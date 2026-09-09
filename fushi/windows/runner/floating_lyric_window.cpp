@@ -54,6 +54,14 @@ constexpr UINT_PTR kHoverLookupTimerId = 1;
 // 查词那样需要 60ms 级精度——它只决定一个窗口显不显示。
 constexpr UINT_PTR kToolbarRevealTimerId = 2;
 constexpr UINT kToolbarRevealPollMs = 120;
+// 正文窗置顶守卫（BUG-2365）。与查词卡的 BUG-1479 守卫同一形状、同一间隔：
+// galgame 切全屏时会把自己抬进置顶带（KiriKiri / Siglus 等引擎的常规动作），同一
+// 置顶带内是「最后一次 SetWindowPos 的赢」，而正文窗只在 show / clamp / DPI 变化时
+// 设过一次，于是被压到游戏底下再也上不来。独立工具条窗有自己的按帧重申
+//（HookToolbarWindow::Sync 无条件 HWND_TOPMOST，BUG-951 的逃生口），所以用户看到的
+// 正是「顶条还在、文字没了」。800ms 取自 BUG-1479 的同一权衡。
+constexpr UINT_PTR kTopmostGuardTimerId = 3;
+constexpr UINT kTopmostGuardIntervalMs = 800;
 // 揭示区在正文窗 ∪ 工具条矩形之外再放宽这么多，避免指针刚离开边缘一像素就消失，
 // 以及「从工具条移向正文」的途中出现空档。
 constexpr float kToolbarRevealMarginDip = 24.0f;
@@ -227,6 +235,7 @@ void FloatingLyricWindow::ResetWindowInteractionState() {
   CancelPointerGesture();
   StopHoverLookupPolling();
   StopToolbarRevealPolling();
+  StopTopmostGuard();
   ResetHoverLookupAnchor();
 }
 
@@ -511,6 +520,7 @@ bool FloatingLyricWindow::Show(HWND owner) {
   // BUG-951: a re-show while pass-through is still on must re-create the
   // escape-hatch toolbar and re-arm the body's click-through in one place.
   ApplyPassThroughExStyle();
+  StartTopmostGuard();
   RequestRender();
   return true;
 }
@@ -541,6 +551,7 @@ void FloatingLyricWindow::Hide() {
   // 隐藏后收不到 WM_MOUSELEAVE：定时器留着就是后台空转。
   StopHoverLookupPolling();
   StopToolbarRevealPolling();
+  StopTopmostGuard();
   toolbar_revealed_ = false;
   ResetHoverLookupAnchor();
   // BUG-951: hand clicks back unconditionally and take the toolbar down with
@@ -1103,6 +1114,56 @@ void FloatingLyricWindow::SyncPassThroughToolbar() {
                              ToolbarStates());
 }
 
+void FloatingLyricWindow::SetTopmostCeilingProvider(
+    std::function<HWND()> provider) {
+  topmost_ceiling_ = std::move(provider);
+}
+
+void FloatingLyricWindow::ReassertTopmost() {
+  if (!OwnsLiveWindow()) {
+    return;
+  }
+  // 用户按 📌 主动取消置顶是显式意图，守卫不得把它顶回去。
+  if (!topmost_) {
+    return;
+  }
+  // 查词卡也有自己的 800ms 置顶守卫（BUG-1479）。两个窗口都往置顶带最顶抢的话，
+  // 卡片会周期性地闪到浮窗底下，所以有卡片时正文窗插在**卡片正下方**：既仍在游戏
+  // 之上（卡片的守卫保证卡片在游戏之上），又不会把卡片压掉。没有卡片时才抢最顶。
+  HWND ceiling = topmost_ceiling_ ? topmost_ceiling_() : nullptr;
+  if (ceiling != nullptr && IsWindow(ceiling) && ceiling != hwnd_) {
+    SetWindowPos(hwnd_, ceiling, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  } else {
+    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
+  // 正文窗刚抬到工具条窗之上，逃生口就被自己的正文盖住了（BUG-951 说的「用户再也
+  // 点不回来」）。同一个 tick 里把工具条重新顶上去——它的 Sync 在无需重绘时只做一次
+  // SetWindowPos，代价与这里的一次相同。
+  SyncPassThroughToolbar();
+}
+
+void FloatingLyricWindow::StartTopmostGuard() {
+  if (topmost_guard_active_ || hwnd_ == nullptr) {
+    return;
+  }
+  if (SetTimer(hwnd_, kTopmostGuardTimerId, kTopmostGuardIntervalMs,
+               nullptr) != 0) {
+    topmost_guard_active_ = true;
+  }
+}
+
+void FloatingLyricWindow::StopTopmostGuard() {
+  if (!topmost_guard_active_) {
+    return;
+  }
+  if (hwnd_ != nullptr) {
+    KillTimer(hwnd_, kTopmostGuardTimerId);
+  }
+  topmost_guard_active_ = false;
+}
+
 void FloatingLyricWindow::MoveBodyTo(int x, int y) {
   if (hwnd_ == nullptr) {
     return;
@@ -1293,6 +1354,10 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
       return 0;
     }
     case WM_TIMER: {
+      if (wparam == kTopmostGuardTimerId) {
+        ReassertTopmost();
+        return 0;
+      }
       if (wparam == kToolbarRevealTimerId) {
         UpdateToolbarReveal();
         return 0;

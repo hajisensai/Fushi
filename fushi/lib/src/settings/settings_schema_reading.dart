@@ -453,6 +453,26 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
+          // 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）的显示开关，
+          // 紧挨同一条状态行右段的「阅读进度指示」。只关显示不停表——计时账仍在
+          // StudyClock 照记（停表是点状态行那一段的手动暂停）。两个开关都关时整条
+          // 状态行不画且回收 28px 底部预留，故与进度开关同样走重锚通道。
+          // order 14：behavior 组内 0-9/11/12/13/18/19 已占，取下一空号。
+          SettingsSwitchItem(
+            id: 'reading_controls.show_reading_timer',
+            title: t.reader_timer_show,
+            icon: Icons.timer_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 14,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.showReadingTimer,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleShowReadingTimer();
+              notifyReaderChromeReanchored(settingsContext);
+            },
+          ),
           // TODO-975 决策#2：顶部进度悬浮开关（点击唤出 + 自动收起 + 不占正文位置）。
           // 仅当进度本身开启时显示。切换改变预留高 → 走重锚通道。
           // TODO-1029：「悬浮控制栏」开关（原「点击空白处隐藏控制栏」）紧挨「悬浮阅读

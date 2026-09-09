@@ -1960,11 +1960,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _progressTotalChars! > 0 &&
       ReaderFushiSource.instance.showTopProgressBar;
 
-  /// 各平台底部状态行（左阅读追踪 / 右字数进度）是否启用。
-  /// 单一真相源 [readerStatusFooterEnabled]：非歌词模式。
+  /// 各平台底部状态行（阅读追踪 / 字数进度）是否启用。
+  /// 单一真相源 [readerStatusFooterEnabled]：非歌词模式，且两段读数至少还开着一段
+  /// （两个开关都关 = 整条行不画且回收 28px 预留）。
   bool get _statusFooterEnabled => readerStatusFooterEnabled(
     desktop: isDesktopPlatform,
     lyricsMode: _lyricsMode,
+    showTimer: ReaderFushiSource.instance.showReadingTimer,
+    showProgress: ReaderFushiSource.instance.showTopProgressBar,
   );
 
   /// 状态行的底部预留高（挤压式：视觉高度 == 预留高度，正文永不压到它下面）。

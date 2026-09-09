@@ -12,7 +12,7 @@ import java.util.Set;
  *   <li>{@link AddContentApiProvider}：主包 {@code com.ichi2.anki}，直接委托给
  *       上游 AAR 的 {@code AddContentApi}。逐行委托、零行为改动——这条是今天所有
  *       Android 用户在走的路，不能因为支持并行版而让它承担任何风险。</li>
- *   <li>{@link DirectAnkiProvider}：并行版（{@code com.ichi2.anki.A} 等）。AAR 把
+ *   <li>{@link DirectAnkiProvider}：并行版（{@code com.ichi2.anki.e} 等）。AAR 把
  *       {@code content://com.ichi2.anki.flashcards} 和权限名都编译成了常量（解包
  *       该 AAR 的常量池核对过），没有任何注入点，所以并行版只能自己驱动
  *       ContentResolver。</li>

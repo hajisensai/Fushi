@@ -628,6 +628,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。
   'reading/Reading progress indicator':
       'test/settings/top_progress_toggle_guard_test.dart',
+  // 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）的显隐开关。生效点
+  // 在状态行组件自身的 showTimer 门控与 readerStatusFooterEnabled（两段都关时整条行
+  // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
+  // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
+  'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。

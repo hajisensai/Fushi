@@ -42,7 +42,7 @@ public class AnkiDroidHelper {
      *
      * <p>BUG-2195：判据从 {@code AddContentApi.getAnkiDroidPackageName}（只认写死的
      * 主包 authority {@code com.ichi2.anki.flashcards}）换成 {@link AnkiDroidTarget}
-     * 的逐候选探测，否则装了并行版（{@code com.ichi2.anki.A} 等）的机器上这里恒
+     * 的逐候选探测，否则装了并行版（{@code com.ichi2.anki.e} 等）的机器上这里恒
      * false，权限框一次都不会弹。
      *
      * @return true if the API is available to use
@@ -60,7 +60,7 @@ public class AnkiDroidHelper {
 
     /**
      * 要申请的读写权限名。BUG-2195：并行版定义的是**它自己**那个带后缀的权限
-     * （{@code com.ichi2.anki.A.permission.READ_WRITE_DATABASE}），申请主包那个只会
+     * （{@code com.ichi2.anki.e.permission.READ_WRITE_DATABASE}），申请主包那个只会
      * 静默判拒。没解析到安装时回退主包常量——此时 shouldRequestPermission 的结果无人
      * 使用（isApiAvailable 已经先短路了）。
      */

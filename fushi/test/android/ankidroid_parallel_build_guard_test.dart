@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-2195：AnkiDroid 并行版（`com.ichi2.anki.A` 等）支持的源码守卫。
+/// BUG-2195：AnkiDroid 并行版（`com.ichi2.anki.e` 等）支持的源码守卫。
 ///
 /// 为什么需要守卫而不是只靠单测：这条链路的关键事实全在 **Java 源码和
 /// AndroidManifest** 里，而本仓库的 Android 侧没有 JVM 单测基建（历史上同类不变式
@@ -53,10 +53,30 @@ void main() {
     return packages;
   }
 
+  test('并行版后缀必须小写（BUG-2370）', () {
+    // 上游 tools/parallel-package-release.sh：
+    //   LCBUILD=`tr '[:upper:]' '[:lower:]' <<< $BUILD`
+    //   ./gradlew ... -PcustomSuffix="$LCBUILD" -PcustomName="AnkiDroid.$BUILD"
+    // 显示名大写（用户看到的图标写着 AnkiDroid.E），包名后缀小写
+    // （com.ichi2.anki.e）。Android 包名大小写敏感，照着图标名写大写后缀 =
+    // 这些候选一条都匹配不上，用户装着并行版却一直被告知「未安装 AnkiDroid」。
+    // BUG-2195 首版就是这么写的，而当时的守卫只钉「候选表 ↔ manifest 一致」，
+    // 两边一起大写就一起错过去了——所以这条不变式必须单独钉。
+    for (final String pkg in candidatePackages()) {
+      expect(pkg, pkg.toLowerCase(),
+          reason: '$pkg 含大写：上游 applicationIdSuffix 恒为小写，'
+              '大写后缀的 AnkiDroid 从未发布过，这条候选永远匹配不到任何安装');
+    }
+  });
+
   test('候选包清单非空，且主包排第一', () {
     final List<String> packages = candidatePackages();
     expect(packages.length, greaterThanOrEqualTo(6),
-        reason: '至少要覆盖主包 + 官方并行版 A–E');
+        reason: '至少要覆盖主包 + 官方并行版 a–e');
+    for (final String suffix in <String>['a', 'b', 'c', 'd', 'e']) {
+      expect(packages, contains('com.ichi2.anki.$suffix'),
+          reason: '官方 parallel-package-release.sh 发布的就是这五个包名');
+    }
     expect(packages.first, 'com.ichi2.anki',
         reason: '同时装了主包和并行版时，主包必须先命中（与修复前行为一致）');
     expect(packages.toSet().length, packages.length, reason: '候选不得重复');

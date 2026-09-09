@@ -527,6 +527,14 @@ class ReaderSettings {
   Future<void> toggleShowTopProgressBar() =>
       _set<bool>('show_top_progress_bar', !showTopProgressBar);
 
+  /// 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）是否显示
+  /// （per-reader，每本书各自记忆）。默认 true = 现状。与 [showTopProgressBar]
+  /// 正交；两个都关时整条状态行不画也不占预留（见 `readerStatusFooterEnabled`）。
+  /// 只关显示，不停表——计时账仍在 `StudyClock` 照记。
+  bool get showReadingTimer => _get<bool>('show_reading_timer', true);
+  Future<void> toggleShowReadingTimer() =>
+      _set<bool>('show_reading_timer', !showReadingTimer);
+
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
