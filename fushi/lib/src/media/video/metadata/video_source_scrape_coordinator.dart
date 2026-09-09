@@ -34,6 +34,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi/src/media/video/scraper/filename_parser.dart';
+import 'package:fushi/src/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -55,8 +56,12 @@ class VideoSourceScrapeCoordinator
     AnimeOfflineIdentityResolver? offlineIdentityResolver,
     bool enableOfflineTitleIndex = false,
     AnimeEpisodeRelationsCatalog? episodeRelations,
+    VideoMetadataProviderRegistry Function(String locale)?
+        localeRegistryFactory,
     this.onWorkScraped,
   })  : primaryProvider = primaryProvider ?? config.primaryProvider,
+        _localeRegistryFactory = localeRegistryFactory ??
+            ((String locale) => _createRegistry(config, locale: locale)),
         episodeRelations = episodeRelations ??
             (enableOfflineTitleIndex ? AnimeEpisodeRelationsCatalog() : null),
         _ownsEpisodeRelations = episodeRelations == null,
@@ -127,14 +132,37 @@ class VideoSourceScrapeCoordinator
   final Set<int> _interruptedRunIds = <int>{};
   int? _activeRunId;
 
+  /// 本趟刮削的来源级 provider 注册表与资料语言（v99 `metadata_locale`）。
+  ///
+  /// TMDB provider 的 `language` 是**构造期**参数，来源 locale 与全局不同时不能
+  /// 复用同一个实例，所以这一趟临时建一套、跑完关掉。协调器同时只跑一趟
+  /// （见 [_activeRunId]，run 生命周期本来就用单字段表达），所以作用域用字段承载
+  /// 是与既有设计一致的；null = 跟随全局。
+  VideoMetadataProviderRegistry? _scopedRegistry;
+  String? _scopedLocale;
+
+  /// 建「本趟的 provider 注册表」的工厂。生产装配就是 [_createRegistry]；测试注入
+  /// 假工厂来断言这一趟到底拿到了哪个 locale——否则来源级 locale 是否真的传下去，
+  /// 只能靠读代码判断。
+  final VideoMetadataProviderRegistry Function(String locale)
+      _localeRegistryFactory;
+
+  /// 刮削管线内部一律用这个 getter 取 provider，别直接用 [registry]——后者是
+  /// 全局 locale 的那套，只留给不写库的手动搜索。
+  VideoMetadataProviderRegistry get _registry => _scopedRegistry ?? registry;
+
+  /// 本趟刮削的有效资料语言（来源级覆盖 > 全局）。
+  String get _locale => _scopedLocale ?? config.locale;
+
   static VideoMetadataProviderRegistry _createRegistry(
-    VideoSourceScrapeGlobalConfig config,
-  ) =>
+    VideoSourceScrapeGlobalConfig config, {
+    String? locale,
+  }) =>
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[
         MalVideoMetadataProvider(),
         TmdbVideoMetadataProvider(
           apiKey: config.tmdbApiKey,
-          language: config.locale,
+          language: locale ?? config.locale,
         ),
       ]);
 
@@ -427,6 +455,14 @@ class VideoSourceScrapeCoordinator
       return SourceScrapeReport(sourceIds: <int>[source.id]);
     }
 
+    // 来源级资料语言与全局不同 → 这一趟用一套自己的 provider（TMDB 的
+    // `language` 只能在构造期给），finally 里关掉。注入进来的 registry 不属于
+    // 协调器，永远只读不关（见 [_ownsRegistry]）——这里关的是本方法自己建的那套。
+    if (settings.locale != config.locale) {
+      _scopedLocale = settings.locale;
+      _scopedRegistry = _localeRegistryFactory(settings.locale);
+    }
+
     final int startedAt = DateTime.now().millisecondsSinceEpoch;
     final int runId = await database.insertVideoSourceScrapeRun(
       VideoSourceScrapeRunsCompanion.insert(
@@ -473,7 +509,7 @@ class VideoSourceScrapeCoordinator
 
       final bool hasProvider = _providerChain(settings.provider).any(
           (VideoMetadataProviderKind kind) =>
-              registry.provider(kind)?.isAvailable ?? false);
+              _registry.provider(kind)?.isAvailable ?? false);
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(SourceScrapeIssue(
@@ -491,7 +527,7 @@ class VideoSourceScrapeCoordinator
       // 「剩下的没做」如实结账成一条可操作说明，而不是让用户对着 N 条一模一样的分
       // 集抓取失败去猜发生了什么。
       final AniDbVideoMetadataProvider? anidb =
-          switch (registry.provider(VideoMetadataProviderKind.anidb)) {
+          switch (_registry.provider(VideoMetadataProviderKind.anidb)) {
         final AniDbVideoMetadataProvider provider => provider,
         _ => null,
       };
@@ -733,6 +769,9 @@ class VideoSourceScrapeCoordinator
     } finally {
       if (_activeRunId == runId) _activeRunId = null;
       _interruptedRunIds.remove(runId);
+      _scopedRegistry?.close();
+      _scopedRegistry = null;
+      _scopedLocale = null;
     }
   }
 
@@ -855,10 +894,16 @@ class VideoSourceScrapeCoordinator
         changedIdentity || retiredStoredIdentity
             ? const <VideoMetadataLookup>[]
             : storedLookups;
-    final List<String> candidates = <String>[
-      if (nfo != null) nfo.title,
-      ..._titleCandidates(localWork, parsed),
-    ];
+    // 识别词（设计稿 C）：用户词表先把字幕组/发布组等噪声块从标题候选里删掉或
+    // 改写。改写结果排在原候选之前，原候选保留在后——规则写错时至少还能按原
+    // 标题搜到东西，而不是整条识别归零。
+    final List<String> candidates = applyScrapeIdentifierWordsToCandidates(
+      <String>[
+        if (nfo != null) nfo.title,
+        ..._titleCandidates(localWork, parsed),
+      ],
+      config.identifierWords,
+    );
     final List<VideoMetadataLookup> identityHints = <VideoMetadataLookup>[
       if (confirmedLookup != null) confirmedLookup,
       ...reusableLookups,
@@ -1029,7 +1074,7 @@ class VideoSourceScrapeCoordinator
                   AniDbVideoMetadataProvider.catalogOnlyPayloadKey] ==
               true) {
         final VideoMetadataProvider? provider =
-            registry.provider(selected.lookup.provider);
+            _registry.provider(selected.lookup.provider);
         try {
           resolvedWork =
               await provider?.fetchWork(selected.lookup) ?? selected.work;
@@ -1070,10 +1115,15 @@ class VideoSourceScrapeCoordinator
       );
     }
     bool seasonEpisodesAuthoritative = primaryHydration.complete;
+    // 识别词的集偏移先于多季扩展落地：先把本地集号纠正成该剧真实编号，多季
+    // 折算才有意义（顺序反过来会拿未纠正的集号去跨季累加）。
+    final Map<String, int> identifierOffsets =
+        _identifierEpisodeOffsets(localWork);
+    Map<String, (int, int)> episodeOverrides =
+        _identifierEpisodeOverrides(localWork, identifierOffsets);
     // 多季一张卡（设计稿 B）：MAL 一个 id 只是一季。本地合集含多季（季目录 /
     // 绝对集号）时，用 Fribb 同一 TMDB 剧的季条目序列把各季映射到各自 MAL id
     // 逐季抓分集，绝对集号经 anime-relations 重定向；卡片仍是这一个合集。
-    Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{};
     _SeasonExpansion? expansion;
     if (metadata.provider == VideoMetadataProviderKind.mal &&
         metadata.kind == VideoMetadataMediaKind.tv &&
@@ -1083,8 +1133,13 @@ class VideoSourceScrapeCoordinator
         primary: metadata,
         primaryLookup: resolvedLookup,
         warnings: warnings,
+        episodeOffsets: identifierOffsets,
       );
-      episodeOverrides = expansion.episodeOverrides;
+      // 扩展只覆盖它真正折算过的成员；其余成员保留识别词纠正后的集号。
+      episodeOverrides = <String, (int, int)>{
+        ...episodeOverrides,
+        ...expansion.episodeOverrides,
+      };
       if (!expansion.complete) seasonEpisodesAuthoritative = false;
     }
     if (metadata.provider != VideoMetadataProviderKind.tmdb) {
@@ -1120,7 +1175,7 @@ class VideoSourceScrapeCoordinator
       metadata = supplementVideoMetadata(
         metadata,
         tmdb.metadata,
-        preferredLanguage: config.locale,
+        preferredLanguage: _locale,
       );
     }
     if (hashEvidence.animeId != null &&
@@ -1273,28 +1328,37 @@ class VideoSourceScrapeCoordinator
     required VideoMetadataWork primary,
     required VideoMetadataLookup primaryLookup,
     required List<SourceScrapeIssue> warnings,
+    Map<String, int> episodeOffsets = const <String, int>{},
   }) async {
     const _SeasonExpansion none = _SeasonExpansion();
     final AnimeIdentityMapping? mapping = identityMapping;
     final VideoMetadataProvider? provider =
-        registry.provider(VideoMetadataProviderKind.mal);
+        _registry.provider(VideoMetadataProviderKind.mal);
     final int? malId = int.tryParse(primaryLookup.externalId);
     if (mapping == null || provider == null || malId == null) return none;
 
-    final Map<String, VideoNameInfo> parsedMembers = <String, VideoNameInfo>{
+    // 识别词的集偏移已经先于本步生效：这里看到的集号是纠正后的编号，跨季
+    // 折算才不会拿错编号去累加。
+    final Map<String, ({int? season, int? episode})> parsedMembers =
+        <String, ({int? season, int? episode})>{
       for (final VideoBookRow member in localWork.members)
-        member.bookUid: parseVideoPath(member.videoPath),
+        member.bookUid: _shiftedEpisodeKey(
+          parseVideoPath(member.videoPath),
+          episodeOffsets[member.bookUid] ?? 0,
+        ),
     };
     final int primaryCount = primary.episodeCount ??
         primary.seasons.firstOrNull?.episodes.length ??
         0;
-    final bool anySeasonHint = parsedMembers.values
-        .any((VideoNameInfo info) => info.season != null && info.season != 1);
-    final bool anyBeyond = parsedMembers.values.any((VideoNameInfo info) =>
-        info.season == null &&
-        info.episode != null &&
-        primaryCount > 0 &&
-        info.episode! > primaryCount);
+    final bool anySeasonHint = parsedMembers.values.any(
+        (({int? season, int? episode}) info) =>
+            info.season != null && info.season != 1);
+    final bool anyBeyond = parsedMembers.values.any(
+        (({int? season, int? episode}) info) =>
+            info.season == null &&
+            info.episode != null &&
+            primaryCount > 0 &&
+            info.episode! > primaryCount);
     if (!anySeasonHint && !anyBeyond) return none;
 
     final List<AnimeIdentityEntry> seasonEntries;
@@ -1355,8 +1419,9 @@ class VideoSourceScrapeCoordinator
     final Map<String, (int, int)> overrides = <String, (int, int)>{};
     final Set<int> neededIndexes = <int>{};
     bool complete = true;
-    for (final MapEntry<String, VideoNameInfo> entry in parsedMembers.entries) {
-      final VideoNameInfo info = entry.value;
+    for (final MapEntry<String, ({int? season, int? episode})> entry
+        in parsedMembers.entries) {
+      final ({int? season, int? episode}) info = entry.value;
       final int? episode = info.episode;
       if (episode == null) continue;
       if (info.season case final int season) {
@@ -1678,7 +1743,7 @@ class VideoSourceScrapeCoordinator
     List<SourceScrapeIssue> warnings,
     String localTitle,
   ) async {
-    final VideoMetadataProvider? provider = registry.provider(lookup.provider);
+    final VideoMetadataProvider? provider = _registry.provider(lookup.provider);
     if (provider == null) {
       return _HydratedWork(metadata: work, complete: false);
     }
@@ -1794,7 +1859,7 @@ class VideoSourceScrapeCoordinator
     VideoMetadataLookup? lookupHint,
   }) async {
     final VideoMetadataProvider? tmdb =
-        registry.provider(VideoMetadataProviderKind.tmdb);
+        _registry.provider(VideoMetadataProviderKind.tmdb);
     if (tmdb == null || !tmdb.isAvailable) {
       return const _TmdbSupplementResult();
     }
@@ -2342,6 +2407,57 @@ class VideoSourceScrapeCoordinator
         videoPath: work.members.first.videoPath,
       );
 
+  /// 识别词给每个成员算出的集号偏移（0 不入表）。词表空时恒为空表。
+  Map<String, int> _identifierEpisodeOffsets(VideoSourceScrapeWork work) {
+    final ScrapeIdentifierWords words = config.identifierWords;
+    if (words.isEmpty) return const <String, int>{};
+    final Map<String, int> offsets = <String, int>{};
+    for (final VideoBookRow member in work.members) {
+      final int offset =
+          words.apply(p.basename(member.videoPath)).episodeOffset;
+      if (offset != 0) offsets[member.bookUid] = offset;
+    }
+    return offsets;
+  }
+
+  /// 把识别词偏移折成 `bookUid → (季, 集)` 覆盖，语义与 [localEpisodeKeyFor]
+  /// 的文件名解析对齐（季缺省 1）。解不出集号或偏移越界的成员不写覆盖。
+  static Map<String, (int, int)> _identifierEpisodeOverrides(
+    VideoSourceScrapeWork work,
+    Map<String, int> offsets,
+  ) {
+    if (offsets.isEmpty) return const <String, (int, int)>{};
+    final Map<String, (int, int)> overrides = <String, (int, int)>{};
+    for (final VideoBookRow member in work.members) {
+      final int offset = offsets[member.bookUid] ?? 0;
+      if (offset == 0) continue;
+      final VideoNameInfo parsed =
+          parseVideoFilename(p.basename(member.videoPath));
+      final ({int? season, int? episode}) shifted =
+          _shiftedEpisodeKey(parsed, offset);
+      final int? episode = shifted.episode;
+      if (episode == null || episode == parsed.episode) continue;
+      overrides[member.bookUid] = (shifted.season ?? 1, episode);
+    }
+    return overrides;
+  }
+
+  /// 对解析结果套用集号偏移；越界（≤ 0 或 > 9999）时保留原编号。
+  static ({int? season, int? episode}) _shiftedEpisodeKey(
+    VideoNameInfo parsed,
+    int offset,
+  ) {
+    final int? episode = parsed.episode;
+    if (episode == null || offset == 0) {
+      return (season: parsed.season, episode: episode);
+    }
+    final int shifted = episode + offset;
+    return (
+      season: parsed.season,
+      episode: shifted > 0 && shifted <= 9999 ? shifted : episode,
+    );
+  }
+
   static int? _parsedSeason(
     VideoSourceScrapeWork work,
     VideoNameInfo filename,
@@ -2574,6 +2690,28 @@ String _pathSegmentFromEnd(String path, int n) {
   return index >= 0 ? segments[index] : '';
 }
 
+/// 把识别词表应用到一组标题候选：改写结果排在最前，原候选保留在后。
+///
+/// 规则写错时（比如屏蔽词把整个标题吃掉）原候选仍在，识别不会整条归零。
+List<String> applyScrapeIdentifierWordsToCandidates(
+  List<String> candidates,
+  ScrapeIdentifierWords words,
+) {
+  if (words.isEmpty) return candidates;
+  final List<String> rewritten = <String>[];
+  for (final String candidate in candidates) {
+    final String next = words.apply(candidate).title.trim();
+    if (next.isNotEmpty && next != candidate.trim()) rewritten.add(next);
+  }
+  if (rewritten.isEmpty) return candidates;
+  final Set<String> seen = <String>{};
+  return <String>[
+    for (final String value in <String>[...rewritten, ...candidates])
+      if (value.trim().isNotEmpty && seen.add(value.trim().toLowerCase()))
+        value.trim(),
+  ];
+}
+
 /// 一个字符串是否只是集号标签而非作品标题：规则引擎解不出标题、却解出了集号。
 /// 四位数（`1917` 这类年份/片名）不算，避免把纯数字片名误杀。
 bool isEpisodeLabelTitle(String value) {
@@ -2588,6 +2726,7 @@ class _EffectiveSourceSettings {
   const _EffectiveSourceSettings({
     required this.enabled,
     required this.provider,
+    required this.locale,
     required this.writeNfo,
     required this.writeImages,
     required this.nfoPolicy,
@@ -2607,6 +2746,11 @@ class _EffectiveSourceSettings {
       // （bangumi / douban / anilist / anidb）回落全局默认。
       provider: parseSelectableVideoMetadataProvider(row?.providerOverride) ??
           primaryProvider,
+      // 来源级 metadata_locale：NULL / 全空白 = 跟随全局。
+      locale: switch (row?.metadataLocale?.trim()) {
+        final String value when value.isNotEmpty => value,
+        _ => config.locale,
+      },
       writeNfo: row?.writeNfo ?? true,
       writeImages: row?.writeImages ?? true,
       nfoPolicy: _policy(row?.nfoPolicy),
@@ -2618,6 +2762,9 @@ class _EffectiveSourceSettings {
 
   final bool enabled;
   final VideoMetadataProviderKind provider;
+
+  /// 本来源刮削用的资料语言（BCP-47）；已经过「空 → 全局」归一。
+  final String locale;
   final bool writeNfo;
   final bool writeImages;
   final SidecarWritePolicy nfoPolicy;

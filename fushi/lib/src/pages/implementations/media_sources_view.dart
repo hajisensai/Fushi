@@ -1065,6 +1065,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         enabled: Value<bool>(draft.enabled),
         // 来源级主资料源覆盖；NULL = 跟随全局默认。
         providerOverride: Value<String?>(draft.providerOverride),
+        // 来源级资料语言；NULL = 跟随全局 video_metadata_locale。
+        metadataLocale: Value<String?>(draft.metadataLocale),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
         writeNfo: Value<bool>(draft.writeNfo),
         writeImages: Value<bool>(draft.writeImages),
@@ -1261,6 +1263,7 @@ class _VideoSourceScrapeSettingsDraft {
     required this.imagePolicy,
     required this.allowExternalOverwrite,
     this.providerOverride,
+    this.metadataLocale,
   });
 
   factory _VideoSourceScrapeSettingsDraft.fromRow(
@@ -1272,6 +1275,10 @@ class _VideoSourceScrapeSettingsDraft {
       // 历史值（bangumi / douban / anilist / anidb）不是可选主源，按「跟随全局」显示。
       providerOverride:
           parseSelectableVideoMetadataProvider(row?.providerOverride)?.name,
+      metadataLocale: switch (row?.metadataLocale?.trim()) {
+        final String value when value.isNotEmpty => value,
+        _ => null,
+      },
       enabled: row?.enabled ?? true,
       autoAfterScan: row?.autoAfterScan ?? false,
       writeNfo: row?.writeNfo ?? true,
@@ -1295,6 +1302,9 @@ class _VideoSourceScrapeSettingsDraft {
 
   /// 此来源的主资料源覆盖：`mal` / `tmdb`；`null` = 跟随全局默认。
   final String? providerOverride;
+
+  /// 此来源的资料语言覆盖（BCP-47）；`null` = 跟随全局 `video_metadata_locale`。
+  final String? metadataLocale;
 
   static String _validPolicy(String? value) =>
       const <String>{'skip', 'missingOnly', 'overwrite'}.contains(value)
@@ -1326,12 +1336,25 @@ class _VideoSourceScrapeSettingsDialogState
   /// 选择器的值：'' = 跟随全局；否则为 provider 名。
   late String _providerOverride = widget.initial.providerOverride ?? '';
 
+  /// 资料语言输入框：空串 = 跟随全局。
+  late final TextEditingController _metadataLocale =
+      TextEditingController(text: widget.initial.metadataLocale ?? '');
+
+  @override
+  void dispose() {
+    _metadataLocale.dispose();
+    super.dispose();
+  }
+
   void _save() {
     Navigator.pop(
       context,
       _VideoSourceScrapeSettingsDraft(
         groupingMode: _groupingMode,
         providerOverride: _providerOverride.isEmpty ? null : _providerOverride,
+        metadataLocale: _metadataLocale.text.trim().isEmpty
+            ? null
+            : _metadataLocale.text.trim(),
         enabled: _enabled,
         autoAfterScan: _autoAfterScan,
         writeNfo: _writeNfo,
@@ -1397,6 +1420,17 @@ class _VideoSourceScrapeSettingsDialogState
                   controlBelow: true,
                 ),
                 Text(t.video_metadata_primary_provider_hint),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: TextField(
+                    controller: _metadataLocale,
+                    decoration: InputDecoration(
+                      labelText: t.video_source_scrape_metadata_locale,
+                      helperText: t.video_source_scrape_metadata_locale_hint,
+                      helperMaxLines: 3,
+                    ),
+                  ),
+                ),
                 AdaptiveSettingsSwitchRow(
                   title: t.video_source_scrape_enabled_toggle,
                   subtitle: t.video_source_scrape_enabled_toggle_hint,

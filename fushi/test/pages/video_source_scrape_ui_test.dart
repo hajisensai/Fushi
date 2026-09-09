@@ -403,6 +403,50 @@ void main() {
       reason: 'legacy column stays compatible even though the UI ignores it',
     );
     expect(settings.allowExternalOverwrite, isFalse);
+    expect(settings.metadataLocale, isNull,
+        reason: 'v99 资料语言留空 = 跟随全局，不写死一个字符串');
+  });
+
+  testWidgets('source settings persist a per-source metadata language (v99)',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    await _pumpView(tester, db, mediaKind: 'video');
+
+    Finder localeField() => find.ancestor(
+          of: find.text('Metadata language'),
+          matching: find.byType(TextField),
+        );
+
+    await tester.tap(find.byTooltip('Source scrape settings'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(localeField());
+    await tester.enterText(localeField(), '  ja  ');
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+
+    expect(
+      (await db.getVideoSourceScrapeSettings(sourceId))!.metadataLocale,
+      'ja',
+      reason: '首尾空白裁掉后写穿 metadata_locale',
+    );
+
+    // 再开一次：输入框回显已存的值，清空后保存回到「跟随全局」= NULL。
+    await tester.tap(find.byTooltip('Source scrape settings'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(localeField()).controller!.text,
+      'ja',
+    );
+    await tester.enterText(localeField(), '   ');
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getVideoSourceScrapeSettings(sourceId))!.metadataLocale,
+      isNull,
+      reason: '空白 = 跟随全局，必须落回 NULL 而不是空串',
+    );
   });
 
   testWidgets('latest persisted run replaces the scan-count subtitle',

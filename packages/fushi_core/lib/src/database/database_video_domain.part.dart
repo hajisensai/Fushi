@@ -281,6 +281,19 @@ mixin _FushiDbVideoDomain
             ..where(($VideoMetadataWorksTable t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  /// 写作品级字段锁（schema v99）。`null` = 清空全部锁。锁是纯用户意图，独立于
+  /// 刮削产物，所以是自己的原语而不是 `upsertVideoMetadataWork` 的一个字段。
+  Future<void> setVideoMetadataWorkLockedFields(
+    int workId,
+    String? lockedFields,
+  ) async {
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(
+      lockedFields: Value<String?>(lockedFields),
+    ));
+  }
+
   Future<VideoMetadataWorkRow?> getVideoMetadataWorkById(int workId) =>
       (select(videoMetadataWorks)
             ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))

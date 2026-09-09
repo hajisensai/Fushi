@@ -102,9 +102,9 @@ void main() {
     final RegExp call = RegExp(r'commitVideoMetadataRuntimePreference\(');
     expect(
       call.allMatches(videoSource).length,
-      2,
-      reason: '刮削语言与刮削主源两处运行期偏好都必须走共享 helper —— 只有它会重建'
-          '下载管线的刮削快照；漏一处就是「设置改了、下一批还用旧值」。'
+      3,
+      reason: '刮削语言、刮削主源与识别词三处运行期偏好都必须走共享 helper —— 只有它'
+          '会重建下载管线的刮削快照；漏一处就是「设置改了、下一批还用旧值」。'
           '这里数的是「视频·媒体库」分区里的运行期刮削偏好数，再加一项要同步 +1',
     );
     expect(

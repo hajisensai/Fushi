@@ -4503,5 +4503,22 @@
   "video_subtitle_retime_done": "已重定时 $matched/$total 句（$percent%），中位偏移 $ms ms",
   "video_subtitle_retime_low_match": "只有 $percent% 的句子对上了。检查语音语言是否选对、这份字幕是不是这一集的。",
   "video_subtitle_retime_dropped": "已剔除 $count 条格式异常的字幕",
-  "video_subtitle_retime_failed": "字幕重定时失败"
+  "video_subtitle_retime_failed": "字幕重定时失败",
+  "video_metadata_identifier_words": "识别词",
+  "video_metadata_identifier_words_hint": "识别前先改写、屏蔽标题或偏移集号",
+  "video_metadata_identifier_words_empty": "未配置",
+  "video_metadata_identifier_words_invalid": "无效规则",
+  "video_metadata_identifier_words_syntax": "一行一条规则，# 开头是注释。屏蔽：直接写正则。替换：A => B。集偏移：前 <> 后 >> EP+1。组合：A => B && 前 <> 后 >> EP+1。",
+  "video_source_scrape_metadata_locale": "资料语言",
+  "video_source_scrape_metadata_locale_hint": "BCP-47 语言标签，如 ja 或 zh-CN。留空 = 跟随全局资料语言。",
+  "video_work_locked_fields": "锁定字段",
+  "video_work_locked_fields_hint": "锁定的字段在下次刮削该作品时保留当前值。",
+  "video_work_locked_fields_saved": "字段锁已保存",
+  "video_work_field_title": "标题",
+  "video_work_field_original_title": "原名",
+  "video_work_field_overview": "简介",
+  "video_work_field_tagline": "标语",
+  "video_work_field_rating": "评分",
+  "video_work_field_cover": "封面",
+  "video_work_field_backdrop": "背景图"
 }

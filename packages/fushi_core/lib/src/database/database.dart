@@ -725,7 +725,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 98;
+  int get schemaVersion => 99;
 
   /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
@@ -3025,6 +3025,21 @@ class FushiDatabase extends _$FushiDatabase
                 !await _columnExists('media_collections', 'source_folder_path')) {
               await m.addColumn(
                   mediaCollections, mediaCollections.sourceFolderPath);
+            }
+          }
+          if (from < 99) {
+            // 刮削 C 二期：来源级资料语言覆盖 + 作品级字段锁。两列都是可空
+            // 文本，NULL = 沿用既有行为（跟随全局 locale / 无锁），存量库无需回填。
+            if (await _tableExists('video_source_scrape_settings') &&
+                !await _columnExists(
+                    'video_source_scrape_settings', 'metadata_locale')) {
+              await m.addColumn(videoSourceScrapeSettings,
+                  videoSourceScrapeSettings.metadataLocale);
+            }
+            if (await _tableExists('video_metadata_works') &&
+                !await _columnExists('video_metadata_works', 'locked_fields')) {
+              await m.addColumn(
+                  videoMetadataWorks, videoMetadataWorks.lockedFields);
             }
           }
         },
