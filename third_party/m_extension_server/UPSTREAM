@@ -63,6 +63,13 @@ and manifest point straight at the commit recorded above.
 
 Hibiki modifications
 --------------------
+overlay/.../MihonImageProxy.kt:
+  Consume and close the extension's network response inside the Rx emission,
+  before blocking for detached ImageData. The call adapter cancels its socket
+  on unsubscribe; reading ResponseBody after toBlocking().single() loses the
+  live response. The overlay retains the source client and image interceptors.
+  A real loopback HTTP body regression supplements the in-memory fixtures.
+
 overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
   JVM HTTP clients resolve the host's authenticated loopback proxy policy per
   URL (FUSHI_MIHON_PROXY_POLICY_PORT; token uses FUSHI_MIHON_TOKEN). The host
