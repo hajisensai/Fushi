@@ -1709,7 +1709,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 unawaited(_selectShaderTier(tier)),
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<VideoShaderTier>>[
-                  for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+                  for (final VideoShaderTierSpec spec in shaderTiersFor())
                     if (spec.tier != VideoShaderTier.low)
                       CheckedPopupMenuItem<VideoShaderTier>(
                         value: spec.tier,

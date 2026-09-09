@@ -765,7 +765,27 @@ String shaderTierLabel(VideoShaderTier tier) {
 }
 
 /// 画质档位一句话说明（选谁用谁，告诉用户该档画质/GPU 取舍）。纯映射。
-String shaderTierLabelDescription(VideoShaderTier tier) {
+///
+/// **按平台分文案**：中/高/极高 在两端映射到不同的着色器链（见 [shaderTiersFor]），
+/// 桌面文案写的是「Anime4K HQ / 需要 RTX 4060」这类**桌面显卡门槛**，照搬到手机上等于
+/// 让用户按一个不存在的标准选档——这正是「手机上选了中档就卡」的表层诱因。移动端换成
+/// 描述「只修复不放大」的那套文案。
+String shaderTierLabelDescription(VideoShaderTier tier, {bool? isMobile}) {
+  final bool mobile = isMobile ?? isMobilePlatform;
+  if (mobile) {
+    switch (tier) {
+      case VideoShaderTier.off:
+        return t.video_shader_tier_off_hint;
+      case VideoShaderTier.low:
+        return t.video_shader_tier_low_hint_mobile;
+      case VideoShaderTier.medium:
+        return t.video_shader_tier_medium_hint_mobile;
+      case VideoShaderTier.high:
+        return t.video_shader_tier_high_hint_mobile;
+      case VideoShaderTier.ultra:
+        return t.video_shader_tier_ultra_hint_mobile;
+    }
+  }
   switch (tier) {
     case VideoShaderTier.off:
       return t.video_shader_tier_off_hint;
@@ -806,7 +826,7 @@ class VideoShaderTierSelector extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: SegmentedButton<VideoShaderTier>(
           segments: <ButtonSegment<VideoShaderTier>>[
-            for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+            for (final VideoShaderTierSpec spec in shaderTiersFor())
               ButtonSegment<VideoShaderTier>(
                 value: spec.tier,
                 label: Text(shaderTierLabel(spec.tier)),
@@ -849,7 +869,7 @@ class VideoShaderTierComparison extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+          for (final VideoShaderTierSpec spec in shaderTiersFor())
             () {
               final bool active = current == spec.tier;
               return Padding(

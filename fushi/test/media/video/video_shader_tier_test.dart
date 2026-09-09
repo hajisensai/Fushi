@@ -229,4 +229,113 @@ void main() {
           isEmpty);
     });
   });
+
+  // ── 移动端档位投影守卫（BUG：手机上选高于「低」的任意档，播放和整个 app 一起卡）──
+  // 根因是档位表只有一张桌面表：中/高/极高 把为「1080p → 4K 桌面显示器」设计的
+  // Anime4K 放大链原样丢给手机 GPU。手机屏幕不比片源更大，放大收益被显示分辨率截断、
+  // 代价却全额付，GPU 占满时连带 Flutter raster 一起掉帧。移动端改成只保留修复 pass。
+  //
+  // 本组把「移动链不含放大 pass」钉成不变式：日后谁把桌面链复制回移动表就会红。
+  group('移动端档位投影（shaderTiersFor / kMobileVideoShaderTiers）', () {
+    /// 放大 / 自动降采样类文件的判据（Anime4K 上游按目录+文件名区分）。
+    bool isUpscalePass(String fileName) =>
+        fileName.contains('Upscale') || fileName.contains('AutoDownscale');
+
+    test('shaderTiersFor 按平台取表，两端都不为空且互为独立对象', () {
+      expect(shaderTiersFor(isMobile: false), same(kVideoShaderTiers));
+      expect(shaderTiersFor(isMobile: true), same(kMobileVideoShaderTiers));
+    });
+
+    test('移动表档位语义与桌面一致：同样五档、同序、同 id', () {
+      expect(
+          kMobileVideoShaderTiers.map((VideoShaderTierSpec s) => s.tier)
+              .toList(),
+          kVideoShaderTiers.map((VideoShaderTierSpec s) => s.tier).toList());
+      expect(
+          kMobileVideoShaderTiers.map((VideoShaderTierSpec s) => s.id).toList(),
+          <String>['off', 'low', 'medium', 'high', 'ultra']);
+    });
+
+    test('无/低 两端完全相同（低=纯 mpv 内置缩放，零 GLSL，无平台差异）', () {
+      for (final VideoShaderTier tier
+          in <VideoShaderTier>[VideoShaderTier.off, VideoShaderTier.low]) {
+        final VideoShaderTierSpec desktop =
+            shaderTierSpec(tier, isMobile: false);
+        final VideoShaderTierSpec mobile = shaderTierSpec(tier, isMobile: true);
+        expect(mobile.highQuality, desktop.highQuality);
+        expect(mobile.shaderFileNames, desktop.shaderFileNames);
+        expect(mobile.shaderFileNames, isEmpty);
+      }
+    });
+
+    test('移动 中/高/极高 一个放大 pass 都不含（本次修复的核心不变式）', () {
+      for (final VideoShaderTier tier in <VideoShaderTier>[
+        VideoShaderTier.medium,
+        VideoShaderTier.high,
+        VideoShaderTier.ultra,
+      ]) {
+        final List<String> files =
+            shaderFilesForTier(tier, isMobile: true);
+        expect(files.where(isUpscalePass), isEmpty,
+            reason: '移动 $tier 档混进了放大/降采样 pass：$files');
+        // 对照组：同一档在桌面上**确实**含放大 pass —— 否则本断言恒真、成空壳守卫。
+        expect(
+            shaderFilesForTier(tier, isMobile: false).where(isUpscalePass),
+            isNotEmpty,
+            reason: '桌面 $tier 档应含放大 pass，否则上面的移动端断言没有区分力');
+      }
+    });
+
+    test('移动 中/高/极高 都以保高光开头，且 pass 数不超过 3', () {
+      for (final VideoShaderTier tier in <VideoShaderTier>[
+        VideoShaderTier.medium,
+        VideoShaderTier.high,
+        VideoShaderTier.ultra,
+      ]) {
+        final List<String> files = shaderFilesForTier(tier, isMobile: true);
+        expect(files.first, 'Anime4K_Clamp_Highlights.glsl');
+        expect(files.length, lessThanOrEqualTo(3),
+            reason: '移动档 pass 数超过 3 就失去「数量级削减」的意义：$files');
+      }
+    });
+
+    test('移动五档文件集两两互异 → tierFromState(isMobile: true) 反查无歧义', () {
+      final Set<VideoShaderTier> hit = <VideoShaderTier>{};
+      for (final VideoShaderTierSpec spec in kMobileVideoShaderTiers) {
+        final VideoShaderTier? back = tierFromState(
+          highQuality: spec.highQuality,
+          enabledShaders: spec.shaderFileNames,
+          isMobile: true,
+        );
+        expect(back, spec.tier, reason: '移动 ${spec.id} 档反查落到了 $back');
+        hit.add(back!);
+      }
+      expect(hit.length, kMobileVideoShaderTiers.length);
+    });
+
+    test('orderedEnabledForTier 在移动端按移动链过滤保序', () {
+      final List<String> want =
+          shaderFilesForTier(VideoShaderTier.ultra, isMobile: true);
+      expect(
+          orderedEnabledForTier(VideoShaderTier.ultra, want.toSet(),
+              isMobile: true),
+          want);
+      // 缺一个文件（下载失败）时只启用真正存在的，不给 libmpv 递缺失路径。
+      final Set<String> present = want.take(want.length - 1).toSet();
+      expect(
+          orderedEnabledForTier(VideoShaderTier.ultra, present,
+              isMobile: true),
+          want.take(want.length - 1).toList());
+    });
+
+    test('移动档文件全部登记进 anime4kManifestFileNames（否则存储页删不掉）', () {
+      final Set<String> manifest = anime4kManifestFileNames().toSet();
+      for (final VideoShaderTierSpec spec in kMobileVideoShaderTiers) {
+        for (final String name in spec.shaderFileNames) {
+          expect(manifest, contains(name),
+              reason: '$name 未登记 → 下载后成为存储页删不掉的孤儿文件');
+        }
+      }
+    });
+  });
 }
