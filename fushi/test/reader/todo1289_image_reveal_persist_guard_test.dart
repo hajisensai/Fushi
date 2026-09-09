@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 /// TODO-1289 守卫：图片防剧透遮罩「点击揭开后又恢复」。
 ///
@@ -43,6 +44,18 @@ void main() {
       expect(js, contains('if (key && _fushiRevealedKeys[key]) return;'));
     });
 
+    test('VN 逐屏克隆复用同一图片身份语义并真实加遮罩', () {
+      final String shared =
+          ReaderPaginationScripts.imageRevealSemanticsScript();
+      final String vn = ReaderVisualNovelScripts.vnShellScript();
+      expect(vn, contains(shared),
+          reason: '三种阅读模式的稳定 reveal key 与会话集必须同源');
+      expect(vn, contains('images.forEach(_fushiBlurImage);'),
+          reason: 'VN 当前屏的大图必须真实进入防剧透遮罩函数');
+      expect(vn, isNot(contains('function noop()')),
+          reason: 'VN media semantics 不得退回 M0 空壳');
+    });
+
     test('blurImages=false 时不装遮罩/揭开副作用（边界，零行为变化）', () {
       // 改动前是「blurImages 为假整段不注入」；引擎静态化后函数照常定义，
       // **副作用**（重新遮罩、两个 window 全局的暴露）仍受同一个开关门控。
@@ -74,6 +87,7 @@ void main() {
       expect(js, contains("this.el.classList.remove('blurred');"));
       expect(js, contains('window.__fushiImageRevealKey(this.el)'));
       expect(js, contains("callHandler('onImageRevealed', revealKey)"));
+      expect(js, contains('window.__fushiMarkImageRevealed(revealKey)'));
     });
 
     test('点击揭开（webview.part.dart）回传 key + 分页脚本嵌入会话集', () {
@@ -82,6 +96,7 @@ void main() {
       );
       // 点击揭开回传。
       expect(src, contains("callHandler('onImageRevealed', key)"));
+      expect(src, contains('window.__fushiMarkImageRevealed(key)'));
       // 注册处理器把 key 收进会话内存集。
       expect(src, contains("handlerName: 'onImageRevealed'"));
       expect(src, contains('_revealedImageKeys.add(key)'));

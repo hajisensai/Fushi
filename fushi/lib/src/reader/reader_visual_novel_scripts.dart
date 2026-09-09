@@ -1,4 +1,4 @@
-// TODO-909 (M0): Visual-Novel reader view-mode, ported from hoshi a
+// TODO-909: Visual-Novel reader view-mode, ported from hoshi a
 // (Hoshi-Reader-Android origin/main @ 24361a9):
 //   app/src/main/assets/hoshi-web/reader/{reader-text-semantics,
 //   reader-vn-content-stream, reader-vn-range-map, reader-visual-novel}.js
@@ -13,8 +13,9 @@
 //     vn-range-map / media-semantics) are inlined ahead of `window.fushiReader`.
 //   * `notifyRestoreComplete` forwards to InAppWebView's `onRestoreComplete`
 //     handler instead of hoshi's native `FushiReaderRestore.postMessage`.
-//   * media-semantics is an M0 no-op stub (images render from cloned chapter
-//     markup); highlights are M1 (guarded by `window.fushiHighlights`).
+//   * Images render from cloned chapter markup; block-image promotion stays
+//     VN-specific, while spoiler/reveal identity reuses the shared reader
+//     image semantics.
 //   * Sasayaki cues always take the inline `.fushi-sentence-audio-cue` wrapper
 //     path, in e-ink too. hoshi swaps to a native rect overlay under e-ink
 //     (`popupHost.renderSentenceAudioHighlight`); Hibiki never ported that host,
@@ -67,6 +68,8 @@ class ReaderVisualNovelScripts {
     // BUG-1688：与分页/连续 shell 同一份视口 meta 重写（单一真相源）。
     const String sharedInitViewport =
         ReaderPaginationScripts.sharedInitViewportJs;
+    final String imageRevealSemantics =
+        ReaderPaginationScripts.imageRevealSemanticsScript();
     // TODO-1085 (BUG-513): single source of truth for the image viewport ratio,
     // shared with the paginated shell (ReaderLayoutDefaults.imageWidthViewportRatio),
     // consumed by applyImageMaxVars below.
@@ -104,17 +107,29 @@ window.__fushiShells.vn = function(C) {
     countRawChars: countRawChars
   };
 })(window);
+$imageRevealSemantics
 (function(global) {
   'use strict';
-  // TODO-909 M0 stub: hoshi a's media-semantics bridges images to an
-  // Android native @JavascriptInterface (FushiReaderImage). Hibiki has no
-  // such bridge at M0, so images render from the chapter's own <img> markup
-  // cloned into the VN screen. These no-ops keep reader-visual-novel.js's
-  // setupReaderImage(s) calls safe. M1 wires Hibiki image interception.
-  function noop() { return null; }
+  // VN keeps its own block-image promotion because it renders one cloned
+  // screen at a time. Spoiler/reveal identity is shared with paginated and
+  // continuous mode through `_fushiBlurImage` above.
+  function setupReaderImage(element) {
+    if (C.blurImages && element && element.classList &&
+        element.classList.contains('block-img')) {
+      _fushiBlurImage(element);
+    }
+    return element;
+  }
+  function setupReaderImages(scope) {
+    if (!scope || !scope.querySelectorAll) return [];
+    var images = Array.from(scope.querySelectorAll(
+      'img.block-img, svg.block-img'));
+    if (C.blurImages) images.forEach(_fushiBlurImage);
+    return images;
+  }
   global.fushiReaderMediaSemantics = {
-    setupReaderImage: noop,
-    setupReaderImages: noop
+    setupReaderImage: setupReaderImage,
+    setupReaderImages: setupReaderImages
   };
 })(window);
 (function(global) {
@@ -2423,8 +2438,8 @@ $sharedInitViewport
   },
   setupReaderImages: function(root) {
     var scope = root || this.screen;
-    // TODO-1085 (BUG-513): the media-semantics stub is a no-op at M0, so cloned
-    // VN images never received the `.block-img` class that the shared reader CSS
+    // TODO-1085 (BUG-513): VN images originally never received the `.block-img`
+    // class that the shared reader CSS
     // (reader_content_styles.dart) needs to give an image a page-sized centred
     // box. Without it they fell through to `img:not(.block-img){max-width:100%}`,
     // whose 100% resolves against the shrink-to-fit `.fushi-vn-content` flex item
@@ -2969,7 +2984,7 @@ $sharedInitViewport
 
 
 
-// ── Hibiki host-compat shims (TODO-909 M0) ───────────────────────────────────
+// ── Hibiki host-compat shims (TODO-909) ──────────────────────────────────────
 // The Dart side calls a few methods on window.fushiReader that hoshi a's VN
 // object does not define. Add minimal, correct equivalents so the shared Dart
 // reader paths behave under VN mode.

@@ -35,20 +35,8 @@ void main() {
     expect(shell.contains('window.__fushiShells.vn = function(C) {'), isTrue);
   });
 
-  // TODO-909 M0 reveal contract. reveal（打字渐显）是 M1 功能；M0 在 webview 的
-  // wire 点（vnRevealSpeedM0ForceZero）强制 revealSpeed=0，让每屏 renderScreen 即
-  // revealComplete=true、paginate 只返 "scrolled"/"limit"，与 Dart _didScroll 只认
-  // "scrolled" 的语义对齐，避免 forward 翻屏命中 "revealed" 分支被误判为章节边界
-  // 而跨章。本测试钉死「revealSpeed=0 时 shell 走 revealComplete=true 路径、且
-  // forward paginate 不返 revealed」这一可落地契约（headless WebView 在 CI 跑不到，
-  // 真机行为留真机 Gate）。
-  test(
-      'M0 reveal speed 0 makes every screen complete on render (no '
-      '"revealed" paginate path)', () {
+  test('VN reveal speed comes from runtime config', () {
     final String shell0 = ReaderVisualNovelScripts.vnShellScript();
-    // M0 的 revealSpeed=0 强制点搬到 Dart 侧 config 组装处（webview.part.dart 的
-    // vnRevealSpeedM0ForceZero，由 vn_view_mode_three_state_guard 钉住）；shell 这边
-    // 只需保证它读的是运行时值、没有把任何 M1 默认值写死进源码。
     expect(
       shell0.contains('revealSpeed: C.vnRevealSpeed,'),
       isTrue,
@@ -57,13 +45,8 @@ void main() {
     expect(
       shell0.contains('revealSpeed: 45'),
       isFalse,
-      reason: 'M0 shell must not carry the M1 default reveal speed',
+      reason: 'the shell must not hardcode the settings default',
     );
-    // The paginate forward path that returns "revealed" is guarded by
-    // `if (!this.revealComplete)`. With revealSpeed <= 0, renderScreen sets
-    // revealComplete = true (this.revealSpeed <= 0 short-circuit), so forward
-    // paginate never takes the "revealed" branch — it returns "scrolled" or
-    // "limit", which Dart _didScroll understands.
     expect(
       shell0.contains('this.revealComplete = true;'),
       isTrue,
@@ -81,13 +64,7 @@ void main() {
     );
   });
 
-  // Pin the Dart-side contract that _didScroll only treats "scrolled" as a real
-  // turn: "revealed" is NOT a scroll, which is exactly why M0 must avoid the
-  // reveal path (otherwise forward paginate -> "revealed" -> _didScroll false ->
-  // _handlePageTurnLimit cross-chapter misjump).
-  test(
-      'chrome _didScroll treats only "scrolled" as a real turn (not '
-      '"revealed")', () {
+  test('chrome consumes reveal completion without treating it as a scroll', () {
     final String chrome = File(
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
     ).readAsStringSync();
@@ -98,8 +75,15 @@ void main() {
     );
     expect(
       chrome.contains("== 'revealed'"),
-      isFalse,
-      reason: '_didScroll must not accept "revealed" as a turn',
+      isTrue,
+      reason: 'finishing the current reveal must not cross the chapter edge',
+    );
+    expect(chrome.contains('_didConsumePageTurn(result)'), isTrue,
+        reason: 'chapter-edge decisions must use the consumed-input contract');
+    expect(
+      chrome.contains('if (_didScroll(result)) await _caretReanchor(direction);'),
+      isTrue,
+      reason: 'reveal-only input must not move the keyboard caret to another page',
     );
   });
 
@@ -264,6 +248,23 @@ void main() {
       isTrue,
       reason: 'gaiji glyph images must be excluded from block promotion',
     );
+    expect(
+      shell.contains('var __fushiKeys = C.revealedKeys;'),
+      isTrue,
+      reason: 'VN must consume the same session reveal keys as other modes',
+    );
+    expect(
+      shell.contains("'img.block-img, svg.block-img'"),
+      isTrue,
+      reason: 'VN media semantics must classify the rendered block images',
+    );
+    expect(
+      shell.contains('images.forEach(_fushiBlurImage);'),
+      isTrue,
+      reason: 'VN block images must receive the shared spoiler mask',
+    );
+    expect(shell.contains('function noop()'), isFalse,
+        reason: 'the M0 media-semantics stub must be gone');
   });
 
   // Never-break：非 VN 模式（分页/连续）不应被 VN 的图片 var/提升逻辑影响 ——
