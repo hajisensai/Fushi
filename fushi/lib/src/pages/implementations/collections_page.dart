@@ -13,6 +13,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/video/m3u8_playlist.dart';
@@ -1299,6 +1300,43 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
   }
 
+  /// 收藏句「跳回原文」的目的地所属功能模块。
+  ///
+  /// 视频句进视频播放页；书 / 有声书 / 歌词三种句共享 `hoshi://book/` 身份，落地
+  /// 都是阅读器（有声书与歌词模式是阅读器内的形态，不是独立页面），所以统一挂
+  /// [ModuleId.books]。
+  ///
+  /// ⚠️ 漫画收藏行也走 [ModuleId.books]：本行只有 bookKey，判不出
+  /// `EpubBooks.format=='manga'`（要现查库，[_openBook] 里才拿得到）。宁可在
+  /// 「books 关 + manga 开」时少跳一条漫画句，也不能在 books 关掉后还把 EPUB
+  /// 阅读器打开。
+  ModuleId _moduleOfSentenceSource(SentenceSourceKind kind) => switch (kind) {
+    SentenceSourceKind.video => ModuleId.video,
+    SentenceSourceKind.book ||
+    SentenceSourceKind.audiobook ||
+    SentenceSourceKind.lyrics => ModuleId.books,
+  };
+
+  /// 收藏行能否「跳回原文」的**唯一**谓词：条目菜单（[_showItemDialog]）与列表行
+  /// （[_buildItem]）共用，此前是两份逐字同构的表达式。
+  ///
+  /// 三条判据：
+  /// - 收藏词行阶段 3 起带归属 bookKey（分节用）但无原文定位，按类型显式排除；
+  /// - 没有 bookKey 就没有目的地；
+  /// - 目的地所属模块被用户关掉 → 不可跳（见 [_moduleOfSentenceSource]）。
+  ///
+  /// 判 false 不会让行消失：行照常渲染（隐藏行会让用户以为收藏数据丢了），只是
+  /// 不出 chevron / 不出「阅读·视频」按钮，点行改开条目菜单（播放/复制/删除仍在），
+  /// 手柄也仍能停焦点。
+  bool _canNavigateTo(_CollectionItem item) {
+    if (item.type == _CollectionType.word) return false;
+    final String? bookKey = item.bookKey;
+    if (bookKey == null || bookKey.isEmpty) return false;
+    return appModel.moduleVisibility.isEnabled(
+      _moduleOfSentenceSource(item.sourceKind),
+    );
+  }
+
   bool _hasAudio(_CollectionItem item) {
     // 视频来源句：有该视频的 row 且收藏自带可用 cue 时间窗即可抽音（不进 _cueMap）。
     if (item.source == kFavoriteSentenceSourceVideo) {
@@ -1323,9 +1361,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // 阶段 3：word 行开始携带归属 bookKey（分节用），但仍无原文定位——跳转判据
     // 显式按类型排除，不再依赖「word 行恰好没 bookKey」。
     final SentenceSourceKind kind = item.sourceKind;
-    final canNavigate = item.type != _CollectionType.word &&
-        item.bookKey != null &&
-        item.bookKey!.isNotEmpty;
+    final bool canNavigate = _canNavigateTo(item);
+    // 「有原文可跳，但目的地模块被用户关掉」——菜单里把原因写出来。行与菜单都
+    // 保留（隐藏会让用户以为收藏丢了），少的只是「跳回原文」那一条；不说明的话
+    // 就成了「这行怎么点不动」的黑盒。
+    final bool blockedByModule =
+        !canNavigate &&
+        item.type != _CollectionType.word &&
+        (item.bookKey?.isNotEmpty ?? false);
     final hasAudio = _hasAudio(item);
     final displayTitle = item.text ?? '';
     // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
@@ -1336,8 +1379,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       context: context,
       builder: (ctx) => CollectionItemDialogFrame(
         title: SelectableText(displayTitle, maxLines: 3),
-        content: bookDisplayTitle != null
-            ? Text(bookDisplayTitle, style: textTheme.bodyMedium)
+        content: bookDisplayTitle != null || blockedByModule
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (bookDisplayTitle != null)
+                    Text(bookDisplayTitle, style: textTheme.bodyMedium),
+                  if (blockedByModule)
+                    Text(
+                      t.module_disabled_hint,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              )
             : null,
         actions: [
           if (hasAudio)
@@ -1617,11 +1674,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 
-    // 阶段 3：word 行开始携带归属 bookKey（分节用）但无原文定位，跳转判据按
-    // 类型显式排除（与条目菜单同判据）。
-    final canNavigate = item.type != _CollectionType.word &&
-        item.bookKey != null &&
-        item.bookKey!.isNotEmpty;
+    final bool canNavigate = _canNavigateTo(item);
 
     final String key = _itemKey(item);
     final bool playingThis = _playingItemKey == key;

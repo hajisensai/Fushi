@@ -11,8 +11,11 @@ import 'package:fushi/src/settings/settings_schema_reading.dart';
 /// - 手势类（滚轮/滑动/箭头/音量键）仍留在「阅读操作」（behavior），未被误移。
 ///
 /// 不经 SettingsContext 直接调无参 destination builder 收集 placement——
-/// [collectReaderItems] 与 [buildSettingsSchema] 的形参 context 在收集路径上
-/// 从不被解引用（只读 const ReaderPlacement），故纯结构守卫与运行时一致。
+/// [buildSettingsSchema] 的形参 context 在收集路径上从不被解引用；
+/// [collectReaderItems] 现在会解引用它（求值 destination 级 `visible`，让被关掉
+/// 的功能模块连同其快捷面板条目一起消失），但那道过滤只决定**哪些 destination
+/// 参与收集**，不改 [ReaderPlacement] 这份 const 声明数据，故本文件按固定
+/// destination 列表做的纯结构守卫与运行时一致。
 void main() {
   /// 把若干 destination 里带 ReaderPlacement 的项按 group 聚合、按 order 升序。
   /// 等价于 [collectReaderItems] 对这些文件的部分（零 harness 依赖）。

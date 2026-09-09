@@ -130,6 +130,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/shortcuts/reader_caret_router.dart';
@@ -1364,6 +1365,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// the page Stack by the chrome insets, so a position relative to the
   /// full-screen dismiss barrier is NOT the WebView's local coordinate.
   final GlobalKey _webViewKey = GlobalKey(debugLabel: 'reader_webview');
+
+  /// 「功能模块」可见性快照（阅读器全部 part 共用的唯一读取口）。
+  ///
+  /// 用 [appModelNoUpdate] 而不是 [appModel]：本 getter 会在按键处理等 **build 之外**
+  /// 的时机被调用，那里 `ref.watch` 非法；AppModel 是全局单例，读到的 pref 恒为当前
+  /// 真值。[AppModel.moduleVisibility] 每次读都重新合成一个 Set，build 里要连问几个
+  /// 模块时请先把它落成局部变量再问，别在同一帧里反复读。
+  ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
+
   EpubBook? _book;
 
   /// TODO-1204：查词计数归属本书——[title] 与阅读统计 tile 的聚合键（[EpubBook.title]，

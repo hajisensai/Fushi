@@ -5,6 +5,7 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/torznab_client.dart';
@@ -740,64 +741,22 @@ class PreferencesRepository extends ChangeNotifier {
     await setPref('first_time_setup', false);
   }
 
-  /// 「功能模块」显隐：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词
-  /// 两个工具 tab 是否出现在底栏/侧栏。默认全开（与旧版行为一致）；新手引导的功能
-  /// 选择与 设置 → 外观 → 功能模块 写同一真值（引导只勾库页，不勾下载/查词）。
-  /// games（Windows）与浏览器扩展（桌面）在读取端还叠加平台门控，这里只存用户意愿。
-  /// 首页/设置恒在，是全部隐藏后的安全回退面，不提供开关。
-  bool get moduleBooksEnabled =>
-      getPref('module_books_enabled', defaultValue: true) as bool;
+  /// 「功能模块」显隐：用户意愿的**唯一存储**，一个 [ModuleId] 一个键。
+  ///
+  /// 默认全开（与旧版行为一致）；新手引导的功能选择与 设置 → 外观 → 功能模块
+  /// 写同一真值。games（Windows）与浏览器扩展（桌面）的平台门控**不在这里**——
+  /// 这里只存用户意愿，平台判据统一在 [ModuleId.availableOn] 判一次，合成见
+  /// [ModuleVisibility.resolve]。首页/设置恒在，是全部关闭后的安全回退面，
+  /// 没有对应 [ModuleId]。
+  ///
+  /// 此前这里是七对手写 getter/setter（22 行/模块），加一个模块要在 prefs /
+  /// AppModel / 设置 schema / 引导 / 底栏 / macOS 侧栏各抄一遍，少抄一处就静默
+  /// 漏一处门控。现在读写都走枚举，加模块只加一个 enum 值。
+  bool moduleEnabled(ModuleId module) =>
+      getPref(module.prefKey, defaultValue: true) as bool;
 
-  Future<void> setModuleBooksEnabled(bool value) async {
-    await setPref('module_books_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleBrowserExtensionEnabled =>
-      getPref('module_browser_extension_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleBrowserExtensionEnabled(bool value) async {
-    await setPref('module_browser_extension_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleMangaEnabled =>
-      getPref('module_manga_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleMangaEnabled(bool value) async {
-    await setPref('module_manga_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleVideoEnabled =>
-      getPref('module_video_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleVideoEnabled(bool value) async {
-    await setPref('module_video_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleGamesEnabled =>
-      getPref('module_games_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleGamesEnabled(bool value) async {
-    await setPref('module_games_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleDownloadsEnabled =>
-      getPref('module_downloads_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleDownloadsEnabled(bool value) async {
-    await setPref('module_downloads_enabled', value);
-    notifyListeners();
-  }
-
-  bool get moduleDictionariesEnabled =>
-      getPref('module_dictionaries_enabled', defaultValue: true) as bool;
-
-  Future<void> setModuleDictionariesEnabled(bool value) async {
-    await setPref('module_dictionaries_enabled', value);
+  Future<void> setModuleEnabled(ModuleId module, bool value) async {
+    await setPref(module.prefKey, value);
     notifyListeners();
   }
 

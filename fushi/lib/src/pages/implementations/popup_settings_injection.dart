@@ -16,6 +16,7 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -603,6 +604,7 @@ class _PopupStaticSettingsMemo {
     required this.audioSourcesJson,
     required this.lookupAudioVolume,
     required this.localeTag,
+    required this.miningEnabled,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -630,6 +632,7 @@ class _PopupStaticSettingsMemo {
   final String audioSourcesJson;
   final String lookupAudioVolume;
   final String localeTag;
+  final bool miningEnabled;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -730,7 +733,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;
   final String customDictCSSJson = jsonEncode(appModel.effectiveCustomDictCSS);
 
-  final String slotKey = '${options.globalLookup}|${options.mobileExternal}'
+  // 「制卡」功能模块（[ModuleId.cardCreation]）总开关。关掉时 popup.js 不渲染词条头
+  // 上的「+」制卡按钮与「在 Anki 中打开」↗ 按钮，也不再每次查词去问 Anki 查重——
+  // 模块关掉的语义是「该模块的全部入口消失」，不是「按钮还在、点了没反应」。
+  //
+  // 判据放在这里（而不是各宿主的回调有无）是有意的：本 builder 是 in-app 弹窗与
+  // app 外全局查词窗**共用**的唯一注入点，一处判据就同时覆盖两类表面（含 galgame
+  // 浮窗），不会像散在宿主里那样漏掉一处。宿主侧「回调为 null 就不渲染」的既有契约
+  // 与它正交、互不覆盖。
+  final bool miningEnabled = appModel.moduleVisibility.isEnabled(
+    ModuleId.cardCreation,
+  );
+
+  final String slotKey =
+      '${options.globalLookup}|${options.mobileExternal}'
       '|${options.sentenceDraftEnabled}';
   final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
   if (cached != null &&
@@ -746,6 +762,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.audioSourcesJson == audioSourcesJson &&
       cached.lookupAudioVolume == lookupAudioVolume &&
       cached.localeTag == localeTag &&
+      cached.miningEnabled == miningEnabled &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -847,6 +864,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
     window.i18nMinedOpenNoCard = ${jsonEncode(t.anki_open_no_card)};
     window.i18nMinedActionFailed = ${jsonEncode(t.anki_card_action_failed)};
+    // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
+    // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
+    // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
+    window.__fushiMiningEnabled = $miningEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window.embedMedia = true;
@@ -887,6 +908,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     audioSourcesJson: audioSourcesJson,
     lookupAudioVolume: lookupAudioVolume,
     localeTag: localeTag,
+    miningEnabled: miningEnabled,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,

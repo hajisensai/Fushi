@@ -594,8 +594,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onDismiss,
     required this.onTextSelected,
     required this.onLinkClick,
-    required this.onMineEntry,
-    required this.onDuplicateCheck,
+    this.onMineEntry,
+    this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
     this.onOpenInAnki,
@@ -655,15 +655,30 @@ class DictionaryPopupLayer extends StatelessWidget {
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
-  final Future<MinePopupResult> Function(Map<String, String> fields)
-      onMineEntry;
+
+  /// 制卡（「+」按钮）回调。**可空**：宿主没有制卡能力（或「制卡」功能模块被关掉）
+  /// 时传 null，与 [onAppendSentence] 等一样走「回调为 null 就不接线」的既有契约，
+  /// 而不是挂一个点了没反应的 no-op。
+  ///
+  /// 注意按钮**渲不渲染**由 popup.js 的 `window.__fushiMiningEnabled` 决定
+  /// （注入点 popup_settings_injection.dart，判据是 ModuleId.cardCreation）——
+  /// 那是 in-app 与 app 外两类表面共用的唯一注入点；本回调为空只是宿主侧的第二道
+  /// 闸（桥调用无人接管时不做任何事），两者正交。
+  final Future<MinePopupResult> Function(Map<String, String> fields)?
+  onMineEntry;
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId] + 新字段）。null 时弹窗不进
   /// 「最新可改」第三态，点 ✓ 仍走旧的查重/再制流程（向后兼容）。
   final Future<MinePopupResult> Function(
-      int noteId, Map<String, String> fields)? onUpdateEntry;
-  final Future<bool> Function(String expression, String reading)
-      onDuplicateCheck;
+    int noteId,
+    Map<String, String> fields,
+  )?
+  onUpdateEntry;
+
+  /// 查重（词条渲染时问 Anki「这张卡已经有了吗」）。**可空**：与 [onMineEntry] 同
+  /// 进同退——制卡不可用时传 null，弹窗既不画 ✓ 也不发查重探测。
+  final Future<bool> Function(String expression, String reading)?
+  onDuplicateCheck;
 
   /// TODO-614：覆写范围=「全部」时按内容反查可覆写的已存在 note id（多张取最近），
   /// 透传给 [DictionaryPopupWebView] 让更早的卡也能进「✓↩ 最新可改」态。null 时弹窗

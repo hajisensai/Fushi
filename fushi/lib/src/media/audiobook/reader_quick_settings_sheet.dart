@@ -14,6 +14,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
@@ -210,6 +211,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   bool _exitScheduled = false;
 
   late String? _subPage = widget.initialSubPage;
+
+  /// 「听书」模块是否可见。关掉时本面板不再渲染「有声书」分类（宽窗分段条 +
+  /// 窄窗导航行两处），即便宿主还持有一个控制器也一样——模块关掉 = 入口消失。
+  bool get _listeningEnabled =>
+      widget.appModel.moduleVisibility.isEnabled(ModuleId.listening);
 
   /// 桌面端右侧「设置」抽屉当前展开的分组 id（初值来自页面记忆）。
   late String _sideSheetTab = widget.initialSideSheetTab;
@@ -530,7 +536,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         icon: Icons.manage_search_outlined,
         label: t.settings_destination_lookup,
       ),
-      if (widget.controller != null)
+      if (widget.controller != null && _listeningEnabled)
         (
           id: 'audiobook',
           icon: Icons.headphones_outlined,
@@ -567,7 +573,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         label: t.settings_destination_lookup,
         page: 'lookup',
       ),
-      if (widget.controller != null)
+      if (widget.controller != null && _listeningEnabled)
         _categoryTile(
           icon: Icons.headphones_outlined,
           label: t.section_audiobook,

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
@@ -9,6 +10,12 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildCardCreationDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.cardCreation,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.cardCreation,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_card_creation,
     summary: t.anki_settings_label,
     icon: Icons.style_outlined,

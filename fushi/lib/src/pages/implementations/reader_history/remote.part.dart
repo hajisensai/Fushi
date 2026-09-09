@@ -48,8 +48,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 互联完整支持批次：漫画书架不再被排除在远端之外——host 的漫画（format='manga'
   /// + hasMangaContent）以占位卡出现在漫画书架并可下载（漫画包通道）。BUG-1181 担心
   /// 的「双份拉取浪费」由共享 TTL 缓存（BUG-1180）吸收：两个书架命中同一份清单。
+  ///
+  /// 「同步与备份 + 互联」模块（[ModuleId.sync]）关掉时同样在此早退：远端书列表来自
+  /// 互联对端 / 云盘后端，属该模块。门控放在取数之前（与 BUG-1182 同一位置）才能做到
+  /// **零网络请求**，而不是拉完再丢。
   bool get _shouldLoadRemoteBooks =>
-      appModelNoUpdate.prefsRepo.showRemoteEntries;
+      appModelNoUpdate.prefsRepo.showRemoteEntries &&
+      _moduleVisibility.isEnabled(ModuleId.sync);
 
   Future<_RemoteBookState?> _loadRemoteBooks(
       {bool forceRefresh = false}) async {
@@ -142,14 +147,18 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 失败态在 await 后消费成一条可见 SnackBar（BUG-1693 批审计 P1——此前
   /// `failed:true` 置了没人读，显式下拉失败与成功在 UI 上一模一样）。
   Future<void> _pullToRefreshBooks() async {
-    await runManualSyncWithFeedback(
-      context: context,
-      appModel: appModel,
-      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-      announceNotConfigured: false,
-      announceBusy: false,
-    );
+    // 同步模块关掉时只摘掉「同步」这一段，下拉手势本身保留（后半段重读本地列表照跑）
+    // ——下拉刷新本地书架与同步无关，一起关掉是误伤。
+    if (_moduleVisibility.isEnabled(ModuleId.sync)) {
+      await runManualSyncWithFeedback(
+        context: context,
+        appModel: appModel,
+        // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
+        // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
+        announceNotConfigured: false,
+        announceBusy: false,
+      );
+    }
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider);
     ref.invalidate(srtBooksProvider);

@@ -1596,12 +1596,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool reversed = appModel.reverseReaderBottomBar;
     final List<Widget> barItems = <Widget>[
-      IconButton(
-        icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
-        iconSize: 22,
-        tooltip: t.audio_import,
-        onPressed: _openAudioImportDialog,
-      ),
+      // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
+      if (_moduleVisibility.isEnabled(ModuleId.listening))
+        IconButton(
+          icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
+          iconSize: 22,
+          tooltip: t.audio_import,
+          onPressed: _openAudioImportDialog,
+        ),
       // TODO-723: illustration gallery -- browse every image in the book around
       // the current reading position. Reuses the existing image viewer + chapter
       // navigation; never touches WebView pagination/restore/lookup.
@@ -1812,6 +1814,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
     final String? extractDir = _extractDir;
+    // 快照一次：[AppModel.moduleVisibility] 每读一次都重新合成一个 Set，下面三个
+    // 有声书回调都要问它。
+    final bool listeningEnabled = _moduleVisibility.isEnabled(
+      ModuleId.listening,
+    );
     return ReaderQuickSettingsSheet(
       controller: _audiobookController,
       toc: toc,
@@ -1847,13 +1854,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
       extractDir: _extractDir,
       onReloadChapter: _reloadWithCurrentSettings,
       onLyricsReload: _loadLyricsPage,
-      onAudioImport: _srtBookUid != null ? _openAudioImportDialog : null,
+      // 「听书」关掉时三个有声书回调一律传 null——面板侧已有「回调为空就不渲染
+      // 该行」的既有契约，用同一条通道关掉「导入音频 / 换对齐文件 / 设备端转录」。
+      onAudioImport: listeningEnabled && _srtBookUid != null
+          ? _openAudioImportDialog
+          : null,
       // 有声书面板「资源」页：对齐文件 / 转录只对 EPUB 有声书开放（standalone
       // SRT 书走 _openSrtBookReimport 一条路）。
-      onPickAlignment: _srtBookUid == null && _audiobookController != null
+      onPickAlignment: listeningEnabled &&
+              _srtBookUid == null &&
+              _audiobookController != null
           ? () => unawaited(_openAlignmentImportDialog())
           : null,
-      onTranscribe: _srtBookUid == null &&
+      onTranscribe: listeningEnabled &&
+              _srtBookUid == null &&
               _audiobookController != null &&
               isAsrSupported
           ? () => unawaited(_transcribeFromAudiobookPanel())
@@ -2199,19 +2213,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ),
             ],
             trailing: <ReaderHeaderAction>[
-              ReaderHeaderAction(
-                icon: Icons.headphones_outlined,
-                label: _labelWithShortcut(
-                  t.section_audiobook,
-                  ShortcutAction.readerOpenAudiobook,
+              // 「听书」模块关掉时整条不渲染（与底栏耳机键同一范式）。
+              if (_moduleVisibility.isEnabled(ModuleId.listening))
+                ReaderHeaderAction(
+                  icon: Icons.headphones_outlined,
+                  label: _labelWithShortcut(
+                    t.section_audiobook,
+                    ShortcutAction.readerOpenAudiobook,
+                  ),
+                  semanticsId: 'hibiki.reader.header.audiobook',
+                  // 已挂有声书 → 居中面板；没有 → 直接进导入。
+                  onPressed: _audiobookController != null
+                      ? () => unawaited(
+                          _showAppearanceSheet(initialSubPage: 'audiobook'))
+                      : _openAudioImportDialog,
                 ),
-                semanticsId: 'hibiki.reader.header.audiobook',
-                // 已挂有声书 → 居中面板；没有 → 直接进导入。
-                onPressed: _audiobookController != null
-                    ? () => unawaited(
-                        _showAppearanceSheet(initialSubPage: 'audiobook'))
-                    : _openAudioImportDialog,
-              ),
               if (desktopWindowFullscreenSupported)
                 ReaderHeaderAction(
                   key: const ValueKey<String>('fushi_reader_fullscreen_button'),

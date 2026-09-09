@@ -43,6 +43,7 @@ import 'package:fushi_core/fushi_core.dart';
 // hibiki_core 未再导出它）。
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
@@ -197,6 +198,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
   /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
   void _rebuild(VoidCallback fn) => setState(fn);
+
+  /// 「功能模块」可见性快照（书架与它全部 part 共用的唯一读取口）。
+  ///
+  /// 用 [appModelNoUpdate]：本 getter 也会在 prefsRepo 回调 / 拖放回调等 build 之外
+  /// 的时机被调用，那里 `ref.watch` 非法（与本页 `_shouldLoadRemoteBooks` 同款理由）；
+  /// AppModel 是全局单例，读到的 pref 恒为当前真值。
+  /// [AppModel.moduleVisibility] 每读一次都重新合成一个 Set——同一帧要连问几个模块
+  /// 时先落成局部变量。
+  ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
 
   Future<Map<String, _AudiobookInfo>> _loadAllAudiobookInfo() async {
     final repo = AudiobookRepository(appModel.database);
@@ -713,11 +723,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             focusId: kShelfImportFocusId,
             label: t.srt_import,
           ),
-      _headerAction(
-        tooltip: t.scrape_all,
-        icon: Icons.manage_search_outlined,
-        onTap: _scrapeAllBooks,
-      ),
+      // 批量在线刮削同样属「在线服务」模块（整批第三方 API 请求）。
+      if (_moduleVisibility.isEnabled(ModuleId.services))
+        _headerAction(
+          tooltip: t.scrape_all,
+          icon: Icons.manage_search_outlined,
+          onTap: _scrapeAllBooks,
+        ),
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
       // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
@@ -1329,12 +1341,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final _RemoteBookState? remoteState = snapState ?? _lastRemoteState;
     // 互联完整支持批次：漫画书架同样显示远端占位卡（_loadRemoteBooks 已按
     // _mangaOnly 分架过滤：漫画架只来 format='manga'+hasMangaContent 的条目）。
-    final bool showRemote = remoteState != null &&
+    // 「同步与备份 + 互联」模块关掉 → 远端占位卡（含其下载按钮与长按面板）整块不
+    // 渲染。取数侧由 [_shouldLoadRemoteBooks] 同门挡住，两处合起来做到零网络请求。
+    final bool showRemote =
+        remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&
-        appModel.prefsRepo.showRemoteEntries;
-    final List<RemoteBookInfo> remoteBooks =
-        showRemote ? remoteState.books : const <RemoteBookInfo>[];
+        appModel.prefsRepo.showRemoteEntries &&
+        _moduleVisibility.isEnabled(ModuleId.sync);
+    final List<RemoteBookInfo> remoteBooks = showRemote
+        ? remoteState.books
+        : const <RemoteBookInfo>[];
     // 纯 SRT（standalone）远端有声书占位（互联后端 listRemoteAudiobooks 的 standalone
     // 项，本地无同 uid SrtBook）——与远端 EPUB 书同门控混排进主网格。
     final List<RemoteAudiobookInfo> remoteSrtBooks =
@@ -2197,6 +2214,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       {bool inCollectionDetail = false}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     if (bookKey == null) return const [];
+    // 本菜单是书卡通往**别的模块**的集散地（听书 / 漫画 / 在线服务），一次快照后
+    // 逐条按模块过滤：被关掉的模块不留可点位置。
+    final ModuleVisibility modules = _moduleVisibility;
+    final bool isManga = _isMangaItem(item);
     return <DialogAction>[
       DialogDangerAction(
         label: t.dialog_delete,
@@ -2207,11 +2228,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.image_outlined,
         onPressed: () => _openIllustrations(item, bookKey),
       ),
-      DialogQuickAction(
-        label: t.audiobook_import,
-        icon: Icons.headphones_outlined,
-        onPressed: () => _openAudiobookImport(item, bookKey),
-      ),
+      if (modules.isEnabled(ModuleId.listening))
+        DialogQuickAction(
+          label: t.audiobook_import,
+          icon: Icons.headphones_outlined,
+          onPressed: () => _openAudiobookImport(item, bookKey),
+        ),
       // 桌面才有文件管理器契约（[currentRevealHost] 在移动端返回 null）——整条隐藏，
       // 而不是画一个点了没反应的按钮。漫画卷要手改 mokuro 数据时，这一条直接把书目录
       // 里的 manga.json 选中，省掉「书在哪个 bookKey 目录」这层猜。
@@ -2232,11 +2254,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       ),
       // 统一三库页刮削入口：书卡菜单直达「在线刮削封面」（视频/游戏的刮削都在
       // 卡菜单一层，书此前必须绕「编辑信息→封面字段小图标」两层，用户实报）。
-      DialogListAction(
-        label: t.book_scrape_cover,
-        icon: Icons.image_search_outlined,
-        onPressed: () => _scrapeEpubCover(item),
-      ),
+      // 刮削要打第三方 API，属「在线服务」模块。
+      if (modules.isEnabled(ModuleId.services))
+        DialogListAction(
+          label: t.book_scrape_cover,
+          icon: Icons.image_search_outlined,
+          onPressed: () => _scrapeEpubCover(item),
+        ),
       // 单卡「加入合集」：与批量三档共用同一 DAO 路径；身份从 bookKey 起步，
       // 落库前在 _addEpubToCollection 内换算成 uid（v83 成员表键）。
       if (!inCollectionDetail)
@@ -2278,21 +2302,27 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 「换封面」同一层级。方向由当前卡自己的源标识决定，不额外读库：
       // `mediaSourceIdentifier` 就是 `EpubBooks.format` 派生出来的
       // （`ReaderFushiSource.mediaSourceKeyFor`），与书架的漫画/书分流同一判据。
-      DialogListAction(
-        label: _isMangaItem(item)
-            ? t.book_convert_to_book_action
-            : t.book_convert_to_manga_action,
-        icon: _isMangaItem(item)
-            ? Icons.menu_book_outlined
-            : Icons.auto_stories_outlined,
-        onPressed: () => _convertBookFormat(
-          bookKey,
-          _isMangaItem(item) ? BookFormatTarget.book : BookFormatTarget.manga,
+      //
+      // ⚠️ 模块门控**只关一个方向**：漫画关掉时不再提供「转成漫画」（那是把书送进
+      // 一个够不到的库）；反向的「转回书」**恒可用**——已经是 manga 格式的书被
+      // [filterShelfEntriesByMangaSplit] 从普通书架排除、漫画库又不可达，把回程也
+      // 关掉就等于把这些书永久锁死。
+      if (isManga || modules.isEnabled(ModuleId.manga))
+        DialogListAction(
+          label: isManga
+              ? t.book_convert_to_book_action
+              : t.book_convert_to_manga_action,
+          icon: isManga
+              ? Icons.menu_book_outlined
+              : Icons.auto_stories_outlined,
+          onPressed: () => _convertBookFormat(
+            bookKey,
+            isManga ? BookFormatTarget.book : BookFormatTarget.manga,
+          ),
         ),
-      ),
       // 漫画作品页：卡片点击已经先进这里，但键盘/手柄用户长按 A 弹的是本对话框，
       // 没有这一条就只能从对话框退出去再确认一次卡片。菜单里给出同一个入口。
-      if (_isMangaItem(item))
+      if (isManga && modules.isEnabled(ModuleId.manga))
         DialogListAction(
           label: t.manga_series_open_series,
           icon: Icons.auto_stories_outlined,
@@ -2312,7 +2342,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
-      if (Platform.isAndroid || Platform.isWindows)
+      // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块。
+      if ((Platform.isAndroid || Platform.isWindows) &&
+          modules.isEnabled(ModuleId.listening))
         DialogListAction(
           label: _isBackgroundListeningBook(bookKey)
               ? '${t.floating_lyric_toggle_action} ✓'

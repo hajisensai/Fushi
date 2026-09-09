@@ -14,6 +14,7 @@ import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
@@ -61,8 +62,26 @@ class DownloadsPage extends ConsumerStatefulWidget {
 
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
+
+  /// 已访问过的资源域（首次访问后保持挂载，来回切不丢搜索词/结果/滚动位置）。
+  /// 初始项在 [initState] 按可见域播种——硬编码 books 会在 books 模块关掉时把一个
+  /// 不可见域的发现页挂起来。
   final Set<_DownloadsResourceDomain> _visitedResourceDomains =
-      <_DownloadsResourceDomain>{_DownloadsResourceDomain.books};
+      <_DownloadsResourceDomain>{};
+
+  @override
+  void initState() {
+    super.initState();
+    // 初始域 = 第一个可见域，不再硬编码 books：books 模块关掉时旧实现会停在一个
+    // 已被过滤掉的域上（分段条选中值不在选项里 → 分段控件直接 assert，发现页也
+    // 会挂在一个用户已关掉的模块上）。四个域全关时保持字段原值，此时
+    // [_buildResourceHub] 整块不渲染，字段不参与任何渲染判据。
+    final List<_DownloadsResourceDomain> domains = _visibleResourceDomains(
+      ref.read(appProvider).moduleVisibility,
+    );
+    if (domains.isNotEmpty) _resourceDomain = domains.first;
+    _visitedResourceDomains.add(_resourceDomain);
+  }
 
   /// 「补对齐文件」：把已下完的孤立音频直接喂进统一导入对话框。
   ///
@@ -171,6 +190,19 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   /// 单独悬在搜索区上方。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
   Widget _buildResourceHub() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 模块门控：四个域分属 books / manga / games / video，关掉的模块不出段，
+    // 它的发现页也一并从保活 Stack 里剪掉（隐藏域不该继续挂在树上跑网络）。
+    final List<_DownloadsResourceDomain> domains = _visibleResourceDomains(
+      ref.watch(appProvider).moduleVisibility,
+    );
+    // 四个域全关：整块资源分区不渲染——空的分段条 + 空 Stack 是「渲染出来但点不
+    // 出任何东西」，正是要消灭的形态。
+    if (domains.isEmpty) return const SizedBox.shrink();
+    // 当前域在渲染期回落到第一个可见域：用户在设置里关掉当前域后本页可能仍挂着
+    // （保活 tab），选中值不在 segments 里会让分段控件直接 assert。
+    final _DownloadsResourceDomain selected = domains.contains(_resourceDomain)
+        ? _resourceDomain
+        : domains.first;
     return Column(
       children: <Widget>[
         Padding(
@@ -183,14 +215,13 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
           child: FushiSegmentedStrip<_DownloadsResourceDomain>(
             key: const ValueKey<String>('downloads-resource-type-picker'),
             segments: <ButtonSegment<_DownloadsResourceDomain>>[
-              for (final _DownloadsResourceDomain domain
-                  in _DownloadsResourceDomain.values)
+              for (final _DownloadsResourceDomain domain in domains)
                 ButtonSegment<_DownloadsResourceDomain>(
                   value: domain,
                   label: Text(_resourceDomainLabel(domain)),
                 ),
             ],
-            selected: _resourceDomain,
+            selected: selected,
             onChanged: _selectResourceDomain,
             minSegmentWidth: 72,
             alignment: Alignment.centerLeft,
@@ -199,14 +230,13 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
         Expanded(
           child: Stack(
             children: <Widget>[
-              for (final _DownloadsResourceDomain domain
-                  in _DownloadsResourceDomain.values)
+              for (final _DownloadsResourceDomain domain in domains)
                 if (_visitedResourceDomains.contains(domain))
                   Positioned.fill(
                     child: Offstage(
-                      offstage: domain != _resourceDomain,
+                      offstage: domain != selected,
                       child: TickerMode(
-                        enabled: domain == _resourceDomain,
+                        enabled: domain == selected,
                         child: KeyedSubtree(
                           key: ValueKey<String>(
                             'downloads-resource-${domain.name}',
@@ -459,23 +489,31 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                           // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
                           // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
                           // 番剧下载对话框「去设置」落到这里仍能一步到达。
-                          Builder(
-                            builder: (BuildContext rowContext) =>
-                                AdaptiveSettingsNavigationRow(
-                              title: t.settings_destination_services,
-                              subtitle: t.settings_services_link_subtitle,
-                              icon: Icons.cloud_outlined,
-                              showIcon: true,
-                              onTap: () => Navigator.of(rowContext).push(
-                                adaptivePageRoute(
-                                  context: rowContext,
-                                  builder: (_) => SettingsDetailPage(
-                                    destination: buildServicesDestination(),
+                          // 「在线服务」分类被 [ModuleId.services] 关掉时这一行
+                          // 不渲染：它指向的设置分类此刻已从设置页消失，留着就是
+                          // 一条通往不存在页面的死路。
+                          if (ref
+                              .watch(appProvider)
+                              .moduleVisibility
+                              .isEnabled(ModuleId.services))
+                            Builder(
+                              builder: (BuildContext rowContext) =>
+                                  AdaptiveSettingsNavigationRow(
+                                    title: t.settings_destination_services,
+                                    subtitle: t.settings_services_link_subtitle,
+                                    icon: Icons.cloud_outlined,
+                                    showIcon: true,
+                                    onTap: () => Navigator.of(rowContext).push(
+                                      adaptivePageRoute(
+                                        context: rowContext,
+                                        builder: (_) => SettingsDetailPage(
+                                          destination:
+                                              buildServicesDestination(),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
                             ),
-                          ),
                           const VideoExternalProviderSettingsSection(
                             scope: VideoExternalProviderScope.downloadRouting,
                           ),
@@ -494,3 +532,23 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
 }
 
 enum _DownloadsResourceDomain { books, manga, games, video }
+
+/// 资源域 → 所属功能模块（穷尽 switch：加域时编译器强制补齐这张表）。
+///
+/// 四个域各自复用对应库的生产发现页，所以门控判据就是那个库的模块开关——关掉
+/// 视频模块还留着「视频」资源域，等于给一个已经关掉的库继续找片源。
+ModuleId _moduleOfResourceDomain(_DownloadsResourceDomain domain) =>
+    switch (domain) {
+      _DownloadsResourceDomain.books => ModuleId.books,
+      _DownloadsResourceDomain.manga => ModuleId.manga,
+      _DownloadsResourceDomain.games => ModuleId.games,
+      _DownloadsResourceDomain.video => ModuleId.video,
+    };
+
+/// 此刻可见的资源域，顺序即分段条顺序（枚举声明序）。
+List<_DownloadsResourceDomain> _visibleResourceDomains(
+  ModuleVisibility visibility,
+) => <_DownloadsResourceDomain>[
+  for (final _DownloadsResourceDomain domain in _DownloadsResourceDomain.values)
+    if (visibility.isEnabled(_moduleOfResourceDomain(domain))) domain,
+];

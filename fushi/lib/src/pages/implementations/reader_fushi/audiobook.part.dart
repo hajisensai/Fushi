@@ -232,6 +232,19 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// [forceReload] = true 时（导入新音频后重解析）先 stop 旧会话，逼 session 重新 load
   /// 新音频；首次开书 = false，优先复用既有后台会话。
   Future<void> _resolveAudioSlot({bool forceReload = false}) async {
+    // 「听书」模块关闭：本函数是 reader 侧**唯一**会 initialiseAudioHandler +
+    // 起/接管 [AudiobookSession]（媒体通知 + 后台播放）的地方，在这里早退即满足
+    // 「模块专属后台下次启动不再拉起」——已在跑的会话不受影响（本函数只在开书 /
+    // 换源时调用，不碰 session 已有的播放）。
+    if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
+      // 歌词模式靠有声书 cue 活着；没有控制器就把它复位，与函数末尾那条
+      // 「_audiobookController == null → 关歌词」是同一条不变式。
+      if (_lyricsMode) {
+        _lyricsMode = false;
+        await ReaderFushiSource.instance.setLyricsMode(false);
+      }
+      return;
+    }
     // TODO-perf（开媒体反馈）：openMedia 已改为不阻塞等 audio_service 冷启，这里
     // 是 handler 的真正消费点（session attach/start 挂媒体通知与控制流）——await
     // 同一份记忆化 future 补齐时序契约；已就绪时立即返回，零额外开销。
@@ -1836,6 +1849,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController != null && _audiobookController!.chapterCueCount > 0;
 
   Future<void> _openAudioImportDialog() async {
+    // 兜底早退：四个入口（底栏耳机键 / 快速设置面板 / 桌面顶栏 / 快捷键 B）在
+    // 「听书」关闭时都已不渲染，这里只挡住将来新接的调用方，不是用户可达路径，
+    // 故无需提示。
+    if (!_moduleVisibility.isEnabled(ModuleId.listening)) return;
     if (_srtBookUid != null) {
       await _openSrtBookReimport();
       return;

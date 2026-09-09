@@ -11,6 +11,7 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -757,6 +758,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     }
     final isDark = (appModel.overrideDictionaryTheme ?? theme).brightness ==
         Brightness.dark;
+    // 「制卡」模块（[ModuleId.cardCreation]）总闸：本处是阅读器 / 漫画 / 视频 /
+    // texthooker 四个媒体页共用的**唯一** Anki 装配点，关掉即四个表面同时失去制卡。
+    // 快照只取一次——[AppModel.moduleVisibility] 每读一次都重新合成一个 Set，
+    // 而下面要问好几次。
+    //
+    // 收藏（onFavoriteEntry / onFavoriteCheck）**不在此列**：收藏句子/词写的是本地
+    // FavoriteWords 表，与 Anki 无关，属阅读能力而非制卡能力。
+    final bool cardCreationEnabled = appModel.moduleVisibility.isEnabled(
+      ModuleId.cardCreation,
+    );
+    // 「+句」草稿（多句合一制卡 / 调整上下文）只为制卡服务，跟着制卡一起关。
+    final bool sentenceDraftEnabled =
+        supportsSentenceDraft && cardCreationEnabled;
 
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
@@ -880,44 +894,60 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // （与 dictionary_page_mixin / home_dictionary_page 同构），webview 的
         // _pushResults 据 searchTerm 不变 + entries 增多自动判 isLoadMore → 走
         // window.updatePopupIncremental() 增量追加，不重渲染整页、保滚动位/热槽。
-        onScrolledToBottom:
-            item.allLoaded ? null : () => loadMoreForLayer(index),
-        onMineEntry: onMineFromPopup,
-        onUpdateEntry: onUpdateFromPopup,
+        onScrolledToBottom: item.allLoaded
+            ? null
+            : () => loadMoreForLayer(index),
+        // 制卡模块关闭：制卡链路整条断开（不写卡、不问 Anki），点了给一句可见提示
+        // 说明为什么没反应——[DictionaryPopupLayer.onMineEntry] 是必填参数，
+        // popup.js 也无条件渲染这颗 + 按钮，所以此处只能落到「可点 + 反馈」这一档。
+        onMineEntry: cardCreationEnabled
+            ? onMineFromPopup
+            : _mineBlockedByModuleGate,
+        onUpdateEntry: cardCreationEnabled ? onUpdateFromPopup : null,
         // TODO-948②：阅读器/有声书弹窗收藏按钮接线（视频走 mixin，不经此处）。
         onFavoriteEntry: onFavoriteFromPopup,
         onFavoriteCheck: onFavoriteCheckFromPopup,
-        onDuplicateCheck: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.isDuplicate(expression, reading);
-        },
+        // 制卡关掉时恒答「不重复」：既画不出撒谎的 ✓，也不会为一个用不了的按钮
+        // 每次查词都去问一遍 Anki（模块关掉 = 该模块的后台流量也一起停）。
+        onDuplicateCheck: cardCreationEnabled
+            ? (expression, reading) async {
+                final repo = ref.read(ankiRepositoryProvider);
+                return repo.isDuplicate(expression, reading);
+              }
+            : (String expression, String reading) async => false,
         // TODO-614：覆写范围=「全部」时按内容反查可覆写的已存在 note id，让阅读器/
         // 有声书/视频弹窗里更早制的卡也能点绿 ✓↩ 覆写（默认 latest / AnkiDroid 回 null）。
-        onOverwriteTargetNoteId: (expression, reading) async {
-          final repo = ref.read(ankiRepositoryProvider);
-          return repo.findOverwriteTargetNoteId(expression, reading);
-        },
+        onOverwriteTargetNoteId: cardCreationEnabled
+            ? (expression, reading) async {
+                final repo = ref.read(ankiRepositoryProvider);
+                return repo.findOverwriteTargetNoteId(expression, reading);
+              }
+            : null,
         // TODO-1007/1008：点 ✓（卡已存在）弹操作选择（覆写/新增重复卡/查看·在 Anki
         // 中打开），命中多张让用户选哪张。reader 覆写 onMineFromPopup/onUpdateFromPopup
         // 做真实制卡/覆盖（基类无操作）。
-        onMinedCardAction: onMinedCardActionFromPopup,
+        onMinedCardAction: cardCreationEnabled
+            ? onMinedCardActionFromPopup
+            : null,
         // TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮 → 反查命中卡直接跳转打开。
-        onOpenInAnki: onOpenInAnkiFromPopup,
+        onOpenInAnki: cardCreationEnabled ? onOpenInAnkiFromPopup : null,
         // TODO-270 F/G「查词窗口多句合一制卡」(乙方案)：仅支持草稿的表面（reader 覆写
         // [supportsSentenceDraft]=true）传入回调；其余表面传 null，弹窗不渲染「+句」。
-        onAppendSentence:
-            supportsSentenceDraft ? onAppendSentenceToDraft : null,
-        onSetSentenceContext:
-            supportsSentenceDraft ? onSetSentenceContextToDraft : null,
-        onClearSentenceDraft:
-            supportsSentenceDraft ? onClearSentenceDraftToDraft : null,
+        onAppendSentence: sentenceDraftEnabled ? onAppendSentenceToDraft : null,
+        onSetSentenceContext: sentenceDraftEnabled
+            ? onSetSentenceContextToDraft
+            : null,
+        onClearSentenceDraft: sentenceDraftEnabled
+            ? onClearSentenceDraftToDraft
+            : null,
         // Niratan「制卡前调整·选择句子上下文」模态：弹窗按需拉取当前草稿的真实上下
         // 文句（前/当前/后）+ 词偏移做预览。只在支持草稿的表面接线，其余传 null。
-        onSentenceContextPreview:
-            supportsSentenceDraft ? onSentenceContextPreviewFromDraft : null,
+        onSentenceContextPreview: sentenceDraftEnabled
+            ? onSentenceContextPreviewFromDraft
+            : null,
         // BUG-763/766：点某词条「调整上下文」→ 弹 app 原生顶层对话框（不再画在弹窗
         // WebView 内）；确认制卡回该层 WebView（item.webViewKey）精确点中该词条制卡。
-        onOpenSentenceContextModal: supportsSentenceDraft
+        onOpenSentenceContextModal: sentenceDraftEnabled
             ? (int entryIndex, String matched) => _openSentenceContextDialog(
                   webViewKey: item.webViewKey,
                   entryIndex: entryIndex,
@@ -1250,6 +1280,21 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+    return const MinePopupResult();
+  }
+
+  /// 「制卡」模块关闭时顶替 [onMineFromPopup] 挂进弹窗的 no-op：**不写任何卡、
+  /// 不碰 Anki**，只弹一句说明为什么没反应。
+  ///
+  /// 为什么不是「按钮不渲染」：popup.js 的制卡 + 按钮是无条件构造的（见
+  /// `assets/popup/popup.js` 的 `createEntryHeader`），而
+  /// [DictionaryPopupLayer.onMineEntry] 又是必填参数——宿主侧没有任何能让那颗按钮
+  /// 消失的开关。在弹窗接上「回调为空就不渲染」的契约之前，这里按仓规「保留可点
+  /// 位置就必须给可见反馈」办，绝不做静默失败。
+  Future<MinePopupResult> _mineBlockedByModuleGate(
+    Map<String, String> fields,
+  ) async {
+    FushiToast.show(msg: t.module_disabled_hint, severity: ToastSeverity.info);
     return const MinePopupResult();
   }
 

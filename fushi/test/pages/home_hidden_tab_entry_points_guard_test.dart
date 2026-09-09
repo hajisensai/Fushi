@@ -79,10 +79,14 @@ void main() {
   });
 
   test('② onOpenSubscriptions 端口同样按下载可达性接线', () {
+    // 归一化空白后再比：换行位置由 dart format 按行宽决定，不是本守卫要钉的不变式
+    // （钉它只会让任何挪动这一行的无关改动凭空报红）。要钉的是「端口按可达性三目
+    // 接线」这件事本身。
+    final String flat = source.replaceAll(RegExp(r'\s+'), ' ');
     expect(
-      source.contains(
-        'onOpenSubscriptions:\n'
-        '          downloadsReachable ? _openVideoDiscoverySubscriptionsPanel : null,',
+      flat.contains(
+        'onOpenSubscriptions: downloadsReachable '
+        '? _openVideoDiscoverySubscriptionsPanel : null,',
       ),
       isTrue,
       reason: '下载页不可达时「管理订阅」端口必须不接线，消费端按 null 不渲染该按钮。',
@@ -99,16 +103,22 @@ void main() {
     );
   });
 
-  test('③ 查词的三条全局入口都走 _revealDictionary，没有裸 _selectTab(HomeTab.dictionaries)',
-      () {
-    // 全文里 `_selectTab(HomeTab.dictionaries)` 只允许出现一次，且必须落在
-    // _revealDictionary 的「tab 可见」分支里。别处出现即是绕过落地面的裸切 tab。
-    final int revealStart =
-        source.indexOf('void _revealDictionary({bool focusSearch = false}) {');
-    final int revealEnd = source.indexOf('\n  }', revealStart);
-    expect(revealStart, greaterThan(0));
-    final List<int> bare = <int>[];
-    for (int i = source.indexOf('_selectTab(HomeTab.dictionaries)');
+  test(
+    '③ 查词的三条全局入口都走 _revealDictionary，没有裸 _selectTab(HomeTab.dictionaries)',
+    () {
+      // 全文里 `_selectTab(HomeTab.dictionaries)` 只允许出现一次，且必须落在
+      // _revealDictionary 的「tab 可见」分支里。别处出现即是绕过落地面的裸切 tab。
+      final int revealStart = source.indexOf('void _revealDictionary({');
+      // 取**函数体**的右花括号，不是参数表的 `}) {`——签名换行之后 '\n  }' 会先
+      // 命中后者，把整个函数体压成零长度区间。
+      final int revealEnd = source.indexOf(
+        '\n  }',
+        source.indexOf(') {', revealStart),
+      );
+      expect(revealStart, greaterThan(0));
+      final List<int> bare = <int>[];
+      for (
+        int i = source.indexOf('_selectTab(HomeTab.dictionaries)');
         i >= 0;
         i = source.indexOf('_selectTab(HomeTab.dictionaries)', i + 1)) {
       bare.add(i);
@@ -126,39 +136,53 @@ void main() {
       reason: '唯一一处必须在 _revealDictionary 的「tab 可见」分支里',
     );
 
-    // 热键两条。
-    expect(
-      source.contains('case ShortcutAction.homeTabDict:\n'
-          '        _revealDictionary();'),
-      isTrue,
-      reason: 'homeTabDict 热键必须走 _revealDictionary',
-    );
-    expect(
-      source.contains('case ShortcutAction.homeFocusSearch:\n'
-          '        _revealDictionary(focusSearch: true);'),
-      isTrue,
-      reason: 'homeFocusSearch 热键必须走 _revealDictionary（含聚焦搜索框）',
-    );
-    // 桌面悬浮字幕点词 / 剪贴板 mainTab 分区一条。
-    expect(
-      source.contains('void _onHomeDictionaryTabRequested() {'),
-      isTrue,
-    );
-    final int handler =
-        source.indexOf('void _onHomeDictionaryTabRequested() {');
-    final int handlerEnd = source.indexOf('\n  }', handler);
-    expect(
-      source.substring(handler, handlerEnd).contains('_revealDictionary()'),
-      isTrue,
-      reason: 'homeDictionaryTabRequest（悬浮字幕点词）必须走 _revealDictionary',
-    );
-  });
+      // 热键两条。它们是**主动导航**：查词模块关掉时必须先返回 ignored 再落地。
+      // ignored 而不是 handled —— handled 会把按键认领掉，同一物理键上绑的
+      // universal / global 动作再也收不到它，于是「关掉查词后 Ctrl+F 既不开页、
+      // 也不再冒泡」，变成一个吃键的黑洞。
+      for (final String action in <String>['homeTabDict', 'homeFocusSearch']) {
+        final int caseAt = source.indexOf('case ShortcutAction.$action:');
+        expect(caseAt, greaterThan(0), reason: '$action 分支应存在');
+        final int caseEnd = source.indexOf('      case ', caseAt + 1);
+        final String branch = source.substring(caseAt, caseEnd);
+        expect(
+          branch.contains('ModuleId.lookup') &&
+              branch.contains('KeyEventResult.ignored'),
+          isTrue,
+          reason: '$action 是主动导航，查词模块关掉时不认领按键（看不见也到不了）',
+        );
+        expect(
+          branch.contains('_revealDictionary('),
+          isTrue,
+          reason: '$action 通过模块门之后仍必须走 _revealDictionary',
+        );
+      }
+      // 桌面悬浮字幕点词 / 剪贴板 mainTab 分区一条。
+      expect(source.contains('void _onHomeDictionaryTabRequested() {'), isTrue);
+      final int handler = source.indexOf(
+        'void _onHomeDictionaryTabRequested() {',
+      );
+      final int handlerEnd = source.indexOf('\n  }', handler);
+      expect(
+        source
+            .substring(handler, handlerEnd)
+            .contains('_revealDictionary(carryingPendingLookup: true)'),
+        isTrue,
+        reason:
+            'homeDictionaryTabRequest（桌面取词 / 悬浮字幕点词 / 扩展回流）必须走 '
+            '_revealDictionary，且必须带 carryingPendingLookup: true —— 它携带一次'
+            '**已经发生**的查词请求，查词模块关着也要给它落地面。漏掉这个实参会让'
+            '请求被模块门吞掉：用户只看到窗口弹到前台却什么都不显示，'
+            'DesktopLookupService.pendingText 永远挂着。',
+      );
+    },
+  );
 
   test('③ _revealDictionary：tab 在切 tab、tab 不在推独立路由且不叠第二份', () {
-    final int body =
-        source.indexOf('void _revealDictionary({bool focusSearch = false}) {');
+    final int body = source.indexOf('void _revealDictionary({');
     expect(body, greaterThan(0));
-    final int end = source.indexOf('\n  }', body);
+    // 同上：跳过多行参数表的 `}) {`，从函数体的开花括号开始找收尾。
+    final int end = source.indexOf('\n  }', source.indexOf(') {', body));
     final String fn = source.substring(body, end);
 
     expect(
@@ -176,6 +200,16 @@ void main() {
       isTrue,
       reason: '已经开着就翻到最上层，绝不叠第二个 HomeDictionaryPage —— '
           '否则 mainTab 分区的 pending 查词会被双消费。',
+    );
+    expect(
+      fn.contains('!carryingPendingLookup') &&
+          fn.contains('isEnabled(ModuleId.lookup)'),
+      isTrue,
+      reason:
+          '模块门必须**按调用来源分流**：主动导航（热键）在查词模块关掉时不开页，'
+          '携带 pending 的（桌面取词/悬浮字幕点词/扩展回流）照常开。合成一个门就'
+          '必然牺牲其中一边——要么「关了还能按 Ctrl+F 弹出查词页」，要么「取词请求'
+          '永远挂着」。',
     );
   });
 }
