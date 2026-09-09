@@ -497,8 +497,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// 在 restoreToCharOffset 里压过分数、把视口拽回旧位置。
   ///
   /// BUG-2333 起 fragment 那条路还经 [_studyRangeForAudioFragment] 把**音频 UTF-16
-  /// 坐标**映射成学习单位偏移，因此它能给出精确字符锚（charOffset）；另两条只算
-  /// 「章 + 章内分数」，charOffset 仍取默认 -1。
+  /// 坐标**映射成学习单位偏移，因此它能给出精确字符锚（charOffset）；无 fragment 的正文兜底也必须
+  /// 唯一匹配正文来取得字符锚，SRT 切章表仍使用章内分数。
   bool _restoreFromCurrentAudioCue() {
     final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
     if (cue == null || _book == null) return false;
@@ -558,13 +558,27 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
 
     final int chapter = _chapterIndexForCue(cue);
-    final int fallbackChapter =
-        chapter >= 0 ? chapter : _chapterIndexForText(cue.text);
+    final int fallbackChapter = chapter >= 0
+        ? chapter
+        : _chapterIndexForText(cue.text);
     if (fallbackChapter < 0) return false;
+    // 章节命中只完成了第一步。无持久化字符坐标的 cue 需继续在正文中唯一定位，
+    // 在创建 WebView 前直接给出字符锚；找不到/重复时保留阅读存档。
+    final ({int offset, int length})? range =
+        ReaderAudioPositionIndex.fromChapterHtml(
+          _book!.chapters[fallbackChapter].html,
+        ).studyRangeForUniqueText(cue.text);
+    if (range == null || range.length <= 0) return false;
     _setOpenResumePoint(
       chapter: fallbackChapter,
-      progress: 0.0,
-      source: 'audio cue chapter href=${cue.chapterHref}',
+      progress:
+          audiobookSentenceAudioCrossChapterProgress(
+            studyCharOffset: range.offset,
+            chapterChars: _chapterCharCounts[fallbackChapter],
+          ) ??
+          0.0,
+      charOffset: range.offset,
+      source: 'audio cue text href=${cue.chapterHref}',
     );
     return true;
   }

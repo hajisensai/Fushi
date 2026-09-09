@@ -4,11 +4,53 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
 
 void main() {
+  test(
+    'cue text restores inside a chapter using learning-unit coordinates',
+    () {
+      final ReaderAudioPositionIndex index =
+          ReaderAudioPositionIndex.fromChapterHtml(
+            '<body><p>序章</p><p>ABC 123𠮷<ruby>猫<rt>ねこ</rt></ruby>だ。</p></body>',
+          );
+      expect(index.studyRangeForUniqueText('猫 だ。'), (offset: 5, length: 2));
+      expect(index.studyRangeForUniqueText('𠮷猫だ'), (offset: 4, length: 3));
+    },
+  );
+
+  test('absent, empty and repeated cue text cannot select a chapter start', () {
+    final ReaderAudioPositionIndex index =
+        ReaderAudioPositionIndex.fromChapterHtml('<body>猫だ。犬だ。猫だ。</body>');
+    for (final String text in <String>['', '。 ', '鳥だ', '猫だ']) {
+      expect(index.studyRangeForUniqueText(text), isNull);
+    }
+  });
+
+  test('overlapping repeated cue text is ambiguous', () {
+    final ReaderAudioPositionIndex index =
+        ReaderAudioPositionIndex.fromChapterHtml('<body>あああ</body>');
+    expect(index.studyRangeForUniqueText('ああ'), isNull);
+  });
+
+  test('chapter-only audio fallback must supply a character anchor', () {
+    final String audio = File(
+      'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+    ).readAsStringSync();
+    final int start = audio.indexOf('final int fallbackChapter =');
+    final int end = audio.indexOf('int _chapterIndexForCue(', start);
+    final String fallback = audio.substring(start, end);
+    expect(fallback, contains('studyRangeForUniqueText(cue.text)'));
+    expect(
+      fallback,
+      contains('if (range == null || range.length <= 0) return false;'),
+    );
+    expect(fallback, contains('charOffset: range.offset'));
+    expect(fallback, isNot(contains('progress: 0.0,')));
+  });
+
   test('Latin and astral CJK audio coordinates convert to study range', () {
     final ReaderAudioPositionIndex index =
         ReaderAudioPositionIndex.fromChapterHtml(
-      '<body>ABC 123𠮷<ruby>猫<rt>ねこ</rt></ruby>だ。</body>',
-    );
+          '<body>ABC 123𠮷<ruby>猫<rt>ねこ</rt></ruby>だ。</body>',
+        );
     expect(index.studyRangeForFragment(matchableStart: 8, matchableEnd: 10), (
       offset: 3,
       length: 2,
@@ -18,8 +60,8 @@ void main() {
   test('node boundaries preserve reader word accounting', () {
     final ReaderAudioPositionIndex index =
         ReaderAudioPositionIndex.fromChapterHtml(
-      '<body><span>ab</span><em>cd</em><p>猫</p></body>',
-    );
+          '<body><span>ab</span><em>cd</em><p>猫</p></body>',
+        );
     expect(index.studyRangeForFragment(matchableStart: 4, matchableEnd: 5), (
       offset: 2,
       length: 1,
@@ -44,8 +86,8 @@ void main() {
     () {
       final ReaderAudioPositionIndex index =
           ReaderAudioPositionIndex.fromChapterHtml(
-        '<body>don\'t café русский 𠮷猫</body>',
-      );
+            '<body>don\'t café русский 𠮷猫</body>',
+          );
       expect(index.studyRangeForFragment(matchableStart: 9, matchableEnd: 10), (
         offset: 4,
         length: 1,
@@ -111,9 +153,10 @@ void main() {
       );
       // 反过来也钉住：不得绕开写入口裸写起点字段（绕开就会留下别的分支的残留锚）。
       expect(
-        RegExp(r'^\s*_initialCharOffset\s*=', multiLine: true)
-            .allMatches(audio)
-            .length,
+        RegExp(
+          r'^\s*_initialCharOffset\s*=',
+          multiLine: true,
+        ).allMatches(audio).length,
         0,
         reason:
             'audiobook.part 不得绕开 _setOpenResumePoint 直接写 _initialCharOffset',

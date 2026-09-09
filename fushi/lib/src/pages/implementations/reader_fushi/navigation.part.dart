@@ -1092,9 +1092,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // （_onRestoreComplete）与失败（_failNavigation / reload catch）都清旗，之后的
     // 首发刷新、onReanchorSettled 补刷都在清旗之后到达，不受这条门影响。
     if (_controller == null || _lyricsMode || _restoreInFlight) return;
+    final InAppWebViewController controller = _controller!;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
     final dynamic result;
     try {
-      result = await _controller!.evaluateJavascript(
+      result = await controller.evaluateJavascript(
         source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
@@ -1120,7 +1123,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // _applyImagePageProgressFallback 兜底显示。
       return;
     }
-    if (!mounted) return;
+    // await 期间可能已经换章、重载或重建 WebView。旧快照不能套新章坐标，
+    // 也不能写回恢复锚或把导航中的视口计入阅读账本。
+    if (!mounted ||
+        _controller != controller ||
+        _navigateGeneration != generation ||
+        _currentChapter != chapter ||
+        _restoreInFlight ||
+        _lyricsMode) {
+      return;
+    }
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
     if (snapshot == null) {
@@ -1257,9 +1269,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       return;
     }
 
+    final InAppWebViewController controller = _controller!;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
     final dynamic result;
     try {
-      result = await _controller!.evaluateJavascript(
+      result = await controller.evaluateJavascript(
         source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
@@ -1271,7 +1286,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] syncPositionFromWebViewProgress failed: $e');
       return;
     }
-    if (!mounted) return;
+    if (!mounted ||
+        _controller != controller ||
+        _navigateGeneration != generation ||
+        _currentChapter != chapter ||
+        _restoreInFlight ||
+        _lyricsMode) {
+      return;
+    }
 
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
