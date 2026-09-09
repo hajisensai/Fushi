@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2405](bugs/BUG-2405-mihon-image-response-lifetime.md) | 🚧 | 🚧 | Mihon 图片响应在读取正文前因 Rx 退订关闭 Socket |
+| [BUG-2405](bugs/BUG-2405-mihon-image-response-lifetime.md) | ✅ | ✅ | Mihon 图片响应在读取正文前因 Rx 退订关闭 Socket |
 | [BUG-2404](bugs/BUG-2404-mihon-proxy-socket-uri.md) | ✅ | ✅ | Mihon 全局代理选择器误将 TCP socket URI 发送至 HTTP 策略端点 |
 | [BUG-2364](bugs/BUG-2364-vn-mouse-wheel.md) | ✅ | ✅ | VN模式鼠标滚轮被分页器能力门误拦截 |
 | [BUG-2363](bugs/BUG-2363-reader-longpress-stationary-selection.md) | ✅ | ✅ | 小说长按必须额外拖动才进入文本选择 |
