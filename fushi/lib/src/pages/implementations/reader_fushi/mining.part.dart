@@ -47,8 +47,10 @@ extension _ReaderMining on _ReaderFushiPageState {
     // _cachedSentenceOffset）会把这些成员改成第二个词的值，导致第一张卡的 cue 句 / 加粗
     // 偏移与第二个词错配（或第二次中途清空时丢失）。await 之后一律只读这些局部值，消除
     // 「await 后读可变成员」整类时序漏洞。
-    final String snapshotCueSentence =
-        appModel.currentMediaSource?.currentCueSentence.text ?? '';
+    // 扩展上下文后两个句子字段必须对应同一段音频；未扩展时保留原 cue 全文。
+    final String snapshotCueSentence = _miningDraft.isEmpty
+        ? appModel.currentMediaSource?.currentCueSentence.text ?? ''
+        : sentence;
     final int? snapshotSentenceOffset = _cachedSentenceOffset;
 
     String? sentenceAudioPath;

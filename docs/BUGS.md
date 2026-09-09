@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2202 条。点号进各自文件。
+> 共 2203 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2386](bugs/BUG-2386-reader-context-cue-sentence.md) | ✅ | ✅ | 有声书扩展例句后字幕原句字段仍只收录当前句 |
 | [BUG-2385](bugs/BUG-2385-reader-toc-anchor-jump-lands-chapter-start.md) | ✅ | ✅ | 目录里同一章的多个锚点条目全跳章首（章节跳转不准） |
 | [BUG-2384](bugs/BUG-2384-reader-toc-rows-missing.md) | ✅ | ✅ | 阅读器目录章节列表显示不全（少行 / 整段消失） |
 | [BUG-2383](bugs/BUG-2383-vn-m1-completion.md) | ✅ | ✅ | VN专属设置渐显与图片语义仍停在M0 |
