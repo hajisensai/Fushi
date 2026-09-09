@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/utils.dart';
@@ -288,23 +290,23 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                     }),
                   ),
                 if (visible.any(
-                  (DownloadTaskEntry task) => task.onRetry != null,
+                  (DownloadTaskEntry task) => task.actions.retry != null,
                 ))
                   TextButton(
                     onPressed: () {
                       for (final DownloadTaskEntry task in visible) {
-                        task.onRetry?.call();
+                        unawaited(task.actions.retry?.call() ?? Future<void>.value());
                       }
                     },
                     child: Text(t.retry),
                   ),
                 if (visible.any(
-                  (DownloadTaskEntry task) => task.onClear != null,
+                  (DownloadTaskEntry task) => task.actions.clear != null,
                 ))
                   TextButton(
                     onPressed: () {
                       for (final DownloadTaskEntry task in visible) {
-                        task.onClear?.call();
+                        unawaited(task.actions.clear?.call() ?? Future<void>.value());
                       }
                     },
                     child: Text(t.download_clear_finished),

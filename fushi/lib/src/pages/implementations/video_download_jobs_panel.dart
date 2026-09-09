@@ -28,6 +28,28 @@ typedef VideoDownloadJobAction = Future<void> Function(
   VideoDownloadJobRow job,
 );
 
+/// 能否重试：只有真失败 / 需要处理的任务能重跑；legacy 导入报告不是可重跑任务。
+bool videoDownloadJobCanRetry(VideoDownloadJobRow job) =>
+    job.resourceProvider != 'legacy-import-report' &&
+    (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+        job.lifecycle == VideoDownloadJobLifecycle.failed);
+
+/// 能否恢复：`cancelled` 是**用户暂停**这一生命周期的冻结 DB 值（见
+/// `VideoDownloadPipelineService.cancelJob`：它不删已下载数据、底层调
+/// pauseTorrent），所以「已暂停」才是它的真实语义。
+bool videoDownloadJobCanResume(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.cancelled;
+
+/// 能否暂停：只有正在跑的任务。对应 `cancelJob`（名为 cancel 实为 pause）。
+bool videoDownloadJobCanPause(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.active;
+
+/// 优先级只对「还会被取走」的任务有意义。已完成 / 已暂停的任务调了也不会重新
+/// 排队，露出来只会让人以为能插队。
+bool videoDownloadJobCanSetPriority(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.active ||
+    job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
+
 typedef VideoDownloadJobLocationLoader = Future<String?> Function(
   VideoDownloadJobRow job,
 );
@@ -412,6 +434,39 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
     }
   }
 
+  /// 统一列表里一条 video job 支持的批量动作。
+  ///
+  /// 可用判据一律复用卡片同款纯函数（videoDownloadJobCan*），不在这里抄第二份——
+  /// 两份判据必然漂移，最后表现为「卡片上有按钮、批量却跳过它」。
+  ///
+  /// 这里直连注入的回调、不经 [_runAction]：那层的 busy 门与逐条 SnackBar 是
+  /// **单条**语义，批量有自己的进度与聚合报告，套上去会让一批操作弹出一串错误条。
+  DownloadTaskActions _entryActions(VideoDownloadJobRow job) {
+    final VideoDownloadJobAction? onPause = widget.onCancel;
+    final VideoDownloadJobAction? onResume = widget.onResume;
+    final VideoDownloadJobAction? onRetry = widget.onRetry;
+    final VideoDownloadJobDeleteAction? onDelete = widget.onDelete;
+    final VideoDownloadJobPriorityAction? onSetPriority = widget.onSetPriority;
+    return DownloadTaskActions(
+      pause: onPause != null && videoDownloadJobCanPause(job)
+          ? () => onPause(job)
+          : null,
+      resume: onResume != null && videoDownloadJobCanResume(job)
+          ? () => onResume(job)
+          : null,
+      retry: onRetry != null && videoDownloadJobCanRetry(job)
+          ? () => onRetry(job)
+          : null,
+      delete: onDelete == null
+          ? null
+          : ({required bool deleteFiles}) =>
+              onDelete(job, deleteFiles: deleteFiles),
+      setPriority: onSetPriority != null && videoDownloadJobCanSetPriority(job)
+          ? (int priority) => onSetPriority(job, priority)
+          : null,
+    );
+  }
+
   Future<void> _runAction(
     VideoDownloadJobRow job,
     VideoDownloadJobAction action,
@@ -637,6 +692,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       additionalTasks: widget.additionalTasks,
       metricsLoader: widget.metricsLoader,
       selectedSizeLoader: widget.selectedSizeLoader,
+      actionsFor: _entryActions,
       itemBuilder: (
         BuildContext context,
         VideoDownloadJobRow job,
@@ -719,9 +775,13 @@ class _VideoDownloadJobList extends StatefulWidget {
     required this.metricsLoader,
     required this.selectedSizeLoader,
     required this.itemBuilder,
+    required this.actionsFor,
     required this.unified,
     required this.additionalTasks,
   });
+
+  /// 统一列表里一条 video job 支持的批量动作，由 panel 按注入的回调组装。
+  final DownloadTaskActions Function(VideoDownloadJobRow job) actionsFor;
 
   final bool unified;
   final List<DownloadTaskEntry> additionalTasks;
@@ -860,6 +920,7 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
             if (job.resourceTitle != null) job.resourceTitle!,
             job.resourceProvider,
           ],
+          actions: widget.actionsFor(job),
           builder: (BuildContext context) => widget.itemBuilder(
             context,
             job,
@@ -927,20 +988,13 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final String Function(String lifecycle)? lifecycleLabel;
   final String Function(String stage)? stageLabel;
 
-  bool get _canRetry =>
-      job.resourceProvider != 'legacy-import-report' &&
-      (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
-          job.lifecycle == VideoDownloadJobLifecycle.failed);
+  bool get _canRetry => videoDownloadJobCanRetry(job);
 
-  bool get _canResume => job.lifecycle == VideoDownloadJobLifecycle.cancelled;
+  bool get _canResume => videoDownloadJobCanResume(job);
 
-  bool get _canCancel => job.lifecycle == VideoDownloadJobLifecycle.active;
+  bool get _canCancel => videoDownloadJobCanPause(job);
 
-  /// 优先级只对「还会被取走」的任务有意义。已完成 / 已取消的任务调了也不会重新
-  /// 排队，露出来只会让人以为能插队。
-  bool get _canSetPriority =>
-      job.lifecycle == VideoDownloadJobLifecycle.active ||
-      job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
+  bool get _canSetPriority => videoDownloadJobCanSetPriority(job);
 
   /// 数值 -> 档位名。非三档的历史值（理论上不会有，但 DB 不拦）按最接近的一档
   /// 显示，不显示裸数字——用户看到 `优先级 · 7` 只会困惑。
