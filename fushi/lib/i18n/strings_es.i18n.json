@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "Descargas completadas",
   "settings_downloads_routing_hint": "Asignación de rutas y fuente de vídeo de destino",
   "settings_downloads_encryption_title": "Cifrado entre pares",
-  "settings_service_disabled": "Desactivado"
+  "settings_service_disabled": "Desactivado",
+  "anki_reposition_auto_title": "Auto-reposition after mining",
+  "anki_reposition_auto_hint": "Reposition new cards by frequency about 30 seconds after the last card is mined. AnkiConnect only."
 }

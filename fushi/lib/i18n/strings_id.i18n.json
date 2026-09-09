@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "Unduhan selesai",
   "settings_downloads_routing_hint": "Pemetaan jalur dan sumber video tujuan",
   "settings_downloads_encryption_title": "Enkripsi peer",
-  "settings_service_disabled": "Dinonaktifkan"
+  "settings_service_disabled": "Dinonaktifkan",
+  "anki_reposition_auto_title": "Auto-reposition after mining",
+  "anki_reposition_auto_hint": "Reposition new cards by frequency about 30 seconds after the last card is mined. AnkiConnect only."
 }

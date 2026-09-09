@@ -204,6 +204,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 id: 'card_creation.anki.reposition',
                 child: _buildDeckRepositionRow(vm),
               ),
+              SettingsSearchTarget(
+                id: 'card_creation.anki.reposition_auto',
+                child: _buildAutoRepositionRow(settings, vm),
+              ),
             ],
           ),
           AdaptiveSettingsSection(
@@ -1439,6 +1443,23 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           : t.anki_reposition_unsupported,
       subtitleMaxLines: 3,
       onTap: supported ? () => _openDeckReposition(vm) : null,
+    );
+  }
+
+  /// 「制卡后自动重排」开关。与上面那行同样的支持判据：不支持的后端置灰而
+  /// 不隐藏，否则用户会以为这功能不存在。
+  Widget _buildAutoRepositionRow(AnkiSettings settings, AnkiViewModel vm) {
+    final bool supported = vm.supportsDeckReposition;
+    return AdaptiveSettingsSwitchRow(
+      icon: Icons.autorenew_outlined,
+      showIcon: true,
+      title: t.anki_reposition_auto_title,
+      subtitle: supported
+          ? t.anki_reposition_auto_hint
+          : t.anki_reposition_unsupported,
+      value: supported && settings.autoRepositionEnabled,
+      onChanged:
+          supported ? (bool v) => vm.setAutoRepositionEnabled(v) : null,
     );
   }
 

@@ -336,6 +336,58 @@ class AnkiDeckRepositionRunner {
     return best;
   }
 
+  /// 每个牌组最多保留几份快照（[pruneSnapshots] 的默认值）。
+  static const int kDefaultSnapshotsPerDeck = 10;
+
+  /// 按**牌组**各保留最近 [keep] 份快照，其余删除；返回删掉的份数。
+  ///
+  /// 手动重排一次写一份快照，用户点一次撤销就消耗掉；自动重排则是每批新卡
+  /// 写一份、没人消费，目录会无界增长——而 [latestSnapshot] 每次都要读完整个
+  /// 目录才能挑出最新的一份，于是「撤销」会随使用越来越慢。
+  ///
+  /// 为什么按牌组分组而不是全局留最近 N 份：全局策略下，在牌组 B 上自动重排
+  /// N 次就会把牌组 A 手动重排的快照挤掉，用户在 A 上的撤销按钮**静默失效**。
+  /// 解析失败的坏文件一律不删（宁可留着占位，也不让一次解析 bug 变成删数据）。
+  Future<int> pruneSnapshots({int keep = kDefaultSnapshotsPerDeck}) async {
+    if (keep < 0) return 0;
+    final Directory dir = await _snapshotDirectory();
+    final Map<String, List<AnkiRepositionSnapshot>> byDeck =
+        <String, List<AnkiRepositionSnapshot>>{};
+    for (final FileSystemEntity entity in dir.listSync()) {
+      if (entity is! File || !entity.path.endsWith('.json')) continue;
+      AnkiRepositionSnapshot? parsed;
+      try {
+        parsed = AnkiRepositionSnapshot.fromJson(
+          entity,
+          jsonDecode(await entity.readAsString()),
+        );
+      } catch (e) {
+        debugPrint('AnkiDeckRepositionRunner: bad snapshot ${entity.path}: $e');
+        continue;
+      }
+      if (parsed == null) continue;
+      byDeck
+          .putIfAbsent(parsed.deckName, () => <AnkiRepositionSnapshot>[])
+          .add(parsed);
+    }
+    int deleted = 0;
+    for (final List<AnkiRepositionSnapshot> snaps in byDeck.values) {
+      if (snaps.length <= keep) continue;
+      snaps.sort((AnkiRepositionSnapshot a, AnkiRepositionSnapshot b) =>
+          b.createdAt.compareTo(a.createdAt));
+      for (final AnkiRepositionSnapshot old in snaps.sublist(keep)) {
+        try {
+          await old.file.delete();
+          deleted++;
+        } catch (e) {
+          debugPrint(
+              'AnkiDeckRepositionRunner: cannot delete ${old.file.path}: $e');
+        }
+      }
+    }
+    return deleted;
+  }
+
   /// 把 [snapshot] 里的旧位置写回去——**只恢复此刻仍是新卡的那些**（快照之后
   /// 学过的卡 `due` 已经是日期，写位置进去就是毁进度）。成功后删掉快照文件。
   Future<AnkiRepositionUndoOutcome> undo(

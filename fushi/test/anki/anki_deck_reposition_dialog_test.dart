@@ -70,6 +70,7 @@ Future<AnkiViewModel> _pumpDialog(
     source: AnkiRepositionSource.dictionaries,
     dictionaries: const <String>['JPDB'],
     aggregate: 'harmonic',
+    rareFirst: false,
   );
   late BuildContext hostContext;
   await tester.pumpWidget(TranslationProvider(
