@@ -35,18 +35,15 @@ OutputBaseFilename=fushi-{#AppVersion}-windows-setup
 Compression=lzma2
 SolidCompression=yes
 
-; ── Material Design 3 外观 ────────────────────────────────────────────────
-; app 五端统一 MD3，安装器是用户见到的第一屏，之前却是 Inno 默认外观（白底 +
-; 分隔线 + 默认纸箱图标 + 无暗色）。Inno 6.7 起原生支持自定义样式、自定义背景色、
-; 跟随系统的明暗切换（dynamic），所以这里用它做 MD3：
-;   - 背景用 MD3 surface（浅 #FEF7FF / 深 #141218），与 app 主题同源；
-;   - hidebevels 去掉经典分隔线（MD3 靠留白与色阶分区，不靠线）；
-;   - windows11 是内置扁平样式，配上面两条后按钮/输入框是圆角扁平的现代形态；
-;   - 图像是本目录 assets\ 下由 generate_md3_assets.py 生成的 MD3 标记与竖图，
-;     明暗各一套。别用 app_icon.ico：那份至今还是改名前的 Hibiki 字标。
-; 版本闸门：这批指令 6.7 以下的编译器不认识，会直接编译失败。CI 已钉 6.7+
-; （release-desktop.yml 的 Compile installer 步骤会校验并按需安装），这里再留一道
-; ISPP 闸门，让任何老编译器上仍能出包，只是退回旧外观。
+; 安装器自己的图标 = app 图标（兔子）。不设的话是 Inno 默认的下载箭头，
+; 于是「双击下载来的 setup.exe」和「桌面上的 Fushi」看着毫不相干。
+; 这份 ico 由 a32b885d65 换成兔子，7 档尺寸（16~256）齐全，直接可用。
+SetupIconFile=..\runner\resources\app_icon.ico
+; 控制面板「应用和功能」里的图标同样取 app 自己的，不留 Inno 默认。
+UninstallDisplayIcon={app}\fushi.exe
+
+; MD3 surface tokens and DPI-specific brand artwork. Native button drawing and
+; page layout live in md3_controls.iss / md3_layout.iss; older Inno keeps its UI.
 #if VER >= EncodeVer(6,7,0)
 WizardStyle=modern dynamic windows11 hidebevels
 WizardBackColor=#FEF7FF
@@ -57,10 +54,6 @@ WizardImageBackColorDynamicDark=#141218
 WizardSmallImageBackColor=#FEF7FF
 WizardSmallImageBackColorDynamicDark=#141218
 WizardImageAlphaFormat=defined
-; 每页背景：MD3 surface 底 + 两团极淡主色晕。样式接管了控件与文字颜色（见 [Code]
-; 的 ApplyMd3Chrome 注释），背景图是唯一还能把 MD3 主色铺满每页的层。
-WizardBackImageFile=assets\wizard_back_1630x1180.png
-WizardBackImageFileDynamicDark=assets\wizard_back_dark_1630x1180.png
 WizardImageFile=assets\wizard_hero_164x314.png,assets\wizard_hero_192x386.png,assets\wizard_hero_246x492.png,assets\wizard_hero_328x628.png
 WizardImageFileDynamicDark=assets\wizard_hero_dark_164x314.png,assets\wizard_hero_dark_192x386.png,assets\wizard_hero_dark_246x492.png,assets\wizard_hero_dark_328x628.png
 WizardSmallImageFile=assets\wizard_mark_55.png,assets\wizard_mark_64.png,assets\wizard_mark_83.png,assets\wizard_mark_110.png,assets\wizard_mark_138.png
@@ -74,6 +67,40 @@ CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
 ; 过渡期双 mutex：老 Hibiki 实例还持有旧名互斥量时，升级安装同样要等它退出。
 AppMutex=FushiSingleInstanceMutex,HibikiSingleInstanceMutex
+
+[Languages]
+; 统一成简体中文。改之前这个安装器是**中英混杂**的：向导自身的页标题、说明、按钮
+; 走 Inno 内置的英文 Default.isl（"Select Destination Location" / "Next"），而本文件
+; 里的 [Tasks] 描述、数据根页文案、各种校验提示全是中文，同一屏上两种语言。
+;
+; 为什么把 .isl 入库而不是引用 Inno 安装目录：简体中文属于 Inno 的
+; user-contributed translations，官方安装包**不随附**（本机 6.7.3 的 Languages\ 下
+; 29 个语言文件里没有中文，日语韩语都有）。放进仓库，CI 才不依赖编译机上恰好装过
+; 中文语言包，也不必在构建时联网取。
+; 来源：jrsoftware/issrc 的 Files/Languages/ChineseSimplified.isl
+;       （维护者 Zhenghan Yang，上游 github.com/kira-96/Inno-Setup-Chinese-Simplified-Translation）
+;       SHA-256 E0B0B350E2245F3C5E65586DFE43D574F6E7F06F2261149ABA284954B3FC9A8D
+;
+; 只列一个语言，所以 Inno 不会弹语言选择框（ShowLanguageDialog=auto 在单语言时不显示）。
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
+
+[Messages]
+WizardSelectDir=安装 Fushi
+SelectDirDesc=为程序选择一个安装位置。
+SelectDirLabel3=程序文件将保存在这里。
+SelectDirBrowseLabel=安装位置
+WizardSelectTasks=按你的习惯设置
+SelectTasksDesc=选择需要的快捷方式与文件关联。
+SelectTasksLabel2=这些选项不会更改你的默认播放器。
+WizardReady=准备好开始了
+ReadyLabel1=确认以下设置，然后开始安装。
+ReadyLabel2a=你可以返回上一步修改设置。
+ReadyLabel2b=确认后即可开始安装。
+ButtonBack=上一步(&B)
+ButtonNext=下一步(&N)
+ButtonInstall=开始安装(&I)
+ButtonFinish=完成(&F)
+ButtonBrowse=浏览(&R)
 
 [Tasks]
 ; 桌面快捷方式：默认勾选（保持旧行为——首装桌面即有图标），允许用户取消。
@@ -559,24 +586,80 @@ begin
   Result := Pos(Lowercase(AddBackslash(A)), Lowercase(AddBackslash(B))) = 1;
 end;
 
-// ── MD3 排版 ──
-// [Setup] 段的 WizardStyle / WizardBackColor / Wizard*ImageFile 已经把整体形态做成
-// MD3（扁平、无分隔线、MD3 surface 背景与主色晕、明暗自适应、MD3 标记与竖图）。
-// 这里只补一件指令做不到的事：页眉标题按 MD3 type scale 排——MD3 的 title-large
-// 是常规字重、比正文大一档，Inno 默认给的是小一号的**粗体**。
-//
-// 别再往这里加颜色赋值：自定义样式（含内置 dark / windows11）激活时，Inno 把所有
-// 文字标签画成透明并用样式的前景色重绘，TPanel 的 Color 也由样式接管。实测
-// （6.7.3，本机深色模式）MainPanel.Color := $261F21 与
-// PageNameLabel.Font.Color := $FFBCD0 都是空操作：抓图取色，页眉底仍是 #141218、
-// 标题仍是纯白 #FFFFFF。字体名/字号/字重则照常生效，所以只留排版。
-// 真要改控件强调色（内置样式给的是 Windows 蓝），得自制 VCL 样式文件走
-// WizardStyleFile，那需要 Delphi 的 Bitmap Style Designer，本仓没有这条工具链。
+// MD3 tokens and native control drawing (Inno Setup 6.6+).
+#if (VER >= EncodeVer(6,6,0)) && (VER < EncodeVer(7,0,0))
+  #define Md3Chrome
+#endif
+
+#ifdef Md3Chrome
+{ 标题栏染色。Inno 自己的 includetitlebar 修饰符要 7.0，我们钉的是 6.7.3，
+  所以走 DWM：Win11 (build 22000+) 允许直接指定标题栏底色/字色/边框色。
+  在更老的系统上这几个属性未知，DwmSetWindowAttribute 返回 E_INVALIDARG 就完事，
+  不会崩也不会画错——所以不判系统版本，失败即保持原生标题栏。 }
+function DwmSetWindowAttribute(Wnd: THandle; Attr: Integer; var Value: Integer;
+  Size: Integer): Integer;
+  external 'DwmSetWindowAttribute@dwmapi.dll stdcall';
+
+{ 按当前明暗取 MD3 色。两套都取自 app 同源的 MD3 baseline 色板，与 [Setup] 段的
+  WizardBackColor（#FEF7FF / #141218）同一族。 }
+function Md3Primary(): TColor;
+begin
+  if IsDarkInstallMode then
+    Result := StrToColor('#D0BCFF')
+  else
+    Result := StrToColor('#6750A4');
+end;
+
+function Md3OnSurface(): TColor;
+begin
+  if IsDarkInstallMode then
+    Result := StrToColor('#E6E0E9')
+  else
+    Result := StrToColor('#1D1B20');
+end;
+
+function Md3SurfaceContainer(): TColor;
+begin
+  if IsDarkInstallMode then
+    Result := StrToColor('#2B2930')
+  else
+    Result := StrToColor('#F3EDF7');
+end;
+
+function Md3Surface(): TColor;
+begin
+  { 与 [Setup] 段的 WizardBackColor / WizardBackColorDynamicDark 同值。 }
+  if IsDarkInstallMode then
+    Result := StrToColor('#141218')
+  else
+    Result := StrToColor('#FEF7FF');
+end;
+
+{ 把标题栏也拉进 MD3：底色接上页面 surface，标题文字用 onSurface，边框用同色
+  以免露出一圈系统默认的亮边。
+  TColor 本身就是 COLORREF（0x00BBGGRR），可以直接喂给 DWM，不用换字节序。
+  三个属性号：34=BORDER_COLOR，35=CAPTION_COLOR，36=TEXT_COLOR，均 Win11 起支持；
+  返回值不检查——老系统上失败就是保持原生标题栏，这正是想要的降级。 }
+procedure Md3StyleTitleBar(Wnd: THandle);
+var
+  Caption, Text, Border: Integer;
+begin
+  Caption := Md3Surface;
+  Text := Md3OnSurface;
+  Border := Md3Surface;
+  DwmSetWindowAttribute(Wnd, 35, Caption, SizeOf(Caption));
+  DwmSetWindowAttribute(Wnd, 36, Text, SizeOf(Text));
+  DwmSetWindowAttribute(Wnd, 34, Border, SizeOf(Border));
+end;
+
+#endif
+
 function Md3UiFontName(const Fallback: String): String;
 begin
-  { MD3 用 Roboto，Windows 上没有；按 Win11 → Win10 → 兜底取系统 UI 字体。
-    不判存在就直接写字体名的话，字体缺失时 GDI 会回落到 Tahoma，比默认还难看。 }
-  if FontExists('Segoe UI Variable Display') then
+  { Use a Windows CJK UI font so Chinese and Latin share a consistent baseline. }
+  if FontExists('Microsoft YaHei UI') then
+    Result := 'Microsoft YaHei UI'
+  else if FontExists('Segoe UI Variable Display') then
     Result := 'Segoe UI Variable Display'
   else if FontExists('Segoe UI') then
     Result := 'Segoe UI'
@@ -584,34 +667,27 @@ begin
     Result := Fallback;
 end;
 
-procedure ApplyMd3Chrome();
-begin
-  WizardForm.PageNameLabel.Font.Name :=
-    Md3UiFontName(WizardForm.PageNameLabel.Font.Name);
-  WizardForm.PageNameLabel.Font.Style := [];
-  WizardForm.PageNameLabel.Font.Size := WizardForm.PageNameLabel.Font.Size + 3;
-  { 放大后高度要重算，再把说明文字顶到新高度下面——两个标签都是固定坐标摆的，
-    不重排就会叠在一起。 }
-  WizardForm.PageNameLabel.AdjustHeight;
-
-  WizardForm.PageDescriptionLabel.Font.Name :=
-    Md3UiFontName(WizardForm.PageDescriptionLabel.Font.Name);
-  WizardForm.PageDescriptionLabel.Top :=
-    WizardForm.PageNameLabel.Top + WizardForm.PageNameLabel.Height + ScaleY(2);
-end;
+#ifdef Md3Chrome
+#include "md3_controls.iss"
+#include "md3_layout.iss"
+#endif
 
 procedure InitializeWizard();
 begin
+#ifdef Md3Chrome
   ApplyMd3Chrome();
+#endif
   DataRootPageOffered := False;
   DataRootPage := CreateInputDirPage(wpSelectDir,
-    '选择数据存储位置',
-    '导入的书籍、漫画、视频封面与字幕、词典和数据库存放在哪里？',
+    '为内容留出空间',
+    '选择书籍、漫画、封面、字幕、词典和数据库的存储位置。',
     '这些数据可能远大于程序本身，建议选一个空间充足的位置。' + #13#10 +
-    '之后可以在「设置 → 数据存储位置」里迁移。' + #13#10#13#10 +
-    '点击「下一步」继续。',
+    '之后可以在「设置 → 数据存储位置」里迁移。',
     False, 'Fushi');
-  DataRootPage.Add('');
+  DataRootPage.Add('数据存储位置');
+#ifdef Md3Chrome
+  Md3LayoutDataRootPage();
+#endif
   DataRootPage.Values[0] := ExpandConstant('{userdocs}\Fushi');
 end;
 
@@ -744,12 +820,15 @@ end;
 function InstallDirWritable(const Dir: String): Boolean;
 var
   Probe: String;
+  CreatedByProbe: Boolean;
 begin
   Result := False;
+  CreatedByProbe := False;
   if not DirExists(Dir) then
   begin
     if not ForceDirectories(Dir) then
       Exit;
+    CreatedByProbe := True;
   end;
   Probe := AddBackslash(Dir) + '.fushi-setup-write-test';
   if SaveStringToFile(Probe, 'fushi setup preflight', False) then
@@ -757,6 +836,15 @@ begin
     DeleteFile(Probe);
     Result := True;
   end;
+  { 预检不该留下痕迹。探针文件一直是删的，**目录**却留着了，两个后果都实测复现过：
+      - 用户在选目录页点了「下一步」之后取消安装，机器上凭空多出一个空目录；
+      - 再次运行安装器时该目录已存在，Inno 于是弹「Folder Exists / 文件夹已存在，
+        仍要安装到该文件夹吗？」——对一个**从没装过**的用户，这个确认框没有任何意义。
+    只删我们自己刚建的这一级：目录本来就存在时（升级、或用户手动建过）一律不碰。
+    ForceDirectories 可能建了多级，但上级几乎总是已存在的系统目录，多留一级空目录
+    远好过误删用户的东西，所以这里只收回最后一级。 }
+  if CreatedByProbe then
+    RemoveDir(Dir);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
