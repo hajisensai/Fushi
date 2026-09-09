@@ -225,43 +225,53 @@ void main() {
   // - 哪天构建机改成 --enable-zlib 重新 vendor，本守卫立刻变红，强制回来重审
   //   `MiningStillFormat.png` 的注释与降级链的假设，而不是让两边继续无声漂开。
   group('BUG-2366：png 编码能力与 Dart 侧假设一致', () {
-    late String configuration;
-    late String codec;
+    // Dart 侧钉的是「**移动端（Android/iOS）**：png 编码器根本不存在」，所以六个切片
+    // 都得验：只验 arm64-v8a 的话，构建机哪天只重编了 iOS（或只重编 v7a）并带上
+    // --enable-zlib，本守卫仍绿，而 Dart 假设已经悄悄失真——正是本组存在的理由。
+    late Archive aar;
 
     setUpAll(() {
-      final File aarFile = File(
-        '${root.path}/third_party/ffmpeg_kit_flutter/android/libs/'
-        'ffmpeg-kit.aar',
-      );
-      final Archive aar = ZipDecoder().decodeBytes(aarFile.readAsBytesSync());
-      configuration = _embeddedConfiguration(
-        aar.findFile('jni/arm64-v8a/libavutil.so')!.content as List<int>,
-        'arm64-v8a libavutil.so',
-      );
-      codec = _asSearchableText(
-        aar.findFile('jni/arm64-v8a/libavcodec.so')!.content as List<int>,
+      aar = ZipDecoder().decodeBytes(
+        File('${root.path}/third_party/ffmpeg_kit_flutter/android/libs/'
+                'ffmpeg-kit.aar')
+            .readAsBytesSync(),
       );
     });
 
-    test('配方仍显式关闭 zlib（= png 编码器不可能编入）', () {
+    /// 与本文件其它组同一套失败提示：条目缺失时说清是哪个 ABI/库，而不是抛
+    /// `Null check operator used on a null value`。
+    List<int> androidSo(String abi, String lib) {
+      final ArchiveFile? entry = aar.findFile('jni/$abi/$lib');
+      if (entry == null) {
+        fail('AAR 里没有 jni/$abi/$lib。ABI 集合变了？');
+      }
+      return entry.content as List<int>;
+    }
+
+    /// 一个切片的完整判据：configure 声明关掉 zlib + 二进制里真的一处都没链。
+    void expectNoPngEncoder({
+      required String label,
+      required List<int> utilBytes,
+      required List<int> codecBytes,
+    }) {
+      final String configuration = _embeddedConfiguration(utilBytes, label);
       expect(
         configuration.contains('--disable-zlib'),
         isTrue,
-        reason: '配方对 zlib 的态度变了。png 编解码器硬依赖 zlib，所以移动端可能已经'
-            '**有**了 png 编码器 —— 回去重审 MiningStillFormat.png 的注释与'
+        reason: '$label 的配方对 zlib 的态度变了。png 编解码器硬依赖 zlib，所以移动端'
+            '可能已经**有**了 png 编码器 —— 回去重审 MiningStillFormat.png 的注释与'
             'extractStillWithFallback 的降级假设，别让它们继续说着旧事实',
       );
       expect(
         configuration.contains('--enable-zlib'),
         isFalse,
-        reason: '同一份 configure 串里同时扫到 enable/disable zlib，判据失真',
+        reason: '$label 的同一份 configure 串里同时扫到 enable/disable zlib，判据失真',
       );
-    });
 
-    test('libavcodec 确实一处都没链 zlib（configure 声明 ≠ 真实产物）', () {
       // configure 写了什么是一回事，二进制里有没有是另一回事——上面 libx264 那组
       // 断言就是这个道理的正面版本。png 编码器（libavcodec/pngenc.c）必须调用
       // zlib 的 deflate 系列；这些符号一条都不出现，才算真的没编进来。
+      final String codec = _asSearchableText(codecBytes);
       for (final String symbol in <String>[
         'deflateInit2_',
         'deflateEnd',
@@ -270,14 +280,48 @@ void main() {
         expect(
           codec.contains(symbol),
           isFalse,
-          reason: 'libavcodec.so 里出现了 zlib 符号 $symbol —— 说明 zlib 其实链上了，'
-              'png 编码器可能已可用，Dart 侧假设需要重审',
+          reason: '$label 的 libavcodec 里出现了 zlib 符号 $symbol —— 说明 zlib 其实'
+              '链上了，png 编码器可能已可用，Dart 侧假设需要重审',
         );
       }
-      // 反证：判据本身没有失真。同一份字节里必须扫得到确定存在的 zlib **无关**符号，
-      // 否则「什么都扫不到」只能说明读错了文件或解码方式不对。
+      // 反证：判据本身没有失真。同一份字节里必须扫得到确定存在的符号，否则
+      // 「什么都扫不到」只能说明读错了文件或解码方式不对，上面的 isFalse 是假绿。
       expect(codec.contains('libx264'), isTrue,
-          reason: '连 libx264 都扫不到，说明读取/解码失真，上面的 isFalse 是假绿');
+          reason: '$label 连 libx264 都扫不到，说明读取/解码失真，isFalse 是假绿');
+    }
+
+    for (final String abi in <String>['arm64-v8a', 'armeabi-v7a']) {
+      test('Android $abi：无 zlib ⇒ 无 png 编码器', () {
+        expectNoPngEncoder(
+          label: 'Android $abi',
+          utilBytes: androidSo(abi, 'libavutil.so'),
+          codecBytes: androidSo(abi, 'libavcodec.so'),
+        );
+      });
+    }
+
+    const Map<String, String> iosSlices = <String, String>{
+      'iOS device(arm64/arm64e)': 'ios-arm64_arm64e',
+      'iOS simulator(arm64/x86_64)': 'ios-arm64_x86_64-simulator',
+    };
+    iosSlices.forEach((String label, String dir) {
+      test('$label：无 zlib ⇒ 无 png 编码器', () {
+        final String base =
+            '${root.path}/third_party/ffmpeg_kit_flutter/ios/Frameworks';
+        final File util = File(
+          '$base/libavutil.xcframework/$dir/libavutil.framework/libavutil',
+        );
+        final File codec = File(
+          '$base/libavcodec.xcframework/$dir/libavcodec.framework/libavcodec',
+        );
+        expect(util.existsSync(), isTrue, reason: '切片缺失：${util.path}');
+        expect(codec.existsSync(), isTrue, reason: '切片缺失：${codec.path}');
+        expectNoPngEncoder(
+          label: label,
+          utilBytes: util.readAsBytesSync(),
+          codecBytes: codec.readAsBytesSync(),
+        );
+      });
     });
   });
 }

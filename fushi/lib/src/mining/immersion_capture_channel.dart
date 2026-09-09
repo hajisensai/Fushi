@@ -347,13 +347,18 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     if (stillTarget != null) {
       final StillFrameExtraction? still = await extractStillWithFallback(
         format: stillFormat,
-        attempt: (MiningStillFormat attempt, {required bool diagnosticOnly}) =>
+        attempt: (
+          MiningStillFormat attempt, {
+          required bool diagnosticOnly,
+          required FfmpegFailureReporter? onFailure,
+        }) =>
             frames(
           inputPath: clip.path,
           outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
           atSeconds: stillTarget.offsetMs / 1000.0,
           decodeFromStart: true,
           diagnosticOnly: diagnosticOnly,
+          onFailure: onFailure,
         ),
       );
       framePath = still?.path;

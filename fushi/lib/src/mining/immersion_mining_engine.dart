@@ -145,6 +145,9 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
 }) async {
   final List<MiningAnimatedFormat> attempts = format.encodeAttempts;
   for (final MiningAnimatedFormat attempt in attempts) {
+    // 还有降级尝试在后面 → 这次失败是预期内的能力探测，只记诊断日志（否则捆绑
+    // ffmpeg 缺编码器时，每制一张卡都往用户可见错误日志里塞一条「错误」）。
+    final bool diagnostic = attempt != attempts.last;
     final String? out = await extractor(
       inputPath: inputPath,
       startMs: startMs,
@@ -153,10 +156,12 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
       fps: attempt.capFps(compression.gifFps),
       width: attempt.capWidth(compression.gifWidth),
       format: attempt,
-      // 还有降级尝试在后面 → 这次失败是预期内的能力探测，只记诊断日志（否则捆绑
-      // ffmpeg 缺编码器时，每制一张卡都往用户可见错误日志里塞一条「错误」）。
-      diagnosticOnly: attempt != attempts.last,
-      onFailure: onFailure,
+      diagnosticOnly: diagnostic,
+      // BUG-2366：与 [extractStillWithFallback] 同一条规矩——「预期内」是**不向用户
+      // 报告任何东西**。此处过去只压日志、照传 reporter，于是移动端（默认 AVIF，
+      // 而自编 ffmpeg-kit 无 libsvtav1）每次都把 `Unknown encoder 'libsvtav1'` 送进
+      // `firstCoverFailure`，再变成降级 toast 的理由或中止根因。
+      onFailure: diagnostic ? null : onFailure,
       tlsPinSha256: tlsPinSha256,
     );
     if (out != null) return (path: out, format: attempt);
@@ -174,6 +179,7 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
 typedef StillAttemptRunner = Future<String?> Function(
   MiningStillFormat attempt, {
   required bool diagnosticOnly,
+  required FfmpegFailureReporter? onFailure,
 });
 
 /// [MiningStillFormat.encodeAttempts] 的**唯一**执行点，与
@@ -200,13 +206,23 @@ typedef StillAttemptRunner = Future<String?> Function(
 Future<StillFrameExtraction?> extractStillWithFallback({
   required MiningStillFormat format,
   required StillAttemptRunner attempt,
+  FfmpegFailureReporter? onFailure,
 }) async {
   final List<MiningStillFormat> attempts = format.encodeAttempts;
   for (final MiningStillFormat candidate in attempts) {
+    // 还有降级尝试在后面 → 这次失败是预期内的能力探测。
+    final bool diagnostic = candidate != attempts.last;
     final String? out = await attempt(
       candidate,
-      // 还有降级尝试在后面 → 这次失败是预期内的能力探测，只记诊断日志。
-      diagnosticOnly: candidate != attempts.last,
+      diagnosticOnly: diagnostic,
+      // 「预期内」意味着**不向用户报告任何东西**，不只是不写错误日志。
+      // `_reportFfmpegFailure`（desktop_audio_clipper.dart）是先无条件
+      // `onFailure?.call(summary)`、再才按 diagnosticOnly 决定要不要落错误日志的：
+      // 只压住日志、放任 onFailure，摘要照样经 `firstCoverFailure` 变成
+      // 「封面已降级」toast 的理由（`lookup_mining.part.dart` 的
+      // `card_cover_degraded_to_static`）与 [_withRootCause] 的中止根因——
+      // 用户依旧会看到一条 `Unknown encoder 'png'`。所以 reporter 在这里一并掐掉。
+      onFailure: diagnostic ? null : onFailure,
     );
     if (out != null) return (path: out, format: candidate);
   }
@@ -397,12 +413,18 @@ class ImmersionMiningEngine {
       if (src == null) return null;
       final StillFrameExtraction? produced = await extractStillWithFallback(
         format: req.stillFormat,
-        attempt: (MiningStillFormat attempt, {required bool diagnosticOnly}) =>
+        onFailure: reportCover,
+        attempt: (
+          MiningStillFormat attempt, {
+          required bool diagnosticOnly,
+          required FfmpegFailureReporter? onFailure,
+        }) =>
             _frame(
           inputPath: src,
           outputPath: '$tempDir/immersion_frame.${attempt.fileExtension}',
           atSeconds: req.clipStartMs / 1000.0,
-          onFailure: reportCover,
+          // 由收口原语决定这次尝试要不要报告（能力探测那次是 null）。
+          onFailure: onFailure,
           tlsPinSha256: req.mediaSourceTlsPinSha256,
           diagnosticOnly: diagnosticOnly,
         ),

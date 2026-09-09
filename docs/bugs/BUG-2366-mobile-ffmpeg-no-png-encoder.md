@@ -67,6 +67,16 @@ Android 上 YouTube / bilibili 两条扩展制卡分支是 `requireAudio: true`
   - 修正 `MiningStillFormat` 的文档注释为实测事实，并写明「想让移动端真支持 png，唯一办法
     是构建机重编 ffmpeg-kit 时加 `--enable-zlib` 并重新 vendor」。
   - 提交 `c8c85ce0ff`。
+  - **代码审查补修（第二次提交）**：首版只压住了错误日志，没堵住用户可见路径。
+    `_reportFfmpegFailure`（`desktop_audio_clipper.dart:422`）是**先无条件**
+    `onFailure?.call(summary)`、再才按 `diagnosticOnly` 决定要不要落错误日志的；
+    于是能力探测那次的摘要照样经 `firstCoverFailure` 变成
+    `card_cover_degraded_to_static` 的 toast 理由与 `_withRootCause` 的中止根因——
+    用户仍会看到 `Unknown encoder 'png'`。修法是把「预期内 = 不向用户报告**任何**
+    东西」这条规矩也收进原语：`extractStillWithFallback` 自己持有 `onFailure`，
+    非末次尝试传 `null`。**动图链是同一个洞且更常命中**（默认 AVIF，而移动端无
+    libsvtav1，每次都往 `firstCoverFailure` 塞 `Unknown encoder 'libsvtav1'`），
+    一并在 `extractAnimatedClipWithFallback` 里修掉。
 - **[x] ② 已加自动化测试** —
   - `fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart` 新增组「BUG-2366：png 编码
     能力与 Dart 侧假设一致」：①配方仍含 `--disable-zlib` 且不含 `--enable-zlib`；
@@ -77,6 +87,14 @@ Android 上 YouTube / bilibili 两条扩展制卡分支是 `requireAudio: true`
     `diagnosticOnly`，两条静图链各断言 `[true, false]`；另加**源码守卫**「lib/ 下
     `MiningStillFormat.encodeAttempts` 只许有一个执行点且必须在
     `immersion_mining_engine.dart`」——挡住第三条链路明天再抄一遍循环（这正是本 bug 的根因形状）。
+  - **审查后加强**：①行为断言补 `hadReporter == [false, true]`（只断言 `diagnosticOnly`
+    挡不住上面那条 onFailure 泄漏）；②源码守卫判据从「按类型名筛」改成「**所有**
+    `encodeAttempts` 消费点必须落在钉死的文件白名单里」——新链路完全可以写成
+    `final attempts = format.encodeAttempts;`（无类型名、无 `stillFormat` 字样），
+    按类型名筛正好会放它过去，而那就是本守卫要拦的形状；③配方守卫从只验
+    `arm64-v8a` 扩到**两个 Android ABI + 四个 iOS 切片**（Dart 侧钉的是「移动端
+    Android/iOS 都没有 png」，只验一个切片的话，构建机单独重编 iOS 并带上
+    `--enable-zlib` 时守卫仍绿）；④条目查找改走带失败提示的 helper，不再裸 `!`。
 - **备注**：
   - 未做真机验证（用户已定：真机验证取消）。移动端 png 编码器缺失是**静态可判定**的
     （符号表 + configure 串），不依赖真机；`diagnosticOnly` 语义由单测钉住。
