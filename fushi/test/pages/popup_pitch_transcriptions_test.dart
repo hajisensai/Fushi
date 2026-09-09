@@ -99,28 +99,45 @@ void main() {
     expect(dedup, greaterThanOrEqualTo(0));
     // BUG-2122 起合并跑在去重之前，去重分支遍历的是合并结果 `group`（此前是原始
     // `pitch`）。判据钉的是「IPA-only 组在去重分支里被保住」，与变量名无关。
-    final int hasTranscriptions = js.indexOf('.transcriptions?.length', dedup);
+    //
+    // BUG-2397 起判据再升一级：保活条件不能是「原始 transcriptions 非空」，必须是
+    // 「**去重后**还剩 transcriptions」。前者会把一段已经显示过的 IPA 再画一遍
+    // （两本 IPA 词典给同一串音标 = 用户看到两行一样的），后者既保住真正独有的
+    // IPA-only 组，又不放过重复。
+    final int keptByUniqueIpa =
+        js.indexOf('uniqueTranscriptions.length > 0', dedup);
     expect(
-      hasTranscriptions,
+      keptByUniqueIpa,
       greaterThan(dedup),
-      reason:
-          'the dedup branch must keep IPA-only groups (transcriptions guard)',
+      reason: 'the dedup branch must keep groups that still have UNIQUE '
+          'transcriptions after dedup (IPA-only dicts), not groups whose raw '
+          'transcriptions are merely non-empty',
     );
     // 判据从「逐字段列出 transcriptions」升级成「整组透传」：BUG-2122 之后去重分支
-    // 拿到的是合并结果，用 `Object.assign({}, group, {pitchPositions: unique})`
-    // 只替换位置、其余字段（transcriptions / patterns / dictionaries）**按构造**全部
-    // 保留。这比列举字段更强——将来再加字段也不会被悄悄漏掉。
-    final int forwarded = js.indexOf(
-      'Object.assign({}, group, { pitchPositions: unique })',
-      dedup,
-    );
+    // 拿到的是合并结果，用 `Object.assign({}, group, {...})` 只替换**可见条目**、
+    // 其余字段（dictionaries 等）按构造全部保留。这比列举字段更强——将来再加字段
+    // 也不会被悄悄漏掉。BUG-2397 起被收窄的可见条目是三类而非一类。
+    final int forwarded = js.indexOf('Object.assign({}, group, {', dedup);
     expect(
       forwarded,
       greaterThan(dedup),
       reason: 'the dedup branch must pass the merged group through intact '
-          '(only pitchPositions may be narrowed), or transcriptions / patterns '
-          '/ source labels get dropped',
+          '(only the visible entries may be narrowed), or transcriptions / '
+          'patterns / source labels get dropped',
     );
+    for (final String narrowed in <String>[
+      'pitchPositions: unique,',
+      'patterns: uniquePatterns,',
+      'transcriptions: uniqueTranscriptions,',
+    ]) {
+      expect(
+        js.indexOf(narrowed, forwarded),
+        greaterThan(forwarded),
+        reason: 'BUG-2397: the dedup branch must forward the deduped $narrowed '
+            '— a class of visible entry that is not narrowed here is a class '
+            'that never gets deduplicated at all',
+      );
+    }
   });
 }
 

@@ -3297,6 +3297,11 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
       // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
       '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
+      // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
+      // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
+      // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
+      // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
+      '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
     };
   }
 
