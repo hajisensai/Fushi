@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 void main() {
@@ -317,6 +318,307 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  group('目录勾选列表的真实接线', () {
+    RecommendedDictionary rec(String name, DictionaryCategory cat) =>
+        RecommendedDictionary(
+          name: name,
+          url: 'https://example.invalid/$name.zip',
+          description: 'desc',
+          matchPrefix: name,
+          category: cat,
+          sizeEstimate: '~1 MB',
+          langCode: 'en',
+        );
+
+    /// 三条：两条 jaEn、一条 kanji；下标即 catalog 顺序。
+    final List<RecommendedDictionary> catalog = <RecommendedDictionary>[
+      rec('Alpha', DictionaryCategory.jaEn),
+      rec('Beta', DictionaryCategory.jaEn),
+      rec('Gamma', DictionaryCategory.kanji),
+    ];
+
+    Future<Set<int>> pumpList(
+      WidgetTester tester, {
+      required Set<int> checked,
+      Set<int> installed = const <int>{},
+    }) async {
+      Set<int> current = Set<int>.of(checked);
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    SingleChildScrollView(
+                  child: DictionaryCatalogSelectionList(
+                    workingCatalog: catalog,
+                    byCategory: <DictionaryCategory,
+                        List<RecommendedDictionary>>{
+                      DictionaryCategory.jaEn: <RecommendedDictionary>[
+                        catalog[0],
+                        catalog[1],
+                      ],
+                      DictionaryCategory.kanji: <RecommendedDictionary>[
+                        catalog[2],
+                      ],
+                    },
+                    recIndex: <RecommendedDictionary, int>{
+                      catalog[0]: 0,
+                      catalog[1]: 1,
+                      catalog[2]: 2,
+                    },
+                    installedIndices: installed,
+                    checked: current,
+                    expandedCategories: <DictionaryCategory>{
+                      DictionaryCategory.jaEn,
+                      DictionaryCategory.kanji,
+                    },
+                    onCheckedChanged: (Set<int> next) =>
+                        setState(() => current = next),
+                    onExpansionChanged: (_, __) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return current;
+    }
+
+    testWidgets('点「全选」勾上全部未安装项，已安装的不进选中集', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      Set<int> current = <int>{};
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    SingleChildScrollView(
+                  child: DictionaryCatalogSelectionList(
+                    workingCatalog: catalog,
+                    byCategory: <DictionaryCategory,
+                        List<RecommendedDictionary>>{
+                      DictionaryCategory.jaEn: <RecommendedDictionary>[
+                        catalog[0],
+                        catalog[1],
+                      ],
+                      DictionaryCategory.kanji: <RecommendedDictionary>[
+                        catalog[2],
+                      ],
+                    },
+                    recIndex: <RecommendedDictionary, int>{
+                      catalog[0]: 0,
+                      catalog[1]: 1,
+                      catalog[2]: 2,
+                    },
+                    installedIndices: const <int>{1},
+                    checked: current,
+                    expandedCategories: <DictionaryCategory>{
+                      DictionaryCategory.jaEn,
+                      DictionaryCategory.kanji,
+                    },
+                    onCheckedChanged: (Set<int> next) =>
+                        setState(() => current = next),
+                    onExpansionChanged: (_, __) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dict-download-select-all')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        current,
+        <int>{0, 2},
+        reason: '已安装的 1 号再下一遍只是白跑一趟下载 + 导入',
+      );
+      expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+    });
+
+    testWidgets('分类三态框勾上 → 只勾本类；再点 → 只清本类', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      Set<int> current = <int>{2};
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    SingleChildScrollView(
+                  child: DictionaryCatalogSelectionList(
+                    workingCatalog: catalog,
+                    byCategory: <DictionaryCategory,
+                        List<RecommendedDictionary>>{
+                      DictionaryCategory.jaEn: <RecommendedDictionary>[
+                        catalog[0],
+                        catalog[1],
+                      ],
+                      DictionaryCategory.kanji: <RecommendedDictionary>[
+                        catalog[2],
+                      ],
+                    },
+                    recIndex: <RecommendedDictionary, int>{
+                      catalog[0]: 0,
+                      catalog[1]: 1,
+                      catalog[2]: 2,
+                    },
+                    installedIndices: const <int>{},
+                    checked: current,
+                    expandedCategories: <DictionaryCategory>{
+                      DictionaryCategory.jaEn,
+                      DictionaryCategory.kanji,
+                    },
+                    onCheckedChanged: (Set<int> next) =>
+                        setState(() => current = next),
+                    onExpansionChanged: (_, __) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('dict-download-category-check-jaEn'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(current, <int>{2, 0, 1},
+          reason: '本类全选不该动别的分类里已经勾上的 2 号');
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('dict-download-category-check-jaEn'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(current, <int>{2}, reason: '再点一次只清本类');
+    });
+
+    testWidgets('全部已安装时全选/反选禁用，分类三态框也点不动', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await pumpList(
+        tester,
+        checked: const <int>{},
+        installed: const <int>{0, 1, 2},
+      );
+
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const ValueKey<String>('dict-download-select-all')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(
+                const ValueKey<String>('dict-download-invert-selection'),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<Checkbox>(
+              find.byKey(
+                const ValueKey<String>('dict-download-category-check-jaEn'),
+              ),
+            )
+            .onChanged,
+        isNull,
+        reason: '本类全已安装时说「已全选」是谎话，框必须点不动',
+      );
+    });
+
+    testWidgets('反选只在可勾选域内翻转', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      Set<int> current = <int>{0};
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: StatefulBuilder(
+                builder: (BuildContext context, StateSetter setState) =>
+                    SingleChildScrollView(
+                  child: DictionaryCatalogSelectionList(
+                    workingCatalog: catalog,
+                    byCategory: <DictionaryCategory,
+                        List<RecommendedDictionary>>{
+                      DictionaryCategory.jaEn: <RecommendedDictionary>[
+                        catalog[0],
+                        catalog[1],
+                      ],
+                      DictionaryCategory.kanji: <RecommendedDictionary>[
+                        catalog[2],
+                      ],
+                    },
+                    recIndex: <RecommendedDictionary, int>{
+                      catalog[0]: 0,
+                      catalog[1]: 1,
+                      catalog[2]: 2,
+                    },
+                    installedIndices: const <int>{2},
+                    checked: current,
+                    expandedCategories: <DictionaryCategory>{
+                      DictionaryCategory.jaEn,
+                      DictionaryCategory.kanji,
+                    },
+                    onCheckedChanged: (Set<int> next) =>
+                        setState(() => current = next),
+                    onExpansionChanged: (_, __) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dict-download-invert-selection')),
+      );
+      await tester.pumpAndSettle();
+      expect(current, <int>{1},
+          reason: '已安装的 2 号既不在原选中集也不该被反选带出来');
     });
   });
 }

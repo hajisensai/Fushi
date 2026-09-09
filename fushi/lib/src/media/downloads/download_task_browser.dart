@@ -96,6 +96,10 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   bool _collapseAll = false;
   final Map<String, bool> _expandedGroups = <String, bool>{};
   bool _selectionMode = false;
+  /// 整批执行中：期间禁掉全部批量按钮。没有这道锁，连点两下就是整批跑两遍
+  /// （同一 hash 被 addTorrent 两次 / 对已删条目再删一遍），也把 runDownloadTaskBatch
+  /// 的串行保证在整批层面破掉了。
+  bool _batchRunning = false;
   /// 选中的任务 id。可见集合会随筛选 / 刷新变化，所以每次真正执行前都拿当前
   /// 可见列表与它取交集（见 [_selectedVisible]）——不这么做，批量动作会作用在
   /// 用户已经看不见、甚至已经不存在的条目上。
@@ -108,13 +112,18 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     super.dispose();
   }
 
-  /// 选中集与**当前可见列表**的交集，按可见顺序排列。
+  /// 选中集与**屏幕上真正渲染出来的行**的交集，按渲染顺序排列。
   ///
-  /// 选中集是纯 id，可见集合却会随筛选、搜索、分组折叠与后台刷新变化。批量动作
-  /// 一律作用于这个交集：既避免动到用户已经筛掉的条目，也天然剔掉已经消失的
-  /// 幽灵 id（任务跑完被清出列表、直链/mokuro 的自增 id 随进程重启作废）。
-  List<DownloadTaskEntry> _selectedVisible(List<DownloadTaskEntry> visible) {
-    return visible
+  /// 传进来的必须是 rows 里的 entry（见 build 末尾的 `_visibleEntries`），**不是**
+  /// 筛选后的全集 `visible`：分组折叠时被收起来的成员仍在 `visible` 里，拿它当域
+  /// 会让「全选 → 删除」把用户根本没看见的条目连同磁盘文件一起删掉——确认框写
+  /// 「删除 15 个」而屏幕上只有 3 张卡。
+  ///
+  /// 选中集是纯 id，渲染集合会随筛选、搜索、分组折叠与后台刷新变化，所以每次都
+  /// 现取交集：既避免动到用户看不见的条目，也天然剔掉已经消失的幽灵 id（任务跑完
+  /// 被清出列表、直链/mokuro 的自增 id 随进程重启作废）。
+  List<DownloadTaskEntry> _selectedVisible(List<DownloadTaskEntry> rendered) {
+    return rendered
         .where((DownloadTaskEntry task) => _selectedIds.contains(task.id))
         .toList();
   }
@@ -132,31 +141,38 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     });
   }
 
-  /// 批量执行一个动作。
+  /// 批量执行一个动作（目标集已定死）。
   ///
-  /// 目标集在 await 之前就用 [List.of] 定死：执行期间列表会因后台刷新重建，跨
-  /// await 两侧各读一次会让「报告里的条数」和「真正动过的条目」对不上。
-  Future<void> _runBatch(
-    List<DownloadTaskEntry> visible,
+  /// [targets] 由调用方在**任何 await 之前**取好并定死：执行期间列表会因后台刷新
+  /// 重建，跨 await 两侧各求一次交集会让「确认框里的 N」和「真正动过的条目」对不上。
+  Future<void> _runBatchOn(
+    List<DownloadTaskEntry> targets,
     DownloadBatchAction action, {
     bool deleteFiles = false,
   }) async {
-    final List<DownloadTaskEntry> targets = List<DownloadTaskEntry>.of(
-      _selectedVisible(visible),
-    );
-    if (targets.isEmpty) return;
-    final DownloadBatchOutcome outcome = await runDownloadTaskBatch(
-      tasks: targets,
-      action: action,
-      deleteFiles: deleteFiles,
-    );
+    if (targets.isEmpty || _batchRunning) return;
+    setState(() => _batchRunning = true);
+    DownloadBatchOutcome outcome = const DownloadBatchOutcome();
+    try {
+      outcome = await runDownloadTaskBatch(
+        tasks: targets,
+        action: action,
+        deleteFiles: deleteFiles,
+        // 失败条目只在计数里体现是不够的：没有 stack trace 就没法查根因。
+        onError: (Object error, StackTrace stackTrace) => debugPrint(
+          '[fushi-downloads] batch ${action.name} failed: $error\n$stackTrace',
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _batchRunning = false);
+    }
     if (!mounted) return;
     setState(() {
       // 已处理的条目退出选中：留着会让下一次批量重复作用在它们身上。
       for (final DownloadTaskEntry task in targets) {
         _selectedIds.remove(task.id);
       }
-      if (_selectedIds.isEmpty) _selectionMode = false;
+      _pruneSelection();
     });
     final String message = describeDownloadBatchOutcome(outcome);
     if (message.isEmpty) return;
@@ -165,14 +181,33 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     );
   }
 
+  /// 剔掉选中集里已经不存在的 id，并在真的空了之后退出选择态。
+  ///
+  /// 判据用**任务全集**而不是当前渲染集：被搜索或折叠暂时藏起来的选中项还活着，
+  /// 拿渲染集判会让批量栏卡在「已选 0」——全部按钮禁用、看着像卡死，清空搜索后
+  /// 那几条又带着选中态冒出来。
+  void _pruneSelection() {
+    final Set<String> alive = <String>{
+      for (final DownloadTaskEntry task in widget.tasks) task.id,
+    };
+    _selectedIds.removeWhere((String id) => !alive.contains(id));
+    if (_selectedIds.isEmpty) _selectionMode = false;
+  }
+
   /// 批量删除：整批只问一次「要不要连文件一起删」。
-  Future<void> _confirmBatchDelete(List<DownloadTaskEntry> visible) async {
-    final List<DownloadTaskEntry> targets = _selectedVisible(visible);
+  ///
+  /// 目标集在弹确认框**之前**就定死并一路带到执行：确认框可能停留好几秒，期间
+  /// 后台轮询会重建列表，跨 await 重算一次交集会让确认框里的 N 与实际删除量对不上，
+  /// 甚至对已经消失的条目调 delete。
+  Future<void> _confirmBatchDelete(List<DownloadTaskEntry> rendered) async {
+    final List<DownloadTaskEntry> targets = List<DownloadTaskEntry>.of(
+      _selectedVisible(rendered),
+    );
     if (targets.isEmpty) return;
     // 「同时删除文件」只在选中集里真有条目兑现得了时才摆出来——mokuro / 直链
-    // 只能把条目移出列表，勾了也删不掉盘上的东西。
+    // 只能把条目移出列表，勾了也删不掉盘上的东西（与单条删除确认框同一纪律）。
     final bool offerDeleteFiles = targets.any(
-      (DownloadTaskEntry task) => task.actions.delete != null,
+      (DownloadTaskEntry task) => task.actions.deletesFiles,
     );
     final bool? deleteFiles = await showDownloadTaskDeleteConfirm(
       context,
@@ -182,8 +217,8 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       offerDeleteFiles: offerDeleteFiles,
     );
     if (deleteFiles == null || !mounted) return;
-    await _runBatch(
-      visible,
+    await _runBatchOn(
+      targets,
       DownloadBatchAction.delete,
       deleteFiles: deleteFiles,
     );
@@ -206,7 +241,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
             onChanged: (_) => _toggleTask(task.id),
           ),
           Expanded(
-            child: IgnorePointer(child: task.builder(context)),
+            // IgnorePointer 只挡指针。卡片里的重试/删除是真正可聚焦的按钮，光挡
+            // 指针的话手柄/键盘用户方向键仍会走进去，按 Enter 直接删任务——
+            // 「想勾第三条变成把第三条删了」在键盘路径上照样成立。
+            child: ExcludeFocus(
+              child: IgnorePointer(child: task.builder(context)),
+            ),
           ),
         ],
       ),
@@ -214,8 +254,11 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   }
 
   /// 底部批量操作栏。动作按钮按「选中集里有几条真支持它」决定可用态。
-  Widget _buildBatchBar(List<DownloadTaskEntry> visible) {
-    final List<DownloadTaskEntry> selected = _selectedVisible(visible);
+  ///
+  /// [rendered] 必须是屏幕上真正渲染出来的行（rows 里的 entry），不是筛选后的
+  /// 全集——分组折叠时被收起来的成员不该被「全选」卷进来。
+  Widget _buildBatchBar(List<DownloadTaskEntry> rendered) {
+    final List<DownloadTaskEntry> selected = _selectedVisible(rendered);
     final ThemeData theme = Theme.of(context);
     Widget action({
       required String id,
@@ -226,6 +269,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       Color? enabledColor,
     }) {
       final bool enabled =
+          !_batchRunning &&
           countDownloadTasksSupporting(selected, batchAction) > 0;
       return FushiIconButton(
         key: ValueKey<String>('download-batch-$id'),
@@ -233,7 +277,13 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         tooltip: tooltip,
         icon: icon,
         enabledColor: enabledColor,
-        onTap: onTap ?? () => unawaited(_runBatch(visible, batchAction)),
+        onTap: onTap ??
+            () => unawaited(
+                  _runBatchOn(
+                    List<DownloadTaskEntry>.of(selected),
+                    batchAction,
+                  ),
+                ),
       );
     }
 
@@ -241,12 +291,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       selectedCount: selected.length,
       onSelectAll: () => setState(
         () => _selectedIds.addAll(
-          visible.map((DownloadTaskEntry task) => task.id),
+          rendered.map((DownloadTaskEntry task) => task.id),
         ),
       ),
       onInvertSelection: () => setState(() {
         final Set<String> next = <String>{
-          for (final DownloadTaskEntry task in visible)
+          for (final DownloadTaskEntry task in rendered)
             if (!_selectedIds.contains(task.id)) task.id,
         };
         _selectedIds
@@ -290,7 +340,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           tooltip: t.download_task_delete,
           batchAction: DownloadBatchAction.delete,
           enabledColor: theme.colorScheme.error,
-          onTap: () => unawaited(_confirmBatchDelete(visible)),
+          onTap: () => unawaited(_confirmBatchDelete(rendered)),
         ),
       ],
     );
@@ -499,26 +549,37 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                       _expandedGroups.clear();
                     }),
                   ),
+                // 这两个「对可见集合全体执行」的入口与多选批量走同一个串行执行器：
+                // 逐条 fire-and-forget 会把 40 条重试变成 40 路并发打向同一后端，
+                // 且任何一条抛错都是没人接的 async 异常。
                 if (visible.any(
                   (DownloadTaskEntry task) => task.actions.retry != null,
                 ))
                   TextButton(
-                    onPressed: () {
-                      for (final DownloadTaskEntry task in visible) {
-                        unawaited(task.actions.retry?.call() ?? Future<void>.value());
-                      }
-                    },
+                    key: const ValueKey<String>('download-task-retry-visible'),
+                    onPressed: _batchRunning
+                        ? null
+                        : () => unawaited(
+                              _runBatchOn(
+                                List<DownloadTaskEntry>.of(visible),
+                                DownloadBatchAction.retry,
+                              ),
+                            ),
                     child: Text(t.retry),
                   ),
                 if (visible.any(
                   (DownloadTaskEntry task) => task.actions.clear != null,
                 ))
                   TextButton(
-                    onPressed: () {
-                      for (final DownloadTaskEntry task in visible) {
-                        unawaited(task.actions.clear?.call() ?? Future<void>.value());
-                      }
-                    },
+                    key: const ValueKey<String>('download-task-clear-visible'),
+                    onPressed: _batchRunning
+                        ? null
+                        : () => unawaited(
+                              _runBatchOn(
+                                List<DownloadTaskEntry>.of(visible),
+                                DownloadBatchAction.clear,
+                              ),
+                            ),
                     child: Text(t.download_clear_finished),
                   ),
                 Text(
@@ -588,7 +649,8 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                   },
                 ),
         ),
-        if (_selectionMode) _buildBatchBar(visible),
+        if (_selectionMode)
+          _buildBatchBar(rows.whereType<DownloadTaskEntry>().toList()),
       ],
     );
   }

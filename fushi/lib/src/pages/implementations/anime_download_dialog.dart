@@ -2405,6 +2405,44 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// addTorrent 顺序/首尾块优先），成功后计划复位 downloading（重置计时，
   /// torrent-missing 超时从头算）。addTorrent 报失败但种子已在后端列表
   /// （入库失败类重试的常态——重复添加被后端拒绝）也算在下，交回轮询重走完成流程。
+  /// 批量路径专用的暂停/恢复：失败**抛错**而不是弹 SnackBar。
+  ///
+  /// _togglePausePlan 在后端拒绝时只 _snack 一句就 return，对单条是合适的，但批量
+  /// 走它会变成「先排队弹 10 条『操作失败』，最后再弹一条『已处理 10 项』」——
+  /// 既刷屏又把失败计数骗成 0。抛出来交给 runDownloadTaskBatch 聚合。
+  Future<void> _batchPausePlan(
+    AnimeDownloadPlan plan, {
+    required bool pause,
+  }) async {
+    if (!await _ensureBackendReady()) {
+      throw StateError('torrent backend unavailable');
+    }
+    final AppModel appModel = ref.read(appProvider);
+    final TorrentBackend backend = appModel.createTorrentBackend(
+      effectiveTorrentConfig(appModel.qbConnectionConfig),
+    );
+    try {
+      if (backend is! TorrentPauseBackend) {
+        throw StateError('backend does not support pause control');
+      }
+      final bool ok = pause
+          ? await backend.pauseTorrent(plan.id)
+          : await backend.resumeTorrent(plan.id);
+      if (!ok) throw StateError('backend rejected pause/resume');
+    } finally {
+      backend.close();
+    }
+    await _reloadPlans();
+  }
+
+  /// 批量路径专用的重试：后端没准备好时抛错而不是静默 return。
+  Future<void> _batchRetryPlan(AnimeDownloadPlan plan) async {
+    if (!await _ensureBackendReady()) {
+      throw StateError('torrent backend unavailable');
+    }
+    await _retryPlan(plan);
+  }
+
   /// 统一下载列表里一条 legacy 计划支持的批量动作。
   ///
   /// 四项在服务层本来就齐（pauseTorrent/resumeTorrent、_retryPlan 重新 addTorrent、
@@ -2415,6 +2453,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     AnimeDownloadPlan plan,
     DownloadTaskStats? stats,
   ) {
+    final AppModel appModel = ref.read(appProvider);
     final bool imported = plan.status == AnimeDownloadPlan.statusImported;
     final bool failed = plan.status == AnimeDownloadPlan.statusFailed;
     final TorrentDisplayStatus? observed = stats == null
@@ -2423,16 +2462,28 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final bool paused = observed == TorrentDisplayStatus.paused;
     // 后端不支持暂停控制时两个槽位都留 null——摆出来点了没反应比没有更糟。
     final bool pauseCapable = _pauseCapable;
+    // 计划仓库没装配（Profile 切换中 / 初始化未完成）时 _deletePlanResolved 会
+    // 静默 return，批量却会把它记成「已处理」。删不了就别填槽位。
+    final bool canDelete = appModel.animeDownloadPlanStore != null;
+    // 删磁盘数据只能由下载后端执行，判据与单条删除确认框逐字一致。
+    final bool canDeleteFiles = canDelete &&
+        appModel.animeDownloadService != null &&
+        effectiveTorrentConfig(appModel.qbConnectionConfig).isConfigured;
     return DownloadTaskActions(
+      // pause / resume 都排除 failed：卡片上的暂停/恢复只在 downloading 时渲染
+      // （见 _buildPlanRowInner），批量比卡片宽会变成「卡片上没有、批量却能做」。
       pause: pauseCapable && !imported && !failed && !paused
-          ? () => _togglePausePlan(plan, pause: true)
+          ? () => _batchPausePlan(plan, pause: true)
           : null,
-      resume: pauseCapable && !imported && paused
-          ? () => _togglePausePlan(plan, pause: false)
+      resume: pauseCapable && !imported && !failed && paused
+          ? () => _batchPausePlan(plan, pause: false)
           : null,
-      retry: failed ? () => _retryPlan(plan) : null,
-      delete: ({required bool deleteFiles}) =>
-          _deletePlanResolved(plan, deleteFiles: deleteFiles),
+      retry: failed ? () => _batchRetryPlan(plan) : null,
+      delete: canDelete
+          ? ({required bool deleteFiles}) =>
+              _deletePlanResolved(plan, deleteFiles: deleteFiles)
+          : null,
+      deletesFiles: canDeleteFiles,
     );
   }
 

@@ -33,6 +33,7 @@ class DownloadTaskActions {
     this.retry,
     this.clear,
     this.delete,
+    this.deletesFiles = false,
     this.setPriority,
   });
 
@@ -63,6 +64,14 @@ class DownloadTaskActions {
   /// 来源做不到连带删文件时不提供本槽位，只提供 [clear]——把「移出列表」伪装成
   /// 「删除」会让用户以为磁盘已经清干净了。
   final Future<void> Function({required bool deleteFiles})? delete;
+
+  /// [delete] 这一次**真的能删掉磁盘文件**吗。
+  ///
+  /// 与「有没有 delete 槽位」是两回事：torrent 侧删数据只能由下载后端执行，后端
+  /// 没配好时槽位仍在（计划行照样删得掉），但 deleteFiles 参数会被丢弃。UI 据此
+  /// 决定要不要摆出「同时删除已下载文件」勾选框——兑现不了就不显示，否则用户勾了
+  /// 以为盘清干净了，而几十 GB 还在，且再没有第二次机会发现。
+  final bool deletesFiles;
 
   /// 设置任务级调度优先级（1 高 / 0 普通 / -1 低）。
   final Future<void> Function(int priority)? setPriority;

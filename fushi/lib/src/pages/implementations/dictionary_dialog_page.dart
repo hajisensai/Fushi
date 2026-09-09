@@ -102,6 +102,226 @@ bool? dictionaryCategoryCheckState({
   return null;
 }
 
+/// 推荐词典目录的勾选列表：顶部「已选 N · 全选 · 反选」+ 按分类折叠的三态勾选。
+///
+/// 从 `_showDownloadSelectionDialog` 的内联闭包里抽出来，是为了让「全选只作用于
+/// 可勾选域」「分类三态」这些接线能被真的测到——判据的纯函数好测，但按钮接错域
+/// （比如把已安装项也算进全选）编译期看不出来，只有 widget 用例拦得住。
+@visibleForTesting
+class DictionaryCatalogSelectionList extends StatelessWidget {
+  const DictionaryCatalogSelectionList({
+    required this.workingCatalog,
+    required this.byCategory,
+    required this.recIndex,
+    required this.installedIndices,
+    required this.checked,
+    required this.expandedCategories,
+    required this.onCheckedChanged,
+    required this.onExpansionChanged,
+    super.key,
+  });
+
+  final List<RecommendedDictionary> workingCatalog;
+  final Map<DictionaryCategory, List<RecommendedDictionary>> byCategory;
+  final Map<RecommendedDictionary, int> recIndex;
+  final Set<int> installedIndices;
+  final Set<int> checked;
+  final Set<DictionaryCategory> expandedCategories;
+  final ValueChanged<Set<int>> onCheckedChanged;
+  final void Function(DictionaryCategory cat, bool expanded) onExpansionChanged;
+
+  String _categoryLabel(DictionaryCategory cat) => switch (cat) {
+    DictionaryCategory.jaEn => t.dict_category_ja_en,
+    DictionaryCategory.jaJa => t.dict_category_ja_ja,
+    DictionaryCategory.jaOther => t.dict_category_ja_other,
+    DictionaryCategory.grammar => t.dict_category_grammar,
+    DictionaryCategory.kanji => t.dict_category_kanji,
+    DictionaryCategory.frequency => t.dict_category_frequency,
+    DictionaryCategory.names => t.dict_category_names,
+    DictionaryCategory.supplementary => t.dict_category_supplementary,
+    DictionaryCategory.bilingual => t.dict_category_bilingual,
+    DictionaryCategory.monolingual => t.dict_category_monolingual,
+  };
+
+  void _toggleOne(int idx, bool value) {
+    final Set<int> next = Set<int>.of(checked);
+    if (value) {
+      next.add(idx);
+    } else {
+      next.remove(idx);
+    }
+    onCheckedChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final TextTheme textTheme = theme.textTheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 47 条目录 + 分类折叠下，逐条点是唯一的入口太贵：全选 / 反选一律只作用于
+    // **可勾选域**（已装的不参与，见 [selectableDictionaryIndices]）。
+    final Set<int> selectable = selectableDictionaryIndices(
+      catalogLength: workingCatalog.length,
+      installedIndices: installedIndices,
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Text(
+              t.batch_selected_count(n: checked.length),
+              style: textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              key: const ValueKey<String>('dict-download-select-all'),
+              onPressed: selectable.isEmpty
+                  ? null
+                  : () => onCheckedChanged(Set<int>.of(selectable)),
+              child: Text(t.batch_select_all),
+            ),
+            TextButton(
+              key: const ValueKey<String>('dict-download-invert-selection'),
+              onPressed: selectable.isEmpty
+                  ? null
+                  : () => onCheckedChanged(selectable.difference(checked)),
+              child: Text(t.batch_invert_selection),
+            ),
+          ],
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        for (final DictionaryCategory cat in DictionaryCategory.values)
+          if (byCategory.containsKey(cat))
+            _buildCategoryTile(
+              context: context,
+              theme: theme,
+              textTheme: textTheme,
+              tokens: tokens,
+              cat: cat,
+              items: byCategory[cat]!,
+              expanded: expandedCategories.contains(cat),
+            ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryTile({
+    required BuildContext context,
+    required ThemeData theme,
+    required TextTheme textTheme,
+    required FushiDesignTokens tokens,
+    required DictionaryCategory cat,
+    required List<RecommendedDictionary> items,
+    required bool expanded,
+  }) {
+    // 本类的可勾选下标（已装的不算），三态框与「本类全选」同域。
+    final Set<int> categoryIndices = <int>{
+      for (final RecommendedDictionary rec in items)
+        if (recIndex[rec] != null && !installedIndices.contains(recIndex[rec]))
+          recIndex[rec]!,
+    };
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: FushiCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiListItem(
+              minHeight: 52,
+              leading: Checkbox(
+                key: ValueKey<String>(
+                  'dict-download-category-check-${cat.name}',
+                ),
+                tristate: true,
+                value: dictionaryCategoryCheckState(
+                  categoryIndices: categoryIndices,
+                  checked: checked,
+                ),
+                onChanged: categoryIndices.isEmpty
+                    ? null
+                    : (bool? value) {
+                        final Set<int> next = Set<int>.of(checked);
+                        if (value ?? false) {
+                          next.addAll(categoryIndices);
+                        } else {
+                          next.removeAll(categoryIndices);
+                        }
+                        onCheckedChanged(next);
+                      },
+              ),
+              title: Text(
+                _categoryLabel(cat),
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              trailing: Icon(
+                expanded ? Icons.expand_less : Icons.expand_more,
+                color: tokens.surfaces.onVariant,
+              ),
+              onTap: () => onExpansionChanged(cat, !expanded),
+            ),
+            if (expanded)
+              for (final RecommendedDictionary rec in items)
+                _buildDictCheckbox(
+                  theme: theme,
+                  textTheme: textTheme,
+                  tokens: tokens,
+                  rec: rec,
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDictCheckbox({
+    required ThemeData theme,
+    required TextTheme textTheme,
+    required FushiDesignTokens tokens,
+    required RecommendedDictionary rec,
+  }) {
+    // HBK-AUDIT-110: O(1) lookup from a precomputed map instead of the former
+    // per-checkbox catalog.indexOf(rec) linear scan on every rebuild.
+    final int idx = recIndex[rec] ?? -1;
+    final bool installed = installedIndices.contains(idx);
+    final bool selected = checked.contains(idx);
+    return FushiListItem(
+      key: ValueKey<String>('dict-download-entry-${rec.name}'),
+      minHeight: 68,
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+        vertical: tokens.spacing.gap,
+      ),
+      selected: selected,
+      onTap: () => _toggleOne(idx, !selected),
+      leading: Checkbox(
+        value: selected,
+        onChanged: (bool? value) => _toggleOne(idx, value ?? false),
+      ),
+      title: Text(
+        rec.name,
+        style: textTheme.bodyMedium?.copyWith(
+          color: installed ? theme.colorScheme.onSurfaceVariant : null,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        installed
+            ? '${t.dict_download_installed}  ${rec.sizeEstimate}'
+            : '${rec.description}  ${rec.sizeEstimate}',
+        style: textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
 class DictionaryDialogPage extends BasePage {
   /// Create an instance of this page.
   const DictionaryDialogPage({
@@ -683,31 +903,6 @@ class _DictionaryDialogPageState extends BasePageState {
     _importDictionaryPaths(importPaths);
   }
 
-  String _categoryLabel(DictionaryCategory cat) {
-    switch (cat) {
-      case DictionaryCategory.jaEn:
-        return t.dict_category_ja_en;
-      case DictionaryCategory.jaJa:
-        return t.dict_category_ja_ja;
-      case DictionaryCategory.jaOther:
-        return t.dict_category_ja_other;
-      case DictionaryCategory.grammar:
-        return t.dict_category_grammar;
-      case DictionaryCategory.kanji:
-        return t.dict_category_kanji;
-      case DictionaryCategory.frequency:
-        return t.dict_category_frequency;
-      case DictionaryCategory.names:
-        return t.dict_category_names;
-      case DictionaryCategory.supplementary:
-        return t.dict_category_supplementary;
-      case DictionaryCategory.bilingual:
-        return t.dict_category_bilingual;
-      case DictionaryCategory.monolingual:
-        return t.dict_category_monolingual;
-    }
-  }
-
   bool _isDictInstalled(RecommendedDictionary rec) {
     return appModel.dictionaries.any((d) {
       final String base = DictionaryRepository.baseName(d.name);
@@ -822,84 +1017,26 @@ class _DictionaryDialogPageState extends BasePageState {
                       },
                     ),
                     SizedBox(height: tokens.spacing.gap),
-                    // 47 条目录 + 分类折叠下，逐条点是唯一的入口太贵：全选 /
-                    // 反选一律只作用于**可勾选域**（已装的不参与，见
-                    // [selectableDictionaryIndices]）。
-                    Builder(
-                      builder: (BuildContext ctx) {
-                        final Set<int> selectable = selectableDictionaryIndices(
-                          catalogLength: workingCatalog.length,
-                          installedIndices: installedIndices,
-                        );
-                        return Row(
-                          children: <Widget>[
-                            Text(
-                              t.batch_selected_count(n: checked.length),
-                              style: textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const Spacer(),
-                            TextButton(
-                              key: const ValueKey<String>(
-                                  'dict-download-select-all'),
-                              onPressed: selectable.isEmpty
-                                  ? null
-                                  : () => setDialogState(
-                                      () => checked = Set<int>.of(selectable)),
-                              child: Text(t.batch_select_all),
-                            ),
-                            TextButton(
-                              key: const ValueKey<String>(
-                                  'dict-download-invert-selection'),
-                              onPressed: selectable.isEmpty
-                                  ? null
-                                  : () => setDialogState(() =>
-                                      checked = selectable.difference(checked)),
-                              child: Text(t.batch_invert_selection),
-                            ),
-                          ],
-                        );
-                      },
+                    DictionaryCatalogSelectionList(
+                      workingCatalog: workingCatalog,
+                      byCategory: byCategory,
+                      recIndex: recIndex,
+                      installedIndices: installedIndices,
+                      checked: checked,
+                      expandedCategories: expandedCategories,
+                      onCheckedChanged: (Set<int> next) =>
+                          setDialogState(() => checked = next),
+                      onExpansionChanged: (
+                        DictionaryCategory cat,
+                        bool expanded,
+                      ) => setDialogState(() {
+                        if (expanded) {
+                          expandedCategories.add(cat);
+                        } else {
+                          expandedCategories.remove(cat);
+                        }
+                      }),
                     ),
-                    SizedBox(height: tokens.spacing.gap),
-                    for (final cat in DictionaryCategory.values)
-                      if (byCategory.containsKey(cat))
-                        _buildCategoryTile(
-                          cat: cat,
-                          items: byCategory[cat]!,
-                          recIndex: recIndex,
-                          checked: checked,
-                          installedIndices: installedIndices,
-                          expanded: expandedCategories.contains(cat),
-                          onExpansionChanged: (bool expanded) {
-                            setDialogState(() {
-                              if (expanded) {
-                                expandedCategories.add(cat);
-                              } else {
-                                expandedCategories.remove(cat);
-                              }
-                            });
-                          },
-                          onChanged: (int idx, bool val) {
-                            setDialogState(() {
-                              if (val) {
-                                checked.add(idx);
-                              } else {
-                                checked.remove(idx);
-                              }
-                            });
-                          },
-                          onToggleCategory: (Set<int> indices, bool val) {
-                            setDialogState(() {
-                              if (val) {
-                                checked.addAll(indices);
-                              } else {
-                                checked.removeAll(indices);
-                              }
-                            });
-                          },
-                        ),
                   ],
                 ),
               ),
@@ -954,115 +1091,6 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildCategoryTile({
-    required DictionaryCategory cat,
-    required List<RecommendedDictionary> items,
-    required Map<RecommendedDictionary, int> recIndex,
-    required Set<int> checked,
-    required Set<int> installedIndices,
-    required bool expanded,
-    required ValueChanged<bool> onExpansionChanged,
-    required void Function(int idx, bool val) onChanged,
-    required void Function(Set<int> indices, bool val) onToggleCategory,
-  }) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Set<int> categoryIndices = <int>{
-      for (final RecommendedDictionary rec in items)
-        if (recIndex[rec] != null && !installedIndices.contains(recIndex[rec]))
-          recIndex[rec]!,
-    };
-    return Padding(
-      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      child: FushiCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FushiListItem(
-              minHeight: 52,
-              // 本类的可勾选下标（已装的不算），三态框与「本类全选」同域。
-              leading: Checkbox(
-                key: ValueKey<String>('dict-download-category-check-${cat.name}'),
-                tristate: true,
-                value: dictionaryCategoryCheckState(
-                  categoryIndices: categoryIndices,
-                  checked: checked,
-                ),
-                onChanged: categoryIndices.isEmpty
-                    ? null
-                    : (bool? value) =>
-                        onToggleCategory(categoryIndices, value ?? false),
-              ),
-              title: Text(
-                _categoryLabel(cat),
-                style: textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              trailing: Icon(
-                expanded ? Icons.expand_less : Icons.expand_more,
-                color: tokens.surfaces.onVariant,
-              ),
-              onTap: () => onExpansionChanged(!expanded),
-            ),
-            if (expanded)
-              for (final rec in items)
-                _buildDictCheckbox(
-                  rec: rec,
-                  recIndex: recIndex,
-                  checked: checked,
-                  installedIndices: installedIndices,
-                  onChanged: onChanged,
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDictCheckbox({
-    required RecommendedDictionary rec,
-    required Map<RecommendedDictionary, int> recIndex,
-    required Set<int> checked,
-    required Set<int> installedIndices,
-    required void Function(int idx, bool val) onChanged,
-  }) {
-    // HBK-AUDIT-110: O(1) lookup from a precomputed map instead of the former
-    // per-checkbox catalog.indexOf(rec) linear scan on every rebuild.
-    final int idx = recIndex[rec] ?? -1;
-    final bool installed = installedIndices.contains(idx);
-    final bool selected = checked.contains(idx);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiListItem(
-      minHeight: 68,
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
-        vertical: tokens.spacing.gap,
-      ),
-      selected: selected,
-      onTap: () => onChanged(idx, !selected),
-      leading: Checkbox(
-        value: selected,
-        onChanged: (bool? value) => onChanged(idx, value ?? false),
-      ),
-      title: Text(
-        rec.name,
-        style: textTheme.bodyMedium?.copyWith(
-          color: installed ? theme.colorScheme.onSurfaceVariant : null,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-        ),
-      ),
-      subtitle: Text(
-        installed
-            ? '${t.dict_download_installed}  ${rec.sizeEstimate}'
-            : '${rec.description}  ${rec.sizeEstimate}',
-        style: textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
     );
   }
 

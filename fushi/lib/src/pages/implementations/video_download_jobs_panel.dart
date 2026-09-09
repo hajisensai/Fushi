@@ -388,6 +388,8 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
           ? null
           : ({required bool deleteFiles}) =>
               onDelete(job, deleteFiles: deleteFiles),
+      // durable pipeline 的 deleteJob 自己会去后端摘种子删数据，能删。
+      deletesFiles: onDelete != null,
       setPriority: onSetPriority != null && videoDownloadJobCanSetPriority(job)
           ? (int priority) => onSetPriority(job, priority)
           : null,
