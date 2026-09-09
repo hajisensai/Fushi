@@ -63,6 +63,7 @@
     `applyViewportVars` 必须排在建舞台/切屏之前，以及 VN 内联的视口 meta 与另两个 shell **字节相同**
     且排在写几何变量之前。
 - **备注**：
+  - 2026-09-09 Windows 离屏复跑时，顶部进度已并入桌面底部状态行，旧夹具只关 `topProgressFloating` 会合法得到 `chromeTopInset=0`。提交 `4f8b860` 让夹具同时关闭承载桌面顶栏的 `bottomBarFloating`，重新建立“顶部 chrome 必须占预留”的前提；复跑通过：top=48、bottom=28、VN screen=`48..894`。
   - **iOS 真机门已过**（iPhone，iOS 26.6，`00008030-000E24680CC3402E`）。本机跑通 iOS 构建需要两步
     一次性环境准备，都不入库：
     1. `rustup target add aarch64-apple-ios` + `rustup update stable`——`native/aidoku_runtime` 的
