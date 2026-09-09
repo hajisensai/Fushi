@@ -3713,7 +3713,6 @@
   "video_clip_exported_with_subtitles": "片段已導出（含字幕）：${path}",
   "video_clip_exporting": "正在匯出片段…",
   "video_collection_no_local_member": "本合集沒有本地影片",
-  "video_collection_scrape": "刮削資料與封面",
   "video_continue_watching": "Continue Watching",
   "video_control_audio_track": "音軌",
   "video_control_custom_action": "快捷鍵 $index",
@@ -4535,5 +4534,13 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "顯示閱讀計時器",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "collection_cover_set": "設定封面",
+  "collection_cover_reset": "回復預設封面",
+  "collection_cover_updated": "封面已更新",
+  "collection_cover_failed": "封面設定失敗",
+  "collection_rescrape": "重新刮削資料與封面",
+  "collection_rescrape_not_planned": "這個合集不在任何本機影片來源的刮削計劃裡",
+  "collection_rescrape_started": "已開始重新刮削",
+  "collection_rescrape_failed": "重新刮削失敗"
 }

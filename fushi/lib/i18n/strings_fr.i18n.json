@@ -3713,7 +3713,6 @@
   "video_clip_exported_with_subtitles": "Clip exporté avec sous-titres : ${path}",
   "video_clip_exporting": "Export de l'extrait…",
   "video_collection_no_local_member": "Aucune vidéo locale dans cette collection",
-  "video_collection_scrape": "Récupérer infos et couverture",
   "video_continue_watching": "Continue Watching",
   "video_control_audio_track": "Piste audio",
   "video_control_custom_action": "Raccourci $index",
@@ -4535,5 +4534,13 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "Afficher le minuteur de lecture",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "collection_cover_set": "Set cover",
+  "collection_cover_reset": "Reset to default cover",
+  "collection_cover_updated": "Cover updated",
+  "collection_cover_failed": "Couldn't set the cover",
+  "collection_rescrape": "Rescrape metadata and cover",
+  "collection_rescrape_not_planned": "This collection isn't in any local video source's scrape plan",
+  "collection_rescrape_started": "Rescrape queued",
+  "collection_rescrape_failed": "Rescrape failed"
 }

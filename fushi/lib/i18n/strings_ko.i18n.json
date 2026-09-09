@@ -3713,7 +3713,6 @@
   "video_clip_exported_with_subtitles": "자막 포함 클립 내보내기 완료: ${path}",
   "video_clip_exporting": "클립 내보내는 중…",
   "video_collection_no_local_member": "이 컬렉션에 로컬 동영상이 없습니다",
-  "video_collection_scrape": "정보 및 표지 스크랩",
   "video_continue_watching": "Continue Watching",
   "video_control_audio_track": "오디오 트랙",
   "video_control_custom_action": "단축키 $index",
@@ -4535,5 +4534,13 @@
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "독서 타이머 표시",
   "media_source_root_already_added": "Already a source — rescanning: $path",
-  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again.",
+  "collection_cover_set": "Set cover",
+  "collection_cover_reset": "Reset to default cover",
+  "collection_cover_updated": "Cover updated",
+  "collection_cover_failed": "Couldn't set the cover",
+  "collection_rescrape": "Rescrape metadata and cover",
+  "collection_rescrape_not_planned": "This collection isn't in any local video source's scrape plan",
+  "collection_rescrape_started": "Rescrape queued",
+  "collection_rescrape_failed": "Rescrape failed"
 }
