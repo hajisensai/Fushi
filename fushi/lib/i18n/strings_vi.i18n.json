@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "Không tìm thấy nguồn trong cơ sở dữ liệu này",
   "local_audio_reference_original": "Tham chiếu tệp gốc (không sao chép)",
   "local_audio_reference_original_desc": "Giữ cơ sở dữ liệu tại vị trí hiện tại và đọc từ đường dẫn gốc; sẽ hỏng nếu tệp bị di chuyển hoặc xóa.",
-  "local_audio_reference_unavailable": "Không thể tham chiếu tệp gốc mà không có quyền truy cập tất cả tệp; đã nhập một bản sao thay thế.",
+  "local_audio_reference_unavailable": "Tệp đã chọn là bản sao tạm thời. Hệ thống sẽ nhập một bản sao được lưu trữ lâu dài thay thế.",
   "local_audio_source_order_title": "Ưu tiên nguồn",
   "log_copy_all": "Sao chép tất cả",
   "log_export_failed": "Xuất thất bại",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "Không thể sử dụng cơ sở dữ liệu âm thanh. Vui lòng chọn lại tệp DB gốc.",
+  "local_audio_file_reselect": "Chọn lại cơ sở dữ liệu âm thanh"
 }

@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "لم يُعثر على مصادر في قاعدة البيانات هذه",
   "local_audio_reference_original": "الإشارة إلى الملف الأصلي (بدون نسخ)",
   "local_audio_reference_original_desc": "إبقاء قاعدة البيانات في مكانها والقراءة من مسارها الأصلي؛ سيتعطل المصدر إذا تم نقل الملف أو حذفه.",
-  "local_audio_reference_unavailable": "لا يمكن الإشارة إلى الملف الأصلي بدون إذن الوصول لجميع الملفات؛ تم استيراد نسخة بدلاً من ذلك.",
+  "local_audio_reference_unavailable": "الملف المحدد نسخة مؤقتة. يجري استيراد نسخة دائمة بدلاً منها.",
   "local_audio_source_order_title": "أولوية المصدر",
   "log_copy_all": "نسخ الكل",
   "log_export_failed": "فشل التصدير",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "قاعدة بيانات الصوت غير متاحة. حدد ملف DB الأصلي مرة أخرى.",
+  "local_audio_file_reselect": "تحديد قاعدة بيانات الصوت مرة أخرى"
 }

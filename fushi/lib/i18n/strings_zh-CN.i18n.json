@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "此数据库未发现可用来源",
   "local_audio_reference_original": "引用原文件（不复制）",
   "local_audio_reference_original_desc": "数据库保留在原位置、按原路径读取；原文件被移动或删除后该来源会失效。",
-  "local_audio_reference_unavailable": "没有「所有文件访问权限」无法引用原文件，已改为导入副本。",
+  "local_audio_reference_unavailable": "所选文件是临时副本，已改为导入持久副本。",
   "local_audio_source_order_title": "来源顺序",
   "log_copy_all": "复制全部",
   "log_export_failed": "导出失败",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "评分",
   "video_work_field_cover": "封面",
   "video_work_field_backdrop": "背景图",
-  "manga_discovery_section_publishing": "连载热门"
+  "manga_discovery_section_publishing": "连载热门",
+  "local_audio_file_unavailable": "发音库文件不可用，请重新选择原始 DB 文件。",
+  "local_audio_file_reselect": "重新选择发音库"
 }

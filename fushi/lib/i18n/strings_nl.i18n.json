@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "Geen bronnen gevonden in deze database",
   "local_audio_reference_original": "Origineel bestand refereren (niet kopiëren)",
   "local_audio_reference_original_desc": "Bewaar de database op de huidige locatie en lees vanaf het oorspronkelijke pad; de bron werkt niet meer als het bestand wordt verplaatst of verwijderd.",
-  "local_audio_reference_unavailable": "Kan het originele bestand niet refereren zonder volledige bestandstoegang; er is in plaats daarvan een kopie geïmporteerd.",
+  "local_audio_reference_unavailable": "Het geselecteerde bestand is een tijdelijke kopie. Er wordt in plaats daarvan een permanente kopie geïmporteerd.",
   "local_audio_source_order_title": "Bronprioriteit",
   "log_copy_all": "Alles kopiëren",
   "log_export_failed": "Export mislukt",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "Audiodatabase niet beschikbaar. Selecteer het oorspronkelijke DB-bestand opnieuw.",
+  "local_audio_file_reselect": "Audiodatabase opnieuw selecteren"
 }

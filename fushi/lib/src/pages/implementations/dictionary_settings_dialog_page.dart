@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,11 +20,13 @@ class AudioSourcesDialog extends StatefulWidget {
     required this.onSave,
     this.onPickLocalDb,
     this.onEditLocalSources,
+    this.isLocalDbAvailable,
+    this.onReplaceLocalDb,
     super.key,
   });
 
   final List<AudioSourceConfig> sources;
-  final void Function(List<AudioSourceConfig>) onSave;
+  final FutureOr<void> Function(List<AudioSourceConfig>) onSave;
 
   /// 选文件并导入为一个 localAudio 源（未持久化）；返回 null 表示用户取消。
   ///
@@ -33,6 +37,9 @@ class AudioSourcesDialog extends StatefulWidget {
 
   /// 打开某个本地音频库的「子来源顺序 + 逐源启用」编辑器（按库路径）。
   final Future<void> Function(String path)? onEditLocalSources;
+
+  final Future<bool> Function(String path)? isLocalDbAvailable;
+  final Future<AudioSourceConfig?> Function(String path)? onReplaceLocalDb;
 
   /// 自定义远端音频 URL 合法性：必须是 http(s) 链接，且至少含一个
   /// `{term}` / `{reading}` 占位符（否则播放时无法代入查词参数）。
@@ -87,6 +94,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   /// 写到**别人**那行上。[AudioSourceConfig] 是 `@immutable` 且实现了 `==`，提交时用
   /// `indexOf` 现场定位即可；该行被删掉则 `indexOf` 返回 -1，编辑态在删除处即时清空。
   AudioSourceConfig? _editingSource;
+
+  final Map<String, Future<bool>> _localAvailability = <String, Future<bool>>{};
 
   @override
   void initState() {
@@ -236,6 +245,39 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   Widget _buildSourceRow(FushiDesignTokens tokens, int index) {
+    final AudioSourceConfig source = _sources[index];
+    final String? dbPath = source.path;
+    if (source.kind != AudioSourceKind.localAudio ||
+        dbPath == null ||
+        widget.isLocalDbAvailable == null) {
+      return _buildSourceRowContent(tokens, index);
+    }
+    return FutureBuilder<bool>(
+      future: _localAvailability.putIfAbsent(
+          dbPath, () => widget.isLocalDbAvailable!(dbPath)),
+      builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
+        final bool unavailable = snapshot.hasError || snapshot.data == false;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _buildSourceRowContent(tokens, index),
+            if (unavailable) ...<Widget>[
+              Text(t.local_audio_file_unavailable,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              if (widget.onReplaceLocalDb != null)
+                TextButton.icon(
+                  onPressed: _importing ? null : () => _replaceLocalDb(dbPath),
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: Text(t.local_audio_file_reselect),
+                ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSourceRowContent(FushiDesignTokens tokens, int index) {
     final AudioSourceConfig source = _sources[index];
     final bool isHibiki = source.kind == AudioSourceKind.fushiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
@@ -476,7 +518,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         // 导入即落盘：拷贝本地库是离散动作，当场持久化才让「导入成功」名副其实，
         // 且此后即便不经任何关闭路径退出（甚至杀进程）也不丢（BUG-053）；dispose
         // 的兜底保存仍覆盖此后的排序/开关/URL 等批量编辑。
-        widget.onSave(_sources);
+        await widget.onSave(List<AudioSourceConfig>.of(_sources));
+        if (!mounted) return;
         _showSnack(t.local_audio_imported);
       }
       // added == null 表示用户取消选择，不弹反馈。
@@ -488,6 +531,36 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       if (mounted) {
         // BUG-779：无效文件（zip / 备份 zip / 空库）给专属可读文案，不把裸异常字符串
         // 甩给用户；其它真·失败（权限 / 磁盘 / 平台）仍带异常摘要便于复述。
+        _showSnack(e is InvalidLocalAudioDbException
+            ? t.local_audio_invalid_db
+            : t.local_audio_import_failed_detail(reason: '$e'));
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Future<void> _replaceLocalDb(String oldPath) async {
+    setState(() => _importing = true);
+    try {
+      final AudioSourceConfig? replacement =
+          await widget.onReplaceLocalDb!(oldPath);
+      if (!mounted || replacement == null) return;
+      // 选择器打开期间允许排序/切换；按路径重新定位，保留用户最新的开关状态。
+      final int index = _sources.indexWhere((AudioSourceConfig source) =>
+          source.kind == AudioSourceKind.localAudio && source.path == oldPath);
+      if (index < 0) return;
+      setState(() {
+        _sources[index] = _sources[index].copyWith(path: replacement.path);
+        _localAvailability.remove(oldPath);
+      });
+      await widget.onSave(List<AudioSourceConfig>.of(_sources));
+      if (!mounted) return;
+      _showSnack(t.local_audio_imported);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('AudioSourcesDialog.replaceLocalDb', e, stack);
+      if (mounted) {
         _showSnack(e is InvalidLocalAudioDbException
             ? t.local_audio_invalid_db
             : t.local_audio_import_failed_detail(reason: '$e'));

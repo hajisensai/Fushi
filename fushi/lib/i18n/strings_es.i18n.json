@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "No se encontraron fuentes en esta base de datos",
   "local_audio_reference_original": "Referenciar archivo original (no copiar)",
   "local_audio_reference_original_desc": "Mantener la base de datos donde está y leer desde su ruta original; la fuente se rompe si el archivo se mueve o elimina.",
-  "local_audio_reference_unavailable": "No se puede referenciar el archivo original sin acceso a todos los archivos; se importó una copia en su lugar.",
+  "local_audio_reference_unavailable": "El archivo seleccionado es una copia temporal. Se importará una copia permanente en su lugar.",
   "local_audio_source_order_title": "Prioridad de las fuentes",
   "log_copy_all": "Copiar todo",
   "log_export_failed": "Error al exportar",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "La base de datos de audio no está disponible. Selecciona de nuevo el archivo DB original.",
+  "local_audio_file_reselect": "Seleccionar de nuevo la base de datos de audio"
 }

@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "ไม่พบแหล่งในฐานข้อมูลนี้",
   "local_audio_reference_original": "อ้างอิงไฟล์ต้นฉบับ (ไม่คัดลอก)",
   "local_audio_reference_original_desc": "เก็บฐานข้อมูลไว้ที่เดิมและอ่านจากเส้นทางต้นฉบับ; จะใช้ไม่ได้หากไฟล์ถูกย้ายหรือลบ",
-  "local_audio_reference_unavailable": "ไม่สามารถอ้างอิงไฟล์ต้นฉบับได้หากไม่มีสิทธิ์เข้าถึงไฟล์ทั้งหมด จึงนำเข้าเป็นสำเนาแทน",
+  "local_audio_reference_unavailable": "ไฟล์ที่เลือกเป็นสำเนาชั่วคราว ระบบจะนำเข้าสำเนาที่จัดเก็บถาวรแทน",
   "local_audio_source_order_title": "ลำดับความสำคัญของแหล่ง",
   "log_copy_all": "คัดลอกทั้งหมด",
   "log_export_failed": "ส่งออกไม่สำเร็จ",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "ไม่สามารถใช้ฐานข้อมูลเสียงได้ โปรดเลือกไฟล์ DB ต้นฉบับอีกครั้ง",
+  "local_audio_file_reselect": "เลือกฐานข้อมูลเสียงอีกครั้ง"
 }

@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "В этой базе данных источники не найдены",
   "local_audio_reference_original": "Ссылаться на оригинальный файл (не копировать)",
   "local_audio_reference_original_desc": "Оставить базу данных на месте и читать по исходному пути; источник перестанет работать при перемещении или удалении файла.",
-  "local_audio_reference_unavailable": "Невозможно сослаться на исходный файл без полного доступа к файлам; вместо этого импортирована копия.",
+  "local_audio_reference_unavailable": "Выбранный файл — временная копия. Вместо неё будет импортирована постоянная копия.",
   "local_audio_source_order_title": "Приоритет источников",
   "log_copy_all": "Копировать всё",
   "log_export_failed": "Ошибка экспорта",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "База аудиоданных недоступна. Выберите исходный файл DB ещё раз.",
+  "local_audio_file_reselect": "Выбрать базу аудиоданных заново"
 }

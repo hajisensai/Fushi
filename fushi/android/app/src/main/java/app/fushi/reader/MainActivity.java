@@ -364,17 +364,28 @@ public class MainActivity extends AudioServiceActivity {
             final boolean isTree = requestCode == SAF_PICK_REAL_DIR_REQUEST;
             ioExecutor.execute(() -> {
                 String resolved = resolveSafRealPath(pickedUri, isTree);
-                // Files: if no real path (true cloud DocumentsProvider), copy to
-                // cache so the pick still works — matches the no-permission
-                // file_picker escape hatch (dangles on cache clear, but rare).
+                // BUG-2265: provenance comes from resolution, never from the
+                // provider name or the returned path's spelling. A cache copy
+                // must be consumed/copied by the importer, never referenced.
+                final boolean isRealPath = resolved != null;
+                // Files: unresolved providers remain usable via a cache copy.
                 // Folders: no fallback (dart:io cannot read a cloud tree anyway).
                 if (resolved == null && !isTree) {
                     resolved = copyUriToCache(pickedUri);
                 }
-                final String realPath = resolved;
+                final Object pickedResult;
+                if (isTree || resolved == null) {
+                    // Keep the directory channel's existing String contract.
+                    pickedResult = resolved;
+                } else {
+                    Map<String, Object> fileResult = new java.util.HashMap<>();
+                    fileResult.put("path", resolved);
+                    fileResult.put("isRealPath", isRealPath);
+                    pickedResult = fileResult;
+                }
                 // null = user picked a folder we cannot map, or a copy failure.
                 new Handler(Looper.getMainLooper()).post(() ->
-                    safResult.success(realPath));
+                    safResult.success(pickedResult));
             });
             return;
         }
@@ -1363,7 +1374,8 @@ public class MainActivity extends AudioServiceActivity {
     // Last-resort copy of a picked file content URI into app cache, returning the
     // cache path. Used only when the URI has no real filesystem path (true cloud
     // DocumentsProvider) — same escape hatch as the no-permission file_picker
-    // path (dangles on cache clear, but the pick still works).
+    // path. The caller labels this as isRealPath=false so importers copy it into
+    // owned storage instead of persisting a reference to this temporary file.
     private String copyUriToCache(Uri uri) {
         try {
             String name = queryDisplayName(uri);

@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "Bu veritabanında kaynak bulunamadı",
   "local_audio_reference_original": "Orijinal dosyaya başvur (kopyalama)",
   "local_audio_reference_original_desc": "Veritabanını olduğu yerde tutun ve orijinal yolundan okuyun; dosya taşınır veya silinirse kaynak bozulur.",
-  "local_audio_reference_unavailable": "Tüm dosyalara erişim olmadan orijinal dosyaya başvurulamıyor; bunun yerine bir kopya içe aktarıldı.",
+  "local_audio_reference_unavailable": "Seçilen dosya geçici bir kopyadır. Bunun yerine kalıcı bir kopya içe aktarılıyor.",
   "local_audio_source_order_title": "Kaynak önceliği",
   "log_copy_all": "Tümünü Kopyala",
   "log_export_failed": "Dışa aktarma başarısız",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "Ses veritabanı kullanılamıyor. Orijinal DB dosyasını yeniden seçin.",
+  "local_audio_file_reselect": "Ses veritabanını yeniden seç"
 }

@@ -1994,7 +1994,7 @@
   "local_audio_no_sources": "Tidak ada sumber di basis data ini",
   "local_audio_reference_original": "Referensi file asli (jangan salin)",
   "local_audio_reference_original_desc": "Biarkan database di tempatnya dan baca dari jalur aslinya; sumber rusak jika file dipindah atau dihapus.",
-  "local_audio_reference_unavailable": "Tidak bisa mereferensikan file asli tanpa akses semua file; salinan diimpor sebagai gantinya.",
+  "local_audio_reference_unavailable": "File yang dipilih adalah salinan sementara. Salinan permanen akan diimpor sebagai gantinya.",
   "local_audio_source_order_title": "Prioritas sumber",
   "log_copy_all": "Salin Semua",
   "log_export_failed": "Ekspor gagal",
@@ -4520,5 +4520,7 @@
   "video_work_field_rating": "Rating",
   "video_work_field_cover": "Cover",
   "video_work_field_backdrop": "Backdrop",
-  "manga_discovery_section_publishing": "Popular publishing manga"
+  "manga_discovery_section_publishing": "Popular publishing manga",
+  "local_audio_file_unavailable": "Basis data audio tidak tersedia. Pilih kembali file DB asli.",
+  "local_audio_file_reselect": "Pilih kembali basis data audio"
 }
