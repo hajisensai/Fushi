@@ -28,7 +28,6 @@ import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
-import 'package:fushi/src/media/audiobook/audiobook_resume_point.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
@@ -2249,13 +2248,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             return ReaderPositionRepository(db).findByBookUid(uid);
           });
     savedPositionFuture.ignore();
-    // BUG-2328：有声书进度的最后写入时刻与阅读进度并行取（两行 + 两偏好，不解析
-    // 音频、不起 audio_service），开书时按 LWW 决定起点跟谁；书签跳转分支不消费。
-    final Future<int> audioPositionAtFuture = widget.initialBookmarkJump != null
-        ? Future<int>.value(0)
-        : AudiobookSessionLauncher(db).readPositionUpdatedAtMs(widget.bookKey);
-    audioPositionAtFuture.ignore();
-
     await profileSettingsFuture;
     if (!mounted) return;
     _settings = ReaderFushiSource.readerSettings;
@@ -2361,10 +2353,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 后者写 _audiobookController，都只读已就绪的 _book），并行等待两组 DB 往返。
     _openTrace.mark('charCounts');
 
-    // 有声书槽（音频服务初始化 + 会话附着 + 全书 cue 预热）不再挡首屏：正文 WebView
-    // 只等书与 spread 表；音频在后台落定后再 _rebuild（底栏出现）并补发 chrome insets。
-    // 两种情况必须先等它：① 没有保存位置 → 起点要从当前音频 cue 推；② 歌词模式要
-    // 恢复（依赖控制器）。
+    // 有声书槽（音频服务初始化 + 会话附着 + 全书 cue 预热）与书/spread 并行起跑。
+    // 普通开书在选首个恢复锚前必须等它：只要存在可映射的音频 cue，音频位置始终
+    // 是主位置；书签/收藏是用户显式跳转，仍保持最高优先级、不消费此槽。
     final Future<void> audioSlotFuture = _resolveAudioSlot().then((_) {
       _openTrace.markLate('audioSlot');
     });
@@ -2419,31 +2410,21 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
               saved.sectionIndex >= _book!.chapters.length)) {
         saved = null;
       }
-      // BUG-2328：阅读进度与有声书进度各自持久化、各带写入时刻。退书后台听书 /
-      // 书架小播放器听书只推进音频进度，重开书若无条件按阅读存档定位，用户看到的
-      // 永远不是听到的地方、按播放后视口才被 cue 拽过去。谁更新谁做起点（LWW，与
-      // 互联同步 BUG-471 同语义）；没有存档时照旧从音频 cue 推。两条音频路都必须等
-      // 有声书槽落定；起点算不出（无 cue / 反查不到章）再回退存档。
-      final int audioAt = await audioPositionAtFuture;
-      if (!mounted) return;
-      final bool preferAudio =
-          saved == null ||
-          audiobookResumeWinsOverReader(
-            readerUpdatedAt: saved.updatedAt,
-            audioUpdatedAt: audioAt,
-          );
+      // BUG-2384：产品真值是「带有声书时音频位置为主」，不是两份时间戳 LWW。
+      // LWW 会让用户往前翻后的较新阅读存档压过音频位置；第二次打开先落旧阅读页，
+      // 播放后又跳到音频 cue，不仅位置错，还可能让统计账本把程序化跨过的文字误当
+      // 正常阅读。这里在 WebView 首文档创建前先解析音频 cue；只有音频不存在、槽失败
+      // 或 cue 无法映射到正文时，才回退阅读存档。显式书签分支仍在本分支之前。
       bool restored = false;
-      if (preferAudio) {
-        // 音频槽失败（audio_service 冷启 / setAudioSource 超时 / 文件不在）不能把整本
-        // 书开失败：正文照开，起点回退存档；底栏由后面的 .catchError 分支提示。
-        try {
-          await audioSlotFuture;
-        } catch (_) {
-          // 已由 audioSlotFuture 的 catchError 链上报 ErrorLogService，这里只回退。
-        }
-        if (!mounted) return;
-        restored = _restoreFromCurrentAudioCue();
+      // 音频槽失败（audio_service 冷启 / setAudioSource 超时 / 文件不在）不能把整本
+      // 书开失败：正文照开，起点回退存档；底栏由后面的 .catchError 分支提示。
+      try {
+        await audioSlotFuture;
+      } catch (_) {
+        // 已由 audioSlotFuture 的 catchError 链上报 ErrorLogService，这里只回退。
       }
+      if (!mounted) return;
+      restored = _restoreFromCurrentAudioCue();
       if (!restored && saved != null) {
         // BUG-162: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
         // BUG-461: 存档恢复无句子区间，单点句首锚（仅收藏句跳转才有句尾锚）。

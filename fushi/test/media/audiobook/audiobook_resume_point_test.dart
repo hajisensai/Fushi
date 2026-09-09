@@ -2,61 +2,19 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/audiobook/audiobook_resume_point.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../pages/reader_fushi_page_source_corpus.dart';
 
-/// BUG-2328：打开带有声书的书时，起点必须在「阅读进度」与「有声书进度」之间按写入
-/// 时刻 LWW 仲裁，而不是有阅读存档就永远忽略音频位置（用户症状：每次点进去都不是
-/// 听到的地方，按播放后才被 cue 拽过去）。
+/// BUG-2384：普通开书时，有效音频 cue 永远是恢复主位置；阅读存档只在没有可播放
+/// 有声书、音频槽失败或 cue 无法映射正文时兜底。恢复锚在首个 WebView 文档之前决定，
+/// 程序化跨过的正文不进入读字账本。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('audiobookResumeWinsOverReader', () {
-    test('audio strictly newer than reader wins', () {
-      expect(
-        audiobookResumeWinsOverReader(
-          readerUpdatedAt: 100,
-          audioUpdatedAt: 101,
-        ),
-        isTrue,
-      );
-    });
-
-    test('reader newer or equal keeps reader (ties and 0/0 are reader)', () {
-      expect(
-        audiobookResumeWinsOverReader(
-          readerUpdatedAt: 101,
-          audioUpdatedAt: 100,
-        ),
-        isFalse,
-      );
-      expect(
-        audiobookResumeWinsOverReader(
-          readerUpdatedAt: 100,
-          audioUpdatedAt: 100,
-        ),
-        isFalse,
-      );
-      expect(
-        audiobookResumeWinsOverReader(readerUpdatedAt: 0, audioUpdatedAt: 0),
-        isFalse,
-      );
-    });
-
-    test('legacy audio position without timestamp (0) never beats a saved '
-        'reader position', () {
-      expect(
-        audiobookResumeWinsOverReader(readerUpdatedAt: 1, audioUpdatedAt: 0),
-        isFalse,
-      );
-    });
-  });
-
-  group('AudiobookSessionLauncher.readPositionUpdatedAtMs', () {
+  group('AudiobookSessionLauncher source selection', () {
     late FushiDatabase db;
     late Directory audioDir;
 
@@ -70,18 +28,14 @@ void main() {
       if (audioDir.existsSync()) audioDir.deleteSync(recursive: true);
     });
 
-    // 来源裁决与 resolve() 同源：Audiobook 行只有在音频文件真实存在时才算数。
     File audioFile(String name) =>
         File('${audioDir.path}/$name')..writeAsBytesSync(const <int>[0]);
 
-    test('book without audiobook or srt book → 0', () async {
-      expect(
-        await AudiobookSessionLauncher(db).readPositionUpdatedAtMs('none'),
-        0,
-      );
+    test('book without playable audiobook or SRT source resolves null', () async {
+      expect(await AudiobookSessionLauncher(db).resolve('none'), isNull);
     });
 
-    test('audiobook row → its audiobook_pos_at_<bookKey> stamp', () async {
+    test('audiobook row restores the position keyed by bookKey', () async {
       const String bookKey = 'epub-A';
       final AudiobookRepository repo = AudiobookRepository(db);
       await repo.ensureAudiobook(bookKey);
@@ -89,15 +43,15 @@ void main() {
         bookKey: bookKey,
         audioPaths: <String>[audioFile('row-a.mp3').path],
       );
-      await db.setPrefTyped('audiobook_pos_at_$bookKey', 4200);
-      expect(
-        await AudiobookSessionLauncher(db).readPositionUpdatedAtMs(bookKey),
-        4200,
-      );
+      await db.setPrefTyped('audiobook_pos_$bookKey', 4200);
+      final AudiobookSessionStartRequest? request =
+          await AudiobookSessionLauncher(db).resolve(bookKey);
+      expect(request, isNotNull);
+      expect(request!.prefs.positionMs, 4200);
+      expect(request.isSrtBookSource, isFalse);
     });
 
-    test('srt book paired to an epub → stamp keyed by the srt uid, '
-        'not the epub bookKey', () async {
+    test('paired SRT source restores its uid-keyed position', () async {
       const String bookKey = 'epub-B';
       final SrtBook book = SrtBook()
         ..uid = 'srtbook_epub_$bookKey'
@@ -107,17 +61,18 @@ void main() {
         ..bookKey = bookKey
         ..audioPaths = <String>[audioFile('paired-b.mp3').path];
       await SrtBookRepository(db).save(book);
-      await db.setPrefTyped('audiobook_pos_at_${book.uid}', 777);
-      await db.setPrefTyped('audiobook_pos_at_$bookKey', 999);
-      // epub 键上的值属于一个不会被启动的来源，不得赢下仲裁。
-      expect(
-        await AudiobookSessionLauncher(db).readPositionUpdatedAtMs(bookKey),
-        777,
-      );
+      await db.setPrefTyped('audiobook_pos_${book.uid}', 777);
+      await db.setPrefTyped('audiobook_pos_$bookKey', 999);
+      final AudiobookSessionStartRequest? request =
+          await AudiobookSessionLauncher(db).resolve(bookKey);
+      expect(request, isNotNull);
+      expect(request!.prefs.positionMs, 777,
+          reason: 'the EPUB-keyed position belongs to a source not launched');
+      expect(request.isSrtBookSource, isTrue);
     });
 
-    test('both rows present → the stamp of the source resolve() would start '
-        '(audiobook row with playable audio wins over the srt uid)', () async {
+    test('playable audiobook row wins source selection over paired SRT',
+        () async {
       const String bookKey = 'epub-C';
       final AudiobookRepository abRepo = AudiobookRepository(db);
       await abRepo.ensureAudiobook(bookKey);
@@ -133,18 +88,17 @@ void main() {
         ..bookKey = bookKey
         ..audioPaths = <String>[audioFile('both-c-srt.mp3').path];
       await SrtBookRepository(db).save(book);
-      await db.setPrefTyped('audiobook_pos_at_$bookKey', 10);
-      // SRT 重导入会给 uid 键盖新时间戳（位置 0）；会话却按 resolve() 优先序加载
-      // bookKey 键——取两键较大值会让一个从不被加载的时间戳赢下仲裁。
-      await db.setPrefTyped('audiobook_pos_at_${book.uid}', 20);
-      expect(
-        await AudiobookSessionLauncher(db).readPositionUpdatedAtMs(bookKey),
-        10,
-      );
+      await db.setPrefTyped('audiobook_pos_$bookKey', 10);
+      await db.setPrefTyped('audiobook_pos_${book.uid}', 20);
+      final AudiobookSessionStartRequest? request =
+          await AudiobookSessionLauncher(db).resolve(bookKey);
+      expect(request, isNotNull);
+      expect(request!.prefs.positionMs, 10);
+      expect(request.isSrtBookSource, isFalse);
     });
 
-    test('audiobook row whose audio is missing falls through to the srt row, '
-        'exactly like resolve()', () async {
+    test('missing audiobook files fall through to playable SRT source',
+        () async {
       const String bookKey = 'epub-F';
       final AudiobookRepository abRepo = AudiobookRepository(db);
       await abRepo.ensureAudiobook(bookKey);
@@ -160,12 +114,13 @@ void main() {
         ..bookKey = bookKey
         ..audioPaths = <String>[audioFile('fallthrough-f.mp3').path];
       await SrtBookRepository(db).save(book);
-      await db.setPrefTyped('audiobook_pos_at_$bookKey', 10);
-      await db.setPrefTyped('audiobook_pos_at_${book.uid}', 20);
-      expect(
-        await AudiobookSessionLauncher(db).readPositionUpdatedAtMs(bookKey),
-        20,
-      );
+      await db.setPrefTyped('audiobook_pos_$bookKey', 10);
+      await db.setPrefTyped('audiobook_pos_${book.uid}', 20);
+      final AudiobookSessionStartRequest? request =
+          await AudiobookSessionLauncher(db).resolve(bookKey);
+      expect(request, isNotNull);
+      expect(request!.prefs.positionMs, 20);
+      expect(request.isSrtBookSource, isTrue);
     });
   });
 
@@ -176,14 +131,15 @@ void main() {
       source = readReaderPageSource();
     });
 
-    test('saved reader position no longer short-circuits the audio cue '
-        'restore; the LWW helper decides', () {
+    test('normal open always resolves audio first; reader save is fallback', () {
       final int lookup = source.indexOf("'[ReaderFushi] restore lookup: ");
       final int end = source.indexOf("_openTrace.mark('position')", lookup);
       expect(lookup, isNonNegative);
       expect(end, greaterThan(lookup));
       final String block = source.substring(lookup, end);
-      expect(block, contains('audiobookResumeWinsOverReader('));
+      expect(block, isNot(contains('audiobookResumeWinsOverReader(')),
+          reason: 'reader/audio timestamps no longer arbitrate product position');
+      expect(block, isNot(contains('audioPositionAtFuture')));
       expect(block, contains('restored = _restoreFromCurrentAudioCue()'));
       // 音频起点算不出时仍回退存档：存档赋值必须门在 !restored 之后。
       expect(block, contains('if (!restored && saved != null)'));
@@ -195,6 +151,21 @@ void main() {
         tryIdx,
         isNonNegative,
         reason: 'audio slot failure must fall back to the saved position',
+      );
+      final int restoreAudio =
+          block.indexOf('restored = _restoreFromCurrentAudioCue()');
+      final int restoreSaved = block.indexOf('if (!restored && saved != null)');
+      expect(awaitSlot, lessThan(restoreAudio));
+      expect(restoreAudio, lessThan(restoreSaved),
+          reason: 'a valid audio cue must win even when reader save is newer');
+      expect(block, isNot(contains('_readLedger.')),
+          reason: 'initial restore only establishes the first ledger unit; '
+              'it must never credit or settle skipped text');
+      expect(
+        source,
+        contains('if (!_audioSlotResolved || _book == null ||'),
+        reason: 'the WebView body must not exist before the audio slot and '
+            'audio-first anchor have settled',
       );
     });
 
@@ -247,8 +218,7 @@ void main() {
       await db.close();
     });
 
-    test('an unchanged position does not re-stamp (exit flush order must not '
-        'decide the LWW)', () async {
+    test('an unchanged position does not create false sync progress', () async {
       const String key = 'epub-D';
       final AudiobookRepository repo = AudiobookRepository(db);
       await repo.updatePositionMs(bookKey: key, positionMs: 5000);
@@ -273,7 +243,7 @@ void main() {
     });
 
     test('legacy row without a stamp stays unstamped while the position is '
-        'unchanged (never claims to be newer than the reader)', () async {
+        'unchanged', () async {
       const String key = 'epub-E';
       await db.setPrefTyped('audiobook_pos_$key', 4000);
       final AudiobookRepository repo = AudiobookRepository(db);
