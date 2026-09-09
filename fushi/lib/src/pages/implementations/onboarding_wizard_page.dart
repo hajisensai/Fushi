@@ -251,7 +251,23 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
   }
 
-  void _goNext() {
+  void _goNext() => unawaited(_goNextAsync());
+
+  /// BUG-2380：离开 Anki 那一步之前先判一次「这套配置真能制出卡吗」，判不过就地
+  /// 劝建并选用 Lapis。放在推进**之前**而不是之后——用户按下一步的那一刻还看得见
+  /// Anki 这一页的上下文，翻页之后再弹就成了没头没尾的打断。
+  ///
+  /// 弹窗不拦路：用户选「保持当前设置」照样进下一步（引导本来就可跳过，这里不该
+  /// 变成硬门）。但建成了的话 `_steps` 会因为 Anki 变 ready 而多出一步，所以 await
+  /// 之后必须重新取一次序列，不能沿用进函数时那份。
+  Future<void> _goNextAsync() async {
+    if (_steps[_stepIndex] == OnboardingStepId.anki) {
+      await promptCreateLapisIfCannotMine(
+        context: context,
+        viewModel: ref.read(ankiViewModelProvider.notifier),
+      );
+      if (!mounted) return;
+    }
     final List<OnboardingStepId> steps = _steps;
     if (steps[_stepIndex] == OnboardingStepId.features) {
       // 不阻塞翻页（写 11 个 pref 要走 DB），但把 future 留给 [_complete] 等。
@@ -479,6 +495,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           anki.availableDecks.isNotEmpty &&
           anki.availableNoteTypes.isNotEmpty;
     });
+    if (!_ankiConnectionVerified || !context.mounted) return;
+    // BUG-2380：连上了就当场判一次「这套配置真能制出卡吗」。判不过就地给出唯一
+    // 出路（创建并选用 Lapis），而不是让用户一路走到第一次制卡才发现字段全空。
+    await promptCreateLapisIfCannotMine(
+      context: context,
+      viewModel: ref.read(ankiViewModelProvider.notifier),
+    );
   }
 
   /// 当前 Anki 后端的展示名（与 platform_services 的编译期选择一致：桌面

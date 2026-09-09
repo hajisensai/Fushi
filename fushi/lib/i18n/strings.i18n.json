@@ -122,10 +122,10 @@
   "anki_connect_port_auto_fix_none": "No free port found on this machine.",
   "anki_connect_use_on_mobile": "Use AnkiConnect instead",
   "anki_connect_use_on_mobile_hint": "Use only on a trusted network. AnkiConnect uses cleartext HTTP; configure a matching API key, then refresh decks and note types after switching.",
-  "anki_create_lapis": "Create Lapis deck",
+  "anki_create_lapis": "Create and use Lapis",
   "anki_create_lapis_exists": "Lapis note type and deck already exist — selected them.",
   "anki_create_lapis_failed": "Could not create Lapis deck: $error",
-  "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them.",
+  "anki_create_lapis_hint": "Adds the Lapis note type and a Lapis deck to Anki, then selects them as the mining target.",
   "anki_create_lapis_success": "Lapis note type and deck created.",
   "anki_deck": "Deck",
   "anki_dedup_auto": "Automatic processing",
@@ -4548,5 +4548,9 @@
   "download_batch_failed": "$n failed",
   "download_batch_delete_confirm": "Delete $n download task(s)?",
   "sync_err_pairing_rejected": "The paired device rejected this device's credentials — pair again to resume syncing.",
-  "sync_err_not_paired": "No paired device yet — set up pairing in Fushi Interconnect first."
+  "sync_err_not_paired": "No paired device yet — set up pairing in Fushi Interconnect first.",
+  "anki_create_lapis_not_found": "Anki said the Lapis deck and note type were created, but they are still missing when Hibiki reads the collection back. Open Anki, make sure it is not busy, and try again.",
+  "anki_lapis_suggest_title": "Anki can't make cards yet",
+  "anki_lapis_suggest_body": "The selected deck and note type can't produce a card Anki will accept. Hibiki can add its Lapis note type and deck and select them for you.",
+  "anki_lapis_suggest_dismiss": "Keep current setup"
 }
