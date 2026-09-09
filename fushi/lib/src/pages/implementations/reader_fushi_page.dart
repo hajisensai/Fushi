@@ -2410,7 +2410,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
               saved.sectionIndex >= _book!.chapters.length)) {
         saved = null;
       }
-      // BUG-2384：产品真值是「带有声书时音频位置为主」，不是两份时间戳 LWW。
+      // BUG-2390：产品真值是「带有声书时音频位置为主」，不是两份时间戳 LWW。
       // LWW 会让用户往前翻后的较新阅读存档压过音频位置；第二次打开先落旧阅读页，
       // 播放后又跳到音频 cue，不仅位置错，还可能让统计账本把程序化跨过的文字误当
       // 正常阅读。这里在 WebView 首文档创建前先解析音频 cue；只有音频不存在、槽失败

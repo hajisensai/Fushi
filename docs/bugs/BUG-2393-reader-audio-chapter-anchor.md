@@ -1,4 +1,4 @@
-## BUG-2387 · 有声书恢复只定位章节却当作句子恢复成功
+## BUG-2393 · 有声书恢复只定位章节却当作句子恢复成功
 - **报告**：2026-09-09（用户：可能已经到章节，但章内跳转失败）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/reader_fushi/audiobook.part.dart:560` 无 fragment 的 href/正文兜底只找章节，随后以 progress=0、无字符锚返回 true，实际上没有尝试章内定位。此结论来自代码，尚未确认用户视频命中此分支。
 - **[x] ① 已修复** — `1fe98e7901`：在已定位章节中用 `ReaderAudioPositionIndex.studyRangeForUniqueText` 唯一匹配归一化字幕文本并转换成阅读学习单位字符锚，首文档直接恢复到句子。未命中/重复/无学习字符则返回 false，由调用方回退阅读存档；已有 fragment 仍信任持久化坐标，不因 ASR 文本差异重匹配。

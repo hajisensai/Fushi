@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../../pages/reader_fushi_page_source_corpus.dart';
 
-/// BUG-2384：普通开书时，有效音频 cue 永远是恢复主位置；阅读存档只在没有可播放
+/// BUG-2390：普通开书时，有效音频 cue 永远是恢复主位置；阅读存档只在没有可播放
 /// 有声书、音频槽失败或 cue 无法映射正文时兜底。恢复锚在首个 WebView 文档之前决定，
 /// 程序化跨过的正文不进入读字账本。
 void main() {

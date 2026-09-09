@@ -33,10 +33,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2393](bugs/BUG-2393-reader-audio-chapter-anchor.md) | ✅ | ✅ | 有声书恢复只定位章节却当作句子恢复成功 |
+| [BUG-2392](bugs/BUG-2392-reader-audio-resume-priority.md) | ✅ | ✅ | 阅读进度异步快照在导航后仍写入位置与统计 |
+| [BUG-2390](bugs/BUG-2390-audiobook-resume-priority.md) | ✅ | ✅ | 带有声书的小说仍让阅读位置覆盖音频位置 |
 | [BUG-2388](bugs/BUG-2388-reader-webkit-empty-caret-restore.md) | ✅ | ✅ | WebKit竖排字符锚矩形为空导致重开回章首 |
-| [BUG-2387](bugs/BUG-2387-reader-audio-chapter-anchor.md) | ✅ | ✅ | 有声书恢复只定位章节却当作句子恢复成功 |
-| [BUG-2385](bugs/BUG-2385-reader-audio-resume-priority.md) | ✅ | ✅ | 阅读进度异步快照在导航后仍写入位置与统计 |
-| [BUG-2384](bugs/BUG-2384-audiobook-resume-priority.md) | ✅ | ✅ | 带有声书的小说仍让阅读位置覆盖音频位置 |
 | [BUG-2364](bugs/BUG-2364-vn-mouse-wheel.md) | ✅ | ✅ | VN模式鼠标滚轮被分页器能力门误拦截 |
 | [BUG-2363](bugs/BUG-2363-reader-longpress-stationary-selection.md) | ✅ | ✅ | 小说长按必须额外拖动才进入文本选择 |
 | [BUG-2362](bugs/BUG-2362-ios-exit-affordances.md) | ✅ | ✅ | iOS 多处页面/模态没有出口，进去就得重启 app |
