@@ -45,6 +45,10 @@ class _FakeFrameExtractor {
   final String? accept;
   final List<String> outputs = <String>[];
 
+  /// BUG-2366：每次尝试收到的 `diagnosticOnly`，与 [outputs] 同序。
+  /// 非末次尝试必须是 true——那次失败是编码器能力探测，不是 app 出错。
+  final List<bool> diagnosticFlags = <bool>[];
+
   Future<String?> call({
     required String inputPath,
     required String outputPath,
@@ -52,8 +56,10 @@ class _FakeFrameExtractor {
     bool decodeFromStart = false,
     FfmpegFailureReporter? onFailure,
     String? tlsPinSha256,
+    bool diagnosticOnly = false,
   }) async {
     outputs.add(outputPath);
+    diagnosticFlags.add(diagnosticOnly);
     if (accept != null && !outputPath.endsWith(accept!)) return null;
     final File out = File(outputPath);
     out.parent.createSync(recursive: true);
@@ -198,6 +204,12 @@ void main() {
       expect(frame.outputs, hasLength(2));
       expect(frame.outputs.first, endsWith('.png'));
       expect(frame.outputs.last, endsWith('.jpg'));
+      // BUG-2366：移动端 ffmpeg-kit 是 --disable-zlib 构建，png 编码器根本不存在，
+      // 所以上面那次 .png 失败在 Android/iOS 上是**每张卡都会发生**的常态，不是异常。
+      // 它必须走诊断分节，不能计进用户可见错误日志（同 BUG-1867 的形态）。
+      expect(frame.diagnosticFlags, <bool>[true, false],
+          reason: '非末次编码尝试必须 diagnosticOnly=true、链尾必须 false；'
+              '这条一旦反了，选 PNG 的移动端用户每制一张卡就多一条假错误');
     });
   });
 
@@ -363,6 +375,10 @@ void main() {
       expect(cap.coverIsStill, isTrue);
       expect(cap.stillFormat, MiningStillFormat.jpg);
       expect(frame.outputs, hasLength(2));
+      // BUG-2366：两条静图链共用 extractStillWithFallback，语义必须逐字一致——
+      // 这条链（浏览器扩展录制片段）以前连 diagnosticOnly 这个参数都传不了。
+      expect(frame.diagnosticFlags, <bool>[true, false],
+          reason: '片段链与引擎链的降级语义必须同一份，不得再各写一遍循环');
     });
 
     test('buildImmersionRequest：静态帧封面名跟随 cap.stillFormat', () {
@@ -555,6 +571,56 @@ void main() {
         sentence: 's',
       );
       expect(req.stillFormat, MiningStillFormat.jpg);
+    });
+  });
+
+  // BUG-2366 的根因是「同一条降级控制流被抄了两份，其中一份漏了规矩」。上面的行为
+  // 断言只能证明**现有**两条链是对的，挡不住第三条链路明天再抄一遍。这条源码守卫
+  // 直接钉死收口点：`MiningStillFormat.encodeAttempts` 在 lib/ 下只许被
+  // `extractStillWithFallback` 消费。
+  group('BUG-2366：静图降级链只有一个执行点', () {
+    test('lib/ 下 MiningStillFormat.encodeAttempts 只在收口原语里被消费', () {
+      final Directory libDir = Directory('lib');
+      expect(libDir.existsSync(), isTrue,
+          reason: '本守卫必须从 fushi/ 目录跑（相对路径 lib/）');
+
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final List<String> lines = entity.readAsLinesSync();
+        for (int i = 0; i < lines.length; i++) {
+          final String line = lines[i];
+          // 只看真正的**执行**（`for (… in ….encodeAttempts)` / 赋值给局部变量），
+          // 不看注释里的 `[MiningStillFormat.encodeAttempts]` 交叉引用。
+          final String code = line.split('//').first;
+          if (!code.contains('encodeAttempts')) continue;
+          // 枚举自身的 getter 定义不是消费点。
+          if (code.contains('get encodeAttempts')) continue;
+          // 动图那条链（MiningAnimatedFormat）不在本守卫范围内。判据按**类型名**，
+          // 不按某种写法——盯着 `stillFormat.encodeAttempts` 这类字面量的守卫，
+          // 恰好会漏掉 `for (final MiningStillFormat a in fmt.encodeAttempts)`
+          // 这种它本该拦下的新循环。
+          if (!code.contains('MiningStillFormat') &&
+              !code.contains('stillFormat')) {
+            continue;
+          }
+          offenders.add('${entity.path}:${i + 1}: ${line.trim()}');
+        }
+      }
+
+      expect(
+        offenders,
+        hasLength(1),
+        reason: '静图降级链出现了 ${offenders.length} 个执行点：\n${offenders.join('\n')}\n'
+            '必须全部走 extractStillWithFallback —— 各写一遍循环正是 BUG-2366：'
+            '有一份漏了 diagnosticOnly，移动端选 PNG 的用户每制一张卡就多一条假错误。',
+      );
+      expect(
+        offenders.single,
+        contains('immersion_mining_engine.dart'),
+        reason: '唯一的执行点必须是 extractStillWithFallback 所在文件；'
+            '它搬家了就更新本守卫，别把断言删掉',
+      );
     });
   });
 }
