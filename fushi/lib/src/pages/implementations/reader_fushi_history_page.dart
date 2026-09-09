@@ -582,7 +582,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 _buildSearchBar(),
                 _buildTagBar(allTags.valueOrNull ?? const []),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-                const SyncProgressBanner(),
+                SyncProgressBanner(compact: _compactLibraryToolbar),
                 Expanded(
                   // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
                   // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
@@ -689,9 +689,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  bool get _compactLibraryToolbar =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
   Widget _buildTagBar(List<BookTagRow> allTags) {
     return FushiTagFilterBar(
       tags: allTags,
+      pinActions: _compactLibraryToolbar,
+      showTagManagement: !_compactLibraryToolbar,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
@@ -871,34 +880,67 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// P5-A 书架搜索框。形态与游戏库页工具条一致（三个库页搜索长一个样），
   /// 搜索词只影响本次会话、不落库。
+  Future<void> _openTagManagement() async {
+    await Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const TagManagementPage(),
+      ),
+    );
+    if (!mounted) return;
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(bookTagMapProvider);
+  }
+
   Widget _buildSearchBar() {
+    final Widget search = SizedBox(
+      height: _compactLibraryToolbar ? 44 : 40,
+      child: TextField(
+        key: const ValueKey<String>('shelf_search_field'),
+        controller: _searchController,
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search, size: 18),
+          hintText: t.library_search,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 4,
+          ),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                ),
+        ),
+        onChanged: (String value) => setState(() => _searchQuery = value),
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: SizedBox(
-        height: 40,
-        child: TextField(
-          key: const ValueKey<String>('shelf_search_field'),
-          controller: _searchController,
-          decoration: InputDecoration(
-            isDense: true,
-            prefixIcon: const Icon(Icons.search, size: 18),
-            hintText: t.library_search,
-            border: const OutlineInputBorder(),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            suffixIcon: _searchQuery.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _searchQuery = '');
-                    },
+      child: _compactLibraryToolbar
+          ? Row(
+              children: <Widget>[
+                Expanded(child: search),
+                const SizedBox(width: 8),
+                IconButton(
+                  key: const ValueKey<String>('library_tag_settings'),
+                  tooltip: t.tag_manage,
+                  constraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 44,
                   ),
-          ),
-          onChanged: (String value) => setState(() => _searchQuery = value),
-        ),
-      ),
+                  icon: const Icon(Icons.settings_outlined, size: 22),
+                  onPressed: _openTagManagement,
+                ),
+              ],
+            )
+          : search,
     );
   }
 
@@ -1353,8 +1395,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // _mangaOnly 分架过滤：漫画架只来 format='manga'+hasMangaContent 的条目）。
     // 「同步与备份 + 互联」模块关掉 → 远端占位卡（含其下载按钮与长按面板）整块不
     // 渲染。取数侧由 [_shouldLoadRemoteBooks] 同门挡住，两处合起来做到零网络请求。
-    final bool showRemote =
-        remoteState != null &&
+    final bool showRemote = remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&
         appModel.prefsRepo.showRemoteEntries &&
@@ -2332,9 +2373,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           label: isManga
               ? t.book_convert_to_book_action
               : t.book_convert_to_manga_action,
-          icon: isManga
-              ? Icons.menu_book_outlined
-              : Icons.auto_stories_outlined,
+          icon:
+              isManga ? Icons.menu_book_outlined : Icons.auto_stories_outlined,
           onPressed: () => _convertBookFormat(
             bookKey,
             isManga ? BookFormatTarget.book : BookFormatTarget.manga,

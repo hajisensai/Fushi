@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2214 条。点号进各自文件。
+> 共 2215 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2402](bugs/BUG-2402-mobile-library-layout.md) | ✅ | ✅ | 手机标签页头留白与筛选工具堆叠 |
 | [BUG-2400](bugs/BUG-2400-remote-manga-empty-content.md) | ✅ | ✅ | 远端空漫画合集被标记为可下载内容 |
 | [BUG-2399](bugs/BUG-2399-reader-chapter-stale-progress.md) | ✅ | ✅ | 小说跨章节晚到进度污染阅读字数和速度 |
 | [BUG-2398](bugs/BUG-2398-anime-season-search.md) | ✅ | ✅ | 搜索在AniList故障时缺少动画续季 |
