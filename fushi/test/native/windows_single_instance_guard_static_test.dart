@@ -23,8 +23,10 @@ void main() {
     final String src = read('windows/runner/main.cpp');
 
     // 必须是真正的运行期检查（GetLastError），而非仅注释提到。
-    expect(read('windows/runner/single_instance_mutex.h')
-        .contains('GetLastError() == ERROR_ALREADY_EXISTS'), isTrue,
+    expect(
+        read('windows/runner/single_instance_mutex.h')
+            .contains('GetLastError() == ERROR_ALREADY_EXISTS'),
+        isTrue,
         reason: '必须检测 GetLastError()==ERROR_ALREADY_EXISTS（真单实例守卫）');
     // TODO-935：数据迁移自动重启会以 detached 模式拉起带 --fushi-restarted 标志的新
     // 进程，但旧进程此刻仍持单实例互斥量。带该标志命中已有实例时必须**等待**旧进程
@@ -32,13 +34,31 @@ void main() {
     // 无此标志，维持「前置旧窗口 + 退出」。守卫这条豁免在位，防止有人把它改回无条件早退。
     expect(src.contains('HasRestartMarker()'), isTrue,
         reason: 'TODO-935：带重启标志命中已有实例须等待互斥量释放再作首实例，不能误退');
-    // 命中已有实例（且非重启豁免）时退出本进程：锚定到二次实例早退分支唯一标志
-    // FindWindowW（前置首实例窗口），断言其后不远处含早退；不再用对 935 插入的注释/
-    // 等待逻辑脆弱的「ERROR_ALREADY_EXISTS 后固定字符窗口」启发式。
-    final int idx = src.indexOf('::FindWindowW(nullptr, L"Fushi")');
-    expect(idx >= 0, isTrue, reason: '二次实例分支必须前置首实例窗口');
-    final String after = src.substring(idx, (idx + 1400).clamp(0, src.length));
-    expect(after.contains('return EXIT_SUCCESS;'), isTrue,
+    // 命中已有实例（且非重启豁免）时退出本进程。
+    //
+    // **按结构锚，不用字符窗口**：这条断言原本是「FindWindowW 之后 1400 字符内必须
+    // 有 return EXIT_SUCCESS」，而那段前面就住着重启豁免与「首实例正在退出/尚未建窗」
+    // 的等待逻辑——每往里加几行等待，return 就被推出窗口一次，接线没断也照红（TODO-935
+    // 那次已经踩过一遍，这次是分片等待又踩一遍）。改成锚在早退分支的**块内**：
+    // `if (another_instance)` 到它配对的收尾之间，必须既前置首实例窗口、又 return。
+    final int branch = src.indexOf('if (another_instance)');
+    expect(branch >= 0, isTrue, reason: '必须有「命中已有实例」的早退分支');
+    final int open = src.indexOf('{', branch);
+    expect(open > branch, isTrue, reason: '早退分支必须是块体');
+    int depth = 0;
+    int close = open;
+    for (; close < src.length; close++) {
+      if (src[close] == '{') depth++;
+      if (src[close] == '}') {
+        depth--;
+        if (depth == 0) break;
+      }
+    }
+    expect(depth, 0, reason: '早退分支花括号不配对');
+    final String body = src.substring(open, close + 1);
+    expect(body.contains('::FindWindowW(nullptr, L"Fushi")'), isTrue,
+        reason: '二次实例分支必须前置首实例窗口');
+    expect(body.contains('return EXIT_SUCCESS;'), isTrue,
         reason: '命中已有实例必须退出本进程，不再创建第二个共享 userDataFolder 的实例');
   });
 
