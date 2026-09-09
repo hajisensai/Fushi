@@ -204,6 +204,12 @@ void main() {
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
       'lib/src/pages/base_source_page.dart',
       'lib/src/lookup/overlay_bridge_handlers.dart',
+      // 不是第四条车道，是**纯委派层**：`AutoRepositionAnkiRepository` 包在
+      // `ankiRepositoryProvider` 最外层给制卡加自动重排副作用，语义要求它把
+      // 基类每个被后端覆盖的成员逐个转发（漏一个就静默掉回基类降级默认，
+      // 见 auto_reposition_repository_delegation_test）。这里的
+      // `_inner.openWordInAnki(...)` 是转发上面三条车道的调用，不是新起一处。
+      'lib/src/anki/auto_reposition_anki_repository.dart',
     };
     expect(
       filesWhere('lib', (String code) => code.contains('.openWordInAnki(')),
@@ -219,6 +225,9 @@ void main() {
     const Set<String> idLanes = <String>{
       'lib/src/anki/anki_mined_card_action_sheet.dart',
       'lib/src/lookup/overlay_bridge_handlers.dart',
+      // 同上：纯委派层两个方法都要转发，凑巧落进「既反查又打开」的形状，
+      // 但它自己不拼装任何链路——两处都只是 `=> _inner.xxx(...)` 一行。
+      'lib/src/anki/auto_reposition_anki_repository.dart',
     };
     expect(
       filesWhere(
