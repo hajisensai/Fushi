@@ -1543,7 +1543,8 @@ class BackupRestoreService {
   /// Reads this device's device-local / credential prefs from the DB in
   /// [dbDirectory] so an import can write them back afterwards.
   ///
-  /// Filters by [PrefRedactionPolicy] rather than enumerating
+  /// Filters by [BackupService._isDeviceLocalPrefKey] (the [PrefRedactionPolicy]
+  /// shape plus the module switches) rather than enumerating
   /// [SyncRepository.deviceLocalPrefKeys]: the policy also matches by prefix and
   /// shape (`media_source_secret_<id>` is one key PER SOURCE ROW and could never
   /// be listed), and — decisively — it is the SAME predicate the export strip
@@ -1559,7 +1560,7 @@ class BackupRestoreService {
       final all = await db.getAllPrefs();
       final out = <String, String>{};
       for (final MapEntry<String, String> entry in all.entries) {
-        if (PrefRedactionPolicy.isDeviceLocalOrCredential(entry.key)) {
+        if (BackupService._isDeviceLocalPrefKey(entry.key)) {
           out[entry.key] = entry.value;
         }
       }

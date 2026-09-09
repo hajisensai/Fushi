@@ -179,6 +179,9 @@ import 'package:fushi/src/mining/youtube_clip_miner.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/settings/settings_schema.dart'
+    show resetSettingsSchemaCache;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart'
@@ -2766,6 +2769,9 @@ class AppModel with ChangeNotifier {
       // TODO-855: prime the prefs-version watermark from the freshly loaded
       // cache (keeps refreshPrefCacheIfChanged consistent if ever reused here).
       _lastSeenPrefsVersion = prefsRepo.prefsVersion;
+      // 刻意**不加模块门**：这只是给 native 悬浮词典窗注册「查词 / 制卡」回调，
+      // 是 app 外取词**能力**而不是查词页入口。用户拍板「关 lookup 只关页面入口，
+      // 查词能力全留」，注销回调会让已开着的悬浮窗查不出词、按钮静默失败。
       _setupFloatingDictHandlers();
       // 已迁移只读态（Fushi 迁移 P1-4）：不再自启互联服务——两版并存时端口
       // 固定必冲突（SyncServerPortInUseException 会打到用户脸上）；老版只保
@@ -2774,33 +2780,50 @@ class AppModel with ChangeNotifier {
         notifyListeners();
         return;
       }
+      // 「功能模块」后台自启门（模块被关 = 它专属的后台**下次启动不再拉起**）。
+      //
+      // 快照只取一次：[moduleVisibility] 每次读都重新合成一个 Set，而下面这一串
+      // 是同一帧里的连续判定，取一次既省分配也保证这一批门读的是同一份真值。
+      //
+      // 刻意**只判启动、不 stop**：用户在会话中途关模块时不切断进行中的任务
+      // （正在跑的同步/下载/做种照常跑完），下次启动才不再拉起。
+      final ModuleVisibility modules = moduleVisibility;
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
       // logged and must never break app init.
-      unawaited(syncServerController.startIfEnabled().then((
-        FushiServerStartOutcome outcome,
-      ) {
-        if (outcome is FushiServerPortInUse) {
-          ErrorLogService.instance.log(
-            'AppModel.startSyncServer',
-            'port ${outcome.port} in use',
-            StackTrace.current,
-          );
-        } else if (outcome is FushiServerStartError) {
-          ErrorLogService.instance.log(
-            'AppModel.startSyncServer',
-            outcome.message,
-            StackTrace.current,
-          );
-        }
-      }).catchError((Object e, StackTrace s) {
-        ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
-      }));
-      // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
-      // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
-      // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
-      installCollectionsSyncWatcher(db: database);
+      // 模块门（sync）：这两条都是「同步与备份 + 互联」专属后台——服务器要绑端口
+      // 起发现广播，监听器要挂 DB 订阅并按写入推同步。关掉 sync 模块后不再自启，
+      // 代价是本机不再作为互联 host 被别的设备发现/连接，合集增删也不再自动推送。
+      if (modules.isEnabled(ModuleId.sync)) {
+        unawaited(syncServerController.startIfEnabled().then((
+          FushiServerStartOutcome outcome,
+        ) {
+          if (outcome is FushiServerPortInUse) {
+            ErrorLogService.instance.log(
+              'AppModel.startSyncServer',
+              'port ${outcome.port} in use',
+              StackTrace.current,
+            );
+          } else if (outcome is FushiServerStartError) {
+            ErrorLogService.instance.log(
+              'AppModel.startSyncServer',
+              outcome.message,
+              StackTrace.current,
+            );
+          }
+        }).catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
+        }));
+        // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
+        // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
+        // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
+        installCollectionsSyncWatcher(db: database);
+      }
+      // 刻意**不加模块门**：它是「让任意 yomitan-api 客户端查 Fushi 词典」的查词
+      // 能力（端口 19633），开关落在恒在的「设置 → 查词」分类里，且移动端同样可用
+      // （browserExtension 模块仅桌面存在）。挂 browserExtension 门会一次犯两个错：
+      // 移动端直接失去该服务，桌面端则开关显示「开」而服务不跑。
       if (yomitanApiServerEnabled) {
         // fail-open：自启动失败绝不阻塞 init、不改开关语义，但必须留痕（BUG-911），
         // 与邻居 startSyncServer / refreshBrowserExtensionCopy 一致记日志，避免静默吞异常。
@@ -2813,11 +2836,21 @@ class AppModel with ChangeNotifier {
       // （只在用户装过扩展、指纹不一致时重解压；没装过不落盘）。此前该副本只在手动跑
       // 「安装扩展」助手时写入 → app 升级后磁盘副本永远停在安装当天的旧版，扩展弹窗与
       // app 内弹窗漂移（BUG-621/688 修了也到不了用户浏览器）。fire-and-forget 不阻塞 init。
-      unawaited(
-          refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance
-            .log('AppModel.refreshBrowserExtensionCopy', e, s);
-      }));
+      // 模块门（browserExtension）：这份磁盘副本只服务「浏览器扩展」管理页的安装
+      // 助手，模块关掉后那个页面本身也不存在。关掉后不再刷新副本，也不再算内置指纹
+      // （查词响应里的 `extensionBuild` 字段随之省略——扩展模块已关，没有消费者）。
+      // 平台判据走 modules（browserExtension 仅桌面），与函数内既有的桌面早退同向。
+      if (modules.isEnabled(ModuleId.browserExtension)) {
+        unawaited(
+            refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.refreshBrowserExtensionCopy', e, s);
+        }));
+      }
+      // 刻意**不加模块门**：texthooker 是「连 Textractor / mpv / agent，把收到的
+      // 文本拿去查词」的查词能力（不只 galgame），开关同样落在恒在的「设置 → 查词」
+      // 分类里，且那个开关自己就直接 start/stop 本管理器——只在启动侧加门会让
+      // 「开关是开的但重启后不连」，两处判据当场漂开。
       if (texthookerEnabled) {
         TexthookerWsClientManager.instance.start(texthookerUrls);
       }
@@ -2830,11 +2863,19 @@ class AppModel with ChangeNotifier {
       }));
       // 番剧下载：启动 qb 完成监听 + 自动入库（fire-and-forget；未配置 qb 时每
       // tick 直接返回，无网络开销，绝不阻塞/中断 init）。
-      unawaited(
-          startAnimeDownloadService().catchError((Object e, StackTrace s) {
-        ErrorLogService.instance
-            .log('AppModel.startAnimeDownloadService', e, s);
-      }));
+      // 模块门（downloads）：番剧下载完成监听是「下载中心」专属后台（计划仓储 +
+      // 完成轮询 + 自动入库）。关掉 downloads 后不再自启，代价是已推给 qb / 内置引擎
+      // 的种子下完后不会被自动识别入库（种子本身照常下完，重开模块后下一 tick 补上）。
+      //
+      // 门只加在调用点：[startAnimeDownloadService] 函数体内部顺序敏感（懒建 session、
+      // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
+      if (modules.isEnabled(ModuleId.downloads)) {
+        unawaited(
+            startAnimeDownloadService().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.startAnimeDownloadService', e, s);
+        }));
+      }
       // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
       // 半截文件，再把下载阶段对齐磁盘。
       //
@@ -6420,28 +6461,34 @@ class AppModel with ChangeNotifier {
   Future<void> setOnboardingCompleted({required bool value}) =>
       prefsRepo.setOnboardingCompleted(value: value);
 
-  bool get moduleBooksEnabled => prefsRepo.moduleBooksEnabled;
-  Future<void> setModuleBooksEnabled(bool value) =>
-      prefsRepo.setModuleBooksEnabled(value);
-  bool get moduleBrowserExtensionEnabled =>
-      prefsRepo.moduleBrowserExtensionEnabled;
-  Future<void> setModuleBrowserExtensionEnabled(bool value) =>
-      prefsRepo.setModuleBrowserExtensionEnabled(value);
-  bool get moduleMangaEnabled => prefsRepo.moduleMangaEnabled;
-  Future<void> setModuleMangaEnabled(bool value) =>
-      prefsRepo.setModuleMangaEnabled(value);
-  bool get moduleVideoEnabled => prefsRepo.moduleVideoEnabled;
-  Future<void> setModuleVideoEnabled(bool value) =>
-      prefsRepo.setModuleVideoEnabled(value);
-  bool get moduleGamesEnabled => prefsRepo.moduleGamesEnabled;
-  Future<void> setModuleGamesEnabled(bool value) =>
-      prefsRepo.setModuleGamesEnabled(value);
-  bool get moduleDownloadsEnabled => prefsRepo.moduleDownloadsEnabled;
-  Future<void> setModuleDownloadsEnabled(bool value) =>
-      prefsRepo.setModuleDownloadsEnabled(value);
-  bool get moduleDictionariesEnabled => prefsRepo.moduleDictionariesEnabled;
-  Future<void> setModuleDictionariesEnabled(bool value) =>
-      prefsRepo.setModuleDictionariesEnabled(value);
+  /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
+  ///
+  /// 偏好仓库还没装配好时**一律判开**（fail-open）。模块门控读得比 `initialise()`
+  /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
+  /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
+  /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
+  /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
+  bool moduleEnabled(ModuleId module) =>
+      isPreferencesReady ? prefsRepo.moduleEnabled(module) : true;
+
+  Future<void> setModuleEnabled(ModuleId module, bool value) async {
+    await prefsRepo.setModuleEnabled(module, value);
+    // 设置 schema 树按 locale 记忆化，两张投影表（阅读器/视频快捷面板）也惰性缓存。
+    // 模块可见性会改变这些树的过滤结果，故翻转开关必须丢弃快照，否则快捷面板会
+    // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
+    resetSettingsSchemaCache();
+    notifyListeners();
+  }
+
+  /// 「此刻哪些模块可见」——pref 真值与平台判据的**唯一合成**。
+  ///
+  /// 全 app 的门控一律读它。此前底栏与 macOS 侧栏各手抄一份七参表，`games` 的
+  /// `Platform.isWindows` 判据抄了两遍、漏了一遍（macOS 那份靠缺省值蒙对）。
+  ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
+        prefOf: moduleEnabled,
+        isWindows: Platform.isWindows,
+        isDesktop: DesktopLookupService.isDesktop,
+      );
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;

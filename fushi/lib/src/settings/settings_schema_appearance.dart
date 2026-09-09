@@ -2,36 +2,95 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/utils.dart';
 
-/// 「功能模块」里的单个 tab 显隐开关。
+/// 「功能模块」开关行的 item id。
 ///
-/// 标题与图标一律从底栏/侧栏的**同一个**真值 [homeNavItemFor] 取，杜绝设置页再抄一份
-/// 标签（那是「设置里叫 Galgame、底栏叫游戏」这类不一致的成因）。[isTool] 区分库页与
-/// 工具页两句提示文案。
-SettingsSwitchItem _moduleSwitch({
-  required String id,
-  required HomeTab tab,
-  required SettingsSwitchGetter value,
-  required Future<void> Function(SettingsContext settingsContext, bool enabled)
-      setValue,
-  SettingsVisibility? visible,
-  bool isTool = false,
-}) {
-  final AdaptiveNavItem navItem = homeNavItemFor(tab);
+/// **历史前缀 `system.` 冻结不改**：这些 id 是设置搜索的定位锚点，与展示分类本就
+/// 解耦（同款先例见下面 app_shell 里关于 `appearance.startup_default_dictionary_tab`
+/// 的注释），改 id 只会平白动摇锚点。四个后加的模块沿用同一前缀保持一致。
+String _moduleItemId(ModuleId module) => switch (module) {
+  ModuleId.books => 'system.module_books',
+  ModuleId.manga => 'system.module_manga',
+  ModuleId.video => 'system.module_video',
+  ModuleId.games => 'system.module_games',
+  ModuleId.downloads => 'system.module_downloads',
+  ModuleId.lookup => 'system.module_lookup',
+  ModuleId.browserExtension => 'system.module_browser_extension',
+  ModuleId.listening => 'system.module_listening',
+  ModuleId.cardCreation => 'system.module_card_creation',
+  ModuleId.services => 'system.module_services',
+  ModuleId.sync => 'system.module_sync',
+};
+
+/// 「功能模块」开关行的标题与图标。
+///
+/// **一律取别处已有的真值，绝不在这里抄第二份标签**——此前这里抄了一套
+/// `module_*_label`（'小说' 对底栏「书架」、'Galgame' 对底栏「游戏」），两份真值
+/// 各改各的必然漂移，用户看到的就是设置项名字对不上底栏。
+/// 有底栏 tab 的模块取 [homeNavItemFor]（底栏改名这里自动跟着改）；没有 tab 的四个
+/// 取它自己那个设置一级分类的标题与图标（同理，分类改名这里自动跟着改）。
+({String label, IconData icon}) _moduleNavIdentity(ModuleId module) {
+  final HomeTab? tab = homeTabOfModule(module);
+  if (tab != null) {
+    final AdaptiveNavItem navItem = homeNavItemFor(tab);
+    return (label: navItem.label, icon: navItem.icon);
+  }
+  return switch (module) {
+    ModuleId.listening => (
+      label: t.settings_destination_listening,
+      icon: Icons.headphones_outlined,
+    ),
+    ModuleId.cardCreation => (
+      label: t.settings_destination_card_creation,
+      icon: Icons.style_outlined,
+    ),
+    ModuleId.services => (
+      label: t.settings_destination_services,
+      icon: Icons.cloud_outlined,
+    ),
+    ModuleId.sync => (
+      label: t.settings_destination_sync_backup,
+      icon: Icons.sync,
+    ),
+    // 上面 homeTabOfModule 已经把有 tab 的七个消化掉了；这里补齐 switch 让编译器
+    // 在新增模块时强制点名，而不是静默落进一个 default 里显示错标签。
+    ModuleId.books ||
+    ModuleId.manga ||
+    ModuleId.video ||
+    ModuleId.games ||
+    ModuleId.downloads ||
+    ModuleId.lookup ||
+    ModuleId.browserExtension => throw StateError(
+      '$module 有对应 HomeTab，标识应走 homeNavItemFor',
+    ),
+  };
+}
+
+/// 「功能模块」里的单个模块开关。
+SettingsSwitchItem _moduleSwitch(ModuleId module) {
+  final ({String label, IconData icon}) identity = _moduleNavIdentity(module);
   return SettingsSwitchItem(
-    id: id,
-    title: navItem.label,
-    subtitle: isTool ? t.module_tool_toggle_hint : t.module_toggle_hint,
-    icon: navItem.icon,
-    visible: visible,
-    value: value,
+    id: _moduleItemId(module),
+    title: identity.label,
+    subtitle: t.module_toggle_hint,
+    icon: identity.icon,
+    // 平台上不存在的模块不出开关（galgame 仅 Windows、浏览器扩展仅桌面）。判据
+    // 与读取端同源（[ModuleId.availableOn]），不在这里另写一份 Platform 判断。
+    visible: (_) => module.availableOn(
+      isWindows: Platform.isWindows,
+      isDesktop: DesktopLookupService.isDesktop,
+    ),
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.moduleEnabled(module),
     onChanged: (SettingsContext settingsContext, bool enabled) async {
-      await setValue(settingsContext, enabled);
+      await settingsContext.appModel.setModuleEnabled(module, enabled);
       settingsContext.refresh();
     },
   );
@@ -174,85 +233,29 @@ SettingsDestination buildAppearanceDestination() {
           ),
         ],
       ),
-      // 「功能模块」：小说/漫画/视频/游戏/浏览器扩展五个库页 tab 加 下载/查词 两个
-      // 工具 tab 的显隐开关（库页那几项与新手引导的功能选择写同一真值）。首页/设置
-      // 恒在，不提供开关；games 仅 Windows、扩展仅桌面显示（读取端还叠加平台门控）。
-      // 顺序与底栏一致：库页 → 下载 → 查词 → 扩展。
+      // 「功能模块」：11 个模块的总开关，值域与顺序都是 [ModuleId]。
       //
-      // 本区管的是「底栏/侧栏出现哪些 tab」，与同分类的「反转导航栏」同域，故住外观
-      // 而不是系统（此前在 系统 › 功能模块）。item id 保留 `system.` 历史前缀不动
-      // ——id 与展示分类本就解耦（同款先例见下面 app_shell 里关于
-      // 'appearance.startup_default_dictionary_tab' 的注释），改 id 只会平白动摇
-      // 搜索定位锚点。
+      // **本区管的不再只是底栏**。这些开关原来只喂 `homeActiveTabs()`（底栏/侧栏
+      // tab 列表），于是「关掉视频」之后设置页仍列着「视频」「在线服务」，首页活动
+      // 筛选条仍有「观看」，视频后台照跑——用户看到的是「只有底栏变干净了」。现在
+      // 一个开关关掉该模块的**全部入口**：底栏/侧栏 tab、首页 dashboard 的条目与
+      // 筛选、设置一级分类（连带设置搜索索引）、跨页跳转、该域快捷键、外部打开，
+      // 以及它专属后台的下次自启。
       //
-      // 标题与图标**一律取底栏真值** [homeNavItemFor]，不再手写第二份：此前这里抄了
-      // 一套 module_*_label（'小说' 对底栏「书架」、'Galgame' 对底栏「游戏」、
-      // 英文 'Novels'/'Browser extension' 对 'Books'/'Extension'），两份真值各改各的
-      // 必然漂移，用户看到的就是设置项名字对不上底栏。现在底栏改名，这里自动跟着改。
+      // 两条刻意的例外：
+      // - 首页/设置**恒在**，是全部模块关光后的安全回退面，没有 ModuleId。
+      // - 关掉「查词」只关**页面入口**，查词**能力全留**（阅读器划词弹窗、设置 →
+      //   查词 分类里的词典导入管理与音频来源）——用户拍板：纯阅读器仍要能查词。
+      //
+      // 分区住外观而不是系统：它与同分类的「反转导航栏」同域（此前在 系统 ›
+      // 功能模块）。item id 保留 `system.` 历史前缀不动，理由见 [_moduleItemId]。
       SettingsSection(
         title: t.settings_section_modules,
+        // 遍历 ModuleId.values 生成，不再逐个手写：加模块只加一个 enum 值，
+        // 枚举顺序就是这里的展示顺序（库页 → 工具页 → 横切能力 → 设备数据）。
+        // 平台上不存在的模块由 _moduleSwitch 自己的 visible 判掉。
         items: <SettingsItem>[
-          _moduleSwitch(
-            id: 'system.module_books',
-            tab: HomeTab.books,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleBooksEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setModuleBooksEnabled(value),
-          ),
-          _moduleSwitch(
-            id: 'system.module_manga',
-            tab: HomeTab.manga,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleMangaEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setModuleMangaEnabled(value),
-          ),
-          _moduleSwitch(
-            id: 'system.module_video',
-            tab: HomeTab.video,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleVideoEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setModuleVideoEnabled(value),
-          ),
-          _moduleSwitch(
-            id: 'system.module_games',
-            tab: HomeTab.games,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleGamesEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setModuleGamesEnabled(value),
-          ),
-          _moduleSwitch(
-            id: 'system.module_downloads',
-            tab: HomeTab.downloads,
-            isTool: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleDownloadsEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setModuleDownloadsEnabled(value),
-          ),
-          _moduleSwitch(
-            id: 'system.module_lookup',
-            tab: HomeTab.dictionaries,
-            isTool: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleDictionariesEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel.setModuleDictionariesEnabled(value),
-          ),
-          _moduleSwitch(
-            id: 'system.module_browser_extension',
-            tab: HomeTab.browserExtension,
-            visible: (_) => DesktopLookupService.isDesktop,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.moduleBrowserExtensionEnabled,
-            setValue: (SettingsContext settingsContext, bool value) =>
-                settingsContext.appModel
-                    .setModuleBrowserExtensionEnabled(value),
-          ),
+          for (final ModuleId module in ModuleId.values) _moduleSwitch(module),
         ],
       ),
       SettingsSection(

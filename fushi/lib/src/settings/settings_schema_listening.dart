@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -12,6 +13,12 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildListeningDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.listening,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.listening,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_listening,
     summary: t.floating_lyric_hint,
     icon: Icons.headphones_outlined,

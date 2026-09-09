@@ -25,6 +25,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
@@ -567,8 +568,23 @@ void main([List<String> args = const <String>[]]) {
       unawaited(Future(() async {
         try {
           await WidgetsBinding.instance.endOfFrame;
-          await GlobalLookupController.instance.start(appModel: appModel);
-          if (GalHookTextOverlayController.isSupported) {
+          // 两个控制器分属不同模块，各判各的门——**必须写成两条独立的 if**：
+          // 它们此前在同一个 try 里顺序执行，给第一个加 early return 会连带
+          // 跳过 galgame 浮窗（games 与 lookup 正交）。
+          //
+          // 「下次启动不再自启」的语义在这里是字面的：两个 start() 都只有单向
+          // 闩（`_started`）、生产路径没有 stop，所以关掉模块要到下次启动才
+          // 真的不装钩子；这正是用户选的「不切断进行中的任务」。
+          final ModuleVisibility modules = appModel.moduleVisibility;
+          if (modules.isEnabled(ModuleId.lookup)) {
+            // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
+            // WebView2 预热，四条通道全部依附于这一次 start()。关掉查词模块
+            // 就不该再往系统里装钩子（快捷键设置页的 globalExternal 分区同步
+            // 隐藏，见 shortcut_settings_page）。
+            await GlobalLookupController.instance.start(appModel: appModel);
+          }
+          if (modules.isEnabled(ModuleId.games) &&
+              GalHookTextOverlayController.isSupported) {
             await GalHookTextOverlayController.instance
                 .start(appModel: appModel);
           }
@@ -1273,6 +1289,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Future<void> _openExternalVideo(String videoPath) async {
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
+
+    // ⓪ 模块门：视频模块关掉时「看不见也到不了」——文件关联 / 命令行 argv /
+    // 单实例转发 / 拖拽四条外部路径都汇到这里，是唯一能读到偏好的落地点（冷启动
+    // argv 分支跑在 AppModel.initialise 之前，那时 prefs 还在 Drift 里读不到）。
+    //
+    // 判定必须排在**入库之前**：下面会经 VideoBookRepository 建/取一行
+    // video_books，若放行到那之后再拦，视频就进了一个用户根本看不见的库。给
+    // toast 而不是静默——双击 mkv 毫无反应会被当成 app 坏了。
+    if (!appModel.moduleVisibility.isEnabled(ModuleId.video)) {
+      FushiToast.show(
+        msg: t.module_disabled_hint,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
 
     // ③ 存在性校验：冷启动 argv 路径虽在 main() 已 existsSync 过，但从那次检查到
     // 此处首帧入库之间文件可能被移动/删除（或检查与使用间的竞态），故再校验一次；
@@ -2004,27 +2035,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                 sidebar: mediaOpen
                                     ? null
                                     : buildFushiMacosSidebar(
+                                        // 与 HomePage._activeTabs 同一真值、
+                                        // 同一个参数。此前这里是第二份手抄的
+                                        // 七参实参表，漏传 gamesEnabled 靠缺省
+                                        // false 蒙对，注释还把漏写说成「macOS
+                                        // 恒 false」——收成一个 ModuleVisibility
+                                        // 后不可能再漂移。
                                         activeTabs: homeActiveTabs(
-                                          // 小说/漫画/视频/扩展按「功能模块」偏好
-                                          // 显隐（与 HomePage._activeTabs 同一真值）。
-                                          // games（galgame 库）仅 Windows；macOS 根
-                                          // 侧栏此处恒 false（gamesEnabled 缺省）。
-                                          booksEnabled:
-                                              appModel.moduleBooksEnabled,
-                                          videoEnabled:
-                                              appModel.moduleVideoEnabled,
-                                          mangaEnabled:
-                                              appModel.moduleMangaEnabled,
-                                          downloadsEnabled:
-                                              appModel.moduleDownloadsEnabled,
-                                          dictionariesEnabled: appModel
-                                              .moduleDictionariesEnabled,
-                                          // 浏览器扩展 tab「电脑才有」：此处为 macOS 根
-                                          // 侧栏，macOS 即桌面 → 与底栏/rail 同一门控。
-                                          browserExtensionEnabled:
-                                              DesktopLookupService.isDesktop &&
-                                                  appModel
-                                                      .moduleBrowserExtensionEnabled,
+                                          appModel.moduleVisibility,
                                         ),
                                       ),
                                 child: child!,

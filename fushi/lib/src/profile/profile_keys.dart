@@ -4,6 +4,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/media/override_title_key.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
@@ -33,7 +34,17 @@ class ProfileKeys {
   static const String categoryDictionary = 'dictionary';
   static const String categoryReader = 'reader';
 
-  static const Set<String> _excludedPrefKeys = {
+  static final Set<String> _excludedPrefKeys = <String>{
+    // 「功能模块」11 个开关（`module_*_enabled`）描述的是**这台设备上要露出哪些
+    // 入口**，与 app_ui_scale / app_locale / eink_mode / current_home_tab_index
+    // 同族，绝不随 Profile 走。不排除会踩一个真 bug：`ProfileRepository` 对
+    // 「快照里没有的键」执行 deletePref，于是切到一个**模块开关落地之前建的老
+    // 快照**，这 11 个键会被整体删掉、回落默认 true —— 用户精心关掉的模块自己
+    // 全开。排除后既不再写入快照也不再从快照读回，存量老快照里可能已存着的
+    // module_* 行留着不读即可（读侧过滤失效，无需 schema 迁移）。
+    //
+    // 键名从 [ModuleId.allPrefKeys] 生成，不手抄——加模块时这里自动跟上。
+    ...ModuleId.allPrefKeys,
     'active_profile_id',
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。

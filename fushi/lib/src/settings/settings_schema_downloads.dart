@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -26,6 +27,12 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildDownloadsDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.downloads,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.downloads,
+      c.appModel.moduleVisibility,
+    ),
     title: t.nav_downloads,
     summary: t.download_settings,
     icon: Icons.download_outlined,

@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
 FushiDatabase _testDb() {
@@ -56,29 +57,38 @@ void main() {
       expect(repo.onboardingCompleted, true);
     });
 
-    test('module tab toggles default to true and round-trip', () async {
+    test('module toggles default to true and round-trip', () async {
       // 「功能模块」显隐默认全开——升级用户底栏不变（Never break userspace）。
-      expect(repo.moduleBooksEnabled, true);
-      expect(repo.moduleMangaEnabled, true);
-      expect(repo.moduleVideoEnabled, true);
-      expect(repo.moduleGamesEnabled, true);
-      expect(repo.moduleBrowserExtensionEnabled, true);
-      expect(repo.moduleDownloadsEnabled, true);
-      expect(repo.moduleDictionariesEnabled, true);
-      await repo.setModuleBooksEnabled(false);
-      await repo.setModuleMangaEnabled(false);
-      await repo.setModuleVideoEnabled(false);
-      await repo.setModuleGamesEnabled(false);
-      await repo.setModuleBrowserExtensionEnabled(false);
-      await repo.setModuleDownloadsEnabled(false);
-      await repo.setModuleDictionariesEnabled(false);
-      expect(repo.moduleBooksEnabled, false);
-      expect(repo.moduleMangaEnabled, false);
-      expect(repo.moduleVideoEnabled, false);
-      expect(repo.moduleGamesEnabled, false);
-      expect(repo.moduleBrowserExtensionEnabled, false);
-      expect(repo.moduleDownloadsEnabled, false);
-      expect(repo.moduleDictionariesEnabled, false);
+      // 按 [ModuleId.values] 遍历而非手抄七个模块：加模块时本用例自动覆盖到它，
+      // 也钉住「一个模块一个键」（同键复用会在写全 false 后被读回暴露）。
+      for (final ModuleId module in ModuleId.values) {
+        expect(
+          repo.moduleEnabled(module),
+          true,
+          reason: '${module.name} 默认应为开',
+        );
+      }
+      for (final ModuleId module in ModuleId.values) {
+        await repo.setModuleEnabled(module, false);
+      }
+      for (final ModuleId module in ModuleId.values) {
+        expect(
+          repo.moduleEnabled(module),
+          false,
+          reason: '${module.name} 关闭后应读回 false',
+        );
+      }
+      // 单个模块翻回开不得连带别人（键必须互不复用）。
+      await repo.setModuleEnabled(ModuleId.books, true);
+      expect(repo.moduleEnabled(ModuleId.books), true);
+      for (final ModuleId module in ModuleId.values) {
+        if (module == ModuleId.books) continue;
+        expect(
+          repo.moduleEnabled(module),
+          false,
+          reason: '${module.name} 不该跟着 books 一起被打开',
+        );
+      }
     });
 
     test('currentHomeTabIndex defaults to 0', () {

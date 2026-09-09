@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -33,6 +34,12 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 SettingsDestination buildVideoDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.video,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.video,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_video,
     summary: t.video_settings_title,
     icon: Icons.movie_outlined,

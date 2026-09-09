@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -30,6 +31,12 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildServicesDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.services,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.services,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_services,
     summary: t.settings_destination_services_summary,
     icon: Icons.cloud_outlined,
@@ -248,6 +255,13 @@ SettingsNavigationItem buildOpenServicesItem(String id) {
     subtitle: t.settings_services_link_subtitle,
     icon: Icons.cloud_outlined,
     showIcon: true,
+    // 与它指向的分类同门控：services 模块关掉时整行不渲染。留着就是一条通往已关
+    // 模块的暗门（宿主分类——视频 / 下载——可能仍开着，所以宿主的 destination 级
+    // 门控盖不住这一行）。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.services,
+      c.appModel.moduleVisibility,
+    ),
     onTap: (SettingsContext settingsContext) async {
       await pushSettingsPage(
         settingsContext,

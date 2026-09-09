@@ -3359,6 +3359,17 @@ function createEntryHeader(entry, idx) {
     }
     
     const buttonsContainer = el('div', { className: 'header-buttons' });
+
+    // 「制卡」功能模块（Dart 侧 ModuleId.cardCreation）关掉时，词条头上的「+」制卡
+    // 按钮与跟它同源的「在 Anki 中打开」↗ 按钮**整颗不渲染**：模块关掉的语义是「该
+    // 模块的全部入口消失」，不是「按钮还在、点了没反应」。
+    //
+    // 判据写成 `!== false` 而不是真值判断：宿主没注入过这个 flag（浏览器扩展 content
+    // 侧、node 单测）时是 undefined → 照旧渲染，零回归。形态与既有的
+    // window.sentenceDraftEnabled / window.sentenceContextPreviewEnabled 一致——由宿主
+    // 声明能力，JS 侧只读不猜。注入点见 popup_settings_injection.dart（in-app 弹窗与
+    // app 外全局查词窗共用同一段 head，故两类表面同时生效）。
+    const miningEnabled = window.__fushiMiningEnabled !== false;
     
     if (window.audioSources?.length) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
@@ -3641,7 +3652,9 @@ function createEntryHeader(entry, idx) {
             }
         }
     });
-    buttonsContainer.appendChild(mineButton);
+    if (miningEnabled) {
+        buttonsContainer.appendChild(mineButton);
+    }
 
     // TODO-1360：「在 Anki 中打开卡片」按钮——仅当该词已制卡（data-mined）时显示。点击
     // 让宿主据 expression/reading 反查 Anki 全部命中卡并直接跳转打开（单卡直开 / 多卡弹
@@ -3666,7 +3679,9 @@ function createEntryHeader(entry, idx) {
         }
     });
     setButtonIcon(openAnkiButton, 'openInAnki');
-    buttonsContainer.appendChild(openAnkiButton);
+    if (miningEnabled) {
+        buttonsContainer.appendChild(openAnkiButton);
+    }
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
     //
@@ -3678,37 +3693,41 @@ function createEntryHeader(entry, idx) {
     // earlier card to the editable ✓↩ latest state so a single click overwrites
     // it in place — no need to have mined it in this popup session. A null reply
     // keeps the ordinary two-state behaviour (Never break userspace).
-    scheduleEntryStateCheck(
-        mineButton,
-        `duplicate\u0000${mineEntryKey(expression, reading)}`,
-        () => window.flutter_inappwebview.callHandler(
-            'duplicateCheck', { expression, reading }),
-        async (isDuplicate) => {
-            const stateEpoch = entryStateCheckEpoch;
-            const stateVersion = mineButton.__fushiEntryStateVersion || 0;
-            // Paint ✓/+ as soon as duplicateCheck answers. The optional
-            // overwrite-target probe is a second Anki round trip and must not
-            // hold the basic lookup-time state hostage.
-            setMineState(isDuplicate);
-            if (isDuplicate && !isLatestEditable(expression, reading)) {
-                try {
-                    const noteId = await window.flutter_inappwebview.callHandler(
-                        'overwriteTargetNoteId', { expression, reading });
-                    if (stateEpoch !== entryStateCheckEpoch ||
-                        stateVersion !== (mineButton.__fushiEntryStateVersion || 0) ||
-                        mineButton.isConnected === false) return;
-                    if (typeof noteId === 'number' && Number.isFinite(noteId)) {
-                        rememberLatestMined(expression, reading, noteId);
-                        setMineState(true);
+    // 制卡模块关掉时上面一颗制卡按钮都没渲染，这里的查重探测也一并停掉——模块
+    // 关掉 = 它的后台流量（每次查词一次 Anki 查重 + 可能的覆写目标反查）也一起停。
+    if (miningEnabled) {
+        scheduleEntryStateCheck(
+            mineButton,
+            `duplicate\u0000${mineEntryKey(expression, reading)}`,
+            () => window.flutter_inappwebview.callHandler(
+                'duplicateCheck', { expression, reading }),
+            async (isDuplicate) => {
+                const stateEpoch = entryStateCheckEpoch;
+                const stateVersion = mineButton.__fushiEntryStateVersion || 0;
+                // Paint ✓/+ as soon as duplicateCheck answers. The optional
+                // overwrite-target probe is a second Anki round trip and must not
+                // hold the basic lookup-time state hostage.
+                setMineState(isDuplicate);
+                if (isDuplicate && !isLatestEditable(expression, reading)) {
+                    try {
+                        const noteId = await window.flutter_inappwebview.callHandler(
+                            'overwriteTargetNoteId', { expression, reading });
+                        if (stateEpoch !== entryStateCheckEpoch ||
+                            stateVersion !== (mineButton.__fushiEntryStateVersion || 0) ||
+                            mineButton.isConnected === false) return;
+                        if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+                            rememberLatestMined(expression, reading, noteId);
+                            setMineState(true);
+                        }
+                    } catch (e) {
+                        // A failed overwrite-target probe must never break the ✓/+ paint;
+                        // fall back to the ordinary mined state below.
+                        console.error('overwriteTargetNoteId probe failed', e);
                     }
-                } catch (e) {
-                    // A failed overwrite-target probe must never break the ✓/+ paint;
-                    // fall back to the ordinary mined state below.
-                    console.error('overwriteTargetNoteId probe failed', e);
                 }
-            }
-        },
-    );
+            },
+        );
+    }
 
     // TODO-393「查词窗口句子上下文制卡」：仅支持草稿的表面（书籍/有声书/视频；宿主接受
     // setSentenceContext）渲染「上 N 句 / 下 N 句」上下文选择器。选「上 N」「下 N」把当前

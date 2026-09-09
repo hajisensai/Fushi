@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -87,6 +88,12 @@ part 'sync_settings_schema/data_root.part.dart';
 SettingsDestination buildSyncBackupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.syncBackup,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.syncBackup,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_sync_backup,
     summary: t.sync_summary,
     icon: Icons.sync,
@@ -462,6 +469,12 @@ SettingsDestination buildInterconnectDestination() {
       _syncSettings(ctx).interconnectEnabled;
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.interconnect,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_interconnect,
     summary: t.interconnect_summary,
     icon: Icons.devices_outlined,

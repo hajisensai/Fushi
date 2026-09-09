@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -39,8 +40,13 @@ class _HomeShellAppModel extends AppModel {
   final bool dictionariesEnabled;
   final List<String> searchedTerms = <String>[];
 
+  // 「功能模块」用户意愿的唯一读取点（[AppModel.moduleVisibility] 经 `prefOf`
+  // 调它合成可见集合），故只桩这一个方法即可决定查词 tab 的显隐；其余模块仍走
+  // 真实偏好，平台判据仍由 [ModuleId.availableOn] 判。
   @override
-  bool get moduleDictionariesEnabled => dictionariesEnabled;
+  bool moduleEnabled(ModuleId module) => module == ModuleId.lookup
+      ? dictionariesEnabled
+      : super.moduleEnabled(module);
 
   @override
   PackageInfo get packageInfo => PackageInfo(
@@ -106,6 +112,27 @@ class _HomeShellAppModel extends AppModel {
     return DictionarySearchResult(searchTerm: searchTerm);
   }
 }
+
+/// 测试用：把「一串具名 bool」翻成一个可见性快照（迁移前 [homeActiveTabs] 收的正是
+/// 这串具名 bool，默认值逐字保留）。这里只用来做「查词 tab 确实不在可见列表里」的
+/// 前置断言，与上面 [_HomeShellAppModel] 桩出来的真实可见性同语义。
+ModuleVisibility _visibility({
+  required bool video,
+  bool books = true,
+  bool manga = true,
+  bool games = false,
+  bool downloads = true,
+  bool lookup = true,
+  bool browserExtension = false,
+}) => ModuleVisibility(<ModuleId>{
+  if (books) ModuleId.books,
+  if (manga) ModuleId.manga,
+  if (video) ModuleId.video,
+  if (games) ModuleId.games,
+  if (downloads) ModuleId.downloads,
+  if (lookup) ModuleId.lookup,
+  if (browserExtension) ModuleId.browserExtension,
+});
 
 Future<_HomeShellAppModel> _pumpHome(
   WidgetTester tester, {
@@ -218,7 +245,7 @@ void main() {
 
     // 前置：查词 tab 真的不在可见列表里，_selectTab 会拒绝切换。
     expect(
-      homeActiveTabs(videoEnabled: true, dictionariesEnabled: false),
+      homeActiveTabs(_visibility(video: true, lookup: false)),
       isNot(contains(HomeTab.dictionaries)),
     );
     HomePage.debugSelectTab!(HomeTab.dictionaries);

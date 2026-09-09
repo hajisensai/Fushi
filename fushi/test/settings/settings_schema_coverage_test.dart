@@ -50,12 +50,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 热力图用例（读取面 key 算术）咬住。
   'reading/Day starts at':
       'test/stats/stat_date_key_test.dart + test/stats/stat_window_test.dart + '
-          'test/pages/stat_summary_test.dart + '
-          'test/widgets/stat_contribution_heatmap_test.dart',
-  // 「功能模块」七开关（五库页 + 下载/查词两个工具 tab）。写 prefsRepo
-  // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
-  // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
-  // =false 各自隐藏对应 tab、首页/设置恒在。
+      'test/pages/stat_summary_test.dart + '
+      'test/widgets/stat_contribution_heatmap_test.dart',
+  // 「功能模块」里**有底栏 tab 的七个**（五库页 + 下载/查词两个工具 tab）。写
+  // prefsRepo（changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness
+  // 里没有挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
+  // =false 各自隐藏对应 tab、首页/设置恒在。（这七个同时也会藏掉自己的设置分类，那一
+  // 半由 settings_module_gating_test 一并咬住。）
   //
   // 键的两半都随「功能模块」搬家改过：destId `system` → `appearance`（本区管底栏
   // 出现哪些 tab，与「反转导航栏」同域），行标题不再是手抄的 module_*_label，而是
@@ -77,6 +78,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
   'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
   'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
+  // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
+  // tab**，homeActiveTabs 那套用例咬不到；写 prefsRepo（changed=true）之后能观测到的
+  // 生效点是**设置一级分类整条消失**（列表 + 搜索索引），而 harness 观测的是本行自己
+  // 所在的那棵渲染树，看不到「另一条 destination 没了」。由专项测试逐个模块咬住：
+  // 关掉它 → 名下分类从可见列表消失、从搜索索引消失，且不波及别的分类。
+  'appearance/Listening': 'test/settings/settings_module_gating_test.dart',
+  'appearance/Card creation': 'test/settings/settings_module_gating_test.dart',
+  'appearance/Online services':
+      'test/settings/settings_module_gating_test.dart',
+  'appearance/Sync & backup': 'test/settings/settings_module_gating_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
