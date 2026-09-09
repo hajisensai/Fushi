@@ -4535,5 +4535,6 @@
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames.",
   "dialog_background_close": "Close (task keeps running)",
   "reader_timer_show": "顯示閱讀計時器",
-  "media_source_root_already_added": "Already a source — rescanning: $path"
+  "media_source_root_already_added": "Already a source — rescanning: $path",
+  "audiobook_transcribe_model_discarded": "The model file could not be read and was removed. Download it again."
 }
