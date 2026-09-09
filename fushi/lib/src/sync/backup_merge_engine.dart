@@ -1436,6 +1436,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v95：ffprobe 规格探测缓存。键是本机绝对路径、内容是本机文件的实测结果，
       // 换台设备既命不中也可能与对端的同名文件规格不同——必须现探，不能合并进来。
       'video_file_specs',
+      // v101：统一更新提醒的事件流。「这台设备还没告诉过用户」是本机状态——
+      // 对端已读的条目在本机同样该提醒一次，合并进来只会让本机漏提醒。
+      'update_feed_entries',
     ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device

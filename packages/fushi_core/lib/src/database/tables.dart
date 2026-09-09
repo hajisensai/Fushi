@@ -2877,3 +2877,54 @@ class VideoFileSpecs extends Table {
   @override
   Set<Column> get primaryKey => {filePath};
 }
+
+// ── update_feed_entries ─────────────────────────────────────────────
+/// v101：全应用**统一的更新事件流**。番剧新集、漫画新章、漫画扩展新版本、
+/// Hibiki 自身新版本，四个域投递到同一张表，UI 只消费这一处。
+///
+/// 为什么必须是一张表而不是四套提醒：在此之前「有更新」这个事实散在四个互不
+/// 知情的地方——番剧靠首页一行现算（`video_subscription_updates.dart`）、扩展靠
+/// 打开扩展页现算（`mihon_extensions_page.dart`）、app 版本靠 `UpdateChecker`
+/// 自己弹窗、在线漫画**根本不存在**这个概念（刷新直接覆盖章节列表，旧集合丢掉）。
+/// 四份各自为政的判据意味着红点、通知、已读状态都要写四遍，且永远对不齐。
+///
+/// 身份 [entryId] = `'<kind>|<targetKey>'`，由投递方拼好（见 `UpdateFeedKind`）。
+/// 投递是 upsert 且**不覆盖 [seenAt]**，所以同一集/同一章重复发现不会让已读的
+/// 条目重新变红——幂等性靠主键本身，而不是靠投递方先查一次再决定写不写。
+///
+/// 设备本地表（同列于 backup 的 device-local 清单）：提醒是「这台设备还没告诉过
+/// 用户」的本机状态，跨设备各自提醒一次是正确行为，不进备份也不进同步。
+@DataClassName('UpdateFeedEntryRow')
+class UpdateFeedEntries extends Table {
+  /// `'<kind>|<targetKey>'`。
+  TextColumn get entryId => text()();
+
+  /// 域，取 `UpdateFeedKind.dbValue`（videoEpisode / mangaChapter /
+  /// mangaExtension / appRelease）。开关按域过滤、UI 按域分组都读它。
+  TextColumn get kind => text()();
+
+  /// 域内身份。番剧 = `'<合集id>|<集号>'`；漫画章 = `'<bookUid>|<chapterKey>'`；
+  /// 扩展 = `'<pkgName>|<versionCode>'`；app = 版本串。带版本/集号是**刻意**的：
+  /// 同一作品的下一集是另一条事件，不该复用上一条的已读状态。
+  TextColumn get targetKey => text()();
+
+  /// 主标题（作品名）。落成快照而不是每次 join 回源表：源行可能已被删除
+  /// （取消订阅、移出书架），而「这条提醒说过什么」不该因此变成空白。
+  TextColumn get title => text()();
+
+  /// 副标题（第几集 / 章名 / 版本号）。无则 NULL。
+  TextColumn get subtitle => text().nullable()();
+
+  /// 跳转所需的身份 JSON（合集 id、bookUid、chapterKey、release 页地址等）。
+  /// **不含本地文件路径**，故不参与数据根重定位（见 `kPathRebaseColumns` 登记）。
+  TextColumn get detailJson => text().nullable()();
+
+  /// 发现时刻（毫秒）。列表倒序、通知节流都读它。
+  IntColumn get discoveredAt => integer()();
+
+  /// 用户看见的时刻（毫秒）。NULL = 未读，红点只数它。
+  IntColumn get seenAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {entryId};
+}

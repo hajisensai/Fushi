@@ -557,6 +557,15 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '同上，来源数字 ID，不是路径。'),
   PathRebaseColumn('MangaSourcePreferences', 'valueJson',
       PathRebaseKind.notAPath, '扩展自定义偏好值的 JSON 编码（扩展私有语义），无本机路径。'),
+
+  // ── update_feed_entries（v101 统一更新提醒）────────────────────────
+  PathRebaseColumn(
+      'UpdateFeedEntries',
+      'detailJson',
+      PathRebaseKind.notAPath,
+      '提醒条目的跳转身份 JSON：合集 id、书 uid、源内 chapterKey、release 页的远端 '
+          'https 地址。**刻意不存本地文件路径**——真要打开的文件由目标域自己按当前'
+          '数据根解析（合集/书走既有打开链路），这里只存身份，故数据根搬家与本列无关。'),
 ];
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的
