@@ -40,27 +40,40 @@ public final class AnkiDroidTarget {
 
     /**
      * 候选包名，**按优先级**排列：主包永远第一（同时装了主包和并行版时行为与修复前
-     * 一致），随后是官方并行版 A–E，最后是开发者自编的 debug 版。
+     * 一致），随后是官方并行版 a–e，最后是开发者自编的 debug 版。
+     *
+     * <p><b>后缀必须小写。</b>并行版的**显示名**是大写的（用户桌面上那个图标写着
+     * {@code AnkiDroid.E}），**包名后缀却是小写的**——上游
+     * {@code tools/parallel-package-release.sh} 里两者是分别传的：
+     * <pre>
+     *   LCBUILD=`tr '[:upper:]' '[:lower:]' &lt;&lt;&lt; $BUILD`
+     *   ./gradlew ... -PcustomSuffix="$LCBUILD" -PcustomName="AnkiDroid.$BUILD"
+     * </pre>
+     * {@code customSuffix} 经 {@code applicationIdSuffix} 拼进 applicationId，于是包名
+     * 是 {@code com.ichi2.anki.e}。Android 包名大小写敏感，照着图标名写大写后缀
+     * （BUG-2195 首版就是这么写的）等于这张表里的并行版项**一条都匹配不上**——
+     * 用户装着 AnkiDroid.E 却一直被告知「未安装 AnkiDroid」。上游从 v2.15.0 起
+     * 一直是小写，大写后缀的并行版从未发布过，因此不保留大写候选。
      *
      * <p>上游的 {@code customSuffix} 理论上可以是任意字符串，所以这张表不可能穷尽；
      * 它覆盖的是官方实际发布的那几个。用 {@code QUERY_ALL_PACKAGES} 去穷举是不可接受
      * 的替代方案（Play 政策受限权限，且为这点功能要它属于滥用）。清单必须与
      * {@code AndroidManifest.xml} 里的 {@code <queries>} / {@code <uses-permission>}
      * 逐条对应——**只在这里加一项而忘了改 manifest，新项在 Android 11+ 上恒不可见**，
-     * 有源码守卫钉这条一致性。
+     * 有源码守卫钉这条一致性（连同后缀大小写）。
      */
     public static final String[] CANDIDATE_PACKAGES = {
         MAIN_PACKAGE,
-        MAIN_PACKAGE + ".A",
-        MAIN_PACKAGE + ".B",
-        MAIN_PACKAGE + ".C",
-        MAIN_PACKAGE + ".D",
-        MAIN_PACKAGE + ".E",
+        MAIN_PACKAGE + ".a",
+        MAIN_PACKAGE + ".b",
+        MAIN_PACKAGE + ".c",
+        MAIN_PACKAGE + ".d",
+        MAIN_PACKAGE + ".e",
         MAIN_PACKAGE + ".debug",
     };
 
 
-    /** 安装包名，例如 {@code com.ichi2.anki.A}。 */
+    /** 安装包名，例如 {@code com.ichi2.anki.e}。 */
     public final String packageName;
 
     /** 该安装的 flashcards provider authority。 */

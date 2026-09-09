@@ -1742,6 +1742,13 @@ bool GlobalLookupWindow::IsShowing() const {
   return visible_ && OwnsLiveWindow() && IsWindowVisible(hwnd_);
 }
 
+HWND GlobalLookupWindow::TopmostCeilingHandle() const {
+  // 复用 IsShowing() 的 OwnsLiveWindow 判据：句柄悬空 / 被系统回收时返回 nullptr，
+  // 否则调用方会把台词浮窗插到一个已经不存在的窗口下面（SetWindowPos 对失效句柄
+  // 不抛异常，只是静默失败——浮窗于是一次都没被抬起来）。
+  return IsShowing() ? hwnd_ : nullptr;
+}
+
 bool GlobalLookupWindow::CaptureRouteIsCurrent() const {
   return route_context_bound_ &&
          capture_route_.source == route_context_.source &&

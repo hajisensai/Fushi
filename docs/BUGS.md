@@ -29,11 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2180 条。点号进各自文件。
+> 共 2184 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2373](bugs/BUG-2373-android-stylus-idle-loses-hover-pressure-buttons.md) | 🚧 | 🚧 | 安卓平板触控笔闲置1-2分钟后悬停/压力/侧键全失效 |
+| [BUG-2370](bugs/BUG-2370-ankidroid-parallel-suffix-case.md) | ✅ | ✅ | AnkiDroid 并行版后缀大小写写错导致恒判未安装 |
+| [BUG-2368](bugs/BUG-2368-duplicate-source-silent-toast.md) | ✅ | ✅ | 「设为常驻来源」选到已登记文件夹时只播裸路径 toast 就返回 |
 | [BUG-2366](bugs/BUG-2366-mobile-ffmpeg-no-png-encoder.md) | ✅ | ✅ | 移动端 ffmpeg-kit 无 png 编码器，静图降级链把注定失败记成用户可见错误 |
+| [BUG-2365](bugs/BUG-2365-gal-overlay-body-sinks-under-fullscreen-game.md) | ✅ | ✅ | galgame 全屏后台词浮窗正文窗沉到游戏底下（顶条还在、文字没了） |
 | [BUG-2362](bugs/BUG-2362-ios-exit-affordances.md) | ✅ | ✅ | iOS 多处页面/模态没有出口，进去就得重启 app |
 | [BUG-2361](bugs/BUG-2361-siglus-eightarg-lookup-no-hit.md) | ✅ | ✅ | 八参数Siglus捕获台词后点击正文直接推进且无查词命中 |
 | [BUG-2360](bugs/BUG-2360-siglus-child-delayed-attach.md) | ✅ | ✅ | Siglus启动器子进程绕过延迟附着并抢先LE初始化 |

@@ -139,7 +139,11 @@ import java.util.Set;
 
 public final class LiveTargetHarness {
     private static final String MAIN = "com.ichi2.anki";
-    private static final String PARALLEL = MAIN + ".A";
+    // BUG-2370：必须是官方**真实发布过**的并行版包名（小写后缀，见
+    // 上游 tools/parallel-package-release.sh 的 customSuffix）。此前这里写的是
+    // 自己编的 ".A"，与当时同样写错的生产候选表一起错，于是这条用例恒绿——
+    // 用户装着 AnkiDroid.E 被判「未安装」，这个「实跑 resolve」的测试却毫无反应。
+    private static final String PARALLEL = MAIN + ".e";
 
     private static final class MutablePackages extends PackageManager {
         final Set<String> authorities = new HashSet<>();

@@ -282,21 +282,25 @@
          requestPermissions 对并行版也会静默判拒且不弹框。
          这份清单必须与 AnkiDroidTarget.CANDIDATE_PACKAGES 逐条对应（有守卫钉）。 -->
     <uses-permission android:name="com.ichi2.anki.permission.READ_WRITE_DATABASE"/>
-    <uses-permission android:name="com.ichi2.anki.A.permission.READ_WRITE_DATABASE"/>
-    <uses-permission android:name="com.ichi2.anki.B.permission.READ_WRITE_DATABASE"/>
-    <uses-permission android:name="com.ichi2.anki.C.permission.READ_WRITE_DATABASE"/>
-    <uses-permission android:name="com.ichi2.anki.D.permission.READ_WRITE_DATABASE"/>
-    <uses-permission android:name="com.ichi2.anki.E.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.a.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.b.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.c.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.d.permission.READ_WRITE_DATABASE"/>
+    <uses-permission android:name="com.ichi2.anki.e.permission.READ_WRITE_DATABASE"/>
     <uses-permission android:name="com.ichi2.anki.debug.permission.READ_WRITE_DATABASE"/>
     <queries>
         <!-- Android 11+ 包可见性。没有这些声明时 resolveContentProvider 查不到并行版，
-             isApiAvailable 恒 false，权限框一次都不会弹（BUG-2195 的直接根因）。 -->
+             isApiAvailable 恒 false，权限框一次都不会弹（BUG-2195 的直接根因）。
+             并行版后缀**小写**：上游 parallel-package-release.sh 把大写的显示名
+             （AnkiDroid.E）与小写的 customSuffix（→ com.ichi2.anki.e）分开传，
+             包名大小写敏感，写成大写等于这几条声明全部落空（BUG-2370）。
+             清单与 AnkiDroidTarget.CANDIDATE_PACKAGES 逐条对应，有源码守卫钉住。 -->
         <package android:name="com.ichi2.anki" />
-        <package android:name="com.ichi2.anki.A" />
-        <package android:name="com.ichi2.anki.B" />
-        <package android:name="com.ichi2.anki.C" />
-        <package android:name="com.ichi2.anki.D" />
-        <package android:name="com.ichi2.anki.E" />
+        <package android:name="com.ichi2.anki.a" />
+        <package android:name="com.ichi2.anki.b" />
+        <package android:name="com.ichi2.anki.c" />
+        <package android:name="com.ichi2.anki.d" />
+        <package android:name="com.ichi2.anki.e" />
         <package android:name="com.ichi2.anki.debug" />
         <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
         <package android:name="app.hibiki.reader" />

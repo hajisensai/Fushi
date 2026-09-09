@@ -61,7 +61,9 @@ $cases
           '--dump-dom',
           '--user-data-dir=${temp.path}/profile',
           html.uri.toString(),
-        ]).timeout(const Duration(seconds: 45));
+          // 比外层的 90s 短：Chrome 真卡住时先由这里抛，错误里带得上 stderr；
+          // 外层先炸就只剩一句没有上下文的 TimeoutException。
+        ]).timeout(const Duration(seconds: 60));
         expect(result.exitCode, 0, reason: '${result.stderr}');
         final RegExpMatch? payload = RegExp(
           r'<pre id="results">([^<]+)</pre>',
@@ -81,5 +83,10 @@ $cases
       }
     },
     skip: chrome == null ? 'Chromium required; set CHROME_EXECUTABLE' : false,
+    // 与同目录另两个真 Chrome 套件（reader_audio_cue_identity /
+    // reader_horizontal_pitch_invariant）同口径。默认的 30s 不够：test/reader 里现在
+    // 有多个起 Chrome 的套件，flutter test 会并行跑它们，机器一忙就有一个被饿死
+    // ——实测本机在有构建同时跑时连 90s 都超过，单跑只要 5~7 秒。
+    timeout: const Timeout(Duration(seconds: 90)),
   );
 }
