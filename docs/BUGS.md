@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2144 条。点号进各自文件。
+> 共 2145 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2331](bugs/BUG-2331-ios-exit-affordances.md) | ✅ | ✅ | iOS 多处页面/模态没有出口，进去就得重启 app |
 | [BUG-2330](bugs/BUG-2330-audiobook-multifile-position-no-file-index.md) | ✅ | ✅ | 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0 |
 | [BUG-2329](bugs/BUG-2329-eink-toggle-no-reader-reinject.md) | ✅ | ✅ | 墨水屏开关不通知阅读器重注入正文样式 |
 | [BUG-2328](bugs/BUG-2328-audiobook-resume-ignored-on-open.md) | ✅ | ✅ | 打开带有声书的书不按有声书进度定位，按播放才跳 |

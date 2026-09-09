@@ -81,6 +81,7 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
 ///
@@ -4201,9 +4202,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // Fullscreen is a presentation layer above the reader route. Back/Esc
         // leaves that layer first and keeps the current WebView/page intact.
         if (await _exitOwnedFullscreenBeforePop()) return;
-        final bool shouldPop = await onWillPop();
-        if (!mounted || !shouldPop) return;
-        navigator.pop();
+        if (!mounted) return;
+        // BUG-2119 口径（视频页 / 小说页 / PDF 页同此）：**退出不等落库**。
+        // onWillPop 是位置 flush + closeMedia 两笔 drift 写，而一条 SQLITE_BUSY 后
+        // 未 reset 的写语句能让整条连接上每次 COMMIT 都抛错（2026-09-04 真机）；
+        // 旧写法 `await onWillPop(); navigator.pop();` 一旦挂在那个 await 上就再也
+        // pop 不了：`canPop: false` 已经关掉了 iOS 的侧滑返回，iOS 又没有系统返回
+        // 键，页内的返回按钮按下去也没反应，用户只能杀进程重开。
+        exitAfterPersist(
+          persist: onWillPop,
+          exit: () => navigator.pop(),
+          onPersistError: (Object error, StackTrace stack) =>
+              ErrorLogService.instance.log('MangaFushi.exitFlush', error, stack),
+        );
       },
       child: Scaffold(
         backgroundColor: Colors.black,

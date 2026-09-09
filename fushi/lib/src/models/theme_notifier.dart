@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/cupertino.dart'
+    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -312,6 +313,42 @@ class EinkNoPageTransitionsBuilder extends PageTransitionsBuilder {
     Widget child,
   ) {
     return child;
+  }
+}
+
+/// E-ink route transition for the platforms whose *only* way back out of a
+/// pushed page is the Cupertino edge-swipe gesture (iOS has no system back
+/// button, and `isCupertinoPlatform` is false under the default `auto` design
+/// system, so every page there is a plain [MaterialPageRoute] whose gesture
+/// comes solely from this [PageTransitionsTheme] entry).
+///
+/// [EinkNoPageTransitionsBuilder] returns `child` verbatim, which never
+/// installs Flutter's back-gesture detector — turning on e-ink mode therefore
+/// used to strip swipe-back from the whole app on iOS/macOS, stranding users on
+/// any page whose chrome is hidden. This builder keeps the detector by
+/// delegating to [CupertinoRouteTransitionMixin.buildPageTransitions], and
+/// still refreshes the panel exactly once by feeding it settled animations
+/// whenever no drag is in flight: pages swap in a single frame as before, and
+/// only a real finger drag gets the live, finger-following animation.
+class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
+  const EinkCupertinoPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final bool dragging = route.popGestureInProgress;
+    return CupertinoRouteTransitionMixin.buildPageTransitions<T>(
+      route,
+      context,
+      dragging ? animation : kAlwaysCompleteAnimation,
+      dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
+      child,
+    );
   }
 }
 
@@ -1191,8 +1228,11 @@ class ThemeNotifier extends ChangeNotifier {
           ? const PageTransitionsTheme(
               builders: <TargetPlatform, PageTransitionsBuilder>{
                 TargetPlatform.android: EinkNoPageTransitionsBuilder(),
-                TargetPlatform.iOS: EinkNoPageTransitionsBuilder(),
-                TargetPlatform.macOS: EinkNoPageTransitionsBuilder(),
+                // iOS/macOS 不能用零转场：它们的返回手势由这份 builder 装载，
+                // 直接 `return child` 等于把侧滑返回从整个 app 拆掉（iOS 又没有
+                // 系统返回键），隐藏顶栏的页面就此退不出去。
+                TargetPlatform.iOS: EinkCupertinoPageTransitionsBuilder(),
+                TargetPlatform.macOS: EinkCupertinoPageTransitionsBuilder(),
                 TargetPlatform.windows: EinkNoPageTransitionsBuilder(),
                 TargetPlatform.linux: EinkNoPageTransitionsBuilder(),
                 TargetPlatform.fuchsia: EinkNoPageTransitionsBuilder(),
@@ -1382,8 +1422,8 @@ class ThemeNotifier extends ChangeNotifier {
                 color: WidgetStateColor.resolveWith(
                   (Set<WidgetState> states) =>
                       states.contains(WidgetState.selected)
-                      ? cs.surface
-                      : cs.onSurface,
+                          ? cs.surface
+                          : cs.onSurface,
                 ),
               )
             : null,

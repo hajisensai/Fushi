@@ -4526,5 +4526,6 @@
   "download_request_failed": "无法创建下载。请检查下载设置和任务列表后重试。",
   "download_resource_resolve_failed": "无法获取下载资源。请检查网络和代理设置后重试。",
   "download_torrent_invalid": "来源返回的种子数据无效。请稍后重试或更换来源。",
-  "download_torrent_selection_failed": "无法在种子中唯一匹配这本书。请刷新目录或更换来源。"
+  "download_torrent_selection_failed": "无法在种子中唯一匹配这本书。请刷新目录或更换来源。",
+  "dialog_background_close": "关闭（任务继续在后台运行）"
 }

@@ -252,6 +252,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
             (index: 0, total: preset.shaders.length, progress: null));
     final CancelToken cancelToken = CancelToken();
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    // 在弹框之前拿住 navigator：收尾时的那次 pop 不能依赖本 State 还 mounted
+    // （见下方注释）。
+    final NavigatorState navigator = Navigator.of(context);
 
     // 进度对话框：取消只置 cancelToken（不自己 pop），关闭统一由本方法在下载收尾时
     // 做一次 pop——保证「关进度框」只有一条路径，不会与取消路径重复 pop 误伤视频页路由。
@@ -260,6 +263,12 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       barrierDismissible: false,
       builder: (BuildContext ctx) => PopScope(
         canPop: false,
+        // 返回等价于「取消下载」，而不是被静默吞掉：pop 仍只由收尾那一处执行，
+        // 这里只置 cancelToken，下载随即以 cancel 结束并走到那次 pop。
+        onPopInvokedWithResult: (bool didPop, Object? result) {
+          if (didPop) return;
+          cancelToken.cancel();
+        },
         child: _Anime4kProgressDialog(
           presetName: preset.name,
           progressNotifier: progressNotifier,
@@ -291,9 +300,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       progressNotifier.dispose();
     }
 
+    // 关闭进度对话框（唯一一次 pop）。**不能挂在 `mounted` 后面**：这个框是
+    // `barrierDismissible: false` + `canPop: false`，视频页在下载期间被换掉
+    // （pushReplacement 到网页播放器、自动换集、页面销毁）本 State 就 unmounted，
+    // 旧写法那句 pop 于是永远不执行，一个 barrier 点不掉、返回被吞、按钮又只置
+    // cancelToken 不自闭的全屏模态就永久留在屏幕上——iOS 既没有系统返回键、
+    // 对话框路由也没有侧滑返回，用户只能杀进程。
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
     if (!mounted) return false;
-    // 关闭进度对话框（唯一一次 pop）。
-    Navigator.of(context).pop();
     await _refresh();
     if (!mounted || cancelled) return false;
 

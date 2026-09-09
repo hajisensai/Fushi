@@ -359,7 +359,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
         child: Column(
           children: [
-            if (!isCupertinoPlatform(context)) _buildPageHeader(),
+            // Cupertino 档由外层导航栏顶替页头，但独立路由（查词模块被关掉时
+            // 走的 `_StandaloneDictionaryRoute`）是个裸 Scaffold，页头里的返回键
+            // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
+            // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
+            if (!isCupertinoPlatform(context) || widget.showBackButton)
+              _buildPageHeader(),
             Expanded(
               child: DesktopContentLayout(
                 kind: DesktopContentKind.dictionary,
