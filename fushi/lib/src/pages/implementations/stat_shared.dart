@@ -235,43 +235,59 @@ Widget buildEmbeddedStatTab(
   );
 }
 
-/// 统计页共用的四周期汇总卡网格：宽屏 2×2，窄屏单列。
+/// 汇总卡两列布局的最小列宽（dp）。低于此宽度时「1234 小时 56 分钟」这类长主值
+/// 会被 [FittedBox] 压到读不出来，不如退回单列。
+const double kStatPeriodSummaryMinColumnWidth = 144;
+
+/// 列宽低于此值时卡片切紧凑内边距。手机两列每列只有 ~155dp，[FushiCard] 默认的
+/// 20dp 四边内边距会吃掉四成可用宽度，主值被压得比单列还小。
+const double kStatPeriodSummaryCompactColumnWidth = 200;
+
+/// 统计页共用的四周期汇总卡网格：能放下两列就 2×2，放不下才单列。
+///
+/// BUG：旧实现按「可用宽度 ≥ 380」判两列。这层外面还有 [FushiSpacingTokens.card]
+/// （20dp）的左右内边距，360dp 宽的手机到这里只剩 320dp，连 412dp 的大屏手机也只
+/// 有 372dp——阈值结构上高于任何手机，所以手机端永远单列。改成按**实际算出的列宽**
+/// 判：列宽够放一张卡就两列，跟屏幕宽度阈值脱钩。
 Widget buildStatPeriodSummaryGrid(
   BuildContext context,
   List<StatPeriodSummary> summaries,
 ) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
-  final List<Widget> panels = summaries
-      .map((StatPeriodSummary summary) =>
-          _StatPeriodSummaryCard(summary: summary))
-      .toList();
+  final double wideGap = tokens.spacing.gap + tokens.spacing.gap / 2;
+  final double compactGap = tokens.spacing.gap;
 
   return Padding(
     padding: EdgeInsets.all(tokens.spacing.card),
     child: LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool twoColumns =
-            constraints.maxWidth.isFinite && constraints.maxWidth >= 380;
-        if (!twoColumns) {
+        final StatPeriodSummaryLayout layout = resolveStatPeriodSummaryLayout(
+          maxWidth: constraints.maxWidth,
+          wideGap: wideGap,
+          compactGap: compactGap,
+        );
+        final List<Widget> panels = summaries
+            .map((StatPeriodSummary summary) => _StatPeriodSummaryCard(
+                  summary: summary,
+                  compact: layout.compact,
+                ))
+            .toList();
+        if (layout.columnWidth == null) {
           return Column(
             children: <Widget>[
               for (int i = 0; i < panels.length; i++) ...<Widget>[
-                if (i > 0) SizedBox(height: gap),
+                if (i > 0) SizedBox(height: layout.gap),
                 panels[i],
               ],
             ],
           );
         }
         return Wrap(
-          spacing: gap,
-          runSpacing: gap,
+          spacing: layout.gap,
+          runSpacing: layout.gap,
           children: <Widget>[
             for (final Widget panel in panels)
-              SizedBox(
-                width: (constraints.maxWidth - gap) / 2,
-                child: panel,
-              ),
+              SizedBox(width: layout.columnWidth, child: panel),
           ],
         );
       },
@@ -279,10 +295,70 @@ Widget buildStatPeriodSummaryGrid(
   );
 }
 
+/// [buildStatPeriodSummaryGrid] 解出的布局：列宽为 null 表示单列。
+class StatPeriodSummaryLayout {
+  const StatPeriodSummaryLayout({
+    required this.columnWidth,
+    required this.gap,
+    required this.compact,
+  });
+
+  /// 两列时每列的宽度；null = 放不下两列，走单列。
+  final double? columnWidth;
+
+  /// 卡片之间的间距（两列时同时用于横纵）。
+  final double gap;
+
+  /// 列窄到需要卡片用紧凑内边距。
+  final bool compact;
+}
+
+/// 纯函数：按可用宽度解出汇总卡网格布局，方便直接测宽度→列数的判据。
+///
+/// 先按 [wideGap] 试两列；差一点点放不下时改用 [compactGap] 再试一次（挤出的
+/// 几 dp 常常正好够 360dp 手机排下两列），仍不够才退单列。单列时间距一律用
+/// [wideGap]，纵向不缺空间。
+StatPeriodSummaryLayout resolveStatPeriodSummaryLayout({
+  required double maxWidth,
+  required double wideGap,
+  required double compactGap,
+}) {
+  // 无界宽度（横向滚动容器里）算不出列宽，只能单列。
+  if (!maxWidth.isFinite) {
+    return StatPeriodSummaryLayout(
+      columnWidth: null,
+      gap: wideGap,
+      compact: false,
+    );
+  }
+  for (final double gap in <double>[wideGap, compactGap]) {
+    final double columnWidth = (maxWidth - gap) / 2;
+    if (columnWidth >= kStatPeriodSummaryMinColumnWidth) {
+      return StatPeriodSummaryLayout(
+        columnWidth: columnWidth,
+        gap: gap,
+        compact: columnWidth < kStatPeriodSummaryCompactColumnWidth,
+      );
+    }
+  }
+  return StatPeriodSummaryLayout(
+    columnWidth: null,
+    gap: wideGap,
+    compact: false,
+  );
+}
+
 class _StatPeriodSummaryCard extends StatelessWidget {
-  const _StatPeriodSummaryCard({required this.summary});
+  const _StatPeriodSummaryCard({
+    required this.summary,
+    this.compact = false,
+  });
 
   final StatPeriodSummary summary;
+
+  /// 手机两列下每列只有 ~155dp，卡片默认 20dp 内边距会把主值挤到读不出来；
+  /// 紧凑态改用 [FushiSpacingTokens.rowHorizontal]（16dp），多让出 8dp 正文宽。
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -292,6 +368,9 @@ class _StatPeriodSummaryCard extends StatelessWidget {
           color: colorScheme.onSurfaceVariant,
         );
     final Widget card = FushiCard(
+      padding: compact
+          ? EdgeInsets.all(tokens.spacing.rowHorizontal)
+          : EdgeInsets.all(tokens.spacing.card),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
