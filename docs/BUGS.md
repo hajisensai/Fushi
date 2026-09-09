@@ -29,11 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2185 条。点号进各自文件。
+> 共 2187 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2373](bugs/BUG-2373-android-stylus-idle-loses-hover-pressure-buttons.md) | 🚧 | 🚧 | 安卓平板触控笔闲置1-2分钟后悬停/压力/侧键全失效 |
+| [BUG-2372](bugs/BUG-2372-gal-overlay-lookup-card-not-anchored-to-word.md) | 🚧 | 🚧 | 悬浮字幕查词弹窗没锚在被点的词上 |
+| [BUG-2371](bugs/BUG-2371-gal-passthrough-block-interior-holes.md) | ✅ | ✅ | 穿透态点字幕文字有时仍透给游戏（行盒并集在块内部留 alpha 0 空洞） |
 | [BUG-2370](bugs/BUG-2370-ankidroid-parallel-suffix-case.md) | ✅ | ✅ | AnkiDroid 并行版后缀大小写写错导致恒判未安装 |
 | [BUG-2369](bugs/BUG-2369-local-episode-numbering-single-filename-gamble.md) | ✅ | ✅ | 本地目录集号靠单文件名赌数字位数，1-9 与 10+ 各错一半 |
 | [BUG-2368](bugs/BUG-2368-duplicate-source-silent-toast.md) | ✅ | ✅ | 「设为常驻来源」选到已登记文件夹时只播裸路径 toast 就返回 |

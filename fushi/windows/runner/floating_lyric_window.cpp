@@ -6,6 +6,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -1899,11 +1900,43 @@ void FloatingLyricWindow::Render() {
                               (style_.bg_color & 0x00FFFFFF)),
                 catch_brush.GetAddressOf());
             if (catch_brush != nullptr) {
+              // BUG-2371 —— 碰撞箱是**文字块的外接矩形**，不是逐行行盒并集。
+              //
+              // 逐行铺留下三类块**内部**的 alpha 0 空洞，点上去照样推进游戏
+              // （BUG-1853 自己在「已知缺口」里记了第一类，另两类同源）：
+              //   ① 空行（台词含连续换行）的行盒宽度为 0，FillRectangle 一个像素
+              //      都画不出 → 文字块中间横着一条整行高的漏点带；
+              //   ② 多行参差时短行两侧的**内凹**（居中对齐尤其明显）；
+              //   ③ 行与行之间若排版留了缝，缝里也是 0。
+              // 三类都是「用户明明点在字幕这一块上」却被判成背景。外接矩形一次
+              // 消掉它们，而不是给空行加一条 `if (m.width <= 0)` 特例分支。
+              //
+              // 块**外**（上下留白、居中块两侧的整片空白）仍是真 alpha 0，
+              // 「点背景推台词」的不变式一字不动。单行文本时外接矩形 == 那一行的
+              // 行盒，逐像素等于改动前。
+              float min_left = FLT_MAX;
+              float min_top = FLT_MAX;
+              float max_right = -FLT_MAX;
+              float max_bottom = -FLT_MAX;
               for (const auto& m : line_metrics) {
+                if (m.height <= 0.0f) {
+                  continue;  // 退化行：没有垂直范围可并，跳过。
+                }
+                // 宽度为 0 的空行仍参与**纵向**并集（它就是那条漏点带），横向由
+                // 有字的行决定；整块都没有字时下面的空判据会挡住。
+                min_top = std::min(min_top, text_origin_y + m.top);
+                max_bottom =
+                    std::max(max_bottom, text_origin_y + m.top + m.height);
+                if (m.width <= 0.0f) {
+                  continue;
+                }
+                min_left = std::min(min_left, text_rect_.left + m.left);
+                max_right =
+                    std::max(max_right, text_rect_.left + m.left + m.width);
+              }
+              if (max_right > min_left && max_bottom > min_top) {
                 render_target_->FillRectangle(
-                    D2D1::RectF(text_rect_.left + m.left, text_origin_y + m.top,
-                                text_rect_.left + m.left + m.width,
-                                text_origin_y + m.top + m.height),
+                    D2D1::RectF(min_left, min_top, max_right, max_bottom),
                     catch_brush.Get());
               }
             }
