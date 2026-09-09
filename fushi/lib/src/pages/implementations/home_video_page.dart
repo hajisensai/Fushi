@@ -103,6 +103,7 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -156,6 +157,53 @@ typedef _VideoTagChip = ({String label, Color? color});
 /// 标签：视频书与书架（EPUB/SRT）**共用同一套标签系统**（共享 `BookTags` 标签池
 /// + `video_book_tag_mappings` 映射）。顶部有标签筛选栏（共享 [selectedTagIdsProvider]，
 /// 与书架联动），卡片渲染所挂标签，长按弹菜单（编辑标签 / 设置封面 / 删除）。
+/// 「最近观看时刻」的两份映射：按 bookUid 键控的当前口径，以及迁移遗留 NULL-uid
+/// 行按 title 的回退口径。
+class _WatchRecency {
+  const _WatchRecency({required this.byUid, required this.legacyByTitle});
+
+  final Map<String, DateTime> byUid;
+  final Map<String, DateTime> legacyByTitle;
+}
+
+/// watch-stats 全量行 + `study_segments` 最近时刻 → 「最近观看」两份映射。
+///
+/// UI v2 Phase B / v39：v39 新行按 bookUid 键控；迁移遗留 NULL-uid 行按 title 建
+/// 回退映射。v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），
+/// 新的观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 [latestWatchAtByKey]，
+/// 同 uid 取最大，任一来源缺席都不影响另一来源。
+///
+/// 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词同一
+/// 判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该视频从
+/// 「最近观看」消失。
+///
+/// 抽成独立函数是因为它有两个调用者：全量的 [_HomeVideoPageState._loadLibraryMapsInner]
+/// 与播放返回后的窄刷新 [_HomeVideoPageState._loadWatchRecency]。两条路径必须给出
+/// 逐字节相同的映射，否则「继续观看」的排序会随刷新来路漂移。
+_WatchRecency _buildWatchRecency(
+  List<VideoWatchStatisticRow> watchRows,
+  Map<String, int> segmentEndAtByUid,
+) {
+  return _WatchRecency(
+    byUid: latestWatchAtByKey(
+      <(String, int)>[
+        for (final VideoWatchStatisticRow r in watchRows)
+          if (r.bookUid case final String uid when uid.isNotEmpty)
+            (uid, r.lastModified),
+        for (final MapEntry<String, int> e in segmentEndAtByUid.entries)
+          if (e.key.isNotEmpty) (e.key, e.value),
+      ],
+    ),
+    legacyByTitle: latestWatchAtByKey(
+      <(String, int)>[
+        for (final VideoWatchStatisticRow r in watchRows)
+          if (r.bookUid == null || r.bookUid!.isEmpty)
+            (r.title, r.lastModified),
+      ],
+    ),
+  );
+}
+
 class HomeVideoPage extends BaseModuleTabPage {
   const HomeVideoPage({
     required this.repo,
@@ -638,6 +686,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
   /// watch-stats 最近观看，外加偏好里的排序方式。
+  /// [_loadWatchRecency] 的记代，与 [_libraryMapsRequestGeneration] 相互独立。
+  int _watchRecencyRequestGeneration = 0;
+
   Future<void> _loadLibraryMaps() async {
     final int requestGeneration = ++_libraryMapsRequestGeneration;
     try {
@@ -653,6 +704,62 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       }
       rethrow;
     }
+  }
+
+  /// 「从播放器返回」专用的窄刷新。
+  ///
+  /// 看完一个视频只可能改动两处：那本书自己的 `video_books` 行（断点 / 完成时刻 /
+  /// 字幕源 / 音轨 / 延迟，以及资源缺失时的删行）和 [StudyClock] 写的
+  /// `study_segments`。合集、来源、刮削资料、元数据作品/图片/分集/花絮、媒体图组
+  /// 这十二张表播放页一行都不写（换音轨只动 `media_collections.audio_track_id`，
+  /// 库页不渲染它，且有 `watchCollectionTablesChanged` 流兜底），因此
+  /// [_loadLibraryMaps] 的整套重算在这条路径上是纯无效功。
+  ///
+  /// 更要紧的是 [_maybeBackfillCovers]：那是「给缺封面的存量行补抽帧」的后台产线，
+  /// 全库扫描 + 逐行同步 stat + 每个候选一次同步 64KB 头部探测（判据在
+  /// `video_cover_extractor.dart`）+ 串行 ffmpeg 子进程，全部压在 UI isolate 上。播放
+  /// 一个视频**不会产生新的缺封面行**（播放页零 `video_books` 插入），所以它挂在
+  /// 这条交互路径上从头到尾都是空转——实测就是它把「每次退出卡一两秒」顶了起来。
+  /// 它的真正触发时机（新行入库）由 `watchVideoBookUids` 流 → [_onVideoUidsChanged]
+  /// → [_refresh] 覆盖，入口还有 [initState] 与下拉刷新（后者还会先清失败记账重试），
+  /// 少跑这一次不会让任何条目永久漏掉。
+  ///
+  /// 只给 [_open] 用。[_refresh] 的其余调用点（uid 集合变化、外部刷新信号、刮削表
+  /// 变化、导入、标签、删除、改名、设封面…）确实需要全量重算，不要把它们并过来。
+  void _refreshAfterPlayback() {
+    setState(() {
+      // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
+      _future = widget.repo.listForShelf();
+    });
+    unawaited(_loadWatchRecency());
+  }
+
+  /// [_refreshAfterPlayback] 的映射侧：只重读喂「最近观看」的那两张表。
+  ///
+  /// 与 [_loadLibraryMapsInner] 各自记代（generation），互不取消：全量重载在途时
+  /// 发起窄重载不会把前者的结果丢掉（那会让其余十几个映射永远停在旧值）。两条路径
+  /// 读的是同一批行、经同一个 [_buildWatchRecency] 聚合，后落地者覆盖前者是等价的。
+  Future<void> _loadWatchRecency() async {
+    final int requestGeneration = ++_watchRecencyRequestGeneration;
+    final FushiDatabase db = ref.read(appProvider).database;
+    final Future<List<VideoWatchStatisticRow>> watchRowsF =
+        db.getAllVideoWatchStatistics();
+    final Future<Map<String, int>> segmentEndAtByUidF =
+        db.getLatestStudyEndAtByMedia(kActivityMediaVideo);
+    // 先挂上监听再逐个 await：某个查询失败时另一个的错误不会成为无人接的异常。
+    await Future.wait<Object?>(<Future<Object?>>[
+      watchRowsF,
+      segmentEndAtByUidF,
+    ]);
+    final _WatchRecency recency = _buildWatchRecency(
+      await watchRowsF,
+      await segmentEndAtByUidF,
+    );
+    if (!mounted || requestGeneration != _watchRecencyRequestGeneration) return;
+    setState(() {
+      _watchAtByUid = recency.byUid;
+      _legacyWatchAtByTitle = recency.legacyByTitle;
+    });
   }
 
   Future<void> _loadLibraryMapsInner(int requestGeneration) async {
@@ -729,27 +836,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // v92 起 `video_watch_statistics` 冻结为 legacy 只读（历史数据还在），新的
     // 观看只写 `study_segments`：两处的 (uid, 时刻) 一起喂 latestWatchAtByKey，
     // 同 uid 取最大，任一来源缺席都不影响另一来源。
-    final List<VideoWatchStatisticRow> watchRows = await watchRowsF;
-    final Map<String, int> segmentEndAtByUid = await segmentEndAtByUidF;
-    // 无身份判定 NULL 与 '' 都算（review4-9/review2-10：与统计页展示、删除谓词
-    // 同一判据）——'' 行进不了任何书架条目的 uid 匹配，落 title 回退才不会让该
-    // 视频从「最近观看」消失。
-    final Map<String, DateTime> watchByUid = latestWatchAtByKey(
-      <(String, int)>[
-        for (final VideoWatchStatisticRow r in watchRows)
-          if (r.bookUid case final String uid when uid.isNotEmpty)
-            (uid, r.lastModified),
-        for (final MapEntry<String, int> e in segmentEndAtByUid.entries)
-          if (e.key.isNotEmpty) (e.key, e.value),
-      ],
+    final _WatchRecency recency = _buildWatchRecency(
+      await watchRowsF,
+      await segmentEndAtByUidF,
     );
-    final Map<String, DateTime> legacyByTitle = latestWatchAtByKey(
-      <(String, int)>[
-        for (final VideoWatchStatisticRow r in watchRows)
-          if (r.bookUid == null || r.bookUid!.isEmpty)
-            (r.title, r.lastModified),
-      ],
-    );
+    final Map<String, DateTime> watchByUid = recency.byUid;
+    final Map<String, DateTime> legacyByTitle = recency.legacyByTitle;
     // TODO-2486：刮削资料批量预取——条目 airDate 派生年份（年份筛选）、合集资料
     // （hero 轮播）。批量 DAO 全表一次拉，替代逐本/逐合集查询的 N+1。
     final List<VideoScrapeMetaRow> scrapeRows = await scrapeRowsF;
@@ -980,7 +1072,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       }
       lastShelfRefreshAt = now;
       shelfDirty = false;
-      setState(() => _future = widget.repo.listForShelf());
+      // 必须用块体：箭头体会把赋值结果（一个 Future）当闭包返回值交给 setState，
+      // debug 断言「setState() callback argument returned a Future」当场抛出，
+      // 整个回填循环从这里被掀掉——release 因断言被编译掉而侥幸跑通，于是这条
+      // 只在 debug 生效的失效路径长期没人发现（封面回填在 debug 下根本不工作）。
+      setState(() {
+        _future = widget.repo.listForShelf();
+      });
     }
 
     try {
@@ -1967,7 +2065,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     // 从播放器返回后刷新：继续观看 hero / 概览统计 / 卡片观看进度行都依赖
     // lastPositionMs 与 watch-stats，播完不刷会展示陈旧数据（对抗审查确认）。
-    if (mounted) _refresh();
+    // 走窄刷新——理由与边界见 [_refreshAfterPlayback]。
+    if (mounted) _refreshAfterPlayback();
   }
 
   Future<void> _openRemote(
@@ -6761,10 +6860,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
-  /// 与书架 [reader_fushi_history_page._buildBatchActionBar] 对齐。
+  /// chrome 收敛到共享 [BatchActionBar]（与书架同一实现），本页只提供动作按钮与可用态。
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
     final int selectedCount =
         _selectedUids.length + _selectedCollectionIds.length;
@@ -6777,64 +6875,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           looseCount: _selectedUids.length,
         ) !=
         CombineTier.noop;
-    return Material(
-      elevation: 6,
-      color: theme.colorScheme.surfaceContainer,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.gap,
-          ),
-          child: Row(
-            children: <Widget>[
-              Text(
-                t.batch_selected_count(n: selectedCount),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              TextButton(
-                onPressed: _selectAllVisible,
-                child: Text(t.batch_select_all),
-              ),
-              TextButton(
-                onPressed: _invertSelection,
-                child: Text(t.batch_invert_selection),
-              ),
-              const Spacer(),
-              FushiIconButton(
-                key: const ValueKey<String>('home_video_batch_combine'),
-                enabled: canCombine,
-                onTap: _batchCombineIntoSeries,
-                // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-                // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-                icon: Icons.playlist_add,
-                tooltip: t.combine_into_series,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
-                enabled: _selectedUids.isNotEmpty,
-                onTap: _batchShowTagPicker,
-                icon: Icons.sell_outlined,
-                tooltip: t.tag_label,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                key: const ValueKey<String>('home_video_batch_delete'),
-                enabled: hasSelection,
-                onTap: _batchDeleteConfirm,
-                icon: Icons.delete_outline,
-                tooltip: t.dialog_delete,
-                enabledColor: theme.colorScheme.error,
-              ),
-            ],
-          ),
+    return BatchActionBar(
+      selectedCount: selectedCount,
+      onSelectAll: _selectAllVisible,
+      onInvertSelection: _invertSelection,
+      actions: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('home_video_batch_combine'),
+          enabled: canCombine,
+          onTap: _batchCombineIntoSeries,
+          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+          icon: Icons.playlist_add,
+          tooltip: t.combine_into_series,
         ),
-      ),
+        FushiIconButton(
+          // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
+          enabled: _selectedUids.isNotEmpty,
+          onTap: _batchShowTagPicker,
+          icon: Icons.sell_outlined,
+          tooltip: t.tag_label,
+        ),
+        FushiIconButton(
+          key: const ValueKey<String>('home_video_batch_delete'),
+          enabled: hasSelection,
+          onTap: _batchDeleteConfirm,
+          icon: Icons.delete_outline,
+          tooltip: t.dialog_delete,
+          enabledColor: theme.colorScheme.error,
+        ),
+      ],
     );
   }
 

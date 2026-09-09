@@ -662,9 +662,8 @@ class FushiSelectableChip extends StatelessWidget {
     // 于是选中态既没有填充差异、边框还从 outlineVariant 变成了底色——选中的
     // chip 比未选中的更没有边，是个负信号。反色填充是墨水屏上唯一稳定可辨的
     // 选中通道（与 segmentedButtonTheme / chipTheme 的处理同源）。
-    final Color selectedFill = eink
-        ? colors.onSurface
-        : colors.primaryContainer;
+    final Color selectedFill =
+        eink ? colors.onSurface : colors.primaryContainer;
     final Color foreground = selected
         ? (eink ? colors.surface : colors.onPrimaryContainer)
         : tokens.surfaces.onSurface;
@@ -674,9 +673,9 @@ class FushiSelectableChip extends StatelessWidget {
     final Widget? effectiveAvatar = effectiveIconOnly
         ? null
         : (avatar ??
-              (leadingIcon == null
-                  ? null
-                  : Icon(leadingIcon, size: 18, color: foreground)));
+            (leadingIcon == null
+                ? null
+                : Icon(leadingIcon, size: 18, color: foreground)));
     final Widget labelWidget = effectiveIconOnly
         ? Icon(leadingIcon, size: 18, color: foreground)
         : Text(
@@ -1817,9 +1816,13 @@ class FushiPageHeader extends StatelessWidget {
           FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact;
-    final double resolvedTop = compact
-        ? tokens.spacing.gap
-        : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
+    // Embedded tabs already own a touch-height row; the home shell owns SafeArea.
+    // A second title margin pushes phone navigation away from the status bar.
+    final double resolvedTop = narrowWindow && titleWidget != null
+        ? 0
+        : compact
+            ? tokens.spacing.gap
+            : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
     final EdgeInsetsGeometry resolvedPadding = padding ??
         EdgeInsets.fromLTRB(
           tokens.spacing.page,

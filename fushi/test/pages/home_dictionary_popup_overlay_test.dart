@@ -172,7 +172,7 @@ void main() {
               child: SourceLookupTextPanel(
                 text: 'XY',
                 globalCoordinates: true,
-                onLookup: (String query, Rect rect) => reported = rect,
+                onLookup: (String query, Rect rect, int _) => reported = rect,
               ),
             ),
           ),

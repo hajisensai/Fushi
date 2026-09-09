@@ -1605,6 +1605,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 小说阅读器制卡时是否给卡片追加「制卡所在字符数」标签（`chars_12345`，全书绝对
+  /// 学习字数位置，countStudyChars 口径）。默认开：这是用户点名要的标注，且只多一个
+  /// tag、不动任何既有字段。
+  bool get autoAddCharPositionToTags =>
+      getPref('auto_add_char_position_to_tags', defaultValue: true) as bool;
+
+  void toggleAutoAddCharPositionToTags() async {
+    await setPref('auto_add_char_position_to_tags', !autoAddCharPositionToTags);
+    notifyListeners();
+  }
+
   // TODO-1650 制卡图片/GIF 清晰度档（0..3，见 [MiningMediaCompression.imageTiers]）。
   // 替代旧的单一「压缩」开关。未显式设过时从旧 `compress_mining_media` 布尔迁移：
   // 开(默认)→标准档 1（= TODO-646 现状，零行为破坏）；关→高清档 2。读写都夹到 0..3，

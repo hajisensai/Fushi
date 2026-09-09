@@ -69,6 +69,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   bool _isClosing = false;
   String _sourceLookupText = '';
 
+  /// 源文本条上「这次查的是哪几个字」的扫描高亮，与首页词典 tab 同一口径。
+  ///
+  /// 本页每次查词都把 [_sourceLookupText] 换成被点字起的后缀（见 [_pushSearch]），
+  /// 所以命中段的起点恒为条首（0）；长度仍要等引擎回报。
+  SourceLookupHighlight? _sourceHighlight;
+
+  /// 迟到匹配长度的发号器（见首页词典 tab 的同名字段）。
+  int _sourceHighlightGeneration = 0;
+
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -171,8 +180,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         offset: trimmed.length,
       );
     }
-    if (mounted) setState(() => _sourceLookupText = trimmed);
-    await pushNestedPopup(
+    final int highlightGeneration = ++_sourceHighlightGeneration;
+    if (mounted) {
+      setState(() {
+        _sourceLookupText = trimmed;
+        // 先框住条首那个字给即时反馈，引擎回报匹配长度后再扩成整词。
+        _sourceHighlight = const SourceLookupHighlight(start: 0, length: 1);
+      });
+    }
+    final int matchedUnits = await pushNestedPopup(
       query: trimmed,
       selectionRect: selectionRect,
       controller: _popup,
@@ -183,6 +199,16 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
     );
+    if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
+    setState(() {
+      _sourceHighlight = resolveSourceLookupHighlight(
+        query: trimmed,
+        // 本页源文本条渲染的就是 trimmed 本身，条首即被查的那个字。
+        tappedGraphemeIndex: 0,
+        matchedUnits: matchedUnits,
+        leadingStripUnits: appModel.lookupLeadingStripUnits(trimmed),
+      );
+    });
   }
 
   void _popAt(int index) {
@@ -359,8 +385,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               text: _sourceLookupText,
               coordinateSpaceKey: _resultStackKey,
               dictionaryHeadwordScale: _dictionaryHeadwordScale,
+              highlight: _sourceHighlight,
               // 源文本面板点选 = 顶层新词，复用常驻热槽（TODO-951 症状C）。
-              onLookup: (String query, Rect rect) =>
+              // charIndex 在本页恒被 _pushSearch 归零：条上的文本随即换成从该字起
+              // 的后缀，被点的字就落回条首。
+              onLookup: (String query, Rect rect, int _) =>
                   _pushSearch(query, rect, reuseWarmSlot: true),
             ),
           Expanded(child: _buildStack(context)),

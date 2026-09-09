@@ -31,6 +31,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // media/audiobook/audiobook_material_library.dart。
   'audiobook_material_dirs',
   'auto_add_book_name_to_tags',
+  // bool：小说阅读器制卡时给卡片追加「制卡所在字符数」标签（`chars_12345`，
+  // countStudyChars 口径的全书绝对位置）。默认开。
+  'auto_add_char_position_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',

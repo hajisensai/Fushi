@@ -18,6 +18,7 @@ WizardSmallImageFile 引用。改配色或形状后重跑本脚本并提交产�
 from __future__ import annotations
 
 import os
+import sys
 from typing import Sequence
 
 from PIL import Image, ImageDraw, ImageFont
@@ -185,22 +186,37 @@ def draw_back(size: tuple[int, int], dark: bool) -> Image.Image:
     return Image.alpha_composite(canvas, glow).convert('RGB')
 
 
+
+
 def main() -> None:
+    # ⚠ hero 与 mark 的入库产物**已经不是本脚本的输出**：95aee16b29 之后它们是手工
+    # 换上的兔子图标，而本脚本画的仍是早期的「圆角方块 + 字母 F」占位。无脑重跑会把
+    # 兔子覆盖回 F（实测踩过一次：右上角标记当场退回 F 方块）。所以这两类默认跳过，
+    # 要重生成占位图得显式传 --regenerate-placeholders —— 那多半意味着你在换一整套
+    # 新品牌图，而不是「顺手重跑一下资产脚本」。
+    regen_placeholders = '--regenerate-placeholders' in sys.argv
+
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
     os.makedirs(out_dir, exist_ok=True)
 
     written: list[str] = []
-    for width, height in HERO_SIZES:
-        for dark in (False, True):
-            name = 'wizard_hero{}_{}x{}.png'.format('_dark' if dark else '', width, height)
-            draw_hero((width, height), dark).save(os.path.join(out_dir, name))
-            written.append(name)
 
-    for side in MARK_SIZES:
-        for dark in (False, True):
-            name = 'wizard_mark{}_{}.png'.format('_dark' if dark else '', side)
-            draw_mark(side, dark).save(os.path.join(out_dir, name))
-            written.append(name)
+    if regen_placeholders:
+        for width, height in HERO_SIZES:
+            for dark in (False, True):
+                name = 'wizard_hero{}_{}x{}.png'.format(
+                    '_dark' if dark else '', width, height)
+                draw_hero((width, height), dark).save(os.path.join(out_dir, name))
+                written.append(name)
+
+        for side in MARK_SIZES:
+            for dark in (False, True):
+                name = 'wizard_mark{}_{}.png'.format('_dark' if dark else '', side)
+                draw_mark(side, dark).save(os.path.join(out_dir, name))
+                written.append(name)
+    else:
+        print('跳过 hero/mark：入库的是手工换的兔子图标，重跑会覆盖成 F 占位。'
+              '确需重生成占位图请加 --regenerate-placeholders。')
 
     for dark in (False, True):
         name = 'wizard_back{}_{}x{}.png'.format(

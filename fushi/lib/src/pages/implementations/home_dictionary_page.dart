@@ -131,6 +131,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   String _sourceLookupText = '';
   int _searchGeneration = 0;
 
+  /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
+  ///
+  /// 查词是「从被点的字到串尾」的整段后缀交给引擎最长匹配（BUG-1478），所以查询串
+  /// 本身看不出命中了多长；不标出来，用户在「と言いつつ」上点第一个字，根本无从
+  /// 判断结果是「と言い」还是「と」。跨度长度只能等引擎回报，故本页持有它、由
+  /// [_sourceHighlightGeneration] 把迟到的回报挡在门外。
+  SourceLookupHighlight? _sourceHighlight;
+
+  /// 高亮的发号器：主查词与源文本条点字都会 ++ 它。异步匹配长度回来时若号已变
+  /// （用户又点了别的字 / 又发起了新查询），这次回报直接丢弃，不去盖新的高亮。
+  int _sourceHighlightGeneration = 0;
+
   bool _historyWritten = false;
 
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
@@ -299,6 +311,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _lastQuery = '';
     _allLoaded = false;
     _sourceLookupText = '';
+    _sourceHighlight = null;
+    _sourceHighlightGeneration++;
     _historyWritten = false;
     setState(() {});
     if (_searchFocusNode.canRequestFocus) {
@@ -629,6 +643,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       // _loadMore will set _allLoaded if nothing new comes back.
       _allLoaded = cached.entries.isEmpty;
       _lastQuery = cached.searchTerm.trim();
+      // 源文本条同步换成这条历史的查询串。此前这里只换 _result 和搜索框，不动
+      // _sourceLookupText——历史列表只在查询框为空时可见，而清空输入框并不经
+      // _clearSearch，于是点开一条历史后源文本条上留的可能是上一次桌面取词的整句
+      // 旧文本。那在没有高亮时只是「有点怪」，加了扫描高亮就会变成「框在一段跟结果
+      // 毫无关系的文字上」：命中长度以本条 cached 为准，坐标系却是别人的串。
+      _sourceLookupText = _lastQuery;
+      // 缓存结果同样带 bestLength，扫描高亮按同一条换算落到句首命中段——否则从
+      // 历史点回一条旧查询，原文条上会是一片没有任何标记的裸文本。
+      _applyMainSearchHighlight(_lastQuery, cached);
       // TODO-931：保留常驻热槽。
       _popup.pruneToWarmSlot();
     });
@@ -650,7 +673,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
     if (!force && _lastQuery == trimmed && overrideMaximumTerms == null) {
       if (_sourceLookupText != trimmed && mounted) {
-        setState(() => _sourceLookupText = trimmed);
+        setState(() {
+          _sourceLookupText = trimmed;
+          // 源文本换了就得重定位扫描高亮：这条早退路径不重查（结果沿用 _result），
+          // 但高亮的坐标系是源文本条，换了串不重算就会框在错的位置上。
+          final DictionarySearchResult? current = _result;
+          if (current == null) {
+            _sourceHighlight = null;
+            _sourceHighlightGeneration++;
+          } else {
+            _applyMainSearchHighlight(trimmed, current);
+          }
+        });
       }
       if (writeHistory &&
           !_historyWritten &&
@@ -687,6 +721,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         writeHistory: writeHistory,
         autoRead: autoRead,
         searchGeneration: searchGeneration,
+        // 「加载更多」（overrideMaximumTerms 非空）不换源文本，也就不该动扫描高亮：
+        // 它只是把同一个查询串的词头上限调大，命中段没变，而用户此刻的高亮可能已经
+        // 是他点出来的某个词，重设会把它弹回句首。
+        resetHighlight: replaceSourceLookupText,
       );
       _lastDispatchedSearch = dispatched;
       unawaited(dispatched);
@@ -701,6 +739,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     required bool writeHistory,
     required bool? autoRead,
     required int searchGeneration,
+    required bool resetHighlight,
   }) async {
     // 用 try/finally 守卫整条失败路径：searchDictionary 走远程网络查询 +
     // fushidicts C++ FFI，任一环节抛异常都不能让 _isSearching 永久为 true
@@ -720,6 +759,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
       _result = result;
       _allLoaded = !result.truncated;
+      if (resetHighlight) _applyMainSearchHighlight(trimmed, result);
 
       if (writeHistory) {
         _historyWritten = true;
@@ -843,8 +883,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             globalCoordinates: true,
             dictionaryHeadwordScale: appModel.dictionaryFontSize /
                 appModel.defaultDictionaryFontSize,
-            onLookup: (String query, Rect screenRect) {
-              _pushNestedPopup(query, screenRect, reuseWarmSlot: true);
+            highlight: _sourceHighlight,
+            onLookup: (String query, Rect screenRect, int charIndex) {
+              unawaited(_lookupFromSourceStrip(query, screenRect, charIndex));
             },
           ),
         // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
@@ -998,6 +1039,55 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           },
         ),
       ),
+    );
+  }
+
+  /// 源文本条点字（或 Shift 悬停）：压查词浮层，并把 Yomitan 式扫描高亮落到真正被
+  /// 匹配的那几个字上。
+  ///
+  /// 分两拍：先立刻框住被点的那个字（点下去就有反馈，不用干等查词往返），引擎回报
+  /// 匹配长度后再扩成整词。中途用户又点了别的字就换号，这次的回报直接丢弃。
+  Future<void> _lookupFromSourceStrip(
+    String query,
+    Rect screenRect,
+    int charIndex,
+  ) async {
+    final int generation = ++_sourceHighlightGeneration;
+    setState(() {
+      _sourceHighlight = SourceLookupHighlight(start: charIndex, length: 1);
+    });
+    final int matchedUnits =
+        await _pushNestedPopup(query, screenRect, reuseWarmSlot: true);
+    if (!mounted || generation != _sourceHighlightGeneration) return;
+    setState(() {
+      _sourceHighlight = resolveSourceLookupHighlight(
+        query: query,
+        tappedGraphemeIndex: charIndex,
+        matchedUnits: matchedUnits,
+        leadingStripUnits: appModel.lookupLeadingStripUnits(query),
+      );
+    });
+  }
+
+  /// 主查词（搜索框提交 / 桌面取词 / 深链 / 点回历史）落地后的扫描高亮。
+  ///
+  /// 引擎的候选串**全部是查询串的前缀**（`scan_candidates` 只从串首锚定、由长到短
+  /// 地截），所以主结果的命中段起点恒为 0 —— 与源文本条点第 0 个字是同一件事，直接
+  /// 复用同一个换算。
+  void _applyMainSearchHighlight(
+    String panelText,
+    DictionarySearchResult result,
+  ) {
+    _sourceHighlightGeneration++;
+    _sourceHighlight = resolveSourceLookupHighlight(
+      query: panelText,
+      tappedGraphemeIndex: 0,
+      matchedUnits: lookupHighlightCharCount(
+        result: result,
+        searchTerm: panelText,
+        language: JapaneseLanguage.instance,
+      ),
+      leadingStripUnits: appModel.lookupLeadingStripUnits(panelText),
     );
   }
 

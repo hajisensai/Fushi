@@ -33,6 +33,8 @@ SettingsDestination buildMangaDestination() {
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'manga.section.viewing',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.manga_section_viewing,
         items: <SettingsItem>[
           // 阅读方向：偏好是新书的默认值，已打开的书仍按自身状态走。
@@ -110,9 +112,9 @@ SettingsDestination buildMangaDestination() {
                 label: t.manga_page_animation_fade,
               ),
             ],
-            selected: (SettingsContext c) =>
-                MangaPageAnimationKey.fromKey(c.appModel.mangaPageAnimation)
-                    .key,
+            selected: (SettingsContext c) => MangaPageAnimationKey.fromKey(
+              c.appModel.mangaPageAnimation,
+            ).key,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaPageAnimation(value),
           ),
@@ -140,6 +142,7 @@ SettingsDestination buildMangaDestination() {
         ],
       ),
       buildMangaOcrSection(),
+      buildMangaCatalogSection(),
     ],
   );
 }

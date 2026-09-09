@@ -28,23 +28,8 @@ class AudiobookSessionLauncher {
     return _resolveAudiobook(source.audiobook, source.audioFiles, bookKey);
   }
 
-  /// 该书有声书进度的最后写入时刻（epoch 毫秒；无可播放的有声书 / 从未写过返回 0），
-  /// 供 reader 开书时与阅读进度 `updatedAt` 做 LWW 仲裁（BUG-2328）。
-  ///
-  /// 读的是 [resolve] **会真正启动**的那个来源的键（Audiobook 行 = bookKey，SrtBook 行
-  /// = uid）——两行可能并存（v29 回填的配对行 + audioOnly 行），而 SRT 重导入会给 uid 键
-  /// 盖新时间戳、会话却加载 bookKey 键的旧位置；取两键较大值会让一个从不被加载的
-  /// 时间戳赢下仲裁。选来源与 [resolve] 共用 [_pickSource]，不另抄一份优先序。
-  /// 不起 audio_service、不读 cue；文件存在性探测与 reader 的音频槽并行，不挡首屏。
-  Future<int> readPositionUpdatedAtMs(String bookKey) async {
-    final _SessionSource? source = await _pickSource(bookKey);
-    if (source == null) return 0;
-    return AudiobookRepository(_db).readPositionUpdatedAtMs(source.positionKey);
-  }
-
   /// 会话来源的唯一裁决点：Audiobook 行（有可播放音频）优先，否则 SrtBook 行（有可
-  /// 播放音频），都没有 = 无有声书。[resolve] 与 [readPositionUpdatedAtMs] 共用，保证
-  /// 「启动哪个」与「读哪个键的时间戳」永远一致。
+  /// 播放音频），都没有 = 无有声书。
   Future<_SessionSource?> _pickSource(String bookKey) async {
     final AudiobookRow? abRow = await _db.getAudiobookByBookKey(bookKey);
     if (abRow != null) {
@@ -272,7 +257,7 @@ class AudiobookSessionLauncher {
 
 /// 一本书的会话启动材料聚合。
 /// [AudiobookSessionLauncher._pickSource] 的裁决结果：要播的 [audiobook]（SrtBook 来源
-/// 时是 uid 身份的合成对象）、已确认存在的 [audioFiles]、持久化位置/时间戳用的
+/// 时是 uid 身份的合成对象）、已确认存在的 [audioFiles]、持久化位置用的
 /// [positionKey]；[srtBook] 非空 = 来源是 SrtBook 行。
 class _SessionSource {
   const _SessionSource({

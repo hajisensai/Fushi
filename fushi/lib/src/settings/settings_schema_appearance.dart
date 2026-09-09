@@ -79,7 +79,6 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
   return SettingsSwitchItem(
     id: _moduleItemId(module),
     title: identity.label,
-    subtitle: t.module_toggle_hint,
     icon: identity.icon,
     // 平台上不存在的模块不出开关（galgame 仅 Windows、浏览器扩展仅桌面）。判据
     // 与读取端同源（[ModuleId.availableOn]），不在这里另写一份 Platform 判断。
@@ -99,11 +98,13 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
 SettingsDestination buildAppearanceDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.appearance,
-    title: t.settings_destination_appearance,
+    title: t.settings_destination_appearance_interaction,
     summary: t.design_system_hint,
     icon: Icons.palette_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'appearance.section.interface',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_interface,
         items: <SettingsItem>[
           // searchTitle 复用各自绘制行的既有标题（无新 key），让这些自定义选择器
@@ -177,6 +178,8 @@ SettingsDestination buildAppearanceDestination() {
         ],
       ),
       SettingsSection(
+        id: 'appearance.section.typography',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         // 排版分区**不折叠**：改字体是外观页的高频操作（用户显式反馈），折叠让每次
         // 改字体都多一次展开点击，收益（省一行高度）远小于代价。
         title: t.section_typography,
@@ -252,6 +255,8 @@ SettingsDestination buildAppearanceDestination() {
       // 分区住外观而不是系统：它与同分类的「反转导航栏」同域（此前在 系统 ›
       // 功能模块）。item id 保留 `system.` 历史前缀不动，理由见 [_moduleItemId]。
       SettingsSection(
+        id: 'appearance.section.modules',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_modules,
         // 遍历 ModuleId.values 生成，不再逐个手写：加模块只加一个 enum 值，
         // 枚举顺序就是这里的展示顺序（库页 → 工具页 → 横切能力 → 设备数据）。
@@ -261,8 +266,9 @@ SettingsDestination buildAppearanceDestination() {
         ],
       ),
       SettingsSection(
+        id: 'appearance.section.navigation',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_app_shell,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'appearance.app_icon',

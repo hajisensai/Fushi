@@ -26,9 +26,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../helpers/test_platform_services.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 SettingsDestination _fixtureDestination() {
@@ -180,17 +178,19 @@ Widget _harness({
     overrides: <Override>[
       appProvider.overrideWith((Ref ref) => resolvedAppModel),
     ],
-    child: MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        platform: platform,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          designSystemTheme ??
-              FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          platform: platform,
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+          extensions: <ThemeExtension<dynamic>>[
+            designSystemTheme ??
+                FushiDesignSystemTheme(themeNotifier.designSystemTheme),
+          ],
+        ),
+        home: _buildHome(cupertinoTheme, builder, textScaler),
       ),
-      home: _buildHome(cupertinoTheme, builder, textScaler),
     ),
   );
 }
@@ -198,23 +198,24 @@ Widget _harness({
 Future<AppModel> _prefsBackedAppModel(
   FushiDatabase db, {
   PackageInfo? packageInfo,
+  AppModel? instance,
 }) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
-  final Directory tempDir =
-      Directory.systemTemp.createTempSync('hibiki_settings_renderer_');
+  final Directory tempDir = Directory.systemTemp.createTempSync(
+    'hibiki_settings_renderer_',
+  );
   addTearDown(() async {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
 
-  final AppModel appModel = packageInfo == null
-      ? _RendererTestAppModel()
-      : _VersionedRendererTestAppModel(packageInfo);
+  final AppModel appModel =
+      instance ??
+      (packageInfo == null
+          ? _RendererTestAppModel()
+          : _VersionedRendererTestAppModel(packageInfo));
   return appModel
-    ..wireLocalAudioForTesting(
-      prefsRepo: prefsRepo,
-      databaseDirectory: tempDir,
-    )
+    ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tempDir)
     ..wireDatabaseForTesting(db);
 }
 
@@ -224,8 +225,9 @@ void main() {
   setUp(() => debugSettingsForceExpandAllSections = true);
   tearDown(() => debugSettingsForceExpandAllSections = false);
 
-  testWidgets('material renderer maps schema to Material controls',
-      (WidgetTester tester) async {
+  testWidgets('material renderer maps schema to Material controls', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.android,
@@ -274,121 +276,122 @@ void main() {
   });
 
   testWidgets(
-      'material renderer keeps long CJK settings rows bounded at 2x text scale',
-      (WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(360, 760));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    'material renderer keeps long CJK settings rows bounded at 2x text scale',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 760));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final SettingsDestination narrowDestination = SettingsDestination(
-      id: SettingsDestinationId.appearance,
-      title: '表示',
-      icon: Icons.palette_outlined,
-      sections: <SettingsSection>[
-        SettingsSection(
-          title: '表示と操作',
-          items: <SettingsItem>[
-            SettingsSwitchItem(
-              id: 'long_toggle',
-              title: '辞書ポップアップを開いたときに現在の単語を自動的に読み上げる',
-              subtitle: '長い日本語の説明文でも右端のスイッチを押し出さない',
-              value: (_) => true,
-              onChanged: (_, __) {},
-            ),
-            SettingsSegmentedItem<String>(
-              id: 'long_segmented',
-              title: '閱讀方向和雙頁顯示模式',
-              subtitle: '選項文字很長時預設下置，必要時水平捲動',
-              options: const <SettingsSegmentOption<String>>[
-                SettingsSegmentOption<String>(
-                  value: 'auto',
-                  label: '自動判定',
-                ),
-                SettingsSegmentOption<String>(
-                  value: 'vertical',
-                  label: '縦書き優先',
-                ),
-                SettingsSegmentOption<String>(
-                  value: 'spread',
-                  label: '見開きページ表示',
-                ),
-              ],
-              selected: (_) => 'auto',
-              onChanged: (_, __) {},
-            ),
-            SettingsSliderItem(
-              id: 'long_slider',
-              title: 'インターフェイスの表示倍率',
-              subtitle: '大きい文字でもスライダーは下段で全幅を使う',
-              value: (_) => 1.2,
-              min: 0.5,
-              max: 2,
-              divisions: 15,
-              label: (_) => '120%',
-              onChanged: (_, __) {},
-            ),
-            SettingsCustomItem(
-              id: 'long_picker',
-              title: '既定の単語帳',
-              builder: (_) => AdaptiveSettingsPickerRow<String>(
-                title: '既定の単語帳',
-                subtitle: '短い選択肢は行内ドロップダウンのまま親幅に合わせて縮む',
-                selected: 'deck_a',
-                options: const <AdaptiveSettingsPickerOption<String>>[
-                  AdaptiveSettingsPickerOption<String>(
-                    value: 'deck_a',
-                    label: '日本語学習・長文カード',
+      final SettingsDestination narrowDestination = SettingsDestination(
+        id: SettingsDestinationId.appearance,
+        title: '表示',
+        icon: Icons.palette_outlined,
+        sections: <SettingsSection>[
+          SettingsSection(
+            title: '表示と操作',
+            items: <SettingsItem>[
+              SettingsSwitchItem(
+                id: 'long_toggle',
+                title: '辞書ポップアップを開いたときに現在の単語を自動的に読み上げる',
+                subtitle: '長い日本語の説明文でも右端のスイッチを押し出さない',
+                value: (_) => true,
+                onChanged: (_, __) {},
+              ),
+              SettingsSegmentedItem<String>(
+                id: 'long_segmented',
+                title: '閱讀方向和雙頁顯示模式',
+                subtitle: '選項文字很長時預設下置，必要時水平捲動',
+                options: const <SettingsSegmentOption<String>>[
+                  SettingsSegmentOption<String>(value: 'auto', label: '自動判定'),
+                  SettingsSegmentOption<String>(
+                    value: 'vertical',
+                    label: '縦書き優先',
                   ),
-                  AdaptiveSettingsPickerOption<String>(
-                    value: 'deck_b',
-                    label: '読書メモ',
+                  SettingsSegmentOption<String>(
+                    value: 'spread',
+                    label: '見開きページ表示',
                   ),
                 ],
-                onChanged: (_) {},
+                selected: (_) => 'auto',
+                onChanged: (_, __) {},
               ),
-            ),
-          ],
+              SettingsSliderItem(
+                id: 'long_slider',
+                title: 'インターフェイスの表示倍率',
+                subtitle: '大きい文字でもスライダーは下段で全幅を使う',
+                value: (_) => 1.2,
+                min: 0.5,
+                max: 2,
+                divisions: 15,
+                label: (_) => '120%',
+                onChanged: (_, __) {},
+              ),
+              SettingsCustomItem(
+                id: 'long_picker',
+                title: '既定の単語帳',
+                builder: (_) => AdaptiveSettingsPickerRow<String>(
+                  title: '既定の単語帳',
+                  subtitle: '短い選択肢は行内ドロップダウンのまま親幅に合わせて縮む',
+                  selected: 'deck_a',
+                  options: const <AdaptiveSettingsPickerOption<String>>[
+                    AdaptiveSettingsPickerOption<String>(
+                      value: 'deck_a',
+                      label: '日本語学習・長文カード',
+                    ),
+                    AdaptiveSettingsPickerOption<String>(
+                      value: 'deck_b',
+                      label: '読書メモ',
+                    ),
+                  ],
+                  onChanged: (_) {},
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.android,
+          textScaler: const TextScaler.linear(2),
+          builder: (SettingsContext settingsContext) {
+            return SizedBox(
+              width: 320,
+              child: MaterialSettingsRenderer().buildDetailContent(
+                settingsContext: settingsContext,
+                destination: narrowDestination,
+              ),
+            );
+          },
         ),
-      ],
-    );
+      );
+      await tester.pump();
 
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.android,
-        textScaler: const TextScaler.linear(2),
-        builder: (SettingsContext settingsContext) {
-          return SizedBox(
-            width: 320,
-            child: MaterialSettingsRenderer().buildDetailContent(
-              settingsContext: settingsContext,
-              destination: narrowDestination,
-            ),
-          );
-        },
-      ),
-    );
-    await tester.pump();
+      expect(
+        tester.takeException(),
+        isNull,
+        reason:
+            'renderer output must not overflow narrow 2x-text settings panes',
+      );
+      expect(find.byType(Switch), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
+        findsOneWidget,
+      );
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.byType(DropdownMenu<int>), findsOneWidget);
+    },
+  );
 
-    expect(
-      tester.takeException(),
-      isNull,
-      reason: 'renderer output must not overflow narrow 2x-text settings panes',
-    );
-    expect(find.byType(Switch), findsOneWidget);
-    expect(
-      find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
-      findsOneWidget,
-    );
-    expect(find.byType(Slider), findsOneWidget);
-    expect(find.byType(DropdownMenu<int>), findsOneWidget);
-  });
-
-  testWidgets('cupertino renderer maps schema to Cupertino controls',
-      (WidgetTester tester) async {
+  testWidgets('cupertino renderer maps schema to Cupertino controls', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
-        designSystemTheme:
-            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
+        designSystemTheme: const FushiDesignSystemTheme(
+          FushiDesignSystem.cupertino,
+        ),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -422,8 +425,9 @@ void main() {
     expect(find.text('Custom builder content'), findsOneWidget);
   });
 
-  testWidgets('material design system keeps Material rows on iOS',
-      (WidgetTester tester) async {
+  testWidgets('material design system keeps Material rows on iOS', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
@@ -455,8 +459,9 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
-        designSystemTheme:
-            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
+        designSystemTheme: const FushiDesignSystemTheme(
+          FushiDesignSystem.cupertino,
+        ),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -480,8 +485,9 @@ void main() {
       _harness(
         platform: TargetPlatform.iOS,
         cupertinoTheme: const CupertinoThemeData(primaryColor: customPrimary),
-        designSystemTheme:
-            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
+        designSystemTheme: const FushiDesignSystemTheme(
+          FushiDesignSystem.cupertino,
+        ),
         builder: (SettingsContext settingsContext) {
           return CupertinoSettingsRenderer().buildDestinationList(
             settingsContext: settingsContext,
@@ -493,14 +499,11 @@ void main() {
       ),
     );
 
-    final Icon icon = tester.widget<Icon>(
-      find.byIcon(Icons.palette_outlined),
-    );
+    final Icon icon = tester.widget<Icon>(find.byIcon(Icons.palette_outlined));
     expect(icon.color, customPrimary);
   });
 
-  testWidgets(
-      'material master-detail destination list is one grouped surface with '
+  testWidgets('material master-detail destinations use fixed groups with '
       'pill selection', (WidgetTester tester) async {
     await tester.pumpWidget(
       _harness(
@@ -508,7 +511,15 @@ void main() {
         builder: (SettingsContext settingsContext) {
           return MaterialSettingsRenderer().buildDestinationList(
             settingsContext: settingsContext,
-            destinations: <SettingsDestination>[_fixtureDestination()],
+            destinations: <SettingsDestination>[
+              _fixtureDestination(),
+              const SettingsDestination(
+                id: SettingsDestinationId.video,
+                title: 'Video',
+                icon: Icons.movie_outlined,
+                sections: <SettingsSection>[],
+              ),
+            ],
             selectedDestinationId: SettingsDestinationId.appearance,
             onDestinationSelected: (_) {},
             pushRoutes: false,
@@ -517,7 +528,10 @@ void main() {
       ),
     );
 
-    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+    expect(find.byType(AdaptiveSettingsSection), findsNWidgets(2));
+    expect(find.text(t.settings_group_interface), findsOneWidget);
+    expect(find.text(t.settings_group_content), findsOneWidget);
+    expect(find.widgetWithText(FushiListItem, 'Video'), findsOneWidget);
     FushiListItem item = tester.widget<FushiListItem>(
       find.widgetWithText(FushiListItem, 'Appearance'),
     );
@@ -526,39 +540,43 @@ void main() {
     expect(item.trailing, isNull);
   });
 
-  testWidgets('material push destination list keeps fill selection and chevron',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.android,
-        builder: (SettingsContext settingsContext) {
-          return MaterialSettingsRenderer().buildDestinationList(
-            settingsContext: settingsContext,
-            destinations: <SettingsDestination>[_fixtureDestination()],
-            selectedDestinationId: SettingsDestinationId.appearance,
-            onDestinationSelected: (_) {},
-          );
-        },
-      ),
-    );
+  testWidgets(
+    'material push destination list keeps fill selection and chevron',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.android,
+          builder: (SettingsContext settingsContext) {
+            return MaterialSettingsRenderer().buildDestinationList(
+              settingsContext: settingsContext,
+              destinations: <SettingsDestination>[_fixtureDestination()],
+              selectedDestinationId: SettingsDestinationId.appearance,
+              onDestinationSelected: (_) {},
+            );
+          },
+        ),
+      );
 
-    expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
-    final FushiListItem item = tester.widget<FushiListItem>(
-      find.widgetWithText(FushiListItem, 'Appearance'),
-    );
-    expect(item.selected, isTrue);
-    expect(item.selectedShape, FushiListItemSelectedShape.fill);
-    expect(item.trailing, isA<Icon>());
-  });
+      expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+      final FushiListItem item = tester.widget<FushiListItem>(
+        find.widgetWithText(FushiListItem, 'Appearance'),
+      );
+      expect(item.selected, isTrue);
+      expect(item.selectedShape, FushiListItemSelectedShape.fill);
+      expect(item.trailing, isA<Icon>());
+    },
+  );
 
-  testWidgets('settings schema keeps icons on destinations',
-      (WidgetTester tester) async {
+  testWidgets('settings schema keeps icons on destinations', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
         builder: (SettingsContext settingsContext) {
-          final List<SettingsDestination> destinations =
-              buildSettingsSchema(settingsContext);
+          final List<SettingsDestination> destinations = buildSettingsSchema(
+            settingsContext,
+          );
           final List<String> missingDestinationIcons = <String>[];
           for (final SettingsDestination destination in destinations) {
             if (destination.icon == Icons.help_outline) {
@@ -573,8 +591,9 @@ void main() {
     );
   });
 
-  testWidgets('system settings exposes the runtime app version',
-      (WidgetTester tester) async {
+  testWidgets('system settings exposes the runtime app version', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(
@@ -595,9 +614,9 @@ void main() {
         builder: (SettingsContext settingsContext) {
           final SettingsDestination system =
               buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.system,
-          );
+                (SettingsDestination destination) =>
+                    destination.id == SettingsDestinationId.system,
+              );
           final List<SettingsItem> versionItems = system.sections
               .expand((SettingsSection section) => section.items)
               .where((SettingsItem item) => item.id == 'system.app_version')
@@ -606,9 +625,7 @@ void main() {
             id: system.id,
             title: system.title,
             icon: system.icon,
-            sections: <SettingsSection>[
-              SettingsSection(items: versionItems),
-            ],
+            sections: <SettingsSection>[SettingsSection(items: versionItems)],
           );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -637,16 +654,18 @@ void main() {
   });
 
   test('system app version row is sourced from runtime PackageInfo', () {
-    final String source =
-        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
+    final String source = File(
+      'lib/src/settings/settings_schema_system.dart',
+    ).readAsStringSync();
 
     expect(source, contains("id: 'system.app_version'"));
     expect(source, contains('settingsContext.appModel.packageInfo'));
     expect(source, isNot(contains('pubspec.yaml')));
   });
 
-  testWidgets('pushed settings detail refreshes dynamic log row counts',
-      (WidgetTester tester) async {
+  testWidgets('pushed settings detail refreshes dynamic log row counts', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
@@ -662,9 +681,9 @@ void main() {
         builder: (SettingsContext settingsContext) {
           final SettingsDestination system =
               buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.system,
-          );
+                (SettingsDestination destination) =>
+                    destination.id == SettingsDestinationId.system,
+              );
           return SettingsDetailPage(destination: system);
         },
       ),
@@ -691,9 +710,9 @@ void main() {
       builder: (SettingsContext settingsContext) {
         final SettingsDestination appearance =
             buildSettingsSchema(settingsContext).firstWhere(
-          (SettingsDestination destination) =>
-              destination.id == SettingsDestinationId.appearance,
-        );
+              (SettingsDestination destination) =>
+                  destination.id == SettingsDestinationId.appearance,
+            );
         final SettingsDestination interfaceOnly = SettingsDestination(
           id: appearance.id,
           title: appearance.title,
@@ -709,49 +728,53 @@ void main() {
   }
 
   testWidgets(
-      'TODO-374: app UI size has no auto/custom toggle, only the slider',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      interfaceSettingsHarness(
-        extraThemePrefs: <String, String>{
-          'app_ui_scale': PrefCodec.encode(1.5),
-        },
-      ),
-    );
+    'TODO-374: app UI size has no auto/custom toggle, only the slider',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        interfaceSettingsHarness(
+          extraThemePrefs: <String, String>{
+            'app_ui_scale': PrefCodec.encode(1.5),
+          },
+        ),
+      );
 
-    // 界面大小已无模式概念：不存在任何 auto/custom 分段切换行（标题为界面大小的
-    // AdaptiveSettingsSegmentedRow）。
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is AdaptiveSettingsSegmentedRow<String> &&
-            widget.title == t.app_ui_scale,
-      ),
-      findsNothing,
-      reason: 'TODO-374 删除了界面大小的自动/自定义模式切换',
-    );
+      // 界面大小已无模式概念：不存在任何 auto/custom 分段切换行（标题为界面大小的
+      // AdaptiveSettingsSegmentedRow）。
+      expect(
+        find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is AdaptiveSettingsSegmentedRow<String> &&
+              widget.title == t.app_ui_scale,
+        ),
+        findsNothing,
+        reason: 'TODO-374 删除了界面大小的自动/自定义模式切换',
+      );
 
-    // 恒渲染一条可拖的具体百分比滑条。
-    expect(
-      find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is AdaptiveSettingsSliderRow &&
-            widget.title == t.app_ui_scale &&
-            widget.value == 1.5 &&
-            widget.min == 0.3 &&
-            widget.max == 3.0 &&
-            widget.divisions == 27,
-      ),
-      findsOneWidget,
-    );
-  });
+      // 恒渲染一条可拖的具体百分比滑条。
+      expect(
+        find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is AdaptiveSettingsSliderRow &&
+              widget.title == t.app_ui_scale &&
+              widget.value == 1.5 &&
+              widget.min == 0.3 &&
+              widget.max == 3.0 &&
+              widget.divisions == 27,
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('lookup settings can edit the Yomitan API key', (
     WidgetTester tester,
   ) async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
-    final AppModel appModel = await _prefsBackedAppModel(db);
+    final _YomitanRendererTestAppModel appModel =
+        _YomitanRendererTestAppModel();
+    await _prefsBackedAppModel(db, instance: appModel);
+    await appModel.setYomitanApiServerEnabled(true);
 
     await tester.pumpWidget(
       _harness(
@@ -761,9 +784,9 @@ void main() {
         builder: (SettingsContext settingsContext) {
           final SettingsDestination lookup =
               buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.lookup,
-          );
+                (SettingsDestination destination) =>
+                    destination.id == SettingsDestinationId.lookup,
+              );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
             destination: lookup,
@@ -787,6 +810,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(appModel.yomitanApiKey, 'mpv-token');
+    final PreferencesRepository reloaded = PreferencesRepository(db);
+    await reloaded.loadFromDb();
+    expect(reloaded.yomitanApiKey, 'mpv-token');
+    expect(appModel.serverStops, 1);
+    expect(appModel.serverStarts, 1);
   });
 
   testWidgets('lookup settings exposes lookup audio volume slider', (
@@ -808,9 +836,9 @@ void main() {
         builder: (SettingsContext settingsContext) {
           final SettingsDestination lookup =
               buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.lookup,
-          );
+                (SettingsDestination destination) =>
+                    destination.id == SettingsDestinationId.lookup,
+              );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
             destination: lookup,
@@ -820,21 +848,25 @@ void main() {
     );
 
     Finder sliderFinder() => find.byWidgetPredicate(
-          (Widget widget) =>
-              widget is AdaptiveSettingsSliderRow &&
-              widget.title == t.lookup_audio_volume,
-        );
+      (Widget widget) =>
+          widget is AdaptiveSettingsSliderRow &&
+          widget.title == t.lookup_audio_volume,
+    );
 
     // 标题带实时百分比读数（与有声书音量行同款）；row.title 保持裸标题作身份。
     expect(find.text('${t.lookup_audio_volume} (100%)'), findsOneWidget);
     expect(sliderFinder(), findsOneWidget);
-    AdaptiveSettingsSliderRow row =
-        tester.widget<AdaptiveSettingsSliderRow>(sliderFinder());
+    AdaptiveSettingsSliderRow row = tester.widget<AdaptiveSettingsSliderRow>(
+      sliderFinder(),
+    );
     expect(row.value, 100);
     expect(row.min, 0);
     expect(row.max, 100);
-    expect(row.divisions, 100,
-        reason: '0–100% 共 100 档 = 拖动 1% 一档（旧 20 档 = 5% 太粗）');
+    expect(
+      row.divisions,
+      100,
+      reason: '0–100% 共 100 档 = 拖动 1% 一档（旧 20 档 = 5% 太粗）',
+    );
     expect(row.step, 5, reason: '键盘/手柄左右键 5% 一步，与拖动档位解耦');
     expect(row.readout, '100%');
     expect(row.label, '100%');
@@ -845,8 +877,9 @@ void main() {
     expect(ReaderFushiSource.instance.lookupAudioVolume, 35);
   });
 
-  testWidgets('app UI scale slider commits only on drag end, not during drag',
-      (WidgetTester tester) async {
+  testWidgets('app UI scale slider commits only on drag end, not during drag', (
+    WidgetTester tester,
+  ) async {
     late AppModel appModel;
     await tester.pumpWidget(
       _harness(
@@ -859,9 +892,9 @@ void main() {
           appModel = settingsContext.appModel;
           final SettingsDestination appearance =
               buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.appearance,
-          );
+                (SettingsDestination destination) =>
+                    destination.id == SettingsDestinationId.appearance,
+              );
           final SettingsDestination interfaceOnly = SettingsDestination(
             id: appearance.id,
             title: appearance.title,
@@ -877,8 +910,8 @@ void main() {
     );
 
     AdaptiveSettingsSliderRow row() => tester.widget<AdaptiveSettingsSliderRow>(
-          find.byType(AdaptiveSettingsSliderRow),
-        );
+      find.byType(AdaptiveSettingsSliderRow),
+    );
 
     expect(appModel.appUiScale, 1.0);
 
@@ -897,19 +930,21 @@ void main() {
     expect(row().value, 2.0);
   });
 
-  testWidgets('appearance custom rows omit Cupertino leading icons',
-      (WidgetTester tester) async {
+  testWidgets('appearance custom rows omit Cupertino leading icons', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
         platform: TargetPlatform.iOS,
-        designSystemTheme:
-            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
+        designSystemTheme: const FushiDesignSystemTheme(
+          FushiDesignSystem.cupertino,
+        ),
         builder: (SettingsContext settingsContext) {
           final SettingsDestination appearance =
               buildSettingsSchema(settingsContext).firstWhere(
-            (SettingsDestination destination) =>
-                destination.id == SettingsDestinationId.appearance,
-          );
+                (SettingsDestination destination) =>
+                    destination.id == SettingsDestinationId.appearance,
+              );
           final SettingsDestination firstSectionOnly = SettingsDestination(
             id: appearance.id,
             title: appearance.title,
@@ -931,16 +966,17 @@ void main() {
   });
 
   test('settings renderers route schema rows through shared component', () {
-    final String material =
-        File('lib/src/settings/material_settings_renderer.dart')
-            .readAsStringSync();
-    final String cupertino =
-        File('lib/src/settings/cupertino_settings_renderer.dart')
-            .readAsStringSync();
+    final String material = File(
+      'lib/src/settings/material_settings_renderer.dart',
+    ).readAsStringSync();
+    final String cupertino = File(
+      'lib/src/settings/cupertino_settings_renderer.dart',
+    ).readAsStringSync();
     // schema section/item/footer 的渲染收口在共享 settings_schema_widgets，行控件
     // 全部走 settings_shared 的自适应组件（不再两个渲染器各复制一份）。
-    final String shared = File('lib/src/settings/settings_schema_widgets.dart')
-        .readAsStringSync();
+    final String shared = File(
+      'lib/src/settings/settings_schema_widgets.dart',
+    ).readAsStringSync();
 
     expect(shared, contains('AdaptiveSettingsNavigationRow('));
     for (final String row in <String>[
@@ -965,13 +1001,19 @@ void main() {
     for (final String src in <String>[material, cupertino, shared]) {
       expect(src, isNot(contains('as dynamic).onChanged')));
       expect(src, isNot(contains('segmented.onChanged as Function')));
-      expect(src,
-          isNot(contains('SettingsNavigationItem navigation => _navigation')));
+      expect(
+        src,
+        isNot(contains('SettingsNavigationItem navigation => _navigation')),
+      );
     }
-    final String destination =
-        File('lib/src/settings/settings_destination.dart').readAsStringSync();
-    expect(destination, contains('dispatchChange('),
-        reason: 'SettingsSegmentedItem 应提供类型安全的 dispatchChange 方法');
+    final String destination = File(
+      'lib/src/settings/settings_destination.dart',
+    ).readAsStringSync();
+    expect(
+      destination,
+      contains('dispatchChange('),
+      reason: 'SettingsSegmentedItem 应提供类型安全的 dispatchChange 方法',
+    );
   });
 
   // 回归：改 String 型 segmented 设置时，渲染器派发处把 SettingsSegmentedItem
@@ -1002,39 +1044,54 @@ void main() {
     );
   }
 
-  testWidgets('material segmented change fires onChanged without _TypeError',
-      (WidgetTester tester) async {
+  testWidgets('material segmented change fires onChanged without _TypeError', (
+    WidgetTester tester,
+  ) async {
     String received = '';
-    await tester.pumpWidget(_harness(
-      platform: TargetPlatform.android,
-      builder: (SettingsContext sctx) => MaterialSettingsRenderer()
-          .buildDetailPage(
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.android,
+        builder: (SettingsContext sctx) =>
+            MaterialSettingsRenderer().buildDetailPage(
               settingsContext: sctx,
-              destination: segmentedFixture((String v) => received = v)),
-    ));
+              destination: segmentedFixture((String v) => received = v),
+            ),
+      ),
+    );
     await tester.tap(find.text('On'));
     await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull,
-        reason: '改 String 型 segmented 设置不得抛 _TypeError');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '改 String 型 segmented 设置不得抛 _TypeError',
+    );
     expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
   });
 
-  testWidgets('cupertino segmented change fires onChanged without _TypeError',
-      (WidgetTester tester) async {
+  testWidgets('cupertino segmented change fires onChanged without _TypeError', (
+    WidgetTester tester,
+  ) async {
     String received = '';
-    await tester.pumpWidget(_harness(
-      platform: TargetPlatform.iOS,
-      designSystemTheme:
-          const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
-      builder: (SettingsContext sctx) => CupertinoSettingsRenderer()
-          .buildDetailPage(
+    await tester.pumpWidget(
+      _harness(
+        platform: TargetPlatform.iOS,
+        designSystemTheme: const FushiDesignSystemTheme(
+          FushiDesignSystem.cupertino,
+        ),
+        builder: (SettingsContext sctx) =>
+            CupertinoSettingsRenderer().buildDetailPage(
               settingsContext: sctx,
-              destination: segmentedFixture((String v) => received = v)),
-    ));
+              destination: segmentedFixture((String v) => received = v),
+            ),
+      ),
+    );
     await tester.tap(find.text('On'));
     await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull,
-        reason: '改 String 型 segmented 设置不得抛 _TypeError');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '改 String 型 segmented 设置不得抛 _TypeError',
+    );
     expect(received, 'on', reason: 'onChanged 必须以正确的 String 值触发');
   });
 
@@ -1042,76 +1099,82 @@ void main() {
   // 详情过去返回裸 Column，内容超高 → RenderFlex 溢出（真机右下角黄黑条纹）。
   // 详情必须像 Material 渲染器一样自带滚动视口。
   testWidgets(
-      'BUG-009: cupertino detail content scrolls in a bounded pane instead of '
-      'overflowing', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.iOS,
-        designSystemTheme:
-            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
-        builder: (SettingsContext settingsContext) {
-          // 模拟宽屏 primary：固定矮高度面板，内容远超其高度。
-          return Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              height: 250,
-              width: 600,
-              child: const CupertinoSettingsRenderer().buildDetailContent(
-                settingsContext: settingsContext,
-                destination: _fixtureDestination(),
+    'BUG-009: cupertino detail content scrolls in a bounded pane instead of '
+    'overflowing',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.iOS,
+          designSystemTheme: const FushiDesignSystemTheme(
+            FushiDesignSystem.cupertino,
+          ),
+          builder: (SettingsContext settingsContext) {
+            // 模拟宽屏 primary：固定矮高度面板，内容远超其高度。
+            return Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                height: 250,
+                width: 600,
+                child: const CupertinoSettingsRenderer().buildDetailContent(
+                  settingsContext: settingsContext,
+                  destination: _fixtureDestination(),
+                ),
               ),
-            ),
-          );
-        },
-      ),
-    );
+            );
+          },
+        ),
+      );
 
-    expect(
-      tester.takeException(),
-      isNull,
-      reason: 'cupertino 详情在有限高度面板里必须可滚动，不得 RenderFlex 溢出（BUG-009 R1）',
-    );
-    // 详情自身提供可滚动视口（宽屏 primary 与 reader 设置弹窗都复用此路径）。
-    expect(find.byType(Scrollable), findsWidgets);
-  });
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'cupertino 详情在有限高度面板里必须可滚动，不得 RenderFlex 溢出（BUG-009 R1）',
+      );
+      // 详情自身提供可滚动视口（宽屏 primary 与 reader 设置弹窗都复用此路径）。
+      expect(find.byType(Scrollable), findsWidgets);
+    },
+  );
 
   // BUG-009 R2：Windows 桌面把外观切到 iOS(Cupertino) 后，设置标签曾退化成
   // 「3 图标 rail + 嵌入 Cupertino 设置」三栏混排、无返回出口、详情溢出。修复后
   // cupertino 桌面复用 Material 全屏外壳：宽屏二栏 + 顶部返回箭头出口，不溢出。
   testWidgets(
-      'BUG-009 R2: cupertino desktop embedded settings expose a back-arrow exit '
-      'and do not overflow', (WidgetTester tester) async {
-    // 默认选中分类改为「外观」后，首屏详情会渲染读 prefsRepo 的开关行
-    //（反转导航栏/启动词典 tab），故 harness 需要 prefs-backed AppModel
-    //（轻量 _RendererTestAppModel 无 prefsRepo 会空指针）。
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final AppModel appModel = await _prefsBackedAppModel(db);
-    await tester.pumpWidget(
-      _harness(
-        // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
-        platform: TargetPlatform.windows,
-        designSystemTheme:
-            const FushiDesignSystemTheme(FushiDesignSystem.cupertino),
-        appModel: appModel,
-        builder: (SettingsContext _) =>
-            SettingsHomePage(embedded: true, onBack: () {}),
-      ),
-    );
-    await tester.pump();
+    'BUG-009 R2: cupertino desktop embedded settings expose a back-arrow exit '
+    'and do not overflow',
+    (WidgetTester tester) async {
+      // 默认选中分类改为「外观」后，首屏详情会渲染读 prefsRepo 的开关行
+      //（反转导航栏/启动词典 tab），故 harness 需要 prefs-backed AppModel
+      //（轻量 _RendererTestAppModel 无 prefsRepo 会空指针）。
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final AppModel appModel = await _prefsBackedAppModel(db);
+      await tester.pumpWidget(
+        _harness(
+          // 复现用户场景：Windows 主机 + 外观强制 iOS(Cupertino) 覆盖。
+          platform: TargetPlatform.windows,
+          designSystemTheme: const FushiDesignSystemTheme(
+            FushiDesignSystem.cupertino,
+          ),
+          appModel: appModel,
+          builder: (SettingsContext _) =>
+              SettingsHomePage(embedded: true, onBack: () {}),
+        ),
+      );
+      await tester.pump();
 
-    expect(
-      tester.takeException(),
-      isNull,
-      reason: 'cupertino 桌面嵌入设置不得 RenderFlex 溢出（BUG-009）',
-    );
-    // 退化态完全没有出口；修复后必须有返回箭头（由统一嵌入页头提供）。
-    expect(
-      find.byIcon(Icons.arrow_back),
-      findsOneWidget,
-      reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
-    );
-  });
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'cupertino 桌面嵌入设置不得 RenderFlex 溢出（BUG-009）',
+      );
+      // 退化态完全没有出口；修复后必须有返回箭头（由统一嵌入页头提供）。
+      expect(
+        find.byIcon(Icons.arrow_back),
+        findsOneWidget,
+        reason: 'cupertino 桌面全屏设置必须提供返回箭头出口（BUG-009 R2）',
+      );
+    },
+  );
 
   // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 外观）的详情
   // 面板：settings_home_page.dart 在 _selectedDestinationId 为 null 时无条件落到
@@ -1124,194 +1187,216 @@ void main() {
   // 必须先把选中项挪走、再要求「打开前目标不在显示」。这里把机制钉住：哪天默认
   // 预选被改掉，这条会红，届时那边的 priming 才可以撤。
   testWidgets(
-      'wide settings preselects and renders destinations.first before any '
-      'navigation (why navigation_stability primes the selection)',
-      (WidgetTester tester) async {
-    final FushiDatabase db = _testDb();
-    addTearDown(db.close);
-    final AppModel appModel = await _prefsBackedAppModel(db);
-    SettingsContext? captured;
-    await tester.pumpWidget(
-      _harness(
-        // 默认 800x600 测试画布 > 720，走宽屏二栏（settings_home_page.dart 的
-        // `wide = constraints.maxWidth >= 720`）。
-        platform: TargetPlatform.windows,
-        appModel: appModel,
-        builder: (SettingsContext settingsContext) {
-          captured = settingsContext;
-          return SettingsHomePage(embedded: true, onBack: () {});
-        },
-      ),
-    );
-    await tester.pump();
+    'wide settings preselects and renders destinations.first before any '
+    'navigation (why navigation_stability primes the selection)',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final AppModel appModel = await _prefsBackedAppModel(db);
+      SettingsContext? captured;
+      await tester.pumpWidget(
+        _harness(
+          // 默认 800x600 测试画布 > 720，走宽屏二栏（settings_home_page.dart 的
+          // `wide = constraints.maxWidth >= 720`）。
+          platform: TargetPlatform.windows,
+          appModel: appModel,
+          builder: (SettingsContext settingsContext) {
+            captured = settingsContext;
+            return SettingsHomePage(embedded: true, onBack: () {});
+          },
+        ),
+      );
+      await tester.pump();
 
-    final SettingsContext? settingsContext = captured;
-    if (settingsContext == null) fail('settings harness did not build');
-    final SettingsDestination first = buildSettingsSchema(settingsContext).first;
-    expect(
-      first.id,
-      SettingsDestinationId.appearance,
-      reason: 'schema 第一项变了的话，下面两条与 itest 的 priming 都要重估',
-    );
+      final SettingsContext? settingsContext = captured;
+      if (settingsContext == null) fail('settings harness did not build');
+      final SettingsDestination first = buildSettingsSchema(
+        settingsContext,
+      ).first;
+      expect(
+        first.id,
+        SettingsDestinationId.appearance,
+        reason: 'schema 第一项变了的话，下面两条与 itest 的 priming 都要重估',
+      );
 
-    // ① 详情面板身份：第一帧就是 destinations.first 的面板，没有任何导航发生。
-    expect(
-      find.byKey(ValueKey<SettingsDestinationId>(first.id)),
-      findsOneWidget,
-      reason: '宽屏首帧就渲染了第一分类的详情面板 —— 「面板存在」本身不构成导航证据',
-    );
+      // ① 详情面板身份：第一帧就是 destinations.first 的面板，没有任何导航发生。
+      expect(
+        find.byKey(ValueKey<SettingsDestinationId>(first.id)),
+        findsOneWidget,
+        reason: '宽屏首帧就渲染了第一分类的详情面板 —— 「面板存在」本身不构成导航证据',
+      );
 
-    // ② 行高亮：第一帧就为 true，所以「这一行 selected」更不是导航证据。
-    final Finder firstRow = find.ancestor(
-      of: find.text(first.title),
-      matching: find.byWidgetPredicate(
-        (Widget widget) => widget is FushiListItem && widget.selected,
-      ),
-    );
-    expect(
-      firstRow,
-      findsWidgets,
-      reason: '宽屏首帧第一分类行已是 selected —— itest 不能拿它当「打开成功」',
-    );
-  });
+      // ② 行高亮：第一帧就为 true，所以「这一行 selected」更不是导航证据。
+      final Finder firstRow = find.ancestor(
+        of: find.text(first.title),
+        matching: find.byWidgetPredicate(
+          (Widget widget) => widget is FushiListItem && widget.selected,
+        ),
+      );
+      expect(
+        firstRow,
+        findsWidgets,
+        reason: '宽屏首帧第一分类行已是 selected —— itest 不能拿它当「打开成功」',
+      );
+    },
+  );
 
   // TODO-1143：master-detail 左父菜单在最窄布局（supportingPaneWidthForLayout
   // clamp 280..360，下界 280px）下曾把长分类标签（如「同步与备份（实验性）」）用
   // FushiListItem 默认 titleMaxLines:1 + ellipsis 截成「同步与…」。修复给
   // buildDestinationList 的分类项传 titleMaxLines: 2（全宽本不换行，无害）。
   testWidgets(
-      'TODO-1143: narrow (280px) master-detail destination rows allow two title '
-      'lines so long CJK category labels are not truncated', (
-    WidgetTester tester,
-  ) async {
-    const String longTitle = '同步与备份（实验性）';
-    final SettingsDestination longDestination = SettingsDestination(
-      id: SettingsDestinationId.syncBackup,
-      title: longTitle,
-      icon: Icons.cloud_sync_outlined,
-      sections: const <SettingsSection>[],
-    );
+    'TODO-1143: narrow (280px) master-detail destination rows allow two title '
+    'lines so long CJK category labels are not truncated',
+    (WidgetTester tester) async {
+      const String longTitle = '同步与备份（实验性）';
+      final SettingsDestination longDestination = SettingsDestination(
+        id: SettingsDestinationId.syncBackup,
+        title: longTitle,
+        icon: Icons.cloud_sync_outlined,
+        sections: const <SettingsSection>[],
+      );
 
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.android,
-        builder: (SettingsContext settingsContext) {
-          return Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: 280, // 左父菜单最窄宽度（clamp 下界）。
-              child: MaterialSettingsRenderer().buildDestinationList(
-                settingsContext: settingsContext,
-                destinations: <SettingsDestination>[longDestination],
-                selectedDestinationId: SettingsDestinationId.syncBackup,
-                onDestinationSelected: (_) {},
-                pushRoutes: false,
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.android,
+          builder: (SettingsContext settingsContext) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 280, // 左父菜单最窄宽度（clamp 下界）。
+                child: MaterialSettingsRenderer().buildDestinationList(
+                  settingsContext: settingsContext,
+                  destinations: <SettingsDestination>[longDestination],
+                  selectedDestinationId: SettingsDestinationId.syncBackup,
+                  onDestinationSelected: (_) {},
+                  pushRoutes: false,
+                ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-    await tester.pumpAndSettle();
+            );
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    // 机制（字体无关）：分类项真拿到 titleMaxLines: 2（放行第二行）。
-    final FushiListItem item = tester.widget<FushiListItem>(
-      find.widgetWithText(FushiListItem, longTitle),
-    );
-    expect(item.titleMaxLines, 2,
-        reason: 'TODO-1143 左父菜单分类项必须传 titleMaxLines: 2');
+      // 机制（字体无关）：分类项真拿到 titleMaxLines: 2（放行第二行）。
+      final FushiListItem item = tester.widget<FushiListItem>(
+        find.widgetWithText(FushiListItem, longTitle),
+      );
+      expect(
+        item.titleMaxLines,
+        2,
+        reason: 'TODO-1143 左父菜单分类项必须传 titleMaxLines: 2',
+      );
 
-    // 效果：标题 RenderParagraph 允许两行，长标签在 280px 内不再被单行 ellipsis
-    // 截断。
-    final RenderParagraph paragraph =
-        tester.renderObject<RenderParagraph>(find.text(longTitle));
-    expect(paragraph.maxLines, 2,
-        reason: 'titleMaxLines: 2 必须真透传到标题的 RenderParagraph');
-    expect(paragraph.didExceedMaxLines, isFalse,
-        reason: '两行内「同步与备份（实验性）」应完整显示，不触发 ellipsis');
-  });
+      // 效果：标题 RenderParagraph 允许两行，长标签在 280px 内不再被单行 ellipsis
+      // 截断。
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        find.text(longTitle),
+      );
+      expect(
+        paragraph.maxLines,
+        2,
+        reason: 'titleMaxLines: 2 必须真透传到标题的 RenderParagraph',
+      );
+      expect(
+        paragraph.didExceedMaxLines,
+        isFalse,
+        reason: '两行内「同步与备份（实验性）」应完整显示，不触发 ellipsis',
+      );
+    },
+  );
 
   testWidgets(
-      'BUG-925: every titled section is collapsible; collapsedByDefault only '
-      'controls the initial open/closed state, not the ability to fold',
-      (WidgetTester tester) async {
-    // 折叠「能力」与「默认收起」解耦后（settings_schema_widgets.dart）：
-    //   有标题 → 一定有折叠头（chevron），不管 collapsedByDefault；
-    //   collapsedByDefault 只决定进页面时展开还是收起；
-    //   无标题 → 没有可点的折叠头，永远平铺。
-    // 关掉全展开钩子，才能同时验「默认收起」这一半（setUp 默认置 true）。
-    debugSettingsForceExpandAllSections = false;
+    'explicit presentation distinguishes core, expanded and collapsed groups',
+    (WidgetTester tester) async {
+      // 核心设置常驻，进阶组显式声明默认展开/收起，无标题组不可折叠。
+      // 关掉全展开钩子，才能同时验「默认收起」这一半（setUp 默认置 true）。
+      debugSettingsForceExpandAllSections = false;
 
-    final SettingsDestination destination = SettingsDestination(
-      id: SettingsDestinationId.appearance,
-      title: 'Folding',
-      icon: Icons.palette_outlined,
-      sections: <SettingsSection>[
-        SettingsSection(
-          title: 'Expanded group',
-          // collapsedByDefault 缺省 = false → 默认展开。
-          items: <SettingsItem>[
-            SettingsSwitchItem(
-              id: 'alpha',
-              title: 'Alpha row',
-              value: (_) => true,
-              onChanged: (_, __) {},
-            ),
-          ],
+      final SettingsDestination destination = SettingsDestination(
+        id: SettingsDestinationId.appearance,
+        title: 'Folding',
+        icon: Icons.palette_outlined,
+        sections: <SettingsSection>[
+          SettingsSection(
+            title: 'Expanded group',
+            presentation: SettingsSectionPresentation.expanded,
+            items: <SettingsItem>[
+              SettingsSwitchItem(
+                id: 'alpha',
+                title: 'Alpha row',
+                value: (_) => true,
+                onChanged: (_, __) {},
+              ),
+            ],
+          ),
+          SettingsSection(
+            title: 'Collapsed group',
+            collapsedByDefault: true, // 默认收起。
+            items: <SettingsItem>[
+              SettingsSwitchItem(
+                id: 'bravo',
+                title: 'Bravo row',
+                value: (_) => true,
+                onChanged: (_, __) {},
+              ),
+            ],
+          ),
+          SettingsSection(
+            // 无标题 → 不可折叠。
+            items: <SettingsItem>[
+              SettingsSwitchItem(
+                id: 'charlie',
+                title: 'Charlie row',
+                value: (_) => true,
+                onChanged: (_, __) {},
+              ),
+            ],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _harness(
+          platform: TargetPlatform.android,
+          builder: (SettingsContext settingsContext) {
+            return MaterialSettingsRenderer().buildDetailPage(
+              settingsContext: settingsContext,
+              destination: destination,
+            );
+          },
         ),
-        SettingsSection(
-          title: 'Collapsed group',
-          collapsedByDefault: true, // 默认收起。
-          items: <SettingsItem>[
-            SettingsSwitchItem(
-              id: 'bravo',
-              title: 'Bravo row',
-              value: (_) => true,
-              onChanged: (_, __) {},
-            ),
-          ],
-        ),
-        SettingsSection(
-          // 无标题 → 不可折叠。
-          items: <SettingsItem>[
-            SettingsSwitchItem(
-              id: 'charlie',
-              title: 'Charlie row',
-              value: (_) => true,
-              onChanged: (_, __) {},
-            ),
-          ],
-        ),
-      ],
-    );
+      );
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(
-      _harness(
-        platform: TargetPlatform.android,
-        builder: (SettingsContext settingsContext) {
-          return MaterialSettingsRenderer().buildDetailPage(
-            settingsContext: settingsContext,
-            destination: destination,
-          );
-        },
-      ),
-    );
-    await tester.pumpAndSettle();
+      // 两个带标题分区各有一个折叠头；无标题分区没有。
+      expect(
+        find.byIcon(Icons.expand_more),
+        findsNWidgets(2),
+        reason: '每个带标题 section 都必须长出折叠头；无标题 section 不出',
+      );
 
-    // 两个带标题分区各有一个折叠头；无标题分区没有。
-    expect(find.byIcon(Icons.expand_more), findsNWidgets(2),
-        reason: '每个带标题 section 都必须长出折叠头；无标题 section 不出');
+      // collapsedByDefault 决定默认态：展开组的行在树内，收起组的行不入树。
+      expect(
+        find.text('Alpha row'),
+        findsOneWidget,
+        reason: 'collapsedByDefault:false 的分区默认展开，行应可见',
+      );
+      expect(
+        find.text('Bravo row'),
+        findsNothing,
+        reason: 'collapsedByDefault:true 的分区默认收起，行应不入树',
+      );
 
-    // collapsedByDefault 决定默认态：展开组的行在树内，收起组的行不入树。
-    expect(find.text('Alpha row'), findsOneWidget,
-        reason: 'collapsedByDefault:false 的分区默认展开，行应可见');
-    expect(find.text('Bravo row'), findsNothing,
-        reason: 'collapsedByDefault:true 的分区默认收起，行应不入树');
-
-    // 无标题分区永远平铺，行始终可见。
-    expect(find.text('Charlie row'), findsOneWidget,
-        reason: '无标题 section 不可折叠，行始终平铺可见');
-  });
+      // 无标题分区永远平铺，行始终可见。
+      expect(
+        find.text('Charlie row'),
+        findsOneWidget,
+        reason: '无标题 section 不可折叠，行始终平铺可见',
+      );
+    },
+  );
 }
 
 /// 渲染器测试用的轻量 AppModel：未跑 initialise()、prefsRepo 为空。阅读设置里
@@ -1325,11 +1410,11 @@ class _RendererTestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Hibiki',
-        packageName: 'jp.hibiki.test',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Hibiki',
+    packageName: 'jp.hibiki.test',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   bool get reverseReaderBottomBar => false;
@@ -1342,4 +1427,20 @@ class _VersionedRendererTestAppModel extends _RendererTestAppModel {
 
   @override
   PackageInfo get packageInfo => _packageInfo;
+}
+
+/// Keep this test on real preference writes while replacing the HTTP listener.
+class _YomitanRendererTestAppModel extends _RendererTestAppModel {
+  int serverStarts = 0;
+  int serverStops = 0;
+
+  @override
+  Future<void> startYomitanApiServer() async {
+    serverStarts++;
+  }
+
+  @override
+  Future<void> stopYomitanApiServer() async {
+    serverStops++;
+  }
 }

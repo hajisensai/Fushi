@@ -4,6 +4,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
+import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -55,51 +56,59 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
-    final List<Widget> rows = <Widget>[
-      for (final SettingsDestination destination in destinations)
-        FushiListItem(
-          selected: destination.id == selectedDestinationId,
-          // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
-          // MD3 rounded pill highlight; the narrow push list keeps full-bleed fill.
-          selectedShape: pushRoutes
-              ? FushiListItemSelectedShape.fill
-              : FushiListItemSelectedShape.pill,
-          leading: Icon(destination.icon),
-          title: Text(destination.title),
-          // TODO-1143：左父菜单在窄布局（clamp 280..360，最窄 280px）下曾把长分类
-          // 标签（如「同步与备份（实验性）」）用 FushiListItem 默认 titleMaxLines:1
-          // 截成「同步与…」。放行第二行；全宽布局本就不换行，无害。
-          titleMaxLines: 2,
-          subtitle:
-              destination.summary != null ? Text(destination.summary!) : null,
-          // Chevron implies push navigation; only show it when tapping actually
-          // pushes a detail route (narrow layout), not in the master-detail pane.
-          trailing: pushRoutes ? const Icon(Icons.chevron_right) : null,
-          onTap: () {
-            onDestinationSelected(destination.id);
-            if (!pushRoutes) return;
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SettingsDetailPage(destination: destination),
-              ),
-            );
-          },
-        ),
-    ];
+    Widget destinationRow(SettingsDestination destination) => FushiListItem(
+      selected: destination.id == selectedDestinationId,
+      // Master-detail (pushRoutes:false) keeps selection in-pane, so use the
+      // MD3 rounded pill highlight; the narrow push list keeps full-bleed fill.
+      selectedShape: pushRoutes
+          ? FushiListItemSelectedShape.fill
+          : FushiListItemSelectedShape.pill,
+      leading: Icon(destination.icon),
+      title: Text(destination.title),
+      // TODO-1143：左父菜单在窄布局（clamp 280..360，最窄 280px）下曾把长分类
+      // 标签（如「同步与备份（实验性）」）用 FushiListItem 默认 titleMaxLines:1
+      // 截成「同步与…」。放行第二行；全宽布局本就不换行，无害。
+      titleMaxLines: 2,
+      subtitle: destination.summary != null ? Text(destination.summary!) : null,
+      // Chevron implies push navigation; only show it when tapping actually
+      // pushes a detail route (narrow layout), not in the master-detail pane.
+      trailing: pushRoutes ? const Icon(Icons.chevron_right) : null,
+      onTap: () {
+        onDestinationSelected(destination.id);
+        if (!pushRoutes) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SettingsDetailPage(destination: destination),
+          ),
+        );
+      },
+    );
 
-    return ListView(
+    // The category list is small and bounded. Keep every group mounted so Tab
+    // can wrap to categories above the viewport after scrolling to a later one.
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
         tokens.spacing.gap,
         tokens.spacing.page,
         tokens.spacing.page + mediaPadding.bottom,
       ),
-      children: <Widget>[
-        AdaptiveSettingsSection(
-          surfaceColor: tokens.surfaces.card,
-          children: rows,
-        ),
-      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (final SettingsNavigationGroup group in groupSettingsDestinations(
+            destinations,
+          ))
+            AdaptiveSettingsSection(
+              key: ValueKey<SettingsNavigationGroupId>(group.id),
+              title: group.id.title(context),
+              surfaceColor: tokens.surfaces.card,
+              children: group.destinations
+                  .map(destinationRow)
+                  .toList(growable: false),
+            ),
+        ],
+      ),
     );
   }
 
@@ -128,8 +137,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
   }) {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<SettingsSection> sections =
-        destination.visibleSections(settingsContext);
+    final List<SettingsSection> sections = destination.visibleSections(
+      settingsContext,
+    );
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
     // Left side hugs the pane divider; give it MD3 expanded breathing room
     // (page + gap = 28) so detail content isn't glued to the nav pane. Horizontal
@@ -143,8 +153,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // pane's bespoke 导航 / 有声书 sub-pages instead of double-indenting and
     // rendering narrower (TODO-1321). Mirrors the Cupertino renderer, whose
     // detail body never owns a horizontal inset.
-    final EdgeInsets horizontal =
-        insetHorizontally ? detailHorizontalInsets(tokens) : EdgeInsets.zero;
+    final EdgeInsets horizontal = insetHorizontally
+        ? detailHorizontalInsets(tokens)
+        : EdgeInsets.zero;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal.left,
       tokens.spacing.gap,
@@ -153,21 +164,28 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     );
 
     Widget section(int index) => SettingsSchemaSection(
-          section: sections[index],
-          settingsContext: settingsContext,
-          showIcons: true,
-          routeBuilder: (BuildContext context, WidgetBuilder builder) {
-            return MaterialPageRoute<void>(builder: builder);
-          },
-          footerStyle: (BuildContext context) =>
-              Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: FushiDesignTokens.of(context).surfaces.onVariant,
-                  ),
-        );
+      key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),
+      scopeId: destination.id.name,
+      section: sections[index],
+      settingsContext: settingsContext,
+      showIcons: true,
+      routeBuilder: (BuildContext context, WidgetBuilder builder) {
+        return MaterialPageRoute<void>(builder: builder);
+      },
+      footerStyle: (BuildContext context) => Theme.of(context)
+          .textTheme
+          .bodySmall
+          ?.copyWith(color: FushiDesignTokens.of(context).surfaces.onVariant),
+    );
 
     // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
     // 与它们共享同一个滚动容器与内边距。
     final Widget? bodyWidget = destination.body?.call(settingsContext);
+    final List<Widget> content = <Widget>[
+      if (bodyWidget != null && destination.bodyBeforeSections) bodyWidget,
+      for (int index = 0; index < sections.length; index++) section(index),
+      if (bodyWidget != null && !destination.bodyBeforeSections) bodyWidget,
+    ];
 
     // Embedded in a PARENT scrollable (cupertino CustomScrollView, the desktop
     // settings SingleChildScrollView, the reader quick-settings sheet): a
@@ -192,9 +210,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             ? const NeverScrollableScrollPhysics()
             : null,
         padding: padding,
-        itemCount: sections.length + (bodyWidget != null ? 1 : 0),
-        itemBuilder: (BuildContext context, int index) =>
-            index < sections.length ? section(index) : bodyWidget!,
+        itemCount: content.length,
+        itemBuilder: (BuildContext context, int index) => content[index],
       );
     }
 
@@ -213,10 +230,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       padding: padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (int index = 0; index < sections.length; index++) section(index),
-          if (bodyWidget != null) bodyWidget,
-        ],
+        children: content,
       ),
     );
   }

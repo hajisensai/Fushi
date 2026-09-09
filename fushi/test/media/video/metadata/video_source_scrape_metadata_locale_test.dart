@@ -106,6 +106,10 @@ class _FakeRegistry implements VideoMetadataProviderRegistry {
   bool closed = false;
 
   @override
+  Iterable<VideoMetadataProvider> get providers =>
+      const <VideoMetadataProvider>[];
+
+  @override
   void close() => closed = true;
 
   @override

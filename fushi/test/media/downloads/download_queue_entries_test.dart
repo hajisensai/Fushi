@@ -128,8 +128,8 @@ void main() {
         isTrue,
       );
       expect(entries!.first.createdAt, greaterThanOrEqualTo(before));
-      expect(entries!.first.onClear, isNull);
-      expect(entries!.first.onRetry, isNull);
+      expect(entries!.first.actions.clear, isNull);
+      expect(entries!.first.actions.retry, isNull);
       final String originalId = entries!.last.id;
       final int? originalCreatedAt = entries!.last.createdAt;
       queue.tasks.last.status = DiscoveryDownloadStatus.failed;
@@ -148,8 +148,8 @@ void main() {
           },
         ),
       );
-      expect(entries!.last.onRetry, isNotNull);
-      entries!.last.onClear!();
+      expect(entries!.last.actions.retry, isNotNull);
+      await entries!.last.actions.clear!();
       await tester.pump();
       expect(queue.tasks, hasLength(3));
       expect(queue.tasks.first.status, DiscoveryDownloadStatus.running);

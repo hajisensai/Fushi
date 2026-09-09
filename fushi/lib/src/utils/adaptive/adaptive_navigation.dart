@@ -46,6 +46,23 @@ const Key fushiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
 /// design system.
 const Key fushiMacosNavKey = ValueKey<String>('hibiki-macos-nav');
 
+/// Height of the mobile bottom bar's **content box**, in logical pixels —
+/// the system gesture inset is let through by [SafeArea] on top of this.
+///
+/// Single source of truth for the bar's height, mirroring
+/// [kAdaptiveNavRailWidth] on the rail side. MD3's nominal 80dp container
+/// leaves 28dp of pure padding around a 52dp destination (32 indicator + 4 gap
+/// + one labelSmall line); adding the gesture inset on top of that pushed the
+/// whole bar to 104dp on a gesture-navigation phone, so it read as floating
+/// above the bottom edge rather than sitting on it (BUG-2395). 64dp keeps the
+/// destination untouched and drops the slack, leaving only
+/// [kAdaptiveNavBarContentPadding] between the labels and the gesture area.
+const double kAdaptiveNavBarContentHeight = 64;
+
+/// Breathing room above and below the bottom bar's destinations.
+/// A 52dp destination plus twice this is [kAdaptiveNavBarContentHeight].
+const double kAdaptiveNavBarContentPadding = 6;
+
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -134,14 +151,35 @@ class _MaterialNavCluster extends StatelessWidget {
       return Material(
         key: fushiMaterialNavKey,
         color: colors.surfaceContainer,
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 80,
-            child: Row(
-              children: <Widget>[
-                for (final Widget tile in tiles) Expanded(child: tile),
-              ],
+        // Clamp text scaling exactly like the stock NavigationBar: at the
+        // system's largest font sizes an unclamped label would push the bar to
+        // a third of the screen.
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: SafeArea(
+            top: false,
+            // minHeight, not a fixed height: even clamped, a scaled label can
+            // outgrow the content box, and a fixed box would overflow instead
+            // of growing (the old 80 only hid this behind spare room).
+            // IntrinsicHeight is what makes that "grow" well defined — each
+            // destination centers itself inside the row, so under a loose
+            // constraint the row would otherwise stretch to the whole screen.
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: kAdaptiveNavBarContentHeight,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: kAdaptiveNavBarContentPadding,
+                ),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: <Widget>[
+                      for (final Widget tile in tiles) Expanded(child: tile),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ),

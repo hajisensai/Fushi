@@ -712,6 +712,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             (null, false) => store.indexUrl,
           };
           return FushiCard(
+            // 仓库卡在 SliverList 里逐条相邻，没有外边距时圆角之间只漏出几处
+            // 底色缺口，看着像锯齿而不是分隔（扩展行同因同治）。
+            margin: EdgeInsets.only(
+              bottom: FushiDesignTokens.of(context).spacing.gap,
+            ),
             padding: EdgeInsets.zero,
             child: FushiListItem(
               leading: const Icon(Icons.hub_outlined),
@@ -1069,6 +1074,8 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
               : t.mihon_extension_uninstall,
       onPrimary:
           installed == null || update ? widget.onInstall : widget.onUninstall,
+      // 这一行的副标题是可展开的「包含的源」清单，不是一行元信息。
+      subtitleMaxLines: 2,
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,

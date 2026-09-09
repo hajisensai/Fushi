@@ -2558,6 +2558,12 @@ function fushiApplyTheme(c, theme, applyBox) {
   // BUG-2284：墨水屏「瞬时滚动」随 theme 下发（app popupInstantScroll）→ 设同名全局供
   // popup.js 的 wheel 监听器读（滚轮改成每次跳固定距离）。缺该 key = 旧 app，保持关闭。
   window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
+  // BUG-2397：「音调去重」随 theme 下发（app deduplicatePitchAccents）→ 设同名全局供
+  // popup.js 的 createPitchSection 去重分支读（content/popup 同隔离世界共享 window）。
+  // 扩展侧此前**从未有人给它赋值**，恒 undefined = falsy，于是无论用户在 app 里怎么设，
+  // 浏览器弹窗的音调去重永远是关的（同一个词的同一个调型被每本词典各画一行）。
+  // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
+  window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经

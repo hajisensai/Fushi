@@ -216,6 +216,18 @@ void main() {
       expect(credited, 400);
     });
 
+    test('BUG-2390 有声书主位置首开：较前阅读存档与中间跨度都不入账', () {
+      // 阅读存档在 chapter 0，但开书锚在 WebView 创建前已由音频 cue 决定，
+      // 因而账本看到的第一个单元直接是 chapter 2 的音频落点；存档页和跨过的
+      // [0,5000) 从未 arrive/leave，不能凭“位置跳了很远”补记成已读。
+      sample(2, 2000, 2400);
+      expect(credited, 0);
+      expect(ledger.coverage, isEmpty);
+      sample(2, 2400, 2800);
+      expect(credited, 400, reason: '只结算用户实际停留并翻走的音频落点页');
+      expect(ledger.coverage.ranges, <(int, int)>[(5000, 5400)]);
+    });
+
     test('纯图片章 / 封面：snapshot == null 不 arrive，账本不动', () {
       sample(0, 800, 1000);
       // 图片章：页面不调 arrive。

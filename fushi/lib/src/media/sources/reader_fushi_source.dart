@@ -1652,6 +1652,69 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  int get readerVisualNovelRevealSpeed =>
+      readerSettings?.visualNovelRevealSpeed ??
+      getPreference<int>(key: 'vn_reveal_speed', defaultValue: 45)
+          .clamp(0, 120);
+  Future<void> setReaderVisualNovelRevealSpeed(int v) async {
+    final int normalized = v.clamp(0, 120);
+    await (readerSettings?.setVisualNovelRevealSpeed(normalized) ??
+        setPreference<int>(key: 'vn_reveal_speed', value: normalized));
+  }
+
+  String get readerVisualNovelScreenMode {
+    final String raw = readerSettings?.visualNovelScreenMode ??
+        getPreference<String>(key: 'vn_screen_mode', defaultValue: 'block');
+    return raw.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+  }
+
+  Future<void> setReaderVisualNovelScreenMode(String v) async {
+    final String normalized =
+        v.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+    await (readerSettings?.setVisualNovelScreenMode(normalized) ??
+        setPreference<String>(key: 'vn_screen_mode', value: normalized));
+  }
+
+  int get readerVisualNovelSentencesPerScreen =>
+      readerSettings?.visualNovelSentencesPerScreen ??
+      getPreference<int>(key: 'vn_sentences_per_screen', defaultValue: 1)
+          .clamp(1, 12);
+  Future<void> setReaderVisualNovelSentencesPerScreen(int v) async {
+    final int normalized = v.clamp(1, 12);
+    await (readerSettings?.setVisualNovelSentencesPerScreen(normalized) ??
+        setPreference<int>(
+          key: 'vn_sentences_per_screen',
+          value: normalized,
+        ));
+  }
+
+  bool get readerVisualNovelPreserveDialogue =>
+      readerSettings?.visualNovelPreserveDialogueBubbles ??
+      getPreference<bool>(key: 'vn_preserve_dialogue', defaultValue: false);
+  Future<void> setReaderVisualNovelPreserveDialogue(bool v) async {
+    await (readerSettings?.setVisualNovelPreserveDialogueBubbles(v) ??
+        setPreference<bool>(key: 'vn_preserve_dialogue', value: v));
+  }
+
+  bool get readerVisualNovelClickAdvance =>
+      readerSettings?.visualNovelClickAdvance ??
+      getPreference<bool>(key: 'vn_click_advance', defaultValue: false);
+  Future<void> setReaderVisualNovelClickAdvance(bool v) async {
+    await (readerSettings?.setVisualNovelClickAdvance(v) ??
+        setPreference<bool>(key: 'vn_click_advance', value: v));
+  }
+
+  bool get readerVisualNovelMergeSpokenSentence =>
+      readerSettings?.visualNovelMergeCrossScreenSentenceAudioCues ??
+      getPreference<bool>(
+        key: 'vn_merge_cross_screen_cues',
+        defaultValue: false,
+      );
+  Future<void> setReaderVisualNovelMergeSpokenSentence(bool v) async {
+    await (readerSettings?.setVisualNovelMergeCrossScreenSentenceAudioCues(v) ??
+        setPreference<bool>(key: 'vn_merge_cross_screen_cues', value: v));
+  }
+
   String get readerTheme =>
       readerSettings?.theme ??
       getPreference<String>(

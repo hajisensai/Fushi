@@ -3392,6 +3392,11 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
       // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
       '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
+      // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
+      // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
+      // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
+      // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
+      '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
     };
   }
 
@@ -3889,7 +3894,16 @@ class AppModel with ChangeNotifier {
   }
 
   /// qBittorrent WebUI 连接配置（番剧下载）；null = 未配置未启用。
-  QbConnectionConfig? get qbConnectionConfig => prefsRepo.qbConnectionConfig;
+  ///
+  /// prefs 还没接上时返回 null 而不是让 [prefsRepo] 的 `!` 抛：本 getter 的契约本来
+  /// 就是「null = 未配置」，而「还没读到偏好」正是未配置的一种。判据必须放在这一层
+  /// 而不是调用方（如 `torrentBackendReady`）——**覆盖了本 getter 的子类根本不经
+  /// prefs**，在调用方判会把它们一起误判成未就绪（实测打翻 6 条下载弹窗用例）。
+  ///
+  /// 起因：下载弹窗的批量多选把 `torrentBackendReady` 拉上了 **build 路径**（每个
+  /// 任务条目算一次 pauseCapable），build 里抛异常等于整块界面炸掉。
+  QbConnectionConfig? get qbConnectionConfig =>
+      isPreferencesReady ? prefsRepo.qbConnectionConfig : null;
 
   Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
     await prefsRepo.setQbConnectionConfig(config);
@@ -6785,6 +6799,10 @@ class AppModel with ChangeNotifier {
   bool get autoAddBookNameToTags => prefsRepo.autoAddBookNameToTags;
   void toggleAutoAddBookNameToTags() => prefsRepo.toggleAutoAddBookNameToTags();
 
+  bool get autoAddCharPositionToTags => prefsRepo.autoAddCharPositionToTags;
+  void toggleAutoAddCharPositionToTags() =>
+      prefsRepo.toggleAutoAddCharPositionToTags();
+
   // TODO-1650 制卡图片/GIF 清晰度档 + 音频质量档（透传 prefsRepo）。默认档 = 旧压缩档
   // （现状零破坏）。制卡消费点用 [MiningMediaCompression.resolve] 据这两个档组装媒体档。
   int get miningImageQuality => prefsRepo.miningImageQuality;
@@ -8029,6 +8047,7 @@ class _AppModelRemoteLookupService
         sentenceOffset: payload.sentenceOffset,
         source: _forwardedSourceFromName(payload.source),
         bookTitleTag: payload.bookTitleTag,
+        charPositionTag: payload.charPositionTag,
         // 转发 payload 本来就带片段时间窗（Netflix / YouTube 扩展制卡按视频
         // 时间轴填）。原样透传，有效性由 formatClipTimestamp 单点判定——非视频
         // 转发两端为 null，渲染成空串。

@@ -77,6 +77,31 @@ enum SyncAuthFailureKind {
   /// 也不是浏览器没回来，而是**用户决定不等了**——UI 对它必须静默：不弹错误、不写
   /// 错误日志、不登出。单立枚举值的理由同 [browserTimeout]：判据是类型，不是字符串。
   cancelled,
+
+  /// 互联（Fushi 互联）的**配对凭据被对端拒绝**：对端对本机的请求回了 401
+  /// （BUG-2377）。与 [credentials] 的差别不是程度而是**凭据模型**——互联根本没有
+  /// 「登录会话」这回事，凭据是配对时对端发给本机的 per-peer token。压成
+  /// [credentials] 会让 UI 说「登录已过期，请重新登录」，把用户指向一个应用里
+  /// **不存在**的操作；真正可操作的是重新配对。
+  ///
+  /// 成因基本只有一种：对端把本机从已配对列表里删了（server 端 token 缓存随即
+  /// 清空，被删设备下一次请求立刻 401，见 `FushiServerController`），或对端重置/
+  /// 重装后 token 换了。
+  ///
+  /// 与 [credentials] 的第二个差别是**不得登出**：`InterconnectSyncBackend.signOut`
+  /// 会清空 `sync_hibiki_client_urls`，把全部对端地址、TOFU 指纹和 per-peer token
+  /// 一并抹掉——用一台对端的 401 去清整份配对配置，正是 BUG-1550 / BUG-1578 要
+  /// 消灭的株连行为。
+  pairingRejected,
+
+  /// 互联**压根没有凭据可发**：一台对端都没配对，或配对信息已被清空。既不是
+  /// 「凭据被拒」（还没走到发请求那一步），也不是 [credentials] 说的「登录过期」。
+  /// 可操作项 = 去「Fushi 互联」里完成配对。
+  ///
+  /// 此前它靠消息字面量 `'Fushi server credentials not configured'` 落进
+  /// `sync_error_messages` 的 `contains('not configured')` 分支 → 返回 null →
+  /// **裸英文原文直接上屏**。判据改成类型（同 [SyncPeerUnreachableError] 的教训）。
+  pairingNotConfigured,
 }
 
 class SyncAuthError implements Exception {

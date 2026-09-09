@@ -126,7 +126,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         source: ReaderPaginationScripts.paginateInvocation(direction),
       );
       if (!mounted || _controller == null) return;
-      if (!_didScroll(result)) {
+      if (!_didConsumePageTurn(result)) {
         // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
         // 在短章边界的二次跨章被拦；键盘/手柄(throttleMs==0)不受限。窗口不再被被拦的
         // 输入自我续期——只有真跨章与 content-ready 会推进它（BUG-1829）。
@@ -136,7 +136,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       } else {
         await _refreshProgress();
         if (!mounted || _controller == null) return;
-        await _caretReanchor(direction);
+        if (_didScroll(result)) await _caretReanchor(direction);
       }
       return;
     }
@@ -144,10 +144,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
     if (!mounted || _controller == null) return;
-    if (_didScroll(result)) {
+    if (_didConsumePageTurn(result)) {
       await _refreshProgress();
       if (!mounted || _controller == null) return;
-      await _caretReanchor(direction);
+      if (_didScroll(result)) await _caretReanchor(direction);
     } else {
       // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
       if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
@@ -1901,8 +1901,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
               coverPath: _book?.coverHref,
             ),
       readerProgress: (_currentChapter, _book!.chapters.length),
-      onJumpSection: (index) async {
-        _navigateToChapter(index, manual: true);
+      onJumpSection: (int index, String? fragment) async {
+        await _jumpToChapterAnchor(index, fragment);
       },
       // BUG-782：退出必须走 maybePop() 而非直接 pop()。直接 Navigator.pop()
       // 会绕过阅读器 PopScope(canPop:false) 的 onPopInvokedWithResult，使
@@ -2063,9 +2063,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
             },
       presentation: presentation,
       onOpenStatistics: _openReadingStatistics,
-      // 导航抽屉（Ctrl+F / 工具栏目录键）打开即聚焦书内搜索框。
-      autofocusSearch:
-          presentation == ReaderQuickSettingsPresentation.sideSheetNavigation,
+      // 导航抽屉（Ctrl+F / 工具栏目录键）在桌面端打开即聚焦书内搜索框；移动端
+      // 不 autofocus，否则软键盘顶起来就把章节目录压掉半屏（见判据文档）。
+      autofocusSearch: readerNavigationAutofocusesSearch(
+        navigationPresentation:
+            presentation == ReaderQuickSettingsPresentation.sideSheetNavigation,
+        desktop: isDesktopPlatform,
+      ),
       initialSideSheetTab: _chrome.lastSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
@@ -2124,19 +2128,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
       await _loadLyricsPage();
       return;
     }
+    final InAppWebViewController controller = _controller!;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
     final dynamic result;
     try {
-      result = await _controller!.evaluateJavascript(
+      result = await controller.evaluateJavascript(
         source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
       // 半销毁的 WebView 上 evaluateJavascript 抛 PlatformException；此处尚未改
       // 任何恢复状态，安全 no-op 返回（此前这是 try 块外的孤儿 await，会逃 zone）。
-      ErrorLogService.instance
-          .log('ReaderFushi.reloadWithCurrentSettings.eval', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.reloadWithCurrentSettings.eval',
+        e,
+        stack,
+      );
       return;
     }
-    if (!mounted || _controller == null) return;
+    if (!mounted ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
+        _lyricsMode) {
+      return;
+    }
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
     final bool hasSameChapterCache = _lastProgressSection == _currentChapter;
@@ -2144,7 +2160,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         snapshot?.progress ?? (hasSameChapterCache ? _lastProgressValue : 0.0);
     // BUG-162 / TODO-219: reload 是同章程序化重建，优先沿用稳定精确锚；
     // stable gate 暂时不给快照时保留同章缓存，避免把瞬态章首 0 当新位置。
-    _initialCharOffset = snapshot?.charOffset ??
+    _initialCharOffset =
+        snapshot?.charOffset ??
         (hasSameChapterCache ? _lastProgressCharOffset : -1);
     _lastProgressSection = _currentChapter;
     _lastProgressValue = _initialProgress;
@@ -2157,9 +2174,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
     _restoreCompleter = Completer<bool>();
     _restoreInFlight = true;
-    debugPrint('[ReaderFushi] reloadWithCurrentSettings: '
-        'chapter=$_currentChapter progress=$_initialProgress '
-        'generation=$gen continuous=${_settings?.isContinuousMode}');
+    debugPrint(
+      '[ReaderFushi] reloadWithCurrentSettings: '
+      'chapter=$_currentChapter progress=$_initialProgress '
+      'generation=$gen continuous=${_settings?.isContinuousMode}',
+    );
 
     _rebuild(() {
       _readerContentReady = false;
@@ -2169,8 +2188,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     try {
       await _loadChapterDirectly(_currentChapter);
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.reloadWithCurrentSettings', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.reloadWithCurrentSettings',
+        e,
+        stack,
+      );
       debugPrint('[ReaderFushi] reloadWithCurrentSettings failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -2805,6 +2827,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
   static bool _didScroll(dynamic result) {
     if (result is String) {
       return result.trim().replaceAll('"', '') == 'scrolled';
+    }
+    return false;
+  }
+
+  static bool _didConsumePageTurn(dynamic result) {
+    if (_didScroll(result)) return true;
+    if (result is String) {
+      // VN 的第一次前进可能只完成当前屏的打字渐显。它虽然没有移动屏索引，
+      // 但已经完整消费了翻页意图，绝不能落进章节边界分支；同时它不算真实
+      // 滚屏，调用方不会误跑 caret 的跨页重锚。
+      return result.trim().replaceAll('"', '') == 'revealed';
     }
     return false;
   }

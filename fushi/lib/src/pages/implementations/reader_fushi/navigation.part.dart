@@ -655,20 +655,34 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves to
       // the current chapter's path plus a fragment. Jump in place instead of
       // reloading the whole chapter (avoids a visible flash + lost scroll).
-      if (link.chapterIndex == _currentChapter && link.fragment != null) {
-        await _jumpToFragmentInPlace(link.fragment!);
-      } else {
-        await _navigateToChapterWithFragment(
-          link.chapterIndex,
-          link.fragment,
-          manual: true,
-        );
-      }
+      await _jumpToChapterAnchor(link.chapterIndex, link.fragment);
       return;
     }
     // HBK-AUDIT-038: route genuine external schemes (http/https/mailto/tel on a
     // foreign host) to the OS; _openExternalUrl no-ops for our own virtual host.
     await _openExternalUrl(url);
+  }
+
+  /// 「章号 + 可选章内锚」的唯一落地口，目录点击与书内链接共用。
+  ///
+  /// fragment 为 null 时就是普通跳章（[_navigateToChapter]，与修复前逐字相同）；
+  /// 带锚且**就在当前章**时原地滚过去（不重载章节，避免闪一下 + 丢滚动位置，
+  /// HBK-AUDIT-038）；带锚且跨章时随章加载一起把锚落地。
+  ///
+  /// 目录侧为什么需要它：EPUB 里「一个 xhtml 装整卷、目录靠 `#anchor` 分节」很
+  /// 常见，这类目录项的 spine 章号**全都一样**，此前锚被丢在
+  /// [flattenTtuTocEntries] 之外，于是同一章下的每一条目录项都只跳到章首——
+  /// 用户看到的「章节跳转不准」。
+  Future<void> _jumpToChapterAnchor(int index, String? fragment) async {
+    if (fragment == null) {
+      await _navigateToChapter(index, manual: true);
+      return;
+    }
+    if (index == _currentChapter) {
+      await _jumpToFragmentInPlace(fragment);
+      return;
+    }
+    await _navigateToChapterWithFragment(index, fragment, manual: true);
   }
 
   Future<void> _navigateToChapterWithFragment(
@@ -1078,9 +1092,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // （_onRestoreComplete）与失败（_failNavigation / reload catch）都清旗，之后的
     // 首发刷新、onReanchorSettled 补刷都在清旗之后到达，不受这条门影响。
     if (_controller == null || _lyricsMode || _restoreInFlight) return;
+    final InAppWebViewController controller = _controller!;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
     final dynamic result;
     try {
-      result = await _controller!.evaluateJavascript(
+      result = await controller.evaluateJavascript(
         source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
@@ -1097,6 +1114,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       );
       return;
     }
+    // JS 往返期间可能已经翻章、重载或替换 WebView。旧文档的章内偏移不能
+    // 按新章的累计字数入账，也不能覆盖新章恢复锚/落库位置。代际同时拦住
+    // A → B → A 和同章重载，不能只检查章号或此刻是否仍在恢复。
+    // BUG-2399：内容还没就绪时晚到的快照同样不得写进恢复锚。这道闸有**两个入口**
+    // （本方法与 [_syncPositionFromWebViewProgress]），判据必须两处一致——只补一处
+    // 等于这条路照样能污染，守卫 reader_progress_snapshot_generation_guard 也正是
+    // 按同一份清单扫这两个方法的。
+    if (!mounted ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
+        _restoreInFlight ||
+        _lyricsMode ||
+        !_readerContentReady) {
+      return;
+    }
     if (result == null) {
       // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
       // settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
@@ -1106,7 +1139,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // _applyImagePageProgressFallback 兜底显示。
       return;
     }
-    if (!mounted) return;
+    // await 期间可能已经换章、重载或重建 WebView。旧快照不能套新章坐标，
+    // 也不能写回恢复锚或把导航中的视口计入阅读账本。
+    if (!mounted ||
+        _controller != controller ||
+        _navigateGeneration != generation ||
+        _currentChapter != chapter ||
+        _restoreInFlight ||
+        _lyricsMode) {
+      return;
+    }
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
     if (snapshot == null) {
@@ -1243,9 +1285,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       return;
     }
 
+    final InAppWebViewController controller = _controller!;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
     final dynamic result;
     try {
-      result = await _controller!.evaluateJavascript(
+      result = await controller.evaluateJavascript(
         source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
@@ -1257,7 +1302,16 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] syncPositionFromWebViewProgress failed: $e');
       return;
     }
-    if (!mounted) return;
+    // 退出/后台刷新同样不能把旧文档快照写进新章节的恢复锚。
+    if (!mounted ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
+        _restoreInFlight ||
+        _lyricsMode ||
+        !_readerContentReady) {
+      return;
+    }
 
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);

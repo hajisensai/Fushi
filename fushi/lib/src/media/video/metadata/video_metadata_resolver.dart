@@ -9,6 +9,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
@@ -87,6 +90,19 @@ class VideoMetadataResolution {
 }
 
 class VideoMetadataProviderRegistry {
+  /// Shared production work catalog for discovery search and scraping.
+  factory VideoMetadataProviderRegistry.production(
+    VideoSourceScrapeGlobalConfig config, {
+    String? locale,
+  }) =>
+      VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+        MalVideoMetadataProvider(),
+        TmdbVideoMetadataProvider(
+          apiKey: config.tmdbApiKey,
+          language: locale ?? config.locale,
+        ),
+      ]);
+
   VideoMetadataProviderRegistry(Iterable<VideoMetadataProvider> providers)
       : _providers = <VideoMetadataProviderKind, VideoMetadataProvider>{
           for (final VideoMetadataProvider provider in providers)
@@ -94,6 +110,8 @@ class VideoMetadataProviderRegistry {
         };
 
   final Map<VideoMetadataProviderKind, VideoMetadataProvider> _providers;
+
+  Iterable<VideoMetadataProvider> get providers => _providers.values;
 
   VideoMetadataProvider? provider(VideoMetadataProviderKind kind) =>
       _providers[kind];

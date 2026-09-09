@@ -3,7 +3,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 
-/// Search-only adapter for the existing TMDB and AniList metadata
+/// Search-only adapter for the existing metadata
 /// providers. Recommendation feeds remain a separate capability: the metadata
 /// contract has no trending/popular endpoint and this adapter does not invent
 /// one.
@@ -78,7 +78,10 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
       return ProviderBatchResult<VideoDiscoveryPage>.success(
         <VideoDiscoveryPage>[
           VideoDiscoveryPage(
-              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
+            items: const <VideoDiscoveryItem>[],
+            page: 1,
+            hasMore: false,
+          ),
         ],
       );
     }
@@ -133,9 +136,7 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
     );
   }
 
-  List<VideoMetadataMediaKind> _requestedKinds(
-    VideoDiscoveryRequest request,
-  ) {
+  List<VideoMetadataMediaKind> _requestedKinds(VideoDiscoveryRequest request) {
     final VideoDiscoveryCategory? requested = request.category;
     if (requested != null && !capabilities.categories.contains(requested)) {
       return const <VideoMetadataMediaKind>[];

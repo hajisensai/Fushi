@@ -590,6 +590,40 @@ void main() {
   });
 
   group('VideoDiscoveryService', () {
+    test('catalog selection excludes AniList search but preserves its feed',
+        () async {
+      final _FakeProvider mal = _FakeProvider(
+        id: 'mal',
+        priority: 1,
+        response: ProviderBatchResult<VideoDiscoveryPage>.success(
+          <VideoDiscoveryPage>[
+            VideoDiscoveryPage(
+              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
+          ],
+        ),
+      );
+      final _FakeProvider anilist = _FakeProvider(
+        id: 'anilist',
+        priority: 2,
+        response: ProviderBatchResult<VideoDiscoveryPage>.success(
+          <VideoDiscoveryPage>[
+            VideoDiscoveryPage(
+              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
+          ],
+        ),
+      );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: <VideoDiscoveryProvider>[mal, anilist],
+        searchProviderIds: <String>{'mal'},
+      );
+      addTearDown(service.close);
+      await service.load(const VideoDiscoveryRequest(query: 'Anime'));
+      expect(mal.searchCalls, 1);
+      expect(anilist.searchCalls, 0);
+      await service.load(const VideoDiscoveryRequest());
+      expect(anilist.discoverCalls, 1);
+    });
+
     test('preserves successful items when another provider fails', () async {
       final _FakeProvider success = _FakeProvider(
         id: 'success',
@@ -1197,6 +1231,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
   final ProviderBatchResult<VideoDiscoveryPage> response;
   final bool supportsPaging;
   int searchCalls = 0;
+  int discoverCalls = 0;
 
   @override
   VideoDiscoveryCapabilities get capabilities => VideoDiscoveryCapabilities(
@@ -1207,8 +1242,10 @@ class _FakeProvider implements VideoDiscoveryProvider {
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> discover(
     VideoDiscoveryRequest request,
-  ) async =>
-      response;
+  ) async {
+    discoverCalls++;
+    return response;
+  }
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> search(

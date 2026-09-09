@@ -10,50 +10,50 @@ import '../helpers/scan_scale.dart';
 void main() {
   const Map<String, List<String>> requiredComponentTokens =
       <String, List<String>>{
-    'lib/src/utils/components/fushi_design_tokens.dart': <String>[
-      'class FushiDesignTokens',
-      'class FushiRadii',
-      'class FushiSurfaceColors',
-      'class FushiTypeRoles',
-      'class FushiDensityTokens',
-      'final FushiDensityTokens density',
-      'static FushiDesignTokens of',
-    ],
-    'lib/src/utils/components/fushi_material_components.dart': <String>[
-      'class FushiCard',
-      'class FushiListItem',
-      'enum FushiListDensity',
-      'FushiListDensity.compact',
-      'class FushiSearchField',
-      'class FushiTextField',
-      'class FushiSelectableChip',
-      'class FushiActionChip',
-      'class FushiTagChip',
-      'class FushiBadge',
-      'class FushiColorSwatch',
-      'class FushiPreviewSwitch',
-      'class FushiPageHeader',
-      'class FushiPageScaffold',
-      'class FushiToolScaffold',
-      'class FushiTransientScaffold',
-      'class FushiOverlayScaffold',
-      'class FushiModalSheetFrame',
-      'class FushiDialogFrame',
-      'class FushiOverflowMenu',
-      'class FushiPopupMenuItem',
-      'class FushiFilePickerRow',
-      'class FushiLogPanel',
-      'class FushiPopupSurface',
-      'class FushiCompactSearchRow',
-      'class FushiEditorPanel',
-      'onLongPress',
-    ],
-    'lib/src/utils/components/settings_shared.dart': <String>[
-      'class AdaptiveSettingsTextField',
-      'FushiCard(',
-      'FushiBadge(',
-    ],
-  };
+        'lib/src/utils/components/fushi_design_tokens.dart': <String>[
+          'class FushiDesignTokens',
+          'class FushiRadii',
+          'class FushiSurfaceColors',
+          'class FushiTypeRoles',
+          'class FushiDensityTokens',
+          'final FushiDensityTokens density',
+          'static FushiDesignTokens of',
+        ],
+        'lib/src/utils/components/fushi_material_components.dart': <String>[
+          'class FushiCard',
+          'class FushiListItem',
+          'enum FushiListDensity',
+          'FushiListDensity.compact',
+          'class FushiSearchField',
+          'class FushiTextField',
+          'class FushiSelectableChip',
+          'class FushiActionChip',
+          'class FushiTagChip',
+          'class FushiBadge',
+          'class FushiColorSwatch',
+          'class FushiPreviewSwitch',
+          'class FushiPageHeader',
+          'class FushiPageScaffold',
+          'class FushiToolScaffold',
+          'class FushiTransientScaffold',
+          'class FushiOverlayScaffold',
+          'class FushiModalSheetFrame',
+          'class FushiDialogFrame',
+          'class FushiOverflowMenu',
+          'class FushiPopupMenuItem',
+          'class FushiFilePickerRow',
+          'class FushiLogPanel',
+          'class FushiPopupSurface',
+          'class FushiCompactSearchRow',
+          'class FushiEditorPanel',
+          'onLongPress',
+        ],
+        'lib/src/utils/components/settings_shared.dart': <String>[
+          'class AdaptiveSettingsTextField',
+          'FushiCard(',
+          'FushiBadge(',
+        ],
+      };
 
   const Map<String, List<String>> migratedSurfaces = <String, List<String>>{
     'lib/src/settings/material_settings_renderer.dart': <String>[
@@ -63,18 +63,18 @@ void main() {
       'SettingsSchemaSection',
       'FushiPageScaffold',
     ],
-    'lib/src/settings/settings_schema_widgets.dart': <String>[
+    'lib/src/settings/settings_section_container.dart': <String>[
       'AdaptiveSettingsSection',
+      'SettingsSectionTitlePlacement.inside',
+    ],
+    'lib/src/settings/settings_schema_widgets.dart': <String>[
+      'SettingsSectionContainer',
       'AdaptiveSettingsSwitchRow',
       'AdaptiveSettingsSegmentedRow',
       'AdaptiveSettingsSliderRow',
     ],
-    'lib/src/settings/settings_home_page.dart': <String>[
-      'FushiPageHeader',
-    ],
-    'lib/src/utils/components/fushi_list_tile.dart': <String>[
-      'FushiListItem',
-    ],
+    'lib/src/settings/settings_home_page.dart': <String>['FushiPageHeader'],
+    'lib/src/utils/components/fushi_list_tile.dart': <String>['FushiListItem'],
     'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       'FushiCard',
       'FushiOverflowMenu',
@@ -89,12 +89,8 @@ void main() {
       'FushiDialogFrame',
     ],
     'lib/src/pages/implementations/media_source_picker_dialog_page.dart':
-        <String>[
-      'FushiListItem',
-    ],
-    'lib/src/pages/base_source_page.dart': <String>[
-      'FushiPopupSurface',
-    ],
+        <String>['FushiListItem'],
+    'lib/src/pages/base_source_page.dart': <String>['FushiPopupSurface'],
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'FushiPageScaffold',
       'FushiCard',
@@ -118,9 +114,7 @@ void main() {
       'FushiDialogFrame',
       'FushiDesignTokens',
     ],
-    'lib/src/utils/misc/update_checker_ui.dart': <String>[
-      'FushiCard',
-    ],
+    'lib/src/utils/misc/update_checker_ui.dart': <String>['FushiCard'],
     'lib/src/sync/sync_compare_dialog.dart': <String>[
       'FushiOverflowMenu',
       'FushiCard',
@@ -159,9 +153,7 @@ void main() {
       'FushiToolScaffold',
       'FushiCard',
     ],
-    'lib/src/pages/base_history_page.dart': <String>[
-      'FushiCard',
-    ],
+    'lib/src/pages/base_history_page.dart': <String>['FushiCard'],
     'lib/src/pages/implementations/history_reader_page.dart': <String>[
       'FushiDesignTokens',
     ],
@@ -196,17 +188,10 @@ void main() {
       'AdaptiveSettingsTextField',
     ],
     'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
-        <String>[
-      'AdaptiveSettingsTextField',
-      'FushiEditorPanel',
-    ],
+        <String>['AdaptiveSettingsTextField', 'FushiEditorPanel'],
     // TODO-586：FushiTextField 随 SettingsNumberField 搬到共享 fields 文件。
-    'lib/src/settings/settings_schema_fields.dart': <String>[
-      'FushiTextField',
-    ],
-    'lib/src/sync/sync_settings_schema.dart': <String>[
-      'FushiTextField',
-    ],
+    'lib/src/settings/settings_schema_fields.dart': <String>['FushiTextField'],
+    'lib/src/sync/sync_settings_schema.dart': <String>['FushiTextField'],
     'lib/src/pages/implementations/custom_theme_page.dart': <String>[
       'FushiTextField',
       'FushiDesignTokens',
@@ -250,9 +235,7 @@ void main() {
       'FushiTagChip',
       'FushiDesignTokens',
     ],
-    'lib/src/utils/misc/fushi_toast.dart': <String>[
-      'FushiDesignTokens',
-    ],
+    'lib/src/utils/misc/fushi_toast.dart': <String>['FushiDesignTokens'],
     // Merged from app_model_popup_dictionary_md3_static_test.dart: the desktop
     // popup dictionary lookup (AppModel.openPopupDictionaryLookup) uses the shared
     // MD3 dialog frame + PopupDictionaryPage instead of a bespoke Dialog shell.
@@ -313,8 +296,8 @@ void main() {
       final String source = entry.key.endsWith('reader_fushi_history_page.dart')
           ? readReaderHistorySource()
           : entry.key.endsWith('sync_settings_schema.dart')
-              ? readSyncSettingsSchemaSource()
-              : file.readAsStringSync();
+          ? readSyncSettingsSchemaSource()
+          : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
@@ -329,16 +312,15 @@ void main() {
       final String source = entry.key.endsWith('reader_fushi_history_page.dart')
           ? readReaderHistorySource()
           : entry.key.endsWith('sync_settings_schema.dart')
-              ? readSyncSettingsSchemaSource()
-              : file.readAsStringSync();
+          ? readSyncSettingsSchemaSource()
+          : file.readAsStringSync();
       for (final String token in entry.value) {
         expect(source, contains(token), reason: '${entry.key} lacks $token');
       }
     }
   });
 
-  test('migrated surfaces do not instantiate old visual primitives directly',
-      () {
+  test('migrated surfaces do not instantiate old visual primitives directly', () {
     const Map<String, List<String>> bannedByFile = <String, List<String>>{
       'lib/src/settings/material_settings_renderer.dart': <String>[
         'ListTile(',
@@ -363,14 +345,9 @@ void main() {
         'surfaceContainerHigh',
         'const SizedBox(height: 12)',
       ],
-      'lib/src/pages/implementations/home_page.dart': <String>[
-        'AlertDialog(',
-      ],
+      'lib/src/pages/implementations/home_page.dart': <String>['AlertDialog('],
       'lib/src/pages/implementations/media_source_picker_dialog_page.dart':
-          <String>[
-        'ListTile(',
-        'fontSize:',
-      ],
+          <String>['ListTile(', 'fontSize:'],
       'lib/src/pages/base_source_page.dart': <String>[
         'DecoratedBox(',
         'BorderRadius.circular(8)',
@@ -410,9 +387,7 @@ void main() {
         '_QuickActionChip',
         'OutlinedButton.icon(',
       ],
-      'lib/src/utils/misc/update_checker_ui.dart': <String>[
-        'child: Card(',
-      ],
+      'lib/src/utils/misc/update_checker_ui.dart': <String>['child: Card('],
       'lib/src/sync/sync_compare_dialog.dart': <String>[
         'return AlertDialog(',
         'PopupMenuButton',
@@ -520,22 +495,15 @@ void main() {
         'OutlineInputBorder',
       ],
       'lib/src/pages/implementations/dictionary_settings_dialog_page.dart':
-          <String>[
-        'fontSize: 13',
-        'OutlineInputBorder',
-      ],
+          <String>['fontSize: 13', 'OutlineInputBorder'],
       'lib/src/pages/implementations/media_item_edit_dialog_page.dart':
-          <String>[
-        'TextField(',
-      ],
+          <String>['TextField('],
       'lib/src/pages/implementations/websocket_dialog_page.dart': <String>[
         'TextField(',
       ],
       // TODO-586：SettingsSecretField/SettingsNumberField（含 AdaptiveSettingsTextField
       // / FushiTextField，子串带 'TextField('）搬到共享 fields 文件。
-      'lib/src/settings/settings_schema_fields.dart': <String>[
-        'TextField(',
-      ],
+      'lib/src/settings/settings_schema_fields.dart': <String>['TextField('],
       'lib/src/sync/sync_settings_schema.dart': <String>[
         'TextField(',
         'OutlineInputBorder',
@@ -559,10 +527,10 @@ void main() {
       ],
       'lib/src/pages/implementations/miscellaneous_settings_page.dart':
           <String>[
-        'BorderRadius.circular(16)',
-        'BorderRadius.circular(13)',
-        'shape: BoxShape.circle',
-      ],
+            'BorderRadius.circular(16)',
+            'BorderRadius.circular(13)',
+            'shape: BoxShape.circle',
+          ],
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>[
         'TextField(',
         'OutlineInputBorder',
@@ -625,10 +593,10 @@ void main() {
     for (final MapEntry<String, List<String>> entry in bannedByFile.entries) {
       final String fileSource =
           entry.key.endsWith('reader_fushi_history_page.dart')
-              ? readReaderHistorySource()
-              : entry.key.endsWith('sync_settings_schema.dart')
-                  ? readSyncSettingsSchemaSource()
-                  : File(entry.key).readAsStringSync();
+          ? readReaderHistorySource()
+          : entry.key.endsWith('sync_settings_schema.dart')
+          ? readSyncSettingsSchemaSource()
+          : File(entry.key).readAsStringSync();
       final String source = entry.key.endsWith('reader_fushi_history_page.dart')
           ? _withoutTransparentInkHosts(
               _functionSource(
@@ -638,15 +606,18 @@ void main() {
               ),
             )
           : entry.key.endsWith('dictionary_dialog_page.dart')
-              ? _functionSource(
-                  fileSource,
-                  'Widget _buildCategoryTile({',
-                  'Future<void> _downloadSelectedDictionaries(',
-                )
-              : _withoutSharedComponentNames(fileSource);
+          ? _functionSource(
+              fileSource,
+              'Widget _buildCategoryTile({',
+              'Future<void> _downloadSelectedDictionaries(',
+            )
+          : _withoutSharedComponentNames(fileSource);
       for (final String banned in entry.value) {
-        expect(source, isNot(contains(banned)),
-            reason: '${entry.key} still contains $banned');
+        expect(
+          source,
+          isNot(contains(banned)),
+          reason: '${entry.key} still contains $banned',
+        );
       }
     }
   });
@@ -690,24 +661,24 @@ void main() {
       // 页面 chrome——同 reading_statistics_page / video_statistics_page 的图表内容豁免类。
       'lib/src/utils/components/stat_contribution_heatmap.dart':
           'Contribution heatmap is a data-visualization component (cell '
-              'intensity maps to a colorScheme scale); the selected-day value '
-              'bubble (_bubbleChip surfaceContainerHighest tonal chip) is chart '
-              'annotation content, not ordinary page chrome — same reviewed '
-              'exception class as reading_statistics_page / video_statistics_page.',
+          'intensity maps to a colorScheme scale); the selected-day value '
+          'bubble (_bubbleChip surfaceContainerHighest tonal chip) is chart '
+          'annotation content, not ordinary page chrome — same reviewed '
+          'exception class as reading_statistics_page / video_statistics_page.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/popup_settings_injection.dart':
           'TODO-895 single-source-of-truth popup settings injection builds the '
-              'shared WebView CSS custom properties (--md-surface-container-high '
-              'etc.) from the MD3 ColorScheme; surface roles are injected into '
-              'popup CSS, not ordinary Flutter page chrome — same reviewed '
-              'exception class as popup_theme_css / global_lookup_render.',
+          'shared WebView CSS custom properties (--md-surface-container-high '
+          'etc.) from the MD3 ColorScheme; surface roles are injected into '
+          'popup CSS, not ordinary Flutter page chrome — same reviewed '
+          'exception class as popup_theme_css / global_lookup_render.',
       'lib/src/utils/popup_theme_css.dart':
           'Popup theme CSS single source of truth maps MD3 ColorScheme surface '
-              'roles (surfaceContainerHigh etc.) to WebView CSS custom '
-              'properties for the three popup injectors — same reviewed '
-              'exception class as popup_settings_injection / '
-              'global_lookup_render.',
+          'roles (surfaceContainerHigh etc.) to WebView CSS custom '
+          'properties for the three popup injectors — same reviewed '
+          'exception class as popup_settings_injection / '
+          'global_lookup_render.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
       'lib/src/pages/implementations/reader_fushi_history_page.dart':
@@ -718,29 +689,29 @@ void main() {
       // 非普通页面 chrome，同书架封面叠层豁免类。
       'lib/src/utils/components/cover_badge.dart':
           'CoverBadge is the shared cover-art overlay pill (subtitle/cloud/'
-              'playlist badges) consolidating at least three hand-copied '
-              'badge implementations; its fixed dark scrim and pill radius '
-              'preserve the existing badge pixel spec — cover overlay '
-              'content, not ordinary page chrome, same reviewed exception '
-              'class as the reader-shelf book-cover overlays.',
+          'playlist badges) consolidating at least three hand-copied '
+          'badge implementations; its fixed dark scrim and pill radius '
+          'preserve the existing badge pixel spec — cover overlay '
+          'content, not ordinary page chrome, same reviewed exception '
+          'class as the reader-shelf book-cover overlays.',
       // TODO-947 系列/合集折叠卡的马赛克封面（2x2 成员封面网格）是书架内容/封面美术，
       // 不是页面 chrome：letterbox 底 surfaceContainerHighest 与格子圆角
       // BorderRadius.circular(cellRadius) 是封面拼图单元，同「书架封面/拖放」豁免类。
       'lib/src/pages/implementations/series_shelf_card.dart':
           'TODO-947 series/collection folder card paints a 2x2 mosaic of member '
-              'book covers; the letterbox surface (surfaceContainerHighest) and '
-              'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
-              'art / reader-shelf content, not ordinary page chrome — same '
-              'reviewed exception class as the reader-shelf book-cover overlays.',
+          'book covers; the letterbox surface (surfaceContainerHighest) and '
+          'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
+          'art / reader-shelf content, not ordinary page chrome — same '
+          'reviewed exception class as the reader-shelf book-cover overlays.',
       // 统一合集 playlist 详情页的剧集列表渲染每集封面缩略图（Image.file + ClipRRect
       // 圆角 + 无封面 letterbox 占位 surfaceContainerHighest）——每集独立视频的封面
       // 美术内容，非普通页面 chrome，同 series_shelf_card 马赛克封面 / 书架封面豁免类。
       'lib/src/pages/implementations/media_collection_detail_page.dart':
           'Unified-collection playlist detail lists per-episode cover '
-              'thumbnails (Image.file + ClipRRect radius + no-cover letterbox '
-              'placeholder using surfaceContainerHighest); episode cover art / '
-              'media-shelf content, not ordinary page chrome — same reviewed '
-              'exception class as series_shelf_card mosaic covers.',
+          'thumbnails (Image.file + ClipRRect radius + no-cover letterbox '
+          'placeholder using surfaceContainerHighest); episode cover art / '
+          'media-shelf content, not ordinary page chrome — same reviewed '
+          'exception class as series_shelf_card mosaic covers.',
       // galgame 游戏库页把每个游戏渲染成封面卡片（有 coverPath 用 Image.file，
       // 否则 surfaceContainerHighest letterbox + 手柄图标占位），点击卡片启动游戏
       // 进入制卡。卡片外框 Card + 无封面占位面色 surfaceContainerHighest 是游戏
@@ -748,12 +719,12 @@ void main() {
       // / media_collection_detail_page 每集封面 / 书架封面豁免类。
       'lib/src/pages/implementations/games_library_page.dart':
           'Galgame library renders each game as a cover card (Image.file cover '
-              'or surfaceContainerHighest letterbox + gamepad-icon placeholder '
-              'when no cover); the card frame (Card) and no-cover placeholder '
-              'surface (surfaceContainerHighest) are game cover art / media-shelf '
-              'content, not ordinary page chrome — same reviewed exception class '
-              'as series_shelf_card mosaic covers / media_collection_detail_page '
-              'per-episode covers / reader-shelf book covers.',
+          'or surfaceContainerHighest letterbox + gamepad-icon placeholder '
+          'when no cover); the card frame (Card) and no-cover placeholder '
+          'surface (surfaceContainerHighest) are game cover art / media-shelf '
+          'content, not ordinary page chrome — same reviewed exception class '
+          'as series_shelf_card mosaic covers / media_collection_detail_page '
+          'per-episode covers / reader-shelf book covers.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
@@ -767,12 +738,12 @@ void main() {
       // 无任何 UI 代码，同「内容而非 chrome」豁免类。
       'lib/src/media/manga/mokuro_payload.dart':
           'MokuroBlock.fontSize is a mokuro/manga.json data field (detected '
-              'bubble text size, serialized round-trip), not page typography — '
-              'pure data-model file with no UI code.',
+          'bubble text size, serialized round-trip), not page typography — '
+          'pure data-model file with no UI code.',
       'lib/src/ocr/manga_ocr_folder_job.dart':
           'Estimates the MokuroBlock.fontSize data field (sqrt(area/chars)) '
-              'for OCR-produced manga.json blocks; pure data layer, no UI '
-              'code.',
+          'for OCR-produced manga.json blocks; pure data layer, no UI '
+          'code.',
       // BUG-1414：PR#692 的框选回写曾是 manga.json 的**第四个生产者**，与上面三条
       // 豁免的是同一个数据字段——`MokuroBlock(fontSize: …)` 落盘成 `font_size`，
       // 由 manga_overlay_html.dart:46 折算成 WebView 覆盖层的 CSS `cqi` 命中框字号，
@@ -786,28 +757,28 @@ void main() {
       // 携带这个数据字段穿过平移 / 区域替换的是 manga_region_ocr.dart。
       'lib/src/media/manga/ocr/manga_region_ocr.dart':
           'Carries the MokuroBlock.fontSize data field through offsetting '
-              're-recognized region blocks back to page pixels and replacing '
-              'the region in a page (copy of an existing field, no estimate); '
-              'pure data layer with no Flutter import, same reviewed '
-              'exception class as mokuro_payload / manga_ocr_folder_job / '
-              'google_lens_ocr_service.',
+          're-recognized region blocks back to page pixels and replacing '
+          'the region in a page (copy of an existing field, no estimate); '
+          'pure data layer with no Flutter import, same reviewed '
+          'exception class as mokuro_payload / manga_ocr_folder_job / '
+          'google_lens_ocr_service.',
       'lib/src/pages/implementations/reader_fushi_page.dart':
           'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
       // 同一份「reader content / 悬浮歌词数据」豁免随搬运延伸到 part 文件（零行为变化）。
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart':
           'Lyrics-mode HTML font size and FloatingLyricStyle font size are '
-              'user content passed to LyricsModeHtml / the platform overlay '
-              'channel, not page chrome — same rationale as the parent '
-              'reader_fushi_page.dart allowlist (extracted verbatim).',
+          'user content passed to LyricsModeHtml / the platform overlay '
+          'channel, not page chrome — same rationale as the parent '
+          'reader_fushi_page.dart allowlist (extracted verbatim).',
       // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
       // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart':
           'Top reading-progress text size (_infoFontSize) and the Windows '
-              'image context-menu font size are reader content / chrome, '
-              'same rationale as the parent reader_fushi_page.dart allowlist '
-              '(extracted verbatim).',
+          'image context-menu font size are reader content / chrome, '
+          'same rationale as the parent reader_fushi_page.dart allowlist '
+          '(extracted verbatim).',
       // BUG-1425：reader_fushi/webview.part.dart 的豁免已删除。它的理由写的是
       // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
       // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
@@ -816,34 +787,34 @@ void main() {
           'Serialized audiobook bridge data includes reader font size.',
       'lib/src/media/audiobook/audiobook_session.dart':
           'Audiobook session forwards the user-configurable floating-lyric font '
-              'size to the platform overlay channel (content/data passed to '
-              'FloatingLyricChannel.show/updateStyle), not page chrome — same '
-              'rationale as audiobook_bridge.',
+          'size to the platform overlay channel (content/data passed to '
+          'FloatingLyricChannel.show/updateStyle), not page chrome — same '
+          'rationale as audiobook_bridge.',
       'lib/src/media/audiobook/now_listening_mini_bar.dart':
           'Now-listening media mini-bar: surface role + book-cover thumbnail '
-              'radius are media-subsystem content chrome (same category as the '
-              'allowlisted reader-shelf book covers / media_item_dialog cover '
-              'hero), driven off the active ColorScheme.',
+          'radius are media-subsystem content chrome (same category as the '
+          'allowlisted reader-shelf book covers / media_item_dialog cover '
+          'hero), driven off the active ColorScheme.',
       'lib/src/models/app_model.dart':
           'AppModel builds the FloatingLyricStyle data object (overlay font '
-              'size is user content passed to the platform overlay), not an '
-              'ordinary page-chrome TextStyle.',
+          'size is user content passed to the platform overlay), not an '
+          'ordinary page-chrome TextStyle.',
       'lib/src/lookup/gal_hook_text_overlay_controller.dart':
           'BUG-1095: the fontSize: hits are named arguments of the '
-              'GalHookTextOverlayChannel MethodChannel wrapper (the caption '
-              'size handed to the native Win32 overlay window), not a Flutter '
-              'TextStyle — this controller renders no widgets at all. Same '
-              'reviewed exception class as the allowlisted AppModel '
-              'FloatingLyricStyle payload.',
+          'GalHookTextOverlayChannel MethodChannel wrapper (the caption '
+          'size handed to the native Win32 overlay window), not a Flutter '
+          'TextStyle — this controller renders no widgets at all. Same '
+          'reviewed exception class as the allowlisted AppModel '
+          'FloatingLyricStyle payload.',
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
-              'white-on-black caption radius/size), not ordinary page chrome.',
+          'white-on-black caption radius/size), not ordinary page chrome.',
       'lib/src/media/audiobook/audiobook_clip_text_render.dart':
           'TODO-945 audiobook clip share renders the selected sentence into '
-              'a shareable video frame (offscreen RepaintBoundary → PNG); the '
-              'fontSize: is rendered media content (auto-scaled to fit the clip '
-              'image), not ordinary page chrome — same reviewed exception class '
-              'as the video subtitle overlay caption.',
+          'a shareable video frame (offscreen RepaintBoundary → PNG); the '
+          'fontSize: is rendered media content (auto-scaled to fit the clip '
+          'image), not ordinary page chrome — same reviewed exception class '
+          'as the video subtitle overlay caption.',
       // BUG-2202：与上面 audiobook_clip_text_render 逐字同型——片段导出把字幕画成
       // 一张离屏位图烧进画面（内封 tx3g 轨会让整个片段在 QQ 这类 IM 里判为不可播）。
       // 这里的 fontSize: 是**导出画面的像素尺寸**（由用户字幕外观设置按
@@ -852,270 +823,270 @@ void main() {
       // 「不是页面 chrome」这句话钉成可证伪的断言，防止豁免退化成整文件免检。
       'lib/src/media/video/video_clip_subtitle_image.dart':
           'BUG-2202 clip export renders each subtitle cue into an off-screen '
-              'full-frame PNG that ffmpeg burns into the picture; the '
-              'fontSize: is rendered media content sized in video pixels, '
-              'never app UI — same reviewed exception class as '
-              'audiobook_clip_text_render.',
+          'full-frame PNG that ffmpeg burns into the picture; the '
+          'fontSize: is rendered media content sized in video pixels, '
+          'never app UI — same reviewed exception class as '
+          'audiobook_clip_text_render.',
       'lib/src/media/video/video_subtitle_jump_panel.dart':
           'Subtitle jump list (asbplayer-style transcript panel) renders cue '
-              'text + timestamp rows as video-subsystem content; row/timestamp '
-              'font size scales with appUiScale, not ordinary page chrome '
-              '(same content rationale as the allowlisted subtitle overlay).',
+          'text + timestamp rows as video-subsystem content; row/timestamp '
+          'font size scales with appUiScale, not ordinary page chrome '
+          '(same content rationale as the allowlisted subtitle overlay).',
       'lib/src/media/video/video_chapter_panel.dart':
           'Chapter list panel (TODO-424) renders chapter index + title + start '
-              'timestamp rows as video-subsystem content; row font size scales '
-              'with appUiScale, not ordinary page chrome (same content rationale '
-              'as the allowlisted sibling subtitle jump panel).',
+          'timestamp rows as video-subsystem content; row font size scales '
+          'with appUiScale, not ordinary page chrome (same content rationale '
+          'as the allowlisted sibling subtitle jump panel).',
       'lib/src/media/video/video_episode_panel.dart':
           'Episode list panel renders episode index + title cards as '
-              'video-subsystem content in a bottom overlay rail; row font size scales '
-              'with appUiScale, not ordinary page chrome.',
+          'video-subsystem content in a bottom overlay rail; row font size scales '
+          'with appUiScale, not ordinary page chrome.',
       'lib/src/media/video/video_episode_rail.dart':
           'Shared episode rail renders 16:9 media cover frames, episode titles '
-              'and playback state as video-subsystem content in the player overlay '
-              'and collection hero; card typography scales with appUiScale in the '
-              'player, the same reviewed content exception as video_episode_panel.',
+          'and playback state as video-subsystem content in the player overlay '
+          'and collection hero; card typography scales with appUiScale in the '
+          'player, the same reviewed content exception as video_episode_panel.',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
-              'size (content), defaults mirror the allowlisted overlay caption.',
+          'size (content), defaults mirror the allowlisted overlay caption.',
       'lib/src/media/video/subtitle_waveform_align_panel.dart':
           'TODO-1051/1207 subtitle-sync waveform panel: the audio-energy '
-              'waveform is a CustomPaint chart, so the chart-canvas frame '
-              '(surfaceContainerHighest tonal surface + rounded clip) and the '
-              'legend color swatches (1-2px markers) are visualization content, '
-              'not ordinary page chrome — same content rationale as the '
-              'allowlisted reading/video statistics pages. Interactive chrome '
-              '(entry button surface, delay/view controls) routes through '
-              'FushiDesignTokens + shared MD3 components (FushiIconButton / '
-              'adaptiveSlider / AdaptiveSettingsTextField).',
+          'waveform is a CustomPaint chart, so the chart-canvas frame '
+          '(surfaceContainerHighest tonal surface + rounded clip) and the '
+          'legend color swatches (1-2px markers) are visualization content, '
+          'not ordinary page chrome — same content rationale as the '
+          'allowlisted reading/video statistics pages. Interactive chrome '
+          '(entry button surface, delay/view controls) routes through '
+          'FushiDesignTokens + shared MD3 components (FushiIconButton / '
+          'adaptiveSlider / AdaptiveSettingsTextField).',
       'lib/src/media/video/video_danmaku_text_metrics.dart':
           'BUG-1297/PR#627 danmaku font-size single source of truth, shared '
-              'by rendering (video_danmaku_overlay) and geometry measurement '
-              '(VideoDanmakuTextMetrics.widthOf -> video_danmaku_layout). The '
-              'file is headless: no Widget/build/BuildContext/Theme.of at all, '
-              'and its only fontSize: is kVideoDanmakuBaseFontSize * the user '
-              'fontScale preference inside the videoDanmakuTextStyle factory - '
-              'timed video content typography, the same reviewed exception '
-              'class as the video_danmaku_overlay entry it was extracted from '
-              'and the user-configurable subtitle caption font size in '
-              'video_fushi/layout.part.dart. Routing it through a shared MD3 '
-              'type role would break the contract the file documents '
-              '(inherit: false, so the host DefaultTextStyle cannot desync '
-              'measurement from render) and reintroduce the measure-18px / '
-              'render-20px drift that made danmaku vanish mid-screen.',
+          'by rendering (video_danmaku_overlay) and geometry measurement '
+          '(VideoDanmakuTextMetrics.widthOf -> video_danmaku_layout). The '
+          'file is headless: no Widget/build/BuildContext/Theme.of at all, '
+          'and its only fontSize: is kVideoDanmakuBaseFontSize * the user '
+          'fontScale preference inside the videoDanmakuTextStyle factory - '
+          'timed video content typography, the same reviewed exception '
+          'class as the video_danmaku_overlay entry it was extracted from '
+          'and the user-configurable subtitle caption font size in '
+          'video_fushi/layout.part.dart. Routing it through a shared MD3 '
+          'type role would break the contract the file documents '
+          '(inherit: false, so the host DefaultTextStyle cannot desync '
+          'measurement from render) and reintroduce the measure-18px / '
+          'render-20px drift that made danmaku vanish mid-screen.',
       'lib/src/media/video/video_thumbnail_preview_overlay.dart':
           'TODO-669 hover/seek thumbnail preview overlay: thumbnail frame corner '
-              'radius (BorderRadius.circular(6*uiScale)) and timestamp bubble '
-              'font size (12*uiScale) scale with appUiScale, colors from the '
-              'active ColorScheme; a video-subsystem transient overlay shown on '
-              'progress-bar scrub, not ordinary page chrome — same reviewed '
-              'exception class as the sibling video_volume_overlays HUD and '
-              'video_danmaku_overlay.',
+          'radius (BorderRadius.circular(6*uiScale)) and timestamp bubble '
+          'font size (12*uiScale) scale with appUiScale, colors from the '
+          'active ColorScheme; a video-subsystem transient overlay shown on '
+          'progress-bar scrub, not ordinary page chrome — same reviewed '
+          'exception class as the sibling video_volume_overlays HUD and '
+          'video_danmaku_overlay.',
       'lib/src/media/video/video_long_press_speed_badge.dart':
           'TODO-1154 long-press temporary-speed badge: a video-subsystem '
-              'transient overlay bubble (BorderRadius.circular(8) pill + speed '
-              'fontSize label) that follows the pointer during a long-press '
-              'speed gesture, styled to match the sibling OSD/HUD; not ordinary '
-              'page chrome — same reviewed media-page exception class as the '
-              'sibling video_thumbnail_preview_overlay / video_volume_overlays '
-              'HUD entries and the volume_osd.part.dart OSD.',
+          'transient overlay bubble (BorderRadius.circular(8) pill + speed '
+          'fontSize label) that follows the pointer during a long-press '
+          'speed gesture, styled to match the sibling OSD/HUD; not ordinary '
+          'page chrome — same reviewed media-page exception class as the '
+          'sibling video_thumbnail_preview_overlay / video_volume_overlays '
+          'HUD entries and the volume_osd.part.dart OSD.',
       'lib/src/media/video/video_volume_overlays.dart':
           'TODO-517 split out the compact video volume popover and '
-              'volume/brightness HUD to keep visible slider/HUD layers from '
-              'occupying the full screen; the barrier may be full-screen, '
-              'but these visible layers are video-subsystem transient overlays, '
-              'not ordinary page chrome. Their size, color, and type are '
-              'measured against appUiScale and video overlay contrast needs, '
-              'same reviewed exception class as video subtitle/jump/chapter/'
-              'quick-settings overlays.',
+          'volume/brightness HUD to keep visible slider/HUD layers from '
+          'occupying the full screen; the barrier may be full-screen, '
+          'but these visible layers are video-subsystem transient overlays, '
+          'not ordinary page chrome. Their size, color, and type are '
+          'measured against appUiScale and video overlay contrast needs, '
+          'same reviewed exception class as video subtitle/jump/chapter/'
+          'quick-settings overlays.',
       // 阶段B：video_quick_settings_sheet.dart 重写为纯 schema 投影外壳后已无
       // 违禁 token，其原豁免（字幕字号 content / 播放中专属 ListTile 行 /
       // monospace 逃生口）随行声明与内嵌 builder 迁移到下面两个新文件。
       'lib/src/media/video/video_settings_actions.dart':
           'Stage-B dual-write layer for the video settings schema: the '
-              'in-player ListTile rows (HLS quality entry / Skia fallback / '
-              'audio-track placeholder) and the monospace fontSize: 13 escape '
-              'hatches of the raw mpv.conf + danmaku block-rules multiline '
-              'fields moved verbatim from video_quick_settings_sheet.dart — '
-              'same reviewed media-page exception class as the sheet entry '
-              'they came from (the sheet itself is now a token-clean schema '
-              'projection shell).',
+          'in-player ListTile rows (HLS quality entry / Skia fallback / '
+          'audio-track placeholder) and the monospace fontSize: 13 escape '
+          'hatches of the raw mpv.conf + danmaku block-rules multiline '
+          'fields moved verbatim from video_quick_settings_sheet.dart — '
+          'same reviewed media-page exception class as the sheet entry '
+          'they came from (the sheet itself is now a token-clean schema '
+          'projection shell).',
       'lib/src/media/video/video_control_layout_editor.dart':
           'Video control 9-slot drag editor extracted verbatim from '
-              'video_quick_settings_sheet.dart (stage B): the stage preview '
-              'canvas paints a surfaceContainerHigh/Highest gradient as a mock '
-              'video frame behind the drop slots (visualization content, not '
-              'ordinary page chrome) — same reviewed media-page exception '
-              'class as the sheet entry it came from.',
+          'video_quick_settings_sheet.dart (stage B): the stage preview '
+          'canvas paints a surfaceContainerHigh/Highest gradient as a mock '
+          'video frame behind the drop slots (visualization content, not '
+          'ordinary page chrome) — same reviewed media-page exception '
+          'class as the sheet entry it came from.',
       'lib/src/settings/settings_schema_video.dart':
           'Home video settings expose the same user-configurable subtitle '
-              'caption font size (VideoSubtitleStyle.copyWith(fontSize:)) for '
-              'parity with the in-player sheet (TODO-286); it is caption content, '
-              'not page chrome — same rationale as video_quick_settings_sheet. '
-              'TODO-586：随 video destination 拆到 settings_schema_video.dart。',
+          'caption font size (VideoSubtitleStyle.copyWith(fontSize:)) for '
+          'parity with the in-player sheet (TODO-286); it is caption content, '
+          'not page chrome — same rationale as video_quick_settings_sheet. '
+          'TODO-586：随 video destination 拆到 settings_schema_video.dart。',
       'lib/src/pages/implementations/video_fushi_page.dart':
           'Video player page chrome (track-switch menu, media controls) '
-              'follows media-page rules like reader/audiobook.',
+          'follows media-page rules like reader/audiobook.',
       // TODO-590: video_fushi_page.dart 拆成主壳 + video_fushi/*.part.dart；
       // 同一份 video player page chrome 豁免随搬运延伸到含 chrome token 的 part 文件
       // （零行为变化，逐字符抽出）。
       'lib/src/pages/implementations/video_fushi/episode.part.dart':
           'Episode push-aside sidebar + auto-advance countdown overlay '
-              'chrome extracted verbatim from video_fushi_page.dart '
-              '(TODO-590 batch4); same media-page rationale as the parent '
-              'video player page allowlist entry.',
+          'chrome extracted verbatim from video_fushi_page.dart '
+          '(TODO-590 batch4); same media-page rationale as the parent '
+          'video player page allowlist entry.',
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart':
           'Subtitle source menu / import / loading-overlay / subtitle jump-list '
-              'side panel chrome extracted verbatim from video_fushi_page.dart '
-              '(TODO-590 batch5); the fontSize:/ListTile chrome (jump panel + '
-              'source side panel rows, caption font scales with appUiScale) is '
-              'the same reviewed media-page exception class as the parent '
-              'video player page allowlist entry.',
+          'side panel chrome extracted verbatim from video_fushi_page.dart '
+          '(TODO-590 batch5); the fontSize:/ListTile chrome (jump panel + '
+          'source side panel rows, caption font scales with appUiScale) is '
+          'the same reviewed media-page exception class as the parent '
+          'video player page allowlist entry.',
       'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
           'Black-flicker warning banner chrome (errorContainer '
-              'BorderRadius.circular(12) frame + fontSize title/body '
-              'labels) added by TODO-1119/BUG-545 as an errorContainer-'
-              'semantic notice bar over the video controls; same reviewed '
-              'media-page exception class as the parent video player page '
-              'allowlist entry.',
+          'BorderRadius.circular(12) frame + fontSize title/body '
+          'labels) added by TODO-1119/BUG-545 as an errorContainer-'
+          'semantic notice bar over the video controls; same reviewed '
+          'media-page exception class as the parent video player page '
+          'allowlist entry.',
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           'Volume / playback-speed compact control popover chrome '
-              '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
-              'label, VideoVolumePopoverCard) extracted verbatim from '
-              'video_fushi_page.dart (TODO-590 batch6); the popover frame + '
-              'speed-label typography scales with appUiScale and is the same '
-              'reviewed media-page exception class as the parent video player '
-              'page allowlist entry.',
+          '(BorderRadius/surfaceContainerHighest frame, fontSize speed '
+          'label, VideoVolumePopoverCard) extracted verbatim from '
+          'video_fushi_page.dart (TODO-590 batch6); the popover frame + '
+          'speed-label typography scales with appUiScale and is the same '
+          'reviewed media-page exception class as the parent video player '
+          'page allowlist entry.',
       'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
           'Mobile/desktop media-controls theme + horizontal-seek absolute-time '
-              'HUD indicator chrome (BorderRadius.circular frame, fontSize '
-              'target/delta time labels in _buildSeekIndicator) extracted from '
-              'video_fushi_page.dart (TODO-590) and extended by TODO-916; the '
-              'seek HUD typography scales with appUiScale and is the same '
-              'reviewed media-page exception class as the parent video player '
-              'page allowlist entry and the sibling control popover/OSD entries.',
+          'HUD indicator chrome (BorderRadius.circular frame, fontSize '
+          'target/delta time labels in _buildSeekIndicator) extracted from '
+          'video_fushi_page.dart (TODO-590) and extended by TODO-916; the '
+          'seek HUD typography scales with appUiScale and is the same '
+          'reviewed media-page exception class as the parent video player '
+          'page allowlist entry and the sibling control popover/OSD entries.',
       'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
           'Volume + OSD / level-HUD / brightness overlay chrome '
-              '(left-top OSD notification card with BorderRadius/fontSize, '
-              'volume & brightness level HUD indicators) extracted verbatim '
-              'from video_fushi_page.dart (TODO-590 batch7); these are '
-              'video-subsystem transient overlays whose size/color/typography '
-              'scale with appUiScale, the same reviewed media-page exception '
-              'class as the parent video player page allowlist entry and the '
-              'sibling video_volume_overlays.dart HUD entry.',
+          '(left-top OSD notification card with BorderRadius/fontSize, '
+          'volume & brightness level HUD indicators) extracted verbatim '
+          'from video_fushi_page.dart (TODO-590 batch7); these are '
+          'video-subsystem transient overlays whose size/color/typography '
+          'scale with appUiScale, the same reviewed media-page exception '
+          'class as the parent video player page allowlist entry and the '
+          'sibling video_volume_overlays.dart HUD entry.',
       'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
           'Audio-track side panel chrome (track-list ListTile rows) extracted '
-              'verbatim from video_fushi_page.dart (TODO-590 batch9); the '
-              'ListTile track rows are the same reviewed media-page exception '
-              'class as the parent video player page allowlist entry and the '
-              'sibling subtitle/chapter side panels.',
+          'verbatim from video_fushi_page.dart (TODO-590 batch9); the '
+          'ListTile track rows are the same reviewed media-page exception '
+          'class as the parent video player page allowlist entry and the '
+          'sibling subtitle/chapter side panels.',
       'lib/src/pages/implementations/video_fushi/quality.part.dart':
           'HLS quality side panel chrome (variant-list ListTile rows, TODO-1158) '
-              'is the same reviewed media-page exception class as the sibling '
-              'audio_track.part.dart / subtitle side panels — a translucent video '
-              'side-panel list of playable stream qualities, not ordinary page chrome.',
+          'is the same reviewed media-page exception class as the sibling '
+          'audio_track.part.dart / subtitle side panels — a translucent video '
+          'side-panel list of playable stream qualities, not ordinary page chrome.',
       'lib/src/media/video/danmaku_manual_match_panel.dart':
           'Danmaku manual search/match side panel chrome (episode-list ListTile '
-              'rows, TODO-1376) is the same reviewed media-page exception class '
-              'as the sibling audio_track.part.dart / quality.part.dart video '
-              'side panels — a translucent video side-panel list of searched '
-              'anime episodes to bind danmaku, not ordinary page chrome.',
+          'rows, TODO-1376) is the same reviewed media-page exception class '
+          'as the sibling audio_track.part.dart / quality.part.dart video '
+          'side panels — a translucent video side-panel list of searched '
+          'anime episodes to bind danmaku, not ordinary page chrome.',
       'lib/src/pages/implementations/video_fushi/layout.part.dart':
           'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
-              'extracted verbatim from video_fushi_page.dart (TODO-590 '
-              'batch16); the user-configurable subtitle caption font size is '
-              'content, not page chrome — the same reviewed media-page '
-              'exception class as the parent video player page allowlist entry '
-              'and the sibling video_quick_settings_sheet caption font size.',
+          'extracted verbatim from video_fushi_page.dart (TODO-590 '
+          'batch16); the user-configurable subtitle caption font size is '
+          'content, not page chrome — the same reviewed media-page '
+          'exception class as the parent video player page allowlist entry '
+          'and the sibling video_quick_settings_sheet caption font size.',
       'lib/src/pages/implementations/home_video_page.dart':
           'Home video grid renders media content badges/download progress; '
-              'long-press management actions use the shared media dialog frame, '
-              'not bespoke bottom-sheet chrome.',
+          'long-press management actions use the shared media dialog frame, '
+          'not bespoke bottom-sheet chrome.',
       'lib/src/pages/implementations/video_shader_dialog.dart':
           'Experimental mpv shader dialog lists imported shader files as '
-              'checkbox rows (transient video-subsystem content).',
+          'checkbox rows (transient video-subsystem content).',
       // 2026-08 字幕工作台：两个 Jimaku 对话框的状态机整体搬进面板文件（对话框只剩
       // 壳，不再含被禁模式），豁免随代码一起搬，理由不变。
       'lib/src/pages/implementations/subtitle_collection_panel.dart':
           'Collection batch-download member list renders per-episode status '
-              'icon / title / language rows as video-subsystem content (batch '
-              'subtitle download progress), not ordinary page chrome — same '
-              'reviewed content exception class as video_episode_panel / '
-              'video_subtitle_jump_panel and the sibling subtitle_search_panel.',
+          'icon / title / language rows as video-subsystem content (batch '
+          'subtitle download progress), not ordinary page chrome — same '
+          'reviewed content exception class as video_episode_panel / '
+          'video_subtitle_jump_panel and the sibling subtitle_search_panel.',
       'lib/src/pages/implementations/subtitle_search_panel.dart':
           'Online subtitle search panel lists downloadable subtitle files as '
-              'transient video-subsystem content rows.',
+          'transient video-subsystem content rows.',
       'lib/src/pages/implementations/anime_download_dialog.dart':
           'Anime download dialog lists Nyaa torrent candidates (release group / '
-              'resolution / seeders / subtitle-coverage badges) and per-episode '
-              'Jimaku subtitle rows plus a download-task list as transient '
-              'video-subsystem content — the same reviewed content exception '
-              'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
+          'resolution / seeders / subtitle-coverage badges) and per-episode '
+          'Jimaku subtitle rows plus a download-task list as transient '
+          'video-subsystem content — the same reviewed content exception '
+          'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
       // PR#295：galgame Hook 诊断页把实时语音轨候选行与 hook 事件日志行渲染为
       // hook 子系统的瞬态内容行（含状态横幅胶囊），非普通页面 chrome——同
       // jimaku/anime 下载对话框与 anki_mined_card_action_sheet 的内容豁免类。
       'lib/src/pages/implementations/game_diagnostics_page.dart':
           'Galgame hook diagnostics page lists live voice-track candidate rows '
-              'and hook event-log rows as transient hook-subsystem content '
-              '(plus a status banner pill), not ordinary page chrome — same '
-              'reviewed content exception class as the jimaku/anime download '
-              'dialogs and anki_mined_card_action_sheet.',
+          'and hook event-log rows as transient hook-subsystem content '
+          '(plus a status banner pill), not ordinary page chrome — same '
+          'reviewed content exception class as the jimaku/anime download '
+          'dialogs and anki_mined_card_action_sheet.',
       // PR#295：Hook 控制台的状态胶囊（hook-ready / 未读行数 / 每行句音状态）是
       // hook 子系统的实时内容指示器，非普通页面 chrome——同视频子系统内容行豁免类。
       'lib/src/pages/implementations/texthooker_page.dart':
           'Hook console status pills (hook-ready / unread-lines / per-line '
-              'audio status capsules) are live hook-subsystem content '
-              'indicators, not ordinary page chrome — same reviewed content '
-              'exception class as the video-subsystem content rows.',
+          'audio status capsules) are live hook-subsystem content '
+          'indicators, not ordinary page chrome — same reviewed content '
+          'exception class as the video-subsystem content rows.',
       // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
       // 触发整库任务，故此处不再需要它的豁免条目。
       'lib/src/anki/anki_mined_card_action_sheet.dart':
           'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
-              'as transient content rows (note preview + per-note overwrite/view '
-              'actions) plus an add-duplicate action row — Anki-subsystem content, '
-              'the same reviewed exception class as the dictionary import/delete '
-              'content rows.',
+          'as transient content rows (note preview + per-note overwrite/view '
+          'actions) plus an add-duplicate action row — Anki-subsystem content, '
+          'the same reviewed exception class as the dictionary import/delete '
+          'content rows.',
       // PR#253 / BUG-922：制卡「选择句子上下文」原生对话框（Niratan 式）的 ±上下文
       // 调整按钮，在横屏矮窗里刻意收紧到 compact 视觉密度（VisualDensity.compact +
       // 收敛 padding/minSize），给句子预览让出竖向空间——挖矿子系统的内容对话框，
       // 非普通页面 chrome，同 anki_mined_card_action_sheet 的内容对话框豁免类。
       'lib/src/pages/implementations/sentence_context_dialog.dart':
           'Sentence-context mining dialog deliberately uses compact visual '
-              'density on its context-adjust buttons to free vertical space for '
-              'the sentence preview in short landscape windows (BUG-922); '
-              'mining-subsystem content dialog, not ordinary page chrome — same '
-              'reviewed exception class as anki_mined_card_action_sheet.',
+          'density on its context-adjust buttons to free vertical space for '
+          'the sentence preview in short landscape windows (BUG-922); '
+          'mining-subsystem content dialog, not ordinary page chrome — same '
+          'reviewed exception class as anki_mined_card_action_sheet.',
       // PR#474 的 Google Lens 引擎是 manga.json 的**新生产者**：它写的
       // `MokuroBlock.fontSize` 与 mokuro_payload / manga_ocr_folder_job 里被
       // 豁免的是同一个数据字段（气泡文字尺寸，落盘给 overlay 用），文件本身
       // 零 UI。属既有 reviewed 豁免类跟随新生产者，不是放宽判据。
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart':
           'Writes the MokuroBlock.fontSize data field for Lens-produced '
-              'manga.json blocks; pure data layer, no UI typography.',
+          'manga.json blocks; pure data layer, no UI typography.',
       // 设备自带 OCR 引擎是 manga.json 的又一个新生产者，与 Lens 完全同类：
       // 写的是同一个 MokuroBlock.fontSize 数据字段（落盘给 overlay 折算 cqi
       // 命中框字号），文件零 UI。既有 reviewed 豁免类跟随新生产者，不是放宽判据；
       // 「无 UI 代码」由下面的纯数据层断言钉成可证伪的。
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart':
           'Writes the MokuroBlock.fontSize data field for device-OCR-produced '
-              'manga.json blocks; pure data layer, no UI typography.',
+          'manga.json blocks; pure data layer, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/storage/data_root_migration_view.dart':
           'TODO-959 data-root migration overlay is pre-init startup chrome '
-              '(rendered while the DB is closed / isInitialised=false during '
-              'the move), mirroring the main.dart loading/error scaffolds '
-              'verbatim — design tokens are not reliably available there, so it '
-              'uses raw fontSize + ColorScheme roles, the same reviewed '
-              'startup-chrome exception class as the main.dart splash branches.',
+          '(rendered while the DB is closed / isInitialised=false during '
+          'the move), mirroring the main.dart loading/error scaffolds '
+          'verbatim — design tokens are not reliably available there, so it '
+          'uses raw fontSize + ColorScheme roles, the same reviewed '
+          'startup-chrome exception class as the main.dart splash branches.',
       'lib/src/startup/loading_watchdog_view.dart':
           'TODO-1260 startup loading/timeout escape view is pre-init startup '
-              'chrome (rendered while isInitialised=false, extracted verbatim '
-              'from the main.dart loading scaffold) — design tokens are not '
-              'reliably available there, so it uses raw fontSize + ColorScheme '
-              'roles, the same reviewed startup-chrome exception class as the '
-              'data-root migration / backup import overlays and the main.dart '
-              'splash branches.',
+          'chrome (rendered while isInitialised=false, extracted verbatim '
+          'from the main.dart loading scaffold) — design tokens are not '
+          'reliably available there, so it uses raw fontSize + ColorScheme '
+          'roles, the same reviewed startup-chrome exception class as the '
+          'data-root migration / backup import overlays and the main.dart '
+          'splash branches.',
       // BUG-1425：查词源文本条的字号是**跨边界对齐常量**，不是本地 MD3 排版决定：
       // BUG-175 / TODO-222 要求它与查词弹窗 headword 同级，而那个 headword 是
       // WebView 里 assets/popup/popup.css 的 `.expression { font-size: 26px }`。
@@ -1125,20 +1096,20 @@ void main() {
       // 可证伪断言：常量必须等于 popup.css 里的真实值，且不得退回 fontSizeFactor。
       'lib/src/utils/components/clipboard_lookup_text_panel.dart':
           'The source-text strip must render at the popup dictionary headword '
-              'size (BUG-175/TODO-222). That headword lives in the WebView, not '
-              'in a Flutter type role: assets/popup/popup.css sets '
-              '.expression { font-size: 26px }. kPopupHeadwordFontSize is that '
-              'cross-boundary parity constant (scaled by the user dictionary '
-              'font ratio), the same reviewed exception class as '
-              'dictionary_popup_native / popup_theme_css.',
+          'size (BUG-175/TODO-222). That headword lives in the WebView, not '
+          'in a Flutter type role: assets/popup/popup.css sets '
+          '.expression { font-size: 26px }. kPopupHeadwordFontSize is that '
+          'cross-boundary parity constant (scaled by the user dictionary '
+          'font ratio), the same reviewed exception class as '
+          'dictionary_popup_native / popup_theme_css.',
       'lib/src/sync/backup_import_overlay_view.dart':
           'TODO-1151 backup import/restore overlay is pre-init startup chrome '
-              '(rendered while the DB is closed / isInitialised=false during the '
-              'import, mirroring the main.dart loading/error scaffolds and the '
-              'sibling data_root_migration_view verbatim) — design tokens are not '
-              'reliably available there, so it uses raw fontSize + ColorScheme '
-              'roles, the same reviewed startup-chrome exception class as the '
-              'data-root migration overlay and the main.dart splash branches.',
+          '(rendered while the DB is closed / isInitialised=false during the '
+          'import, mirroring the main.dart loading/error scaffolds and the '
+          'sibling data_root_migration_view verbatim) — design tokens are not '
+          'reliably available there, so it uses raw fontSize + ColorScheme '
+          'roles, the same reviewed startup-chrome exception class as the '
+          'data-root migration overlay and the main.dart splash branches.',
       // BUG-2166 批：桌面端阅读器 chrome 改 ッツ 形态时，原本长在
       // reader_fushi/chrome.part.dart 里的那几块（工具栏 / 状态行 / 画廊 /
       // 统计浮层 / 有声书面板）被拆成 lib/src/reader/ 下的独立文件。豁免随搬运
@@ -1147,33 +1118,33 @@ void main() {
       // kTopProgressFontSize 成一族），不跟随 app 全局 MD3 排版。
       'lib/src/reader/reader_desktop_chrome.dart':
           'Reader toolbar typography lives on the reading surface scale '
-              '(kReaderDesktopHeaderTitleFontSize, a named sibling of '
-              'kTopProgressFontSize), not the app type roles — same reviewed '
-              'exception class as reader_fushi/chrome.part.dart.',
+          '(kReaderDesktopHeaderTitleFontSize, a named sibling of '
+          'kTopProgressFontSize), not the app type roles — same reviewed '
+          'exception class as reader_fushi/chrome.part.dart.',
       'lib/src/reader/reader_status_footer.dart':
           'Status strip font size is kReaderStatusFooterFontSize == '
-              'kTopProgressFontSize: the footer must match the top progress '
-              'pill exactly — same reviewed exception class as '
-              'reader_fushi/chrome.part.dart.',
+          'kTopProgressFontSize: the footer must match the top progress '
+          'pill exactly — same reviewed exception class as '
+          'reader_fushi/chrome.part.dart.',
       'lib/src/reader/reader_gallery_page.dart':
           'Thumbnail grid is image content: the placeholder surface and the '
-              'thumbnail corner radii size to the image cells, not to page '
-              'chrome — same reviewed exception class as '
-              'reader_fushi/chrome.part.dart.',
+          'thumbnail corner radii size to the image cells, not to page '
+          'chrome — same reviewed exception class as '
+          'reader_fushi/chrome.part.dart.',
       'lib/src/reader/reader_audiobook_panel.dart':
           'Audiobook cue list is dense reader content (tonal cue track + cue '
-              'row corners) — same reviewed exception class as '
-              'reader_fushi/chrome.part.dart.',
+          'row corners) — same reviewed exception class as '
+          'reader_fushi/chrome.part.dart.',
       'lib/src/reader/reader_statistics_dialog.dart':
           'Reading-session metric bars are chart content (progress-track '
-              'surface) — same reviewed exception class as '
-              'reading_statistics_page / video_statistics_page. The compact '
-              'chart controls are gone: the dialog now uses full-width shared '
-              'components, so VisualDensity.compact is no longer exempted.',
+          'surface) — same reviewed exception class as '
+          'reading_statistics_page / video_statistics_page. The compact '
+          'chart controls are gone: the dialog now uses full-width shared '
+          'components, so VisualDensity.compact is no longer exempted.',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'In-book quick settings sheet packs reader controls at reader '
-              'density — same reviewed exception class as '
-              'reader_fushi/chrome.part.dart.',
+          'density — same reviewed exception class as '
+          'reader_fushi/chrome.part.dart.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1201,88 +1172,88 @@ void main() {
       'lib/src/anki/anki_mined_card_action_sheet.dart': <String>{'ListTile('},
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/lookup/gal_hook_text_overlay_controller.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/audiobook/audiobook_bridge.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/audiobook_clip_text_render.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/media/manga/ocr/manga_region_ocr.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/manga/mokuro_payload.dart': <String>{'fontSize:'},
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/danmaku_manual_match_panel.dart': <String>{
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_chapter_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_control_layout_editor.dart': <String>{
         'surfaceContainerHigh',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_danmaku_text_metrics.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_episode_panel.dart': <String>{
         'VisualDensity.compact',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_episode_rail.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_long_press_speed_badge.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_settings_actions.dart': <String>{
         'fontSize:',
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/media/video/video_subtitle_jump_panel.dart': <String>{
         'VisualDensity.compact',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_subtitle_overlay.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_subtitle_style.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_thumbnail_preview_overlay.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/media/video/video_volume_overlays.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/models/app_model.dart': <String>{
         'surfaceContainerHigh',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/models/theme_notifier.dart': <String>{
         'surfaceContainerLow',
         'surfaceContainerLowest',
         'surfaceContainerHigh',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/ocr/manga_ocr_folder_job.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
@@ -1291,51 +1262,51 @@ void main() {
         'surfaceContainerHighest',
         'fontSize:',
         'Card(',
-        'ListTile('
+        'ListTile(',
       },
       // BUG-2187 重设计后预览区改用的 token：SegmentedButton 的紧凑密度与
       // 预览进度条的 tonal 轨道底色，都是「预览studio 展示的样例控件」而非页面
       // chrome（原先的 surfaceContainerLow 已不复存在，留着会变死豁免）。
       'lib/src/pages/implementations/custom_theme_page.dart': <String>{
         'VisualDensity.compact',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/game_diagnostics_page.dart': <String>{
         'BorderRadius.circular(',
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/pages/implementations/games_library_page.dart': <String>{
         'surfaceContainerHighest',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/pages/implementations/history_reader_page.dart': <String>{
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/home_video_page.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
         'BorderRadius.circular(',
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/pages/implementations/subtitle_search_panel.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/pages/implementations/media_collection_detail_page.dart':
           <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerLow',
-        'surfaceContainerHighest',
-        'fontSize:'
-      },
+            'BorderRadius.circular(',
+            'surfaceContainerLow',
+            'surfaceContainerHighest',
+            'fontSize:',
+          },
       'lib/src/pages/implementations/popup_settings_injection.dart': <String>{
-        'surfaceContainerHigh'
+        'surfaceContainerHigh',
       },
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart': <String>{
         'BorderRadius.circular(',
@@ -1347,32 +1318,32 @@ void main() {
         // BUG-2166 批：桌面 chrome 的抽屉/状态行底色用到低阶 tonal 面。
         'surfaceContainerLow',
         'surfaceContainerLowest',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_status_footer.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_gallery_page.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/reader/reader_audiobook_panel.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/reader/reader_statistics_dialog.dart': <String>{
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
-        'VisualDensity.compact'
+        'VisualDensity.compact',
       },
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>{
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
-        'BorderRadius.circular('
+        'BorderRadius.circular(',
       },
       'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
           <String>{'surfaceContainerHighest'},
@@ -1380,21 +1351,21 @@ void main() {
           <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_history/remote.part.dart': <String>{
         'VisualDensity.compact',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/reading_statistics_page.dart': <String>{
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/sentence_context_dialog.dart': <String>{
-        'VisualDensity.compact'
+        'VisualDensity.compact',
       },
       'lib/src/pages/implementations/series_shelf_card.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/texthooker_page.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
           <String>{'ListTile('},
@@ -1405,72 +1376,76 @@ void main() {
       'lib/src/pages/implementations/video_fushi/episode.part.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
           <String>{
-        'BorderRadius.circular(',
-        'VisualDensity.compact',
-        'fontSize:'
-      },
+            'BorderRadius.circular(',
+            'VisualDensity.compact',
+            'fontSize:',
+          },
       'lib/src/pages/implementations/video_fushi/layout.part.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/pages/implementations/video_fushi/quality.part.dart': <String>{
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
       'lib/src/pages/implementations/video_fushi_page.dart': <String>{
         'fontSize:',
-        'ListTile('
+        'ListTile(',
       },
       'lib/src/pages/implementations/video_shader_dialog.dart': <String>{
-        'CheckboxListTile('
+        'CheckboxListTile(',
       },
       'lib/src/settings/settings_schema_video.dart': <String>{'fontSize:'},
       'lib/src/startup/loading_watchdog_view.dart': <String>{'fontSize:'},
       'lib/src/storage/data_root_migration_view.dart': <String>{'fontSize:'},
       'lib/src/sync/backup_import_overlay_view.dart': <String>{'fontSize:'},
       'lib/src/utils/components/clipboard_lookup_text_panel.dart': <String>{
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/utils/components/cover_badge.dart': <String>{
-        'BorderRadius.circular('
+        'BorderRadius.circular(',
       },
       'lib/src/utils/components/fushi_design_tokens.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerLow',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/utils/components/fushi_material_components.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
         'surfaceContainerHigh',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/utils/components/settings_shared.dart': <String>{
         'VisualDensity.compact',
-        'fontSize:'
+        'fontSize:',
       },
       'lib/src/utils/components/stat_contribution_heatmap.dart': <String>{
-        'surfaceContainerHighest'
+        'surfaceContainerHighest',
       },
       'lib/src/utils/popup_theme_css.dart': <String>{'surfaceContainerHigh'},
     };
 
-    expect(allowedTokens.keys.toSet(), allowedFiles.keys.toSet(),
-        reason: '两张豁免表的键必须一一对应：allowedFiles 是给人读的理由，'
-            'allowedTokens 是判据真正用的范围。少一边 = 要么有文件整份免检'
-            '（token 表缺项按空集处理会当场红，这条只是把原因说清），'
-            '要么有条理由挂在名单上却不再有对应范围。');
+    expect(
+      allowedTokens.keys.toSet(),
+      allowedFiles.keys.toSet(),
+      reason:
+          '两张豁免表的键必须一一对应：allowedFiles 是给人读的理由，'
+          'allowedTokens 是判据真正用的范围。少一边 = 要么有文件整份免检'
+          '（token 表缺项按空集处理会当场红，这条只是把原因说清），'
+          '要么有条理由挂在名单上却不再有对应范围。',
+    );
 
     final List<String> violations = <String>[];
     // BUG-1425：真正被用上的豁免键。一条豁免没被用上只有两种情况——文件没了，或者
@@ -1479,14 +1454,19 @@ void main() {
     final Set<String> liveAllowlistKeys = <String>{};
     // TODO-2715：逐 token 的实际命中，用来抓「登记了却不再命中」的过期 token。
     final Map<String, Set<String>> liveTokens = <String, Set<String>>{};
-    final List<File> dartFiles = Directory('lib/src')
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((File file) => file.path.endsWith('.dart'))
-        .toList(growable: false)
-      ..sort((File a, File b) => a.path.compareTo(b.path));
-    expectScanScale(dartFiles.length,
-        what: 'lib/src 下的 .dart', atLeast: 750, measured: 930);
+    final List<File> dartFiles =
+        Directory('lib/src')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((File file) => file.path.endsWith('.dart'))
+            .toList(growable: false)
+          ..sort((File a, File b) => a.path.compareTo(b.path));
+    expectScanScale(
+      dartFiles.length,
+      what: 'lib/src 下的 .dart',
+      atLeast: 750,
+      measured: 930,
+    );
     for (final File file in dartFiles) {
       final String path = file.path.replaceAll(r'\', '/');
       final String? reason = allowedFiles[path];
@@ -1506,8 +1486,10 @@ void main() {
             .where((String token) => !covered.contains(token))
             .toList(growable: false);
         if (uncovered.isEmpty) continue;
-        violations.add('$path: ${uncovered.join(', ')}'
-            '（豁免只覆盖 ${covered.join(', ')}；新 token 不在被审范围内）');
+        violations.add(
+          '$path: ${uncovered.join(', ')}'
+          '（豁免只覆盖 ${covered.join(', ')}；新 token 不在被审范围内）',
+        );
         continue;
       }
       violations.add('$path: ${hits.join(', ')}');
@@ -1516,7 +1498,8 @@ void main() {
     expect(
       violations,
       isEmpty,
-      reason: 'Route ordinary visual chrome through shared MD3 components, or '
+      reason:
+          'Route ordinary visual chrome through shared MD3 components, or '
           'add a reviewed allowlist reason for true content exceptions.',
     );
 
@@ -1526,7 +1509,8 @@ void main() {
     expect(
       deadAllowlistEntries,
       isEmpty,
-      reason: 'BUG-1425: these allowlist entries no longer match anything — '
+      reason:
+          'BUG-1425: these allowlist entries no longer match anything — '
           'the file is gone, or it has zero forbidden-chrome hits. A reason '
           'that has drifted away from the code is not a reviewed exception, '
           'it is a standing blanket waiver. Delete the entry.',
@@ -1538,14 +1522,16 @@ void main() {
     allowedTokens.forEach((String path, Set<String> tokens) {
       final Set<String>? live = liveTokens[path];
       if (live == null) return; // 整条已由 deadAllowlistEntries 报出。
-      final Iterable<String> gone =
-          tokens.where((String token) => !live.contains(token));
+      final Iterable<String> gone = tokens.where(
+        (String token) => !live.contains(token),
+      );
       if (gone.isNotEmpty) deadTokens.add('$path: ${gone.join(', ')}');
     });
     expect(
       deadTokens,
       isEmpty,
-      reason: 'TODO-2715: these exempted tokens no longer occur in the file. '
+      reason:
+          'TODO-2715: these exempted tokens no longer occur in the file. '
           'A token that has been routed through the shared MD3 components must '
           'be removed from allowedTokens, otherwise the exemption silently '
           'holds the door open for it to come back:\n${deadTokens.join('\n')}',
@@ -1559,42 +1545,62 @@ void main() {
   // 标识符边界原语（[_containsForbiddenChrome]），不是另写一套宽松子串。
   test('reviewed content exemptions do not silently cover bare chrome', () {
     // 章节面板：行骨架是共享组件，不是裸 ListTile（其豁免只覆盖行字号）。
-    final String chapterPanel =
-        File('lib/src/media/video/video_chapter_panel.dart').readAsStringSync();
+    final String chapterPanel = File(
+      'lib/src/media/video/video_chapter_panel.dart',
+    ).readAsStringSync();
     expect(chapterPanel, contains('FushiListItem('));
-    expect(_containsForbiddenChrome(chapterPanel, 'ListTile('), isFalse,
-        reason: 'video_chapter_panel is allowlisted for row font size only; '
-            'its row skeleton must stay a shared MD3 component');
+    expect(
+      _containsForbiddenChrome(chapterPanel, 'ListTile('),
+      isFalse,
+      reason:
+          'video_chapter_panel is allowlisted for row font size only; '
+          'its row skeleton must stay a shared MD3 component',
+    );
 
     // Hook 控制台：两个选择对话框的行骨架同上（其豁免只覆盖状态胶囊）。
-    final String texthooker =
-        File('lib/src/pages/implementations/texthooker_page.dart')
-            .readAsStringSync();
+    final String texthooker = File(
+      'lib/src/pages/implementations/texthooker_page.dart',
+    ).readAsStringSync();
     expect(texthooker, contains('FushiListItem('));
-    expect(_containsForbiddenChrome(texthooker, 'ListTile('), isFalse,
-        reason: 'texthooker_page is allowlisted for hook status pills only; '
-            'its dialog rows must stay shared MD3 components');
+    expect(
+      _containsForbiddenChrome(texthooker, 'ListTile('),
+      isFalse,
+      reason:
+          'texthooker_page is allowlisted for hook status pills only; '
+          'its dialog rows must stay shared MD3 components',
+    );
 
     // 着色器对话框：豁免只写了「导入的 shader 文件以勾选行列出」，所以
     // CheckboxListTile 留着，Anime4K 预设列表的裸 ListTile 不许回来。
-    final String shaderDialog =
-        File('lib/src/pages/implementations/video_shader_dialog.dart')
-            .readAsStringSync();
+    final String shaderDialog = File(
+      'lib/src/pages/implementations/video_shader_dialog.dart',
+    ).readAsStringSync();
     expect(shaderDialog, contains('FushiListItem('));
-    expect(shaderDialog, contains('CheckboxListTile('),
-        reason: 'the reviewed reason is about the shader-file checkbox rows; '
-            'if they are gone the reason must be rewritten, not inherited');
-    expect(_containsForbiddenChrome(shaderDialog, 'ListTile('), isFalse,
-        reason: 'the Anime4K preset picker must stay a shared MD3 row');
+    expect(
+      shaderDialog,
+      contains('CheckboxListTile('),
+      reason:
+          'the reviewed reason is about the shader-file checkbox rows; '
+          'if they are gone the reason must be rewritten, not inherited',
+    );
+    expect(
+      _containsForbiddenChrome(shaderDialog, 'ListTile('),
+      isFalse,
+      reason: 'the Anime4K preset picker must stay a shared MD3 row',
+    );
 
     // 番剧下载对话框：豁免通篇讲内容行，开关不在其中。
-    final String animeDownload =
-        File('lib/src/pages/implementations/anime_download_dialog.dart')
-            .readAsStringSync();
+    final String animeDownload = File(
+      'lib/src/pages/implementations/anime_download_dialog.dart',
+    ).readAsStringSync();
     expect(animeDownload, contains('AdaptiveSettingsSwitchRow('));
-    expect(_containsForbiddenChrome(animeDownload, 'SwitchListTile('), isFalse,
-        reason: 'anime_download_dialog is allowlisted for content rows; a '
-            'settings toggle must go through the shared MD3 switch row');
+    expect(
+      _containsForbiddenChrome(animeDownload, 'SwitchListTile('),
+      isFalse,
+      reason:
+          'anime_download_dialog is allowlisted for content rows; a '
+          'settings toggle must go through the shared MD3 switch row',
+    );
   });
 
   // BUG-1425：查词源文本条的豁免理由说它的字号对齐弹窗 headword，而那个 headword
@@ -1606,12 +1612,17 @@ void main() {
     ).readAsStringSync();
     final String code = maskComments(panel);
 
-    final RegExp declaration =
-        RegExp(r'const double kPopupHeadwordFontSize = ([0-9.]+);');
+    final RegExp declaration = RegExp(
+      r'const double kPopupHeadwordFontSize = ([0-9.]+);',
+    );
     final RegExpMatch? declared = declaration.firstMatch(code);
-    expect(declared, isNotNull,
-        reason: 'the strip must name its headword size as a documented '
-            'cross-boundary constant, not an inline literal');
+    expect(
+      declared,
+      isNotNull,
+      reason:
+          'the strip must name its headword size as a documented '
+          'cross-boundary constant, not an inline literal',
+    );
     final double dartSize = double.parse(declared!.group(1)!);
 
     // popup.css 的 `.expression` 就是弹窗 headword 那一行。
@@ -1620,12 +1631,20 @@ void main() {
       r'\.expression\s*\{[^}]*?font-size:\s*([0-9.]+)px',
       dotAll: true,
     ).firstMatch(popupCss);
-    expect(cssRule, isNotNull,
-        reason: 'popup.css must still size the .expression headword; if that '
-            'rule moved, the Flutter-side parity reason is stale');
-    expect(dartSize, double.parse(cssRule!.group(1)!),
-        reason: 'the source-text strip must render at the popup headword size '
-            '(BUG-175/TODO-222); the two sides have drifted apart');
+    expect(
+      cssRule,
+      isNotNull,
+      reason:
+          'popup.css must still size the .expression headword; if that '
+          'rule moved, the Flutter-side parity reason is stale',
+    );
+    expect(
+      dartSize,
+      double.parse(cssRule!.group(1)!),
+      reason:
+          'the source-text strip must render at the popup headword size '
+          '(BUG-175/TODO-222); the two sides have drifted apart',
+    );
 
     // 不许把字号重新藏进 TextStyle.apply（BUG-1425 的原始绕过写法）。
     expect(code, isNot(contains('fontSizeFactor')));
@@ -1637,11 +1656,12 @@ void main() {
         .map((String line) => line.trim())
         .toList(growable: false);
     expect(
-        fontSizeLines,
-        <String>[
-          'return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);'
-        ],
-        reason: 'the allowlisted hit must stay the single popup-parity size');
+      fontSizeLines,
+      <String>[
+        'return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);',
+      ],
+      reason: 'the allowlisted hit must stay the single popup-parity size',
+    );
   });
 
   // BUG-1414：上面 allowlist 里 manga_json_writeback.dart 的豁免理由是「纯数据层、
@@ -1654,18 +1674,26 @@ void main() {
     ).readAsStringSync();
     final String code = maskComments(source);
 
-    expect(code, isNot(contains('package:flutter/')),
-        reason: 'system_ocr_manga_service.dart is allowlisted as a pure data '
-            'layer; a Flutter import invalidates that reason');
+    expect(
+      code,
+      isNot(contains('package:flutter/')),
+      reason:
+          'system_ocr_manga_service.dart is allowlisted as a pure data '
+          'layer; a Flutter import invalidates that reason',
+    );
 
     final List<String> dataFieldLines = code
         .split('\n')
         .where((String line) => line.contains('fontSize:'))
         .map((String line) => line.trim())
         .toList(growable: false);
-    expect(dataFieldLines, <String>['fontSize: estimateMangaBlockFontSize('],
-        reason: 'the allowlisted hit must stay the MokuroBlock data-field '
-            'write, not page typography');
+    expect(
+      dataFieldLines,
+      <String>['fontSize: estimateMangaBlockFontSize('],
+      reason:
+          'the allowlisted hit must stay the MokuroBlock data-field '
+          'write, not page typography',
+    );
 
     for (final String chrome in const <String>[
       'TextStyle(',
@@ -1673,8 +1701,11 @@ void main() {
       'ListTile(',
       'BorderRadius.circular(',
     ]) {
-      expect(code, isNot(contains(chrome)),
-          reason: 'the reviewed exemption must not start covering page chrome');
+      expect(
+        code,
+        isNot(contains(chrome)),
+        reason: 'the reviewed exemption must not start covering page chrome',
+      );
     }
   });
 
@@ -1694,12 +1725,19 @@ void main() {
       'Widget build(',
       'package:flutter/material.dart',
     ]) {
-      expect(code, isNot(contains(ui)),
-          reason: 'video_clip_subtitle_image.dart is allowlisted as off-screen '
-              'media rendering; "$ui" invalidates that reason');
+      expect(
+        code,
+        isNot(contains(ui)),
+        reason:
+            'video_clip_subtitle_image.dart is allowlisted as off-screen '
+            'media rendering; "$ui" invalidates that reason',
+      );
     }
-    expect(code, contains('PictureRecorder'),
-        reason: 'the allowlisted hit must stay an off-screen raster path');
+    expect(
+      code,
+      contains('PictureRecorder'),
+      reason: 'the allowlisted hit must stay an off-screen raster path',
+    );
 
     // 命中的 fontSize: 恰好两处，都是**按画面尺寸换算出来的像素值**：一处算出来
     // （屏幕逻辑字号 × 画面高/屏幕视频区高），一处喂给 TextStyle。写死数值、或多出
@@ -1709,13 +1747,10 @@ void main() {
         .where((String line) => line.contains('fontSize:'))
         .map((String line) => line.trim())
         .toList(growable: false);
-    expect(
-        hits,
-        <String>[
-          'fontSize: style.fontSize * scale,',
-          'fontSize: layout.fontSize,',
-        ],
-        reason: 'the allowlisted hits must stay computed video-pixel sizes');
+    expect(hits, <String>[
+      'fontSize: style.fontSize * scale,',
+      'fontSize: layout.fontSize,',
+    ], reason: 'the allowlisted hits must stay computed video-pixel sizes');
   });
 
   test('manga region re-OCR layer stays a pure data layer', () {
@@ -1726,9 +1761,13 @@ void main() {
     ).readAsStringSync();
     final String code = maskComments(source);
 
-    expect(code, isNot(contains('package:flutter/')),
-        reason: 'manga_region_ocr.dart is allowlisted as a pure data layer; '
-            'a Flutter import invalidates that reason');
+    expect(
+      code,
+      isNot(contains('package:flutter/')),
+      reason:
+          'manga_region_ocr.dart is allowlisted as a pure data layer; '
+          'a Flutter import invalidates that reason',
+    );
 
     // 两处命中都只是把既有块的字段原样搬到新块（平移 / 重编号），不估算、不排版。
     final List<String> dataFieldLines = code
@@ -1737,13 +1776,15 @@ void main() {
         .map((String line) => line.trim())
         .toList(growable: false);
     expect(
-        dataFieldLines,
-        <String>[
-          'fontSize: block.fontSize,',
-          'fontSize: merged[index].fontSize,',
-        ],
-        reason: 'the allowlisted hits must stay MokuroBlock data-field copies, '
-            'not page typography');
+      dataFieldLines,
+      <String>[
+        'fontSize: block.fontSize,',
+        'fontSize: merged[index].fontSize,',
+      ],
+      reason:
+          'the allowlisted hits must stay MokuroBlock data-field copies, '
+          'not page typography',
+    );
 
     for (final String chrome in const <String>[
       'TextStyle(',
@@ -1752,8 +1793,11 @@ void main() {
       'BorderRadius.circular(',
       'Widget build(',
     ]) {
-      expect(code, isNot(contains(chrome)),
-          reason: 'the reviewed exemption must not start covering page chrome');
+      expect(
+        code,
+        isNot(contains(chrome)),
+        reason: 'the reviewed exemption must not start covering page chrome',
+      );
     }
   });
 
@@ -1764,9 +1808,13 @@ void main() {
     final String code = maskComments(source);
 
     // 无 Flutter import ⇒ 这个文件里不可能存在页面 chrome。
-    expect(code, isNot(contains('package:flutter/')),
-        reason: 'manga_json_writeback.dart is allowlisted as a pure data '
-            'layer; a Flutter import invalidates that reason');
+    expect(
+      code,
+      isNot(contains('package:flutter/')),
+      reason:
+          'manga_json_writeback.dart is allowlisted as a pure data '
+          'layer; a Flutter import invalidates that reason',
+    );
 
     // 写侧不再自己构造块（块由引擎链产出、经 manga_region_ocr.dart 平移/替换），
     // 这里一个 fontSize: 都不该再有；有了就是有人把排版或块构造塞回了写侧。
@@ -1775,10 +1823,14 @@ void main() {
         .where((String line) => line.contains('fontSize:'))
         .map((String line) => line.trim())
         .toList(growable: false);
-    expect(dataFieldLines, isEmpty,
-        reason: 'manga_json_writeback.dart no longer writes MokuroBlock '
-            'fields itself; a fontSize: here means block construction or '
-            'typography leaked back into the write side');
+    expect(
+      dataFieldLines,
+      isEmpty,
+      reason:
+          'manga_json_writeback.dart no longer writes MokuroBlock '
+          'fields itself; a fontSize: here means block construction or '
+          'typography leaked back into the write side',
+    );
 
     for (final String chrome in const <String>[
       'TextStyle(',
@@ -1790,8 +1842,11 @@ void main() {
       'PopupMenuButton(',
       'Widget build(',
     ]) {
-      expect(code, isNot(contains(chrome)),
-          reason: 'manga.json writeback must stay UI-free, found $chrome');
+      expect(
+        code,
+        isNot(contains(chrome)),
+        reason: 'manga.json writeback must stay UI-free, found $chrome',
+      );
     }
   });
 
@@ -1844,8 +1899,10 @@ void main() {
     expect(tagBar, isNot(contains('size: 18')));
     expect(tagBar, isNot(contains('BorderRadius.circular(16)')));
     expect(tagBar, isNot(contains('height: 44')));
-    expect(tagBar,
-        isNot(contains('EdgeInsets.symmetric(horizontal: 12, vertical: 6)')));
+    expect(
+      tagBar,
+      isNot(contains('EdgeInsets.symmetric(horizontal: 12, vertical: 6)')),
+    );
     expect(tagBar, isNot(contains('const SizedBox(width: 6)')));
   });
 
@@ -1902,43 +1959,45 @@ void main() {
     expect(cardLayout, isNot(contains('left: 6,')));
   });
 
-  test('book long-press frame uses visible cover block and MD3 action layout',
-      () {
-    // TODO-557 把长按对话框封面从「Stack/Positioned.fill + LinearGradient scrim
-    // 背景」（TODO-455 引入、让封面几乎不可见）改回「Column 顶部可见封面块」：
-    // ConstrainedBox 限高 + ColoredBox letterbox + 传入的封面 widget（其内部
-    // BoxFit.contain，整幅可见不裁切）。本守卫断言这一可见封面结构，并反向锁定
-    // 旧 scrim 背景结构不回归。
-    final String source = File(
-      'lib/src/pages/implementations/media_item_dialog_page.dart',
-    ).readAsStringSync();
-    final String frame = _sectionSource(
-      source,
-      'class MediaItemDialogFrame extends StatelessWidget',
-      source.length,
-    );
+  test(
+    'book long-press frame uses visible cover block and MD3 action layout',
+    () {
+      // TODO-557 把长按对话框封面从「Stack/Positioned.fill + LinearGradient scrim
+      // 背景」（TODO-455 引入、让封面几乎不可见）改回「Column 顶部可见封面块」：
+      // ConstrainedBox 限高 + ColoredBox letterbox + 传入的封面 widget（其内部
+      // BoxFit.contain，整幅可见不裁切）。本守卫断言这一可见封面结构，并反向锁定
+      // 旧 scrim 背景结构不回归。
+      final String source = File(
+        'lib/src/pages/implementations/media_item_dialog_page.dart',
+      ).readAsStringSync();
+      final String frame = _sectionSource(
+        source,
+        'class MediaItemDialogFrame extends StatelessWidget',
+        source.length,
+      );
 
-    // 共享 MD3 对话框框 + 顶部可见封面块（限高 + letterbox 背景）。
-    expect(frame, contains('FushiDialogFrame('));
-    expect(frame, contains('ConstrainedBox('));
-    expect(frame, contains('ColoredBox('));
-    expect(frame, contains('tokens.surfaces.overlay'));
-    // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
-    expect(frame, contains('Wrap('));
-    expect(frame, contains('FushiActionChip('));
-    expect(frame, contains('FushiListItem('));
-    expect(frame, contains('TextButton('));
-    expect(frame, contains('final bool showLaunchAction;'));
-    expect(frame, contains('showLaunchAction &&'));
-    expect(frame, contains('launchLabel != null'));
-    expect(frame, contains('onLaunch != null'));
-    expect(frame, isNot(contains('SingleChildScrollView(')));
-    expect(frame, isNot(contains('ListTile(')));
-    expect(frame, isNot(contains('OutlinedButton.icon(')));
-    // 旧 scrim 背景结构（封面铺底 + 渐变遮罩）不得回归。
-    expect(frame, isNot(contains('Positioned.fill')));
-    expect(frame, isNot(contains('LinearGradient(')));
-  });
+      // 共享 MD3 对话框框 + 顶部可见封面块（限高 + letterbox 背景）。
+      expect(frame, contains('FushiDialogFrame('));
+      expect(frame, contains('ConstrainedBox('));
+      expect(frame, contains('ColoredBox('));
+      expect(frame, contains('tokens.surfaces.overlay'));
+      // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
+      expect(frame, contains('Wrap('));
+      expect(frame, contains('FushiActionChip('));
+      expect(frame, contains('FushiListItem('));
+      expect(frame, contains('TextButton('));
+      expect(frame, contains('final bool showLaunchAction;'));
+      expect(frame, contains('showLaunchAction &&'));
+      expect(frame, contains('launchLabel != null'));
+      expect(frame, contains('onLaunch != null'));
+      expect(frame, isNot(contains('SingleChildScrollView(')));
+      expect(frame, isNot(contains('ListTile(')));
+      expect(frame, isNot(contains('OutlinedButton.icon(')));
+      // 旧 scrim 背景结构（封面铺底 + 渐变遮罩）不得回归。
+      expect(frame, isNot(contains('Positioned.fill')));
+      expect(frame, isNot(contains('LinearGradient(')));
+    },
+  );
 
   test('settings renderer rows use shared MD3 row primitives', () {
     // schema 行渲染已从两个渲染器收口到共享 settings_schema_widgets.SettingsSchemaItem。
@@ -2012,8 +2071,19 @@ void main() {
       source.length,
     );
 
+    // 批量操作栏的 chrome（含全部间距）已收敛到共享 [BatchActionBar]，所以令牌
+    // 用法要到那份实现里断言；调用点只剩动作按钮，仍不得出现硬编码间距。
+    // 钉的是「批量操作栏不许硬编码间距」这个不变式，不是它写在哪个函数里。
+    final String sharedBar = File(
+      'lib/src/utils/components/batch_action_bar.dart',
+    ).readAsStringSync();
+    expect(sharedBar, contains('FushiDesignTokens'));
+    expect(sharedBar, contains('tokens.spacing'));
+    expect(sharedBar, isNot(contains('const SizedBox(height: 12)')));
+    expect(sharedBar, isNot(contains('const SizedBox(width: 12)')));
+    expect(sharedBar, isNot(contains('const SizedBox(width: 8)')));
+
     for (final String section in <String>[
-      batchActionBar,
       placeholder,
       batchTagIntentRow,
     ]) {
@@ -2030,10 +2100,7 @@ void main() {
       );
     }
     expect(batchActionBar, isNot(contains('const SizedBox(width: 4)')));
-    expect(
-      source,
-      isNot(contains('padding: const EdgeInsets.all(24)')),
-    );
+    expect(source, isNot(contains('padding: const EdgeInsets.all(24)')));
   });
 
   test('reader history title footer and drag target use shared MD3 tokens', () {
@@ -2104,10 +2171,7 @@ void main() {
     ).readAsStringSync();
     expect(sharedBatchTagFrame, contains('FushiDialogFrame('));
     expect(sharedBatchTagFrame, contains('FushiModalSheetFrame('));
-    for (final String dialogSource in <String>[
-      deleteDialog,
-      batchTagDialog,
-    ]) {
+    for (final String dialogSource in <String>[deleteDialog, batchTagDialog]) {
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
   });
@@ -2322,10 +2386,7 @@ void main() {
       expect(section, contains('tokens.type.metadata'));
       expect(section, contains('buildImportAction('));
       expect(section, isNot(contains('Theme.of(context).textTheme.bodySmall')));
-      expect(
-        section,
-        isNot(contains('Theme.of(context).colorScheme.primary')),
-      );
+      expect(section, isNot(contains('Theme.of(context).colorScheme.primary')));
       expect(
         section,
         isNot(contains('Theme.of(context).colorScheme.onSurfaceVariant')),
@@ -2340,8 +2401,9 @@ void main() {
   });
 
   test('sentenceAudioHighlight rematch controls use shared MD3 tokens', () {
-    final String source = File('lib/src/media/audiobook/subtitle_rematch.dart')
-        .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/subtitle_rematch.dart',
+    ).readAsStringSync();
     final String rematchSheet = _functionSource(
       source,
       'Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet)',
@@ -2404,8 +2466,9 @@ void main() {
   });
 
   test('anki integration dialogs use shared MD3 dialog chrome', () {
-    final String source =
-        File('lib/src/models/anki_integration.dart').readAsStringSync();
+    final String source = File(
+      'lib/src/models/anki_integration.dart',
+    ).readAsStringSync();
     final String apiFlow = _functionSource(
       source,
       'Future<void> showApiMessage(BuildContext? ctx) async',
@@ -2427,11 +2490,12 @@ void main() {
   test('update checker dialogs use shared MD3 dialog chrome', () {
     // TODO-584 拆分后: _showUpdateDialog/_showFallbackDialog 随 UpdateChecker
     // 门面进 release part; UpdateAvailableDialog/_DownloadOverlay 进 ui part。
-    final String releaseSource =
-        File('lib/src/utils/misc/update_checker_release.dart')
-            .readAsStringSync();
-    final String uiSource =
-        File('lib/src/utils/misc/update_checker_ui.dart').readAsStringSync();
+    final String releaseSource = File(
+      'lib/src/utils/misc/update_checker_release.dart',
+    ).readAsStringSync();
+    final String uiSource = File(
+      'lib/src/utils/misc/update_checker_ui.dart',
+    ).readAsStringSync();
     final String updateFlow = _functionSource(
       releaseSource,
       'static void _showUpdateDialog(',
@@ -2462,10 +2526,12 @@ void main() {
   });
 
   test('sync feedback dialogs use shared MD3 dialog chrome', () {
-    final String messageSource =
-        File('lib/src/sync/sync_message_dialog.dart').readAsStringSync();
-    final String compareSource =
-        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
+    final String messageSource = File(
+      'lib/src/sync/sync_message_dialog.dart',
+    ).readAsStringSync();
+    final String compareSource = File(
+      'lib/src/sync/sync_compare_dialog.dart',
+    ).readAsStringSync();
     // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，正向 showSyncMessage(
     // 与负向 alert 禁令都覆盖全部 part。
     final String settingsSource = readSyncSettingsSchemaSource();
@@ -2481,8 +2547,9 @@ void main() {
   });
 
   test('settings action dialogs use shared MD3 inset tokens', () {
-    final String source =
-        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+    final String source = File(
+      'lib/src/settings/settings_actions.dart',
+    ).readAsStringSync();
     final String confirmationDialog = _functionSource(
       source,
       'Future<bool> showSettingsConfirmationDialog(',
@@ -2536,8 +2603,9 @@ void main() {
     expect(sharedMenu, contains('tokens.radii.menuRadius'));
     expect(sharedMenu, contains('PopupMenuPosition.under'));
 
-    final String dropdown =
-        File('lib/src/utils/components/fushi_dropdown.dart').readAsStringSync();
+    final String dropdown = File(
+      'lib/src/utils/components/fushi_dropdown.dart',
+    ).readAsStringSync();
     expect(dropdown, contains('MenuAnchor('));
     expect(dropdown, contains('tokens.radii.menuRadius'));
     expect(dropdown, contains('tokens.surfaces.overlay'));
@@ -2547,8 +2615,10 @@ void main() {
 
     for (final String path in menuFiles) {
       final String source = File(path).readAsStringSync();
-      final String withoutSharedMenuItems =
-          source.replaceAll('FushiPopupMenuItem', 'SharedMenuItem');
+      final String withoutSharedMenuItems = source.replaceAll(
+        'FushiPopupMenuItem',
+        'SharedMenuItem',
+      );
 
       expect(
         source,
@@ -2569,8 +2639,9 @@ void main() {
   });
 
   test('transient routes use shared MD3 motion tokens', () {
-    final File motionFile =
-        File('lib/src/utils/components/fushi_motion_tokens.dart');
+    final File motionFile = File(
+      'lib/src/utils/components/fushi_motion_tokens.dart',
+    );
     expect(motionFile.existsSync(), isTrue);
 
     final String motion = motionFile.readAsStringSync();
@@ -2581,17 +2652,21 @@ void main() {
     expect(motion, contains('Easing.emphasizedDecelerate'));
     expect(motion, contains('Easing.emphasizedAccelerate'));
 
-    final String dialog =
-        File('lib/src/utils/misc/show_app_dialog.dart').readAsStringSync();
-    final String sheet =
-        File('lib/src/utils/adaptive/adaptive_widgets.dart').readAsStringSync();
+    final String dialog = File(
+      'lib/src/utils/misc/show_app_dialog.dart',
+    ).readAsStringSync();
+    final String sheet = File(
+      'lib/src/utils/adaptive/adaptive_widgets.dart',
+    ).readAsStringSync();
     final String menu = File(
       'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
-    final String home =
-        File('lib/src/pages/implementations/home_page.dart').readAsStringSync();
-    final String sync =
-        File('lib/src/sync/sync_compare_dialog.dart').readAsStringSync();
+    final String home = File(
+      'lib/src/pages/implementations/home_page.dart',
+    ).readAsStringSync();
+    final String sync = File(
+      'lib/src/sync/sync_compare_dialog.dart',
+    ).readAsStringSync();
 
     expect(dialog, contains('animationStyle: fushiMd3DialogAnimationStyle'));
     expect(sheet, contains('sheetAnimationStyle: fushiMd3SheetAnimationStyle'));
@@ -2603,9 +2678,9 @@ void main() {
   });
 
   test('shared MD3 primitives animate state changes', () {
-    final String motion =
-        File('lib/src/utils/components/fushi_motion_tokens.dart')
-            .readAsStringSync();
+    final String motion = File(
+      'lib/src/utils/components/fushi_motion_tokens.dart',
+    ).readAsStringSync();
     expect(motion, contains('fushiMd3StateDuration'));
     expect(motion, contains('fushiMd3StateCurve'));
     expect(motion, contains('Durations.short4'));
@@ -2628,9 +2703,11 @@ void main() {
       expect(
         section.contains('duration: fushiMd3StateDuration') ||
             section.contains(
-                'duration: einkSafeDuration(context, fushiMd3StateDuration)'),
+              'duration: einkSafeDuration(context, fushiMd3StateDuration)',
+            ),
         isTrue,
-        reason: '$start section must animate with fushiMd3StateDuration '
+        reason:
+            '$start section must animate with fushiMd3StateDuration '
             '(optionally eink-gated via einkSafeDuration)',
       );
       expect(section, contains('curve: fushiMd3StateCurve'));
@@ -2696,7 +2773,8 @@ void main() {
     expect(
       managerTile,
       isNot(
-          contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)')),
+        contains('const EdgeInsets.symmetric(horizontal: 12, vertical: 8)'),
+      ),
     );
     expect(managerTile, isNot(contains('const SizedBox(width: 8)')));
     expect(managerTile, isNot(contains('const SizedBox(height: 8)')));
@@ -2711,8 +2789,9 @@ void main() {
     expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
     expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
-    final String sourcePage =
-        File('lib/src/pages/base_source_page.dart').readAsStringSync();
+    final String sourcePage = File(
+      'lib/src/pages/base_source_page.dart',
+    ).readAsStringSync();
     final String dictionaryLoading = _functionSource(
       sourcePage,
       'Widget buildDictionaryLoading()',
@@ -2744,8 +2823,11 @@ void main() {
     expect(mineButton, contains('Icons.add_circle_outline'));
     expect(mineButton, contains('tokens.spacing'));
     expect(mineButton, contains('creator_export_card'));
-    expect(containsIdentifierCall(mineButton, 'IconButton'), isFalse,
-        reason: '制卡按钮不得用裸 IconButton（含 IconButton.filledTonal）');
+    expect(
+      containsIdentifierCall(mineButton, 'IconButton'),
+      isFalse,
+      reason: '制卡按钮不得用裸 IconButton（含 IconButton.filledTonal）',
+    );
     expect(mineButton, isNot(contains("Text('+")));
     expect(mineButton, isNot(contains('FushiFocusable(')));
 
@@ -2776,10 +2858,16 @@ void main() {
       'lib/src/media/sources/reader_fushi_source.dart',
     ]) {
       final String source = File(path).readAsStringSync();
-      expect(source, isNot(contains('material_floating_search_bar')),
-          reason: '$path still imports legacy floating search');
-      expect(source, isNot(contains('FloatingSearchBar')),
-          reason: '$path still depends on legacy floating search widgets');
+      expect(
+        source,
+        isNot(contains('material_floating_search_bar')),
+        reason: '$path still imports legacy floating search',
+      );
+      expect(
+        source,
+        isNot(contains('FloatingSearchBar')),
+        reason: '$path still depends on legacy floating search widgets',
+      );
     }
   });
 
@@ -2819,8 +2907,9 @@ void main() {
   });
 
   test('theme selector uses shared MD3 swatches', () {
-    final String source =
-        File('lib/src/settings/settings_actions.dart').readAsStringSync();
+    final String source = File(
+      'lib/src/settings/settings_actions.dart',
+    ).readAsStringSync();
     final String themeSelector = _functionSource(
       source,
       'Widget buildThemeSelector(SettingsContext settingsContext)',
@@ -2962,10 +3051,7 @@ void main() {
     // Converged: no bespoke section-header class, no standalone scaffold/list.
     expect(source, isNot(contains('class _ScopeSectionHeader')));
     expect(source, contains('buildSettingsDetailShell('));
-    expect(
-      source,
-      isNot(contains('const EdgeInsets.fromLTRB(16, 16, 8, 4)')),
-    );
+    expect(source, isNot(contains('const EdgeInsets.fromLTRB(16, 16, 8, 4)')));
   });
 
   test('shortcut binding editor uses shared MD3 tag chips', () {
@@ -3094,10 +3180,7 @@ void main() {
     expect(editorBuild, contains('FushiSelectableChip('));
     expect(editorBuild, contains('FushiEditorPanel('));
     expect(editorBuild, isNot(contains('height: 40')));
-    expect(
-      editorBuild,
-      isNot(contains('const EdgeInsets.only(right: 6)')),
-    );
+    expect(editorBuild, isNot(contains('const EdgeInsets.only(right: 6)')));
     expect(
       editorBuild,
       isNot(
@@ -3170,26 +3253,31 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('media item cover override uses MD3 card chrome instead of fake input',
-      () {
-    final String source = File(
-      'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
-    ).readAsStringSync();
-    final String coverField = _sectionSource(
-      source,
-      'class MediaItemCoverOverrideField',
-      source.length,
-    );
+  test(
+    'media item cover override uses MD3 card chrome instead of fake input',
+    () {
+      final String source = File(
+        'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
+      ).readAsStringSync();
+      final String coverField = _sectionSource(
+        source,
+        'class MediaItemCoverOverrideField',
+        source.length,
+      );
 
-    expect(coverField, contains('FushiCard('));
-    expect(coverField, contains('FushiDesignTokens.of(context)'));
-    expect(coverField, contains('tokens.spacing'));
-    expect(coverField, isNot(contains('FushiTextField(')));
-    expect(coverField, isNot(contains('TextStyle(color: Colors.transparent)')));
-    expect(coverField, isNot(contains('contentPadding: EdgeInsets.zero')));
-    expect(coverField, isNot(contains('const BoxConstraints(')));
-    expect(coverField, isNot(contains('Spacing.of(context)')));
-  });
+      expect(coverField, contains('FushiCard('));
+      expect(coverField, contains('FushiDesignTokens.of(context)'));
+      expect(coverField, contains('tokens.spacing'));
+      expect(coverField, isNot(contains('FushiTextField(')));
+      expect(
+        coverField,
+        isNot(contains('TextStyle(color: Colors.transparent)')),
+      );
+      expect(coverField, isNot(contains('contentPadding: EdgeInsets.zero')));
+      expect(coverField, isNot(contains('const BoxConstraints(')));
+      expect(coverField, isNot(contains('Spacing.of(context)')));
+    },
+  );
 
   test('page chrome surfaces use shared MD3 spacing tokens', () {
     final String homeSource = File(
@@ -3362,9 +3450,7 @@ void main() {
     }
     expect(
       searchHeader,
-      isNot(
-        contains('isCupertinoPlatform(context) ? 8 : 16'),
-      ),
+      isNot(contains('isCupertinoPlatform(context) ? 8 : 16')),
     );
     expect(
       historyList,
@@ -3374,7 +3460,8 @@ void main() {
       historyList,
       isNot(
         contains(
-            'margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2)'),
+          'margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2)',
+        ),
       ),
     );
     expect(historyList, isNot(contains('const SizedBox(width: 4)')));
@@ -3454,18 +3541,12 @@ void main() {
       source.length,
     );
 
-    expect(
-      selectionFlow,
-      contains('DictionaryDownloadSelectionDialogFrame('),
-    );
+    expect(selectionFlow, contains('DictionaryDownloadSelectionDialogFrame('));
     expect(selectionFlow, isNot(contains('adaptiveAlertDialog(')));
     expect(progressFlow, contains('DictionaryDownloadProgressDialog('));
     expect(progressFlow, isNot(contains('adaptiveAlertDialog(')));
 
-    for (final String dialogSource in <String>[
-      selectionFrame,
-      progressFrame,
-    ]) {
+    for (final String dialogSource in <String>[selectionFrame, progressFrame]) {
       expect(dialogSource, contains('FushiDialogFrame('));
       expect(dialogSource, contains('FushiModalSheetFrame('));
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
@@ -3580,24 +3661,19 @@ const Set<String> _wholeIdentifierTokens = <String>{
   'surfaceContainerHighest',
 };
 
-String _functionSource(
-  String source,
-  String startToken,
-  String endToken,
-) {
+String _functionSource(String source, String startToken, String endToken) {
   final int start = source.indexOf(startToken);
   final int end = source.indexOf(endToken, start + startToken.length);
   expect(start, isNonNegative, reason: 'missing $startToken');
-  expect(end, greaterThan(start),
-      reason: 'missing $endToken after $startToken');
+  expect(
+    end,
+    greaterThan(start),
+    reason: 'missing $endToken after $startToken',
+  );
   return source.substring(start, end);
 }
 
-String _sectionSource(
-  String source,
-  String startToken,
-  Object endToken,
-) {
+String _sectionSource(String source, String startToken, Object endToken) {
   final int start = source.lastIndexOf(startToken);
   expect(start, isNonNegative, reason: 'missing final $startToken');
   final int end = switch (endToken) {
@@ -3605,8 +3681,11 @@ String _sectionSource(
     final String token => source.indexOf(token, start + startToken.length),
     _ => throw ArgumentError.value(endToken, 'endToken'),
   };
-  expect(end, greaterThan(start),
-      reason: 'missing $endToken after $startToken');
+  expect(
+    end,
+    greaterThan(start),
+    reason: 'missing $endToken after $startToken',
+  );
   return source.substring(start, end);
 }
 
@@ -3618,6 +3697,8 @@ String _nextWidgetAfter(String source, String startToken) {
     source.substring(start + startToken.length),
   );
   expect(match, isNotNull, reason: 'missing next Widget after $startToken');
-  return source.substring(start + startToken.length + match!.start + 1,
-      start + startToken.length + match.start + match.group(0)!.length);
+  return source.substring(
+    start + startToken.length + match!.start + 1,
+    start + startToken.length + match.start + match.group(0)!.length,
+  );
 }
