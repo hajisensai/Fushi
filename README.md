@@ -18,6 +18,10 @@
 </div>
 
 
+## Maintainer
+
+Fushi is maintained by [hajisensai](https://github.com/hajisensai). Contact: [hajisensai@gmail.com](mailto:hajisensai@gmail.com).
+
 ## Platform Support
 
 | Platform | Status | Rendering / UI |
