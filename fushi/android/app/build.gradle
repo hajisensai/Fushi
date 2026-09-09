@@ -127,6 +127,10 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // v101 统一更新提醒引入 flutter_local_notifications：它自 v10 起用 java.time
+        // 做定时通知的向后兼容，**即使只发即时通知也必须开 desugaring**（插件 README
+        // 明写）。不开则 Android 构建在 dex 阶段直接失败。
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -261,6 +265,9 @@ flutter {
 }
 
 dependencies {
+    // 与 compileOptions 的 coreLibraryDesugaringEnabled 成对；版本对齐
+    // flutter_local_notifications 自身 android/build.gradle 里钉的那个。
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation "androidx.webkit:webkit:1.12.0"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
