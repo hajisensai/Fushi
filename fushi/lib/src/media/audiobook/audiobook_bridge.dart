@@ -802,12 +802,18 @@ class TtuTocEntry {
     required this.label,
     this.parent,
     this.depth = 0,
+    this.fragment,
   });
 
   final int index;
   final String label;
   final String? parent;
   final int depth;
+
+  /// 目录项 href 里的 `#fragment`（章内锚），没有则 null。EPUB 里「一个 xhtml
+  /// 装整卷、目录靠锚点分节」是常见结构：那些条目的 [index] 全指向同一个 spine
+  /// 章，**只有 fragment 能区分它们**。丢掉它就等于每一条都跳章首。
+  final String? fragment;
 
   bool get isHeader => index < 0;
 }

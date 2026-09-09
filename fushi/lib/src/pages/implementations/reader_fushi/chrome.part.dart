@@ -1901,8 +1901,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
               coverPath: _book?.coverHref,
             ),
       readerProgress: (_currentChapter, _book!.chapters.length),
-      onJumpSection: (index) async {
-        _navigateToChapter(index, manual: true);
+      onJumpSection: (int index, String? fragment) async {
+        await _jumpToChapterAnchor(index, fragment);
       },
       // BUG-782：退出必须走 maybePop() 而非直接 pop()。直接 Navigator.pop()
       // 会绕过阅读器 PopScope(canPop:false) 的 onPopInvokedWithResult，使
@@ -2063,9 +2063,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
             },
       presentation: presentation,
       onOpenStatistics: _openReadingStatistics,
-      // 导航抽屉（Ctrl+F / 工具栏目录键）打开即聚焦书内搜索框。
-      autofocusSearch:
-          presentation == ReaderQuickSettingsPresentation.sideSheetNavigation,
+      // 导航抽屉（Ctrl+F / 工具栏目录键）在桌面端打开即聚焦书内搜索框；移动端
+      // 不 autofocus，否则软键盘顶起来就把章节目录压掉半屏（见判据文档）。
+      autofocusSearch: readerNavigationAutofocusesSearch(
+        navigationPresentation:
+            presentation == ReaderQuickSettingsPresentation.sideSheetNavigation,
+        desktop: isDesktopPlatform,
+      ),
       initialSideSheetTab: _chrome.lastSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,

@@ -46,6 +46,21 @@ bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
     (window.width >= kFushiSettingsWideThreshold &&
         window.height >= kFushiSettingsWideMinHeight);
 
+/// 导航抽屉打开时是否把焦点直接放进「书内搜索」输入框。
+///
+/// 桌面端有物理键盘：Ctrl+F / 工具栏目录键唤出导航抽屉后，光标落进搜索框才是
+/// 「搜索」这个动作的自然续写，不占任何屏幕空间。
+///
+/// 移动端相反——autofocus 会立刻顶起软键盘，把本来就是主角的**章节目录**压到
+/// 剩下的半屏里（抽屉是全高路由，键盘的 viewInsets 直接吃掉下半部分），用户
+/// 十次里有九次只是想点一章跳过去，却先要按返回键收键盘。故手机 / 平板一律
+/// 不 autofocus：点搜索框仍照常弹键盘，主动权交回用户。
+bool readerNavigationAutofocusesSearch({
+  required bool navigationPresentation,
+  required bool desktop,
+}) =>
+    navigationPresentation && desktop;
+
 /// 顶部工具栏的顶部预留高。
 ///
 ///  * 未启用 → 0；

@@ -74,10 +74,22 @@ void main() {
       )),
       reason: 'Reverse chapter-edge page turns are user-initiated.',
     );
+    // BUG-2385：目录点击与书内链接现在共用同一个落地口 _jumpToChapterAnchor，
+    // 「用户发起」的判据随之搬进那个 helper —— 不变式没变（两条路径都 manual），
+    // 变的是它写在哪里。这里钉住入口 + helper 内部两侧，避免哪一天 helper 悄悄
+    // 把 manual 丢了。
+    expect(
+      readerSource,
+      contains('await _jumpToChapterAnchor(link.chapterIndex, link.fragment);'),
+      reason: 'Internal links must go through the shared anchor entry point.',
+    );
     expect(
       readerSource,
       matches(RegExp(
-        r'_navigateToChapterWithFragment\(\s*link\.chapterIndex,\s*link\.fragment,\s*manual: true,',
+        r'Future<void> _jumpToChapterAnchor\([\s\S]*?'
+        r'_navigateToChapter\(index, manual: true\);[\s\S]*?'
+        r'_jumpToFragmentInPlace\(fragment\);[\s\S]*?'
+        r'_navigateToChapterWithFragment\(index, fragment, manual: true\);',
         multiLine: true,
       )),
       reason: 'Internal TOC/link jumps are user-initiated.',
