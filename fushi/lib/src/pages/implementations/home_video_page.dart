@@ -103,6 +103,7 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -6859,10 +6860,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
-  /// 与书架 [reader_fushi_history_page._buildBatchActionBar] 对齐。
+  /// chrome 收敛到共享 [BatchActionBar]（与书架同一实现），本页只提供动作按钮与可用态。
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
     final int selectedCount =
         _selectedUids.length + _selectedCollectionIds.length;
@@ -6875,64 +6875,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           looseCount: _selectedUids.length,
         ) !=
         CombineTier.noop;
-    return Material(
-      elevation: 6,
-      color: theme.colorScheme.surfaceContainer,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.gap,
-          ),
-          child: Row(
-            children: <Widget>[
-              Text(
-                t.batch_selected_count(n: selectedCount),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(width: tokens.spacing.gap),
-              TextButton(
-                onPressed: _selectAllVisible,
-                child: Text(t.batch_select_all),
-              ),
-              TextButton(
-                onPressed: _invertSelection,
-                child: Text(t.batch_invert_selection),
-              ),
-              const Spacer(),
-              FushiIconButton(
-                key: const ValueKey<String>('home_video_batch_combine'),
-                enabled: canCombine,
-                onTap: _batchCombineIntoSeries,
-                // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-                // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-                icon: Icons.playlist_add,
-                tooltip: t.combine_into_series,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
-                enabled: _selectedUids.isNotEmpty,
-                onTap: _batchShowTagPicker,
-                icon: Icons.sell_outlined,
-                tooltip: t.tag_label,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                key: const ValueKey<String>('home_video_batch_delete'),
-                enabled: hasSelection,
-                onTap: _batchDeleteConfirm,
-                icon: Icons.delete_outline,
-                tooltip: t.dialog_delete,
-                enabledColor: theme.colorScheme.error,
-              ),
-            ],
-          ),
+    return BatchActionBar(
+      selectedCount: selectedCount,
+      onSelectAll: _selectAllVisible,
+      onInvertSelection: _invertSelection,
+      actions: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('home_video_batch_combine'),
+          enabled: canCombine,
+          onTap: _batchCombineIntoSeries,
+          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+          icon: Icons.playlist_add,
+          tooltip: t.combine_into_series,
         ),
-      ),
+        FushiIconButton(
+          // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
+          enabled: _selectedUids.isNotEmpty,
+          onTap: _batchShowTagPicker,
+          icon: Icons.sell_outlined,
+          tooltip: t.tag_label,
+        ),
+        FushiIconButton(
+          key: const ValueKey<String>('home_video_batch_delete'),
+          enabled: hasSelection,
+          onTap: _batchDeleteConfirm,
+          icon: Icons.delete_outline,
+          tooltip: t.dialog_delete,
+          enabledColor: theme.colorScheme.error,
+        ),
+      ],
     );
   }
 

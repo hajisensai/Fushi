@@ -4542,5 +4542,9 @@
   "collection_rescrape": "Rescrape metadata and cover",
   "collection_rescrape_not_planned": "This collection isn't in any local video source's scrape plan",
   "collection_rescrape_started": "Rescrape queued",
-  "collection_rescrape_failed": "Rescrape failed"
+  "collection_rescrape_failed": "Rescrape failed",
+  "download_batch_done": "$n task(s) processed",
+  "download_batch_unsupported": "$n skipped (not supported)",
+  "download_batch_failed": "$n failed",
+  "download_batch_delete_confirm": "Delete $n download task(s)?"
 }

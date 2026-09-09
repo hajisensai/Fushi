@@ -1157,7 +1157,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final SubtitleSearchSeed seed = await _buildJimakuSeed(query);
     final SubtitleCollectionSpec? collection = await _subtitleCollectionSpec();
     if (!context.mounted) return;
-    final String? downloaded = await SubtitleWorkbenchPage.open(
+    final List<String>? downloadedPaths = await SubtitleWorkbenchPage.open(
       context,
       host: AppSubtitleWorkbenchHost(appModel),
       saveDirectory: saveDir,
@@ -1172,7 +1172,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    if (downloaded == null || !context.mounted) return;
+    if (downloadedPaths == null ||
+        downloadedPaths.isEmpty ||
+        !context.mounted) {
+      return;
+    }
+    // 多选下载：**全部**登记进字幕轨列表，只把第一条（用户最先勾的那条）应用为
+    // 当前字幕。其余就在轨列表里等着切——一次下 5 条却只有 1 条能找得到，等于
+    // 另外 4 条白下了。
+    for (final String extra in downloadedPaths.skip(1)) {
+      _registerImportedSubtitleSource(extra);
+    }
+    final String downloaded = downloadedPaths.first;
     if (_isRemote) {
       // 远端：内存应用，不写本地 DB（_applyRemoteSubtitle 自带 cue 为空时的失败提示
       // + 成功 OSD），不叠加额外提示。

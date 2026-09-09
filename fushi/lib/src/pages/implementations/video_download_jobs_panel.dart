@@ -4,6 +4,7 @@ import 'package:fushi/src/media/downloads/download_task_browser.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -24,93 +25,41 @@ import 'package:fushi/src/media/video/download/video_download_pipeline_service.d
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 import 'package:fushi/utils.dart';
 
+// 确认框已迁到 media/downloads 共享层（browser 也要用它做批量删除，
+// 而 panel 自己 import 了 browser——留在这里会构成循环 import）。
+// 窄 show 的 re-export 让三个既有 import 点不必改动。
+export 'package:fushi/src/media/downloads/download_task_delete_confirm.dart'
+    show showDownloadTaskDeleteConfirm;
+
 typedef VideoDownloadJobAction = Future<void> Function(
   VideoDownloadJobRow job,
 );
 
+/// 能否重试：只有真失败 / 需要处理的任务能重跑；legacy 导入报告不是可重跑任务。
+bool videoDownloadJobCanRetry(VideoDownloadJobRow job) =>
+    job.resourceProvider != 'legacy-import-report' &&
+    (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+        job.lifecycle == VideoDownloadJobLifecycle.failed);
+
+/// 能否恢复：`cancelled` 是**用户暂停**这一生命周期的冻结 DB 值（见
+/// `VideoDownloadPipelineService.cancelJob`：它不删已下载数据、底层调
+/// pauseTorrent），所以「已暂停」才是它的真实语义。
+bool videoDownloadJobCanResume(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.cancelled;
+
+/// 能否暂停：只有正在跑的任务。对应 `cancelJob`（名为 cancel 实为 pause）。
+bool videoDownloadJobCanPause(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.active;
+
+/// 优先级只对「还会被取走」的任务有意义。已完成 / 已暂停的任务调了也不会重新
+/// 排队，露出来只会让人以为能插队。
+bool videoDownloadJobCanSetPriority(VideoDownloadJobRow job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.active ||
+    job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
+
 typedef VideoDownloadJobLocationLoader = Future<String?> Function(
   VideoDownloadJobRow job,
 );
-
-/// 下载任务「删除任务」确认框：正文 + 「同时删除已下载文件」勾选框。返回 null=取消，
-/// 否则为勾选值。v78 任务面板与旧番剧计划面板共用，两处口径一致；测试按
-/// `video-download-job-delete-files-<keySuffix>` / `…-confirm-<keySuffix>` 定位。
-///
-/// [offerDeleteFiles]=false 时不渲染勾选框、恒返回 false：删已下载的数据只能由下载
-/// 后端执行，本机没有可用后端时那个勾选框兑现不了（与两个删除确认框「兑现不了就不
-/// 显示」同一纪律）。
-Future<bool?> showDownloadTaskDeleteConfirm(
-  BuildContext context, {
-  required String title,
-  required String keySuffix,
-  bool offerDeleteFiles = true,
-}) {
-  bool deleteFiles = false;
-  return showAppDialog<bool>(
-    context: context,
-    builder: (BuildContext dialogContext) => StatefulBuilder(
-      builder: (
-        BuildContext context,
-        void Function(void Function()) setDialogState,
-      ) =>
-          AlertDialog(
-        title: Text(t.download_task_delete),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(t.download_task_delete_confirm(title: title)),
-            if (offerDeleteFiles) ...<Widget>[
-              const SizedBox(height: 12),
-              // 共享 MD3 行 + 裸 [Checkbox] 作 leading，整行 onTap 翻转——等价旧
-              // CheckboxListTile 的取值/回调/标题，但行高与内边距走设计令牌。
-              //
-              // 这里刻意**不**换成两个删除确认框用的 [DeleteConfirmCheckboxRow]：
-              // 那个行基于 `AdaptiveSettingsRow`，内部有 `LayoutBuilder`，而
-              // `AlertDialog` 会对 content 做 intrinsic 测量——
-              // 「LayoutBuilder does not support returning intrinsic dimensions」
-              // 直接崩。两个删除确认框用的是 `FushiModalSheetFrame`，不测 intrinsic。
-              // 要统一得先把本弹窗换成同一个 frame，那是另一件事。
-              FushiListItem(
-                key: ValueKey<String>(
-                  'video-download-job-delete-files-$keySuffix',
-                ),
-                density: FushiListDensity.compact,
-                padding: EdgeInsets.zero,
-                onTap: () => setDialogState(
-                  () => deleteFiles = !deleteFiles,
-                ),
-                leading: Checkbox(
-                  value: deleteFiles,
-                  onChanged: (bool? value) => setDialogState(
-                    () => deleteFiles = value ?? false,
-                  ),
-                ),
-                title: Text(t.download_task_delete_files),
-              ),
-            ],
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            key: ValueKey<String>(
-              'video-download-job-delete-confirm-$keySuffix',
-            ),
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              offerDeleteFiles && deleteFiles,
-            ),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
-    ),
-  );
-}
 
 typedef VideoDownloadJobDeleteAction = Future<void> Function(
   VideoDownloadJobRow job, {
@@ -412,6 +361,41 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
     }
   }
 
+  /// 统一列表里一条 video job 支持的批量动作。
+  ///
+  /// 可用判据一律复用卡片同款纯函数（videoDownloadJobCan*），不在这里抄第二份——
+  /// 两份判据必然漂移，最后表现为「卡片上有按钮、批量却跳过它」。
+  ///
+  /// 这里直连注入的回调、不经 [_runAction]：那层的 busy 门与逐条 SnackBar 是
+  /// **单条**语义，批量有自己的进度与聚合报告，套上去会让一批操作弹出一串错误条。
+  DownloadTaskActions _entryActions(VideoDownloadJobRow job) {
+    final VideoDownloadJobAction? onPause = widget.onCancel;
+    final VideoDownloadJobAction? onResume = widget.onResume;
+    final VideoDownloadJobAction? onRetry = widget.onRetry;
+    final VideoDownloadJobDeleteAction? onDelete = widget.onDelete;
+    final VideoDownloadJobPriorityAction? onSetPriority = widget.onSetPriority;
+    return DownloadTaskActions(
+      pause: onPause != null && videoDownloadJobCanPause(job)
+          ? () => onPause(job)
+          : null,
+      resume: onResume != null && videoDownloadJobCanResume(job)
+          ? () => onResume(job)
+          : null,
+      retry: onRetry != null && videoDownloadJobCanRetry(job)
+          ? () => onRetry(job)
+          : null,
+      delete: onDelete == null
+          ? null
+          : ({required bool deleteFiles}) =>
+              onDelete(job, deleteFiles: deleteFiles),
+      // durable pipeline 的 deleteJob 自己会去后端摘种子删数据，能删。
+      deletesFiles: onDelete != null,
+      setPriority: onSetPriority != null && videoDownloadJobCanSetPriority(job)
+          ? (int priority) => onSetPriority(job, priority)
+          : null,
+    );
+  }
+
   Future<void> _runAction(
     VideoDownloadJobRow job,
     VideoDownloadJobAction action,
@@ -637,6 +621,7 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       additionalTasks: widget.additionalTasks,
       metricsLoader: widget.metricsLoader,
       selectedSizeLoader: widget.selectedSizeLoader,
+      actionsFor: _entryActions,
       itemBuilder: (
         BuildContext context,
         VideoDownloadJobRow job,
@@ -719,9 +704,13 @@ class _VideoDownloadJobList extends StatefulWidget {
     required this.metricsLoader,
     required this.selectedSizeLoader,
     required this.itemBuilder,
+    required this.actionsFor,
     required this.unified,
     required this.additionalTasks,
   });
+
+  /// 统一列表里一条 video job 支持的批量动作，由 panel 按注入的回调组装。
+  final DownloadTaskActions Function(VideoDownloadJobRow job) actionsFor;
 
   final bool unified;
   final List<DownloadTaskEntry> additionalTasks;
@@ -860,6 +849,7 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
             if (job.resourceTitle != null) job.resourceTitle!,
             job.resourceProvider,
           ],
+          actions: widget.actionsFor(job),
           builder: (BuildContext context) => widget.itemBuilder(
             context,
             job,
@@ -927,20 +917,13 @@ class _VideoDownloadJobCard extends StatelessWidget {
   final String Function(String lifecycle)? lifecycleLabel;
   final String Function(String stage)? stageLabel;
 
-  bool get _canRetry =>
-      job.resourceProvider != 'legacy-import-report' &&
-      (job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
-          job.lifecycle == VideoDownloadJobLifecycle.failed);
+  bool get _canRetry => videoDownloadJobCanRetry(job);
 
-  bool get _canResume => job.lifecycle == VideoDownloadJobLifecycle.cancelled;
+  bool get _canResume => videoDownloadJobCanResume(job);
 
-  bool get _canCancel => job.lifecycle == VideoDownloadJobLifecycle.active;
+  bool get _canCancel => videoDownloadJobCanPause(job);
 
-  /// 优先级只对「还会被取走」的任务有意义。已完成 / 已取消的任务调了也不会重新
-  /// 排队，露出来只会让人以为能插队。
-  bool get _canSetPriority =>
-      job.lifecycle == VideoDownloadJobLifecycle.active ||
-      job.lifecycle == VideoDownloadJobLifecycle.needsAttention;
+  bool get _canSetPriority => videoDownloadJobCanSetPriority(job);
 
   /// 数值 -> 档位名。非三档的历史值（理论上不会有，但 DB 不拦）按最接近的一档
   /// 显示，不显示裸数字——用户看到 `优先级 · 7` 只会困惑。

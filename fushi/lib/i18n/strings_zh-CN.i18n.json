@@ -4542,5 +4542,9 @@
   "collection_rescrape": "重新刮削资料与封面",
   "collection_rescrape_not_planned": "这个合集不在任何本地视频来源的刮削计划里",
   "collection_rescrape_started": "已开始重新刮削",
-  "collection_rescrape_failed": "重新刮削失败"
+  "collection_rescrape_failed": "重新刮削失败",
+  "download_batch_done": "已处理 $n 项",
+  "download_batch_unsupported": "$n 项不支持此操作",
+  "download_batch_failed": "$n 项失败",
+  "download_batch_delete_confirm": "删除 $n 个下载任务？"
 }

@@ -98,6 +98,7 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 

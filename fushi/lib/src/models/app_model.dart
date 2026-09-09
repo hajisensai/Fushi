@@ -3794,7 +3794,16 @@ class AppModel with ChangeNotifier {
   }
 
   /// qBittorrent WebUI 连接配置（番剧下载）；null = 未配置未启用。
-  QbConnectionConfig? get qbConnectionConfig => prefsRepo.qbConnectionConfig;
+  ///
+  /// prefs 还没接上时返回 null 而不是让 [prefsRepo] 的 `!` 抛：本 getter 的契约本来
+  /// 就是「null = 未配置」，而「还没读到偏好」正是未配置的一种。判据必须放在这一层
+  /// 而不是调用方（如 `torrentBackendReady`）——**覆盖了本 getter 的子类根本不经
+  /// prefs**，在调用方判会把它们一起误判成未就绪（实测打翻 6 条下载弹窗用例）。
+  ///
+  /// 起因：下载弹窗的批量多选把 `torrentBackendReady` 拉上了 **build 路径**（每个
+  /// 任务条目算一次 pauseCapable），build 里抛异常等于整块界面炸掉。
+  QbConnectionConfig? get qbConnectionConfig =>
+      isPreferencesReady ? prefsRepo.qbConnectionConfig : null;
 
   Future<void> setQbConnectionConfig(QbConnectionConfig? config) async {
     await prefsRepo.setQbConnectionConfig(config);
