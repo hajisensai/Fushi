@@ -7,7 +7,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 
 import '../../../helpers/source_guard.dart';
 
-/// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（AniList + TMDB），
+/// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（MAL 搜索 + AniList + TMDB），
 /// 来源选择不随代理状态分叉降级。
 ///
 /// 两层钉法：
@@ -18,7 +18,7 @@ import '../../../helpers/source_guard.dart';
 ///    杜绝将来有人把来源选择接到代理状态上。下载域曾有的独立代理三态
 ///    （`DownloadNetworkProxy*`）已并入全局代理项，同样列入禁引清单防复活。
 void main() {
-  test('production discovery service aggregates only AniList + TMDB', () {
+  test('production discovery service aggregates MAL search + AniList + TMDB', () {
     final VideoDiscoveryService service = VideoDiscoveryService.production(
       const VideoSourceScrapeGlobalConfig(tmdbApiKey: 'test-key'),
     );
@@ -26,7 +26,7 @@ void main() {
     final Set<String> providerIds = service.providerIdsForTesting.toSet();
     expect(
       providerIds,
-      <String>{'anilist', 'tmdb'},
+      <String>{'mal', 'anilist', 'tmdb'},
     );
     expect(providerIds, isNot(contains('bangumi')));
   });

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
@@ -45,19 +46,25 @@ class VideoDiscoveryService {
       language: config.locale,
     );
     final AniListVideoMetadataProvider anilist = AniListVideoMetadataProvider();
+    final MalVideoMetadataProvider mal = MalVideoMetadataProvider();
     return VideoDiscoveryService(
       providers: <VideoDiscoveryProvider>[
+        // MAL has separate anime season identities even when AniList is down.
+        // Share the detail provider; the service owns its lifetime.
+        VideoMetadataSearchDiscoveryProvider(
+          provider: mal,
+          categories: const <VideoDiscoveryCategory>{
+            VideoDiscoveryCategory.anime,
+          },
+          priority: 5,
+        ),
         AniListVideoDiscoveryProvider(),
         TmdbVideoDiscoveryProvider(
           apiKey: config.tmdbApiKey,
           language: config.locale,
         ),
       ],
-      metadataProviders: <VideoMetadataProvider>[
-        MalVideoMetadataProvider(),
-        tmdb,
-        anilist,
-      ],
+      metadataProviders: <VideoMetadataProvider>[mal, tmdb, anilist],
       closesProviders: true,
     );
   }
