@@ -34,6 +34,7 @@ import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
@@ -1088,6 +1089,9 @@ class _HomeDashboardPageState
           controller: _dashboardScrollController,
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
+            // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
+            // SizedBox.shrink），没有更新的日子首页不多一块空卡。
+            UpdatesDashboardBanner(service: appModel.updateFeedService),
             // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
             if (appModel.isMigrationReadonly) ...<Widget>[
               _MigrationReadonlyBanner(appModel: appModel),

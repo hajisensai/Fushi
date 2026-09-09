@@ -10,7 +10,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
+import 'package:fushi/src/updates/update_check_scheduler.dart';
+import 'package:fushi/src/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
+import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -910,6 +913,53 @@ class AppModel with ChangeNotifier {
             ? LocalUpdateNotifier(appName: 'Fushi')
             : const NoopUpdateNotifier(),
       );
+
+  UpdateCheckScheduler? _updateCheckScheduler;
+
+  /// 启动后台更新检查（漫画新章 + 漫画扩展）。幂等，重复调用不再起第二个定时器。
+  ///
+  /// **番剧不在这里**：订阅服务有自己的相位学习节奏。**app 版本也不在这里**：
+  /// 启动期的 `UpdateChecker.scheduleCheck` 已经在查，那条链路顺手把结果投给更新
+  /// 中心即可（见 home_page 的 onUpdateAvailable），再排一个定时器只会重复请求。
+  ///
+  /// 漫画两个 probe 都**不主动拉起 Mihon runtime**：`mihonManager` 是懒建的，为了
+  /// 后台检查而在启动时拉起一个 sidecar 进程，对没用过在线漫画的用户是纯亏。没起
+  /// 来就这一轮跳过，等用户用过一次之后的检查自然会覆盖。
+  void startUpdateChecks() {
+    if (_updateCheckScheduler != null) return;
+    final UpdateFeedService feed = updateFeedService;
+    final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
+      prefs: prefsRepo,
+      isKindEnabled: feed.isKindEnabled,
+      probes: <UpdateFeedKind, UpdateProbe>{
+        UpdateFeedKind.mangaChapter: () async {
+          if (_mihonManager == null) return;
+          await runOnlineMangaUpdateProbe(
+            database: database,
+            serviceFor: onlineMangaLibraryService,
+          );
+        },
+        UpdateFeedKind.mangaExtension: () async {
+          final MihonManager? manager = _mihonManager;
+          if (manager == null) return;
+          await runMangaExtensionUpdateProbe(
+            feed: feed,
+            refreshStores: manager.refreshStores,
+            available: () => manager.available,
+            installed: () => manager.installed,
+          );
+        },
+      },
+    );
+    _updateCheckScheduler = scheduler;
+    scheduler.start();
+  }
+
+  Future<void> stopUpdateChecks() async {
+    final UpdateCheckScheduler? scheduler = _updateCheckScheduler;
+    _updateCheckScheduler = null;
+    await scheduler?.stop();
+  }
 
   /// TODO-855: last prefs-version this process has reconciled its cache against.
   /// Used by [refreshPrefCacheIfChanged] so the warm-reuse :popup process only

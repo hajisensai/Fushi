@@ -11,6 +11,7 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -416,6 +417,73 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.appModel.updateAutoInstall,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setUpdateAutoInstall(value);
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
+      //
+      // 这一节**不经 `AppModel.updateFeedService`**，直接读写同一批 pref 键：
+      // service 本身也只是这些键的读写者，而 schema 会在没有数据库的 widget
+      // 测试里被构建，走 service 等于给一个纯偏好项挂上整条 DB 依赖。
+      SettingsSection(
+        title: t.updates_notify_section,
+        items: <SettingsItem>[
+          for (final (UpdateFeedKind kind, String title, String hint, IconData icon)
+              in <(UpdateFeedKind, String, String, IconData)>[
+            (
+              UpdateFeedKind.videoEpisode,
+              t.updates_notify_video_episode,
+              t.updates_notify_video_episode_hint,
+              Icons.movie_outlined,
+            ),
+            (
+              UpdateFeedKind.mangaChapter,
+              t.updates_notify_manga_chapter,
+              t.updates_notify_manga_chapter_hint,
+              Icons.photo_library_outlined,
+            ),
+            (
+              UpdateFeedKind.mangaExtension,
+              t.updates_notify_manga_extension,
+              t.updates_notify_manga_extension_hint,
+              Icons.extension_outlined,
+            ),
+            (
+              UpdateFeedKind.appRelease,
+              t.updates_notify_app_release,
+              t.updates_notify_app_release_hint,
+              Icons.system_update_outlined,
+            ),
+          ])
+            SettingsSwitchItem(
+              id: 'system.updates.${kind.dbValue}',
+              title: title,
+              subtitle: hint,
+              icon: icon,
+              value: (SettingsContext settingsContext) =>
+                  settingsContext.appModel.prefsRepo
+                      .getPref(kind.enabledPrefKey, defaultValue: true) as bool,
+              onChanged: (SettingsContext settingsContext, bool value) async {
+                await settingsContext.appModel.prefsRepo
+                    .setPref(kind.enabledPrefKey, value);
+                settingsContext.refresh();
+              },
+            ),
+          SettingsSwitchItem(
+            id: 'system.updates.system_notifications',
+            title: t.updates_system_notifications,
+            subtitle: t.updates_system_notifications_hint,
+            icon: Icons.notifications_active_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.getPref(
+                  kUpdateSystemNotificationsPref,
+                  defaultValue: true,
+                ) as bool,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setPref(kUpdateSystemNotificationsPref, value);
               settingsContext.refresh();
             },
           ),

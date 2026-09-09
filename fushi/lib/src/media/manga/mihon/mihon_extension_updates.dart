@@ -23,6 +23,16 @@ class MihonExtensionUpdate {
   int get versionCode => available.extensionVersionCode;
 }
 
+/// 单条判据：这个仓库条目相对已装版本算不算「有更新」。
+///
+/// 扩展页的角标与 [mihonExtensionUpdates] 共用它——同一个问题只能有一份答案，
+/// 否则「页面上亮了角标但提醒没发」这类不一致迟早出现。
+bool hasMihonExtensionUpdate({
+  required MihonAvailableExtension available,
+  required MangaExtensionRow? installed,
+}) =>
+    installed != null && available.extensionVersionCode > installed.versionCode;
+
 /// 已装扩展中，仓库索引里版本更高的那些。
 ///
 /// 判据是 `>` 而不是 `!=`，与扩展页角标逐字一致（BUG-1996）：两侧同量（DB 列存
@@ -44,8 +54,10 @@ List<MihonExtensionUpdate> mihonExtensionUpdates({
       <String, MihonExtensionUpdate>{};
   for (final MihonAvailableExtension candidate in available) {
     final MangaExtensionRow? row = installedByPackage[candidate.packageName];
-    if (row == null) continue;
-    if (candidate.extensionVersionCode <= row.versionCode) continue;
+    if (row == null ||
+        !hasMihonExtensionUpdate(available: candidate, installed: row)) {
+      continue;
+    }
     final MihonExtensionUpdate? current = best[candidate.packageName];
     if (current != null &&
         current.available.extensionVersionCode >=
