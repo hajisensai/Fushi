@@ -9,7 +9,11 @@ import 'package:fushi/src/media/video/video_sidecar.dart'
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/collection_manifest.dart';
 import 'package:fushi/src/sync/manga_sync_package.dart'
-    show importMangaPackageFile, isMangaPackage, repackageMangaBook;
+    show
+        hasExportableMangaContent,
+        importMangaPackageFile,
+        isMangaPackage,
+        repackageMangaBook;
 import 'package:fushi/src/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
