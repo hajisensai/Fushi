@@ -1,0 +1,6 @@
+## BUG-2383 · VN专属设置渐显与图片语义仍停在M0
+- **报告**：2026-09-09（用户：盘点 VN 缺口后要求“全部根本性修复”）
+- **真实性**：✅ 真 bug，且是四个同属 M0 未收口的契约缺口：① `settings_schema_reading.dart` 只暴露 VN 视图选项，`reader_settings.dart` 已有的 6 个 VN 偏好没有全局或书内 UI；② `reader_fushi/webview.part.dart` 用 `vnClickAdvanceM0ForceOn=true` / `vnRevealSpeedM0ForceZero=0` 覆盖两个真实偏好；③ `reader_fushi/chrome.part.dart` 的 `_didScroll` 只认 `scrolled`，VN 渐显返回 `revealed` 会被误判章末；④ `reader_visual_novel_scripts.dart` 的 `fushiReaderMediaSemantics.setupReaderImage(s)` 是 no-op，导致图片防剧透在 VN 完全失效。
+- **[x] ① 已修复** — `8552f5cc4c`：六项偏好全部接入全局设置和书内快捷设置并按 VN/句子模式动态门控；配置直接进入 VN 引擎，不再被 M0 常量覆盖；翻页结果拆成“输入已消费”与“真实滚屏”，`revealed` 阻止跨章但不误跑 caret 跨页重锚；三种阅读 shell 共用稳定图片 reveal key / 会话活集，VN 在逐屏克隆完成后真实加遮罩，点击与焦点揭开同时登记 JS 活集和 Dart 会话集。
+- **[x] ② 已加自动化测试** — 新增 `fushi/test/settings/vn_settings_m1_test.dart`，覆盖六项 UI 的模式可见性、书内投影、持久化写穿与每次提交触发 VN 重建；扩展 `vn_shell_smoke_test.dart`、`vn_view_mode_three_state_guard_test.dart`、`todo1289_image_reveal_persist_guard_test.dart`，覆盖渐显消费契约、真实偏好装配、图片语义同源和 VN 遮罩。最终 10 个定向 suite 共 59 项通过，设置 schema coverage 通过，全量 `flutter analyze --no-pub` 无问题。
+- **备注**：同分支含前置滚轮修复 `d3be7f7401`（BUG-2364）。尚未在 Windows/Android/iOS 真 WebView 上逐项验收渐显手感、六项设置切换和 VN 图片遮罩；代码与自动化验证通过不冒充设备 E2E。
