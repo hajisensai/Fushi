@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// 无头复现辅助（TODO-1229 / BUG-594）：把**真实**分页 / 连续横排 shell（`ReaderPaginationScripts
@@ -20,6 +21,13 @@ void main() {
     final String paginated = ReaderPaginationScripts.paginatedShellSource();
     final String continuous = ReaderPaginationScripts.continuousShellSource();
     final String tmp = Directory.systemTemp.path;
+    for (final bool continuousMode in <bool>[false, true]) {
+      File(
+        '$tmp/fushi_full_engine_${continuousMode ? 'continuous' : 'paginated'}.js',
+      ).writeAsStringSync(
+        readerFushiEngineSource(continuousMode: continuousMode),
+      );
+    }
     File('$tmp/fushi_shell_paginated.html').writeAsStringSync(paginated);
     File('$tmp/fushi_shell_continuous.html').writeAsStringSync(continuous);
     File('$tmp/fushi_shell_fwd.html').writeAsStringSync(paginated);

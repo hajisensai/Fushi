@@ -1235,6 +1235,32 @@ window.__fushiInstallShell = function(C) {
     }
     return false;
   },
+  // WebKit vertical text can give a collapsed caret range an all-zero rect,
+  // even for an off-screen character. Measure that character instead; treating
+  // the empty rect as a real origin restores every saved anchor to chapter start.
+  characterAnchorRect: function(range) {
+    var rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) return rect;
+    var node = range.startContainer;
+    if (!node || node.nodeType !== 3) return null;
+    var text = node.textContent || '';
+    var start = range.startOffset;
+    if (start >= text.length) return null;
+    var glyph = range.cloneRange();
+    // A learning-unit boundary can precede collapsed whitespace. Skip its
+    // empty boxes, measuring one code point at a time rather than a union rect.
+    while (start < text.length) {
+      var end = start + (text.codePointAt(start) > 0xFFFF ? 2 : 1);
+      glyph.setStart(node, start);
+      glyph.setEnd(node, end);
+      var rects = glyph.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
+      }
+      start = end;
+    }
+    return null;
+  },
   // TODO-736 A-1：连续模式进度的「字符级」分子。移植安卓 reader-continuous.js
   // countCharsBeforeViewport（:92-151）：返回本文本节点里**已滚出视口首边**的可匹配字符
   // 数（与 countChars / isMatchableChar 同口径作分子，calculateProgress 总字符作分母）。
@@ -2868,7 +2894,8 @@ $_sharedJs
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
     range.collapse(true);
-    var rect = range.getBoundingClientRect();
+    var rect = this.characterAnchorRect(range);
+    if (!rect) return;
     var context = this.getScrollContext();
     var scrollOffset = context.vertical
       ? (context.scrollEl.scrollTop + rect.top)
@@ -3496,14 +3523,17 @@ $_sharedJs
     }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
-    var rect = startRange.getBoundingClientRect();
+    var rect = this.characterAnchorRect(startRange);
+    if (!rect) return;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var cs = getComputedStyle(document.body);
     if (vertical) {
       var pr = parseFloat(cs.paddingRight) || 0;
       var targetX = window.innerWidth - pr;
-      var startScrollV = root.scrollLeft + (rect.left - targetX);
+      // Align the glyph's right edge with the content band. Aligning its left
+      // edge puts the whole glyph outside the viewport after expanding a caret.
+      var startScrollV = root.scrollLeft + (rect.right - targetX);
       // 竖排可见区在内容宽度轴（chrome-* inset 仍是顶/底 padding 与本轴正交），无「句尾被
       // 底栏切」语义 → 句首贴右沿即可（与旧版一致）。
       root.scrollLeft = startScrollV;
@@ -3513,8 +3543,8 @@ $_sharedJs
     // 句尾区间锚（BUG-461）：仅横排、且调用方给了句尾偏移时启用。
     if (typeof endCharOffset === 'number' && endCharOffset > charOffset) {
       var endRange = this.collapsedRangeAtCharOffset(endCharOffset);
-      if (endRange) {
-        var endRect = endRange.getBoundingClientRect();
+      var endRect = endRange ? this.characterAnchorRect(endRange) : null;
+      if (endRect) {
         var lineH = parseFloat(cs.lineHeight);
         if (!(lineH > 0)) lineH = (parseFloat(cs.fontSize) || 16) * 1.5;
         // 句尾远边 = 句尾字符底边（含其所在行高），相对句首起始边的尺寸。
