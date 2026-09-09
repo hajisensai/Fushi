@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2136 条。点号进各自文件。
+> 共 2137 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2327](bugs/BUG-2327-library-search-skips-srt-remote.md) | ✅ | ✅ | 库页搜索漏过 SRT 有声书卡与远端占位卡 |
 | [BUG-2326](bugs/BUG-2326-lyrics-mode-top-chrome.md) | ✅ | ✅ | 歌词模式没有顶栏，也没有回到阅读模式的入口 |
 | [BUG-2325](bugs/BUG-2325-audiobook-follow-flips-back-one-page.md) | ✅ | ✅ | 有声书跟随播放时视口自己退回前一页，下一句又翻回来 |
 | [BUG-2286](bugs/BUG-2286-episode-only-filenames-split-into-cards.md) | ✅ | ✅ | 文件名只剩集号时每集各成一张卡，整部番被拆成一堆分开的条目 |

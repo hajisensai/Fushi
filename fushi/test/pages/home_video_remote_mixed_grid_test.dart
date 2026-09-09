@@ -278,6 +278,61 @@ void main() {
       reason: '远端目录拉取失败时占位卡不出现',
     );
   });
+
+  testWidgets('BUG-2327：搜索同口径裁掉不命中的远端占位卡，本地与远端命中都保留',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/local-hit'),
+      title: Value('Local Sakamoto'),
+      videoPath: Value('/abs/local-hit.mp4'),
+    ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/local-miss'),
+      title: Value('Local Other'),
+      videoPath: Value('/abs/local-miss.mp4'),
+    ));
+
+    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
+      <RemoteVideoInfo>[
+        RemoteVideoInfo(id: 'remote/hit', title: 'Remote Sakamoto'),
+        RemoteVideoInfo(id: 'remote/miss', title: 'Remote Other'),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_miss')),
+      findsOneWidget,
+      reason: '空查询不过滤',
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('video_search_field')),
+      'sakamoto',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('home_video_video/local-hit')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_hit')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home_video_video/local-miss')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_miss')),
+      findsNothing,
+      reason: '不命中的远端占位卡必须被搜索裁掉（BUG-2327）',
+    );
+  });
 }
 
 class _ListFakeRemoteVideoClient implements RemoteVideoClient {
