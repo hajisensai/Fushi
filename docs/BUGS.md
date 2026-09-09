@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2112 条。点号进各自文件。
+> 共 2113 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2333](bugs/BUG-2333-reader-favorite-coordinate-contract.md) | ✅ | ✅ | 收藏拖选范围与高亮及音频坐标混用 |
 | [BUG-2281](bugs/BUG-2281-dashboard-hover-frame.md) | ✅ | ✅ | 首页继续卡片悬停放大被列表裁剪 |
 | [BUG-2253](bugs/BUG-2253-gal-japanese-locale-auto-by-default.md) | ✅ | ✅ | 游戏日文转区默认自动，没选过就替用户改了启动方式 |
 | [BUG-2252](bugs/BUG-2252-opensubtitles-key-stub-double-quotes.md) | ✅ | ✅ | CI 注入 OpenSubtitles key 生成双引号字面量，analyze 门必红 |

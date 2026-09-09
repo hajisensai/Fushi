@@ -1,0 +1,16 @@
+## BUG-2333 · 收藏拖选范围与高亮及音频坐标混用
+- **报告**：2026-09-09（用户：拖选灰底文字后右键收藏，黄色高亮落到前文）
+- **真实性**：✅ 真 bug；使用生产 JS 在真实 Chrome DOM 复现并回归。
+- **根因**：
+  - `fushi/lib/src/reader/reader_selection_scripts.dart:1814` 的 `getNormalizedOffset` 已按学习单位计数，`fushi/lib/src/media/audiobook/highlight_bridge.dart:166` 却按可匹配字符计数；收藏位置直接跨坐标使用。
+  - `fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart:2712` 的右键收藏读取菜单失焦后的原生选区，并优先使用扩展句子及上次查词收藏状态；原生元素边界下钻首子节点还会改变真实选区。
+  - 查词 cue、句子音频、插图归属和上下文句导出也消费学习单位作为音频 UTF-16 字符坐标；音频恢复/跨章/歌词保存把音频字符位置除以学习单位总数。
+- **[x] ① 已实现根因修复** — 提交 `1ec221380c`（`fix(reader): separate favorite and audio coordinate contracts`）。
+  - 收藏操作捕获选区及章号，严格保存选中文字，并按本轮内容查询精确删除 ID。
+  - 收藏高亮使用正文文本锚，持久位置仅用于区分重复内容；旧记录同样验证文本，歧义/失配不画到别处。CSS Highlight 与旧 WebView span 路径共用解析。
+  - 原生选区按真实 DOM Range 剪裁可见文本，排除 ruby 注音，正确处理元素子节点边界。
+  - 保留历史学习单位字段供导航；新增明确的音频匹配字段，缺失时不跨坐标回退。
+  - 音频 fragment 经章节 DOM 文本节点映射为学习范围，覆盖恢复、跨章与歌词收藏/退出保存；保留合法近似匹配，拒绝越界和半个代理对。索引最多缓存三章。
+- **[x] ② 自动化测试** — `reader_favorite_coordinates_test.dart/.js`（21 个真实 Chrome DOM 场景）、`reader_audio_coordinate_contract_test.dart`、`reader_audio_position_test.dart`，更新收藏入口和跨章契约守卫。
+- **验证**：`flutter test test/reader test/media/audiobook/cross_chapter_no_zero_test.dart test/media/audiobook/mining_audio_clip_test.dart test/pages/favorited_sentence_stats_bug893_test.dart test/pages/reader_text_context_menu_scale_guard_test.dart --no-pub`：1,616 项通过，退出 0（含 21 个 Chrome DOM 场景）。`flutter analyze --no-pub`：No issues found，退出 0。`bug.dart check`：2113 条，号唯一，索引同步。
+- **备注**：未取得截图对应的原书与用户运行设备，尚未复测真实 App 的“拖选→右键收藏”原始路径；未运行全平台构建和本地全量 Flutter 测试。旧对齐 fragment 没有正文版本指纹，合法范围内的历史失效对齐无法仅凭范围识别，本次不搜索或猜测其它 cue。
