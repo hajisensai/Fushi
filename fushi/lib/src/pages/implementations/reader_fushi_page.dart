@@ -40,6 +40,7 @@ import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
@@ -3148,23 +3149,35 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
               onPointerDown: _handleReaderPointerDown,
               child: PopScope(
                 canPop: false,
-                onPopInvokedWithResult: (didPop, dynamic result) async {
+                onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
-                  // BUG-782 加固：onWillPop 是异步长操作（落位置 flush + closeMedia
-                  // 约百毫秒），窗口期内第二次退出触发（ESC/手柄 B 连按、退出按钮后
-                  // 再 ESC）会并发再跑一条 onWillPop——首条完成 pop 掉阅读器后，第二
-                  // 条的 nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动
-                  // 同步重复执行）。并发退出触发合并为一次。
+                  // BUG-782 加固：窗口期内第二次退出触发（ESC/手柄 B 连按、退出
+                  // 按钮后再 ESC）会再跑一条退出——首条 pop 掉阅读器后，第二条的
+                  // nav.pop() 会把下面的书架也弹掉（连退两级 + closeMedia/自动同步
+                  // 重复执行）。并发退出触发合并为一次；下面的 exit 是同步执行的，
+                  // 跑完这一页的路由就没了，所以这道门只上不下。
                   if (_popInProgress) return;
                   _popInProgress = true;
-                  try {
-                    final nav = Navigator.of(context);
-                    final bool allow = await onWillPop();
-                    if (allow && mounted) nav.pop();
-                  } finally {
-                    // onWillPop 异常逃逸时复位，用户可重试退出而非永久困死。
-                    _popInProgress = false;
-                  }
+                  final NavigatorState nav = Navigator.of(context);
+                  // BUG-2119 口径（视频页早已是这个写法）：**退出不等落库**。
+                  // onWillPop 里是位置 flush + closeMedia 两笔 drift 写，而一条
+                  // SQLITE_BUSY 后未 reset 的写语句能让整条连接上每次 COMMIT 都抛错
+                  // （2026-09-04 真机）；旧写法 `await onWillPop(); nav.pop();` 一旦
+                  // 挂在那个 await 上，nav.pop() 就永远到不了，而 `_popInProgress`
+                  // 的复位又在 finally 里，于是后续每一次返回都被静默吞掉。iOS 既
+                  // 没有系统返回键、`canPop: false` 又关掉了侧滑，只能杀进程重开。
+                  // （[flushWithBoundedProbe] 只给链上的实时探针加了上界，落库与
+                  // closeMedia 这两段 await 的上界就是这里给的：不等。）
+                  exitAfterPersist(
+                    persist: onWillPop,
+                    exit: () => nav.pop(),
+                    onPersistError: (Object error, StackTrace stack) =>
+                        ErrorLogService.instance.log(
+                      'ReaderFushi.exitFlush',
+                      error,
+                      stack,
+                    ),
+                  );
                 },
                 child: Scaffold(
                   backgroundColor: bgColor,
@@ -3270,6 +3283,40 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       // it never detaches the Positioned's StackParentData (which would
                       // drop the bar to the Stack's top-start alignment).
                       _buildBottomChrome(),
+                      // BUG-2230 同口径（网页流媒体页 / 漫画页早已如此）：**出口不是
+                      // 内容的一部分，不随内容存亡**。本页的返回箭头挂在顶栏上，而
+                      // 顶栏的可见条件含 `_hasEverLoaded`——它只在 WebView 首屏渲染
+                      // 成功后才置位。EPUB 损坏 / 解压目录缺失 / WebView 起不来 /
+                      // 音频槽解析挂住时整页只剩一个转圈：iOS 没有系统返回键，
+                      // `canPop: false` 又关掉了侧滑，而「点空白唤回顶栏」在非
+                      // Windows 走的是页内 JS 回传（见 [hostOwnsWebViewPointerInput]），
+                      // 内容没加载出来就压根不存在。三条通道同时落空，用户只能杀
+                      // 进程。未就绪时无条件挂一枚返回键。
+                      if (!_hasEverLoaded)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: SafeArea(
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Material(
+                                type: MaterialType.circle,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surface.withValues(alpha: 0.7),
+                                child: IconButton(
+                                  key: const ValueKey<String>(
+                                    'reader_unloaded_back',
+                                  ),
+                                  tooltip: t.back,
+                                  icon: const Icon(Icons.arrow_back),
+                                  onPressed: () =>
+                                      Navigator.of(context).maybePop(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

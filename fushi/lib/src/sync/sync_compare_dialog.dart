@@ -1169,8 +1169,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             overflowSpacing: tokens.spacing.gap,
             children: [
               TextButton(
-                onPressed: _applying ? null : () => Navigator.pop(context),
-                child: Text(t.sync_compare_close),
+                // 应用期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既
+                // 没有系统返回键、对话框路由也没有侧滑返回，而 `_applyChoices` 先
+                // 抢全局同步互斥锁（后台自动云同步在跑就一直等）、拿到锁后逐本做
+                // 网络传输，全程没有取消令牌——禁用这颗按钮等于把用户锁死在框里。
+                // 由 [SyncConflictPrompter] 自动弹出的那条更严重：用户根本没主动
+                // 进来。关闭只解绑 UI，传输继续在后台跑完（下面每处 setState /
+                // Navigator.pop 都有 mounted 守卫）。
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  _applying ? t.dialog_background_close : t.sync_compare_close,
+                ),
               ),
               if (_entries != null && _entries!.isNotEmpty)
                 FilledButton(

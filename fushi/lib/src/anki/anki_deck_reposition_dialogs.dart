@@ -441,6 +441,16 @@ Future<T?> runAnkiRepositionWithProgress<T>(
                       requested ? null : () => cancelRequested.value = true,
                   child: Text(t.dialog_cancel),
                 ),
+              )
+            else
+              // 不可中止时也必须留一枚出口：本框是 `barrierDismissible: false` +
+              // `PopScope(canPop: false)` + actions 全空，写回/撤销都是逐张卡打
+              // AnkiConnect 的分钟级串行任务，桌面 Anki 一睡眠就没有尽头。iOS 既
+              // 没有系统返回键、对话框路由也没有侧滑返回，用户只能杀进程。这颗
+              // 按钮只把 UI 与任务解绑（任务继续在 Anki 端跑完），不谎称能中止。
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(t.dialog_background_close),
               ),
           ],
         ),

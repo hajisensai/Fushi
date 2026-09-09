@@ -438,7 +438,19 @@ class _DictionaryDialogPageState extends BasePageState {
                   DictionaryDialogDeletePage(name: progressName),
             );
 
-            await run();
+            Object? failure;
+            StackTrace? failureStack;
+            try {
+              await run();
+            } catch (e, stack) {
+              // 删除抛异常（DB 被占用、文件 IO 失败）时也必须往下走收尾：进度页是
+              // `barrierDismissible: false` + `PopScope(canPop: false)`，iOS 没有
+              // 系统返回键、侧滑又被 canPop 关掉，异常路径不 pop 就是把用户永久
+              // 锁在转圈框里，只能杀进程。
+              ErrorLogService.instance.log('DictionaryDialog.delete', e, stack);
+              failure = e;
+              failureStack = stack;
+            }
 
             if (mounted) {
               Navigator.pop(context);
@@ -447,6 +459,16 @@ class _DictionaryDialogPageState extends BasePageState {
             if (mounted) {
               Navigator.pop(context);
               setState(() {});
+            }
+
+            if (failure != null && mounted) {
+              unawaited(
+                showErrorDetails(
+                  context,
+                  title: title,
+                  error: '$failure\n$failureStack',
+                ),
+              );
             }
           },
         ),
