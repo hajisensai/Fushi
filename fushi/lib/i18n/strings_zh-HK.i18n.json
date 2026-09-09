@@ -4211,7 +4211,7 @@
   "video_shader_import_done": "已匯入 $count 個着色器",
   "video_shader_import_from_mpv": "從本機 mpv 匯入",
   "video_shader_import_from_mpv_hint": "自動搜索本機 mpv；未找到時可手動選擇 mpv 目錄。",
-  "video_shader_mobile_perf_hint": "在手機上，着色器只在標準 GPU 算繪路徑下生效，實際效果因機型 GPU 而異；高檔位可能掉幀或發熱。建議先試低／中檔，並在本機確認效果。",
+  "video_shader_mobile_perf_hint": "手機上的中/高/極高檔使用「只去模糊、不放大」的 Anime4K 鏈：放大 pass 已移除——螢幕不比片源更大，放大收益有限卻會佔滿 GPU，連帶整個 app 變卡。實際效果仍因機型 GPU 而異，掉幀或發熱就往下退一檔。",
   "video_shader_mpv_dir_current": "mpv 資料夾：$path",
   "video_shader_mpv_dir_empty": "此資料夾找不到着色器",
   "video_shader_mpv_not_found": "找不到本機 mpv 着色器",
@@ -4526,5 +4526,9 @@
   "download_request_failed": "Could not create the download. Check the download settings and task list, then try again.",
   "download_resource_resolve_failed": "Could not fetch the download resource. Check the network and proxy settings, then try again.",
   "download_torrent_invalid": "The source returned invalid torrent data. Retry later or choose another source.",
-  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source."
+  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source.",
+  "video_shader_tier_low_hint_mobile": "mpv's built-in sharpening (spline36 on phones). No download, no extra GPU passes. The safe choice if anything above this drops frames.",
+  "video_shader_tier_medium_hint_mobile": "Anime4K deblur (S) at the source resolution. No upscaling passes, so the cost does not scale with your screen. Start here on phones.",
+  "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
+  "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames."
 }

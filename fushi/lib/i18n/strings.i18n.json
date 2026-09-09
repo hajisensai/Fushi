@@ -4211,7 +4211,7 @@
   "video_shader_import_done": "Imported $count shader(s)",
   "video_shader_import_from_mpv": "Import from local mpv",
   "video_shader_import_from_mpv_hint": "Search local mpv automatically, or choose an mpv folder when none is found.",
-  "video_shader_mobile_perf_hint": "On phones, shaders apply only on the standard GPU render path and effectiveness varies by device GPU; higher tiers may drop frames or heat up. Try Low/Medium first and check the result on your device.",
+  "video_shader_mobile_perf_hint": "On phones, Medium/High/Ultra use deblur-only Anime4K chains: the upscaling passes are left out, because your screen is no larger than the source, so they would cost a lot of GPU for little gain and slow the whole app down. Results still vary by device GPU, and shaders only apply on the standard GPU render path — drop a tier if you see dropped frames or heat.",
   "video_shader_mpv_dir_current": "mpv folder: $path",
   "video_shader_mpv_dir_empty": "No shaders found in that folder",
   "video_shader_mpv_not_found": "No local mpv shaders found",
@@ -4526,5 +4526,9 @@
   "download_request_failed": "Could not create the download. Check the download settings and task list, then try again.",
   "download_resource_resolve_failed": "Could not fetch the download resource. Check the network and proxy settings, then try again.",
   "download_torrent_invalid": "The source returned invalid torrent data. Retry later or choose another source.",
-  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source."
+  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source.",
+  "video_shader_tier_low_hint_mobile": "mpv's built-in sharpening (spline36 on phones). No download, no extra GPU passes. The safe choice if anything above this drops frames.",
+  "video_shader_tier_medium_hint_mobile": "Anime4K deblur (S) at the source resolution. No upscaling passes, so the cost does not scale with your screen. Start here on phones.",
+  "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
+  "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames."
 }

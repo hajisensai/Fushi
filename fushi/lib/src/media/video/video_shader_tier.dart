@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 
 /// 视频画质增强「档位」：把用户面前的「无/低/中/高/极高」五档，投影到底层两套**正交**
@@ -51,7 +53,8 @@ class VideoShaderTierSpec {
       preset == null ? const <String>[] : preset!.fileNames;
 }
 
-/// 五档的权威定义表（顺序即 UI 从左到右 无→极高）。
+/// **桌面**五档的权威定义表（顺序即 UI 从左到右 无→极高）。移动端另有一张
+/// [kMobileVideoShaderTiers]，取哪张一律经 [shaderTiersFor] 投影，别直接引用本表。
 final List<VideoShaderTierSpec> kVideoShaderTiers = <VideoShaderTierSpec>[
   VideoShaderTierSpec(
     tier: VideoShaderTier.off,
@@ -85,13 +88,69 @@ final List<VideoShaderTierSpec> kVideoShaderTiers = <VideoShaderTierSpec>[
   ),
 ];
 
+/// **移动端**五档定义表。与桌面表**同语义、不同投影**：档位含义（无→极高，越高越强）
+/// 一字不变，变的只是每档映射到哪条 GLSL 链。
+///
+/// 无/低 与桌面完全相同（低=纯 mpv 内置缩放，移动端回落 spline36，见
+/// `resolveScaleProperties`，零 GLSL）。中/高/极高 换成**只修复、不放大**的链
+/// （[kAnime4kMobileRestoreSPreset] 等三个常量，理由见其 doc）：桌面链的开销主体是两个
+/// `Upscale_CNN_x2` + 两个 `AutoDownscalePre`，而手机屏幕不比片源更大，放大收益被显示
+/// 分辨率截断、代价却全额付；GPU 占满时连带 Flutter raster 一起卡（用户实测：手机上选
+/// 高于「低」的任意档，播放和整个 app 一起卡）。
+///
+/// 这与 `resolveScaleProperties` 早就为移动端做的降级（EWA polar → spline36，TODO-1196）
+/// 是同一条判断——那次只做了「内置缩放」这一半，GLSL 这一半一直漏着，本表补上。
+final List<VideoShaderTierSpec> kMobileVideoShaderTiers = <VideoShaderTierSpec>[
+  VideoShaderTierSpec(
+    tier: VideoShaderTier.off,
+    id: 'off',
+    highQuality: false,
+    preset: null,
+  ),
+  VideoShaderTierSpec(
+    tier: VideoShaderTier.low,
+    id: 'low',
+    highQuality: true,
+    preset: null,
+  ),
+  VideoShaderTierSpec(
+    tier: VideoShaderTier.medium,
+    id: 'medium',
+    highQuality: true,
+    preset: kAnime4kMobileRestoreSPreset,
+  ),
+  VideoShaderTierSpec(
+    tier: VideoShaderTier.high,
+    id: 'high',
+    highQuality: true,
+    preset: kAnime4kMobileRestoreMPreset,
+  ),
+  VideoShaderTierSpec(
+    tier: VideoShaderTier.ultra,
+    id: 'ultra',
+    highQuality: true,
+    preset: kAnime4kMobileRestoreMSoftPreset,
+  ),
+];
+
+/// **纯函数**：取本平台该用的档位表（[kVideoShaderTiers] / [kMobileVideoShaderTiers]）。
+///
+/// 与 `resolveScaleProperties` 同签名范式：[isMobile] 显式传入便于单测两端都断言，不传
+/// 则按运行平台判定。**本文件所有档位查询都经这里取表**，保证「选档写入」与「反查回读」
+/// 用的是同一张表——两边取不同表会让刚选的档立刻显示成「自定义」。
+List<VideoShaderTierSpec> shaderTiersFor({bool? isMobile}) {
+  final bool mobile = isMobile ?? (Platform.isAndroid || Platform.isIOS);
+  return mobile ? kMobileVideoShaderTiers : kVideoShaderTiers;
+}
+
 /// 取某档的规格。纯函数。
-VideoShaderTierSpec shaderTierSpec(VideoShaderTier tier) =>
-    kVideoShaderTiers.firstWhere((VideoShaderTierSpec s) => s.tier == tier);
+VideoShaderTierSpec shaderTierSpec(VideoShaderTier tier, {bool? isMobile}) =>
+    shaderTiersFor(isMobile: isMobile)
+        .firstWhere((VideoShaderTierSpec s) => s.tier == tier);
 
 /// 该档需要的 GLSL 文件名集合（落盘 + 启用）。纯函数。
-List<String> shaderFilesForTier(VideoShaderTier tier) =>
-    shaderTierSpec(tier).shaderFileNames;
+List<String> shaderFilesForTier(VideoShaderTier tier, {bool? isMobile}) =>
+    shaderTierSpec(tier, isMobile: isMobile).shaderFileNames;
 
 /// **纯函数**：从当前底层状态（内置缩放开关 [highQuality] + 已启用 GLSL 文件名集
 /// [enabledShaders]）反查命中的档位；都不命中（用户手工勾了非标准集）返回 null=自定义。
@@ -101,9 +160,10 @@ List<String> shaderFilesForTier(VideoShaderTier tier) =>
 VideoShaderTier? tierFromState({
   required bool highQuality,
   required List<String> enabledShaders,
+  bool? isMobile,
 }) {
   final Set<String> enabled = enabledShaders.toSet();
-  for (final VideoShaderTierSpec spec in kVideoShaderTiers) {
+  for (final VideoShaderTierSpec spec in shaderTiersFor(isMobile: isMobile)) {
     if (spec.highQuality != highQuality) continue;
     final Set<String> want = spec.shaderFileNames.toSet();
     if (_setEquals(enabled, want)) return spec.tier;
@@ -122,10 +182,11 @@ bool _setEquals(Set<String> a, Set<String> b) =>
 /// 不会让 libmpv 加载缺失路径。
 List<String> orderedEnabledForTier(
   VideoShaderTier tier,
-  Set<String> presentFiles,
-) {
+  Set<String> presentFiles, {
+  bool? isMobile,
+}) {
   return <String>[
-    for (final String name in shaderFilesForTier(tier))
+    for (final String name in shaderFilesForTier(tier, isMobile: isMobile))
       if (presentFiles.contains(name)) name,
   ];
 }

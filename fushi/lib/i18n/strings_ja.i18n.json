@@ -4211,7 +4211,7 @@
   "video_shader_import_done": "シェーダーを $count 件インポートしました",
   "video_shader_import_from_mpv": "ローカルの mpv からインポート",
   "video_shader_import_from_mpv_hint": "自动搜索本机 mpv；未找到时可手动选择 mpv 目录。",
-  "video_shader_mobile_perf_hint": "スマートフォンでは標準の GPU 描画パス上でのみシェーダーが有効になり、効果は機種の GPU によって異なります。高い段階ではコマ落ちや発熱が起こる場合があります。まずは低／中で試し、実機で効果を確認してください。",
+  "video_shader_mobile_perf_hint": "スマホでは中／高／最高は「デブラーのみ・拡大なし」の Anime4K チェーンを使います。画面はソースより大きくないため、拡大パスは効果が薄い割に GPU を占有し、アプリ全体が重くなります。効果は機種の GPU によります。コマ落ちや発熱があれば一段階下げてください。",
   "video_shader_mpv_dir_current": "mpv フォルダ：$path",
   "video_shader_mpv_dir_empty": "そのフォルダにシェーダーが見つかりません",
   "video_shader_mpv_not_found": "ローカルの mpv シェーダーが見つかりません",
@@ -4526,5 +4526,9 @@
   "download_request_failed": "Could not create the download. Check the download settings and task list, then try again.",
   "download_resource_resolve_failed": "Could not fetch the download resource. Check the network and proxy settings, then try again.",
   "download_torrent_invalid": "The source returned invalid torrent data. Retry later or choose another source.",
-  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source."
+  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source.",
+  "video_shader_tier_low_hint_mobile": "mpv's built-in sharpening (spline36 on phones). No download, no extra GPU passes. The safe choice if anything above this drops frames.",
+  "video_shader_tier_medium_hint_mobile": "Anime4K deblur (S) at the source resolution. No upscaling passes, so the cost does not scale with your screen. Start here on phones.",
+  "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
+  "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames."
 }

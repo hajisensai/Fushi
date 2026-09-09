@@ -4211,7 +4211,7 @@
   "video_shader_import_done": "Импортировано шейдеров: $count",
   "video_shader_import_from_mpv": "Импорт из локального mpv",
   "video_shader_import_from_mpv_hint": "自动搜索本机 mpv；未找到时可手动选择 mpv 目录。",
-  "video_shader_mobile_perf_hint": "На телефонах шейдеры применяются только на стандартном пути GPU-рендеринга, и эффективность зависит от GPU устройства; высокие уровни могут вызывать пропуск кадров или нагрев. Сначала попробуйте «Низкое»/«Среднее» и проверьте результат на своём устройстве.",
+  "video_shader_mobile_perf_hint": "На телефонах Средний/Высокий/Ультра используют цепочки Anime4K только для убрания размытия: проходы апскейла убраны, ведь экран не больше источника — они съели бы GPU и замедлили всё приложение. Эффект зависит от GPU устройства; при пропусках кадров или нагреве понизьте уровень.",
   "video_shader_mpv_dir_current": "Папка mpv: $path",
   "video_shader_mpv_dir_empty": "В этой папке шейдеры не найдены",
   "video_shader_mpv_not_found": "Локальные шейдеры mpv не найдены",
@@ -4526,5 +4526,9 @@
   "download_request_failed": "Could not create the download. Check the download settings and task list, then try again.",
   "download_resource_resolve_failed": "Could not fetch the download resource. Check the network and proxy settings, then try again.",
   "download_torrent_invalid": "The source returned invalid torrent data. Retry later or choose another source.",
-  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source."
+  "download_torrent_selection_failed": "Could not uniquely match this volume in the torrent. Refresh the catalog or choose another source.",
+  "video_shader_tier_low_hint_mobile": "mpv's built-in sharpening (spline36 on phones). No download, no extra GPU passes. The safe choice if anything above this drops frames.",
+  "video_shader_tier_medium_hint_mobile": "Anime4K deblur (S) at the source resolution. No upscaling passes, so the cost does not scale with your screen. Start here on phones.",
+  "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
+  "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames."
 }
