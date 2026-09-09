@@ -1991,12 +1991,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 冻住的旧数。
   bool get _desktopChromeEnabled => true;
 
-  /// 顶部工具栏的顶部预留高：悬浮态（默认）恒 0；挤压态且底栏占位时占工具栏高
-  /// （与 [_bottomChromeReserve] 同一台状态机的上端），并入 [_readerTopOffset]。
+  /// 顶部工具栏的顶部预留高：占位时恒占工具栏高（悬浮/挤压同值，BUG-2387——
+  /// 顶栏是不透明面，正文不得排到它下面），并入 [_readerTopOffset]。
   double get _desktopHeaderReserve => readerDesktopHeaderReserve(
     enabled: _desktopChromeEnabled,
     barOccupiesLayout: _hasEverLoaded && _showChrome,
-    floating: _bottomBarFloating,
     headerHeight: kReaderDesktopHeaderHeight,
   );
 
