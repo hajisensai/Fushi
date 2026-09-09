@@ -2468,6 +2468,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           totalChars: _progressTotalChars,
           chapterCurrentChars: _footerChapterCurrentChars,
           chapterTotalChars: _footerChapterTotalChars,
+          showTimer: ReaderFushiSource.instance.showReadingTimer,
           showProgress: ReaderFushiSource.instance.showTopProgressBar,
           textColor: _themeTextColor(),
           backgroundColor: _themeBackgroundColor(),
@@ -2527,6 +2528,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         totalChars: _progressTotalChars,
         chapterCurrentChars: _footerChapterCurrentChars,
         chapterTotalChars: _footerChapterTotalChars,
+        showTimer: ReaderFushiSource.instance.showReadingTimer,
         showProgress: ReaderFushiSource.instance.showTopProgressBar,
         textColor: _themeTextColor(),
       );
