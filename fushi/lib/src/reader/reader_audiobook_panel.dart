@@ -38,7 +38,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
 
   /// 阅读器当前章（用于「当前章节」标注）。
   final int? currentSection;
-  final Future<void> Function(int sectionIndex) onJumpSection;
+  final Future<void> Function(int sectionIndex, String? fragment) onJumpSection;
   final String title;
   final String? chapterLabel;
 
@@ -549,7 +549,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       trailing: Text(time, style: timeStyle),
       onTap: () async {
         Navigator.of(context).pop();
-        await widget.onJumpSection(entry.index);
+        await widget.onJumpSection(entry.index, entry.fragment);
         final AudioCue? first = ctrl?.sectionFirstCue(entry.index);
         if (ctrl != null && first != null) {
           await ctrl.skipToCue(first);

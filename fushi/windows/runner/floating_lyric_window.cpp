@@ -6,6 +6,7 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -54,6 +55,14 @@ constexpr UINT_PTR kHoverLookupTimerId = 1;
 // 查词那样需要 60ms 级精度——它只决定一个窗口显不显示。
 constexpr UINT_PTR kToolbarRevealTimerId = 2;
 constexpr UINT kToolbarRevealPollMs = 120;
+// 正文窗置顶守卫（BUG-2365）。与查词卡的 BUG-1479 守卫同一形状、同一间隔：
+// galgame 切全屏时会把自己抬进置顶带（KiriKiri / Siglus 等引擎的常规动作），同一
+// 置顶带内是「最后一次 SetWindowPos 的赢」，而正文窗只在 show / clamp / DPI 变化时
+// 设过一次，于是被压到游戏底下再也上不来。独立工具条窗有自己的按帧重申
+//（HookToolbarWindow::Sync 无条件 HWND_TOPMOST，BUG-951 的逃生口），所以用户看到的
+// 正是「顶条还在、文字没了」。800ms 取自 BUG-1479 的同一权衡。
+constexpr UINT_PTR kTopmostGuardTimerId = 3;
+constexpr UINT kTopmostGuardIntervalMs = 800;
 // 揭示区在正文窗 ∪ 工具条矩形之外再放宽这么多，避免指针刚离开边缘一像素就消失，
 // 以及「从工具条移向正文」的途中出现空档。
 constexpr float kToolbarRevealMarginDip = 24.0f;
@@ -227,6 +236,7 @@ void FloatingLyricWindow::ResetWindowInteractionState() {
   CancelPointerGesture();
   StopHoverLookupPolling();
   StopToolbarRevealPolling();
+  StopTopmostGuard();
   ResetHoverLookupAnchor();
 }
 
@@ -511,6 +521,7 @@ bool FloatingLyricWindow::Show(HWND owner) {
   // BUG-951: a re-show while pass-through is still on must re-create the
   // escape-hatch toolbar and re-arm the body's click-through in one place.
   ApplyPassThroughExStyle();
+  StartTopmostGuard();
   RequestRender();
   return true;
 }
@@ -541,6 +552,7 @@ void FloatingLyricWindow::Hide() {
   // 隐藏后收不到 WM_MOUSELEAVE：定时器留着就是后台空转。
   StopHoverLookupPolling();
   StopToolbarRevealPolling();
+  StopTopmostGuard();
   toolbar_revealed_ = false;
   ResetHoverLookupAnchor();
   // BUG-951: hand clicks back unconditionally and take the toolbar down with
@@ -1103,6 +1115,56 @@ void FloatingLyricWindow::SyncPassThroughToolbar() {
                              ToolbarStates());
 }
 
+void FloatingLyricWindow::SetTopmostCeilingProvider(
+    std::function<HWND()> provider) {
+  topmost_ceiling_ = std::move(provider);
+}
+
+void FloatingLyricWindow::ReassertTopmost() {
+  if (!OwnsLiveWindow()) {
+    return;
+  }
+  // 用户按 📌 主动取消置顶是显式意图，守卫不得把它顶回去。
+  if (!topmost_) {
+    return;
+  }
+  // 查词卡也有自己的 800ms 置顶守卫（BUG-1479）。两个窗口都往置顶带最顶抢的话，
+  // 卡片会周期性地闪到浮窗底下，所以有卡片时正文窗插在**卡片正下方**：既仍在游戏
+  // 之上（卡片的守卫保证卡片在游戏之上），又不会把卡片压掉。没有卡片时才抢最顶。
+  HWND ceiling = topmost_ceiling_ ? topmost_ceiling_() : nullptr;
+  if (ceiling != nullptr && IsWindow(ceiling) && ceiling != hwnd_) {
+    SetWindowPos(hwnd_, ceiling, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  } else {
+    SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
+  // 正文窗刚抬到工具条窗之上，逃生口就被自己的正文盖住了（BUG-951 说的「用户再也
+  // 点不回来」）。同一个 tick 里把工具条重新顶上去——它的 Sync 在无需重绘时只做一次
+  // SetWindowPos，代价与这里的一次相同。
+  SyncPassThroughToolbar();
+}
+
+void FloatingLyricWindow::StartTopmostGuard() {
+  if (topmost_guard_active_ || hwnd_ == nullptr) {
+    return;
+  }
+  if (SetTimer(hwnd_, kTopmostGuardTimerId, kTopmostGuardIntervalMs,
+               nullptr) != 0) {
+    topmost_guard_active_ = true;
+  }
+}
+
+void FloatingLyricWindow::StopTopmostGuard() {
+  if (!topmost_guard_active_) {
+    return;
+  }
+  if (hwnd_ != nullptr) {
+    KillTimer(hwnd_, kTopmostGuardTimerId);
+  }
+  topmost_guard_active_ = false;
+}
+
 void FloatingLyricWindow::MoveBodyTo(int x, int y) {
   if (hwnd_ == nullptr) {
     return;
@@ -1293,6 +1355,10 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
       return 0;
     }
     case WM_TIMER: {
+      if (wparam == kTopmostGuardTimerId) {
+        ReassertTopmost();
+        return 0;
+      }
       if (wparam == kToolbarRevealTimerId) {
         UpdateToolbarReveal();
         return 0;
@@ -1834,11 +1900,43 @@ void FloatingLyricWindow::Render() {
                               (style_.bg_color & 0x00FFFFFF)),
                 catch_brush.GetAddressOf());
             if (catch_brush != nullptr) {
+              // BUG-2371 —— 碰撞箱是**文字块的外接矩形**，不是逐行行盒并集。
+              //
+              // 逐行铺留下三类块**内部**的 alpha 0 空洞，点上去照样推进游戏
+              // （BUG-1853 自己在「已知缺口」里记了第一类，另两类同源）：
+              //   ① 空行（台词含连续换行）的行盒宽度为 0，FillRectangle 一个像素
+              //      都画不出 → 文字块中间横着一条整行高的漏点带；
+              //   ② 多行参差时短行两侧的**内凹**（居中对齐尤其明显）；
+              //   ③ 行与行之间若排版留了缝，缝里也是 0。
+              // 三类都是「用户明明点在字幕这一块上」却被判成背景。外接矩形一次
+              // 消掉它们，而不是给空行加一条 `if (m.width <= 0)` 特例分支。
+              //
+              // 块**外**（上下留白、居中块两侧的整片空白）仍是真 alpha 0，
+              // 「点背景推台词」的不变式一字不动。单行文本时外接矩形 == 那一行的
+              // 行盒，逐像素等于改动前。
+              float min_left = FLT_MAX;
+              float min_top = FLT_MAX;
+              float max_right = -FLT_MAX;
+              float max_bottom = -FLT_MAX;
               for (const auto& m : line_metrics) {
+                if (m.height <= 0.0f) {
+                  continue;  // 退化行：没有垂直范围可并，跳过。
+                }
+                // 宽度为 0 的空行仍参与**纵向**并集（它就是那条漏点带），横向由
+                // 有字的行决定；整块都没有字时下面的空判据会挡住。
+                min_top = std::min(min_top, text_origin_y + m.top);
+                max_bottom =
+                    std::max(max_bottom, text_origin_y + m.top + m.height);
+                if (m.width <= 0.0f) {
+                  continue;
+                }
+                min_left = std::min(min_left, text_rect_.left + m.left);
+                max_right =
+                    std::max(max_right, text_rect_.left + m.left + m.width);
+              }
+              if (max_right > min_left && max_bottom > min_top) {
                 render_target_->FillRectangle(
-                    D2D1::RectF(text_rect_.left + m.left, text_origin_y + m.top,
-                                text_rect_.left + m.left + m.width,
-                                text_origin_y + m.top + m.height),
+                    D2D1::RectF(min_left, min_top, max_right, max_bottom),
                     catch_brush.Get());
               }
             }

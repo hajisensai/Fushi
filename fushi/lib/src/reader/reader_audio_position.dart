@@ -67,6 +67,20 @@ class ReaderAudioPositionIndex {
   final List<int> _studyOffsets;
   final List<int> _studyEnds;
 
+  /// Finds a cue without persisted coordinates only when its normalized text
+  /// occurs once in this chapter. Existing fragments must continue to use
+  /// [studyRangeForFragment], including fuzzy ASR matches.
+  ({int offset, int length})? studyRangeForUniqueText(String text) {
+    final String needle = AudioTextNormalizer.normalize(text);
+    if (needle.isEmpty) return null;
+    final int start = _text.indexOf(needle);
+    if (start < 0 || _text.indexOf(needle, start + 1) >= 0) return null;
+    return studyRangeForFragment(
+      matchableStart: start,
+      matchableEnd: start + needle.length,
+    );
+  }
+
   /// The persisted fragment identifies an upstream-matched EPUB span. Subtitle
   /// text may intentionally differ (fuzzy matching / ASR), so this conversion
   /// validates coordinates rather than redoing matching or searching by text.

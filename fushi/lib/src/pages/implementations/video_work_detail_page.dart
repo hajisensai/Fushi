@@ -38,6 +38,7 @@ class VideoWorkDetailPage extends StatelessWidget {
     required this.onChanged,
     this.remote,
     this.onDeleteMembersMedia,
+    this.onRescrapeCollection,
     super.key,
   });
 
@@ -55,6 +56,11 @@ class VideoWorkDetailPage extends StatelessWidget {
   final CollectionRemoteContext? remote;
 
   final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+
+  /// 透传给合集详情页的「重新刮削资料与封面」（刮削 controller 归 HomePage，
+  /// 由库页注入）。null = 不渲染该菜单项。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onRescrapeCollection;
 
   @override
   Widget build(BuildContext context) {
@@ -108,6 +114,7 @@ class VideoWorkDetailPage extends StatelessWidget {
             },
             onChanged: onChanged,
             onDeleteMembersMedia: onDeleteMembersMedia,
+            onRescrapeCollection: onRescrapeCollection,
           );
         },
       );

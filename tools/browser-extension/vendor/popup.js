@@ -2901,19 +2901,40 @@ function createPitchSection(pitches, reading) {
     const merged = mergeIdenticalPitchGroups(pitches);
     const groups = [];
     if (window.deduplicatePitchAccents) {
-        const seen = new Set();
+        // BUG-2397：去重必须覆盖**三类可见条目**，各自一套 seen。此前只有数字
+        // 位置进 seen，`patterns`（“heiban” 等 pattern 式音调）与 `transcriptions`（IPA）
+        // 一概不管：两本词典都标 heiban、或都给同一段 IPA 时，它们照样各占一行，
+        // 用户看到的就是「开了去重还是重复」。（mergeIdenticalPitchGroups 只能接住整份
+        // payload 全等的那一种；只要两本词典在另一个字段上差一点，合并就不成立，
+        // 重复全部落到这一步。）
+        //
+        // 三类各一个 Set、不合并成一个：位置是数字、另两类是字符串，混在一起
+        // `1` 与 `'1'` 会互相误杀（Set 按 SameValueZero 比，不会相等，但语义上
+        // 把三个值域摆进同一个命名空间本身就是错的）。
+        const seenPositions = new Set();
+        const seenPatterns = new Set();
+        const seenTranscriptions = new Set();
         merged.forEach(group => {
-            const unique = (group.pitchPositions || []).filter(pos => !seen.has(pos));
+            const unique = (group.pitchPositions || []).filter(pos => !seenPositions.has(pos));
             // TODO-688: a group with no unique pitch positions but with IPA
             // transcriptions (Yomitan `ipa`-mode dicts have no pitch positions)
             // must still render, or the transcriptions are silently dropped.
             // Pattern-style accents (79c55c2) likewise keep the group alive.
-            const hasTranscriptions = group.transcriptions?.length;
-            const hasPatterns = group.patterns?.length;
-            if (unique.length > 0 || hasTranscriptions || hasPatterns) {
-                unique.forEach(pos => seen.add(pos));
-                // 保留合并出来的 `dictionaries`，只把位置换成去重后的那份。
-                groups.push(Object.assign({}, group, { pitchPositions: unique }));
+            // BUG-2397：保活的判据从「原始字段非空」改成「**去重后**还剩东西」——
+            // 前者会把一整行已经显示过的 IPA / pattern 再画一遍。
+            const uniquePatterns = (group.patterns || []).filter(p => !seenPatterns.has(p));
+            const uniqueTranscriptions =
+                (group.transcriptions || []).filter(ipa => !seenTranscriptions.has(ipa));
+            if (unique.length > 0 || uniquePatterns.length > 0 || uniqueTranscriptions.length > 0) {
+                unique.forEach(pos => seenPositions.add(pos));
+                uniquePatterns.forEach(p => seenPatterns.add(p));
+                uniqueTranscriptions.forEach(ipa => seenTranscriptions.add(ipa));
+                // 保留合并出来的 `dictionaries`，只把三类可见条目换成去重后的那份。
+                groups.push(Object.assign({}, group, {
+                    pitchPositions: unique,
+                    patterns: uniquePatterns,
+                    transcriptions: uniqueTranscriptions,
+                }));
             }
         });
     } else {

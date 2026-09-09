@@ -399,6 +399,36 @@ class AnkiSettings {
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
+  /// BUG-2380：不需要真卡内容就能下的结论——当前选中的牌组 + 笔记类型 + 字段映射，
+  /// 能不能产出一张 Anki 不会当场拒收的卡。UI 用它决定要不要劝用户去建 Lapis。
+  ///
+  /// [isConfigured] 只看两个 id 非空，答不了这个问题：id 指向的牌组可能已经被用户
+  /// 在 Anki 端删掉，笔记类型的首字段也可能压根没接任何模板——两种情况下卡都制不
+  /// 出来，但 [isConfigured] 一律为真。
+  ///
+  /// 首字段判据与制卡时的 `BaseAnkiRepository.preflightNoteFields` **同源**：Anki
+  /// 的 `fields_check()` 只看笔记类型的**第一个字段**，它空了就拒收整张卡（服务端
+  /// 原文 `cannot create note because it is empty`）。后端没报出字段表（`fields`
+  /// 为空）时无从预检，和 `preflightNoteFields` 一样放行。
+  ///
+  /// 有意**不**要求「必须是 Lapis」：用户自己配好的笔记类型照样能制卡，拿 Lapis 当
+  /// 唯一合格线会把这些人也弹一遍窗。
+  bool get canMineCards {
+    if (!isConfigured) return false;
+    // 选中的牌组还在不在 Anki 里。清单为空 = 这次没拉到清单（离线/没连过），
+    // 无从判断，不拦。
+    if (availableDecks.isNotEmpty &&
+        availableDecks.every((AnkiDeck d) =>
+            d.id != selectedDeckId && d.name != selectedDeckName)) {
+      return false;
+    }
+    final AnkiNoteType? noteType = selectedNoteType;
+    if (noteType == null) return false;
+    if (noteType.fields.isEmpty) return true;
+    final String? template = fieldMappings[noteType.fields.first];
+    return template != null && template.trim().isNotEmpty;
+  }
+
   AnkiNoteType? get selectedNoteType =>
       availableNoteTypes.firstWhereOrNull((t) => t.id == selectedNoteTypeId) ??
       (selectedNoteTypeName != null
@@ -714,6 +744,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.charPositionTag,
     this.clipStartMs,
     this.clipEndMs,
   });
@@ -745,6 +776,17 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 「制卡位置标签」开关开启时，调用方（小说阅读器）算好的**制卡所在字符数标签**
+  /// （`chars_12345`，见 [BaseAnkiRepository.formatCharPositionTag]）：这张卡是在全书
+  /// 第几个学习字（`countStudyChars` 口径）处制的。开关关闭、非小说来源、或锚点取不到
+  /// （章字数未算完 / JS 拿不到 caret）时为 `null`，[BaseAnkiRepository.buildNoteTags]
+  /// 不追加——宁可不打标签，也不打一个 `chars_0` 冒充书首。
+  ///
+  /// 与 [bookTitleTag] / [collectionTag] 同构：真值源（`countStudyChars` 口径的章内锚 +
+  /// 每章累计前缀）都在主 app 的阅读器 state 里，hibiki_anki 是独立包拿不到，故由调用方
+  /// 算好字面量后注入，本包只负责按既有去重规则追加。
+  final String? charPositionTag;
 
   /// 本张卡截取的媒体片段起止（毫秒，媒体时间轴上的**偏移**，非 wall-clock 时刻，
   /// 故按术语表用 `Ms` 后缀）。渲染 `{clip-timestamp}` 用。
@@ -784,6 +826,7 @@ class AnkiMiningContext {
         source: source,
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
+        charPositionTag: charPositionTag,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
       );
@@ -1447,6 +1490,15 @@ class AnkiErrorCode {
   /// Anki 的 `fields_check()` 只看首字段，空就拒收整张卡（服务端原文同样是
   /// `cannot create note because it is empty`）。本地预检把它变成一句能照着做的话。
   static const String firstFieldEmpty = 'ANKI_FIRST_FIELD_EMPTY';
+
+  /// BUG-2380：「创建并选用 Lapis」建完之后，Lapis 牌组 / 笔记类型仍然不在后端
+  /// 回读的清单里 —— 也就是后端把创建**静默吞掉**了（AnkiDroid 的 `addNewDeck`
+  /// 失败返回 null 而 native 侧照样 `result.success`，是已知形态）。
+  ///
+  /// 必须单列成一个失败码，不能像旧实现那样「找不到 Lapis 就退而选清单里的第一个
+  /// 牌组/笔记类型」：那会把用户自己的牌组当成 Lapis 选中、套上 Lapis 的字段映射，
+  /// 还照样报「创建成功」。用户看到的就是「点了创建，选中的却是我自己的牌组」。
+  static const String lapisSetupMissing = 'ANKI_LAPIS_SETUP_MISSING';
 }
 
 sealed class AnkiFetchResult {

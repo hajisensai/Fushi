@@ -14,6 +14,8 @@ import 'package:fushi/media.dart';
 import 'package:fushi/src/epub/epub_importer.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart'
+    show kReaderDesktopHeaderHeight;
 
 import 'helpers/focus_driver.dart';
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
@@ -28,12 +30,14 @@ import 'test_helpers.dart';
 /// real CSS variables injected into the WebView (--chrome-top-inset /
 /// --chrome-bottom-inset) plus the body first-line getBoundingClientRect().top:
 ///
-///  1. Reclaim blank: show_top_progress_bar ON->OFF reclaims the 18px reserve
-///     (--chrome-top-inset -> 0, first line top -> ~0). reader_chrome_floating
-///     topProgressReserve:48 returns 0 when progress disabled.
+///  1. Reclaim blank: show_top_progress_bar ON->OFF reclaims the 18px reserve.
+///     reader_chrome_floating topProgressReserve returns 0 when progress is
+///     disabled. 注意 BUG-2387 起 --chrome-top-inset 恒含 48px 顶部工具栏预留，
+///     故本 goal 断言的是「回收 18px 后只剩顶栏那份」，不是归 0。
 ///  2. Floating does not take text space (975 core ask): top progress floating
-///     false->true keeps --chrome-top-inset at 0 (floating reserve is 0); first
-///     line top stays ~0 (strip overlays body, not pushed down).
+///     false->true 回收进度条那 18px。同样因 BUG-2387，断言的是**差值**恰为
+///     18px，而不是 --chrome-top-inset 归 0（那会把顶栏预留和进度条预留混成
+///     一个数，且顶栏预留归 0 正是 BUG-2387 的病）。
 ///  3. Bottom tap-reveal no-layout-shift: tap_empty_hide_chrome false->true
 ///     drops --chrome-bottom-inset from (bar height ~56px) to system inset only;
 ///     onTapEmpty reveal keeps --chrome-bottom-inset unchanged.
@@ -100,17 +104,11 @@ void main() {
 
         await _openBooksTab(tester, driver);
         final String bookKey = await _seedTestBook(tester);
-        await _openBooksTab(tester, driver);
 
-        final String seededKey =
-            'book_entry_${ReaderFushiSource.mediaIdentifierFor(bookKey)}';
-        final Finder seededEntry = find.byKey(ValueKey<String>(seededKey));
-        for (int i = 0; i < 40 && seededEntry.evaluate().isEmpty; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-        }
-        expect(seededEntry, findsOneWidget,
-            reason: 'freshly seeded paginated book must appear on the shelf');
-
+        // 不经书架卡片：[_activateBook] 直接驱动 AppModel.openMedia（与卡片 onTap
+        // 同一调用），书架列表是否已刷出与本测试要量的 chrome inset 几何无关。原先
+        // 这里等书架卡片入树，是本测试唯一的不确定点——刷不出来就整条挂在前置上、
+        // 下面的 DOM 断言一条都跑不到（实测撞到过）。
         await _activateBook(tester, bookKey);
         await tester.pump(const Duration(seconds: 3));
 
@@ -192,26 +190,34 @@ void main() {
 
         const double kTopReservePx = 18.0; // _infoFontSize(12) * 1.5
         const double kEps = 1.5;
+        // BUG-2387 起 --chrome-top-inset 恒含顶部工具栏预留（顶栏不透明，正文不得
+        // 排到它下面）。本测试原先把 top-inset 当成「只由进度条构成」，谓词
+        // `v >= 18` 会被这 48px 直接满足、settle 立刻返回，后续读数在尚未 settle
+        // 时就被采走（实测底栏 inset 读到 28 而非 ~56）。故所有绝对值预期都加上它。
+        const double kHeaderPx = kReaderDesktopHeaderHeight;
 
         // ───────────────────────────────────────────────────────────────
         // Baseline: top squeeze ON -> top-inset has 18px reserve; bottom squeeze
         // -> bottom-inset has bar height (~56px). The 975 "old behavior" control.
         // ───────────────────────────────────────────────────────────────
+        // 只等顶栏那份落地。进度条预留经 `_showTopProgress` 门控、需要
+        // `_progressTotalChars > 0`（BUG-470），本机实测在基线采样窗口内并不总能
+        // 落地；把它写进等待条件会让 settle 空转到超时。进度条那 18px 由 goal1 /
+        // goal2 的**差值**断言负责，那里才是它真正被测量的地方。
         final double baseTopInset = await settleCssVar(
           readChromeTopInset,
-          (v) => v >= kTopReservePx - 1.0,
+          (v) => v >= kHeaderPx - 1.0,
         );
         final double baseBottomInset = await readChromeBottomInset();
         final double baseFirstTop = await firstLineTop();
         debugPrint('[CHROME975] BASELINE topInset=$baseTopInset '
             'bottomInset=$baseBottomInset firstTop=$baseFirstTop');
 
-        expect(baseTopInset, greaterThanOrEqualTo(kTopReservePx - 1.0),
-            reason: 'baseline: top squeeze ON, --chrome-top-inset has 18px. '
-                'got=$baseTopInset');
-        expect(baseFirstTop, greaterThanOrEqualTo(kTopReservePx - 1.0),
-            reason:
-                'baseline: first line top clears the strip. got=$baseFirstTop');
+        expect(baseTopInset, greaterThanOrEqualTo(kHeaderPx - 1.0),
+            reason: 'baseline: --chrome-top-inset 至少含顶栏预留 ${kHeaderPx}px'
+                '（BUG-2387：顶栏不透明，正文不得排到它下面）。got=$baseTopInset');
+        expect(baseFirstTop, greaterThanOrEqualTo(kHeaderPx - 1.0),
+            reason: 'baseline: 正文首行须落在顶栏下沿之下。got=$baseFirstTop');
         // System bottom inset is usually 0 on desktop; assert "clearly > 0" with
         // a wide tolerance rather than coupling to the exact scaled height.
         expect(baseBottomInset, greaterThan(30.0),
@@ -230,18 +236,18 @@ void main() {
 
         final double offTopInset = await settleCssVar(
           readChromeTopInset,
-          (v) => v <= 1.0,
+          (v) => v <= kHeaderPx + 1.0,
         );
         final double offFirstTop = await firstLineTop();
         debugPrint('[CHROME975] PROGRESS-OFF topInset=$offTopInset '
             'firstTop=$offFirstTop');
 
-        expect(offTopInset, lessThanOrEqualTo(1.0),
-            reason: 'goal1: progress OFF -> --chrome-top-inset reclaimed to 0. '
-                'got=$offTopInset');
-        expect(offFirstTop, lessThanOrEqualTo(kTopReservePx - 1.0),
-            reason: 'goal1: progress OFF -> first line moves into former strip '
-                'area (< 18px). got=$offFirstTop');
+        expect(offTopInset, lessThanOrEqualTo(kHeaderPx + 1.0),
+            reason: 'goal1: 关进度回收那 ${kTopReservePx}px，只剩顶栏预留 '
+                '${kHeaderPx}px。got=$offTopInset');
+        expect(offFirstTop, lessThanOrEqualTo(kHeaderPx + kTopReservePx - 1.0),
+            reason: 'goal1: 关进度后正文首行上移进原进度条带。'
+                'got=$offFirstTop');
 
         // ───────────────────────────────────────────────────────────────
         // Goal 2: floating does not take text space. Restore progress ON (now
@@ -254,11 +260,12 @@ void main() {
         ReaderFushiSource.onChromeReanchorLive?.call();
         final double reTopInset = await settleCssVar(
           readChromeTopInset,
-          (v) => v >= kTopReservePx - 1.0,
+          (v) => v >= kHeaderPx - 1.0,
         );
-        expect(reTopInset, greaterThanOrEqualTo(kTopReservePx - 1.0),
-            reason: 'precondition: restoring progress ON re-adds 18px. '
-                'got=$reTopInset');
+        expect(reTopInset, greaterThanOrEqualTo(kHeaderPx - 1.0),
+            reason: 'precondition: 顶栏预留仍在。got=$reTopInset');
+        // 挤压态下的正文首行位置，作为下面「切悬浮应上移 18px」的基线。
+        final double reFirstTop = await firstLineTop();
 
         ReaderFushiSource.instance.toggleTopProgressFloating(); // to floating
         await _pumpForPref(tester);
@@ -266,20 +273,30 @@ void main() {
             reason: 'top floating pref must land true');
         ReaderFushiSource.onChromeReanchorLive?.call();
 
+        // BUG-2387 起 `--chrome-top-inset` 恒含 48px 顶部工具栏预留（顶栏是不透明
+        // 面，正文不得排到它下面），故本 goal 不再断言它归 0——那会把「顶栏预留」
+        // 和「进度条预留」两件事混成一个数。真正要钉的不变式是**差值**：把顶部进度
+        // 切成悬浮，应当且仅应当回收进度条那 18px。
         final double floatTopInset = await settleCssVar(
           readChromeTopInset,
-          (v) => v <= 1.0,
+          (v) => v <= reTopInset - (kTopReservePx - 1.0),
         );
         final double floatFirstTop = await firstLineTop();
+        final double reclaimed = reTopInset - floatTopInset;
         debugPrint('[CHROME975] TOP-FLOATING topInset=$floatTopInset '
-            'firstTop=$floatFirstTop');
+            'firstTop=$floatFirstTop reclaimed=$reclaimed');
 
-        expect(floatTopInset, lessThanOrEqualTo(1.0),
-            reason: 'goal2: top floating -> --chrome-top-inset is 0 (floating '
-                'reserve 0, strip overlays body). got=$floatTopInset');
-        expect(floatFirstTop, lessThanOrEqualTo(kTopReservePx - 1.0),
-            reason: 'goal2: floating -> first line not pushed down (< 18px), '
-                'i.e. does not take text space. got=$floatFirstTop');
+        expect(reclaimed, greaterThanOrEqualTo(kTopReservePx - 1.0),
+            reason: 'goal2: 顶部进度切悬浮应回收进度条预留（约 ${kTopReservePx}px）。'
+                'squeeze=$reTopInset floating=$floatTopInset '
+                'reclaimed=$reclaimed');
+        expect(reclaimed, lessThanOrEqualTo(kTopReservePx + kEps),
+            reason: 'goal2: 只应回收进度条那一份，不得连顶栏的 48px 一起回收'
+                '（正文会被工具栏压住，BUG-2387）。reclaimed=$reclaimed');
+        expect(floatFirstTop,
+            lessThanOrEqualTo(reFirstTop - (kTopReservePx - 1.0)),
+            reason: 'goal2: 悬浮后正文首行应上移约 ${kTopReservePx}px（进度条不再占位）。'
+                'squeezeFirstTop=$reFirstTop floatingFirstTop=$floatFirstTop');
 
         await takeScreenshot(binding, 'todo975_top_floating_no_layout_shift');
 

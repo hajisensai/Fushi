@@ -44,6 +44,7 @@ class _FakeFrameExtractor {
     bool decodeFromStart = false,
     FfmpegFailureReporter? onFailure,
     String? tlsPinSha256,
+    bool diagnosticOnly = false,
   }) async {
     calls.add((
       inputPath: inputPath,

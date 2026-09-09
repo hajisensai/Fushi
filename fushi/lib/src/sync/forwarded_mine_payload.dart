@@ -27,6 +27,7 @@ class ForwardedMinePayload {
     this.sentenceOffset,
     this.source,
     this.bookTitleTag,
+    this.charPositionTag,
     this.clipStartMs,
     this.clipEndMs,
     this.coverBytes,
@@ -48,6 +49,11 @@ class ForwardedMinePayload {
   /// `AnkiMiningSource.name`（`'book'` / `'video'` / `'game'`）；null = 不追加分类标签。
   final String? source;
   final String? bookTitleTag;
+
+  /// `AnkiMiningContext.charPositionTag`：制卡所在字符数标签（`chars_12345`）。可空 =
+  /// 非小说来源、开关关闭、锚点取不到，或对端是尚未带这个键的旧版本——服务端解析成
+  /// null，`buildNoteTags` 不追加，卡照建。
+  final String? charPositionTag;
 
   /// `AnkiMiningContext.clipStartMs|clipEndMs`：本卡截取的媒体片段起止（毫秒偏移），
   /// 服务端渲染 `{clip-timestamp}` 用。可空 = 无时间轴来源（书 / galgame），或对端是
@@ -73,6 +79,7 @@ class ForwardedMinePayload {
         if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
         if (source != null) 'source': source,
         if (bookTitleTag != null) 'bookTitleTag': bookTitleTag,
+        if (charPositionTag != null) 'charPositionTag': charPositionTag,
         if (clipStartMs != null) 'clipStartMs': clipStartMs,
         if (clipEndMs != null) 'clipEndMs': clipEndMs,
         if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
@@ -113,6 +120,7 @@ class ForwardedMinePayload {
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt(),
       source: json['source'] as String?,
       bookTitleTag: json['bookTitleTag'] as String?,
+      charPositionTag: json['charPositionTag'] as String?,
       clipStartMs: (json['clipStartMs'] as num?)?.toInt(),
       clipEndMs: (json['clipEndMs'] as num?)?.toInt(),
       coverBytes: tryDecodeBase64(json['coverBase64']),

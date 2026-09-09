@@ -360,6 +360,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add book title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
           'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
+  // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo
+  // （changed=true），真正的消费点在制卡路径 reader_fushi/mining.part.dart 的
+  // charPositionTag（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
+  // 也没有 Anki，探不到「卡上真带了这个 tag」。两端各有专项测试咬住：注入点由源码
+  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），tag 装配由
+  // hibiki_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
+  'cardCreation/Auto-add mining position to tags':
+      'test/pages/reader_mining_char_position_tag_guard_test.dart + '
+          'packages/fushi_anki/test/mining_tag_and_parallel_test.dart '
+          '(charPositionTag group)',
   // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
   // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
   // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
@@ -628,6 +638,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。
   'reading/Reading progress indicator':
       'test/settings/top_progress_toggle_guard_test.dart',
+  // 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）的显隐开关。生效点
+  // 在状态行组件自身的 showTimer 门控与 readerStatusFooterEnabled（两段都关时整条行
+  // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
+  // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
+  'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。

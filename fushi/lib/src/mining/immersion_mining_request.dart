@@ -227,9 +227,26 @@ enum MiningAnimatedFormat {
 /// jpg/png；webp/avif 得把截图字节再喂一次 ffmpeg，多一次进程往返和一层失败降级，而静图
 /// 本身体积已经不是瓶颈（4K 帧降到长边 1000px 后 JPEG 约 200KB）。
 ///
-/// [png] 走 [encodeAttempts] 的降级链：捆绑 ffmpeg 缺 png 编码器时退回 [jpg] 再抽一次，
-/// 而不是让封面直接丢失（入库的 `ffmpeg-min` 配方 ENCODERS 含 `png`，移动端 ffmpeg-kit
-/// 的 min 包同样含 png；链路是给「配方漂了/别的构建」兜底，不是给现状兜底）。
+/// [png] 走 [encodeAttempts] 的降级链：ffmpeg 缺 png 编码器时退回 [jpg] 再抽一次，
+/// 而不是让封面直接丢失。
+///
+/// **两个平台的现状不同，别再把这条链当纯兜底**（BUG-2366，此处原先写反）：
+/// - 桌面：入库的 `ffmpeg-min` 配方 ENCODERS 含 `png`，降级链确实只是给「配方漂了 /
+///   用户自带的外部 ffmpeg」兜底。
+/// - **移动端（Android/iOS）：png 编码器根本不存在**。入库的自编 ffmpeg-kit 配方带
+///   `--disable-zlib`，而 ffmpeg 的 png 编解码器硬依赖 zlib——实测 AAR 里
+///   `libavcodec.so` 的未定义符号中一条 `deflate*`/`inflate*` 都没有。所以移动端选
+///   [png] 时，第一次尝试是**注定失败**的常态路径，降级到 [jpg] 才出卡。
+///
+/// 由此推出两条不变式，改这里前先想清楚：
+/// 1. 那次注定失败**不是错误**，不得进用户可见错误日志——收口在
+///    `extractStillWithFallback`（`immersion_mining_engine.dart`），非末次尝试一律
+///    `diagnosticOnly`。
+/// 2. 卡上的文件扩展名必须跟随**实际编成**的格式（见 [fileExtension]）。
+///
+/// 想让移动端真正支持 png，唯一办法是在构建机重编 ffmpeg-kit 时加 `--enable-zlib`
+/// 并重新 vendor AAR/xcframework；配方与 Dart 假设的一致性由守卫
+/// `fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart` 钉住。
 enum MiningStillFormat {
   jpg('jpg', 'jpg'),
   png('png', 'png');

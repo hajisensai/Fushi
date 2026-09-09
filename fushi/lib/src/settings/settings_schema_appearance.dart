@@ -79,7 +79,6 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
   return SettingsSwitchItem(
     id: _moduleItemId(module),
     title: identity.label,
-    subtitle: t.module_toggle_hint,
     icon: identity.icon,
     // 平台上不存在的模块不出开关（galgame 仅 Windows、浏览器扩展仅桌面）。判据
     // 与读取端同源（[ModuleId.availableOn]），不在这里另写一份 Platform 判断。

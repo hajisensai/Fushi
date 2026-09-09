@@ -94,6 +94,10 @@ class _FakeService extends AsrTranscriptionService {
 
   /// 非 null 时 plan 报「EP 探测失败」（模拟有 GPU 的机器探测抛错被推荐成 CPU）。
   final String? probeError;
+
+  /// 非 null 时 `start` 抛它。装模型文件读不出图那条路径：引擎在 load 阶段把坏
+  /// 档删掉再抛，所以抛之前 `ready` 归 false——与真实时序一致。
+  Object? startError;
   int downloadCalls = 0;
   int discardCalls = 0;
   final List<AsrLanguage> planLanguages = <AsrLanguage>[];
@@ -174,6 +178,12 @@ class _FakeService extends AsrTranscriptionService {
   }) async {
     lastStartLanguage = language;
     lastStartPreference = preference;
+    final Object? failure = startError;
+    if (failure != null) {
+      // 引擎判定坏档时是「先删文件、再抛」，所以下一次 plan 必然未就绪。
+      ready = false;
+      Error.throwWithStackTrace(failure, StackTrace.current);
+    }
     final AsrEngineSessions sessions = AsrEngineSessions(
       encoder: _NoopSession(),
       decoder: _NoopSession(),
@@ -639,5 +649,57 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, t.cancel));
     await tester.pumpAndSettle();
     expect(result, isNull);
+  });
+
+  // BUG-2375：模型文件被截断/内容不是 onnx 时 ORT 报 `Protobuf parsing failed`，
+  // 而整本转录跑在后台 isolate，错误跨边界只剩字符串（`Bad state: ...`），所以
+  // 这里的判据只能按文本走。引擎已经把坏档删掉，界面必须退回「需要下载」并说明
+  // 原因——从前是停在错误态、把那句 protobuf 原文甩给用户，重试永远同一个错。
+  testWidgets('模型读不出图：退回下载态并说明模型已被清除', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
+      ..startError = StateError(
+        'PlatformException(ORT_ERROR, Load model from '
+        r'D:\hibiki\support\asr_models\reazonspeech-k2-v2\'
+        'encoder-epoch-99-avg-1.onnx failed:Protobuf parsing failed., '
+        'false, null)',
+      );
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_model_download),
+      findsOneWidget,
+      reason: '坏档已被删，界面该落回既有的下载阶段',
+    );
+    expect(
+      find.textContaining(t.audiobook_transcribe_model_discarded),
+      findsOneWidget,
+      reason: '不说一句为什么，用户会以为刚下好的模型没生效',
+    );
+  });
+
+  testWidgets('非坏档失败仍停在错误态，不谎报模型被清除', (WidgetTester tester) async {
+    final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
+      ..startError = StateError('cuda out of memory');
+    await tester.pumpWidget(wrap(service, (String? _) {}));
+    await tester.tap(find.byKey(const ValueKey<String>('open')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_start),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('cuda out of memory'), findsOneWidget);
+    expect(
+      find.textContaining(t.audiobook_transcribe_model_discarded),
+      findsNothing,
+    );
   });
 }

@@ -257,8 +257,8 @@ class ReaderSettings {
 
   // ── VN (Visual-Novel) settings (TODO-909) ──────────────────────────────
   // Defaults copied from hoshi a ReaderSettings.kt (🔒③). per-Profile global,
-  // same `src:reader_fushi:` Drift mechanism as view_mode. M0 wires these into
-  // the VN shell; the dedicated settings UI for them lands in M1.
+  // same `src:reader_fushi:` Drift mechanism as view_mode. All six values are
+  // exposed by the reading settings schema and consumed by the VN shell.
 
   /// Typewriter reveal speed in chars/sec (0 = instant). hoshi default 45.
   int get visualNovelRevealSpeed =>
@@ -290,13 +290,12 @@ class ReaderSettings {
       _set<bool>('vn_preserve_dialogue', v);
 
   /// Advance to the next screen on a blank tap. hoshi default false
-  /// (commit `42c0bab`). M0 force-enables the tap binding in the host for
-  /// device verification; this getter is the M1 default it falls back to.
+  /// (commit `42c0bab`).
   bool get visualNovelClickAdvance => _get<bool>('vn_click_advance', false);
   Future<void> setVisualNovelClickAdvance(bool v) =>
       _set<bool>('vn_click_advance', v);
 
-  /// Merge Sasayaki cues that straddle a screen boundary (M1 feature).
+  /// Merge Sasayaki cues that straddle a screen boundary.
   bool get visualNovelMergeCrossScreenSentenceAudioCues =>
       _get<bool>('vn_merge_cross_screen_cues', false);
   Future<void> setVisualNovelMergeCrossScreenSentenceAudioCues(bool v) =>
@@ -526,6 +525,14 @@ class ReaderSettings {
   bool get showTopProgressBar => _get<bool>('show_top_progress_bar', true);
   Future<void> toggleShowTopProgressBar() =>
       _set<bool>('show_top_progress_bar', !showTopProgressBar);
+
+  /// 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）是否显示
+  /// （per-reader，每本书各自记忆）。默认 true = 现状。与 [showTopProgressBar]
+  /// 正交；两个都关时整条状态行不画也不占预留（见 `readerStatusFooterEnabled`）。
+  /// 只关显示，不停表——计时账仍在 `StudyClock` 照记。
+  bool get showReadingTimer => _get<bool>('show_reading_timer', true);
+  Future<void> toggleShowReadingTimer() =>
+      _set<bool>('show_reading_timer', !showReadingTimer);
 
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>

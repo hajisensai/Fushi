@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
@@ -362,7 +363,7 @@ Widget buildStatDailyDurationChartSection(
                 color: colorScheme.onSurfaceVariant,
               ),
               valueOf: statMsValue,
-              labelFormatter: formatStatDurationAxis,
+              axisScaleOf: statDurationAxisScale,
             ),
           ),
         ),
@@ -607,14 +608,97 @@ String formatStatTime(int ms) {
   return t.stat_format_hours_minutes(h: h, m: m);
 }
 
-/// 统计页字数外显：≥1 万套「万」文案（保留 1 位小数），否则整数字文案。
-/// 与阅读统计页原私有 `_formatChars` 同口径，供热力图气泡等复用（机械去重）。
-String formatStatChars(int chars) {
-  if (chars >= 10000) {
-    return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
-  }
-  return t.stat_format_chars(n: chars);
+/// 每日 / 每周字数目标编辑对话框。写 0 = 清除（隐藏）该目标。返回 true 表示用户
+/// 点了保存并已写穿偏好，调用方据此重建。
+///
+/// 阅读统计 tab 与统计中心总览 tab 编辑的是**同一个**持久化目标
+/// （`readingGoal*Chars`），所以只有一份表单；两处各写一份的话，单位、清零语义和
+/// 校验规则一改就只改到一处。
+Future<bool> showStatGoalEditDialog(
+  BuildContext context,
+  AppModel appModel,
+) async {
+  final TextEditingController dailyController = TextEditingController(
+    text: appModel.readingGoalDailyChars == 0
+        ? ''
+        : appModel.readingGoalDailyChars.toString(),
+  );
+  final TextEditingController weeklyController = TextEditingController(
+    text: appModel.readingGoalWeeklyChars == 0
+        ? ''
+        : appModel.readingGoalWeeklyChars.toString(),
+  );
+
+  final bool? saved = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
+      return AlertDialog(
+        title: Text(t.stat_goal_set),
+        // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
+              // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
+              // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
+              TextField(
+                controller: dailyController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: t.stat_goal_daily,
+                  suffixText: t.stat_goal_unit_chars,
+                ),
+              ),
+              SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+              TextField(
+                controller: weeklyController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: t.stat_goal_weekly,
+                  suffixText: t.stat_goal_unit_chars,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(t.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      );
+    },
+  );
+
+  final String dailyText = dailyController.text.trim();
+  final String weeklyText = weeklyController.text.trim();
+  dailyController.dispose();
+  weeklyController.dispose();
+
+  if (saved != true) return false;
+
+  final int daily = int.tryParse(dailyText) ?? 0;
+  final int weekly = int.tryParse(weeklyText) ?? 0;
+  await appModel.setReadingGoalDailyChars(daily < 0 ? 0 : daily);
+  await appModel.setReadingGoalWeeklyChars(weekly < 0 ? 0 : weekly);
+  return true;
 }
+
+/// 统计页字数外显：数字部分走当前语言的紧凑写法（[formatCompactCount]：CJK
+/// `6.8万`、其余语言 `68K`），再套上 i18n 的「N characters」文案。
+///
+/// 倍率单位不再进 i18n 词条——它是语言属性而非可翻译文案，旧的
+/// `stat_format_chars_wan` 键把中文万进制硬贴给了 13 种非 CJK 语言（BUG-935）。
+/// 全统计页只此一份实现（阅读页原私有 `_formatChars` 已并入）。
+String formatStatChars(int chars) =>
+    t.stat_format_chars(n: formatStatCharsAxis(chars));
 
 /// 相对时间外显：把 [activityRelativeTime] 的结构化结果套上 i18n 文案
 /// （刚刚 / N 分钟前 / N 小时前 / N 天前）。

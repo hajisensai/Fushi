@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/scan_scale.dart';
+import '../helpers/source_guard.dart';
 
 void main() {
   // 唯一枚举点：下面两个投影和扫描规模哨兵共用它。分开各写一遍 listSync 会让
@@ -37,9 +38,15 @@ void main() {
   final String assembly = File(
     'lib/src/media/video/cover_ui/video_scrape_actions.dart',
   ).readAsStringSync();
-  final String home = File(
-    'lib/src/pages/implementations/home_video_page.dart',
-  ).readAsStringSync();
+  // 掩注释再判：本文件的判据全是「不得再出现某个已退役的入口名」，而一句
+  // 「这个入口当年连同旧的 X 一起被删、现在按新管线接回来、不复活 X」的**注释**
+  // 里天然会出现那个名字。裸 contains 会把这种解释判成入口（BUG-2374 实测），
+  // 等于逼后人不写理由——正好是反的激励。
+  final String home = maskComments(
+    File(
+      'lib/src/pages/implementations/home_video_page.dart',
+    ).readAsStringSync(),
+  );
   final String workDetail = File(
     'lib/src/pages/implementations/video_work_detail_page.dart',
   ).readAsStringSync();

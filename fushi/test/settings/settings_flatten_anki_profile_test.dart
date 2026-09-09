@@ -181,15 +181,15 @@ void main() {
     expect(find.byType(AdaptiveSettingsNavigationRow), findsNothing,
         reason: '平铺后不应再出现指向 Anki 子页的跳转行');
 
-    // ③ TODO-135 方案A：默认标签区三个开关（hibiki / 来源分类 / 自动添加书名）都
-    //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出——故恰有三个 SwitchRow。
+    // ③ TODO-135 方案A：默认标签区的开关（hibiki / 来源分类 / 自动添加书名 /
+    //    自动添加制卡位置）都并入一个无条件显示的区块。未配置 Anki 时它们也都露出。
     //    TODO-1650 把旧「压缩制卡媒体」开关换成「图片/GIF 清晰度 + 音频质量」两滑块，
     //    紧随其后的独立无标题区（同样无条件显示）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(5),
-        reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名），未配置 Anki '
-            '时都应显示（旧「压缩」开关已换成两滑块，不再是 SwitchRow；「制卡到已配对'
-            '设备」已移到 Hibiki 互联分类）。外加媒体去重区的两个自动开关'
-            '（自动处理 + 自动直接删除），共 5 个。');
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(6),
+        reason: 'TODO-135 方案A 四开关（hibiki / 来源分类 / 自动添加书名 / 自动添加制卡'
+            '位置），未配置 Anki 时都应显示（旧「压缩」开关已换成两滑块，不再是 '
+            'SwitchRow；「制卡到已配对设备」已移到 Hibiki 互联分类）。外加媒体去重区的'
+            '两个自动开关（自动处理 + 自动直接删除），共 6 个。');
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2),
         reason: 'TODO-1650「图片/GIF 清晰度」+「音频质量」两滑块应无条件显示');
     // 媒体去重的两个自动开关：**默认都关**（方案 A 的核心），且「自动直接删除」

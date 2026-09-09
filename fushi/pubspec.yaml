@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.3.0+1274
+version: 2.3.0+1290
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 78a5241b30feb9a45f76cca5d6b2907c4d13638b
+      ref: b8a7b76016dd0b7eb55671bbe8b4e054af965d64
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 78a5241b30feb9a45f76cca5d6b2907c4d13638b
+      ref: b8a7b76016dd0b7eb55671bbe8b4e054af965d64
   archive: ^3.6.1
   async_zip: ^0.1.0
   basic_utils: ^5.7.0

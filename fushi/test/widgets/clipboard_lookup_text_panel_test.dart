@@ -4,14 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 
 void main() {
   Widget buildSubject({
     required String text,
-    required void Function(String query, Rect rect) onLookup,
+    required void Function(String query, Rect rect, int charIndex) onLookup,
     double dictionaryHeadwordScale = 1.0,
+    SourceLookupHighlight? highlight,
   }) {
     return MaterialApp(
       home: Scaffold(
@@ -19,10 +21,26 @@ void main() {
           text: text,
           onLookup: onLookup,
           dictionaryHeadwordScale: dictionaryHeadwordScale,
+          highlight: highlight,
         ),
       ),
     );
   }
+
+  /// 本条内画在某个字底下的高亮框（条外的 Material chrome 也有 DecoratedBox，
+  /// 必须先限定在本条子树里再往上找祖先）。
+  Finder highlightBoxOf(String char) => find.ancestor(
+        of: find.text(char),
+        matching: find.descendant(
+          of: find.byType(SourceLookupTextPanel),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+
+  Finder allHighlightBoxes() => find.descendant(
+        of: find.byType(SourceLookupTextPanel),
+        matching: find.byType(DecoratedBox),
+      );
 
   testWidgets('tapping a character looks up the suffix from that character',
       (WidgetTester tester) async {
@@ -32,7 +50,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: 'abcdef',
-        onLookup: (String value, Rect localRect) {
+        onLookup: (String value, Rect localRect, int _) {
           query = value;
           rect = localRect;
         },
@@ -54,7 +72,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: 'abcdef',
-        onLookup: (String value, Rect localRect) {
+        onLookup: (String value, Rect localRect, int _) {
           query = value;
           rect = localRect;
         },
@@ -90,7 +108,7 @@ void main() {
                 top: 30,
                 child: SourceLookupTextPanel(
                   text: 'abc',
-                  onLookup: (_, Rect localRect) {
+                  onLookup: (_, Rect localRect, __) {
                     rect = localRect;
                   },
                 ),
@@ -117,7 +135,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: '   ',
-        onLookup: (_, __) => called = true,
+        onLookup: (_, __, ___) => called = true,
       ),
     );
 
@@ -131,7 +149,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: 'abcdef',
-        onLookup: (_, __) {},
+        onLookup: (_, __, ___) {},
       ),
     );
 
@@ -146,7 +164,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: 'abcdef',
-        onLookup: (String value, Rect _) {
+        onLookup: (String value, Rect _, int __) {
           query = value;
         },
       ),
@@ -174,7 +192,7 @@ void main() {
               theme = Theme.of(context);
               return SourceLookupTextPanel(
                 text: 'あ',
-                onLookup: (_, __) {},
+                onLookup: (_, __, ___) {},
               );
             },
           ),
@@ -198,7 +216,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: 'あ',
-        onLookup: (_, __) {},
+        onLookup: (_, __, ___) {},
         dictionaryHeadwordScale: 1.5,
       ),
     );
@@ -221,7 +239,7 @@ void main() {
             children: <Widget>[
               SourceLookupTextPanel(
                 text: 'あいう',
-                onLookup: (_, __) {},
+                onLookup: (_, __, ___) {},
               ),
             ],
           ),
@@ -260,7 +278,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: longText,
-        onLookup: (_, __) {},
+        onLookup: (_, __, ___) {},
       ),
     );
     await tester.pump();
@@ -284,7 +302,7 @@ void main() {
     await tester.pumpWidget(
       buildSubject(
         text: longText,
-        onLookup: (String value, Rect _) {
+        onLookup: (String value, Rect _, int __) {
           query = value;
         },
       ),
@@ -300,5 +318,252 @@ void main() {
     expect(query!.characters.length, kMaxLookupInputChars,
         reason: '后缀长度 = 截断后的字符数，被裁掉的尾部不计入');
     expect(query, isNot(contains('X')), reason: '后缀绝不能包含被裁掉的尾部');
+  });
+
+  // ── Yomitan 式扫描高亮 ───────────────────────────────────────────────
+
+  testWidgets('highlight boxes exactly the matched span and nothing else',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'と言いつつ',
+        onLookup: (_, __, ___) {},
+        // 点第 1 个字（言）查「言いつつ」，引擎命中「言い」两个字。
+        highlight: const SourceLookupHighlight(start: 1, length: 2),
+      ),
+    );
+
+    expect(allHighlightBoxes(), findsNWidgets(2), reason: '只框住命中的两个字');
+    expect(highlightBoxOf('言'), findsOneWidget);
+    expect(highlightBoxOf('い'), findsOneWidget);
+    expect(highlightBoxOf('と'), findsNothing, reason: '命中段之前的字不该被框');
+    expect(highlightBoxOf('つ'), findsNothing, reason: '命中段之后的字不该被框');
+  });
+
+  testWidgets('no highlight parameter leaves the strip completely unboxed',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(text: 'と言いつつ', onLookup: (_, __, ___) {}),
+    );
+
+    expect(allHighlightBoxes(), findsNothing);
+  });
+
+  testWidgets(
+      'highlight uses the popup in-card highlight color and only rounds the '
+      'outer corners', (WidgetTester tester) async {
+    late final ThemeData theme;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              theme = Theme.of(context);
+              return SourceLookupTextPanel(
+                text: 'あいう',
+                onLookup: (_, __, ___) {},
+                highlight: const SourceLookupHighlight(start: 0, length: 3),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    BoxDecoration decorationOf(String char) =>
+        tester.widget<DecoratedBox>(highlightBoxOf(char)).decoration
+            as BoxDecoration;
+
+    // 与 WebView 卡片内的 `--fushi-primary-highlight` 同色
+    // （popup_theme_css.dart 的 cssRgba035(scheme.primary)）。
+    expect(
+      decorationOf('あ').color,
+      theme.colorScheme.primary.withValues(alpha: 0.35),
+    );
+
+    const Radius corner = Radius.circular(FushiRadii.chipValue);
+    final BorderRadius first = decorationOf('あ').borderRadius! as BorderRadius;
+    final BorderRadius middle = decorationOf('い').borderRadius! as BorderRadius;
+    final BorderRadius last = decorationOf('う').borderRadius! as BorderRadius;
+    expect(first.topLeft, corner);
+    expect(first.topRight, Radius.zero, reason: '首字右侧要与下一个字严丝合缝');
+    expect(middle.topLeft, Radius.zero);
+    expect(middle.topRight, Radius.zero, reason: '中间的字两侧都不能收圆角');
+    expect(last.topLeft, Radius.zero);
+    expect(last.topRight, corner);
+  });
+
+  testWidgets(
+      'single-character match still renders one box with both corners rounded',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'あいう',
+        onLookup: (_, __, ___) {},
+        highlight: const SourceLookupHighlight(start: 1, length: 1),
+      ),
+    );
+
+    expect(allHighlightBoxes(), findsNWidgets(1));
+    final BorderRadius radius = (tester
+            .widget<DecoratedBox>(highlightBoxOf('い'))
+            .decoration as BoxDecoration)
+        .borderRadius! as BorderRadius;
+    const Radius corner = Radius.circular(FushiRadii.chipValue);
+    expect(radius.topLeft, corner);
+    expect(radius.topRight, corner);
+  });
+
+  testWidgets('out-of-range highlight is inert instead of throwing',
+      (WidgetTester tester) async {
+    // 源文本被换短、旧高亮还没来得及重算的那一帧。
+    await tester.pumpWidget(
+      buildSubject(
+        text: 'あ',
+        onLookup: (_, __, ___) {},
+        highlight: const SourceLookupHighlight(start: 5, length: 3),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(allHighlightBoxes(), findsNothing);
+  });
+
+  group('resolveSourceLookupHighlight（UTF-16 匹配长度 → 字素簇跨度）', () {
+    test('从被点的字起，按引擎匹配长度框住整词', () {
+      // 「と言いつつ」上点第 0 个字：查询串是整条，引擎命中「と言い」(3 unit)。
+      expect(
+        resolveSourceLookupHighlight(
+          query: 'と言いつつ',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 3,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 0, length: 3),
+      );
+      // 点第 1 个字：查询串只剩后缀，命中「言い」——起点必须回到条上的绝对下标 1。
+      expect(
+        resolveSourceLookupHighlight(
+          query: '言いつつ',
+          tappedGraphemeIndex: 1,
+          matchedUnits: 2,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 1, length: 2),
+      );
+      expect(
+        resolveSourceLookupHighlight(
+          query: 'つつ',
+          tappedGraphemeIndex: 3,
+          matchedUnits: 2,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 3, length: 2),
+      );
+    });
+
+    test('句首标点被引擎剥掉时高亮右移那段长度（BUG-773 同一个坑）', () {
+      // normalizeSearchTerm 把「「」剥掉后才去匹配，bestLength 以剥离串为坐标系；
+      // 条上显示的是原串，不右移就会左吞括号、右缺词尾。
+      expect(
+        resolveSourceLookupHighlight(
+          query: '「言いつつ',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 2,
+          leadingStripUnits: 1,
+        ),
+        const SourceLookupHighlight(start: 1, length: 2),
+      );
+    });
+
+    test('匹配长度落在代理对中间时整字入框，绝不把一个字劈成两半', () {
+      // 𠮟 = U+20B9F，占 2 个 UTF-16 code unit、1 个字素簇。
+      expect(
+        resolveSourceLookupHighlight(
+          query: '𠮟る',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 2,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 0, length: 1),
+      );
+      expect(
+        resolveSourceLookupHighlight(
+          query: '𠮟る',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 3,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 0, length: 2),
+      );
+      // 长度停在代理对内部（1 unit）也要把整个字圈进来，而不是半个。
+      expect(
+        resolveSourceLookupHighlight(
+          query: '𠮟る',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 1,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 0, length: 1),
+      );
+    });
+
+    test('多码点字素簇（ZWJ 序列）算一个字', () {
+      const String family = '\u{1F468}‍\u{1F469}‍\u{1F466}';
+      expect(
+        resolveSourceLookupHighlight(
+          query: '$familyあ',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 2,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 0, length: 1),
+      );
+    });
+
+    test('零命中退化成只框被点的那个字', () {
+      expect(
+        resolveSourceLookupHighlight(
+          query: 'あいう',
+          tappedGraphemeIndex: 2,
+          matchedUnits: 0,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 2, length: 1),
+      );
+    });
+
+    test('匹配长度超出查询串时钳到串尾，不越界', () {
+      expect(
+        resolveSourceLookupHighlight(
+          query: 'あい',
+          tappedGraphemeIndex: 1,
+          matchedUnits: 99,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 1, length: 2),
+      );
+    });
+
+    test('空查询串 / 整串都被剥掉时不产出非法跨度', () {
+      expect(
+        resolveSourceLookupHighlight(
+          query: '',
+          tappedGraphemeIndex: 4,
+          matchedUnits: 3,
+          leadingStripUnits: 0,
+        ),
+        const SourceLookupHighlight(start: 4, length: 1),
+      );
+      expect(
+        resolveSourceLookupHighlight(
+          query: '。。',
+          tappedGraphemeIndex: 0,
+          matchedUnits: 1,
+          leadingStripUnits: 2,
+        ).length,
+        greaterThanOrEqualTo(1),
+      );
+    });
   });
 }

@@ -435,7 +435,6 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   }
 
   Widget _buildBatchActionBar() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
     final int selectedCount =
         _selectedKeys.length + _selectedCollectionIds.length;
@@ -448,77 +447,36 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           looseCount: _selectedKeys.length,
         ) !=
         CombineTier.noop;
-
-    // 全 app elevation 0 纪律：去阴影改上边框分隔（巡检 PR-3）；窄屏 + 大字体下
-    // 「已选 N / 全选 / 反选」改 Wrap 自动换行（旧 Row 全员不可收缩必溢出）。
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        border: Border(
-          top: BorderSide(color: theme.colorScheme.outlineVariant),
+    return BatchActionBar(
+      selectedCount: selectedCount,
+      onSelectAll: _selectAll,
+      onInvertSelection: _invertSelection,
+      actions: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('reader_shelf_batch_combine'),
+          enabled: canCombine,
+          onTap: _batchCombineIntoSeries,
+          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+          icon: Icons.playlist_add,
+          tooltip: t.combine_into_series,
         ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.gap,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: tokens.spacing.gap,
-                  children: <Widget>[
-                    Text(
-                      t.batch_selected_count(n: selectedCount),
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _selectAll,
-                      child: Text(t.batch_select_all),
-                    ),
-                    TextButton(
-                      onPressed: _invertSelection,
-                      child: Text(t.batch_invert_selection),
-                    ),
-                  ],
-                ),
-              ),
-              FushiIconButton(
-                key: const ValueKey<String>('reader_shelf_batch_combine'),
-                enabled: canCombine,
-                onTap: _batchCombineIntoSeries,
-                // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-                // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-                icon: Icons.playlist_add,
-                tooltip: t.combine_into_series,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
-                enabled: _selectedKeys.isNotEmpty,
-                onTap: _batchShowTagPicker,
-                icon: Icons.sell_outlined,
-                tooltip: t.tag_label,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                key: const ValueKey<String>('reader_shelf_batch_delete'),
-                enabled: hasSelection,
-                onTap: _batchDeleteConfirm,
-                icon: Icons.delete_outline,
-                tooltip: t.dialog_delete,
-                enabledColor: theme.colorScheme.error,
-              ),
-            ],
-          ),
+        FushiIconButton(
+          // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
+          enabled: _selectedKeys.isNotEmpty,
+          onTap: _batchShowTagPicker,
+          icon: Icons.sell_outlined,
+          tooltip: t.tag_label,
         ),
-      ),
+        FushiIconButton(
+          key: const ValueKey<String>('reader_shelf_batch_delete'),
+          enabled: hasSelection,
+          onTap: _batchDeleteConfirm,
+          icon: Icons.delete_outline,
+          tooltip: t.dialog_delete,
+          enabledColor: theme.colorScheme.error,
+        ),
+      ],
     );
   }
 

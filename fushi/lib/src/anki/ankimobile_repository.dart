@@ -387,6 +387,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         includeCategory: settings.tagIncludeCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
+        charPositionTag: context.charPositionTag,
       );
       final success = Uri.parse(fushiAnkiSuccessCallback).replace(
         queryParameters: <String, String>{

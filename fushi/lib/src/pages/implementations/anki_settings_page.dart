@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -455,6 +456,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 setState(() {});
               },
             ),
+            // 制卡所在字符数标签（`chars_12345`）：只有小说阅读器会注入（其它来源没有
+            // 「全书第几个字」这个坐标），但开关与其余标签开关同区——用户找「卡片带哪些
+            // 标签」只会来这里找。
+            AdaptiveSettingsSwitchRow(
+              title: t.auto_add_char_position_to_tags,
+              subtitle: t.auto_add_char_position_to_tags_hint,
+              icon: Icons.my_location_outlined,
+              value: appModel.autoAddCharPositionToTags,
+              onChanged: (bool value) {
+                appModel.toggleAutoAddCharPositionToTags();
+                setState(() {});
+              },
+            ),
           ],
         ),
         // TODO-1650 制卡媒体清晰度：媒体清晰度与「卡片带哪些标签」语义无关，单独占
@@ -748,8 +762,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       // 任一在途动作（刷新或 Lapis 创建）期间都不可重入。
       onTap: uiState.isFetching || _creatingLapis
           ? null
-          : () => vm.fetchConfiguration(),
+          : () => unawaited(_refreshAndCheckMining(vm)),
     );
+  }
+
+  /// BUG-2380：刷新（= 连接 Anki）之后当场判一次「这套配置真能制出卡吗」，判不过
+  /// 就地劝建并选用 Lapis —— 与新手引导「测试连接」是同一个判据、同一个弹窗
+  /// （[promptCreateLapisIfCannotMine]），两处不许各写一套。
+  Future<void> _refreshAndCheckMining(AnkiViewModel vm) async {
+    await vm.fetchConfiguration();
+    if (!mounted) return;
+    await promptCreateLapisIfCannotMine(context: context, viewModel: vm);
   }
 
   /// AnkiConnect 的 API key 编辑入口。

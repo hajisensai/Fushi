@@ -441,13 +441,6 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     }
   }
 
-  static String _formatChars(int chars) {
-    if (chars >= 10000) {
-      return t.stat_format_chars_wan(n: (chars / 10000).toStringAsFixed(1));
-    }
-    return t.stat_format_chars(n: chars);
-  }
-
   /// 阅读速度展示：四舍五入到整数字/小时，套 i18n 单位。
   static String _formatCph(double cph) =>
       t.stat_speed_cph(n: cph.round().toString());
@@ -653,19 +646,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         ),
         StatKpiItem(
           icon: Icons.today_outlined,
-          value: _formatChars(_todayChars),
+          value: formatStatChars(_todayChars),
           label: t.stat_today,
         ),
         StatKpiItem(
           icon: Icons.trending_up,
-          value: _formatChars(_weekChars),
+          value: formatStatChars(_weekChars),
           label: t.stat_this_week,
           delta: weekDelta,
           deltaUp: weekPct == null ? true : weekPct >= 0,
         ),
         StatKpiItem(
           icon: Icons.show_chart,
-          value: _formatChars(dailyAvgChars),
+          value: formatStatChars(dailyAvgChars),
           label: t.stat_daily_average,
         ),
       ],
@@ -766,7 +759,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       StatBreakdownSource.game => (Icons.videogame_asset, t.home_filter_game),
     };
     final List<String> metrics = <String>[
-      _formatChars(totals.chars),
+      formatStatChars(totals.chars),
       formatStatTime(totals.timeMs),
       // 页数只有漫画有；0 页不显示（未翻页的会话只贡献时长）。
       if (totals.pages > 0) t.stat_format_pages(n: totals.pages),
@@ -860,10 +853,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   }) {
     return StatPeriodSummary(
       label: label,
-      primaryValue: _formatChars(chars),
+      // 主值 = 学习时长，与观看 / 游戏 / 总览三个 tab 同口径（用户 2026-09-08
+      // 「统计全改成游戏那种」时骨架已统一，主值口径漏了这一处：四张同形卡里只有
+      // 阅读卡以字数打头，横着看四个 tab 时首行数字不可比）。字数降为首条副行。
+      primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
-        StatSummaryLine(value: formatStatTime(ms)),
+        StatSummaryLine(value: formatStatChars(chars)),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
         StatSummaryLine(label: t.stat_mined, value: '$mined'),
         StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
@@ -1041,82 +1037,12 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  /// Number-input dialog to set/clear the daily & weekly character goals.
-  /// Writing 0 clears (hides) that goal. setState reruns the sliver build so the
-  /// card appears/updates/disappears immediately.
+  /// 目标编辑：表单本体是统计页共享件 [showStatGoalEditDialog]（统计中心总览 tab
+  /// 编辑的是同一个持久化目标）。保存后 setState 重跑 sliver build，目标卡立刻
+  /// 出现/更新/消失。
   Future<void> _editGoals() async {
-    final TextEditingController dailyController = TextEditingController(
-      text: appModelNoUpdate.readingGoalDailyChars == 0
-          ? ''
-          : appModelNoUpdate.readingGoalDailyChars.toString(),
-    );
-    final TextEditingController weeklyController = TextEditingController(
-      text: appModelNoUpdate.readingGoalWeeklyChars == 0
-          ? ''
-          : appModelNoUpdate.readingGoalWeeklyChars.toString(),
-    );
-
-    final bool? saved = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
-        return AlertDialog(
-          title: Text(t.stat_goal_set),
-          // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
-                // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
-                // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
-                TextField(
-                  controller: dailyController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: t.stat_goal_daily,
-                    suffixText: t.stat_goal_unit_chars,
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-                TextField(
-                  controller: weeklyController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: t.stat_goal_weekly,
-                    suffixText: t.stat_goal_unit_chars,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(t.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(t.dialog_save),
-            ),
-          ],
-        );
-      },
-    );
-
-    final String dailyText = dailyController.text.trim();
-    final String weeklyText = weeklyController.text.trim();
-    dailyController.dispose();
-    weeklyController.dispose();
-
-    if (saved != true) return;
-
-    final int daily = int.tryParse(dailyText) ?? 0;
-    final int weekly = int.tryParse(weeklyText) ?? 0;
-    await appModelNoUpdate.setReadingGoalDailyChars(daily < 0 ? 0 : daily);
-    await appModelNoUpdate.setReadingGoalWeeklyChars(weekly < 0 ? 0 : weekly);
-    if (!mounted) return;
-    setState(() {});
+    final bool saved = await showStatGoalEditDialog(context, appModelNoUpdate);
+    if (saved && mounted) setState(() {});
   }
 
   /// 「今天」环形进度卡：字数目标环（复用持久化每日目标，未设则回退默认仅作可视化）
@@ -1552,7 +1478,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       icon: Icons.menu_book,
       title: _bookDisplayTitle(book),
       collectionName: _collectionNameForBook(book),
-      meta: '${_formatChars(book.chars)} · '
+      meta: '${formatStatChars(book.chars)} · '
           '${t.stat_sessions_count(n: sessionCount)}$speed',
       meta2:
           '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',

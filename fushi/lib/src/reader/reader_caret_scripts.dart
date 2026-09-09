@@ -1053,10 +1053,15 @@ window.fushiCaret = {
         // 而非放大；揭开后再次激活才走 onImageTap 放大（与指针点击语义一致）。
         if (this.el.classList && this.el.classList.contains('blurred')) {
           this.el.classList.remove('blurred');
-          // TODO-1289：键盘/手柄揭开也持久——回传稳定 key 给 Dart 会话集。
-          if (window.__fushiImageRevealKey && window.flutter_inappwebview) {
+          // TODO-1289：Dart 会话集负责跨文档；JS 活集负责 VN 同一文档内来回切屏。
+          if (window.__fushiImageRevealKey) {
             var revealKey = window.__fushiImageRevealKey(this.el);
-            if (revealKey) window.flutter_inappwebview.callHandler('onImageRevealed', revealKey);
+            if (revealKey && window.__fushiMarkImageRevealed) {
+              window.__fushiMarkImageRevealed(revealKey);
+            }
+            if (revealKey && window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('onImageRevealed', revealKey);
+            }
           }
           return 'activated';
         }

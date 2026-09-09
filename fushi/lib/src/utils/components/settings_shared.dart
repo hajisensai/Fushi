@@ -66,12 +66,17 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     super.key,
     this.actions,
     this.padding,
+    this.bottom,
   });
 
   final Widget title;
   final List<Widget> children;
   final List<Widget>? actions;
   final EdgeInsetsGeometry? padding;
+
+  /// 钉在列表下方、不随内容滚动的一条（多选态的批量操作栏用）。为空时布局与
+  /// 加它之前逐字相同。
+  final Widget? bottom;
 
   @override
   Widget build(BuildContext context) {
@@ -86,36 +91,52 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
         );
 
     if (cupertino) {
+      final Widget scroll = CustomScrollView(
+        slivers: <Widget>[
+          CupertinoSliverNavigationBar(
+            largeTitle: title,
+            trailing: actions != null && actions!.isNotEmpty
+                ? Row(mainAxisSize: MainAxisSize.min, children: actions!)
+                : null,
+          ),
+          SliverPadding(
+            padding: listPadding,
+            sliver: SliverList(
+              delegate: SliverChildListDelegate(children),
+            ),
+          ),
+        ],
+      );
       return CupertinoPageScaffold(
         backgroundColor: CupertinoColors.systemGroupedBackground.resolveFrom(
           context,
         ),
-        child: CustomScrollView(
-          slivers: <Widget>[
-            CupertinoSliverNavigationBar(
-              largeTitle: title,
-              trailing: actions != null && actions!.isNotEmpty
-                  ? Row(mainAxisSize: MainAxisSize.min, children: actions!)
-                  : null,
-            ),
-            SliverPadding(
-              padding: listPadding,
-              sliver: SliverList(
-                delegate: SliverChildListDelegate(children),
+        child: bottom == null
+            ? scroll
+            : Column(
+                children: <Widget>[
+                  Expanded(child: scroll),
+                  bottom!,
+                ],
               ),
-            ),
-          ],
-        ),
       );
     }
 
+    final Widget list = ListView(
+      padding: listPadding,
+      children: children,
+    );
     return FushiToolScaffold.customTitle(
       title: title,
       actions: actions ?? const <Widget>[],
-      body: ListView(
-        padding: listPadding,
-        children: children,
-      ),
+      body: bottom == null
+          ? list
+          : Column(
+              children: <Widget>[
+                Expanded(child: list),
+                bottom!,
+              ],
+            ),
     );
   }
 }

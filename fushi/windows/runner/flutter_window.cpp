@@ -519,7 +519,15 @@ bool FlutterWindow::OnCreate() {
               }
             }
           }
+          const bool was_fullscreen = IsFullscreen();
           SetFullscreen(enter);
+          // A fullscreen/maximized transition can preserve the client size,
+          // so WM_SIZE alone does not guarantee a fresh Flutter presentation.
+          // Request it AFTER geometry restoration and snapshot release, while
+          // the controller is alive. Do not redraw failed or no-op transitions.
+          if (flutter_controller_ && was_fullscreen != IsFullscreen()) {
+            flutter_controller_->ForceRedraw();
+          }
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
@@ -1218,6 +1226,14 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
   // 旧的自绘 5 槽歌词条形态已删 —— 它是同一件事的第二份实现，且只有它还在用无坐标
   // 的旧 LookupCallback（卡片只能跟着鼠标飘）。
   floating_lyric_window_->SetHookTextMode(true);
+  // BUG-2365 —— 正文窗的置顶守卫必须让位给查词卡：卡片自己也每 800ms 重申置顶
+  // （BUG-1479），两个窗口都抢置顶带最顶就会互相顶掉、卡片周期性闪到浮窗底下。
+  // 有可见卡片时正文窗插在卡片正下方，仍在全屏游戏之上。
+  floating_lyric_window_->SetTopmostCeilingProvider([this]() -> HWND {
+    return global_lookup_window_ != nullptr
+               ? global_lookup_window_->TopmostCeilingHandle()
+               : nullptr;
+  });
   // 但按钮语义不同：这里是上一句 / 播放暂停 / 下一句，不是试听 / 重捕 / 工作台。
   floating_lyric_window_->SetToolbarProfile(
       hook_toolbar::Profile::kAudiobook);
@@ -1458,6 +1474,14 @@ void FlutterWindow::RegisterImeGuardChannel() {
 void FlutterWindow::RegisterGalHookTextChannel() {
   gal_hook_text_window_ = std::make_unique<FloatingLyricWindow>();
   gal_hook_text_window_->SetHookTextMode(true);
+  // BUG-2365 —— 正文窗的置顶守卫必须让位给查词卡：卡片自己也每 800ms 重申置顶
+  // （BUG-1479），两个窗口都抢置顶带最顶就会互相顶掉、卡片周期性闪到浮窗底下。
+  // 有可见卡片时正文窗插在卡片正下方，仍在全屏游戏之上。
+  gal_hook_text_window_->SetTopmostCeilingProvider([this]() -> HWND {
+    return global_lookup_window_ != nullptr
+               ? global_lookup_window_->TopmostCeilingHandle()
+               : nullptr;
+  });
   attached_text_surface_window_ =
       std::make_unique<AttachedTextSurfaceWindow>();
 

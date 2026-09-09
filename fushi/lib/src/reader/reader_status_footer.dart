@@ -27,16 +27,23 @@ const double kReaderStatusFooterHeight = 28;
 /// 状态行文字字号，与顶部进度 pill 同源（12）。
 const double kReaderStatusFooterFontSize = kTopProgressFontSize;
 
-/// 状态行是否启用：各平台的非歌词模式。保留 desktop 参数兼容调用方。
+/// 状态行是否启用：非歌词模式，且两段读数里至少还剩一段要画。保留 desktop 参数
+/// 兼容调用方。
 ///
 /// 歌词模式是独立 HTML 文档，进度与阅读追踪都不适用（顶部进度 pill 在歌词模式同样
 /// 不画），且它的底部留白走 `independentDocumentInsets` 的 Flutter 侧 Padding，
 /// 不经 `setChromeInsets`；状态行在歌词模式下既不画也不占预留。
+///
+/// 「显示阅读计时器」「阅读进度指示」两个开关**都**关掉时整条行不画也不占预留——
+/// 空行照占 28px 是白吃正文高度。判据只此一处（[readerStatusFooterReserve] 的
+/// `enabled` 就是它），绘制与预留不会各判各的。
 bool readerStatusFooterEnabled({
   required bool desktop,
   required bool lyricsMode,
+  required bool showTimer,
+  required bool showProgress,
 }) =>
-    !lyricsMode;
+    !lyricsMode && (showTimer || showProgress);
 
 /// 状态行的底部预留高：启用时占 [footerHeight]，否则 0。
 double readerStatusFooterReserve({
@@ -100,6 +107,7 @@ class ReaderStatusFooter extends StatefulWidget {
     required this.sessionTotals,
     required this.currentChars,
     required this.totalChars,
+    required this.showTimer,
     required this.showProgress,
     this.chapterCurrentChars,
     this.chapterTotalChars,
@@ -123,7 +131,12 @@ class ReaderStatusFooter extends StatefulWidget {
   final int? chapterCurrentChars;
   final int? chapterTotalChars;
 
-  /// 右侧进度是否显示（「阅读进度指示」开关落到这里）。
+  /// 阅读追踪（计时器图标 + 字/时 + 本次时长）是否显示（「显示阅读计时器」开关落到
+  /// 这里）。关掉只是不画这一段——[StudyClock] 照常计时、照常落库，隐藏读数不等于
+  /// 停表（停表是点这一段本身的手动暂停）。
+  final bool showTimer;
+
+  /// 进度读数是否显示（「阅读进度指示」开关落到这里）。
   final bool showProgress;
 
   final Color textColor;
@@ -157,6 +170,8 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
     // 秒表 tick 只在文案真的变了才重建：计时暂停 / 失焦期间读数不动，不白重建。
     _ticker = Timer.periodic(widget.tick, (_) {
       if (!mounted) return;
+      // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
+      if (!widget.showTimer) return;
       final String tracker = readerTrackerLabel(widget.sessionTotals());
       if (tracker == _lastTracker) return;
       setState(() => _lastTracker = tracker);
@@ -221,43 +236,45 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: <Widget>[
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth:
-                          constraints.maxWidth * (progress == null ? 1 : .4),
-                    ),
-                    child: _hitTarget(
-                      onTap: widget.onTapTracker,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(
-                            totals.active
-                                ? Icons.timer_outlined
-                                : Icons.timer_off_outlined,
-                            key: ValueKey<bool>(totals.active),
-                            size: kReaderStatusFooterFontSize + 2,
-                            color: muted,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              readerTrackerLabel(totals),
-                              key: const ValueKey<String>(
-                                  'fushi_status_tracker'),
-                              style: style,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                  if (widget.showTimer)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth:
+                            constraints.maxWidth * (progress == null ? 1 : .4),
+                      ),
+                      child: _hitTarget(
+                        onTap: widget.onTapTracker,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(
+                              totals.active
+                                  ? Icons.timer_outlined
+                                  : Icons.timer_off_outlined,
+                              key: ValueKey<bool>(totals.active),
+                              size: kReaderStatusFooterFontSize + 2,
+                              color: muted,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                readerTrackerLabel(totals),
+                                key: const ValueKey<String>(
+                                    'fushi_status_tracker'),
+                                style: style,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                   if (progress != null)
                     Flexible(
                       child: Padding(
-                        padding: const EdgeInsets.only(left: 8),
+                        padding: EdgeInsets.only(
+                            left: widget.showTimer ? 8 : 0),
                         child: _hitTarget(
                           onTap: widget.onTapProgress,
                           child: Text(
@@ -289,6 +306,7 @@ class ReaderStatusInline extends StatefulWidget {
     required this.sessionTotals,
     required this.currentChars,
     required this.totalChars,
+    required this.showTimer,
     required this.showProgress,
     required this.textColor,
     this.chapterCurrentChars,
@@ -301,6 +319,7 @@ class ReaderStatusInline extends StatefulWidget {
   final int? totalChars;
   final int? chapterCurrentChars;
   final int? chapterTotalChars;
+  final bool showTimer;
   final bool showProgress;
   final Color textColor;
   final Duration tick;
@@ -318,6 +337,8 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline> {
     super.initState();
     _ticker = Timer.periodic(widget.tick, (_) {
       if (!mounted) return;
+      // 计时器读数隐藏时这一层没有随秒变化的内容，秒表 tick 不必重建。
+      if (!widget.showTimer) return;
       final String tracker = readerTrackerLabel(widget.sessionTotals());
       if (tracker == _lastTracker) return;
       setState(() => _lastTracker = tracker);
@@ -350,20 +371,22 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(
-          totals.active ? Icons.timer_outlined : Icons.timer_off_outlined,
-          size: kReaderStatusFooterFontSize + 2,
-          color: muted,
-        ),
-        const SizedBox(width: 6),
-        Text(
-          readerTrackerLabel(totals),
-          key: const ValueKey<String>('fushi_bar_status_tracker'),
-          style: style,
-          maxLines: 1,
-        ),
+        if (widget.showTimer) ...<Widget>[
+          Icon(
+            totals.active ? Icons.timer_outlined : Icons.timer_off_outlined,
+            size: kReaderStatusFooterFontSize + 2,
+            color: muted,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            readerTrackerLabel(totals),
+            key: const ValueKey<String>('fushi_bar_status_tracker'),
+            style: style,
+            maxLines: 1,
+          ),
+        ],
         if (progress != null) ...<Widget>[
-          const SizedBox(width: 16),
+          if (widget.showTimer) const SizedBox(width: 16),
           Text(
             progress,
             key: const ValueKey<String>('fushi_bar_status_progress'),

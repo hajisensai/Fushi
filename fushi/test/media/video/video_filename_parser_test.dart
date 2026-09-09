@@ -352,6 +352,162 @@ void main() {
     });
   });
 
+  group('兄弟集合差分定号（BUG-2369）', () {
+    /// 用户报障形态：12 集的目录里集号不补零。单文件名规则只认「两位数或带前导
+    /// 零」的尾部裸集数，于是 1..9 全部解不出、10..12 解得出——一半文件没有集号，
+    /// 番名里还留着那个数字，同一部番被拆成一堆单集卡、顺序变成 1,10,11,12,2…
+    test('不补零的 12 集目录：整批定号、归一组、按集号排序', () {
+      final List<String> paths = <String>[
+        for (int i = 1; i <= 12; i++) '/anime/Chuunibyou/Chuunibyou $i.mkv',
+      ];
+      final List<VideoGroup> groups = groupVideosIntoPlaylists(paths);
+      expect(groups, hasLength(1), reason: '12 个文件必须归一组，不是 10 组');
+      final VideoGroup g = groups.single;
+      expect(g.series, 'Chuunibyou', reason: '系列名里不能留着集号');
+      expect(g.isPlaylist, isTrue);
+      expect(
+        g.episodes.map((VideoEpisode e) => e.episode).toList(),
+        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      );
+    });
+
+    test('集号紧贴标题（无分隔符）同样定号', () {
+      final List<String> paths = <String>[
+        for (int i = 1; i <= 12; i++) '/anime/Show/Show!$i.mkv',
+      ];
+      final VideoGroup g = groupVideosIntoPlaylists(paths).single;
+      expect(
+        g.episodes.map((VideoEpisode e) => e.episode).toList(),
+        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      );
+    });
+
+    test('公共前缀不得切断数字段：只有 10/11/12 的目录不能解成 0/1/2', () {
+      final SiblingEpisodeNumbering? sib =
+          resolveSiblingEpisodeNumbers(<String>[
+        '/a/Show 10.mkv',
+        '/a/Show 11.mkv',
+        '/a/Show 12.mkv',
+      ]);
+      expect(sib, isNotNull);
+      expect(sib!.numbers.values.toList(), <int>[10, 11, 12]);
+      expect(sib.series, 'Show');
+    });
+
+    test('parsedEpisodeNumbersOf：整批解析补齐单文件名解不出的集号', () {
+      final List<String> paths = <String>[
+        for (int i = 1; i <= 12; i++) '/anime/Show/Show $i.mkv',
+      ];
+      expect(
+        parsedEpisodeNumbersOf(paths),
+        <int>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      );
+    });
+
+    test('已解出的集号只补不覆盖（后缀带画质块的真实命名）', () {
+      final List<String> paths = <String>[
+        '/a/Show - Interview 1 [BD].mkv',
+        '/a/Show - Interview 2 [BD].mkv',
+        '/a/Show - Interview 10 [BD].mkv',
+      ];
+      // 第三个单看文件名就解得出 10（尾部两位裸数字），前两个解不出。
+      expect(parsedEpisodeNumberOf(paths[2]), 10);
+      expect(parsedEpisodeNumberOf(paths[0]), isNull);
+      expect(parsedEpisodeNumbersOf(paths), <int>[1, 2, 10]);
+    });
+
+    test('不同目录各自定号，互不偷号', () {
+      final List<String> paths = <String>[
+        '/a/S1/Show 1.mkv',
+        '/a/S1/Show 2.mkv',
+        '/a/S2/Show 10.mkv',
+        '/a/S2/Show 11.mkv',
+      ];
+      expect(parsedEpisodeNumbersOf(paths), <int>[1, 2, 10, 11]);
+    });
+
+    test('补零命名不经过差分，行为与修复前逐字相同', () {
+      final List<String> paths = <String>[
+        '/a/[Nekomoe] Show - 01 [1080p].mkv',
+        '/a/[Nekomoe] Show - 02 [1080p].mkv',
+        '/a/[Nekomoe] Show - 03 [1080p].mkv',
+      ];
+      // 每个文件都自带集号 → 差分整条通路不介入。
+      expect(fillEpisodeNumbersFromSiblings(paths, <int?>[1, 2, 3]),
+          <int>[1, 2, 3]);
+      final VideoGroup g = groupVideosIntoPlaylists(paths).single;
+      expect(g.series, 'Show');
+      expect(g.episodes.map((VideoEpisode e) => e.episode).toList(),
+          <int>[1, 2, 3]);
+    });
+  });
+
+  group('兄弟差分的负样本：判据不成立就整目录放弃（BUG-2369）', () {
+    test('混入特典 → 不硬凑集号', () {
+      final List<String> paths = <String>[
+        '/a/Show 1.mkv',
+        '/a/Show 2.mkv',
+        '/a/Show OVA.mkv',
+      ];
+      expect(resolveSiblingEpisodeNumbers(paths), isNull);
+      expect(parsedEpisodeNumbersOf(paths), <int?>[null, null, null]);
+    });
+
+    test('按年份区分的目录：4 位数字不当集号', () {
+      final List<String> paths = <String>[
+        '/a/Movie (1979).mkv',
+        '/a/Movie (2005).mkv',
+      ];
+      expect(resolveSiblingEpisodeNumbers(paths), isNull);
+      expect(parsedEpisodeNumbersOf(paths), <int?>[null, null]);
+    });
+
+    test('差分结果与已解出的集号对不上 → 整目录放弃，不覆盖已有值', () {
+      final List<String> paths = <String>[
+        '/a/Show 1.mkv',
+        '/a/Show 2.mkv',
+        '/a/Show 3.mkv',
+      ];
+      // 差分给的是 1/2/3；已解出的那个说自己是 7（绝对集号口径），两套口径不同。
+      expect(
+        fillEpisodeNumbersFromSiblings(paths, <int?>[null, null, 7]),
+        <int?>[null, null, 7],
+      );
+    });
+
+    test('stem 重名（不同目录同名文件）→ 该目录判据不成立', () {
+      expect(
+        resolveSiblingEpisodeNumbers(<String>['/a/01.mkv', '/b/01.mkv']),
+        isNull,
+      );
+    });
+
+    test('单个文件不做差分', () {
+      expect(resolveSiblingEpisodeNumbers(<String>['/a/Show 1.mkv']), isNull);
+    });
+
+    test('集号真的解不出时按自然序排，不是裸字符串序', () {
+      // 三个文件差在「9 / 100 / extra」上：差分因 extra 不是纯数字而放弃，
+      // 集号全为 null，末位判据只剩标题。裸字符串序会把 100 排到 9 前面。
+      final List<String> paths = <String>[
+        '/a/Show - Talk 100 (x).mkv',
+        '/a/Show - Talk extra (x).mkv',
+        '/a/Show - Talk 9 (x).mkv',
+      ];
+      final VideoGroup g = groupVideosIntoPlaylists(paths).single;
+      expect(g.episodes.every((VideoEpisode e) => e.episode == null), isTrue,
+          reason: '前提：这三个都解不出集号，否则这条用例没在测末位判据');
+      expect(
+        g.episodes.map((VideoEpisode e) => e.title).toList(),
+        <String>[
+          'Show - Talk 9 (x)',
+          'Show - Talk 100 (x)',
+          'Show - Talk extra (x)',
+        ],
+      );
+    });
+  });
+
   group('listVideoFilesInDirectory', () {
     late Directory root;
 

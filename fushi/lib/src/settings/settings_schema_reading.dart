@@ -16,6 +16,11 @@ SettingsDestination buildReadingDestination() {
   // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
       c.readerSource.readerViewMode == 'paginated';
+  bool isVisualNovel(SettingsContext c) =>
+      c.readerSource.readerViewMode == 'vn';
+  bool isVisualNovelSentenceMode(SettingsContext c) =>
+      isVisualNovel(c) &&
+      c.readerSource.readerVisualNovelScreenMode == 'sentences';
   return SettingsDestination(
     id: SettingsDestinationId.reading,
     title: t.settings_destination_reading,
@@ -50,8 +55,6 @@ SettingsDestination buildReadingDestination() {
                 label: t.reader_scroll,
                 tooltip: t.reader_scroll,
               ),
-              // TODO-909: third book view-mode. M0 exposes it so the device
-              // Gate can select VN; the 6 VN-specific sub-settings are M1.
               SettingsSegmentOption<String>(
                 value: 'vn',
                 label: t.reader_vn,
@@ -220,6 +223,136 @@ SettingsDestination buildReadingDestination() {
             onChanged: (SettingsContext c, String v) {
               c.readerSource.setReaderFuriganaMode(v);
               notifyReaderSettingsChanged(c);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        title: t.reader_vn_settings,
+        visible: isVisualNovel,
+        items: <SettingsItem>[
+          SettingsSliderItem(
+            id: 'reading_vn.reveal_speed',
+            title: t.reader_vn_reveal_speed,
+            icon: Icons.animation_outlined,
+            min: 0,
+            max: 120,
+            divisions: 24,
+            step: 5,
+            titleReadout: true,
+            commitOnRelease: true,
+            visible: isVisualNovel,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 22,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerVisualNovelRevealSpeed.toDouble(),
+            label: (double v) => v.round() == 0
+                ? t.reader_vn_reveal_instant
+                : '${v.round()}/s',
+            onChanged: (SettingsContext c, double v) async {
+              await c.readerSource
+                  .setReaderVisualNovelRevealSpeed(v.round());
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'reading_vn.screen_mode',
+            title: t.reader_vn_screen_mode,
+            icon: Icons.view_agenda_outlined,
+            controlBelow: true,
+            visible: isVisualNovel,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 23,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'block',
+                label: t.reader_vn_screen_block,
+                tooltip: t.reader_vn_screen_block,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'sentences',
+                label: t.reader_vn_screen_sentences,
+                tooltip: t.reader_vn_screen_sentences,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.readerVisualNovelScreenMode,
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderVisualNovelScreenMode(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'reading_vn.sentences_per_screen',
+            title: t.reader_vn_sentences_per_screen,
+            icon: Icons.format_list_numbered,
+            visible: isVisualNovelSentenceMode,
+            min: 1,
+            max: 12,
+            step: 1,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 24,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerVisualNovelSentencesPerScreen.toDouble(),
+            format: (double v) => '${v.round()}',
+            onChanged: (SettingsContext c, double v) async {
+              await c.readerSource
+                  .setReaderVisualNovelSentencesPerScreen(v.round());
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_vn.preserve_dialogue',
+            title: t.reader_vn_preserve_dialogue,
+            icon: Icons.format_quote,
+            visible: isVisualNovelSentenceMode,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.layout,
+              order: 25,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerVisualNovelPreserveDialogue,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setReaderVisualNovelPreserveDialogue(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_vn.click_advance',
+            title: t.reader_vn_click_advance,
+            icon: Icons.touch_app_outlined,
+            visible: isVisualNovel,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 20,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerVisualNovelClickAdvance,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setReaderVisualNovelClickAdvance(v);
+              notifyReaderLayoutChanged(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_vn.merge_spoken_sentence',
+            title: t.reader_vn_merge_spoken_sentence,
+            icon: Icons.graphic_eq_outlined,
+            visible: isVisualNovel,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 0,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.readerVisualNovelMergeSpokenSentence,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setReaderVisualNovelMergeSpokenSentence(v);
+              notifyReaderLayoutChanged(c);
             },
           ),
         ],
@@ -450,6 +583,26 @@ SettingsDestination buildReadingDestination() {
               settingsContext.readerSource.toggleShowTopProgressBar();
               // TODO-975 需求 A：开/关顶部进度改变了喂 WebView 的预留高（关进度回收
               // 18px），走重锚通道保住连续模式滚动位置。
+              notifyReaderChromeReanchored(settingsContext);
+            },
+          ),
+          // 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）的显示开关，
+          // 紧挨同一条状态行右段的「阅读进度指示」。只关显示不停表——计时账仍在
+          // StudyClock 照记（停表是点状态行那一段的手动暂停）。两个开关都关时整条
+          // 状态行不画且回收 28px 底部预留，故与进度开关同样走重锚通道。
+          // order 14：behavior 组内 0-9/11/12/13/18/19 已占，取下一空号。
+          SettingsSwitchItem(
+            id: 'reading_controls.show_reading_timer',
+            title: t.reader_timer_show,
+            icon: Icons.timer_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 14,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.showReadingTimer,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.readerSource.toggleShowReadingTimer();
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
