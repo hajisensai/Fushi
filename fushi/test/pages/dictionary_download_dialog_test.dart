@@ -372,7 +372,7 @@ void main() {
                     },
                     installedIndices: installed,
                     checked: current,
-                    expandedCategories: <DictionaryCategory>{
+                    expandedCategories: const <DictionaryCategory>{
                       DictionaryCategory.jaEn,
                       DictionaryCategory.kanji,
                     },
@@ -424,7 +424,7 @@ void main() {
                     },
                     installedIndices: const <int>{1},
                     checked: current,
-                    expandedCategories: <DictionaryCategory>{
+                    expandedCategories: const <DictionaryCategory>{
                       DictionaryCategory.jaEn,
                       DictionaryCategory.kanji,
                     },
@@ -487,7 +487,7 @@ void main() {
                     },
                     installedIndices: const <int>{},
                     checked: current,
-                    expandedCategories: <DictionaryCategory>{
+                    expandedCategories: const <DictionaryCategory>{
                       DictionaryCategory.jaEn,
                       DictionaryCategory.kanji,
                     },
@@ -597,7 +597,7 @@ void main() {
                     },
                     installedIndices: const <int>{2},
                     checked: current,
-                    expandedCategories: <DictionaryCategory>{
+                    expandedCategories: const <DictionaryCategory>{
                       DictionaryCategory.jaEn,
                       DictionaryCategory.kanji,
                     },
