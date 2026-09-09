@@ -41,14 +41,55 @@ void main() {
       final String body =
           methodBody(page, 'Future<void> _maybeBackfillCovers() async {');
       expect(body.contains('refreshShelfThrottled('), isTrue);
-      // 直接重列只允许出现一次——在节流闭包里；循环体里不得再裸调。
+      // 直接重列只允许出现一次——在节流闭包里；循环体里不得再裸调。钉的是「几次
+      // 重列」这个不变式，不是那行的写法（写法从箭头体改成了块体，见下一条）。
       expect(
-          'setState(() => _future = widget.repo.listForShelf())'
-              .allMatches(body)
-              .length,
+          'widget.repo.listForShelf()'.allMatches(body).length,
           1,
           reason: '每张封面一次全库重列 + 整页重建');
       expect(page.contains('_coverBackfillRefreshInterval'), isTrue);
+    });
+
+    test('cover backfill never hands setState a closure returning a Future',
+        () {
+      final String body =
+          methodBody(page, 'Future<void> _maybeBackfillCovers() async {');
+      // `setState(() => _future = ...)` 的箭头体会把赋值结果（Future）当返回值
+      // 交给 setState，debug 断言当场抛出并掀掉整个回填循环；release 因断言被
+      // 编译掉而侥幸跑通，于是这条失效路径只在 debug 生效、长期无人发现。
+      expect(body.contains('setState(() => _future'), isFalse,
+          reason: 'setState() callback argument returned a Future');
+    });
+
+    test('returning from the player does not rerun the whole library load', () {
+      final String open = methodBody(
+          page, 'Future<void> _open(VideoBookRow book, {int? playlistCollectionId}) async {');
+      expect(open.contains('_refreshAfterPlayback()'), isTrue,
+          reason: '播放返回必须走窄刷新');
+      expect(open.contains('_refresh()'), isFalse,
+          reason: '全量 _refresh 会重算 12 张与观看无关的表并拖起封面回填产线');
+
+      final String narrow =
+          methodBody(page, 'void _refreshAfterPlayback() {');
+      expect(narrow.contains('widget.repo.listForShelf()'), isTrue,
+          reason: '断点 / 完成时刻 / 字幕源 / 音轨都在 video_books 上');
+      expect(narrow.contains('_loadWatchRecency()'), isTrue,
+          reason: 'study_segments 驱动的「最近观看」会变');
+      expect(narrow.contains('_maybeBackfillCovers('), isFalse,
+          reason: '播放不产生新的缺封面行，回填是后台产线不该压在退出这一帧上');
+      expect(narrow.contains('_loadLibraryMaps('), isFalse,
+          reason: '合集 / 刮削 / 元数据播放页一行都不写');
+
+      // 窄重载与全量重载必须给出同一份「最近观看」映射，否则排序随刷新来路漂移。
+      final String recency =
+          methodBody(page, 'Future<void> _loadWatchRecency() async {');
+      expect(recency.contains('_buildWatchRecency('), isTrue);
+      final String full = methodBody(
+          page, 'Future<void> _loadLibraryMapsInner(int requestGeneration)');
+      expect(full.contains('_buildWatchRecency('), isTrue);
+      // 两条路径各记各的代，互不取消。
+      expect(recency.contains('_watchRecencyRequestGeneration'), isTrue);
+      expect(full.contains('_libraryMapsRequestGeneration'), isTrue);
     });
 
     test('_loadLibraryMapsInner issues its table reads concurrently', () {
