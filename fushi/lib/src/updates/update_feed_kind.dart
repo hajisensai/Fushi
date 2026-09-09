@@ -62,14 +62,18 @@ String videoEpisodeTargetKey({
 }) =>
     '$collectionId|$episodeKey';
 
-/// 漫画新章的域内身份。`chapterKey` 是**源内**章节身份（Mihon = `chapter.url`，
-/// Aidoku = `chapter['key']`），与 `manga_chapter_states.chapterKey` 同一族——
-/// 源刷新后章节顺序和索引都会变，key 不变，所以这里同样刻意不用 index。
+/// 漫画新章的域内身份。
+///
+/// `bookKey` 是 `epub_books` 主键（在线漫画那支是 `<runtime>-<sha256 前 32>`，
+/// 由源身份摘要而来，不随标题改名变化）；`chapterKey` 是**源内**章节身份
+/// （Mihon = `chapter.url`，Aidoku = `chapter['key']`），与
+/// `manga_chapter_states.chapterKey` 同一族——源刷新后章节顺序和索引都会变，
+/// key 不变，所以这里同样刻意不用 index。
 String mangaChapterTargetKey({
-  required String bookUid,
+  required String bookKey,
   required String chapterKey,
 }) =>
-    '$bookUid|$chapterKey';
+    '$bookKey|$chapterKey';
 
 /// 扩展新版的域内身份。带 versionCode：同一扩展的下一个版本是另一条事件。
 String mangaExtensionTargetKey({

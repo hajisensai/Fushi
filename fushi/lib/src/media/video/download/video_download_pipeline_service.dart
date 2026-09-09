@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -50,6 +51,8 @@ import 'package:fushi/src/media/video/video_duration_probe.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 enum VideoDownloadSubtitlePolicy { none, bestEffort, required }
@@ -796,6 +799,7 @@ class VideoDownloadPipelineService {
     String? workerId,
     this.pollInterval = const Duration(seconds: 5),
     this.leaseDuration = const Duration(minutes: 2),
+    this.updateFeed,
   }) : preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
@@ -826,6 +830,11 @@ class VideoDownloadPipelineService {
   final String workerId;
   final Duration pollInterval;
   final Duration leaseDuration;
+
+  /// v101 更新提醒的投递口。可空：测试与不需要提醒的装配传 null，判据本身不因此
+  /// 走两条路径。
+  final UpdateFeedService? updateFeed;
+
   final VideoBookRepository _videoRepository;
   final VideoDownloadOrganizer _organizer = const VideoDownloadOrganizer();
 
@@ -3349,6 +3358,12 @@ class VideoDownloadPipelineService {
           bookUid: result.createdEpisodeUids.first,
           title: job.title,
         );
+        await _publishSubscriptionEpisodeUpdates(
+          job: job,
+          collectionId: collectionId,
+          files: files,
+          result: result,
+        );
       }
     } else {
       // 多部电影一个种子（BUG-2007）：organize 已把够体量的并列正片保成
@@ -3947,10 +3962,56 @@ class VideoDownloadPipelineService {
     return a.id.compareTo(b.id);
   }
 
-  static String _episodeTitle(String title, VideoDownloadJobFileRow file) {
+  /// 订阅下载入库后投递「番剧更新」提醒（v101）。
+  ///
+  /// 三个刻意的判据：
+  /// * 挂在 **`createdEpisodeUids`** 上而不是「下载完成」——那份判据由
+  ///   `importSplitPlaylist` 在事务内按归一路径算出，调用方自己重扫会把崩溃重放
+  ///   误判成新增（BUG-1417 的形状）；
+  /// * 只提醒**订阅**拉起来的任务，手动下载不提醒（用户自己刚点的）；
+  /// * 挂在**入库之后**，所以提醒出现时那一集已经能点开就播。
+  Future<void> _publishSubscriptionEpisodeUpdates({
+    required VideoDownloadJobRow job,
+    required int collectionId,
+    required List<VideoDownloadJobFileRow> files,
+    required SplitPlaylistImportResult result,
+  }) async {
+    final UpdateFeedService? feed = updateFeed;
+    if (feed == null) return;
+    if (!await database.isVideoDownloadJobFromSubscription(job.jobId)) return;
+    final List<UpdateFeedDraft> drafts = <UpdateFeedDraft>[];
+    for (final String uid in result.createdEpisodeUids) {
+      final int index = result.episodeUids.indexOf(uid);
+      final VideoDownloadJobFileRow? file =
+          index >= 0 && index < files.length ? files[index] : null;
+      drafts.add(
+        UpdateFeedDraft(
+          kind: UpdateFeedKind.videoEpisode,
+          targetKey: videoEpisodeTargetKey(
+            collectionId: collectionId,
+            episodeKey: uid,
+          ),
+          title: job.title,
+          subtitle: file == null ? null : _episodeLabel(file),
+          detailJson: jsonEncode(<String, Object?>{
+            'collectionId': collectionId,
+            'bookUid': uid,
+          }),
+        ),
+      );
+    }
+    await feed.publishBatch(UpdateFeedKind.videoEpisode, drafts);
+  }
+
+  static String _episodeTitle(String title, VideoDownloadJobFileRow file) =>
+      '$title - ${_episodeLabel(file)}';
+
+  /// 不带作品名的集标签（`S01E03`）。更新提醒的副标题用它——那里作品名已经在
+  /// 主标题上了，再拼一遍只会把通知栏的一行挤没。
+  static String _episodeLabel(VideoDownloadJobFileRow file) {
     final String season = (file.season ?? 1).toString().padLeft(2, '0');
     final String episode = (file.episode ?? 0).toString().padLeft(2, '0');
-    return '$title - S${season}E$episode';
+    return 'S${season}E$episode';
   }
 
   static String _safeSubtitleExtension(String fileName) {
