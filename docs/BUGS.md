@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2197 条。点号进各自文件。
+> 共 2200 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2384](bugs/BUG-2384-reader-toc-rows-missing.md) | ✅ | ✅ | 阅读器目录章节列表显示不全（少行 / 整段消失） |
+| [BUG-2383](bugs/BUG-2383-reader-toc-anchor-jump-lands-chapter-start.md) | ✅ | ✅ | 目录里同一章的多个锚点条目全跳章首（章节跳转不准） |
+| [BUG-2382](bugs/BUG-2382-reader-nav-autofocus-keyboard.md) | ✅ | ✅ | 移动端打开阅读器导航抽屉即自动弹出软键盘 |
 | [BUG-2380](bugs/BUG-2380-ankidroid-create-deck-silent-failure.md) | ✅ | ✅ | AnkiDroid 建牌组/笔记类型失败被吞成成功，一键创建 Lapis 改选用户自己的牌组 |
 | [BUG-2379](bugs/BUG-2379-ci-package-tests-hardcoded-list.md) | ✅ | ✅ | CI 的 Run package tests 循环写死五个包名，新包的测试在 CI 里一次都不会跑 |
 | [BUG-2378](bugs/BUG-2378-nul-guard-scan-roots-hardcoded.md) | ✅ | ✅ | 裸 NUL 守卫的扫描根写死包清单，新包与 packages/*/test 全在扫描面之外 |

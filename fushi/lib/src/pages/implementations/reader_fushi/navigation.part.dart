@@ -655,20 +655,34 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // HBK-AUDIT-038: a same-document anchor (e.g. href="#note1") resolves to
       // the current chapter's path plus a fragment. Jump in place instead of
       // reloading the whole chapter (avoids a visible flash + lost scroll).
-      if (link.chapterIndex == _currentChapter && link.fragment != null) {
-        await _jumpToFragmentInPlace(link.fragment!);
-      } else {
-        await _navigateToChapterWithFragment(
-          link.chapterIndex,
-          link.fragment,
-          manual: true,
-        );
-      }
+      await _jumpToChapterAnchor(link.chapterIndex, link.fragment);
       return;
     }
     // HBK-AUDIT-038: route genuine external schemes (http/https/mailto/tel on a
     // foreign host) to the OS; _openExternalUrl no-ops for our own virtual host.
     await _openExternalUrl(url);
+  }
+
+  /// 「章号 + 可选章内锚」的唯一落地口，目录点击与书内链接共用。
+  ///
+  /// fragment 为 null 时就是普通跳章（[_navigateToChapter]，与修复前逐字相同）；
+  /// 带锚且**就在当前章**时原地滚过去（不重载章节，避免闪一下 + 丢滚动位置，
+  /// HBK-AUDIT-038）；带锚且跨章时随章加载一起把锚落地。
+  ///
+  /// 目录侧为什么需要它：EPUB 里「一个 xhtml 装整卷、目录靠 `#anchor` 分节」很
+  /// 常见，这类目录项的 spine 章号**全都一样**，此前锚被丢在
+  /// [flattenTtuTocEntries] 之外，于是同一章下的每一条目录项都只跳到章首——
+  /// 用户看到的「章节跳转不准」。
+  Future<void> _jumpToChapterAnchor(int index, String? fragment) async {
+    if (fragment == null) {
+      await _navigateToChapter(index, manual: true);
+      return;
+    }
+    if (index == _currentChapter) {
+      await _jumpToFragmentInPlace(fragment);
+      return;
+    }
+    await _navigateToChapterWithFragment(index, fragment, manual: true);
   }
 
   Future<void> _navigateToChapterWithFragment(
