@@ -4527,6 +4527,8 @@
   "download_resource_resolve_failed": "无法获取下载资源。请检查网络和代理设置后重试。",
   "download_torrent_invalid": "来源返回的种子数据无效。请稍后重试或更换来源。",
   "download_torrent_selection_failed": "无法在种子中唯一匹配这本书。请刷新目录或更换来源。",
+  "profile_language_bindings": "语言绑定",
+  "profile_language_bindings_hint": "在条目已标注内容语言时生效。EPUB 会自动读取文件里的声明；其它格式需要在条目上手动指定。",
   "video_shader_tier_low_hint_mobile": "mpv 内置锐化（手机上为 spline36）。无需下载，不增加任何 GPU pass。上面几档掉帧时退回这一档最稳。",
   "video_shader_tier_medium_hint_mobile": "Anime4K 去模糊（S），在片源原分辨率上跑。不含放大 pass，开销不随屏幕分辨率增长。手机建议从这一档开始。",
   "video_shader_tier_high_hint_mobile": "Anime4K 去模糊（M），在片源原分辨率上跑。kernel 比「中」更大，同样不含放大 pass。适合较快的手机 GPU。",

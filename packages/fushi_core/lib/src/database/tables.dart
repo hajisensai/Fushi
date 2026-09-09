@@ -577,6 +577,24 @@ class BookProfiles extends Table {
   Set<Column> get primaryKey => {bookKey};
 }
 
+// ── language_profiles ───────────────────────────────────────────────
+// 「这种内容语言用哪个 Profile」。与 [MediaTypeProfiles] 同构、同性质：都是
+// Profile 的自动解析绑定，只是路由键不同（语言 vs 媒体类型）。
+//
+// [languageTag] 是**归一化后**的键（`normalizeLanguageBinding`：保留 language +
+// script、丢 region，如 `ja` / `zh-Hant`），不是内容语言列里的原始 BCP-47 串。
+// 写入与查询两侧都必须过那个函数，否则用户绑了 `ja` 而书里写 `ja-JP` 会静默
+// 不生效。
+@DataClassName('LanguageProfileRow')
+class LanguageProfiles extends Table {
+  TextColumn get languageTag => text()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  Set<Column> get primaryKey => {languageTag};
+}
+
 // ── sync_baselines ──────────────────────────────────────────────────
 // 每本书每个同步维度「上次同步成功时双方一致的版本」（共同祖先），
 // 用于三方分叉检测。assetKey = sanitizeTtuFilename(book.title)（跨设备稳定）。

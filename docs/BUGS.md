@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2145 条。点号进各自文件。
+> 共 2148 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2334](bugs/BUG-2334-mobile-shader-tier-desktop-chain.md) | ✅ | ✅ | mobile-shader-tier-desktop-chain |
+| [BUG-2332](bugs/BUG-2332-cloud-manga-content-sync.md) | ✅ | ✅ | 云盘同步后端完全不同步漫画（上传静默跳过、下载按 EPUB 导入失败） |
 | [BUG-2330](bugs/BUG-2330-audiobook-multifile-position-no-file-index.md) | ✅ | ✅ | 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0 |
 | [BUG-2329](bugs/BUG-2329-eink-toggle-no-reader-reinject.md) | ✅ | ✅ | 墨水屏开关不通知阅读器重注入正文样式 |
 | [BUG-2328](bugs/BUG-2328-audiobook-resume-ignored-on-open.md) | ✅ | ✅ | 打开带有声书的书不按有声书进度定位，按播放才跳 |
@@ -44,6 +45,8 @@
 | [BUG-2285](bugs/BUG-2285-fribb-tmdb-id-shape-misparsed.md) | ✅ | ✅ | Fribb 映射表的 themoviedb_id 是对象不是裸数字、TVDB 键是 tvdb_id，解析用错形状导致 TMDB id 恒为 null |
 | [BUG-2284](bugs/BUG-2284-lookup-popup-instant-scroll.md) | ✅ | ✅ | 查词弹窗「瞬时滚动」开关对滚轮完全无效 |
 | [BUG-2283](bugs/BUG-2283-eink-swipe-dismiss-animation.md) | ✅ | ✅ | 墨水屏模式：查词弹窗滑动关闭仍有滑出/弹回补间动画 |
+| [BUG-2280](bugs/BUG-2280-android-detach-retained-engine.md) | ✅ | ✅ | Android快速重开复用已关库引擎 |
+| [BUG-2279](bugs/BUG-2279-rapid-reopen-mutex.md) | ✅ | ✅ | Windows快速重开未等待旧实例退出 |
 | [BUG-2278](bugs/BUG-2278-ankidroid-live-target.md) | ✅ | ✅ | AnkiDroid识别与API实例缓存导致安装或启用后仍无法连接 |
 | [BUG-2277](bugs/BUG-2277-ext-page-sentence.md) | ✅ | ✅ | 浏览器扩展查词/制卡不取页面所在句子 |
 | [BUG-2276](bugs/BUG-2276-macos-reader-panel-transparent-barrier.md) | ✅ | ✅ | macOS 阅读设置/导航抽屉打开后点正文不关闭 |

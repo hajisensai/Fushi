@@ -1212,6 +1212,15 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM book_profiles AS m '
       'WHERE m.book_key = sbp.book_key)',
     );
+    await _db.customStatement(
+      'INSERT INTO language_profiles (language_tag, profile_id) '
+      'SELECT slp.language_tag, tp.id '
+      'FROM $_srcAlias.language_profiles AS slp '
+      'JOIN $_srcAlias.profiles AS sp ON sp.id = slp.profile_id '
+      'JOIN profiles AS tp ON tp.name = sp.name '
+      'WHERE NOT EXISTS (SELECT 1 FROM language_profiles AS m '
+      'WHERE m.language_tag = slp.language_tag)',
+    );
   }
 
   /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,

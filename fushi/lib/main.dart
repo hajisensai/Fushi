@@ -57,6 +57,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart, dataRootMigrationRestart;
 import 'package:fushi/src/startup/webview_prewarm.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
@@ -710,7 +711,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 缺；WAL 崩溃安全，超时放行只损失一次 checkpoint，不损失已提交的数据。
   static const Duration _closeDatabaseOnExitTimeout = Duration(seconds: 3);
 
-  Future<void>? _androidBackgroundFlushInFlight;
+  final AndroidViewLifecycle _androidViewLifecycle = AndroidViewLifecycle();
 
   /// 守卫：Windows 安装器 handoff reconcile 的 post-frame 调度只挂一个。
   bool _windowsUpdateHandoffScheduled = false;
@@ -844,18 +845,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return;
     }
     if (Platform.isAndroid) {
-      switch (state) {
-        case AppLifecycleState.inactive:
-        case AppLifecycleState.paused:
-        case AppLifecycleState.hidden:
-          unawaited(_flushActivePagesForAndroidBackground());
-          return;
-        case AppLifecycleState.detached:
-          unawaited(_flushAndCloseForLifecycleDetach());
-          return;
-        case AppLifecycleState.resumed:
-          return;
-      }
+      // BUG-2280: AudioServiceActivity can detach while its cached engine
+      // survives. A new Activity must retain that engine's DB and services.
+      unawaited(_androidViewLifecycle.handleState(state));
+      return;
     }
     // `detached` = the app is about to be terminated (the engine is detaching
     // from the view). Tear down Bonsoir's mDNS event sources here as a fallback
@@ -1028,36 +1021,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         '[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms');
   }
 
-  /// Android 退后台不是退出：只做保留式 flush，页面回前台后仍继续持有回调。
-  ///
-  /// 页面本身也会在 paused/hidden 尝试 flush，但那是 fire-and-forget；这里给
-  /// Android 一个 app-level 汇聚点，确保 reader/video/audiobook 的 pending 位置写穿。
-  Future<void> _flushActivePagesForAndroidBackground() async {
-    final Future<void>? existing = _androidBackgroundFlushInFlight;
-    if (existing != null) {
-      return existing;
-    }
-
-    final Future<void> run = () async {
-      try {
-        await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
-      } catch (e) {
-        debugPrint('[Fushi] android background flush failed: $e');
-      }
-    }();
-    _androidBackgroundFlushInFlight = run;
-    try {
-      await run;
-    } finally {
-      if (identical(_androidBackgroundFlushInFlight, run)) {
-        _androidBackgroundFlushInFlight = null;
-      }
-    }
-  }
-
   /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源），再 flush 活跃页面并 close DB。
   ///
-  /// 仅作 `detached` 生命周期兜底（移动端 / 不经 window_manager 的退出路径）。桌面
+  /// 仅作非 Android 的 `detached` 生命周期兜底。Android view 脱离不代表引擎退出。桌面
   /// 点 X 走 [_flushAndExitForWindowClose]（flush + closeDB + exit(0)），不再到这里。
   /// 超时上限收紧到 1.5s（TODO-086）：原生 stop 不归时放行，避免拖住退出。
   Future<void> _flushAndCloseForLifecycleDetach() async {
@@ -1075,11 +1041,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     try {
-      final Future<void>? pendingBackgroundFlush =
-          _androidBackgroundFlushInFlight;
-      if (pendingBackgroundFlush != null) {
-        await pendingBackgroundFlush;
-      }
       await ExitFlushRegistry.instance.flushAll();
     } catch (e) {
       debugPrint('[Fushi] lifecycle detach flush failed: $e');
