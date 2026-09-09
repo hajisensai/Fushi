@@ -1,6 +1,7 @@
 ## BUG-2397 · 音调去重对 pattern 式音调与 IPA 完全不生效
 - **报告**：2026-09-10（用户：「fushi 音调去重没用」）
-- **真实性**：✅ 真 bug，两条独立根因，都用 node 真执行 `createPitchSection` 复现过：
+- **真实性**：✅ 真 bug，**三条独立根因**（①用 node 真执行 `createPitchSection` 复现，
+  ②③沿真实代码路径定位到具体行）：
   - **根因①** `fushi/assets/popup/popup.js:2903`（去重分支）：`seen` 只收 **数字位置**
     `pitchPositions`，`patterns`（"heiban" 等 pattern 式音调）与 `transcriptions`（IPA 音标）
     一概不参与去重；保活守卫又写成 `group.transcriptions?.length` / `group.patterns?.length`
@@ -24,7 +25,7 @@
     `null == "true"` 判成 `false`。净效果：**设置页显示「开」，系统级弹窗里却是关的**，
     而绝大多数用户从没理由去点一个看起来已经开着的开关。同一处还连累另外两个 Dart 默认为
     `true` 的键（`harmonic_frequency` / `collapse_dictionaries`）。
-- **[x] ① 已修复** — `<pending>`
+- **[x] ① 已修复** — `6dda5c84cd`
   - 根因①：`createPitchSection` 的去重改成**逐类**：`seenPositions` / `seenPatterns` /
     `seenTranscriptions` 三个 Set 各自过滤，保活判据从「原始字段非空」改成「**去重后**
     还剩东西」，`Object.assign` 透传时三类可见条目都换成去重后的那份。三份 popup.js
