@@ -145,7 +145,7 @@ dependency_overrides:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 78a5241b30feb9a45f76cca5d6b2907c4d13638b
+      ref: b8a7b76016dd0b7eb55671bbe8b4e054af965d64
 
 # Melos 7 的配置位置就是这里（7.0 起 melos.yaml 被废弃）。包列表不再重复声明：
 # 成员由上面的 workspace: 决定，melos 直接读它。
