@@ -4534,5 +4534,6 @@
   "video_shader_tier_high_hint_mobile": "Anime4K deblur (M) at the source resolution. Larger kernel than Medium; still no upscaling passes. For faster phone GPUs.",
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames.",
   "dialog_background_close": "Close (task keeps running)",
-  "reader_timer_show": "Lesetimer anzeigen"
+  "reader_timer_show": "Lesetimer anzeigen",
+  "media_source_root_already_added": "Already a source — rescanning: $path"
 }

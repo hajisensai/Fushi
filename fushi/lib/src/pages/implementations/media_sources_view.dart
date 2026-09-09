@@ -806,11 +806,19 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
-    final bool dup = existing.any(
-        (SourceLibraryRow r) => r.transport == 'local' && r.rootPath == norm);
-    if (dup) {
-      FushiToast.show(msg: norm, severity: ToastSeverity.warning);
-      return;
+    // 该根已是常驻来源（BUG-2368）：旧行为是播一条**只有路径**的 toast 就 return。
+    // 用户视角就是「选完文件夹被静默弹回」——既不知道为什么，也没有任何进展。
+    // 「这个文件夹我要它进库」在根已登记时的正确落地是**重扫那一行**，和
+    // [importLocalFolderOnce] 撞同根时的处理逐字一致；提示语说清原因再重扫。
+    for (final SourceLibraryRow row in existing) {
+      if (row.transport == 'local' && row.rootPath == norm) {
+        FushiToast.show(
+          msg: t.media_source_root_already_added(path: norm),
+          severity: ToastSeverity.warning,
+        );
+        await _rescan(row);
+        return;
+      }
     }
 
     final String? groupingMode = await _pickVideoGroupingMode();
@@ -850,10 +858,16 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (!mounted || picked == null || picked.isEmpty) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
-    // 该根已是常驻来源：不再造同根的一次性影子，直接重扫那一行。
+    // 该根已是常驻来源：不再造同根的一次性影子，直接重扫那一行。重扫本身在来源页
+    // 之外（快速导入区）没有可见痕迹，因此和 [addLocalFolder] 一样先说明再扫
+    // （BUG-2368），否则用户看到的同样是「选完文件夹什么都没发生」。
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
     for (final SourceLibraryRow row in existing) {
       if (row.transport == 'local' && row.rootPath == norm) {
+        FushiToast.show(
+          msg: t.media_source_root_already_added(path: norm),
+          severity: ToastSeverity.warning,
+        );
         await _rescan(row);
         return;
       }
@@ -925,14 +939,17 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String norm =
         normalizeSourceRootPath(result.remotePath, transport: result.transport);
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
-    // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。
-    final bool dup = existing.any((SourceLibraryRow r) {
-      if (r.transport != result.transport || r.rootPath != norm) return false;
-      final Map<String, Object?> cfg = decodeSourceConfig(r.configJson);
-      return (cfg['host'] as String?) == result.host;
-    });
-    if (dup) {
-      FushiToast.show(msg: norm, severity: ToastSeverity.warning);
+    // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。命中时与本地分支同样处理
+    // （BUG-2368）：说明原因 + 重扫已有行，而不是播一条裸路径 toast 就 return。
+    for (final SourceLibraryRow row in existing) {
+      if (row.transport != result.transport || row.rootPath != norm) continue;
+      final Map<String, Object?> cfg = decodeSourceConfig(row.configJson);
+      if ((cfg['host'] as String?) != result.host) continue;
+      FushiToast.show(
+        msg: t.media_source_root_already_added(path: norm),
+        severity: ToastSeverity.warning,
+      );
+      await _rescan(row);
       return;
     }
 
