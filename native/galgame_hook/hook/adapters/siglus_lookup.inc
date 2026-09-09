@@ -1,4 +1,4 @@
-// Exact-profile SiglusEngine in-game lookup sensor.
+// Structurally admitted SiglusEngine in-game lookup sensor.
 //
 // This file is included after text_render_adapter.inc inside dll_main.cpp's
 // anonymous namespace. Keep it header-free. The pure data transforms live in
@@ -9,77 +9,33 @@
 static_assert(sizeof(wchar_t) == sizeof(char16_t),
               "Siglus lookup requires Windows UTF-16 wchar_t");
 
-constexpr size_t kSiglusLookupGlyphEventSlots = 512;
-constexpr size_t kSiglusLookupTextSlots = 4;
-constexpr size_t kSiglusLookupClickEventSlots = 4;
-constexpr size_t kSiglusLookupMaxTextUnits = 512;
-constexpr ULONGLONG kSiglusLookupClickTargetMaxAgeMs = 64;
-constexpr ULONGLONG kSiglusLookupDuplicateHitWindowMs = 250;
+#include "siglus_lookup_worker_types.inc"
 
-struct SiglusLookupGlyphEvent {
-  volatile LONG64 seq = 0;
-  uint16_t code_unit = 0;
-  uint16_t reserved = 0;
-  int32_t design_x = 0;
-  int32_t design_y = 0;
-  int32_t extent = 0;
-};
-
-struct SiglusLookupTextSnapshot {
-  volatile LONG64 seq = 0;
-  uint32_t text_units = 0;
-  wchar_t text[kSiglusLookupMaxTextUnits] = {};
-};
-
-struct SiglusLookupPayload {
-  uint64_t geometry_generation = 0;
-  uint32_t text_units = 0;
-  uint32_t char_index = 0;
-  fushi_voice_hook::SiglusLookupRect rect;
-  uintptr_t game_window = 0;
-  int32_t client_screen_x = 0;
-  int32_t client_screen_y = 0;
-  int32_t client_width = 0;
-  int32_t client_height = 0;
-  wchar_t text[kSiglusLookupMaxTextUnits] = {};
-};
-
-struct SiglusLookupClickTarget {
-  volatile LONG64 seq = 0;
-  uint32_t valid = 0;
-  ULONGLONG published_tick = 0;
-  uintptr_t game_window = 0;
-  int32_t client_screen_x = 0;
-  int32_t client_screen_y = 0;
-  int32_t client_width = 0;
-  int32_t client_height = 0;
-  uint64_t geometry_generation = 0;
-  uint32_t text_units = 0;
-  wchar_t text[kSiglusLookupMaxTextUnits] = {};
-  fushi_voice_hook::SiglusLookupGeometry geometry;
-};
-
-struct SiglusLookupClickEvent {
-  volatile LONG64 seq = 0;
-  SiglusLookupPayload payload;
-};
-
-using SiglusGlyphLayoutFn = uint8_t(__thiscall *)(void *, uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t,
-                                                  uintptr_t, uintptr_t);
+using fushi_voice_hook::SiglusGlyphLayoutFn;
+using fushi_voice_hook::SiglusEightArgGlyphLayoutFn;
+using fushi_voice_hook::SiglusLegacyGlyphLayoutFn;
 using SiglusInputMessageFn = void(__stdcall *)(UINT, WPARAM, LPARAM);
+using SiglusLegacyInputMessageFn = void(__fastcall *)(LPARAM, WPARAM, UINT);
 
 SiglusGlyphLayoutFn g_orig_SiglusGlyphLayout = nullptr;
+SiglusEightArgGlyphLayoutFn g_orig_SiglusEightArgGlyphLayout = nullptr;
+SiglusLegacyGlyphLayoutFn g_orig_SiglusLegacyGlyphLayout = nullptr;
 decltype(&GetKeyState) g_orig_SiglusGetKeyState = nullptr;
+decltype(&GetKeyboardState) g_orig_SiglusGetKeyboardState = nullptr;
 SiglusInputMessageFn g_orig_SiglusInputMessage = nullptr;
+SiglusLegacyInputMessageFn g_orig_SiglusLegacyInputMessage = nullptr;
 std::atomic<bool> g_siglus_lookup_capture_enabled{false};
 std::atomic<bool> g_siglus_lookup_click_runtime_enabled{false};
 std::atomic<uint32_t> g_siglus_lookup_click_epoch{1};
 std::atomic<const fushi_voice_hook::SiglusLookupProfile *>
     g_siglus_lookup_profile{nullptr};
 volatile LONG g_siglus_lookup_profile_state = 0; // 0 unknown, 1 match, -1 miss
+// 2 is a scan in progress; only the owner can publish the immutable profile.
+fushi_voice_hook::SiglusLookupProfile g_siglus_family_profile;
+ULONGLONG g_siglus_family_first_scan = 0;
+ULONGLONG g_siglus_family_last_scan = 0;
+bool g_siglus_digest_attempted = false;
+const fushi_voice_hook::SiglusLookupProfile* g_siglus_measured_profile = nullptr;
 volatile LONG g_siglus_exact_binary_structure_state =
     0; // 0 unknown, 1 hydrated structure match, -1 reject
 // v19 准入上报用。不复用 lookup_diag 的 kLookupDiagSensorInstalled：那位是**粘滞**的，
@@ -103,9 +59,10 @@ uint64_t g_siglus_lookup_luna_text_processed_seq = 0;
 
 wchar_t g_siglus_lookup_active_line[kSiglusLookupMaxTextUnits] = {};
 uint32_t g_siglus_lookup_active_line_units = 0;
-fushi_voice_hook::SiglusLookupGeometry g_siglus_lookup_active_geometry;
-bool g_siglus_lookup_active_valid = false;
-uint64_t g_siglus_lookup_geometry_generation = 0;
+fushi_voice_hook::SiglusLookupTextIdentity g_siglus_lookup_text_identity;
+fushi_voice_hook::SiglusLookupLayoutState g_siglus_lookup_layout;
+HWND g_siglus_lookup_layout_window = nullptr;
+fushi_voice_hook::SiglusLookupEngineView g_siglus_lookup_engine_view;
 bool g_siglus_lookup_last_shift_down = false;
 
 SiglusLookupClickTarget g_siglus_lookup_click_target = {};
@@ -345,14 +302,166 @@ bool Sha256FileForSiglusLookup(const wchar_t *path,
 // 见 leaf_aquaplus_adapter.inc 里同名函数的说明：不可逆的抢占决策必须问三态，
 // 不能拿「压成 bool 的 false」当「确定不是这个引擎」。
 bool IsSiglusLookupIdentityUndecided() {
-  return InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0) == 0;
+  const LONG state = InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0);
+  return fushi_voice_hook::IsSiglusLookupResolutionPending(state);
+}
+
+#include "siglus_lookup_legacy.inc"
+
+bool ShouldReserveSiglusKeyboardState() {
+  const auto* profile = ActiveSiglusLookupProfile();
+  return IsSiglusLookupIdentityUndecided() ||
+      (profile != nullptr && IsLegacySiglusLookup(*profile));
+}
+
+bool ReadSiglusDesignSize(HMODULE module, uintptr_t config_rva,
+                          int32_t* width, int32_t* height, bool legacy = false,
+                          bool eightarg = false) {
+  if (module == nullptr || config_rva == 0 || width == nullptr || height == nullptr)
+    return false;
+  __try {
+    const auto slot = reinterpret_cast<uintptr_t>(module) + config_rva;
+    if (!fushi_voice_hook::exact_lookup::IsReadableSpan(
+            reinterpret_cast<const void*>(slot), sizeof(uint32_t))) return false;
+    const uintptr_t config = *reinterpret_cast<const uint32_t*>(slot);
+    if (config == 0 || (config & 3u) != 0 ||
+        !fushi_voice_hook::exact_lookup::IsReadableSpan(
+            reinterpret_cast<const void*>(config), eightarg ? 0x6c : (legacy ? 0x98 : 0x84))) return false;
+    *width = *reinterpret_cast<const int32_t*>(config + (eightarg ? 0x64 : (legacy ? 0x90 : 0x7c)));
+    *height = *reinterpret_cast<const int32_t*>(config + (eightarg ? 0x68 : (legacy ? 0x94 : 0x80)));
+    return fushi_voice_hook::siglus_viewport::ValidDesignSize(*width, *height);
+  } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+bool ResolveSiglusLiveFamily(HMODULE module,
+                             fushi_voice_hook::SiglusLookupProfile* profile) {
+  __try {
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    if (!fushi_voice_hook::OpenSiglusLoadedImage(module, &image))
+      return false;
+    const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    const auto key_state = user32 == nullptr ? nullptr :
+        GetProcAddress(user32, "GetKeyState");
+    const uintptr_t key_iat =
+        fushi_voice_hook::siglus_viewport::FindGetKeyStateImport(
+            image, reinterpret_cast<uintptr_t>(key_state));
+    fushi_voice_hook::SiglusLookupProfile luna_profile, native_profile;
+    const bool luna_matched = key_iat != 0 &&
+        fushi_voice_hook::ResolveSiglusFamilyProfile(image, key_iat, &luna_profile);
+    const bool native_matched = key_state != nullptr &&
+        fushi_voice_hook::ResolveSiglusNativeFamilyProfile(
+            image, reinterpret_cast<uintptr_t>(key_state), &native_profile);
+    const auto verified_import = [&](const char* name) -> uintptr_t {
+      return user32 == nullptr ? 0 :
+          fushi_voice_hook::siglus_viewport::FindVerifiedUser32Import(
+              image, name, reinterpret_cast<uintptr_t>(GetProcAddress(user32, name)));
+    };
+    const siglus_legacy_input::Imports legacy_imports = {
+        verified_import("GetKeyboardState"), verified_import("GetCursorPos"),
+        verified_import("GetActiveWindow"), verified_import("ScreenToClient")};
+    fushi_voice_hook::LegacyGlyphSites glyph_sites;
+    siglus_legacy_input::Sites input_sites;
+    siglus_legacy_owner::Sites owner_sites;
+    const bool legacy_matched =
+        fushi_voice_hook::ResolveSiglusLegacyGlyphSites(image, &glyph_sites) &&
+        siglus_legacy_input::Resolve(image, legacy_imports, &input_sites) &&
+        siglus_legacy_owner::Resolve(image, glyph_sites, input_sites, &owner_sites);
+    const fushi_voice_hook::siglus_eightarg_input_viewport::Imports eightarg_imports = {
+        verified_import("GetKeyState"), verified_import("GetCursorPos"),
+        verified_import("GetActiveWindow"), verified_import("ScreenToClient")};
+    siglus_eightarg::Sites eightarg_sites;
+    const bool eightarg_matched = siglus_eightarg::Resolve(
+        image, eightarg_imports, &eightarg_sites);
+    // Complete families are mutually exclusive; no digest or scan order
+    // may choose between ambiguous contracts.
+    if (!fushi_voice_hook::HasUniqueSiglusLookupFamily(
+            luna_matched, native_matched, legacy_matched, eightarg_matched)) return false;
+    if (eightarg_matched) {
+      siglus_eightarg_live::Snapshot snapshot;
+      if (!siglus_eightarg::ValidateLiveEntries(image, eightarg_sites) ||
+          !siglus_eightarg_live::ReadSnapshot(reinterpret_cast<uintptr_t>(module),
+              eightarg_sites.input, ReadSiglusLegacyMemory, nullptr, &snapshot)) return false;
+      *profile = {};
+      profile->pe_machine = IMAGE_FILE_MACHINE_I386;
+      profile->pointer_bits = 32;
+      profile->text_feed = fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane;
+      profile->glyph_abi = fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxEightArguments;
+      profile->glyph_layout_rva = eightarg_sites.glyph.glyph_entry_rva;
+      profile->dialogue_glyph_return_rva = eightarg_sites.glyph.wrapper_glyph_return_rva;
+      profile->exact_text_rva = eightarg_sites.glyph.scenario_entry_rva;
+      profile->exact_text_return_rva = eightarg_sites.glyph.message_scenario_return_rva;
+      profile->input_message_rva = eightarg_sites.input.message;
+      profile->main_input_message_return_rva = eightarg_sites.input.window_message_return;
+      profile->get_key_state_return_rva = eightarg_sites.input.key_state_return;
+      profile->viewport_config_rva = eightarg_sites.input.config_slot;
+      profile->viewport_width = snapshot.design_width;
+      profile->viewport_height = snapshot.design_height;
+      g_siglus_eightarg_sites = eightarg_sites;
+      return true;
+    }
+    if (legacy_matched) {
+      siglus_legacy_live::Snapshot snapshot;
+      if (!siglus_legacy_live::ReadSnapshot(reinterpret_cast<uintptr_t>(module),
+              input_sites, ReadSiglusLegacyMemory, nullptr, &snapshot)) return false;
+      *profile = {};
+      profile->pe_machine = IMAGE_FILE_MACHINE_I386;
+      profile->pointer_bits = 32;
+      profile->text_feed = fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane;
+      profile->glyph_abi = fushi_voice_hook::SiglusGlyphLayoutAbi::kStackSixteenArguments;
+      profile->glyph_layout_rva = glyph_sites.glyph_entry_rva;
+      profile->dialogue_glyph_return_rva = glyph_sites.dialogue_glyph_return_rva;
+      profile->exact_text_rva = glyph_sites.text_entry_rva;
+      profile->exact_text_return_rva = glyph_sites.text_bridge_return_rva;
+      profile->input_message_rva = input_sites.message;
+      profile->main_input_message_return_rva = input_sites.main_message_return;
+      profile->get_keyboard_state_return_rva = input_sites.keyboard_state_return;
+      profile->viewport_config_rva = input_sites.config_slot;
+      profile->viewport_width = snapshot.design_width;
+      profile->viewport_height = snapshot.design_height;
+      g_siglus_legacy_input_sites = input_sites;
+      g_siglus_legacy_glyph_sites = glyph_sites;
+      g_siglus_legacy_owner_sites = owner_sites;
+      return true;
+    }
+    *profile = luna_matched ? luna_profile : native_profile;
+    const uintptr_t config = luna_matched
+        ? fushi_voice_hook::siglus_viewport::ResolveConfigSlot(image)
+        : fushi_voice_hook::siglus_native_viewport::ResolveNativeConfigSlot(image);
+    if (config == 0) return false;
+    profile->viewport_config_rva = config;
+    return ReadSiglusDesignSize(module, config, &profile->viewport_width,
+                                &profile->viewport_height);
+  } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+bool SameSiglusMeasuredAnchors(const fushi_voice_hook::SiglusLookupProfile& lhs,
+                                const fushi_voice_hook::SiglusLookupProfile& rhs) {
+  return lhs.text_feed == rhs.text_feed && lhs.glyph_abi == rhs.glyph_abi &&
+      lhs.glyph_layout_rva == rhs.glyph_layout_rva &&
+      lhs.dialogue_glyph_return_rva == rhs.dialogue_glyph_return_rva &&
+      lhs.exact_text_rva == rhs.exact_text_rva &&
+      lhs.exact_text_return_rva == rhs.exact_text_return_rva &&
+      lhs.get_key_state_return_rva == rhs.get_key_state_return_rva &&
+      lhs.get_keyboard_state_return_rva == rhs.get_keyboard_state_return_rva &&
+      lhs.input_message_rva == rhs.input_message_rva &&
+      lhs.main_input_message_return_rva == rhs.main_input_message_return_rva;
 }
 
 bool IsSiglusLookupProfileMatched() {
   const LONG cached =
       InterlockedCompareExchange(&g_siglus_lookup_profile_state, 0, 0);
-  if (cached != 0)
-    return cached > 0;
+  if (cached != 0) return cached == 1;
+  if (InterlockedCompareExchange(&g_siglus_lookup_profile_state, 2, 0) != 0)
+    return false;
+  const ULONGLONG now = GetTickCount64();
+  if (g_siglus_family_first_scan == 0) g_siglus_family_first_scan = now;
+  // Protected launches expose the real code only after startup. Scans are
+  // bounded and rate-limited; no hook is installed until the full proof exists.
+  if (g_siglus_family_last_scan != 0 && now-g_siglus_family_last_scan < 500) {
+    InterlockedExchange(&g_siglus_lookup_profile_state, 0);
+    return false;
+  }
+  g_siglus_family_last_scan = now;
   wchar_t executable[32768] = {};
   const DWORD chars = GetModuleFileNameW(
       nullptr, executable,
@@ -370,7 +479,7 @@ bool IsSiglusLookupProfileMatched() {
       }
     }
   }
-  const bool executable_read =
+  const bool executable_read = !g_siglus_digest_attempted &&
       chars != 0 && chars < sizeof(executable) / sizeof(executable[0]) &&
       Sha256FileForSiglusLookup(executable, &digest);
   bool hash_matched = false;
@@ -406,13 +515,29 @@ bool IsSiglusLookupProfileMatched() {
     // 自己的摘要。共享槽服务的是另一档——谁都没认领时的收敛（见 host_executable_digest.h）。
     fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
   }
-  const auto *profile =
-      executable_read ? fushi_voice_hook::FindSiglusLookupProfile(
-                            digest.data(), digest.size(), machine)
-                      : nullptr;
+  if (executable_read) {
+    g_siglus_digest_attempted = true;
+    g_siglus_measured_profile = fushi_voice_hook::FindSiglusLookupProfile(
+        digest.data(), digest.size(), machine);
+  }
+  const fushi_voice_hook::SiglusLookupProfile* profile = nullptr;
+  // Digests corroborate previously measured sites; neither ABI is admitted
+  // by its title/hash. Every active profile comes from the live structural proof.
+  if (machine == IMAGE_FILE_MACHINE_I386 && IsSiglusEngine() &&
+             ResolveSiglusLiveFamily(module, &g_siglus_family_profile) &&
+             (g_siglus_measured_profile == nullptr ||
+              SameSiglusMeasuredAnchors(g_siglus_family_profile,
+                                        *g_siglus_measured_profile))) {
+    profile = &g_siglus_family_profile;
+    InterlockedExchange(&g_siglus_exact_binary_structure_state, 1);
+  }
   const bool matched = profile != nullptr;
   g_siglus_lookup_profile.store(profile, std::memory_order_release);
-  InterlockedExchange(&g_siglus_lookup_profile_state, matched ? 1 : -1);
+  const bool finished = machine != IMAGE_FILE_MACHINE_I386 ||
+      !IsSiglusEngine() ||
+      now-g_siglus_family_first_scan >= 120000;
+  InterlockedExchange(&g_siglus_lookup_profile_state,
+                       matched ? 1 : (finished ? -1 : 0));
   if (matched) {
     SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusProfileMatched);
   }
@@ -486,6 +611,17 @@ bool IsSiglusExactBinaryStructureMatched(
 }
 
 bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
+  const auto* profile = ActiveSiglusLookupProfile();
+  if (profile != nullptr && IsEightArgSiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_eight_arg_glyph::kGlyphEntry.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
+  if (profile != nullptr && IsLegacySiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_legacy_glyph::kGlyphEntry.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
   return fushi_voice_hook::exact_lookup::IsReadableSpan(
              target,
              fushi_voice_hook::siglus_exact::kGlyphLayoutEntryPattern.size) &&
@@ -497,6 +633,16 @@ bool MatchesSiglusGlyphLayoutEntry(const uint8_t *target) {
 
 bool MatchesSiglusInputMessageEntry(const uint8_t *target) {
   const auto *profile = ActiveSiglusLookupProfile();
+  if (profile != nullptr && IsEightArgSiglusLookup(*profile)) {
+    const auto pattern = fushi_voice_hook::siglus_eightarg_input_viewport::kMessage.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
+  if (profile != nullptr && IsLegacySiglusLookup(*profile)) {
+    const auto pattern = siglus_legacy_input::kMessage.pattern();
+    return fushi_voice_hook::exact_lookup::IsReadableSpan(target, pattern.size) &&
+        fushi_voice_hook::exact_lookup::MatchesMaskedPattern(target, pattern);
+  }
   const auto *pattern =
       profile == nullptr
           ? nullptr
@@ -509,91 +655,67 @@ bool MatchesSiglusInputMessageEntry(const uint8_t *target) {
                                                               *pattern);
 }
 
-void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
-                                   int32_t design_y, int32_t extent) {
-  if (code_unit == 0 || extent <= 0)
+#include "siglus_lookup_glyph_batch_transport.inc"
+
+thread_local fushi_voice_hook::siglus_eightarg_glyph_batch::Collector
+    g_siglus_eightarg_glyph_batch;
+
+void PublishSiglusLookupGlyphRecord(uint16_t code_unit, int32_t design_x,
+                                   int32_t design_y, int32_t extent, bool invalid) {
+  if (!invalid && (code_unit == 0 || extent <= 0))
     return;
+  const auto* profile = ActiveSiglusLookupProfile();
+  const uint64_t occurrence = profile && IsEightArgSiglusLookup(*profile)
+      ? g_siglus_eightarg_thread_occurrence : 0;
+  if (profile && IsEightArgSiglusLookup(*profile) && (occurrence == 0 ||
+      occurrence != g_siglus_eightarg_occurrence.load(std::memory_order_acquire))) return;
   const uint64_t next = static_cast<uint64_t>(
       InterlockedIncrement64(&g_siglus_lookup_glyph_event_count));
   SiglusLookupGlyphEvent *event =
       &g_siglus_lookup_glyph_events[next % kSiglusLookupGlyphEventSlots];
   InterlockedExchange64(&event->seq, 0);
   event->code_unit = code_unit;
-  event->reserved = 0;
+  event->reserved = invalid ? 1 : 0;
   event->design_x = design_x;
   event->design_y = design_y;
   event->extent = extent;
+  event->occurrence = occurrence;
   InterlockedExchange64(&event->seq, static_cast<LONG64>(next));
-  SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGlyphObserved);
+  if (!invalid) SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGlyphObserved);
 }
 
-uint8_t __fastcall Detour_SiglusGlyphLayout(void *self, void *, uintptr_t arg1,
-                                            uintptr_t arg2, uintptr_t arg3,
-                                            uintptr_t arg4, uintptr_t arg5,
-                                            uintptr_t arg6, uintptr_t arg7,
-                                            uintptr_t arg8, uintptr_t arg9,
-                                            uintptr_t arg10) {
-  const uintptr_t return_address =
-      reinterpret_cast<uintptr_t>(_ReturnAddress());
-  const SiglusGlyphLayoutFn original = g_orig_SiglusGlyphLayout;
-  if (original == nullptr)
-    return 0;
-  const uint8_t result = original(self, arg1, arg2, arg3, arg4, arg5, arg6,
-                                  arg7, arg8, arg9, arg10);
-  if (result == 0 || self == nullptr ||
-      !g_siglus_lookup_capture_enabled.load(std::memory_order_acquire)) {
-    return result;
-  }
-  const uintptr_t module =
-      reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-  const auto *profile = ActiveSiglusLookupProfile();
-  if (return_address < module ||
-      profile == nullptr ||
-      return_address - module != profile->dialogue_glyph_return_rva) {
-    return result;
-  }
-  __try {
-    const auto *bytes = static_cast<const uint8_t *>(self);
-    const uint32_t character =
-        *reinterpret_cast<const uint32_t *>(bytes + 0x04);
-    const int32_t extent = *reinterpret_cast<const int32_t *>(bytes + 0x08);
-    const float design_x = *reinterpret_cast<const float *>(bytes + 0x40);
-    const float design_y = *reinterpret_cast<const float *>(bytes + 0x44);
-    if (character != 0 && character <= 0xFFFFu && extent > 0 && extent <= 256 &&
-        std::isfinite(design_x) && std::isfinite(design_y)) {
-      const int32_t x = static_cast<int32_t>(std::lround(design_x));
-      const int32_t y = static_cast<int32_t>(std::lround(design_y));
-      if (x >= 0 && x < profile->viewport_width && y >= 0 &&
-          y < profile->viewport_height) {
-        PublishSiglusLookupGlyphEvent(static_cast<uint16_t>(character), x, y,
-                                      extent);
-      }
-    }
-  } __except (EXCEPTION_EXECUTE_HANDLER) {
-  }
-  return result;
+void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
+                                   int32_t design_y, int32_t extent) {
+  PublishSiglusLookupGlyphRecord(code_unit, design_x, design_y, extent, false);
+}
+void PublishSiglusLookupGlyphInvalidation() {
+  g_siglus_eightarg_glyph_batch.Reset();
+  PublishSiglusEightArgGlyphBatch(nullptr, 1, g_siglus_eightarg_thread_occurrence);
 }
 
-void PublishSiglusLookupTextSnapshot(const wchar_t *text,
-                                     uint32_t text_units) {
-  if (text == nullptr || text_units == 0 ||
-      text_units > kSiglusLookupMaxTextUnits) {
-    return;
-  }
-  const uint64_t next = static_cast<uint64_t>(
-      InterlockedIncrement64(&g_siglus_lookup_text_count));
-  SiglusLookupTextSnapshot *snapshot =
-      &g_siglus_lookup_text_snapshots[next % kSiglusLookupTextSlots];
-  InterlockedExchange64(&snapshot->seq, 0);
-  snapshot->text_units = text_units;
-  memcpy(snapshot->text, text,
-         static_cast<size_t>(text_units) * sizeof(wchar_t));
-  InterlockedExchange64(&snapshot->seq, static_cast<LONG64>(next));
+void CaptureSiglusEightArgGlyphRecord(const fushi_voice_hook::SiglusGlyphRecord& glyph,
+                                    uint32_t ordinal, uint32_t count,
+                                    const siglus_eightarg_owner::Vector& vector) {
+  const fushi_voice_hook::siglus_eightarg_glyph_batch::Identity identity{
+      g_siglus_eightarg_thread_occurrence,
+      g_siglus_lookup_click_epoch.load(std::memory_order_acquire),
+      g_siglus_eightarg_thread_body, vector.begin, vector.end, vector.capacity};
+  const auto result = g_siglus_eightarg_glyph_batch.Push(identity, ordinal, count, glyph);
+  if (result.invalidate_previous)
+    PublishSiglusEightArgGlyphBatch(nullptr, 1, identity.occurrence);
+  if (result.complete)
+    PublishSiglusEightArgGlyphBatch(g_siglus_eightarg_glyph_batch.entries(),
+        g_siglus_eightarg_glyph_batch.size(), identity.occurrence);
 }
+
+#include "siglus_lookup_glyph.inc"
+
+#include "siglus_lookup_text_snapshot.inc"
 
 void ObserveSiglusLookupExactText(const wchar_t *text, uint32_t text_units,
                                   uint64_t callsite_rva,
-                                  uintptr_t function_rva) {
+                                  uintptr_t function_rva,
+                                  uint64_t text_event_id, uint64_t thread_id) {
   const auto *profile = ActiveSiglusLookupProfile();
   if (!g_siglus_lookup_capture_enabled.load(std::memory_order_acquire) ||
       profile == nullptr ||
@@ -603,10 +725,15 @@ void ObserveSiglusLookupExactText(const wchar_t *text, uint32_t text_units,
       function_rva != profile->exact_text_rva) {
     return;
   }
-  PublishSiglusLookupTextSnapshot(text, text_units);
+  PublishSiglusLookupTextSnapshot(text, text_units, {text_event_id, thread_id});
 }
 
 void ConsumeSiglusLookupLunaScenarioText() {
+  // The profile describes the scenario ABI. Its immutable admission is shared
+  // by Luna fallback and the native message observer; only its actual owner
+  // may publish text snapshots for the current occurrence.
+  if (IsSiglusMessageTextInstalled() || IsSiglusMessageTextOwnershipBlocked())
+    return;
   const auto *profile = ActiveSiglusLookupProfile();
   if (!g_siglus_lookup_capture_enabled.load(std::memory_order_acquire) ||
       profile == nullptr ||
@@ -653,6 +780,7 @@ void ConsumeSiglusLookupLunaScenarioText() {
         byte_len / sizeof(wchar_t) <= kSiglusLookupMaxTextUnits;
     SiglusLookupTextSnapshot candidate = {};
     if (target) {
+      candidate.identity = {global_seq, slot->thread_id};
       candidate.text_units = byte_len / sizeof(wchar_t);
       const auto *payload = reinterpret_cast<const uint8_t *>(slot) +
                             sizeof(fushi_voice_hook::TextSlot);
@@ -670,54 +798,17 @@ void ConsumeSiglusLookupLunaScenarioText() {
   }
   g_siglus_lookup_luna_text_processed_seq = processed_through;
   if (newest_seq != 0)
-    PublishSiglusLookupTextSnapshot(newest.text, newest.text_units);
+    PublishSiglusLookupTextSnapshot(newest.text, newest.text_units, newest.identity);
 }
 
-bool ReadSiglusLookupGlyphEvent(uint64_t seq, SiglusLookupGlyphEvent *copy) {
-  if (seq == 0 || copy == nullptr)
-    return false;
-  SiglusLookupGlyphEvent *source =
-      &g_siglus_lookup_glyph_events[seq % kSiglusLookupGlyphEventSlots];
-  const uint64_t before =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (before != seq)
-    return false;
-  memcpy(copy, source, sizeof(*copy));
-  const uint64_t after =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  return after == before && after != 0;
-}
 
-bool ReadLatestSiglusLookupText(SiglusLookupTextSnapshot *copy, uint64_t *seq) {
-  if (copy == nullptr || seq == nullptr)
-    return false;
-  const uint64_t latest = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_text_count, 0, 0));
-  if (latest == 0 || latest == g_siglus_lookup_text_processed_seq) {
-    return false;
-  }
-  SiglusLookupTextSnapshot *source =
-      &g_siglus_lookup_text_snapshots[latest % kSiglusLookupTextSlots];
-  const uint64_t before =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (before != latest)
-    return false;
-  memcpy(copy, source, sizeof(*copy));
-  const uint64_t after =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (after != before || after == 0 ||
-      copy->text_units > kSiglusLookupMaxTextUnits) {
-    return false;
-  }
-  *seq = latest;
-  return true;
-}
 
 void InvalidateSiglusLookupClickTarget() {
   const uint64_t next = static_cast<uint64_t>(
       InterlockedIncrement64(&g_siglus_lookup_click_target_count));
   InterlockedExchange64(&g_siglus_lookup_click_target.seq, 0);
   g_siglus_lookup_click_target.valid = 0;
+  g_siglus_lookup_click_target.engine_view = {};
   g_siglus_lookup_click_target.published_tick = GetTickCount64();
   g_siglus_lookup_click_target.game_window = 0;
   g_siglus_lookup_click_target.client_screen_x = 0;
@@ -725,6 +816,8 @@ void InvalidateSiglusLookupClickTarget() {
   g_siglus_lookup_click_target.client_width = 0;
   g_siglus_lookup_click_target.client_height = 0;
   g_siglus_lookup_click_target.geometry_generation = 0;
+  g_siglus_lookup_click_target.text_identity = {};
+  g_siglus_lookup_click_target.snapshot_epoch = 0;
   g_siglus_lookup_click_target.text_units = 0;
   g_siglus_lookup_click_target.geometry = {};
   InterlockedExchange64(&g_siglus_lookup_click_target.seq,
@@ -734,8 +827,13 @@ void InvalidateSiglusLookupClickTarget() {
 void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
                                     int32_t client_width,
                                     int32_t client_height) {
-  if (!g_siglus_lookup_active_valid ||
-      g_siglus_lookup_geometry_generation == 0 || game == nullptr ||
+  fushi_voice_hook::SiglusLookupEngineView engine_view;
+  if (!g_siglus_lookup_layout.current_valid ||
+      !ReadSiglusLookupEngineView(game, &engine_view) ||
+      !fushi_voice_hook::SameSiglusLookupEngineView(engine_view, g_siglus_lookup_engine_view) ||
+      g_siglus_lookup_text_identity.event_id == 0 ||
+      g_siglus_lookup_text_identity.thread_id == 0 ||
+      g_siglus_lookup_layout.generation == 0 || game == nullptr ||
       client_width <= 0 || client_height <= 0 ||
       g_siglus_lookup_active_line_units == 0) {
     InvalidateSiglusLookupClickTarget();
@@ -745,6 +843,8 @@ void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
       InterlockedIncrement64(&g_siglus_lookup_click_target_count));
   InterlockedExchange64(&g_siglus_lookup_click_target.seq, 0);
   g_siglus_lookup_click_target.valid = 1;
+  g_siglus_lookup_click_target.engine_view = engine_view;
+  g_siglus_lookup_click_target.text_identity = g_siglus_lookup_text_identity;
   g_siglus_lookup_click_target.published_tick = GetTickCount64();
   g_siglus_lookup_click_target.game_window = reinterpret_cast<uintptr_t>(game);
   g_siglus_lookup_click_target.client_screen_x = client_origin.x;
@@ -752,352 +852,23 @@ void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
   g_siglus_lookup_click_target.client_width = client_width;
   g_siglus_lookup_click_target.client_height = client_height;
   g_siglus_lookup_click_target.geometry_generation =
-      g_siglus_lookup_geometry_generation;
+      g_siglus_lookup_layout.generation;
+  g_siglus_lookup_click_target.snapshot_epoch = g_siglus_lookup_layout.snapshot_epoch;
   g_siglus_lookup_click_target.text_units = g_siglus_lookup_active_line_units;
   memcpy(g_siglus_lookup_click_target.text, g_siglus_lookup_active_line,
          static_cast<size_t>(g_siglus_lookup_active_line_units) *
              sizeof(wchar_t));
-  g_siglus_lookup_click_target.geometry = g_siglus_lookup_active_geometry;
+  g_siglus_lookup_click_target.geometry = g_siglus_lookup_layout.geometry;
   InterlockedExchange64(&g_siglus_lookup_click_target.seq,
                         static_cast<LONG64>(next));
 }
 
-bool ReadSiglusLookupClickTarget(SiglusLookupClickTarget *copy) {
-  if (copy == nullptr)
-    return false;
-  const uint64_t before = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_click_target.seq, 0, 0));
-  if (before == 0)
-    return false;
-  memcpy(copy, &g_siglus_lookup_click_target, sizeof(*copy));
-  const uint64_t after = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_click_target.seq, 0, 0));
-  const ULONGLONG now = GetTickCount64();
-  return after == before && after != 0 && copy->valid == 1 &&
-         copy->text_units != 0 &&
-         copy->text_units <= kSiglusLookupMaxTextUnits &&
-         copy->geometry.glyph_count != 0 &&
-         copy->geometry.glyph_count <=
-              fushi_voice_hook::kSiglusLookupMaxGlyphs &&
-          copy->geometry_generation != 0 &&
-         copy->published_tick != 0 && now >= copy->published_tick &&
-         now - copy->published_tick <= kSiglusLookupClickTargetMaxAgeMs;
-}
+#include "siglus_lookup_input_diagnostics.inc"
+#include "siglus_lookup_click_target.inc"
+#include "siglus_lookup_worker.inc"
+#include "siglus_lookup_click_policy.inc"
 
-bool BuildSiglusLookupPayloadAtPress(const SiglusLookupClickTarget &target,
-                                     HWND game, const POINT &screen_point,
-                                     SiglusLookupPayload *payload,
-                                     uint16_t *glyph_index) {
-  const auto *profile = ActiveSiglusLookupProfile();
-  if (payload == nullptr || glyph_index == nullptr || target.valid != 1 ||
-      profile == nullptr ||
-      game == nullptr || reinterpret_cast<HWND>(target.game_window) != game ||
-      !IsWindow(game) || GetForegroundWindow() != game) {
-    return false;
-  }
-  const HWND point_window = WindowFromPoint(screen_point);
-  if (point_window == nullptr ||
-      (point_window != game && !IsChild(game, point_window))) {
-    return false;
-  }
-  RECT client = {};
-  POINT origin = {0, 0};
-  if (!GetClientRect(game, &client) || !ClientToScreen(game, &origin)) {
-    return false;
-  }
-  const int32_t client_width = client.right - client.left;
-  const int32_t client_height = client.bottom - client.top;
-  if (client_width != target.client_width ||
-      client_height != target.client_height ||
-      origin.x != target.client_screen_x ||
-      origin.y != target.client_screen_y) {
-    return false;
-  }
-  const int32_t cursor_x = screen_point.x - origin.x;
-  const int32_t cursor_y = screen_point.y - origin.y;
-  for (size_t index = 0; index < target.geometry.glyph_count; ++index) {
-    fushi_voice_hook::SiglusLookupRect client_rect;
-    if (!fushi_voice_hook::ScaleSiglusLookupRectToClient(
-            *profile, target.geometry.glyphs[index].rect, client_width,
-            client_height, &client_rect)) {
-      continue;
-    }
-    if (cursor_x < client_rect.x || cursor_y < client_rect.y ||
-        cursor_x >= client_rect.x + client_rect.width ||
-        cursor_y >= client_rect.y + client_rect.height) {
-      continue;
-    }
-    *payload = {};
-    payload->geometry_generation = target.geometry_generation;
-    payload->text_units = target.text_units;
-    payload->char_index = target.geometry.glyphs[index].char_index;
-    payload->rect = client_rect;
-    payload->game_window = reinterpret_cast<uintptr_t>(game);
-    payload->client_screen_x = origin.x;
-    payload->client_screen_y = origin.y;
-    payload->client_width = client_width;
-    payload->client_height = client_height;
-    memcpy(payload->text, target.text,
-           static_cast<size_t>(target.text_units) * sizeof(wchar_t));
-    *glyph_index = static_cast<uint16_t>(index);
-    return payload->char_index < payload->text_units;
-  }
-  return false;
-}
-
-fushi_voice_hook::SiglusLookupClientSnapshot SiglusLookupPayloadClientSnapshot(
-    const SiglusLookupPayload &payload) {
-  return {payload.game_window, payload.client_screen_x,
-          payload.client_screen_y, payload.client_width,
-          payload.client_height};
-}
-
-fushi_voice_hook::SiglusLookupClientSnapshot SiglusLookupTargetClientSnapshot(
-    const SiglusLookupClickTarget &target) {
-  return {target.game_window, target.client_screen_x,
-          target.client_screen_y, target.client_width,
-          target.client_height};
-}
-
-bool SiglusLookupPayloadMatchesPublishedTarget(
-    const SiglusLookupPayload &payload) {
-  SiglusLookupClickTarget target;
-  return ReadSiglusLookupClickTarget(&target) &&
-         fushi_voice_hook::MatchesSiglusLookupGenerationAndClient(
-             payload.geometry_generation,
-             SiglusLookupPayloadClientSnapshot(payload),
-             target.geometry_generation,
-             SiglusLookupTargetClientSnapshot(target));
-}
-
-void QueueSiglusLookupClickSubmit(const SiglusLookupPayload &payload) {
-  if (payload.text_units == 0 ||
-      payload.text_units > kSiglusLookupMaxTextUnits ||
-      payload.char_index >= payload.text_units) {
-    return;
-  }
-  const uint64_t next = static_cast<uint64_t>(
-      InterlockedIncrement64(&g_siglus_lookup_click_event_count));
-  SiglusLookupClickEvent *event =
-      &g_siglus_lookup_click_events[next % kSiglusLookupClickEventSlots];
-  InterlockedExchange64(&event->seq, 0);
-  event->payload = payload;
-  InterlockedExchange64(&event->seq, static_cast<LONG64>(next));
-}
-
-bool ReadLatestSiglusLookupClickSubmit(SiglusLookupClickEvent *copy,
-                                       uint64_t *seq) {
-  if (copy == nullptr || seq == nullptr)
-    return false;
-  const uint64_t latest = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_click_event_count, 0, 0));
-  if (latest == 0 || latest == g_siglus_lookup_click_processed_seq) {
-    return false;
-  }
-  SiglusLookupClickEvent *source =
-      &g_siglus_lookup_click_events[latest % kSiglusLookupClickEventSlots];
-  const uint64_t before =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (before != latest)
-    return false;
-  memcpy(copy, source, sizeof(*copy));
-  const uint64_t after =
-      static_cast<uint64_t>(InterlockedCompareExchange64(&source->seq, 0, 0));
-  if (after != before || after == 0)
-    return false;
-  *seq = latest;
-  return true;
-}
-
-SHORT WINAPI Detour_SiglusGetKeyState(int virtual_key) {
-  const uintptr_t return_address =
-      reinterpret_cast<uintptr_t>(_ReturnAddress());
-  const auto original = g_orig_SiglusGetKeyState;
-  if (original == nullptr)
-    return 0;
-  const SHORT raw = original(virtual_key);
-  if (virtual_key != VK_LBUTTON || !g_capture_enabled) {
-    return raw;
-  }
-  // 早退之后才解析模块基址：这条 detour 装在全进程的 user32!GetKeyState 上，
-  // 游戏每帧会为一堆与查词无关的虚拟键调它，把 syscall 排在早退之前等于给每一次
-  // 调用白付一笔。
-  const uintptr_t module =
-      reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-  const bool runtime_enabled =
-      g_siglus_lookup_click_runtime_enabled.load(std::memory_order_acquire);
-  const HWND published_game =
-      g_siglus_sampled_input_game_window.load(std::memory_order_acquire);
-  const HWND direct_popup =
-      GetValidPublishedSiglusSampledInputShieldPopup(published_game);
-  const bool direct_shield =
-      direct_popup != nullptr &&
-      IsSiglusSampledInputShieldReadyPublished(published_game);
-  const bool bitmap_popup_visible = IsLookupOverlayInputShieldVisible();
-  const bool popup_shield = direct_shield || bitmap_popup_visible;
-  const bool lookup_press_latched =
-      g_siglus_lookup_left_button_filter_latched.load(
-          std::memory_order_acquire);
-  const auto *profile = ActiveSiglusLookupProfile();
-  const bool admitted_lookup_poller =
-      profile != nullptr && return_address >= module &&
-      return_address - module == profile->get_key_state_return_rva;
-  if (!admitted_lookup_poller) {
-    // The WebView HWND consumes queued mouse messages in its real region and
-    // the host HHOOK consumes game-client clicks outside it.  Siglus also polls
-    // physical state at several other callsites, so those callers must be
-    // filtered before the exact lookup-poller gate.  Otherwise a click can be
-    // handled by WebView and still advance the game in the same frame.
-    return fushi_voice_hook::FilterSiglusLookupGetKeyState(
-        raw, popup_shield || lookup_press_latched);
-  }
-  SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagSiglusGetKeyStateObserved);
-  const uint32_t epoch =
-      g_siglus_lookup_click_epoch.load(std::memory_order_acquire);
-  if (epoch != g_siglus_lookup_click_observed_epoch) {
-    g_siglus_lookup_click_observed_epoch = epoch;
-    g_siglus_lookup_click_sample_state = {};
-    g_siglus_lookup_pending_click = {};
-    g_siglus_lookup_pending_click_valid = false;
-    g_siglus_lookup_left_button_filter_latched.store(false,
-                                                     std::memory_order_release);
-  }
-  if (!runtime_enabled && !popup_shield && !lookup_press_latched &&
-      g_siglus_lookup_click_sample_state.owner ==
-          fushi_voice_hook::SiglusLookupClickOwner::kIdle) {
-    return raw;
-  }
-  const bool button_down = (static_cast<uint16_t>(raw) & 0x8000u) != 0;
-  const bool fresh_down = button_down &&
-                          g_siglus_lookup_click_sample_state.synchronized &&
-                          g_siglus_lookup_click_sample_state.owner ==
-                              fushi_voice_hook::SiglusLookupClickOwner::kIdle;
-  HWND game = published_game;
-  if (game == nullptr || !IsWindow(game))
-    game = FindGameMainWindow();
-  POINT pointer = {};
-  const bool pointer_valid = !fresh_down || GetCursorPos(&pointer) != FALSE;
-  SiglusLookupPayload pressed_payload;
-  uint16_t hit_index = fushi_voice_hook::kSiglusLookupNoGlyph;
-  bool hit = false;
-  if (fresh_down && runtime_enabled && !popup_shield && pointer_valid &&
-      ReadSiglusLookupClickTarget(&g_siglus_lookup_click_read_target)) {
-    hit =
-        BuildSiglusLookupPayloadAtPress(g_siglus_lookup_click_read_target, game,
-                                        pointer, &pressed_payload, &hit_index);
-  }
-  const auto decision = fushi_voice_hook::AdvanceSiglusLookupClickSample(
-      button_down, popup_shield,
-      hit ? hit_index : fushi_voice_hook::kSiglusLookupNoGlyph,
-      &g_siglus_lookup_click_sample_state);
-  if (decision.begin && decision.popup_transaction && pointer_valid &&
-      !direct_shield && bitmap_popup_visible && game != nullptr &&
-      GetForegroundWindow() == game) {
-    const HWND point_window = WindowFromPoint(pointer);
-    if (point_window != nullptr &&
-        (point_window == game || IsChild(game, point_window))) {
-      RequestLookupOverlayOutsideDismiss();
-    }
-  }
-  if (decision.begin && hit && !decision.popup_transaction) {
-    g_siglus_lookup_pending_click = pressed_payload;
-    g_siglus_lookup_pending_click_valid = true;
-  }
-  if (decision.submit) {
-    // Freeze the glyph at down, then require the worker-published logical
-    // sentence, geometry, HWND and client transform to still match on up.
-    if (g_siglus_lookup_pending_click_valid && runtime_enabled &&
-        SiglusLookupPayloadMatchesPublishedTarget(
-            g_siglus_lookup_pending_click)) {
-      QueueSiglusLookupClickSubmit(g_siglus_lookup_pending_click);
-    }
-    g_siglus_lookup_pending_click_valid = false;
-  } else if (!button_down && !decision.consume) {
-    g_siglus_lookup_pending_click_valid = false;
-  }
-  if (decision.consume) {
-    g_siglus_lookup_left_button_filter_latched.store(true,
-                                                     std::memory_order_release);
-  }
-  const SHORT filtered = fushi_voice_hook::FilterSiglusLookupGetKeyState(
-      raw, decision.consume || popup_shield || lookup_press_latched);
-  if (!button_down) {
-    // Keep the latch through the exact poller's up sample itself, then release
-    // it for the next physical transaction. Other GetKeyState callers are not
-    // allowed to clear it because GetKeyState state is thread-queue-relative.
-    g_siglus_lookup_left_button_filter_latched.store(false,
-                                                     std::memory_order_release);
-  }
-  return filtered;
-}
-
-void __stdcall Detour_SiglusInputMessage(UINT message, WPARAM wparam,
-                                         LPARAM lparam) {
-  const SiglusInputMessageFn original = g_orig_SiglusInputMessage;
-  if (original == nullptr)
-    return;
-  const uintptr_t module =
-      reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-  const uintptr_t return_address =
-      reinterpret_cast<uintptr_t>(_ReturnAddress());
-  const auto *profile = ActiveSiglusLookupProfile();
-  if (profile == nullptr || return_address < module ||
-      return_address - module != profile->main_input_message_return_rva) {
-    original(message, wparam, lparam);
-    return;
-  }
-
-  const bool is_down =
-      message == fushi_voice_hook::kSiglusLookupWmLeftButtonDown ||
-      message == fushi_voice_hook::kSiglusLookupWmLeftButtonDoubleClick;
-  const bool is_up = message == fushi_voice_hook::kSiglusLookupWmLeftButtonUp;
-  if (!is_down && !is_up) {
-    original(message, wparam, lparam);
-    return;
-  }
-
-  HWND game =
-      g_siglus_sampled_input_game_window.load(std::memory_order_acquire);
-  if (game == nullptr || !IsWindow(game))
-    game = FindGameMainWindow();
-  const HWND direct_popup =
-      GetValidPublishedSiglusSampledInputShieldPopup(game);
-  const bool direct_shield =
-      direct_popup != nullptr && IsSiglusSampledInputShieldReadyPublished(game);
-  const bool popup_shield =
-      direct_shield || IsLookupOverlayInputShieldVisible();
-
-  bool glyph_hit = false;
-  if (is_down && !popup_shield &&
-      g_siglus_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
-      game != nullptr) {
-    POINT screen_point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    SiglusLookupClickTarget target;
-    SiglusLookupPayload payload;
-    uint16_t glyph_index = fushi_voice_hook::kSiglusLookupNoGlyph;
-    if (ClientToScreen(game, &screen_point) &&
-        ReadSiglusLookupClickTarget(&target)) {
-      glyph_hit = BuildSiglusLookupPayloadAtPress(target, game, screen_point,
-                                                  &payload, &glyph_index);
-    }
-  }
-
-  const bool latched = g_siglus_lookup_message_left_button_latched.load(
-      std::memory_order_acquire);
-  const auto decision = fushi_voice_hook::DecideSiglusLookupMouseMessage(
-      static_cast<uint32_t>(message), popup_shield, glyph_hit, latched);
-  g_siglus_lookup_message_left_button_latched.store(decision.next_latched,
-                                                    std::memory_order_release);
-  if (decision.consume) {
-    // The exact GetKeyState poller still observes physical state and owns the
-    // one lookup submission. This latch only makes every other state consumer
-    // agree while the engine's independent WM edge writer is bypassed.
-    g_siglus_lookup_left_button_filter_latched.store(true,
-                                                     std::memory_order_release);
-    return;
-  }
-  original(message, wparam, lparam);
-}
+#include "siglus_lookup_input.inc"
 
 bool InstallSiglusLookupSensor() {
   if (!IsSiglusLookupProfileMatched())
@@ -1106,15 +877,34 @@ bool InstallSiglusLookupSensor() {
   if (profile == nullptr)
     return false;
   HMODULE module = GetModuleHandleW(nullptr);
+  const bool eightarg = IsEightArgSiglusLookup(*profile);
+  // The occurrence observer must own Scenario before glyph/input capture.
+  if (eightarg && !IsSiglusMessageTextInstalled()) return false;
+  const bool legacy = IsLegacySiglusLookup(*profile);
+  if (profile->viewport_config_rva != 0) {
+    int32_t width = 0, height = 0;
+    if (!ReadSiglusDesignSize(module, profile->viewport_config_rva, &width, &height, legacy, eightarg) ||
+        width != profile->viewport_width || height != profile->viewport_height) {
+      g_siglus_lookup_sensor_installed.store(false, std::memory_order_release);
+      RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
+      return false;
+    }
+  }
   if (module == nullptr ||
       !IsSiglusExactBinaryStructureMatched(profile, module))
     return false;
   const ULONGLONG now = GetTickCount64();
   const HWND cached_game =
       g_siglus_sampled_input_game_window.load(std::memory_order_acquire);
-  if (g_orig_SiglusGlyphLayout != nullptr &&
+  const bool glyph_installed = eightarg ? g_orig_SiglusEightArgGlyphLayout != nullptr
+                                      : legacy ? g_orig_SiglusLegacyGlyphLayout != nullptr
+                                      : g_orig_SiglusGlyphLayout != nullptr;
+  const bool message_installed = legacy ? g_orig_SiglusLegacyInputMessage != nullptr
+                                        : g_orig_SiglusInputMessage != nullptr;
+  if (glyph_installed &&
       g_orig_SiglusGetKeyState != nullptr &&
-      g_orig_SiglusInputMessage != nullptr && cached_game != nullptr &&
+      (!legacy || g_orig_SiglusGetKeyboardState != nullptr) &&
+      message_installed && cached_game != nullptr &&
       cached_game == g_siglus_sampled_input_property_window &&
       IsWindow(cached_game) && g_siglus_sampled_input_last_health_tick != 0 &&
       now - g_siglus_sampled_input_last_health_tick <
@@ -1126,13 +916,17 @@ bool InstallSiglusLookupSensor() {
     RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
     return false;
   }
-  if (g_orig_SiglusGlyphLayout == nullptr) {
+  if (!glyph_installed) {
     auto *target = reinterpret_cast<uint8_t *>(module) +
                    profile->glyph_layout_rva;
+    void* callback = eightarg ? reinterpret_cast<void*>(&Detour_SiglusEightArgGlyphLayout)
+                            : legacy ? reinterpret_cast<void*>(&Detour_SiglusLegacyGlyphLayout)
+                            : reinterpret_cast<void*>(&Detour_SiglusGlyphLayout);
+    void** original = eightarg ? reinterpret_cast<void**>(&g_orig_SiglusEightArgGlyphLayout)
+                              : legacy ? reinterpret_cast<void**>(&g_orig_SiglusLegacyGlyphLayout)
+                              : reinterpret_cast<void**>(&g_orig_SiglusGlyphLayout);
     if (!MatchesSiglusGlyphLayoutEntry(target) ||
-        !HookFn(target, reinterpret_cast<void *>(&Detour_SiglusGlyphLayout),
-                reinterpret_cast<void **>(&g_orig_SiglusGlyphLayout)) ||
-        g_orig_SiglusGlyphLayout == nullptr) {
+        !HookFn(target, callback, original) || *original == nullptr) {
       RevokeSiglusSampledInputShieldReady(
           g_siglus_sampled_input_property_window);
       return false;
@@ -1156,13 +950,27 @@ bool InstallSiglusLookupSensor() {
       return false;
     }
   }
-  if (g_orig_SiglusInputMessage == nullptr) {
+  if (legacy && g_orig_SiglusGetKeyboardState == nullptr) {
+    const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    void* target = user32 == nullptr ? nullptr :
+        reinterpret_cast<void*>(GetProcAddress(user32, "GetKeyboardState"));
+    if (target == nullptr ||
+        !HookFn(target, reinterpret_cast<void*>(&Detour_SiglusGetKeyboardState),
+                reinterpret_cast<void**>(&g_orig_SiglusGetKeyboardState)) ||
+        g_orig_SiglusGetKeyboardState == nullptr) {
+      RevokeSiglusSampledInputShieldReady(g_siglus_sampled_input_property_window);
+      return false;
+    }
+  }
+  if (!message_installed) {
     auto *target = reinterpret_cast<uint8_t *>(module) +
                    profile->input_message_rva;
+    void* callback = legacy ? reinterpret_cast<void*>(&Detour_SiglusLegacyInputMessage)
+                            : reinterpret_cast<void*>(&Detour_SiglusInputMessage);
+    void** original = legacy ? reinterpret_cast<void**>(&g_orig_SiglusLegacyInputMessage)
+                              : reinterpret_cast<void**>(&g_orig_SiglusInputMessage);
     if (!MatchesSiglusInputMessageEntry(target) ||
-        !HookFn(target, reinterpret_cast<void *>(&Detour_SiglusInputMessage),
-                reinterpret_cast<void **>(&g_orig_SiglusInputMessage)) ||
-        g_orig_SiglusInputMessage == nullptr) {
+        !HookFn(target, callback, original) || *original == nullptr) {
       RevokeSiglusSampledInputShieldReady(
           g_siglus_sampled_input_property_window);
       return false;
@@ -1179,12 +987,14 @@ bool InstallSiglusLookupSensor() {
   return true;
 }
 
-// v19 准入查询。纯读缓存：profile 判定与摘要都在 IsSiglusLookupProfileMatched() 里
-// 一次性算好并缓存，这里不触发任何 IO 或 hook 安装——registry 每轮 Poll 都会调它。
+// v19 admission queries share the serialized family resolver. Only the first
+// successful proof is published; pending initialization remains undecided.
 fushi_voice_hook::LookupAdmissionReport SiglusLookupAdmission() {
   fushi_voice_hook::LookupAdmissionReport report;
   if (!IsSiglusLookupProfileMatched()) {
-    report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+    report.state = IsSiglusLookupIdentityUndecided()
+        ? fushi_voice_hook::kLookupAdmissionUnknown
+        : fushi_voice_hook::kLookupAdmissionIdentityRejected;
     std::memcpy(report.executable_sha256, g_siglus_lookup_executable_sha256,
                 sizeof(report.executable_sha256));
     return report;
@@ -1205,209 +1015,6 @@ void SetSiglusLookupRuntimeEnabled(bool enabled) {
   }
 }
 
-void ConsumeSiglusLookupCaptures() {
-  ConsumeSiglusLookupLunaScenarioText();
-  bool changed = false;
-  SiglusLookupTextSnapshot text_snapshot;
-  uint64_t text_seq = 0;
-  if (ReadLatestSiglusLookupText(&text_snapshot, &text_seq)) {
-    g_siglus_lookup_text_processed_seq = text_seq;
-    const bool same =
-        text_snapshot.text_units == g_siglus_lookup_active_line_units &&
-        text_snapshot.text_units != 0 &&
-        memcmp(text_snapshot.text, g_siglus_lookup_active_line,
-               static_cast<size_t>(text_snapshot.text_units) *
-                   sizeof(wchar_t)) == 0;
-    if (!same) {
-      g_siglus_lookup_active_line_units = text_snapshot.text_units;
-      memcpy(g_siglus_lookup_active_line, text_snapshot.text,
-             static_cast<size_t>(text_snapshot.text_units) * sizeof(wchar_t));
-      g_siglus_lookup_active_valid = false;
-      changed = true;
-    }
-  }
-
-  const uint64_t latest = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
-  if (latest != g_siglus_lookup_glyph_processed_seq) {
-    uint64_t first = g_siglus_lookup_glyph_processed_seq + 1;
-    if (latest >= kSiglusLookupGlyphEventSlots &&
-        first <= latest - kSiglusLookupGlyphEventSlots) {
-      first = latest - kSiglusLookupGlyphEventSlots + 1;
-      fushi_voice_hook::ClearSiglusLookupGlyphCapture(
-          &g_siglus_lookup_glyph_captures);
-    }
-    uint64_t processed_through = first - 1u;
-    for (uint64_t seq = first; seq <= latest; ++seq) {
-      SiglusLookupGlyphEvent event;
-      // The producer reserves its sequence before publishing the slot. Stop
-      // at the first not-yet-published event so the next tick retries it;
-      // advancing straight to `latest` would permanently drop a tail glyph.
-      if (!ReadSiglusLookupGlyphEvent(seq, &event))
-        break;
-      fushi_voice_hook::AppendSiglusLookupGlyphCapture(
-          static_cast<char16_t>(event.code_unit), event.design_x,
-          event.design_y, event.extent, &g_siglus_lookup_glyph_captures);
-      processed_through = seq;
-      changed = true;
-    }
-    g_siglus_lookup_glyph_processed_seq = processed_through;
-  }
-
-  if (!changed || g_siglus_lookup_active_line_units == 0)
-    return;
-  const auto *profile = ActiveSiglusLookupProfile();
-  if (profile == nullptr)
-    return;
-  fushi_voice_hook::SiglusLookupGeometry geometry;
-  size_t matched_end = 0;
-  if (fushi_voice_hook::BuildSiglusLookupGeometry(
-          *profile, g_siglus_lookup_glyph_captures,
-          reinterpret_cast<const char16_t *>(g_siglus_lookup_active_line),
-          g_siglus_lookup_active_line_units, &geometry, &matched_end) &&
-      matched_end == g_siglus_lookup_glyph_captures.count) {
-    const bool same_logical_geometry =
-        g_siglus_lookup_active_valid &&
-        fushi_voice_hook::SameSiglusLookupGeometry(
-            g_siglus_lookup_active_geometry, geometry);
-    if (!same_logical_geometry) {
-      g_siglus_lookup_geometry_generation =
-          fushi_voice_hook::NextSiglusLookupLogicalGeneration(
-              g_siglus_lookup_geometry_generation);
-    }
-    g_siglus_lookup_active_geometry = geometry;
-    g_siglus_lookup_active_valid = true;
-    SetSiglusLookupDiag(fushi_voice_hook::kLookupDiagGeometryObserved);
-  } else {
-    // New glyph events exist but do not yet form the selected sentence's
-    // newest complete layout. Never keep publishing the preceding geometry
-    // while the renderer is between generations.
-    g_siglus_lookup_active_valid = false;
-  }
-}
-
-bool PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
-  if (g_header == nullptr || payload.text_units == 0 ||
-      payload.text_units > kSiglusLookupMaxTextUnits ||
-      payload.char_index >= payload.text_units) {
-    return false;
-  }
-  char utf8[fushi_voice_hook::kLookupLineBytes] = {};
-  const int bytes = WideCharToMultiByte(
-      CP_UTF8, 0, payload.text, static_cast<int>(payload.text_units), utf8,
-      static_cast<int>(sizeof(utf8)), nullptr, nullptr);
-  if (bytes <= 0 || payload.geometry_generation == 0)
-    return false;
-  fushi_voice_hook::LookupGeometryHitPublication publication;
-  publication.provider_kind =
-      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout;
-  publication.provider_id =
-      fushi_voice_hook::kLookupGeometryProviderIdSiglus;
-  publication.char_index = payload.char_index;
-  publication.source_length = fushi_voice_hook::LookupUtf16SourceLength(
-      payload.text, payload.text_units, payload.char_index);
-  publication.char_count = payload.text_units;
-  publication.coordinate_space =
-      fushi_voice_hook::kLookupCoordinateSpaceClientPhysicalPixels;
-  publication.writing_mode = fushi_voice_hook::kLookupWritingModeHorizontal;
-  publication.text_generation = payload.geometry_generation;
-  publication.geometry_generation = payload.geometry_generation;
-  publication.glyph_x = payload.rect.x;
-  publication.glyph_y = payload.rect.y;
-  publication.glyph_w = payload.rect.width;
-  publication.glyph_h = payload.rect.height;
-  publication.view_w = payload.client_width;
-  publication.view_h = payload.client_height;
-  publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
-  publication.line_utf8 = reinterpret_cast<const uint8_t *>(utf8);
-  publication.line_bytes = static_cast<uint32_t>(bytes);
-  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
-}
-
-bool IsSiglusLookupPayloadCurrent(const SiglusLookupPayload &payload) {
-  const auto *profile = ActiveSiglusLookupProfile();
-  const uint64_t latest_text = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_text_count, 0, 0));
-  const uint64_t latest_glyph = static_cast<uint64_t>(
-      InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
-  if (profile == nullptr || !g_siglus_lookup_active_valid ||
-      g_siglus_lookup_geometry_generation == 0 || payload.text_units == 0 ||
-      latest_text != g_siglus_lookup_text_processed_seq ||
-      latest_glyph != g_siglus_lookup_glyph_processed_seq ||
-      payload.text_units != g_siglus_lookup_active_line_units ||
-      payload.char_index >= payload.text_units ||
-      memcmp(payload.text, g_siglus_lookup_active_line,
-             static_cast<size_t>(payload.text_units) * sizeof(wchar_t)) != 0) {
-    return false;
-  }
-
-  const HWND game = reinterpret_cast<HWND>(payload.game_window);
-  RECT client = {};
-  POINT origin = {0, 0};
-  if (game == nullptr || !IsWindow(game) || GetForegroundWindow() != game ||
-      g_siglus_sampled_input_game_window.load(std::memory_order_acquire) !=
-          game ||
-      !GetClientRect(game, &client) || !ClientToScreen(game, &origin)) {
-    return false;
-  }
-  const fushi_voice_hook::SiglusLookupClientSnapshot active_client = {
-      reinterpret_cast<uintptr_t>(game), origin.x, origin.y,
-      client.right - client.left, client.bottom - client.top};
-  if (!fushi_voice_hook::MatchesSiglusLookupGenerationAndClient(
-          payload.geometry_generation,
-          SiglusLookupPayloadClientSnapshot(payload),
-          g_siglus_lookup_geometry_generation, active_client)) {
-    return false;
-  }
-
-  for (size_t index = 0;
-       index < g_siglus_lookup_active_geometry.glyph_count; ++index) {
-    const auto &glyph = g_siglus_lookup_active_geometry.glyphs[index];
-    if (glyph.char_index != payload.char_index)
-      continue;
-    fushi_voice_hook::SiglusLookupRect expected;
-    if (!fushi_voice_hook::ScaleSiglusLookupRectToClient(
-            *profile, glyph.rect, active_client.width, active_client.height,
-            &expected)) {
-      return false;
-    }
-    return payload.rect.x == expected.x && payload.rect.y == expected.y &&
-           payload.rect.width == expected.width &&
-           payload.rect.height == expected.height;
-  }
-  return false;
-}
-
-bool PublishSiglusLookupPayload(const SiglusLookupPayload &payload) {
-  if (!IsSiglusLookupPayloadCurrent(payload))
-    return false;
-  const ULONGLONG now = GetTickCount64();
-  uint64_t identity = 1469598103934665603ull;
-  const auto hash_value = [&identity](uint64_t value) {
-    identity ^= value;
-    identity *= 1099511628211ull;
-  };
-  hash_value(payload.text_units);
-  for (uint32_t index = 0; index < payload.text_units; ++index) {
-    hash_value(static_cast<uint32_t>(payload.text[index]));
-  }
-  hash_value(payload.char_index);
-  hash_value(static_cast<uint32_t>(payload.rect.x));
-  hash_value(static_cast<uint32_t>(payload.rect.y));
-  if (identity == g_siglus_lookup_last_hit_identity &&
-      now >= g_siglus_lookup_last_hit_tick &&
-      now - g_siglus_lookup_last_hit_tick <=
-          kSiglusLookupDuplicateHitWindowMs) {
-    return false;
-  }
-  if (!IsSiglusLookupPayloadCurrent(payload) ||
-      !PublishSiglusLookupHit(payload)) {
-    return false;
-  }
-  g_siglus_lookup_last_hit_identity = identity;
-  g_siglus_lookup_last_hit_tick = now;
-  return true;
-}
 
 void ProcessSiglusLookupTick() {
   if (g_stop || g_header == nullptr ||
@@ -1421,8 +1028,7 @@ void ProcessSiglusLookupTick() {
     }
     SetSiglusLookupRuntimeEnabled(false);
     g_siglus_lookup_last_shift_down = false;
-    g_siglus_lookup_active_valid = false;
-    InvalidateSiglusLookupClickTarget();
+    ResetSiglusLookupRuntimeLayout();
     return;
   }
   if (!InstallSiglusLookupSensor()) {
@@ -1431,13 +1037,71 @@ void ProcessSiglusLookupTick() {
         fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
         fushi_voice_hook::kLookupGeometryProviderIdSiglus);
     SetSiglusLookupRuntimeEnabled(false);
-    InvalidateSiglusLookupClickTarget();
+    ResetSiglusLookupRuntimeLayout();
     return;
   }
   SetSiglusLookupRuntimeEnabled(true);
+  // Window health is required even while a split redraw has no current click
+  // geometry. A missing/empty client cannot inherit a prior lifetime.
+  HWND game = FindGameMainWindow();
+  RECT client = {};
+  POINT origin = {0, 0};
+  if (game == nullptr || !IsWindow(game) || !GetClientRect(game, &client) ||
+      client.right <= client.left || client.bottom <= client.top ||
+      !ClientToScreen(game, &origin)) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    ResetSiglusLookupRuntimeLayout();
+    return;
+  }
+  if (g_siglus_lookup_layout_window != nullptr &&
+      g_siglus_lookup_layout_window != game) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    ResetSiglusLookupRuntimeLayout();
+  }
+  g_siglus_lookup_layout_window = game;
+  fushi_voice_hook::SiglusLookupEngineView engine_view;
+  if (!ReadSiglusLookupEngineView(game, &engine_view) ||
+      !RefreshSiglusLegacyGlyphOwners()) {
+    fushi_voice_hook::g_geometry_provider_registry.Retire(
+        g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    const uint64_t processed = g_siglus_lookup_glyph_processed_seq;
+    const auto* current_profile = ActiveSiglusLookupProfile();
+    const uint64_t occurrence = g_siglus_eightarg_occurrence.load(std::memory_order_acquire);
+    const bool awaiting_initial_view = current_profile && IsEightArgSiglusLookup(*current_profile) &&
+        occurrence != 0 && occurrence == g_siglus_eightarg_worker_occurrence &&
+        g_siglus_lookup_engine_view.occurrence != occurrence;
+    ResetSiglusLookupRuntimeLayout();
+    if (awaiting_initial_view) g_siglus_lookup_glyph_processed_seq = processed;
+    return;
+  }
+  if (!fushi_voice_hook::SameSiglusLookupEngineView(engine_view, g_siglus_lookup_engine_view)) {
+    const uint64_t processed = g_siglus_lookup_glyph_processed_seq;
+    ResetSiglusLookupRuntimeLayout();
+    if (IsEightArgSiglusLookup(*ActiveSiglusLookupProfile()) &&
+        engine_view.occurrence != g_siglus_lookup_engine_view.occurrence)
+      g_siglus_lookup_glyph_processed_seq = processed;
+    g_siglus_lookup_layout_window = game;
+  }
+  g_siglus_lookup_engine_view = engine_view;
   ConsumeSiglusLookupCaptures();
 
-  if (g_siglus_lookup_active_valid) {
+  if (IsEightArgSiglusLookup(*ActiveSiglusLookupProfile()) &&
+      engine_view.occurrence != g_siglus_eightarg_occurrence.load(std::memory_order_acquire)) {
+    InvalidateSiglusLookupClickTarget();
+    fushi_voice_hook::g_geometry_provider_registry.Retire(g_header,
+        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+    return;
+  }
+
+  if (g_siglus_lookup_layout.line_has_complete_layout &&
+      g_siglus_lookup_text_identity.event_id != 0 &&
+      g_siglus_lookup_text_identity.thread_id != 0) {
     fushi_voice_hook::g_geometry_provider_registry.OfferReady(
         g_header,
         fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
@@ -1449,32 +1113,18 @@ void ProcessSiglusLookupTick() {
         fushi_voice_hook::kLookupGeometryProviderIdSiglus);
   }
 
-  SiglusLookupClickEvent click_event;
-  uint64_t click_seq = 0;
-  bool click_submitted = false;
-  if (ReadLatestSiglusLookupClickSubmit(&click_event, &click_seq)) {
-    g_siglus_lookup_click_processed_seq = click_seq;
-    click_submitted = PublishSiglusLookupPayload(click_event.payload);
-  }
+  const bool click_submitted = ProcessSiglusLookupClickSubmissions();
 
   const uint16_t shift_state =
       static_cast<uint16_t>(GetAsyncKeyState(VK_SHIFT));
   const bool shift_submit = fushi_voice_hook::ConsumeSiglusLookupShiftSample(
       shift_state, &g_siglus_lookup_last_shift_down);
-  if (!g_siglus_lookup_active_valid) {
+  if (!IsSiglusLookupCaptureReadyForInput()) {
     InvalidateSiglusLookupClickTarget();
     return;
   }
-  HWND game = FindGameMainWindow();
-  RECT client = {};
-  POINT origin = {0, 0};
   POINT cursor = {};
-  if (game == nullptr || !GetClientRect(game, &client) ||
-      !ClientToScreen(game, &origin) || !GetCursorPos(&cursor)) {
-    fushi_voice_hook::g_geometry_provider_registry.Retire(
-        g_header,
-        fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
-        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  if (!GetCursorPos(&cursor)) {
     InvalidateSiglusLookupClickTarget();
     return;
   }
@@ -1520,8 +1170,7 @@ void ShutdownSiglusLookup() {
   SetSiglusLookupRuntimeEnabled(false);
   g_siglus_lookup_message_left_button_latched.store(false,
                                                     std::memory_order_release);
-  g_siglus_lookup_active_valid = false;
-  InvalidateSiglusLookupClickTarget();
+  ResetSiglusLookupRuntimeLayout();
   // Keep Required on this exact Siglus process.  A later/older host must fail
   // closed until a live GetKeyState detour republishes Ready; dropping Required
   // would silently re-enable the HHOOK-only path disproved on the real game.
@@ -1532,6 +1181,7 @@ void ShutdownSiglusLookup() {
 
 bool IsSiglusLookupProfileMatched() { return false; }
 bool IsSiglusLookupIdentityUndecided() { return false; }
+bool ShouldReserveSiglusKeyboardState() { return false; }
 void ProcessSiglusLookupTick() {}
 void ShutdownSiglusLookup() {}
 

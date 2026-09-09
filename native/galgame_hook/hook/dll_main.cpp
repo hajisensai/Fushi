@@ -66,8 +66,34 @@
 #include "tracked_handle_table.h"
 #include "hunex_hfa.h"
 #include "siglus_ovk.h"
+#include "siglus_voice_binding.h"
 #include "siglus_launch.h"
 #include "adapters/siglus_lookup.h"
+#include "adapters/siglus_image.h"
+#include "adapters/siglus_autoprofile.h"
+#include "adapters/siglus_viewport.h"
+#include "adapters/siglus_legacy_glyph_sites.h"
+#include "adapters/siglus_legacy_input_viewport.h"
+#include "adapters/siglus_legacy_runtime.h"
+#include "adapters/siglus_legacy_owner.h"
+#include "adapters/siglus_eightarg_lookup_family.h"
+#include "adapters/siglus_eightarg_runtime.h"
+#include "adapters/siglus_eightarg_owner.h"
+#include "adapters/siglus_eightarg_message_capture.h"
+#include "adapters/siglus_eightarg_glyph_batch.h"
+#include "adapters/siglus_native_autoprofile.h"
+#include "adapters/siglus_native_viewport.h"
+#include "adapters/siglus_message_profile.h"
+#include "adapters/siglus_message_capture.h"
+#include "adapters/siglus_native_message_profile.h"
+#include "adapters/siglus_native_message_capture.h"
+#include "adapters/siglus_legacy_message_profile.h"
+#include "adapters/siglus_legacy_message_capture.h"
+#include "adapters/siglus_legacy_resource.h"
+#include "adapters/siglus_legacy_live_admission.h"
+#include "adapters/siglus_resource_mapping.h"
+#include "adapters/siglus_native_resource.h"
+#include "adapters/siglus_voice_source.h"
 #include "adapters/hunex_gge_lookup.h"
 #include "adapters/hunex_gge_capture_bridge.h"
 #include "adapters/hunex_gge_lookup_core.h"
@@ -83,6 +109,7 @@
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
 #include "voice_hook_ipc.h"
+#include "siglus_text_owner.h"
 #include "voice_resource_filename.h"
 #include "voice_resource_pairing.h"
 #include "kirikiri_voice_storage_name.h"
@@ -238,35 +265,7 @@ std::wstring VoiceBaseName(const wchar_t* storagename, const uint8_t* data,
   return base;
 }
 
-bool WriteVoiceOggAt(const uint8_t* data, uint32_t len,
-                     const wchar_t* storagename, uint64_t tick_ms,
-                     uint64_t text_event_id = 0) {
-  if (data == nullptr || len == 0) return false;
-  wchar_t temp[MAX_PATH] = {0};
-  const DWORD n = GetTempPathW(MAX_PATH, temp);
-  if (n == 0 || n >= MAX_PATH) return false;
-  std::wstring dir = std::wstring(temp) + L"fushi_gal_voice";
-  if (!CreateDirectoryW(dir.c_str(), nullptr) &&
-      GetLastError() != ERROR_ALREADY_EXISTS) {
-    return false;
-  }
-  std::wstring file =
-      dir + L"\\" + fushi_voice_hook::BuildVoiceResourceFileName(
-                          tick_ms, VoiceBaseName(storagename, data, len),
-                          text_event_id);
-  HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr,
-                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (f == INVALID_HANDLE_VALUE) return false;
-  DWORD written = 0;
-  const bool write_ok = WriteFile(f, data, len, &written, nullptr) != FALSE &&
-      written == len;
-  const bool close_ok = CloseHandle(f) != FALSE;
-  if (!write_ok || !close_ok) {
-    DeleteFileW(file.c_str());
-    return false;
-  }
-  return true;
-}
+#include "voice_resource_writer.inc"
 
 // 首次拿到语音格式的写入闩：多路 CreateSourceVoice 只让第一个写 header 格式字段。
 volatile LONG g_format_set = 0;
@@ -603,6 +602,9 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapters/renpy_adapter.inc"
 #include "adapters/text_render_adapter.inc"
 #include "adapters/siglus_lookup.inc"
+#include "adapters/siglus_message_capture.inc"
+#include "adapters/siglus_voice_source.inc"
+#include "adapters/siglus_message_voice.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
 
@@ -656,9 +658,18 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
 
   g_header->hooked = 1;
   fushi_voice_hook::g_geometry_provider_registry.Reset(g_header);
+  // BUG-2339: proof-of-life must not let Luna claim a pending Siglus entry.
+  // This cheap engine classification precedes Ready; ABI work stays async.
+  fushi_voice_hook::InitializeSiglusTextOwner(g_header, IsSiglusEngine());
   // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
   // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-  if (!SignalReady(pid, legacy_hibiki_ipc)) return 1;
+  if (!SignalReady(pid, legacy_hibiki_ipc)) {
+    // This worker will never install hooks or advance Pending. A later helper
+    // must not reuse its mapping as a live, ready injection session.
+    fushi_voice_hook::AtomicStoreShared32(&g_header->hooked, 0u);
+    registry.FailSiglusTextStartup();
+    return 1;
+  }
 
   // ── C.2/C.3：缓存各区基址后安装捕获 hook ────────────────────────────
   g_ring_base = reinterpret_cast<uint8_t*>(g_header) + sizeof(SharedHeader);
@@ -704,6 +715,8 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
     g_capture_enabled = true;  // detour 上线（未加载时 hook 随后命中）。
     registry.InstallStartupAdapters();
     TryInstallGenericLookupInputShield();
+  } else {
+    registry.FailSiglusTextStartup();
   }
 
   // registry 保留原有各 adapter 的 150 次重试预算和调用顺序；工作线程只管生命周期。

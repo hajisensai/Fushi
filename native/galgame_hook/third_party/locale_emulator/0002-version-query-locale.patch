@@ -1,0 +1,143 @@
+diff --git a/LocaleEmulator/Hooks/NtdllHook.cpp b/LocaleEmulator/Hooks/NtdllHook.cpp
+index 5545bdb..b98b490 100644
+--- a/LocaleEmulator/Hooks/NtdllHook.cpp
++++ b/LocaleEmulator/Hooks/NtdllHook.cpp
+@@ -1,6 +1,6 @@
+ #include "stdafx.h"
+ 
+-extern BOOL Initialize(PVOID BaseAddress);
++extern BOOL Initialize(PVOID BaseAddress, BOOL ProcessOwnedMapping);
+ 
+ typedef struct
+ {
+@@ -136,7 +136,7 @@ NoInline PVOID FASTCALL LoadSelfAsFirstDll(PVOID ReturnAddress)
+ 
+         WriteProtectMemory(CurrentProcess, LePeb->LdrLoadDllAddress, LePeb->LdrLoadDllBackup, LePeb->LdrLoadDllBackupSize);
+ 
+-        if(!Initialize(&__ImageBase))
++        if(!Initialize(&__ImageBase, TRUE))
+             break;
+ 
+         // UNICODE_STRING DllPath;
+diff --git a/LocaleEmulator/LocaleEmulator.cpp b/LocaleEmulator/LocaleEmulator.cpp
+index 8b4e039..327f3ac 100644
+--- a/LocaleEmulator/LocaleEmulator.cpp
++++ b/LocaleEmulator/LocaleEmulator.cpp
+@@ -31,9 +31,12 @@ ForceInline VOID LeSetGlobalData(PLeGlobalData GlobalData)
+     g_GlobalData = GlobalData;
+ }
+ 
+-ForceInline VOID LeReleaseGlobalData()
++ForceInline BOOL LeReleaseGlobalData()
+ {
++    if (g_GlobalData != nullptr && NT_FAILED(g_GlobalData->UnHookVersionRoutines()))
++        return FALSE;
+     SafeDeleteT(g_GlobalData);
++    return TRUE;
+ }
+ 
+ BOOL NTAPI DelayInitDllEntry(PVOID BaseAddress, ULONG Reason, PVOID Reserved)
+@@ -449,6 +452,8 @@ NTSTATUS LeGlobalData::InitRegistryRedirection(PREGISTRY_REDIRECTION_ENTRY64 Ent
+     return STATUS_SUCCESS;
+ }
+ 
++#include "version_query_hooks.inc"
++
+ typedef struct
+ {
+     UNICODE_STRING DllName;
+@@ -464,6 +469,7 @@ PDLL_HOOK_ENTRY LookupDllHookEntry(PCUNICODE_STRING BaseDllName)
+         { RTL_CONSTANT_STRING(L"USER32.dll"),       &LeGlobalData::HookUser32Routines,      &LeGlobalData::UnHookUser32Routines },
+         { RTL_CONSTANT_STRING(L"GDI32.dll"),        &LeGlobalData::HookGdi32Routines,       &LeGlobalData::UnHookGdi32Routines },
+         { RTL_CONSTANT_STRING(L"KERNEL32.dll"),     &LeGlobalData::HookKernel32Routines,    &LeGlobalData::UnHookKernel32Routines },
++        { RTL_CONSTANT_STRING(L"VERSION.dll"),      &LeGlobalData::HookVersionRoutines,     &LeGlobalData::UnHookVersionRoutines },
+     };
+ 
+     PDLL_HOOK_ENTRY Entry;
+@@ -547,6 +553,7 @@ NTSTATUS LeGlobalData::UnInitialize()
+         DllNotificationCookie = nullptr;
+     }
+ 
++    NTSTATUS VersionStatus = UnHookVersionRoutines();
+     UnHookGdi32Routines();
+     UnHookUser32Routines();
+     UnHookKernel32Routines();
+@@ -556,12 +563,13 @@ NTSTATUS LeGlobalData::UnInitialize()
+ 
+     RtlFreeUnicodeString(&SystemDirectory);
+ 
+-    return 0;
++    return VersionStatus;
+ }
+ 
+ inline BOOL UnInitialize(PVOID BaseAddress)
+ {
+-    LeReleaseGlobalData();
++    if (!LeReleaseGlobalData())
++        return FALSE;
+     ml::MlUnInitialize();
+     return FALSE;
+ }
+@@ -615,7 +623,7 @@ VOID GenerateModuleList(ml::String &ModuleNames)
+     }
+ }
+ 
+-BOOL Initialize(PVOID BaseAddress)
++BOOL Initialize(PVOID BaseAddress, BOOL ProcessOwnedMapping)
+ {
+     NTSTATUS            Status;
+     PLDR_MODULE         Kernel32;
+@@ -641,6 +649,7 @@ BOOL Initialize(PVOID BaseAddress)
+     if (GlobalData == nullptr)
+         return FALSE;
+ 
++    GlobalData->ProcessOwnedMapping = ProcessOwnedMapping;
+     LeSetGlobalData(GlobalData);
+ 
+     Status = GlobalData->Initialize();
+@@ -657,9 +666,13 @@ BOOL NTAPI DllMain(PVOID BaseAddress, ULONG Reason, PVOID Reserved)
+     switch (Reason)
+     {
+         case DLL_PROCESS_ATTACH:
+-            return Initialize(BaseAddress) || UnInitialize(BaseAddress);
++            return Initialize(BaseAddress, FALSE) || UnInitialize(BaseAddress);
+ 
+         case DLL_PROCESS_DETACH:
++            // At process termination other DLLs/threads are already tearing down.
++            // The OS releases this process-lifetime context and its pinned code.
++            if (Reserved != nullptr)
++                break;
+             UnInitialize(BaseAddress);
+             break;
+     }
+diff --git a/LocaleEmulator/LocaleEmulator.h b/LocaleEmulator/LocaleEmulator.h
+index bffce0b..7a067cf 100644
+--- a/LocaleEmulator/LocaleEmulator.h
++++ b/LocaleEmulator/LocaleEmulator.h
+@@ -525,6 +525,8 @@ protected:
+ 
+ public:
+     PVOID CodePageMapView;
++    // Set only by the explicit SelfShadow entry; no loader-error inference.
++    BOOL ProcessOwnedMapping;
+     ULONG_PTR AnsiCodePageOffset, OemCodePageOffset, UnicodeCaseTableOffset;
+ 
+ protected:
+@@ -547,6 +549,8 @@ public:
+         API_POINTER(NtContinue)                 StubLdrInitNtContinue;
+         API_POINTER(LdrResSearchResource)       StubLdrResSearchResource;
+         API_POINTER(RtlCustomCPToUnicodeN)      StubRtlCustomCPToUnicodeN;
++        BOOL (WINAPI* StubGetFileVersionInfoW)(LPCWSTR, DWORD, DWORD, LPVOID);
++        BOOL (WINAPI* StubGetFileVersionInfoExW)(DWORD, LPCWSTR, DWORD, DWORD, LPVOID);
+ 
+         API_POINTER(NtUserMessageCall)          StubNtUserMessageCall;
+         API_POINTER(NtUserDefSetText)           StubNtUserDefSetText;
+@@ -699,6 +703,8 @@ public:
+ 
+     NTSTATUS HookKernel32Routines(PVOID Kernel32);
+     NTSTATUS UnHookKernel32Routines();
++    NTSTATUS HookVersionRoutines(PVOID Version);
++    NTSTATUS UnHookVersionRoutines();
+ 
+     NTSTATUS
+     LookupRegistryRedirectionEntry(

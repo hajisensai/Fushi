@@ -90,6 +90,7 @@ public:
     uint64_t generation = 0;
     uint64_t text_generation = 0;
     bool available = false;
+    bool snapshot_conflicted = false;
   };
 
   struct Snapshot {
@@ -199,6 +200,8 @@ public:
                               const std::wstring &launch_exe_path,
                               std::string *error);
 
+  // risk_accepted in StartCalibration/Configure is retained for channel
+  // compatibility. BUG-2154 makes consent a product policy, not session state.
   RequestResult StartCalibration(const Epoch &epoch, uint32_t target_pid,
                                  HWND target_hwnd,
                                  const NormalizedRect *initial_rect,
@@ -383,7 +386,6 @@ private:
   ReferenceClient configured_reference_client_;
   ReferenceClient live_reference_client_;
   Layout layout_;
-  bool risk_accepted_ = false;
   std::string input_mode_;
   std::string surface_mode_ = "attachedOnly";
 

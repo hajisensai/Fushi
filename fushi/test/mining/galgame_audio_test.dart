@@ -24,7 +24,7 @@ Uint8List _craftPe(int machine) {
 
 class _FakeProcess implements Process {
   _FakeProcess({this.onKill})
-      : stdin = IOSink(StreamController<List<int>>().sink);
+    : stdin = IOSink(StreamController<List<int>>().sink);
 
   final void Function()? onKill;
 
@@ -239,8 +239,9 @@ void main() {
       isFloat: false,
     );
     // 造 1000ms 的可辨识 PCM：每字节 = (index % 251)，便于断言切片边界。
-    final Uint8List oneSec =
-        Uint8List.fromList(List<int>.generate(192000, (i) => i % 251));
+    final Uint8List oneSec = Uint8List.fromList(
+      List<int>.generate(192000, (i) => i % 251),
+    );
 
     test('中段切片按 byteRate 对齐取正确字节区间', () {
       final s = slicePcmByMs(oneSec, fmt, 250, 500); // [48000,96000)
@@ -422,11 +423,13 @@ void main() {
     });
 
     test('grabRecent 缺 pcm 字段 -> null', () async {
-      setHandler((call) async => <String, Object?>{
-            'sampleRate': 48000,
-            'channels': 2,
-            'bitsPerSample': 16,
-          });
+      setHandler(
+        (call) async => <String, Object?>{
+          'sampleRate': 48000,
+          'channels': 2,
+          'bitsPerSample': 16,
+        },
+      );
       expect(await LoopbackGalAudioSource().grabRecent(3000), isNull);
     });
   });
@@ -450,8 +453,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_capability_gate_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       var injectionStarts = 0;
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
@@ -486,8 +490,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_capability_probe_failed_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       var injectionStarts = 0;
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
@@ -521,8 +526,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_capability_probe_throw_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       final EngineHookGalAudioSource source = EngineHookGalAudioSource(
         targetPid: 2468,
@@ -581,8 +587,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_output_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       final File game = File('${temp.path}${Platform.pathSeparator}game.exe');
       await game.writeAsBytes(_craftPe(0x014c));
@@ -634,30 +641,30 @@ void main() {
         systemAnsiCodePageProbe: () => 936,
         japaneseLocaleNeedProbe: (String _, String? __) async =>
             const GalJapaneseLocaleVerdict(
-          need: GalJapaneseLocaleNeed.needed,
-          evidence: <GalJapaneseLocaleEvidence>[
-            GalJapaneseLocaleEvidence.versionInfoJapanese,
-          ],
-        ),
+              need: GalJapaneseLocaleNeed.needed,
+              evidence: <GalJapaneseLocaleEvidence>[
+                GalJapaneseLocaleEvidence.versionInfoJapanese,
+              ],
+            ),
         processStarter: (String executable, List<String> arguments) async {
           expect(executable, injector.path);
-          expect(
-            arguments,
-            <String>[
-              '--launch',
-              game.path,
-              '--hold',
-              '--native-loopback-policy',
-              'deny',
-              // 握手超时与 readyTimeout 同源下发（见 buildEngineHookInjectorArguments）。
-              '--wait-ms',
-              '1000',
-              '--japanese-locale',
-            ],
-          );
+          expect(arguments, <String>[
+            '--launch',
+            game.path,
+            '--hold',
+            '--native-loopback-policy',
+            'deny',
+            // 握手超时与 readyTimeout 同源下发（见 buildEngineHookInjectorArguments）。
+            '--wait-ms',
+            '1000',
+            '--japanese-locale',
+          ]);
           scheduleMicrotask(() {
             process.stdoutController.add(
-              'OK hooked pid=4321 mode=launch\n'.codeUnits,
+              ('LAUNCH pid=1111 arch=x86 role=launcher locale=1\n'
+                      'LAUNCH pid=4321 arch=x86 role=game locale=1\n'
+                      'OK hooked pid=4321 mode=launch\n')
+                  .codeUnits,
             );
           });
           return process;
@@ -684,6 +691,8 @@ void main() {
       try {
         expect(await source.start(), isNull);
         expect(source.gamePid, 4321);
+        expect(source.launchedPid, 4321);
+        expect(source.localeGameLaunchConfirmed, isTrue);
         process.stdoutController.add('post-ready\n'.codeUnits);
         final List<int> stderrChunk = List<int>.filled(4096, 0x78);
         for (var i = 0; i < 128; i++) {
@@ -706,8 +715,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_attach_ready_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       final _FakeProcess process = _FakeProcess();
       var openCalls = 0;
@@ -781,8 +791,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_native_policy_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       final List<String> events = <String>[];
       final _FakeProcess process = _FakeProcess(
@@ -792,11 +803,11 @@ void main() {
       var requested = 0;
       var state = 0;
       Map<Object?, Object?> policyStatus() => <Object?, Object?>{
-            'nativeLoopbackRequested': requested,
-            'nativeLoopbackRequestSeq': requestSeq,
-            'nativeLoopbackState': state,
-            'nativeLoopbackAppliedSeq': requestSeq,
-          };
+        'nativeLoopbackRequested': requested,
+        'nativeLoopbackRequestSeq': requestSeq,
+        'nativeLoopbackState': state,
+        'nativeLoopbackAppliedSeq': requestSeq,
+      };
 
       setHandler((MethodCall call) async {
         events.add(call.method);
@@ -834,10 +845,7 @@ void main() {
         processStarter: (String executable, List<String> arguments) async {
           expect(
             arguments,
-            containsAllInOrder(<String>[
-              '--native-loopback-policy',
-              'deny',
-            ]),
+            containsAllInOrder(<String>['--native-loopback-policy', 'deny']),
           );
           scheduleMicrotask(() {
             process.stdoutController.add(
@@ -873,8 +881,10 @@ void main() {
     });
 
     test('targetPid<=0 -> start null', () async {
-      final src =
-          EngineHookGalAudioSource(targetPid: 0, injectorPath: 'C:/nope.exe');
+      final src = EngineHookGalAudioSource(
+        targetPid: 0,
+        injectorPath: 'C:/nope.exe',
+      );
       expect(await src.start(), isNull);
     });
 
@@ -905,10 +915,13 @@ void main() {
 
     test('grabRecent error map -> null', () async {
       setHandler(
-          (call) async => <String, Object?>{'error': 'no voice buffered'});
+        (call) async => <String, Object?>{'error': 'no voice buffered'},
+      );
       expect(
-        await EngineHookGalAudioSource(targetPid: 1, injectorPath: null)
-            .grabRecent(5000),
+        await EngineHookGalAudioSource(
+          targetPid: 1,
+          injectorPath: null,
+        ).grabRecent(5000),
         isNull,
       );
     });
@@ -920,8 +933,10 @@ void main() {
         return null;
       });
       expect(
-        await EngineHookGalAudioSource(targetPid: 1, injectorPath: null)
-            .grabRecent(0),
+        await EngineHookGalAudioSource(
+          targetPid: 1,
+          injectorPath: null,
+        ).grabRecent(0),
         isNull,
       );
       expect(called, false);
@@ -934,48 +949,50 @@ void main() {
       await src.stop();
     });
 
-    test('pollText keeps Luna thread discovery metadata for the UI selector',
-        () async {
-      setHandler((MethodCall call) async {
-        if (call.method != 'pollText') return null;
-        expect(call.arguments, <String, Object?>{'fromSeq': 7});
-        return <String, Object?>{
-          'count': 8,
-          'lines': <Object?>[
-            <Object?, Object?>{
-              'seq': 8,
-              'ts': 123456,
-              'text': '',
-              'threadId': 0x1234,
-              'threadAddress': 0x5678,
-              'threadContext': 9,
-              'threadContext2': 10,
-              'processId': 42,
-              'sourceKind': 2,
-              'eventKind': 1,
-              'eventFlags': 1,
-              'hookName': 'TextRender',
-              'hookCode': 'HS932@5678',
-            },
-          ],
-        };
-      });
+    test(
+      'pollText keeps Luna thread discovery metadata for the UI selector',
+      () async {
+        setHandler((MethodCall call) async {
+          if (call.method != 'pollText') return null;
+          expect(call.arguments, <String, Object?>{'fromSeq': 7});
+          return <String, Object?>{
+            'count': 8,
+            'lines': <Object?>[
+              <Object?, Object?>{
+                'seq': 8,
+                'ts': 123456,
+                'text': '',
+                'threadId': 0x1234,
+                'threadAddress': 0x5678,
+                'threadContext': 9,
+                'threadContext2': 10,
+                'processId': 42,
+                'sourceKind': 2,
+                'eventKind': 1,
+                'eventFlags': 1,
+                'hookName': 'TextRender',
+                'hookCode': 'HS932@5678',
+              },
+            ],
+          };
+        });
 
-      final GalTextPoll? poll = await EngineHookGalAudioSource(
-        targetPid: 1,
-        injectorPath: null,
-      ).pollText(7);
-      expect(poll, isNotNull);
-      expect(poll!.count, 8);
-      final GalHookedLine line = poll.lines.single;
-      expect(line.textThreadKey, 'luna:1234');
-      expect(line.textThreadLabel, 'TextRender · 0x5678');
-      expect(line.hookCode, 'HS932@5678');
-      expect(line.processId, 42);
-      expect(line.threadContext2, 10);
-      expect(line.eventKind, GalTextEventKind.threadDiscovered);
-      expect(line.eventFlags, 1);
-    });
+        final GalTextPoll? poll = await EngineHookGalAudioSource(
+          targetPid: 1,
+          injectorPath: null,
+        ).pollText(7);
+        expect(poll, isNotNull);
+        expect(poll!.count, 8);
+        final GalHookedLine line = poll.lines.single;
+        expect(line.textThreadKey, 'luna:1234');
+        expect(line.textThreadLabel, 'TextRender · 0x5678');
+        expect(line.hookCode, 'HS932@5678');
+        expect(line.processId, 42);
+        expect(line.threadContext2, 10);
+        expect(line.eventKind, GalTextEventKind.threadDiscovered);
+        expect(line.eventFlags, 1);
+      },
+    );
 
     test('Siglus exact text source has a stable selectable thread label', () {
       const GalHookedLine line = GalHookedLine(
@@ -990,23 +1007,25 @@ void main() {
       expect(line.textThreadLabel, 'Siglus exact · 0x25c880');
     });
 
-    test('selectTextThread forwards the native thread id and can reset to auto',
-        () async {
-      final List<Object?> selected = <Object?>[];
-      setHandler((MethodCall call) async {
-        if (call.method != 'selectTextThread') return null;
-        selected.add((call.arguments as Map<Object?, Object?>)['threadId']);
-        return <String, Object?>{'ok': true};
-      });
-      final EngineHookGalAudioSource source = EngineHookGalAudioSource(
-        targetPid: 1,
-        injectorPath: null,
-      );
+    test(
+      'selectTextThread forwards the native thread id and can reset to auto',
+      () async {
+        final List<Object?> selected = <Object?>[];
+        setHandler((MethodCall call) async {
+          if (call.method != 'selectTextThread') return null;
+          selected.add((call.arguments as Map<Object?, Object?>)['threadId']);
+          return <String, Object?>{'ok': true};
+        });
+        final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+          targetPid: 1,
+          injectorPath: null,
+        );
 
-      expect(await source.selectTextThread(0x1234), isTrue);
-      expect(await source.selectTextThread(null), isTrue);
-      expect(selected, <Object?>[0x1234, 0]);
-    });
+        expect(await source.selectTextThread(0x1234), isTrue);
+        expect(await source.selectTextThread(null), isTrue);
+        expect(selected, <Object?>[0x1234, 0]);
+      },
+    );
 
     test('targetIsWow64: native 返回 true -> 32 位（选 x86 注入器）', () async {
       setHandler((call) async {
@@ -1027,9 +1046,13 @@ void main() {
     test('targetIsWow64: pid<=0 / error / native 缺失 -> null', () async {
       setHandler((call) async => <String, Object?>{'error': 'open failed'});
       expect(
-          await EngineHookGalAudioSource.targetIsWow64(0), isNull); // 不打 native
+        await EngineHookGalAudioSource.targetIsWow64(0),
+        isNull,
+      ); // 不打 native
       expect(
-          await EngineHookGalAudioSource.targetIsWow64(4321), isNull); // error
+        await EngineHookGalAudioSource.targetIsWow64(4321),
+        isNull,
+      ); // error
       setHandler(null);
       expect(await EngineHookGalAudioSource.targetIsWow64(4321), isNull); // 缺失
     });
@@ -1162,10 +1185,7 @@ void main() {
 
     test('attach 模式保持旧参数，未启用时不带 Luna PC hooks', () {
       expect(
-        buildEngineHookInjectorArguments(
-          targetPid: 4567,
-          launchExe: null,
-        ),
+        buildEngineHookInjectorArguments(targetPid: 4567, launchExe: null),
         <String>[
           '--pid',
           '4567',
@@ -1205,13 +1225,7 @@ void main() {
           launchExe: null,
           readyTimeoutMs: 0,
         ),
-        <String>[
-          '--pid',
-          '4567',
-          '--hold',
-          '--native-loopback-policy',
-          'deny',
-        ],
+        <String>['--pid', '4567', '--hold', '--native-loopback-policy', 'deny'],
       );
     });
 
@@ -1222,10 +1236,7 @@ void main() {
           launchExe: null,
           nativeLoopbackPolicy: GalNativeLoopbackPolicy.allow,
         ),
-        containsAllInOrder(<String>[
-          '--native-loopback-policy',
-          'allow',
-        ]),
+        containsAllInOrder(<String>['--native-loopback-policy', 'allow']),
       );
     });
   });
@@ -1248,9 +1259,7 @@ void main() {
 
     test('旧 helper 的人类可读诊断仍能归类（向后兼容）', () {
       expect(
-        classifyGalHookInjectorFailure(
-          '位数不匹配：目标是 64 位进程，请改用对应 arch 的注入器\n',
-        ),
+        classifyGalHookInjectorFailure('位数不匹配：目标是 64 位进程，请改用对应 arch 的注入器\n'),
         GalHookInjectorFailure.bitnessMismatch,
       );
       expect(
@@ -1268,15 +1277,11 @@ void main() {
         GalHookInjectorFailure.createProcessFailed,
       );
       expect(
-        classifyGalHookInjectorFailure(
-          '注入完成但未收到就绪信号（5000ms 超时）；hooked=0\n',
-        ),
+        classifyGalHookInjectorFailure('注入完成但未收到就绪信号（5000ms 超时）；hooked=0\n'),
         GalHookInjectorFailure.readyTimeout,
       );
       expect(
-        classifyGalHookInjectorFailure(
-          '已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）\n',
-        ),
+        classifyGalHookInjectorFailure('已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）\n'),
         GalHookInjectorFailure.staleSession,
       );
       expect(
@@ -1315,9 +1320,7 @@ void main() {
       );
       // 不会自愈：重试只会掩盖必须告诉用户的处置。
       expect(
-        galHookFailureIsRetryable(
-          GalHookInjectorFailure.residentHookMismatch,
-        ),
+        galHookFailureIsRetryable(GalHookInjectorFailure.residentHookMismatch),
         isFalse,
       );
       expect(
@@ -1340,15 +1343,52 @@ void main() {
   });
 
   group('parseInjectorLaunchedPid', () {
+    test(
+      'native producer reports launcher/game role and actual locale result',
+      () {
+        final String producer = File(
+          '../native/galgame_hook/injector/injector_main.cpp',
+        ).readAsStringSync();
+        expect(producer, contains('role=%s locale=%d%s\\n'));
+        expect(producer, contains('launcher_layout ? " wait=launcher" : ""'));
+        expect(
+          producer,
+          contains(
+            'follow_children ? "launcher" : "game", locale_launched ? 1 : 0',
+          ),
+        );
+        expect(producer, contains('role=game locale=%d\\n'));
+        expect(
+          producer,
+          contains(
+            'sizeof(void*) == 8 ? "x64" : "x86", locale_launched ? 1 : 0',
+          ),
+        );
+      },
+    );
+    test('latest complete record replaces launcher; partial chunks do not', () {
+      const String first = 'LAUNCH pid=1111 arch=x86 role=launcher locale=1\n';
+      const String child = 'LAUNCH pid=2222 arch=x86 role=game locale=1\n';
+      for (int i = 0; i < child.length; i++) {
+        final GalHookLaunchObservation launch = parseInjectorLaunchObservation(
+          first + child.substring(0, i),
+        )!;
+        expect(launch.pid, 1111);
+        expect(launch.gameTarget, isFalse);
+      }
+      final GalHookLaunchObservation launch = parseInjectorLaunchObservation(
+        first + child,
+      )!;
+      expect(launch.pid, 2222);
+      expect(launch.gameTarget, isTrue);
+      expect(launch.localeLaunch, isTrue);
+    });
     test('注入结果之前就能拿到已创建的游戏 PID', () {
       expect(parseInjectorLaunchedPid('LAUNCH pid=20096 arch=x64\n'), 20096);
     });
 
     test('旧 helper 不打印该行时返回 null（不猜）', () {
-      expect(
-        parseInjectorLaunchedPid('OK hooked pid=8152 hooked=1\n'),
-        isNull,
-      );
+      expect(parseInjectorLaunchedPid('OK hooked pid=8152 hooked=1\n'), isNull);
       expect(parseInjectorLaunchedPid('LAUNCH pid=0\n'), isNull);
     });
   });
@@ -1357,7 +1397,8 @@ void main() {
     test('解析 OK hooked pid=<N>', () {
       expect(
         parseInjectorHookedPid(
-            'OK hooked pid=8152 hooked=1 ring=23040000 sr=0 ch=0'),
+          'OK hooked pid=8152 hooked=1 ring=23040000 sr=0 ch=0',
+        ),
         8152,
       );
       expect(

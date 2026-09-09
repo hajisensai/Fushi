@@ -6,6 +6,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/mining/external_window_mining.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/adts_duration.dart';
+import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
@@ -226,6 +228,7 @@ class GalHookMiningCoordinator {
     required String lineId,
     required Map<String, String> fields,
     String? sentenceOverride,
+    GalIngameMiningBinding? occurrence,
     required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     int? updateNoteId,
@@ -248,6 +251,7 @@ class GalHookMiningCoordinator {
         lineId: lineId,
         fields: fields,
         sentenceOverride: sentenceOverride,
+        occurrence: occurrence,
         compression: compression,
         repo: repo,
         updateNoteId: updateNoteId,
@@ -271,6 +275,7 @@ class GalHookMiningCoordinator {
     required String lineId,
     required Map<String, String> fields,
     required String? sentenceOverride,
+    required GalIngameMiningBinding? occurrence,
     required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     required int? updateNoteId,
@@ -288,6 +293,22 @@ class GalHookMiningCoordinator {
     }
     final GalHookSessionState state = _stateLoader();
     final ExternalWindowInfo? window = state.boundWindow;
+    bool occurrenceIsCurrent() {
+      if (occurrence == null) return true;
+      final GalHookSessionState current = _stateLoader();
+      return occurrence.resolve(
+            currentSessionStartedAt: current.sessionStartedAt,
+            currentTargetHwnd: current.boundWindow?.hwnd,
+            selectedLines: _session.selectedSessionLines,
+          ) ==
+          entry.id;
+    }
+
+    if (!occurrenceIsCurrent()) {
+      return const GalHookMiningResult(
+        failureReason: 'captured occurrence is no longer available',
+      );
+    }
     if (!state.externalWindowMode || window == null) {
       return const GalHookMiningResult(
         failureReason: 'game window is not bound',
@@ -351,14 +372,17 @@ class GalHookMiningCoordinator {
     final String audioExtension = immersionMiningAudioExtension();
     Object? audioError;
     StackTrace? audioStack;
-    final Future<Uint8List?> audioFuture = _captureAudio(
+    final Future<Uint8List?> audioFuture = (occurrence != null
+            ? _session.captureAudioForOccurrence(
+                occurrence: occurrence,
+                outputExtension: audioExtension,
+              )
+            : _captureAudio(
       lineId: entry.id,
-      // 音频层用 lineId + 原始文本做严格会话校验。内嵌 popup 的
-      // sentenceOverride 只负责写进卡片；它可能已去掉 `.ks` 元数据或折叠重复句，
-      // 不能拿来和文本线程载荷逐字比较，否则当前这类合法绑定会被误判 unavailable。
-      sentence: entry.text,
+                // sentenceOverride only changes card text, not audio identity.
+                sentence: entry.text,
       outputExtension: audioExtension,
-    ).catchError((Object e, StackTrace st) {
+              )).catchError((Object e, StackTrace st) {
       audioError = e;
       audioStack = st;
       return null;
@@ -422,7 +446,9 @@ class GalHookMiningCoordinator {
         final Future<Duration?> targetDuration = audioFuture.then(
           (Uint8List? bytes) {
             if (bytes == null || bytes.isEmpty) return null;
-            final int? durationMs = _lineLookup(lineId)?.audioDurationMs;
+            final int? durationMs = occurrence == null
+                ? _lineLookup(lineId)?.audioDurationMs
+                : adtsDurationMs(bytes);
             return durationMs == null || durationMs <= 0
                 ? null
                 : Duration(milliseconds: durationMs);
@@ -487,6 +513,11 @@ class GalHookMiningCoordinator {
 
     final Directory jobDirectory = await _createTempDirectory();
     try {
+      if (!occurrenceIsCurrent()) {
+        return const GalHookMiningResult(
+          failureReason: 'captured occurrence is no longer available',
+        );
+      }
       final ImmersionMiningResult mined = await _engine.mine(
         buildExternalWindowRequest(
           fields: effectiveFields,

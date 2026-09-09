@@ -167,6 +167,21 @@ void main() {
       expect(sessionSnapshot, greaterThanOrEqualTo(0));
       expect(hwndSnapshot, greaterThan(sessionSnapshot));
       expect(deferredMining, greaterThan(hwndSnapshot));
+      final int binding = handler.indexOf('GalIngameMiningBinding(');
+      expect(binding, greaterThan(hwndSnapshot));
+      expect(
+        binding,
+        lessThan(deferredMining),
+        reason: 'popup 必须在 sourceSequence 被真实折叠覆盖前固定原 occurrence',
+      );
+      expect(
+        handler.indexOf('occurrence.resolve('),
+        greaterThan(deferredMining),
+      );
+      expect(
+        handler.contains('selectedLines:_session.selectedSessionLines'),
+        isTrue,
+      );
       expect(
         handler.contains('textGeneration:textGeneration') &&
             handler.contains('sessionStartedAt:sessionStartedAt') &&

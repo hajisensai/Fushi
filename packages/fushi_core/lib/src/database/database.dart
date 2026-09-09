@@ -728,6 +728,17 @@ class FushiDatabase extends _$FushiDatabase
   @override
   int get schemaVersion => 100;
 
+  /// BUG-2335: version 97 also exists in a parallel migration history without
+  /// the v96 expansion column. Reuse the additive migration on open so a
+  /// matching user_version cannot skip the column required by the mapper.
+  Future<void> _ensureDictionaryExpandedLanguagesColumn(Migrator m) async {
+    if (await _tableExists('dictionary_metadata') &&
+        !await _columnExists('dictionary_metadata', 'expanded_languages_json')) {
+      await m.addColumn(
+          dictionaryMetadata, dictionaryMetadata.expandedLanguagesJson);
+    }
+  }
+
   /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
   /// 正常库全部 no-op。语句与原台阶逐字相同，避免两处定义出现分叉。
@@ -2991,12 +3002,7 @@ class FushiDatabase extends _$FushiDatabase
             // = 逐字节保持 v96 前的折叠行为（Never break userspace）。
             // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
             // _columnExists 短路。
-            if (await _tableExists('dictionary_metadata') &&
-                !await _columnExists(
-                    'dictionary_metadata', 'expanded_languages_json')) {
-              await m.addColumn(dictionaryMetadata,
-                  dictionaryMetadata.expandedLanguagesJson);
-            }
+            await _ensureDictionaryExpandedLanguagesColumn(m);
           }
           if (from < 97) {
             // v97（schema 漂移修补，BUG-2162）：真实用户库 user_version 已是 95，却缺
@@ -3091,6 +3097,11 @@ class FushiDatabase extends _$FushiDatabase
               appSchemaVersion: schemaVersion,
             );
           }
+
+          // This one known same-version collision cannot reach onUpgrade.
+          // Keep it after downgrade refusal and before any generated query;
+          // do not rewrite user_version or replay unrelated migration steps.
+          await _ensureDictionaryExpandedLanguagesColumn(createMigrator());
 
           // A hard process exit cannot run HomePage.dispose, so a scrape run
           // left in `running` would otherwise remain active forever. Reconcile

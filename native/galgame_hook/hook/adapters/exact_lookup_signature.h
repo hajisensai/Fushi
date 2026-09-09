@@ -24,8 +24,10 @@
 namespace fushi_voice_hook::exact_lookup {
 
 // A signature is only a candidate locator. Every production caller must also
-// bind its sole match back to an exact-hash profile RVA and validate the PE
-// section/call graph/ABI that gives that RVA meaning. A null mask means every
+// validate the PE sections, call graph and ABI that give its sole match
+// meaning. Exact profiles also bind that proof to their measured hash/RVA;
+// family resolvers derive every site from independent structural proofs.
+// A null mask means every
 // byte is significant; a zero mask byte wildcards the corresponding byte.
 struct MaskedPattern {
   const uint8_t* bytes = nullptr;
@@ -161,7 +163,14 @@ struct LoadedPeImage {
   size_t section_count = 0u;
 };
 
-inline bool OpenLoadedPeImage(HMODULE module, LoadedPeImage* image) {
+enum class LoadedPeSectionExtent {
+  kRawAndVirtualMaximum,
+  kVirtualSize,
+};
+
+inline bool OpenLoadedPeImage(
+    HMODULE module, LoadedPeImage* image,
+    LoadedPeSectionExtent extent = LoadedPeSectionExtent::kRawAndVirtualMaximum) {
   if (module == nullptr || image == nullptr) return false;
   *image = {};
   const auto* base = reinterpret_cast<const uint8_t*>(module);
@@ -229,7 +238,10 @@ inline bool OpenLoadedPeImage(HMODULE module, LoadedPeImage* image) {
                 section_headers + index * sizeof(IMAGE_SECTION_HEADER),
                 sizeof(section));
     const uint32_t span =
-        (std::max)(section.Misc.VirtualSize, section.SizeOfRawData);
+        extent == LoadedPeSectionExtent::kVirtualSize &&
+                section.Misc.VirtualSize != 0u
+            ? section.Misc.VirtualSize
+            : (std::max)(section.Misc.VirtualSize, section.SizeOfRawData);
     if (span == 0u || section.VirtualAddress >= image_bytes ||
         span > image_bytes - section.VirtualAddress) {
       *image = {};

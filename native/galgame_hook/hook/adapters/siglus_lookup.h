@@ -8,16 +8,47 @@
 #include <limits>
 
 #include "exact_lookup_signature.h"
+#include "siglus_glyph_record.h"
+#include "siglus_glyph_abi.h"
 
 namespace fushi_voice_hook {
 
 inline constexpr uint16_t kSiglusLookupPeMachineI386 = 0x014cu;
 inline constexpr size_t kSiglusLookupCaptureCapacity = 512u;
+inline constexpr size_t kSiglusLookupTextCapacity = 512u;
 inline constexpr size_t kSiglusLookupMaxGlyphs = 256u;
 inline constexpr uint16_t kSiglusLookupNoGlyph =
     std::numeric_limits<uint16_t>::max();
 
-// Keep the text source and its ABI in the exact executable profile. A native
+// Identity belongs to the committed text event, never to a renderer counter.
+// Native writers use WriteTextLaneEvent's return value; Luna readers preserve
+// the stable slot's seq and thread_id together with its text.
+struct SiglusLookupTextIdentity {
+  uint64_t event_id = 0;
+  uint64_t thread_id = 0;
+};
+
+// Windows UTF-16 payload; seq is the snapshot commit marker, not TextSlot.seq.
+struct SiglusLookupTextSnapshot {
+  SiglusLookupTextIdentity identity;
+  volatile int64_t seq = 0;
+  uint32_t text_units = 0;
+  wchar_t text[kSiglusLookupTextCapacity] = {};
+};
+
+inline bool IsSiglusLookupTextIdentityCurrent(
+    const SiglusLookupTextIdentity& captured,
+    const SiglusLookupTextIdentity& current) {
+  return captured.event_id != 0 && captured.thread_id != 0 &&
+         captured.event_id == current.event_id &&
+         captured.thread_id == current.thread_id;
+}
+
+inline bool IsSiglusLookupResolutionPending(long state) {
+  return state == 0 || state == 2;
+}
+
+// Keep the text source and its ABI in the admitted profile. A native
 // TextUnion callback and a Luna Scenario lane have different ownership and
 // caller-validation contracts even when the surrounding renderer is Siglus.
 enum class SiglusLookupTextFeed : uint8_t {
@@ -25,15 +56,20 @@ enum class SiglusLookupTextFeed : uint8_t {
   kLunaScenarioLane = 2,
 };
 
-// Each profile admits one measured executable only. The RVAs describe the
-// Siglus per-visible-glyph layout boundary and the return address immediately
-// after the engine's GetKeyState(VK_LBUTTON) call. They are unrelated to the
-// SGRE renderer and DirectInput ABI.
+inline bool HasUniqueSiglusLookupFamily(bool luna, bool native, bool legacy,
+                                       bool eightarg = false) {
+  return static_cast<int>(luna) + static_cast<int>(native) +
+             static_cast<int>(legacy) + static_cast<int>(eightarg) == 1;
+}
+
+// A profile is either a measured executable or a structurally resolved ABI
+// family. The RVAs describe the visible-glyph layout boundary and the engine's
+// key sampler. They are unrelated to the SGRE renderer and DirectInput ABI.
 struct SiglusLookupProfile {
   std::array<uint8_t, 32> executable_sha256 = {};
-  // The shipped launcher virtualizes self-reads back to its same-size .org
-  // image. Keep that exact runtime view in the same low-degree profile rather
-  // than weakening admission to an engine-family or signature-only match.
+  // Anemoi's launcher virtualizes self-reads back to its same-size .org image.
+  // The measured reference retains both identities for consistency checks.
+  // Structurally resolved profiles for either ABI leave digest fields empty.
   std::array<uint8_t, 32> runtime_view_sha256 = {};
   uint16_t pe_machine = 0;
   uint8_t pointer_bits = 0;
@@ -47,6 +83,11 @@ struct SiglusLookupProfile {
   uintptr_t main_input_message_return_rva = 0;
   int32_t viewport_width = 0;
   int32_t viewport_height = 0;
+  // Nonzero only for a structurally resolved family profile. The design
+  // dimensions come from this runtime Gameexe-config pointer, not a title.
+  uintptr_t viewport_config_rva = 0;
+  SiglusGlyphLayoutAbi glyph_abi = SiglusGlyphLayoutAbi::kEcxTenArguments;
+  uintptr_t get_keyboard_state_return_rva = 0;
 };
 
 inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
@@ -132,6 +173,7 @@ inline bool MatchesSiglusLookupProfile(const SiglusLookupProfile &profile,
       !valid_text_feed || profile.get_key_state_return_rva == 0 ||
       profile.input_message_rva == 0 ||
       profile.main_input_message_return_rva == 0 ||
+      profile.glyph_abi != SiglusGlyphLayoutAbi::kEcxTenArguments ||
       profile.viewport_width <= 0 || profile.viewport_height <= 0) {
     return false;
   }
@@ -208,14 +250,10 @@ inline constexpr exact_lookup::MaskedPattern kSprbInputMessageEntryPattern = {
 
 inline const exact_lookup::MaskedPattern* InputMessagePatternForProfile(
     const SiglusLookupProfile& profile) {
-  if (profile.input_message_rva ==
-          kAnemoiSiglusLookupProfile.input_message_rva &&
-      profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion) {
+  if (profile.text_feed == SiglusLookupTextFeed::kNativeEcxTextUnion) {
     return &kAnemoiInputMessageEntryPattern;
   }
-  if (profile.input_message_rva ==
-          kSummerPocketsReflectionBlueSiglusLookupProfile.input_message_rva &&
-      profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane) {
+  if (profile.text_feed == SiglusLookupTextFeed::kLunaScenarioLane) {
     return &kSprbInputMessageEntryPattern;
   }
   return nullptr;
@@ -592,6 +630,65 @@ BuildSiglusLookupGeometry(const SiglusLookupProfile &profile,
   return true;
 }
 
+// A committed same-line layout owns the provider lifetime, while only a
+// complete newest capture may supply a fresh click. Worker slices can end in
+// the middle of an identical redraw; that does not retire an existing popup.
+struct SiglusLookupLayoutState {
+  SiglusLookupGeometry geometry;
+  bool current_valid = false;
+  bool line_has_complete_layout = false;
+  uint64_t generation = 0;
+  // A press begun before an incomplete capture cannot submit after recovery,
+  // even if the logical geometry and its generation remain unchanged.
+  uint64_t snapshot_epoch = 0;
+};
+
+inline void InvalidateSiglusLookupCurrentLayout(SiglusLookupLayoutState* state) {
+  if (state == nullptr) return;
+  if (state->current_valid)
+    state->snapshot_epoch = NextSiglusLookupLogicalGeneration(state->snapshot_epoch);
+  state->current_valid = false;
+}
+
+// New text or loss of sensor/window/viewport/session revokes the committed
+// lifetime too. Counters stay monotonic so old payloads cannot become current.
+inline void ResetSiglusLookupLayout(SiglusLookupLayoutState* state) {
+  if (state == nullptr) return;
+  InvalidateSiglusLookupCurrentLayout(state);
+  state->line_has_complete_layout = false;
+}
+
+inline bool UpdateSiglusLookupLayout(
+    const SiglusLookupProfile& profile,
+    const SiglusLookupGlyphCaptureBuffer& captures,
+    const char16_t* line, size_t units, SiglusLookupLayoutState* state) {
+  if (state == nullptr) return false;
+  SiglusLookupGeometry candidate;
+  size_t matched_end = 0;
+  if (!BuildSiglusLookupGeometry(profile, captures, line, units, &candidate,
+                                 &matched_end) || matched_end != captures.count) {
+    InvalidateSiglusLookupCurrentLayout(state);
+    return false;
+  }
+  if (!state->line_has_complete_layout ||
+      !SameSiglusLookupGeometry(state->geometry, candidate)) {
+    state->generation = NextSiglusLookupLogicalGeneration(state->generation);
+  }
+  if (state->snapshot_epoch == 0)
+    state->snapshot_epoch = NextSiglusLookupLogicalGeneration(state->snapshot_epoch);
+  state->geometry = candidate;
+  state->current_valid = true;
+  state->line_has_complete_layout = true;
+  return true;
+}
+
+inline bool IsSiglusLookupLayoutSubmissionCurrent(
+    const SiglusLookupLayoutState& state, uint64_t generation,
+    uint64_t snapshot_epoch) {
+  return state.current_valid && generation != 0 && snapshot_epoch != 0 &&
+         generation == state.generation && snapshot_epoch == state.snapshot_epoch;
+}
+
 // The admitted build lays out text in a 1920x1080 design surface even when
 // the PMv2 HWND client is physically larger. Fit that surface into the real
 // client with the same centered letterbox transform used by the renderer.
@@ -626,6 +723,69 @@ inline bool ScaleSiglusLookupRectToClient(const SiglusLookupProfile &profile,
   return client_rect->x < client_width && client_rect->y < client_height &&
          client_rect->x + client_rect->width > 0 &&
          client_rect->y + client_rect->height > 0;
+}
+
+// A live legacy viewport is an engine rectangle, including stretch and
+// non-centred layouts. Identity is carried through the physical transaction.
+struct SiglusLookupEngineView {
+  uintptr_t owner = 0;
+  SiglusLookupRect viewport;
+  uint64_t occurrence = 0;
+};
+
+inline bool SameSiglusLookupEngineView(const SiglusLookupEngineView& lhs,
+                                      const SiglusLookupEngineView& rhs) {
+  return lhs.owner == rhs.owner && lhs.viewport.x == rhs.viewport.x &&
+      lhs.viewport.y == rhs.viewport.y && lhs.viewport.width == rhs.viewport.width &&
+      lhs.viewport.height == rhs.viewport.height && lhs.occurrence == rhs.occurrence;
+}
+
+inline bool ProjectSiglusLookupRect(const SiglusLookupProfile& profile,
+                                    const SiglusLookupEngineView& view,
+                                    const SiglusLookupRect design,
+                                    int32_t client_width, int32_t client_height,
+                                    SiglusLookupRect* output) {
+  if (output == nullptr) return false;
+  *output = {};
+  if (profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxTenArguments) {
+    return view.owner == 0 && ScaleSiglusLookupRectToClient(
+        profile, design, client_width, client_height, output);
+  }
+  if (profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxEightArguments &&
+      view.occurrence == 0) return false;
+  if ((profile.glyph_abi != SiglusGlyphLayoutAbi::kStackSixteenArguments &&
+       profile.glyph_abi != SiglusGlyphLayoutAbi::kEcxEightArguments) ||
+      view.owner == 0 || profile.viewport_width <= 0 || profile.viewport_height <= 0 ||
+      client_width <= 0 || client_height <= 0 || view.viewport.width <= 0 ||
+      view.viewport.height <= 0 || design.x < 0 || design.y < 0 ||
+      design.width <= 0 || design.height <= 0 ||
+      static_cast<int64_t>(design.x) + design.width > profile.viewport_width ||
+      static_cast<int64_t>(design.y) + design.height > profile.viewport_height)
+    return false;
+  const auto project = [](int32_t origin, int64_t value, int32_t extent,
+                          int32_t design_extent) -> int64_t {
+    return static_cast<int64_t>(origin) +
+        (value * extent + design_extent / 2) / design_extent;
+  };
+  const int64_t left = project(view.viewport.x, design.x, view.viewport.width,
+                               profile.viewport_width);
+  const int64_t top = project(view.viewport.y, design.y, view.viewport.height,
+                              profile.viewport_height);
+  const int64_t right = project(view.viewport.x,
+      static_cast<int64_t>(design.x) + design.width, view.viewport.width,
+      profile.viewport_width);
+  const int64_t bottom = project(view.viewport.y,
+      static_cast<int64_t>(design.y) + design.height, view.viewport.height,
+      profile.viewport_height);
+  // Clip to the real client before narrowing, including negative engine offsets.
+  const int64_t x = std::max<int64_t>(0, left);
+  const int64_t y = std::max<int64_t>(0, top);
+  const int64_t r = std::min<int64_t>(client_width, right);
+  const int64_t b = std::min<int64_t>(client_height, bottom);
+  if (r <= x || b <= y) return false;
+  *output = {static_cast<int32_t>(x), static_cast<int32_t>(y),
+             static_cast<int32_t>(r-x), static_cast<int32_t>(b-y)};
+  return true;
 }
 
 inline int FindSiglusLookupGlyph(const SiglusLookupGeometry &geometry,
@@ -672,8 +832,12 @@ struct SiglusLookupClickDecision {
 // matching up. A miss is passed through for the whole transaction. A lookup
 // hit or popup shield consumes the complete down/hold/up transaction; only a
 // lookup-owned up submits the glyph captured on its down.
+// Native admission gates new glyph ownership and submission, not an already
+// owned tail. A host-published popup has its own shield transaction, including
+// attached-only popups; revoking glyph input must not expose its close click.
 inline SiglusLookupClickDecision
-AdvanceSiglusLookupClickSample(bool button_down, bool popup_shield,
+AdvanceSiglusLookupClickSample(bool native_input_allowed, bool button_down,
+                               bool popup_shield,
                                uint16_t hit_glyph_index,
                                SiglusLookupClickSampleState *state) {
   SiglusLookupClickDecision decision;
@@ -697,7 +861,7 @@ AdvanceSiglusLookupClickSample(bool button_down, bool popup_shield,
       decision.popup_transaction = true;
       return decision;
     }
-    if (hit_glyph_index != kSiglusLookupNoGlyph) {
+    if (native_input_allowed && hit_glyph_index != kSiglusLookupNoGlyph) {
       state->owner = SiglusLookupClickOwner::kLookup;
       state->glyph_index = hit_glyph_index;
       decision.consume = true;
@@ -718,7 +882,8 @@ AdvanceSiglusLookupClickSample(bool button_down, bool popup_shield,
                              ? owned_glyph
                              : kSiglusLookupNoGlyph;
   if (!button_down) {
-    decision.submit = owner == SiglusLookupClickOwner::kLookup;
+    decision.submit = owner == SiglusLookupClickOwner::kLookup &&
+                      native_input_allowed;
     state->owner = SiglusLookupClickOwner::kIdle;
     state->glyph_index = kSiglusLookupNoGlyph;
   }
@@ -765,12 +930,13 @@ struct SiglusLookupMouseMessageDecision {
 //     filter latch heals from the physical `!button_down` sample; the message
 //     path heals from the down edge, which is its equivalent ground truth.
 inline SiglusLookupMouseMessageDecision
-DecideSiglusLookupMouseMessage(uint32_t message, bool popup_shield,
+DecideSiglusLookupMouseMessage(bool native_input_allowed, uint32_t message,
+                               bool popup_shield,
                                bool glyph_hit, bool latched) {
   SiglusLookupMouseMessageDecision decision;
   if (message == kSiglusLookupWmLeftButtonDown ||
       message == kSiglusLookupWmLeftButtonDoubleClick) {
-    decision.consume = popup_shield || glyph_hit;
+    decision.consume = popup_shield || (native_input_allowed && glyph_hit);
     decision.next_latched = decision.consume;
     return decision;
   }

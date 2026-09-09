@@ -29,8 +29,8 @@ void Check(bool condition, const char* message) {
 
 void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
-  Check(fushi_voice_hook::kSharedVersion == 23,
-        "shared ABI must be v23（BUG-2149 adapter 运行期读数在层原点块后纯追加，尺寸变了必须升版）");
+  Check(fushi_voice_hook::kSharedVersion == 24,
+        "shared ABI must be v24（BUG-2339 Siglus text ownership 尾追加）");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");
@@ -70,11 +70,14 @@ void TestV16AndV17TailAbiAndDefaultDeny() {
   Check(offsetof(SharedHeader, adapter_reports) >=
             offsetof(SharedHeader, lookup_layer_reserved) + sizeof(uint32_t),
         "v23 adapter report block must append after the v22 layer-origin block");
+  Check(offsetof(SharedHeader, siglus_text_owner) ==
+            offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
+        "v24 ownership must follow the v23 reports without changing old fields");
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, adapter_report_seq) +
+            ((offsetof(SharedHeader, siglus_text_owner) +
               sizeof(uint32_t) + 7u) /
              8u) * 8u,
-        "v23 adapter report block must be the exact SharedHeader tail (only 8-align padding)");
+        "v24 ownership must be the exact SharedHeader tail (only 8-align padding)");
   Check(fushi_voice_hook::AtomicLoadShared32(
             &header.native_loopback_requested) ==
             fushi_voice_hook::kNativeLoopbackDeny,

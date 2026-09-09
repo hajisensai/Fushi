@@ -73,6 +73,8 @@ try {
   Invoke-Checked $python 'tests/renpy_lookup_source_guard_test.py'
   Invoke-Checked $python 'tests/evidence_contract_test.py'
   Invoke-Checked $python 'tests/galhook_workflow_test.py'
+  Invoke-Checked $python 'tests/locale_emulator_runtime_pe_test.py'
+  & (Join-Path $hookRoot 'tests/locale_emulator_build_output_test.ps1')
   # CloseHandle detour 及其可达的 Forget* 不得阻塞：MinHook Freeze（含 LunaHook32 那份）
   # 挂起全部线程后仍会调 CloseHandle，锁在这里等于等一个被自己挂起的线程（BUG-2046）。
   Invoke-Checked $python 'tests/close_handle_detour_lockfree_guard_test.py'

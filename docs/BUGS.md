@@ -29,10 +29,37 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2147 条。点号进各自文件。
+> 共 2174 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2361](bugs/BUG-2361-siglus-eightarg-lookup-no-hit.md) | ✅ | ✅ | 八参数Siglus捕获台词后点击正文直接推进且无查词命中 |
+| [BUG-2360](bugs/BUG-2360-siglus-child-delayed-attach.md) | ✅ | ✅ | Siglus启动器子进程绕过延迟附着并抢先LE初始化 |
+| [BUG-2359](bugs/BUG-2359-siglus-lookup-consumed-click-without-hit.md) | 🚧 | ✅ | Siglus已入队查词点击偶发未发布命中且终结原因缺失 |
+| [BUG-2358](bugs/BUG-2358-siglus-launcher-wait-handshake.md) | ✅ | ✅ | 启动菜单等待耗尽游戏注入握手期限 |
+| [BUG-2357](bugs/BUG-2357-siglus-legacy-owner-publication-churn.md) | ✅ | ✅ | 旧版Siglus重复发布正文对象导致查词弹窗闪退 |
+| [BUG-2356](bugs/BUG-2356-siglus-legacy-keyboard-hook-owner.md) | ✅ | ✅ | 旧版Siglus键盘状态接口被通用输入盾抢占 |
+| [BUG-2355](bugs/BUG-2355-launcher-exit-locale-relaunch.md) | ✅ | ✅ | 启动器正常退出被误判转区崩溃并重复启动 |
+| [BUG-2354](bugs/BUG-2354-launcher-lineage.md) | ✅ | ✅ | 启动器退出后丢失已确认的游戏进程谱系 |
+| [BUG-2353](bugs/BUG-2353-locale-timezone-display-name.md) | ✅ | ✅ | 日语转区将时区ID误作本地化时区名称 |
+| [BUG-2352](bugs/BUG-2352-siglus-system-version-locale.md) | ✅ | ✅ | Siglus旧版读取系统版本资源时日语转区仍被判定失败 |
+| [BUG-2351](bugs/BUG-2351-gal-voice-companion-session-boundary.md) | ✅ | ✅ | 制卡伴音按重复事件编号混入旧会话语音 |
+| [BUG-2350](bugs/BUG-2350-siglus-lookup-capture-frontier.md) | ✅ | ✅ | Siglus同句重绘前沿未消费时永久丢弃已入队查词点击 |
+| [BUG-2349](bugs/BUG-2349-galgame-folded-typed-audio-ownership.md) | ✅ | ✅ | 折叠正文事件继承旧语音与带事件资源退回时间匹配 |
+| [BUG-2348](bugs/BUG-2348-siglus-native-rollback-reenables-retained-hook.md) | ✅ | ✅ | Siglus NativeEcx 安装回滚后回退重启残留 Hook |
+| [BUG-2347](bugs/BUG-2347-siglus-lookup-oversized-text-retains-old-target.md) | ✅ | ✅ | Siglus超容量新正文未撤销旧查词事件与点击目标 |
+| [BUG-2346](bugs/BUG-2346-selected-thread-history-resource-pairing.md) | ✅ | ✅ | Windows线程历史回捞跳过已导出的精确事件语音配对 |
+| [BUG-2345](bugs/BUG-2345-flutter-child-at-index-null.md) | 🚧 | 🚧 | Windows Flutter ChildAtIndex 枚举空子节点时访问冲突 |
+| [BUG-2344](bugs/BUG-2344-siglus-ovk-member-identity.md) | ✅ | ✅ | Siglus OVK将采样数误当成员ID导致资源命名不唯一 |
+| [BUG-2343](bugs/BUG-2343-siglus-voice-resource-without-dialogue-event.md) | 🚧 | ✅ | Siglus 语音资源缺少正文事件身份，配对依赖时间窗 |
+| [BUG-2342](bugs/BUG-2342-siglus-lookup-layout-generation-as-text-event.md) | ✅ | ✅ | Siglus查词用几何代数冒充字幕事件ID导致制卡行与音频身份错误 |
+| [BUG-2341](bugs/BUG-2341-siglus-ovk-export-failure-reported-captured.md) | ✅ | ✅ | Siglus OVK 导出失败仍报告已捕获 |
+| [BUG-2340](bugs/BUG-2340-siglus-partial-redraw-retires-popup.md) | ✅ | ✅ | Siglus同句分批重绘错误撤销已打开词典 |
+| [BUG-2339](bugs/BUG-2339-siglus-text-hook-ownership-race.md) | ✅ | ✅ | Siglus原生文本适配与Luna自动扫描争抢入口 |
+| [BUG-2338](bugs/BUG-2338-locale-emulator-loader-list-sentinel.md) | ✅ | ✅ | Locale Emulator在早期模块初始化链表头上解引用导致Rewrite启动崩溃 |
+| [BUG-2337](bugs/BUG-2337-windows-uia-flutter-host-crash.md) | 🚧 | 🚧 | Windows宿主在UIAutomation回调进入Flutter时访问冲突退出 |
+| [BUG-2336](bugs/BUG-2336-geometry-snapshot-conflict-as-none.md) | ✅ | ✅ | Windows宿主将快照读取冲突误报为没有原生查词provider |
+| [BUG-2335](bugs/BUG-2335-dictionary-expanded-column-version-collision.md) | ✅ | ✅ | 同版本数据库缺词典显式展开列导致启动空值崩溃 |
 | [BUG-2332](bugs/BUG-2332-cloud-manga-content-sync.md) | ✅ | ✅ | 云盘同步后端完全不同步漫画（上传静默跳过、下载按 EPUB 导入失败） |
 | [BUG-2330](bugs/BUG-2330-audiobook-multifile-position-no-file-index.md) | ✅ | ✅ | 多文件有声书持久化文件内毫秒无文件下标，重开恒落文件0 |
 | [BUG-2329](bugs/BUG-2329-eink-toggle-no-reader-reinject.md) | ✅ | ✅ | 墨水屏开关不通知阅读器重注入正文样式 |

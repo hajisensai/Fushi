@@ -1,5 +1,6 @@
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/mining/gal_voice_resource_name.dart';
 import 'package:fushi/src/sync/texthooker_line_fold.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
@@ -328,6 +329,7 @@ class TexthookerLineEntry {
     this.sourceLabel,
     this.sourceSequence,
     this.hookTimestampMs,
+    this.eventOwnedVoice = false,
     this.textThreadKey,
     this.textThreadLabel,
     this.textHookCode,
@@ -353,6 +355,9 @@ class TexthookerLineEntry {
   final String? sourceLabel;
   final int? sourceSequence;
   final int? hookTimestampMs;
+
+  /// Windows native message producer supplies exact resource event ownership.
+  final bool eventOwnedVoice;
   final String? textThreadKey;
   final String? textThreadLabel;
   final String? textHookCode;
@@ -407,6 +412,7 @@ class TexthookerLineEntry {
     List<RubySpan>? rubySpans,
     int? sourceSequence,
     int? hookTimestampMs,
+    bool? eventOwnedVoice,
     TexthookerLineAudioStatus? audioStatus,
     String? audioBackend,
     String? audioResourceId,
@@ -416,6 +422,7 @@ class TexthookerLineEntry {
     int? minedNoteId,
     bool? favorited,
     bool clearAudioResourceId = false,
+    bool clearAudioDuration = false,
     bool clearFallbackReason = false,
     bool clearMinedNoteId = false,
   }) {
@@ -426,6 +433,7 @@ class TexthookerLineEntry {
       sourceLabel: sourceLabel,
       sourceSequence: sourceSequence ?? this.sourceSequence,
       hookTimestampMs: hookTimestampMs ?? this.hookTimestampMs,
+      eventOwnedVoice: eventOwnedVoice ?? this.eventOwnedVoice,
       textThreadKey: textThreadKey,
       textThreadLabel: textThreadLabel,
       textHookCode: textHookCode,
@@ -435,7 +443,8 @@ class TexthookerLineEntry {
       audioBackend: audioBackend ?? this.audioBackend,
       audioResourceId:
           clearAudioResourceId ? null : audioResourceId ?? this.audioResourceId,
-      audioDurationMs: audioDurationMs ?? this.audioDurationMs,
+      audioDurationMs:
+          clearAudioDuration ? null : audioDurationMs ?? this.audioDurationMs,
       fallbackReason:
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
       mined: mined ?? this.mined,
@@ -821,6 +830,7 @@ class TexthookerService extends ChangeNotifier {
     String? sourceLabel,
     int? sourceSequence,
     int? hookTimestampMs,
+    bool eventOwnedVoice = false,
     String? textThreadKey,
     String? textThreadLabel,
     String? textHookCode,
@@ -908,8 +918,7 @@ class TexthookerService extends ChangeNotifier {
       for (int i = 0; i < absorbed.length - 1; i++) {
         _lastFoldedLineIds.add(absorbed[i].id);
       }
-      // 语音：回吞掉的几条里只要有一条已经配上了资源，就把它带到合并结果上，
-      // 否则「先配上音、再被后续重绘吞掉」等于把那段语音丢了。
+      // 未标记资源保留既有渐进折叠合同；带事件身份的音频必须仍属于新 seq。
       TexthookerLineEntry audioDonor = base;
       for (final TexthookerLineEntry candidate in absorbed) {
         if (candidate.audioStatus == TexthookerLineAudioStatus.matched) {
@@ -928,6 +937,8 @@ class TexthookerService extends ChangeNotifier {
           .firstWhere((TexthookerLineEntry e) => e.minedNoteId != null,
               orElse: () => base)
           .minedNoteId;
+      final bool inheritsAudio =
+          _canInheritAudio(audioDonor, sourceSequence, eventOwnedVoice);
       final TexthookerLineEntry merged = base.copyWith(
         text: mergedText,
         rubySpans: mergedSpans,
@@ -938,10 +949,13 @@ class TexthookerService extends ChangeNotifier {
         // 合并后这一条仍要认领得到本次重绘带出来的那段语音。
         sourceSequence: sourceSequence,
         hookTimestampMs: hookTimestampMs,
-        audioStatus: audioDonor.audioStatus,
+        eventOwnedVoice: eventOwnedVoice,
+        audioStatus: inheritsAudio ? audioDonor.audioStatus : audioStatus,
         audioBackend: audioDonor.audioBackend,
         audioResourceId: audioDonor.audioResourceId,
         audioDurationMs: audioDonor.audioDurationMs,
+        clearAudioResourceId: !inheritsAudio,
+        clearAudioDuration: !inheritsAudio,
       );
       // 字数只计真正新增的那段。不变式：buffer 里每条都已经按它**当前**的文本计过
       // 一次，所以这次新增 = 合并结果里**没被任何一条盖住**的部分。被吞掉的每条都
@@ -981,6 +995,7 @@ class TexthookerService extends ChangeNotifier {
       sourceLabel: sourceLabel,
       sourceSequence: sourceSequence,
       hookTimestampMs: hookTimestampMs,
+      eventOwnedVoice: eventOwnedVoice,
       textThreadKey: textThreadKey,
       textThreadLabel: textThreadLabel,
       textHookCode: textHookCode,
@@ -994,6 +1009,20 @@ class TexthookerService extends ChangeNotifier {
     }
     notifyListeners();
     return entry;
+  }
+
+  // Folding preserves a display row, not ownership of another native event's
+  // resource. Legacy unmarked progressive audio retains its existing policy.
+  static bool _canInheritAudio(
+    TexthookerLineEntry donor,
+    int? seq,
+    bool eventOnly,
+  ) {
+    final int? audioSeq = donor.audioResourceId == null
+        ? null
+        : parseGalVoiceResourceName(donor.audioResourceId!)?.textEventId;
+    if (audioSeq != null) return audioSeq == seq;
+    return !eventOnly || donor.sourceSequence == seq;
   }
 
   bool updateLineAudio(
@@ -1012,6 +1041,9 @@ class TexthookerService extends ChangeNotifier {
       audioBackend: backend,
       audioResourceId: resourceId,
       audioDurationMs: durationMs,
+      clearAudioDuration: durationMs == null &&
+          resourceId != null &&
+          resourceId != _entries[index].audioResourceId,
       fallbackReason: fallbackReason,
       clearAudioResourceId: clearResourceId,
       clearFallbackReason: fallbackReason == null,
