@@ -4546,5 +4546,7 @@
   "download_batch_done": "$n task(s) processed",
   "download_batch_unsupported": "$n skipped (not supported)",
   "download_batch_failed": "$n failed",
-  "download_batch_delete_confirm": "Delete $n download task(s)?"
+  "download_batch_delete_confirm": "Delete $n download task(s)?",
+  "sync_err_pairing_rejected": "L'appareil associé a refusé les identifiants de cet appareil — associez-le à nouveau pour reprendre la synchronisation.",
+  "sync_err_not_paired": "Aucun appareil associé pour l'instant — configurez d'abord l'association dans « Fushi Interconnect »."
 }

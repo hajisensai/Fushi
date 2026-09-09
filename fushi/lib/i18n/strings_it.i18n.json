@@ -4546,5 +4546,7 @@
   "download_batch_done": "$n task(s) processed",
   "download_batch_unsupported": "$n skipped (not supported)",
   "download_batch_failed": "$n failed",
-  "download_batch_delete_confirm": "Delete $n download task(s)?"
+  "download_batch_delete_confirm": "Delete $n download task(s)?",
+  "sync_err_pairing_rejected": "Il dispositivo associato ha rifiutato le credenziali di questo dispositivo: esegui di nuovo l'associazione per riprendere la sincronizzazione.",
+  "sync_err_not_paired": "Nessun dispositivo associato: configura prima l'associazione in «Fushi Interconnect»."
 }

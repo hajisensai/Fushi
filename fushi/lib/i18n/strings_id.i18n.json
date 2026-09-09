@@ -4546,5 +4546,7 @@
   "download_batch_done": "$n task(s) processed",
   "download_batch_unsupported": "$n skipped (not supported)",
   "download_batch_failed": "$n failed",
-  "download_batch_delete_confirm": "Delete $n download task(s)?"
+  "download_batch_delete_confirm": "Delete $n download task(s)?",
+  "sync_err_pairing_rejected": "Perangkat yang dipasangkan menolak kredensial perangkat ini — pasangkan ulang untuk melanjutkan sinkronisasi.",
+  "sync_err_not_paired": "Belum ada perangkat yang dipasangkan — atur pemasangan di \"Fushi Interconnect\" terlebih dahulu."
 }

@@ -4546,5 +4546,7 @@
   "download_batch_done": "$n task(s) processed",
   "download_batch_unsupported": "$n skipped (not supported)",
   "download_batch_failed": "$n failed",
-  "download_batch_delete_confirm": "Delete $n download task(s)?"
+  "download_batch_delete_confirm": "Delete $n download task(s)?",
+  "sync_err_pairing_rejected": "O dispositivo pareado rejeitou as credenciais deste dispositivo — pareie novamente para retomar a sincronização.",
+  "sync_err_not_paired": "Nenhum dispositivo pareado ainda — configure o pareamento em \"Fushi Interconnect\" primeiro."
 }

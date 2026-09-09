@@ -4546,5 +4546,7 @@
   "download_batch_done": "$n task(s) processed",
   "download_batch_unsupported": "$n skipped (not supported)",
   "download_batch_failed": "$n failed",
-  "download_batch_delete_confirm": "Delete $n download task(s)?"
+  "download_batch_delete_confirm": "Delete $n download task(s)?",
+  "sync_err_pairing_rejected": "페어링된 기기가 이 기기의 자격 증명을 거부했습니다. 동기화를 재개하려면 다시 페어링하세요.",
+  "sync_err_not_paired": "아직 페어링된 기기가 없습니다. 먼저 'Fushi 互联'에서 페어링을 완료하세요."
 }

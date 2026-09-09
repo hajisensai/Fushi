@@ -4546,5 +4546,7 @@
   "download_batch_done": "$n task(s) processed",
   "download_batch_unsupported": "$n skipped (not supported)",
   "download_batch_failed": "$n failed",
-  "download_batch_delete_confirm": "Delete $n download task(s)?"
+  "download_batch_delete_confirm": "Delete $n download task(s)?",
+  "sync_err_pairing_rejected": "ペアリング済みの端末がこの端末の認証情報を拒否しました。同期を再開するには再度ペアリングしてください。",
+  "sync_err_not_paired": "ペアリング済みの端末がありません。まず「Fushi 互联」でペアリングを行ってください。"
 }

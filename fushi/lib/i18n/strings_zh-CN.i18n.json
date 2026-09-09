@@ -4546,5 +4546,7 @@
   "download_batch_done": "已处理 $n 项",
   "download_batch_unsupported": "$n 项不支持此操作",
   "download_batch_failed": "$n 项失败",
-  "download_batch_delete_confirm": "删除 $n 个下载任务？"
+  "download_batch_delete_confirm": "删除 $n 个下载任务？",
+  "sync_err_pairing_rejected": "对方设备已拒绝本机的配对凭据，请重新配对后再同步。",
+  "sync_err_not_paired": "尚未配对任何设备，请先在「Fushi 互联」里完成配对。"
 }
