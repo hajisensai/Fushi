@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2190 条。点号进各自文件。
+> 共 2192 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2379](bugs/BUG-2379-ci-package-tests-hardcoded-list.md) | ✅ | ✅ | CI 的 Run package tests 循环写死五个包名，新包的测试在 CI 里一次都不会跑 |
+| [BUG-2378](bugs/BUG-2378-nul-guard-scan-roots-hardcoded.md) | ✅ | ✅ | 裸 NUL 守卫的扫描根写死包清单，新包与 packages/*/test 全在扫描面之外 |
 | [BUG-2375](bugs/BUG-2375-asr-unusable-model.md) | ✅ | ✅ | ASR 模型文件损坏后永久卡死：Protobuf parsing failed 且无自愈路径 |
 | [BUG-2374](bugs/BUG-2374-collection-cover-and-rescrape-entries-lost.md) | ✅ | ✅ | 合集丢失设置封面与重新刮削入口 |
 | [BUG-2373](bugs/BUG-2373-android-stylus-idle-loses-hover-pressure-buttons.md) | 🚧 | 🚧 | 安卓平板触控笔闲置1-2分钟后悬停/压力/侧键全失效 |
