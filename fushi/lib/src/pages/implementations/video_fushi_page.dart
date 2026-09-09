@@ -1565,7 +1565,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _handleSubtitleListLookup(
         listHit.cue,
         listHit.graphemeIndex,
-        listHit.charRect,
+        listHit.anchorRect,
       );
     }
   }
@@ -4437,7 +4437,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _handleSubtitleListLookup(
         listHit.cue,
         listHit.graphemeIndex,
-        listHit.charRect,
+        listHit.anchorRect,
       );
     }
   }
@@ -4524,7 +4524,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _handleSubtitleListLookup(
         listHit.cue,
         listHit.graphemeIndex,
-        listHit.charRect,
+        listHit.anchorRect,
       );
       return;
     }
