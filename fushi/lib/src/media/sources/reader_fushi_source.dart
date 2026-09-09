@@ -1392,6 +1392,19 @@ class ReaderFushiSource extends ReaderMediaSource {
         ));
   }
 
+  /// 底部状态行左段「阅读计时器」是否显示（分层同 [showTopProgressBar]）。
+  bool get showReadingTimer =>
+      readerSettings?.showReadingTimer ??
+      getPreference<bool>(key: 'show_reading_timer', defaultValue: true);
+
+  void toggleShowReadingTimer() async {
+    await (readerSettings?.toggleShowReadingTimer() ??
+        setPreference<bool>(
+          key: 'show_reading_timer',
+          value: !showReadingTimer,
+        ));
+  }
+
   bool get keepScreenAwake =>
       readerSettings?.keepScreenAwake ??
       getPreference<bool>(key: 'keep_screen_awake', defaultValue: true);
