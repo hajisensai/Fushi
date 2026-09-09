@@ -282,15 +282,23 @@ class ReaderPaginationScripts {
   /// 横排 `padding-left`）。滚动坐标原点是 body 的 padding box，列内容却从 content box
   /// 起始边开始，故列 j 的起始滚动坐标 = `contentStart + j*pageSize`。不减相位就等于把
   /// 网格整体平移了 contentStart，见 `alignToPage` 注释与 BUG-1764/BUG-875。
+  ///
+  /// [columnGap] 是 BUG-2325 的落页下侧容差：`pageSize` 由 CSSOM 序列化的列宽（3 位小数）
+  /// 推出，浏览器排版却把 used 列宽量化到 1/64 px，两者每页差一点点并**累积**，于是第 j 列
+  /// 的真实起始坐标比网格线 `j*pageSize` 低 j·δ —— 列顶首字的 anchor 就被 floor 判进前一列
+  /// （用户可见：有声书跟随读到列顶那句时视口退回上一页）。网格线之前的 column-gap 带没有
+  /// 任何内容，落进去的锚只可能是后一列的列顶字，故按「gap 归属后一列」定义列号。默认 0 =
+  /// 旧语义（既有相位契约用例口径不变）；JS `alignToPage` 恒传 `context.columnGap`。
   @visibleForTesting
   static double revealAnchorTargetScrollForTesting({
     required double rectStart,
     required double currentScroll,
     required double pageSize,
     double contentStart = 0,
+    double columnGap = 0,
   }) {
     if (pageSize <= 0) return currentScroll;
-    final double anchor = rectStart + currentScroll - contentStart;
+    final double anchor = rectStart + currentScroll - contentStart + columnGap;
     final double safe = anchor < 0 ? 0 : anchor;
     return (safe / pageSize).floorToDouble() * pageSize;
   }
@@ -312,6 +320,7 @@ class ReaderPaginationScripts {
     required double currentScroll,
     required double pageSize,
     double contentStart = 0,
+    double columnGap = 0,
   }) {
     if (pageSize <= 0) return null;
     final double target = revealAnchorTargetScrollForTesting(
@@ -319,6 +328,7 @@ class ReaderPaginationScripts {
       currentScroll: currentScroll,
       pageSize: pageSize,
       contentStart: contentStart,
+      columnGap: columnGap,
     );
     if (target == currentScroll) return null;
     return target;
@@ -2209,7 +2219,10 @@ $_sharedJs
       maxScroll: maxScroll,
       physicalMaxScroll: physicalMaxScroll,
       viewportExtent: viewportExtent,
-      contentStart: contentStart
+      contentStart: contentStart,
+      // BUG-2325：列间距。alignToPage 拿它当「落页网格的下侧容差」——gap 带里没有任何
+      // 内容，落进去的锚只可能是后一列列顶被网格漂移带到线下的字。见 alignToPage。
+      columnGap: gap
     };
   },
   getPagePosition: function(context) {
@@ -2280,8 +2293,30 @@ $_sharedJs
     // 减相位后 alignToPage 就是精确的列号函数，两个方向的错判同时消失，不需要任何可见性特例。
     // 返回值仍落在 j*pageSize 的滚动网格上（页对齐后内容起始边露出 contentStart 的页边距，
     // 与 paginate / pageStepPosition / minScroll 的网格严格同源，网格本身零变化）。
+    //
+    // BUG-2325（真机 HiBreak 竖排：有声书跟随读到「句首恰在列顶」的句子时退回前一页，下
+    // 一句又翻回来）：列号函数还必须带**下侧容差**，否则它在列边界上是零余量的等号判据。
+    // 根因是 pageStep 与浏览器真实列周期之间存在**每页累积**的亚像素差：
+    //   · pageStep 由 `parseFloat(getComputedStyle(body).columnWidth)` 推出，而 CSSOM 把
+    //     used 值序列化成 3 位小数字符串；
+    //   · 浏览器内部把 used 列宽量化到 LayoutUnit（1/64 px）再排版。
+    //   两者只有在列宽恰好是 1/64 的整数倍时才相等。真机 824x1648@300dpi → DPR 1.875 →
+    //   CSS 视口高 878.9333…px（小数！）→ used 列宽 832.9333…px 被量化成 832.921875px，
+    //   而 JS 读到 "832.933px" → pageStep 每页比真实列周期大 0.0111px。第 j 列的真实起始
+    //   坐标因此比网格线 j*pageStep 低 j*0.0111px：第 9 页起就低过 0.1px，第 89 页低近 1px。
+    //   列顶首字的 anchor 恰好等于该列真实起始坐标，于是 floor 把它判进**前一列** → 视口
+    //   退回上一页；下一句 cue 不在列顶，anchor 远离网格线，又翻回来。整数 CSS 视口（列宽
+    //   本就是 1/64 倍数）零漂移，所以这条只在小数 DPR 设备上现形。
+    // 网格线之前恰好是 column-gap 那一段，**没有任何内容**（前一列内容盒在 gap 之前就结束
+    // 了），所以落进 gap 带的锚只可能是后一列被漂移带下来的列顶字。列号按「gap 归属后一列」
+    // 定义即可，容差用的是几何真值 gap(22px)，不是拍脑袋的 ε：按上面的漂移率能兜住约 1900
+    // 页，且列内任意位置（含列末最后一像素，anchor−phase+gap < (j+1)*pageSize）仍落本列，
+    // BUG-875 / BUG-1764 两个方向都不受影响。
+    // 不去改 pageStep 本身（把它量化到 1/64 是 Blink 实现细节、跨引擎不成立；改列周期口径
+    // 会动到 paginate/minScroll/restore 全部落页路径，见 TODO-753/792 的历史）。
     var phase = context.contentStart || 0;
-    return Math.floor(Math.max(0, offset - phase) / context.pageSize) * context.pageSize;
+    var gapTolerance = context.columnGap || 0;
+    return Math.floor(Math.max(0, offset - phase + gapTolerance) / context.pageSize) * context.pageSize;
   },
   alignContentStartToPage: function(context, offset) {
     // TODO-1179：章首落点只能向下偏置到「包含首行内容边」的那一页。firstContentEdge
@@ -2291,7 +2326,11 @@ $_sharedJs
     // 「含首行」那页，绝不跳过首行（宁可多显示半列 padding）。与 scrollToCharOffset /
     // scrollToProgressPaged 的 floor(alignToPage) 落页锚同量纲；此函数只被 minScroll
     // 一处调用，无其它场景受影响。
-    return this.alignToPage(context, offset);
+    // BUG-2325：alignToPage 起带 gap 下侧容差（列顶字不再被网格漂移判进前一列）；章首落点
+    // **不吃**这条容差——这里的语义是「绝不跳过首行」，首行内容边真落在前一列末时必须留在
+    // 前一列，吃了容差反而会把它推进下一列、跳过首行。故保留裸相位 floor。
+    var phase = context.contentStart || 0;
+    return Math.floor(Math.max(0, offset - phase) / context.pageSize) * context.pageSize;
   },
   pageStepPosition: function(currentScroll, pitch) {
     if (pitch <= 0) return currentScroll;
@@ -2817,7 +2856,10 @@ $_sharedJs
     var scrollOffset = context.vertical
       ? (context.scrollEl.scrollTop + rect.top)
       : (context.scrollEl.scrollLeft + rect.left);
-    var charPage = Math.floor(Math.max(0, scrollOffset) / context.pageSize);
+    // BUG-2325：字符落页走同一个列号函数 alignToPage（减相位 + gap 下侧容差）。旧的裸
+    // floor(scrollOffset/pageSize) 既漏了相位 contentStart，也吃不住上面那条每页累积的
+    // 网格漂移：精确锚恢复 / 样式重锚 commit 落到「页首字」时同样会退回前一列。
+    var charPage = Math.round(this.alignToPage(context, scrollOffset) / context.pageSize);
     var aligned;
     if (hintScroll !== undefined) {
       // Page-stable hint: if the target char is within one page of where we
