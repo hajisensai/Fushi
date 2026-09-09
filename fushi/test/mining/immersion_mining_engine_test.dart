@@ -107,14 +107,16 @@ void main() {
           required String outputPath,
           double atSeconds = 10.0,
           FfmpegFailureReporter? onFailure,
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256,
+          bool diagnosticOnly = false}) async =>
       outputPath;
   Future<String?> nullFrame(
           {required String inputPath,
           required String outputPath,
           double atSeconds = 10.0,
           FfmpegFailureReporter? onFailure,
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256,
+          bool diagnosticOnly = false}) async =>
       null;
 
   test('gif+audio success builds context and calls mineEntry', () async {
