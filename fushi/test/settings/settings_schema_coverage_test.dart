@@ -1203,10 +1203,29 @@ void main() {
         .toList();
     expect(pickers.length, greaterThanOrEqualTo(20),
         reason: '全仓下拉型设置项应被遍历到（认出来这一步）');
-    expect(pickers.where((ItemVerdict v) => v.persisted).length,
-        greaterThanOrEqualTo(18),
-        reason: '下拉行必须真的被驱动并写穿 DB（驱动那一步）。未写穿的: '
-            '${pickers.where((ItemVerdict v) => !v.persisted).map((ItemVerdict v) => v.id).join(", ")}');
+    // 「驱动那一步」以前钉的是绝对数（写穿 >= 18）——那数的是**当前平台恰好有
+    // 多少行**，不是不变式。下拉行里有 4 条挂着 `Platform.isWindows`
+    // （`game/Lookup trigger` 与 cardCreation 的三条 Game* 卡图格式），于是本机
+    // 36 条里 21 条写穿、Linux CI 少掉那 4 条只剩 17，同一份代码 Win 绿 Linux 红。
+    //
+    // 真正要守的是「驱动序列没退化」，那与平台无关，直接钉两条：
+    // ① 凡是真被驱动动了的下拉行（changed），必须写穿 DB —— 一条都不许漏；
+    // ② 至少一半被认出来的下拉行真的驱动得动 —— `_driveDropdownRow` 退化成
+    //    认得出、动不了（changed 全 false）时这条先红。
+    // 剩下驱动不动的是 `profiles/*`（changed=false，见下）与
+    // `cardCreation/Card font scale`（`SettingsBodySearchEntry`，真控件在 Lapis
+    // 模板编辑器自绘 body 里，本来就不经通用驱动器）。
+    final List<ItemVerdict> drivenPickers =
+        pickers.where((ItemVerdict v) => v.changed).toList();
+    final List<ItemVerdict> drivenNotPersisted =
+        drivenPickers.where((ItemVerdict v) => !v.persisted).toList();
+    expect(drivenNotPersisted, isEmpty,
+        reason: '被驱动动了却没写穿 DB 的下拉行: '
+            '${drivenNotPersisted.map((ItemVerdict v) => v.id).join(", ")}');
+    expect(drivenPickers.length * 2, greaterThanOrEqualTo(pickers.length),
+        reason: '下拉行必须真的驱动得动（驱动那一步）：认出 ${pickers.length} 条、'
+            '只驱动得动 ${drivenPickers.length} 条。驱动不动的: '
+            '${pickers.where((ItemVerdict v) => !v.changed).map((ItemVerdict v) => v.id).join(", ")}');
     expect(globallyRestored, isTrue,
         reason: '全部设置必须能还原到初始快照。diff: ${restoreDiff.join("; ")}');
   });
