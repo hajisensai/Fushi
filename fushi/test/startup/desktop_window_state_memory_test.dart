@@ -196,7 +196,7 @@ void main() {
           reason: '必须能把「正在退出」和「正常运行」区分开');
       final int probeAt = runner.indexOf('::IsWindowVisible(exiting)');
       final int waitAt =
-          runner.indexOf('WaitForSingleInstanceMutex', probeAt);
+          runner.indexOf('single_instance_mutex.Wait', probeAt);
       expect(waitAt, greaterThan(probeAt),
           reason: '认出它在退出之后要等它释放互斥量，然后本进程按首实例正常启动');
       final int handoffAt =
