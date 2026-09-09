@@ -139,13 +139,32 @@ void main() {
     expect(find.byIcon(Icons.circle_outlined), findsOneWidget);
   });
 
-  testWidgets('当前章有播放角标', (WidgetTester tester) async {
+  testWidgets('当前章有播放角标，整行也高亮', (WidgetTester tester) async {
     await pumpList(
       tester,
       entry: entryWith(chapters),
       currentChapterKey: '/c/2',
     );
     expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
+    // 几百话的表里，一个 trailing 小图标扫不到；整行底色才是能一眼定位的信号。
+    final List<FushiCard> cards =
+        tester.widgetList<FushiCard>(find.byType(FushiCard)).toList();
+    expect(cards.where((FushiCard card) => card.selected), hasLength(1));
+    expect(cards, hasLength(3));
+  });
+
+  testWidgets('章节行紧凑且行间有实边距', (WidgetTester tester) async {
+    await pumpList(tester, entry: entryWith(chapters));
+    final List<Element> rows = find.byType(FushiListItem).evaluate().toList();
+    expect(rows, hasLength(3));
+    for (final Element row in rows) {
+      // standard 密度（下限 56 + 上下各 12）是给两行副标题留的；章节行只有
+      // 标题 + 一行元信息，几百条累计出的空白比内容还多。
+      expect(tester.getSize(find.byWidget(row.widget)).height, lessThan(56));
+    }
+    final Rect first = tester.getRect(find.byWidget(rows.first.widget));
+    final Rect second = tester.getRect(find.byWidget(rows[1].widget));
+    expect(second.top - first.bottom, greaterThan(0));
   });
 
   testWidgets('只看未读会滤掉已读的章', (WidgetTester tester) async {

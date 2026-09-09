@@ -637,6 +637,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       );
 
   Widget _buildAidokuSection() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (!AidokuRuntimeFactory.isSupported) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -753,11 +754,12 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         for (final AidokuSavedRepository repository
             in _aidokuRepositories ?? const <AidokuSavedRepository>[])
           FushiCard(
+            margin: EdgeInsets.only(bottom: tokens.spacing.gap),
             padding: EdgeInsets.zero,
             child: FushiListItem(
               leading: const Icon(Icons.cloud_outlined),
               title: Text(repository.name),
-              subtitle: Text(repository.indexUrl),
+              subtitle: Text(mangaSourceHostLabel(repository.indexUrl)),
               trailing: Wrap(
                 children: <Widget>[
                   IconButton(
@@ -816,9 +818,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                 contentWarning: (source.contentRating ?? 0) >= 3,
                 busy: _aidokuInstallingSourceId == source.id,
                 subtitle: Text(
-                  '${source.languages.join(', ').toUpperCase()} · '
-                  '${t.aidoku_extension_version} ${source.version}\n'
-                  '${source.baseUrl ?? source.id}',
+                  mangaSourceMetaLine(<String?>[
+                    source.languages.join(', ').toUpperCase(),
+                    '${t.aidoku_extension_version} ${source.version}',
+                    mangaSourceHostLabel(source.baseUrl ?? source.id),
+                  ]),
                 ),
                 enabled: package?.enabled,
                 onEnabledChanged: package == null
@@ -842,9 +846,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
           MangaExtensionManagementTile(
             title: package.name,
             subtitle: Text(
-              '${package.languages.join(', ').toUpperCase()} · '
-              '${t.aidoku_extension_version} ${package.version}\n'
-              '${package.id}',
+              mangaSourceMetaLine(<String?>[
+                package.languages.join(', ').toUpperCase(),
+                '${t.aidoku_extension_version} ${package.version}',
+                mangaSourceHostLabel(package.id),
+              ]),
             ),
             enabled: package.enabled,
             onEnabledChanged: (bool value) =>
@@ -1318,7 +1324,10 @@ class _AidokuRepositorySourcesDialogState
                           iconUrl: source.iconUri?.toString(),
                           contentWarning: (source.contentRating ?? 0) >= 3,
                           subtitle: Text(
-                            '${metadata.join(' · ')}\n${source.id}',
+                            mangaSourceMetaLine(<String?>[
+                              ...metadata,
+                              mangaSourceHostLabel(source.id),
+                            ]),
                           ),
                           busy: isInstalling,
                           enabled: installed?.enabled,

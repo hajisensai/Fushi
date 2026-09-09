@@ -121,9 +121,23 @@ class MangaChapterList extends StatelessWidget {
     // 「读了一半」= 有状态行、没读完、且真的翻过页。开了一下就退出（lastPage 0）
     // 不算进度，显示成「读到 1/24 页」只会误导。
     final bool partial = !read && state != null && state.lastPage > 0;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiCard(
+      // 相邻卡片外边距为 0 时，10px 圆角在行间漏出一串页面底色缺口，长章节
+      // 表看着像锯齿。章节动辄几百条，间距取 gap 的一半就够分辨。
+      margin: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
+      // 当前章此前只有 trailing 一个播放图标，滚动中根本扫不到；整行底色是
+      // 唯一能一眼定位的信号。
+      selected: current,
       padding: EdgeInsets.zero,
       child: FushiListItem(
+        // 章节行只有「标题 + 一行元信息」，standard 密度（56 下限 + 上下 12）
+        // 是给两行副标题留的余量，几百条累计出的空白比内容还多。
+        density: FushiListDensity.compact,
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal - 4,
+          vertical: tokens.spacing.gap / 2,
+        ),
         title: Text(
           chapter.name,
           style: read
@@ -139,6 +153,7 @@ class MangaChapterList extends StatelessWidget {
               : partial
               ? Icons.incomplete_circle
               : Icons.circle_outlined,
+          size: 20,
           color: read
               ? theme.colorScheme.onSurfaceVariant
               : theme.colorScheme.primary,
