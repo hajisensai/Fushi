@@ -106,7 +106,15 @@ void main() {
     final base = read('lib/src/pages/base_source_page.dart');
     expect(base.contains('Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup('),
         isTrue);
-    expect(base.contains('onOpenInAnki: onOpenInAnkiFromPopup'), isTrue);
+    // 钉的是「这个回调确实被接进去了」，不是某一种写法：制卡模块关掉时接线变成
+    // `onOpenInAnki: cardCreationEnabled ? onOpenInAnkiFromPopup : null`，
+    // 不变式（↗ 由 host lane 提供并传进弹窗层）没变。把整串实参写死会让这类
+    // 合法改动无辜变红 —— 同 browser_extension_lookup_highlight 那次的形态。
+    expect(
+      RegExp(r'onOpenInAnki:[^,\n]*onOpenInAnkiFromPopup').hasMatch(base),
+      isTrue,
+      reason: '↗ 必须由 host lane 接进弹窗层（允许模块闸包一层三元）',
+    );
     expect(base.contains('repo.openWordInAnki(expression, reading)'), isTrue);
   });
 

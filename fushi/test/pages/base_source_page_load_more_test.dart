@@ -244,7 +244,8 @@ void main() {
         reason: '按 entries.length 递增会让上限一次暴涨十几倍');
     // The popup layer receives a non-null onScrolledToBottom when not allLoaded.
     expect(
-        base.contains('item.allLoaded ? null : () => loadMoreForLayer(index)'),
+        RegExp(r'item\.allLoaded[\s\S]{0,80}?loadMoreForLayer\(index\)')
+            .hasMatch(base),
         isTrue,
         reason:
             'the popup layer must wire onScrolledToBottom to loadMoreForLayer');

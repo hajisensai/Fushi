@@ -68,9 +68,19 @@ void main() {
     final String src = readSource('lib/src/pages/base_source_page.dart');
     expect(src, contains('supportsSentenceDraft'));
     expect(src, contains('onSetSentenceContextToDraft'));
+    // 本条守卫的立意是「只在支持草稿的表面接线」。门控变量改名成
+    // sentenceDraftEnabled 后，立意靠两条一起钉：接线读它，且它必须 AND 上
+    // supportsSentenceDraft —— 只钉接线的话，表面判据被丢了也照样绿。
     expect(
-      src,
-      contains('supportsSentenceDraft ? onSetSentenceContextToDraft : null'),
+      RegExp(r'sentenceDraftEnabled\s*\?\s*onSetSentenceContextToDraft\s*:\s*null')
+          .hasMatch(src),
+      isTrue,
+    );
+    expect(
+      RegExp(r'sentenceDraftEnabled\s*=[\s\S]{0,80}?supportsSentenceDraft')
+          .hasMatch(src),
+      isTrue,
+      reason: '草稿门控必须仍然 AND 上「该表面支持草稿」，不能退化成只看模块闸',
     );
     // Default: no draft support (pure dictionary / home lookup).
     expect(src, contains('bool get supportsSentenceDraft => false;'));
