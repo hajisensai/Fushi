@@ -10,6 +10,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -139,6 +140,28 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 动作行与三个域 tab 同形（[buildEmbeddedStatTab]）：本 tab 之前完全没有动作
+    // 行，四个 tab 横过去时顶栏参差。目标入口的理由与 BUG-970 同：目标卡在未设目标
+    // 时整卡隐藏（[_buildGoalCard]），没有常驻入口就永远设不了第一个目标。
+    // 「清空」不放这里——本 tab 是跨域视图，批量清空只在各域 tab 里按域执行。
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.flag_outlined,
+        tooltip: t.stat_goal_set,
+        enabled: !_loading,
+        onTap: _editGoals,
+      ),
+      FushiIconButton(
+        icon: Icons.refresh,
+        tooltip: t.stat_refresh,
+        enabled: !_loading,
+        onTap: () => unawaited(_load()),
+      ),
+    ];
+    return buildEmbeddedStatTab(context, actions, _buildBody(tokens));
+  }
+
+  Widget _buildBody(FushiDesignTokens tokens) {
     if (_loading) {
       return Center(
         child: CircularProgressIndicator(
@@ -155,6 +178,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       children: <Widget>[
         _buildGoalCard(tokens, w),
         _buildSummaryCards(w),
+        buildStatDailyDurationChartSection(context, _dailyChartData(w)),
         buildStatSessionSection(
           context,
           sessions: _sessions,
@@ -163,6 +187,32 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         ),
       ],
     );
+  }
+
+  /// 目标编辑：与阅读统计 tab 同一份表单、同一个持久化目标。
+  Future<void> _editGoals() async {
+    final bool saved =
+        await showStatGoalEditDialog(context, ref.read(appProvider));
+    if (saved && mounted) setState(() {});
+  }
+
+  /// 最近 30 天跨域时长柱面：把完整日面 [_daily] 按 dateKey 折成图表点，再按
+  /// `lastDayKeys(30)` 补齐空日期——与三个域 tab 的同名图表同一口径（本 tab 之前
+  /// 没有这张图，数据其实一直是齐的）。
+  List<StatDayData> _dailyChartData(StatWindow w) {
+    final Map<String, StatDayData> byKey = <String, StatDayData>{};
+    for (final StatFact f in _daily) {
+      final StatDayData day = byKey.putIfAbsent(
+        f.dateKey,
+        () => StatDayData(dateKey: f.dateKey),
+      );
+      day.chars += f.chars;
+      day.ms += f.ms;
+    }
+    return <StatDayData>[
+      for (final String key in w.lastDayKeys(30))
+        byKey[key] ?? StatDayData(dateKey: key),
+    ];
   }
 
   /// 会话行展示名：与时段明细的 [_entryTitle] 同判据（游戏走库内显示名、书走

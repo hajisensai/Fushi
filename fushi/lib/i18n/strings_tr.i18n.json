@@ -3165,7 +3165,6 @@
   "stat_favorited": "Sık kullanılan",
   "stat_favorited_sentence": "Sık kullanılan cümleler",
   "stat_format_chars": "$n karakter",
-  "stat_format_chars_wan": "$n万 karakter",
   "stat_format_days": "$n gün",
   "stat_format_hours_minutes": "$h sa $m dk",
   "stat_format_minutes": "$n dk",

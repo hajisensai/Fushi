@@ -3165,7 +3165,6 @@
   "stat_favorited": "즐겨찾기",
   "stat_favorited_sentence": "즐겨찾기한 문장",
   "stat_format_chars": "$n자",
-  "stat_format_chars_wan": "$n만자",
   "stat_format_days": "$n일",
   "stat_format_hours_minutes": "$h시간 $m분",
   "stat_format_minutes": "$n분",
