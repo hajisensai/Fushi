@@ -4562,5 +4562,7 @@
   "reader_vn_sentences_per_screen": "每屏句数",
   "reader_vn_preserve_dialogue": "保持对话完整",
   "reader_vn_click_advance": "点击空白处推进",
-  "reader_vn_merge_spoken_sentence": "有声句保持在同一屏"
+  "reader_vn_merge_spoken_sentence": "有声句保持在同一屏",
+  "auto_add_char_position_to_tags": "自动添加制卡位置到标签",
+  "auto_add_char_position_to_tags_hint": "给卡片加上 chars_12345 标签，记录制卡时读到全书第几个字。"
 }

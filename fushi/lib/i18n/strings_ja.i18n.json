@@ -4562,5 +4562,7 @@
   "reader_vn_sentences_per_screen": "Sentences per screen",
   "reader_vn_preserve_dialogue": "Keep dialogue together",
   "reader_vn_click_advance": "Blank tap advances",
-  "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen"
+  "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen",
+  "auto_add_char_position_to_tags": "タグにカード作成位置を自動追加",
+  "auto_add_char_position_to_tags_hint": "カード作成時に本の何文字目まで読んだかを chars_12345 タグで記録します。"
 }
