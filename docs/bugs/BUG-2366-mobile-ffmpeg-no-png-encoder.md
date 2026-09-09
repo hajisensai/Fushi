@@ -66,7 +66,7 @@ Android 上 YouTube / bilibili 两条扩展制卡分支是 `requireAudio: true`
     只会在调用点长出假参数。共用的是控制流，不是参数表。
   - 修正 `MiningStillFormat` 的文档注释为实测事实，并写明「想让移动端真支持 png，唯一办法
     是构建机重编 ffmpeg-kit 时加 `--enable-zlib` 并重新 vendor」。
-  - 提交：见本文件末尾。
+  - 提交 `c8c85ce0ff`。
 - **[x] ② 已加自动化测试** —
   - `fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart` 新增组「BUG-2366：png 编码
     能力与 Dart 侧假设一致」：①配方仍含 `--disable-zlib` 且不含 `--enable-zlib`；
