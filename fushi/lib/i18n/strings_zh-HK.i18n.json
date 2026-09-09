@@ -4563,5 +4563,6 @@
   "reader_vn_click_advance": "Blank tap advances",
   "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen",
   "auto_add_char_position_to_tags": "自動將製卡位置加入標籤",
-  "auto_add_char_position_to_tags_hint": "為卡片加上 chars_12345 標籤，記錄製卡時讀到全書第幾個字。"
+  "auto_add_char_position_to_tags_hint": "為卡片加上 chars_12345 標籤，記錄製卡時讀到全書第幾個字。",
+  "audiobook_transcribe_alignment_hint": "Generated text is aligned to the audio in a second model pass before saving. The alignment model is downloaded if needed."
 }

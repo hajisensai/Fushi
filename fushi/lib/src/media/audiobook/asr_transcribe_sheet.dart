@@ -391,8 +391,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (plan == null) return;
     setState(() {
       _phase = _Phase.downloading;
-      _downloadTotal = plan.modelStatus.totalBytes;
-      _downloadReceived = plan.modelStatus.obtainedBytes;
+      _downloadTotal = plan.totalModelBytes;
+      _downloadReceived = plan.obtainedModelBytes;
       _downloadFile = '';
     });
     // 逐文件事件：把「之前文件」的字节累计起来展示总进度。
@@ -731,6 +731,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(t.audiobook_transcribe_intro, style: tokens.type.metadata),
+          Text(t.audiobook_transcribe_alignment_hint,
+              style: tokens.type.metadata),
           SizedBox(height: tokens.spacing.rowVertical),
           Text(
             t.audiobook_transcribe_language_label,

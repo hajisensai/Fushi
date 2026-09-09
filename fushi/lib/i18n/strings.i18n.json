@@ -4563,5 +4563,6 @@
   "reader_vn_click_advance": "Blank tap advances",
   "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen",
   "auto_add_char_position_to_tags": "Auto-add mining position to tags",
-  "auto_add_char_position_to_tags_hint": "Tags each card with chars_12345 — how many characters into the book it was mined."
+  "auto_add_char_position_to_tags_hint": "Tags each card with chars_12345 — how many characters into the book it was mined.",
+  "audiobook_transcribe_alignment_hint": "Generated text is aligned to the audio in a second model pass before saving. The alignment model is downloaded if needed."
 }

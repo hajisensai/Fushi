@@ -4563,5 +4563,6 @@
   "reader_vn_click_advance": "Blank tap advances",
   "reader_vn_merge_spoken_sentence": "Keep spoken sentence on one screen",
   "auto_add_char_position_to_tags": "タグにカード作成位置を自動追加",
-  "auto_add_char_position_to_tags_hint": "カード作成時に本の何文字目まで読んだかを chars_12345 タグで記録します。"
+  "auto_add_char_position_to_tags_hint": "カード作成時に本の何文字目まで読んだかを chars_12345 タグで記録します。",
+  "audiobook_transcribe_alignment_hint": "Generated text is aligned to the audio in a second model pass before saving. The alignment model is downloaded if needed."
 }

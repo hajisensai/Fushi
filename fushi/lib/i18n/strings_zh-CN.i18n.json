@@ -4563,5 +4563,6 @@
   "reader_vn_click_advance": "点击空白处推进",
   "reader_vn_merge_spoken_sentence": "有声句保持在同一屏",
   "auto_add_char_position_to_tags": "自动添加制卡位置到标签",
-  "auto_add_char_position_to_tags_hint": "给卡片加上 chars_12345 标签，记录制卡时读到全书第几个字。"
+  "auto_add_char_position_to_tags_hint": "给卡片加上 chars_12345 标签，记录制卡时读到全书第几个字。",
+  "audiobook_transcribe_alignment_hint": "生成文字后会再运行一遍模型校准时间，再保存字幕。首次使用会下载所需的调轴模型。"
 }

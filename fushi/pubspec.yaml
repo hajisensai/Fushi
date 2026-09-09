@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: b8a7b76016dd0b7eb55671bbe8b4e054af965d64
+      ref: 047bb9bb47667abb04b2ffea8a4c00163b620182
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: b8a7b76016dd0b7eb55671bbe8b4e054af965d64
+      ref: 047bb9bb47667abb04b2ffea8a4c00163b620182
   archive: ^3.6.1
   async_zip: ^0.1.0
   basic_utils: ^5.7.0

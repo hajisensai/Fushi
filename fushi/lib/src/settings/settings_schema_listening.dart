@@ -99,8 +99,12 @@ SettingsDestination buildListeningDestination() {
           SettingsCustomItem(
             id: 'listening.asr_models',
             searchTitle: t.asr_models_section,
-            builder: (SettingsContext _) =>
-                AsrModelsSettingsSection(service: createAsrTranscriptionService()),
+            builder: (SettingsContext _) => AsrModelsSettingsSection(
+              // Each pack, including the shared aligner, is managed separately.
+              service: createAsrTranscriptionService(
+                alignGeneratedSubtitles: false,
+              ),
+            ),
           ),
         ],
       ),

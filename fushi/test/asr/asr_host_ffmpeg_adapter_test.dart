@@ -47,7 +47,17 @@ class _ThrowingBackend implements host.FfmpegBackend {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   const FushiAsrFfmpegBackend adapter = FushiAsrFfmpegBackend();
+
+  test('generated subtitles use a second model pass by default', () {
+    expect(createAsrTranscriptionService().alignGeneratedSubtitles, isTrue);
+    expect(
+      createAsrTranscriptionService(alignGeneratedSubtitles: false)
+          .alignGeneratedSubtitles,
+      isFalse,
+    );
+  });
 
   tearDown(() => host.setFfmpegBackendForTesting(null));
 
