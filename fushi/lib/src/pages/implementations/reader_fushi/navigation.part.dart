@@ -1114,6 +1114,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       );
       return;
     }
+    // JS 往返期间可能已经翻章、重载或替换 WebView。旧文档的章内偏移不能
+    // 按新章的累计字数入账，也不能覆盖新章恢复锚/落库位置。代际同时拦住
+    // A → B → A 和同章重载，不能只检查章号或此刻是否仍在恢复。
+    // BUG-2399：内容还没就绪时晚到的快照同样不得写进恢复锚。这道闸有**两个入口**
+    // （本方法与 [_syncPositionFromWebViewProgress]），判据必须两处一致——只补一处
+    // 等于这条路照样能污染，守卫 reader_progress_snapshot_generation_guard 也正是
+    // 按同一份清单扫这两个方法的。
+    if (!mounted ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
+        _restoreInFlight ||
+        _lyricsMode ||
+        !_readerContentReady) {
+      return;
+    }
     if (result == null) {
       // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
       // settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
@@ -1286,12 +1302,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] syncPositionFromWebViewProgress failed: $e');
       return;
     }
+    // 退出/后台刷新同样不能把旧文档快照写进新章节的恢复锚。
     if (!mounted ||
-        _controller != controller ||
-        _navigateGeneration != generation ||
-        _currentChapter != chapter ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
         _restoreInFlight ||
-        _lyricsMode) {
+        _lyricsMode ||
+        !_readerContentReady) {
       return;
     }
 

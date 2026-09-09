@@ -28,11 +28,89 @@ void main() {
   final String corpus = readReaderPageSource();
   final String masked = maskComments(corpus);
 
+  for (final String method in <String>[
+    'Future<void> _syncPositionFromWebViewProgress() async',
+    'Future<void> _reloadWithCurrentSettings() async',
+  ]) {
+    test('$method 不把旧文档快照写进新章恢复锚', () {
+      final String code = maskComments(methodBody(corpus, method));
+      final int request = code.indexOf('await controller.evaluateJavascript(');
+      expect(request, isNonNegative);
+      for (final String capture in <String>[
+        'final InAppWebViewController controller = _controller!;',
+        'final int generation = _navigateGeneration;',
+        'final int chapter = _currentChapter;',
+      ]) {
+        expect(code.indexOf(capture), inInclusiveRange(0, request - 1));
+      }
+      final int gate = code.indexOf('if (!mounted ||', request);
+      expect(gate, greaterThan(request));
+      final int gateEnd = code.indexOf('}', gate);
+      final String guard = code.substring(gate, gateEnd);
+      for (final String rejection in <String>[
+        'generation != _navigateGeneration',
+        'chapter != _currentChapter',
+        '!identical(controller, _controller)',
+        '_lyricsMode',
+        'return;',
+      ]) {
+        expect(guard, contains(rejection));
+      }
+      expect(
+        code.indexOf('parseReaderStableProgressDetails(result)'),
+        greaterThan(gateEnd),
+      );
+    });
+  }
+
   group('arrive：_refreshProgress 是唯一记字入口', () {
     final String body = methodBody(
       corpus,
       'Future<void> _refreshProgress() async',
     );
+
+    test('跨章 JS 请求捕获发起时的文档身份', () {
+      final String code = maskComments(body);
+      final int request = code.indexOf('await controller.evaluateJavascript(');
+      expect(request, isNonNegative);
+      for (final String capture in <String>[
+        'final InAppWebViewController controller = _controller!;',
+        'final int generation = _navigateGeneration;',
+        'final int chapter = _currentChapter;',
+      ]) {
+        final int at = code.indexOf(capture);
+        expect(at, isNonNegative);
+        expect(at, lessThan(request));
+      }
+    });
+
+    test('旧章晚到结果在解析、图片兜底、记账和保存之前被丢弃', () {
+      final String code = maskComments(body);
+      final int request = code.indexOf('await controller.evaluateJavascript(');
+      final int gate = code.indexOf('if (!mounted ||', request);
+      expect(gate, greaterThan(request));
+      final int gateEnd = code.indexOf('}', gate);
+      final String guard = code.substring(gate, gateEnd);
+      for (final String rejection in <String>[
+        'generation != _navigateGeneration',
+        'chapter != _currentChapter',
+        '!identical(controller, _controller)',
+        '_restoreInFlight',
+        '_lyricsMode',
+        'return;',
+      ]) {
+        expect(guard, contains(rejection));
+      }
+      for (final String consumer in <String>[
+        'parseReaderStableProgressDetails(result)',
+        '_applyImagePageProgressFallback()',
+        '_lastProgressSection =',
+        '_readLedger.arrive(',
+        '_debouncedSavePosition(',
+      ]) {
+        expect(code.indexOf(consumer), greaterThan(gateEnd));
+      }
+    });
 
     test('起 / 止都经 absoluteCharOffsetOf 换算，止点取 snapshot.charOffsetEnd', () {
       expect(containsCodeLine(body, 'absoluteCharOffsetOf('), isTrue);
@@ -226,7 +304,8 @@ void main() {
       expect(
         containsCodeLine(body, '_studyClock?.detach();'),
         isTrue,
-        reason: 'dispose 是同步的：停表必须走 detach（内部零 IO，'
+        reason:
+            'dispose 是同步的：停表必须走 detach（内部零 IO，'
             '攒下的写交给 ExitFlushRegistry.defer），不许自己起事务',
       );
       expect(
@@ -250,7 +329,10 @@ void main() {
         );
       }
       expect(
-        containsCodeLine(body, 'ExitFlushRegistry.instance.defer(_flushPosition);'),
+        containsCodeLine(
+          body,
+          'ExitFlushRegistry.instance.defer(_flushPosition);',
+        ),
         isTrue,
         reason: '退出那一刻的位置改为登记到退出汇合点，由退出路径统一 await',
       );
@@ -295,21 +377,18 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test(
-      'leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
-      '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作',
-      () {
-        expect('_readLedger.leave('.allMatches(masked), hasLength(5));
-        // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
-        // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
-        expect('_studyClock?.detach();'.allMatches(masked), hasLength(1));
-        expect(
-          masked.contains('_readLedger.settle'),
-          isFalse,
-          reason: 'ReadUnitLedger.settle 已删；关书 / 退后台 / 退出不结算站着的页',
-        );
-      },
-    );
+    test('leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
+        '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
+      expect('_readLedger.leave('.allMatches(masked), hasLength(5));
+      // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
+      // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
+      expect('_studyClock?.detach();'.allMatches(masked), hasLength(1));
+      expect(
+        masked.contains('_readLedger.settle'),
+        isFalse,
+        reason: 'ReadUnitLedger.settle 已删；关书 / 退后台 / 退出不结算站着的页',
+      );
+    });
   });
 
   group('搜索跳转不对账本做动作（只滚动、不 notifyRestoreComplete，落点首个 arrive 结算旧页）', () {

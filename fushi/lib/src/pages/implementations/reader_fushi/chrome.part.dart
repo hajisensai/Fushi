@@ -2128,19 +2128,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
       await _loadLyricsPage();
       return;
     }
+    final InAppWebViewController controller = _controller!;
+    final int generation = _navigateGeneration;
+    final int chapter = _currentChapter;
     final dynamic result;
     try {
-      result = await _controller!.evaluateJavascript(
+      result = await controller.evaluateJavascript(
         source: ReaderPaginationScripts.stableProgressInvocation(),
       );
     } catch (e, stack) {
       // 半销毁的 WebView 上 evaluateJavascript 抛 PlatformException；此处尚未改
       // 任何恢复状态，安全 no-op 返回（此前这是 try 块外的孤儿 await，会逃 zone）。
-      ErrorLogService.instance
-          .log('ReaderFushi.reloadWithCurrentSettings.eval', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.reloadWithCurrentSettings.eval',
+        e,
+        stack,
+      );
       return;
     }
-    if (!mounted || _controller == null) return;
+    if (!mounted ||
+        generation != _navigateGeneration ||
+        chapter != _currentChapter ||
+        !identical(controller, _controller) ||
+        _lyricsMode) {
+      return;
+    }
     final ReaderStableProgressDetails? snapshot =
         parseReaderStableProgressDetails(result);
     final bool hasSameChapterCache = _lastProgressSection == _currentChapter;
@@ -2148,7 +2160,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         snapshot?.progress ?? (hasSameChapterCache ? _lastProgressValue : 0.0);
     // BUG-162 / TODO-219: reload 是同章程序化重建，优先沿用稳定精确锚；
     // stable gate 暂时不给快照时保留同章缓存，避免把瞬态章首 0 当新位置。
-    _initialCharOffset = snapshot?.charOffset ??
+    _initialCharOffset =
+        snapshot?.charOffset ??
         (hasSameChapterCache ? _lastProgressCharOffset : -1);
     _lastProgressSection = _currentChapter;
     _lastProgressValue = _initialProgress;
@@ -2161,9 +2174,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
     _restoreCompleter = Completer<bool>();
     _restoreInFlight = true;
-    debugPrint('[ReaderFushi] reloadWithCurrentSettings: '
-        'chapter=$_currentChapter progress=$_initialProgress '
-        'generation=$gen continuous=${_settings?.isContinuousMode}');
+    debugPrint(
+      '[ReaderFushi] reloadWithCurrentSettings: '
+      'chapter=$_currentChapter progress=$_initialProgress '
+      'generation=$gen continuous=${_settings?.isContinuousMode}',
+    );
 
     _rebuild(() {
       _readerContentReady = false;
@@ -2173,8 +2188,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     try {
       await _loadChapterDirectly(_currentChapter);
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.reloadWithCurrentSettings', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.reloadWithCurrentSettings',
+        e,
+        stack,
+      );
       debugPrint('[ReaderFushi] reloadWithCurrentSettings failed: $e');
       _restoreInFlight = false;
       if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
