@@ -79,6 +79,7 @@ class MigrationManifest {
     'profile_settings',
     'media_type_profiles',
     'book_profiles',
+    'language_profiles',
   ];
 
   Map<String, Object?> toJson() => <String, Object?>{

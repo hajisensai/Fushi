@@ -282,11 +282,13 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       if (!installed || !mounted) return;
       final GalHookSessionController controller =
           widget.sessionController ?? GalHookSessionController.instance;
-      // TODO-2936：应用「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      // TODO-2936：应用语言级 / 「游戏」媒体类型的 Profile 绑定（非致命、与启动并行）。
+      // 语言取该游戏卡上用户指定的 `galgames.language`（hook 文本无语言声明可读）。
       unawaited(
-        ref
-            .read(profileViewModelProvider.notifier)
-            .autoApplyBinding(mediaType: ProfileMediaKind.game),
+        ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+              languageTag: game.language,
+              mediaType: ProfileMediaKind.game,
+            ),
       );
       final GalHookLaunchResult result = await controller.launchGame(
         game.exePath,

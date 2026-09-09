@@ -139,6 +139,19 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
             ),
           ],
         ),
+        // 语言绑定的优先级高于上面的媒体类型绑定、低于书架上的单条目绑定
+        // （book > language > mediaType > 当前激活）。
+        AdaptiveSettingsSection(
+          title: t.profile_language_bindings,
+          children: [
+            AdaptiveSettingsRow(
+              title: t.profile_language_bindings_hint,
+              titleMaxLines: 4,
+            ),
+            for (final String tag in _languageBindingTags(uiState))
+              _buildLanguageRow(tag, uiState, vm),
+          ],
+        ),
       ],
     );
   }
@@ -238,6 +251,55 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   // ---------------------------------------------------------------------------
   // Media-type binding rows
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Language binding rows
+  // ---------------------------------------------------------------------------
+
+  /// 要铺出来的语言标签：内容语言选择器的标准候选（用户能在条目上设的那几个）
+  /// 打头，后面接「已绑定但不在标准候选里」的标签。
+  ///
+  /// 后半段不是多余的：`EpubBooks.language` 是从 EPUB 的 `dc:language` 自动回填
+  /// 的，值域是整个 BCP-47（一本法语书就会写进 `fr`）。少了这一段，用户给这类
+  /// 语言建的绑定会在 UI 上彻底消失——看不见、也改不掉，只能观察到「Profile 莫名
+  /// 其妙自己切了」。
+  List<String> _languageBindingTags(ProfileUiState uiState) {
+    final List<String> standard = <String>[
+      for (final ({String? tag, String label}) option
+          in kContentLanguageOptions)
+        if (option.tag != null) option.tag!,
+    ];
+    final List<String> extras = uiState.languageBindings.keys
+        .where((String tag) => !standard.contains(tag))
+        .toList()
+      ..sort();
+    return <String>[...standard, ...extras];
+  }
+
+  Widget _buildLanguageRow(
+    String languageTag,
+    ProfileUiState uiState,
+    ProfileViewModel vm,
+  ) {
+    final int? boundId = uiState.languageBindings[languageTag];
+    return AdaptiveSettingsPickerRow<int?>(
+      title: contentLanguageLabelOf(languageTag),
+      selected: boundId,
+      materialWidth: 176,
+      options: [
+        AdaptiveSettingsPickerOption<int?>(
+          value: null,
+          label: t.profile_media_none,
+        ),
+        for (final p in uiState.profiles)
+          AdaptiveSettingsPickerOption<int?>(
+            value: p.id,
+            label: p.name,
+          ),
+      ],
+      onChanged: (int? id) => vm.setLanguageBinding(languageTag, id),
+    );
+  }
 
   Widget _buildMediaTypeRow(
     String label,

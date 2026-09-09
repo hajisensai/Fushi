@@ -1054,14 +1054,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // TODO-2936：应用「漫画」媒体类型 / 本书 book 级的 Profile 绑定（与 EPUB/
     // 视频阅读器同范式：非致命、与开书链并行；漫画的 bookKey 就是 Profile 的
     // book 级 entryKey，见 book_format_convert.dart 的身份说明）。
-    unawaited(
-      ref
-          .read(profileViewModelProvider.notifier)
-          .autoApplyBinding(
-            bookUid: widget.bookKey,
-            mediaType: ProfileMediaKind.manga,
-          ),
-    );
+    unawaited(_resolveAndApplyMangaProfile());
+  }
+
+  /// 解析并应用 Profile 绑定（book 级 > 语言级 > 'manga' 媒体类型级 > 当前激活）。
+  ///
+  /// 漫画与 EPUB 共用 `epub_books` 表，语言取该行的 `language` 列。**注意当前它
+  /// 对漫画基本恒为 NULL**：`manga_importer` 的插入不带 language（CBZ / 图片包
+  /// 没有任何语言声明可读，PDF 也没有稳定的 `dc:language` 对应物），只有用户手动
+  /// 指定过的行才有值。通道在此接通，值有没有是数据侧的事——恒 NULL 时语言级整级
+  /// 跳过，行为与接通前逐字节一致。
+  Future<void> _resolveAndApplyMangaProfile() async {
+    String? languageTag;
+    try {
+      languageTag =
+          (await appModel.database.getEpubBook(widget.bookKey))?.language;
+    } catch (e, st) {
+      debugPrint('[MangaFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
+    }
+    await ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+          bookUid: widget.bookKey,
+          languageTag: languageTag,
+          mediaType: ProfileMediaKind.manga,
+        );
   }
 
   @override

@@ -10105,6 +10105,236 @@ class BookProfilesCompanion extends UpdateCompanion<BookProfileRow> {
   }
 }
 
+class $LanguageProfilesTable extends LanguageProfiles
+    with TableInfo<$LanguageProfilesTable, LanguageProfileRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LanguageProfilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _languageTagMeta = const VerificationMeta(
+    'languageTag',
+  );
+  @override
+  late final GeneratedColumn<String> languageTag = GeneratedColumn<String>(
+    'language_tag',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileIdMeta = const VerificationMeta(
+    'profileId',
+  );
+  @override
+  late final GeneratedColumn<int> profileId = GeneratedColumn<int>(
+    'profile_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES profiles (id) ON DELETE CASCADE',
+    ),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [languageTag, profileId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'language_profiles';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LanguageProfileRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('language_tag')) {
+      context.handle(
+        _languageTagMeta,
+        languageTag.isAcceptableOrUnknown(
+          data['language_tag']!,
+          _languageTagMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_languageTagMeta);
+    }
+    if (data.containsKey('profile_id')) {
+      context.handle(
+        _profileIdMeta,
+        profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {languageTag};
+  @override
+  LanguageProfileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LanguageProfileRow(
+      languageTag: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}language_tag'],
+      )!,
+      profileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}profile_id'],
+      )!,
+    );
+  }
+
+  @override
+  $LanguageProfilesTable createAlias(String alias) {
+    return $LanguageProfilesTable(attachedDatabase, alias);
+  }
+}
+
+class LanguageProfileRow extends DataClass
+    implements Insertable<LanguageProfileRow> {
+  final String languageTag;
+  final int profileId;
+  const LanguageProfileRow({
+    required this.languageTag,
+    required this.profileId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['language_tag'] = Variable<String>(languageTag);
+    map['profile_id'] = Variable<int>(profileId);
+    return map;
+  }
+
+  LanguageProfilesCompanion toCompanion(bool nullToAbsent) {
+    return LanguageProfilesCompanion(
+      languageTag: Value(languageTag),
+      profileId: Value(profileId),
+    );
+  }
+
+  factory LanguageProfileRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LanguageProfileRow(
+      languageTag: serializer.fromJson<String>(json['languageTag']),
+      profileId: serializer.fromJson<int>(json['profileId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'languageTag': serializer.toJson<String>(languageTag),
+      'profileId': serializer.toJson<int>(profileId),
+    };
+  }
+
+  LanguageProfileRow copyWith({String? languageTag, int? profileId}) =>
+      LanguageProfileRow(
+        languageTag: languageTag ?? this.languageTag,
+        profileId: profileId ?? this.profileId,
+      );
+  LanguageProfileRow copyWithCompanion(LanguageProfilesCompanion data) {
+    return LanguageProfileRow(
+      languageTag: data.languageTag.present
+          ? data.languageTag.value
+          : this.languageTag,
+      profileId: data.profileId.present ? data.profileId.value : this.profileId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LanguageProfileRow(')
+          ..write('languageTag: $languageTag, ')
+          ..write('profileId: $profileId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(languageTag, profileId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LanguageProfileRow &&
+          other.languageTag == this.languageTag &&
+          other.profileId == this.profileId);
+}
+
+class LanguageProfilesCompanion extends UpdateCompanion<LanguageProfileRow> {
+  final Value<String> languageTag;
+  final Value<int> profileId;
+  final Value<int> rowid;
+  const LanguageProfilesCompanion({
+    this.languageTag = const Value.absent(),
+    this.profileId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LanguageProfilesCompanion.insert({
+    required String languageTag,
+    required int profileId,
+    this.rowid = const Value.absent(),
+  }) : languageTag = Value(languageTag),
+       profileId = Value(profileId);
+  static Insertable<LanguageProfileRow> custom({
+    Expression<String>? languageTag,
+    Expression<int>? profileId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (languageTag != null) 'language_tag': languageTag,
+      if (profileId != null) 'profile_id': profileId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LanguageProfilesCompanion copyWith({
+    Value<String>? languageTag,
+    Value<int>? profileId,
+    Value<int>? rowid,
+  }) {
+    return LanguageProfilesCompanion(
+      languageTag: languageTag ?? this.languageTag,
+      profileId: profileId ?? this.profileId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (languageTag.present) {
+      map['language_tag'] = Variable<String>(languageTag.value);
+    }
+    if (profileId.present) {
+      map['profile_id'] = Variable<int>(profileId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LanguageProfilesCompanion(')
+          ..write('languageTag: $languageTag, ')
+          ..write('profileId: $profileId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $SyncBaselinesTable extends SyncBaselines
     with TableInfo<$SyncBaselinesTable, SyncBaselineRow> {
   @override
@@ -50497,6 +50727,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $MediaTypeProfilesTable mediaTypeProfiles =
       $MediaTypeProfilesTable(this);
   late final $BookProfilesTable bookProfiles = $BookProfilesTable(this);
+  late final $LanguageProfilesTable languageProfiles = $LanguageProfilesTable(
+    this,
+  );
   late final $SyncBaselinesTable syncBaselines = $SyncBaselinesTable(this);
   late final $VideoBooksTable videoBooks = $VideoBooksTable(this);
   late final $VideoWatchStatisticsTable videoWatchStatistics =
@@ -50637,6 +50870,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     profileSettings,
     mediaTypeProfiles,
     bookProfiles,
+    languageProfiles,
     syncBaselines,
     videoBooks,
     videoWatchStatistics,
@@ -50735,6 +50969,13 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('book_profiles', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'profiles',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('language_profiles', kind: UpdateKind.delete)],
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
@@ -56803,6 +57044,27 @@ final class $$ProfilesTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$LanguageProfilesTable, List<LanguageProfileRow>>
+  _languageProfilesRefsTable(_$FushiDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.languageProfiles,
+        aliasName: 'profiles__id__language_profiles__profile_id',
+      );
+
+  $$LanguageProfilesTableProcessedTableManager get languageProfilesRefs {
+    final manager = $$LanguageProfilesTableTableManager(
+      $_db,
+      $_db.languageProfiles,
+    ).filter((f) => f.profileId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _languageProfilesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$ProfilesTableFilterComposer
@@ -56900,6 +57162,31 @@ class $$ProfilesTableFilterComposer
           }) => $$BookProfilesTableFilterComposer(
             $db: $db,
             $table: $db.bookProfiles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> languageProfilesRefs(
+    Expression<bool> Function($$LanguageProfilesTableFilterComposer f) f,
+  ) {
+    final $$LanguageProfilesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.languageProfiles,
+      getReferencedColumn: (t) => t.profileId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$LanguageProfilesTableFilterComposer(
+            $db: $db,
+            $table: $db.languageProfiles,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -57036,6 +57323,31 @@ class $$ProfilesTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> languageProfilesRefs<T extends Object>(
+    Expression<T> Function($$LanguageProfilesTableAnnotationComposer a) f,
+  ) {
+    final $$LanguageProfilesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.languageProfiles,
+      getReferencedColumn: (t) => t.profileId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$LanguageProfilesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.languageProfiles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ProfilesTableTableManager
@@ -57055,6 +57367,7 @@ class $$ProfilesTableTableManager
             bool profileSettingsRefs,
             bool mediaTypeProfilesRefs,
             bool bookProfilesRefs,
+            bool languageProfilesRefs,
           })
         > {
   $$ProfilesTableTableManager(_$FushiDatabase db, $ProfilesTable table)
@@ -57105,6 +57418,7 @@ class $$ProfilesTableTableManager
                 profileSettingsRefs = false,
                 mediaTypeProfilesRefs = false,
                 bookProfilesRefs = false,
+                languageProfilesRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -57112,6 +57426,7 @@ class $$ProfilesTableTableManager
                     if (profileSettingsRefs) db.profileSettings,
                     if (mediaTypeProfilesRefs) db.mediaTypeProfiles,
                     if (bookProfilesRefs) db.bookProfiles,
+                    if (languageProfilesRefs) db.languageProfiles,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -57179,6 +57494,27 @@ class $$ProfilesTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (languageProfilesRefs)
+                        await $_getPrefetchedData<
+                          ProfileRow,
+                          $ProfilesTable,
+                          LanguageProfileRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ProfilesTableReferences
+                              ._languageProfilesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ProfilesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).languageProfilesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.profileId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -57203,6 +57539,7 @@ typedef $$ProfilesTableProcessedTableManager =
         bool profileSettingsRefs,
         bool mediaTypeProfilesRefs,
         bool bookProfilesRefs,
+        bool languageProfilesRefs,
       })
     >;
 typedef $$ProfileSettingsTableCreateCompanionBuilder =
@@ -58064,6 +58401,281 @@ typedef $$BookProfilesTableProcessedTableManager =
       $$BookProfilesTableUpdateCompanionBuilder,
       (BookProfileRow, $$BookProfilesTableReferences),
       BookProfileRow,
+      PrefetchHooks Function({bool profileId})
+    >;
+typedef $$LanguageProfilesTableCreateCompanionBuilder =
+    LanguageProfilesCompanion Function({
+      required String languageTag,
+      required int profileId,
+      Value<int> rowid,
+    });
+typedef $$LanguageProfilesTableUpdateCompanionBuilder =
+    LanguageProfilesCompanion Function({
+      Value<String> languageTag,
+      Value<int> profileId,
+      Value<int> rowid,
+    });
+
+final class $$LanguageProfilesTableReferences
+    extends
+        BaseReferences<
+          _$FushiDatabase,
+          $LanguageProfilesTable,
+          LanguageProfileRow
+        > {
+  $$LanguageProfilesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $ProfilesTable _profileIdTable(_$FushiDatabase db) =>
+      db.profiles.createAlias('language_profiles__profile_id__profiles__id');
+
+  $$ProfilesTableProcessedTableManager get profileId {
+    final $_column = $_itemColumn<int>('profile_id')!;
+
+    final manager = $$ProfilesTableTableManager(
+      $_db,
+      $_db.profiles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_profileIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$LanguageProfilesTableFilterComposer
+    extends Composer<_$FushiDatabase, $LanguageProfilesTable> {
+  $$LanguageProfilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get languageTag => $composableBuilder(
+    column: $table.languageTag,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ProfilesTableFilterComposer get profileId {
+    final $$ProfilesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.profileId,
+      referencedTable: $db.profiles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ProfilesTableFilterComposer(
+            $db: $db,
+            $table: $db.profiles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$LanguageProfilesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $LanguageProfilesTable> {
+  $$LanguageProfilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get languageTag => $composableBuilder(
+    column: $table.languageTag,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ProfilesTableOrderingComposer get profileId {
+    final $$ProfilesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.profileId,
+      referencedTable: $db.profiles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ProfilesTableOrderingComposer(
+            $db: $db,
+            $table: $db.profiles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$LanguageProfilesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $LanguageProfilesTable> {
+  $$LanguageProfilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get languageTag => $composableBuilder(
+    column: $table.languageTag,
+    builder: (column) => column,
+  );
+
+  $$ProfilesTableAnnotationComposer get profileId {
+    final $$ProfilesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.profileId,
+      referencedTable: $db.profiles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ProfilesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.profiles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$LanguageProfilesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $LanguageProfilesTable,
+          LanguageProfileRow,
+          $$LanguageProfilesTableFilterComposer,
+          $$LanguageProfilesTableOrderingComposer,
+          $$LanguageProfilesTableAnnotationComposer,
+          $$LanguageProfilesTableCreateCompanionBuilder,
+          $$LanguageProfilesTableUpdateCompanionBuilder,
+          (LanguageProfileRow, $$LanguageProfilesTableReferences),
+          LanguageProfileRow,
+          PrefetchHooks Function({bool profileId})
+        > {
+  $$LanguageProfilesTableTableManager(
+    _$FushiDatabase db,
+    $LanguageProfilesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LanguageProfilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LanguageProfilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LanguageProfilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> languageTag = const Value.absent(),
+                Value<int> profileId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LanguageProfilesCompanion(
+                languageTag: languageTag,
+                profileId: profileId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String languageTag,
+                required int profileId,
+                Value<int> rowid = const Value.absent(),
+              }) => LanguageProfilesCompanion.insert(
+                languageTag: languageTag,
+                profileId: profileId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$LanguageProfilesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({profileId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (profileId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.profileId,
+                                referencedTable:
+                                    $$LanguageProfilesTableReferences
+                                        ._profileIdTable(db),
+                                referencedColumn:
+                                    $$LanguageProfilesTableReferences
+                                        ._profileIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$LanguageProfilesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $LanguageProfilesTable,
+      LanguageProfileRow,
+      $$LanguageProfilesTableFilterComposer,
+      $$LanguageProfilesTableOrderingComposer,
+      $$LanguageProfilesTableAnnotationComposer,
+      $$LanguageProfilesTableCreateCompanionBuilder,
+      $$LanguageProfilesTableUpdateCompanionBuilder,
+      (LanguageProfileRow, $$LanguageProfilesTableReferences),
+      LanguageProfileRow,
       PrefetchHooks Function({bool profileId})
     >;
 typedef $$SyncBaselinesTableCreateCompanionBuilder =
@@ -88322,6 +88934,8 @@ class $FushiDatabaseManager {
       $$MediaTypeProfilesTableTableManager(_db, _db.mediaTypeProfiles);
   $$BookProfilesTableTableManager get bookProfiles =>
       $$BookProfilesTableTableManager(_db, _db.bookProfiles);
+  $$LanguageProfilesTableTableManager get languageProfiles =>
+      $$LanguageProfilesTableTableManager(_db, _db.languageProfiles);
   $$SyncBaselinesTableTableManager get syncBaselines =>
       $$SyncBaselinesTableTableManager(_db, _db.syncBaselines);
   $$VideoBooksTableTableManager get videoBooks =>

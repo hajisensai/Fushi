@@ -99,11 +99,17 @@ class ProfileUiState {
     this.profiles = const [],
     this.activeProfileId = -1,
     this.mediaTypeBindings = const {},
+    this.languageBindings = const {},
     this.isLoading = false,
   });
   final List<ProfileRow> profiles;
   final int activeProfileId;
   final Map<String, int> mediaTypeBindings;
+
+  /// 语言绑定：key = 归一化语言标签（`ja` / `zh-Hant`），value = profileId。
+  /// 与 [mediaTypeBindings] 不同，它是**开放值域**——没有固定枚举可以铺死，UI 只
+  /// 能列出已有绑定 + 一个添加入口。
+  final Map<String, int> languageBindings;
   final bool isLoading;
 
   ProfileRow? get activeProfile {
@@ -117,12 +123,14 @@ class ProfileUiState {
     List<ProfileRow>? profiles,
     int? activeProfileId,
     Map<String, int>? mediaTypeBindings,
+    Map<String, int>? languageBindings,
     bool? isLoading,
   }) =>
       ProfileUiState(
         profiles: profiles ?? this.profiles,
         activeProfileId: activeProfileId ?? this.activeProfileId,
         mediaTypeBindings: mediaTypeBindings ?? this.mediaTypeBindings,
+        languageBindings: languageBindings ?? this.languageBindings,
         isLoading: isLoading ?? this.isLoading,
       );
 }
@@ -159,25 +167,33 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     final profiles = await _repo.getAllProfiles();
     final activeId = await _repo.getActiveProfileId();
     final bindings = await _repo.getAllMediaTypeBindings();
+    final languageBindings = await _repo.getAllLanguageBindings();
     state = ProfileUiState(
       profiles: profiles,
       activeProfileId: activeId,
       mediaTypeBindings: bindings,
+      languageBindings: languageBindings,
     );
   }
 
   Future<void> reload() => _load();
 
-  /// TODO-2936：解析绑定（book 级 > 媒体类型级 > 当前激活）并在结果与当前激活
+  /// TODO-2936：解析绑定（book 级 > 语言级 > 媒体类型级 > 当前激活）并在结果与当前激活
   /// 不同时切换。各媒体入口（阅读器 / 视频 / 漫画开页、gal launch/attach、浏览
   /// 器扩展查词）共用的非致命入口：失败只记日志，绝不打断调用方的加载/查词链。
+  /// [languageTag]：该条目的**内容语言**原始串（`EpubBooks.language` /
+  /// `VideoBooks.language` / `Galgames.language` 等列的值），由 repository 归一。
+  /// 拿不到就不传——绝不要拿全局默认内容语言来填（理由见 [ProfileRepository.
+  /// resolveProfileId] 的文档）。
   Future<void> autoApplyBinding({
     String? bookUid,
+    String? languageTag,
     required ProfileMediaKind mediaType,
   }) async {
     try {
       final int resolvedId = await _repo.resolveProfileId(
         bookUid: bookUid,
+        languageTag: languageTag,
         mediaType: mediaType,
       );
       final int currentActiveId = await _repo.getActiveProfileId();
@@ -255,6 +271,19 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     }
     state = state.copyWith(
       mediaTypeBindings: await _repo.getAllMediaTypeBindings(),
+    );
+  }
+
+  /// 绑定 / 解绑一种内容语言（[profileId] 为 null 即解绑）。[languageTag] 传任意
+  /// 形态的 BCP-47 串，归一在 repository 层做。
+  Future<void> setLanguageBinding(String languageTag, int? profileId) async {
+    if (profileId == null) {
+      await _repo.removeLanguageBinding(languageTag);
+    } else {
+      await _repo.setLanguageBinding(languageTag, profileId);
+    }
+    state = state.copyWith(
+      languageBindings: await _repo.getAllLanguageBindings(),
     );
   }
 

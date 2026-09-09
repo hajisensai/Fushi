@@ -137,6 +137,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
       final String bookKey = widget.bookKey;
 
+      // 两张内容表都查一次：媒体类型判定只需要知道「有没有」，但语言级绑定要读
+      // 它们的 language 列。`audiobooks` 表自身**没有** language 列——有声书的
+      // 语言跟着它配对的 srt_books / epub_books 行走，所以这里不按 mediaType
+      // 分支去取，两张都取、SRT 优先（有声书多数配 SRT）。
+      final srtRow = await db.getSrtBookByBookKey(bookKey);
+      final epubRow = await db.getEpubBook(bookKey);
+
       ProfileMediaKind mediaType;
       if (mediaTypeOverride != null) {
         mediaType = mediaTypeOverride;
@@ -145,15 +152,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         final abRow = await db.getAudiobookByBookKey(bookKey);
         if (abRow != null) {
           mediaType = ProfileMediaKind.audiobook;
-        } else {
-          final srtRow = await db.getSrtBookByBookKey(bookKey);
-          if (srtRow != null) {
-            mediaType = ProfileMediaKind.srtbook;
-          }
+        } else if (srtRow != null) {
+          mediaType = ProfileMediaKind.srtbook;
         }
       }
 
-      await profileVm.autoApplyBinding(bookUid: bookKey, mediaType: mediaType);
+      await profileVm.autoApplyBinding(
+        bookUid: bookKey,
+        languageTag: srtRow?.language ?? epubRow?.language,
+        mediaType: mediaType,
+      );
     } catch (e, st) {
       debugPrint(
         '[ReaderFushi] profile resolution failed (non-fatal): $e\n$st',
