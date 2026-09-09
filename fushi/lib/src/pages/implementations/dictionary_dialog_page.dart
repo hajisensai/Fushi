@@ -69,6 +69,39 @@ void enterDictionaryImportStage({
 }
 
 /// Page used for managing installed dictionaries.
+/// 推荐词典下载弹窗的「可勾选下标域」：catalog 全体减去已安装项。
+///
+/// 全选 / 反选 / 分类三态一律以此为域，与默认勾选同判据（
+/// `defaultSelectionForLearningLang` 的结果也要 `.difference(installedIndices)`）：
+/// 已装的词典再下一遍只会走一趟无谓的下载 + 导入，把它们算进「全选」等于把
+/// 47 条目录里最贵的那部分默认塞给用户。
+@visibleForTesting
+Set<int> selectableDictionaryIndices({
+  required int catalogLength,
+  required Set<int> installedIndices,
+}) {
+  return <int>{
+    for (int i = 0; i < catalogLength; i++)
+      if (!installedIndices.contains(i)) i,
+  };
+}
+
+/// 分类头三态勾选框的值：全选 true / 全不选 false / 部分 null。
+///
+/// [categoryIndices] 只应传本类的**可勾选**下标；本类全是已安装项时传空集，
+/// 调用方据此把勾选框禁用（无可选项时 true/false 都是谎话）。
+@visibleForTesting
+bool? dictionaryCategoryCheckState({
+  required Set<int> categoryIndices,
+  required Set<int> checked,
+}) {
+  if (categoryIndices.isEmpty) return false;
+  final int hit = categoryIndices.where(checked.contains).length;
+  if (hit == 0) return false;
+  if (hit == categoryIndices.length) return true;
+  return null;
+}
+
 class DictionaryDialogPage extends BasePage {
   /// Create an instance of this page.
   const DictionaryDialogPage({
@@ -789,6 +822,47 @@ class _DictionaryDialogPageState extends BasePageState {
                       },
                     ),
                     SizedBox(height: tokens.spacing.gap),
+                    // 47 条目录 + 分类折叠下，逐条点是唯一的入口太贵：全选 /
+                    // 反选一律只作用于**可勾选域**（已装的不参与，见
+                    // [selectableDictionaryIndices]）。
+                    Builder(
+                      builder: (BuildContext ctx) {
+                        final Set<int> selectable = selectableDictionaryIndices(
+                          catalogLength: workingCatalog.length,
+                          installedIndices: installedIndices,
+                        );
+                        return Row(
+                          children: <Widget>[
+                            Text(
+                              t.batch_selected_count(n: checked.length),
+                              style: textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              key: const ValueKey<String>(
+                                  'dict-download-select-all'),
+                              onPressed: selectable.isEmpty
+                                  ? null
+                                  : () => setDialogState(
+                                      () => checked = Set<int>.of(selectable)),
+                              child: Text(t.batch_select_all),
+                            ),
+                            TextButton(
+                              key: const ValueKey<String>(
+                                  'dict-download-invert-selection'),
+                              onPressed: selectable.isEmpty
+                                  ? null
+                                  : () => setDialogState(() =>
+                                      checked = selectable.difference(checked)),
+                              child: Text(t.batch_invert_selection),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
                     for (final cat in DictionaryCategory.values)
                       if (byCategory.containsKey(cat))
                         _buildCategoryTile(
@@ -813,6 +887,15 @@ class _DictionaryDialogPageState extends BasePageState {
                                 checked.add(idx);
                               } else {
                                 checked.remove(idx);
+                              }
+                            });
+                          },
+                          onToggleCategory: (Set<int> indices, bool val) {
+                            setDialogState(() {
+                              if (val) {
+                                checked.addAll(indices);
+                              } else {
+                                checked.removeAll(indices);
                               }
                             });
                           },
@@ -883,8 +966,14 @@ class _DictionaryDialogPageState extends BasePageState {
     required bool expanded,
     required ValueChanged<bool> onExpansionChanged,
     required void Function(int idx, bool val) onChanged,
+    required void Function(Set<int> indices, bool val) onToggleCategory,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Set<int> categoryIndices = <int>{
+      for (final RecommendedDictionary rec in items)
+        if (recIndex[rec] != null && !installedIndices.contains(recIndex[rec]))
+          recIndex[rec]!,
+    };
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: FushiCard(
@@ -894,6 +983,19 @@ class _DictionaryDialogPageState extends BasePageState {
           children: [
             FushiListItem(
               minHeight: 52,
+              // 本类的可勾选下标（已装的不算），三态框与「本类全选」同域。
+              leading: Checkbox(
+                key: ValueKey<String>('dict-download-category-check-${cat.name}'),
+                tristate: true,
+                value: dictionaryCategoryCheckState(
+                  categoryIndices: categoryIndices,
+                  checked: checked,
+                ),
+                onChanged: categoryIndices.isEmpty
+                    ? null
+                    : (bool? value) =>
+                        onToggleCategory(categoryIndices, value ?? false),
+              ),
               title: Text(
                 _categoryLabel(cat),
                 style: textTheme.titleSmall?.copyWith(

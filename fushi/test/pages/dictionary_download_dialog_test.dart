@@ -232,4 +232,91 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('批量勾选：全选 / 反选 / 分类三态的可勾选域', () {
+    test('可勾选域 = catalog 全体减去已安装项', () {
+      expect(
+        selectableDictionaryIndices(
+          catalogLength: 5,
+          installedIndices: <int>{1, 3},
+        ),
+        <int>{0, 2, 4},
+      );
+    });
+
+    test('全部已安装时可勾选域为空（全选/反选按钮据此禁用）', () {
+      expect(
+        selectableDictionaryIndices(
+          catalogLength: 3,
+          installedIndices: <int>{0, 1, 2},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('没有已安装项时可勾选域是整份 catalog', () {
+      expect(
+        selectableDictionaryIndices(
+          catalogLength: 3,
+          installedIndices: const <int>{},
+        ),
+        <int>{0, 1, 2},
+      );
+    });
+
+    test('反选只在可勾选域内翻转，已安装项不会被卷进来', () {
+      final Set<int> selectable = selectableDictionaryIndices(
+        catalogLength: 5,
+        installedIndices: <int>{1},
+      );
+      final Set<int> checked = <int>{0, 2};
+      expect(selectable.difference(checked), <int>{3, 4},
+          reason: '已安装的 1 号既不在原选中集也不该被反选带出来');
+    });
+
+    test('分类三态：全选 true / 全不选 false / 部分 null', () {
+      expect(
+        dictionaryCategoryCheckState(
+          categoryIndices: <int>{1, 2, 3},
+          checked: <int>{1, 2, 3},
+        ),
+        isTrue,
+      );
+      expect(
+        dictionaryCategoryCheckState(
+          categoryIndices: <int>{1, 2, 3},
+          checked: <int>{9},
+        ),
+        isFalse,
+      );
+      expect(
+        dictionaryCategoryCheckState(
+          categoryIndices: <int>{1, 2, 3},
+          checked: <int>{2},
+        ),
+        isNull,
+      );
+    });
+
+    test('分类可勾选域为空时给 false 而非 true（勾选框同时被禁用）', () {
+      expect(
+        dictionaryCategoryCheckState(
+          categoryIndices: const <int>{},
+          checked: <int>{1, 2},
+        ),
+        isFalse,
+        reason: '本类全已安装时说「已全选」是谎话，且此时勾选框不可点',
+      );
+    });
+
+    test('选中集含本类之外的下标不影响本类三态判定', () {
+      expect(
+        dictionaryCategoryCheckState(
+          categoryIndices: <int>{1, 2},
+          checked: <int>{1, 2, 7, 8},
+        ),
+        isTrue,
+      );
+    });
+  });
 }
