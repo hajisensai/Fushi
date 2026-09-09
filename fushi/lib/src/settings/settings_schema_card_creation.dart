@@ -107,6 +107,13 @@ SettingsDestination buildCardCreationDestination() {
             c.ref.watch(ankiViewModelProvider).isConfigured,
       ),
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.reposition_auto',
+        title: t.anki_reposition_auto_title,
+        hasRevealTarget: true,
+        visible: (SettingsContext c) =>
+            c.ref.watch(ankiViewModelProvider).isConfigured,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.profile',
         hasRevealTarget: true,
         title: t.profile_label,

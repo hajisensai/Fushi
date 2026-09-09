@@ -606,8 +606,10 @@ BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
   final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
     runner: AnkiDeckRepositionRunner(repo),
     loadSettings: repo.loadSettings,
-    onFailure: (String message) => FushiToast.showMine(
-      msg: message,
+    // 文案在这一层渲染：调度器本身够不到 `t.*`（它要保持无 Flutter 依赖），
+    // 在那边拼字面量等于让 17 种语言的用户都看英文。
+    onFailure: (String deckName) => FushiToast.showMine(
+      msg: t.anki_reposition_auto_failed(deck: deckName),
       status: MineToastStatus.failed,
     ),
   );

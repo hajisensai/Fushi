@@ -17,11 +17,15 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 
-/// 自动重排失败时报给用户的通道（生产实现是 toast）。
+/// 自动重排失败时报给用户的通道，入参是**出问题的牌组名**（生产实现是 toast）。
 ///
-/// 注入而不是直接调 UI，是为了让本类保持无 Flutter widget 依赖、可纯 Dart 单测。
+/// 传牌组名而不是现成的句子：本类要保持无 Flutter 依赖、可纯 Dart 单测，够不到
+/// `t.*`；文案在注入点（`anki_view_model.dart`）用 i18n 渲染，否则 17 种语言的
+/// 用户都会看到一句英文字面量。
+///
 /// 只在**失败**时调用：成功是静默的——用户没点任何按钮，不该为此收到通知。
-typedef AnkiAutoRepositionFailureReporter = void Function(String message);
+/// 「部分卡没移动」与「整轮抛异常」共用这一条通道，因为用户能做的动作一样。
+typedef AnkiAutoRepositionFailureReporter = void Function(String deckName);
 
 /// 一次自动重排跑完的结果，仅供测试与诊断断言（生产路径不消费）。
 @immutable
@@ -54,12 +58,12 @@ class AnkiAutoRepositionScheduler {
     required Future<AnkiSettings> Function() loadSettings,
     AnkiAutoRepositionFailureReporter? onFailure,
     Duration debounce = kDefaultDebounce,
-    int snapshotsPerDeck = AnkiDeckRepositionRunner.kDefaultSnapshotsPerDeck,
+    int keepSnapshots = AnkiDeckRepositionRunner.kDefaultAutoSnapshots,
   })  : _runner = runner,
         _loadSettings = loadSettings,
         _onFailure = onFailure,
         _debounce = debounce,
-        _snapshotsPerDeck = snapshotsPerDeck;
+        _keepSnapshots = keepSnapshots;
 
   /// 默认防抖窗口。够长到把「连着挖十个词」合成一批，又短到用户切回 Anki
   /// 时位置已经排好。
@@ -69,7 +73,7 @@ class AnkiAutoRepositionScheduler {
   final Future<AnkiSettings> Function() _loadSettings;
   final AnkiAutoRepositionFailureReporter? _onFailure;
   final Duration _debounce;
-  final int _snapshotsPerDeck;
+  final int _keepSnapshots;
 
   final Set<String> _pending = <String>{};
   Timer? _timer;
@@ -80,7 +84,7 @@ class AnkiAutoRepositionScheduler {
   @visibleForTesting
   void Function(AnkiAutoRepositionRun run)? onRunForTesting;
 
-  /// 正在等防抖或正在跑（测试与诊断用）。
+  /// 既没在等防抖也没在跑、且没有待办（测试与诊断用）。
   bool get isIdle => _timer == null && !_running && _pending.isEmpty;
 
   /// 制卡成功后调用。[deckName] 是**后端实际落卡**的牌组名。
@@ -98,7 +102,10 @@ class AnkiAutoRepositionScheduler {
     });
   }
 
-  /// 立刻跑掉待办（跳过剩余防抖）。设置页关掉开关前的收尾、测试用。
+  /// 跳过剩余防抖，立刻处理待办。
+  ///
+  /// **已经有一轮在跑时立即返回、不等它跑完**（单飞由 [_flush] 保证）——待办
+  /// 不会丢，正在跑的那轮收尾时会捡走。目前只有测试调它。
   Future<void> flushNow() {
     _timer?.cancel();
     _timer = null;
@@ -141,11 +148,34 @@ class AnkiAutoRepositionScheduler {
         deckName: deckName,
         settings: settings,
         options: options,
+        shouldCancel: () => _disposed,
       );
       // plan == null：后端不支持（已在 _flush 里挡过，这里是兜底）。
-      // updates 为空：位置本来就是对的，不写、也不留快照。
-      if (plan == null || plan.updates.isEmpty) return;
-      final AnkiRepositionOutcome outcome = await _runner.apply(plan);
+      if (plan == null) return;
+
+      // 🔴 判据是 `changed`，**不是** `updates.isEmpty`：`planCardPositions` 给
+      // 每张新卡都发一条 update（位置 = 1..N），所以只要牌组里有新卡，
+      // `updates` 就永远非空。用它当判据等于「每批制卡都把整个牌组的位置重写
+      // 一遍、并写一份全量快照」——挖一个词就给 2000 张卡发 2000 条
+      // setSpecificValueOfCard，哪怕排完与原来一模一样。
+      if (plan.changed == 0) return;
+
+      // 词典来源下一张都没查到词频 = 这次重排没有任何排序依据，`planCardPositions`
+      // 会保持原有相对顺序但把位置重编成 1..N——一次没有信息量的全牌组重写。
+      // 成因是真实的：用户在弹窗里选过的词频词典后来被删/被隐藏（弹窗自己会把
+      // 选择与已装载求交，`fromSettings` 不会），或这个 entry point 的词典引擎
+      // 没初始化（`defaultAnkiFrequencyLookup` 返回空）。手动路径有预览给用户
+      // 看，自动路径没有，只能在这里挡掉。
+      if (options.source == AnkiRepositionSource.dictionaries &&
+          plan.ranked == 0) {
+        return;
+      }
+
+      // apply 一旦开始就让它跑完，即使中途 dispose：它是一批位置写入，
+      // 半途停下留下的是「排了一半」的队列，比写完更糟。
+      if (_disposed) return;
+      final AnkiRepositionOutcome outcome =
+          await _runner.apply(plan, auto: true);
       onRunForTesting?.call(
         AnkiAutoRepositionRun(
           deckName: deckName,
@@ -154,19 +184,14 @@ class AnkiAutoRepositionScheduler {
           failed: outcome.failures.length,
         ),
       );
-      if (outcome.failures.isNotEmpty) {
-        _onFailure?.call(
-          'Auto reposition: ${outcome.failures.length} of '
-          '${plan.updates.length} cards in "$deckName" could not be moved.',
-        );
-      }
-      await _runner.pruneSnapshots(keep: _snapshotsPerDeck);
+      if (outcome.failures.isNotEmpty) _onFailure?.call(deckName);
+      await _runner.pruneSnapshots(keep: _keepSnapshots);
     } on AnkiRepositionCancelled {
       // 自动路径没有取消按钮，走到这里只可能是 runner 内部的兜底；不打扰用户。
       return;
     } catch (e, stack) {
       debugPrint('AnkiAutoRepositionScheduler: $deckName failed: $e\n$stack');
-      _onFailure?.call('Auto reposition failed for "$deckName": $e');
+      _onFailure?.call(deckName);
     }
   }
 

@@ -256,6 +256,7 @@ class AnkiDeckRepositionRunner {
   Future<AnkiRepositionOutcome> apply(
     AnkiRepositionPlan plan, {
     AnkiRepositionOnProgress? onProgress,
+    bool auto = false,
   }) async {
     onProgress?.call(AnkiRepositionProgress(
       stage: AnkiRepositionStage.fetch,
@@ -281,7 +282,7 @@ class AnkiDeckRepositionRunner {
       stage: AnkiRepositionStage.write,
       total: updates.length,
     ));
-    final File snapshot = await _writeSnapshot(plan, previous);
+    final File snapshot = await _writeSnapshot(plan, previous, auto: auto);
     final AnkiCardDueWriteResult result =
         await _repository.setNewCardPositions(updates);
     return AnkiRepositionOutcome(
@@ -294,12 +295,14 @@ class AnkiDeckRepositionRunner {
 
   Future<File> _writeSnapshot(
     AnkiRepositionPlan plan,
-    List<AnkiCardDueUpdate> previous,
-  ) async {
+    List<AnkiCardDueUpdate> previous, {
+    required bool auto,
+  }) async {
     final Directory dir = await _snapshotDirectory();
     final DateTime now = DateTime.now();
     final String stamp = now.toUtc().toIso8601String().replaceAll(':', '-');
-    final File file = File(p.join(dir.path, 'reposition-$stamp.json'));
+    final String prefix = auto ? kAutoPrefix : kManualPrefix;
+    final File file = File(p.join(dir.path, '$prefix$stamp.json'));
     final AnkiRepositionSnapshot snapshot = AnkiRepositionSnapshot(
       file: file,
       deckName: plan.deckName,
@@ -312,12 +315,18 @@ class AnkiDeckRepositionRunner {
     return file;
   }
 
-  /// [deckName] 最近一次重排的快照；没有返回 null。坏文件跳过。
+  /// [deckName] 最近一次**手动**重排的快照；没有返回 null。坏文件跳过。
+  ///
+  /// **不看自动重排写的快照**：撤销按钮的语义是「撤销我刚才点的那次重排」。
+  /// 自动重排每批新卡就写一份，若一并参与挑选，用户手动重排后随便挖一个词，
+  /// 30 秒后撤销按钮指向的就变成「自动那次之前」＝手动重排的结果本身，于是
+  /// 那次手动重排**永远撤不回去了**，而按钮看起来一切正常。
   Future<AnkiRepositionSnapshot?> latestSnapshot(String deckName) async {
     final Directory dir = await _snapshotDirectory();
     AnkiRepositionSnapshot? best;
     for (final FileSystemEntity entity in dir.listSync()) {
       if (entity is! File || !entity.path.endsWith('.json')) continue;
+      if (_isAutoSnapshot(entity.path)) continue;
       AnkiRepositionSnapshot? parsed;
       try {
         parsed = AnkiRepositionSnapshot.fromJson(
@@ -336,53 +345,51 @@ class AnkiDeckRepositionRunner {
     return best;
   }
 
-  /// 每个牌组最多保留几份快照（[pruneSnapshots] 的默认值）。
-  static const int kDefaultSnapshotsPerDeck = 10;
+  /// 最多保留几份**自动**快照（[pruneSnapshots] 的默认值）。
+  static const int kDefaultAutoSnapshots = 20;
 
-  /// 按**牌组**各保留最近 [keep] 份快照，其余删除；返回删掉的份数。
+  /// 自动重排写的快照文件名前缀。**来源编进文件名而不是文件内容**：
+  /// [latestSnapshot] 与 [pruneSnapshots] 都只需要按来源筛，编进文件名就能
+  /// 零解析地筛掉——否则每次都要把每份快照的整个 `positions` 数组读进来
+  /// 反序列化一遍，只为看一眼它是谁写的。
+  static const String kAutoPrefix = 'reposition-auto-';
+
+  /// 手动重排写的快照文件名前缀（沿用历史文件名，旧快照照常认）。
+  static const String kManualPrefix = 'reposition-';
+
+  static bool _isAutoSnapshot(String path) =>
+      p.basename(path).startsWith(kAutoPrefix);
+
+  /// 只保留最近 [keep] 份**自动**快照，其余删除；返回删掉的份数。
   ///
-  /// 手动重排一次写一份快照，用户点一次撤销就消耗掉；自动重排则是每批新卡
-  /// 写一份、没人消费，目录会无界增长——而 [latestSnapshot] 每次都要读完整个
-  /// 目录才能挑出最新的一份，于是「撤销」会随使用越来越慢。
-  ///
-  /// 为什么按牌组分组而不是全局留最近 N 份：全局策略下，在牌组 B 上自动重排
-  /// N 次就会把牌组 A 手动重排的快照挤掉，用户在 A 上的撤销按钮**静默失效**。
-  /// 解析失败的坏文件一律不删（宁可留着占位，也不让一次解析 bug 变成删数据）。
-  Future<int> pruneSnapshots({int keep = kDefaultSnapshotsPerDeck}) async {
+  /// 三条都是有意的：
+  /// * **只删自动的**。手动快照是用户点「重排」时留下的撤销点，一份都不能被
+  ///   自动路径的产物挤掉——那会让撤销按钮静默失效。
+  /// * **不按牌组分组**。自动快照不参与 [latestSnapshot]（撤销只认手动的），
+  ///   它们只是诊断兜底，全局留最近若干份就够；分组反而要读文件内容。
+  /// * **零解析**。来源与时刻都在文件名里（`reposition-auto-<ISO 时刻>.json`，
+  ///   冒号换成 `-`，字典序 == 时间序），按名字排序即可，不必把每份快照的整个
+  ///   `positions` 数组反序列化一遍——自动路径无人值守地跑，那笔开销会随牌组
+  ///   变大而变成每轮几 MB 的 JSON 解析。
+  Future<int> pruneSnapshots({int keep = kDefaultAutoSnapshots}) async {
     if (keep < 0) return 0;
     final Directory dir = await _snapshotDirectory();
-    final Map<String, List<AnkiRepositionSnapshot>> byDeck =
-        <String, List<AnkiRepositionSnapshot>>{};
-    for (final FileSystemEntity entity in dir.listSync()) {
-      if (entity is! File || !entity.path.endsWith('.json')) continue;
-      AnkiRepositionSnapshot? parsed;
-      try {
-        parsed = AnkiRepositionSnapshot.fromJson(
-          entity,
-          jsonDecode(await entity.readAsString()),
-        );
-      } catch (e) {
-        debugPrint('AnkiDeckRepositionRunner: bad snapshot ${entity.path}: $e');
-        continue;
-      }
-      if (parsed == null) continue;
-      byDeck
-          .putIfAbsent(parsed.deckName, () => <AnkiRepositionSnapshot>[])
-          .add(parsed);
-    }
+    final List<String> autoSnapshots = <String>[
+      for (final FileSystemEntity e in dir.listSync())
+        if (e is File && e.path.endsWith('.json') && _isAutoSnapshot(e.path))
+          e.path,
+    ];
+    if (autoSnapshots.length <= keep) return 0;
+    // 文件名里的 ISO 时刻字典序即时间序，新的在后。
+    autoSnapshots.sort();
     int deleted = 0;
-    for (final List<AnkiRepositionSnapshot> snaps in byDeck.values) {
-      if (snaps.length <= keep) continue;
-      snaps.sort((AnkiRepositionSnapshot a, AnkiRepositionSnapshot b) =>
-          b.createdAt.compareTo(a.createdAt));
-      for (final AnkiRepositionSnapshot old in snaps.sublist(keep)) {
-        try {
-          await old.file.delete();
-          deleted++;
-        } catch (e) {
-          debugPrint(
-              'AnkiDeckRepositionRunner: cannot delete ${old.file.path}: $e');
-        }
+    for (final String path
+        in autoSnapshots.sublist(0, autoSnapshots.length - keep)) {
+      try {
+        await File(path).delete();
+        deleted++;
+      } catch (e) {
+        debugPrint('AnkiDeckRepositionRunner: cannot delete $path: $e');
       }
     }
     return deleted;

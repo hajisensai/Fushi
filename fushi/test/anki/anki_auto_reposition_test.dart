@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
+import 'package:fushi/src/anki/anki_deck_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -131,23 +133,27 @@ void main() {
   ({_FakeRepo repo, AnkiAutoRepositionScheduler scheduler}) build({
     bool enabled = true,
     bool supported = true,
+    bool alreadySorted = false,
+    bool noFrequencies = false,
+    AnkiRepositionSource source = AnkiRepositionSource.dictionaries,
     Duration debounce = const Duration(milliseconds: 20),
   }) {
     final AnkiSettings settings = AnkiSettings(
       selectedDeckId: 1,
       availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       autoRepositionEnabled: enabled,
+      repositionSource: source,
     );
     final _FakeRepo repo = _FakeRepo(supported: supported, settings: settings);
     // 位置与词频相反：rare 在前(due 1)、common 在后(due 2)，重排必然要动。
-    repo.cards['Mining'] = <AnkiCardInfo>[
-      _card(1, 1, 'rare'),
-      _card(2, 2, 'common'),
-    ];
+    repo.cards['Mining'] = alreadySorted
+        ? <AnkiCardInfo>[_card(1, 1, 'common'), _card(2, 2, 'rare')]
+        : <AnkiCardInfo>[_card(1, 1, 'rare'), _card(2, 2, 'common')];
     final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
       runner: AnkiDeckRepositionRunner(
         repo,
-        lookup: _lookup,
+        lookup:
+            noFrequencies ? (String e) => const <FushiTermResult>[] : _lookup,
         snapshotDirectory: () async => tempDir,
       ),
       loadSettings: repo.loadSettings,
@@ -167,9 +173,8 @@ void main() {
         reason: '五次制卡应合并成一次写回，而不是一张卡刷一次 AnkiConnect');
     expect(r.repo.writes.single, hasLength(2));
     // common(cardId 2) 应被排到第一个位置。
-    final AnkiCardDueUpdate first = r.repo.writes.single
-        .reduce((AnkiCardDueUpdate a, AnkiCardDueUpdate b) =>
-            a.due <= b.due ? a : b);
+    final AnkiCardDueUpdate first = r.repo.writes.single.reduce(
+        (AnkiCardDueUpdate a, AnkiCardDueUpdate b) => a.due <= b.due ? a : b);
     expect(first.cardId, 2, reason: '词频最高的卡应排到队首');
     r.scheduler.dispose();
   });
@@ -209,8 +214,7 @@ void main() {
     gate.complete();
     await Future.wait(<Future<void>>[firstRun, secondCall]);
 
-    expect(r.repo.writes, hasLength(2),
-        reason: '第二次制卡不能被丢掉，应由第一轮收尾时捡走再跑一轮');
+    expect(r.repo.writes, hasLength(2), reason: '第二次制卡不能被丢掉，应由第一轮收尾时捡走再跑一轮');
     r.scheduler.dispose();
   });
 
@@ -265,8 +269,7 @@ void main() {
     test('成功但没有落卡牌组名 → 不触发', () async {
       final w = wrap();
       w.repo.mineResult = const MineOutcome.success();
-      expect(await minesThenFlush(w), 0,
-          reason: '牌组名是唯一的重排目标，猜一个比不做更危险');
+      expect(await minesThenFlush(w), 0, reason: '牌组名是唯一的重排目标，猜一个比不做更危险');
     });
 
     test('后端不支持卡片级读写 → 不触发', () async {
@@ -276,32 +279,95 @@ void main() {
     });
   });
 
-  test('快照按牌组各留最近 N 份，不会互相挤掉', () async {
+  test('位置本来就对时一张卡都不写、也不留快照', () async {
+    final r = build(alreadySorted: true);
+    r.scheduler.notifyMined('Mining');
+    await r.scheduler.flushNow();
+
+    expect(r.repo.writes, isEmpty,
+        reason: '判据必须是 plan.changed，不是 plan.updates.isEmpty——'
+            'planCardPositions 给每张新卡都发一条 update，用 updates 判等于'
+            '每批制卡都把整个牌组重写一遍');
+    expect(tempDir.listSync(), isEmpty, reason: '没写回就不该留快照');
+    r.scheduler.dispose();
+  });
+
+  test('词典来源下一张都没查到词频时不重排', () async {
+    final r = build(noFrequencies: true);
+    r.scheduler.notifyMined('Mining');
+    await r.scheduler.flushNow();
+
+    expect(r.repo.writes, isEmpty,
+        reason: '没有任何排序依据的「重排」只是一次无信息量的全牌组位置重写'
+            '（选中的词频词典被删/被隐藏时就是这个状态）');
+    r.scheduler.dispose();
+  });
+
+  test('自动重排的快照不会劫持手动重排的撤销点', () async {
     final r = build();
     final AnkiDeckRepositionRunner runner = AnkiDeckRepositionRunner(
       r.repo,
       lookup: _lookup,
       snapshotDirectory: () async => tempDir,
     );
-    // 牌组 A 一份（模拟手动重排留下的撤销点）、牌组 B 五份。
-    void writeSnapshot(String deck, int seq) {
-      File('${tempDir.path}/reposition-$deck-$seq.json').writeAsStringSync(
-        '{"deckName":"$deck","createdAt":'
-        '"2026-09-0${seq}T00:00:00.000Z","positions":[]}',
-      );
-    }
 
-    writeSnapshot('A', 1);
+    // 手动重排一次（auto 默认 false）。
+    final AnkiRepositionPlan? manual = await runner.plan(
+      deckName: 'Mining',
+      settings: await r.repo.loadSettings(),
+      options: const AnkiRepositionRankOptions(),
+    );
+    await runner.apply(manual!);
+    final AnkiRepositionSnapshot? afterManual =
+        await runner.latestSnapshot('Mining');
+    expect(afterManual, isNotNull);
+
+    // 再让自动路径跑一轮（卡的位置已被手动那次改过，这里重新造成待排状态）。
+    r.repo.cards['Mining'] = <AnkiCardInfo>[
+      _card(1, 1, 'rare'),
+      _card(2, 2, 'common'),
+    ];
+    r.scheduler.notifyMined('Mining');
+    await r.scheduler.flushNow();
+    expect(r.repo.writes, isNotEmpty, reason: '自动那轮应该真的写了');
+
+    final AnkiRepositionSnapshot? afterAuto =
+        await runner.latestSnapshot('Mining');
+    expect(afterAuto!.file.path, afterManual!.file.path,
+        reason: '撤销按钮必须仍指向手动那次之前的状态；被自动快照顶掉的话，'
+            '那次手动重排就永远撤不回去了，而按钮看起来一切正常');
+    r.scheduler.dispose();
+  });
+
+  test('pruneSnapshots 只削自动快照，手动的一份不动', () async {
+    final r = build();
+    final AnkiDeckRepositionRunner runner = AnkiDeckRepositionRunner(
+      r.repo,
+      lookup: _lookup,
+      snapshotDirectory: () async => tempDir,
+    );
+    File snap(String name) =>
+        File('${tempDir.path}/$name')..writeAsStringSync('{}');
+
+    snap(
+        '${AnkiDeckRepositionRunner.kManualPrefix}2026-09-01T00-00-00.000Z.json');
     for (int i = 1; i <= 5; i++) {
-      writeSnapshot('B', i);
+      snap('${AnkiDeckRepositionRunner.kAutoPrefix}2026-09-0${i}T00-00-00.000Z'
+          '.json');
     }
 
     final int deleted = await runner.pruneSnapshots(keep: 2);
 
-    expect(deleted, 3, reason: 'B 的 5 份只留 2 份');
-    final AnkiRepositionSnapshot? a = await runner.latestSnapshot('A');
-    expect(a, isNotNull,
-        reason: '在 B 上反复自动重排，不能把 A 的撤销点静默挤掉');
+    expect(deleted, 3, reason: '5 份自动快照只留 2 份');
+    final List<String> left = tempDir
+        .listSync()
+        .map((FileSystemEntity e) => p.basename(e.path))
+        .toList()
+      ..sort();
+    expect(
+        left.where((String n) => !n.startsWith('reposition-auto-')).length, 1,
+        reason: '手动快照是用户的撤销点，一份都不能被自动路径的产物挤掉');
+    expect(left.length, 3);
     r.scheduler.dispose();
   });
 }
