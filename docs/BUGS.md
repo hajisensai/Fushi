@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2190 条。点号进各自文件。
+> 共 2191 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2376](bugs/BUG-2376-video-exit-refresh-lag.md) | ✅ | ✅ | 从视频退出后库页刷新卡顿 |
 | [BUG-2375](bugs/BUG-2375-asr-unusable-model.md) | ✅ | ✅ | ASR 模型文件损坏后永久卡死：Protobuf parsing failed 且无自愈路径 |
 | [BUG-2374](bugs/BUG-2374-collection-cover-and-rescrape-entries-lost.md) | ✅ | ✅ | 合集丢失设置封面与重新刮削入口 |
 | [BUG-2373](bugs/BUG-2373-android-stylus-idle-loses-hover-pressure-buttons.md) | 🚧 | 🚧 | 安卓平板触控笔闲置1-2分钟后悬停/压力/侧键全失效 |
