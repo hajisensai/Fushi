@@ -2012,8 +2012,19 @@ void main() {
       source.length,
     );
 
+    // 批量操作栏的 chrome（含全部间距）已收敛到共享 [BatchActionBar]，所以令牌
+    // 用法要到那份实现里断言；调用点只剩动作按钮，仍不得出现硬编码间距。
+    // 钉的是「批量操作栏不许硬编码间距」这个不变式，不是它写在哪个函数里。
+    final String sharedBar = File(
+      'lib/src/utils/components/batch_action_bar.dart',
+    ).readAsStringSync();
+    expect(sharedBar, contains('FushiDesignTokens'));
+    expect(sharedBar, contains('tokens.spacing'));
+    expect(sharedBar, isNot(contains('const SizedBox(height: 12)')));
+    expect(sharedBar, isNot(contains('const SizedBox(width: 12)')));
+    expect(sharedBar, isNot(contains('const SizedBox(width: 8)')));
+
     for (final String section in <String>[
-      batchActionBar,
       placeholder,
       batchTagIntentRow,
     ]) {
@@ -2029,7 +2040,14 @@ void main() {
         ),
       );
     }
-    expect(batchActionBar, isNot(contains('const SizedBox(width: 4)')));
+    for (final String forbidden in <String>[
+      'const SizedBox(width: 4)',
+      'const SizedBox(width: 8)',
+      'const SizedBox(width: 12)',
+      'const SizedBox(height: 12)',
+    ]) {
+      expect(batchActionBar, isNot(contains(forbidden)));
+    }
     expect(
       source,
       isNot(contains('padding: const EdgeInsets.all(24)')),
