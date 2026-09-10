@@ -63,6 +63,12 @@ and manifest point straight at the commit recorded above.
 
 Hibiki modifications
 --------------------
+overlay/.../DalvikHandler.kt:
+  Route both bare FilterList results and legacy FiltersResponse wrappers through
+  the explicit filter wire codec. Select options use their display toString,
+  never arbitrary extension-object bean serialization; array/wrapper shapes,
+  filter kinds, states and nested groups remain stable.
+
 overlay/.../DexAllocationRepair.kt:
   Original DEX may allocate a concrete subtype whose constructor was inlined,
   then invoke the direct superclass constructor on that same register. Recover
@@ -70,6 +76,10 @@ overlay/.../DexAllocationRepair.kt:
   proof and unambiguous allocation counts. A synthetic forwarding constructor
   preserves the verified superclass call when the subtype no longer declares
   it. Unknown/ambiguous flows remain unchanged; no source names are special-cased.
+  Concrete ancestors (including Object) require the same original-DEX receiver
+  proof even if a matching constructor exists; allocation counts alone cannot
+  authorize changing an otherwise valid concrete NEW. This preserves typed
+  filter options instead of allowing Object values to fail later in typed arrays.
 
 overlay/.../MihonImageProxy.kt:
   Consume and close the extension's network response inside the Rx emission,

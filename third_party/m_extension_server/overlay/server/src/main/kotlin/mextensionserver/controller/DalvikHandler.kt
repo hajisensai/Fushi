@@ -3,6 +3,7 @@ package mextensionserver.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.model.Filter
+import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.online.HttpSource
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -84,15 +85,7 @@ class DalvikHandler {
                     MihonInvoker.invokeMethod(loadedExtension, dataBody)
                 }
 
-            val serializableResult =
-                if (result is FiltersResponse) {
-                    mapOf(
-                        "filterList" to
-                            result.filterList?.map { filter -> filter.toBridgeMap() }.orEmpty(),
-                    )
-                } else {
-                    result
-                }
+            val serializableResult = filterResponseForBridge(result)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
             NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.OK,
@@ -146,6 +139,14 @@ class DalvikHandler {
         )
     }
 }
+
+/** Preserve both supported response envelopes without serializing extension objects. */
+internal fun filterResponseForBridge(result: Any?): Any? =
+    when (result) {
+        is FilterList -> result.map { it.toBridgeMap() }
+        is FiltersResponse -> mapOf("filterList" to result.filterList?.map { it.toBridgeMap() }.orEmpty())
+        else -> result
+    }
 
 private fun Filter<*>.toBridgeMap(): Map<String, Any?> {
     val filter = this

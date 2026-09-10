@@ -25,7 +25,6 @@ import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
-import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
@@ -39,7 +38,7 @@ import kotlin.streams.asSequence
  * Restore exact DEX allocation types lost by dex2jar. R8 can inline a concrete
  * subclass constructor and invoke its superclass constructor on the original
  * new-instance register. DEX permits this, but JVM NEW and <init> owners must
- * match. The converter can instead emit NEW of that abstract superclass.
+ * match. The converter can instead emit NEW of that superclass, including Object.
  *
  * BUG-2406: SchaleNetwork's original p0 is a concrete Filter.Group subclass
  * with no methods or fields. getFilterList allocates p0, builds arguments in a
@@ -50,6 +49,8 @@ import kotlin.streams.asSequence
  * constructors are reused. A missing forwarding constructor is emitted only
  * when original DEX proves the allocation register invokes the accessible direct
  * superclass constructor with that descriptor. Ambiguity remains untouched.
+ * Concrete superclass substitutions additionally require receiver evidence for
+ * every allocation, even when the subclass already has a matching constructor.
  */
 object DexAllocationRepair {
     private val logger = KotlinLogging.logger {}
@@ -68,7 +69,7 @@ object DexAllocationRepair {
                 .getOrNull()
                 ?: return
         runCatching { rewriteJar(jarFile, evidence.first, evidence.second) }
-            .onFailure { logger.warn(it) { "Unable to repair abstract allocations in $jarFile" } }
+            .onFailure { logger.warn(it) { "Unable to repair generalized allocations in $jarFile" } }
     }
 
     /**
@@ -81,7 +82,7 @@ object DexAllocationRepair {
     ) {
         if (allocations.isEmpty()) return
         runCatching { rewriteJar(jarFile, allocations) }
-            .onFailure { logger.warn(it) { "Unable to repair abstract allocations in $jarFile" } }
+            .onFailure { logger.warn(it) { "Unable to repair generalized allocations in $jarFile" } }
     }
 
     /** `owner#name#desc` → 该方法里 `new-instance` 的 internal name 列表（可重复）。 */
@@ -307,11 +308,11 @@ object DexAllocationRepair {
         changedClasses: MutableSet<String>,
     ): Boolean {
         val instructions = method.instructions.toArray()
-        val abstractNews =
+        val jarNews =
             instructions
                 .filterIsInstance<TypeInsnNode>()
-                .filter { it.opcode == Opcodes.NEW && shapes[it.desc]?.isInstantiable == false }
-        if (abstractNews.isEmpty()) return false
+                .filter { it.opcode == Opcodes.NEW && shapes[it.desc] != null }
+        if (jarNews.isEmpty()) return false
 
         val dexNews = allocations[methodKey(owner, method.name, method.desc)] ?: return false
         val jarCounts =
@@ -323,21 +324,21 @@ object DexAllocationRepair {
         val dexCounts = dexNews.groupingBy { it }.eachCount()
 
         var changed = false
-        abstractNews.map(TypeInsnNode::desc).distinct().forEach { abstractType ->
+        jarNews.map(TypeInsnNode::desc).distinct().forEach { ancestorType ->
             // dex 里本来就分配过这个类型 → 不是泛化造成的，交给别的 pass，别动。
-            if ((dexCounts[abstractType] ?: 0) != 0) return@forEach
-            val missing = jarCounts[abstractType] ?: return@forEach
+            if ((dexCounts[ancestorType] ?: 0) != 0) return@forEach
+            val missing = jarCounts[ancestorType] ?: return@forEach
 
             val candidates =
                 dexCounts
-                    .filterKeys { it != abstractType && isSubclassOf(it, abstractType, shapes) }
+                    .filterKeys { it != ancestorType && isSubclassOf(it, ancestorType, shapes) }
                     .filter { (type, dexCount) -> dexCount - (jarCounts[type] ?: 0) == missing }
                     .keys
             val replacement =
                 candidates.singleOrNull() ?: run {
                     logger.warn {
-                        "Ambiguous abstract allocation in $owner.${method.name}: " +
-                            "NEW $abstractType ×$missing, candidates=$candidates — left as-is"
+                        "Ambiguous generalized allocation in $owner.${method.name}: " +
+                            "NEW $ancestorType ×$missing, candidates=$candidates — left as-is"
                     }
                     return@forEach
                 }
@@ -346,43 +347,51 @@ object DexAllocationRepair {
 
             // A descriptor mismatch alone is not evidence of inlining. Only
             // the original DEX receiver proof can authorize a forwarding ctor.
-            val constructorDescriptors = constructorDescriptorsFor(method, abstractType)
+            val pairs = allocationPairs(method, ancestorType) ?: return@forEach
+            val constructorDescriptors = pairs.map { it.second.desc }.toSet()
             val missingDescriptors = constructorDescriptors - replacementShape.constructors
             val evidence = constructors[methodKey(owner, method.name, method.desc)].orEmpty()
+
+            fun hasConstructorEvidence(descriptor: String): Boolean =
+                evidence.count { it == ConstructorEvidence(replacement, ancestorType, descriptor) } ==
+                    pairs.count { it.second.desc == descriptor }
+
+            // A concrete parent allocation can be intentional. Allocation counts
+            // alone never authorize changing its runtime type: require the original
+            // DEX to prove every substituted receiver called this parent constructor.
+            if (shapes[ancestorType]?.isInstantiable == true &&
+                !constructorDescriptors.all(::hasConstructorEvidence)
+            ) {
+                return@forEach
+            }
             val replacementNode = classes[replacement]
             val canForward =
                 replacementNode != null &&
-                    replacementNode.superName == abstractType &&
+                    replacementNode.superName == ancestorType &&
                     missingDescriptors.all { descriptor ->
-                        evidence.count { it == ConstructorEvidence(replacement, abstractType, descriptor) } ==
-                            method.instructions.toArray().filterIsInstance<MethodInsnNode>().count {
-                                it.opcode == Opcodes.INVOKESPECIAL &&
-                                    it.name == "<init>" &&
-                                    it.owner == abstractType &&
-                                    it.desc == descriptor
-                            } &&
-                            descriptor in shapes[abstractType]?.accessibleConstructors.orEmpty()
+                        hasConstructorEvidence(descriptor) &&
+                            descriptor in shapes[ancestorType]?.accessibleConstructors.orEmpty()
                     }
             if (missingDescriptors.isNotEmpty() && !canForward) {
                 logger.warn {
-                    "Skipping abstract allocation in $owner.${method.name}: " +
+                    "Skipping generalized allocation in $owner.${method.name}: " +
                         "$replacement has no constructor matching $constructorDescriptors " +
                         "(dex2jar likely inlined the constructor) — left as-is"
                 }
                 return@forEach
             }
 
-            if (rewriteAllocations(method, abstractType, replacement)) {
+            if (rewriteAllocations(method, ancestorType, replacement)) {
                 missingDescriptors.forEach { descriptor ->
                     if (replacementNode!!.methods.none { it.name == "<init>" && it.desc == descriptor }) {
-                        replacementNode.methods.add(forwardingConstructor(abstractType, descriptor))
+                        replacementNode.methods.add(forwardingConstructor(ancestorType, descriptor))
                         changedClasses += replacement
                     }
                 }
                 changed = true
                 logger.info {
                     "Restored dex allocation in $owner.${method.name}: " +
-                        "NEW $abstractType → NEW $replacement (×$missing)"
+                        "NEW $ancestorType → NEW $replacement (×$missing)"
                 }
             }
         }
@@ -407,23 +416,8 @@ object DexAllocationRepair {
             visitEnd()
         }
 
-    /** 该方法里所有以 [abstractType] 为 owner 的构造调用描述符。 */
-    private fun constructorDescriptorsFor(
-        method: MethodNode,
-        abstractType: String,
-    ): Set<String> =
-        method.instructions
-            .toArray()
-            .filterIsInstance<MethodInsnNode>()
-            .filter {
-                it.opcode == Opcodes.INVOKESPECIAL &&
-                    it.name == "<init>" &&
-                    it.owner == abstractType
-            }.map(MethodInsnNode::desc)
-            .toSet()
-
     /**
-     * 把 `NEW abstractType` 及与之配对的 `INVOKESPECIAL abstractType.<init>` 换成
+     * 把 `NEW ancestorType` 及与之配对的 `INVOKESPECIAL ancestorType.<init>` 换成
      * [replacement]。
      *
      * 按栈序配对：只有紧跟其后、尚未认领的那条 `<init>` 才算这次分配的构造调用。子类
@@ -432,38 +426,43 @@ object DexAllocationRepair {
      */
     private fun rewriteAllocations(
         method: MethodNode,
-        abstractType: String,
+        ancestorType: String,
         replacement: String,
     ): Boolean {
+        val pairs = allocationPairs(method, ancestorType) ?: return false
+        pairs.forEach { (allocation, constructor) ->
+            allocation.desc = replacement
+            constructor.owner = replacement
+        }
+        return true
+    }
+
+    /** Pair NEW with its constructor, excluding this/super constructor calls. */
+    private fun allocationPairs(
+        method: MethodNode,
+        ancestorType: String,
+    ): List<Pair<TypeInsnNode, MethodInsnNode>>? {
         val pending = ArrayDeque<TypeInsnNode>()
-        val rewrites = mutableListOf<AbstractInsnNode>()
+        val pairs = mutableListOf<Pair<TypeInsnNode, MethodInsnNode>>()
         method.instructions.toArray().forEach { insn ->
             when {
                 insn is TypeInsnNode &&
                     insn.opcode == Opcodes.NEW &&
-                    insn.desc == abstractType -> pending.addLast(insn)
+                    insn.desc == ancestorType -> pending.addLast(insn)
 
                 insn is MethodInsnNode &&
                     insn.opcode == Opcodes.INVOKESPECIAL &&
                     insn.name == "<init>" &&
-                    insn.owner == abstractType &&
+                    insn.owner == ancestorType &&
                     pending.isNotEmpty() -> {
-                    rewrites += pending.removeLast()
-                    rewrites += insn
+                    pairs += pending.removeLast() to insn
                 }
             }
         }
         // 配不上对的分配点原样留着：宁可保留一个明确的 InstantiationError，也不要
         // 制造出 NEW 与 <init> 类型不一致的、过不了校验器的字节码。
-        if (rewrites.isEmpty() || pending.isNotEmpty()) return false
-        rewrites.forEach { insn ->
-            when (insn) {
-                is TypeInsnNode -> insn.desc = replacement
-                is MethodInsnNode -> insn.owner = replacement
-                else -> Unit
-            }
-        }
-        return true
+        if (pairs.isEmpty() || pending.isNotEmpty()) return null
+        return pairs
     }
 
     private fun isSubclassOf(

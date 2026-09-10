@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2184 条。点号进各自文件。
+> 共 2186 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2408](bugs/BUG-2408-mihon-filter-wire-codec.md) | ✅ | ✅ | Mihon 裸 FilterList 绕过类型化序列化导致选项对象报错 |
+| [BUG-2407](bugs/BUG-2407-mihon-concrete-allocation-type.md) | ✅ | ✅ | Comic Days 筛选选项类型被转成 Object 导致 ArrayStoreException |
 | [BUG-2406](bugs/BUG-2406-mihon-inlined-filter-constructor.md) | ✅ | ✅ | SchaleNetwork 内联筛选组构造器导致抽象类实例化失败 |
 | [BUG-2405](bugs/BUG-2405-mihon-image-response-lifetime.md) | ✅ | ✅ | Mihon 图片响应在读取正文前因 Rx 退订关闭 Socket |
 | [BUG-2404](bugs/BUG-2404-mihon-proxy-socket-uri.md) | ✅ | ✅ | Mihon 全局代理选择器误将 TCP socket URI 发送至 HTTP 策略端点 |
