@@ -2191,6 +2191,28 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
   }
 }
 
+/// 底部安全区（iOS home indicator / Android 手势条）的高度。
+///
+/// [FushiPageScaffold] / [FushiToolScaffold] 的 body 外层 `SafeArea` 是
+/// `bottom: false`——底部 inset **不扣 viewport**，让内容能一直画到屏幕最底（否则那条
+/// 34pt 就是一条谁也用不了的底色空白，滚动内容在切线处被拦腰截断，BUG-2440）。代价是
+/// body 自己得把这段补进滚动 padding，不然末项静止时被手势条压住。
+///
+/// 取 `padding` 而不是 `viewPadding`：键盘弹出时 `padding.bottom` 归零（那段已被
+/// `viewInsets` 接管），跟着归零才不会在键盘上方多顶一块空白；桌面与无手势条的设备上
+/// 本来就是 0，本函数与整套改动一并成为空操作。
+double bottomSafeInsetOf(BuildContext context) =>
+    MediaQuery.paddingOf(context).bottom;
+
+/// 把底部安全区补进 [base] 的下边（**相加**，不是取 max）。
+///
+/// 这里与 BUG-383「逐边 max、不相加」的口径**故意不同**，因为语义不同：那边两个值描述
+/// 的是同一段「离屏幕边缘的距离」（控件 margin vs 系统 inset），取大的即可；这里 [base]
+/// 是内容与内容之间的呼吸位（卡片间距 / 页边距），系统 inset 是被手势条吃掉的不可用区，
+/// 两段各自成立——只取 max 会让末项贴着手势条，视觉上比别的项少一截间距。
+EdgeInsets withBottomSafeInset(BuildContext context, EdgeInsets base) =>
+    base.copyWith(bottom: base.bottom + bottomSafeInsetOf(context));
+
 class FushiPageScaffold extends StatefulWidget {
   const FushiPageScaffold({
     required this.title,
@@ -2275,6 +2297,16 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
         floatingActionButtonLocation: widget.floatingActionButtonLocation,
         bottomNavigationBar: widget.bottomNavigationBar,
         body: SafeArea(
+          // bottom:false —— 底部安全区（iOS home indicator / Android 手势条）**不在这里
+          // 扣**，交给 body 自己按 [bottomSafeInsetOf] 加进内容 padding（BUG-2440）。
+          // SafeArea 扣底是把 viewport 硬切在手势条之上：那条 34pt 变成一条谁也用不了的
+          // 底色空白，滚动内容在切线处被拦腰截断（卡片边框、文字切一半），怎么滚都进不去；
+          // 更糟的是它同时 removePadding 把 padding.bottom 清零，让 body 里**已经写好**的
+          // `+ mediaPadding.bottom` 集体变成死代码（settings 三处渲染器都中招）。
+          // 让内容滚过安全区、只在滚动 padding 里补偿，才是这两条诉求（不留空白 + 末项
+          // 不被压）唯一同时成立的形态。与 BUG-383 / BUG-1783 同一范式：拿掉 SafeArea、
+          // 改走显式 inset，逐边取值不相加。
+          bottom: false,
           // stretch (not start) so every page body receives a tight full-width
           // constraint. Under start the cross axis stays loose, and any body
           // that shrink-wraps its width (e.g. a vertical SingleChildScrollView
@@ -2372,6 +2404,10 @@ class FushiToolScaffold extends StatelessWidget {
       backgroundColor: backgroundColor ?? tokens.surfaces.page,
       bottomNavigationBar: bottomNavigationBar,
       body: SafeArea(
+        // 与 [FushiPageScaffold] 同一口径（BUG-2440）：底部 inset 不扣 viewport。
+        // 本脚手架的底部动作条走 [Scaffold.bottomNavigationBar]（在这层 SafeArea 之外、
+        // 各自已套 SafeArea），不受影响；body 的滚动内容按 [withBottomSafeInset] 补偿。
+        bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[

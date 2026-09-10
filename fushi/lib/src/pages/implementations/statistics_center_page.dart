@@ -206,7 +206,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     }
     final StatWindow w = StatWindow(DateTime.now());
     return ListView(
-      padding: EdgeInsets.only(bottom: tokens.spacing.card * 2),
+      // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，tab 内容末尾自己让开
+      // home indicator / 手势条（三个域 tab 走 [buildStatTailSliver]）。
+      padding: withBottomSafeInset(
+        context,
+        EdgeInsets.only(bottom: tokens.spacing.card * 2),
+      ),
       children: <Widget>[
         _buildGoalCard(tokens, w),
         _buildSummaryCards(w),
