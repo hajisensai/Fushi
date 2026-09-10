@@ -39,46 +39,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
   bool get _paginationInFlight =>
       _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
 
-  /// TODO-1229 / BUG-1829：记一次**真正的跨章**发生时刻，开启跨章冷却窗。
+  /// BUG-2424：消费一次积压的翻页意图并重放。
   ///
-  /// 只在跨章事件上调用：① 各入口确实要调 [_handlePageTurnLimit] 之前；② 该次跨章落地的
-  /// 新章 content-ready 时的重锚（[_noteChapterTurnSettledIfPending]）。
-  /// **绝不在被拦截/被丢弃的输入上调用**——那会把闸门的钥匙交给被闸门拦住的那一方，用户
-  /// 持续拨轮就永远等不到窗口过期（BUG-1829，见 [_lastChapterTurnAt] 的说明）。
-  void _noteChapterTurn() {
-    _lastChapterTurnAt = DateTime.now();
-  }
-
-  /// TODO-1229 第三次复诉：标记「一次惯性跨章已真正发起导航」。只在惯性输入
-  /// (滚轮/触摸，throttleMs>0)确实调 [_handlePageTurnLimit] 且其内部真的触发了
-  /// 导航时置位（末章/首章边界不导航则不置位，避免旗子悬空）。等新章 content-ready
-  /// 时由 [_noteChapterTurnSettledIfPending] 消费。
-  void _markInertiaChapterTurnPending() {
-    _inertiaChapterTurnPending = true;
-  }
-
-  /// TODO-1229 第三次复诉：惯性跨章落地的新章内容就绪那一刻，把跨章冷却窗重新 stamp
-  /// 到当下——保证新章刚出现时总有一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮/
-  /// 惯性，即使换章加载耗时超过冷却窗、期间没有续窗 tick（鼠标滚轮离散事件的真因）。
-  /// 只在 pending 时生效并复位旗子；非惯性来源(初次开书/恢复/键盘跨章)不置旗、不受影响。
-  void _noteChapterTurnSettledIfPending() {
-    if (!_inertiaChapterTurnPending) return;
-    _inertiaChapterTurnPending = false;
-    _noteChapterTurn();
-  }
-
-  /// TODO-1229 / BUG-1829：跨章冷却闸门。距上次**真正跨章**不足 [_kChapterTurnCooldown]
-  /// 则判为同一手势的残余惯性、拒绝本次跨章（返回 true=正在冷却=拦截），否则放行。
-  /// 只在惯性型输入(滚轮/触摸)的跨章决策处调用；键盘/手柄(throttleMs==0)不经此闸门。
+  /// 在 [_onRestoreComplete] 的收尾（新章内容就绪、`fushiReader` 可用）之后调用，
+  /// 所以重放时的页边界判定是在**已就绪**的状态上做的——这正是原始「跳两章」
+  /// （在飞时 `evaluateJavascript` 返 null 被 `_didScroll` 误读成页边界）消失的原因。
   ///
-  /// **纯读，无副作用（BUG-1829）**：旧实现在拦截时把 [_lastChapterTurnAt] 写成当下，把
-  /// 窗口滑走，于是被拦的输入自己给自己续期——真实滚轮每 30~100ms 一个事件，用户只要还在
-  /// 拨，窗口就永远不过期。窗口只能由跨章事件推进（[_noteChapterTurn]）。
-  bool _chapterTurnCoolingDown() => chapterTurnCoolingDown(
-        lastTurnAt: _lastChapterTurnAt,
-        now: DateTime.now(),
-        cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
-      );
+  /// 一次只消费一个意图：重放本身会再次置 `_paginationInFlight`（若它导致跨章），
+  /// 下一个意图由那次导航的 content-ready 继续消费，天然串成 1:1 的链，不会并发。
+  /// 重放**不过 [_lastPaginateTime] 节流**——该节流限的是「用户新输入的速率」，
+  /// 而积压意图早已是用户按下过的、被延后执行的输入，再节流一次就等于又丢一遍。
+  void _replayPendingPageTurn() {
+    if (!mounted || _controller == null) return;
+    if (_paginationInFlight) return;
+    final ReaderNavigationDirection? next = _pageTurnQueue.consume();
+    if (next == null) return;
+    unawaited(_paginate(next));
+  }
 
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
@@ -91,10 +68,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
     // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
     if (_paginationInFlight) {
-      // BUG-1829：换章加载期到达的输入只丢弃，**不**滑动跨章冷却窗。v2 曾在这里
-      // stamp，用来盖住「加载期无续窗 tick → 窗口早过期 → 残余惯性二次跨章」；v3 改用
-      // 新章 content-ready 重锚（[_noteChapterTurnSettledIfPending]）后，这条已由更晚、
-      // 更准的锚点覆盖，留着只会让持续输入自我续期，把单页章变成滚轮死区。
+      // BUG-2424：换章加载期到达的输入**排队**而不是丢弃。旧实现在这里直接 return，
+      // 用户在换章那几百毫秒里拨的每一格滚轮都石沉大海（「按了没反应，要再按一次」）。
+      // 此刻仍不能就地执行——`fushiReader` 未就绪、`evaluateJavascript` 返 null 会被
+      // `_didScroll` 误读成页边界而多跨一章（原始「跳两章」的成因之一）——所以存下
+      // 意图，由 [_replayPendingPageTurn] 在 content-ready 之后重放，那时判定是在
+      // 已就绪状态上做的。排队的输入不推进 _lastPaginateTime。
+      _pageTurnQueue.push(direction);
       return;
     }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
@@ -127,12 +107,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
       if (!mounted || _controller == null) return;
       if (!_didConsumePageTurn(result)) {
-        // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
-        // 在短章边界的二次跨章被拦；键盘/手柄(throttleMs==0)不受限。窗口不再被被拦的
-        // 输入自我续期——只有真跨章与 content-ready 会推进它（BUG-1829）。
-        if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-        _noteChapterTurn();
-        _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
+        // BUG-2424：跨章冷却闸门已删除。这里的判定发生在 `fushiReader` 已就绪之后
+        // （result 是真实的 paginate 返回值，不是在飞时的 null），所以「一次输入最多
+        // 一次跨章」由这条路径本身保证，不需要再叠一层时间窗。
+        _handlePageTurnLimit(direction.jsValue);
       } else {
         await _refreshProgress();
         if (!mounted || _controller == null) return;
@@ -149,10 +127,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (!mounted || _controller == null) return;
       if (_didScroll(result)) await _caretReanchor(direction);
     } else {
-      // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
-      if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-      _noteChapterTurn();
-      _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
+      // BUG-2424：同上——分页模式的跨章判定同样发生在 JS 已就绪之后，冷却闸门已删除。
+      _handlePageTurnLimit(direction.jsValue);
     }
   }
 

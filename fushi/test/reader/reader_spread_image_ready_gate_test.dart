@@ -94,16 +94,20 @@ void main() {
           reason: '_loadSpreadPage 函数体内不得再内联 spreadReady（已下沉到 builder）');
     });
 
-    test('spreadReady 处理器仍保留 cf0adf642 冷却窗重锚接线', () {
-      // BUG-568 v3：spread content-ready 消费 pending 并重 stamp 冷却窗，勿被本次修复破坏。
+    test('spreadReady 处理器仍是一个 content-ready 完成点（重放积压翻页意图）', () {
+      // BUG-568 v3 originally pinned the chapter-turn cooldown re-stamp here.
+      // BUG-2424 删掉了那套冷却窗，但这条不变式本身没变、而且更要紧：spread 路径
+      // **从不发 onRestoreComplete**，spreadReady 是它唯一的 content-ready 完成点。
+      // 漏掉这行，用户在换章加载期拨的滚轮会一直压在队列里，直到下一次真实导航才
+      // 突然连翻——正是队列化必须在每个完成点都接线的原因。
       final int handlerIdx = source.indexOf("handlerName: 'spreadReady'");
       expect(handlerIdx, greaterThan(0));
       final int handlerEnd =
           source.indexOf("handlerName: 'onCueTap'", handlerIdx);
       expect(handlerEnd, greaterThan(handlerIdx));
       final String handlerBody = source.substring(handlerIdx, handlerEnd);
-      expect(handlerBody, contains('_noteChapterTurnSettledIfPending()'),
-          reason: 'spreadReady 处理器必须保留跨章冷却窗重锚（cf0adf642 / BUG-568 v3）');
+      expect(handlerBody, contains('_replayPendingPageTurn()'),
+          reason: 'spreadReady 处理器必须重放积压的翻页意图（BUG-2424）');
     });
   });
 }
