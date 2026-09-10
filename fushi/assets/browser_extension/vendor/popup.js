@@ -5858,6 +5858,137 @@ if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
     document.addEventListener('wheel', __fushiPopupWheelListener, { passive: false });
 }
 
+/* BUG-2415: 墨水屏「瞬时滚动」（app 设置 lookup.popup_instant_scroll）的**触摸**半边。
+   BUG-2284 把 window.__fushiPopupInstantScroll 接进了 wheel 监听，但墨水屏设备
+   （Android e-ink 阅读器）上根本没有滚轮——用户是用手指上下**滑**弹窗的，而那条路径
+   此前 100% 走 WebView 原生滚动：逐帧连续位移 + 松手后的惯性 fling。设置文案承诺的正是
+   「按固定距离瞬时跳动、无动画滚动（for e-ink screens）」，触摸路径不认这个开关 =
+   在唯一真正的墨水屏输入方式上开关等于没接线（与 BUG-2284 ① 同一类空开关）。
+
+   与滚轮同源但不同形：滚轮是离散 notch，可以「一格跳半屏」；手指是连续位移，同样按
+   固定距离跳，但量化的是**手指行程**——每滑够一步就跳一步，即「量化的 1:1 跟手」。
+   这样既保留方向反馈（与 _BodySwipeDismissDetector 跟手期刻意保留 Transform.translate
+   同理，见 BUG-2283 备注），又把整段滑动的重绘从每帧一次压成每步一次，preventDefault
+   再把松手惯性彻底掐掉——墨水屏上「松手后还要糊几秒」正是惯性拖出来的。
+
+   接管判定放在 touchstart 一次定死，touchmove 里不再判轴：Chromium 只在某一帧
+   touchmove 未被 preventDefault 时才会启动原生滚动，一旦启动，后续帧的 cancelable
+   就变 false、再 preventDefault 也没用。若留一段「判轴死区」不拦截，Android 的
+   ~8dp touch slop 恰好落在死区里，原生滚动会抢先起步 → 变成原生滚动与瞬跳同时位移。
+   所以要么从第一帧就拿下整轮手势，要么整轮不碰。
+
+   整轮不碰的三个豁免（都在 touchstart 判）：多指（缩放/系统手势）、已有选区（选区手柄
+   拖动也是 touchmove，拦了就拖不动手柄，嵌套查词要靠它选词）、以及手指落在**真正横向
+   溢出**的祖先上（.expression-scroll / .gloss-image-scroll / .gloss-sc-table-container，
+   见 popup.css）——拿下整轮会连它们的横滚一起掐掉。判据是实际溢出而非 CSS 声明，所以
+   短词头那种没溢出的 .expression-scroll 不会误触发豁免。
+
+   只在 in-app 弹窗挂载：扩展镜像里 popup.js 与宿主页共用 document，非 passive 的
+   touchmove 会掐掉宿主页整页的合成器快速滚动路径（wheel 那条为此专门只挂 shadow
+   host，见 BUG-1078），而墨水屏场景是 app 内弹窗，扩展侧没有这个需求。三镜像仍逐字节
+   一致（TODO-1267 parity guard），差别只在运行期分支。 */
+const POPUP_EINK_TOUCH_VIEWPORT_FRACTION = 0.25; // 一步跳 1/4 屏
+const POPUP_EINK_TOUCH_MIN_STEP = 24;            // 视口异常小时的下限（布局 px）
+// 防御性上限：一帧内最多补几步。正常一帧手指走不了几步，这个上限只为杜绝异常输入
+// （极端 zoom / 视口塌成 0）下的死循环。
+const POPUP_EINK_TOUCH_MAX_STEPS_PER_MOVE = 20;
+let _popupEinkTouchId = null;
+let _popupEinkTouchScroller = null;
+let _popupEinkTouchAnchorY = 0;
+
+function __fushiPopupEinkTouchReset() {
+    _popupEinkTouchId = null;
+    _popupEinkTouchScroller = null;
+}
+
+// 一步的距离：被滚表面视口高度 × FRACTION，夹在 [MIN_STEP, 一屏] 内（永不一步跳过整屏
+// 内容）。复用滚轮那条的 extent 解析——zoom → 布局 px 的换算已经在里面。
+function popupEinkTouchStep(scroller) {
+    const extent = popupEinkWheelExtent(scroller);
+    return Math.max(
+        POPUP_EINK_TOUCH_MIN_STEP,
+        Math.min(extent, extent * POPUP_EINK_TOUCH_VIEWPORT_FRACTION));
+}
+
+// 从触点向上找**真正横向溢出**的祖先（不是只看 CSS 声明）。找到 → 本轮不接管。
+function __fushiPopupEinkTouchHasHorizontalScroll(node) {
+    let el = node;
+    let hops = 0;
+    while (el && el.nodeType === 1 && hops < 32) {
+        if (el.scrollWidth > el.clientWidth + 1) {
+            let overflowX = '';
+            try {
+                overflowX = (window.getComputedStyle(el) || {}).overflowX || '';
+            } catch (_) { overflowX = ''; }
+            if (overflowX === 'auto' || overflowX === 'scroll') return true;
+        }
+        el = el.parentElement || (el.parentNode && el.parentNode.host) || null;
+        hops++;
+    }
+    return false;
+}
+
+function __fushiPopupEinkTouchStart(e) {
+    __fushiPopupEinkTouchReset();
+    if (!window.__fushiPopupInstantScroll) return;
+    if (!__fushiEventInsidePopup(e)) return;
+    if (!e.touches || e.touches.length !== 1) return;
+    try {
+        const sel = __fushiSel();
+        if (sel && !sel.isCollapsed) return;
+    } catch (_) { /* 读不到选区就按「无选区」走，最坏是拦了一次手柄拖动 */ }
+    if (__fushiPopupEinkTouchHasHorizontalScroll(__fushiEventTarget(e))) return;
+    const t = e.touches[0];
+    _popupEinkTouchId = t.identifier;
+    _popupEinkTouchScroller = __fushiWheelScroller(e);
+    _popupEinkTouchAnchorY = t.clientY;
+}
+
+function __fushiPopupEinkTouchMove(e) {
+    if (_popupEinkTouchId === null) return;
+    if (!window.__fushiPopupInstantScroll) { __fushiPopupEinkTouchReset(); return; }
+    // 中途落下第二根指针：本轮永久失效（不能把剩余指针重新解释成新的一次纵滑，
+    // 与 _BodySwipeDismissDetector 的 BUG-1242 同一条纪律）。
+    if (!e.touches || e.touches.length !== 1) { __fushiPopupEinkTouchReset(); return; }
+    const t = e.touches[0];
+    if (t.identifier !== _popupEinkTouchId) { __fushiPopupEinkTouchReset(); return; }
+    // 已经不可取消 = 原生滚动已起步（理论上进不来，touchstart 已拿下整轮）。此时再跳
+    // 会和原生一起双倍位移，直接弃掉本轮。
+    if (e.cancelable === false) { __fushiPopupEinkTouchReset(); return; }
+    e.preventDefault();
+    const step = popupEinkTouchStep(_popupEinkTouchScroller);
+    if (!(step > 0)) return;
+    // 手指上滑（clientY 变小）→ 正 → 内容下滚，与原生方向一致。
+    let travel = _popupEinkTouchAnchorY - t.clientY;
+    let guard = 0;
+    while (Math.abs(travel) >= step && guard < POPUP_EINK_TOUCH_MAX_STEPS_PER_MOVE) {
+        const dir = travel > 0 ? 1 : -1;
+        const jump = Math.trunc(dir * step);
+        if (jump === 0) break;
+        if (_popupEinkTouchScroller) {
+            _popupEinkTouchScroller.scrollBy({ top: jump, behavior: 'auto' });
+        } else {
+            window.scrollBy({ top: jump, behavior: 'auto' });
+        }
+        // 锚点跟着走一步：手指要再滑满一步才触发下一跳（这就是 1:1 量化）。
+        _popupEinkTouchAnchorY -= dir * step;
+        travel -= dir * step;
+        guard++;
+    }
+}
+
+if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
+    // 扩展镜像：不挂（理由见上方块注释）。留空分支是为了让三镜像逐字节一致时，
+    // 「扩展侧刻意不挂」这条决定在代码里看得见，而不是靠读注释推断。
+} else {
+    // in-app 弹窗 WebView：整份文档就是弹窗。touchmove 必须 passive:false，否则
+    // preventDefault 无效、惯性照旧（这正是 BUG-2415 要掐的东西）。
+    document.addEventListener('touchstart', __fushiPopupEinkTouchStart, { passive: true });
+    document.addEventListener('touchmove', __fushiPopupEinkTouchMove, { passive: false });
+    document.addEventListener('touchend', __fushiPopupEinkTouchReset, { passive: true });
+    document.addEventListener('touchcancel', __fushiPopupEinkTouchReset, { passive: true });
+}
+
 
 let _popupMouseDownPos = null;
 function __fushiPopupMouseDown(e) {
