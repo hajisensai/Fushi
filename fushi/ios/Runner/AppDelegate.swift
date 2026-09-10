@@ -46,6 +46,10 @@ import Flutter
   }
 
   private func installChannels(binaryMessenger: FlutterBinaryMessenger) {
+    // 系统自带 OCR（Vision）。Dart 侧与 Android 侧早就在了，这半边一直空着——
+    // 没注册时 Dart 收到 MissingPluginException，isAvailable() 返回 false，引擎
+    // 选项就静默不出现（system_ocr_channel.dart 的注释把这条定为「当前事实」）。
+    FushiSystemOcr.register(binaryMessenger: binaryMessenger)
     challengeBrowser = FushiChallengeBrowser(binaryMessenger: binaryMessenger) {
       UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }
