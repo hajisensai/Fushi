@@ -580,6 +580,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Rect? _topPopupAnchoredRect;
   Rect? _topPopupSelectionRect;
 
+  // BUG-2416: nested selections must use the popup Stack coordinate space.
+  final GlobalKey _popupCoordinateSpaceKey = GlobalKey();
+
   /// 拖把手起手：把当前偏好基准尺寸存入预览态（后续增量累积其上），并冻结顶层卡当前左上角。
   void _onPopupResizeStart() {
     setState(() {
@@ -646,6 +649,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             builder: (context, constraints) {
               final screen = Size(constraints.maxWidth, constraints.maxHeight);
               return Stack(
+                key: _popupCoordinateSpaceKey,
                 // BUG-135: 隐藏热槽停到屏幕右外侧（_buildPopupLayer），Clip.none 让它
                 // 在屏外照常预热、又不裁掉（默认 hardEdge 会裁，原生 WebView 失温）。
                 clipBehavior: Clip.none,
@@ -829,6 +833,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                   webViewKey: item.webViewKey,
                   localRect: localRect,
                   fallback: item.selectionRect,
+                  coordinateSpaceKey: _popupCoordinateSpaceKey,
                 );
           prunePopupStack(index + 1);
           final count = await searchDictionaryResult(
@@ -852,6 +857,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 expectedTerm: text,
                 wordLocalRect: wordRect,
                 fallback: childRect,
+                coordinateSpaceKey: _popupCoordinateSpaceKey,
               );
             }
           }
@@ -863,6 +869,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                   webViewKey: item.webViewKey,
                   localRect: localRect,
                   fallback: item.selectionRect,
+                  coordinateSpaceKey: _popupCoordinateSpaceKey,
                 );
           prunePopupStack(index + 1);
           // TODO-1190: symmetric with onTextSelected above — mark the clicked
@@ -886,6 +893,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                 expectedTerm: query,
                 wordLocalRect: wordRect,
                 fallback: childRect,
+                coordinateSpaceKey: _popupCoordinateSpaceKey,
               );
             }
           }
