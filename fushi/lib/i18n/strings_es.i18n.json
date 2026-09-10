@@ -4690,5 +4690,6 @@
   "subscription_remote_unsupported": "The host has no download backend configured",
   "subscription_run_remote": "Host $device",
   "subscription_remote_section_title": "Subscriptions on $device",
-  "subscription_remote_provider_unavailable": "The host has no indexer for this resource ($provider)"
+  "subscription_remote_provider_unavailable": "The host has no indexer for this resource ($provider)",
+  "video_load_failed_not_opened": "The player couldn't open this video. The file may be in use, or the video engine needs the app restarted."
 }

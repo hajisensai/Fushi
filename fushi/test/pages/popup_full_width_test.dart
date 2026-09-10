@@ -79,8 +79,12 @@ void main() {
             padding: padding,
           );
 
+      // 本条钉的不变式是「fullWidth 开关不改变 dock 面板」——它与 dock 到底有多宽
+      // 无关。BUG-2439（#1410）把 dock 改成**真正铺满左右**（不再留 padding），
+      // 所以下面那句跟着改成 screen.width；钉「等于屏宽」而不是「屏宽减 padding」，
+      // 正是 dock 与跟随模式的区别所在。
       expect(docked(fullWidth: true), docked(fullWidth: false));
-      expect(docked(fullWidth: false).width, screen.width - padding * 2);
+      expect(docked(fullWidth: false).width, screen.width);
     });
 
     test('全宽不会溢出屏幕：右缘仍在 padding 之内', () {
