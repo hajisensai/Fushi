@@ -46,8 +46,22 @@ BUG-1745 起 JS 侧就随方向一起回传输入设备（`webview.part.dart:148
    消费到「队空」或「又进入在飞」为止，两种出口都必要：重放导致**跨章**→ `_paginationInFlight` 立刻为真 → 退出循环，剩余意图由那次导航的 content-ready 再进来消费，串成 1:1 的链；重放只是**章内翻页**（新章还有下一页）则不会再有 content-ready 把它叫醒，必须就地继续消费，否则剩余意图一直压到下一次跨章才突然连翻（自查补漏，提交 c68cfb579d）。另有 `_replayingPageTurns` 重入闸：await 期间可能被另一个完成点再次调用，两个循环同时消费同一队列会让意图乱序落到不同章上。
    **重放不过 `_lastPaginateTime` 节流**——该节流限的是用户新输入的速率，积压意图是已按下过、被延后执行的输入，再节流一次等于又丢一遍。
 4. 删除 `chapterTurnCoolingDown` 纯函数、`_kChapterTurnCooldown`、`_lastChapterTurnAt`、`_inertiaChapterTurnPending`、`_noteChapterTurn`、`_noteChapterTurnSettledIfPending`、`_markInertiaChapterTurnPending`，以及只服务于它们的 `_handlePageTurnLimit(inertia:)` 参数。4 个状态位 + 2 个 stamp 点 → 1 个队列。
-5. `onBoundarySwipe` 改读 `args[1]` 的 `pointerKind`，并去掉它对跨章叠的 `_lastPaginateTime` 节流窗（用户要求一口气连跨多章、不必停手；`wheelPageTurnInterval` 的语义是**章内翻页速率**，跨章由加载节奏天然限流）。
-6. **触摸板惯性仍必须聚合，但理由不是时间窗**：跨章会 `loadUrl` 换文档，JS 侧的 `_continuousWheelLastTickAt` 随之归零，新章的第一个残余惯性 tick 会被 JS 那道 `startsNewWheelGesture` 误判成「新手势」而放行 → 二次跨章。这正是必须由活在 reader State、跨文档持续存在的 `_pagedWheelGestureGate`（BUG-1342 同一实例）兜住的洞。鼠标滚轮不经此 gate。
+5. `onBoundarySwipe` 改读 `args[1]` 的 `pointerKind`。
+6. **节流统一前置**（用户于 2026-09-10 明确要求：「都受他管 连续模式的也受它管」）：
+   `wheelPageTurnInterval` 是**用户自己在设置里配的限速器**（150~800ms 可调），语义是
+   「每隔这么久接受一次翻页输入」——**统一管章内翻页与跨章，两种模式一视同仁**。
+   故：连续模式的 `onBoundarySwipe`（绕过 `_paginate` 入口）就地补一道同款闸门；
+   `_paginate` 入口的节流从在飞判定**之后**提到**之前**。两处顺序完全一致：
+   **先节流 → 再 stamp → 最后才是在飞排队**。过了节流 = 这一次输入被接受、占掉
+   一个翻页配额，所以即使接着要入队也先 stamp（不然加载期内每个 tick 都会被
+   接受入队，落定后一次性连翻，等于用户配的速率对跨章不生效）；重放不再过节流
+   （这一格在**入队前**就已经过了）。
+
+   > 这里走过一次弯路，记下来免得后人重踩：初版把用户的「不需要我停手就可以下一章」
+   > 读成了「跨章不该限速」，于是把 `onBoundarySwipe` 的节流窗一并删了。实际上用户指的
+   > 是**隐藏的冷却窗**（不可配、而且随加载时长膨胀）；他自己配的限速器应该照常生效。
+   > 判据：**用户可见可调的闸门统一生效，隐藏且锢错地方的闸门才该删**。
+7. **触摸板惯性仍必须聚合，但理由不是时间窗**：跨章会 `loadUrl` 换文档，JS 侧的 `_continuousWheelLastTickAt` 随之归零，新章的第一个残余惯性 tick 会被 JS 那道 `startsNewWheelGesture` 误判成「新手势」而放行 → 二次跨章。这正是必须由活在 reader State、跨文档持续存在的 `_pagedWheelGestureGate`（BUG-1342 同一实例）兜住的洞。鼠标滚轮不经此 gate。
 
 「一次输入最多产生一次跨章」这条真正的不变式，现在由队列的 1:1 消费直接保证，不再需要任何时间窗。
 

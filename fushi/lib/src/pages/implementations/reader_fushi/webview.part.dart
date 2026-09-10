@@ -2272,12 +2272,30 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onBoundarySwipe',
           callback: (List<dynamic> args) async {
             if (args.isEmpty || _lyricsMode) return;
-            // BUG-2424：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，故在此
-            // 单独收口。导航/恢复在飞时**排队**而不是丢弃——旧实现直接 return，用户在
-            // 换章那几百毫秒里拨的每一格滚轮都石沉大海。此刻不能就地执行（前一次章加载
-            // 未落定时再次跨章 = 跳两章），但意图必须留下：由 [_replayPendingPageTurn]
-            // 在新章 content-ready 之后重放，走完整 _paginate（章内还有页就翻页，真到
-            // 边界才跨章），所以刚落地新章的章首插图页不会被越过。
+            // TODO-737 节流分流：连续滚轮跨章直接调 _handlePageTurnLimit、**绕过
+            // _paginate 入口闸门**，所以用户配的「滚轮翻页间隔」必须在这里就地补一道，
+            // 否则连续模式的跨章不受任何限速。
+            //
+            // BUG-2424：闸门顺序与 _paginate 入口保持**完全一致**——先节流、再 stamp、
+            // 最后才是在飞排队。跨章和章内翻页受同一个用户设置管，两种模式一视同仁；
+            // 把节流放到排队之后会让加载期的输入绕过限速直接入队，落定后一次性连翻。
+            final int throttleMs =
+                ReaderFushiSource.instance.wheelPageTurnInterval;
+            if (throttleMs > 0 && _lastPaginateTime != null) {
+              final int elapsedMs =
+                  DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
+              if (elapsedMs < throttleMs) return;
+            }
+            // 过了节流 = 这一次输入被**接受**，占掉一个翻页配额，此刻就 stamp（哪怕它
+            // 接着要进队列等重放），否则加载期内每个 tick 都会被接受入队。
+            if (throttleMs > 0) {
+              _lastPaginateTime = DateTime.now();
+            }
+            // BUG-2424：导航/恢复在飞时**排队**而不是丢弃——旧实现直接 return，用户在
+            // 换章那几百毫秒里拨的滚轮石沉大海。此刻不能就地执行（前一次章加载未落定时
+            // 再次跨章 = 跳两章），但意图必须留下：由 [_replayPendingPageTurn] 在新章
+            // content-ready 之后重放，走完整 _paginate（章内还有页就翻页，真到边界才
+            // 跨章），所以刚落地新章的章首插图页不会被越过。
             if (_paginationInFlight) {
               _pageTurnQueue.push(
                 args[0] == 'backward'
@@ -2303,11 +2321,14 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // 惯性 tick 会被它误判成「新手势」而放行 → 二次跨章。这正是必须由活在
             // reader State、跨文档持续存在的 gate（BUG-1342 同一实例）来兜的洞。
             //
-            // 鼠标滚轮不聚合：一格就是一个 tick、一次明确的翻页意图，用户拨几格就该
-            // 跨几章。旧实现在这里叠了 `_lastPaginateTime` 节流窗 + 450ms 跨章冷却窗
-            // （且冷却窗的锚点被重 stamp 到新章 content-ready），两窗相加让下一次跨章
-            // 最早要等 `T_load + 450ms`，期间输入还被静默丢弃——那正是用户报的
-            // 「来回跨章要强制等待、按了没反应」。两窗一并删除。
+            // 鼠标滚轮不经这道 gate：一格就是一个 tick、一次明确的翻页意图，它的速率
+            // 由上面那道用户可配的节流管，不需要再被聚合成「一次手势」。
+            //
+            // 被删掉的是**另一道**窗：450ms 跨章冷却窗（`_kChapterTurnCooldown`）。它
+            // 不可配置，而且锚点被重 stamp 到新章 content-ready，与节流相加让下一次跨章
+            // 最早要等 `T_load + 450ms`，期间输入还被静默丢弃——那正是用户报的「来回
+            // 跨章要强制等待、按了没反应」。节流窗保留（用户自己配的限速器，统一管
+            // 章内翻页与跨章），冷却窗删除。
             if (pointerKind == 'trackpad' &&
                 !_pagedWheelGestureGate.shouldStartNewGesture(
                   now: DateTime.now(),
