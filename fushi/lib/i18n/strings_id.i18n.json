@@ -4619,5 +4619,7 @@
   "audiobook_transcribe_engine_system_hint": "Uses the built-in speech model — no 1 GB download from us. The system still fetches its own language assets the first time, and keeps them shared across apps.",
   "audiobook_transcribe_engine_system_install": "Install language",
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
-  "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress."
+  "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
+  "popup_full_width": "Full-width popup",
+  "popup_full_width_hint": "Ignore the maximum width and let the popup span the available width. Its position still follows the selected word."
 }

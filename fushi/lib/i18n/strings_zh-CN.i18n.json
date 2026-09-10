@@ -4619,5 +4619,7 @@
   "audiobook_transcribe_engine_system_hint": "用系统自带的语音模型，不下载我们那 1 GB 模型。首次使用时系统仍会下载它自己的语言资产，那份资产由系统保管、多个 app 共用。",
   "audiobook_transcribe_engine_system_install": "安装语言",
   "audiobook_transcribe_engine_system_installing": "正在让系统安装该语言…",
-  "audiobook_transcribe_engine_system_no_pause": "这个引擎在文件中途无法暂停，停止会丢掉当前文件的进度。"
+  "audiobook_transcribe_engine_system_no_pause": "这个引擎在文件中途无法暂停，停止会丢掉当前文件的进度。",
+  "popup_full_width": "弹窗全宽",
+  "popup_full_width_hint": "忽略最大宽度，让弹窗横向铺满可用宽度；位置仍跟随选中的词。"
 }

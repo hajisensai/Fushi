@@ -6398,6 +6398,11 @@ class AppModel with ChangeNotifier {
   double get popupMaxWidth => prefsRepo.popupMaxWidth;
   void setPopupMaxWidth(double width) => prefsRepo.setPopupMaxWidth(width);
 
+  /// 全宽展示：忽略 [popupMaxWidth]，弹窗横向铺满（位置仍跟随选区）。
+  bool get popupFullWidth => prefsRepo.popupFullWidth;
+  Future<void> setPopupFullWidth(bool value) =>
+      prefsRepo.setPopupFullWidth(value);
+
   double get defaultPopupMaxHeight => prefsRepo.defaultPopupMaxHeight;
   double get popupMaxHeight => prefsRepo.popupMaxHeight;
   void setPopupMaxHeight(double height) => prefsRepo.setPopupMaxHeight(height);
