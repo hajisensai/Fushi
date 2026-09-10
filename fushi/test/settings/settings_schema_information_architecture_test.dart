@@ -4,7 +4,6 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
@@ -15,8 +14,8 @@ import 'package:fushi/src/settings/settings_schema_video.dart';
 
 List<SettingsDestination> _destinations() => <SettingsDestination>[
   buildAppearanceDestination(),
+  // 听书并入阅读：它的分区由 buildReadingDestination 展开，取阅读一条即已覆盖。
   buildReadingDestination(),
-  buildListeningDestination(),
   buildMangaDestination(),
   buildVideoDestination(),
   buildLookupDestination(),
@@ -92,6 +91,10 @@ void main() {
           'reading.section.chrome',
           'reading.section.statistics',
           'reading.section.advanced_typography',
+          // 听书 2026-08-24 并入阅读：两个分区排在阅读各组之后（见
+          // buildListeningSections）。同一本 EPUB 的「读」与「听」从此同分类。
+          'listening.section.playback',
+          'listening.section.floating_lyric',
         ],
       );
     },
@@ -100,7 +103,7 @@ void main() {
   test('optional feature switches remain outside collapsed groups', () {
     for (final (SettingsDestination destination, String sectionId)
         in <(SettingsDestination, String)>[
-          (buildListeningDestination(), 'listening.section.floating_lyric'),
+          (buildReadingDestination(), 'listening.section.floating_lyric'),
           (buildVideoDestination(), 'video.section.danmaku'),
           (buildMangaDestination(), 'manga.section.ocr'),
           (buildLookupDestination(), 'lookup.section.integrations'),

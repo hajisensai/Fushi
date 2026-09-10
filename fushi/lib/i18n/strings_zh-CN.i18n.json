@@ -4620,5 +4620,6 @@
   "audiobook_transcribe_engine_system_install": "安装语言",
   "audiobook_transcribe_engine_system_installing": "正在让系统安装该语言…",
   "audiobook_transcribe_engine_system_no_pause": "这个引擎在文件中途无法暂停，停止会丢掉当前文件的进度。",
-  "storage_models_components": "模型与组件"
+  "storage_models_components": "模型与组件",
+  "settings_group_tools": "工具"
 }

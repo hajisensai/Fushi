@@ -34,7 +34,6 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
 ) => switch (id) {
   SettingsDestinationId.appearance => SettingsNavigationGroupId.interface,
   SettingsDestinationId.reading ||
-  SettingsDestinationId.listening ||
   SettingsDestinationId.manga ||
   SettingsDestinationId.video ||
   SettingsDestinationId.game ||

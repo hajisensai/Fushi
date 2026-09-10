@@ -44,7 +44,6 @@ void main() {
   test('tracking stays with content when enabled', () {
     final List<SettingsDestination> visible = <SettingsDestination>[
       destination(SettingsDestinationId.reading),
-      destination(SettingsDestinationId.listening),
       destination(SettingsDestinationId.manga),
       destination(SettingsDestinationId.video),
       destination(SettingsDestinationId.game),

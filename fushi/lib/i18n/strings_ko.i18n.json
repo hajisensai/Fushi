@@ -4560,10 +4560,10 @@
   "auto_add_char_position_to_tags_hint": "Tags each card with chars_12345 — how many characters into the book it was mined.",
   "audiobook_transcribe_alignment_hint": "Generated text is aligned to the audio in a second model pass before saving. The alignment model is downloaded if needed.",
   "settings_group_interface": "인터페이스",
-  "settings_group_content": "콘텐츠",
+  "settings_group_content": "Content",
   "settings_group_learning": "학습",
   "settings_group_connections": "연결",
-  "settings_group_data": "데이터 및 기기",
+  "settings_group_data": "Data & device",
   "settings_group_app": "앱",
   "settings_destination_appearance_interaction": "모양 및 상호작용",
   "settings_destination_profile_presets": "설정 프리셋",
@@ -4620,5 +4620,6 @@
   "audiobook_transcribe_engine_system_install": "Install language",
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
   "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
-  "storage_models_components": "모델 및 구성 요소"
+  "storage_models_components": "모델 및 구성 요소",
+  "settings_group_tools": "Tools"
 }

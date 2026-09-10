@@ -5,6 +5,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/utils.dart';
 
 SettingsDestination buildReadingDestination() {
@@ -24,7 +25,10 @@ SettingsDestination buildReadingDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.reading,
     title: t.settings_destination_reading,
-    summary: t.section_layout,
+    // 副标题带上「听书」：并入后本分类是听书设置的唯一入口，标题本身看不出这
+    // 一点；且 summary 参与设置搜索的命中面（settings_search 的 haystack），
+    // 用户搜「听书」才还能落到这里。复用原一级分类名，不新增 i18n key。
+    summary: '${t.section_layout} · ${t.settings_destination_listening}',
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       // 「模式与排版方向」：阅读呈现的模式与方向选择（翻页/滚动、竖排、跨页展开、
@@ -525,6 +529,7 @@ SettingsDestination buildReadingDestination() {
         id: 'reading.section.page_turn_input',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_page_turn_input,
+        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'reading_controls.highlight_on_tap',
@@ -921,6 +926,10 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
+      // 听书（有声书 + 悬浮歌词）2026-08-24 并入本分类，见 buildListeningSections
+      // 的合并说明。放在阅读各组之后：同一本 EPUB 的「读」与「听」从此在一个分类里。
+      // 这两个分区自带听书模块门，关掉模块时它们不渲染、也不进搜索索引。
+      ...buildListeningSections(),
     ],
   );
 }

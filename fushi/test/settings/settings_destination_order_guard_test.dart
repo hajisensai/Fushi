@@ -20,8 +20,8 @@ void main() {
 
       const List<String> expectedOrder = <String>[
         'buildAppearanceDestination()',
+        // 听书 2026-08-24 并入阅读（buildListeningSections），不再是独立分类。
         'buildReadingDestination()',
-        'buildListeningDestination()',
         'buildMangaDestination()',
         'buildVideoDestination()',
         'buildGameDestination()',

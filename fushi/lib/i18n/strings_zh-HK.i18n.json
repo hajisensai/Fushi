@@ -4620,5 +4620,6 @@
   "audiobook_transcribe_engine_system_install": "Install language",
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
   "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
-  "storage_models_components": "模型與元件"
+  "storage_models_components": "模型與元件",
+  "settings_group_tools": "工具"
 }

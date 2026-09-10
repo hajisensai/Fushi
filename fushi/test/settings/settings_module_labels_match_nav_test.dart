@@ -5,7 +5,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
+import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
@@ -41,11 +41,14 @@ void main() {
     ModuleId.sync: 'system.module_sync',
   };
 
-  /// 没有底栏 tab 的四个模块 → 它所属的设置一级分类。取的是**真的那条
+  /// 没有底栏 tab、且仍有自己一级分类的模块 → 那条分类。取的是**真的那条
   /// destination**（不是重抄一遍标题字面量），分类改名 / 换图标时这里自动跟着改。
+  ///
+  /// 听书 2026-08-24 并入「阅读」，不再有自己的 destination（见
+  /// buildListeningSections），因此不在这张表里——它的标签真值改由下面那条
+  /// 专用用例钉住。
   final Map<ModuleId, SettingsDestination> destinationOfTablessModule =
       <ModuleId, SettingsDestination>{
-        ModuleId.listening: buildListeningDestination(),
         ModuleId.cardCreation: buildCardCreationDestination(),
         ModuleId.services: buildServicesDestination(),
         ModuleId.sync: buildSyncBackupDestination(),
@@ -105,6 +108,7 @@ void main() {
 
     for (final ModuleId module in ModuleId.values) {
       if (homeTabOfModule(module) != null) continue;
+      if (module == ModuleId.listening) continue; // 见下方专用用例
       final SettingsDestination? destination =
           destinationOfTablessModule[module];
       expect(
@@ -135,6 +139,32 @@ void main() {
         reason: '${item.id} 的图标与设置分类不一致，取那条 destination 的 icon',
       );
     }
+  });
+
+  test('听书：并入阅读后，开关标签仍与「阅读」摘要里那半边同源', () {
+    // 听书没有 destination 了，上面那条按 destination 取真值的循环够不着它。
+    // 但不变式还在：开关标签不能是手写的第二份。并类后这两处共用同一个 i18n
+    // key —— 开关行取 t.settings_destination_listening，「阅读」的 summary 也把它
+    // 拼进去（那是并类之后用户能搜到「听书」的唯一命中面，见 settings_search 把
+    // destination.summary 纳入 haystack）。任一处改成别的字面量，这条就红。
+    final Map<String, SettingsItem> byId = <String, SettingsItem>{
+      for (final SettingsItem item in modulesSection().items) item.id: item,
+    };
+    final SettingsItem item = byId[moduleItemIds[ModuleId.listening]!]!;
+    expect(
+      item.title,
+      t.settings_destination_listening,
+      reason: '听书开关的标题改成手写字面量了——它必须与阅读摘要共用同一个 key',
+    );
+    final String? summary = buildReadingDestination().summary;
+    expect(summary, isNotNull, reason: '阅读分类没有摘要，听书在设置里就搜不到了');
+    expect(
+      summary,
+      contains(item.title!),
+      reason:
+          '「阅读」的摘要里不再出现「${item.title}」。并类之后这是听书唯一的可发现面：'
+          '摘要参与设置搜索的 haystack，去掉它 = 用户搜「听书」什么也搜不到。',
+    );
   });
 
   test('四个横切模块确实没有底栏 tab（否则上面两条守卫会互相放水）', () {

@@ -32,7 +32,12 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
           CupertinoSliverNavigationBar(
             largeTitle: Text(settingsContext.context.t.settings),
           ),
-          SliverFillRemaining(child: list),
+          // buildDestinationList 返回的是不可滚动的 section 列表，高度随分类数
+          // 增长（分块后又多了几个组标题头）。SliverFillRemaining 会把它钉死在
+          // 「剩余视口高度」里、内容超出即 RenderFlex 溢出；SliverToBoxAdapter 让
+          // 它按自身高度参与外层 CustomScrollView 的滚动（宽屏那条路径已由主页的
+          // SingleChildScrollView 兜住，见 settings_home_page）。
+          SliverToBoxAdapter(child: list),
         ],
       ),
     );

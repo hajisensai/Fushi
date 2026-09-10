@@ -4560,10 +4560,10 @@
   "auto_add_char_position_to_tags_hint": "Tags each card with chars_12345 — how many characters into the book it was mined.",
   "audiobook_transcribe_alignment_hint": "Generated text is aligned to the audio in a second model pass before saving. The alignment model is downloaded if needed.",
   "settings_group_interface": "الواجهة",
-  "settings_group_content": "المحتوى",
+  "settings_group_content": "Content",
   "settings_group_learning": "التعلّم",
   "settings_group_connections": "الاتصالات",
-  "settings_group_data": "البيانات والأجهزة",
+  "settings_group_data": "Data & device",
   "settings_group_app": "التطبيق",
   "settings_destination_appearance_interaction": "المظهر والتفاعل",
   "settings_destination_profile_presets": "إعدادات مسبقة",
@@ -4620,5 +4620,6 @@
   "audiobook_transcribe_engine_system_install": "Install language",
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
   "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
-  "storage_models_components": "النماذج والمكوّنات"
+  "storage_models_components": "النماذج والمكوّنات",
+  "settings_group_tools": "Tools"
 }
