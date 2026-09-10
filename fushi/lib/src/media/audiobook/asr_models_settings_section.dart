@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/utils.dart';
 
@@ -53,25 +55,32 @@ class _PackRow {
   }
 }
 
-/// 注册表里的包，按 id 去重。
+/// 设置页要列出来的包：本仓基础清单 + 用户手动接入的包，按 id 去重。
 ///
-/// 去重是必须的：给某语言换模型时，注册表里会多一份「只声明那一种语言」的窄包
-/// （见 `asr_model_catalog.dart` 文件头），它与原包**同 id、同磁盘目录**——不去重
-/// 设置页就会出现两行同名模型，删掉其中一行把另一行的文件也删了。
-List<AsrModelPack> _distinctPacks() {
+/// **不读 `asrModelRegistry.packs`**：给某语言换模型时，注册表最前面会多一份
+/// 「只声明那一种语言」的窄包（见 `asr_model_catalog.dart` 文件头），它与原包同
+/// id。按 id 取第一个就会把 Omnilingual 那行的语言列表从「德语 · 西语 · 法语 …」
+/// 缩成只剩「日本語」，而这一行的副标题本来就是要把它服务的语言全列出来。
+List<AsrModelPack> _listedPacks() {
   final List<AsrModelPack> out = <AsrModelPack>[];
   final Set<String> seen = <String>{};
-  for (final AsrModelPack pack in asrModelRegistry.packs) {
+  final Map<String, AsrModelPack> custom = <String, AsrModelPack>{
+    for (final AsrModelPack pack in asrModelCatalog.customPacks) pack.id: pack,
+  };
+  for (final AsrModelPack pack in fushiAsrBasePacks()) {
+    if (seen.add(pack.id)) out.add(custom[pack.id] ?? pack);
+  }
+  for (final AsrModelPack pack in asrModelCatalog.customPacks) {
     if (seen.add(pack.id)) out.add(pack);
   }
   return out;
 }
 
 class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
-  late final List<_PackRow> _rows = <_PackRow>[
+  late List<_PackRow> _rows = <_PackRow>[
     // 读注册表而不是内置常量表：用户自带的包与「给某语言换了模型」都只体现在
     // 注册表里，照着 kAsrModelPacks 画会让自带模型在设置页整个不可见。
-    for (final AsrModelPack pack in _distinctPacks()) _PackRow(pack),
+    for (final AsrModelPack pack in _listedPacks()) _PackRow(pack),
   ];
 
   @override
@@ -158,6 +167,42 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     if (!mounted) return;
     // 重查状态让副标题给出准数（已拿到手的 `.part` 字节算进「已下载一部分」）。
     await _refresh(row);
+  }
+
+  /// 移除一个手动接入的本地模型：只改目录，不动用户的文件。
+  Future<void> _detach(_PackRow row) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.audiobook_transcribe_model_custom_detach),
+        content: Text(t.audiobook_transcribe_model_custom_detach_hint),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          FilledButton(
+            key: ValueKey<String>('asr-models-detach-confirm-${row.pack.id}'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.audiobook_transcribe_model_custom_detach),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await saveAsrModelCatalog(
+      asrModelCatalog.withoutCustomPack(row.pack.id),
+    );
+    if (!mounted) return;
+    await row.cancelDownload();
+    setState(() {
+      _rows = <_PackRow>[
+        for (final AsrModelPack pack in _listedPacks()) _PackRow(pack),
+      ];
+    });
+    for (final _PackRow fresh in _rows) {
+      unawaited(_refresh(fresh));
+    }
   }
 
   Future<void> _confirmDelete(_PackRow row) async {
@@ -247,6 +292,17 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       );
     }
     final AsrModelStatus status = plan.modelStatus;
+    // 手动接入的本地模型：它的「模型目录」就是用户自己的文件夹，`deleteAll()`
+    // 会把用户的模型文件真删掉。所以这里给的是「移除接入」——只从目录里去掉这个
+    // 包（连同指向它的选择），文件一个不碰。
+    if (localAsrModelDirectory(row.pack) != null) {
+      return OutlinedButton.icon(
+        key: ValueKey<String>('asr-models-detach-${row.pack.id}'),
+        onPressed: row.deleting ? null : () => unawaited(_detach(row)),
+        icon: const Icon(Icons.link_off_outlined, size: 18),
+        label: Text(t.audiobook_transcribe_model_custom_detach),
+      );
+    }
     final Widget delete = OutlinedButton.icon(
       key: ValueKey<String>('asr-models-delete-${row.pack.id}'),
       onPressed: row.deleting ? null : () => unawaited(_confirmDelete(row)),

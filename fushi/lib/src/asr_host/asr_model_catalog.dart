@@ -129,6 +129,26 @@ List<AsrModelPack> fushiAsrBasePacks() {
   ];
 }
 
+/// 这个包的模型文件是不是就在用户自己的文件夹里；是则返回那个文件夹。
+///
+/// 判据是 [AsrModelPack.sourceUrl] 的 scheme——内置包那里是模型主页（https），
+/// 手动接入的包是 `Uri.file(用户选的文件夹)`。不看 id 前缀：少一个要两处同步的特例。
+///
+/// **为什么需要它**：包里的 `AsrModelStore.open()` 把目录钉死成
+/// `<数据根>/asr_models/<pack.id>`，就绪判定与下载都只在那个目录里发生，
+/// [AsrModelFile.url] 只有下载时才读。所以「文件留在原处」不是自动成立的——
+/// 宿主必须把 store 的目录改写成用户那个文件夹（见 `asr_host.dart` 的
+/// `openAsrModelStore`），否则本地模型恒判未就绪，弹层会去下载一个 `file:` URL。
+Directory? localAsrModelDirectory(AsrModelPack pack) {
+  final Uri? uri = Uri.tryParse(pack.sourceUrl);
+  if (uri == null || !uri.isScheme('file')) return null;
+  try {
+    return Directory(uri.toFilePath());
+  } on UnsupportedError {
+    return null;
+  }
+}
+
 /// 用户的模型目录状态（手动接入的包 + 每语言的选择）。不可变，改动返回新实例。
 class AsrModelCatalog {
   const AsrModelCatalog({
@@ -194,6 +214,26 @@ class AsrModelCatalog {
       next[language.tag] = packId;
     }
     return AsrModelCatalog(customPacks: customPacks, choices: next);
+  }
+
+  /// 接入一个手动指定的本地包，必要时改 id 去重，返回新目录与**实际入库的包**。
+  ///
+  /// id 由显示名派生（`custom-<slug>`），两个不同文件夹很容易撞上同一个 id
+  /// （两次都没改名，或两个不同盘上各有一个叫 model 的文件夹）。撞上而直接按 id
+  /// 覆盖的话，先前那份连同指向它的选择会被悄悄改指到新目录，两者还共用同一个
+  /// `asr_models/<id>` 磁盘目录。所以：同 id **同目录**视为重新接入（覆盖），
+  /// 同 id **不同目录**则加数字后缀。
+  ({AsrModelCatalog catalog, AsrModelPack pack}) withLocalPack(
+    AsrModelPack pack,
+  ) {
+    String id = pack.id;
+    for (int n = 2;; n++) {
+      final AsrModelPack? existing = _packById(customPacks, id);
+      if (existing == null || existing.sourceUrl == pack.sourceUrl) break;
+      id = '${pack.id}-$n';
+    }
+    final AsrModelPack effective = id == pack.id ? pack : _withId(pack, id);
+    return (catalog: withCustomPack(effective), pack: effective);
   }
 
   /// 接入（或按 id 覆盖）一个自带包。
@@ -331,18 +371,28 @@ AsrLocalModelScan scanLocalAsrModelDirectory({
         role: modelRole,
       );
 
-  if (encoderFp32 != null || encoderInt8 != null) {
+  // 判据是「认出**任意一个** transducer 角色」而不是「认出 encoder」：只有
+  // decoder / joiner 的目录（下载中断、导出脚本没写出 encoder）若落到下面的 CTC
+  // 分支，`decoder-*.onnx` 会被当成 CTC 模型收下，用户拿到一个「加成功了」但必定
+  // 跑不通的包。正确答案是 incompleteTransducer。
+  final bool looksTransducer = encoderFp32 != null ||
+      encoderInt8 != null ||
+      decoderFp32 != null ||
+      decoderInt8 != null ||
+      joinerFp32 != null ||
+      joinerInt8 != null;
+  if (looksTransducer) {
     // transducer：两个变体的角色都必须齐（`filesFor()` 逐角色 firstWhere，缺一个
     // 就在 plan() 里抛 StateError 炸掉整个弹层）。上游对「没给 int8 decoder 的
     // 包」用的就是这条：缺的一侧指向另一侧的同一个文件。
     final File? decoder = decoderFp32 ?? decoderInt8;
     final File? joiner = joinerFp32 ?? joinerInt8;
-    if (decoder == null || joiner == null) {
+    final File? encoder = encoderFp32 ?? encoderInt8;
+    if (encoder == null || decoder == null || joiner == null) {
       return const AsrLocalModelRejected(
         AsrLocalModelProblem.incompleteTransducer,
       );
     }
-    final File encoder = (encoderFp32 ?? encoderInt8)!;
     return AsrLocalModelFound(
       AsrModelPack(
         languages: languages,
@@ -417,14 +467,32 @@ Future<AsrModelCatalog> readAsrModelCatalog() async {
   }
 }
 
-/// 写目录。先整份编码再开文件——「open(write) 之后编码抛异常」会把已有内容截成
-/// 零字节，那等于用户的自带模型配置凭空消失。
+/// 写目录：先整份编码，再写同目录的 `.tmp`，最后 rename 到位。
+///
+/// 两层都必要。先编码是防「open(write) 之后编码抛异常」把已有内容截成零字节；
+/// 走 `.tmp` + rename 是防写到一半断电 / 磁盘满留下半截 JSON——那种文件下次启动
+/// 解析失败，[loadAsrModelCatalog] 吞掉退回内置表，用户的自带模型配置就无声消失
+/// 了。rename 在同一文件系统上是原子的。
 Future<void> writeAsrModelCatalog(AsrModelCatalog catalog) async {
   final String text =
       const JsonEncoder.withIndent('  ').convert(catalog.toJson());
   final File file = await asrModelCatalogFile();
   await file.parent.create(recursive: true);
-  await file.writeAsString(text);
+  final File tmp = File('${file.path}.tmp');
+  await tmp.writeAsString(text, flush: true);
+  await tmp.rename(file.path);
+}
+
+/// 同步读一份目录文件。
+///
+/// 后台转录 isolate 的引导里用：那边没有 await 的余地，也不该为读一个几 KB 的
+/// JSON 去装一整套异步装配。文件不存在 / 为空返回空目录；解析失败照抛
+/// （[AsrModelCatalog.fromJson] 的纪律）。
+AsrModelCatalog readAsrModelCatalogSync(File file) {
+  if (!file.existsSync()) return AsrModelCatalog.empty;
+  final String text = file.readAsStringSync();
+  if (text.trim().isEmpty) return AsrModelCatalog.empty;
+  return AsrModelCatalog.fromJson(jsonDecode(text) as Object?);
 }
 
 // ── 内部 ─────────────────────────────────────────────────────────────────────
@@ -437,6 +505,20 @@ AsrModelPack _withLanguages(AsrModelPack pack, List<AsrLanguage> languages) =>
     AsrModelPack(
       languages: languages,
       id: pack.id,
+      displayName: pack.displayName,
+      sourceUrl: pack.sourceUrl,
+      files: pack.files,
+      architecture: pack.architecture,
+      decoderContextSize: pack.decoderContextSize,
+      indexType: pack.indexType,
+      blankToken: pack.blankToken,
+      fp32GpuMinBudgetBytes: pack.fp32GpuMinBudgetBytes,
+    );
+
+/// 换一个 id，其余字段逐字照抄（见 [_withLanguages] 同样的理由）。
+AsrModelPack _withId(AsrModelPack pack, String id) => AsrModelPack(
+      languages: pack.languages,
+      id: id,
       displayName: pack.displayName,
       sourceUrl: pack.sourceUrl,
       files: pack.files,

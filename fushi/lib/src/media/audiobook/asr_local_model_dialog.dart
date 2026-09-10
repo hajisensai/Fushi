@@ -184,7 +184,9 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
           FushiTextField(
             controller: _name,
             labelText: t.audiobook_transcribe_model_custom_name,
-            onChanged: (String _) => _rescan(),
+            // 名字只影响 displayName 与 id，不影响认哪些文件——不重扫目录
+            // （扫描是 listSync + 逐文件 lengthSync，模型目录在网络盘上会逐字卡）。
+            onChanged: (String _) => setState(() {}),
           ),
           SizedBox(height: tokens.spacing.rowVertical),
           FushiListItem(
@@ -219,8 +221,11 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
                 ButtonSegment<int>(value: 2, label: Text('2')),
               ],
               selected: <int>{_contextSize},
+              // 自己 setState：_rescan() 在还没选目录时会提前 return，光靠它
+              // 重绘的话，「先展开高级改参数、再选文件夹」这个很自然的顺序下
+              // 分段按钮看上去点不动。
               onSelectionChanged: (Set<int> s) {
-                _contextSize = s.first;
+                setState(() => _contextSize = s.first);
                 _rescan();
               },
             ),
@@ -244,7 +249,7 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
               ],
               selected: <AsrIndexType>{_indexType},
               onSelectionChanged: (Set<AsrIndexType> s) {
-                _indexType = s.first;
+                setState(() => _indexType = s.first);
                 _rescan();
               },
             ),
@@ -270,11 +275,28 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
             key: const ValueKey<String>('asr-local-model-confirm'),
             icon: const Icon(Icons.check_outlined, size: 18),
             label: Text(t.dialog_done),
-            onPressed: pack == null ? null : () => Navigator.pop(context, pack),
+            onPressed: pack == null
+                ? null
+                : () => Navigator.pop(context, _named(pack)),
           ),
         ],
       ),
     );
+  }
+
+  /// 把当前输入框里的名字套进包（改名不重扫目录，所以在确认这一刻套一次）。
+  AsrModelPack _named(AsrModelPack pack) {
+    final String name = _name.text.trim();
+    if (name.isEmpty || name == pack.displayName) return pack;
+    final AsrLocalModelScan scan = scanLocalAsrModelDirectory(
+      dir: Directory(_dirPath!),
+      displayName: name,
+      languages: <AsrLanguage>[widget.language],
+      decoderContextSize: _contextSize,
+      indexType: _indexType,
+      blankToken: _blank.text.trim().isEmpty ? '<blk>' : _blank.text.trim(),
+    );
+    return scan is AsrLocalModelFound ? scan.pack : pack;
   }
 
   /// 状态行：认出来了报架构与文件数，没认出来报具体缺什么。
