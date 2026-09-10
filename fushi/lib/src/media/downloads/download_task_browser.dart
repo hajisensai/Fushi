@@ -29,6 +29,22 @@ String downloadTaskStatusLabel(DownloadTaskStatus status) => switch (status) {
   DownloadTaskStatus.cancelled => t.download_status_cancelled,
 };
 
+/// 一组任务的整体完成度（0..1）。
+///
+/// 已完成的任务记满，进度未知的记 0，按组内**全部**任务数取平均。分母刻意不用
+/// 「有进度的任务数」——10 条里只有 1 条报了 100%，那样算出来就是 100%，会把刚
+/// 开跑的一组说成已经下完。
+double downloadGroupProgress(List<DownloadTaskEntry> tasks) {
+  if (tasks.isEmpty) return 0;
+  double sum = 0;
+  for (final DownloadTaskEntry task in tasks) {
+    sum += task.status == DownloadTaskStatus.completed
+        ? 1
+        : (task.progress ?? 0).clamp(0, 1).toDouble();
+  }
+  return sum / tasks.length;
+}
+
 List<DownloadTaskEntry> selectDownloadTasks(
   List<DownloadTaskEntry> tasks, {
   String query = '',
@@ -632,18 +648,46 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                               task.status == DownloadTaskStatus.completed,
                         )
                         .length;
+                    // 组折叠后成员卡片连同各自的进度条一起消失，只剩
+                    // 「已完成 / 总数」这个整数计数——一组十集全在下载中时它恒为
+                    // 0 / 10，看不出到底跑到哪了。所以组头自己带一份整体进度。
+                    final double groupProgress = downloadGroupProgress(
+                      group.value,
+                    );
                     return Semantics(
                       expanded: expanded,
-                      child: FushiListItem(
-                        key: ValueKey<String>('download-group-$key'),
-                        leading: Icon(
-                          expanded ? Icons.expand_more : Icons.chevron_right,
-                        ),
-                        title: Text(_groupTitle(group.value.first)),
-                        titleMaxLines: 2,
-                        trailing: Text('$completed / ${group.value.length}'),
-                        onTap: () =>
-                            setState(() => _expandedGroups[key] = !expanded),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          FushiListItem(
+                            key: ValueKey<String>('download-group-$key'),
+                            leading: Icon(
+                              expanded
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                            ),
+                            title: Text(_groupTitle(group.value.first)),
+                            titleMaxLines: 2,
+                            // 百分比刻意放在第二行而不是并进 trailing：360px +
+                            // 文字放大 2.0 下，trailing 只放得下「已完成 / 总数」，
+                            // 再接一段就把整行撑溢出（本文件的窄屏守卫会红）。
+                            subtitle: Text('${(groupProgress * 100).round()}%'),
+                            trailing: Text(
+                              '$completed / ${group.value.length}',
+                            ),
+                            onTap: () => setState(
+                              () => _expandedGroups[key] = !expanded,
+                            ),
+                          ),
+                          if (!expanded && groupProgress < 1)
+                            LinearProgressIndicator(
+                              key: ValueKey<String>(
+                                'download-group-progress-$key',
+                              ),
+                              value: groupProgress,
+                              minHeight: 2,
+                            ),
+                        ],
                       ),
                     );
                   },

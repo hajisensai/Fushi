@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart';
 import 'package:fushi/utils.dart';
 
 typedef VideoDiscoveryAction = Future<void> Function(
@@ -251,9 +252,11 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final ImageProvider? backdrop = _networkImage(item.backdropUrl);
-    final double width = MediaQuery.sizeOf(context).width;
-    final bool compact = width < 700;
-    final double expandedHeight = compact ? 460 : 430;
+    final Size viewport = MediaQuery.sizeOf(context);
+    final double width = viewport.width;
+    final bool compact = width < kVideoDiscoveryCompactWidth;
+    final double expandedHeight =
+        videoDiscoveryHeroHeightForViewport(width, viewport.height);
     return SliverAppBar(
       pinned: true,
       expandedHeight: expandedHeight,

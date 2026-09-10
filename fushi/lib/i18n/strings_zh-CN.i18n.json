@@ -4632,5 +4632,6 @@
   "book_rename": "重命名",
   "book_rename_label": "标题",
   "dict_rename": "重命名",
-  "dict_rename_label": "词典名称"
+  "dict_rename_label": "词典名称",
+  "shortcut_action_global_external_open_lookup_page": "唤起主窗并打开查词页"
 }
