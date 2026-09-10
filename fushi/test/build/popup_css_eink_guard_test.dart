@@ -39,6 +39,34 @@ void main() {
     expect(css, contains('html.eink ::selection'));
   });
 
+  // BUG-2430 ②：墨水屏块此前只压了圆角 / 阴影 / 过渡 / 顶部按钮那几个 opacity，
+  // **正文侧**十几处静息 opacity（0.4~0.9）与一处亚像素 transform 全部漏网。
+  // 半透明黑字在墨水屏上就是抖动灰——10px 的 `.dict-label` 尤其糊；0.5px 位移则把
+  // 字形推到半个物理像素上，墨水屏没有灰阶去表现，只能糊成两行。这两条都是「看起来
+  // 只是不够锐利」的静默失效，没有任何报错，故用守卫钉死。
+  test('html.eink flattens resting body opacity and subpixel transforms', () {
+    for (final String path in <String>[
+      popupCssPath,
+      'assets/browser_extension/vendor/popup.css',
+      '../tools/browser-extension/vendor/popup.css',
+    ]) {
+      final String css = File(path).readAsStringSync();
+      // 正文/标签的静息半透明压平（抽查两条最典型的：10px 词典名标签、
+      // 折叠三角伪元素）。
+      expect(css, contains('html.eink .dict-label'),
+          reason: '$path 缺少词典名标签的 eink opacity 压平');
+      expect(css, contains('html.eink .glossary-group > summary::before'),
+          reason: '$path 缺少折叠三角的 eink opacity 压平');
+      // 亚像素位移归零。
+      expect(css, contains('html.eink .mine-button.duplicate'),
+          reason: '$path 缺少 0.5px 亚像素位移的 eink 归零');
+      // 状态反馈刻意不压平：:disabled 的弱化本身就是它要传达的信息，
+      // 若哪天被一条通配 opacity 规则连坐，这里应当有人重新审。
+      expect(css, isNot(contains('html.eink * { opacity')),
+          reason: '$path 不应用通配规则压平 opacity（会连坐 disabled / 隐藏态）');
+    }
+  });
+
   test('generated content.css re-roots html.eink for the extension', () {
     final String css = File(contentCssPath).readAsStringSync();
     expect(css, contains(':where(#entries-container).eink'));

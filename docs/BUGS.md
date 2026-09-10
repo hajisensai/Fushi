@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2235 条。点号进各自文件。
+> 共 2238 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2432](bugs/BUG-2432-eink-popup-body-opacity-not-flattened.md) | ✅ | ✅ | 墨水屏弹窗只压了按钮 opacity，正文侧十几处静息半透明与亚像素位移漏网 |
+| [BUG-2431](bugs/BUG-2431-dict-style-preview-missing-eink.md) | ✅ | ✅ | 词典样式预览不注入 eink class，墨水屏下预览与真弹窗不同源 |
+| [BUG-2430](bugs/BUG-2430-reader-lookup-popup-loses-eink-theme.md) | ✅ | ✅ | 书内查词弹窗丢失墨水屏主题扩展，整个 html.eink 覆盖块失效 |
 | [BUG-2427](bugs/BUG-2427-desktop-library-header-top-gap.md) | ✅ | ✅ | 桌面端库页页头顶部留白过大（手机端修复未同步） |
 | [BUG-2426](bugs/BUG-2426-side-panel-embed-self-attested.md) | ✅ | ✅ | 扩展 side-panel 的「是否被嵌入」由 URL 参数自证，省略参数即可绕过 #1295 全部加固 |
 | [BUG-2423](bugs/BUG-2423-sync-conflict-title-truncated.md) | ✅ | ✅ | 同步冲突卡片书名单行省略，同系列多条冲突只剩同一前缀无法分辨 |
