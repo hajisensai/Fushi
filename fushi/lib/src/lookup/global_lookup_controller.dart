@@ -76,6 +76,9 @@ class GlobalLookupController {
   /// 本进程当前已注册到 OS 的热键，按动作索引。表驱动而不是每个动作一个字段：
   /// 撤销/重注册只有一条路径，加动作不必再抄一遍生命周期。
   final Map<ShortcutAction, HotKey> _hotKeys = <ShortcutAction, HotKey>{};
+
+  /// 热键(重)注册的串行链。见 [_registerHotKeysFromRegistry] 的重入说明。
+  Future<void> _hotKeyRegistration = Future<void>.value();
   // TODO-1066 — the live shortcut registry we read the global-lookup hotkey
   // from (was a hard-coded Ctrl+Alt+D). Listened to so a user remapping the
   // key in settings (or a profile switch that reloads bindings) re-registers
@@ -376,7 +379,24 @@ class GlobalLookupController {
   /// binding (e.g. the user cleared it, or a platform with no default) nothing
   /// is registered for it and that one action is simply off until a key is
   /// assigned — the others still register. Non-fatal on failure.
-  Future<void> _registerHotKeysFromRegistry() async {
+  Future<void> _registerHotKeysFromRegistry() {
+    // 串行化：本方法从「同步清空 _hotKeys」到「逐个 register 完」之间有多个 await，
+    // 而调用方 [_onRegistryChanged] 是 fire-and-forget、registry 每次 notifyListeners
+    // 都触发一次（改键 + 恢复默认 + 切 profile 可以连着来）。若第二次调用在第一次的
+    // await 缝里进来，它看到的 _hotKeys 已被清空 ⇒ **跳过注销**，同一组合键被注册两
+    // 遍，而表里只留得下最后一个 —— 另一个再也注销不掉（旧键继续生效 / 一次按键触发
+    // 两遍）。接在上一轮尾巴上跑，缝就不存在了。
+    final Future<void> next = _hotKeyRegistration
+        .then((_) => _registerHotKeysNow())
+        // 上一轮失败不能卡死整条链（内部已逐条 catch，这里只兜底）。
+        .catchError(
+            (Object e) => glog('hotkey: registration round FAILED: $e'));
+    _hotKeyRegistration = next;
+    return next;
+  }
+
+  /// 串行链上的一轮实际注册，只由 [_registerHotKeysFromRegistry] 调用。
+  Future<void> _registerHotKeysNow() async {
     // Drop everything registered last round (idempotent: safe when empty).
     final List<MapEntry<ShortcutAction, HotKey>> previous =
         _hotKeys.entries.toList(growable: false);
@@ -592,7 +612,7 @@ class GlobalLookupController {
   ///
   /// 三个触发源共用这一个方法，语义完全一致，不各自复制一条链路（route 铸造、
   /// epoch 作废、prewarm、隐藏时序都在这条链上，复制一份必然漂移）：
-  ///   · 键盘：OS 级热键（win32 `RegisterHotKey`，见 [_registerHotKeyFromRegistry]）；
+  ///   · 键盘：OS 级热键（win32 `RegisterHotKey`，见 [_registerHotKeysFromRegistry]）；
   ///   · 手柄：`GamepadService` 的后台分支（不经 Flutter 焦点树，app 失焦时仍有效）；
   ///   · 鼠标侧键：native RawInput 监听（见 windows/runner/global_mouse_trigger.cpp）。
   ///

@@ -131,24 +131,25 @@ enum HomeTab {
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
 /// 一次，两个调用点各减七行，也不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-  HomeTab.home,
-  // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
-  // 首页/设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它们）。
-  if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
-  if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
-  if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
-  if (visibility.isEnabled(ModuleId.games)) HomeTab.games,
-  // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
-  // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
-  // 视频/游戏之后。
-  if (visibility.isEnabled(ModuleId.downloads)) HomeTab.downloads,
-  if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
-  // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
-  // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
-  // [ModuleId.availableOn]），位置紧邻设置之前。
-  if (visibility.isEnabled(ModuleId.browserExtension)) HomeTab.browserExtension,
-  HomeTab.settings,
-];
+      HomeTab.home,
+      // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
+      // 首页/设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它们）。
+      if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
+      if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
+      if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
+      if (visibility.isEnabled(ModuleId.games)) HomeTab.games,
+      // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
+      // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
+      // 视频/游戏之后。
+      if (visibility.isEnabled(ModuleId.downloads)) HomeTab.downloads,
+      if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
+      // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
+      // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
+      // [ModuleId.availableOn]），位置紧邻设置之前。
+      if (visibility.isEnabled(ModuleId.browserExtension))
+        HomeTab.browserExtension,
+      HomeTab.settings,
+    ];
 
 /// 启动落地 tab。「启动默认打开查词」只在查词 tab 真的可见时成立——查词模块被
 /// 关掉时返回它会让 `_currentTab` 从第一帧起就指向一个不在 [homeActiveTabs] 里的
@@ -365,6 +366,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
   HomeTab _previousTab = HomeTab.home;
   final FocusNode _keyboardFocusNode = FocusNode();
+
   /// 待消费的查词页聚焦请求（见 [DictionaryFocusRequest]）。查词页不保活，请求得
   /// 能挂着等页面挂载来取，故是可空值而不是 bump 计数。
   final ValueNotifier<DictionaryFocusRequest?> _dictFocusSignal =
@@ -660,7 +662,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// （页面已挂载并消费）。
   void _onHomeDictionaryTabRequested() {
     if (!mounted) return;
-    if (_currentTab == HomeTab.dictionaries) return;
+    // 「已经在查词 tab 上」只有在 HomePage 真的是栈顶时才等于「已经显示出来了」。
+    // 阅读器 / 播放器压在上面时那个 tab 被完全遮住，早退会让本次请求变成彻底的
+    // no-op（窗口弹到前台、一点反馈都没有）。被遮住时继续走 [_revealDictionary]，
+    // 由它推独立查词路由到最上层。
+    if (_currentTab == HomeTab.dictionaries &&
+        (ModalRoute.of(context)?.isCurrent ?? true)) {
+      return;
+    }
     // 这条是「用户刚用桌面取词 / 悬浮字幕点词 / 扩展回流发起了一次查词」，携带待
     // 消费的 pendingText，即便查词模块关着也必须给它落地面，否则请求永远挂着。
     _revealDictionary(carryingPendingLookup: true);
@@ -907,7 +916,17 @@ class _HomePageState extends BasePageState<HomePage>
       _dictFocusSignal.value = DictionaryFocusRequest(clearQuery: clearQuery);
     }
 
-    if (_activeTabs().contains(HomeTab.dictionaries)) {
+    // 切 tab 只有在 HomePage **真的是栈顶**时才等于「用户看得见查词页」：阅读器 /
+    // 播放器 / 漫画都是 `Navigator.push` 压在 HomePage 之上的全屏路由（BUG-286 已
+    // 记过这条），此时 [_selectTab] 只是在被完全遮住的 IndexedStack 里换了一页 ——
+    // 用户看到的是「窗口弹到前台却什么都没变」，正是本方法要消灭的那个形态。
+    //
+    // 所以判据是「查词页会不会被看见」，而不是「查词 tab 在不在导航里」。被遮住时
+    // 改推独立查词路由压在最上层：立刻可见，返回键退回原来的书 / 视频。**刻意不用
+    // popUntil 把上面的路由弹掉** —— BUG-286 定过这条边界：不能为了看个词强退阅读器
+    // 并停掉有声书。
+    final bool homeIsTopmost = ModalRoute.of(context)?.isCurrent ?? true;
+    if (homeIsTopmost && _activeTabs().contains(HomeTab.dictionaries)) {
       _selectTab(HomeTab.dictionaries);
       requestFocus();
       return;

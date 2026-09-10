@@ -117,24 +117,23 @@ void main() {
       );
       expect(revealStart, greaterThan(0));
       final List<int> bare = <int>[];
-      for (
-        int i = source.indexOf('_selectTab(HomeTab.dictionaries)');
-        i >= 0;
-        i = source.indexOf('_selectTab(HomeTab.dictionaries)', i + 1)) {
-      bare.add(i);
-    }
-    expect(
-      bare.length,
-      1,
-      reason: '裸切 tab 在查词模块关掉时会被 _selectTab 直接吞掉：用户按热键只会看到'
-          '窗口弹到前台却什么都不显示，pendingText 永远挂着。所有查词入口必须走'
-          '_revealDictionary。',
-    );
-    expect(
-      bare.single > revealStart && bare.single < revealEnd,
-      isTrue,
-      reason: '唯一一处必须在 _revealDictionary 的「tab 可见」分支里',
-    );
+      for (int i = source.indexOf('_selectTab(HomeTab.dictionaries)');
+          i >= 0;
+          i = source.indexOf('_selectTab(HomeTab.dictionaries)', i + 1)) {
+        bare.add(i);
+      }
+      expect(
+        bare.length,
+        1,
+        reason: '裸切 tab 在查词模块关掉时会被 _selectTab 直接吞掉：用户按热键只会看到'
+            '窗口弹到前台却什么都不显示，pendingText 永远挂着。所有查词入口必须走'
+            '_revealDictionary。',
+      );
+      expect(
+        bare.single > revealStart && bare.single < revealEnd,
+        isTrue,
+        reason: '唯一一处必须在 _revealDictionary 的「tab 可见」分支里',
+      );
 
       // 热键两条。它们是**主动导航**：查词模块关掉时必须先返回 ignored 再落地。
       // ignored 而不是 handled —— handled 会把按键认领掉，同一物理键上绑的
@@ -168,8 +167,7 @@ void main() {
             .substring(handler, handlerEnd)
             .contains('_revealDictionary(carryingPendingLookup: true)'),
         isTrue,
-        reason:
-            'homeDictionaryTabRequest（桌面取词 / 悬浮字幕点词 / 扩展回流）必须走 '
+        reason: 'homeDictionaryTabRequest（桌面取词 / 悬浮字幕点词 / 扩展回流）必须走 '
             '_revealDictionary，且必须带 carryingPendingLookup: true —— 它携带一次'
             '**已经发生**的查词请求，查词模块关着也要给它落地面。漏掉这个实参会让'
             '请求被模块门吞掉：用户只看到窗口弹到前台却什么都不显示，'
@@ -186,9 +184,23 @@ void main() {
     final String fn = source.substring(body, end);
 
     expect(
-      fn.contains('if (_activeTabs().contains(HomeTab.dictionaries)) {'),
+      fn.contains('_activeTabs().contains(HomeTab.dictionaries)'),
       isTrue,
       reason: 'tab 可见时仍走原来的切 tab 路径',
+    );
+    // 切 tab 分支必须**同时**要求 HomePage 是栈顶：阅读器 / 播放器 / 漫画都是 push
+    // 在 HomePage 之上的全屏路由，被它们遮住时 _selectTab 只是在看不见的
+    // IndexedStack 里换一页 —— 用户看到的是「窗口弹到前台却什么都没变」。少了这个
+    // 与条件，全局热键「置顶并打开查词页」在最典型的场景下就是彻底的 no-op。
+    expect(
+      fn.contains('homeIsTopmost && _activeTabs().contains'),
+      isTrue,
+      reason: '切 tab 分支必须与「HomePage 在栈顶」同时成立，否则查词页看不见',
+    );
+    expect(
+      fn.contains('ModalRoute.of(context)?.isCurrent'),
+      isTrue,
+      reason: '「看得见」的判据只能来自路由栈顶状态，不能靠 tab 列表推断',
     );
     expect(
       fn.contains('_StandaloneDictionaryRoute(focusSignal: _dictFocusSignal)'),
@@ -205,8 +217,7 @@ void main() {
       fn.contains('!carryingPendingLookup') &&
           fn.contains('isEnabled(ModuleId.lookup)'),
       isTrue,
-      reason:
-          '模块门必须**按调用来源分流**：主动导航（热键）在查词模块关掉时不开页，'
+      reason: '模块门必须**按调用来源分流**：主动导航（热键）在查词模块关掉时不开页，'
           '携带 pending 的（桌面取词/悬浮字幕点词/扩展回流）照常开。合成一个门就'
           '必然牺牲其中一边——要么「关了还能按 Ctrl+F 弹出查词页」，要么「取词请求'
           '永远挂着」。',
