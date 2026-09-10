@@ -246,9 +246,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
             childCount: _aggregate.byGame.length,
           ),
         ),
-        SliverPadding(
-          padding: EdgeInsets.only(bottom: tokens.spacing.card * 2),
-        ),
+        buildStatTailSliver(context),
       ],
     );
   }

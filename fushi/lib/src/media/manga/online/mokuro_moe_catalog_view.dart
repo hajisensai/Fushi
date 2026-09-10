@@ -390,11 +390,27 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     // 对话框语境：正文原样交给外层约束（动作按钮由对话框 footer 提供）。
     if (!widget.embedded) return body;
     // 页面语境：正文撑满可用空间，series 阶段在底部画动作行。
+    final bool hasActions = _stage == _CatalogStage.series;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Expanded(child: body),
-        if (_stage == _CatalogStage.series) _buildEmbeddedActions(tokens),
+        // BUG-2440：页面语境下 scaffold 的 body 不再扣底部安全区，内部无 padding
+        // 的网格/列表会自动把 MediaQuery.padding 当滚动 padding 用（正是要的）；
+        // 但动作行在时那段归动作行的 SafeArea，先摘掉，免得两边各补一次、在按钮
+        // 上方多顶出一条空白。对话框语境上面已 return，不受影响。
+        Expanded(
+          child: hasActions
+              ? MediaQuery.removePadding(
+                  context: context,
+                  removeBottom: true,
+                  child: body,
+                )
+              : body,
+        ),
+        // BUG-2440：动作行是贴屏幕最底的固定元素，自己套 SafeArea 才不会被
+        // home indicator / 手势条压住。
+        if (hasActions)
+          SafeArea(top: false, child: _buildEmbeddedActions(tokens)),
       ],
     );
   }
