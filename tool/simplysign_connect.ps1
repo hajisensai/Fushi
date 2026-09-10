@@ -34,7 +34,9 @@ param(
     # 期望出现在 Cert:\CurrentUser\My 的代码签名证书指纹（大写无空格）。
     [string] $ExpectedThumbprint = $env:CERTUM_CERT_THUMBPRINT,
 
-    [string] $ExePath = $(if ($env:CERTUM_EXE_PATH) { $env:CERTUM_EXE_PATH } else { 'D:\APP\certum\SimplySignDesktop.exe' }),
+    # 留空时自动探测：本机开发装在 D:\APP\certum，CI runner 上 MSI 装进
+    # Program Files，路径不同。把它硬编码进调用方等于给每个环境开一个特例分支。
+    [string] $ExePath = $env:CERTUM_EXE_PATH,
 
     # 等证书出现在存储里的上限秒数。
     [int] $TimeoutSeconds = 90,
@@ -59,6 +61,25 @@ function Get-SimplySignLogTail([int] $Lines = 25) {
     # 邮箱脱敏：日志会打 "logging in. user: <邮箱>"，避免证据贴进 CI 输出时外泄。
     return ((Get-Content -LiteralPath $latest.FullName -Tail $Lines) -join "`n") `
         -replace '([A-Za-z0-9._%+-]{2})[A-Za-z0-9._%+-]*@', '$1***@'
+}
+
+function Resolve-SimplySignExe([string] $Explicit) {
+    if (-not [string]::IsNullOrWhiteSpace($Explicit)) {
+        if (-not (Test-Path -LiteralPath $Explicit)) { throw "指定的 SimplySignDesktop.exe 不存在: $Explicit" }
+        return $Explicit
+    }
+    [string[]] $roots = @(
+        'D:\APP\certum',
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)}
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+    foreach ($root in $roots) {
+        $hit = Get-ChildItem -LiteralPath $root -Filter 'SimplySignDesktop.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    throw "找不到 SimplySignDesktop.exe。已搜索: $($roots -join ', ')。用 -ExePath 或 CERTUM_EXE_PATH 指定。"
 }
 
 function Test-CertPresent([string] $Thumbprint) {
@@ -188,9 +209,8 @@ if ($ReuseExisting -and (Test-CertPresent $ExpectedThumbprint)) {
     exit 0
 }
 
-if (-not (Test-Path -LiteralPath $ExePath)) {
-    throw "找不到 SimplySignDesktop.exe: $ExePath（用 -ExePath 或 CERTUM_EXE_PATH 指定）"
-}
+$ExePath = Resolve-SimplySignExe $ExePath
+Write-Step "SimplySign: $ExePath"
 
 # 先断干净再登录。不这么做的话，只要存储里已经躺着一张上次会话留下的证书，
 # 下面那个「等证书出现」的循环会在第一次轮询就命中并报成功 —— 这次登录
