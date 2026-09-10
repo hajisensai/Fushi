@@ -937,10 +937,34 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 而它属于下载中心——模块关掉时那个页面本身已不可达，入口留着就是一个点了会把
   /// 用户推进一条不存在流程的按钮。同域的 `home_page.dart` 早就按「页面不可达时
   /// 入口就不该渲染」处理（`_downloadsReachable`），这里补齐。
-  bool get _downloadsAvailable => ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appProvider).moduleVisibility.isEnabled(ModuleId.downloads);
+  ///
+  /// 🔴 **容器缺席要容忍，不能让整页 build 抛**：本页有 8 个 widget 测试把它直接
+  /// 挂在 `MaterialApp` 下、**不带 `ProviderScope`**（它此前的功能没有一处在 build
+  /// 路径上需要 Riverpod——第一次用到容器是「打开字幕工作台」那个方法体里）。裸调
+  /// `ProviderScope.containerOf` 会把「一个入口该不该显示」变成整页崩溃的理由，
+  /// 三个 suite 共 14 条用例当场全红。缺席只可能发生在测试里：三个生产装配点
+  /// （本页推相关合集、`video_work_detail_page`、路由表）全都在 `runApp` 的
+  /// [UncontrolledProviderScope] 之内，所以缺席时回落 `true`（= 改动前的行为）
+  /// 既不影响合规，也让那些不关心下载入口的用例继续测它们本来要测的东西。
+  bool get _downloadsAvailable {
+    final ProviderContainer? container = _maybeProviderContainer();
+    if (container == null) return true;
+    return container
+        .read(appProvider)
+        .moduleVisibility
+        .isEnabled(ModuleId.downloads);
+  }
+
+  /// 本页所在树上的 Riverpod 容器；没有 [ProviderScope] 时返回 null。
+  ///
+  /// 用 `getElementForInheritedWidgetOfExactType` 而不是 `dependOnInherited...`：
+  /// 与 `containerOf(listen: false)` 同语义——只取一次值，不为它注册重建依赖。
+  ProviderContainer? _maybeProviderContainer() {
+    final InheritedElement? element = context
+        .getElementForInheritedWidgetOfExactType<UncontrolledProviderScope>();
+    final Widget? widget = element?.widget;
+    return widget is UncontrolledProviderScope ? widget.container : null;
+  }
 
   /// 文件名解出的集号；解不出回落集级刮削行的 episodeNumber（两者都无 → null）。
   int? _episodeNumberOf(CollectionEpisodeSlot slot) =>

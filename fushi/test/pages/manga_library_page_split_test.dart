@@ -94,10 +94,14 @@ void main() {
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
-      // 恒为三视图（外加设置），**不随平台变**。Mihon 扩展是「来源」的一部分，
-      // 不占 tab；「发现」是漫画唯一的发现入口，五平台同构（AniList 与扩展宿主
-      // 无关）。这条断言同时是 BUG-1710 的反向锚：browse 视图被并进 discover 后
-      // 不得再回到漫画库——两个 tab 的 label 都是「发现」，用户点哪个都分不清。
+      // 书架 / 发现 / 来源三视图（外加设置）。Mihon 扩展是「来源」的一部分，不占
+      // tab；「发现」不随**扩展宿主是否可用**变（AniList 与扩展宿主无关）。这条
+      // 断言同时是 BUG-1710 的反向锚：browse 视图被并进 discover 后不得再回到漫画
+      // 库——两个 tab 的 label 都是「发现」，用户点哪个都分不清。
+      //
+      // 本用例跑在宿主平台（非 iOS），所以看到的是完整四项。iOS 上「发现」按 App
+      // Store 合规整条不存在（`StoreRestrictedCapability.externalDiscovery`），
+      // 那条分叉由下一个用例按源码钉住——它是唯一放行的条件。
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind).toList(),
         <MediaLibraryViewKind>[
@@ -155,11 +159,23 @@ void main() {
         isFalse,
         reason: '漫画库页的视图列表必须是无条件常量，不得按平台/扩展可用性分叉',
       );
-      // 同一句的另一半：连条件表达式都不该有——三个 spec 是平铺常量。
+      // 同一句的另一半：视图列表里**几乎**不该有条件表达式——出现条件即意味着某
+      // 平台/某状态下 tab 会少一个。
+      //
+      // 唯一放行的是 App Store 合规边界（`StoreRestrictedCapability`）：iOS 上
+      // 「发现」不是「扩展宿主暂不可用」，而是整条能力按审核要求不存在，留一个点
+      // 进去什么都没有的死 tab 比少一个 tab 更差。所以判据从「一个条件都不许有」
+      // 收紧成「**只许有那一个条件**」——`MihonRuntimeFactory` 这类按运行时能力
+      // 分叉的写法，以及任何别的新条件，仍然当场红。
+      final List<String> conditions = RegExp(r'if \(([^)]*)\)')
+          .allMatches(source)
+          .map((Match match) => match.group(1)!.trim())
+          .toList();
       expect(
-        source.contains('if ('),
-        isFalse,
-        reason: '视图列表里出现条件即意味着某平台/某状态下 tab 会少一个',
+        conditions,
+        everyElement('StoreRestrictedCapability.externalDiscovery.isAvailable'),
+        reason: '视图列表里只允许 App Store 合规边界这一个条件；'
+            '按平台/扩展可用性分叉一律不行',
       );
       for (final String removed in <String>[
         'mangaSources',
