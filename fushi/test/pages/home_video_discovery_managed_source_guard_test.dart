@@ -39,12 +39,19 @@ void main() {
         reason: '$signature 必须经统一出口拿来源清单（缺来源时弹引导），'
             '不能自己裸调 getManagedVideoDownloadSources 后甩一句提示',
       );
-      expect(
-        containsIdentifier(maskCommentsAndStrings(body),
-            'getManagedVideoDownloadSources'),
-        isFalse,
-        reason: '$signature 不得绕过统一出口直接读来源清单',
-      );
+      // 裸读来源清单只在**一种**情形下正当：已配对 host 能跑这条订阅时，落点在
+      // host，本地有没有受管来源都不影响可用性——此时弹「去加本地来源」的引导
+      // 反而是错的提示。所以规则不是「禁止裸调」，而是「裸调必须与 host 判据
+      // 同现」：整段换回裸调（把无 host 那半边的引导一起丢掉）照样红。
+      final String code = maskCommentsAndStrings(body);
+      if (containsIdentifier(code, 'getManagedVideoDownloadSources')) {
+        expect(
+          containsIdentifier(code, 'remoteTargets'),
+          isTrue,
+          reason: '$signature 裸读来源清单只允许出现在「已配对 host 可跑」的分支里'
+              '（与 remoteTargets 判据同现）；无 host 时必须回到统一出口',
+        );
+      }
     }
   });
 

@@ -288,7 +288,11 @@ void main() {
     test('空洞拒收是唯一一道门，且在 AppPaths / ffmpeg 之前', () {
       final int gate = source
           .indexOf('if (!isRemoteInput && hasHollowMediaHeader(videoPath))');
-      final int appPaths = source.indexOf('AppPaths.videoCoversDirectory()');
+      // 抽取器搬进引擎后不认识 app 的 AppPaths，建目录改经 enginePaths 装配点。
+      // 仍钉同一条不变式：空洞拒收要排在建目录之前（否则为一个必然失败的输入
+      // 先建目录）；只是标记要跟着换，不然 indexOf 得 -1、断言变成恒假。
+      final int appPaths =
+          source.indexOf('enginePaths.videoCoversDirectory()');
       final int embedded =
           source.indexOf('await extractEmbeddedVideoCoverViaFfmpeg(');
       expect(gate, greaterThanOrEqualTo(0), reason: '抽取器层必须有空洞拒收');
