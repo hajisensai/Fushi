@@ -583,12 +583,33 @@ class FushiShortcutRegistry extends ChangeNotifier {
     return null;
   }
 
+  /// 键盘冲突检测**额外**扫 `globalExternal`，理由与
+  /// [_gamepadPreemptingScopes] 同构、而且更强：这个 scope 的键盘绑定由
+  /// `GlobalLookupController` 注册成 win32 `RegisterHotKey`，是**全系统级**吞键
+  /// ——命中时前台程序（包括 Hibiki 自己的页面）根本收不到那次按键。于是用户把
+  /// app 外热键改成某个 app 内已用组合键（比如 Ctrl+F）后，阅读器 / 首页的
+  /// Ctrl+F 会在全 app 静默失效，而设置页一声不吭。
+  ///
+  /// 同样只改**检测**不改 `coactiveScopes`：后者同时喂运行时解析
+  /// （`resolveKeyboard` / `reverse_binding_index`），动它就是改派发。
+  static const List<ShortcutScope> _keyboardPreemptingScopes = <ShortcutScope>[
+    ShortcutScope.globalExternal
+  ];
+
   ShortcutAction? hasKeyboardConflict(
     ShortcutScope scope,
     InputBinding binding, {
     required ShortcutAction? exclude,
   }) {
-    for (final coactive in scope.coactiveScopes) {
+    // globalExternal 自己改键时只扫自己：它已经是被扫的那一方，再把页面 scope 全
+    // 拉进来会让「OS 热键 vs 页面键」这条**单向**抢占被报成双向冲突。
+    final List<ShortcutScope> scopes = scope == ShortcutScope.globalExternal
+        ? scope.coactiveScopes
+        : <ShortcutScope>[
+            ...scope.coactiveScopes,
+            ..._keyboardPreemptingScopes
+          ];
+    for (final coactive in scopes) {
       for (final action in ShortcutAction.actionsForScope(coactive)) {
         if (action == exclude) continue;
         final bindings = _bindings[action];

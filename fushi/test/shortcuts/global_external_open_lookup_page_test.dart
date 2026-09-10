@@ -122,6 +122,51 @@ void main() {
     });
   });
 
+  group('跨 scope 抢占检测', () {
+    // globalExternal 的键盘绑定注册成 win32 RegisterHotKey，是全系统级吞键：命中时
+    // 连 Hibiki 自己的页面都收不到那次按键。所以给页面动作绑一个**已被 OS 热键占住**
+    // 的组合键必须报冲突，否则用户绑完只会发现「阅读器的这个键从此没反应了」，而设置
+    // 页一声不吭。手柄侧早有同构处理（_gamepadPreemptingScopes），键盘侧此前是缺口。
+    test('页面动作绑到 OS 热键已占的组合键 → 必须报冲突', () {
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
+      registry.loadDefaults(TargetPlatform.windows);
+      final InputBinding osHotKey = registry
+          .bindingsFor(ShortcutAction.globalExternalOpenLookupPage)
+          .keyboardBindings
+          .first;
+
+      expect(
+        registry.hasKeyboardConflict(
+          ShortcutScope.reader,
+          osHotKey,
+          exclude: ShortcutAction.readerPageForward,
+        ),
+        ShortcutAction.globalExternalOpenLookupPage,
+        reason: 'reader 的键撞上全系统级 OS 热键时必须能被检测到',
+      );
+    });
+
+    test('反向不报：OS 热键自己改键时只扫自己（抢占是单向的）', () {
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
+      registry.loadDefaults(TargetPlatform.windows);
+      final InputBinding readerKey = registry
+          .bindingsFor(ShortcutAction.readerPageForward)
+          .keyboardBindings
+          .first;
+
+      expect(
+        registry.hasKeyboardConflict(
+          ShortcutScope.globalExternal,
+          readerKey,
+          exclude: ShortcutAction.globalExternalOpenLookupPage,
+        ),
+        isNull,
+        reason: 'OS 热键抢的是页面的键，不是反过来；报成双向会让 globalExternal '
+            '几乎绑什么都提示冲突',
+      );
+    });
+  });
+
   group('升级路径', () {
     test('schema 版本已 bump（新 action 必须随版本号一起发出去）', () {
       expect(kShortcutSchemaVersion, greaterThanOrEqualTo(12));
