@@ -367,7 +367,10 @@ class _HomePageState extends BasePageState<HomePage>
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
   HomeTab _previousTab = HomeTab.home;
   final FocusNode _keyboardFocusNode = FocusNode();
-  final ValueNotifier<int> _dictFocusSignal = ValueNotifier<int>(0);
+  /// 待消费的查词页聚焦请求（见 [DictionaryFocusRequest]）。查词页不保活，请求得
+  /// 能挂着等页面挂载来取，故是可空值而不是 bump 计数。
+  final ValueNotifier<DictionaryFocusRequest?> _dictFocusSignal =
+      ValueNotifier<DictionaryFocusRequest?>(null);
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
   final Map<HomeTab, ScrollController> _tabScrollControllers =
       <HomeTab, ScrollController>{};
@@ -893,6 +896,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// [HomeDictionaryPage]，同一条消费路径，只是换了个承载面。
   void _revealDictionary({
     bool focusSearch = false,
+    bool clearQuery = false,
     bool carryingPendingLookup = false,
   }) {
     if (!mounted) return;
@@ -900,9 +904,14 @@ class _HomePageState extends BasePageState<HomePage>
         !appModel.moduleVisibility.isEnabled(ModuleId.lookup)) {
       return;
     }
+    void requestFocus() {
+      if (!focusSearch) return;
+      _dictFocusSignal.value = DictionaryFocusRequest(clearQuery: clearQuery);
+    }
+
     if (_activeTabs().contains(HomeTab.dictionaries)) {
       _selectTab(HomeTab.dictionaries);
-      if (focusSearch) _dictFocusSignal.value++;
+      requestFocus();
       return;
     }
     final Route<void>? existing = _standaloneDictionaryRoute;
@@ -910,7 +919,7 @@ class _HomePageState extends BasePageState<HomePage>
       // 已经开着：翻到最上层即可，绝不叠第二个查词页。
       Navigator.of(context)
           .popUntil((Route<Object?> route) => route == existing);
-      if (focusSearch) _dictFocusSignal.value++;
+      requestFocus();
       return;
     }
     final Route<void> route = adaptivePageRoute<void>(
@@ -923,12 +932,21 @@ class _HomePageState extends BasePageState<HomePage>
         _standaloneDictionaryRoute = null;
       }
     }));
-    // focusSearch 的 signal 在页面挂载后才有监听者，推完这一帧再发。
-    if (focusSearch) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _dictFocusSignal.value++;
-      });
-    }
+    // 请求是可挂起的 pending，页面挂载后自己取；不必等帧。
+    requestFocus();
+  }
+
+  /// 用户从导航（移动底栏 / 桌面 rail）点选 tab 的**唯一**入口。
+  ///
+  /// 与程序化切 tab（桌面取词落地、dashboard 卡片、快捷键）分开：点「查词」是
+  /// 「我要查个新词」这一条明确意图，故顺带清空上次残留的查询并聚焦搜索框——
+  /// 键盘随焦点弹起。程序化路径继续走 [_selectTab]，不受影响（桌面取词正要把
+  /// pending 的词填进去，清空会把它擦掉）。
+  void _selectTabFromNav(HomeTab tab) {
+    _selectTab(tab);
+    if (tab != HomeTab.dictionaries) return;
+    if (!_activeTabs().contains(HomeTab.dictionaries)) return;
+    _dictFocusSignal.value = const DictionaryFocusRequest(clearQuery: true);
   }
 
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
@@ -1297,7 +1315,7 @@ class _HomePageState extends BasePageState<HomePage>
     );
 
     void selectVisual(int index) {
-      _selectTab(homeTabForVisualIndex(
+      _selectTabFromNav(homeTabForVisualIndex(
         tabs: tabs,
         visualIndex: index,
         reversed: reversed,
@@ -1386,7 +1404,7 @@ class _HomePageState extends BasePageState<HomePage>
           context: context,
           currentIndex: visualIndex,
           onTap: (int index) {
-            _selectTab(homeTabForVisualIndex(
+            _selectTabFromNav(homeTabForVisualIndex(
               tabs: tabs,
               visualIndex: index,
               reversed: reversed,
@@ -2772,7 +2790,7 @@ class _LocalDiscoveryTarget {
 class _StandaloneDictionaryRoute extends StatelessWidget {
   const _StandaloneDictionaryRoute({required this.focusSignal});
 
-  final ValueNotifier<int> focusSignal;
+  final ValueNotifier<DictionaryFocusRequest?> focusSignal;
 
   @override
   Widget build(BuildContext context) {

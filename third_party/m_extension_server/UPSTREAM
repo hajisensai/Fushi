@@ -63,10 +63,40 @@ and manifest point straight at the commit recorded above.
 
 Hibiki modifications
 --------------------
+overlay/.../DalvikHandler.kt:
+  Typed source HttpException responses retain their original HTTP 400-599
+  transport status and carry errorKind/sourceStatusCode. Internal failures
+  retain bridge/500; legacy code/type/stack fields remain available.
+  Route both bare FilterList results and legacy FiltersResponse wrappers through
+  the explicit filter wire codec. Select options use their display toString,
+  never arbitrary extension-object bean serialization; array/wrapper shapes,
+  filter kinds, states and nested groups remain stable.
+
+overlay/.../DexAllocationRepair.kt:
+  Original DEX may allocate a concrete subtype whose constructor was inlined,
+  then invoke the direct superclass constructor on that same register. Recover
+  the concrete JVM allocation only with original-DEX receiver/control-flow
+  proof and unambiguous allocation counts. A synthetic forwarding constructor
+  preserves the verified superclass call when the subtype no longer declares
+  it. Unknown/ambiguous flows remain unchanged; no source names are special-cased.
+  Concrete ancestors (including Object) require the same original-DEX receiver
+  proof even if a matching constructor exists; allocation counts alone cannot
+  authorize changing an otherwise valid concrete NEW. This preserves typed
+  filter options instead of allowing Object values to fail later in typed arrays.
+
+overlay/.../MihonImageProxy.kt:
+  Consume and close the extension's network response inside the Rx emission,
+  before blocking for detached ImageData. The call adapter cancels its socket
+  on unsubscribe; reading ResponseBody after toBlocking().single() loses the
+  live response. The overlay retains the source client and image interceptors.
+  A real loopback HTTP body regression supplements the in-memory fixtures.
+
 overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
   JVM HTTP clients resolve the host's authenticated loopback proxy policy per
   URL (FUSHI_MIHON_PROXY_POLICY_PORT; token uses FUSHI_MIHON_TOKEN). The host
   retains auto/manual/direct, local bypass, NO_PROXY and Basic credentials.
+  JVM socket:// selector callbacks connect the already-selected TCP endpoint
+  directly; they must not reapply HTTP policy to the origin or proxy transport.
   NetworkHelper uses HTTP/1.1 with zero idle connections so even an active
   HTTP/2 connection cannot bypass a new proxy selection after settings change.
   Existing calls finish normally; each new call incurs connection/TLS setup.
@@ -149,8 +179,9 @@ Security boundary (must not be weakened)
   the size, not the destination: the URL is chosen by the source site, exactly
   as in upstream's own /image/<uuid> page path, which is inherent to Mihon's
   "the site tells the client where the image is" contract.
-- The upstream process identity is retained: Main.kt, ServerWindow.kt,
-  MExtensionServerLoader and MihonImageProxy are untouched, and the Hibiki
+- The upstream process identity is retained: Main.kt, ServerWindow.kt and
+  MExtensionServerLoader are untouched; MihonImageProxy has a response-lifetime
+  overlay described above. The Hibiki
   host only ever terminates the Process handle it started (never a port or
   process-name scan). The upstream wire key __mangatan_bridge_context__ is
   deliberately kept; only the capability identifier is renamed to

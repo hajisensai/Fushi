@@ -496,6 +496,191 @@ void main() {
     );
   });
 
+  group('installMany', () {
+    late List<String> requested;
+    late MockClient httpClient;
+    late int lastDownloadedApk;
+
+    Future<void> useBulkRepository({
+      int count = 3,
+      Set<String> brokenApks = const <String>{},
+    }) async {
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: 'https://repo.example/index.json',
+          name: 'Fixture repository',
+          format: MihonStoreFormat.currentJson.name,
+          signingKey: const Value<String?>('aabb'),
+        ),
+      );
+      manager.dispose();
+      requested = <String>[];
+      // staged APK 的文件名是 `extension-<sha>.apk.part`，不带包名——inspect 的
+      // fake 只能靠「刚下载的是哪一条」来还原身份，安装是串行的所以够用。
+      lastDownloadedApk = 0;
+      httpClient = MockClient((http.Request request) async {
+        requested.add(request.url.toString());
+        if (request.url.path.endsWith('/index.json')) {
+          return http.Response(_bulkIndexJson(count), HttpStatus.ok);
+        }
+        for (final String broken in brokenApks) {
+          if (request.url.path.endsWith(broken)) {
+            return http.Response('', HttpStatus.notFound);
+          }
+        }
+        final RegExp apkPattern = RegExp(r'/apk/bulk(\d+)\.apk$');
+        final RegExpMatch? match = apkPattern.firstMatch(request.url.path);
+        if (match != null) {
+          lastDownloadedApk = int.parse(match.group(1)!);
+          // 每条的字节都不同：内容相同会算出同一个 sha，整批共用一个
+          // `extension-<sha>.apk.part`，测的就不是批量了。
+          return http.Response.bytes(
+            <int>[0x50, 0x4b, 0x03, 0x04, lastDownloadedApk],
+            HttpStatus.ok,
+          );
+        }
+        return http.Response('', HttpStatus.notFound);
+      });
+      manager = MihonManager(
+        database: database,
+        rootDirectory: root,
+        runtime: runtime,
+        storeClient: MihonExtensionStoreClient(client: httpClient),
+      );
+      await manager.initialise();
+      runtime.inspectionResolver = (String apkPath) {
+        final int index = lastDownloadedApk;
+        return MihonExtensionInspection(
+          packageName: 'org.example.bulk$index',
+          name: 'Bulk $index',
+          apkVersionCode: 9,
+          versionName: '1.6.9',
+          libVersion: '1.6',
+          signerSha256: 'aabb',
+          sourceClasses: const <String>['FixtureSource'],
+        );
+      };
+    }
+
+    test(
+      '每个仓库只解析一次索引，整批只让 runtime 失效一次',
+      () async {
+        await useBulkRepository(count: 3);
+        // 索引在 initialise 的 _refreshStores 里已经拉过一次，只数安装期间的。
+        final int before =
+            requested.where((String url) => url.endsWith('/index.json')).length;
+
+        final MihonBulkInstallReport report = await manager.installMany(
+          <MihonAvailableExtension>[
+            _bulkSnapshot(0),
+            _bulkSnapshot(1),
+            _bulkSnapshot(2),
+          ],
+          trustSigner: true,
+        );
+
+        expect(report.installed, hasLength(3));
+        expect(report.failed, isEmpty);
+        // 逐条安装会重解析 3 次（每条一次）；批量只准多解析 1 次。
+        expect(
+          requested.where((String url) => url.endsWith('/index.json')).length -
+              before,
+          1,
+        );
+        // 桌面端每次失效都要重启 Java sidecar：整批只准重启一次。
+        expect(runtime.invalidatedBatches, hasLength(1));
+        expect(runtime.invalidatedBatches.single, <String>[
+          'org.example.bulk0',
+          'org.example.bulk1',
+          'org.example.bulk2',
+        ]);
+        expect(
+          (await database.getMangaExtensions())
+              .map((MangaExtensionRow row) => row.packageName)
+              .toList()
+            ..sort(),
+          <String>[
+            'org.example.bulk0',
+            'org.example.bulk1',
+            'org.example.bulk2',
+          ],
+        );
+      },
+    );
+
+    test('已经装过的跳过，不当成升级重装', () async {
+      await useBulkRepository(count: 2);
+      await manager.installMany(<MihonAvailableExtension>[
+        _bulkSnapshot(0),
+      ], trustSigner: true);
+      runtime.invalidatedBatches.clear();
+
+      final MihonBulkInstallReport report = await manager.installMany(
+        <MihonAvailableExtension>[_bulkSnapshot(0), _bulkSnapshot(1)],
+        trustSigner: true,
+      );
+
+      expect(report.skipped, <String>['org.example.bulk0']);
+      expect(report.installed, <String>['org.example.bulk1']);
+    });
+
+    test('单条失败不中断整批，失败原因逐条留在报告里', () async {
+      await useBulkRepository(
+        count: 3,
+        brokenApks: <String>{'/apk/bulk1.apk'},
+      );
+
+      final MihonBulkInstallReport report = await manager.installMany(
+        <MihonAvailableExtension>[
+          _bulkSnapshot(0),
+          _bulkSnapshot(1),
+          _bulkSnapshot(2),
+        ],
+        trustSigner: true,
+      );
+
+      expect(report.installed, <String>[
+        'org.example.bulk0',
+        'org.example.bulk2',
+      ]);
+      expect(report.failed.keys, <String>['org.example.bulk1']);
+      expect(report.failed['org.example.bulk1'], contains('404'));
+      // 失败那条的 staged APK 当场删掉，不留到下次启动才清。
+      final Directory tmp = Directory('${root.path}/tmp');
+      final List<FileSystemEntity> staged = tmp.existsSync()
+          ? tmp
+              .listSync()
+              .where((FileSystemEntity entity) =>
+                  entity.path.endsWith('.apk.part'))
+              .toList()
+          : <FileSystemEntity>[];
+      expect(staged, isEmpty);
+    });
+
+    test('取消之后不再开始新的安装', () async {
+      await useBulkRepository(count: 3);
+      int seen = 0;
+
+      final MihonBulkInstallReport report = await manager.installMany(
+        <MihonAvailableExtension>[
+          _bulkSnapshot(0),
+          _bulkSnapshot(1),
+          _bulkSnapshot(2),
+        ],
+        trustSigner: true,
+        onProgress: (int done, int total, MihonAvailableExtension current) {
+          seen++;
+        },
+        // 第一条报完进度就取消：第二条根本不该开始。
+        isCancelled: () => seen >= 1,
+      );
+
+      expect(seen, 1);
+      expect(report.installed, <String>['org.example.bulk0']);
+      expect(report.attempted, 1);
+    });
+  });
+
   test('store install reports an extension pulled from the repository',
       () async {
     await database.upsertMangaExtensionStore(
@@ -608,6 +793,45 @@ Future<void> _seedInstalled(
       ),
     );
 
+/// 批量安装用的仓库索引：`count` 个扩展，包名 `org.example.bulk<N>`。
+String _bulkIndexJson(int count) => jsonEncode(<String, Object?>{
+      'name': 'Fixture repository',
+      'badgeLabel': 'Fixture',
+      'signingKey': 'aabb',
+      'extensionList': <String, Object?>{
+        'extensions': <Object?>[
+          for (int index = 0; index < count; index++)
+            <String, Object?>{
+              'name': 'Bulk $index',
+              'packageName': 'org.example.bulk$index',
+              'resources': <String, Object?>{
+                'apkUrl': 'apk/bulk$index.apk',
+                'iconUrl': 'icons/bulk$index.png',
+              },
+              'extensionLib': '1.6',
+              'versionCode': 9,
+              'versionName': '1.6.9',
+              'contentWarning': 'CONTENT_WARNING_SAFE',
+              'sources': <Object?>[],
+            },
+        ],
+      },
+    });
+
+MihonAvailableExtension _bulkSnapshot(int index) => MihonAvailableExtension(
+      storeUrl: 'https://repo.example/index.json',
+      name: 'Bulk $index',
+      packageName: 'org.example.bulk$index',
+      apkUrl: 'https://repo.example/apk/bulk$index.apk',
+      iconUrl: 'https://repo.example/icons/bulk$index.png',
+      libVersion: '1.6',
+      extensionVersionCode: 9,
+      versionName: '1.6.9',
+      language: 'ja',
+      contentWarning: 0,
+      sources: const <MihonAvailableSource>[],
+    );
+
 class _InstallRuntime extends Fake implements MihonRuntime {
   MihonExtensionInspection inspection = _inspection(
     versionCode: 1,
@@ -615,9 +839,13 @@ class _InstallRuntime extends Fake implements MihonRuntime {
   );
   bool failListSources = false;
 
+  /// 批量安装要给不同扩展返回不同的 inspection（元数据三全等是逐个校验的），
+  /// 单条用例仍用固定的 [inspection]。
+  MihonExtensionInspection Function(String apkPath)? inspectionResolver;
+
   @override
   Future<MihonExtensionInspection> inspectExtension(String apkPath) async =>
-      inspection;
+      inspectionResolver?.call(apkPath) ?? inspection;
 
   @override
   Future<String> installPrivateExtension(String apkPath) async => apkPath;
@@ -633,9 +861,9 @@ class _InstallRuntime extends Fake implements MihonRuntime {
         'Fixture load failed',
       );
     }
-    return const <MihonSource>[
+    return <MihonSource>[
       MihonSource(
-        extensionPackage: 'org.example.fixture',
+        extensionPackage: extension.packageName,
         id: '9223372036854775807',
         name: 'Fixture source',
         language: 'en',
@@ -644,8 +872,19 @@ class _InstallRuntime extends Fake implements MihonRuntime {
     ];
   }
 
+  final List<String> invalidatedPackages = <String>[];
+  final List<List<String>> invalidatedBatches = <List<String>>[];
+
   @override
-  Future<void> invalidateExtension(String packageName) async {}
+  Future<void> invalidateExtension(String packageName) async {
+    invalidatedPackages.add(packageName);
+  }
+
+  @override
+  Future<void> invalidateExtensions(Iterable<String> packageNames) async {
+    invalidatedBatches.add(packageNames.toList(growable: false));
+    invalidatedPackages.addAll(packageNames);
+  }
 
   @override
   Future<void> dispose() async {}

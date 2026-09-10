@@ -220,6 +220,8 @@ class AnkiSettings {
     this.repositionSource = AnkiRepositionSource.dictionaries,
     this.repositionDictionaries = const <String>[],
     this.repositionAggregate = 'harmonic',
+    this.repositionRareFirst = false,
+    this.autoRepositionEnabled = false,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -280,6 +282,11 @@ class AnkiSettings {
             const <String>[],
         repositionAggregate:
             json['repositionAggregate'] as String? ?? 'harmonic',
+        repositionRareFirst: json['repositionRareFirst'] as bool? ?? false,
+        // 缺键 = 老装置升级上来：自动重排默认关，升级不会凭空获得
+        // 一条会动 Anki 新卡队列位置的自动路径。
+        autoRepositionEnabled:
+            json['autoRepositionEnabled'] as bool? ?? false,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -399,6 +406,16 @@ class AnkiSettings {
   /// fushi_anki 不依赖 fushi_dictionary）。
   final String repositionAggregate;
 
+  /// 重排时罕见词优先（默认常见词优先）。此前只活在对话框的临时
+  /// 状态里；自动重排没有对话框，必须能从设置里读到它。
+  final bool repositionRareFirst;
+
+  /// 制卡成功后自动按词频重排该牌组的新卡（防抖批量、静默）。
+  /// 默认关：它会在用户没有点任何按钮的情况下写 Anki 的新卡位置，
+  /// 必须是显式选择而不是升级送的。仅 AnkiConnect 后端真正生效
+  /// （[BaseAnkiRepository.supportsDeckReposition]）。
+  final bool autoRepositionEnabled;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   /// BUG-2380：不需要真卡内容就能下的结论——当前选中的牌组 + 笔记类型 + 字段映射，
@@ -477,6 +494,8 @@ class AnkiSettings {
     AnkiRepositionSource? repositionSource,
     List<String>? repositionDictionaries,
     String? repositionAggregate,
+    bool? repositionRareFirst,
+    bool? autoRepositionEnabled,
   }) =>
       AnkiSettings(
         selectedDeckId:
@@ -531,6 +550,9 @@ class AnkiSettings {
         repositionDictionaries:
             repositionDictionaries ?? this.repositionDictionaries,
         repositionAggregate: repositionAggregate ?? this.repositionAggregate,
+        repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
+        autoRepositionEnabled:
+            autoRepositionEnabled ?? this.autoRepositionEnabled,
       );
 
   Map<String, dynamic> toJson() => {
@@ -570,6 +592,8 @@ class AnkiSettings {
         'repositionSource': repositionSource.name,
         'repositionDictionaries': repositionDictionaries,
         'repositionAggregate': repositionAggregate,
+        'repositionRareFirst': repositionRareFirst,
+        'autoRepositionEnabled': autoRepositionEnabled,
       };
 }
 

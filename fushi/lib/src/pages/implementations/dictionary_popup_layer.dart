@@ -521,15 +521,29 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
 /// chain, accounting for the header offset, border inset, and any scale in one
 /// shot. Falls back to [fallback] only when the render box is unavailable
 /// (should not happen at selection time — the parent popup is on-screen).
+/// With [coordinateSpaceKey], return coordinates in that popup Stack instead.
+/// BUG-2416: reader popup placement must not apply screen offsets/scale twice.
 Rect popupWordScreenRect({
   required GlobalKey webViewKey,
   required Rect localRect,
   required Rect fallback,
+  GlobalKey? coordinateSpaceKey,
 }) {
   final RenderObject? obj = webViewKey.currentContext?.findRenderObject();
   if (obj is RenderBox && obj.attached && obj.hasSize) {
     final Offset topLeft = obj.localToGlobal(localRect.topLeft);
     final Offset bottomRight = obj.localToGlobal(localRect.bottomRight);
+    if (coordinateSpaceKey != null) {
+      final RenderObject? target = coordinateSpaceKey.currentContext
+          ?.findRenderObject();
+      if (target is! RenderBox || !target.attached || !target.hasSize) {
+        return fallback;
+      }
+      return Rect.fromPoints(
+        target.globalToLocal(topLeft),
+        target.globalToLocal(bottomRight),
+      );
+    }
     return Rect.fromPoints(topLeft, bottomRight);
   }
   return fallback;
@@ -567,19 +581,21 @@ bool reanchorNestedPopupToWord({
   required String expectedTerm,
   required Rect? wordLocalRect,
   required Rect fallback,
+  GlobalKey? coordinateSpaceKey,
 }) {
   if (wordLocalRect == null || wordLocalRect.isEmpty) return false;
   final int childIndex = parentIndex + 1;
   if (childIndex <= 0 || childIndex >= controller.entries.length) return false;
   final DictionaryPopupEntry child = controller.entries[childIndex];
   if (child.searchTerm != expectedTerm.trim()) return false;
-  final Rect screenRect = popupWordScreenRect(
+  final Rect targetRect = popupWordScreenRect(
     webViewKey: parentWebViewKey,
     localRect: wordLocalRect,
     fallback: fallback,
+    coordinateSpaceKey: coordinateSpaceKey,
   );
-  if (screenRect == fallback || screenRect == child.selectionRect) return false;
-  controller.reanchorEntry(child, screenRect);
+  if (targetRect == fallback || targetRect == child.selectionRect) return false;
+  controller.reanchorEntry(child, targetRect);
   return true;
 }
 

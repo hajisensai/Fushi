@@ -29,16 +29,25 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2216 条。点号进各自文件。
+> 共 2225 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2416](bugs/BUG-2416-reader-nested-popup-coordinate-space.md) | ✅ | ✅ | 阅读器嵌套查词混用屏幕与浮层坐标导致遮字 |
+| [BUG-2415](bugs/BUG-2415-eink-popup-touch-instant-scroll.md) | ✅ | ✅ | 墨水屏瞬时滚动只接了滚轮，触摸拖动仍走原生惯性滚动 |
+| [BUG-2409](bugs/BUG-2409-mihon-source-http-error.md) | ✅ | ✅ | Mihon 保留源站HTTP错误状态并区分桥接失败 |
+| [BUG-2408](bugs/BUG-2408-mihon-filter-wire-codec.md) | ✅ | ✅ | Mihon 裸 FilterList 绕过类型化序列化导致选项对象报错 |
+| [BUG-2407](bugs/BUG-2407-mihon-concrete-allocation-type.md) | ✅ | ✅ | Comic Days 筛选选项类型被转成 Object 导致 ArrayStoreException |
+| [BUG-2406](bugs/BUG-2406-mihon-inlined-filter-constructor.md) | ✅ | ✅ | SchaleNetwork 内联筛选组构造器导致抽象类实例化失败 |
+| [BUG-2405](bugs/BUG-2405-mihon-image-response-lifetime.md) | ✅ | ✅ | Mihon 图片响应在读取正文前因 Rx 退订关闭 Socket |
+| [BUG-2404](bugs/BUG-2404-mihon-proxy-socket-uri.md) | ✅ | ✅ | Mihon 全局代理选择器误将 TCP socket URI 发送至 HTTP 策略端点 |
 | [BUG-2403](bugs/BUG-2403-video-doubleclick-ignores-mouse-button.md) | ✅ | ✅ | 视频页双击判定不看鼠标按钮号，右键双击画面切全屏 |
 | [BUG-2402](bugs/BUG-2402-mobile-library-layout.md) | ✅ | ✅ | 手机标签页头留白与筛选工具堆叠 |
 | [BUG-2400](bugs/BUG-2400-remote-manga-empty-content.md) | ✅ | ✅ | 远端空漫画合集被标记为可下载内容 |
 | [BUG-2399](bugs/BUG-2399-reader-chapter-stale-progress.md) | ✅ | ✅ | 小说跨章节晚到进度污染阅读字数和速度 |
 | [BUG-2398](bugs/BUG-2398-anime-season-search.md) | ✅ | ✅ | 搜索在AniList故障时缺少动画续季 |
 | [BUG-2397](bugs/BUG-2397-pitch-dedup-ignores-patterns-and-ipa.md) | ✅ | ✅ | 音调去重对 pattern 式音调与 IPA 完全不生效 |
+| [BUG-2396](bugs/BUG-2396-stat-period-grid-phone-single-column.md) | ✅ | ✅ | 统计中心时段汇总卡在手机上只显示一列 |
 | [BUG-2395](bugs/BUG-2395-mobile-nav-bar-too-tall.md) | ✅ | ✅ | 移动端底部导航栏过高未贴近底部 |
 | [BUG-2393](bugs/BUG-2393-reader-audio-chapter-anchor.md) | ✅ | ✅ | 有声书恢复只定位章节却当作句子恢复成功 |
 | [BUG-2392](bugs/BUG-2392-reader-audio-resume-priority.md) | ✅ | ✅ | 阅读进度异步快照在导航后仍写入位置与统计 |

@@ -3,6 +3,7 @@ package mextensionserver.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.model.Filter
+import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.online.HttpSource
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -84,15 +85,7 @@ class DalvikHandler {
                     MihonInvoker.invokeMethod(loadedExtension, dataBody)
                 }
 
-            val serializableResult =
-                if (result is FiltersResponse) {
-                    mapOf(
-                        "filterList" to
-                            result.filterList?.map { filter -> filter.toBridgeMap() }.orEmpty(),
-                    )
-                } else {
-                    result
-                }
+            val serializableResult = filterResponseForBridge(result)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
             NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.OK,
@@ -105,20 +98,22 @@ class DalvikHandler {
             errorResponse(error)
         }
 
-    private fun errorResponse(error: Throwable): NanoHTTPD.Response {
+    internal fun errorResponse(error: Throwable): NanoHTTPD.Response {
         logger.error(error) { "Error handling request" }
+        // Only the typed source HTTP failure establishes an upstream status.
+        // Exception messages (including ones mentioning HTTP) are not a protocol.
+        val sourceStatusCode =
+            (error as? eu.kanade.tachiyomi.network.HttpException)?.code?.takeIf { it in 400..599 }
         val status =
-            when (error) {
-                is eu.kanade.tachiyomi.network.HttpException -> {
-                    when (error.code) {
-                        400 -> NanoHTTPD.Response.Status.BAD_REQUEST
-                        401 -> NanoHTTPD.Response.Status.UNAUTHORIZED
-                        403 -> NanoHTTPD.Response.Status.FORBIDDEN
-                        404 -> NanoHTTPD.Response.Status.NOT_FOUND
-                        else -> NanoHTTPD.Response.Status.INTERNAL_ERROR
+            if (sourceStatusCode != null) {
+                NanoHTTPD.Response.Status.lookup(sourceStatusCode)
+                    ?: object : NanoHTTPD.Response.IStatus {
+                        override fun getRequestStatus(): Int = sourceStatusCode
+
+                        override fun getDescription(): String = "$sourceStatusCode Source HTTP error"
                     }
-                }
-                else -> NanoHTTPD.Response.Status.INTERNAL_ERROR
+            } else {
+                NanoHTTPD.Response.Status.INTERNAL_ERROR
             }
         // 桌面端此前只回 `error`（= e.message），Java 栈仅存在于本进程 stdout，而宿主
         // 把 sidecar 的 stdout/stderr 直接丢弃，于是扩展加载类错误（NoSuchMethodError /
@@ -131,6 +126,8 @@ class DalvikHandler {
                     "error" to (error.message ?: error.javaClass.simpleName),
                     "errorType" to error.javaClass.name,
                     "stackTrace" to error.stackTraceToString().take(MAX_STACK_TRACE_CHARS),
+                    "errorKind" to if (sourceStatusCode != null) "sourceHttp" else "bridge",
+                    "sourceStatusCode" to sourceStatusCode,
                     "code" to
                         if (error is eu.kanade.tachiyomi.network.HttpException) {
                             error.code
@@ -146,6 +143,14 @@ class DalvikHandler {
         )
     }
 }
+
+/** Preserve both supported response envelopes without serializing extension objects. */
+internal fun filterResponseForBridge(result: Any?): Any? =
+    when (result) {
+        is FilterList -> result.map { it.toBridgeMap() }
+        is FiltersResponse -> mapOf("filterList" to result.filterList?.map { it.toBridgeMap() }.orEmpty())
+        else -> result
+    }
 
 private fun Filter<*>.toBridgeMap(): Map<String, Any?> {
     val filter = this

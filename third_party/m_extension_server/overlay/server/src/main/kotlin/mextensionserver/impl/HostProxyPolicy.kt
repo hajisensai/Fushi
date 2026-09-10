@@ -67,7 +67,8 @@ object HostProxyPolicy : ProxySelector() {
             connection.connectTimeout = 3000
             connection.readTimeout = 3000
             connection.setRequestProperty("Authorization", "Bearer $token")
-            if (connection.responseCode != 200) throw IOException("Host proxy policy is unavailable")
+            val status = connection.responseCode
+            if (status != 200) throw IOException("Host proxy policy is unavailable (HTTP $status)")
             val json = connection.inputStream.use { mapper.readTree(it) }
             return Policy(json.path("directive").asText(), json.path("username").asText(), json.path("password").asText())
         } finally {
@@ -89,7 +90,16 @@ object HostProxyPolicy : ProxySelector() {
             }
         }
 
-    override fun select(uri: URI): List<Proxy> = proxies(lookup(uri).directive)
+    override fun select(uri: URI): List<Proxy> {
+        // The JVM also consults its global selector from SocksSocketImpl after
+        // the HTTP client has already selected a route. This socket URI names
+        // that route's TCP endpoint (possibly the HTTP proxy), not an origin URL.
+        // Applying the host's HTTP policy again would reject the socket scheme
+        // or proxy the proxy connection. Only this transport lookup is DIRECT;
+        // origin HTTP(S) lookups still require a successful host policy response.
+        if (uri.scheme.equals("socket", ignoreCase = true)) return listOf(Proxy.NO_PROXY)
+        return proxies(lookup(uri).directive)
+    }
 
     override fun connectFailed(
         uri: URI,

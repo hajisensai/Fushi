@@ -19,6 +19,92 @@ void main() {
       File('${resourceDirectory.path}/m-extension-server.jar').existsSync();
 
   test(
+    'source errors cross the real runtime boundary without restarting it',
+    () async {
+      final Directory data = await Directory.systemTemp.createTemp(
+        'mihon-http-error-',
+      );
+      final File apk = File('${data.path}/fixture.apk')
+        ..writeAsBytesSync(<int>[0]);
+      final http.Client realClient = http.Client();
+      final DesktopMihonRuntime runtime = DesktopMihonRuntime(
+        dataDirectory: data,
+        resourceDirectory: resourceDirectory,
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.path != '/dalvik') {
+            final http.Request forwarded =
+                http.Request(request.method, request.url)
+                  ..headers.addAll(request.headers)
+                  ..bodyBytes = request.bodyBytes;
+            return http.Response.fromStream(await realClient.send(forwarded));
+          }
+          final Map<String, dynamic> payload =
+              jsonDecode(request.body) as Map<String, dynamic>;
+          if (payload['method'] == 'external') {
+            return http.Response(
+              jsonEncode(<String, Object>{
+                'errorKind': 'sourceHttp',
+                'sourceStatusCode': 502,
+                'error': 'HTTP error 502',
+                'stackTrace': 'source trace',
+              }),
+              502,
+            );
+          }
+          if (payload['method'] == 'gateway') {
+            return http.Response('<html>502</html>', 502);
+          }
+          return http.Response('{"ok":true}', 200);
+        }),
+      );
+      final MihonExtensionRef extension = MihonExtensionRef(
+        packageName: 'fixture',
+        apkPath: apk.path,
+      );
+      try {
+        await runtime.getCapabilities();
+        final int? pid = runtime.processId;
+        await expectLater(
+          runtime.invokeBridge(extension, 'external', <String, Object?>{}),
+          throwsA(
+            isA<MihonRuntimeException>()
+                .having(
+                  (MihonRuntimeException e) => e.code,
+                  'code',
+                  'SOURCE_HTTP_502',
+                )
+                .having(
+                  (MihonRuntimeException e) => e.details,
+                  'details',
+                  'source trace',
+                ),
+          ),
+        );
+        await expectLater(
+          runtime.invokeBridge(extension, 'gateway', <String, Object?>{}),
+          throwsA(
+            isA<MihonRuntimeException>().having(
+              (MihonRuntimeException e) => e.code,
+              'code',
+              'BRIDGE_HTTP_502',
+            ),
+          ),
+        );
+        expect(
+          await runtime.invokeBridge(extension, 'healthy', <String, Object?>{}),
+          <String, Object>{'ok': true},
+        );
+        expect(runtime.processId, pid);
+      } finally {
+        await runtime.dispose();
+        realClient.close();
+        await data.delete(recursive: true);
+      }
+    },
+    skip: !bridgeAvailable,
+  );
+
+  test(
     'bundled Java bridge is stopped without a residual process',
     () async {
       final Directory dataDirectory = await Directory.systemTemp.createTemp(
