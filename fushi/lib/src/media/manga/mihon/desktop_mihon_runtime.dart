@@ -11,6 +11,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_child_process_containment.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
@@ -45,19 +47,28 @@ Future<Uint8List> readMihonSourceImageBytes(
 }
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
-    implements CancellableMihonRuntime {
+    implements CancellableMihonRuntime, HostCookieMihonRuntime {
   DesktopMihonRuntime({
     required this.dataDirectory,
     Directory? resourceDirectory,
     http.Client? httpClient,
+    MihonCookieJar? cookieJar,
   })  : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
         _processContainment = MihonChildProcessContainment.platform(),
-        _http = httpClient ?? http.Client();
+        _http = httpClient ?? http.Client(),
+        _cookies = cookieJar ?? MihonCookieJar.shared;
 
   final Directory dataDirectory;
   final Directory resourceDirectory;
   final http.Client _http;
   final MihonChildProcessContainment _processContainment;
+
+  /// 登录态真值。sidecar 自己的 cookie jar 是进程内存、`_restart()` 即清空，
+  /// 所以宿主每次调用都要重新注入（BUG-2425）。
+  final MihonCookieJar _cookies;
+
+  @override
+  MihonCookieJar get cookieJar => _cookies;
 
   Process? _process;
   int? _port;
@@ -93,6 +104,58 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'Content-Type': 'application/json; charset=utf-8',
       };
 
+  /// [_headers] 再加上 [source] 站点的登录 cookie。
+  ///
+  /// sidecar 的 `DalvikHandler` 把收到的 `Cookie:` 头解析后灌进该源的 okhttp
+  /// jar，域取自 `source.getBaseUrl()`——所以这里必须用**同一个 baseUrl** 挑
+  /// cookie，否则注进去的条目域对不上，等于没注。
+  ///
+  /// 刻意**不发 `User-Agent`**：sidecar 收到该头会全局改写这个源的 UA，而本轮
+  /// 桌面端并不做 Cloudflare 解题（sidecar 的 `CloudflareInterceptor` 是空壳），
+  /// 没有「clearance 绑定 UA」的约束，改写只会平白破坏自设 UA 的源。将来桌面
+  /// 端补上解题时，UA 必须与 cookie 一起作为「登录身份」整体存取，而不是在这里
+  /// 单独塞一个默认值。
+  Future<Map<String, String>> _headersFor(MihonSource? source) async {
+    final Map<String, String> headers = _headers;
+    final Uri? base = _sourceBaseUri(source);
+    if (base == null) return headers;
+    await _cookies.ensureLoadedBestEffort();
+    final String? cookie = _cookies.cookieHeaderFor(base);
+    if (cookie != null) headers['Cookie'] = cookie;
+    return headers;
+  }
+
+  /// 源站 baseUrl；解析不出 host 的源（空串 / 相对地址）当作没有站点。
+  static Uri? _sourceBaseUri(MihonSource? source) {
+    final String raw = source?.baseUrl.trim() ?? '';
+    if (raw.isEmpty) return null;
+    final Uri? parsed = Uri.tryParse(raw);
+    if (parsed == null || parsed.host.isEmpty) return null;
+    return parsed;
+  }
+
+  /// 把 sidecar 回传的 `Set-Cookie` 增量并回宿主 jar。
+  ///
+  /// 少了这一步，登录态只能撑到服务端轮转会话为止：源在响应里换发的新
+  /// session cookie 只活在 sidecar 的内存 jar 里，下次 `_restart()` 一清，
+  /// 宿主手上还是登录时那份**已经作废**的旧 cookie。
+  Future<void> _absorbResponseCookies(
+    MihonSource? source,
+    Map<String, String> responseHeaders,
+  ) async {
+    if (_sourceBaseUri(source) == null) return;
+    final String? raw = responseHeaders[kMihonSetCookieHeader];
+    if (raw == null || raw.isEmpty) return;
+    final List<MangaCookie> incoming = decodeMihonSetCookieHeader(raw);
+    if (incoming.isEmpty) return;
+    try {
+      await _cookies.mergeFromRuntime(incoming);
+    } on Object {
+      // cookie 落盘失败不该把一次成功的源调用变成失败：内存里的新值这一轮仍然
+      // 有效，下一次响应会再带一遍。
+    }
+  }
+
   @override
   Future<MihonCapabilities> getCapabilities() async {
     await _ensureStarted();
@@ -120,14 +183,15 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Future<Object?> invokeBridge(
     MihonExtensionRef extension,
     String method,
-    Map<String, Object?> arguments,
-  ) async {
+    Map<String, Object?> arguments, {
+    MihonSource? source,
+  }) async {
     final Map<String, Object?> payload = <String, Object?>{
       'data': await _apkBase64(extension.apkPath),
       'method': method,
       ...arguments,
     };
-    return _postJson('/dalvik', payload);
+    return _postJson('/dalvik', payload, source: source);
   }
 
   @override
@@ -210,7 +274,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }) async {
     await _ensureStarted();
     final http.Request request = http.Request('POST', _uri('/source-image'))
-      ..headers.addAll(_headers)
+      ..headers.addAll(await _headersFor(source))
       ..body = jsonEncode(<String, Object?>{
         'data': await _apkBase64(extension.apkPath),
         'sourceId': source.id,
@@ -244,7 +308,18 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     await _postObject('/source-data/clear', <String, Object?>{
       'data': await _apkBase64(extension.apkPath),
       'sourceId': source.id,
-    });
+    }, source: source);
+    // sidecar 侧 `SourceDataHandler` 清的是它自己那份内存 jar。宿主手上还留着
+    // 真值，不一起清的话「清除源数据」清完立刻又被下一次请求原样注回去——用户
+    // 看到的就是「登出按了没反应」。
+    final Uri? base = _sourceBaseUri(source);
+    if (base != null) {
+      try {
+        await _cookies.clearForHost(base.host);
+      } on Object {
+        // 清不动文件不该让「清除源数据」整体失败：服务端那份已经清了。
+      }
+    }
     await _restart();
   }
 
@@ -591,9 +666,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   Future<Map<String, Object?>> _postObject(
     String path,
-    Map<String, Object?> body,
-  ) async {
-    final Object? response = await _postJson(path, body);
+    Map<String, Object?> body, {
+    MihonSource? source,
+  }) async {
+    final Object? response = await _postJson(path, body, source: source);
     if (response is! Map<Object?, Object?>) {
       throw MihonRuntimeException(
         'INVALID_RESPONSE',
@@ -603,12 +679,23 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return response.cast<String, Object?>();
   }
 
-  Future<Object?> _postJson(String path, Map<String, Object?> body) async {
+  Future<Object?> _postJson(
+    String path,
+    Map<String, Object?> body, {
+    MihonSource? source,
+  }) async {
     await _ensureStarted();
     try {
       final http.Response response = await _http
-          .post(_uri(path), headers: _headers, body: jsonEncode(body))
+          .post(
+            _uri(path),
+            headers: await _headersFor(source),
+            body: jsonEncode(body),
+          )
           .timeout(const Duration(seconds: 45));
+      // 先吸收 cookie 再判状态码：源返回 403 往往正是「会话过期并换发了新
+      // cookie」那一刻，此时丢掉回传的增量会让下一次重试继续用作废的旧值。
+      await _absorbResponseCookies(source, response.headers);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw decodeErrorResponse(response);
       }

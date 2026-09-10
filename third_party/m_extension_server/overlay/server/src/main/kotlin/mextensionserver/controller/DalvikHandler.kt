@@ -1,18 +1,14 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
-import eu.kanade.tachiyomi.source.online.HttpSource
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
 import mextensionserver.model.FiltersResponse
-import okhttp3.Cookie
-import okhttp3.HttpUrl
 
 /**
  * Hibiki serializes manga filters into an explicit wire shape. Jackson cannot
@@ -36,62 +32,26 @@ class DalvikHandler {
                 MExtensionServerLoader.invokeWithExtension(dataBody.data) { loadedExtension ->
                     val selectedSource = MihonInvoker.selectSource(loadedExtension.sources, dataBody)
                     MihonInvoker.preparePreferences(dataBody, selectedSource)
-                    val domain =
-                        selectedSource.let { source ->
-                            try {
-                                val baseUrl = source.javaClass.getMethod("getBaseUrl").invoke(source) as String
-                                java.net.URI(baseUrl).host
-                            } catch (error: Exception) {
-                                logger.error(error) { "Error getting domain from source" }
-                                null
-                            }
-                        } ?: "localhost"
+                    // Host-owned login session; see [SourceCookieInjection].
+                    val domain = SourceCookieInjection.domainOf(selectedSource)
+                    SourceCookieInjection.injectRequestCookies(session, selectedSource, domain)
+                    SourceCookieInjection.applyRequestUserAgent(session, selectedSource)
 
-                    val cookies =
-                        (session.headers["cookie"] ?: session.headers["Cookie"])
-                            ?.let { cookieHeader ->
-                                cookieHeader
-                                    .split(";")
-                                    .map { cookieString ->
-                                        val parts = cookieString.trim().split("=", limit = 2)
-                                        Cookie
-                                            .Builder()
-                                            .name(parts[0].trim())
-                                            .value(parts.getOrElse(1) { "" }.trim())
-                                            .domain(domain.removePrefix("."))
-                                            .path("/")
-                                            .build()
-                                    }.distinctBy { it.name }
-                            }?.toList()
-                    val network =
-                        when (selectedSource) {
-                            is HttpSource -> selectedSource.network
-                            is AnimeHttpSource -> selectedSource.network
-                            else -> null
-                        }
-                    if (cookies != null) {
-                        network?.cookieJar?.addAll(
-                            HttpUrl
-                                .Builder()
-                                .scheme("http")
-                                .host(domain.removePrefix("."))
-                                .build(),
-                            cookies,
-                        )
-                    }
-                    (session.headers["user-agent"] ?: session.headers["User-Agent"])
-                        ?.let { userAgent -> network?.setUA(userAgent) }
-
-                    MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                    val invoked = MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                    invoked to
+                        SourceCookieInjection.encodeJarCookies(objectMapper, selectedSource, domain)
                 }
 
-            val serializableResult = filterResponseForBridge(result)
+            val (invocationResult, jarCookies) = result
+            val serializableResult = filterResponseForBridge(invocationResult)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
             NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.OK,
                 "application/json",
                 responseJson,
-            )
+            ).apply {
+                if (jarCookies != null) addHeader(SET_COOKIE_HEADER, jarCookies)
+            }
         } catch (error: LinkageError) {
             errorResponse(error)
         } catch (error: Exception) {

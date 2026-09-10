@@ -28,6 +28,17 @@ class SourceImageHandler {
                 val source = MihonInvoker.selectSource(loaded.sources, data) as? HttpSource
                     ?: throw IllegalArgumentException("Source is not an HTTP source")
                 MihonInvoker.preparePreferences(data, source)
+                // Covers are fetched with the source's own client, so they need the
+                // host-owned session too (BUG-2425). Without this a login-gated source
+                // renders signed-in pages next to broken covers whenever an image is
+                // the first call after a sidecar restart -- the bridge jar is empty
+                // until some /dalvik call happens to refill it.
+                SourceCookieInjection.injectRequestCookies(
+                    session,
+                    source,
+                    SourceCookieInjection.domainOf(source),
+                )
+                SourceCookieInjection.applyRequestUserAgent(session, source)
                 val response = source.client.newCall(
                     Request.Builder().url(request.url).headers(source.headers).build(),
                 ).execute()

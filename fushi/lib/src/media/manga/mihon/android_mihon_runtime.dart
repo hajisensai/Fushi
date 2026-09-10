@@ -79,12 +79,16 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
         <String, Object?>{'packageName': packageName},
       );
 
+  /// Android 刻意忽略 [source]：这边 cookie 的唯一所有者是系统 `CookieManager`，
+  /// 扩展的 okhttp 经 `AndroidCookieJar` 直接读它，宿主不需要（也不该）再注一遍。
+  /// 桌面端才需要按源注入，见 [MihonBridgeRuntime.invokeBridge] 的说明。
   @override
   Future<Object?> invokeBridge(
     MihonExtensionRef extension,
     String method,
-    Map<String, Object?> arguments,
-  ) =>
+    Map<String, Object?> arguments, {
+    MihonSource? source,
+  }) =>
       _invoke<Object?>('invoke', <String, Object?>{
         'packageName': extension.packageName,
         'apkPath': extension.apkPath,
