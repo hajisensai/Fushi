@@ -614,6 +614,7 @@ class _PopupStaticSettingsMemo {
     required this.collapsedNames,
     required this.expandedNames,
     required this.hiddenNames,
+    required this.dictionaryDisplayNames,
     required this.stylesJson,
     required this.globalDictCSS,
     required this.customDictCSSJson,
@@ -642,6 +643,7 @@ class _PopupStaticSettingsMemo {
   final String collapsedNames;
   final String expandedNames;
   final String hiddenNames;
+  final String dictionaryDisplayNames;
   final String stylesJson;
   final String globalDictCSS;
   final String customDictCSSJson;
@@ -728,6 +730,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String hiddenNames = jsonEncode(
     appModel.hiddenDictionaryNames.toList(),
   );
+  // 词典改名：真名 -> 显示名的**旁路映射表**。popupJson 里的 `dictionary` 字段
+  // 恒为真名（它同时是 CSS 作用域 key、媒体 URL 参数、隐藏/折叠/排序 key 和
+  // Anki `{single-glossary-<名>}` token 的 key，替换它会静默打断上述全部），
+  // popup.js 只在**渲染词典名文本**的那几处查这张表。只装真正改过名的条目。
+  final String dictionaryDisplayNames =
+      jsonEncode(appModel.dictionaryDisplayNameOverrides);
   // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
   // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;
@@ -777,6 +785,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       // 词典引擎），一旦那条被优化掉就静默失效。
       cached.expandedNames == expandedNames &&
       cached.hiddenNames == hiddenNames &&
+      cached.dictionaryDisplayNames == dictionaryDisplayNames &&
       identical(cached.stylesJson, stylesJson) &&
       cached.globalDictCSS == globalDictCSS &&
       cached.customDictCSSJson == customDictCSSJson) {
@@ -884,6 +893,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
     window.hiddenDictionaryNames = $hiddenNames;
+    window.dictionaryDisplayNames = $dictionaryDisplayNames;
 ''';
   final String tail = '''    window.dictionaryStyles = $stylesJson;
     window.globalDictCSS = ${jsonEncode(globalDictCSS)};
@@ -918,6 +928,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,
     hiddenNames: hiddenNames,
+    dictionaryDisplayNames: dictionaryDisplayNames,
     stylesJson: stylesJson,
     globalDictCSS: globalDictCSS,
     customDictCSSJson: customDictCSSJson,

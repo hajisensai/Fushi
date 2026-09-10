@@ -4626,5 +4626,11 @@
   "mihon_source_login_hint": "Sign in on the site, then tap Done to save the session",
   "mihon_source_login_done": "Done",
   "mihon_source_login_empty": "No session cookies were captured; nothing was saved",
-  "mihon_source_login_saved": "Signed in to this source"
+  "mihon_source_login_saved": "Signed in to this source",
+  "media_source_rename": "重命名",
+  "media_source_rename_label": "來源名稱",
+  "book_rename": "重命名",
+  "book_rename_label": "標題",
+  "dict_rename": "重命名",
+  "dict_rename_label": "詞典名稱"
 }

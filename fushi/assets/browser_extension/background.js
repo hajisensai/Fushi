@@ -198,7 +198,7 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
 // 响应拿。但它体量大（实测整库 285 KB，单本 OALDPE 就 210 KB），不能每次 hover 查词都传，
 // 故走 revision 门控：请求里带上已缓存的 revision，server 只在指纹变了（用户导入/删词典、
 // 改自定义 CSS）时才回全量，其余时候只回指纹。SW 被回收后缓存清空，下次查词自动重取一次。
-let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
 
 // 把服务端这次查词响应里的 CSS 尾段并进缓存，并把**完整**尾段回填进 data，
 // 让 content.js / side-panel.js 无论命中缓存与否都能拿到同一份可直接赋给 window.* 的值。
@@ -214,14 +214,20 @@ function fushiMergePopupCss(data) {
       globalDictCSS: typeof data.globalDictCSS === 'string' ? data.globalDictCSS : '',
       customDictCSS: (data.customDictCSS && typeof data.customDictCSS === 'object')
         ? data.customDictCSS : {},
+      // 词典改名（v95）：真名 -> 显示名。与 CSS 同一条 revision 门控，改名会改
+      // 指纹 → 下次查词全量重取一次。
+      dictionaryDisplayNames:
+        (data.dictionaryDisplayNames && typeof data.dictionaryDisplayNames === 'object')
+          ? data.dictionaryDisplayNames : {},
     };
   } else if (fushiPopupCss.revision !== revision) {
     // 指纹变了但这次响应没带正文（不该发生；真发生时宁可清空也不能用陈旧样式）。
-    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
   }
   data.dictionaryStyles = fushiPopupCss.dictionaryStyles;
   data.globalDictCSS = fushiPopupCss.globalDictCSS;
   data.customDictCSS = fushiPopupCss.customDictCSS;
+  data.dictionaryDisplayNames = fushiPopupCss.dictionaryDisplayNames;
   return data;
 }
 

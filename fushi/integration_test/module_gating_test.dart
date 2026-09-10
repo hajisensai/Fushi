@@ -25,7 +25,6 @@ import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
@@ -94,8 +93,8 @@ Map<SettingsDestinationId, String> destinationTitles() {
   final List<SettingsDestination> all = <SettingsDestination>[
     buildAppearanceDestination(),
     buildReadingDestination(),
+    // 听书 2026-08-24 并入阅读，不再是独立一级分类。
     buildMangaDestination(),
-    buildListeningDestination(),
     buildVideoDestination(),
     buildMediaTrackingDestination(),
     buildDownloadsDestination(),

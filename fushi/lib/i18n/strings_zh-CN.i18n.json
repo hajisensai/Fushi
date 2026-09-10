@@ -4626,5 +4626,11 @@
   "mihon_source_login_hint": "在网站上登录后，点「完成」保存会话",
   "mihon_source_login_done": "完成",
   "mihon_source_login_empty": "没有捕获到会话 cookie，未保存",
-  "mihon_source_login_saved": "已登录该源"
+  "mihon_source_login_saved": "已登录该源",
+  "media_source_rename": "重命名",
+  "media_source_rename_label": "来源名称",
+  "book_rename": "重命名",
+  "book_rename_label": "标题",
+  "dict_rename": "重命名",
+  "dict_rename_label": "词典名称"
 }

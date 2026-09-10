@@ -726,7 +726,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 100;
+  int get schemaVersion => 101;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3066,6 +3066,22 @@ class FushiDatabase extends _$FushiDatabase
               'CREATE INDEX IF NOT EXISTS idx_language_profiles_profile '
               'ON language_profiles (profile_id)',
             );
+          }
+          if (from < 101) {
+            // v101（词典改名）：dictionary_metadata 加 display_name——用户给词典
+            // 起的显示名。真名 `name` 是主键 + 磁盘目录名 + 引擎装载路径 + 一串
+            // 外键（CSS map key / 样式规则 / data-dictionary 选择器 / 媒体 URL /
+            // Anki token / 同步资产名），冻结不动，只加显示层覆盖（见 tables.dart
+            // 该列的注释）。
+            //
+            // 无损：nullable 无 default → 旧库既有行全 NULL = 没改过名 = 显示真名
+            // = 逐字节保留 v101 前的渲染。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists('dictionary_metadata', 'display_name')) {
+              await m.addColumn(
+                  dictionaryMetadata, dictionaryMetadata.displayName);
+            }
           }
         },
         onCreate: (m) async {

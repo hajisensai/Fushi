@@ -1564,6 +1564,15 @@ class AppModel with ChangeNotifier {
   // ── dictionary delegates (DictionaryRepository) ────────────────────
 
   List<Dictionary> get dictionaries => dictRepo.dictionaries;
+
+  /// 词典改名投影（真名 -> 显示名，只含改过名的）。推导在
+  /// [dictionaryDisplayNameOverridesOf] 单点完成。
+  ///
+  /// 走 [dictionaries] 而不是直接读 `dictRepo`：那个 getter 是子类的覆盖点
+  /// （测试替身靠它喂词典列表），绕过去就会在 `dictRepo` 这个 late 字段上炸
+  /// LateInitializationError——实测过。
+  Map<String, String> get dictionaryDisplayNameOverrides =>
+      dictionaryDisplayNameOverridesOf(dictionaries);
   List<Dictionary> get termDictionaries => dictRepo.termDictionaries;
   List<Dictionary> get freqDictionaries => dictRepo.freqDictionaries;
   List<Dictionary> get pitchDictionaries => dictRepo.pitchDictionaries;
@@ -1629,16 +1638,13 @@ class AppModel with ChangeNotifier {
           }
           // 纯 kanji 词典（mask 里没有 term）保持 kanji 类型不动，但**同样**要把
           // 标记写下去——这正是旧实现漏掉的那一半，也是每次启动全表重扫的来源。
-          final updated = Dictionary(
-            name: d.name,
-            formatKey: d.formatKey,
-            order: d.order,
+          //
+          // copyWith 而不是 new：构造器漏填的用户设置列会被
+          // _dictionaryToCompanion 显式写成 NULL（不是 absent），这里只想换
+          // type/metadata，逐字段重建会把用户手动指定的内容语言和改名一起抹掉。
+          final updated = d.copyWith(
             type: mixed ? DictionaryType.term : d.type,
             metadata: meta,
-            hiddenLanguages: d.hiddenLanguages,
-            collapsedLanguages: d.collapsedLanguages,
-            expandedLanguages: d.expandedLanguages,
-            languageOverride: d.languageOverride,
           );
           dictRepo.persistDictionary(updated);
           if (mixed) {
@@ -1686,17 +1692,8 @@ class AppModel with ChangeNotifier {
       // 与 kanji 分支同理：探过就落标记，哪怕结论是「类型没错，不用改」。
       final Map<String, String> meta = Map<String, String>.from(d.metadata);
       meta[kDictTypeProbeKey] = kDictTypeProbeVersion;
-      final updated = Dictionary(
-        name: d.name,
-        formatKey: d.formatKey,
-        order: d.order,
-        type: detected ?? d.type,
-        metadata: meta,
-        hiddenLanguages: d.hiddenLanguages,
-        collapsedLanguages: d.collapsedLanguages,
-        expandedLanguages: d.expandedLanguages,
-        languageOverride: d.languageOverride,
-      );
+      // 同上：copyWith 而不是逐字段 new（见 Dictionary.copyWith 的说明）。
+      final updated = d.copyWith(type: detected ?? d.type, metadata: meta);
       dictRepo.persistDictionary(updated);
       if (detected != null) {
         debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
@@ -3194,17 +3191,22 @@ class AppModel with ChangeNotifier {
     // popup.js 在两个宿主里呈现不一致。
     final String globalCss = effectiveGlobalDictCSS;
     final Map<String, String> customCss = effectiveCustomDictCSS;
+    // 词典改名（v95）：必须一并进下面的缓存判定——否则改完名命中旧实例、
+    // revision 不变，扩展永远拉不到新名。
+    final Map<String, String> displayNames = dictionaryDisplayNameOverrides;
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
         cached.globalDictCss == globalCss &&
-        _sameStringMap(cached.customDictCss, customCss)) {
+        _sameStringMap(cached.customDictCss, customCss) &&
+        _sameStringMap(cached.dictionaryDisplayNames, displayNames)) {
       return cached;
     }
     return _browserExtensionPopupCss = RemotePopupDictionaryCss(
       dictionaryStyles: styles,
       globalDictCss: globalCss,
       customDictCss: customCss,
+      dictionaryDisplayNames: displayNames,
     );
   }
 
@@ -5337,6 +5339,9 @@ class AppModel with ChangeNotifier {
   /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
   void setDictionaryLanguageOverride(Dictionary dictionary, String? language) =>
       dictRepo.setDictionaryLanguageOverride(dictionary, language);
+
+  void setDictionaryDisplayName(Dictionary dictionary, String? displayName) =>
+      dictRepo.setDictionaryDisplayName(dictionary, displayName);
 
   /// BUG-2158：折叠三态循环（继承 → 显式展开 → 显式折叠 → 继承）。
   /// 旧的 `toggleDictionaryCollapsed` 双态入口已删除，不与本方法并存。
