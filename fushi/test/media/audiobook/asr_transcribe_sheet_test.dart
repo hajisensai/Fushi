@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
@@ -78,10 +79,9 @@ class _FakeService extends AsrTranscriptionService {
     this.existingSrt,
     this.probeError,
   }) : super(
-        backend: const AsrIsolateBackend(
-          buildFactory: _unusedOnnxFactory,
-        ),
-
+          backend: const AsrIsolateBackend(
+            buildFactory: _unusedOnnxFactory,
+          ),
           pcm: _FakePcm(),
           openStore: (AsrLanguage l) async =>
               AsrModelStore(jobsDir, asrModelPackFor(l)),
@@ -212,7 +212,8 @@ class _FakeService extends AsrTranscriptionService {
 /// 在语言下拉里选 [language]：先点开下拉（触发器显示当前语言），再点菜单里的
 /// 母语名条目（触发器与条目可能同文，取最后一个即菜单项）。
 Future<void> pickLanguage(WidgetTester tester, AsrLanguage language) async {
-  await tester.tap(find.byKey(const ValueKey<String>('asr-transcribe-language')));
+  await tester
+      .tap(find.byKey(const ValueKey<String>('asr-transcribe-language')));
   await tester.pumpAndSettle();
   final Finder entry = find.text(language.nativeName).last;
   // 菜单有最大高度、可滚动；条目可能在视口外。
@@ -221,6 +222,15 @@ Future<void> pickLanguage(WidgetTester tester, AsrLanguage language) async {
   await tester.tap(entry);
   await tester.pumpAndSettle();
 }
+
+/// 状态行（`asr-transcribe-status`）当前显示的文本。
+String _statusText(WidgetTester tester) =>
+    tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('asr-transcribe-status')),
+        )
+        .data ??
+    '';
 
 /// 这几组用例都走进程内路径（`runInIsolate: false`）或只碰 UI，不会真起后台
 /// isolate。真被调到说明用例走错了路径，直接炸比默默建个真后端好。
@@ -248,6 +258,9 @@ void main() {
       required String? initialDirectory,
     })? saveFilePicker,
     AsrLanguage? languageHint,
+    AsrModelCatalog Function()? catalogGetter,
+    Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
+    Future<String?> Function()? directoryPicker,
   }) {
     return ProviderScope(
       child: TranslationProvider(
@@ -266,6 +279,9 @@ void main() {
                       languageHint: languageHint,
                       languageGetter: () => savedLanguage,
                       languageSetter: (String tag) async => savedLanguage = tag,
+                      catalogGetter: catalogGetter,
+                      catalogSetter: catalogSetter,
+                      directoryPicker: directoryPicker,
                     );
                     onResult(r);
                   },
@@ -318,11 +334,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(service.lastDownloadLanguage, AsrLanguage.english);
-    // 下载完成后的就绪行带英语包名。
-    expect(
-      find.textContaining(kAsrEnglishPack.displayName),
-      findsOneWidget,
-    );
+    // 下载完成后的就绪行带英语包名。（只看状态行：模型下拉里也会显示包名。）
+    expect(_statusText(tester), contains(kAsrEnglishPack.displayName));
   });
 
   testWidgets('偏好里存的是 en：弹层初值就是英语，start 也带英语', (WidgetTester tester) async {
@@ -374,7 +387,10 @@ void main() {
       AsrAccelerationPreference.auto,
     ]);
 
-    await tester.tap(find.text(t.audiobook_transcribe_accel_coreml));
+    final Finder coreml = find.text(t.audiobook_transcribe_accel_coreml);
+    await tester.ensureVisible(coreml);
+    await tester.pumpAndSettle();
+    await tester.tap(coreml);
     await tester.pumpAndSettle();
     expect(service.planPreferences.last, AsrAccelerationPreference.coreml);
 
@@ -540,7 +556,8 @@ void main() {
     expect(asrLanguageHintFromBookLanguage('zh-CN'), AsrLanguage.mandarin);
     expect(asrLanguageHintFromBookLanguage('zh-Hant-TW'), AsrLanguage.mandarin);
     expect(asrLanguageHintFromBookLanguage('zh-HK'), AsrLanguage.cantonese);
-    expect(asrLanguageHintFromBookLanguage('zh-Hant-HK'), AsrLanguage.cantonese);
+    expect(
+        asrLanguageHintFromBookLanguage('zh-Hant-HK'), AsrLanguage.cantonese);
     expect(asrLanguageHintFromBookLanguage('yue'), AsrLanguage.cantonese);
     expect(asrLanguageHintFromBookLanguage('ko-KR'), AsrLanguage.korean);
     // Omnilingual 兜住的 9 种也能从书的语言标签推出来。
@@ -565,8 +582,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.planLanguages, <AsrLanguage>[AsrLanguage.english]);
     expect(
-      find.textContaining(kAsrEnglishPack.displayName),
-      findsOneWidget,
+      _statusText(tester),
+      contains(kAsrEnglishPack.displayName),
       reason: '就绪行应标出英语包名（初值来自书的语言而非偏好）',
     );
     expect(savedLanguage, 'ja', reason: 'hint 只作初值，不写回偏好');
@@ -701,5 +718,125 @@ void main() {
       find.textContaining(t.audiobook_transcribe_model_discarded),
       findsNothing,
     );
+  });
+
+  group('模型选择', () {
+    late AsrModelCatalog catalog;
+
+    Future<void> setCatalog(AsrModelCatalog next) async {
+      catalog = next;
+      asrModelRegistry = buildAsrModelRegistry(next);
+    }
+
+    // 真实 IO 只能在 setUp / tearDown 里做：testWidgets 体内是 fake async，
+    // `Directory.systemTemp.createTemp()` 的 Future 永远不会完成，用例会一路挂到
+    // 10 分钟超时（症状是「did not complete」，不是断言失败）。
+    late Directory modelDir;
+
+    setUp(() async {
+      catalog = AsrModelCatalog.empty;
+      asrModelRegistry = buildAsrModelRegistry(catalog);
+      modelDir = await Directory.systemTemp.createTemp('asr_local_ui_');
+      for (final String name in <String>[
+        'tokens.txt',
+        'encoder-epoch-99-avg-1.onnx',
+        'decoder-epoch-99-avg-1.onnx',
+        'joiner-epoch-99-avg-1.onnx',
+      ]) {
+        File(p.join(modelDir.path, name)).writeAsBytesSync(<int>[1, 2, 3]);
+      }
+    });
+    tearDown(() async {
+      asrModelRegistry = AsrModelRegistry.builtin();
+      if (modelDir.existsSync()) await modelDir.delete(recursive: true);
+    });
+
+    Widget wrapWithCatalog(
+      _FakeService service, {
+      Future<String?> Function()? directoryPicker,
+    }) =>
+        wrap(
+          service,
+          (String? _) {},
+          catalogGetter: () => catalog,
+          catalogSetter: setCatalog,
+          directoryPicker: directoryPicker,
+        );
+
+    testWidgets('默认显示该语言的内置模型，并列出可切换的备选', (WidgetTester tester) async {
+      final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+      await tester.pumpWidget(wrapWithCatalog(service));
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(kAsrJapanesePack.displayName), findsWidgets);
+
+      await tester
+          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tester.pumpAndSettle();
+      expect(find.text(kAsrOmnilingualPack.displayName), findsWidgets);
+    });
+
+    testWidgets('换模型：写进目录并按新包重新规划', (WidgetTester tester) async {
+      final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+      await tester.pumpWidget(wrapWithCatalog(service));
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+      final int plansBefore = service.planLanguages.length;
+
+      await tester
+          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tester.pumpAndSettle();
+      final Finder entry = find.text(kAsrOmnilingualPack.displayName).last;
+      await tester.ensureVisible(entry);
+      await tester.pumpAndSettle();
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+
+      expect(catalog.choices[AsrLanguage.japanese.tag], kAsrOmnilingualPack.id);
+      expect(service.planLanguages.length, greaterThan(plansBefore));
+      // 只有日语改了：英语仍是内置英语包。
+      expect(
+        asrModelRegistry.packForLanguage(AsrLanguage.english)?.id,
+        kAsrEnglishPack.id,
+      );
+    });
+
+    testWidgets('手动指定本地模型：接入后自动选中', (WidgetTester tester) async {
+      final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+      await tester.pumpWidget(
+        wrapWithCatalog(service, directoryPicker: () async => modelDir.path),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+
+      // 「手动指定模型」弹层里有文本框，光标闪烁是一个永不停的动画：
+      // pumpAndSettle 会一直等到超时。这几步一律用有限 pump。
+      Future<void> settle() async {
+        for (int i = 0; i < 12; i++) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+      }
+
+      await tester
+          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model-add')));
+      await settle();
+      expect(
+        find.byKey(const ValueKey<String>('asr-local-model-pick')),
+        findsOneWidget,
+      );
+      await tester
+          .tap(find.byKey(const ValueKey<String>('asr-local-model-pick')));
+      await settle();
+      await tester
+          .tap(find.byKey(const ValueKey<String>('asr-local-model-confirm')));
+      await settle();
+
+      expect(catalog.customPacks, hasLength(1));
+      final String id = catalog.customPacks.single.id;
+      expect(id, startsWith(kAsrCustomPackIdPrefix));
+      expect(catalog.choices[AsrLanguage.japanese.tag], id);
+      expect(asrModelRegistry.packForLanguage(AsrLanguage.japanese)?.id, id);
+    });
   });
 }

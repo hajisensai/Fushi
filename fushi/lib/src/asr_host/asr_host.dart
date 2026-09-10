@@ -9,11 +9,14 @@
 /// 非对称 bug。所以两处都调 [createAsrTranscriptionService]，装配参数只有这一份。
 library;
 
+import 'dart:convert';
+
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 
+import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/video/ffmpeg_backend.dart' as host_ffmpeg;
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -27,21 +30,49 @@ asr.OnnxSessionFactory buildFushiOnnxFactory() =>
 
 /// 后台转录 isolate 的宿主前置初始化。
 ///
-/// 本仓的 ONNX 后端是 method channel 插件，后台 isolate 必须先挂上 binary
-/// messenger 才能发方法调用——这是整条 ASR 链路上唯一的结构性 Flutter 依赖，
-/// 抽包时做成了钩子。同样**必须是顶层函数**。
-void fushiAsrIsolateBootstrap(Object token) {
-  BackgroundIsolateBinaryMessenger.ensureInitialized(token as RootIsolateToken);
+/// 做两件事，都**必须**在后台 isolate 里重做一遍（Dart 全局按 isolate 隔离）：
+///
+/// 1. 挂上 binary messenger：本仓的 ONNX 后端是 method channel 插件，后台 isolate
+///    不挂就发不出方法调用——这是整条 ASR 链路上唯一的结构性 Flutter 依赖。
+/// 2. 装模型注册表：后台那侧 `asrModelPackFor(spec.language)`
+///    （`asr_transcribe_isolate.dart`）读的是**它自己**的全局注册表。不装就是内置
+///    表，用户选了别的模型 / 接了自带模型时，这边会按**另一个包**的文件名、架构、
+///    blank 记号去装载——而 spec 里的模型目录又是主 isolate 按正确的包算好的，
+///    于是变成「目录对、元数据错」的静默错解码，不会报错只会出乱码。
+///
+/// 同样**必须是顶层函数**（要跨 isolate 边界发送，闭包过不去）。参数是
+/// [fushiAsrBackend] 拼的 `[RootIsolateToken?, 注册表 JSON]`——两样都是可发送值。
+void fushiAsrIsolateBootstrap(Object arg) {
+  final List<Object?> payload = arg as List<Object?>;
+  final Object? token = payload.isEmpty ? null : payload.first;
+  // 纯后台 isolate 起的转录拿不到 token（见 [fushiAsrBackend]）：不挂 messenger，
+  // 让后端自己炸出可读的错，但注册表照装——它与 method channel 无关。
+  if (token is RootIsolateToken) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+  }
+  final Object? registryJson = payload.length > 1 ? payload[1] : null;
+  if (registryJson is String && registryJson.isNotEmpty) {
+    asr.asrModelRegistry =
+        asr.AsrModelRegistry.fromJson(jsonDecode(registryJson) as Object?);
+  }
 }
 
 /// 本仓的后台 isolate 装配。
 ///
 /// `RootIsolateToken.instance` 在纯后台 isolate 里可能为 null（例如从别的 isolate
-/// 起转录）；此时不传 bootstrap，让后端自己去炸出可读的错，而不是在这里静默继续。
+/// 起转录）；bootstrap 会跳过挂 messenger 那一步，让后端自己去炸出可读的错，而不是
+/// 在这里静默继续。
+///
+/// 注册表按值序列化过去（不是让那侧再读一遍磁盘）：主 isolate 已经用它算出了
+/// spec 里的模型目录，两侧必须是**同一份**表，中间隔一次读盘就多一次「用户刚好
+/// 在这时改了选择」和「读盘失败」的分叉。
 asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
       buildFactory: buildFushiOnnxFactory,
       bootstrap: fushiAsrIsolateBootstrap,
-      bootstrapArg: RootIsolateToken.instance,
+      bootstrapArg: <Object?>[
+        RootIsolateToken.instance,
+        jsonEncode(asr.asrModelRegistry.toJson()),
+      ],
     );
 
 /// 把 `fushi_asr_core` 的三个装配点接到本仓的实现上。
@@ -66,6 +97,45 @@ void installAsrHostBindings() {
 
   // 包里默认写 stderr（CLI 场景要把字幕留给 stdout）；app 里走 debugPrint。
   asr.asrLogSink = (String message) => debugPrint(message);
+}
+
+/// 本进程当前的模型目录（用户选择 + 自带包）。
+///
+/// 与 `asr.asrModelRegistry` 一起是同一件事的两面：目录是可编辑的**源**，注册表是
+/// 按它组装出来的**结果**，包里所有 `asrModelPackFor()` 读的是后者。两者只在
+/// [applyAsrModelCatalog] 里一起换，不允许分别赋值。
+AsrModelCatalog _asrModelCatalog = AsrModelCatalog.empty;
+
+AsrModelCatalog get asrModelCatalog => _asrModelCatalog;
+
+/// 把一份目录装进本进程：组装注册表 + 记住目录。不落盘（落盘见
+/// [saveAsrModelCatalog]），因为启动时读回来的那次不需要再写一遍。
+void applyAsrModelCatalog(AsrModelCatalog catalog) {
+  _asrModelCatalog = catalog;
+  asr.asrModelRegistry = buildAsrModelRegistry(catalog);
+}
+
+/// 启动时读回用户的模型目录并装上。
+///
+/// 在 [installAsrHostBindings] **之后**调用：它要读数据根，而数据根的解析器正是
+/// 前者装的。读不出来（文件损坏 / 配错）不能拦住启动——ASR 只是一个功能，整个 app
+/// 不该为它起不来；退回内置表并把原因打进日志。
+Future<void> loadAsrModelCatalog() async {
+  try {
+    applyAsrModelCatalog(await readAsrModelCatalog());
+  } catch (error) {
+    applyAsrModelCatalog(AsrModelCatalog.empty);
+    debugPrint('[Fushi] ASR model catalog load failed: $error');
+  }
+}
+
+/// 改动目录：先落盘再装进本进程。
+///
+/// 顺序是刻意的——写盘失败时本进程状态保持不变，用户看到的仍是上一份选择，而不是
+/// 「界面上换了、下次启动又变回去」这种只有重启才发现的假成功。
+Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
+  await writeAsrModelCatalog(catalog);
+  applyAsrModelCatalog(catalog);
 }
 
 /// 建一个装配好的转录服务。两个生产实例化点都调这里。
