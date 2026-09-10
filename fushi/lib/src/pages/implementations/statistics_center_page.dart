@@ -12,6 +12,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -104,9 +105,9 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Map<int, String> _collectionNamesById = <int, String>{};
   List<GalgameEntry> _games = <GalgameEntry>[];
 
-  /// 跨域计数面分桶（阅读 + 视频两个来源之和；游戏域不写这四张计数面）。时段卡
-  /// 之前只有时长 / 字数，制卡与查词这两个每天都在动的数字在总览上一个都看不到，
-  /// 只能逐个 tab 翻——现在与两个域 tab 的时段卡同形。
+  /// 跨域计数面分桶（阅读 + 视频 + 游戏三个来源之和）。时段卡之前只有时长 / 字数，
+  /// 制卡与查词这两个每天都在动的数字在总览上一个都看不到，只能逐个 tab 翻——
+  /// 现在与三个域 tab 的时段卡逐行同形。
   StatActivityBuckets _lookup = StatActivityBuckets();
   StatActivityBuckets _mined = StatActivityBuckets();
   StatActivityBuckets _favorited = StatActivityBuckets();
@@ -129,8 +130,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       );
       _daily = facts.daily;
       _sessions = facts.sessions;
-      // 跨域 = 不传 source（两个域 tab 各传自己的那一个），所以总览的四个数字
-      // 恒等于两个 tab 之和：同一批行、同一个分桶函数，没有第二条口径。
+      // 跨域 = 不传 source（三个域 tab 各传自己的那一个），所以总览的四个数字
+      // 恒等于三个 tab 之和：同一批行、同一个分桶函数，没有第二条口径。
       final DateTime now = DateTime.now();
       final StatCounterFacts counters = facts.counters;
       _lookup = bucketActivityByDateKey(counters.lookupEvents(), now);
@@ -164,10 +165,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 动作行与三个域 tab 同形（[buildEmbeddedStatTab]）：本 tab 之前完全没有动作
-    // 行，四个 tab 横过去时顶栏参差。目标入口的理由与 BUG-970 同：目标卡在未设目标
+    // 四个 tab 的动作行**逐颗同形**（用户 2026-09-10「所有界面都要统一」）：
+    // 目标 → 刷新 → 清空全部统计。此前是四种排列（总览无清空、观看 / 游戏无目标），
+    // 横着切 tab 时按钮在原地变意思。目标入口的理由与 BUG-970 同：目标卡在未设目标
     // 时整卡隐藏（[_buildGoalCard]），没有常驻入口就永远设不了第一个目标。
-    // 「清空」不放这里——本 tab 是跨域视图，批量清空只在各域 tab 里按域执行。
+    // 本 tab 是跨域视图，所以这里的「清空」= 三个域一起清（[_confirmAndClearAll]）。
     final List<Widget> actions = <Widget>[
       FushiIconButton(
         icon: Icons.flag_outlined,
@@ -180,6 +182,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         tooltip: t.stat_refresh,
         enabled: !_loading,
         onTap: () => unawaited(_load()),
+      ),
+      FushiIconButton(
+        icon: Icons.delete_sweep_outlined,
+        tooltip: t.stat_clear_all,
+        enabled: !_loading,
+        onTap: _confirmAndClearAll,
       ),
     ];
     return buildEmbeddedStatTab(context, actions, _buildBody(tokens));
@@ -209,6 +217,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           titleOf: _sessionTitle,
           collectionOf: _sessionCollectionName,
           onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
         ),
       ],
     );
@@ -282,6 +292,36 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   /// 删一次会话：段写零 + 游戏骨架行硬删（同一事务），再整页重聚合。
   Future<void> _deleteSession(StudySession s) async {
     await deleteStudySession(ref.read(appProvider).database, s);
+    if (mounted) await _load();
+  }
+
+  /// 清空**三个域**的全部统计（本 tab 是跨域视图，逐域各清一次 = 三个域 tab 上那
+  /// 三颗按钮按一遍的结果，没有第二条清空路径）。确认文案把三域范围与保留项一次
+  /// 列全。收藏的词句、制卡历史、游戏库、活动时间线一律保留。
+  Future<void> _confirmAndClearAll() async {
+    final bool confirmed = await confirmClearAllStatistics(
+      context,
+      t.stat_clear_all_overview_message,
+    );
+    if (!confirmed || !mounted) return;
+    final FushiDatabase db = ref.read(appProvider).database;
+    await db.clearAllReadingStatistics();
+    await db.clearAllVideoStatistics();
+    await db.clearAllGalgameStatistics();
+    if (mounted) await _load();
+  }
+
+  /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid
+  /// 再写库），再整页重聚合——改完日期的会话要重新按 gap 归并、重新排序。
+  Future<void> _editSession(StudySession s, StudySessionEdit edit) async {
+    await applyStudySessionEdit(ref.read(appProvider).database, s, edit);
+    if (mounted) await _load();
+  }
+
+  /// 清除这一批会话记录（防呆确认已在按钮里做掉）。本 tab 是跨域视图，这一批就是
+  /// 三个域的全部会话；只清会话事实，收藏 / 制卡历史 / 查词计数一个都不动。
+  Future<void> _clearSessions(List<StudySession> batch) async {
+    await deleteStudySessions(ref.read(appProvider).database, batch);
     if (mounted) await _load();
   }
 

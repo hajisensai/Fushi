@@ -4625,5 +4625,16 @@
   "audiobook_transcribe_engine_system_hint": "用系统自带的语音模型，不下载我们那 1 GB 模型。首次使用时系统仍会下载它自己的语言资产，那份资产由系统保管、多个 app 共用。",
   "audiobook_transcribe_engine_system_install": "安装语言",
   "audiobook_transcribe_engine_system_installing": "正在让系统安装该语言…",
-  "audiobook_transcribe_engine_system_no_pause": "这个引擎在文件中途无法暂停，停止会丢掉当前文件的进度。"
+  "audiobook_transcribe_engine_system_no_pause": "这个引擎在文件中途无法暂停，停止会丢掉当前文件的进度。",
+  "stat_session_edit": "编辑会话",
+  "stat_session_edit_date": "日期",
+  "stat_session_edit_date_invalid": "日期请按 YYYY-MM-DD 填写。",
+  "stat_session_edit_chars": "字数",
+  "stat_session_edit_chars_invalid": "字数必须是 0 或更大的整数。",
+  "stat_session_edit_message": "改日期会把整次会话一起挪过去，一天里的时刻不变；字数会按比例分摊回这次会话的各个片段。",
+  "stat_sessions_clear_all": "清除全部会话",
+  "stat_sessions_clear_all_title": "清除全部会话记录",
+  "stat_sessions_clear_all_message": "确定清除全部 $n 条会话记录吗？这些会话的时长、字数、页数都会被清掉；收藏的词句、制卡历史和游戏库不受影响。此操作不可撤销。",
+  "stat_sessions_clear_all_ack": "我确认要删除这 $n 条会话记录。",
+  "stat_clear_all_overview_message": "确定把阅读、观看、游戏三个域的统计一起清空吗？三个域的时长、字数以及查词 / 制卡计数都会被删除；收藏的词、句子、制卡卡片、游戏库与活动时间线不受影响。此操作不可撤销。"
 }

@@ -376,6 +376,69 @@ mixin _FushiDbContentMisc
         }
       });
 
+  /// 批量删学习会话（统计页会话区块的「清除全部会话」）：语义与 [deleteStudySession]
+  /// 逐条调用逐字节一致（段写零 + 游戏骨架行硬删、不立墓碑），只是收进**一个**事务
+  /// ——会话流常年几十上百条，逐条一个事务在移动端能卡住整个 UI 帧。
+  Future<void> deleteStudySessions({
+    required Set<String> segmentUids,
+    List<int> gameSessionIds = const <int>[],
+  }) =>
+      transaction(() async {
+        await zeroStudySegmentsByUids(segmentUids);
+        if (gameSessionIds.isNotEmpty) {
+          await (delete(galgameSessions)
+                ..where((t) => t.id.isIn(gameSessionIds)))
+              .go();
+        }
+      });
+
+  /// 编辑一次学习会话（统计页会话流每行的铅笔）：按 uid 逐段写**绝对值**
+  /// （起止时刻 / dateKey / hour / 字数），游戏会话另有 `galgame_sessions` 骨架行
+  /// 同步平移。同一事务。
+  ///
+  /// 与 [deleteStudySession] 同一条纪律：调用方**不要**直接进这里，走
+  /// `fushi/lib/src/stats/study_sessions.dart` 的 `applyStudySessionEdit`——它先让
+  /// 段 uid 在在跑的 `StudyClock` 上退役，否则时钟下一个 tick 会把刚改完的段按旧
+  /// 绝对值原样写回去（「改了又弹回来」）。
+  ///
+  /// [insertSegments] 是游戏会话的特例：游玩骨架行可能一条字数段都没有（纯时长
+  /// 会话），此时改字数没有任何行可写，只能新建一条与骨架区间相交的 chars-only 段
+  /// ——正是 hook 记字数时写的那种行，下次派生会被同一个骨架吸收回去。
+  ///
+  /// 段墓碑（`startAt < deletedAt` 压制）在这里**不**拦：编辑是用户的显式绝对值写。
+  /// 只有「先清空该媒体统计立了碑、又把老会话往更早的日期改」这一条极窄路径能撞上
+  /// ——那种行本地存活、下次同步落地时被碑压掉，与手动改早任何一段的结果一致。
+  Future<void> updateStudySession({
+    required List<StudySegmentsCompanion> segments,
+    List<StudySegmentsCompanion> insertSegments =
+        const <StudySegmentsCompanion>[],
+    int? gameSessionId,
+    int? gameStartMs,
+    int? gameEndMs,
+    String? gameDateKey,
+  }) =>
+      transaction(() async {
+        for (final StudySegmentsCompanion row in segments) {
+          await (update(studySegments)..where((t) => t.uid.equals(row.uid.value)))
+              .write(row);
+        }
+        for (final StudySegmentsCompanion row in insertSegments) {
+          await into(studySegments).insertOnConflictUpdate(row);
+        }
+        if (gameSessionId != null &&
+            gameStartMs != null &&
+            gameEndMs != null &&
+            gameDateKey != null) {
+          await (update(galgameSessions)
+                ..where((t) => t.id.equals(gameSessionId)))
+              .write(GalgameSessionsCompanion(
+            startMs: Value(gameStartMs),
+            endMs: Value(gameEndMs),
+            dateKey: Value(gameDateKey),
+          ));
+        }
+      });
+
   /// 时段明细 sheet 的「删这一条」（BUG-2108 用户诉求：看着不对的数据要能删）：
   /// 删某媒体在 [dateKeys] 这几天的**全部统计事实**——正是 sheet 那一行求和用到的
   /// 行集，不多不少。

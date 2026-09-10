@@ -15,6 +15,7 @@ import 'dart:convert';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -272,42 +273,29 @@ Future<void> _handleFavoriteBridge(
 }
 
 /// TODO-1188 — favorite toggle ([toggle] true) or read ([toggle] false)
-/// against the FavoriteWords table. Uses [kStatSourceBook] so the
-/// (expression, reading, sourceType) uniqueness key is SHARED with in-book
-/// favorites (consistent ★ across surfaces). No toast: the main window is
-/// backgrounded behind the external app; the star flip is the feedback.
+/// against the FavoriteWords table. 判据与写入在 [overlayToggleOrCheckFavoriteWord]
+/// （那里有跨源 ★ 一致性的三条纪律：跨源判、跨源删、单源写），本函数只把 AppModel
+/// 拆成它要的 db + 当前来源 + 今日键——这样那三条纪律能用内存 DB 直接测行为，而
+/// 不是只剩源码扫描守卫。新增收藏的来源由 [overlayStatSourceType] 判：有归属的
+/// galgame 会话在跑 → [kStatSourceGame]，否则 [kStatSourceBook]（与书内弹窗收藏
+/// 同一行，(expression, reading, sourceType) 唯一键共享）。
+///
+/// No toast: the main window is backgrounded behind the external app; the star
+/// flip is the feedback.
 Future<bool> _toggleOrCheckFavorite(
   AppModel model, {
   required bool toggle,
   required String expression,
   required String reading,
-}) async {
-  final FushiDatabase db = model.database;
-  final bool already = await db.isFavoriteWord(
-    expression: expression,
-    reading: reading,
-    sourceType: kStatSourceBook,
-  );
-  if (!toggle) {
-    return already; // favoriteCheck: report the current state, no write.
-  }
-  if (already) {
-    await db.removeFavoriteWord(
+}) =>
+    overlayToggleOrCheckFavoriteWord(
+      db: model.database,
+      toggle: toggle,
       expression: expression,
       reading: reading,
-      sourceType: kStatSourceBook,
+      addSourceType: overlayStatSourceType(),
+      dateKey: statTodayKey(),
     );
-    return false;
-  }
-  await db.addFavoriteWord(
-    expression: expression,
-    reading: reading,
-    glossary: '',
-    sourceType: kStatSourceBook,
-    dateKey: statTodayKey(),
-  );
-  return true;
-}
 
 /// TODO-1188 follow-up — resolves a DEFERRED mineEntry bridge call and pushes
 /// the {ankiConnect, noteId} result back so popup.js flips the ➕ button
@@ -369,7 +357,7 @@ Future<void> _handleMineBridge(
 /// TODO-1188 follow-up — mines [fields] to Anki through the same
 /// [BaseAnkiRepository.mineEntry] path the in-app dictionary popup uses,
 /// records mined-count + mined-sentence stats on success (source
-/// [kStatSourceBook]), and returns the popup.js-shaped {ankiConnect, noteId}
+/// [overlayStatSourceType]), and returns the popup.js-shaped {ankiConnect, noteId}
 /// reply. Gaiji bytes are flushed to the Anki media cache first
 /// ([writeDictionaryMediaCache]) so dictionary media embeds rather than
 /// degrading to alt text. App-external lookup has NO screenshot /
@@ -413,8 +401,11 @@ Future<Map<String, Object?>> _mineEntry(
 }
 
 /// TODO-1188 follow-up — records one mined-count + one mined-sentence history
-/// row on a successful app-external mine (source [kStatSourceBook]; no book
-/// locator). Best-effort: any failure is logged and swallowed.
+/// row on a successful app-external mine (来源按 [overlayStatSourceType] 分流：
+/// galgame 会话在跑 → 游戏域，否则书域；no book locator). 两个写入点的值域**不同**：
+/// `recordMiningEvent` 吃统计来源值域（`kStatSource*`），`addMinedSentence.source`
+/// 吃收藏句 / 制卡句值域（`kFavoriteSentenceSource*`，那一列还有 audiobook /
+/// lyrics），故各取各的判据包装器。Best-effort: any failure is logged and swallowed.
 Future<void> _recordMinedStats(
   AppModel model,
   Map<String, String> fields,
@@ -427,9 +418,9 @@ Future<void> _recordMinedStats(
     final String dateKey = statDateKey(now);
     // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口（同事务；app 外查词
     // 无书 → bookKey/title 空，只进汇总桶）。制卡历史行与之共用同一时刻的 dateKey。
-    await db.recordMiningEvent(sourceType: kStatSourceBook, at: now);
+    await db.recordMiningEvent(sourceType: overlayStatSourceType(), at: now);
     await db.addMinedSentence(
-      source: kStatSourceBook,
+      source: overlayMinedSentenceSource(),
       dateKey: dateKey,
       expression: fields['expression'] ?? '',
       reading: fields['reading'] ?? '',

@@ -25,6 +25,7 @@ import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -35,7 +36,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show kStatSourceBook, mimeTypeForFilePath;
+    show kStatSourceBook, kStatSourceGame, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
@@ -1682,9 +1683,11 @@ class GlobalLookupController {
   }
 
   /// TODO-1204 — records one lookup on every app-external hotkey / nested lookup
-  /// (source [kStatSourceBook]; no book locator — global overlay is not tied to a
-  /// book, so it only feeds the stats page "lookup" totals, never a per-book
-  /// tile). Best-effort: any failure is logged and swallowed.
+  /// (source [overlayStatSourceType]: [kStatSourceGame] while an attributed
+  /// galgame hook session is running, else [kStatSourceBook]; no book locator —
+  /// the global overlay is not tied to a book, so it only feeds the stats page
+  /// "lookup" totals, never a per-book tile). Best-effort: any failure is logged
+  /// and swallowed.
   void _recordLookupCount() {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1696,7 +1699,7 @@ class GlobalLookupController {
       unawaited(
         model.database
             .addLookupCount(
-          sourceType: kStatSourceBook,
+          sourceType: overlayStatSourceType(),
           dateKey: statTodayKey(),
         )
             .catchError((Object e, StackTrace st) {

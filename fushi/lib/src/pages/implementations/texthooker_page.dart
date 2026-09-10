@@ -45,7 +45,8 @@ import 'package:fushi/media.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind;
+import 'package:fushi_core/fushi_core.dart'
+    show ProfileMediaKind, kStatSourceGame;
 
 /// fallback 制卡（非外部窗口/非 Windows，走普通 in-app popup 制卡）也要带上当前活跃
 /// hook 台词作 sentence，否则挖出的卡 `{sentence}` 恒空（BUG-954）。仅在 [fields] 未自带
@@ -664,9 +665,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
   /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的
   /// super.onMineEntry / onUpdateEntry，也必须同标 game，不能吃默认 book。
-  /// 统计口径（[dictionarySourceType]）不动，标签与统计是两个维度。
   @override
   AnkiMiningSource get miningSource => AnkiMiningSource.game;
+
+  /// 统计口径与分类标签现在对齐（用户 2026-09-10「游戏查词制卡收藏收藏句子都要
+  /// 补上」）：本页此前吃 mixin 默认的 [kStatSourceBook]，于是 texthooker 里查的词、
+  /// 制的卡、收藏的词句**全进阅读域**，统计中心的游戏 tab 一个都看不到。app 外的
+  /// 浮窗表面按会话活跃与否分流（`lookup/overlay_stat_source.dart`），本页是 app 内
+  /// 的 galgame 表面，来源恒定是游戏域，不需要判据。
+  @override
+  String get dictionarySourceType => kStatSourceGame;
 
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {

@@ -4625,5 +4625,16 @@
   "audiobook_transcribe_engine_system_hint": "Uses the built-in speech model — no 1 GB download from us. The system still fetches its own language assets the first time, and keeps them shared across apps.",
   "audiobook_transcribe_engine_system_install": "Install language",
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
-  "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress."
+  "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
+  "stat_session_edit": "Edit session",
+  "stat_session_edit_date": "Date",
+  "stat_session_edit_date_invalid": "Enter the date as YYYY-MM-DD.",
+  "stat_session_edit_chars": "Characters",
+  "stat_session_edit_chars_invalid": "Characters must be a whole number of 0 or more.",
+  "stat_session_edit_message": "Changing the date moves the whole session and keeps its time of day. The character count is split back across the session's segments.",
+  "stat_sessions_clear_all": "Clear all sessions",
+  "stat_sessions_clear_all_title": "Clear all session records",
+  "stat_sessions_clear_all_message": "Clear all $n session records? Their time, character and page counts go away. Your saved words and sentences, mined cards and game library are kept. This cannot be undone.",
+  "stat_sessions_clear_all_ack": "I understand this deletes all $n session records.",
+  "stat_clear_all_overview_message": "Clear reading, watching and game statistics all at once? Time, character counts and lookup/mining counts across all three go away. Your saved words and sentences, mined cards, game library and activity timeline are kept. This cannot be undone."
 }

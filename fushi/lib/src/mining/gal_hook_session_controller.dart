@@ -1122,6 +1122,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 当前会话的稳定游戏 id（launch 模式为可执行文件路径），无稳定 id 时为 null。
   String? _activityGameKey;
 
+  /// [_activityGameKey] 的只读投影：**有归属的在跑 galgame 会话**的稳定 id；
+  /// null = 没有（没开会话、会话已 [stopCapture]、或纯 WebSocket/剪贴板文本流这类
+  /// 无可归属游戏身份的来源）。
+  ///
+  /// 供 app 外查词 / 制卡的统计来源判据（`overlay_stat_source.dart`）读——那条链路
+  /// 不经页面、拿不到任何书/视频上下文，只能问「现在有没有在玩游戏」。它与
+  /// [_activityGameTitle] 同生命周期（`_beginActivitySession` 置位、`stopCapture`
+  /// 清空），所以不会在会话停掉后继续把查词记进游戏域。
+  String? get activityGameKey => _activityGameKey;
+
   // ── 游玩时长记账（galgame_sessions 事实表的唯一生产写入方）──────────────
   /// 建游玩计时器的工厂（见 [GalgamePlayTrackerFactory]）。
   final GalgamePlayTrackerFactory _playTrackerFactory;
