@@ -39,6 +39,7 @@
 | [BUG-2399](bugs/BUG-2399-reader-chapter-stale-progress.md) | ✅ | ✅ | 小说跨章节晚到进度污染阅读字数和速度 |
 | [BUG-2398](bugs/BUG-2398-anime-season-search.md) | ✅ | ✅ | 搜索在AniList故障时缺少动画续季 |
 | [BUG-2397](bugs/BUG-2397-pitch-dedup-ignores-patterns-and-ipa.md) | ✅ | ✅ | 音调去重对 pattern 式音调与 IPA 完全不生效 |
+| [BUG-2396](bugs/BUG-2396-stat-period-grid-phone-single-column.md) | ✅ | ✅ | 统计中心时段汇总卡在手机上只显示一列 |
 | [BUG-2395](bugs/BUG-2395-mobile-nav-bar-too-tall.md) | ✅ | ✅ | 移动端底部导航栏过高未贴近底部 |
 | [BUG-2393](bugs/BUG-2393-reader-audio-chapter-anchor.md) | ✅ | ✅ | 有声书恢复只定位章节却当作句子恢复成功 |
 | [BUG-2392](bugs/BUG-2392-reader-audio-resume-priority.md) | ✅ | ✅ | 阅读进度异步快照在导航后仍写入位置与统计 |
