@@ -1798,15 +1798,18 @@ class FushiPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // TODO-667: 顶部留白分三档。
+    // TODO-667 / BUG-2402: 顶部留白按「页头主位是什么」先分两类，标题类再分三档。
+    // - 页头主位是嵌入的分段 tab 行（[titleWidget] 非空）：顶距恒 0，与窗口宽度
+    //   无关，理由见下方 [resolvedTop] 处的注释。
+    // 以下三档只适用于纯文字大标题（[title]）：
     // - [compact] 模式（上方已有 AppBar，由 [FushiPageScaffold] 传入）顶距最小，
     //   只留一个 gap，标题紧贴 AppBar 下沿。
     // - 非 compact 但窗口是手机竖屏 / 窄窗（[WindowSizeClass.compact]，宽 < 600）：
     //   页头本身就是顶部锚点，外层 [SafeArea] 已让出状态栏 / 刘海，再叠
-    //   `page + 8 = 24` 会让标题离顶部空出一行（用户反馈「和摄像头差一行」）。
-    //   收到普通 `page = 16`，保留必要呼吸又不顶到摄像头。
+    //   `page + 8` 会让标题离顶部空出一行（用户反馈「和摄像头差一行」）。
+    //   收到普通 `page`，保留必要呼吸又不顶到摄像头。
     // - 非 compact 的中 / 宽窗（桌面 / 平板，宽 >= 600）：窗口顶部无系统栏遮挡、
-    //   内容区另有左右留白，`page + 8 = 24` 的标题区呼吸感合适，保持不变。
+    //   内容区另有左右留白，`page + 8` 的标题区呼吸感合适。
     // BUG-401: classify on the real physical width. FushiPageHeader renders
     // inside FushiAppUiScale, so MediaQuery.sizeOf here is the inflated
     // logical width; multiply by the net app UI scale to recover the real
@@ -1816,9 +1819,14 @@ class FushiPageHeader extends StatelessWidget {
           FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact;
-    // Embedded tabs already own a touch-height row; the home shell owns SafeArea.
-    // A second title margin pushes phone navigation away from the status bar.
-    final double resolvedTop = narrowWindow && titleWidget != null
+    // Embedded tabs already own a touch-height row, so the header is a seam
+    // between the shell chrome and those tabs, not a title band. Whatever sits
+    // above it already yields the space that seam needs -- SafeArea for the
+    // status bar / notch on phones, FushiDesktopTitleBar's real 32px caption row
+    // on desktop -- and the tabs carry their own 13px of centring slack inside
+    // the 46px MD3 TabBar. A title margin here is therefore a second, redundant
+    // one at every window size, which is why this arm ignores [narrowWindow].
+    final double resolvedTop = titleWidget != null
         ? 0
         : compact
             ? tokens.spacing.gap

@@ -65,11 +65,49 @@ void main() {
     expect(tester.getTopLeft(find.byKey(tabsKey)).dy, 0);
   });
 
-  testWidgets('wide header retains its title margin', (
+  // A tab row owns its own touch height, and the shell above the header already
+  // yields the seam (SafeArea on phones, the 32px caption row on desktop), so
+  // the title margin is redundant at every width -- not just on phones. Desktop
+  // used to take `page + 8` here and showed a visibly empty band under the
+  // window caption.
+  testWidgets('wide header drops the title margin too', (
     WidgetTester tester,
   ) async {
     await pumpHeader(tester, width: 900);
-    expect(tester.getTopLeft(find.byKey(tabsKey)).dy, greaterThan(47));
+    expect(tester.getTopLeft(find.byKey(tabsKey)).dy, closeTo(47, 0.01));
+  });
+
+  testWidgets('wide header keeps the title margin for a plain text title', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(900, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: Size(900, 852),
+            padding: EdgeInsets.only(top: 47),
+            viewPadding: EdgeInsets.only(top: 47),
+          ),
+          child: FushiAppUiScale(
+            scale: 1,
+            child: Scaffold(
+              body: SafeArea(
+                child: Column(
+                  children: <Widget>[
+                    FushiPageHeader(title: '书架'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    // spacing.page + 8 == 28, unchanged: a text title still needs its band.
+    expect(tester.getTopLeft(find.text('书架')).dy, closeTo(47 + 28, 0.01));
   });
 
   testWidgets('explicit header padding still takes precedence', (
