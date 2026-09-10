@@ -8,7 +8,8 @@ import 'package:fushi/utils.dart';
 
 /// 设置区「语音识别模型」组的正文（隶属**听**设置分类）。
 ///
-/// 一语言一行（[kAsrModelPacks]）：标题 = 模型名，副标题 = 语言 + 状态
+/// 一个包一行（当前注册表 `asrModelRegistry.packs`，含用户自带包）：标题 = 模型名，
+/// 副标题 = 语言 + 状态
 /// （已下载·占用 / 下载了一部分·已得/总 / 未下载·需要多少），行尾 下载（下载中
 /// 变成进度条 + 取消）/ 删除（二次确认，报释放字节）。变体取自
 /// [AsrTranscriptionService.plan] 的 `auto` 推荐——与转录弹层默认会下的那一套
@@ -52,9 +53,25 @@ class _PackRow {
   }
 }
 
+/// 注册表里的包，按 id 去重。
+///
+/// 去重是必须的：给某语言换模型时，注册表里会多一份「只声明那一种语言」的窄包
+/// （见 `asr_model_catalog.dart` 文件头），它与原包**同 id、同磁盘目录**——不去重
+/// 设置页就会出现两行同名模型，删掉其中一行把另一行的文件也删了。
+List<AsrModelPack> _distinctPacks() {
+  final List<AsrModelPack> out = <AsrModelPack>[];
+  final Set<String> seen = <String>{};
+  for (final AsrModelPack pack in asrModelRegistry.packs) {
+    if (seen.add(pack.id)) out.add(pack);
+  }
+  return out;
+}
+
 class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
   late final List<_PackRow> _rows = <_PackRow>[
-    for (final AsrModelPack pack in kAsrModelPacks) _PackRow(pack),
+    // 读注册表而不是内置常量表：用户自带的包与「给某语言换了模型」都只体现在
+    // 注册表里，照着 kAsrModelPacks 画会让自带模型在设置页整个不可见。
+    for (final AsrModelPack pack in _distinctPacks()) _PackRow(pack),
   ];
 
   @override
@@ -185,9 +202,8 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
   /// 副标题：语言 + 状态（三态都给真实字节数）。
   String _subtitle(_PackRow row) {
     // 多语言包（Omnilingual）把它服务的语言全列出来。
-    final String language = row.pack.languages
-        .map(asrLanguageLabel)
-        .join(' · ');
+    final String language =
+        row.pack.languages.map(asrLanguageLabel).join(' · ');
     final AsrModelStatus? status = row.plan?.modelStatus;
     if (status == null) return language;
     final String state = status.ready
