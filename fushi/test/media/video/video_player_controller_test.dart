@@ -2249,6 +2249,69 @@ void main() {
           reason: '媒体打开后必须照常记录进度，否则这道门就把正常功能一起关掉了');
     });
 
+    // 失败判定本身（决定「把整页换成失败页」）必须可测：判早了会把正在正常起播的
+    // 视频打成打不开，不判就退回本 bug 的黑屏 00:00。两个方向的代价都很实在。
+    group('shouldDiagnoseMediaNeverOpened', () {
+      test('本地文件 + 媒体始终没打开 → 判失败', () {
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: false,
+            isLocalFile: true,
+            alreadyFailed: false,
+            missingResource: false,
+          ),
+          isTrue,
+        );
+      });
+
+      test('媒体已打开 → 永不判失败（慢解码不是失败）', () {
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: true,
+            isLocalFile: true,
+            alreadyFailed: false,
+            missingResource: false,
+          ),
+          isFalse,
+        );
+      });
+
+      test('非本地文件（网络流 / 直播 / 互联对端）→ 不判死', () {
+        // 直播 duration 恒 0、弱网首个分片握手可能拖很久；对它们判死是行为倒退，
+        // 旧行为（promote 给 media_kit 自己的缓冲圈继续等）必须保留。
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: false,
+            isLocalFile: false,
+            alreadyFailed: false,
+            missingResource: false,
+          ),
+          isFalse,
+        );
+      });
+
+      test('页面已在失败态 / 资源缺失态 → 不再盖一层', () {
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: false,
+            isLocalFile: true,
+            alreadyFailed: true,
+            missingResource: false,
+          ),
+          isFalse,
+        );
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: false,
+            isLocalFile: true,
+            alreadyFailed: false,
+            missingResource: true,
+          ),
+          isFalse,
+        );
+      });
+    });
+
     test('对照：媒体已打开时，flushPosition 照常落库', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);

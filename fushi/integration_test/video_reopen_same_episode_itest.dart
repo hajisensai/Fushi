@@ -131,6 +131,13 @@ void main() {
 
         await exitOnce('first');
 
+        // 退出必须把刚才播到的位置 flush 落库——这一条同时给③建立**非零基线**：
+        // 没有它，③ 的「没被抹成 0」就是拿 0 和 0 比，永远恒真。
+        final VideoBookRow? afterFirst = await repo.getByBookUid(_kBookUid);
+        final int savedAfterFirst = afterFirst?.lastPositionMs ?? 0;
+        expect(savedAfterFirst, greaterThan(0),
+            reason: '首次退出应把播放位置 flush 落库，实测=$savedAfterFirst');
+
         // 故障现场两次打开之间隔了约 4 分钟；这里只需跨过 teardown 的异步收尾窗口。
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 100));
@@ -158,11 +165,33 @@ void main() {
         expect(secondPlayed, greaterThan(1000),
             reason: '重开同一集后必须真的能播放前进，实测=$secondPlayed');
 
-        // ── ③ 重开失败时绝不能把 0 覆盖掉真实进度（数据损坏防线）────────────
-        final VideoBookRow? row = await repo.getByBookUid(_kBookUid);
-        expect(row, isNotNull);
-
+        // ── ③ 数据损坏防线：重开这一程绝不能把已存进度抹掉 ───────────────────
+        // 基线由①退出时的 flush 建立（savedAfterFirst > 0）。若重开失败而位置写入
+        // 又没门控，第一个 125ms tick 就会把 0 写进去——现场就是这么丢的 135 秒。
         await exitOnce('second');
+        final VideoBookRow? afterSecond = await repo.getByBookUid(_kBookUid);
+        final int savedAfterSecond = afterSecond?.lastPositionMs ?? -1;
+        expect(savedAfterSecond, greaterThan(0),
+            reason: '重开这一程不得把已存进度抹成 0（基线 $savedAfterFirst，'
+                '实测 $savedAfterSecond）');
+
+        // 捕获到的框架异常里，除了离屏真窗口已知的 resize / 控制条布局噪声之外，
+        // 不该有别的——否则本用例会把真实回归静默吞掉（只打印条数等于没断言）。
+        const List<String> knownOffscreenNoise = <String>[
+          'RenderFlex',
+          'overflowed',
+          'ScrollController',
+          'ScrollPosition',
+          'Scrollbar',
+          'constraints',
+          'Size',
+        ];
+        final List<String> unexpected = caught
+            .where((String e) =>
+                !knownOffscreenNoise.any((String n) => e.contains(n)))
+            .toList();
+        expect(unexpected, isEmpty,
+            reason: '出现了与离屏 resize / 布局无关的框架异常：$unexpected');
         debugPrint(
             '[reopen-itest] non-fatal framework errors=${caught.length}');
       } finally {

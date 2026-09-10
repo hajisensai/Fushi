@@ -1099,6 +1099,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 绝不无限转圈——只把「上界」从两个圈收敛为一个圈，保留旧行为下界。
   Timer? _firstFramePromoteTimer;
 
+  /// BUG-2439：本次 load 期间 libmpv 报过的最后一条错误文本（[_handlePlaybackError]
+  /// 记录）。**不是失败判据**，只在真判失败时附进诊断日志，帮忙定位是哪一步炸的。
+  String? _lastPlaybackErrorMessage;
+
   /// BUG-2439：首帧兜底到点后、判定「媒体压根没打开」之前的额外宽限（毫秒）。
   ///
   /// 两段之所以分开：前段 2500ms 是「首帧还没出画」的兜底（纯音频容器、解码异常机型
@@ -2206,32 +2210,59 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 分流后：媒体活着就照旧 promote（慢解码不该被误判成失败）；没打开则再给一段
   /// 宽限（[_kMediaOpenGraceMs]，覆盖慢盘 / 大容器 / 冷启动），宽限内一旦打开就正常
   /// 走下去，到点仍没打开才判失败——给原因、给重试与返回入口。
+  ///
+  /// **超时判失败只用于本地文件**：网络流 / 互联对端的 open 耗时受对端与链路支配，
+  /// 弱网下首个分片握手拖过宽限是正常的；直播流更是 duration 恒 0、只能等 position
+  /// 推进才证明活着。对它们维持旧行为（到点 promote，交给 media_kit 自己的缓冲圈继续
+  /// 等），否则就是拿一条 15 秒的硬线把本来能播的流判死——那是行为倒退。
   void _promoteVideoReadyOrDiagnose(VideoPlayerController controller) {
     if (!mounted) return;
     if (controller.mediaOpened) {
       _promoteVideoReady();
       return;
     }
+    if (controller.videoPath == null) {
+      _promoteVideoReady(); // 非本地文件：不做超时判死。
+      return;
+    }
     _firstFramePromoteTimer = Timer(
       const Duration(milliseconds: _kMediaOpenGraceMs),
       () {
         if (!mounted) return;
+        // 页面这期间可能已经换了 controller（换集 / 重试）：旧定时器不得打翻新一程。
+        if (!identical(_controller ?? _pendingController, controller)) return;
         if (controller.mediaOpened) {
           _promoteVideoReady();
           return;
         }
-        if (_failed || _missingResource) return;
-        // 走到这里 = 媒体自始至终没被打开，且 libmpv 一条 error 都没发出来
-        // （原生侧静默失败，例如 VO / 纹理建不出来）。宁可给一句「打不开」也不能
-        // 把黑屏伪装成正常播放。
+        // 走到这里 mediaOpened 必为 false、videoPath 必非空（上面两个分支已分流），
+        // 故本判据剩下的唯一作用是「页面已在别的失败/缺失态里就别再盖一层」——那种
+        // 情况下什么都不做，**尤其不能 promote**（那等于把失败页换成黑画面）。
+        if (!VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+          mediaOpened: controller.mediaOpened,
+          isLocalFile: controller.videoPath != null,
+          alreadyFailed: _failed,
+          missingResource: _missingResource,
+        )) {
+          return;
+        }
+        _firstFramePromoteTimer = null;
+        // 走到这里 = 本地文件、给足 15 秒、duration 与 position 自始至终是 0。
+        // 首帧监听**故意保留**：媒体若在之后才真打开，[_promoteVideoReadyOnFirstFrame]
+        // 会把失败态自愈掉（见那里），不必让用户手动点重试。
         ErrorLogService.instance.log(
           'VideoFushi.mediaNeverOpened',
-          'media never opened within '
-              '${2500 + _kMediaOpenGraceMs}ms (duration/position stayed 0)',
+          'media never opened within ${2500 + _kMediaOpenGraceMs}ms '
+              '(duration/position stayed 0); '
+              'lastPlayerError=${_lastPlaybackErrorMessage ?? "<none>"}',
           StackTrace.current,
         );
         setState(() {
           _failed = true;
+          // 文案固定用「打不开」，不拿 mpv 的原始错误文本去过 [_describeLoadFailure]
+          // ——那是给 Dart 异常设计的裸子串匹配，mpv 文本里带路径，
+          // `\\NAS\Network Share\…` 会命中 'network' 报成网络故障、文件名含
+          // `Private` 会命中 'private' 报成「受限」，把本地文件问题指向错误方向。
           _failReason = t.video_load_failed_not_opened;
         });
       },
@@ -2240,6 +2271,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [VideoPlayerController] 宽高流回调：首帧解码出画后即提升可见态。
   void _promoteVideoReadyOnFirstFrame() {
+    // BUG-2439 自愈：[_promoteVideoReadyOrDiagnose] 的超时判失败之后，媒体仍可能真的
+    // 打开（慢得离谱的盘 / 冷启动 / 原生侧迟到就绪）。此时必须把失败态收回去——否则
+    // 监听照样会把 [_videoReadyToShow] 翻真，而 [_failed] 在 [_buildScaffold] 里优先级
+    // 更高，用户就被钉在「打不开」页上，背后画面其实已经在播。
+    //
+    // 放在最前面：下面那行 `_videoReadyToShow` 提前返回会跳过自愈。
+    final VideoPlayerController? active = _controller ?? _pendingController;
+    if (_failed && mounted && (active?.mediaOpened ?? false)) {
+      setState(() {
+        _failed = false;
+        _failReason = null;
+      });
+    }
     if (_videoReadyToShow) return;
     // TODO-1297：就绪 = 首帧已出画**且**缓冲结束（[isReadyForFirstPaint]），而非仅
     // [hasFirstFrame]——否则解码出首帧但仍在缓冲时提前挂载 [Video]，media_kit 缓冲圈
@@ -7790,31 +7834,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return t.video_load_failed_generic;
   }
 
-  /// BUG-2439：libmpv 层错误（`player.stream.error`）的归宿。
+  /// BUG-2439：libmpv 层错误（`player.stream.error`）的归宿——**只留证，不判决**。
   ///
-  /// 按「这一程到底播成没有」分流，因为两种情形该做的事正相反：
-  /// - **媒体从未打开**（[VideoPlayerController.mediaOpened] 为 false）：本次打开是彻底
-  ///   失败的，进失败态给出原因 + 重试/返回入口。此前这条路径什么都不做，2.5 秒兜底
-  ///   定时器照常把页面 promote 成就绪，用户面对的是黑屏 ＋ 整套控件 ＋ `00:00 / 00:00`。
-  /// - **已经打开过之后才报错**（中途解码错误、单条轨出问题）：画面与进度都还在，
-  ///   掀掉整页比留着更糟；只落日志留证。
+  /// 关键事实：`player.stream.error` **不是「媒体打不开」的专用通道**。media_kit 把
+  /// mpv 里 level == error 且 prefix ∈ `{file, ffmpeg(tcp: 开头), vd, ad, cplayer,
+  /// stream}` 的日志**全部**灌进这条流（`media_kit/lib/src/player/native/player/
+  /// real.dart`），而这些在**完全正常**的播放里也会出现：hwdec 候选逐个试错会打
+  /// `[vd] Could not open codec.`，外挂音轨 / 外挂字幕打不开会打
+  /// `[cplayer] Can not open external file …` / `[stream] Failed to open …`。
   ///
-  /// [_pendingController] 也要看：错误可能在 `load` 尚未返回、controller 还没赋给
-  /// [_controller] 时就到达。
+  /// 所以拿它当失败判据是错的：`load()` 刚返回那一段时间里 [mediaOpened] 还没被观测
+  /// 到翻真（media_kit 的 `open()` 先 `stop()` 把 state 清零，`loadfile` 只下发不等
+  /// 解析完，重容器上这个窗口有一秒以上），上述任一条正常错误都会把**正在正常起播**
+  /// 的页面打成失败页——而播放器并不会因此停下，音频还会在失败页背后继续响。
+  ///
+  /// 判决权因此收归唯一判据：「给足时间后媒体仍未打开」（见
+  /// [_promoteVideoReadyOrDiagnose]）。本方法只做两件事：落日志留证、把最后一条错误
+  /// 文本记下来，供那条判据在真判失败时附进诊断日志。
   void _handlePlaybackError(String message) {
     ErrorLogService.instance.log(
       'VideoFushi.playerError',
       message,
       StackTrace.current,
     );
-    if (!mounted) return;
-    final VideoPlayerController? active = _controller ?? _pendingController;
-    if (active?.mediaOpened ?? false) return;
-    if (_failed) return;
-    setState(() {
-      _failed = true;
-      _failReason = _describeLoadFailure(message);
-    });
+    _lastPlaybackErrorMessage = message;
   }
 
   /// 加载失败态「重试」：清失败标记后从头重跑 [_init]（本地重读 row、流媒体重解析
