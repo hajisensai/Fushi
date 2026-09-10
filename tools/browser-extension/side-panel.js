@@ -36,7 +36,26 @@
   //   · html 根挂 .fushi-embed 类，side-panel.css 按触屏规格放大控件、补安全区。
   // typeof 守卫：vm 行为测试沙箱里没有全局 location，扩展页里永远有——两不耽误。
   var EMBED_SEARCH = typeof location === 'undefined' ? '' : String(location.search || '');
-  var EMBED = /[?&]fushiEmbed=1/.test(EMBED_SEARCH);
+  // BUG-2426：「这份文档是不是被嵌进了别人的页面」是浏览器的客观事实，不能由
+  // URL 参数声明。旧判据只看 `?fushiEmbed=1`，于是 #1295 那一整套「宿主 origin 与
+  // 目标 tabId 一律不许自证」的加固，被恶意站点**省略这个参数**就能整个绕过：
+  // EMBED=false ⇒ queryActiveTab() 落回 chrome.tabs.query({active,currentWindow})，
+  // 把用户此刻真正在看的标签页交给嵌入方当靶子（跨源读不到内容，但足够点击劫持
+  // 借用户的手去跳转/制卡）。判据改成帧嵌套这一浏览器事实；同源比较不会抛，真抛了
+  // 也按「被嵌入」fail-closed。URL 参数保留只为兼容合法抽屉路径，不再是唯一来源。
+  var EMBED = (function () {
+    try {
+      // 真浏览器里 window.top 恒存在：顶层页 top === self，被嵌入则不等（跨源时它是
+      // 一个不可读的 Window 代理，但引用比较照样成立）。`window.top &&` 只为挡住
+      // 行为测试沙箱里没有 top 的情形，浏览器里永远走不到那条回退。
+      if (typeof window !== 'undefined' && window.top && window.top !== window.self) {
+        return true;
+      }
+    } catch (_) {
+      return true; // 连比较都被拒 = 必然嵌在别人的页面里，fail-closed
+    }
+    return /[?&]fushiEmbed=1/.test(EMBED_SEARCH);
+  })();
   // 目标标签 id 不从 URL 取：?fushiTabId= 是自证参数，嵌入方填谁的号都行。
   // 改由 SW 在 drawerEmbedVerify 应答里按 sender.tab.id 背书（见文件末尾 EMBED 块），
   // 背书到货前保持 null —— 那期间 queryActiveTab 一律给空，fail-closed。
