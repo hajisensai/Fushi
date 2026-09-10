@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2239 条。点号进各自文件。
+> 共 2242 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2436](bugs/BUG-2436-eink-popup-body-opacity-not-flattened.md) | ✅ | ✅ | 墨水屏弹窗只压了按钮 opacity，正文侧十几处静息半透明与亚像素位移漏网 |
+| [BUG-2435](bugs/BUG-2435-dict-style-preview-missing-eink.md) | ✅ | ✅ | 词典样式预览不注入 eink class，墨水屏下预览与真弹窗不同源 |
+| [BUG-2434](bugs/BUG-2434-reader-lookup-popup-loses-eink-theme.md) | ✅ | ✅ | 书内查词弹窗丢失墨水屏主题扩展，整个 html.eink 覆盖块失效 |
 | [BUG-2431](bugs/BUG-2431-discovery-hero-backdrop-cropped.md) | ✅ | ✅ | 发现页详情顶部 backdrop 被上下裁掉六成 |
 | [BUG-2428](bugs/BUG-2428-dict-scan-inline-results.md) | ✅ | ✅ | 查词页源文本条点字压嵌套浮层，没有换下方的查词结果 |
 | [BUG-2427](bugs/BUG-2427-desktop-library-header-top-gap.md) | ✅ | ✅ | 桌面端库页页头顶部留白过大（手机端修复未同步） |

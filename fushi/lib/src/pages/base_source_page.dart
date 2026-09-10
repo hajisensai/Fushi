@@ -1181,6 +1181,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       selectionRect: sel,
       screen: screen,
       bottomDocked: appModel.popupBottomDocked,
+      fullWidth: appModel.popupFullWidth,
       maxWidth: popupMaxWidth,
       maxHeight: popupMaxHeight,
       padding: popupPadding,

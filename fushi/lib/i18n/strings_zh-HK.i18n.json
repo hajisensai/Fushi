@@ -4633,5 +4633,7 @@
   "book_rename_label": "標題",
   "dict_rename": "重命名",
   "dict_rename_label": "詞典名稱",
-  "shortcut_action_global_external_open_lookup_page": "喚起主視窗並開啟查詞頁"
+  "shortcut_action_global_external_open_lookup_page": "喚起主視窗並開啟查詞頁",
+  "popup_full_width": "Full-width popup",
+  "popup_full_width_hint": "Ignore the maximum width and let the popup span the available width. Its position still follows the selected word."
 }
