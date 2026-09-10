@@ -4618,5 +4618,7 @@
   "audiobook_transcribe_model_custom_error_transducer": "找到了 encoder，但旁边没有 decoder / joiner。",
   "audiobook_transcribe_model_custom_detach": "移除接入",
   "audiobook_transcribe_model_custom_detach_hint": "只是从模型列表里移除，你的文件不会被删除。",
-  "audiobook_transcribe_model_custom_added": "已接入 $name"
+  "audiobook_transcribe_model_custom_added": "已接入 $name",
+  "manga_source_interconnect_subtitle": "浏览已配对设备上的漫画库",
+  "manga_source_interconnect_disabled": "在设置里开启 Fushi 互联后即可使用此来源"
 }

@@ -8,7 +8,13 @@ import 'package:flutter/foundation.dart';
 /// 用户库里的 `sourceMetadata` JSON。
 enum OnlineMangaRuntimeKind {
   mihon('mihon'),
-  aidoku('aidoku');
+  aidoku('aidoku'),
+
+  /// 已配对的互联对端（把对端漫画库当成一个源，按页在线读）。
+  ///
+  /// 它没有「扩展包」，`extensionPackage` 恒是 [kInterconnectMangaPackage]、
+  /// `sourceId` 恒是对端库那一维的常量，`seriesKey` = 对端 `bookKey`。
+  interconnect('interconnect');
 
   const OnlineMangaRuntimeKind(this.wireValue);
 
@@ -21,6 +27,23 @@ enum OnlineMangaRuntimeKind {
     return null;
   }
 }
+
+/// 互联漫画源在书架身份里占的「扩展包」位。
+///
+/// 互联源没有扩展包，但 [OnlineMangaLibraryService.bookKeyFor] 的身份三元组
+/// （包 / 源 / 作品）是**存量键推导**，不能为了这一个源改形状——那会让所有已入库的
+/// 在线漫画变成找不到的孤儿。所以这里给一个固定占位值，让三元组保持原样。
+///
+/// ⚠️ 值已进用户库的 `epub_books.bookKey` 与磁盘目录名，**永不可改**。
+const String kInterconnectMangaPackage = 'fushi.interconnect';
+
+/// 互联漫画源在书架身份里占的「源 id」位。
+///
+/// 恒定而不含对端地址：换 IP / 重新配对不该让书架条目全部失配（对端身份变化由
+/// `InterconnectSyncBackend.sessionIdentityRevision` 驱动缓存失效，不由键表达）。
+///
+/// ⚠️ 同样已进 bookKey，**永不可改**。
+const String kInterconnectMangaSourceId = 'library';
 
 /// 归一化后的章节。
 ///

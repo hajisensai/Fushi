@@ -4618,5 +4618,7 @@
   "audiobook_transcribe_model_custom_error_transducer": "Found an encoder but no decoder / joiner next to it.",
   "audiobook_transcribe_model_custom_detach": "Remove from list",
   "audiobook_transcribe_model_custom_detach_hint": "Only removes it from the model list. Your files are not deleted.",
-  "audiobook_transcribe_model_custom_added": "Added $name"
+  "audiobook_transcribe_model_custom_added": "Added $name",
+  "manga_source_interconnect_subtitle": "Browse the manga library on your paired device",
+  "manga_source_interconnect_disabled": "Turn on Fushi Interconnect in settings to use this source"
 }
