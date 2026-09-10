@@ -50,6 +50,9 @@ import Flutter
     // 没注册时 Dart 收到 MissingPluginException，isAvailable() 返回 false，引擎
     // 选项就静默不出现（system_ocr_channel.dart 的注释把这条定为「当前事实」）。
     FushiSystemOcr.register(binaryMessenger: binaryMessenger)
+    // 系统语音转录（iOS 26 的 SpeechAnalyzer）。老系统上原生侧应答「不支持」，
+    // Dart 侧据此不把这个引擎放进下拉。
+    FushiSpeechTranscriber.register(binaryMessenger: binaryMessenger)
     challengeBrowser = FushiChallengeBrowser(binaryMessenger: binaryMessenger) {
       UIApplication.shared.connectedScenes
         .compactMap { $0 as? UIWindowScene }

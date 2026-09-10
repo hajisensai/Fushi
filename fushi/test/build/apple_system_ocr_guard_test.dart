@@ -11,8 +11,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
-  final String swift = File('apple/FushiSystemOcr.swift').readAsStringSync();
+  // 剥注释后再判：本仓注释里往往留着与实现同样的字面量，不剥的话「改了实现、
+  // 守卫仍绿」（假绿形态④）。
+  final String swift = maskComments(
+    File('apple/FushiSystemOcr.swift').readAsStringSync(),
+  );
   final String dart =
       File('lib/src/ocr/system_ocr_channel.dart').readAsStringSync();
   final String iosDelegate =
@@ -51,7 +57,8 @@ void main() {
       );
       expect(
         pbx,
-        contains('/* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile;'),
+        contains(
+            '/* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile;'),
         reason: '$path 缺 PBXBuildFile',
       );
       // group children + Sources phase：两处引用各一次，加上上面两条定义，共四处。
