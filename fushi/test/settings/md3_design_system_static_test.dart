@@ -2714,7 +2714,8 @@ void main() {
     }
   });
 
-  test('selected list items use primary foreground and a subtle outline', () {
+  test('selected list items use primary foreground without stacking an outline',
+      () {
     final String components = File(
       'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
@@ -2727,8 +2728,12 @@ void main() {
     expect(listItem, contains('selectedForeground'));
     expect(listItem, contains('tokens.surfaces.primary'));
     expect(listItem, contains('FontWeight.w700'));
+    // pill 的边框两态都画、非 eink 下两态都透明：几何恒定（1px 占位）以免选中后
+    // 行高跳变，而填充已经是选中信号，再叠一圈 primary 细边就是填充之上的第二
+    // 条线。eink 下填充塌缩，那里才换成实描边色。
     expect(listItem, contains('Border.all('));
-    expect(listItem, contains('withValues(alpha: 0.20)'));
+    expect(listItem, contains('Colors.transparent'));
+    expect(listItem, isNot(contains('withValues(alpha: 0.20)')));
   });
 
   test('dictionary and popup surfaces use shared MD3 primitives', () {

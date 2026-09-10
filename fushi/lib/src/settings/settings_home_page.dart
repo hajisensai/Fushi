@@ -141,6 +141,19 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   Widget _buildSearchField() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
+    // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
+    // outlineVariant 深一档，在同一屏里是第三种强度的线。
+    //
+    // eink 例外：填充在 eink scheme 下塌缩成背景色，描边是唯一的边界信号，
+    // 那里把 enabled/focused 交回主题默认（enabledBorder/focusedBorder 传 null
+    // 即回落主题；只覆盖 border 会被主题的 enabledBorder 顶掉）。
+    final bool eink = isEinkTheme(context);
+    final InputBorder flatBorder = OutlineInputBorder(
+      // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+      borderRadius: tokens.radii.controlRadius,
+      borderSide: BorderSide.none,
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -169,10 +182,24 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                     },
                   ),
             isDense: true,
-            border: OutlineInputBorder(
-              // MD3 守卫：圆角一律走 design tokens，不自持字面量。
-              borderRadius: tokens.radii.controlRadius,
-            ),
+            filled: !eink,
+            fillColor: eink ? null : tokens.surfaces.search,
+            border: eink
+                ? OutlineInputBorder(
+                    // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+                    borderRadius: tokens.radii.controlRadius,
+                  )
+                : flatBorder,
+            enabledBorder: eink ? null : flatBorder,
+            focusedBorder: eink
+                ? null
+                : OutlineInputBorder(
+                    borderRadius: tokens.radii.controlRadius,
+                    borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
           ),
           onChanged: (String value) => setState(() => _searchQuery = value),
         ),

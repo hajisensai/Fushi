@@ -647,7 +647,7 @@ void main() {
   });
 
   test(
-    'settings Material polish keeps surfaces outlined and actions aligned',
+    'settings Material polish keeps surfaces filled and actions aligned',
     () {
       final String shared = readNormalizedSource(
         'lib/src/utils/components/settings_shared.dart',
@@ -659,10 +659,15 @@ void main() {
         reason:
             'right-pane sections should read as card surfaces, not page fill',
       );
+      // 分组卡靠填充分层表达边界，不再在填充之上叠一圈描边：填充 + 描边是两套
+      // 并存的边界信号，和输入框/分段控件的 colorScheme.outline 描边混在同一屏
+      // 上就是三种强度的线。eink 的补边由 FushiCard 内部负责（钉在
+      // test/widgets/fushi_card_eink_border_test.dart），这里不从外部传。
       expect(
         shared,
-        contains('borderColor: tokens.surfaces.outline'),
-        reason: 'settings section surfaces need a lightweight MD3 outline',
+        isNot(contains('borderColor:')),
+        reason:
+            'filled settings sections must not stack an outline on the fill',
       );
       expect(shared, contains('endIndent:'));
       expect(

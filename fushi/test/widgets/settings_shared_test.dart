@@ -122,7 +122,9 @@ void main() {
     ).colorScheme;
     final FushiCard card = tester.widget<FushiCard>(find.byType(FushiCard));
     expect(card.color, scheme.surfaceContainer);
-    expect(card.borderColor, scheme.outlineVariant);
+    // 填充卡不叠描边；eink 的补边由 FushiCard 自己按主题决定（见
+    // test/widgets/fushi_card_eink_border_test.dart），section 不从外部传。
+    expect(card.borderColor, isNull);
     expect(find.byType(Switch), findsOneWidget);
   });
 
