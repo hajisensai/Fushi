@@ -1099,11 +1099,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 绝不无限转圈——只把「上界」从两个圈收敛为一个圈，保留旧行为下界。
   Timer? _firstFramePromoteTimer;
 
-  /// BUG-2439：本次 load 期间 libmpv 报过的最后一条错误文本（[_handlePlaybackError]
+  /// BUG-2441：本次 load 期间 libmpv 报过的最后一条错误文本（[_handlePlaybackError]
   /// 记录）。**不是失败判据**，只在真判失败时附进诊断日志，帮忙定位是哪一步炸的。
   String? _lastPlaybackErrorMessage;
 
-  /// BUG-2439：首帧兜底到点后、判定「媒体压根没打开」之前的额外宽限（毫秒）。
+  /// BUG-2441：首帧兜底到点后、判定「媒体压根没打开」之前的额外宽限（毫秒）。
   ///
   /// 两段之所以分开：前段 2500ms 是「首帧还没出画」的兜底（纯音频容器、解码异常机型
   /// 都靠它切给 media_kit），本段则是「连媒体都还没打开」的宽限。取值要盖住慢盘 / 大
@@ -2201,7 +2201,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// BUG-2439：首帧兜底到点时的**分流**——「首帧还没解码出来」与「媒体压根没打开」
+  /// BUG-2441：首帧兜底到点时的**分流**——「首帧还没解码出来」与「媒体压根没打开」
   /// 是两件事，此前都被同一个无条件 `_promoteVideoReady()` 当成前者处理。
   ///
   /// 后者才是用户看到的那个形状：libmpv 没打开成功 → 永远不会有首帧 → 2.5 秒一到
@@ -2271,7 +2271,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [VideoPlayerController] 宽高流回调：首帧解码出画后即提升可见态。
   void _promoteVideoReadyOnFirstFrame() {
-    // BUG-2439 自愈：[_promoteVideoReadyOrDiagnose] 的超时判失败之后，媒体仍可能真的
+    // BUG-2441 自愈：[_promoteVideoReadyOrDiagnose] 的超时判失败之后，媒体仍可能真的
     // 打开（慢得离谱的盘 / 冷启动 / 原生侧迟到就绪）。此时必须把失败态收回去——否则
     // 监听照样会把 [_videoReadyToShow] 翻真，而 [_failed] 在 [_buildScaffold] 里优先级
     // 更高，用户就被钉在「打不开」页上，背后画面其实已经在播。
@@ -3538,7 +3538,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
     controller.onSuspectedBlackFlicker =
         Platform.isWindows ? _handleSuspectedBlackFlicker : null;
-    // BUG-2439：libmpv 层错误的唯一 UI 通道。此前无人订阅 `player.stream.error`，
+    // BUG-2441：libmpv 层错误的唯一 UI 通道。此前无人订阅 `player.stream.error`，
     // 媒体打不开时页面只会黑屏 + 00:00，用户与日志两头都拿不到任何线索。
     controller.onPlaybackError = _handlePlaybackError;
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
@@ -7834,7 +7834,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return t.video_load_failed_generic;
   }
 
-  /// BUG-2439：libmpv 层错误（`player.stream.error`）的归宿——**只留证，不判决**。
+  /// BUG-2441：libmpv 层错误（`player.stream.error`）的归宿——**只留证，不判决**。
   ///
   /// 关键事实：`player.stream.error` **不是「媒体打不开」的专用通道**。media_kit 把
   /// mpv 里 level == error 且 prefix ∈ `{file, ffmpeg(tcp: 开头), vd, ad, cplayer,

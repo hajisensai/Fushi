@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
-/// BUG-2439：`player.stream.error` 是**证据，不是判决**——这条守卫钉死它。
+/// BUG-2441：`player.stream.error` 是**证据，不是判决**——这条守卫钉死它。
 ///
 /// 为什么需要一条守卫而不是靠注释：这个错误极其容易重犯。它读起来太像「播放器报错
 /// 了 → 那就是打不开 → 显示失败页」，而真相是 media_kit 把 mpv 里 level == error 且
@@ -22,7 +22,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// 判决权只属于 `VideoPlayerController.shouldDiagnoseMediaNeverOpened`（纯函数，
 /// 真值表在 `test/media/video/video_player_controller_test.dart`）。
 void main() {
-  group('BUG-2439 mpv error 只留证不判决', () {
+  group('BUG-2441 mpv error 只留证不判决', () {
     test('_handlePlaybackError 不触碰任何失败态', () {
       final String src = readVideoFushiSource();
       // 必须剥注释再断言：本方法的文档里就写着「不得置失败态」这类词，
@@ -56,7 +56,7 @@ void main() {
     });
 
     test('失败判定不读 mpv 错误文本', () {
-      // BUG-2439 审查发现：`_describeLoadFailure` 是给 Dart 异常设计的裸子串匹配，
+      // BUG-2441 审查发现：`_describeLoadFailure` 是给 Dart 异常设计的裸子串匹配，
       // 喂 mpv 原始文本会误分类——`\\NAS\Network Share\…` 命中 'network' 报成网络
       // 故障、文件名含 `Private` 命中 'private' 报成「受限」，把本地文件问题指向
       // 完全错误的排查方向。判失败时文案固定用 not_opened。

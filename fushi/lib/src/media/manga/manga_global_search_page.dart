@@ -255,7 +255,12 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      // BUG-2440：scaffold 的 body 不再扣底部安全区，最后一个源的结果块得靠这里
+      // 补出手势条那一段，否则静止时被压住。
+      padding: withBottomSafeInset(
+        context,
+        const EdgeInsets.symmetric(vertical: 8),
+      ),
       itemCount: _runs.length,
       itemBuilder: (BuildContext context, int index) =>
           _buildSection(_runs[index]),

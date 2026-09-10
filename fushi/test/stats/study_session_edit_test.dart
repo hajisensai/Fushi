@@ -454,7 +454,7 @@ void main() {
 
     test('源码顺序守卫：retireStudySegmentUids 出现在 updateStudySession 之前', () {
       final String source =
-          File('lib/src/stats/study_sessions.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/stats/study_sessions.dart').readAsStringSync();
       final int body = source.indexOf('Future<void> applyStudySessionEdit(');
       expect(body, greaterThan(0), reason: '入口改名了就来这里同步改');
       final int retire = source.indexOf('retireStudySegmentUids(', body);

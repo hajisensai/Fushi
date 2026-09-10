@@ -697,7 +697,7 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// 存在的理由是 `positionMs == 0` 背了两种互斥含义：「用户确实停在片头」与
   /// 「媒体根本没打开」。此前无处可分，于是 open 失败后第一个 125ms tick 就把 0
-  /// 经 [_maybeSavePosition] 写库，**覆盖掉用户的真实进度**（BUG-2439 实测：一集
+  /// 经 [_maybeSavePosition] 写库，**覆盖掉用户的真实进度**（BUG-2441 实测：一集
   /// 已看 135 秒，重开失败后 `lastPositionMs` 被改写成 0）。
   ///
   /// 判据是「曾观测到 duration > 0 **或** position > 0」，两条缺一不可：
@@ -797,7 +797,7 @@ class VideoPlayerController extends ChangeNotifier
     return enteredRealBackground && hasVideo && seekable;
   }
 
-  /// BUG-2439：首帧兜底宽限到点时，是否应判「媒体压根没打开」失败。
+  /// BUG-2441：首帧兜底宽限到点时，是否应判「媒体压根没打开」失败。
   ///
   /// 抽成纯函数是因为这条判据**必须可测**：它决定的是「把整页换成失败页」这种不可
   /// 忽视的用户可见后果，而错判两个方向的代价都很实在——判早了会把正在正常起播的
@@ -1292,7 +1292,7 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// 在此之前**全仓库没有任何一处订阅它**：libmpv 打不开媒体时既不抛异常、也不置
   /// 任何失败态，页面于是在 2.5 秒兜底定时器到点后照常挂载画面——用户看到的是黑屏
-  /// ＋整套控件 ＋ `00:00 / 00:00`，一个字的错误都没有（BUG-2439 现场）。
+  /// ＋整套控件 ＋ `00:00 / 00:00`，一个字的错误都没有（BUG-2441 现场）。
   StreamSubscription<String>? _errorSub;
 
   /// 播放器层错误回调（页面挂）：媒体打不开 / 解码失败等 libmpv 侧错误经此上抛。
@@ -1546,7 +1546,7 @@ class VideoPlayerController extends ChangeNotifier
       });
       // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
       _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
-      // BUG-2439：给 libmpv 层错误一个归宿。同样随 Player 生命周期挂一次。
+      // BUG-2441：给 libmpv 层错误一个归宿。同样随 Player 生命周期挂一次。
       //
       // 这里**只校验 player identity、不校验 loadToken**，是因为消费端
       // （`VideoFushiPage._handlePlaybackError`）只落日志、不做任何判决：换集时上一片
@@ -2375,7 +2375,7 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   bool get debugRestoreGuardActive => _restoreTargetMs != null;
 
-  /// BUG-2439 测试钩子：把控制器摆成「[load] 已跑过（有 bookUid），但媒体**始终没被
+  /// BUG-2441 测试钩子：把控制器摆成「[load] 已跑过（有 bookUid），但媒体**始终没被
   /// 打开**」——即 libmpv `open` 失败 / VO 建不出来时的真实状态。
   ///
   /// 与 [debugPrimeRestoreGuardForTesting] 的区别就是 [mediaOpened] 留在 false：那个
@@ -3506,7 +3506,7 @@ class VideoPlayerController extends ChangeNotifier
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
     _audioDeviceSub = null;
-    // BUG-2439：错误订阅与 Player 同作用域，随它一起摘（也断开对页面回调的引用）。
+    // BUG-2441：错误订阅与 Player 同作用域，随它一起摘（也断开对页面回调的引用）。
     unawaited(_errorSub?.cancel());
     _errorSub = null;
     onPlaybackError = null;

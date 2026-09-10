@@ -816,13 +816,22 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       ),
       body: Column(
         children: <Widget>[
+          // BUG-2440：脚手架的 body 不再扣底部安全区，那一段归下面这条按钮行的
+          // SafeArea 认领。步骤正文在按钮行**上方**、够不着屏幕底边，所以先把
+          // 底部 inset 从它的 MediaQuery 里摘掉——不摘的话，自己补安全区的步骤
+          // （如 [OnlineServicesOnboardingView]）会和按钮行各补一次，在按钮上方
+          // 顶出一条 34pt 空白。
           Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: _kOnboardingContentMaxWidth,
+            child: MediaQuery.removePadding(
+              context: context,
+              removeBottom: true,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _kOnboardingContentMaxWidth,
+                  ),
+                  child: _buildStep(step),
                 ),
-                child: _buildStep(step),
               ),
             ),
           ),

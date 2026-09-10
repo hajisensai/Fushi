@@ -1,4 +1,4 @@
-## BUG-2439 · video-reopen-black-screen
+## BUG-2441 · video-reopen-black-screen
 - **报告**：2026-09-10（用户：本机 Windows 桌面版，`D:\APP\Hibiki\fushi.exe` 2.3.0-debug.14373）
 - **真实性**：✅ 真 bug（现场取证，非复现推断）
 
@@ -56,7 +56,7 @@
   - 判失败分支收干净定时器并校验 controller 仍是当前那个；
   - 失败文案不再过 `_describeLoadFailure`（裸子串匹配遇上带路径的 mpv 文本会把 `\\NAS\Network Share\…` 判成网络故障、文件名含 `Private` 判成「受限」）。
 
-- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_player_controller_test.dart` 新增 group「BUG-2439 媒体未打开时禁止位置写入」6 条：4 条否定（tick 的 0 / 非零位置 / `flushPosition` / `dispose` 强制写都不落库）＋ 2 条正向对照（媒体已打开时 tick 与 flush 照常落库），对照是为了防止「门永远关着」也能全绿的空壳。配套测试钩子 `debugPrimeUnopenedMediaForTesting`（与既有 `debugPrimeRestoreGuardForTesting` 刻意分开：两者驱动的是位置写入的两道**不同**的门）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_player_controller_test.dart` 新增 group「BUG-2441 媒体未打开时禁止位置写入」6 条：4 条否定（tick 的 0 / 非零位置 / `flushPosition` / `dispose` 强制写都不落库）＋ 2 条正向对照（媒体已打开时 tick 与 flush 照常落库），对照是为了防止「门永远关着」也能全绿的空壳。配套测试钩子 `debugPrimeUnopenedMediaForTesting`（与既有 `debugPrimeRestoreGuardForTesting` 刻意分开：两者驱动的是位置写入的两道**不同**的门）。
   - `shouldDiagnoseMediaNeverOpened` 真值表 4 条（含「媒体已打开不判死」「非本地文件不判死」两个方向）。
   - 源码守卫 `fushi/test/pages/video_playback_error_not_a_verdict_guard_test.dart`：钉死 `_handlePlaybackError` 不触碰失败态（这个错极易重犯，读起来太像「播放器报错 → 就是打不开」），并带反向断言防「方法体被删空也恒绿」。**变异实测**：把 `_failed = true` 加回该方法 → 守卫红；恢复 → 绿。
   - 另有真机复现用例 `fushi/integration_test/video_reopen_same_episode_itest.dart`（同一集播放→退出→重开，断言第二次 `debugDurationMs > 0` 且能真实前进），用故障现场那部素材。其中「进度不被抹」一条最初写成了空壳（fixture 播种就是 0，`expect(row, isNotNull)` 恒真），已改为由第一次退出建立非零基线再核对。

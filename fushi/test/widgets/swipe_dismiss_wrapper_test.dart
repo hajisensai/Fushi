@@ -571,16 +571,141 @@ void main() {
         buildApp(eink: false, onDismiss: () => dismissed = true),
       );
       final Offset center = tester.getCenter(find.byType(SizedBox).first);
+      final Offset before = tester.getTopLeft(find.byType(SizedBox).first);
       final TestGesture gesture = await tester.startGesture(center);
       await gesture.moveBy(const Offset(60, 0));
       await gesture.up();
       await tester.pump();
 
       expect(dismissed, isFalse);
-      final Transform transform = tester.widget<Transform>(
-        find.byType(Transform).first,
+      // 开关关掉后本 wrapper 一层 [Transform] 都不挂（BUG-2439），所以断言落在
+      // 「卡片没挪过」这一用户可见事实上，而不是补间控制器的中间量。
+      expect(
+        find.descendant(
+          of: find.byType(SwipeDismissWrapper),
+          matching: find.byType(Transform),
+        ),
+        findsNothing,
       );
-      expect(transform.transform.getTranslation().x, 0);
+      expect(tester.getTopLeft(find.byType(SizedBox).first), before);
+    });
+  });
+
+  /// BUG-2439：开关关掉后**跟手期**也不许有位移。
+  ///
+  /// BUG-2405 只归零了松手后的补间，`Transform.translate` 原样留着 —— 用户拖动时仍看
+  /// 得见弹窗跟着手指滑一段才消失，与「关掉则瞬间关闭」的副标题不符。判别点必须落在
+  /// **手指还没抬起**的那一帧：抬手后的行为两版一样（都当帧关），只看结果分不出来。
+  group('SwipeDismissWrapper「弹窗关闭动画」关掉后跟手期零位移（BUG-2439）', () {
+    tearDown(() async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(true);
+    });
+
+    /// 过阈值横拖但**不抬手**，回报卡片左上角相对拖动前挪了多少 px。
+    Future<double> dragWithoutReleasing(
+      WidgetTester tester, {
+      required bool animation,
+      Key? key,
+    }) async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(animation);
+      bool dismissed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SwipeDismissWrapper(
+              key: key,
+              onDismiss: () => dismissed = true,
+              child: const SizedBox(
+                width: 300,
+                height: 100,
+                child: ColoredBox(color: Colors.blue),
+              ),
+            ),
+          ),
+        ),
+      );
+      final Finder card = find.byType(SizedBox).first;
+      final Offset before = tester.getTopLeft(card);
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(card),
+      );
+      await gesture.moveBy(const Offset(200, 0));
+      await tester.pump();
+      final double moved = tester.getTopLeft(card).dx - before.dx;
+      // 收尾：抬手 + settle，别把手势和补间漏给下一个用例。
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(dismissed, isTrue, reason: '过阈值抬手后总该关，两版一致');
+      return moved;
+    }
+
+    testWidgets('开关开着：跟手期卡片跟着手指走（既有手感不变）', (WidgetTester tester) async {
+      expect(await dragWithoutReleasing(tester, animation: true), 200);
+    });
+
+    testWidgets('开关关掉：跟手期卡片一动不动', (WidgetTester tester) async {
+      expect(await dragWithoutReleasing(tester, animation: false), 0);
+    });
+
+    testWidgets('同一条拖动：开着跟手位移 200、关掉恒 0（开关真的改变跟手期行为）', (
+      WidgetTester tester,
+    ) async {
+      final double on = await dragWithoutReleasing(
+        tester,
+        animation: true,
+        key: const ValueKey<String>('follow-on'),
+      );
+      final double off = await dragWithoutReleasing(
+        tester,
+        animation: false,
+        key: const ValueKey<String>('follow-off'),
+      );
+      expect(on, 200);
+      expect(off, 0);
+      expect(on, isNot(equals(off)));
+    });
+
+    testWidgets('开关关掉：跟手期不挂 Transform/Opacity（不是靠 offset 0 假装不动）', (
+      WidgetTester tester,
+    ) async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(false);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SwipeDismissWrapper(
+              onDismiss: () {},
+              child: const SizedBox(
+                width: 300,
+                height: 100,
+                child: ColoredBox(color: Colors.blue),
+              ),
+            ),
+          ),
+        ),
+      );
+      final Finder card = find.byType(SizedBox).first;
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(card),
+      );
+      await gesture.moveBy(const Offset(200, 0));
+      await tester.pump();
+
+      expect(
+        find.descendant(
+          of: find.byType(SwipeDismissWrapper),
+          matching: find.byType(Transform),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(SwipeDismissWrapper),
+          matching: find.byType(Opacity),
+        ),
+        findsNothing,
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
     });
   });
 }

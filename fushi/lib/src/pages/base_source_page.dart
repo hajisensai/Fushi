@@ -798,6 +798,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         hasChildPopup: index < stack.length - 1,
         isDark: isDark,
         overrideFillColor: appModel.overrideDictionaryColor,
+        // dock 面板铺满屏幕左右缘时把圆角摊平，否则边缘露出背景（BUG-2439）。
+        bottomDocked: appModel.popupBottomDocked,
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,

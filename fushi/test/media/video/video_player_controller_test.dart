@@ -2173,7 +2173,7 @@ void main() {
     });
   });
 
-  // BUG-2439：媒体没被打开时（libmpv `open` 失败 / VO 建不出来），position 恒 0——那
+  // BUG-2441：媒体没被打开时（libmpv `open` 失败 / VO 建不出来），position 恒 0——那
   // 不是「用户停在片头」，是「没东西可播」。三个位置写入点此前无法区分这两种 0，于是
   // 重开失败后的第一个 125ms tick 就把 0 写库，抹掉用户上一程的真实进度（现场实测：
   // 已看 135 秒的一集被改写成 lastPositionMs=0）。
@@ -2181,7 +2181,7 @@ void main() {
   // 判据是 mediaOpened 而**不是**「位置是否为 0」：位置大小不能证明媒体活着，反过来
   // 直播流一开始 position 就是 0 却完全正常。下面每条否定断言都配了正向对照，防止
   // 「门永远关着」也能让用例全绿。
-  group('VideoPlayerController BUG-2439 媒体未打开时禁止位置写入', () {
+  group('VideoPlayerController BUG-2441 媒体未打开时禁止位置写入', () {
     test('未打开：tick 读到的 0 不写库', () async {
       final c = VideoPlayerController();
       addTearDown(c.dispose);

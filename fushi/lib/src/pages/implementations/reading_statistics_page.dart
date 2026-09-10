@@ -560,7 +560,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 childCount: _bookData.length,
               ),
             ),
-            SliverPadding(padding: EdgeInsets.only(bottom: card * 2)),
+            // BUG-2440：收尾留白连带补上底部安全区，否则脚手架让出 home indicator
+            // 那一段后，最后一本书会被手势条压住。
+            buildStatTailSliver(context),
           ],
         );
       },

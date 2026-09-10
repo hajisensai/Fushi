@@ -24,8 +24,10 @@ double swipeDismissThreshold(double sensitivity) =>
 ///     残影，此前是唯一的关闭途径。
 ///
 /// [Duration.zero] 的 `animateTo` 当帧就 complete，`onDismiss` 仍在完成回调里触发，
-/// 关窗时序不变，只是不再画中间帧。跟手期的 `Transform.translate` 不受影响——手指
-/// 按住时的实时跟随不是补间动画，去掉会让滑关失去方向反馈（BUG-2283 备注）。
+/// 关窗时序不变，只是不再画中间帧。
+///
+/// 墨水屏那条**只归零补间**：跟手期的 `Transform.translate` 保留，手指按住时仍有方向
+/// 反馈（BUG-2283 备注）。用户显式关掉开关那条更强，见 [popupSwipeDismissIsInstant]。
 Duration popupDismissAnimationDuration(
   BuildContext context,
   Duration duration,
@@ -35,6 +37,22 @@ Duration popupDismissAnimationDuration(
   }
   return einkSafeDuration(context, duration);
 }
+
+/// 用户显式关掉「弹窗关闭动画」（`popup_dismiss_animation`）时，滑关**整条**都不画：
+///
+///   * 跟手期不再 `Transform.translate` + 淡出——手指按住拖动时弹窗一动不动；
+///   * 抬手那一刻按累计横向位移判 [swipeDismissThreshold]：过了当帧 `onDismiss`，
+///     没过就原地留着（无 spring-back 补间可弹——本来就没动过）。
+///
+/// 判定时机仍在**抬手**，与 Hoshi Reader Android 一致：那边的滑关只监听
+/// `touchstart`/`touchend`、不听 `touchmove`（`LookupPopupHtml.kt`），拖动期间弹窗零
+/// 位移，抬手过阈值就直接 `dismiss()`，全链路无补间、无 exit transition。
+///
+/// BUG-2405 只把松手后的补间归零，跟手位移原样留着，于是开关关掉后拖动仍看得见弹窗
+/// 跟着手指滑一段才消失——与「弹窗关闭动画」这个名字和「关掉则瞬间关闭」的副标题
+/// 不符（BUG-2439）。
+bool popupSwipeDismissIsInstant() =>
+    !ReaderFushiSource.instance.popupDismissAnimation;
 
 // BUG-1757：`BarrierSwipeDismissTracker` 已迁到 `lookup_dismiss_barrier.dart`，
 // 并入唯一的 barrier 构造入口 [LookupDismissBarrier]。页面不再自己持有 tracker、
@@ -84,6 +102,11 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
 
   double get _threshold => swipeDismissThreshold(widget.sensitivity);
   double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
+
+  /// 用户关掉「弹窗关闭动画」= 整条滑关不画（[popupSwipeDismissIsInstant]）：跟手期
+  /// 不重绘、不位移，抬手过阈值当帧关。**用时取值**，与补间时长同理（在设置里翻开关
+  /// 只触发 rebuild，缓存到字段会留着上一次的值）。
+  bool get _instant => popupSwipeDismissIsInstant();
 
   @override
   void initState() {
@@ -172,12 +195,23 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
       _decided = true;
       _isHorizontal = _dragX.abs() > _dragY.abs() * 2.5;
     }
-    if (_decided && _isHorizontal && mounted) {
+    // instant：跟手期一帧都不重画（[build] 也不会挂 Transform/Opacity），弹窗按住不动。
+    if (_decided && _isHorizontal && mounted && !_instant) {
       setState(() {});
     }
   }
 
   void _finishDrag() {
+    if (_instant) {
+      // 抬手当帧判定：过阈值直接关（无滑出补间），没过就复位（没动过，无 spring-back）。
+      final bool passed =
+          _decided && _isHorizontal && _dragX.abs() > _threshold;
+      // 不置 [_dismissing]：instant 没有「已滑出、等宿主移除」的退场帧要保住，留着它
+      // 反而会在宿主复用同一 child 时把 [_beginDrag] 永久锁死（那条复位靠 child 换身份）。
+      _reset();
+      if (passed) widget.onDismiss();
+      return;
+    }
     _applyDismissDuration();
     if (_decided && _isHorizontal && _dragX.abs() > _threshold) {
       // TODO-890：过阈值后不再 opacity 瞬灭，而是朝拖动方向补间滑出屏外（卡片宽 +
@@ -206,7 +240,8 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
 
   @override
   Widget build(BuildContext context) {
-    final bool active = (_decided && _isHorizontal) || _dismissing;
+    final bool active =
+        !_instant && ((_decided && _isHorizontal) || _dismissing);
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => _beginDrag(),
@@ -221,6 +256,9 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
           if (constraints.maxWidth.isFinite) {
             _layerWidth = constraints.maxWidth;
           }
+          // instant：没有跟手位移也没有退场补间，[Transform]/[Opacity] 一层都不套——
+          // 弹窗要么原样在，要么当帧消失。
+          if (_instant) return widget.child;
           // 退场期随位移淡出（对齐 _BodySwipeDismissDetector）：补间把 _dragX 推向
           // 「卡片宽 + 边距」屏外，opacity 同步从当前值趋近 0；中段卡片仍可见（介于
           // 0 与 1），朝屏外滑走而非瞬灭。归一分母用真实卡片宽 + 边距，无宽度回退 300。

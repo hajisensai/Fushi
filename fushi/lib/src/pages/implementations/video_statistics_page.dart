@@ -317,9 +317,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             childCount: _agg.byVideo.length,
           ),
         ),
-        SliverPadding(
-          padding: EdgeInsets.only(bottom: tokens.spacing.card * 2),
-        ),
+        buildStatTailSliver(context),
       ],
     );
   }

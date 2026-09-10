@@ -237,7 +237,9 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
         return GridView.builder(
-          padding: const EdgeInsets.all(16),
+          // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
+          // 补出手势条那一段，否则静止时被压住点不到。
+          padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             childAspectRatio: 0.62,
