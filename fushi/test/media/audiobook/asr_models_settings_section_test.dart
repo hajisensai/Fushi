@@ -13,6 +13,7 @@ import 'package:path/path.dart' as p;
 class _FakeService extends AsrTranscriptionService {
   _FakeService({required this.root, required this.readyByLanguage})
       : super(
+        audioProfile: AsrAudioProfile.cleanSpeech,
         backend: const AsrIsolateBackend(
           buildFactory: _unusedOnnxFactory,
         ),
@@ -51,6 +52,7 @@ class _FakeService extends AsrTranscriptionService {
   Stream<ModelDownloadEvent> downloadModel({
     required AsrLanguage language,
     required AsrEncoderVariant variant,
+    bool includeAlignment = false,
   }) async* {
     downloadLanguages.add(language);
     yield const ModelDownloadEvent(
