@@ -37,35 +37,55 @@ class VideoPendingScrapeWork {
 /// 在所有本地视频来源的刮削计划里定位某个合集对应的作品单元。
 ///
 /// 「重新刮削这个合集」需要的三样东西——来源行、作品标题、稳定键——只有计划器
-/// 知道：合集本身不记 sourceId（成员才记），而作品单元是计划器按「合集 = 一个
-/// 剧集作品」现推出来的。所以入口不是「查一张表」，而是「问计划器要同一份计划」，
-/// 与自动补刮、待确认队列、批次刮削看到的作品定义**逐字节同源**。
+/// 知道：合集本身不记 sourceId（成员才记），而作品单元是计划器按来源现推出来的。
+/// 所以入口不是「查一张表」，而是「问计划器要同一份计划」，与自动补刮、待确认
+/// 队列、批次刮削看到的作品定义**逐字节同源**。
 ///
-/// 按 [VideoSourceScrapeWork.stableKey]（`collection:<id>`）匹配而不是按标题：
-/// 同名合集、改过名的合集都不会认错，也不会撞
-/// [VideoSourceScrapeWorkAmbiguous]。
+/// 关键点（BUG-2433）：计划器对同一个合集有**两种同样合法**的表示。成员数 >=2
+/// 且文件名解析出集号时，整个合集是一个 `collection:<id>` 单元；否则每个成员各
+/// 自是一个 `book:<uid>` 单元——单成员合集、剧场版合集、目录合集都落在后者。
+/// 旧实现只按 `collection:<id>` 字面匹配，于是对后者一律报「不在刮削计划里」，
+/// 而成员明明就在计划里，用户拿到的是一句假话 + 死胡同。
 ///
-/// 找不到返回 null——合集成员全是远端占位、来源已删、或该来源是目录分组模式
-/// （计划器对它返回空计划）时都会这样，调用方需要给出可见提示而不是静默失败。
-Future<VideoPendingScrapeWork?> planScrapeWorkForCollection(
+/// 所以定位判据是**成员归属**而不是 key 字面：
+/// * 存在合集级单元 -> 只返回它（既有行为一字不变，且它已覆盖全部有集号成员）；
+/// * 否则返回该合集成员对应的全部 book 级单元。
+///
+/// 返回空列表才是真的无从下手——成员全是远端占位、来源已删、成员被特典分类器
+/// 判为非正片、或该来源是目录分组模式（计划器对它返回空计划）。调用方据此给可
+/// 见提示；返回多个时调用方须让用户选，不得默选第一个（合集里是 N 个独立作品，
+/// 猜哪个都可能把身份写错）。
+Future<List<VideoPendingScrapeWork>> planScrapeWorksForCollection(
   FushiDatabase database,
   int collectionId,
 ) async {
   final String stableKey = 'collection:$collectionId';
+  final Set<String> memberUids = <String>{
+    for (final MediaCollectionItemRow item
+        in await database.getCollectionItems(collectionId))
+      if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
+  };
   final List<SourceLibraryRow> sources =
       (await database.getMediaSourcesByKind('video'))
           .where((SourceLibraryRow source) => source.transport == 'local')
           .toList(growable: false);
+  final List<VideoPendingScrapeWork> memberWorks = <VideoPendingScrapeWork>[];
   for (final SourceLibraryRow source in sources) {
     final List<VideoSourceScrapeWork> works =
         await VideoSourceWorkPlanner(database).plan(source);
     for (final VideoSourceScrapeWork work in works) {
       if (work.stableKey == stableKey) {
-        return VideoPendingScrapeWork(source: source, work: work);
+        return <VideoPendingScrapeWork>[
+          VideoPendingScrapeWork(source: source, work: work),
+        ];
+      }
+      if (work.collection == null &&
+          memberUids.contains(work.members.single.bookUid)) {
+        memberWorks.add(VideoPendingScrapeWork(source: source, work: work));
       }
     }
   }
-  return null;
+  return List<VideoPendingScrapeWork>.unmodifiable(memberWorks);
 }
 
 /// 自动补刮调度器。生命周期跟随 HomePage 的刮削 controller。

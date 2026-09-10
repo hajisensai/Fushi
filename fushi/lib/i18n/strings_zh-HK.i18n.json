@@ -4635,5 +4635,6 @@
   "dict_rename_label": "詞典名稱",
   "shortcut_action_global_external_open_lookup_page": "喚起主視窗並開啟查詞頁",
   "video_discovery_provider_rate_limited": "Some sources are rate limited; showing the rest",
-  "video_discovery_provider_failed": "Some sources failed temporarily; showing the rest"
+  "video_discovery_provider_failed": "Some sources failed temporarily; showing the rest",
+  "collection_rescrape_pick_work": "Pick a work to rescrape"
 }

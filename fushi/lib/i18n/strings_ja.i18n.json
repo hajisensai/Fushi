@@ -4635,5 +4635,6 @@
   "dict_rename_label": "Dictionary name",
   "shortcut_action_global_external_open_lookup_page": "前面に出して辞書検索ページを開く",
   "video_discovery_provider_rate_limited": "Some sources are rate limited; showing the rest",
-  "video_discovery_provider_failed": "Some sources failed temporarily; showing the rest"
+  "video_discovery_provider_failed": "Some sources failed temporarily; showing the rest",
+  "collection_rescrape_pick_work": "Pick a work to rescrape"
 }

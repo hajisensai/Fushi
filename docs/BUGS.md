@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2241 条。点号进各自文件。
+> 共 2242 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2433](bugs/BUG-2433-collection-rescrape-dead-end.md) | ✅ | ✅ | 合集右键重新刮削对单成员/无集号合集必然死胡同 |
 | [BUG-2431](bugs/BUG-2431-discovery-hero-backdrop-cropped.md) | ✅ | ✅ | 发现页详情顶部 backdrop 被上下裁掉六成 |
 | [BUG-2430](bugs/BUG-2430-discovery-failure-shows-raw-provider-id.md) | ✅ | ✅ | 发现页失败横幅印原始 provider id 且不分失败类型 |
 | [BUG-2429](bugs/BUG-2429-opensubtitles-builtin-shown-disabled.md) | ✅ | ✅ | OpenSubtitles 内置密钥却显示已停用 |
