@@ -4634,8 +4634,6 @@
   "dict_rename": "Rename",
   "dict_rename_label": "Dictionary name",
   "shortcut_action_global_external_open_lookup_page": "Bring to front and open lookup page",
-  "popup_full_width": "Full-width popup",
-  "popup_full_width_hint": "Ignore the maximum width and let the popup span the available width. Its position still follows the selected word.",
   "stat_session_edit": "Edit session",
   "stat_session_edit_date": "Date",
   "stat_session_edit_date_invalid": "Enter the date as YYYY-MM-DD.",
