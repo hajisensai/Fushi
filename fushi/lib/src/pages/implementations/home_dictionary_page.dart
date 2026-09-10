@@ -60,6 +60,23 @@ abstract class HomeDictionarySearchDebug {
   void debugClosePopup();
 }
 
+/// 「把用户送进搜索框」的一次请求。承载面（[HomeDictionaryPage]）不保活——切走即
+/// 销毁、切回冷建，所以请求必须是**可挂起、由页面消费掉**的值，而不是一次性的
+/// 通知脉冲：底栏点「查词」时页面还没挂载，脉冲发出去无人接。与桌面取词的
+/// [DesktopLookupService.pendingRequest] 同范式。
+///
+/// [clearQuery] 是这条请求的**意图**，不是调用方的旗标堆叠：
+/// - 用户从导航（底栏 / 侧栏 rail）点进查词 = 「我要查个新词」→ 清空上次残留的
+///   查询与结果再聚焦，键盘随焦点弹起。
+/// - 热键「聚焦搜索框」= 「我要编辑当前查询」→ 只聚焦，不动已有文本。
+@immutable
+class DictionaryFocusRequest {
+  const DictionaryFocusRequest({required this.clearQuery});
+
+  /// 聚焦前是否先清空搜索框与查询结果。
+  final bool clearQuery;
+}
+
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
   const HomeDictionaryPage({
@@ -69,7 +86,9 @@ class HomeDictionaryPage extends BaseTabPage {
     this.initialQuery,
   });
 
-  final ValueNotifier<int>? focusSignal;
+  /// 待消费的聚焦请求（见 [DictionaryFocusRequest]）。本页消费后置回 null，故同一
+  /// 请求不会被重复执行，下一次点击也总是 null→request 的真实变化。
+  final ValueNotifier<DictionaryFocusRequest?>? focusSignal;
 
   /// 挂载后立即当作用户输入查一次的文本（不写查词历史）。新手引导用它把练习句子
   /// 直接喂进本页：源文本条显示整句，用户在真实查词面板里点词。与在搜索框里粘贴
@@ -158,7 +177,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);
-    widget.focusSignal?.addListener(_onFocusSignal);
+    widget.focusSignal?.addListener(_consumeFocusRequest);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
     // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
     // 本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在本页
@@ -166,6 +185,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 消费，无 pending 则 no-op，不会乱消费）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDesktopLookupPending();
+    });
+    // 同理，导航点进本 tab 的聚焦请求也排在本页挂载**之前**（本页不保活，点击那
+    // 一刻它还不存在），挂载即消费一次已排入的 pending。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _consumeFocusRequest();
     });
     // 新手引导的练习句子：挂载后当作用户输入查一次（不写历史），源文本条随即显示
     // 整句供点词。
@@ -201,9 +225,20 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     setState(() => _popup.seedWarmSlot());
   }
 
-  void _onFocusSignal() {
+  /// 消费一条待处理的聚焦请求（挂载后 / 在场时收到通知都走这里）。
+  void _consumeFocusRequest() {
+    final ValueNotifier<DictionaryFocusRequest?>? signal = widget.focusSignal;
+    final DictionaryFocusRequest? request = signal?.value;
+    if (signal == null || request == null) return;
+    signal.value = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocusNode.requestFocus();
+      if (!mounted) return;
+      if (request.clearQuery) {
+        // _clearSearch 自带 requestFocus——清空与聚焦是同一个动作，别拆成两步。
+        _clearSearch();
+        return;
+      }
+      _searchFocusNode.requestFocus();
     });
   }
 
@@ -260,7 +295,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
-    widget.focusSignal?.removeListener(_onFocusSignal);
+    widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
