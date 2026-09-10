@@ -15,6 +15,8 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiEinkTheme;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -248,6 +250,45 @@ void main() {
         expect(hot.script, contains('"renderJs"'));
       },
     );
+  });
+
+  // BUG-2430：这条是墨水屏适配链路的**后半段**。前半段（覆盖主题必须带
+  // FushiEinkTheme）由 test/dictionary/dictionary_popup_theme_test.dart 钉住；
+  // 这里钉「拿到扩展之后，注入串里真的会 toggle eink class」——popup.css 的整个
+  // html.eink 覆盖块挂在这个 class 上，少了它整块样式静默失效、无任何报错。
+  group('eink class 注入', () {
+    test('主题带 FushiEinkTheme(true) → 注入 toggle 成 true', () {
+      final MemoAppModel appModel = MemoAppModel();
+      final PopupStaticSettingsJs js = build(
+        appModel,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          extensions: <ThemeExtension<dynamic>>[const FushiEinkTheme(true)],
+        ),
+      );
+      expect(js.head, contains("classList.toggle('eink', true)"));
+    });
+
+    test('扩展为 false → toggle 成 false（要能摘除，不是只加不减）', () {
+      final MemoAppModel appModel = MemoAppModel();
+      final PopupStaticSettingsJs js = build(
+        appModel,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          extensions: <ThemeExtension<dynamic>>[const FushiEinkTheme(false)],
+        ),
+      );
+      expect(js.head, contains("classList.toggle('eink', false)"));
+    });
+
+    test('主题丢了扩展 → 恒 false（这正是 BUG-2430 的失效形态）', () {
+      final MemoAppModel appModel = MemoAppModel();
+      final PopupStaticSettingsJs js = build(
+        appModel,
+        theme: ThemeData(brightness: Brightness.light),
+      );
+      expect(js.head, contains("classList.toggle('eink', false)"));
+    });
   });
 
   group('memo invalidation', () {

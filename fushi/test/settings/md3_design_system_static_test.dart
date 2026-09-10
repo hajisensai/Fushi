@@ -779,6 +779,15 @@ void main() {
           'image context-menu font size are reader content / chrome, '
           'same rationale as the parent reader_fushi_page.dart allowlist '
           '(extracted verbatim).',
+      // BUG-2430：书内查词弹窗的覆盖主题决策从 chrome.part.dart 抽成纯函数
+      // （抽出来才能对「墨水屏下不叠纸色」「必须挂 FushiEinkTheme」直接写断言，
+      // 而不是只能扫源码）。那段 ColorScheme.copyWith 是逐字搬运的，豁免随之
+      // 延伸，理由与父条目 reader_fushi/chrome.part.dart 同一类。
+      'lib/src/pages/implementations/dictionary_popup_theme.dart':
+          'The dictionary popup override theme derives its neutral container '
+          'ladder from the reader paper color (deriveSurfaceRolesFrom) — it is '
+          'reader content chrome, same rationale as the parent '
+          'reader_fushi/chrome.part.dart allowlist (extracted verbatim).',
       // BUG-1425：reader_fushi/webview.part.dart 的豁免已删除。它的理由写的是
       // 「shellScript 收到 fontSize: s.fontSize.round()」，但该文件如今一个禁用
       // token 都不剩（`shellScript` 这个符号在整个 lib/src 里也已不存在），豁免早与
@@ -1305,6 +1314,12 @@ void main() {
             'surfaceContainerHighest',
             'fontSize:',
           },
+      'lib/src/pages/implementations/dictionary_popup_theme.dart': <String>{
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+      },
       'lib/src/pages/implementations/popup_settings_injection.dart': <String>{
         'surfaceContainerHigh',
       },
@@ -1314,10 +1329,9 @@ void main() {
         // lib/src/reader/reader_statistics_dialog.dart，本文件已无此 token，
         // 留着就是死豁免（会给它无声开着回来的门）。
         'surfaceContainerHigh',
-        'surfaceContainerHighest',
-        // BUG-2166 批：桌面 chrome 的抽屉/状态行底色用到低阶 tonal 面。
-        'surfaceContainerLow',
-        'surfaceContainerLowest',
+        // BUG-2430：查词弹窗覆盖主题的中性梯度（surfaceContainerHighest /
+        // Low / Lowest）已搬到 dictionary_popup_theme.dart，本文件不再命中，
+        // 按同一条「不留死豁免」纪律删除，范围随代码走。
         'fontSize:',
       },
       'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
