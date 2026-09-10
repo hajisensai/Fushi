@@ -28,8 +28,10 @@ void main() {
         lum(r.surfaceContainerHighest),
         lessThan(lum(r.surfaceContainerHigh)),
       );
-      // 卡片只是极浅灰（层次仍在但不抢戏）。
-      expect(lum(r.surfaceContainer), greaterThan(0.85));
+      // 卡片只是浅灰（层次看得见但不抢戏）。阈值随梯度一起从 0.85 放到 0.82：
+      // 这套比例现在对齐 applyFushiSurfaceLadder 的 tone 阶梯，原先照抄 M3
+      // baseline 的间距挤了将近一半，用户钉底色前后层次会明显一跳。
+      expect(lum(r.surfaceContainer), greaterThan(0.82));
       expect(r.onSurface, const Color(0xDE000000));
       expect(lum(r.outline), lessThan(lum(r.outlineVariant)));
     });
@@ -73,7 +75,7 @@ void main() {
       );
     });
 
-    test('不给 surface：与旧输出完全一致（零变化）', () {
+    test('不给 surface：走统一阶梯，钉死路径不外溢', () {
       final ColorScheme a = buildFushiColorScheme(
         seedColor: seed,
         brightness: Brightness.light,
@@ -82,10 +84,19 @@ void main() {
         seedColor: seed,
         brightness: Brightness.light,
       );
-      expect(a.surface, b.surface);
-      expect(a.surfaceContainer, b.surfaceContainer);
+      // 不钉 surface 时表面来自 applyFushiSurfaceLadder（不再是 M3 baseline
+      // 原样）——但必须是那个函数算的，不能是钉死路径的 deriveSurfaceRolesFrom
+      // 漏进来。
+      final ColorScheme laddered = applyFushiSurfaceLadder(b);
+      expect(a.surface, laddered.surface);
+      expect(a.surfaceContainer, laddered.surfaceContainer);
+      expect(a.surfaceContainerHighest, laddered.surfaceContainerHighest);
+      // 阶梯只碰表面：主题色角色与 surfaceTint 仍与 fromSeed 一致。
       expect(a.surfaceTint, b.surfaceTint);
       expect(a.inversePrimary, b.inversePrimary);
+      expect(a.primary, b.primary);
+      expect(a.secondaryContainer, b.secondaryContainer);
+      expect(a.outlineVariant, b.outlineVariant);
     });
 
     test('memo key 区分 surface', () {

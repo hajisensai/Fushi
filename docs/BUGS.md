@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2227 条。点号进各自文件。
+> 共 2228 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2422](bugs/BUG-2422-settings-surface-ladder-flat.md) | ✅ | ✅ | 设置页页面底/导航窗格/卡片三层对比度仅1.05糊成一片（M3阶梯最挤段+全局关阴影） |
 | [BUG-2418](bugs/BUG-2418-popup-dismiss-animation-toggle.md) | ✅ | ✅ | 滑动关闭弹窗的动画只能靠开墨水屏模式关掉，没有独立开关 |
 | [BUG-2417](bugs/BUG-2417-stat-session-collection-title.md) | ✅ | ✅ | 统计「最近会话」标题单行截断且不带合集名 |
 | [BUG-2416](bugs/BUG-2416-reader-nested-popup-coordinate-space.md) | ✅ | ✅ | 阅读器嵌套查词混用屏幕与浮层坐标导致遮字 |
