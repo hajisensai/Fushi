@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2252 条。点号进各自文件。
+> 共 2254 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2445](bugs/BUG-2445-mihon-protobuf-not-registered.md) | ✅ | ✅ | Injekt 未注册 ProtoBuf 导致 5 个 protobuf 漫画源整源不可用 |
+| [BUG-2444](bugs/BUG-2444-mihon-proxy-policy-selector-throws.md) | ✅ | ✅ | 宿主代理策略故障时 ProxySelector 抛异常导致 sidecar 堆耗尽、请求挂死到超时 |
 | [BUG-2442](bugs/BUG-2442-activity-video-cover-landscape-slot.md) | ✅ | ✅ | 首页活动时间轴的视频缩略用横版槽，竖版海报被缩成模糊小条 |
 | [BUG-2441](bugs/BUG-2441-video-reopen-black-screen.md) | ✅ | ✅ | video-reopen-black-screen |
 | [BUG-2440](bugs/BUG-2440-ios-bottom-safearea-gap.md) | ✅ | ✅ | iOS 页面底部安全区留下一条不可用空白，滚动内容被硬切 |
