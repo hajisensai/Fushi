@@ -2194,19 +2194,26 @@
     user-select: none;
 }
 
-/* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。 */
+/* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。
+   只在**这一页确实有 <video>** 时才挂（subtitle-panel.js 的 dragDropActive），且只占右上角
+   一枚小角标——早先是 inset:24px 的整屏虚线框，任何网页拖文件上传都被它糊住半个屏幕。 */
 #fushi-subtitle-drop-hint {
     position: fixed;
-    inset: 24px;
+    top: 16px;
+    right: 16px;
+    max-width: min(60vw, 320px);
     z-index: 2147483646;
-    display: grid;
-    place-items: center;
-    border: 2px dashed var(--md-primary, #9dd7b8);
-    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    padding: 8px 14px;
+    border: 1px solid var(--md-primary, #9dd7b8);
+    border-radius: 999px;
     color: var(--md-on-primary-container, #b9f2cf);
-    background: rgba(12, 20, 16, 0.82);
-    font: 700 18px/1.4 "Hiragino Sans", "Yu Gothic UI", sans-serif;
-    letter-spacing: 0.04em;
+    background: rgba(12, 20, 16, 0.92);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    font: 600 13px/1.3 "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     pointer-events: none;
 }
 

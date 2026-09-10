@@ -4689,5 +4689,18 @@
   "subscription_run_remote": "主机 $device",
   "subscription_remote_section_title": "$device 上的订阅",
   "subscription_remote_provider_unavailable": "主机上没有这个资源的索引器（$provider）",
-  "video_load_failed_not_opened": "播放器打不开该视频。文件可能被占用，或播放引擎需要重启应用后才能恢复。"
+  "video_load_failed_not_opened": "播放器打不开该视频。文件可能被占用，或播放引擎需要重启应用后才能恢复。",
+  "browser_extension_test_page_title": "试一试浏览器扩展",
+  "browser_extension_test_page_intro": "这张页面由 Fushi 自己提供，扩展一定能注入它。按下面两步试一下。",
+  "browser_extension_test_page_probe_checking": "正在检测扩展是否已注入本页…",
+  "browser_extension_test_page_probe_ok": "扩展已注入本页，连接正常。",
+  "browser_extension_test_page_probe_missing": "没有检测到扩展。请先在浏览器里加载扩展，然后刷新本页。",
+  "browser_extension_test_page_step_popup_title": "从右上角打开扩展",
+  "browser_extension_test_page_step_popup_body": "点击浏览器右上角的 Fushi 图标，应该弹出扩展面板。",
+  "browser_extension_test_page_step_lookup_title": "按 Shift 查词",
+  "browser_extension_test_page_step_lookup_body": "按住 Shift 并把鼠标移到下面句子里的词上，应该弹出词典查词结果。",
+  "browser_extension_test_page_sample_label": "练习句",
+  "browser_extension_test_page_action": "打开试用网页",
+  "browser_extension_test_page_action_desc": "在浏览器里打开一张由 Fushi 提供的网页，验证右上角弹窗与 Shift 查词。",
+  "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。"
 }

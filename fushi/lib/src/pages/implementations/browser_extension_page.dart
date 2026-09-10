@@ -9,6 +9,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
 import 'package:fushi/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 桌面专属「浏览器扩展」页（顶层导航目的地，仅桌面显示）。
 ///
@@ -206,6 +207,8 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           ),
           const SizedBox(height: 8),
           _verifyStep(theme),
+          const SizedBox(height: 8),
+          _tryItStep(theme, serverOn: serverOn),
         ],
         const Divider(height: 32),
         _versionCard(theme, appModel, build),
@@ -260,6 +263,54 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 引导之后的第 7 步：在真网页上试一遍基础功能。
+  ///
+  /// 页面由本机 yomitan-api server 提供（`/onboarding/extension-test`）——必须是 http：
+  /// Chrome 默认不给扩展 `file://` 权限，本地 HTML 文件证明不了插件是否活着。server 没开
+  /// 时按钮禁用（URL 打开就是连接失败），提示先开服务器。
+  Widget _tryItStep(ThemeData theme, {required bool serverOn}) {
+    return FushiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.public_outlined,
+                  size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(child: Text(t.browser_extension_test_page_title)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            serverOn
+                ? t.browser_extension_test_page_action_desc
+                : t.browser_extension_test_page_server_off,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              onPressed: serverOn ? _openTestPage : null,
+              icon: const Icon(Icons.open_in_new_outlined, size: 18),
+              label: Text(t.browser_extension_test_page_action),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openTestPage() async {
+    final AppModel appModel = ref.read(appProvider);
+    await launchUrl(
+      Uri.parse(appModel.browserExtensionTestPageUrl),
+      mode: LaunchMode.externalApplication,
     );
   }
 

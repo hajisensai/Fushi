@@ -22,6 +22,8 @@ import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
+import 'package:fushi/src/sync/browser_extension_test_page.dart'
+    show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -84,6 +86,7 @@ class YomitanApiServer {
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
+    String Function()? extensionTestPageProvider,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -102,6 +105,7 @@ class YomitanApiServer {
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
         _subtitleRegistryProvider = subtitleRegistryProvider,
+        _extensionTestPageProvider = extensionTestPageProvider,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -145,6 +149,10 @@ class YomitanApiServer {
   // 此前这里持有的是**自己 new 的 JimakuClient**（只认 API key），于是扩展永远只有
   // Jimaku 一家：零配置的 AJATT、用户已填 key 的 OpenSubtitles 在扩展里都不存在。
   final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
+
+  /// 新手引导「试一试」页的 HTML 供给器：请求到达时才生成（例句随用户已装词典的
+  /// 词头语言走，文案随当前 app 语言走）。未注入时该路由 404。
+  final String Function()? _extensionTestPageProvider;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -210,6 +218,11 @@ class YomitanApiServer {
         // 单词音频文件端点是裸 GET（HTML5 Audio 无 Authorization）→ 免鉴权放行，靠
         // 不可猜的短命 id 兜底（与 FushiSyncServer 的 /api/lookup/audio/file 同策略）。
         if (request.url.path == 'api/lookup/audio/file') return inner(request);
+        // 「试一试」页是浏览器地址栏直接打开的裸 GET（无 Authorization），且只吐一张
+        // 静态说明页（例句 + 操作步骤，无任何用户数据）→ 与音频文件端点同策略放行。
+        if ('/${request.url.path}' == kBrowserExtensionTestPagePath) {
+          return inner(request);
+        }
         final String? key = _apiKey;
         if (key == null || key.isEmpty) return inner(request);
 
@@ -286,6 +299,22 @@ class YomitanApiServer {
         return shelf.Response(405, body: 'Method Not Allowed');
       }
       return _lookupRoutes.handleAudioFile(request, headOnly: method == 'HEAD');
+    }
+    // 「试一试」页同样是裸 GET/HEAD（用户从 app 点开、浏览器直接访问）→ 405 门之前处理。
+    if (path == kBrowserExtensionTestPagePath) {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      final String Function()? build = _extensionTestPageProvider;
+      if (build == null) return shelf.Response.notFound('Not Found');
+      final String html = build();
+      return shelf.Response.ok(
+        method == 'HEAD' ? '' : html,
+        headers: <String, String>{
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+        },
+      );
     }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
