@@ -164,8 +164,33 @@ Future<void> _tapNav(WidgetTester tester, String label) async {
   await _settle(tester);
 }
 
-SearchBar _searchBar(WidgetTester tester) =>
-    tester.widget<SearchBar>(find.byKey(_searchFieldKey));
+/// 搜索框当前的焦点节点。
+///
+/// **不按具体控件类型取**：这条用例钉的是「焦点在搜索框上」，与搜索框内部用
+/// 哪个 Material 控件渲染无关。原先写 `tester.widget<SearchBar>(...)`，#1406 把
+/// FushiSearchField 从 MD3 SearchBar 换成 TextField 之后当场
+/// `type 'TextField' is not a subtype of type 'SearchBar'`——把类型改成 TextField
+/// 只是把同一个坑往后挪一次。任何文本输入控件底下都有 EditableText，取它的
+/// focusNode 才是真正与实现无关的判据。
+/// 搜索框当前的文本。理由同 [_searchFocusNode]：不绑具体控件类型。
+String _searchText(WidgetTester tester) => tester
+    .widget<EditableText>(
+      find.descendant(
+        of: find.byKey(_searchFieldKey),
+        matching: find.byType(EditableText),
+      ),
+    )
+    .controller
+    .text;
+
+FocusNode _searchFocusNode(WidgetTester tester) => tester
+    .widget<EditableText>(
+      find.descendant(
+        of: find.byKey(_searchFieldKey),
+        matching: find.byType(EditableText),
+      ),
+    )
+    .focusNode;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -197,7 +222,7 @@ void main() {
 
     expect(find.byType(HomeDictionaryPage), findsOneWidget);
     expect(
-      _searchBar(tester).focusNode?.hasFocus,
+      _searchFocusNode(tester).hasFocus,
       isTrue,
       reason: '点导航进查词 = 要查新词；焦点必须已经在搜索框上，键盘才会弹。',
     );
@@ -216,18 +241,18 @@ void main() {
     // 用户上一次查的词还留在框里（截图里的「おばさん」）。
     await tester.enterText(find.byKey(_searchFieldKey), 'おばさん');
     await _settle(tester);
-    expect(_searchBar(tester).controller?.text, 'おばさん');
+    expect(_searchText(tester), 'おばさん');
 
     // 查词 tab 已是当前 tab，再点一次底栏的「查词」。
     await _tapNav(tester, t.nav_lookup);
 
     expect(
-      _searchBar(tester).controller?.text,
+      _searchText(tester),
       isEmpty,
       reason: '再点一次 = 重新开始查；残留的查询必须被清掉。',
     );
     expect(
-      _searchBar(tester).focusNode?.hasFocus,
+      _searchFocusNode(tester).hasFocus,
       isTrue,
       reason: '清空之后焦点仍要留在搜索框上，用户直接就能打字。',
     );
