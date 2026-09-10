@@ -797,6 +797,33 @@ class VideoPlayerController extends ChangeNotifier
     return enteredRealBackground && hasVideo && seekable;
   }
 
+  /// BUG-2441：首帧兜底宽限到点时，是否应判「媒体压根没打开」失败。
+  ///
+  /// 抽成纯函数是因为这条判据**必须可测**：它决定的是「把整页换成失败页」这种不可
+  /// 忽视的用户可见后果，而错判两个方向的代价都很实在——判早了会把正在正常起播的
+  /// 视频打成打不开，判晚了 / 不判就退回本 bug 的黑屏 `00:00`。
+  ///
+  /// 入参：
+  ///  - [mediaOpened]：见 [VideoPlayerController.mediaOpened]。唯一的正面证据。
+  ///  - [isLocalFile]：本次播的是本地文件（非网络流 / 互联对端）。**只对本地文件判死**
+  ///    ——网络流的 open 耗时受对端与链路支配，弱网下首个分片握手拖过宽限是正常的；
+  ///    直播流更是 duration 恒 0、只能等 position 推进才证明活着。对它们判死是行为倒退。
+  ///  - [alreadyFailed] / [missingResource]：页面已在别的失败/缺失态里，别再盖一层。
+  ///
+  /// **不看 mpv 是否报过 error**：`player.stream.error` 在完全正常的播放里也会响
+  /// （hwdec 候选试错、外挂轨打不开），它是证据不是判据，详见
+  /// `VideoFushiPage._handlePlaybackError` 的文档。
+  static bool shouldDiagnoseMediaNeverOpened({
+    required bool mediaOpened,
+    required bool isLocalFile,
+    required bool alreadyFailed,
+    required bool missingResource,
+  }) {
+    if (mediaOpened) return false;
+    if (!isLocalFile) return false;
+    return !alreadyFailed && !missingResource;
+  }
+
   /// BUG-1863：强制重建视频解码链——seek 到**当前位置**。
   ///
   /// mpv 的 seek 会 flush 解码器并从目标位置之前的关键帧重新解码，因而 DPB 被重新填满、
@@ -1520,6 +1547,15 @@ class VideoPlayerController extends ChangeNotifier
       // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
       _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
       // BUG-2441：给 libmpv 层错误一个归宿。同样随 Player 生命周期挂一次。
+      //
+      // 这里**只校验 player identity、不校验 loadToken**，是因为消费端
+      // （`VideoFushiPage._handlePlaybackError`）只落日志、不做任何判决：换集时上一片
+      // teardown 的迟到 error 记进日志无害，反而是有用的取证。
+      //
+      // ⚠ 若将来把这条流接到任何**判决**上（置失败态、停播、切源……），必须先补
+      // `_isCurrentLoad(player, loadToken)` 双判据——换集复用同一 Player 时单靠
+      // identity 区分不出「旧片的迟到错误」和「新片的真错误」，会把正在正常加载的
+      // 新一集打成失败。本文件其余 8 处原生下发都用双判据，同理。
       _errorSub = player.stream.error.listen((String message) {
         if (!identical(_player, player)) return; // 旧 Player 的迟到错误不算数。
         onPlaybackError?.call(redactAppNativeProxySecrets(message));

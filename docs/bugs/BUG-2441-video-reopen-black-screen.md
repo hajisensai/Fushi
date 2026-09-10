@@ -49,8 +49,17 @@
   - 首帧兜底改为分流 `_promoteVideoReadyOrDiagnose`：媒体活着照旧 promote（慢解码、纯音频容器不受影响）；没打开则再给 12.5 秒宽限，到点仍没打开才判失败并落 `VideoFushi.mediaNeverOpened` 日志。
   - 新 i18n key `video_load_failed_not_opened`（经 `tool/i18n_sync.dart --add`，17 语言齐全，`dart run slang` 重生成）。
 
+  **code review 返工（同一 PR 内）**：首版把 `player.stream.error` 直接接到「置失败态」上，是错的——media_kit 把 mpv 里 level == error 且 prefix ∈ `{file, ffmpeg(tcp:), vd, ad, cplayer, stream}` 的日志**全部**灌进这条流，而 hwdec 候选试错（`[vd] Could not open codec.`）、外挂音轨/字幕打不开（`[cplayer] Can not open external file …`）在**完全正常**的播放里必然出现；`load()` 刚返回那一段 `mediaOpened` 尚未被观测到翻真（`open()` 先 `stop()` 清 state、`loadfile` 只下发不等解析完，重容器上窗口有一秒以上），于是正常起播会被打成失败页、而播放器不停、音频在失败页背后继续响。已改为：
+  - mpv error **只留证不判决**（落日志 + 记一条诊断文本），判决权收归纯函数 `VideoPlayerController.shouldDiagnoseMediaNeverOpened`；
+  - 超时判失败**只对本地文件**（网络流/直播 open 耗时受链路支配、直播 duration 恒 0，15 秒硬线是行为倒退）；
+  - 失败态**可自愈**（判失败后媒体真打开了就反向清 `_failed`，不把用户钉在失败页而背后已在播）；
+  - 判失败分支收干净定时器并校验 controller 仍是当前那个；
+  - 失败文案不再过 `_describeLoadFailure`（裸子串匹配遇上带路径的 mpv 文本会把 `\\NAS\Network Share\…` 判成网络故障、文件名含 `Private` 判成「受限」）。
+
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/video_player_controller_test.dart` 新增 group「BUG-2441 媒体未打开时禁止位置写入」6 条：4 条否定（tick 的 0 / 非零位置 / `flushPosition` / `dispose` 强制写都不落库）＋ 2 条正向对照（媒体已打开时 tick 与 flush 照常落库），对照是为了防止「门永远关着」也能全绿的空壳。配套测试钩子 `debugPrimeUnopenedMediaForTesting`（与既有 `debugPrimeRestoreGuardForTesting` 刻意分开：两者驱动的是位置写入的两道**不同**的门）。
-  - 另有真机复现用例 `fushi/integration_test/video_reopen_same_episode_itest.dart`（同一集播放→退出→重开，断言第二次 `debugDurationMs > 0` 且能真实前进），用故障现场那部素材。
+  - `shouldDiagnoseMediaNeverOpened` 真值表 4 条（含「媒体已打开不判死」「非本地文件不判死」两个方向）。
+  - 源码守卫 `fushi/test/pages/video_playback_error_not_a_verdict_guard_test.dart`：钉死 `_handlePlaybackError` 不触碰失败态（这个错极易重犯，读起来太像「播放器报错 → 就是打不开」），并带反向断言防「方法体被删空也恒绿」。**变异实测**：把 `_failed = true` 加回该方法 → 守卫红；恢复 → 绿。
+  - 另有真机复现用例 `fushi/integration_test/video_reopen_same_episode_itest.dart`（同一集播放→退出→重开，断言第二次 `debugDurationMs > 0` 且能真实前进），用故障现场那部素材。其中「进度不被抹」一条最初写成了空壳（fixture 播种就是 0，`expect(row, isNotNull)` 恒真），已改为由第一次退出建立非零基线再核对。
 
 ### 备注 / 未尽事项
 
