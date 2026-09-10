@@ -139,7 +139,10 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return _buildEmbeddedShell(content);
   }
 
-  Widget _buildSearchField() {
+  /// [onNavPane] 为 true 时搜索框画在宽屏导航窗格的 tonal 底上（`surfaces.card`），
+  /// 那里 `surfaces.search` 与底色只差一档、几乎糊掉，故再提一档到 `surfaces.overlay`；
+  /// 窄屏单列画在页面底（`surfaces.page`）上，保持原来的 `surfaces.search`。
+  Widget _buildSearchField({bool onNavPane = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
     // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
@@ -183,7 +186,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                   ),
             isDense: true,
             filled: !eink,
-            fillColor: eink ? null : tokens.surfaces.search,
+            fillColor: eink
+                ? null
+                : (onNavPane
+                      ? tokens.surfaces.overlay
+                      : tokens.surfaces.search),
             border: eink
                 ? OutlineInputBorder(
                     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
@@ -338,9 +345,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         ? CupertinoColors.separator.resolveFrom(context)
         : tokens.surfaces.outline;
     // MD3 list-detail: the nav pane sits on the tonal container token
-    // (`surfaces.group`) while the detail pane stays on the base page surface.
+    // (`surfaces.card`) while the detail pane stays on the base page surface.
     // Material only — Cupertino keeps its system background untouched.
-    final Color? navPaneColor = cupertino ? null : tokens.surfaces.group;
+    final Color? navPaneColor = cupertino ? null : tokens.surfaces.card;
     return MaterialSupportingPaneLayout(
       minSplitWidth: 720,
       supportingSide: SupportingPaneSide.start,
@@ -350,7 +357,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            _buildSearchField(),
+            _buildSearchField(onNavPane: true),
             Expanded(
               child: _searchQuery.trim().isEmpty
                   ? renderer.buildDestinationList(

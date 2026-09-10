@@ -551,15 +551,19 @@ void main() {
       final String source = readNormalizedSource(
         'lib/src/settings/settings_home_page.dart',
       );
-      // MD3 list-detail: nav pane on tonal token surface (surfaces.group =
-      // surfaceContainerLow), gated to Material via the cupertino branch。
+      // MD3 list-detail: nav pane on tonal token surface, gated to Material via
+      // the cupertino branch。
       // 旧锚点 `'cupertino ? null :'` 把三元表达式的**排版**写进了契约（换行一改
-      // 就红）。契约是「取 surfaces.group 的那条语句本身被 cupertino 门控」。
-      expect(source, contains('tokens.surfaces.group'));
-      final String statement = _statementAround(
-        source,
-        'tokens.surfaces.group',
-      );
+      // 就红）。契约是「取 tonal 底色的那条语句本身被 cupertino 门控」。
+      //
+      // 底色档位从 `surfaces.group`（surfaceContainerLow）提到 `surfaces.card`
+      // （surfaceContainer）：实测浅色主题下 surfaceContainerLow 与 surface 只差
+      // 约 2%（#F0F4F8 vs #F5FAFD），窗格与详情之间那条 1px 分隔线两侧几乎同色，
+      // 线因此读不出「两个窗格」、只读成一条凭空的竖线。提一档后面差约 4.3%，线
+      // 两侧真有两个面，同时左边「图标侧栏 | 导航窗格」那条本就没有分隔线的缝也
+      // 一并变得可辨。
+      expect(source, contains('tokens.surfaces.card'));
+      final String statement = _statementAround(source, 'tokens.surfaces.card');
       expect(
         statement,
         contains('cupertino'),
@@ -633,11 +637,16 @@ void main() {
       isTrue,
       reason: 'Material destination groups must retain shared section surfaces',
     );
+    // 分组卡只在**窄屏 push 列表**里铺：那里列表直接落在 `surfaces.page` 上，卡是
+    // 它唯一的容器。宽屏主从的导航窗格本身已经是一块 tonal 面（`surfaces.card`，
+    // 见下面那条守卫），再铺一层同色卡片就是卡中卡——卡边界看不见，窗格反而少了
+    // 一整块可辨的实色面，于是窗格与详情之间那条分隔线两侧都是近乎同色的浅面，
+    // 线读不出「两个窗格」、只读成一条凭空的竖线。宽屏那侧显式传 transparent。
     expect(
       material,
-      contains('surfaceColor: tokens.surfaces.card'),
+      contains('surfaceColor: pushRoutes ? null : Colors.transparent'),
       reason:
-          'wide supporting-pane list needs a visible lightweight surface over its tonal pane',
+          'narrow push list keeps the group card; the wide nav pane is itself the tonal surface',
     );
     expect(
       containsIdentifierCall(material, 'ListView.separated'),
