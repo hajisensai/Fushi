@@ -4583,5 +4583,8 @@
   "settings_downloads_routing_title": "下载完成后",
   "settings_downloads_routing_hint": "路径映射与目标视频来源",
   "settings_downloads_encryption_title": "节点加密",
-  "settings_service_disabled": "已停用"
+  "settings_service_disabled": "已停用",
+  "anki_reposition_auto_title": "制卡后自动重排",
+  "anki_reposition_auto_hint": "最后一张卡制好约 30 秒后，自动按词频重排该牌组的新卡。仅 AnkiConnect 可用。",
+  "anki_reposition_auto_failed": "「$deck」自动重排失败"
 }

@@ -27,6 +27,7 @@ class AnkiRepositionRankOptions {
         source: settings.repositionSource,
         dictionaries: settings.repositionDictionaries.toSet(),
         aggregate: FrequencyAggregate.fromName(settings.repositionAggregate),
+        rareFirst: settings.repositionRareFirst,
       );
 
   final AnkiRepositionSource source;

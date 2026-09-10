@@ -4583,5 +4583,8 @@
   "settings_downloads_routing_title": "Tamamlanan indirmeler",
   "settings_downloads_routing_hint": "Yol eşleme ve hedef video kaynağı",
   "settings_downloads_encryption_title": "Eş şifrelemesi",
-  "settings_service_disabled": "Devre dışı"
+  "settings_service_disabled": "Devre dışı",
+  "anki_reposition_auto_title": "Auto-reposition after mining",
+  "anki_reposition_auto_hint": "Reposition new cards by frequency about 30 seconds after the last card is mined. AnkiConnect only.",
+  "anki_reposition_auto_failed": "Auto reposition failed for $deck"
 }

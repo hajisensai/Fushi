@@ -4,7 +4,9 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
+import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
@@ -458,12 +460,24 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     required AnkiRepositionSource source,
     required List<String> dictionaries,
     required String aggregate,
+    required bool rareFirst,
   }) async {
     final updated = await _repository.updateSettings((s) => s.copyWith(
           repositionSource: source,
           repositionDictionaries: dictionaries,
           repositionAggregate: aggregate,
+          repositionRareFirst: rareFirst,
         ));
+    state = state.copyWith(settings: updated);
+  }
+
+  /// 打开/关闭「制卡后自动重排新卡」。默认关。
+  ///
+  /// 只写设置，不碰调度器：调度器每轮跑之前重新读这个值，所以关掉是立即生效的
+  /// （连正在等防抖的那一批也会在到期时被挡下），不需要在这里去把它叫醒。
+  Future<void> setAutoRepositionEnabled(bool enabled) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(autoRepositionEnabled: enabled));
     state = state.copyWith(settings: updated);
   }
 
@@ -559,9 +573,9 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
       ref.watch(platformServicesProvider).createAnkiRepository();
   final bool mineToServer =
       ref.watch(appProvider.select((AppModel m) => m.mineToServerEnabled));
-  if (!mineToServer) return local;
+  if (!mineToServer) return _withAutoReposition(ref, local);
   final AppModel appModel = ref.read(appProvider);
-  return RemoteMiningAnkiRepository(
+  final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
     client: appModel.createRemoteMiningClient(),
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
@@ -571,7 +585,37 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
       status: MineToastStatus.failed,
     ),
   );
+  // 远端制卡的仓库 `supportsDeckReposition` 为 false，装饰器里的判据会跳过——
+  // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
+  return _withAutoReposition(ref, remote);
 });
+
+/// 给 [repo] 套上「制卡后自动重排新卡」。
+///
+/// 调度器随 provider 生命周期走：provider 被 invalidate（切 Profile、改 Anki 连接
+/// 设置）时旧的必须 [AnkiAutoRepositionScheduler.dispose]，否则它手里的防抖 Timer
+/// 会在一个已经废弃的仓库上触发一次重排。
+///
+/// runner 与 loadSettings 都绑**被包装的 [repo]** 而不是包装后的自己：重排只读写
+/// 卡片位置、不制卡，绑自己不会递归，但多绕一层没有意义。
+///
+/// 这里**不**看 `autoRepositionEnabled`：开关由调度器每轮重新读。若在此处按开关
+/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
+/// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
+BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
+  final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
+    runner: AnkiDeckRepositionRunner(repo),
+    loadSettings: repo.loadSettings,
+    // 文案在这一层渲染：调度器本身够不到 `t.*`（它要保持无 Flutter 依赖），
+    // 在那边拼字面量等于让 17 种语言的用户都看英文。
+    onFailure: (String deckName) => FushiToast.showMine(
+      msg: t.anki_reposition_auto_failed(deck: deckName),
+      status: MineToastStatus.failed,
+    ),
+  );
+  ref.onDispose(scheduler.dispose);
+  return AutoRepositionAnkiRepository(inner: repo, scheduler: scheduler);
+}
 
 final ankiViewModelProvider =
     StateNotifierProvider<AnkiViewModel, AnkiUiState>((ref) {

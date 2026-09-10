@@ -51,7 +51,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
   late AnkiRepositionSource _source;
   late Set<String> _dictionaries;
   late FrequencyAggregate _aggregate;
-  bool _rareFirst = false;
+  late bool _rareFirst;
   bool _busy = false;
   AnkiRepositionSnapshot? _snapshot;
 
@@ -71,6 +71,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         .where(widget.loadedDictionaries.contains)
         .toSet();
     _aggregate = FrequencyAggregate.fromName(_settings.repositionAggregate);
+    _rareFirst = _settings.repositionRareFirst;
     unawaited(_refreshSnapshot());
   }
 
@@ -102,6 +103,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         source: _source,
         dictionaries: _dictionaries.toList()..sort(),
         aggregate: _aggregate.name,
+        rareFirst: _rareFirst,
       );
 
   @override
