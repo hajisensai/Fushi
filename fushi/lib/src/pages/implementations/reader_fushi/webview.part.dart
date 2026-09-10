@@ -2272,38 +2272,53 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           handlerName: 'onBoundarySwipe',
           callback: (List<dynamic> args) async {
             if (args.isEmpty || _lyricsMode) return;
-            // TODO-1229 案A：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，
-            // 故守卫在此单独收口——导航/恢复在飞时丢弃，否则连续滚轮跨章会在前一次章
-            // 加载未落定时再次跨章 → 跳两章。与 _paginate 入口同一 _paginationInFlight。
-            // BUG-1829：换章加载期到达的 tick 只丢弃，**不**滑动跨章冷却窗——与 _paginate
-            // 入口同一处理。新章 content-ready 的重锚（_noteChapterTurnSettledIfPending）
-            // 已经覆盖这段窗口；在这里 stamp 只会让持续输入自我续期、永远等不到放行。
+            // BUG-2424：跨章手势绕过 _paginate 入口直接调 _handlePageTurnLimit，故在此
+            // 单独收口。导航/恢复在飞时**排队**而不是丢弃——旧实现直接 return，用户在
+            // 换章那几百毫秒里拨的每一格滚轮都石沉大海。此刻不能就地执行（前一次章加载
+            // 未落定时再次跨章 = 跳两章），但意图必须留下：由 [_replayPendingPageTurn]
+            // 在新章 content-ready 之后重放，走完整 _paginate（章内还有页就翻页，真到
+            // 边界才跨章），所以刚落地新章的章首插图页不会被越过。
             if (_paginationInFlight) {
+              _pageTurnQueue.push(
+                args[0] == 'backward'
+                    ? ReaderNavigationDirection.backward
+                    : ReaderNavigationDirection.forward,
+              );
               return;
             }
             // Boundary swipe → chapter turn also stole focus to the WebView
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
+            // BUG-1745 起 JS 侧就随 dir 一起回传输入设备（鼠标='wheel'/触摸板=
+            // 'trackpad'），但这个 handler 一直只读 args[0] 把它丢了，于是只能对所有
+            // 设备一刀切上时间窗。缺省按鼠标推断（老 shell / 触摸边界 IIFE 只传 dir，
+            // 它们本就是离散的一次性手势）。
+            final String pointerKind =
+                args.length > 1 ? args[1] as String : 'wheel';
             if (!_hasChapterTurnTarget(dir)) return;
-            // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
-            // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
-            // 滚轮跨章不受任何节流。这里就地用与 _paginate 同款 _lastPaginateTime
-            // 时间戳闸门拦绕过路径；闸门只放这一处（不放 _handlePageTurnLimit 本体），
-            // 故分页跨章经 _paginate 内部调 _handlePageTurnLimit 时不会被自己盖的戳
-            // 吞掉（章末翻得过去）。
-            final int throttleMs =
-                ReaderFushiSource.instance.wheelPageTurnInterval;
-            if (throttleMs > 0 && _lastPaginateTime != null) {
-              final int elapsedMs =
-                  DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
-              if (elapsedMs < throttleMs) return;
+            // BUG-2424：触摸板的一次物理滑动会喷出持续 1s+ 的惯性 tick，必须聚合成
+            // 一次跨章。**不能靠 JS 侧那道 `startsNewWheelGesture`**——跨章会 loadUrl
+            // 换文档，JS 侧的 `_continuousWheelLastTickAt` 随之归零，新章的第一个残余
+            // 惯性 tick 会被它误判成「新手势」而放行 → 二次跨章。这正是必须由活在
+            // reader State、跨文档持续存在的 gate（BUG-1342 同一实例）来兜的洞。
+            //
+            // 鼠标滚轮不聚合：一格就是一个 tick、一次明确的翻页意图，用户拨几格就该
+            // 跨几章。旧实现在这里叠了 `_lastPaginateTime` 节流窗 + 450ms 跨章冷却窗
+            // （且冷却窗的锚点被重 stamp 到新章 content-ready），两窗相加让下一次跨章
+            // 最早要等 `T_load + 450ms`，期间输入还被静默丢弃——那正是用户报的
+            // 「来回跨章要强制等待、按了没反应」。两窗一并删除。
+            if (pointerKind == 'trackpad' &&
+                !_pagedWheelGestureGate.shouldStartNewGesture(
+                  now: DateTime.now(),
+                  settleInterval: Duration(
+                    milliseconds:
+                        ReaderFushiSource.instance.wheelPageTurnInterval,
+                  ),
+                  canTurnPage: true,
+                )) {
+              return;
             }
-            // TODO-1229 v2：跨章冷却闸门——同一惯性手势落地短章(插图/单页)后残余惯性
-            // 在新章边界的二次跨章被拦。窗口不再被被拦的输入自我续期（BUG-1829）。
-            // onBoundarySwipe 仅惯性/触摸路径，
-            // 无键盘调用，故无条件过闸门。
-            if (_chapterTurnCoolingDown()) return;
             if (!await _prepareContinuousChapterTransition()) return;
             if (!mounted ||
                 _paginationInFlight ||
@@ -2313,20 +2328,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             }
             // BUG-369/TODO-656 诊断：跨章手势汇合点（滚轮/触摸/指针都经此）。
             debugPrint('[xchapter] onBoundarySwipe dir=$dir '
-                'chapter=$_currentChapter');
-            _noteChapterTurn();
+                'chapter=$_currentChapter kind=$pointerKind');
             if (dir == 'forward') {
-              _handlePageTurnLimit('forward', inertia: true);
+              _handlePageTurnLimit('forward');
             } else if (dir == 'backward') {
-              _handlePageTurnLimit('backward', inertia: true);
+              _handlePageTurnLimit('backward');
             }
             // 导航真的开始时 _beginNavigation 已把 _readerContentReady 置 false（同步，
             // 早于本行）；仍为 true 就说明这次跨章被 _handlePageTurnLimit 内部守卫吃掉，
             // 快照没有消费者，必须就地丢弃。
             _discardIdleChapterTransitionSnapshot();
-            if (throttleMs > 0) {
-              _lastPaginateTime = DateTime.now();
-            }
           },
         );
 
@@ -2425,9 +2436,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                 // 设置条)要等 8s _startContentReadyTimeout 兜底才出现。set-once，不复位。
                 _hasEverLoaded = true;
               });
-              // TODO-1229 第三次复诉：spread 内容就绪同样消费 pending 并 stamp 冷却窗，
-              // 挡住惯性跨章落地漫画页后残余滚轮的二次跨章（与 _onRestoreComplete 对齐）。
-              _noteChapterTurnSettledIfPending();
+              // BUG-2424：spread 内容就绪同样是一个 content-ready 完成点，积压的翻页
+              // 意图在这里重放（与 _onRestoreComplete 对齐）。spread 路径从不发
+              // onRestoreComplete，漏掉这里积压意图就会一直压到下一次真实导航。
+              unawaited(_replayPendingPageTurn());
               // BUG-467：spread 内容就绪同样补下 chrome insets（_hasEverLoaded 刚翻 true，
               // 初始 HTML 漏了底栏预留）。
               _reapplyChromeInsetsAfterFirstLoad();

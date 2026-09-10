@@ -226,8 +226,12 @@ void main() {
     expect(page.contains('popupWordScreenRect('), isTrue,
         reason:
             'top-level result-WebView lookup maps localRect to screen coords');
-    expect(page.contains('globalCoordinates: true'), isTrue,
-        reason: 'source-text panel reports screen coords for the overlay');
+    // 源文本条曾经也往这个 overlay 里压卡（故此处曾断言它回报屏幕坐标）。它现在改走
+    // 主查词管线、整份换掉下方结果，不再产出任何弹窗坐标——那条断言的前提没了。
+    // 「点字不压浮层」的不变量由 home_dictionary_source_scan_test 的源码守卫接管；
+    // 这里只继续守住**结果 WebView 内部**取词那条仍在用 overlay 的入口。
+    expect(page.contains('onTextSelected:'), isTrue,
+        reason: 'result WebView selection still feeds the overlay popup stack');
   });
 
   test(

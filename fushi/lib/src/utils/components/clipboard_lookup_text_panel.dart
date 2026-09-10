@@ -98,6 +98,55 @@ SourceLookupHighlight resolveSourceLookupHighlight({
   );
 }
 
+/// 一次「扫描查词」的发起点：交给引擎的那段串，以及它在源文本条上的起始字素簇。
+///
+/// 源文本条上点第 n 个字，查的是「从该字到串尾」的后缀（[SourceLookupTextPanel]
+/// 的 `onLookup`）。引擎的候选串全部是查询串的**前缀**，所以命中段的起点恒为
+/// [query] 的串首，而 [charIndex] 就是那个串首落在条上的位置——把两者绑成一个值，
+/// 异步结果回来时才能把匹配长度还给**发起那一次**的位置（见
+/// [resolveSourceLookupHighlight]）。主查词是同一件事的退化情形：整条就是查询串，
+/// [charIndex] = 0。
+@immutable
+class SourceLookupScan {
+  const SourceLookupScan({required this.query, required this.charIndex});
+
+  /// 从源文本条回报的原始后缀构造，把串首空白折进 [charIndex]。
+  ///
+  /// 查词管线一律 `trim()` 查询串，而 [SourceLookupTextPanel] 回报的下标指的是**未
+  /// trim** 的那个字。用户点在词与词之间的空白上时两者就错开一位，高亮会框住那个
+  /// 空白、而不是引擎真正吃下去的第一个字。
+  factory SourceLookupScan.fromSuffix({
+    required String suffix,
+    required int charIndex,
+  }) {
+    final int leadingBlank = suffix.characters
+        .takeWhile((String grapheme) => grapheme.trim().isEmpty)
+        .length;
+    return SourceLookupScan(
+      query: suffix.trim(),
+      charIndex: charIndex + leadingBlank,
+    );
+  }
+
+  /// 交给引擎的串（源文本条从 [charIndex] 起的后缀 / 主查词的整个查询串）。
+  final String query;
+
+  /// [query] 的串首在源文本条渲染序列里的字素簇下标。
+  final int charIndex;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SourceLookupScan &&
+      other.query == query &&
+      other.charIndex == charIndex;
+
+  @override
+  int get hashCode => Object.hash(query, charIndex);
+
+  @override
+  String toString() => 'SourceLookupScan(query: $query, charIndex: $charIndex)';
+}
+
 class SourceLookupTextPanel extends StatefulWidget {
   const SourceLookupTextPanel({
     required this.text,

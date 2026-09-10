@@ -4622,5 +4622,10 @@
   "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
   "storage_models_components": "โมเดลและส่วนประกอบ",
   "settings_group_tools": "Tools",
+  "mihon_source_login": "Log in",
+  "mihon_source_login_hint": "Sign in on the site, then tap Done to save the session",
+  "mihon_source_login_done": "Done",
+  "mihon_source_login_empty": "No session cookies were captured; nothing was saved",
+  "mihon_source_login_saved": "Signed in to this source",
   "shortcut_action_global_external_open_lookup_page": "Bring to front and open lookup page"
 }

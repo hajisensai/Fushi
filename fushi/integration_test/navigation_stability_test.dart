@@ -110,10 +110,6 @@ void main() {
           ),
           (id: SettingsDestinationId.manga, label: t.manga_library),
           (
-            id: SettingsDestinationId.listening,
-            label: t.settings_destination_listening,
-          ),
-          (
             id: SettingsDestinationId.video,
             label: t.settings_destination_video,
           ),

@@ -160,7 +160,7 @@ void main() {
     expect(summary, isNotNull, reason: '阅读分类没有摘要，听书在设置里就搜不到了');
     expect(
       summary,
-      contains(item.title!),
+      contains(item.title),
       reason:
           '「阅读」的摘要里不再出现「${item.title}」。并类之后这是听书唯一的可发现面：'
           '摘要参与设置搜索的 haystack，去掉它 = 用户搜「听书」什么也搜不到。',

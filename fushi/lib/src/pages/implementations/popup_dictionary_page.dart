@@ -71,8 +71,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   /// 源文本条上「这次查的是哪几个字」的扫描高亮，与首页词典 tab 同一口径。
   ///
-  /// 本页每次查词都把 [_sourceLookupText] 换成被点字起的后缀（见 [_pushSearch]），
-  /// 所以命中段的起点恒为条首（0）；长度仍要等引擎回报。
+  /// 顶层查词（宿主推来新词 / 搜索栏提交 / 开页自动查词）会把 [_sourceLookupText]
+  /// 换成查询串本身，命中段起点即条首（0）；源文本条点字则整句不动、起点是被点的
+  /// 那个字素簇（见 [_pushSearch] 的 `scan`）。长度两种情形都要等引擎回报。
   SourceLookupHighlight? _sourceHighlight;
 
   /// 迟到匹配长度的发号器（见首页词典 tab 的同名字段）。
@@ -171,10 +172,17 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     String query,
     Rect selectionRect, {
     bool reuseWarmSlot = false,
+    // 源文本条点字发起的「扫描查词」（Yomitan 式）。非空时本条与搜索框都**不动**：
+    // 变的只有下方那份结果和条上的高亮跨度，锚点就是被点的那个字素簇。
+    SourceLookupScan? scan,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    if (_searchController.text != trimmed) {
+    // 此前每次点字都把条上的整句换成「被点字起的后缀」，被点字左边的上下文就此丢
+    // 失：在「と言いつつ」上点「つ」，条上只剩「つつ」，再想点回「言」已经没得点。
+    // Yomitan 的扫描是整句不动、只挪高亮，所以扫描查词不再接管这两处。
+    final int anchorIndex = scan?.charIndex ?? 0;
+    if (scan == null && _searchController.text != trimmed) {
       _searchController.text = trimmed;
       _searchController.selection = TextSelection.collapsed(
         offset: trimmed.length,
@@ -183,9 +191,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final int highlightGeneration = ++_sourceHighlightGeneration;
     if (mounted) {
       setState(() {
-        _sourceLookupText = trimmed;
-        // 先框住条首那个字给即时反馈，引擎回报匹配长度后再扩成整词。
-        _sourceHighlight = const SourceLookupHighlight(start: 0, length: 1);
+        if (scan == null) _sourceLookupText = trimmed;
+        // 先框住被点的那个字给即时反馈，引擎回报匹配长度后再扩成整词。
+        _sourceHighlight = SourceLookupHighlight(
+          start: anchorIndex,
+          length: 1,
+        );
       });
     }
     final int matchedUnits = await pushNestedPopup(
@@ -203,8 +214,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     setState(() {
       _sourceHighlight = resolveSourceLookupHighlight(
         query: trimmed,
-        // 本页源文本条渲染的就是 trimmed 本身，条首即被查的那个字。
-        tappedGraphemeIndex: 0,
+        // 顶层查词时条上渲染的就是 trimmed 本身，条首即被查的那个字（锚点 0）；
+        // 扫描查词时条上是整句，锚点是被点的那个字。
+        tappedGraphemeIndex: anchorIndex,
         matchedUnits: matchedUnits,
         leadingStripUnits: appModel.lookupLeadingStripUnits(trimmed),
       );
@@ -386,11 +398,17 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               coordinateSpaceKey: _resultStackKey,
               dictionaryHeadwordScale: _dictionaryHeadwordScale,
               highlight: _sourceHighlight,
-              // 源文本面板点选 = 顶层新词，复用常驻热槽（TODO-951 症状C）。
-              // charIndex 在本页恒被 _pushSearch 归零：条上的文本随即换成从该字起
-              // 的后缀，被点的字就落回条首。
-              onLookup: (String query, Rect rect, int _) =>
-                  _pushSearch(query, rect, reuseWarmSlot: true),
+              // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
+              // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
+              onLookup: (String query, Rect rect, int charIndex) => _pushSearch(
+                query,
+                rect,
+                reuseWarmSlot: true,
+                scan: SourceLookupScan.fromSuffix(
+                  suffix: query,
+                  charIndex: charIndex,
+                ),
+              ),
             ),
           Expanded(child: _buildStack(context)),
         ],

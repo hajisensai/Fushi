@@ -429,6 +429,43 @@ void main() {
     expect(allHighlightBoxes(), findsNothing);
   });
 
+  group('SourceLookupScan.fromSuffix（后缀 → 查询串 + 高亮锚）', () {
+    test('普通后缀原样带过，锚就是被点的那个字', () {
+      final SourceLookupScan scan = SourceLookupScan.fromSuffix(
+        suffix: '言いつつ',
+        charIndex: 1,
+      );
+      expect(scan.query, '言いつつ');
+      expect(scan.charIndex, 1);
+    });
+
+    test('串首空白折进锚：查词管线会 trim，锚不跟着右移就框在空白上', () {
+      final SourceLookupScan scan = SourceLookupScan.fromSuffix(
+        suffix: '  hello world',
+        charIndex: 5,
+      );
+      expect(scan.query, 'hello world');
+      expect(scan.charIndex, 7, reason: '5 + 两个空白字素簇');
+    });
+
+    test('全空白后缀不产出查询串（宿主据此早退，不发空查询）', () {
+      final SourceLookupScan scan = SourceLookupScan.fromSuffix(
+        suffix: '   ',
+        charIndex: 3,
+      );
+      expect(scan.query, isEmpty);
+    });
+
+    test('串尾空白只影响查询串，不影响锚', () {
+      final SourceLookupScan scan = SourceLookupScan.fromSuffix(
+        suffix: 'あい  ',
+        charIndex: 2,
+      );
+      expect(scan.query, 'あい');
+      expect(scan.charIndex, 2);
+    });
+  });
+
   group('resolveSourceLookupHighlight（UTF-16 匹配长度 → 字素簇跨度）', () {
     test('从被点的字起，按引擎匹配长度框住整词', () {
       // 「と言いつつ」上点第 0 个字：查询串是整条，引擎命中「と言い」(3 unit)。
