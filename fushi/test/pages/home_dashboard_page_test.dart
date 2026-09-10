@@ -589,11 +589,19 @@ void main() {
     expect(opened.last, ('v1', cid));
     // 旧行为（只把首页切到视频 tab）不再发生。
     expect(homeShellTabNotifier.value, tabBefore);
-    // 活动条前置已是视频封面缩略槽（68×40，占位图标兜底），不再是裸 20px 图标。
+    // 活动条前置已是视频封面缩略槽（占位图标兜底），不再是裸 20px 图标；且槽是
+    // **竖版 40×56**，与同列表的书/游戏同槽——刮削回来的 2:3 海报塞进旧的 68×40
+    // 横槽会被 PortraitCoverImage 判为不合槽，缩成模糊垫底里的一小条。
+    expect(
+      find.byWidgetPredicate(
+          (Widget w) => w is SizedBox && w.width == 40 && w.height == 56),
+      findsWidgets,
+    );
     expect(
       find.byWidgetPredicate(
           (Widget w) => w is SizedBox && w.width == 68 && w.height == 40),
-      findsWidgets,
+      findsNothing,
+      reason: '视频活动条不得回退横版槽（竖版海报会被缩成模糊垫底里的一小条）',
     );
     expect(tester.takeException(), isNull);
   });
