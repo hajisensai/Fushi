@@ -1018,31 +1018,60 @@
     fileEl.value = '';
   });
 
-  // ── Jimaku 查字幕（asb 式云端字幕）：搜索框 → server /api/subtitle/jimaku/search（用户在
-  // app 设置里填的 API key；真人剧 anime=false 补搜在 server 侧）→ 点候选下载解析 →
+  // ── 查字幕（asb 式云端字幕）：搜索框 → server /api/subtitle/search → 点候选下载解析 →
   // 复用外挂字幕的 InstallTrack 落地（与本地文件同一条轨/偏移/覆盖层链路）。
-  var jimakuRowEl = document.getElementById('jimaku-row');
-  var jimakuQueryEl = document.getElementById('jimaku-query');
-  var jimakuEpEl = document.getElementById('jimaku-ep');
-  var jimakuResultsEl = document.getElementById('jimaku-results');
-  function jimakuErrorText(data, response) {
-    var error = data && data.error;
-    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
-    if (error === 'unauthorized') return 'Jimaku API key 无效或无权限';
-    if (error === 'rate-limited') return 'Jimaku 限流，请稍后再试';
-    if (error === 'missing-query') return '请输入搜索词';
-    if (!response || response.ok !== true) return 'Jimaku 搜索失败：请确认 Fushi 已启动';
-    return 'Jimaku 暂不可用，请稍后再试';
+  //
+  // 来源不再写死 Jimaku：server 那边扇出**用户在 app 里配好的全部在线字幕来源**
+  // （Jimaku / OpenSubtitles / AJATT），与视频页的「找字幕」看到同一批。AJATT 零配置，
+  // 所以没填任何 key 的用户在这里也有结果——此前他们点开只会看到「请先填 API key」。
+  var subsRowEl = document.getElementById('subs-row');
+  var subsQueryEl = document.getElementById('subs-query');
+  var subsEpEl = document.getElementById('subs-ep');
+  var subsResultsEl = document.getElementById('subs-results');
+  // 来源展示名：server 下发的是 provider id，列表里要让用户一眼看出这条来自哪家
+  // （同一部作品三家都可能有，质量与语言差别很大）。未知 id 原样显示，不吞。
+  var SUBTITLE_PROVIDER_LABELS = {
+    jimaku: 'Jimaku',
+    opensubtitles: 'OpenSubtitles',
+    ajatt: 'AJATT',
+  };
+  function providerLabel(id) {
+    if (!id) return '';
+    return SUBTITLE_PROVIDER_LABELS[id] || String(id);
   }
-  async function jimakuInstall(candidate) {
+  function subsErrorText(data, response) {
+    var error = data && data.error;
+    if (error === 'no-provider') {
+      return '没有可用的字幕来源：请在 Fushi 设置 → 视频 → 字幕 里启用 AJATT，或填 Jimaku / OpenSubtitles 的 key';
+    }
+    // 旧版 app（还只有 jimaku 端点）会回这个码。
+    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
+    if (error === 'unauthorized') return '字幕来源拒绝访问：请检查 API key';
+    if (error === 'rate-limited') return '字幕来源限流或配额用尽，请稍后再试';
+    if (error === 'missing-query') return '请输入搜索词';
+    if (!response || response.ok !== true) return '字幕搜索失败：请确认 Fushi 已启动';
+    return '字幕来源暂不可用，请稍后再试';
+  }
+  // 部分来源挂了但另一些答了：结果照出，同时说清楚少了谁——把它们混成一个「没找到」，
+  // 用户只会一遍遍换搜索词（app 内「找字幕」也是这么处理的）。
+  function failedProviderNames(data) {
+    var failures = data && Array.isArray(data.failures) ? data.failures : [];
+    var names = [];
+    failures.forEach(function (failure) {
+      var name = providerLabel(failure && failure.provider);
+      if (name && names.indexOf(name) < 0) names.push(name);
+    });
+    return names;
+  }
+  async function subsInstall(candidate) {
     toast('正在下载：' + candidate.fileName);
-    var response = await sendRuntime({ type: 'jimakuFetch', handle: candidate.handle });
+    var response = await sendRuntime({ type: 'subtitleFetch', handle: candidate.handle });
     var data = response && response.data;
     if (!response || response.ok !== true || !data || data.ok !== true ||
         !Array.isArray(data.cues) || !data.cues.length) {
       toast(data && data.error === 'unknown-handle'
         ? '候选已过期，请重新搜索'
-        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : jimakuErrorText(data, response)));
+        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : subsErrorText(data, response)));
       return;
     }
     var state = await sendToTab({
@@ -1053,89 +1082,99 @@
     if (state && state.ok) {
       stateSignature = metadataSignature(state);
       applyState(state, true);
-      jimakuResultsEl.hidden = true;
-      jimakuResultsEl.textContent = '';
-      toast('已加载 Jimaku 字幕：' + data.cues.length + ' 句');
+      subsResultsEl.hidden = true;
+      subsResultsEl.textContent = '';
+      toast('已加载' + (providerLabel(data.provider || candidate.provider)
+        ? ' ' + providerLabel(data.provider || candidate.provider) : '') +
+        '字幕：' + data.cues.length + ' 句');
     }
   }
-  function renderJimakuResults(candidates, truncated) {
-    jimakuResultsEl.textContent = '';
+  function renderSubsResults(candidates, truncated) {
+    subsResultsEl.textContent = '';
     if (!candidates.length) {
       var empty = document.createElement('div');
-      empty.className = 'jimaku-empty';
+      empty.className = 'subs-empty';
       empty.textContent = '无结果。试试日文原名，或填集数缩小范围。';
-      jimakuResultsEl.appendChild(empty);
-      jimakuResultsEl.hidden = false;
+      subsResultsEl.appendChild(empty);
+      subsResultsEl.hidden = false;
       return;
     }
     candidates.forEach(function (candidate) {
       var row = document.createElement('button');
       row.type = 'button';
-      row.className = 'jimaku-item';
+      row.className = 'subs-item';
       var name = document.createElement('span');
-      name.className = 'jimaku-item-name';
+      name.className = 'subs-item-name';
       name.textContent = candidate.fileName;
       var meta = document.createElement('span');
-      meta.className = 'jimaku-item-meta';
-      meta.textContent = candidate.entryName +
-        (candidate.language ? ' · ' + candidate.language : '') +
-        (candidate.episode != null ? ' · 第' + candidate.episode + '集' : '');
+      meta.className = 'subs-item-meta';
+      var parts = [];
+      var label = providerLabel(candidate.provider);
+      if (label) parts.push(label);
+      if (candidate.entryName) parts.push(candidate.entryName);
+      if (candidate.language) parts.push(candidate.language);
+      if (candidate.episode != null) parts.push('第' + candidate.episode + '集');
+      // 机翻档与人工档并排时质量差一个数量级，来源既然标了就得显示出来。
+      if (candidate.aiTranslated === true) parts.push('机翻');
+      meta.textContent = parts.join(' · ');
       row.appendChild(name);
       row.appendChild(meta);
-      row.addEventListener('click', function () { jimakuInstall(candidate); });
-      jimakuResultsEl.appendChild(row);
+      row.addEventListener('click', function () { subsInstall(candidate); });
+      subsResultsEl.appendChild(row);
     });
     if (truncated) {
       var more = document.createElement('div');
-      more.className = 'jimaku-empty';
+      more.className = 'subs-empty';
       more.textContent = '结果过多已截断，填集数可缩小范围。';
-      jimakuResultsEl.appendChild(more);
+      subsResultsEl.appendChild(more);
     }
-    jimakuResultsEl.hidden = false;
+    subsResultsEl.hidden = false;
   }
-  var jimakuSearching = false;
-  async function jimakuSearch() {
-    if (jimakuSearching) return;
-    var query = String(jimakuQueryEl.value || '').trim();
+  var subsSearching = false;
+  async function subsSearch() {
+    if (subsSearching) return;
+    var query = String(subsQueryEl.value || '').trim();
     if (!query) { toast('请输入搜索词'); return; }
-    var episode = parseInt(jimakuEpEl.value, 10);
-    jimakuSearching = true;
-    toast('正在搜索 Jimaku…');
+    var episode = parseInt(subsEpEl.value, 10);
+    subsSearching = true;
+    toast('正在搜索字幕…');
     try {
       var response = await sendRuntime({
-        type: 'jimakuSearch',
+        type: 'subtitleSearch',
         query: query,
         ...(Number.isInteger(episode) && episode > 0 ? { episode: episode } : {}),
       });
       var data = response && response.data;
       if (!response || response.ok !== true || !data || data.ok !== true) {
-        toast(jimakuErrorText(data, response));
+        toast(subsErrorText(data, response));
         return;
       }
-      renderJimakuResults(Array.isArray(data.candidates) ? data.candidates : [],
+      renderSubsResults(Array.isArray(data.candidates) ? data.candidates : [],
         data.truncated === true);
+      var failed = failedProviderNames(data);
+      if (failed.length) toast('部分来源未响应：' + failed.join('、'));
     } finally {
-      jimakuSearching = false;
+      subsSearching = false;
     }
   }
-  document.getElementById('jimaku').addEventListener('click', function () {
-    var show = jimakuRowEl.hidden;
-    jimakuRowEl.hidden = !show;
-    if (!show) { jimakuResultsEl.hidden = true; return; }
+  document.getElementById('subs').addEventListener('click', function () {
+    var show = subsRowEl.hidden;
+    subsRowEl.hidden = !show;
+    if (!show) { subsResultsEl.hidden = true; return; }
     // 预填当前标签页标题（长显示名命中率低，用户可改成日文原名——placeholder 已提示）。
-    if (!jimakuQueryEl.value && currentTabId != null) {
+    if (!subsQueryEl.value && currentTabId != null) {
       try {
         chrome.tabs.get(currentTabId, function (tab) {
           try { if (chrome.runtime.lastError) return; } catch (_) { return; }
-          if (tab && tab.title && !jimakuQueryEl.value) jimakuQueryEl.value = tab.title;
+          if (tab && tab.title && !subsQueryEl.value) subsQueryEl.value = tab.title;
         });
       } catch (_) {}
     }
-    jimakuQueryEl.focus();
+    subsQueryEl.focus();
   });
-  document.getElementById('jimaku-go').addEventListener('click', function () { jimakuSearch(); });
-  jimakuQueryEl.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter') jimakuSearch();
+  document.getElementById('subs-go').addEventListener('click', function () { subsSearch(); });
+  subsQueryEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') subsSearch();
   });
 
   document.getElementById('smaller').addEventListener('click', function () {

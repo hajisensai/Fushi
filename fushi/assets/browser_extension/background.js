@@ -853,12 +853,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
-      } else if (msg.type === 'jimakuSearch') {
-        // Jimaku 查字幕①：Side Panel 搜索框 → server /api/subtitle/jimaku/search（server 持
-        // 用户在 app 设置里填的 Jimaku API key；真人剧 anime=false 补搜也在 server 侧）。
-        const r = await fetch(base + '/api/subtitle/jimaku/search', {
+      } else if (msg.type === 'subtitleSearch') {
+        // 查字幕①：Side Panel 搜索框 → server /api/subtitle/search。server 扇出
+        // **用户已配好的全部在线字幕来源**（Jimaku / OpenSubtitles / AJATT，与 app 内
+        // 视频页「找字幕」同一批 provider），一家挂了另几家照样出结果。
+        //
+        // 超时比别的端点长：AJATT 第一次搜索要拉约 9 MB 的静态目录（之后落盘缓存
+        // 24 小时），20 秒会在首次使用时稳定超时，而那正是零配置用户的第一印象。
+        const r = await fetch(base + '/api/subtitle/search', {
           method: 'POST',
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(45000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
             query: msg.query || '',
@@ -872,10 +876,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
-      } else if (msg.type === 'jimakuFetch') {
-        // Jimaku 查字幕②：候选 handle → server 下载+自动识别编码+解析，响应与
-        // /api/subtitle/parse 同形（{format,cues}），Side Panel 直接走既有 InstallTrack。
-        const r = await fetch(base + '/api/subtitle/jimaku/fetch', {
+      } else if (msg.type === 'subtitleFetch') {
+        // 查字幕②：候选 handle → server 按 handle 找回候选、交还给**它自己的来源**下载，
+        // 自动识别编码 + 解析，响应与 /api/subtitle/parse 同形（{format,cues}），
+        // Side Panel 直接走既有 InstallTrack。
+        const r = await fetch(base + '/api/subtitle/fetch', {
           method: 'POST',
           signal: AbortSignal.timeout(30000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },

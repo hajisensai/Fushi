@@ -6,13 +6,16 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
-import 'package:fushi/src/media/video/jimaku_client.dart' show JimakuClient;
+import 'package:fushi/src/media/video/download/video_subtitle_registry.dart'
+    show VideoSubtitleRegistry;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
+    show VideoSubtitleCandidate;
 import 'package:fushi/src/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
 import 'package:fushi/src/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/remote_jimaku_subtitle_handlers.dart';
+import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 import 'package:fushi/src/sync/remote_lookup_routes.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_sync_server.dart'
@@ -78,7 +81,7 @@ class YomitanApiServer {
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
-    String? Function()? jimakuApiKeyProvider,
+    Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -96,7 +99,7 @@ class YomitanApiServer {
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
-        _jimakuApiKeyProvider = jimakuApiKeyProvider,
+        _subtitleRegistryProvider = subtitleRegistryProvider,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -133,38 +136,32 @@ class YomitanApiServer {
   // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
   // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
   final void Function(String build, String? version)? _onExtensionReport;
-  // 「Jimaku 查字幕」扩展桥：从偏好读用户 API key 的供给器。未注入/key 为空时两个
-  // jimaku 端点回 {ok:false, error:'no-api-key'}（扩展提示去 app 设置里填 key）。
-  final String? Function()? _jimakuApiKeyProvider;
+  // 「查字幕」扩展桥：已配置在线字幕来源的 registry 供给器（Jimaku / OpenSubtitles /
+  // AJATT，与 app 内「找字幕」对话框同一份）。未注入/一个来源都没配时端点回
+  // {ok:false, error:'no-provider'}；旧 jimaku 端点在 Jimaku 缺席时仍回 'no-api-key'。
+  //
+  // 此前这里持有的是**自己 new 的 JimakuClient**（只认 API key），于是扩展永远只有
+  // Jimaku 一家：零配置的 AJATT、用户已填 key 的 OpenSubtitles 在扩展里都不存在。
+  final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
   final String? _apiKey;
   final bool _allowLan;
 
   HttpServer? _server;
 
-  // Jimaku client 按 key 缓存复用（每请求新建会泄漏 http.Client）；key 变更时换新关旧。
-  JimakuClient? _jimakuClient;
-  String? _jimakuClientKey;
-  // 搜索候选按 handle 暂存（download 需要 file url 等上下文）；插入序 LRU，上限截断。
-  static const int _kJimakuCandidateCacheLimit = 200;
-  final Map<String, RemoteJimakuCandidate> _jimakuCandidates =
-      <String, RemoteJimakuCandidate>{};
+  // 搜索候选按 handle 暂存（download 要交回候选对象本身：OpenSubtitles 的 fileId、
+  // Jimaku/AJATT 的下载 URL 都只活在候选里，裸 handle 串重建不出来）；插入序 LRU。
+  static const int _kSubtitleCandidateCacheLimit = 200;
+  final Map<String, VideoSubtitleCandidate> _subtitleCandidates =
+      <String, VideoSubtitleCandidate>{};
 
-  JimakuClient? _jimakuClientFor() {
-    final String? key = _jimakuApiKeyProvider?.call();
-    if (key == null || key.trim().isEmpty) return null;
-    if (_jimakuClient == null || _jimakuClientKey != key) {
-      _jimakuClient?.close();
-      _jimakuClient = JimakuClient(apiKey: key);
-      _jimakuClientKey = key;
-    }
-    return _jimakuClient;
-  }
+  Future<VideoSubtitleRegistry?> _subtitleRegistryFor() async =>
+      await _subtitleRegistryProvider?.call();
 
-  void _rememberJimakuCandidate(String handle, RemoteJimakuCandidate c) {
-    _jimakuCandidates.remove(handle); // 重插到尾部（LRU 触达即续期）
-    _jimakuCandidates[handle] = c;
-    while (_jimakuCandidates.length > _kJimakuCandidateCacheLimit) {
-      _jimakuCandidates.remove(_jimakuCandidates.keys.first);
+  void _rememberSubtitleCandidate(String handle, VideoSubtitleCandidate c) {
+    _subtitleCandidates.remove(handle); // 重插到尾部（LRU 触达即续期）
+    _subtitleCandidates[handle] = c;
+    while (_subtitleCandidates.length > _kSubtitleCandidateCacheLimit) {
+      _subtitleCandidates.remove(_subtitleCandidates.keys.first);
     }
   }
 
@@ -202,10 +199,7 @@ class YomitanApiServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
-    _jimakuClient?.close();
-    _jimakuClient = null;
-    _jimakuClientKey = null;
-    _jimakuCandidates.clear();
+    _subtitleCandidates.clear();
   }
 
   shelf.Middleware _authMiddleware() {
@@ -334,37 +328,57 @@ class YomitanApiServer {
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
         return _handleSubtitleParse(request);
+      case '/api/subtitle/search':
+        return _handleSubtitleSearch(request);
+      case '/api/subtitle/fetch':
+        return _handleSubtitleFetch(request);
+      // 旧扩展副本（BUG-1079 的自更新 stale 态）仍打 jimaku 专用路径：限定到
+      // Jimaku 一家，语义与旧实现逐字不变。
       case '/api/subtitle/jimaku/search':
-        return _handleJimakuSearch(request);
+        return _handleSubtitleSearch(
+          request,
+          restrictToProviderIds: kJimakuOnlyProviderIds,
+        );
       case '/api/subtitle/jimaku/fetch':
-        return _handleJimakuFetch(request);
+        return _handleSubtitleFetch(
+          request,
+          restrictToProviderIds: kJimakuOnlyProviderIds,
+        );
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
   }
 
-  /// 「Jimaku 查字幕」扩展桥①搜索：body `{query?, anilistId?, episode?, anime?}`。
-  /// 逻辑在 [buildJimakuSearchResponse]（含真人剧 anime=false 补搜）；候选按 handle
-  /// 暂存供 fetch。
-  Future<shelf.Response> _handleJimakuSearch(shelf.Request request) async {
+  /// 「查字幕」扩展桥①搜索：body `{query?, anilistId?, episode?, season?, anime?,
+  /// languages?}`。逻辑在 [buildRemoteSubtitleSearchResponse]（扇出全部已配置来源、
+  /// 排序去重、部分失败照样出结果）；候选按 handle 暂存供 fetch。
+  Future<shelf.Response> _handleSubtitleSearch(
+    shelf.Request request, {
+    Set<String>? restrictToProviderIds,
+  }) async {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return jsonResponse(await buildJimakuSearchResponse(
+    return jsonResponse(await buildRemoteSubtitleSearchResponse(
       body,
-      clientProvider: _jimakuClientFor,
-      rememberCandidate: _rememberJimakuCandidate,
+      registryProvider: _subtitleRegistryFor,
+      rememberCandidate: _rememberSubtitleCandidate,
+      restrictToProviderIds: restrictToProviderIds,
     ));
   }
 
-  /// 「Jimaku 查字幕」扩展桥②下载+解析：body `{handle}`。响应与 `/api/subtitle/parse`
+  /// 「查字幕」扩展桥②下载+解析：body `{handle}`。响应与 `/api/subtitle/parse`
   /// 同形（`{format, cues:[...]}` + filename/language），扩展直接走既有 InstallTrack 落地。
-  Future<shelf.Response> _handleJimakuFetch(shelf.Request request) async {
+  Future<shelf.Response> _handleSubtitleFetch(
+    shelf.Request request, {
+    Set<String>? restrictToProviderIds,
+  }) async {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return jsonResponse(await buildJimakuFetchResponse(
+    return jsonResponse(await buildRemoteSubtitleFetchResponse(
       body,
-      clientProvider: _jimakuClientFor,
-      resolveCandidate: (String handle) => _jimakuCandidates[handle],
+      registryProvider: _subtitleRegistryFor,
+      resolveCandidate: (String handle) => _subtitleCandidates[handle],
+      restrictToProviderIds: restrictToProviderIds,
     ));
   }
 

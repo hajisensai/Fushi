@@ -2,7 +2,7 @@
 // 安卓系浏览器没有 chrome.sidePanel——那是桌面独有 API，字幕列表（side-panel.html 整套 UI）
 // 在手机上原本没有任何显示面。本脚本在「触屏设备 + 页面里有视频」时挂一条贴边拉条：
 //   · 轻点拉条 → 抽屉滑入：横屏从右缘抽出、竖屏从底部升起；内容是一份 iframe，指向
-//     side-panel.html?fushiEmbed=1&fushiEmbedToken=… —— 选轨/点句跳转/时轴偏移/外挂字幕/Jimaku
+//     side-panel.html?fushiEmbed=1&fushiEmbedToken=… —— 选轨/点句跳转/时轴偏移/外挂字幕/查字幕
 //     搜字幕/制卡/面板查词全部原样复用，零复制逻辑；
 //   · 按住拉条直接左右/上下拖 → 抽屉跟手；松手按露出比例吸附开/关，开态拖过当前尺寸
 //     即顺手加宽/加高并存进 mobileSubtitleDrawerGeom（下次记住）——「可收可拉」；
