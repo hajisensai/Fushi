@@ -643,7 +643,15 @@ class _VideoResourceSearchSurfaceState
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _manualIdController = TextEditingController();
   final TextEditingController _manualYearController = TextEditingController();
-  final TextEditingController _startAfterController = TextEditingController();
+
+  /// 订阅起始集号的默认值。新版（`organizationPolicy == 'library'`）订阅把
+  /// `startAfterEpisode` 按「从该集开始」解释（见
+  /// `video_download_subscription_service.dart` 的 `inclusiveStart`），所以默认
+  /// 第 1 集与「留空 = 不限」落到同一个窗口；显式填出来用户才看得见起点。
+  static const String _defaultStartEpisode = '1';
+
+  final TextEditingController _startAfterController =
+      TextEditingController(text: _defaultStartEpisode);
   VideoDiscoveryCategory _manualCategory = VideoDiscoveryCategory.anime;
   VideoMetadataMediaKind _manualMediaKind = VideoMetadataMediaKind.tv;
   String _manualProvider = 'anidb';
@@ -673,7 +681,11 @@ class _VideoResourceSearchSurfaceState
       VideoDownloadSubtitlePolicy.bestEffort;
   bool _loading = false;
   bool _submitting = false;
-  bool _strictConfirmed = false;
+
+  /// 「加入订阅」开关（追踪当前 release 的字幕组 + 分辨率）。默认打开：进这个
+  /// 面板本来就是为了订阅，再要求用户手工确认一次只是多一步（提交按钮此前一直
+  /// 因为它是 false 而禁用）。用户显式关掉后不再被换候选/重新搜索拉回来。
+  bool _strictConfirmed = true;
   int _generation = 0;
 
   @override
@@ -735,7 +747,6 @@ class _VideoResourceSearchSurfaceState
       _loading = false;
       _result = null;
       _selectedCandidates.clear();
-      _strictConfirmed = false;
     });
   }
 
@@ -786,7 +797,6 @@ class _VideoResourceSearchSurfaceState
     setState(() {
       _loading = true;
       _selectedCandidates.clear();
-      _strictConfirmed = false;
     });
     final ProviderBatchResult<VideoResourceCandidate> result =
         await widget.registry.search(
@@ -804,7 +814,6 @@ class _VideoResourceSearchSurfaceState
 
   void _select(VideoResourceCandidate candidate) {
     setState(() {
-      _strictConfirmed = false;
       if (widget.subscription) {
         // 订阅只跟一条模板：选新的直接替换，不累积。
         _selectedCandidates
@@ -812,8 +821,7 @@ class _VideoResourceSearchSurfaceState
           ..add(candidate);
       } else if (!_selectedCandidates.remove(
         _selectedCandidates.firstWhereOrNull(
-          (VideoResourceCandidate c) =>
-              c.identityKey == candidate.identityKey,
+          (VideoResourceCandidate c) => c.identityKey == candidate.identityKey,
         ),
       )) {
         _selectedCandidates.add(candidate);
@@ -821,10 +829,9 @@ class _VideoResourceSearchSurfaceState
       // 起始集号只对订阅有意义，且要跟着「当前这一条」走；下载模式多选时用最后
       // 点的那条填，反正提交时不读它。
       final VideoResourceCandidate? current = _selected;
-      final int? episode = current == null
-          ? null
-          : episodeNumberFromReleaseTitle(current.title);
-      _startAfterController.text = episode?.toString() ?? '';
+      final int? episode =
+          current == null ? null : episodeNumberFromReleaseTitle(current.title);
+      _startAfterController.text = episode?.toString() ?? _defaultStartEpisode;
     });
   }
 
@@ -1104,7 +1111,6 @@ class _VideoResourceSearchSurfaceState
                     _manualMediaKind = value;
                     _result = null;
                     _selectedCandidates.clear();
-                    _strictConfirmed = false;
                   });
                 },
               ),
@@ -1508,7 +1514,7 @@ class _VideoResourceSearchSurfaceState
                 labelText: t.video_jimaku_episode,
                 helperText: t.download_subscription_start_episode(
                   episode: _startAfterController.text.trim().isEmpty
-                      ? '1'
+                      ? _defaultStartEpisode
                       : _startAfterController.text.trim(),
                 ),
               ),
