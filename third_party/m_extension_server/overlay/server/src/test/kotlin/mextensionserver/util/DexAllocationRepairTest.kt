@@ -90,10 +90,9 @@ class DexAllocationRepairTest {
 
     @Test
     fun `leaves the allocation alone when the candidate has no matching constructor`() {
-        // dex2jar 有时把构造整个内联掉，连描述符一起换成父类的（koharu 的 Lp0; 在 dex 里
-        // 是 `<init>(Lp;)V` 的 Kotlin 内部类，却被转成了父类的 `(String, List)`）。这时
-        // 光把 owner 改回去只会把 InstantiationError 换成 NoSuchMethodError——一样不可用、
-        // 还更难查。必须原样放过。
+        // Allocation counts alone cannot prove which constructor ran in DEX.
+        // Without receiver/constructor evidence, do not invent a forwarding
+        // constructor or replace InstantiationError with NoSuchMethodError.
         val jar = buildFixture(concreteCtorDesc = "(Ljava/lang/String;)V")
         try {
             DexAllocationRepair.restoreWithAllocations(

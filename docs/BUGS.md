@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2218 条。点号进各自文件。
+> 共 2221 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2415](bugs/BUG-2415-eink-popup-touch-instant-scroll.md) | ✅ | ✅ | 墨水屏瞬时滚动只接了滚轮，触摸拖动仍走原生惯性滚动 |
+| [BUG-2406](bugs/BUG-2406-mihon-inlined-filter-constructor.md) | ✅ | ✅ | SchaleNetwork 内联筛选组构造器导致抽象类实例化失败 |
+| [BUG-2405](bugs/BUG-2405-mihon-image-response-lifetime.md) | ✅ | ✅ | Mihon 图片响应在读取正文前因 Rx 退订关闭 Socket |
+| [BUG-2404](bugs/BUG-2404-mihon-proxy-socket-uri.md) | ✅ | ✅ | Mihon 全局代理选择器误将 TCP socket URI 发送至 HTTP 策略端点 |
 | [BUG-2403](bugs/BUG-2403-video-doubleclick-ignores-mouse-button.md) | ✅ | ✅ | 视频页双击判定不看鼠标按钮号，右键双击画面切全屏 |
 | [BUG-2402](bugs/BUG-2402-mobile-library-layout.md) | ✅ | ✅ | 手机标签页头留白与筛选工具堆叠 |
 | [BUG-2400](bugs/BUG-2400-remote-manga-empty-content.md) | ✅ | ✅ | 远端空漫画合集被标记为可下载内容 |
