@@ -27,6 +27,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// [onDeleteMembersMedia] 非 null 且合集有成员时，删除确认框提供
 /// [deleteMembersCheckboxLabel] 勾选行（调用方按媒体域传
 /// `delete_collection_also_books` / `delete_collection_also_videos` 等文案）。
+/// [deleteMembersLocalFilesSubtitle] 非 null 时，勾了上面那行还会再出现二级
+/// 「同时删除本地文件」勾选行，其状态经 `deleteLocalFiles` 参数交给
+/// [onDeleteMembersMedia]——库里的条目删不删、磁盘上的原件删不删是两个决定，
+/// 调用方按媒体域决定是否提供后者（视频合集提供；书 / 游戏合集传 null）。
 /// [extraListActions] 由调用方注入媒体特有行（视频页：在线匹配封面 / 为合集
 /// 获取字幕），本对话框统一负责「先关自身再执行」，回调里不要再 pop。
 /// 排序两项内建（[applyCollectionOneKeySort]，与详情页 AppBar 排序菜单同源），
@@ -37,9 +41,12 @@ Future<void> showCollectionContextDialog({
   required MediaCollectionRow collection,
   required VoidCallback onOpenDetail,
   required VoidCallback onChanged,
-  Future<void> Function(List<MediaCollectionItemRow> members)?
-      onDeleteMembersMedia,
+  Future<void> Function(
+    List<MediaCollectionItemRow> members,
+    bool deleteLocalFiles,
+  )? onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
+  String? deleteMembersLocalFilesSubtitle,
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
@@ -127,6 +134,8 @@ Future<void> showCollectionContextDialog({
                 onChanged: onChanged,
                 onDeleteMembersMedia: onDeleteMembersMedia,
                 deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
+                deleteMembersLocalFilesSubtitle:
+                    deleteMembersLocalFilesSubtitle,
                 deleteMembersDisclosure: deleteMembersDisclosure,
               ),
             ),
@@ -187,8 +196,9 @@ Future<void> _sortCollection({
   onChanged();
 }
 
-/// 删除合集：确认（可选「连同成员本体一起删」勾选）→ 先删成员本体（调用方注入，
-/// 按媒体域删 DB 行 + 磁盘副本）→ [deleteMediaCollectionWithAssets] 解散容器
+/// 删除合集：确认（可选「连同成员本体一起删」勾选，及其下的「同时删除本地文件」
+/// 二级勾选）→ 先删成员本体（调用方注入，按媒体域删 DB 行 + 磁盘副本，勾了二级
+/// 就连原始文件一起删）→ [deleteMediaCollectionWithAssets] 解散容器
 /// （清引用行 + 写合集级墓碑 + 回收合集自有封面）。与两个合集详情页的 `_delete`
 /// 同一顺序、同一入口（BUG-1319：回收必须挂在删除动作上，不能各入口各写一遍）。
 Future<void> _deleteCollection({
@@ -196,9 +206,12 @@ Future<void> _deleteCollection({
   required FushiDatabase db,
   required MediaCollectionRow collection,
   required VoidCallback onChanged,
-  required Future<void> Function(List<MediaCollectionItemRow> members)?
-      onDeleteMembersMedia,
+  required Future<void> Function(
+    List<MediaCollectionItemRow> members,
+    bool deleteLocalFiles,
+  )? onDeleteMembersMedia,
   required String? deleteMembersCheckboxLabel,
+  required String? deleteMembersLocalFilesSubtitle,
   required DeletionDisclosure? deleteMembersDisclosure,
 }) async {
   final List<MediaCollectionItemRow> members =
@@ -214,12 +227,17 @@ Future<void> _deleteCollection({
       message: t.delete_collection_confirm,
       confirmLabel: t.delete_collection,
       checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
+      localFilesSubtitle:
+          canDeleteMembers ? deleteMembersLocalFilesSubtitle : null,
       checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
     ),
   );
   if (result == null || !context.mounted) return;
   if (result.checked && onDeleteMembersMedia != null) {
-    await onDeleteMembersMedia(List<MediaCollectionItemRow>.of(members));
+    await onDeleteMembersMedia(
+      List<MediaCollectionItemRow>.of(members),
+      result.deleteLocalFiles,
+    );
   }
   await deleteMediaCollectionWithAssets(db, collection.id);
   onChanged();

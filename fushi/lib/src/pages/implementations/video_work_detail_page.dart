@@ -38,6 +38,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     required this.onChanged,
     this.remote,
     this.onDeleteMembersMedia,
+    this.deleteMembersLocalFilesSubtitle,
     this.onRescrapeCollection,
     super.key,
   });
@@ -55,7 +56,14 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 视图（调用方没有互联 client），与远端支持引入前逐字节相同。
   final CollectionRemoteContext? remote;
 
-  final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+  final Future<void> Function(
+    List<VideoBookRow> members,
+    bool deleteLocalFiles,
+  )? onDeleteMembersMedia;
+
+  /// 透传给 [MediaCollectionDetailPage.deleteMembersLocalFilesSubtitle]：
+  /// 「同时删除其中的视频」之下的二级「同时删除本地文件」勾选说明。
+  final String? deleteMembersLocalFilesSubtitle;
 
   /// 透传给合集详情页的「重新刮削资料与封面」（刮削 controller 归 HomePage，
   /// 由库页注入）。null = 不渲染该菜单项。
@@ -151,6 +159,8 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
             },
             onChanged: widget.onChanged,
             onDeleteMembersMedia: widget.onDeleteMembersMedia,
+            deleteMembersLocalFilesSubtitle:
+                widget.deleteMembersLocalFilesSubtitle,
             onRescrapeCollection: widget.onRescrapeCollection,
           );
         },
