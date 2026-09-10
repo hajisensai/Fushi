@@ -78,31 +78,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (_controller == null) {
       return;
     }
-    // TODO-1229 案A：导航/恢复在飞窗口直接丢弃输入（放在节流戳之前，被丢弃的输入
-    // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
-    // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
-    if (_paginationInFlight) {
-      // BUG-2424：换章加载期到达的输入**排队**而不是丢弃。旧实现在这里直接 return，
-      // 用户在换章那几百毫秒里拨的每一格滚轮都石沉大海（「按了没反应，要再按一次」）。
-      // 此刻仍不能就地执行——`fushiReader` 未就绪、`evaluateJavascript` 返 null 会被
-      // `_didScroll` 误读成页边界而多跨一章（原始「跳两章」的成因之一）——所以存下
-      // 意图，由 [_replayPendingPageTurn] 在 content-ready 之后重放，那时判定是在
-      // 已就绪状态上做的。排队的输入不推进 _lastPaginateTime。
-      _pageTurnQueue.push(direction);
-      return;
-    }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
     // wheelPageTurnInterval(450)、音量键固定 defaultScrollingSpeed(100)、键盘/手柄 0。
     // 时间戳语义（与音量键旧 _lastVolumeKeyTime / HBK-AUDIT-120 一致）：读 throttleMs
-    // 时即生效，无残留 timer。**只盖在 _paginate 入口**——内部跨章（_handlePageTurnLimit）
-    // 已在闸门内、不重复节流，故分页到章末经 _paginate 仍翻得过去（不自吞，4 必补点 #1）。
+    // 时即生效，无残留 timer。
+    //
+    // BUG-2424：节流必须排在在飞判定**之前**。它是用户在设置里配的「滚轮翻页间隔」，
+    // 语义是「每隔这么久接受一次翻页输入」——**统一管所有滚轮翻页，含跨章**，与分页/
+    // 连续模式无关。放在在飞判定之后的话，换章加载期到达的输入会绕过限速直接入队，
+    // 落定后一次性连翻，等于用户配的速率对跨章不生效。
     if (throttleMs > 0 && _lastPaginateTime != null) {
       final int elapsedMs =
           DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
       if (elapsedMs < throttleMs) return;
     }
+    // 过了节流 = 这一次输入被**接受**，占掉一个翻页配额，所以此刻就 stamp——哪怕它
+    // 接着要进队列等重放。不 stamp 的话，加载期内的每一个 tick 都会被接受入队。
     if (throttleMs > 0) {
       _lastPaginateTime = DateTime.now();
+    }
+    if (_paginationInFlight) {
+      // BUG-2424：换章加载期到达的输入**排队**而不是丢弃。旧实现在这里直接 return，
+      // 用户在换章那几百毫秒里拨的滚轮石沉大海（「按了没反应，要再按一次」）。
+      // 此刻仍不能就地执行——`fushiReader` 未就绪、`evaluateJavascript` 返 null 会被
+      // `_didScroll` 误读成页边界而多跨一章（原始「跳两章」的成因之一）——所以存下
+      // 意图，由 [_replayPendingPageTurn] 在 content-ready 之后重放，那时判定是在
+      // 已就绪状态上做的。重放不再过节流：这一格在**入队前**就已经过了。
+      _pageTurnQueue.push(direction);
+      return;
     }
     // Lyrics mode renders LyricsModeHtml — a vertical cue list with no
     // fushiReader paginator. paginate() there no-ops in JS (the

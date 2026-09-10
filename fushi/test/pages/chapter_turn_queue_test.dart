@@ -190,11 +190,35 @@ void main() {
       }
     });
 
-    test('onBoundarySwipe 不再对跨章叠 _lastPaginateTime 节流窗', () {
+    test('节流统一管跨章：onBoundarySwipe 也要就地补一道 _lastPaginateTime 闸门', () {
+      // 连续模式的跨章绕过 _paginate 入口直接调 _handlePageTurnLimit，不在这里
+      // 补一道，用户配的「滚轮翻页间隔」就只管得着分页模式。
       final String handler = boundarySwipeHandler();
-      expect(handler.contains('_lastPaginateTime'), isFalse,
-          reason: '用户要求一口气连续跨多章、不必停手；wheelPageTurnInterval 限的是'
-              '章内翻页速率，跨章由加载节奏天然限流');
+      expect(handler, contains('wheelPageTurnInterval'));
+      expect(handler, contains('_lastPaginateTime'),
+          reason: '跨章与章内翻页受同一个用户设置管，两种模式一视同仁');
+    });
+
+    test('两处闸门顺序一致：先节流、再 stamp、最后才是在飞排队', () {
+      // 顺序是这条不变式的全部：节流若排在在飞判定**之后**，换章加载期到达的
+      // 输入就会绕过限速直接入队，落定后一次性连翻——用户配的速率对跨章等于不生效。
+      for (final String body in <String>[
+        paginateBody(),
+        boundarySwipeHandler()
+      ]) {
+        final int throttleIdx = body.indexOf('elapsedMs < throttleMs');
+        final int stampIdx =
+            body.indexOf('_lastPaginateTime = DateTime.now();');
+        final int queueIdx = body.indexOf('_pageTurnQueue.push(');
+        expect(throttleIdx, isNonNegative);
+        expect(stampIdx, isNonNegative);
+        expect(queueIdx, isNonNegative);
+        expect(throttleIdx, lessThan(stampIdx), reason: '先查节流再 stamp');
+        expect(stampIdx, lessThan(queueIdx),
+            reason: '过了节流 = 这一次输入被接受、占掉一个翻页配额，'
+                '所以即使接着要入队也必须先 stamp；'
+                '不然加载期内每一个 tick 都会被接受入队');
+      }
     });
 
     test('触摸板惯性仍由跨文档 gate 聚合（JS 侧手势窗随换文档归零，拦不住）', () {

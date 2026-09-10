@@ -25,7 +25,16 @@ import 'test_helpers.dart';
 ///
 /// 既有的 `reader_cross_chapter_perf_itest.dart` 结构上测不到这个：它是「9 次前进 +
 /// 9 次后退」的单向两趟，而且每次跨章后固定停留 1500ms —— 那个停留正是为了越过
-/// 450ms 冷却窗，等于把闸门排除在测量之外。本文件反过来，**故意不等**。
+/// 冷却窗，等于把闸门排除在测量之外。本文件反过来，**只等满用户配的那一道闸门**。
+///
+/// 两道闸门必须分清楚：
+///   * `wheelPageTurnInterval`（默认 450ms）是**用户在设置里配的限速器**，统一管章内
+///     翻页与跨章，窗口从**发起**那一刻算——保留。
+///   * `_kChapterTurnCooldown`（450ms）是隐藏的、不可配的，而且锢点被重新 stamp 到
+///     **新章 content-ready**，于是与节流相加成 `T_load + 450ms`——删除。
+///
+/// 本用例恰好等满 throttle 后发下一拍，就把两者分开了：新代码该放行，
+/// 旧代码因为冷却窗还没过期而把输入吞掉。
 ///
 /// 驱动走生产通道 `callHandler('onBoundarySwipe', dir)`（与用户滚轮滚到章末时 JS 侧
 /// 发出的是同一事件；只传方向 ⇒ Dart 侧 pointerKind 缺省按鼠标推断，正是用户场景）。
@@ -147,13 +156,20 @@ void main() {
       final List<String> visited = <String>[await currentChapterFile()];
       final List<int> landingMs = <int>[];
 
+      // 用户配的「滚轮翻页间隔」统一管章内翻页与跨章，所以两拍之间必须等满它。
+      // 关键是等满的起算点：节流窗从**发起**那一刻算（加载耗时包含在窗内），
+      // 而被删掉的冷却窗是从**新章 content-ready** 重新 stamp。所以恰好等满
+      // throttle、不多等一毫秒，就能把两者分开：新代码放行，旧代码还在
+      // `T_load + 450ms` 的冷却里被吞。别把这个等待改大，改大就测不出冷却窗了。
+      final int throttleMs = ReaderFushiSource.instance.wheelPageTurnInterval;
       for (int i = 0; i < script.length; i++) {
         final String dir = script[i];
         final String from = visited.last;
+        final DateTime firedAt = DateTime.now();
         final Duration elapsed = await turnAndAwaitLanding(dir);
-        // 只让新章 settle 一帧——**不给冷却窗任何过期的机会**。这个「不等」正是本用例
-        // 与 reader_cross_chapter_perf_itest 的全部区别，不要往这里加 sleep。
-        await tester.pump(const Duration(milliseconds: 16));
+        while (DateTime.now().difference(firedAt).inMilliseconds < throttleMs) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
         final String to = await currentChapterFile();
         landingMs.add(elapsed.inMilliseconds);
         debugPrint('[xchapter-queue] #$i $dir $from -> $to '
