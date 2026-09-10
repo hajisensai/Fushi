@@ -4672,5 +4672,6 @@
   "updates_system_notifications_hint": "同时发送系统通知。关掉后仍保留应用内红点。",
   "updates_check_now": "立即检查更新",
   "updates_checking": "检查中…",
-  "updates_notification_summary": "$first 等 $count 项"
+  "updates_notification_summary": "$first 等 $count 项",
+  "video_load_failed_not_opened": "播放器打不开该视频。文件可能被占用，或播放引擎需要重启应用后才能恢复。"
 }

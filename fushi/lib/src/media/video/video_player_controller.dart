@@ -451,6 +451,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 上次持久化时的整秒位置；用于 [_maybeSavePosition] 节流到每秒至多一次。
   int _lastSavedSec = -1;
 
+  /// 本次 [load] 的媒体是否已被底层**真正打开**（见 [mediaOpened]）。
+  bool _mediaOpened = false;
+
   /// 恢复 seek 的目标位置（毫秒）；非 null 表示「正在恢复上次进度，seek 尚未落地」。
   ///
   /// media_kit 在 `open(play:false)` 刚返回时 player 常未就绪（position/duration 仍
@@ -689,6 +692,36 @@ class VideoPlayerController extends ChangeNotifier
       _debugDurationOverride ??
       _externalDurationMs ??
       _player?.state.duration.inMilliseconds;
+
+  /// 本次 [load] 的媒体是否已被底层**真正打开**。
+  ///
+  /// 存在的理由是 `positionMs == 0` 背了两种互斥含义：「用户确实停在片头」与
+  /// 「媒体根本没打开」。此前无处可分，于是 open 失败后第一个 125ms tick 就把 0
+  /// 经 [_maybeSavePosition] 写库，**覆盖掉用户的真实进度**（BUG-2439 实测：一集
+  /// 已看 135 秒，重开失败后 `lastPositionMs` 被改写成 0）。
+  ///
+  /// 判据是「曾观测到 duration > 0 **或** position > 0」，两条缺一不可：
+  /// 点播媒体 open 成功即报 duration；直播流 duration 恒 0 但 position 会推进。
+  /// 两者都恒 0 才是「没打开」——这正是 libmpv open 失败 / VO 建不出来时的形状
+  /// （代码里早有同一判据：「duration > 0 是真实 ready 信号」，见
+  /// [_refreshChaptersWhenDurationReady] 的调用点注释，此前只用于读章节）。
+  ///
+  /// 由 [load] 复位、由 [_markMediaOpenedIfEvident] 翻真、由 [dispose] 复位。
+  bool get mediaOpened => _mediaOpened;
+
+  /// 观测到「媒体确实打开了」的任一证据即翻真 [mediaOpened]（单向，本次 load 内）。
+  ///
+  /// 三个位置写入点与页面的首帧兜底都读它，故任何能证明媒体活着的观测都应经过这里：
+  /// duration 首次就绪、125ms tick 读到非零 position、open 后的即时快照。
+  void _markMediaOpenedIfEvident(Player player) {
+    if (_mediaOpened) return;
+    if (player.state.duration <= Duration.zero &&
+        player.state.position <= Duration.zero) {
+      return;
+    }
+    _mediaOpened = true;
+    notifyListeners();
+  }
 
   /// 测试注入的视频分辨率（widget 测试无真实解码帧；BUG-820 让 overlay 的
   /// 视频内容矩形几何可测）。生产恒 null。
@@ -1228,6 +1261,18 @@ class VideoPlayerController extends ChangeNotifier
   /// （[matchLuaLogToScripts]）。随 Player 生命周期挂一次、Player 释放时取消。
   StreamSubscription<PlayerLog>? _luaLogSub;
 
+  /// 播放器层错误订阅（`player.stream.error`）。随 Player 生命周期挂一次。
+  ///
+  /// 在此之前**全仓库没有任何一处订阅它**：libmpv 打不开媒体时既不抛异常、也不置
+  /// 任何失败态，页面于是在 2.5 秒兜底定时器到点后照常挂载画面——用户看到的是黑屏
+  /// ＋整套控件 ＋ `00:00 / 00:00`，一个字的错误都没有（BUG-2439 现场）。
+  StreamSubscription<String>? _errorSub;
+
+  /// 播放器层错误回调（页面挂）：媒体打不开 / 解码失败等 libmpv 侧错误经此上抛。
+  ///
+  /// 这是 mpv 错误到 UI 的**唯一**通道；不挂它就回到「静默黑屏」的老路。
+  void Function(String message)? onPlaybackError;
+
   /// BUG-2032：随包 libmpv 是否编入 Lua（建 Player 后读 `mpv-configuration`，
   /// 见 [_probeLuaCapability]）。页面在 [load] 完成后落 pref，让全局设置页也能说明。
   MpvLuaCapability luaCapability = MpvLuaCapability.unknown;
@@ -1356,6 +1401,9 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // 换片同样要复位：上一片的「已打开」不能给新片背书，否则新片 open 失败时旧
+    // 证据仍让三个位置写入点放行、把 0 写进新片的进度。
+    _mediaOpened = false;
     _bookUid = bookUid;
     _videoPath = videoFile?.path;
     final String sourceUri = mediaUri ?? mediaUriForVideoPath(videoFile!.path);
@@ -1471,6 +1519,11 @@ class VideoPlayerController extends ChangeNotifier
       });
       // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
       _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
+      // BUG-2439：给 libmpv 层错误一个归宿。同样随 Player 生命周期挂一次。
+      _errorSub = player.stream.error.listen((String message) {
+        if (!identical(_player, player)) return; // 旧 Player 的迟到错误不算数。
+        onPlaybackError?.call(redactAppNativeProxySecrets(message));
+      });
     }
     // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
     // / 着色器 / mpv 配置 / 音量 / 速率）全用方法开头捕获的局部 [player]。这些 await 缺口
@@ -1554,6 +1607,9 @@ class VideoPlayerController extends ChangeNotifier
       play: false,
     );
     if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
+    // 点播媒体 open 成功即报 duration，这里先取一次快照；直播流（duration 恒 0）与
+    // 慢容器由下面 125ms tick 的同一 helper 继续观测。见 [mediaOpened]。
+    _markMediaOpenedIfEvident(player);
 
     // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
     // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
@@ -1690,6 +1746,9 @@ class VideoPlayerController extends ChangeNotifier
     _tick = Timer.periodic(const Duration(milliseconds: 125), (_) {
       final Player? p = _player;
       if (p == null) return;
+      // 媒体是否真的活着，只有持续观测能回答（直播流要等 position 推进，慢容器要
+      // 等 duration 解析）。放在读位置之前，让本拍的位置写入已能看到正确的判据。
+      _markMediaOpenedIfEvident(p);
       updateCueForPosition(p.state.position.inMilliseconds);
       // TODO-1119：同一 tick 里顺带做黑闪采样（内部自节流到 >=1s、仅 Windows 挂了
       // 回调时才真正读属性），不新起定时器。
@@ -2267,6 +2326,10 @@ class VideoPlayerController extends ChangeNotifier
     required int restoreTargetMs,
   }) {
     _bookUid = bookUid;
+    // 本钩子摆的是「[load] 已成功、正处于恢复 seek 守护中」的状态——媒体在那个时点
+    // 必然已经打开，故一并置真 [mediaOpened]，否则位置写入会被「媒体没打开」这道门
+    // 挡在 [_isRestoringPast] 之前，本钩子就测不到它本来要测的守护逻辑了。
+    _mediaOpened = true;
     _restoreTargetMs = restoreTargetMs;
     _restoreGuardTicksLeft = _restoreGuardGraceTicks;
     _lastSavedSec = -1;
@@ -2275,6 +2338,21 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试可见：当前恢复守护是否仍生效（[_restoreTargetMs] 非空）。
   @visibleForTesting
   bool get debugRestoreGuardActive => _restoreTargetMs != null;
+
+  /// BUG-2439 测试钩子：把控制器摆成「[load] 已跑过（有 bookUid），但媒体**始终没被
+  /// 打开**」——即 libmpv `open` 失败 / VO 建不出来时的真实状态。
+  ///
+  /// 与 [debugPrimeRestoreGuardForTesting] 的区别就是 [mediaOpened] 留在 false：那个
+  /// 钩子模拟的是「打开成功、正在恢复 seek」，本钩子模拟的是「压根没打开」。两者不能
+  /// 合并——它们要驱动的正是位置写入的两道**不同**的门。
+  @visibleForTesting
+  void debugPrimeUnopenedMediaForTesting({required String bookUid}) {
+    _bookUid = bookUid;
+    _mediaOpened = false;
+    _restoreTargetMs = null;
+    _restoreGuardTicksLeft = 0;
+    _lastSavedSec = -1;
+  }
 
   /// 测试可见：恢复守护的宽限上限（断言用，避免测试硬编码数字与实现漂移）。
   @visibleForTesting
@@ -2402,6 +2480,9 @@ class VideoPlayerController extends ChangeNotifier
   void _maybeSavePosition(int posMs) {
     final String? bookUid = _bookUid;
     if (bookUid == null) return;
+    // 媒体没打开：此刻的 position 不是「用户在片头」，是「没东西可播」。写它会把
+    // 真实进度抹成 0。见 [mediaOpened]。
+    if (!_mediaOpened) return;
     // 恢复 seek 未落地：当前 position 是过渡期小值，写它会覆盖真实进度。跳过。
     if (_isRestoringPast(posMs)) return;
     final int sec = posMs ~/ 1000;
@@ -2426,6 +2507,9 @@ class VideoPlayerController extends ChangeNotifier
     final String? bookUid = _bookUid;
     final int? posMs = positionMs;
     if (bookUid == null || posMs == null) return;
+    // 媒体没打开（open 失败 / VO 建不出来）：退出时这里的 posMs 恒 0，写下去就是把
+    // 用户上一程的真实进度抹掉。见 [mediaOpened]。
+    if (!_mediaOpened) return;
     // 恢复 seek 未落地：退出瞬间的 position 仍是过渡期小值，写它会覆盖真实进度。跳过。
     if (_isRestoringPast(posMs)) return;
     _lastSavedSec = posMs ~/ 1000;
@@ -3386,6 +3470,10 @@ class VideoPlayerController extends ChangeNotifier
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
     _audioDeviceSub = null;
+    // BUG-2439：错误订阅与 Player 同作用域，随它一起摘（也断开对页面回调的引用）。
+    unawaited(_errorSub?.cancel());
+    _errorSub = null;
+    onPlaybackError = null;
     // TODO-1212：注销文件句柄释放登记（迁移路径不再触达已销毁的本控制器）。
     final MediaHandleReleaseCallback? registration = _mediaHandleRegistration;
     if (registration != null) {
@@ -3397,6 +3485,9 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_player?.dispose());
     _player = null;
     _videoController = null;
+    // Player 没了，「媒体已打开」这条证据随之作废（本控制器已不可能再有位置写入，
+    // 复位是为了不让任何迟到的回调借着旧证据放行）。
+    _mediaOpened = false;
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     luaScriptStates.dispose();
     _videoPath = null;
@@ -3413,6 +3504,9 @@ class VideoPlayerController extends ChangeNotifier
     if (player == null) return;
     _player = null;
     _videoController = null;
+    _mediaOpened = false; // 与 [dispose] 一致：Player 没了，旧证据作废。
+    unawaited(_errorSub?.cancel()); // 错误订阅与 Player 同作用域。
+    _errorSub = null;
     _resetLuaScriptState(); // 新 Player 必须重新 load-script（见字段注释）。
     await player.dispose();
   }
@@ -3423,6 +3517,9 @@ class VideoPlayerController extends ChangeNotifier
     final String? bookUid = _bookUid;
     final int? posMs = positionMs;
     if (bookUid == null || posMs == null) return;
+    // 媒体没打开：dispose 瞬间的 position 恒 0，写它等于用一次失败的打开清空进度。
+    // 见 [mediaOpened]。
+    if (!_mediaOpened) return;
     // 恢复 seek 未落地：dispose 瞬间的 position 仍是过渡期小值，勿覆盖真实进度。
     if (_isRestoringPast(posMs)) return;
     _lastSavedSec = posMs ~/ 1000;

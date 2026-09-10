@@ -2172,4 +2172,94 @@ void main() {
       expect(c.currentCue, isNull, reason: '落地后不得把字幕钉在跳转目标上');
     });
   });
+
+  // BUG-2439：媒体没被打开时（libmpv `open` 失败 / VO 建不出来），position 恒 0——那
+  // 不是「用户停在片头」，是「没东西可播」。三个位置写入点此前无法区分这两种 0，于是
+  // 重开失败后的第一个 125ms tick 就把 0 写库，抹掉用户上一程的真实进度（现场实测：
+  // 已看 135 秒的一集被改写成 lastPositionMs=0）。
+  //
+  // 判据是 mediaOpened 而**不是**「位置是否为 0」：位置大小不能证明媒体活着，反过来
+  // 直播流一开始 position 就是 0 却完全正常。下面每条否定断言都配了正向对照，防止
+  // 「门永远关着」也能让用例全绿。
+  group('VideoPlayerController BUG-2439 媒体未打开时禁止位置写入', () {
+    test('未打开：tick 读到的 0 不写库', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeUnopenedMediaForTesting(bookUid: 'v1');
+
+      c.debugUpdateCueForPosition(0);
+
+      expect(c.mediaOpened, isFalse);
+      expect(writes, isEmpty, reason: '媒体没打开时的 0 不是进度，写它就是抹掉真实进度');
+    });
+
+    test('未打开：非零位置同样不写（判据是媒体状态，不是位置大小）', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeUnopenedMediaForTesting(bookUid: 'v1');
+
+      c.debugUpdateCueForPosition(42000);
+
+      expect(writes, isEmpty,
+          reason: '门是「媒体有没有打开」，不是「位置大不大」——否则换个非零值就能绕过去');
+    });
+
+    test('未打开：退出时的 flushPosition 不写', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeUnopenedMediaForTesting(bookUid: 'v1');
+      c.debugSetPositionForTesting(0);
+
+      await c.flushPosition();
+
+      expect(writes, isEmpty, reason: '退出黑屏页时把 0 flush 落库，正是进度被抹的那一下');
+    });
+
+    test('未打开：dispose 的强制写也不写', () async {
+      final c = VideoPlayerController();
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeUnopenedMediaForTesting(bookUid: 'v1');
+      c.debugSetPositionForTesting(0);
+
+      c.dispose(); // 内部走 _forceSavePositionSync（绕过整秒节流的那条路）。
+
+      expect(writes, isEmpty, reason: 'dispose 的强制写同样要认「媒体到底打开没有」');
+    });
+
+    test('对照：媒体已打开时，同样的写入点照常落库', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      // 这个钩子摆的是「load 成功、恢复守护中」——媒体在那个时点已经打开。
+      c.debugPrimeRestoreGuardForTesting(bookUid: 'v1', restoreTargetMs: 1000);
+
+      expect(c.mediaOpened, isTrue);
+
+      c.debugUpdateCueForPosition(1000); // 追上目标 → 清守护 → 放行写入。
+
+      expect(writes, <int>[1000],
+          reason: '媒体打开后必须照常记录进度，否则这道门就把正常功能一起关掉了');
+    });
+
+    test('对照：媒体已打开时，flushPosition 照常落库', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      final List<int> writes = <int>[];
+      c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+      c.debugPrimeRestoreGuardForTesting(bookUid: 'v1', restoreTargetMs: 0);
+      c.debugSetPositionForTesting(5000);
+
+      await c.flushPosition();
+
+      expect(writes, <int>[5000], reason: '正常退出仍必须 flush 掉最后那几百毫秒进度');
+    });
+  });
 }
