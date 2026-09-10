@@ -356,7 +356,7 @@
   "asr_models_download": "下载",
   "asr_models_download_failed": "下载失败：$error",
   "asr_models_section": "语音识别模型",
-  "asr_models_section_summary": "有声书设备端转录用的模型，只下载你需要的语言。",
+  "asr_models_section_summary": "本机语音识别模型，只下载你需要的语言。",
   "asr_models_status_missing": "未下载 · 需要 $size",
   "asr_models_status_partial": "已下载一部分 · $obtained / $total",
   "asr_models_status_ready": "已下载 · 占用 $size",
@@ -4594,5 +4594,6 @@
   "mihon_extension_bulk_install_confirm": "从该仓库安装 ${count} 个扩展？扩展会运行来自源站的代码。",
   "mihon_extension_bulk_install_progress": "正在安装 ${current}/${total}：${name}",
   "mihon_extension_bulk_install_done": "已安装 ${installed} 个，跳过 ${skipped} 个，失败 ${failed} 个",
-  "mihon_extension_bulk_install_nothing": "当前筛选下的扩展都已经装过了。"
+  "mihon_extension_bulk_install_nothing": "当前筛选下的扩展都已经装过了。",
+  "storage_models_components": "模型与组件"
 }

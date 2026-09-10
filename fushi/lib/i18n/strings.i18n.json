@@ -356,7 +356,7 @@
   "asr_models_download": "Download",
   "asr_models_download_failed": "Download failed: $error",
   "asr_models_section": "Speech recognition models",
-  "asr_models_section_summary": "Models for on-device audiobook transcription. Download only the languages you need.",
+  "asr_models_section_summary": "On-device speech recognition models. Download only the languages you need.",
   "asr_models_status_missing": "Not downloaded · $size",
   "asr_models_status_partial": "Partially downloaded · $obtained / $total",
   "asr_models_status_ready": "Downloaded · $size on disk",
@@ -4594,5 +4594,6 @@
   "mihon_extension_bulk_install_confirm": "Install ${count} extensions from this repository? Extensions run code from their sources.",
   "mihon_extension_bulk_install_progress": "Installing ${current}/${total}: ${name}",
   "mihon_extension_bulk_install_done": "Installed ${installed}, skipped ${skipped}, failed ${failed}",
-  "mihon_extension_bulk_install_nothing": "Every extension matching the current filters is already installed."
+  "mihon_extension_bulk_install_nothing": "Every extension matching the current filters is already installed.",
+  "storage_models_components": "Models and components"
 }
