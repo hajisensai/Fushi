@@ -113,14 +113,10 @@ import 'package:fushi/src/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
-import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
-import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
-import 'package:fushi/src/media/video/subtitle/ajatt_subtitle_provider.dart';
-import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -4029,6 +4025,42 @@ class AppModel with ChangeNotifier {
   VideoSubtitleRegistry? _videoSubtitleRegistry;
   VideoSubtitleRegistry? get videoSubtitleRegistry => _videoSubtitleRegistry;
 
+  // 浏览器扩展「查字幕」桥专用的字幕来源 registry（下载管线没起时才有值）。
+  VideoSubtitleRegistry? _browserSubtitleRegistry;
+
+  /// 浏览器扩展查字幕用的字幕来源 registry。
+  ///
+  /// 优先复用下载管线那一套（同一批 provider 实例、同一份 AJATT 目录缓存）。但
+  /// 管线只在**下载模块开着**时才启动（[startAnimeDownloadService] 的门控），而
+  /// 「给网页视频找字幕」跟下不下载种子毫无关系——关掉下载模块的用户此前照样能用
+  /// 扩展搜 Jimaku（那条老路只看 API key）。所以管线不在时按同一份工厂现建一套，
+  /// 缓存复用；配置变更由 [reloadVideoDownloadPipelineRuntime] 统一作废。
+  ///
+  /// 返回 null = 一个来源都没配（三家全关）。
+  Future<VideoSubtitleRegistry?> browserExtensionSubtitleRegistry() async {
+    final VideoSubtitleRegistry? pipeline = _videoSubtitleRegistry;
+    if (pipeline != null) {
+      // 管线起来了就不再留第二套（多一套 = 多一份 http client + 多一份 9 MB 目录）。
+      _disposeBrowserSubtitleRegistry();
+      return pipeline.providers.isEmpty ? null : pipeline;
+    }
+    final VideoSubtitleRegistry? cached = _browserSubtitleRegistry;
+    if (cached != null) return cached;
+    final List<VideoSubtitleProvider> providers =
+        await createConfiguredVideoSubtitleProviders(
+      prefs: prefsRepo,
+      httpClientFactory: createDownloadHttpClient,
+      supportRootProvider: AppPaths.supportRootDirectory,
+    );
+    if (providers.isEmpty) return null;
+    return _browserSubtitleRegistry = VideoSubtitleRegistry(providers);
+  }
+
+  void _disposeBrowserSubtitleRegistry() {
+    _browserSubtitleRegistry?.close();
+    _browserSubtitleRegistry = null;
+  }
+
   /// 刮削后自动补字幕（BUG-1698）。与 [_videoSubtitleRegistry] 同生命周期：
   /// 用户改了字幕来源/语言后 `reloadVideoDownloadPipelineRuntime` 会一起重建。
   VideoSubtitleBackfillService? _videoSubtitleBackfillService;
@@ -4446,52 +4478,14 @@ class AppModel with ChangeNotifier {
         closesClient: true,
       ),
     ];
+    // 字幕来源的装配判据在 [createConfiguredVideoSubtitleProviders] 一处（浏览器
+    // 扩展的查字幕桥用的是同一份工厂，不再自己判「哪家算配好了」）。
     final List<VideoSubtitleProvider> subtitleProviders =
-        <VideoSubtitleProvider>[];
-    // Jimaku：`enabled && key` 双门控（形状对齐 OpenSubtitles）。开关默认 true，
-    // 所以存量已填 key 的用户升级后行为不变。
-    if (prefsRepo.jimakuEnabled && prefsRepo.jimakuApiKey.trim().isNotEmpty) {
-      final http.Client jimakuHttpClient = await createDownloadHttpClient();
-      subtitleProviders.add(JimakuVideoSubtitleProvider(
-        client: JimakuClient(
-          apiKey: prefsRepo.jimakuApiKey,
-          client: jimakuHttpClient,
-        ),
-        closesClient: true,
-      ));
-    }
-    final OpenSubtitlesConfig? openSubtitles =
-        prefsRepo.videoSubtitleOpenSubtitlesConfig;
-    if (openSubtitles != null &&
-        openSubtitles.enabled &&
-        openSubtitles.effectiveApiKey.isNotEmpty) {
-      final http.Client openSubtitlesHttpClient =
-          await createDownloadHttpClient();
-      subtitleProviders.add(OpenSubtitlesClient(
-        config: openSubtitles,
-        client: openSubtitlesHttpClient,
-        closesClient: true,
-      ));
-    }
-    // AJATT（kitsunekko 镜像）：零配置，只有开关。目录 HTML 约 9 MB，解析结果落
-    // support 目录缓存 24 小时（`subtitle_catalogs/ajatt.json`）。
-    if (prefsRepo.videoSubtitleAjattEnabled) {
-      final http.Client ajattHttpClient = await createDownloadHttpClient();
-      final Directory supportRoot = await AppPaths.supportRootDirectory();
-      subtitleProviders.add(AjattVideoSubtitleProvider(
-        client: AjattClient(
-          client: ajattHttpClient,
-          closesClient: true,
-          cache: AjattCatalogCache(
-            file: File(path.join(
-              supportRoot.path,
-              'subtitle_catalogs',
-              'ajatt.json',
-            )),
-          ),
-        ),
-      ));
-    }
+        await createConfiguredVideoSubtitleProviders(
+      prefs: prefsRepo,
+      httpClientFactory: createDownloadHttpClient,
+      supportRootProvider: AppPaths.supportRootDirectory,
+    );
     final VideoResourceRegistry resources = VideoResourceRegistry(
       resourceProviders,
       disabledProviderIds: videoResourceDisabledSourceIds,
@@ -4598,6 +4592,10 @@ class AppModel with ChangeNotifier {
   /// 失败记日志后返回，service 留 null，但 wanted 仍为 true，下一次设置变更
   /// 就能救活。
   Future<void> reloadVideoDownloadPipelineRuntime() async {
+    // 扩展查字幕桥那套按需建的 registry 必须先作废，且**在 wanted 门闩之前**：
+    // 关掉下载模块的用户永远不满足门闩，但他改 Jimaku key / OpenSubtitles 配置
+    // 时同样得让扩展立刻用上新凭据（这里是所有字幕来源设置项的共同汇合点）。
+    _disposeBrowserSubtitleRegistry();
     if (!_videoDownloadPipelineRuntimeWanted) return;
     await _disposeVideoDownloadPipelineRuntime();
     notifyListeners();
@@ -6663,6 +6661,8 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _videoDownloadPipelineRuntimeWanted = false;
     unawaited(_disposeVideoDownloadPipelineRuntime());
+    // 扩展查字幕桥那套 registry 不属于下载管线（管线关着时它才存在），得单独收。
+    _disposeBrowserSubtitleRegistry();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
@@ -7279,9 +7279,10 @@ class AppModel with ChangeNotifier {
         _browserExtensionReportedAt = DateTime.now();
         browserExtensionReportedBuild.value = build;
       },
-      // 「Jimaku 查字幕」扩展桥：Side Panel 搜索/下载字幕经 /api/subtitle/jimaku/* 复用
-      // 用户在 app 设置里填的 Jimaku API key；未填时端点回 no-api-key（扩展提示去填）。
-      jimakuApiKeyProvider: () => jimakuApiKey,
+      // 「查字幕」扩展桥：Side Panel 搜索/下载字幕经 /api/subtitle/{search,fetch}
+      // 复用**用户在 app 设置里配好的全部在线字幕来源**（Jimaku / OpenSubtitles /
+      // AJATT），与视频页的「找字幕」同一批 provider；一个都没配时端点回 no-provider。
+      subtitleRegistryProvider: browserExtensionSubtitleRegistry,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';

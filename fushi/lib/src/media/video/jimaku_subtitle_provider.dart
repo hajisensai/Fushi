@@ -140,14 +140,23 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
 /// 把发现层的分类映射成 Jimaku 的 `anime` 硬过滤（BUG-1694）。
 ///
 /// `discoveryCategory` 已经是这个问题的答案，不需要再猜：anime → 只搜动画；
-/// movie/tv → 只搜真人；连 media 都没有（纯文本搜索请求）才两档都试。
+/// movie/tv → 只搜真人；连 media 都没有（纯文本搜索请求）才看请求自带的
+/// [VideoSubtitleSearchRequest.anime] 提示，它也没有才两档都试。
+///
+/// 那个 `anime` 字段此前是**死字段**：声明了、注释写着「只有 Jimaku 消费」，却没有
+/// 任何地方读它——扩展桥要表达「用户明说了这是番剧/真人剧」时只能绕开 registry 自己
+/// 直连 JimakuClient。接上它，纯文本搜索请求才有办法在没有 media 引用的前提下收敛。
 JimakuAnimeFilter _animeFilterFor(VideoSubtitleSearchRequest request) {
   return switch (request.media?.discoveryCategory) {
     VideoDiscoveryCategory.anime => JimakuAnimeFilter.anime,
     VideoDiscoveryCategory.movie ||
     VideoDiscoveryCategory.tv =>
       JimakuAnimeFilter.liveAction,
-    null => JimakuAnimeFilter.either,
+    null => switch (request.anime) {
+        true => JimakuAnimeFilter.anime,
+        false => JimakuAnimeFilter.liveAction,
+        null => JimakuAnimeFilter.either,
+      },
   };
 }
 

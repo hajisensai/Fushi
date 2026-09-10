@@ -1,3 +1,5 @@
+import 'package:fushi/src/media/video/download/video_subtitle_registry.dart'
+    show VideoSubtitleRegistry;
 import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
@@ -22,7 +24,7 @@ class YomitanApiServerManager {
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
-    String? Function()? jimakuApiKeyProvider,
+    Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -37,7 +39,7 @@ class YomitanApiServerManager {
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
-        _jimakuApiKeyProvider = jimakuApiKeyProvider;
+        _subtitleRegistryProvider = subtitleRegistryProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -65,7 +67,7 @@ class YomitanApiServerManager {
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
   // 「Jimaku 查字幕」扩展桥：Jimaku API key 供给器，透传给 [YomitanApiServer]。
-  final String? Function()? _jimakuApiKeyProvider;
+  final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
 
   YomitanApiServer? _server;
 
@@ -90,7 +92,7 @@ class YomitanApiServerManager {
       onExtensionSeen: _onExtensionSeen,
       onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
-      jimakuApiKeyProvider: _jimakuApiKeyProvider,
+      subtitleRegistryProvider: _subtitleRegistryProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );
