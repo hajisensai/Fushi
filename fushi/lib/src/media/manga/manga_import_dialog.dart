@@ -424,7 +424,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       action: () async {
         reportProgress(0, '');
         debugPrint('[fushi-import] manga route: carrier=$carrier path=$path');
-        reportProgress(0.5, t.import_step_importing_epub);
+        // 漫画（cbz/zip/mokuro/PDF 转页图）同样不产出 EPUB，用中性文案。
+        reportProgress(0.5, t.import_step_importing_book);
 
         // 批量目录导完要报「成功/跳过/失败各几卷」，单卷路径仍报那句通用成功。
         String? batchSummary;
