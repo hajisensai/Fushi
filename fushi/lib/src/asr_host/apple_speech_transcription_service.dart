@@ -44,6 +44,9 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
           // 父类构造要一个 backend，但本服务把每一个会用到它的方法都覆写了，
           // ONNX 那条路在这里结构上不可达（`buildFactory` 永远不会被调）。
           backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
+          // 同理：Apple 原生引擎自己做端点检测，不经本仓的 VAD 切段。父类要求
+          // 显式声明素材属性（见 AsrAudioProfile），这里填一个不会被用到的值。
+          audioProfile: AsrAudioProfile.cleanSpeech,
         );
 
   final AppleSpeechPlatform _platform;
@@ -130,6 +133,8 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   Stream<ModelDownloadEvent> downloadModel({
     required AsrLanguage language,
     required AsrEncoderVariant variant,
+    // 系统语音资产里没有「调轴模型」这回事，收下但忽略。
+    bool includeAlignment = false,
   }) async* {
     yield const ModelDownloadEvent(
       fileName: 'system speech assets',
