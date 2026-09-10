@@ -2542,8 +2542,8 @@ class _HomeDashboardPageState
     return entry.title;
   }
 
-  /// 活动条前置视觉：命中本地条目用封面缩略（书与游戏 40×56 竖版 / 视频 68×40
-  /// 横版，圆角裁切，与继续卡同源取图），查不到（已删/远端 display-only 行/导入
+  /// 活动条前置视觉：命中本地条目用封面缩略（书、游戏、视频一律 40×56 竖版，
+  /// 圆角裁切，与继续卡同源取图），查不到（已删/远端 display-only 行/导入
   /// 无封面）回退原类型图标（用户反馈时间轴只有小图标认不出条目）。
   Widget _activityLeading(
     FushiDesignTokens tokens,
@@ -2582,13 +2582,14 @@ class _HomeDashboardPageState
           return ClipRRect(
             borderRadius: FushiBorderRadius.card,
             child: SizedBox(
-              width: 68,
-              height: 40,
-              // BUG-1299：横版槽，判定方向随槽走（海报垫底、截帧铺满）。
+              width: 40,
+              height: 56,
+              // 竖版槽，与同列表的书/游戏同槽（用户 2026-07-24 拍板统一竖版）：
+              // 刮削回来的 2:3 海报直接铺满，16:9 截帧由 PortraitCoverImage 走
+              // 模糊垫底 + contain（BUG-1299 的槽向自适应，判定方向随槽走）。
               child: _videoCover(
                 tokens,
                 video,
-                landscapeSlot: true,
                 decodeWidth: kActivityCoverDecodePixelWidth,
               ),
             ),
