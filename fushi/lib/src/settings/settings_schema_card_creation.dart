@@ -348,7 +348,6 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           id: 'card_creation.anki.video_mining_image_mode',
           hasRevealTarget: true,
           title: t.video_mining_image_mode,
-          subtitle: t.video_mining_image_mode_hint,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_still_format',

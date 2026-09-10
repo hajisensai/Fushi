@@ -171,8 +171,6 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
       padding: const EdgeInsets.all(16),
       children: <Widget>[
         // 返回键在页头的 leading 上（见 build），正文不再重复放一个。
-        Text(t.browser_extension_page_intro, style: theme.textTheme.bodyMedium),
-        const SizedBox(height: 16),
         _statusCard(theme,
             serverOn: serverOn,
             connected: connected,
