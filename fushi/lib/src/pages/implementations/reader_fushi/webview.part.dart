@@ -2439,7 +2439,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
               // BUG-2424：spread 内容就绪同样是一个 content-ready 完成点，积压的翻页
               // 意图在这里重放（与 _onRestoreComplete 对齐）。spread 路径从不发
               // onRestoreComplete，漏掉这里积压意图就会一直压到下一次真实导航。
-              _replayPendingPageTurn();
+              unawaited(_replayPendingPageTurn());
               // BUG-467：spread 内容就绪同样补下 chrome insets（_hasEverLoaded 刚翻 true，
               // 初始 HTML 漏了底栏预留）。
               _reapplyChromeInsetsAfterFirstLoad();

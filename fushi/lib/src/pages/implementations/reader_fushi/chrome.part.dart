@@ -45,16 +45,30 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 所以重放时的页边界判定是在**已就绪**的状态上做的——这正是原始「跳两章」
   /// （在飞时 `evaluateJavascript` 返 null 被 `_didScroll` 误读成页边界）消失的原因。
   ///
-  /// 一次只消费一个意图：重放本身会再次置 `_paginationInFlight`（若它导致跨章），
-  /// 下一个意图由那次导航的 content-ready 继续消费，天然串成 1:1 的链，不会并发。
+  /// 消费到「队列空」或「又进入在飞」为止，两种出口都必要：
+  ///   * 重放导致**跨章** → `_paginationInFlight` 立刻为真 → 退出循环，剩余意图由那次
+  ///     导航的 content-ready 再次进来消费，串成 1:1 的链；
+  ///   * 重放只是**章内翻页**（新章还有下一页）→ 不会再有 content-ready 把我们叫醒，
+  ///     必须就地继续消费，否则剩余意图一直压到下一次跨章才突然连翻。
+  ///
   /// 重放**不过 [_lastPaginateTime] 节流**——该节流限的是「用户新输入的速率」，
   /// 而积压意图早已是用户按下过的、被延后执行的输入，再节流一次就等于又丢一遍。
-  void _replayPendingPageTurn() {
-    if (!mounted || _controller == null) return;
-    if (_paginationInFlight) return;
-    final ReaderNavigationDirection? next = _pageTurnQueue.consume();
-    if (next == null) return;
-    unawaited(_paginate(next));
+  ///
+  /// `_replayingPageTurns` 防重入：本方法在 await 期间可能被另一个 content-ready
+  /// 完成点再次调用（spreadReady / 兜底超时与 onRestoreComplete 并非互斥），两个
+  /// 循环同时消费同一个队列会让意图乱序落到不同章上。
+  Future<void> _replayPendingPageTurn() async {
+    if (_replayingPageTurns) return;
+    _replayingPageTurns = true;
+    try {
+      while (mounted && _controller != null && !_paginationInFlight) {
+        final ReaderNavigationDirection? next = _pageTurnQueue.consume();
+        if (next == null) return;
+        await _paginate(next);
+      }
+    } finally {
+      _replayingPageTurns = false;
+    }
   }
 
   Future<void> _paginate(

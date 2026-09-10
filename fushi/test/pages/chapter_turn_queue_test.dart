@@ -231,7 +231,9 @@ void main() {
       final int settleIdx = source.indexOf('final int settleGeneration =');
       expect(settleIdx, isNonNegative);
       final int replayIdx =
-          source.indexOf('_replayPendingPageTurn();', settleIdx);
+          // 钉「调用出现在收尾之后」这条不变式，不钉调用的写法：包在
+          // unawaited(...) 里时带分号的形态就不存在了（钉写法 = 加个包装就假红）。
+          source.indexOf('_replayPendingPageTurn()', settleIdx);
       expect(replayIdx, isNonNegative);
       final int prefetchIdx =
           source.indexOf('_prefetchAdjacentChapterImages(', settleIdx);
@@ -240,6 +242,26 @@ void main() {
           reason: '重放必须排在收尾块最后：遮罩先撤、新章可见、fushiReader 已就绪，'
               '页边界判定才是在真实状态上做的（原始「跳两章」正是在飞时 '
               'evaluateJavascript 返 null 被 _didScroll 误读成边界）');
+    });
+
+    test('重放必须消费到「队空」或「又进入在飞」，不能只消费一个', () {
+      final String replay = _slice(
+        source,
+        'Future<void> _replayPendingPageTurn() async {',
+        'Future<void> _paginate(',
+      );
+      expect(replay, contains('while ('),
+          reason: '重放只消费一个意图是错的：若那一次只是**章内翻页**'
+              '（新章还有下一页），就不会再有 content-ready 把我们叫醒，'
+              '剩下的意图会一直压到下一次跨章才突然连翻');
+      expect(replay, contains('!_paginationInFlight'),
+          reason: '循环必须在重新进入在飞（重放导致跨章）时退出，'
+              '剩余意图交给那次导航的 content-ready 继续消费');
+      expect(replay, contains('await _paginate(next);'),
+          reason: '必须 await：不等就无法得知这一次到底是章内翻页还是跨章');
+      expect(replay, contains('_replayingPageTurns'),
+          reason: '重入闸必须在：await 期间可能被另一个 content-ready '
+              '完成点再次调用，两个循环同时消费同一队列会让意图乱序落到不同章上');
     });
 
     test('非翻页导航作废积压意图，翻页导航保留', () {

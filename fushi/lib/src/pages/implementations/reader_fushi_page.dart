@@ -1716,6 +1716,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 非翻页导航作废积压——用户已显式换了目的地。由 _handlePageTurnLimit 置位、
   // _beginNavigation 消费并复位。
   bool _navigationFromPageTurn = false;
+  // BUG-2424：_replayPendingPageTurn 的重入闸。它在 await _paginate 期间可能被另一个
+  // content-ready 完成点再次调用，两个循环同时消费同一个队列会让意图乱序落到不同章上。
+  bool _replayingPageTurns = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;

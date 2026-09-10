@@ -57,7 +57,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         _failNavigation();
         // BUG-2424：兜底超时也算内容就绪 —— 积压的翻页意图必须在这里也放行，否则
         // 一次 JS 卡死会把用户此后拨的所有滚轮永久压在队列里。
-        _replayPendingPageTurn();
+        unawaited(_replayPendingPageTurn());
         // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
         _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
@@ -248,7 +248,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // 意图由那次导航的 content-ready 继续消费，串成 1:1 的链，不会并发。
       // 上面的代际守卫同样护住这里：被更晚的导航（目录跳转 / 书签）顶掉时整段丢弃，
       // 不把旧的滚轮意图应用到用户刚跳到的新位置。
-      _replayPendingPageTurn();
+      unawaited(_replayPendingPageTurn());
     });
   }
 
