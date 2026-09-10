@@ -9,7 +9,54 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/utils/net/app_http.dart';
+
+/// 把资料源抛出的异常翻译成 UI 可解释的 [ExternalProviderFailure]。
+///
+/// **所有**消费视频资料源的适配层都必须走这里。BUG-2430：此前同一个发现域里有两条
+/// 翻译路径——TMDB / AniList 走这份逻辑（认得 statusCode，429 归
+/// [ExternalProviderFailureKind.rateLimited] 并带上 `retryAfter`），MAL 走裸的
+/// [ExternalProviderFailure.fromException]，它不认识 [VideoMetadataNetworkException]，
+/// 于是限流、5xx、鉴权失败被一律压成 `unknown` 且丢掉 status / retryAfter，UI 只能
+/// 统一说成「暂不可用」。
+ExternalProviderFailure externalFailureFromVideoMetadataError({
+  required String providerId,
+  required String operation,
+  required Object error,
+}) {
+  if (error is! VideoMetadataNetworkException) {
+    return ExternalProviderFailure.fromException(
+      providerId: providerId,
+      operation: operation,
+      error: error,
+    );
+  }
+  final int? status = error.statusCode;
+  final ExternalProviderFailureKind kind;
+  if (status == 401) {
+    kind = ExternalProviderFailureKind.unauthorized;
+  } else if (status == 403) {
+    kind = ExternalProviderFailureKind.forbidden;
+  } else if (status == 404) {
+    kind = ExternalProviderFailureKind.notFound;
+  } else if (status == 429) {
+    kind = ExternalProviderFailureKind.rateLimited;
+  } else {
+    kind = ExternalProviderFailureKind.network;
+  }
+  return ExternalProviderFailure(
+    providerId: providerId,
+    operation: operation,
+    kind: kind,
+    message: status == null
+        ? 'provider network request failed'
+        : 'provider returned HTTP $status',
+    statusCode: status,
+    retryAfter: error.retryAfter,
+    retryable: status == null || status == 429 || status >= 500,
+  );
+}
 
 class VideoMetadataNetworkException implements Exception {
   const VideoMetadataNetworkException(

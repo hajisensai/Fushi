@@ -4,6 +4,7 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_json.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 
@@ -36,6 +37,10 @@ class TmdbVideoDiscoveryProvider implements VideoDiscoveryProvider {
 
   @override
   String get id => 'tmdb';
+
+  @override
+  String get displayName =>
+      videoMetadataProviderLabel(VideoMetadataProviderKind.tmdb);
 
   @override
   int get priority => 20;
@@ -575,6 +580,9 @@ query Discovery(
   String get id => 'anilist';
 
   @override
+  String get displayName => 'AniList';
+
+  @override
   int get priority => 10;
 
   @override
@@ -953,43 +961,18 @@ List<VideoDiscoveryItem> _interleaveItems(
   return result;
 }
 
+/// 见 [externalFailureFromVideoMetadataError]——翻译逻辑是全域共享的一份，本地只留
+/// 这个短名转发给三个调用点用。
 ExternalProviderFailure _providerFailure({
   required String providerId,
   required String operation,
   required Object error,
-}) {
-  if (error is! VideoMetadataNetworkException) {
-    return ExternalProviderFailure.fromException(
+}) =>
+    externalFailureFromVideoMetadataError(
       providerId: providerId,
       operation: operation,
       error: error,
     );
-  }
-  final int? status = error.statusCode;
-  final ExternalProviderFailureKind kind;
-  if (status == 401) {
-    kind = ExternalProviderFailureKind.unauthorized;
-  } else if (status == 403) {
-    kind = ExternalProviderFailureKind.forbidden;
-  } else if (status == 404) {
-    kind = ExternalProviderFailureKind.notFound;
-  } else if (status == 429) {
-    kind = ExternalProviderFailureKind.rateLimited;
-  } else {
-    kind = ExternalProviderFailureKind.network;
-  }
-  return ExternalProviderFailure(
-    providerId: providerId,
-    operation: operation,
-    kind: kind,
-    message: status == null
-        ? 'provider network request failed'
-        : 'provider returned HTTP $status',
-    statusCode: status,
-    retryAfter: error.retryAfter,
-    retryable: status == null || status == 429 || status >= 500,
-  );
-}
 
 const Map<int, String> _tmdbGenreNames = <int, String>{
   12: 'Adventure',

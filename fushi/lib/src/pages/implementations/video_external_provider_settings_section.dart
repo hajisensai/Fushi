@@ -16,7 +16,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/src/utils/net/app_user_agent.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 @immutable
@@ -278,7 +277,7 @@ class _VideoExternalProviderSettingsSectionState
   @override
   void initState() {
     super.initState();
-    _openSubtitles = _OpenSubtitlesDraft.empty();
+    _openSubtitles = _OpenSubtitlesDraft.fromConfig(null);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -1300,28 +1299,24 @@ class _OpenSubtitlesDraft {
     required this.allowInsecureHttp,
   });
 
-  factory _OpenSubtitlesDraft.empty() => _OpenSubtitlesDraft(
-    endpoint: 'https://api.opensubtitles.com/api/v1',
-    apiKey: '',
-    username: '',
-    password: '',
-    userAgent: fushiUserAgent('opensubtitles'),
-    enabled: false,
-    allowInsecureHttp: false,
-  );
-
-  factory _OpenSubtitlesDraft.fromConfig(OpenSubtitlesConfig? config) =>
-      config == null
-      ? _OpenSubtitlesDraft.empty()
-      : _OpenSubtitlesDraft(
-          endpoint: config.baseUrl.toString(),
-          apiKey: config.apiKey,
-          username: config.username ?? '',
-          password: config.password ?? '',
-          userAgent: config.userAgent,
-          enabled: config.enabled,
-          allowInsecureHttp: config.allowInsecureHttp,
-        );
+  /// 未配置态同样走 [OpenSubtitlesConfig.unconfigured]，不再另写一份默认。
+  ///
+  /// BUG-2429：这里曾有一个 `empty()` 把 `enabled` 硬写成 false（与 config 的构造
+  /// 默认相反），于是用户一进本页、随便碰一个字段，debounce 保存就把这个没人选过的
+  /// false 落盘，内置应用密钥从此失效。
+  factory _OpenSubtitlesDraft.fromConfig(OpenSubtitlesConfig? config) {
+    final OpenSubtitlesConfig source =
+        config ?? OpenSubtitlesConfig.unconfigured();
+    return _OpenSubtitlesDraft(
+      endpoint: source.baseUrl.toString(),
+      apiKey: source.apiKey,
+      username: source.username ?? '',
+      password: source.password ?? '',
+      userAgent: source.userAgent,
+      enabled: source.enabled,
+      allowInsecureHttp: source.allowInsecureHttp,
+    );
+  }
 
   final String endpoint;
   final String apiKey;

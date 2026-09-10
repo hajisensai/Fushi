@@ -18,11 +18,10 @@ bool shouldShowVideoOnlineServicesReminder(PreferencesRepository preferences) {
       config.anidbPassword.isNotEmpty;
   final bool jimakuReady =
       preferences.jimakuEnabled && preferences.jimakuApiKey.trim().isNotEmpty;
-  final OpenSubtitlesConfig? subtitles =
+  final OpenSubtitlesConfig subtitles =
       preferences.videoSubtitleOpenSubtitlesConfig;
-  final bool openSubtitlesReady = subtitles != null &&
-      subtitles.enabled &&
-      subtitles.effectiveApiKey.isNotEmpty;
+  final bool openSubtitlesReady =
+      subtitles.enabled && subtitles.effectiveApiKey.isNotEmpty;
   // Public / bundled access (MAL, TMDB, DanDanPlay) never creates missing setup.
   return !aniDbReady || !jimakuReady || !openSubtitlesReady;
 }

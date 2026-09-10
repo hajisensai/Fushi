@@ -276,6 +276,13 @@ String? _metadataImage(VideoMetadataWork work, VideoMetadataImageKind kind) {
 abstract interface class VideoDiscoveryProvider {
   String get id;
 
+  /// 用户可见的来源名（品牌名，不翻译；经 i18n 表统一出口）。
+  ///
+  /// BUG-2430：失败横幅原先直接印 [id]（`mal` / `tmdb`），那是接线用的标识，与用户
+  /// 在页面别处看到的品牌名不是一个口径。做成接口成员而不是 UI 层的 id 映射表，新
+  /// 来源接进来时编译期就必须给出名字，不会漏。
+  String get displayName;
+
   /// Lower values run first and win provider-local tie breaks.
   int get priority;
   VideoDiscoveryCapabilities get capabilities;

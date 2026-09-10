@@ -2,6 +2,8 @@ import 'package:fushi/src/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
 
 /// Search-only adapter for the existing metadata
 /// providers. Recommendation feeds remain a separate capability: the metadata
@@ -27,6 +29,9 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
 
   @override
   String get id => _provider.providerKind.name;
+
+  @override
+  String get displayName => videoMetadataProviderLabel(_provider.providerKind);
 
   @override
   final int priority;
@@ -102,8 +107,10 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
         );
         successfulSearches++;
       } on Object catch (error) {
+        // BUG-2430：必须走共享翻译，否则 Jikan 的 429 会被压成 unknown，UI 把
+        // 「被限流，等一会儿再搜」显示成「来源暂不可用」。
         failures.add(
-          ExternalProviderFailure.fromException(
+          externalFailureFromVideoMetadataError(
             providerId: id,
             operation: 'search-${kind.name}',
             error: error,
