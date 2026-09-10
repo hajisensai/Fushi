@@ -11,6 +11,7 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketAddress
 import java.net.URI
+import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -286,10 +287,22 @@ class HostProxyPolicyTest {
         val url = "http://127.0.0.1:${origin.address.port}/"
         try {
             val started = System.nanoTime()
-            assertFails {
-                client.newCall(Request.Builder().url(url).build()).execute().close()
-            }
+            val failure =
+                assertFails {
+                    client.newCall(Request.Builder().url(url).build()).execute().close()
+                }
             val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            // The call must die on the unresolvable fail-closed route, not by the lookup's own
+            // exception escaping select(). Asserting only "it failed" would still pass against
+            // the throwing implementation this test exists to keep out.
+            assertEquals(
+                true,
+                generateSequence(failure, Throwable::cause).any {
+                    it is UnknownHostException &&
+                        it.message.orEmpty().contains("host-proxy-policy-unavailable.invalid")
+                },
+                "expected the fail-closed route, got ${failure::class.java.name}: ${failure.message}",
+            )
             // The old selector threw out of select(); OkHttp then retried routes without bound
             // and the JVM died of OutOfMemoryError in about two seconds, taking every other
             // source in the sidecar with it. One bounded failure is the whole point.
