@@ -8,22 +8,22 @@
   "notes": "Automated release-signed debug-channel build from develop @ 4db4c80. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.3.0-debug.14377-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14377-ios.ipa",
-      "releaseSequence": 14377,
-      "tag": "v2.3.0-debug.14377+16ef904",
-      "version": "2.3.0-debug.14377",
-      "size": 59166022,
-      "sha256": "191c09751ea24f7c9911817f3bd8471e189fef46487f20b80676c88e344552ad"
+      "name": "fushi-2.3.0-debug.14378-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14378-ios.ipa",
+      "releaseSequence": 14378,
+      "tag": "v2.3.0-debug.14378+c0cf2d4",
+      "version": "2.3.0-debug.14378",
+      "size": 59162640,
+      "sha256": "add14480566bff800eaa3566c35e03a3eb95de23e4552ee8d07e254e7f47f2d9"
     },
     {
-      "name": "fushi-2.3.0-debug.14377-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14377-macos.zip",
-      "releaseSequence": 14377,
-      "tag": "v2.3.0-debug.14377+16ef904",
-      "version": "2.3.0-debug.14377",
-      "size": 335948946,
-      "sha256": "1f4a3492cf5e82316fb7b6759a84e88b601c901c19326ac7d37b8c98d0b1184c"
+      "name": "fushi-2.3.0-debug.14378-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14378-macos.zip",
+      "releaseSequence": 14378,
+      "tag": "v2.3.0-debug.14378+c0cf2d4",
+      "version": "2.3.0-debug.14378",
+      "size": 335943676,
+      "sha256": "819c5d3b5ec9dc9a1fdba7186bb4815884dd615e0f6a2caed19c657bc442b06b"
     },
     {
       "name": "fushi-2.3.0-debug.14378-windows-setup.exe",
