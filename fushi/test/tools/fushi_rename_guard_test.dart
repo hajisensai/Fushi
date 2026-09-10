@@ -215,7 +215,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'lib/src/sync/sync_orchestrator.dart':
           'kLegacySyncAudiobookAssetName / _legacyDictionaryAssetSuffix / '
               '_legacyLocalAudioAssetSuffix：写新读旧的兼容读入口。',
-      'lib/src/sync/aggregate_sync_service.dart':
+      'packages/fushi_engine/lib/sync/aggregate_sync_service.dart':
           '_legacyAggregateAssetSuffix：每设备聚合快照的兼容读入口。',
       'lib/src/sync/sync_compare_dialog.dart':
           'legacySuffix：远端词典对比的兼容读分支（与 orchestrator 同源口径）。',
@@ -575,6 +575,8 @@ Iterable<File> _pathFormScanFiles() sync* {
 /// 扫描根（相对 `fushi/`，即 flutter test 的 cwd）。
 const List<String> _scanRoots = <String>[
   'lib',
+  '../packages/fushi_engine/lib',
+  '../packages/fushi_server/lib',
   '../packages/fushi_core/lib',
   '../packages/fushi_dictionary/lib',
   '../packages/fushi_anki/lib',

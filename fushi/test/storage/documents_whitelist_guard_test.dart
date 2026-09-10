@@ -35,14 +35,27 @@ void main() {
 
   String firstSegment(String raw) => raw.split('/').first.split(r'\').first;
 
+  const List<String> scanRoots = <String>[
+    'lib',
+    '../packages/fushi_engine/lib',
+    '../packages/fushi_server/lib',
+  ];
+
   test('lib/ 里所有 documents 根顶层派生点都收进了迁移白名单', () {
     final Directory lib = Directory('lib');
     expect(lib.existsSync(), isTrue,
         reason: '本测试假定 cwd 为 fushi/（flutter test 默认）');
 
-    final List<File> sources = dartSources(lib);
+    // documents 根的派生点如今大半住在引擎里（engine_paths.dart 的
+    // documentsSubdirectory('video_covers' / 'video_subtitles' / 'fushi_books'
+    // / 'audiobooks')）。只扫 fushi/lib 等于对这些新家视而不见：引擎里再加一个
+    // 子目录不会红，数据根迁移就会把它落在旧位置（TODO-1226 同型）。
+    final List<File> sources = <File>[
+      for (final String rel in scanRoots)
+        if (Directory(rel).existsSync()) ...dartSources(Directory(rel)),
+    ];
     expectScanScale(sources.length,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        what: 'lib/ 下的 .dart', atLeast: 1120, measured: 1401);
 
     final Map<String, Set<String>> missing = <String, Set<String>>{};
     for (final File f in sources) {

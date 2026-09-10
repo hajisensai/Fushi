@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_subtitle_provider.dart';
-import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
 /// 「用户当前配了哪些在线字幕来源」的**唯一真相源**。

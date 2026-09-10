@@ -157,7 +157,7 @@ void main() {
     test('extractAudioSegmentViaFfmpeg early returns report via shared helper',
         () {
       final String clipper =
-          libFile('lib/src/utils/misc/desktop_audio_clipper.dart');
+          libFile('../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart');
       // The two pre-ffmpeg early returns (non-positive range / missing input)
       // must go through _reportFfmpegEarlyReturn, which both logs to
       // ErrorLogService and forwards onFailure.

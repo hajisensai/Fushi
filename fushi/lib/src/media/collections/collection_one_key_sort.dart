@@ -1,4 +1,4 @@
-import 'package:fushi/src/media/collections/shelf_sort.dart'
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart'
     show GalgameCustomData;

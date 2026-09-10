@@ -14,7 +14,7 @@ import 'package:fushi/src/mining/galgame_scrape_controller.dart';
 import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'

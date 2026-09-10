@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi/src/media/video/video_specs_display.dart';
 
 /// 规格的格式化。纯函数层，不碰 i18n 也不碰 widget。

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/collections/shelf_sort.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'

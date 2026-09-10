@@ -12,7 +12,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 一条在线漫画书架条目**不可用**的原因。
 ///

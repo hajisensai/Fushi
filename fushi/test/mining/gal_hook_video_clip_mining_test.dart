@@ -6,11 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, VideoMiningImageMode;
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// galgame「视频片段」模式的协调器契约：先等语音播完再导出录制帧（片段终点必须在

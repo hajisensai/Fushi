@@ -2,7 +2,7 @@
 /// 来源设置对话框与全局设置页共用一份。
 library;
 
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
 
 String videoMetadataProviderLabel(VideoMetadataProviderKind kind) =>

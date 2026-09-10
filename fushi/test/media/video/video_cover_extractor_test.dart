@@ -6,10 +6,10 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart'
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 
 void main() {
   test('封面 mutation 串行且允许同一异步链安全重入', () async {

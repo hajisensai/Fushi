@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/video/ffmpeg_backend.dart'
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
 import 'package:fushi/src/mining/window_capture_channel.dart'
     show WindowRecordingExport, WindowRecordingFrame;

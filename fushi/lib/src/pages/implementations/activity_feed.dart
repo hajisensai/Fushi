@@ -1,4 +1,4 @@
-import 'package:fushi/src/stats/study_sessions.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 首页 Activity 时间轴的纯数据层：把 [ActivityEventRow] 事件流聚合成「按日期分组、

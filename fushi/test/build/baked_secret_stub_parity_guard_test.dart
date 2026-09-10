@@ -38,7 +38,7 @@ void main() {
     'Provide gitignored TMDB API key stub':
         'fushi/lib/src/media/video/scraper/tmdb_default_key.dart',
     'Provide OpenSubtitles API key stub':
-        'fushi/lib/src/media/video/subtitle/opensubtitles_default_key.dart',
+        'packages/fushi_engine/lib/media/video/subtitle/opensubtitles_default_key.dart',
   };
 
   const String actionRef = './.github/actions/provide-baked-secrets';

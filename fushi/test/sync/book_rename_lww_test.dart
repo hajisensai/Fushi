@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -67,9 +67,13 @@ void main() {
     return db;
   }
 
+  /// [source] 给了就按 app 的装配（`AppModel` 里的 adoptOverrideTitle 回调）把
+  /// 推送方显示名写穿 `ReaderFushiSource` 内存缓存；不给则走引擎默认的只写 DB
+  /// 路径（无头服务端的形状）。
   LocalLibraryHostService buildHost(
     FushiDatabase db, {
     Future<String?> Function(File)? importBookFromFile,
+    ReaderFushiSource? source,
   }) =>
       LocalLibraryHostService(
         db: db,
@@ -78,6 +82,18 @@ void main() {
         refreshDictionaryCache: () async {},
         runExclusive: (Future<void> Function() body) => body(),
         importBookFromFile: importBookFromFile,
+        adoptOverrideTitle: source == null
+            ? null
+            : ({
+                required String bookKey,
+                required String title,
+                required int updatedAt,
+              }) =>
+                source.adoptOverrideTitleIfNewer(
+                  item: source.overrideTitleMediaItemForBookKey(bookKey),
+                  title: title,
+                  updatedAt: updatedAt,
+                ),
       );
 
   /// 把 [db] 装成 `MediaSource` 的共享库并清掉源的内存偏好缓存，让
@@ -406,6 +422,7 @@ void main() {
     // fake importer：落库并返回**真实** bookKey（重名会带后缀，与 title 不同）。
     final LocalLibraryHostService host = buildHost(
       db,
+      source: source,
       importBookFromFile: (File f) async {
         const String bookKey = '原始書名 (2)';
         await db.insertEpubBook(book(bookKey, bookKey));

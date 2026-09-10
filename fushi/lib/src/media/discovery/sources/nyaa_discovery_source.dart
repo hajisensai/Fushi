@@ -12,11 +12,11 @@
 /// [DiscoveryContentHint.none]。
 library;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/media/discovery/nyaa_literature_classifier.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
 
 /// 请求时取当前 Nyaa 过滤三态的回调（偏好可随时变，源实例常驻，所以按次读）。
 typedef NyaaQualityFilterProvider = NyaaQualityFilter Function();

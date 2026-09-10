@@ -18,16 +18,16 @@ void main() {
 
   group('metadata-only callers do not pull chaptersJson', () {
     const List<String> thinCallers = <String>[
-      'lib/src/epub/epub_importer.dart',
+      '../packages/fushi_engine/lib/epub/epub_importer.dart',
       'lib/src/pdf/pdf_importer.dart',
-      'lib/src/media/manga/manga_importer.dart',
+      '../packages/fushi_engine/lib/media/manga/manga_importer.dart',
       'lib/src/media/source_library/source_library_scanner.dart',
-      'lib/src/stats/stat_facts.dart',
+      '../packages/fushi_engine/lib/stats/stat_facts.dart',
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
       'lib/src/pages/implementations/reader_history/books.part.dart',
       'lib/src/pages/implementations/reader_history/remote.part.dart',
       'lib/src/media/collections/collection_one_key_sort.dart',
-      'lib/src/media/tracking/media_tracking_repository.dart',
+      '../packages/fushi_engine/lib/media/tracking/media_tracking_repository.dart',
       'lib/src/pages/implementations/collections_page.dart',
       'lib/src/media/manga/online/mokuro_moe_catalog_view.dart',
     ];

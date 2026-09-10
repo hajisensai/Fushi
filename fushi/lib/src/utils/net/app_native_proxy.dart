@@ -5,8 +5,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:fushi/src/utils/net/app_http.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 Future<AppNativeProxy>? _sharedProxy;
 Future<AppNativeProxy>? _challengeProxy;

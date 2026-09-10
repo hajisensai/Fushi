@@ -12,6 +12,7 @@ import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
 import 'language_utils.dart';
 import 'transform_description_i18n.dart';
+import '../models/fushi_text_selection.dart';
 
 /// Defines common characteristics required for tuning locale and text
 /// segmentation behaviour for different languages. Override the variables

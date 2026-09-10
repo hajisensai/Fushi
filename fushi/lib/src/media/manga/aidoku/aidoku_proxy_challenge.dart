@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// null means the existing platform-browser route can be used. A requested
 /// proxy or explicit direct mode must never silently fall back to system rules.

@@ -1,13 +1,13 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 来源级 `provider_override` 与全局主源偏好决定手动搜索链的顺序；历史值回落全局。

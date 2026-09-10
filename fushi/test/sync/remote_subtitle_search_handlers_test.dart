@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

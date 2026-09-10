@@ -11,7 +11,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_progress_labels.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
 
 /// mokuro.moe 目录内容体的外层可见状态快照：标题与动作按钮所需的最小事实。

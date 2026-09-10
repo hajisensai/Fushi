@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 
 void main() {
   group('resolveDuplicateTitle', () {
@@ -73,7 +73,7 @@ void main() {
 
   test('EpubImporter wires the conflict resolver into both import paths', () {
     final String src =
-        File('lib/src/epub/epub_importer.dart').readAsStringSync();
+        File('../packages/fushi_engine/lib/epub/epub_importer.dart').readAsStringSync();
     // 两条插库路径都必须在 insert 前过 resolveDuplicateTitle，且暴露回调。
     expect(
       'resolveDuplicateTitle'.allMatches(src).length,

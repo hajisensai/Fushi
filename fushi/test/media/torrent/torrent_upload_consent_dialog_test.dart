@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
 
 void main() {

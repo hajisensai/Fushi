@@ -18,10 +18,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
 import 'package:fushi/src/models/preferences_repository.dart';

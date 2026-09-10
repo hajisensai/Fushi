@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/stats/study_sessions.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 

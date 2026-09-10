@@ -5,12 +5,12 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// PDF 阅读器（Phase 1）的导入器：把一份 PDF 作为「第二种书」落进 `EpubBooks`
 /// 表（`format='pdf'`），复用整套书架 / 进度 / 删除管线，而非另建平行表。

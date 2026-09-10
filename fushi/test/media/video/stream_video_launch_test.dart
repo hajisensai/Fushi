@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/youtube_stream_cache.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_core/fushi_core.dart';

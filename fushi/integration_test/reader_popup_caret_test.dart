@@ -13,7 +13,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';

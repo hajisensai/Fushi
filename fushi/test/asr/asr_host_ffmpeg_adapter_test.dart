@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart' as host;
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart' as host;
 
 /// ASR 的 PCM 解码搬进 `fushi_asr_core` 之后，本仓与包之间隔着一个
 /// [FushiAsrFfmpegBackend]。它转的是两套**同源但不同类型**的 `Ffmpeg*`，字段错位

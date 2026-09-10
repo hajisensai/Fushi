@@ -8,7 +8,7 @@ import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/utils.dart';

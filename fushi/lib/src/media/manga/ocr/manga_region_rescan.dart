@@ -15,7 +15,7 @@ import 'dart:io';
 import 'dart:ui' show Rect;
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
 import 'package:fushi/src/media/manga/ocr/manga_region_ocr.dart';
 

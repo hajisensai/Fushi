@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
 /// BUG-1568（BUG-908(a) 的视频同形问题）：视频流 token 签发侧必须有上限 + 过期清理。
 ///

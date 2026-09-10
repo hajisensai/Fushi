@@ -1,6 +1,5 @@
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
-
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -11,7 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
@@ -31,31 +30,29 @@ import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart'
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
-import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
-import 'package:fushi/src/media/video/video_local_files.dart'
+import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
-    show showVideoSourceScrapeManualBindingDialog;
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
@@ -71,7 +68,7 @@ import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortNewCollectionMembersNaturally;
-import 'package:fushi/src/media/collections/shelf_sort.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
@@ -87,9 +84,9 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -108,13 +105,15 @@ import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
+    show showVideoSourceScrapeManualBindingDialog;
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]

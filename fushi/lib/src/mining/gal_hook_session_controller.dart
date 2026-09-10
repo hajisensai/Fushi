@@ -26,7 +26,7 @@ import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [FushiDatabase.
 /// upsertStudySegment]（chars-only 游戏段）；单测可注入假写入方

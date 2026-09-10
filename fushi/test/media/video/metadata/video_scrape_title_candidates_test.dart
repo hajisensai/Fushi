@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 
 void main() {
   group('isEpisodeLabelTitle', () {
@@ -70,8 +70,11 @@ void main() {
     // 实测看不出差别（真红只发生在 CI Linux）。这条源码断言补上那半边 ——
     // 任何平台都咬得住：这个函数取目录名不得再走平台上下文的 path API。
     test('the candidate builder never uses platform-context path APIs', () {
+      // 路径跟着代码搬：coordinator 已从 fushi/lib/src 移入引擎包。写死旧路径的
+      // 后果是 PathNotFoundException（硬红，不是静默放行）——这条守卫因此还活着。
       final String source = File(
-        'lib/src/media/video/metadata/video_source_scrape_coordinator.dart',
+        '../packages/fushi_engine/lib/media/video/metadata/'
+        'video_source_scrape_coordinator.dart',
       ).readAsStringSync();
       const String marker = 'List<String> videoScrapeTitleCandidates(';
       final int start = source.indexOf(marker);

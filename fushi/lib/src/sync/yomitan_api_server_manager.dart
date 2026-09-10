@@ -1,7 +1,7 @@
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart'
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 

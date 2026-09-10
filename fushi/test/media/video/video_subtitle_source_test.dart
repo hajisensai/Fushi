@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -451,11 +451,15 @@ hello async vtt
     });
 
     test('video subtitle load paths await the async parser entry point', () {
+      // 实现已搬进引擎包（cwd 仍是 fushi/，所以要往上一级）。写死旧路径的后果
+      // 是 PathNotFoundException——硬红，不会伪装成通过。
       final String source = File(
         p.join(
           Directory.current.path,
+          '..',
+          'packages',
+          'fushi_engine',
           'lib',
-          'src',
           'media',
           'video',
           'video_subtitle_source.dart',

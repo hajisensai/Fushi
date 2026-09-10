@@ -1,34 +1,33 @@
 import 'dart:io';
-
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/epub/book_css_repository.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/video/video_sidecar.dart'
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/local_audio_manager.dart';
-import 'package:fushi/src/sync/collection_manifest.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart'
+import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart'
     show
         hasExportableMangaContent,
         importMangaPackageFile,
         isMangaPackage,
         repackageMangaBook;
-import 'package:fushi/src/sync/collection_sync_engine.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/override_title_lookup.dart';
-import 'package:fushi/src/sync/interconnect_service_config.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/aggregate_sync_service.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/override_title_lookup.dart';
+import 'package:fushi_engine/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/video_manifest.dart';
 import 'package:fushi_audio/fushi_audio.dart'

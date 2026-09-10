@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/scraper/scrape_identifier_words.dart';
+import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 
 /// 设计稿 C 二期第一项：识别词（对标 MoviePilot WordsMatcher）。
 /// 四种语法、注释/空行、非法行收集、偏移越界与前导 0 保持，都锁在这里。

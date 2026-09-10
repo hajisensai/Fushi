@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
-import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi/utils.dart';
 
 class _ManualBindingRunner

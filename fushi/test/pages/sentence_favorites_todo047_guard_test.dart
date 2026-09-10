@@ -272,7 +272,8 @@ void main() {
     });
 
     test('收藏语句的来源切分与日期回退判据只在 StatCounterFacts 里', () {
-      final String src = read('lib/src/stats/stat_facts.dart');
+      // stat_facts 已随引擎抽取搬走（cwd 是 fushi/，所以往上一级）。
+      final String src = read('../packages/fushi_engine/lib/stats/stat_facts.dart');
       expect(
         src,
         contains('s.source != kFavoriteSentenceSourceVideo'),

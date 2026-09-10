@@ -9,11 +9,11 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
-import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/scraper/filename_parser.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

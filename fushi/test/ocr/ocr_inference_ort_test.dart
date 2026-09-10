@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 
 void main() {

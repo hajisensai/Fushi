@@ -20,8 +20,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// 本仓真实存在的本机 / 局域网出站目标（取自 BUG-1498 普查表的「禁止接代理清单」）。
 const List<String> kLocalOnlyTargets = <String>[
@@ -403,9 +403,8 @@ void main() {
     });
 
     test('三个公开工厂都经 applyAppProxySync（源码守卫：漏一个就是一条暗路）', () {
-      final String source = File(
-        'lib/src/utils/net/app_http.dart',
-      ).readAsStringSync();
+      final String source =
+          File('../packages/fushi_engine/lib/utils/net/app_http.dart').readAsStringSync();
       expect(source, contains('applyAppProxySync(client)'));
       // createAppHttpIoClient / createAppDio 都必须复用 createAppHttpClient，
       // 而不是各自 new 一个裸的。

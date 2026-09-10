@@ -1,14 +1,11 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
-
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
-
 import 'package:path/path.dart' as p;
-
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
-import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -16,9 +13,9 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:fushi/src/media/collections/collection_relation.dart';
 import 'package:fushi/src/media/collections/collection_scrape_metadata_compat.dart';
-import 'package:fushi/src/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
@@ -27,16 +24,15 @@ import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
-import 'package:fushi/src/media/video/video_local_files.dart'
+import 'package:fushi_engine/media/video/video_local_files.dart'
     show videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
@@ -51,12 +47,13 @@ import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；

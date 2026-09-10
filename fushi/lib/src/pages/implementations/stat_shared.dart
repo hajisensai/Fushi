@@ -3,10 +3,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 /// 三个域统计页「按媒体」列表共用的一行（用户 2026-09-08「统计全改成游戏那种」：
 /// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·

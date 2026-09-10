@@ -5,8 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/src/media/manga/discovery/mal_manga_discovery_provider.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
-import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 void main() {
   Map<String, Object?> manga({int id = 10, String status = 'Publishing'}) =>

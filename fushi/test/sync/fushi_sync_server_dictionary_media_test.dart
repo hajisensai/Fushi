@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
 /// TODO-1215: GET /api/media/dictionary serves dictionary media (gaiji /
 /// pitch-accent SVG, etc.) bytes so the browser extension's rewritten <img src>

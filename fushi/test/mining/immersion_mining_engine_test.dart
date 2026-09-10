@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression, FfmpegFailureReporter;
 
 class _FakeRepo implements BaseAnkiRepository {

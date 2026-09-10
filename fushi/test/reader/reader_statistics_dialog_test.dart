@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart'
+    show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
     show kMinCphSampleMs;
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
-import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, kActivityMediaBook;
+import 'package:fushi_audio/fushi_audio.dart'
+    show StudySessionTotals;
 
 StatFact _fact({
   required String dateKey,

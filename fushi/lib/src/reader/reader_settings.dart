@@ -9,6 +9,7 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
@@ -971,7 +972,8 @@ class ReaderSettings {
 }
 
 class ReaderCustomFontCss {
-  static const String kReaderResourceHost = 'fushi.local';
+  /// 值住在引擎（`EpubBook.resolveInternalLink` 也按它识别内链），这里只是别名。
+  static const String kReaderResourceHost = engine_host.kReaderResourceHost;
   static const String kReaderResourceScheme = 'fushi-reader';
 
   static ({String fontFamily, String fontFaces}) build(

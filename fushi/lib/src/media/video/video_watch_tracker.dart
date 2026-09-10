@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/stats/interval_coverage.dart';
-import 'package:fushi/src/stats/study_char_count.dart';
+import 'package:fushi_engine/stats/study_char_count.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 

@@ -20,8 +20,8 @@ void main() {
     test('主壳 + 每个 part 都在清单里、顺序确定（漏登记 = 负向断言真空通过）', () {
       expectPartManifestMatchesDisk(
         manifest: localLibraryHostServiceFiles(),
-        shellPath: 'lib/src/sync/local_library_host_service.dart',
-        partDirPath: 'lib/src/sync/local_library_host_service',
+        shellPath: '../packages/fushi_engine/lib/sync/local_library_host_service.dart',
+        partDirPath: '../packages/fushi_engine/lib/sync/local_library_host_service',
       );
     });
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart'
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadSubtitlePolicy;
 import 'package:fushi/src/pages/implementations/video_download_subscriptions_panel.dart'
     show videoDownloadSubscriptionFilterSummary;

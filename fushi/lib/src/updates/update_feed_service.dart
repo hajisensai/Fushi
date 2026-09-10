@@ -9,27 +9,14 @@ import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, UpdateFeedEntriesCompanion, UpdateFeedEntryRow;
 
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_port.dart';
+// 纯数据与端口住在引擎（依赖方向 app → 引擎，见 update_feed_port.dart）；
+// 这里 re-export 让既有调用点照旧只 import 本文件。
+export 'package:fushi_engine/updates/update_feed_port.dart'
+    show UpdateFeedDraft, UpdateFeedPublisher;
 import 'package:fushi/src/updates/update_notifier.dart';
 
-/// 一条待投递的更新事件。域侧只需填这些，身份拼接与落库由服务负责。
-class UpdateFeedDraft {
-  const UpdateFeedDraft({
-    required this.kind,
-    required this.targetKey,
-    required this.title,
-    this.subtitle,
-    this.detailJson,
-  });
-
-  final UpdateFeedKind kind;
-  final String targetKey;
-  final String title;
-  final String? subtitle;
-  final String? detailJson;
-
-  String get entryId => updateFeedEntryId(kind, targetKey);
-}
 
 /// 一次投递的结果。域侧一般不用看，[newEntries] 供调用方写日志或做后续动作。
 class UpdateFeedPublishResult {
@@ -53,7 +40,9 @@ class UpdateFeedPublishResult {
 /// 检查是各域自己的事（番剧走既有订阅检查节奏、漫画走库更新调度、app 走启动检查），
 /// 这里只负责「发现了之后怎么办」。把调度也塞进来会让这一层同时owning四种完全
 /// 不同的节奏，而那四种节奏本来就该由最懂它的域来定。
-class UpdateFeedService {
+/// 投递实现：端口定义在引擎侧（[UpdateFeedPublisher]），依赖方向 app → 引擎。
+/// 显式 implements 是有意的——不写的话，端口签名将来改了这里不会被编译器拦住。
+class UpdateFeedService implements UpdateFeedPublisher {
   UpdateFeedService({
     required FushiDatabase database,
     required PreferencesRepository prefs,
@@ -115,6 +104,7 @@ class UpdateFeedService {
   ///
   /// 关掉的域在这里就被整批丢弃——不投递、不出红点、不通知。「投递了但不提醒」
   /// 会让更新页里堆满用户明确说过不关心的东西。
+  @override
   Future<UpdateFeedPublishResult> publishBatch(
     UpdateFeedKind kind,
     List<UpdateFeedDraft> drafts,

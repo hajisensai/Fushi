@@ -18,10 +18,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 // createAppHttpIoClient 经 fushi/utils.dart 转出，无需再单独 import app_http.dart。

@@ -10,12 +10,12 @@ import 'dart:ui';
 
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi/src/ocr/manga_ocr_pipeline.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 final Uri kGoogleLensEndpoint =
     Uri.parse('https://lensfrontend-pa.googleapis.com/v1/crupload');
@@ -299,7 +299,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     final List<MokuroBlock> blocks = <MokuroBlock>[];
     for (int index = 0; index < paragraphs.length; index++) {
       final GoogleLensParagraph paragraph = paragraphs[index];
-      final Rect blockRect = _toPixels(
+      final MokuroRect blockRect = _toPixels(
         paragraph.normalizedBounds,
         width,
         height,
@@ -326,7 +326,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     }
     return MokuroImage(
       url: relativeUrl,
-      size: Size(width, height),
+      size: MokuroSize(width, height),
       blocks: blocks,
     );
   }
@@ -346,8 +346,8 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     }
   }
 
-  static Rect _toPixels(Rect normalized, double width, double height) =>
-      Rect.fromLTRB(
+  static MokuroRect _toPixels(Rect normalized, double width, double height) =>
+      MokuroRect.fromLTRB(
         normalized.left * width,
         normalized.top * height,
         normalized.right * width,
@@ -516,7 +516,8 @@ MokuroImage _migrateLegacyCachedLensPage(MokuroImage page) {
   return MokuroImage(url: page.url, size: page.size, blocks: blocks);
 }
 
-Rect _flipLegacyLensRect(Rect rect, double pageHeight) => Rect.fromLTRB(
+MokuroRect _flipLegacyLensRect(MokuroRect rect, double pageHeight) =>
+    MokuroRect.fromLTRB(
       rect.left,
       pageHeight - rect.bottom,
       rect.right,
@@ -584,7 +585,7 @@ List<List<_CachedLensPiece>> _groupCachedLensPieces(
   for (final _CachedLensPiece piece in remaining) {
     List<_CachedLensPiece>? match;
     for (final List<_CachedLensPiece> group in groups) {
-      final Rect anchor = group.first.rectangle;
+      final MokuroRect anchor = group.first.rectangle;
       final bool overlaps = vertical
           ? _axisOverlap(anchor.left, anchor.right, piece.rectangle.left,
                   piece.rectangle.right) >
@@ -621,7 +622,7 @@ class _CachedLensPiece {
   const _CachedLensPiece({required this.text, required this.rectangle});
 
   final String text;
-  final Rect rectangle;
+  final MokuroRect rectangle;
 }
 
 Future<Map<String, MokuroImage>> _readExistingPages(File output) async {

@@ -1,4 +1,4 @@
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// Reading layout of a manga book.
 enum MangaReadingMode {

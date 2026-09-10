@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/utils.dart';
 

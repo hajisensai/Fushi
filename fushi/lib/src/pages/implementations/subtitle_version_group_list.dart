@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/media/video/jimaku_client.dart'
+import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/utils.dart';

@@ -4,11 +4,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart'
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
     as discovery;
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 

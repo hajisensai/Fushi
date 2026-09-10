@@ -7,10 +7,10 @@ library;
 
 import 'dart:io';
 
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/import/discovery_archive_extractor.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
 /// 各域导入器端口。返回值约定：入库成功返回身份键（bookKey/exe 路径），
 /// 因重复被跳过返回 null；失败抛异常。

@@ -11,7 +11,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';

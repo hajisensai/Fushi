@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 /// TODO-1303 契约守卫：`/api/mine` 响应体现在除 `result` 外，还摊开诊断

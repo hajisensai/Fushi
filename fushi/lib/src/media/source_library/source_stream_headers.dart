@@ -10,7 +10,7 @@ import 'dart:convert';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
 
 /// 按 [sourceId] 解析打开该来源流媒体（视频流 / spec 里的字幕 URL）所需的

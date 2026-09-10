@@ -113,7 +113,7 @@ void main() {
       // 之后继续打已关闭的连接。而它们关库后紧接着要在**文件层**合并/替换整个 DB
       // 目录，那是数据安全问题，不是噪声问题。
       final String pipeline = File(
-        'lib/src/media/video/download/video_download_pipeline_service.dart',
+        '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart',
       ).readAsStringSync();
       expect(
         pipeline,

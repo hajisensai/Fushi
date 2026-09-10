@@ -10,84 +10,26 @@
 /// 算法层不 import 本文件（依赖 `ocr_inference.dart` 的抽象）。
 library;
 
+import 'dart:developer' as developer;
+import 'package:flutter/services.dart'
+    show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
-
-import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_inference.dart';
+export 'package:fushi_engine/ocr/ocr_inference.dart'
+    show
+        createOcrSessionWithProviderFallback,
+        isLocalOnnxRuntimeAvailable,
+        kOcrLogName,
+        resolveOcrSessionInputs;
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 // 本地推理可不可用的那道闸门随共享 ONNX 抽象一起搬进了 fushi_asr_core；本层保留同名
 // getter 转发，OCR 调用方与测试零改动。
-import 'package:fushi_asr_core/asr_core.dart' as onnx
-    show isLocalOnnxRuntimeAvailable;
 
 /// 本子系统统一的 `dart:developer` 日志通道名。
 ///
 /// 用 `dart:developer` 而不是 `debugPrint`：整卷 OCR 跑在 `Isolate.spawn` 出来
 /// 的后台 isolate 里，那里没有 Flutter binding，`debugPrint` 的节流实现依赖
 /// binding 的 Timer 调度；`developer.log` 在任何 isolate 都可直接用。
-const String kOcrLogName = 'hibiki.ocr';
-
-/// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
-///
-/// 真相源是共享层的同名 getter（`onnx_inference_ort.dart`，五端全真的理由与
-/// 「保留具名闸门」的理由都写在那里）；这里只转发，让 `MangaOcrServiceImpl` 的
-/// 闸门与既有测试继续从 OCR 层拿到它。
-bool get isLocalOnnxRuntimeAvailable => onnx.isLocalOnnxRuntimeAvailable;
-
-/// 用配置的加速 EP 创建会话；首选 EP 建不起来时退 CPU 重试一次。
-///
-/// 转发到共享的 [createOnnxSessionWithProviderFallback]（判据、异常语义、
-/// `onResolved` 必回报一次——全部见那里的注释），只把日志通道钉成 [kOcrLogName]。
-Future<T> createOcrSessionWithProviderFallback<T>({
-  required List<OcrExecutionProvider> providers,
-  required Future<T> Function(List<OcrExecutionProvider> providers) create,
-  void Function(OcrProviderResolution resolution)? onResolved,
-}) {
-  return createOnnxSessionWithProviderFallback<T>(
-    providers: providers,
-    create: create,
-    onResolved: onResolved,
-    logName: kOcrLogName,
-  );
-}
-
-/// 把算法层的语义输入名对齐到当前 ONNX 文件声明的真实输入名。
-///
-/// Manga OCR 下载源的检测器/编码器都只有一个输入，但不同导出版本分别使用过
-/// `pixel_values`、`images` 等名字。单输入模型不存在位置歧义，因此以 session
-/// 元数据为准；多输入 decoder 仍要求名称精确匹配，避免按顺序猜测而接错张量。
-///
-/// 单输入分支必须放在按名匹配**之前**：放在后面时，循环里任一未命中就已经
-/// `return inputs` 退出，循环走完又保证 `resolved` 非空，元数据回退永远不可达
-/// ——doc 宣称的鲁棒性并不存在（BUG-1173 同批审查发现）。
-Map<String, OcrTensor> resolveOcrSessionInputs({
-  required Map<String, OcrTensor> inputs,
-  required List<String> sessionInputNames,
-}) {
-  if (inputs.length == 1 && sessionInputNames.length == 1) {
-    return <String, OcrTensor>{
-      sessionInputNames.single: inputs.values.single,
-    };
-  }
-  final Map<String, OcrTensor> resolved = <String, OcrTensor>{};
-  for (final String sessionName in sessionInputNames) {
-    final OcrTensor? exact = inputs[sessionName];
-    if (exact != null) {
-      resolved[sessionName] = exact;
-      continue;
-    }
-    if (sessionName == 'images' && inputs['pixel_values'] != null) {
-      resolved[sessionName] = inputs['pixel_values']!;
-      continue;
-    }
-    return inputs;
-  }
-  if (resolved.isNotEmpty) {
-    return resolved;
-  }
-  return inputs;
-}
-
-/// [resolveOcrSessionInputs] 适配到共享工厂钩子的位置参数形态。
 Map<String, OcrTensor> _resolveOcrInputs(
   Map<String, OcrTensor> inputs,
   List<String> sessionInputNames,
@@ -98,11 +40,6 @@ Map<String, OcrTensor> _resolveOcrInputs(
   );
 }
 
-/// OCR 用的 flutter_onnxruntime 会话工厂：共享 [OrtOnnxSessionFactory] +
-/// manga-ocr 输入名对齐钩子 + `hibiki.ocr` 日志通道。
-///
-/// `availableAcceleratedProviders()`（BUG-2050 的探测语义边界）与带
-/// `onProviderResolved` 的 `createSession` 均由父类提供，注释见那里。
 class OrtOcrSessionFactory extends OrtOnnxSessionFactory {
   OrtOcrSessionFactory({OnnxRuntime? runtime})
       : super(
@@ -110,4 +47,23 @@ class OrtOcrSessionFactory extends OrtOnnxSessionFactory {
           resolveInputs: _resolveOcrInputs,
           logName: kOcrLogName,
         );
+}
+
+/// 顶层函数：在后台 isolate 里构造插件后端的 OCR 会话工厂
+/// （装进引擎 `ocrSessionFactoryBuilder`；只有顶层函数能跨 `Isolate.spawn`）。
+OcrSessionFactory buildOrtOcrFactory() => OrtOcrSessionFactory();
+
+/// 顶层函数：后台 isolate 引导——让 flutter_onnxruntime 的 MethodChannel 调用可从
+/// 该 isolate 发出。没有 token 就没有 MethodChannel：后面第一次 ORT 调用会以
+/// 「No implementation found」告终，而那条报错完全看不出根因在这里，所以留痕。
+void fushiOcrIsolateBootstrap(Object? token) {
+  if (token is RootIsolateToken) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+    return;
+  }
+  developer.log(
+    'manga OCR volume job started without a RootIsolateToken; '
+    'ORT MethodChannel calls from this isolate will fail',
+    name: kOcrLogName,
+  );
 }

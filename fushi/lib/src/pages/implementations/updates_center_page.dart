@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/utils.dart';
 

@@ -12,9 +12,9 @@ import '../helpers/part_corpus.dart';
 /// 路径排序拼接（同 [readSyncSettingsSchemaSource] 的理由：手写 part 清单实测会漏，
 /// 漏掉的 part 里负向断言真空通过）。
 const String _localLibraryHostShell =
-    'lib/src/sync/local_library_host_service.dart';
+    '../packages/fushi_engine/lib/sync/local_library_host_service.dart';
 const String kLocalLibraryHostPartDir =
-    'lib/src/sync/local_library_host_service';
+    '../packages/fushi_engine/lib/sync/local_library_host_service';
 
 /// 主库 + 磁盘上全部 `*.part.dart`（按路径排序）。
 List<String> localLibraryHostServiceFiles() => partCorpusFiles(

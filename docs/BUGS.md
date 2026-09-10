@@ -150,6 +150,7 @@
 | [BUG-2277](bugs/BUG-2277-ext-page-sentence.md) | ✅ | ✅ | 浏览器扩展查词/制卡不取页面所在句子 |
 | [BUG-2276](bugs/BUG-2276-macos-reader-panel-transparent-barrier.md) | ✅ | ✅ | macOS 阅读设置/导航抽屉打开后点正文不关闭 |
 | [BUG-2275](bugs/BUG-2275-cloudflare-challenge-proxy.md) | ✅ | ✅ | Cloudflare验证网页未继承手动代理 |
+| [BUG-2274](bugs/BUG-2274-cloud-book-title-double-sanitize.md) | ✅ | ✅ | 云盘远端书标题未反解：书架去重二次 sanitize 成 %253A，本地已有的书仍显示为远端待下载 |
 | [BUG-2273](bugs/BUG-2273-mihon-timeout-kills-other-requests.md) | ✅ | ✅ | 单个漫画源超时重启共享桥接并中断其它请求 |
 | [BUG-2272](bugs/BUG-2272-outbound-proxy-native-images.md) | ✅ | ✅ | 公网图片及原生网络链路未继承应用代理 |
 | [BUG-2270](bugs/BUG-2270-sidecar-ownership-record-failed-opaque.md) | ✅ | 🚧 | 刮削 sidecar 报「文件已写入，但所有权记录失败」但不给出真实异常，Cover Song Collection 三条无法定位根因 |

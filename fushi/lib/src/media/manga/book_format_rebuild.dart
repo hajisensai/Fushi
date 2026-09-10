@@ -36,17 +36,17 @@ import 'package:pdfrx/pdfrx.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
-import 'package:fushi/src/media/manga/manga_importer.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 
 /// PDF 逐页导出页图时的目标宽度（px）。比封面的 600 大得多：页图是**要拿去 OCR 再
 /// 查词**的，600px 的扫描页在识别端就是一团糊。

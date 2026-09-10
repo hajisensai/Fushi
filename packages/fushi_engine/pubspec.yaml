@@ -1,0 +1,54 @@
+name: fushi_engine
+resolution: workspace
+description: >-
+  Fushi 纯 Dart 引擎：互联 host 服务器（shelf）、配对/TLS、远程 OCR 作业、
+  漫画 OCR 算法层、视频下载管线、刮削/字幕搜索、ffmpeg CLI 后端。
+  同时被 Flutter app（fushi/）与无头服务端（packages/fushi_server）消费。
+publish_to: none
+
+# 本包 pubspec 不声明 flutter sdk：源码禁止 package:flutter / dart:ui / 任何
+# method-channel 插件 import（守卫 fushi/test/build/fushi_engine_purity_guard_test.dart）。
+# 依赖的 fushi_core / fushi_audio 等目前仍声明 flutter，所以解析依赖时需要
+# Flutter SDK 作为构建工具链；运行时二进制不含 Flutter（dart compile exe 是最终门）。
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+
+dependencies:
+  fushi_core:
+    path: ../fushi_core
+  fushi_audio:
+    path: ../fushi_audio
+  fushi_anki:
+    path: ../fushi_anki
+  fushi_dictionary:
+    path: ../fushi_dictionary
+  fushi_platform:
+    path: ../fushi_platform
+  fushi_torrent:
+    path: ../fushi_torrent
+  # 与 fushi/pubspec.yaml 钉同一 sha（OCR 与 ASR 共用 OnnxSessionFactory 抽象）。
+  fushi_asr_core:
+    git:
+      url: https://github.com/hajisensai/fushi-subtitles.git
+      path: packages/asr_core
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+  archive: ^3.6.1
+  basic_utils: ^5.7.0
+  collection: any
+  crypto: ^3.0.0
+  dio: ^5.1.1
+  drift: ">=2.33.0 <2.34.0"
+  ffi: ^2.1.3
+  html: ^0.15.2
+  html_unescape: ^2.0.0
+  http: ^1.2.0
+  image: ^4.3.0
+  meta: ^1.9.0
+  path: ^1.8.2
+  shelf: ^1.4.0
+  xml: ^6.3.0
+  youtube_explode_dart: ^2.3.6
+
+dev_dependencies:
+  lints: ^2.0.0
+  test: ^1.24.0

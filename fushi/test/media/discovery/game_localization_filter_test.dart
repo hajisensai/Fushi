@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/sources/shinnku_discovery_source.dart';
 
 /// BUG-1910：「gal下载缺少筛选生肉熟肉等标签」（用户 2026-08-28）。

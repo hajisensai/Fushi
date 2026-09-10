@@ -27,7 +27,7 @@ void main() {
   }
 
   test('字幕标签术语用「内封」而非「内嵌」（BUG-122）', () {
-    final String src = read('lib/src/media/video/video_subtitle_source.dart');
+    final String src = read('../packages/fushi_engine/lib/media/video/video_subtitle_source.dart');
     // embeddedSubtitleTrackLabel 生成的菜单标签前缀必须是「内封 N: 」（TODO-844
     // 后改用 parts.join，但前缀文案不变）。
     expect(

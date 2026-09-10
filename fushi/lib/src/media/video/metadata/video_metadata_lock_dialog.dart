@@ -6,7 +6,7 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_locked_fields.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 

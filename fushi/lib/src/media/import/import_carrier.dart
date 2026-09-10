@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 
 /// 一个待导入路径的**载体身份**：它到底是哪种东西，因而该交给哪个 importer。
 ///

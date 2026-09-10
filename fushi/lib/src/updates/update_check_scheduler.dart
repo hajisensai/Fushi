@@ -15,7 +15,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 
 /// 一次域检查。抛异常 = 这轮没查成（网络不通、源挂了），调度器吞掉并照常记时刻
 /// ——不记的话每个 tick 都会重试，网络一断就是一场对源站的连击。

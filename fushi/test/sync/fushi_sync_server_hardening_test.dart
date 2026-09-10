@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'fushi_sync_server_source_corpus.dart';

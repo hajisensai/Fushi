@@ -14,7 +14,7 @@ import 'package:fushi/src/mining/metadata/adapters/bangumi_adapter.dart';
 import 'package:fushi/src/mining/metadata/adapters/vndb_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 /// 一次搜索的结果：候选列表 + 各源失败原因（部分失败时用于给用户可读提示）。
 class GalgameScrapeSearchResult {

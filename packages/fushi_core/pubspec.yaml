@@ -6,14 +6,14 @@ publish_to: none
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: ">=3.41.6"
 
+# 零 Flutter：本包被无头服务端（packages/fushi_server，dart compile exe）消费，
+# 不得依赖 flutter sdk / 任何 method-channel 插件。sqlite3 原生库由各消费方自己
+# 装配（Flutter app 在 fushi/pubspec.yaml 声明 sqlite3_flutter_libs；服务端走
+# sqlite3 包的 build hook / 系统库）。
 dependencies:
-  flutter:
-    sdk: flutter
   drift: ">=2.33.0 <2.34.0"
   sqlite3: ">=3.4.0 <4.0.0"
-  sqlite3_flutter_libs: ^0.5.28
   path: ^1.8.2
 
 dev_dependencies:

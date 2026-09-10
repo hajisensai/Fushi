@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_model.dart';
 import 'audiobook_path_relocator.dart';
@@ -77,7 +76,7 @@ class SrtBookRepository {
       try {
         root = await AudiobookStorage.audiobooksRootDir();
       } catch (e) {
-        debugPrint(
+        fushiDebugPrint(
             '[fushi-audio] srt path repair skipped (no documents root): $e');
         return 0;
       }
@@ -113,7 +112,7 @@ class SrtBookRepository {
       rowsChanged++;
     }
     if (!relocator.stats.isEmpty) {
-      debugPrint('[fushi-audio] srt path repair: rows=$rowsChanged '
+      fushiDebugPrint('[fushi-audio] srt path repair: rows=$rowsChanged '
           '${relocator.stats} root=$root');
     }
     return rowsChanged;
@@ -133,7 +132,7 @@ class SrtBookRepository {
       if (decoded is! List) return null;
       paths = decoded.whereType<String>().toList();
     } catch (e) {
-      debugPrint('[fushi-audio] srt path repair: bad audioPathsJson for '
+      fushiDebugPrint('[fushi-audio] srt path repair: bad audioPathsJson for '
           '$uid: $e');
       return null;
     }

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart' show debugPrint, protected;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 走 [WebDavOps] 的路径式后端（WebDAV / 互联 client）共用的三件套：

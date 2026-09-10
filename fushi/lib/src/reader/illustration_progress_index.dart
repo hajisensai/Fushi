@@ -1,9 +1,9 @@
 import 'package:html/dom.dart' as html_dom;
 
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
-import 'package:fushi/src/stats/study_char_count.dart' show countStudyChars;
+import 'package:fushi_engine/stats/study_char_count.dart' show countStudyChars;
 
 /// 一张插图在书里的阅读位置：spine 章号 + 章内归一偏移。
 ///

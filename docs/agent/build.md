@@ -42,6 +42,13 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 > Google Drive 同步的 OAuth 凭据已写死进源码默认值（`lib/src/sync/google_drive_auth.dart`），构建无需再传 `--dart-define`。如需换凭据，改该文件的 `defaultValue` 或自行加 `--dart-define` 覆盖。
 
+## 无头服务端 fushi_server（Linux CLI + WebUI）
+
+- 源码 `packages/fushi_server/`（纯 Dart，依赖 `packages/fushi_engine`）；本机构建 `cd packages/fushi_server && dart build cli`，产物 `build/cli/<os>_<arch>/bundle/`（`bin/` 可执行 + `lib/` native asset）。**不要 `dart compile exe`**：sqlite3 是 native asset，单文件 exe 运行时打不开 DB。
+- CI：`build-multiplatform.yml` 的 linux job 在 Flutter Linux 构建后加跑 `dart build cli`，再把两块随包原生库放进 `bundle/lib/`：① `libfushi_torrent_ffi.so`（`native/fushi_torrent/build_linux_so.sh`：vcpkg manifest **静态链** libtorrent 2.0.11 + boost + openssl，overlay triplet `x64-linux-fpic`，ABI 校验同 `native-torrent-gate.yml`；目标机零运行库依赖）② `libonnxruntime.so` 1.22.0 CPU 版（与 `third_party/flutter_onnxruntime/linux` 同版本；CUDA 用户自换 GPU 包并配 `onnxruntime_library`）。随后用这份 `.so` 跑 `packages/fushi_torrent` 的 FFI 测试，再真进程冒烟：起 `serve`，断言 admin API 报 `backend=embedded` 且 17 语 ASR plan 无 error（= 两块库都真被 dlopen 了）。工件名 `fushi_server-linux-x64`。
+- 服务端找随包库的规则在 `packages/fushi_server/lib/src/native_libs.dart`：`<exe 同级>` → `<exe>/../lib/` → cwd；都没有就交给引擎按裸名走系统搜索路径。
+- 发布：`.github/workflows/release-server.yml`（**只有 `workflow_dispatch`**，通道 beta / formal），Linux（`ubuntu-22.04`，静态 `.so`）+ Windows（vcpkg DLL）两个包，各自真进程冒烟后由 publish job 发到 GitHub Release，tag `fushi-server-v<version>-beta.<seq>` / `fushi-server-v<version>`。版本取 `packages/fushi_server/pubspec.yaml` 的 `version:`（与 app 独立），序号仍是 `tool/release_sequence.sh`。**服务端 release 永远 `make_latest: false`，formal 也不例外**：app 稳定通道更新检查走 `releases/latest`，服务端包成为 Latest 会把五端 app 的更新判成「远端不比本机新」而停更。`tool/check_release_policy.ps1` 已把它纳入检查。没有安装包与自更新。安装、systemd、配置、admin API、上传协议见 [packages/fushi_server/README.md](../../packages/fushi_server/README.md)。
+
 ## 发布通道
 
 默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。

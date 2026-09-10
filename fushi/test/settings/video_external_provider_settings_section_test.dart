@@ -5,11 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
-import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
-import 'package:fushi/src/media/torrent/torznab_client.dart';
-import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
-import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/settings/settings_search.dart';

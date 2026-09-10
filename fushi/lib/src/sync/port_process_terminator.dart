@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:fushi/src/platform/desktop/windows_process_query.dart';
+import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 
 /// 监听某端口的进程信息（用于「端口被占用 → 一键结束占用进程」）。
 class PortListenerInfo {

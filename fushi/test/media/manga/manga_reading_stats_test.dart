@@ -1,8 +1,7 @@
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 守卫漫画的字数/页数换算（v60）：漫画此前 `charsRead` 恒 0，只记时长，统计页
 /// 永远显示 0 字。现在按已读页的 OCR 文本计字数、按已读页计页数，两个量纲各自
@@ -10,10 +9,10 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 /// 本函数是无状态换算，不再持去重集合。
 MokuroImage _page(List<String> lines) => MokuroImage(
       url: 'p.jpg',
-      size: const Size(800, 1200),
+      size: const MokuroSize(800, 1200),
       blocks: <MokuroBlock>[
         MokuroBlock(
-          rectangle: const Rect.fromLTRB(0, 0, 10, 10),
+          rectangle: const MokuroRect.fromLTRB(0, 0, 10, 10),
           isVertical: true,
           fontSize: 12,
           zIndex: 0,
@@ -33,7 +32,7 @@ void main() {
       expect(
         mangaPageCharCount(const MokuroImage(
           url: 'p.jpg',
-          size: Size(800, 1200),
+          size: MokuroSize(800, 1200),
           blocks: <MokuroBlock>[],
         )),
         0,

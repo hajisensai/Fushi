@@ -31,7 +31,17 @@ param(
     [string] $Description = 'Fushi',
 
     # 先确保 SimplySign 已连接（未连接时用 seed 自动登录）。
-    [switch] $AutoConnect
+    [switch] $AutoConnect,
+
+    # -Path 给目录时，递归收集其中的 .exe / .dll（用于给整个 bundle 补签）。
+    [switch] $Recurse,
+
+    # 跳过「已被他人有效签名」的文件。给整包补签时必须开：bundle 里混着微软的
+    # VC++ CRT 运行库，重签会把微软的签名换成我们的 —— 那是倒退不是补齐。
+    [switch] $SkipValidlySigned,
+
+    # 每批文件数。时间戳服务器对批量签名有限流，一次性甩几百个文件容易被拒。
+    [int] $BatchSize = 20
 )
 
 Set-StrictMode -Version Latest
@@ -74,28 +84,93 @@ Write-Step "有效期至: $($cert.NotAfter)  (剩余 $([int]($cert.NotAfter - (G
 # --- 2. 解析待签文件 ---------------------------------------------------------
 [string[]] $targets = @()
 foreach ($p in $Path) {
+    # 目录必须先单独判掉。`Get-ChildItem -Path <目录> -File` 会列出目录**里面**的
+    # 文件并排除目录本身，于是 PSIsContainer 永远为假、递归分支永远走不到 ——
+    # 表现是「给了目录却只签到顶层几个文件」，而且报成功。
+    if (Test-Path -LiteralPath $p -PathType Container) {
+        if (-not $Recurse) { throw "$p 是目录；要给整个目录补签请加 -Recurse。" }
+        # 也不能用 `-Recurse -Include '*.exe','*.dll'`：-Include 在路径不含通配符时
+        # 只对顶层生效，子目录的命中会被静默丢弃。改为递归取全部再按扩展名过滤。
+        $targets += (Get-ChildItem -LiteralPath $p -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.exe', '.dll' }).FullName
+        continue
+    }
     $resolved = Get-ChildItem -Path $p -File -ErrorAction SilentlyContinue
-    if (-not $resolved) { throw "找不到待签文件: $p" }
+    if (-not $resolved) { throw "找不到待签目标: $p" }
     $targets += $resolved.FullName
 }
-Write-Step "待签文件 $($targets.Count) 个"
+$targets = @($targets | Where-Object { $_ } | Select-Object -Unique)
+if ($targets.Count -eq 0) { throw "没有收集到任何待签文件。" }
+Write-Step "收集到 $($targets.Count) 个候选文件"
+
+# 分流：已被**他人**有效签名的跳过（微软 CRT、第三方带签 DLL）；
+# 未签名、或已由本证书签过的，都进待签队列（后者重签是幂等的）。
+[string[]] $toSign = @()
+[object[]] $skipped = @()
+if ($SkipValidlySigned) {
+    foreach ($t in $targets) {
+        $s = Get-AuthenticodeSignature -LiteralPath $t
+        if ($s.Status -eq 'Valid' -and $s.SignerCertificate -and
+            $s.SignerCertificate.Thumbprint -ne $Thumbprint) {
+            $skipped += [pscustomobject]@{ Path = $t; Signer = $s.SignerCertificate.Subject }
+        } else {
+            $toSign += $t
+        }
+    }
+    Write-Step "跳过 $($skipped.Count) 个已由他方有效签名的文件，待签 $($toSign.Count) 个"
+    foreach ($k in $skipped) {
+        Write-Host "    skip: $(Split-Path $k.Path -Leaf)  <- $($k.Signer)"
+    }
+} else {
+    $toSign = $targets
+    Write-Step "待签文件 $($toSign.Count) 个"
+}
+if ($toSign.Count -eq 0) {
+    Write-Step "没有需要签名的文件，结束。"
+    exit 0
+}
 
 # --- 3. 签名 -----------------------------------------------------------------
 [string] $signtool = Get-SignTool
 Write-Step "signtool: $signtool"
 
-& $signtool sign /sha1 $Thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /d $Description /v @targets
-if ($LASTEXITCODE -ne 0) { throw "signtool sign 失败，退出码 $LASTEXITCODE" }
+# 分批 + 重试。时间戳服务器（DigiCert 免费端点）对批量请求限流，一次甩几百个
+# 文件会中途拒绝；这类失败是间歇性的、且 signtool 只报一个笼统退出码。
+# 重试用递增退避，不是无脑循环 —— 真错（证书没挂上、文件被占用）会稳定复现，
+# 三次都失败就抛出去，不会把真问题拖成静默。
+[int] $batchNo = 0
+for ($i = 0; $i -lt $toSign.Count; $i += $BatchSize) {
+    $batch = @($toSign[$i..([math]::Min($i + $BatchSize - 1, $toSign.Count - 1))])
+    $batchNo++
+    [bool] $ok = $false
+    for ($attempt = 1; $attempt -le 3 -and -not $ok; $attempt++) {
+        & $signtool sign /sha1 $Thumbprint /fd SHA256 /tr $TimestampUrl /td SHA256 /d $Description $batch
+        if ($LASTEXITCODE -eq 0) {
+            $ok = $true
+        } else {
+            Write-Host "[sign] 批次 $batchNo 第 $attempt 次失败（退出码 $LASTEXITCODE）" -ForegroundColor Yellow
+            if ($attempt -lt 3) { Start-Sleep -Seconds (10 * $attempt) }
+        }
+    }
+    if (-not $ok) { throw "signtool sign 批次 $batchNo 连续 3 次失败。" }
+    Write-Step "批次 $batchNo 完成（$($batch.Count) 个文件，累计 $([math]::Min($i + $BatchSize, $toSign.Count))/$($toSign.Count)）"
+}
 
 # --- 4. 验证 -----------------------------------------------------------------
 # 判绿只认 verify 的退出码 + 每个文件的 Authenticode 状态。sign 成功不代表链完整：
 # 少装中间 CA 时 sign 照样 exit 0，verify 才会红。
+# 只验我们签过的那批；跳过的文件本来就不该带我们的签名。
 Write-Step "验证签名与证书链…"
-& $signtool verify /pa /v @targets
+& $signtool verify /pa @toSign
 if ($LASTEXITCODE -ne 0) { throw "signtool verify 失败，退出码 $LASTEXITCODE（多半是中间 CA 缺失或时间戳未取到）" }
+[string[]] $targetsToReport = $toSign
 
+# 文件多时逐个打全量详情会把日志淹掉，但失败的必须点名。
+# 判据对每个文件都跑，只是通过的按单行汇报。
+[bool] $verbosePerFile = ($targetsToReport.Count -le 3)
 [bool] $allValid = $true
-foreach ($t in $targets) {
+[int] $okCount = 0
+foreach ($t in $targetsToReport) {
     $sig = Get-AuthenticodeSignature -LiteralPath $t
     [string] $hash = (Get-FileHash -LiteralPath $t -Algorithm SHA256).Hash
     [bool] $hasTs = $null -ne $sig.TimeStamperCertificate
@@ -109,21 +184,25 @@ foreach ($t in $targets) {
     [bool] $isOurCert  = ($null -ne $sig.SignerCertificate) -and
                          ($sig.SignerCertificate.Thumbprint -eq $Thumbprint)
     [bool] $ok = ($sig.Status -eq 'Valid') -and $hasTs -and $isEmbedded -and $isOurCert
-    if (-not $ok) { $allValid = $false }
+    if (-not $ok) { $allValid = $false } else { $okCount++ }
 
-    Write-Host ""
-    Write-Host "  文件      : $t"
-    Write-Host "  状态      : $($sig.Status)$(if (-not $ok) { '   <== 判定失败' })"
-    Write-Host "  签名类型  : $($sig.SignatureType)$(if (-not $isEmbedded) { '   <== 期望 Authenticode（嵌入式）' })"
-    Write-Host "  签名者    : $($sig.SignerCertificate.Subject)"
-    Write-Host "  签名者指纹: $($sig.SignerCertificate.Thumbprint)$(if (-not $isOurCert) { "   <== 期望 $Thumbprint" })"
-    Write-Host "  时间戳    : $(if ($hasTs) { $sig.TimeStamperCertificate.Subject } else { '缺失 —— 证书到期后签名将失效！' })"
-    Write-Host "  SHA256    : $hash"
-    Write-Host "  大小      : $((Get-Item -LiteralPath $t).Length)"
+    if ($verbosePerFile -or -not $ok) {
+        Write-Host ""
+        Write-Host "  文件      : $t"
+        Write-Host "  状态      : $($sig.Status)$(if (-not $ok) { '   <== 判定失败' })"
+        Write-Host "  签名类型  : $($sig.SignatureType)$(if (-not $isEmbedded) { '   <== 期望 Authenticode（嵌入式）' })"
+        Write-Host "  签名者    : $($sig.SignerCertificate.Subject)"
+        Write-Host "  签名者指纹: $($sig.SignerCertificate.Thumbprint)$(if (-not $isOurCert) { "   <== 期望 $Thumbprint" })"
+        Write-Host "  时间戳    : $(if ($hasTs) { $sig.TimeStamperCertificate.Subject } else { '缺失 —— 证书到期后签名将失效！' })"
+        Write-Host "  SHA256    : $hash"
+        Write-Host "  大小      : $((Get-Item -LiteralPath $t).Length)"
+    } else {
+        Write-Host "  OK  $(Split-Path $t -Leaf)"
+    }
 }
 
 if (-not $allValid) { throw "存在状态非 Valid 或缺时间戳的文件，判定失败。" }
 
 Write-Host ""
-Write-Step "全部 $($targets.Count) 个文件签名并验证通过。"
+Write-Step "签名并验证通过 $okCount 个文件$(if ($skipped.Count -gt 0) { "，另跳过 $($skipped.Count) 个他方已签名文件" })。"
 exit 0

@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat;
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/source_guard.dart';

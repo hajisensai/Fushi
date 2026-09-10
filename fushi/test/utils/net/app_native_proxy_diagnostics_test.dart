@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// BUG-2381：Aidoku 的 wasm host 是 Rust `reqwest`，https 请求经 `hyper-util` 的
 /// CONNECT 隧道打进本地中继。两件事在这条链上必须成立，而既有中继测试都用 Dart

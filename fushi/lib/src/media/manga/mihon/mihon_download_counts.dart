@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 扩展仓库索引本身**没有下载量字段**（keiyoushi 的 `index.pb` / `index.json`、
 /// Aidoku 的 `index.min.json` 都没有）。唯一的公开热度真相源是 GitHub Release

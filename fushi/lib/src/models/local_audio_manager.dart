@@ -5,11 +5,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:fushi/src/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi_engine/models/local_audio_db_entry.dart';
+export 'package:fushi_engine/models/local_audio_db_entry.dart';
 
 /// 选中的文件不是一个可用的本地音频源库（不是 Yomitan「本地音频服务器」SQLite，
 /// 或库里没有任何音频）。[LocalAudioManager.importFile] 在把文件收进库前抛出，
@@ -26,55 +28,6 @@ class InvalidLocalAudioDbException implements Exception {
       '($sourcePath)';
 }
 
-class LocalAudioDbEntry {
-  const LocalAudioDbEntry({
-    required this.path,
-    required this.displayName,
-    this.enabled = false,
-    this.sources = const <LocalAudioSourcePref>[],
-  });
-
-  factory LocalAudioDbEntry.fromJson(Map<String, dynamic> json) =>
-      LocalAudioDbEntry(
-        path: json['path'] as String? ?? '',
-        displayName: json['displayName'] as String? ?? '',
-        enabled: json['enabled'] as bool? ?? true,
-        sources: (json['sources'] as List<dynamic>?)
-                ?.map((dynamic e) =>
-                    LocalAudioSourcePref.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            const <LocalAudioSourcePref>[],
-      );
-
-  final String path;
-  final String displayName;
-  final bool enabled;
-
-  /// 库内子来源偏好（优先级序，首=最高）。空=未配置 → 查询退回 DB 自然序、全启用。
-  final List<LocalAudioSourcePref> sources;
-
-  LocalAudioDbEntry copyWith({
-    String? path,
-    String? displayName,
-    bool? enabled,
-    List<LocalAudioSourcePref>? sources,
-  }) =>
-      LocalAudioDbEntry(
-        path: path ?? this.path,
-        displayName: displayName ?? this.displayName,
-        enabled: enabled ?? this.enabled,
-        sources: sources ?? this.sources,
-      );
-
-  Map<String, dynamic> toJson() => {
-        'path': path,
-        'displayName': displayName,
-        'enabled': enabled,
-        if (sources.isNotEmpty)
-          'sources':
-              sources.map((LocalAudioSourcePref s) => s.toJson()).toList(),
-      };
-}
 
 class LocalAudioManager {
   LocalAudioManager({

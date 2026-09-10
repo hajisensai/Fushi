@@ -13,7 +13,7 @@
 /// 判据只能有一个——现在它在泛型核心里，Jimaku 与 registry 候选共用同一份。
 library;
 
-import 'package:fushi/src/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 
 /// 从 Jimaku 文件列表构建的按集索引（[SubtitleEpisodeIndex] 的 `JimakuFile` 实例）。

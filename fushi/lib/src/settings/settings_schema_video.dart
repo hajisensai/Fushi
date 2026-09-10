@@ -10,11 +10,9 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
-import 'package:fushi/src/media/video/scraper/scrape_identifier_words.dart';
+import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -23,6 +21,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
 
 /// 视频设置唯一真相源（阶段 B）：每个条目声明一次，同时服务两个宿主——
 /// 全局设置页（本 destination 的 sections 直接渲染；无 host 时读写纯 pref、下次

@@ -4,9 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_manager.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi/src/utils/net/github_mirrors.dart';
-import 'package:fushi/src/utils/net/app_user_agent.dart';
+import 'package:fushi_engine/utils/net/app_user_agent.dart';
 
 /// Anime4K（bloc97/Anime4K）GLSL 着色器一键下载：定义官方推荐预设、生成多镜像
 /// 下载 URL、把一组 `.glsl` 拉到 [mpvShaderDirectory] 供视频页勾选启用。

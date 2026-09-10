@@ -8,22 +8,15 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
+import 'package:fushi_engine/sync/sync_backend_type.dart';
+export 'package:fushi_engine/sync/sync_backend_type.dart';
 
-enum SyncBackendType {
-  googleDrive,
-  fushiServer,
-  webDav,
-  oneDrive,
-  dropbox,
-  ftp,
-  sftp,
-}
 
 class SyncBackendError implements Exception {
   SyncBackendError(this.message, {this.isRetryable = false});

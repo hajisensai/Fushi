@@ -5,7 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_manager.dart' show kSyncBookTagsAssetName;
 import 'package:fushi/src/sync/sync_orchestrator.dart'
@@ -15,9 +15,9 @@ import 'package:fushi/src/sync/sync_orchestrator.dart'
         parseTagSidecar,
         parseBookCssSidecar;
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1165: cloud per-book folder tags.json sidecar round-trip + rebuild.

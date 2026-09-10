@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart' show kChapterCharCountCaliber;
+import 'package:fushi_engine/epub/epub_book.dart' show kChapterCharCountCaliber;
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show chaptersJsonCharCaliberIsCurrent;
 

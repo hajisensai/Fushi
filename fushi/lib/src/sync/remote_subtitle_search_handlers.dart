@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
 /// 浏览器扩展「查字幕」桥（Side Panel → server → 全部已配置的在线字幕来源）的共享
 /// handler 逻辑。与 [buildRemoteDictionaryLookupResponse] 同范式：纯逻辑（已解析

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
-import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/utils.dart';

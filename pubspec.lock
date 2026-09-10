@@ -50,7 +50,7 @@ packages:
     source: hosted
     version: "1.0.1"
   archive:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: archive
       sha256: cb6a278ef2dbb298455e1a713bda08524a175630ec643a242c399c932a0a1f7d
@@ -919,6 +919,15 @@ packages:
       path: "packages/asr_core"
       ref: "8820d3862297f42c99e1f0d9f440a9dddccee0ac"
       resolved-ref: "8820d3862297f42c99e1f0d9f440a9dddccee0ac"
+      url: "https://github.com/hajisensai/fushi-subtitles.git"
+    source: git
+    version: "0.1.0"
+  fushi_asr_onnx_ffi:
+    dependency: transitive
+    description:
+      path: "packages/asr_onnx_ffi"
+      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      resolved-ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"

@@ -1,13 +1,10 @@
 import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import '../../../helpers/source_guard.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 
 /// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（MAL 搜索 + AniList + TMDB），
 /// 来源选择不随代理状态分叉降级。

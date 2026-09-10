@@ -7,10 +7,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:fushi/src/models/local_audio_source_pref.dart';
-import 'package:fushi/src/sync/local_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show AudiobookStorage, installAudiobookStoragePlatform;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -595,10 +597,13 @@ void main() {
           return null;
         },
       );
+      // 平台兜底（getApplicationDocumentsDirectory → 上面的 mock）现在由重文件装配。
+      installAudiobookStoragePlatform();
     });
 
     tearDown(() async {
       await db.close();
+      AudiobookStorage.documentsRootResolver = null;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),

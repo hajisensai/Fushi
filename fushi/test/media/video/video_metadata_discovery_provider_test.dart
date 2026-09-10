@@ -1,17 +1,15 @@
 import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
-import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/mal_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 
 void main() {
   test(

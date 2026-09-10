@@ -6,18 +6,18 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/media_extensions.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -28,6 +28,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
+import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 
 // 集数解析下沉后的源兼容出口（订阅聚合与既有测试从本文件 import 它）。
 export 'package:fushi/src/media/video/download/video_resource_version_groups.dart'
@@ -111,6 +112,30 @@ class VideoDiscoverySubscriptionSelection {
   final StrictVideoSubscriptionFilter filter;
   final int? startAfterEpisode;
 }
+
+/// 订阅交给已配对 host 跑（host 自己搜、自己下到自己的库）。没有本地落地源
+/// （`MediaSourceRow`）这一维——落点是 host 的下载目录。
+class VideoDiscoveryRemoteSubscriptionSelection {
+  const VideoDiscoveryRemoteSubscriptionSelection({
+    required this.target,
+    required this.media,
+    required this.resource,
+    required this.filter,
+    required this.subtitlePolicy,
+    this.startAfterEpisode,
+  });
+
+  final HostSubscriptionTarget target;
+  final VideoMediaReference media;
+  final VideoResourceCandidate resource;
+  final StrictVideoSubscriptionFilter filter;
+  final VideoDownloadSubtitlePolicy subtitlePolicy;
+  final int? startAfterEpisode;
+}
+
+typedef VideoDiscoveryRemoteSubscriptionSubmit = Future<void> Function(
+  VideoDiscoveryRemoteSubscriptionSelection selection,
+);
 
 enum SubtitleInstallTarget { activeTask, existingVideo, directory }
 
@@ -575,6 +600,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
     required this.onSubmit,
     this.defaultSourceId,
     this.onConfigureBackend,
+    this.remoteTargets = const <HostSubscriptionTarget>[],
+    this.onRemoteSubmit,
     super.key,
   });
 
@@ -584,6 +611,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
   final int? defaultSourceId;
   final VideoDiscoverySubscriptionSubmit onSubmit;
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+  final List<HostSubscriptionTarget> remoteTargets;
+  final VideoDiscoveryRemoteSubscriptionSubmit? onRemoteSubmit;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -595,6 +624,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
             sources: sources,
             defaultSourceId: defaultSourceId,
             onSubscriptionSubmit: onSubmit,
+            remoteTargets: remoteTargets,
+            onRemoteSubscriptionSubmit: onRemoteSubmit,
             onConfigureBackend: onConfigureBackend,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
@@ -612,6 +643,8 @@ class VideoResourceSearchSurface extends StatefulWidget {
     this.defaultSourceId,
     this.onSubmit,
     this.onSubscriptionSubmit,
+    this.remoteTargets = const <HostSubscriptionTarget>[],
+    this.onRemoteSubscriptionSubmit,
     this.onConfigureBackend,
     this.onClose,
     this.pageMode = false,
@@ -624,6 +657,11 @@ class VideoResourceSearchSurface extends StatefulWidget {
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit? onSubmit;
   final VideoDiscoverySubscriptionSubmit? onSubscriptionSubmit;
+
+  /// 宣告支持内容订阅的已配对 host（只在订阅模式有意义）。非空时多出「运行位置」
+  /// 下拉：本机 / 某台 host；没有本地落地源时默认落到第一台 host。
+  final List<HostSubscriptionTarget> remoteTargets;
+  final VideoDiscoveryRemoteSubscriptionSubmit? onRemoteSubscriptionSubmit;
 
   /// 见 [VideoDownloadBackendSetupPrompt]：提交失败在「后端没配好 / 后端运行时缺失」
   /// 时的可执行出口。null = 宿主没接线，失败态只报事实不给按钮。
@@ -688,6 +726,10 @@ class _VideoResourceSearchSurfaceState
   bool _strictConfirmed = true;
   int _generation = 0;
 
+  /// 订阅运行位置：null = 本机。
+  HostSubscriptionTarget? _remoteTarget;
+  bool get _remote => _remoteTarget != null;
+
   @override
   void initState() {
     super.initState();
@@ -706,6 +748,11 @@ class _VideoResourceSearchSurfaceState
     )
         ? widget.defaultSourceId
         : widget.sources.firstOrNull?.id;
+    if (widget.subscription &&
+        widget.sources.isEmpty &&
+        widget.remoteTargets.isNotEmpty) {
+      _remoteTarget = widget.remoteTargets.first;
+    }
     if (widget.initialItem != null) unawaited(_search());
   }
 
@@ -843,6 +890,7 @@ class _VideoResourceSearchSurfaceState
   }
 
   Future<void> _submit() async {
+    if (_remote) return _submitRemote();
     final VideoMediaReference? media = _media;
     final MediaSourceRow? source = _source;
     // 目标集在任何 await 之前定死：提交期间搜索结果会被刷新重建，跨 await 重读
@@ -916,6 +964,61 @@ class _VideoResourceSearchSurfaceState
       // 设置页可跳；唯一确定有意义的动作是「按用户修好外部条件后再来一次」。
       _showSubmitFailure(
         error.message,
+        SnackBarAction(label: t.retry, onPressed: () => unawaited(_submit())),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// 订阅交给 host：不经本地后端，失败原因来自 host（provider 不在 / 没配后端 /
+  /// 网络），按 host 的结构化 reason 给文案。
+  Future<void> _submitRemote() async {
+    final HostSubscriptionTarget? target = _remoteTarget;
+    final VideoMediaReference? media = _media;
+    final VideoResourceCandidate? resource = _selected;
+    final VideoDiscoveryRemoteSubscriptionSubmit? submit =
+        widget.onRemoteSubscriptionSubmit;
+    if (target == null ||
+        media == null ||
+        resource == null ||
+        submit == null ||
+        _submitting) {
+      return;
+    }
+    final StrictVideoSubscriptionFilter? filter =
+        deriveStrictVideoSubscriptionFilter(resource);
+    if (filter == null || !_strictConfirmed) return;
+    final String providerId = persistedVideoResourceProviderId(resource);
+    if (!target.supportsResourceProvider(providerId)) {
+      _showSubmitFailure(
+        t.subscription_remote_provider_unavailable(provider: providerId),
+        null,
+      );
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      await submit(VideoDiscoveryRemoteSubscriptionSelection(
+        target: target,
+        media: media,
+        resource: resource,
+        filter: filter,
+        subtitlePolicy: _subtitlePolicy,
+        startAfterEpisode: media.mediaKind == VideoMetadataMediaKind.movie
+            ? null
+            : int.tryParse(_startAfterController.text.trim()),
+      ));
+      if (mounted) widget.onClose?.call();
+    } on HostSubscriptionException catch (error) {
+      final String message = switch (error.reason) {
+        'provider_unavailable' =>
+          t.subscription_remote_provider_unavailable(provider: providerId),
+        'unsupported' => t.subscription_remote_unsupported,
+        _ => error.detail ?? error.code,
+      };
+      _showSubmitFailure(
+        message,
         SnackBarAction(label: t.retry, onPressed: () => unawaited(_submit())),
       );
     } finally {
@@ -1256,7 +1359,8 @@ class _VideoResourceSearchSurfaceState
       !_loading &&
       !_submitting &&
       _selectedCandidates.isNotEmpty &&
-      _source != null &&
+      // 远端下载目标不需要本地 source：任务整条交给对端执行。
+      (_source != null || _remote) &&
       (!widget.subscription || (filter != null && _strictConfirmed));
 
   Widget _buildResults() {
@@ -1401,15 +1505,50 @@ class _VideoResourceSearchSurfaceState
 
   Widget _buildOptions(StrictVideoSubscriptionFilter? filter) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool showRunLocation =
+        widget.subscription && widget.remoteTargets.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (showRunLocation) ...<Widget>[
+          DropdownButtonFormField<HostSubscriptionTarget?>(
+            key: const ValueKey<String>('video-subscription-run-location'),
+            initialValue: _remoteTarget,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: t.subscription_run_location,
+            ),
+            items: <DropdownMenuItem<HostSubscriptionTarget?>>[
+              if (widget.sources.isNotEmpty)
+                DropdownMenuItem<HostSubscriptionTarget?>(
+                  value: null,
+                  child: Text(t.subscription_run_local),
+                ),
+              for (final HostSubscriptionTarget target in widget.remoteTargets)
+                DropdownMenuItem<HostSubscriptionTarget?>(
+                  value: target,
+                  child: Text(
+                    t.subscription_run_remote(device: target.label),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: _submitting
+                ? null
+                : (HostSubscriptionTarget? value) =>
+                    setState(() => _remoteTarget = value),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+        ],
         Row(
           // 左侧带 helperText、右侧没有：默认的居中对齐会把右侧输入框往下挤
           // 半个 helper 高（两个框底边错位）。顶对齐让两个框同高齐边，helper
           // 自然挂在左框下方。
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            // 交给 host 跑时落点是 host 的下载目录，本地来源不参与。
+            if (!_remote)
             Expanded(
               child: DropdownButtonFormField<int>(
                 key: const ValueKey<String>('video-resource-source'),
@@ -1439,7 +1578,7 @@ class _VideoResourceSearchSurfaceState
                     : (int? value) => setState(() => _sourceId = value),
               ),
             ),
-            SizedBox(width: tokens.spacing.gap),
+            if (!_remote) SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: DropdownButtonFormField<VideoDownloadSubtitlePolicy>(
                 key: const ValueKey<String>('video-resource-subtitle-policy'),

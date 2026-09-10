@@ -11,7 +11,7 @@ import 'package:integration_test/integration_test.dart';
 import 'support/test_app_launcher.dart';
 import 'package:fushi/main.dart' as app;
 import 'package:fushi/media.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'

@@ -24,6 +24,8 @@ workspace:
   - packages/fushi_audio
   - packages/fushi_core
   - packages/fushi_dictionary
+  - packages/fushi_engine
+  - packages/fushi_server
   - packages/fushi_platform
   - packages/fushi_torrent
   - packages/gamepads_android_stub
@@ -146,6 +148,23 @@ dependency_overrides:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
       ref: 8820d3862297f42c99e1f0d9f440a9dddccee0ac
+  # fushi_asr_onnx_ffi（仅无头 fushi_server 依赖）把 archive 钉成 ^4.0.0，本仓其余
+  # 全部钉 ^3.6.1；pub workspace 只解析一次，两者无法共存。
+  #
+  # 往上升不是选项：archive 4 移除了 `package:archive/archive_io.dart`（本仓 12+ 个
+  # 文件在用）并改掉了 `ArchiveFile.content`，实测迁移面 76 个文件——为一个包把全仓
+  # 拖去做这次迁移不成比例。
+  #
+  # 往下钉需要一行兼容补丁：上游整个包只有三处 archive API，其中
+  # `ort_provisioning.dart` 的 `entry.readBytes()` 是 4.x 专有（实测编译失败：
+  # "The method 'readBytes' isn't defined for the type 'ArchiveFile'"），3.x 的等价
+  # 物是 `entry.content`。补丁在
+  # `ci/patches/git/fushi-subtitles-<sha>/`，由 `ci/apply-patches.sh` 打进 pub-cache。
+  #
+  # 这是上游约束过紧的兼容层，不是本仓缺陷。清理条件：上游把那行换成 3/4 通吃的
+  # 写法、或把约束放宽成 `>=3.6.1 <5.0.0`——届时删掉这条 override 与补丁目录。
+  # sha 一变补丁自动跳过并告警，不会静默失效。
+  archive: ^3.6.1
 
 # Melos 7 的配置位置就是这里（7.0 起 melos.yaml 被废弃）。包列表不再重复声明：
 # 成员由上面的 workspace: 决定，melos 直接读它。

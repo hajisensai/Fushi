@@ -1,18 +1,17 @@
 library;
 
 import 'package:flutter/foundation.dart';
-
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_merge.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/scraper/title_normalizer.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 
 /// 发现页的生产聚合服务。

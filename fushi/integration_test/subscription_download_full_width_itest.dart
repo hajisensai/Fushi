@@ -8,10 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/test_app_launcher.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'

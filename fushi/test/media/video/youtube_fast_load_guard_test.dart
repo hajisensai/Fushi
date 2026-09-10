@@ -21,7 +21,7 @@ void main() {
   setUpAll(() {
     launchSrc = read('lib/src/media/video/stream_video_launch.dart');
     pageSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
-    resolverSrc = read('lib/src/media/video/youtube_source_resolver.dart');
+    resolverSrc = read('../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart');
   });
 
   test('① 快解析 gate：buildStreamVideoLaunch 的 YouTube 分支用 withCaptions:false',

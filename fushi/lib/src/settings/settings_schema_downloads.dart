@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';

@@ -36,20 +36,20 @@ import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
-import 'package:fushi/src/sync/pairing/fushi_pair_v2_client.dart';
-import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
-import 'package:fushi/src/sync/pairing/discovered_pairing_probe.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_v2_client.dart';
+import 'package:fushi_engine/sync/pairing/fushi_ping_client.dart';
+import 'package:fushi_engine/sync/pairing/discovered_pairing_probe.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
-import 'package:fushi/src/sync/tls/fushi_pinning_http.dart'
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart'
     show fingerprintEquals;
-import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
+import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -71,7 +71,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），

@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/video/download/video_download_organizer.dart';
-import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/download/video_download_organizer.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:path/path.dart' as p;
 
 /// 本机侧根目录，按**当前平台**给。

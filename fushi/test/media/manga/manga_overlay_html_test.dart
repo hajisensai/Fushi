@@ -1,26 +1,25 @@
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 MokuroImage _pageWithTwoBlocks() {
   return const MokuroImage(
     url: 'p001.jpg',
-    size: Size(1000, 2000),
+    size: MokuroSize(1000, 2000),
     blocks: <MokuroBlock>[
       MokuroBlock(
-        rectangle: Rect.fromLTWH(100, 200, 300, 400),
+        rectangle: MokuroRect.fromLTWH(100, 200, 300, 400),
         isVertical: true,
         fontSize: 32,
         zIndex: 0,
         lines: <String>['一行目', '二行目'],
       ),
       MokuroBlock(
-        rectangle: Rect.fromLTWH(500, 600, 200, 100),
+        rectangle: MokuroRect.fromLTWH(500, 600, 200, 100),
         isVertical: false,
         fontSize: 24,
         zIndex: 1,
@@ -90,10 +89,10 @@ void main() {
       // 命中区域塌缩到原点点框全 miss。须落地非零下限（3cqi）。
       const MokuroImage page = MokuroImage(
         url: 'p.jpg',
-        size: Size(1000, 1000),
+        size: MokuroSize(1000, 1000),
         blocks: <MokuroBlock>[
           MokuroBlock(
-            rectangle: Rect.fromLTWH(0, 0, 500, 500),
+            rectangle: MokuroRect.fromLTWH(0, 0, 500, 500),
             isVertical: false,
             fontSize: 0, // ← 缺字段容错回退
             zIndex: 0,
@@ -127,10 +126,10 @@ void main() {
     test('HTML 特殊字符转义（< > & 不破坏结构）', () {
       const MokuroImage page = MokuroImage(
         url: 'p.jpg',
-        size: Size(100, 100),
+        size: MokuroSize(100, 100),
         blocks: <MokuroBlock>[
           MokuroBlock(
-            rectangle: Rect.fromLTWH(0, 0, 10, 10),
+            rectangle: MokuroRect.fromLTWH(0, 0, 10, 10),
             isVertical: false,
             fontSize: 10,
             zIndex: 0,
@@ -150,38 +149,38 @@ void main() {
       // 「大丈夫だよな?」被拆成注音 + 三个正文列。
       const MokuroImage page = MokuroImage(
         url: 'page-000003.jpg',
-        size: Size(1170, 1600),
+        size: MokuroSize(1170, 1600),
         blocks: <MokuroBlock>[
           MokuroBlock(
-            rectangle: Rect.fromLTRB(288, 565, 309, 675),
+            rectangle: MokuroRect.fromLTRB(288, 565, 309, 675),
             isVertical: true,
             fontSize: 21,
             zIndex: 0,
             lines: <String>['だいじょうぶ'],
           ),
           MokuroBlock(
-            rectangle: Rect.fromLTRB(250, 561, 288, 687),
+            rectangle: MokuroRect.fromLTRB(250, 561, 288, 687),
             isVertical: true,
             fontSize: 37,
             zIndex: 1,
             lines: <String>['大丈夫'],
           ),
           MokuroBlock(
-            rectangle: Rect.fromLTRB(205, 565, 240, 687),
+            rectangle: MokuroRect.fromLTRB(205, 565, 240, 687),
             isVertical: true,
             fontSize: 34,
             zIndex: 2,
             lines: <String>['だよな'],
           ),
           MokuroBlock(
-            rectangle: Rect.fromLTRB(164, 644, 177, 683),
+            rectangle: MokuroRect.fromLTRB(164, 644, 177, 683),
             isVertical: true,
             fontSize: 22,
             zIndex: 3,
             lines: <String>['?'],
           ),
           MokuroBlock(
-            rectangle: Rect.fromLTRB(322, 560, 360, 686),
+            rectangle: MokuroRect.fromLTRB(322, 560, 360, 686),
             isVertical: true,
             fontSize: 34,
             zIndex: 4,
@@ -223,24 +222,24 @@ void main() {
     test('横排相邻行合句但在强句末停止', () {
       const MokuroImage page = MokuroImage(
         url: 'horizontal.jpg',
-        size: Size(1000, 1000),
+        size: MokuroSize(1000, 1000),
         blocks: <MokuroBlock>[
           MokuroBlock(
-            rectangle: Rect.fromLTWH(100, 100, 120, 30),
+            rectangle: MokuroRect.fromLTWH(100, 100, 120, 30),
             isVertical: false,
             fontSize: 30,
             zIndex: 0,
             lines: <String>['今日は'],
           ),
           MokuroBlock(
-            rectangle: Rect.fromLTWH(100, 138, 100, 30),
+            rectangle: MokuroRect.fromLTWH(100, 138, 100, 30),
             isVertical: false,
             fontSize: 30,
             zIndex: 1,
             lines: <String>['晴れ。'],
           ),
           MokuroBlock(
-            rectangle: Rect.fromLTWH(100, 176, 100, 30),
+            rectangle: MokuroRect.fromLTWH(100, 176, 100, 30),
             isVertical: false,
             fontSize: 30,
             zIndex: 2,
@@ -292,7 +291,7 @@ void main() {
   group('mangaEffectiveTextRegions', () {
     test('横排从左到右、竖排从上到下拆字符，并保留 UTF-16 偏移', () {
       const MokuroBlock horizontal = MokuroBlock(
-        rectangle: Rect.fromLTWH(10, 20, 60, 10),
+        rectangle: MokuroRect.fromLTWH(10, 20, 60, 10),
         isVertical: false,
         fontSize: 10,
         zIndex: 0,
@@ -300,14 +299,14 @@ void main() {
       );
       final List<MangaOcrTextRegion> horizontalRegions =
           mangaEffectiveTextRegions(horizontal);
-      expect(horizontalRegions.map((r) => r.rectangle).toList(), <Rect>[
-        const Rect.fromLTWH(10, 20, 20, 10),
-        const Rect.fromLTWH(30, 20, 20, 10),
-        const Rect.fromLTWH(50, 20, 20, 10),
+      expect(horizontalRegions.map((r) => r.rectangle).toList(), <MokuroRect>[
+        const MokuroRect.fromLTWH(10, 20, 20, 10),
+        const MokuroRect.fromLTWH(30, 20, 20, 10),
+        const MokuroRect.fromLTWH(50, 20, 20, 10),
       ]);
 
       const MokuroBlock vertical = MokuroBlock(
-        rectangle: Rect.fromLTWH(80, 30, 12, 60),
+        rectangle: MokuroRect.fromLTWH(80, 30, 12, 60),
         isVertical: true,
         fontSize: 10,
         zIndex: 0,
@@ -315,10 +314,10 @@ void main() {
       );
       final List<MangaOcrTextRegion> verticalRegions =
           mangaEffectiveTextRegions(vertical);
-      expect(verticalRegions.map((r) => r.rectangle).toList(), <Rect>[
-        const Rect.fromLTWH(80, 30, 12, 20),
-        const Rect.fromLTWH(80, 50, 12, 20),
-        const Rect.fromLTWH(80, 70, 12, 20),
+      expect(verticalRegions.map((r) => r.rectangle).toList(), <MokuroRect>[
+        const MokuroRect.fromLTWH(80, 30, 12, 20),
+        const MokuroRect.fromLTWH(80, 50, 12, 20),
+        const MokuroRect.fromLTWH(80, 70, 12, 20),
       ]);
       expect(verticalRegions.first.utf16Start, 0);
       expect(verticalRegions.first.utf16End, 2,
@@ -328,7 +327,7 @@ void main() {
 
     test('多列竖排按右到左分列，lines_coords 优先使用真实行框', () {
       const MokuroBlock fallback = MokuroBlock(
-        rectangle: Rect.fromLTWH(10, 20, 40, 100),
+        rectangle: MokuroRect.fromLTWH(10, 20, 40, 100),
         isVertical: true,
         fontSize: 10,
         zIndex: 0,
@@ -337,12 +336,12 @@ void main() {
       final List<MangaOcrTextRegion> fallbackRegions =
           mangaEffectiveTextRegions(fallback);
       expect(
-          fallbackRegions[0].rectangle, const Rect.fromLTWH(30, 20, 20, 100));
+          fallbackRegions[0].rectangle, const MokuroRect.fromLTWH(30, 20, 20, 100));
       expect(
-          fallbackRegions[1].rectangle, const Rect.fromLTWH(10, 20, 20, 100));
+          fallbackRegions[1].rectangle, const MokuroRect.fromLTWH(10, 20, 20, 100));
 
       const MokuroBlock withCoordinates = MokuroBlock(
-        rectangle: Rect.fromLTWH(0, 0, 100, 100),
+        rectangle: MokuroRect.fromLTWH(0, 0, 100, 100),
         isVertical: false,
         fontSize: 10,
         zIndex: 0,
@@ -359,9 +358,9 @@ void main() {
       final List<MangaOcrTextRegion> coordinateRegions =
           mangaEffectiveTextRegions(withCoordinates);
       expect(
-          coordinateRegions[0].rectangle, const Rect.fromLTWH(20, 30, 30, 20));
+          coordinateRegions[0].rectangle, const MokuroRect.fromLTWH(20, 30, 30, 20));
       expect(
-          coordinateRegions[1].rectangle, const Rect.fromLTWH(50, 30, 30, 20));
+          coordinateRegions[1].rectangle, const MokuroRect.fromLTWH(50, 30, 30, 20));
     });
   });
 
@@ -407,7 +406,7 @@ void main() {
     test('webtoon → .manga-page div 不内联 width（宽由 style 块 width:100vw 给）', () {
       // 用无 OCR 框的页：OCR 框自带 width:% 会干扰「div 是否内联 width」的判定。
       const MokuroImage blank = MokuroImage(
-          url: 'p.jpg', size: Size(800, 1200), blocks: <MokuroBlock>[]);
+          url: 'p.jpg', size: MokuroSize(800, 1200), blocks: <MokuroBlock>[]);
       final String html =
           mangaPageDivHtml(blank, 'p.jpg', pagesInSpread: 1, isWebtoon: true);
       // .manga-page div 的 style 不含 vw 宽（webtoon 宽由外部 style 块给）。
@@ -794,17 +793,17 @@ void main() {
     test('Lens regions render transparent character hit targets', () {
       const MokuroImage page = MokuroImage(
         url: 'p.jpg',
-        size: Size(100, 200),
+        size: MokuroSize(100, 200),
         blocks: <MokuroBlock>[
           MokuroBlock(
-            rectangle: Rect.fromLTWH(10, 20, 40, 20),
+            rectangle: MokuroRect.fromLTWH(10, 20, 40, 20),
             isVertical: false,
             fontSize: 10,
             zIndex: 0,
             lines: <String>['日本'],
             regions: <MangaOcrTextRegion>[
               MangaOcrTextRegion(
-                rectangle: Rect.fromLTWH(10, 20, 20, 20),
+                rectangle: MokuroRect.fromLTWH(10, 20, 20, 20),
                 utf16Start: 0,
                 utf16End: 1,
               ),
@@ -835,7 +834,7 @@ void main() {
         <MokuroImage>[
           const MokuroImage(
             url: 'online.jpg',
-            size: Size(1000, 1400),
+            size: MokuroSize(1000, 1400),
             blocks: <MokuroBlock>[],
           ),
         ],

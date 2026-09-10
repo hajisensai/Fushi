@@ -8,17 +8,16 @@
 /// 3. 必须暴露回放入口，否则识别完成后用户还得自己再点一次——那这条路径就白做了。
 library;
 
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 const List<MokuroImage> _pages = <MokuroImage>[
-  MokuroImage(url: 'p001.jpg', size: Size(1000, 1600), blocks: <MokuroBlock>[]),
-  MokuroImage(url: 'p002.jpg', size: Size(1000, 1600), blocks: <MokuroBlock>[]),
+  MokuroImage(url: 'p001.jpg', size: MokuroSize(1000, 1600), blocks: <MokuroBlock>[]),
+  MokuroImage(url: 'p002.jpg', size: MokuroSize(1000, 1600), blocks: <MokuroBlock>[]),
 ];
 
 String _document({MangaReadingMode mode = MangaReadingMode.spread}) {

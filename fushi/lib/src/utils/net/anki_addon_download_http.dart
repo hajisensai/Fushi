@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi_anki/fushi_anki.dart';
 
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 把插件下载的 client 工厂接到应用代理出口。幂等，可重复调用。
 void installAnkiAddonDownloadHttpClientFactory() {

@@ -12,10 +12,10 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
-import 'package:fushi/src/media/collections/shelf_sort.dart'
+import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
-import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/reader/illustration_progress_index.dart';

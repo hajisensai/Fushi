@@ -12,7 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/utils.dart';
 
 /// 打开一条更新。

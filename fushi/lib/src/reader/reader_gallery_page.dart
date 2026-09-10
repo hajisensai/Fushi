@@ -10,7 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:fushi/src/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/utils.dart';
 

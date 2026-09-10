@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/net/app_user_agent.dart';
+import 'package:fushi_engine/utils/net/app_user_agent.dart';
 
 import '../helpers/scan_scale.dart';
 import '../helpers/source_guard.dart';
@@ -23,7 +23,7 @@ void main() {
     'lib/src/media/manga/aidoku/aidoku_reader_chapter.dart',
     'lib/src/media/manga/aidoku/aidoku_source_browse_page.dart',
     'lib/src/media/manga/ocr/google_lens_ocr_service.dart',
-    'lib/src/media/video/youtube_source_resolver.dart',
+    '../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart',
   };
 
   /// 旧名在**非 UA 语境**下的合法残留（迁移入口、旧包名、旧资产契约）不在扫描面
@@ -41,9 +41,21 @@ void main() {
     final Directory lib = Directory('lib');
     expect(lib.existsSync(), isTrue, reason: '必须在 fushi/ 下跑');
 
+    // 出站 UA 纪律对引擎/服务端的 HTTP 客户端同样适用（同族的
+    // outbound_http_discipline_guard 已经把这两个包收进去了，这条漏了）。
+    const List<String> scanRoots = <String>[
+      'lib',
+      '../packages/fushi_engine/lib',
+      '../packages/fushi_server/lib',
+    ];
+
     final List<String> offenders = <String>[];
     int scanned = 0;
-    for (final FileSystemEntity entity in lib.listSync(recursive: true)) {
+    for (final FileSystemEntity entity in <FileSystemEntity>[
+      for (final String rel in scanRoots)
+        if (Directory(rel).existsSync())
+          ...Directory(rel).listSync(recursive: true),
+    ]) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       scanned++;
       final String relative = entity.path.replaceAll(r'\', '/');
@@ -68,8 +80,8 @@ void main() {
     expectScanScale(
       scanned,
       what: 'lib/ 下的 .dart',
-      atLeast: 950,
-      measured: 1221,
+      atLeast: 1120,
+      measured: 1401,
     );
 
     expect(

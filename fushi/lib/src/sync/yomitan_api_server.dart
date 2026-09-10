@@ -6,19 +6,21 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart'
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart'
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
     show VideoSubtitleCandidate;
-import 'package:fushi/src/media/video/video_subtitle_source.dart'
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
-import 'package:fushi/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
+// remote_subtitle_search_handlers 是 #1399 把 Jimaku 专用处理器泛化后的版本，
+// 仍住在 fushi（它接的是 app 侧已配置的字幕源）；其余几个随本 PR 搬进 engine。
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
-import 'package:fushi/src/sync/remote_lookup_routes.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart'
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';

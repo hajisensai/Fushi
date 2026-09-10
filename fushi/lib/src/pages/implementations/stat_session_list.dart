@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
-import 'package:fushi/src/stats/study_sessions.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 
 /// 统计页「会话流」（用户 2026-09-08：每个域都要会话级统计 + 能删掉误点的会话）。

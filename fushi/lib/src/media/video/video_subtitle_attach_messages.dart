@@ -1,6 +1,6 @@
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
 /// **纯映射**：把 [SubtitleAttachResult] 翻成给用户看的一句话。
 ///

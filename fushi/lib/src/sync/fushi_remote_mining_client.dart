@@ -1,4 +1,4 @@
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
