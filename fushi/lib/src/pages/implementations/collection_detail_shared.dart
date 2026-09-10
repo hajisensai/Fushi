@@ -140,6 +140,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   /// 返回 null = 取消。
   Future<FushiDestructiveConfirmResult?> confirmDetailCollectionDelete({
     String? checkboxLabel,
+    String? localFilesSubtitle,
     DeletionDisclosure? checkedDisclosure,
   }) {
     return showAppDialog<FushiDestructiveConfirmResult>(
@@ -149,6 +150,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         message: t.delete_collection_confirm,
         confirmLabel: t.delete_collection,
         checkboxLabel: checkboxLabel,
+        localFilesSubtitle: localFilesSubtitle,
         checkedDisclosure: checkedDisclosure,
       ),
     );

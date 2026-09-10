@@ -1907,8 +1907,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
   /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
   /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
+  /// [deleteLocalFiles] 与视频侧共用同一回调形状。书架合集不提供「同时删除本地
+  /// 文件」二级勾选（书的原件删除自有纪律，走 [ReaderFushiSource.deleteBook]），
+  /// 故这里恒收到 false；混入的视频成员照旧只删 DB 行 + app 副本、保留原始文件。
   Future<void> _deleteCollectionMembersMedia(
     List<MediaCollectionItemRow> members,
+    bool deleteLocalFiles,
   ) async {
     bool anyVideo = false;
     for (final MediaCollectionItemRow m in members) {

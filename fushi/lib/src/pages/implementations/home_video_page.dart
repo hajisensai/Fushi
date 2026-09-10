@@ -6322,9 +6322,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集封面卡长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
-  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
+  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) async {
     final VideoBookRepository repo = widget.repo;
-    final FushiDatabase db = ref.read(appProvider).database;
+    final AppModel appModel = ref.read(appProvider);
+    final FushiDatabase db = appModel.database;
+    // 「同时删除本地文件」二级勾选只在这个合集真有本机原件时才摆出来（成员全是
+    // 远端流就没有文件可删，与单删 / 批删同一条「兑现不了就不显示」纪律）。判据
+    // [videoBookHasLocalFiles] 要的是视频行本身，成员引用行只有 uid，故先取一遍库。
+    final Set<String> memberUids = <String>{
+      for (final MediaCollectionItemRow m
+          in await db.getCollectionItems(collection.id))
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+    };
+    final bool anyLocalFile = memberUids.isNotEmpty &&
+        (await repo.listAll()).any((VideoBookRow b) =>
+            memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b));
+    if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: db,
@@ -6335,22 +6348,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ref.invalidate(filteredCollectionIdsProvider);
         _refresh();
       },
-      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async {
-        bool anyVideo = false;
-        for (final MediaCollectionItemRow m in members) {
-          // 视频合集理论上只含 video 成员；混入的未知/跨域成员跳过不误删。
-          if (MediaKind.tryParse(m.mediaType) != MediaKind.video) continue;
-          await repo.deleteVideoBookAndReclaimAssets(
-            m.entryKey,
-            compactDatabase: false,
-          );
-          anyVideo = true;
-        }
-        if (anyVideo) {
-          await repo.compactAfterVideoDeleteBestEffort();
-        }
+      onDeleteMembersMedia: (
+        List<MediaCollectionItemRow> members,
+        bool deleteLocalFiles,
+      ) async {
+        final List<String> uids = <String>[
+          for (final MediaCollectionItemRow m in members)
+            // 视频合集理论上只含 video 成员；混入的未知/跨域成员跳过不误删。
+            if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+        ];
+        if (uids.isEmpty) return;
+        // 必须走 [deleteVideoBooksWithDecision] 而不是裸仓库调用：勾了「删本地
+        // 文件」时，删盘前要先让播放器放句柄（Windows 上不放就是 errno 32，
+        // 用户看到「删除成功」而盘上一个文件没少）、把还在做种的文件在下载后端
+        // 标 skip，删完再对账下载任务。这条纪律只存在于那一层。
+        final VideoLibraryDeleteResult result =
+            await deleteVideoBooksWithDecision(
+          repo: repo,
+          database: db,
+          pipeline: appModel.videoDownloadPipelineService,
+          bookUids: uids,
+          decision: DeleteDecision(
+            scope: DeleteScope.keepLocalOnly,
+            deleteLocalFiles: deleteLocalFiles,
+          ),
+        );
+        reportLocalFileDeleteFailures(
+          result.localFiles,
+          source: 'HomeVideoPage.deleteCollectionMembers',
+        );
       },
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
+      deleteMembersLocalFilesSubtitle:
+          anyLocalFile ? t.delete_local_files_video_desc : null,
       // 视频合集特有项：封面 / 重刮 / 批量字幕。
       //
       // 封面两项只给视频合集：书架与游戏库的合集入口是横排行头，根本没有封面槽，
@@ -6571,17 +6601,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
           remote: remote,
-          onDeleteMembersMedia: (List<VideoBookRow> members) async {
-            for (final VideoBookRow member in members) {
-              await repo.deleteVideoBookAndReclaimAssets(
-                member.bookUid,
-                compactDatabase: false,
-              );
-            }
-            if (members.isNotEmpty) {
-              await repo.compactAfterVideoDeleteBestEffort();
-            }
+          onDeleteMembersMedia: (
+            List<VideoBookRow> members,
+            bool deleteLocalFiles,
+          ) async {
+            if (members.isEmpty) return;
+            // 与库页右键同一条删除纪律（先放句柄 / 标 skip，再删盘，删完对账）。
+            final VideoLibraryDeleteResult result =
+                await deleteVideoBooksWithDecision(
+              repo: repo,
+              database: db,
+              pipeline: ref.read(appProvider).videoDownloadPipelineService,
+              bookUids: members.map((VideoBookRow m) => m.bookUid),
+              decision: DeleteDecision(
+                scope: DeleteScope.keepLocalOnly,
+                deleteLocalFiles: deleteLocalFiles,
+              ),
+            );
+            reportLocalFileDeleteFailures(
+              result.localFiles,
+              source: 'VideoWorkDetailPage.deleteCollectionMembers',
+            );
           },
+          deleteMembersLocalFilesSubtitle: t.delete_local_files_video_desc,
           // 详情页的「重新刮削资料与封面」：controller 归 HomePage，注入库页同一
           // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
           onRescrapeCollection:
