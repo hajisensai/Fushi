@@ -3220,6 +3220,7 @@ class FushiPopupSurface extends StatelessWidget {
     this.showBorder = true,
     this.clipBehavior = Clip.antiAlias,
     this.borderOnForeground = true,
+    this.borderRadius,
   });
 
   final Widget child;
@@ -3228,6 +3229,13 @@ class FushiPopupSurface extends StatelessWidget {
   final double elevation;
   final bool showBorder;
   final Clip clipBehavior;
+
+  /// 圆角覆写。默认 null = 走设计令牌的卡片圆角（10）。
+  ///
+  /// 唯一的现实用途是**贴边的 surface**：查词弹窗的底部 dock 面板铺满屏幕最左到最右
+  /// （BUG-2439），此时左右两侧的圆角弧会在屏幕边缘露出背景，看起来就是「没铺满」。
+  /// 贴哪条边就把那两个角摊平，别整块改令牌——其余 surface 的圆角是全局一致的。
+  final BorderRadius? borderRadius;
 
   /// BUG-1692：描边画在子节点**之前**还是**之后**。
   ///
@@ -3265,11 +3273,26 @@ class FushiPopupSurface extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(_borderWidth),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(
-          math.max(0, tokens.radii.card - _borderWidth),
-        ),
+        borderRadius: _deflate(_outerRadius(tokens)),
         child: content,
       ),
+    );
+  }
+
+  BorderRadius _outerRadius(FushiDesignTokens tokens) =>
+      borderRadius ?? tokens.radii.cardRadius;
+
+  /// 内圈半径 = 外圈逐角减一个笔宽（摊平的角保持摊平，不会被减成负数）。
+  static BorderRadius _deflate(BorderRadius outer) {
+    Radius shrink(Radius r) => Radius.elliptical(
+          math.max(0, r.x - _borderWidth),
+          math.max(0, r.y - _borderWidth),
+        );
+    return BorderRadius.only(
+      topLeft: shrink(outer.topLeft),
+      topRight: shrink(outer.topRight),
+      bottomLeft: shrink(outer.bottomLeft),
+      bottomRight: shrink(outer.bottomRight),
     );
   }
 
@@ -3280,7 +3303,7 @@ class FushiPopupSurface extends StatelessWidget {
       color: color ?? tokens.surfaces.card,
       elevation: elevation,
       shape: RoundedRectangleBorder(
-        borderRadius: tokens.radii.cardRadius,
+        borderRadius: _outerRadius(tokens),
         side: showBorder
             ? BorderSide(color: tokens.surfaces.outline, width: _borderWidth)
             : BorderSide.none,
