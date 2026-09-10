@@ -43,7 +43,7 @@ BUG-1745 起 JS 侧就随方向一起回传输入设备（`webview.part.dart:148
    存的是**翻页意图**而非跨章意图——重放走完整 `_paginate`（章内还有页就翻页，真到边界才跨章），所以刚落地新章的章首插图页会被正常翻过去，而不是被越过。「章首整页被跳过」正是原始症状的另一半。
 2. 两处在飞路径改为 `_pageTurnQueue.push(direction)` 后 return。
 3. `_replayPendingPageTurn()` 在三个 content-ready 完成点消费：`_onRestoreComplete` 的**延后收尾块最末**（遮罩已撤、新章可见、`fushiReader` 已就绪，且共用该块既有的 `_navigateGeneration` 代际守卫）、`spreadReady`、8s 兜底超时。
-   一次只消费一个：若它导致跨章，`_paginationInFlight` 立刻再次为真，剩下的意图由那次导航的 content-ready 继续消费，串成 1:1 的链，不并发。
+   消费到「队空」或「又进入在飞」为止，两种出口都必要：重放导致**跨章**→ `_paginationInFlight` 立刻为真 → 退出循环，剩余意图由那次导航的 content-ready 再进来消费，串成 1:1 的链；重放只是**章内翻页**（新章还有下一页）则不会再有 content-ready 把它叫醒，必须就地继续消费，否则剩余意图一直压到下一次跨章才突然连翻（自查补漏，提交 c68cfb579d）。另有 `_replayingPageTurns` 重入闸：await 期间可能被另一个完成点再次调用，两个循环同时消费同一队列会让意图乱序落到不同章上。
    **重放不过 `_lastPaginateTime` 节流**——该节流限的是用户新输入的速率，积压意图是已按下过、被延后执行的输入，再节流一次等于又丢一遍。
 4. 删除 `chapterTurnCoolingDown` 纯函数、`_kChapterTurnCooldown`、`_lastChapterTurnAt`、`_inertiaChapterTurnPending`、`_noteChapterTurn`、`_noteChapterTurnSettledIfPending`、`_markInertiaChapterTurnPending`，以及只服务于它们的 `_handlePageTurnLimit(inertia:)` 参数。4 个状态位 + 2 个 stamp 点 → 1 个队列。
 5. `onBoundarySwipe` 改读 `args[1]` 的 `pointerKind`，并去掉它对跨章叠的 `_lastPaginateTime` 节流窗（用户要求一口气连跨多章、不必停手；`wheelPageTurnInterval` 的语义是**章内翻页速率**，跨章由加载节奏天然限流）。
@@ -57,7 +57,41 @@ BUG-1829 修的是「被拦输入自我续期 → 单页章成滚轮死区」。
 
 - **[x] ① 已修复** — 见上，`fix/reader-cross-chapter-input-queue`
 - **[x] ② 已加自动化测试** —
-  - `fushi/test/pages/chapter_turn_queue_test.dart`（18 项，取代已删的 `chapter_turn_cooldown_test.dart` / `chapter_turn_cooldown_ready_restamp_test.dart`）：队列纯语义（1:1 消费 / N 次输入 N 次重放 / 反向抵消 / 上限 / clear）、旧守卫行为不变式的新语义版、源码守卫（两处在飞路径必须入队 / 冷却窗整套不得复活 / 跨章不得叠节流窗 / 触摸板经 gate 而鼠标不经 / 三个完成点都重放 / 重放排在收尾之后且受代际守卫 / 非翻页导航作废积压）。
+  - `fushi/test/pages/chapter_turn_queue_test.dart`（19 项，取代已删的 `chapter_turn_cooldown_test.dart` / `chapter_turn_cooldown_ready_restamp_test.dart`）：队列纯语义（1:1 消费 / N 次输入 N 次重放 / 反向抵消 / 上限 / clear）、旧守卫行为不变式的新语义版、源码守卫（两处在飞路径必须入队 / 冷却窗整套不得复活 / 跨章不得叠节流窗 / 触摸板经 gate 而鼠标不经 / 三个完成点都重放 / 重放排在收尾之后且受代际守卫 / 非翻页导航作废积压）。
     源码守卫读的是 `maskComments()` 剥注释后的语料——钉的是「代码里没有这些接线」，不是「注释里不准提这些名字」；本次改动的说明注释本身要讲清删掉了什么，裸扫原文会被自己的解释文字判红。
   - `fushi/test/reader/reader_spread_image_ready_gate_test.dart`：那条原本钉冷却窗重锚的断言改钉新的等价物（spreadReady 仍是 content-ready 完成点，必须重放积压意图）。不变式没变而且更要紧——spread 路径从不发 `onRestoreComplete`。
-- **备注**：交互延迟 + 输入丢失，非崩溃。`test/pages`（3601 项）、`test/reader`（1611 项）定向全绿，`flutter analyze lib` 零问题。
+
+### 真机实测（Windows 离屏 itest，同机同书同用例、只换 lib）
+
+用例：`integration_test/reader_cross_chapter_input_queue_itest.dart` ——
+forward → backward → forward → backward 四拍，**每拍落地后只 pump 一帧就发下一次**。
+
+修复前（lib 还原到基底 `87eda400f2`，`xchapter-queue-mutant`）：
+
+```
+[xchapter-queue] #0 forward  chapter_01 -> chapter_02  landed=174ms
+[xchapter-queue] #1 backward chapter_02 -> chapter_02  landed=0ms
+Some tests failed.  (exit 1)
+```
+
+第 1 拍 **30 秒内完全没有落地**（`landed=0ms`）、章节原地不动——这就是用户报的
+「按了没反应」的真机复现：此刻冷却窗刚在 chapter_02 的 content-ready 被重新 stamp，
+正是窗口最满的时刻。
+
+修复后（`xchapter-queue-v2`）：
+
+```
+[xchapter-queue] #0 forward  chapter_01 -> chapter_02  landed=167ms
+[xchapter-queue] #1 backward chapter_02 -> chapter_01  landed=191ms
+[xchapter-queue] #2 forward  chapter_01 -> chapter_02  landed= 77ms
+[xchapter-queue] #3 backward chapter_02 -> chapter_01  landed=154ms
+All tests passed!  (exit 0)
+```
+
+四拍全部落地，落地时间 77~191ms **就是章节加载本身**，闸门带来的额外等待归零
+（修复前是 `T_load + 450ms`，且第 2 拍起直接被吞）。来回四拍回到起点、四次输入
+恰好四次跨章（无「跳两章」）。
+
+证据：`fushi/.codex-test/windows-itest/xchapter-queue-{v2,mutant}/command.log`（不入库）。
+
+- **备注**：交互延迟 + 输入丢失，非崩溃。`test/pages`（3601 项）、`test/reader`（1611 项）定向全绿，`flutter analyze`（含 test）零问题，真机用例已做变异实测（还原 lib 即红，见上）。
