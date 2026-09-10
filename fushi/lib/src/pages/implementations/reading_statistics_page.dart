@@ -536,6 +536,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     context,
                     sessions: _sessions,
                     titleOf: _sessionTitle,
+                    collectionOf: _sessionCollectionName,
                     onDelete: _deleteSession,
                   ),
                 ),
@@ -1437,6 +1438,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String _sessionTitle(StudySession s) =>
       ReaderFushiSource.instance.overrideTitleForBookKey(s.mediaKey) ?? s.title;
 
+  /// 会话行的所属合集名（BUG-2417：合集里段 title 是分册名，行上得写清是哪套
+  /// 书）。会话自带 bookKey 身份（段 mediaKey），经 [_epubUidByBookKey] 换算拼
+  /// 'epub|<uid>'，与 [_collectionNameForBook] 同一 v83 键契约。
+  String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
+      ? null
+      : statCollectionName(
+          MediaKind.epub.compositeKey(_epubUidByBookKey[s.mediaKey] ?? s.mediaKey),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        );
+
   /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
   Future<void> _deleteSession(StudySession s) async {
     await deleteStudySession(appModelNoUpdate.database, s);
@@ -1455,6 +1467,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       title: _bookDisplayTitle(book),
       sessions: sessions,
       titleOf: _sessionTitle,
+      collectionOf: _sessionCollectionName,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
     );

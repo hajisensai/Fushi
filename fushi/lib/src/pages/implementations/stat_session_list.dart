@@ -19,6 +19,14 @@ import 'package:fushi/utils.dart';
 /// 会话行展示名：段 title 快照 → 调用方按域换成当前显示名（书走 override 书名）。
 typedef StatSessionTitleOf = String Function(StudySession session);
 
+/// 会话行所属合集名（'<mediaType>|<entryKey>' 归属键 → 主合集名，见
+/// [statCollectionName]）；不属于任何合集返回 null。
+///
+/// BUG-2417：段 title 快照是**条目名**，合集里就是分集名（「暗中行动」「威胁」）。
+/// 单看一行认不出是哪部作品——会话流是跨媒体时间序，没有时段明细 sheet 那种
+/// 合集组头兜底，所以合集名必须贴在行上。
+typedef StatSessionCollectionOf = String? Function(StudySession session);
+
 /// 一行的量纲文案：时长 · 字数 · 页数，为 0 的量纲不显示；全 0 显示 0 分钟。
 String formatStatSessionMeta(StudySession s) {
   final List<String> parts = <String>[
@@ -43,6 +51,7 @@ Widget buildStatSessionSection(
   required List<StudySession> sessions,
   required StatSessionTitleOf titleOf,
   required Future<void> Function(StudySession session) onDelete,
+  StatSessionCollectionOf? collectionOf,
   int limit = 8,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -74,6 +83,7 @@ Widget buildStatSessionSection(
                     title: t.stat_sessions_show_all,
                     sessions: sessions,
                     titleOf: titleOf,
+                    collectionOf: collectionOf,
                     onDelete: onDelete,
                   ),
                 ),
@@ -90,6 +100,7 @@ Widget buildStatSessionSection(
           StatSessionList(
             sessions: shown,
             titleOf: titleOf,
+            collectionOf: collectionOf,
             onDelete: onDelete,
           ),
       ],
@@ -103,6 +114,7 @@ class StatSessionList extends StatefulWidget {
     required this.sessions,
     required this.titleOf,
     required this.onDelete,
+    this.collectionOf,
     this.onDeleted,
     super.key,
   });
@@ -110,6 +122,9 @@ class StatSessionList extends StatefulWidget {
   final List<StudySession> sessions;
   final StatSessionTitleOf titleOf;
   final Future<void> Function(StudySession session) onDelete;
+
+  /// 行的合集名解析器；不传（或返回 null）的行只显示条目名。
+  final StatSessionCollectionOf? collectionOf;
 
   /// 每删掉一行后回调（sheet 用它记「删过」让调用方关 sheet 后重聚合）。
   final VoidCallback? onDeleted;
@@ -146,7 +161,11 @@ class _StatSessionListState extends State<StatSessionList> {
               size: 18,
               color: colors.onSurfaceVariant,
             ),
-            title: Text(_titleOf(s)),
+            // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
+            // 单行 ellipsis 只看得到开头几个字。本区块的父容器（页面 sliver /
+            // sheet 的 Column）高度自由，放到 2 行不会撑破谁。
+            titleMaxLines: 2,
+            title: _buildTitle(context, s),
             subtitle: Text(
               '${formatStatSessionRange(s.startAt, s.endAt)} · '
               '${formatStatSessionMeta(s)}',
@@ -161,15 +180,43 @@ class _StatSessionListState extends State<StatSessionList> {
     );
   }
 
+  /// 行标题：命中合集时在条目名上方挂合集小标签（与「按书 / 按视频」tile
+  /// 同一 [buildStatCollectionLabel] 视觉），未命中只有条目名。
+  Widget _buildTitle(BuildContext context, StudySession s) {
+    final String? collection = _collectionOf(s);
+    final Text title = Text(_titleOf(s));
+    if (collection == null) return title;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        buildStatCollectionLabel(context, collection),
+        title,
+      ],
+    );
+  }
+
   String _titleOf(StudySession s) {
     final String title = widget.titleOf(s);
     return title.isEmpty ? s.mediaKey : title;
   }
 
+  /// 合集名，空串按「无合集」处理（解析器可能给出空名合集）。
+  String? _collectionOf(StudySession s) {
+    final String? name = widget.collectionOf?.call(s);
+    return name == null || name.isEmpty ? null : name;
+  }
+
+  /// 确认框是纯文本单行，合集名走 ' - ' 前缀（[collectionQualifiedTitle] 同口径）。
+  String _confirmName(StudySession s) {
+    final String? collection = _collectionOf(s);
+    final String title = _titleOf(s);
+    return collection == null ? title : '$collection - $title';
+  }
+
   Future<void> _confirmAndDelete(StudySession s) async {
     final bool confirmed = await confirmDeleteStatistics(
       context,
-      '${_titleOf(s)}\n${formatStatSessionRange(s.startAt, s.endAt)}',
+      '${_confirmName(s)}\n${formatStatSessionRange(s.startAt, s.endAt)}',
       message: t.stat_session_delete_message,
     );
     if (!confirmed || !mounted) return;
@@ -187,6 +234,7 @@ Future<bool> showStatSessionsSheet(
   required List<StudySession> sessions,
   required StatSessionTitleOf titleOf,
   required Future<void> Function(StudySession session) onDelete,
+  StatSessionCollectionOf? collectionOf,
 }) async {
   bool deleted = false;
   await adaptiveModalSheet<void>(
@@ -208,6 +256,7 @@ Future<bool> showStatSessionsSheet(
                 StatSessionList(
                   sessions: sessions,
                   titleOf: titleOf,
+                  collectionOf: collectionOf,
                   onDelete: onDelete,
                   onDeleted: () => deleted = true,
                 ),

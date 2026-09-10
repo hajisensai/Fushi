@@ -183,6 +183,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           context,
           sessions: _sessions,
           titleOf: _sessionTitle,
+          collectionOf: _sessionCollectionName,
           onDelete: _deleteSession,
         ),
       ],
@@ -231,6 +232,27 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           s.title;
     }
     return s.title;
+  }
+
+  /// 会话行的所属合集名（BUG-2417：会话流混排三域，段 title 是条目名——合集里
+  /// 就是分集 / 分册名）。判据与事实行版 [_entryCollection] 同构，输入换成会话；
+  /// 会话恒自带身份（段 mediaKey），不需要 legacy 的按 title 反查。
+  String? _sessionCollectionName(StudySession s) {
+    if (s.mediaKey.isEmpty) return null;
+    if (s.isBook) {
+      return statCollectionName(
+        MediaKind.epub.compositeKey(
+          _epubUidByBookKey[s.mediaKey] ?? s.mediaKey,
+        ),
+        _primaryCollectionByEntry,
+        _collectionNamesById,
+      );
+    }
+    return statCollectionName(
+      (s.isVideo ? MediaKind.video : MediaKind.game).compositeKey(s.mediaKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
   }
 
   /// 删一次会话：段写零 + 游戏骨架行硬删（同一事务），再整页重聚合。

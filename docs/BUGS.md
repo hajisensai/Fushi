@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2225 条。点号进各自文件。
+> 共 2226 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2417](bugs/BUG-2417-stat-session-collection-title.md) | ✅ | ✅ | 统计「最近会话」标题单行截断且不带合集名 |
 | [BUG-2416](bugs/BUG-2416-reader-nested-popup-coordinate-space.md) | ✅ | ✅ | 阅读器嵌套查词混用屏幕与浮层坐标导致遮字 |
 | [BUG-2415](bugs/BUG-2415-eink-popup-touch-instant-scroll.md) | ✅ | ✅ | 墨水屏瞬时滚动只接了滚轮，触摸拖动仍走原生惯性滚动 |
 | [BUG-2409](bugs/BUG-2409-mihon-source-http-error.md) | ✅ | ✅ | Mihon 保留源站HTTP错误状态并区分桥接失败 |
