@@ -68,6 +68,7 @@ import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/external_video.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
@@ -804,7 +805,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
     // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
+    // 只在有 Aidoku 宿主的平台装：iOS 的宿主已按 App Store 合规移除
+    // （[StoreRestrictedCapability.onlineMangaSource]），那里装个解题器等于给一个
+    // 不存在的源留后门。`AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源
+    // 匹配用它的 `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
+    if (AidokuRuntimeFactory.isSupported) {
+      installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
+    }
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {

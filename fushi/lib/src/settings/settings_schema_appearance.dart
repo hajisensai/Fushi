@@ -80,11 +80,13 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
     id: _moduleItemId(module),
     title: identity.label,
     icon: identity.icon,
-    // 平台上不存在的模块不出开关（galgame 仅 Windows、浏览器扩展仅桌面）。判据
-    // 与读取端同源（[ModuleId.availableOn]），不在这里另写一份 Platform 判断。
+    // 平台上不存在的模块不出开关（galgame 仅 Windows、浏览器扩展仅桌面、下载
+    // 中心不进 App Store）。判据与读取端同源（[ModuleId.availableOn]），不在这里
+    // 另写一份 Platform 判断。
     visible: (_) => module.availableOn(
       isWindows: Platform.isWindows,
       isDesktop: DesktopLookupService.isDesktop,
+      isIOS: Platform.isIOS,
     ),
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleEnabled(module),

@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -149,10 +150,15 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         // **也同位**：本地库的各视图排完才是在线发现，最后才是管理类分区。此前发现夹在
         // 首页与系列 / 全部视频之间，一排里「自己的库 → 推荐 → 自己的库」来回跳，是四个
         // 模块里唯一的例外（2026-08-24 用户反馈）。
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.discover,
-          label: t.library_view_browse,
-        ),
+        //
+        // iOS 上整段不声明（[StoreRestrictedCapability.externalDiscovery]）：发现页的
+        // 番剧条目全部通向资源索引器与种子获取，索引器不装配后它只剩空列表。分区不进
+        // tabs 列表，`_discoverVisited` 就永远是 false，下面 Stack 里那段也不会构建。
+        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.discover,
+            label: t.library_view_browse,
+          ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
           label: t.library_view_import,

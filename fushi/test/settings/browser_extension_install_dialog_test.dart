@@ -164,22 +164,37 @@ void main() {
       // 的来源）。所以这里改成**断言新真相源的行为**——比扫字面量强，也不会因为
       // 下一次接线换写法而无辜变红。
       expect(
-        ModuleId.browserExtension
-            .availableOn(isWindows: false, isDesktop: false),
+        ModuleId.browserExtension.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: false,
+        ),
         isFalse,
         reason: '手机浏览器装不了未解压扩展，非桌面必须没有这个模块',
       );
       expect(
-        ModuleId.browserExtension.availableOn(isWindows: true, isDesktop: true),
+        ModuleId.browserExtension.availableOn(
+          isWindows: true,
+          isDesktop: true,
+          isIOS: false,
+        ),
         isTrue,
       );
       // 合成后的可见集合也必须一致（平台不可用时，pref 开着也不该出现）。
       expect(
-        ModuleVisibility.all(isWindows: false, isDesktop: false).enabled,
+        ModuleVisibility.all(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: false,
+        ).enabled,
         isNot(contains(ModuleId.browserExtension)),
       );
       expect(
-        ModuleVisibility.all(isWindows: false, isDesktop: true).enabled,
+        ModuleVisibility.all(
+          isWindows: false,
+          isDesktop: true,
+          isIOS: false,
+        ).enabled,
         contains(ModuleId.browserExtension),
       );
     });

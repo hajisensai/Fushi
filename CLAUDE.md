@@ -56,6 +56,7 @@
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
 - 国际化用 Slang，源文件 `fushi/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
 - 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。桌面端依赖 fork 的 `flutter_inappwebview_windows` 渲染 EPUB。
+- **iOS 版按 App Store 合规少三类能力**，其余四平台不受影响：① 内置外部发现源与书/漫画/视频三个库页的「发现」视图（含用户自配 OPDS、视频域资源索引器与在线发现 provider）；② 在线漫画源宿主（Aidoku 仓库 / Mihon 扩展 / mokuro.moe 卷下载）；③ 下载中心（torrent / 磁力 / 直链队列，含外接 qBittorrent）。理由都不是「iOS 做不到」而是审核指南不允许，所以判据**只在 `fushi/lib/src/models/store_compliance.dart` 的 `StoreRestrictedCapability` 写一次**，`ModuleId.downloads` 的 `availableOn` 委托到它，消费端一律问这两处、不各自写 `Platform.isIOS`。Aidoku 的 iOS 宿主（内嵌 Rust 静态库 + Swift 桥 + Xcode build phase + CI rust target）已整条移除，**macOS 宿主不受影响**；漫画/视频/书的本地库与阅读播放能力一概保留。守卫 `fushi/test/build/ios_store_compliance_guard_test.dart`——这条边界失效是静默的（本地与 CI 全绿、上架才被拒），改动这三块前先读它。
 
 ## 命名术语表（2026-07 定案，新代码遵守）
 

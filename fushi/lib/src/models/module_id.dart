@@ -18,6 +18,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/models/store_compliance.dart';
+
 /// 一个可被用户整体关闭的功能模块。
 ///
 /// 顺序 = 设置页「功能模块」分区的展示顺序，也与底栏/侧栏的 tab 顺序同向
@@ -74,22 +76,35 @@ enum ModuleId {
   /// `Platform.isWindows`）、`main.dart`（browserExtension 判
   /// `DesktopLookupService.isDesktop`）与 `settings_schema_appearance.dart`
   /// （两个 `visible:` 回调）四处，正是漂移的来源。
-  bool availableOn({required bool isWindows, required bool isDesktop}) =>
-      switch (this) {
-        // galgame hook 只做 Windows 端（见 CLAUDE.md「Galgame Hook 硬规则」）。
-        ModuleId.games => isWindows,
-        // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
-        ModuleId.browserExtension => isDesktop,
-        ModuleId.books ||
-        ModuleId.manga ||
-        ModuleId.video ||
-        ModuleId.downloads ||
-        ModuleId.lookup ||
-        ModuleId.listening ||
-        ModuleId.cardCreation ||
-        ModuleId.services ||
-        ModuleId.sync => true,
-      };
+  ///
+  /// [isIOS] 单列而不是靠 `!isDesktop && !isAndroid` 推：它承载的不是「这个平台
+  /// 做不做得到」，而是 App Store 的合规边界（见 [StoreRestrictedCapability]），
+  /// 两者会在同一个平台上给出相反的答案——下载中心在 iOS 上技术可行（外接
+  /// qBittorrent 是纯 HTTP），但不允许上架。
+  bool availableOn({
+    required bool isWindows,
+    required bool isDesktop,
+    required bool isIOS,
+  }) => switch (this) {
+    // galgame hook 只做 Windows 端（见 CLAUDE.md「Galgame Hook 硬规则」）。
+    ModuleId.games => isWindows,
+    // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
+    ModuleId.browserExtension => isDesktop,
+    // 通用 torrent / 磁力下载器不能进 App Store。判据不在这里写死，委托给
+    // 合规边界的唯一真相源——发现页与在线漫画源受同一条边界约束，但它们不是
+    // 模块，两处若各判各的就会分头漂移。
+    ModuleId.downloads => StoreRestrictedCapability.downloads.availableOn(
+      isIOS: isIOS,
+    ),
+    ModuleId.books ||
+    ModuleId.manga ||
+    ModuleId.video ||
+    ModuleId.lookup ||
+    ModuleId.listening ||
+    ModuleId.cardCreation ||
+    ModuleId.services ||
+    ModuleId.sync => true,
+  };
 
   /// 把持久化键解析回枚举；未知键返回 `null`（备份/同步可能带来旧键或对端新键，
   /// **绝不抛异常**）。
@@ -119,10 +134,12 @@ class ModuleVisibility {
   factory ModuleVisibility.all({
     required bool isWindows,
     required bool isDesktop,
+    required bool isIOS,
   }) => ModuleVisibility.resolve(
     prefOf: (ModuleId _) => true,
     isWindows: isWindows,
     isDesktop: isDesktop,
+    isIOS: isIOS,
   );
 
   /// 把「每个模块的 pref 真值」与平台判据合成为可见集合。
@@ -135,10 +152,17 @@ class ModuleVisibility {
     required bool Function(ModuleId id) prefOf,
     required bool isWindows,
     required bool isDesktop,
+    required bool isIOS,
   }) {
     final Set<ModuleId> enabled = <ModuleId>{};
     for (final ModuleId id in ModuleId.values) {
-      if (!id.availableOn(isWindows: isWindows, isDesktop: isDesktop)) continue;
+      if (!id.availableOn(
+        isWindows: isWindows,
+        isDesktop: isDesktop,
+        isIOS: isIOS,
+      )) {
+        continue;
+      }
       if (!prefOf(id)) continue;
       enabled.add(id);
     }

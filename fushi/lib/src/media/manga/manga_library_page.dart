@@ -2,13 +2,14 @@ import 'package:flutter/widgets.dart';
 
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/manga_sources_page.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
-/// 顶层漫画库页：**恒为三视图**（外加设置），五个平台完全同构。
+/// 顶层漫画库页：**书架 + 发现 + 来源**三视图（外加设置）。
 ///
 /// - **书架**：数据、卡片、搜索、排序、合集、进度和删除全部复用小说书架；唯一差异
 ///   是只展示 `EpubBooks.format == 'manga'` 的条目。普通书架由同一页面反向排除漫画。
@@ -22,10 +23,17 @@ import 'package:fushi/utils.dart';
 /// 改成「发现」之后，漫画库里出现了两个字面完全相同的 tab，用户点哪个都叫发现
 /// （BUG-1710）；两页能力互补，已合并进上面的「发现」，冗余 tab 删除。
 ///
-/// 视图列表是**无条件常量**：不按 `MihonRuntimeFactory.isSupported` 分叉，
-/// iOS / Linux 与 Android / Windows / macOS 的 tab 数量、顺序、kind 完全一致，
-/// 差异只落在各视图**内部内容**（没有扩展宿主时相应小节显示为不可用）。导航结构
-/// 分平台漂移会让快捷键、焦点顺序和用户肌肉记忆按平台裂开。
+/// 视图列表不按**运行时能力**分叉：不看 `MihonRuntimeFactory.isSupported`，
+/// Linux 与 Android / Windows / macOS 的 tab 数量、顺序、kind 完全一致，差异只落
+/// 在各视图**内部内容**（没有扩展宿主时相应小节显示为不可用）。导航结构按能力漂移
+/// 会让快捷键、焦点顺序和用户肌肉记忆按平台裂开。
+///
+/// **iOS 是这条规则唯一的例外，且理由不同**：那里的「发现」不是「功能暂不可用」，
+/// 而是按 App Store 合规整条不存在（[StoreRestrictedCapability]）——发现页的全部
+/// 内容（AniList 榜单点开后的来源匹配、各来源热门行、mokuro.moe 卷下载）都以在线
+/// 源宿主为前提，宿主不装配后留下的是一个点进去什么都没有的死 tab。「不可用提示」
+/// 这条常规退路在这里也不合适：合规要求的是不提供入口，不是提供一个说明为什么没有
+/// 的入口。
 ///
 /// Mihon 在线漫画复用 EpubBooks 的漫画身份进入同一书架，当前章节/页码可跨重启
 /// 继续；页面仍由来源运行时按需流式获取，不把鉴权 URL 暴露给 WebView。
@@ -47,12 +55,13 @@ class MangaLibraryPage extends StatelessWidget {
           builder: (BuildContext context, Widget navigation) =>
               ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
         ),
-        MediaLibraryViewSpec(
-          kind: MediaLibraryViewKind.discover,
-          label: t.library_view_discover,
-          builder: (BuildContext context, Widget navigation) =>
-              MangaDiscoveryPage(navigation: navigation),
-        ),
+        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.discover,
+            label: t.library_view_discover,
+            builder: (BuildContext context, Widget navigation) =>
+                MangaDiscoveryPage(navigation: navigation),
+          ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
           label: t.library_view_import,

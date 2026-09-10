@@ -47,26 +47,34 @@ void main() {
       );
     });
 
-    test('平台判据只有 games / browserExtension 两条', () {
+    test('平台判据只有 games / browserExtension / downloads 三条', () {
       for (final ModuleId id in ModuleId.values) {
         final bool onWindowsDesktop = id.availableOn(
           isWindows: true,
           isDesktop: true,
+          isIOS: false,
         );
-        final bool onMobile = id.availableOn(
+        // 判 Android 而不是笼统的「移动端」：downloads 的判据是 iOS 本身
+        // （App Store 合规），两个移动平台在这条上结论相反。
+        final bool onAndroid = id.availableOn(
           isWindows: false,
           isDesktop: false,
+          isIOS: false,
         );
         expect(onWindowsDesktop, isTrue, reason: 'Windows 桌面上全部模块都可用');
         if (id == ModuleId.games || id == ModuleId.browserExtension) {
-          expect(onMobile, isFalse, reason: '$id 是桌面/Windows 限定');
+          expect(onAndroid, isFalse, reason: '$id 是桌面/Windows 限定');
         } else {
-          expect(onMobile, isTrue, reason: '$id 不该有平台限制');
+          expect(onAndroid, isTrue, reason: '$id 不该有平台限制');
         }
       }
       // galgame hook 只做 Windows：非 Windows 桌面（macOS/Linux）也不能有。
       expect(
-        ModuleId.games.availableOn(isWindows: false, isDesktop: true),
+        ModuleId.games.availableOn(
+          isWindows: false,
+          isDesktop: true,
+          isIOS: false,
+        ),
         isFalse,
       );
       // 浏览器扩展是「电脑才有」，非 Windows 桌面照样有。
@@ -74,8 +82,19 @@ void main() {
         ModuleId.browserExtension.availableOn(
           isWindows: false,
           isDesktop: true,
+          isIOS: false,
         ),
         isTrue,
+      );
+      // 下载中心：唯一一条不是「这个平台做不做得到」的判据。完整边界与它的
+      // 兄弟能力（发现源 / 在线漫画源）见 test/build/ios_store_compliance_guard_test.dart。
+      expect(
+        ModuleId.downloads.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: true,
+        ),
+        isFalse,
       );
     });
   });
@@ -86,6 +105,7 @@ void main() {
         prefOf: (ModuleId _) => true,
         isWindows: false,
         isDesktop: false,
+        isIOS: false,
       );
       expect(mobile.isEnabled(ModuleId.games), isFalse);
       expect(mobile.isEnabled(ModuleId.browserExtension), isFalse);
@@ -97,6 +117,7 @@ void main() {
         prefOf: (ModuleId id) => id == ModuleId.books,
         isWindows: true,
         isDesktop: true,
+        isIOS: false,
       );
       expect(only.enabled, <ModuleId>{ModuleId.books});
     });

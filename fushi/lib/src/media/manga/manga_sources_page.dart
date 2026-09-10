@@ -21,6 +21,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -878,6 +879,12 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   @override
   Widget build(BuildContext context) {
     final MihonManager? manager = _manager;
+    // iOS 上「来源」视图只剩本地：扫描根与单卷导入。扩展仓库与在线源整段不渲染
+    // （[StoreRestrictedCapability.onlineMangaSource]），连「本平台不支持」的说明
+    // 也不留——合规要求的是不提供第三方内容源入口，一句「这个功能在 macOS 上有」
+    // 仍然是在向 iOS 用户指路。
+    final bool onlineSourcesAvailable =
+        StoreRestrictedCapability.onlineMangaSource.isAvailable;
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
@@ -948,20 +955,23 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                               key: _localSourcesKey,
                               mediaKind: 'manga',
                             ),
-                            const SizedBox(height: 28),
-                            _sectionTitle(t.aidoku_extensions_title),
-                            const SizedBox(height: 8),
-                            _buildAidokuSection(),
-                            const SizedBox(height: 28),
-                            _sectionTitle(t.mihon_extensions_title),
-                            const SizedBox(height: 8),
+                            if (onlineSourcesAvailable) ...<Widget>[
+                              const SizedBox(height: 28),
+                              _sectionTitle(t.aidoku_extensions_title),
+                              const SizedBox(height: 8),
+                              _buildAidokuSection(),
+                              const SizedBox(height: 28),
+                              _sectionTitle(t.mihon_extensions_title),
+                              const SizedBox(height: 8),
+                            ],
                           ],
                         ),
                       ),
-                      if (manager == null)
-                        SliverToBoxAdapter(child: _unavailableNote())
-                      else
-                        const MihonExtensionsPage(embedded: true),
+                      if (onlineSourcesAvailable)
+                        if (manager == null)
+                          SliverToBoxAdapter(child: _unavailableNote())
+                        else
+                          const MihonExtensionsPage(embedded: true),
                       SliverToBoxAdapter(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -970,16 +980,24 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                             _sectionTitle(t.mihon_sources_title),
                             const SizedBox(height: 8),
                             // 内置在线源：与扩展提供的源同节同级（见类文档）。
-                            const MokuroMoeSourceRow(),
-                            const SizedBox(height: 8),
+                            if (onlineSourcesAvailable) ...<Widget>[
+                              const MokuroMoeSourceRow(),
+                              const SizedBox(height: 8),
+                            ],
                             // 已配对互联对端的漫画库也是一个「在线源」：不下整卷，
                             // 直接在对端上翻页（Suwayomi 作为 Tachiyomi 源的形态）。
+                            //
+                            // 这一行**不受商店合规边界约束**，iOS 上照常提供：它读的是
+                            // 用户自己另一台设备上的库，不是第三方内容索引——与 Plex /
+                            // Jellyfin 客户端连自己的服务器同类。整节因此也保留标题，
+                            // 只是在 iOS 上只剩这一行。
                             const InterconnectMangaSourceRow(),
-                            if (manager == null) _unavailableNote(),
+                            if (onlineSourcesAvailable && manager == null)
+                              _unavailableNote(),
                           ],
                         ),
                       ),
-                      if (manager != null)
+                      if (onlineSourcesAvailable && manager != null)
                         SliverList.builder(
                           itemCount: manager.sources.length,
                           itemBuilder: (BuildContext context, int index) =>

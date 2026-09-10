@@ -1,11 +1,14 @@
+/// Aidoku **子进程**运行时的契约（假 exe 驱动，不依赖真运行时）。
+///
+/// #1389 按 App Store 合规移除 Aidoku 的 iOS 宿主时，把整份文件一起删了；但这里
+/// 7 条用例只有 2 条绑 iOS 的 MethodChannel，其余 5 条测的是子进程那条路径——它在
+/// Android / Windows / macOS / Linux 上原封不动地还在跑（`aidoku_runtime.dart`
+/// 只从 595 行缩到 378 行）。这份是把那 5 条恢复回来，2 条 iOS 用例不再恢复。
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
-import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -78,8 +81,6 @@ esac
   });
 
   tearDown(() async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.aidokuRuntime, null);
     await root.delete(recursive: true);
   });
 
@@ -172,85 +173,4 @@ esac
     );
   });
 
-  test('iOS runtime sends the shared command contract over its channel',
-      () async {
-    final List<MethodCall> calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(FushiChannels.aidokuRuntime,
-            (MethodCall call) async {
-      calls.add(call);
-      final Map<Object?, Object?> arguments =
-          call.arguments! as Map<Object?, Object?>;
-      return switch (arguments['command']) {
-        'inspect' => <String, Object?>{
-            'manifest': <String, Object?>{
-              'info': <String, Object?>{'id': 'ja.test'},
-            },
-            'runtime': <String, Object?>{
-              'imports': <String>['net.send'],
-              'exports': <String>['get_search_manga_list'],
-              'requiresWebView': false,
-            },
-          },
-        'search' => <String, Object?>{
-            'result': <String, Object?>{
-              'entries': <Object?>[],
-              'has_next_page': false,
-            },
-          },
-        _ => throw PlatformException(code: 'UNEXPECTED_COMMAND'),
-      };
-    });
-    final IosAidokuRuntime runtime = IosAidokuRuntime();
-
-    final AidokuPackageInspection inspection =
-        await runtime.inspect('/documents/source.aix');
-    final Map<String, Object?> search = await runtime.search(
-      '/documents/source.aix',
-      query: '東京',
-      page: 2,
-    );
-
-    expect(inspection.sourceInfo['id'], 'ja.test');
-    expect(search['has_next_page'], isFalse);
-    expect(calls, hasLength(2));
-    expect(calls.first.method, 'invoke');
-    expect(calls.last.arguments, <String, Object?>{
-      'command': 'search',
-      'packagePath': '/documents/source.aix',
-      'query': '東京',
-      'page': 2,
-      'network': <String, Object?>{
-        'proxyUrl': (await ensureAppNativeProxyEndpoint()).toString(),
-      },
-    });
-  });
-
-  test('iOS runtime preserves native error codes', () async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      FushiChannels.aidokuRuntime,
-      (MethodCall call) async => throw PlatformException(
-        code: 'UNSUPPORTED_IMPORT',
-        message: 'js.webview_create is not available',
-      ),
-    );
-
-    await expectLater(
-      IosAidokuRuntime().inspect('/documents/source.aix'),
-      throwsA(
-        isA<AidokuRuntimeException>()
-            .having(
-              (AidokuRuntimeException error) => error.code,
-              'code',
-              'UNSUPPORTED_IMPORT',
-            )
-            .having(
-              (AidokuRuntimeException error) => error.message,
-              'message',
-              contains('js.webview_create'),
-            ),
-      ),
-    );
-  });
 }
