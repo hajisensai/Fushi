@@ -255,8 +255,19 @@ class _PreviewRuntime extends Fake implements MihonRuntime {
     ];
   }
 
+  final List<String> invalidatedPackages = <String>[];
+  final List<List<String>> invalidatedBatches = <List<String>>[];
+
   @override
-  Future<void> invalidateExtension(String packageName) async {}
+  Future<void> invalidateExtension(String packageName) async {
+    invalidatedPackages.add(packageName);
+  }
+
+  @override
+  Future<void> invalidateExtensions(Iterable<String> packageNames) async {
+    invalidatedBatches.add(packageNames.toList(growable: false));
+    invalidatedPackages.addAll(packageNames);
+  }
 
   @override
   Future<void> dispose() async {}

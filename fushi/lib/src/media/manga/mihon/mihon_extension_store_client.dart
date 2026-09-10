@@ -76,6 +76,7 @@ class MihonAvailableExtension {
     required this.language,
     required this.contentWarning,
     required this.sources,
+    this.downloadCount,
   });
 
   final String storeUrl;
@@ -95,6 +96,29 @@ class MihonAvailableExtension {
   final String language;
   final int contentWarning;
   final List<MihonAvailableSource> sources;
+
+  /// 这一版扩展 APK 的公开下载次数，**不来自仓库索引**——索引里没有这个字段。
+  /// 由 `MihonManager` 在目录刷新后用 GitHub Release 资产计数 enrich 进来
+  /// （见 [MihonDownloadCounts]），拿不到就是 null（自建仓库、API 限流、断网）。
+  ///
+  /// null 与 0 语义不同：null = 没有公开数据，0 = 有数据且确实没人下过。
+  final int? downloadCount;
+
+  MihonAvailableExtension withDownloadCount(int? count) =>
+      MihonAvailableExtension(
+        storeUrl: storeUrl,
+        name: name,
+        packageName: packageName,
+        apkUrl: apkUrl,
+        iconUrl: iconUrl,
+        libVersion: libVersion,
+        extensionVersionCode: extensionVersionCode,
+        versionName: versionName,
+        language: language,
+        contentWarning: contentWarning,
+        sources: sources,
+        downloadCount: count,
+      );
 }
 
 @immutable

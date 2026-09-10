@@ -12,7 +12,7 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart';
 class AndroidMihonRuntime extends MihonBridgeRuntime
     implements CancellableMihonRuntime, ChallengeMihonRuntime {
   AndroidMihonRuntime({MethodChannel? channel})
-    : _channel = channel ?? const MethodChannel('app.fushi.reader/mihon');
+      : _channel = channel ?? const MethodChannel('app.fushi.reader/mihon');
 
   final MethodChannel _channel;
   int _imageRequestSequence = 0;
@@ -31,10 +31,10 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
       final Uri relay = await ensureAppChallengeProxyEndpoint();
       await _channel
           .invokeMethod<void>('configureProxyPolicy', <String, Object?>{
-            'port': server.port,
-            'token': token,
-            'challengeProxyEndpoint': relay.toString(),
-          });
+        'port': server.port,
+        'token': token,
+        'challengeProxyEndpoint': relay.toString(),
+      });
       _proxyPolicy = server;
     } on Object {
       await server.close();
@@ -75,21 +75,22 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
 
   @override
   Future<void> uninstallPrivateExtension(String packageName) => _invokeVoid(
-    'uninstallPrivateExtension',
-    <String, Object?>{'packageName': packageName},
-  );
+        'uninstallPrivateExtension',
+        <String, Object?>{'packageName': packageName},
+      );
 
   @override
   Future<Object?> invokeBridge(
     MihonExtensionRef extension,
     String method,
     Map<String, Object?> arguments,
-  ) => _invoke<Object?>('invoke', <String, Object?>{
-    'packageName': extension.packageName,
-    'apkPath': extension.apkPath,
-    'method': method,
-    ...arguments,
-  });
+  ) =>
+      _invoke<Object?>('invoke', <String, Object?>{
+        'packageName': extension.packageName,
+        'apkPath': extension.apkPath,
+        'method': method,
+        ...arguments,
+      });
 
   @override
   Future<Uint8List> fetchImage(
@@ -97,13 +98,14 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
     MihonSource source,
     MihonPage page, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) => fetchImageRequest(
-    extension,
-    source,
-    page,
-    requestId: 'direct-${_imageRequestSequence++}',
-    preferences: preferences,
-  );
+  }) =>
+      fetchImageRequest(
+        extension,
+        source,
+        page,
+        requestId: 'direct-${_imageRequestSequence++}',
+        preferences: preferences,
+      );
 
   @override
   Future<Uint8List> fetchImageRequest(
@@ -139,9 +141,9 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
 
   @override
   Future<void> cancelImageRequests(Iterable<String> requestIds) => _invokeVoid(
-    'cancelImageRequests',
-    <String, Object?>{'requestIds': requestIds.toList(growable: false)},
-  );
+        'cancelImageRequests',
+        <String, Object?>{'requestIds': requestIds.toList(growable: false)},
+      );
 
   @override
   Future<Uint8List> fetchSourceImage(
@@ -152,12 +154,12 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
   }) async {
     final Uint8List? bytes =
         await _invoke<Uint8List>('fetchSourceImage', <String, Object?>{
-          'packageName': extension.packageName,
-          'apkPath': extension.apkPath,
-          'sourceId': source.id,
-          'url': url,
-          'preferences': mihonBridgePreferences(source, preferences),
-        });
+      'packageName': extension.packageName,
+      'apkPath': extension.apkPath,
+      'sourceId': source.id,
+      'url': url,
+      'preferences': mihonBridgePreferences(source, preferences),
+    });
     if (bytes == null || bytes.isEmpty) {
       throw const MihonRuntimeException(
         'EMPTY_IMAGE',
@@ -171,16 +173,25 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
   Future<void> clearSourceData(
     MihonExtensionRef extension,
     MihonSource source,
-  ) => _invokeVoid('clearSourceData', <String, Object?>{
-    'packageName': extension.packageName,
-    'sourceId': source.id,
-  });
+  ) =>
+      _invokeVoid('clearSourceData', <String, Object?>{
+        'packageName': extension.packageName,
+        'sourceId': source.id,
+      });
 
   @override
   Future<void> invalidateExtension(String packageName) => _invokeVoid(
-    'invalidateExtension',
-    <String, Object?>{'packageName': packageName},
-  );
+        'invalidateExtension',
+        <String, Object?>{'packageName': packageName},
+      );
+
+  @override
+  Future<void> invalidateExtensions(Iterable<String> packageNames) async {
+    // Android 侧失效是一次 method channel 调用，没有桌面端的进程重启代价。
+    for (final String packageName in packageNames) {
+      await invalidateExtension(packageName);
+    }
+  }
 
   @override
   Future<void> dispose() async {

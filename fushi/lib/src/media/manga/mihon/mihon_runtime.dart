@@ -102,6 +102,14 @@ abstract interface class MihonRuntime {
 
   Future<void> invalidateExtension(String packageName);
 
+  /// 一次失效**一批**扩展。
+  ///
+  /// 存在的理由是桌面端：那边失效的唯一手段是重启 Java sidecar（class loader 一旦
+  /// 加载过某个 APK 就不会重读），逐个调等于批量安装 N 个扩展就重启 N 次进程——
+  /// 一次几秒，装一百个光重启就是十几分钟，中途每次重启还会把正在浏览的源打断。
+  /// Android 端没有这个代价，逐个调即可。
+  Future<void> invalidateExtensions(Iterable<String> packageNames);
+
   Future<void> dispose();
 }
 
@@ -129,18 +137,21 @@ abstract interface class ChallengeMihonRuntime {
 Map<String, Object?> mihonBridgeContext(
   MihonSource source, {
   String? changedPreferenceKey,
-}) => <String, Object?>{
-  'key': '__mangatan_bridge_context__',
-  'sourceId': source.id,
-  if (changedPreferenceKey != null)
-    'changedPreferenceKey': changedPreferenceKey,
-};
+}) =>
+    <String, Object?>{
+      'key': '__mangatan_bridge_context__',
+      'sourceId': source.id,
+      if (changedPreferenceKey != null)
+        'changedPreferenceKey': changedPreferenceKey,
+    };
 
 List<Map<String, Object?>> mihonBridgePreferences(
   MihonSource source,
   List<MihonPreference> preferences, {
   String? changedPreferenceKey,
-}) => <Map<String, Object?>>[
-  mihonBridgeContext(source, changedPreferenceKey: changedPreferenceKey),
-  ...preferences.map((MihonPreference preference) => preference.toBridgeJson()),
-];
+}) =>
+    <Map<String, Object?>>[
+      mihonBridgeContext(source, changedPreferenceKey: changedPreferenceKey),
+      ...preferences
+          .map((MihonPreference preference) => preference.toBridgeJson()),
+    ];
