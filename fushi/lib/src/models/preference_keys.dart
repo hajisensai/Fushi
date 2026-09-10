@@ -177,8 +177,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // "Compact Glossaries"）。默认 false。
   'popup_compact_glossaries',
   'popup_dictionary_columns',
-  // bool：查词弹窗全宽展示（忽略最大宽度，横向铺满；位置仍跟随选区）。默认 false。
-  'popup_full_width',
   'popup_instant_scroll',
   'popup_max_height',
   'popup_max_width',

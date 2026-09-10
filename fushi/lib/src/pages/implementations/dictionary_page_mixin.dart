@@ -274,7 +274,6 @@ mixin DictionaryPageMixin {
       selectionRect: layerSelection,
       screen: screen,
       bottomDocked: mixinAppModel.popupBottomDocked,
-      fullWidth: mixinAppModel.popupFullWidth,
       maxWidth: (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *
           mixinAppModel.appUiScale,
       maxHeight: effectiveMaxHeight,
