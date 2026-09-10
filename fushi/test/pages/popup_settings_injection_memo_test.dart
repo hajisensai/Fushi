@@ -263,7 +263,7 @@ void main() {
         appModel,
         theme: ThemeData(
           brightness: Brightness.light,
-          extensions: <ThemeExtension<dynamic>>[const FushiEinkTheme(true)],
+          extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(true)],
         ),
       );
       expect(js.head, contains("classList.toggle('eink', true)"));
@@ -275,7 +275,7 @@ void main() {
         appModel,
         theme: ThemeData(
           brightness: Brightness.light,
-          extensions: <ThemeExtension<dynamic>>[const FushiEinkTheme(false)],
+          extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(false)],
         ),
       );
       expect(js.head, contains("classList.toggle('eink', false)"));
