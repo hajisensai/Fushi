@@ -33,7 +33,10 @@ class CollectionRelationsSection extends StatefulWidget {
   final void Function(int targetCollectionId) onOpenCollection;
 
   /// 「去下载」：以关系边标题预填打开下载对话框。
-  final void Function(CollectionRelationRow relation) onDownload;
+  ///
+  /// null = 本平台/本配置没有下载中心（模块关掉，或 iOS 按 App Store 合规不提供），
+  /// 此时小菜单里不出这一项——留着就是一个点了会推进不存在流程的按钮。
+  final void Function(CollectionRelationRow relation)? onDownload;
 
   @override
   State<CollectionRelationsSection> createState() =>
@@ -92,16 +95,17 @@ class _CollectionRelationsSectionState
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_RelationMenuAction>>[
-        PopupMenuItem<_RelationMenuAction>(
-          value: _RelationMenuAction.download,
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.download_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(t.collection_relation_download),
-            ],
+        if (widget.onDownload != null)
+          PopupMenuItem<_RelationMenuAction>(
+            value: _RelationMenuAction.download,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.download_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_relation_download),
+              ],
+            ),
           ),
-        ),
         PopupMenuItem<_RelationMenuAction>(
           value: _RelationMenuAction.bind,
           child: Row(
@@ -117,7 +121,7 @@ class _CollectionRelationsSectionState
     if (!mounted) return;
     switch (action) {
       case _RelationMenuAction.download:
-        widget.onDownload(relation);
+        widget.onDownload?.call(relation);
       case _RelationMenuAction.bind:
         await _bindToExisting(relation);
       case null:

@@ -182,6 +182,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -4774,6 +4775,17 @@ class AppModel with ChangeNotifier {
     }
     cached?.close();
     _discoveryRegistryLacksPrefs = !isPreferencesReady;
+    // iOS 上一个源都不登记，内置的与用户自配 OPDS 的都不登记
+    // （[StoreRestrictedCapability.externalDiscovery]）。
+    //
+    // 仍然建一份**空**注册表而不是返回 null：设置页的「发现来源」开关区、停用
+    // 清单、发现页自身都无条件解引用本 getter，把合规边界做成一条空指针路径只会
+    // 换来一批 iOS 专属崩溃。空注册表让这些消费端自然渲染成「没有源」。
+    if (!StoreRestrictedCapability.externalDiscovery.isAvailable) {
+      return _mediaDiscoveryService = MediaDiscoveryService(
+        sources: const <MediaDiscoverySource>[],
+      );
+    }
     return _mediaDiscoveryService =
         MediaDiscoveryService(sources: <MediaDiscoverySource>[
       CoreAudioDiscoverySource(
@@ -6536,6 +6548,7 @@ class AppModel with ChangeNotifier {
         prefOf: moduleEnabled,
         isWindows: platformServices.isWindows,
         isDesktop: platformServices.isDesktop,
+        isIOS: platformServices.isIOS,
       );
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。

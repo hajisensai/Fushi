@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show AppExitResponse, PlatformDispatcher;
-
+import 'dart:ui'
+    show AppExitResponse, PlatformDispatcher;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -79,17 +79,15 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show Value;
 import 'package:fushi_core/fushi_core.dart'
-    show
-        VideoBooksCompanion,
-        VideoBookRow,
-        ProfileMediaKind,
-        FushiDatabaseFailureKind;
+    show FushiDatabaseFailureKind, ProfileMediaKind, VideoBookRow, VideoBooksCompanion;
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 
 Color? _savedSplashColor;
 
@@ -806,7 +804,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
     // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
+    // 只在有 Aidoku 宿主的平台装：iOS 的宿主已按 App Store 合规移除
+    // （[StoreRestrictedCapability.onlineMangaSource]），那里装个解题器等于给一个
+    // 不存在的源留后门。`AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源
+    // 匹配用它的 `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
+    if (AidokuRuntimeFactory.isSupported) {
+      installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
+    }
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {

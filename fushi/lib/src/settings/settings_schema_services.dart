@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/discovery_source_settings_sectio
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -126,6 +127,12 @@ SettingsDestination buildServicesDestination() {
       SettingsSection(
         id: 'services.resources',
         title: t.section_services_resources,
+        // iOS 上整节不渲染：内置索引器、Torznab、发现来源、OPDS 服务器四项配置的
+        // 全部消费端（发现页与下载中心）都已按 App Store 合规移除
+        // （[StoreRestrictedCapability.externalDiscovery]），留着就是一组配了也
+        // 不会生效的字段。用 section 级 `visible` 而不是逐项加判据：三条渲染路径
+        // （分类正文 / 主从详情 / 设置搜索索引）共用它，逐项写会漏掉搜索索引。
+        visible: (_) => StoreRestrictedCapability.externalDiscovery.isAvailable,
         items: <SettingsItem>[
           _externalServicePage(
             id: 'services.builtin_sources',

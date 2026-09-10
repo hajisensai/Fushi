@@ -23,6 +23,7 @@
 /* Begin PBXBuildFile section */
 		FA171A002B000001001C0F01 /* FushiChallengeBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */; };
 		FA171A002B000002001C0F01 /* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000002001C0F02 /* FushiSystemOcr.swift */; };
+		FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */; };
 		331C80D8294CF71000263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C80D7294CF71000263BE5 /* RunnerTests.swift */; };
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
@@ -67,6 +68,7 @@
 /* Begin PBXFileReference section */
 		FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiChallengeBrowser.swift; path = ../../apple/FushiChallengeBrowser.swift; sourceTree = "<group>"; };
 		FA171A002B000002001C0F02 /* FushiSystemOcr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSystemOcr.swift; path = ../../apple/FushiSystemOcr.swift; sourceTree = "<group>"; };
+		FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSpeechTranscriber.swift; path = ../../apple/FushiSpeechTranscriber.swift; sourceTree = "<group>"; };
 		0B7C95E12A53CED1568D4414 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		112D242DE0B0F664C7BC49FA /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C80D5294CF71000263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -185,6 +187,7 @@
 			children = (
 				FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */,
 				FA171A002B000002001C0F02 /* FushiSystemOcr.swift */,
+				FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */,
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
@@ -496,6 +499,7 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				FA171A002B000001001C0F01 /* FushiChallengeBrowser.swift in Sources */,
 				FA171A002B000002001C0F01 /* FushiSystemOcr.swift in Sources */,
+				FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);

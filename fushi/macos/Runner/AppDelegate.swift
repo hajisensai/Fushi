@@ -14,6 +14,9 @@ class AppDelegate: FlutterAppDelegate {
       let controller = windowController.flutterViewController
       // 系统自带 OCR（Vision）。与 iOS 侧同一份实现（apple/FushiSystemOcr.swift）。
       FushiSystemOcr.register(binaryMessenger: controller.engine.binaryMessenger)
+      // 系统语音转录（macOS 26 的 SpeechAnalyzer）；与 iOS 同一份实现。
+      FushiSpeechTranscriber.register(
+        binaryMessenger: controller.engine.binaryMessenger)
       challengeBrowser = FushiChallengeBrowser(
         binaryMessenger: controller.engine.binaryMessenger
       ) { [weak self] in self?.mainFlutterWindow }

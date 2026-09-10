@@ -20,6 +20,8 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/asr_host/apple_speech_transcription_service.dart';
+import 'package:fushi/src/asr_host/asr_engine_options.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/audiobook/asr_local_model_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -269,6 +271,7 @@ class AsrTranscribeSheet extends StatefulWidget {
     AsrModelCatalog Function()? catalogGetter,
     Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
     this.directoryPicker,
+    this.systemSpeechService,
     super.key,
   })  : catalogGetter = catalogGetter ?? _readAsrModelCatalog,
         catalogSetter = catalogSetter ?? saveAsrModelCatalog;
@@ -303,11 +306,22 @@ class AsrTranscribeSheet extends StatefulWidget {
   /// 「手动指定模型」用的目录选择器；null = 真的系统对话框。
   final Future<String?> Function()? directoryPicker;
 
+  /// 选中「系统语音识别」时用哪个服务；null = 真的 [AppleSpeechTranscriptionService]。
+  /// 测试注入 fake，免得 widget 测试去碰 method channel。
+  final AsrTranscriptionService Function()? systemSpeechService;
+
   @override
   State<AsrTranscribeSheet> createState() => _AsrTranscribeSheetState();
 }
 
 class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
+  /// 当前生效的转录服务。选中系统语音时换成另一份实现（见 [_serviceFor]）——
+  /// 弹层其余部分只与「一个 AsrTranscriptionService」对话，不知道底下是谁。
+  late AsrTranscriptionService _service = widget.service;
+
+  /// 本机有没有系统语音（OS ≥ 26 且原生侧在）。探完才决定下拉里出不出那一项。
+  bool _systemSpeechAvailable = false;
+
   _Phase _phase = _Phase.checking;
   AsrAccelerationPreference _preference = AsrAccelerationPreference.auto;
   AsrLanguage _language = AsrLanguage.japanese;
@@ -345,6 +359,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _language = widget.languageHint ??
         AsrLanguage.fromTag(widget.languageGetter?.call()) ??
         AsrLanguage.japanese;
+    _service = _serviceFor(_selectedEngineId());
+    unawaited(_probeSystemSpeech());
     _refreshPlan();
     _probeRemote();
   }
@@ -375,15 +391,15 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     });
     try {
       final AsrLanguage language = _language;
-      final AsrTranscribePlan plan = await widget.service.plan(
+      final AsrTranscribePlan plan = await _service.plan(
         language: language,
         preference: _preference,
       );
-      final String? finished = await widget.service.finishedSrtPath(
+      final String? finished = await _service.finishedSrtPath(
         widget.audioPaths,
         language,
       );
-      final AsrJobState? existing = await widget.service.existingState(
+      final AsrJobState? existing = await _service.existingState(
         widget.audioPaths,
         language,
       );
@@ -452,7 +468,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     int completedBytes = 0;
     String lastFile = '';
     int lastFileTotal = 0;
-    _downloadSub = widget.service
+    _downloadSub = _service
         .downloadModel(language: plan.language, variant: plan.variant)
         .listen(
       (ModelDownloadEvent e) {
@@ -488,7 +504,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       _result = null;
     });
     try {
-      final AsrRunningTranscription running = await widget.service.start(
+      final AsrRunningTranscription running = await _service.start(
         audioPaths: widget.audioPaths,
         language: plan.language,
         variant: plan.variant,
@@ -672,16 +688,56 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _refreshPlan();
   }
 
-  /// 这门语言当前能选哪些模型包（第一项 = 当前生效的那个）。
-  List<AsrModelPack> _modelChoices() =>
-      asrModelChoicesFor(_language, asrModelRegistry);
+  /// 这门语言当前能选哪些引擎（ONNX 包在前，系统语音在后）。
+  List<AsrEngineOption> _engineOptions() => asrEngineOptions(
+        language: _language,
+        registry: asrModelRegistry,
+        systemSpeechAvailable: _systemSpeechAvailable,
+        systemSpeechLabel: t.audiobook_transcribe_engine_system,
+      );
+
+  /// 当前选中的引擎 id。
+  String? _selectedEngineId() => selectedAsrEngineId(
+        language: _language,
+        catalog: widget.catalogGetter(),
+        options: _engineOptions(),
+      );
+
+  /// 按选中的引擎给出服务实例。ONNX 走注入进来的那份（生产是
+  /// `createAsrTranscriptionService()`，测试是 fake）；系统语音走另一份实现。
+  AsrTranscriptionService _serviceFor(String? engineId) {
+    if (engineId != kAppleSpeechEngineId) return widget.service;
+    final AsrTranscriptionService Function()? factory =
+        widget.systemSpeechService;
+    return factory != null ? factory() : AppleSpeechTranscriptionService();
+  }
+
+  /// 探本机有没有系统语音。探不到（非 Apple、OS < 26、原生侧没实现）就当没有——
+  /// 让一个点了必报错的选项出现在下拉里比不出现更糟。
+  Future<void> _probeSystemSpeech() async {
+    bool available = false;
+    try {
+      final AsrTranscriptionService probe = _serviceFor(kAppleSpeechEngineId);
+      if (probe is AppleSpeechTranscriptionService) {
+        available = await probe.isAvailable();
+      }
+    } catch (_) {
+      available = false;
+    }
+    if (!mounted || available == _systemSpeechAvailable) return;
+    setState(() => _systemSpeechAvailable = available);
+  }
 
   /// 下拉每项的副标题：平台适配度 + int8 全套大小。
   ///
   /// 「多大」用 int8 那套：它是手机与无 GPU 桌面实际会下的一套，也是两套里小的
   /// 那个——把大的报给用户会让「Omnilingual 在手机上要 4 GB」这种吓人的数字出现在
   /// 一个根本不会下 fp32 的设备上。
-  String _modelSubtitle(AsrModelPack pack) {
+  String _modelSubtitle(AsrEngineOption option) {
+    final AsrModelPack? pack = option.pack;
+    // 系统语音没有包、没有大小可报——说清它的真实代价（系统会下自己的语言资产），
+    // 别编一个字节数，也别吹成零下载。
+    if (pack == null) return t.audiobook_transcribe_engine_system_hint;
     final String fit = switch (asrModelFitFor(pack, mobile: _isMobile)) {
       AsrModelFit.light => t.audiobook_transcribe_model_fit_light,
       AsrModelFit.desktop => t.audiobook_transcribe_model_fit_desktop,
@@ -696,6 +752,19 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     return '$fit · $size$badge';
   }
 
+  /// 当前选中的是不是系统语音引擎。
+  bool get _systemSpeech => _selectedEngineId() == kAppleSpeechEngineId;
+
+  /// 就绪行里那段「用哪个模型跑」的描述。
+  ///
+  /// 系统语音没有变体（fp32 / int8 是 ONNX 编码器的概念），报变体等于报一个假事实，
+  /// 所以只报引擎名。
+  String _readyEngineLabel(AsrTranscribePlan plan) {
+    if (_systemSpeech) return t.audiobook_transcribe_engine_system;
+    return '${asrModelPackFor(plan.language).displayName} · '
+        '${_variantLabel(plan.variant)}';
+  }
+
   bool get _isMobile =>
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
@@ -704,11 +773,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   ///
   /// 模型换了就是另一套磁盘目录与另一个任务哈希（任务 id 含包 id），所以进行中的
   /// 进度不会被顶掉，切回去还在。
-  Future<void> _changeModel(String packId) async {
-    final List<AsrModelPack> packs = _modelChoices();
-    if (packs.isEmpty || packs.first.id == packId) return;
+  Future<void> _changeEngine(String engineId) async {
+    if (_selectedEngineId() == engineId) return;
+    // 先换服务再重新规划：plan / 就绪判定 / 任务目录全由服务决定，顺序反了会用
+    // 旧引擎去查新引擎的任务。
+    setState(() => _service = _serviceFor(engineId));
     await _updateCatalog(
-      widget.catalogGetter().withChoice(_language, packId),
+      widget.catalogGetter().withChoice(_language, engineId),
     );
   }
 
@@ -772,7 +843,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   }
 
   Future<void> _discard() async {
-    await widget.service.discard(widget.audioPaths, _language);
+    await _service.discard(widget.audioPaths, _language);
     if (!mounted) return;
     _result = null;
     _finishedSrt = null;
@@ -835,13 +906,17 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
       case _Phase.ready:
       case _Phase.paused:
+        // 就绪行报的是**当前引擎**的名字。不能再直接问 `asrModelPackFor(language)`
+        // ——那只答得出 ONNX 包，选中系统语音时会报出一个根本没在跑的模型名。
         final String ready = t.audiobook_transcribe_model_ready(
-          variant: plan == null
-              ? ''
-              : '${asrModelPackFor(plan.language).displayName} · '
-                  '${_variantLabel(plan.variant)}',
+          variant: plan == null ? '' : _readyEngineLabel(plan),
         );
         final StringBuffer sb = StringBuffer(ready);
+        if (_systemSpeech) {
+          sb
+            ..writeln()
+            ..write(t.audiobook_transcribe_engine_system_no_pause);
+        }
         if (_phase == _Phase.paused) {
           sb
             ..writeln()
@@ -1011,22 +1086,22 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           // 进度条），模型区多占一行会把「加速」整段挤出首屏。
           Builder(
             builder: (BuildContext ctx) {
-              final List<AsrModelPack> packs = _modelChoices();
+              final List<AsrEngineOption> options = _engineOptions();
               return Row(
                 children: <Widget>[
                   Expanded(
                     child: GamepadMenuDropdown<String>(
                       key: const ValueKey<String>('asr-transcribe-model'),
                       entries: <GamepadDropdownEntry<String>>[
-                        for (final AsrModelPack pack in packs)
-                          (value: pack.id, label: pack.displayName),
+                        for (final AsrEngineOption option in options)
+                          (value: option.id, label: option.label),
                       ],
-                      selected: packs.isEmpty ? null : packs.first.id,
-                      enabled: _canChangePreference && packs.length > 1,
+                      selected: _selectedEngineId(),
+                      enabled: _canChangePreference && options.length > 1,
                       entrySubtitle: (String id) => _modelSubtitle(
-                        packs.firstWhere((AsrModelPack p) => p.id == id),
+                        options.firstWhere((AsrEngineOption o) => o.id == id),
                       ),
-                      onChanged: _changeModel,
+                      onChanged: _changeEngine,
                     ),
                   ),
                   SizedBox(width: tokens.spacing.gap),
@@ -1034,7 +1109,12 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                     key: const ValueKey<String>('asr-transcribe-model-add'),
                     tooltip: t.audiobook_transcribe_model_custom_add,
                     icon: const Icon(Icons.create_new_folder_outlined),
-                    onPressed: _canChangePreference ? _addLocalModel : null,
+                    // 选中系统语音时接入本地 ONNX 模型没有意义（那是另一个引擎的
+                    // 东西）——留着可点会让用户以为接进来就能给系统语音用。
+                    onPressed: _canChangePreference &&
+                            _selectedEngineId() != kAppleSpeechEngineId
+                        ? _addLocalModel
+                        : null,
                   ),
                 ],
               );

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		FA171A002B000001001C0F01 /* FushiChallengeBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */; };
 		FA171A002B000002001C0F01 /* FushiSystemOcr.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000002001C0F02 /* FushiSystemOcr.swift */; };
+		FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		61FEF2834CC237156E0983BA /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */; };
@@ -35,6 +36,7 @@
 /* Begin PBXFileReference section */
 		FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiChallengeBrowser.swift; path = ../../apple/FushiChallengeBrowser.swift; sourceTree = "<group>"; };
 		FA171A002B000002001C0F02 /* FushiSystemOcr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSystemOcr.swift; path = ../../apple/FushiSystemOcr.swift; sourceTree = "<group>"; };
+		FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSpeechTranscriber.swift; path = ../../apple/FushiSpeechTranscriber.swift; sourceTree = "<group>"; };
 		0F5A058A6A618CF04E7D9DEC /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
@@ -116,6 +118,7 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				FA171A002B000001001C0F02 /* FushiChallengeBrowser.swift */,
 				FA171A002B000002001C0F02 /* FushiSystemOcr.swift */,
+				FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				8F6D7C1A2A3948576E0D1234 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -143,7 +146,6 @@
 			buildPhases = (
 				913B847A994ABA4520129689 /* [CP] Check Pods Manifest.lock */,
 				B20200000000000000000001 /* Build FushiDicts FFI */,
-				B20300000000000000000001 /* Build Aidoku Runtime */,
 				9740EEB61CF901F6004384FC /* Run Script */,
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
@@ -318,29 +320,6 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/build_fushidicts_ffi.sh\"\n";
 		};
-		B20300000000000000000001 /* Build Aidoku Runtime */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(AIDOKU_RUNTIME_SOURCE_DIR)/Cargo.lock",
-				"$(AIDOKU_RUNTIME_SOURCE_DIR)/Cargo.toml",
-				"$(AIDOKU_RUNTIME_SOURCE_DIR)/src/embedded.rs",
-				"$(AIDOKU_RUNTIME_SOURCE_DIR)/src/lib.rs",
-			);
-			name = "Build Aidoku Runtime";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(AIDOKU_RUNTIME_ARCHIVE)",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/bash;
-			shellScript = "/bin/bash \"$PROJECT_DIR/build_aidoku_runtime.sh\"\n";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -350,6 +329,7 @@
 			files = (
 				FA171A002B000001001C0F01 /* FushiChallengeBrowser.swift in Sources */,
 				FA171A002B000002001C0F01 /* FushiSystemOcr.swift in Sources */,
+				FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				8F6D7C1B2A3948576E0D1234 /* SceneDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
@@ -432,9 +412,6 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
 			buildSettings = {
-				AIDOKU_RUNTIME_ARCHIVE = "$(AIDOKU_RUNTIME_BUILD_DIR)/libfushi_aidoku_runtime.a";
-				AIDOKU_RUNTIME_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/aidoku_runtime/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				AIDOKU_RUNTIME_SOURCE_DIR = "$(PROJECT_DIR)/../../native/aidoku_runtime";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -452,7 +429,6 @@
 					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
-					"$(AIDOKU_RUNTIME_ARCHIVE)",
 					"-framework",
 					CoreFoundation,
 				);
@@ -576,9 +552,6 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 9740EEB21CF90195004384FC /* Debug.xcconfig */;
 			buildSettings = {
-				AIDOKU_RUNTIME_ARCHIVE = "$(AIDOKU_RUNTIME_BUILD_DIR)/libfushi_aidoku_runtime.a";
-				AIDOKU_RUNTIME_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/aidoku_runtime/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				AIDOKU_RUNTIME_SOURCE_DIR = "$(PROJECT_DIR)/../../native/aidoku_runtime";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -596,7 +569,6 @@
 					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
-					"$(AIDOKU_RUNTIME_ARCHIVE)",
 					"-framework",
 					CoreFoundation,
 				);
@@ -614,9 +586,6 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
 			buildSettings = {
-				AIDOKU_RUNTIME_ARCHIVE = "$(AIDOKU_RUNTIME_BUILD_DIR)/libfushi_aidoku_runtime.a";
-				AIDOKU_RUNTIME_BUILD_DIR = "$(PROJECT_DIR)/Flutter/ephemeral/aidoku_runtime/$(CONFIGURATION)-$(PLATFORM_NAME)";
-				AIDOKU_RUNTIME_SOURCE_DIR = "$(PROJECT_DIR)/../../native/aidoku_runtime";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -634,7 +603,6 @@
 					"-Wl,-export_dynamic",
 					"-force_load",
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
-					"$(AIDOKU_RUNTIME_ARCHIVE)",
 					"-framework",
 					CoreFoundation,
 				);

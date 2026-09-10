@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 
 /// 发现页的生产聚合服务。
 ///
@@ -46,24 +47,31 @@ class VideoDiscoveryService {
     final VideoMetadataProviderRegistry catalog =
         VideoMetadataProviderRegistry.production(config);
     final AniListVideoMetadataProvider anilist = AniListVideoMetadataProvider();
+    // iOS 上不登记任何**发现** provider（[StoreRestrictedCapability.externalDiscovery]）；
+    // metadata provider 照常保留——那条链路服务的是本地媒体库的刮削（MAL / TMDB /
+    // AniDB 补全已入库文件的作品资料），与「浏览站上有什么可看」不是一回事，
+    // 两者共用本类只是因为它们查的是同一批 API。
+    final bool discoveryAvailable =
+        StoreRestrictedCapability.externalDiscovery.isAvailable;
     return VideoDiscoveryService(
       providers: <VideoDiscoveryProvider>[
-        for (final VideoMetadataProvider provider in catalog.providers)
-          if (provider.providerKind == VideoMetadataProviderKind.tmdb)
-            // Preserve TMDB's discovery paging and filter capabilities.
-            TmdbVideoDiscoveryProvider(
-              apiKey: config.tmdbApiKey,
-              language: config.locale,
-            )
-          else
-            VideoMetadataSearchDiscoveryProvider(
-              provider: provider,
-              categories: const <VideoDiscoveryCategory>{
-                VideoDiscoveryCategory.anime,
-              },
-              priority: 5,
-            ),
-        AniListVideoDiscoveryProvider(),
+        if (discoveryAvailable)
+          for (final VideoMetadataProvider provider in catalog.providers)
+            if (provider.providerKind == VideoMetadataProviderKind.tmdb)
+              // Preserve TMDB's discovery paging and filter capabilities.
+              TmdbVideoDiscoveryProvider(
+                apiKey: config.tmdbApiKey,
+                language: config.locale,
+              )
+            else
+              VideoMetadataSearchDiscoveryProvider(
+                provider: provider,
+                categories: const <VideoDiscoveryCategory>{
+                  VideoDiscoveryCategory.anime,
+                },
+                priority: 5,
+              ),
+        if (discoveryAvailable) AniListVideoDiscoveryProvider(),
       ],
       metadataProviders: <VideoMetadataProvider>[
         ...catalog.providers,
