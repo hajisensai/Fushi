@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
@@ -7,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 统计页会话流（用户 2026-09-08：每个域都要会话级统计，能删误点的会话）的行为守卫：
 ///  * 每行显示 标题 · 起止 · 量纲；空串标题回退 mediaKey；
+///  * BUG-2406：命中合集的行在条目名上方挂合集名，标题最多两行（不再单行截断）；
 ///  * 区块只显示前 [limit] 行，多出来时给「全部会话 (N)」入口进 sheet；
 ///  * 垃圾桶 → 确认框（会话专用文案）→ 点删除才回调 [onDelete] 并移除该行；取消不动。
 StudySession _session(
@@ -35,6 +37,7 @@ Future<void> _pump(
   WidgetTester tester, {
   required List<StudySession> sessions,
   required Future<void> Function(StudySession) onDelete,
+  StatSessionCollectionOf? collectionOf,
   int limit = 8,
 }) async {
   await tester.pumpWidget(
@@ -47,6 +50,7 @@ Future<void> _pump(
                 context,
                 sessions: sessions,
                 titleOf: (StudySession s) => s.title,
+                collectionOf: collectionOf,
                 onDelete: onDelete,
                 limit: limit,
               ),
@@ -80,6 +84,75 @@ void main() {
     expect(find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
         findsOneWidget);
     expect(find.text(t.stat_sessions_empty), findsNothing);
+  });
+
+  testWidgets('BUG-2406：命中合集的行带合集名，未命中只有条目名', (
+    WidgetTester tester,
+  ) async {
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        _session('a', title: '暗中行动', kind: kActivityMediaVideo),
+        _session('b', title: '独立的一本书'),
+      ],
+      collectionOf: (StudySession s) =>
+          s.mediaKey == 'k-a' ? 'Re：从零开始的异世界生活' : null,
+      onDelete: (_) async {},
+    );
+    expect(
+      find.text('Re：从零开始的异世界生活'),
+      findsOneWidget,
+      reason: '分集名单看认不出作品，合集名必须上屏',
+    );
+    expect(find.text('暗中行动'), findsOneWidget, reason: '合集名不顶掉条目名');
+    expect(find.text('独立的一本书'), findsOneWidget);
+    expect(
+      find.byIcon(Icons.folder_outlined),
+      findsOneWidget,
+      reason: '不属于合集的行不挂标签',
+    );
+  });
+
+  testWidgets('BUG-2406：合集名进删除确认文案', (WidgetTester tester) async {
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        _session('a', title: '暗中行动', kind: kActivityMediaVideo),
+      ],
+      collectionOf: (StudySession s) => '异世界生活',
+      onDelete: (_) async {},
+    );
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('异世界生活 - 暗中行动'), findsOneWidget);
+  });
+
+  testWidgets('BUG-2406：长标题排到第二行而不是单行省略', (WidgetTester tester) async {
+    const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
+    // 手机宽度：用户实报的截图就是这个宽度下的单行截断。
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        _session('a', title: long, kind: kActivityMediaVideo),
+      ],
+      onDelete: (_) async {},
+    );
+    final RenderParagraph title = tester.renderObject<RenderParagraph>(
+      find.text(long),
+    );
+    expect(
+      title.didExceedMaxLines,
+      isFalse,
+      reason: '两行装得下这个长度的媒体名',
+    );
+    expect(
+      title.size.height,
+      greaterThan(title.preferredLineHeight * 1.5),
+      reason: '真的排到了第二行（单行 ellipsis 会停在一行高）',
+    );
   });
 
   testWidgets('空列表显示空态', (WidgetTester tester) async {

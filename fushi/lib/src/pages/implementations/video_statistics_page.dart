@@ -269,6 +269,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             context,
             sessions: _sessions,
             titleOf: (StudySession s) => s.title,
+            collectionOf: _sessionCollectionName,
             onDelete: _deleteSession,
           ),
         ),
@@ -445,6 +446,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       title: video.title,
       sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
       titleOf: (StudySession s) => s.title,
+      collectionOf: _sessionCollectionName,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
     );
@@ -492,6 +494,17 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _collectionNamesById,
     );
   }
+
+  /// 会话行的所属合集名（BUG-2406：合集里段 title 是分集名，行上得写清是哪部
+  /// 作品）。会话自带 bookUid 身份（段 mediaKey），走与 [_collectionNameForVideo]
+  /// 同一 'video|<bookUid>' 键契约。
+  String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
+      ? null
+      : statCollectionName(
+          MediaKind.video.compositeKey(s.mediaKey),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        );
 
   /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
   /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删
