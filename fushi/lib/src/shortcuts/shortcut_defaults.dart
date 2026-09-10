@@ -487,6 +487,15 @@ class ShortcutDefaults {
     ShortcutAction.globalExternalLookup: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
+    // 用户请求：把主窗唤到前台并直接落在查词页上。默认 Ctrl+Alt+F（F = find，与
+    // 同一 scope 里已占的 Ctrl+Alt+D 相邻好记）。跟 globalExternalLookup 一样是
+    // 键盘-only：鼠标侧键 3/4 已被那条占掉，手柄在 app 外只有一条单槽派发链
+    // （GlobalExternalLookupRoute）且只认那条，给了绑定也永不触发。
+    // macOS 表自动把 Ctrl→Meta（见 _macOS）；移动端整个 globalExternal scope 返回
+    // 空绑定（见 _mobile），系统不允许第三方注册全局热键。
+    ShortcutAction.globalExternalOpenLookupPage: _kb([
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.alt}),
+    ]),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立

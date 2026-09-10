@@ -524,6 +524,31 @@ enum ShortcutAction {
   // 修复「app 外查词快捷键没办法设置」。
   globalExternalLookup(ShortcutScope.globalExternal, 'global_external_lookup'),
 
+  // 用户请求：一个键把 Hibiki 主窗**唤到前台**并直接落在**查词页**上。
+  //
+  // 与上面的 globalExternalLookup 是两件不同的事，别合并：
+  //   · globalExternalLookup —— 取当前前台程序的选中文本，在**无边框覆盖窗**里出
+  //     结果，主窗一动不动（`WS_EX_NOACTIVATE`，刻意不抢焦点）。
+  //   · globalExternalOpenLookupPage（本 action）—— 不取任何文本，把**主窗**唤到
+  //     前台并切到查词页，让用户自己输入 / 粘贴。
+  // 因此它没有「选中什么」这个前提，在任何时刻按都有确定行为。
+  //
+  // 执行体同样在 GlobalLookupController（globalExternal scope 的动作一律由它读绑定
+  // 注册进 hotkey_manager，不经 resolveKeyboard / 页面派发）：唤前台走
+  // DesktopLookupService.bringMainWindowToFront（已含 Windows 前台归属判断与任务栏
+  // 闪烁清理），落地面走 AppModel.requestHomeDictionaryTab —— 与桌面取词 / 悬浮字幕
+  // 点词同一条 `_revealDictionary(carryingPendingLookup: true)` 路径：这是一次**用户
+  // 显式发起**的查词，「功能模块 → 查词」关掉的是导航项而不是查词能力，故 tab 不在
+  // 时推独立查词路由承载，绝不静默吞掉按键。
+  //
+  // 键盘-only：鼠标侧键那两个号已被 globalExternalLookup 占（真相源见
+  // [allowedMouseButtons]），手柄在 app 外的派发链只有 GlobalExternalLookupRoute
+  // 那一条、只认 globalExternalLookup，给了绑定也永不触发。
+  globalExternalOpenLookupPage(
+    ShortcutScope.globalExternal,
+    'global_external_open_lookup_page',
+  ),
+
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
   // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
   // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
@@ -599,6 +624,15 @@ enum ShortcutAction {
         // 而 Windows 键盘上有 Menu 键，用户几乎必然会去试着绑一下。
         ShortcutAction.globalContextMenu => const <ShortcutChannel>{
             ShortcutChannel.mouse,
+          },
+        // 「置顶并打开查词页」只有键盘一条路：执行体挂在 hotkey_manager 的 OS 热键
+        // 上（GlobalLookupController._osHotKeyActions），而本 scope 继承来的另外两条
+        // 通道各自只有**一个**消费者、且都只认 globalExternalLookup ——鼠标是 native
+        // RawInput 侧键触发（runner 侧只登记那一个按钮号），手柄是进程级单槽
+        // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
+        // 能回显，按下去什么都不发生。
+        ShortcutAction.globalExternalOpenLookupPage => const <ShortcutChannel>{
+            ShortcutChannel.keyboard,
           },
         _ => scope.channels,
       };
