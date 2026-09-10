@@ -25,6 +25,7 @@ class YomitanApiServerManager {
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
+    String Function()? extensionTestPageProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -39,7 +40,8 @@ class YomitanApiServerManager {
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
-        _subtitleRegistryProvider = subtitleRegistryProvider;
+        _subtitleRegistryProvider = subtitleRegistryProvider,
+        _extensionTestPageProvider = extensionTestPageProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -68,6 +70,8 @@ class YomitanApiServerManager {
   final void Function(String build, String? version)? _onExtensionReport;
   // 「Jimaku 查字幕」扩展桥：Jimaku API key 供给器，透传给 [YomitanApiServer]。
   final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
+  // 新手引导「试一试」页的 HTML 供给器，透传给 [YomitanApiServer]（GET 路由）。
+  final String Function()? _extensionTestPageProvider;
 
   YomitanApiServer? _server;
 
@@ -93,6 +97,7 @@ class YomitanApiServerManager {
       onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
       subtitleRegistryProvider: _subtitleRegistryProvider,
+      extensionTestPageProvider: _extensionTestPageProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

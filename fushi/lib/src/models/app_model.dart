@@ -191,6 +191,8 @@ import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
+import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
+import 'package:fushi/src/sync/browser_extension_test_page.dart';
 import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
@@ -7355,6 +7357,41 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  // ── 浏览器扩展「试一试」页 ───────────────────────────────────────────
+  /// 新手引导装完扩展后给用户验的那张页面的地址。必须是 http（`file://` 在 Chrome 下
+  /// 默认不给扩展权限，证明不了任何事），由本机 yomitan-api server 提供，所以 app 在跑
+  /// 就一定打得开。
+  String get browserExtensionTestPageUrl =>
+      'http://127.0.0.1:$yomitanApiPort$kBrowserExtensionTestPagePath';
+
+  /// 试用页 HTML：请求到达时才生成——例句按用户**已装词典**的词头语言挑（与引导内查词
+  /// 教程同一真相源 [onboardingSampleLanguage]），文案随当前 app 语言。
+  String buildBrowserExtensionTestPageHtml() {
+    final String language = onboardingSampleLanguage(
+      dictionarySourceLanguages: dictionaries.map(
+        (Dictionary dictionary) => dictionary.effectiveSourceLanguage,
+      ),
+      // 这里读的是**已装词典**（引导早已走完），不是引导里的推荐包勾选状态。
+      recommendedPackSelected: false,
+    );
+    return buildBrowserExtensionTestPage(
+      sentence: kOnboardingSampleSentences[language]!,
+      languageTag: language,
+      strings: BrowserExtensionTestPageStrings(
+        title: t.browser_extension_test_page_title,
+        intro: t.browser_extension_test_page_intro,
+        probeChecking: t.browser_extension_test_page_probe_checking,
+        probeOk: t.browser_extension_test_page_probe_ok,
+        probeMissing: t.browser_extension_test_page_probe_missing,
+        stepPopupTitle: t.browser_extension_test_page_step_popup_title,
+        stepPopupBody: t.browser_extension_test_page_step_popup_body,
+        stepLookupTitle: t.browser_extension_test_page_step_lookup_title,
+        stepLookupBody: t.browser_extension_test_page_step_lookup_body,
+        sampleLabel: t.browser_extension_test_page_sample_label,
+      ),
+    );
+  }
+
   // ── yomitan-api server (lifecycle) ──────────────────────────────────
   YomitanApiServerManager? _yomitanServerManager;
 
@@ -7403,6 +7440,8 @@ class AppModel with ChangeNotifier {
       // 复用**用户在 app 设置里配好的全部在线字幕来源**（Jimaku / OpenSubtitles /
       // AJATT），与视频页的「找字幕」同一批 provider；一个都没配时端点回 no-provider。
       subtitleRegistryProvider: browserExtensionSubtitleRegistry,
+      // 新手引导「试一试」页：GET /onboarding/extension-test 到达时才生成 HTML。
+      extensionTestPageProvider: buildBrowserExtensionTestPageHtml,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';
