@@ -103,9 +103,14 @@ Future<int> runFushiServerCli(List<String> args) async {
     return 64;
   }
   final ArgResults? command = results.command;
-  if (results['help'] as bool || command == null) {
+  final bool helpRequested = results['help'] as bool;
+  if (helpRequested || command == null) {
     _usage(parser);
-    return command == null ? 64 : 0;
+    // 退出码看的是**用户要什么**，不是有没有 command：显式 `--help` 是成功路径
+    // （CLI 惯例，且 release-server.yml 的构建冒烟就是在 `set -e` 下跑
+    // `fushi_server --help`——旧写法让裸 `--help` 因 command == null 返回 64，
+    // 整个 linux job 固定红）。什么都不给才是用法错误（64 = EX_USAGE）。
+    return helpRequested ? 0 : 64;
   }
   final File configFile = File(p.absolute(results['config'] as String));
   final bool verbose = results['verbose'] as bool;
