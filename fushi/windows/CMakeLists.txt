@@ -174,9 +174,18 @@ install(CODE "
 #
 # 这是唯一能挡住回归的东西——flutter analyze 与 Dart 单测在结构上永远看不到 bundle
 # 里有哪些文件，而验证构建跑的是 --debug，也不经过这条 install 路径。
+#
+# 判据路径必须用 ${INSTALL_BUNDLE_LIB_DIR}（不转义），**不能**用
+# \${CMAKE_INSTALL_PREFIX}（转义）。本仓的 bundle 目录是生成器表达式（上面的
+# BUILD_BUNDLE_DIR = $<TARGET_FILE_DIR:...>），生成出来的 cmake_install.cmake 里
+# 第 5 行就是 `set(CMAKE_INSTALL_PREFIX "$<TARGET_FILE_DIR:fushi>")` —— 脚本期这个
+# 变量永远是那串**未求值的 genex 字面量**，EXISTS 恒假，与 dll 在不在无关，于是
+# Windows Release 构建 100% 失败（CI 日志里 `Installing: .../pdfium.dll` 明明成功）。
+# install(DESTINATION) 不受影响是因为 DESTINATION 的 genex 在 generate 期求值；
+# install(CODE) 里只有不转义的 ${...} 才会被 generate 期求值。
 install(CODE "
   if(CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\")
-    if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/pdfium.dll\")
+    if(NOT EXISTS \"${INSTALL_BUNDLE_LIB_DIR}/pdfium.dll\")
       message(FATAL_ERROR
         \"Missing pdfium.dll in the Windows bundle. \"
         \"PDF import and the PDF reader hang forever without it (BUG-2419). \"

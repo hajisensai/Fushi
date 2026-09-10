@@ -98,6 +98,30 @@ void main() {
             '守卫。与同文件里 fushi_torrent 那条 install(CODE) 守卫同款理由：禁止'
             '产出一个运行时必然不可用的发布包。',
       );
+
+      // 守卫本身也会写错，而且错法很隐蔽：判据路径若写成**转义**的
+      // `\${CMAKE_INSTALL_PREFIX}`，取值就被推迟到 install 脚本期，而本仓的
+      // bundle 目录是生成器表达式（`BUILD_BUNDLE_DIR = $<TARGET_FILE_DIR:...>`），
+      // 生成出来的 cmake_install.cmake 里那句就是
+      // `set(CMAKE_INSTALL_PREFIX "$<TARGET_FILE_DIR:fushi>")` —— 脚本期它永远是
+      // 那串**未求值的 genex 字面量**，EXISTS 恒假。后果不是「守卫失效」而是
+      // 「守卫恒真」：dll 装进去了也照样 FATAL_ERROR，Windows Release 100% 构建
+      // 失败（实测 CI 日志里 `Installing: .../pdfium.dll` 成功、守卫仍报缺）。
+      //
+      // 只有**不转义**的 `${...}`（configure 期展开成含 genex 的串、generate 期
+      // 求值）才会在脚本里落成真实绝对路径。所以这里钉：install(CODE) 里的存在性
+      // 判据不许出现转义形式的 CMAKE_INSTALL_PREFIX。
+      final RegExp escapedPrefixInExists = RegExp(
+        r'NOT\s+EXISTS[^\n]*\\\$\{CMAKE_INSTALL_PREFIX\}',
+      );
+      expect(
+        escapedPrefixInExists.hasMatch(cmake),
+        isFalse,
+        reason: 'install(CODE) 的存在性判据用了转义的 \${CMAKE_INSTALL_PREFIX}。'
+            '脚本期它是未求值的 \$<TARGET_FILE_DIR:...> 字面量，EXISTS 恒假，'
+            '守卫会在文件确实存在时也让 Release 构建失败。改用不转义的 '
+            '\${INSTALL_BUNDLE_LIB_DIR}（与 install(DIRECTORY) 的 DESTINATION 同源）。',
+      );
     });
 
     test('linux/CMakeLists.txt 同款规则仍在（防止只保留一个平台）', () {
