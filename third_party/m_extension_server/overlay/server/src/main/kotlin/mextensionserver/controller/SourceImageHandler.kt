@@ -19,40 +19,49 @@ class SourceImageHandler {
             val files = mutableMapOf<String, String>()
             session.parseBody(files)
             val request = mapper.readValue(files["postData"], SourceImageRequest::class.java)
-            val data = DataBody(
-                data = request.data,
-                method = "headersManga",
-                preferences = request.preferences,
-            )
-            val image = MExtensionServerLoader.invokeWithExtension(request.data) { loaded ->
-                val source = MihonInvoker.selectSource(loaded.sources, data) as? HttpSource
-                    ?: throw IllegalArgumentException("Source is not an HTTP source")
-                MihonInvoker.preparePreferences(data, source)
-                // Covers are fetched with the source's own client, so they need the
-                // host-owned session too (BUG-2425). Without this a login-gated source
-                // renders signed-in pages next to broken covers whenever an image is
-                // the first call after a sidecar restart -- the bridge jar is empty
-                // until some /dalvik call happens to refill it.
-                SourceCookieInjection.injectRequestCookies(
-                    session,
-                    source,
-                    SourceCookieInjection.domainOf(source),
+            val data =
+                DataBody(
+                    data = request.data,
+                    method = "headersManga",
+                    preferences = request.preferences,
                 )
-                SourceCookieInjection.applyRequestUserAgent(session, source)
-                val response = source.client.newCall(
-                    Request.Builder().url(request.url).headers(source.headers).build(),
-                ).execute()
-                response.use {
-                    if (!it.isSuccessful) {
-                        throw IllegalStateException("Source image HTTP ${it.code}")
-                    }
-                    val body = it.body
-                    ImageResult(
-                        readBounded(body),
-                        body.contentType()?.toString() ?: "application/octet-stream",
+            val image =
+                MExtensionServerLoader.invokeWithExtension(request.data) { loaded ->
+                    val source =
+                        MihonInvoker.selectSource(loaded.sources, data) as? HttpSource
+                            ?: throw IllegalArgumentException("Source is not an HTTP source")
+                    MihonInvoker.preparePreferences(data, source)
+                    // Covers are fetched with the source's own client, so they need the
+                    // host-owned session too (BUG-2425). Without this a login-gated source
+                    // renders signed-in pages next to broken covers whenever an image is
+                    // the first call after a sidecar restart -- the bridge jar is empty
+                    // until some /dalvik call happens to refill it.
+                    SourceCookieInjection.injectRequestCookies(
+                        session,
+                        source,
+                        SourceCookieInjection.domainOf(source),
                     )
+                    SourceCookieInjection.applyRequestUserAgent(session, source)
+                    val response =
+                        source.client
+                            .newCall(
+                                Request
+                                    .Builder()
+                                    .url(request.url)
+                                    .headers(source.headers)
+                                    .build(),
+                            ).execute()
+                    response.use {
+                        if (!it.isSuccessful) {
+                            throw IllegalStateException("Source image HTTP ${it.code}")
+                        }
+                        val body = it.body
+                        ImageResult(
+                            readBounded(body),
+                            body.contentType()?.toString() ?: "application/octet-stream",
+                        )
+                    }
                 }
-            }
             NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.OK,
                 image.contentType,
@@ -112,13 +121,17 @@ class SourceImageHandler {
         val data: String,
         val sourceId: String,
         val url: String,
-        val preferences: MutableList<Map<String, Any>>? = mutableListOf(
-            mutableMapOf(
-                "key" to "__mangatan_bridge_context__",
-                "sourceId" to sourceId,
+        val preferences: MutableList<Map<String, Any>>? =
+            mutableListOf(
+                mutableMapOf(
+                    "key" to "__mangatan_bridge_context__",
+                    "sourceId" to sourceId,
+                ),
             ),
-        ),
     )
 
-    private data class ImageResult(val bytes: ByteArray, val contentType: String)
+    private data class ImageResult(
+        val bytes: ByteArray,
+        val contentType: String,
+    )
 }

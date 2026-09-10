@@ -580,12 +580,10 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   /// 两个条件缺一不可：运行时是「宿主持有 cookie」那一类（桌面 sidecar；Android
   /// 由系统 `CookieManager` 拥有 cookie，不需要也不该走这条），以及该源报出了
   /// 可解析出 host 的 baseUrl（有些源的 baseUrl 是空串或相对地址）。
-  Uri? _loginTargetFor(MangaOnlineSourceRow source) {
-    if (_manager?.runtime is! HostCookieMihonRuntime) return null;
-    final Uri? parsed = Uri.tryParse(source.baseUrl.trim());
-    if (parsed == null || parsed.host.isEmpty) return null;
-    return parsed;
-  }
+  Uri? _loginTargetFor(MangaOnlineSourceRow source) => mihonLoginTarget(
+        runtime: _manager?.runtime,
+        baseUrl: source.baseUrl,
+      );
 
   Future<void> _openWebLogin(MangaOnlineSourceRow source) async {
     final Uri? target = _loginTargetFor(source);

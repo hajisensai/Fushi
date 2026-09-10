@@ -93,7 +93,11 @@ object SourceCookieInjection {
                 }.distinctBy { it.name }
         if (cookies.isEmpty()) return
         networkOf(source)?.cookieJar?.addAll(
-            HttpUrl.Builder().scheme("http").host(host).build(),
+            HttpUrl
+                .Builder()
+                .scheme("http")
+                .host(host)
+                .build(),
             cookies,
         )
     }
@@ -129,7 +133,22 @@ object SourceCookieInjection {
                 .scheme("https")
                 .host(domain.removePrefix("."))
                 .build()
-        val cookies = jar.loadForRequest(url)
+        return encodeCookies(mapper, jar.loadForRequest(url))
+    }
+
+    /**
+     * The wire shape itself, split out so it can be pinned by a test without a
+     * loaded extension.
+     *
+     * The host decodes this in `mihon_cookie_jar.dart`; the two sides are only
+     * verified together by pinning one literal payload in both test suites.
+     * A shape change that keeps each side self-consistent is exactly the kind
+     * that ships broken, because either side alone still passes.
+     */
+    fun encodeCookies(
+        mapper: ObjectMapper,
+        cookies: List<Cookie>,
+    ): String? {
         if (cookies.isEmpty()) return null
         val payload =
             cookies.map { cookie ->

@@ -18,10 +18,13 @@
   - `clearSourceData` 连带清宿主 jar，否则「清除源数据」清完立刻被下次请求原样注回去。
   - UI 入口：源行加登录按钮，门控用 `runtime is HostCookieMihonRuntime` 这个**能力**判据，而不是 `Platform.isAndroid`。
 
-- **[x] ② 自动化测试** — `fushi/test/media/manga/mihon_cookie_jar_test.dart`（17 例：持久化往返 / 父子域匹配 / 过期 / 坏文件降级 / `clearForHost` 只清该站 / `mergeFromRuntime` 逐条覆盖且不动同站其它条目 / 无变化不落盘 / 线格式含非 ASCII 与分号的往返保真 + 坏载荷降级 / 注入按 host 过滤 / 无 cookie 不发头 / 刻意不发 UA / 无 host 的源不炸 / 回传被并回并落盘）；`fushi/test/media/manga/mihon_web_login_page_test.dart`（6 例：导出并关页 / 子域重标 / 第三方域被拒 / 空结果与导出失败都不关页 / 关闭按钮不导出）。运行时侧经 `debugRequestHeaders` / `debugAbsorbResponseCookies` 两个 `@visibleForTesting` 缝跑**生产函数本身**，不复制一份注入规则。新 overlay 文件已登记进 `mihon_vendored_server_guard_test.dart` 的 `_overlayNewFiles`。
+- **[x] ② 自动化测试** — Kotlin 侧 `overlay/server/src/test/kotlin/mextensionserver/controller/SourceCookieInjectionTest.kt`（4 例：线格式字面量 / 会话 cookie 不带 OkHttp 的哨兵过期 / 空表不出头 / `domainOf` 回退）。**跨语言契约**：该测试里的 base64 字面量与 Dart 测试里的逐字节相同——两侧各有自己的编解码实现，只改一边而保持该边自洽的改动在各自测试里照样全绿，只有把同一份载荷钉在两边、漂移才会红。
+
+  Dart 侧 `fushi/test/media/manga/mihon_cookie_jar_test.dart`（17 例：持久化往返 / 父子域匹配 / 过期 / 坏文件降级 / `clearForHost` 只清该站 / `mergeFromRuntime` 逐条覆盖且不动同站其它条目 / 无变化不落盘 / 线格式含非 ASCII 与分号的往返保真 + 坏载荷降级 / 注入按 host 过滤 / 无 cookie 不发头 / 刻意不发 UA / 无 host 的源不炸 / 回传被并回并落盘）；`fushi/test/media/manga/mihon_web_login_page_test.dart`（6 例：导出并关页 / 子域重标 / 第三方域被拒 / 空结果与导出失败都不关页 / 关闭按钮不导出）。运行时侧经 `debugRequestHeaders` / `debugAbsorbResponseCookies` 两个 `@visibleForTesting` 缝跑**生产函数本身**，不复制一份注入规则。新 overlay 文件已登记进 `mihon_vendored_server_guard_test.dart` 的 `_overlayNewFiles`。
 
 - **验证边界（未做的部分要说清楚）**：
-  - Dart 侧：全量 `flutter analyze` 绿；`test/media/manga/` + `test/build/mihon_vendored_server_guard_test.dart` 778 通过；51 条目录枚举型守卫整批 **368 通过**（与文档当前基线一致）。该批守卫当场抓出新文件里的一个裸 NUL 字节并已修（`dart_source_no_raw_nul_guard`）。
+  - Dart 侧：全量 `flutter analyze` 绿；`test/media/manga/` + `test/build/mihon_vendored_server_guard_test.dart` 778 通过；51 条目录枚举型守卫整批 **368 通过**（与文档当前基线一致）。该批守卫当场抓出新文件里的一个裸 NUL 字节并已修（`dart_source_no_raw_nul_guard`）——正是「定向测试按功能域挑、永远挑不到目录枚举型守卫」的实例。
+  - Kotlin 侧：`tool/mihon/build_desktop_runtime.ps1` 完整构建通过（含 `:server:test`），产物齐全。**`BUILD SUCCESSFUL` 不被当作新测试跑过的证据**——另起持久构建树单跑该测试类，读 JUnit XML 得 `tests="4" skipped="0" failures="0" errors="0"`，其中「线格式字面量」那条通过即证明 Kotlin 编码器产出与 Dart 解码器测试消费的字节完全一致。
   - **未做真实站点端到端**：没有拿真实 BookWalker 账号登录并验证 🔒 消失。宿主侧注入/回传/持久化均有测试覆盖，但「真登录后扩展判定归属成功」这一环只在代码路径上成立，未经真机证据。按 galgame 门的口径，这一环记 `implemented_unverified`。
   - **这本书即使解锁也读不了**：用户截图那本是轻小说（富士見ファンタジア文庫）。sidecar 日志 `sidecar.log.1:25283` 显示扩展在取到 `viewer-trial.bookwalker.jp/.../viewer.html`（200 OK）后抛 `Novels are not supported!`（`MihonInvoker.kt:334`，出现 3 次）——那是 BookWalker 扩展对小说的自有限制，与本 bug 无关，不在本轮范围。
   - **本轮不做桌面 Cloudflare 解题**：sidecar 的 `CloudflareInterceptor` 是空实现。因此刻意**不发 `User-Agent`**（没有「clearance 绑定 UA」的约束，发了只会全局改写自设 UA 的源）。将来补桌面解题时，UA 必须与 cookie 一起作为「登录身份」整体存取。

@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 
 /// BUG-2425：桌面端在真实浏览器里登录源站，把会话交给宿主的 jar。
@@ -83,6 +85,44 @@ void main() {
     });
     await tester.pumpAndSettle();
   }
+
+  group('登录入口的能力判据', () {
+    test('宿主持有 cookie 且源报得出 host 才给入口', () {
+      expect(
+        mihonLoginTarget(
+          runtime: _HostCookieRuntime(),
+          baseUrl: 'https://bookwalker.jp',
+        ),
+        Uri.parse('https://bookwalker.jp'),
+      );
+    });
+
+    test('运行时不持有 cookie（Android：系统 CookieManager 才是所有者）→ 无入口', () {
+      expect(
+        mihonLoginTarget(runtime: Object(), baseUrl: 'https://bookwalker.jp'),
+        isNull,
+      );
+      expect(
+        mihonLoginTarget(runtime: null, baseUrl: 'https://bookwalker.jp'),
+        isNull,
+      );
+    });
+
+    test('baseUrl 解析不出 host → 无入口（既开不了页也定不了域）', () {
+      for (final String baseUrl in <String>[
+        '',
+        '   ',
+        '/relative',
+        'not a url'
+      ]) {
+        expect(
+          mihonLoginTarget(runtime: _HostCookieRuntime(), baseUrl: baseUrl),
+          isNull,
+          reason: 'baseUrl=$baseUrl 不该给出登录入口',
+        );
+      }
+    });
+  });
 
   testWidgets('点「完成」把整站 cookie 导出到 jar 并关页', (WidgetTester tester) async {
     final MihonCookieJar store = jar();
@@ -196,4 +236,11 @@ void main() {
     expect(read, isFalse);
     expect(store.cookies, isEmpty);
   });
+}
+
+/// 只为判据测试存在：实现「宿主持有 cookie」这个能力即可，不需要真的是运行时。
+class _HostCookieRuntime implements HostCookieMihonRuntime {
+  @override
+  MangaCookieJar get cookieJar =>
+      throw UnimplementedError('判据只看类型，不会碰这个 getter');
 }

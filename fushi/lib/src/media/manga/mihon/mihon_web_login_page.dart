@@ -6,7 +6,26 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+
+/// 该源能不能在 app 里登录，以及登录页要打开哪个地址；不能则返回 null。
+///
+/// 两个条件缺一不可：
+/// 1. [runtime] 是「宿主持有 cookie」那一类（桌面 sidecar）。Android 由系统
+///    `CookieManager` 拥有 cookie，不需要也不该走这条——所以判据是**能力**
+///    （`is HostCookieMihonRuntime`），不是 `Platform.isAndroid`。
+/// 2. 该源报得出能解析出 host 的 [baseUrl]。有些源的 baseUrl 是空串或相对地址，
+///    那样既开不了登录页，也无从决定 cookie 的域。
+///
+/// 抽成纯函数是为了能被直接断言：这种「决定入口显不显示」的判据一旦悄悄恒假，
+/// 表现就是按钮从此不出现，而任何页面测试都不会因此变红。
+Uri? mihonLoginTarget({required Object? runtime, required String baseUrl}) {
+  if (runtime is! HostCookieMihonRuntime) return null;
+  final Uri? parsed = Uri.tryParse(baseUrl.trim());
+  if (parsed == null || parsed.host.isEmpty) return null;
+  return parsed;
+}
 
 /// 在真实浏览器里登录漫画源，然后把会话交给宿主的 cookie jar（BUG-2425）。
 ///

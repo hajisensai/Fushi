@@ -164,6 +164,29 @@ void main() {
       expect(roundTripped[1].expiresAt, now + 1000);
     });
 
+    test('解得开 Kotlin 侧编码器产出的那一份（跨语言契约）', () {
+      // 这个字面量与 sidecar 的
+      // `overlay/.../controller/SourceCookieInjectionTest.kt` 逐字节相同。
+      // 两侧各有自己的编解码实现，只改一边而保持该边自洽的改动，在各自的
+      // 测试里照样全绿——只有把同一份载荷钉在两边，漂移才会红。
+      const String fromKotlin =
+          'W3sibmFtZSI6InNlc3Npb24iLCJ2YWx1ZSI6ImFiYyIsImRvbWFpbiI6ImJvb2t3YWxrZXIuanAiLCJwYXRoIjoiLyIsInNl'
+          'Y3VyZSI6dHJ1ZSwiZXhwaXJlc0F0IjoxNzg5MDAwMDAwMDAwfSx7Im5hbWUiOiJjc3JmIiwidmFsdWUiOiJ4O3kseiIsImRv'
+          'bWFpbiI6ImJvb2t3YWxrZXIuanAiLCJwYXRoIjoiLyIsInNlY3VyZSI6ZmFsc2V9XQ==';
+
+      final List<MangaCookie> decoded = decodeMihonSetCookieHeader(fromKotlin);
+
+      expect(
+          decoded.map((MangaCookie c) => c.name), <String>['session', 'csrf']);
+      expect(decoded[0].value, 'abc');
+      expect(decoded[0].secure, isTrue);
+      expect(decoded[0].expiresAt, 1789000000000);
+      // 分号/逗号原样穿过——正是套 base64 要防的那类损坏。
+      expect(decoded[1].value, 'x;y,z');
+      // 会话 cookie 不带过期时刻。
+      expect(decoded[1].expiresAt, isNull);
+    });
+
     test('坏载荷降级成空表，不抛', () {
       expect(decodeMihonSetCookieHeader('not-base64!!'), isEmpty);
       expect(

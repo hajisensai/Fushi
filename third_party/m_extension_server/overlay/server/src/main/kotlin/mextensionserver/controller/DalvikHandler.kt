@@ -45,13 +45,14 @@ class DalvikHandler {
             val (invocationResult, jarCookies) = result
             val serializableResult = filterResponseForBridge(invocationResult)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
-            NanoHTTPD.newFixedLengthResponse(
-                NanoHTTPD.Response.Status.OK,
-                "application/json",
-                responseJson,
-            ).apply {
-                if (jarCookies != null) addHeader(SET_COOKIE_HEADER, jarCookies)
-            }
+            NanoHTTPD
+                .newFixedLengthResponse(
+                    NanoHTTPD.Response.Status.OK,
+                    "application/json",
+                    responseJson,
+                ).apply {
+                    if (jarCookies != null) addHeader(SET_COOKIE_HEADER, jarCookies)
+                }
         } catch (error: LinkageError) {
             errorResponse(error)
         } catch (error: Exception) {
