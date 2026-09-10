@@ -19,6 +19,7 @@ import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
+import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -501,8 +502,23 @@ class _HomePageState extends BasePageState<HomePage>
           // TODO-1024 / BUG-479：启动期后台检查跑完即把结果写回缓存，下次「检查更新」
           // 直接读缓存乐观反馈（恒快）。auto 路径不读缓存（仍后台静默刷新）。
           cacheWriter: appModel.setUpdateCheckCache,
+          // v101：把「确实有新版」这条事实同时投进更新中心。既有对话框照旧——
+          // 用户点掉对话框之后，红点与更新页仍留着这条，不再是「弹过一次就没了」。
+          // 回调是同步的（投递不该挡住更新流程），所以这里 unawaited 出去。
+          onUpdateAvailable: (String version, String? releaseUrl) => unawaited(
+            publishAppReleaseUpdate(
+              feed: appModel.updateFeedService,
+              version: version,
+              releaseUrl: releaseUrl,
+            ),
+          ),
         );
       }
+
+      // v101 后台更新检查（漫画新章 / 漫画扩展）。与上面的 app 版本检查并列放在
+      // 启动期：用户最想知道「我不在的时候更新了什么」的时刻就是刚打开应用。
+      // 各域自己的到期判据挡住频繁重启造成的重复请求。
+      appModel.startUpdateChecks();
 
       // 这一段是 HomePage 层的模块专属后台自启：同步（sync）与视频索引（video）。
       // 模块关掉就不再拉起——「关掉的模块下次启动不该还在后台跑」。已经在飞的

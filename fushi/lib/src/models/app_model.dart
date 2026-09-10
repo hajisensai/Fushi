@@ -9,6 +9,12 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/updates/local_update_notifier.dart';
+import 'package:fushi/src/updates/update_check_scheduler.dart';
+import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi/src/updates/update_feed_service.dart';
+import 'package:fushi/src/updates/update_probes.dart';
+import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -889,6 +895,95 @@ class AppModel with ChangeNotifier {
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
   bool get isPreferencesReady => _prefsRepo != null;
+
+  /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
+  /// app 版本检查）与更新页共用这一份，进程内单例。
+  ///
+  /// **不放 `initialise()`**：弹窗词典与悬浮词典是另外两个 entry point，不经
+  /// `initialise()`，而它们也可能间接走到会投递的代码路径；懒 getter 让「谁用谁
+  /// 建」，用不到的进程一分钱不花（与 `installAsrHostBindings` 那处同类教训）。
+  UpdateFeedService? _updateFeedService;
+  UpdateFeedService get updateFeedService =>
+      _updateFeedService ??= UpdateFeedService(
+        database: database,
+        prefs: prefsRepo,
+        notifier: LocalUpdateNotifier.isSupportedPlatform
+            ? LocalUpdateNotifier(appName: 'Fushi')
+            : const NoopUpdateNotifier(),
+        notificationText: _localizedUpdateNotificationText,
+      );
+
+  /// 通知文案的本地化外壳。服务层默认实现只组装结构（那一层要能在纯 Dart 单测里
+  /// 跑，slang 的 `t` 需要 Flutter binding），这里补上句子。
+  static UpdateNotificationText _localizedUpdateNotificationText(
+    UpdateFeedKind kind,
+    List<UpdateFeedDraft> fresh,
+  ) {
+    final UpdateFeedDraft first = fresh.first;
+    if (fresh.length == 1) {
+      return UpdateNotificationText(
+        title: first.title,
+        body: first.subtitle ?? '',
+      );
+    }
+    final String firstLine = first.subtitle == null || first.subtitle!.isEmpty
+        ? first.title
+        : '${first.title} · ${first.subtitle}';
+    return UpdateNotificationText(
+      title: first.title,
+      body: t.updates_notification_summary(
+        first: firstLine,
+        count: fresh.length - 1,
+      ),
+    );
+  }
+
+  UpdateCheckScheduler? _updateCheckScheduler;
+
+  /// 启动后台更新检查（漫画新章 + 漫画扩展）。幂等，重复调用不再起第二个定时器。
+  ///
+  /// **番剧不在这里**：订阅服务有自己的相位学习节奏。**app 版本也不在这里**：
+  /// 启动期的 `UpdateChecker.scheduleCheck` 已经在查，那条链路顺手把结果投给更新
+  /// 中心即可（见 home_page 的 onUpdateAvailable），再排一个定时器只会重复请求。
+  ///
+  /// 漫画两个 probe 都**不主动拉起 Mihon runtime**：`mihonManager` 是懒建的，为了
+  /// 后台检查而在启动时拉起一个 sidecar 进程，对没用过在线漫画的用户是纯亏。没起
+  /// 来就这一轮跳过，等用户用过一次之后的检查自然会覆盖。
+  void startUpdateChecks() {
+    if (_updateCheckScheduler != null) return;
+    final UpdateFeedService feed = updateFeedService;
+    final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
+      prefs: prefsRepo,
+      isKindEnabled: feed.isKindEnabled,
+      probes: <UpdateFeedKind, UpdateProbe>{
+        UpdateFeedKind.mangaChapter: () async {
+          if (_mihonManager == null) return;
+          await runOnlineMangaUpdateProbe(
+            database: database,
+            serviceFor: onlineMangaLibraryService,
+          );
+        },
+        UpdateFeedKind.mangaExtension: () async {
+          final MihonManager? manager = _mihonManager;
+          if (manager == null) return;
+          await runMangaExtensionUpdateProbe(
+            feed: feed,
+            refreshStores: manager.refreshStores,
+            available: () => manager.available,
+            installed: () => manager.installed,
+          );
+        },
+      },
+    );
+    _updateCheckScheduler = scheduler;
+    scheduler.start();
+  }
+
+  Future<void> stopUpdateChecks() async {
+    final UpdateCheckScheduler? scheduler = _updateCheckScheduler;
+    _updateCheckScheduler = null;
+    await scheduler?.stop();
+  }
 
   /// TODO-855: last prefs-version this process has reconciled its cache against.
   /// Used by [refreshPrefCacheIfChanged] so the warm-reuse :popup process only
@@ -3968,12 +4063,14 @@ class AppModel with ChangeNotifier {
           database: manager.database,
           rootDirectory: manager.rootDirectory,
           adapter: MihonLibraryAdapter(manager),
+          updateFeed: updateFeedService,
         );
       case OnlineMangaRuntimeKind.aidoku:
         return OnlineMangaLibraryService(
           database: database,
           rootDirectory: aidokuLibraryRoot,
           adapter: AidokuLibraryAdapter(),
+          updateFeed: updateFeedService,
         );
       // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
       // iOS/Linux 上直接抛 UnsupportedError。
@@ -4539,6 +4636,7 @@ class AppModel with ChangeNotifier {
           discoveryImportExecutor.importPaths(kind, paths),
       manualTorrentDirectory:
           Directory(path.join(appDirectory.path, 'manual_torrents')),
+      updateFeed: updateFeedService,
     )..start();
     _videoDownloadPipelineService = pipeline;
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(

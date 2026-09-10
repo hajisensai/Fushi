@@ -16,6 +16,15 @@
 
 > **代理**：`pub get` 只认继承来的 `HTTPS_PROXY`/`HTTP_PROXY`，而 agent 每次工具调用都是新 shell —— 上一条命令里设的代理不会留到下一条，这是「`setup_worktree.ps1` 首跑 socket error、带代理重跑就过」的根因。`bootstrap.ps1` 按 `调用方环境变量 > FUSHI_BOOTSTRAP_PROXY > <主 checkout>/tool/bootstrap.local.env`（gitignore，本机私有，一次配好所有 worktree 通用）取代理，三者都没有也照常直连跑（CI 不受影响），只是会先探一次 pub.dev 并在不通时把配法打在前面——**探测只示警不拦路**（实测单次探测会误报：探测 10s 超时失败的同一时刻，`pub get` 自带重试仍 45s 跑通），真判死刑交给 `pub get` 自己，失败时把同一份配法作为报错抛出。代理地址绝不写进入库脚本。
 
+> **Windows 构建先决条件：Visual Studio 的「C++ ATL」组件**（2026-09-09，v101 统一
+> 更新提醒引入 `flutter_local_notifications` 之后成为硬要求）。它的 Windows 实现
+> `flutter_local_notifications_windows` 直接 `#include <atlbase.h>`，装了 VS 的
+> 「使用 C++ 的桌面开发」但没勾 ATL 的机器会在
+> `plugin.cpp(5,10): error C1083: Cannot open include file: 'atlbase.h'` 停住——
+> 判据是 `<VS>\VC\Tools\MSVC\<ver>\` 下**没有 `atlmfc` 目录**。
+> 修法：VS Installer → 修改 → 单个组件 → 勾「适用于最新 v143 生成工具的 C++ ATL
+> (x86 和 x64)」。**CI 不受影响**：GitHub 的 `windows-2022` image 自带该组件。
+
 ```bash
 cd fushi
 flutter build apk --release --target-platform android-arm64 --split-per-abi

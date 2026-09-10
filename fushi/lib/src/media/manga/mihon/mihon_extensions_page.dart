@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_updates.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
@@ -1319,8 +1320,12 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
     // 且 `!=` 会在**已装版本比仓库新**时（本地侧载 / 同包多仓库）误报「有更新」并
     // 顶掉下面的「卸载」按钮，点下去必得 DOWNGRADE_REJECTED。`>` 结构上不可能有
     // 这个假阳性，保留。
-    final bool update = installed != null &&
-        extension.extensionVersionCode > installed.versionCode;
+    // 判据本体收口在 mihon_extension_updates.dart：更新提醒（v101）与这里的角标
+    // 必须是同一个答案，否则会出现「角标亮了但没提醒」这类不一致。
+    final bool update = hasMihonExtensionUpdate(
+      available: extension,
+      installed: installed,
+    );
     final ThemeData theme = Theme.of(context);
     final int hiddenSources = _showAllSources
         ? 0

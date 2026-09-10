@@ -537,9 +537,11 @@ const List<String> _deviceLocalTables = <String>[
   'fushi_paired_peers',
   'web_mine_queue',
   'video_file_specs',
+  'update_feed_entries',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
+  'update_feed_entries',
   'video_file_specs',
   'web_mine_queue',
   'sync_baselines',

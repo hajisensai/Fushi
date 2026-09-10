@@ -36,6 +36,21 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
+  // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
+  // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
+  // 扩展索引、版本检查都要联网），观测不到。行为由服务层用例逐条咬住：
+  // 「关掉的域整批丢弃」「系统通知总开关只关通知不关红点」。
+  'system/Notify about new anime episodes':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/Notify about new manga chapters':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/Notify about manga extension updates':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/Notify about app releases':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/System notifications':
+      'test/updates/update_feed_service_test.dart（总开关只关通知不关红点）',
   // v92 阅读空闲门（分钟）：写 prefsRepo（changed=true），生效点是阅读器建
   // StudyClock 时读一次 appModel.readingIdleTimeout——harness 里没有阅读器。
   // 空闲门行为由 study_clock_test「阅读空闲门」用例咬住，接线由
