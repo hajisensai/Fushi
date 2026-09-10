@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "Tải xuống đã hoàn tất",
   "settings_downloads_routing_hint": "Ánh xạ đường dẫn và nguồn video đích",
   "settings_downloads_encryption_title": "Mã hóa kết nối peer",
-  "settings_service_disabled": "Đã tắt"
+  "settings_service_disabled": "Đã tắt",
+  "popup_dismiss_animation": "Popup close animation",
+  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode)."
 }

@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "التنزيلات المكتملة",
   "settings_downloads_routing_hint": "تعيين المسارات ومصدر الفيديو المستهدف",
   "settings_downloads_encryption_title": "تشفير الاتصال بالأقران",
-  "settings_service_disabled": "معطّل"
+  "settings_service_disabled": "معطّل",
+  "popup_dismiss_animation": "Popup close animation",
+  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode)."
 }

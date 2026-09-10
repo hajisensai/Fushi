@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2216 条。点号进各自文件。
+> 共 2217 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2405](bugs/BUG-2405-popup-dismiss-animation-toggle.md) | ✅ | ✅ | 滑动关闭弹窗的动画只能靠开墨水屏模式关掉，没有独立开关 |
 | [BUG-2403](bugs/BUG-2403-video-doubleclick-ignores-mouse-button.md) | ✅ | ✅ | 视频页双击判定不看鼠标按钮号，右键双击画面切全屏 |
 | [BUG-2402](bugs/BUG-2402-mobile-library-layout.md) | ✅ | ✅ | 手机标签页头留白与筛选工具堆叠 |
 | [BUG-2400](bugs/BUG-2400-remote-manga-empty-content.md) | ✅ | ✅ | 远端空漫画合集被标记为可下载内容 |

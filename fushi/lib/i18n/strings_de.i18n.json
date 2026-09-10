@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "Abgeschlossene Downloads",
   "settings_downloads_routing_hint": "Pfadzuordnung und Ziel-Videoquelle",
   "settings_downloads_encryption_title": "Peer-Verschlüsselung",
-  "settings_service_disabled": "Deaktiviert"
+  "settings_service_disabled": "Deaktiviert",
+  "popup_dismiss_animation": "Popup close animation",
+  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode)."
 }

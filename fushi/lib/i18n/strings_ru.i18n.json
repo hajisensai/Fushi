@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "Завершённые загрузки",
   "settings_downloads_routing_hint": "Сопоставление путей и целевой источник видео",
   "settings_downloads_encryption_title": "Шифрование соединений с пирами",
-  "settings_service_disabled": "Отключено"
+  "settings_service_disabled": "Отключено",
+  "popup_dismiss_animation": "Popup close animation",
+  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode)."
 }

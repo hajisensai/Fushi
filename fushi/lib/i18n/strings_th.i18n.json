@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "การดาวน์โหลดที่เสร็จสิ้น",
   "settings_downloads_routing_hint": "การแมปเส้นทางและแหล่งวิดีโอปลายทาง",
   "settings_downloads_encryption_title": "การเข้ารหัสระหว่างเพียร์",
-  "settings_service_disabled": "ปิดใช้งาน"
+  "settings_service_disabled": "ปิดใช้งาน",
+  "popup_dismiss_animation": "Popup close animation",
+  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode)."
 }

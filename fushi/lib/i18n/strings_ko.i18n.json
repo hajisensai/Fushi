@@ -4583,5 +4583,7 @@
   "settings_downloads_routing_title": "완료된 다운로드",
   "settings_downloads_routing_hint": "경로 매핑 및 대상 동영상 소스",
   "settings_downloads_encryption_title": "피어 암호화",
-  "settings_service_disabled": "사용 안 함"
+  "settings_service_disabled": "사용 안 함",
+  "popup_dismiss_animation": "Popup close animation",
+  "popup_dismiss_animation_hint": "Play a slide-out animation when a lookup popup is closed by swiping. Turn it off to close instantly (always off in e-ink mode)."
 }

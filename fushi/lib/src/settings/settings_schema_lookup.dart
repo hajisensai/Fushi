@@ -695,6 +695,25 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
+          // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
+          // 就得连带吃下纯黑白主题。与上面两项同属查词弹窗滑关行为，紧邻摆放。
+          // 默认 true = 保持既有手感；墨水屏模式下无论本开关如何都已归零。
+          SettingsSwitchItem(
+            id: 'reading_controls.popup_dismiss_animation',
+            title: t.popup_dismiss_animation,
+            subtitle: t.popup_dismiss_animation_hint,
+            icon: Icons.animation_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 6),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.popupDismissAnimation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setPopupDismissAnimation(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
