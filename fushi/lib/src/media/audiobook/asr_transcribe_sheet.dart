@@ -19,6 +19,8 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/asr_host/asr_model_catalog.dart';
+import 'package:fushi/src/media/audiobook/asr_local_model_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
@@ -42,6 +44,9 @@ Future<String?> showAsrTranscribeSheet({
   })? saveFilePicker,
   String Function()? languageGetter,
   Future<void> Function(String tag)? languageSetter,
+  AsrModelCatalog Function()? catalogGetter,
+  Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
+  Future<String?> Function()? directoryPicker,
 }) {
   final AsrTranscriptionService effective =
       service ?? createAsrTranscriptionService();
@@ -60,6 +65,9 @@ Future<String?> showAsrTranscribeSheet({
         languageHint: languageHint,
         languageGetter: getter,
         languageSetter: setter,
+        catalogGetter: catalogGetter,
+        catalogSetter: catalogSetter,
+        directoryPicker: directoryPicker,
       );
   if (isDesktopPlatform) {
     return showAppDialog<String>(
@@ -214,6 +222,9 @@ String suggestedTranscriptFileName(List<String> audioPaths) {
   return '${p.basenameWithoutExtension(audioPaths.first)}.srt';
 }
 
+/// 默认的目录读取口（`asrModelCatalog` 是 getter，取不到函数引用）。
+AsrModelCatalog _readAsrModelCatalog() => asrModelCatalog;
+
 enum _Phase {
   checking,
   needDownload,
@@ -236,8 +247,12 @@ class AsrTranscribeSheet extends StatefulWidget {
     this.languageHint,
     this.languageGetter,
     this.languageSetter,
+    AsrModelCatalog Function()? catalogGetter,
+    Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
+    this.directoryPicker,
     super.key,
-  });
+  })  : catalogGetter = catalogGetter ?? _readAsrModelCatalog,
+        catalogSetter = catalogSetter ?? saveAsrModelCatalog;
 
   final List<String> audioPaths;
 
@@ -258,6 +273,14 @@ class AsrTranscribeSheet extends StatefulWidget {
 
   /// 切换语言后写回偏好（[AsrLanguage.tag]）；null = 不记忆。
   final Future<void> Function(String tag)? languageSetter;
+
+  /// 模型目录（每语言选了谁 + 自带包）的读写口。默认读写本进程的那份并落盘；
+  /// widget 测试注入内存实现，不碰数据根。
+  final AsrModelCatalog Function() catalogGetter;
+  final Future<void> Function(AsrModelCatalog catalog) catalogSetter;
+
+  /// 「手动指定模型」用的目录选择器；null = 真的系统对话框。
+  final Future<String?> Function()? directoryPicker;
 
   @override
   State<AsrTranscribeSheet> createState() => _AsrTranscribeSheetState();
@@ -512,6 +535,87 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _refreshPlan();
   }
 
+  /// 这门语言当前能选哪些模型包（第一项 = 当前生效的那个）。
+  List<AsrModelPack> _modelChoices() =>
+      asrModelChoicesFor(_language, asrModelRegistry);
+
+  /// 下拉每项的副标题：平台适配度 + int8 全套大小。
+  ///
+  /// 「多大」用 int8 那套：它是手机与无 GPU 桌面实际会下的一套，也是两套里小的
+  /// 那个——把大的报给用户会让「Omnilingual 在手机上要 4 GB」这种吓人的数字出现在
+  /// 一个根本不会下 fp32 的设备上。
+  String _modelSubtitle(AsrModelPack pack) {
+    final String fit = switch (asrModelFitFor(pack, mobile: _isMobile)) {
+      AsrModelFit.light => t.audiobook_transcribe_model_fit_light,
+      AsrModelFit.desktop => t.audiobook_transcribe_model_fit_desktop,
+      AsrModelFit.heavyOnMobile =>
+        t.audiobook_transcribe_model_fit_heavy_mobile,
+    };
+    final String size =
+        FushiByteFormat.bytes(pack.totalBytes(AsrEncoderVariant.int8));
+    final bool custom = pack.id.startsWith(kAsrCustomPackIdPrefix);
+    final String badge =
+        custom ? ' · ${t.audiobook_transcribe_model_custom_badge}' : '';
+    return '$fit · $size$badge';
+  }
+
+  bool get _isMobile =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// 换模型：记住选择（每语言一条），再按新包重新规划。
+  ///
+  /// 模型换了就是另一套磁盘目录与另一个任务哈希（任务 id 含包 id），所以进行中的
+  /// 进度不会被顶掉，切回去还在。
+  Future<void> _changeModel(String packId) async {
+    final List<AsrModelPack> packs = _modelChoices();
+    if (packs.isEmpty || packs.first.id == packId) return;
+    await _updateCatalog(
+      widget.catalogGetter().withChoice(_language, packId),
+    );
+  }
+
+  /// 手动指定一个本地模型：认好之后接进目录并**顺手选中**——用户刚指了它，还要再
+  /// 去下拉里选一次是多余的一步。
+  Future<void> _addLocalModel() async {
+    final AsrModelPack? pack = await showAsrLocalModelDialog(
+      context: context,
+      language: _language,
+      directoryPicker: widget.directoryPicker,
+    );
+    if (pack == null || !mounted) return;
+    await _updateCatalog(
+      widget
+          .catalogGetter()
+          .withCustomPack(pack)
+          .withChoice(_language, pack.id),
+    );
+    if (!mounted) return;
+    FushiToast.show(
+      msg: t.audiobook_transcribe_model_custom_added(name: pack.displayName),
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 落盘 + 装进本进程，然后重新规划。写盘失败不改本进程状态（见
+  /// `saveAsrModelCatalog`），所以这里把错误显示出来而不是当作已生效。
+  Future<void> _updateCatalog(AsrModelCatalog catalog) async {
+    try {
+      await widget.catalogSetter(catalog);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _phase = _Phase.error;
+        _error = '$error';
+      });
+      return;
+    }
+    if (!mounted) return;
+    _result = null;
+    _progress = null;
+    await _refreshPlan();
+  }
+
   /// 把转录产物导出到用户指定位置（桌面存盘 / 移动端分享）。产物文件本身留在
   /// 任务目录里，导出只是拷一份，之后仍可「使用字幕」。
   Future<void> _export() async {
@@ -751,6 +855,47 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             entrySubtitle: (AsrLanguage language) =>
                 asrModelPackFor(language).displayName,
             onChanged: _changeLanguage,
+          ),
+          SizedBox(height: tokens.spacing.rowVertical),
+          Text(
+            t.audiobook_transcribe_model_label,
+            style: tokens.type.listTitle,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          // 模型：这门语言下注册表里认得的包。第一项就是当前生效的那个
+          // （`asrModelPackFor` 同样取「第一个服务它的包」），所以不另算选中项。
+          // 下拉与「手动指定」同一行：弹层本来就长（语言 / 模型 / 加速 / 状态 /
+          // 进度条），模型区多占一行会把「加速」整段挤出首屏。
+          Builder(
+            builder: (BuildContext ctx) {
+              final List<AsrModelPack> packs = _modelChoices();
+              return Row(
+                children: <Widget>[
+                  Expanded(
+                    child: GamepadMenuDropdown<String>(
+                      key: const ValueKey<String>('asr-transcribe-model'),
+                      entries: <GamepadDropdownEntry<String>>[
+                        for (final AsrModelPack pack in packs)
+                          (value: pack.id, label: pack.displayName),
+                      ],
+                      selected: packs.isEmpty ? null : packs.first.id,
+                      enabled: _canChangePreference && packs.length > 1,
+                      entrySubtitle: (String id) => _modelSubtitle(
+                        packs.firstWhere((AsrModelPack p) => p.id == id),
+                      ),
+                      onChanged: _changeModel,
+                    ),
+                  ),
+                  SizedBox(width: tokens.spacing.gap),
+                  IconButton(
+                    key: const ValueKey<String>('asr-transcribe-model-add'),
+                    tooltip: t.audiobook_transcribe_model_custom_add,
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    onPressed: _canChangePreference ? _addLocalModel : null,
+                  ),
+                ],
+              );
+            },
           ),
           SizedBox(height: tokens.spacing.rowVertical),
           Text(

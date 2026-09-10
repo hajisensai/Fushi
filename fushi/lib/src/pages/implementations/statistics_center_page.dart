@@ -10,6 +10,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
@@ -103,6 +104,14 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Map<int, String> _collectionNamesById = <int, String>{};
   List<GalgameEntry> _games = <GalgameEntry>[];
 
+  /// 跨域计数面分桶（阅读 + 视频两个来源之和；游戏域不写这四张计数面）。时段卡
+  /// 之前只有时长 / 字数，制卡与查词这两个每天都在动的数字在总览上一个都看不到，
+  /// 只能逐个 tab 翻——现在与两个域 tab 的时段卡同形。
+  StatActivityBuckets _lookup = StatActivityBuckets();
+  StatActivityBuckets _mined = StatActivityBuckets();
+  StatActivityBuckets _favorited = StatActivityBuckets();
+  StatActivityBuckets _favoritedSentences = StatActivityBuckets();
+
   @override
   void initState() {
     super.initState();
@@ -113,9 +122,24 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     try {
       final AppModel appModel = ref.read(appProvider);
       final FushiDatabase db = appModel.database;
-      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final StatFacts facts = await loadStatFacts(
+        db,
+        activityLimit: 0,
+        includeCounters: true,
+      );
       _daily = facts.daily;
       _sessions = facts.sessions;
+      // 跨域 = 不传 source（两个域 tab 各传自己的那一个），所以总览的四个数字
+      // 恒等于两个 tab 之和：同一批行、同一个分桶函数，没有第二条口径。
+      final DateTime now = DateTime.now();
+      final StatCounterFacts counters = facts.counters;
+      _lookup = bucketActivityByDateKey(counters.lookupEvents(), now);
+      _mined = bucketActivityByDateKey(counters.minedEvents(), now);
+      _favorited = bucketActivityByDateKey(counters.favoriteWordEvents(), now);
+      _favoritedSentences = bucketActivityByDateKey(
+        counters.favoriteSentenceEvents(),
+        now,
+      );
       // BUG-2216：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
       _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
       _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
@@ -183,6 +207,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           context,
           sessions: _sessions,
           titleOf: _sessionTitle,
+          collectionOf: _sessionCollectionName,
           onDelete: _deleteSession,
         ),
       ],
@@ -233,6 +258,27 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     return s.title;
   }
 
+  /// 会话行的所属合集名（BUG-2417：会话流混排三域，段 title 是条目名——合集里
+  /// 就是分集 / 分册名）。判据与事实行版 [_entryCollection] 同构，输入换成会话；
+  /// 会话恒自带身份（段 mediaKey），不需要 legacy 的按 title 反查。
+  String? _sessionCollectionName(StudySession s) {
+    if (s.mediaKey.isEmpty) return null;
+    if (s.isBook) {
+      return statCollectionName(
+        MediaKind.epub.compositeKey(
+          _epubUidByBookKey[s.mediaKey] ?? s.mediaKey,
+        ),
+        _primaryCollectionByEntry,
+        _collectionNamesById,
+      );
+    }
+    return statCollectionName(
+      (s.isVideo ? MediaKind.video : MediaKind.game).compositeKey(s.mediaKey),
+      _primaryCollectionByEntry,
+      _collectionNamesById,
+    );
+  }
+
   /// 删一次会话：段写零 + 游戏骨架行硬删（同一事务），再整页重聚合。
   Future<void> _deleteSession(StudySession s) async {
     await deleteStudySession(ref.read(appProvider).database, s);
@@ -280,20 +326,40 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     );
   }
 
-  /// 四张跨域时段卡：主值=学习总时长，副行=学习总字数；点卡 → 完整日面的时段
-  /// 明细 sheet。
+  /// 四张跨域时段卡：主值=学习总时长，副行=学习总字数 + 查词 / 制卡 / 收藏词 /
+  /// 收藏句（与阅读、视频两个域 tab 的时段卡逐行同形，只是这里是跨域求和）；
+  /// 点卡 → 完整日面的时段明细 sheet。
   Widget _buildSummaryCards(StatWindow w) {
     return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
-      _periodSummary(t.stat_today, w.isToday),
-      _periodSummary(t.stat_this_week, w.inWeek),
-      _periodSummary(t.stat_this_month, w.inMonth),
-      _periodSummary(t.stat_all_time, (String _) => true),
+      _periodSummary(
+        t.stat_today,
+        w.isToday,
+        (StatActivityBuckets b) => b.today,
+      ),
+      _periodSummary(
+        t.stat_this_week,
+        w.inWeek,
+        (StatActivityBuckets b) => b.week,
+      ),
+      _periodSummary(
+        t.stat_this_month,
+        w.inMonth,
+        (StatActivityBuckets b) => b.month,
+      ),
+      _periodSummary(
+        t.stat_all_time,
+        (String _) => true,
+        (StatActivityBuckets b) => b.all,
+      ),
     ]);
   }
 
+  /// [pick] = 这张卡取分桶里的哪一格（今日 / 本周 / 本月 / 全部），与 [contains]
+  /// 的窗口一一对应：四个计数面只分一次桶，四张卡各取一格。
   StatPeriodSummary _periodSummary(
     String label,
     bool Function(String dateKey) contains,
+    int Function(StatActivityBuckets) pick,
   ) {
     int chars = 0;
     int ms = 0;
@@ -306,7 +372,16 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       label: label,
       primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
-      lines: <StatSummaryLine>[StatSummaryLine(value: formatStatChars(chars))],
+      lines: <StatSummaryLine>[
+        StatSummaryLine(value: formatStatChars(chars)),
+        StatSummaryLine(label: t.stat_lookup, value: '${pick(_lookup)}'),
+        StatSummaryLine(label: t.stat_mined, value: '${pick(_mined)}'),
+        StatSummaryLine(label: t.stat_favorited, value: '${pick(_favorited)}'),
+        StatSummaryLine(
+          label: t.stat_favorited_sentence,
+          value: '${pick(_favoritedSentences)}',
+        ),
+      ],
     );
   }
 

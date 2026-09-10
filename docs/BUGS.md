@@ -29,13 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2228 条。点号进各自文件。
+> 共 2230 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2421](bugs/BUG-2421-favorite-words-cross-device-gaps.md) | 🚧 | 🚧 | 收藏的单词跨端看不到：wire 丢归属 + 云同步绑死统计开关 + 备份按统计表删除 |
 | [BUG-2420](bugs/BUG-2420-import-dialog-says-epub-for-18-formats.md) | ✅ | 🚧 | 书籍导入 UI 通篇写死 EPUB，实际支持 18 种格式 |
 | [BUG-2419](bugs/BUG-2419-windows-pdf-import-hangs-pdfium-missing.md) | ✅ | ✅ | Windows PDF 导入永久卡在「导入 EPUB…」：pdfium.dll 从未进入安装包 |
+| [BUG-2418](bugs/BUG-2418-popup-dismiss-animation-toggle.md) | ✅ | ✅ | 滑动关闭弹窗的动画只能靠开墨水屏模式关掉，没有独立开关 |
+| [BUG-2417](bugs/BUG-2417-stat-session-collection-title.md) | ✅ | ✅ | 统计「最近会话」标题单行截断且不带合集名 |
 | [BUG-2416](bugs/BUG-2416-reader-nested-popup-coordinate-space.md) | ✅ | ✅ | 阅读器嵌套查词混用屏幕与浮层坐标导致遮字 |
 | [BUG-2415](bugs/BUG-2415-eink-popup-touch-instant-scroll.md) | ✅ | ✅ | 墨水屏瞬时滚动只接了滚轮，触摸拖动仍走原生惯性滚动 |
 | [BUG-2409](bugs/BUG-2409-mihon-source-http-error.md) | ✅ | ✅ | Mihon 保留源站HTTP错误状态并区分桥接失败 |

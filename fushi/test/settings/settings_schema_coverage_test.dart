@@ -413,6 +413,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 FushiFocusRoot/Ring',
   'lookup/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
+  // BUG-2418：滑动关闭弹窗的「关闭动画」开关（默认 true，关掉＝松手当帧就关）。与上面
+  // 两项滑关设置同源、同一条 MediaSource 偏好通道，harness 里同样观测不到写穿与生效：
+  // 生效点是 AnimationController.duration 被设成 Duration.zero，既不是 reader CSS
+  // 也不是主题树，没有适用的 T4 渲染探针。由专项 widget 行为测试覆盖（「只 pump 一帧」
+  // 判别：开着当帧仍在补间、关掉当帧就 onDismiss，另含 eink 不被开关覆盖一条）。
+  'lookup/Popup close animation':
+      'test/widgets/swipe_dismiss_wrapper_test.dart',
   'reading/Reverse keyboard left/right page-turn direction':
       'test/reader/reader_space_pause_test.dart + test/shortcuts/global_navigation_test.dart',
   // TODO-436/407②：查词弹窗"滑动关闭"开关。归「查词」分组（destId=lookup）。生效点

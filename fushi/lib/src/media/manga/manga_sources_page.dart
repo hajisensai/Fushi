@@ -18,6 +18,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
@@ -970,6 +971,10 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                             const SizedBox(height: 8),
                             // 内置在线源：与扩展提供的源同节同级（见类文档）。
                             const MokuroMoeSourceRow(),
+                            const SizedBox(height: 8),
+                            // 已配对互联对端的漫画库也是一个「在线源」：不下整卷，
+                            // 直接在对端上翻页（Suwayomi 作为 Tachiyomi 源的形态）。
+                            const InterconnectMangaSourceRow(),
                             if (manager == null) _unavailableNote(),
                           ],
                         ),

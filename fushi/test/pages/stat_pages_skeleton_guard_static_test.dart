@@ -17,6 +17,21 @@ const Map<String, String> _pages = <String, String>{
   'game': 'lib/src/pages/implementations/game_statistics_page.dart',
 };
 
+/// 从左括号 [open] 起按括号配对切出整个实参列表（注释已由 [maskComments] 掩掉；
+/// 这些调用点的字符串字面量里没有括号）。
+String _callArguments(String src, int open) {
+  int depth = 0;
+  for (int i = open; i < src.length; i++) {
+    final String c = src[i];
+    if (c == '(') depth++;
+    if (c == ')') {
+      depth--;
+      if (depth == 0) return src.substring(open, i + 1);
+    }
+  }
+  return src.substring(open);
+}
+
 void main() {
   for (final MapEntry<String, String> e in _pages.entries) {
     group(e.key, () {
@@ -68,6 +83,35 @@ void main() {
       'buildStatHourlyFormatChartSection(context, _hourly)',
     ]) {
       expect(foldBody.contains(block), isTrue, reason: '$block 下沉进折叠区，不得删');
+    }
+  });
+
+  /// BUG-2417：会话行的段 title 是**条目名**，合集里就是分集 / 分册名。会话流没有
+  /// 时段明细 sheet 那种合集组头兜底，四个挂会话区块的页面（三个域 tab + 总览）
+  /// 一个都不能漏传合集解析器，否则那一页的行又退回「暗中行动」认不出作品。
+  test('四个页面的会话区块都传 collectionOf', () {
+    const Map<String, String> pagesWithSessions = <String, String>{
+      ..._pages,
+      'center': 'lib/src/pages/implementations/statistics_center_page.dart',
+    };
+    for (final MapEntry<String, String> e in pagesWithSessions.entries) {
+      final String src = maskComments(
+        File(e.value).readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      for (final String call in <String>[
+        'buildStatSessionSection(',
+        'showStatSessionsSheet(',
+      ]) {
+        int at = src.indexOf(call);
+        while (at >= 0) {
+          expect(
+            _callArguments(src, at + call.length - 1).contains('collectionOf:'),
+            isTrue,
+            reason: '${e.key} 的 $call 漏传合集解析器',
+          );
+          at = src.indexOf(call, at + call.length);
+        }
+      }
     }
   });
 

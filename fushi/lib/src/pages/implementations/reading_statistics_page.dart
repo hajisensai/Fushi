@@ -19,7 +19,6 @@ import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 「按书」列表的排序键：字数 / 时长 / 阅读速度（cph）。
@@ -192,7 +191,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       // 「阅读」里拆出来单列，页数是漫画独有的第三个量纲）已在里面按 title 反查
       // 库表补好，段自带身份。本页只取阅读域（书 + 漫画）的日面；统计页不需要
       // 活动行，activityLimit 传 0。
-      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final StatFacts facts = await loadStatFacts(
+        db,
+        activityLimit: 0,
+        includeCounters: true,
+      );
       _bookFacts = facts.dailyBooks.toList();
       _dailyFacts = facts.daily;
       _sessions = facts.sessions.where((StudySession s) => s.isBook).toList();
@@ -202,25 +205,27 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       final List<EpubBookMeta> epubRows = facts.epubRows;
       _ambiguousBookTitles = ambiguousBookTitles(epubRows);
       _computeAggregates();
-      final List<FavoriteWordRow> favs = await db.getFavoriteWordsBySource(
-        kStatSourceBook,
+      // 计数面（查词 / 制卡 / 收藏）与事实面同一次加载：总览 tab 是跨域视图，
+      // 它的四个数字必须恰好等于本 tab 与视频 tab 之和；三页各查一遍时，口径一漂
+      // 就静默对不上。按 source 切片的判据只在 [StatCounterFacts] 里写一遍。
+      final StatCounterFacts counterFacts = facts.counters;
+      final List<FavoriteWordRow> favs = counterFacts.favoriteWordsFor(
+        StatSourceKind.book,
       );
-      final List<MiningStatisticRow> mined = await db
-          .getMiningStatisticsBySource(kStatSourceBook);
       _favorited = bucketActivityByDateKey(
-        favs.map((FavoriteWordRow f) => (f.dateKey, 1)),
+        counterFacts.favoriteWordEvents(source: StatSourceKind.book),
         now,
       );
       _mined = bucketActivityByDateKey(
-        mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
+        counterFacts.minedEvents(source: StatSourceKind.book),
         now,
       );
-      // TODO-1204：查词/制卡 per-book 计数（新表）。汇总用 lookupCount 分桶，
-      // per-book tile 按 title 聚合（无书查词 title='' 跳过，只进汇总）。
-      final List<LookupMiningCounterRow> counters = await db
-          .getLookupMiningCountersBySource(kStatSourceBook);
+      // 查词/制卡 per-book 计数：汇总用 lookupCount 分桶，per-book tile 按 title
+      // 聚合（无书查词 title='' 跳过，只进汇总）。
+      final List<LookupMiningCounterRow> counters = counterFacts
+          .lookupCountersFor(StatSourceKind.book);
       _lookup = bucketActivityByDateKey(
-        counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
+        counterFacts.lookupEvents(source: StatSourceKind.book),
         now,
       );
       _bookCounters = aggregateStatCountersByTitle(counters);
@@ -243,17 +248,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
       // 滤光 → 统计恒为 0。改用 `dateKey ?? statDateKey(createdAt)` 回退——createdAt
       // 恒非空，已存的无 dateKey 收藏也按创建日归桶（与写入端补 dateKey 双向修复）。
-      final List<FavoriteSentence> favSentences =
-          await FavoriteSentenceRepository(db).getAll();
       _favoritedSentences = bucketActivityByDateKey(
-        favSentences
-            .where(
-              (FavoriteSentence s) => s.source != kFavoriteSentenceSourceVideo,
-            )
-            .map(
-              (FavoriteSentence s) =>
-                  (s.dateKey ?? statDateKey(s.createdAt), 1),
-            ),
+        counterFacts.favoriteSentenceEvents(source: StatSourceKind.book),
         now,
       );
       _loadHourlyData(facts);
@@ -536,6 +532,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                     context,
                     sessions: _sessions,
                     titleOf: _sessionTitle,
+                    collectionOf: _sessionCollectionName,
                     onDelete: _deleteSession,
                   ),
                 ),
@@ -1437,6 +1434,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String _sessionTitle(StudySession s) =>
       ReaderFushiSource.instance.overrideTitleForBookKey(s.mediaKey) ?? s.title;
 
+  /// 会话行的所属合集名（BUG-2417：合集里段 title 是分册名，行上得写清是哪套
+  /// 书）。会话自带 bookKey 身份（段 mediaKey），经 [_epubUidByBookKey] 换算拼
+  /// 'epub|<uid>'，与 [_collectionNameForBook] 同一 v83 键契约。
+  String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
+      ? null
+      : statCollectionName(
+          MediaKind.epub.compositeKey(_epubUidByBookKey[s.mediaKey] ?? s.mediaKey),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        );
+
   /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
   Future<void> _deleteSession(StudySession s) async {
     await deleteStudySession(appModelNoUpdate.database, s);
@@ -1455,6 +1463,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       title: _bookDisplayTitle(book),
       sessions: sessions,
       titleOf: _sessionTitle,
+      collectionOf: _sessionCollectionName,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
     );
