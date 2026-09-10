@@ -9,7 +9,7 @@
 /// 非对称 bug。所以两处都调 [createAsrTranscriptionService]，装配参数只有这一份。
 library;
 
-import 'dart:convert';
+import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart' as asr;
 import 'package:flutter/foundation.dart';
@@ -41,7 +41,7 @@ asr.OnnxSessionFactory buildFushiOnnxFactory() =>
 ///    于是变成「目录对、元数据错」的静默错解码，不会报错只会出乱码。
 ///
 /// 同样**必须是顶层函数**（要跨 isolate 边界发送，闭包过不去）。参数是
-/// [fushiAsrBackend] 拼的 `[RootIsolateToken?, 注册表 JSON]`——两样都是可发送值。
+/// [fushiAsrBackend] 拼的 `[RootIsolateToken?, 模型目录文件路径]`——两样都是可发送值。
 void fushiAsrIsolateBootstrap(Object arg) {
   final List<Object?> payload = arg as List<Object?>;
   final Object? token = payload.isEmpty ? null : payload.first;
@@ -50,10 +50,10 @@ void fushiAsrIsolateBootstrap(Object arg) {
   if (token is RootIsolateToken) {
     BackgroundIsolateBinaryMessenger.ensureInitialized(token);
   }
-  final Object? registryJson = payload.length > 1 ? payload[1] : null;
-  if (registryJson is String && registryJson.isNotEmpty) {
+  final Object? catalogPath = payload.length > 1 ? payload[1] : null;
+  if (catalogPath is String && catalogPath.isNotEmpty) {
     asr.asrModelRegistry =
-        asr.AsrModelRegistry.fromJson(jsonDecode(registryJson) as Object?);
+        buildAsrModelRegistry(readAsrModelCatalogSync(File(catalogPath)));
   }
 }
 
@@ -63,15 +63,18 @@ void fushiAsrIsolateBootstrap(Object arg) {
 /// 起转录）；bootstrap 会跳过挂 messenger 那一步，让后端自己去炸出可读的错，而不是
 /// 在这里静默继续。
 ///
-/// 注册表按值序列化过去（不是让那侧再读一遍磁盘）：主 isolate 已经用它算出了
-/// spec 里的模型目录，两侧必须是**同一份**表，中间隔一次读盘就多一次「用户刚好
-/// 在这时改了选择」和「读盘失败」的分叉。
+/// 传过去的是目录**文件路径**而不是注册表快照：`AsrIsolateBackend` 在
+/// [createAsrTranscriptionService] 时构造一次，而服务的生命周期是「弹层打开到关闭」
+/// ——用户正是在这中间换模型的。快照会停在打开弹层那一刻，于是后台按**旧包**的
+/// 架构 / blankToken / indexType 去装载主 isolate 按**新包**算好的目录，不报错，
+/// 只出乱码。路径是常量，内容每次起 isolate 时现读，而 [saveAsrModelCatalog] 是
+/// 先落盘再改本进程状态，所以盘上永远不落后于内存。
 asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
       buildFactory: buildFushiOnnxFactory,
       bootstrap: fushiAsrIsolateBootstrap,
       bootstrapArg: <Object?>[
         RootIsolateToken.instance,
-        jsonEncode(asr.asrModelRegistry.toJson()),
+        _asrModelCatalogPath,
       ],
     );
 
@@ -106,6 +109,14 @@ void installAsrHostBindings() {
 /// [applyAsrModelCatalog] 里一起换，不允许分别赋值。
 AsrModelCatalog _asrModelCatalog = AsrModelCatalog.empty;
 
+/// 目录文件的绝对路径，解析一次记下来。
+///
+/// 后台 isolate 的引导要用它（同步读），而数据根解析是异步的、那侧也没装解析器
+/// ——所以在主 isolate 这边解析好，路径本身当可发送值带过去。空串 = 还没
+/// [loadAsrModelCatalog] 过（弹窗词典等不经 `main()` 的 entry point），此时两侧
+/// 都用内置表，仍然一致。
+String _asrModelCatalogPath = '';
+
 AsrModelCatalog get asrModelCatalog => _asrModelCatalog;
 
 /// 把一份目录装进本进程：组装注册表 + 记住目录。不落盘（落盘见
@@ -122,6 +133,7 @@ void applyAsrModelCatalog(AsrModelCatalog catalog) {
 /// 不该为它起不来；退回内置表并把原因打进日志。
 Future<void> loadAsrModelCatalog() async {
   try {
+    _asrModelCatalogPath = (await asrModelCatalogFile()).path;
     applyAsrModelCatalog(await readAsrModelCatalog());
   } catch (error) {
     applyAsrModelCatalog(AsrModelCatalog.empty);
@@ -146,7 +158,25 @@ asr.AsrTranscriptionService createAsrTranscriptionService({
       alignGeneratedSubtitles: alignGeneratedSubtitles,
       backend: fushiAsrBackend(),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
+      openStore: openAsrModelStore,
     );
+
+/// 打开某语言当前模型包的磁盘目录。
+///
+/// 内置包走包里的默认（`<数据根>/asr_models/<id>`）；**手动接入的本地包用用户
+/// 自己那个文件夹**。这一处注入同时决定了四条路径看的是哪个目录：就绪判定
+/// （`plan`）、下载（`downloadModel`）、进程内装载，以及后台 isolate 的
+/// `spec.storeDirPath`——包里这四处都从 `openStore` 取 store。
+///
+/// 不注入的话本地模型恒判未就绪：包里的 `AsrModelStore` 只按 `pack.id` 拼目录、
+/// 只在那个目录里 stat 文件名，`AsrModelFile.url` 要到下载时才读——于是弹层会
+/// 提示「需要下载」，点下去再拿 `file:` URL 去发 HTTP 请求。
+Future<asr.AsrModelStore> openAsrModelStore(asr.AsrLanguage language) async {
+  final asr.AsrModelPack pack = asr.asrModelPackFor(language);
+  final Directory? local = localAsrModelDirectory(pack);
+  if (local != null) return asr.AsrModelStore(local, pack);
+  return asr.AsrModelStore.open(language);
+}
 
 /// 把 `fushi_asr_core` 的 ffmpeg 后端接口转接到本仓的 [host_ffmpeg.FfmpegBackend]。
 ///

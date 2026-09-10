@@ -584,15 +584,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       directoryPicker: widget.directoryPicker,
     );
     if (pack == null || !mounted) return;
-    await _updateCatalog(
-      widget
-          .catalogGetter()
-          .withCustomPack(pack)
-          .withChoice(_language, pack.id),
-    );
+    // withLocalPack 而不是 withCustomPack：id 由显示名派生，两个不同文件夹很容易
+    // 撞上同一个 id，撞了要加后缀而不是把先前那份覆盖掉（连同指向它的选择）。
+    final ({AsrModelCatalog catalog, AsrModelPack pack}) added =
+        widget.catalogGetter().withLocalPack(pack);
+    await _updateCatalog(added.catalog.withChoice(_language, added.pack.id));
     if (!mounted) return;
     FushiToast.show(
-      msg: t.audiobook_transcribe_model_custom_added(name: pack.displayName),
+      msg: t.audiobook_transcribe_model_custom_added(
+        name: added.pack.displayName,
+      ),
       severity: ToastSeverity.success,
     );
   }

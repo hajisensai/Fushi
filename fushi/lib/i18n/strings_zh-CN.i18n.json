@@ -4599,11 +4599,9 @@
   "audiobook_transcribe_model_fit_light": "轻量 · 手机和桌面都合适",
   "audiobook_transcribe_model_fit_desktop": "大模型 · 建议桌面（有独显更好）",
   "audiobook_transcribe_model_fit_heavy_mobile": "大模型 · 手机上能跑，但很慢",
-  "audiobook_transcribe_model_default_badge": "默认",
   "audiobook_transcribe_model_custom_badge": "自带",
   "audiobook_transcribe_model_custom_add": "手动指定模型…",
   "audiobook_transcribe_model_custom_title": "手动指定模型",
-  "audiobook_transcribe_model_custom_intro": "选一个放着 sherpa-onnx 导出模型的文件夹（encoder / decoder / joiner 三件套，或单个 CTC 模型，外加 tokens.txt）。文件留在原处，不会复制也不会下载。",
   "audiobook_transcribe_model_custom_pick": "选择文件夹",
   "audiobook_transcribe_model_custom_name": "模型名称",
   "audiobook_transcribe_model_custom_blank": "Blank 记号",
@@ -4616,5 +4614,6 @@
   "audiobook_transcribe_model_custom_error_transducer": "找到了 encoder，但旁边没有 decoder / joiner。",
   "audiobook_transcribe_model_custom_detach": "移除接入",
   "audiobook_transcribe_model_custom_detach_hint": "只是从模型列表里移除，你的文件不会被删除。",
-  "audiobook_transcribe_model_custom_added": "已接入 $name"
+  "audiobook_transcribe_model_custom_added": "已接入 $name",
+  "audiobook_transcribe_model_custom_intro": "选一个放着 sherpa-onnx 导出模型的文件夹（encoder / decoder / joiner 三件套，或单个 CTC 模型，外加 tokens.txt）。文件留在原处不会复制，只有文件夹里没有 VAD 模型时会补下那 640 KB。"
 }

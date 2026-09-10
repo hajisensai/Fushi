@@ -321,29 +321,202 @@ void main() {
   });
 
   group('后台 isolate 装配', () {
-    tearDown(() => asrModelRegistry = AsrModelRegistry.builtin());
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('asr_bootstrap_');
+    });
+    tearDown(() async {
+      asrModelRegistry = AsrModelRegistry.builtin();
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
 
-    test('bootstrap 把注册表装到那一侧（没有 token 也照装）', () {
-      final AsrModelRegistry sent = buildAsrModelRegistry(
+    File catalogFile(AsrModelCatalog catalog) =>
+        File('${dir.path}${Platform.pathSeparator}asr_models.json')
+          ..writeAsStringSync(jsonEncode(catalog.toJson()));
+
+    test('bootstrap 现读目录文件装表（没有 token 也照装）', () {
+      final File file = catalogFile(
         AsrModelCatalog.empty
             .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
       );
       asrModelRegistry = AsrModelRegistry.builtin();
 
-      fushiAsrIsolateBootstrap(<Object?>[null, jsonEncode(sent.toJson())]);
+      fushiAsrIsolateBootstrap(<Object?>[null, file.path]);
 
       // 这条断言就是「后台不会按错模型静默解码」的全部依据：那侧的
       // asrModelPackFor(ja) 必须与主 isolate 规划时用的是同一个包。
       expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrOmnilingualPack.id);
     });
 
-    test('注册表 JSON 缺失时保持原样，不清空成空表', () {
+    test('每次起 isolate 都现读：弹层打开后改的选择也能带过去', () {
+      final File file = catalogFile(AsrModelCatalog.empty);
+      fushiAsrIsolateBootstrap(<Object?>[null, file.path]);
+      expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrJapanesePack.id);
+
+      // 用户在弹层里换了模型 → 先落盘。backend 的 bootstrapArg 是同一个路径，
+      // 下一次起 isolate 读到的就是新的。
+      catalogFile(
+        AsrModelCatalog.empty
+            .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
+      );
+      fushiAsrIsolateBootstrap(<Object?>[null, file.path]);
+      expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrOmnilingualPack.id);
+    });
+
+    test('路径缺失 / 文件不存在时保持内置表，不清空成空表', () {
       asrModelRegistry = AsrModelRegistry.builtin();
       fushiAsrIsolateBootstrap(<Object?>[null]);
       expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrJapanesePack.id);
+
+      fushiAsrIsolateBootstrap(
+        <Object?>[null, '${dir.path}${Platform.pathSeparator}nope.json'],
+      );
+      expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrJapanesePack.id);
+    });
+  });
+
+  group('本地模型的磁盘目录', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('asr_local_store_');
+      for (final String name in <String>[
+        'tokens.txt',
+        'encoder-epoch-99-avg-1.onnx',
+        'decoder-epoch-99-avg-1.onnx',
+        'joiner-epoch-99-avg-1.onnx',
+      ]) {
+        File('${dir.path}${Platform.pathSeparator}$name')
+            .writeAsBytesSync(<int>[1, 2, 3]);
+      }
+    });
+    tearDown(() async {
+      asrModelRegistry = AsrModelRegistry.builtin();
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    });
+
+    test('sourceUrl 是 file: 的包解析出用户那个文件夹；内置包不是', () {
+      final AsrModelPack local = (scanLocalAsrModelDirectory(
+        dir: dir,
+        displayName: '我的模型',
+        languages: <AsrLanguage>[AsrLanguage.japanese],
+      ) as AsrLocalModelFound)
+          .pack;
+      expect(localAsrModelDirectory(local)?.path, dir.path);
+      expect(localAsrModelDirectory(kAsrJapanesePack), isNull);
+    });
+
+    test('装配出的 store 指向用户文件夹，模型文件当场就位', () async {
+      final AsrModelPack local = (scanLocalAsrModelDirectory(
+        dir: dir,
+        displayName: '我的模型',
+        languages: <AsrLanguage>[AsrLanguage.japanese],
+      ) as AsrLocalModelFound)
+          .pack;
+      final AsrModelCatalog catalog = AsrModelCatalog.empty
+          .withCustomPack(local)
+          .withChoice(AsrLanguage.japanese, local.id);
+      asrModelRegistry = buildAsrModelRegistry(catalog);
+
+      final AsrModelStore store = await openAsrModelStore(AsrLanguage.japanese);
+      // 这条是「手动指定模型」能不能跑的全部依据：包里的 AsrModelStore.open()
+      // 只按 pack.id 拼 <数据根>/asr_models/<id>，文件不在那儿就恒判未就绪、
+      // 接着拿 file: URL 去发 HTTP 请求。
+      expect(store.dir.path, dir.path);
+      // 模型本体四个文件当场就位（未就绪的只剩 VAD——目录里没有就补下那 640 KB，
+      // 见 scanLocalAsrModelDirectory 的文档）。
+      for (final AsrModelRole role in <AsrModelRole>[
+        AsrModelRole.encoderInt8,
+        AsrModelRole.decoderInt8,
+        AsrModelRole.joinerInt8,
+        AsrModelRole.tokens,
+      ]) {
+        expect(
+          store.fileFor(role).existsSync(),
+          isTrue,
+          reason: '$role 应该直接指到用户文件夹里的文件',
+        );
+      }
+      expect(
+        store.fileFor(AsrModelRole.vad).path,
+        startsWith(dir.path),
+        reason: 'VAD 也该落在用户文件夹，而不是 asr_models/<id>',
+      );
+    });
+
+    test('vad 不在文件夹里时补的是内置直链，不是 file: URL', () {
+      final AsrModelPack local = (scanLocalAsrModelDirectory(
+        dir: dir,
+        displayName: '我的模型',
+        languages: <AsrLanguage>[AsrLanguage.japanese],
+      ) as AsrLocalModelFound)
+          .pack;
+      expect(
+        local.fileForRole(AsrModelRole.vad).url,
+        startsWith('https://'),
+      );
+    });
+  });
+
+  group('接入时的 id 去重', () {
+    test('同名不同目录：加后缀，先前那份与它的选择都不受影响', () {
+      final AsrModelPack first = _fakeLocalPack('custom-model', '/tmp/a');
+      final AsrModelPack second = _fakeLocalPack('custom-model', '/tmp/b');
+      final ({AsrModelCatalog catalog, AsrModelPack pack}) added1 =
+          AsrModelCatalog.empty.withLocalPack(first);
+      final ({AsrModelCatalog catalog, AsrModelPack pack}) added2 =
+          added1.catalog.withLocalPack(second);
+
+      expect(added1.pack.id, 'custom-model');
+      expect(added2.pack.id, 'custom-model-2');
+      expect(added2.catalog.customPacks, hasLength(2));
+      expect(
+        added2.catalog.customPacks.map((AsrModelPack p) => p.sourceUrl).toSet(),
+        <String>{'file:///tmp/a', 'file:///tmp/b'},
+      );
+    });
+
+    test('同名同目录：视为重新接入，覆盖而不是加一份', () {
+      final ({AsrModelCatalog catalog, AsrModelPack pack}) added =
+          AsrModelCatalog.empty
+              .withLocalPack(_fakeLocalPack('custom-model', '/tmp/a'))
+              .catalog
+              .withLocalPack(_fakeLocalPack('custom-model', '/tmp/a'));
+      expect(added.pack.id, 'custom-model');
+      expect(added.catalog.customPacks, hasLength(1));
     });
   });
 }
+
+/// 一个 sourceUrl 指向本地目录的假包（只用来验 id 去重规则）。
+AsrModelPack _fakeLocalPack(String id, String dirPath) => AsrModelPack(
+      languages: const <AsrLanguage>[AsrLanguage.japanese],
+      id: id,
+      displayName: id,
+      sourceUrl: Uri.file(dirPath).toString(),
+      files: const <AsrModelFile>[
+        AsrModelFile(
+          fileName: 'model.onnx',
+          url: 'file:///tmp/model.onnx',
+          expectedBytes: 10,
+          role: AsrModelRole.ctcModelFp32,
+        ),
+        AsrModelFile(
+          fileName: 'model.onnx',
+          url: 'file:///tmp/model.onnx',
+          expectedBytes: 10,
+          role: AsrModelRole.ctcModelInt8,
+        ),
+        AsrModelFile(
+          fileName: 'tokens.txt',
+          url: 'file:///tmp/tokens.txt',
+          expectedBytes: 10,
+          role: AsrModelRole.tokens,
+        ),
+        kAsrVadFile,
+      ],
+      architecture: AsrModelArchitecture.ctc,
+      blankToken: '<blk>',
+    );
 
 AsrModelPack _fakePack(
   String id,
