@@ -3289,7 +3289,7 @@ function wrapExpressionInlineKanji(container) {
             acceptNode(node) {
                 const p = node.parentElement;
                 if (!node.textContent || !p) return NodeFilter.FILTER_REJECT;
-                if (p.closest('rt, rp, .ruby-rt, .ruby-reserve, .kanji-inline')) {
+                if (p.closest('rt, rp, .ruby-rt, .ruby-reserve, .expr-char')) {
                     return NodeFilter.FILTER_REJECT;
                 }
                 return NodeFilter.FILTER_ACCEPT;
@@ -3297,36 +3297,50 @@ function wrapExpressionInlineKanji(container) {
         });
         const textNodes = [];
         while (walker.nextNode()) textNodes.push(walker.currentNode);
+        // 过滤器已排掉读音与孪生体，剩下的可见基字按文档序拼起来就是 expression
+        // 本身，所以这个累加偏移与 expression 的 UTF-16 下标同域。点击处理器还会
+        // 拿「本格字面 == expression 该位置的字符」再自校验一次：ruby 结构哪天让
+        // 基字序与 expression 错位，也只是退回整词，不会去查一段错位的串。
+        let offset = 0;
         for (const node of textNodes) {
-            const text = node.textContent;
-            let hasKanji = false;
-            for (const ch of text) {
-                if (KANJI_PATTERN.test(ch)) { hasKanji = true; break; }
-            }
-            if (!hasKanji) continue;
             const frag = document.createDocumentFragment();
-            let run = '';
-            const flushRun = () => {
-                if (run) {
-                    frag.appendChild(document.createTextNode(run));
-                    run = '';
-                }
-            };
-            for (const ch of text) {
-                if (KANJI_PATTERN.test(ch)) {
-                    flushRun();
-                    const span = document.createElement('span');
-                    span.className = 'kanji-inline';
-                    span.textContent = ch;
-                    frag.appendChild(span);
-                } else {
-                    run += ch;
-                }
+            for (const ch of node.textContent) {
+                const span = document.createElement('span');
+                span.className = KANJI_PATTERN.test(ch)
+                    ? 'expr-char kanji-inline'
+                    : 'expr-char';
+                span.setAttribute('data-char-index', String(offset));
+                span.textContent = ch;
+                frag.appendChild(span);
+                offset += ch.length;
             }
-            flushRun();
             node.replaceWith(frag);
         }
     });
+}
+
+// 词头上的一次点击落在哪个字格上、该查什么。
+//
+// - 汉字格（.kanji-inline）：查这个字本身。单字查询才带汉字卡（Dart 侧
+//   queryKanjiForTerm 只对单字生效），design-2026-08 的「点词头汉字看单字」入口
+//   照旧。
+// - 其余字格（假名 / 拉丁 …）：查**从这个字到词尾**的那一段。用户 2026-09-10
+//   反馈：点「置かない」的 か 要能出「かない」，而不是把整个词头原样再搜一遍
+//   ——那是一次空转查询，点了等于没点。
+// - 落在读音(rt)、孪生体或字与字之间的空隙：返回 null，调用方退回整词（旧行为）。
+function resolveExpressionTapTarget(expression, target) {
+    const cell = target instanceof Element ? target.closest('.expr-char') : null;
+    if (!cell) return null;
+    const ch = cell.textContent || '';
+    if (cell.classList.contains('kanji-inline')) {
+        return { term: ch, anchorEl: cell };
+    }
+    const index = Number(cell.getAttribute('data-char-index'));
+    if (!Number.isInteger(index) || index < 0 || index >= expression.length) {
+        return null;
+    }
+    if (!expression.startsWith(ch, index)) return null;
+    return { term: expression.slice(index), anchorEl: cell };
 }
 
 function createEntryHeader(entry, idx) {
@@ -3353,16 +3367,14 @@ function createEntryHeader(entry, idx) {
     expressionSpan.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        // design-2026-08 讨论区反馈: a click landing on an inline kanji (.kanji-inline, wrapped
-        // by wrapExpressionInlineKanji) looks up THAT character — same
-        // onLinkClick channel + anchor-rect semantics the removed
-        // kanji-breakdown chips used. Anywhere else on the headword keeps the
-        // old whole-expression re-lookup.
-        const kanjiEl = e.target instanceof Element
-            ? e.target.closest('.kanji-inline')
-            : null;
-        const anchorEl = kanjiEl || expressionSpan;
-        const term = kanjiEl ? kanjiEl.textContent : expression;
+        // 词头的每个字都是自己的点击目标（wrapExpressionInlineKanji 逐字包格）：
+        // 汉字格查该字（汉字卡入口，design-2026-08 讨论区反馈），其余字格查「从该
+        // 字到词尾」的那一段（用户 2026-09-10 反馈）。onLinkClick 通道与锚点矩形
+        // 语义与被删掉的 kanji-breakdown chip 时代一致。落空（读音/空隙）才退回
+        // 整词再查一遍。
+        const hit = resolveExpressionTapTarget(expression, e.target);
+        const anchorEl = hit ? hit.anchorEl : expressionSpan;
+        const term = hit ? hit.term : expression;
         const rect = anchorEl.getBoundingClientRect();
         window.flutter_inappwebview.callHandler('onLinkClick', term, {
             x: rect.left,

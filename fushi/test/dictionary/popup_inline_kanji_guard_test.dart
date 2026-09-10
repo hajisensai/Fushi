@@ -121,4 +121,51 @@ void main() {
       });
     }
   });
+
+  group('词头逐字可点：假名格查「到词尾」，不是整词重搜', () {
+    for (final String path in jsMirrors) {
+      test('[$path] 词头点击经 resolveExpressionTapTarget 分流', () {
+        final String src = read(path);
+        // 用户 2026-09-10 反馈：点「置かない」的 か 必须查「かない」。分流判据活在
+        // resolveExpressionTapTarget 里（行为测试 test/js/popup_headword_char_lookup
+        // .test.mjs 用真 DOM 钉住语义），这条守卫只钉**接线**：createEntryHeader 的
+        // 词头点击必须真的走它，而不是退回「汉字查单字 / 其余整词重搜」的旧二分。
+        final String body = methodBody(
+          src,
+          'function createEntryHeader',
+          lexicon: SourceLexicon.js,
+        );
+        expect(
+          containsIdentifierCall(body, 'resolveExpressionTapTarget'),
+          isTrue,
+          reason:
+              '$path 的 createEntryHeader 没有调用 resolveExpressionTapTarget——'
+              '词头点击又回到了「只有汉字可点、假名整词重搜」的旧分流。',
+        );
+      });
+
+      test('[$path] wrapExpressionInlineKanji 逐字包格（不只包汉字）', () {
+        final String src = maskJsComments(read(path));
+        final String body = methodBody(
+          src,
+          'function wrapExpressionInlineKanji',
+          lexicon: SourceLexicon.js,
+        );
+        // 只包汉字时假名没有 .expr-char 格，也就没有 data-char-index，点击处理器
+        // 拿不到下标 → 静默退回整词重搜（正是本次要修的病症）。
+        expect(
+          body.contains('expr-char'),
+          isTrue,
+          reason: '$path 的 wrapExpressionInlineKanji 不再逐字包 .expr-char 格。',
+        );
+        expect(
+          body.contains('data-char-index'),
+          isTrue,
+          reason:
+              '$path 的字格没有 data-char-index——点击处理器无从知道点的是第几个字，'
+              '「查到词尾」会整体退回整词重搜。',
+        );
+      });
+    }
+  });
 }
