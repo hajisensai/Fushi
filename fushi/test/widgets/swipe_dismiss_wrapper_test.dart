@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 
@@ -465,6 +466,117 @@ void main() {
 
       expect(dismissed, isFalse);
       // 补间归零 ⇒ 已回到原位，没有任何待跑的帧（pumpAndSettle 不会再推进动画）。
+      final Transform transform = tester.widget<Transform>(
+        find.byType(Transform).first,
+      );
+      expect(transform.transform.getTranslation().x, 0);
+    });
+  });
+
+  // BUG-2418：用户诉求是「滑动关闭那段动画能**单独**关掉」，此前唯一途径是开墨水屏
+  // 模式顺带归零（想要瞬时关闭就得连带吃下纯黑白主题）。新开关 popup_dismiss_animation
+  // 默认 true=保持既有手感，关掉则松手当帧就关。判别力同上：只 pump 一帧。
+  group('SwipeDismissWrapper「弹窗关闭动画」开关', () {
+    tearDown(() async {
+      // 单例偏好：必须还原，否则泄漏到同进程后续用例。
+      await ReaderFushiSource.instance.setPopupDismissAnimation(true);
+    });
+
+    // key：同一个用例里连跑两次时必须换 State。第一次滑关后 wrapper 停在退场态
+    // （_dismissing=true，等宿主换 child），而这里的 child 是 const、跨 build 恒
+    // identical，didUpdateWidget 的「换了 child 才复位」判不出来，第二次拖动会被
+    // _beginDrag/_handleDragDelta 的 `if (_dismissing) return` 整个吃掉。
+    Widget buildApp({
+      required bool eink,
+      required VoidCallback onDismiss,
+      Key? key,
+    }) {
+      return MaterialApp(
+        theme: ThemeData(
+          extensions: <ThemeExtension<dynamic>>[FushiEinkTheme(eink)],
+        ),
+        home: Scaffold(
+          body: SwipeDismissWrapper(
+            key: key,
+            onDismiss: onDismiss,
+            child: const SizedBox(
+              width: 300,
+              height: 100,
+              child: ColoredBox(color: Colors.blue),
+            ),
+          ),
+        ),
+      );
+    }
+
+    /// 过阈值横拖后松手，只 pump **一帧**，回报此刻是否已 dismiss。
+    Future<bool> dragAndPumpOneFrame(
+      WidgetTester tester, {
+      required bool animation,
+      bool eink = false,
+      Key? key,
+    }) async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(animation);
+      bool dismissed = false;
+      await tester.pumpWidget(
+        buildApp(eink: eink, onDismiss: () => dismissed = true, key: key),
+      );
+      final Offset center = tester.getCenter(find.byType(SizedBox).first);
+      final TestGesture gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(200, 0));
+      await gesture.up();
+      await tester.pump();
+      return dismissed;
+    }
+
+    testWidgets('默认（开关开着、非 eink）：松手当帧仍在补间', (WidgetTester tester) async {
+      expect(await dragAndPumpOneFrame(tester, animation: true), isFalse);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('开关关掉：补间归零，松手当帧即 onDismiss', (WidgetTester tester) async {
+      expect(await dragAndPumpOneFrame(tester, animation: false), isTrue);
+    });
+
+    testWidgets('同一条拖动：开着仍在补间、关掉当帧就关（开关真的改变行为）', (
+      WidgetTester tester,
+    ) async {
+      final bool onStillTweening = await dragAndPumpOneFrame(
+        tester,
+        animation: true,
+        key: const ValueKey<String>('animation-on'),
+      );
+      await tester.pumpAndSettle();
+      final bool offDismissedNow = await dragAndPumpOneFrame(
+        tester,
+        animation: false,
+        key: const ValueKey<String>('animation-off'),
+      );
+      expect(onStillTweening, isFalse);
+      expect(offDismissedNow, isTrue);
+      expect(onStillTweening, isNot(equals(offDismissedNow)));
+    });
+
+    testWidgets('eink 下即使开关开着也仍归零（eink 不被开关覆盖）', (WidgetTester tester) async {
+      expect(
+        await dragAndPumpOneFrame(tester, animation: true, eink: true),
+        isTrue,
+      );
+    });
+
+    testWidgets('开关关掉、未过阈值：弹回不留补间且不误关', (WidgetTester tester) async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(false);
+      bool dismissed = false;
+      await tester.pumpWidget(
+        buildApp(eink: false, onDismiss: () => dismissed = true),
+      );
+      final Offset center = tester.getCenter(find.byType(SizedBox).first);
+      final TestGesture gesture = await tester.startGesture(center);
+      await gesture.moveBy(const Offset(60, 0));
+      await gesture.up();
+      await tester.pump();
+
+      expect(dismissed, isFalse);
       final Transform transform = tester.widget<Transform>(
         find.byType(Transform).first,
       );

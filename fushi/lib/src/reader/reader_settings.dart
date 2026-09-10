@@ -440,6 +440,12 @@ class ReaderSettings {
   Future<void> setDismissSwipeSensitivity(double v) =>
       _set<double>('dismiss_swipe_sensitivity', v);
 
+  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
+  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。
+  bool get popupDismissAnimation => _get<bool>('popup_dismiss_animation', true);
+  Future<void> setPopupDismissAnimation(bool v) =>
+      _set<bool>('popup_dismiss_animation', v);
+
   /// TODO-407②：查词弹窗是否允许"水平滑动关闭"（[SwipeDismissWrapper]）。桌面端
   /// （Windows/Linux）鼠标左键框选正文与滑动手势的位移序列同形，默认关闭滑动关闭、
   /// 用顶栏 X 兜底；触摸为主的平台（macOS/iOS/Android）默认开启。未持久化覆盖时
