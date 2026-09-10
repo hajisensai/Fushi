@@ -772,60 +772,6 @@ jobs:
       # 判据是**能力探测**，不是版本号：ISCC.exe 的版本资源是 0.0.0.0，命令行 banner
       # 也只印「Inno Setup 6 Command-Line Compiler」不带小版本（6.7.3 本机实测），
       # 没有可靠的版本读法。直接拿一个只用 6.7 指令的最小脚本编一次：编得过就够新。
-      - name: Compile installer (Inno Setup)
-        shell: pwsh
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          function Test-Md3Capable([string]$compiler) {
-            if (-not (Test-Path -LiteralPath $compiler)) { return $false }
-            $probeDir = Join-Path $env:RUNNER_TEMP 'iscc-md3-probe'
-            New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
-            $probe = Join-Path $probeDir 'probe.iss'
-            @(
-              '[Setup]',
-              'AppName=Probe',
-              'AppVersion=1.0',
-              'DefaultDirName={localappdata}\Probe',
-              "OutputDir=$probeDir",
-              'OutputBaseFilename=probe',
-              'WizardStyle=modern dynamic windows11 hidebevels',
-              'WizardBackColorDynamicDark=#141218',
-              '[Files]'
-            ) | Set-Content -LiteralPath $probe -Encoding UTF8
-            & $compiler $probe | Out-Null
-            return ($LASTEXITCODE -eq 0)
-          }
-          if (-not (Test-Md3Capable $iscc)) {
-            Write-Host "Installed ISCC cannot compile the MD3 directives; installing pinned Inno Setup 6.7.3"
-            # 官方 release 资产，不走 choco：choco 的 innosetup 包版本经常滞后，
-            # 而这里要的是一个确定的版本，不是「最新可用的那个」。
-            $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
-            $url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
-            # SHA-256 钉死、fail-closed（与本文件里 7za 的做法同规格）。这里下载的
-            # 东西比 7za 严重一个量级 —— 它是**编译出用户要运行的那个 setup.exe 的
-            # 工具**；源包被掉包而不先验，我们的安装器就成了给污染产物背书的东西。
-            $expected = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
-            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-            $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
-            if ($actual -ne $expected) {
-              throw ("Inno Setup 6.7.3 installer SHA-256 mismatch: expected $expected, got $actual. " +
-                "Refusing to run an unverified compiler installer.")
-            }
-            & $installer /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Inno Setup installer failed with exit code $LASTEXITCODE" }
-            if (-not (Test-Md3Capable $iscc)) {
-              throw ("Inno Setup 6.7+ is required for the Material Design 3 installer chrome " +
-                "and the freshly installed compiler at $iscc still rejects those directives. " +
-                "Shipping with an older compiler would silently fall back to the pre-MD3 look " +
-                "(fushi.iss keeps an ISPP version gate so it still compiles).")
-            }
-          }
-          Write-Host "ISCC accepts the MD3 wizard directives"
-          & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
-            "/DSourceDir=$PWD\fushi\build\windows\x64\runner\Release" `
-            "/DOutputDir=$PWD\fushi\build\installer" `
-            "fushi\windows\installer\fushi.iss"
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
       # 代码签名走 Certum 云端 HSM（SimplySign）。私钥按 CA/B Forum 规则留在硬件里、
       # 导不出 .pfx，所以这里不能用 signtool /f cert.pfx —— 早先那条
       # WINDOWS_CERT_BASE64 -> cert.pfx 的路径对这类证书永远走不通，
@@ -880,6 +826,78 @@ jobs:
         run: |
           & "$PWD\tool\simplysign_connect.ps1"
           if ($LASTEXITCODE -ne 0) { throw "SimplySign 登录失败，退出码 $LASTEXITCODE" }
+      # 给 bundle 里的所有 exe/dll 签名，必须在 Inno 打包**之前** —— 打包之后再签
+      # 只能签到外壳，里面的程序仍是未签名的。
+      # 只签外壳时的实际缺口：fushi.exe、fushi_update_launcher.exe、voice_hook/ 下的
+      # 注入器与 hook DLL、ffmpeg/ffprobe 全部无签名，杀软扫描已安装目录照样报毒；
+      # galgame 注入器尤其容易被盯上，而它恰恰是最需要签名背书的那个。
+      # -SkipValidlySigned：bundle 里混着微软的 VC++ CRT 运行库，重签会把微软签名
+      # 换成我们的，那是倒退不是补齐。
+      - name: Sign Windows bundle binaries
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          & "$PWD\tool\sign_windows_release.ps1" `
+            -Path "$PWD\fushi\build\windows\x64\runner\Release" `
+            -Recurse -SkipValidlySigned `
+            -Description 'Fushi'
+          if ($LASTEXITCODE -ne 0) { throw "bundle 签名失败，退出码 $LASTEXITCODE" }
+      - name: Compile installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          function Test-Md3Capable([string]$compiler) {
+            if (-not (Test-Path -LiteralPath $compiler)) { return $false }
+            $probeDir = Join-Path $env:RUNNER_TEMP 'iscc-md3-probe'
+            New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+            $probe = Join-Path $probeDir 'probe.iss'
+            @(
+              '[Setup]',
+              'AppName=Probe',
+              'AppVersion=1.0',
+              'DefaultDirName={localappdata}\Probe',
+              "OutputDir=$probeDir",
+              'OutputBaseFilename=probe',
+              'WizardStyle=modern dynamic windows11 hidebevels',
+              'WizardBackColorDynamicDark=#141218',
+              '[Files]'
+            ) | Set-Content -LiteralPath $probe -Encoding UTF8
+            & $compiler $probe | Out-Null
+            return ($LASTEXITCODE -eq 0)
+          }
+          if (-not (Test-Md3Capable $iscc)) {
+            Write-Host "Installed ISCC cannot compile the MD3 directives; installing pinned Inno Setup 6.7.3"
+            # 官方 release 资产，不走 choco：choco 的 innosetup 包版本经常滞后，
+            # 而这里要的是一个确定的版本，不是「最新可用的那个」。
+            $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+            $url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
+            # SHA-256 钉死、fail-closed（与本文件里 7za 的做法同规格）。这里下载的
+            # 东西比 7za 严重一个量级 —— 它是**编译出用户要运行的那个 setup.exe 的
+            # 工具**；源包被掉包而不先验，我们的安装器就成了给污染产物背书的东西。
+            $expected = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+            Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+            $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+            if ($actual -ne $expected) {
+              throw ("Inno Setup 6.7.3 installer SHA-256 mismatch: expected $expected, got $actual. " +
+                "Refusing to run an unverified compiler installer.")
+            }
+            & $installer /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup installer failed with exit code $LASTEXITCODE" }
+            if (-not (Test-Md3Capable $iscc)) {
+              throw ("Inno Setup 6.7+ is required for the Material Design 3 installer chrome " +
+                "and the freshly installed compiler at $iscc still rejects those directives. " +
+                "Shipping with an older compiler would silently fall back to the pre-MD3 look " +
+                "(fushi.iss keeps an ISPP version gate so it still compiles).")
+            }
+          }
+          Write-Host "ISCC accepts the MD3 wizard directives"
+          & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
+            "/DSourceDir=$PWD\fushi\build\windows\x64\runner\Release" `
+            "/DOutputDir=$PWD\fushi\build\installer" `
+            "fushi\windows\installer\fushi.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
       - name: Sign Windows installer
         if: steps.signcheck.outputs.have == 'true'
         shell: pwsh
