@@ -526,12 +526,41 @@ void main() {
         dockedHeight: 360,
       );
 
-      // 全宽（减左右内边距），贴屏底（减底内边距），与选区无关。
-      expect(docked.left, 6, reason: '左边距=inset');
-      expect(docked.width, 800 - 6 * 2, reason: '占满屏宽减左右内边距');
-      expect(docked.right, lessThanOrEqualTo(800));
+      // BUG-2439：横向真·铺满（左缘 0、右缘 = 屏宽），纵向仍留 inset 贴屏底。
+      expect(docked.left, 0, reason: '整宽面板从屏幕最左开始');
+      expect(docked.width, 800, reason: '占满整个屏宽，左右一像素都不留');
+      expect(docked.right, 800, reason: '一直铺到屏幕最右');
       expect(docked.bottom, lessThanOrEqualTo(600 - 6), reason: '底边贴屏底减底内边距');
       expect(docked.height, 360);
+    });
+
+    test('BUG-2439: 跟随模式的贴边 padding 不再削掉 dock 的左右两边', () {
+      // 两个收口点都把跟随模式的 padding（默认 6）传进 resolvePopupRect；那个数是
+      // 「别贴着屏幕边缘弹出」，与 dock 的「铺满」相反，转发进横向就是本 bug 的根因。
+      final Rect docked = resolvePopupRect(
+        selectionRect: const Rect.fromLTWH(10, 10, 20, 20),
+        screen: screen,
+        bottomDocked: true,
+        maxWidth: 360,
+        maxHeight: 360,
+        padding: 6,
+      );
+
+      expect(docked.left, 0);
+      expect(docked.width, 800);
+      // padding 仍然管纵向：面板与屏底之间保留那 6px。
+      expect(docked.bottom, 600 - 6);
+    });
+
+    test('BUG-2439: 横向 inset 仍可显式给出（分轴而非删掉）', () {
+      final Rect docked = dockedPopupRect(
+        screen: screen,
+        horizontalInset: 12,
+        dockedHeight: 360,
+      );
+
+      expect(docked.left, 12);
+      expect(docked.width, 800 - 12 * 2);
     });
 
     test('docked rect is identical regardless of where the word sits', () {
