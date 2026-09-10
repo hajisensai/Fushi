@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
