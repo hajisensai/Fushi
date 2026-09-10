@@ -83,6 +83,13 @@ class OpenSubtitlesConfig {
     }
   }
 
+  /// 「用户从没配置过」的规范表示：启用，走内置应用密钥。
+  ///
+  /// 这是本设置项默认值的**唯一**真相源——偏好读取、设置页列表状态、详情页草稿初值
+  /// 都取这里。BUG-2429 的根因就是这三处各自写了一份默认，且详情页那份把 `enabled`
+  /// 写成了 false。
+  factory OpenSubtitlesConfig.unconfigured() => OpenSubtitlesConfig(apiKey: '');
+
   factory OpenSubtitlesConfig.fromJson(Map<String, Object?> json) {
     final String? rawBaseUrl = json['baseUrl'] as String?;
     return OpenSubtitlesConfig(

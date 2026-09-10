@@ -4646,5 +4646,8 @@
   "stat_sessions_clear_all_title": "清除全部会话记录",
   "stat_sessions_clear_all_message": "确定清除全部 $n 条会话记录吗？这些会话的时长、字数、页数都会被清掉；收藏的词句、制卡历史和游戏库不受影响。此操作不可撤销。",
   "stat_sessions_clear_all_ack": "我确认要删除这 $n 条会话记录。",
-  "stat_clear_all_overview_message": "确定把阅读、观看、游戏三个域的统计一起清空吗？三个域的时长、字数以及查词 / 制卡计数都会被删除；收藏的词、句子、制卡卡片、游戏库与活动时间线不受影响。此操作不可撤销。"
+  "stat_clear_all_overview_message": "确定把阅读、观看、游戏三个域的统计一起清空吗？三个域的时长、字数以及查词 / 制卡计数都会被删除；收藏的词、句子、制卡卡片、游戏库与活动时间线不受影响。此操作不可撤销。",
+  "video_discovery_provider_rate_limited": "部分来源请求过于频繁，已显示其余结果",
+  "video_discovery_provider_failed": "部分来源暂时请求失败，已显示其余结果",
+  "collection_rescrape_pick_work": "选择要重新刮削的作品"
 }

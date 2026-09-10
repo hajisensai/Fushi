@@ -73,9 +73,10 @@ SettingsDestination buildServicesDestination() {
             title: t.video_opensubtitles_settings_title,
             scope: VideoExternalProviderScope.openSubtitles,
             status: (SettingsContext c) {
+              // 偏好永不返回 null（未配置 = 构造默认），所以这里与运行时装配、
+              // 详情页开关看的是同一个对象、同一套判据（BUG-2429）。
               final OpenSubtitlesConfig config =
-                  c.appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig ??
-                  OpenSubtitlesConfig(apiKey: '');
+                  c.appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig;
               if (!config.enabled) {
                 return t.settings_service_disabled;
               }

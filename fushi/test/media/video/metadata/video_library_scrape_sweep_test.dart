@@ -282,7 +282,7 @@ void main() {
     );
   });
 
-  group('planScrapeWorkForCollection（「重刮这一个合集」的定位入口）', () {
+  group('planScrapeWorksForCollection（「重刮这一个合集」的定位入口）', () {
     /// 建一个多成员合集并返回 id —— 计划器只把**多成员**合集当剧集作品单元。
     Future<int> addCollection(String name, int sourceId,
         {required List<String> uids}) async {
@@ -301,13 +301,13 @@ void main() {
       final int id =
           await addCollection('Show', sourceId, uids: <String>['s-e1', 's-e2']);
 
-      final VideoPendingScrapeWork? planned =
-          await planScrapeWorkForCollection(db, id);
+      final List<VideoPendingScrapeWork> planned =
+          await planScrapeWorksForCollection(db, id);
 
-      expect(planned, isNotNull);
-      expect(planned!.source.id, sourceId);
-      expect(planned.work.stableKey, 'collection:$id');
-      expect(planned.work.collection?.id, id);
+      expect(planned, hasLength(1));
+      expect(planned.single.source.id, sourceId);
+      expect(planned.single.work.stableKey, 'collection:$id');
+      expect(planned.single.work.collection?.id, id);
     });
 
     test('同名合集不会认错——匹配的是 stableKey 不是标题', () async {
@@ -318,16 +318,111 @@ void main() {
           await addCollection('Show', sourceId, uids: <String>['b-e1', 'b-e2']);
 
       expect(
-          (await planScrapeWorkForCollection(db, first))!.work.collection?.id,
+          (await planScrapeWorksForCollection(db, first))
+              .single
+              .work
+              .collection
+              ?.id,
           first);
       expect(
-          (await planScrapeWorkForCollection(db, second))!.work.collection?.id,
+          (await planScrapeWorksForCollection(db, second))
+              .single
+              .work
+              .collection
+              ?.id,
           second);
     });
 
-    test('合集不在任何本地来源的计划里时返回 null（调用方据此给可见提示）', () async {
+    test('合集不在任何本地来源的计划里时返回空列表（调用方据此给可见提示）', () async {
       final int orphan = await db.createMediaCollection('No members');
-      expect(await planScrapeWorkForCollection(db, orphan), isNull);
+      expect(await planScrapeWorksForCollection(db, orphan), isEmpty);
+    });
+
+    test('单成员合集回落到成员的 book 单元，而不是报「不在刮削计划里」（BUG-2433）',
+        () async {
+      // 用户真实数据形状：合集「<名> 播放列表」只有一个成员，成员标题是纯集号
+      // 标签 S00E01。单成员被 multiMemberCollectionIdByVideoUid 的 >=2 判据剔除，
+      // 计划里它是 book 单元；旧实现只认 collection:<id>，于是必然死胡同。
+      final int sourceId = await addSource('D:/video');
+      await addVideo(
+        'video/Kimi no Na wa - S00E01',
+        'D:/video/Kimi no Na wa/Season 00/Kimi no Na wa - S00E01.mkv',
+        sourceId,
+        title: 'S00E01',
+      );
+      final int id = await db.createMediaCollection(
+        'Kimi no Na wa 播放列表',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(
+          id, MediaKind.video, 'video/Kimi no Na wa - S00E01');
+
+      final List<VideoPendingScrapeWork> planned =
+          await planScrapeWorksForCollection(db, id);
+
+      expect(planned, hasLength(1));
+      expect(planned.single.source.id, sourceId);
+      expect(planned.single.work.collection, isNull);
+      expect(planned.single.work.stableKey,
+          'book:video/Kimi no Na wa - S00E01');
+    });
+
+    test('多片无集号合集返回全部候选，调用方须让用户选而不是默选第一个', () async {
+      final int sourceId = await addSource('/movies');
+      await addVideo('movie-a', '/movies/A Movie (2020).mkv', sourceId,
+          title: 'A Movie');
+      await addVideo('movie-b', '/movies/B Movie (2021).mkv', sourceId,
+          title: 'B Movie');
+      final int id = await db.createMediaCollection(
+        'Weekend playlist',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(id, MediaKind.video, 'movie-a');
+      await db.addToCollection(id, MediaKind.video, 'movie-b');
+
+      final List<VideoPendingScrapeWork> planned =
+          await planScrapeWorksForCollection(db, id);
+
+      expect(planned, hasLength(2));
+      expect(
+        planned.map((VideoPendingScrapeWork entry) => entry.work.stableKey),
+        containsAll(<String>['book:movie-a', 'book:movie-b']),
+      );
+    });
+
+    test('合集级单元存在时只返回它，不把并存的无集号成员一起带出来', () async {
+      // 同一合集里有集号的成员进合集级单元、无集号的成员各自成 book 单元；此时
+      // 「重刮这个合集」的答案仍是合集级单元（既有行为一字不变）。
+      final int sourceId = await addSource('D:/A');
+      final int id =
+          await addCollection('Show', sourceId, uids: <String>['s-e1', 's-e2']);
+      await addVideo('bonus', 'D:/A/Bonus Feature.mkv', sourceId,
+          title: 'Bonus Feature');
+      await db.addToCollection(id, MediaKind.video, 'bonus');
+
+      final List<VideoPendingScrapeWork> planned =
+          await planScrapeWorksForCollection(db, id);
+
+      expect(planned, hasLength(1));
+      expect(planned.single.work.stableKey, 'collection:$id');
+    });
+
+    test('成员只存在于非 local 来源时返回空列表', () async {
+      final int remoteId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'remote',
+          mediaKind: 'video',
+          rootPath: 'remote://lib',
+          createdAt: 1,
+          transport: const Value<String>('interconnect'),
+        ),
+      );
+      await addVideo('remote-1', 'remote://lib/Movie.mkv', remoteId,
+          title: 'Movie');
+      final int id = await db.createMediaCollection('Remote only');
+      await db.addToCollection(id, MediaKind.video, 'remote-1');
+
+      expect(await planScrapeWorksForCollection(db, id), isEmpty);
     });
   });
 }

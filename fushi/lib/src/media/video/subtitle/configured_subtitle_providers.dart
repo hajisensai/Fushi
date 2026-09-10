@@ -42,11 +42,12 @@ Future<List<VideoSubtitleProvider>> createConfiguredVideoSubtitleProviders({
       ),
     );
   }
-  final OpenSubtitlesConfig? openSubtitles =
+  // 判据只有「开着 + 有可用密钥」两条。`effectiveApiKey` 在用户没填自己的 key 时
+  // 落到内置应用密钥上，所以没配置过的用户同样能用（BUG-2429：偏好此前会返回 null，
+  // 于是这里整个不装配，内置密钥形同虚设，设置页却显示「已内置」）。
+  final OpenSubtitlesConfig openSubtitles =
       prefs.videoSubtitleOpenSubtitlesConfig;
-  if (openSubtitles != null &&
-      openSubtitles.enabled &&
-      openSubtitles.effectiveApiKey.isNotEmpty) {
+  if (openSubtitles.enabled && openSubtitles.effectiveApiKey.isNotEmpty) {
     providers.add(
       OpenSubtitlesClient(
         config: openSubtitles,

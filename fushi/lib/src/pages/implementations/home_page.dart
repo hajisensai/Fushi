@@ -319,6 +319,10 @@ class _ProductionVideoDiscoveryController implements VideoDiscoveryController {
     VideoDiscoveryRequest request,
   ) =>
       service.load(request);
+
+  @override
+  String displayNameFor(String providerId) =>
+      service.displayNameFor(providerId);
 }
 
 String? _videoMetadataImageUrl(

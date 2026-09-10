@@ -6462,23 +6462,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         widget.scrapeTaskController;
     if (controller == null) return;
     final FushiDatabase db = ref.read(appProvider).database;
-    final VideoPendingScrapeWork? planned =
-        await planScrapeWorkForCollection(db, collection.id);
+    final List<VideoPendingScrapeWork> planned =
+        await planScrapeWorksForCollection(db, collection.id);
     if (!mounted) return;
-    if (planned == null) {
+    if (planned.isEmpty) {
       FushiToast.show(
         msg: t.collection_rescrape_not_planned,
         severity: ToastSeverity.info,
       );
       return;
     }
+    // 合集在计划里对应多个独立作品（无集号的多片播放列表、目录合集）时不能默选
+    // 第一个——猜错就把身份写到别的作品上。让用户选，而不是再给一句死胡同提示。
+    final VideoPendingScrapeWork? chosen = planned.length == 1
+        ? planned.single
+        : await _pickCollectionScrapeWork(planned);
+    if (chosen == null || !mounted) return;
+    // 搜索种子：整个合集就是这一个作品时用合集名（成员标题可能是「S00E01」这种
+    // 纯集号标签，拿它当种子等于让用户对着无意义的词搜）；合集里有多个作品时合
+    // 集名描述的是整个播放列表，反而是选中成员自己的标题更贴。
     final VideoSourceScrapeConfirmationCandidate? candidate =
         await showVideoSourceScrapeManualBindingDialog(
       context: context,
       controller: controller,
-      source: planned.source,
-      workTitle: planned.work.title,
-      workStableKey: planned.work.stableKey,
+      source: chosen.source,
+      workTitle: planned.length == 1 ? collection.name : chosen.work.title,
+      workStableKey: chosen.work.stableKey,
     );
     if (candidate == null || !mounted) return;
     FushiToast.show(
@@ -6487,9 +6496,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     try {
       await controller.rescrapeWorkWithLookup(
-        source: planned.source,
-        workTitle: planned.work.title,
-        workStableKey: planned.work.stableKey,
+        source: chosen.source,
+        workTitle: chosen.work.title,
+        workStableKey: chosen.work.stableKey,
         lookup: candidate.lookup,
       );
     } on VideoSourceScrapeCancelled {
@@ -6507,6 +6516,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _refresh();
   }
+
+  /// 合集在刮削计划里对应多个独立作品时，让用户选一个重刮（BUG-2433）。
+  ///
+  /// 取消返回 null。列表项标题就是计划器给出的作品标题，与待确认队列、批次刮削
+  /// 里看到的是同一份作品定义——用户在这里选的和系统在别处认的是同一个东西。
+  Future<VideoPendingScrapeWork?> _pickCollectionScrapeWork(
+    List<VideoPendingScrapeWork> works,
+  ) =>
+      showAppDialog<VideoPendingScrapeWork>(
+        context: context,
+        builder: (BuildContext context) => SimpleDialog(
+          title: Text(t.collection_rescrape_pick_work),
+          children: <Widget>[
+            for (final VideoPendingScrapeWork entry in works)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(entry),
+                child: Text(entry.work.title),
+              ),
+          ],
+        ),
+      );
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [SubtitleWorkbenchPage]
   /// （合集作用域：绑定 AniList 系列 → 统一来源 → 逐集拉最佳字幕）。collection 行重取一次拿最新

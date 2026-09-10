@@ -19,10 +19,20 @@ abstract interface class VideoDiscoveryController {
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
     discovery.VideoDiscoveryRequest request,
   );
+
+  /// [ExternalProviderFailure.providerId] -> 用户可见来源名。
+  ///
+  /// BUG-2430：失败横幅原先直接印 providerId（`mal`），那是接线标识不是品牌名。解析
+  /// 放在端口上，页面就不必为了一个名字去依赖 service 具体类型，也不必自己维护一张
+  /// id -> 名字的映射表（那种表迟早漏掉新来源）。
+  String displayNameFor(String providerId);
 }
 
 class EmptyVideoDiscoveryController implements VideoDiscoveryController {
   const EmptyVideoDiscoveryController();
+
+  @override
+  String displayNameFor(String providerId) => providerId;
 
   @override
   Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> load(
@@ -908,10 +918,38 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         .ceilToDouble();
   }
 
+  /// 横幅文案取决于失败**性质**，不是「有失败就说不可用」。
+  ///
+  /// BUG-2430：MAL 走 Jikan 公共接口，1 秒一发、不重试，撞上 429 是家常便饭。那是
+  /// 「等一会儿再搜」，不是「这个来源不可用」——后者会让用户跑去设置页找一个根本不
+  /// 存在的开关。混合了多种性质时退回最泛的说法。
+  String _providerWarningMessage() {
+    bool allOf(Set<ExternalProviderFailureKind> kinds) =>
+        _failures.every((ExternalProviderFailure e) => kinds.contains(e.kind));
+    if (allOf(const <ExternalProviderFailureKind>{
+      ExternalProviderFailureKind.rateLimited,
+      ExternalProviderFailureKind.quotaExceeded,
+    })) {
+      return t.video_discovery_provider_rate_limited;
+    }
+    if (allOf(const <ExternalProviderFailureKind>{
+      ExternalProviderFailureKind.unavailable,
+      ExternalProviderFailureKind.unauthorized,
+      ExternalProviderFailureKind.forbidden,
+      ExternalProviderFailureKind.unsupported,
+    })) {
+      return t.video_discovery_provider_warning;
+    }
+    return t.video_discovery_provider_failed;
+  }
+
   Widget _buildProviderWarning() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Set<String> providerIds =
-        _failures.map((ExternalProviderFailure e) => e.providerId).toSet();
+    // 印品牌名而不是接线用的 provider id（BUG-2430）。
+    final Set<String> providerNames = <String>{
+      for (final ExternalProviderFailure failure in _failures)
+        _controller.displayNameFor(failure.providerId),
+    };
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -930,10 +968,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
           children: <Widget>[
             const Icon(Icons.cloud_off_outlined),
             SizedBox(width: tokens.spacing.gap),
-            Expanded(child: Text(t.video_discovery_provider_warning)),
-            if (providerIds.isNotEmpty)
+            Expanded(child: Text(_providerWarningMessage())),
+            if (providerNames.isNotEmpty)
               Text(
-                providerIds.join(' · '),
+                providerNames.join(' · '),
                 style: tokens.type.metadata,
               ),
           ],

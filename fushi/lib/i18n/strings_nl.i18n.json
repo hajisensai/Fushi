@@ -4646,5 +4646,8 @@
   "stat_sessions_clear_all_title": "Clear all session records",
   "stat_sessions_clear_all_message": "Clear all $n session records? Their time, character and page counts go away. Your saved words and sentences, mined cards and game library are kept. This cannot be undone.",
   "stat_sessions_clear_all_ack": "I understand this deletes all $n session records.",
-  "stat_clear_all_overview_message": "Clear reading, watching and game statistics all at once? Time, character counts and lookup/mining counts across all three go away. Your saved words and sentences, mined cards, game library and activity timeline are kept. This cannot be undone."
+  "stat_clear_all_overview_message": "Clear reading, watching and game statistics all at once? Time, character counts and lookup/mining counts across all three go away. Your saved words and sentences, mined cards, game library and activity timeline are kept. This cannot be undone.",
+  "video_discovery_provider_rate_limited": "Some sources are rate limited; showing the rest",
+  "video_discovery_provider_failed": "Some sources failed temporarily; showing the rest",
+  "collection_rescrape_pick_work": "Pick a work to rescrape"
 }

@@ -74,8 +74,8 @@ void main() {
         ' password ');
     expect(reloaded.jimakuApiKey, 'jimaku-key');
     expect(reloaded.jimakuEnabled, isTrue);
-    expect(reloaded.videoSubtitleOpenSubtitlesConfig?.apiKey, 'subtitle-key');
-    expect(reloaded.videoSubtitleOpenSubtitlesConfig?.enabled, isTrue);
+    expect(reloaded.videoSubtitleOpenSubtitlesConfig.apiKey, 'subtitle-key');
+    expect(reloaded.videoSubtitleOpenSubtitlesConfig.enabled, isTrue);
     expect(ProfileKeys.isExcludedPref(kVideoOnlineServicesSetupDismissedPref),
         isTrue);
     await reloaded.setPref(kVideoAniDbHashEnabledPref, false);
