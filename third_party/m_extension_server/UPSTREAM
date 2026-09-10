@@ -103,6 +103,23 @@ overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
   It scopes proxy authentication to the selected host/port with one 407 attempt. Request
   logging is BASIC with authorization headers redacted. Missing host policy
   fails closed. upstream_src remains pristine.
+  ProxySelector.select never throws. OkHttp turns a throwing selector into an
+  unbounded routing retry that exhausts the heap (measured: an OutOfMemoryError
+  in the NanoHTTPD worker after the call had already hung for the client's full
+  timeout), so both failure shapes are expressed as routes instead: no endpoint
+  at all means the sidecar runs outside Fushi and routes DIRECT, while an
+  endpoint that cannot answer yields an unresolvable .invalid route -- failing
+  closed without ever silently downgrading to DIRECT. The proxy authenticator
+  answers a policy outage with no credentials for the same reason.
+
+overlay/.../AppModule.kt:
+  Registers ProtoBuf alongside Json in the Injekt container. Extensions using
+  protobuf APIs resolve it from a static initialiser, so the missing
+  registration surfaced as ExceptionInInitializerError / NoClassDefFoundError
+  with the InjektionException swallowed (measured on five installed
+  extensions). The dependency was already on the classpath. The type argument
+  is explicit because `ProtoBuf` is a companion object and inference would
+  register it under ProtoBuf.Default.
 
 server-build.gradle.patch:
   build.gradle.kts                 org.jogamp resolution: SciJava mirror first,
@@ -142,6 +159,8 @@ overlay/ (full-file replacements):
                                                 buffered with a hard ceiling
   .../controller/SourceDataHandler.kt           new: clear per-source
                                                 preferences, cookies and cache
+  .../AppModule.kt                              ProtoBuf registered in the
+                                                Injekt container next to Json
 
 Security boundary (must not be weakened)
 ----------------------------------------
