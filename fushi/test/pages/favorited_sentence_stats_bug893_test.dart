@@ -164,7 +164,9 @@ void main() {
     test('读取端回退 createdAt，不再用 dateKey != null 过滤收藏语句', () {
       // 判据已从两个统计页收敛进 StatCounterFacts（总览 tab 也要同一份）。
       final String src =
-          File('lib/src/stats/stat_facts.dart').readAsStringSync();
+          // stat_facts 已随引擎抽取搬走（cwd 是 fushi/，所以往上一级）。
+          File('../packages/fushi_engine/lib/stats/stat_facts.dart')
+              .readAsStringSync();
       expect(
           src.contains('s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt)'),
           isTrue,
