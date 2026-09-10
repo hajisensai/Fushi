@@ -34,6 +34,7 @@ import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -71,7 +72,13 @@ class GlobalLookupController {
       _frameResults[kGlobalLookupRootFrameId]?.bestLength ?? 0;
 
   AppModel? _appModel;
-  HotKey? _hotKey;
+
+  /// 本进程当前已注册到 OS 的热键，按动作索引。表驱动而不是每个动作一个字段：
+  /// 撤销/重注册只有一条路径，加动作不必再抄一遍生命周期。
+  final Map<ShortcutAction, HotKey> _hotKeys = <ShortcutAction, HotKey>{};
+
+  /// 热键(重)注册的串行链。见 [_registerHotKeysFromRegistry] 的重入说明。
+  Future<void> _hotKeyRegistration = Future<void>.value();
   // TODO-1066 — the live shortcut registry we read the global-lookup hotkey
   // from (was a hard-coded Ctrl+Alt+D). Listened to so a user remapping the
   // key in settings (or a profile switch that reloads bindings) re-registers
@@ -297,7 +304,7 @@ class GlobalLookupController {
     // re-register whenever the registry changes (user remap / profile switch).
     _registry = appModel.shortcutRegistry;
     _registry!.addListener(_onRegistryChanged);
-    await _registerHotKeyFromRegistry();
+    await _registerHotKeysFromRegistry();
 
     // TODO-1066 — 另外两条非键盘触发源（手柄按钮 / 鼠标侧键）。它们与上面的键盘
     // 热键是**同一个执行体、不同的 OS 机制**（见 ShortcutScope.globalExternal 的
@@ -348,66 +355,142 @@ class GlobalLookupController {
     }
   }
 
-  /// TODO-1066 — (un)registers the OS-level trigger hotkey from the current
-  /// [ShortcutAction.globalExternalLookup] binding in the registry. Unregisters
-  /// any previously-registered hotkey first so a remap does not leak the old
-  /// combo. The first keyboard binding (there is at most one meaningful global
-  /// hotkey) is used; when the action has no keyboard binding (e.g. the user
-  /// cleared it, or on a platform with no default) no hotkey is registered and
-  /// the feature is simply off until a key is assigned. Non-fatal on failure.
-  Future<void> _registerHotKeyFromRegistry() async {
-    // Drop the previously-registered hotkey (idempotent: safe when none).
-    final HotKey? previous = _hotKey;
-    _hotKey = null;
-    if (previous != null) {
+  /// globalExternal scope 每个动作的**执行体登记处**——这个 scope 的动作不经
+  /// resolveKeyboard / 页面派发，全部由本控制器读绑定注册进 OS 级 hotkey_manager，
+  /// 于是「谁执行」在别处无处可查，只能在这里登记。
+  ///
+  /// ⚠️ 新增 globalExternal 动作必须在此登记一条，否则设置页照样渲染出可改键行、
+  /// 用户照样能录键保存，按下去却什么都不发生（本文件反复警告的那种病）。守卫
+  /// `global_external_lookup_hotkey_test` 按 scope 枚举核对这张表的完整性。
+  Map<ShortcutAction, Future<void> Function()> get _osHotKeyActions =>
+      <ShortcutAction, Future<void> Function()>{
+        // 取前台程序的选中文本 → 不抢焦点的覆盖窗出词卡（主窗一动不动）。
+        ShortcutAction.globalExternalLookup: () =>
+            triggerSelectionLookup(source: 'hotkey'),
+        // 相反的取舍：不取任何文本，把主窗唤到前台并落在查词页上。
+        ShortcutAction.globalExternalOpenLookupPage: openLookupPageInMainWindow,
+      };
+
+  /// TODO-1066 — (un)registers the OS-level hotkeys from the current
+  /// [_osHotKeyActions] bindings in the registry. Unregisters everything
+  /// previously registered first so a remap does not leak the old combo. For
+  /// each action the first keyboard binding is used (there is at most one
+  /// meaningful global hotkey per action); when an action has no keyboard
+  /// binding (e.g. the user cleared it, or a platform with no default) nothing
+  /// is registered for it and that one action is simply off until a key is
+  /// assigned — the others still register. Non-fatal on failure.
+  Future<void> _registerHotKeysFromRegistry() {
+    // 串行化：本方法从「同步清空 _hotKeys」到「逐个 register 完」之间有多个 await，
+    // 而调用方 [_onRegistryChanged] 是 fire-and-forget、registry 每次 notifyListeners
+    // 都触发一次（改键 + 恢复默认 + 切 profile 可以连着来）。若第二次调用在第一次的
+    // await 缝里进来，它看到的 _hotKeys 已被清空 ⇒ **跳过注销**，同一组合键被注册两
+    // 遍，而表里只留得下最后一个 —— 另一个再也注销不掉（旧键继续生效 / 一次按键触发
+    // 两遍）。接在上一轮尾巴上跑，缝就不存在了。
+    final Future<void> next = _hotKeyRegistration
+        .then((_) => _registerHotKeysNow())
+        // 上一轮失败不能卡死整条链（内部已逐条 catch，这里只兜底）。
+        .catchError(
+            (Object e) => glog('hotkey: registration round FAILED: $e'));
+    _hotKeyRegistration = next;
+    return next;
+  }
+
+  /// 串行链上的一轮实际注册，只由 [_registerHotKeysFromRegistry] 调用。
+  Future<void> _registerHotKeysNow() async {
+    // Drop everything registered last round (idempotent: safe when empty).
+    final List<MapEntry<ShortcutAction, HotKey>> previous =
+        _hotKeys.entries.toList(growable: false);
+    _hotKeys.clear();
+    for (final MapEntry<ShortcutAction, HotKey> entry in previous) {
       try {
-        await hotKeyManager.unregister(previous);
+        await hotKeyManager.unregister(entry.value);
       } catch (e) {
-        glog('hotkey: unregister previous FAILED (non-fatal): $e');
+        glog('hotkey: unregister previous ${entry.key.key} '
+            'FAILED (non-fatal): $e');
       }
     }
     final FushiShortcutRegistry? registry = _registry;
     if (registry == null) {
       return;
     }
-    final ShortcutBindingSet set = registry.bindingsFor(
-      ShortcutAction.globalExternalLookup,
-    );
+    for (final MapEntry<ShortcutAction, Future<void> Function()> entry
+        in _osHotKeyActions.entries) {
+      await _registerOneHotKey(registry, entry.key, entry.value);
+    }
+  }
+
+  /// 注册单个 OS 热键。失败只影响这一个动作，其余照常注册。
+  Future<void> _registerOneHotKey(
+    FushiShortcutRegistry registry,
+    ShortcutAction action,
+    Future<void> Function() run,
+  ) async {
+    final ShortcutBindingSet set = registry.bindingsFor(action);
     if (set.keyboardBindings.isEmpty) {
       glog(
-        'hotkey: no keyboard binding for globalExternalLookup — not '
+        'hotkey: no keyboard binding for ${action.key} — not '
         'registered (feature off until a key is assigned)',
       );
       return;
     }
     final HotKey? hotKey = _hotKeyFromBinding(set.keyboardBindings.first);
     if (hotKey == null) {
-      glog('hotkey: binding has no mappable physical key — not registered');
+      glog('hotkey: ${action.key} binding has no mappable physical key — '
+          'not registered');
       return;
     }
-    _hotKey = hotKey;
+    _hotKeys[action] = hotKey;
     try {
       await hotKeyManager.register(
         hotKey,
-        keyDownHandler: (_) => triggerSelectionLookup(source: 'hotkey'),
+        keyDownHandler: (_) => unawaited(run()),
       );
       glog(
-        'hotkey: registered ${set.keyboardBindings.first.displayLabel} '
-        'from registry OK',
+        'hotkey: registered ${action.key} = '
+        '${set.keyboardBindings.first.displayLabel} from registry OK',
       );
     } catch (e, st) {
-      glog('hotkey: register FAILED: $e');
+      // 注册失败要能被撤销逻辑之外的人看见：本表已记下它，但 OS 侧其实没接上，
+      // 下一轮 unregister 对未注册的 HotKey 是无害 no-op，故不必回滚这条记录。
+      glog('hotkey: register ${action.key} FAILED: $e');
       // TODO-1086 可见化：全局查词热键注册失败过去只写进 glog 临时诊断文件，用户/开发者
       // 都看不到「应用外查词唤不出来」的真正原因（热键没注册上）。这里额外把失败记进
       // ErrorLogService（用户可见的错误日志页 + 随复制/上传链路带走），让此失败成为可诊断
       // 项而不是静默吞掉。别的注册/系统热键冲突（另一个 app 已占用同一组合键）也会经此暴露。
       ErrorLogService.instance.log(
         'GlobalLookupController.registerHotKey',
-        'Failed to register global lookup hotkey '
+        'Failed to register global hotkey ${action.key} = '
             '${set.keyboardBindings.first.displayLabel}: $e',
         st,
       );
     }
+  }
+
+  /// 用户请求：一个键把 Hibiki 主窗**唤到前台**并直接落在**查词页**上
+  /// （[ShortcutAction.globalExternalOpenLookupPage] 的执行体）。
+  ///
+  /// 与 [triggerSelectionLookup] 是**相反**的产品取舍，别合并成一个动作：那条刻意
+  /// 不碰主窗（覆盖窗 `WS_EX_NOACTIVATE`，绝不抢前台程序的焦点），这条要的恰恰是把
+  /// 主窗抢到前台。它也不读任何选中文本，故在任何时刻按都有确定行为。
+  ///
+  /// 两步都复用既有出口，不新增 native：
+  ///  ① [DesktopLookupService.bringMainWindowToFront] —— 已含「已在前台就整个
+  ///     no-op」（对前台窗调 SetForegroundWindow 会退化成任务栏闪烁，TODO-341）与
+  ///     闪烁清理（TODO-615）。别绕过它直接调 windowManager。
+  ///  ② [AppModel.requestHomeDictionaryTab] —— HomePage 侧走
+  ///     `_revealDictionary(carryingPendingLookup: true)`：查词 tab 在就切 tab，被
+  ///     「功能模块 → 查词」关掉时推独立查词路由承载同一个 HomeDictionaryPage。这是
+  ///     一次**用户显式发起**的查词，绝不能被模块门静默吞掉（吞掉的表现是窗口弹到
+  ///     前台却什么都没变，比没有这个热键更糟）。
+  Future<void> openLookupPageInMainWindow() async {
+    final AppModel? model = _appModel;
+    if (model == null) {
+      glog('openLookupPage: no AppModel (start() not run) — ignored');
+      return;
+    }
+    await DesktopLookupService.instance.bringMainWindowToFront();
+    model.requestHomeDictionaryTab();
+    glog('openLookupPage: main window fronted + dictionary tab requested');
   }
 
   /// TODO-1066 — DOM `MouseEvent.button` 号里**允许**当全局触发的那两个：
@@ -470,12 +553,12 @@ class GlobalLookupController {
 
   /// TODO-1066 — re-registers the OS hotkey when the registry changes (user
   /// remaps the key in settings, or a profile switch reloads bindings). Fire and
-  /// forget; failures are logged inside [_registerHotKeyFromRegistry].
+  /// forget; failures are logged inside [_registerHotKeysFromRegistry].
   ///
   /// 鼠标侧键触发同样跟着重推（手柄那条不用：它每次按下都现查注册表，没有需要
   /// 同步的 OS 侧状态）。
   void _onRegistryChanged() {
-    unawaited(_registerHotKeyFromRegistry());
+    unawaited(_registerHotKeysFromRegistry());
     unawaited(_registerMouseTriggerFromRegistry());
   }
 
@@ -529,7 +612,7 @@ class GlobalLookupController {
   ///
   /// 三个触发源共用这一个方法，语义完全一致，不各自复制一条链路（route 铸造、
   /// epoch 作废、prewarm、隐藏时序都在这条链上，复制一份必然漂移）：
-  ///   · 键盘：OS 级热键（win32 `RegisterHotKey`，见 [_registerHotKeyFromRegistry]）；
+  ///   · 键盘：OS 级热键（win32 `RegisterHotKey`，见 [_registerHotKeysFromRegistry]）；
   ///   · 手柄：`GamepadService` 的后台分支（不经 Flutter 焦点树，app 失焦时仍有效）；
   ///   · 鼠标侧键：native RawInput 监听（见 windows/runner/global_mouse_trigger.cpp）。
   ///

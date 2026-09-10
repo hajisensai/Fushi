@@ -179,6 +179,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_dpad_right;
       case ShortcutAction.globalExternalLookup:
         return t.shortcut_action_global_external_lookup;
+      case ShortcutAction.globalExternalOpenLookupPage:
+        return t.shortcut_action_global_external_open_lookup_page;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:

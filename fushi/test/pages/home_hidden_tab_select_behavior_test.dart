@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -124,15 +125,16 @@ ModuleVisibility _visibility({
   bool downloads = true,
   bool lookup = true,
   bool browserExtension = false,
-}) => ModuleVisibility(<ModuleId>{
-  if (books) ModuleId.books,
-  if (manga) ModuleId.manga,
-  if (video) ModuleId.video,
-  if (games) ModuleId.games,
-  if (downloads) ModuleId.downloads,
-  if (lookup) ModuleId.lookup,
-  if (browserExtension) ModuleId.browserExtension,
-});
+}) =>
+    ModuleVisibility(<ModuleId>{
+      if (books) ModuleId.books,
+      if (manga) ModuleId.manga,
+      if (video) ModuleId.video,
+      if (games) ModuleId.games,
+      if (downloads) ModuleId.downloads,
+      if (lookup) ModuleId.lookup,
+      if (browserExtension) ModuleId.browserExtension,
+    });
 
 Future<_HomeShellAppModel> _pumpHome(
   WidgetTester tester, {
@@ -304,6 +306,76 @@ void main() {
       reason: '同一时刻全 app 只能有一个 HomeDictionaryPage，'
           '否则 mainTab 分区的 pending 查词会被双消费。',
     );
+    await _unmount(tester);
+  });
+
+  // 全局热键「置顶主窗并打开查词页」（globalExternalOpenLookupPage）最典型的用法就是
+  // 「正在 Hibiki 里看书 / 看视频 → 切到别的程序 → 按热键」。阅读器 / 播放器 / 漫画
+  // 都是 `Navigator.push` 压在 HomePage 之上的全屏路由（BUG-286 记过），此时若只
+  // `_selectTab` 切底下那层 IndexedStack，用户看到的是「窗口弹到前台却什么都没变」。
+  testWidgets('查词 tab 开着但被全屏路由遮住：必须推独立路由到最上层，且不弹掉原页面',
+      (WidgetTester tester) async {
+    final _HomeShellAppModel appModel =
+        await _pumpHome(tester, dictionariesEnabled: true);
+
+    // 模拟阅读器 / 播放器：一层压在 HomePage 之上的全屏路由。
+    unawaited(Navigator.of(appModel.navigatorKey.currentContext!).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Center(child: Text('reader-上层'))),
+      ),
+    ));
+    await _settle(tester);
+    expect(find.text('reader-上层'), findsOneWidget);
+
+    DesktopLookupService.instance.triggerLookup(' coveredword ');
+    appModel.requestHomeDictionaryTab();
+    await _settle(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('home-dictionary-route-back')),
+      findsOneWidget,
+      reason: '被遮住时必须推独立查词路由压在最上层 —— 只切底下的 tab 等于什么都没做。',
+    );
+    expect(
+      // 被不透明路由完全遮住的那层是 offstage 的，默认 finder 会跳过它 ——
+      // 这里要问的是「它还在不在栈上」，不是「它可不可见」，故必须关掉 skipOffstage。
+      find.text('reader-上层', skipOffstage: false),
+      findsOneWidget,
+      reason: '**不得** popUntil 把用户正在读的书 / 正在放的视频弹掉'
+          '（BUG-286 定过这条边界：不能为看个词强退阅读器并停有声书）。',
+    );
+    expect(appModel.searchedTerms, <String>['coveredword']);
+    expect(DesktopLookupService.instance.pendingText, isNull);
+    await _unmount(tester);
+  });
+
+  // 上一条的死角：底下那层恰好已经停在查词 tab 上。早退判据若只看 `_currentTab`，
+  // 这次请求会变成**彻底的 no-op**（窗口弹到前台、一点反馈都没有）。
+  testWidgets('底层已在查词 tab 且被全屏路由遮住：仍必须推独立路由，不得早退成 no-op',
+      (WidgetTester tester) async {
+    final _HomeShellAppModel appModel =
+        await _pumpHome(tester, dictionariesEnabled: true);
+
+    HomePage.debugSelectTab!(HomeTab.dictionaries);
+    await _settle(tester);
+    expect(find.byType(HomeDictionaryPage), findsOneWidget);
+
+    unawaited(Navigator.of(appModel.navigatorKey.currentContext!).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Center(child: Text('video-上层'))),
+      ),
+    ));
+    await _settle(tester);
+
+    appModel.requestHomeDictionaryTab();
+    await _settle(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('home-dictionary-route-back')),
+      findsOneWidget,
+      reason: '「已经在查词 tab 上」只有 HomePage 在栈顶时才等于「已经显示出来了」。',
+    );
+    expect(find.text('video-上层', skipOffstage: false), findsOneWidget);
     await _unmount(tester);
   });
 }

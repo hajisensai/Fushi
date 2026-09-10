@@ -36,12 +36,16 @@ void main() {
 
     test('a failed register() is logged to ErrorLogService (not glog-only)',
         () {
-      // Locate the registration helper and confirm its catch reaches the
-      // user-visible / uploadable ErrorLogService channel.
-      final int at =
-          controller.indexOf('Future<void> _registerHotKeyFromRegistry(');
+      // Anchor on the OS-registration CALL rather than a helper NAME: the
+      // registration is table-driven now (one helper per action), and pinning
+      // whatever the helper happens to be called today makes this guard red on
+      // a pure rename while the invariant ("a failed register is visible")
+      // never moved. Whatever function performs `hotKeyManager.register(` must
+      // reach the user-visible / uploadable ErrorLogService channel from its
+      // catch.
+      final int at = controller.indexOf('hotKeyManager.register(');
       expect(at, greaterThan(-1),
-          reason: '_registerHotKeyFromRegistry must exist');
+          reason: 'the controller must register the OS hotkey itself');
       final String fn = controller.substring(at);
       expect(fn.contains('ErrorLogService.instance.log('), isTrue,
           reason: 'a failed hotkey register must surface through the visible '
