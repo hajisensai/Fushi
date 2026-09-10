@@ -64,6 +64,9 @@ and manifest point straight at the commit recorded above.
 Hibiki modifications
 --------------------
 overlay/.../DalvikHandler.kt:
+  Typed source HttpException responses retain their original HTTP 400-599
+  transport status and carry errorKind/sourceStatusCode. Internal failures
+  retain bridge/500; legacy code/type/stack fields remain available.
   Route both bare FilterList results and legacy FiltersResponse wrappers through
   the explicit filter wire codec. Select options use their display toString,
   never arbitrary extension-object bean serialization; array/wrapper shapes,

@@ -525,6 +525,40 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return '$type\n$stack';
   }
 
+  /// Decode the bridge envelope without confusing source HTTP failures with
+  /// transport failures. Older sidecars expose the source code via HttpException.
+  static MihonRuntimeException decodeErrorResponse(http.Response response) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      // Non-JSON gateway responses still have a meaningful transport status.
+    }
+    final Map<Object?, Object?> error = decoded is Map<Object?, Object?>
+        ? decoded
+        : const <Object?, Object?>{};
+    final Object? kind = error['errorKind'];
+    final Object? sourceCode = kind == 'sourceHttp'
+        ? error['sourceStatusCode']
+        : kind == null &&
+              error['errorType'] == 'eu.kanade.tachiyomi.network.HttpException'
+        ? error['code']
+        : null;
+    final int? sourceStatus =
+        sourceCode is int && sourceCode >= 400 && sourceCode <= 599
+        ? sourceCode
+        : null;
+    return MihonRuntimeException(
+      sourceStatus == null
+          ? 'BRIDGE_HTTP_${response.statusCode}'
+          : 'SOURCE_HTTP_$sourceStatus',
+      sourceStatus == null
+          ? error['error']?.toString() ?? 'Mihon bridge request failed'
+          : 'Manga source returned HTTP $sourceStatus',
+      details: _errorDetails(error),
+    );
+  }
+
   Future<MihonCapabilities> _readCapabilities() async {
     final http.Response response = await _http
         .get(_uri('/capabilities'), headers: _headers)
@@ -567,23 +601,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       final http.Response response = await _http
           .post(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 45));
-      final Object? decoded = response.body.isEmpty
-          ? null
-          : jsonDecode(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final Map<Object?, Object?>? error = decoded is Map<Object?, Object?>
-            ? decoded
-            : null;
-        throw MihonRuntimeException(
-          'BRIDGE_HTTP_${response.statusCode}',
-          error?['error']?.toString() ?? 'Mihon bridge request failed',
-          // 桌面路径此前从不填 details，于是「查看详情」对话框在桌面端恒为空，
-          // 用户只能看到一行没有出处的错误文本。sidecar 现在回传异常类型与 Java
-          // 栈（DalvikHandler.errorResponse），把它们接上，与 Android 路径对齐。
-          details: _errorDetails(error),
-        );
+        throw decodeErrorResponse(response);
       }
-      return decoded;
+      return response.body.isEmpty ? null : jsonDecode(response.body);
     } on MihonRuntimeException {
       rethrow;
     } on TimeoutException catch (error) {
