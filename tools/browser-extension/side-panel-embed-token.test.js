@@ -43,6 +43,7 @@ async function loadEmbedPanel(opts) {
   const o = opts || {};
   const tabSends = [];
   const runtimeSends = [];
+  const queryCalls = [];
   let verifyCalls = 0;
   let currentLastError; // 真 chrome 在回调期间才置位；这里照搬这个时序
   const intervals = [];
@@ -84,7 +85,11 @@ async function loadEmbedPanel(opts) {
       if (key === 'tabs') {
         return {
           get(_id, cb) { if (cb) cb({ id: 42 }); return Promise.resolve({ id: 42 }); },
-          query(_q, cb) { if (cb) cb([{ id: 42 }]); return Promise.resolve([{ id: 42 }]); },
+          query(_q, cb) {
+            queryCalls.push(_q);
+            if (cb) cb([{ id: 42 }]);
+            return Promise.resolve([{ id: 42 }]);
+          },
           onActivated: { addListener() {} },
           onUpdated: { addListener() {} },
           sendMessage(tabId, msg, cb) {
@@ -141,6 +146,10 @@ async function loadEmbedPanel(opts) {
     URL,
   };
   sandbox.window.window = sandbox.window;
+  sandbox.window.self = sandbox.window;
+  // 真浏览器里 window.top 恒存在：顶层扩展页 top === self，被网页嵌进 iframe 则不等
+  // （跨源时是个读不动的 Window 代理，引用比较仍然成立）。
+  sandbox.window.top = o.embeddedFrame ? { name: 'hostile-top' } : sandbox.window;
   sandbox.self = sandbox.window;
   vm.createContext(sandbox);
   vm.runInContext(DICT_MEDIA, sandbox, { filename: 'vendor/dict-media.js' });
@@ -150,7 +159,7 @@ async function loadEmbedPanel(opts) {
     for (const fn of (winHandlers.message || []).slice()) fn({ origin, data, source: {} });
   };
   const tick = async () => { for (const fn of intervals.slice()) fn(); await flush(); };
-  return { tabSends, runtimeSends, dispatch, tick };
+  return { tabSends, runtimeSends, queryCalls, dispatch, tick };
 }
 
 test('带 token 的嵌入面板开局向 SW 核销，且只带 token 不带自证 origin', async () => {
@@ -254,4 +263,38 @@ test('开局核销撞上 SW 休眠（lastError）：下一次轮询补请求并�
   for (const s of p.tabSends) {
     assert.strictEqual(s.tabId, 42, '自愈后仍然只认背书的那一页');
   }
+});
+
+// ---------------------------------------------------------------------------
+// BUG-2426：「是不是被嵌入」不能由 URL 参数自证
+// ---------------------------------------------------------------------------
+// 上面每一条守的都是「已经进了 EMBED 分支之后不许自证身份」。但进不进那个分支，
+// 旧实现只看 `?fushiEmbed=1` —— 那也是嵌入方说了算的。恶意站点把参数一省，
+// EMBED 就是 false，queryActiveTab() 落回 chrome.tabs.query({active,currentWindow})，
+// 上面所有加固一并作废：面板拿到的是用户此刻真正在看的标签页。
+
+test('BUG-2426 被嵌入但 URL 不带 fushiEmbed：仍须走嵌入分支，绝不回落 tabs.query', async () => {
+  const p = await loadEmbedPanel({
+    search: '', // 攻击者当然不会替你加这个参数
+    embeddedFrame: true,
+    verifyResp: { origin: '', tabId: null }, // SW 不给背书
+  });
+  const verify = p.runtimeSends.filter((m) => m && m.type === 'drawerEmbedVerify');
+  assert.strictEqual(verify.length, 1, '帧嵌套是浏览器事实，必须据此进入嵌入分支');
+  await p.tick();
+  await p.tick();
+  assert.strictEqual(
+    p.queryCalls.length, 0,
+    'chrome.tabs.query 被调用了：省掉 URL 参数就能把用户当前标签页交出去',
+  );
+  assert.strictEqual(p.tabSends.length, 0, '没背书就不许驱动任何标签页');
+});
+
+test('BUG-2426 顶层扩展页（top === self）不受影响：照常按当前标签工作', async () => {
+  // 负向对照：判据收紧不得误伤 chrome.sidePanel 打开的正常顶层面板。
+  const p = await loadEmbedPanel({ search: '', embeddedFrame: false });
+  const verify = p.runtimeSends.filter((m) => m && m.type === 'drawerEmbedVerify');
+  assert.strictEqual(verify.length, 0, '顶层页不该去核销嵌入凭证');
+  await p.tick();
+  assert.ok(p.queryCalls.length > 0, '顶层面板本来就该用 tabs.query 找当前标签页');
 });
