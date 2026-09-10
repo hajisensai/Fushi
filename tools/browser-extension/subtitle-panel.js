@@ -516,6 +516,10 @@
     return !!(file && /\.(srt|ass|ssa|vtt)$/i.test(String(file.name || '')));
   }
 
+  // 拖放导入的生效判据：这一页确实在放视频。没有 <video> 的普通网页（网盘上传、邮箱附件、
+  // 图床）一律不介入——连 dragover 的 preventDefault 都不做，宿主页的拖放行为零改动。
+  function dragDropActive() { return st.dragDropEnabled && !!videoEl(); }
+
   function showDropHint() {
     if (!st.dropHint) {
       st.dropHint = document.createElement('div');
@@ -538,7 +542,7 @@
   }
 
   document.addEventListener('dragover', function (e) {
-    if (!st.dragDropEnabled || !e.dataTransfer) return;
+    if (!dragDropActive() || !e.dataTransfer) return;
     var hasFiles = e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0;
     if (!hasFiles) return;
     e.preventDefault();
@@ -549,7 +553,7 @@
     if (!e.relatedTarget) hideDropHint();
   }, true);
   document.addEventListener('drop', function (e) {
-    if (!st.dragDropEnabled) return;
+    if (!dragDropActive()) return;
     var files = filesFromTransfer(e.dataTransfer);
     hideDropHint();
     if (!files.length) return;
