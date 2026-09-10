@@ -114,7 +114,11 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
 import 'package:fushi/src/shortcuts/input_binding.dart'
-    show GamepadButton, InputBinding, activeModifierKeys;
+    show
+        GamepadButton,
+        InputBinding,
+        activeModifierKeys,
+        domMouseButtonFromPointerButtons;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction, resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
@@ -1477,6 +1481,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       VideoGamepadSecondaryTapDeduper();
   DateTime? _lastVideoPointerUpAt;
   Offset? _lastVideoPointerUpPosition;
+
+  /// 当前按住的**非主键**指针（右键 / 中键 / 侧键）的 `PointerEvent.pointer` 集合。
+  ///
+  /// 存在的唯一理由：[PointerUpEvent.buttons] 在抬起那一刻恒为 0——按钮号只在按下
+  /// 事件里有，[_handleVideoPointerUp] 自己拿不到「这次抬起的是哪个键」。所以按钮判据
+  /// 必须在按下侧记账（[_recordVideoPointerButton]），抬起侧查表
+  /// （见 BUG-2403：双击判定不看按钮号，右键双击画面 = 切全屏）。
+  ///
+  /// 判据恒用 [domMouseButtonFromPointerButtons]——全仓同一个按钮折叠函数（设置页
+  /// 录制、鼠标绑定通道、右键菜单读的都是它）。左键与触摸在那里恒折不出按钮号，故
+  /// 恒不入集合，双击全屏 / 双击 seek / 移动端双击暂停行为逐字不变。
+  final Set<int> _nonPrimaryVideoPointers = <int>{};
   bool _videoFullscreenTransitioning = false;
 
   /// 全屏路由当前是否在栈上：进全屏置位、全屏路由 future 完成（任意退出路径：
@@ -7816,7 +7832,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  /// 按下侧的按钮号记账（BUG-2403）。与 [_handleVideoPointerUp] 挂在**同一个**
+  /// [Listener] 上，命中集合逐字一致，所以每一次进得了抬起判定的按下都记得到账。
+  ///
+  /// 只记非主键：左键与触摸在 [domMouseButtonFromPointerButtons] 里恒折不出按钮号，
+  /// 集合对它们始终为空，双击路径零改变。
+  void _recordVideoPointerButton(PointerDownEvent event) {
+    if (domMouseButtonFromPointerButtons(event.buttons) != null) {
+      _nonPrimaryVideoPointers.add(event.pointer);
+    }
+  }
+
+  /// 指针被系统取消（手势竞技场外的取消、设备移除…）时销账，否则该 pointer id 的记录
+  /// 会一直留在集合里——抬起事件不会再来，[_handleVideoPointerUp] 也就没机会取走。
+  void _forgetVideoPointerButton(PointerCancelEvent event) {
+    _nonPrimaryVideoPointers.remove(event.pointer);
+  }
+
   void _handleVideoPointerUp(PointerUpEvent event) {
+    // BUG-2403：这次抬起的是不是非主键。账在按下侧记（[_recordVideoPointerButton]），
+    // 这里**一次性取走**——放在函数最前面，下面每条早返回都已经销过账，集合不会随
+    // 点击次数增长。
+    final bool nonPrimaryButton =
+        _nonPrimaryVideoPointers.remove(event.pointer);
     // 点视频区任意位置 = 用户把交互意图交还播放器：顺手收回键盘焦点（TODO-040 ①
     // 「点了外面/焦点丢失后」的恢复路径——与原生播放器一致，点一下画面即恢复键盘）。
     // 查词浮层打开时点击被根 Overlay barrier 拦截、到不了这里，guard 仅兜底；点
@@ -7825,6 +7863,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 触屏点画面唤回视频左侧锁 / 解锁按钮（TODO-126）。沉浸态下控制条指针被 gate，但本
     // 外层 Listener 在 gate 之外仍收到指针，故沉浸态点画面也能唤回解锁按钮（移动端无 hover）。
     _pokeLockButton();
+    // BUG-2403：下面整段「双击画面」判定（桌面 → 切全屏 / 双击左右区 seek，移动 →
+    // 暂停）此前完全不看按钮号，右键（中键 / 侧键同理）的两次抬起照样落进 400ms +
+    // 48px 的窗口，于是桌面「右键双击画面」直接 [_toggleVideoFullscreen]，在全屏里就
+    // 表现为「右键双击把全屏关掉」。挂载点的注释一直写着「左键双击全屏」
+    // （[_buildVideoControlsInner] 的 Listener），只是那个判据从来没写进实现。
+    //
+    // 焦点归还与唤回锁按钮排在本门之前：那两件事的语义是「用户在画面上有动作」，与
+    // 按了哪个键无关，右键弹菜单前照样该做（既有行为，不动）。
+    //
+    // 非主键不碰 [_lastVideoPointerUpAt]：它对左键的双击追踪是透明的，「左—右—左」
+    // 仍是 400ms 内的两次左键 = 双击，与原生播放器一致。
+    if (nonPrimaryButton) return;
     // 选集横轨打开时，视频区由 dismiss barrier 接管这次点击并只关闭横轨；外层
     // Listener 仍会先收到 pointer-up，必须在 barrier 的 onTap 执行前早返回，否则同一次
     // 点击还会进入双击 / 暂停 / 全屏判定（BUG-1501）。点横轨自身也会经过本 Listener，

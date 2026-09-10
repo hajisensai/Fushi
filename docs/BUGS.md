@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2403](bugs/BUG-2403-video-doubleclick-ignores-mouse-button.md) | ✅ | ✅ | 视频页双击判定不看鼠标按钮号，右键双击画面切全屏 |
 | [BUG-2402](bugs/BUG-2402-mobile-library-layout.md) | ✅ | ✅ | 手机标签页头留白与筛选工具堆叠 |
 | [BUG-2400](bugs/BUG-2400-remote-manga-empty-content.md) | ✅ | ✅ | 远端空漫画合集被标记为可下载内容 |
 | [BUG-2399](bugs/BUG-2399-reader-chapter-stale-progress.md) | ✅ | ✅ | 小说跨章节晚到进度污染阅读字数和速度 |
