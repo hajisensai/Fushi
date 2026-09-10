@@ -55,9 +55,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         // 变体已收敛进 _failNavigation（清 _isNavigatingToChapter + _restoreInFlight 并
         // complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时）。
         _failNavigation();
-        // TODO-1229 第三次复诉：兜底超时也算内容就绪，消费 pending 并 stamp 冷却窗，
-        // 避免惯性跨章后旗子悬空到下一次真实导航才被清（那会造成一次假冷却）。
-        _noteChapterTurnSettledIfPending();
+        // BUG-2424：兜底超时也算内容就绪 —— 积压的翻页意图必须在这里也放行，否则
+        // 一次 JS 卡死会把用户此后拨的所有滚轮永久压在队列里。
+        unawaited(_replayPendingPageTurn());
         // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
         _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
@@ -107,9 +107,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     ReaderChapterPerfTrace.mark('jsInitRestore');
     // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
     _clearContentReadyTimeout();
-    // TODO-1229 第三次复诉：惯性跨章落地的新章一就绪，就把跨章冷却窗 stamp 到当下，
-    // 挡住随后的残余滚轮/惯性在新章边界二次跨章（滚轮离散事件在长加载期间不续窗的真因）。
-    _noteChapterTurnSettledIfPending();
+
     if (!mounted) {
       return;
     }
@@ -243,6 +241,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       _prefetchAdjacentChapterImages(
         _currentChapter + _chapterAdvanceDirection,
       );
+      // BUG-2424：积压的翻页意图在收尾的**最后**重放——此刻遮罩已撤、新章可见、
+      // `fushiReader` 已就绪，页边界判定是在真实状态上做的（这正是原始「跳两章」
+      // 消失的原因：在飞时 evaluateJavascript 返 null 会被 _didScroll 误读成边界）。
+      // 一次只消费一个：若它导致跨章，`_paginationInFlight` 立刻再次为真，剩下的
+      // 意图由那次导航的 content-ready 继续消费，串成 1:1 的链，不会并发。
+      // 上面的代际守卫同样护住这里：被更晚的导航（目录跳转 / 书签）顶掉时整段丢弃，
+      // 不把旧的滚轮意图应用到用户刚跳到的新位置。
+      unawaited(_replayPendingPageTurn());
     });
   }
 
@@ -457,6 +463,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 脚本（旧的 post-await 复位在 lyrics/spread/early-return/throw 路径会被跳过）。
     _initialFragment = fragment;
     _restoreInFlight = true;
+    // BUG-2424：非翻页导航（目录 / 书签 / 搜索 / 内链跳转）作废积压的翻页意图。翻页
+    // 触发的导航必须**保留**队列——排队正是发生在它开启的这段在飞窗口里，清掉就等于
+    // 又把用户的输入丢了。标记消费一次即复位（下一次导航默认按非翻页处理）。
+    if (!_navigationFromPageTurn) {
+      _pageTurnQueue.clear();
+    }
+    _navigationFromPageTurn = false;
     // TODO-718 重设计：删除 _continuousSettleGuardArmed 武装——非自愿 reflow 归零判据已改无状态
     // （直接看 fromUserScroll），不再需要「导航武装/用户滚动解武装」状态机。
     _rebuild(() {
@@ -1000,10 +1013,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     unawaited(snapshot.evict());
   }
 
-  void _handlePageTurnLimit(String direction, {bool inertia = false}) {
+  void _handlePageTurnLimit(String direction) {
     if (_book == null) {
       return;
     }
+    // BUG-2424：本次导航由翻页触发。[_beginNavigation] 读它来决定要不要作废积压的
+    // 翻页意图——只有**非翻页**导航（目录 / 书签 / 搜索 / 内链跳转）才作废：用户已经
+    // 显式换了目的地，把之前排队的滚轮意图重放到新位置只会把他从那里带走。
+    _navigationFromPageTurn = true;
     // BUG-369/TODO-656 诊断：跨章真正落子前记录方向与当前章号，便于对照「跳早了」。
     debugPrint(
       '[xchapter] handlePageTurnLimit dir=$direction '
@@ -1023,12 +1040,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       final bool manual = _settings?.spreadMode == 'off';
       if (direction == 'forward') {
         if (currentVirtual + 1 < _spreadMap!.length) {
-          if (inertia) _markInertiaChapterTurnPending();
           _navigateToVirtualPage(currentVirtual + 1, manual: manual);
         }
       } else {
         if (currentVirtual > 0) {
-          if (inertia) _markInertiaChapterTurnPending();
           _navigateToVirtualPage(
             currentVirtual - 1,
             progress: 0.99,
@@ -1042,12 +1057,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 兜底：spread map 尚未构建（book/settings 未就绪，翻页前罕见）时退回裸翻章。
     if (direction == 'forward') {
       if (_currentChapter < _book!.chapters.length - 1) {
-        if (inertia) _markInertiaChapterTurnPending();
         _navigateToChapter(_currentChapter + 1, manual: true);
       }
     } else {
       if (_currentChapter > 0) {
-        if (inertia) _markInertiaChapterTurnPending();
         _navigateToChapter(_currentChapter - 1, progress: 0.99, manual: true);
       }
     }
