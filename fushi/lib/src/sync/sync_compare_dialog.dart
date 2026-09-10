@@ -1334,11 +1334,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             children: [
               _directionIcon(entry, theme),
               const SizedBox(width: 6),
+              // 书名是这一行唯一的身份（`_choices` 也按 title 索引），而轻小说 /
+              // 有声书标题动辄二三十字。单行省略后同一系列的多条冲突只剩下
+              // 同一个前缀（「無職転生 ～異世界行った…」），用户无法分辨自己在给
+              // 哪一本裁决。改成换行展示，3 行封顶以免异常长的标题把卡片拉得无界。
               Expanded(
                 child: Text(
                   entry.title,
                   style: theme.textTheme.titleSmall,
-                  maxLines: 1,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
