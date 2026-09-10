@@ -174,11 +174,25 @@ void main() {
         greaterThan(group),
         reason: 'every merged source must get its own .pitch-dict-label pill',
       );
+      // 钉不变式而不是写法：标签文本可以过一层显示名投影
+      // （__fushiDictDisplayName，词典改名 v101），但**必须源自循环变量**
+      // dictionary —— 写死成 pitchData.dictionary 就退回「只渲染第一本」。
+      final int pill =
+          js.indexOf("className: 'pitch-dict-label'", labelLoop);
+      expect(pill, greaterThan(labelLoop),
+          reason: 'the pill loop must render a .pitch-dict-label');
+      final int pillEnd = js.indexOf('\n', pill);
+      final String pillLine = js.substring(pill, pillEnd);
       expect(
-        js.indexOf("className: 'pitch-dict-label', textContent: dictionary",
-            labelLoop),
-        greaterThan(labelLoop),
-        reason: 'the pill loop must render the per-dictionary label',
+        pillLine,
+        contains('dictionary'),
+        reason: 'the pill label must come from the loop variable',
+      );
+      expect(
+        pillLine,
+        isNot(contains('pitchData.')),
+        reason: 'the pill label must NOT read pitchData.dictionary — that is '
+            'the regression where only the first source gets rendered',
       );
     });
   });

@@ -79,6 +79,7 @@ class _FakeService extends AsrTranscriptionService {
     this.existingSrt,
     this.probeError,
   }) : super(
+          audioProfile: AsrAudioProfile.cleanSpeech,
           backend: const AsrIsolateBackend(
             buildFactory: _unusedOnnxFactory,
           ),
@@ -132,6 +133,7 @@ class _FakeService extends AsrTranscriptionService {
   Stream<ModelDownloadEvent> downloadModel({
     required AsrLanguage language,
     required AsrEncoderVariant variant,
+    bool includeAlignment = false,
   }) async* {
     downloadCalls++;
     lastDownloadLanguage = language;

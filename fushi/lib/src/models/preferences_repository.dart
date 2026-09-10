@@ -122,7 +122,56 @@ class PreferencesRepository extends ChangeNotifier {
     DandanplayConfig.current = DandanplayConfig.decode(
       getPref('video_danmaku_config', defaultValue: '') as String,
     );
+    await _repairOpenSubtitlesEnabledOnce();
     _installAppProxyReaders();
+  }
+
+  /// BUG-2429 的存量数据修复标记。跑过一次就再也不跑。
+  static const String openSubtitlesEnabledRepairedKey =
+      'video_subtitle_opensubtitles_enabled_repaired';
+
+  /// 把「空草稿」写下的 `enabled=false` 一次性归一回默认启用。
+  ///
+  /// 设置页的 OpenSubtitles 详情草稿曾把未配置态的开关初值硬写成 false（与
+  /// [OpenSubtitlesConfig] 的构造默认相反），于是用户只要在该页碰过任意一个字段，
+  /// debounce 保存就把这个**没人选过的 false** 落盘，内置应用密钥从此形同虚设，
+  /// 而设置列表还照样显示「已内置」。判据取「一条自有凭据都没有（apiKey /
+  /// username / password 全空）却是关闭态」——这正是空草稿的指纹。真正手动关掉
+  /// 且没填过任何凭据的用户会被打开一次，但标记键保证只发生一次；此后再关就一直
+  /// 是关的。挂在 [loadFromDb]（偏好变得可读的那一刻）而不是某个 entry point 的
+  /// initialise，理由同 [_installAppProxyReaders]。
+  Future<void> _repairOpenSubtitlesEnabledOnce() async {
+    if (getPref(openSubtitlesEnabledRepairedKey, defaultValue: false) as bool) {
+      return;
+    }
+    final String raw = getPref(
+      'video_subtitle_opensubtitles_config',
+      defaultValue: '',
+    ) as String;
+    // 没写过配置的用户没有需要修的东西，但同样打标记：这条修复只针对存量脏数据，
+    // 不该在此后每次启动都重新解析一遍。
+    if (raw.trim().isNotEmpty) {
+      final OpenSubtitlesConfig config = videoSubtitleOpenSubtitlesConfig;
+      final bool hasOwnCredentials = config.apiKey.trim().isNotEmpty ||
+          (config.username?.trim().isNotEmpty ?? false) ||
+          (config.password?.isNotEmpty ?? false);
+      if (!config.enabled && !hasOwnCredentials) {
+        await setPref(
+          'video_subtitle_opensubtitles_config',
+          jsonEncode(OpenSubtitlesConfig(
+            apiKey: config.apiKey,
+            username: config.username,
+            password: config.password,
+            userAgent: config.userAgent,
+            baseUrl: config.baseUrl,
+            enabled: true,
+            priority: config.priority,
+            allowInsecureHttp: config.allowInsecureHttp,
+          ).toJson()),
+        );
+      }
+    }
+    await setPref(openSubtitlesEnabledRepairedKey, true);
   }
 
   /// 把进程级代理读取器接到本仓库上。**绑定点必须是「偏好变得可读的那一刻」**，不是
@@ -574,6 +623,20 @@ class PreferencesRepository extends ChangeNotifier {
 
   void setPopupMaxWidth(double width) async {
     await setPref('popup_max_width', width);
+    notifyListeners();
+  }
+
+  /// 查词弹窗「全宽展示」：忽略上面的最大宽度，横向铺满可用宽度（左右仍留同一条
+  /// 边距）。位置仍跟随选区——与「底部固定」正交：底部固定本来就是屏幕底部的一条
+  /// 全宽面板，本项管的是**贴词定位下**也占满宽度。
+  ///
+  /// 存在的理由是「最大宽度」是绝对逻辑像素：换设备、旋屏、改界面缩放后都得重调，
+  /// 而墨水屏这类窄屏上用户要的恒定是「占满」。默认 false = 保持既有手感。
+  bool get popupFullWidth =>
+      getPref('popup_full_width', defaultValue: false) as bool;
+
+  Future<void> setPopupFullWidth(bool value) async {
+    await setPref('popup_full_width', value);
     notifyListeners();
   }
 
@@ -1178,15 +1241,23 @@ class PreferencesRepository extends ChangeNotifier {
   }
 
   /// OpenSubtitles 的设备本地配置。登录 token 只存在 client 内存中，绝不写入本键。
-  OpenSubtitlesConfig? get videoSubtitleOpenSubtitlesConfig {
+  ///
+  /// **永不返回 null**：没配置过 = [OpenSubtitlesConfig.unconfigured]（启用 + 内置
+  /// 应用密钥）。BUG-2429：此前返回 null，于是「没配置过」这个特殊情况要由每个消费方
+  /// 各自解释一遍，而三处解释互相矛盾——运行时装配当它「不装配」（内置密钥形同虚设），
+  /// 设置页列表当它「已内置」（谎报可用），详情页草稿当它「开关关闭」（用户一碰字段
+  /// 就把 enabled=false 落盘）。默认值收敛到一处，特殊情况随之消失。
+  OpenSubtitlesConfig get videoSubtitleOpenSubtitlesConfig {
     final String raw = getPref(
       'video_subtitle_opensubtitles_config',
       defaultValue: '',
     ) as String;
-    if (raw.trim().isEmpty) return null;
+    if (raw.trim().isEmpty) return OpenSubtitlesConfig.unconfigured();
     try {
       final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map<Object?, Object?>) return null;
+      if (decoded is! Map<Object?, Object?>) {
+        return OpenSubtitlesConfig.unconfigured();
+      }
       return OpenSubtitlesConfig.fromJson(<String, Object?>{
         for (final MapEntry<Object?, Object?> entry in decoded.entries)
           entry.key.toString(): entry.value,
@@ -1197,7 +1268,7 @@ class PreferencesRepository extends ChangeNotifier {
         error,
         stack,
       );
-      return null;
+      return OpenSubtitlesConfig.unconfigured();
     }
   }
 

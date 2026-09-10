@@ -31,6 +31,11 @@ class _FakeDiscoveryController implements VideoDiscoveryController {
     requests.add(request);
     return handler(request);
   }
+
+  /// 测试里来源名就是 id 的大写形态，足以把「横幅印的是显示名而不是原始 id」这条
+  /// 不变式钉死。
+  @override
+  String displayNameFor(String providerId) => providerId.toUpperCase();
 }
 
 discovery.VideoDiscoveryItem _item(
@@ -520,7 +525,55 @@ void main() {
       find.byKey(const ValueKey<String>('video-discovery-provider-warning')),
       findsOneWidget,
     );
-    expect(find.text('bangumi'), findsOneWidget);
+    // BUG-2430：横幅印的是用户可见来源名，不是接线用的 provider id。
+    expect(find.text('bangumi'), findsNothing);
+    expect(find.text('BANGUMI'), findsOneWidget);
+    // timeout 属于「暂时失败」，不该说成「暂不可用」。
+    expect(find.text(t.video_discovery_provider_failed), findsOneWidget);
+  });
+
+  testWidgets('限流失败说的是稍后再试，不是来源不可用', (WidgetTester tester) async {
+    const ExternalProviderFailure failure = ExternalProviderFailure(
+      providerId: 'mal',
+      operation: 'search-tv',
+      kind: ExternalProviderFailureKind.rateLimited,
+      message: 'provider returned HTTP 429',
+      statusCode: 429,
+      retryable: true,
+    );
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(
+        <discovery.VideoDiscoveryItem>[_item('ok', '可用结果')],
+        failures: const <ExternalProviderFailure>[failure],
+      ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_discovery_provider_rate_limited), findsOneWidget);
+    expect(find.text(t.video_discovery_provider_warning), findsNothing);
+    expect(find.text('MAL'), findsOneWidget);
+  });
+
+  testWidgets('真正的不可用仍然说不可用', (WidgetTester tester) async {
+    const ExternalProviderFailure failure = ExternalProviderFailure(
+      providerId: 'tmdb',
+      operation: 'discover',
+      kind: ExternalProviderFailureKind.unavailable,
+      message: 'metadata provider is not configured',
+    );
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(
+        <discovery.VideoDiscoveryItem>[_item('ok', '可用结果')],
+        failures: const <ExternalProviderFailure>[failure],
+      ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_discovery_provider_warning), findsOneWidget);
   });
 
   testWidgets('所有来源失败展示可重试错误态', (WidgetTester tester) async {

@@ -127,14 +127,18 @@ void main() {
     }
   });
 
-  testWidgets('四个横切模块各自真的名下有分类（否则上面三条在空集上恒绿）', (WidgetTester tester) async {
-    // 听书/制卡/在线服务/同步没有底栏 tab，设置分类是它们唯一的可断言落地面。
+  testWidgets('三个横切模块各自真的名下有分类（否则上面三条在空集上恒绿）', (WidgetTester tester) async {
+    // 制卡/在线服务/同步没有底栏 tab，设置分类是它们唯一的可断言落地面。
     // 归属表一旦被改成 null，上面的循环会在空集上静默通过——先在这里挡住。
+    //
+    // 听书不在这份名单里：2026-08-24 它并入了「阅读」分类（见
+    // buildListeningSections），落地面从「一条一级分类」降到「阅读里的两个分区」。
+    // 上面那三条循环只认 destination 级归属，对听书因此是空集恒绿——真正的门控
+    // 断言挪到下面那条专用用例，别把这里的名单当成全部覆盖。
     await pumpContext(tester);
     appModel.enabled = ModuleId.values.toSet();
     final Set<SettingsDestinationId> visible = visibleIds();
     for (final ModuleId module in <ModuleId>[
-      ModuleId.listening,
       ModuleId.cardCreation,
       ModuleId.services,
       ModuleId.sync,
@@ -148,6 +152,51 @@ void main() {
         reason: '$module 名下没有任何可见设置分类，它的开关就没有落地面了',
       );
     }
+  });
+
+  testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (
+    WidgetTester tester,
+  ) async {
+    // 并类之后听书没有自己的 destination，上面按 destination 归属做的三条循环
+    // 对它恒为空集。不变式本身没变——「关掉模块 ⇒ 它的设置行看不见也搜不到」——
+    // 只是粒度降到了分区，所以这里直接按 item id 前缀断言那条不变式。
+    await pumpContext(tester);
+
+    // 断言落在**分区可见性**上，而不是展平后的行：桩 AppModel 没有 prefsRepo，
+    // 求值 item 的 visible/titleBuilder 会当场抛（上面第三条用例同样靠只展平
+    // 模块名下那几条来绕开）。分区不可见时其下的行本就进不了搜索索引
+    // （SettingsSection.visibleCopy 先过滤分区，flattenVisibleSettings 再展平），
+    // 所以这一层就是「看不见也到不了」的收口点。
+    List<String> visibleListeningSectionIds() {
+      final List<SettingsDestination> reading = buildSettingsSchema(sctx)
+          .where(
+            (SettingsDestination d) => d.id == SettingsDestinationId.reading,
+          )
+          .toList();
+      expect(reading, hasLength(1), reason: '阅读分类不见了，下面的断言会在空集上恒绿');
+      return reading.single.sections
+          .where((SettingsSection s) => s.isVisible(sctx))
+          .map((SettingsSection s) => s.id)
+          .whereType<String>()
+          .where((String id) => id.startsWith('listening.'))
+          .toList();
+    }
+
+    appModel.enabled = ModuleId.values.toSet();
+    expect(
+      visibleListeningSectionIds(),
+      hasLength(2),
+      reason: '听书模块开着却看不到那两个分区——并入阅读时把分区门写反了，'
+          '或者分区根本没被展开进 buildReadingDestination',
+    );
+
+    appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.listening);
+    expect(
+      visibleListeningSectionIds(),
+      isEmpty,
+      reason: '关掉听书模块后 listening.* 分区还在阅读里。并类时模块门原本挂在'
+          'destination 上，下放到分区时漏了哪一个，这条就会红。',
+    );
   });
 }
 

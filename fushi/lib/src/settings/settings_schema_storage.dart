@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
@@ -22,8 +24,7 @@ import 'package:fushi/utils.dart';
 /// 「存储」一级设置分类：数据存储位置（数据根在哪）+ 磁盘占用总览（每个类目
 /// 都可展开明细，书/词典可单条删除）+ 随包组件展示。
 ///
-/// 「数据存储位置」是本页唯一的 schema section（历史上挂过同步备份、后来挪到
-/// 「系统」）：它回答「数据放哪」，与下面「占了多少」是同一个问题的两半，放在
+/// 「数据存储位置」回答「数据放哪」，模型与组件管理全局资源，与下面「占了多少」放在
 /// 一起才成一页；item id 仍是 'sync.data_storage_location'，构建函数留在
 /// sync_settings_schema（行 widget 是该库私有 part）。
 ///
@@ -36,29 +37,47 @@ SettingsDestination buildStorageDestination() {
     title: t.settings_destination_storage,
     summary: t.settings_destination_storage_summary,
     icon: Icons.sd_storage_outlined,
-    sections: <SettingsSection>[buildDataStorageLocationSection()],
+    sections: <SettingsSection>[
+      buildDataStorageLocationSection(),
+      SettingsSection(
+        id: 'storage.section.models_components',
+        title: t.storage_models_components,
+        visible: (_) => isAsrSupported,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            // Preserve the existing search anchor while changing its owner.
+            id: 'listening.asr_models',
+            title: t.asr_models_section,
+            subtitle: t.asr_models_section_summary,
+            icon: Icons.record_voice_over_outlined,
+            child: _buildAsrModelsDestination,
+          ),
+        ],
+      ),
+    ],
     body: (SettingsContext c) => StorageUsageView(
       service: StorageUsageService(),
       booksProvider: () async {
-        final List<EpubBookRow> rows =
-            await c.appModel.database.getAllEpubBooks();
+        final List<EpubBookRow> rows = await c.appModel.database
+            .getAllEpubBooks();
         // 有声书 persist 目录的真实键口径与删除侧一致（审查 H1）：EPUB 配音频
         // 用 bookKey（AudiobookRepository.delete），字幕书音频用关联 SrtBooks.uid
         //（SrtBookRepository）；EpubBooks.uid 是 v81 本机机器 id，从不入哈希。
-        final List<SrtBookRow> srtRows =
-            await c.appModel.database.getAllSrtBooks();
+        final List<SrtBookRow> srtRows = await c.appModel.database
+            .getAllSrtBooks();
         // BUG-1893：音频的真相源是 DB 里记的路径（audioRoot / audioPathsJson）。
         // 互联同步拉来的有声书落的是明文目录 audiobooks/<safeDirName(key)>，哈希
         // 目录只是本地导入那一条路径的形态；两者都喂给扫描层，重叠部分由
         // resolveBookStoragePaths 去嵌套去重，不会重复计数。
-        final List<AudiobookRow> audiobookRows =
-            await c.appModel.database.getAllAudiobooks();
+        final List<AudiobookRow> audiobookRows = await c.appModel.database
+            .getAllAudiobooks();
         final Map<String, List<String>> audioPathsByBookKey =
             <String, List<String>>{};
         for (final AudiobookRow ab in audiobookRows) {
           if (ab.bookKey.isEmpty) continue;
-          (audioPathsByBookKey[ab.bookKey] ??= <String>[])
-              .addAll(_audioPathsOf(ab.audioRoot, ab.audioPathsJson));
+          (audioPathsByBookKey[ab.bookKey] ??= <String>[]).addAll(
+            _audioPathsOf(ab.audioRoot, ab.audioPathsJson),
+          );
         }
         final Map<String, List<String>> srtUidsByBookKey =
             <String, List<String>>{};
@@ -71,8 +90,9 @@ SettingsDestination buildStorageDestination() {
             continue;
           }
           (srtUidsByBookKey[srt.bookKey] ??= <String>[]).add(srt.uid);
-          (audioPathsByBookKey[srt.bookKey] ??= <String>[])
-              .addAll(_audioPathsOf(srt.audioRoot, srt.audioPathsJson));
+          (audioPathsByBookKey[srt.bookKey] ??= <String>[]).addAll(
+            _audioPathsOf(srt.audioRoot, srt.audioPathsJson),
+          );
         }
         return <StorageBookRef>[
           for (final EpubBookRow row in rows)
@@ -101,13 +121,16 @@ SettingsDestination buildStorageDestination() {
       dictionaryNamesProvider: () async => <String>[
         for (final Dictionary d in c.appModel.dictionaries) d.name,
       ],
+      // 只翻译明细行的 label；上面那份真名列表照旧驱动目录扫描与删除路由。
+      dictionaryDisplayNamesProvider: () async =>
+          c.appModel.dictionaryDisplayNameOverrides,
       deleteBook: (String bookKey) async {
-        final DeleteBookResult result =
-            await ReaderFushiSource.instance.deleteBook(
-          db: c.appModel.database,
-          bookKey: bookKey,
-          appModel: c.appModel,
-        );
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteBook(
+              db: c.appModel.database,
+              bookKey: bookKey,
+              appModel: c.appModel,
+            );
         if (result.deleted) {
           // 与书架删除路径同款缓存失效（books.part.dart），否则书架/首页里
           // 这本书要等那些页自己刷新才消失（审查 M3）。invalidate 整个
@@ -137,8 +160,7 @@ SettingsDestination buildStorageDestination() {
       deleteFiles: (List<String> paths) async {
         for (final String path in paths) {
           try {
-            final FileSystemEntityType type =
-                await FileSystemEntity.type(path);
+            final FileSystemEntityType type = await FileSystemEntity.type(path);
             switch (type) {
               case FileSystemEntityType.directory:
                 await Directory(path).delete(recursive: true);
@@ -160,8 +182,9 @@ SettingsDestination buildStorageDestination() {
         for (final Dictionary d in c.appModel.dictionaries) {
           if (d.name == name) {
             await c.appModel.deleteDictionary(d);
-            final bool stillPresent =
-                c.appModel.dictionaries.any((Dictionary x) => x.name == name);
+            final bool stillPresent = c.appModel.dictionaries.any(
+              (Dictionary x) => x.name == name,
+            );
             return stillPresent ? t.storage_dictionary_delete_incomplete : null;
           }
         }
@@ -177,7 +200,8 @@ SettingsDestination buildStorageDestination() {
       SettingsBodySearchEntry(
         id: 'storage.shaders',
         title: t.storage_category_shaders,
-        subtitle: '${t.storage_modules_anime4k_title} · '
+        subtitle:
+            '${t.storage_modules_anime4k_title} · '
             '${t.storage_shaders_delete_anime4k}',
       ),
       SettingsBodySearchEntry(
@@ -189,12 +213,28 @@ SettingsDestination buildStorageDestination() {
   );
 }
 
+/// Global model resources remain reachable even when listening is disabled.
+SettingsDestination _buildAsrModelsDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.storage,
+    visible: (_) => isAsrSupported,
+    title: t.asr_models_section,
+    icon: Icons.record_voice_over_outlined,
+    sections: const <SettingsSection>[],
+    body: (SettingsContext _) => AsrModelsSettingsSection(
+      service: createAsrTranscriptionService(alignGeneratedSubtitles: false),
+    ),
+  );
+}
+
 /// DB 里一行有声书/字幕书的音频真实路径：legacy 的 `audioRoot`（目录模式）加
 /// `audioPathsJson`（文件列表模式）。两种模式历史上共存，同步导入更是两列都写
 /// （`sync_asset_package_service.dart`），所以两列全取、重叠交给
 /// `resolveBookStoragePaths` 去嵌套。坏 JSON 降级成空列表，不能炸整页扫描。
 List<String> _audioPathsOf(
-    final String? audioRoot, final String? audioPathsJson) {
+  final String? audioRoot,
+  final String? audioPathsJson,
+) {
   final List<String> out = <String>[
     if (audioRoot != null && audioRoot.isNotEmpty) audioRoot,
   ];

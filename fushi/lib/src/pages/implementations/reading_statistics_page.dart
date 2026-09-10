@@ -28,9 +28,9 @@ enum _BookSort { chars, time, speed }
 const int _kDailyCharGoalFallback = 5000;
 const int _kDailyTimeGoalMinutes = 60;
 
-/// 宽屏断点：>= 此宽度时「今天」与「速度摘要」并排，内容整体居中限宽。
+/// 宽屏断点：>= 此宽度时「分析」折叠区里的「今天」与「速度摘要」并排。
+/// （内容整体不再限宽居中——四个 tab 统一全宽自适应，见 [_buildContent]。）
 const double _kWideBreakpoint = 720;
-const double _kMaxContentWidth = 1040;
 
 class ReadingStatisticsPage extends BasePage {
   const ReadingStatisticsPage({super.key, this.embedded = false});
@@ -515,50 +515,53 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= _kWideBreakpoint;
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
-            child: CustomScrollView(
-              slivers: <Widget>[
-                SliverToBoxAdapter(child: _buildSummaryCards()),
-                SliverToBoxAdapter(
-                  child: buildStatDailyDurationChartSection(
-                    context,
-                    _dailyData,
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: buildStatSessionSection(
-                    context,
-                    sessions: _sessions,
-                    titleOf: _sessionTitle,
-                    collectionOf: _sessionCollectionName,
-                    onDelete: _deleteSession,
-                  ),
-                ),
-                SliverToBoxAdapter(child: _buildGoalPanel()),
-                SliverToBoxAdapter(child: _buildAnalysisFold(wide)),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      card,
-                      card + tokens.spacing.gap,
-                      card,
-                      tokens.spacing.gap,
-                    ),
-                    child: _buildByBookHeader(),
-                  ),
-                ),
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildBookTile(_bookData[index]),
-                    childCount: _bookData.length,
-                  ),
-                ),
-                SliverPadding(padding: EdgeInsets.only(bottom: card * 2)),
-              ],
+        // 统计中心四个 tab 一律**全宽自适应**（用户 2026-09-10「阅读的布局不统一，
+        // 做成自适应统一布局」）：本页此前独有一层 `Center + ConstrainedBox(1040)`，
+        // 总览 / 观看 / 游戏三个 tab 都没有，横过去时阅读 tab 的卡片、图表、会话
+        // 整体缩在中间一条，左右各留一大片空白。宽屏的排布交给各区块自己的
+        // LayoutBuilder（时段卡按实际列宽判两列、[_buildMidSection] 按 [wide] 并排），
+        // 不靠一个页面级硬上限。
+        return CustomScrollView(
+          slivers: <Widget>[
+            SliverToBoxAdapter(child: _buildSummaryCards()),
+            SliverToBoxAdapter(
+              child: buildStatDailyDurationChartSection(
+                context,
+                _dailyData,
+              ),
             ),
-          ),
+            SliverToBoxAdapter(
+              child: buildStatSessionSection(
+                context,
+                sessions: _sessions,
+                titleOf: _sessionTitle,
+                collectionOf: _sessionCollectionName,
+                onDelete: _deleteSession,
+                onEdit: _editSession,
+                onClearAll: _clearSessions,
+              ),
+            ),
+            SliverToBoxAdapter(child: _buildGoalPanel()),
+            SliverToBoxAdapter(child: _buildAnalysisFold(wide)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  card,
+                  card + tokens.spacing.gap,
+                  card,
+                  tokens.spacing.gap,
+                ),
+                child: _buildByBookHeader(),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildBookTile(_bookData[index]),
+                childCount: _bookData.length,
+              ),
+            ),
+            SliverPadding(padding: EdgeInsets.only(bottom: card * 2)),
+          ],
         );
       },
     );
@@ -1451,6 +1454,20 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     if (mounted) await _loadFromDatabase();
   }
 
+  /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid
+  /// 再写库），再整页重聚合——改完日期的会话要重新按 gap 归并、重新排序。
+  Future<void> _editSession(StudySession s, StudySessionEdit edit) async {
+    await applyStudySessionEdit(appModelNoUpdate.database, s, edit);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 清除这一批会话记录（防呆确认已在按钮里做掉）：只清会话事实，收藏 / 制卡历史 /
+  /// 查词计数一个都不动（与逐条删同一边界）。
+  Future<void> _clearSessions(List<StudySession> batch) async {
+    await deleteStudySessions(appModelNoUpdate.database, batch);
+    if (mounted) await _loadFromDatabase();
+  }
+
   /// 点按书 tile → 这本书的会话列表 sheet（legacy 无身份 tile 按 title 反查；
   /// 反查不到就没有会话——legacy 日行本来也没有会话）。
   Future<void> _showBookSessions(_BookData book) async {
@@ -1466,6 +1483,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       collectionOf: _sessionCollectionName,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
+      onEdit: (StudySession s, StudySessionEdit edit) =>
+          applyStudySessionEdit(appModelNoUpdate.database, s, edit),
+      onClearAll: (List<StudySession> batch) =>
+          deleteStudySessions(appModelNoUpdate.database, batch),
     );
     if (deleted && mounted) await _loadFromDatabase();
   }

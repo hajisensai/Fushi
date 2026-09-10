@@ -103,6 +103,15 @@ class VideoDiscoveryService {
       .map((VideoDiscoveryProvider provider) => provider.id)
       .toList(growable: false);
 
+  /// provider id -> 用户可见来源名。找不到时退回 id（服务自身产生的 failure，例如
+  /// `discovery` 这个合成 id，本来就没有对应的来源）。
+  String displayNameFor(String providerId) {
+    for (final VideoDiscoveryProvider provider in _providers) {
+      if (provider.id == providerId) return provider.displayName;
+    }
+    return providerId;
+  }
+
   @visibleForTesting
   Set<String> get searchProviderIdsForTesting => <String>{
         for (final VideoDiscoveryProvider provider in _providers)

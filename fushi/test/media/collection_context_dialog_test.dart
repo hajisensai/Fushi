@@ -45,6 +45,7 @@ void main() {
     required FushiDatabase db,
     required MediaCollectionRow collection,
     required bool injectDeleteMembers,
+    String? localFilesSubtitle,
     List<DialogListAction> extraListActions = const <DialogListAction>[],
   }) async {
     final _Probe probe = _Probe();
@@ -64,15 +65,20 @@ void main() {
                   onOpenDetail: () => probe.openedDetail = true,
                   onChanged: () => probe.changedCount++,
                   onDeleteMembersMedia: injectDeleteMembers
-                      ? (List<MediaCollectionItemRow> members) async {
+                      ? (
+                          List<MediaCollectionItemRow> members,
+                          bool deleteLocalFiles,
+                        ) async {
                           probe.deletedMembers = members
                               .map((MediaCollectionItemRow m) => m.entryKey)
                               .toList();
+                          probe.deleteLocalFiles = deleteLocalFiles;
                         }
                       : null,
                   deleteMembersCheckboxLabel: injectDeleteMembers
                       ? t.delete_collection_also_books
                       : null,
+                  deleteMembersLocalFilesSubtitle: localFilesSubtitle,
                   extraListActions: extraListActions,
                 ),
                 child: const Text('open'),
@@ -147,6 +153,99 @@ void main() {
     expect(probe.deletedMembers, <String>['book-1', 'book-2']);
     expect(await db.getAllMediaCollections(), isEmpty);
     expect(probe.changedCount, 1);
+  });
+
+  // ── 二级勾选「同时删除本地文件」：删库里的条目 ≠ 删磁盘上的原件 ─────────────
+  // 这两个决定必须分开落地。压成一行文案（旧实现「同时删除其中的视频（保留你的
+  // 原始视频文件）」）等于替用户把后一个决定定死，用户没有任何入口删原件。
+
+  testWidgets('二级勾选未提供：勾主选也不出现「同时删除本地文件」，回调收到 false',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+    );
+
+    await tapDeleteAction(tester);
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.delete_local_files),
+      findsNothing,
+      reason: '调用方没给本机原件文案 = 该域没有可删的原件，不许摆兑现不了的开关。',
+    );
+
+    await tapConfirm(tester);
+    expect(probe.deleteLocalFiles, isFalse);
+  });
+
+  testWidgets('二级勾选只在主勾选之下出现，勾上后回调收到 deleteLocalFiles=true',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      localFilesSubtitle: t.delete_local_files_video_desc,
+    );
+
+    await tapDeleteAction(tester);
+    expect(
+      find.text(t.delete_local_files),
+      findsNothing,
+      reason: '主勾选没勾 = 成员本体都不删，磁盘原件更无从谈起。',
+    );
+
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    expect(find.text(t.delete_local_files), findsOneWidget);
+    await tester.tap(find.text(t.delete_local_files));
+    await tester.pumpAndSettle();
+    await tapConfirm(tester);
+
+    expect(probe.deletedMembers, <String>['book-1', 'book-2']);
+    expect(
+      probe.deleteLocalFiles,
+      isTrue,
+      reason: '勾了「同时删除本地文件」就必须把这个判据交给调用方，否则原件永远删不掉。',
+    );
+  });
+
+  testWidgets('取消主勾选会复位二级勾选：重新勾主选时不得留着看不见的 true', (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      localFilesSubtitle: t.delete_local_files_video_desc,
+    );
+
+    await tapDeleteAction(tester);
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_local_files));
+    await tester.pumpAndSettle();
+    // 反悔：取消主勾选（二级行随之消失），再勾回来。
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tapConfirm(tester);
+
+    expect(probe.deletedMembers, <String>['book-1', 'book-2']);
+    expect(
+      probe.deleteLocalFiles,
+      isFalse,
+      reason: '隐藏着的 true 会在用户下次勾主选时静默删掉磁盘原件。',
+    );
   });
 
   testWidgets('取消确认框：合集与成员都不动，页面也不刷新', (WidgetTester tester) async {
@@ -314,6 +413,24 @@ void main() {
       });
     });
 
+    test('home_video_page：删成员走 deleteVideoBooksWithDecision 并给出删本地文件二级勾选', () {
+      final String src = File(
+        'lib/src/pages/implementations/home_video_page.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains('deleteMembersLocalFilesSubtitle:'),
+        reason: '不注入本机原件文案 = 用户删合集时永远没有删原始视频文件的入口。',
+      );
+      expect(
+        src,
+        isNot(contains('repo.deleteVideoBookAndReclaimAssets(')),
+        reason: '合集删成员必须走 deleteVideoBooksWithDecision：勾了「删本地文件」时'
+            '要先让播放器放句柄（Windows 上不放就是 errno 32，盘上文件一个没少）、'
+            '把做种文件标 skip，删完再对账下载任务。裸仓库调用绕过这整条纪律。',
+      );
+    });
+
     test('games_library_page 走统一合集菜单且**不**注入删成员本体（纯解散语义）', () {
       final String src = File(
         'lib/src/pages/implementations/games_library_page.dart',
@@ -339,4 +456,7 @@ class _Probe {
   bool openedDetail = false;
   int changedCount = 0;
   List<String>? deletedMembers;
+
+  /// 删成员回调收到的「连磁盘原件一起删」判据。null = 回调没被调过。
+  bool? deleteLocalFiles;
 }

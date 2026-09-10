@@ -107,6 +107,7 @@ import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/media/video/video_filename_parser.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
@@ -2852,35 +2853,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
   /// 空白标题不提交（保持原名）。
+  ///
+  /// 弹窗走库内共享的 [showNameInputDialog]：此前这里是一个**裸 AlertDialog**
+  /// （全库唯一没走 Fushi 设计系统的改名框），且 controller 在 `await` 返回后
+  /// 立即 dispose——那时弹窗还没拆完，属于过早释放（游戏改名踩过同一个坑并留了
+  /// 注释）。收编后 trim / 空名短路 / controller 生命周期都由原语统一负责。
   Future<void> _renameVideo(VideoBookRow book) async {
-    final TextEditingController controller =
-        TextEditingController(text: book.title);
-    final String? newTitle = await showAppDialog<String>(
+    final String? newTitle = await showNameInputDialog(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.video_rename),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: InputDecoration(hintText: t.video_rename_hint),
-          onSubmitted: (String v) => Navigator.pop(ctx, v),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: Text(t.dialog_save),
-          ),
-        ],
-      ),
+      title: t.video_rename,
+      labelText: t.video_rename_hint,
+      initialName: book.title,
+      leadingIcon: Icons.drive_file_rename_outline,
     );
-    controller.dispose();
-    final String? trimmed = newTitle?.trim();
-    if (trimmed == null || trimmed.isEmpty || trimmed == book.title) return;
-    await widget.repo.updateTitle(book.bookUid, trimmed);
+    if (newTitle == null || newTitle == book.title) return;
+    await widget.repo.updateTitle(book.bookUid, newTitle);
     if (mounted) _refresh();
   }
 
@@ -6322,9 +6309,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集封面卡长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
   /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
   /// `onDeleteMembersMedia` 同一删除纪律）。
-  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
+  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) async {
     final VideoBookRepository repo = widget.repo;
-    final FushiDatabase db = ref.read(appProvider).database;
+    final AppModel appModel = ref.read(appProvider);
+    final FushiDatabase db = appModel.database;
+    // 「同时删除本地文件」二级勾选只在这个合集真有本机原件时才摆出来（成员全是
+    // 远端流就没有文件可删，与单删 / 批删同一条「兑现不了就不显示」纪律）。判据
+    // [videoBookHasLocalFiles] 要的是视频行本身，成员引用行只有 uid，故先取一遍库。
+    final Set<String> memberUids = <String>{
+      for (final MediaCollectionItemRow m
+          in await db.getCollectionItems(collection.id))
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+    };
+    final bool anyLocalFile = memberUids.isNotEmpty &&
+        (await repo.listAll()).any((VideoBookRow b) =>
+            memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b));
+    if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: db,
@@ -6335,22 +6335,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ref.invalidate(filteredCollectionIdsProvider);
         _refresh();
       },
-      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async {
-        bool anyVideo = false;
-        for (final MediaCollectionItemRow m in members) {
-          // 视频合集理论上只含 video 成员；混入的未知/跨域成员跳过不误删。
-          if (MediaKind.tryParse(m.mediaType) != MediaKind.video) continue;
-          await repo.deleteVideoBookAndReclaimAssets(
-            m.entryKey,
-            compactDatabase: false,
-          );
-          anyVideo = true;
-        }
-        if (anyVideo) {
-          await repo.compactAfterVideoDeleteBestEffort();
-        }
+      onDeleteMembersMedia: (
+        List<MediaCollectionItemRow> members,
+        bool deleteLocalFiles,
+      ) async {
+        final List<String> uids = <String>[
+          for (final MediaCollectionItemRow m in members)
+            // 视频合集理论上只含 video 成员；混入的未知/跨域成员跳过不误删。
+            if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+        ];
+        if (uids.isEmpty) return;
+        // 必须走 [deleteVideoBooksWithDecision] 而不是裸仓库调用：勾了「删本地
+        // 文件」时，删盘前要先让播放器放句柄（Windows 上不放就是 errno 32，
+        // 用户看到「删除成功」而盘上一个文件没少）、把还在做种的文件在下载后端
+        // 标 skip，删完再对账下载任务。这条纪律只存在于那一层。
+        final VideoLibraryDeleteResult result =
+            await deleteVideoBooksWithDecision(
+          repo: repo,
+          database: db,
+          pipeline: appModel.videoDownloadPipelineService,
+          bookUids: uids,
+          decision: DeleteDecision(
+            scope: DeleteScope.keepLocalOnly,
+            deleteLocalFiles: deleteLocalFiles,
+          ),
+        );
+        reportLocalFileDeleteFailures(
+          result.localFiles,
+          source: 'HomeVideoPage.deleteCollectionMembers',
+        );
       },
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
+      deleteMembersLocalFilesSubtitle:
+          anyLocalFile ? t.delete_local_files_video_desc : null,
       // 视频合集特有项：封面 / 重刮 / 批量字幕。
       //
       // 封面两项只给视频合集：书架与游戏库的合集入口是横排行头，根本没有封面槽，
@@ -6445,23 +6462,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         widget.scrapeTaskController;
     if (controller == null) return;
     final FushiDatabase db = ref.read(appProvider).database;
-    final VideoPendingScrapeWork? planned =
-        await planScrapeWorkForCollection(db, collection.id);
+    final List<VideoPendingScrapeWork> planned =
+        await planScrapeWorksForCollection(db, collection.id);
     if (!mounted) return;
-    if (planned == null) {
+    if (planned.isEmpty) {
       FushiToast.show(
         msg: t.collection_rescrape_not_planned,
         severity: ToastSeverity.info,
       );
       return;
     }
+    // 合集在计划里对应多个独立作品（无集号的多片播放列表、目录合集）时不能默选
+    // 第一个——猜错就把身份写到别的作品上。让用户选，而不是再给一句死胡同提示。
+    final VideoPendingScrapeWork? chosen = planned.length == 1
+        ? planned.single
+        : await _pickCollectionScrapeWork(planned);
+    if (chosen == null || !mounted) return;
+    // 搜索种子：整个合集就是这一个作品时用合集名（成员标题可能是「S00E01」这种
+    // 纯集号标签，拿它当种子等于让用户对着无意义的词搜）；合集里有多个作品时合
+    // 集名描述的是整个播放列表，反而是选中成员自己的标题更贴。
     final VideoSourceScrapeConfirmationCandidate? candidate =
         await showVideoSourceScrapeManualBindingDialog(
       context: context,
       controller: controller,
-      source: planned.source,
-      workTitle: planned.work.title,
-      workStableKey: planned.work.stableKey,
+      source: chosen.source,
+      workTitle: planned.length == 1 ? collection.name : chosen.work.title,
+      workStableKey: chosen.work.stableKey,
     );
     if (candidate == null || !mounted) return;
     FushiToast.show(
@@ -6470,9 +6496,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     try {
       await controller.rescrapeWorkWithLookup(
-        source: planned.source,
-        workTitle: planned.work.title,
-        workStableKey: planned.work.stableKey,
+        source: chosen.source,
+        workTitle: chosen.work.title,
+        workStableKey: chosen.work.stableKey,
         lookup: candidate.lookup,
       );
     } on VideoSourceScrapeCancelled {
@@ -6490,6 +6516,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (!mounted) return;
     _refresh();
   }
+
+  /// 合集在刮削计划里对应多个独立作品时，让用户选一个重刮（BUG-2433）。
+  ///
+  /// 取消返回 null。列表项标题就是计划器给出的作品标题，与待确认队列、批次刮削
+  /// 里看到的是同一份作品定义——用户在这里选的和系统在别处认的是同一个东西。
+  Future<VideoPendingScrapeWork?> _pickCollectionScrapeWork(
+    List<VideoPendingScrapeWork> works,
+  ) =>
+      showAppDialog<VideoPendingScrapeWork>(
+        context: context,
+        builder: (BuildContext context) => SimpleDialog(
+          title: Text(t.collection_rescrape_pick_work),
+          children: <Widget>[
+            for (final VideoPendingScrapeWork entry in works)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(entry),
+                child: Text(entry.work.title),
+              ),
+          ],
+        ),
+      );
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [SubtitleWorkbenchPage]
   /// （合集作用域：绑定 AniList 系列 → 统一来源 → 逐集拉最佳字幕）。collection 行重取一次拿最新
@@ -6571,17 +6618,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
           remote: remote,
-          onDeleteMembersMedia: (List<VideoBookRow> members) async {
-            for (final VideoBookRow member in members) {
-              await repo.deleteVideoBookAndReclaimAssets(
-                member.bookUid,
-                compactDatabase: false,
-              );
-            }
-            if (members.isNotEmpty) {
-              await repo.compactAfterVideoDeleteBestEffort();
-            }
+          onDeleteMembersMedia: (
+            List<VideoBookRow> members,
+            bool deleteLocalFiles,
+          ) async {
+            if (members.isEmpty) return;
+            // 与库页右键同一条删除纪律（先放句柄 / 标 skip，再删盘，删完对账）。
+            final VideoLibraryDeleteResult result =
+                await deleteVideoBooksWithDecision(
+              repo: repo,
+              database: db,
+              pipeline: ref.read(appProvider).videoDownloadPipelineService,
+              bookUids: members.map((VideoBookRow m) => m.bookUid),
+              decision: DeleteDecision(
+                scope: DeleteScope.keepLocalOnly,
+                deleteLocalFiles: deleteLocalFiles,
+              ),
+            );
+            reportLocalFileDeleteFailures(
+              result.localFiles,
+              source: 'VideoWorkDetailPage.deleteCollectionMembers',
+            );
           },
+          deleteMembersLocalFilesSubtitle: t.delete_local_files_video_desc,
           // 详情页的「重新刮削资料与封面」：controller 归 HomePage，注入库页同一
           // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
           onRescrapeCollection:

@@ -69,7 +69,6 @@ void main() {
       'buildLookupDestination()',
       'buildCardCreationDestination()',
       'buildVideoDestination()',
-      'buildListeningDestination()',
       'buildSyncBackupDestination()',
       'buildSystemDestination()',
     ],
@@ -97,9 +96,11 @@ void main() {
       'SettingsDestination buildVideoDestination()',
       'SettingsDestinationId.video',
     ],
+    // 听书 2026-08-24 并入阅读：不再是 destination，但仍是自己的领域 library
+    // （返回分区，由 buildReadingDestination 展开）——「一域一文件」契约不变。
     'lib/src/settings/settings_schema_listening.dart': <String>[
-      'SettingsDestination buildListeningDestination()',
-      'SettingsDestinationId.listening',
+      'List<SettingsSection> buildListeningSections()',
+      "id: 'listening.audiobook_background_play'",
     ],
     'lib/src/settings/settings_schema_system.dart': <String>[
       'SettingsDestination buildSystemDestination()',
@@ -303,7 +304,6 @@ void main() {
       'SettingsDestinationId.reading',
       'SettingsDestinationId.lookup',
       'SettingsDestinationId.cardCreation',
-      'SettingsDestinationId.listening',
       'SettingsDestinationId.syncBackup',
       'SettingsDestinationId.system',
     ]) {
@@ -315,6 +315,9 @@ void main() {
       isNot(contains('SettingsDestinationId.dictionaryAndCards')),
     );
     expect(combined, isNot(contains('SettingsDestinationId.audiobook')));
+    // 听书并入阅读后该 id 被删（无持久化用途）；留着会让「听书是独立一级分类」
+    // 的假设悄悄复活。
+    expect(combined, isNot(contains('SettingsDestinationId.listening')));
     expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 
@@ -644,7 +647,7 @@ void main() {
   });
 
   test(
-    'settings Material polish keeps surfaces outlined and actions aligned',
+    'settings Material polish keeps surfaces filled and actions aligned',
     () {
       final String shared = readNormalizedSource(
         'lib/src/utils/components/settings_shared.dart',
@@ -656,10 +659,15 @@ void main() {
         reason:
             'right-pane sections should read as card surfaces, not page fill',
       );
+      // 分组卡靠填充分层表达边界，不再在填充之上叠一圈描边：填充 + 描边是两套
+      // 并存的边界信号，和输入框/分段控件的 colorScheme.outline 描边混在同一屏
+      // 上就是三种强度的线。eink 的补边由 FushiCard 内部负责（钉在
+      // test/widgets/fushi_card_eink_border_test.dart），这里不从外部传。
       expect(
         shared,
-        contains('borderColor: tokens.surfaces.outline'),
-        reason: 'settings section surfaces need a lightweight MD3 outline',
+        isNot(contains('borderColor:')),
+        reason:
+            'filled settings sections must not stack an outline on the fill',
       );
       expect(shared, contains('endIndent:'));
       expect(

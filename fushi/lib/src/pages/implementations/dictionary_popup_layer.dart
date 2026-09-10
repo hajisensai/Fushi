@@ -220,6 +220,14 @@ Rect resolvePopupRect({
   double bottomReserve = 0.0,
   double topReserve = 0.0,
   bool verticalWriting = false,
+
+  /// 全宽展示：忽略 [maxWidth]，让弹窗横向铺满可用宽度（左右仍各留 [padding]）。
+  /// 只作用于跟随选区这一支——[bottomDocked] 的 dock 面板本来就是全宽的。
+  ///
+  /// 之所以是「把 maxWidth 换成屏宽」而不是另起一套几何：[calcPopupPosition] 的
+  /// `availableWidth` 本就是 `(screen.width - padding * 2).clamp(0, maxWidth)`，
+  /// 传屏宽即让 clamp 失去约束力，避让 / 边界 / 竖排回退全部沿用同一条既有路径。
+  bool fullWidth = false,
 }) {
   if (bottomDocked) {
     return dockedPopupRect(
@@ -234,7 +242,7 @@ Rect resolvePopupRect({
     selectionRect: selectionRect,
     screen: screen,
     padding: padding,
-    maxWidth: maxWidth,
+    maxWidth: fullWidth ? screen.width : maxWidth,
     maxHeight: maxHeight,
     bottomReserve: bottomReserve,
     topReserve: topReserve,

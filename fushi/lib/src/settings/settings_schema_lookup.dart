@@ -490,9 +490,26 @@ SettingsDestination buildLookupDestination() {
         presentation: SettingsSectionPresentation.collapsed,
         title: t.settings_section_lookup_popup_window,
         items: <SettingsItem>[
+          // 全宽展示（对齐 Hoshi Reader Android 的 "Full Width" 弹窗开关）。放在
+          // 宽度滑杆之前：它一旦打开，下面那条滑杆就不再决定任何东西，故同时隐藏，
+          // 避免留一条「拖了没反应」的死控件。
+          SettingsSwitchItem(
+            id: 'lookup.popup_full_width',
+            title: t.popup_full_width,
+            subtitle: t.popup_full_width_hint,
+            icon: Icons.fit_screen_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupFullWidth,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPopupFullWidth(value);
+              settingsContext.refresh();
+            },
+          ),
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
             titleReadout: true,
+            visible: (SettingsContext settingsContext) =>
+                !settingsContext.appModel.popupFullWidth,
             // TODO-1352: 放宽查词弹窗最大宽度的强制上限（1000→2000），让宽屏 / 4K 下
             // 弹窗能拉到接近占满（实际宽度仍由 resolvePopupRect 按当前屏宽 clamp，
             // 绝不会超出屏幕）。divisions 保持 10px 步进（1750/175）。

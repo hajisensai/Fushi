@@ -31,6 +31,7 @@ part 'database_library.part.dart';
 part 'database_statistics.part.dart';
 part 'database_content_misc.part.dart';
 part 'database_tags_sync.part.dart';
+part 'database_update_feed.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -696,6 +697,7 @@ void _requireOneVideoMetadataOwner({
   StudySegments,
   WebMineQueue,
   VideoFileSpecs,
+  UpdateFeedEntries,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -705,7 +707,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbPrefsMedia,
         _FushiDbContentMisc,
         _FushiDbStatistics,
-        _FushiDbVideoDomain {
+        _FushiDbVideoDomain,
+        _FushiDbUpdateFeed {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -726,7 +729,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 100;
+  int get schemaVersion => 102;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3065,6 +3068,44 @@ class FushiDatabase extends _$FushiDatabase
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_language_profiles_profile '
               'ON language_profiles (profile_id)',
+            );
+          }
+          if (from < 101) {
+            // v101（词典改名）：dictionary_metadata 加 display_name——用户给词典
+            // 起的显示名。真名 `name` 是主键 + 磁盘目录名 + 引擎装载路径 + 一串
+            // 外键（CSS map key / 样式规则 / data-dictionary 选择器 / 媒体 URL /
+            // Anki token / 同步资产名），冻结不动，只加显示层覆盖（见 tables.dart
+            // 该列的注释）。
+            //
+            // 无损：nullable 无 default → 旧库既有行全 NULL = 没改过名 = 显示真名
+            // = 逐字节保留 v101 前的渲染。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists('dictionary_metadata', 'display_name')) {
+              await m.addColumn(
+                  dictionaryMetadata, dictionaryMetadata.displayName);
+            }
+          }
+          if (from < 102) {
+            // v102（统一更新提醒）：新表 update_feed_entries，四个域（番剧新集 /
+            // 漫画新章 / 漫画扩展新版 / app 新版）投递到同一条事件流。与 v95、v100
+            // 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 一条提醒都没有 = 红点恒 0、更新页空列表，
+            // 与升级前逐字节一致；已有的首页「已更新未看」行是独立现算逻辑，不读本表。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('update_feed_entries')) {
+              await m.createTable(updateFeedEntries);
+            }
+            // 索引与建表同步内联（`_ensureIndexes` 不覆盖升级路径，见 v100 步）。
+            // 未读计数与按域分组是仅有的两种读法，一条复合索引兜住。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_update_feed_kind_seen '
+              'ON update_feed_entries (kind, seen_at)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_update_feed_discovered '
+              'ON update_feed_entries (discovered_at)',
             );
           }
         },

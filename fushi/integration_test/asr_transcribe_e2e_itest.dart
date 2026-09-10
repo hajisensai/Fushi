@@ -101,6 +101,8 @@ Future<
   required AsrEncoderVariant variant,
 }) async {
   final AsrTranscriptionService service = AsrTranscriptionService(
+    // 素材是干净朗读（TTS / 有声书），能量门限的双模态前提成立。
+    audioProfile: AsrAudioProfile.cleanSpeech,
     backend: fushiAsrBackend(),
     openStore: (AsrLanguage _) async => store,
     jobsRoot: () async => jobsRoot,

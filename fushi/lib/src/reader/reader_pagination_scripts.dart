@@ -32,6 +32,55 @@ class ReaderPageStep {
   final double targetScroll;
 }
 
+/// 翻页意图队列：换章加载 / 恢复在飞期间到达的翻页输入的暂存处。
+///
+/// 旧实现在 `_paginationInFlight` 为真时**直接丢弃**这些输入，于是用户在跨章的那几百
+/// 毫秒里拨的滚轮全部石沉大海——体感就是「按了没反应，要再按一次」。丢弃的原始理由是
+/// 真实的：在飞时 `fushiReader` 尚未就绪，`evaluateJavascript` 返 null 会被 `_didScroll`
+/// 读成「已到页边界」→ 一次输入触发第二次跨章（用户复诉三次的「跳两章」）。但那是
+/// **判定时机**错了，不是输入本身该被扔掉：把意图存下来、等 JS 就绪后再判定，两个问题
+/// 一起消失。
+///
+/// 存的是「翻页意图」而不是「跨章意图」——重放走完整的 `_paginate`（章内还有页就翻页，
+/// 真到边界才跨章）。所以刚落地新章的章首插图页/单页章会被正常翻过去，而不是被越过；
+/// 「章首整页被跳过」正是同一个原始症状的另一半。
+///
+/// 反向意图相互抵消：用户翻过头往回拨时，不该先把积压的正向意图翻完再倒回来。
+class ReaderPageTurnQueue {
+  /// 积压上限。一次惯性流可能在单次换章加载里堆出几十个 tick；超出即饱和，
+  /// 避免一次误触换来失控连翻。带符号计数，故上下界对称。
+  static const int kMaxPending = 8;
+
+  /// 带符号积压：> 0 为前进 N 次，< 0 为后退 N 次，0 为空。
+  int _pending = 0;
+
+  int get pending => _pending;
+
+  bool get isEmpty => _pending == 0;
+
+  /// 记一次翻页意图。反向抵消后 clamp 到 [kMaxPending]。
+  void push(ReaderNavigationDirection direction) {
+    final int delta = direction == ReaderNavigationDirection.forward ? 1 : -1;
+    _pending = (_pending + delta).clamp(-kMaxPending, kMaxPending);
+  }
+
+  /// 取出一次待重放的意图；队列为空时返回 null。
+  ReaderNavigationDirection? consume() {
+    if (_pending == 0) return null;
+    final bool forward = _pending > 0;
+    _pending += forward ? -1 : 1;
+    return forward
+        ? ReaderNavigationDirection.forward
+        : ReaderNavigationDirection.backward;
+  }
+
+  /// 丢弃全部积压。用于「用户显式改变了意图」的场合（目录跳转 / 书签跳转 /
+  /// 退出阅读器）——那些导航之后再重放旧滚轮意图只会把用户从刚跳到的位置带走。
+  void clear() {
+    _pending = 0;
+  }
+}
+
 /// Groups the many horizontal wheel ticks emitted by one macOS trackpad swipe
 /// into one page-turn intent.
 ///

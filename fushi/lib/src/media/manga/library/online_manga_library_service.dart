@@ -6,10 +6,13 @@ import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi/src/updates/update_feed_service.dart';
 
 /// 从一个已就绪的 [MihonManager] 直接建服务。
 ///
@@ -33,6 +36,7 @@ class OnlineMangaLibraryService {
     required this.database,
     required this.rootDirectory,
     required this.adapter,
+    this.updateFeed,
   });
 
   final FushiDatabase database;
@@ -41,6 +45,11 @@ class OnlineMangaLibraryService {
   final Directory rootDirectory;
 
   final OnlineMangaRuntimeAdapter adapter;
+
+  /// 更新提醒的投递口（v101）。可空是**刻意**的：源浏览页临时建的服务实例、
+  /// 单测里的实例都不需要提醒，而「刷新出新章」这件事的判据不该因为少一个可选
+  /// 依赖就走两条路径。null = 只落库不提醒。
+  final UpdateFeedService? updateFeed;
 
   /// 身份串的分隔符：NUL。
   ///
@@ -182,7 +191,51 @@ class OnlineMangaLibraryService {
       chapterCount: chapters.length,
       chaptersJson: _chaptersJson(chapters),
     );
+    await _publishNewChapters(
+      bookKey: bookKey,
+      title: series.title,
+      previous: existing.chapters,
+      current: chapters,
+    );
     return updated;
+  }
+
+  /// 把这次刷新新出现的章投递成更新提醒。
+  ///
+  /// 挂在**落库之后**：先保证库里已经是新状态，再提醒——反过来的话，提醒发出去
+  /// 而落库失败，用户点进来会看到一部没有那章的书。
+  Future<void> _publishNewChapters({
+    required String bookKey,
+    required String title,
+    required List<OnlineMangaChapter> previous,
+    required List<OnlineMangaChapter> current,
+  }) async {
+    final UpdateFeedService? feed = updateFeed;
+    if (feed == null) return;
+    final List<OnlineMangaChapter> fresh = newlyAppearedChapters(
+      previous: previous,
+      current: current,
+    );
+    if (fresh.isEmpty) return;
+    await feed.publishBatch(
+      UpdateFeedKind.mangaChapter,
+      <UpdateFeedDraft>[
+        for (final OnlineMangaChapter chapter in fresh)
+          UpdateFeedDraft(
+            kind: UpdateFeedKind.mangaChapter,
+            targetKey: mangaChapterTargetKey(
+              bookKey: bookKey,
+              chapterKey: chapter.key,
+            ),
+            title: title,
+            subtitle: mangaChapterDisplayName(chapter),
+            detailJson: jsonEncode(<String, Object?>{
+              'bookKey': bookKey,
+              'chapterKey': chapter.key,
+            }),
+          ),
+      ],
+    );
   }
 
   /// 联网刷新一条书架条目，成功则落库。

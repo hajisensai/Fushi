@@ -1,0 +1,6 @@
+## BUG-2431 · 发现页详情顶部 backdrop 被上下裁掉六成
+- **报告**：2026-09-10（用户：截图「顶部海报显示不全」，确认预期是整张图完整显示）
+- **真实性**：✅ 真 bug。`video_discovery_detail_page.dart:254-256`（旧）里 hero 高度是**写死的断点常量** `compact ? 460 : 430`，与图片比例完全脱钩；而 backdrop 是刮削来的 16:9 横图，由 `LandscapeCoverImage` 横图分支走 `Image(fit: BoxFit.cover)` 无 alignment 铺满容器（`landscape_cover_image.dart:104-112`）。用户 1920 逻辑宽窗口下整图需要 1080 高，容器只给 430 —— 上下各砍一截，正好是截图里人物头顶和身体被切的样子。同页三个 hero 各写各的高度公式，只有首页轮播 `videoHeroHeightForWidth`（`video_home_layout.dart:89`）是从宽度派生的，但那是 21:9 故意裁切的设计，不能直接套。
+- **[x] ① 已修复** — 新增纯函数 `videoDiscoveryHeroHeightForViewport`（`fushi/lib/src/media/video/video_home_layout.dart:106`）：高度按 `width * 9 / 16` 从 backdrop 比例派生，下限保留 430/460（窄屏宁可裁图也不让 hero 内标题/评分/按钮/状态流程溢出），上限是视口高度（hero 不吃满一屏以上，下方始终留出可滚动提示）。断点常量 `kVideoDiscoveryCompactWidth` 提为单一真相源，页面 `_buildHero` 改为调用它。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_home_layout_test.dart` 新增 group `videoDiscoveryHeroHeightForViewport` 四条：1920×1125 得 1080（钉死用户实报场景不再裁）、上限被视口接管、窄屏取文字排版下限、视口比下限还矮时 clamp 不炸。
+- **备注**：窄屏（<700dp）下图仍会被 cover 裁 —— hero 内那一列文字需要 460 的最小高度，而 400 宽时图只占 225 高，二者互斥，这里显式选了「文字不溢出」。若以后要窄屏也完整，得让 `LandscapeCoverImage` 在容器比图更高时走 contain + 模糊垫底（竖图分支已有这套），那要动共享组件和 `cover_aspect_probe_test` 守卫，另开一条。本轮未做真机复测（用户已取消真机验证要求），证据为纯函数单测 + 三个发现页 widget 测试全绿。

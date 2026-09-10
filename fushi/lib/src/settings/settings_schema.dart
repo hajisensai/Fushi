@@ -6,7 +6,6 @@ import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/media/tracking/media_tracking_service.dart'
@@ -88,7 +87,6 @@ List<SettingsDestination> _buildDestinations() {
   return List<SettingsDestination>.unmodifiable(<SettingsDestination>[
     buildAppearanceDestination(),
     buildReadingDestination(),
-    buildListeningDestination(),
     buildMangaDestination(),
     buildVideoDestination(),
     buildGameDestination(),

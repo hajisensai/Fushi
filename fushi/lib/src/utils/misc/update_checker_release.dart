@@ -94,6 +94,9 @@ class UpdateChecker {
     String customProxy = '',
     void Function()? onUpToDate,
     void Function(Object error)? onError,
+    // v101：确认有可更新版本时触发，供更新中心投递提醒（此前这条事实只活在紧接着
+    // 弹出的对话框里，点掉就没了）。同步回调：投递不该挡更新流程，异步的自己 unawaited。
+    void Function(String version, String? releaseUrl)? onUpdateAvailable,
     // TODO-1024 / BUG-479：缓存优先 + 后台静默刷新。`cacheWriter` 在一次成功网络检查
     // 拿到最新 tag 后把结果写回缓存（供下次「检查更新」乐观即时反馈）。乐观读由调用方
     // 直接读 `appModel.updateCheckCache`（不经此参数）。默认 null = 不接缓存（旧调用零变化）。
@@ -137,6 +140,7 @@ class UpdateChecker {
               customProxy: customProxy,
               onUpToDate: onUpToDate,
               onError: onError,
+              onUpdateAvailable: onUpdateAvailable,
               cacheWriter: cacheWriter,
               fetchReleases: fetchReleasesForTesting)
           .whenComplete(() {
@@ -271,6 +275,7 @@ class UpdateChecker {
     String customProxy = '',
     void Function()? onUpToDate,
     void Function(Object error)? onError,
+    void Function(String version, String? releaseUrl)? onUpdateAvailable,
     // TODO-1024 / BUG-479：成功拿到最新 tag 后把结果写回缓存（供下次乐观显示）。默认
     // null = 不写缓存（旧调用字节级零变化）。
     UpdateCheckCacheWriter? cacheWriter,
@@ -358,6 +363,11 @@ class UpdateChecker {
         onUpToDate?.call();
         return;
       }
+
+      // 唯一已确认「有更新、版本号是多少」的位置（通道过滤/跨轨比较/选 asset 都跑完）。
+      try {
+        onUpdateAvailable?.call(version, json['html_url'] as String?);
+      } on Object catch (_) {}
 
       final releaseBody = json['body'] as String? ?? '';
 

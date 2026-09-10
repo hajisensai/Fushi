@@ -222,6 +222,36 @@ void main() {
   ///
   /// 不变式：整段共用同一条左右基线后，三者边缘必须重合。
   ///
+  /// BUG-2429：未配置过时，「启用」开关的初值必须是开——它此前被硬写成 false，与
+  /// [OpenSubtitlesConfig] 的构造默认相反。用户在本页改任意一个字段都会触发 debounce
+  /// 保存，于是这个没人选过的 false 被落盘，内置应用密钥从此失效，而设置列表还照样
+  /// 显示「已内置」。
+  testWidgets('BUG-2429：未配置时启用开关默认打开，且不会把关闭态写回',
+      (WidgetTester tester) async {
+    final _FakeStore store = _FakeStore(const VideoExternalSettingsSnapshot());
+    await tester.pumpWidget(_wideHarness(store));
+    await tester.pumpAndSettle();
+
+    final Finder enabled = find.byKey(
+      const ValueKey<String>('video-opensubtitles-enabled'),
+    );
+    await _show(tester, enabled);
+    expect(
+      tester.widget<SwitchListTile>(enabled).value,
+      isTrue,
+      reason: '未配置态的开关必须与 OpenSubtitlesConfig 的构造默认一致',
+    );
+
+    // 碰一个无关字段触发保存：落盘的配置不能把开关带成关。
+    await tester.enterText(
+      _textField(const ValueKey<String>('video-opensubtitles-user-agent')),
+      'Custom UA v1',
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(store.openSubtitlesWrites, isNotEmpty);
+    expect(store.openSubtitlesWrites.last.enabled, isTrue);
+  });
+
   /// BUG-1858：这条基线之外此前还收了一层 560 右边界。那层只加在本段和下载设置
   /// 上，同一个「在线服务」页里下面的元数据刮削行照旧撑满 pane，于是一页之内两种
   /// 输入框宽度。用户 2026-08-25 拍板统一成撑满，右边界改为「pane 宽减两边各

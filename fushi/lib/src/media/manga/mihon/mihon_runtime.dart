@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
 abstract interface class MihonRuntime {
@@ -132,6 +133,18 @@ abstract interface class CancellableMihonRuntime {
 /// a challenge and must never open an Activity themselves.
 abstract interface class ChallengeMihonRuntime {
   Future<void> solveCloudflare(Uri uri, {String? userAgent});
+}
+
+/// 宿主自己持有源站登录 cookie 的运行时（桌面 sidecar，BUG-2425）。
+///
+/// 只有实现了它的运行时才谈得上「在 app 里登录源站」：cookie 的真值落在宿主的
+/// [cookieJar] 里，每次调用重新注入 sidecar。Android **刻意不实现**——那边系统
+/// `CookieManager` 才是唯一所有者，宿主再存一份只会两份打架。
+///
+/// UI 用 `is HostCookieMihonRuntime` 判断要不要显示登录入口，而不是写
+/// `Platform.isAndroid`：判据是「谁拥有 cookie」这个能力，不是操作系统。
+abstract interface class HostCookieMihonRuntime {
+  MangaCookieJar get cookieJar;
 }
 
 Map<String, Object?> mihonBridgeContext(

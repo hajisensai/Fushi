@@ -17,8 +17,9 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
-    show SurfaceRoles, ThemeNotifier, deriveSurfaceRolesFrom;
+    show ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/epub/epub_book.dart';
@@ -468,31 +469,22 @@ bool studyClockMayRun({
   required int modalDepth,
 }) => !manualPause && !lifecycleStopped && modalDepth == 0;
 
-/// TODO-1229 / BUG-1829：跨章去抖判据（纯函数，供单测锁定「一次连续手势=一次跨章」语义）。
-///
-/// 危险窗是「**刚跨完一章**」那一段：残余惯性会在刚落地的短章(插图/单页章)边界上再次
-/// 触发跨章 → **跳两章**。所以冷却锚定的是**跨章事件本身**——[lastTurnAt] 只在两种真实
-/// 事件上 stamp：① 真正发起一次跨章；② 该次跨章落地的新章 content-ready（
-/// `_noteChapterTurnSettledIfPending`，TODO-1229 v3 的重锚，覆盖「加载 >450ms 时窗口早
-/// 过期」的洞）。距 [lastTurnAt] 不足 [cooldown] 即判为同一手势的残余惯性 → 返回 true
-/// （拦截）。[lastTurnAt] 为 null（从未跨章）恒放行。
-///
-/// **BUG-1829：被拦截 / 被丢弃的输入绝不 stamp。** v2 曾让调用方在拦截和在飞丢弃时把
-/// 时间戳滑到当下，想用「输入静默」当手势结束的判据；v3 换成 content-ready 重锚之后那条
-/// 滑窗已经多余，却留了下来，于是变成纯粹的危害：真实滚轮每 30~100ms 一个事件，用户只要
-/// 还在拨，窗口就被自己的输入无限续期、**永远等不到过期**——拨得越快越不动。单页章
-/// （封面/插图/目录/版权页）里每一次滚轮都必须走跨章判定，整章因此成为滚轮死区（实测
-/// 100ms 间隔连发 5 次：零跨章；同一本书正文长章同样节奏则正常翻页）。判据维度必须是
-/// 「距上次**跨章**多久」，不是「距上次**输入**多久」——后者由用户持续输入控制，等于把
-/// 闸门的钥匙交给了被闸门拦住的那一方。
-bool chapterTurnCoolingDown({
-  required DateTime? lastTurnAt,
-  required DateTime now,
-  required Duration cooldown,
-}) {
-  if (lastTurnAt == null) return false;
-  return now.difference(lastTurnAt) < cooldown;
-}
+// BUG-2424：跨章去抖判据 `chapterTurnCoolingDown` 连同 TODO-1229 / BUG-568 / BUG-1829
+// 那整套时间窗（`_kChapterTurnCooldown` / `_lastChapterTurnAt` /
+// `_inertiaChapterTurnPending` / `_noteChapterTurnSettledIfPending`）已删除。
+//
+// 那套机制要区分的是「同一次拨轮的残余惯性」与「用户新拨了一下」，但用的代理量是
+// 「距上次**跨章**多久」，而且 v3 把窗口的锚点重新 stamp 到了**新章 content-ready**
+// 那一刻。惯性时长是手离开滚轮那刻起算的固定物理量，和章节加载多久没有任何因果关系；
+// 锚在加载完成上的直接后果是**加载越慢、罚用户等得越久**：实测滚轮跨章后下一次跨章
+// 最早要等 `T_load + 450ms`（纯文本章约 540ms，带整页插图章 800~1000ms），且这段时间
+// 里到达的输入被静默丢弃、不排队、零反馈——用户体感就是「按了没反应，要再按一次」，
+// 来回跨章尤其明显（每次都吃满这条窗）。
+//
+// 真正的不变式从来不是「两次跨章之间必须隔多久」，而是**一次输入最多产生一次跨章**。
+// 现在由 [ReaderPageTurnQueue] 的 1:1 消费直接保证，不再需要任何时间窗；惯性流的聚合
+// 由既有的 [ReaderWheelGestureGate] 按 tick 间隔负责（触摸板），鼠标滚轮本就一格一
+// tick、一格一次翻页意图。
 
 /// TODO-796：图片/封面页（纯 `<img>`，全章无可读文本）的进度 UI 兜底锚点。
 ///
@@ -527,18 +519,22 @@ bool chapterTurnCoolingDown({
 ///
 /// spread 页是内联 HTML（两张整页 `<img>`）。旧实现的 `<script>` 在**解析那一刻**就
 /// 同步 `callHandler('spreadReady')`——**不等图片 decode**。cf0adf642（BUG-568 v3）把
-/// 跨章冷却窗重锚 `_noteChapterTurnSettledIfPending` 接在 spreadReady 上，本意是「新章
-/// 内容一就绪就开一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮」。但 spreadReady
-/// 早于图片可见，整页大图 decode 常 >450ms → 冷却窗在图片 paint 之前就过期 → 图片刚
-/// 出现（闪）时残余惯性滚轮不再被拦 → 二次跨章把图片翻走（消失）。单图章节（走分页壳）
-/// 不闪，是因为它 restore / `notifyRestoreComplete` 前有 `Promise.all(imagePromises)`
-/// 等图片 `load`，content-ready 天然对齐图片可见。
+/// 当时的跨章冷却窗重锚接在 spreadReady 上，本意是「新章内容一就绪就开一个完整
+/// 450ms 窗口挡住残余滚轮」。但 spreadReady 早于图片可见，整页大图 decode 常 >450ms
+/// → 冷却窗在图片 paint 之前就过期 → 图片刚出现（闪）时残余惯性滚轮不再被拦 →
+/// 二次跨章把图片翻走（消失）。单图章节（走分页壳）不闪，是因为它 restore /
+/// `notifyRestoreComplete` 前有 `Promise.all(imagePromises)` 等图片 `load`，
+/// content-ready 天然对齐图片可见。
 ///
 /// 修法：让 spread HTML 也**等两张图 `load`/`error` 后再发 spreadReady**，镜像分页壳的
 /// `Promise.all(imagePromises)` 契约——`img.complete` 已就绪同步短路、`error` 也算就绪
-/// 防坏图/慢图悬空、无图则立即就绪。这样冷却窗重锚对齐真实图片可见时刻，不动 cf0adf642
-/// 的冷却闸门/pending 机制，只把「就绪信号」挪到正确时机；Dart 侧 8s
+/// 防坏图/慢图悬空、无图则立即就绪。只把「就绪信号」挪到正确时机；Dart 侧 8s
 /// `_startContentReadyTimeout` 仍是最终兜底（与分页壳一致）。
+///
+/// BUG-2424 后那套冷却窗已整体删除（见 [ReaderPageTurnQueue]），但**本修法与它无关、
+/// 依然必要**：spreadReady 是 spread 路径唯一的 content-ready 完成点，它决定遮罩何时
+/// 撤、积压翻页意图何时重放。若它仍早于图片可见，用户看到的就是「遮罩撤了但页面空着」，
+/// 且重放会落在尚未撑开几何的页上。
 ///
 /// [leftUrl] / [rightUrl] 是已解析的整页图 URL（调用方已按 RTL/LTR 排好左右）。纯字符串
 /// 生成、无副作用，供单测锁定「spreadReady 被图片 load 门控」（撤回同步触发 → 守卫转红）。
@@ -1678,11 +1674,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 单一 setter（_sharedJs 的 _setReanchorPending），true→false 转换即 callHandler
   // 'onReanchorSettled'（webview.part.dart 注册）→ Dart 补刷一次进度。事件覆盖所有清旗
   // 路径（含 commit 之外的逃逸路径），轮询重试字段已整体删除。
-  // TODO-1229 v2：跨章去抖冷却窗（固定 450ms，对齐默认 wheelPageTurnInterval）。必须
-  // 足够长以桥接一次惯性手势内相邻 wheel/touch 事件的间隔(约 16~60ms，偶有尖峰)——冷却窗
-  // 若短于间隔会在手势中途重新开启而放行第二次跨章。用固定常量(不跟随用户可调的
-  // wheelPageTurnInterval)保证鲁棒：即便用户把章内翻页节流调得很小，跨章冷却仍稳定桥接惯性。
-  static const Duration _kChapterTurnCooldown = Duration(milliseconds: 450);
   // 卡死修复：滚动触发的进度重算加时间节流（对齐 hoshi 安卓 CONTINUOUS_PROGRESS_THROTTLE_MS
   // = 50ms）。原本只有「在飞/pending」coalesce，一完成就背靠背补跑 calculateProgress（遍历整章
   // 15 万字 DOM）→ 鼠标拖动/连续滚动每秒上百次回传把 WebView JS 线程占满 → 卡死。
@@ -1714,33 +1705,21 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 纵向鼠标滚轮仍保留既有的固定窗口节流手感。
   final ReaderWheelGestureGate _pagedWheelGestureGate =
       ReaderWheelGestureGate();
-  // TODO-1229 / BUG-1829：跨章去抖时间戳（独立于 _lastPaginateTime 的章内节流）。BUG-568
-  // 案A 的 _paginationInFlight 守卫只覆盖「换章加载+restore」这一段瞬态窗口，而
-  // _lastPaginateTime 节流窗口锚定在手势起点(第一 tick)。两窗口都在手势中途失效后，残余
-  // 惯性会在刚落地的短章(章首插图页/单页章)边界上再次触发跨章 → **跳两章**。
-  //
-  // 本时间戳把「下一次跨章」的冷却锚定到**跨章事件本身**，只在两种真实事件上 stamp：
-  //   ① [_noteChapterTurn]：真正发起一次跨章；
-  //   ② [_noteChapterTurnSettledIfPending]：该次跨章落地的新章 content-ready（v3 重锚，
-  //      覆盖「加载 >450ms、期间没有续窗 tick」的洞）。
-  // **被冷却闸门拒掉、或被在飞守卫丢弃的输入一律不 stamp**（BUG-1829）：v2 曾靠它们把窗口
-  // 滑到当下，用「输入静默」当手势结束判据；v3 的 content-ready 重锚落地后这条滑窗已多余，
-  // 却留了下来，于是真实滚轮（每 30~100ms 一个事件）只要用户还在拨就把窗口无限续期，永远
-  // 等不到过期——拨得越快越不动，单页章直接成滚轮死区。判据维度是「距上次**跨章**」，不是
-  // 「距上次**输入**」。只作用于惯性型输入(滚轮/触摸，throttleMs>0)的跨章决策，不影响章内
-  // 翻页，也不节流键盘/手柄(throttleMs=0)。
-  DateTime? _lastChapterTurnAt;
-  // TODO-1229 第三次复诉（滚轮仍双跳）：v2 冷却窗只靠「换章加载期不断到达的惯性 tick」
-  // 把时间戳滑到当下来维持（那条滑窗已由 BUG-1829 删除，见上）。但鼠标滚轮
-  // 是**离散**事件流——用户拨两三格越过章末边界后 burst 就结束了，换章加载（整章解析+渲染
-  // +restore，常 >450ms）期间**没有**后续 tick 续窗；等新章(短插图/单页章)在边界上
-  // 出现时冷却窗早已过期(now - 上次跨章 > 450ms)，紧随其后的残余滚动在新章边界二次跨章 →
-  // 「第一次正常然后很快又跳一次」。根因=冷却窗锚在「输入」，而危险窗其实是「新章刚出现的
-  // 那一刻」；长加载把两者拉开出一个洞。修法：惯性跨章真正发起导航时置本旗，等新章内容
-  // 就绪(content-ready)那一刻**重新把冷却窗 stamp 到当下**——无论加载多久、期间有没有
-  // 续窗 tick，新章一出现就有一个完整 [_kChapterTurnCooldown] 窗口挡住残余惯性。键盘/手柄
-  // 跨章(throttleMs==0)不置旗、也天然不过冷却闸门，逐次翻章不受影响。
-  bool _inertiaChapterTurnPending = false;
+  // BUG-2424：换章加载 / 恢复在飞期间到达的翻页输入的暂存处。旧实现在
+  // `_paginationInFlight` 为真时直接 return 丢弃，用户拨的滚轮石沉大海（「按了没反应，
+  // 要再按一次」）。改为存下意图、等 JS 就绪后重放——顺带根除原始「跳两章」的第二个
+  // 成因：在飞时 `evaluateJavascript` 返 null 被 `_didScroll` 误读成页边界。
+  // 存的是「翻页意图」而非「跨章意图」，重放走完整 `_paginate`，故刚落地新章的章首
+  // 插图页会被正常翻过去而不是被越过。
+  final ReaderPageTurnQueue _pageTurnQueue = ReaderPageTurnQueue();
+  // BUG-2424：本次 _beginNavigation 是否由翻页（_handlePageTurnLimit）触发。翻页导航
+  // 保留积压意图（排队正发生在它开启的在飞窗口里）；目录 / 书签 / 搜索 / 内链跳转等
+  // 非翻页导航作废积压——用户已显式换了目的地。由 _handlePageTurnLimit 置位、
+  // _beginNavigation 消费并复位。
+  bool _navigationFromPageTurn = false;
+  // BUG-2424：_replayPendingPageTurn 的重入闸。它在 await _paginate 期间可能被另一个
+  // content-ready 完成点再次调用，两个循环同时消费同一个队列会让意图乱序落到不同章上。
+  bool _replayingPageTurns = false;
   int _lastSavedSection = -1;
   double _lastSavedProgress = -1;
   int _lastProgressSection = -1;

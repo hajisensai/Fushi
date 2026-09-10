@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.3.0+1301
+version: 2.3.0+1306
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      ref: 8820d3862297f42c99e1f0d9f440a9dddccee0ac
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      ref: 8820d3862297f42c99e1f0d9f440a9dddccee0ac
   archive: ^3.6.1
   async_zip: ^0.1.0
   basic_utils: ^5.7.0
@@ -86,7 +86,12 @@ dependencies:
   flutter_exit_app: ^1.0.5
   flutter_html: ^3.0.0
   flutter_inappwebview: ^6.1.5
-  flutter_logs: ^2.1.11 
+  flutter_logs: ^2.1.11
+  # v101 统一更新提醒的系统通知后端。选 20.x 而不是 22.x：22 起要求
+  # `sdk: ^3.10.0`，会把本包的 SDK 下界从 3.8 顶上去；20.1.0 的
+  # environment 与本仓一致，且 android/ios/macos/linux/windows 五端都有实现
+  # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
+  flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
   flutter_staggered_grid_view: ^0.7.0
   fluttertoast: ^8.2.1

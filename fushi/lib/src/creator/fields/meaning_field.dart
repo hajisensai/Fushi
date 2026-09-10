@@ -43,6 +43,10 @@ class MeaningField extends Field {
 
     entriesByDictionaryName.forEach((dictionaryName, singleDictionaryEntries) {
       if (prependDictionaryNames) {
+        // 词典改名（v95）刻意**不**翻这里：写进 Anki 卡片的正文是历史存档，改名
+        // 不回溯——翻了之后同牌组里旧卡真名、新卡新名，比统一真名更难认。而且这个
+        // 变量同时是上面 groupBy 的分组 key（与 {single-glossary-<名>} 模板 token
+        // 对齐），要翻必须先把「分组键」和「显示文本」拆开。
         meaningBuffer.writeln('【$dictionaryName】');
       }
 

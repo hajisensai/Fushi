@@ -85,7 +85,6 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.shortcuts => null,
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
-  SettingsDestinationId.listening => ModuleId.listening,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
   SettingsDestinationId.downloads => ModuleId.downloads,
   SettingsDestinationId.game => ModuleId.games,

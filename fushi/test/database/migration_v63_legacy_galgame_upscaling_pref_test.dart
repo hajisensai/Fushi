@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 100);
-    expect(db.schemaVersion, 100);
+    expect(version.read<int>('user_version'), 102);
+    expect(db.schemaVersion, 102);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -281,6 +281,7 @@ void main() {
         'web_mine_queue',
         'video_file_specs',
         'language_profiles',
+        'update_feed_entries',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
           'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
@@ -289,8 +290,9 @@ void main() {
           'manga_chapter_states（漫画每章阅读状态）与 v92 的 study_segments / '
           'study_segment_tombstones（学习统计唯一事实表 + 按身份墓碑）、'
           'v93 的 web_mine_queue（网页播放器自动制卡队列）、v95 的 '
-          'video_file_specs（视频文件技术规格探测缓存）与 v99 的 '
-          'language_profiles（语言级 Profile 绑定）外，'
+          'video_file_specs（视频文件技术规格探测缓存）、v100 的 '
+          'language_profiles（语言级 Profile 绑定）与 v101 的 '
+          'update_feed_entries（统一更新提醒事件流）外，'
           '升级不得新增任何表',
     );
   });
@@ -309,7 +311,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 100);
+    expect(version.read<int>('user_version'), 102);
   });
 
   test(
@@ -340,7 +342,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 100);
+      expect(probe.select('PRAGMA user_version').first.values.first, 102);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

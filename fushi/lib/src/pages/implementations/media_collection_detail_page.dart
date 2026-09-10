@@ -31,6 +31,8 @@ import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi/src/media/video/video_local_files.dart'
+    show videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi/src/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/media/video/video_book_repository.dart';
@@ -70,6 +72,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.remote,
     required this.onChanged,
     this.onDeleteMembersMedia,
+    this.deleteMembersLocalFilesSubtitle,
     this.onRescrapeCollection,
     super.key,
   });
@@ -103,7 +106,15 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 调用方（持 [VideoBookRepository]）注入：按 [VideoBookRow] 删视频 DB 行 +
   /// app 拥有副本（封面/字幕），**保留用户原始视频文件**（导入时只存路径从不复制）。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
-  final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+  final Future<void> Function(
+    List<VideoBookRow> members,
+    bool deleteLocalFiles,
+  )? onDeleteMembersMedia;
+
+  /// 非 null 时，「同时删除其中的视频」勾选下再给一行「同时删除本地文件」二级
+  /// 勾选，其状态经 [onDeleteMembersMedia] 的 `deleteLocalFiles` 参数落地。
+  /// null = 该合集没有可删的本机原件（如全是远端流），不摆这一行。
+  final String? deleteMembersLocalFilesSubtitle;
 
   /// 「重新刮削资料与封面」：由库页注入（刮削 controller 的生命周期归 HomePage，
   /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
@@ -1162,6 +1173,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
+      // 成员全是远端流时不摆「同时删除本地文件」——盘上没有文件可删，摆了就是
+      // 一个兑现不了的开关（与单删 / 批删同一纪律）。
+      localFilesSubtitle:
+          canDeleteMembers && _members.any(videoBookHasLocalFiles)
+              ? widget.deleteMembersLocalFilesSubtitle
+              : null,
     );
     if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
@@ -1169,7 +1186,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
     // 自有封面会永久留在磁盘上（BUG-1319）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
-      await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
+      await widget.onDeleteMembersMedia!(
+        List<VideoBookRow>.of(_members),
+        result.deleteLocalFiles,
+      );
     }
     await deleteMediaCollectionWithAssets(
         widget.database, widget.collection.id);

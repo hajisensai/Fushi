@@ -14,7 +14,6 @@ enum SettingsDestinationId {
   lookup,
   cardCreation,
   video,
-  listening,
   mediaTracking,
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。

@@ -228,7 +228,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 四个 tab 的动作行逐颗同形（用户 2026-09-10「所有界面都要统一」）：
+    // 目标 → 刷新 → 清空全部统计。目标是**跨域的每日学习目标**（同一份表单、同一个
+    // 持久化值），本页此前没有入口，切到这个 tab 目标按钮就凭空消失。
     final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.flag_outlined,
+        tooltip: t.stat_goal_set,
+        enabled: !_loading,
+        onTap: _editGoals,
+      ),
       FushiIconButton(
         icon: Icons.refresh,
         tooltip: t.stat_refresh,
@@ -277,6 +286,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             titleOf: (StudySession s) => s.title,
             collectionOf: _sessionCollectionName,
             onDelete: _deleteSession,
+            onEdit: _editSession,
+            onClearAll: _clearSessions,
           ),
         ),
         SliverToBoxAdapter(
@@ -320,6 +331,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _periodSummary(
         t.stat_today,
         _agg.todayMs,
+        _agg.todayChars,
         _agg.todayCompleted,
         _lookup.today,
         _mined.today,
@@ -330,6 +342,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _periodSummary(
         t.stat_this_week,
         _agg.weekMs,
+        _agg.weekChars,
         _agg.weekCompleted,
         _lookup.week,
         _mined.week,
@@ -340,6 +353,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _periodSummary(
         t.stat_this_month,
         _agg.monthMs,
+        _agg.monthChars,
         _agg.monthCompleted,
         _lookup.month,
         _mined.month,
@@ -350,6 +364,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _periodSummary(
         t.stat_all_time,
         _agg.allMs,
+        _agg.allChars,
         _agg.allCompleted,
         _lookup.all,
         _mined.all,
@@ -363,6 +378,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   StatPeriodSummary _periodSummary(
     String label,
     int ms,
+    int chars,
     int completed,
     int lookup,
     int mined,
@@ -375,6 +391,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
+        // 字数打头，与另外三个 tab 的卡逐行同形（用户 2026-09-10「所有界面都要统一」）：
+        // 本页此前把字幕字数只画进「按视频」列表，四张同形卡横过去时只有观看少一行。
+        StatSummaryLine(value: formatStatChars(chars)),
         StatSummaryLine(label: t.video_stat_completed, value: '$completed'),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
         StatSummaryLine(label: t.stat_mined, value: '$mined'),
@@ -443,6 +462,27 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     if (mounted) await _loadFromDatabase();
   }
 
+  /// 目标编辑：与阅读 tab、总览 tab 同一份表单、同一个持久化目标（每日学习目标是
+  /// **跨域**的一个值，不是每个域各一份）。
+  Future<void> _editGoals() async {
+    final bool saved = await showStatGoalEditDialog(context, appModelNoUpdate);
+    if (saved && mounted) setState(() {});
+  }
+
+  /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid
+  /// 再写库），再整页重聚合——改完日期的会话要重新按 gap 归并、重新排序。
+  Future<void> _editSession(StudySession s, StudySessionEdit edit) async {
+    await applyStudySessionEdit(appModelNoUpdate.database, s, edit);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 清除这一批会话记录（防呆确认已在按钮里做掉）：只清会话事实，收藏 / 制卡历史 /
+  /// 查词计数一个都不动（与逐条删同一边界）。
+  Future<void> _clearSessions(List<StudySession> batch) async {
+    await deleteStudySessions(appModelNoUpdate.database, batch);
+    if (mounted) await _loadFromDatabase();
+  }
+
   /// 点按视频 tile → 这部视频的会话列表 sheet。
   Future<void> _showVideoSessions(VideoStatBookData video) async {
     final String? uid = video.bookUid;
@@ -455,6 +495,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       collectionOf: _sessionCollectionName,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
+      onEdit: (StudySession s, StudySessionEdit edit) =>
+          applyStudySessionEdit(appModelNoUpdate.database, s, edit),
+      onClearAll: (List<StudySession> batch) =>
+          deleteStudySessions(appModelNoUpdate.database, batch),
     );
     if (deleted && mounted) await _loadFromDatabase();
   }

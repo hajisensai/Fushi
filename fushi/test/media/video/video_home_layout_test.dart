@@ -130,6 +130,33 @@ void main() {
     });
   });
 
+  group('videoDiscoveryHeroHeightForViewport', () {
+    test('桌面宽度按 16:9 派生，整张 backdrop 不被上下裁（BUG-2431）', () {
+      // 用户实报的 1920×1125 窗口：旧实现写死 430，图需要 1080 高，砍掉六成。
+      expect(
+        videoDiscoveryHeroHeightForViewport(1920, 1125),
+        closeTo(1080, 0.001),
+      );
+      expect(videoDiscoveryHeroHeightForViewport(1280, 900), closeTo(720, 0.001));
+    });
+
+    test('高度绝不超过视口，hero 不吃满一屏以上', () {
+      // 16:9 图在窄高窗口里需要的高度超过视口时，上限接管。
+      expect(videoDiscoveryHeroHeightForViewport(1920, 800), 800);
+    });
+
+    test('窄屏保住文字排版下限', () {
+      // 400 宽的手机：图只需 225 高，但标题/评分/按钮/状态流程放不下，取下限。
+      expect(videoDiscoveryHeroHeightForViewport(400, 900), 460);
+      // 断点之上换用宽屏下限。
+      expect(videoDiscoveryHeroHeightForViewport(700, 900), 430);
+    });
+
+    test('视口比下限还矮时不炸 clamp', () {
+      expect(videoDiscoveryHeroHeightForViewport(360, 300), 460);
+    });
+  });
+
   group('videoAirYear / videoAirSeasonQuarter', () {
     test('TMDB 全日期与裸年份都解析', () {
       expect(videoAirYear('2024-10-05'), 2024);

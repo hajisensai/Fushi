@@ -1226,6 +1226,9 @@ class _FakeProvider implements VideoDiscoveryProvider {
   final String id;
 
   @override
+  String get displayName => id;
+
+  @override
   final int priority;
 
   final ProviderBatchResult<VideoDiscoveryPage> response;
@@ -1268,6 +1271,9 @@ class _PagedFakeProvider implements VideoDiscoveryProvider {
 
   @override
   final String id;
+
+  @override
+  String get displayName => id;
 
   @override
   final int priority;

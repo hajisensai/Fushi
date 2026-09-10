@@ -39,46 +39,37 @@ extension _ReaderChrome on _ReaderFushiPageState {
   bool get _paginationInFlight =>
       _restoreInFlight || !_readerContentReady || _isNavigatingToChapter;
 
-  /// TODO-1229 / BUG-1829：记一次**真正的跨章**发生时刻，开启跨章冷却窗。
+  /// BUG-2424：消费一次积压的翻页意图并重放。
   ///
-  /// 只在跨章事件上调用：① 各入口确实要调 [_handlePageTurnLimit] 之前；② 该次跨章落地的
-  /// 新章 content-ready 时的重锚（[_noteChapterTurnSettledIfPending]）。
-  /// **绝不在被拦截/被丢弃的输入上调用**——那会把闸门的钥匙交给被闸门拦住的那一方，用户
-  /// 持续拨轮就永远等不到窗口过期（BUG-1829，见 [_lastChapterTurnAt] 的说明）。
-  void _noteChapterTurn() {
-    _lastChapterTurnAt = DateTime.now();
-  }
-
-  /// TODO-1229 第三次复诉：标记「一次惯性跨章已真正发起导航」。只在惯性输入
-  /// (滚轮/触摸，throttleMs>0)确实调 [_handlePageTurnLimit] 且其内部真的触发了
-  /// 导航时置位（末章/首章边界不导航则不置位，避免旗子悬空）。等新章 content-ready
-  /// 时由 [_noteChapterTurnSettledIfPending] 消费。
-  void _markInertiaChapterTurnPending() {
-    _inertiaChapterTurnPending = true;
-  }
-
-  /// TODO-1229 第三次复诉：惯性跨章落地的新章内容就绪那一刻，把跨章冷却窗重新 stamp
-  /// 到当下——保证新章刚出现时总有一个完整 [_kChapterTurnCooldown] 窗口挡住残余滚轮/
-  /// 惯性，即使换章加载耗时超过冷却窗、期间没有续窗 tick（鼠标滚轮离散事件的真因）。
-  /// 只在 pending 时生效并复位旗子；非惯性来源(初次开书/恢复/键盘跨章)不置旗、不受影响。
-  void _noteChapterTurnSettledIfPending() {
-    if (!_inertiaChapterTurnPending) return;
-    _inertiaChapterTurnPending = false;
-    _noteChapterTurn();
-  }
-
-  /// TODO-1229 / BUG-1829：跨章冷却闸门。距上次**真正跨章**不足 [_kChapterTurnCooldown]
-  /// 则判为同一手势的残余惯性、拒绝本次跨章（返回 true=正在冷却=拦截），否则放行。
-  /// 只在惯性型输入(滚轮/触摸)的跨章决策处调用；键盘/手柄(throttleMs==0)不经此闸门。
+  /// 在 [_onRestoreComplete] 的收尾（新章内容就绪、`fushiReader` 可用）之后调用，
+  /// 所以重放时的页边界判定是在**已就绪**的状态上做的——这正是原始「跳两章」
+  /// （在飞时 `evaluateJavascript` 返 null 被 `_didScroll` 误读成页边界）消失的原因。
   ///
-  /// **纯读，无副作用（BUG-1829）**：旧实现在拦截时把 [_lastChapterTurnAt] 写成当下，把
-  /// 窗口滑走，于是被拦的输入自己给自己续期——真实滚轮每 30~100ms 一个事件，用户只要还在
-  /// 拨，窗口就永远不过期。窗口只能由跨章事件推进（[_noteChapterTurn]）。
-  bool _chapterTurnCoolingDown() => chapterTurnCoolingDown(
-        lastTurnAt: _lastChapterTurnAt,
-        now: DateTime.now(),
-        cooldown: _ReaderFushiPageState._kChapterTurnCooldown,
-      );
+  /// 消费到「队列空」或「又进入在飞」为止，两种出口都必要：
+  ///   * 重放导致**跨章** → `_paginationInFlight` 立刻为真 → 退出循环，剩余意图由那次
+  ///     导航的 content-ready 再次进来消费，串成 1:1 的链；
+  ///   * 重放只是**章内翻页**（新章还有下一页）→ 不会再有 content-ready 把我们叫醒，
+  ///     必须就地继续消费，否则剩余意图一直压到下一次跨章才突然连翻。
+  ///
+  /// 重放**不过 [_lastPaginateTime] 节流**——该节流限的是「用户新输入的速率」，
+  /// 而积压意图早已是用户按下过的、被延后执行的输入，再节流一次就等于又丢一遍。
+  ///
+  /// `_replayingPageTurns` 防重入：本方法在 await 期间可能被另一个 content-ready
+  /// 完成点再次调用（spreadReady / 兜底超时与 onRestoreComplete 并非互斥），两个
+  /// 循环同时消费同一个队列会让意图乱序落到不同章上。
+  Future<void> _replayPendingPageTurn() async {
+    if (_replayingPageTurns) return;
+    _replayingPageTurns = true;
+    try {
+      while (mounted && _controller != null && !_paginationInFlight) {
+        final ReaderNavigationDirection? next = _pageTurnQueue.consume();
+        if (next == null) return;
+        await _paginate(next);
+      }
+    } finally {
+      _replayingPageTurns = false;
+    }
+  }
 
   Future<void> _paginate(
     ReaderNavigationDirection direction, {
@@ -87,28 +78,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (_controller == null) {
       return;
     }
-    // TODO-1229 案A：导航/恢复在飞窗口直接丢弃输入（放在节流戳之前，被丢弃的输入
-    // 不推进 _lastPaginateTime，恢复后首个真实输入不被误吞）。守卫只在瞬态窗口生效，
-    // 不误杀正常连续翻页（见 _paginationInFlight 文档）。
-    if (_paginationInFlight) {
-      // BUG-1829：换章加载期到达的输入只丢弃，**不**滑动跨章冷却窗。v2 曾在这里
-      // stamp，用来盖住「加载期无续窗 tick → 窗口早过期 → 残余惯性二次跨章」；v3 改用
-      // 新章 content-ready 重锚（[_noteChapterTurnSettledIfPending]）后，这条已由更晚、
-      // 更准的锚点覆盖，留着只会让持续输入自我续期，把单页章变成滚轮死区。
-      return;
-    }
     // TODO-737: 翻页输入节流闸门归一到此唯一入口。各源传不同 throttleMs：滚轮
     // wheelPageTurnInterval(450)、音量键固定 defaultScrollingSpeed(100)、键盘/手柄 0。
     // 时间戳语义（与音量键旧 _lastVolumeKeyTime / HBK-AUDIT-120 一致）：读 throttleMs
-    // 时即生效，无残留 timer。**只盖在 _paginate 入口**——内部跨章（_handlePageTurnLimit）
-    // 已在闸门内、不重复节流，故分页到章末经 _paginate 仍翻得过去（不自吞，4 必补点 #1）。
+    // 时即生效，无残留 timer。
+    //
+    // BUG-2424：节流必须排在在飞判定**之前**。它是用户在设置里配的「滚轮翻页间隔」，
+    // 语义是「每隔这么久接受一次翻页输入」——**统一管所有滚轮翻页，含跨章**，与分页/
+    // 连续模式无关。放在在飞判定之后的话，换章加载期到达的输入会绕过限速直接入队，
+    // 落定后一次性连翻，等于用户配的速率对跨章不生效。
     if (throttleMs > 0 && _lastPaginateTime != null) {
       final int elapsedMs =
           DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
       if (elapsedMs < throttleMs) return;
     }
+    // 过了节流 = 这一次输入被**接受**，占掉一个翻页配额，所以此刻就 stamp——哪怕它
+    // 接着要进队列等重放。不 stamp 的话，加载期内的每一个 tick 都会被接受入队。
     if (throttleMs > 0) {
       _lastPaginateTime = DateTime.now();
+    }
+    if (_paginationInFlight) {
+      // BUG-2424：换章加载期到达的输入**排队**而不是丢弃。旧实现在这里直接 return，
+      // 用户在换章那几百毫秒里拨的滚轮石沉大海（「按了没反应，要再按一次」）。
+      // 此刻仍不能就地执行——`fushiReader` 未就绪、`evaluateJavascript` 返 null 会被
+      // `_didScroll` 误读成页边界而多跨一章（原始「跳两章」的成因之一）——所以存下
+      // 意图，由 [_replayPendingPageTurn] 在 content-ready 之后重放，那时判定是在
+      // 已就绪状态上做的。重放不再过节流：这一格在**入队前**就已经过了。
+      _pageTurnQueue.push(direction);
+      return;
     }
     // Lyrics mode renders LyricsModeHtml — a vertical cue list with no
     // fushiReader paginator. paginate() there no-ops in JS (the
@@ -127,12 +124,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
       if (!mounted || _controller == null) return;
       if (!_didConsumePageTurn(result)) {
-        // TODO-1229 v2：惯性型输入(throttleMs>0)跨章前过冷却闸门——同一手势残余惯性
-        // 在短章边界的二次跨章被拦；键盘/手柄(throttleMs==0)不受限。窗口不再被被拦的
-        // 输入自我续期——只有真跨章与 content-ready 会推进它（BUG-1829）。
-        if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-        _noteChapterTurn();
-        _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
+        // BUG-2424：跨章冷却闸门已删除。这里的判定发生在 `fushiReader` 已就绪之后
+        // （result 是真实的 paginate 返回值，不是在飞时的 null），所以「一次输入最多
+        // 一次跨章」由这条路径本身保证，不需要再叠一层时间窗。
+        _handlePageTurnLimit(direction.jsValue);
       } else {
         await _refreshProgress();
         if (!mounted || _controller == null) return;
@@ -149,10 +144,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       if (!mounted || _controller == null) return;
       if (_didScroll(result)) await _caretReanchor(direction);
     } else {
-      // TODO-1229 v2：同上——分页模式惯性跨章过冷却闸门，拦同一手势的二次跨章。
-      if (throttleMs > 0 && _chapterTurnCoolingDown()) return;
-      _noteChapterTurn();
-      _handlePageTurnLimit(direction.jsValue, inertia: throttleMs > 0);
+      // BUG-2424：同上——分页模式的跨章判定同样发生在 JS 已就绪之后，冷却闸门已删除。
+      _handlePageTurnLimit(direction.jsValue);
     }
   }
 
@@ -2786,40 +2779,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (mounted) _rebuild(() {});
   }
 
-  /// 词典弹窗配色 = app 真实 ColorScheme（主题色 / 高亮 / 描边跟用户主题）+ 纸色
-  /// 与字色盖上去的中性角色。以前是拿纸色当 seed 重造整套 ColorScheme，弹窗里的
-  /// 按钮、查到词高亮全由纸色派生，与用户设的主题色完全脱钩（改了主题色最高频的
-  /// 查词面不变色）。中性梯度与编辑页预览 / ColorScheme 用同一个
+  /// 把当前取值喂给 [resolveDictionaryPopupTheme]——弹窗覆盖主题的全部决策
+  /// （含墨水屏两条不变式）都在那个纯函数里，本方法不再自己拼 ThemeData。
+  ///
+  /// 非墨水屏下的语义不变：app 真实 ColorScheme（主题色 / 高亮 / 描边跟用户主题）
+  /// + 纸色与字色盖上去的中性角色。以前是拿纸色当 seed 重造整套 ColorScheme，
+  /// 弹窗里的按钮、查到词高亮全由纸色派生，与用户设的主题色完全脱钩（改了主题色
+  /// 最高频的查词面不变色）。中性梯度与编辑页预览 / ColorScheme 用同一个
   /// [deriveSurfaceRolesFrom]，所见即所得。
   void _syncDictionaryTheme() {
-    final Color bg = _themeBackgroundColor();
-    final Color textColor = _themeTextColor();
-    final Brightness brightness =
-        _isReaderThemeDark ? Brightness.dark : Brightness.light;
-    final SurfaceRoles paper = deriveSurfaceRolesFrom(bg);
-    appModel.setOverrideDictionaryColor(bg);
-    appModel.setOverrideDictionaryTheme(
-      ThemeData(
-        useMaterial3: true,
-        colorScheme: appModel.buildColorScheme(brightness).copyWith(
-              surface: paper.surface,
-              surfaceDim: paper.surfaceDim,
-              surfaceBright: paper.surfaceBright,
-              surfaceContainerLowest: paper.surfaceContainerLowest,
-              surfaceContainerLow: paper.surfaceContainerLow,
-              surfaceContainer: paper.surfaceContainer,
-              surfaceContainerHigh: paper.surfaceContainerHigh,
-              surfaceContainerHighest: paper.surfaceContainerHighest,
-              onSurface: textColor,
-              onSurfaceVariant: paper.onSurfaceVariant,
-              outline: paper.outline,
-              outlineVariant: paper.outlineVariant,
-              inverseSurface: paper.inverseSurface,
-              onInverseSurface: paper.onInverseSurface,
-              surfaceTint: Colors.transparent,
-            ),
-      ),
+    // 决策全在 [resolveDictionaryPopupTheme]（纯函数、可直接断言）：它保证覆盖
+    // 主题带上 FushiEinkTheme 扩展，并在墨水屏下跳过纸色派生。这里只负责把
+    // AppModel / 阅读器主题的当前取值喂进去。
+    final DictionaryPopupTheme resolved = resolveDictionaryPopupTheme(
+      eink: appModel.einkMode,
+      einkDark: appModel.isDarkMode,
+      readerBackground: _themeBackgroundColor(),
+      readerForeground: _themeTextColor(),
+      readerDark: _isReaderThemeDark,
+      buildColorScheme: appModel.buildColorScheme,
     );
+    appModel.setOverrideDictionaryColor(resolved.fillColor);
+    appModel.setOverrideDictionaryTheme(resolved.theme);
   }
 
   // ── JS result helpers (evaluateJavascript returns dynamic) ────────

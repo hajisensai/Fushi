@@ -37,6 +37,8 @@ Future<void> _pump(
   WidgetTester tester, {
   required List<StudySession> sessions,
   required Future<void> Function(StudySession) onDelete,
+  StatSessionEditOf? onEdit,
+  StatSessionClearAll? onClearAll,
   StatSessionCollectionOf? collectionOf,
   int limit = 8,
 }) async {
@@ -52,6 +54,8 @@ Future<void> _pump(
                 titleOf: (StudySession s) => s.title,
                 collectionOf: collectionOf,
                 onDelete: onDelete,
+                onEdit: onEdit ?? (StudySession s, StudySessionEdit e) async {},
+                onClearAll: onClearAll ?? (List<StudySession> b) async {},
                 limit: limit,
               ),
             ),
@@ -216,5 +220,153 @@ void main() {
     expect(deleted, <String>['a']);
     expect(find.text('A'), findsNothing);
     expect(find.text('B'), findsOneWidget);
+  });
+
+  // ↓ 用户 2026-09-10：「里面的每个会话做成可编辑」+「再加个清除所有会话记录并且防呆」。
+
+  testWidgets('整行点击弹的是会话编辑框（初值来自这一行）', (WidgetTester tester) async {
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        _session('a', title: 'A', chars: 1200),
+        _session('b', title: 'B'),
+      ],
+      onDelete: (_) async {},
+    );
+    // 编辑入口是**整行**，不是 trailing 上的第二颗图标按钮：那 48dp 预算里塞两颗
+    // 会把标题挤回单行省略（BUG-2417 的回归，见下面「长标题」那条守卫）。
+    expect(
+      find.byIcon(Icons.edit_outlined),
+      findsNothing,
+      reason: 'trailing 只放得下一颗按钮，编辑走整行 onTap',
+    );
+    await tester.tap(find.text('A'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('stat-session-edit-date')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('stat-session-edit-chars')),
+      findsOneWidget,
+    );
+    expect(find.text('A'), findsWidgets, reason: '编辑的是这一行，标题进正文');
+  });
+
+  testWidgets('改完保存：onEdit 拿到只带真改过项的 edit，那一行当场显示新值', (
+    WidgetTester tester,
+  ) async {
+    final List<StudySessionEdit> edits = <StudySessionEdit>[];
+    await _pump(
+      tester,
+      sessions: <StudySession>[_session('a', title: 'A', chars: 1200)],
+      onDelete: (_) async {},
+      onEdit: (StudySession s, StudySessionEdit e) async => edits.add(e),
+    );
+    expect(
+      find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('A'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('stat-session-edit-chars')),
+      '900',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(edits, hasLength(1));
+    expect(edits.single.chars, 900);
+    expect(edits.single.date, isNull, reason: '没动日期就别传，避免一次无谓的平移写');
+    // sheet 拿的是打开那一刻的快照，页面在它底下重聚合不会传上来——改完还显示旧值
+    // 是用户第一眼就能看见的假。真相仍以关掉之后的重聚合为准。
+    expect(
+      find.textContaining(formatStatSessionMeta(_session('a', chars: 900))),
+      findsOneWidget,
+      reason: '那一行当场换成编辑后的展示副本',
+    );
+    expect(
+      find.textContaining(formatStatSessionMeta(_session('a', chars: 1200))),
+      findsNothing,
+    );
+  });
+
+  testWidgets('清除全部会话：防呆确认后 onClearAll 拿到的是整批，不是截断后的 8 条', (
+    WidgetTester tester,
+  ) async {
+    List<StudySession>? cleared;
+    final List<StudySession> all = <StudySession>[
+      for (int i = 0; i < 12; i++) _session('s$i', title: 'S$i'),
+    ];
+    await _pump(
+      tester,
+      sessions: all,
+      onDelete: (_) async {},
+      onClearAll: (List<StudySession> batch) async => cleared = batch,
+    );
+    expect(find.text('S8'), findsNothing, reason: '屏幕上只有前 8 条');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
+    );
+    await tester.pumpAndSettle();
+    final Finder confirm =
+        find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
+    expect(
+      tester.widget<FilledButton>(confirm).onPressed,
+      isNull,
+      reason: '防呆：没勾确认项之前不许清',
+    );
+    expect(cleared, isNull);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('stat-clear-sessions-ack')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+
+    expect(cleared, isNotNull);
+    expect(
+      cleared,
+      hasLength(12),
+      reason: '清的是这一页拿到的整批（域 tab = 本域全部），不是屏幕上那 8 条',
+    );
+  });
+
+  testWidgets('取消防呆框 → 一条都不清', (WidgetTester tester) async {
+    List<StudySession>? cleared;
+    await _pump(
+      tester,
+      sessions: <StudySession>[_session('a', title: 'A')],
+      onDelete: (_) async {},
+      onClearAll: (List<StudySession> batch) async => cleared = batch,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(cleared, isNull);
+    expect(find.text('A'), findsOneWidget);
+  });
+
+  testWidgets('空列表：不显示「清除全部会话」按钮（没有东西可清）', (
+    WidgetTester tester,
+  ) async {
+    await _pump(
+      tester,
+      sessions: const <StudySession>[],
+      onDelete: (_) async {},
+    );
+    expect(
+      find.byKey(const ValueKey<String>('stat-sessions-clear-all')),
+      findsNothing,
+    );
+    expect(find.byIcon(Icons.delete_outline), findsNothing);
   });
 }

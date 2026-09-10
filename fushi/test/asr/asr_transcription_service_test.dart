@@ -46,6 +46,7 @@ void main() {
 
   AsrTranscriptionService service(_ProbeFactory factory) =>
       AsrTranscriptionService(
+        audioProfile: AsrAudioProfile.cleanSpeech,
         backend: const AsrIsolateBackend(
           buildFactory: _unusedOnnxFactory,
         ),

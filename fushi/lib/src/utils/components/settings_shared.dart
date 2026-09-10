@@ -176,11 +176,19 @@ class AdaptiveSettingsSurface extends StatelessWidget {
       );
     }
 
+    // 设置分组卡靠「填充分层」表达边界，不再在填充之上再叠一圈 1px
+    // outlineVariant 描边：MD3 的 filled card 不描边，填充 + 描边是两套并存的
+    // 边界信号。设置页一屏里原本还有输入框与分段控件的 colorScheme.outline
+    // 描边（比卡片描边深一档）和 0.5px 行分隔线，三种强度的线叠在一起就是
+    // 「描边很怪」的来源。
+    //
+    // eink 例外由 FushiCard 内部兜住：eink scheme 把所有 surface container 塌
+    // 缩成背景色，卡片没有可分层的填充，此时它自己补一圈实描边
+    // （fushi_material_components.dart 的 eink 分支），这里不传 borderColor。
     return FushiCard(
       padding: EdgeInsets.zero,
       borderRadius: tokens.radii.groupRadius,
       color: color ?? tokens.surfaces.card,
-      borderColor: tokens.surfaces.outline,
       child: content,
     );
   }
