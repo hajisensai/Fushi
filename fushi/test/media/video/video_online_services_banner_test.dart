@@ -14,11 +14,20 @@ void main() {
   late FushiDatabase db;
   late PreferencesRepository preferences;
 
+  late String embeddedKeyBackup;
+
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     preferences = PreferencesRepository(db);
+    // 内置密钥是**构建期注入**的：本机 worktree 是空桩、CI 注入真值。
+    // 而 `effectiveApiKey` 在用户没填 key 时会回落到它 —— 不钉死的话，
+    // 「OpenSubtitles 是否就绪」在两个环境里结论相反，本用例本机绿、CI 红。
+    // 这里要钉的是「四项配齐才收起提醒」的逻辑，与本机有没有内置密钥无关。
+    embeddedKeyBackup = OpenSubtitlesConfig.embeddedApiKey;
+    OpenSubtitlesConfig.embeddedApiKey = '';
   });
   tearDown(() async {
+    OpenSubtitlesConfig.embeddedApiKey = embeddedKeyBackup;
     preferences.dispose();
     await db.close();
   });

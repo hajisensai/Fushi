@@ -1538,7 +1538,7 @@
   "game_hook_reason_hook_dll_missing": "钩子组件不完整（缺少 hook 库），请重新安装。",
   "game_hook_reason_injection_failed": "注入游戏被拦截，请把 Fushi 与该游戏加入杀毒软件白名单。",
   "game_hook_reason_native_loopback_ack_timeout": "音频采集策略未在超时内确认。文本采集不受影响；若缺少游戏内语音可重试一次。",
-  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。请尝试关闭游戏，然后重新运行一次 Fushi。若无法解决请联系开发者。",
+  "game_hook_reason_protocol_mismatch": "捕获组件与本体版本不一致。组件内置在 Fushi 里，不用单独安装。先完全关掉游戏再重开一次：游戏进程里可能还挂着上次注入的旧组件。若仍不匹配，说明磁盘上的组件比本体旧（上次更新时游戏正开着，换不掉被占用的文件）——关掉所有游戏，再重跑一次 Fushi 安装程序。",
   "game_hook_reason_ready_timeout": "钩子库未能在超时内加载完成，杀毒软件扫描可能是原因。",
   "game_hook_reason_resident_hook_mismatch": "游戏里还残留上一次的捕获会话，请重启一次游戏。",
   "game_hook_reason_resume_failed": "已启动的游戏无法恢复运行并被结束，请重新启动。",

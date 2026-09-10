@@ -125,6 +125,11 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
       getPref('video_danmaku_config', defaultValue: '') as String,
     );
     await _repairOpenSubtitlesEnabledOnce();
+    // 上面那次修复写会经 setPref 抬高持久化版本号，而缓存是**在它之前**读的。
+    // 不把版本重读回来，loadFromDb 一结束进程内值就比 DB 少一个，
+    // 「版本不同 = 别的进程改过」于是每次启动误报一次、白重载一次。
+    _prefCache[prefsVersionKey] =
+        PrefCodec.encode(await readPrefsVersionFromDb());
     _installAppProxyReaders();
   }
 

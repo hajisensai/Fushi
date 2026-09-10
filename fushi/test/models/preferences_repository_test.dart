@@ -789,54 +789,68 @@ void main() {
   // reload, NOT by this process's own setPref calls — hence the assertions
   // below read the DB, not the in-memory getter.
   group('prefsVersion (TODO-855)', () {
-    test('starts at 0 on a fresh install', () async {
-      expect(repo.prefsVersion, 0);
-      expect(await repo.readPrefsVersionFromDb(), 0);
+    // 这组钉的是**增量**而不是绝对数：`loadFromDb()` 自己就会写偏好
+    // （`_repairOpenSubtitlesEnabledOnce` 在全新库上也打一次标记，见那里的注释
+    // ——不打就得每次启动重解析），所以「新装 == 0」不是不变式，只是当年恰好成立
+    // 的一个数。真不变式是「每一次 setPref 让持久化版本号单调 +1，而进程内 getter
+    // 只在整体 reload 时跟上」，与起点是几无关。
+    //
+    // 唯一保留绝对数的是「直接写版本键」那条：它钉的本来就是「值就是你写的那个数」。
+    test('a fresh load leaves the counter consistent between DB and memory',
+        () async {
+      final int baseline = await repo.readPrefsVersionFromDb();
+      expect(repo.prefsVersion, baseline,
+          reason: 'loadFromDb 之后，进程内值必须等于 DB 值');
     });
 
     test('setPref bumps the persisted version monotonically', () async {
-      expect(await repo.readPrefsVersionFromDb(), 0);
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       await repo.setPref('k2', 'b');
-      expect(await repo.readPrefsVersionFromDb(), 2);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 2);
       // Same key written again still counts as a change.
       await repo.setPref('k1', 'c');
-      expect(await repo.readPrefsVersionFromDb(), 3);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 3);
     });
 
     test('the in-memory getter reflects the DB only after a full reload',
         () async {
       // A same-process write does NOT advance the in-memory getter (bump is
       // in the DB layer); a reload picks it up.
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
-      expect(repo.prefsVersion, 0,
+      expect(repo.prefsVersion, baseline,
           reason: 'in-memory getter is stale until the next loadFromDb');
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       await repo.refreshFromDb();
-      expect(repo.prefsVersion, 1);
+      expect(repo.prefsVersion, baseline + 1);
     });
 
     test('the version itself is persisted to DB and survives a reload',
         () async {
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
       await repo.setPref('k2', 'b');
-      expect(await repo.readPrefsVersionFromDb(), 2);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 2);
 
       final PreferencesRepository repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       addTearDown(repo2.dispose);
       // A second process loading the same DB sees the persisted counter.
-      expect(repo2.prefsVersion, 2);
-      expect(await repo2.readPrefsVersionFromDb(), 2);
+      // 注意 repo2.loadFromDb() 自己不再写（修复标记已在上面打过），所以这里
+      // 仍是 baseline + 2。
+      expect(repo2.prefsVersion, baseline + 2);
+      expect(await repo2.readPrefsVersionFromDb(), baseline + 2);
     });
 
     test('writing the version key directly does NOT recurse / double-bump',
         () async {
       // The DB-layer choke point guards the version key against re-bumping
       // itself. A direct write of prefsVersionKey must not increment further.
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       // The version key is a PrefCodec int; a direct int write of it must be
       // parsed back correctly and must NOT trigger an extra bump on top.
       await repo.setPref(PreferencesRepository.prefsVersionKey, 99);
@@ -848,21 +862,22 @@ void main() {
       // Writers that bypass PreferencesRepository (ThemeNotifier, MediaSource,
       // profile switch) go straight through FushiDatabase.setPref and must
       // still bump — that is the whole point of sinking the bump down a layer.
-      expect(await repo.readPrefsVersionFromDb(), 0);
+      final int baseline = await repo.readPrefsVersionFromDb();
       await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       await db.setPref('src:reader_fushi:font_size', PrefCodec.encode(20));
-      expect(await repo.readPrefsVersionFromDb(), 2);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 2);
     });
 
     test(
         'readPrefsVersionFromDb sees a cross-process write the in-memory '
         'cache has not yet observed', () async {
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
       // In-memory cache is stale (no same-process bump tracking)...
-      expect(repo.prefsVersion, 0);
+      expect(repo.prefsVersion, baseline);
       // ...but the cheap DB read sees the write's bump.
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
 
       // Simulate the MAIN app process bumping the counter further while THIS
       // (popup) process holds a stale cache: write straight to the DB row
@@ -872,7 +887,7 @@ void main() {
         PreferencesRepository.prefsVersionKey,
         PrefCodec.encode(7),
       );
-      expect(repo.prefsVersion, 0);
+      expect(repo.prefsVersion, baseline);
       expect(await repo.readPrefsVersionFromDb(), 7);
     });
   });
