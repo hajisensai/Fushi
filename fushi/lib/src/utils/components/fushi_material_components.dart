@@ -296,10 +296,15 @@ class _FushiListItemState extends State<FushiListItem> {
     // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
     // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
     // 列表里逐行错位）。几何恒定，颜色才是唯一的选中信号。
+    //
+    // 非 eink 下选中边也保持透明：secondaryContainer 填充已经把选中态说清楚了，
+    // 再叠一圈 primary 20% 的细边只是填充之上的第二条线（设置页左栏里它和分组卡
+    // 描边、行分隔线一起凑成三层线）。eink 下选中填充塌缩成背景色，边是唯一信号，
+    // 那里保留并换成实描边色。
     final BoxBorder? pillBorder = pill
         ? Border.all(
-            color: widget.selected
-                ? tokens.surfaces.primary.withValues(alpha: 0.20)
+            color: widget.selected && isEinkTheme(context)
+                ? tokens.surfaces.outline
                 : Colors.transparent,
           )
         : null;
