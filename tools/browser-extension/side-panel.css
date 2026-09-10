@@ -87,15 +87,15 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   margin-top: 8px;
 }
 
-/* ── Jimaku 查字幕（asb 式云端字幕搜索） ── */
-.jimaku-row {
+/* ── 查字幕（asb 式云端字幕搜索；来源 = app 里配好的全部在线字幕源） ── */
+.subs-row {
   display: grid;
   grid-template-columns: 1fr 52px 40px;
   gap: 6px;
   margin-top: 8px;
 }
 
-.jimaku-row input {
+.subs-row input {
   min-height: 32px;
   padding: 0 8px;
   border: 1px solid var(--line);
@@ -105,7 +105,7 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   font: inherit;
 }
 
-.jimaku-results {
+.subs-results {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -114,7 +114,7 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   overflow-y: auto;
 }
 
-.jimaku-item {
+.subs-item {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -123,9 +123,9 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   text-align: left;
 }
 
-.jimaku-item-name { font-weight: 600; word-break: break-all; }
-.jimaku-item-meta { color: var(--muted); font-size: 12px; }
-.jimaku-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+.subs-item-name { font-weight: 600; word-break: break-all; }
+.subs-item-meta { color: var(--muted); font-size: 12px; }
+.subs-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
 
 #offset-value { text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -297,7 +297,7 @@ html.fushi-embed .toolbar { flex: 0 1 auto; min-width: 0; margin-top: 0; gap: 3p
 
 html.fushi-embed #track { margin-top: 6px; height: 32px; min-height: 32px; font-size: 13px; }
 html.fushi-embed .offset-row { margin-top: 6px; }
-html.fushi-embed .jimaku-row input { min-height: 32px; }
+html.fushi-embed .subs-row input { min-height: 32px; }
 
 /* ── 嵌入态防出界：窄抽屉（最窄 220）里这些盒子会捅穿面板边，全改可收缩规格 ── */
 /* 时轴行基版是 6 列最少 ~313px：auto-fit 让它按实际宽度自动降列（宽=一行，窄=两三行）。 */
@@ -306,13 +306,13 @@ html.fushi-embed .offset-row {
 }
 
 /* input 默认有 ~147px 固有宽且 grid 项 min-width:auto 不缩，1fr 被顶爆。 */
-html.fushi-embed .jimaku-row { grid-template-columns: 1fr 46px 40px; }
-html.fushi-embed .jimaku-row input { min-width: 0; }
+html.fushi-embed .subs-row { grid-template-columns: 1fr 46px 40px; }
+html.fushi-embed .subs-row input { min-width: 0; }
 
 /* 展开设置那一排也缩到 32 档，跟按钮行同高——两态一体。 */
 html.fushi-embed .offset-row button,
 html.fushi-embed .offset-row span,
-html.fushi-embed .jimaku-row button {
+html.fushi-embed .subs-row button {
   height: 32px;
   min-height: 32px;
 }
@@ -338,7 +338,7 @@ html.fushi-embed .subtitle-list {
   padding: 6px 6px calc(16px + env(safe-area-inset-bottom));
 }
 
-/* 折叠态：隐藏选轨/时轴/Jimaku，工具排 display:contents 并进折叠钮同一行。
+/* 折叠态：隐藏选轨/时轴/查字幕，工具排 display:contents 并进折叠钮同一行。
    头部两行制与按钮尺寸是 embed 通用规格（见基规则），展开收起只差隐藏与并排。 */
 html.fushi-embed body.hdr-folded .panel-header {
   padding-top: calc(4px + env(safe-area-inset-top));
@@ -363,5 +363,5 @@ html.fushi-embed .toolbar button {
 
 html.fushi-embed body.hdr-folded #track,
 html.fushi-embed body.hdr-folded #offset,
-html.fushi-embed body.hdr-folded #jimaku-row,
-html.fushi-embed body.hdr-folded #jimaku-results { display: none !important; }
+html.fushi-embed body.hdr-folded #subs-row,
+html.fushi-embed body.hdr-folded #subs-results { display: none !important; }

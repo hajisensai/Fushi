@@ -198,7 +198,7 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
 // 响应拿。但它体量大（实测整库 285 KB，单本 OALDPE 就 210 KB），不能每次 hover 查词都传，
 // 故走 revision 门控：请求里带上已缓存的 revision，server 只在指纹变了（用户导入/删词典、
 // 改自定义 CSS）时才回全量，其余时候只回指纹。SW 被回收后缓存清空，下次查词自动重取一次。
-let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
 
 // 把服务端这次查词响应里的 CSS 尾段并进缓存，并把**完整**尾段回填进 data，
 // 让 content.js / side-panel.js 无论命中缓存与否都能拿到同一份可直接赋给 window.* 的值。
@@ -214,14 +214,20 @@ function fushiMergePopupCss(data) {
       globalDictCSS: typeof data.globalDictCSS === 'string' ? data.globalDictCSS : '',
       customDictCSS: (data.customDictCSS && typeof data.customDictCSS === 'object')
         ? data.customDictCSS : {},
+      // 词典改名（v95）：真名 -> 显示名。与 CSS 同一条 revision 门控，改名会改
+      // 指纹 → 下次查词全量重取一次。
+      dictionaryDisplayNames:
+        (data.dictionaryDisplayNames && typeof data.dictionaryDisplayNames === 'object')
+          ? data.dictionaryDisplayNames : {},
     };
   } else if (fushiPopupCss.revision !== revision) {
     // 指纹变了但这次响应没带正文（不该发生；真发生时宁可清空也不能用陈旧样式）。
-    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
   }
   data.dictionaryStyles = fushiPopupCss.dictionaryStyles;
   data.globalDictCSS = fushiPopupCss.globalDictCSS;
   data.customDictCSS = fushiPopupCss.customDictCSS;
+  data.dictionaryDisplayNames = fushiPopupCss.dictionaryDisplayNames;
   return data;
 }
 
@@ -853,12 +859,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
-      } else if (msg.type === 'jimakuSearch') {
-        // Jimaku 查字幕①：Side Panel 搜索框 → server /api/subtitle/jimaku/search（server 持
-        // 用户在 app 设置里填的 Jimaku API key；真人剧 anime=false 补搜也在 server 侧）。
-        const r = await fetch(base + '/api/subtitle/jimaku/search', {
+      } else if (msg.type === 'subtitleSearch') {
+        // 查字幕①：Side Panel 搜索框 → server /api/subtitle/search。server 扇出
+        // **用户已配好的全部在线字幕来源**（Jimaku / OpenSubtitles / AJATT，与 app 内
+        // 视频页「找字幕」同一批 provider），一家挂了另几家照样出结果。
+        //
+        // 超时比别的端点长：AJATT 第一次搜索要拉约 9 MB 的静态目录（之后落盘缓存
+        // 24 小时），20 秒会在首次使用时稳定超时，而那正是零配置用户的第一印象。
+        const r = await fetch(base + '/api/subtitle/search', {
           method: 'POST',
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(45000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
             query: msg.query || '',
@@ -872,10 +882,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
-      } else if (msg.type === 'jimakuFetch') {
-        // Jimaku 查字幕②：候选 handle → server 下载+自动识别编码+解析，响应与
-        // /api/subtitle/parse 同形（{format,cues}），Side Panel 直接走既有 InstallTrack。
-        const r = await fetch(base + '/api/subtitle/jimaku/fetch', {
+      } else if (msg.type === 'subtitleFetch') {
+        // 查字幕②：候选 handle → server 按 handle 找回候选、交还给**它自己的来源**下载，
+        // 自动识别编码 + 解析，响应与 /api/subtitle/parse 同形（{format,cues}），
+        // Side Panel 直接走既有 InstallTrack。
+        const r = await fetch(base + '/api/subtitle/fetch', {
           method: 'POST',
           signal: AbortSignal.timeout(30000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },

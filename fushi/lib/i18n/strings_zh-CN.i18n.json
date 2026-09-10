@@ -4627,6 +4627,12 @@
   "mihon_source_login_done": "完成",
   "mihon_source_login_empty": "没有捕获到会话 cookie，未保存",
   "mihon_source_login_saved": "已登录该源",
+  "media_source_rename": "重命名",
+  "media_source_rename_label": "来源名称",
+  "book_rename": "重命名",
+  "book_rename_label": "标题",
+  "dict_rename": "重命名",
+  "dict_rename_label": "词典名称",
   "shortcut_action_global_external_open_lookup_page": "唤起主窗并打开查词页",
   "video_discovery_provider_rate_limited": "部分来源请求过于频繁，已显示其余结果",
   "video_discovery_provider_failed": "部分来源暂时请求失败，已显示其余结果"

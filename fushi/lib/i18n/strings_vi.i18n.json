@@ -4627,6 +4627,12 @@
   "mihon_source_login_done": "Done",
   "mihon_source_login_empty": "No session cookies were captured; nothing was saved",
   "mihon_source_login_saved": "Signed in to this source",
+  "media_source_rename": "Rename",
+  "media_source_rename_label": "Source name",
+  "book_rename": "Rename",
+  "book_rename_label": "Title",
+  "dict_rename": "Rename",
+  "dict_rename_label": "Dictionary name",
   "shortcut_action_global_external_open_lookup_page": "Bring to front and open lookup page",
   "video_discovery_provider_rate_limited": "Some sources are rate limited; showing the rest",
   "video_discovery_provider_failed": "Some sources failed temporarily; showing the rest"
