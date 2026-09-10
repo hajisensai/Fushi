@@ -217,11 +217,119 @@ void main() {
     expect(find.text('third'), findsNothing);
     expect(find.text('other'), findsNothing);
     expect(find.text('0 / 3'), findsOneWidget);
+    expect(find.text('0%'), findsOneWidget);
     await tester.tap(group);
     await tester.pumpAndSettle();
     expect(find.text('first'), findsOneWidget);
     expect(find.text('third'), findsOneWidget);
     expect(find.text('other'), findsNothing);
+  });
+
+  testWidgets('collapsed collection still shows overall progress', (
+    WidgetTester tester,
+  ) async {
+    // 组一折叠，成员卡片连同各自的进度条一起消失。整数计数 completed/total 在
+    // 「四条全在下载中」时恒为 0 / 4，看不出跑到哪了，所以组头自己带进度。
+    _viewport(tester, const Size(1000, 900));
+    final List<DownloadTaskEntry> tasks = <DownloadTaskEntry>[
+      _task(
+        'done',
+        status: DownloadTaskStatus.completed,
+        progress: 1,
+        collectionKey: 'key',
+        collectionTitle: 'Key Collection',
+      ),
+      _task(
+        'half',
+        progress: 0.5,
+        collectionKey: 'key',
+        collectionTitle: 'Key Collection',
+      ),
+      _task(
+        'fresh',
+        progress: 0,
+        collectionKey: 'key',
+        collectionTitle: 'Key Collection',
+      ),
+      // 进度未知：记 0，不许把它排除出分母。
+      _task('unknown', collectionKey: 'key', collectionTitle: 'Key Collection'),
+    ];
+    await tester.pumpWidget(_host(tasks));
+    await tester.pumpAndSettle();
+    final Finder progressBar = find.byKey(
+      const ValueKey<String>('download-group-progress-collection:key'),
+    );
+    // 展开时明细就在下面，组头不重复画条。
+    expect(progressBar, findsNothing);
+    expect(find.text('38%'), findsOneWidget);
+    expect(find.text('1 / 4'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('download-group-collection:key')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('half'), findsNothing);
+    expect(progressBar, findsOneWidget);
+    expect(
+      tester.widget<LinearProgressIndicator>(progressBar).value,
+      closeTo(0.375, 1e-9),
+    );
+    expect(find.text('38%'), findsOneWidget);
+    expect(find.text('1 / 4'), findsOneWidget);
+  });
+
+  testWidgets('fully completed collection drops the group progress bar', (
+    WidgetTester tester,
+  ) async {
+    _viewport(tester, const Size(1000, 900));
+    final List<DownloadTaskEntry> tasks = <DownloadTaskEntry>[
+      _task(
+        'done-a',
+        status: DownloadTaskStatus.completed,
+        progress: 1,
+        collectionKey: 'key',
+        collectionTitle: 'Key Collection',
+      ),
+      _task(
+        'done-b',
+        status: DownloadTaskStatus.completed,
+        progress: 1,
+        collectionKey: 'key',
+        collectionTitle: 'Key Collection',
+      ),
+    ];
+    await tester.pumpWidget(_host(tasks));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('download-group-collection:key')),
+    );
+    await tester.pumpAndSettle();
+    // '2 / 2' 在筛选栏也出现一次，这里只钉组头自己的两项。
+    expect(find.text('100%'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('download-group-progress-collection:key'),
+      ),
+      findsNothing,
+    );
+  });
+
+  test('group progress averages over every member, unknown counts as zero', () {
+    List<DownloadTaskEntry> members(List<double?> values) => <DownloadTaskEntry>[
+      for (int i = 0; i < values.length; i++) _task('t$i', progress: values[i]),
+    ];
+    expect(downloadGroupProgress(const <DownloadTaskEntry>[]), 0);
+    expect(downloadGroupProgress(members(<double?>[1, null])), 0.5);
+    expect(downloadGroupProgress(members(<double?>[1, 1])), 1);
+    // 越界的观测值被夹住，不会把整组算成 >100%。
+    expect(downloadGroupProgress(members(<double?>[2, 0])), 0.5);
+    expect(
+      downloadGroupProgress(<DownloadTaskEntry>[
+        _task('c', status: DownloadTaskStatus.completed),
+        _task('q', status: DownloadTaskStatus.queued),
+      ]),
+      0.5,
+    );
   });
 
   testWidgets(
