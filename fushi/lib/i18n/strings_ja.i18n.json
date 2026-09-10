@@ -4635,5 +4635,16 @@
   "dict_rename_label": "Dictionary name",
   "shortcut_action_global_external_open_lookup_page": "前面に出して辞書検索ページを開く",
   "popup_full_width": "Full-width popup",
-  "popup_full_width_hint": "Ignore the maximum width and let the popup span the available width. Its position still follows the selected word."
+  "popup_full_width_hint": "Ignore the maximum width and let the popup span the available width. Its position still follows the selected word.",
+  "stat_session_edit": "Edit session",
+  "stat_session_edit_date": "Date",
+  "stat_session_edit_date_invalid": "Enter the date as YYYY-MM-DD.",
+  "stat_session_edit_chars": "Characters",
+  "stat_session_edit_chars_invalid": "Characters must be a whole number of 0 or more.",
+  "stat_session_edit_message": "Changing the date moves the whole session and keeps its time of day. The character count is split back across the session's segments.",
+  "stat_sessions_clear_all": "Clear all sessions",
+  "stat_sessions_clear_all_title": "Clear all session records",
+  "stat_sessions_clear_all_message": "Clear all $n session records? Their time, character and page counts go away. Your saved words and sentences, mined cards and game library are kept. This cannot be undone.",
+  "stat_sessions_clear_all_ack": "I understand this deletes all $n session records.",
+  "stat_clear_all_overview_message": "Clear reading, watching and game statistics all at once? Time, character counts and lookup/mining counts across all three go away. Your saved words and sentences, mined cards, game library and activity timeline are kept. This cannot be undone."
 }

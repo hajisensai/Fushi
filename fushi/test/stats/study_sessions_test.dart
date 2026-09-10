@@ -213,4 +213,174 @@ void main() {
     );
     expect(out.single.title, '新名');
   });
+
+  // ↓ 会话编辑（用户 2026-09-10：「里面的每个会话做成可编辑，日期和字符都能编辑」）
+  // 的两个纯函数。落库那一半在 test/stats/study_session_edit_test.dart。
+
+  group('distributeSessionChars：新总字数按各段现有字数比例分摊', () {
+    test('比例分摊：(300, 700) 摊成总数 500 → (150, 350)', () {
+      expect(distributeSessionChars(<int>[300, 700], 500), <int>[150, 350]);
+    });
+
+    test('除不尽的余数全给第一段（sum(out) == total 才逐字节成立）', () {
+      expect(distributeSessionChars(<int>[1, 1, 1], 10), <int>[4, 3, 3]);
+      expect(distributeSessionChars(<int>[1, 2], 100), <int>[34, 66]);
+    });
+
+    test('多组边界数据：总和恒等于 total，且没有负数段', () {
+      const List<List<int>> currents = <List<int>>[
+        <int>[1],
+        <int>[0, 0, 7],
+        <int>[3, 3, 3, 3],
+        <int>[1, 999999],
+        <int>[7, 11, 13, 17, 19, 23],
+        <int>[0, 5, 0, 5, 0],
+      ];
+      const List<int> totals = <int>[0, 1, 2, 7, 99, 100, 1234567];
+      for (final List<int> current in currents) {
+        for (final int total in totals) {
+          final List<int> out = distributeSessionChars(current, total);
+          final String where = 'current=$current total=$total';
+          expect(out, hasLength(current.length), reason: where);
+          expect(
+            out.fold<int>(0, (int a, int b) => a + b),
+            total,
+            reason: where,
+          );
+          expect(out.every((int c) => c >= 0), isTrue, reason: where);
+        }
+      }
+    });
+
+    test('现有全 0（纯时长段 / 游戏骨架）：整数落第一段，不摊平成凭空的数字', () {
+      expect(distributeSessionChars(<int>[0, 0, 0], 500), <int>[500, 0, 0]);
+      expect(distributeSessionChars(<int>[0], 500), <int>[500]);
+    });
+
+    test('单段：全额给它；空列表返回空', () {
+      expect(distributeSessionChars(<int>[42], 7), <int>[7]);
+      expect(distributeSessionChars(const <int>[], 500), isEmpty);
+    });
+
+    test('total = 0 全零；负数夹到 0（不许写出负字数）', () {
+      expect(distributeSessionChars(<int>[300, 700], 0), <int>[0, 0]);
+      expect(distributeSessionChars(<int>[300, 700], -5), <int>[0, 0]);
+      expect(distributeSessionChars(<int>[0, 0], -5), <int>[0, 0]);
+    });
+  });
+
+  group('StudySession.withEdit：sheet 里改完那行的展示副本', () {
+    StudySession session() => StudySession(
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'b1',
+          title: 'T',
+          format: 'epub',
+          deviceId: 'dev',
+          startAt: DateTime(2026, 9, 8, 10, 0).millisecondsSinceEpoch,
+          endAt: DateTime(2026, 9, 8, 11, 0).millisecondsSinceEpoch,
+          durationMs: 45 * _min,
+          chars: 1200,
+          pages: 3,
+          segmentUids: <String>['a', 'b'],
+        );
+
+    test('只改字数：总字数换掉，起止 / 时长 / 身份一个都不动', () {
+      final StudySession out = session().withEdit(
+        const StudySessionEdit(chars: 900),
+      );
+      expect(out.chars, 900);
+      expect(out.startAt, session().startAt);
+      expect(out.endAt, session().endAt);
+      expect(out.durationMs, session().durationMs);
+      expect(out.pages, 3);
+      expect(out.segmentUids, <String>['a', 'b']);
+      expect(out.key, session().key, reason: '同一条会话，列表 key 不许换');
+    });
+
+    test('只改日期：起止同量平移、跨度不变，字数不动', () {
+      final StudySession out = session().withEdit(
+        StudySessionEdit(date: DateTime(2026, 9, 1)),
+      );
+      const int shift = -7 * 24 * 60 * _min;
+      expect(out.startAt, session().startAt + shift);
+      expect(out.endAt, session().endAt + shift);
+      expect(out.endAt - out.startAt, session().endAt - session().startAt);
+      expect(out.chars, 1200);
+      expect(out.durationMs, session().durationMs);
+    });
+
+    test('两项都改 / 空 edit（空 edit 就是原样副本）', () {
+      final StudySession both = session().withEdit(
+        StudySessionEdit(date: DateTime(2026, 9, 10), chars: 7),
+      );
+      expect(both.chars, 7);
+      expect(both.startAt, session().startAt + 2 * 24 * 60 * _min);
+      final StudySession none = session().withEdit(const StudySessionEdit());
+      expect(none.startAt, session().startAt);
+      expect(none.chars, 1200);
+    });
+  });
+
+  group('studySessionDateShiftMs：按日历日之差平移，不是换年月日', () {
+    test('同一天为 0（两侧的时分秒都不参与）', () {
+      expect(
+        studySessionDateShiftMs(
+          DateTime(2026, 6, 15, 23, 59, 59),
+          DateTime(2026, 6, 15),
+        ),
+        0,
+      );
+      expect(
+        studySessionDateShiftMs(
+          DateTime(2026, 6, 15, 0, 0, 1),
+          DateTime(2026, 6, 15, 18, 30),
+        ),
+        0,
+        reason: '目标只取 y/m/d',
+      );
+    });
+
+    test('往后一天 = +1 天；往前一天 = -1 天', () {
+      const int day = 24 * 60 * 60 * 1000;
+      expect(
+        studySessionDateShiftMs(
+          DateTime(2026, 6, 15, 8, 20),
+          DateTime(2026, 6, 16),
+        ),
+        day,
+      );
+      expect(
+        studySessionDateShiftMs(
+          DateTime(2026, 6, 15, 8, 20),
+          DateTime(2026, 6, 14),
+        ),
+        -day,
+      );
+    });
+
+    test('跨月 / 跨年：平移后落在目标日历日，时分秒原样保留', () {
+      for (final (DateTime, DateTime) pair in <(DateTime, DateTime)>[
+        (DateTime(2026, 1, 31, 22, 17, 5), DateTime(2026, 2, 1)),
+        (DateTime(2025, 12, 31, 23, 40), DateTime(2026, 1, 1)),
+        (DateTime(2026, 1, 5, 3, 30), DateTime(2025, 12, 20)),
+      ]) {
+        final DateTime from = pair.$1;
+        final DateTime to = pair.$2;
+        final int shift = studySessionDateShiftMs(from, to);
+        final DateTime moved = DateTime.fromMillisecondsSinceEpoch(
+          from.millisecondsSinceEpoch + shift,
+        );
+        expect(
+          <int>[moved.year, moved.month, moved.day],
+          <int>[to.year, to.month, to.day],
+          reason: '$from → $to',
+        );
+        expect(
+          <int>[moved.hour, moved.minute, moved.second],
+          <int>[from.hour, from.minute, from.second],
+          reason: '只挪日历日，保留时分秒',
+        );
+      }
+    });
+  });
 }

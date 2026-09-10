@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
@@ -15,6 +16,16 @@ import 'package:fushi/utils.dart';
 /// 那个 helper 先让段 uid 在在跑的 StudyClock 上退役，别绕过它直接调 DB 层）。
 ///
 /// 没有点击跳转：会话是统计事实，不是媒体入口（按媒体列表 / 时段明细已有跳转）。
+/// **整行点击 = 编辑这次会话**（改日期 / 字数，走 [showStatSessionEditDialog] →
+/// `applyStudySessionEdit`），区块标题行上另有「清除全部会话」（防呆确认 →
+/// [onClearAll]）：四个挂会话区块的页面（三个域 tab + 总览）用的是同一份区块，
+/// 所以这两件事天然四处同形。
+///
+/// 编辑入口**刻意不是 trailing 上的第二颗图标按钮**：`trailing` 只有一颗按钮的
+/// 48dp 宽度预算，塞第二颗会把标题挤到单行省略——正是 BUG-2417 报的那条回归
+/// （守卫 `test/pages/stat_session_list_test.dart` 的「长标题排到第二行」在 400dp
+/// 手机宽下当场变红，实测 448dp 才放得下两颗）。行本来就没有任何点击语义，拿它
+/// 当编辑入口不与谁冲突，且焦点驱动下 Tab 到行按 Enter 即可（集成测试友好）。
 
 /// 会话行展示名：段 title 快照 → 调用方按域换成当前显示名（书走 override 书名）。
 typedef StatSessionTitleOf = String Function(StudySession session);
@@ -26,6 +37,17 @@ typedef StatSessionTitleOf = String Function(StudySession session);
 /// 单看一行认不出是哪部作品——会话流是跨媒体时间序，没有时段明细 sheet 那种
 /// 合集组头兜底，所以合集名必须贴在行上。
 typedef StatSessionCollectionOf = String? Function(StudySession session);
+
+/// 编辑一次会话：调用页落 `applyStudySessionEdit(db, session, edit)` 再整页重聚合。
+typedef StatSessionEditOf = Future<void> Function(
+  StudySession session,
+  StudySessionEdit edit,
+);
+
+/// 清除这一批会话：调用页落 `deleteStudySessions(db, sessions)` 再整页重聚合。
+typedef StatSessionClearAll = Future<void> Function(
+  List<StudySession> sessions,
+);
 
 /// 一行的量纲文案：时长 · 字数 · 页数，为 0 的量纲不显示；全 0 显示 0 分钟。
 String formatStatSessionMeta(StudySession s) {
@@ -51,6 +73,8 @@ Widget buildStatSessionSection(
   required List<StudySession> sessions,
   required StatSessionTitleOf titleOf,
   required Future<void> Function(StudySession session) onDelete,
+  required StatSessionEditOf onEdit,
+  required StatSessionClearAll onClearAll,
   StatSessionCollectionOf? collectionOf,
   int limit = 8,
 }) {
@@ -85,9 +109,18 @@ Widget buildStatSessionSection(
                     titleOf: titleOf,
                     collectionOf: collectionOf,
                     onDelete: onDelete,
+                    onEdit: onEdit,
+                    onClearAll: onClearAll,
                   ),
                 ),
                 child: Text('${t.stat_sessions_show_all} (${sessions.length})'),
+              ),
+            // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
+            // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
+            if (sessions.isNotEmpty)
+              _StatSessionsClearAllButton(
+                sessions: sessions,
+                onClearAll: onClearAll,
               ),
           ],
         ),
@@ -102,18 +135,53 @@ Widget buildStatSessionSection(
             titleOf: titleOf,
             collectionOf: collectionOf,
             onDelete: onDelete,
+            onEdit: onEdit,
           ),
       ],
     ),
   );
 }
 
+/// 「清除全部会话」按钮：防呆确认（[confirmClearAllStatSessions]，必须先勾确认）
+/// → [onClearAll]。区块标题行与 sheet 头共用同一颗，别在两处各写一遍。
+class _StatSessionsClearAllButton extends StatelessWidget {
+  const _StatSessionsClearAllButton({
+    required this.sessions,
+    required this.onClearAll,
+  });
+
+  final List<StudySession> sessions;
+  final StatSessionClearAll onClearAll;
+
+  Future<void> _confirmAndClear(BuildContext context) async {
+    final bool confirmed =
+        await confirmClearAllStatSessions(context, sessions.length);
+    if (!confirmed) return;
+    await onClearAll(sessions);
+  }
+
+  // 图标刻意**不用** `delete_sweep_outlined`：顶栏那颗「清空全部统计」已经是它，
+  // 同屏两颗一样的扫帚、清的范围却差着一个数量级（会话事实 vs 整个域的全部统计），
+  // 是最典型的误点来源。`playlist_remove` 读作「把这张列表清空」，范围一眼就对。
+  @override
+  Widget build(BuildContext context) => IconButton(
+        key: const ValueKey<String>('stat-sessions-clear-all'),
+        tooltip: t.stat_sessions_clear_all,
+        icon: const Icon(Icons.playlist_remove, size: 20),
+        onPressed: () => unawaited(_confirmAndClear(context)),
+      );
+}
+
 /// 会话列表（区块与 sheet 共用）。删除：确认 → [onDelete] → 行从列表移除。
+/// 编辑：弹 [showStatSessionEditDialog] → [onEdit] → 本地换成展示副本 + 通知调用方
+/// 整页重聚合（重聚合才算得出最终形态：改完日期的会话要重新按 gap 归并、重新排序，
+/// 甚至与相邻会话合并成一条）。
 class StatSessionList extends StatefulWidget {
   const StatSessionList({
     required this.sessions,
     required this.titleOf,
     required this.onDelete,
+    required this.onEdit,
     this.collectionOf,
     this.onDeleted,
     super.key,
@@ -123,10 +191,13 @@ class StatSessionList extends StatefulWidget {
   final StatSessionTitleOf titleOf;
   final Future<void> Function(StudySession session) onDelete;
 
+  /// 保存一次会话编辑（日期 / 字数）。
+  final StatSessionEditOf onEdit;
+
   /// 行的合集名解析器；不传（或返回 null）的行只显示条目名。
   final StatSessionCollectionOf? collectionOf;
 
-  /// 每删掉一行后回调（sheet 用它记「删过」让调用方关 sheet 后重聚合）。
+  /// 每删掉一行 / 改完一行后回调（sheet 用它记「动过」让调用方关 sheet 后重聚合）。
   final VoidCallback? onDeleted;
 
   @override
@@ -170,6 +241,8 @@ class _StatSessionListState extends State<StatSessionList> {
               '${formatStatSessionRange(s.startAt, s.endAt)} · '
               '${formatStatSessionMeta(s)}',
             ),
+            // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
+            onTap: () => unawaited(_edit(s)),
             trailing: IconButton(
               tooltip: t.stat_session_delete,
               icon: const Icon(Icons.delete_outline),
@@ -213,6 +286,28 @@ class _StatSessionListState extends State<StatSessionList> {
     return collection == null ? title : '$collection - $title';
   }
 
+  /// 改一行：弹编辑框 → 写库 → 通知调用方整页重聚合。
+  ///
+  /// 本地那行同时换成 [StudySession.withEdit] 的展示副本：区块里这一步会被随后
+  /// 重聚合传下来的新列表覆盖（[didUpdateWidget]），无所谓；在 sheet 里它是**唯一**
+  /// 会动的东西——sheet 拿的是打开那一刻的快照，页面在底下重聚合不会让 sheet 跟着
+  /// 变，不就地换用户改完看到的还是旧值。真相仍以重聚合为准（改完日期的会话可能
+  /// 与相邻会话合并成一条，副本算不出来），关掉 sheet 之后看到的才是最终形态。
+  Future<void> _edit(StudySession s) async {
+    final StudySessionEdit? edit = await showStatSessionEditDialog(
+      context,
+      itemTitle: _confirmName(s),
+      startAt: s.startAt,
+      chars: s.chars,
+    );
+    if (edit == null || !mounted) return;
+    await widget.onEdit(s, edit);
+    if (!mounted) return;
+    final int at = _rows.indexOf(s);
+    if (at >= 0) setState(() => _rows[at] = s.withEdit(edit));
+    widget.onDeleted?.call();
+  }
+
   Future<void> _confirmAndDelete(StudySession s) async {
     final bool confirmed = await confirmDeleteStatistics(
       context,
@@ -227,16 +322,22 @@ class _StatSessionListState extends State<StatSessionList> {
   }
 }
 
-/// 全部会话 / 某媒体的会话 sheet。返回是否删过（true = 调用方重聚合）。
+/// 全部会话 / 某媒体的会话 sheet。返回是否动过（删 / 改，true = 调用方重聚合）。
+///
+/// 与页面内区块用的是同一个 [StatSessionList]，所以「每条都能改、能删、能一次清光」
+/// 在这里和在区块里逐字节同形——用户 2026-09-10「所有会话都要可编辑」指的正是
+/// 「全部会话」这一屏也算数。
 Future<bool> showStatSessionsSheet(
   BuildContext context, {
   required String title,
   required List<StudySession> sessions,
   required StatSessionTitleOf titleOf,
   required Future<void> Function(StudySession session) onDelete,
+  required StatSessionEditOf onEdit,
+  required StatSessionClearAll onClearAll,
   StatSessionCollectionOf? collectionOf,
 }) async {
-  bool deleted = false;
+  bool touched = false;
   await adaptiveModalSheet<void>(
     context: context,
     builder: (BuildContext sheetContext) {
@@ -248,7 +349,24 @@ Future<bool> showStatSessionsSheet(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(title, style: tokens.type.sectionLabel),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(title, style: tokens.type.sectionLabel),
+                  ),
+                  if (sessions.isNotEmpty)
+                    _StatSessionsClearAllButton(
+                      sessions: sessions,
+                      onClearAll: (List<StudySession> batch) async {
+                        touched = true;
+                        await onClearAll(batch);
+                        if (sheetContext.mounted) {
+                          Navigator.of(sheetContext).pop();
+                        }
+                      },
+                    ),
+                ],
+              ),
               SizedBox(height: tokens.spacing.gap / 2),
               if (sessions.isEmpty)
                 Text(t.stat_sessions_empty, style: tokens.type.metadata)
@@ -258,7 +376,8 @@ Future<bool> showStatSessionsSheet(
                   titleOf: titleOf,
                   collectionOf: collectionOf,
                   onDelete: onDelete,
-                  onDeleted: () => deleted = true,
+                  onEdit: onEdit,
+                  onDeleted: () => touched = true,
                 ),
             ],
           ),
@@ -266,5 +385,5 @@ Future<bool> showStatSessionsSheet(
       );
     },
   );
-  return deleted;
+  return touched;
 }

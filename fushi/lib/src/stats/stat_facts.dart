@@ -127,9 +127,16 @@ class StatCounterFacts {
   Iterable<(String, int)> favoriteWordEvents({StatSourceKind? source}) =>
       favoriteWordsFor(source).map((FavoriteWordRow f) => (f.dateKey, 1));
 
-  /// 收藏句事件流。收藏句的 `source` 是**另一个值域**（书 / 视频 / 有声书 / 歌词），
-  /// 与 [StatSourceKind] 不同构：视频域取 `source == video`，阅读域取其余全部
-  /// （有声书 / 歌词都算阅读，与阅读统计页历史判据一致）。
+  /// 收藏句事件流。收藏句的 `source` 是**另一个值域**（书 / 视频 / 有声书 / 歌词 /
+  /// 游戏），与 [StatSourceKind] 不同构：视频域取 `source == video`、游戏域取
+  /// `source == game`，阅读域取**其余全部**（有声书 / 歌词都算阅读，与阅读统计页
+  /// 历史判据一致）。
+  ///
+  /// 阅读域必须**同时**排除 video 与 game（而不是只排 video）：三个域各取一份、
+  /// `source: null` 取全部，「总览 = 三域之和」这条恒等式才成立；漏排一个值域，
+  /// 游戏收藏句会在阅读域与游戏域各计一次，总览就比三域之和小。新增值域时这里
+  /// 与它的域分支必须同时改，否则恒等式静默破掉（`stat_counter_facts_test` 钉死）。
+  ///
   /// BUG-893：dateKey 缺失（写入端补 dateKey 之前的老条目）回退按 createdAt 归日，
   /// 否则老收藏全被滤掉、统计恒 0。
   Iterable<(String, int)> favoriteSentenceEvents({StatSourceKind? source}) =>
@@ -138,7 +145,10 @@ class StatCounterFacts {
                 null => true,
                 StatSourceKind.video =>
                   s.source == kFavoriteSentenceSourceVideo,
-                StatSourceKind.book => s.source != kFavoriteSentenceSourceVideo,
+                StatSourceKind.game => s.source == kFavoriteSentenceSourceGame,
+                StatSourceKind.book =>
+                  s.source != kFavoriteSentenceSourceVideo &&
+                      s.source != kFavoriteSentenceSourceGame,
               })
           .map((FavoriteSentence s) => (
                 s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt),

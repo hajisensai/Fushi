@@ -56,7 +56,12 @@ void main() {
       // 定位 popup_max_width 滑块的 max。
       final int idx = src.indexOf("id: 'lookup.popup_max_width'");
       expect(idx, greaterThan(-1));
-      final String block = src.substring(idx, idx + 400);
+      // 块的终点取**下一个 item 的 id**，不要用固定字符窗口：往这个滑块里加
+      // 一行（如 #1402 的 visible: 全宽时隐藏）就会把 max 挤出窗口，让守卫在
+      // 判据一字未变的情况下变红。
+      final int next = src.indexOf("id: 'lookup.", idx + 10);
+      expect(next, greaterThan(idx), reason: '找不到下一个 item，块划不出来');
+      final String block = src.substring(idx, next);
       expect(block.contains('max: 2000'), isTrue,
           reason: 'TODO-1352：弹窗最大宽度上限应放宽到 2000');
       expect(block.contains('max: 1000'), isFalse,

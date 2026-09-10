@@ -39,6 +39,10 @@ class WarmPopupTestAppModel extends AppModel {
   // popupMaxWidth/Height 同属弹窗布局路径，照例覆写避免 prefsRepo 空指针。
   @override
   bool get popupBottomDocked => false;
+  @override
+  // #1402 把 popupFullWidth 也拉上了弹窗几何这条 build 路径，它同样走 prefsRepo；
+  // 桩里不覆写就会在 build 时抛（与 popupBottomDocked 同因）。
+  bool get popupFullWidth => false;
 
   @override
   double get appUiScale => 1.0;

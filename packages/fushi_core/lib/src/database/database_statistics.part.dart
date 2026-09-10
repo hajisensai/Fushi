@@ -383,6 +383,19 @@ mixin _FushiDbStatistics
     return q.get();
   }
 
+  /// 按 uid 取段（会话流编辑「这一次会话」时要读回每段的**现有**字数与起止时刻，
+  /// 才能把新的总字数按比例分摊、把时刻整体平移；[StudySession] 只带会话级求和）。
+  Future<List<StudySegmentRow>> getStudySegmentsByUids(Set<String> uids) {
+    // 空集也返回**可增长**的空列表，不是 `const []`：本表其余查询走 drift 的
+    // `.get()`，拿到的恒是可变 List，调用方（`applyStudySessionEdit` 拿去 sort）
+    // 按那个契约写。返回不可变常量会让「uid 集为空」这条路径——也就是纯时长
+    // 游戏会话——在 sort 上抛 `Cannot modify an unmodifiable list`。
+    if (uids.isEmpty) {
+      return Future<List<StudySegmentRow>>.value(<StudySegmentRow>[]);
+    }
+    return (select(studySegments)..where((t) => t.uid.isIn(uids))).get();
+  }
+
   /// 某媒体的全部段（详情 / 删除前预览）。
   Future<List<StudySegmentRow>> getStudySegmentsForMedia({
     required String mediaKind,

@@ -35,8 +35,13 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.checkboxLabel,
     this.checkboxInitialValue = false,
     this.checkedDisclosure,
+    this.checkboxKey,
+    this.requireCheckboxToConfirm = false,
     super.key,
-  });
+  }) : assert(
+          !requireCheckboxToConfirm || checkboxLabel != null,
+          '防呆闸没有勾选项就是一颗永远点不动的按钮',
+        );
 
   final String title;
   final String message;
@@ -58,6 +63,17 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 其中的书」同屏并存，而代码按勾选递归删了每本书的解压目录和有声书目录。披露挂
   /// 在勾选状态上，正文才不会再和实际行为说反话。
   final DeletionDisclosure? checkedDisclosure;
+
+  /// 勾选行的 key（供测试 / 集成测试焦点驱动定位）。
+  final Key? checkboxKey;
+
+  /// **防呆闸**：true 时确认按钮在勾选前恒禁用（`onPressed: null`）。
+  ///
+  /// 与默认的「可选项」勾选（如「连同书籍本体一起删除」）是两种语义，别混：
+  /// 可选项决定**删多少**，防呆闸决定**能不能删**。用在「按钮就长在常用位置、
+  /// 一个纯确认框等同于点两下删光半年数据」的地方（统计页会话区块标题行上的
+  /// 「清除全部会话」就是这种）。勾选文案应当把不可逆的范围复述一遍。
+  final bool requireCheckboxToConfirm;
 
   @override
   State<FushiDestructiveConfirmDialog> createState() =>
@@ -98,6 +114,7 @@ class _FushiDestructiveConfirmDialogState
             if (widget.checkboxLabel != null) ...[
               SizedBox(height: tokens.spacing.gap),
               FushiListItem(
+                key: widget.checkboxKey,
                 density: FushiListDensity.compact,
                 padding: EdgeInsets.zero,
                 // BUG-1291：勾选文案是整句解释（「同时删除其中的视频（保留你的
@@ -143,10 +160,13 @@ class _FushiDestructiveConfirmDialogState
             adaptiveDialogAction(
               context: context,
               isDestructiveAction: true,
-              onPressed: () => Navigator.pop(
-                context,
-                FushiDestructiveConfirmResult(checked: _checked),
-              ),
+              // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
+              onPressed: widget.requireCheckboxToConfirm && !_checked
+                  ? null
+                  : () => Navigator.pop(
+                        context,
+                        FushiDestructiveConfirmResult(checked: _checked),
+                      ),
               child: Text(widget.confirmLabel ?? t.dialog_delete),
             ),
           ],

@@ -18,21 +18,37 @@ void main() {
   final String caret = File(
     'lib/src/pages/implementations/reader_fushi/caret.part.dart',
   ).readAsStringSync();
+  // BUG-2434：弹窗覆盖主题的决策已抽成纯函数，断言面跟着搬到这里。
+  final String popupTheme = File(
+    'lib/src/pages/implementations/dictionary_popup_theme.dart',
+  ).readAsStringSync();
 
   test('词典弹窗：app ColorScheme 为基底 + 纸色中性梯度，不再 fromSeed(纸色)', () {
+    // 决策住在纯函数 resolveDictionaryPopupTheme 里（BUG-2434 从
+    // chrome.part.dart 抽出），断言面因此在 dictionary_popup_theme.dart。
+    expect(popupTheme.contains('ColorScheme.fromSeed('), isFalse,
+        reason: '纸色重造 ColorScheme 会让按钮/高亮/描边与用户主题色脱钩');
+    expect(
+      RegExp(r'buildColorScheme\(brightness\)').hasMatch(popupTheme),
+      isTrue,
+      reason: 'app 真实 ColorScheme 必须是基底',
+    );
+    expect(popupTheme.contains('deriveSurfaceRolesFrom(bg)'), isTrue,
+        reason: '纸色只贡献中性角色梯度');
+  });
+
+  test('词典弹窗：chrome.part 仍然只是把当前取值喂给那个纯函数', () {
+    // 上一条搬去了纯函数，这条守住「决策没有偷偷搬回 chrome.part」——
+    // 两条一起才等价于原先那一条的覆盖面。
     final int start = chrome.indexOf('void _syncDictionaryTheme()');
     expect(start, greaterThanOrEqualTo(0));
     final String body = chrome.substring(
       start,
       chrome.indexOf('\n  }\n', start),
     );
+    expect(body.contains('resolveDictionaryPopupTheme('), isTrue,
+        reason: '决策必须仍然经由纯函数，否则上一条守卫就看不见它了');
     expect(body.contains('ColorScheme.fromSeed('), isFalse);
-    expect(
-      RegExp(r'appModel\s*\.buildColorScheme\(brightness\)').hasMatch(body),
-      isTrue,
-    );
-    expect(body.contains('deriveSurfaceRolesFrom(bg)'), isTrue);
-    expect(body.contains('onSurface: textColor'), isTrue);
   });
 
   test('歌词高亮 / caret 焦点环：两档都跟主题 primary，无硬编码高亮黄', () {

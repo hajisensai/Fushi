@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2242 条。点号进各自文件。
+> 共 2244 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2438](bugs/BUG-2438-galgame-lookups-mined-as-book.md) | ✅ | ✅ | galgame 查词/制卡/收藏被记成 book 来源，游戏统计缺四个指标 |
+| [BUG-2437](bugs/BUG-2437-stats-tabs-layout-not-unified.md) | ✅ | ✅ | 统计中心阅读 tab 独有页面级限宽，四个 tab 布局不统一 |
 | [BUG-2436](bugs/BUG-2436-eink-popup-body-opacity-not-flattened.md) | ✅ | ✅ | 墨水屏弹窗只压了按钮 opacity，正文侧十几处静息半透明与亚像素位移漏网 |
 | [BUG-2435](bugs/BUG-2435-dict-style-preview-missing-eink.md) | ✅ | ✅ | 词典样式预览不注入 eink class，墨水屏下预览与真弹窗不同源 |
 | [BUG-2434](bugs/BUG-2434-reader-lookup-popup-loses-eink-theme.md) | ✅ | ✅ | 书内查词弹窗丢失墨水屏主题扩展，整个 html.eink 覆盖块失效 |
