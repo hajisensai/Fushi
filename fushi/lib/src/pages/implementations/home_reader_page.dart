@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
@@ -29,6 +30,10 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
   /// （EPUB / PDF / 通用），页面类型由当前来源决定，壳不得硬编某一个实现。
   /// 「浏览」= 统一发现页（小说 + 有声书在线源：nyaa 等，源可切换、默认全部源
   /// 聚合，下载完自动入库）。
+  ///
+  /// iOS 上「浏览」整个不声明（[StoreRestrictedCapability.externalDiscovery]）：
+  /// 那一页的全部内容都是内置外部源，源不装配后它只剩一个空壳。省略而不是留个
+  /// 空 tab，正是 [MediaLibraryViewKind] 文档说的「各域只声明自己真正有的视图」。
   @override
   Widget build(BuildContext context) {
     return MediaLibraryShell(
@@ -40,18 +45,19 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           builder: (BuildContext context, Widget navigation) =>
               mediaSource.buildHistoryPage(navigation: navigation),
         ),
-        MediaLibraryViewSpec(
-          kind: MediaLibraryViewKind.browse,
-          label: t.library_view_browse,
-          builder: (BuildContext context, Widget navigation) =>
-              MediaDiscoveryPage(
-            kinds: const <DiscoveryMediaKind>[
-              DiscoveryMediaKind.novel,
-              DiscoveryMediaKind.audiobook,
-            ],
-            navigation: navigation,
+        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.browse,
+            label: t.library_view_browse,
+            builder: (BuildContext context, Widget navigation) =>
+                MediaDiscoveryPage(
+              kinds: const <DiscoveryMediaKind>[
+                DiscoveryMediaKind.novel,
+                DiscoveryMediaKind.audiobook,
+              ],
+              navigation: navigation,
+            ),
           ),
-        ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
           label: t.library_view_import,

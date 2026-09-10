@@ -342,9 +342,14 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
   /// 平台门只管「要不要**我自己**去造运行时」。
   ///
   /// `AidokuRuntimeFactory.isSupported` 表达的是「本平台能不能创建 Aidoku 运行
-  /// 时」（只有 macOS/iOS）。但调用方把运行时和安装包都预置进来时，这条限制根本
+  /// 时」（只有 macOS）。但调用方把运行时和安装包都预置进来时，这条限制根本
   /// 不适用——那份运行时已经在手上、能直接用。只看平台会把这种情况误判成不可用，
   /// 于是页面明明能拉到章节却显示「本平台不支持」。
+  ///
+  /// 这条 preset 逃生口不是合规缺口：iOS 上唯一能造出 [AidokuRuntime] 的工厂已经
+  /// 抛 `UNSUPPORTED_PLATFORM`，没有任何生产路径能把 `_runtime` 填非空。旧版本
+  /// 留下的 Aidoku 书架条目走到这里会拿到 false，作品页据此显示「本平台不支持」，
+  /// 而不是崩在懒建运行时上。
   @override
   bool get isSupportedOnThisPlatform =>
       (_runtime != null && presetPackage != null) ||

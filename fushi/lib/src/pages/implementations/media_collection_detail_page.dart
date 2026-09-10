@@ -43,6 +43,7 @@ import 'package:fushi/src/pages/implementations/collection_relations_section.dar
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
     show SubtitleCollectionPanel;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
@@ -927,6 +928,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ),
     );
   }
+
+  /// 下载入口此刻是否该渲染：「功能模块 › 下载」开着，且本平台有下载中心
+  /// （iOS 按 App Store 合规恒无，见 `store_compliance.dart`）。
+  ///
+  /// 判据问 [ModuleVisibility] 而不是直接判平台：本页的三个下载入口（集菜单
+  /// 「下载」、相关作品「去下载」、管理菜单「补齐缺集」）打开的都是番剧下载对话框，
+  /// 而它属于下载中心——模块关掉时那个页面本身已不可达，入口留着就是一个点了会把
+  /// 用户推进一条不存在流程的按钮。同域的 `home_page.dart` 早就按「页面不可达时
+  /// 入口就不该渲染」处理（`_downloadsReachable`），这里补齐。
+  bool get _downloadsAvailable => ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider).moduleVisibility.isEnabled(ModuleId.downloads);
 
   /// 文件名解出的集号；解不出回落集级刮削行的 episodeNumber（两者都无 → null）。
   int? _episodeNumberOf(CollectionEpisodeSlot slot) =>
@@ -2360,16 +2374,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_EpisodeMenuAction>>[
-        PopupMenuItem<_EpisodeMenuAction>(
-          value: _EpisodeMenuAction.download,
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.download_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(t.collection_episode_download),
-            ],
+        if (_downloadsAvailable)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.download,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.download_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_episode_download),
+              ],
+            ),
           ),
-        ),
         // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
         // 仅本地文件有——远端占位集探不了。
         if (episode.local != null && widget.videoSpecs != null)
@@ -2566,12 +2581,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               t.collection_episode_rename,
               enabled: _members.isNotEmpty,
             ),
-            _manageMenuItem(
-              _CollectionManageAction.fillMissing,
-              Icons.playlist_add,
-              t.collection_episode_fill_missing,
-              enabled: _slots.isNotEmpty,
-            ),
+            // 「补齐缺集」做的事就是打开番剧下载对话框，所以它和另外两个下载
+            // 入口同门：没有下载中心时整项不出，而不是出一项点了打不开对话框的菜单。
+            if (_downloadsAvailable)
+              _manageMenuItem(
+                _CollectionManageAction.fillMissing,
+                Icons.playlist_add,
+                t.collection_episode_fill_missing,
+                enabled: _slots.isNotEmpty,
+              ),
             _manageMenuItem(
               _CollectionManageAction.splitBySeason,
               Icons.call_split,
@@ -2655,7 +2673,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                           collectionId: widget.collection.id,
                           onOpenCollection: (int id) =>
                               _openRelatedCollection(id),
-                          onDownload: _downloadRelation,
+                          onDownload:
+                              _downloadsAvailable ? _downloadRelation : null,
                         ),
                       ),
                     ),

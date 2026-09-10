@@ -186,6 +186,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   bool _moduleAvailable(ModuleId module) => module.availableOn(
     isWindows: Platform.isWindows,
     isDesktop: DesktopLookupService.isDesktop,
+    isIOS: Platform.isIOS,
   );
 
   @override

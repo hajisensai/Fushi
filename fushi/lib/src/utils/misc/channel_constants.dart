@@ -29,8 +29,6 @@ abstract final class FushiChannels {
       MethodChannel('$_prefix/screen_brightness');
   static const MethodChannel selectionActions =
       MethodChannel('$_prefix/selection_actions');
-  static const MethodChannel aidokuRuntime =
-      MethodChannel('$_prefix/aidoku_runtime');
   static const MethodChannel cloudflareProxyBrowser =
       MethodChannel('$_prefix/cloudflare_proxy_browser');
   // TODO-617: drives the desktop global lookup overlay (bare WebView2 window).

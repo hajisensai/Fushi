@@ -59,6 +59,14 @@ class PlatformServices {
   /// 本进程跑在桌面端吗（Windows / macOS / Linux）。同上，默认取真实平台。
   final bool isDesktop;
 
+  /// 本进程跑在 iOS 上吗。同上，默认取真实平台。
+  ///
+  /// 单列一个字段而不是让调用方写 `!isDesktop && !isAndroid`：iOS 在
+  /// [ModuleId.availableOn] 里承载的是 App Store 合规边界
+  /// （[StoreRestrictedCapability]），与「移动端」这个技术分类不是一回事——
+  /// Android 同为移动端却不受任何一条商店限制约束。
+  final bool isIOS;
+
   PlatformServices({
     required this.directory,
     required this.lifecycle,
@@ -71,9 +79,11 @@ class PlatformServices {
     AndroidClipboardService? androidClipboard,
     bool? isWindows,
     bool? isDesktop,
+    bool? isIOS,
   })  : isWindows = isWindows ?? Platform.isWindows,
         isDesktop = isDesktop ??
             (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
+        isIOS = isIOS ?? Platform.isIOS,
         _createDefaultAnkiRepository = createAnkiRepository,
         _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
         _isMobile = isMobile,
