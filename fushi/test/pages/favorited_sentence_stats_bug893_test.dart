@@ -2,20 +2,32 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 // BUG-893：阅读统计「收藏语句」计数恒为 0。根因——reader 书内收藏写入端不带 dateKey，
 // 读取端又用 `dateKey != null` 过滤，把所有书内收藏滤光。修复：写入补 dateKey +
 // 读取端回退 `dateKey ?? statDateKey(createdAt)`（createdAt 恒非空，已存无 dateKey 收藏也计入）。
 
-/// 复刻 reading_statistics_page._loadData 里收藏语句的分桶映射（read-side 修复逻辑）。
+/// 阅读侧收藏语句的分桶：直接走生产判据（[StatCounterFacts.favoriteSentenceEvents]，
+/// 三个统计 tab 共用的那一个），不再在测试里复刻一份——复刻件与实现漂移时，测试会
+/// 在实现已经坏掉的情况下继续绿。
 StatActivityBuckets bucketFavoritedSentences(
     List<FavoriteSentence> favSentences, DateTime now) {
   return bucketActivityByDateKey(
-    favSentences
-        .where((FavoriteSentence s) => s.source != kFavoriteSentenceSourceVideo)
-        .map(
-            (FavoriteSentence s) => (s.dateKey ?? statDateKey(s.createdAt), 1)),
+    StatCounterFacts(favoriteSentences: favSentences)
+        .favoriteSentenceEvents(source: StatSourceKind.book),
+    now,
+  );
+}
+
+/// 视频侧同判据（BUG-893 的读取端回退此前只修了阅读侧）。
+StatActivityBuckets bucketVideoFavoritedSentences(
+    List<FavoriteSentence> favSentences, DateTime now) {
+  return bucketActivityByDateKey(
+    StatCounterFacts(favoriteSentences: favSentences)
+        .favoriteSentenceEvents(source: StatSourceKind.video),
     now,
   );
 }
@@ -87,6 +99,50 @@ void main() {
     });
   });
 
+  group('video side shares the same fallback', () {
+    test('无 dateKey 的视频收藏按 createdAt 计入（此前视频侧仍在漏）', () {
+      final favs = <FavoriteSentence>[
+        FavoriteSentence(
+          text: 'v1',
+          bookTitle: 'V',
+          createdAt: DateTime(2026, 7, 18, 9),
+          source: kFavoriteSentenceSourceVideo,
+        ),
+        FavoriteSentence(
+            text: 'b1', bookTitle: 'B', createdAt: DateTime(2026, 7, 18, 9)),
+      ];
+      final b = bucketVideoFavoritedSentences(favs, now);
+      expect(b.today, 1, reason: '视频那条无 dateKey 也要计入');
+      expect(b.all, 1, reason: '书内那条不算进视频域');
+    });
+
+    test('跨域（source 不传）= 两个域之和', () {
+      final favs = <FavoriteSentence>[
+        FavoriteSentence(
+          text: 'v1',
+          bookTitle: 'V',
+          createdAt: DateTime(2026, 7, 18, 9),
+          source: kFavoriteSentenceSourceVideo,
+        ),
+        FavoriteSentence(
+            text: 'b1', bookTitle: 'B', createdAt: DateTime(2026, 7, 18, 9)),
+        FavoriteSentence(
+            text: 'b2', bookTitle: 'B', createdAt: DateTime(2026, 7, 17, 9)),
+      ];
+      final StatActivityBuckets all = bucketActivityByDateKey(
+        StatCounterFacts(favoriteSentences: favs).favoriteSentenceEvents(),
+        now,
+      );
+      expect(
+        all.all,
+        bucketFavoritedSentences(favs, now).all +
+            bucketVideoFavoritedSentences(favs, now).all,
+        reason: '总览 tab 的跨域数字必须恰好是两个域 tab 之和',
+      );
+      expect(all.all, 3);
+    });
+  });
+
   group('source guards (lock the fix)', () {
     test('reader 书内收藏写入端补了 dateKey', () {
       final String src =
@@ -105,12 +161,22 @@ void main() {
           reason: 'BUG-893 回归：书内收藏不带 dateKey → 统计恒 0');
     });
 
-    test('阅读统计读取端回退 createdAt，不再用 dateKey != null 过滤收藏语句', () {
+    test('读取端回退 createdAt，不再用 dateKey != null 过滤收藏语句', () {
+      // 判据已从两个统计页收敛进 StatCounterFacts（总览 tab 也要同一份）。
       final String src =
-          File('lib/src/pages/implementations/reading_statistics_page.dart')
-              .readAsStringSync();
-      expect(src.contains('s.dateKey ?? statDateKey(s.createdAt)'), isTrue,
+          File('lib/src/stats/stat_facts.dart').readAsStringSync();
+      expect(
+          src.contains('s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt)'),
+          isTrue,
           reason: 'BUG-893：读取端须回退 createdAt，兼容已存无 dateKey 收藏');
+      for (final String page in <String>[
+        'lib/src/pages/implementations/reading_statistics_page.dart',
+        'lib/src/pages/implementations/video_statistics_page.dart',
+      ]) {
+        expect(File(page).readAsStringSync().contains('s.dateKey != null'),
+            isFalse,
+            reason: '$page 不许再自己按 dateKey 非空过滤收藏语句');
+      }
     });
   });
 }
