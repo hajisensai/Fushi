@@ -9,10 +9,10 @@ library;
 
 import 'dart:io';
 
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:path/path.dart' as p;
 
 /// 批量下载里的一集输入：稳定身份 + 定位信息 + 合集内序位。

@@ -1,9 +1,10 @@
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
-import 'package:fushi/src/stats/study_sessions.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 
 // v92 统计域重构：study_segments 是学习统计的唯一事实表。本测试锁定 DAO 契约：
 // 按 uid 幂等 upsert（绝对值覆盖，永不 +=）、窗口查询、按身份删除 + 墓碑、按种类清空。

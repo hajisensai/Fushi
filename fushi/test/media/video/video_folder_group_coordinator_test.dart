@@ -1,11 +1,11 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
-import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {

@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 
 void main() {
   test('production work catalog contains MAL and TMDB', () {

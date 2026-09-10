@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart'
     show Value, OrderingTerm, BooleanExpressionOperators;
-import 'package:fushi/src/media/video/external_video.dart'
+import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

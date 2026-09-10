@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
 void main() {
   group('decode/encode 素材库目录', () {

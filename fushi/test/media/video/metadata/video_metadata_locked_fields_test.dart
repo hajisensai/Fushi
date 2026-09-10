@@ -1,11 +1,11 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_database_store.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_locked_fields.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v99 字段锁：编解码前向兼容 + `apply()` 里「被锁字段一律保留旧值，其余照常更新」。

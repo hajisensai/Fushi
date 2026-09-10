@@ -6,8 +6,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/video/video_path_migration.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart';
 import 'package:path/path.dart' as p;
 
 /// 可编程后端：记录收到的调用，按需返回成功/失败。

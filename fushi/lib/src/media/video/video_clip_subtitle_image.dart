@@ -15,7 +15,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 
 /// 视频显示区高度取不到时的回退基准（逻辑像素）。

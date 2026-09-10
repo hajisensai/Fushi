@@ -18,9 +18,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/dictionary/dictionary_media_types.dart'
+import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show dictionaryMediaMimeType;
-import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/sync/sync_utils.dart' show guessSyncContentType;
 import 'package:fushi_anki/fushi_anki.dart'
     show kAnkiMimeTypeByExtension, mimeTypeForPath;

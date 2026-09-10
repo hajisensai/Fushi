@@ -6,10 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
 
 import '../../helpers/source_guard.dart';

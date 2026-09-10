@@ -1,23 +1,22 @@
 import 'dart:async' show unawaited;
-
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
-import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/misc/engine_listenable.dart';
+import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 
 /// 统一发现页：书（小说/有声书）与 galgame 共用的多源在线资源发现视图。
 ///
@@ -903,7 +902,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       int hiddenManga
     }) visible = _visible;
     return AnimatedBuilder(
-      animation: queue,
+      animation: EngineListenable(queue),
       builder: (BuildContext context, Widget? _) => ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[

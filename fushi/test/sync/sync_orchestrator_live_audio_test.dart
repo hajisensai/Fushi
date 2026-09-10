@@ -16,21 +16,21 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_storage.dart' show EpubStorage;
+import 'package:fushi_engine/epub/epub_storage.dart' show EpubStorage;
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
-import 'package:fushi/src/models/local_audio_source_pref.dart'
+import 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
-import 'package:fushi/src/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

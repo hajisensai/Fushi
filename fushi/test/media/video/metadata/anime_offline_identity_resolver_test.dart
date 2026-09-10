@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/anidb_title_catalog.dart';
-import 'package:fushi/src/media/video/metadata/anime_identity_mapping.dart';
-import 'package:fushi/src/media/video/metadata/anime_offline_identity_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
+import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi_engine/media/video/metadata/anime_offline_identity_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 
 /// 离线标题索引阶段：AniDB 标题包唯一精确命中 → Fribb 换 MAL / TMDB id。
 void main() {

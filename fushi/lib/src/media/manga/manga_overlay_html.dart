@@ -1,12 +1,11 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
 ///
@@ -33,7 +32,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
   final StringBuffer buffer = StringBuffer();
   for (int blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
     final MokuroBlock block = page.blocks[blockIndex];
-    final Rect r = block.rectangle;
+    final MokuroRect r = block.rectangle;
     final double leftPct = (r.left / pageWidth) * 100;
     final double topPct = (r.top / pageHeight) * 100;
     final double widthPct = (r.width / pageWidth) * 100;
@@ -210,20 +209,24 @@ bool _mangaKanaOnly(String text) =>
 bool _mangaContainsKanji(String text) =>
     RegExp(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]').hasMatch(text);
 
-double _mangaAxisOverlap(Rect a, Rect b, {required bool vertical}) {
+double _mangaAxisOverlap(
+  MokuroRect a,
+  MokuroRect b, {
+  required bool vertical,
+}) {
   if (vertical) {
     return math.max(0, math.min(a.bottom, b.bottom) - math.max(a.top, b.top));
   }
   return math.max(0, math.min(a.right, b.right) - math.max(a.left, b.left));
 }
 
-double _mangaAxisLength(Rect rect, {required bool vertical}) =>
+double _mangaAxisLength(MokuroRect rect, {required bool vertical}) =>
     vertical ? rect.height : rect.width;
 
-double _mangaCrossThickness(Rect rect, {required bool vertical}) =>
+double _mangaCrossThickness(MokuroRect rect, {required bool vertical}) =>
     vertical ? rect.width : rect.height;
 
-double _mangaCrossGap(Rect a, Rect b, {required bool vertical}) {
+double _mangaCrossGap(MokuroRect a, MokuroRect b, {required bool vertical}) {
   if (vertical) {
     return math.max(0, math.max(a.left, b.left) - math.min(a.right, b.right));
   }
@@ -327,7 +330,7 @@ List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
   if (block.lines.isEmpty || block.rectangle.isEmpty) {
     return const <MangaOcrTextRegion>[];
   }
-  final List<Rect> lineRects = _mangaLineRects(block);
+  final List<MokuroRect> lineRects = _mangaLineRects(block);
   final List<MangaOcrTextRegion> result = <MangaOcrTextRegion>[];
   int utf16Base = 0;
   for (int lineIndex = 0; lineIndex < block.lines.length; lineIndex++) {
@@ -343,16 +346,16 @@ List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
       offset = end;
     }
     if (characters.isNotEmpty) {
-      final Rect lineRect = lineRects[lineIndex];
+      final MokuroRect lineRect = lineRects[lineIndex];
       for (int index = 0; index < characters.length; index++) {
-        final Rect characterRect = block.isVertical
-            ? Rect.fromLTWH(
+        final MokuroRect characterRect = block.isVertical
+            ? MokuroRect.fromLTWH(
                 lineRect.left,
                 lineRect.top + index * lineRect.height / characters.length,
                 lineRect.width,
                 lineRect.height / characters.length,
               )
-            : Rect.fromLTWH(
+            : MokuroRect.fromLTWH(
                 lineRect.left + index * lineRect.width / characters.length,
                 lineRect.top,
                 lineRect.width / characters.length,
@@ -370,10 +373,10 @@ List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
   return result;
 }
 
-List<Rect> _mangaLineRects(MokuroBlock block) {
+List<MokuroRect> _mangaLineRects(MokuroBlock block) {
   final List<List<List<double>>>? coordinates = block.linesCoords;
   if (coordinates != null && coordinates.length == block.lines.length) {
-    final List<Rect> parsed = <Rect>[];
+    final List<MokuroRect> parsed = <MokuroRect>[];
     for (final List<List<double>> polygon in coordinates) {
       if (polygon.isEmpty ||
           polygon.any((List<double> point) => point.length < 2)) {
@@ -394,20 +397,20 @@ List<Rect> _mangaLineRects(MokuroBlock block) {
         parsed.clear();
         break;
       }
-      parsed.add(Rect.fromLTRB(left, top, right, bottom));
+      parsed.add(MokuroRect.fromLTRB(left, top, right, bottom));
     }
     if (parsed.length == block.lines.length) {
       return parsed;
     }
   }
 
-  final Rect rect = block.rectangle;
+  final MokuroRect rect = block.rectangle;
   final int count = block.lines.length;
   if (block.isVertical) {
     final double width = rect.width / count;
-    return <Rect>[
+    return <MokuroRect>[
       for (int index = 0; index < count; index++)
-        Rect.fromLTWH(
+        MokuroRect.fromLTWH(
           rect.right - (index + 1) * width,
           rect.top,
           width,
@@ -416,9 +419,9 @@ List<Rect> _mangaLineRects(MokuroBlock block) {
     ];
   }
   final double height = rect.height / count;
-  return <Rect>[
+  return <MokuroRect>[
     for (int index = 0; index < count; index++)
-      Rect.fromLTWH(
+      MokuroRect.fromLTWH(
         rect.left,
         rect.top + index * height,
         rect.width,
@@ -432,7 +435,7 @@ String _mangaCharacterRegionsHtml({
   required List<MangaOcrTextRegion> regions,
 }) {
   final String sentence = block.lines.join();
-  final Rect parent = block.rectangle;
+  final MokuroRect parent = block.rectangle;
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
@@ -442,7 +445,7 @@ String _mangaCharacterRegionsHtml({
         region.utf16End > sentence.length) {
       continue;
     }
-    final Rect r = region.rectangle;
+    final MokuroRect r = region.rectangle;
     final double leftPct = ((r.left - parent.left) / parentWidth) * 100;
     final double topPct = ((r.top - parent.top) / parentHeight) * 100;
     final double widthPct = (r.width / parentWidth) * 100;

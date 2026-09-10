@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// Authenticated loopback policy lookup for the JVM's per-URL ProxySelector.
 /// Secrets stay in memory, never in process arguments, URLs, or logs.

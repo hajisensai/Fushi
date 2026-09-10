@@ -22,11 +22,11 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/epub/epub_spread_analyzer.dart';
 import 'package:fushi/src/epub/epub_spread_map.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
@@ -46,15 +46,15 @@ import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_webview_render.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
-import 'package:fushi/src/mining/immersion_mining_request.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult;
@@ -86,7 +86,7 @@ import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';

@@ -19,14 +19,14 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart'
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
 /// 轮询退避：500ms 起步 ×1.5 递增，封顶 5s。纯函数便于单测单调性与上限。

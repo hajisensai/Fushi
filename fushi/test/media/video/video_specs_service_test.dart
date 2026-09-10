@@ -5,8 +5,8 @@ import 'package:drift/native.dart' show NativeDatabase;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/video/video_duration_probe.dart';
-import 'package:fushi/src/media/video/video_dynamic_range.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_dynamic_range.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 
 /// 规格服务：缓存三层（内存 → DB → ffprobe）、失效判据、并发上限。

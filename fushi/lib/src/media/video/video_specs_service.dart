@@ -20,7 +20,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 
 /// 同时在跑的 ffprobe 进程数上限。

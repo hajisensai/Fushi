@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/misc/helper_process_registry.dart';
+import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 
 /// BUG-1708 第二面：app 为更新主动退出后，它拉起的 ffmpeg 还活着并锁住
 /// `<安装目录>\ffmpeg.exe`，Inno 复制到该文件时 `DeleteFile failed; code 5`，

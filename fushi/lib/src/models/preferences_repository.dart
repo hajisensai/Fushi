@@ -7,12 +7,13 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
-import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
@@ -24,7 +25,7 @@ import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
 // 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
-import 'package:fushi/src/utils/net/app_proxy.dart'
+import 'package:fushi_engine/utils/net/app_proxy.dart'
     show
         appUserProxyModeReader,
         appUserProxyPasswordReader,
@@ -34,14 +35,15 @@ import 'package:fushi/src/utils/net/app_proxy.dart'
         kProxyModeDirect,
         kProxyModeManual,
         normalizeUserProxyHostPort;
-import 'package:fushi/src/mining/immersion_mining_request.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
 ///
@@ -81,7 +83,7 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
   }
 }
 
-class PreferencesRepository extends ChangeNotifier {
+class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
 
   static const String videoOnlineServicesSetupDismissedKey =
@@ -197,6 +199,7 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  @override
   dynamic getPref(String key, {dynamic defaultValue}) {
     final raw = _prefCache[key];
     if (raw == null) {
@@ -205,6 +208,7 @@ class PreferencesRepository extends ChangeNotifier {
     return PrefCodec.decode(raw, defaultValue);
   }
 
+  @override
   Future<void> setPref(String key, dynamic value) async {
     final String strVal = PrefCodec.encode(value);
     _prefCache[key] = strVal;
@@ -1185,29 +1189,22 @@ class PreferencesRepository extends ChangeNotifier {
 
   /// 多个 Torznab indexer 的设备本地配置。API key 与 endpoint 分栏保存，读取旧
   /// Jackett/Prowlarr `?apikey=` URL 时由 codec 拆开，避免含密钥 URL 流出本机。
-  List<TorznabIndexerConfig> get videoResourceTorznabConfigs {
-    final String raw = getPref(
-      'video_resource_torznab_config',
-      defaultValue: '',
-    ) as String;
-    if (raw.trim().isEmpty) return const <TorznabIndexerConfig>[];
-    try {
-      return decodeTorznabIndexerConfigs(jsonDecode(raw));
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'PreferencesRepository.videoResourceTorznabConfigs.decode',
-        error,
-        stack,
+  List<TorznabIndexerConfig> get videoResourceTorznabConfigs =>
+      readTorznabIndexerConfigs(
+        this,
+        onDecodeError: (Object error, StackTrace stack) =>
+            ErrorLogService.instance.log(
+          'PreferencesRepository.videoResourceTorznabConfigs.decode',
+          error,
+          stack,
+        ),
       );
-      return const <TorznabIndexerConfig>[];
-    }
-  }
 
   Future<void> setVideoResourceTorznabConfigs(
     Iterable<TorznabIndexerConfig> configs,
   ) async {
     await setPref(
-      'video_resource_torznab_config',
+      kVideoResourceTorznabConfigPref,
       jsonEncode(encodeTorznabIndexerConfigs(configs)),
     );
     notifyListeners();

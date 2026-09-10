@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/media/torrent/magnet_utils.dart';
+import 'package:fushi_engine/media/torrent/magnet_utils.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// BUG-1807：URL 归一化的**主防线在消费端**，不是输入框的 keyboardType。
 ///

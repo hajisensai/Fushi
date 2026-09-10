@@ -7,13 +7,12 @@
 /// 不再对框选做排他断言——两条 OCR 路径共存，互不排斥。
 library;
 
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 void main() {
   test('阅读器文档暴露逐页热替换 OCR 层的入口，且按 data-page 定位', () {
@@ -21,7 +20,7 @@ void main() {
       <MokuroImage>[
         const MokuroImage(
           url: 'page.jpg',
-          size: Size(1000, 1600),
+          size: MokuroSize(1000, 1600),
           blocks: <MokuroBlock>[],
         ),
       ],

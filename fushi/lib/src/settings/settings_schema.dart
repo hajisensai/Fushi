@@ -8,7 +8,7 @@ import 'package:fushi/src/settings/settings_schema_downloads.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart'
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';

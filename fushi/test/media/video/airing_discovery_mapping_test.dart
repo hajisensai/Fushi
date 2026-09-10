@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart'
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 
 AniListAiringEpisode _episode({

@@ -12,8 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 
 const String _hash = 'aa11bb22cc33dd44ee55ff66aa77bb88cc99dd00';

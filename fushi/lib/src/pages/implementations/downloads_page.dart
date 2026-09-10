@@ -9,10 +9,11 @@ import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
@@ -358,12 +359,18 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                               BuildContext context,
                               List<DownloadTaskEntry> manga,
                             ) =>
-                                VideoDownloadJobsPanel.database(
+                                RemoteDownloadTasksSection(
+                              tasksBuilder: (
+                                BuildContext context,
+                                List<DownloadTaskEntry> remote,
+                              ) =>
+                                  VideoDownloadJobsPanel.database(
                               unified: true,
                               additionalTasks: <DownloadTaskEntry>[
                                 ...legacy,
                                 ...direct,
                                 ...manga,
+                                ...remote,
                               ],
                               database: ref.read(appProvider).database,
                               metricsLoader: ref
@@ -478,7 +485,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   );
                                 }
                               },
-                            ),
+                            )),
                           ),
                         ),
                       ),

@@ -1,19 +1,16 @@
 import 'dart:developer' as developer;
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart'
-    show importMangaPackageFile, isMangaPackage;
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
@@ -21,11 +18,13 @@ import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/sync/manga_sync_package.dart'
+    show importMangaPackageFile, isMangaPackage;
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -193,7 +192,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   final remoteByTitle = <String, SyncFileRef>{};
   for (final f in remoteBooks) {
     remoteByTitle[f.name] = f;
-    final cleaned = _unsanitize(f.name);
+    final cleaned = unsanitizeTtuFilename(f.name);
     if (cleaned != f.name) remoteByTitle[cleaned] = f;
     allTitles.add(cleaned);
   }
@@ -457,17 +456,6 @@ Future<String> _ensureRoot(
   final savedCache = await repo.getFolderCache(scope);
   backend.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
   return backend.findOrCreateRootFolder();
-}
-
-String _unsanitize(String name) {
-  return name
-      .replaceAll('~ttu-spc~', ' ')
-      .replaceAll('~ttu-dend~', '.')
-      .replaceAll('~ttu-star~', '*')
-      .replaceAllMapped(
-        RegExp(r'%([0-9A-Fa-f]{2})'),
-        (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-      );
 }
 
 Future<void> showSyncCompareDialog(

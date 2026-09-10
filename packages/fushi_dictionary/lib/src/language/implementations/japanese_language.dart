@@ -11,6 +11,7 @@ import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
 import '../language.dart';
 import '../language_utils.dart';
+import '../../models/fushi_text_selection.dart';
 
 /// Language implementation of the Japanese language.
 class JapaneseLanguage extends Language {

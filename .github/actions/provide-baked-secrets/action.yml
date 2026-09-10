@@ -72,7 +72,7 @@ runs:
       env:
         OPENSUBTITLES_API_KEY: ${{ inputs.opensubtitles-api-key }}
       run: |
-        dst=fushi/lib/src/media/video/subtitle/opensubtitles_default_key.dart
+        dst=packages/fushi_engine/lib/media/video/subtitle/opensubtitles_default_key.dart
         python3 "$GITHUB_ACTION_PATH/write_opensubtitles_key.py" "$dst"
     # google_oauth_secret.dart 是 gitignored 的（真值只存在于仓库 secret 与本机），
     # 所以这里连占位都可能不存在，缺文件时才从 .example.dart 复制。

@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -8,21 +7,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
-import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/utils.dart';
-
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
+import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 
 /// 统一发现页的「不发请求」契约（BUG-1711）。
 ///

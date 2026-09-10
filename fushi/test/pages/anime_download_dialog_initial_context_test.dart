@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/models/app_model.dart';

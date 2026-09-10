@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 
 List<EpubImageRef> _images(int n) => <EpubImageRef>[

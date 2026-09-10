@@ -27,14 +27,14 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_atom_parser.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_feed.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_json_parser.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 源 id 的前缀。持久化的「停用源清单」按 id 存，改前缀即断档。
 const String kOpdsSourceIdPrefix = 'opds-';

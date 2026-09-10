@@ -4,7 +4,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 
 /// v101 后台检查调度：到期判据、开关门控、失败照样记时刻、重入保护。
 void main() {

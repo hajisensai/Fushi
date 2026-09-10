@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -196,7 +196,7 @@ void main() {
       expect(lib.existsSync(), isTrue, reason: '必须在 fushi/ 包根下跑');
       // 唯一豁免：回收入口自己，它就是那层包装。
       const String allowed =
-          'lib/src/media/collections/collection_asset_reclaim.dart';
+          '../packages/fushi_engine/lib/media/collections/collection_asset_reclaim.dart';
       // 前置负向后顾定标识符边界：deleteMediaCollectionWithAssets(（新入口）与
       // deleteMediaCollectionRaw(（同步引擎另行处理）都不该被这条判据命中。
       final RegExp bare =
@@ -235,7 +235,7 @@ void main() {
 
     test('同步删除传播必须在事务外回收被解散合集的资产', () {
       final String src =
-          File('lib/src/sync/collection_sync_engine.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/sync/collection_sync_engine.dart').readAsStringSync();
       final String body = methodBody(
         src,
         'Future<int> applyCollectionLocalChanges(',

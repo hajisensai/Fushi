@@ -12,7 +12,7 @@ library;
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class SubtitleVersionLanguageProbe {
   SubtitleVersionLanguageProbe({

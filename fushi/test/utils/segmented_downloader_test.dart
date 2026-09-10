@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
-import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 
 /// 假服务器：按 URL 路由资源，支持 Range，可注入「忽略 Range」「超发字节」「404」

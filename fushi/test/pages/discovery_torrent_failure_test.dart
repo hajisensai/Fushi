@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
-import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 
 void main() {

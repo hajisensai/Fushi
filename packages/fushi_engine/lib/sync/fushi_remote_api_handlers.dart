@@ -1,0 +1,410 @@
+import 'dart:convert';
+
+import 'package:fushi_anki/fushi_anki_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary_core.dart';
+
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+
+/// TODO-1000（BUG-530）：浏览器扩展 / 外部工具的两个远端 API（查词 `/api/lookup/dictionary`
+/// + 制卡 `/api/mine`）的**共享 handler 逻辑**。FushiSyncServer（互联/同步 host）与
+/// YomitanApiServer（外部工具 API surface）都复用这里，保证扩展契约是**单一真相源**——
+/// 历史 bug 正是两个 server 契约分裂：扩展被自动配置指向 YomitanApiServer（19633），但
+/// 这两个端点当时只在 FushiSyncServer 实现，导致 Netflix 查词/制卡全断。
+///
+/// 纯逻辑（已解析的 body Map → 调注入的窄接口 service → 返回响应 Map），不碰 shelf/HTTP，
+/// 便于单测、便于两个 server 各自套自己的路由/鉴权外壳。
+
+/// BUG-1718：查词弹窗的「CSS 尾段」——app 内弹窗由 `popup_settings_injection` 注入 WebView 的
+/// `window.dictionaryStyles` / `globalDictCSS` / `customDictCSS` 三件套，打包成一个值随
+/// `/api/lookup/dictionary` 下发给浏览器扩展（扩展跑的是同一份 `popup.js`，这三个全局是它渲染
+/// 词典自带样式与用户自定义样式的唯一输入）。
+///
+/// - [dictionaryStyles]：`词典名 → 词典包自带 CSS`（mdx 导入时从兄弟 `.css` 落成词典目录下的
+///   `styles.css`，由 fushidicts `get_styles()` 读回）。**不是**用户设置，是词典内容的一部分。
+/// - [globalDictCss]：用户对所有词典生效的自定义 CSS。
+/// - [customDictCss]：用户按词典名单独覆盖的自定义 CSS。
+///
+/// [revision] 是这三者内容的指纹，用于「客户端缓存 + 增量下发」门控（见
+/// [buildRemoteDictionaryLookupResponse]）：内容不变 ⇒ 指纹不变 ⇒ 查词响应里只带指纹不带正文。
+/// 惰性计算并缓存在实例上，所以调用方只要按数据源身份复用同一个实例，指纹就只算一次。
+class RemotePopupDictionaryCss {
+  RemotePopupDictionaryCss({
+    required this.dictionaryStyles,
+    required this.globalDictCss,
+    required this.customDictCss,
+    this.dictionaryDisplayNames = const <String, String>{},
+  });
+
+  final Map<String, String> dictionaryStyles;
+  final String globalDictCss;
+  final Map<String, String> customDictCss;
+
+  /// 词典改名（v95）：真名 -> 显示名，只含真正改过名的条目。搭 popup.js 的
+  /// `__fushiDictDisplayName` 用，**只翻译渲染出来的词典名文本**；`dictionary`
+  /// 字段、`data-dictionary` 属性、媒体 URL 参数一律仍是真名。
+  ///
+  /// 挂在本类而不是另开一条通道：它与 CSS 三件套同属「弹窗渲染用的旁路数据」，
+  /// 共用下面的 revision 门控——改名改 revision，扩展下次查词即拉到新表。
+  final Map<String, String> dictionaryDisplayNames;
+
+  late final String revision = _computeRevision();
+
+  String _computeRevision() {
+    int h = 0;
+    for (final MapEntry<String, String> e in dictionaryStyles.entries) {
+      h = Object.hash(h, e.key, e.value.length, e.value.hashCode);
+    }
+    h = Object.hash(h, globalDictCss.length, globalDictCss.hashCode);
+    for (final MapEntry<String, String> e in customDictCss.entries) {
+      h = Object.hash(h, e.key, e.value.length, e.value.hashCode);
+    }
+    // 改名必须进 revision，否则扩展会一直命中旧缓存、改了不生效。
+    for (final MapEntry<String, String> e in dictionaryDisplayNames.entries) {
+      h = Object.hash(h, e.key, e.value.hashCode);
+    }
+    return '${dictionaryStyles.length}.${customDictCss.length}.'
+        '${dictionaryDisplayNames.length}.'
+        '${h.toUnsigned(32).toRadixString(16)}';
+  }
+}
+
+/// `POST /api/lookup/dictionary` 的响应体。[body] 是已解析的 JSON Map。
+/// term 为空 → 返回空结果（与既有契约一致，不算错误）。
+///
+/// BUG-530：可选 [themeColorsProvider] 返回当前 app 主题的 CSS 变量 Map（`--md-*` /
+/// `--fushi-popup-*` / `--dict-columns`），随响应放进 `theme` 字段下发。浏览器扩展
+/// content.js 读 `resp.data.theme` 并 `setProperty` 到弹窗容器 → 弹窗实时跟随用户主题
+/// （改主题下次查词即变），无需重装扩展。null（未注入）时不带 `theme` 字段（向后兼容）。
+Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteLookupService lookup,
+  FushiRemoteHistoryService? history,
+  RemoteDictionaryPopupTiming? popupTiming,
+  Map<String, String> Function()? themeColorsProvider,
+  List<String> Function()? audioSourcesProvider,
+  bool Function()? autoReadOnLookupProvider,
+  String? Function()? extensionBuildProvider,
+  RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
+}) async {
+  final Map<String, String>? theme = themeColorsProvider?.call();
+  // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
+  // window.audioSources（非空 → popup.js 渲染 ♪ 按钮）。null（未注入，如 sync host）
+  // 时不带该字段（向后兼容）。
+  final List<String>? audioSources = audioSourcesProvider?.call();
+  // BUG-726：app 内置扩展的内容指纹随查词响应下发。扩展 background 对比自身
+  // FUSHI_DEFAULTS.build，不一致即 chrome.runtime.reload() 从磁盘拉新（磁盘副本由
+  // app 启动时刷新）。null（未注入 / 指纹尚未算好）时不带该字段（向后兼容）。
+  // 查词后自动朗读：app 内弹窗、app 外浮窗、剪贴板面板三个表面早就按全局偏好
+  // `autoReadOnLookup` 自动发音（BUG-1210 已为「一个表面接了线、另一个没接」收过一次口），
+  // 浏览器扩展是最后一个漏掉的表面——用户在扩展里查词必须手动点 ♪。这里把同一个偏好随查词
+  // 响应下发，扩展据此在渲染后播首条词的发音；不新增扩展本地开关，免得两处语义漂开。
+  // null（未注入，如 sync host）时不带该字段（向后兼容）。
+  final bool? autoReadOnLookup = autoReadOnLookupProvider?.call();
+  final String? extensionBuild = extensionBuildProvider?.call();
+  // BUG-1718：弹窗「CSS 尾段」（词典自带 styles.css + 用户全局/单典自定义 CSS）。app 内弹窗由
+  // popup_settings_injection 把 window.dictionaryStyles / globalDictCSS / customDictCSS 注入
+  // WebView；浏览器扩展跑的是**同一份 popup.js**，却从来拿不到这三件套 —— mdx 词典的自带样式
+  // 在扩展里 100% 失效（用户可见症状：词头/音标/徽标/义项缩进全成裸文本）。
+  //
+  // 不能像 theme / audioSources 那样每次查词都下发：实测单本 OALDPE 的 styles.css 就有 210 KB，
+  // 整库 285 KB，而查词是 hover 级高频请求（BUG-871 / BUG-1525 已为同样理由收窄过响应体）。
+  // 故走 revision 门控：客户端把自己缓存的 revision 放进请求体 `stylesRevision`，
+  //   - 字段**缺失** ⇒ 老客户端不认识该契约 ⇒ 一个字节都不发（向后兼容，旧扩展行为不变）；
+  //   - 字段在且与当前 revision 不同 ⇒ 全量下发一次，之后一直命中缓存。
+  final RemotePopupDictionaryCss? popupCss = popupDictionaryCssProvider?.call();
+  final bool cssStale = popupCss != null &&
+      body.containsKey('stylesRevision') &&
+      body['stylesRevision']?.toString() != popupCss.revision;
+  final Map<String, Object?> envelope = <String, Object?>{
+    if (theme != null) 'theme': theme,
+    if (audioSources != null) 'audioSources': audioSources,
+    if (autoReadOnLookup != null) 'autoReadOnLookup': autoReadOnLookup,
+    if (extensionBuild != null) 'extensionBuild': extensionBuild,
+    if (popupCss != null) 'dictionaryStylesRevision': popupCss.revision,
+    if (cssStale) ...<String, Object?>{
+      'dictionaryStyles': popupCss.dictionaryStyles,
+      'globalDictCSS': popupCss.globalDictCss,
+      'customDictCSS': popupCss.customDictCss,
+      'dictionaryDisplayNames': popupCss.dictionaryDisplayNames,
+    },
+  };
+  final String term = body['term']?.toString() ?? '';
+  if (term.trim().isEmpty) {
+    return <String, dynamic>{
+      'type': 'dictionaryResult',
+      'result': null,
+      'popupJson': null,
+      ...envelope,
+    };
+  }
+  final bool wildcards = body['wildcards'] as bool? ?? false;
+  final int maximumTerms = (body['maximumTerms'] as num?)?.toInt() ?? 10;
+  // BUG-871：浏览器扩展只消费 popupJson 与 bestLength。完整 result 还会重复携带
+  // popupJson 已渲染的全部词条，真实复杂词可让单次 HTTP 响应超过 1 MB。仅在调用方
+  // 显式请求时收窄 result；默认仍返回旧契约，避免影响同步端与第三方客户端。
+  final bool popupOnly = body['popupOnly'] as bool? ?? false;
+  final bool record = body['record'] as bool? ?? false;
+  // BUG-1525：浏览器扩展只消费 popupJson + bestLength。若实现方提供窄快路径，
+  // 不再先构造完整 DictionaryEntry（其中每条 glossary 都会额外 jsonEncode），再把
+  // 同一份 FFI 结果遍历一次生成 popupJson。record=true 必须保留完整结果供历史使用。
+  if (popupOnly && !record && lookup is FushiRemotePopupLookupService) {
+    final FushiRemotePopupLookupService popupLookup =
+        lookup as FushiRemotePopupLookupService;
+    final RemoteDictionaryPopupLookup? popup =
+        popupTiming != null && popupLookup is FushiRemoteTimedPopupLookupService
+            ? await popupLookup.searchDictionaryPopupWithTiming(
+                term: term,
+                wildcards: wildcards,
+                maximumTerms: maximumTerms,
+                timing: popupTiming,
+              )
+            : await popupLookup.searchDictionaryPopup(
+                term: term,
+                wildcards: wildcards,
+                maximumTerms: maximumTerms,
+              );
+    return <String, dynamic>{
+      'type': 'dictionaryResult',
+      'result': popup == null
+          ? null
+          : <String, dynamic>{'bestLength': popup.bestLength},
+      'popupJson': popup?.popupJson,
+      ...envelope,
+    };
+  }
+  final DictionarySearchResult? result = await lookup.searchDictionary(
+    term: term,
+    wildcards: wildcards,
+    maximumTerms: maximumTerms,
+  );
+  if (result != null && history != null && record) {
+    history.recordHistory(result);
+  }
+  return <String, dynamic>{
+    'type': 'dictionaryResult',
+    'result': result == null
+        ? null
+        : popupOnly
+            ? <String, dynamic>{'bestLength': result.bestLength}
+            : jsonDecode(result.toJson()),
+    'popupJson': result?.popupJson,
+    ...envelope,
+  };
+}
+
+/// BUG-2189：`/api/mine` 里单词音频引用的**可落卡化**。
+///
+/// 浏览器扩展查词时经 `/api/lookup/audio` 拿到的是本机 server 签发的 **5 分钟短命
+/// token URL**（`/api/lookup/audio/file?id=`），弹窗把它原样冻进 `fields.audio`。
+/// 「立即出卡」时 token 还新鲜；但 Netflix / YouTube **批量队列**是看完一集才统一生成
+/// ——几十分钟甚至跨会话之后 token 早被 prune → Anki 侧抓取 404 → 卡建好了、
+/// `[sound:]` 空（用户报「网飞制卡少了单词音频」）。
+///
+/// 解法不是把 token 续命（谁也不知道用户什么时候点生成），而是在制卡这一刻把它换成
+/// **自包含**引用：token 仍活 → 直接取字节；已过期 → 按 `expression + reading` 重走
+/// 同一条 `lookupAudio`；两者都编成 `data:<mime>;base64,…`——与 app 内本地音频库制卡
+/// 用的引用同形（`audioRefToWebViewUrl` / `AnkiAudioRef.dataUri`，BUG-1050），AnkiConnect
+/// 与 AnkiDroid 两个 repo 都认。取不到（音频库没这个词）返 null，调用方保留原引用，
+/// 让既有 404 → `audioWarning` 诊断照常浮出，不做静默吞。
+///
+/// 只处理本机 token 端点的引用（[remoteAudioTokenIdFromRef] 非 null）；其余（外部 http、
+/// data:、本地路径）不是短命的，原样透传。
+typedef RemoteMineWordAudioResolver = Future<String?> Function(
+  String tokenId, {
+  required String expression,
+  required String reading,
+});
+
+/// 若 [audioRef] 是本机 server 签发的单词音频 token URL（`/api/lookup/audio/file?id=…`），
+/// 返回其 token id；否则 null。只看路径与 `id` 查询参数，不看 host/port——扩展配的可能是
+/// `127.0.0.1` / `localhost` / 局域网地址，server 自己无从得知外部看到的是哪一个。
+String? remoteAudioTokenIdFromRef(String audioRef) {
+  if (audioRef.isEmpty) return null;
+  final Uri? uri = Uri.tryParse(audioRef);
+  if (uri == null || !uri.hasScheme) return null;
+  if (uri.path != '/api/lookup/audio/file') return null;
+  final String? id = uri.queryParameters['id'];
+  return (id == null || id.isEmpty) ? null : id;
+}
+
+/// 把一次单词音频查询结果编成自包含的 `data:` URI（制卡侧 `AnkiAudioRef.dataUri`）。
+String remoteAudioLookupToDataUri(RemoteAudioLookup lookup) =>
+    'data:${lookup.contentType};base64,${base64Encode(lookup.bytes)}';
+
+/// [buildRemoteMineResponse] 的前置步骤：把 `body.fields.audio` 里的本机短命 token 引用
+/// 换成 [wordAudio] 解析出的自包含引用。返回新的 body（不改入参）；无需改写时原样返回。
+/// 纯逻辑、可单测。
+Future<Map<String, dynamic>> resolveRemoteMineWordAudio(
+  Map<String, dynamic> body, {
+  required RemoteMineWordAudioResolver? wordAudio,
+}) async {
+  if (wordAudio == null) return body;
+  final Object? rawFields = body['fields'];
+  if (rawFields is! Map) return body;
+  final String audio = rawFields['audio']?.toString() ?? '';
+  final String? tokenId = remoteAudioTokenIdFromRef(audio);
+  if (tokenId == null) return body;
+  final String? durable = await wordAudio(
+    tokenId,
+    expression: rawFields['expression']?.toString() ?? '',
+    reading: rawFields['reading']?.toString() ?? '',
+  );
+  if (durable == null || durable.isEmpty) return body;
+  return <String, dynamic>{
+    ...body,
+    'fields': <String, dynamic>{...rawFields, 'audio': durable},
+  };
+}
+
+/// `POST /api/mine` 的响应体。[body] 是已解析的 JSON Map，必须含 `fields`（Map）。
+/// 带截图/时间戳/clip 的沉浸挖词走 [FushiRemoteMiningService.mineImmersion]（引擎在实现方，
+/// 这里只转发解析好的 payload）；纯 `{fields,sentence}` 走 [FushiRemoteMiningService.mineEntry]
+/// 回落（向后兼容浏览器扩展纯文本挖词 + 移动端）。
+/// fields 缺失/类型错时 [ImmersionMinePayload.fromJson] 抛 [FormatException]，由调用方转 400。
+/// [wordAudio]（BUG-2189）：单词音频短命 token → 自包含引用的解析器，见
+/// [resolveRemoteMineWordAudio]；null（未注入）时 fields 原样透传（旧行为）。
+Future<Map<String, dynamic>> buildRemoteMineResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+  RemoteMineWordAudioResolver? wordAudio,
+}) async {
+  final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(
+      await resolveRemoteMineWordAudio(body, wordAudio: wordAudio));
+  // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
+  // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
+  // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。
+  final RemoteMineResult r = payload.isImmersion
+      ? await mining.mineImmersion(payload)
+      : await mining.mineEntry(
+          fields: payload.fields, sentence: payload.sentence);
+  return <String, dynamic>{
+    'result': r.result,
+    if (r.message != null) 'message': r.message,
+    if (r.detail != null) 'detail': r.detail,
+    // BUG-1549：成功时回传实际落卡的牌组名（旧客户端/扩展忽略即可，向后兼容）。
+    if (r.deckName != null) 'deckName': r.deckName,
+  };
+}
+
+/// `POST /api/mine/forward` 的响应体。互联「制卡到服务端」：客户端把未渲染的制卡请求 +
+/// 全部本地媒体字节转发来，本机用自己的 Anki 配置落卡。[body] 需含 `rawPayloadJson`（非空
+/// 字符串），缺失/类型错时 [ForwardedMinePayload.fromJson] 抛 [FormatException]，由调用方转
+/// 400。响应形状与 `/api/mine` 一致（`{result, message?, detail?}`）。
+Future<Map<String, dynamic>> buildForwardedMineResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final ForwardedMinePayload payload = ForwardedMinePayload.fromJson(body);
+  final RemoteMineResult r = await mining.mineForwarded(payload);
+  return <String, dynamic>{
+    'result': r.result,
+    if (r.message != null) 'message': r.message,
+    if (r.detail != null) 'detail': r.detail,
+    // BUG-1549：成功时回传主机实际落卡的牌组名，供客户端成功 toast 显示。
+    if (r.deckName != null) 'deckName': r.deckName,
+  };
+}
+
+/// TODO-1176：`POST /api/duplicate` 的响应体。[body] 需含 `expression`（+可选 `reading`）。
+/// 浏览器扩展查词弹窗渲染时调它，把制卡按钮从恒「+」变成与 app 一致的 `+`（未添加）/
+/// `✓`（Anki 已有）两态。空 expression → 直接返回 `false`（不算错误，与查词空 term 一致）。
+/// 经注入的 [mining].isDuplicate 复用 app 内同一 Anki 查重后端，单一真相源。
+Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String expression = body['expression']?.toString() ?? '';
+  final String reading = body['reading']?.toString() ?? '';
+  if (expression.trim().isEmpty) {
+    return <String, dynamic>{'duplicate': false};
+  }
+  final bool duplicate =
+      await mining.isDuplicate(expression: expression, reading: reading);
+  return <String, dynamic>{'duplicate': duplicate};
+}
+
+/// `POST /api/anki/note-type/read` 的响应体。互联 Lapis 客制化：手机端（AnkiDroid /
+/// AnkiMobile 没有改已存在模板的平台 API）经互联读主机端 note type 完整定义，供可视化
+/// 编辑器拿真实基线、备份与漂移判定。[body] 需含 `modelName`（非空），缺失/类型错抛
+/// [FormatException]（调用方转 400）。主机后端不支持模板读写或模型不存在时 `noteType`
+/// 为 null（客户端按「未找到」提示）。
+Future<Map<String, dynamic>> buildAnkiNoteTypeReadResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final AnkiNoteTypeDefinition? def =
+      await mining.readNoteTypeDefinition(_requiredModelName(body));
+  return <String, dynamic>{'noteType': def?.toJson()};
+}
+
+/// `POST /api/anki/note-type/styling` 的响应体。覆写主机端 note type 的 styling。
+/// [body] 需含 `modelName` 与 `css`（均为字符串，css 可为空串），缺失/类型错抛
+/// [FormatException]。`ok=false` = 主机后端不支持模板写入。
+Future<Map<String, dynamic>> buildAnkiNoteTypeStylingResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String modelName = _requiredModelName(body);
+  final Object? css = body['css'];
+  if (css is! String) throw const FormatException('Missing css');
+  return <String, dynamic>{
+    'ok': await mining.updateNoteTypeStyling(modelName, css),
+  };
+}
+
+/// `POST /api/anki/note-type/templates` 的响应体。覆写主机端 note type 的全部卡模板
+/// （客户端「从备份恢复」/写 Lapis 背面模板用）。[body] 需含 `modelName` 与
+/// `templates`（`[{name, front, back}]`），缺失/类型错抛 [FormatException]。
+/// `ok=false` = 主机后端不支持模板写入。
+Future<Map<String, dynamic>> buildAnkiNoteTypeTemplatesResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String modelName = _requiredModelName(body);
+  final Object? rawTemplates = body['templates'];
+  if (rawTemplates is! List) throw const FormatException('Missing templates');
+  final List<AnkiCardTemplate> templates = <AnkiCardTemplate>[];
+  for (final Object? entry in rawTemplates) {
+    if (entry is! Map) throw const FormatException('Malformed templates');
+    templates.add(AnkiCardTemplate.fromJson(Map<String, dynamic>.from(entry)));
+  }
+  return <String, dynamic>{
+    'ok': await mining.updateNoteTypeTemplates(modelName, templates),
+  };
+}
+
+/// `POST /api/anki/media/dedup/probe` 的响应体。主机端此刻能不能做媒体去重
+/// （客户端据此决定显不显示「媒体存储优化」区）。主机 Anki 不可达照抛（调用方
+/// 转成失败响应，客户端保持「未知」而不是记成「不支持」）。
+Future<Map<String, dynamic>> buildAnkiMediaDedupProbeResponse({
+  required FushiRemoteMiningService mining,
+}) async {
+  return <String, dynamic>{'available': await mining.probeMediaMaintenance()};
+}
+
+/// `POST /api/anki/media/dedup/run` 的响应体。在主机端跑一轮媒体去重。
+/// [body] 可含 `dryRun`（bool，缺省 true——**默认不动文件**：这条链路上真删的
+/// 决定权在客户端用户手里，缺字段的旧客户端/坏请求绝不能被解读成「删吧」）。
+/// `report` 为 null = 主机后端不支持。
+Future<Map<String, dynamic>> buildAnkiMediaDedupRunResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final Object? rawDryRun = body['dryRun'];
+  if (rawDryRun != null && rawDryRun is! bool) {
+    throw const FormatException('Malformed dryRun');
+  }
+  final AnkiMediaDedupReport? report =
+      await mining.runMediaDedup(dryRun: (rawDryRun as bool?) ?? true);
+  return <String, dynamic>{'report': report?.toJson()};
+}
+
+String _requiredModelName(Map<String, dynamic> body) {
+  final String modelName = body['modelName']?.toString() ?? '';
+  if (modelName.trim().isEmpty) {
+    throw const FormatException('Missing modelName');
+  }
+  return modelName;
+}

@@ -7,7 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:fushi/src/models/dictionary_directory.dart';
+import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 

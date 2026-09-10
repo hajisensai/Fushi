@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/discovery/discovery_metadata_identity.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/discovery/discovery_metadata_identity.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 
 VideoMediaReference _reference({
   String provider = 'anilist',

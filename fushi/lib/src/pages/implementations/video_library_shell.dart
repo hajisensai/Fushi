@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
-import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';

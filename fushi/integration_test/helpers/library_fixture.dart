@@ -12,14 +12,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/main.dart' show FushiReaderApp;
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/media/media_item.dart' show MediaItem;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show singleVideoBookUid;
 import 'package:fushi/src/models/app_model.dart';

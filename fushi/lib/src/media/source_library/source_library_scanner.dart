@@ -38,18 +38,19 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
-import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
-import 'package:fushi/src/media/manga/manga_importer.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart'
+import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
-import 'package:fushi/src/media/manga/mokuro_payload.dart'
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show
         MokuroImage,
         MokuroPayload,
@@ -60,18 +61,18 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart'
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/external_video.dart'
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath, sourceEntryBasename;
-import 'package:fushi/src/sync/ttu_filename.dart';
-import 'package:fushi/src/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_folder_group_coordinator.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 
@@ -409,64 +410,33 @@ ScanPlan planScanFromFileList(
     mangaArchives: mangaArchives,
     mangaFolders: mangaRootPath == null
         ? const <ScanMangaFolderItem>[]
-        : _planLocalMangaImageFolders(
-            files: files,
-            rootPath: mangaRootPath,
-            mokuroItems: mangas,
-          ),
+        : _planLocalMangaImageFolders(files: files, rootPath: mangaRootPath),
   );
 }
 
 /// 把扫描根里的纯页图归成可独立导入的卷目录。
 ///
-/// - 根目录直接有页图：根本身是一卷（与手动“选择漫画文件夹”一致）；
-/// - 根目录没有页图：每个含页图的直接子目录是一卷，因此选择这些卷的上级目录也能
-///   批量导入；更深的章节/图片子目录仍归属于这个直接子目录，不会拆成多本；
-/// - 候选目录与 `.mokuro` 所在目录存在祖先/后代关系时，以 manifest 为准，不再
-///   生成裸图卷。两种导入器都递归读页图，混用会把同一批图片重复消费。
+/// 归组规则（根有页图 → 根一卷；否则每个含页图的直接子目录一卷；与 `.mokuro`
+/// 目录有祖先/后代关系的候选让位给 manifest）下沉在引擎 [planMangaFolders]，
+/// 与无头服务端的库扫描共用同一份实现；这里只做 [SourceFileEntry] → 路径列表的
+/// 适配。`.mokuro` 由引擎按扩展名自行识别（与 [kScanMangaExtensions] 同一集合）。
 ///
 /// 只在本地来源调用：返回的目录会直接交给 `dart:io` 漫画导入器。
 List<ScanMangaFolderItem> _planLocalMangaImageFolders({
   required List<SourceFileEntry> files,
   required String rootPath,
-  required List<ScanMangaItem> mokuroItems,
 }) {
-  final String root = p.normalize(rootPath);
-  bool rootHasImages = false;
-  final Set<String> childFolders = <String>{};
-  for (final SourceFileEntry entry in files) {
-    if (entry.isDirectory ||
-        !kImageExtensionsBase.contains(p.extension(entry.name).toLowerCase())) {
-      continue;
-    }
-    final String relative = p.relative(p.normalize(entry.path), from: root);
-    final List<String> segments = p.split(relative);
-    if (segments.isEmpty || segments.first == '..') continue;
-    if (segments.length == 1) {
-      rootHasImages = true;
-    } else {
-      childFolders.add(p.join(root, segments.first));
-    }
-  }
-
-  final List<String> candidates = rootHasImages
-      ? <String>[root]
-      : (childFolders.toList()
-        ..sort((String a, String b) =>
-            a.toLowerCase().compareTo(b.toLowerCase())));
-  final List<ScanMangaFolderItem> result = <ScanMangaFolderItem>[];
-  for (final String candidate in candidates) {
-    final bool claimedByMokuro = mokuroItems.any((ScanMangaItem item) {
-      final String mokuroDir = p.dirname(p.normalize(item.mokuroPath));
-      return p.equals(mokuroDir, candidate) ||
-          p.isWithin(mokuroDir, candidate) ||
-          p.isWithin(candidate, mokuroDir);
-    });
-    if (!claimedByMokuro) {
-      result.add(ScanMangaFolderItem(folderPath: candidate));
-    }
-  }
-  return result;
+  final MangaFolderPlan plan = planMangaFolders(
+    rootPath: rootPath,
+    filePaths: <String>[
+      for (final SourceFileEntry entry in files)
+        if (!entry.isDirectory) entry.path,
+    ],
+  );
+  return <ScanMangaFolderItem>[
+    for (final String folder in plan.imageFolders)
+      ScanMangaFolderItem(folderPath: folder),
+  ];
 }
 
 /// Source-library scanner: scans one [SourceLibraryRow] root, inserts the media

@@ -6,7 +6,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_reader_chapter.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 
 /// 互联漫画源里的一部「作品」。

@@ -18,9 +18,9 @@ import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart'
     show AnimeDownloadImportOutcome;
-import 'package:fushi/src/media/video/video_cover_extractor.dart'
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
-import 'package:fushi/src/utils/misc/fushi_time_format.dart'
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart'
     show FushiTimeFormat;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;

@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_network_bindings.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:http/http.dart' as http;

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_clip_subtitle_burn.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 

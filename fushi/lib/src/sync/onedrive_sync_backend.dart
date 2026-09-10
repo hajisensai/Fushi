@@ -6,16 +6,16 @@ import 'package:http/http.dart' as http;
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
 import 'package:fushi/src/sync/sync_http.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_root_migration.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 
 /// OneDrive sync backend via Microsoft Graph API.
 ///

@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/collection_manifest.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;

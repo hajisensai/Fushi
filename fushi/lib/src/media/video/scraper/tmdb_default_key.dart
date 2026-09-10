@@ -1,3 +1,10 @@
+/// 用户自定义 TMDB API key 的偏好键：定义在引擎 `media_pref_keys.dart`（服务端刮削
+/// 装配也读它），这里再导出——与 [kBuiltinTmdbApiKey] 同住一个文件是有意的：「这次
+/// 请求用哪把 key」的全部输入就是这两者，分散在 UI 文件里会让人以为改弹窗就能改
+/// 取值规则。（指令必须在声明之前，故放在文件头注释之后、第一个 const 之前。）
+export 'package:fushi_engine/media/media_pref_keys.dart'
+    show kVideoScraperTmdbApiKeyPref;
+
 // 入库默认值（空占位，保证任何 clone/worktree 都能直接编译）。模板见
 // tmdb_default_key.example.dart。
 //
@@ -18,12 +25,6 @@
 // "This product uses the TMDB API but is not endorsed or certified by TMDB."
 // ——见「关于」页署名区。删 key 前不要先删署名，反之亦然。
 const String kBuiltinTmdbApiKey = '';
-
-/// 用户自定义 TMDB API key 的偏好键（存 Drift `preferences` 表，不改 schema）。
-///
-/// 与 [kBuiltinTmdbApiKey] 同住一个文件是有意的：「这次请求用哪把 key」的全部输入
-/// 就是这两者，分散在 UI 文件里会让人以为改弹窗就能改取值规则。
-const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 
 /// 解析实际生效的 TMDB key：**用户自填优先，其次内置**。
 ///

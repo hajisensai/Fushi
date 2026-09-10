@@ -1,11 +1,10 @@
 import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 void main() {
   // AniDB 身份 / TMDB key 是第三方凭据，住「在线服务」分区；刮削语言是刮削行为

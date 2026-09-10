@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_repository_client.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
 /// BUG-1804：中文/日文输入法把 URL 结构字符转成全角，导致合法仓库地址
 /// 被判 INVALID_URL（前两例），或带着垃圾域名通过校验（第三例）。

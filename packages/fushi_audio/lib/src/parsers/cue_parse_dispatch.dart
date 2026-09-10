@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'dart:isolate';
 
 import '../audiobook/audiobook_model.dart';
 
@@ -46,7 +46,7 @@ class CueParseDispatch {
     required List<AudioCue> Function() parse,
   }) {
     if (shouldParseInIsolate(content)) {
-      return compute((_) => parse(), null);
+      return Isolate.run(parse);
     }
     return Future<List<AudioCue>>.value(parse());
   }

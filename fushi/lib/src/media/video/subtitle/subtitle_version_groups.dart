@@ -6,9 +6,9 @@
 /// 折进一张卡，用户选一次版本，具体某集由 [pickGroupCandidateForEpisode] 解析。
 library;
 
-import 'package:fushi/src/media/video/jimaku_client.dart'
+import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageLabel, jimakuLanguageRank;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// 文件名开头的发布组标签（`[SubsPlease] xxx` → `SubsPlease`）。
 /// 8 位 hex（CRC）、分辨率、纯语言 token 不算组名；认不出返回 null。

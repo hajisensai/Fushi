@@ -17,7 +17,7 @@ export 'src/database/stat_source_kind.dart';
 export 'src/database/sync_tombstone_kind.dart';
 export 'src/database/tables.dart';
 export 'src/database/tag_host_kind.dart';
-export 'src/models/fushi_text_selection.dart';
+export 'src/utils/fushi_debug_print.dart';
 export 'src/utils/jp_codepoint_fold.dart';
 export 'src/utils/local_file_deletion.dart';
 export 'src/utils/mime_types.dart';

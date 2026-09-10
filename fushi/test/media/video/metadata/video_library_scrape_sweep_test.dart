@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/metadata/video_library_scrape_sweep.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
-import 'package:fushi/src/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 

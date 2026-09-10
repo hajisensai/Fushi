@@ -18,10 +18,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 class ShinnkuDiscoverySource extends MediaDiscoverySource {
   ShinnkuDiscoverySource({

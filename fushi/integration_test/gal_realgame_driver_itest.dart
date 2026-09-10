@@ -52,7 +52,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;

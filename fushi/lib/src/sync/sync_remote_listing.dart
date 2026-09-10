@@ -1,4 +1,4 @@
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 

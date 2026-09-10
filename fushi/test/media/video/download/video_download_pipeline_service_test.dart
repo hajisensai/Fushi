@@ -6,27 +6,27 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart'
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
-import 'package:fushi/src/media/discovery/discovery_models.dart'
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 

@@ -7,10 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';

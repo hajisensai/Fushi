@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// Optional real native-library probe. No user player is touched; a separate
 /// Python process loads the specified library with null audio/video outputs.

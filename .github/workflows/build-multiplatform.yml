@@ -310,6 +310,129 @@ jobs:
           fi
           echo "::endgroup::"
           exit 1
+      # 无头服务端（packages/fushi_server）：纯 Dart，dart build 出带 native assets
+      # （sqlite3）的 CLI bundle。这是 fushi_engine「闭包里没有 dart:ui」的最终门——
+      # flutter analyze / 守卫测试都只是它的镜像。--help 冒烟不开 DB。
+      - name: Build headless fushi_server (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart build cli --target packages/fushi_server/bin/fushi_server.dart \
+            --output build/fushi_server_linux
+          ls -la build/fushi_server_linux/bundle
+          build/fushi_server_linux/bundle/bin/fushi_server --help
+      # 第 4 期：无头服务端的两块随包原生库，都落 bundle/lib/（服务端按
+      # `<exe>/../lib/<裸名>` 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
+      #
+      # (a) 内置 torrent 引擎 bridge：**vcpkg manifest 静态链**（x64-linux-fpic overlay
+      #     triplet，libtorrent 2.0.11 + boost + openssl 全进 .so，libstdc++ 也静态），
+      #     目标机零运行库依赖——此前动态链发行版 libtorrent-rasterbar，等于逼用户
+      #     `apt install` 或退到外接 qBittorrent。冷编约 40 min，二进制缓存命中后 ~3 min；
+      #     缓存 key 带 runner ImageVersion（TODO-2668 同款理由）。
+      # (b) onnxruntime CPU 版：与 third_party/flutter_onnxruntime/linux 钉同一版本
+      #     1.22.0（asr_onnx_ffi 的 kOrtApiVersion=22 要求 ≥1.22）。要 CUDA 的用户
+      #     自行换成 GPU 包并在配置 onnxruntime_library 指过去（README「GPU」一节）。
+      - name: Resolve vcpkg cache identity (fushi_server)
+        id: vcpkg_cache_id_server
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Cache vcpkg source distfiles (libtorrent linux)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
+      - name: Cache vcpkg binary archives (libtorrent linux)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id_server.outputs.image }}
+      - name: Build embedded torrent bridge for fushi_server (Linux, static)
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+        run: |
+          set -euo pipefail
+          chmod +x native/fushi_torrent/build_linux_so.sh
+          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
+          so=native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so
+          bash .github/scripts/verify_torrent_abi.sh "$so" nm
+          mkdir -p build/fushi_server_linux/bundle/lib
+          cp "$so" build/fushi_server_linux/bundle/lib/
+      # 与 windows job 同一理由：这是 Linux 上唯一能把 Dart FFI 绑定按真实 ABI 调一遍
+      # 的地方（release.yml 的真单测门没有原生产物，这个包整组 skip）。
+      - name: Run fushi_torrent FFI tests against the freshly built .so
+        shell: bash
+        working-directory: packages/fushi_torrent
+        env:
+          FUSHI_TORRENT_LIB: ${{ github.workspace }}/native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_TORRENT_LIB" || { echo "::error::.so not found at $FUSHI_TORRENT_LIB"; exit 1; }
+          dart pub get
+          dart test
+      - name: Bundle onnxruntime (CPU) for fushi_server (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORT_VERSION=1.22.0
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* \
+            build/fushi_server_linux/bundle/lib/
+          ls -la build/fushi_server_linux/bundle/lib
+      - name: Smoke fushi_server with bundled native libs (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 真进程起 serve：验证 sqlite3 native asset、随包 .so 定位、admin 端口全通。
+          # 端口固定非默认值，避免与 runner 上别的东西撞。
+          cfg="$RUNNER_TEMP/fushi_server_smoke"
+          mkdir -p "$cfg"
+          cat > "$cfg/fushi_server.yaml" <<'YAML'
+          data_dir: "data"
+          port: 48765
+          bind: "127.0.0.1"
+          tls: false
+          admin_port: 48780
+          admin_bind: "127.0.0.1"
+          admin_token: "ci-smoke-token"
+          torrent:
+            engine: embedded
+          libraries: []
+          YAML
+          build/fushi_server_linux/bundle/bin/fushi_server serve --config "$cfg/fushi_server.yaml" \
+            > "$cfg/serve.log" 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            curl -fsS -o /dev/null http://127.0.0.1:48780/ && break
+            sleep 0.5
+          done
+          status="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/status)"
+          echo "$status"
+          echo "$status" | grep -q '"backend":"embedded"' \
+            || { echo "::error::embedded torrent engine not resolved (bundled .so not loaded)"; cat "$cfg/serve.log"; exit 1; }
+          models="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/models)"
+          echo "$models" | grep -q '"asr":\[' || { echo "::error::models endpoint failed"; cat "$cfg/serve.log"; exit 1; }
+          echo "$models" | grep -q '"error"' && { echo "::error::an ASR language failed to plan (onnxruntime not loadable?)"; echo "$models"; cat "$cfg/serve.log"; exit 1; }
+          kill $pid; wait $pid || true
+          cat "$cfg/serve.log"
+      - name: Upload fushi_server (Linux)
+        uses: actions/upload-artifact@v7
+        with:
+          name: fushi_server-linux-x64
+          path: build/fushi_server_linux/bundle/
+          if-no-files-found: error
 
   # macOS gates the desktop build plus the shared smoke contract.
   macos:

@@ -10,8 +10,8 @@ import '../helpers/part_corpus.dart';
 /// 原来读单文件的静态守卫改读这份「合并语料」：主库 + 磁盘枚举的全部 part 文件按
 /// 路径排序拼接（同 [readSyncSettingsSchemaSource] 的理由：手写 part 清单实测会漏，
 /// 漏掉的 part 里负向断言真空通过）。
-const String _fushiSyncServerShell = 'lib/src/sync/fushi_sync_server.dart';
-const String kFushiSyncServerPartDir = 'lib/src/sync/fushi_sync_server';
+const String _fushiSyncServerShell = '../packages/fushi_engine/lib/sync/fushi_sync_server.dart';
+const String kFushiSyncServerPartDir = '../packages/fushi_engine/lib/sync/fushi_sync_server';
 
 /// 主库 + 磁盘上全部 `*.part.dart`（按路径排序）。
 List<String> fushiSyncServerFiles() => partCorpusFiles(

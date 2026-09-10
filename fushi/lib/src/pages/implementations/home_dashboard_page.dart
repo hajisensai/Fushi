@@ -1,15 +1,12 @@
-import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
-
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import 'package:fushi/media.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -19,18 +16,18 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
-import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
+import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
-import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoCardOrientation;
-import 'package:fushi/src/media/video/m3u8_playlist.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -42,10 +39,10 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -57,6 +54,8 @@ import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_importer.dart';
+import 'package:fushi_engine/foundation/engine_notifier.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
 ///
@@ -610,7 +609,7 @@ class _HomeDashboardPageState
   }
 
   /// 追踪状态版本号（[initState] 挂监听，[dispose] 解除）。
-  ValueListenable<int>? _trackingRevision;
+  EngineValueListenable<int>? _trackingRevision;
 
   /// 游戏库仓储（[initState] 挂监听，[dispose] 解除）。
   GalgameRepository? _galgameRepo;

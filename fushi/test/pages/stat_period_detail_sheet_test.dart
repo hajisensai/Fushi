@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 时段明细 sheet（阶段 1，统计中心大改造）的行为守卫：

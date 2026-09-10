@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/torrent/tracker_subscription.dart';
+import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

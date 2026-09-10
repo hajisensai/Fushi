@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi_core/fushi_core.dart';

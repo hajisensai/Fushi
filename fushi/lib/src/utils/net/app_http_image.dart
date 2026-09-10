@@ -7,7 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 走应用代理出口的网络图片 provider（BUG-1715）。
 ///

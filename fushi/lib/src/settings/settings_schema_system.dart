@@ -11,7 +11,7 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/sync_http.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';

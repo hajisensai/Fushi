@@ -5,12 +5,12 @@
 // 被一律压成 unknown 并丢掉状态码——UI 只能把「被限流，等一会儿再搜」统一显示成
 // 「来源暂不可用」。MAL 走 Jikan 公共接口、1 秒一发且不重试，429 是常态。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_metadata_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 class _ThrowingMetadataProvider implements VideoMetadataProvider {
   _ThrowingMetadataProvider(this.error);

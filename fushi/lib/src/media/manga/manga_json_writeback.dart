@@ -35,7 +35,7 @@ import 'dart:ui';
 
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/manga_region_ocr.dart';
 
 /// 进程内 per-path 写锁（规范化路径 → 链尾 Future）。

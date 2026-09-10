@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('package service stays streaming (no whole-file/zip in memory)', () {
     final String src = File(
-      'lib/src/sync/sync_asset_package_service.dart',
+      '../packages/fushi_engine/lib/sync/sync_asset_package_service.dart',
     ).readAsStringSync();
 
     expect(src.contains('readAsBytes'), isFalse,

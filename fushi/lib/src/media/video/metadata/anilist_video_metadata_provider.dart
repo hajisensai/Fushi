@@ -1,9 +1,9 @@
 library;
 
-import 'package:fushi/src/media/video/metadata/video_metadata_json.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 
 class AniListVideoMetadataProvider

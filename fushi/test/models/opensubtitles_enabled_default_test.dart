@@ -8,7 +8,7 @@
 // 偏好读取永不返回 null，存量脏数据一次性归一且只归一一次。
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 

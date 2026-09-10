@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
-import 'package:fushi/src/stats/study_char_count.dart';
+import 'package:fushi_engine/stats/study_char_count.dart';
 
 /// Dart ↔ JS 学习单位计数**对拍**。
 ///

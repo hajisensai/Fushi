@@ -6,7 +6,7 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 
 /// 「点一下就识别」这条路不弹引擎选择框，因此**引擎选择的每一条分支都必须在这里

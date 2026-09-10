@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
-import 'package:fushi/src/media/metadata/image_download.dart';
+import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_cover_preview.dart';
 import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
 import 'package:fushi/utils.dart';

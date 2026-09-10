@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 // BUG-835：extractFfmpegFailureReason 的正准实现在 ffmpeg_backend.dart（与
 // FfmpegBackend 同层），直接从这里取，不再经 video_clip_exporter 转口。
-import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 

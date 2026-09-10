@@ -1,4 +1,4 @@
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 
 /// 学习活动的**来源**维度：供跨来源首页汇总与来源拆分纯函数使用。
 ///

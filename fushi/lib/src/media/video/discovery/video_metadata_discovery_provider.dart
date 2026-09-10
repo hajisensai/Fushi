@@ -1,9 +1,9 @@
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 /// Search-only adapter for the existing metadata
 /// providers. Recommendation feeds remain a separate capability: the metadata

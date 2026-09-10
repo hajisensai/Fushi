@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 const String _png =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';

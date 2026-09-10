@@ -12,7 +12,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';

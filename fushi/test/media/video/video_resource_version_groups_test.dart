@@ -1,7 +1,7 @@
 // B2 资源选版：下载模式「发布组›清晰度」聚类纯函数。
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 
 class _FakeResource extends VideoResourceCandidate {

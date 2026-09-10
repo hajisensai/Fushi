@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -251,12 +251,12 @@ void main() {
     // B3 拆分后 fushi_sync_server 是主库 + fushi_sync_server/*.part.dart：负向断言
     // 必须扫合并语料，只扫主库会让搬进 part 的重复壳真空通过。
     final Map<String, String Function()> sources = <String, String Function()>{
-      'lib/src/sync/fushi_sync_server.dart': readFushiSyncServerSource,
+      '../packages/fushi_engine/lib/sync/fushi_sync_server.dart': readFushiSyncServerSource,
       'lib/src/sync/yomitan_api_server.dart': () =>
           File('lib/src/sync/yomitan_api_server.dart').readAsStringSync(),
     };
     const Map<String, List<String>> banned = <String, List<String>>{
-      'lib/src/sync/fushi_sync_server.dart': <String>[
+      '../packages/fushi_engine/lib/sync/fushi_sync_server.dart': <String>[
         'class _RemoteAudioToken',
         'Future<shelf.Response> _handleMine(',
         'Future<shelf.Response> _handleMineForward(',
@@ -315,7 +315,7 @@ void main() {
       // bearer。换成 Random()（时间种子、可预测）之后，长度断言、`isNot(b)`
       // 断言、TTL 断言、上限断言**全部照绿**——没有任何别的测试会红。
       final String src =
-          File('lib/src/sync/remote_lookup_routes.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/sync/remote_lookup_routes.dart').readAsStringSync();
       expect(src, contains('Random.secure()'),
           reason: '音频 token id 是 bearer，必须用密码学随机源');
       expect(src, isNot(contains('Random()')),

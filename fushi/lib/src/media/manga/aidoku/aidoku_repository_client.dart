@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/utils/net/app_http.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:http/http.dart' as http;
 
 const int kMaximumAidokuRepositoryBytes = 8 * 1024 * 1024;

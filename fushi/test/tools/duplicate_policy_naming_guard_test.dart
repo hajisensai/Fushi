@@ -23,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/scan_scale.dart';
 
-const String kPolicyFile = 'lib/src/epub/book_title_conflict.dart';
+const String kPolicyFile = '../packages/fushi_engine/lib/epub/book_title_conflict.dart';
 
 /// 已淘汰的名字 → 换成什么。
 const Map<String, String> kRetiredNames = <String, String>{
@@ -90,11 +90,18 @@ List<String> _codeHits(List<String> roots, String needle) {
 }
 
 void main() {
-  const List<String> roots = <String>['lib', 'test'];
+  // 被测真相源 kPolicyFile 已经在引擎里（book_title_conflict.dart），淘汰词的
+  // 扫描面却还只有 fushi/lib + fushi/test —— 引擎里复活淘汰词不会红。
+  const List<String> roots = <String>[
+    'lib',
+    'test',
+    '../packages/fushi_engine/lib',
+    '../packages/fushi_server/lib',
+  ];
 
   test('扫描规模哨兵：淘汰词扫描确实扫到了 lib/ + test/', () {
     expectScanScale(_scannedDartFiles(roots).length,
-        what: 'lib/ + test/ 下的 .dart（已排除本守卫自身）', atLeast: 2500, measured: 3145);
+        what: 'lib/ + test/ 下的 .dart（已排除本守卫自身）', atLeast: 3570, measured: 4463);
   });
 
   group('淘汰词不得复活', () {

@@ -1,13 +1,13 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// v99 来源级资料语言（`video_source_scrape_settings.metadata_locale`）。

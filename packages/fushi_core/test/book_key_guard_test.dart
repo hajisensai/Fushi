@@ -21,7 +21,7 @@ void main() {
       File('lib/src/utils/ttu_sanitize.dart').readAsStringSync(),
     );
     final String appBody = _extractSanitizeBody(
-      File('../../fushi/lib/src/sync/ttu_filename.dart').readAsStringSync(),
+      File('../fushi_engine/lib/sync/ttu_filename.dart').readAsStringSync(),
     );
 
     expect(coreBody, isNotEmpty,

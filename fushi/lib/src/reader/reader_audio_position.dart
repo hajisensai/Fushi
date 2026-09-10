@@ -1,8 +1,8 @@
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:html/dom.dart' as dom;
 
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/stats/study_char_count.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/stats/study_char_count.dart';
 
 /// Converts audio UTF-16 positions to the reader's completed learning units.
 /// Each original DOM text node retains its own word boundary, matching

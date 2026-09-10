@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_http.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:http/http.dart' as http;
 
 import '../helpers/source_guard.dart';

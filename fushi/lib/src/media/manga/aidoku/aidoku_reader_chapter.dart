@@ -13,7 +13,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 const int _maximumAidokuImageBytes = 100 * 1024 * 1024;
 

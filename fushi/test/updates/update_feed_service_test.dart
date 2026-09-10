@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
 

@@ -6,10 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
-import 'package:fushi/src/media/torrent/download_timeouts.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/torrent/public_trackers.dart';
+import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi_engine/media/torrent/download_timeouts.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/public_trackers.dart';
 
 import 'nyaa_html_fixture.dart';
 

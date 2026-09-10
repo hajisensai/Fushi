@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/local_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/interconnect_profile_transfer.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
@@ -190,7 +190,7 @@ void main() {
 
     test('入站导入永不覆盖 host 既有配置（契约写在接口文档里）', () {
       final String iface =
-          File('lib/src/sync/interconnect_profile_transfer.dart')
+          File('../packages/fushi_engine/lib/sync/interconnect_profile_transfer.dart')
               .readAsStringSync();
       expect(iface, contains('createNew'),
           reason: '入站一律新建 Profile 的契约必须留在接口文档里');

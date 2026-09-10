@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 
 class _Cand {
   const _Cand(this.name, this.language);

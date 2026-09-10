@@ -8,10 +8,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
 /// 播放页「找字幕」对话框的三条用户实测缺陷（同一批反馈、同一个对话框）：

@@ -20,7 +20,7 @@ library;
 
 import 'package:html_unescape/html_unescape.dart';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
 /// 一条标题的打分明细。[hint] 是最终判定。
 class NyaaLiteratureScore {

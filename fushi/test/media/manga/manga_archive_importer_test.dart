@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -221,7 +220,7 @@ Attributes = A
       expect(payload.images.single.size.width, 40);
       final MokuroBlock block = payload.images.single.blocks.single;
       expect(block.lines, <String>['埋め込み']);
-      expect(block.rectangle, const Rect.fromLTRB(1, 2, 30, 40));
+      expect(block.rectangle, const MokuroRect.fromLTRB(1, 2, 30, 40));
       expect(block.isVertical, isTrue);
       expect(block.fontSize, 17);
       expect(block.linesCoords, isNotNull);

@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
+import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
 
@@ -646,7 +648,7 @@ class AnkiMiningPayload {
       try {
         singleGlossaries = Map<String, String>.from(jsonDecode(sgRaw) as Map);
       } catch (e, stack) {
-        debugPrint('AnkiMiningPayload.singleGlossaries: $e\n$stack');
+        fushiDebugPrint('AnkiMiningPayload.singleGlossaries: $e\n$stack');
       }
     } else if (sgRaw is Map) {
       singleGlossaries = Map<String, String>.from(sgRaw);
@@ -660,7 +662,7 @@ class AnkiMiningPayload {
             .map((e) => DictionaryMedia.fromJson(e as Map<String, dynamic>))
             .toList();
       } catch (e, stack) {
-        debugPrint('AnkiMiningPayload.dictionaryMedia: $e\n$stack');
+        fushiDebugPrint('AnkiMiningPayload.dictionaryMedia: $e\n$stack');
       }
     } else if (dmRaw is List) {
       dictionaryMedia = dmRaw

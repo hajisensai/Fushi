@@ -18,16 +18,16 @@ library;
 
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, LocalFileDeleteReport;
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart'
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show
         VideoDownloadPipelineService,
         prepareVideoDownloadJobsForLocalDelete,
         reconcileVideoDownloadJobsAfterLocalDelete;
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_local_files.dart'
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
     show LocalVideoFileDeleteHooks;
 import 'package:fushi/src/startup/media_handle_registry.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 /// [deleteVideoBooksWithDecision] 的结果：删了几行 + 本机原件的逐条删除结果。
 typedef VideoLibraryDeleteResult = ({

@@ -3,10 +3,10 @@
 // Anki 的 note type，可视化配置 Lapis 因此第一次在手机上可用。
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 class _FakeMining implements FushiRemoteMiningService {

@@ -58,9 +58,12 @@ void main() {
       r'(debugPrint|print|ErrorLogService[^;]*\.log)\s*\([^;]*\b_pendingPairPin\b',
       multiLine: true,
     );
-    for (final File entity in Directory('lib/src/sync')
+    for (final File entity in <Directory>[
+      Directory('lib/src/sync'),
+      Directory('../packages/fushi_engine/lib/sync'),
+    ].expand((Directory d) => d
         .listSync(recursive: true)
-        .whereType<File>()) {
+        .whereType<File>())) {
       if (!entity.path.endsWith('.dart')) continue;
       final String normalized = entity.path.replaceAll('\\', '/');
       final String source = _stripComments(entity.readAsStringSync());
@@ -79,7 +82,7 @@ void main() {
 
   test('协议核心不持有/不打印任何明文 PIN 出网调用', () {
     final String src = _stripComments(
-        File('lib/src/sync/pairing/fushi_pairing_protocol.dart')
+        File('../packages/fushi_engine/lib/sync/pairing/fushi_pairing_protocol.dart')
             .readAsStringSync());
     // computePinProof 把 PIN 作为 HMAC key（不可逆），断言它确实经 Hmac 处理。
     expect(src.contains('Hmac(sha256'), isTrue,

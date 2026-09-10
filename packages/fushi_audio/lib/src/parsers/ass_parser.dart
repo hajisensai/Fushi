@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 import '../audiobook/audiobook_model.dart';
 import 'cue_parse_dispatch.dart';
@@ -279,8 +279,8 @@ class AssParser {
           i + 1 < rawCues.length ? rawCues[i + 1].$1 : start + 5000;
       final int end = rawEnd ?? fallbackEnd;
       if (end <= start) {
-        if (kDebugMode) {
-          debugPrint(
+        if (fushiDebugMode) {
+          fushiDebugPrint(
               'AssParser: skip cue with end<=start (start=$start end=$end): $text');
         }
         continue;

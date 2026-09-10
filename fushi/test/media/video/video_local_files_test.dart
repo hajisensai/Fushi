@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_local_files.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart';
 import 'package:fushi_core/fushi_core.dart'
     show LocalFileDeleteReport, platformPathKey;
 import 'package:path/path.dart' as p;

@@ -12,7 +12,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// 取 client 的 innertube clientName（兜底链的可读身份，用于断言链的构成与顺序）。
 String _clientName(yt.YoutubeApiClient client) =>

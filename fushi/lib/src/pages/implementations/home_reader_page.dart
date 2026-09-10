@@ -1,15 +1,14 @@
 import 'package:flutter/widgets.dart';
-
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
-import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 
 /// The body content for the Reader tab in the main menu.
 class HomeReaderPage extends BaseTabPage {

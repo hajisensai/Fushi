@@ -16,7 +16,7 @@
 library;
 
 import 'package:fushi/src/media/collections/collection_continue.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// 一条视频行参与概览推导的最小投影（页面从 `VideoBookRow` 映射；测试直接构造）。
 class VideoOverviewEntry {

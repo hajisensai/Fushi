@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 
 /// 把一个**本地文件夹**登记成常驻扫描根并立即扫一遍。

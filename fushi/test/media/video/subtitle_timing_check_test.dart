@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 
 /// 造一条 srt：`count` 句，每句 2 秒，最后一句结束在 `lastEndSeconds`。
 String _srt({required int count, required int lastEndSeconds}) {

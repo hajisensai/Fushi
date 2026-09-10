@@ -66,6 +66,8 @@ dependencies:
     path: ../packages/fushi_core
   fushi_dictionary:
     path: ../packages/fushi_dictionary
+  fushi_engine:
+    path: ../packages/fushi_engine
   fushi_anki:
     path: ../packages/fushi_anki
   fushi_audio:

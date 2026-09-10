@@ -230,6 +230,25 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
   Require-Text $relativePath $content 'Magpie-hibiki-slim-x64.zip.sha256' 'the bundled Magpie archive must ship with its sha256 sidecar; the installer refuses an unverified package (BUG-1292)'
 }
 
+# release-server.yml (headless server) is a separate product line: no push/debug
+# channel, no update manifest, no rolling tag. It only shares the release sequence
+# source and the hard rule that a non-app release must never become Latest (the app
+# stable-channel updater resolves releases/latest; a server Latest would stall it).
+$serverWorkflow = '.github/workflows/release-server.yml'
+$serverContent = Read-RepoFile $serverWorkflow
+Require-Text $serverWorkflow $serverContent 'concurrency:' 'server publisher must serialize same-tag runs'
+Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a server publish must run to completion'
+Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'
+Require-Text $serverWorkflow $serverContent 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'server release sequence must come from the shared script'
+Require-Text $serverWorkflow $serverContent 'MAKE_LATEST=false' 'server releases are never Latest, formal included'
+Require-Text $serverWorkflow $serverContent 'make_latest: ${{ needs.channel.outputs.make_latest }}' 'make_latest must flow from the channel output (never a literal)'
+Require-Text $serverWorkflow $serverContent 'fushi-server-*) : ;;' 'server release tags must be validated to start with fushi-server- so they never collide with app tags'
+Forbid-Pattern $serverWorkflow $serverContent 'RELEASE_SEQUENCE=\$\(git rev-list' 'release sequence must go through tool/release_sequence.sh'
+Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
+Forbid-Pattern $serverWorkflow $serverContent 'github\.run_number' 'workflow-local run_number is not a release sequence'
+Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'a server release must never be Latest'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only (workflow_dispatch); no push trigger'
+
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'
 Require-Text 'docs/agent/build.md' $buildDoc 'git rev-list --count HEAD' 'durable docs must name the sequence source'

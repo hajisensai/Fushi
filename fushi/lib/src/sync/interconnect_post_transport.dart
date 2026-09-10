@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:http/http.dart' as http;
 

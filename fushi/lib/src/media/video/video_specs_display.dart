@@ -10,8 +10,8 @@
 /// 顺带让这一整层可以脱离 widget 测试。
 library;
 
-import 'package:fushi/src/media/video/video_duration_probe.dart';
-import 'package:fushi/src/media/video/video_dynamic_range.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_dynamic_range.dart';
 
 /// 详情页规格表里的一项。widget 层据此取对应的 i18n label。
 enum VideoSpecField {

@@ -3,7 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
-import 'package:fushi/src/stats/study_sessions.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 统计页会话流（用户 2026-09-08：每个域都要会话级统计，能删误点的会话）的行为守卫：

@@ -48,9 +48,10 @@ void main() {
 
   // 容忍 dart format 把 ErrorLogService.instance.log( 折行成
   // ErrorLogService.instance 换行后 .log(，用正则匹配中间任意空白。
-  final RegExp logRe = RegExp(r'ErrorLogService\.instance\s*\.log\(');
+  // fushi_engine 里的文件走 engineLog（ErrorLogService 在 app 实现该 sink）。
+  final RegExp logRe = RegExp(r'(ErrorLogService\.instance\s*\.|engineLog\.)log\(');
   final RegExp diagRe =
-      RegExp(r'ErrorLogService\.instance\s*\.logDiagnostic\(');
+      RegExp(r'(ErrorLogService\.instance\s*\.|engineLog\.)logDiagnostic\(');
 
   group('collection_exporter.saveOrShareExport fail-open 补 log', () {
     test('catch 仍走 notify 且补 ErrorLogService.log', () {
@@ -69,7 +70,7 @@ void main() {
 
   group('jimaku_client 预期网络失败路径补 logDiagnostic', () {
     late String src;
-    setUpAll(() => src = libFile('lib/src/media/video/jimaku_client.dart'));
+    setUpAll(() => src = libFile('../packages/fushi_engine/lib/media/video/jimaku_client.dart'));
 
     test('_searchEntries catch 补 diagnostic 且仍返回空列表', () {
       final String body =
@@ -128,7 +129,7 @@ void main() {
         () {
       // v92：阅读统计的 DB 写挪进 fushi_audio 的 StudyClock（页面侧没有 try/catch 可
       // 补日志了）。fail-open 语义现在由时钟写链承担：写失败不冒泡、段留 dirty、
-      // 下个 tick 用绝对值重写。fushi_audio 不依赖 ErrorLogService，只能 debugPrint。
+      // 下个 tick 用绝对值重写。fushi_audio 不依赖 ErrorLogService，只能 fushiDebugPrint。
       final String body = fnBody(src, 'Future<void> _flushReadingStats(');
       expect(body, contains('_studyClock?.flushNow()'),
           reason: '_flushReadingStats 只能是结算时钟，不得再自己写库。');
@@ -139,8 +140,9 @@ void main() {
           reason: 'StudyClock 写链必须捕获写失败（fail-open：不阻塞阅读 / 播放）。');
       expect(enqueue, contains('seg.dirty = true'),
           reason: '写失败保持 dirty，下个 tick 用绝对值重写。');
-      expect(enqueue, contains("debugPrint('[study-clock] write error"),
-          reason: 'fail-open 未变：保留 debugPrint 诊断。');
+      expect(enqueue, contains("fushiDebugPrint('[study-clock] write error"),
+          reason:
+              'fail-open 未变：保留 fushiDebugPrint 诊断（fushi_audio 零 Flutter 后的装配点）。');
     });
 
     test('_persistPosition 的 repo.save 包 catch 并补 ErrorLogService.log', () {

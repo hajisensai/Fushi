@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 

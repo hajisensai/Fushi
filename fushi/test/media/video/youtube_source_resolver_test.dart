@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 void main() {

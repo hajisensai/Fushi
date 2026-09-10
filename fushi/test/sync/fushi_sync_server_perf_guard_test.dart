@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:path/path.dart' as p;
 
 /// 互联传输层性能守卫（BUG-937 / 提速批次）：

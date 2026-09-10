@@ -27,8 +27,8 @@ void main() {
     test('主壳 + 每个 part 都在清单里、顺序确定（漏登记 = 负向断言真空通过）', () {
       expectPartManifestMatchesDisk(
         manifest: fushiSyncServerFiles(),
-        shellPath: 'lib/src/sync/fushi_sync_server.dart',
-        partDirPath: 'lib/src/sync/fushi_sync_server',
+        shellPath: '../packages/fushi_engine/lib/sync/fushi_sync_server.dart',
+        partDirPath: '../packages/fushi_engine/lib/sync/fushi_sync_server',
       );
     });
 

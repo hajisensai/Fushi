@@ -39,7 +39,7 @@ List<String> videoFushiPageFiles() => partCorpusFiles(
 /// relocation, assertion intent unchanged.
 const List<String> _immersionMiningEngineFiles = <String>[
   'lib/src/mining/immersion_mining_engine.dart',
-  'lib/src/mining/immersion_mining_request.dart',
+  '../packages/fushi_engine/lib/mining/immersion_mining_request.dart',
 ];
 
 /// 读「视频页合并语料」：主壳 + 全部 part 文件拼成单个字符串，供静态守卫切片/断言。

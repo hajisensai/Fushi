@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:fushi/src/media/video/metadata/anime_identity_mapping.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
 // Fribb anime-list-full.json 的**实测**形状（2026-09-08 抓真文件核对，39304 行）：
 // `themoviedb_id` 恒为对象 `{"tv": N}`（7092 行）或 `{"movie": [N]}`（1363 行，

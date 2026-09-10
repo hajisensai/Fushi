@@ -21,8 +21,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -153,7 +153,7 @@ void main() {
   group('EpubParser 源码守卫：不得再出现按 qualified name 的裸查找 (BUG-2012)', () {
     test('epub_parser.dart 里所有标签查找都走 _elements/_childElement', () {
       final String source =
-          File('lib/src/epub/epub_parser.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/epub/epub_parser.dart').readAsStringSync();
 
       // 剥掉注释，否则文档里解释这个坑的那几行会被判据自己命中（假红）。
       // 必须走共享原语：手写的「跳 `//` 开头整行」只管行首注释，行尾注释与

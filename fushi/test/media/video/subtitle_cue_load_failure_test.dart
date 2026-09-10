@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-1490 第二环：加载失败的**原因**必须留下来。

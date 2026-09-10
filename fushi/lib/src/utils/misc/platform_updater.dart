@@ -5,8 +5,8 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show kGalgameHelperInstallDirectoryName;
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
-import 'package:fushi/src/utils/misc/helper_process_registry.dart';
-import 'package:fushi/src/platform/desktop/windows_process_query.dart';
+import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
+import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';

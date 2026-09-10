@@ -5,7 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 
 /// v101 首页横幅：没有未读时**一个像素都不占**（首页顶部不该多一块常驻空卡），

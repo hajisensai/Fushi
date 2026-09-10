@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/video_sidecar_writer.dart';
+import 'package:fushi_engine/media/video/metadata/video_sidecar_writer.dart';
 import 'package:path/path.dart' as p;
 
 class _MemoryArtifactStore implements SidecarArtifactHashStore {

@@ -3,9 +3,10 @@ import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 
 import 'package:fushi_audio/fushi_audio.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show loadEpubSectionsInBackground;
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 
 /// Sasayaki 重匹配入口，被 [AudiobookImportDialog]（已附加视图）和书架
 /// 长按菜单复用。把"弹 searchWindow slider" 和"跑 matcher + 落库 + toast"
@@ -13,36 +14,16 @@ import 'package:fushi/utils.dart';
 class SubtitleRematch {
   const SubtitleRematch._();
 
-  /// 只有 SRT/LRC/VTT/ASS 走 matcher；SMIL/JSON 有硬时间码锚点，与 window 无关。
-  static const Set<String> supportedFormats = <String>{
-    'srt',
-    'lrc',
-    'vtt',
-    'ass'
-  };
+  /// 格式策略住在引擎 [SubtitleRematchPolicy]（对齐执行器也要用）；这里只是别名，
+  /// 保住既有调用点。
+  static const Set<String> supportedFormats =
+      SubtitleRematchPolicy.supportedFormats;
 
-  /// 硬时间码格式，matcher 无能为力，直接排除。
-  static const Set<String> nonMatcherFormats = <String>{'smil', 'json'};
+  static const Set<String> nonMatcherFormats =
+      SubtitleRematchPolicy.nonMatcherFormats;
 
-  static bool isEligible(Audiobook ab) {
-    final String fmt = ab.alignmentFormat.toLowerCase();
-    final String ext = _extFromPath(ab.alignmentPath);
-    if (nonMatcherFormats.contains(fmt) || nonMatcherFormats.contains(ext)) {
-      return false;
-    }
-    return true;
-  }
+  static bool isEligible(Audiobook ab) => SubtitleRematchPolicy.isEligible(ab);
 
-  static String _extFromPath(String path) {
-    if (path.isEmpty) {
-      return '';
-    }
-    final String last = path.split('.').last.toLowerCase();
-    if (last == path.toLowerCase()) {
-      return '';
-    }
-    return last;
-  }
 
   static Future<bool?> promptAndRun({
     required BuildContext context,

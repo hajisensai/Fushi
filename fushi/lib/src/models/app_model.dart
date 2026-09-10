@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
-import 'package:fushi/src/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
@@ -55,15 +55,15 @@ import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
-import 'package:fushi/src/models/dictionary_directory.dart';
+import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -76,23 +76,24 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/download_timeouts.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
-import 'package:fushi/src/media/torrent/download_save_root.dart';
-import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
-import 'package:fushi/src/media/torrent/qb_torrent_backend.dart';
-import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/torrent/tracker_subscription.dart';
+import 'package:fushi_engine/media/torrent/download_save_root.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart';
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
@@ -107,37 +108,37 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi/src/media/torrent/torrent_memory.dart';
+import 'package:fushi_engine/media/torrent/torrent_memory.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_download_subscription_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
-import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart';
-import 'package:fushi/src/sync/local_library_host_service.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
@@ -161,26 +162,26 @@ import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/file_export_manager.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
-import 'package:fushi/src/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart'
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
-import 'package:fushi/src/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -188,7 +189,7 @@ import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart'
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
 import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -199,7 +200,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
-export 'package:fushi/src/models/local_audio_source_pref.dart'
+export 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 export 'package:fushi/src/models/audio_source_config.dart'
     show AudioSourceConfig, AudioSourceKind;
@@ -605,6 +606,20 @@ class AppModel with ChangeNotifier {
           // 与「配置管理」页导出同参：把指向本机 custom_fonts/ 的绝对路径剥成相对，
           // 免得对端拿到一堆指向不存在目录的字体路径。
           fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+        );
+      },
+      // 推送方随书带来的显示名：走 ReaderFushiSource（写穿 MediaSource 内存缓存，
+      // 只写 DB 的话 host 书架会一直显示旧名直到重启）。
+      adoptOverrideTitle: ({
+        required String bookKey,
+        required String title,
+        required int updatedAt,
+      }) {
+        final ReaderFushiSource source = ReaderFushiSource.instance;
+        return source.adoptOverrideTitleIfNewer(
+          item: source.overrideTitleMediaItemForBookKey(bookKey),
+          title: title,
+          updatedAt: updatedAt,
         );
       },
       importProfileJson: (String json) async {
@@ -4955,11 +4970,8 @@ class AppModel with ChangeNotifier {
       };
 
   /// 设置里停用的**内置**视频资源索引器 id（Nyaa / apibay / Knaben）。
-  Set<String> get videoResourceDisabledSourceIds => <String>{
-        for (final String id
-            in prefsRepo.videoResourceDisabledSources.split(','))
-          if (id.trim().isNotEmpty) id.trim(),
-      };
+  Set<String> get videoResourceDisabledSourceIds =>
+      readVideoResourceDisabledSourceIds(prefsRepo);
 
   /// 开/关一个发现源。停用清单是逗号分隔的字符串，读写都只经这一个入口，
   /// 免得每个调用点各写一份 split/join。

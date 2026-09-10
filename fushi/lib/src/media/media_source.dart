@@ -9,12 +9,14 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/media/override_title_key.dart';
+import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as path;
+import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
+export 'package:fushi_engine/media/media_pref_keys.dart' show dbSourcePrefKey;
 
 /// 一个 [MediaSource] 偏好在 Drift `preferences` 表里的命名空间化 key：
 /// `src:<sourceId>:<key>`。这是该格式的**单一真相源**——`MediaSource._dbPrefKey`
@@ -23,7 +25,6 @@ import 'package:path/path.dart' as path;
 ///
 /// ⚠️ 这是持久化 key 编码：格式绝不能变（变了即丢用户偏好，never break userspace），
 /// `reader_fushi` 等历史 sourceId 是冻结值。守卫测试断言其输出逐字节等于旧字符串。
-String dbSourcePrefKey(String sourceId, String key) => 'src:$sourceId:$key';
 
 /// A source for a [MediaType] that will appear on the list of sources when
 /// set as active. Handles sourcing and delivery of arguments such that the
@@ -483,7 +484,7 @@ abstract class MediaSource {
   /// [MediaItem] 的层（互联 host 清单、备份 / 合并的 SQL 谓词）用它，避免各自
   /// 硬编码 `override_title://` 前缀导致键形状漂移。
   static String overrideTitleKeyFor(String mediaIdentifier) =>
-      '$kOverrideTitleKeyMarker$mediaIdentifier';
+      pref_keys.overrideTitleKeyFor(mediaIdentifier);
 
   /// BUG-1317 之前的旧书名键形态（源键出现两次）。只用于读取期回退与清除。
   static String legacyOverrideTitleKey({

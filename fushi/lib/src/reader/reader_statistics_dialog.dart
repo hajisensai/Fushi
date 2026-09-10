@@ -29,7 +29,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/reader_status_footer.dart'
     show readingCharsPerHour;
-import 'package:fushi/src/stats/stat_facts.dart'
+import 'package:fushi_engine/stats/stat_facts.dart'
     show StatFact, statFactBelongsToBook;
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/utils.dart';

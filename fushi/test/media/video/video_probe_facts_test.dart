@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
-import 'package:fushi/src/media/video/video_dynamic_range.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_dynamic_range.dart';
 
 /// ffprobe JSON 的解析。
 ///

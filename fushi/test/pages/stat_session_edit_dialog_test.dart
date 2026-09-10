@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
-import 'package:fushi/src/stats/study_sessions.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 

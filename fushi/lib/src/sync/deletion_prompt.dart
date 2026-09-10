@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart'

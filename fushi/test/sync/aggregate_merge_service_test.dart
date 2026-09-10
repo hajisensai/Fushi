@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/aggregate_merge_service.dart';
+import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show FavoriteSentence, kFavoriteSentenceSourceBook;
 

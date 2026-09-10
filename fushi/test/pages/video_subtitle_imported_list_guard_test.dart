@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
 import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';

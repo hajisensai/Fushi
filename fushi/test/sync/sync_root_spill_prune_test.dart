@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'fake_asset_store.dart';
