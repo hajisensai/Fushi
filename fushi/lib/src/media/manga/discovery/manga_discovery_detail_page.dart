@@ -253,7 +253,9 @@ class _MangaDiscoveryDetailPageState
     return FushiPageScaffold(
       title: entry.preferredTitle,
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        // BUG-2440：scaffold 的 body 不再扣底部安全区，简介滚到底时最后一段
+        // 会被手势条压住，这里把这段补进滚动 padding。
+        padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
         children: <Widget>[
           _buildHero(entry),
           const SizedBox(height: 16),

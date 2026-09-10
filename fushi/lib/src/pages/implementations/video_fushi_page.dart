@@ -1099,6 +1099,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 绝不无限转圈——只把「上界」从两个圈收敛为一个圈，保留旧行为下界。
   Timer? _firstFramePromoteTimer;
 
+  /// BUG-2441：首帧兜底到点后、判定「媒体压根没打开」之前的额外宽限（毫秒）。
+  ///
+  /// 两段之所以分开：前段 2500ms 是「首帧还没出画」的兜底（纯音频容器、解码异常机型
+  /// 都靠它切给 media_kit），本段则是「连媒体都还没打开」的宽限。取值要盖住慢盘 / 大
+  /// 容器 / 冷启动的 open 耗时（本机 6.7GB、16 条流的 mkv 实测 open 一返回 duration
+  /// 就有），又不能长到让用户对着黑屏干等——合计 15 秒。
+  static const int _kMediaOpenGraceMs = 12500;
+
   /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
   /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
   /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
@@ -2185,7 +2193,48 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.addListener(_promoteVideoReadyOnFirstFrame);
     _firstFramePromoteTimer = Timer(
       const Duration(milliseconds: 2500),
-      () => _promoteVideoReady(),
+      () => _promoteVideoReadyOrDiagnose(controller),
+    );
+  }
+
+  /// BUG-2441：首帧兜底到点时的**分流**——「首帧还没解码出来」与「媒体压根没打开」
+  /// 是两件事，此前都被同一个无条件 `_promoteVideoReady()` 当成前者处理。
+  ///
+  /// 后者才是用户看到的那个形状：libmpv 没打开成功 → 永远不会有首帧 → 2.5 秒一到
+  /// 照样挂载画面 → 黑屏 ＋ 整套控件 ＋ `00:00 / 00:00` ＋ 零提示。
+  ///
+  /// 分流后：媒体活着就照旧 promote（慢解码不该被误判成失败）；没打开则再给一段
+  /// 宽限（[_kMediaOpenGraceMs]，覆盖慢盘 / 大容器 / 冷启动），宽限内一旦打开就正常
+  /// 走下去，到点仍没打开才判失败——给原因、给重试与返回入口。
+  void _promoteVideoReadyOrDiagnose(VideoPlayerController controller) {
+    if (!mounted) return;
+    if (controller.mediaOpened) {
+      _promoteVideoReady();
+      return;
+    }
+    _firstFramePromoteTimer = Timer(
+      const Duration(milliseconds: _kMediaOpenGraceMs),
+      () {
+        if (!mounted) return;
+        if (controller.mediaOpened) {
+          _promoteVideoReady();
+          return;
+        }
+        if (_failed || _missingResource) return;
+        // 走到这里 = 媒体自始至终没被打开，且 libmpv 一条 error 都没发出来
+        // （原生侧静默失败，例如 VO / 纹理建不出来）。宁可给一句「打不开」也不能
+        // 把黑屏伪装成正常播放。
+        ErrorLogService.instance.log(
+          'VideoFushi.mediaNeverOpened',
+          'media never opened within '
+              '${2500 + _kMediaOpenGraceMs}ms (duration/position stayed 0)',
+          StackTrace.current,
+        );
+        setState(() {
+          _failed = true;
+          _failReason = t.video_load_failed_not_opened;
+        });
+      },
     );
   }
 
@@ -3445,6 +3494,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
     controller.onSuspectedBlackFlicker =
         Platform.isWindows ? _handleSuspectedBlackFlicker : null;
+    // BUG-2441：libmpv 层错误的唯一 UI 通道。此前无人订阅 `player.stream.error`，
+    // 媒体打不开时页面只会黑屏 + 00:00，用户与日志两头都拿不到任何线索。
+    controller.onPlaybackError = _handlePlaybackError;
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
@@ -7736,6 +7788,33 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return t.video_load_failed_unavailable;
     }
     return t.video_load_failed_generic;
+  }
+
+  /// BUG-2441：libmpv 层错误（`player.stream.error`）的归宿。
+  ///
+  /// 按「这一程到底播成没有」分流，因为两种情形该做的事正相反：
+  /// - **媒体从未打开**（[VideoPlayerController.mediaOpened] 为 false）：本次打开是彻底
+  ///   失败的，进失败态给出原因 + 重试/返回入口。此前这条路径什么都不做，2.5 秒兜底
+  ///   定时器照常把页面 promote 成就绪，用户面对的是黑屏 ＋ 整套控件 ＋ `00:00 / 00:00`。
+  /// - **已经打开过之后才报错**（中途解码错误、单条轨出问题）：画面与进度都还在，
+  ///   掀掉整页比留着更糟；只落日志留证。
+  ///
+  /// [_pendingController] 也要看：错误可能在 `load` 尚未返回、controller 还没赋给
+  /// [_controller] 时就到达。
+  void _handlePlaybackError(String message) {
+    ErrorLogService.instance.log(
+      'VideoFushi.playerError',
+      message,
+      StackTrace.current,
+    );
+    if (!mounted) return;
+    final VideoPlayerController? active = _controller ?? _pendingController;
+    if (active?.mediaOpened ?? false) return;
+    if (_failed) return;
+    setState(() {
+      _failed = true;
+      _failReason = _describeLoadFailure(message);
+    });
   }
 
   /// 加载失败态「重试」：清失败标记后从头重跑 [_init]（本地重读 row、流媒体重解析

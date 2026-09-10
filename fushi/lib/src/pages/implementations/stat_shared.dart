@@ -243,6 +243,22 @@ const double kStatPeriodSummaryMinColumnWidth = 144;
 /// 20dp 四边内边距会吃掉四成可用宽度，主值被压得比单列还小。
 const double kStatPeriodSummaryCompactColumnWidth = 200;
 
+/// 统计页滚动内容的收尾留白：原有的两倍卡片间距 + 底部安全区（BUG-2440）。
+///
+/// [FushiPageScaffold] 的 SafeArea 已改成 `bottom: false`（内容画得到屏幕最底，
+/// 不再留一条谁也用不了的底色空白），代价是 body 自己要把 inset 补进滚动内容，
+/// 否则静止时最后一行被 home indicator / 手势条压住。三域统计页的独立页路径与
+/// 统计中心 tab 路径（[buildEmbeddedStatTab]）的滚动视图都直抵屏幕底部，补偿相同，
+/// 所以补在这一层而不是各自的 scaffold 分支里。
+Widget buildStatTailSliver(BuildContext context) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  return SliverPadding(
+    padding: EdgeInsets.only(
+      bottom: tokens.spacing.card * 2 + bottomSafeInsetOf(context),
+    ),
+  );
+}
+
 /// 统计页共用的四周期汇总卡网格：能放下两列就 2×2，放不下才单列。
 ///
 /// BUG：旧实现按「可用宽度 ≥ 380」判两列。这层外面还有 [FushiSpacingTokens.card]

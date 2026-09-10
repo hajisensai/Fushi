@@ -734,6 +734,8 @@ mixin DictionaryPageMixin {
         hasChildPopup: index < controller.entries.length - 1,
         isDark: isDark,
         overrideFillColor: mixinAppModel.overrideDictionaryColor,
+        // dock 面板铺满屏幕左右缘时把圆角摊平，否则边缘露出背景（BUG-2439）。
+        bottomDocked: mixinAppModel.popupBottomDocked,
         onDismiss: () => onPop(index),
         // BUG-1269：弹窗是原生 WebView，指针落上去后宿主收不到键盘/鼠标——把宿主
         // 声明的那些输入交回来（表由注册表当前绑定实时导出，改键立即跟随）。

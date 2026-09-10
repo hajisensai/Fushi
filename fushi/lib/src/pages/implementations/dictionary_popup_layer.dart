@@ -173,13 +173,21 @@ Rect computeFloatingLyricPopupRect({
 }
 
 /// TODO-108：底部固定（dock）模式下的弹窗矩形——忽略选区位置，把弹窗放成屏幕底部
-/// 一条全宽面板。[screen] 是可用区域大小；[inset] 是左右及离屏底的内边距；[dockedHeight]
-/// 是面板目标高度（会按可用高度 clamp）；[bottomReserve]/[topReserve] 与跟随模式同义
-/// （底栏/状态栏等预留），保证 dock 面板不被这些区域遮住。纯函数，reader 与 video 两个
-/// 收口点共用同一实现，保证两表面 dock 行为一致。
+/// 一条全宽面板。[screen] 是可用区域大小；[dockedHeight] 是面板目标高度（会按可用高度
+/// clamp）；[bottomReserve]/[topReserve] 与跟随模式同义（底栏/状态栏等预留），保证 dock
+/// 面板不被这些区域遮住。纯函数，reader 与 video 两个收口点共用同一实现，保证两表面
+/// dock 行为一致。
+///
+/// 两个内边距**分轴**（BUG-2439）：
+///   * [horizontalInset] 默认 **0** —— 「整宽面板」就该从屏幕最左铺到最右。此前它与
+///     纵向共用一个 [inset]，而两个收口点都把跟随模式的贴边避让 padding（6）转发进来，
+///     于是 dock 面板左右各缺 6px，怎么调设置都补不上。跟随模式的 padding 是「别贴着
+///     屏幕边缘弹出」，与 dock 的「铺满」诉求相反，不该共用同一个数。
+///   * [inset] 只管纵向：面板与屏幕底（或 [bottomReserve] 上沿）之间的留白。
 Rect dockedPopupRect({
   required Size screen,
   double inset = 6.0,
+  double horizontalInset = 0.0,
   double dockedHeight = 360.0,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
@@ -187,18 +195,17 @@ Rect dockedPopupRect({
   final double reserve = bottomReserve.clamp(0, screen.height);
   final double effectiveTop = topReserve.clamp(0, screen.height);
   final double effectiveBottom = screen.height - reserve;
-  final double horizontalInset = inset.clamp(0, screen.width / 2);
+  final double sideInset = horizontalInset.clamp(0, screen.width / 2);
   final double verticalInset =
       inset.clamp(0, (effectiveBottom).clamp(0, screen.height) / 2);
-  final double width =
-      (screen.width - horizontalInset * 2).clamp(0, screen.width);
+  final double width = (screen.width - sideInset * 2).clamp(0, screen.width);
   final double maxAvail = (effectiveBottom - effectiveTop - verticalInset * 2)
       .clamp(0, screen.height);
   final double height = dockedHeight.clamp(0, maxAvail);
   final double top = (effectiveBottom - verticalInset - height)
       .clamp(effectiveTop + verticalInset, effectiveBottom)
       .toDouble();
-  return Rect.fromLTWH(horizontalInset, top, width, height);
+  return Rect.fromLTWH(sideInset, top, width, height);
 }
 
 /// 查词弹窗位置分流的单一收口：[bottomDocked] 时忽略选区返回屏幕底部全宽 dock 面板
@@ -232,6 +239,7 @@ Rect resolvePopupRect({
   if (bottomDocked) {
     return dockedPopupRect(
       screen: screen,
+      // [padding] 只喂纵向。横向留默认 0：dock 面板铺满屏幕最左到最右（BUG-2439）。
       inset: padding,
       dockedHeight: maxHeight,
       bottomReserve: bottomReserve,
@@ -647,6 +655,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.isDark = false,
     this.overrideFillColor,
     this.showBorder = true,
+    this.bottomDocked = false,
     this.swipeDismissible = true,
     this.enableSwipeToClose = true,
     this.onClose,
@@ -815,6 +824,14 @@ class DictionaryPopupLayer extends StatelessWidget {
   static const Key resizeGripKey =
       ValueKey<String>('dictionary-popup-resize-grip');
 
+  /// 本层是否是「底部停靠」的整宽面板（`popup_bottom_docked`）。
+  ///
+  /// 只影响**贴边处的观感**：dock 面板的矩形铺满屏幕最左到最右（见 [dockedPopupRect]
+  /// 的 `horizontalInset`），此时卡片圆角的四段弧会在屏幕左右缘露出背景色，看起来就是
+  /// 「全宽没铺满」。为真时把圆角摊平成直角，让 surface 真正边到边（BUG-2439）。跟随
+  /// 选区的普通弹窗四周都有留白，保持既有圆角。
+  final bool bottomDocked;
+
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
   bool get _swipeActive => swipeDismissible && enableSwipeToClose;
@@ -869,6 +886,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     final Widget surface = FushiPopupSurface(
       color: fillColor,
       showBorder: showBorder,
+      // dock 面板贴着屏幕左右缘，圆角摊平才是真正的「整宽」（BUG-2439）。
+      borderRadius: bottomDocked ? BorderRadius.zero : null,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
       // BUG-1692：本 surface 里装的是原生 WebView（平台视图）。描边默认走
       // foregroundPainter、画在 WebView **之后**且 bounds 覆盖整个浮层，macOS engine
@@ -1356,6 +1375,10 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
         ReaderFushiSource.instance.dismissSwipeSensitivity,
       );
 
+  /// 用户关掉「弹窗关闭动画」= 整条滑关不画（[popupSwipeDismissIsInstant]）：跟手期
+  /// 不重绘、不位移，抬手过阈值当帧关。**用时取值**，理由同 [_applyDismissDuration]。
+  bool get _instant => popupSwipeDismissIsInstant();
+
   @override
   void initState() {
     super.initState();
@@ -1445,6 +1468,9 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       _pointerIsHorizontal = delta.dx.abs() > delta.dy.abs() * 1.5;
     }
     if (_pointerIsHorizontal != true) return;
+    // instant：跟手期一帧都不重画（[build] 也不挂 Transform/Opacity），弹窗按住不动；
+    // 判定所需的累计位移在抬手时由 [_onPointerUp] 从指针位置重算，不依赖 [_dragX]。
+    if (_instant) return;
     setState(() => _dragX = delta.dx);
   }
 
@@ -1452,10 +1478,17 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
     final bool shouldFinish = _pointerIsHorizontal == true;
+    // instant 下 [_dragX] 恒 0（跟手期不更新），累计位移只能从起点重算。
+    final double accumulated =
+        _pointerStart == null ? _dragX : event.position.dx - _pointerStart!.dx;
     _clearTrackedPointer();
-    if (shouldFinish) {
-      _finishHorizontalDrag();
+    if (!shouldFinish) return;
+    if (_instant) {
+      // 抬手当帧判定：过阈值直接关（无滑出补间），没过什么都不用做（弹窗没动过）。
+      if (accumulated.abs() > _threshold) widget.onDismiss();
+      return;
     }
+    _finishHorizontalDrag();
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
@@ -1494,6 +1527,11 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _springBack() {
+    // instant：跟手期没位移过，没有可弹回的距离，也不该起一次 0→0 的补间。
+    if (_instant) {
+      if (_dragX != 0 && mounted) setState(() => _dragX = 0);
+      return;
+    }
     _applyDismissDuration();
     _dragStartX = _dragX;
     _dragTargetX = 0;
@@ -1511,7 +1549,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
-      child: widget.enableSwipeToClose
+      child: widget.enableSwipeToClose && !_instant
           ? LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
                 if (constraints.maxWidth.isFinite) {
