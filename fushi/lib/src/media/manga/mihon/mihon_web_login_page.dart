@@ -79,8 +79,11 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
     _visited.add(_originOf(widget.baseUrl));
   }
 
-  static Uri _originOf(Uri url) =>
-      Uri(scheme: url.scheme, host: url.host, port: url.hasPort ? url.port : null, path: '/');
+  static Uri _originOf(Uri url) => Uri(
+      scheme: url.scheme,
+      host: url.host,
+      port: url.hasPort ? url.port : null,
+      path: '/');
 
   Future<List<Cookie>> _readCookies(WebUri url) =>
       widget.cookieReader?.call(url) ??
@@ -127,8 +130,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       (cookie.domain ?? host).toString(),
     );
     if (domain.isEmpty) return null;
-    final bool sameSite =
-        MangaCookie.hostMatchesDomain(host, domain) ||
+    final bool sameSite = MangaCookie.hostMatchesDomain(host, domain) ||
         MangaCookie.hostMatchesDomain(domain, host);
     if (!sameSite) return null;
     final num? expires = cookie.expiresDate as num?;
@@ -195,8 +197,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             ),
           ),
           Expanded(
-            child:
-                widget.webViewBuilder?.call(context) ??
+            child: widget.webViewBuilder?.call(context) ??
                 KeyedSubtree(
                   // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正
                   // 重建出新的 platform view，而不动 WebView 自己的锚点。
@@ -213,17 +214,16 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
                     onLoadStop: (InAppWebViewController _, WebUri? url) =>
                         _noteVisited(url),
                     // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
-                    onRenderProcessGone:
-                        (
-                          InAppWebViewController _,
-                          RenderProcessGoneDetail detail,
-                        ) => unawaited(
-                          _deathGuard.handleDeath(
-                            didCrash: detail.didCrash,
-                            rendererPriorityAtExit:
-                                detail.rendererPriorityAtExit,
-                          ),
-                        ),
+                    onRenderProcessGone: (
+                      InAppWebViewController _,
+                      RenderProcessGoneDetail detail,
+                    ) =>
+                        unawaited(
+                      _deathGuard.handleDeath(
+                        didCrash: detail.didCrash,
+                        rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                      ),
+                    ),
                   ),
                 ),
           ),

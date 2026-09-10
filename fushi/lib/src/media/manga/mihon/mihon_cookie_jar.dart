@@ -39,10 +39,11 @@ List<MangaCookie> decodeMihonSetCookieHeader(String raw) {
 
 /// 编码端（测试与 Kotlin 侧共用同一份形状定义）。
 String encodeMihonSetCookieHeader(List<MangaCookie> cookies) => base64Encode(
-  utf8.encode(
-    jsonEncode(cookies.map((MangaCookie cookie) => cookie.toJson()).toList()),
-  ),
-);
+      utf8.encode(
+        jsonEncode(
+            cookies.map((MangaCookie cookie) => cookie.toJson()).toList()),
+      ),
+    );
 
 /// Mihon 扩展的登录态真值（BUG-2425）。
 ///

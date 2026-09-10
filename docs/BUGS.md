@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2425](bugs/BUG-2425-desktop-mihon-no-cookie-owner.md) | 🚧 | 🚧 | 桌面 Mihon 扩展无 cookie 所有者：需登录的源永远锁着 |
+| [BUG-2425](bugs/BUG-2425-desktop-mihon-no-cookie-owner.md) | ✅ | ✅ | 桌面 Mihon 扩展无 cookie 所有者：需登录的源永远锁着 |
 | [BUG-2423](bugs/BUG-2423-sync-conflict-title-truncated.md) | ✅ | ✅ | 同步冲突卡片书名单行省略，同系列多条冲突只剩同一前缀无法分辨 |
 | [BUG-2422](bugs/BUG-2422-settings-surface-ladder-flat.md) | ✅ | ✅ | 设置页页面底/导航窗格/卡片三层对比度仅1.05糊成一片（M3阶梯最挤段+全局关阴影） |
 | [BUG-2421](bugs/BUG-2421-favorite-words-cross-device-gaps.md) | 🚧 | 🚧 | 收藏的单词跨端看不到：wire 丢归属 + 云同步绑死统计开关 + 备份按统计表删除 |

@@ -125,6 +125,21 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return headers;
   }
 
+  /// 测试缝：直接跑生产的请求头构造，不必先把 JVM sidecar 拉起来。
+  ///
+  /// 暴露的是**同一个函数**而不是一份复制品——注入规则一旦在测试里另写一遍，
+  /// 两边就能各自正确、合起来还是不发 cookie。
+  @visibleForTesting
+  Future<Map<String, String>> debugRequestHeaders(MihonSource? source) =>
+      _headersFor(source);
+
+  /// 测试缝：同上，跑生产的响应 cookie 吸收。
+  @visibleForTesting
+  Future<void> debugAbsorbResponseCookies(
+    MihonSource? source,
+    Map<String, String> responseHeaders,
+  ) => _absorbResponseCookies(source, responseHeaders);
+
   /// 源站 baseUrl；解析不出 host 的源（空串 / 相对地址）当作没有站点。
   static Uri? _sourceBaseUri(MihonSource? source) {
     final String raw = source?.baseUrl.trim() ?? '';
