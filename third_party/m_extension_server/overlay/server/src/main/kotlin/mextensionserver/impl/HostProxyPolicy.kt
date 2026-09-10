@@ -1,6 +1,7 @@
 package mextensionserver.impl
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import io.github.oshai.kotlinlogging.KotlinLogging
 import okhttp3.Authenticator
 import okhttp3.ConnectionPool
 import okhttp3.Credentials
@@ -23,9 +24,31 @@ object HostProxyPolicy : ProxySelector() {
         val port: Int,
     )
 
+    private val logger = KotlinLogging.logger {}
+
     private val mapper = jacksonObjectMapper()
     private val port = System.getenv("FUSHI_MIHON_PROXY_POLICY_PORT")?.toIntOrNull()
     private val token = System.getenv("FUSHI_MIHON_TOKEN").orEmpty()
+
+    /** Single criterion for "the host told us where to ask"; [install] and [select] share it. */
+    private val hasHostEndpoint: Boolean
+        get() = port != null && port in 1..65535 && token.isNotEmpty()
+
+    /**
+     * The route taken when the host owns proxy decisions but cannot be asked right now.
+     *
+     * `.invalid` never resolves (RFC 2606), so the call fails without reaching the network:
+     * a policy outage must not silently downgrade to DIRECT and leak traffic past the user's
+     * proxy. It is a returned route rather than a thrown exception because
+     * [ProxySelector.select] is not allowed to fail -- see [select].
+     */
+    private val unavailable =
+        listOf(
+            Proxy(
+                Proxy.Type.HTTP,
+                InetSocketAddress.createUnresolved("host-proxy-policy-unavailable.invalid", 1),
+            ),
+        )
 
     data class Policy(
         val directive: String,
@@ -52,7 +75,7 @@ object HostProxyPolicy : ProxySelector() {
      * wiring regressed: it is logged, not swallowed silently.
      */
     fun install(): Boolean {
-        if (port == null || port !in 1..65535 || token.isEmpty()) return false
+        if (!hasHostEndpoint) return false
         setDefault(this)
         return true
     }
@@ -90,6 +113,14 @@ object HostProxyPolicy : ProxySelector() {
             }
         }
 
+    /**
+     * Never throws. OkHttp treats a failure here as an unbounded routing retry rather than a
+     * failed call: with a throwing selector a single request grows connection state until the
+     * JVM dies of OutOfMemoryError in ~2s, killing every source in the sidecar at once, not
+     * just the one request. Measured on both shapes this used to produce -- IOException from a
+     * non-200 host reply, and URISyntaxException from interpolating a null port into the
+     * endpoint URL. So both "no host to ask" and "host cannot answer" are expressed as routes.
+     */
     override fun select(uri: URI): List<Proxy> {
         // The JVM also consults its global selector from SocksSocketImpl after
         // the HTTP client has already selected a route. This socket URI names
@@ -98,7 +129,25 @@ object HostProxyPolicy : ProxySelector() {
         // or proxy the proxy connection. Only this transport lookup is DIRECT;
         // origin HTTP(S) lookups still require a successful host policy response.
         if (uri.scheme.equals("socket", ignoreCase = true)) return listOf(Proxy.NO_PROXY)
-        return proxies(lookup(uri).directive)
+        return selectWith(uri, hasHostEndpoint, ::lookup)
+    }
+
+    /**
+     * @param hostEndpointPresent false when this sidecar runs outside Fushi (the
+     *   tool/mihon/verify_desktop_runtime.* smoke tests). There is no host to ask and nothing
+     *   to fall back to but DIRECT -- the same reasoning [install] documents for returning false.
+     */
+    internal fun selectWith(
+        uri: URI,
+        hostEndpointPresent: Boolean,
+        policyLookup: (URI) -> Policy,
+    ): List<Proxy> {
+        if (!hostEndpointPresent) return listOf(Proxy.NO_PROXY)
+        return runCatching { proxies(policyLookup(uri).directive) }
+            .getOrElse { failure ->
+                logger.warn(failure) { "Host proxy policy unavailable for ${uri.scheme}://${uri.host}; failing closed" }
+                unavailable
+            }
     }
 
     override fun connectFailed(
@@ -149,11 +198,20 @@ object HostProxyPolicy : ProxySelector() {
             ) {
                 null
             } else {
-                val policy = policyLookup(response.request.url.toUri())
+                // A policy outage must not propagate out of the authenticator either: OkHttp
+                // calls this from inside its follow-up loop, so throwing here has the same
+                // unbounded-retry shape select() had. Without credentials the call simply
+                // ends at the proxy's 407.
+                val policy =
+                    runCatching { policyLookup(response.request.url.toUri()) }
+                        .getOrElse {
+                            logger.warn(it) { "Host proxy policy unavailable while answering a proxy challenge" }
+                            null
+                        } ?: return@Authenticator null
                 val address = route.proxy.address() as? InetSocketAddress
                 val matches =
                     address != null &&
-                        proxies(policy.directive).any { candidate ->
+                        runCatching { proxies(policy.directive) }.getOrDefault(emptyList()).any { candidate ->
                             val expected = candidate.address() as? InetSocketAddress
                             expected != null &&
                                 expected.hostString.equals(address.hostString, ignoreCase = true) &&

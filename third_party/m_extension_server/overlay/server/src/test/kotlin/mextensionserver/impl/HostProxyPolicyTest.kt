@@ -229,6 +229,115 @@ class HostProxyPolicyTest {
     }
 
     @Test
+    fun standalonePolicylessSidecarRoutesDirect() {
+        val routes =
+            HostProxyPolicy.selectWith(URI("https://source.invalid/chapter"), false) {
+                error("the host must not be asked when it never supplied an endpoint")
+            }
+        assertEquals(listOf(Proxy.NO_PROXY), routes)
+    }
+
+    @Test
+    fun unreachableHostPolicyYieldsAnUnresolvableRouteInsteadOfThrowing() {
+        val routes =
+            HostProxyPolicy.selectWith(URI("https://source.invalid/chapter"), true) {
+                throw IOException("Host proxy policy is unavailable (HTTP 503)")
+            }
+        // Failing closed: never DIRECT (that would leak past the user's proxy), and never a
+        // throw (OkHttp turns a throwing selector into an unbounded retry that exhausts the heap).
+        assertEquals(1, routes.size)
+        assertEquals(Proxy.Type.HTTP, routes[0].type())
+        val address = routes[0].address() as InetSocketAddress
+        assertEquals(true, address.isUnresolved)
+        assertEquals(false, address.hostString.equals("source.invalid", ignoreCase = true))
+    }
+
+    @Test
+    fun policyOutageFailsOneCallAndLeavesTheClientUsable() {
+        val origin = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        origin.createContext("/") { exchange ->
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        origin.start()
+        var reachable = false
+        val selector =
+            object : ProxySelector() {
+                override fun select(uri: URI): List<Proxy> =
+                    HostProxyPolicy.selectWith(uri, true) {
+                        if (reachable) {
+                            HostProxyPolicy.Policy("DIRECT")
+                        } else {
+                            throw IOException("Host proxy policy is unavailable (HTTP 503)")
+                        }
+                    }
+
+                override fun connectFailed(
+                    uri: URI,
+                    sa: SocketAddress,
+                    ioe: IOException,
+                ) = Unit
+            }
+        val client =
+            HostProxyPolicy
+                .configureClient(OkHttpClient.Builder(), selector)
+                .callTimeout(java.time.Duration.ofSeconds(15))
+                .build()
+        val url = "http://127.0.0.1:${origin.address.port}/"
+        try {
+            val started = System.nanoTime()
+            assertFails {
+                client.newCall(Request.Builder().url(url).build()).execute().close()
+            }
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            // The old selector threw out of select(); OkHttp then retried routes without bound
+            // and the JVM died of OutOfMemoryError in about two seconds, taking every other
+            // source in the sidecar with it. One bounded failure is the whole point.
+            assertEquals(true, elapsedMs < 15_000, "policy outage must fail fast, took ${elapsedMs}ms")
+
+            reachable = true
+            client.newCall(Request.Builder().url(url).build()).execute().use {
+                assertEquals(200, it.code)
+            }
+        } finally {
+            origin.stop(0)
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdownNow()
+        }
+    }
+
+    @Test
+    fun proxyChallengeSurvivesAPolicyOutage() {
+        val proxy = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        proxy.createContext("/") { exchange ->
+            exchange.responseHeaders.add("Proxy-Authenticate", "Basic realm=fixture")
+            exchange.sendResponseHeaders(407, -1)
+            exchange.close()
+        }
+        proxy.start()
+        val client =
+            HostProxyPolicy
+                .configureClient(OkHttpClient.Builder())
+                .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", proxy.address.port)))
+                .proxyAuthenticator(
+                    HostProxyPolicy.authenticatorFor {
+                        throw IOException("Host proxy policy is unavailable (HTTP 503)")
+                    },
+                ).callTimeout(java.time.Duration.ofSeconds(15))
+                .build()
+        try {
+            // No credentials to offer, so the call ends at the proxy's own 407 rather than
+            // throwing out of OkHttp's follow-up loop.
+            client.newCall(Request.Builder().url("http://source.invalid/").build()).execute().use {
+                assertEquals(407, it.code)
+            }
+        } finally {
+            proxy.stop(0)
+            client.dispatcher.executorService.shutdownNow()
+        }
+    }
+
+    @Test
     fun malformedPolicyFailsClosed() {
         assertFails { HostProxyPolicy.proxies("") }
         assertFails { HostProxyPolicy.proxies("PROXY user:secret@localhost:7890") }
