@@ -1,38 +1,20 @@
 {
   "schemaVersion": 1,
-  "version": "2.3.0-beta.14343",
-  "tag": "v2.3.0-beta.14343",
+  "version": "2.3.0-beta.14474",
+  "tag": "v2.3.0-beta.14474",
   "channel": "beta",
   "prerelease": true,
-  "releaseSequence": 14343,
+  "releaseSequence": 14474,
   "notes": "## Fushi 2.3.0\n\n### Speech-to-Subtitle — Experimental\n> This feature is experimental.\n\n- 17 interface languages covered: dedicated models for Japanese, English, Mandarin, Cantonese, Korean, Russian, Vietnamese and Thai, plus a multilingual model for the rest\n- GPU accelerated: a 30-minute English audiobook transcribes in a few seconds\n- Per-word timing feeds the audiobook matcher, so seeking lands where you expect\n\n### Reader\n- Redesigned desktop reading chrome — top toolbar, side navigation drawer, chapter progress, and a collapsible table of contents that remembers its state\n- New image gallery: illustrations you haven't reached yet stay masked until you tap them\n- Audiobook panel rebuilt: chapter durations, ±10s seek, alignment and transcription entry points\n- Faster book opening\n\n### Statistics\n- Reading time and character counts rewritten around a **coverage ledger**: re-reading the same passage no longer double-counts\n- Video watch time counts first-time coverage only — replays and rewatches don't inflate it\n- Configurable daily reset hour; long-press a time entry to delete it\n\n### Video\n- Anime metadata now uses **MAL as the primary source with TMDB as fallback**, plus AniDB ED2K hash identification\n- Clip export burns subtitles into the picture, so shared clips play anywhere\n- Local files are probed for resolution, HDR, codec and audio tracks — shown on library cards and detail pages\n- New \"Updated, not watched\" row on the video home: subscribed shows with unwatched episodes, one tap to the next one\n- Hidden subtitles reveal on hover or click, and step aside while you're looking a word up\n\n### Dictionaries & Lookup\n- MDX import is fully streaming now — importing a large dictionary uses a fraction of the memory it used to\n- Dictionary download failures finally tell you why instead of failing silently\n- Global out-of-app lookup can be triggered by gamepad buttons and mouse side buttons\n- Merged pitch-accent rows keep every dictionary source; nested lookup stays inside the popup\n\n### Card Creation\n- Netflix mining fixes: word audio no longer expires mid-session, gaiji images stop overlapping the sentence, multi-sentence selections come through as one card\n- AnkiDroid parallel builds are recognized, so the permission dialog actually appears\n- Audio preview added to the mining context dialog\n\n### Windows Galgame\n- New engine support: Unreal Engine (IoStore), Unity (Mono), CMVS, AOS/SFA, smash/fzmedia, Leaf\n- KiriKiri lookup sensor rewritten — classic KAG3 titles that never installed the sensor now work\n- Japanese locale switching is now **off by default**\n\n### Sync, Backup & Setup\n- Settings reorganized: sync/backup and interconnect each split into focused subpages with live summary rows\n- Desktop cloud OAuth now shows a proper waiting dialog — copy the link, reopen the browser, or cancel\n- Conflict comparison dialog: per-section counts, bulk resolution, \"conflicts only\" filter\n- Profiles can be uploaded and downloaded between paired devices\n- Recommended pack downloads survive leaving the wizard, show progress on the home screen, and can be resumed or abandoned\n\n### Interface & Stability\n- New app icon\n- Custom themes redesigned\n- Faster library, home and startup loading\n- In-app updates fixed — the installer no longer fails silently on exit\n\n---\n\n## Fushi 2.3.0 更新公告\n\n### 设备端语音转字幕 —— 实验性功能\n> 该功能目前为实验性。\n\n- 覆盖 17 种界面语言：日语、英语、普通话、粤语、韩语、俄语、越南语、泰语有专用模型，其余语言走多语模型\n- 支持 GPU 加速：30 分钟英语有声书几秒转完\n- 逐词时间戳接入有声书匹配器，跳播落点准确\n\n### 阅读器\n- 桌面端阅读界面重做——顶部工具栏、侧边导航抽屉、章节进度、可折叠且记住状态的目录\n- 新图片库：还没读到的插图默认遮住，点一下揭开\n- 有声书面板重做：章节时长、±10 秒跳转、对齐与转录入口\n- 开书更快\n\n### 学习统计\n- 阅读时长与字数改按**覆盖账本**记账：同一段重读不再重复计数\n- 视频观看时长只计首次覆盖，回放与重看不再灌水\n- 「今日」的重置时刻可配置；时段明细可长按删除\n\n### 视频\n- 动画资料改为 **MAL 为主、TMDB 兜底**，并保留 AniDB ED2K 哈希识别\n- 片段导出把字幕烧进画面，发出去在哪都能播\n- 本地文件会探测清晰度、HDR、编码和音轨，标注在库页卡片与作品详情页\n- 视频首页新增「已更新未看」行：订阅番剧有集没看即列出，点开直接播那一集\n- 隐藏字幕支持悬停或点击显形，查词时自动让位\n\n### 词典与查词\n- MDX 导入改为全流式，导入大词典的内存峰值大幅下降\n- 词典下载失败会说明原因，不再静默失败\n- app 外全局查词支持手柄按钮和鼠标侧键触发\n- 同音调型合并后仍保留全部词典来源；嵌套查词不再跳出弹窗\n\n### 制卡\n- 网飞制卡修复：单词音频不再中途过期、外字图不再压住正文、多句选中合成一张卡\n- 认得出 AnkiDroid 并行版，权限框不再永远不弹\n- 制卡上下文对话框加了试听\n\n### Windows Galgame\n- 新增引擎支持：Unreal Engine（IoStore）、Unity（Mono）、CMVS、AOS/SFA、smash/fzmedia、Leaf\n- KiriKiri 查词传感器重做——原来装不上传感器的经典 KAG3 作品现在可用\n- 日文转区**默认改为关闭**\n\n### 同步、备份与配置\n- 设置页重组：同步备份、互联各自拆成职责清晰的子页，主页留带实时摘要的入口行\n- 桌面云盘 OAuth 增加等待对话框——可复制登录链接、重开浏览器或取消\n- 冲突对比对话框：段头带计数、批量裁决、「只看冲突」筛选\n- 配置文件可在已配对设备间上传下载\n- 推荐包下载走完向导也不会被取消，首页常驻进度入口，可续传也可放弃\n\n### 界面与稳定性\n- 更换应用图标\n- 自定义主题重设计\n- 库页、首页、启动的加载更快\n- 修复应用内更新静默失败",
   "assets": [
     {
-      "name": "fushi-2.3.0-beta.14343-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.14343/fushi-2.3.0-beta.14343-ios.ipa",
-      "releaseSequence": 14343,
-      "tag": "v2.3.0-beta.14343",
-      "version": "2.3.0-beta.14343",
-      "size": 68763403,
-      "sha256": "8fa4563b979f32ed083b0b99cbb79901d23c2418e6b3e4a3a5481f2125734d67"
-    },
-    {
-      "name": "fushi-2.3.0-beta.14343-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.14343/fushi-2.3.0-beta.14343-macos.zip",
-      "releaseSequence": 14343,
-      "tag": "v2.3.0-beta.14343",
-      "version": "2.3.0-beta.14343",
-      "size": 335751099,
-      "sha256": "d2d82bf9ded60a038ce0abff56ae575f6a50d6f25d7ce24c44e80d83f7c9f902"
-    },
-    {
-      "name": "fushi-2.3.0-beta.14343-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.14343/fushi-2.3.0-beta.14343-windows-setup.exe",
-      "releaseSequence": 14343,
-      "tag": "v2.3.0-beta.14343",
-      "version": "2.3.0-beta.14343",
-      "size": 262193737,
-      "sha256": "643ffc6381b841052e6602ad39ce0c8508bfc696be371fbc98bba978081f1d0f"
+      "name": "fushi-2.3.0-beta.14474-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.3.0-beta.14474/fushi-2.3.0-beta.14474-windows-setup.exe",
+      "releaseSequence": 14474,
+      "tag": "v2.3.0-beta.14474",
+      "version": "2.3.0-beta.14474",
+      "size": 265112504,
+      "sha256": "aaaf616a78fe788e56509a6eb02f3894a697bc789829f05ab155115c04830bf3"
     }
   ]
 }
