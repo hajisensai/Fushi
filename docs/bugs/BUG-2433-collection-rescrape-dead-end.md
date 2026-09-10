@@ -15,6 +15,6 @@
 
   另有既有测试 `fushi/test/media/video/video_source_work_planner_test.dart:96`「任意多片 m3u 合集不会被误判为电视剧作品」明确钉死了这条设计意图。所以根因在**查询的定位方式**，不在计划器。
 
-- **[x] ① 已修复** — `planScrapeWorkForCollection` → `planScrapeWorksForCollection`，改按**成员归属**定位并返回候选列表：存在合集级单元就只返回它（既有行为一字不变），否则返回该合集成员对应的全部 `book:<uid>` 单元。调用方三分支：0 个 → 保留提示（此时才是真话）；1 个 → 直接走原绑定 + 重刮；N 个 → 弹选择列表（新增 `collection_rescrape_pick_work`），不再默选第一个也不再死胡同。搜索种子在「整个合集就是这一个作品」时改用合集名（成员标题可能是 `S00E01` 这种纯集号标签）。计划器、stableKey、canonical 锚定、封面归属**一律未动** → 零数据迁移、零回归。提交 `<commit>`
+- **[x] ① 已修复** — `planScrapeWorkForCollection` → `planScrapeWorksForCollection`，改按**成员归属**定位并返回候选列表：存在合集级单元就只返回它（既有行为一字不变），否则返回该合集成员对应的全部 `book:<uid>` 单元。调用方三分支：0 个 → 保留提示（此时才是真话）；1 个 → 直接走原绑定 + 重刮；N 个 → 弹选择列表（新增 `collection_rescrape_pick_work`），不再默选第一个也不再死胡同。搜索种子在「整个合集就是这一个作品」时改用合集名（成员标题可能是 `S00E01` 这种纯集号标签）。计划器、stableKey、canonical 锚定、封面归属**一律未动** → 零数据迁移、零回归。提交 `c81ba126bc`
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_library_scrape_sweep_test.dart`：单成员合集回落 book 单元（按用户真实数据形状构造）、多片无集号合集返回全部候选、合集级单元存在时只返回它、非 local 来源返回空、以及既有三条改成列表口径。共 16 条全绿。
 - **备注**：多候选的选择列表是同一条路径的另一半死胡同（多片播放列表、目录合集右键重刮原本同样只能拿到那句 toast），一并修掉。
