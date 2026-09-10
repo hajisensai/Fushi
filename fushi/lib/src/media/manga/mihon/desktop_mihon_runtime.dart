@@ -50,9 +50,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     required this.dataDirectory,
     Directory? resourceDirectory,
     http.Client? httpClient,
-  }) : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
-       _processContainment = MihonChildProcessContainment.platform(),
-       _http = httpClient ?? http.Client();
+  })  : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
+        _processContainment = MihonChildProcessContainment.platform(),
+        _http = httpClient ?? http.Client();
 
   final Directory dataDirectory;
   final Directory resourceDirectory;
@@ -85,13 +85,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   Map<String, String> get _headers => <String, String>{
-    'Authorization': 'Bearer $_token',
-    // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
-    // omits its charset. Mihon manga URLs commonly contain CJK text, so
-    // omitting this parameter corrupts those URLs into U+FFFD on the
-    // bridge round trip and makes otherwise valid detail pages return 404.
-    'Content-Type': 'application/json; charset=utf-8',
-  };
+        'Authorization': 'Bearer $_token',
+        // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
+        // omits its charset. Mihon manga URLs commonly contain CJK text, so
+        // omitting this parameter corrupts those URLs into U+FFFD on the
+        // bridge round trip and makes otherwise valid detail pages return 404.
+        'Content-Type': 'application/json; charset=utf-8',
+      };
 
   @override
   Future<MihonCapabilities> getCapabilities() async {
@@ -136,13 +136,14 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     MihonSource source,
     MihonPage page, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) => fetchImageRequest(
-    extension,
-    source,
-    page,
-    requestId: 'direct-${_imageRequestSequence++}',
-    preferences: preferences,
-  );
+  }) =>
+      fetchImageRequest(
+        extension,
+        source,
+        page,
+        requestId: 'direct-${_imageRequestSequence++}',
+        preferences: preferences,
+      );
 
   @override
   Future<Uint8List> fetchImageRequest(
@@ -216,9 +217,8 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'url': url,
         'preferences': mihonBridgePreferences(source, preferences),
       });
-    final http.StreamedResponse response = await _http
-        .send(request)
-        .timeout(kMihonSourceImageHeaderTimeout);
+    final http.StreamedResponse response =
+        await _http.send(request).timeout(kMihonSourceImageHeaderTimeout);
     if (response.statusCode != HttpStatus.ok) {
       await response.stream.drain<void>().timeout(kMihonSourceImageIdleTimeout);
       throw MihonRuntimeException(
@@ -249,11 +249,19 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }
 
   @override
-  Future<void> invalidateExtension(String packageName) async {
+  Future<void> invalidateExtension(String packageName) =>
+      invalidateExtensions(<String>[packageName]);
+
+  @override
+  Future<void> invalidateExtensions(Iterable<String> packageNames) async {
+    final Set<String> names = packageNames.toSet();
+    if (names.isEmpty) return;
     _apkCache.removeWhere(
       (String path, _CachedApk value) =>
-          p.basenameWithoutExtension(path) == packageName,
+          names.contains(p.basenameWithoutExtension(path)),
     );
+    // 一次重启覆盖整批：sidecar 重启后所有扩展都会被重新加载，逐个重启没有额外
+    // 效果，只有额外代价。
     await _restart();
   }
 
@@ -417,11 +425,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen((String line) {
-          log.write(line);
-          if (announced.isCompleted) return;
-          final int? port = _parseReadyPort(line);
-          if (port != null) announced.complete(port);
-        });
+      log.write(line);
+      if (announced.isCompleted) return;
+      final int? port = _parseReadyPort(line);
+      if (port != null) announced.complete(port);
+    });
     process.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
@@ -567,13 +575,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       final http.Response response = await _http
           .post(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 45));
-      final Object? decoded = response.body.isEmpty
-          ? null
-          : jsonDecode(response.body);
+      final Object? decoded =
+          response.body.isEmpty ? null : jsonDecode(response.body);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final Map<Object?, Object?>? error = decoded is Map<Object?, Object?>
-            ? decoded
-            : null;
+        final Map<Object?, Object?>? error =
+            decoded is Map<Object?, Object?> ? decoded : null;
         throw MihonRuntimeException(
           'BRIDGE_HTTP_${response.statusCode}',
           error?['error']?.toString() ?? 'Mihon bridge request failed',
@@ -645,8 +651,8 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   String _javaExecutablePath() {
     final String runtimeName = Platform.isMacOS
         ? (Abi.current() == Abi.macosArm64
-              ? 'runtime-macos-arm64'
-              : 'runtime-macos-x64')
+            ? 'runtime-macos-arm64'
+            : 'runtime-macos-x64')
         : 'runtime';
     return p.join(
       resourceDirectory.path,

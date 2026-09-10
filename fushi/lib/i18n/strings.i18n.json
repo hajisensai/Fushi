@@ -4583,5 +4583,13 @@
   "settings_downloads_routing_title": "Completed downloads",
   "settings_downloads_routing_hint": "Path mapping and target video source",
   "settings_downloads_encryption_title": "Peer encryption",
-  "settings_service_disabled": "Disabled"
+  "settings_service_disabled": "Disabled",
+  "mihon_extension_download_count_unknown": "No download data",
+  "mihon_extension_bulk_install": "Bulk install",
+  "mihon_extension_min_downloads": "Min downloads",
+  "mihon_extension_download_count": "${count} downloads",
+  "mihon_extension_bulk_install_confirm": "Install ${count} extensions from this repository? Extensions run code from their sources.",
+  "mihon_extension_bulk_install_progress": "Installing ${current}/${total}: ${name}",
+  "mihon_extension_bulk_install_done": "Installed ${installed}, skipped ${skipped}, failed ${failed}",
+  "mihon_extension_bulk_install_nothing": "Every extension matching the current filters is already installed."
 }

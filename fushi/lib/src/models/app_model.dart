@@ -3940,6 +3940,9 @@ class AppModel with ChangeNotifier {
       // keiyoushi）。别把它挪进 MihonManager 的默认值——那会让每个构造 manager
       // 的单测都去拉真实网络索引，见 MihonManager.seedDefaultStore 的说明。
       seedDefaultStore: true,
+      // 同理只有真实 app 去拉扩展的公开下载量（一次 5 MB 量级的 GitHub API
+      // 请求）；单测构造的 manager 一律不碰外网。
+      fetchDownloadCounts: true,
     );
     _mihonManager = manager;
     unawaited(manager.initialise());

@@ -4583,5 +4583,13 @@
   "settings_downloads_routing_title": "下载完成后",
   "settings_downloads_routing_hint": "路径映射与目标视频来源",
   "settings_downloads_encryption_title": "节点加密",
-  "settings_service_disabled": "已停用"
+  "settings_service_disabled": "已停用",
+  "mihon_extension_download_count_unknown": "无下载数据",
+  "mihon_extension_bulk_install": "批量安装",
+  "mihon_extension_min_downloads": "最低下载量",
+  "mihon_extension_download_count": "${count} 次下载",
+  "mihon_extension_bulk_install_confirm": "从该仓库安装 ${count} 个扩展？扩展会运行来自源站的代码。",
+  "mihon_extension_bulk_install_progress": "正在安装 ${current}/${total}：${name}",
+  "mihon_extension_bulk_install_done": "已安装 ${installed} 个，跳过 ${skipped} 个，失败 ${failed} 个",
+  "mihon_extension_bulk_install_nothing": "当前筛选下的扩展都已经装过了。"
 }
