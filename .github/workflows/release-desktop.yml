@@ -908,6 +908,51 @@ jobs:
             -Path "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe" `
             -Description 'Fushi'
           if ($LASTEXITCODE -ne 0) { throw "签名失败，退出码 $LASTEXITCODE" }
+      # 打包后回验：把刚签好的安装器真的装进 runner 的临时目录，检查**装出来的**
+      # 每个 exe/dll 都带签名。
+      # 「Sign Windows bundle binaries」验的是打包**前**的文件，证明不了 Inno 把它们
+      # 原样收了进去 —— 只要 iss 的 Source 规则漏掉某个子目录、或哪一步在打包前又
+      # 覆盖了文件，那一步照样全绿，而用户装出来的仍是无签名程序。这一步验的是
+      # 用户实际拿到的东西，等价于把「更新装完是什么样」搬进 CI。
+      - name: Verify installed payload is signed
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          $thumb = if ($env:CERTUM_CERT_THUMBPRINT) { $env:CERTUM_CERT_THUMBPRINT } else { 'D717A3F6A12F50B75E9D04072A69B1BCB590AE14' }
+          $setup = "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+          $dst   = "$env:RUNNER_TEMP\payload-verify"
+          $p = Start-Process -FilePath $setup -ArgumentList @(
+            '/VERYSILENT', '/SP-', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=$dst"
+          ) -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "静默安装失败，退出码 $($p.ExitCode)" }
+          if (-not (Test-Path -LiteralPath "$dst\fushi.exe")) { throw "装出来的目录里没有 fushi.exe: $dst" }
+
+          $files = Get-ChildItem -LiteralPath $dst -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.dll' } |
+            # unins*.exe 是 Inno 在**安装时**现生成的卸载器，我们签不到它。
+            Where-Object { $_.Name -notlike 'unins*.exe' }
+
+          $ours = 0; $others = 0; [string[]] $unsigned = @()
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
+            if ($s.Status -eq 'Valid' -and $s.SignerCertificate.Thumbprint -eq $thumb) { $ours++ }
+            elseif ($s.Status -eq 'Valid' -and $s.SignerCertificate) { $others++ }
+            else { $unsigned += $f.FullName.Substring($dst.Length + 1) }
+          }
+          Write-Host "装出的 exe/dll 共 $($files.Count) 个：本证书签名 $ours，他方签名 $others，未签名 $($unsigned.Count)"
+
+          $main = Get-AuthenticodeSignature -LiteralPath "$dst\fushi.exe"
+          Write-Host "fushi.exe -> $($main.Status) / $($main.SignatureType) / $($main.SignerCertificate.Subject)"
+          if ($main.Status -ne 'Valid' -or $main.SignerCertificate.Thumbprint -ne $thumb) {
+            throw "fushi.exe 未被本证书签名 —— 安装包外壳签了但里面没签，等于没补齐。"
+          }
+          if ($unsigned.Count -gt 0) {
+            $unsigned | ForEach-Object { Write-Host "  未签名: $_" }
+            throw "装出来的目录里还有 $($unsigned.Count) 个无签名 exe/dll。"
+          }
+          Write-Host "回验通过：安装后目录内无任何未签名 exe/dll。"
       # 登录会话留在 runner 上没有意义，且 GitHub 托管 runner 用完即毁；
       # 自托管 runner 上不断开则会把会话泄给下一个 job。
       - name: Disconnect SimplySign
