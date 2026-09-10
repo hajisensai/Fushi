@@ -495,11 +495,13 @@ class _HomePageState extends BasePageState<HomePage>
           cacheWriter: appModel.setUpdateCheckCache,
           // v101：把「确实有新版」这条事实同时投进更新中心。既有对话框照旧——
           // 用户点掉对话框之后，红点与更新页仍留着这条，不再是「弹过一次就没了」。
-          onUpdateAvailable: (String version, String? releaseUrl) =>
-              publishAppReleaseUpdate(
-            feed: appModel.updateFeedService,
-            version: version,
-            releaseUrl: releaseUrl,
+          // 回调是同步的（投递不该挡住更新流程），所以这里 unawaited 出去。
+          onUpdateAvailable: (String version, String? releaseUrl) => unawaited(
+            publishAppReleaseUpdate(
+              feed: appModel.updateFeedService,
+              version: version,
+              releaseUrl: releaseUrl,
+            ),
           ),
         );
       }
