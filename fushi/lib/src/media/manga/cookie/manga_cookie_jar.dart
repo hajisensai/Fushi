@@ -18,6 +18,7 @@ class MangaCookie {
     required this.domain,
     this.path = '/',
     this.secure = false,
+    this.hostOnly = false,
     this.expiresAt,
   });
 
@@ -27,6 +28,7 @@ class MangaCookie {
         domain: json['domain']?.toString() ?? '',
         path: json['path']?.toString() ?? '/',
         secure: json['secure'] == true,
+        hostOnly: json['hostOnly'] == true,
         expiresAt: (json['expiresAt'] as num?)?.toInt(),
       );
 
@@ -38,6 +40,16 @@ class MangaCookie {
   final String path;
   final bool secure;
 
+  /// 只对 [domain] **这一个** host 生效（浏览器里 `Set-Cookie` 未写 `Domain=`
+  /// 属性的那种），不覆盖子域。
+  ///
+  /// 必须随线格式一起传：okhttp 的 jar 把 `secure` 与 `hostOnly` 算进 cookie 的
+  /// **身份**（`WrappedCookie.equals`）。宿主注入的条目若把这两位丢成默认值，
+  /// 它与站点自己 `Set-Cookie` 写进去的同名条目就是两条不同的 cookie，谁也覆盖
+  /// 不了谁——okhttp 于是把 `session=旧值; session=新值` 一起发出去，取首值的
+  /// 服务端拿到的是作废的那个。
+  final bool hostOnly;
+
   /// 过期时刻（毫秒时间戳）；null = 会话 cookie，随文件保留直到被替换。
   final int? expiresAt;
 
@@ -48,7 +60,12 @@ class MangaCookie {
 
   bool isExpiredAt(int nowMs) => expiresAt != null && expiresAt! <= nowMs;
 
-  bool matchesHost(String host) => hostMatchesDomain(host, canonicalDomain);
+  /// 这条 cookie 该不该发给 [host]。
+  ///
+  /// host-only 的条目只认完全相等；其余按 RFC 6265 的域匹配。
+  bool matchesHost(String host) => hostOnly
+      ? canonicalizeDomain(host) == canonicalDomain
+      : hostMatchesDomain(host, canonicalDomain);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'name': name,
@@ -56,6 +73,7 @@ class MangaCookie {
         'domain': canonicalDomain,
         'path': path,
         'secure': secure,
+        if (hostOnly) 'hostOnly': true,
         if (expiresAt != null) 'expiresAt': expiresAt,
       };
 
@@ -167,6 +185,30 @@ class MangaCookieJar {
         .toList(growable: false);
   }
 
+  /// 属于 [host] 这个**站点**的全部 cookie（不论作用在父域还是子域）。
+  ///
+  /// 与 [cookiesFor] 的区别是刻意的：[cookiesFor] 回答「这条 cookie 该不该发给
+  /// 这个 URL」，由**发请求的一方**判断；而把登录态交给扩展运行时的时候，宿主
+  /// 并不知道扩展接下来要打哪些子域（日站的登录域、api 域、viewer 域常常各不
+  /// 相同），所以要把整站的条目**连同各自真实的域**一起交出去，由对端的 jar 按
+  /// 每个实际请求 URL 去匹配。
+  ///
+  /// 用 [cookiesFor] 代替会静默丢掉子域条目：作用在 `member.example.jp` 的登录
+  /// cookie 对 `https://example.jp` 不生效，于是一条都不会被交出去——表现正是
+  /// 「登录了但还是锁着」。
+  List<MangaCookie> cookiesForSite(String host) {
+    final int now = _clock();
+    final String site = MangaCookie.canonicalizeDomain(host);
+    return _cookies
+        .where(
+          (MangaCookie cookie) =>
+              !cookie.isExpiredAt(now) &&
+              (MangaCookie.hostMatchesDomain(site, cookie.canonicalDomain) ||
+                  MangaCookie.hostMatchesDomain(cookie.canonicalDomain, site)),
+        )
+        .toList(growable: false);
+  }
+
   /// `Cookie:` 请求头值；无匹配返回 null。
   String? cookieHeaderFor(Uri url) {
     final List<MangaCookie> matched = cookiesFor(url);
@@ -209,6 +251,37 @@ class MangaCookieJar {
       for (final MangaCookie cookie in _cookies)
         if (!cookie.isExpiredAt(now) &&
             !replacedDomains.contains(cookie.canonicalDomain))
+          cookie,
+      ...incoming,
+    ];
+    await _persist();
+  }
+
+  /// 用浏览器导出的整组 cookie **替换**整个站点（[host] 的父域与子域全算）的
+  /// 旧条目，各自的真实域原样保留。
+  ///
+  /// 与 [replaceForHost] 的区别：那个只收「域覆盖 host」的条目（Cloudflare 放行
+  /// cookie 就是这种），子域条目会被丢掉。登录导出必须连子域一起收——日站的会话
+  /// cookie 常常只作用在登录子域上。
+  Future<void> replaceForSite(String host, List<MangaCookie> fresh) async {
+    await ensureLoaded();
+    final int now = _clock();
+    final String site = MangaCookie.canonicalizeDomain(host);
+    bool belongsToSite(String domain) =>
+        MangaCookie.hostMatchesDomain(site, domain) ||
+        MangaCookie.hostMatchesDomain(domain, site);
+
+    final List<MangaCookie> incoming = fresh
+        .where(
+          (MangaCookie cookie) =>
+              cookie.isValid &&
+              !cookie.isExpiredAt(now) &&
+              belongsToSite(cookie.canonicalDomain),
+        )
+        .toList(growable: false);
+    _cookies = <MangaCookie>[
+      for (final MangaCookie cookie in _cookies)
+        if (!cookie.isExpiredAt(now) && !belongsToSite(cookie.canonicalDomain))
           cookie,
       ...incoming,
     ];

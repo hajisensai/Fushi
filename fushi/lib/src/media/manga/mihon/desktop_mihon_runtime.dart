@@ -110,18 +110,26 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   /// jar，域取自 `source.getBaseUrl()`——所以这里必须用**同一个 baseUrl** 挑
   /// cookie，否则注进去的条目域对不上，等于没注。
   ///
-  /// 刻意**不发 `User-Agent`**：sidecar 收到该头会全局改写这个源的 UA，而本轮
-  /// 桌面端并不做 Cloudflare 解题（sidecar 的 `CloudflareInterceptor` 是空壳），
-  /// 没有「clearance 绑定 UA」的约束，改写只会平白破坏自设 UA 的源。将来桌面
-  /// 端补上解题时，UA 必须与 cookie 一起作为「登录身份」整体存取，而不是在这里
-  /// 单独塞一个默认值。
+  /// 交出的是**整站**的 cookie 连同各自真实的域，而不是「对 baseUrl 生效的那些」：
+  /// 宿主并不知道扩展接下来要打哪些子域（日站的登录域 / api 域 / viewer 域常常
+  /// 各不相同），按 baseUrl 筛会把只作用在登录子域上的会话 cookie 整个丢掉。域
+  /// 匹配由 sidecar 那边的 okhttp jar 按每个实际请求 URL 去做。
+  ///
+  /// 刻意**不设源的 UA**：本轮桌面端不做 Cloudflare 解题（sidecar 的
+  /// `CloudflareInterceptor` 是空壳），没有「clearance 绑定 UA」的约束，改写只会
+  /// 平白破坏自设 UA 的源。注意这条**只有在 sidecar 改成读专用头之后才成立**——
+  /// 在那之前，`dart:io` 无条件带上的 `User-Agent: Dart/x.y (dart:io)` 会被当成
+  /// 源的 UA 全局写下去。将来补解题时，UA 必须与 cookie 一起作为「登录身份」整体
+  /// 存取，而不是在这里单独塞一个默认值。
   Future<Map<String, String>> _headersFor(MihonSource? source) async {
     final Map<String, String> headers = _headers;
     final Uri? base = _sourceBaseUri(source);
     if (base == null) return headers;
     await _cookies.ensureLoadedBestEffort();
-    final String? cookie = _cookies.cookieHeaderFor(base);
-    if (cookie != null) headers['Cookie'] = cookie;
+    final List<MangaCookie> cookies = _cookies.cookiesForSite(base.host);
+    if (cookies.isNotEmpty) {
+      headers[kMihonCookieHeader] = encodeMihonCookieWire(cookies);
+    }
     return headers;
   }
 
@@ -161,7 +169,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     if (_sourceBaseUri(source) == null) return;
     final String? raw = responseHeaders[kMihonSetCookieHeader];
     if (raw == null || raw.isEmpty) return;
-    final List<MangaCookie> incoming = decodeMihonSetCookieHeader(raw);
+    final List<MangaCookie> incoming = decodeMihonCookieWire(raw);
     if (incoming.isEmpty) return;
     try {
       await _cookies.mergeFromRuntime(incoming);
@@ -298,6 +306,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       });
     final http.StreamedResponse response =
         await _http.send(request).timeout(kMihonSourceImageHeaderTimeout);
+    // 封面/图片请求往往比 `/dalvik` 更频繁，先撞上会话续期的通常正是它们；
+    // 只注入不回收，等于把这条链路上换发的新 cookie 全丢掉。
+    await _absorbResponseCookies(source, response.headers);
     if (response.statusCode != HttpStatus.ok) {
       await response.stream.drain<void>().timeout(kMihonSourceImageIdleTimeout);
       throw MihonRuntimeException(

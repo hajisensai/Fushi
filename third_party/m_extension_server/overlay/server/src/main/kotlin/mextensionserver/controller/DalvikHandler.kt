@@ -21,28 +21,43 @@ class DalvikHandler {
     private val logger = KotlinLogging.logger {}
     private val objectMapper = jacksonObjectMapper()
 
-    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response =
-        try {
+    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
+        // Declared outside the try so the catch clauses can still report the
+        // jar: the failing call is the one most likely to have rotated the
+        // session.
+        var pendingJarCookies: String? = null
+        return try {
             val body = mutableMapOf<String, String>()
             session.parseBody(body)
             val json = body["postData"] ?: throw IllegalArgumentException("No JSON body")
             val dataBody = objectMapper.readValue(json, DataBody::class.java)
 
-            val result =
+            // A failing call is the *most* likely one to have rotated the
+            // session -- a 401/403 usually is the site handing out a fresh
+            // cookie as it rejects the stale one. Capturing the jar here rather
+            // than only on the success path is what lets the error response
+            // carry it back; otherwise the host retries forever with the dead
+            // value it already had.
+            val invocationResult =
                 MExtensionServerLoader.invokeWithExtension(dataBody.data) { loadedExtension ->
                     val selectedSource = MihonInvoker.selectSource(loadedExtension.sources, dataBody)
                     MihonInvoker.preparePreferences(dataBody, selectedSource)
                     // Host-owned login session; see [SourceCookieInjection].
                     val domain = SourceCookieInjection.domainOf(selectedSource)
-                    SourceCookieInjection.injectRequestCookies(session, selectedSource, domain)
+                    SourceCookieInjection.injectRequestCookies(session, selectedSource)
                     SourceCookieInjection.applyRequestUserAgent(session, selectedSource)
-
-                    val invoked = MihonInvoker.invokeMethod(loadedExtension, dataBody)
-                    invoked to
-                        SourceCookieInjection.encodeJarCookies(objectMapper, selectedSource, domain)
+                    try {
+                        MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                    } finally {
+                        pendingJarCookies =
+                            SourceCookieInjection.encodeJarCookies(
+                                objectMapper,
+                                selectedSource,
+                                domain,
+                            )
+                    }
                 }
 
-            val (invocationResult, jarCookies) = result
             val serializableResult = filterResponseForBridge(invocationResult)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
             NanoHTTPD
@@ -50,14 +65,17 @@ class DalvikHandler {
                     NanoHTTPD.Response.Status.OK,
                     "application/json",
                     responseJson,
-                ).apply {
-                    if (jarCookies != null) addHeader(SET_COOKIE_HEADER, jarCookies)
-                }
+                ).withJarCookies(pendingJarCookies)
         } catch (error: LinkageError) {
-            errorResponse(error)
+            errorResponse(error).withJarCookies(pendingJarCookies)
         } catch (error: Exception) {
-            errorResponse(error)
+            errorResponse(error).withJarCookies(pendingJarCookies)
         }
+    }
+
+    /** Attaches [SET_COOKIE_HEADER] when the call actually touched cookies. */
+    private fun NanoHTTPD.Response.withJarCookies(payload: String?): NanoHTTPD.Response =
+        apply { if (payload != null) addHeader(SET_COOKIE_HEADER, payload) }
 
     internal fun errorResponse(error: Throwable): NanoHTTPD.Response {
         logger.error(error) { "Error handling request" }

@@ -143,28 +143,75 @@ void main() {
     expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
   });
 
-  testWidgets('子域 cookie 被重标到源站 host，否则永远发不出去', (WidgetTester tester) async {
+  testWidgets('子域 cookie 保留真实域，并随整站一起交给运行时', (WidgetTester tester) async {
     final MihonCookieJar store = jar();
     await pumpLogin(
       tester,
       store: store,
       cookieReader: (WebUri url) async => <Cookie>[
-        // 登录域和内容域不同是日站常态；原样保留 member. 这个域，
-        // cookieHeaderFor('https://bookwalker.jp') 就匹配不到它。
-        browserCookie(
-          'session',
-          value: 'abc',
-          domain: 'member.bookwalker.jp',
-        ),
+        // 登录域和内容域不同是日站常态。第一版把它重标到 bookwalker.jp，
+        // 那会把作用域平白放宽到父域及其全部子域；现在原样保留，由对端的
+        // okhttp jar 按每个实际请求 URL 匹配。
+        browserCookie('session', value: 'abc', domain: 'member.bookwalker.jp'),
+      ],
+    );
+
+    await tapDone(tester);
+
+    final List<MangaCookie> site = store.cookiesForSite('bookwalker.jp');
+    expect(site.single.name, 'session');
+    expect(site.single.domain, 'member.bookwalker.jp');
+    // 它对父域**不**生效，正是它应有的作用域。
+    expect(store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')), isNull);
+    expect(
+      store.cookieHeaderFor(Uri.parse('https://member.bookwalker.jp/')),
+      'session=abc',
+    );
+  });
+
+  testWidgets('同名 cookie 跨子域各自保留，不再按 name 互相挤掉', (WidgetTester tester) async {
+    final MihonCookieJar store = jar();
+    await pumpLogin(
+      tester,
+      store: store,
+      cookieReader: (WebUri url) async => <Cookie>[
+        // 回归：曾经只按 name 去重，胜出者取决于 origin 遍历顺序，而那顺序
+        // 又不是访问先后（Set.add 命中已有元素不会挪到末尾）——等于随机挑一个，
+        // 挑错就是「显示已登录但还是锁着」。
+        browserCookie('session', value: 'content', domain: 'bookwalker.jp'),
+        browserCookie('session',
+            value: 'login', domain: 'member.bookwalker.jp'),
       ],
     );
 
     await tapDone(tester);
 
     expect(
-      store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
-      'session=abc',
+      store
+          .cookiesForSite('bookwalker.jp')
+          .map((MangaCookie c) => '${c.domain}=${c.value}')
+          .toSet(),
+      <String>{'bookwalker.jp=content', 'member.bookwalker.jp=login'},
     );
+  });
+
+  testWidgets('未报 domain 的 cookie 存成 host-only（浏览器语义）', (
+    WidgetTester tester,
+  ) async {
+    final MihonCookieJar store = jar();
+    await pumpLogin(
+      tester,
+      store: store,
+      cookieReader: (WebUri url) async => <Cookie>[
+        browserCookie('session', value: 'abc'),
+      ],
+    );
+
+    await tapDone(tester);
+
+    final MangaCookie saved = store.cookiesForSite('bookwalker.jp').single;
+    expect(saved.hostOnly, isTrue);
+    expect(saved.domain, 'bookwalker.jp');
   });
 
   testWidgets('第三方域的 cookie 不进 jar', (WidgetTester tester) async {

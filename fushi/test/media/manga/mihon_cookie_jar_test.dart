@@ -104,6 +104,70 @@ void main() {
     });
   });
 
+  group('站点级选取与替换（登录导出用的那套）', () {
+    test('cookiesForSite 双向都收：父域条目与子域条目一起交出去', () async {
+      final MihonCookieJar store = jar();
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
+        cookie('parent', domain: 'bookwalker.jp'),
+        cookie('child', domain: 'member.bookwalker.jp'),
+      ]);
+      await store.replaceForSite('cmoa.jp', <MangaCookie>[
+        cookie('other', domain: 'cmoa.jp'),
+      ]);
+
+      expect(
+        store
+            .cookiesForSite('bookwalker.jp')
+            .map((MangaCookie c) => c.name)
+            .toSet(),
+        <String>{'parent', 'child'},
+      );
+      // 无关站点不串味。
+      expect(store.cookiesForSite('cmoa.jp').single.name, 'other');
+    });
+
+    test('host-only 条目只发给那一个 host，不发给子域', () async {
+      final MihonCookieJar store = jar();
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
+        const MangaCookie(
+          name: 'session',
+          value: 'abc',
+          domain: 'bookwalker.jp',
+          hostOnly: true,
+        ),
+      ]);
+
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        'session=abc',
+      );
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://member.bookwalker.jp/')),
+        isNull,
+      );
+    });
+
+    test('replaceForSite 整站替换，不动别的站', () async {
+      final MihonCookieJar store = jar();
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
+        cookie('old', domain: 'member.bookwalker.jp'),
+      ]);
+      await store.replaceForSite('cmoa.jp', <MangaCookie>[
+        cookie('keep', domain: 'cmoa.jp'),
+      ]);
+
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
+        cookie('fresh', domain: 'bookwalker.jp'),
+      ]);
+
+      expect(
+        store.cookiesForSite('bookwalker.jp').map((MangaCookie c) => c.name),
+        <String>['fresh'],
+      );
+      expect(store.cookiesForSite('cmoa.jp').single.name, 'keep');
+    });
+  });
+
   group('mergeFromRuntime 的语义与 replaceForHost 刻意不同', () {
     test('逐条覆盖同名条目，不动同站其它条目', () async {
       final MihonCookieJar store = jar();
@@ -153,8 +217,8 @@ void main() {
         cookie('remember', value: 'x', expiresAt: now + 1000),
       ];
 
-      final List<MangaCookie> roundTripped = decodeMihonSetCookieHeader(
-        encodeMihonSetCookieHeader(original),
+      final List<MangaCookie> roundTripped = decodeMihonCookieWire(
+        encodeMihonCookieWire(original),
       );
 
       expect(roundTripped.map((MangaCookie c) => c.value), <String>[
@@ -170,27 +234,31 @@ void main() {
       // 两侧各有自己的编解码实现，只改一边而保持该边自洽的改动，在各自的
       // 测试里照样全绿——只有把同一份载荷钉在两边，漂移才会红。
       const String fromKotlin =
-          'W3sibmFtZSI6InNlc3Npb24iLCJ2YWx1ZSI6ImFiYyIsImRvbWFpbiI6ImJvb2t3YWxrZXIuanAiLCJwYXRoIjoiLyIsInNl'
-          'Y3VyZSI6dHJ1ZSwiZXhwaXJlc0F0IjoxNzg5MDAwMDAwMDAwfSx7Im5hbWUiOiJjc3JmIiwidmFsdWUiOiJ4O3kseiIsImRv'
-          'bWFpbiI6ImJvb2t3YWxrZXIuanAiLCJwYXRoIjoiLyIsInNlY3VyZSI6ZmFsc2V9XQ==';
+          'W3sibmFtZSI6InNlc3Npb24iLCJ2YWx1ZSI6ImFiYyIsImRvbWFpbiI6Im1lbWJlci5ib29rd2Fsa2VyLmpwIiwicGF0aCI6'
+          'Ii8iLCJzZWN1cmUiOnRydWUsImhvc3RPbmx5Ijp0cnVlLCJleHBpcmVzQXQiOjE3ODkwMDAwMDAwMDB9LHsibmFtZSI6ImNz'
+          'cmYiLCJ2YWx1ZSI6Ing7eSx6IiwiZG9tYWluIjoiYm9va3dhbGtlci5qcCIsInBhdGgiOiIvIiwic2VjdXJlIjpmYWxzZX1d';
 
-      final List<MangaCookie> decoded = decodeMihonSetCookieHeader(fromKotlin);
+      final List<MangaCookie> decoded = decodeMihonCookieWire(fromKotlin);
 
       expect(
           decoded.map((MangaCookie c) => c.name), <String>['session', 'csrf']);
       expect(decoded[0].value, 'abc');
+      // 域原样保留（不再重标到源站 host），且 secure/hostOnly 都过得来——
+      // 这三样正是扁平 `Cookie:` 头会丢掉、进而让注入条目与站点自己那条并存的。
+      expect(decoded[0].domain, 'member.bookwalker.jp');
       expect(decoded[0].secure, isTrue);
+      expect(decoded[0].hostOnly, isTrue);
       expect(decoded[0].expiresAt, 1789000000000);
       // 分号/逗号原样穿过——正是套 base64 要防的那类损坏。
       expect(decoded[1].value, 'x;y,z');
+      expect(decoded[1].hostOnly, isFalse);
       // 会话 cookie 不带过期时刻。
       expect(decoded[1].expiresAt, isNull);
     });
 
     test('坏载荷降级成空表，不抛', () {
-      expect(decodeMihonSetCookieHeader('not-base64!!'), isEmpty);
-      expect(
-          decodeMihonSetCookieHeader(base64Encode(utf8.encode('{}'))), isEmpty);
+      expect(decodeMihonCookieWire('not-base64!!'), isEmpty);
+      expect(decodeMihonCookieWire(base64Encode(utf8.encode('{}'))), isEmpty);
     });
 
     test('无名条目被丢掉', () {
@@ -199,7 +267,7 @@ void main() {
           <String, Object?>{'name': '', 'value': 'x', 'domain': 'a.test'},
         ])),
       );
-      expect(decodeMihonSetCookieHeader(payload), isEmpty);
+      expect(decodeMihonCookieWire(payload), isEmpty);
     });
   });
 
@@ -219,22 +287,33 @@ void main() {
           cookieJar: store,
         );
 
-    test('有 cookie 时按源 baseUrl 的 host 注入 Cookie 头', () async {
+    test('把整站 cookie 以结构化头交出去（含子域，域原样保留）', () async {
       final MihonCookieJar store = jar();
-      await store.replaceForHost('bookwalker.jp', <MangaCookie>[
-        cookie('session', value: 'abc'),
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
+        cookie('session', value: 'abc', domain: 'member.bookwalker.jp'),
+        cookie('pref', value: 'p'),
       ]);
 
       final Map<String, String> headers = await runtimeWith(
         store,
       ).debugRequestHeaders(source);
 
-      expect(headers['Cookie'], 'session=abc');
+      // 回归：曾经按「对 baseUrl 生效」筛选，只作用在登录子域上的会话 cookie
+      // 一条都发不出去——表现正是「登录了但还是锁着」。
+      final List<MangaCookie> sent = decodeMihonCookieWire(
+        headers[kMihonCookieHeader]!,
+      );
+      expect(
+        sent.map((MangaCookie c) => '${c.name}@${c.domain}').toSet(),
+        <String>{'session@member.bookwalker.jp', 'pref@bookwalker.jp'},
+      );
+      // 回归：不再借用标准 `Cookie:` 头（它是有损的，且与传输层 UA 同处一组）。
+      expect(headers.containsKey('Cookie'), isFalse);
     });
 
-    test('没有该站 cookie 时不发 Cookie 头', () async {
+    test('没有该站 cookie 时不发 cookie 头', () async {
       final MihonCookieJar store = jar();
-      await store.replaceForHost('cmoa.jp', <MangaCookie>[
+      await store.replaceForSite('cmoa.jp', <MangaCookie>[
         cookie('other', domain: 'cmoa.jp'),
       ]);
 
@@ -242,12 +321,12 @@ void main() {
         store,
       ).debugRequestHeaders(source);
 
-      expect(headers.containsKey('Cookie'), isFalse);
+      expect(headers.containsKey(kMihonCookieHeader), isFalse);
     });
 
-    test('刻意不发 User-Agent（会全局改写源自设 UA）', () async {
+    test('不设源 UA：既不发专用头，也不借用传输层的 User-Agent', () async {
       final MihonCookieJar store = jar();
-      await store.replaceForHost('bookwalker.jp', <MangaCookie>[
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
         cookie('session'),
       ]);
 
@@ -255,10 +334,14 @@ void main() {
         store,
       ).debugRequestHeaders(source);
 
-      // 先钉住「这条路真的跑起来了」，否则下面那句否定断言在功能整个缺失时
+      // 先钉住「这条路真的跑起来了」，否则下面的否定断言在功能整个缺失时
       // 也照样为真，是个空壳。
-      expect(headers['Cookie'], 'session=v');
-      expect(headers.containsKey('User-Agent'), isFalse);
+      expect(headers.containsKey(kMihonCookieHeader), isTrue);
+      // 回归：sidecar 曾经把**收到的任何 UA** 当成「设这个源的 UA」，而
+      // `dart:io` 的 HttpClient 无条件带 `User-Agent: Dart/x.y (dart:io)`
+      // （宿主这里根本控制不到），于是每次调用都把源的 UA 改写成 Dart。
+      // 现在源 UA 只走这个专用头，宿主不发即不改写。
+      expect(headers.containsKey('X-Fushi-Source-User-Agent'), isFalse);
     });
 
     test('baseUrl 解析不出 host 的源不注入，也不炸', () async {
@@ -270,7 +353,7 @@ void main() {
         baseUrl: '',
       );
       final MihonCookieJar store = jar();
-      await store.replaceForHost('bookwalker.jp', <MangaCookie>[
+      await store.replaceForSite('bookwalker.jp', <MangaCookie>[
         cookie('session'),
       ]);
 
@@ -278,7 +361,7 @@ void main() {
         store,
       ).debugRequestHeaders(hostless);
 
-      expect(headers.containsKey('Cookie'), isFalse);
+      expect(headers.containsKey(kMihonCookieHeader), isFalse);
     });
 
     test('响应回传的 cookie 被并回宿主 jar（会话轮转不掉登录）', () async {
@@ -290,7 +373,7 @@ void main() {
       await runtimeWith(store).debugAbsorbResponseCookies(
         source,
         <String, String>{
-          kMihonSetCookieHeader: encodeMihonSetCookieHeader(<MangaCookie>[
+          kMihonSetCookieHeader: encodeMihonCookieWire(<MangaCookie>[
             cookie('session', value: 'rotated'),
           ]),
         },

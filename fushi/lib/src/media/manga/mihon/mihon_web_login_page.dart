@@ -39,16 +39,12 @@ Uri? mihonLoginTarget({required Object? runtime, required String baseUrl}) {
 ///
 /// 所以这里不猜：用户自己确认登录完成，点「完成」时导出当前整站 cookie。
 ///
-/// ## 域的重定标（必须与 sidecar 对齐）
+/// ## 域原样保留
 ///
-/// 导出时会把子域 cookie（如 `member.bookwalker.jp`）**重标到源站 baseUrl 的
-/// host**（`bookwalker.jp`）。这不是图省事：sidecar 的 `DalvikHandler` 收到
-/// `Cookie:` 头后，本来就会用 `source.getBaseUrl()` 的 host 重建每一条
-/// cookie 的域。宿主若原样保留子域，`cookieHeaderFor(baseUrl)` 就匹配不到它们、
-/// 根本不会发出去——登录会静默失败。两边看同一个域，是这条链路能通的前提。
-///
-/// 代价是 cookie 作用域被放宽到源站的父域及其全部子域。范围仅限该源站点、且与
-/// sidecar 既有行为一致；要收窄必须两侧一起改。
+/// 导出的条目**保留浏览器给的真实域**（`member.bookwalker.jp` 就存成它自己），
+/// 不重标到源站 host。线格式是结构化的，域/path/secure/hostOnly/过期全程无损，
+/// 由 sidecar 那边的 okhttp jar 按每个实际请求 URL 做匹配——这既比重标准确，也
+/// 不会把作用域平白放宽到源站父域及其全部子域。
 class MihonWebLoginPage extends StatefulWidget {
   const MihonWebLoginPage({
     required this.sourceName,
@@ -118,46 +114,60 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
   /// 把浏览器里的整站 cookie 导出到 jar；返回导出条数。
   Future<int> _export() async {
     final String host = widget.baseUrl.host;
-    // 后访问到的 origin 排在后面：同名 cookie 以最近一次登录流程写的为准，
-    // 与 sidecar 收头时 `distinctBy { it.name }` 的取值方向保持一致。
-    final List<MangaCookie> collected = <MangaCookie>[];
+    final Map<String, MangaCookie> deduped = <String, MangaCookie>{};
     for (final Uri origin in _visited) {
       final List<Cookie> cookies = await _readCookies(WebUri.uri(origin));
       for (final Cookie cookie in cookies) {
-        final MangaCookie? mapped = _toJarCookie(cookie, host);
-        if (mapped != null) collected.add(mapped);
+        final MangaCookie? mapped = _toJarCookie(cookie, origin.host, host);
+        if (mapped == null) continue;
+        // 按 (name, domain) 去重，**不是**只按 name：同名 cookie 在登录子域与
+        // 内容域上取值不同是常态，只按 name 去重会让其中一份把另一份挤掉，而
+        // 挤掉哪一份取决于 origin 的遍历顺序——那顺序又不是「访问先后」
+        // （`Set.add` 命中已有元素不会把它挪到末尾），等于随机挑一个。
+        deduped['${mapped.name}${mapped.canonicalDomain}'] = mapped;
       }
     }
-    final Map<String, MangaCookie> deduped = <String, MangaCookie>{
-      for (final MangaCookie cookie in collected) cookie.name: cookie,
-    };
     final List<MangaCookie> fresh = deduped.values.toList(growable: false);
     if (fresh.isEmpty) return 0;
-    await widget.jar.replaceForHost(host, fresh);
+    await widget.jar.replaceForSite(host, fresh);
     return fresh.length;
   }
 
-  /// 浏览器 cookie → jar cookie，域重标到 [host]（见类文档）。
+  /// 浏览器 cookie → jar cookie。
   ///
-  /// 只收与源站**同一站点**的条目：cookie 的域覆盖 host（父域），或反过来是
-  /// host 的子域。第三方域（统计、广告、SSO 供应商）一概不进 jar——它们对源站
-  /// 请求没有用，进来只会被原样发给源站，白白扩大外泄面。
-  static MangaCookie? _toJarCookie(Cookie cookie, String host) {
+  /// 只收与源站**同一站点**的条目：cookie 的域覆盖 [siteHost]（父域），或反过来
+  /// 是它的子域。第三方域（统计、广告、SSO 供应商）一概不进 jar——它们对源站请求
+  /// 没有用，进来只会被原样交给扩展，白白扩大外泄面。
+  ///
+  /// [originHost] 是读到这条 cookie 的那个 origin：浏览器对 host-only cookie
+  /// （`Set-Cookie` 未写 `Domain=`）不报 domain，此时它的域就是该 origin 的 host，
+  /// 且**只对这一个 host 生效**。
+  static MangaCookie? _toJarCookie(
+    Cookie cookie,
+    String originHost,
+    String siteHost,
+  ) {
     final String name = cookie.name.trim();
     if (name.isEmpty) return null;
+    final String? reported = cookie.domain?.toString().trim();
+    final bool hostOnly = reported == null || reported.isEmpty;
     final String domain = MangaCookie.canonicalizeDomain(
-      (cookie.domain ?? host).toString(),
+      hostOnly ? originHost : reported,
     );
     if (domain.isEmpty) return null;
-    final bool sameSite = MangaCookie.hostMatchesDomain(host, domain) ||
-        MangaCookie.hostMatchesDomain(domain, host);
+    final bool sameSite = MangaCookie.hostMatchesDomain(siteHost, domain) ||
+        MangaCookie.hostMatchesDomain(domain, siteHost);
     if (!sameSite) return null;
     final num? expires = cookie.expiresDate as num?;
     return MangaCookie(
       name: name,
       value: cookie.value?.toString() ?? '',
-      domain: host,
+      domain: domain,
+      path: cookie.path?.toString().trim().isNotEmpty == true
+          ? cookie.path!.toString()
+          : '/',
       secure: cookie.isSecure ?? false,
+      hostOnly: hostOnly,
       // 会话 cookie（无 expires）落 null：jar 会一直留着它，直到下次登录整站替换。
       expiresAt: expires == null || expires <= 0 ? null : expires.toInt(),
     );

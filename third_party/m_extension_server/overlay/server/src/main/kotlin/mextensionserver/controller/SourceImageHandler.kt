@@ -14,8 +14,9 @@ import java.io.ByteArrayOutputStream
 class SourceImageHandler {
     private val mapper = jacksonObjectMapper()
 
-    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response =
-        try {
+    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
+        var pendingJarCookies: String? = null
+        return try {
             val files = mutableMapOf<String, String>()
             session.parseBody(files)
             val request = mapper.readValue(files["postData"], SourceImageRequest::class.java)
@@ -36,11 +37,7 @@ class SourceImageHandler {
                     // renders signed-in pages next to broken covers whenever an image is
                     // the first call after a sidecar restart -- the bridge jar is empty
                     // until some /dalvik call happens to refill it.
-                    SourceCookieInjection.injectRequestCookies(
-                        session,
-                        source,
-                        SourceCookieInjection.domainOf(source),
-                    )
+                    SourceCookieInjection.injectRequestCookies(session, source)
                     SourceCookieInjection.applyRequestUserAgent(session, source)
                     val response =
                         source.client
@@ -51,30 +48,52 @@ class SourceImageHandler {
                                     .headers(source.headers)
                                     .build(),
                             ).execute()
-                    response.use {
-                        if (!it.isSuccessful) {
-                            throw IllegalStateException("Source image HTTP ${it.code}")
+                    try {
+                        response.use {
+                            if (!it.isSuccessful) {
+                                throw IllegalStateException("Source image HTTP ${it.code}")
+                            }
+                            val body = it.body
+                            ImageResult(
+                                readBounded(body),
+                                body.contentType()?.toString() ?: "application/octet-stream",
+                            )
                         }
-                        val body = it.body
-                        ImageResult(
-                            readBounded(body),
-                            body.contentType()?.toString() ?: "application/octet-stream",
-                        )
+                    } finally {
+                        // Images are usually the most frequent calls, so they are
+                        // typically what first meets a session renewal. Injecting
+                        // without reporting back loses every cookie rotated on this
+                        // path (BUG-2425).
+                        pendingJarCookies =
+                            SourceCookieInjection.encodeJarCookies(
+                                mapper,
+                                source,
+                                SourceCookieInjection.domainOf(source),
+                            )
                     }
                 }
-            NanoHTTPD.newFixedLengthResponse(
-                NanoHTTPD.Response.Status.OK,
-                image.contentType,
-                ByteArrayInputStream(image.bytes),
-                image.bytes.size.toLong(),
-            )
+            NanoHTTPD
+                .newFixedLengthResponse(
+                    NanoHTTPD.Response.Status.OK,
+                    image.contentType,
+                    ByteArrayInputStream(image.bytes),
+                    image.bytes.size.toLong(),
+                ).apply {
+                    pendingJarCookies?.let { addHeader(SET_COOKIE_HEADER, it) }
+                }
         } catch (error: Throwable) {
-            NanoHTTPD.newFixedLengthResponse(
-                NanoHTTPD.Response.Status.INTERNAL_ERROR,
-                "application/json",
-                mapper.writeValueAsString(mapOf("error" to (error.message ?: "Image request failed"))),
-            )
+            NanoHTTPD
+                .newFixedLengthResponse(
+                    NanoHTTPD.Response.Status.INTERNAL_ERROR,
+                    "application/json",
+                    mapper.writeValueAsString(
+                        mapOf("error" to (error.message ?: "Image request failed")),
+                    ),
+                ).apply {
+                    pendingJarCookies?.let { addHeader(SET_COOKIE_HEADER, it) }
+                }
         }
+    }
 
     /**
      * Buffers the response with a hard ceiling instead of `body.bytes()`.
