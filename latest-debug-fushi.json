@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ 52e66f4. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.3.0-debug.14450-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14450-macos.zip",
-      "releaseSequence": 14450,
-      "tag": "v2.3.0-debug.14450+3243cb1",
-      "version": "2.3.0-debug.14450",
-      "size": 336016962,
-      "sha256": "f17dff0279d7d434f9c3cc57c9a069cd9aabbaeb6b4617818026e928c5f29963"
-    },
-    {
-      "name": "fushi-2.3.0-debug.14474-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14474-ios.ipa",
-      "releaseSequence": 14474,
-      "tag": "v2.3.0-debug.14474+6772bbc",
-      "version": "2.3.0-debug.14474",
-      "size": 59312519,
-      "sha256": "60859af06dee4a6d906fbb4739ae86f1ac96f11ef82500a85540c6bddbcb8f62"
-    },
-    {
       "name": "fushi-2.3.0-debug.14487-52e66f4-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14487-52e66f4-debug.apk",
       "releaseSequence": 14487,
@@ -33,6 +15,24 @@
       "version": "2.3.0-debug.14487",
       "size": 270695867,
       "sha256": "8ed0f9fd0c9f95b2e995697b41e9fa9a183473b5950da3a4a34634e1db21e698"
+    },
+    {
+      "name": "fushi-2.3.0-debug.14487-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14487-ios.ipa",
+      "releaseSequence": 14487,
+      "tag": "v2.3.0-debug.14487+52e66f4",
+      "version": "2.3.0-debug.14487",
+      "size": 59372660,
+      "sha256": "2df038182b1df9557b898ad66804b7c9067d0775180e8c4831f95a4e09bfb9ce"
+    },
+    {
+      "name": "fushi-2.3.0-debug.14487-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.3.0-debug.14487-macos.zip",
+      "releaseSequence": 14487,
+      "tag": "v2.3.0-debug.14487+52e66f4",
+      "version": "2.3.0-debug.14487",
+      "size": 336437560,
+      "sha256": "1a3aaeec12a7b200652b6e65aa1bcb6070fd59ac44d1a618ab7d4793e1c08f38"
     },
     {
       "name": "fushi-2.3.0-debug.14487-windows-setup.exe",
