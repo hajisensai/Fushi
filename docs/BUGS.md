@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2232 条。点号进各自文件。
+> 共 2233 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -380,6 +380,7 @@
 | [BUG-2013](bugs/BUG-2013-reader-vertical-scroll-height-ignores-scrollbar.md) | ✅ | ✅ | 竖排滚动模式 body 高度未扣水平滚动条，末行文字被裁 |
 | [BUG-2012](bugs/BUG-2012-epub-opf-namespace-prefix.md) | ✅ | ✅ | 带 opf: 前缀的 OPF 导致 manifest/spine 解析为空、EPUB 导入失败 |
 | [BUG-2011](bugs/BUG-2011-clip-export-container-portability.md) | ✅ | ✅ | 视频片段导出产物只有 mpv 能播，进度条显示整集时长 |
+| [BUG-2010](bugs/BUG-2010-work-detail-foreground-rebuild-flash.md) | ✅ | ✅ | 作品资料页一拉到前台就闪回加载态 |
 | [BUG-2009](bugs/BUG-2009-desktop-wheel-scroll-speed-halved.md) | ✅ | ✅ | 桌面滚轮平滑修复把滚动速度砍半 |
 | [BUG-2008](bugs/BUG-2008-subtitle-collection-panel-guessed-identity.md) | ✅ | ✅ | 合集字幕批量搜索只用合集名与裸 anilistId，无视已刮削的规范身份 |
 | [BUG-2007](bugs/BUG-2007-organize-multi-movie-extras-swallow.md) | ✅ | ✅ | 多部电影一个种子时仅最大文件算正片，其余被扔进 Extras 不入库不刮削 |

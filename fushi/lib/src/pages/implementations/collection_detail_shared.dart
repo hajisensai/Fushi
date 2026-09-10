@@ -24,6 +24,32 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   /// 标签 chip 行强制重取计数（编辑标签返回后自增）。
   int detailTagsRefresh = 0;
 
+  Future<List<BookTagRow>>? _detailTagsFuture;
+  int? _detailTagsToken;
+  int? _detailTagsCollectionId;
+
+  /// 标签查询，身份 = (合集 id, [detailTagsRefresh])。
+  ///
+  /// **不能在 build 里现取**（BUG-2010）：那样每次重建都对库多发一次查询，而
+  /// 重建源不受本页控制——app 一拉到前台就走 `AppLifecycleState.resumed` → 重取
+  /// 系统调色板 → 通知主题 → 全树重建。
+  ///
+  /// 注意 chip 行**不会**因此闪：builder 只读 `snap.data`，而 FutureBuilder 换
+  /// future 时走的是 `_snapshot.inState(ConnectionState.none)`——data 会保留，
+  /// 只有像 `VideoWorkDetailPage` 那样判 `connectionState` 的才会退回加载态。
+  /// 记忆化省下的是白查库，不是闪。
+  Future<List<BookTagRow>> get _detailTags {
+    final int collectionId = detailCollection.id;
+    if (_detailTagsFuture == null ||
+        _detailTagsToken != detailTagsRefresh ||
+        _detailTagsCollectionId != collectionId) {
+      _detailTagsToken = detailTagsRefresh;
+      _detailTagsCollectionId = collectionId;
+      _detailTagsFuture = detailDatabase.getTagsForCollection(collectionId);
+    }
+    return _detailTagsFuture!;
+  }
+
   /// 重命名合集：命名弹窗 → renameMediaCollection → setState 更新页题。
   Future<void> renameDetailCollection() async {
     final String? newName = await showCollectionNameDialog(
@@ -55,8 +81,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   Widget buildDetailTagChips() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FutureBuilder<List<BookTagRow>>(
-      key: ValueKey<int>(detailTagsRefresh),
-      future: detailDatabase.getTagsForCollection(detailCollection.id),
+      future: _detailTags,
       builder: (BuildContext context, AsyncSnapshot<List<BookTagRow>> snap) {
         final List<BookTagRow> tags = snap.data ?? const <BookTagRow>[];
         if (tags.isEmpty) return const SizedBox.shrink();
