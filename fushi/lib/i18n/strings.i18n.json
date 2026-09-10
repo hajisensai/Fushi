@@ -356,7 +356,7 @@
   "asr_models_download": "Download",
   "asr_models_download_failed": "Download failed: $error",
   "asr_models_section": "Speech recognition models",
-  "asr_models_section_summary": "Models for on-device audiobook transcription. Download only the languages you need.",
+  "asr_models_section_summary": "On-device speech recognition models. Download only the languages you need.",
   "asr_models_status_missing": "Not downloaded · $size",
   "asr_models_status_partial": "Partially downloaded · $obtained / $total",
   "asr_models_status_ready": "Downloaded · $size on disk",
@@ -4619,5 +4619,6 @@
   "audiobook_transcribe_engine_system_hint": "Uses the built-in speech model — no 1 GB download from us. The system still fetches its own language assets the first time, and keeps them shared across apps.",
   "audiobook_transcribe_engine_system_install": "Install language",
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
-  "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress."
+  "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
+  "storage_models_components": "Models and components"
 }

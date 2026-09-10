@@ -1,8 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/asr_host/asr_host.dart';
-import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -313,37 +311,6 @@ SettingsDestination buildListeningDestination() {
           ),
         ],
       ),
-      // 有声书设备端转录的语言模型包：让用户预先只下自己要的语言、也能删掉
-      // 腾磁盘。仅本机随包了 ONNX Runtime 的平台才有这一组（与转录入口同门控）。
-      SettingsSection(
-        id: 'listening.section.models',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.asr_models_section,
-        visible: (_) => isAsrSupported,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'listening.asr_models',
-            title: t.asr_models_section,
-            subtitle: t.asr_models_section_summary,
-            icon: Icons.record_voice_over_outlined,
-            child: _buildAsrModelsDestination,
-          ),
-        ],
-      ),
     ],
-  );
-}
-
-/// Reuse the model manager as the page body to avoid nested settings cards.
-SettingsDestination _buildAsrModelsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.listening,
-    title: t.asr_models_section,
-    icon: Icons.record_voice_over_outlined,
-    sections: const <SettingsSection>[],
-    body: (SettingsContext _) => AsrModelsSettingsSection(
-      // 模型管理页里每个包（含共用对齐器）各自管理，这里不做自动调轴。
-      service: createAsrTranscriptionService(alignGeneratedSubtitles: false),
-    ),
   );
 }
