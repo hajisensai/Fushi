@@ -77,12 +77,35 @@ void main() {
   /// 必须包在 [WidgetTester.runAsync] 里：widget 测试默认跑在 fake-async 时区，
   /// `dart:io` 的完成事件送不进去，`pumpAndSettle` 会在导出还没落盘时就返回，
   /// 断言随即读到一个空 jar——那是测试机制的假红，不是功能坏了。
+  /// 点「完成」并**等 `_finish()` 真的跑完**。
+  ///
+  /// 它是异步的（读 cookie → 写 jar → pop 或弹 SnackBar）。原先这里等的是固定
+  /// 50ms 墙钟：本机够用，Linux CI runner 一忙就来不及，于是「点了完成、页还在」
+  /// 变成一条与代码无关的红。改成等可观测的真实信号——
+  /// `_saving` 期间「完成」按钮 onPressed 为 null，所以
+  ///   ① 按钮重新可点（失败/空结果那支，页留着）或
+  ///   ② 整页已经 pop 掉（成功那支）
+  /// 任一成立即为跑完。上界只用来防死循环，正常路径远早于它退出。
   Future<void> tapDone(WidgetTester tester) async {
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey<String>('mihon_login_done')));
+    await tester.tap(find.byKey(const ValueKey<String>('mihon_login_done')));
+    await tester.pump();
+
+    final Finder done = find.byKey(const ValueKey<String>('mihon_login_done'));
+    bool settled() {
+      final Iterable<Element> hits = done.evaluate();
+      if (hits.isEmpty) return true; // 页已经 pop
+      final Widget widget = hits.first.widget;
+      return widget is TextButton && widget.onPressed != null;
+    }
+
+    final Stopwatch clock = Stopwatch()..start();
+    while (!settled() && clock.elapsed < const Duration(seconds: 10)) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
       await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    });
+    }
+    expect(settled(), isTrue, reason: '_finish() 10 秒还没跑完，不是时序问题了');
     await tester.pumpAndSettle();
   }
 
