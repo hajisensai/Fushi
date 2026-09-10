@@ -1356,12 +1356,18 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       ..addStatusListener(_onStatus);
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 墨水屏模式：滑出/弹回补间归零（Duration.zero 的 forward 立即 complete，
-    // onDismiss 时序不变，只是不再画补间帧）。跟随主题切换双向生效。
-    _controller.duration = einkSafeDuration(context, _kSlideDuration);
+  /// 滑出/弹回补间的时长**用时取值**，不缓存（`Duration.zero` 的 forward 立即
+  /// complete，onDismiss 时序不变，只是不再画补间帧）。
+  ///
+  /// 曾经写在 `didChangeDependencies` 里，但那只在**依赖**（这里是 `Theme`）变化时
+  /// 重跑：用户在设置里翻「弹窗关闭动画」只触发 rebuild、不触发
+  /// `didChangeDependencies`，控制器会一直留着上一次的 200ms，表现成「关了没用」的
+  /// 空开关。取值改在每次启动补间前一刻，两条来源（用户开关 / 墨水屏）都当场生效。
+  void _applyDismissDuration() {
+    _controller.duration = popupDismissAnimationDuration(
+      context,
+      _kSlideDuration,
+    );
   }
 
   @override
@@ -1461,6 +1467,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _finishHorizontalDrag() {
+    _applyDismissDuration();
     final double accumulated = _dragX;
     // 双向水平：左右皆可，对齐手机 `_dragX.abs()`。
     if (accumulated.abs() > _threshold) {
@@ -1479,6 +1486,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _springBack() {
+    _applyDismissDuration();
     _dragStartX = _dragX;
     _dragTargetX = 0;
     _dismissing = false;

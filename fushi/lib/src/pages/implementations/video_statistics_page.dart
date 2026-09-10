@@ -111,7 +111,11 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // v92：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
       // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
       // activityLimit 0：统计页不需要活动流行。
-      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final StatFacts facts = await loadStatFacts(
+        db,
+        activityLimit: 0,
+        includeCounters: true,
+      );
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
       _sessions = facts.sessions.where((StudySession s) => s.isVideo).toList();
@@ -137,14 +141,15 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       final DateTime now = DateTime.now();
       _window = StatWindow(now);
       _armMidnightReload(now);
-      final List<FavoriteWordRow> favs = await db.getFavoriteWordsBySource(
-        kStatSourceVideo,
+      // 计数面（查词 / 制卡 / 收藏）与事实面同一次加载：总览 tab 的跨域数字必须
+      // 恰好等于阅读 tab 与本 tab 之和，各页各查一遍就会在口径漂移时静默对不上。
+      final StatCounterFacts counterFacts = facts.counters;
+      final List<FavoriteWordRow> favs = counterFacts.favoriteWordsFor(
+        StatSourceKind.video,
       );
-      final List<MiningStatisticRow> mined = await db
-          .getMiningStatisticsBySource(kStatSourceVideo);
-      // TODO-1204：查词/制卡 per-video 计数（新表）。
-      final List<LookupMiningCounterRow> counters = await db
-          .getLookupMiningCountersBySource(kStatSourceVideo);
+      // 查词/制卡 per-video 计数。
+      final List<LookupMiningCounterRow> counters = counterFacts
+          .lookupCountersFor(StatSourceKind.video);
       // v76：观看 / 计数 / 收藏三个行宇宙进同一次身份分组，tile 自带全部数字
       // （吸收判据全局一致，绝不各分各的再拼——那是计数在同名 tile 间游走的根因）。
       // 库表级同名判定（≥2 个 uid 共享一个 title）喂给吸收否决：与迁移回填的
@@ -165,28 +170,29 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         },
       );
       _favorited = bucketActivityByDateKey(
-        favs.map((FavoriteWordRow f) => (f.dateKey, 1)),
+        counterFacts.favoriteWordEvents(source: StatSourceKind.video),
         now,
       );
       _mined = bucketActivityByDateKey(
-        mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
+        counterFacts.minedEvents(source: StatSourceKind.video),
         now,
       );
       _lookup = bucketActivityByDateKey(
-        counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
+        counterFacts.lookupEvents(source: StatSourceKind.video),
         now,
       );
-      // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
-      final List<FavoriteSentence> favSentences =
-          await FavoriteSentenceRepository(db).getAll();
-      final List<FavoriteSentence> videoFavSentences = favSentences
+      // 视频来源收藏语句（source==video）。BUG-893 的读取端回退此前只修了阅读侧：
+      // 本页旧判据是 `dateKey != null`，写入端补 dateKey 之前存下的视频收藏一条不
+      // 计——现在与阅读侧同一个判据（[StatCounterFacts.favoriteSentenceEvents]），
+      // 顺带让总览的跨域和恒等于两个域 tab 之和。
+      final List<FavoriteSentence> videoFavSentences = counterFacts
+          .favoriteSentences
           .where(
-            (FavoriteSentence s) =>
-                s.source == kFavoriteSentenceSourceVideo && s.dateKey != null,
+            (FavoriteSentence s) => s.source == kFavoriteSentenceSourceVideo,
           )
           .toList();
       _favoritedSentences = bucketActivityByDateKey(
-        videoFavSentences.map((FavoriteSentence s) => (s.dateKey!, 1)),
+        counterFacts.favoriteSentenceEvents(source: StatSourceKind.video),
         now,
       );
       // counters 也算有数据（review4-6）：只在视频域查过词（无观看/收藏/制卡）
@@ -195,7 +201,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           stats.isNotEmpty ||
           completed.isNotEmpty ||
           favs.isNotEmpty ||
-          mined.isNotEmpty ||
+          counterFacts.minedEvents(source: StatSourceKind.video).isNotEmpty ||
           counters.isNotEmpty ||
           videoFavSentences.isNotEmpty;
       _loadHourlyData(facts);
@@ -269,6 +275,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             context,
             sessions: _sessions,
             titleOf: (StudySession s) => s.title,
+            collectionOf: _sessionCollectionName,
             onDelete: _deleteSession,
           ),
         ),
@@ -445,6 +452,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       title: video.title,
       sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
       titleOf: (StudySession s) => s.title,
+      collectionOf: _sessionCollectionName,
       onDelete: (StudySession s) =>
           deleteStudySession(appModelNoUpdate.database, s),
     );
@@ -492,6 +500,17 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       _collectionNamesById,
     );
   }
+
+  /// 会话行的所属合集名（BUG-2417：合集里段 title 是分集名，行上得写清是哪部
+  /// 作品）。会话自带 bookUid 身份（段 mediaKey），走与 [_collectionNameForVideo]
+  /// 同一 'video|<bookUid>' 键契约。
+  String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
+      ? null
+      : statCollectionName(
+          MediaKind.video.compositeKey(s.mediaKey),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        );
 
   /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
   /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删

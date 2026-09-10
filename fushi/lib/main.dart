@@ -201,6 +201,9 @@ void main([List<String> args = const <String>[]]) {
     // 词典），写在 main 里哪个入口都不会漏。
     installEngineHostBindings();
     installAsrHostBindings();
+    // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
+    // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
+    await loadAsrModelCatalog();
     AppIconSelection startupAppIcon = currentAppIconSelection.value;
     try {
       // BUG-1920：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏

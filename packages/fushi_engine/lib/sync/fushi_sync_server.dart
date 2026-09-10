@@ -537,6 +537,9 @@ class FushiSyncServer {
         reqPath.startsWith('/api/library/books/')) {
       return _handleLibraryBooks(request, method, reqPath);
     }
+    if (reqPath.startsWith('/api/library/manga/')) {
+      return _handleLibraryManga(request, method, reqPath);
+    }
     if (reqPath == '/api/library/localaudio' ||
         reqPath.startsWith('/api/library/localaudio/')) {
       return _handleLibraryLocalAudio(request, method, reqPath);

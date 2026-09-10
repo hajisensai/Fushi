@@ -12,6 +12,8 @@ class AppDelegate: FlutterAppDelegate {
     if let windowController =
         mainFlutterWindow?.contentViewController as? MacOSWindowUtilsViewController {
       let controller = windowController.flutterViewController
+      // 系统自带 OCR（Vision）。与 iOS 侧同一份实现（apple/FushiSystemOcr.swift）。
+      FushiSystemOcr.register(binaryMessenger: controller.engine.binaryMessenger)
       challengeBrowser = FushiChallengeBrowser(
         binaryMessenger: controller.engine.binaryMessenger
       ) { [weak self] in self?.mainFlutterWindow }

@@ -1339,6 +1339,21 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
+  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
+  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。唯一消费点是
+  /// [popupDismissAnimationDuration]。
+  bool get popupDismissAnimation => getPreference<bool>(
+        key: 'popup_dismiss_animation',
+        defaultValue: true,
+      );
+
+  Future<void> setPopupDismissAnimation(bool value) async {
+    await setPreference<bool>(
+      key: 'popup_dismiss_animation',
+      value: value,
+    );
+  }
+
   /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。
   int get wheelPageTurnInterval =>
       readerSettings?.wheelPageTurnInterval ??

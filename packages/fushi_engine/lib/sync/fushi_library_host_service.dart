@@ -702,6 +702,130 @@ class RemoteBookProgress {
       );
 }
 
+/// 互联漫画源：对端一卷漫画的**页表**（`GET /api/library/manga/<bookKey>/manifest`）。
+///
+/// 漫画在本仓是 `EpubBooks` 里 `format=='manga'` 的一行，磁盘布局
+/// `<extractDir>/{manga.json, images/…}`，**一本 = 一卷**、卷内无章节。所以互联漫画源
+/// 把「一本」映射成「一部作品的唯一一章」，页表就是 `manga.json` 的 `pages` 顺序。
+///
+/// 刻意**不带 OCR 文本框**：mokuro 的 blocks 一卷可达数 MB，而在线漫画阅读器
+/// （`MangaFushiPage` 的 onlineChapter 路径）本来就走它自己的在线 OCR 链路。复用对端
+/// 已有的 blocks 是独立议题（要动共享阅读器的 OCR 入口），不在本端点契约里。
+class RemoteMangaManifest {
+  const RemoteMangaManifest({
+    required this.bookKey,
+    required this.title,
+    required this.pages,
+    this.readingMode,
+  });
+
+  /// 对端 `epub_books.bookKey`：既是清单里的身份，也是页图端点的路径段。
+  final String bookKey;
+  final String title;
+
+  /// 对端该书的按本阅读模式（`'spread'|'webtoon'`；null = 跟随自动判定）。
+  final String? readingMode;
+
+  final List<RemoteMangaPageInfo> pages;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'bookKey': bookKey,
+        'title': title,
+        if (readingMode != null) 'readingMode': readingMode,
+        'pages': <Map<String, Object?>>[
+          for (final RemoteMangaPageInfo page in pages) page.toJson(),
+        ],
+      };
+
+  static RemoteMangaManifest fromJson(Map<String, Object?> json) {
+    final Object? rawPages = json['pages'];
+    return RemoteMangaManifest(
+      bookKey: json['bookKey']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      readingMode: json['readingMode']?.toString(),
+      pages: <RemoteMangaPageInfo>[
+        if (rawPages is List<Object?>)
+          for (final Object? page in rawPages)
+            if (page is Map<Object?, Object?>)
+              RemoteMangaPageInfo.fromJson(page.cast<String, Object?>()),
+      ],
+    );
+  }
+}
+
+/// [RemoteMangaManifest] 里的一页。
+///
+/// [width]/[height] 是 `manga.json` 里 OCR 生产者报告的像素尺寸（**不是**解码图片得
+/// 到的），可能缺失（0）——阅读器对在线章节本来就先用中性尺寸 bootstrap、再按真实
+/// 字节纠正，所以缺失不影响正确性，只是少一次几何预热。
+class RemoteMangaPageInfo {
+  const RemoteMangaPageInfo({
+    required this.index,
+    required this.name,
+    this.width = 0,
+    this.height = 0,
+  });
+
+  /// 0 基页序，同时是页图端点的路径段。
+  final int index;
+
+  /// 页图在对端 `images/` 下的正斜杠相对路径。**仅供展示与缓存身份**，client 绝不
+  /// 拿它拼路径读盘——取图恒走 [index] 端点，路径解析留在 host 侧那一道穿越守卫里。
+  final String name;
+
+  final int width;
+  final int height;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'index': index,
+        'name': name,
+        if (width > 0) 'width': width,
+        if (height > 0) 'height': height,
+      };
+
+  static RemoteMangaPageInfo fromJson(Map<String, Object?> json) =>
+      RemoteMangaPageInfo(
+        index: _jsonInt(json['index']) ?? 0,
+        name: json['name']?.toString() ?? '',
+        width: _jsonInt(json['width']) ?? 0,
+        height: _jsonInt(json['height']) ?? 0,
+      );
+}
+
+/// 对端不提供互联漫画源（老版本 Fushi，或库服务关着）。
+///
+/// 与「这本书读不出来」严格分开：前者是**对端能力**问题，出路是让对端升级 / 打开
+/// 库服务；后者是这一本的问题，出路是换一本。混成一句「加载失败 + 重试」会让用户对着
+/// 一个永远不会成功的按钮反复重试（`OnlineMangaUnavailableReason` 分类的同一教训）。
+class MangaInterconnectUnsupported implements Exception {
+  const MangaInterconnectUnsupported();
+
+  @override
+  String toString() =>
+      'MangaInterconnectUnsupported: the paired peer does not serve manga pages';
+}
+
+/// 互联漫画源的 host 能力（**可选**，与 [FushiLibraryHostService] 分开声明）。
+///
+/// 分开是本仓对可选能力的既定范式（`AudiobookDelayHost` / `InterconnectServiceConfigHost`
+/// / `VideoDeletionHost` 同款）：server 用 `is MangaLibraryHost` 协商，没实现的 host
+/// 一律 404 且 `/api/capabilities` 不报 `manga` 位。塞进主接口会把它变成必需能力——
+/// 十几个只关心自己那一域的实现（含测试替身）会被迫实现两个与它们无关的方法，而
+/// 「这台 host 不供漫画页」本来就是一种合法状态，不该用抛异常的桩来表达。
+abstract interface class MangaLibraryHost {
+  /// host 端漫画 [bookKey] 的页表（互联漫画源按页在线阅读，不必先下整卷）。
+  ///
+  /// 该书不存在、不是漫画、或没有可读内容（占位合集 / 缺 `manga.json` / 空页表）时抛
+  /// [StateError] → 端点 404。[bookKey] 含路径穿越字符时抛 [ArgumentError]。
+  Future<RemoteMangaManifest> mangaManifest(String bookKey);
+
+  /// host 端漫画 [bookKey] 第 [index] 页（0 基）的页图文件。
+  ///
+  /// 越界、缺文件、或解析出的路径逃出该书 `images/` 目录时抛 [StateError] → 端点 404
+  /// （穿越只在 host 侧这一道守卫上判，client 永远不参与路径解析）。
+  Future<File> mangaPageFile(String bookKey, int index);
+}
+
 /// 书籍阅读进度跨设备冲突解决（TODO-767）——「取较新时间戳」last-write-wins，
 /// 与视频/有声书统一的单维 LWW [resolvePositionLww] 同范式（取较新者；时间戳相等时
 /// 取「读得更远」者）。本函数是其双维（sectionIndex + normCharOffset）变体，且胜者

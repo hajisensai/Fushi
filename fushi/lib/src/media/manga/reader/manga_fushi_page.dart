@@ -29,6 +29,7 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart'
     show SystemOcrUnavailableException;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
@@ -563,17 +564,8 @@ class MangaFushiPage extends BaseSourcePage {
   ///
   /// 注意比 EPUB 侧多一个 `p.absolute`：本函数的契约是返回**绝对**路径，而
   /// `p.normalize` 与 `canonicalize` 不同、**不会**绝对化。
-  static String? resolveMangaResource(String imagesRoot, String relative) {
-    final String decoded = Uri.decodeComponent(relative);
-    final String joined = p.join(imagesRoot, decoded);
-    if (!p.isWithin(p.canonicalize(imagesRoot), p.canonicalize(joined))) {
-      return null;
-    }
-    final String filePath = p.normalize(p.absolute(joined));
-    final File file = File(filePath);
-    if (!file.existsSync()) return null;
-    return filePath;
-  }
+  static String? resolveMangaResource(String imagesRoot, String relative) =>
+      MangaStorage.resolvePageFilePath(imagesRoot, relative);
 
   /// 纯函数：`manga.local` 图片 URL → 树内文件路径；host 不对/越界/缺文件 → null。
   static String? resolveImageUrlToFile(String imagesRoot, String imgUrl) {
@@ -587,16 +579,8 @@ class MangaFushiPage extends BaseSourcePage {
   /// 将 manga.json 中相对漫画根目录的 `images/foo.jpg` 转为相对
   /// [_imagesDir]（其本身已经是 `<book>/images`）的 `foo.jpg`。旧版
   /// `.mokuro` 直接保存 `foo.jpg`，因此两种格式都要兼容。
-  static String mangaImageRelativePath(String storedUrl) {
-    String normalized = storedUrl.replaceAll(r'\', '/');
-    while (normalized.startsWith('./')) {
-      normalized = normalized.substring(2);
-    }
-    if (normalized.toLowerCase().startsWith('images/')) {
-      return normalized.substring('images/'.length);
-    }
-    return normalized;
-  }
+  static String mangaImageRelativePath(String storedUrl) =>
+      MangaStorage.pageRelativePath(storedUrl);
 
   /// Resolve the exact image for a 0-based manga [pageIndex].
   ///

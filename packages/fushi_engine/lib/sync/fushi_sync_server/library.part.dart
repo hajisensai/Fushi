@@ -265,6 +265,80 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     return _coverFile(await service.bookCoverPath(bookId));
   }
 
+  /// 互联漫画源：页表 + 按页取图（**只读**，GET only）。
+  ///
+  /// 两条路径都在 `/api/library/manga/<bookKey>/` 下：
+  /// * `…/manifest` → [RemoteMangaManifest]（一本 = 一卷 = 一章的页表）
+  /// * `…/pages/<index>` → 该页图字节（`serveFileWithRange`，与封面 / 视频同款）
+  ///
+  /// 与书域 `/api/library/books/<id>` 的整卷 zip 下载**并存不重叠**：那条是「把这本
+  /// 搬过来」，这条是「我在你那儿翻页」。老 host 没有本路径 → 404，新 client 据此
+  /// 显示「对端版本过低」，不会退化成静默空列表。
+  ///
+  /// 鉴权：走 [_authMiddleware] 的常规 Basic（与词典 / 书 / 封面同门槛），**没有**视频
+  /// `…/stream?token=` 那种豁免——页图由 client 自己的 HTTP 栈按序取，不经外部播放器，
+  /// 不需要可外泄的短时 token。
+  Future<shelf.Response> _handleLibraryManga(
+    shelf.Request request,
+    String method,
+    String reqPath,
+  ) async {
+    if (_libraryService == null) {
+      return shelf.Response.notFound('Library service off');
+    }
+    // 能力协商（`is MangaLibraryHost`）与 `/api/capabilities` 的 `manga` 位同一判据。
+    // 声明成 Object? 是为了让 `is!` 真的收窄类型——`MangaLibraryHost` 不是
+    // `FushiLibraryHostService` 的子类型，对后者的变量做 `is!` 不产生类型提升。
+    final Object svc = _libraryService;
+    if (svc is! MangaLibraryHost) {
+      return shelf.Response.notFound('Manga library not available');
+    }
+    if (method != 'GET') return shelf.Response(405);
+
+    const String prefix = '/api/library/manga/';
+    final String rest = reqPath.substring(prefix.length);
+    const String manifestSuffix = '/manifest';
+    const String pagesMarker = '/pages/';
+
+    if (rest.endsWith(manifestSuffix)) {
+      final String bookKey =
+          rest.substring(0, rest.length - manifestSuffix.length);
+      final shelf.Response? unsafe = _rejectUnsafeAssetId(bookKey, 'book key');
+      if (unsafe != null) return unsafe;
+      try {
+        final RemoteMangaManifest manifest = await svc.mangaManifest(bookKey);
+        return shelf.Response.ok(
+          jsonEncode(manifest.toJson()),
+          headers: <String, String>{'Content-Type': 'application/json'},
+        );
+      } on StateError {
+        return shelf.Response.notFound('Manga not found');
+      } on ArgumentError {
+        return shelf.Response.forbidden('Invalid book key');
+      }
+    }
+
+    final int marker = rest.indexOf(pagesMarker);
+    if (marker > 0) {
+      final String bookKey = rest.substring(0, marker);
+      final shelf.Response? unsafe = _rejectUnsafeAssetId(bookKey, 'book key');
+      if (unsafe != null) return unsafe;
+      final int? index =
+          int.tryParse(rest.substring(marker + pagesMarker.length));
+      if (index == null) return shelf.Response.notFound('Missing page index');
+      try {
+        final File page = await svc.mangaPageFile(bookKey, index);
+        return serveFileWithRange(page, request);
+      } on StateError {
+        return shelf.Response.notFound('Manga page not found');
+      } on ArgumentError {
+        return shelf.Response.forbidden('Invalid book key');
+      }
+    }
+
+    return shelf.Response.notFound('Unknown manga route');
+  }
+
   Future<shelf.Response> _handleLibraryLocalAudio(
     shelf.Request request,
     String method,

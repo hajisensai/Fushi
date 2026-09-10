@@ -168,6 +168,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
             context,
             sessions: _sessions,
             titleOf: _sessionTitle,
+            collectionOf: _sessionCollectionName,
             onDelete: _deleteSession,
           ),
         ),
@@ -329,6 +330,16 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     );
     return displayTitleForGame(entry: entry, rawTitle: s.title);
   }
+
+  /// 会话行的所属合集名（BUG-2417：同一系列的分作单看名字认不出属于哪套）。
+  /// 'game|<galgames.id>' 键契约，与时段明细 sheet 的 collectionOf 同一映射。
+  String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
+      ? null
+      : statCollectionName(
+          MediaKind.game.compositeKey(s.mediaKey),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        );
 
   /// 删一次会话：galgame_sessions 骨架行硬删 + 吸收的字数段写零（同一事务），再重聚合。
   Future<void> _deleteSession(StudySession s) async {

@@ -356,6 +356,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'books': lib,
         'audio': lib,
         'videos': lib,
+        // 互联漫画源（按页在线阅读，`/api/library/manga/**`）。老 host 无此字段 →
+        // client 的漫画「来源」页把这一行标成「对端版本过低」，而不是让用户点进去
+        // 对着一屏 404 反复重试。与既有 `mangaOcr` 能力位同一范式。
+        'manga': _libraryService is MangaLibraryHost,
         'serviceConfig': _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。

@@ -1,5 +1,8 @@
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
+// 引擎只准 import 纯 Dart 子 barrel（全 barrel 会导出 just_audio 等插件，
+// 把 Flutter 拖进无头服务端的 AOT 编译）。
+import 'package:fushi_audio/fushi_audio_core.dart';
 
 /// 一条学习统计事实的统一形状（v92 统计域重构）。
 ///
@@ -59,6 +62,92 @@ class StatFact {
   String get identityKey => mediaKey.isNotEmpty ? mediaKey : title;
 }
 
+/// 「查词 / 制卡 / 收藏词 / 收藏句」四类计数事实（学习事实面之外的**计数面**）。
+///
+/// 与 [StatFact] 严格分列：这四类行没有时长 / 字数 / 页数，粒度是
+/// (dateKey, sourceType)（+ per-book 计数自带的 title / bookKey），混进日面就会
+/// 被所有按 ms / chars 求和的消费方当成零行，还会污染排行与热力图。它们只按
+/// dateKey 分桶（`bucketActivityByDateKey`）。
+///
+/// 三个消费方——统计中心总览 tab、阅读 tab、视频 tab——**共用同一次加载**：总览
+/// 是跨域视图，数字必须恰好等于两个域 tab 之和，各页各查一遍就会在口径漂移时
+/// 静默对不上（此前总览干脆没有这四个数字，域 tab 各查各的）。
+class StatCounterFacts {
+  const StatCounterFacts({
+    this.mining = const <MiningStatisticRow>[],
+    this.lookupCounters = const <LookupMiningCounterRow>[],
+    this.favoriteWords = const <FavoriteWordRow>[],
+    this.favoriteSentences = const <FavoriteSentence>[],
+  });
+
+  static const StatCounterFacts empty = StatCounterFacts();
+
+  /// 制卡的按日全局计数（`mining_statistics`，已按 (sourceType, dateKey) 聚合）。
+  final List<MiningStatisticRow> mining;
+
+  /// 查词 / 制卡的 per-book 计数（`lookup_mining_counters`）。查词数只有这一个
+  /// 来源（查词不落逐次记录，只有按日计数）。
+  final List<LookupMiningCounterRow> lookupCounters;
+
+  /// 收藏词（`favorite_words`，每行一条 = 计 1）。
+  final List<FavoriteWordRow> favoriteWords;
+
+  /// 收藏句（`FavoriteSentenceRepository`，偏好里的 JSON 列表）。
+  final List<FavoriteSentence> favoriteSentences;
+
+  /// 按统计来源过滤 per-book 计数行（[source] 为 null = 跨域全取）。
+  List<LookupMiningCounterRow> lookupCountersFor(StatSourceKind? source) =>
+      source == null
+          ? lookupCounters
+          : lookupCounters
+              .where(
+                  (LookupMiningCounterRow c) => c.sourceType == source.dbValue)
+              .toList();
+
+  /// 按统计来源过滤收藏词行（[source] 为 null = 跨域全取）。
+  List<FavoriteWordRow> favoriteWordsFor(StatSourceKind? source) =>
+      source == null
+          ? favoriteWords
+          : favoriteWords
+              .where((FavoriteWordRow f) => f.sourceType == source.dbValue)
+              .toList();
+
+  /// 查词数事件流（喂 `bucketActivityByDateKey`）。[source] 为 null = 跨域求和。
+  Iterable<(String, int)> lookupEvents({StatSourceKind? source}) =>
+      lookupCountersFor(source)
+          .map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount));
+
+  /// 制卡数事件流。真相源是 `mining_statistics`（域页历史口径），**不是**
+  /// `lookup_mining_counters.mineCount`——后者是 per-book 分摊面，无书制卡进
+  /// title='' 行，两张表在「哪些制卡能归到书上」这一点上不等价。
+  Iterable<(String, int)> minedEvents({StatSourceKind? source}) => mining
+      .where((MiningStatisticRow m) =>
+          source == null || m.sourceType == source.dbValue)
+      .map((MiningStatisticRow m) => (m.dateKey, m.count));
+
+  /// 收藏词事件流（每行计 1）。
+  Iterable<(String, int)> favoriteWordEvents({StatSourceKind? source}) =>
+      favoriteWordsFor(source).map((FavoriteWordRow f) => (f.dateKey, 1));
+
+  /// 收藏句事件流。收藏句的 `source` 是**另一个值域**（书 / 视频 / 有声书 / 歌词），
+  /// 与 [StatSourceKind] 不同构：视频域取 `source == video`，阅读域取其余全部
+  /// （有声书 / 歌词都算阅读，与阅读统计页历史判据一致）。
+  /// BUG-893：dateKey 缺失（写入端补 dateKey 之前的老条目）回退按 createdAt 归日，
+  /// 否则老收藏全被滤掉、统计恒 0。
+  Iterable<(String, int)> favoriteSentenceEvents({StatSourceKind? source}) =>
+      favoriteSentences
+          .where((FavoriteSentence s) => switch (source) {
+                null => true,
+                StatSourceKind.video =>
+                  s.source == kFavoriteSentenceSourceVideo,
+                StatSourceKind.book => s.source != kFavoriteSentenceSourceVideo,
+              })
+          .map((FavoriteSentence s) => (
+                s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt),
+                1,
+              ));
+}
+
 /// 库表按 title 分桶（BUG-2216：legacy 阅读行只有 title，反查库表补身份时同名
 /// ≥2 本不能贴给任意一本——宁可留成无身份组也不错贴）。
 Map<String, List<EpubBookMeta>> _booksByTitle(Iterable<EpubBookMeta> rows) {
@@ -114,6 +203,7 @@ class StatFacts {
     required this.epubRows,
     this.recentGameSessions = const <GalgameSessionRow>[],
     this.gameNamesById = const <String, String>{},
+    this.counters = StatCounterFacts.empty,
     this.activityLimit = 200,
   });
 
@@ -130,6 +220,10 @@ class StatFacts {
 
   /// galgames.id → 显示名（合成游玩事件的 title 快照）。
   final Map<String, String> gameNamesById;
+
+  /// 查词 / 制卡 / 收藏计数面（只在 `loadStatFacts(includeCounters: true)` 时装载，
+  /// 否则是 [StatCounterFacts.empty]——首页时间轴不需要，不白付四个全表读）。
+  final StatCounterFacts counters;
 
   /// [activityRows] 的条数上限（与 legacy 行的取数上限同值）。
   final int activityLimit;
@@ -193,10 +287,12 @@ const int kRecentGameSessionsLimit = 200;
 Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
+  bool includeCounters = false,
 }) async {
-  // 九个全表读互不依赖：一次全部发出去让 Drift 后台执行器流水线化，而不是每个都
-  // 等上一个往返回来（首页与三个统计页每次打开都走这里）。先 Future.wait 挂上
-  // 监听，某个失败时其余错误不会成为无人接的未处理异常。
+  // 十个全表读互不依赖（[includeCounters] 时再挂计数面的四个）：一次全部发出去让
+  // Drift 后台执行器流水线化，而不是每个都等上一个往返回来（首页与三个统计页每次
+  // 打开都走这里）。先 Future.wait 挂上监听，某个失败时其余错误不会成为无人接的
+  // 未处理异常。
   final Future<List<EpubBookMeta>> epubRowsF = db.getEpubBookMetas();
   final Future<List<ReadingStatisticRow>> readingF =
       db.getAllReadingStatistics();
@@ -222,6 +318,10 @@ Future<StatFacts> loadStatFacts(
       db.getRecentGalgameSessions(
     limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
   );
+  // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。
+  final Future<StatCounterFacts> countersF = includeCounters
+      ? _loadCounterFacts(db)
+      : Future<StatCounterFacts>.value(StatCounterFacts.empty);
   await Future.wait<Object?>(<Future<Object?>>[
     epubRowsF,
     readingF,
@@ -233,6 +333,7 @@ Future<StatFacts> loadStatFacts(
     gameActivityF,
     segmentsF,
     recentGameSessionsF,
+    countersF,
   ]);
 
   final List<EpubBookMeta> epubRows = await epubRowsF;
@@ -398,7 +499,31 @@ Future<StatFacts> loadStatFacts(
     epubRows: epubRows,
     recentGameSessions: recentGameSessions,
     gameNamesById: gameNamesById,
+    counters: await countersF,
     activityLimit: activityLimit,
+  );
+}
+
+/// 计数面的四个全表读（与主事实面同一批并发）。收藏句在偏好里（一条 JSON），
+/// 其余三张是按日聚合的小表。
+Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
+  final Future<List<MiningStatisticRow>> miningF = db.getAllMiningStatistics();
+  final Future<List<LookupMiningCounterRow>> countersF =
+      db.getAllLookupMiningCounters();
+  final Future<List<FavoriteWordRow>> favoriteWordsF = db.getAllFavoriteWords();
+  final Future<List<FavoriteSentence>> favoriteSentencesF =
+      FavoriteSentenceRepository(db).getAll();
+  await Future.wait<Object?>(<Future<Object?>>[
+    miningF,
+    countersF,
+    favoriteWordsF,
+    favoriteSentencesF,
+  ]);
+  return StatCounterFacts(
+    mining: await miningF,
+    lookupCounters: await countersF,
+    favoriteWords: await favoriteWordsF,
+    favoriteSentences: await favoriteSentencesF,
   );
 }
 

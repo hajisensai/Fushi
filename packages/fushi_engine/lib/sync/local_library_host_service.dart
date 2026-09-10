@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show Value;
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart'
@@ -10,18 +11,16 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/media_pref_keys.dart';
-import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi_engine/media/video/m3u8_playlist.dart'
+    show PlaylistEntry;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
-    show
-        effectiveSeriesAudioTrackId,
-        effectiveSeriesDelayMs,
-        effectiveSeriesSecondaryDelayMs;
+    show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs, effectiveSeriesSecondaryDelayMs;
 import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show hasExportableMangaContent, repackageMangaBook;
+    show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
@@ -43,9 +42,14 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart'
+    show MangaStorage;
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
+    show MokuroPayload, parseMangaJson;
 
 part 'local_library_host_service/dictionaries.part.dart';
 part 'local_library_host_service/books.part.dart';
+part 'local_library_host_service/manga.part.dart';
 part 'local_library_host_service/local_audio.part.dart';
 part 'local_library_host_service/audiobooks.part.dart';
 part 'local_library_host_service/videos.part.dart';
@@ -78,6 +82,7 @@ String? _existingFilePath(String? path) {
 abstract class _LocalLibraryHostBase
     implements
         FushiLibraryHostService,
+        MangaLibraryHost,
         DeletionTombstoneHost,
         VideoDeletionHost,
         VideoPlaybackSyncHost,
@@ -136,6 +141,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
         _LocalLibraryHostShared,
         _LocalLibraryHostDictionaries,
         _LocalLibraryHostBooks,
+        _LocalLibraryHostManga,
         _LocalLibraryHostLocalAudio,
         _LocalLibraryHostAudiobooks,
         _LocalLibraryHostVideos,

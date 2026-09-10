@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration;
 
@@ -10,6 +11,30 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
 /// （桌面拖正文关一层，TODO-716）共用，避免两份魔法数漂移。
 double swipeDismissThreshold(double sensitivity) =>
     30 + (1.0 - sensitivity) * 160;
+
+/// 查词弹窗「滑动关闭」松手补间时长的**唯一**入口——两个滑关实现（本文件的
+/// [SwipeDismissWrapper]＝弹窗顶栏可拖区与独立查词窗整窗，以及
+/// `dictionary_popup_layer.dart` 的 `_BodySwipeDismissDetector`＝弹窗正文横拖）
+/// 都必须经这里取时长，别再各自写三元。
+///
+/// 两条归零来源：
+///   * 用户显式关掉「弹窗关闭动画」（`popup_dismiss_animation`，设置 › 查词）——
+///     用户诉求就是「滑动关闭那段动画能单独关掉」，而不是只能靠开墨水屏模式顺带关；
+///   * 墨水屏模式（[einkSafeDuration]）——慢刷新屏上这段 200ms 位移+淡出是一串灰阶
+///     残影，此前是唯一的关闭途径。
+///
+/// [Duration.zero] 的 `animateTo` 当帧就 complete，`onDismiss` 仍在完成回调里触发，
+/// 关窗时序不变，只是不再画中间帧。跟手期的 `Transform.translate` 不受影响——手指
+/// 按住时的实时跟随不是补间动画，去掉会让滑关失去方向反馈（BUG-2283 备注）。
+Duration popupDismissAnimationDuration(
+  BuildContext context,
+  Duration duration,
+) {
+  if (!ReaderFushiSource.instance.popupDismissAnimation) {
+    return Duration.zero;
+  }
+  return einkSafeDuration(context, duration);
+}
 
 // BUG-1757：`BarrierSwipeDismissTracker` 已迁到 `lookup_dismiss_barrier.dart`，
 // 并入唯一的 barrier 构造入口 [LookupDismissBarrier]。页面不再自己持有 tracker、
@@ -69,14 +94,18 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
           ..addStatusListener(_onAnimStatus);
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 墨水屏模式：松手后的「补间滑出屏外 / 弹回原位」归零。[Duration.zero] 的
-    // `animateTo` 当帧就 complete，`onDismiss` 时序不变（仍在完成回调里关一层），
-    // 只是不再画中间帧——慢刷新屏上这段 200ms 位移+淡出是一串灰阶残影。
-    // 与弹窗正文的 `_BodySwipeDismissDetector` 同款处理，跟随主题切换双向生效。
-    _controller.duration = einkSafeDuration(context, _kSwipeSlideDuration);
+  /// 松手补间的时长**用时取值**，不缓存。
+  ///
+  /// 曾经写在 `didChangeDependencies` 里，但那只在**依赖**（这里是 `Theme`）变化时重跑：
+  /// 用户在设置里翻「弹窗关闭动画」只触发 rebuild、不触发 `didChangeDependencies`，
+  /// 于是控制器一直留着上一次的 200ms——开关要等到下次主题切换或弹窗重建才生效，
+  /// 表现成「关了没用」的空开关。取值改在每次启动补间前一刻，两条来源（用户开关 /
+  /// 墨水屏）都当场生效，不依赖任何重建时机。
+  void _applyDismissDuration() {
+    _controller.duration = popupDismissAnimationDuration(
+      context,
+      _kSwipeSlideDuration,
+    );
   }
 
   @override
@@ -149,6 +178,7 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
   }
 
   void _finishDrag() {
+    _applyDismissDuration();
     if (_decided && _isHorizontal && _dragX.abs() > _threshold) {
       // TODO-890：过阈值后不再 opacity 瞬灭，而是朝拖动方向补间滑出屏外（卡片宽 +
       // 边距）再在完成回调里 onDismiss——与 _BodySwipeDismissDetector 动画一致。

@@ -115,4 +115,47 @@ class MangaStorage {
   /// [File]。用于落盘与封面定位。
   static File destFile(String bookDir, String destRel) =>
       File(p.joinAll(<String>[bookDir, ...destRel.split('/')]));
+
+  /// 书目录（`extractDir`）下的页图根：`<bookDir>/images`。
+  ///
+  /// 阅读器算的是 `dirname(extractDir/epubPath)/images`，而 `epubPath` 恒是书目录
+  /// 直属的 [kMangaJsonFileName]，两者等价。互联 host 供图时也必须落在这个根内。
+  static Directory imagesDirectory(String bookDir) =>
+      Directory(p.join(bookDir, kImagesDirName));
+
+  /// `manga.json` 里的 `url` → 相对 [imagesDirectory] 的正斜杠路径。
+  ///
+  /// 本仓两种存量写法都要吃：本仓导入器写的是含 `images/` 前缀的相对路径，旧版
+  /// `.mokuro` 直接写 `foo.jpg`。
+  static String pageRelativePath(String storedUrl) {
+    String normalized = storedUrl.replaceAll(r'\', '/');
+    while (normalized.startsWith('./')) {
+      normalized = normalized.substring(2);
+    }
+    if (normalized.toLowerCase().startsWith('$kImagesDirName/')) {
+      return normalized.substring(kImagesDirName.length + 1);
+    }
+    return normalized;
+  }
+
+  /// 纯路径解析 + 穿越守卫：[relative] 在 [imagesRoot] 内解析到**存在的**文件时返回
+  /// 规范绝对路径（保留磁盘真实大小写），越界或缺文件一律 null。
+  ///
+  /// BUG-1221 的两种路径形式必须并存：越界判定用 `p.canonicalize`（Windows 上整体
+  /// 小写化，`../` 逃逸不会被大小写差异绕过），返回值用 `p.absolute` + `p.normalize`
+  /// （同样绝对化并折叠 `.`/`..`，但保留大小写——返回值会流出本次读取，被制卡当作
+  /// Anki 封面源路径，小写化会让大小写敏感平台上 `existsSync` 直接 false）。
+  ///
+  /// 归位到本层（原先是阅读器 widget 的静态方法）是因为互联 host 供图必须用**同一条**
+  /// 穿越守卫：安全边界靠复制粘贴维持，抄漏一处就是真漏洞。
+  static String? resolvePageFilePath(String imagesRoot, String relative) {
+    final String decoded = Uri.decodeComponent(relative);
+    final String joined = p.join(imagesRoot, decoded);
+    if (!p.isWithin(p.canonicalize(imagesRoot), p.canonicalize(joined))) {
+      return null;
+    }
+    final String filePath = p.normalize(p.absolute(joined));
+    if (!File(filePath).existsSync()) return null;
+    return filePath;
+  }
 }

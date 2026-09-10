@@ -1095,7 +1095,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'）。
     // PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。
     if (carrier == ImportCarrier.pdf) {
-      reportProgress(0.5, t.import_step_importing_epub);
+      // PDF 完全不经 EPUB 管线（pdfrx 直接渲染、落库 format='pdf'），所以这里报的是
+      // 中性的「导入书籍…」。用户看到「导入 EPUB…」卡住时会以为是 EPUB 转换出了问题，
+      // 而真正卡住的是 PDFium——错误的文案会把排查引向错误的方向（BUG-2419）。
+      reportProgress(0.5, t.import_step_importing_book);
       await PdfImporter.importFromPath(
         db: widget.db,
         filePath: _epubPath!,
