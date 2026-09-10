@@ -192,6 +192,23 @@ if (-not (Test-Path -LiteralPath $ExePath)) {
     throw "找不到 SimplySignDesktop.exe: $ExePath（用 -ExePath 或 CERTUM_EXE_PATH 指定）"
 }
 
+# 先断干净再登录。不这么做的话，只要存储里已经躺着一张上次会话留下的证书，
+# 下面那个「等证书出现」的循环会在第一次轮询就命中并报成功 —— 这次登录
+# 有没有真的发生完全没被验证。实测踩过：明明什么都没做，脚本 0.1s 报连接成功。
+# /close 走 Program.cs 的 WM_CLOSE 分支，会把虚拟卡连同证书一起摘掉。
+if (Test-CertPresent $ExpectedThumbprint) {
+    Write-Step "存储里已有证书（上次会话残留），先断开以确保本次登录结果可验证…"
+    Start-Process -FilePath $ExePath -ArgumentList @('/close') -Wait -ErrorAction SilentlyContinue
+    [System.Diagnostics.Stopwatch] $swClose = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($swClose.Elapsed.TotalSeconds -lt 20 -and (Test-CertPresent $ExpectedThumbprint)) {
+        Start-Sleep -Milliseconds 500
+    }
+    if (Test-CertPresent $ExpectedThumbprint) {
+        throw "断开失败：20s 后证书仍在 Cert:\CurrentUser\My。拒绝在无法验证的状态下继续。"
+    }
+    Write-Step "已断开。"
+}
+
 $seed = ConvertFrom-OtpAuthUri $SeedUri
 if ([string]::IsNullOrWhiteSpace($UserId)) { $UserId = $seed.User }
 if ([string]::IsNullOrWhiteSpace($UserId)) {
