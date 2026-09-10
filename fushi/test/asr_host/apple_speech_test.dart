@@ -6,9 +6,11 @@
 /// 设备上看起来和「这段没人说话」一模一样。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 
@@ -60,7 +62,7 @@ class _FakePlatform implements AppleSpeechPlatform {
           startMs: 100,
           endMs: 900,
           tokens: <String>['今日', 'は', 'いい', '天気'],
-          tokenOffsetsMs: <int>[100, 300, 500, 700],
+          tokenStartsMs: <int>[100, 300, 500, 700],
         ),
       ],
     );
@@ -68,6 +70,53 @@ class _FakePlatform implements AppleSpeechPlatform {
 
   @override
   Future<void> cancel() async => cancelCalls++;
+}
+
+/// 停在半路的假平台：转录**不返回**，直到 [cancel] 把它以原生的 `CANCELLED`
+/// 抛回来——这正是真机上按下暂停时发生的事。
+///
+/// [_FakePlatform] 的 transcribe 立刻返回，`requestPause()` 只能在 `run()` 之前调，
+/// 于是循环在第一行就 break、根本走不到「有一次转录正在飞」的那条路径。
+class _CancellingPlatform implements AppleSpeechPlatform {
+  final Completer<AppleSpeechResult> _inFlight = Completer<AppleSpeechResult>();
+
+  /// 原生已经开转（用来确保暂停发生在转录中途，而不是开跑之前）。
+  final Completer<void> started = Completer<void>();
+
+  int cancelCalls = 0;
+
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<List<String>> installedLocales() async => const <String>['ja-JP'];
+
+  @override
+  Future<List<String>> supportedLocales() async => const <String>['ja-JP'];
+
+  @override
+  Future<void> prepare(String locale) async {}
+
+  @override
+  Future<AppleSpeechResult> transcribe({
+    required String path,
+    required String locale,
+    void Function(int processedMs, int totalMs)? onProgress,
+  }) {
+    onProgress?.call(300, 1000);
+    if (!started.isCompleted) started.complete();
+    return _inFlight.future;
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancelCalls++;
+    if (!_inFlight.isCompleted) {
+      _inFlight.completeError(
+        PlatformException(code: 'CANCELLED', message: 'cancelled'),
+      );
+    }
+  }
 }
 
 void main() {
@@ -93,7 +142,7 @@ void main() {
       expect(result.segments.single.startMs, 100);
       expect(result.segments.single.endMs, 900);
       expect(result.segments.single.tokens, <String>['hel', 'lo']);
-      expect(result.segments.single.tokenOffsetsMs, <int>[100, 400]);
+      expect(result.segments.single.tokenStartsMs, <int>[100, 400]);
     });
 
     test('空文本与退化区间逐条丢弃，不毁掉整份', () {
@@ -128,7 +177,7 @@ void main() {
   });
 
   group('appleSpeechCues', () {
-    test('多文件按拼接时间轴平移，逐词起点一起平移', () {
+    test('cue 时间按拼接时间轴平移，逐词偏移改以 cue 起点为基准', () {
       final List<AsrCue> cues = appleSpeechCues(
         const <AppleSpeechSegment>[
           AppleSpeechSegment(
@@ -136,7 +185,7 @@ void main() {
             startMs: 100,
             endMs: 400,
             tokens: <String>['second', 'file'],
-            tokenOffsetsMs: <int>[100, 250],
+            tokenStartsMs: <int>[100, 250],
           ),
         ],
         fileIndex: 1,
@@ -146,10 +195,30 @@ void main() {
       expect(cue.startMs, 60100);
       expect(cue.endMs, 60400);
       expect(cue.audioFileIndex, 1);
-      // 逐词起点不平移的话，跳播会整整差一个文件的时长。
-      expect(cue.tokenOffsetsMs, <int>[60100, 60250]);
+      // 上游 sidecar 的 `o` 是**相对 cue 起点**的偏移，消费端一律按
+      // `cue.startMs + o` 还原。塞绝对时间（60100/60250）会让每个词多算一整个
+      // cue 起点，而 SRT 与行数全对得上——静默偏移，只有跳播看得出来。
+      expect(cue.tokenOffsetsMs, <int>[0, 150]);
       // 下游 attachAsrCueTokenTiming 要求两者等长，不等长时一条都不挂。
       expect(cue.tokens.length, cue.tokenOffsetsMs.length);
+    });
+
+    test('词起点早于句起点时夹到 0，不丢词（丢了就长度不等，一条都挂不上）', () {
+      final List<AsrCue> cues = appleSpeechCues(
+        const <AppleSpeechSegment>[
+          AppleSpeechSegment(
+            text: 'early token',
+            startMs: 500,
+            endMs: 900,
+            tokens: <String>['early', 'token'],
+            tokenStartsMs: <int>[480, 700],
+          ),
+        ],
+        fileIndex: 0,
+        offsetMs: 0,
+      );
+      expect(cues.single.tokenOffsetsMs, <int>[0, 200]);
+      expect(cues.single.tokens.length, cues.single.tokenOffsetsMs.length);
     });
   });
 
@@ -261,7 +330,7 @@ void main() {
       if (audioDir.existsSync()) await audioDir.delete(recursive: true);
     });
 
-    AppleSpeechTranscriptionService build(_FakePlatform platform) =>
+    AppleSpeechTranscriptionService build(AppleSpeechPlatform platform) =>
         AppleSpeechTranscriptionService(
           platform: platform,
           jobsRoot: () async => jobs,
@@ -413,6 +482,60 @@ void main() {
           await service.jobDirFor(audioPaths, AsrLanguage.japanese);
       // 半份 SRT 比没有更糟：下游会把它当成一份完整字幕去匹配。
       expect(File('${dir.path}/${AsrJobFiles.srt}').existsSync(), isFalse);
+    });
+
+    test('转录中途暂停：原生的 CANCELLED 要落成「已暂停」，不是转录失败', () async {
+      final _CancellingPlatform platform = _CancellingPlatform();
+      final AppleSpeechTranscriptionService service = build(platform);
+      final AsrRunningTranscription running = await service.start(
+        audioPaths: audioPaths,
+        language: AsrLanguage.japanese,
+        variant: AsrEncoderVariant.int8,
+        preference: AsrAccelerationPreference.auto,
+      );
+
+      final List<AsrTranscribeEvent> events = <AsrTranscribeEvent>[];
+      final Completer<void> closed = Completer<void>();
+      Object? failure;
+      final StreamSubscription<AsrTranscribeEvent> sub = running.run().listen(
+            events.add,
+            onError: (Object error, StackTrace _) => failure = error,
+            onDone: closed.complete,
+          );
+
+      await platform.started.future;
+      running.requestPause();
+      await closed.future;
+      await sub.cancel();
+
+      expect(platform.cancelCalls, greaterThan(0));
+      // 取消是我们自己要求的，不该冒充失败——弹层会把它显示成「转录失败」并
+      // 甩出一条 PlatformException 原文。
+      expect(failure, isNull);
+      // 弹层按下暂停后停在 pausing，只认这个事件才落到「已暂停」。
+      expect(events.whereType<AsrTranscribePausedEvent>(), hasLength(1));
+      expect(events.whereType<AsrTranscribeFinishedEvent>(), isEmpty);
+    });
+
+    test('原生的文件内进度要并进产出流（长文件唯一会动的那个）', () async {
+      final _FakePlatform platform = _FakePlatform();
+      final AppleSpeechTranscriptionService service = build(platform);
+      final AsrRunningTranscription running = await service.start(
+        audioPaths: audioPaths,
+        language: AsrLanguage.japanese,
+        variant: AsrEncoderVariant.int8,
+        preference: AsrAccelerationPreference.auto,
+      );
+      final List<AsrTranscribeEvent> events = await running.run().toList();
+      final List<int> processed = events
+          .whereType<AsrTranscribeProgressEvent>()
+          .map((AsrTranscribeProgressEvent e) => e.progress.processedMs)
+          .toList();
+
+      // 假平台每个文件在半路报一次 500/1000；第二个文件要加上第一个的时长。
+      // 缺了它们，几小时的音频在整份转完前进度条一动不动。
+      expect(processed, contains(500));
+      expect(processed, contains(1500));
     });
   });
 }

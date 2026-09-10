@@ -225,9 +225,13 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
 /// 一次正在跑的系统语音转录。
 ///
 /// 与 ONNX 那条的**行为差异必须说清**：系统 API 是「喂一个文件、等它转完」，中途
-/// **没有可续跑的检查点**。所以 [requestPause] 只能是取消——本类不发
-/// `AsrTranscribePausedEvent`，弹层的「暂停」在这个引擎下等于放弃当前文件的进度
-/// （已转完的文件仍然留在任务目录里，下次从下一个文件接着来）。
+/// **没有可续跑的检查点**。产物只在**整趟跑完**之后才落盘（SRT / sidecar /
+/// `state.json` 一次写齐），所以 [requestPause] 实际上是放弃**整趟**——不是「从下
+/// 一个文件接着来」，重开就是从第一个文件重跑。
+///
+/// 即便如此也**必须发** `AsrTranscribePausedEvent`：弹层按下暂停后停在
+/// `_Phase.pausing`，只认这个事件落到「已暂停」。不发它（或改发 error）会让界面
+/// 卡在「正在暂停…」或报出一条 `PlatformException(CANCELLED)` 当失败。
 class AppleSpeechRunningTranscription implements AsrRunningTranscription {
   AppleSpeechRunningTranscription({
     required AppleSpeechPlatform platform,
@@ -261,90 +265,128 @@ class AppleSpeechRunningTranscription implements AsrRunningTranscription {
   @override
   AsrDecodeStats? get decodeStats => null;
 
+  /// 事件流。真正的活在 [_drive] 里，**不能用 `async*`**：原生的文件内进度是从
+  /// 回调里来的，而回调里 `yield` 不了。早先那版在回调里往一个没人订阅的
+  /// `StreamController` 里塞进度，等于把长文件唯一会动的那个进度整份丢掉——
+  /// 转一个几小时的音频，进度条要到整个文件转完才第一次动。
+  ///
+  /// 起跑挂在 `onListen` 上：`run()` 被调用但没人订阅时不该已经在转。
   @override
-  Stream<AsrTranscribeEvent> run() async* {
+  Stream<AsrTranscribeEvent> run() {
+    final StreamController<AsrTranscribeEvent> events =
+        StreamController<AsrTranscribeEvent>();
+    events.onListen = () => unawaited(_drive(events));
+    return events.stream;
+  }
+
+  Future<void> _drive(StreamController<AsrTranscribeEvent> events) async {
     final Stopwatch clock = Stopwatch()..start();
     final List<AsrCue> cues = <AsrCue>[];
     final List<int> fileDurationsMs = <int>[];
     int offsetMs = 0;
+    int currentIndex = 0;
 
-    for (int index = 0; index < audioPaths.length; index++) {
-      if (_cancelled) break;
-      final StreamController<AsrTranscribeProgress> ticks =
-          StreamController<AsrTranscribeProgress>();
-      final int fileIndex = index;
-      final int base = offsetMs;
-      final AppleSpeechResult result = await _platform.transcribe(
-        path: audioPaths[index],
-        locale: language.tag,
-        onProgress: (int processedMs, int totalMs) {
-          if (ticks.isClosed) return;
-          ticks.add(
-            AsrTranscribeProgress(
-              fileIndex: fileIndex,
-              filesTotal: audioPaths.length,
-              processedMs: base + processedMs,
-              totalMs: base + totalMs,
-              speechMs: base + processedMs,
-              segmentsDone: cues.length,
-              elapsed: clock.elapsed,
-            ),
-          );
-        },
-      );
-      unawaited(ticks.close());
-      cues.addAll(
-        appleSpeechCues(
-          result.segments,
-          fileIndex: index,
-          offsetMs: offsetMs,
-        ),
-      );
-      offsetMs += result.durationMs;
-      fileDurationsMs.add(result.durationMs);
-      yield AsrTranscribeProgressEvent(
+    AsrTranscribeProgress progressAt(
+      int fileIndex,
+      int processedMs,
+      int totalMs,
+    ) =>
         AsrTranscribeProgress(
-          fileIndex: index,
+          fileIndex: fileIndex,
           filesTotal: audioPaths.length,
-          processedMs: offsetMs,
-          totalMs: offsetMs,
-          speechMs: offsetMs,
+          processedMs: processedMs,
+          totalMs: totalMs,
+          speechMs: processedMs,
           segmentsDone: cues.length,
           elapsed: clock.elapsed,
-        ),
-      );
+        );
+
+    void emit(AsrTranscribeEvent event) {
+      if (!events.isClosed) events.add(event);
     }
 
-    if (_cancelled) return;
+    try {
+      for (int index = 0; index < audioPaths.length; index++) {
+        if (_cancelled) break;
+        currentIndex = index;
+        final int base = offsetMs;
+        final AppleSpeechResult result;
+        try {
+          result = await _platform.transcribe(
+            path: audioPaths[index],
+            locale: language.tag,
+            onProgress: (int processedMs, int totalMs) => emit(
+              AsrTranscribeProgressEvent(
+                progressAt(index, base + processedMs, base + totalMs),
+              ),
+            ),
+          );
+        } on Object {
+          // 取消是我们自己发下去的，原生会以 `CANCELLED` 应答；那不是失败，
+          // 不能报成错误态（见 [requestPause]）。只有**没在取消**时才是真失败。
+          if (_cancelled) break;
+          rethrow;
+        }
+        cues.addAll(
+          appleSpeechCues(
+            result.segments,
+            fileIndex: index,
+            offsetMs: offsetMs,
+          ),
+        );
+        offsetMs += result.durationMs;
+        fileDurationsMs.add(result.durationMs);
+        emit(
+          AsrTranscribeProgressEvent(progressAt(index, offsetMs, offsetMs)),
+        );
+      }
 
-    // 产物与 ONNX 后端同构：同一套序列化函数、同样的文件名。
-    final File srt = File(p.join(jobDir.path, AsrJobFiles.srt));
-    final File tokens = File(p.join(jobDir.path, AsrJobFiles.cueTokens));
-    await srt.writeAsString(serializeAsrCuesToSrt(cues), flush: true);
-    await tokens.writeAsString(serializeAsrCueTokens(cues), flush: true);
-    await File(p.join(jobDir.path, AsrJobFiles.state)).writeAsString(
-      jsonEncode(
-        AsrJobState(
-          audioPaths: audioPaths,
-          modelId: kAppleSpeechEngineId,
-          fileDurationsMs: fileDurationsMs,
-          resumeSamples: List<int>.filled(audioPaths.length, 0),
-          finished: true,
-        ).toJson(),
-      ),
-      flush: true,
-    );
+      if (_cancelled) {
+        // 必须给一个终局事件：弹层按下暂停后停在 `_Phase.pausing`，收不到
+        // Paused 就一直显示「正在暂停…」且没有任何按钮可按。
+        emit(
+          AsrTranscribePausedEvent(
+            progressAt(currentIndex, offsetMs, offsetMs),
+          ),
+        );
+        return;
+      }
 
-    yield AsrTranscribeFinishedEvent(
-      AsrTranscribeResult(
-        srtPath: srt.path,
-        segmentsPath: p.join(jobDir.path, AsrJobFiles.segments),
-        cueCount: cues.length,
-        segmentCount: cues.length,
-        totalMs: offsetMs,
-        fileDurationsMs: fileDurationsMs,
-      ),
-    );
+      // 产物与 ONNX 后端同构：同一套序列化函数、同样的文件名。
+      final File srt = File(p.join(jobDir.path, AsrJobFiles.srt));
+      final File tokens = File(p.join(jobDir.path, AsrJobFiles.cueTokens));
+      await srt.writeAsString(serializeAsrCuesToSrt(cues), flush: true);
+      await tokens.writeAsString(serializeAsrCueTokens(cues), flush: true);
+      await File(p.join(jobDir.path, AsrJobFiles.state)).writeAsString(
+        jsonEncode(
+          AsrJobState(
+            audioPaths: audioPaths,
+            modelId: kAppleSpeechEngineId,
+            fileDurationsMs: fileDurationsMs,
+            resumeSamples: List<int>.filled(audioPaths.length, 0),
+            finished: true,
+          ).toJson(),
+        ),
+        flush: true,
+      );
+
+      emit(
+        AsrTranscribeFinishedEvent(
+          AsrTranscribeResult(
+            srtPath: srt.path,
+            segmentsPath: p.join(jobDir.path, AsrJobFiles.segments),
+            cueCount: cues.length,
+            segmentCount: cues.length,
+            totalMs: offsetMs,
+            fileDurationsMs: fileDurationsMs,
+          ),
+        ),
+      );
+    } catch (error, stack) {
+      if (!events.isClosed) events.addError(error, stack);
+    } finally {
+      await events.close();
+    }
   }
 
   @override
@@ -356,6 +398,10 @@ class AppleSpeechRunningTranscription implements AsrRunningTranscription {
 
   @override
   Future<void> dispose() async {
-    if (!_cancelled) await _platform.cancel();
+    // 先立旗再取消：在跑的那次 `transcribe` 会以 `CANCELLED` 抛回来，[_drive]
+    // 靠这面旗把它认成「我们要求的停」而不是转录失败。
+    final bool wasRunning = !_cancelled;
+    _cancelled = true;
+    if (wasRunning) await _platform.cancel();
   }
 }

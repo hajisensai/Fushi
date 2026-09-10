@@ -23,7 +23,7 @@ class AppleSpeechSegment {
     required this.startMs,
     required this.endMs,
     this.tokens = const <String>[],
-    this.tokenOffsetsMs = const <int>[],
+    this.tokenStartsMs = const <int>[],
   });
 
   final String text;
@@ -31,8 +31,14 @@ class AppleSpeechSegment {
   final int endMs;
 
   /// 逐词文本与起点（毫秒）。两者等长；原生没给词级时间时同为空。
+  ///
+  /// **是「起点」不是「偏移」**：与 [startMs] / [endMs] 同一把尺子，都是这个音频
+  /// 文件内的绝对毫秒（原生那边来自 `run.audioTimeRange.start`）。而下游
+  /// [AsrCue.tokenOffsetsMs] 要的是**相对 cue 起点**的偏移——两者差一个 cue 起点，
+  /// 换算在 [appleSpeechCues] 里做。这两个词曾经共用一个名字，代价是逐词时间整体
+  /// 偏掉一个 cue 起点、而 SRT 与行数全对得上，谁都看不出来。
   final List<String> tokens;
-  final List<int> tokenOffsetsMs;
+  final List<int> tokenStartsMs;
 }
 
 /// 一次转录的结果。
@@ -221,7 +227,7 @@ AppleSpeechResult parseAppleSpeechPayload(Map<Object?, Object?> raw) {
       // 退化区间：留着会在 SRT 里变成一条零长甚至倒挂的字幕。
       if (endMs <= startMs) continue;
       final List<String> tokens = <String>[];
-      final List<int> offsets = <int>[];
+      final List<int> starts = <int>[];
       final Object? rawTokens = map['tokens'];
       if (rawTokens is List) {
         for (final Object? token in rawTokens) {
@@ -230,7 +236,7 @@ AppleSpeechResult parseAppleSpeechPayload(Map<Object?, Object?> raw) {
           final String piece = (t['text'] ?? '').toString();
           if (piece.isEmpty) continue;
           tokens.add(piece);
-          offsets.add(_asInt(t['startMs']));
+          starts.add(_asInt(t['startMs']));
         }
       }
       segments.add(
@@ -239,7 +245,7 @@ AppleSpeechResult parseAppleSpeechPayload(Map<Object?, Object?> raw) {
           startMs: startMs,
           endMs: endMs,
           tokens: tokens,
-          tokenOffsetsMs: offsets,
+          tokenStartsMs: starts,
         ),
       );
     }
@@ -253,8 +259,20 @@ AppleSpeechResult parseAppleSpeechPayload(Map<Object?, Object?> raw) {
 /// 多文件有声书转出来的是**单时间轴** SRT（与 ONNX 后端一致），所以每个文件的时间
 /// 都要加上前面所有文件的时长。
 ///
-/// 逐词起点同样要平移；词数与 [AsrCue.tokens] 不等长会让下游一条都不挂
-/// （`attachAsrCueTokenTiming` 的纪律），所以两个列表在这里就保持等长。
+/// 逐词时间要**换基准**，不是跟着平移：原生给的
+/// [AppleSpeechSegment.tokenStartsMs] 是文件内绝对毫秒，而 [AsrCue.tokenOffsetsMs]
+/// 的契约是**相对该 cue 起点**的偏移（上游 `serializeAsrCueTokens` 写进
+/// `transcript.tokens.jsonl` 的 `o`，消费端一律按 `cue.startMs + o` 还原绝对时刻，
+/// 见 `cue_sentence_resegmenter.dart`）。所以这里减掉 `segment.startMs`——拼接偏移
+/// `offsetMs` 在减法里自己抵消掉了，**不该再加一次**。
+///
+/// 加错基准是**静默**的：SRT 逐行正确、cue 数与 sidecar 行数一致，
+/// `attachAsrCueTokenTiming` 照挂不误，只有逐词跳播会整体偏掉一个 cue 起点
+/// （有声书里就是几十分钟到几小时）。
+///
+/// 负偏移会被夹到 0：原生偶尔把词的起点报得比句子起点早一点点，夹住比丢弃好——
+/// 词数与 [AsrCue.tokens] 不等长会让下游一条都不挂（`attachAsrCueTokenTiming` 的
+/// 纪律），所以两个列表在这里必须保持等长。
 List<AsrCue> appleSpeechCues(
   List<AppleSpeechSegment> segments, {
   required int fileIndex,
@@ -269,7 +287,8 @@ List<AsrCue> appleSpeechCues(
         audioFileIndex: fileIndex,
         tokens: segment.tokens,
         tokenOffsetsMs: <int>[
-          for (final int offset in segment.tokenOffsetsMs) offset + offsetMs,
+          for (final int start in segment.tokenStartsMs)
+            if (start < segment.startMs) 0 else start - segment.startMs,
         ],
       ),
   ];
