@@ -29,13 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2237 条。点号进各自文件。
+> 共 2238 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2428](bugs/BUG-2428-dict-scan-inline-results.md) | ✅ | ✅ | 查词页源文本条点字压嵌套浮层，没有换下方的查词结果 |
 | [BUG-2427](bugs/BUG-2427-desktop-library-header-top-gap.md) | ✅ | ✅ | 桌面端库页页头顶部留白过大（手机端修复未同步） |
 | [BUG-2426](bugs/BUG-2426-side-panel-embed-self-attested.md) | ✅ | ✅ | 扩展 side-panel 的「是否被嵌入」由 URL 参数自证，省略参数即可绕过 #1295 全部加固 |
+| [BUG-2425](bugs/BUG-2425-desktop-mihon-no-cookie-owner.md) | ✅ | ✅ | 桌面 Mihon 扩展无 cookie 所有者：需登录的源永远锁着 |
 | [BUG-2424](bugs/BUG-2424-reader-cross-chapter-input-discarded.md) | ✅ | ✅ | 换章加载期滚轮输入被丢弃且跨章冷却窗锚在加载完成 |
 | [BUG-2423](bugs/BUG-2423-sync-conflict-title-truncated.md) | ✅ | ✅ | 同步冲突卡片书名单行省略，同系列多条冲突只剩同一前缀无法分辨 |
 | [BUG-2422](bugs/BUG-2422-settings-surface-ladder-flat.md) | ✅ | ✅ | 设置页页面底/导航窗格/卡片三层对比度仅1.05糊成一片（M3阶梯最挤段+全局关阴影） |

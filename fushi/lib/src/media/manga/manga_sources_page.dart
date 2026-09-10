@@ -14,10 +14,14 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_repository_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -571,6 +575,39 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     }
   }
 
+  /// 该源能不能在 app 里登录，以及登录页要打开哪个地址。
+  ///
+  /// 两个条件缺一不可：运行时是「宿主持有 cookie」那一类（桌面 sidecar；Android
+  /// 由系统 `CookieManager` 拥有 cookie，不需要也不该走这条），以及该源报出了
+  /// 可解析出 host 的 baseUrl（有些源的 baseUrl 是空串或相对地址）。
+  Uri? _loginTargetFor(MangaOnlineSourceRow source) => mihonLoginTarget(
+        runtime: _manager?.runtime,
+        baseUrl: source.baseUrl,
+      );
+
+  Future<void> _openWebLogin(MangaOnlineSourceRow source) async {
+    final Uri? target = _loginTargetFor(source);
+    final Object? runtime = _manager?.runtime;
+    if (target == null || runtime is! HostCookieMihonRuntime) return;
+    final MangaCookieJar jar = runtime.cookieJar;
+    if (jar is! MihonCookieJar) return;
+    final bool? saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        fullscreenDialog: true,
+        builder: (BuildContext _) => MihonWebLoginPage(
+          sourceName: source.name,
+          baseUrl: target,
+          jar: jar,
+        ),
+      ),
+    );
+    if (!mounted || saved != true) return;
+    FushiToast.show(msg: t.mihon_source_login_saved);
+    // 登录态变了，源的章节归属会跟着变；让下一次进源重新取，而不是继续用锁着的
+    // 那份缓存。
+    setState(() {});
+  }
+
   void _openPreferences(MangaOnlineSourceRow source) {
     showAppDialog<void>(
       context: context,
@@ -1052,6 +1089,13 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                   : () => unawaited(_moveSource(source, 1)),
               icon: const Icon(Icons.keyboard_arrow_down),
             ),
+            if (_loginTargetFor(source) != null)
+              IconButton(
+                key: ValueKey<String>('mihon_source_login_${source.sourceId}'),
+                tooltip: t.mihon_source_login,
+                onPressed: () => unawaited(_openWebLogin(source)),
+                icon: const Icon(Icons.login),
+              ),
             IconButton(
               tooltip: t.mihon_source_preferences,
               onPressed: () => _openPreferences(source),

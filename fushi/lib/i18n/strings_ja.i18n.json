@@ -4621,5 +4621,10 @@
   "audiobook_transcribe_engine_system_installing": "Asking the system to install the language…",
   "audiobook_transcribe_engine_system_no_pause": "This engine can't pause mid-file — stopping discards the current file's progress.",
   "storage_models_components": "モデルとコンポーネント",
-  "settings_group_tools": "Tools"
+  "settings_group_tools": "Tools",
+  "mihon_source_login": "Log in",
+  "mihon_source_login_hint": "Sign in on the site, then tap Done to save the session",
+  "mihon_source_login_done": "Done",
+  "mihon_source_login_empty": "No session cookies were captured; nothing was saved",
+  "mihon_source_login_saved": "Signed in to this source"
 }

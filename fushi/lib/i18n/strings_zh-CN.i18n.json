@@ -4621,5 +4621,10 @@
   "audiobook_transcribe_engine_system_installing": "正在让系统安装该语言…",
   "audiobook_transcribe_engine_system_no_pause": "这个引擎在文件中途无法暂停，停止会丢掉当前文件的进度。",
   "storage_models_components": "模型与组件",
-  "settings_group_tools": "工具"
+  "settings_group_tools": "工具",
+  "mihon_source_login": "登录",
+  "mihon_source_login_hint": "在网站上登录后，点「完成」保存会话",
+  "mihon_source_login_done": "完成",
+  "mihon_source_login_empty": "没有捕获到会话 cookie，未保存",
+  "mihon_source_login_saved": "已登录该源"
 }

@@ -1,18 +1,14 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
-import eu.kanade.tachiyomi.source.online.HttpSource
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
 import mextensionserver.model.FiltersResponse
-import okhttp3.Cookie
-import okhttp3.HttpUrl
 
 /**
  * Hibiki serializes manga filters into an explicit wire shape. Jackson cannot
@@ -25,78 +21,61 @@ class DalvikHandler {
     private val logger = KotlinLogging.logger {}
     private val objectMapper = jacksonObjectMapper()
 
-    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response =
-        try {
+    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
+        // Declared outside the try so the catch clauses can still report the
+        // jar: the failing call is the one most likely to have rotated the
+        // session.
+        var pendingJarCookies: String? = null
+        return try {
             val body = mutableMapOf<String, String>()
             session.parseBody(body)
             val json = body["postData"] ?: throw IllegalArgumentException("No JSON body")
             val dataBody = objectMapper.readValue(json, DataBody::class.java)
 
-            val result =
+            // A failing call is the *most* likely one to have rotated the
+            // session -- a 401/403 usually is the site handing out a fresh
+            // cookie as it rejects the stale one. Capturing the jar here rather
+            // than only on the success path is what lets the error response
+            // carry it back; otherwise the host retries forever with the dead
+            // value it already had.
+            val invocationResult =
                 MExtensionServerLoader.invokeWithExtension(dataBody.data) { loadedExtension ->
                     val selectedSource = MihonInvoker.selectSource(loadedExtension.sources, dataBody)
                     MihonInvoker.preparePreferences(dataBody, selectedSource)
-                    val domain =
-                        selectedSource.let { source ->
-                            try {
-                                val baseUrl = source.javaClass.getMethod("getBaseUrl").invoke(source) as String
-                                java.net.URI(baseUrl).host
-                            } catch (error: Exception) {
-                                logger.error(error) { "Error getting domain from source" }
-                                null
-                            }
-                        } ?: "localhost"
-
-                    val cookies =
-                        (session.headers["cookie"] ?: session.headers["Cookie"])
-                            ?.let { cookieHeader ->
-                                cookieHeader
-                                    .split(";")
-                                    .map { cookieString ->
-                                        val parts = cookieString.trim().split("=", limit = 2)
-                                        Cookie
-                                            .Builder()
-                                            .name(parts[0].trim())
-                                            .value(parts.getOrElse(1) { "" }.trim())
-                                            .domain(domain.removePrefix("."))
-                                            .path("/")
-                                            .build()
-                                    }.distinctBy { it.name }
-                            }?.toList()
-                    val network =
-                        when (selectedSource) {
-                            is HttpSource -> selectedSource.network
-                            is AnimeHttpSource -> selectedSource.network
-                            else -> null
-                        }
-                    if (cookies != null) {
-                        network?.cookieJar?.addAll(
-                            HttpUrl
-                                .Builder()
-                                .scheme("http")
-                                .host(domain.removePrefix("."))
-                                .build(),
-                            cookies,
-                        )
+                    // Host-owned login session; see [SourceCookieInjection].
+                    val domain = SourceCookieInjection.domainOf(selectedSource)
+                    SourceCookieInjection.injectRequestCookies(session, selectedSource)
+                    SourceCookieInjection.applyRequestUserAgent(session, selectedSource)
+                    try {
+                        MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                    } finally {
+                        pendingJarCookies =
+                            SourceCookieInjection.encodeJarCookies(
+                                objectMapper,
+                                selectedSource,
+                                domain,
+                            )
                     }
-                    (session.headers["user-agent"] ?: session.headers["User-Agent"])
-                        ?.let { userAgent -> network?.setUA(userAgent) }
-
-                    MihonInvoker.invokeMethod(loadedExtension, dataBody)
                 }
 
-            val serializableResult = filterResponseForBridge(result)
+            val serializableResult = filterResponseForBridge(invocationResult)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
-            NanoHTTPD.newFixedLengthResponse(
-                NanoHTTPD.Response.Status.OK,
-                "application/json",
-                responseJson,
-            )
+            NanoHTTPD
+                .newFixedLengthResponse(
+                    NanoHTTPD.Response.Status.OK,
+                    "application/json",
+                    responseJson,
+                ).withJarCookies(pendingJarCookies)
         } catch (error: LinkageError) {
-            errorResponse(error)
+            errorResponse(error).withJarCookies(pendingJarCookies)
         } catch (error: Exception) {
-            errorResponse(error)
+            errorResponse(error).withJarCookies(pendingJarCookies)
         }
+    }
+
+    /** Attaches [SET_COOKIE_HEADER] when the call actually touched cookies. */
+    private fun NanoHTTPD.Response.withJarCookies(payload: String?): NanoHTTPD.Response =
+        apply { if (payload != null) addHeader(SET_COOKIE_HEADER, payload) }
 
     internal fun errorResponse(error: Throwable): NanoHTTPD.Response {
         logger.error(error) { "Error handling request" }
