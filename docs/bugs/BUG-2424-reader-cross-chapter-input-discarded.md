@@ -78,12 +78,17 @@ BUG-1829 修的是「被拦输入自我续期 → 单页章成滚轮死区」。
 ### 真机实测（Windows 离屏 itest，同机同书同用例、只换 lib）
 
 用例：`integration_test/reader_cross_chapter_input_queue_itest.dart` ——
-forward → backward → forward → backward 四拍，**每拍落地后只 pump 一帧就发下一次**。
+forward → backward → forward → backward 四拍，每拍之间**从发起时刻起恰好等满
+`wheelPageTurnInterval`（用户配的那道闸门）、不多等一毫秒**。
 
-修复前（lib 还原到基底 `87eda400f2`，`xchapter-queue-mutant`）：
+这个等待时长是故意选的，恰好能把两道闸门分开：节流窗从**发起**那一刻算
+（加载耗时包含在窗内），而被删的冷却窗从**新章 content-ready** 重新 stamp。
+所以等满 throttle 时：新代码已过闸门该放行，旧代码还在 `T_load + 450ms` 的冷却里。
+
+修复前（lib 还原到基底 `87eda400f2`，`xchapter-throttle-mutant`）：
 
 ```
-[xchapter-queue] #0 forward  chapter_01 -> chapter_02  landed=174ms
+[xchapter-queue] #0 forward  chapter_01 -> chapter_02  landed=116ms
 [xchapter-queue] #1 backward chapter_02 -> chapter_02  landed=0ms
 Some tests failed.  (exit 1)
 ```
@@ -92,20 +97,20 @@ Some tests failed.  (exit 1)
 「按了没反应」的真机复现：此刻冷却窗刚在 chapter_02 的 content-ready 被重新 stamp，
 正是窗口最满的时刻。
 
-修复后（`xchapter-queue-v2`）：
+修复后（`xchapter-final`，对应最终提交）：
 
 ```
-[xchapter-queue] #0 forward  chapter_01 -> chapter_02  landed=167ms
-[xchapter-queue] #1 backward chapter_02 -> chapter_01  landed=191ms
-[xchapter-queue] #2 forward  chapter_01 -> chapter_02  landed= 77ms
-[xchapter-queue] #3 backward chapter_02 -> chapter_01  landed=154ms
+[xchapter-queue] #0 forward  chapter_01 -> chapter_02  landed=119ms
+[xchapter-queue] #1 backward chapter_02 -> chapter_01  landed=134ms
+[xchapter-queue] #2 forward  chapter_01 -> chapter_02  landed=102ms
+[xchapter-queue] #3 backward chapter_02 -> chapter_01  landed=122ms
 All tests passed!  (exit 0)
 ```
 
-四拍全部落地，落地时间 77~191ms **就是章节加载本身**，闸门带来的额外等待归零
-（修复前是 `T_load + 450ms`，且第 2 拍起直接被吞）。来回四拍回到起点、四次输入
-恰好四次跨章（无「跳两章」）。
+四拍全部落地，落地时间 102~134ms **就是章节加载本身**，隐藏冷却窗带来的额外
+等待归零（修复前是 `T_load + 450ms`，且第 2 拍起直接被吞）。来回四拍回到起点、
+四次输入恰好四次跨章（无「跳两章」）。用户配的 `wheelPageTurnInterval` 仍然生效。
 
-证据：`fushi/.codex-test/windows-itest/xchapter-queue-{v2,mutant}/command.log`（不入库）。
+证据：`fushi/.codex-test/windows-itest/xchapter-{final,throttle-mutant}/command.log`（不入库）。
 
 - **备注**：交互延迟 + 输入丢失，非崩溃。`test/pages`（3601 项）、`test/reader`（1611 项）定向全绿，`flutter analyze`（含 test）零问题，真机用例已做变异实测（还原 lib 即红，见上）。
