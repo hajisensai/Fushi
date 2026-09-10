@@ -62,6 +62,7 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -3975,8 +3976,22 @@ class AppModel with ChangeNotifier {
           rootDirectory: aidokuLibraryRoot,
           adapter: AidokuLibraryAdapter(),
         );
+      // 互联对端同样不碰 [mihonManager]：它五端都可用，而 mihonManager 在
+      // iOS/Linux 上直接抛 UnsupportedError。
+      case OnlineMangaRuntimeKind.interconnect:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: interconnectMangaLibraryRoot,
+          adapter: const InterconnectLibraryAdapter(),
+        );
     }
   }
+
+  /// 互联漫画源书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  ///
+  /// 与 Aidoku 的根平级、各自独立：删一个源的缓存不该波及另一个。
+  Directory get interconnectMangaLibraryRoot =>
+      Directory(path.join(databaseDirectory.path, 'interconnect_manga'));
 
   /// Aidoku 书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
   ///

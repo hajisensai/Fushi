@@ -25,8 +25,11 @@ import 'package:fushi/src/media/video/series_playback_prefs.dart'
         effectiveSeriesAudioTrackId,
         effectiveSeriesDelayMs,
         effectiveSeriesSecondaryDelayMs;
+import 'package:fushi/src/media/manga/manga_storage.dart' show MangaStorage;
+import 'package:fushi/src/media/manga/mokuro_payload.dart'
+    show MokuroPayload, parseMangaJson;
 import 'package:fushi/src/sync/manga_sync_package.dart'
-    show hasExportableMangaContent, repackageMangaBook;
+    show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi/src/stats/stat_facts.dart';
 import 'package:fushi/src/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/override_title_lookup.dart';
@@ -52,6 +55,7 @@ import 'package:path/path.dart' as p;
 
 part 'local_library_host_service/dictionaries.part.dart';
 part 'local_library_host_service/books.part.dart';
+part 'local_library_host_service/manga.part.dart';
 part 'local_library_host_service/local_audio.part.dart';
 part 'local_library_host_service/audiobooks.part.dart';
 part 'local_library_host_service/videos.part.dart';
@@ -84,6 +88,7 @@ String? _existingFilePath(String? path) {
 abstract class _LocalLibraryHostBase
     implements
         FushiLibraryHostService,
+        MangaLibraryHost,
         DeletionTombstoneHost,
         VideoDeletionHost,
         VideoPlaybackSyncHost,
@@ -137,6 +142,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
         _LocalLibraryHostShared,
         _LocalLibraryHostDictionaries,
         _LocalLibraryHostBooks,
+        _LocalLibraryHostManga,
         _LocalLibraryHostLocalAudio,
         _LocalLibraryHostAudiobooks,
         _LocalLibraryHostVideos,
