@@ -31,7 +31,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: e4dd0f882eb92230ad63a2a540fde273a67ca489
+      ref: 8820d3862297f42c99e1f0d9f440a9dddccee0ac
   archive: ^3.6.1
   basic_utils: ^5.7.0
   collection: any
