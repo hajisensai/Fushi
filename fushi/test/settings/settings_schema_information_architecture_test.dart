@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
@@ -11,24 +13,24 @@ import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 
 List<SettingsDestination> _destinations() => <SettingsDestination>[
-      buildAppearanceDestination(),
-      buildReadingDestination(),
-      buildListeningDestination(),
-      buildMangaDestination(),
-      buildVideoDestination(),
-      buildLookupDestination(),
-      buildProfilesDestination(),
-      buildStorageDestination(),
-      buildSystemDestination(),
-    ];
+  buildAppearanceDestination(),
+  // 听书并入阅读：它的分区由 buildReadingDestination 展开，取阅读一条即已覆盖。
+  buildReadingDestination(),
+  buildMangaDestination(),
+  buildVideoDestination(),
+  buildLookupDestination(),
+  buildProfilesDestination(),
+  buildStorageDestination(),
+  buildSystemDestination(),
+];
 
 SettingsSection _section(SettingsDestination destination, String id) =>
     destination.sections.singleWhere((SettingsSection s) => s.id == id);
 
-SettingsItem _item(SettingsDestination destination, String id) =>
-    destination.sections
-        .expand((SettingsSection s) => s.items)
-        .singleWhere((SettingsItem i) => i.id == id);
+SettingsItem _item(SettingsDestination destination, String id) => destination
+    .sections
+    .expand((SettingsSection s) => s.items)
+    .singleWhere((SettingsItem i) => i.id == id);
 
 void main() {
   test('ordinary sections have unique persistent identities', () {
@@ -89,6 +91,10 @@ void main() {
           'reading.section.chrome',
           'reading.section.statistics',
           'reading.section.advanced_typography',
+          // 听书 2026-08-24 并入阅读：两个分区排在阅读各组之后（见
+          // buildListeningSections）。同一本 EPUB 的「读」与「听」从此同分类。
+          'listening.section.playback',
+          'listening.section.floating_lyric',
         ],
       );
     },
@@ -97,11 +103,11 @@ void main() {
   test('optional feature switches remain outside collapsed groups', () {
     for (final (SettingsDestination destination, String sectionId)
         in <(SettingsDestination, String)>[
-      (buildListeningDestination(), 'listening.section.floating_lyric'),
-      (buildVideoDestination(), 'video.section.danmaku'),
-      (buildMangaDestination(), 'manga.section.ocr'),
-      (buildLookupDestination(), 'lookup.section.integrations'),
-    ]) {
+          (buildReadingDestination(), 'listening.section.floating_lyric'),
+          (buildVideoDestination(), 'video.section.danmaku'),
+          (buildMangaDestination(), 'manga.section.ocr'),
+          (buildLookupDestination(), 'lookup.section.integrations'),
+        ]) {
       expect(
         _section(destination, sectionId).presentation,
         SettingsSectionPresentation.alwaysExpanded,
@@ -114,9 +120,9 @@ void main() {
     () {
       for (final (SettingsDestination destination, String itemId)
           in <(SettingsDestination, String)>[
-        (buildListeningDestination(), 'listening.asr_models'),
-        (buildMangaDestination(), 'manga.ocr'),
-      ]) {
+            (buildStorageDestination(), 'listening.asr_models'),
+            (buildMangaDestination(), 'manga.ocr'),
+          ]) {
         final SettingsNavigationItem navigation =
             _item(destination, itemId) as SettingsNavigationItem;
         final SettingsDestination child = navigation.child!();
@@ -133,12 +139,53 @@ void main() {
   );
 
   test(
+    'ASR models have one global storage owner independent of module settings',
+    () {
+      final List<SettingsDestination> owners = _destinations()
+          .where(
+            (SettingsDestination d) => d.sections.any(
+              (SettingsSection s) => s.items.any(
+                (SettingsItem i) => i.id == 'listening.asr_models',
+              ),
+            ),
+          )
+          .toList();
+      expect(
+        owners.map((SettingsDestination d) => d.id),
+        <SettingsDestinationId>[SettingsDestinationId.storage],
+      );
+      final SettingsDestination storage = owners.single;
+      expect(
+        storage.visible,
+        isNull,
+        reason: 'Global models must not be gated by the listening module',
+      );
+      final List<SettingsSearchEntry> results =
+          flattenVisibleSettings(<SettingsDestination>[
+                storage,
+              ], _GlobalModelContext())
+              .where(
+                (SettingsSearchEntry e) => e.item.id == 'listening.asr_models',
+              )
+              .toList();
+      expect(results, hasLength(isAsrSupported ? 1 : 0));
+      if (isAsrSupported) {
+        expect(results.single.destination.id, SettingsDestinationId.storage);
+        expect(results.single.hasRevealTarget, isTrue);
+        expect(
+          results.single.sectionTitle,
+          _section(storage, 'storage.section.models_components').title,
+        );
+      }
+    },
+  );
+
+  test(
     'lookup audio and external application entries belong to their own groups',
     () {
       final SettingsDestination lookup = buildLookupDestination();
       expect(
-        _section(lookup, 'lookup.section.dictionaries')
-            .items
+        _section(lookup, 'lookup.section.dictionaries').items
             .whereType<SettingsNavigationItem>()
             .map((SettingsNavigationItem i) => i.id),
         isNot(contains('lookup.browser_extension')),
@@ -180,12 +227,19 @@ void main() {
         isA<SettingsCustomItem>(),
       );
       expect(
-        buildSystemDestination()
-            .sections
+        buildSystemDestination().sections
             .expand((SettingsSection s) => s.items)
             .map((SettingsItem i) => i.id),
         isNot(contains('sync.data_storage_location')),
       );
     },
+  );
+}
+
+/// Global resources must not require a listening configuration or a live host.
+class _GlobalModelContext implements SettingsContext {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw StateError(
+    'Unexpected context dependency: ${invocation.memberName}',
   );
 }

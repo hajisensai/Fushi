@@ -826,23 +826,79 @@ jobs:
             "/DOutputDir=$PWD\fushi\build\installer" `
             "fushi\windows\installer\fushi.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+      # 代码签名走 Certum 云端 HSM（SimplySign）。私钥按 CA/B Forum 规则留在硬件里、
+      # 导不出 .pfx，所以这里不能用 signtool /f cert.pfx —— 早先那条
+      # WINDOWS_CERT_BASE64 -> cert.pfx 的路径对这类证书永远走不通，
+      # 表现是 signcheck 恒判 false、签名步骤被静默跳过、发出去的包其实没签名。
+      # 现在的通路：装 SimplySign Desktop（注册 CSP/KSP）-> 用 TOTP seed 无人值守
+      # 登录 -> signtool /sha1 通过命名管道让云端 HSM 完成签名运算。
       - name: Check signing availability
         id: signcheck
         shell: bash
         env:
-          CERT: ${{ secrets.WINDOWS_CERT_BASE64 }}
+          SEED: ${{ secrets.CERTUM_OTP_URI }}
         run: |
-          if [ -n "$CERT" ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "have=false" >> "$GITHUB_OUTPUT"; fi
-      - name: Sign installer (optional)
+          if [ -n "$SEED" ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "have=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -z "$SEED" ]; then
+            echo "::warning title=Windows installer unsigned::CERTUM_OTP_URI secret 未配置，本次产物不会被签名。"
+          fi
+      # MSI 有 274MB，每次重下既慢又给 Certum 添负担。按版本号缓存。
+      - name: Cache SimplySign Desktop installer
         if: steps.signcheck.outputs.have == 'true'
-        env:
-          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        id: ssdcache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\SimplySignDesktop.msi
+          key: simplysign-desktop-9.4.4.92-64bit-en
+      - name: Install SimplySign Desktop
+        if: steps.signcheck.outputs.have == 'true'
         shell: pwsh
         run: |
-          [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
-          $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
-          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+          $msi = "$env:RUNNER_TEMP\SimplySignDesktop.msi"
+          # 上游文件应当是不可变的（URL 带版本号）。哈希对不上就停 —— 这是签名
+          # 凭据链路，宁可发不出版本，也不能把来路不明的 CSP/KSP 装进签名环境。
+          $expected = '8EC420FC27798B86078B7BD02FE7152097E1B3005BAB51820EACA8E57DF84DA3'
+          if (-not (Test-Path -LiteralPath $msi)) {
+            $url = 'https://files.certum.eu/software/SimplySignDesktop/Windows/9.4.4.92/SimplySignDesktop-9.4.4.92-64-bit-en.msi'
+            Write-Host "下载 SimplySign Desktop…"
+            Invoke-WebRequest -Uri $url -OutFile $msi -UseBasicParsing
+          }
+          $actual = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash
+          if ($actual -ne $expected) {
+            throw "SimplySign MSI 哈希不符。expected=$expected actual=$actual"
+          }
+          Write-Host "MSI 哈希校验通过。"
+          $p = Start-Process msiexec -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec 安装失败，退出码 $($p.ExitCode)" }
+          Write-Host "SimplySign Desktop 安装完成。"
+      - name: Connect SimplySign (unattended)
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_OTP_URI: ${{ secrets.CERTUM_OTP_URI }}
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          & "$PWD\tool\simplysign_connect.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "SimplySign 登录失败，退出码 $LASTEXITCODE" }
+      - name: Sign Windows installer
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          & "$PWD\tool\sign_windows_release.ps1" `
+            -Path "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe" `
+            -Description 'Fushi'
+          if ($LASTEXITCODE -ne 0) { throw "签名失败，退出码 $LASTEXITCODE" }
+      # 登录会话留在 runner 上没有意义，且 GitHub 托管 runner 用完即毁；
+      # 自托管 runner 上不断开则会把会话泄给下一个 job。
+      - name: Disconnect SimplySign
+        if: always() && steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $exe = Get-ChildItem $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter 'SimplySignDesktop.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exe) { Start-Process $exe.FullName -ArgumentList '/close' -Wait -ErrorAction SilentlyContinue }
       - name: Prepare Windows installer release asset
         shell: bash
         env:

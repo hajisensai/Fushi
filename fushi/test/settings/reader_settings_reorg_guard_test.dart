@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 
 /// TODO-725 守卫：阅读器设置面板重新归类/排序。
@@ -45,10 +44,9 @@ void main() {
   }
 
   Map<ReaderGroup, List<SettingsItem>> collected() =>
-      collectFrom(<SettingsDestination>[
-        buildReadingDestination(),
-        buildListeningDestination(),
-      ]);
+      // 听书 2026-08-24 并入阅读：它的分区由 buildReadingDestination 展开，
+      // 不再有独立 destination，这里只取阅读一条即已覆盖两域。
+      collectFrom(<SettingsDestination>[buildReadingDestination()]);
 
   test('advanced global sections keep their reader quick-panel placements', () {
     final SettingsDestination reading = buildReadingDestination();
@@ -66,7 +64,7 @@ void main() {
       ]),
     );
     final Map<ReaderGroup, List<SettingsItem>> quick = collectFrom(
-      <SettingsDestination>[reading, buildListeningDestination()],
+      <SettingsDestination>[reading],
     );
     for (final SettingsItem item in advanced.expand(
       (SettingsSection s) => s.items,

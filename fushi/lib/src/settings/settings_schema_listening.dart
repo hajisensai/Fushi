@@ -1,349 +1,327 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/asr_host/asr_host.dart';
-import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
-import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
-SettingsDestination buildListeningDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.listening,
-    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
-    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
-    visible: (SettingsContext c) => isSettingsDestinationVisible(
-      SettingsDestinationId.listening,
-      c.appModel.moduleVisibility,
+/// 「听书」的两个设置分区（有声书 + 悬浮歌词）。
+///
+/// 2026-08-24 用户决策：不再作为独立一级分类，由 [buildReadingDestination] 展开进
+/// 「阅读」末尾。同一本 EPUB 的「读」与「听」原本被拆在两个一级分类里，用户得在两
+/// 处找同一本书的设置；而听书统共十来项、其中大半还是悬浮歌词一个子功能，撑不起
+/// 一个一级分类。
+///
+/// 合并只动**归属**：item id（`listening.*`）、持久化 key、各项的 visible 门控全部
+/// 原样保留；`SettingsDestinationId.listening` 随之删除——它没有任何持久化用途
+/// （只做内存态选中项身份）。
+///
+/// 「功能模块」门控原先挂在 destination 上（关掉听书模块 = 整条分类不渲染 / 不进
+/// 搜索索引）。并类之后没有 destination 可挂了，**门控下放到这两个分区自己身上**，
+/// 否则关掉模块的用户会在「阅读」里重新看到听书设置——那是并类顺手放开了一道门。
+///
+/// 保持独立 library 而不是把这 300 行搬进已很长的 settings_schema_reading.dart：
+/// 领域文件边界不变，settings_redesign_static_test 的「一域一文件」契约照旧成立。
+List<SettingsSection> buildListeningSections() {
+  bool listeningModuleOn(SettingsContext c) =>
+      c.appModel.moduleVisibility.isEnabledOrUngated(ModuleId.listening);
+  return <SettingsSection>[
+    SettingsSection(
+      // 模块门原先挂在 destination 上，并入阅读后下放到分区自己身上。
+      visible: listeningModuleOn,
+      id: 'listening.section.playback',
+      presentation: SettingsSectionPresentation.alwaysExpanded,
+      title: t.section_audiobook,
+      items: <SettingsItem>[
+        // TODO-702：有声书退出即停（默认 OFF）/ 后台续播（开启）。默认关 = 退出
+        // 阅读页就停止有声书播放；开启后退书后会话继续在后台播。
+        SettingsSwitchItem(
+          id: 'listening.audiobook_background_play',
+          title: t.audiobook_background_play,
+          subtitle: t.audiobook_background_play_hint,
+          icon: Icons.play_circle_outline,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookBackgroundPlay,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setAudiobookBackgroundPlay(
+              value: value,
+            );
+            settingsContext.refresh();
+          },
+        ),
+        // 有声书素材库：按作品身份命名的字幕/正文目录。下载完成后据此配齐
+        // 「正文 + 字幕 + 音频」，配不齐时由用户在导入框里手动补。
+        SettingsActionItem(
+          id: 'listening.audiobook_material_library',
+          title: t.audiobook_material_library,
+          subtitle: t.audiobook_material_library_hint,
+          icon: Icons.library_books_outlined,
+          onTap: (SettingsContext settingsContext) async {
+            await showAppDialog<void>(
+              context: settingsContext.context,
+              builder: (_) => AudiobookMaterialLibraryDialog(
+                appModel: settingsContext.appModel,
+              ),
+            );
+            settingsContext.refresh();
+          },
+        ),
+        SettingsSwitchItem(
+          id: 'listening.media_notification',
+          title: t.show_media_notification,
+          icon: Icons.notifications_outlined,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.showMediaNotification,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setShowMediaNotification(value);
+            settingsContext.refresh();
+          },
+        ),
+        SettingsSwitchItem(
+          id: 'listening.volume_key_sentence_nav',
+          title: t.volume_key_sentence_nav,
+          icon: Icons.skip_next_outlined,
+          // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
+          visible: (_) => Platform.isAndroid,
+          reader: const ReaderPlacement(
+            group: ReaderGroup.behavior,
+            order: 10,
+          ),
+          value: (SettingsContext settingsContext) =>
+              settingsContext.readerSource.volumeKeySentenceNavEnabled,
+          onChanged: (SettingsContext settingsContext, bool value) {
+            settingsContext.readerSource.toggleVolumeKeySentenceNavEnabled();
+            notifyReaderSettingsChanged(settingsContext);
+          },
+        ),
+      ],
     ),
-    title: t.settings_destination_listening,
-    summary: t.floating_lyric_hint,
-    icon: Icons.headphones_outlined,
-    sections: <SettingsSection>[
-      SettingsSection(
-        id: 'listening.section.playback',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.section_audiobook,
-        items: <SettingsItem>[
-          // TODO-702：有声书退出即停（默认 OFF）/ 后台续播（开启）。默认关 = 退出
-          // 阅读页就停止有声书播放；开启后退书后会话继续在后台播。
-          SettingsSwitchItem(
-            id: 'listening.audiobook_background_play',
-            title: t.audiobook_background_play,
-            subtitle: t.audiobook_background_play_hint,
-            icon: Icons.play_circle_outline,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.audiobookBackgroundPlay,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setAudiobookBackgroundPlay(
-                value: value,
-              );
-              settingsContext.refresh();
-            },
-          ),
-          // 有声书素材库：按作品身份命名的字幕/正文目录。下载完成后据此配齐
-          // 「正文 + 字幕 + 音频」，配不齐时由用户在导入框里手动补。
-          SettingsActionItem(
-            id: 'listening.audiobook_material_library',
-            title: t.audiobook_material_library,
-            subtitle: t.audiobook_material_library_hint,
-            icon: Icons.library_books_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await showAppDialog<void>(
-                context: settingsContext.context,
-                builder: (_) => AudiobookMaterialLibraryDialog(
-                  appModel: settingsContext.appModel,
-                ),
-              );
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'listening.media_notification',
-            title: t.show_media_notification,
-            icon: Icons.notifications_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.showMediaNotification,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setShowMediaNotification(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'listening.volume_key_sentence_nav',
-            title: t.volume_key_sentence_nav,
-            icon: Icons.skip_next_outlined,
-            // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
-            visible: (_) => Platform.isAndroid,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 10,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.readerSource.volumeKeySentenceNavEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.readerSource.toggleVolumeKeySentenceNavEnabled();
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-        ],
-      ),
-      // 悬浮歌词全家桶（总开关 + 7 个样式/行为子项）独立成组：原先与后台播放/
-      // 媒体通知平铺同级，一个子功能占了「有声书」分区 2/3 的行数。
-      SettingsSection(
-        id: 'listening.section.floating_lyric',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.section_floating_lyric,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'listening.floating_lyric',
-            title: t.show_floating_lyric,
-            subtitle: t.floating_lyric_hint,
-            icon: Icons.subtitles_outlined,
-            // The strip is the desktop counterpart of the Android overlay
-            // (windows/runner/floating_lyric_window.cpp), so Windows must see
-            // this switch too — gating it to Android hid it from desktop users
-            // and was the "floating subtitle setting missing/permission"
-            // complaint (TODO-038). The Dart channel's isSupported already
-            // allows Android + Windows.
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.showFloatingLyric,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              // TODO-1069/1070：走语义意图入口，置位（非翻转）+ 有会话时原子拉/隐
-              // 原生悬浮窗 + 写意图 pref。旧实现只裸写 setShowFloatingLyric 旁路，
-              // 不真正显隐窗，导致开关不即时、与书内翻转显隐反相。
-              await settingsContext.appModel.setFloatingLyricEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_font_size',
-            title: t.floating_lyric_font_size,
-            icon: Icons.format_size,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 8,
-            max: 64,
-            step: 1,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricFontSize,
-            format: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setFloatingLyricFontSize(value);
-              // TODO-1069：改字号后把整支 style（含 fontSize）经 FloatingLyricChannel
-              // .updateStyle 即时推给原生悬浮窗——与透明度三项对齐。漏掉这一步时字号
-              // 只写了 pref，原生窗不刷新，得等改透明度才顺带把字号推过去。
-              await settingsContext.appModel.audiobookSession
-                  .applyFloatingLyricStyle();
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-370: 悬浮字幕「文字透明度」+「按钮底色透明度」自定义（0..100%，
-          // 100=保持现观感）。与字号一样仅 Android/Windows 可见（有原生悬浮窗后端）。
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_text_opacity',
-            title: t.floating_lyric_text_opacity,
-            icon: Icons.opacity_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 0,
-            max: 100,
-            step: 5,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricTextOpacity.toDouble(),
-            format: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setFloatingLyricTextOpacity(
-                value.round(),
-              );
-              await settingsContext.appModel.audiobookSession
-                  .applyFloatingLyricStyle();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_button_bg_opacity',
-            title: t.floating_lyric_button_bg_opacity,
-            icon: Icons.smart_button_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 0,
-            max: 100,
-            step: 5,
-            value: (SettingsContext settingsContext) => settingsContext
-                .appModel
-                .floatingLyricButtonBgOpacity
-                .toDouble(),
-            format: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setFloatingLyricButtonBgOpacity(
-                value.round(),
-              );
-              await settingsContext.appModel.audiobookSession
-                  .applyFloatingLyricStyle();
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-576: 悬浮字幕/歌词条「背景透明度」自定义（0..100%，默认 70=更不挡
-          // 视野）。同样仅 Android/Windows 可见（有原生悬浮窗后端）。
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_bg_opacity',
-            title: t.floating_lyric_bg_opacity,
-            icon: Icons.gradient_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 0,
-            max: 100,
-            step: 5,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricBgOpacity.toDouble(),
-            format: (double value) => '${value.round()}%',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setFloatingLyricBgOpacity(
-                value.round(),
-              );
-              await settingsContext.appModel.audiobookSession
-                  .applyFloatingLyricStyle();
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（dp，0=平台原生观感）。同样仅
-          // Android/Windows 可见（有原生悬浮窗后端）。镜像透明度那条 apply 链路。
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_corner_radius',
-            title: t.floating_lyric_corner_radius,
-            subtitle: t.floating_lyric_corner_radius_hint,
-            icon: Icons.rounded_corner_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 0,
-            max: 48,
-            step: 2,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricCornerRadius.toDouble(),
-            format: (double value) =>
-                value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setFloatingLyricCornerRadius(
-                value.round(),
-              );
-              await settingsContext.appModel.audiobookSession
-                  .applyFloatingLyricStyle();
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-708 P2: 悬浮字幕/歌词条「宽度」自定义（dp，0=平台默认宽）。0 显示为「自动」，
-          // 其余 200..1200 逐 40 dp 步进。
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_width',
-            title: t.floating_lyric_width,
-            subtitle: t.floating_lyric_width_hint,
-            icon: Icons.width_normal_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 0,
-            max: 1200,
-            step: 40,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricWidth.toDouble(),
-            format: (double value) =>
-                value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
-            onChanged: (SettingsContext settingsContext, double value) async {
-              // 0=自动；其余夹到 [200,1200]（<200 的步进值向上取到 200，保持哨兵语义只在 0）。
-              final int rounded = value.round();
-              final int width = rounded <= 0
-                  ? 0
-                  : (rounded < 200 ? 200 : rounded);
-              await settingsContext.appModel.setFloatingLyricWidth(width);
-              await settingsContext.appModel.audiobookSession
-                  .applyFloatingLyricStyle();
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-708 P4: 悬浮字幕/歌词条「上下文行数」（对称单值，0=只当前行=今天单行
-          // 观感）。0 显示为「自动」/单行语义，1..3 在当前行上下各显示 N 行。改值后调
-          // resyncFloatingLyricText 即时重推（对称透明度那条的 applyFloatingLyricStyle）。
-          SettingsStepperItem(
-            id: 'listening.floating_lyric_context_lines',
-            title: t.floating_lyric_context_lines,
-            subtitle: t.floating_lyric_context_lines_hint,
-            icon: Icons.format_line_spacing_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            min: 0,
-            max: 3,
-            step: 1,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricContextLines.toDouble(),
-            format: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setFloatingLyricContextLines(
-                value.round(),
-              );
-              await settingsContext.appModel.audiobookSession
-                  .resyncFloatingLyricText();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'listening.floating_lyric_click_lookup',
-            title: t.floating_lyric_click_lookup,
-            subtitle: t.floating_lyric_click_lookup_hint,
-            icon: Icons.touch_app_outlined,
-            visible: (SettingsContext c) =>
-                (Platform.isAndroid || Platform.isWindows) &&
-                c.appModel.showFloatingLyric,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.floatingLyricClickLookup,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setFloatingLyricClickLookup(value);
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-      // 有声书设备端转录的语言模型包：让用户预先只下自己要的语言、也能删掉
-      // 腾磁盘。仅本机随包了 ONNX Runtime 的平台才有这一组（与转录入口同门控）。
-      SettingsSection(
-        id: 'listening.section.models',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.asr_models_section,
-        visible: (_) => isAsrSupported,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'listening.asr_models',
-            title: t.asr_models_section,
-            subtitle: t.asr_models_section_summary,
-            icon: Icons.record_voice_over_outlined,
-            child: _buildAsrModelsDestination,
-          ),
-        ],
-      ),
-    ],
-  );
-}
-
-/// Reuse the model manager as the page body to avoid nested settings cards.
-SettingsDestination _buildAsrModelsDestination() {
-  return SettingsDestination(
-    id: SettingsDestinationId.listening,
-    title: t.asr_models_section,
-    icon: Icons.record_voice_over_outlined,
-    sections: const <SettingsSection>[],
-    body: (SettingsContext _) => AsrModelsSettingsSection(
-      // 模型管理页里每个包（含共用对齐器）各自管理，这里不做自动调轴。
-      service: createAsrTranscriptionService(alignGeneratedSubtitles: false),
+    // 悬浮歌词全家桶（总开关 + 7 个样式/行为子项）独立成组：原先与后台播放/
+    // 媒体通知平铺同级，一个子功能占了「有声书」分区 2/3 的行数。
+    SettingsSection(
+      // 模块门原先挂在 destination 上，并入阅读后下放到分区自己身上。
+      visible: listeningModuleOn,
+      id: 'listening.section.floating_lyric',
+      presentation: SettingsSectionPresentation.alwaysExpanded,
+      title: t.section_floating_lyric,
+      items: <SettingsItem>[
+        SettingsSwitchItem(
+          id: 'listening.floating_lyric',
+          title: t.show_floating_lyric,
+          subtitle: t.floating_lyric_hint,
+          icon: Icons.subtitles_outlined,
+          // The strip is the desktop counterpart of the Android overlay
+          // (windows/runner/floating_lyric_window.cpp), so Windows must see
+          // this switch too — gating it to Android hid it from desktop users
+          // and was the "floating subtitle setting missing/permission"
+          // complaint (TODO-038). The Dart channel's isSupported already
+          // allows Android + Windows.
+          visible: (_) => Platform.isAndroid || Platform.isWindows,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.showFloatingLyric,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            // TODO-1069/1070：走语义意图入口，置位（非翻转）+ 有会话时原子拉/隐
+            // 原生悬浮窗 + 写意图 pref。旧实现只裸写 setShowFloatingLyric 旁路，
+            // 不真正显隐窗，导致开关不即时、与书内翻转显隐反相。
+            await settingsContext.appModel.setFloatingLyricEnabled(value);
+            settingsContext.refresh();
+          },
+        ),
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_font_size',
+          title: t.floating_lyric_font_size,
+          icon: Icons.format_size,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 8,
+          max: 64,
+          step: 1,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricFontSize,
+          format: (double value) => value.round().toString(),
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricFontSize(value);
+            // TODO-1069：改字号后把整支 style（含 fontSize）经 FloatingLyricChannel
+            // .updateStyle 即时推给原生悬浮窗——与透明度三项对齐。漏掉这一步时字号
+            // 只写了 pref，原生窗不刷新，得等改透明度才顺带把字号推过去。
+            await settingsContext.appModel.audiobookSession
+                .applyFloatingLyricStyle();
+            settingsContext.refresh();
+          },
+        ),
+        // TODO-370: 悬浮字幕「文字透明度」+「按钮底色透明度」自定义（0..100%，
+        // 100=保持现观感）。与字号一样仅 Android/Windows 可见（有原生悬浮窗后端）。
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_text_opacity',
+          title: t.floating_lyric_text_opacity,
+          icon: Icons.opacity_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 0,
+          max: 100,
+          step: 5,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricTextOpacity.toDouble(),
+          format: (double value) => '${value.round()}%',
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricTextOpacity(
+              value.round(),
+            );
+            await settingsContext.appModel.audiobookSession
+                .applyFloatingLyricStyle();
+            settingsContext.refresh();
+          },
+        ),
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_button_bg_opacity',
+          title: t.floating_lyric_button_bg_opacity,
+          icon: Icons.smart_button_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 0,
+          max: 100,
+          step: 5,
+          value: (SettingsContext settingsContext) => settingsContext
+              .appModel
+              .floatingLyricButtonBgOpacity
+              .toDouble(),
+          format: (double value) => '${value.round()}%',
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricButtonBgOpacity(
+              value.round(),
+            );
+            await settingsContext.appModel.audiobookSession
+                .applyFloatingLyricStyle();
+            settingsContext.refresh();
+          },
+        ),
+        // TODO-576: 悬浮字幕/歌词条「背景透明度」自定义（0..100%，默认 70=更不挡
+        // 视野）。同样仅 Android/Windows 可见（有原生悬浮窗后端）。
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_bg_opacity',
+          title: t.floating_lyric_bg_opacity,
+          icon: Icons.gradient_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 0,
+          max: 100,
+          step: 5,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricBgOpacity.toDouble(),
+          format: (double value) => '${value.round()}%',
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricBgOpacity(
+              value.round(),
+            );
+            await settingsContext.appModel.audiobookSession
+                .applyFloatingLyricStyle();
+            settingsContext.refresh();
+          },
+        ),
+        // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（dp，0=平台原生观感）。同样仅
+        // Android/Windows 可见（有原生悬浮窗后端）。镜像透明度那条 apply 链路。
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_corner_radius',
+          title: t.floating_lyric_corner_radius,
+          subtitle: t.floating_lyric_corner_radius_hint,
+          icon: Icons.rounded_corner_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 0,
+          max: 48,
+          step: 2,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricCornerRadius.toDouble(),
+          format: (double value) =>
+              value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricCornerRadius(
+              value.round(),
+            );
+            await settingsContext.appModel.audiobookSession
+                .applyFloatingLyricStyle();
+            settingsContext.refresh();
+          },
+        ),
+        // TODO-708 P2: 悬浮字幕/歌词条「宽度」自定义（dp，0=平台默认宽）。0 显示为「自动」，
+        // 其余 200..1200 逐 40 dp 步进。
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_width',
+          title: t.floating_lyric_width,
+          subtitle: t.floating_lyric_width_hint,
+          icon: Icons.width_normal_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 0,
+          max: 1200,
+          step: 40,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricWidth.toDouble(),
+          format: (double value) =>
+              value.round() == 0 ? t.audio_panel_auto : '${value.round()}',
+          onChanged: (SettingsContext settingsContext, double value) async {
+            // 0=自动；其余夹到 [200,1200]（<200 的步进值向上取到 200，保持哨兵语义只在 0）。
+            final int rounded = value.round();
+            final int width = rounded <= 0
+                ? 0
+                : (rounded < 200 ? 200 : rounded);
+            await settingsContext.appModel.setFloatingLyricWidth(width);
+            await settingsContext.appModel.audiobookSession
+                .applyFloatingLyricStyle();
+            settingsContext.refresh();
+          },
+        ),
+        // TODO-708 P4: 悬浮字幕/歌词条「上下文行数」（对称单值，0=只当前行=今天单行
+        // 观感）。0 显示为「自动」/单行语义，1..3 在当前行上下各显示 N 行。改值后调
+        // resyncFloatingLyricText 即时重推（对称透明度那条的 applyFloatingLyricStyle）。
+        SettingsStepperItem(
+          id: 'listening.floating_lyric_context_lines',
+          title: t.floating_lyric_context_lines,
+          subtitle: t.floating_lyric_context_lines_hint,
+          icon: Icons.format_line_spacing_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          min: 0,
+          max: 3,
+          step: 1,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricContextLines.toDouble(),
+          format: (double value) => value.round().toString(),
+          onChanged: (SettingsContext settingsContext, double value) async {
+            await settingsContext.appModel.setFloatingLyricContextLines(
+              value.round(),
+            );
+            await settingsContext.appModel.audiobookSession
+                .resyncFloatingLyricText();
+            settingsContext.refresh();
+          },
+        ),
+        SettingsSwitchItem(
+          id: 'listening.floating_lyric_click_lookup',
+          title: t.floating_lyric_click_lookup,
+          subtitle: t.floating_lyric_click_lookup_hint,
+          icon: Icons.touch_app_outlined,
+          visible: (SettingsContext c) =>
+              (Platform.isAndroid || Platform.isWindows) &&
+              c.appModel.showFloatingLyric,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.floatingLyricClickLookup,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setFloatingLyricClickLookup(value);
+            settingsContext.refresh();
+          },
+        ),
+      ],
     ),
-  );
+  ];
 }
