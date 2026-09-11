@@ -632,6 +632,8 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
       // 改同一个 JS 全局，无需整章重注入。
       hoverAutoLookup: ReaderFushiSource.instance.hoverAutoLookup,
+      // BUG-2490：WebView 为原生视图的平台由宿主腿接管悬停查词，关掉文档内 mousemove 腿。
+      hostHoverLookup: !hostOwnsWebViewPointerInput,
       highlightOnTap: ReaderFushiSource.instance.highlightOnTap,
       showChrome: _showChrome,
       debugLogging: DebugLogService.instance.enabled,
@@ -790,6 +792,10 @@ install: function(C) {
   var fushiVnMode = C.vnMode;
   var fushiVnClickAdvance = C.vnClickAdvance;
   window.__hoverAutoLookup = C.hoverAutoLookup;
+  // BUG-2490：宿主（Flutter）侧接管悬停查词的平台上，本文档的 mousemove 腿整条关掉
+  // （一平台一条腿，见 reader_host_hover_lookup.dart）。与 __hoverAutoLookup 同为
+  // Dart 单写的只读镜像，live 变更经 _applyHoverAutoLookupLive 改同一全局。
+  window.__fushiHostHoverLookup = C.hostHoverLookup;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   var gestureExceededTapSlop = false;
   var imageLongPressTimer = null;
@@ -1494,6 +1500,8 @@ $kPagedWheelGestureHelperJs
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {
+    // BUG-2490：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
+    if (window.__fushiHostHoverLookup) return;
     // TODO-756b：开了 window.__hoverAutoLookup 则纯悬停即查词（不要求 Shift）；
     // 否则退回 756a 的 Shift 门控。未触发分支仍复位节流锚，使下次进入即触发。
     if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
@@ -2688,7 +2696,21 @@ updateLive: function(patch) {
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
     // for global→local coordinate mapping (TODO-806), while the ValueKey stays on
     // the InAppWebView itself for the integration-test finders (fushi_webview).
-    final Widget keyed = KeyedSubtree(key: _webViewKey, child: webView);
+    //
+    // BUG-2490：紧包一层 MouseRegion 作宿主侧 Shift-悬停查词的入口（macOS 上 WebView
+    // DOM 收不到 mousemove，见 [_handleWebViewHostHover]）。`opaque: false`：只旁听、
+    // 不改任何命中结果——WebView 本就是 Stack 最底层，弹窗 barrier 盖上来时本层自然
+    // 收到 exit、由 barrier 接力。RenderMouseRegion 与 WebView 同尺寸同原点，
+    // [_webViewKey] 读到的 RenderBox 几何不变。
+    final Widget keyed = KeyedSubtree(
+      key: _webViewKey,
+      child: MouseRegion(
+        opaque: false,
+        onHover: _handleWebViewHostHover,
+        onExit: _handleWebViewHostHoverExit,
+        child: webView,
+      ),
+    );
     // TODO-954：Windows 文字选区右键。`HitTestBehavior.translucent` 让左键框选 / 滚动 /
     // 查词点击照常落进 WebView（与 dictionary_popup_webview 的 BUG-261 范式同），只额外
     // 截菜单键弹出 Flutter 菜单——后者随界面大小缩放。BUG-2111 之后「菜单键」由绑定表决定

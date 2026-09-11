@@ -479,6 +479,9 @@ _lc.addEventListener('pointerup', function(e) {
 // 短路处理，不闪不叠层。__hoverAutoLookup 初值由 Dart 在歌词页就绪时下发。
 var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
 document.addEventListener('mousemove', function(e) {
+  // BUG-2490：宿主（Flutter）侧接管悬停查词的平台上本腿让路（开关由 Dart 与
+  // __hoverAutoLookup 一起在歌词页就绪时下发）。
+  if (window.__fushiHostHoverLookup) return;
   if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
   var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
   if (dx * dx + dy * dy < 64) return;
