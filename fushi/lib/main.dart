@@ -66,6 +66,7 @@ import 'package:fushi/src/platform/windows_ime_guard.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
+import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -852,6 +853,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         );
       });
     }
+  }
+
+  /// BUG-2456：引擎默认 deep linking 会把 `fushi://ankiFetch` 这类 x-callback
+  /// 回跳再推成 `pushRouteInformation`，`WidgetsApp` 据此 `pushNamed('/')` 在
+  /// 设置页上面又压一个 HomePage（用户看到「跳回主页」）。本 observer 在
+  /// `WidgetsApp` 之前注册，先答 true 把这条推送截断；真正的 URL 处理仍由各平台
+  /// 通道送进 [handleIncomingUrl]。理由与边界见 [swallowEngineDeepLinkRoute]。
+  @override
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async {
+    return swallowEngineDeepLinkRoute(routeInformation);
   }
 
   @override
