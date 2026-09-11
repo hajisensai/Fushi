@@ -31,7 +31,7 @@ class _ManualBindingRunner
 
   @override
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
-    required SourceLibraryRow source,
+    SourceLibraryRow? source,
     required String workTitle,
     String? workStableKey,
     required String query,
@@ -40,6 +40,10 @@ class _ManualBindingRunner
     searchedKeys.add(workStableKey);
     return results;
   }
+
+  @override
+  Future<VideoMetadataWork?> fetchWorkForLookup(VideoMetadataLookup lookup) =>
+      Future<VideoMetadataWork?>.value(null);
 
   @override
   Future<SourceScrapeReport> rescrapeWorkWithLookup({

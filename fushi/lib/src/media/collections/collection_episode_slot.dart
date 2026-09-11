@@ -121,6 +121,8 @@ class CollectionRemoteContext {
     required this.openEpisode,
     this.coverFetcher,
     this.downloadMembers,
+    this.scrapeOnHost,
+    this.scrapeForHost,
   });
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
@@ -144,4 +146,11 @@ class CollectionRemoteContext {
     MediaCollectionRow collection,
     List<RemoteVideoInfo> members,
   )? downloadMembers;
+
+  /// 7a：让 host 用户选定的身份在 host 上重刮本合集（候选搜索也打到 host）。
+  /// null = 对端不支持远程刮削。
+  final Future<void> Function(MediaCollectionRow collection)? scrapeOnHost;
+
+  /// 7b：本机刮削后把完整资料回写 host。null = 本机无刮削链或对端不支持。
+  final Future<void> Function(MediaCollectionRow collection)? scrapeForHost;
 }

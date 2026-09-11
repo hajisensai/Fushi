@@ -4711,5 +4711,12 @@
   "remote_collection_download_members": "Download remote episodes",
   "remote_collection_download_nothing": "No remote episodes to download",
   "remote_collection_download_started": "Downloading $count remote episode(s) in the background",
-  "remote_collection_download_done": "Downloaded $ok remote episode(s), $failed failed"
+  "remote_collection_download_done": "Downloaded $ok remote episode(s), $failed failed",
+  "remote_collection_scrape_on_host": "Scrape on host",
+  "remote_collection_scrape_push_to_host": "Scrape here and send to host",
+  "remote_collection_scrape_unavailable": "Remote scraping is not available for this host",
+  "remote_collection_scrape_done": "Metadata updated from host",
+  "remote_collection_scrape_failed": "Remote scrape failed: the work is not in the host library plan",
+  "remote_collection_scrape_identity_conflict": "The host already binds this work to $provider ID $id. Replace it?",
+  "remote_collection_scrape_pick_work": "Choose which work to scrape"
 }

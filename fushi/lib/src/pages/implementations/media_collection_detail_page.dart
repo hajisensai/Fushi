@@ -2522,6 +2522,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.remote?.downloadMembers?.call(_collection, _remoteMembers);
         if (mounted) await _reload();
         return;
+      case _CollectionManageAction.scrapeOnHost:
+        await widget.remote?.scrapeOnHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.scrapeForHost:
+        await widget.remote?.scrapeForHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.splitBySeason:
         await _splitBySeason();
         return;
@@ -2646,6 +2654,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 t.remote_collection_download_members,
                 enabled: _remoteMembers.isNotEmpty,
               ),
+            // 互联刮削（7a / 7b）。
+            if (widget.remote?.scrapeOnHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrapeOnHost,
+                Icons.cloud_sync_outlined,
+                t.remote_collection_scrape_on_host,
+              ),
+            if (widget.remote?.scrapeForHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrapeForHost,
+                Icons.cloud_upload_outlined,
+                t.remote_collection_scrape_push_to_host,
+              ),
             _manageMenuItem(
               _CollectionManageAction.splitBySeason,
               Icons.call_split,
@@ -2767,6 +2788,8 @@ enum _CollectionManageAction {
   renameEpisodes,
   fillMissing,
   downloadRemote,
+  scrapeOnHost,
+  scrapeForHost,
   splitBySeason,
   lockFields,
   rename,

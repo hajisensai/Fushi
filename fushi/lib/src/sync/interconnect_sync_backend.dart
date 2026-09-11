@@ -3,7 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
+    show VideoMetadataLookup;
+import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
@@ -1265,6 +1271,110 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'POST /api/library/collections');
     final String body = await _readBodyBounded(res);
     return CollectionManifest.fromJson(jsonDecode(body));
+  }
+
+  // ── Live video metadata (interconnect-only, #7) ────────────────────────
+  // `docs/specs/2026-09-12-interconnect-scrape-metadata.md`。
+
+  /// 7c：GET host 全部作品刮削元数据（[since] 非 null 只取 updatedAt 更新的）。
+  /// 老 host 无端点 404 → null（调用方跳过元数据同步，不崩）。
+  Future<List<VideoMetadataWorkEntry>?> getRemoteVideoMetadata({
+    int? since,
+  }) async {
+    await _ensureResolved();
+    final String query = since == null ? '' : '?since=$since';
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/metadata$query',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/metadata');
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    final List<VideoMetadataWorkEntry> out = <VideoMetadataWorkEntry>[];
+    if (decoded is Map && decoded['works'] is List) {
+      for (final Object? raw in decoded['works'] as List<Object?>) {
+        try {
+          out.add(VideoMetadataWorkEntry.fromJson(raw));
+        } on FormatException {
+          // 单条坏数据跳过，不让整份清单失效。
+        }
+      }
+    }
+    return out;
+  }
+
+  /// 7a：让 host 按 [query] 搜候选（host 自己的 provider / 主源 / 资料语言配置）。
+  Future<List<VideoMetadataCandidateEntry>> searchRemoteVideoMetadataCandidates({
+    required VideoMetadataWorkKey key,
+    required String query,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata/candidates',
+      <String, Object?>{'key': key.toJson(), 'query': query},
+    );
+    return <VideoMetadataCandidateEntry>[
+      if (decoded is Map && decoded['candidates'] is List)
+        for (final Object? raw in decoded['candidates'] as List<Object?>)
+          VideoMetadataCandidateEntry.fromJson(raw),
+    ];
+  }
+
+  /// 7a：让 host 用 [lookup] 重刮 [key]。200 / 409 都解成 [VideoMetadataWriteResult]。
+  Future<VideoMetadataWriteResult> requestRemoteVideoMetadataScrape({
+    required VideoMetadataWorkKey key,
+    required VideoMetadataLookup lookup,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata/scrape',
+      <String, Object?>{
+        'key': key.toJson(),
+        'lookup': encodeVideoMetadataLookup(lookup),
+      },
+    );
+    return VideoMetadataWriteResult.fromJson(decoded);
+  }
+
+  /// 7b：把本机刮好的 [work] 写回 host。409 identity 冲突也解成结果对象由 UI 决定。
+  Future<VideoMetadataWriteResult> putRemoteVideoMetadata({
+    required VideoMetadataWorkKey key,
+    required VideoMetadataLookup lookup,
+    required VideoMetadataWork work,
+    bool replaceIdentity = false,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata',
+      <String, Object?>{
+        'key': key.toJson(),
+        'lookup': encodeVideoMetadataLookup(lookup),
+        'work': encodeVideoMetadataWork(work),
+        'replaceIdentity': replaceIdentity,
+      },
+      method: 'PUT',
+    );
+    return VideoMetadataWriteResult.fromJson(decoded);
+  }
+
+  /// 元数据端点共用的 JSON 往返：409 是协议内的可解释拒绝，与 200 一样返回 body；
+  /// 其余非 2xx 走 [checkStatus] 抛错。
+  Future<Object?> _postMetadataJson(
+    String path,
+    Map<String, Object?> body, {
+    String method = 'POST',
+  }) async {
+    await _ensureResolved();
+    final HttpClientRequest req =
+        await _ops!.buildRequest(method, '$_apiBase$path');
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(body)));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode != 409) {
+      _ops!.checkStatus(res.statusCode, '$method $path');
+    }
+    return jsonDecode(await _readBodyBounded(res));
   }
 
   /// GET 对端 host 当前删除墓碑清单（显式确认式删除传播，host→client 消费方向）。

@@ -50,6 +50,10 @@ import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
+    show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -87,6 +91,8 @@ import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/video_metadata_manifest.dart';
+import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -113,7 +119,9 @@ import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
-    show showVideoSourceScrapeManualBindingDialog;
+    show
+        showVideoMetadataCandidateSearchDialog,
+        showVideoSourceScrapeManualBindingDialog;
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -6535,6 +6543,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             icon: Icons.cloud_download_outlined,
             onPressed: () => unawaited(_downloadRemoteCollection(collection)),
           ),
+        // 互联刮削（7a / 7b）：只在互联源上出现。
+        if (_metadataBackend != null) ...<DialogListAction>[
+          DialogListAction(
+            label: t.remote_collection_scrape_on_host,
+            icon: Icons.cloud_sync_outlined,
+            onPressed: () => unawaited(_scrapeCollectionOnHost(collection)),
+          ),
+          if (widget.scrapeTaskController != null)
+            DialogListAction(
+              label: t.remote_collection_scrape_push_to_host,
+              icon: Icons.cloud_upload_outlined,
+              onPressed: () => unawaited(_scrapeCollectionForHost(collection)),
+            ),
+        ],
       ],
     );
   }
@@ -6738,6 +6760,214 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       )),
       coverFetcher: remoteCoverFetcherFor(_remoteVideoClient),
       downloadMembers: _downloadRemoteMembers,
+      scrapeOnHost:
+          _metadataBackend == null ? null : _scrapeCollectionOnHost,
+      scrapeForHost: _metadataBackend == null ||
+              widget.scrapeTaskController == null
+          ? null
+          : _scrapeCollectionForHost,
+    );
+  }
+
+  // ── 互联刮削元数据（7a / 7b）────────────────────────────────────────────
+  // `docs/specs/2026-09-12-interconnect-scrape-metadata.md` §3。
+
+  /// 元数据端点只在互联 backend 上有；云盘源没有。
+  InterconnectSyncBackend? get _metadataBackend {
+    final RemoteVideoClient? client = _remoteVideoClient;
+    return client is InterconnectSyncBackend ? client : null;
+  }
+
+  static VideoMetadataWorkKey _metadataKeyOf(MediaCollectionRow collection) =>
+      VideoMetadataWorkKey.collection(
+        name: collection.name,
+        collectionType: collection.collectionType,
+      );
+
+  /// 7a：候选搜索与重刮都在 host 上跑（host 自己的 provider / 主源 / 资料语言），
+  /// 客户端只负责让用户选身份，回来把 host 落好的作品条目落进本地并刷新。
+  Future<void> _scrapeCollectionOnHost(MediaCollectionRow collection) async {
+    final InterconnectSyncBackend? backend = _metadataBackend;
+    if (backend == null) return;
+    VideoMetadataWorkKey key = _metadataKeyOf(collection);
+    final VideoSourceScrapeConfirmationCandidate? candidate =
+        await showVideoMetadataCandidateSearchDialog(
+      context: context,
+      workTitle: collection.name,
+      search: (String query) async => <VideoSourceScrapeConfirmationCandidate>[
+        for (final VideoMetadataCandidateEntry c
+            in await backend.searchRemoteVideoMetadataCandidates(
+          key: key,
+          query: query,
+        ))
+          VideoSourceScrapeConfirmationCandidate(lookup: c.lookup, work: c.work),
+      ],
+    );
+    if (candidate == null || !mounted) return;
+    FushiToast.show(
+      msg: t.collection_rescrape_started,
+      severity: ToastSeverity.info,
+    );
+    try {
+      VideoMetadataWriteResult result =
+          await backend.requestRemoteVideoMetadataScrape(
+        key: key,
+        lookup: candidate.lookup,
+      );
+      // BUG-2433 同款：合集在 host 计划里是 N 个独立作品时让用户选，不默选第一个。
+      if (result.conflict == VideoMetadataConflict.ambiguousWork) {
+        if (!mounted) return;
+        final VideoMetadataWorkKey? picked =
+            await _pickRemoteWorkKey(result.ambiguousWorks);
+        if (picked == null) return;
+        key = picked;
+        result = await backend.requestRemoteVideoMetadataScrape(
+          key: key,
+          lookup: candidate.lookup,
+        );
+      }
+      await _finishRemoteMetadataWrite(result);
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.scrapeCollectionOnHost', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
+  /// 7b：本机刮削链搜候选、拉完整资料，再 PUT 到 host（host 字段锁保留旧值；
+  /// host 已绑不同身份时先问用户是否替换——手动指定 ID 不静默换源）。
+  Future<void> _scrapeCollectionForHost(MediaCollectionRow collection) async {
+    final InterconnectSyncBackend? backend = _metadataBackend;
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (backend == null || controller == null) return;
+    final VideoMetadataWorkKey key = _metadataKeyOf(collection);
+    final VideoSourceScrapeConfirmationCandidate? candidate =
+        await showVideoSourceScrapeManualBindingDialog(
+      context: context,
+      controller: controller,
+      workTitle: collection.name,
+    );
+    if (candidate == null || !mounted) return;
+    FushiToast.show(
+      msg: t.collection_rescrape_started,
+      severity: ToastSeverity.info,
+    );
+    try {
+      final VideoMetadataWork work =
+          await controller.fetchWorkForLookup(candidate.lookup) ??
+              candidate.work;
+      VideoMetadataWriteResult result = await backend.putRemoteVideoMetadata(
+        key: key,
+        lookup: candidate.lookup,
+        work: work,
+      );
+      if (result.conflict == VideoMetadataConflict.identity) {
+        final VideoMetadataLookup? current = result.currentLookup;
+        if (!mounted) return;
+        final bool? replace = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog(
+            title: Text(collection.name),
+            content: Text(t.remote_collection_scrape_identity_conflict(
+              provider: current?.provider.name.toUpperCase() ?? '?',
+              id: current?.externalId ?? '?',
+            )),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_replace),
+              ),
+            ],
+          ),
+        );
+        if (replace != true) return;
+        result = await backend.putRemoteVideoMetadata(
+          key: key,
+          lookup: candidate.lookup,
+          work: work,
+          replaceIdentity: true,
+        );
+      }
+      await _finishRemoteMetadataWrite(result);
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.scrapeCollectionForHost', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
+  /// host 写操作的收尾：成功则把 host 回传的作品条目落本地（客户端立刻看到，
+  /// 不等下一轮同步）并刷新；可解释拒绝给对应提示。
+  Future<void> _finishRemoteMetadataWrite(
+    VideoMetadataWriteResult result,
+  ) async {
+    final VideoMetadataWorkEntry? entry = result.entry;
+    if (entry != null) {
+      await applyRemoteVideoMetadata(
+        ref.read(appProvider).database,
+        <VideoMetadataWorkEntry>[entry],
+      );
+      if (!mounted) return;
+      _refresh();
+      FushiToast.show(
+        msg: t.remote_collection_scrape_done,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    if (!mounted) return;
+    FushiToast.show(
+      msg: result.conflict == VideoMetadataConflict.notPlanned
+          ? t.remote_collection_scrape_failed
+          : t.collection_rescrape_failed,
+      severity: ToastSeverity.error,
+    );
+  }
+
+  /// host 报合集对应多个作品单元时让用户选一个（标题取远端清单里该 bookUid 的
+  /// 标题，取不到退回 bookUid）。
+  Future<VideoMetadataWorkKey?> _pickRemoteWorkKey(
+    List<VideoMetadataWorkKey> works,
+  ) async {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    final Map<String, String> titles = <String, String>{};
+    if (source != null) {
+      try {
+        for (final RemoteVideoInfo v in await _remoteCache.read(
+          sourceId: source.remoteLibrarySourceId,
+          key: RemoteLibraryCacheKeys.videos,
+          fetch: source.listRemoteVideos,
+        )) {
+          titles[v.id] = v.title;
+        }
+      } catch (_) {
+        // 取不到标题就显示 bookUid，不阻断选择。
+      }
+    }
+    if (!mounted) return null;
+    return showAppDialog<VideoMetadataWorkKey>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(t.remote_collection_scrape_pick_work),
+        children: <Widget>[
+          for (final VideoMetadataWorkKey k in works)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, k),
+              child: Text(titles[k.bookUid] ?? k.bookUid ?? k.toString()),
+            ),
+        ],
+      ),
     );
   }
 

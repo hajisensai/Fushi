@@ -409,6 +409,10 @@ class _HomePageState extends BasePageState<HomePage>
   @override
   void initState() {
     super.initState();
+    // 7a：把本页持有的刮削控制器借给互联 host（远程候选搜索 / 重刮）。getter 按
+    // 当前偏好惰性建，所以解析器每次都返回配置正确的那一个。
+    appModelNoUpdate.videoScrapeControllerResolver =
+        () async => _videoSourceScrapeController;
 
     _currentTab = homeInitialTab(
       startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
@@ -699,6 +703,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    appModelNoUpdate.videoScrapeControllerResolver = null;
     assert(() {
       HomePage.debugSelectTab = null;
       HomePage.debugVideoDiscoveryActions = null;

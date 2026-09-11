@@ -13,7 +13,23 @@ import 'package:fushi_audio/fushi_audio_core.dart'
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show PlaylistEntry;
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
+    show VideoPendingScrapeWork, planScrapeWorksForCollection;
+import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
+    show VideoMetadataLookup;
+import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
+    show VideoSourceScrapeConfirmationCandidate, VideoSourceScrapeTaskController;
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart'
+    show SourceLibraryRow;
+import 'package:fushi_engine/sync/video_metadata_manifest.dart';
+import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -53,6 +69,7 @@ part 'local_library_host_service/manga.part.dart';
 part 'local_library_host_service/local_audio.part.dart';
 part 'local_library_host_service/audiobooks.part.dart';
 part 'local_library_host_service/videos.part.dart';
+part 'local_library_host_service/video_metadata.part.dart';
 part 'local_library_host_service/sync_state.part.dart';
 
 // ── 跨域共享的顶层 helper（原 LocalLibraryHostService 的 private static；mixin 体内看不到宿主类
@@ -88,7 +105,8 @@ abstract class _LocalLibraryHostBase
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
         InterconnectServiceConfigHost,
-        InterconnectProfileHost {
+        InterconnectProfileHost,
+        VideoMetadataHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;
@@ -115,6 +133,7 @@ abstract class _LocalLibraryHostBase
   Future<String?> Function(
       {required String videoPath,
       required String bookUid})? get _extractVideoCover;
+  Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
 }
 
 /// 用真实 Hibiki 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
@@ -145,6 +164,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
         _LocalLibraryHostLocalAudio,
         _LocalLibraryHostAudiobooks,
         _LocalLibraryHostVideos,
+        _LocalLibraryHostVideoMetadata,
         _LocalLibraryHostSyncState {
   LocalLibraryHostService({
     required FushiDatabase db,
@@ -174,6 +194,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
       required String videoPath,
       required String bookUid,
     })? extractVideoCover,
+    Future<VideoSourceScrapeTaskController?> Function()? scrapeController,
   })  : _db = db,
         _dictionaryResourceRoot = dictionaryResourceRoot,
         _packages = packages,
@@ -193,7 +214,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
         _videoSubtitleLangCode = videoSubtitleLangCode,
         _uploadedVideoRoot = uploadedVideoRoot,
         _videoCoversDirectory = videoCoversDirectory,
-        _extractVideoCover = extractVideoCover;
+        _extractVideoCover = extractVideoCover,
+        _scrapeController = scrapeController;
 
   @override
   final FushiDatabase _db;
@@ -285,6 +307,13 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   @override
   final Future<String?> Function(
       {required String videoPath, required String bookUid})? _extractVideoCover;
+
+  /// 7a 远程刮削用的 host 刮削控制器解析器（可选）。控制器归 UI 层（HomePage）
+  /// 持有并按偏好重建，host 不自造第二个协调器（两个协调器会各自抢
+  /// `VideoScrapeOperationGate`），只在请求到来时取一次。null / 解析出 null →
+  /// candidates 回空、scrape 回 notPlanned。
+  @override
+  final Future<VideoSourceScrapeTaskController?> Function()? _scrapeController;
 }
 
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。

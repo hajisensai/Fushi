@@ -132,6 +132,8 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
+    show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
@@ -528,6 +530,13 @@ class AppModel with ChangeNotifier {
   /// snooze + 单飞）。同步消费到远端删除标记后经 [presentDeletionCandidates] 弹出。
   final DeletionPromptPrompter syncDeletionPrompter = DeletionPromptPrompter();
 
+  /// 7a 远程刮削：host 端需要一个刮削控制器代客户端搜候选 / 重刮。控制器归
+  /// HomePage 持有并按偏好重建（它是唯一持 `VideoScrapeOperationGate` 的实例，
+  /// host 不自造第二个协调器），HomePage 在 initState 登记、dispose 清除；未登记
+  /// （弹窗词典 / 悬浮词典入口没有 HomePage）→ host 报「不支持远程刮削」。
+  Future<VideoSourceScrapeTaskController?> Function()?
+      videoScrapeControllerResolver;
+
   /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
@@ -551,6 +560,7 @@ class AppModel with ChangeNotifier {
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
       packages: SyncAssetPackageService(db: database),
+      scrapeController: () async => videoScrapeControllerResolver?.call(),
       refreshDictionaryCache: () async {
         // host 侧（互联对端上传/删除词典）直接改 DB，Dart 侧内存 cache 不会自己
         // 跟上：不先 loadFromDb，_rebuildDictPathsCacheAsync 读的还是旧列表，刚被

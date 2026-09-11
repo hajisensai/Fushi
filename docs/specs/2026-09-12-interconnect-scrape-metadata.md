@@ -78,3 +78,24 @@ host 从 DB 反向装载：新增 `loadVideoMetadataWork(db, workRow)`（`video_
 - `VideoSourceScrapeWork.source` 是非空 `SourceLibraryRow`，客户端下载的视频没有来源库；`apply` 实际不读 `source`，批 1 通过为客户端 apply 构造一个只含 collection/members 的工作单元解决（不改 `VideoSourceScrapeWork` 类型，避免波及计划器）。
 - 一个合集在计划器里可能是多个 `book:<uid>` 单元（BUG-2433）：7a 的 `candidates` / `scrape` 请求带的是 `MetadataWorkKey`，host 端按 `planScrapeWorksForCollection` 解析；多单元时返回 409 `{conflict: "ambiguousWork", works: [...]}`，客户端按本地同款 `_pickCollectionScrapeWork` 让用户选后带 `bookUid` 重发。
 - Wire 体积：全库 works 一次拉。先按 `since` 增量；images / credits 可能大，批 1 先全量，实测超 1MB 再拆端点。
+
+## 6. 落地记录（2026-09-12，批 1~3 同一 PR）
+
+- 引擎：`video_metadata_wire.dart`（codec）、`video_metadata_work_loader.dart`（DB → 模型）、`sync/video_metadata_manifest.dart`（wire DTO）、`sync/video_metadata_work_target.dart`（自然键 ↔ 本地作品单元、`applyRemoteVideoMetadata`）；`VideoSourceScrapeWork.source` 改可空（只喂 `apply` 的目标，§5 第一条最终没走「不改类型」那条路——改可空比构造假来源行干净，真刮入口 `scrapeImportedWork` 用 `ArgumentError.checkNotNull` 守住）；`searchManualCandidates` 的 `source` 可空 + 新增 `fetchWorkForLookup`。
+- host：`VideoMetadataHost` 可选能力接口（`is` 探测，老 host 404），`LocalLibraryHostService` 实现，`scrapeController` 由 app 经 `AppModel.videoScrapeControllerResolver` 借 HomePage 的控制器（不造第二个协调器）；无头服务端自动降级（无刮削链：candidates 空、scrape 409 notPlanned）。
+- 客户端：`InterconnectSyncBackend` 四个方法；`sync_orchestrator/video_metadata.part.dart` 紧跟合集同步；合集右键 / 详情页管理菜单三项：「下载远端集」（#6）「在主机上刮削」（7a）「本机刮削并回写主机」（7b）。
+- 守卫：`fushi/test/media/video/metadata/video_metadata_wire_roundtrip_test.dart`（编解码 + `apply→load→encode→decode→apply→load` 幂等）、`fushi/test/sync/interconnect_video_metadata_host_test.dart`（真 HTTP：列出 / since / 7a 降级 / 7b 身份冲突与 replace / 字段锁 / 400 / notPlanned）、`fushi/test/sync/interconnect_video_metadata_client_apply_test.dart`。
+
+### 6.1 loader 反向装载的已知不可逆差异（wire 上读回 ≠ provider 原件）
+
+**模型有字段但 DB 没列（apply 直接丢）**：`VideoMetadataWork.aliases / seasonCount / episodeCount`；`VideoMetadataPerson.id` / `VideoMetadataCharacter.id`（personKey/characterKey 是派生的）；`VideoMetadataCharacter.originalName`；`VideoMetadataImage.likes / seasonNumber / episodeNumber`；`VideoMetadataId.isDefault`（用 `isPrimary` 回填）。
+
+**apply 归一化**：id `type` 小写、`value` trim、同 type 只留最后一条；terms 按 `TitleNormalizer` 去重；credit `roleName` 写成 `roleName ?? character.name ?? ''` 并按 (person, kind, roleName) 去重，人物/角色 ids 跨作品累积；images 按 `(kind, position)` 排序、`rating ← voteAverage`、被字段锁保住的旧图行照读；extras 只落 `remoteUrl != null` 的在线附件；`provider` 靠主身份反推（作品 `ids` 里没有 `type == provider.name` 时读回的是第一条身份的 provider；`local` 骨架作品无身份直接抛、不上 wire）；credit / extra kind DB 是 snake_case，loader 反向映射，未知值域跳过。
+
+**DB 有列但模型没有（wire entry 另带或无视）**：`lockedFields / updatedAt`（entry 另带）、`VideoMetadataSeasons.endDate`、`VideoMetadataImages.width/height/sha256/localPath`、`VideoMetadataPeople.profilePath`、`VideoMetadataCharacters.imagePath`、`VideoMetadataProviderIdentities.externalUrl`、`VideoMetadataExtras.thumbnailPath/bookUid`。图片只带 `remoteUrl`，客户端沿用「无 localPath 用 remoteUrl」回落。
+
+### 6.2 未做 / 真机缺口
+
+- 真机双端（host 刮 → 客户端同步；客户端在 host 上重刮；客户端代刮回写）未实测，只有内存 DB + 真 HTTP 的端到端测试。
+- 7a/7b 入口只做了视频合集；单条目视频（`book:<uid>`）的客户端入口未加（wire 与 host 已支持 `bookUid` 键）。
+- 客户端 `updatedAt` 新旧判定用两端各自的时钟；时钟差大时 host 更新可能被跳过一轮（下一次 host 再刮会追上）。
