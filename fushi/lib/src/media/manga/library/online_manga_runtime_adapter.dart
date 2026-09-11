@@ -1,16 +1,19 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:http/http.dart' as http;
 
+import 'package:fushi/src/media/manga/aidoku/aidoku_image_page.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart'
     show aidokuChapterDisplayTitle;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -85,11 +88,66 @@ class OnlineMangaRefreshResult {
   final List<OnlineMangaChapter> chapters;
 }
 
-/// 把「某个在线漫画运行时」收成书架侧需要的四件事。
+/// 一章页表里的一页：各运行时自己的取图引用 + 页序。
 ///
-/// 书架、作品页和阅读器只跟这个契约打交道，因此加第三个运行时不需要再动它们
-/// 任何一行——这正是 v88 前 Aidoku 进不了书架的原因：那时的
+/// 密封是为了让 [OnlineMangaRuntimeAdapter.fetchChapterPage] 能穷尽分派而不靠
+/// `is` 链；下载服务只按 [index] 命名落盘文件，不看里面是什么。
+sealed class OnlineMangaPageRef {
+  const OnlineMangaPageRef({required this.index});
+
+  /// 0-based 页序（落盘名 `page-000001` 由它 +1 得出）。
+  final int index;
+}
+
+/// Mihon：取图必须经扩展自己的 OkHttp 客户端（拦截器、cookie、按请求头）。
+class MihonMangaPageRef extends OnlineMangaPageRef {
+  const MihonMangaPageRef({
+    required super.index,
+    required this.context,
+    required this.page,
+  });
+
+  final MihonSourceContext context;
+  final MihonPage page;
+}
+
+/// Aidoku：普通 https + UA / Referer / cookie jar。
+class AidokuMangaPageRef extends OnlineMangaPageRef {
+  const AidokuMangaPageRef({
+    required super.index,
+    required this.page,
+    this.referer,
+  });
+
+  final AidokuImagePage page;
+
+  /// 作品页 URL（https 才带），作为取图的 Referer。
+  final String? referer;
+}
+
+/// 互联对端：`bookKey` + 页序即是端点路径段。
+class InterconnectMangaPageRef extends OnlineMangaPageRef {
+  const InterconnectMangaPageRef({
+    required super.index,
+    required this.bookKey,
+    required this.remoteIndex,
+  });
+
+  final String bookKey;
+
+  /// 对端页表里的 `index`（通常与 [index] 相同，但以对端报的为准）。
+  final int remoteIndex;
+}
+
+/// 把「某个在线漫画运行时」收成书架侧需要的几件事。
+///
+/// 书架、作品页、下载服务和阅读器只跟这个契约打交道，因此加第三个运行时不需要
+/// 再动它们任何一行——这正是 v88 前 Aidoku 进不了书架的原因：那时的
 /// `MihonLibraryService` 直接把 `MihonManager` 焊死在签名里。
+///
+/// 取页是**两段式**（设计稿 2026-09-12 §3）：先 [resolveChapterPages] 拿页表，再逐页
+/// [fetchChapterPage] 取字节。没有阅读会话、没有页缓存——在线章只能下载后读，
+/// 落盘由 `MangaDownloadService` 统一做。
 abstract interface class OnlineMangaRuntimeAdapter {
   OnlineMangaRuntimeKind get kind;
 
@@ -102,14 +160,14 @@ abstract interface class OnlineMangaRuntimeAdapter {
   /// 重新拉作品详情 + 章节列表。
   Future<OnlineMangaRefreshResult> refresh(OnlineMangaLibraryEntry entry);
 
-  /// 解析出一章，交给共享阅读器。
-  Future<OnlineMangaReaderChapter> openChapter({
+  /// 解析一章的页表（按页序）。空章节视为失败，由实现抛 [OnlineMangaUnavailable]。
+  Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-    required Directory managedDirectory,
-    required bool persistProgress,
-    int? initialPage,
   });
+
+  /// 取一页字节。只接受本运行时自己在 [resolveChapterPages] 里造的引用。
+  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page);
 
   /// 取封面字节（入库时落盘一份，之后书架离线可见）。
   Future<List<int>> fetchCover(OnlineMangaLibraryEntry entry, String url);
@@ -194,12 +252,9 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
   }
 
   @override
-  Future<OnlineMangaReaderChapter> openChapter({
+  Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-    required Directory managedDirectory,
-    required bool persistProgress,
-    int? initialPage,
   }) async {
     final MihonSourceContext context = await _context(entry);
     final MihonChapter native = MihonChapter.fromJson(chapter.raw);
@@ -210,16 +265,16 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
         native,
         preferences: context.preferences,
       );
-      return MihonReaderChapter(
-        manager: manager,
-        sourceContext: context,
-        manga: MihonManga.fromJson(entry.series.raw),
-        chapter: native,
-        pages: pages,
-        managedDirectory: managedDirectory,
-        persistProgress: persistProgress,
-        initialPage: initialPage,
-      );
+      if (pages.isEmpty) {
+        throw const MihonRuntimeException(
+          'EMPTY_CHAPTER',
+          'The source returned no pages for this chapter',
+        );
+      }
+      return <OnlineMangaPageRef>[
+        for (int index = 0; index < pages.length; index++)
+          MihonMangaPageRef(index: index, context: context, page: pages[index]),
+      ];
     } on Object catch (error) {
       throw OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.runtimeFailure,
@@ -229,6 +284,32 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
         sourceLabel: context.source.name,
       );
     }
+  }
+
+  /// 走 [CancellableMihonRuntime.fetchImageRequest]（请求可被 runtime 侧登记）；
+  /// 不支持的 runtime 退回 [MihonRuntime.fetchImage]。两者都经扩展自己的 OkHttp
+  /// 客户端，绝不能换成裸 HTTP——会丢掉扩展拦截器、cookie 与按请求头。
+  @override
+  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
+    if (page is! MihonMangaPageRef) {
+      throw ArgumentError.value(page, 'page', 'not a Mihon page reference');
+    }
+    final MihonRuntime runtime = manager.runtime;
+    if (runtime is CancellableMihonRuntime) {
+      return (runtime as CancellableMihonRuntime).fetchImageRequest(
+        page.context.extension,
+        page.context.source,
+        page.page,
+        requestId: 'download-${identityHashCode(page)}-${page.index}',
+        preferences: page.context.preferences,
+      );
+    }
+    return runtime.fetchImage(
+      page.context.extension,
+      page.context.source,
+      page.page,
+      preferences: page.context.preferences,
+    );
   }
 
   @override
@@ -391,12 +472,9 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
   }
 
   @override
-  Future<OnlineMangaReaderChapter> openChapter({
+  Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-    required Directory managedDirectory,
-    required bool persistProgress,
-    int? initialPage,
   }) async {
     final AidokuInstalledPackage package = await _package(entry);
     try {
@@ -405,15 +483,16 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
         entry.series.raw,
         chapter.raw,
       );
-      return AidokuReaderChapter(
-        package: package,
-        manga: entry.series.raw,
-        chapter: chapter.raw,
-        pages: aidokuImagePagesFrom(rawPages),
-        managedDirectory: managedDirectory,
-        persistProgress: persistProgress,
-        initialPage: initialPage,
-      );
+      final List<AidokuImagePage> pages = aidokuImagePagesFrom(rawPages);
+      final String? referer = _httpsUrl(entry.series.raw['url']);
+      return <OnlineMangaPageRef>[
+        for (int index = 0; index < pages.length; index++)
+          AidokuMangaPageRef(
+            index: index,
+            page: pages[index],
+            referer: referer,
+          ),
+      ];
     } on Object catch (error) {
       throw OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.runtimeFailure,
@@ -422,6 +501,28 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
         stage: 'pages',
         sourceLabel: package.name,
       );
+    }
+  }
+
+  /// 同 `AidokuRuntime._invoke`：cookie 拿不到就按无 cookie 下图，不拦下载。
+  /// client 经 `createAppHttpIoClient()`：公网请求必须跟随应用统一代理出口。
+  @override
+  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
+    if (page is! AidokuMangaPageRef) {
+      throw ArgumentError.value(page, 'page', 'not an Aidoku page reference');
+    }
+    final AidokuCookieJar jar = AidokuCookieJar.shared;
+    await jar.ensureLoadedBestEffort();
+    final http.Client client = createAppHttpIoClient();
+    try {
+      return await fetchAidokuImagePage(
+        page.page,
+        client: client,
+        referer: page.referer,
+        jar: jar,
+      );
+    } finally {
+      client.close();
     }
   }
 
@@ -514,6 +615,13 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
       genre: genre,
       raw: raw,
     );
+  }
+
+  static String? _httpsUrl(Object? value) {
+    final String candidate = value?.toString().trim() ?? '';
+    return Uri.tryParse(candidate)?.isScheme('https') == true
+        ? candidate
+        : null;
   }
 
   static List<OnlineMangaChapter> chaptersOf(Map<String, Object?> details) {

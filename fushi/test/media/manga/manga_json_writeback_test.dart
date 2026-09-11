@@ -128,7 +128,9 @@ void main() {
   // 调用点必须靠源码扫描抓——这条守卫与文件头的调用点清单是同一份真相。
   group('锁覆盖守卫：书根 manga.json 的每个写/删都在锁内', () {
     const List<String> consumers = <String>[
-      'lib/src/media/manga/reader/manga_fushi_page.dart',
+      // 2026-09-12 起阅读器不再写任何 manga.json（在线几何回填 / 章节引导重写随
+      // 「先下载再读」一起删除）；章 manga.json 由下载服务落盘。
+      'lib/src/media/manga/download/manga_download_service.dart',
       'lib/src/media/manga/manga_ocr_wizard_dialog.dart',
       // BUG-2449：整卷 OCR 的完成落盘随任务所有权搬到了注册表。
       'lib/src/media/manga/ocr/manga_ocr_job_registry.dart',
@@ -152,20 +154,27 @@ void main() {
       }
     });
 
-    test('在线章节失效时删 manga.json 也在锁内', () {
+    test('删章目录（连带其 manga.json）也在锁内', () {
       final String body =
-          File('lib/src/media/manga/reader/manga_fushi_page.dart')
+          File('lib/src/media/manga/library/manga_chapter_storage.dart')
               .readAsStringSync();
       final int start =
-          body.indexOf('Future<void> _invalidateOnlineChapterPayload(');
+          body.indexOf('Future<void> deleteChapterDownload(');
       expect(start, greaterThan(0));
-      final int end = body.indexOf('\n  Future<', start + 1);
+      final int end = body.indexOf('\nFuture<', start + 1);
       final String fn = body.substring(start, end > start ? end : body.length);
       expect(
         fn,
         contains('runExclusiveOnMangaJson'),
-        reason: '无锁 delete 会落在别的写者的读-改-写之间，让删掉的内容被原样写回',
+        reason: '无锁 delete 会落在整卷 OCR 落盘的读-改-写之间，让删掉的目录被写回一半',
       );
+    });
+
+    test('阅读器页不再写书根 manga.json（写侧只剩下载服务 / 向导 / 注册表）', () {
+      final String body =
+          File('lib/src/media/manga/reader/manga_fushi_page.dart')
+              .readAsStringSync();
+      expect(body, isNot(contains('writeMangaJsonAtomically(')));
     });
 
     test('阅读器页不得再自己拼书根 manga.json 的落盘（绕过锁与原子写）', () {

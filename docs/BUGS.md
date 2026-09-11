@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2269 条。点号进各自文件。
+> 共 2270 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2464](bugs/BUG-2464-manga-online-download-first.md) | ✅ | ✅ | 在线漫画改为强制下载后才能看，删除在线直读与阅读期页图缓存 |
 | [BUG-2461](bugs/BUG-2461-manga-reader-inline-ocr-entries-removed.md) | ✅ | ✅ | 阅读器内 OCR 入口（整卷按钮/点击即识别/框选重识别）移除，OCR 只在阅读器外触发 |
 | [BUG-2459](bugs/BUG-2459-ios-ankimobile-callback-deeplink-home-push.md) | ✅ | ✅ | iOS AnkiMobile 回跳被引擎 deep linking 压出第二个 HomePage |
 | [BUG-2457](bugs/BUG-2457-manga-ocr-beam-early-stopping.md) | ✅ | ✅ | 漫画 OCR beam search 按 early_stopping=false 实现与原版 generation_config 不符，退化图跑满 300 步既慢又编造 |

@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
+import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
@@ -21,6 +23,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:path/path.dart' as p;
 
 /// 作品页要显示**哪一部**作品。
@@ -125,6 +128,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   bool _newestFirst = true;
   bool _unreadOnly = false;
 
+  /// 下载状态位（设计稿 2026-09-12 §5）：任务行 + 磁盘判据，两份合成章节行上
+  /// 的一个状态。任务表一变就整体重算。
+  Map<String, MangaDownloadJobRow> _jobs = const <String, MangaDownloadJobRow>{};
+  Set<String> _downloaded = const <String>{};
+  StreamSubscription<void>? _jobsWatch;
+
   AppModel get _appModel => ref.read(appProvider);
 
   Widget _challengeAction(Object? error) => MihonCloudflareAction(
@@ -184,6 +193,93 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     unawaited(_load());
   }
 
+  @override
+  void dispose() {
+    unawaited(_jobsWatch?.cancel());
+    _jobsWatch = null;
+    super.dispose();
+  }
+
+  /// 重算下载状态位并（首次）订阅任务表。只对在库条目有意义：未入库的作品既没有
+  /// 任务也没有章目录。
+  Future<void> _refreshDownloadState() async {
+    final EpubBookRow? row = _row;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final AppModel? appModel = _appModelOrNull;
+    if (row == null || entry == null || appModel == null) return;
+    final MangaDownloadService downloads = appModel.mangaDownloadService;
+    _jobsWatch ??= downloads.watchJobs().listen(
+      (_) => unawaited(_refreshDownloadState()),
+      onError: (Object error, StackTrace stack) {
+        ErrorLogService.instance.log(
+          'MangaSeriesPage.watchDownloads',
+          error,
+          stack,
+        );
+      },
+    );
+    final Map<String, MangaDownloadJobRow> jobs =
+        await downloads.jobsForBook(row.bookKey);
+    final Set<String> downloaded = await downloadedChapterKeys(
+      await MangaStorage.bookPath(row.bookKey),
+      entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
+    );
+    if (!mounted) return;
+    setState(() {
+      _jobs = jobs;
+      _downloaded = downloaded;
+    });
+  }
+
+  Future<void> _enqueueChapter(OnlineMangaChapter chapter) async {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final AppModel? appModel = _appModelOrNull;
+    if (entry == null || appModel == null) return;
+    try {
+      await appModel.mangaDownloadService.enqueueChapter(
+        entry: entry,
+        chapter: chapter,
+        autoOcr: false,
+      );
+      if (mounted) FushiToast.show(msg: t.manga_chapter_download_queued);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaSeriesPage.enqueue', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
+    await _refreshDownloadState();
+  }
+
+  Future<void> _retryChapterDownload(OnlineMangaChapter chapter) async {
+    final MangaDownloadJobRow? job = _jobs[chapter.key];
+    final AppModel? appModel = _appModelOrNull;
+    if (job == null || appModel == null) return;
+    await appModel.mangaDownloadService.retry(job.jobId);
+    await _refreshDownloadState();
+  }
+
+  Future<void> _deleteChapterDownload(OnlineMangaChapter chapter) async {
+    final EpubBookRow? row = _row;
+    if (row == null) return;
+    try {
+      await deleteChapterDownload(
+        await MangaStorage.bookPath(row.bookKey),
+        chapter.key,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaSeriesPage.deleteDownload',
+        error,
+        stack,
+      );
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
+    await _refreshDownloadState();
+  }
+
   Future<void> _load() async {
     try {
       switch (widget.target) {
@@ -233,6 +329,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       unawaited(_resolveSourceLabel(service.adapter, entry));
       unawaited(_refreshFromSource(silent: true));
     }
+    unawaited(_refreshDownloadState());
   }
 
   Future<void> _loadFromSource(
@@ -271,6 +368,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _states = states;
     });
     unawaited(_refreshFromSource(silent: true));
+    unawaited(_refreshDownloadState());
   }
 
   Future<Map<String, MangaChapterStateRow>> _readChapterStates(
@@ -382,6 +480,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         _row = row;
         _entry = OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) ?? entry;
       });
+      unawaited(_refreshDownloadState());
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.add', error, stack);
       if (mounted) {
@@ -399,6 +498,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return OnlineMangaLibraryService.resumeChapterIndex(entry, _states);
   }
 
+  /// 点章节：已下载 → 开读；否则入队并提示（设计稿 2026-09-12 §5，在线漫画先
+  /// 下载再读）。未入库的先入库——任务表按 bookKey 记，没有行就没地方挂任务。
   Future<void> _openChapterAt(int index) async {
     final OnlineMangaLibraryService? service = _service;
     OnlineMangaLibraryEntry? entry = _entry;
@@ -417,6 +518,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           _row = row;
           _entry = entry;
         });
+      }
+      final OnlineMangaChapter chapter = entry.chapters[index];
+      final String bookDir = await MangaStorage.bookPath(bookKey);
+      if (!await isChapterDownloaded(bookDir, chapter.key)) {
+        await _enqueueChapter(chapter);
+        return;
       }
       final OnlineMangaLibraryEntry selected = await service.selectChapter(
         bookKey: bookKey,
@@ -539,6 +646,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _entry = OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) ?? _entry;
       _states = states;
     });
+    unawaited(_refreshDownloadState());
   }
 
   Future<void> _toggleChapterRead(OnlineMangaChapter chapter) async {
@@ -678,6 +786,20 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ? null
                 : (OnlineMangaChapter chapter) =>
                       unawaited(_markUpToRead(chapter)),
+            downloadedChapterKeys: _downloaded,
+            jobsByChapterKey: _jobs,
+            onDownload: _bookKey == null
+                ? null
+                : (OnlineMangaChapter chapter) =>
+                      unawaited(_enqueueChapter(chapter)),
+            onRetryDownload: _bookKey == null
+                ? null
+                : (OnlineMangaChapter chapter) =>
+                      unawaited(_retryChapterDownload(chapter)),
+            onDeleteDownload: _bookKey == null
+                ? null
+                : (OnlineMangaChapter chapter) =>
+                      unawaited(_deleteChapterDownload(chapter)),
           ),
       ],
     );

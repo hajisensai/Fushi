@@ -72,7 +72,11 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
@@ -4069,6 +4073,71 @@ class AppModel with ChangeNotifier {
             MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
       );
 
+  /// 在线漫画章节下载服务（懒建，app 生命周期常驻；设计稿 2026-09-12 §4）。
+  ///
+  /// 作品页 / 阅读器只负责 enqueue；worker 在 [startMangaDownloads]（HomePage 就绪
+  /// 后）才开始消费，之前入队的任务留在表里等着。与 [mokuroMoeDownloadQueue] 同款
+  /// 生命周期：关库 / 切 Profile 时在 [quiesceBackgroundDatabaseWriters] 销毁。
+  MangaDownloadService? _mangaDownloadService;
+  MangaDownloadService get mangaDownloadService =>
+      _mangaDownloadService ??= MangaDownloadService(
+        database: database,
+        serviceFor: onlineMangaLibraryService,
+        onChapterDownloaded: _autoOcrDownloadedMangaChapter,
+      );
+
+  /// 启动章节下载 worker：复位上次进程死亡留下的 `running` 行并开始消费。幂等。
+  Future<void> startMangaDownloads() => mangaDownloadService.start();
+
+  /// `auto_ocr` 的完成钩子：解析引擎并经注册表排整卷 OCR。
+  ///
+  /// 引擎装配（`MangaOcrWizardEngines.resolve`）要一个能拿到 `ProviderContainer`
+  /// 的 context——注册表和 OCR 服务都是 Riverpod 单例。这里用全局 [navigatorKey]
+  /// 的 context；拿不到（app 还没起完 / 正在拆栈）就跳过并记日志，下载本身不受
+  /// 影响。**刻意不 await 排队**：同书上一章还在识别时 `enqueue` 要等它结束，
+  /// 让下载 worker 卡在这里等一个几分钟的 OCR 毫无道理。
+  Future<void> _autoOcrDownloadedMangaChapter(
+    MangaDownloadedChapter chapter,
+  ) async {
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null) {
+      ErrorLogService.instance.log(
+        'MangaDownloadAutoOcr.noContext ${chapter.bookKey}',
+        StateError('No navigator context to assemble OCR engines'),
+        StackTrace.current,
+      );
+      return;
+    }
+    final ProviderContainer container = ProviderScope.containerOf(
+      context,
+      listen: false,
+    );
+    final MangaOcrWizardEngines engines = MangaOcrWizardEngines.resolve(
+      context: context,
+      db: database,
+    );
+    unawaited(
+      runAutoMangaOcrForDownloadedChapter(
+        chapter: chapter,
+        engines: engines,
+        registry: container.read(mangaOcrJobRegistryProvider),
+        preference: MangaOcrEnginePreferenceKey.fromKey(
+          mangaOcrEnginePreference,
+        ),
+        lensLanguage: mangaOcrLensLanguage,
+      ).then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'MangaDownloadAutoOcr ${chapter.bookKey}',
+            error,
+            stack,
+          );
+        },
+      ),
+    );
+  }
+
   /// 视频文件技术规格缓存（v95，懒建）：库页卡片的清晰度/HDR 角标与作品详情页的
   /// 规格表共用一份，跨页面存活以免来回切页反复 ffprobe。
   ///
@@ -6779,6 +6848,8 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _mangaDownloadService?.dispose();
+    _mangaDownloadService = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
     // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
     _videoSpecsService?.dispose();
@@ -6855,6 +6926,8 @@ class AppModel with ChangeNotifier {
     _disposeBrowserSubtitleRegistry();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _mangaDownloadService?.dispose();
+    _mangaDownloadService = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
     // 旧实例还拿着已关闭的连接，探测队列一落库就抛。
     _videoSpecsService?.dispose();

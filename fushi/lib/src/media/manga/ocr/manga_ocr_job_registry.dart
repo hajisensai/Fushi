@@ -52,6 +52,7 @@ class MangaOcrRunningJob {
   Object? _error;
   bool _cancelled = false;
   bool _ended = false;
+  final Completer<void> _endedCompleter = Completer<void>();
 
   String get bookKey => job.bookKey;
 
@@ -67,6 +68,10 @@ class MangaOcrRunningJob {
 
   /// 底层任务已结束（完成、失败或取消）。
   bool get isEnded => _ended;
+
+  /// 结束时完成（完成 / 失败 / 取消一律正常完成，不带错误）：排队等同书上一个
+  /// 任务的调用方只关心「轮到我了没」。
+  Future<void> get whenEnded => _endedCompleter.future;
 
   /// 广播给观察者的事件流：与底层流同序，finished 事件在落盘**之后**才转发。
   Stream<MangaOcrBackgroundEvent> get events => _observers.stream;
@@ -101,12 +106,16 @@ class MangaOcrRunningJob {
     // 刻意不 await：广播流的 done 要等每个观察者消费完才算送达，一个正卡在异步
     // 事件处理里的页面观察者不该把「真停任务」也一起卡住。
     unawaited(_observers.close());
+    if (!_endedCompleter.isCompleted) _endedCompleter.complete();
   }
 }
 
 /// 按 `bookKey` 索引的任务注册表；一本书同一时刻最多一个整卷任务。
 class MangaOcrJobRegistry {
   final Map<String, MangaOcrRunningJob> _jobs = <String, MangaOcrRunningJob>{};
+
+  /// 按 bookKey 的排队链尾（[enqueue] 用）；链上没人时不留条目。
+  final Map<String, Future<void>> _queues = <String, Future<void>>{};
 
   /// 这本书正在跑的任务；没有则 null。已结束的任务不会留在这里。
   MangaOcrRunningJob? running(String bookKey) => _jobs[bookKey];
@@ -163,6 +172,37 @@ class MangaOcrJobRegistry {
       cancelOnError: true,
     );
     return running;
+  }
+
+  /// 排队启动：同一本书已有任务在跑（或已有排队者）时，等它结束再 [start]。
+  ///
+  /// 下载完成钩子的自动 OCR 用这条：同书连下三章、上一章还在识别时，[start] 会
+  /// 直接把已在跑的那个返回、本章被静默吞掉。这里按 bookKey 串成 FIFO，每章都
+  /// 轮得到。返回的 Future 在**本任务真正启动**时完成（不等它跑完）。
+  Future<MangaOcrRunningJob> enqueue({
+    required MangaOcrBackgroundJob job,
+    required String mangaJsonPath,
+  }) {
+    final String bookKey = job.bookKey;
+    final Future<void> previous =
+        _queues[bookKey] ?? _jobs[bookKey]?.whenEnded ?? Future<void>.value();
+    final Completer<MangaOcrRunningJob> started =
+        Completer<MangaOcrRunningJob>();
+    final Future<void> tail = previous.then((_) async {
+      // 前一个刚 _forget 时 running() 可能已为空，但也可能仍是「刚结束还没被
+      // 清掉」的那一个；start 只认 _jobs 里的，_forget 与 _end 同步发生，安全。
+      final MangaOcrRunningJob running = start(
+        job: job,
+        mangaJsonPath: mangaJsonPath,
+      );
+      started.complete(running);
+      await running.whenEnded;
+    });
+    _queues[bookKey] = tail;
+    unawaited(tail.whenComplete(() {
+      if (identical(_queues[bookKey], tail)) _queues.remove(bookKey);
+    }));
+    return started.future;
   }
 
   /// 用户取消这本书的任务；没有任务在跑则 no-op。
