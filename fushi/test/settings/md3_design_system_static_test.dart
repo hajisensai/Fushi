@@ -712,6 +712,17 @@ void main() {
           'placeholder using surfaceContainerHighest); episode cover art / '
           'media-shelf content, not ordinary page chrome — same reviewed '
           'exception class as series_shelf_card mosaic covers.',
+      // 更新中心（#1427）每条新集消息带一张该集截图缩略图（Image.file + ClipRRect
+      // 圆角，无图时退作品封面/纯文字）。列表行外壳本身走 FushiListItem，文件里
+      // 唯一的裸 BorderRadius 就是这张缩略图的圆角——截图/封面美术，非普通页面
+      // chrome，同 media_collection_detail_page 每集封面缩略图豁免类。
+      'lib/src/pages/implementations/updates_center_page.dart':
+          'Updates center rows carry a per-episode screenshot thumbnail '
+          '(Image.file + ClipRRect radius, falling back to the work cover); '
+          'the row shell itself is a shared FushiListItem, so the only bare '
+          'radius is the thumbnail corner — screenshot / cover art, not '
+          'ordinary page chrome, same reviewed exception class as '
+          'media_collection_detail_page per-episode covers.',
       // galgame 游戏库页把每个游戏渲染成封面卡片（有 coverPath 用 Image.file，
       // 否则 surfaceContainerHighest letterbox + 手柄图标占位），点击卡片启动游戏
       // 进入制卡。卡片外框 Card + 无封面占位面色 surfaceContainerHighest 是游戏
@@ -1301,6 +1312,11 @@ void main() {
             'surfaceContainerHighest',
             'fontSize:',
           },
+      // 更新中心（#1427）：行骨架走 FushiListItem，唯一命中的是新集截图缩略图的
+      // ClipRRect 圆角。范围就写这一个 token——多写一个就是预留通行证。
+      'lib/src/pages/implementations/updates_center_page.dart': <String>{
+        'BorderRadius.circular(',
+      },
       'lib/src/pages/implementations/dictionary_popup_theme.dart': <String>{
         'surfaceContainerHigh',
         'surfaceContainerHighest',
