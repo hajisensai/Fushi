@@ -22,6 +22,8 @@ import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -917,6 +919,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 「点击即识别」的起任务闸门（弹说明、探测引擎期间挡住连点）。
   bool _tapOcrStarting = false;
 
+  /// 整卷 OCR 任务归 app 级注册表所有（BUG-2449）；本页只观察。
+  /// [_wholeVolumeOcrSubscription] 是观察者订阅，取消它不影响底层任务。
+  late final MangaOcrJobRegistry _ocrRegistry;
+  MangaOcrRunningJob? _observedOcrJob;
   StreamSubscription<void>? _wholeVolumeOcrSubscription;
   String? _debugOcrHitOrientation;
   String? _debugOcrHitCharacter;
@@ -1016,6 +1022,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void initState() {
     super.initState();
+    _ocrRegistry = ref.read(mangaOcrJobRegistryProvider);
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
         MangaReaderInputAction.previous,
@@ -1087,11 +1094,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _zoomPreferenceDebouncer = null;
     if (zoomDebouncer != null) unawaited(zoomDebouncer.dispose());
     _dictionaryTurnDismissTimer?.cancel();
+    // BUG-2449：这里只是不再观察；整卷 OCR 任务归注册表所有，退出页面照跑。
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
+    _observedOcrJob = null;
     final MangaReaderSession? pageSession = _pageSession;
     _pageSession = null;
-    if (pageSession != null) {
+    // 在线 OCR 靠这个会话取页图：任务还在跑就由注册表在任务结束时关。
+    if (pageSession != null && !_sessionHeldByOcrJob(pageSession)) {
       unawaited(_closePageSession(pageSession));
     }
     // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
@@ -1192,6 +1202,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _closePageSession(MangaReaderSession session) async {
     await session.close();
   }
+
+  bool _sessionHeldByOcrJob(MangaReaderSession session) =>
+      _ocrRegistry.running(widget.bookKey)?.ownsSession(session) ?? false;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -1412,6 +1425,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // after the first paint so opening a large book stays fast and both local
     // ONNX and Lens results remain queryable across reader restarts.
     unawaited(_recoverIncrementalOcrCache(row.extractDir, payload));
+    _reattachRunningOcrJob(row.extractDir);
   }
 
   Future<void> _loadOnlineBookFromShelf(
@@ -1518,6 +1532,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required EpubBookRow? persistedRow,
   }) async {
     final Directory directory = input.managedDirectory;
+    // 换章：先不再观察旧章的整卷任务（任务本身照跑），装好新章后按目录接回。
+    _detachWholeVolumeOcrObserver();
     final Directory imagesDirectory = Directory(
       p.join(directory.path, 'images'),
     );
@@ -1680,7 +1696,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     };
     _onlineChapter = input;
     _persistProgress = input.persistProgress;
-    if (previousSession != null) unawaited(previousSession.close());
+    if (previousSession != null && !_sessionHeldByOcrJob(previousSession)) {
+      unawaited(previousSession.close());
+    }
 
     final int restoredSpread = MangaFushiPage.restoreSpreadFromProgress(
       spreads,
@@ -1702,6 +1720,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _noteVisiblePages();
     unawaited(_primeOnlinePages(restoredPage));
     unawaited(_recoverIncrementalOcrCache(directory.path, payload));
+    _reattachRunningOcrJob(directory.path);
   }
 
   Future<bool> _onlineChapterIdentityMatches(
@@ -3175,18 +3194,61 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 订阅一个已经构造好的 OCR 任务，接管进度态与逐页热替换。
+  /// 把一个已经构造好的 OCR 任务交给注册表启动，然后观察它。
   ///
   /// 向导入口和「点击即识别」共用：任务从哪来不影响它跑起来之后的样子。
+  /// 任务所有权在注册表（BUG-2449）：本页退出不影响它，落盘也由注册表完成。
   void _attachWholeVolumeOcrJob(MangaOcrBackgroundJob job) {
+    final EpubBookRow? row = _bookRow;
+    if (row == null) return;
+    final MangaReaderSession? session = _pageSession;
+    final MangaOcrRunningJob running = _ocrRegistry.start(
+      job: job,
+      mangaJsonPath: p.join(row.extractDir, row.epubPath),
+      sessions: <MangaReaderSession>[
+        // 在线 OCR 靠阅读会话取页图，任务活多久会话就得开多久。
+        if (_onlineChapter != null && session != null) session,
+      ],
+    );
+    _observeWholeVolumeOcrJob(running);
+  }
+
+  /// 重进一本正在跑整卷 OCR 的书 / 章：接回注册表里的任务，HUD 从当前进度接着显示。
+  ///
+  /// 只接目录一致的任务：在线书按章各有受管目录，A 章的任务不能把结果热替换到
+  /// B 章的页上。
+  void _reattachRunningOcrJob(String imageRoot) {
+    final MangaOcrRunningJob? running = _ocrRegistry.running(widget.bookKey);
+    if (running == null) return;
+    if (p.equals(running.job.managedDirectory, imageRoot)) {
+      _observeWholeVolumeOcrJob(running);
+    }
+  }
+
+  void _detachWholeVolumeOcrObserver() {
+    unawaited(_wholeVolumeOcrSubscription?.cancel());
+    _wholeVolumeOcrSubscription = null;
+    _observedOcrJob = null;
+    _pendingTapLookup = null;
+    if (mounted && _wholeVolumeOcrRunning) {
+      setState(() => _wholeVolumeOcrRunning = false);
+    }
+  }
+
+  /// 观察注册表里的任务：进度态、逐页热替换、完成刷新都从这里来。
+  void _observeWholeVolumeOcrJob(MangaOcrRunningJob running) {
+    if (identical(_observedOcrJob, running)) return;
+    unawaited(_wholeVolumeOcrSubscription?.cancel());
+    _observedOcrJob = running;
+    final MangaOcrBackgroundEvent? snapshot = running.lastEvent;
     setState(() {
       _wholeVolumeOcrRunning = true;
-      _wholeVolumeOcrDone = 0;
-      _wholeVolumeOcrTotal = 0;
+      _wholeVolumeOcrDone = snapshot?.pagesDone ?? 0;
+      _wholeVolumeOcrTotal = snapshot?.pagesTotal ?? 0;
       _wholeVolumeOcrAcceleration = null;
       _wholeVolumeOcrDegradeNotified = false;
     });
-    _wholeVolumeOcrSubscription = job.events
+    _wholeVolumeOcrSubscription = running.events
         .asyncMap(_handleWholeVolumeOcrEvent)
         .listen(
           (_) {},
@@ -3206,6 +3268,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
           onDone: () {
             _wholeVolumeOcrSubscription = null;
+            _observedOcrJob = null;
             _pendingTapLookup = null;
             if (mounted && _wholeVolumeOcrRunning) {
               setState(() => _wholeVolumeOcrRunning = false);
@@ -3274,24 +3337,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _finishWholeVolumeOcr(MangaOcrBackgroundEvent event) async {
-    final EpubBookRow? row = _bookRow;
-    final String? resultPath = event.resultPath;
-    if (row == null || resultPath == null) return;
-    final String source = await File(resultPath).readAsString();
-    final MokuroPayload payload = event.external
-        ? parseMokuro(source)
-        : parseMangaJson(source);
-    if (payload.images.isEmpty) {
-      throw StateError('OCR result has no pages');
-    }
-    // 整卷落盘与框选回写、在线几何回填共用同一把 per-path 写锁：三者都是整份
-    // 读-改-写，交叠会互相覆盖。
-    final String target = p.join(row.extractDir, row.epubPath);
-    await runExclusiveOnMangaJson<void>(
-      target,
-      () => writeMangaJsonAtomically(target, payload),
-    );
-    if (!mounted) return;
+    // 落盘已由注册表在转发 finished 之前完成（BUG-2449）；这里只刷新本页显示。
+    final MokuroPayload? payload = _observedOcrJob?.result;
+    if (payload == null || !mounted) return;
     setState(() {
       _payload = payload;
       _wholeVolumeOcrDone = event.pagesTotal;
@@ -3314,9 +3362,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     FushiToast.show(msg: t.manga_ocr_done, severity: ToastSeverity.success);
   }
 
+  /// HUD 取消按钮：这是用户**真停**任务的入口（区别于退出页面的仅不再观察）。
   void _cancelWholeVolumeOcr() {
+    unawaited(_ocrRegistry.cancel(widget.bookKey));
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
+    _observedOcrJob = null;
     if (mounted) {
       setState(() {
         _wholeVolumeOcrRunning = false;

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 // 真实现由并行 agent（生产者 B）编写；本 provider 是 UI 层拿服务单例的唯一入口。
 // 本文件是整棵 UI 依赖图中**唯一**直接引用 [MangaOcrServiceImpl] 的地方——设置区 /
@@ -18,3 +19,11 @@ MangaOcrService createMangaOcrService() => MangaOcrServiceImpl();
 /// widget 直接经构造参数收服务、不 `ref.read` 本 provider，故测试无需覆盖亦可编译。
 final Provider<MangaOcrService> mangaOcrServiceProvider =
     Provider<MangaOcrService>((Ref ref) => createMangaOcrService());
+
+/// 整卷 OCR 任务注册表的全局单例 provider（BUG-2449）。
+///
+/// 任务所有权在这里而不在阅读页 State：页面订阅的是注册表转发的广播流，退出页面
+/// 只是不再观察，任务照跑；重进同书按 `bookKey` 接回进度。测试用
+/// `mangaOcrJobRegistryProvider.overrideWithValue(registry)` 注入预置任务。
+final Provider<MangaOcrJobRegistry> mangaOcrJobRegistryProvider =
+    Provider<MangaOcrJobRegistry>((Ref ref) => MangaOcrJobRegistry());

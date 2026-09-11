@@ -10,7 +10,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
@@ -349,6 +352,99 @@ void main() {
       findsOneWidget,
       reason: '加载失败态必须仍有返回按钮，否则 iOS 上是死锁',
     );
+  });
+
+  testWidgets('BUG-2449：整卷 OCR 任务归注册表，退出阅读页不取消底层任务、重进接回进度',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db);
+
+    final Directory bookDir =
+        Directory.systemTemp.createTempSync('manga_ocr_registry_page_');
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+
+    const String bookKey = 'ocr registry book';
+    // 预置一个正在跑的任务：底层流的 onCancel 就是「执行器被真停」的探针。
+    bool sourceCancelled = false;
+    final StreamController<MangaOcrBackgroundEvent> source =
+        StreamController<MangaOcrBackgroundEvent>(
+      onCancel: () => sourceCancelled = true,
+    );
+    final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+    registry.start(
+      job: MangaOcrBackgroundJob(
+        bookKey: bookKey,
+        managedDirectory: bookDir.path,
+        engine: MangaOcrEngineId.localOnnx,
+        events: source.stream,
+      ),
+      mangaJsonPath: p.join(bookDir.path, 'manga.json'),
+    );
+    source.add(const MangaOcrBackgroundEvent.progress(pagesDone: 1, pagesTotal: 2));
+
+    await tester.runAsync(() async {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'ocr registry book',
+        epubPath: 'manga.json',
+        extractDir: bookDir.path,
+        chapterCount: 2,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ));
+      await tester.pumpWidget(_harness(
+        appModel,
+        _item(bookKey),
+        bookKey,
+        extraOverrides: <Override>[
+          mangaOcrServiceProvider
+              .overrideWithValue(_FakeMangaOcrService(ready: true)),
+          mangaOcrJobRegistryProvider.overrideWithValue(registry),
+        ],
+      ));
+      for (int i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        if (find
+            .byKey(const ValueKey<String>('manga_content_ready'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    // 重进接回：书装好后 HUD 直接从注册表的快照显示进度。
+    expect(find.text('1/2'), findsOneWidget,
+        reason: '重进正在跑 OCR 的书，HUD 必须接回进度');
+
+    // 退出阅读页：只是不再观察，底层任务不得被取消。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(sourceCancelled, isFalse, reason: '退出阅读页不得杀掉整卷 OCR');
+    expect(registry.running(bookKey), isNotNull);
+
+    // 真停只由用户取消触发。（真异步：fake zone 里 await 一个 async 函数不会被
+    // 冲刷，要放进 runAsync。）
+    await tester.runAsync(() async {
+      await registry.cancel(bookKey);
+      await source.close();
+    });
+    expect(sourceCancelled, isTrue);
   });
 
   testWidgets('页码弹窗关闭动画期间不使用已 dispose 的输入控制器', (WidgetTester tester) async {
