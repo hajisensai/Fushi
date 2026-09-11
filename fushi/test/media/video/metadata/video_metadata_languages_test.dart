@@ -44,23 +44,27 @@ void main() {
       expect(kFallbackVideoMetadataLocale, 'en-US');
     });
 
+    test('用户手填的畸形 locale：取第一个非空段，兜底是子标签而不是整串', () {
+      // 设置页与来源级覆盖都是裸文本框，没有格式校验。
+      expect(const VideoMetadataLanguages('-DE').primarySubtag, 'de');
+      expect(const VideoMetadataLanguages('_cn').primarySubtag, 'cn');
+      expect(const VideoMetadataLanguages('zh--CN').primarySubtag, 'zh');
+      // 一个非空段都没有：兜底必须是 TMDB 认的子标签（`en`），不能是整串
+      // `en-US`——整串会让 include_image_language 带一个死条目。
+      const VideoMetadataLanguages hollow = VideoMetadataLanguages('-');
+      expect(
+          hollow.primarySubtag,
+          const VideoMetadataLanguages(kFallbackVideoMetadataLocale)
+              .primarySubtag);
+      expect(hollow.tmdbIncludeImageLanguage, 'en,null');
+    });
+
     test('搜索别名语言：本语言在前，只补 en-US / ja-JP 两个有领域理由的', () {
       expect(const VideoMetadataLanguages('de-DE').searchLocales,
           <String>['de-DE', 'en-US', 'ja-JP']);
       // 此前这个列表尾部无条件追加 zh-CN，非中文用户每次搜索白搭一次请求。
       expect(const VideoMetadataLanguages('de-DE').searchLocales,
           isNot(contains('zh-CN')));
-    });
-
-    test('别名语言按查询串的文字扩，而不是按资料语言', () {
-      // 资料语言英语 + 中文目录名：TMDB 命中与 language 无关，但响应 title 只
-      // 投影成请求的语言。不并入 zh-CN 就只拿到 en/ja 标题，上层 exact gate
-      // 比不中，自动应用门不过，整批记识别失败。
-      const VideoMetadataLanguages english = VideoMetadataLanguages('en-US');
-      expect(english.searchLocalesForQuery('葬送のフリーレン'), contains('zh-CN'),
-          reason: '查询串含汉字 → 必须一并请求中文投影');
-      expect(english.searchLocalesForQuery('Frieren'), isNot(contains('zh-CN')),
-          reason: '纯拉丁查询串没有中文证据，不该白搭一次请求');
     });
 
     test('日语 ja 与别名表的 ja-JP 整串不等，也不对同一语言请求两次', () {

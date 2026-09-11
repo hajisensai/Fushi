@@ -101,17 +101,16 @@ class VideoSourceScrapeGlobalConfig {
         clientName: anidbClientName,
         clientVersion: anidbClientVersion ?? 0,
       );
-  /// 本批次的资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，见
-  /// `VideoSourceScrapeCoordinator._locale`。
-  final String locale;
-
-  /// 由 [locale] 派生的各 provider 语言参数。
+  /// 本批次的**全局**资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，所以
+  /// 消费端一律从**有效** locale 派生语言参数（`VideoSourceScrapeCoordinator._locale`
+  /// / provider 的 `language`），不要在这里加一个从全局 locale 派生的 getter——
+  /// 那会成为第二个入口，悄悄无视来源级覆盖，正是 BUG-2454 修掉的那类接错线。
   ///
-  /// 曾经这里是一个 `List<String> imageLanguages` 字段，声明了却**从没被任何地方
-  /// 读过**——真正生效的是 provider 里 4 处 `'zh,en,null'` 字面量和
+  /// 曾经旁边还有一个 `List<String> imageLanguages` 字段，声明了却**从没被任何
+  /// 地方读过**——真正生效的是 provider 里 4 处 `'zh,en,null'` 字面量和
   /// `selectVideoMetadataImages` 的默认参数。字段与生效常量接错了，改字段等于
-  /// 什么都没改。改成派生 getter 后，语言只有一个可改的地方。
-  VideoMetadataLanguages get languages => VideoMetadataLanguages(locale);
+  /// 什么都没改。
+  final String locale;
 
   /// 标题候选的用户预处理词表（屏蔽 / 替换 / 集偏移）。解析失败的行已在
   /// 构造时丢弃，只有可用的规则会进到这里。
@@ -120,13 +119,16 @@ class VideoSourceScrapeGlobalConfig {
   /// [uiLocaleTag] 是**界面语言**（app 侧 `AppModel.appLocale.toLanguageTag()`）；
   /// 用户没显式设过资料语言时就用它。此前这里回落到写死的 `zh-CN`，等于让每个
   /// 德语、韩语、阿拉伯语用户默认拉中文简介和中文海报——app 出 17 种语言，没有
-  /// 哪种语言配当隐含默认值。调用方拿不到界面语言时（例如只查凭据是否配齐的
-  /// 场景、无头服务端）可以省略，此时退到 [kFallbackVideoMetadataLocale]，与
-  /// `appLocale` 自己的末端兜底一致。
+  /// 哪种语言配当隐含默认值。
+  ///
+  /// **必填**而不是给默认值：有默认值的可选参数 + 某个调用点忘传 = 那条路径静默
+  /// 退回兜底、单测全绿（本 bug 的根因形状）。拿不到界面语言的调用方要**显式**
+  /// 说出用什么：无头服务端传它自己的配置项，只查凭据是否配齐的场景传
+  /// [kFallbackVideoMetadataLocale]。空白串同样退到该兜底。
   factory VideoSourceScrapeGlobalConfig.fromPreferences(
     PrefStore preferences, {
     required String resolvedTmdbApiKey,
-    String uiLocaleTag = kFallbackVideoMetadataLocale,
+    required String uiLocaleTag,
     AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
   }) {
     String read(String key, [String fallback = '']) =>

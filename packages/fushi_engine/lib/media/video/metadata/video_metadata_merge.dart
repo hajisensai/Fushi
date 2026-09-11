@@ -421,9 +421,10 @@ String _imageSlotKey(VideoMetadataImage image) => <Object?>[
 
 /// 每个层级/图种只选一张（背景图可多张）。
 ///
-/// 带文字的图（海报 / logo 等）先按 [languageOrder]（本语言 → en → 无语言 →
-/// 其它），同语言内再按评分、票数、likes；背景图是画面不是文字，语言标签只表示
-/// 「上面有没有印片名」，仍按评分优先、语言只作同分兜底（与修复前一致）。
+/// 印着片名的图种（见 [kLanguageFirstImageKinds]）先按 [languageOrder]（本语言
+/// → en → 无语言 → 其它），同语言内再按评分、票数、likes；背景图 / 分集剧照 /
+/// 横版图是画面不是文字，语言标签只表示「上面有没有印片名」，仍按评分优先、语言
+/// 只作同分兜底（与修复前一致）。
 ///
 /// [languageOrder] 必填：它此前有个 `['zh','en','']` 的默认值，而唯一调用点从不
 /// 传值——于是无论用户是谁、资料语言是什么，海报永远中文优先。默认值把「忘了接线」
@@ -474,6 +475,20 @@ Map<String, List<VideoMetadataImage>> _groupImages(
   return grouped;
 }
 
+/// 图上印着片名文字、语言标签有实际含义的图种：这些按资料语言优先选。
+///
+/// 是「图种的属性」而不是「除背景图之外的一切」：分集剧照（`thumb`）和横版图
+/// （`landscape`）与背景图一样是画面，TMDB 给剧照打的语言标签不代表上面有字，
+/// 按语言优先会让一张 0 票的 `en` 剧照压住 8 分的无标签剧照。
+const Set<VideoMetadataImageKind> kLanguageFirstImageKinds =
+    <VideoMetadataImageKind>{
+  VideoMetadataImageKind.cover,
+  VideoMetadataImageKind.logo,
+  VideoMetadataImageKind.banner,
+  VideoMetadataImageKind.disc,
+  VideoMetadataImageKind.clearart,
+};
+
 int _compareImages(
   VideoMetadataImage a,
   VideoMetadataImage b,
@@ -491,9 +506,10 @@ int _compareImages(
       languageRank(a.language).compareTo(languageRank(b.language));
   // 海报 / logo 上印的是片名，用户选了资料语言就是要那种文字的图：语言先于
   // 评分，否则一张高分外语海报永远压住本语言海报（用户设 ja 仍拿到中文海报，
-  // 就是这条路径）。背景图是画面，评分继续做主。
-  final bool textual = a.kind != VideoMetadataImageKind.backdrop;
-  if (textual && language != 0) return language;
+  // 就是这条路径）。画面类图种评分继续做主。
+  if (kLanguageFirstImageKinds.contains(a.kind) && language != 0) {
+    return language;
+  }
   final int rating = (b.voteAverage ?? -1).compareTo(a.voteAverage ?? -1);
   if (rating != 0) return rating;
   final int votes = (b.voteCount ?? -1).compareTo(a.voteCount ?? -1);
