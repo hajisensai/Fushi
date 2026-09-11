@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2447：词典正文里的链接（惯用句 / 交叉引用）带振假名时，点击发出的查询词
+/// BUG-2456：词典正文里的链接（惯用句 / 交叉引用）带振假名时，点击发出的查询词
 /// 必须是**基字**，不能混入 `<rt>` 读音。
 ///
 /// 根因：popup.js 两条链接路径都拿 `textContent` 当查询词——结构化内容 `<a>`
@@ -46,7 +46,7 @@ void main() {
     expect(
       result.exitCode,
       0,
-      reason: 'BUG-2447 link query JS behavior test failed.\n'
+      reason: 'BUG-2456 link query JS behavior test failed.\n'
           'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
     expect(

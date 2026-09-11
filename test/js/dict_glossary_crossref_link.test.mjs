@@ -44,7 +44,7 @@ function extract(name) {
 }
 
 const handlerSrc = extract("handleGlossaryAnchorClick");
-// BUG-2447：查询词改经 linkVisibleBaseText 取基字（剥 rt/rp/.ruby-rt/.ruby-reserve），
+// BUG-2456：查询词改经 linkVisibleBaseText 取基字（剥 rt/rp/.ruby-rt/.ruby-reserve），
 // 与 handler 一起注入——它是 handler 的真实依赖，不桩。
 const baseTextSrc = extract("linkVisibleBaseText");
 
@@ -105,7 +105,7 @@ test("BUG-767 类义语交叉引用：阻止默认导航 + 用干净词头触发
   assert.equal(r.externalCalls.length, 0, "内部引用不应当作外链打开");
 });
 
-test("BUG-2447 带振假名的交叉引用：查询词只取基字，不混入 rt 读音", () => {
+test("BUG-2456 带振假名的交叉引用：查询词只取基字，不混入 rt 读音", () => {
   // 真实形态（明鏡国語辞典 第三版 逆引き 列出的惯用句）：锚内每个汉字都带 <ruby>/<rt>。
   // 裸 textContent = 「足あしが棒ぼうになる」→ Dart 前缀扫描只能命中首字「足」→ 汉字卡，
   // 用户症状「惯用句开头是汉字就进不去、被重定向到那个汉字」。
@@ -118,7 +118,7 @@ test("BUG-2447 带振假名的交叉引用：查询词只取基字，不混入 r
   assert.equal(r.linkCalls[0][0], "足が棒になる", "查询词必须剥掉 <rt> 振假名");
 });
 
-test("BUG-2447 postProcessRuby 之后的 DOM：.ruby-reserve 孪生体与 .ruby-rt 一并剥掉", () => {
+test("BUG-2456 postProcessRuby 之后的 DOM：.ruby-reserve 孪生体与 .ruby-rt 一并剥掉", () => {
   // 点击发生在 postProcessRuby 已跑过的 DOM 上：每个基字被包成 .ruby-unit，rt 挪进
   // .ruby-rt，另克隆一份读音 .ruby-reserve 插在基字**前面**。裸 textContent 此时是
   // 「あし足あしが…」——连首字都不是汉字了，前缀扫描落到「あし」。
@@ -133,7 +133,7 @@ test("BUG-2447 postProcessRuby 之后的 DOM：.ruby-reserve 孪生体与 .ruby-
   assert.equal(r.linkCalls[0][0], "足が棒になる", "reserve 孪生体与 .ruby-rt 都不是查询词的一部分");
 });
 
-test("BUG-2447 <rp> 括号回退与内部空白：不进查询词，词间空格折叠为单个", () => {
+test("BUG-2456 <rp> 括号回退与内部空白：不进查询词，词间空格折叠为单个", () => {
   const r = clickAnchor(
     `<a href="entry://x"><ruby>漢<rp>(</rp><rt>かん</rt><rp>)</rp></ruby>字\n  <span>  熟語 </span></a>`,
   );

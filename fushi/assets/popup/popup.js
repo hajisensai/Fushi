@@ -2541,7 +2541,7 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
             if (isExternal) {
                 openExternalLink(node.href);
             } else {
-                // BUG-2447：没有 ?query= 时以链接的**基字**文本为查询词，不能用裸
+                // BUG-2456：没有 ?query= 时以链接的**基字**文本为查询词，不能用裸
                 // textContent——它会把 <rt> 振假名拼进去（见 linkVisibleBaseText）。
                 const query = node.href.indexOf('?') >= 0
                     ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || linkVisibleBaseText(element)
@@ -6045,7 +6045,7 @@ function __fushiPopupMouseDown(e) {
 // openExternalLink，发音媒体节点忽略，其余内部交叉引用用可见词头 textContent 作查询词转成
 // onLinkClick 重查（与结构化内容链接、app 的干净词头索引一致）。抽成具名函数便于 test/js
 // jsdom 行为测试直接执行判据。
-// BUG-2447：词典正文里链接的「可见基字文本」——拿来当查询词时必须剥掉振假名。
+// BUG-2456：词典正文里链接的「可见基字文本」——拿来当查询词时必须剥掉振假名。
 //
 // 交叉引用（明鏡逆引き列出的惯用句、MDX 類義語 等）多半带 <ruby>：
 //   <a><ruby>足<rt>あし</rt></ruby>が<ruby>棒<rt>ぼう</rt></ruby>になる</a>
@@ -6101,7 +6101,7 @@ function handleGlossaryAnchorClick(event, anchor) {
         }
         return;
     }
-    // BUG-2447：查询词只取基字，不取振假名（见 linkVisibleBaseText）。
+    // BUG-2456：查询词只取基字，不取振假名（见 linkVisibleBaseText）。
     const query = linkVisibleBaseText(anchor);
     if (!query) return;
     const rect = anchor.getBoundingClientRect();

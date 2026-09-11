@@ -1,4 +1,4 @@
-// BUG-2447 behavior test: a dictionary-body link (惯用句 / 交叉引用) whose text
+// BUG-2456 behavior test: a dictionary-body link (惯用句 / 交叉引用) whose text
 // carries furigana must send the BASE text as the lookup query, never the
 // reading.
 //
