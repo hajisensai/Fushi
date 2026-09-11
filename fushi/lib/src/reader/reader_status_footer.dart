@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
@@ -45,12 +46,43 @@ bool readerStatusFooterEnabled({
 }) =>
     !lyricsMode && (showTimer || showProgress);
 
-/// 状态行的底部预留高：启用时占 [footerHeight]，否则 0。
+/// 状态行是否已被底栏**吸收**：挤压态底栏占位（[bottomChromeReserve] > 0）且宽屏把
+/// 同一串读数并进了底栏右端（[inlineStatus]，[ReaderStatusInline]）。
+///
+/// 那时状态行既不画也不占预留——底部只有一条。此前挤压态下状态行坐在底栏之上、底栏
+/// 右端又画一份同样的数字：同一串「计时 / 已读 / 百分比」上下叠两行，多占一条
+/// [kReaderStatusFooterHeight] 的正文高度（BUG-2467）。悬浮态底栏不占位
+/// （[bottomChromeReserve] == 0），状态行照常在场，底栏唤出时盖在其上、收起后露出。
+/// 窄屏（读数不并进底栏）状态行仍独立成行，坐在底栏之上，不吸收。
+bool readerStatusFooterAbsorbedByBar({
+  required bool inlineStatus,
+  required double bottomChromeReserve,
+}) =>
+    inlineStatus && bottomChromeReserve > 0;
+
+/// 状态行的底部预留高：启用且未被底栏吸收（[absorbedByBar]，见
+/// [readerStatusFooterAbsorbedByBar]）时占 [footerHeight]，否则 0。
 double readerStatusFooterReserve({
   required bool enabled,
   required double footerHeight,
+  bool absorbedByBar = false,
 }) =>
-    enabled ? footerHeight : 0;
+    enabled && !absorbedByBar ? footerHeight : 0;
+
+/// 状态行**底部带**的高度：状态行坐进系统底部安全区（iPhone home indicator 34pt /
+/// Android 手势条）里，带高 = max(状态行预留 [footerReserve], 系统底 inset
+/// [bottomInset])；状态行不在场（预留 0：歌词模式 / 被底栏吸收）时只剩系统 inset。
+///
+/// 此前预留是 `状态行高 + 系统 inset` 两段相加、状态行画在安全区**之上**：iPhone 上
+/// 底部一共扣掉 28 + 34 = 62pt，其中 34pt 是一条谁也不用的纯背景空带（BUG-2470）。
+/// home indicator 是叠在内容上的一条 5pt 细线（8pt 离底），不是不可用区域——参照
+/// Hoshi Reader iOS 把进度读数直接放进去；桌面 / Android 沉浸模式 inset 为 0，带高就是
+/// 状态行高，零变化。
+double readerStatusFooterBandHeight({
+  required double footerReserve,
+  required double bottomInset,
+}) =>
+    math.max(footerReserve, bottomInset);
 
 /// 每小时字数（四舍五入到整数）。时长或字数为 0 时返回 0，不做「不足 1 分钟无值」的
 /// 统计口径门槛（那是统计页 `computeCph` 的事）：状态行开局就要显示 `0 / h`。
@@ -114,6 +146,7 @@ class ReaderStatusFooter extends StatefulWidget {
     required this.textColor,
     required this.backgroundColor,
     this.height = kReaderStatusFooterHeight,
+    this.bottomInset = 0,
     this.tick = const Duration(seconds: 1),
     this.onTap,
     this.onTapTracker,
@@ -141,7 +174,14 @@ class ReaderStatusFooter extends StatefulWidget {
 
   final Color textColor;
   final Color backgroundColor;
+
+  /// 读数行本身的高度（[kReaderStatusFooterHeight]）。
   final double height;
+
+  /// 系统底部安全区高（iPhone home indicator）。整条状态行占
+  /// `max(height, bottomInset)` 的带（[readerStatusFooterBandHeight]），读数行贴带顶、
+  /// 多出的部分在读数行**之下**——读数落在 home indicator 细线之上，不与它重叠。
+  final double bottomInset;
 
   /// 秒表刷新周期（测试可缩短）。
   final Duration tick;
@@ -219,15 +259,20 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             chapterTotal: widget.chapterTotalChars,
           )
         : null;
+    final double bandHeight = readerStatusFooterBandHeight(
+      footerReserve: widget.height,
+      bottomInset: widget.bottomInset,
+    );
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
       child: ColoredBox(
         color: widget.backgroundColor,
         child: SizedBox(
-          height: widget.height,
+          height: bandHeight,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            // 读数行贴带顶，多出的安全区在读数之下（BUG-2470）。
+            padding: EdgeInsets.fromLTRB(16, 0, 16, bandHeight - widget.height),
             // 两段读数并排贴右：Row 主轴 end 对齐把它们一起推到右缘，追踪块不再被
             // Expanded 的进度段挤到左角。窄屏保护不变——追踪块仍最多占 40% 宽、
             // 两段都 ellipsis，谁放不下谁先省略，行永远不溢出。

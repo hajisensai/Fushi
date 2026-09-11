@@ -59,8 +59,60 @@ void main() {
       expect(readerStatusFooterReserve(enabled: true, footerHeight: 28), 28);
       expect(readerStatusFooterReserve(enabled: false, footerHeight: 28), 0);
       expect(
+        readerStatusFooterReserve(
+            enabled: true, footerHeight: 28, absorbedByBar: true),
+        0,
+        reason: 'BUG-2467：读数已并进挤压态底栏，状态行不再另占一条预留',
+      );
+      expect(
           kReaderStatusFooterHeight, greaterThan(kReaderStatusFooterFontSize),
           reason: '预留高必须装得下文字行盒（视觉高度 == 预留高度铁律）');
+    });
+
+    test('band: footer sits inside the system bottom inset (BUG-2470)', () {
+      // iPhone：home indicator 34pt 装得下 28px 的状态行 → 带高 34，不是 62。
+      expect(
+        readerStatusFooterBandHeight(footerReserve: 28, bottomInset: 34),
+        34,
+      );
+      // 桌面 / Android 沉浸模式：inset 0 → 带高就是状态行高。
+      expect(
+        readerStatusFooterBandHeight(footerReserve: 28, bottomInset: 0),
+        28,
+      );
+      // 小手势条（Android 16dp）装不下状态行 → 带高取状态行高。
+      expect(
+        readerStatusFooterBandHeight(footerReserve: 28, bottomInset: 16),
+        28,
+      );
+      // 状态行不在场（歌词 / 被底栏吸收）：只剩系统 inset。
+      expect(
+        readerStatusFooterBandHeight(footerReserve: 0, bottomInset: 34),
+        34,
+      );
+    });
+
+    test(
+        'absorbed by bar: only squeeze bar occupying + inline status (BUG-2467)',
+        () {
+      // 挤压态底栏占位（预留 > 0）且宽屏读数并进底栏右端 → 吸收。
+      expect(
+        readerStatusFooterAbsorbedByBar(
+            inlineStatus: true, bottomChromeReserve: 56),
+        isTrue,
+      );
+      // 悬浮态 / 底栏收起 / 无有声书：底栏不占位 → 状态行照常在场。
+      expect(
+        readerStatusFooterAbsorbedByBar(
+            inlineStatus: true, bottomChromeReserve: 0),
+        isFalse,
+      );
+      // 窄屏读数独立成行：状态行坐在底栏之上，不吸收。
+      expect(
+        readerStatusFooterAbsorbedByBar(
+            inlineStatus: false, bottomChromeReserve: 56),
+        isFalse,
+      );
     });
 
     test('chars per hour: 0 when nothing read; rounded otherwise', () {
@@ -314,10 +366,22 @@ void main() {
 
     test('footer reserve is part of _readerBottomReserve (single source)', () {
       expect(
-        src.contains('_readerBottomReserve =>\n'
-            '      _bottomChromeReserve + _statusFooterReserve + _stableBottomInset'),
+        src.contains(
+          '_readerBottomReserve => _bottomChromeReserve + _statusFooterBand;',
+        ),
         isTrue,
         reason: '状态行是挤压式：预留必须与底栏 / 系统 inset 同源进 WebView / 焦点环',
+      );
+      // BUG-2470：状态行与系统底 inset 取大而不是相加——单一真相源在纯函数里。
+      expect(
+        src.contains('_statusFooterBand => readerStatusFooterBandHeight('),
+        isTrue,
+        reason: '状态行坐进系统底部安全区：带高 = max(预留, inset)，不再叠加',
+      );
+      expect(
+        src.contains('_stableBottomInset + (_separatePlaybackStatus'),
+        isFalse,
+        reason: '状态行不再画在系统 inset 之上（旧 _statusFooterBottomOffset）',
       );
       expect(
         src.contains('_statusFooterReserve => readerStatusFooterReserve('),
@@ -326,6 +390,44 @@ void main() {
       expect(
         src.contains('_statusFooterEnabled => readerStatusFooterEnabled('),
         isTrue,
+      );
+    });
+
+    test(
+        'footer yields to the squeeze bar that already carries its numbers '
+        '(BUG-2467)', () {
+      // 预留与绘制两处都走同一个吸收判据，否则又回到「预留 28px 却画在底栏后面」
+      // 或「不预留却画出来压正文」。
+      expect(
+        src.contains('absorbedByBar: _statusFooterAbsorbedByBar,'),
+        isTrue,
+        reason: '状态行预留必须受吸收判据门控',
+      );
+      expect(
+        src.contains(
+            '_statusFooterAbsorbedByBar => readerStatusFooterAbsorbedByBar('),
+        isTrue,
+      );
+      final String footerBuild = _slice(
+        src,
+        '  Widget _buildStatusFooter() {',
+        '    return Positioned(',
+      );
+      expect(
+        footerBuild.contains('_statusFooterAbsorbedByBar'),
+        isTrue,
+        reason: '挤压态底栏已并入读数时状态行整条不画（不再叠两行同样的数字）',
+      );
+      final String barBuild = _slice(
+        src,
+        '  Widget _buildAudiobookBar() {',
+        '  /// 小说页的窗口全屏切换',
+      );
+      expect(
+        barBuild.contains(
+            'trailing: _playbackStatusInline ? _buildBarStatusText() : null,'),
+        isTrue,
+        reason: '底栏右端仍是读数的唯一落点',
       );
     });
 
@@ -365,9 +467,15 @@ void main() {
           reason: '绘制门控与底栏同源用 set-once _hasEverLoaded（切章不闪烁）');
       expect(build.contains('_readerContentReady'), isFalse);
       expect(
-        build.contains('bottom: _statusFooterBottomOffset'),
+        build.contains('bottom: 0,'),
         isTrue,
-        reason: '底栏挤压时状态行坐在底栏之上；悬浮时贴底',
+        reason: 'BUG-2470：状态行贴屏底、整条带坐进系统底部安全区；'
+            '挤压态窄屏是底栏坐到它上面（_wrapBottomChromeBar），不是它往上挪',
+      );
+      expect(
+        build.contains('bottomInset: _stableBottomInset,'),
+        isTrue,
+        reason: '带高 = max(行高, 系统底 inset) 由组件按 bottomInset 画',
       );
       expect(build.contains('Focus(') || build.contains('canRequestFocus'),
           isFalse,

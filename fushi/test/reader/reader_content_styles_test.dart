@@ -570,7 +570,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
     });
 
     test('continuous layout contains --chrome-top-inset in padding-top',
@@ -643,13 +643,13 @@ void main() {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
       // TODO-734：竖排 content-box 高 = reader-viewport-height(纯 V) − 上下 padding
-      // （margin + fontSize + chrome insets），与 padding-top/padding-bottom 逐项镜像。
-      // 基准是 --reader-viewport-height 不是 --page-height（后者含 +bottomOverlap 给图片）。
+      // （margin + chrome insets），与 padding-top/padding-bottom 逐项镜像（BUG-2469：
+      // 不再多扣一个字号）。基准是 --reader-viewport-height 不是 --page-height。
       // TODO-743：竖排 column-width 现包一层 max(<F>px, calc(...)) 坍塌地板。
       expect(
           css,
           contains(
-              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
     });
 
     test('horizontal paginated column-gap is the same fixed constant',
@@ -835,7 +835,7 @@ void main() {
       expect(
           css,
           contains(
-              'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;'));
+              'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px)) !important;'));
       expect(css,
           contains('border-left-width: var(--reader-margin-left, ${settings.marginLeft}vw) !important;'));
       // 覆盖条色 == 页背景色（不透明覆盖泄露文字）。
@@ -1045,10 +1045,10 @@ void main() {
       expect(ReaderSettings.normalizeMarginPercent(double.infinity), 0);
     });
 
-    // ② 回归守卫：底部预留用 ${fontSize}px（跟字号），不是硬编码常量。把字号抬到接近
-    // TODO-299 的上限 128，断言底部预留 = 128px（不是 22px），否则大字号竖排正文被底栏遮挡。
-    test('vertical bottom reserve scales with fontSize, not a hardcoded const',
-        () async {
+    // ② 回归守卫（BUG-2469 改写）：底部 padding 只含页边距 + chrome inset，**不再**
+    // 多留一个字号或旧的 22px 常量——那是 TODO-734 之前列高建在 V+O 上的配对项，基准
+    // 改纯 V 后只剩一条空带。把字号抬到 128 断言 padding-bottom / column-width 都不含它。
+    test('vertical bottom reserve has no font-size band (BUG-2469)', () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -1058,26 +1058,27 @@ void main() {
       await settings.setFontSize(128);
 
       final String css = ReaderContentStyles.css(settings: settings);
-      // 分页竖排 padding-bottom 跟随字号。
+      // 分页竖排 padding-bottom = 页边距 + chrome inset，不含字号。
       expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + 128px + var(--chrome-bottom-inset, 0px))'));
-      // TODO-729：字号缩放从 column-gap 移到 column-width(content-box)——gap 固定 22px。
-      // TODO-734：基准改为 --reader-viewport-height(纯 V)。竖排 content-box 高扣掉
-      // fontSize(128px) 一项，列周期随字号变。
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
+      expect(css, isNot(contains('+ 128px + var(--chrome-bottom-inset')));
+      // TODO-729：gap 固定 22px。TODO-734：基准改为 --reader-viewport-height(纯 V)。
+      // 列高 = V − 上下页边距 − chrome inset；128px 只作 TODO-743 坍塌地板。
       // TODO-743：max(128px, calc(...)) 坍塌地板；宽裕视口下 max 取 calc，零变化。
       expect(
           css,
           contains(
-              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
       // column-gap 固定常量，不再把 fontSize 塞进去。
       expect(css, contains('column-gap: 22px !important;'));
       // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。
       expect(css, isNot(contains('+ 22px + var(--chrome-bottom-inset')));
     });
 
-    test('horizontal bottom reserve also scales with fontSize', () async {
+    test('horizontal bottom reserve has no font-size band either (BUG-2469)',
+        () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -1090,7 +1091,8 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + 96px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
+      expect(css, isNot(contains('+ 96px + var(--chrome-bottom-inset')));
     });
 
     test('source margin getters fall back to the 2% defaults', () async {

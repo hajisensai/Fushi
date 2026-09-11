@@ -3018,6 +3018,16 @@ $_sharedJs
     // them can stop pagination before the final columns after the bottom bar
     // changes. Invalidate even when a re-anchor is already in flight.
     this.paginationMetrics = null;
+    // The image max box (--fushi-image-max-width/height) is the body content
+    // box, which the chrome insets just shrank/grew. initialize() sized it
+    // against the initial insets (before the bottom bar / header occupied
+    // layout), and only style/page-size re-anchors re-derived it — so after the
+    // first-load inset re-send (or a squeeze-mode bar toggle) a full-page
+    // illustration stayed one chrome height taller than the column and Blink
+    // sliced the monolithic <img> across three columns: a strip at the bottom
+    // of the previous page, the middle on its own page, a strip at the top of
+    // the next. Re-derive it here, before the re-anchor samples the new layout.
+    this._resetImageMaxVars();
     if (inFlight || charOffset < 0) return;
     this._setReanchorPending(true);
     var self = this;
@@ -3684,6 +3694,9 @@ $_sharedJs
     var scrollBefore = inFlight ? 0 : this._readContinuousScroll();
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
+    // Same as the paginated shell: the insets are part of the body padding, so
+    // the image max box must be re-derived from the new content box.
+    this._resetImageMaxVars();
     if (inFlight || charOffset < 0) return;
     this._setReanchorPending(true);
     var self = this;

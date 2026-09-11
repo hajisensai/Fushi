@@ -176,8 +176,9 @@ SettingsDestination buildLookupDestination() {
             },
           ),
           // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
-          // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。重进
-          // 阅读器章节后注入端生效（window.scanNonJapaneseText）。
+          // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。开着的
+          // 阅读器经 notifyReaderSettingsChanged → updateLive 热更新
+          // window.scanNonJapaneseText（BUG-2471），不必重进章节。
           SettingsSwitchItem(
             id: 'lookup.scan_non_japanese',
             title: t.scan_non_japanese_text,
@@ -187,7 +188,7 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.scanNonJapaneseText,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setScanNonJapaneseText(value);
-              settingsContext.refresh();
+              notifyReaderSettingsChanged(settingsContext);
             },
           ),
           // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文

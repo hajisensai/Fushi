@@ -15,7 +15,7 @@ void main() {
     final String page =
         File('lib/src/pages/implementations/reader_fushi_page.dart')
             .readAsStringSync();
-    expect(chrome, contains('? _statusFooterReserve + _stableBottomInset'));
+    expect(chrome, contains('? _statusFooterBand : 0'));
     expect(chrome,
         contains('height: _separatePlaybackStatus ? 0 : _stableBottomInset'));
     expect(

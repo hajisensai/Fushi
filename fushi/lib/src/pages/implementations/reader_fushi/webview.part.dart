@@ -699,6 +699,27 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
+  /// BUG-2471：设置热更新时下发给引擎的那一小份（[ReaderEngineConfig.liveUpdateInvocation]），
+  /// 与 [_buildReaderEngineConfig] 同一套派生（滑动阈值经
+  /// [ReaderSettings.swipePageTurnDistThresholds]、滚轮静默窗同样 clamp），只是不带
+  /// 导航 / 视口 / 进度那些必须随 install 走的键。
+  String _liveEngineConfigJs() {
+    final ReaderSettings s = _settings!;
+    final ({int dist, int fastDist}) swipeThresholds =
+        ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
+    return ReaderEngineConfig.liveUpdateInvocation(
+      marginTop: s.marginTop,
+      marginBottom: s.marginBottom,
+      marginLeft: s.marginLeft,
+      marginRight: s.marginRight,
+      swipeDistThreshold: swipeThresholds.dist,
+      swipeFastDistThreshold: swipeThresholds.fastDist,
+      wheelGestureQuietMs:
+          ReaderFushiSource.instance.wheelPageTurnInterval.clamp(150, 800),
+      scanNonJapaneseText: appModel.scanNonJapaneseText,
+    );
+  }
+
   /// 阅读器引擎的**静态**源码（零 per-nav 插值），按 view-mode 分三份。
   ///
   /// 原名 `_buildReaderSetupScript({sasayakiCuesJson})`——每次跨章把 insets /
@@ -763,6 +784,9 @@ install: function(C) {
   window.__fushiApplyReaderMargins = function(width, height) {
     var w = Math.max(0, Number(width) || 0);
     var h = Math.max(0, Number(height) || 0);
+    // BUG-2471: remember the viewport the margins were sized from so a live
+    // margin change (updateLive) can re-materialize without a resize.
+    window.__fushiReaderMarginsLast = { w: w, h: h };
     var root = document.documentElement;
     function pct(value) {
       var n = Number(value);
@@ -1606,6 +1630,34 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   $longPressDragJs
   var cloak = document.getElementById('fushi-cloak');
   if (cloak) cloak.remove();
+},
+// BUG-2471: hot-update the per-nav config without re-running install. `C`
+// inside install() IS window.__fushiReaderConfig (same object), so assigning
+// onto it is visible to every closure that reads C.* at use time. Derived
+// values that install() materialized once are recomputed here: the four
+// margin percentages -> `--reader-margin-*` px (sized from the last viewport
+// __fushiApplyReaderMargins saw) and window.scanNonJapaneseText. Returns
+// whether the margins changed (the caller then swaps CSS + re-anchors).
+updateLive: function(patch) {
+  var C = window.__fushiReaderConfig;
+  if (!C || !patch) return false;
+  var marginKeys = ['marginTop', 'marginBottom', 'marginLeft', 'marginRight'];
+  var marginsChanged = false;
+  for (var k in patch) {
+    if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+    if (marginKeys.indexOf(k) >= 0 && Number(patch[k]) !== Number(C[k])) {
+      marginsChanged = true;
+    }
+    C[k] = patch[k];
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'scanNonJapaneseText')) {
+    window.scanNonJapaneseText = C.scanNonJapaneseText;
+  }
+  var last = window.__fushiReaderMarginsLast;
+  if (marginsChanged && last && window.__fushiApplyReaderMargins) {
+    window.__fushiApplyReaderMargins(last.w, last.h);
+  }
+  return marginsChanged;
 }
 };
 ''';
