@@ -6,7 +6,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show immutable, kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
@@ -20,15 +20,12 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/ocr/system_ocr_channel.dart'
-    show SystemOcrUnavailableException;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -40,13 +37,9 @@ import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_online_ocr.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
-import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
-import 'package:fushi/src/media/manga/ocr/manga_ocr_auto_start.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
-import 'package:fushi/src/media/manga/ocr/manga_region_rescan.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
@@ -891,8 +884,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   String? _miningPageImagePath;
   int _miningPageGeneration = 0;
 
-  /// 整卷 OCR 向导防重入。识别进度与取消由向导持有，阅读器只负责完成后热刷新。
-  bool _wholeVolumeOcrOpen = false;
+  /// 整卷 OCR 只能在阅读器外触发（作品页 / 书架），任务归 app 级注册表所有；
+  /// 阅读器只观察它：HUD 进度、逐页热替换、取消。
   bool _wholeVolumeOcrRunning = false;
   int _wholeVolumeOcrDone = 0;
   int _wholeVolumeOcrTotal = 0;
@@ -902,22 +895,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 降级提示只弹一次，避免逐页事件刷屏。
   bool _wholeVolumeOcrDegradeNotified = false;
-
-  /// 框选区域重识别：模式激活位。JS 侧同名门控由 `__mangaSetRescanMode` 同步。
-  bool _rescanModeActive = false;
-
-  /// 框选区域重识别：单飞闸门（一次只跑一个框；两个框同时写同一页会互相覆盖）。
-  bool _rescanBusy = false;
-
-  /// 「点击即识别」：本页文字层落地后要回放的那一次点击（视口坐标）。
-  ///
-  /// 存的是**视口**坐标而不是页内像素：回放要交回 JS 的 `_selectOcrChar`，它吃的
-  /// 就是视口坐标。中途翻页/缩放会让这个点失效——那没关系，回放找不到字就静默，
-  /// 反正用户注意力早就不在那儿了。
-  _MangaTapLookup? _pendingTapLookup;
-
-  /// 「点击即识别」的起任务闸门（弹说明、探测引擎期间挡住连点）。
-  bool _tapOcrStarting = false;
 
   /// 整卷 OCR 任务归 app 级注册表所有（BUG-2449）；本页只观察。
   /// [_wholeVolumeOcrSubscription] 是观察者订阅，取消它不影响底层任务。
@@ -1855,7 +1832,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     final String target = p.join(row.extractDir, row.epubPath);
     try {
-      // 与框选回写共用同一把 per-path 写锁：两者都是整份读-改-写，交叠会丢更新。
+      // 整份读-改-写走同一把 per-path 写锁（注册表落盘也拿这把锁），交叠会丢更新。
       // `.tmp` 残渣清理必须在**锁内**：`.tmp` 是 per-path 固定名，锁外删等于删掉
       // 下一个写者正在写的临时文件。
       await runExclusiveOnMangaJson<void>(target, () async {
@@ -2206,15 +2183,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       // 首窗图作为制卡卡图（ERRATA C2）；在 _spreads/_currentSpread 定型后解析。
       _updateCurrentPageImagePath();
-      // 新文档的 JS 侧框选门控从零开始；Dart 态仍激活就续上，否则按钮亮着却
-      // 拖不出框（回写后重载窗口是这条路径最常见的触发者）。
-      if (_rescanModeActive) {
-        await _controller!.evaluateJavascript(
-          source:
-              'window.__mangaSetRescanMode && '
-              'window.__mangaSetRescanMode(true);',
-        );
-      }
     } catch (_) {
       _loadedSpreads = previousLoaded;
       rethrow;
@@ -2538,17 +2506,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }) {
     if (action == MangaReaderInputAction.toggleFullscreen) {
       unawaited(_toggleMangaFullscreen());
-      return;
-    }
-    // 框选识别模式独占键盘：「返回上一级」/ 关词典键（默认都是 Escape）退出模式，
-    // 翻页键一律吞掉——框选途中翻走当前页会让松手时算出的 pageIndex 指向另一页，
-    // 回写就落错页。放在去抖之前：两条输入源（Flutter / 原生 WebView 桥）共用这一个
-    // 闸门。框选模式是本页最内的一层，故「返回」在这里只退出模式、绝不退出漫画。
-    if (_rescanModeActive) {
-      if (action == MangaReaderInputAction.dismissDictionary ||
-          action == MangaReaderInputAction.backOrExit) {
-        unawaited(_setRescanMode(false));
-      }
       return;
     }
     // 平移在这里就地返回：它不翻页、不关词典、也不该被翻页的跨源去抖吃掉（按住
@@ -2920,299 +2877,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 直接运行非模态全页/整卷 OCR。选好引擎后向导立即关闭，任务由阅读器持有；
-  /// Lens 从当前页扫到末页后再补首页，每完成一页就热替换该页透明文字层。
-  Future<void> _openWholeVolumeOcr() async {
-    final EpubBookRow? row = _bookRow;
-    if (row == null || _wholeVolumeOcrOpen || _wholeVolumeOcrRunning) {
-      return;
-    }
-    // 框选区域重识别在飞：整卷收尾是拿结果文件整份覆写 manga.json，会把它刚落盘
-    // 的区域吞掉。等它写完再开整卷。
-    if (_rescanBusy) {
-      FushiToast.show(
-        msg: t.manga_rescan_running,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-    setState(() => _wholeVolumeOcrOpen = true);
-    try {
-      final OnlineMangaReaderChapter? online = _onlineChapter;
-      final MangaOcrBackgroundJob? job;
-      if (online != null) {
-        final MangaOcrAutoStartResult result = await _buildOnlineOcrJob(online);
-        if (!mounted) return;
-        if (!result.started) {
-          if (!result.cancelled) {
-            FushiToast.show(
-              msg: result.unavailableReason ?? t.manga_ocr_engine_none,
-              severity: ToastSeverity.warning,
-            );
-          }
-          return;
-        }
-        job = result.job;
-      } else {
-        job = await MangaModule.openBookOcr(
-          context: context,
-          db: appModel.database,
-          book: row,
-          startPage: _currentPage,
-        );
-      }
-      if (!mounted || job == null) return;
-      _attachWholeVolumeOcrJob(job);
-    } catch (error, stack) {
-      ErrorLogService.instance.log(
-        'MangaFushiPage.wholeVolumeOcr',
-        error,
-        stack,
-      );
-      if (mounted) {
-        FushiToast.show(
-          msg: '${t.manga_ocr_wizard_failed}: $error',
-          severity: ToastSeverity.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _wholeVolumeOcrOpen = false);
-    }
-  }
-
-  // ── 点击即识别 ───────────────────────────────────────────────────────
-  //
-  // 用户的原话是：安装完不用下模型、也不用先点识别模式，在漫画对话框上点一下
-  // 就该弹查词。这条路径就是那个「点一下」——它不是第三个 OCR 引擎，只是把
-  // 「当前页优先的整卷任务」接到空白点击上，并在该页文字层落地的那一刻把用户
-  // 原来点的位置重放一次。
-  //
-  // 框选识别按钮和整卷按钮都保留：它们解决的是别的问题（漏框修补、整卷预跑）。
-
-  /// 空白点击回传：该页还没有文字层时，按用户设置的引擎就地开跑。
-  Future<void> _onTapEmpty(List<dynamic> args) async {
-    if (args.isEmpty || args.first is! String) return;
-    final Map<String, dynamic> data;
-    try {
-      final Object? decoded = jsonDecode(args.first as String);
-      if (decoded is! Map<String, dynamic>) return;
-      data = decoded;
-    } catch (_) {
-      return;
-    }
-    final Object? rawPage = data['pageIndex'];
-    // 点在页与页之间的留白上：没有「哪一页」可言，什么都不做。
-    if (rawPage is! int) return;
-    // 这一页已经有文字层了，用户点的就是真空白（气泡间隙、画面），不该再开跑。
-    if (data['hasOcr'] == true) return;
-    final Object? rawX = data['x'];
-    final Object? rawY = data['y'];
-    if (rawX is! num || rawY is! num) return;
-    await _startTapOcr(
-      pageIndex: rawPage,
-      x: rawX.toDouble(),
-      y: rawY.toDouble(),
-    );
-  }
-
-  Future<void> _startTapOcr({
-    required int pageIndex,
-    required double x,
-    required double y,
-  }) async {
-    if (!appModel.mangaTapToOcr) return;
-    // 框选模式下指针归框选所有；向导开着时用户正在自己选引擎，别抢。
-    if (_rescanModeActive || _wholeVolumeOcrOpen) return;
-    // 框选区域重识别在飞：这里起的整卷任务收尾会整份覆写 manga.json，吞掉它刚
-    // 落盘的区域。同一条「正在识别」提示，等它写完再点。
-    if (_rescanBusy) {
-      FushiToast.show(
-        msg: t.manga_rescan_running,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-
-    // JS 只能看见 DOM：一页没有 .ocr-box，既可能是「还没识别」，也可能是「识别
-    // 过、这页本来就没字」（纯画面页、扉页）。后者点一下就重跑一次任务纯属白费。
-    // 真相源是识别元数据——这一卷跑过 OCR，那这页的空就是真的空。
-    final MokuroPayload? payload = _payload;
-    if (payload?.ocr != null &&
-        pageIndex >= 0 &&
-        pageIndex < (payload?.images.length ?? 0) &&
-        payload!.images[pageIndex].blocks.isEmpty) {
-      return;
-    }
-
-    // 无论要不要起新任务，先记下这一点：任务已经在跑时，用户点的往往正是他想
-    // 查的那个气泡，等该页轮到就回放。
-    _pendingTapLookup = _MangaTapLookup(pageIndex: pageIndex, x: x, y: y);
-
-    if (_wholeVolumeOcrRunning || _tapOcrStarting) {
-      FushiToast.show(
-        msg: t.manga_tap_ocr_running,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-
-    _tapOcrStarting = true;
-    try {
-      if (!appModel.mangaTapToOcrNoticeShown) {
-        final bool proceed = await _showTapOcrNotice();
-        if (!proceed || !mounted) {
-          _pendingTapLookup = null;
-          return;
-        }
-        await appModel.setMangaTapToOcrNoticeShown(true);
-        if (!mounted) return;
-      }
-
-      final OnlineMangaReaderChapter? online = _onlineChapter;
-      if (online != null) {
-        final MangaOcrAutoStartResult result = await _buildOnlineOcrJob(online);
-        if (!mounted) return;
-        if (!result.started) {
-          _pendingTapLookup = null;
-          if (result.cancelled) return;
-          FushiToast.show(
-            msg: result.unavailableReason ?? t.manga_ocr_engine_none,
-            severity: ToastSeverity.warning,
-          );
-          return;
-        }
-        _attachWholeVolumeOcrJob(result.job!);
-        return;
-      }
-
-      final EpubBookRow? row = _bookRow;
-      if (row == null) {
-        _pendingTapLookup = null;
-        return;
-      }
-      final MangaOcrAutoStartResult result =
-          await startMangaOcrWithPreferredEngine(
-            context: context,
-            db: appModel.database,
-            bookKey: widget.bookKey,
-            imageDirPath: row.extractDir,
-            startPage: _currentPage,
-            lensLanguage: appModel.mangaOcrLensLanguage,
-          );
-      if (!mounted) return;
-      if (!result.started) {
-        _pendingTapLookup = null;
-        // 用户自己在 Lens 告知里点了取消：不该再弹一句报错骂他一遍。
-        if (result.cancelled) return;
-        FushiToast.show(
-          msg: result.unavailableReason ?? t.manga_ocr_engine_none,
-          severity: ToastSeverity.warning,
-        );
-        return;
-      }
-      _attachWholeVolumeOcrJob(result.job!);
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.tapOcr', error, stack);
-      _pendingTapLookup = null;
-      if (mounted) {
-        FushiToast.show(
-          msg: '${t.manga_ocr_wizard_failed}: $error',
-          severity: ToastSeverity.error,
-        );
-      }
-    } finally {
-      _tapOcrStarting = false;
-    }
-  }
-
-  /// 首次说明：这一点会触发一次识别，用的是设置里选的哪个引擎，去哪儿改。
-  ///
-  /// 只弹一次。它与 Lens 的上传告知是两件事——那条只讲「图片会发给 Google」，
-  /// 这条讲「你点一下就会开始跑」，在 Lens 引擎下两条会前后脚出现，各说各的。
-  Future<bool> _showTapOcrNotice() async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => AlertDialog(
-        title: Text(t.manga_tap_ocr_notice_title),
-        content: Text(t.manga_tap_ocr_notice_body),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            key: const ValueKey<String>('manga_tap_ocr_notice_confirm'),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.manga_tap_ocr_notice_confirm),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
-
-  /// 该页文字层刚落地：把用户原来点的位置回放一次，接上查词。
-  Future<void> _replayPendingTapLookup(int pageIndex) async {
-    final _MangaTapLookup? pending = _pendingTapLookup;
-    if (pending == null || pending.pageIndex != pageIndex) return;
-    _pendingTapLookup = null;
-    await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaTapLookupAt && '
-          'window.__mangaTapLookupAt(${pending.x}, ${pending.y});',
-    );
-  }
-
-  /// 在线章节的 OCR 任务（按用户偏好；在线页先物化成本地缓存供离线引擎读取）。
-  ///
-  /// 抽出来是因为「点一下就识别」和顶栏整卷按钮要的是同一个任务，只是入口不同。
-  Future<MangaOcrAutoStartResult> _buildOnlineOcrJob(
-    OnlineMangaReaderChapter online,
-  ) async {
-    final MangaReaderSession? session = _pageSession;
-    final MokuroPayload? payload = _payload;
-    if (session == null || payload == null) {
-      return MangaOcrAutoStartResult.unavailable(t.manga_ocr_engine_none, null);
-    }
-    _onlineGeometryPersistDebounce?.cancel();
-    await _persistOnlinePayloadGeometry();
-    if (!mounted) {
-      return const MangaOcrAutoStartResult.cancelled();
-    }
-    return startOnlineMangaOcrWithPreferredEngine(
-      context: context,
-      db: appModel.database,
-      bookKey: widget.bookKey,
-      session: session,
-      managedDirectory: online.managedDirectory,
-      initialPayload: payload,
-      startPage: _currentPage,
-      lensLanguage: normalizeLensLanguage(
-        online.sourceLanguage,
-        fallback: appModel.mangaOcrLensLanguage,
-      ),
-    );
-  }
-
-  /// 把一个已经构造好的 OCR 任务交给注册表启动，然后观察它。
-  ///
-  /// 向导入口和「点击即识别」共用：任务从哪来不影响它跑起来之后的样子。
-  /// 任务所有权在注册表（BUG-2449）：本页退出不影响它，落盘也由注册表完成。
-  void _attachWholeVolumeOcrJob(MangaOcrBackgroundJob job) {
-    final EpubBookRow? row = _bookRow;
-    if (row == null) return;
-    final MangaReaderSession? session = _pageSession;
-    final MangaOcrRunningJob running = _ocrRegistry.start(
-      job: job,
-      mangaJsonPath: p.join(row.extractDir, row.epubPath),
-      sessions: <MangaReaderSession>[
-        // 在线 OCR 靠阅读会话取页图，任务活多久会话就得开多久。
-        if (_onlineChapter != null && session != null) session,
-      ],
-    );
-    _observeWholeVolumeOcrJob(running);
-  }
-
   /// 重进一本正在跑整卷 OCR 的书 / 章：接回注册表里的任务，HUD 从当前进度接着显示。
   ///
   /// 只接目录一致的任务：在线书按章各有受管目录，A 章的任务不能把结果热替换到
@@ -3229,7 +2893,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
     _observedOcrJob = null;
-    _pendingTapLookup = null;
     if (mounted && _wholeVolumeOcrRunning) {
       setState(() => _wholeVolumeOcrRunning = false);
     }
@@ -3260,7 +2923,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             );
             if (!mounted) return;
             setState(() => _wholeVolumeOcrRunning = false);
-            _pendingTapLookup = null;
             FushiToast.show(
               msg: '${t.manga_ocr_wizard_failed}: $error',
               severity: ToastSeverity.error,
@@ -3269,7 +2931,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           onDone: () {
             _wholeVolumeOcrSubscription = null;
             _observedOcrJob = null;
-            _pendingTapLookup = null;
             if (mounted && _wholeVolumeOcrRunning) {
               setState(() => _wholeVolumeOcrRunning = false);
             }
@@ -3304,8 +2965,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _payload = MokuroPayload(images: images, ocr: current.ocr);
     });
     await _replacePageOcrOverlay(pageIndex, page);
-    // 文字层就位后才回放：早一步回放必然落空（那时页面上还没有可命中的字）。
-    await _replayPendingTapLookup(pageIndex);
   }
 
   /// 记录并（首次）提示本次任务真正生效的执行后端。
@@ -3374,277 +3033,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _wholeVolumeOcrDone = 0;
         _wholeVolumeOcrTotal = 0;
       });
-    }
-  }
-
-  // ── 重新识别框选区域 ─────────────────────────────────────────────────
-  //
-  // 四段链：JS 框选 → `onMangaBoxSelected` → 裁框进临时目录、交给**设置里的引擎**
-  // （与整卷 / 点击识别同一条 `startMangaOcrWithPreferredEngine` 链，五个引擎零
-  // 分支）→ 结果块平移回页图坐标、替换该页区域内的旧块并回写 manga.json → 热替换
-  // 该页文字层。能力层在 `media/manga/ocr/manga_region_ocr.dart`，写侧在
-  // `media/manga/manga_json_writeback.dart`；本页只做编排与状态同步。
-  //
-  // 没有结果卡片、没有独立的模型闸门：识别出来就是文字层里的框，点一下即查词；
-  // 引擎不可用的原因由引擎链给出（模型没下 / 系统 OCR 不可用 / 没有配对主机）。
-
-  /// chrome「重新识别框选区域」按钮：模式内再点 = 退出，否则进入模式。
-  Future<void> _onRescanButtonPressed() async {
-    await _setRescanMode(!_rescanModeActive);
-  }
-
-  /// Dart/JS 双侧同步进入/退出框选模式。
-  Future<void> _setRescanMode(bool on) async {
-    if (!mounted) return;
-    setState(() => _rescanModeActive = on);
-    await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaSetRescanMode && '
-          'window.__mangaSetRescanMode(${on ? 'true' : 'false'});',
-    );
-    if (on) {
-      FushiToast.show(msg: t.manga_rescan_hint, severity: ToastSeverity.info);
-    }
-  }
-
-  /// JS 框选回传（`onMangaBoxSelected`）：payload 是
-  /// `{pageIndex, left, top, right, bottom}`——pageIndex 为 0-based 整卷页码，
-  /// 坐标为**该页页图像素**（跨页 spread 已在 JS 侧按框中心落页并 clamp）。
-  /// JS 发出有效框即自动退出模式，这里同步复位按钮态。
-  Future<void> _onMangaBoxSelected(String payloadJson) async {
-    if (mounted && _rescanModeActive) {
-      setState(() => _rescanModeActive = false);
-    }
-    final MokuroPayload? payload = _payload;
-    final String? imagesDir = _imagesDir;
-    final EpubBookRow? row = _bookRow;
-    // `_wholeVolumeOcrOpen`（向导 modal 开着）也要显式挡：现在靠 modal 遮住 WebView
-    // 让 JS 发不出框选，那是布局巧合不是不变量——向导一旦改成非模态就会漏进来，
-    // 而向导落盘是**整份覆写**，途中回写的区域会被整段吞掉。
-    if (payload == null ||
-        imagesDir == null ||
-        row == null ||
-        _rescanBusy ||
-        _wholeVolumeOcrOpen) {
-      return;
-    }
-    // 整卷任务收尾时会拿结果文件整份覆写 manga.json，途中回写的区域会被吞掉；
-    // 与「点击即识别」同一条闸门。
-    if (_wholeVolumeOcrRunning) {
-      FushiToast.show(
-        msg: t.manga_tap_ocr_running,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-    final Object? decoded = _tryDecodeJson(payloadJson);
-    if (decoded is! Map) return;
-    final int pageIndex = (decoded['pageIndex'] as num?)?.toInt() ?? -1;
-    if (pageIndex < 0 || pageIndex >= payload.images.length) return;
-    final Rect box = Rect.fromLTRB(
-      (decoded['left'] as num?)?.toDouble() ?? 0,
-      (decoded['top'] as num?)?.toDouble() ?? 0,
-      (decoded['right'] as num?)?.toDouble() ?? 0,
-      (decoded['bottom'] as num?)?.toDouble() ?? 0,
-    );
-    // JS 侧已按视口 8px 过滤；这里按页图像素二次防御（畸形 payload）。
-    if (box.width < 8 || box.height < 8) return;
-    final String? imagePath = MangaFushiPage.resolveMangaResource(
-      imagesDir,
-      MangaFushiPage.mangaImageRelativePath(payload.images[pageIndex].url),
-    );
-    if (imagePath == null) {
-      FushiToast.show(
-        msg: t.manga_rescan_failed,
-        severity: ToastSeverity.error,
-      );
-      return;
-    }
-    _rescanBusy = true;
-    try {
-      await _reocrRegion(
-        row: row,
-        payload: payload,
-        pageIndex: pageIndex,
-        imagePath: imagePath,
-        box: box,
-      );
-    } on SystemOcrUnavailableException catch (error, stack) {
-      // ML Kit 的 unbundled 模型在能力探测里报 available，真跑起来才发现 Play 服务
-      // 里没装（`MODEL_UNAVAILABLE`）。冒成通用失败的话用户只会看到「重新识别框选
-      // 区域失败」，拿不到「去装识别模型」这个可操作原因。
-      ErrorLogService.instance.log('MangaFushiPage.rescan', error, stack);
-      if (mounted) {
-        FushiToast.show(
-          msg: t.manga_ocr_engine_system_unavailable,
-          severity: ToastSeverity.warning,
-        );
-      }
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.rescan', error, stack);
-      if (mounted) {
-        FushiToast.show(
-          msg: t.manga_rescan_failed,
-          severity: ToastSeverity.error,
-        );
-      }
-    } finally {
-      _rescanBusy = false;
-    }
-  }
-
-  /// 裁框 → 偏好引擎 → 区域替换回写 → 热替换该页文字层 → 挂撤销。
-  ///
-  /// 编排本体在 `ocr/manga_region_rescan.dart`（`runMangaRegionRescan`，无 UI、可
-  /// 直测）；这里只做「注入引擎选取」和「把终局翻译成 UI」。引擎链跑的是一个只装着
-  /// 裁图的临时目录，所以在线章节也能用（裁图是本地字节，不必像整卷那样被迫走
-  /// Lens）。
-  Future<void> _reocrRegion({
-    required EpubBookRow row,
-    required MokuroPayload payload,
-    required int pageIndex,
-    required String imagePath,
-    required Rect box,
-  }) async {
-    final String mangaJsonPath = p.join(row.extractDir, row.epubPath);
-    final MangaRegionRescanOutcome outcome = await runMangaRegionRescan(
-      imagePath: imagePath,
-      mangaJsonPath: mangaJsonPath,
-      pageIndex: pageIndex,
-      box: box,
-      pageBlocks: payload.images[pageIndex].blocks,
-      startEngine: (String imageDirPath) async {
-        // 裁框有 await（解码整页图），页面可能已经关了；拿死 context 去弹 Lens 告知
-        // 等于替用户点了同意。
-        if (!mounted) return const MangaOcrAutoStartResult.cancelled();
-        return startMangaOcrWithPreferredEngine(
-          context: context,
-          db: appModel.database,
-          bookKey: widget.bookKey,
-          imageDirPath: imageDirPath,
-          startPage: 0,
-          lensLanguage: appModel.mangaOcrLensLanguage,
-        );
-      },
-      onEngineStarted: () {
-        if (!mounted) return;
-        FushiToast.show(
-          msg: t.manga_rescan_running,
-          severity: ToastSeverity.info,
-        );
-      },
-      // 在线几何 debounce 到期时会把当时的 `_payload` 整份写回。它若插在「区域落盘」
-      // 与下面的 setState 之间，写的就是**不含新块**的旧快照，刚回写的区域当场被吞。
-      // 几何本来就会在下次翻页/滚动时重新排程。
-      onBeforeWriteback: () => _onlineGeometryPersistDebounce?.cancel(),
-    );
-    if (!mounted) return;
-    switch (outcome.status) {
-      // 用户自己在 Lens 告知里点了取消（或页面已关）：不该再弹一句报错骂他一遍。
-      case MangaRegionRescanStatus.cancelled:
-        return;
-      case MangaRegionRescanStatus.unavailable:
-        FushiToast.show(
-          msg: outcome.unavailableReason ?? t.manga_ocr_engine_none,
-          severity: ToastSeverity.warning,
-        );
-      case MangaRegionRescanStatus.empty:
-        FushiToast.show(
-          msg: t.manga_rescan_empty,
-          severity: ToastSeverity.info,
-        );
-      case MangaRegionRescanStatus.replaced:
-        // 锁内已经产出了落盘后的 payload，直接用——锁外重读会读到别的写者的版本。
-        final MokuroPayload updated = outcome.payload!;
-        setState(() => _payload = updated);
-        await _replacePageOcrOverlay(pageIndex, updated.images[pageIndex]);
-        if (!mounted) return;
-        _offerRegionRescanUndo(
-          mangaJsonPath: mangaJsonPath,
-          pageIndex: pageIndex,
-          previousPage: outcome.previousPage!,
-        );
-    }
-  }
-
-  /// 区域替换成功提示 + 撤销入口。
-  ///
-  /// 区域替换是**磁盘上的破坏性写**（旧文字块从 manga.json 里永久消失，外部 mokuro
-  /// 工具与其它设备读的是同一份）。识别结果比原文差是常态，所以成功提示必须带一条
-  /// 回头路，而不是只报一句「已回写」。没有 ScaffoldMessenger（理论上不该发生）时
-  /// 降级为普通 toast，绝不静默。
-  void _offerRegionRescanUndo({
-    required String mangaJsonPath,
-    required int pageIndex,
-    required MokuroImage previousPage,
-  }) {
-    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(
-      context,
-    );
-    if (messenger == null) {
-      FushiToast.show(
-        msg: t.manga_rescan_region_updated,
-        severity: ToastSeverity.success,
-      );
-      return;
-    }
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(t.manga_rescan_region_updated),
-        duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: t.undo,
-          onPressed: () => unawaited(
-            _undoRegionRescan(
-              mangaJsonPath: mangaJsonPath,
-              pageIndex: pageIndex,
-              previousPage: previousPage,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 把该页整页还原成区域替换前的快照并热替换文字层。
-  Future<void> _undoRegionRescan({
-    required String mangaJsonPath,
-    required int pageIndex,
-    required MokuroImage previousPage,
-  }) async {
-    try {
-      // 与回写同一条理由：几何 debounce 插在还原与 setState 之间会把还原吞掉。
-      _onlineGeometryPersistDebounce?.cancel();
-      final MokuroPayload restored = await restoreMangaPage(
-        mangaJsonPath: mangaJsonPath,
-        pageIndex: pageIndex,
-        page: previousPage,
-      );
-      if (!mounted) return;
-      setState(() => _payload = restored);
-      await _replacePageOcrOverlay(pageIndex, restored.images[pageIndex]);
-      if (!mounted) return;
-      FushiToast.show(
-        msg: t.manga_rescan_undone,
-        severity: ToastSeverity.success,
-      );
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.rescanUndo', error, stack);
-      if (mounted) {
-        FushiToast.show(
-          msg: t.manga_rescan_undo_failed,
-          severity: ToastSeverity.error,
-        );
-      }
-    }
-  }
-
-  static Object? _tryDecodeJson(String source) {
-    try {
-      return jsonDecode(source);
-    } catch (_) {
-      return null;
     }
   }
 
@@ -4453,56 +3841,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             );
           },
         ),
-        // 重新识别框选区域入口：OCR 漏框或认错的气泡就地用偏好引擎重跑一块，不必
-        // 整卷重跑。常显；引擎不可用在框选松手后由引擎链给出原因。激活时高亮。
-        Tooltip(
-          message: t.manga_rescan_run,
-          child: IconButton(
-            key: const ValueKey<String>('manga_rescan_button'),
-            icon: Icon(
-              Icons.highlight_alt_outlined,
-              color: _rescanModeActive
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.white,
+        // 整卷 OCR 在阅读器外触发；这里只在任务运行时给一个取消入口。
+        if (_wholeVolumeOcrRunning)
+          Tooltip(
+            message: t.dialog_cancel,
+            child: IconButton(
+              key: const ValueKey<String>('manga_ocr_cancel_button'),
+              icon: const Icon(
+                Icons.stop_circle_outlined,
+                color: Colors.white,
+              ),
+              onPressed: _cancelWholeVolumeOcr,
             ),
-            onPressed: () => unawaited(_onRescanButtonPressed()),
           ),
-        ),
-        // Niratan 风格整页 OCR：直接选择引擎并识别整卷，不进入框选模式。
-        Tooltip(
-          message: _wholeVolumeOcrRunning && _wholeVolumeOcrTotal > 0
-              ? <String>[
-                  t.manga_ocr_wizard_page_progress(
-                    done: _wholeVolumeOcrDone,
-                    total: _wholeVolumeOcrTotal,
-                  ),
-                  if (_wholeVolumeOcrAcceleration != null)
-                    t.manga_ocr_acceleration_status(
-                      engine: _wholeVolumeOcrAcceleration!.label,
-                    ),
-                ].join('\n')
-              : t.manga_ocr_wizard_run,
-          child: IconButton(
-            key: const ValueKey<String>('manga_full_ocr_button'),
-            icon: _wholeVolumeOcrOpen || _wholeVolumeOcrRunning
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(
-                    Icons.document_scanner_outlined,
-                    color: Colors.white,
-                  ),
-            onPressed: _wholeVolumeOcrOpen
-                ? null
-                : _wholeVolumeOcrRunning
-                ? _cancelWholeVolumeOcr
-                : () => unawaited(_openWholeVolumeOcr()),
-          ),
-        ),
         if (_wholeVolumeOcrRunning && _wholeVolumeOcrTotal > 0)
           Padding(
             padding: const EdgeInsets.only(right: 4),
@@ -4696,14 +4047,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _controller = controller;
         // ERRATA H2/C1：唯一的 onTextSelected 注册点。
         _registerSelectionHandlers(controller);
-        // 空白 tap 是 no-op（记录 sink 让手势机契约可观察）。
+        // 空白 tap 本身是 no-op；但指针已让原生 WebView 夺走 OS 焦点，焦点回收
+        // 必须做，否则此后方向键翻页全部失效。
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
-          callback: (List<dynamic> args) {
-            // 空白 tap 不再是纯 no-op，但指针已让原生 WebView 夺走 OS 焦点，
-            // 焦点回收仍然必须最先做，否则此后方向键翻页全部失效。
+          callback: (List<dynamic> _) {
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
-            unawaited(_onTapEmpty(args));
           },
         );
         controller.addJavaScriptHandler(
@@ -4776,13 +4125,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               return;
             }
             unawaited(_showReaderContextMenu(args[0] as String));
-          },
-        );
-        controller.addJavaScriptHandler(
-          handlerName: 'onMangaBoxSelected',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty || args[0] is! String) return;
-            unawaited(_onMangaBoxSelected(args[0] as String));
           },
         );
         controller.addJavaScriptHandler(
@@ -4930,23 +4272,4 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 补一次，让首开/换窗后第一次按方向键就作用在漫画上。
     _focusOwnership.reclaim(FocusReclaimCause.contentReady);
   }
-}
-
-/// 「点击即识别」待回放的一次点击。
-///
-/// 只在页文字层落地的那一帧用一次，用完即弃——留着它跨页回放只会在别的页面上
-/// 随机选中一个字。
-@immutable
-class _MangaTapLookup {
-  const _MangaTapLookup({
-    required this.pageIndex,
-    required this.x,
-    required this.y,
-  });
-
-  final int pageIndex;
-
-  /// 视口坐标（JS 侧 `_selectOcrChar` 吃的就是这个坐标系）。
-  final double x;
-  final double y;
 }

@@ -911,94 +911,7 @@ String _mangaGestureJs({
     for (var i = 0; i < boxes.length; i++) boxes[i].remove();
     if (html) page.insertAdjacentHTML('beforeend', html);
   };
-  // ── 框选识别模式 ──
-  // Dart 经 window.__mangaSetRescanMode(true/false) 进入/退出。模式内：
-  // - pointer 拖出橡皮筋矩形（fixed 定位半透明框，纯视觉反馈）；
-  // - 查词 tap / swipe 翻页 / 滚轮翻页全部旁路（框选手势独占指针）；
-  // - 松手把视口矩形换算成**页图像素坐标**（框中心命中的 .manga-page 的
-  //   data-page/data-pw/data-ph + getBoundingClientRect 线性映射；spread 跨页时
-  //   以框中心判定落页并 clamp 进该页），经 onMangaBoxSelected 回 Dart；
-  // - 任一维 < 8px（视口坐标）忽略并保持模式（用户重画）；
-  // - 有效框发出后自动退出模式（Dart 端收到即复位按钮态）。
-  var RESCAN = false;
-  var rescanStart = null;
-  var rescanEl = null;
-  window.__mangaSetRescanMode = function(on){
-    RESCAN = !!on;
-    if (!RESCAN) _rescanClear();
-  };
-  function _rescanClear(){
-    if (rescanEl && rescanEl.parentNode) rescanEl.parentNode.removeChild(rescanEl);
-    rescanEl = null;
-    rescanStart = null;
-  }
-  function _rescanUpdate(x, y){
-    if (!rescanStart) return;
-    if (!rescanEl) {
-      rescanEl = document.createElement('div');
-      rescanEl.id = 'manga-rescan-rect';
-      rescanEl.style.cssText = 'position:fixed;z-index:2147483647;'
-        + 'pointer-events:none;border:2px solid rgba(66,165,245,0.9);'
-        + 'background:rgba(66,165,245,0.25);';
-      document.body.appendChild(rescanEl);
-    }
-    rescanEl.style.left = Math.min(rescanStart.x, x) + 'px';
-    rescanEl.style.top = Math.min(rescanStart.y, y) + 'px';
-    rescanEl.style.width = Math.abs(x - rescanStart.x) + 'px';
-    rescanEl.style.height = Math.abs(y - rescanStart.y) + 'px';
-  }
-  // 视口坐标 → 落在哪一页 + 该页的像素换算器。框选松手与「点击处按需识别」
-  // 用的是同一套几何：spread 跨页时以给定点判定落页，坐标 clamp 进该页。
-  // 两处各写一遍的话，迟早有一处在 spread/缩放下算错而另一处没错。
-  function _pageAt(cx, cy){
-    var pages = document.querySelectorAll('.manga-page');
-    var target = null, tr = null;
-    for (var i = 0; i < pages.length; i++) {
-      var r = pages[i].getBoundingClientRect();
-      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-        target = pages[i];
-        tr = r;
-        break;
-      }
-    }
-    if (!target || tr.width <= 0 || tr.height <= 0) return null;
-    var pw = parseFloat(target.getAttribute('data-pw')) || 0;
-    var ph = parseFloat(target.getAttribute('data-ph')) || 0;
-    if (pw <= 0 || ph <= 0) return null;
-    return {
-      el: target,
-      rect: tr,
-      pw: pw,
-      ph: ph,
-      pageIndex: parseInt(target.getAttribute('data-page'), 10) || 0,
-      toPx: function(v){
-        return Math.min(pw, Math.max(0, (v - tr.left) / tr.width * pw));
-      },
-      toPy: function(v){
-        return Math.min(ph, Math.max(0, (v - tr.top) / tr.height * ph));
-      }
-    };
-  }
-  function _rescanFinish(x, y){
-    var start = rescanStart;
-    _rescanClear();
-    if (!start) return;
-    if (Math.abs(x - start.x) < 8 || Math.abs(y - start.y) < 8) return;
-    var page = _pageAt((start.x + x) / 2, (start.y + y) / 2);
-    if (!page) return;
-    RESCAN = false;
-    var b = _bridge();
-    if (!b) return;
-    b.callHandler('onMangaBoxSelected', JSON.stringify({
-      pageIndex: page.pageIndex,
-      left: page.toPx(Math.min(start.x, x)),
-      top: page.toPy(Math.min(start.y, y)),
-      right: page.toPx(Math.max(start.x, x)),
-      bottom: page.toPy(Math.max(start.y, y))
-    }));
-  }
   document.addEventListener('pointermove', function(e){
-    if (RESCAN && rescanStart) { _rescanUpdate(e.clientX, e.clientY); return; }
     if (rightDrag) {
       var dx = e.clientX - rightDrag.lastX;
       var dy = e.clientY - rightDrag.lastY;
@@ -1280,7 +1193,6 @@ String _mangaGestureJs({
   // pointer distance so a stationary cursor does not repeat the same lookup.
   var shiftHoverX = -1, shiftHoverY = -1;
   document.addEventListener('mousemove', function(e){
-    if (RESCAN) return;
     if (!e.shiftKey) { shiftHoverX = -1; shiftHoverY = -1; return; }
     var dx = e.clientX - shiftHoverX, dy = e.clientY - shiftHoverY;
     if (shiftHoverX >= 0 && dx * dx + dy * dy < 16) return;
@@ -1307,24 +1219,10 @@ String _mangaGestureJs({
     if (_selectOcrChar(x, y, false)) return;
     var zone = _tapZoneTurn(x);
     if (zone) { b.callHandler('onMangaTurn', zone); return; }
-    // 裸图 / 尚未完成 OCR 的区域不打开大图，继续留在阅读器。
-    //
-    // 但空白点不再是纯 no-op：带上「点在哪一页、该页有没有文字层」，Dart 侧据此
-    // 决定要不要就地开跑 OCR。判据是**该页有没有 .ocr-box**，不是「这一点没命中
-    // 文字」——已识别的页面上点空隙本来就该什么都不做，那不是缺 OCR。
-    var page = _pageAt(x, y);
-    b.callHandler('onTapEmpty', JSON.stringify(page ? {
-      pageIndex: page.pageIndex,
-      x: x,
-      y: y,
-      hasOcr: page.el.querySelector('.ocr-box') !== null
-    } : {}));
+    // 裸图 / 尚未完成 OCR 的区域不打开大图，继续留在阅读器。空白点是 no-op，
+    // 只回传给 Dart 收回焦点；OCR 只能在阅读器外触发，这里不再带落页 payload。
+    b.callHandler('onTapEmpty');
   }
-  // Dart 在按需 OCR 落地该页文字层之后回放原点击点，把「点一下 → 识别 → 查词」
-  // 接成一次操作。找不到字就静默——用户可能已经翻页或点的本就是空白。
-  window.__mangaTapLookupAt = function(x, y){
-    try { return _selectOcrChar(x, y, false); } catch (e) { return false; }
-  };
   function _end(x, y){
     // 无配对 pointerdown（has=false）：合成事件或捕获丢失，没有位移可判 swipe →
     // 只能是 tap，直接走 tap 路径（不丢选词）。
@@ -1367,7 +1265,6 @@ String _mangaGestureJs({
         return;
       }
     }
-    if (RESCAN) { rescanStart = {x: e.clientX, y: e.clientY}; return; }
     if (e.button === 2) {
       rightDrag = {
         startX:e.clientX, startY:e.clientY,
@@ -1415,8 +1312,6 @@ String _mangaGestureJs({
       }
       if (drag && drag.touch) _startFlick(drag.vy);
     }
-    // 必须排在 _end 的 tap/swipe 消歧之前：框选松手不得被判成 tap 查词或 swipe 翻页。
-    if (RESCAN) { _rescanFinish(e.clientX, e.clientY); return; }
     if (e.button === 2) {
       var drag = rightDrag;
       rightDrag = null;
@@ -1443,7 +1338,6 @@ String _mangaGestureJs({
       if (Object.keys(touchPts).length < 2) pinch = null;
       if (Object.keys(touchPts).length === 0) pinchGuard = false;
     }
-    if (RESCAN) _rescanClear();
   }, {passive: true});
   document.addEventListener('contextmenu', function(e){
     e.preventDefault();
@@ -1480,7 +1374,6 @@ String _mangaGestureJs({
     return dir;
   }
   document.addEventListener('wheel', function(e){
-    if (RESCAN) return;
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -1511,7 +1404,6 @@ String _mangaGestureJs({
     var _wheelAccum = 0;
     var _wheelDir = 0;
     document.addEventListener('wheel', function(e){
-      if (RESCAN) return;
       if (e.ctrlKey || e.metaKey) return;
       e.preventDefault();
       var wdx = e.deltaX || 0;
