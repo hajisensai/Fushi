@@ -260,6 +260,22 @@ void main() {
     );
   });
 
+  test('warmUpNotifier：启动期初始化一次；总开关关着不初始化', () async {
+    final UpdateFeedService service = await makeService();
+    await service.warmUpNotifier();
+    await service.warmUpNotifier();
+    expect(notifier.ensureReadyCalls, 1, reason: '重复 warm-up 不重复初始化');
+    await service.publishBatch(
+        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    expect(notifier.ensureReadyCalls, 1, reason: '发通知复用启动期的初始化');
+
+    final UpdateFeedService cold = await makeService();
+    await cold.setSystemNotificationsEnabled(false);
+    await cold.warmUpNotifier();
+    expect(notifier.ensureReadyCalls, 0,
+        reason: '关着总开关时不初始化（Android 13+ 初始化会弹权限）');
+  });
+
   test('通知 id：无组回落到域固定值；有组跨进程稳定且不与其它域撞', () {
     expect(updateNotificationId(UpdateFeedKind.videoEpisode, null), 9101);
     expect(updateNotificationId(UpdateFeedKind.appRelease, null), 9104);

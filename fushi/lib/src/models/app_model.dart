@@ -1033,6 +1033,9 @@ class AppModel with ChangeNotifier {
   void startUpdateChecks() {
     if (_updateCheckScheduler != null) return;
     final UpdateFeedService feed = updateFeedService;
+    // 通知后端在这里（HomePage 已就绪、navigator 已存在）初始化：点击回调与
+    // 冷启动回放都要有可跳转的 context。
+    unawaited(feed.warmUpNotifier());
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,
       isKindEnabled: feed.isKindEnabled,

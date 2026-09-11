@@ -4,7 +4,7 @@
 /// 单测里跑完，而这一层一旦被 import 进去，每条测试都要先架 method channel。
 library;
 
-import 'dart:io' show File, Platform;
+import 'dart:io' show Directory, File, Platform;
 
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -121,7 +121,26 @@ class LocalUpdateNotifier implements UpdateNotifier {
       );
       _ready = false;
     }
+    if (_ready) await _replayLaunchResponse();
     return _ready;
+  }
+
+  /// 冷启动是被通知拉起来的（Android 进程被杀后点通知）：初始化时回调还没挂
+  /// 上，那次点击只留在 launch details 里，这里补投一次。只在启动期的
+  /// [ensureReady]（`UpdateFeedService.warmUpNotifier`）里走到——时机确定，不会
+  /// 在几小时后第一次发通知时突然回放一次旧点击。
+  Future<void> _replayLaunchResponse() async {
+    if (onResponse == null) return;
+    try {
+      final NotificationAppLaunchDetails? details =
+          await _plugin.getNotificationAppLaunchDetails();
+      final NotificationResponse? response = details?.notificationResponse;
+      if (details?.didNotificationLaunchApp == true && response != null) {
+        _dispatch(response);
+      }
+    } on Object catch (error) {
+      debugPrint('LocalUpdateNotifier: launch details unavailable. $error');
+    }
   }
 
   Future<bool> _initialise() async {
@@ -195,14 +214,17 @@ class LocalUpdateNotifier implements UpdateNotifier {
   Future<void> notify(UpdateNotification notification) async {
     if (!_ready) return;
     try {
+      final DarwinNotificationDetails darwin = await _darwinDetails(
+        notification,
+      );
       await _plugin.show(
         id: notification.id,
         title: notification.title,
         body: notification.body.isEmpty ? null : notification.body,
         notificationDetails: NotificationDetails(
           android: _androidDetails(notification),
-          iOS: _darwinDetails(notification),
-          macOS: _darwinDetails(notification),
+          iOS: darwin,
+          macOS: darwin,
           linux: _linuxDetails(notification),
           windows: _windowsDetails(notification),
         ),
@@ -256,14 +278,44 @@ class LocalUpdateNotifier implements UpdateNotifier {
 
   /// Apple 端：附件即配图；按钮要在初始化时按 category 预先登记文案，而文案
   /// 随语言变、随域变，这里刻意不做——点本体即打开落点，与桌面一致。
-  DarwinNotificationDetails _darwinDetails(UpdateNotification notification) {
-    final String? image = _existingImage(notification);
+  ///
+  /// **附件必须是一份拷贝**：`UNNotificationAttachment` 会把文件**移动**进系统
+  /// 附件存储（只有 bundle 内的资源才是复制）。传来的 [UpdateNotification
+  /// .imagePath] 是这集刚落成的书架封面 / 作品海报，直接挂等于把封面搬走。
+  Future<DarwinNotificationDetails> _darwinDetails(
+    UpdateNotification notification,
+  ) async {
+    String? attachment;
+    if (Platform.isIOS || Platform.isMacOS) {
+      attachment = await _copyForAttachment(_existingImage(notification));
+    }
     return DarwinNotificationDetails(
       presentSound: false,
-      attachments: image == null
+      attachments: attachment == null
           ? null
-          : <DarwinNotificationAttachment>[DarwinNotificationAttachment(image)],
+          : <DarwinNotificationAttachment>[
+              DarwinNotificationAttachment(attachment),
+            ],
     );
+  }
+
+  static Future<String?> _copyForAttachment(String? image) async {
+    if (image == null) return null;
+    try {
+      final Directory dir = Directory(
+        p.join(Directory.systemTemp.path, 'fushi_notification_attachments'),
+      );
+      await dir.create(recursive: true);
+      final String target = p.join(
+        dir.path,
+        '${DateTime.now().microsecondsSinceEpoch}${p.extension(image)}',
+      );
+      await File(image).copy(target);
+      return target;
+    } on Object catch (error) {
+      debugPrint('LocalUpdateNotifier: attachment copy failed. $error');
+      return null;
+    }
   }
 
   LinuxNotificationDetails _linuxDetails(UpdateNotification notification) {

@@ -93,6 +93,15 @@ class UpdateFeedService implements UpdateFeedPublisher {
     await _prefs.setPref(kUpdateSystemNotificationsPref, enabled);
   }
 
+  /// 启动期把通知后端初始化好：注册点击回调、回放「被通知冷启动」的那次点击、
+  /// 让上个进程留下的通知能被撤销。没有这一步，回调只在本进程**第一次发通知**
+  /// 时才挂上——重启后点昨晚那条「播放」什么都不发生。总开关关着就不初始化
+  /// （Android 13+ 初始化会弹权限）。
+  Future<void> warmUpNotifier() async {
+    if (!systemNotificationsEnabled) return;
+    _notifierReady ??= await _notifier.ensureReady();
+  }
+
   /// 投递一批事件。**同一域**的一批合成**一条**汇总通知。
   ///
   /// 为什么必须是批量入口：一轮订阅检查落 12 集是常态，逐条发通知等于把通知栏

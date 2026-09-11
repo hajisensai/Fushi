@@ -4047,7 +4047,11 @@ class VideoDownloadPipelineService {
     required int collectionId,
   }) async {
     String? frame;
-    if (videoPath != null) {
+    // 与库内导入 / host 回填同一套门：维护动作（刮削清理）持锁期间不写封面，
+    // 这轮就退作品海报。
+    final VideoScrapeOperationLease? lease =
+        videoPath == null ? null : VideoScrapeOperationGate.tryEnterOperation();
+    if (lease != null) {
       try {
         frame = await VideoCoverMutationGate.runExclusive(() async {
           final CoverMetaStore store = CoverMetaStore(
@@ -4057,7 +4061,7 @@ class VideoDownloadPipelineService {
             return (await database.getVideoBookByBookUid(bookUid))?.coverPath;
           }
           final String? cover = await _coverExtractor(
-            videoPath: videoPath,
+            videoPath: videoPath!,
             bookUid: bookUid,
           );
           if (cover == null || cover.isEmpty) return null;
@@ -4073,6 +4077,8 @@ class VideoDownloadPipelineService {
         });
       } catch (error, stack) {
         engineLog.log('videoDownload.episodeCover', error, stack);
+      } finally {
+        lease.release();
       }
     }
     if (frame != null && frame.isNotEmpty) return frame;
@@ -4095,12 +4101,16 @@ class VideoDownloadPipelineService {
       r'^\s*\[([^\]]{1,40})\]',
     ).firstMatch(resourceTitle);
     final String? groupName = group?.group(1)?.trim();
-    final bool groupLooksLikeHash =
-        groupName != null && RegExp(r'^[0-9A-Fa-f]{6,}$').hasMatch(groupName);
+    final String? resolutionLabel = resolution?.group(1);
+    // 首方括号是 hash 串（`[A1B2C3D4]`）或就是分辨率本身（`[1080p][Group]`）都
+    // 不算字幕组——后者会把「1080p · 1080p」写进副标题。
+    final bool groupIsNoise = groupName == null ||
+        groupName.isEmpty ||
+        RegExp(r'^[0-9A-Fa-f]{6,}$').hasMatch(groupName) ||
+        groupName.toLowerCase() == resolutionLabel?.toLowerCase();
     final List<String> parts = <String>[
-      if (resolution != null) resolution.group(1)!,
-      if (groupName != null && groupName.isNotEmpty && !groupLooksLikeHash)
-        groupName,
+      if (resolutionLabel != null) resolutionLabel,
+      if (!groupIsNoise) groupName,
     ];
     return parts.isEmpty ? null : parts.join(' · ');
   }

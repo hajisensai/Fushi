@@ -1440,6 +1440,13 @@ void main() {
         '720P',
       );
       expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(
+          '[1080p][Group] Show - 01',
+        ),
+        '1080p',
+        reason: '首方括号就是分辨率时不当字幕组，否则副标题「1080p · 1080p」',
+      );
+      expect(
         VideoDownloadPipelineService.subscriptionReleaseLabel('Show 02'),
         isNull,
       );
