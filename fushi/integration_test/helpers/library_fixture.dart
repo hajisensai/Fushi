@@ -276,6 +276,7 @@ Future<String> seedAudiobook(
   WidgetTester tester, {
   String title = 'Hibiki Test Audiobook',
   Duration audioDuration = const Duration(seconds: 3),
+  int cueCount = 5,
 }) async {
   final AppModel appModel = await readyAppModel(tester);
   await showBooksTab(tester);
@@ -284,8 +285,11 @@ Future<String> seedAudiobook(
   );
 
   // 先用占位 bookKey 造 cue/EPUB；导入后拿到真实 bookKey 再回填 cue 的 bookKey。
-  final List<AudioCue> seedCues =
-      buildSampleCues(bookKey: 'pending', chapterHref: kFixtureChapterHref);
+  final List<AudioCue> seedCues = buildSampleCues(
+    bookKey: 'pending',
+    chapterHref: kFixtureChapterHref,
+    count: cueCount,
+  );
   final Uint8List epubBytes =
       await buildAudiobookEpubBytes(title: title, cues: seedCues);
   final String bookKey = await EpubImporter.import(
@@ -303,8 +307,11 @@ Future<String> seedAudiobook(
   );
 
   // 用真实 bookKey 重建 cue（chapterHref 与 EPUB 内 spine 一致）。
-  final List<AudioCue> cues =
-      buildSampleCues(bookKey: bookKey, chapterHref: kFixtureChapterHref);
+  final List<AudioCue> cues = buildSampleCues(
+    bookKey: bookKey,
+    chapterHref: kFixtureChapterHref,
+    count: cueCount,
+  );
 
   final AudiobookRepository repo = AudiobookRepository(appModel.database);
   // 窄写入：repository 没有「写一整行」的入口（BUG-1678），播种也按动作拆开。

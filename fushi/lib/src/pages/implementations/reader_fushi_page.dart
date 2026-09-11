@@ -86,6 +86,7 @@ import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
+import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
@@ -1494,6 +1495,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       '[ReaderFushi] restore from $source: '
       'chapter=$chapter progress=$progress charOffset=$charOffset',
     );
+    studyDiag(
+      'reader',
+      'open resume point chapter=$chapter '
+      'progress=${progress.toStringAsFixed(4)} charOffset=$charOffset '
+      'source=$source',
+    );
   }
   // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内抑制 ReaderPosition
   // 持久化——用户从收藏 / 制卡历史点进来看某句，不应把该书真实阅读进度覆盖成跳转锚。
@@ -1563,6 +1570,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 听书跟随 reveal 落定后的进度补刷（见 `_scheduleReanchorSettleProgressRefresh`）。
   Timer? _revealProgressRefreshTimer;
+
+  /// 统计诊断流水上次记过的单元（`_traceArrive` 去重用）。
+  (int, int)? _lastTracedUnit;
 
   List<int> get _chapterCharCounts => _progress.chapterCharCounts;
   set _chapterCharCounts(List<int> v) => _progress.chapterCharCounts = v;

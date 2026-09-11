@@ -10,10 +10,12 @@ import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
+import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -550,6 +552,16 @@ SettingsDestination buildSystemDestination() {
                 DebugLogService.instance.entries.isNotEmpty,
             builder: (_) => const DebugLogPage(),
           ),
+          // 用户 2026-09-12：导出统计诊断日志排查阅读速度异常。正文 = 头信息 +
+          // 最近会话快照（字/时一列）+ StudyClock / 阅读器账本 / 有声书恢复流水；
+          // 桌面弹保存对话框、移动端走系统分享（saveLogToFile 内部分流）。
+          SettingsActionItem(
+            id: 'diagnostics.study_diag_export',
+            title: t.settings_study_diag_export,
+            subtitle: t.settings_study_diag_export_hint,
+            icon: Icons.save_alt_outlined,
+            onTap: _exportStudyDiagLog,
+          ),
         ],
       ),
     ],
@@ -566,6 +578,24 @@ bool _manualCheckInFlight = false;
 /// `autoInstall: false`（发现新版只弹确认对话框，不沿用自动安装偏好静默装）。
 /// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
 /// UpdateChecker 既有对话框/打开发布页（零改动）。
+/// 设置 › 诊断 › 导出统计诊断日志（正文见 [buildStudyDiagExport]）。
+Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
+  final AppModel appModel = settingsContext.appModel;
+  final String log = await buildStudyDiagExport(
+    appModel.database,
+    appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
+    readingIdleTimeoutMinutes: appModel.readingIdleTimeoutMinutes,
+    statDayResetHour: appModel.statDayResetHour,
+  );
+  if (!settingsContext.context.mounted) return;
+  await saveLogToFile(
+    context: settingsContext.context,
+    log: log,
+    fileName: 'fushi_study_diag_log.txt',
+    subject: t.study_diag_share_subject,
+  );
+}
+
 Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
   if (_manualCheckInFlight) return;
   _manualCheckInFlight = true;

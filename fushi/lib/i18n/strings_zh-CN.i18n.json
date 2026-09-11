@@ -4717,5 +4717,9 @@
   "manga_chapter_download_status_queued": "排队中",
   "manga_chapter_download_status_downloading": "下载中 $done/$total",
   "manga_chapter_download_status_downloaded": "已下载",
-  "manga_chapter_download_status_failed": "下载失败"
+  "manga_chapter_download_status_failed": "下载失败",
+  "stat_reading_speed": "阅读速度",
+  "settings_study_diag_export": "导出统计诊断日志",
+  "settings_study_diag_export_hint": "翻页入账、段开封、有声书恢复与跳页流水，用于排查阅读速度异常。保存为文本文件。",
+  "study_diag_share_subject": "Fushi 统计诊断日志"
 }

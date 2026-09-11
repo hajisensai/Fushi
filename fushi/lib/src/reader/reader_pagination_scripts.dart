@@ -1025,6 +1025,14 @@ window.__fushiInstallShell = function(C) {
       try { window.flutter_inappwebview.callHandler('onReanchorSettled'); } catch (e) {}
     }
   },
+  // BUG-2465：重锚的落定一律排在下一帧（rAF），但页面隐藏时（macOS 窗口不可见 /
+  // 隐藏、Chromium 最小化）浏览器冻结 requestAnimationFrame，`_reanchorPending` 就一直
+  // 挂着——stableProgress 恒 null、位置永不落库、账本永不 arrive，直到窗口回到前台。
+  // 隐藏时改用 setTimeout(0)：没有可见帧可等，布局在隐藏文档里照常可读，立刻落定。
+  _reanchorFrame: function(fn) {
+    if (document.hidden === true) { setTimeout(fn, 0); return; }
+    requestAnimationFrame(fn);
+  },
   // wave1 去重：content-box 尺寸探针（body clientWidth/Height 扣 padding）。曾在分页/连续
   // 两 shell 尾部各挂一份逐字相同的 window.fushiReader._contentSize = function(){...}；上移进
   // _sharedJs 作对象字面量属性，两 shell 经 $_sharedJs 各得一份、字节等价（_imageMaxBox 经
@@ -3013,7 +3021,7 @@ $_sharedJs
     if (inFlight || charOffset < 0) return;
     this._setReanchorPending(true);
     var self = this;
-    requestAnimationFrame(function() {
+    this._reanchorFrame(function() {
       try {
         self.scrollToCharOffset(charOffset, scrollBefore);
       } finally {
@@ -3147,7 +3155,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   if (inFlight) return;
   this._setReanchorPending(true);
   var self = this;
-  requestAnimationFrame(function() {
+  this._reanchorFrame(function() {
     try {
       self.scrollToProgressPaged(self.getScrollContext(), progress);
     } finally {
@@ -3313,20 +3321,26 @@ $_sharedJs
     // 保持 TODO-825 的 smooth（用户点名要动画，settle 窗治闪屏），零行为变化。
     var behavior = (window.getComputedStyle(document.documentElement)
       .getPropertyValue('--fushi-reader-eink-mode').trim() === '1') ? 'auto' : 'smooth';
+    // BUG-2466：跨过一整个视口以上的「跟随」不是跟、是跳（重开书音频在几十页外 /
+    // 跨章落地 / 手动 seek）——smooth 补间会连续多帧滚过中间所有页，settle 窗（250ms）
+    // 关了之后每次 scroll 回传都把途中视口 arrive 进阅读账本，那些从没读过的页全部
+    // 入账 = 字数虚增、字/时爆表。一个视口之内（逐句跟读翻到下一屏）仍走 behavior
+    // 变量的 smooth（TODO-825 用户点名要的动画一根毛不动），只有跳才瞬时落地。
+    var followBehavior = function(delta, viewport) {
+      return Math.abs(delta) > viewport ? 'auto' : behavior;
+    };
     if (wm.startsWith('vertical')) {
       var vw = window.innerWidth;
       var safe = vw * margin;
       if (rect.left >= safe && rect.right <= vw - safe) return false;
-      if (wm === 'vertical-rl') {
-        window.scrollBy({left: rect.right - (vw - safe), behavior: behavior});
-      } else {
-        window.scrollBy({left: rect.left - safe, behavior: behavior});
-      }
+      var dx = (wm === 'vertical-rl') ? rect.right - (vw - safe) : rect.left - safe;
+      window.scrollBy({left: dx, behavior: followBehavior(dx, vw)});
     } else {
       var vh = window.innerHeight;
       var safe = vh * margin;
       if (rect.top >= safe && rect.bottom <= vh - safe) return false;
-      window.scrollBy({top: rect.top - safe, behavior: behavior});
+      var dy = rect.top - safe;
+      window.scrollBy({top: dy, behavior: followBehavior(dy, vh)});
     }
     return true;
   },
@@ -3673,7 +3687,7 @@ $_sharedJs
     if (inFlight || charOffset < 0) return;
     this._setReanchorPending(true);
     var self = this;
-    requestAnimationFrame(function() {
+    this._reanchorFrame(function() {
       try {
         self.scrollToCharOffset(charOffset, undefined, scrollBefore);
       } finally {
@@ -3840,7 +3854,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   if (inFlight || progress <= 0) return;
   this._setReanchorPending(true);
   var self = this;
-  requestAnimationFrame(function() {
+  this._reanchorFrame(function() {
     try {
       self.scrollToProgressContinuous(progress);
     } finally {

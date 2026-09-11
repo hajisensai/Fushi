@@ -410,6 +410,25 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   ///
   /// 注意：[_navigateToChapter] 额外把 charOffset 镜像进 `_lastProgressCharOffset`，
   /// 另两者不设 → 该字段不在此 helper 内（保各自原行为）。
+  /// 统计诊断流水（排查读速异常用）：可见单元变了才记一行，标出与上一单元的
+  /// 关系（相邻 / 前跳多少字 / 回翻），读速异常时能直接看到是哪一跳。同一单元重复
+  /// 采样在账本里是 no-op，不值一行。
+  void _traceArrive(int start, int end) {
+    final (int, int)? last = _lastTracedUnit;
+    if (last != null && last.$1 == start && last.$2 == end) return;
+    _lastTracedUnit = (start, end);
+    final String relation = last == null
+        ? 'first'
+        : start == last.$2
+        ? 'next'
+        : start > last.$2
+        ? 'jump +${start - last.$2}c'
+        : start < last.$1
+        ? 'back ${start - last.$1}c'
+        : 'overlap';
+    studyDiag('ledger', 'arrive [$start,$end) $relation');
+  }
+
   void _beginNavigation({
     required int chapter,
     required double progress,
@@ -425,6 +444,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // `discard()` 时当前单元已是空的，不会再把真读过的上一页整页丢掉（BUG-2226）。
     // 同章重恢复（宽变 / 分页↔连续 / 竖横排）也会提前结算同一页——并集去重，之后
     // 同页新边界只补多露出的部分，总额不变。
+    studyDiag('reader', 'navigate → chapter=$chapter (leave current unit)');
     _readLedger.leave();
     // BUG-1231 / TODO-1309：新导航先作废上一代的章内精确定位，再把本次定位绑定到
     // 已递增的导航代际。绑定必须与导航状态初始化同处、且发生在 loadUrl 之前：
@@ -1211,6 +1231,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       charOffset: snapshot.charOffsetEnd,
     );
     if (unitStart >= 0 && unitEnd > unitStart) {
+      _traceArrive(unitStart, unitEnd);
       _readLedger.arrive(unitStart, unitEnd);
     }
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的

@@ -248,6 +248,17 @@ class StudyClock {
   /// [detach] 结算出来的最后一笔写的去处（见 [DeferredStudyWrite]）。
   final DeferredStudyWrite? deferWrite;
 
+  /// 诊断流水出口（用户 2026-09-12：导出日志排查阅读速度异常）。app 层把它接到
+  /// `StudyDiagLog`；本包不依赖 app，做成静态 sink 让五个装配点一处都不用改。
+  /// null = 不记。每行前缀 `kind:key`，同一本书的事件可 grep 成一条线。
+  static void Function(String line)? trace;
+
+  void _trace(String message) {
+    final void Function(String line)? sink = trace;
+    if (sink == null) return;
+    sink('$_mediaKind:$_mediaKey $message');
+  }
+
   /// 会话累计（见 [StudySessionTotals]）：封段不清。时长只增不减；字数会被
   /// [retractChars]（回翻）扣回，但不低于 0。
   int _sessionDurationMs = 0;
@@ -329,6 +340,7 @@ class StudyClock {
     _tickStart = now;
     _lastTouch = now;
     _timer = Timer.periodic(_tick, (_) => unawaited(_onTimer()));
+    _trace('start accrual=${accrual.name} idle=${idleTimeout?.inSeconds}s');
   }
 
   /// 停表：先把「上一次 tick 到现在」的部分窗口结算进当前段，再封段落库。
@@ -345,6 +357,10 @@ class StudyClock {
     final _OpenSegment? seg = _open;
     _open = null;
     if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
+    _trace(
+      'stop session=${_sessionDurationMs}ms/${_sessionChars}c '
+      '${seg == null ? 'no-open' : 'seal ${_describe(seg)}'}',
+    );
     await _writeChain;
   }
 
@@ -371,6 +387,11 @@ class StudyClock {
     final _OpenSegment? seg = _open;
     _open = null;
     if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
+    _trace(
+      'detach session=${_sessionDurationMs}ms/${_sessionChars}c '
+      '${seg == null ? 'no-open' : 'seal ${_describe(seg)}'} '
+      'deferred=${_deferredSegments.length}',
+    );
     if (_deferredSegments.isEmpty) return;
     final List<_OpenSegment> pending = List<_OpenSegment>.of(_deferredSegments);
     _deferredSegments.clear();
@@ -389,21 +410,25 @@ class StudyClock {
   /// 字数与时长一并不计；水位照常由页面推进，所以这些字之后也不会补计——这是有意的，
   /// 否则会产出「0 时长却有字数」的段，把字/时推向无穷。
   void addChars(int chars) {
+    if (chars > 0 && !isRunning) _trace('drop +${chars}c (not running)');
     if (chars <= 0 || !isRunning) return;
     touch();
     _settleBeforeContentAccount();
     _ensureOpen(_now()).chars += chars;
     _open!.dirty = true;
     _sessionChars += chars;
+    _trace('+${chars}c → ${_describe(_open!)} session=${_sessionChars}c');
   }
 
   /// 记页数到当前打开段（漫画 / PDF 翻页）。停表期间丢弃，同 [addChars]。
   void addPages(int pages) {
+    if (pages > 0 && !isRunning) _trace('drop +${pages}p (not running)');
     if (pages <= 0 || !isRunning) return;
     touch();
     _settleBeforeContentAccount();
     _ensureOpen(_now()).pages += pages;
     _open!.dirty = true;
+    _trace('+${pages}p → ${_describe(_open!)}');
   }
 
   /// 撤回本会话已记的字数（回翻）。阅读账本的入账额是「会话覆盖并集 ∩ [0, 当前
@@ -418,13 +443,18 @@ class StudyClock {
   /// 撤回不是内容输入：不 [touch]、不开段、不结算待定窗口。停表期间与 [addChars]
   /// 同律直接丢弃（BUG-2210）。返回实际扣掉的数。
   int retractChars(int chars) {
-    if (chars <= 0 || !isRunning) return 0;
+    if (chars <= 0) return 0;
+    if (!isRunning) {
+      _trace('drop -${chars}c (not running)');
+      return 0;
+    }
     final int taken = _retract(
       chars,
       (_OpenSegment seg) => seg.chars,
       (_OpenSegment seg, int value) => seg.chars = value,
     );
     _sessionChars -= taken;
+    _trace('-${chars}c taken=$taken session=${_sessionChars}c');
     return taken;
   }
 
@@ -432,11 +462,13 @@ class StudyClock {
   /// 累计器，只改段。
   int retractPages(int pages) {
     if (pages <= 0 || !isRunning) return 0;
-    return _retract(
+    final int taken = _retract(
       pages,
       (_OpenSegment seg) => seg.pages,
       (_OpenSegment seg, int value) => seg.pages = value,
     );
+    _trace('-${pages}p taken=$taken');
+    return taken;
   }
 
   /// [retractChars] / [retractPages] 的共用扣减：从 [_sessionSegments] 尾往前，
@@ -524,6 +556,10 @@ class StudyClock {
     if (!accepted) {
       // 整窗丢弃 + 封段：下一个被接受的窗口开新段（活动流按 30 分钟 gap 归并，
       // 封段不会把一次阅读拆成多条）。
+      _trace(
+        'reject window ${now.difference(start).inMilliseconds}ms '
+        '(${_rejectReason(start, now)})',
+      );
       _seal();
       return;
     }
@@ -559,6 +595,23 @@ class StudyClock {
     return now.difference(last) > timeout;
   }
 
+  /// 诊断用：窗口被哪道守卫拒掉（断档 / 非活跃 / 空闲）。
+  String _rejectReason(DateTime start, DateTime now) {
+    if (!isContinuousReadingGap(start, now)) return 'gap';
+    if (!(isActive?.call() ?? true)) return 'inactive';
+    if (_isIdle(now)) {
+      final DateTime? last = _lastTouch;
+      final int since = last == null ? -1 : now.difference(last).inSeconds;
+      return 'idle ${since}s';
+    }
+    return 'accepted';
+  }
+
+  /// 诊断用：段的一行摘要。
+  static String _describe(_OpenSegment seg) =>
+      'seg ${seg.uid.substring(0, seg.uid.length < 8 ? seg.uid.length : 8)} '
+      '${seg.dateKey}@${seg.hour} ${seg.durationMs}ms/${seg.chars}c/${seg.pages}p';
+
   /// 当前打开段；没有或已跨小时 / 跨天（段不跨小时边界）就封旧开新。
   _OpenSegment _ensureOpen(DateTime now) {
     final String dateKey = FushiDatabase.statDateKeyOf(now);
@@ -579,6 +632,7 @@ class StudyClock {
     );
     _open = seg;
     _sessionSegments.add(seg);
+    _trace('open ${_describe(seg)}');
     return seg;
   }
 
@@ -588,6 +642,7 @@ class StudyClock {
     final _OpenSegment? seg = _open;
     if (seg == null) return;
     _open = null;
+    _trace('seal ${_describe(seg)}');
     if (_needsWrite(seg)) _enqueueWrite(seg);
     if (seg.chars == 0 && seg.pages == 0) _sessionSegments.remove(seg);
   }
@@ -628,6 +683,7 @@ class StudyClock {
       // fail-open：不冒泡、不阻塞阅读 / 播放；段留 dirty，下个 tick 用绝对值重写。
       seg.dirty = true;
       fushiDebugPrint('[study-clock] write error: $e\n$stack');
+      _trace('write error ${_describe(seg)}: $e');
       onWriteError?.call(e, stack);
     });
   }

@@ -4717,5 +4717,9 @@
   "manga_chapter_download_status_queued": "Queued",
   "manga_chapter_download_status_downloading": "Downloading $done/$total",
   "manga_chapter_download_status_downloaded": "Downloaded",
-  "manga_chapter_download_status_failed": "Download failed"
+  "manga_chapter_download_status_failed": "Download failed",
+  "stat_reading_speed": "Reading speed",
+  "settings_study_diag_export": "Export study diagnostics log",
+  "settings_study_diag_export_hint": "Page credits, segment open/close, audiobook resume and jump trace, for troubleshooting reading-speed anomalies. Saved as a text file.",
+  "study_diag_share_subject": "Fushi study diagnostics"
 }

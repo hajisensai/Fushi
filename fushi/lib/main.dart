@@ -48,6 +48,8 @@ import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/stats/study_diag_log.dart';
+import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
 import 'package:fushi/src/storage/data_root_migration_view.dart';
@@ -461,6 +463,10 @@ void main([List<String> args = const <String>[]]) {
 
     /// Initialise error log service.
     await ErrorLogService.instance.init();
+    // 统计诊断流水（用户 2026-09-12：导出日志排查阅读速度异常）。StudyClock 在
+    // fushi_audio 包里，靠静态 sink 接进来——五个装配点一处不改。
+    await StudyDiagLog.instance.init();
+    StudyClock.trace = (String line) => StudyDiagLog.instance.add('clock', line);
     // 下面四步都只依赖错误日志已就绪、彼此独立（各自读写自己的文件 / 通道），
     // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
     await Future.wait<void>(<Future<void>>[
