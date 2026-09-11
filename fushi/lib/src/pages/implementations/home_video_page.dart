@@ -2546,7 +2546,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       final Uint8List bytes = await fetcher.fetchRemoteCover(coverUrl);
       if (bytes.isEmpty) return null;
       final File coverDest = await _remoteCoverDestination(bookUid);
-      await coverDest.writeAsBytes(bytes, flush: true);
+      // 经收口写：bookUid 稳定 ⇒ 同一远端视频重下就是**同路径覆盖**，裸
+      // writeAsBytes 不驱逐解码缓存，重下后照旧画旧封面（BUG-1118 的回归形态）。
+      // applyCoverBytes 把「落稳 rename + 双键 evict」收在一个函数里。
+      await MediaCoverService.applyCoverBytes(
+        bytes: bytes,
+        destPath: coverDest.path,
+      );
       return coverDest.path;
     } catch (e) {
       debugPrint('[home-video] host video cover download failed: $e');
