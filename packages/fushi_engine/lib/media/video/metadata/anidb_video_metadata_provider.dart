@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -31,7 +32,7 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
   AniDbVideoMetadataProvider({
     String clientName = '',
     int? clientVersion,
-    this.language = 'zh-CN',
+    this.language = kFallbackVideoMetadataLocale,
     http.Client? client,
     VideoMetadataHttpClient? transport,
     AniDbTitleCatalog? titleCatalog,

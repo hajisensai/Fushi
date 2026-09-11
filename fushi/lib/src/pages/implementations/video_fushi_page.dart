@@ -952,6 +952,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_dispatchPokeHover] 在微任务里取出派发。每次 poke 刷新为最新抖动位置，连按时去重为单
   /// 次派发但派发的仍是最新位置（保 TODO-148/BUG-215 的去重续命）。
   PointerHoverEvent? _pendingPokeHover;
+
+  /// 合成 hover 设备是否已在 Flutter `MouseTracker` 里登记在册（BUG-2453）。
+  /// [_dispatchPokeHover] 首次真正派发即置真；[_retireSyntheticHoverDevice] 注销后清零。
+  /// 只在真派发过时才派 `PointerRemovedEvent`——从没造过这个设备（移动端 / 从未 poke）
+  /// 就不往指针管线塞任何事件。
+  bool _syntheticHoverDeviceLive = false;
   static const double _volumeStep = 5.0;
 
   /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。
@@ -4042,6 +4048,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
     WidgetsBinding.instance.removeObserver(this);
+    // BUG-2453：注销 [_pokeControlsVisible] 造出来的合成 hover 设备。它在 Flutter
+    // `MouseTracker` 里是一条真实的设备状态，只有 `PointerRemovedEvent` 才会删——
+    // 不注销就永远停在视频区中心，退出播放器后每帧都在那一点命中，库页中心那张卡
+    // 收到 onEnter 被当成「鼠标悬停」放大。
+    _retireSyntheticHoverDevice();
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。

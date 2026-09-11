@@ -129,7 +129,38 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     final PointerHoverEvent? event = _pendingPokeHover;
     _pendingPokeHover = null;
     if (event == null || !mounted) return;
+    // BUG-2453：真派发过就登记「设备在册」，dispose 时按此决定要不要注销。
+    _syntheticHoverDeviceLive = true;
     GestureBinding.instance.handlePointerEvent(event);
+  }
+
+  /// 注销合成 hover 设备（BUG-2453）——它与本页 State 同生共死。
+  ///
+  /// 根因：[_pokeControlsVisible] 派的合成 hover 在 Flutter `MouseTracker` 里会为
+  /// [_VideoFushiPageState._syntheticHoverDevice] 建一条**真实的设备状态**（`_mouseStates`），
+  /// 而框架只在收到同设备的 `PointerRemovedEvent` 时才删它。此前全仓没人派过这个 remove：
+  /// 幽灵指针永远停在视频区几何中心，退出播放器后每帧帧末 `updateAllDevices` 仍在那一点
+  /// 命中测试，库页中心那张卡的 `MouseRegion` 收到 onEnter → `FushiHoverLift` 放大——
+  /// 用户报「进视频页时中间的卡片显示鼠标悬停效果，鼠标明明没放上去」。
+  ///
+  /// 为什么不在每次 hover 后立刻注销：media_kit fork 的 `onExit` 无条件 `visible = false`
+  /// 并取消隐藏 Timer（third_party/media_kit_video/.../material_desktop.dart），remove 会
+  /// 触发 onExit，poke 就白派了。合成设备的语义是「用户的手在控制条上」，它该活到本页
+  /// 退出；退出时控制条子树已随本页 deactivate 从渲染树摘下，MouseTracker 对已摘下的
+  /// region 不再回调 onExit（`validForMouseTracker` 为假），注销没有任何副作用。
+  ///
+  /// 顺带清掉还没派出去的 [_pendingPokeHover]：微任务里 [_dispatchPokeHover] 本就按
+  /// `mounted` 早退，这里再清一次是让「注销之后不会再冒出新设备」不依赖调用时机。
+  void _retireSyntheticHoverDevice() {
+    _pendingPokeHover = null;
+    if (!_syntheticHoverDeviceLive) return;
+    _syntheticHoverDeviceLive = false;
+    GestureBinding.instance.handlePointerEvent(
+      const PointerRemovedEvent(
+        device: _VideoFushiPageState._syntheticHoverDevice,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
   }
 
   void _clearRailHover() {

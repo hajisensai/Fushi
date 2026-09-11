@@ -88,6 +88,8 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 
 Color? _savedSplashColor;
 
@@ -810,6 +812,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // 匹配用它的 `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
     if (AidokuRuntimeFactory.isSupported) {
       installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
+    }
+    // 桌面 Mihon sidecar 是无头 JVM，被 Cloudflare 拦下时由宿主弹 WebView 解题；
+    // Android 有自己的 CloudflareChallengeActivity，不走这条。
+    if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
+      installMihonCloudflareResolver(ref.read(appProvider).navigatorKey);
     }
 
     if (Platform.isAndroid) {

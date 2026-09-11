@@ -182,7 +182,11 @@ void main() {
     addTearDown(hash.close);
     final VideoSourceScrapeCoordinator runner = VideoSourceScrapeCoordinator(
       database: db,
-      config: const VideoSourceScrapeGlobalConfig(),
+      // 资料语言显式写死 zh-CN：本用例测的是「简介语言感知」，它**只在资料语言
+      // 不是英语时**才有可观察行为（MAL 简介恒英文）。以前这里吃全局默认值，
+      // 而那个默认值恰好是 zh-CN——语言默认值改成跟随界面语言后，这种隐式依赖
+      // 会让用例静默失去意义（英语下 MAL 简介本就匹配首选语言，不会被替换）。
+      config: const VideoSourceScrapeGlobalConfig(locale: 'zh-CN'),
       hashIdentityService: hash,
       registry:
           VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
@@ -192,7 +196,7 @@ void main() {
     );
     expect((await scrape(runner, source)).succeededWorks, 1);
     expect(applied?.provider, VideoMetadataProviderKind.mal);
-    // 简介语言感知（设计稿 A3）：默认刮削语言 zh-CN，MAL 简介恒英文、TMDB 简介
+    // 简介语言感知（设计稿 A3）：本用例刮削语言 zh-CN，MAL 简介恒英文、TMDB 简介
     // 按 zh-CN 返回 → 简介取 TMDB；评分等其它标量仍是主源 MAL 独占。
     expect(applied?.plot, 'tmdb plot');
     expect(applied?.rating, 8);

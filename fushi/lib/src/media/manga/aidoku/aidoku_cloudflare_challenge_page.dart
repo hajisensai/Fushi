@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
@@ -101,7 +102,10 @@ class AidokuCloudflareChallengePage extends StatefulWidget {
   });
 
   final Uri challengeUrl;
-  final AidokuCookieJar jar;
+
+  /// 解完后整站 cookie 写进这里。基类即可：Aidoku 与桌面 Mihon 的 jar 是同一份
+  /// 实现的两个子类，解题页对两边逐字相同，不为 Mihon 再复制一页。
+  final MangaCookieJar jar;
 
   /// 被拦请求实际用的 UA；`cf_clearance` 绑定解题时的 UA，必须逐字节一致。
   final String userAgent;

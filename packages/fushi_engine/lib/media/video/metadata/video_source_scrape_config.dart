@@ -10,6 +10,7 @@ library;
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 
@@ -80,8 +81,7 @@ class VideoSourceScrapeGlobalConfig {
     this.hashEnabled = false,
     this.anidbUsername = '',
     this.anidbPassword = '',
-    this.locale = 'zh-CN',
-    this.imageLanguages = const <String>['zh', 'en', ''],
+    this.locale = kFallbackVideoMetadataLocale,
     this.primaryProvider = VideoMetadataProviderKind.mal,
     this.identifierWords = ScrapeIdentifierWords.empty,
   });
@@ -101,21 +101,40 @@ class VideoSourceScrapeGlobalConfig {
         clientName: anidbClientName,
         clientVersion: anidbClientVersion ?? 0,
       );
+  /// 本批次的资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，见
+  /// `VideoSourceScrapeCoordinator._locale`。
   final String locale;
-  final List<String> imageLanguages;
+
+  /// 由 [locale] 派生的各 provider 语言参数。
+  ///
+  /// 曾经这里是一个 `List<String> imageLanguages` 字段，声明了却**从没被任何地方
+  /// 读过**——真正生效的是 provider 里 4 处 `'zh,en,null'` 字面量和
+  /// `selectVideoMetadataImages` 的默认参数。字段与生效常量接错了，改字段等于
+  /// 什么都没改。改成派生 getter 后，语言只有一个可改的地方。
+  VideoMetadataLanguages get languages => VideoMetadataLanguages(locale);
 
   /// 标题候选的用户预处理词表（屏蔽 / 替换 / 集偏移）。解析失败的行已在
   /// 构造时丢弃，只有可用的规则会进到这里。
   final ScrapeIdentifierWords identifierWords;
 
+  /// [uiLocaleTag] 是**界面语言**（app 侧 `AppModel.appLocale.toLanguageTag()`）；
+  /// 用户没显式设过资料语言时就用它。此前这里回落到写死的 `zh-CN`，等于让每个
+  /// 德语、韩语、阿拉伯语用户默认拉中文简介和中文海报——app 出 17 种语言，没有
+  /// 哪种语言配当隐含默认值。调用方拿不到界面语言时（例如只查凭据是否配齐的
+  /// 场景、无头服务端）可以省略，此时退到 [kFallbackVideoMetadataLocale]，与
+  /// `appLocale` 自己的末端兜底一致。
   factory VideoSourceScrapeGlobalConfig.fromPreferences(
     PrefStore preferences, {
     required String resolvedTmdbApiKey,
+    String uiLocaleTag = kFallbackVideoMetadataLocale,
     AniDbAppClientIdentity bundledAniDbClient = kBundledAniDbClient,
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
-    final String locale = read(kVideoMetadataLocalePref, 'zh-CN');
+    final String uiLocale = uiLocaleTag.trim().isEmpty
+        ? kFallbackVideoMetadataLocale
+        : uiLocaleTag.trim();
+    final String locale = read(kVideoMetadataLocalePref, uiLocale);
     final AniDbAppClientIdentity client = resolveAniDbAppClient(
       customName: read(kVideoMetadataAniDbClientNamePref),
       customVersion: parseAniDbClientVersion(
@@ -133,7 +152,7 @@ class VideoSourceScrapeGlobalConfig {
       // Password whitespace is significant; do not apply the display-string trimmer.
       anidbPassword: preferences.getPref(kVideoAniDbPasswordPref,
           defaultValue: '') as String,
-      locale: locale.isEmpty ? 'zh-CN' : locale,
+      locale: locale.isEmpty ? uiLocale : locale,
       primaryProvider: parseSelectableVideoMetadataProvider(
             read(kVideoMetadataPrimaryProviderPref),
           ) ??

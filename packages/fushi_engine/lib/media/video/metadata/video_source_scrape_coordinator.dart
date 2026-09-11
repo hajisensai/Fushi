@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -1929,6 +1930,10 @@ class VideoSourceScrapeCoordinator
     ];
     final List<VideoMetadataImage> selected = selectVideoMetadataImages(
       primary: primary,
+      // 本趟的有效资料语言（来源级覆盖 > 全局），与 TMDB 请求端的
+      // include_image_language 同源——两端必须一致，否则请求回来的图会在选择
+      // 阶段被另一套语言序重新排一遍。
+      languageOrder: VideoMetadataLanguages(_locale).imageLanguages,
     );
     final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[
       for (final VideoMetadataSeason season in metadata.seasons)

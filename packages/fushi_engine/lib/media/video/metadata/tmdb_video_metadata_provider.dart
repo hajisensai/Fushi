@@ -1,6 +1,7 @@
 library;
 
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -19,7 +20,7 @@ class TmdbVideoMetadataProvider
     VideoMetadataHttpClient? transport,
     this.baseUrl = 'https://api.themoviedb.org/3',
     this.imageBaseUrl = 'https://image.tmdb.org/t/p/original',
-    this.language = 'zh-CN',
+    this.language = kFallbackVideoMetadataLocale,
   })  : assert(client == null || transport == null),
         _apiKey = apiKey.trim(),
         _accessToken = accessToken.trim(),
@@ -32,7 +33,15 @@ class TmdbVideoMetadataProvider
   final bool _ownsTransport;
   final String baseUrl;
   final String imageBaseUrl;
+
+  /// 本 provider 实例的资料语言（BCP-47）。构造期固定：换语言要换实例，见
+  /// `VideoSourceScrapeCoordinator._createRegistry`。
   final String language;
+
+  /// 由 [language] 派生的语言参数（图片语言、搜索别名语言）。文字与图片必须
+  /// 同源：此前 `language` 有接线而图片语言写死 zh，用户设了 ja 得到日文简介 +
+  /// 中文海报。
+  VideoMetadataLanguages get _languages => VideoMetadataLanguages(language);
 
   @override
   VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.tmdb;
@@ -46,19 +55,17 @@ class TmdbVideoMetadataProvider
   ) async {
     _requireAvailable();
     // TMDB 的搜索会命中原名、译名和别名，但响应 title/name 只投影成请求的
-    // language。严格匹配若只看 zh-CN 响应，会把通过英文别名命中的
-    // `Himouto! Umaru-chan` 错误拒绝，因为返回行只剩中文名和日文原名。
+    // language。严格匹配若只看单一语言的响应，会把通过英文别名命中的
+    // `Himouto! Umaru-chan` 错误拒绝，因为返回行只剩本地化名和日文原名。
     // 在同一 TMDB 主源内合并常用动画元数据语言的展示名，仍由上层 exact gate
     // 决定是否自动应用；这不是跨 provider fallback，也不放宽成模糊匹配。
-    final List<String> languages = <String>[
-      language,
-      'en-US',
-      'ja-JP',
-      'zh-CN',
-    ].fold<List<String>>(<String>[], (List<String> values, String value) {
-      if (value.trim().isNotEmpty && !values.contains(value)) values.add(value);
-      return values;
-    });
+    //
+    // 兜底语言按**查询串自身的文字**扩，而不是无条件追加 zh-CN：TMDB 的命中与
+    // language 无关，但响应里的 title 只投影成请求的那一种语言，而上面的 exact
+    // gate 比的正是这些 title。无条件追加是让每个非中文用户每次搜索白搭一次
+    // 请求；按文字扩则让「资料语言英语 + 中文目录名」的用户照样判得出 exact。
+    final List<String> languages =
+        _languages.searchLocalesForQuery(request.title);
     final Map<String, VideoMetadataWork> merged = <String, VideoMetadataWork>{};
     for (int languageIndex = 0;
         languageIndex < languages.length;
@@ -142,11 +149,11 @@ class TmdbVideoMetadataProvider
     final Map<String, Object?>? payload = await _getObjectOrNull(
       path,
       operation: 'TMDB ${lookup.mediaKind.name} details',
-      query: const <String, String>{
+      query: <String, String>{
         'append_to_response':
             'external_ids,credits,images,content_ratings,release_dates,keywords,'
                 'alternative_titles,translations',
-        'include_image_language': 'zh,en,null',
+        'include_image_language': _languages.tmdbIncludeImageLanguage,
       },
       cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}',
     );
@@ -178,9 +185,9 @@ class TmdbVideoMetadataProvider
       final Map<String, Object?>? payload = await _getObjectOrNull(
         '/tv/${lookup.externalId}/season/${summary.seasonNumber}',
         operation: 'TMDB season details',
-        query: const <String, String>{
+        query: <String, String>{
           'append_to_response': 'aggregate_credits,images,external_ids',
-          'include_image_language': 'zh,en,null',
+          'include_image_language': _languages.tmdbIncludeImageLanguage,
         },
         cacheKey: 'tmdb:season:${lookup.externalId}:${summary.seasonNumber}',
       );
@@ -214,9 +221,9 @@ class TmdbVideoMetadataProvider
     final Map<String, Object?>? payload = await _getObjectOrNull(
       '/tv/${lookup.externalId}/season/$seasonNumber',
       operation: 'TMDB season episodes',
-      query: const <String, String>{
+      query: <String, String>{
         'append_to_response': 'aggregate_credits,images,external_ids',
-        'include_image_language': 'zh,en,null',
+        'include_image_language': _languages.tmdbIncludeImageLanguage,
       },
       cacheKey: 'tmdb:season:${lookup.externalId}:$seasonNumber',
     );
@@ -404,9 +411,9 @@ class TmdbVideoMetadataProvider
     final Map<String, Object?>? payload = await _getObjectOrNull(
       '/tv/${lookup.externalId}/season/$seasonNumber/episode/$episodeNumber',
       operation: 'TMDB episode details',
-      query: const <String, String>{
+      query: <String, String>{
         'append_to_response': 'external_ids,credits,images',
-        'include_image_language': 'zh,en,null',
+        'include_image_language': _languages.tmdbIncludeImageLanguage,
       },
       cacheKey:
           'tmdb:episode:${lookup.externalId}:$seasonNumber:$episodeNumber',

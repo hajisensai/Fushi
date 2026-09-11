@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_child_process_containment.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_gate.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -47,7 +48,10 @@ Future<Uint8List> readMihonSourceImageBytes(
 }
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
-    implements CancellableMihonRuntime, HostCookieMihonRuntime {
+    implements
+        CancellableMihonRuntime,
+        HostCookieMihonRuntime,
+        ChallengeMihonRuntime {
   DesktopMihonRuntime({
     required this.dataDirectory,
     Directory? resourceDirectory,
@@ -192,6 +196,30 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       <String, Object?>{'data': await _apkBase64(apkPath)},
     );
     return MihonExtensionInspection.fromJson(response);
+  }
+
+  /// 在宿主的浏览器里解 Cloudflare 挑战，把拿到的整站 cookie 写进 [_cookies]。
+  ///
+  /// 解题页要用 sidecar **实际发出**的 UA 打开被拦的地址（都由 sidecar 随错误报
+  /// 回来）：`cf_clearance` 绑定 UA，浏览器换个 UA 拿到的 cookie 交给 sidecar 会
+  /// 被 Cloudflare 原地拒掉，表现为「验证完了还是 403」。写进的是同一个 jar 实例，
+  /// 下一次调用 [_headersFor] 就会把新 cookie 注入 sidecar，不需要重启子进程。
+  @override
+  Future<void> solveCloudflare(Uri uri, {String? userAgent}) async {
+    final MihonCloudflareResolver? resolver = MihonCloudflareGate.resolver;
+    if (resolver == null) {
+      throw const MihonRuntimeException(
+        'CHALLENGE_UNAVAILABLE',
+        'No browser is available to solve the verification',
+      );
+    }
+    final bool solved = await resolver(uri, userAgent ?? '', _cookies);
+    if (!solved) {
+      throw const MihonRuntimeException(
+        'CHALLENGE_CANCELLED',
+        'Website verification was cancelled',
+      );
+    }
   }
 
   @override
@@ -647,6 +675,23 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         ? decoded
         : const <Object?, Object?>{};
     final Object? kind = error['errorKind'];
+    // sidecar 的 CloudflareInterceptor 认出了拦截页：把被拦 URL 与实际发出的 UA
+    // 原样带上，解题页要用同一个 UA 打开同一个地址，cf_clearance 才对得上。
+    if (kind == 'cloudflare') {
+      final Uri? challengeUrl = Uri.tryParse(
+        error['challengeUrl']?.toString() ?? '',
+      );
+      if (challengeUrl != null &&
+          challengeUrl.host.isNotEmpty &&
+          (challengeUrl.scheme == 'http' || challengeUrl.scheme == 'https')) {
+        final String? userAgent = error['userAgent']?.toString();
+        return MihonCloudflareChallengeException(
+          challengeUrl,
+          userAgent: userAgent == null || userAgent.isEmpty ? null : userAgent,
+          details: _errorDetails(error),
+        );
+      }
+    }
     final Object? sourceCode = kind == 'sourceHttp'
         ? error['sourceStatusCode']
         : kind == null &&

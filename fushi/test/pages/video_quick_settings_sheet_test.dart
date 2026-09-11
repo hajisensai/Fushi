@@ -1867,6 +1867,77 @@ void main() {
       expect(hidden.top, greaterThanOrEqualTo(preview.bottom));
     });
 
+    // BUG-2448：宽窗舞台原是「固定高 Stack + 绝对定位」——同一侧三个槽位（顶栏 /
+    // 屏幕侧 / 底栏）按内容长高后没有任何布局约束阻止它们互相盖住，平板宽度
+    // （480~900）上右列直接挤成一团。改成按行堆叠后：任意宽度、任意 UI 缩放，
+    // 槽位两两不相交，且不再靠槽位内嵌套滚动截断内容。
+    for (final ({double width, double scale}) sizeCase
+        in <({double width, double scale})>[
+      (width: 500, scale: 1.0),
+      (width: 600, scale: 1.0),
+      (width: 640, scale: 1.5),
+      (width: 720, scale: 2.0),
+      (width: 900, scale: 1.0),
+    ]) {
+      testWidgets(
+          'wide preview slots never overlap at ${sizeCase.width.round()}px '
+          'and UI scale ${sizeCase.scale} (BUG-2448)', (tester) async {
+        await tester.binding.setSurfaceSize(Size(sizeCase.width, 1600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await _pumpSheet(
+          tester,
+          uiScale: sizeCase.scale,
+          wrapScale: sizeCase.scale,
+        );
+        await openControls(tester);
+
+        final Rect preview = tester.getRect(find.byKey(
+          const ValueKey<String>('video-control-editor-preview'),
+        ));
+        final List<VideoControlSlot> stageSlots = <VideoControlSlot>[
+          VideoControlSlot.topLeft,
+          VideoControlSlot.topCenter,
+          VideoControlSlot.topRight,
+          VideoControlSlot.screenLeft,
+          VideoControlSlot.screenRight,
+          VideoControlSlot.bottomLeft,
+          VideoControlSlot.bottomCenter,
+          VideoControlSlot.bottomRight,
+        ];
+        for (int i = 0; i < stageSlots.length; i++) {
+          final Rect a = tester.getRect(slotFinder(stageSlots[i]));
+          expect(a.top, greaterThanOrEqualTo(preview.top - 0.5),
+              reason: '${stageSlots[i]} escapes the stage top');
+          expect(a.bottom, lessThanOrEqualTo(preview.bottom + 0.5),
+              reason: '${stageSlots[i]} escapes the stage bottom');
+          for (int j = i + 1; j < stageSlots.length; j++) {
+            final Rect b = tester.getRect(slotFinder(stageSlots[j]));
+            expect(a.overlaps(b), isFalse,
+                reason: '${stageSlots[i]} and ${stageSlots[j]} overlap');
+          }
+        }
+        // 槽位内不再嵌套滚动：所有已放置的 chip 必须完整落在自己槽位里。
+        final Rect bottomRight =
+            tester.getRect(slotFinder(VideoControlSlot.bottomRight));
+        final List<VideoControlItem> placed = VideoControlLayout.currentChrome
+            .itemsIn(VideoControlSlot.bottomRight);
+        expect(placed.length, greaterThanOrEqualTo(4));
+        for (int index = 0; index < placed.length; index++) {
+          if (!placed[index].isChipRenderable) continue;
+          final Rect chip = tester.getRect(chipFinder(
+            placed[index],
+            VideoControlSlot.bottomRight,
+            index,
+          ));
+          expect(bottomRight.contains(chip.topLeft), isTrue,
+              reason: '${placed[index]} chip clipped at the slot top');
+          expect(bottomRight.contains(chip.bottomRight), isTrue,
+              reason: '${placed[index]} chip clipped at the slot bottom');
+        }
+        _expectNoFlutterErrors(tester);
+      });
+    }
+
     testWidgets(
         'narrow preview uses a compact slot grid without horizontal tail',
         (tester) async {

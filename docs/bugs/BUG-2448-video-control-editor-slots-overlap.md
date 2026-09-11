@@ -1,0 +1,6 @@
+## BUG-2448 · 视频控制按键编辑器宽窗舞台各槽位互相重叠
+- **报告**：2026-09-11（用户：安卓平板上视频设置「控制按键」页，右列「顶栏（右）/ 屏幕右侧 / 底栏（右）」三块与「底栏（中）」挤成一团、互相盖住，按键看不清也拖不准）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/video/video_control_layout_editor.dart:139-243`（修复前）：宽窗（≥480）舞台是「固定高 `Stack` + `Positioned` 绝对定位」，高度只按 `min(420, max(260, 宽×9/16))` 取，而每个槽位按内容长高（默认布局底栏右 6 个 chip、顶栏右 6 个 chip，侧栏宽 128~224 只排得下 2~4 个/行）。同一侧三个槽位（顶 / 中 / 底）之间没有任何布局约束阻止重叠，平板宽度（480~900）下右列高度之和超过舞台高，直接盖在一起；同时槽位内 `maxHeight 148` + 嵌套 `SingleChildScrollView` 又把超出的 chip 截掉。widget 测试在 500/600/640/720/900 宽度全部复现（`topRight` 与 `screenRight` 相交）。
+- **[x] ① 已修复** — 宽窗舞台改为**按行堆叠**：顶栏行 / 屏幕侧行 / 底栏行三个 `Row`，侧槽位定宽贴边、中央槽位居中，槽位 `growToContent` 完整展开、行高由内容决定；舞台只保留 16:9 的**最小**高度（`ConstrainedBox(minHeight)` + `spaceBetween`）维持播放器方位感，内容更高时整体跟着长（外层设置页本就纵向滚动）。窄窗（<480）原有 compact 网格不变。`fix(video): 控制按键编辑器宽窗舞台按行堆叠，槽位不再重叠`
+- **[x] ② 已加自动化测试** — `fushi/test/pages/video_quick_settings_sheet_test.dart`「wide preview slots never overlap at Npx and UI scale S (BUG-2448)」×5：8 个舞台槽位两两不相交、都落在舞台内，且 `bottomRight` 内每个已放置 chip 完整落在槽位矩形内（不再被嵌套滚动截断）；原有「preview places slots at player-like positions」方位断言与 7 组无溢出用例照常通过。
+- **备注**：像素证据走 widget golden 临时预览（380/600/800 逻辑宽，Deng.ttf），三档分区清晰、无重叠；真机安卓平板复测待用户确认。
