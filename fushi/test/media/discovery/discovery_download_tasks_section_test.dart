@@ -93,7 +93,7 @@ void main() {
       reason: '找不到 downloads_page.dart（路径变了要同步本守卫）',
     );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
-    final int mokuro = code.indexOf('MokuroMoeTasksSection(');
+    final int mokuro = code.indexOf('MangaDownloadTasksSection(');
     final int direct = code.indexOf('DiscoveryDownloadTasksSection(');
     expect(
       direct,

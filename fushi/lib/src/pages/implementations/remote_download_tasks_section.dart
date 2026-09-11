@@ -1,6 +1,6 @@
 /// 下载中心「任务」tab 里的互联 host 代下载任务段（设计 §3.3）。
 ///
-/// 与 `DiscoveryDownloadTasksSection` / `MokuroMoeTasksSection` 同一链式注入形状：
+/// 与 `DiscoveryDownloadTasksSection` / `MangaDownloadTasksSection` 同一链式注入形状：
 /// 探测第一台宣告 downloads 能力的已配对 host，把它的 `/api/downloads` 任务映射成
 /// [DownloadTaskEntry] 交给下游 `tasksBuilder` 混进统一列表。没有 host 就是空段，
 /// 页面零变化。列表按固定周期轮询（远端没有 watch 流）。

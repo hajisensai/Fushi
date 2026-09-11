@@ -184,13 +184,12 @@ class OnlineMangaLibraryService {
       );
       if (found >= 0) nextIndex = found;
     }
-    final OnlineMangaLibraryEntry updated = OnlineMangaLibraryEntry(
-      runtime: existing.runtime,
-      extensionPackage: existing.extensionPackage,
-      sourceId: existing.sourceId,
+    // copyWith 而不是重新构造：订阅两位（v3）必须跟着刷新活下来。
+    final OnlineMangaLibraryEntry updated = existing.copyWith(
       series: series,
       chapters: List<OnlineMangaChapter>.unmodifiable(chapters),
       currentChapterIndex: nextIndex,
+      clearCurrentChapter: nextIndex == null,
     );
     await database.updateEpubBookMihonState(
       bookKey,
@@ -276,6 +275,27 @@ class OnlineMangaLibraryService {
     }
     final OnlineMangaLibraryEntry updated = entry.copyWith(
       currentChapterIndex: chapterIndex,
+    );
+    await database.updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: updated.encode(),
+      chapterCount: updated.chapters.length,
+      chaptersJson: _chaptersJson(updated.chapters),
+    );
+    return updated;
+  }
+
+  /// 写订阅位（设计稿 2026-09-12 §2.3）：只改 `sourceMetadata` 里的两个布尔，
+  /// 章节列表 / 当前章原样。返回写回后的描述符。
+  Future<OnlineMangaLibraryEntry> setSubscription({
+    required String bookKey,
+    required OnlineMangaLibraryEntry entry,
+    required bool subscribed,
+    required bool autoDownload,
+  }) async {
+    final OnlineMangaLibraryEntry updated = entry.copyWith(
+      subscribed: subscribed,
+      autoDownload: autoDownload,
     );
     await database.updateEpubBookMihonState(
       bookKey,

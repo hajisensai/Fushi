@@ -11,7 +11,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -354,7 +354,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                             BuildContext context,
                             List<DownloadTaskEntry> direct,
                           ) =>
-                              MokuroMoeTasksSection(
+                              MangaDownloadTasksSection(
                             tasksBuilder: (
                               BuildContext context,
                               List<DownloadTaskEntry> manga,

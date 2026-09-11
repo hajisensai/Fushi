@@ -37,6 +37,7 @@ class MangaChapterList extends StatelessWidget {
     this.onDownload,
     this.onDeleteDownload,
     this.onRetryDownload,
+    this.onOcr,
   });
 
   final OnlineMangaLibraryEntry? entry;
@@ -65,6 +66,9 @@ class MangaChapterList extends StatelessWidget {
   final void Function(OnlineMangaChapter chapter)? onDownload;
   final void Function(OnlineMangaChapter chapter)? onDeleteDownload;
   final void Function(OnlineMangaChapter chapter)? onRetryDownload;
+
+  /// 「识别本章」（只对已下载的章出现）；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onOcr;
 
   /// 一章的下载状态：磁盘判据优先（真正决定能不能读），其次看任务行。
   _ChapterDownloadState _downloadStateOf(OnlineMangaChapter chapter) {
@@ -257,7 +261,8 @@ class MangaChapterList extends StatelessWidget {
         onMarkUpToRead != null ||
         onDownload != null ||
         onDeleteDownload != null ||
-        onRetryDownload != null;
+        onRetryDownload != null ||
+        onOcr != null;
     final List<Widget> children = <Widget>[
       _buildDownloadIndicator(context, download),
       if (current)
@@ -289,6 +294,12 @@ class MangaChapterList extends StatelessWidget {
                 value: 'retry-download',
                 label: t.manga_chapter_download_retry_action,
               ),
+            if (onOcr != null && download == _ChapterDownloadState.downloaded)
+              FushiPopupMenuItem<String>(
+                key: const ValueKey<String>('manga_chapter_ocr'),
+                value: 'ocr',
+                label: t.manga_chapter_ocr_action,
+              ),
             if (onDeleteDownload != null &&
                 download == _ChapterDownloadState.downloaded)
               FushiPopupMenuItem<String>(
@@ -308,6 +319,8 @@ class MangaChapterList extends StatelessWidget {
                 onRetryDownload?.call(chapter);
               case 'delete-download':
                 onDeleteDownload?.call(chapter);
+              case 'ocr':
+                onOcr?.call(chapter);
             }
           },
         ),

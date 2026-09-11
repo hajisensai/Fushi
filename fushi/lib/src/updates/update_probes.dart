@@ -10,6 +10,7 @@ import 'dart:convert' show jsonEncode;
 import 'package:fushi_core/fushi_core.dart'
     show EpubBookRow, FushiDatabase, MangaExtensionRow;
 
+import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
@@ -32,8 +33,20 @@ List<({EpubBookRow book, OnlineMangaLibraryEntry entry})> onlineMangaLibraryRows
   return out;
 }
 
-/// 在线漫画库检查：逐条联网刷新，新章由
-/// `OnlineMangaLibraryService.refresh` 自己投递（那里是唯一的 diff 点）。
+/// 订阅自动下载的入队口：`entry.autoDownload` 为真的条目刷新出新章时调用，
+/// [chapters] 按章序（旧 → 新）。生产是 `MangaDownloadService.enqueueChapters`；
+/// 测试注入记录器。
+typedef OnlineMangaAutoDownload = Future<void> Function(
+  OnlineMangaLibraryEntry entry,
+  List<OnlineMangaChapter> chapters,
+);
+
+/// 在线漫画库检查：逐条联网刷新，新章提醒由
+/// `OnlineMangaLibraryService.refresh` 自己投递（那里是唯一的提醒 diff 点）。
+///
+/// 订阅（设计稿 2026-09-12 §5）：`autoDownload` 为真的条目，这次刷新新出现的章
+/// （[newlyAppearedChapters] 同一判据——首次拉取、身份漂移都不算）交给
+/// [autoDownload] 入队。**不另起 Timer**：追更就挂在这条 6 小时探针上。
 ///
 /// **串行**而不是并发：几十条书架条目并发打同一个源站等于自制一次小型压测，
 /// 而这是后台任务，快几秒对用户没有任何意义。
@@ -43,6 +56,7 @@ List<({EpubBookRow book, OnlineMangaLibraryEntry entry})> onlineMangaLibraryRows
 Future<int> runOnlineMangaUpdateProbe({
   required FushiDatabase database,
   required OnlineMangaLibraryService Function(OnlineMangaRuntimeKind) serviceFor,
+  OnlineMangaAutoDownload? autoDownload,
   void Function(Object error, String bookKey)? onError,
 }) async {
   final List<EpubBookRow> books = await database.getAllEpubBooks();
@@ -50,11 +64,22 @@ Future<int> runOnlineMangaUpdateProbe({
   for (final ({EpubBookRow book, OnlineMangaLibraryEntry entry}) row
       in onlineMangaLibraryRows(books)) {
     try {
-      await serviceFor(row.entry.runtime).refreshFromSource(
+      final OnlineMangaLibraryEntry updated =
+          await serviceFor(row.entry.runtime).refreshFromSource(
         bookKey: row.book.bookKey,
         entry: row.entry,
       );
       refreshed++;
+      if (autoDownload != null && row.entry.autoDownload) {
+        final List<OnlineMangaChapter> fresh = newlyAppearedChapters(
+          previous: row.entry.chapters,
+          current: updated.chapters,
+        );
+        if (fresh.isNotEmpty) {
+          // 源按新→旧返回；入队按章序（旧章先下）。
+          await autoDownload(updated, fresh.reversed.toList(growable: false));
+        }
+      }
     } on Object catch (error) {
       onError?.call(error, row.book.bookKey);
     }
