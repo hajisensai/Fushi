@@ -21,6 +21,7 @@ import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/webdav_path_backend_mixin.dart';
@@ -390,7 +391,29 @@ class InterconnectSyncBackend extends SyncBackend
       _activeToken = token;
       clearCache();
     }
+    _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _sessionResolved = true;
+  }
+
+  /// BUG-2448：https host 的 TOFU 指纹登记给 app 内置中继，让 native 播放器
+  /// （libmpv / ffmpeg）取这台 host 的视频流时由 Dart 侧钉扎 TLS，而不是各平台
+  /// libmpv 自己去判自签证书（curl 后端默认校验 → 一律打不开）。明文 http host
+  /// 无需登记。每次解析都登记（幂等覆盖）：重新配对换了证书时指纹跟着刷新。
+  static void _registerPinnedNativeOrigin(
+    String baseUrl,
+    String? fingerprintSha256,
+  ) {
+    final Uri base = Uri.parse(baseUrl);
+    if (!base.isScheme('https') ||
+        fingerprintSha256 == null ||
+        fingerprintSha256.isEmpty) {
+      return;
+    }
+    registerPinnedNativeOrigin(
+      host: base.host,
+      port: base.port,
+      fingerprintSha256: fingerprintSha256,
+    );
   }
 
   /// BUG-1550：是否至少有一个已启用候选拿得出凭据（自带 token 或全局回落）。

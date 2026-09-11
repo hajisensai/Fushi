@@ -29,13 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2259 条。点号进各自文件。
+> 共 2260 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2451](bugs/BUG-2451-manga-global-search-ganma-fuzzy.md) | 🚧 | 🚧 | 全局搜索里 GANMA! 返回与关键词无关的作品（未复现为本仓 bug：源站服务端分词模糊匹配） |
 | [BUG-2450](bugs/BUG-2450-manga-online-image-timeout-no-retry.md) | 🚧 | 🚧 | 在线漫画封面与页图超时或失败后没有退避重试、没有重刷入口、加载队列排队无超时 |
 | [BUG-2449](bugs/BUG-2449-manga-ocr-job-dies-on-reader-exit.md) | 🚧 | 🚧 | 退出漫画阅读页会真停掉正在跑的整卷 OCR 任务 |
+| [BUG-2448](bugs/BUG-2448-interconnect-video-native-tls-trust.md) | ✅ | ✅ | 互联远端视频打不开：随包 libmpv 换 libcurl 后默认校验自签证书 |
 | [BUG-2446](bugs/BUG-2446-ext-subtitle-drop-scope.md) | ✅ | ✅ | 浏览器扩展：任何网页拖文件都弹整屏「松开以加载字幕」 |
 | [BUG-2445](bugs/BUG-2445-mihon-protobuf-not-registered.md) | ✅ | ✅ | Injekt 未注册 ProtoBuf 导致 5 个 protobuf 漫画源整源不可用 |
 | [BUG-2444](bugs/BUG-2444-mihon-proxy-policy-selector-throws.md) | ✅ | ✅ | 宿主代理策略故障时 ProxySelector 抛异常导致 sidecar 堆耗尽、请求挂死到超时 |
