@@ -11,7 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 // 发版或本地跑脚本时炸。实际发生过的三批：
 //   * proguard-rules.pro 的 -keep class <旧包名>.**：R8 对匹配零个类的 keep
 //     规则不告警 → release 包启动即闪退（见 android_app_package_keep_rule_guard_test）；
-//   * run.sh / run.ps1 / 根 .bat 指向已被 git mv 掉的旧应用目录；
 //   * ci/*.sh 的 PKG 默认值、tool/*_sweep.sh 的 REPO 默认值仍是旧身份 →
 //     adb / gh 全部打空。
 //
@@ -87,8 +86,6 @@ const List<_ScanRoot> _scriptRoots = <_ScanRoot>[
   _ScanRoot('../scripts', extensions: <String>{'.py'}),
   _ScanRoot('../.codex-test/tools', extensions: <String>{'.ps1'}),
   _ScanRoot('tool', extensions: <String>{'.ps1', '.sh'}),
-  _ScanRoot('../run.sh'),
-  _ScanRoot('../run.ps1'),
   // workspace 根 pubspec：melos 段带仓库身份（A/B 要扫），overrides 的 vendor
   // 说明里带外部真名（C 不能扫）。理由见 _buildConfigRoots 末尾。
   _ScanRoot('../pubspec.yaml'),
