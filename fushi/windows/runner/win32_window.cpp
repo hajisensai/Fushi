@@ -5,6 +5,8 @@
 #include <dwmapi.h>
 #include <flutter_windows.h>
 
+#include <chrono>
+
 #include "resource.h"
 
 namespace {
@@ -339,22 +341,19 @@ Win32Window::MessageHandler(HWND hwnd,
       // (see UpdateFrameChrome), so a drag-resize costs one comparison per
       // WM_SIZE, not a DwmSetWindowAttribute round trip.
       UpdateFrameChrome();
-      RECT rect = GetClientArea();
       // BUG-1916: the surface just changed size; its new area is uninitialised
       // (black) and its old area may carry an older fill. Paint it whole,
-      // under the view too, before the view is resized — MoveWindow below
-      // blocks until the engine presents a frame of the new size. On the
+      // under the view too, before the view is resized — the child MoveWindow
+      // below blocks until the engine presents a frame of the new size. On the
       // hardware path the view is its own composition layer, so this fill is
       // never visible through it; if the engine has fallen back to software
       // rendering (view paints into this same surface) the worst case is one
       // theme-coloured frame under the view — still better than the old
       // teal erase on every WM_PAINT.
       FillSurfaceBackdrop();
-      if (child_content_ != nullptr) {
-        // Size and position the child window.
-        MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
-                   rect.bottom - rect.top, TRUE);
-      }
+      // Size and position the child window — through the resize gate
+      // (BUG-2462), never with a bare MoveWindow.
+      SyncChildToClientArea();
       return 0;
     }
 
@@ -469,12 +468,55 @@ Win32Window* Win32Window::GetThisFromHandle(HWND const window) noexcept {
 void Win32Window::SetChildContent(HWND content) {
   child_content_ = content;
   SetParent(content, window_handle_);
-  RECT frame = GetClientArea();
-
-  MoveWindow(content, frame.left, frame.top, frame.right - frame.left,
-             frame.bottom - frame.top, true);
+  SyncChildToClientArea();
 
   SetFocus(child_content_);
+}
+
+void Win32Window::SyncChildToClientArea() {
+  if (child_content_ == nullptr) {
+    return;
+  }
+  const RECT rect = GetClientArea();
+  const ChildSize size{static_cast<int32_t>(rect.right - rect.left),
+                       static_cast<int32_t>(rect.bottom - rect.top)};
+  switch (child_resize_gate_.Request(size)) {
+    case ChildResizeGate::Decision::kDeliver:
+      DeliverChildSize(size);
+      break;
+    case ChildResizeGate::Decision::kNoChange:
+    case ChildResizeGate::Decision::kDefer:
+      // kDefer: the size the engine currently presents at is being requested
+      // while an earlier delivery is still unconfirmed — exactly the sequence
+      // that pins the engine's resize target and drops every frame. The child
+      // keeps its current size until Dart confirms the pending one
+      // (OnChildFrameRasterized), which then delivers this request.
+      break;
+  }
+}
+
+void Win32Window::DeliverChildSize(ChildSize size) {
+  if (child_content_ == nullptr) {
+    return;
+  }
+  // MoveWindow sends the child's WM_SIZE synchronously; the engine blocks
+  // inside it for up to kWindowResizeTimeout waiting for a frame of the new
+  // size. The measured duration therefore tells the gate whether that wait
+  // succeeded (see ChildResizeGate::DeliveryFinished).
+  const auto start = std::chrono::steady_clock::now();
+  MoveWindow(child_content_, 0, 0, size.width, size.height, TRUE);
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - start)
+                           .count();
+  child_resize_gate_.DeliveryFinished(elapsed);
+}
+
+void Win32Window::OnChildFrameRasterized(int32_t width, int32_t height) {
+  const std::optional<ChildSize> deferred =
+      child_resize_gate_.OnFrameRasterized(ChildSize{width, height});
+  if (deferred.has_value()) {
+    DeliverChildSize(*deferred);
+  }
 }
 
 RECT Win32Window::GetClientArea() {

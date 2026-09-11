@@ -240,6 +240,10 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoEnterCaret,
   // 「返回上一级」：视频页把它解释成逐级退出阶梯（关字幕列表 → 退侧栏 → … → 退页）。
   ShortcutAction.globalBack,
+  // 全局全屏键（默认 F11）：视频页把它解释成**与双击 / F 完全相同**的视频全屏
+  // （全屏路由 + 原生窗口全屏），而不是 app 根那条只切窗口的裸 F11（BUG-2462：
+  // 用户裁定 F11 与双击全屏在视频页必须是同一件事）。
+  ShortcutAction.globalToggleFullscreen,
 ];
 
 Map<ShortcutAction, VoidCallback> videoActionCallbacks(
@@ -292,6 +296,10 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     // [buildVideoPlayerShortcutsFromRegistry] 按 action 读 `bindingsFor`（与 scope
     // 无关），故它照常拿到当前绑定、改键立即生效。
     ShortcutAction.globalBack: actions.escape,
+    // 全局全屏键（global scope，默认 F11）→ 视频自己的全屏切换，与双击 / F 同一
+    // 执行体（BUG-2462）。不映射它时，F11 会穿到 app 根的
+    // `_handleGlobalToggleFullscreen`，只切原生窗口、不压全屏路由——与双击行为分叉。
+    ShortcutAction.globalToggleFullscreen: actions.toggleFullscreen,
   };
 }
 
@@ -333,8 +341,9 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
   VideoPlayerShortcutActions actions, {
   Set<ShortcutAction> exclude = const <ShortcutAction>{},
 }) {
-  final Map<ShortcutAction, VoidCallback> callbacks =
-      videoActionCallbacks(actions);
+  final Map<ShortcutAction, VoidCallback> callbacks = videoActionCallbacks(
+    actions,
+  );
   final Map<ShortcutActivator, VoidCallback> result =
       <ShortcutActivator, VoidCallback>{};
   for (final MapEntry<ShortcutAction, VoidCallback> entry
@@ -379,7 +388,7 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
 /// 「进入时是否已暂停」成为类型契约的一部分，这个特殊情况就不存在了。
 class SubtitleCaretPauseTracker {
   SubtitleCaretPauseTracker({required bool playingAtEntry})
-      : _sawPaused = !playingAtEntry;
+    : _sawPaused = !playingAtEntry;
 
   bool _sawPaused;
 
@@ -496,8 +505,9 @@ bool keyDownMatchesHoldSpeed(
   KeyDownEvent event, {
   required bool hasEditableFocus,
 }) {
-  final Set<ModifierKey> modifiers =
-      currentKeyboardModifiers(HardwareKeyboard.instance);
+  final Set<ModifierKey> modifiers = currentKeyboardModifiers(
+    HardwareKeyboard.instance,
+  );
   if (hasEditableFocus &&
       editableFocusClaimsKey(
         logicalKey: event.logicalKey,
@@ -587,10 +597,12 @@ class VideoKeyboardResolution {
   /// 仅 [VideoKeyboardDispatch.run] 时非空。
   final ShortcutAction? action;
 
-  static const VideoKeyboardResolution ignored =
-      VideoKeyboardResolution(VideoKeyboardDispatch.ignore);
-  static const VideoKeyboardResolution dismissPopup =
-      VideoKeyboardResolution(VideoKeyboardDispatch.dismissPopup);
+  static const VideoKeyboardResolution ignored = VideoKeyboardResolution(
+    VideoKeyboardDispatch.ignore,
+  );
+  static const VideoKeyboardResolution dismissPopup = VideoKeyboardResolution(
+    VideoKeyboardDispatch.dismissPopup,
+  );
   static const VideoKeyboardResolution swallowedRepeat =
       VideoKeyboardResolution(VideoKeyboardDispatch.swallowRepeat);
 
@@ -723,16 +735,14 @@ Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
   required VoidCallback dismissPopup,
 }) {
   return base.map(
-    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
-      activator,
-      () {
-        if (isPopupVisible()) {
-          dismissPopup();
-          return;
-        }
-        callback();
-      },
-    ),
+    (ShortcutActivator activator, VoidCallback callback) =>
+        MapEntry(activator, () {
+          if (isPopupVisible()) {
+            dismissPopup();
+            return;
+          }
+          callback();
+        }),
   );
 }
 
@@ -868,5 +878,22 @@ ShortcutAction? _resolveVideoKeyboardAction(
         modifiers: modifiers,
         scope: ShortcutScope.universal,
         physicalKey: event.physicalKey,
-      );
+      ) ??
+      _resolveGlobalToggleFullscreen(registry, event, modifiers);
+}
+
+/// global scope 里**只**认领全屏键（BUG-2462）：视频页要把 F11 接成自己的全屏切换，
+/// 其余 global 动作（翻页滚动、右键菜单……）照旧留给 app 根处理，不在这里截胡。
+ShortcutAction? _resolveGlobalToggleFullscreen(
+  FushiShortcutRegistry registry,
+  KeyEvent event,
+  Set<ModifierKey> modifiers,
+) {
+  final ShortcutAction? action = registry.resolveKeyboard(
+    event.logicalKey,
+    modifiers: modifiers,
+    scope: ShortcutScope.global,
+    physicalKey: event.physicalKey,
+  );
+  return action == ShortcutAction.globalToggleFullscreen ? action : null;
 }

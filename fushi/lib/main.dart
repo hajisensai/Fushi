@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui'
-    show AppExitResponse, PlatformDispatcher;
+import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -38,6 +37,7 @@ import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
+import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
@@ -79,10 +79,13 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:drift/drift.dart'
-    show Value;
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabaseFailureKind, ProfileMediaKind, VideoBookRow, VideoBooksCompanion;
+    show
+        FushiDatabaseFailureKind,
+        ProfileMediaKind,
+        VideoBookRow,
+        VideoBooksCompanion;
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
@@ -134,8 +137,9 @@ SystemUiOverlayStyle fushiSystemOverlayStyle(Brightness brightness) {
   // black nav bar). With our transparent edge-to-edge nav bar that would leave
   // the gesture pill / buttons light on a light theme — invisible, and frozen
   // across theme switches.
-  final iconBrightness =
-      brightness == Brightness.dark ? Brightness.light : Brightness.dark;
+  final iconBrightness = brightness == Brightness.dark
+      ? Brightness.light
+      : Brightness.dark;
   return SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: iconBrightness,
@@ -180,480 +184,494 @@ void main([List<String> args = const <String>[]]) {
   /// Run and handle an error zone to customise the action performed upon
   /// an error or exception. This allows for error logging for debug purposes
   /// as well as communicating errors to Crashlytics if enabled.
-  runZonedGuarded<Future<void>>(() async {
-    /// Necessary to initialise Flutter when running native code before
-    /// starting the application.
-    final binding = WidgetsFlutterBinding.ensureInitialized();
-    // Fushi 改名：app-support 根一次性搬迁（Windows
-    // %APPDATA%\Hibiki\Hibiki -> %APPDATA%\Fushi\Fushi；macOS
-    // ~/Library/Application Support/com.example.hibiki -> app.fushi.reader）。
-    // 必须先于进程内**第一次** SharedPreferences 读取（下面的
-    // applyInitialPlacement 就会读）——插件会在新路径缓存空 prefs，数据根配置
-    // 与 documents 布局锚点全在里面，晚了就等于丢配置。
-    await migrateLegacySupportDir();
-    // macOS 的 prefs 走 NSUserDefaults（域名 = bundle id），不在上面搬走的
-    // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
-    // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
-    await recoverLegacyMacosPrefsFromSharedPreferences();
-    // ASR 算法层住在独立包（fushi_asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
-    // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
-    // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
-    // 词典），写在 main 里哪个入口都不会漏。
-    installEngineHostBindings();
-    installAsrHostBindings();
-    // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
-    // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
-    await loadAsrModelCatalog();
-    AppIconSelection startupAppIcon = currentAppIconSelection.value;
-    try {
-      // BUG-1920：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏
-      // 第一帧先画固定旧图标，直到用户重新打开设置页才刷新。
-      startupAppIcon = await loadAppIconSelection();
-    } catch (e) {
-      debugPrint('[Fushi] app icon preference restore failed: $e');
-    }
-    if (Platform.isAndroid) {
+  runZonedGuarded<Future<void>>(
+    () async {
+      /// Necessary to initialise Flutter when running native code before
+      /// starting the application.
+      final binding = WidgetsFlutterBinding.ensureInitialized();
+      // Fushi 改名：app-support 根一次性搬迁（Windows
+      // %APPDATA%\Hibiki\Hibiki -> %APPDATA%\Fushi\Fushi；macOS
+      // ~/Library/Application Support/com.example.hibiki -> app.fushi.reader）。
+      // 必须先于进程内**第一次** SharedPreferences 读取（下面的
+      // applyInitialPlacement 就会读）——插件会在新路径缓存空 prefs，数据根配置
+      // 与 documents 布局锚点全在里面，晚了就等于丢配置。
+      await migrateLegacySupportDir();
+      // macOS 的 prefs 走 NSUserDefaults（域名 = bundle id），不在上面搬走的
+      // app-support 根里。bundle id 从 com.example.hibiki 改成 app.fushi.reader
+      // 后旧域整份不可见，其中就有用户自选的数据根路径——只捞回那几个锚点键。
+      await recoverLegacyMacosPrefsFromSharedPreferences();
+      // ASR 算法层住在独立包（fushi_asr_core），它的数据根 / 出站 HTTP / 日志三个装配点
+      // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
+      // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
+      // 词典），写在 main 里哪个入口都不会漏。
+      installEngineHostBindings();
+      installAsrHostBindings();
+      // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
+      // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
+      await loadAsrModelCatalog();
+      AppIconSelection startupAppIcon = currentAppIconSelection.value;
       try {
-        // Android 启动器 alias 才是老用户当前图标的权威来源。旧版本没有写 Dart
-        // 偏好；冷启动必须先读 native 状态，避免 rail 每次都回到 default。
-        final String nativePreset =
-            await FushiChannels.iconSwitch.invokeMethod<String>(
-                  'getCurrentIcon',
-                ) ??
-                'default';
-        final AppIconSelection nativeSelection = AppIconSelection(
-          presetKey: nativePreset,
-        );
+        // BUG-1920：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏
+        // 第一帧先画固定旧图标，直到用户重新打开设置页才刷新。
+        startupAppIcon = await loadAppIconSelection();
+      } catch (e) {
+        debugPrint('[Fushi] app icon preference restore failed: $e');
+      }
+      if (Platform.isAndroid) {
         try {
-          // 值没变就不写盘：getCurrentIcon 只是把 launcher alias 的既有真值读回来，
-          // 每次冷启动无条件 setString 是纯浪费（且发生在 runApp 之前）。仅发布，
-          // 让 rail 拿到正确图标即可。
-          if (nativePreset == startupAppIcon.presetKey) {
+          // Android 启动器 alias 才是老用户当前图标的权威来源。旧版本没有写 Dart
+          // 偏好；冷启动必须先读 native 状态，避免 rail 每次都回到 default。
+          final String nativePreset =
+              await FushiChannels.iconSwitch.invokeMethod<String>(
+                'getCurrentIcon',
+              ) ??
+              'default';
+          final AppIconSelection nativeSelection = AppIconSelection(
+            presetKey: nativePreset,
+          );
+          try {
+            // 值没变就不写盘：getCurrentIcon 只是把 launcher alias 的既有真值读回来，
+            // 每次冷启动无条件 setString 是纯浪费（且发生在 runApp 之前）。仅发布，
+            // 让 rail 拿到正确图标即可。
+            if (nativePreset == startupAppIcon.presetKey) {
+              startupAppIcon = await publishAppIconSelection(nativeSelection);
+            } else {
+              startupAppIcon = await saveAppIconSelection(nativeSelection);
+            }
+          } catch (e) {
+            // 偏好写入失败也不能覆盖已经生效的 launcher 真值；本次运行仍同步 rail。
             startupAppIcon = await publishAppIconSelection(nativeSelection);
-          } else {
-            startupAppIcon = await saveAppIconSelection(nativeSelection);
+            debugPrint('[Fushi] Android app icon preference sync failed: $e');
           }
         } catch (e) {
-          // 偏好写入失败也不能覆盖已经生效的 launcher 真值；本次运行仍同步 rail。
-          startupAppIcon = await publishAppIconSelection(nativeSelection);
-          debugPrint('[Fushi] Android app icon preference sync failed: $e');
+          debugPrint('[Fushi] Android launcher icon restore failed: $e');
         }
-      } catch (e) {
-        debugPrint('[Fushi] Android launcher icon restore failed: $e');
       }
-    }
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      await windowManager.ensureInitialized();
-      if (Platform.isWindows || Platform.isMacOS) {
-        // window_manager's Windows plugin implements setTitleBarStyle as a
-        // string assignment + SetWindowPos and always reports success, so there
-        // is no failure mode to fall back from here (the macOS plugin likewise
-        // just flips NSWindow properties). The app frame is therefore
-        // unconditional on both hosts once the plugin is initialised.
-        //
-        // macOS 走同一条路（用户拍板：两端同一个 MD3 顶栏）：`hidden` 在 macOS
-        // 上是 `titleVisibility=.hidden` + `titlebarAppearsTransparent` +
-        // `fullSizeContentView`，`windowButtonVisibility: false` 则把红黄绿三个
-        // 交通灯 `standardWindowButton(_).isHidden = true`。于是 macOS 不再有
-        // 系统交通灯，最小化/缩放/关闭全部由 [FushiDesktopTitleBar] 的 MD3 按钮
-        // 提供（AppKit 仍然自己拥有窗口四边的 resize 边框，不需要 app 代劳）。
-        // 这也一并根除了「交通灯浮在 Flutter 内容左上角」派生的一整串让位补丁
-        // （BUG-869 的 SafeArea 保留带、BUG-973 视频页临时隐藏、BUG-1343 阅读器
-        // 自绘拖拽带）。
-        await windowManager.setTitleBarStyle(
-          TitleBarStyle.hidden,
-          windowButtonVisibility: false,
-        );
-        FushiDesktopTitleBar.markEnabled();
-      }
-      // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
-      // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
-      MainWindowForegroundWatcher.instance.start();
-      await DesktopWindowPlacement.applyInitialPlacement();
-      // Intercept the native window-close signal so we can tear down Bonsoir's
-      // mDNS event sources (LAN broadcast + discovery) BEFORE the Flutter engine
-      // exits. Without this, a queued mDNS event delivered to a torn-down
-      // messenger crashes the process on exit (TODO-036, Windows). The actual
-      // event-source cut + fast exit runs in
-      // [_FushiReaderAppState.onWindowClose] (TODO-086).
-      await windowManager.setPreventClose(true);
-      // TODO-959: 数据迁移成功后的自动重启会以 detached 模式拉新进程并带上重启标志。
-      // 新进程的 Windows runner 见到标志会**隐藏建窗**（不带 WS_VISIBLE，见
-      // win32_window.cpp 的 restarted_hidden 分支），把「旧进程 exit(0) → 新进程
-      // Flutter 首帧」这段交接期挡在屏幕之外，避免空白/黑色错误窗。此处在首帧前
-      // （runApp 之前）主动 show()+focus() 把已建好的隐藏主窗口顶到前台并显示出来。
-      // 铁律：隐藏建窗的进程**必须**在这里成功显示，否则窗口永久不可见。因此 show()
-      // 即使抛错也要在 catch 里再兜底强制 show 一次，绝不让任何路径停在不可见状态。
-      if (args.contains(DesktopLifecycleService.restartMarkerArg)) {
-        try {
-          await windowManager.show();
-          await windowManager.focus();
-        } catch (e) {
-          debugPrint('[Fushi] restart window focus skipped: $e');
-          // 兜底：上面的 focus() 抢前台失败不致命，但隐藏建窗的窗口若未 show 就会
-          // 永久不可见。再尝试一次纯 show()，仍失败也只能记录（极端环境）。
+      // BUG-2462：Windows 子窗 resize 闸门的确认信号。必须在 runApp 之前挂——
+      // 首帧起 runner 就在等这条上报来确认它交付的第一个尺寸。
+      installRasterizedFrameSizeReporter();
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        await windowManager.ensureInitialized();
+        if (Platform.isWindows || Platform.isMacOS) {
+          // window_manager's Windows plugin implements setTitleBarStyle as a
+          // string assignment + SetWindowPos and always reports success, so there
+          // is no failure mode to fall back from here (the macOS plugin likewise
+          // just flips NSWindow properties). The app frame is therefore
+          // unconditional on both hosts once the plugin is initialised.
+          //
+          // macOS 走同一条路（用户拍板：两端同一个 MD3 顶栏）：`hidden` 在 macOS
+          // 上是 `titleVisibility=.hidden` + `titlebarAppearsTransparent` +
+          // `fullSizeContentView`，`windowButtonVisibility: false` 则把红黄绿三个
+          // 交通灯 `standardWindowButton(_).isHidden = true`。于是 macOS 不再有
+          // 系统交通灯，最小化/缩放/关闭全部由 [FushiDesktopTitleBar] 的 MD3 按钮
+          // 提供（AppKit 仍然自己拥有窗口四边的 resize 边框，不需要 app 代劳）。
+          // 这也一并根除了「交通灯浮在 Flutter 内容左上角」派生的一整串让位补丁
+          // （BUG-869 的 SafeArea 保留带、BUG-973 视频页临时隐藏、BUG-1343 阅读器
+          // 自绘拖拽带）。
+          await windowManager.setTitleBarStyle(
+            TitleBarStyle.hidden,
+            windowButtonVisibility: false,
+          );
+          FushiDesktopTitleBar.markEnabled();
+        }
+        // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
+        // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
+        MainWindowForegroundWatcher.instance.start();
+        await DesktopWindowPlacement.applyInitialPlacement();
+        // Intercept the native window-close signal so we can tear down Bonsoir's
+        // mDNS event sources (LAN broadcast + discovery) BEFORE the Flutter engine
+        // exits. Without this, a queued mDNS event delivered to a torn-down
+        // messenger crashes the process on exit (TODO-036, Windows). The actual
+        // event-source cut + fast exit runs in
+        // [_FushiReaderAppState.onWindowClose] (TODO-086).
+        await windowManager.setPreventClose(true);
+        // TODO-959: 数据迁移成功后的自动重启会以 detached 模式拉新进程并带上重启标志。
+        // 新进程的 Windows runner 见到标志会**隐藏建窗**（不带 WS_VISIBLE，见
+        // win32_window.cpp 的 restarted_hidden 分支），把「旧进程 exit(0) → 新进程
+        // Flutter 首帧」这段交接期挡在屏幕之外，避免空白/黑色错误窗。此处在首帧前
+        // （runApp 之前）主动 show()+focus() 把已建好的隐藏主窗口顶到前台并显示出来。
+        // 铁律：隐藏建窗的进程**必须**在这里成功显示，否则窗口永久不可见。因此 show()
+        // 即使抛错也要在 catch 里再兜底强制 show 一次，绝不让任何路径停在不可见状态。
+        if (args.contains(DesktopLifecycleService.restartMarkerArg)) {
           try {
             await windowManager.show();
-          } catch (e2) {
-            debugPrint('[Fushi] restart window show fallback failed: $e2');
-          }
-        }
-      }
-      await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
-      // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
-      // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
-      if (Platform.isWindows) {
-        try {
-          final String? iconPath = startupAppIcon.usesCustomFile
-              ? startupAppIcon.customPath
-              : await exportPresetIconToFile(startupAppIcon.presetKey);
-          if (iconPath != null && File(iconPath).existsSync()) {
-            final bool applied =
-                await WindowCaptionChannel.setWindowIcon(iconPath);
-            if (applied) {
-              // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
-              // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
-              // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
-              final Uint8List iconBytes = await File(iconPath).readAsBytes();
-              await syncWindowsShortcutIcons(iconBytes);
+            await windowManager.focus();
+          } catch (e) {
+            debugPrint('[Fushi] restart window focus skipped: $e');
+            // 兜底：上面的 focus() 抢前台失败不致命，但隐藏建窗的窗口若未 show 就会
+            // 永久不可见。再尝试一次纯 show()，仍失败也只能记录（极端环境）。
+            try {
+              await windowManager.show();
+            } catch (e2) {
+              debugPrint('[Fushi] restart window show fallback failed: $e2');
             }
           }
-        } catch (e) {
-          debugPrint('[Fushi] window icon restore failed: $e');
+        }
+        await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
+        // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
+        // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
+        if (Platform.isWindows) {
+          try {
+            final String? iconPath = startupAppIcon.usesCustomFile
+                ? startupAppIcon.customPath
+                : await exportPresetIconToFile(startupAppIcon.presetKey);
+            if (iconPath != null && File(iconPath).existsSync()) {
+              final bool applied = await WindowCaptionChannel.setWindowIcon(
+                iconPath,
+              );
+              if (applied) {
+                // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
+                // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
+                // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
+                final Uint8List iconBytes = await File(iconPath).readAsBytes();
+                await syncWindowsShortcutIcons(iconBytes);
+              }
+            }
+          } catch (e) {
+            debugPrint('[Fushi] window icon restore failed: $e');
+          }
         }
       }
-    }
-    JustAudioMediaKit.title = 'Fushi';
-    // 关闭 pitch-shift 控制（默认 true）。开启时 media_kit 的 setRate 会在每次调速时
-    // 重写 mpv 的 `af` 音频滤镜图（scaletempo:scale=…）；在 Windows 上播放过程中反复
-    // 重配滤镜图会触发 libmpv 进程级崩溃（有声书拖动倍速闪退，BUG-070）。本 app 从不
-    // 调用 setPitch（无变调 UI），关掉后调速改走 mpv 原生 `speed` 属性（稳定，不重配
-    // 滤镜图），mpv 默认 `audio-pitch-correction=yes` 仍保留音高 → 有声书加速不变调。
-    JustAudioMediaKit.pitch = false;
-    JustAudioMediaKit.ensureInitialized();
-    MediaKit.ensureInitialized();
+      JustAudioMediaKit.title = 'Fushi';
+      // 关闭 pitch-shift 控制（默认 true）。开启时 media_kit 的 setRate 会在每次调速时
+      // 重写 mpv 的 `af` 音频滤镜图（scaletempo:scale=…）；在 Windows 上播放过程中反复
+      // 重配滤镜图会触发 libmpv 进程级崩溃（有声书拖动倍速闪退，BUG-070）。本 app 从不
+      // 调用 setPitch（无变调 UI），关掉后调速改走 mpv 原生 `speed` 属性（稳定，不重配
+      // 滤镜图），mpv 默认 `audio-pitch-correction=yes` 仍保留音高 → 有声书加速不变调。
+      JustAudioMediaKit.pitch = false;
+      JustAudioMediaKit.ensureInitialized();
+      MediaKit.ensureInitialized();
 
-    // BUG-1015 的查词播放器冷启动静音预热**不在启动路径**（BUG-1690）：预热要在真实
-    // 音频输出设备上开渲染流，启动即预热会打断其他 app 正在播的音乐（iOS 激活音频会话
-    // 直接暂停对方；蓝牙多点/独占输出被抢走）。预热已改为惰性——首次真实查词播放前，
-    // 由桌面查词播放器在自身的激活串行队列里就地执行（见 desktop_audio_playback.dart），
-    // BUG-1015 的保护不变。启动路径不得新增任何打开音频输出流的调用。
-    // （BUG-1093 弹窗 WebView <audio> 首次无声是 WebView2 autoplay 策略，与此无关。）
+      // BUG-1015 的查词播放器冷启动静音预热**不在启动路径**（BUG-1690）：预热要在真实
+      // 音频输出设备上开渲染流，启动即预热会打断其他 app 正在播的音乐（iOS 激活音频会话
+      // 直接暂停对方；蓝牙多点/独占输出被抢走）。预热已改为惰性——首次真实查词播放前，
+      // 由桌面查词播放器在自身的激活串行队列里就地执行（见 desktop_audio_playback.dart），
+      // BUG-1015 的保护不变。启动路径不得新增任何打开音频输出流的调用。
+      // （BUG-1093 弹窗 WebView <audio> 首次无声是 WebView2 autoplay 策略，与此无关。）
 
-    // macOS native shell: initialise the macos_window_utils channel (paired with
-    // MainFlutterWindowManipulator.start in MainFlutterWindow.swift) so the
-    // MacosWindow transparent titlebar / sidebar vibrancy work. enableWindow
-    // Delegate is required for fullscreen presentation options. macos_ui's ToolBar
-    // adds a passthrough view constrained to the titlebar, which throws
-    // `NSLayoutAttributeTop requires NSWindowStyleMaskFullSizeContentView` unless
-    // the window has a full-size content view + transparent titlebar, so enable
-    // those explicitly here (before runApp) so the style mask is correct before
-    // any ToolBar mounts. No-op / not called on other platforms.
-    if (Platform.isMacOS) {
-      await WindowManipulator.initialize(enableWindowDelegate: true);
-      await WindowManipulator.makeTitlebarTransparent();
-      await WindowManipulator.enableFullSizeContentView();
-    }
-
-    /// Ensure no pop-in for the selected app icon. Precaching is a best-effort
-    /// optimisation: if the decode fails (e.g. the CI software-GPU emulator
-    /// can't decompress the PNG → "Could not decompress image", or low memory),
-    /// it must NOT surface as an unhandled FlutterError — that would both spam
-    /// error reporting on real devices and fail the appSmoke integration test.
-    /// Swallow it via precacheImage's onError; the icon just falls back to a
-    /// one-frame decode-on-demand later.
-    binding.addPostFrameCallback((_) async {
-      final context = binding.rootElement;
-      if (context != null) {
-        precacheImage(
-          appIconImageProvider(startupAppIcon),
-          context,
-          onError: (Object error, StackTrace? stack) {
-            debugPrint('[startup] app icon precache skipped: $error');
-          },
-        );
-      }
-    });
-
-    /// Ensure wake prevention is disabled if not reverted from entering a
-    /// media source.  WakelockPlus supports all desktop and mobile platforms,
-    /// so clear it unconditionally; the try-catch handles unsupported targets.
-    try {
-      WakelockPlus.disable();
-    } catch (e) {
-      debugPrint('[Fushi] wakelock disable on startup failed: $e');
-    }
-    if (Platform.isAndroid || Platform.isIOS) {
-      // Home/menu shell: hide the Android status bar (keep the nav bar) so the
-      // always-on OS clock/battery strip stops crowding the top-right action
-      // icons (TODO-097). iOS keeps edge-to-edge. Reader/video override this with
-      // immersiveSticky on open and restore it via closeMedia on exit.
-      unawaited(setHomeShellSystemUiMode());
-    }
-
-    // Match system bar overlays to the platform brightness immediately so the
-    // status bar and navigation bar don't flash white on dark-mode devices.
-    final platformBrightness =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness;
-    SystemChrome.setSystemUIOverlayStyle(
-      fushiSystemOverlayStyle(platformBrightness),
-    );
-
-    if (Platform.isAndroid || Platform.isIOS) {
-      try {
-        final raw =
-            await FushiChannels.splash.invokeMethod<int>('getSplashColor');
-        if (raw != null && raw != 0) _savedSplashColor = Color(raw);
-      } catch (e) {
-        debugPrint('[Fushi] getSplashColor failed: $e');
+      // macOS native shell: initialise the macos_window_utils channel (paired with
+      // MainFlutterWindowManipulator.start in MainFlutterWindow.swift) so the
+      // MacosWindow transparent titlebar / sidebar vibrancy work. enableWindow
+      // Delegate is required for fullscreen presentation options. macos_ui's ToolBar
+      // adds a passthrough view constrained to the titlebar, which throws
+      // `NSLayoutAttributeTop requires NSWindowStyleMaskFullSizeContentView` unless
+      // the window has a full-size content view + transparent titlebar, so enable
+      // those explicitly here (before runApp) so the style mask is correct before
+      // any ToolBar mounts. No-op / not called on other platforms.
+      if (Platform.isMacOS) {
+        await WindowManipulator.initialize(enableWindowDelegate: true);
+        await WindowManipulator.makeTitlebarTransparent();
+        await WindowManipulator.enableFullSizeContentView();
       }
 
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    }
-
-    /// Some packages propagate their [StackTrace] in an unusual format as
-    /// opposed to the format generated by Dart. This function allows the
-    /// Flutter framework to handle such formats so they can be displayed
-    /// appropriately.
-    FlutterError.demangleStackTrace = (stack) {
-      if (stack is Trace) {
-        return stack.vmTrace;
-      }
-      if (stack is Chain) {
-        return stack.toTrace().vmTrace;
-      }
-      return stack;
-    };
-
-    /// Construct platform-specific service implementations once, before the
-    /// provider container is created.  This value object is injected into both
-    /// [platformServicesProvider] (for widget-layer access) and [AppModel]
-    /// (via [appProvider]).
-    final platformServices = PlatformServices.forCurrentPlatform();
-
-    /// Create the provider container before running the app so the same
-    /// [AppModel] instance is shared between the widget tree and the
-    /// initialisation call below.
-    final container = ProviderContainer(
-      overrides: [
-        platformServicesProvider.overrideWithValue(platformServices),
-      ],
-    );
-
-    /// BUG-1450：Windows 上没有文本框持焦时解除窗口的 IME 关联，否则中文输入法
-    /// 会吞掉每一个按键（引擎把它们报成 physical=0/logical=0），整张快捷键表失效。
-    /// 必须在 runApp 之前挂上：install 会立刻同步一次，冷启动第一帧起就生效。
-    WindowsImeGuard.install();
-
-    /// Start the application immediately so the user sees the loading page
-    /// rather than a blank white screen while initialisation is in progress.
-    runApp(
-      UncontrolledProviderScope(
-        container: container,
-        child: const FushiReaderApp(),
-      ),
-    );
-
-    /// Initialise error log service.
-    await ErrorLogService.instance.init();
-    // 下面四步都只依赖错误日志已就绪、彼此独立（各自读写自己的文件 / 通道），
-    // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
-    await Future.wait<void>(<Future<void>>[
-      DebugLogService.instance.init(),
-      // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
-      // 供设置项同步渲染。非 Android 静默降级为不支持。
-      RenderBackendService.instance.init(),
-      // BUG-209 / TODO-398：把上次运行残留的 Windows WGC 帧捕获生命周期日志
-      // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
-      // UAF 崩溃提供可读的崩前生命周期证据。
-      WgcCaptureLog.foldIntoErrorLog(),
-      // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
-      // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
-      PresentStallLog.foldIntoErrorLog(),
-    ]);
-
-    /// Initialise local file-based logging (mobile only).
-    if (Platform.isAndroid || Platform.isIOS) {
-      await FlutterLogs.initLogs(
-        logLevelsEnabled: [
-          LogLevel.INFO,
-          LogLevel.WARNING,
-          LogLevel.ERROR,
-          LogLevel.SEVERE
-        ],
-        timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
-        directoryStructure: DirectoryStructure.FOR_DATE,
-        logTypesEnabled: ['device', 'network', 'errors'],
-        logFileExtension: LogFileExtension.LOG,
-        logsRetentionPeriodInDays: 7,
-      );
-    }
-
-    /// Run the heavy initialisation after the first frame has been scheduled.
-    /// [AppModel.isInitialised] will flip to true and notify listeners when
-    /// done, causing [FushiReaderApp] to navigate from [LoadingPage] to
-    /// [HomePage].
-    await FushiDicts.preloadTransforms();
-
-    final appModel = container.read(appProvider);
-    // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
-    // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
-    appModel.browserLookupProfileApplier = () => container
-        .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(mediaType: ProfileMediaKind.browser);
-    await appModel.initialise();
-
-    // ── 预热 WebView 引擎 ──────────────────────────────────────────────
-    // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
-    // 移动端可直接预热；桌面端（WebView2）必须等首帧渲染、Flutter view
-    // 已挂载后再构造 HeadlessInAppWebView，否则会崩 WebView2。
-
-    // Windows/iOS 弹窗内联资产（popup.html/js/css ~300KB）异步预读：把 4 次
-    // 同步读盘从「第一次查词」路径挪到启动空闲期（内部平台门控，其它平台 no-op）。
-    unawaited(DictionaryPopupWebViewState.preloadInlinePopupAssets());
-
-    final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
-    final bool isDesktopPlatform =
-        Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-    if (shouldPrewarmWebView(
-      isMobile: isMobilePlatform,
-      isDesktop: isDesktopPlatform,
-      lowMemory: appModel.lowMemoryMode,
-    )) {
-      unawaited(Future(() async {
-        // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
-        // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
-        // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
-        // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
-        // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
-        // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
-        // 超时兜底，先到者胜、只 dispose 一次。
-        late final HeadlessInAppWebView warmup;
-        final WebViewPrewarmSession session = WebViewPrewarmSession(
-          disposeWebView: () => warmup.dispose(),
-          onFinished: (String reason) =>
-              debugPrint('[Fushi] WebView engine pre-warm ended: $reason'),
-        );
-        try {
-          // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
-          if (isDesktopPlatform) {
-            await WidgetsBinding.instance.endOfFrame;
-          }
-          warmup = HeadlessInAppWebView(
-            initialUrlRequest: URLRequest(url: WebUri('about:blank')),
-            onLoadStop: (controller, url) async {
-              // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
-              // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
-              // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
-              await Future.delayed(const Duration(milliseconds: 100));
-              await session.finish('loaded');
+      /// Ensure no pop-in for the selected app icon. Precaching is a best-effort
+      /// optimisation: if the decode fails (e.g. the CI software-GPU emulator
+      /// can't decompress the PNG → "Could not decompress image", or low memory),
+      /// it must NOT surface as an unhandled FlutterError — that would both spam
+      /// error reporting on real devices and fail the appSmoke integration test.
+      /// Swallow it via precacheImage's onError; the icon just falls back to a
+      /// one-frame decode-on-demand later.
+      binding.addPostFrameCallback((_) async {
+        final context = binding.rootElement;
+        if (context != null) {
+          precacheImage(
+            appIconImageProvider(startupAppIcon),
+            context,
+            onError: (Object error, StackTrace? stack) {
+              debugPrint('[startup] app icon precache skipped: $error');
             },
-            onReceivedError: (controller, request, error) =>
-                session.finish('load error: ${error.type}'),
-            // 接管 renderer 死亡：Android 侧只要注册了这个回调，
-            // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
-            onRenderProcessGone: (controller, detail) =>
-                session.finish('renderer gone (didCrash=${detail.didCrash})'),
           );
-          await warmup.run();
-          session.armTimeout();
-        } catch (e) {
-          debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
-          await session.finish('run failed: $e');
         }
-      }));
-    }
+      });
 
-    // TODO-617: start the global lookup overlay trigger on desktop (Windows MVP).
-    // After the first frame so the Flutter view / WebView2 host is attached.
-    if (isDesktopPlatform) {
-      unawaited(Future(() async {
-        try {
-          await WidgetsBinding.instance.endOfFrame;
-          // 两个控制器分属不同模块，各判各的门——**必须写成两条独立的 if**：
-          // 它们此前在同一个 try 里顺序执行，给第一个加 early return 会连带
-          // 跳过 galgame 浮窗（games 与 lookup 正交）。
-          //
-          // 「下次启动不再自启」的语义在这里是字面的：两个 start() 都只有单向
-          // 闩（`_started`）、生产路径没有 stop，所以关掉模块要到下次启动才
-          // 真的不装钩子；这正是用户选的「不切断进行中的任务」。
-          final ModuleVisibility modules = appModel.moduleVisibility;
-          if (modules.isEnabled(ModuleId.lookup)) {
-            // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
-            // WebView2 预热，四条通道全部依附于这一次 start()。关掉查词模块
-            // 就不该再往系统里装钩子（快捷键设置页的 globalExternal 分区同步
-            // 隐藏，见 shortcut_settings_page）。
-            await GlobalLookupController.instance.start(appModel: appModel);
-          }
-          if (modules.isEnabled(ModuleId.games) &&
-              GalHookTextOverlayController.isSupported) {
-            await GalHookTextOverlayController.instance
-                .start(appModel: appModel);
-          }
-        } catch (e, st) {
-          // 🔴 这里以前只有 debugPrint —— release 构建下它**无处可去**。于是这一整段
-          // 桌面查词启动链（全局查词覆盖窗 / galgame 台词浮窗）里任何一步抛异常，
-          // 都会静默地把后面全部跳过：用户看到的是"某个功能
-          // 就是不工作"，日志里一个字都没有。真机上正因为这个，galgame 台词浮窗控制器
-          // 没启动这件事查了很久才定位到。落盘记录，别再让启动失败无声无息。
-          glog('startup: global lookup chain FAILED (non-fatal): $e');
-          glog('startup: stack: $st');
-          debugPrint('[Fushi] global lookup start failed (non-fatal): $e');
-        }
-      }));
-    }
-
-    // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1292）。
-    // 版本与 app 强绑定：要新组件就更新 Hibiki。不要恢复后台静默下载或旧包联网兜底。
-
-    /// Capture Flutter framework errors with full details.
-    FlutterError.onError = (details) {
-      // Suppress known Flutter framework bug: RawTooltipState creates
-      // multiple tickers from SingleTickerProviderStateMixin.
-      final msg = details.exceptionAsString();
-      if (msg.contains('SingleTickerProviderStateMixin') &&
-          msg.contains('RawTooltipState')) {
-        return;
+      /// Ensure wake prevention is disabled if not reverted from entering a
+      /// media source.  WakelockPlus supports all desktop and mobile platforms,
+      /// so clear it unconditionally; the try-catch handles unsupported targets.
+      try {
+        WakelockPlus.disable();
+      } catch (e) {
+        debugPrint('[Fushi] wakelock disable on startup failed: $e');
       }
-      FlutterError.presentError(details);
-      // TODO-607 P0-1：FlutterError 是致命级，用同步 flush 落盘——若这条错误紧接着把
-      // 进程带崩（如 build/layout 期的 native 回调异常），异步 append 来不及写盘。
-      ErrorLogService.instance.logFatal(
-        flutterErrorLogSource(details),
-        msg,
-        details.stack,
-      );
-    };
+      if (Platform.isAndroid || Platform.isIOS) {
+        // Home/menu shell: hide the Android status bar (keep the nav bar) so the
+        // always-on OS clock/battery strip stops crowding the top-right action
+        // icons (TODO-097). iOS keeps edge-to-edge. Reader/video override this with
+        // immersiveSticky on open and restore it via closeMedia on exit.
+        unawaited(setHomeShellSystemUiMode());
+      }
 
-    /// TODO-607 P0-1：平台/引擎层未捕获的异步错误（platform message handler、
-    /// 原生回调、microtask 等）不经 [FlutterError.onError] 也不一定经
-    /// [runZonedGuarded] 的 onError——它们走 [PlatformDispatcher.onError]。此前没装
-    /// 这个钩子，这类错误对错误日志完全不可见（用户报「错误日志一片空白」的一类
-    /// 来源）。装上后用同步 flush 落盘（致命级），返回 true 标记「已处理」，避免
-    /// 引擎把它再当未处理崩溃上报。
-    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-      ErrorLogService.instance.logFatal('PlatformDispatcher', error, stack);
-      return true;
-    };
-  }, (exception, stack) {
-    /// Print error details to the console.
-    final details = FlutterErrorDetails(exception: exception, stack: stack);
-
-    /// Log the error. UncaughtZone 是致命级（zone 顶层未捕获），同步 flush 落盘
-    /// （TODO-607 P0-1）——这条之后进程往往就终止了，异步 append 来不及写盘。
-    ErrorLogService.instance.logFatal('UncaughtZone', exception, stack);
-    if (Platform.isAndroid || Platform.isIOS) {
-      FlutterLogs.logError(
-        'fushi_reader',
-        details.exceptionAsString(),
-        stack.toString(),
+      // Match system bar overlays to the platform brightness immediately so the
+      // status bar and navigation bar don't flash white on dark-mode devices.
+      final platformBrightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      SystemChrome.setSystemUIOverlayStyle(
+        fushiSystemOverlayStyle(platformBrightness),
       );
-    }
-  });
+
+      if (Platform.isAndroid || Platform.isIOS) {
+        try {
+          final raw = await FushiChannels.splash.invokeMethod<int>(
+            'getSplashColor',
+          );
+          if (raw != null && raw != 0) _savedSplashColor = Color(raw);
+        } catch (e) {
+          debugPrint('[Fushi] getSplashColor failed: $e');
+        }
+
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
+
+      /// Some packages propagate their [StackTrace] in an unusual format as
+      /// opposed to the format generated by Dart. This function allows the
+      /// Flutter framework to handle such formats so they can be displayed
+      /// appropriately.
+      FlutterError.demangleStackTrace = (stack) {
+        if (stack is Trace) {
+          return stack.vmTrace;
+        }
+        if (stack is Chain) {
+          return stack.toTrace().vmTrace;
+        }
+        return stack;
+      };
+
+      /// Construct platform-specific service implementations once, before the
+      /// provider container is created.  This value object is injected into both
+      /// [platformServicesProvider] (for widget-layer access) and [AppModel]
+      /// (via [appProvider]).
+      final platformServices = PlatformServices.forCurrentPlatform();
+
+      /// Create the provider container before running the app so the same
+      /// [AppModel] instance is shared between the widget tree and the
+      /// initialisation call below.
+      final container = ProviderContainer(
+        overrides: [
+          platformServicesProvider.overrideWithValue(platformServices),
+        ],
+      );
+
+      /// BUG-1450：Windows 上没有文本框持焦时解除窗口的 IME 关联，否则中文输入法
+      /// 会吞掉每一个按键（引擎把它们报成 physical=0/logical=0），整张快捷键表失效。
+      /// 必须在 runApp 之前挂上：install 会立刻同步一次，冷启动第一帧起就生效。
+      WindowsImeGuard.install();
+
+      /// Start the application immediately so the user sees the loading page
+      /// rather than a blank white screen while initialisation is in progress.
+      runApp(
+        UncontrolledProviderScope(
+          container: container,
+          child: const FushiReaderApp(),
+        ),
+      );
+
+      /// Initialise error log service.
+      await ErrorLogService.instance.init();
+      // 下面四步都只依赖错误日志已就绪、彼此独立（各自读写自己的文件 / 通道），
+      // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
+      await Future.wait<void>(<Future<void>>[
+        DebugLogService.instance.init(),
+        // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
+        // 供设置项同步渲染。非 Android 静默降级为不支持。
+        RenderBackendService.instance.init(),
+        // BUG-209 / TODO-398：把上次运行残留的 Windows WGC 帧捕获生命周期日志
+        // 折进错误日志（仅 Windows），纳入现有上传链路，为 GraphicsCapture 延迟
+        // UAF 崩溃提供可读的崩前生命周期证据。
+        WgcCaptureLog.foldIntoErrorLog(),
+        // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
+        // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
+        PresentStallLog.foldIntoErrorLog(),
+      ]);
+
+      /// Initialise local file-based logging (mobile only).
+      if (Platform.isAndroid || Platform.isIOS) {
+        await FlutterLogs.initLogs(
+          logLevelsEnabled: [
+            LogLevel.INFO,
+            LogLevel.WARNING,
+            LogLevel.ERROR,
+            LogLevel.SEVERE,
+          ],
+          timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
+          directoryStructure: DirectoryStructure.FOR_DATE,
+          logTypesEnabled: ['device', 'network', 'errors'],
+          logFileExtension: LogFileExtension.LOG,
+          logsRetentionPeriodInDays: 7,
+        );
+      }
+
+      /// Run the heavy initialisation after the first frame has been scheduled.
+      /// [AppModel.isInitialised] will flip to true and notify listeners when
+      /// done, causing [FushiReaderApp] to navigate from [LoadingPage] to
+      /// [HomePage].
+      await FushiDicts.preloadTransforms();
+
+      final appModel = container.read(appProvider);
+      // TODO-2936：浏览器扩展查词命中 yomitan-api server 时应用「浏览器」媒体类型
+      // 的 Profile 绑定。必须在 initialise() 之前注入（server 在 initialise 内启动）。
+      appModel.browserLookupProfileApplier = () => container
+          .read(profileViewModelProvider.notifier)
+          .autoApplyBinding(mediaType: ProfileMediaKind.browser);
+      await appModel.initialise();
+
+      // ── 预热 WebView 引擎 ──────────────────────────────────────────────
+      // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
+      // 移动端可直接预热；桌面端（WebView2）必须等首帧渲染、Flutter view
+      // 已挂载后再构造 HeadlessInAppWebView，否则会崩 WebView2。
+
+      // Windows/iOS 弹窗内联资产（popup.html/js/css ~300KB）异步预读：把 4 次
+      // 同步读盘从「第一次查词」路径挪到启动空闲期（内部平台门控，其它平台 no-op）。
+      unawaited(DictionaryPopupWebViewState.preloadInlinePopupAssets());
+
+      final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
+      final bool isDesktopPlatform =
+          Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+      if (shouldPrewarmWebView(
+        isMobile: isMobilePlatform,
+        isDesktop: isDesktopPlatform,
+        lowMemory: appModel.lowMemoryMode,
+      )) {
+        unawaited(
+          Future(() async {
+            // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
+            // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
+            // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
+            // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
+            // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
+            // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
+            // 超时兜底，先到者胜、只 dispose 一次。
+            late final HeadlessInAppWebView warmup;
+            final WebViewPrewarmSession session = WebViewPrewarmSession(
+              disposeWebView: () => warmup.dispose(),
+              onFinished: (String reason) =>
+                  debugPrint('[Fushi] WebView engine pre-warm ended: $reason'),
+            );
+            try {
+              // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
+              if (isDesktopPlatform) {
+                await WidgetsBinding.instance.endOfFrame;
+              }
+              warmup = HeadlessInAppWebView(
+                initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+                onLoadStop: (controller, url) async {
+                  // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
+                  // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
+                  // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
+                  await Future.delayed(const Duration(milliseconds: 100));
+                  await session.finish('loaded');
+                },
+                onReceivedError: (controller, request, error) =>
+                    session.finish('load error: ${error.type}'),
+                // 接管 renderer 死亡：Android 侧只要注册了这个回调，
+                // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+                onRenderProcessGone: (controller, detail) => session.finish(
+                  'renderer gone (didCrash=${detail.didCrash})',
+                ),
+              );
+              await warmup.run();
+              session.armTimeout();
+            } catch (e) {
+              debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
+              await session.finish('run failed: $e');
+            }
+          }),
+        );
+      }
+
+      // TODO-617: start the global lookup overlay trigger on desktop (Windows MVP).
+      // After the first frame so the Flutter view / WebView2 host is attached.
+      if (isDesktopPlatform) {
+        unawaited(
+          Future(() async {
+            try {
+              await WidgetsBinding.instance.endOfFrame;
+              // 两个控制器分属不同模块，各判各的门——**必须写成两条独立的 if**：
+              // 它们此前在同一个 try 里顺序执行，给第一个加 early return 会连带
+              // 跳过 galgame 浮窗（games 与 lookup 正交）。
+              //
+              // 「下次启动不再自启」的语义在这里是字面的：两个 start() 都只有单向
+              // 闩（`_started`）、生产路径没有 stop，所以关掉模块要到下次启动才
+              // 真的不装钩子；这正是用户选的「不切断进行中的任务」。
+              final ModuleVisibility modules = appModel.moduleVisibility;
+              if (modules.isEnabled(ModuleId.lookup)) {
+                // app 外全局取词：OS 级热键 + 鼠标侧键 RawInput + 手柄触发 + 离屏
+                // WebView2 预热，四条通道全部依附于这一次 start()。关掉查词模块
+                // 就不该再往系统里装钩子（快捷键设置页的 globalExternal 分区同步
+                // 隐藏，见 shortcut_settings_page）。
+                await GlobalLookupController.instance.start(appModel: appModel);
+              }
+              if (modules.isEnabled(ModuleId.games) &&
+                  GalHookTextOverlayController.isSupported) {
+                await GalHookTextOverlayController.instance.start(
+                  appModel: appModel,
+                );
+              }
+            } catch (e, st) {
+              // 🔴 这里以前只有 debugPrint —— release 构建下它**无处可去**。于是这一整段
+              // 桌面查词启动链（全局查词覆盖窗 / galgame 台词浮窗）里任何一步抛异常，
+              // 都会静默地把后面全部跳过：用户看到的是"某个功能
+              // 就是不工作"，日志里一个字都没有。真机上正因为这个，galgame 台词浮窗控制器
+              // 没启动这件事查了很久才定位到。落盘记录，别再让启动失败无声无息。
+              glog('startup: global lookup chain FAILED (non-fatal): $e');
+              glog('startup: stack: $st');
+              debugPrint('[Fushi] global lookup start failed (non-fatal): $e');
+            }
+          }),
+        );
+      }
+
+      // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1292）。
+      // 版本与 app 强绑定：要新组件就更新 Hibiki。不要恢复后台静默下载或旧包联网兜底。
+
+      /// Capture Flutter framework errors with full details.
+      FlutterError.onError = (details) {
+        // Suppress known Flutter framework bug: RawTooltipState creates
+        // multiple tickers from SingleTickerProviderStateMixin.
+        final msg = details.exceptionAsString();
+        if (msg.contains('SingleTickerProviderStateMixin') &&
+            msg.contains('RawTooltipState')) {
+          return;
+        }
+        FlutterError.presentError(details);
+        // TODO-607 P0-1：FlutterError 是致命级，用同步 flush 落盘——若这条错误紧接着把
+        // 进程带崩（如 build/layout 期的 native 回调异常），异步 append 来不及写盘。
+        ErrorLogService.instance.logFatal(
+          flutterErrorLogSource(details),
+          msg,
+          details.stack,
+        );
+      };
+
+      /// TODO-607 P0-1：平台/引擎层未捕获的异步错误（platform message handler、
+      /// 原生回调、microtask 等）不经 [FlutterError.onError] 也不一定经
+      /// [runZonedGuarded] 的 onError——它们走 [PlatformDispatcher.onError]。此前没装
+      /// 这个钩子，这类错误对错误日志完全不可见（用户报「错误日志一片空白」的一类
+      /// 来源）。装上后用同步 flush 落盘（致命级），返回 true 标记「已处理」，避免
+      /// 引擎把它再当未处理崩溃上报。
+      PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+        ErrorLogService.instance.logFatal('PlatformDispatcher', error, stack);
+        return true;
+      };
+    },
+    (exception, stack) {
+      /// Print error details to the console.
+      final details = FlutterErrorDetails(exception: exception, stack: stack);
+
+      /// Log the error. UncaughtZone 是致命级（zone 顶层未捕获），同步 flush 落盘
+      /// （TODO-607 P0-1）——这条之后进程往往就终止了，异步 append 来不及写盘。
+      ErrorLogService.instance.logFatal('UncaughtZone', exception, stack);
+      if (Platform.isAndroid || Platform.isIOS) {
+        FlutterLogs.logError(
+          'fushi_reader',
+          details.exceptionAsString(),
+          stack.toString(),
+        );
+      }
+    },
+  );
 }
 
 /// Encapsulates theming, spacing and other configurable options pertaining to
@@ -683,16 +701,18 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// （见 `windows/runner/external_video_handoff.*` + `flutter_window.cpp`）。首实例
   /// 经此 MethodChannel 收到 `openExternalVideo`，复用现有 [_openExternalVideo]
   /// 打开链路。仅 Windows 注册（其它桌面平台暂无单实例守卫，走首启 argv 路径）。
-  static const MethodChannel _externalVideoChannel =
-      MethodChannel('app.fushi/external_video');
+  static const MethodChannel _externalVideoChannel = MethodChannel(
+    'app.fushi/external_video',
+  );
 
   /// TODO-1092: Windows 系统强调色/主题色实时变更通知 channel。runner 侧
   /// （`windows/runner/flutter_window.cpp` 的 MessageHandler）收到
   /// WM_DWMCOLORIZATIONCOLORCHANGED / WM_SETTINGCHANGE("ImmersiveColorSet") /
   /// WM_THEMECHANGED 后经此 channel 推 `onSystemColorChanged`，Dart 侧据此调
   /// [AppModel.refreshSystemPalette] 让动态取色实时刷新（不再等生命周期 resumed）。
-  static const MethodChannel _systemThemeChannel =
-      MethodChannel('app.fushi/system_theme');
+  static const MethodChannel _systemThemeChannel = MethodChannel(
+    'app.fushi/system_theme',
+  );
 
   /// 去抖：一次系统色变更常连发多条 Win32 广播（DWM + ImmersiveColorSet +
   /// THEMECHANGED），合并到一次 [AppModel.refreshSystemPalette]，避免同一变更重复
@@ -822,33 +842,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         intents.ReceiveIntent.getInitialIntent().then(
-          (intent) => handleIntent(
-            intent: intent,
-            isInitial: true,
-          ),
+          (intent) => handleIntent(intent: intent, isInitial: true),
         );
-        _intentsSubscription =
-            intents.ReceiveIntent.receivedIntentStream.listen(
-          (intent) => handleIntent(
-            intent: intent,
-            isInitial: false,
-          ),
-        );
+        _intentsSubscription = intents.ReceiveIntent.receivedIntentStream
+            .listen((intent) => handleIntent(intent: intent, isInitial: false));
       });
     }
     if (Platform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         IosUrlEventChannel.getInitialUrl().then(
-          (url) => handleIncomingUrl(
-            data: url,
-            isInitial: true,
-          ),
+          (url) => handleIncomingUrl(data: url, isInitial: true),
         );
         _iosUrlSubscription = IosUrlEventChannel.urls.listen(
-          (url) => handleIncomingUrl(
-            data: url,
-            isInitial: false,
-          ),
+          (url) => handleIncomingUrl(data: url, isInitial: false),
         );
       });
     }
@@ -942,8 +948,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final Stopwatch exitWatch = Stopwatch()..start();
     final AppModel appModel = ref.read(appProvider);
     try {
-      await DesktopWindowPlacement.saveCurrentBoundsNow()
-          .timeout(const Duration(milliseconds: 800));
+      await DesktopWindowPlacement.saveCurrentBoundsNow().timeout(
+        const Duration(milliseconds: 800),
+      );
     } catch (e) {
       debugPrint('[Fushi] desktop window placement save on exit failed: $e');
     }
@@ -960,17 +967,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // 的原生 WebView2 / DirectComposition teardown 历史上都出现过不归（BUG-192）。
     // 窗口此刻已不可见，进程再卡住就成了用户看不见也关不掉的僵尸——到点无条件终止。
     final Timer exitWatchdog = Timer(_exitWatchdogTimeout, () {
-      debugPrint('[Fushi] exit watchdog fired after '
-          '${exitWatch.elapsedMilliseconds}ms; forcing exit');
+      debugPrint(
+        '[Fushi] exit watchdog fired after '
+        '${exitWatch.elapsedMilliseconds}ms; forcing exit',
+      );
       exit(0);
     });
     // ①② 并行：切断 Bonsoir 事件源只动 mDNS 订阅，页面 flush 只写 Drift，两者互不
     //    依赖。过去串行 await 让各自的超时预算直接相加。
     await Future.wait(<Future<void>>[
       _guardedExitStep('sync source fast shutdown', () async {
-        await appModel.syncServerController
-            .shutdownForExitFast()
-            .timeout(const Duration(milliseconds: 1500));
+        await appModel.syncServerController.shutdownForExitFast().timeout(
+          const Duration(milliseconds: 1500),
+        );
       }),
       // ② flush 活跃页面 pending 进度/统计（缓存值落库，不碰退出期正在拆的 WebView）。
       _guardedExitStep('exit flush', () async {
@@ -984,8 +993,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     //    syncContent 默认关时只剩小 JSON，几乎瞬间返回；卡住也由 drain 上限放行，
     //    绝不无限拖住退出。drain 自身不抛（退出清理失败不阻止退出）。
     await _guardedExitStep('book-exit sync drain', () async {
-      await BookExitSyncScope.instance
-          .drain(timeout: const Duration(seconds: 5));
+      await BookExitSyncScope.instance.drain(
+        timeout: const Duration(seconds: 5),
+      );
     });
     // ③ close database：WAL checkpoint + 排空后台 isolate pending 写。退出最后一道
     //    数据完整性闸门——必须在 exit(0) 之前完成。
@@ -1003,7 +1013,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           .timeout(_closeDatabaseOnExitTimeout);
     });
     debugPrint(
-        '[Fushi] exit teardown finished in ${exitWatch.elapsedMilliseconds}ms');
+      '[Fushi] exit teardown finished in ${exitWatch.elapsedMilliseconds}ms',
+    );
     // ④ 进程级快杀（desktop lifecycle = exit(0)），跳过 destroy() 的同步插件拆除。
     //
     // **看门狗不在这之前 cancel**：exitApp() 里 WindowsNativePreExit + exit(0) 才是
@@ -1025,16 +1036,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     try {
       await run();
     } on TimeoutException {
-      debugPrint('[Fushi] exit step "$label" timed out after '
-          '${watch.elapsedMilliseconds}ms; continuing');
+      debugPrint(
+        '[Fushi] exit step "$label" timed out after '
+        '${watch.elapsedMilliseconds}ms; continuing',
+      );
       return;
     } catch (e) {
-      debugPrint('[Fushi] exit step "$label" failed after '
-          '${watch.elapsedMilliseconds}ms: $e');
+      debugPrint(
+        '[Fushi] exit step "$label" failed after '
+        '${watch.elapsedMilliseconds}ms: $e',
+      );
       return;
     }
     debugPrint(
-        '[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms');
+      '[Fushi] exit step "$label" took ${watch.elapsedMilliseconds}ms',
+    );
   }
 
   /// 停掉 Bonsoir 的 LAN 广播 + 发现（mDNS 事件源），再 flush 活跃页面并 close DB。
@@ -1047,9 +1063,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _shutdownStarted = true;
     final AppModel appModel = ref.read(appProvider);
     try {
-      await appModel.syncServerController
-          .shutdownForExit()
-          .timeout(const Duration(milliseconds: 1500));
+      await appModel.syncServerController.shutdownForExit().timeout(
+        const Duration(milliseconds: 1500),
+      );
     } on TimeoutException {
       debugPrint('[Fushi] sync source shutdown on exit timed out; continuing');
     } catch (e) {
@@ -1178,20 +1194,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         default:
           return;
       }
-      FushiToast.show(
-        msg: t.sync_signed_in,
-        severity: ToastSeverity.success,
-      );
+      FushiToast.show(msg: t.sync_signed_in, severity: ToastSeverity.success);
     } on SyncAuthError catch (e) {
       FushiToast.show(
         msg: t.sync_auth_error(message: friendlySyncErrorDetail(e)),
         severity: ToastSeverity.error,
       );
     } catch (e) {
-      FushiToast.show(
-        msg: friendlySyncError(e),
-        severity: ToastSeverity.error,
-      );
+      FushiToast.show(msg: friendlySyncError(e), severity: ToastSeverity.error);
     }
   }
 
@@ -1246,13 +1256,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   Future<dynamic> _handleSystemThemeChannel(MethodCall call) async {
     if (call.method != 'onSystemColorChanged') return null;
     _systemColorRefreshDebounce?.cancel();
-    _systemColorRefreshDebounce = Timer(
-      const Duration(milliseconds: 150),
-      () {
-        if (!mounted) return;
-        unawaited(ref.read(appProvider).refreshSystemPalette());
-      },
-    );
+    _systemColorRefreshDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      unawaited(ref.read(appProvider).refreshSystemPalette());
+    });
     return null;
   }
 
@@ -1297,67 +1304,69 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
     String bookUid;
     try {
-      bookUid = await _runExternalVideoCoverMutation(
-        (bool allowAutoCover) async {
-          // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
-          // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
-          // 走仓库单一真相源 findByVideoPath（与 isDuplicateVideoPath 同比对语义）。
-          final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
-          if (sameFile != null) return sameFile.bookUid;
+      bookUid = await _runExternalVideoCoverMutation((
+        bool allowAutoCover,
+      ) async {
+        // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
+        // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
+        // 走仓库单一真相源 findByVideoPath（与 isDuplicateVideoPath 同比对语义）。
+        final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
+        if (sameFile != null) return sameFile.bookUid;
 
-          final String candidateUid = externalVideoBookUid(videoPath);
-          final VideoBookRow? existing = await repo.getByBookUid(candidateUid);
-          if (existing != null) return candidateUid;
+        final String candidateUid = externalVideoBookUid(videoPath);
+        final VideoBookRow? existing = await repo.getByBookUid(candidateUid);
+        if (existing != null) return candidateUid;
 
-          CoverMetaStore? coverMetaStore;
-          String? coverPath;
-          if (allowAutoCover) {
-            try {
-              final CoverMetaStore store =
-                  CoverMetaStore(await VideoStorage.coversDir());
-              if (await store.allowsAutoFrameWrite(candidateUid)) {
-                coverMetaStore = store;
-                // ① 封面：复用库内导入同款 extractVideoCover（桌面 ffmpeg 抽帧；移动端无
-                // ffmpeg 时返 null 留空占位）。仅新建外部条目时抽一次。
-                coverPath = await extractVideoCover(
-                  videoPath: videoPath,
-                  bookUid: candidateUid,
-                );
-              }
-            } on Object catch (error) {
-              // provenance 不可读时 fail closed：仍建无封面的媒体行。
-              debugPrint(
-                '[Fushi] external video cover admission failed: $error',
+        CoverMetaStore? coverMetaStore;
+        String? coverPath;
+        if (allowAutoCover) {
+          try {
+            final CoverMetaStore store = CoverMetaStore(
+              await VideoStorage.coversDir(),
+            );
+            if (await store.allowsAutoFrameWrite(candidateUid)) {
+              coverMetaStore = store;
+              // ① 封面：复用库内导入同款 extractVideoCover（桌面 ffmpeg 抽帧；移动端无
+              // ffmpeg 时返 null 留空占位）。仅新建外部条目时抽一次。
+              coverPath = await extractVideoCover(
+                videoPath: videoPath,
+                bookUid: candidateUid,
               );
             }
+          } on Object catch (error) {
+            // provenance 不可读时 fail closed：仍建无封面的媒体行。
+            debugPrint('[Fushi] external video cover admission failed: $error');
           }
-          await repo.saveVideoBook(VideoBooksCompanion(
+        }
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
             bookUid: Value(candidateUid),
             title: Value(p.basenameWithoutExtension(videoPath)),
             videoPath: Value(videoPath),
             coverPath: Value<String?>(coverPath),
             importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          ));
-          if (coverPath != null && coverMetaStore != null) {
-            try {
-              final bool committed =
-                  await coverMetaStore.markAutoFrameAfterWrite(candidateUid);
-              if (!committed) {
-                debugPrint(
-                  '[Fushi] external video cover provenance changed during '
-                  'automatic write: $candidateUid',
-                );
-              }
-            } on Object catch (error) {
+          ),
+        );
+        if (coverPath != null && coverMetaStore != null) {
+          try {
+            final bool committed = await coverMetaStore.markAutoFrameAfterWrite(
+              candidateUid,
+            );
+            if (!committed) {
               debugPrint(
-                '[Fushi] external video cover provenance commit failed: '
-                '$error',
+                '[Fushi] external video cover provenance changed during '
+                'automatic write: $candidateUid',
               );
             }
+          } on Object catch (error) {
+            debugPrint(
+              '[Fushi] external video cover provenance commit failed: '
+              '$error',
+            );
           }
-          return candidateUid;
-        },
-      );
+        }
+        return candidateUid;
+      });
     } catch (e) {
       debugPrint('[Fushi] external video upsert failed: $e');
       return;
@@ -1396,14 +1405,18 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _windowsUpdateHandoffChecked = true;
       // Windows 与 macOS 运行时互斥；两个 reconcile 各自按平台自守（非本平台即早退），
       // 故并列调用只会有一个真正执行。共用同一 checked 旗标做一次性去重。
-      unawaited(UpdateChecker.reconcilePendingWindowsInstallerHandoff(
-        navigatorContext,
-        currentVersion,
-      ));
-      unawaited(UpdateChecker.reconcilePendingMacInstallerHandoff(
-        navigatorContext,
-        currentVersion,
-      ));
+      unawaited(
+        UpdateChecker.reconcilePendingWindowsInstallerHandoff(
+          navigatorContext,
+          currentVersion,
+        ),
+      );
+      unawaited(
+        UpdateChecker.reconcilePendingMacInstallerHandoff(
+          navigatorContext,
+          currentVersion,
+        ),
+      );
     });
   }
 
@@ -1553,11 +1566,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                        cannotOpen
-                            ? Icons.folder_off_outlined
-                            : Icons.broken_image_outlined,
-                        size: 48,
-                        color: cs.error),
+                      cannotOpen
+                          ? Icons.folder_off_outlined
+                          : Icons.broken_image_outlined,
+                      size: 48,
+                      color: cs.error,
+                    ),
                     const SizedBox(height: 16),
                     Text(
                       cannotOpen
@@ -1628,8 +1642,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.folder_off_outlined,
-                        size: 48, color: cs.primary),
+                    Icon(
+                      Icons.folder_off_outlined,
+                      size: 48,
+                      color: cs.primary,
+                    ),
                     const SizedBox(height: 16),
                     Text(
                       t.data_root_unavailable_title,
@@ -1892,7 +1909,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           // lit by keyboard/gamepad navigation on one page is not carried onto the
           // freshly-entered page (BUG-398).
           navigatorObservers: <NavigatorObserver>[
-            appModel.focusHighlightObserver
+            appModel.focusHighlightObserver,
           ],
           home: home,
           locale: locale,
@@ -1944,20 +1961,22 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               child: AnnotatedRegion<SystemUiOverlayStyle>(
                 value: fushiSystemOverlayStyle(cs.brightness),
                 child: CupertinoTheme(
-                  data: fushiCupertinoTheme(cs,
-                      fontFamily: appModel.appFontFamily),
+                  data: fushiCupertinoTheme(
+                    cs,
+                    fontFamily: appModel.appFontFamily,
+                  ),
                   child: LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) {
-                      final Size viewport = constraints.hasBoundedWidth &&
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      final Size viewport =
+                          constraints.hasBoundedWidth &&
                               constraints.hasBoundedHeight
                           ? constraints.biggest
                           : MediaQuery.sizeOf(context);
-                      final double uiScale =
-                          appModel.resolveAppUiScaleForViewport(
-                        viewport: viewport,
-                        platform: Theme.of(context).platform,
-                      );
+                      final double uiScale = appModel
+                          .resolveAppUiScaleForViewport(
+                            viewport: viewport,
+                            platform: Theme.of(context).platform,
+                          );
                       Widget navigation = wrapWithGlobalNavigation(
                         navigatorKey: appModel.navigatorKey,
                         focusNavigationEnabled:
@@ -2002,29 +2021,35 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                         // sidebar。navigation（=整个 navigator）作为不变 child 透传，
                         // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
                         navigation = MacosTheme(
-                          data:
-                              fushiMacosThemeFromColorScheme(cs, cs.brightness),
+                          data: fushiMacosThemeFromColorScheme(
+                            cs,
+                            cs.brightness,
+                          ),
                           child: ValueListenableBuilder<bool>(
                             valueListenable: appModel.mediaOpenNotifier,
-                            builder: (BuildContext context, bool mediaOpen,
-                                Widget? child) {
-                              return MacosWindow(
-                                sidebar: mediaOpen
-                                    ? null
-                                    : buildFushiMacosSidebar(
-                                        // 与 HomePage._activeTabs 同一真值、
-                                        // 同一个参数。此前这里是第二份手抄的
-                                        // 七参实参表，漏传 gamesEnabled 靠缺省
-                                        // false 蒙对，注释还把漏写说成「macOS
-                                        // 恒 false」——收成一个 ModuleVisibility
-                                        // 后不可能再漂移。
-                                        activeTabs: homeActiveTabs(
-                                          appModel.moduleVisibility,
-                                        ),
-                                      ),
-                                child: child!,
-                              );
-                            },
+                            builder:
+                                (
+                                  BuildContext context,
+                                  bool mediaOpen,
+                                  Widget? child,
+                                ) {
+                                  return MacosWindow(
+                                    sidebar: mediaOpen
+                                        ? null
+                                        : buildFushiMacosSidebar(
+                                            // 与 HomePage._activeTabs 同一真值、
+                                            // 同一个参数。此前这里是第二份手抄的
+                                            // 七参实参表，漏传 gamesEnabled 靠缺省
+                                            // false 蒙对，注释还把漏写说成「macOS
+                                            // 恒 false」——收成一个 ModuleVisibility
+                                            // 后不可能再漂移。
+                                            activeTabs: homeActiveTabs(
+                                              appModel.moduleVisibility,
+                                            ),
+                                          ),
+                                    child: child!,
+                                  );
+                                },
                             child: navigation,
                           ),
                         );
@@ -2047,31 +2072,42 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           // as the unchanging `child`, so flipping this never
                           // rebuilds the navigator subtree.
                           valueListenable: appModel.mediaOpenNotifier,
-                          builder: (BuildContext context, bool mediaOpen,
-                              Widget? child) {
-                            final bool railVisible = !mediaOpen &&
-                                windowSizeClassForWidth(viewport.width) !=
-                                    WindowSizeClass.compact;
-                            return FushiDesktopTitleBar(
-                              // The native-sized frame sits outside app UI
-                              // zoom; align its title with the visually scaled
-                              // home rail. Breakpoint and rail width both come
-                              // from the widgets that own them (HomePage's
-                              // size class / adaptiveNavRail), so they cannot
-                              // drift apart behind a copied literal.
-                              leadingInset: railVisible
-                                  ? kAdaptiveNavRailWidth * uiScale
-                                  : 0,
-                              title: ValueListenableBuilder<HomeTab>(
-                                valueListenable: homeShellTabNotifier,
-                                builder: (BuildContext context, HomeTab tab,
-                                    Widget? _) {
-                                  return Text(homeNavItemFor(tab).label);
-                                },
-                              ),
-                              child: child!,
-                            );
-                          },
+                          builder:
+                              (
+                                BuildContext context,
+                                bool mediaOpen,
+                                Widget? child,
+                              ) {
+                                final bool railVisible =
+                                    !mediaOpen &&
+                                    windowSizeClassForWidth(viewport.width) !=
+                                        WindowSizeClass.compact;
+                                return FushiDesktopTitleBar(
+                                  // The native-sized frame sits outside app UI
+                                  // zoom; align its title with the visually scaled
+                                  // home rail. Breakpoint and rail width both come
+                                  // from the widgets that own them (HomePage's
+                                  // size class / adaptiveNavRail), so they cannot
+                                  // drift apart behind a copied literal.
+                                  leadingInset: railVisible
+                                      ? kAdaptiveNavRailWidth * uiScale
+                                      : 0,
+                                  title: ValueListenableBuilder<HomeTab>(
+                                    valueListenable: homeShellTabNotifier,
+                                    builder:
+                                        (
+                                          BuildContext context,
+                                          HomeTab tab,
+                                          Widget? _,
+                                        ) {
+                                          return Text(
+                                            homeNavItemFor(tab).label,
+                                          );
+                                        },
+                                  ),
+                                  child: child!,
+                                );
+                              },
                           child: navigation,
                         );
                       }

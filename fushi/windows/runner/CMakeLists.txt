@@ -155,6 +155,24 @@ add_custom_target(fushi_windows_activation_policy_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
 
+# BUG-2462: the Flutter child resize gate (child_resize_gate.h) closes the
+# engine's resize-synchroniser hazard (A -> B -> A while Dart is busy pins the
+# resize target and drops every frame = frozen window when entering fullscreen
+# during video load). Its state machine is pure; keep every transition
+# executable on each Windows runner build.
+add_executable(fushi_windows_child_resize_gate_test
+  "tests/child_resize_gate_test.cpp"
+)
+apply_standard_settings(fushi_windows_child_resize_gate_test)
+target_compile_definitions(fushi_windows_child_resize_gate_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_child_resize_gate_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_child_resize_gate_test>"
+  DEPENDS fushi_windows_child_resize_gate_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_child_resize_gate_gate)
+
 # Capture suppression is authorized by an exact epoch/token, while text may
 # advance behind the hidden surface. Keep that release contract executable so
 # a sentence change cannot strand the invisible catch window forever or let an
