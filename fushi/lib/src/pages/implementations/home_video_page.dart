@@ -337,6 +337,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   Set<String> get _selectedUids => _selection.looseKeys;
 
+  /// 选中集里的本地条目（裸 bookUid）：组合 / 打标签 / 删除三个本地动作的输入。
+  /// BUG-2458：散卡选中集里现在混着远端占位键（[_remoteVideoSelectionKey]）。
+  Set<String> get _selectedLocalUids => <String>{
+        for (final String key in _selectedUids)
+          if (!_isRemoteVideoSelectionKey(key)) key,
+      };
+
+  /// 选中集里的远端占位键：批量「下载」的输入。
+  Set<String> get _selectedRemoteKeys => <String>{
+        for (final String key in _selectedUids)
+          if (_isRemoteVideoSelectionKey(key)) key,
+      };
+
   /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedUids] 并存。
   /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
   Set<int> get _selectedCollectionIds => _selection.collectionIds;
@@ -1380,6 +1393,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() => _selection.enterWith(slot));
   }
 
+  /// 散卡点击的多选分发——本地 / 远端、网格 / 列表所有散卡的**唯一**入口
+  /// （BUG-2458 视频侧根治）。此前每张卡各抄一份 `handleTap`，远端卡那份漏抄
+  /// → 多选态点远端卡照走流播 / 下载。分发只认 [selectionKey]，不认卡是本地还是
+  /// 远端：null = 该卡不可勾选（合集成员卡），多选态照常 [open]。
+  void _dispatchCardTap({
+    required String? selectionKey,
+    required VoidCallback open,
+  }) {
+    if (selectionKey != null) {
+      if (_selectionMode) {
+        _toggleSelection(selectionKey);
+        return;
+      }
+      // 桌面 Ctrl/⌘（macOS）/ Shift + 点击 = 不经工具栏直接进多选并选中该卡。
+      if (selectionEntryModifierPressed(context)) {
+        _enterSelectionWith(SelectionSlot.loose(selectionKey));
+        return;
+      }
+    }
+    open();
+  }
+
+  /// 散卡槽的多选键：本地 = 裸 bookUid（与 [shelfSelectionToEntry] 的 video 面
+  /// 同源），远端 = [_remoteVideoSelectionKey]。
+  String _videoSlotSelectionKey(_VideoSlot slot) {
+    final VideoBookRow? local = slot.local;
+    if (local != null) return local.bookUid;
+    return _remoteVideoSelectionKey(slot.remote!);
+  }
+
   /// 一个视频是否已归进某个系列（= 在系列视图里被折进合集卡）。
   ///
   /// 判据与 [_groupVideos] 的折叠判据同源（`collection_grouping.collectionIdOf`）：
@@ -1469,8 +1512,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final List<MediaCollectionRow> collections =
         await ref.read(appProvider).database.getAllMediaCollections();
     if (!mounted) return false;
+    // BUG-2458：远端占位键的存在性真值是最近一次拉到的远端目录（占位卡就是从它
+    // 渲染的），不在本地表里；不纳入就会被当幽灵键整批剔光。
+    final _RemoteVideoState? remoteState = _lastRemoteState;
     final int dropped = _selection.retainExisting(
-      loose: <String>{for (final VideoBookRow b in books) b.bookUid},
+      loose: <String>{
+        for (final VideoBookRow b in books) b.bookUid,
+        if (remoteState != null)
+          for (final RemoteVideoInfo v in remoteState.videos)
+            _remoteVideoSelectionKey(v),
+      },
       collections: <int>{for (final MediaCollectionRow c in collections) c.id},
     );
     if (dropped == 0) return _selection.isNotEmpty;
@@ -1497,7 +1548,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 从 null 解析出集合、自动刮削刷新列表——都会让它自己变。跨 await 两侧各读
     // 一次的话，确认框说「删 5 个」而实际删 3 个，极端情况下甚至一个都没删还弹
     // 成功提示。
-    final Set<String> targetUids = Set<String>.of(_selectedUids);
+    final Set<String> targetUids = _selectedLocalUids;
     final Set<int> targetCollectionIds = Set<int>.of(_selectedCollectionIds);
     final int mediaCount = targetUids.length;
     final int collectionCount = targetCollectionIds.length;
@@ -1511,7 +1562,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     // 勾过但被当前筛选挡住的那些不会被删（批量操作只作用于看得见的条目），必须
     // 说出来——否则用户以为勾了几个就删了几个。
-    final int hidden = _selection.hiddenSelectedCount;
+    // 只数本地键：远端占位键不是删除对象（BUG-2458）。
+    final int hidden = _selection.hiddenSelectedCountWhere(
+      (String key) => !_isRemoteVideoSelectionKey(key),
+    );
     final String message = hidden == 0
         ? baseMessage
         : '$baseMessage\n\n${t.batch_hidden_by_filter_note(n: hidden)}';
@@ -1523,7 +1577,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (collectionCount == 0) {
       // 「同时删除本地文件」只在选中集里至少有一条是本地文件时才摆出来
       // （全是远端流就没有文件可删，与同步勾选框「兑现不了就不显示」同一纪律）。
-      final Set<String> selected = Set<String>.of(_selectedUids);
+      final Set<String> selected = _selectedLocalUids;
       final bool anyLocalFile = (await widget.repo.listAll()).any(
         (VideoBookRow b) =>
             selected.contains(b.bookUid) && videoBookHasLocalFiles(b),
@@ -1643,7 +1697,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 幽灵键会让 bookTags 的外键插入抛异常，而弹窗把落库 await 在 loading 态里，
     // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
     if (!await _pruneStaleSelection() || !mounted) return;
-    if (_selectedUids.isEmpty) return;
+    final Set<String> localUids = _selectedLocalUids;
+    if (localUids.isEmpty) return;
     final List<BookTagRow>? allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
       FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
@@ -1653,7 +1708,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (_) => _VideoBatchTagPickerDialog(
         allTags: allTags,
-        selectedUids: Set<String>.of(_selectedUids),
+        selectedUids: localUids,
         database: ref.read(appProvider).database,
       ),
     );
@@ -1904,7 +1959,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     };
     final List<ShelfEntryRef> looseRefs = sortNewCollectionMembersNaturally(
       <ShelfEntryRef>[
-        for (final String uid in _selectedUids)
+        for (final String uid in _selectedLocalUids)
           if (shelfSelectionToEntry(uid, ShelfSelectionSurface.video)
               case final ShelfEntryRef ref)
             ref,
@@ -1934,7 +1989,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ) async {
     // TODO-1125 B：预填合集默认名——把选中视频标题经 parseVideoFilename 去集号得系列名，
     // 再取最长公共前缀；推导为空则兜底 t.series_default_name（「新系列」）。
-    final Set<String> selectedUids = Set<String>.of(_selectedUids);
+    final Set<String> selectedUids = _selectedLocalUids;
     final List<String> memberSeries = <String>[
       for (final VideoBookRow book in _visibleVideos)
         if (selectedUids.contains(book.bookUid))
@@ -2251,6 +2306,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_video_downloaded)),
     );
+  }
+
+  /// BUG-2458：批量栏「下载」——把选中的远端占位卡逐个交给既有单本下载链
+  /// （[_downloadRemote]，任务归 [InterconnectDownloadManager] 所有、与本页生命周期
+  /// 无关），先退出多选态；进度 / 失败落在各卡角标上（[_remoteDownloadBadge]）。
+  ///
+  /// 选中键只是身份，占位对象要回到最近一次远端目录里找；目录已刷新、已下载入库
+  /// 被去重隐藏的键找不到就跳过。**串行**：管理器只按 id 去重、无并发上限，
+  /// 「全选 → 下载」若一帧内扇出 N 个并行下载 + 落库，对手机端 host 是真实压力；
+  /// 逐个 await 让批量与用户逐张点的节奏等价。服务不可达进循环前判一次、只提示一次。
+  Future<void> _batchDownloadSelectedRemote() async {
+    final Set<String> keys = _selectedRemoteKeys;
+    if (keys.isEmpty) return;
+    final _RemoteVideoState? state = _lastRemoteState;
+    _exitSelectionMode();
+    if (state == null) return;
+    if (_remoteVideoSource == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_video_unavailable)),
+      );
+      return;
+    }
+    for (final RemoteVideoInfo video in state.videos) {
+      if (!keys.contains(_remoteVideoSelectionKey(video))) continue;
+      // 页面卸载后停止派发：已起的任务归管理器继续跑到底。
+      if (!mounted) return;
+      await _downloadRemote(video);
+    }
   }
 
   /// 把刚下载到本机的对端视频 [dest] 登记成本地 [VideoBooksCompanion] 行，使其出现在
@@ -4656,7 +4739,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             build: (VideoCardOrientation orientation) =>
                 _buildVideoSlotCard(slot, orientation: orientation),
           ),
-          selectionKey: slot.local?.bookUid,
+          selectionKey: _videoSlotSelectionKey(slot),
         ));
       } else if (collectionVisible(group.collection!.id)) {
         collectionGroups.add(group);
@@ -4720,8 +4803,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             _sortMode,
           ));
     _visibleCollectionIds = const <int>[];
+    // 本地在前、远端占位在后，与下面列表 / 网格两种布局的渲染序一致。
     _syncVisibleOrder(
-      loose: <String>[for (final VideoBookRow book in ordered) book.bookUid],
+      loose: <String>[
+        for (final VideoBookRow book in ordered) book.bookUid,
+        for (final RemoteVideoInfo video in remoteVideos)
+          _remoteVideoSelectionKey(video),
+      ],
       collections: const <int>[],
     );
     if (_allVideosLayout == _AllVideosLayout.list) {
@@ -4775,22 +4863,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final bool selected =
         _selectionMode && _selectedUids.contains(book.bookUid);
     final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
-    void handleTap() {
-      if (_selectionMode) {
-        _toggleSelection(book.bookUid);
-      } else if (selectionEntryModifierPressed(context)) {
-        _enterSelectionWith(slot);
-      } else {
-        _open(book);
-      }
-    }
 
     final Widget row = FushiCard(
       key: ValueKey<String>('home_video_list_${book.bookUid}'),
       focusId: FushiFocusId('home-video-list-${book.bookUid}'),
       padding: EdgeInsets.zero,
       selected: selected,
-      onTap: handleTap,
+      onTap: () => _dispatchCardTap(
+        selectionKey: book.bookUid,
+        open: () => _open(book),
+      ),
       onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
       onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
       child: SizedBox(
@@ -4875,11 +4957,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   Widget _buildAllVideoRemoteListRow(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
+    final String selectionKey = _remoteVideoSelectionKey(video);
+    final bool selected =
+        _selectionMode && _selectedUids.contains(selectionKey);
     return FushiCard(
       key: ValueKey<String>('remote_video_list_$safeKey'),
       focusId: FushiFocusId('home-video-remote-list-$safeKey'),
       padding: EdgeInsets.zero,
-      onTap: () => _openRemote(video),
+      selected: selected,
+      // BUG-2458：与本地行同走 [_dispatchCardTap]，多选态点击 = 勾选。
+      onTap: () => _dispatchCardTap(
+        selectionKey: selectionKey,
+        open: () => _openRemote(video),
+      ),
       onLongPress: _selectionMode ? null : () => _showRemoteVideoDialog(video),
       onSecondaryTap:
           _selectionMode ? null : () => _showRemoteVideoDialog(video),
@@ -4889,10 +4979,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           children: <Widget>[
             SizedBox(
               width: 164,
-              child: _buildRemoteVideoCover(
-                video,
-                poster: false,
-                landscapeSlot: true,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _buildRemoteVideoCover(
+                    video,
+                    poster: false,
+                    landscapeSlot: true,
+                  ),
+                  if (_selectionMode)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: ShelfSelectionCheck(selected: selected),
+                    ),
+                  if (selected)
+                    const Positioned.fill(child: ShelfSelectedOverlay()),
+                ],
               ),
             ),
             const SizedBox(width: 14),
@@ -5450,15 +5553,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final String safeKey = _safeRemoteKey(video.id);
     final Widget? downloadBadge = _remoteDownloadBadge(video, safeKey);
     final List<_VideoTagChip> remoteTags = _remoteTagChips(video.tags);
+    // BUG-2458：散卡区远端占位卡可勾选（勾选后经批量栏「下载」一起下）；带合集
+    // 成员上下文的成员卡与本地成员卡同规则不可单独勾。
+    final bool selectable = collectionMembers == null;
+    final String selectionKey = _remoteVideoSelectionKey(video);
+    final bool showSelection = _selectionMode && selectable;
+    final bool selected = showSelection && _selectedUids.contains(selectionKey);
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
     final Widget card = FushiCard(
       key: ValueKey<String>('remote_video_card_$safeKey'),
       focusId: FushiFocusId('home-video-remote-$safeKey'),
       padding: EdgeInsets.zero,
+      selected: selected,
       // 合集行内点远端成员：带合集成员上下文进播放器（连播）；散卡区无上下文（单视频）。
-      onTap: () => _openRemote(video,
-          collectionMembers: collectionMembers, startIndex: memberIndex),
+      onTap: () => _dispatchCardTap(
+        selectionKey: selectable ? selectionKey : null,
+        open: () => _openRemote(video,
+            collectionMembers: collectionMembers, startIndex: memberIndex),
+      ),
       // 短按仍流式播放（_openRemote）；长按 / 桌面右键弹选项面板，与本地视频
       // 卡长按一致（TODO-768 / BUG-416）。原先远端视频卡无 onLongPress（长按
       // 没反应），现在补齐。
@@ -5502,7 +5615,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 左上一列：远端标签 chip（BUG-1808，host 清单下发标签名）在上、
                 // 字幕角标在下。标签补画前这个角只有字幕角标，两者并成一列后谁都
                 // 不遮谁。字幕角标收敛到共享 [CoverBadge]（UI 巡检 PR-4，PR-0 组件）。
-                if (remoteTags.isNotEmpty || video.hasSubtitle)
+                // 多选态勾选框占左上角（与本地卡同位 top:6,left:6），这一列让位。
+                if ((remoteTags.isNotEmpty || video.hasSubtitle) &&
+                    !showSelection)
                   Positioned(
                     top: 6,
                     left: 6,
@@ -5516,6 +5631,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       ],
                     ),
                   ),
+                if (showSelection)
+                  Positioned(
+                    top: 6,
+                    left: 6,
+                    child: ShelfSelectionCheck(selected: selected),
+                  ),
+                if (selected)
+                  const Positioned.fill(child: ShelfSelectedOverlay()),
                 // TODO-885: 远端播放列表集数角标（与本地卡同款，左下避开右上字幕/下载）。
                 if (video.isPlaylist)
                   Positioned(
@@ -6692,34 +6815,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 块2：只有可单独勾选的卡才在多选态显示勾选框/高亮/切换选中。
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(book.bookUid);
-    final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
-    void handleTap() {
-      if (showSelection) {
-        _toggleSelection(book.bookUid);
-        return;
-      }
-      // 桌面 Ctrl/⌘（macOS）/ Shift + 点击 = 不经工具栏直接进多选并选中该卡。
-      if (selectable &&
-          !_selectionMode &&
-          selectionEntryModifierPressed(context)) {
-        _enterSelectionWith(slot);
-        return;
-      }
-      if (onTapOverride != null) {
-        onTapOverride();
-      } else {
-        _open(book, playlistCollectionId: playlistCollectionId);
-      }
-    }
-
     final FushiCard fushiCard = FushiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: FushiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
       selected: selected,
       // 选择态：点击切换勾选、长按交给祖先的扫选接管区（与书架 _bookCardShell 一致）。
-      // 成员卡（selectable=false）多选态照常开播、不切换选中。
-      onTap: handleTap,
+      // 成员卡（selectable=false）多选态照常开播、不切换选中。分发走
+      // [_dispatchCardTap]（所有散卡唯一入口）。
+      onTap: () => _dispatchCardTap(
+        selectionKey: selectable ? book.bookUid : null,
+        open: onTapOverride ??
+            () => _open(book, playlistCollectionId: playlistCollectionId),
+      ),
       // 长按 / 桌面右键都弹管理菜单，与书架书卡（_bookCardShell）、远端视频卡
       // （_buildRemoteVideoCard）一致——本地视频卡此前只挂了 onLongPress、漏了
       // onSecondaryTap，故桌面右键本地视频卡无反应（BUG-758）。
@@ -6922,15 +7030,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
+    // BUG-2458：散卡选中集里混着远端占位键——「已选 N」计全部，但组合 / 打标签 /
+    // 删除三个本地动作只按本地键判可用态与取目标；远端键只喂「下载」。
+    final Set<String> localUids = _selectedLocalUids;
+    final Set<String> remoteKeys = _selectedRemoteKeys;
     final int selectedCount =
         _selectedUids.length + _selectedCollectionIds.length;
-    final bool hasSelection =
-        _selectedUids.isNotEmpty || _selectedCollectionIds.isNotEmpty;
+    final bool hasLocalSelection =
+        localUids.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
     // 只在真能组合（新建 / 并入 / 合并）时才可点，与 [_batchCombineIntoSeries] 同判据。
     final bool canCombine = classifyCombine(
           collectionCount: _selectedCollectionIds.length,
-          looseCount: _selectedUids.length,
+          looseCount: localUids.length,
         ) !=
         CombineTier.noop;
     return BatchActionBar(
@@ -6938,6 +7050,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onSelectAll: _selectAllVisible,
       onInvertSelection: _invertSelection,
       actions: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('home_video_batch_download'),
+          enabled: remoteKeys.isNotEmpty,
+          onTap: _batchDownloadSelectedRemote,
+          icon: Icons.download_outlined,
+          tooltip: t.remote_video_download,
+        ),
         FushiIconButton(
           key: const ValueKey<String>('home_video_batch_combine'),
           enabled: canCombine,
@@ -6948,15 +7067,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           tooltip: t.combine_into_series,
         ),
         FushiIconButton(
-          // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
-          enabled: _selectedUids.isNotEmpty,
+          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
+          enabled: localUids.isNotEmpty,
           onTap: _batchShowTagPicker,
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
         ),
         FushiIconButton(
           key: const ValueKey<String>('home_video_batch_delete'),
-          enabled: hasSelection,
+          enabled: hasLocalSelection,
           onTap: _batchDeleteConfirm,
           icon: Icons.delete_outline,
           tooltip: t.dialog_delete,
@@ -7347,6 +7466,17 @@ class _VideoHeroItem {
 /// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或
 /// 「远端有本地无」占位 [remote]，二者恰一非空。让 [groupByCollections] 把本地成员与
 /// 远端占位成员折进同一合集行（远端占位归属由 host 合集下发 + 本地自然键解析注入）。
+/// BUG-2458：远端占位卡的多选键（与本地裸 bookUid 同住一个选中集，靠前缀分流）。
+/// 身份是远端稳定 `video.id`；下载入库后 bookUid == id、占位卡被去重隐藏，两者
+/// 不会同时可见。
+const String _kRemoteVideoSelectionPrefix = 'remote_video_';
+
+String _remoteVideoSelectionKey(RemoteVideoInfo video) =>
+    '$_kRemoteVideoSelectionPrefix${video.id}';
+
+bool _isRemoteVideoSelectionKey(String key) =>
+    key.startsWith(_kRemoteVideoSelectionPrefix);
+
 class _VideoSlot {
   const _VideoSlot({this.local, this.remote})
       : assert(local != null || remote != null);
