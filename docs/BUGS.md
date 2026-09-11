@@ -29,18 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2281 条。点号进各自文件。
+> 共 2274 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2472](bugs/BUG-2472-webkit-ruby-paragraph-first-line-growth.md) | ✅ | ✅ | WebKit 上首行含振假名的段落被撑高一截 |
-| [BUG-2471](bugs/BUG-2471-reader-settings-live-engine-config.md) | ✅ | ✅ | 阅读器边距等设置改完不实时生效 |
-| [BUG-2470](bugs/BUG-2470-reader-status-footer-inside-bottom-safe-area.md) | ✅ | ✅ | 阅读器状态行坐进系统底部安全区 |
-| [BUG-2469](bugs/BUG-2469-reader-paged-bottom-font-size-band.md) | ✅ | ✅ | 分页布局底部多留一个字号的空带 |
-| [BUG-2468](bugs/BUG-2468-reader-image-max-stale-on-chrome-insets.md) | ✅ | ✅ | 分页整页插图在 chrome inset 变化后被切成三段 |
-| [BUG-2467](bugs/BUG-2467-reader-status-footer-duplicated-squeeze.md) | ✅ | ✅ | 挤压态底栏与状态行重复画同一串读数 |
-| [BUG-2466](bugs/BUG-2466-reader-continuous-reveal-smooth-scroll-inflates-ledger.md) | ✅ | ✅ | 连续模式听书长距离平滑跟随滚动把途中视口计入阅读账本 |
-| [BUG-2465](bugs/BUG-2465-reader-reanchor-frozen-when-page-hidden.md) | ✅ | ✅ | 页面隐藏时阅读器重锚旗永不清（rAF 冻结）位置与进度不落库 |
+| [BUG-2473](bugs/BUG-2473-manga-download-all-subscription-download-center.md) | ✅ | ✅ | 作品页下载全部/自动识别/订阅自动下载，mokuro 队列并入持久任务表，下载中心分区 |
 | [BUG-2464](bugs/BUG-2464-manga-online-download-first.md) | ✅ | ✅ | 在线漫画改为强制下载后才能看，删除在线直读与阅读期页图缓存 |
 | [BUG-2463](bugs/BUG-2463-interconnect-download-drops-host-cover-timestamps.md) | ✅ | ✅ | 互联下载登记丢失 host 封面 / importedAt / completedAt |
 | [BUG-2461](bugs/BUG-2461-manga-reader-inline-ocr-entries-removed.md) | ✅ | ✅ | 阅读器内 OCR 入口（整卷按钮/点击即识别/框选重识别）移除，OCR 只在阅读器外触发 |

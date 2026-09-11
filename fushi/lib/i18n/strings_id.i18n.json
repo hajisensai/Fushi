@@ -4720,5 +4720,19 @@
   "study_diag_share_subject": "Fushi study diagnostics",
   "reader_furigana_off": "Off",
   "reader_furigana_toggle": "Toggle",
-  "reader_furigana_hidden": "Hidden"
+  "reader_furigana_hidden": "Hidden",
+  "manga_series_download_all": "Download all",
+  "manga_series_download_all_none": "Every chapter is already downloaded or queued",
+  "manga_series_auto_ocr": "Recognize after download",
+  "manga_series_ocr_all_downloaded": "Recognize all downloaded",
+  "manga_series_ocr_all_none": "No downloaded chapter needs recognition",
+  "manga_series_ocr_queued": "Recognition queued",
+  "manga_series_ocr_no_engine": "No OCR engine is available",
+  "manga_chapter_ocr_action": "Recognize this chapter",
+  "manga_series_subscribe": "Subscribe",
+  "manga_series_unsubscribe": "Unsubscribe",
+  "manga_series_auto_download": "Auto-download new chapters",
+  "manga_online_download_all": "Download all",
+  "manga_online_select_all": "Select all",
+  "manga_series_download_all_queued": "$count chapters queued"
 }

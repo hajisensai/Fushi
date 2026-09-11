@@ -80,7 +80,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
@@ -1059,6 +1059,17 @@ class AppModel with ChangeNotifier {
           await runOnlineMangaUpdateProbe(
             database: database,
             serviceFor: onlineMangaLibraryService,
+            // 订阅且开了「新章自动下载」的条目：新章直接入队（设计稿 §5），
+            // `auto_ocr` 取作品页 chip 的持久值。
+            autoDownload: (
+              OnlineMangaLibraryEntry entry,
+              List<OnlineMangaChapter> chapters,
+            ) =>
+                mangaDownloadService.enqueueChapters(
+              entry: entry,
+              chapters: chapters,
+              autoOcr: mangaDownloadAutoOcr,
+            ),
           );
         },
         UpdateFeedKind.mangaExtension: () async {
@@ -4072,28 +4083,22 @@ class AppModel with ChangeNotifier {
   AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore =>
       _animeDownloadSubscriptionStore;
 
-  /// mokuro.moe 卷下载队列（懒建，app 生命周期常驻）：「在线目录」对话框只
-  /// 负责 enqueue，「下载」页任务 tab 与对话框共同观察本实例——关对话框不
-  /// 中断下载（统一下载中心）。书架页监听 importedCount 增量刷新书列表。
-  MokuroMoeDownloadQueue? _mokuroMoeDownloadQueue;
-  MokuroMoeDownloadQueue get mokuroMoeDownloadQueue =>
-      _mokuroMoeDownloadQueue ??= MokuroMoeDownloadQueue(
-        db: database,
-        clientFactory: () =>
-            MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
-      );
-
-  /// 在线漫画章节下载服务（懒建，app 生命周期常驻；设计稿 2026-09-12 §4）。
+  /// 漫画下载服务（懒建，app 生命周期常驻；设计稿 2026-09-12 §4）：在线章节 +
+  /// mokuro.moe 整卷共用一张任务表、一个 worker。
   ///
-  /// 作品页 / 阅读器只负责 enqueue；worker 在 [startMangaDownloads]（HomePage 就绪
-  /// 后）才开始消费，之前入队的任务留在表里等着。与 [mokuroMoeDownloadQueue] 同款
-  /// 生命周期：关库 / 切 Profile 时在 [quiesceBackgroundDatabaseWriters] 销毁。
+  /// 作品页 / 阅读器 / mokuro 目录页只负责 enqueue；worker 在 [startMangaDownloads]
+  /// （HomePage 就绪后）才开始消费，之前入队的任务留在表里等着。关库 / 切 Profile
+  /// 时在 [quiesceBackgroundDatabaseWriters] 销毁。书架页监听
+  /// [MangaDownloadService.mokuroImportedCount] 增量刷新书列表。
   MangaDownloadService? _mangaDownloadService;
   MangaDownloadService get mangaDownloadService =>
       _mangaDownloadService ??= MangaDownloadService(
         database: database,
         serviceFor: onlineMangaLibraryService,
         onChapterDownloaded: _autoOcrDownloadedMangaChapter,
+        mokuroDownloader: () => MokuroMoeVolumeDownloader(
+          client: MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
+        ),
       );
 
   /// 启动章节下载 worker：复位上次进程死亡留下的 `running` 行并开始消费。幂等。
@@ -5165,7 +5170,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// 发现页直链下载队列（懒建，app 生命周期常驻——关闭发现页不中断下载，
-  /// 语义同 [mokuroMoeDownloadQueue]）。
+  /// 语义同 [mangaDownloadService]）。
   DiscoveryDownloadQueue get discoveryDownloadQueue =>
       _discoveryDownloadQueue ??= DiscoveryDownloadQueue(
         resolvePayload: (DiscoveryResourceItem item) {
@@ -6856,8 +6861,6 @@ class AppModel with ChangeNotifier {
   }) async {
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
-    _mokuroMoeDownloadQueue?.dispose();
-    _mokuroMoeDownloadQueue = null;
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
@@ -6934,8 +6937,6 @@ class AppModel with ChangeNotifier {
     unawaited(_disposeVideoDownloadPipelineRuntime());
     // 扩展查字幕桥那套 registry 不属于下载管线（管线关着时它才存在），得单独收。
     _disposeBrowserSubtitleRegistry();
-    _mokuroMoeDownloadQueue?.dispose();
-    _mokuroMoeDownloadQueue = null;
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
@@ -8133,6 +8134,11 @@ class AppModel with ChangeNotifier {
   bool get mangaOnlineCatalogEnabled => prefsRepo.mangaOnlineCatalogEnabled;
   Future<void> setMangaOnlineCatalogEnabled(bool value) =>
       prefsRepo.setMangaOnlineCatalogEnabled(value);
+
+  /// 作品页「完成后自动识别」chip 的持久值；单章 / 整部入队都读它作 `auto_ocr`。
+  bool get mangaDownloadAutoOcr => prefsRepo.mangaDownloadAutoOcr;
+  Future<void> setMangaDownloadAutoOcr(bool value) =>
+      prefsRepo.setMangaDownloadAutoOcr(value);
 
   // TODO-1024 / BUG-479：更新检查结果缓存（缓存优先 + 后台静默刷新）。
   UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;

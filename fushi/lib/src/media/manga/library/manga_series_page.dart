@@ -9,13 +9,19 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
+import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
+import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
@@ -24,6 +30,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:path/path.dart' as p;
 
 /// 作品页要显示**哪一部**作品。
@@ -101,9 +108,21 @@ class SourceMangaSeriesTarget extends MangaSeriesTarget {
 /// - **本地卷也进这里**（用户明确要求的一致性）：本地 mokuro 卷没有章节，
 ///   章节区换成页数/进度，不假装有章节列表。
 class MangaSeriesPage extends ConsumerStatefulWidget {
-  const MangaSeriesPage({required this.target, super.key});
+  const MangaSeriesPage({
+    required this.target,
+    super.key,
+    this.ocrEnginesOverride,
+    this.lensDisclosureOverride,
+  });
 
   final MangaSeriesTarget target;
+
+  /// 测试缝：「识别本章 / 识别全部已下载」的引擎集合（null = 生产装配
+  /// `MangaOcrWizardEngines.resolve`）。
+  final MangaOcrWizardEngines? ocrEnginesOverride;
+
+  /// 测试缝：Google Lens 上传同意闸门（null = [ensureGoogleLensDisclosure]）。
+  final GoogleLensDisclosureGate? lensDisclosureOverride;
 
   @override
   ConsumerState<MangaSeriesPage> createState() => _MangaSeriesPageState();
@@ -239,7 +258,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       await appModel.mangaDownloadService.enqueueChapter(
         entry: entry,
         chapter: chapter,
-        autoOcr: false,
+        autoOcr: appModel.mangaDownloadAutoOcr,
       );
       if (mounted) FushiToast.show(msg: t.manga_chapter_download_queued);
     } on Object catch (error, stack) {
@@ -278,6 +297,214 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       }
     }
     await _refreshDownloadState();
+  }
+
+  /// 「下载全部」：未下载且没有排队 / 执行中任务的章按章序（旧 → 新）入队。
+  /// 已下载、已在队列里的不重复入队；一章都没有可下的就说清楚。
+  Future<void> _downloadAll() async {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final AppModel? appModel = _appModelOrNull;
+    if (entry == null || appModel == null || _bookKey == null) return;
+    final List<OnlineMangaChapter> pending = <OnlineMangaChapter>[
+      for (final OnlineMangaChapter chapter in entry.chapters.reversed)
+        if (!_downloaded.contains(chapter.key) && !_isChapterPending(chapter))
+          chapter,
+    ];
+    if (pending.isEmpty) {
+      FushiToast.show(msg: t.manga_series_download_all_none);
+      return;
+    }
+    try {
+      await appModel.mangaDownloadService.enqueueChapters(
+        entry: entry,
+        chapters: pending,
+        autoOcr: appModel.mangaDownloadAutoOcr,
+      );
+      if (mounted) {
+        FushiToast.show(
+          msg: t.manga_series_download_all_queued(count: pending.length),
+        );
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaSeriesPage.downloadAll', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
+    await _refreshDownloadState();
+  }
+
+  bool _isChapterPending(OnlineMangaChapter chapter) {
+    final String? status = _jobs[chapter.key]?.status;
+    return status == MangaDownloadJobStatus.queued ||
+        status == MangaDownloadJobStatus.running;
+  }
+
+  Future<void> _setAutoOcr(bool value) async {
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel == null) return;
+    await appModel.setMangaDownloadAutoOcr(value);
+    if (mounted) setState(() {});
+  }
+
+  /// 「识别本章」：已下载的章目录排一个整卷 OCR 任务（阅读器外触发，设计稿 §1.3）。
+  ///
+  /// 引擎解析与向导 / 下载钩子共用同一份探测（`manga_ocr_engine_probe.dart`）；
+  /// 与后台钩子的差别只有「用户在场」：Lens 可以选，但要先过一次上传同意闸门。
+  /// 任务经 `MangaOcrJobRegistry.enqueue` 按 bookKey 排队（BUG-2449 所有权 +
+  /// 同书 FIFO），作品页只负责起任务，阅读器按 bookKey + 目录接回进度。
+  Future<void> _ocrChapter(OnlineMangaChapter chapter) async {
+    final EpubBookRow? row = _row;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (row == null || entry == null || _busy) return;
+    final String bookDir = await MangaStorage.bookPath(row.bookKey);
+    if (!await isChapterDownloaded(bookDir, chapter.key)) return;
+    final int queued = await _enqueueChapterOcr(entry, row, <OnlineMangaChapter>[
+      chapter,
+    ]);
+    if (queued > 0 && mounted) {
+      FushiToast.show(msg: t.manga_series_ocr_queued);
+    }
+  }
+
+  /// 「识别全部已下载」：已下载且章 `manga.json` 里 blocks 全空的章依次排队。
+  Future<void> _ocrAllDownloaded() async {
+    final EpubBookRow? row = _row;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (row == null || entry == null || _busy) return;
+    final String bookDir = await MangaStorage.bookPath(row.bookKey);
+    final List<OnlineMangaChapter> targets = <OnlineMangaChapter>[];
+    for (final OnlineMangaChapter chapter in entry.chapters.reversed) {
+      if (!_downloaded.contains(chapter.key)) continue;
+      if (await _chapterNeedsOcr(bookDir, chapter.key)) targets.add(chapter);
+    }
+    if (targets.isEmpty) {
+      FushiToast.show(msg: t.manga_series_ocr_all_none);
+      return;
+    }
+    final int queued = await _enqueueChapterOcr(entry, row, targets);
+    if (queued > 0 && mounted) {
+      FushiToast.show(msg: t.manga_series_ocr_queued);
+    }
+  }
+
+  /// 章 `manga.json` 里一个 block 都没有 = 还没识别过。读不出来按「不需要」处理
+  /// （坏文件不该被整卷 OCR 悄悄覆盖）。
+  static Future<bool> _chapterNeedsOcr(String bookDir, String chapterKey) async {
+    try {
+      final File json = mangaChapterJsonFile(
+        mangaChapterDirectory(bookDir, chapterKey),
+      );
+      final MokuroPayload payload = parseMangaJson(await json.readAsString());
+      return payload.images.isNotEmpty &&
+          payload.images.every((MokuroImage image) => image.blocks.isEmpty);
+    } on Object {
+      return false;
+    }
+  }
+
+  /// 解析引擎（一次），逐章排任务。返回排上的章数；解析不到引擎 / 用户拒绝 Lens
+  /// 上传 → 0 并提示。
+  Future<int> _enqueueChapterOcr(
+    OnlineMangaLibraryEntry entry,
+    EpubBookRow row,
+    List<OnlineMangaChapter> chapters,
+  ) async {
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel == null) return 0;
+    final MangaOcrWizardEngines engines = widget.ocrEnginesOverride ??
+        MangaOcrWizardEngines.resolve(context: context, db: appModel.database);
+    final MangaOcrEngineAvailability availability =
+        await probeMangaOcrEngines(engines);
+    final MangaOcrEnginePreference preference =
+        MangaOcrEnginePreferenceKey.fromKey(appModel.mangaOcrEnginePreference);
+    final MangaOcrEngineId? engine = resolveMangaOcrEngine(
+      preference: preference,
+      hasExistingMetadata: false,
+      capabilities: availability.capabilities,
+    );
+    if (!mounted) return 0;
+    if (engine == null || !availability.isUsable(engine)) {
+      FushiToast.show(
+        msg: t.manga_series_ocr_no_engine,
+        severity: ToastSeverity.error,
+      );
+      return 0;
+    }
+    if (engine == MangaOcrEngineId.googleLens) {
+      final GoogleLensDisclosureGate gate =
+          widget.lensDisclosureOverride ?? ensureGoogleLensDisclosure;
+      if (!await gate(context)) return 0;
+      if (!mounted) return 0;
+    }
+    final MangaOcrJobRegistry registry = ref.read(mangaOcrJobRegistryProvider);
+    final String bookDir = await MangaStorage.bookPath(row.bookKey);
+    int queued = 0;
+    for (final OnlineMangaChapter chapter in chapters) {
+      final Directory chapterDir = mangaChapterDirectory(bookDir, chapter.key);
+      final MangaOcrJobSpec spec = MangaOcrJobSpec(
+        engine: engine,
+        engines: engines,
+        imageDirPath: chapterDir.path,
+        lensLanguage: appModel.mangaOcrLensLanguage,
+        volumeTitle: '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
+        remoteTarget: availability.remoteTarget,
+      );
+      // 刻意不 await 启动：同书上一章还在识别时 enqueue 要等它结束。
+      unawaited(
+        registry.enqueue(
+          job: MangaOcrBackgroundJob(
+            bookKey: row.bookKey,
+            managedDirectory: chapterDir.path,
+            engine: engine,
+            events: mangaOcrBackgroundEvents(spec),
+          ),
+          mangaJsonPath: mangaChapterJsonFile(chapterDir).path,
+        ),
+      );
+      queued += 1;
+    }
+    return queued;
+  }
+
+  /// 书签 = 订阅开关：开订阅时默认同时开「新章自动下载」；关订阅把两位一起关
+  /// （没有订阅的自动下载没有意义，探针只看 autoDownload）。
+  Future<void> _toggleSubscription() async {
+    final bool subscribed = !(_entry?.subscribed ?? false);
+    await _writeSubscription(subscribed: subscribed, autoDownload: subscribed);
+  }
+
+  Future<void> _toggleAutoDownload() async {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (entry == null) return;
+    await _writeSubscription(
+      subscribed: entry.subscribed,
+      autoDownload: !entry.autoDownload,
+    );
+  }
+
+  Future<void> _writeSubscription({
+    required bool subscribed,
+    required bool autoDownload,
+  }) async {
+    final OnlineMangaLibraryService? service = _service;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final String? bookKey = _bookKey;
+    if (service == null || entry == null || bookKey == null || _busy) return;
+    try {
+      final OnlineMangaLibraryEntry updated = await service.setSubscription(
+        bookKey: bookKey,
+        entry: entry,
+        subscribed: subscribed,
+        autoDownload: autoDownload,
+      );
+      if (mounted) setState(() => _entry = updated);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaSeriesPage.subscribe', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
   }
 
   Future<void> _load() async {
@@ -701,10 +928,25 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget build(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
+    final bool canSubscribe =
+        entry != null && _row != null && _service != null;
     return FushiPageScaffold(
       title: title,
       subtitle: _subtitle(),
       actions: <Widget>[
+        if (canSubscribe)
+          IconButton(
+            key: const ValueKey<String>('manga_series_subscribe'),
+            tooltip: entry.subscribed
+                ? t.manga_series_unsubscribe
+                : t.manga_series_subscribe,
+            onPressed: _busy ? null : () => unawaited(_toggleSubscription()),
+            icon: Icon(
+              entry.subscribed
+                  ? Icons.bookmark
+                  : Icons.bookmark_add_outlined,
+            ),
+          ),
         if (entry != null)
           IconButton(
             key: const ValueKey<String>('manga_series_refresh'),
@@ -719,6 +961,24 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
+          ),
+        if (canSubscribe && entry.subscribed)
+          FushiOverflowMenu<String>(
+            key: const ValueKey<String>('manga_series_more'),
+            items: <PopupMenuEntry<String>>[
+              FushiPopupMenuItem<String>(
+                key: const ValueKey<String>('manga_series_auto_download'),
+                value: 'auto-download',
+                label: t.manga_series_auto_download,
+                icon: entry.autoDownload
+                    ? Icons.check_box
+                    : Icons.check_box_outline_blank,
+                selected: entry.autoDownload,
+              ),
+            ],
+            onSelected: (String value) {
+              if (value == 'auto-download') unawaited(_toggleAutoDownload());
+            },
           ),
       ],
       body: _buildBody(context),
@@ -800,6 +1060,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ? null
                 : (OnlineMangaChapter chapter) =>
                       unawaited(_deleteChapterDownload(chapter)),
+            onOcr: _bookKey == null
+                ? null
+                : (OnlineMangaChapter chapter) =>
+                      unawaited(_ocrChapter(chapter)),
           ),
       ],
     );
@@ -1084,6 +1348,28 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             inLibrary ? t.mihon_in_bookshelf : t.mihon_add_to_bookshelf,
           ),
         ),
+        // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
+        if (inLibrary) ...<Widget>[
+          OutlinedButton.icon(
+            key: const ValueKey<String>('manga_series_download_all'),
+            onPressed: _busy ? null : () => unawaited(_downloadAll()),
+            icon: const Icon(Icons.download_outlined),
+            label: Text(t.manga_series_download_all),
+          ),
+          FushiSelectableChip(
+            key: const ValueKey<String>('manga_series_auto_ocr_chip'),
+            label: t.manga_series_auto_ocr,
+            leadingIcon: Icons.document_scanner_outlined,
+            selected: _appModelOrNull?.mangaDownloadAutoOcr ?? false,
+            onSelected: (bool value) => unawaited(_setAutoOcr(value)),
+          ),
+          OutlinedButton.icon(
+            key: const ValueKey<String>('manga_series_ocr_all_downloaded'),
+            onPressed: _busy ? null : () => unawaited(_ocrAllDownloaded()),
+            icon: const Icon(Icons.document_scanner_outlined),
+            label: Text(t.manga_series_ocr_all_downloaded),
+          ),
+        ],
       ],
     );
   }

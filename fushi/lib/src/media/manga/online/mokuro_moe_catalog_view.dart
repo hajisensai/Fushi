@@ -5,9 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_progress_labels.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -25,6 +24,7 @@ class MokuroMoeCatalogSnapshot {
     this.seriesName,
     this.inSeriesStage = false,
     this.canDownload = false,
+    this.canDownloadAll = false,
   });
 
   /// series 阶段的系列名（browse 阶段为 null，外层回退到目录标题文案）。
@@ -36,6 +36,9 @@ class MokuroMoeCatalogSnapshot {
   /// 「下载所选」是否可用（series 阶段且已选中至少一卷）。
   final bool canDownload;
 
+  /// 「下载全部」是否可用（series 阶段且还有可选的卷）。
+  final bool canDownloadAll;
+
   // == 去重是本快照的契约核心：ValueNotifier 靠它吞掉与标题/动作无关的
   // setState（加载态、进度重绘），也保证 initState 期间的同值写入不触发
   // build 期 notify。
@@ -44,33 +47,35 @@ class MokuroMoeCatalogSnapshot {
       other is MokuroMoeCatalogSnapshot &&
       other.seriesName == seriesName &&
       other.inSeriesStage == inSeriesStage &&
-      other.canDownload == canDownload;
+      other.canDownload == canDownload &&
+      other.canDownloadAll == canDownloadAll;
 
   @override
-  int get hashCode => Object.hash(seriesName, inSeriesStage, canDownload);
+  int get hashCode =>
+      Object.hash(seriesName, inSeriesStage, canDownload, canDownloadAll);
 }
 
-/// 内容体所处阶段（下载不再是阶段——它在共享队列里后台进行）。
+/// 内容体所处阶段（下载不再是阶段——它在持久任务表里后台进行）。
 enum _CatalogStage { browse, series }
 
-/// mokuro.moe「在线目录」内容体（O1）：浏览/搜索系列 → 选卷 → 入队
-/// [MokuroMoeDownloadQueue]（app 级共享队列，统一下载中心）。
+/// mokuro.moe「在线目录」内容体（O1）：浏览/搜索系列 → 选卷 → 入
+/// [MangaDownloadService] 的持久任务表（`kind = mokuro_volume`，统一下载中心）。
 ///
 /// 既可被 [MokuroMoeCatalogDialog] 当对话框正文（[embedded] = false：尺寸由
 /// 外层约束、动作按钮由对话框 footer 提供），也可 [embedded] = true 直接嵌入
 /// 页面（正文撑满可用空间、动作按钮画在 View 内部、不显示关闭按钮）。
 ///
-/// 内容体只负责浏览与 enqueue：下载在队列里后台执行，**关闭宿主不中断**；
+/// 内容体只负责浏览与 enqueue：下载由 worker 后台执行，**关闭宿主不中断**；
 /// 进度既在内联面板显示，也与「下载」页任务 tab 同源可见。书架刷新不依赖
-/// 关闭回传——书架页直接监听队列的 importedCount 增量。
+/// 关闭回传——书架页直接监听服务的 mokuroImportedCount 增量。
 ///
 /// 照 [MangaOcrWizardDialog] 范式：依赖全构造注入（[clientOverride] /
-/// [queueOverride] 供 widget 测试绕网络/DB），dispose 只摘监听不动队列。
+/// [downloadsOverride] 供 widget 测试绕网络），dispose 只摘监听不动任务。
 class MokuroMoeCatalogView extends ConsumerStatefulWidget {
   const MokuroMoeCatalogView({
     required this.db,
     this.clientOverride,
-    this.queueOverride,
+    this.downloadsOverride,
     this.enabledOverride,
     this.embedded = false,
     this.onClose,
@@ -78,14 +83,14 @@ class MokuroMoeCatalogView extends ConsumerStatefulWidget {
     super.key,
   });
 
-  /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
+  /// 目标数据库（查已在库书目用；下载落库由服务持有的 db 完成）。
   final FushiDatabase db;
 
   /// 测试用 client（null = 按偏好 base URL 构造真实 client）。
   final MokuroMoeClient? clientOverride;
 
-  /// 测试用队列（null = 取 [AppModel.mokuroMoeDownloadQueue] 共享实例）。
-  final MokuroMoeDownloadQueue? queueOverride;
+  /// 测试用下载服务（null = 取 [AppModel.mangaDownloadService] 共享实例）。
+  final MangaDownloadService? downloadsOverride;
 
   /// Source gate. Production hosts normally pass/read the AppModel preference;
   /// tests can provide it explicitly without constructing an AppModel.
@@ -108,11 +113,11 @@ class MokuroMoeCatalogView extends ConsumerStatefulWidget {
       MokuroMoeCatalogViewState();
 }
 
-/// 公开 State：对话框壳经 GlobalKey 调用 [backToBrowse] / [enqueueSelected]
-/// 构建 footer 动作，标题经 [stageTitle] / 快照获取。
+/// 公开 State：对话框壳经 GlobalKey 调用 [backToBrowse] / [enqueueSelected] /
+/// [enqueueAll] 构建 footer 动作，标题经 [stageTitle] / 快照获取。
 class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   late final MokuroMoeClient _client;
-  late final MokuroMoeDownloadQueue _queue;
+  late final MangaDownloadService _downloads;
   late bool _enabled;
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -137,11 +142,15 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   /// 的旧响应回来发现 token 变了就直接丢弃，不会把上一个系列的卷画到这一个上。
   int _seriesToken = 0;
 
-  /// 已在库的书身份 key（`sanitizeTtuFilename(title)`；含队列本次新导入的）。
+  /// 已在库的书身份 key（`sanitizeTtuFilename(title)`；含本次新导入的）。
   final Set<String> _existingBookKeys = <String>{};
 
-  /// 已处理过完成回调的任务（防重复计 ✓/重复 toast——队列每次 notify 都全量扫）。
-  final Set<MokuroMoeDownloadTask> _seenDone = <MokuroMoeDownloadTask>{};
+  /// 当前系列的卷任务行（按卷名），任务表一变整体重取。
+  Map<String, MangaDownloadJobRow> _jobs = const <String, MangaDownloadJobRow>{};
+  StreamSubscription<void>? _jobsWatch;
+
+  /// 已处理过完成的任务 id（防重复计 ✓/重复 toast——任务表每次变更都全量扫）。
+  final Set<String> _seenDone = <String>{};
 
   /// 当前阶段标题（browse = 目录标题文案；series = 系列名）。
   String get stageTitle => _stage == _CatalogStage.browse
@@ -152,23 +161,15 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   void initState() {
     super.initState();
     _enabled = widget.enabledOverride ??
-        (widget.clientOverride != null && widget.queueOverride != null
+        (widget.clientOverride != null && widget.downloadsOverride != null
             ? true
             : ref.read(appProvider).mangaOnlineCatalogEnabled);
     _client = widget.clientOverride ??
         MokuroMoeClient(
           baseUrl: ref.read(appProvider).mangaOnlineCatalogBaseUrl,
         );
-    _queue =
-        widget.queueOverride ?? ref.read(appProvider).mokuroMoeDownloadQueue;
-    // The app-level queue outlives this view. Existing done tasks are
-    // history, not completion transitions for the newly opened instance.
-    _seenDone.addAll(
-      _queue.tasks.where(
-        (MokuroMoeDownloadTask task) => task.status == MokuroMoeTaskStatus.done,
-      ),
-    );
-    _queue.addListener(_onQueueChanged);
+    _downloads =
+        widget.downloadsOverride ?? ref.read(appProvider).mangaDownloadService;
     if (_enabled) {
       unawaited(_loadLibrary());
       unawaited(_loadExistingBooks());
@@ -197,8 +198,9 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
 
   @override
   void dispose() {
-    // 只摘监听：队列是 app 级服务，下载继续（统一下载中心语义）。
-    _queue.removeListener(_onQueueChanged);
+    // 只摘监听：下载服务是 app 级的，任务继续（统一下载中心语义）。
+    unawaited(_jobsWatch?.cancel());
+    _jobsWatch = null;
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -218,28 +220,47 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       seriesName: inSeries ? _series?.name : null,
       inSeriesStage: inSeries,
       canDownload: inSeries && _selectedVolumes.isNotEmpty,
+      canDownloadAll: inSeries && _selectableVolumes().isNotEmpty,
     );
   }
 
-  /// 队列广播：完成的任务标 ✓（写进 _existingBookKeys，与书架身份同源）并
-  /// toast 一次；其余变更（进度/状态）只触发重绘。
-  void _onQueueChanged() {
-    if (!mounted) return;
+  /// 重取当前系列的任务行；[seedHistory] = 首次进系列：表里已 done 的行是历史，
+  /// 不算这次的完成事件（不标 ✓ toast）。完成的任务标 ✓（写进
+  /// _existingBookKeys，与书架身份同源）并 toast 一次；其余变更只触发重绘。
+  Future<void> _refreshJobs({bool seedHistory = false}) async {
+    final MokuroMoeSeries? series = _series;
+    if (series == null) return;
+    final Map<String, MangaDownloadJobRow> jobs =
+        await _downloads.mokuroJobsForSeries(series.name);
+    if (!mounted || _series?.name != series.name) return;
     bool completed = false;
-    for (final MokuroMoeDownloadTask task in _queue.tasks) {
-      if (task.status != MokuroMoeTaskStatus.done) continue;
-      if (!_seenDone.add(task)) continue;
-      _existingBookKeys.add(sanitizeTtuFilename(task.title));
-      _selectedVolumes.remove(task.volumeName);
+    for (final MangaDownloadJobRow job in jobs.values) {
+      if (job.status != MangaDownloadJobStatus.done) continue;
+      if (!_seenDone.add(job.jobId) || seedHistory) continue;
+      _existingBookKeys.add(sanitizeTtuFilename(job.title));
+      _selectedVolumes.remove(job.chapterKey);
       completed = true;
     }
-    setState(() {});
+    setState(() => _jobs = jobs);
     if (completed) {
       FushiToast.show(
         msg: t.manga_ocr_wizard_done,
         severity: ToastSeverity.success,
       );
     }
+  }
+
+  void _watchJobs() {
+    _jobsWatch ??= _downloads.watchJobs().listen(
+      (_) => unawaited(_refreshJobs()),
+      onError: (Object error, StackTrace stack) {
+        ErrorLogService.instance.log(
+          'MokuroMoeCatalogView.watchJobs',
+          error,
+          stack,
+        );
+      },
+    );
   }
 
   Future<void> _loadLibrary() async {
@@ -302,7 +323,10 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       // 条目自带卷（旧响应形状 / 注入的 fake client）就直接用，不空跑一次网络。
       _seriesLoading = series.volumes.isEmpty;
       _seriesError = null;
+      _jobs = const <String, MangaDownloadJobRow>{};
     });
+    _watchJobs();
+    unawaited(_refreshJobs(seedHistory: true));
     if (!_seriesLoading) return;
     try {
       final MokuroMoeSeries detail = await _client.fetchSeries(series.name);
@@ -340,8 +364,29 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     });
   }
 
-  /// 所选卷入队共享下载队列（保持卷序），toast 提示后清空选择。下载/落库
-  /// 全在队列后台进行——宿主可继续浏览或直接关闭。
+  /// 还能选的卷（未在库、无未完成任务），按卷序。
+  List<String> _selectableVolumes() {
+    final MokuroMoeSeries? series = _series;
+    if (series == null) return const <String>[];
+    return <String>[
+      for (final MokuroMoeVolume volume in series.volumes)
+        if (_isSelectable(volume.name)) volume.name,
+    ];
+  }
+
+  bool _isSelectable(String volume) =>
+      !_isImported(volume) && !_isPending(volume);
+
+  /// 该卷是否已排队 / 执行中（行内禁用复选框，防重复入队）。
+  bool _isPending(String volume) {
+    final MangaDownloadJobRow? job = _jobs[volume];
+    return job != null &&
+        (job.status == MangaDownloadJobStatus.queued ||
+            job.status == MangaDownloadJobStatus.running);
+  }
+
+  /// 所选卷入持久任务表（保持卷序），toast 提示后清空选择。下载/落库全在
+  /// worker 后台进行——宿主可继续浏览或直接关闭。
   void enqueueSelected() {
     final MokuroMoeSeries? series = _series;
     if (series == null || _selectedVolumes.isEmpty) return;
@@ -349,12 +394,53 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         .map((MokuroMoeVolume v) => v.name)
         .where(_selectedVolumes.contains)
         .toList();
-    _queue.enqueue(seriesName: series.name, volumeNames: volumes);
+    unawaited(_enqueue(series.name, volumes));
+  }
+
+  /// 系列里所有还能选的卷全部入队（「下载全部」）。
+  void enqueueAll() {
+    final MokuroMoeSeries? series = _series;
+    if (series == null) return;
+    final List<String> volumes = _selectableVolumes();
+    if (volumes.isEmpty) return;
+    unawaited(_enqueue(series.name, volumes));
+  }
+
+  /// 全选 / 全不选还能选的卷（header 复选框）。
+  void toggleSelectAll() {
+    final List<String> selectable = _selectableVolumes();
+    setState(() {
+      if (_selectedVolumes.length >= selectable.length &&
+          selectable.every(_selectedVolumes.contains)) {
+        _selectedVolumes.clear();
+      } else {
+        _selectedVolumes
+          ..clear()
+          ..addAll(selectable);
+      }
+    });
+  }
+
+  Future<void> _enqueue(String seriesName, List<String> volumes) async {
+    try {
+      await _downloads.enqueueMokuroVolumes(
+        seriesName: seriesName,
+        volumeNames: volumes,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MokuroMoeCatalogView.enqueue', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() => _selectedVolumes.clear());
     FushiToast.show(
       msg: t.manga_online_queue_added,
       severity: ToastSeverity.info,
     );
+    await _refreshJobs();
   }
 
   // ── UI ───────────────────────────────────────────────────────────────
@@ -427,6 +513,12 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
           OutlinedButton(
             onPressed: backToBrowse,
             child: Text(t.back),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          OutlinedButton(
+            key: const ValueKey<String>('mokuro_moe_download_all'),
+            onPressed: _selectableVolumes().isEmpty ? null : enqueueAll,
+            child: Text(t.manga_online_download_all),
           ),
           SizedBox(width: tokens.spacing.gap),
           FilledButton(
@@ -547,9 +639,38 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (_queue.hasUnfinished) _buildQueuePanel(tokens),
+        if (_hasUnfinishedJobs) _buildQueuePanel(tokens),
+        if (series.volumes.isNotEmpty && !_seriesLoading && _seriesError == null)
+          _buildSelectAllHeader(tokens),
         Expanded(child: _buildSeriesBody(tokens, series)),
       ],
+    );
+  }
+
+  bool get _hasUnfinishedJobs => _jobs.values.any(
+        (MangaDownloadJobRow job) =>
+            job.status == MangaDownloadJobStatus.queued ||
+            job.status == MangaDownloadJobStatus.running,
+      );
+
+  /// 卷列表头：全选复选框（只作用于还能选的卷）。
+  Widget _buildSelectAllHeader(FushiDesignTokens tokens) {
+    final List<String> selectable = _selectableVolumes();
+    final bool allSelected = selectable.isNotEmpty &&
+        selectable.every(_selectedVolumes.contains);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+      child: Row(
+        children: <Widget>[
+          Checkbox(
+            key: const ValueKey<String>('mokuro_moe_select_all'),
+            value: allSelected,
+            onChanged: selectable.isEmpty ? null : (_) => toggleSelectAll(),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Text(t.manga_online_select_all, style: tokens.type.listSubtitle),
+        ],
+      ),
     );
   }
 
@@ -602,19 +723,14 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   Widget _buildVolumeRow(FushiDesignTokens tokens, MokuroMoeVolume volume) {
     final MokuroMoeSeries? series = _series;
     final bool imported = _isImported(volume.name);
-    final MokuroMoeDownloadTask? pending =
-        series == null ? null : _queue.pendingTask(series.name, volume.name);
+    final MangaDownloadJobRow? job = series == null ? null : _jobs[volume.name];
     final String? subtitleText = imported
         ? t.manga_online_downloaded
-        : switch (pending?.status) {
-            MokuroMoeTaskStatus.running =>
-              mokuroMoeStageLabel(pending!.lastEvent),
-            MokuroMoeTaskStatus.queued => t.download_status_queued,
-            // 退避重试中也是「未完成任务」，行仍不可再选，得说清它在等什么。
-            MokuroMoeTaskStatus.waitingRetry => t.manga_online_retry_waiting(
-                attempt: pending!.autoRetries,
-                total: _queue.maxAutoRetries,
-              ),
+        : switch (job?.status) {
+            MangaDownloadJobStatus.running => _progressLabel(job!),
+            MangaDownloadJobStatus.queued => t.download_status_queued,
+            MangaDownloadJobStatus.failed =>
+              '${t.manga_online_failed}: ${job!.lastError ?? ''}',
             _ => null,
           };
     final Widget? subtitle = subtitleText == null
@@ -623,7 +739,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
             style: tokens.type.listSubtitle,
             maxLines: 1,
             overflow: TextOverflow.ellipsis);
-    final bool selectable = !imported && pending == null;
+    final bool selectable = !imported && !_isPending(volume.name);
     // 手排行（MD3 tokens 间距），不走 ListTile（MD3 守卫：普通 chrome 统一走
     // 共享 tokens 布局）。
     return InkWell(
@@ -678,13 +794,40 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     );
   }
 
-  /// 共享队列的内联进度面板（有未完成任务时显示）：`x/y · 当前卷阶段` +
-  /// 进度条 + 取消当前卷。与「下载」页任务 tab 同源（同队列 + 同换算）。
+  /// 执行中任务的进度文案：CBZ 阶段是字节、导入阶段是页——任务行只存比值，
+  /// 这里统一显示成「x / y」。
+  static String _progressLabel(MangaDownloadJobRow job) => job.pagesTotal > 0
+      ? t.manga_ocr_wizard_page_progress(
+          done: job.pagesDone,
+          total: job.pagesTotal,
+        )
+      : t.download_status_queued;
+
+  static double? _progressValue(MangaDownloadJobRow? job) =>
+      job == null || job.pagesTotal <= 0
+          ? null
+          : (job.pagesDone / job.pagesTotal).clamp(0.0, 1.0);
+
+  /// 本系列任务的内联进度面板（有未完成任务时显示）：`x/y · 当前卷进度` +
+  /// 进度条 + 取消当前卷。与「下载」页任务 tab 同源（同一张任务表）。
   Widget _buildQueuePanel(FushiDesignTokens tokens) {
-    final MokuroMoeDownloadTask? running = _queue.runningTask;
+    final List<MangaDownloadJobRow> jobs = _jobs.values.toList();
+    MangaDownloadJobRow? running;
+    for (final MangaDownloadJobRow job in jobs) {
+      if (job.status == MangaDownloadJobStatus.running) {
+        running = job;
+        break;
+      }
+    }
+    final int finished = jobs
+        .where((MangaDownloadJobRow job) =>
+            job.status != MangaDownloadJobStatus.queued &&
+            job.status != MangaDownloadJobStatus.running)
+        .length;
     final String label = running == null
         ? t.download_status_queued
-        : '${running.title} · ${mokuroMoeStageLabel(running.lastEvent)}';
+        : '${running.title} · ${_progressLabel(running)}';
+    final MangaDownloadJobRow? cancelTarget = running;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
@@ -695,25 +838,24 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
               Expanded(
                 child: Text(
                   // 「第 x / y 卷」：x = 已收尾数 + 当前执行中的这卷（保持原语义）。
-                  '${t.manga_online_queue_progress(done: _queue.finishedCount + (running != null ? 1 : 0), total: _queue.totalCount)}'
+                  '${t.manga_online_queue_progress(done: finished + (running != null ? 1 : 0), total: jobs.length)}'
                   ' · $label',
                   style: tokens.type.listSubtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (running != null)
+              if (cancelTarget != null)
                 FushiIconButton(
                   tooltip: t.dialog_cancel,
                   icon: Icons.close,
                   size: 18,
-                  onTap: () => _queue.cancel(running),
+                  onTap: () => unawaited(_downloads.cancel(cancelTarget.jobId)),
                 ),
             ],
           ),
           SizedBox(height: tokens.spacing.gap / 2),
-          LinearProgressIndicator(
-              value: mokuroMoeProgressValue(running?.lastEvent)),
+          LinearProgressIndicator(value: _progressValue(running)),
         ],
       ),
     );

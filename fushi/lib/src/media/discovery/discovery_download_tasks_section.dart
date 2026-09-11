@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/misc/engine_listenable.dart';
 /// 生命周期常驻），这里直接监听它，不另存一份。
 ///
 /// 行内可取消排队/执行中的任务、重试失败/取消的任务；已结束任务经「清除已完成」
-/// 批量清掉。范式与 `MokuroMoeTasksSection` 相同。
+/// 批量清掉。范式与 `MangaDownloadTasksSection` 相同。
 class DiscoveryDownloadTasksSection extends ConsumerWidget {
   const DiscoveryDownloadTasksSection({
     super.key,
