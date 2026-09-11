@@ -202,10 +202,40 @@ void main() {
       expect(r.body, isEmpty);
     });
 
-    test('未登记：中继按明文 http 直连 TLS 端口，必失败（登记是唯一放行条件）', () async {
+    test('未登记：中继按明文 http 直连 TLS 端口 → 502（登记是唯一放行条件）', () async {
       final ({String head, List<int> body}) r = await viaRelay('/clip.bin');
-      expect(r.head, isNot(startsWith('HTTP/1.1 200')));
-      expect(r.body, isNot(equals(body)));
+      expect(r.head, startsWith('HTTP/1.1 502'));
+      expect(r.body, isEmpty);
+    });
+
+    test('撤销登记后同一原点回到明文直连 → 502（host 关 TLS 后不残留旧指纹）', () async {
+      registerPinnedNativeOrigin(
+        host: '127.0.0.1',
+        port: origin.port,
+        fingerprintSha256: fingerprint,
+      );
+      expect((await viaRelay('/clip.bin')).head, startsWith('HTTP/1.1 200'));
+      unregisterPinnedNativeOrigin(host: '127.0.0.1', port: origin.port);
+      expect(pinnedNativeOriginFingerprint('127.0.0.1', origin.port), isNull);
+      final ({String head, List<int> body}) r = await viaRelay('/clip.bin');
+      expect(r.head, startsWith('HTTP/1.1 502'));
+    });
+
+    test('同一钉扎原点的连续请求复用一条上游连接（不逐请求重新 TLS 握手）', () async {
+      registerPinnedNativeOrigin(
+        host: '127.0.0.1',
+        port: origin.port,
+        fingerprintSha256: fingerprint,
+      );
+      for (int i = 0; i < 3; i++) {
+        final ({String head, List<int> body}) r = await viaRelay(
+          '/clip.bin',
+          range: 'bytes=$i-$i',
+        );
+        expect(r.head, startsWith('HTTP/1.1 206'), reason: 'request #$i');
+      }
+      // 三个 Range 请求若各起一个客户端，原点会看到 3 条连接；复用后只有 1 条。
+      expect(origin.connectionsInfo().total, 1);
     });
   });
 }

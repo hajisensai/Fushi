@@ -398,7 +398,9 @@ class InterconnectSyncBackend extends SyncBackend
   /// BUG-2448：https host 的 TOFU 指纹登记给 app 内置中继，让 native 播放器
   /// （libmpv / ffmpeg）取这台 host 的视频流时由 Dart 侧钉扎 TLS，而不是各平台
   /// libmpv 自己去判自签证书（curl 后端默认校验 → 一律打不开）。明文 http host
-  /// 无需登记。每次解析都登记（幂等覆盖）：重新配对换了证书时指纹跟着刷新。
+  /// 每次解析都登记（幂等覆盖）：重新配对换了证书时指纹跟着刷新。解析成明文
+  /// http 的 host 则**撤销**同一 (host, port) 的登记（host 关了 TLS 后重新配对，
+  /// 端口不变）——残留旧指纹会让中继把明文请求硬升 https 去握手明文端口。
   static void _registerPinnedNativeOrigin(
     String baseUrl,
     String? fingerprintSha256,
@@ -407,6 +409,7 @@ class InterconnectSyncBackend extends SyncBackend
     if (!base.isScheme('https') ||
         fingerprintSha256 == null ||
         fingerprintSha256.isEmpty) {
+      unregisterPinnedNativeOrigin(host: base.host, port: base.port);
       return;
     }
     registerPinnedNativeOrigin(
