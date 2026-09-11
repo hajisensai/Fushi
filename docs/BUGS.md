@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2265 条。点号进各自文件。
+> 共 2266 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2456](bugs/BUG-2456-dict-link-furigana-query.md) | ✅ | ✅ | 词典正文链接点击查询词混入振假名，前缀扫描退化成首字汉字 |
 | [BUG-2455](bugs/BUG-2455-interconnect-video-native-tls-trust.md) | ✅ | ✅ | 互联远端视频打不开：随包 libmpv 换 libcurl 后默认校验自签证书 |
 | [BUG-2454](bugs/BUG-2454-scrape-image-language-ignores-locale.md) | ✅ | ✅ | 刮削图片语言写死中文，不看资料语言偏好 |
 | [BUG-2453](bugs/BUG-2453-synthetic-hover-device-leak.md) | ✅ | ✅ | 视频播放页合成 hover 设备退出后不注销，库页中心卡片被幽灵指针悬停放大 |
