@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 守卫：视频播放设置面板已从 bespoke 深色单列 `showModalBottomSheet` 迁移到与阅读器
@@ -328,30 +330,20 @@ void main() {
       'void _markControlsVisible(bool visible) {',
       '/// 桌面鼠标移出视频区',
     );
-    final String pokeMethod = _between(
-      source,
-      'void _pokeControlsVisible() {',
-      'void _clearRailHover()',
-    );
-    final String hoverExitMethod = _between(
-      source,
-      'void _onVideoControlsHoverExit() {',
-      'bool _isSyntheticControlsHover(PointerEvent event)',
-    );
-    final String syntheticHoverMethod = _between(
-      source,
-      'bool _isSyntheticControlsHover(PointerEvent event)',
-      'void _handleVideoControlsHover(PointerEvent event) {',
-    );
-    final String hoverHandlerMethod = _between(
+    // BUG-2453：合成 hover 设备整套删除（`_isSyntheticControlsHover` 不复存在），旧的
+    // 「下一个方法签名」文本锚点跟着失效；下面四个方法体改用花括号配对切出，右边界由
+    // 结构决定，不再依赖相邻成员的顺序。
+    final String pokeMethod =
+        methodBody(source, 'void _pokeControlsVisible() {');
+    final String hoverExitMethod =
+        methodBody(source, 'void _onVideoControlsHoverExit() {');
+    final String hoverHandlerMethod = methodBody(
       source,
       'void _handleVideoControlsHover(PointerEvent event) {',
-      'void _handleVideoControlsHoverExit(PointerEvent event) {',
     );
-    final String hoverExitHandlerMethod = _between(
+    final String hoverExitHandlerMethod = methodBody(
       source,
       'void _handleVideoControlsHoverExit(PointerEvent event) {',
-      '/// 唤回视频左侧锁',
     );
     final String hoverWrapMethod = _between(
       source,
@@ -370,12 +362,14 @@ void main() {
         panelMethod, isNot(contains('valueListenable: _videoControlsVisible')),
         reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载');
 
-    // TODO-364：poke 仍派合成 hover 驱动 media_kit 自己的可见性/Timer（单一真相源），
-    // 但不再另翻 Hibiki 镜像（相位反根因）。
-    expect(pokeMethod,
-        contains('device: _VideoFushiPageState._syntheticHoverDevice'));
-    expect(pokeMethod, isNot(contains('_markControlsVisible(true);')),
-        reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收合成 hover 后推送，TODO-364）');
+    // TODO-364：poke 驱动的是 media_kit 自己的可见性/Timer（单一真相源），不另翻 Hibiki
+    // 镜像（相位反根因）。BUG-2453 起「驱动」的形态从派合成 hover 换成 fork 的 wakeSignal
+    // （`_restartHideTimerSignal.poke()`，fork 收到即调它自己的 onHover），真相源不变。
+    expect(
+        containsCodeLine(pokeMethod, '_restartHideTimerSignal.poke();'), isTrue,
+        reason: 'poke 必须经 wakeSignal 驱动 media_kit 自己的可见性 / Timer（TODO-364）');
+    expect(containsCodeLine(pokeMethod, '_markControlsVisible(true);'), isFalse,
+        reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收到信号后推送，TODO-364）');
     // TODO-364：_markControlsVisible 收敛成仅门控收起（assert(!visible)）+ 重派生；
     // 不再有 Hibiki 侧独立隐藏 Timer 条件。
     expect(visibilityMethod, contains('_applyControlsVisibilityFromMediaKit()'),
@@ -383,21 +377,35 @@ void main() {
     expect(visibilityMethod, isNot(contains('_videoControlsHideTimer')),
         reason: '不应残留 Hibiki 侧独立隐藏 Timer（TODO-364）');
     // TODO-364：鼠标移出只交还光标，控制条隐藏由 media_kit onExit 推送，不在 Hibiki 侧判可见。
-    expect(hoverExitMethod, contains('_setCursorHidden(false)'),
+    expect(
+        containsCodeLine(hoverExitMethod, '_setCursorHidden(false);'), isTrue,
         reason: '鼠标移出应交还光标');
     expect(
-        hoverExitMethod, isNot(contains('_videoControlsVisible.value = false')),
+        containsCodeLine(
+            hoverExitMethod, '_videoControlsVisible.value = false'),
+        isFalse,
         reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）');
-    expect(syntheticHoverMethod,
-        contains('event.device == _VideoFushiPageState._syntheticHoverDevice'));
-    expect(
-        hoverHandlerMethod, contains('if (!_isSyntheticControlsHover(event))'));
+    // BUG-2453：到 hover 处理器的事件只可能是真实鼠标（页面不再合成指针事件），故
+    // 无条件唤回光标；按设备号过滤的 helper 不得回来——它存在的唯一理由是页面自己在造
+    // 合成设备，而那正是幽灵悬停的来源。
+    expect(containsCodeLine(hoverHandlerMethod, '_setCursorHidden(false);'),
+        isTrue,
+        reason: '真实鼠标 hover 应无条件唤回光标（TODO-318）');
+    for (final String body in <String>[
+      hoverHandlerMethod,
+      hoverExitHandlerMethod,
+    ]) {
+      expect(containsIdentifier(body, '_isSyntheticControlsHover'), isFalse,
+          reason: '按设备号过滤 hover 不得回来（BUG-2453）');
+    }
     // TODO-364：真实 hover 不再乐观翻镜像（可见性由 media_kit onHover 推送）。
-    expect(hoverHandlerMethod, isNot(contains('_markControlsVisible(true);')),
+    expect(containsCodeLine(hoverHandlerMethod, '_markControlsVisible(true);'),
+        isFalse,
         reason: 'hover 不应再乐观翻镜像（可见性由 media_kit 真实态推送，TODO-364）');
-    expect(hoverExitHandlerMethod,
-        contains('if (_isSyntheticControlsHover(event)) return;'));
-    expect(hoverExitHandlerMethod, contains('_onVideoControlsHoverExit();'));
+    expect(
+        containsCodeLine(
+            hoverExitHandlerMethod, '_onVideoControlsHoverExit();'),
+        isTrue);
     expect(hoverWrapMethod, contains('onEnter: _handleVideoControlsHover'));
     expect(hoverWrapMethod, contains('onHover: _handleVideoControlsHover'));
     expect(hoverWrapMethod, contains('onExit: _handleVideoControlsHoverExit'));

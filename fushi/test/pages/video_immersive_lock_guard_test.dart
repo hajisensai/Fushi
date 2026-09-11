@@ -69,24 +69,30 @@ void main() {
   });
 
   test('② poke 在锁定态早返回（键盘跳句不再弹控制条）', () {
-    // _pokeControlsVisible 在桌面门控之后、派发合成 hover 之前，必须先判锁定态早返回。
-    final int pokeIdx = src.indexOf('void _pokeControlsVisible()');
-    expect(pokeIdx, greaterThanOrEqualTo(0));
-    final int dispatchIdx =
-        src.indexOf('GestureBinding.instance.handlePointerEvent', pokeIdx);
-    final int gateIdx =
-        src.indexOf('if (_immersiveLocked.value) return;', pokeIdx);
+    // _pokeControlsVisible 必须先判锁定态早返回，再发唤醒信号。
+    // BUG-2453 之前「唤醒」是派合成 hover（GestureBinding.handlePointerEvent），旧守卫拿它
+    // 当顺序锚点；现在唤醒是 `_restartHideTimerSignal.poke()`（fork 的 wakeSignal），锚点换成
+    // 它，不变量不变：门控在出口之前。方法体用花括号配对切出，只在体内比顺序。
+    final String poke =
+        maskComments(methodBody(src, 'void _pokeControlsVisible()'));
+    const String exit = '_restartHideTimerSignal.poke();';
+    final int exitIdx = poke.indexOf(exit);
+    expect(exitIdx, greaterThanOrEqualTo(0),
+        reason: '_pokeControlsVisible 的出口已不是 $exit，守卫需同步更新');
+    final int gateIdx = poke.indexOf('if (_immersiveLocked.value) return;');
     expect(gateIdx, greaterThanOrEqualTo(0),
         reason: 'poke 未在锁定态早返回（锁定态键盘交互会弹控制条）');
-    expect(gateIdx, lessThan(dispatchIdx), reason: '锁定态早返回必须排在派发合成 hover 之前');
+    expect(gateIdx, lessThan(exitIdx),
+        reason: '锁定态早返回必须排在发唤醒信号之前——信号本身分不出「续命」和「唤起」');
   });
 
   test('② poke 在字幕列表等强压制态早返回，不让 hover 与控制条互相拉起', () {
-    final int pokeIdx = src.indexOf('void _pokeControlsVisible()');
-    expect(pokeIdx, greaterThanOrEqualTo(0));
-    final int dispatchIdx =
-        src.indexOf('GestureBinding.instance.handlePointerEvent', pokeIdx);
-    expect(dispatchIdx, greaterThan(pokeIdx));
+    final String poke =
+        maskComments(methodBody(src, 'void _pokeControlsVisible()'));
+    const String exit = '_restartHideTimerSignal.poke();';
+    final int exitIdx = poke.indexOf(exit);
+    expect(exitIdx, greaterThanOrEqualTo(0),
+        reason: '_pokeControlsVisible 的出口已不是 $exit，守卫需同步更新');
 
     for (final String gate in <String>[
       'if (_immersiveLocked.value) return;',
@@ -94,10 +100,10 @@ void main() {
       'if (_subtitleListVisible.value) return;',
       'if (_videoControlEditMode.value) return;',
     ]) {
-      final int gateIdx = src.indexOf(gate, pokeIdx);
+      final int gateIdx = poke.indexOf(gate);
       expect(gateIdx, greaterThanOrEqualTo(0),
           reason: '_pokeControlsVisible 缺强压制态早返回：$gate');
-      expect(gateIdx, lessThan(dispatchIdx), reason: '$gate 必须排在派发合成 hover 之前');
+      expect(gateIdx, lessThan(exitIdx), reason: '$gate 必须排在发唤醒信号之前');
     }
   });
 
@@ -132,9 +138,10 @@ void main() {
     }
     // 活性自证：上面两条是**否定**断言，门控被整个删光时它们也全绿。真相是门控确实
     // 存在、且落在逐个动作上（[_buildVideoShortcutActions] 里几乎每个实参都包了一层）。
-    final String actions =
-        maskComments(methodBody(src, 'VideoPlayerShortcutActions '
-            '_buildVideoShortcutActions('));
+    final String actions = maskComments(methodBody(
+        src,
+        'VideoPlayerShortcutActions '
+        '_buildVideoShortcutActions('));
     expect(
       '_runWhenImmersiveAllowsShortcuts('.allMatches(actions).length,
       greaterThan(20),
@@ -321,8 +328,7 @@ void main() {
     expect(dismissIdx, greaterThanOrEqualTo(0), reason: 'Esc 未先逐级关前台层');
     expect(fullscreenExitIdx, greaterThan(dismissIdx),
         reason: 'Esc 关前台层必须排在退全屏之前');
-    expect(exitIdx, greaterThan(dismissIdx),
-        reason: 'Esc 关前台层必须排在退页之前（逐级退出）');
+    expect(exitIdx, greaterThan(dismissIdx), reason: 'Esc 关前台层必须排在退页之前（逐级退出）');
     // 它确实还是 globalBack 的执行体（抽成具名方法之后不能忘了接回去）。
     expect(src.contains('escape: _handleVideoEscapeAction,'), isTrue,
         reason: 'globalBack 的执行体必须仍接在 VideoPlayerShortcutActions.escape 上');

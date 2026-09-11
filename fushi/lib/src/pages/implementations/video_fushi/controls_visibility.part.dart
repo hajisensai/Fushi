@@ -4,7 +4,7 @@ part of '../video_fushi_page.dart';
 /// controls-visibility / hover / poke / autohide domain methods extracted via
 /// part-of (TODO-590 batch3); shared private scope. Behaviour-preserving:
 /// bodies are verbatim except references to the main shell's `static` members
-/// (`_syntheticHoverDevice` / `_videoControlsHoverDuration`) are fully qualified
+/// (`_videoControlsHoverDuration`) are fully qualified
 /// through `_VideoFushiPageState.` — an extension cannot resolve a host class's
 /// private static by bare name, so the qualification is mandatory and otherwise
 /// byte-exact. No `setState(` lives in this domain, so no `_rebuild(` forwarding
@@ -20,77 +20,36 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   /// （上下句快进 / ±秒 seek）与编程 seek 都不触发重置 → 用户一直按键快进，控制条
   /// 仍只活 2 秒就消失，得反复呼出。media_kit 不暴露任何「重置计时」公开 API。
   ///
-  /// 这里不绕开症状、而是驱动 media_kit **自己设计的**重置路径：往控制条区域中心派发
-  /// 一个合成 [PointerHoverEvent]，命中其 `MouseRegion` → `onHover()` → 重置隐藏
-  /// `Timer` 并翻可见。等价于「用户把鼠标移到了控制条上」，与键盘交互语义一致。
-  /// 仅桌面有 hover 语义（移动端 controls 用 tap 唤起、各按钮 onPressed 自带反馈，
-  /// 无此问题），故仅桌面派发。[_videoControlsContext] 是 controls 子树 context
-  /// （全屏复用同一 builder 时为全屏子树），其 RenderBox 即控制条命中区。
+  /// 出口只有一个：[_restartHideTimerSignal]。两端 fork 都订阅它，语义差异在 fork 侧——
+  /// 桌面 `wakeSignal`（BUG-2453）收到即调它自己的 `onHover()`：唤起 + 重排隐藏 Timer，
+  /// 等价于「用户把鼠标移到了控制条上」；移动 `restartHideTimerSignal`（TODO-1059）只在
+  /// 控制条可见时重排隐藏 Timer（移动无 hover 语义，按钮 onPressed 自带反馈）。
+  ///
+  /// 桌面此前**不是**这么做的：往视频区几何中心派一条固定设备号的合成 [PointerHoverEvent]
+  /// 去命中 media_kit 的 `MouseRegion`。那条假鼠标设备在 Flutter `MouseTracker` 里是真实
+  /// 的设备状态，只有同设备的 `PointerRemovedEvent` 才删，全仓没人派过——退出播放器后
+  /// 幽灵指针永远停在屏幕中心，库页中心那张卡被判 hover 放大（BUG-2453）。而「注销时机」
+  /// 无论放 dispose（finalizeTree 锁态、换集误伤新页）还是失去栈顶（边沿一次性、注销后
+  /// 再 poke 即复发、`removeRoute` / 弹窗路由收不到动画状态）都是在错的抽象上打补丁。
+  /// 改走显式信号后，连带的 BUG-215 ±1px 抖动、BUG-425 微任务延迟、BUG-1798 按设备号
+  /// 过滤三层补丁一并删除，页面不再合成任何指针事件。
   void _pokeControlsVisible() {
     // 强压制态下不续命控制条，避免控制条和 rail 被 poke 拉回（桌面/移动同门控——门控成立
-    // 时控制条本被遮住/压制，续命只会打架）。门控检查提前到平台无关处（TODO-1059）：桌面
-    // 派合成 hover，移动端改发 [_restartHideTimerSignal]（fork 侧续命隐藏 Timer）。
+    // 时控制条本被遮住/压制，续命只会打架）。
     if (_immersiveLocked.value) return;
     if (_videoSidePanel.value != null) return;
     if (_subtitleListVisible.value) return;
     if (_videoControlEditMode.value) return;
-    // BUG-1798：查词浮层开着时同样早退，与上面四个门控同族（「控制条本被遮住/压制，续命只会
-    // 打架」）。浮层的 dismiss barrier 是全屏 **opaque** 命中层（`ColoredBox` 的 render object
-    // 命中行为为 opaque），它一挂上，合成 hover 就再也到不了 media_kit 自己的 MouseRegion——
-    // 本方法赖以工作的那条「命中 fork 的 onHover → 重置隐藏 Timer」路径 100% 断掉，派发是**纯
-    // 无效**的。而事件并不会凭空消失：它改落进 barrier 的 [_onDismissBarrierHover]，污染指针
-    // 记账与换词去重键（那侧已按设备滤掉，此处再从源头掐断，两道都不是补丁——前者是「合成事件
-    // 不参与指针记账」的不变量，后者是「明知到不了目标就不派发」）。
-    // 顺带消除一个自激环：[_handleSubtitleHover] 收到字幕 hover 就调本方法，而合成 hover 又会
-    // 被 barrier 收走再触发换词逻辑。
+    // BUG-1798：查词浮层开着时同样早退，与上面四个门控同族——浮层的 dismiss barrier 盖在
+    // 控制条之上，此时唤起控制条只会在背后打架。顺带消除一个自激环：[_handleSubtitleHover]
+    // 收到字幕 hover 就调本方法。
     if (_lookupOverlayActive.value) return;
-    if (!_isDesktopVideoControls) {
-      // 移动端：底部按钮栏按下时经此续命 media_kit 隐藏 Timer（fork 只在整屏 tap / seek 时
-      // 重置，按按钮不重置 → 手指还在按控制条却隐藏 = 误触）。移动无 hover 语义，故不派合成
-      // hover，改边沿触发信号，fork 的 [restartHideTimerSignal] 监听在可见态重排 Timer。
-      _restartHideTimerSignal.poke();
-      return;
+    if (_isDesktopVideoControls) {
+      // 合成 hover 时代它会顺带经页面根 Listener 命中 [_handleVideoControlsHover] 续命侧边
+      // 锁按钮；改信号后显式补上，行为不变。
+      _pokeLockButton();
     }
-    final BuildContext? ctx = _videoControlsContext;
-    if (ctx == null || !ctx.mounted) return;
-    final RenderObject? renderObject = ctx.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) return;
-    final Offset center = renderObject.localToGlobal(
-      renderObject.size.center(Offset.zero),
-    );
-    // ±1px 抖动 x 坐标（TODO-148/BUG-215）：连续派发到同一坐标会被 MouseTracker
-    // 去重、media_kit onHover 不再触发；每次翻转让坐标始终变化，强制每次都续命
-    // 隐藏定时。1px 仍稳落控制条命中区内。
-    _pokeParity = !_pokeParity;
-    final Offset pokePosition = Offset(
-      center.dx + (_pokeParity ? 1.0 : -1.0),
-      center.dy,
-    );
-    // 合成 hover 事件在此（命中区几何有效时）同步构造，但**派发**延迟到微任务（BUG-425）。
-    _pendingPokeHover = PointerHoverEvent(
-      position: pokePosition,
-      // 复用一个稳定的合成设备 id，避免与真实鼠标/触控设备冲突。
-      device: _VideoFushiPageState._syntheticHoverDevice,
-      kind: PointerDeviceKind.mouse,
-    );
-    // BUG-425：合成 hover 的**派发**恒延迟到 [scheduleMicrotask]，绝不在本调用栈内同步
-    // 派发。本 helper 的部分调用方是 MouseRegion 自己的 onEnter/onHover（rail / 锁按钮
-    // keep-alive、字幕盒 hover），它们运行在 Flutter `MouseTracker.updateAllDevices` 遍历
-    // `_mouseStates` 的 `_deviceUpdatePhase` 内；若此处同步 `handlePointerEvent` →
-    // `MouseTracker.updateWithEvent` 会在迭代期写 `_mouseStates[_syntheticHoverDevice]` →
-    // release 抛 `Concurrent modification during iteration: _Map len:2`（debug 触
-    // `_debugDuringDeviceUpdate` 重入断言）。微任务在当前调用栈（含 MouseTracker 迭代）解开
-    // 后、下一事件/帧前执行，唤醒在用户尺度上仍即时，但不再重入。[_pokeDispatchScheduled]
-    // 把同一微任务窗口内的多次 poke 折叠成一次派发：每次都刷新 [_pendingPokeHover] 为最新
-    // 抖动位置（保 BUG-215 去重续命），但只排一个微任务，派发最新那条。
-    // 不再在 Hibiki 侧另翻镜像可见性（TODO-364）：刚派发的合成 hover 会命中 media_kit
-    // 自己的 MouseRegion → 其 onHover 翻 `visible=true` 并重置 **它唯一的** 隐藏 Timer、
-    // 把真实可见性推进 [_mediaKitControlsVisible]，由 [_applyControlsVisibilityFromMediaKit]
-    // 派生进 [_videoControlsVisible]。键盘 / seek 唤起控制条时字幕跟着上顶，且与真实控制条
-    // 同相位（旧实现这里直接翻镜像 + 另起 Timer 是相位反的根因）。
-    if (_pokeDispatchScheduled) return;
-    _pokeDispatchScheduled = true;
-    scheduleMicrotask(_dispatchPokeHover);
+    _restartHideTimerSignal.poke();
   }
 
   /// 控制条【续命】原语（BUG-2030）：只在控制条**已可见**时重置它的自动隐藏计时，
@@ -105,9 +64,9 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   ///   连按就必须续命——那正是 BUG-176 ② / BUG-215 修的东西，两个诉求不冲突：
   ///   旧实现把「续命」和「唤起」绑在同一个动作里，才让修一个带出另一个。
   ///
-  /// 门控只能在派发**之前**做：桌面端续命靠给 media_kit 派合成 hover，而它的 `onHover` 是
+  /// 门控只能在发信号**之前**做：桌面 fork 的 `wakeSignal` 处理就是它自己的 `onHover`，
   /// 无条件 `visible = true`（third_party/media_kit_video/.../material_desktop.dart）
-  /// ——合成 hover 本身分不出「续命」和「唤起」。移动端那侧 fork 早已是本语义
+  /// ——信号本身分不出「续命」和「唤起」。移动端那侧 fork 早已是本语义
   /// （`_restartHideTimer`：`if (!mounted || !visible) return;`，注释原文
   /// "we must not silently un-hide"），本方法把桌面对齐过去，消除两端不对称。
   ///
@@ -117,64 +76,6 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   void _keepControlsAliveIfVisible() {
     if (!_mediaKitControlsVisible.value) return;
     _pokeControlsVisible();
-  }
-
-  /// 在微任务里真正派发 [_pokeControlsVisible] 排好的合成 hover（BUG-425）。此时已脱离任何
-  /// MouseRegion 回调 / `MouseTracker` 迭代栈，经 [GestureBinding.handlePointerEvent] 写
-  /// `_mouseStates` 不再与遍历冲突。派发前重校验 `mounted`（微任务窗口内页面可能已销毁），
-  /// 失效则丢弃（仅丢一次控制条续命，无副作用）。派发的是 [_pendingPokeHover]——即同一窗口内
-  /// 最后一次 poke 刷新的最新抖动位置，连按时去重为单次派发但位置仍是最新（保 BUG-215）。
-  void _dispatchPokeHover() {
-    _pokeDispatchScheduled = false;
-    final PointerHoverEvent? event = _pendingPokeHover;
-    _pendingPokeHover = null;
-    if (event == null || !mounted) return;
-    // BUG-2453：真派发过就登记「设备在册」，本页失去栈顶时 [_retireSyntheticHoverDevice]
-    // 按此决定要不要派 PointerRemovedEvent。
-    _syntheticHoverDeviceLive = true;
-    GestureBinding.instance.handlePointerEvent(event);
-  }
-
-  /// 注销合成 hover 设备（BUG-2453）——由 build 里包住整页的 [RouteTopListener] 在本页
-  /// **失去栈顶**那一帧的帧末调用，派同设备的 `PointerRemovedEvent`。
-  ///
-  /// 根因：[_pokeControlsVisible] 派的合成 hover 在 Flutter `MouseTracker` 里会为
-  /// [_VideoFushiPageState._syntheticHoverDevice] 建一条**真实的设备状态**（`_mouseStates`），
-  /// 而框架只在收到同设备的 `PointerRemovedEvent` 时才删它。此前全仓没人派过这个 remove：
-  /// 幽灵指针永远停在视频区几何中心，退出播放器后每帧帧末 `updateAllDevices` 仍在那一点
-  /// 命中测试，库页中心那张卡的 `MouseRegion` 收到 onEnter → `FushiHoverLift` 放大——
-  /// 用户报「进视频页时中间的卡片显示鼠标悬停效果，鼠标明明没放上去」。
-  ///
-  /// 为什么不在每次 hover 后立刻注销：media_kit fork 的 `onExit` 无条件 `visible = false`
-  /// 并取消隐藏 Timer（third_party/media_kit_video/.../material_desktop.dart），remove 会
-  /// 触发 onExit，poke 就白派了。合成设备的语义是「用户的手在控制条上」，它该活到本页
-  /// 不再是栈顶。
-  ///
-  /// 为什么不在 `dispose()` 里派（第一版就是这么写的，审查打回）：
-  /// - dispose 跑在 `BuildOwner.finalizeTree` 的锁态内。pop 的反向过渡期间本页
-  ///   `IgnorePointer`，幽灵指针早已进到下层库页中心那张卡上；此时派 remove，MouseTracker
-  ///   给那张仍挂在树上的卡回调 onExit → `setState` → debug 抛「setState() or
-  ///   markNeedsBuild() called when widget tree was locked」，dispose 后半段整段跳过。
-  /// - `pushReplacement` 换集时旧页 dispose 晚于新页入场，幽灵指针已进到新页 media_kit
-  ///   的全画面 `MouseRegion`，remove 触发其 onExit 把新页刚露出的控制条和光标一起藏掉。
-  ///
-  /// 失去栈顶的帧末（[RouteTopListener] 的语义）不在 build / finalize 锁内，且**早于**
-  /// MouseTracker 自己的帧末重命中（`RendererBinding` 在 `drawFrame` 之后才登记那一条），
-  /// 所以幽灵指针来不及进入下层页 / 新页的任何 region，onExit 只落在本页自己的控制条上
-  /// （本页正在退场，藏掉无妨）。`RouteAware` 不可用——`AppModel.routeObserver` 从未挂到
-  /// 任何 Navigator，且 Flutter 的 `RouteObserver` 不报 `didReplace`。
-  ///
-  /// 幂等：重回栈顶（弹窗关掉）再失去会再调，未在册时什么都不派。
-  void _retireSyntheticHoverDevice() {
-    _pendingPokeHover = null;
-    if (!_syntheticHoverDeviceLive) return;
-    _syntheticHoverDeviceLive = false;
-    GestureBinding.instance.handlePointerEvent(
-      const PointerRemovedEvent(
-        device: _VideoFushiPageState._syntheticHoverDevice,
-        kind: PointerDeviceKind.mouse,
-      ),
-    );
   }
 
   void _clearRailHover() {
@@ -240,15 +141,10 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     _setCursorHidden(false);
   }
 
-  bool _isSyntheticControlsHover(PointerEvent event) =>
-      event.device == _VideoFushiPageState._syntheticHoverDevice;
-
   void _handleVideoControlsHover(PointerEvent event) {
-    if (!_isSyntheticControlsHover(event)) {
-      // 真实鼠标移动 → 唤回光标（TODO-318）。合成 poke（键盘/seek 续命）不强制显示光标，
-      // 否则键盘连按快进会让本该隐藏的光标常驻。沉浸锁态也借此唤回光标找解锁按钮。
-      _setCursorHidden(false);
-    }
+    // 真实鼠标移动 → 唤回光标（TODO-318）；沉浸锁态也借此唤回光标找解锁按钮。键盘 / seek
+    // 续命走 [_pokeControlsVisible] 的信号、不经这里，所以不会让本该隐藏的光标常驻。
+    _setCursorHidden(false);
     // 控制条可见性不在此翻（TODO-364）：本 hover 包裹层 `opaque:false`，真实鼠标 hover 会
     // 继续下探命中 media_kit 自己的 MouseRegion → 其 onHover 翻 `visible` 并推送
     // [_mediaKitControlsVisible]，字幕避让由 [_applyControlsVisibilityFromMediaKit] 派生，
@@ -257,7 +153,6 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   }
 
   void _handleVideoControlsHoverExit(PointerEvent event) {
-    if (_isSyntheticControlsHover(event)) return;
     _onVideoControlsHoverExit();
   }
 

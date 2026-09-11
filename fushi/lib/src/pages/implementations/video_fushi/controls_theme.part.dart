@@ -43,6 +43,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 唯一消费它（见 [_mediaKitControlsVisible] / [_applyControlsVisibilityFromMediaKit]），
       // 不再另建镜像 + 第二个 Timer（旧实现两套计时相位反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
+      // BUG-2453：控制条唤醒走显式信号（fork 侧收到即调自己的 onHover：唤起 +
+      // 重排隐藏 Timer），取代旧的「往视频区中心派合成 hover」——那会在 Flutter
+      // MouseTracker 留下一条永不注销的假鼠标设备，退出播放器后一直悬停在库页中心卡上。
+      wakeSignal: _restartHideTimerSignal,
       // TODO-565：进度条（seek bar）经 media_kit 内部 player.seek 绕过 controller 的
       // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
