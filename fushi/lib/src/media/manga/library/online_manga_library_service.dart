@@ -10,7 +10,8 @@ import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 
@@ -41,7 +42,11 @@ class OnlineMangaLibraryService {
 
   final FushiDatabase database;
 
-  /// 在线漫画的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  /// **旧**落盘根（`<runtimeRoot>/library/<bookKey>` 与 `reader-cache/`）。
+  ///
+  /// 2026-09-12 起在线条目统一住进 `<fushi_books>/<bookKey>`（设计稿 §2.1），这个根
+  /// 只剩两个用途：[ensureBookDirectory] 识别还没迁走的旧目录，以及顺手清掉该书的
+  /// 旧 `reader-cache/`。新条目不再往这里写任何东西。
   final Directory rootDirectory;
 
   final OnlineMangaRuntimeAdapter adapter;
@@ -109,10 +114,12 @@ class OnlineMangaLibraryService {
     }
 
     final Directory directory = Directory(
-      p.join(rootDirectory.path, 'library', bookKey),
+      await MangaStorage.bookDirectory(bookKey),
     );
     await Directory(p.join(directory.path, 'chapters')).create(recursive: true);
-    final File placeholder = File(p.join(directory.path, 'manga.json'));
+    final File placeholder = File(
+      p.join(directory.path, MangaStorage.kMangaJsonFileName),
+    );
     await _writeAtomic(placeholder, '{"pages":[]}');
 
     String? coverPath;
@@ -279,31 +286,83 @@ class OnlineMangaLibraryService {
     return updated;
   }
 
-  /// 某一章页图的落盘目录。
-  Directory chapterDirectory(String bookKey, OnlineMangaChapter chapter) {
-    final String digest = sha256
-        .convert(utf8.encode(chapter.key))
-        .toString()
-        .substring(0, 24);
-    return Directory(
-      p.join(rootDirectory.path, 'reader-cache', 'chapters', bookKey, digest),
+  /// 保证这条在线条目的书目录住在 `<fushi_books>/<bookKey>`，返回**当前**行。
+  ///
+  /// 2026-09-12 前在线条目落在 `<runtimeRoot>/library/<bookKey>`；章节页图只是
+  /// `reader-cache/` 里的临时缓存。改成「先下载再读」后章目录成了正式内容，必须
+  /// 和封面、占位 manga.json 一起住进标准书根，删书 / 备份 / 数据根迁移才能
+  /// 按 `extractDir` 一并处理。首次访问时把旧目录整个搬过去（跨卷用复制 + 删除），
+  /// 再改 `extractDir`；`bookKey` / `uid` 不变，进度零迁移。
+  ///
+  /// 已在标准位置的行原样返回（零 IO 之外的一次路径比较）。
+  Future<EpubBookRow> ensureBookDirectory(EpubBookRow row) async {
+    final String target = await MangaStorage.bookPath(row.bookKey);
+    if (p.equals(row.extractDir, target)) return row;
+    final Directory source = Directory(row.extractDir);
+    final Directory destination = Directory(target);
+    if (await source.exists()) {
+      await _moveDirectory(source, destination);
+    } else {
+      await destination.create(recursive: true);
+    }
+    await Directory(p.join(target, 'chapters')).create(recursive: true);
+    final File placeholder = File(
+      p.join(target, MangaStorage.kMangaJsonFileName),
     );
+    if (!await placeholder.exists()) {
+      await _writeAtomic(placeholder, '{"pages":[]}');
+    }
+    await database.updateEpubBookContentPaths(row.bookKey, extractDir: target);
+    // 旧的阅读期页缓存对新布局毫无价值，顺手清掉——失败只记日志，不挡打开。
+    final Directory staleCache = Directory(
+      p.join(rootDirectory.path, 'reader-cache', 'chapters', row.bookKey),
+    );
+    try {
+      if (await staleCache.exists()) await staleCache.delete(recursive: true);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'OnlineMangaLibraryService.cleanReaderCache',
+        error,
+        stack,
+      );
+    }
+    return (await database.getEpubBook(row.bookKey)) ??
+        row.copyWith(extractDir: target);
   }
 
-  /// 打开某一章，交给共享阅读器。
-  Future<OnlineMangaReaderChapter> openChapter({
-    required String bookKey,
-    required OnlineMangaLibraryEntry entry,
-    required OnlineMangaChapter chapter,
-    bool persistProgress = true,
-    int? initialPage,
-  }) => adapter.openChapter(
-    entry: entry,
-    chapter: chapter,
-    managedDirectory: chapterDirectory(bookKey, chapter),
-    persistProgress: persistProgress,
-    initialPage: initialPage,
-  );
+  /// 目录搬家：同卷直接 rename，跨卷（`rename` 抛 `FileSystemException`）退回
+  /// 递归复制 + 删源。
+  static Future<void> _moveDirectory(
+    Directory source,
+    Directory destination,
+  ) async {
+    await destination.parent.create(recursive: true);
+    if (await destination.exists()) {
+      // 目标已有东西（半次迁移中断过）：合并进去而不是覆盖。
+      await _copyTree(source, destination);
+      await source.delete(recursive: true);
+      return;
+    }
+    try {
+      await source.rename(destination.path);
+    } on FileSystemException {
+      await _copyTree(source, destination);
+      await source.delete(recursive: true);
+    }
+  }
+
+  static Future<void> _copyTree(Directory source, Directory destination) async {
+    await destination.create(recursive: true);
+    await for (final FileSystemEntity entity in source.list(followLinks: false)) {
+      final String name = p.basename(entity.path);
+      final String targetPath = p.join(destination.path, name);
+      if (entity is Directory) {
+        await _copyTree(entity, Directory(targetPath));
+      } else if (entity is File) {
+        await entity.copy(targetPath);
+      }
+    }
+  }
 
   /// 新读者从哪一章开始。
   ///

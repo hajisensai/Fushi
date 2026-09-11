@@ -93,7 +93,7 @@ Future<Uint8List> fetchPage(OnlineMangaPageRef page);                   // 单�
 |---|---|---|
 | A | 删阅读器内 OCR 入口 + 书架「整卷 OCR」外部入口 + HUD 取消按钮 | — |
 | B1 | `manga_download_jobs` 表 v103 + DAO + 迁移测试 + 三处登记 | — |
-| B2 | 适配器改两段式 + `MangaDownloadService` + 目录迁移 + 阅读器切本地 + 删在线会话/直读/懒 OCR | A, B1 |
+| B2 | 适配器改两段式 + `MangaDownloadService` + 目录迁移 + 阅读器切本地 + 删在线会话/直读/懒 OCR（**已落地**：分支 `manga-download-first`，BUG-2464；作品页章节行状态位 + 点章入队 + 溢出菜单「下载 / 删除下载 / 重试」也在这一批做了最小可用版，「下载全部 / 自动 OCR chip / 订阅」留 C） | A, B1 |
 | C | 作品页下载状态与动作 + 订阅位 v3 + 探针入队 + mokuro 队列并表 + 下载中心分区 | B2 |
 
 每阶段独立分支、独立测试、合入 develop 后跑目录枚举型守卫整批。

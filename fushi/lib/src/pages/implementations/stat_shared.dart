@@ -3,6 +3,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
+import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -794,6 +795,37 @@ Future<bool> showStatGoalEditDialog(
 /// 全统计页只此一份实现（阅读页原私有 `_formatChars` 已并入）。
 String formatStatChars(int chars) =>
     t.stat_format_chars(n: formatStatCharsAxis(chars));
+
+/// 阅读速度外显：四舍五入到整数字/小时，套 i18n 单位文案（`N 字/时`）。时段卡、
+/// 会话行、按书行都经这一处（用户 2026-09-12：统计中心顶部方框与每个会话都要
+/// 显示「每小时多少字」）。
+String formatStatCph(double cph) =>
+    t.stat_speed_cph(n: cph.round().toString());
+
+/// 一组事实行 / 一次会话的阅读速度外显：经 [computeCph]（最小样本 1 分钟，
+/// BUG-1107）算不出有效速度时返回 null，调用方不显示该行而不是显示 0。
+String? formatStatCphOf(int chars, int ms) {
+  if (chars <= 0) return null;
+  final double? cph = computeCph(chars, ms);
+  return cph == null ? null : formatStatCph(cph);
+}
+
+/// 一个时段（[contains] 选 dateKey）内**阅读域**的速度外显：只累加 `isBook` 的
+/// 日面行再经 [formatStatCphOf]。统计中心总览的时段卡是跨域总和（视频只计时不
+/// 计字、游戏 hook 只计字不计时），「字/时」只对阅读域有意义，所以单独切片算。
+String? statBookCphOf(
+  List<StatFact> daily,
+  bool Function(String dateKey) contains,
+) {
+  int chars = 0;
+  int ms = 0;
+  for (final StatFact f in daily) {
+    if (!f.isBook || !contains(f.dateKey)) continue;
+    chars += f.chars;
+    ms += f.ms;
+  }
+  return formatStatCphOf(chars, ms);
+}
 
 /// 相对时间外显：把 [activityRelativeTime] 的结构化结果套上 i18n 文案
 /// （刚刚 / N 分钟前 / N 小时前 / N 天前）。

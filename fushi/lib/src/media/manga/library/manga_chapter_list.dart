@@ -4,10 +4,20 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/utils.dart';
 
+/// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
+enum _ChapterDownloadState {
+  notDownloaded,
+  queued,
+  downloading,
+  downloaded,
+  failed,
+}
+
 /// 章节列表。
 ///
 /// 作品页和阅读器里的「章节」弹层用**同一个** widget：两处对「已读怎么显示、
-/// 当前章怎么高亮、排序默认哪个方向」的答案必须一致，各写一份必然漂移。
+/// 当前章怎么高亮、排序默认哪个方向、下载状态怎么标」的答案必须一致，各写一份
+/// 必然漂移。
 class MangaChapterList extends StatelessWidget {
   const MangaChapterList({
     required this.entry,
@@ -22,6 +32,11 @@ class MangaChapterList extends StatelessWidget {
     this.onToggleRead,
     this.onMarkUpToRead,
     this.showHeader = true,
+    this.downloadedChapterKeys = const <String>{},
+    this.jobsByChapterKey = const <String, MangaDownloadJobRow>{},
+    this.onDownload,
+    this.onDeleteDownload,
+    this.onRetryDownload,
   });
 
   final OnlineMangaLibraryEntry? entry;
@@ -38,6 +53,36 @@ class MangaChapterList extends StatelessWidget {
   final void Function(OnlineMangaChapter chapter)? onToggleRead;
   final void Function(OnlineMangaChapter chapter)? onMarkUpToRead;
   final bool showHeader;
+
+  /// 下载状态位（设计稿 2026-09-12 §5）。两份输入合成一个状态：
+  /// [downloadedChapterKeys] 是磁盘判据（`isChapterDownloaded`）的结果、
+  /// [jobsByChapterKey] 是任务表里的行；下载中 / 排队 / 失败看任务行，已下载看
+  /// 磁盘。默认都空 = 每章都显示成「未下载」（阅读器内的章节选择器只给磁盘那份）。
+  final Set<String> downloadedChapterKeys;
+  final Map<String, MangaDownloadJobRow> jobsByChapterKey;
+
+  /// 溢出菜单里的下载动作；null = 不出现对应项。
+  final void Function(OnlineMangaChapter chapter)? onDownload;
+  final void Function(OnlineMangaChapter chapter)? onDeleteDownload;
+  final void Function(OnlineMangaChapter chapter)? onRetryDownload;
+
+  /// 一章的下载状态：磁盘判据优先（真正决定能不能读），其次看任务行。
+  _ChapterDownloadState _downloadStateOf(OnlineMangaChapter chapter) {
+    if (downloadedChapterKeys.contains(chapter.key)) {
+      return _ChapterDownloadState.downloaded;
+    }
+    final MangaDownloadJobRow? job = jobsByChapterKey[chapter.key];
+    switch (job?.status) {
+      case MangaDownloadJobStatus.queued:
+        return _ChapterDownloadState.queued;
+      case MangaDownloadJobStatus.running:
+        return _ChapterDownloadState.downloading;
+      case MangaDownloadJobStatus.failed:
+        return _ChapterDownloadState.failed;
+      default:
+        return _ChapterDownloadState.notDownloaded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,9 +215,23 @@ class MangaChapterList extends StatelessWidget {
     MangaChapterStateRow? state,
     bool partial,
   ) {
+    final MangaDownloadJobRow? job = jobsByChapterKey[chapter.key];
+    final _ChapterDownloadState download = _downloadStateOf(chapter);
     final List<String> parts = <String>[
       if (chapter.scanlator?.isNotEmpty == true) chapter.scanlator!,
       if (chapter.uploadedAt != null) _formatDate(chapter.uploadedAt!),
+      switch (download) {
+        _ChapterDownloadState.queued => t.manga_chapter_download_status_queued,
+        _ChapterDownloadState.downloading =>
+          t.manga_chapter_download_status_downloading(
+            done: '${job?.pagesDone ?? 0}',
+            total: '${job?.pagesTotal ?? 0}',
+          ),
+        _ChapterDownloadState.downloaded =>
+          t.manga_chapter_download_status_downloaded,
+        _ChapterDownloadState.failed => t.manga_chapter_download_status_failed,
+        _ChapterDownloadState.notDownloaded => t.manga_chapter_not_downloaded,
+      },
       if (partial)
         state!.pageCount != null
             ? t.manga_series_read_progress(
@@ -192,13 +251,18 @@ class MangaChapterList extends StatelessWidget {
     OnlineMangaChapter chapter,
     bool current,
   ) {
+    final ThemeData theme = Theme.of(context);
+    final _ChapterDownloadState download = _downloadStateOf(chapter);
+    final bool hasMenu = onToggleRead != null ||
+        onMarkUpToRead != null ||
+        onDownload != null ||
+        onDeleteDownload != null ||
+        onRetryDownload != null;
     final List<Widget> children = <Widget>[
+      _buildDownloadIndicator(context, download),
       if (current)
-        Icon(
-          Icons.play_circle_outline,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      if (onToggleRead != null || onMarkUpToRead != null)
+        Icon(Icons.play_circle_outline, color: theme.colorScheme.primary),
+      if (hasMenu)
         FushiOverflowMenu<String>(
           items: <PopupMenuEntry<String>>[
             if (onToggleRead != null)
@@ -213,6 +277,24 @@ class MangaChapterList extends StatelessWidget {
                 value: 'mark-up-to',
                 label: t.manga_series_mark_previous_read,
               ),
+            if (onDownload != null &&
+                download == _ChapterDownloadState.notDownloaded)
+              FushiPopupMenuItem<String>(
+                value: 'download',
+                label: t.manga_chapter_download_action,
+              ),
+            if (onRetryDownload != null &&
+                download == _ChapterDownloadState.failed)
+              FushiPopupMenuItem<String>(
+                value: 'retry-download',
+                label: t.manga_chapter_download_retry_action,
+              ),
+            if (onDeleteDownload != null &&
+                download == _ChapterDownloadState.downloaded)
+              FushiPopupMenuItem<String>(
+                value: 'delete-download',
+                label: t.manga_chapter_download_delete_action,
+              ),
           ],
           onSelected: (String value) {
             switch (value) {
@@ -220,12 +302,58 @@ class MangaChapterList extends StatelessWidget {
                 onToggleRead?.call(chapter);
               case 'mark-up-to':
                 onMarkUpToRead?.call(chapter);
+              case 'download':
+                onDownload?.call(chapter);
+              case 'retry-download':
+                onRetryDownload?.call(chapter);
+              case 'delete-download':
+                onDeleteDownload?.call(chapter);
             }
           },
         ),
     ];
     if (children.isEmpty) return const Icon(Icons.chevron_right);
     return Row(mainAxisSize: MainAxisSize.min, children: children);
+  }
+
+  /// 行尾的下载状态位：图标一眼能扫到，文字在副标题里。
+  Widget _buildDownloadIndicator(
+    BuildContext context,
+    _ChapterDownloadState download,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Widget icon = switch (download) {
+      _ChapterDownloadState.downloaded => Icon(
+          Icons.download_done,
+          size: 20,
+          color: scheme.primary,
+        ),
+      _ChapterDownloadState.queued => Icon(
+          Icons.schedule,
+          size: 20,
+          color: scheme.onSurfaceVariant,
+        ),
+      _ChapterDownloadState.downloading => const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      _ChapterDownloadState.failed => Icon(
+          Icons.error_outline,
+          size: 20,
+          color: scheme.error,
+        ),
+      _ChapterDownloadState.notDownloaded => Icon(
+          Icons.cloud_outlined,
+          size: 20,
+          color: scheme.onSurfaceVariant,
+        ),
+    };
+    return Padding(
+      key: ValueKey<String>('manga_chapter_download_${download.name}'),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: icon,
+    );
   }
 
   static String _formatDate(int millis) {

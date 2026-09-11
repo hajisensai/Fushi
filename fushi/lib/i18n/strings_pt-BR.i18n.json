@@ -4708,5 +4708,18 @@
   "remote_collection_scrape_done": "Metadata updated from host",
   "remote_collection_scrape_failed": "Remote scrape failed: the work is not in the host library plan",
   "remote_collection_scrape_identity_conflict": "The host already binds this work to $provider ID $id. Replace it?",
-  "remote_collection_scrape_pick_work": "Choose which work to scrape"
+  "remote_collection_scrape_pick_work": "Choose which work to scrape",
+  "manga_chapter_not_downloaded": "This chapter has not been downloaded yet",
+  "manga_chapter_download_queued": "Added to the download queue",
+  "manga_chapter_download_action": "Download",
+  "manga_chapter_download_delete_action": "Delete download",
+  "manga_chapter_download_retry_action": "Retry download",
+  "manga_chapter_download_status_queued": "Queued",
+  "manga_chapter_download_status_downloading": "Downloading $done/$total",
+  "manga_chapter_download_status_downloaded": "Downloaded",
+  "manga_chapter_download_status_failed": "Download failed",
+  "stat_reading_speed": "Reading speed",
+  "settings_study_diag_export": "Export study diagnostics log",
+  "settings_study_diag_export_hint": "Page credits, segment open/close, audiobook resume and jump trace, for troubleshooting reading-speed anomalies. Saved as a text file.",
+  "study_diag_share_subject": "Fushi study diagnostics"
 }

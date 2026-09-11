@@ -47,9 +47,6 @@ class _FakeSession implements MangaReaderSession {
   String cacheIdentity(int index) => 'p$index';
 
   @override
-  Future<void> prefetchAround(int index) async {}
-
-  @override
   Future<void> close() async {
     closed = true;
   }

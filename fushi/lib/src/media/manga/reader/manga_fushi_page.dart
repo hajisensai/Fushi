@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -18,13 +17,10 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
-import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
-    show kMangaOcrOutDirName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
@@ -34,10 +30,9 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
+import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
-import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
@@ -359,15 +354,14 @@ class MangaFushiPage extends BaseSourcePage {
     super.key,
     required super.item,
     required this.bookKey,
-    this.onlineChapter,
   });
 
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
+  ///
+  /// 在线书架条目也只带 bookKey：读哪一章由 `sourceMetadata` 的
+  /// `currentChapterIndex` 决定，且该章必须已下载（设计稿 2026-09-12 §1），阅读器
+  /// 不再有任何在线取图路径。
   final String bookKey;
-
-  /// A directly selected online chapter. Shelf launches leave this null and
-  /// restore the Mihon chapter from the restart descriptor in `sourceMetadata`.
-  final OnlineMangaReaderChapter? onlineChapter;
 
   /// 漫画拦截器专属虚拟域。必须与阅读器的 `fushi.local` 互异。
   static const String kMangaHost = 'manga.local';
@@ -727,9 +721,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   // ── 书架在线条目的「章」上下文 ──────────────────────────────────────
   //
-  // 只在从书架打开一条在线漫画时非空（`widget.onlineChapter` 直给的预览路径没有
-  // 书架身份，也就没有上一章/下一章可言）。三个字段一起构成「我现在读的是这本
-  // 书的第几章」，是换章、每章进度落库和读完标记的唯一依据。
+  // 只在从书架打开一条在线漫画时非空。三个字段一起构成「我现在读的是这本书的
+  // 第几章」，是换章、每章进度落库和读完标记的唯一依据。
   OnlineMangaLibraryService? _shelfLibraryService;
   OnlineMangaLibraryEntry? _shelfEntry;
   int _shelfChapterIndex = -1;
@@ -739,6 +732,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
   bool _edgeToastShown = false;
+
+  /// 当前选中的在线章还没下载：正文区显示「本章未下载」态（入队 / 选章两个出口），
+  /// 顶部 chrome 不显示，返回键照常在。下载服务把这一章下完后自动装载。
+  bool _chapterNotDownloaded = false;
+
+  /// 「本章未下载」态下观察下载表的订阅：任务表一变就复核磁盘判据。
+  StreamSubscription<void>? _downloadWatch;
 
   /// 当前章在书架体系里的身份；非书架在线条目为 null。
   String? get _shelfChapterKey {
@@ -769,30 +769,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   String? _imagesDir;
   MangaReaderSession? _pageSession;
   Map<String, int> _localPageIndices = const <String, int>{};
-  OnlineMangaReaderChapter? _onlineChapter;
-  Object? _onlinePageChallenge;
-  Object? _onlineChallengeRuntime;
-  Future<void> Function()? _onlineChallengeRetry;
-  int _onlineImageRetry = 0;
-
-  Future<void> _retryChallengedImages() async {
-    final int revision = ++_onlineImageRetry;
-    if (mounted) setState(() => _onlinePageChallenge = null);
-    await _controller?.evaluateJavascript(
-      source:
-          '''
-      document.querySelectorAll('img').forEach(function(image) {
-        if (image.complete && image.naturalWidth > 0) return;
-        const url = new URL(image.src, document.baseURI);
-        if (url.hostname !== '${MangaFushiPage.kMangaHost}' || !url.pathname.startsWith('/img/')) return;
-        url.searchParams.set('retry', '$revision');
-        image.src = url.toString();
-      });
-    ''',
-    );
-  }
-
-  bool _persistProgress = true;
   MokuroPayload? _payload;
   MangaReadingMode _mode = MangaReadingMode.spread;
   List<MangaSpreadEntry> _spreads = <MangaSpreadEntry>[];
@@ -826,7 +802,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _currentPage = 0;
   double _currentFraction = 0;
   Timer? _progressDebounce;
-  Timer? _onlineGeometryPersistDebounce;
   MangaZoomPreferenceDebouncer? _zoomPreferenceDebouncer;
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
@@ -1065,7 +1040,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();
     _progressDebounce?.cancel();
-    _onlineGeometryPersistDebounce?.cancel();
+    unawaited(_downloadWatch?.cancel());
+    _downloadWatch = null;
     final MangaZoomPreferenceDebouncer? zoomDebouncer =
         _zoomPreferenceDebouncer;
     _zoomPreferenceDebouncer = null;
@@ -1266,14 +1242,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _loadBook() async {
     final FushiDatabase db = appModel.database;
-    final OnlineMangaReaderChapter? directOnlineChapter = widget.onlineChapter;
-    if (directOnlineChapter != null) {
-      final EpubBookRow? persisted = directOnlineChapter.persistProgress
-          ? await db.getEpubBook(widget.bookKey)
-          : null;
-      await _loadOnlineChapter(directOnlineChapter, persistedRow: persisted);
-      return;
-    }
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
     if (!mounted) return;
     if (row == null) {
@@ -1288,7 +1256,28 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     // 存储契约（与 PDF 同构）：extractDir/epubPath 指向 manga.json；页图在
     // 同目录的 images/ 下（manga.json 里的 url 是 images/ 内正斜杠相对路径）。
-    final String mangaJsonPath = p.join(row.extractDir, row.epubPath);
+    await _loadLocalPayload(
+      row: row,
+      mangaJsonPath: p.join(row.extractDir, row.epubPath),
+    );
+  }
+
+  /// 从一份本地 `manga.json + images/` 装载正文。
+  ///
+  /// 本地导入卷与**已下载的在线章**共用这一条：后者的章目录就是同一个形状
+  /// （设计稿 2026-09-12 §2.1），阅读器不再有第二条「在线」装载路径。[row] 是要挂到
+  /// [_bookRow] 上的行——在线章传的是 `extractDir` 改成章目录的副本，整卷 OCR
+  /// 接回、缓存恢复、卡图路径都据此定位。
+  ///
+  /// [initialPage] 非空 = 章级进度（`manga_chapter_states`）已定好起始页，**不读**
+  /// 书级 `reader_positions`——那一行装的是上一章读到哪（BUG-1924）；null = 本地卷，
+  /// 按书级位置恢复。
+  Future<void> _loadLocalPayload({
+    required EpubBookRow row,
+    required String mangaJsonPath,
+    int? initialPage,
+  }) async {
+    final FushiDatabase db = appModel.database;
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
       setState(() {
@@ -1347,26 +1336,38 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     int restoredPage = 0;
     double restoredFraction = 0;
     ReaderPosition? saved;
-    try {
-      if (_bookUid != null) {
-        saved = await ReaderPositionRepository(db).findByBookUid(_bookUid!);
+    if (initialPage != null) {
+      restoredPage = initialPage.clamp(
+        0,
+        math.max(0, payload.images.length - 1),
+      );
+    } else {
+      try {
+        if (_bookUid != null) {
+          saved = await ReaderPositionRepository(db).findByBookUid(_bookUid!);
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('MangaFushiPage.restore', e, stack);
       }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.restore', e, stack);
-    }
-    if (!mounted) return;
-    if (saved != null &&
-        saved.sectionIndex >= 0 &&
-        saved.sectionIndex < payload.images.length) {
-      restoredPage = saved.sectionIndex;
-      if (mode == MangaReadingMode.webtoon) {
-        restoredFraction = MangaFushiPage.charOffsetToWebtoonFraction(
-          saved.charOffset,
-        );
+      if (!mounted) return;
+      if (saved != null &&
+          saved.sectionIndex >= 0 &&
+          saved.sectionIndex < payload.images.length) {
+        restoredPage = saved.sectionIndex;
+        if (mode == MangaReadingMode.webtoon) {
+          restoredFraction = MangaFushiPage.charOffsetToWebtoonFraction(
+            saved.charOffset,
+          );
+        }
       }
     }
 
     _ensureStudyClock(db);
+    // 同一 State 内换章 = 页号坐标系重用（新章页号从 0 起）：先结算离开的旧章
+    // 末页（翻走即计），再清并集；首次打开两步都是 no-op。
+    _readLedger
+      ..leave()
+      ..reset();
 
     final int restoredSpread = MangaFushiPage.restoreSpreadFromProgress(
       spreads,
@@ -1378,9 +1379,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       for (int index = 0; index < relativePagePaths.length; index++)
         _localPageKey(relativePagePaths[index]): index,
     };
-    if (previousLocalPageSession != null) {
+    if (previousLocalPageSession != null &&
+        !_sessionHeldByOcrJob(previousLocalPageSession)) {
       unawaited(previousLocalPageSession.close());
     }
+    unawaited(_downloadWatch?.cancel());
+    _downloadWatch = null;
     setState(() {
       _bookRow = row;
       _imagesDir = imagesDir;
@@ -1392,6 +1396,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentFraction = restoredFraction;
       _lastSavedPage = saved != null ? restoredPage : -1;
       _lastSavedFraction = saved != null ? restoredFraction : -1;
+      _chapterNotDownloaded = false;
+      _loadFailed = false;
     });
     _pageNotifier.value = _currentPage;
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
@@ -1412,16 +1418,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       final OnlineMangaLibraryService service = appModel
           .onlineMangaLibraryService(entry.runtime);
-      if (service.adapter case MihonLibraryAdapter(:final manager)) {
-        _onlineChallengeRuntime = manager.runtime;
-      }
       int chapterIndex = OnlineMangaLibraryService.initialChapterIndex(entry);
       if (chapterIndex < 0) {
-        throw const OnlineMangaUnavailable(
-          OnlineMangaUnavailableReason.runtimeFailure,
-          'The manga has no chapters',
-        );
+        throw StateError('The manga has no chapters');
       }
+      // 一次性目录迁移：旧条目从 `<runtimeRoot>/library` 搬进 `fushi_books`，
+      // 章目录才有地方落（设计稿 2026-09-12 §2.1）。
+      row = await service.ensureBookDirectory(row);
       if (entry.currentChapterIndex == null) {
         entry = await service.selectChapter(
           bookKey: row.bookKey,
@@ -1446,18 +1449,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         setState(() {
           _bookRow = row;
           _loadFailed = true;
-          if (mihonCloudflareChallenge(error) != null) {
-            _onlinePageChallenge = error;
-            _onlineChallengeRetry = () async {
-              if (mounted) {
-                setState(() {
-                  _loadFailed = false;
-                  _onlinePageChallenge = null;
-                });
-              }
-              await _loadBook();
-            };
-          }
         });
       }
     }
@@ -1466,7 +1457,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 打开书架条目的第 [chapterIndex] 章。
   ///
   /// 首次进入和「换章」共用这一条路径，所以换章不会走出任何首次进入没走过的
-  /// 分支——章节缓存失效、OCR 重建、进度恢复全部一致。
+  /// 分支——OCR 接回、进度恢复全部一致。
+  ///
+  /// 章必须**已下载**（设计稿 2026-09-12 §1：在线漫画先下载再读，不留半下载可读
+  /// 路径）：判据只问 [isChapterDownloaded]；未下载就切到「本章未下载」态返回，
+  /// 由用户入队或换到已下载的章，下载表一变就复核。
   Future<void> _openShelfChapter({
     required EpubBookRow row,
     required OnlineMangaLibraryService service,
@@ -1474,11 +1469,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required int chapterIndex,
   }) async {
     final OnlineMangaChapter chapter = entry.chapters[chapterIndex];
+    _shelfLibraryService = service;
+    _shelfEntry = entry;
+    _shelfChapterIndex = chapterIndex;
+    _edgeToastShown = false;
+    final Directory chapterDir = mangaChapterDirectory(
+      row.extractDir,
+      chapter.key,
+    );
+    if (!await isChapterDownloaded(row.extractDir, chapter.key)) {
+      if (!mounted) return;
+      _detachWholeVolumeOcrObserver();
+      setState(() {
+        _bookRow = row;
+        _chapterNotDownloaded = true;
+      });
+      _watchDownloadsForCurrentChapter();
+      return;
+    }
     // 每章进度：切回读过一半的旧章要落回原页，而不是从头开始（v88 前
     // selectChapter 会把唯一那行 reader_positions 清零，上一章位置永久丢失）。
     //
     // 书架在线章**一律显式给页码**（读到一半给 lastPage，其余给 0），不能留
-    // null：`_loadOnlineChapter` 在 `initialPage == null` 时会回落到整本**唯一
+    // null：`_loadLocalPayload` 在 `initialPage == null` 时会回落到整本**唯一
     // 那行** `reader_positions`，而那一行装的是**上一章**读到哪。读完第 3 话第
     // 20 页 → 自动换到未读的第 4 话 → 第 4 话从第 20 页开始，整章整章跳过内容。
     // 每章进度的真相源是 `manga_chapter_states`；书级那行只服务单章 / 本地条目。
@@ -1491,372 +1504,80 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         initialPage = state.lastPage;
       }
     }
-    final OnlineMangaReaderChapter resolved = await service.openChapter(
-      bookKey: row.bookKey,
-      entry: entry,
-      chapter: chapter,
-      initialPage: initialPage,
-    );
-    _shelfLibraryService = service;
-    _shelfEntry = entry;
-    _shelfChapterIndex = chapterIndex;
-    _edgeToastShown = false;
-    await _loadOnlineChapter(resolved, persistedRow: row);
-  }
-
-  Future<void> _loadOnlineChapter(
-    OnlineMangaReaderChapter input, {
-    required EpubBookRow? persistedRow,
-  }) async {
-    final Directory directory = input.managedDirectory;
+    if (!mounted) return;
     // 换章：先不再观察旧章的整卷任务（任务本身照跑），装好新章后按目录接回。
     _detachWholeVolumeOcrObserver();
-    final Directory imagesDirectory = Directory(
-      p.join(directory.path, 'images'),
+    final File mangaJson = mangaChapterJsonFile(chapterDir);
+    await _loadLocalPayload(
+      row: row.copyWith(
+        epubPath: p.basename(mangaJson.path),
+        extractDir: chapterDir.path,
+      ),
+      mangaJsonPath: mangaJson.path,
+      initialPage: initialPage,
     );
-    await imagesDirectory.create(recursive: true);
-    final List<String> pageIdentities = input.pageIdentities;
-    final File identityFile = File(
-      p.join(directory.path, input.identityFileName),
-    );
-    final bool sameChapterPages = await _onlineChapterIdentityMatches(
-      identityFile,
-      pageIdentities,
-    );
-    if (!sameChapterPages) {
-      await _invalidateOnlineChapterPayload(directory, imagesDirectory);
-    }
-    await _writeOnlineChapterIdentity(identityFile, pageIdentities);
+  }
 
-    final List<String> relativePagePaths = <String>[
-      for (int index = 0; index < input.pageCount; index++)
-        'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
-    ];
-    final File mangaJson = File(p.join(directory.path, 'manga.json'));
-    MokuroPayload? payload;
-    bool rewriteMangaJson = !await mangaJson.exists();
-    if (await mangaJson.exists()) {
-      try {
-        final MokuroPayload stored = await MangaFushiPage.parseMangaJsonOffUi(
-          await mangaJson.readAsString(),
-        );
-        if (stored.images.length == input.pageCount) {
-          payload = stored;
-        } else {
-          rewriteMangaJson = true;
-        }
-      } on Object {
-        payload = null;
-        rewriteMangaJson = true;
-      }
-    }
-    payload ??= MokuroPayload(
-      images: <MokuroImage>[
-        for (final String path in relativePagePaths)
-          MokuroImage(
-            url: path,
-            // Mihon does not expose dimensions before fetching the page. This
-            // neutral portrait ratio is only used until OCR decodes the real
-            // dimensions; image rendering itself keeps the source aspect.
-            size: const MokuroSize(1000, 1400),
-            blocks: const <MokuroBlock>[],
-          ),
-      ],
-    );
-    if (rewriteMangaJson) {
-      // 与几何 debounce 同一 State、可交叠，且共用同一个 `<manga.json>.tmp`：
-      // 必须同锁，否则两个写者互相踩临时文件。
-      final MokuroPayload bootstrapped = payload;
-      await runExclusiveOnMangaJson<void>(
-        mangaJson.path,
-        () => writeMangaJsonAtomically(mangaJson.path, bootstrapped),
-      );
-    }
-
-    final MangaReaderSession pageSession = await input.openPageSession();
-    if (!mounted) {
-      await pageSession.close();
+  /// 「本章未下载」态：把当前章交给下载服务。
+  Future<void> _enqueueCurrentChapterDownload() async {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    if (entry == null ||
+        _shelfChapterIndex < 0 ||
+        _shelfChapterIndex >= entry.chapters.length) {
       return;
     }
+    try {
+      await appModel.mangaDownloadService.enqueueChapter(
+        entry: entry,
+        chapter: entry.chapters[_shelfChapterIndex],
+        autoOcr: false,
+      );
+      if (mounted) FushiToast.show(msg: t.manga_chapter_download_queued);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.enqueue', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
+  }
 
-    _spreadPreference = MangaSpreadPreferenceKey.fromKey(
-      appModel.mangaSpreadPreference,
-    );
-    _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
-    _zoomPercent = appModel.mangaZoomPercent.clamp(
-      kMangaZoomMinPercent,
-      kMangaZoomMaxPercent,
-    );
-    _zoomSensitivity = appModel.mangaZoomSensitivity.clamp(
-      kMangaZoomSensitivityMin,
-      kMangaZoomSensitivityMax,
-    );
-    _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
-    _tapZonePaging = appModel.mangaTapZonePaging;
-    _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
-    final EpubBookRow row = persistedRow != null
-        ? persistedRow.copyWith(
-            epubPath: p.basename(mangaJson.path),
-            extractDir: directory.path,
-            chapterCount: input.pageCount,
-          )
-        : EpubBookRow(
-            bookKey: widget.bookKey,
-            // v81：无持久行的内存兜底行——身份生成一次;真正落库仍经
-            // insertEpubBook 单点(见其 doc)。
-            uid: generateEpubBookUid(),
-            title: input.title,
-            author: input.author,
-            epubPath: p.basename(mangaJson.path),
-            extractDir: directory.path,
-            chapterCount: input.pageCount,
-            chaptersJson: '[]',
-            importedAt: DateTime.now().millisecondsSinceEpoch,
-            format: 'manga',
-          );
-    final MangaReadingMode mode =
-        MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-        detectReadingMode(payload);
-    final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
-
-    // v82：持久位置键 = **持久化**行的 uid；内存兜底行的现造 uid 不参与位置
-    // 读写（见 [_bookUid] doc）。
-    final String? persistedUid =
-        (persistedRow != null && persistedRow.uid.isNotEmpty)
-        ? persistedRow.uid
-        : null;
-    _bookUid = persistedUid;
-    int restoredPage = input.initialPage ?? 0;
-    double restoredFraction = 0;
-    ReaderPosition? saved;
-    if (input.persistProgress &&
-        input.initialPage == null &&
-        persistedUid != null) {
-      try {
-        saved = await ReaderPositionRepository(
-          appModel.database,
-        ).findByBookUid(persistedUid);
-      } on Object catch (error, stack) {
+  /// 「本章未下载」态下盯着下载表：本章下完就自动装载，用户不用退出重进。
+  void _watchDownloadsForCurrentChapter() {
+    if (_downloadWatch != null) return;
+    _downloadWatch = appModel.mangaDownloadService.watchJobs().listen(
+      (_) => unawaited(_reloadIfCurrentChapterArrived()),
+      onError: (Object error, StackTrace stack) {
         ErrorLogService.instance.log(
-          'MangaFushiPage.restoreOnline',
+          'MangaFushiPage.watchDownloads',
           error,
           stack,
         );
-      }
-      if (saved != null &&
-          saved.sectionIndex >= 0 &&
-          saved.sectionIndex < payload.images.length) {
-        restoredPage = saved.sectionIndex;
-        if (mode == MangaReadingMode.webtoon) {
-          restoredFraction = MangaFushiPage.charOffsetToWebtoonFraction(
-            saved.charOffset,
-          );
-        }
-      }
-    }
-    restoredPage = restoredPage.clamp(
-      0,
-      math.max(0, payload.images.length - 1),
-    );
-
-    _ensureStudyClock(appModel.database);
-    // 同一 State 内换章 = 页号坐标系重用（新章页号从 0 起）：先结算离开的旧章
-    // 末页（翻走即计），再清并集；首次打开两步都是 no-op。
-    _readLedger
-      ..leave()
-      ..reset();
-    final MangaReaderSession? previousSession = _pageSession;
-    _pageSession = pageSession;
-    _localPageIndices = <String, int>{
-      for (int index = 0; index < relativePagePaths.length; index++)
-        _localPageKey(relativePagePaths[index]): index,
-    };
-    _onlineChapter = input;
-    _persistProgress = input.persistProgress;
-    if (previousSession != null && !_sessionHeldByOcrJob(previousSession)) {
-      unawaited(previousSession.close());
-    }
-
-    final int restoredSpread = MangaFushiPage.restoreSpreadFromProgress(
-      spreads,
-      restoredPage,
-    );
-    setState(() {
-      _bookRow = row;
-      _imagesDir = imagesDirectory.path;
-      _payload = payload;
-      _mode = mode;
-      _spreads = spreads;
-      _currentSpread = restoredSpread;
-      _currentPage = MangaFushiPage.firstPageOfSpread(spreads, restoredSpread);
-      _currentFraction = restoredFraction;
-      _lastSavedPage = saved != null ? restoredPage : -1;
-      _lastSavedFraction = saved != null ? restoredFraction : -1;
-    });
-    _pageNotifier.value = _currentPage;
-    _noteVisiblePages();
-    unawaited(_primeOnlinePages(restoredPage));
-    unawaited(_recoverIncrementalOcrCache(directory.path, payload));
-    _reattachRunningOcrJob(directory.path);
-  }
-
-  Future<bool> _onlineChapterIdentityMatches(
-    File file,
-    List<String> expected,
-  ) async {
-    try {
-      final Object? decoded = jsonDecode(await file.readAsString());
-      if (decoded is! Map<Object?, Object?> ||
-          decoded['schema_version'] != 1 ||
-          decoded['pages'] is! List<Object?>) {
-        return false;
-      }
-      final List<String> stored = (decoded['pages'] as List<Object?>)
-          .map((Object? value) => value?.toString() ?? '')
-          .toList(growable: false);
-      if (stored.length != expected.length) return false;
-      for (int index = 0; index < expected.length; index++) {
-        if (stored[index] != expected[index]) return false;
-      }
-      return true;
-    } on Object {
-      return false;
-    }
-  }
-
-  Future<void> _invalidateOnlineChapterPayload(
-    Directory directory,
-    Directory imagesDirectory,
-  ) async {
-    // 删也要进锁：无锁 delete 可能落在别的写者的读-改-写之间，让它把刚删掉的
-    // 内容又原样写回去（或反过来，让新写的内容被这次删除抹掉）。
-    final File payload = File(p.join(directory.path, 'manga.json'));
-    await runExclusiveOnMangaJson<void>(payload.path, () async {
-      if (await payload.exists()) await payload.delete();
-    });
-    final File materializedManifest = File(
-      p.join(imagesDirectory.path, '.mihon-pages.json'),
-    );
-    if (await materializedManifest.exists()) {
-      await materializedManifest.delete();
-    }
-    final Directory ocr = Directory(
-      p.join(imagesDirectory.path, kMangaOcrOutDirName),
-    );
-    if (await ocr.exists()) await ocr.delete(recursive: true);
-    if (await imagesDirectory.exists()) {
-      await for (final FileSystemEntity entity in imagesDirectory.list()) {
-        if (entity is File &&
-            RegExp(r'^page-\d{6}\.jpg$').hasMatch(p.basename(entity.path))) {
-          await entity.delete();
-        }
-      }
-    }
-  }
-
-  Future<void> _writeOnlineChapterIdentity(
-    File target,
-    List<String> identities,
-  ) async {
-    final File temporary = File('${target.path}.tmp');
-    await temporary.writeAsString(
-      jsonEncode(<String, Object?>{'schema_version': 1, 'pages': identities}),
-      flush: true,
-    );
-    if (await target.exists()) await target.delete();
-    await temporary.rename(target.path);
-  }
-
-  Future<void> _primeOnlinePages(int pageIndex) async {
-    final MangaReaderSession? session = _pageSession;
-    if (session == null || _onlineChapter == null) return;
-    try {
-      final MangaPageBytes page = await session.page(pageIndex);
-      await _synchronizeOnlinePageGeometry(pageIndex, page);
-      await session.prefetchAround(pageIndex);
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'MangaFushiPage.onlinePrefetch',
-        error,
-        stack,
-      );
-    }
-  }
-
-  Future<void> _synchronizeOnlinePageGeometry(
-    int pageIndex,
-    MangaPageBytes page,
-  ) async {
-    final int? width = page.width;
-    final int? height = page.height;
-    final MokuroPayload? current = _payload;
-    if (width == null ||
-        height == null ||
-        width <= 0 ||
-        height <= 0 ||
-        current == null ||
-        pageIndex < 0 ||
-        pageIndex >= current.images.length) {
-      return;
-    }
-    final MokuroImage previous = current.images[pageIndex];
-    if (previous.size.width != width || previous.size.height != height) {
-      final List<MokuroImage> images = List<MokuroImage>.of(current.images);
-      images[pageIndex] = MokuroImage(
-        url: previous.url,
-        size: MokuroSize(width.toDouble(), height.toDouble()),
-        blocks: previous.blocks,
-      );
-      _payload = MokuroPayload(images: images, ocr: current.ocr);
-      _onlineGeometryPersistDebounce?.cancel();
-      _onlineGeometryPersistDebounce = Timer(
-        const Duration(milliseconds: 500),
-        () => unawaited(_persistOnlinePayloadGeometry()),
-      );
-    }
-    await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaUpdatePageGeometry && '
-          'window.__mangaUpdatePageGeometry($pageIndex, $width, $height);',
+      },
     );
   }
 
-  Future<void> _persistOnlinePayloadGeometry() async {
+  Future<void> _reloadIfCurrentChapterArrived() async {
+    final OnlineMangaLibraryService? service = _shelfLibraryService;
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
     final EpubBookRow? row = _bookRow;
-    final MokuroPayload? payload = _payload;
-    if (row == null ||
-        payload == null ||
-        _onlineChapter == null ||
-        _wholeVolumeOcrRunning) {
+    final String? chapterKey = _shelfChapterKey;
+    if (!mounted ||
+        !_chapterNotDownloaded ||
+        _switchingChapter ||
+        service == null ||
+        entry == null ||
+        row == null ||
+        chapterKey == null) {
       return;
     }
-    final String target = p.join(row.extractDir, row.epubPath);
-    try {
-      // 整份读-改-写走同一把 per-path 写锁（注册表落盘也拿这把锁），交叠会丢更新。
-      // `.tmp` 残渣清理必须在**锁内**：`.tmp` 是 per-path 固定名，锁外删等于删掉
-      // 下一个写者正在写的临时文件。
-      await runExclusiveOnMangaJson<void>(target, () async {
-        try {
-          await writeMangaJsonAtomically(target, payload);
-        } on Object {
-          final File temporary = File('$target.tmp');
-          if (await temporary.exists()) {
-            try {
-              await temporary.delete();
-            } on FileSystemException {
-              // Best-effort cleanup; the managed target remains intact.
-            }
-          }
-          rethrow;
-        }
-      });
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'MangaFushiPage.persistOnlineGeometry',
-        error,
-        stack,
-      );
-    }
+    if (!await isChapterDownloaded(row.extractDir, chapterKey)) return;
+    if (!mounted || !_chapterNotDownloaded) return;
+    await _openShelfChapter(
+      row: row,
+      service: service,
+      entry: entry,
+      chapterIndex: _shelfChapterIndex,
+    );
   }
 
   Future<void> _recoverIncrementalOcrCache(
@@ -1984,9 +1705,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (pageSession != null && pageIndex != null) {
       try {
         final MangaPageBytes page = await pageSession.page(pageIndex);
-        if (_onlineChapter != null) {
-          await _synchronizeOnlinePageGeometry(pageIndex, page);
-        }
         return WebResourceResponse(
           contentType: page.contentType,
           statusCode: 200,
@@ -1999,13 +1717,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log('MangaFushiPage.page', error, stackTrace);
-        if (mounted && mihonCloudflareChallenge(error) != null) {
-          if (_onlineChapter case MihonReaderChapter(:final manager)) {
-            _onlineChallengeRuntime = manager.runtime;
-          }
-          _onlineChallengeRetry = _retryChallengedImages;
-          setState(() => _onlinePageChallenge = error);
-        }
         return WebResourceResponse(
           contentType: 'text/plain',
           statusCode: 502,
@@ -2239,9 +1950,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
-    if (_onlineChapter != null) {
-      unawaited(_primeOnlinePages(_currentPage));
-    }
   }
 
   // ── 换章 ───────────────────────────────────────────────────────────
@@ -2302,6 +2010,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     setState(() => _switchingChapter = true);
     try {
+      // 目标章没下载就不动：停在当前章、把它交给下载队列并提示（设计稿
+      // 2026-09-12 §5）。判据与作品页 / 下载服务同一处（isChapterDownloaded）。
+      // 注意 [_bookRow] 在读章时指向**章目录**副本，书根要从 bookKey 重新解析。
+      final String bookDir = await MangaStorage.bookPath(row.bookKey);
+      final OnlineMangaChapter target = entry.chapters[index];
+      if (!await isChapterDownloaded(bookDir, target.key)) {
+        await appModel.mangaDownloadService.enqueueChapter(
+          entry: entry,
+          chapter: target,
+          autoOcr: false,
+        );
+        if (mounted) {
+          FushiToast.show(
+            msg:
+                '${t.manga_chapter_not_downloaded} · '
+                '${t.manga_chapter_download_queued}',
+          );
+        }
+        return;
+      }
       // 换章前把当前章的进度落库，否则「翻到下一章再翻回来」会丢掉刚读的位置。
       await _saveCurrentChapterState();
       final OnlineMangaLibraryEntry selected = await service.selectChapter(
@@ -2310,7 +2038,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         chapterIndex: index,
       );
       await _openShelfChapter(
-        row: row,
+        row: row.copyWith(extractDir: bookDir),
         service: service,
         entry: selected,
         chapterIndex: index,
@@ -2318,20 +2046,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       final int pageCount = _payload?.images.length ?? 0;
       if (landOnLastPage && mounted && pageCount > 0) {
         await _jumpToPage(pageCount);
-      }
-    } on OnlineMangaUnavailable catch (error) {
-      if (mounted) {
-        if (mihonCloudflareChallenge(error) != null &&
-            service.adapter is MihonLibraryAdapter) {
-          _onlineChallengeRuntime =
-              (service.adapter as MihonLibraryAdapter).manager.runtime;
-          _onlineChallengeRetry = () async {
-            if (mounted) setState(() => _onlinePageChallenge = null);
-            await _switchToChapter(index, landOnLastPage: landOnLastPage);
-          };
-          setState(() => _onlinePageChallenge = error);
-        }
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
@@ -2351,7 +2065,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _saveCurrentChapterState({int? readAt}) async {
     final EpubBookRow? row = _bookRow;
     final String? chapterKey = _shelfChapterKey;
-    if (row == null || chapterKey == null || row.uid.isEmpty) return;
+    // 没装载正文（「本章未下载」态）就没有进度可写：写一行 lastPage 0 会把这章
+    // 的 updatedAt 推到最新，让作品页「继续阅读」误落到一章没读过的上面。
+    if (row == null || chapterKey == null || row.uid.isEmpty || _payload == null) {
+      return;
+    }
     await appModel.database.saveMangaChapterState(
       bookUid: row.uid,
       chapterKey: chapterKey,
@@ -2434,9 +2152,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
-    if (_onlineChapter != null) {
-      unawaited(_primeOnlinePages(_currentPage));
-    }
   }
 
   /// 桌面键盘翻页（webtoon 交 WebView 原生竖滚，方向键一律 ignored）。
@@ -2829,9 +2544,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _updateCurrentPageImagePath();
     }
     _recordProgress();
-    if (spreadChanged && _onlineChapter != null) {
-      unawaited(_primeOnlinePages(_currentPage));
-    }
   }
 
   /// 解析当前 spread 首页图的绝对文件路径，作为 Anki 卡图（ERRATA C2——
@@ -2853,34 +2565,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       imagesDir,
       MangaFushiPage.mangaImageRelativePath(payload.images[page].url),
     );
-    if (_currentPageImagePath == null && _onlineChapter != null) {
-      unawaited(_resolveOnlineCurrentPageFile(page));
-    }
-  }
-
-  Future<void> _resolveOnlineCurrentPageFile(int page) async {
-    final MangaReaderSession? session = _pageSession;
-    if (session == null || page < 0 || page >= session.pageCount) return;
-    try {
-      final File? file = await session.localFile(page);
-      if (!mounted ||
-          page != MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread)) {
-        return;
-      }
-      _currentPageImagePath = file?.path;
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'MangaFushiPage.onlineCardImage',
-        error,
-        stack,
-      );
-    }
   }
 
   /// 重进一本正在跑整卷 OCR 的书 / 章：接回注册表里的任务，HUD 从当前进度接着显示。
   ///
-  /// 只接目录一致的任务：在线书按章各有受管目录，A 章的任务不能把结果热替换到
-  /// B 章的页上。
+  /// 只接目录一致的任务：在线书按章各有章目录（`chapters/<digest>`），A 章的任务
+  /// 不能把结果热替换到 B 章的页上。
   void _reattachRunningOcrJob(String imageRoot) {
     final MangaOcrRunningJob? running = _ocrRegistry.running(widget.bookKey);
     if (running == null) return;
@@ -3345,7 +3035,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _persistPosition(int page, double fraction) async {
     _lastSavedPage = page;
     _lastSavedFraction = fraction;
-    if (!_persistProgress) return;
     final FushiDatabase db = appModel.database;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
     // v82：uid 缺失 = 库里没有这本书的持久行（内存兜底行不算），位置与「已读完」
@@ -3490,6 +3179,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final Map<String, MangaChapterStateRow> states = row.uid.isEmpty
         ? const <String, MangaChapterStateRow>{}
         : await appModel.database.getMangaChapterStates(row.uid);
+    final Set<String> downloaded = await downloadedChapterKeys(
+      await MangaStorage.bookPath(row.bookKey),
+      entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
+    );
     if (!mounted) return;
     final int? target = await showModalBottomSheet<int>(
       context: context,
@@ -3503,6 +3196,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           newestFirst: true,
           unreadOnly: false,
           currentChapterKey: _shelfChapterKey,
+          downloadedChapterKeys: downloaded,
           showHeader: false,
           onChapterTap: (OnlineMangaChapter chapter) => Navigator.of(
             sheetContext,
@@ -3694,23 +3388,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 fit: StackFit.expand,
                 children: <Widget>[
                   Positioned.fill(child: _buildBody()),
-                  if (_onlinePageChallenge != null &&
-                      _onlineChallengeRuntime != null)
-                    Positioned(
-                      bottom: 16,
-                      left: 16,
-                      right: 16,
-                      child: SafeArea(
-                        child: FushiCard(
-                          child: MihonCloudflareAction(
-                            runtime: _onlineChallengeRuntime,
-                            error: _onlinePageChallenge,
-                            onVerified:
-                                _onlineChallengeRetry ?? _retryChallengedImages,
-                          ),
-                        ),
-                      ),
-                    ),
                   // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
                   // WebView 持焦后会吞掉翻页键。
                   Positioned.fill(
@@ -3744,8 +3421,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                         ),
                       ),
                     ),
-                  // 顶部 chrome：页码指示 + 阅读模式切换。
-                  if (_bookRow != null && !_loadFailed && _chromeVisible)
+                  // 顶部 chrome：页码指示 + 阅读模式切换。「本章未下载」态没有正文，
+                  // 页码 / 布局 / 缩放全无意义，一并不显示。
+                  if (_bookRow != null &&
+                      !_loadFailed &&
+                      !_chapterNotDownloaded &&
+                      _chromeVisible)
                     Positioned(
                       top: 0,
                       right: 0,
@@ -3993,6 +3674,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
       );
     }
+    if (_chapterNotDownloaded) return _buildChapterNotDownloaded();
     if (_bookRow == null || _imagesDir == null || _payload == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -4003,6 +3685,72 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return KeyedSubtree(
       key: const ValueKey<String>('manga_content_ready'),
       child: _buildWebView(),
+    );
+  }
+
+  /// 「本章未下载」态（设计稿 2026-09-12 §1：在线漫画先下载再读）。
+  ///
+  /// 两个出口：把本章交给下载队列（下完自动装载）、换到别的章。返回键由外层
+  /// 无条件提供，这里不再画第二个。
+  Widget _buildChapterNotDownloaded() {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    final String chapterName =
+        entry != null &&
+            _shelfChapterIndex >= 0 &&
+            _shelfChapterIndex < entry.chapters.length
+        ? entry.chapters[_shelfChapterIndex].name
+        : '';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.cloud_download_outlined,
+              size: 48,
+              color: Colors.white70,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              t.manga_chapter_not_downloaded,
+              key: const ValueKey<String>('manga_chapter_not_downloaded'),
+              style: const TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+            if (chapterName.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                chapterName,
+                style: const TextStyle(color: Colors.white54),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                FilledButton.icon(
+                  key: const ValueKey<String>('manga_reader_enqueue_download'),
+                  onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
+                  icon: const Icon(Icons.download),
+                  label: Text(t.manga_chapter_download_action),
+                ),
+                OutlinedButton.icon(
+                  key: const ValueKey<String>('manga_reader_pick_chapter'),
+                  onPressed: _switchingChapter
+                      ? null
+                      : () => unawaited(_showChapterPicker()),
+                  icon: const Icon(Icons.list_alt_outlined),
+                  label: Text(t.manga_series_chapters_action),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

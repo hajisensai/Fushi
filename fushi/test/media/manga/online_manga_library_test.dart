@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/native.dart';
@@ -10,7 +11,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:path/path.dart' as p;
 
 /// 身份串的分隔符是 NUL。测试里也用 `String.fromCharCode(0)` 而不是源码字面量：
@@ -60,6 +61,8 @@ void main() {
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-online-manga-');
+    // 2026-09-12 起在线条目直接落 `<fushi_books>/<bookKey>`；测试里把书根钉到临时目录。
+    EpubStorage.debugBaseDirectoryOverride = root.path;
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     service = OnlineMangaLibraryService(
       database: database,
@@ -69,6 +72,7 @@ void main() {
   });
 
   tearDown(() async {
+    EpubStorage.debugBaseDirectoryOverride = null;
     await database.close();
     if (await root.exists()) await root.delete(recursive: true);
   });
@@ -283,17 +287,54 @@ void main() {
     );
   });
 
-  test('章节缓存目录按 chapterKey 稳定，预览与书架命中同一份', () async {
+  test('新条目直接落 <fushi_books>/<bookKey>，带 chapters/ 与占位 manga.json', () async {
     final EpubBookRow row = await service.add(entryFor(chapters: chapters));
-    final Directory first = service.chapterDirectory(row.bookKey, chapters.last);
+    expect(row.extractDir, p.join(root.path, 'fushi_books', row.bookKey));
+    expect(Directory(p.join(row.extractDir, 'chapters')).existsSync(), isTrue);
     expect(
-      p.relative(first.path, from: root.path),
-      startsWith(p.join('reader-cache', 'chapters', row.bookKey)),
+      File(p.join(row.extractDir, 'manga.json')).readAsStringSync(),
+      '{"pages":[]}',
     );
+    expect(await service.ensureBookDirectory(row), row, reason: '已在标准位置：零改动');
+  });
+
+  test('ensureBookDirectory 把旧 <runtimeRoot>/library 目录整个搬进 fushi_books', () async {
+    final EpubBookRow added = await service.add(entryFor(chapters: chapters));
+    // 造一条 2026-09-12 前的旧行：目录住在 <runtimeRoot>/library/<bookKey>。
+    final Directory legacy = Directory(
+      p.join(root.path, 'library', added.bookKey),
+    );
+    await legacy.parent.create(recursive: true);
+    await Directory(added.extractDir).rename(legacy.path);
+    File(p.join(legacy.path, 'note.txt')).writeAsStringSync('keep me');
+    await database.updateEpubBookContentPaths(
+      added.bookKey,
+      extractDir: legacy.path,
+    );
+    final Directory staleCache = Directory(
+      p.join(root.path, 'reader-cache', 'chapters', added.bookKey, 'x'),
+    )..createSync(recursive: true);
+
+    final EpubBookRow migrated = await service.ensureBookDirectory(
+      (await database.getEpubBook(added.bookKey))!,
+    );
+
+    expect(migrated.extractDir, p.join(root.path, 'fushi_books', added.bookKey));
+    expect(migrated.uid, added.uid, reason: '身份不变，进度零迁移');
+    expect(legacy.existsSync(), isFalse, reason: '旧目录搬走，不是复制一份');
+    expect(File(p.join(migrated.extractDir, 'cover.png')).existsSync(), isTrue);
     expect(
-      service.chapterDirectory(row.bookKey, chapters.last).path,
-      first.path,
+      File(p.join(migrated.extractDir, 'note.txt')).readAsStringSync(),
+      'keep me',
     );
+    expect(Directory(p.join(migrated.extractDir, 'chapters')).existsSync(),
+        isTrue);
+    expect(
+      (await database.getEpubBook(added.bookKey))!.extractDir,
+      migrated.extractDir,
+      reason: '行必须真的改了 extractDir',
+    );
+    expect(staleCache.existsSync(), isFalse, reason: '旧阅读期页缓存顺手清掉');
   });
 
   group('resumeChapterIndex', () {
@@ -454,13 +495,14 @@ class _FixtureAdapter implements OnlineMangaRuntimeAdapter {
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
   @override
-  Future<OnlineMangaReaderChapter> openChapter({
+  Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-    required Directory managedDirectory,
-    required bool persistProgress,
-    int? initialPage,
   }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) =>
       throw UnimplementedError();
 
   @override

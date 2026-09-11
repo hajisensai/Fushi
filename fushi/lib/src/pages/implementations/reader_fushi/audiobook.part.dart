@@ -915,6 +915,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// 「到达」新单元，旧位置 → 目标 cue 之间被跳过的正文从未成为当前单元、不计。
   /// 后跳（上一句）同理：目标页若已在会话并集里，翻走时结算为 0（重听不重复计）。
   void _handleExplicitCueJump(AudioCue cue) {
+    studyDiag(
+      'reader',
+      'explicit cue jump → sentence=${cue.sentenceIndex} '
+      '${cue.startMs}ms (leave current unit)',
+    );
     _readLedger.leave();
   }
 

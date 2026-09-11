@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
+import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -199,43 +200,18 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   Future<void> _refreshEngines() async {
     if (!mounted) return;
     setState(() => _checkingEngines = true);
-    bool builtin = false;
-    if (widget.engines.service.isSupportedPlatform) {
-      try {
-        final MangaOcrModelStatus status =
-            await widget.engines.service.modelStatus();
-        builtin = status.allReady;
-      } catch (_) {
-        builtin = false;
-      }
-    }
-    bool external = false;
-    if (widget.engines.externalRunner != null) {
-      try {
-        external = (await widget.engines.externalRunner!.probe()) != null;
-      } catch (_) {
-        external = false;
-      }
-    }
-    // 漫画 P3：探测已配对 host 的远程 OCR 能力（老 host 无 capabilities 字段 →
-    // probe 回 null → 选项隐藏，零破坏）。host 报了「支持但模型未下载」时 probe
-    // 仍返回 target，UI 据此置灰 + 说明原因（TODO-2635）。
-    MangaOcrRemoteTarget? remote;
-    if (widget.engines.remoteRunner != null) {
-      try {
-        remote = await widget.engines.remoteRunner!.probe();
-      } catch (_) {
-        remote = null;
-      }
-    }
+    // 探测与能力表在 `manga_ocr_engine_probe.dart`：下载完成钩子的自动 OCR 读的是
+    // 同一份判据，向导这里只剩「把结果摆进状态」。
+    final MangaOcrEngineAvailability availability =
+        await probeMangaOcrEngines(widget.engines);
     if (!mounted) return;
     setState(() {
-      _builtinAvailable = builtin;
-      _externalAvailable = external;
-      _remoteAvailable = remote?.capability.usable ?? false;
-      _remoteModelsMissing = remote?.capability.modelsMissing ?? false;
-      _remoteTarget = remote;
-      _lensAvailable = widget.engines.lensRunner != null;
+      _builtinAvailable = availability.builtinReady;
+      _externalAvailable = availability.externalReady;
+      _remoteAvailable = availability.remoteUsable;
+      _remoteModelsMissing = availability.remoteModelsMissing;
+      _remoteTarget = availability.remoteTarget;
+      _lensAvailable = availability.lensOffered;
       _checkingEngines = false;
       final String preferenceKey = widget.engines.initialEnginePreference ??
           MangaOcrEnginePreference.auto.key;
@@ -244,41 +220,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       _engine = resolveMangaOcrEngine(
             preference: preference,
             hasExistingMetadata: false,
-            capabilities: <MangaOcrEngineCapability>[
-              MangaOcrEngineCapability(
-                id: MangaOcrEngineId.localOnnx,
-                supported: widget.engines.service.isSupportedPlatform,
-                ready: builtin,
-                requiresNetwork: false,
-                uploadsImages: false,
-                supportsIncremental: true,
-              ),
-              MangaOcrEngineCapability(
-                id: MangaOcrEngineId.googleLens,
-                supported: widget.engines.lensRunner != null,
-                ready: widget.engines.lensRunner != null,
-                requiresNetwork: true,
-                uploadsImages: true,
-                supportsIncremental: true,
-              ),
-              MangaOcrEngineCapability(
-                id: MangaOcrEngineId.externalMokuro,
-                supported: widget.engines.externalRunner != null,
-                ready: external,
-                requiresNetwork: false,
-                uploadsImages: false,
-                supportsIncremental: false,
-              ),
-              MangaOcrEngineCapability(
-                id: MangaOcrEngineId.pairedHost,
-                supported: widget.engines.remoteRunner != null,
-                // 模型没下载的 host 不算 ready，auto 解析不得落到它上面。
-                ready: remote?.capability.usable ?? false,
-                requiresNetwork: true,
-                uploadsImages: true,
-                supportsIncremental: true,
-              ),
-            ],
+            capabilities: availability.capabilities,
           ) ??
           preference.explicitEngine ??
           MangaOcrEngineId.localOnnx;

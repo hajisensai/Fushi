@@ -413,12 +413,17 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       chars += f.chars;
       ms += f.ms;
     }
+    // 阅读速度只按阅读域算（[statBookCphOf]）：卡上的时长 / 字数是跨域总和，
+    // 视频只计时不计字、游戏 hook 只计字不计时，混进去的「字/时」谁也解释不了。
+    final String? cph = statBookCphOf(_daily, contains);
     return StatPeriodSummary(
       label: label,
       primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatChars(chars)),
+        if (cph != null)
+          StatSummaryLine(label: t.stat_reading_speed, value: cph),
         StatSummaryLine(label: t.stat_lookup, value: '${pick(_lookup)}'),
         StatSummaryLine(label: t.stat_mined, value: '${pick(_mined)}'),
         StatSummaryLine(label: t.stat_favorited, value: '${pick(_favorited)}'),
