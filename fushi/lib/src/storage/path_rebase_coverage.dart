@@ -566,6 +566,33 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '提醒条目的跳转身份 JSON：合集 id、书 uid、源内 chapterKey、release 页的远端 '
           'https 地址。**刻意不存本地文件路径**——真要打开的文件由目标域自己按当前'
           '数据根解析（合集/书走既有打开链路），这里只存身份，故数据根搬家与本列无关。'),
+
+  // ── manga_download_jobs（v103 漫画下载队列）──────────────────────
+  // 本表**没有路径列**：章目录由消费方按 (bookKey, chapterKey) 在当前数据根下
+  // 解析，任务行只存身份 / 状态 / 进度。逐列登记 notAPath 是为了把「无路径」
+  // 这个判断写成显式声明，而不是靠守卫正则恰好没命中。
+  PathRebaseColumn('MangaDownloadJobs', 'jobId', PathRebaseKind.notAPath,
+      '由 kind/bookKey/chapterKey 派生的 sha256 前缀，不是路径。'),
+  PathRebaseColumn('MangaDownloadJobs', 'kind', PathRebaseKind.notAPath,
+      '枚举值 chapter / mokuro_volume。'),
+  PathRebaseColumn('MangaDownloadJobs', 'bookKey', PathRebaseKind.notAPath,
+      '在线条目 bookKey 或 mokuro:<seriesName>，是身份不是目录。'),
+  PathRebaseColumn('MangaDownloadJobs', 'chapterKey', PathRebaseKind.notAPath,
+      '源内章 key / mokuro 卷名，是身份不是目录。'),
+  PathRebaseColumn('MangaDownloadJobs', 'runtime', PathRebaseKind.notAPath,
+      '枚举值 mihon / aidoku / interconnect / mokuro_moe。'),
+  PathRebaseColumn(
+      'MangaDownloadJobs', 'title', PathRebaseKind.notAPath, '展示用作品名快照。'),
+  PathRebaseColumn(
+      'MangaDownloadJobs', 'chapterTitle', PathRebaseKind.notAPath, '展示用章名快照。'),
+  PathRebaseColumn('MangaDownloadJobs', 'status', PathRebaseKind.notAPath,
+      '枚举值 queued / running / done / failed / cancelled。'),
+  PathRebaseColumn(
+      'MangaDownloadJobs',
+      'lastError',
+      PathRebaseKind.notAPath,
+      '最近一次失败的错误文案（可能夹带异常里的路径片段，但那是诊断文本，'
+          '不会被任何代码当路径解析）。'),
 ];
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的
