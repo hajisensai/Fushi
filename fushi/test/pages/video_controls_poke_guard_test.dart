@@ -7,7 +7,15 @@ import 'video_fushi_page_source_corpus.dart';
 /// 源码守卫（BUG-176 ②）：控制条自动隐藏计时只在 media_kit 的鼠标 hover/进度条
 /// 拖动时重置，键盘快进/跳句与底部按钮 tap 都不触发重置 → 控制条只活 2 秒就消失，
 /// 用户「一直快进它也只保持两三秒然后消失」。修复=每次快进/跳句/seek 都
-/// [_pokeControlsVisible] 往控制条区派发合成 hover，驱动 media_kit 自身的重置路径。
+/// [_pokeControlsVisible]，驱动 media_kit 自身的重置路径。
+///
+/// 「驱动」的形态在 BUG-2453 换过一次：旧实现往视频区几何中心派合成 hover 去命中
+/// media_kit 的 MouseRegion，那条假鼠标设备在 MouseTracker 里永不注销、退出播放器后
+/// 一直悬停在库页中心卡上；现在页面**不再合成任何指针事件**，两端只
+/// `_restartHideTimerSignal.poke()`——桌面 fork 经 `wakeSignal` 收到即调自己的
+/// `onHover()`（唤起 + 重排隐藏 Timer），移动 fork 经 `restartHideTimerSignal` 只重排
+/// Timer。本文件只钉页面侧「每个入口都到达这条信号」的接线；信号 → fork 的装配与
+/// 「语料无指针事件」由 video_controls_wake_signal_guard_test.dart 钉。
 ///
 /// media_kit headless 不可跑视频 widget（无 native player / 无 hover 管线），故在
 /// 源码层钉死接线契约，防回归把任一入口的续命/唤起删掉。
@@ -21,7 +29,8 @@ import 'video_fushi_page_source_corpus.dart';
 ///   BUG-176 ②/BUG-215 的原始诉求（连按时别 2 秒消失）落在「已可见」那一支，未被削弱。
 ///
 /// 合并（守卫审计）：原 video_controls_poke_dedup_guard_test.dart 的
-/// TODO-148/BUG-215 ② 去重抖动守卫并入本文件第二个 group，断言逐字搬运。
+/// TODO-148/BUG-215 ② 去重抖动守卫并入本文件第二个 group；BUG-2453 后该 group 改成
+/// 反向钉「抖动机制不得回来」（见 group 注释）。
 void main() {
   late String src;
 
@@ -30,31 +39,43 @@ void main() {
   });
 
   group('BUG-176② 入口接线', () {
-    test('存在 _pokeControlsVisible 助手且经 GestureBinding 派发合成 hover', () {
-      expect(src.contains('void _pokeControlsVisible()'), isTrue,
-          reason: '必须有唤醒控制条的助手');
-      expect(src.contains('GestureBinding.instance.handlePointerEvent'), isTrue,
-          reason: 'poke 必须经 GestureBinding 派发指针事件以驱动 media_kit MouseRegion');
-      expect(src.contains('PointerHoverEvent('), isTrue,
-          reason: 'poke 必须派发 hover 事件（media_kit 在 onHover 重置隐藏计时）');
+    test('存在 _pokeControlsVisible 助手，唯一出口是 _restartHideTimerSignal.poke()', () {
+      // methodBody 找不到签名会直接 fail——「必须有唤醒控制条的助手」由它兜住。
+      final String body = methodBody(src, 'void _pokeControlsVisible()');
+      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
+          reason: 'poke 必须发 _restartHideTimerSignal：桌面 fork 的 wakeSignal 收到即调'
+              '自己的 onHover() 重置隐藏计时（BUG-176 ② 的原始诉求），页面不再合成指针'
+              '事件去命中 MouseRegion（BUG-2453）');
+      // 反向：旧的「派指针事件命中 MouseRegion」路径不得以任何形式回到 poke 体内——
+      // 那正是幽灵设备的来源。
+      expect(containsCodeLine(body, 'handlePointerEvent('), isFalse,
+          reason: 'poke 不得再派发指针事件（BUG-2453：合成设备永不注销）');
+      expect(containsCodeLine(body, 'PointerHoverEvent('), isFalse,
+          reason: 'poke 不得再构造合成 hover（BUG-2453）');
     });
 
-    test('poke 仅桌面派发合成 hover（移动端 controls 无 hover 自动隐藏问题）', () {
-      expect(src.contains('bool get _isDesktopVideoControls'), isTrue);
-      // TODO-1059：平台无关的压制门控（沉浸锁 / 侧栏 / 字幕列表 / 编辑态）前置到
-      // _isDesktopVideoControls 之前，且移动端改走 _restartHideTimerSignal.poke() 续命隐藏
-      // Timer 而**不派合成 hover**（无 hover 语义）。故桌面门控不再是方法体首语句——守卫改成
-      // 「方法体内存在 !_isDesktopVideoControls 早退」，不变量强度不变：移动端绝不派合成 hover。
+    test('poke 两端都发信号；桌面只多续命侧边锁按钮', () {
+      expect(containsCodeLine(src, 'bool get _isDesktopVideoControls'), isTrue);
+      // TODO-1059 把移动端改成「经 _restartHideTimerSignal 续命隐藏 Timer」；BUG-2453 把
+      // 桌面也并到同一条信号上。于是 poke 体内唯一的平台分支只剩 `_pokeLockButton()`
+      // （合成 hover 时代它经页面根 Listener 顺带续命锁按钮，改信号后显式补上），而
+      // 信号本身**必须在平台分支之外**无条件发出——否则任一端都会回到「控制条 2 秒消失」。
       final String body = methodBody(src, 'void _pokeControlsVisible()');
+      final int branchAt =
+          maskComments(body).indexOf('if (_isDesktopVideoControls)');
+      expect(branchAt, greaterThanOrEqualTo(0),
+          reason: 'poke 应保留桌面分支续命侧边锁按钮（键盘 seek 时锁按钮跟着露出）');
+      final String desktopBranch =
+          balancedBlockFrom(body, branchAt, what: 'poke 的桌面分支');
+      expect(containsCodeLine(desktopBranch, '_pokeLockButton();'), isTrue,
+          reason: '桌面分支必须续命侧边锁按钮');
       expect(
-        RegExp(r'if \(!_isDesktopVideoControls\)\s*\{').hasMatch(body),
-        isTrue,
-        reason:
-            '_pokeControlsVisible 必须门控 _isDesktopVideoControls（移动端不派合成 hover）',
+        containsCodeLine(desktopBranch, '_restartHideTimerSignal.poke();'),
+        isFalse,
+        reason: '信号不得被桌面分支包住——移动端也靠它续命隐藏 Timer（TODO-1059）',
       );
-      // 移动端分支续命隐藏 Timer 而非派合成 hover（TODO-1059）。
-      expect(body.contains('_restartHideTimerSignal.poke();'), isTrue,
-          reason: '移动端经 _restartHideTimerSignal 续命，而非派合成 hover');
+      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
+          reason: '信号在平台分支之外无条件发出（两端共用，BUG-2453）');
     });
 
     test('键盘 / 手柄六个入口只【续命】控制条，不唤起（BUG-2030）', () {
@@ -105,17 +126,18 @@ void main() {
       expect(
         containsCodeLine(body, 'if (!_mediaKitControlsVisible.value) return;'),
         isTrue,
-        reason: '续命原语必须以「不可见就早退」开路——门控只能做在派发合成 hover '
-            '**之前**：media_kit 的 onHover 无条件 `visible = true`，合成 hover 本身'
-            '分不出续命与唤起（BUG-2030）',
+        reason: '续命原语必须以「不可见就早退」开路——门控只能做在发信号'
+            '**之前**：桌面 fork 的 wakeSignal 处理就是它自己的 onHover，无条件 '
+            '`visible = true`，信号本身分不出续命与唤起（BUG-2030）',
       );
       // 早退之后才是真正的续命动作，否则这方法就成了空壳。
       expect(containsCodeLine(body, '_pokeControlsVisible();'), isTrue,
-          reason: '已可见时必须真的续命（复用 poke 的合成 hover 派发路径）');
+          reason: '已可见时必须真的续命（复用 poke 的信号路径）');
     });
 
     test('media_kit fork 的桌面 onHover 仍是无条件唤起（BUG-2030 门控前提）', () {
-      // 本条守的是「为什么门控必须在 Hibiki 侧、派发之前」这个前提：一旦上游/fork 把
+      // 本条守的是「为什么门控必须在 Hibiki 侧、发信号之前」这个前提：wakeSignal 的处理
+      // 就是调 onHover()（video_controls_wake_signal_guard_test.dart 钉），一旦上游/fork 把
       // onHover 改成条件式唤起，_keepControlsAliveIfVisible 的实现方式就该重新评估，
       // 而不是让它继续基于一个已经不成立的事实。
       final String fork = File(
@@ -153,58 +175,35 @@ void main() {
     });
   });
 
-  /// 源码守卫（TODO-148/BUG-215 ②）：连按快进/跳句时控制条自动隐藏计时不续命。
+  /// 源码守卫（TODO-148/BUG-215 ②）：连按快进/跳句时控制条自动隐藏计时**每次都**续命。
   ///
-  /// 根因=[_pokeControlsVisible] 每次都把合成 hover 派发到控制条**固定中心点**，
-  /// Flutter `MouseTracker` 对「同一设备落同一坐标」的连续 hover 去重 → 第二次起
-  /// media_kit 的 `MouseRegion.onHover` 不再触发、隐藏 `Timer` 不重置，控制条仍只
-  /// 活 2 秒就消失。修复=每次派发把 x 坐标 ±1px 抖动（[_pokeParity] 翻转），使坐标
-  /// 始终变化、强制每次都回调 onHover 续命。
+  /// 历史：旧实现把合成 hover 派发到控制条固定中心点，Flutter `MouseTracker` 对「同一
+  /// 设备落同一坐标」的连续 hover 去重 → 第二次起 media_kit 的 `onHover` 不再触发、
+  /// 隐藏 Timer 不重置。当时的修法是每次派发把 x 坐标 ±1px 抖动（`_pokeParity` 翻转）。
   ///
-  /// media_kit headless 不可跑视频 widget（无 native player / 无 hover 管线 / 无
-  /// MouseTracker 去重），故在源码层钉死「合成 hover 位置每次抖动、不再用固定
-  /// center」契约，防回归把抖动删回固定坐标。
-  group('poke 去重抖动 (BUG-215/TODO-148)', () {
-    /// 取 _pokeControlsVisible 方法体：花括号配对，边界完全由源码结构给出。
-    /// 演进史（两次塌陷都不是行为退化，是守卫自己塌掉）：固定 1200 字窗 →
-    /// TODO-1059（平台无关门控前置）+ BUG-425（派发拆到 _dispatchPokeHover 微任务）
-    /// 把方法体撑过 1200 字，pokePosition/派发落到窗外 → 改按「下一成员
-    /// _dispatchPokeHover 的签名」切片 → 该成员一旦改名/挪位又会 indexOf 落空。
-    /// 现在只依赖方法自身的花括号，且右界收在 `}` 上（比旧窗口更紧，
-    /// `position: center` 这条禁止型断言不会再被下一个成员的代码污染）。
-    String pokeBody() => methodBody(src, 'void _pokeControlsVisible()');
-
-    test('存在 _pokeParity 抖动开关字段', () {
-      expect(src.contains('bool _pokeParity = false;'), isTrue,
-          reason: '必须有合成 hover 位置抖动开关字段（TODO-148/BUG-215）');
+  /// BUG-2453 删掉了整套合成派发，去重问题随之**在结构上消失**：信号是 Listenable，
+  /// `poke()` 每次都无条件通知 fork 调 `onHover()`，没有坐标、没有设备、没有去重。
+  /// 所以这组不再钉抖动，改成反向钉「抖动脚手架不得回来」——它们只在合成派发存在时才有
+  /// 意义，任何一个重新出现都说明有人把合成设备（幽灵指针的来源）带回来了。
+  /// 「每次都续命」这条原始不变量在新实现里的形态，就是上一组钉的「信号在平台分支之外
+  /// 无条件发出」。
+  group('poke 去重抖动脚手架不得回来 (BUG-215/TODO-148 → BUG-2453)', () {
+    test('语料里没有 _pokeParity / pokePosition', () {
+      for (final String needle in <String>['_pokeParity', 'pokePosition']) {
+        expect(containsIdentifier(src, needle), isFalse,
+            reason: '$needle 是合成 hover 抖动的脚手架，只在派指针事件时有意义；'
+                '它回来 = 合成设备回来（BUG-2453）');
+      }
     });
 
-    test('每次 poke 翻转 _pokeParity 并据此 ±1px 偏移合成 hover 位置', () {
-      final String body = pokeBody();
-      expect(body.contains('_pokeParity = !_pokeParity;'), isTrue,
-          reason: 'poke 必须翻转 _pokeParity，使每次派发坐标都不同');
-      expect(
-        RegExp(r'_pokeParity \? 1\.0 : -1\.0').hasMatch(body),
-        isTrue,
-        reason: 'poke 必须据 _pokeParity 把 x 坐标 ±1px 偏移（绕开 MouseTracker 同坐标去重）',
-      );
-    });
-
-    test('合成 hover 派发用抖动后的位置，而非固定 center', () {
-      final String body = pokeBody();
-      // 抖动后的位置变量喂给 PointerHoverEvent，而不是直接 position: center。
-      expect(body.contains('Offset pokePosition ='), isTrue,
-          reason: '必须先算出抖动后的 pokePosition');
-      expect(
-        RegExp(r'PointerHoverEvent\(\s*position: pokePosition,').hasMatch(body),
-        isTrue,
-        reason: '派发的 hover 必须用抖动后的 pokePosition（不是固定 center → 会被去重）',
-      );
-      expect(
-        RegExp(r'PointerHoverEvent\(\s*position: center,').hasMatch(body),
-        isFalse,
-        reason: '不得回退用固定 center 派发（会触发 MouseTracker 同坐标去重，回归 BUG-215）',
-      );
+    test('poke 体内没有任何去重 / 折叠：每次调用都到达信号', () {
+      final String body = methodBody(src, 'void _pokeControlsVisible()');
+      // BUG-425 的微任务去重旗与 BUG-215 的抖动一样，都是合成派发的附属物；poke 一旦
+      // 再按「已排程 / 同坐标」折叠调用，连按就回到「第二次起不续命」。
+      expect(containsCodeLine(body, '_pokeDispatchScheduled'), isFalse,
+          reason: '不得再用去重旗折叠 poke（BUG-425 脚手架，随合成派发一起删除）');
+      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
+          reason: '每次 poke 都必须无条件到达信号（BUG-215 原始不变量）');
     });
   });
 }
