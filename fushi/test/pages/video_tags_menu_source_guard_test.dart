@@ -68,8 +68,20 @@ void main() {
           reason: '未进选择态时触屏/桌面长按都弹菜单，选择态才禁用');
       expect(flat.contains('touchLongPressSelects'), isFalse,
           reason: '不得再按触屏平台把未进入选择态的长按改判成多选');
-      expect(src.contains('_toggleSelection(book.bookUid)'), isTrue,
-          reason: '选择态点卡片切换勾选');
+      // BUG-2458：多选分发收成唯一入口 [_dispatchCardTap]（本地 / 远端、网格 / 列表
+      // 散卡全走它），选择态切换勾选在分发器里做，卡片只报自己的 selectionKey。
+      expect(flat.contains('_dispatchCardTap( selectionKey: book.bookUid'),
+          isTrue,
+          reason: '本地卡把 bookUid 交给统一分发');
+      expect(
+          flat.contains('if (_selectionMode) { _toggleSelection(selectionKey);'),
+          isTrue,
+          reason: '选择态点卡片切换勾选（分发器唯一实现）');
+      expect(
+          RegExp(r'_toggleSelection\(').allMatches(src).length,
+          2,
+          reason: '_toggleSelection 只应有声明 + 分发器一处调用；'
+              '卡片里再出现直调 = 又抄了一份 handleTap（远端卡漏抄的老路）');
     });
 
     test('未进选择态的长按不按平台改判，也不再叠加临时 ⋮ 按钮', () {
