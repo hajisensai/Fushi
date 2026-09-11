@@ -948,6 +948,22 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               necessity: OnboardingActionNecessity.recommended,
               onPressed: () => _pushPage((_) => const BrowserExtensionPage()),
             ),
+            // 装完之后总得有个地方真试一下。页面由本机 server 提供（http，扩展才注入得了；
+            // Chrome 默认不给扩展 file:// 权限），server 没开就不给点。
+            OnboardingAction(
+              icon: Icons.public_outlined,
+              label: t.browser_extension_test_page_action,
+              description: appModel.yomitanApiServerEnabled
+                  ? t.browser_extension_test_page_action_desc
+                  : t.browser_extension_test_page_server_off,
+              necessity: OnboardingActionNecessity.recommended,
+              onPressed: appModel.yomitanApiServerEnabled
+                  ? () => launchUrl(
+                        Uri.parse(appModel.browserExtensionTestPageUrl),
+                        mode: LaunchMode.externalApplication,
+                      )
+                  : null,
+            ),
           ],
         );
       case OnboardingStepId.fonts:

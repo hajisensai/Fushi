@@ -4634,8 +4634,6 @@
   "dict_rename": "重命名",
   "dict_rename_label": "詞典名稱",
   "shortcut_action_global_external_open_lookup_page": "喚起主視窗並開啟查詞頁",
-  "popup_full_width": "Full-width popup",
-  "popup_full_width_hint": "Ignore the maximum width and let the popup span the available width. Its position still follows the selected word.",
   "stat_session_edit": "Edit session",
   "stat_session_edit_date": "Date",
   "stat_session_edit_date_invalid": "Enter the date as YYYY-MM-DD.",
@@ -4691,5 +4689,18 @@
   "subscription_run_remote": "Host $device",
   "subscription_remote_section_title": "Subscriptions on $device",
   "subscription_remote_provider_unavailable": "The host has no indexer for this resource ($provider)",
-  "video_load_failed_not_opened": "The player couldn't open this video. The file may be in use, or the video engine needs the app restarted."
+  "video_load_failed_not_opened": "The player couldn't open this video. The file may be in use, or the video engine needs the app restarted.",
+  "browser_extension_test_page_title": "Try the browser extension",
+  "browser_extension_test_page_intro": "This page is served by Fushi itself, so the extension can inject it. Try the two things below.",
+  "browser_extension_test_page_probe_checking": "Checking whether the extension is injected…",
+  "browser_extension_test_page_probe_ok": "The extension is injected on this page.",
+  "browser_extension_test_page_probe_missing": "The extension was not injected. Load it in your browser and reload this page.",
+  "browser_extension_test_page_step_popup_title": "Open the extension from the toolbar",
+  "browser_extension_test_page_step_popup_body": "Click the Fushi icon in the top-right toolbar; the extension popup should open.",
+  "browser_extension_test_page_step_lookup_title": "Look a word up with Shift",
+  "browser_extension_test_page_step_lookup_body": "Hold Shift and hover a word in the sentence below; the dictionary popup should appear.",
+  "browser_extension_test_page_sample_label": "Practice sentence",
+  "browser_extension_test_page_action": "Open the test page",
+  "browser_extension_test_page_action_desc": "Opens a page served by Fushi in your browser to check the toolbar popup and Shift lookup.",
+  "browser_extension_test_page_server_off": "Enable the lookup server first, then try again."
 }

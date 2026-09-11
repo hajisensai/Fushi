@@ -13,13 +13,17 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 class MaterialSettingsRenderer implements SettingsRenderer {
   const MaterialSettingsRenderer();
 
-  /// 详情页正文的水平内边距（唯一真相源）：左侧贴近 pane 分隔线，给 MD3 expanded
-  /// 呼吸量（page + gap），右侧 page。[buildDetailContent] 与任何要与 schema
-  /// section 等宽对齐的兄弟卡片（如阅读器快捷设置里并入 layout 子页顶部的主题选
-  /// 择器卡）都必须从这里取横向缩进，避免各自硬编码导致左右对不齐。
+  /// 详情页正文的水平内边距（唯一真相源）：左右都是 page。[buildDetailContent]
+  /// 与任何要与 schema section 等宽对齐的兄弟卡片（如阅读器快捷设置里并入 layout
+  /// 子页顶部的主题选择器卡）都必须从这里取横向缩进，避免各自硬编码导致左右对不齐。
+  ///
+  /// 左侧曾是 `page + gap`（28），比右侧宽 8：详情正文在自己的窗格里左右不等宽，
+  /// 而且宽屏主从下正文左缘紧邻 pane 分隔线——线左边是导航窗格的 20，右边是详情的
+  /// 28，一条线两侧呼吸不一样宽，线看着偏向左侧。两边同取 page 后，正文在窗格内
+  /// 左右对称，分隔线也居中于 20 + 20 的缝里。
   static EdgeInsets detailHorizontalInsets(FushiDesignTokens tokens) {
     return EdgeInsets.only(
-      left: tokens.spacing.page + tokens.spacing.gap,
+      left: tokens.spacing.page,
       right: tokens.spacing.page,
     );
   }
@@ -102,7 +106,12 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             AdaptiveSettingsSection(
               key: ValueKey<SettingsNavigationGroupId>(group.id),
               title: group.id.title(context),
-              surfaceColor: tokens.surfaces.card,
+              // 宽屏主从（pushRoutes:false）下导航窗格自己已经是一块 tonal 面
+              // （`surfaces.card`），分组再铺一层同色卡片就是卡中卡：卡片边界看不见，
+              // 窗格却因此少了一整块可辨的实色面。那里分组只做分段与标题，填充交给
+              // 窗格本身。窄屏 push 列表没有窗格底、直接铺在 `surfaces.page` 上，
+              // 分组卡仍是它唯一的容器，保持不变。
+              surfaceColor: pushRoutes ? null : Colors.transparent,
               children: group.destinations
                   .map(destinationRow)
                   .toList(growable: false),

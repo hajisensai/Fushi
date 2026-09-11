@@ -635,20 +635,6 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// 查词弹窗「全宽展示」：忽略上面的最大宽度，横向铺满可用宽度（左右仍留同一条
-  /// 边距）。位置仍跟随选区——与「底部固定」正交：底部固定本来就是屏幕底部的一条
-  /// 全宽面板，本项管的是**贴词定位下**也占满宽度。
-  ///
-  /// 存在的理由是「最大宽度」是绝对逻辑像素：换设备、旋屏、改界面缩放后都得重调，
-  /// 而墨水屏这类窄屏上用户要的恒定是「占满」。默认 false = 保持既有手感。
-  bool get popupFullWidth =>
-      getPref('popup_full_width', defaultValue: false) as bool;
-
-  Future<void> setPopupFullWidth(bool value) async {
-    await setPref('popup_full_width', value);
-    notifyListeners();
-  }
-
   final double defaultPopupMaxHeight = 360;
 
   double get popupMaxHeight =>

@@ -339,11 +339,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // charOffset 不变/spread 优先由专项纯函数测试守住，渲染效果需真机验。
   'reading/Merge illustration pages into text':
       'test/epub/epub_spread_map_test.dart: mergeImagePages absorb/spread-priority/charOffset (reader layout effect needs live WebView, DEVICE for render)',
-  // BUG-2434 批：「弹窗全宽」（对齐 Hoshi 的 Full Width）。焦点遍历能切到开关并
-  // 写穿 DB，但生效点是 resolvePopupRect 算出的矩形宽度——纯几何，harness 没有
-  // 适用的 T4 渲染探针，故与兄弟行 Popup max width / max height 同款登记，行为由
-  // 专项纯函数测试钉住（含「开/关同一组入参结果必须不同」的判别力用例）。
-  'lookup/Full-width popup': 'test/pages/popup_full_width_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案

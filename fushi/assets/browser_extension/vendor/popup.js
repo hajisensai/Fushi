@@ -4212,9 +4212,26 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
         if (longPressed) event?.preventDefault?.();
     });
     summary.addEventListener('touchmove', () => clearTimeout(longPressTimer));
-    summary.addEventListener('mousedown', () => {
+    // BUG-2447：`<summary>` 是查词弹窗里唯一「鼠标点一下就会拿到 DOM 焦点」的元素——
+    // 按钮与链接在 macOS WebKit 下按平台惯例 `isMouseFocusable` 恒为 false，释义正文与
+    // 留白根本不可聚焦。而节点一旦获得焦点，WebKit 就让承载它的 WKWebView 成为窗口的
+    // first responder，此后 `keyDown:` 全部进 WebKit，FlutterViewController 再也收不到
+    // 按键。macOS 上**没有任何东西能把 first responder 还回来**：Flutter 引擎的平台视图
+    // 层（FlutterMutatorView / FlutterPlatformViewController）整层没有 firstResponder
+    // 代码，`PageFocusOwnership.reclaim` 只动 Flutter 自己的焦点树，而 Windows 那条兜底
+    // （fork 的 custom_platform_view 每次 onPointerDown 都 requestFocus）依赖 WebView2 的
+    // 无窗口合成、在真原生 WKWebView 上并不存在。于是「展开/折叠一次词典分组」之后宿主
+    // 页面的快捷键整条失效，只剩 JS 桥里宿主显式转发的那两三个动作还活着——BUG-1269 当年
+    // 补的正是那条桥，它按构造覆盖不到其余绑定。
+    //
+    // 取消 mousedown 的默认动作即掐断「点击 → 节点获焦」这一步，而 `<details>` 的开合是
+    // `click` 的 activation behavior，与 mousedown 的默认动作无关，照常发生；Tab 聚焦也
+    // 不受影响（只有**鼠标**聚焦是 mousedown 的默认动作）。只对主键生效：非主键本就不
+    // 参与聚焦，中键/右键要原样留给弹窗输入桥的 `Mouse<n>` 转发判定。
+    summary.addEventListener('mousedown', (e) => {
         longPressed = false;
         longPressTimer = setTimeout(toggleSelection, 500);
+        if (e && e.button === 0) e.preventDefault();
     });
     summary.addEventListener('mouseup', () => clearTimeout(longPressTimer));
     summary.addEventListener('mouseleave', () => clearTimeout(longPressTimer));
