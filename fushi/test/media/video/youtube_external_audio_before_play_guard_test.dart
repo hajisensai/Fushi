@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 真实音画同步只能在真机（可能 ANDROID_VR 流）复测；此守卫锁住「外挂音轨早于 seek/play」
 /// 的静态时序不变量，防止有人把它挪回 load 之后（回归无声）。
-/// 外挂音轨的调用形状（BUG-2448 起 URL 先过 nativePlaybackUri 收口）。
+/// 外挂音轨的调用形状（BUG-2455 起 URL 先过 nativePlaybackUri 收口）。
 const String _kAttachCall =
     'AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))';
 
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('load() 内经 AudioTrack.uri 外挂 externalAudioTrackUrl', () {
-      // BUG-2448：URL 先过 nativePlaybackUri 收口，再 audio-add。
+      // BUG-2455：URL 先过 nativePlaybackUri 收口，再 audio-add。
       expect(ctrl.contains(_kAttachCall), isTrue,
           reason: '必须用 $_kAttachCall（libmpv audio-add）外挂音轨');
     });

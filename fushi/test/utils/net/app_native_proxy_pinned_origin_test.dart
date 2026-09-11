@@ -6,7 +6,7 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 
-/// BUG-2448：互联 host 的自签 https 流不再交给 native 自己去做 TLS——URL 经
+/// BUG-2455：互联 host 的自签 https 流不再交给 native 自己去做 TLS——URL 经
 /// [nativePlaybackUri] 降成明文 http，中继按登记的 (host, port) 指纹升回钉扎 https。
 ///
 /// 这里用真自签证书起一个 https 原点，从中继的 loopback 入口以 native 播放器的
