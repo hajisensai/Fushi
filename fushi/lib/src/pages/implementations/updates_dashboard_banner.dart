@@ -51,15 +51,7 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
   int get _total => _counts.values.fold<int>(0, (int a, int b) => a + b);
 
   Future<void> _openCenter() async {
-    await Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext pageContext) => UpdatesCenterPage(
-          service: widget.service,
-          onOpenEntry: (entry) => openUpdateFeedEntry(pageContext, entry),
-        ),
-      ),
-    );
+    await openUpdatesCenter(context, widget.service);
     await _reload();
   }
 

@@ -183,6 +183,118 @@ void main() {
     expect(counts.containsKey(UpdateFeedKind.mangaChapter), isFalse);
   });
 
+  test('通知按组拆：同域不同作品各一条，同作品多集一条；配图/时刻/按钮透传', () async {
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    notifier = RecordingUpdateNotifier();
+    final UpdateFeedService service = UpdateFeedService(
+      database: db,
+      prefs: prefs,
+      notifier: notifier,
+      notificationText: (UpdateFeedKind kind, List<UpdateFeedDraft> fresh) =>
+          UpdateNotificationText(
+        title: fresh.first.title,
+        body: fresh.length == 1
+            ? fresh.first.subtitle ?? ''
+            : '+${fresh.length - 1}',
+        openLabel: 'Play',
+        viewAllLabel: 'View',
+      ),
+    );
+
+    UpdateFeedDraft grouped(String key, String group, {String? image}) =>
+        UpdateFeedDraft(
+          kind: UpdateFeedKind.videoEpisode,
+          targetKey: '$group/$key',
+          title: group,
+          subtitle: 'S01E$key',
+          imagePath: image,
+          publishedAt: 1700000000000,
+          notificationGroup: 'collection:$group',
+        );
+
+    await service.publishBatch(
+      UpdateFeedKind.videoEpisode,
+      <UpdateFeedDraft>[
+        grouped('1', 'A', image: r'C:\covers\a1.jpg'),
+        grouped('2', 'A'),
+        grouped('1', 'B'),
+      ],
+    );
+    expect(notifier.sent, hasLength(2), reason: '两部作品各占一格，同作品两集合并');
+    final UpdateNotification a = notifier.sent[0];
+    final UpdateNotification b = notifier.sent[1];
+    expect(a.id, isNot(b.id));
+    expect(
+      a.id,
+      updateNotificationId(UpdateFeedKind.videoEpisode, 'collection:A'),
+      reason: '同组恒同 id：下次 A 再更新替换而不是叠加',
+    );
+    expect(a.body, '+1');
+    expect(a.imagePath, r'C:\covers\a1.jpg', reason: '配图取组内第一条');
+    expect(a.timestamp, DateTime.fromMillisecondsSinceEpoch(1700000000000));
+    expect(
+      a.actions.map((UpdateNotificationAction x) => x.id),
+      <String>[kUpdateNotificationActionOpen, kUpdateNotificationActionViewAll],
+    );
+    expect(
+      a.actions.map((UpdateNotificationAction x) => x.label),
+      <String>['Play', 'View'],
+    );
+    final UpdateNotificationPayload? payload =
+        UpdateNotificationPayload.decode(a.payload);
+    expect(payload?.kind, UpdateFeedKind.videoEpisode);
+    expect(payload?.entryId, grouped('1', 'A').entryId,
+        reason: '载荷指向组内第一条：点通知就播那一集');
+    expect(b.imagePath, isNull);
+
+    await service.markAllSeen(kind: UpdateFeedKind.videoEpisode);
+    expect(notifier.cancelled, containsAll(<int>[a.id, b.id]),
+        reason: '标已读要撤掉本进程发过的每条分组通知');
+    expect(
+      notifier.cancelled,
+      contains(updateNotificationId(UpdateFeedKind.videoEpisode, null)),
+      reason: '域级固定 id 也撤：上个进程留下的那条不在内存账本里',
+    );
+  });
+
+  test('通知 id：无组回落到域固定值；有组跨进程稳定且不与其它域撞', () {
+    expect(updateNotificationId(UpdateFeedKind.videoEpisode, null), 9101);
+    expect(updateNotificationId(UpdateFeedKind.appRelease, null), 9104);
+    final int a1 =
+        updateNotificationId(UpdateFeedKind.videoEpisode, 'collection:1');
+    expect(
+      a1,
+      updateNotificationId(UpdateFeedKind.videoEpisode, 'collection:1'),
+    );
+    expect(
+      a1,
+      isNot(updateNotificationId(UpdateFeedKind.videoEpisode, 'collection:2')),
+    );
+    expect(
+      a1,
+      isNot(updateNotificationId(UpdateFeedKind.mangaChapter, 'collection:1')),
+    );
+    expect(a1, greaterThan(0));
+    expect(a1, lessThan(1 << 31), reason: 'Android 通知 id 是 32 位有符号 int');
+  });
+
+  test('载荷：JSON 往返；旧版裸 kind 值 / 垃圾解成 null 让调用方退到更新中心', () {
+    const UpdateNotificationPayload payload = UpdateNotificationPayload(
+      kind: UpdateFeedKind.mangaChapter,
+      entryId: 'manga_chapter:x',
+    );
+    final UpdateNotificationPayload? back =
+        UpdateNotificationPayload.decode(payload.encode());
+    expect(back?.kind, UpdateFeedKind.mangaChapter);
+    expect(back?.entryId, 'manga_chapter:x');
+    expect(UpdateNotificationPayload.decode('video_episode'), isNull);
+    expect(UpdateNotificationPayload.decode('{not json'), isNull);
+    expect(UpdateNotificationPayload.decode(null), isNull);
+  });
+
   test('混域投递直接抛错（通知按域合并，混进来会算错归属）', () async {
     final UpdateFeedService service = await makeService();
     expect(

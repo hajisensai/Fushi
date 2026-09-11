@@ -27,6 +27,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_port.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -1257,6 +1260,197 @@ void main() {
     }
   }
   test(
+      'subscription import publishes a per-work episode update with frame, '
+      'release info and published time', () async {
+    final _RecordingUpdateFeed feed = _RecordingUpdateFeed();
+    final List<String> extracted = <String>[];
+    final Directory frames =
+        await Directory.systemTemp.createTemp('fushi-episode-frames-');
+    addTearDown(() => frames.delete(recursive: true));
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      updateFeed: feed,
+      coverExtractor: ({
+        required String videoPath,
+        required String bookUid,
+        double atSeconds = 10.0,
+      }) async {
+        extracted.add(videoPath);
+        final File frame = File(
+          p.join(frames.path, '${bookUid.replaceAll('/', '_')}.jpg'),
+        );
+        await frame.create(recursive: true);
+        return frame.path;
+      },
+    );
+    addTearDown(environment.close);
+    const String jobId = 'subscription-episode-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+    );
+    await environment.database.updateVideoDownloadJob(
+      jobId,
+      const VideoDownloadJobsCompanion(
+        resourceTitle: Value<String?>(
+          '[SubsPlease] Show - 02 (1080p) [A1B2C3D4].mkv',
+        ),
+      ),
+    );
+    const int publishedAt = 1_760_000_000_000;
+    await environment.database.upsertVideoDownloadSubscription(
+      VideoDownloadSubscriptionsCompanion.insert(
+        subscriptionId: 'sub-1',
+        resourceProvider: 'nyaa:test-instance',
+        mediaKind: 'tv',
+        title: 'Show',
+        searchQuery: 'Show',
+        backendKind: 'embedded',
+        fingerprint: _expectedIdentity.fingerprint,
+        createdAt: 1,
+        updatedAt: 1,
+      ),
+    );
+    await environment.database.upsertVideoDownloadSubscriptionItem(
+      VideoDownloadSubscriptionItemsCompanion.insert(
+        subscriptionId: 'sub-1',
+        logicalItemKey: 's1e2',
+        resourceProvider: 'nyaa:test-instance',
+        selectedResourceId: 'release-1',
+        title: 'Show - 02',
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        publishedAt: const Value<int?>(publishedAt),
+        jobId: const Value<String?>(jobId),
+        discoveredAt: 1,
+        updatedAt: 1,
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      'Show S01E02.mkv',
+    );
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E02.mkv',
+        currentRelativePath: 'Show S01E02.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    expect(feed.batches, hasLength(1));
+    expect(feed.batches.single.kind, UpdateFeedKind.videoEpisode);
+    final UpdateFeedDraft draft = feed.batches.single.drafts.single;
+    expect(draft.title, 'Show');
+    expect(draft.subtitle, 'S01E02 · 1080p · SubsPlease');
+    expect(draft.publishedAt, publishedAt);
+    expect(extracted, <String>[videoPath]);
+    expect(draft.imagePath, isNotNull);
+    expect(File(draft.imagePath!).existsSync(), isTrue);
+    final Map<String, Object?> detail =
+        jsonDecode(draft.detailJson!) as Map<String, Object?>;
+    expect(draft.notificationGroup, 'collection:${detail['collectionId']}');
+    expect(detail['imagePath'], draft.imagePath);
+    expect(detail['publishedAt'], publishedAt);
+    // 抽的那帧顺手就是这集的书架封面。
+    final VideoBookRow? book = await environment.database.getVideoBookByBookUid(
+      detail['bookUid'] as String,
+    );
+    expect(book?.coverPath, draft.imagePath);
+  });
+
+  test('manual (non-subscription) import publishes no episode update',
+      () async {
+    final _RecordingUpdateFeed feed = _RecordingUpdateFeed();
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      updateFeed: feed,
+      coverExtractor: ({
+        required String videoPath,
+        required String bookUid,
+        double atSeconds = 10.0,
+      }) async =>
+          fail('manual import must not extract a notification frame'),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'manual-episode-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E02.mkv',
+        currentRelativePath: 'Show S01E02.mkv',
+        finalAbsolutePath: Value<String?>(
+          p.join(environment.root.path, 'Show S01E02.mkv'),
+        ),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+    expect(feed.batches, isEmpty);
+  });
+
+  group('subscriptionReleaseLabel', () {
+    test('picks resolution and leading group, ignores hash brackets', () {
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(
+          '[SubsPlease] Show - 02 (1080p) [A1B2C3D4].mkv',
+        ),
+        '1080p · SubsPlease',
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(
+          '[A1B2C3D4] Show 02 720P',
+        ),
+        '720P',
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel('Show 02'),
+        isNull,
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(null),
+        isNull,
+      );
+    });
+  });
+
+  test(
       'a multi-movie torrent imports every standalone movie with its own '
       'title (BUG-2007)', () async {
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
@@ -2150,6 +2344,8 @@ class _PipelineEnvironment {
     Duration leaseDuration = const Duration(minutes: 1),
     Duration pollInterval = const Duration(hours: 1),
     String? candidateMagnetUri,
+    UpdateFeedPublisher? updateFeed,
+    VideoCoverExtractor? coverExtractor,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -2194,6 +2390,9 @@ class _PipelineEnvironment {
       workerId: 'pipeline-test-worker',
       pollInterval: pollInterval,
       leaseDuration: leaseDuration,
+      updateFeed: updateFeed,
+      coverExtractor: coverExtractor,
+      videoCoversDirectory: Directory(p.join(root.path, 'covers')),
     );
     return _PipelineEnvironment._(
       database: database,
@@ -2625,5 +2824,19 @@ class _RecordingMetadataProvider extends _UnavailableAniListMetadataProvider {
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
     lookups.add(lookup);
     throw StateError('recorded confirmed lookup');
+  }
+}
+
+/// 记录投递到更新提醒端口的批次（不落库、不发通知）。
+class _RecordingUpdateFeed implements UpdateFeedPublisher {
+  final List<({UpdateFeedKind kind, List<UpdateFeedDraft> drafts})> batches =
+      <({UpdateFeedKind kind, List<UpdateFeedDraft> drafts})>[];
+
+  @override
+  Future<void> publishBatch(
+    UpdateFeedKind kind,
+    List<UpdateFeedDraft> drafts,
+  ) async {
+    batches.add((kind: kind, drafts: List<UpdateFeedDraft>.of(drafts)));
   }
 }

@@ -4702,5 +4702,11 @@
   "browser_extension_test_page_sample_label": "练习句",
   "browser_extension_test_page_action": "打开试用网页",
   "browser_extension_test_page_action_desc": "在浏览器里打开一张由 Fushi 提供的网页，验证右上角弹窗与 Shift 查词。",
-  "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。"
+  "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。",
+  "updates_notification_open_video_episode": "播放",
+  "updates_notification_open_manga_chapter": "阅读",
+  "updates_notification_open_manga_extension": "更新",
+  "updates_notification_open_app_release": "下载",
+  "updates_notification_view_all": "查看更新",
+  "updates_notification_header": "订阅更新"
 }

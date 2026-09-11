@@ -6,6 +6,14 @@
 /// `local_update_notifier.dart`，测试用 [RecordingUpdateNotifier]。
 library;
 
+/// 通知上的一个动作按钮。[id] 回流到 [UpdateNotificationResponse.actionId]。
+class UpdateNotificationAction {
+  const UpdateNotificationAction({required this.id, required this.label});
+
+  final String id;
+  final String label;
+}
+
 /// 一条待发的系统通知。
 class UpdateNotification {
   const UpdateNotification({
@@ -13,18 +21,39 @@ class UpdateNotification {
     required this.title,
     required this.body,
     this.payload,
+    this.imagePath,
+    this.timestamp,
+    this.actions = const <UpdateNotificationAction>[],
   });
 
-  /// 平台通知 id。同 id 再发 = 替换而不是叠加，所以按域取固定值即可
-  /// （见 `UpdateFeedService`：一个域最多同时挂一条汇总通知）。
+  /// 平台通知 id。同 id 再发 = 替换而不是叠加（见 `updateNotificationId`：
+  /// 无组 = 域固定值，有组 = 域 + 组名派生）。
   final int id;
 
   final String title;
   final String body;
 
-  /// 点击通知时回传的载荷（当前是 `UpdateFeedKind.dbValue`，用于把用户送到
-  /// 更新页对应分组）。
+  /// 点击通知时回传的载荷（`UpdateNotificationPayload` 编码，见
+  /// `update_feed_service.dart`），用于把用户送到那条更新的落点。
   final String? payload;
+
+  /// 配图的本机绝对路径；null = 纯文字。各平台各自映射（Windows hero 大图 /
+  /// Android BigPicture / Apple attachment / Linux icon）。
+  final String? imagePath;
+
+  /// 通知显示的时刻；null = 平台默认（发出的那一刻）。
+  final DateTime? timestamp;
+
+  /// 动作按钮，按顺序显示。空 = 只有点击本体。
+  final List<UpdateNotificationAction> actions;
+}
+
+/// 用户对一条通知的响应：点本体（[actionId] 为 null）或点某个按钮。
+class UpdateNotificationResponse {
+  const UpdateNotificationResponse({required this.payload, this.actionId});
+
+  final String? payload;
+  final String? actionId;
 }
 
 abstract class UpdateNotifier {

@@ -45,7 +45,11 @@ import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
@@ -799,10 +803,13 @@ class VideoDownloadPipelineService {
     this.pollInterval = const Duration(seconds: 5),
     this.leaseDuration = const Duration(minutes: 2),
     this.updateFeed,
+    VideoCoverExtractor? coverExtractor,
+    this.videoCoversDirectory,
   }) : preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
        workerId = workerId ?? 'video-${generateVideoDownloadInstallationId()}',
+       _coverExtractor = coverExtractor ?? extractVideoCover,
        _videoRepository = VideoBookRepository(database);
 
   final FushiDatabase database;
@@ -826,6 +833,12 @@ class VideoDownloadPipelineService {
   /// 手动任务 .torrent 元数据的落盘目录（`<jobId>.torrent`）。null 时手动
   /// 任务只接受磁力链接。
   final Directory? manualTorrentDirectory;
+
+  /// 订阅新集提醒的配图抽取（默认 [extractVideoCover]，ffmpeg 抽帧）；测试注入。
+  final VideoCoverExtractor _coverExtractor;
+
+  /// 封面来源账本（`cover_meta.json`）所在目录；null = `VideoStorage.coversDir()`。
+  final Directory? videoCoversDirectory;
   final String workerId;
   final Duration pollInterval;
   final Duration leaseDuration;
@@ -3970,6 +3983,10 @@ class VideoDownloadPipelineService {
   ///   误判成新增（BUG-1417 的形状）；
   /// * 只提醒**订阅**拉起来的任务，手动下载不提醒（用户自己刚点的）；
   /// * 挂在**入库之后**，所以提醒出现时那一集已经能点开就播。
+  ///
+  /// 提醒带三样东西：该集抽帧（[_episodeNotificationImage]，顺手就是这集的书架
+  /// 封面）、资源发布时刻（订阅条目 `publishedAt`）、发布信息（字幕组 / 分辨率，
+  /// 从资源标题里认）。通知按作品分组（`notificationGroup`）：一部番一格。
   Future<void> _publishSubscriptionEpisodeUpdates({
     required VideoDownloadJobRow job,
     required int collectionId,
@@ -3978,12 +3995,24 @@ class VideoDownloadPipelineService {
   }) async {
     final UpdateFeedPublisher? feed = updateFeed;
     if (feed == null) return;
-    if (!await database.isVideoDownloadJobFromSubscription(job.jobId)) return;
+    final VideoDownloadSubscriptionItemRow? item = await database
+        .videoDownloadSubscriptionItemForJob(job.jobId);
+    if (item == null) return;
+    final String? release = subscriptionReleaseLabel(job.resourceTitle);
     final List<UpdateFeedDraft> drafts = <UpdateFeedDraft>[];
     for (final String uid in result.createdEpisodeUids) {
       final int index = result.episodeUids.indexOf(uid);
       final VideoDownloadJobFileRow? file =
           index >= 0 && index < files.length ? files[index] : null;
+      final String? imagePath = await _episodeNotificationImage(
+        bookUid: uid,
+        videoPath: file?.finalAbsolutePath,
+        collectionId: collectionId,
+      );
+      final String subtitle = <String>[
+        if (file != null) _episodeLabel(file),
+        if (release != null) release,
+      ].join(' · ');
       drafts.add(
         UpdateFeedDraft(
           kind: UpdateFeedKind.videoEpisode,
@@ -3992,15 +4021,88 @@ class VideoDownloadPipelineService {
             episodeKey: uid,
           ),
           title: job.title,
-          subtitle: file == null ? null : _episodeLabel(file),
+          subtitle: subtitle.isEmpty ? null : subtitle,
           detailJson: jsonEncode(<String, Object?>{
             'collectionId': collectionId,
             'bookUid': uid,
+            if (imagePath != null) 'imagePath': imagePath,
+            if (item.publishedAt != null) 'publishedAt': item.publishedAt,
           }),
+          imagePath: imagePath,
+          publishedAt: item.publishedAt,
+          notificationGroup: 'collection:$collectionId',
         ),
       );
     }
     await feed.publishBatch(UpdateFeedKind.videoEpisode, drafts);
+  }
+
+  /// 新集提醒的配图：该集抽帧，并把它落成这集的书架封面（来源账本记
+  /// autoFrame，与库内导入 / 书架回填同一套准入）；抽不到（无 ffmpeg、空洞文件）
+  /// 退作品封面；都没有就纯文字。**best-effort**：任何失败只记日志，不能让
+  /// 「已入库、已能播」的事实因为一张图发不出提醒。
+  Future<String?> _episodeNotificationImage({
+    required String bookUid,
+    required String? videoPath,
+    required int collectionId,
+  }) async {
+    String? frame;
+    if (videoPath != null) {
+      try {
+        frame = await VideoCoverMutationGate.runExclusive(() async {
+          final CoverMetaStore store = CoverMetaStore(
+            videoCoversDirectory ?? await VideoStorage.coversDir(),
+          );
+          if (!await store.allowsAutoFrameWrite(bookUid)) {
+            return (await database.getVideoBookByBookUid(bookUid))?.coverPath;
+          }
+          final String? cover = await _coverExtractor(
+            videoPath: videoPath,
+            bookUid: bookUid,
+          );
+          if (cover == null || cover.isEmpty) return null;
+          await database.updateVideoBookCover(bookUid, cover);
+          if (!await store.markAutoFrameAfterWrite(bookUid)) {
+            engineLog.log(
+              'videoDownload.episodeCover.provenanceConflict',
+              StateError('封面来源在自动抽帧期间发生变化: $bookUid'),
+              StackTrace.current,
+            );
+          }
+          return cover;
+        });
+      } catch (error, stack) {
+        engineLog.log('videoDownload.episodeCover', error, stack);
+      }
+    }
+    if (frame != null && frame.isNotEmpty) return frame;
+    final MediaCollectionRow? collection = await database
+        .getMediaCollectionById(collectionId);
+    final String? poster = collection?.coverPath;
+    return poster == null || poster.isEmpty ? null : poster;
+  }
+
+  /// 从资源标题里认发布信息：`[SubsPlease] Show - 02 (1080p) [ABCD].mkv` →
+  /// `1080p · SubsPlease`。认不出任何一样返回 null——不硬凑。分辨率取第一个
+  /// `NNNNp` / `4K`；字幕组取开头第一个方括号（惯例位置），纯 hash 串不算。
+  static String? subscriptionReleaseLabel(String? resourceTitle) {
+    if (resourceTitle == null) return null;
+    final RegExpMatch? resolution = RegExp(
+      r'\b(\d{3,4}p|4K)\b',
+      caseSensitive: false,
+    ).firstMatch(resourceTitle);
+    final RegExpMatch? group = RegExp(
+      r'^\s*\[([^\]]{1,40})\]',
+    ).firstMatch(resourceTitle);
+    final String? groupName = group?.group(1)?.trim();
+    final bool groupLooksLikeHash =
+        groupName != null && RegExp(r'^[0-9A-Fa-f]{6,}$').hasMatch(groupName);
+    final List<String> parts = <String>[
+      if (resolution != null) resolution.group(1)!,
+      if (groupName != null && groupName.isNotEmpty && !groupLooksLikeHash)
+        groupName,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   static String _episodeTitle(String title, VideoDownloadJobFileRow file) =>
