@@ -1439,6 +1439,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v101：统一更新提醒的事件流。「这台设备还没告诉过用户」是本机状态——
       // 对端已读的条目在本机同样该提醒一次，合并进来只会让本机漏提醒。
       'update_feed_entries',
+      // v103：漫画下载队列。任务指向的是本机磁盘上的章目录（半成品），另一台
+      // 设备既没有那份目录也不该替它续跑，合并进来只会造一堆永远跑不完的任务。
+      'manga_download_jobs',
     ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device

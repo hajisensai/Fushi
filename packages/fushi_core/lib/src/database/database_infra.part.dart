@@ -188,6 +188,18 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'CREATE INDEX IF NOT EXISTS idx_video_download_subscription_items_job '
             'ON video_download_subscription_items (job_id)'
       ],
+      // v103：漫画下载队列——同章幂等 + worker 按 (status, created_at) 取最早。
+      // 与 database.dart 的 v103 升级步逐字一致。
+      [
+        'manga_download_jobs',
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_manga_download_jobs_identity '
+            'ON manga_download_jobs (kind, book_key, chapter_key)'
+      ],
+      [
+        'manga_download_jobs',
+        'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
+            'ON manga_download_jobs (status, created_at)'
+      ],
     ];
     for (final List<String> entry in indexes) {
       if (await _tableExists(entry[0])) {

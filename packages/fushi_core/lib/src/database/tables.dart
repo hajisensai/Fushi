@@ -2943,3 +2943,92 @@ class UpdateFeedEntries extends Table {
   @override
   Set<Column> get primaryKey => {entryId};
 }
+
+/// 漫画章节下载任务的种类值域（`manga_download_jobs.kind`）。
+abstract final class MangaDownloadJobKind {
+  /// 在线来源（Mihon / Aidoku / 互联）的单章。
+  static const String chapter = 'chapter';
+
+  /// mokuro.moe 整卷（替代原内存队列 `MokuroMoeDownloadQueue`）。
+  static const String mokuroVolume = 'mokuro_volume';
+}
+
+/// 漫画下载任务状态值域（`manga_download_jobs.status`）。
+abstract final class MangaDownloadJobStatus {
+  static const String queued = 'queued';
+  static const String running = 'running';
+  static const String done = 'done';
+  static const String failed = 'failed';
+  static const String cancelled = 'cancelled';
+}
+
+/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
+///
+/// 设计稿 `docs/specs/2026-09-12-manga-download-first-design.md` §2.2。
+/// 在线漫画改成「先下载再读」后，每个待下载的章（或 mokuro.moe 卷）在这里占
+/// 一行；单 worker 按 `(status, created_at)` 串行取任务，进程死亡后 `running`
+/// 行由 `resetRunningMangaDownloadJobs` 复位回 `queued` 续跑。
+///
+/// **不复用 `video_download_jobs`**：那张表的 CHECK 强制 magnet / backend /
+/// fingerprint 非空、stage 限 torrent 六段，塞章节任务要造假值。
+///
+/// 设备本地表（同列于 backup 的 device-local 清单、merge 跳过清单）：任务对应的
+/// 是本机磁盘上的章目录，另一台设备既没有这份半成品也不该替它续跑。
+/// 无路径列：章目录由消费方按 `(bookKey, chapterKey)` 在当前数据根下解析，
+/// 见 `kPathRebaseColumns` 的登记。
+@DataClassName('MangaDownloadJobRow')
+class MangaDownloadJobs extends Table {
+  /// 调用方生成的稳定任务 id：`sha256(kind NUL bookKey NUL chapterKey)[:32]`，
+  /// 同章重复入队幂等；不能用自增 id 充当跨崩溃幂等键。
+  TextColumn get jobId => text()();
+
+  /// 取 [MangaDownloadJobKind]。
+  TextColumn get kind => text()();
+
+  /// 在线条目 bookKey；mokuro 卷为 `mokuro:<seriesName>`。
+  TextColumn get bookKey => text()();
+
+  /// 章 key；mokuro 卷为卷名。
+  TextColumn get chapterKey => text()();
+
+  /// `mihon` / `aidoku` / `interconnect` / `mokuro_moe`。
+  TextColumn get runtime => text()();
+
+  /// 展示用作品名 / 章名。落快照而不是 join 回源表：源条目可能已被移出书架。
+  TextColumn get title => text()();
+  TextColumn get chapterTitle => text()();
+
+  /// 取 [MangaDownloadJobStatus]。
+  TextColumn get status =>
+      text().withDefault(const Constant(MangaDownloadJobStatus.queued))();
+
+  IntColumn get pagesDone => integer().withDefault(const Constant(0))();
+  IntColumn get pagesTotal => integer().withDefault(const Constant(0))();
+
+  /// 自动重试次数（退避 2s/8s/20s，与 mokuro 队列既有语义一致）。
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+
+  /// 完成后自动起 OCR（Google Lens 引擎除外——它需要用户逐次同意）。
+  BoolColumn get autoOcr => boolean().withDefault(const Constant(false))();
+
+  /// 时刻列均为毫秒。
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+  IntColumn get completedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{jobId};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (job_id != '' AND book_key != '' AND chapter_key != '' "
+            "AND runtime != '')",
+        "CHECK (kind IN ('chapter', 'mokuro_volume'))",
+        "CHECK (status IN ('queued', 'running', 'done', 'failed', "
+            "'cancelled'))",
+        'CHECK (pages_done >= 0 AND pages_total >= 0 '
+            'AND pages_done <= pages_total)',
+        'CHECK (attempt_count >= 0)',
+      ];
+}

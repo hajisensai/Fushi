@@ -645,7 +645,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (payload.images.isEmpty) {
       throw const MangaImportException('OCR result has no pages');
     }
-    // 整份覆写：不进 per-path 写锁就会整段吞掉用户刚在阅读器里框选回写的块
+    // 整份覆写：不进 per-path 写锁就会整段吞掉在线几何回填刚落盘的改动
     // （两者写的是同一个 `<书目录>/manga.json`）。
     final String target = p.join(managedDir, MangaStorage.kMangaJsonFileName);
     await runExclusiveOnMangaJson<void>(

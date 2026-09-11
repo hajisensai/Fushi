@@ -487,9 +487,13 @@ void main() {
       );
       expect(doc.contains('onImageTap'), isFalse,
           reason: '裸图单击必须留在阅读器，不再打开独立大图');
-      // onTapEmpty 从无参变成带落页 payload（点击即识别要知道该识别哪一页）。
-      // 这条断言看的仍是同一件事：裸图单击走空白回传、留在阅读器。
-      expect(doc.contains("b.callHandler('onTapEmpty', JSON.stringify("), isTrue);
+      // 裸图单击走空白回传、留在阅读器；阅读器内不再触发 OCR，所以 onTapEmpty
+      // 回到无 payload（Dart 侧只回收焦点）。
+      expect(doc.contains("b.callHandler('onTapEmpty');"), isTrue);
+      expect(doc.contains('__mangaTapLookupAt'), isFalse,
+          reason: '点击即识别已移除，不得再有回放钩子');
+      expect(doc.contains('__mangaSetRescanMode'), isFalse,
+          reason: '框选重识别已移除，不得再有 JS 侧模式门');
       expect(doc.contains('function _hitOcrChar(x, y)'), isTrue);
       expect(doc.contains('r.left - 4'), isTrue,
           reason: '不同缩放下都必须保留 Niratan 的 4 屏幕像素命中余量');
