@@ -48,7 +48,7 @@
 > Flutter/WebView 离屏全白）。见 [computer-use-testing.md](computer-use-testing.md) 的
 > 「离屏观察」与 `integration_test/helpers/observe_capture.dart`。
 
-**三端跑同一份焦点驱动测试**（可见应用巡检和截图取证流程见 [computer-use-testing.md](computer-use-testing.md)）：
+**两端跑同一份焦点驱动测试**（可见应用巡检和截图取证流程见 [computer-use-testing.md](computer-use-testing.md)）：
 ```bash
 # 模拟器（Android，gameButtonA 可合成）
 flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/integration-test.sh
@@ -58,8 +58,6 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 # runner 默认重定向 LOCALAPPDATA / USERPROFILE / TEMP，任一被改都让 MF CDM 报 Netflix D7702/D7703
 # （0x80070003，实测二分）；该开关保留三者真实、APPDATA 与 WebView2 profile 仍隔离
 .\fushi\tool\run_windows_itest.ps1 -Visible -KeepUserDirs integration_test/web_video_netflix_live_itest.dart
-# Mac 跨机（Windows 当总指挥，sync→Mac ff→跑）
-.\tool\run_mac_itest.ps1 integration_test/<t>_test.dart
 ```
 
 `reader_computer_use_flow` 在 Windows runner 下还会把可见验收证据（function-matrix、flutter-ui-tree、截图）写进 `.codex-test/windows-itest/<run-id>/computer-use/...`——产物清单、判读规则、「截图缺失≠功能失败」见 [computer-use-testing.md](computer-use-testing.md)。

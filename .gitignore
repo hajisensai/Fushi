@@ -166,3 +166,9 @@ third_party/media_kit_video/macos/Headers/
 /.signing/
 *.otpauth
 *.seed
+
+# 本机私有：Windows 与局域网 Mac 之间的 SSH 同步/跨机测试脚本，含内网主机信息，不入库
+/tool/sync_from_mac.ps1
+/tool/sync_to_mac.ps1
+/tool/run_mac_itest.ps1
+/tool/sync_upload_exclusions.txt
