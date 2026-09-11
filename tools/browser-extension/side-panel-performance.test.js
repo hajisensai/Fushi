@@ -113,9 +113,14 @@ test('shared popup yields between remaining dictionary entries', () => {
   // 优先、setTimeout 兜底），**让出这件事本身没变**，所以判据跟着换调度器名字即可。
   assert.match(POPUP, /const renderNextDictionaryBlock = \(\) => \{/);
   // 还有未建的块或词条时必须让出宏任务，而不是同步 while/for 一次建完。
+  //
+  // 中间允许夹别的语句：#1421 在这里插了一行 __fushiApplyPendingScrollTop(false)
+  // （历史页回退先恢复滚动位）。钉的是「这个分支里让出了」，不是「紧挨着让出」——
+  // 要求紧邻等于钉写法，任何人往块里加一行都会红，而让出这件事没变。
+  // 下面那条「有且仅有 2 处」的计数断言仍然挡住「某条路径退回同步渲染」。
   assert.match(
     POPUP,
-    /if \(activeEntryElement \|\| nextEntryIndex < entries\.length\) \{\s*\n\s*scheduleRenderTail\(renderNextDictionaryBlock\);/,
+    /if \(activeEntryElement \|\| nextEntryIndex < entries\.length\) \{[^}]*?scheduleRenderTail\(renderNextDictionaryBlock\);/s,
   );
   // 两处调度：首批渲染后启动队列 + 每建一片后续跑。少一处就说明某条路径退回同步渲染。
   const yieldSites = POPUP.match(/scheduleRenderTail\(renderNextDictionaryBlock\)/g) || [];

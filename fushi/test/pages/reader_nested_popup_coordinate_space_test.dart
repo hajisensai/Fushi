@@ -122,15 +122,17 @@ void main() {
   }
 
   test(
-    'reader text and link callbacks convert initial and whole-word anchors',
+    'reader text callback converts initial and whole-word anchors',
     () {
       final String source = File(
         'lib/src/pages/base_source_page.dart',
       ).readAsStringSync();
       expect(source, contains('key: _popupCoordinateSpaceKey'));
+      // 只剩 onTextSelected 一条嵌套车道（首字符锚 + 整词重锚各一处）：onLinkClick
+      // 通道已改成弹窗内原地跳转（对齐 Hoshi Reader iOS），不再叠子层、不再换算坐标。
       expect(
         'coordinateSpaceKey: _popupCoordinateSpaceKey'.allMatches(source),
-        hasLength(4),
+        hasLength(2),
       );
     },
   );

@@ -4747,6 +4747,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         );
       },
       onPop: _popNestedPopupAt,
+      // 词头 / 链接 / 汉字点击原地跳转也自动朗读，与上面嵌套查词的 autoRead 同口径。
+      autoReadOnNavigate: true,
     );
   }
 

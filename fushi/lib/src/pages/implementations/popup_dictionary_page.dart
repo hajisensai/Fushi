@@ -228,6 +228,43 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     popNestedPopupAt(index, _popup);
   }
 
+  /// 弹窗内原地跳转（词头 / 链接 / 汉字）。跳成功后搜索栏跟着显示当前词——此前嵌套
+  /// 层走 [_pushSearch] 时搜索栏也是随下钻词走的，保持这一观感。
+  Future<void> _navigateInPlace(
+    int index,
+    DictionaryPopupEntry entry,
+    String query,
+  ) async {
+    await navigatePopupInPlace(
+      controller: _popup,
+      index: index,
+      entry: entry,
+      query: query,
+      autoRead: true,
+    );
+    _syncSearchBarToEntry(entry);
+  }
+
+  Future<void> _navigateHistory(
+    DictionaryPopupEntry entry, {
+    required bool forward,
+  }) async {
+    await navigatePopupHistory(
+      controller: _popup,
+      entry: entry,
+      forward: forward,
+    );
+    _syncSearchBarToEntry(entry);
+  }
+
+  void _syncSearchBarToEntry(DictionaryPopupEntry entry) {
+    if (!mounted || !_popup.entries.contains(entry)) return;
+    final String term = entry.searchTerm;
+    if (term.isEmpty || _searchController.text == term) return;
+    _searchController.text = term;
+    _searchController.selection = TextSelection.collapsed(offset: term.length);
+  }
+
   Future<void> _close() async {
     if (_isClosing) return;
     _isClosing = true;
@@ -514,6 +551,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // documentElement 不透明填充铺满整窗的泛白（in-app 与桌面 global-lookup 不受影响）。
       transparentDocumentBackground: true,
       result: entry.result,
+      restoreScrollTop: entry.restoreScrollTop,
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
       // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。
@@ -531,6 +569,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onDismiss: isBase ? _close : () => _popAt(index),
       onClose: isBase ? null : () => _popAt(index),
       onBack: null,
+      // 弹窗内原地跳转历史（词头 / 链接 / 汉字点击）：跳过才画 ← →。
+      historyNav: entry.hasNavigationHistory
+          ? DictionaryPopupHistoryNav(
+              canGoBack: entry.canGoBack,
+              canGoForward: entry.canGoForward,
+              onBack: () => _navigateHistory(entry, forward: false),
+              onForward: () => _navigateHistory(entry, forward: true),
+            )
+          : null,
       onRendered: () {
         if (_popup.revealRendered(entry) && mounted) setState(() {});
       },
@@ -548,12 +595,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         }
         _pushSearch(text, localRect);
       },
-      onLinkClick: (query, localRect) {
-        if (_popup.entries.length > index + 1) {
-          setState(() => _popup.truncateTo(index + 1));
-        }
-        _pushSearch(query, localRect);
-      },
+      // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
+      // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
+      // 来回）。释义正文点词（onTextSelected）仍叠子层。
+      onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
       onMineEntry: onMineEntry,
       onUpdateEntry: onUpdateEntry,
       onDuplicateCheck: checkDuplicate,
