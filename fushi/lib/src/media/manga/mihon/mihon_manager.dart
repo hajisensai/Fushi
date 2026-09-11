@@ -38,11 +38,14 @@ class MihonManager extends ChangeNotifier {
     MihonDownloadCountsClient? downloadCountsClient,
     this.seedDefaultStore = false,
     this.fetchDownloadCounts = false,
+    Duration coverCacheMaxAge =
+        const Duration(days: kMangaCoverCacheDefaultMaxAgeDays),
   })  : _storeClient = storeClient ?? MihonExtensionStoreClient(),
         _downloadCountsClient =
             downloadCountsClient ?? MihonDownloadCountsClient() {
     coverCache = MihonCoverCache(
       Directory(p.join(rootDirectory.path, 'cache', 'covers')),
+      maxAge: coverCacheMaxAge,
     );
     if (Platform.isWindows || Platform.isMacOS) {
       _exitShutdown =
