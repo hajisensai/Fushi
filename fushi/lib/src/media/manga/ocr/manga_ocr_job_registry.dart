@@ -203,8 +203,8 @@ class MangaOcrJobRegistry {
     if (payload.images.isEmpty) {
       throw StateError('OCR result has no pages');
     }
-    // 整卷落盘与框选回写、在线几何回填共用同一把 per-path 写锁：三者都是整份
-    // 读-改-写，交叠会互相覆盖。
+    // 整卷落盘与在线几何回填共用同一把 per-path 写锁：两者都是整份读-改-写，
+    // 交叠会互相覆盖。
     final String target = running.mangaJsonPath;
     await runExclusiveOnMangaJson<void>(
       target,

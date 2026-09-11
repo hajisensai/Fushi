@@ -28,18 +28,6 @@ SettingsSection buildMangaOcrSection() {
         icon: Icons.document_scanner_outlined,
         child: _buildMangaOcrDestination,
       ),
-      // 「点一下没识别的对话框就地开跑」。默认开——这条路径存在的全部意义就是
-      // 让用户不必先去点识别模式；关掉即回到旧行为（空白点只回收焦点），给不
-      // 希望被动触发联网/耗电的人留后路。
-      SettingsSwitchItem(
-        id: 'manga.tap_to_ocr',
-        title: t.manga_tap_to_ocr,
-        subtitle: t.manga_tap_to_ocr_desc,
-        icon: Icons.touch_app_outlined,
-        value: (SettingsContext c) => c.appModel.mangaTapToOcr,
-        onChanged: (SettingsContext c, bool value) =>
-            c.appModel.setMangaTapToOcr(value),
-      ),
     ],
   );
 }

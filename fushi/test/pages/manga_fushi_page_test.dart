@@ -262,7 +262,8 @@ void main() {
         reason: 'ReaderPositions.sectionIndex 必须恢复为当前页（0-based → 1-based 显示）');
   });
 
-  testWidgets('整卷 OCR 入口：书加载成功后 chrome 出现按钮', (WidgetTester tester) async {
+  testWidgets('阅读器内无 OCR 入口：书加载成功后 chrome 没有整卷/框选按钮，返回按钮仍在',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -314,16 +315,23 @@ void main() {
     });
     await tester.pump();
 
-    // 书加载成功 → chrome 在树 → 整卷 OCR 入口在场。
-    expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
-        findsOneWidget,
-        reason: '整卷 OCR 入口必须出现在 chrome');
+    // 书加载成功 → chrome 在树；但 OCR 只能在阅读器外触发（2026-09-12 产品决策），
+    // 阅读器内不得再有整卷 / 框选入口；没有任务在跑时也没有取消按钮。
     expect(find.byKey(const ValueKey<String>('manga_reader_back_button')),
         findsOneWidget,
         reason: '漫画阅读器必须常显左上返回按钮');
+    expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
+        findsNothing,
+        reason: '阅读器内不得再有整卷 OCR 入口');
+    expect(find.byKey(const ValueKey<String>('manga_rescan_button')),
+        findsNothing,
+        reason: '阅读器内不得再有框选重识别入口');
+    expect(find.byKey(const ValueKey<String>('manga_ocr_cancel_button')),
+        findsNothing,
+        reason: '没有外部任务在跑时不显示取消按钮');
   });
 
-  testWidgets('整卷 OCR 入口：加载失败（无书行）时 chrome 不构建 → 无按钮',
+  testWidgets('加载失败（无书行）时 chrome 不构建 → 无 OCR 相关按钮，但返回按钮仍在',
       (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -342,6 +350,8 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
+        findsNothing);
+    expect(find.byKey(const ValueKey<String>('manga_ocr_cancel_button')),
         findsNothing);
     // 但**出口必须还在**。加载失败时正文只剩一行「找不到书籍文件」，返回键若
     // 跟着顶栏一起消失，iOS 上就彻底无路可走：没有系统返回键，本页
@@ -445,6 +455,104 @@ void main() {
       await source.close();
     });
     expect(sourceCancelled, isTrue);
+  });
+
+  testWidgets('HUD 取消按钮：外部任务运行时显示，点击后底层流收到 cancel、HUD 消失',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db);
+
+    final Directory bookDir =
+        Directory.systemTemp.createTempSync('manga_ocr_cancel_button_');
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+
+    const String bookKey = 'ocr cancel button book';
+    bool sourceCancelled = false;
+    final StreamController<MangaOcrBackgroundEvent> source =
+        StreamController<MangaOcrBackgroundEvent>(
+      onCancel: () => sourceCancelled = true,
+    );
+    addTearDown(source.close);
+    final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+    // 任务由阅读器**外**启动（注册表），阅读器只观察。
+    registry.start(
+      job: MangaOcrBackgroundJob(
+        bookKey: bookKey,
+        managedDirectory: bookDir.path,
+        engine: MangaOcrEngineId.localOnnx,
+        events: source.stream,
+      ),
+      mangaJsonPath: p.join(bookDir.path, 'manga.json'),
+    );
+    source.add(const MangaOcrBackgroundEvent.progress(pagesDone: 1, pagesTotal: 2));
+
+    await tester.runAsync(() async {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'ocr cancel button book',
+        epubPath: 'manga.json',
+        extractDir: bookDir.path,
+        chapterCount: 2,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ));
+      await tester.pumpWidget(_harness(
+        appModel,
+        _item(bookKey),
+        bookKey,
+        extraOverrides: <Override>[
+          mangaOcrServiceProvider
+              .overrideWithValue(_FakeMangaOcrService(ready: true)),
+          mangaOcrJobRegistryProvider.overrideWithValue(registry),
+        ],
+      ));
+      for (int i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        if (find
+            .byKey(const ValueKey<String>('manga_content_ready'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    final Finder cancelButton =
+        find.byKey(const ValueKey<String>('manga_ocr_cancel_button'));
+    expect(find.text('1/2'), findsOneWidget);
+    expect(cancelButton, findsOneWidget,
+        reason: '外部任务运行时 HUD 旁必须有取消入口');
+    expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
+        findsNothing,
+        reason: '任务运行时也不得出现整卷 OCR 入口');
+
+    // 真异步：注册表 cancel 是 async 函数，fake zone 里不会被冲刷，放进 runAsync。
+    await tester.runAsync(() async {
+      await tester.tap(cancelButton);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    await tester.pump();
+
+    expect(sourceCancelled, isTrue, reason: '取消按钮必须真停底层任务');
+    expect(registry.running(bookKey), isNull);
+    expect(cancelButton, findsNothing, reason: '任务停了取消按钮随之消失');
+    expect(find.text('1/2'), findsNothing, reason: 'HUD 进度随任务结束消失');
   });
 
   testWidgets('页码弹窗关闭动画期间不使用已 dispose 的输入控制器', (WidgetTester tester) async {

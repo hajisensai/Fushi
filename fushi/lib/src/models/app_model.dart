@@ -7938,14 +7938,6 @@ class AppModel with ChangeNotifier {
   Future<void> setAsrTranscribeLanguage(String value) =>
       prefsRepo.setAsrTranscribeLanguage(value);
 
-  bool get mangaTapToOcr => prefsRepo.mangaTapToOcr;
-  Future<void> setMangaTapToOcr(bool value) =>
-      prefsRepo.setMangaTapToOcr(value);
-
-  bool get mangaTapToOcrNoticeShown => prefsRepo.mangaTapToOcrNoticeShown;
-  Future<void> setMangaTapToOcrNoticeShown(bool value) =>
-      prefsRepo.setMangaTapToOcrNoticeShown(value);
-
   String get mangaSpreadPreference => prefsRepo.mangaSpreadPreference;
   Future<void> setMangaSpreadPreference(String value) =>
       prefsRepo.setMangaSpreadPreference(value);
