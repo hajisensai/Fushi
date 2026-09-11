@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
@@ -364,7 +363,8 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       case AidokuGlobalSource(:final AidokuInstalledPackage package):
         final Map<String, Object?> manga = run.aidokuItems[index];
         title = manga['title']?.toString() ?? manga['key'].toString();
-        cover = _AidokuStripCover(url: manga['cover']?.toString());
+        // 与单源浏览页同一封面组件（磁盘缓存 + 退避重试 + 可点重试）。
+        cover = AidokuCoverImage(url: manga['cover']?.toString());
         onTap = () => _openAidoku(package, manga);
     }
     return SizedBox(
@@ -423,33 +423,4 @@ class _SectionMessage extends StatelessWidget {
       style: TextStyle(color: Theme.of(context).colorScheme.outline),
     ),
   );
-}
-
-/// Aidoku 搜索结果封面。`AppHttpImage` + 浏览器 UA，与单源浏览页同一策略。
-class _AidokuStripCover extends StatelessWidget {
-  const _AidokuStripCover({required this.url});
-
-  final String? url;
-
-  @override
-  Widget build(BuildContext context) {
-    final String value = url?.trim() ?? '';
-    if (value.isEmpty) {
-      return const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.image_not_supported_outlined)),
-      );
-    }
-    return Image(
-      image: AppHttpImage(
-        value,
-        headers: const <String, String>{'User-Agent': kAidokuUserAgent},
-      ),
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.broken_image_outlined)),
-      ),
-    );
-  }
 }

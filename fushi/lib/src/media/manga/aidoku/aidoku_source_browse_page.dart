@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
@@ -266,7 +265,7 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Expanded(
-                    child: _AidokuCover(
+                    child: AidokuCoverImage(
                       url: manga['cover']?.toString(),
                       referer: _sourceBaseUrl,
                     ),
@@ -356,7 +355,7 @@ class AidokuMangaDetailPage extends ConsumerWidget {
           chapters: const <OnlineMangaChapter>[],
         ),
         sourceLabel: package.name,
-        remoteCoverBuilder: (BuildContext context) => _AidokuCover(
+        remoteCoverBuilder: (BuildContext context) => AidokuCoverImage(
           url: manga['cover']?.toString(),
           referer: _aidokuHttpsUrl(manga['url']) ?? sourceBaseUrl,
         ),
@@ -497,38 +496,6 @@ String _aidokuNumber(Object? value) {
   final double number = value.toDouble();
   if (number == number.truncateToDouble()) return number.toInt().toString();
   return number.toString().replaceFirst(RegExp(r'0+$'), '');
-}
-
-class _AidokuCover extends StatelessWidget {
-  const _AidokuCover({required this.url, this.referer});
-
-  final String? url;
-  final String? referer;
-
-  @override
-  Widget build(BuildContext context) {
-    final String value = url?.trim() ?? '';
-    if (value.isEmpty) {
-      return const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.image_not_supported_outlined)),
-      );
-    }
-    return Image(
-      image: AppHttpImage(
-        value,
-        headers: <String, String>{
-          'User-Agent': kAidokuUserAgent,
-          if (referer != null) 'Referer': referer!,
-        },
-      ),
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.broken_image_outlined)),
-      ),
-    );
-  }
 }
 
 String? _aidokuHttpsUrl(Object? value) {

@@ -6,6 +6,11 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
+    show
+        kMangaCoverCacheDefaultMaxAgeDays,
+        kMangaCoverCacheMaxDays,
+        kMangaCoverCacheMinDays;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -2723,6 +2728,23 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setMangaReadingDirection(String value) async {
     await setPref('manga_reading_direction', value);
+    notifyListeners();
+  }
+
+  /// 在线漫画封面磁盘缓存的保留天数（BUG-2450，默认 180）。
+  int get mangaCoverCacheMaxAgeDays {
+    final int days = getPref(
+      'manga_cover_cache_max_age_days',
+      defaultValue: kMangaCoverCacheDefaultMaxAgeDays,
+    ) as int;
+    return days.clamp(kMangaCoverCacheMinDays, kMangaCoverCacheMaxDays);
+  }
+
+  Future<void> setMangaCoverCacheMaxAgeDays(int value) async {
+    await setPref(
+      'manga_cover_cache_max_age_days',
+      value.clamp(kMangaCoverCacheMinDays, kMangaCoverCacheMaxDays),
+    );
     notifyListeners();
   }
 

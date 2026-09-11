@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -79,6 +80,25 @@ SettingsSection buildMangaCatalogSection() {
             settingsContext.appModel.mangaOnlineCatalogBaseUrl,
         onChanged: (SettingsContext settingsContext, String value) =>
             settingsContext.appModel.setMangaOnlineCatalogBaseUrl(value.trim()),
+      ),
+      // 在线源封面磁盘缓存的保留天数（BUG-2450 用户诉求「缓存失效时间拉长」）。
+      // 生效点是 MihonCoverCache.maxAge：过期条目下次读取时删掉重取。
+      SettingsSliderItem(
+        id: 'manga.cover_cache_max_age',
+        title: t.manga_cover_cache_max_age,
+        subtitle: t.manga_cover_cache_max_age_subtitle,
+        icon: Icons.image_outlined,
+        min: kMangaCoverCacheMinDays.toDouble(),
+        max: kMangaCoverCacheMaxDays.toDouble(),
+        divisions: (kMangaCoverCacheMaxDays - kMangaCoverCacheMinDays) ~/ 30,
+        step: 30,
+        titleReadout: true,
+        commitOnRelease: true,
+        label: (double v) => t.stat_format_days(n: v.round()),
+        value: (SettingsContext c) =>
+            c.appModel.mangaCoverCacheMaxAgeDays.toDouble(),
+        onChanged: (SettingsContext c, double value) =>
+            c.appModel.setMangaCoverCacheMaxAgeDays(value.round()),
       ),
     ],
   );
