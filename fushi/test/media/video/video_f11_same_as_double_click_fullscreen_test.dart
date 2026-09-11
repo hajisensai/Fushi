@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -68,6 +70,52 @@ void main() {
     );
     callbacks[byF11.action]!();
     expect(log, <String>['toggleFullscreen']);
+  });
+
+  test('F11 只认按下沿：重复沿不消费，不会按住来回翻转全屏', () {
+    final FushiShortcutRegistry registry = defaults();
+    final VideoKeyboardResolution repeat = resolveVideoKeyboardShortcut(
+      registry,
+      const KeyRepeatEvent(
+        logicalKey: LogicalKeyboardKey.f11,
+        physicalKey: PhysicalKeyboardKey.f11,
+        timeStamp: Duration.zero,
+      ),
+      modifiers: const <ModifierKey>{},
+      hasEditableFocus: false,
+      hasVisiblePopup: false,
+      videoSurfaceHoldsFocus: true,
+      videoNavigablePanelOpen: false,
+    );
+    expect(repeat.dispatch, isNot(VideoKeyboardDispatch.run));
+  });
+
+  test('对轴弹窗的冻结快捷键表把 F11 与视频全屏键一起摘掉', () {
+    // 两处 `buildVideoPlayerShortcutsFromRegistry(... exclude: {...})` 调用点：
+    // 弹窗里切全屏路由会让弹窗与路由栈错位，F11 现在也是视频全屏，必须同摘。
+    for (final String path in <String>[
+      'lib/src/pages/implementations/video_fushi_page.dart',
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    ]) {
+      final List<String> lines = File(path).readAsLinesSync();
+      int blocks = 0;
+      for (int i = 0; i < lines.length; i++) {
+        if (!lines[i].contains('exclude: const <ShortcutAction>{')) continue;
+        blocks++;
+        final String block = lines.sublist(i, i + 8).join('\n');
+        expect(
+          block,
+          contains('ShortcutAction.videoToggleFullscreen'),
+          reason: '$path:${i + 1} 冻结表理应摘掉视频全屏键',
+        );
+        expect(
+          block,
+          contains('ShortcutAction.globalToggleFullscreen'),
+          reason: '$path:${i + 1} 冻结表漏摘 F11（globalToggleFullscreen）',
+        );
+      }
+      expect(blocks, greaterThan(0), reason: '$path 找不到 exclude 块，守卫空转');
+    }
   });
 
   test('global scope 里只认领全屏键，其余 global 动作仍留给 app 根', () {

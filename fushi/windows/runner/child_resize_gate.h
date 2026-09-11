@@ -1,6 +1,7 @@
 #ifndef RUNNER_CHILD_RESIZE_GATE_H_
 #define RUNNER_CHILD_RESIZE_GATE_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -85,11 +86,28 @@ class ChildResizeGate {
       deferred_.reset();
       return Decision::kNoChange;
     }
-    if (pending_.has_value() && surface_.has_value() && requested == *surface_) {
+    if (pending_.has_value() && MayBeSurface(requested)) {
+      // While a delivery is unconfirmed the engine's surface is one of
+      // |surface_candidates_|: the last confirmed size, or any size delivered
+      // since that Dart may already have rasterised without the report having
+      // reached us (release batches FrameTiming for up to a second, and the
+      // UI isolate being busy is exactly this bug's scenario). Delivering any
+      // of them could hit the engine's "same size as surface" early return
+      // and pin the target — park it until the pending size is confirmed and
+      // the surface is exactly known again.
       deferred_ = requested;
       return Decision::kDefer;
     }
+    if (pending_.has_value()) {
+      // Superseding an unconfirmed delivery: Dart may or may not have
+      // rasterised it in the meantime, so from now on it is one of the sizes
+      // the surface may have.
+      AddCandidate(*pending_);
+    }
     deferred_.reset();
+    // Only a report that arrives *during* this delivery may confirm it; an
+    // older report of the same size says nothing about the new target.
+    last_rasterized_.reset();
     child_ = requested;
     pending_ = requested;
     return Decision::kDeliver;
@@ -117,21 +135,28 @@ class ChildResizeGate {
     last_rasterized_ = rasterized;
     if (!pending_.has_value()) {
       if (child_.has_value() && rasterized == *child_) {
-        surface_ = rasterized;
+        SetSurface(rasterized);
       }
       return std::nullopt;
     }
     if (rasterized != *pending_) {
       // A stale frame (built before the metrics of the pending size reached
-      // Dart) or a frame for a size that has since been superseded.
+      // Dart) or a frame for a size that has since been superseded. Neither
+      // says anything about the pending target.
       return std::nullopt;
     }
+    // The pending size is always the engine's armed target (Request never
+    // delivers a size the surface may already have), so a rasterised frame of
+    // it was accepted and the surface is now exactly this size.
     Confirm();
     if (!deferred_.has_value()) {
       return std::nullopt;
     }
     const ChildSize next = *deferred_;
     deferred_.reset();
+    if (child_.has_value() && next == *child_) {
+      return std::nullopt;
+    }
     child_ = next;
     pending_ = next;
     return next;
@@ -139,15 +164,53 @@ class ChildResizeGate {
 
   // The child's current (last delivered) size, if any.
   std::optional<ChildSize> child_size() const { return child_; }
-  // The size the engine is known to present at, if known.
+  // The size the engine is known to present at (only exact while nothing is
+  // pending), if known.
   std::optional<ChildSize> surface_size() const { return surface_; }
   bool has_pending() const { return pending_.has_value(); }
   bool has_deferred() const { return deferred_.has_value(); }
+  size_t surface_candidate_count() const { return candidate_count_; }
 
  private:
+  // Bounded: candidates only accumulate while deliveries keep timing out and
+  // keep being superseded (a drag-resize on a stalled UI isolate). Beyond the
+  // cap the oldest entry is dropped — being wrong about a size that old costs
+  // one extra deferral at worst, never a missed one for recent sizes.
+  static constexpr size_t kMaxCandidates = 16;
+
   void Confirm() {
-    surface_ = pending_;
+    SetSurface(*pending_);
     pending_.reset();
+  }
+
+  void SetSurface(ChildSize size) {
+    surface_ = size;
+    candidate_count_ = 0;
+    AddCandidate(size);
+  }
+
+  void AddCandidate(ChildSize size) {
+    for (size_t i = 0; i < candidate_count_; ++i) {
+      if (surface_candidates_[i] == size) {
+        return;
+      }
+    }
+    if (candidate_count_ == kMaxCandidates) {
+      for (size_t i = 1; i < kMaxCandidates; ++i) {
+        surface_candidates_[i - 1] = surface_candidates_[i];
+      }
+      --candidate_count_;
+    }
+    surface_candidates_[candidate_count_++] = size;
+  }
+
+  bool MayBeSurface(ChildSize size) const {
+    for (size_t i = 0; i < candidate_count_; ++i) {
+      if (surface_candidates_[i] == size) {
+        return true;
+      }
+    }
+    return false;
   }
 
   std::optional<ChildSize> child_;
@@ -155,6 +218,8 @@ class ChildResizeGate {
   std::optional<ChildSize> pending_;
   std::optional<ChildSize> deferred_;
   std::optional<ChildSize> last_rasterized_;
+  ChildSize surface_candidates_[kMaxCandidates] = {};
+  size_t candidate_count_ = 0;
 };
 
 #endif  // RUNNER_CHILD_RESIZE_GATE_H_

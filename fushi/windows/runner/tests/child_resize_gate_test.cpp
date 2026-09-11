@@ -143,18 +143,90 @@ bool TestDifferentSizeWhilePendingDelivers() {
   return ok;
 }
 
+// Review finding on the first cut: a single "last confirmed surface" is stale
+// while a timed-out delivery may already have been rasterised but not yet
+// reported. W → X (times out) → Y (times out) → X must NOT deliver X: the
+// engine's surface may already be X, and delivering it would hit the
+// same-size early return with target Y armed.
+bool TestSupersededUnconfirmedSizeIsStillHazardous() {
+  bool ok = true;
+  ChildResizeGate gate;
+  Deliver(gate, kNormal, kFast);  // W confirmed
+  ok &= Expect(Deliver(gate, kMaximized, kTimedOut) == Decision::kDeliver,
+               "X delivered");
+  ok &= Expect(Deliver(gate, kUnzoomed, kTimedOut) == Decision::kDeliver,
+               "Y supersedes the unconfirmed X");
+  ok &= Expect(gate.surface_candidate_count() == 2,
+               "surface may now be W or X");
+  ok &= Expect(gate.Request(kMaximized) == Decision::kDefer,
+               "returning to the superseded, unconfirmed X is deferred");
+  ok &= Expect(gate.Request(kNormal) == Decision::kDefer,
+               "returning to the last confirmed W is deferred too");
+  // Dart's late report of X (rasterised before Y's metrics reached it) says
+  // nothing about the armed target Y.
+  ok &= Expect(!gate.OnFrameRasterized(kMaximized).has_value(),
+               "late report of the superseded X does not release anything");
+  ok &= Expect(gate.has_pending(), "Y still pending after X's late report");
+  // Y confirmed: the surface is exactly Y again, candidates collapse, and the
+  // parked request (latest one wins: W) is delivered.
+  const std::optional<ChildSize> next = gate.OnFrameRasterized(kUnzoomed);
+  ok &= Expect(next.has_value() && *next == kNormal,
+               "confirming Y releases the parked request");
+  ok &= Expect(gate.surface_candidate_count() == 1 &&
+                   gate.surface_size().has_value() &&
+                   *gate.surface_size() == kUnzoomed,
+               "candidates collapse to the confirmed surface");
+  gate.DeliveryFinished(kFast);
+  ok &= Expect(Deliver(gate, kMaximized, kFast) == Decision::kDeliver,
+               "with nothing pending, X is a plain delivery again");
+  return ok;
+}
+
+// An old report of a size must not confirm a *later* delivery of that size.
+bool TestStaleReportDoesNotConfirmLaterDelivery() {
+  bool ok = true;
+  ChildResizeGate gate;
+  Deliver(gate, kNormal, kFast);
+  gate.OnFrameRasterized(kMaximized);  // stray report, size != child
+  ok &= Expect(Deliver(gate, kMaximized, kTimedOut) == Decision::kDeliver,
+               "deliver X later");
+  ok &= Expect(gate.has_pending(),
+               "the earlier stray report of X must not confirm this delivery");
+  return ok;
+}
+
+// The parked size can equal the size being confirmed (parent bounced back to
+// the pending size); nothing is delivered then.
+bool TestDeferredEqualToConfirmedIsDropped() {
+  bool ok = true;
+  ChildResizeGate gate;
+  Deliver(gate, kMaximized, kFast);
+  Deliver(gate, kUnzoomed, kTimedOut);
+  ok &= Expect(gate.Request(kMaximized) == Decision::kDefer, "deferred");
+  ok &= Expect(gate.Request(kUnzoomed) == Decision::kNoChange,
+               "parent bounced back to the pending size: nothing to deliver");
+  ok &= Expect(!gate.OnFrameRasterized(kUnzoomed).has_value(),
+               "confirmation with nothing parked delivers nothing");
+  ok &= Expect(!gate.has_pending() && !gate.has_deferred(), "settled");
+  return ok;
+}
+
 // Before the first confirmation the surface is unknown; nothing can be judged
 // hazardous, so every size is delivered (the engine has no surface yet and
 // never arms a target in that state).
-bool TestUnknownSurfaceAlwaysDelivers() {
+bool TestUnknownSurfaceDeliversUnseenSizes() {
   bool ok = true;
   ChildResizeGate gate;
   ok &= Expect(Deliver(gate, kMaximized, kTimedOut) == Decision::kDeliver,
                "first delivery");
   ok &= Expect(Deliver(gate, kUnzoomed, kTimedOut) == Decision::kDeliver,
                "second delivery while first is pending");
-  ok &= Expect(Deliver(gate, kMaximized, kTimedOut) == Decision::kDeliver,
-               "return to the first size is delivered: surface unknown");
+  ok &= Expect(Deliver(gate, kNormal, kTimedOut) == Decision::kDeliver,
+               "a never-delivered size is delivered: it cannot be the surface");
+  // The superseded first delivery may have become the surface meanwhile, so
+  // it is hazardous even though no size was ever confirmed.
+  ok &= Expect(gate.Request(kMaximized) == Decision::kDefer,
+               "return to a superseded unconfirmed size is deferred");
   return ok;
 }
 
@@ -184,7 +256,10 @@ int main() {
   passed &= TestFullscreenRoundTripWhileBusyDefers();
   passed &= TestReportDuringDeliveryConfirms();
   passed &= TestDifferentSizeWhilePendingDelivers();
-  passed &= TestUnknownSurfaceAlwaysDelivers();
+  passed &= TestSupersededUnconfirmedSizeIsStillHazardous();
+  passed &= TestStaleReportDoesNotConfirmLaterDelivery();
+  passed &= TestDeferredEqualToConfirmedIsDropped();
+  passed &= TestUnknownSurfaceDeliversUnseenSizes();
   passed &= TestRequestsWhileDeferred();
 
   if (!passed) {

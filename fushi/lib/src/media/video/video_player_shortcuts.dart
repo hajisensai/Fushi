@@ -321,6 +321,9 @@ const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
   ShortcutAction.videoToggleSubtitleHide,
   ShortcutAction.videoEnterCaret,
   ShortcutAction.popupMineEntry,
+  // BUG-2462：F11 改由本页接管后仍只认按下沿——app 根那条路本就只认
+  // [KeyDownEvent]，按住（或卡顿时积压的重复沿）不能来回翻转全屏。
+  ShortcutAction.globalToggleFullscreen,
 };
 
 /// 把注册表里的视频键盘绑定冻结成一张 `Map<ShortcutActivator, VoidCallback>`

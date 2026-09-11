@@ -62,8 +62,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
           bookKey: widget.bookUid,
         ),
     ];
-    final String content =
-        buildSentenceExport(rows, format: ExportFormat.markdown);
+    final String content = buildSentenceExport(
+      rows,
+      format: ExportFormat.markdown,
+    );
     final ExportFileMeta meta = exportFileMeta(ExportFormat.markdown);
     if (!mounted) return;
     await saveOrShareExport(
@@ -171,10 +173,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// / 副字幕入口）与选择逻辑与旧侧栏逐行一致，数据随视频页 `_rebuild` 重建。
   Widget _buildSubtitleTrackSettingsSection(VideoPlayerController controller) {
     return Builder(
-      builder: (BuildContext context) => _buildSubtitleTrackRows(
-        context,
-        controller,
-      ),
+      builder: (BuildContext context) =>
+          _buildSubtitleTrackRows(context, controller),
     );
   }
 
@@ -207,10 +207,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         onTap: _subtitleLoadingShown
             ? null
             : () => unawaited(
-                  _isRemote
-                      ? _pickAndImportRemoteSubtitle(controller)
-                      : _pickAndImportSubtitle(controller),
-                ),
+                _isRemote
+                    ? _pickAndImportRemoteSubtitle(controller)
+                    : _pickAndImportSubtitle(controller),
+              ),
       ),
       // 模型重定时：与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
       // 只对本地视频出现——它要把整条音轨喂给设备端转录，远端模式手里只有一条流。
@@ -230,17 +230,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
         title: Text(t.video_subtitle_off),
         // TODO-818：「关闭」项高亮判据。本地用显式关闭哨兵；远端模式不落库（关闭仅
         // 清内存 _currentSubtitleSource=null），故 null 也算关闭，覆盖两种表面。
-        selected: SubtitleSource.isOff(_currentSubtitleSource) ||
+        selected:
+            SubtitleSource.isOff(_currentSubtitleSource) ||
             (_isRemote && _currentSubtitleSource == null),
         selectedColor: cs.primary,
         enabled: !_subtitleLoadingShown,
         onTap: _subtitleLoadingShown
             ? null
             : () => unawaited(
-                  _isRemote
-                      ? _clearRemoteSubtitle(controller)
-                      : _selectSubtitleOff(controller),
-                ),
+                _isRemote
+                    ? _clearRemoteSubtitle(controller)
+                    : _selectSubtitleOff(controller),
+              ),
       ),
       // TODO-1302 track-list-first：每条 YouTube 字幕轨一行（元数据先来、cue 懒下载 on-select）。
       // 轨列表由 [_resolveDeferredYoutubeCaptionTracks] 起播后回填 client（不依赖 cue 就绪 →
@@ -290,9 +291,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 _currentSubtitleSource == _remoteEmbeddedSubtitleSource(track),
             selectedColor: cs.primary,
             onTap: track.isText && !_subtitleLoadingShown
-                ? () => unawaited(
-                      _applyRemoteEmbeddedSubtitle(controller, track),
-                    )
+                ? () =>
+                      unawaited(_applyRemoteEmbeddedSubtitle(controller, track))
                 : null,
           ),
       // BUG-1861：远端模式下本机落盘的字幕档（Jimaku 下载 / 手动导入）也要有自己的行。
@@ -320,12 +320,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 onTap: _subtitleLoadingShown
                     ? null
                     : () => unawaited(
-                          _applyRemoteSubtitle(
-                            controller,
-                            source.externalPath!,
-                            label: source.label,
-                          ),
+                        _applyRemoteSubtitle(
+                          controller,
+                          source.externalPath!,
+                          label: source.label,
                         ),
+                      ),
               ),
             ),
       if (!_isRemote)
@@ -375,10 +375,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         children: _buildSecondarySubtitleRows(context, controller),
       ),
     ];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: rows,
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: rows);
   }
 
   /// 副字幕源行（TODO-857 / TODO-1312 视频双字幕）：顶部「关闭」项 + 与主字幕**同一份**
@@ -404,7 +401,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ListTile(
           leading: const Icon(Icons.subtitles_off),
           title: Text(t.video_subtitle_off),
-          selected: _currentSecondarySubtitleSource == null ||
+          selected:
+              _currentSecondarySubtitleSource == null ||
               SubtitleSource.isOff(_currentSecondarySubtitleSource),
           selectedColor: cs.primary,
           enabled: !_subtitleLoadingShown,
@@ -420,8 +418,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
           onTap: _subtitleLoadingShown
               ? null
               : () => unawaited(
-                    _pickAndImportRemoteSecondarySubtitle(controller),
-                  ),
+                  _pickAndImportRemoteSecondarySubtitle(controller),
+                ),
         ),
         if (hostSub != null)
           ListTile(
@@ -434,8 +432,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
             onTap: _subtitleLoadingShown
                 ? null
                 : () => unawaited(
-                      _applyRemoteSecondarySubtitle(controller, hostSub),
-                    ),
+                    _applyRemoteSecondarySubtitle(controller, hostSub),
+                  ),
           ),
         for (final RemoteVideoEmbeddedSubtitleTrack track
             in _remoteEmbeddedSubtitleTracks)
@@ -452,13 +450,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   : t.video_subtitle_import_unsupported,
             ),
             enabled: track.isText && !_subtitleLoadingShown,
-            selected: _currentSecondarySubtitleSource ==
+            selected:
+                _currentSecondarySubtitleSource ==
                 _remoteEmbeddedSubtitleSource(track),
             selectedColor: cs.primary,
             onTap: track.isText && !_subtitleLoadingShown
                 ? () => unawaited(
-                      _applyRemoteEmbeddedSecondarySubtitle(controller, track),
-                    )
+                    _applyRemoteEmbeddedSecondarySubtitle(controller, track),
+                  )
                 : null,
           ),
         // BUG-1861：与远端**主**字幕轨行完全同形——本机落盘的字幕档
@@ -484,12 +483,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 onTap: _subtitleLoadingShown
                     ? null
                     : () => unawaited(
-                          _applyRemoteSecondarySubtitle(
-                            controller,
-                            source.externalPath!,
-                            label: source.label,
-                          ),
+                        _applyRemoteSecondarySubtitle(
+                          controller,
+                          source.externalPath!,
+                          label: source.label,
                         ),
+                      ),
               ),
             ),
       ];
@@ -500,7 +499,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         leading: const Icon(Icons.subtitles_off),
         title: Text(t.video_subtitle_off),
         // 「关闭」高亮：显式关闭哨兵或无副字幕（null）。
-        selected: SubtitleSource.isOff(_currentSecondarySubtitleSource) ||
+        selected:
+            SubtitleSource.isOff(_currentSecondarySubtitleSource) ||
             _currentSecondarySubtitleSource == null,
         selectedColor: cs.primary,
         enabled: !_subtitleLoadingShown,
@@ -530,8 +530,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
             onTap: _subtitleLoadingShown
                 ? null
                 : () => unawaited(
-                      _selectSecondarySubtitleSource(controller, source),
-                    ),
+                    _selectSecondarySubtitleSource(controller, source),
+                  ),
           ),
         ),
     ];
@@ -584,8 +584,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     Offset globalPosition,
   ) async {
     if (_subtitleLoadingShown) return;
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -642,16 +643,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (path == null) return;
     // 全 app 统一的「确认销毁」对话框（FushiDestructiveConfirmDialog）；pop null =
     // 取消。对话框是覆盖层、会夺焦，guardOverlay 在任何退出路径归还焦点。
-    final FushiDestructiveConfirmResult? confirmed =
-        await _focusOwnership.guardOverlay(
-      () => showAppDialog<FushiDestructiveConfirmResult>(
-        context: context,
-        builder: (BuildContext _) => FushiDestructiveConfirmDialog(
-          title: t.video_subtitle_delete,
-          message: t.video_subtitle_delete_confirm(path: path),
-        ),
-      ),
-    );
+    final FushiDestructiveConfirmResult? confirmed = await _focusOwnership
+        .guardOverlay(
+          () => showAppDialog<FushiDestructiveConfirmResult>(
+            context: context,
+            builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+              title: t.video_subtitle_delete,
+              message: t.video_subtitle_delete_confirm(path: path),
+            ),
+          ),
+        );
     if (confirmed == null || !mounted) return;
     // 先停止引用，再销毁文件——顺序不是风格问题。反过来写（删完再清）时，
     // `await file.delete()` 是一次真 IO await：用户在这期间退出视频页，State 就
@@ -696,8 +697,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
         !sameExternalSubtitlePathForMenu(s, path);
     _rebuild(() {
       _subtitleMenuSources = _subtitleMenuSources.where(notDeleted).toList();
-      _importedSubtitleSources =
-          _importedSubtitleSources.where(notDeleted).toList();
+      _importedSubtitleSources = _importedSubtitleSources
+          .where(notDeleted)
+          .toList();
     });
     _showOsd(t.video_subtitle_deleted(label: source.label));
   }
@@ -896,10 +898,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// BUG-1490：原来五种失败共用一句「可能是图形或不支持的字幕轨」，用户拿一个
   /// 明明是文本 ASS 的文件看到「不支持」，会去换字幕而不是查真正的问题。
   /// 现在只有**真的**跟轨类型/格式有关的两种才这么说，「读不出 / 解不出」另给一句。
-  String _subtitleFailureMessage(
-    SubtitleCueLoadFailure failure,
-    String label,
-  ) {
+  String _subtitleFailureMessage(SubtitleCueLoadFailure failure, String label) {
     switch (failure) {
       case SubtitleCueLoadFailure.unsupportedFormat:
       case SubtitleCueLoadFailure.extractionFailed:
@@ -943,9 +942,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 本机镜像盖戳（互联 LWW 载体，播放偏好同步泛化批）：使 host 侧
     // getVideoPlayback / 清单以带戳值参与逐字段 LWW，对端能跟随本机选择。
     await _stampRemoteStringPref(
-        videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
-        videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
-        persisted);
+      videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
+      videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
+      persisted,
+    );
     if (!mounted) return false;
     _rebuild(() => _currentSecondarySubtitleSource = persisted);
     _showOsd(t.video_subtitle_switched(label: source.label));
@@ -964,12 +964,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     // 本机镜像盖戳（互联 LWW 载体）：显式关闭同样跨设备传播（off 哨兵原样入通道）。
     await _stampRemoteStringPref(
-        videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
-        videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
-        SubtitleSource.offSentinel);
+      videoRemoteSecondarySubtitlePrefKey(widget.bookUid),
+      videoRemoteSecondarySubtitleAtPrefKey(widget.bookUid),
+      SubtitleSource.offSentinel,
+    );
     if (!mounted) return;
     _rebuild(
-        () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel);
+      () => _currentSecondarySubtitleSource = SubtitleSource.offSentinel,
+    );
   }
 
   /// 视频就绪后恢复用户选过的副字幕轨（TODO-857 / TODO-1312）。支持内嵌轨（`embedded:<n>`）
@@ -1015,8 +1017,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return;
     }
     if (!mounted || _controller != controller) return;
-    final List<AudioCue> cues =
-        await loadCuesForSource(source, videoPath, widget.bookUid);
+    final List<AudioCue> cues = await loadCuesForSource(
+      source,
+      videoPath,
+      widget.bookUid,
+    );
     if (!mounted || _controller != controller) return;
     if (cues.isEmpty) return;
     controller.setSecondaryCues(cues);
@@ -1034,8 +1039,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _maybeLoadEmbeddedSubtitleFonts(String videoPath) async {
     if (_isRemote) return;
     if (!appModel.videoRespectAssStyle) return;
-    final Set<String> families =
-        await _embeddedFontLoader.loadForVideo(videoPath);
+    final Set<String> families = await _embeddedFontLoader.loadForVideo(
+      videoPath,
+    );
     if (!mounted || families.isEmpty) return;
     // 字体已进引擎；重建让字幕 overlay 按 cue.fontName 重解析并命中新注册的 family。
     _rebuild(() {});
@@ -1051,8 +1057,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   String? _jimakuQuery() {
     final String? videoPath = _currentVideoPath;
     if (videoPath != null && videoPath.trim().isNotEmpty) {
-      final String series =
-          parseVideoFilename(p.basename(videoPath)).series.trim();
+      final String series = parseVideoFilename(
+        p.basename(videoPath),
+      ).series.trim();
       return series.isEmpty ? null : series;
     }
     if (_isRemote) {
@@ -1084,8 +1091,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
           : await db.getVideoMetadataWorkByBook(widget.bookUid);
       final Map<String, String> externalIds = <String, String>{};
       if (work != null) {
-        final List<VideoMetadataProviderIdentityRow> identities =
-            await db.getVideoMetadataProviderIdentities(workId: work.id);
+        final List<VideoMetadataProviderIdentityRow> identities = await db
+            .getVideoMetadataProviderIdentities(workId: work.id);
         for (final VideoMetadataProviderIdentityRow row in identities) {
           externalIds[row.provider.trim().toLowerCase()] = row.externalId;
         }
@@ -1099,8 +1106,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         isMovie: work?.mediaType == 'movie',
       );
     } on Object catch (error) {
-      ErrorLogService.instance
-          .logDiagnostic('VideoFushiPage._buildJimakuSeed', error);
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._buildJimakuSeed',
+        error,
+      );
       return buildSubtitleSearchSeed(
         displayTitle: fallbackTitle,
         collectionTitle: _playlistTitle,
@@ -1121,11 +1130,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final int? collectionId = widget.playlistCollectionId;
     if (collectionId == null) return null;
     try {
-      final MediaCollectionRow? collection =
-          await widget.repo.getMediaCollectionById(collectionId);
+      final MediaCollectionRow? collection = await widget.repo
+          .getMediaCollectionById(collectionId);
       if (collection == null) return null;
-      final List<MediaCollectionItemRow> items =
-          await widget.repo.getCollectionItems(collectionId);
+      final List<MediaCollectionItemRow> items = await widget.repo
+          .getCollectionItems(collectionId);
       final List<VideoBookRow> members = <VideoBookRow>[];
       for (final MediaCollectionItemRow item in items) {
         if (item.mediaType != MediaKind.video.dbValue) continue;
@@ -1135,8 +1144,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (members.isEmpty) return null;
       return SubtitleCollectionSpec(collection: collection, members: members);
     } on Object catch (error) {
-      ErrorLogService.instance
-          .logDiagnostic('VideoFushiPage._subtitleCollectionSpec', error);
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._subtitleCollectionSpec',
+        error,
+      );
       return null;
     }
   }
@@ -1293,18 +1304,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 在重进时按路径重放；embedded:<n> 等非文件源退出后落回 host 默认，不阻塞当前应用。
     // 合集连播下按当前成员 id 记忆字幕选择（键 = (成员 id, 0)），与 _loadRemoteEpisode 读取
     // 端同源；单视频/host-playlist 沿用 (widget.bookUid, _currentEpisode)。
-    final (String subUid, int subEp) =
-        _remotePositionKeyForIndex(_currentEpisode);
-    unawaited(
-      appModel.setRemoteSubtitleSource(subUid, subEp, source),
+    final (String subUid, int subEp) = _remotePositionKeyForIndex(
+      _currentEpisode,
     );
+    unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
     _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
 
   String _remoteEmbeddedSubtitleSource(
     RemoteVideoEmbeddedSubtitleTrack track,
-  ) =>
-      'embedded:${track.streamIndex}';
+  ) => 'embedded:${track.streamIndex}';
 
   String _remoteEmbeddedSubtitleLabel(RemoteVideoEmbeddedSubtitleTrack track) {
     final List<String> parts = <String>[
@@ -1364,8 +1373,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     _rebuild(() => _currentSubtitleSource = null);
     // 持久化「显式关闭」（off: 哨兵）：重进 _loadRemoteEpisode 时保持关闭，不再自动加载
     // host 默认字幕（否则用户每次进影片都要重新关一遍）。
-    final (String subUid, int subEp) =
-        _remotePositionKeyForIndex(_currentEpisode);
+    final (String subUid, int subEp) = _remotePositionKeyForIndex(
+      _currentEpisode,
+    );
     unawaited(
       appModel.setRemoteSubtitleSource(
         subUid,
@@ -1413,13 +1423,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
     unawaited(() async {
       final int nowMs = await _stampRemoteStringPref(
-          videoRemoteSecondarySubtitlePrefKey(uid),
-          videoRemoteSecondarySubtitleAtPrefKey(uid),
-          source);
+        videoRemoteSecondarySubtitlePrefKey(uid),
+        videoRemoteSecondarySubtitleAtPrefKey(uid),
+        source,
+      );
       _pushRemotePlayback(
-          uid,
-          VideoPlaybackSyncState(
-              secondarySubtitleSource: source, secondarySubtitleAt: nowMs));
+        uid,
+        VideoPlaybackSyncState(
+          secondarySubtitleSource: source,
+          secondarySubtitleAt: nowMs,
+        ),
+      );
     }());
     _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
@@ -1512,11 +1526,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
     unawaited(() async {
       final int nowMs = await _stampRemoteStringPref(
-          videoRemoteSecondarySubtitlePrefKey(uid),
-          videoRemoteSecondarySubtitleAtPrefKey(uid),
-          null);
+        videoRemoteSecondarySubtitlePrefKey(uid),
+        videoRemoteSecondarySubtitleAtPrefKey(uid),
+        null,
+      );
       _pushRemotePlayback(
-          uid, VideoPlaybackSyncState(secondarySubtitleAt: nowMs));
+        uid,
+        VideoPlaybackSyncState(secondarySubtitleAt: nowMs),
+      );
     }());
   }
 
@@ -1529,7 +1546,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     List<AudioCue> cues = const <AudioCue>[];
     if (persisted.startsWith(SubtitleSource.embeddedPrefix)) {
       final int? streamIndex = int.tryParse(
-          persisted.substring(SubtitleSource.embeddedPrefix.length));
+        persisted.substring(SubtitleSource.embeddedPrefix.length),
+      );
       final RemoteVideoClient? client = _effectiveRemoteClient;
       final RemoteVideoInfo? info = _effectiveRemoteInfo;
       if (streamIndex == null || client == null || info == null) return;
@@ -1540,7 +1558,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
           p.join(
             temp.path,
             _remoteSubtitleTempFileName(
-                '${info.id}_sec$streamIndex', 'embedded_$streamIndex.srt'),
+              '${info.id}_sec$streamIndex',
+              'embedded_$streamIndex.srt',
+            ),
           ),
         );
         await client.getRemoteVideoSubtitle(
@@ -1610,8 +1630,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (cues.isEmpty) {
       if (mounted) _rebuild(() => _subtitleMenuLoading = true);
       try {
-        cues = await resolveYoutubeCaptionCues(track,
-            bookKey: 'yt:${widget.bookUid}');
+        cues = await resolveYoutubeCaptionCues(
+          track,
+          bookKey: 'yt:${widget.bookUid}',
+        );
       } finally {
         // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
         // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
@@ -1625,10 +1647,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (cues.isEmpty) {
       // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
       if (loadSeq == null) {
-        _showOsd(
-          t.video_subtitle_youtube_empty,
-          severity: ToastSeverity.error,
-        );
+        _showOsd(t.video_subtitle_youtube_empty, severity: ToastSeverity.error);
       }
       return;
     }
@@ -1694,10 +1713,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     if (!mounted) return;
     if (retimed == null) {
-      _showOsd(
-        t.video_subtitle_retime_failed,
-        severity: ToastSeverity.error,
-      );
+      _showOsd(t.video_subtitle_retime_failed, severity: ToastSeverity.error);
       return;
     }
     // 落盘的新档走既有外挂字幕链路：拷进字幕目录（同目录时跳过）、选中、并入字幕轨
@@ -1768,10 +1784,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         await File(srcPath).copy(dest);
       } catch (_) {
         if (!mounted) return;
-        _showOsd(
-          t.video_subtitle_import_failed,
-          severity: ToastSeverity.error,
-        );
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
         return;
       }
     }
@@ -1923,8 +1936,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         cues: const <AudioCue>[],
       );
     } else {
-      await widget.repo
-          .updateSubtitleSource(widget.bookUid, SubtitleSource.offSentinel);
+      await widget.repo.updateSubtitleSource(
+        widget.bookUid,
+        SubtitleSource.offSentinel,
+      );
     }
     if (!mounted) return;
     _rebuild(() => _currentSubtitleSource = SubtitleSource.offSentinel);
@@ -1945,8 +1960,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // maxWidth]（防跨设备屏宽差异下越界，且面板不至于宽到吞掉整块画面）。
     final double autoWidth = (screenWidth * 0.28).clamp(240.0, 420.0);
     const double minPanelWidth = 240.0;
-    final double maxPanelWidth =
-        (screenWidth * 0.6).clamp(minPanelWidth, 720.0);
+    final double maxPanelWidth = (screenWidth * 0.6).clamp(
+      minPanelWidth,
+      720.0,
+    );
     final double storedWidth = appModel.videoSubtitleListWidth;
     final double panelWidth =
         (_subtitleListWidthDrag ?? (storedWidth > 0 ? storedWidth : autoWidth))
@@ -1997,7 +2014,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                           children: <Widget>[
                             VideoSubtitleJumpPanel(
                               key: const ValueKey<String>(
-                                  'video-subtitle-jump-panel'),
+                                'video-subtitle-jump-panel',
+                              ),
                               controller: controller,
                               onTapCue: _handleSubtitleJumpTap,
                               onLookupCue: _handleSubtitleListLookup,
@@ -2014,17 +2032,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               initialAutoScroll:
                                   appModel.videoSubtitleListAutoScroll,
                               onAutoScrollChanged: (bool value) => unawaited(
-                                appModel
-                                    .setVideoSubtitleListAutoScroll(value),
+                                appModel.setVideoSubtitleListAutoScroll(value),
                               ),
                               // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
                               // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
                               initialFontScaleIndex:
                                   appModel.videoSubtitleListFontScaleIndex,
-                              onFontScaleIndexChanged: (int value) =>
-                                  unawaited(
+                              onFontScaleIndexChanged: (int value) => unawaited(
                                 appModel.setVideoSubtitleListFontScaleIndex(
-                                    value),
+                                  value,
+                                ),
                               ),
                               // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
                               hoverAutoLookupEnabled:
@@ -2041,11 +2058,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
                               // 一份：整表快捷键只包 media_kit controls 子树，焦点
                               // 一进面板就收不到按键了。
                               searchActivators: <ShortcutActivator>[
-                                for (final InputBinding b in appModel
-                                    .shortcutRegistry
-                                    .bindingsFor(ShortcutAction
-                                        .videoSearchSubtitleList)
-                                    .keyboardBindings)
+                                for (final InputBinding b
+                                    in appModel.shortcutRegistry
+                                        .bindingsFor(
+                                          ShortcutAction
+                                              .videoSearchSubtitleList,
+                                        )
+                                        .keyboardBindings)
                                   b.toActivator(includeRepeats: false),
                               ],
                               searchRequests: _subtitleSearchRequests,
@@ -2095,8 +2114,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         behavior: HitTestBehavior.translucent,
         onHorizontalDragUpdate: (DragUpdateDetails details) {
           final double base = _subtitleListWidthDrag ?? currentWidth;
-          final double next =
-              (base - details.delta.dx).clamp(minWidth, maxWidth);
+          final double next = (base - details.delta.dx).clamp(
+            minWidth,
+            maxWidth,
+          );
           _rebuild(() => _subtitleListWidthDrag = next);
         },
         onHorizontalDragEnd: (DragEndDetails details) {
@@ -2182,13 +2203,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return null;
     }
     // 时长缺失时用最后一条 cue 的结束时间兜底（cue 升序由 setCues 保证），仍能栅格化。
-    final int rawDurationMs =
-        (durationMs != null && durationMs > 0) ? durationMs : cues.last.endMs;
+    final int rawDurationMs = (durationMs != null && durationMs > 0)
+        ? durationMs
+        : cues.last.endMs;
     // 性能截断（TODO-413）：cue 栅格化上界与 [extractAudioEnergyEnvelope] 的 ffmpeg `-t`
     // 取同一上界（前 N 分钟），两侧栅格都从 t=0 同 binMs 起、截到同一上界，相位一致不偏；
     // 超界的 cue 在 [buildCueActivityEnvelope] 内按 length 自然 clamp/跳过（不进活动序列）。
-    final int effectiveDurationMs =
-        math.min(rawDurationMs, kSubtitleAutoAlignProbeLimitMs);
+    final int effectiveDurationMs = math.min(
+      rawDurationMs,
+      kSubtitleAutoAlignProbeLimitMs,
+    );
 
     _showOsd(
       t.video_subtitle_auto_align_running,
@@ -2304,8 +2328,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final int durationMs = controller.durationMs ?? 0;
     final int windowEndMs =
         (durationMs > 0 && durationMs < kSubtitleAutoAlignProbeLimitMs)
-            ? durationMs
-            : kSubtitleAutoAlignProbeLimitMs;
+        ? durationMs
+        : kSubtitleAutoAlignProbeLimitMs;
     final bool canAutoAlign = cues.isNotEmpty && videoPath.isNotEmpty;
     if (!context.mounted) return;
     // guardOverlay：对轴弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
@@ -2341,6 +2365,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
             exclude: const <ShortcutAction>{
               ShortcutAction.globalBack,
               ShortcutAction.videoToggleFullscreen,
+              // BUG-2462：F11 也是视频全屏了，同样不在弹窗里切路由。
+              ShortcutAction.globalToggleFullscreen,
               ShortcutAction.videoToggleSubtitleList,
               ShortcutAction.videoToggleImmersiveLock,
               ShortcutAction.videoOpenSubtitleAlign,
