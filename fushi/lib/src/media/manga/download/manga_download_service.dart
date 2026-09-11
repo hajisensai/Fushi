@@ -188,6 +188,17 @@ class MangaDownloadService {
 
   int get _now => _clock().millisecondsSinceEpoch;
 
+  /// 上一条新排任务的 `created_at`。worker 按 `(created_at, job_id)` 领取，同一
+  /// 毫秒内批量入队（「下载全部」几十章）若共用同一时刻，领取序会退化成哈希序、
+  /// 章序丢失；这里保证每条新任务的 `created_at` 严格递增。
+  int _lastCreatedAt = 0;
+
+  int _nextCreatedAt() {
+    final int now = _now;
+    _lastCreatedAt = now > _lastCreatedAt ? now : _lastCreatedAt + 1;
+    return _lastCreatedAt;
+  }
+
   /// worker 是否空闲（测试用；生产不需要等它）。
   Future<void> get whenIdle => _idle?.future ?? Future<void>.value();
 
@@ -285,7 +296,7 @@ class MangaDownloadService {
         attemptCount: const Value<int>(0),
         lastError: const Value<String?>(null),
         autoOcr: const Value<bool>(false),
-        createdAt: Value<int>(existing?.createdAt ?? now),
+        createdAt: Value<int>(existing?.createdAt ?? _nextCreatedAt()),
         updatedAt: Value<int>(now),
         completedAt: const Value<int?>(null),
       ),
@@ -361,7 +372,7 @@ class MangaDownloadService {
         attemptCount: const Value<int>(0),
         lastError: const Value<String?>(null),
         autoOcr: Value<bool>(autoOcr),
-        createdAt: Value<int>(existing?.createdAt ?? now),
+        createdAt: Value<int>(existing?.createdAt ?? _nextCreatedAt()),
         updatedAt: Value<int>(now),
         completedAt: const Value<int?>(null),
       ),

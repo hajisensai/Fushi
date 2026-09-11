@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2273 条。点号进各自文件。
+> 共 2274 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2473](bugs/BUG-2473-manga-download-all-subscription-download-center.md) | ✅ | ✅ | 作品页下载全部/自动识别/订阅自动下载，mokuro 队列并入持久任务表，下载中心分区 |
 | [BUG-2464](bugs/BUG-2464-manga-online-download-first.md) | ✅ | ✅ | 在线漫画改为强制下载后才能看，删除在线直读与阅读期页图缓存 |
 | [BUG-2463](bugs/BUG-2463-interconnect-download-drops-host-cover-timestamps.md) | ✅ | ✅ | 互联下载登记丢失 host 封面 / importedAt / completedAt |
 | [BUG-2461](bugs/BUG-2461-manga-reader-inline-ocr-entries-removed.md) | ✅ | ✅ | 阅读器内 OCR 入口（整卷按钮/点击即识别/框选重识别）移除，OCR 只在阅读器外触发 |
