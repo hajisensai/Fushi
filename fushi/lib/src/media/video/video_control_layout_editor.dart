@@ -141,120 +141,117 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
           );
         }
 
+        // BUG-2448：宽窗舞台不再是「固定高 Stack + 绝对定位」。那套布局里同一侧的
+        // 顶栏 / 屏幕侧 / 底栏三个槽位各按内容长高，却没有任何约束阻止它们互相盖住，
+        // 平板宽度（480~900）上右列直接挤成一团，chip 还被槽位内的嵌套滚动截断。
+        // 现在按三行堆叠（顶栏行 / 屏幕侧行 / 底栏行），每行高度由内容决定、槽位
+        // 完整展开；舞台只保留 16:9 的**最小**高度维持播放器方位感，内容更高时
+        // 整体跟着长——外层设置页本来就是纵向滚动，长高不会截断任何东西。
         final double stageWidth = constraints.maxWidth;
-        final double stageHeight = math.min(
+        final double stageMinHeight = math.min(
           420,
           math.max(260, stageWidth * 9 / 16),
         );
-        return SizedBox(
-          width: stageWidth,
-          height: stageHeight,
-          child: DecoratedBox(
-            key: const ValueKey<String>('video-control-editor-preview'),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest,
-              borderRadius: tokens.radii.controlRadius,
-              border: Border.all(color: cs.outlineVariant),
-            ),
-            child: ClipRRect(
-              borderRadius: tokens.radii.controlRadius,
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints preview) {
-                  final double sideWidth =
-                      math.min(224, math.max(128, preview.maxWidth * 0.24));
-                  final double centerWidth =
-                      math.min(236, math.max(128, preview.maxWidth * 0.22));
-                  const double inset = 10;
-                  return Stack(
+        const double inset = 10;
+        final double innerWidth = stageWidth - inset * 2;
+        final double sideWidth =
+            math.min(224, math.max(128, innerWidth * 0.24));
+        final double centerWidth =
+            math.min(236, math.max(128, innerWidth * 0.22));
+        final double gap = tokens.spacing.gap;
+        return DecoratedBox(
+          key: const ValueKey<String>('video-control-editor-preview'),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: tokens.radii.controlRadius,
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          child: ClipRRect(
+            borderRadius: tokens.radii.controlRadius,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    cs.surfaceContainerHigh,
+                    cs.surfaceContainerHighest,
+                  ],
+                ),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: stageMinHeight),
+                child: Padding(
+                  padding: const EdgeInsets.all(inset),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: <Color>[
-                                cs.surfaceContainerHigh,
-                                cs.surfaceContainerHighest,
-                              ],
-                            ),
-                          ),
-                        ),
+                      _buildStageRow(
+                        left: VideoControlSlot.topLeft,
+                        center: VideoControlSlot.topCenter,
+                        right: VideoControlSlot.topRight,
+                        sideWidth: sideWidth,
+                        centerWidth: centerWidth,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                       ),
-                      Positioned(
-                        top: inset,
-                        left: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.topLeft),
+                      SizedBox(height: gap),
+                      _buildStageRow(
+                        left: VideoControlSlot.screenLeft,
+                        center: null,
+                        right: VideoControlSlot.screenRight,
+                        sideWidth: sideWidth,
+                        centerWidth: centerWidth,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                       ),
-                      Positioned(
-                        top: inset,
-                        right: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.topRight),
-                      ),
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: inset),
-                          child: SizedBox(
-                            width: centerWidth,
-                            child: _buildSlotRegion(
-                              VideoControlSlot.topCenter,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: inset,
-                        top: 0,
-                        bottom: 0,
-                        width: sideWidth,
-                        child: Center(
-                          child: _buildSlotRegion(VideoControlSlot.screenLeft),
-                        ),
-                      ),
-                      Positioned(
-                        right: inset,
-                        top: 0,
-                        bottom: 0,
-                        width: sideWidth,
-                        child: Center(
-                          child: _buildSlotRegion(VideoControlSlot.screenRight),
-                        ),
-                      ),
-                      Positioned(
-                        left: inset,
-                        bottom: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.bottomLeft),
-                      ),
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: inset),
-                          child: SizedBox(
-                            width: centerWidth,
-                            child: _buildSlotRegion(
-                              VideoControlSlot.bottomCenter,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: inset,
-                        bottom: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.bottomRight),
+                      SizedBox(height: gap),
+                      _buildStageRow(
+                        left: VideoControlSlot.bottomLeft,
+                        center: VideoControlSlot.bottomCenter,
+                        right: VideoControlSlot.bottomRight,
+                        sideWidth: sideWidth,
+                        centerWidth: centerWidth,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                       ),
                     ],
-                  );
-                },
+                  ),
+                ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  /// 舞台一行：左右两个侧槽位定宽贴边、中央槽位居中；[center] 为 null 时中央留空
+  /// （屏幕侧行没有中央槽位）。槽位按内容长高，行高取三者最高，互不重叠。
+  Widget _buildStageRow({
+    required VideoControlSlot left,
+    required VideoControlSlot? center,
+    required VideoControlSlot right,
+    required double sideWidth,
+    required double centerWidth,
+    required CrossAxisAlignment crossAxisAlignment,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: crossAxisAlignment,
+      children: <Widget>[
+        SizedBox(
+          width: sideWidth,
+          child: _buildSlotRegion(left, growToContent: true),
+        ),
+        if (center != null)
+          SizedBox(
+            width: centerWidth,
+            child: _buildSlotRegion(center, growToContent: true),
+          ),
+        SizedBox(
+          width: sideWidth,
+          child: _buildSlotRegion(right, growToContent: true),
+        ),
+      ],
     );
   }
 
