@@ -400,15 +400,22 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // BUG-1478：按**词头**递增，不是按 glossary 行数（entries.length）——
     // 后者是另一个单位，一个词头带十几条注释时上限会一次暴涨十几倍。
     final int newMax = current.headwordCount + appModel.maximumTerms;
+    final String term = entry.searchTerm;
     entry.isSearching = true;
     try {
       final DictionarySearchResult result = await appModel.searchDictionary(
-        searchTerm: entry.searchTerm,
+        searchTerm: term,
         searchWithWildcards: false,
         overrideMaximumTerms: newMax,
       );
       // 续查期间该层可能被裁掉/换词（嵌套查词、关栈）；用身份核对确保只更新原层。
-      if (!mounted || !_popup.entries.contains(entry)) return;
+      // 原地跳转 / 后退 / 前进会在**同一个 entry** 上换词，所以还要核对词没变，
+      // 否则旧词的续查结果会灌进新页。
+      if (!mounted ||
+          !_popup.entries.contains(entry) ||
+          entry.searchTerm != term) {
+        return;
+      }
       _popup.fillResult(
         entry,
         result: result,
@@ -419,6 +426,82 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       if (_popup.entries.contains(entry) && entry.isSearching) {
         entry.isSearching = false;
       }
+    }
+  }
+
+  /// 弹窗内原地跳转（词头 / 交叉引用链接 / 汉字点击）：先裁掉 [index] 之上的子层，
+  /// 查 [query]，**有结果才**把 [item] 当前页压进后退栈、在同一个 WebView 里换成新词
+  /// （Hoshi iOS：`if (count > 0) redirect(count)`，空结果什么都不发生，弹窗不动）。
+  /// 弹窗位置 / 尺寸都不变：selectionRect 保留，外壳高度由新内容的 onContentMetrics
+  /// 再伸缩。
+  ///
+  /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
+  /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃，不灌进别的词。
+  /// 查询期间置 [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  Future<void> navigatePopupInPlace({
+    required int index,
+    required DictionaryPopupEntry item,
+    required String query,
+  }) async {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty || item.isSearching) return;
+    prunePopupStack(index + 1);
+    // 离开当前页前记下它的滚动位（回来时恢复）；查询开始后再读会读到新内容。
+    final double scrollTop =
+        await item.webViewKey.currentState?.currentScrollTop() ?? 0;
+    if (!mounted || !_popup.entries.contains(item)) return;
+    final String termAtStart = item.searchTerm;
+    item.isSearching = true;
+    try {
+      final DictionarySearchResult result = await appModel.searchDictionary(
+        searchTerm: trimmed,
+        searchWithWildcards: false,
+        overrideMaximumTerms: appModel.maximumTerms,
+      );
+      if (!mounted ||
+          !_popup.entries.contains(item) ||
+          item.searchTerm != termAtStart) {
+        return;
+      }
+      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
+      appModel.addToDictionaryHistory(result: result);
+      _popup.navigateInPlace(
+        item,
+        term: trimmed,
+        result: result,
+        allLoaded: !result.truncated,
+        scrollTop: scrollTop,
+      );
+      if (ReaderFushiSource.instance.autoReadOnLookup &&
+          result.entries.isNotEmpty) {
+        final DictionaryEntry entry = result.entries.first;
+        if (entry.word.isNotEmpty) {
+          _autoReadWord(entry.word, entry.reading);
+        }
+      }
+    } finally {
+      // navigateInPlace 成功路径已清 isSearching；失败 / 提前 return 在此兜底复位。
+      if (_popup.entries.contains(item) && item.isSearching) {
+        item.isSearching = false;
+      }
+    }
+  }
+
+  /// 顶栏 ← / →：在 [item] 的原地跳转历史里后退 / 前进一页。先记当前页滚动位（再往
+  /// 回走时恢复），controller 换页后 `notifyListeners` 经 [buildDictionary] 的
+  /// AnimatedBuilder 重建，WebView 按 result 身份重推、渲染完恢复该页滚动位。
+  Future<void> _navigatePopupHistory(
+    DictionaryPopupEntry item, {
+    required bool forward,
+  }) async {
+    if (item.isSearching) return;
+    final double scrollTop =
+        await item.webViewKey.currentState?.currentScrollTop() ?? 0;
+    if (!mounted || !_popup.entries.contains(item)) return;
+    if (forward) {
+      _popup.goForward(item, scrollTop: scrollTop);
+    } else {
+      _popup.goBack(item, scrollTop: scrollTop);
     }
   }
 
@@ -792,6 +875,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,
+        restoreScrollTop: item.restoreScrollTop,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
         // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
@@ -864,42 +948,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             }
           }
         },
-        onLinkClick: (query, localRect) async {
-          final childRect = localRect == Rect.zero
-              ? item.selectionRect
-              : popupWordScreenRect(
-                  webViewKey: item.webViewKey,
-                  localRect: localRect,
-                  fallback: item.selectionRect,
-                  coordinateSpaceKey: _popupCoordinateSpaceKey,
-                );
-          prunePopupStack(index + 1);
-          // TODO-1190: symmetric with onTextSelected above — mark the clicked
-          // headword/link target in this parent card after the child search
-          // (it previously highlighted only on plain-text selection, so a
-          // headword/kanji-tag tap left the source word unmarked).
-          final count = await searchDictionaryResult(
-            searchTerm: query,
-            selectionRect: childRect,
-          );
-          if (count > 0) {
-            // BUG-2054：与 onTextSelected 对称（含两道身份门）。
-            final int generation = activeLookupGeneration;
-            final Rect? wordRect =
-                await item.webViewKey.currentState?.highlightSelection(count);
-            if (mounted && generation == activeLookupGeneration) {
-              reanchorNestedPopupToWord(
-                controller: _popup,
-                parentWebViewKey: item.webViewKey,
-                parentIndex: index,
-                expectedTerm: query,
-                wordLocalRect: wordRect,
-                fallback: childRect,
-                coordinateSpaceKey: _popupCoordinateSpaceKey,
-              );
-            }
-          }
-        },
+        // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
+        // 子弹窗——对齐 Hoshi Reader iOS（`lookupRedirect` → `redirect(count)`：
+        // 同一个 WebView 换内容，← → 在历史页间来回）。释义正文点词（onTextSelected）
+        // 仍叠子层，也与 Hoshi 一致（那边 `textSelected` 走 `popups.append`）。
+        onLinkClick: (query, localRect) =>
+            navigatePopupInPlace(index: index, item: item, query: query),
+        historyNav: item.hasNavigationHistory
+            ? DictionaryPopupHistoryNav(
+                canGoBack: item.canGoBack,
+                canGoForward: item.canGoForward,
+                onBack: () => _navigatePopupHistory(item, forward: false),
+                onForward: () => _navigatePopupHistory(item, forward: true),
+              )
+            : null,
         // TODO-962：弹窗滚到底时若该层结果可能被截断（!allLoaded）就续查下一批词头
         // （与 dictionary_page_mixin / home_dictionary_page 同构），webview 的
         // _pushResults 据 searchTerm 不变 + entries 增多自动判 isLoadMore → 走

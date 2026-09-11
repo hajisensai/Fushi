@@ -4869,6 +4869,23 @@ function __fushiReportedContentHeight(){
     return Math.ceil(__fushiScrollHeight() * __fushiPopupContentZoom());
 }
 
+// 弹窗内原地跳转（对齐 Hoshi Reader iOS 的 backStack/forwardStack）：后退 / 前进回到
+// 历史页时，Dart 在 renderPopup() 之前把该页离开时的 scrollTop 写进
+// window.__fushiPendingScrollTop（新词 / load-more 写 0 = 不恢复）。内容是分批进
+// DOM 的，首发 popupRendered 时文档往往还不够高、直接 scrollTo 会被夹到底；所以
+// 每个尾批切片后都试一次「够高就恢复」，尾批全部完成（final）时不管够不够高都
+// 应用一次兜底（浏览器自行夹紧）。应用后清零，同一份 pending 绝不影响下一次渲染。
+window.__fushiPendingScrollTop = 0;
+function __fushiApplyPendingScrollTop(isFinal) {
+    const y = window.__fushiPendingScrollTop || 0;
+    if (!(y > 0)) return;
+    const el = document.scrollingElement || document.documentElement;
+    if (!el) return;
+    if (!isFinal && (el.scrollHeight - el.clientHeight) < y) return;
+    el.scrollTop = y;
+    window.__fushiPendingScrollTop = 0;
+}
+
 // 性能（查词时延）：多词条渲染现在**双发**同一 token 的 popupRendered——首词条
 // 同步渲染完（build + 局部 postProcessRuby + applyCustomCSS）立即发第一次，宿主
 // 据此撤盖板/翻可见（首屏可见性只依赖首词条，Dart 侧全部消费方幂等）；尾批词条
@@ -4884,6 +4901,7 @@ function _firePopupRendered(stillRendering) {
         // Its own render signal owns the reveal gate; never let this stale
         // callback reveal the new card early.
         if (generation !== window._renderGeneration) return;
+        __fushiApplyPendingScrollTop(!stillRendering);
         _reportPopupHeight();
         // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
         // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
@@ -5477,6 +5495,8 @@ window.renderPopup = function() {
         } while ((activeEntryElement || nextEntryIndex < entries.length) &&
             performance.now() - sliceStart < TAIL_SLICE_BUDGET_MS);
         if (activeEntryElement || nextEntryIndex < entries.length) {
+            // 历史页回退：内容一够高就把滚动位恢复回去，不等尾批全部完成。
+            __fushiApplyPendingScrollTop(false);
             scheduleRenderTail(renderNextDictionaryBlock);
             return;
         }
