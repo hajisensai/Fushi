@@ -134,7 +134,45 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     GestureBinding.instance.handlePointerEvent(event);
   }
 
-  /// 注销合成 hover 设备（BUG-2453）——它与本页 State 同生共死。
+  /// 给本页路由的两条动画挂「失去栈顶」监听（BUG-2453）；同一路由只挂一次。
+  ///
+  /// - 主动画进入 `reverse`：本页被 pop（ESC / 返回 / popUntil 连同上面的全屏路由一起
+  ///   出栈都走这条，`didPop` 同步 `_controller.reverse()`）。
+  /// - 次动画进入 `forward`：一条可衔接过渡的新路由压上来或替换本页——本地换集的
+  ///   `pushReplacement`（episode.part.dart）、app 外打开视频再压一个播放页都是它。
+  ///
+  /// 为什么不用 `RouteAware`：`AppModel.routeObserver` 从未挂到任何 Navigator；也不用
+  /// `ModalRoute.isCurrent`：pop 不会重建 `_ModalScope`，那个值在被 pop 的路由上是陈旧的。
+  void _attachSyntheticHoverRouteListeners(ModalRoute<Object?>? route) {
+    if (identical(route, _syntheticHoverRoute)) return;
+    _detachSyntheticHoverRouteListeners();
+    _syntheticHoverRoute = route;
+    route?.animation?.addStatusListener(_onSyntheticHoverOwnRouteStatus);
+    route?.secondaryAnimation
+        ?.addStatusListener(_onSyntheticHoverCoveringRouteStatus);
+  }
+
+  void _detachSyntheticHoverRouteListeners() {
+    final ModalRoute<Object?>? route = _syntheticHoverRoute;
+    if (route == null) return;
+    route.animation?.removeStatusListener(_onSyntheticHoverOwnRouteStatus);
+    route.secondaryAnimation
+        ?.removeStatusListener(_onSyntheticHoverCoveringRouteStatus);
+    _syntheticHoverRoute = null;
+  }
+
+  /// 本页路由自己的动画：`reverse` = 本页正被 pop。
+  void _onSyntheticHoverOwnRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse) _retireSyntheticHoverDevice();
+  }
+
+  /// 压在本页上面那条路由的动画：`forward` = 新路由正在入场（push-on-top / 替换）。
+  void _onSyntheticHoverCoveringRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.forward) _retireSyntheticHoverDevice();
+  }
+
+  /// 注销合成 hover 设备（BUG-2453）——在本页失去栈顶那一帧的帧末派同设备的
+  /// `PointerRemovedEvent`。
   ///
   /// 根因：[_pokeControlsVisible] 派的合成 hover 在 Flutter `MouseTracker` 里会为
   /// [_VideoFushiPageState._syntheticHoverDevice] 建一条**真实的设备状态**（`_mouseStates`），
@@ -146,21 +184,37 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   /// 为什么不在每次 hover 后立刻注销：media_kit fork 的 `onExit` 无条件 `visible = false`
   /// 并取消隐藏 Timer（third_party/media_kit_video/.../material_desktop.dart），remove 会
   /// 触发 onExit，poke 就白派了。合成设备的语义是「用户的手在控制条上」，它该活到本页
-  /// 退出；退出时控制条子树已随本页 deactivate 从渲染树摘下，MouseTracker 对已摘下的
-  /// region 不再回调 onExit（`validForMouseTracker` 为假），注销没有任何副作用。
+  /// 不再是栈顶。
   ///
-  /// 顺带清掉还没派出去的 [_pendingPokeHover]：微任务里 [_dispatchPokeHover] 本就按
-  /// `mounted` 早退，这里再清一次是让「注销之后不会再冒出新设备」不依赖调用时机。
+  /// 为什么不在 `dispose()` 里派（第一版就是这么写的，审查打回）：
+  /// - dispose 跑在 `BuildOwner.finalizeTree` 的锁态内。pop 的反向过渡期间本页
+  ///   `IgnorePointer`，幽灵指针早已进到下层库页中心那张卡上；此时派 remove，MouseTracker
+  ///   给那张仍挂在树上的卡回调 onExit → `setState` → debug 抛「setState() or
+  ///   markNeedsBuild() called when widget tree was locked」，dispose 后半段整段跳过。
+  /// - `pushReplacement` 换集时旧页 dispose 晚于新页入场，幽灵指针已进到新页 media_kit
+  ///   的全画面 `MouseRegion`，remove 触发其 onExit 把新页刚露出的控制条和光标一起藏掉。
+  ///
+  /// 改在失去栈顶那一刻排一个 post-frame 派发：该时刻由 `Navigator.pop / push` 同步触发
+  /// （可能正跑在某个 MouseRegion 回调、即 MouseTracker 迭代栈里，BUG-425 同族，故不能
+  /// 同步派），而 post-frame 回调不在 build / finalize 锁内，且**早于** MouseTracker 自己
+  /// 的帧末重命中（`RendererBinding` 在 `drawFrame` 之后才登记那一条），所以幽灵指针来
+  /// 不及进入下层页 / 新页的任何 region，onExit 只落在本页自己的控制条上（本页正在退场，
+  /// 藏掉无妨）。
+  ///
+  /// 「在册」旗在真正派发的那一刻清零而不是排队时：排队到派发之间若又 poke 了一次，
+  /// 那条新 hover 同样会被这次 remove 删掉，旗必须与设备表同步为假。
   void _retireSyntheticHoverDevice() {
     _pendingPokeHover = null;
     if (!_syntheticHoverDeviceLive) return;
-    _syntheticHoverDeviceLive = false;
-    GestureBinding.instance.handlePointerEvent(
-      const PointerRemovedEvent(
-        device: _VideoFushiPageState._syntheticHoverDevice,
-        kind: PointerDeviceKind.mouse,
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syntheticHoverDeviceLive = false;
+      GestureBinding.instance.handlePointerEvent(
+        const PointerRemovedEvent(
+          device: _VideoFushiPageState._syntheticHoverDevice,
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+    });
   }
 
   void _clearRailHover() {
