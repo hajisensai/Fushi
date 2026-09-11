@@ -19,10 +19,10 @@ void main() {
     final String code = maskComments(body);
 
     // 关键判据：声明必须是**非空** `int`。写成 `int? initialPage;` 时，未读章
-    // 与已读完章都会带着 null 走进 `_loadOnlineChapter`，那里
-    // （`if (input.persistProgress && input.initialPage == null && ...)`）会去
-    // 读整本**唯一那行** `reader_positions` —— 装的是上一章读到哪。读完第 3 话
-    // 第 20 页自动换到第 4 话，第 4 话就从第 20 页开始，整章整章跳过内容。
+    // 与已读完章都会带着 null 走进 `_loadLocalPayload`，那里
+    // （`initialPage == null` 分支）会去读整本**唯一那行** `reader_positions`
+    // —— 装的是上一章读到哪。读完第 3 话第 20 页自动换到第 4 话，第 4 话就从
+    // 第 20 页开始，整章整章跳过内容。
     expect(
       code,
       contains('int initialPage = 0;'),
@@ -36,7 +36,7 @@ void main() {
     expect(
       code,
       contains('initialPage: initialPage'),
-      reason: '算出来的页码必须真的传给 openChapter',
+      reason: '算出来的页码必须真的传给 _loadLocalPayload',
     );
   });
 

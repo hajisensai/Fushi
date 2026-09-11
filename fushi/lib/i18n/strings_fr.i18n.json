@@ -4697,5 +4697,14 @@
   "updates_notification_open_manga_extension": "Update",
   "updates_notification_open_app_release": "Download",
   "updates_notification_view_all": "View updates",
-  "updates_notification_header": "Subscription updates"
+  "updates_notification_header": "Subscription updates",
+  "manga_chapter_not_downloaded": "This chapter has not been downloaded yet",
+  "manga_chapter_download_queued": "Added to the download queue",
+  "manga_chapter_download_action": "Download",
+  "manga_chapter_download_delete_action": "Delete download",
+  "manga_chapter_download_retry_action": "Retry download",
+  "manga_chapter_download_status_queued": "Queued",
+  "manga_chapter_download_status_downloading": "Downloading $done/$total",
+  "manga_chapter_download_status_downloaded": "Downloaded",
+  "manga_chapter_download_status_failed": "Download failed"
 }

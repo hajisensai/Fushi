@@ -1,19 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
@@ -360,100 +356,6 @@ class AidokuMangaDetailPage extends ConsumerWidget {
           referer: _aidokuHttpsUrl(manga['url']) ?? sourceBaseUrl,
         ),
       ),
-    );
-  }
-}
-
-class _AidokuChapterReaderPage extends StatefulWidget {
-  const _AidokuChapterReaderPage({
-    required this.package,
-    required this.runtime,
-    required this.manga,
-    required this.chapter,
-  });
-
-  final AidokuInstalledPackage package;
-  final AidokuRuntime runtime;
-  final Map<String, Object?> manga;
-  final Map<String, Object?> chapter;
-
-  @override
-  State<_AidokuChapterReaderPage> createState() =>
-      _AidokuChapterReaderPageState();
-}
-
-class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
-  AidokuReaderChapter? _resolved;
-  Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final List<Object?> result = await widget.runtime.getPages(
-        widget.package.packagePath,
-        widget.manga,
-        widget.chapter,
-      );
-      final List<AidokuImagePage> pages = result
-          .whereType<Map<Object?, Object?>>()
-          .map((Map<Object?, Object?> value) =>
-              AidokuImagePage.fromJson(value.cast<String, Object?>()))
-          .toList(growable: false);
-      if (pages.isEmpty) {
-        throw const AidokuRuntimeException(
-          'EMPTY_CHAPTER',
-          'Aidoku returned no readable image pages for this chapter',
-        );
-      }
-      if (mounted) {
-        setState(() {
-          _resolved = AidokuReaderChapter(
-            package: widget.package,
-            manga: widget.manga,
-            chapter: widget.chapter,
-            pages: pages,
-          );
-        });
-      }
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'AidokuReader.pages ${widget.package.id} ${widget.chapter['key']}',
-        error,
-        stack,
-      );
-      if (mounted) setState(() => _error = error);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final String chapterTitle = aidokuChapterDisplayTitle(widget.chapter);
-    final AidokuReaderChapter? resolved = _resolved;
-    if (resolved != null) {
-      final String identity = <String>[
-        widget.package.id,
-        widget.manga['key']?.toString() ?? '',
-        widget.chapter['key']?.toString() ?? '',
-      ].join('\u001f');
-      return FushiAppUiScaleNeutralizer(
-        child: MangaFushiPage(
-          item: null,
-          bookKey: 'aidoku-${sha256.convert(utf8.encode(identity))}',
-          onlineChapter: resolved,
-        ),
-      );
-    }
-    return FushiPageScaffold(
-      title: chapterTitle,
-      subtitle: widget.manga['title']?.toString(),
-      body: _error != null
-          ? Center(child: Text('$_error'))
-          : Center(child: adaptiveIndicator(context: context)),
     );
   }
 }

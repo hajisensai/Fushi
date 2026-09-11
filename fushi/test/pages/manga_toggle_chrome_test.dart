@@ -160,9 +160,15 @@ void main() {
         isTrue,
         reason: '可见性必须是页面自己的状态字段',
       );
-      // 顶栏画的是页码 / 框选 OCR / 单双页，没有内容时它们无意义——继续挂内容门控。
+      // 顶栏画的是页码 / 框选 OCR / 单双页，没有内容时它们无意义——继续挂内容门控
+      // （「本章未下载」态同样没有正文，2026-09-12 起一并门掉）。
       expect(
-        pageSrc.contains('_bookRow != null && !_loadFailed && _chromeVisible'),
+        pageSrc.contains(
+          '_bookRow != null &&\n'
+          '                      !_loadFailed &&\n'
+          '                      !_chapterNotDownloaded &&\n'
+          '                      _chromeVisible',
+        ),
         isTrue,
         reason: '顶栏（页码/OCR/单双页）在没有内容时不该画',
       );
@@ -176,11 +182,16 @@ void main() {
         reason: '唤回按钮不得挂内容门控——隐藏界面后内容加载失败会连返回键一起叫不回来',
       );
       expect(
-        RegExp(r'_bookRow != null && !_loadFailed && _chromeVisible')
-            .allMatches(pageSrc)
-            .length,
+        RegExp(
+          r'_bookRow != null &&\s+!_loadFailed &&\s+!_chapterNotDownloaded &&\s+_chromeVisible',
+        ).allMatches(pageSrc).length,
         1,
         reason: '内容门控只该剩顶栏那一处；返回键若还挂着它，失败态就没有出口了',
+      );
+      expect(
+        RegExp(r'!_loadFailed &&\s+_chromeVisible').allMatches(pageSrc).length,
+        0,
+        reason: '没有第二处「内容 && _chromeVisible」门控（返回键 / 唤回键不得挂它）',
       );
     });
 

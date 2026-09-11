@@ -4,21 +4,18 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_image_page.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
-import 'package:fushi/src/media/manga/interconnect/interconnect_reader_chapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 互联漫画源端到端：真 [FushiSyncServer] + 真 [InterconnectSyncBackend] + 真适配器
-/// + 真页缓存。
+/// 互联漫画源端到端：真 [FushiSyncServer] + 真 [InterconnectSyncBackend] + 真适配器。
 ///
 /// 不 mock backend 的理由：这个源的全部价值就在「HTTP 往返 + 鉴权 + 缓存」这条链上，
 /// 把 backend 换成假的等于把被测对象换掉了。
@@ -133,7 +130,6 @@ void main() {
   late _MangaHost host;
   late FushiSyncServer server;
   late InterconnectSyncBackend backend;
-  late Directory managed;
 
   setUp(() async {
     host = _MangaHost(pageBytes);
@@ -149,12 +145,10 @@ void main() {
       base: 'http://127.0.0.1:${server.port}',
       token: token,
     );
-    managed = Directory.systemTemp.createTempSync('hbk_mangasrc_managed');
   });
 
   tearDown(() async {
     await server.stop();
-    if (managed.existsSync()) managed.deleteSync(recursive: true);
   });
 
   OnlineMangaLibraryEntry entryOf(RemoteBookInfo book) =>
@@ -194,102 +188,60 @@ void main() {
     expect(result.series.raw['readingMode'], 'spread');
   });
 
-  test('开章 → 逐页真取到对端字节，且页序不串', () async {
+  test('解析页表 → 逐页真取到对端字节，且页序不串（两段式契约）', () async {
     final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
       backend,
     ).listSeries();
     final OnlineMangaLibraryEntry entry = entryOf(series.single);
-    final OnlineMangaReaderChapter chapter =
-        await InterconnectLibraryAdapter(backend: backend).openChapter(
+    final InterconnectLibraryAdapter adapter =
+        InterconnectLibraryAdapter(backend: backend);
+    final List<OnlineMangaPageRef> pages = await adapter.resolveChapterPages(
       entry: entry,
       chapter: entry.chapters.single,
-      managedDirectory: managed,
-      persistProgress: false,
     );
-    expect(chapter.pageCount, 3);
-    expect(chapter.pageIdentities.toSet().length, 3, reason: '每页身份必须互不相同');
+    expect(pages, hasLength(3));
+    expect(
+      pages.map((OnlineMangaPageRef page) => page.index).toList(),
+      <int>[0, 1, 2],
+    );
+    expect(pages, everyElement(isA<InterconnectMangaPageRef>()));
 
-    final MangaReaderSession session = await chapter.openPageSession();
-    addTearDown(session.close);
     for (int i = 0; i < 3; i++) {
-      final MangaPageBytes page = await session.page(i);
-      expect(page.bytes, Uint8List.fromList(pageBytes[i]));
+      final Uint8List bytes = await adapter.fetchChapterPage(pages[i]);
+      expect(bytes, Uint8List.fromList(pageBytes[i]));
     }
     expect(host.servedPages, <int>[0, 1, 2]);
   });
 
-  test('页图落磁盘缓存，第二次读不再打对端', () async {
+  test('取页不带缓存：每次 fetchChapterPage 都真打对端（落盘归下载服务）', () async {
     final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
       backend,
     ).listSeries();
     final OnlineMangaLibraryEntry entry = entryOf(series.single);
-    final OnlineMangaReaderChapter chapter =
-        await InterconnectLibraryAdapter(backend: backend).openChapter(
+    final InterconnectLibraryAdapter adapter =
+        InterconnectLibraryAdapter(backend: backend);
+    final List<OnlineMangaPageRef> pages = await adapter.resolveChapterPages(
       entry: entry,
       chapter: entry.chapters.single,
-      managedDirectory: managed,
-      persistProgress: false,
     );
-    final MangaReaderSession session = await chapter.openPageSession();
-    addTearDown(session.close);
-
-    await session.page(0);
-    expect(host.servedPages, <int>[0]);
-    await session.page(0);
-    expect(host.servedPages, <int>[0], reason: '命中磁盘缓存就不该再向对端要一次');
+    await adapter.fetchChapterPage(pages[0]);
+    await adapter.fetchChapterPage(pages[0]);
+    expect(host.servedPages, <int>[0, 0]);
   });
 
-  test('预取失败不冒泡（相邻页抖动不该打断当前页阅读）', () async {
-    final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
-      backend,
-    ).listSeries();
-    final OnlineMangaLibraryEntry entry = entryOf(series.single);
-    final OnlineMangaReaderChapter chapter =
-        await InterconnectLibraryAdapter(backend: backend).openChapter(
-      entry: entry,
-      chapter: entry.chapters.single,
-      managedDirectory: managed,
-      persistProgress: false,
-    );
-    final MangaReaderSession session = await chapter.openPageSession();
-    addTearDown(session.close);
-    await server.stop(); // 对端下线 → 预取全部失败
-    await expectLater(session.prefetchAround(1), completes);
-  });
-
-  test('身份掺入配对凭据命名空间：换对端不复用上一台的页缓存', () async {
-    final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
-      backend,
-    ).listSeries();
-    final OnlineMangaLibraryEntry entry = entryOf(series.single);
-    final InterconnectReaderChapter chapter = InterconnectReaderChapter(
-      backend: backend,
-      bookKey: 'yotsuba-1',
-      title: 'よつばと！1',
-      pages: const <RemoteMangaPageInfo>[
-        RemoteMangaPageInfo(index: 0, name: 'p0.jpg'),
-      ],
-      managedDirectory: managed,
-      persistProgress: false,
-    );
-    final InterconnectSyncBackend other = await _buildBackend(
-      base: 'http://127.0.0.1:${server.port}',
-      token: 'a-different-token',
-    );
-    final InterconnectReaderChapter otherChapter = InterconnectReaderChapter(
-      backend: other,
-      bookKey: 'yotsuba-1',
-      title: 'よつばと！1',
-      pages: const <RemoteMangaPageInfo>[
-        RemoteMangaPageInfo(index: 0, name: 'p0.jpg'),
-      ],
-      managedDirectory: managed,
-      persistProgress: false,
-    );
-    expect(entry.series.key, 'yotsuba-1');
-    expect(
-      chapter.pageIdentities.single,
-      isNot(otherChapter.pageIdentities.single),
+  test('别的运行时的页引用一律拒绝（密封分派不靠猜）', () async {
+    await expectLater(
+      InterconnectLibraryAdapter(backend: backend).fetchChapterPage(
+        const AidokuMangaPageRef(
+          index: 0,
+          page: AidokuImagePage(
+            url: 'https://cdn.example/p.jpg',
+            headers: <String, String>{},
+            context: <String, String>{},
+          ),
+        ),
+      ),
+      throwsArgumentError,
     );
   });
 

@@ -1,11 +1,9 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
-import 'package:fushi/src/media/manga/interconnect/interconnect_reader_chapter.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 
@@ -124,12 +122,9 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
   }
 
   @override
-  Future<OnlineMangaReaderChapter> openChapter({
+  Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-    required Directory managedDirectory,
-    required bool persistProgress,
-    int? initialPage,
   }) async {
     final RemoteMangaManifest manifest = await _manifest(entry, 'pages');
     if (manifest.pages.isEmpty) {
@@ -139,15 +134,40 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
         stage: 'pages',
       );
     }
-    return InterconnectReaderChapter(
-      backend: backend,
-      bookKey: manifest.bookKey.isEmpty ? entry.series.key : manifest.bookKey,
-      title: manifest.title.isEmpty ? entry.series.title : manifest.title,
-      pages: manifest.pages,
-      managedDirectory: managedDirectory,
-      persistProgress: persistProgress,
-      initialPage: initialPage,
+    final String bookKey =
+        manifest.bookKey.isEmpty ? entry.series.key : manifest.bookKey;
+    return <OnlineMangaPageRef>[
+      for (int index = 0; index < manifest.pages.length; index++)
+        InterconnectMangaPageRef(
+          index: index,
+          bookKey: bookKey,
+          remoteIndex: manifest.pages[index].index,
+        ),
+    ];
+  }
+
+  /// **不自己造 HTTP client**：互联对端可能是自签证书 + TOFU 指纹钉扎，只有
+  /// [InterconnectSyncBackend] 手上那条会话带得动 `badCertificateCallback` 与
+  /// Basic 凭据。裸 `http.Client` 在钉扎对端上必然握手失败。
+  @override
+  Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
+    if (page is! InterconnectMangaPageRef) {
+      throw ArgumentError.value(
+        page,
+        'page',
+        'not an interconnect page reference',
+      );
+    }
+    final Uint8List bytes = await backend.fetchRemoteMangaPage(
+      page.bookKey,
+      page.remoteIndex,
     );
+    if (bytes.isEmpty) {
+      throw StateError(
+        'Peer returned an empty manga page: ${page.bookKey}#${page.index}',
+      );
+    }
+    return bytes;
   }
 
   /// 封面走对端清单里已经带好的绝对 `coverUrl`（host 按 client 实际请求地址回填，

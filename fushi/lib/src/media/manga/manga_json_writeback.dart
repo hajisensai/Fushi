@@ -1,4 +1,4 @@
-/// manga.json 回写（整卷 OCR 落盘与在线几何回填的共同写侧）。
+/// manga.json 回写（整卷 OCR 落盘与章下载落盘的共同写侧）。
 ///
 /// 读-改-写往返：`parseMangaJson` → 改 payload → `mangaPayloadToJson` → 原子落盘。
 ///
@@ -16,8 +16,10 @@
 ///    `manga_json_writeback_test.dart` 的锁覆盖守卫）：
 ///    - `ocr/manga_ocr_job_registry.dart` 的 `_ingest`（整卷 OCR 完成落盘；BUG-2449 起
 ///      任务归 app 级注册表，落盘随所有权一起离开阅读页）
-///    - `manga_fushi_page.dart` 的 `_persistOnlinePayloadGeometry`（在线几何回填）
-///    - `manga_fushi_page.dart` 的在线章节引导重写与 `_invalidateOnlineChapterPayload`
+///    - `download/manga_download_service.dart` 的 `_download`（章下载完成后写章
+///      `manga.json`；2026-09-12 起阅读器不再写任何 manga.json——在线几何回填与
+///      章节引导重写随「先下载再读」一起删除）
+///    - `library/manga_chapter_storage.dart` 的 `deleteChapterDownload`（删章目录）
 ///    - `manga_ocr_wizard_dialog.dart` 的 `_writeManagedMangaJson`（向导对已入库书落盘）
 ///
 ///    其中向导那条是**整份覆写**：不进锁就会整段吞掉几何回填刚落盘的改动。

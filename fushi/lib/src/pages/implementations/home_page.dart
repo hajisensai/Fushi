@@ -521,6 +521,10 @@ class _HomePageState extends BasePageState<HomePage>
       // 启动期：用户最想知道「我不在的时候更新了什么」的时刻就是刚打开应用。
       // 各域自己的到期判据挡住频繁重启造成的重复请求。
       appModel.startUpdateChecks();
+      // 在线漫画章节下载 worker（设计稿 2026-09-12 §4）：复位上次进程死亡留下的
+      // running 行并续跑队列。放在这里而不是 initialise()：完成钩子的自动 OCR 要
+      // 从 navigator 的 context 装配引擎，HomePage 就绪之前拿不到。
+      unawaited(appModel.startMangaDownloads());
 
       // 这一段是 HomePage 层的模块专属后台自启：同步（sync）与视频索引（video）。
       // 模块关掉就不再拉起——「关掉的模块下次启动不该还在后台跑」。已经在飞的
