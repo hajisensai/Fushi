@@ -1,3 +1,5 @@
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
 
@@ -180,23 +182,47 @@ class _UpdateEntryTile extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final UpdateFeedKind? kind = UpdateFeedKind.fromDbValue(entry.kind);
     final bool unseen = entry.seenAt == null;
+    final Map<String, Object?> detail = decodeUpdateFeedDetail(entry.detailJson);
+    // 配图 / 发布时刻是域侧写进 detailJson 的可选投影（番剧域有，其余没有）；
+    // 图文件可能已被封面 GC 收走，不在就退回域图标。
+    final String? imagePath = detail['imagePath'] as String?;
+    final bool hasImage = imagePath != null && File(imagePath).existsSync();
+    final int? publishedAt = detail['publishedAt'] as int?;
+    final String subtitle = <String>[
+      if (entry.subtitle case final String s when s.isNotEmpty) s,
+      if (publishedAt != null)
+        FushiTimeFormat.dateHourMinute(
+          DateTime.fromMillisecondsSinceEpoch(publishedAt),
+        ),
+    ].join(' · ');
     // 走共享的 FushiListItem 而不是裸 ListTile：普通页面外壳的 MD3 决策收口在
     // 组件层（md3_design_system_static_test 守着这条），每页自己拼一遍 ListTile
     // 正是那条守卫要拦的东西。
     return FushiListItem(
-      leading: Icon(
-        kind == null ? Icons.notifications_outlined : updateFeedKindIcon(kind),
-        color: unseen ? theme.colorScheme.primary : theme.colorScheme.outline,
-      ),
+      leading: hasImage
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.file(
+                File(imagePath),
+                width: 64,
+                height: 36,
+                fit: BoxFit.cover,
+              ),
+            )
+          : Icon(
+              kind == null
+                  ? Icons.notifications_outlined
+                  : updateFeedKindIcon(kind),
+              color:
+                  unseen ? theme.colorScheme.primary : theme.colorScheme.outline,
+            ),
       title: Text(
         entry.title,
         style: unseen
             ? theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)
             : theme.textTheme.bodyLarge,
       ),
-      subtitle: entry.subtitle == null || entry.subtitle!.isEmpty
-          ? null
-          : Text(entry.subtitle!),
+      subtitle: subtitle.isEmpty ? null : Text(subtitle),
       subtitleMaxLines: 1,
       // 未读点：与「加粗 = 未读」同一个事实的第二个可见表征，不靠字重也能分辨。
       trailing: unseen

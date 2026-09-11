@@ -14,6 +14,7 @@ import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
+import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -925,22 +926,78 @@ class AppModel with ChangeNotifier {
         database: database,
         prefs: prefsRepo,
         notifier: LocalUpdateNotifier.isSupportedPlatform
-            ? LocalUpdateNotifier(appName: 'Fushi')
+            ? LocalUpdateNotifier(
+                appName: 'Fushi',
+                groupTitle: t.updates_notification_header,
+                onResponse: _onUpdateNotificationResponse,
+              )
             : const NoopUpdateNotifier(),
-        notificationText: _localizedUpdateNotificationText,
+        notificationText: localizedUpdateNotificationText,
       );
 
+  /// 用户点了系统通知：本体 / 「打开」→ 那条更新的落点（番剧 = 播放该集）；
+  /// 「查看更新」/ 载荷解不出 / 条目已被清 → 更新中心。先把窗口唤到前台——
+  /// Windows 的 toast 激活只是回调进程，不会替我们把主窗拉起来。
+  Future<void> _onUpdateNotificationResponse(
+    UpdateNotificationResponse response,
+  ) async {
+    await DesktopLookupService.instance.bringMainWindowToFront();
+    final BuildContext? context = navigatorKey.currentContext;
+    if (context == null || !isDatabaseReady) return;
+    final UpdateNotificationPayload? payload =
+        UpdateNotificationPayload.decode(response.payload);
+    final UpdateFeedEntryRow? entry = payload == null ||
+            response.actionId == kUpdateNotificationActionViewAll
+        ? null
+        : await database.getUpdateFeedEntry(payload.entryId);
+    if (!context.mounted) return;
+    if (entry == null) {
+      await openUpdatesCenter(context, updateFeedService);
+      return;
+    }
+    // 与更新中心页同序：先标已读（「点开过」不取决于跳转成败），再跳。
+    await updateFeedService.markSeen(<String>[entry.entryId]);
+    if (!context.mounted) return;
+    await openUpdateFeedEntry(context, entry);
+  }
+
+  /// 「打开落点」按钮的文案，按域。
+  static String _openActionLabel(UpdateFeedKind kind) => switch (kind) {
+        UpdateFeedKind.videoEpisode =>
+          t.updates_notification_open_video_episode,
+        UpdateFeedKind.mangaChapter =>
+          t.updates_notification_open_manga_chapter,
+        UpdateFeedKind.mangaExtension =>
+          t.updates_notification_open_manga_extension,
+        UpdateFeedKind.appRelease => t.updates_notification_open_app_release,
+      };
+
   /// 通知文案的本地化外壳。服务层默认实现只组装结构（那一层要能在纯 Dart 单测里
-  /// 跑，slang 的 `t` 需要 Flutter binding），这里补上句子。
-  static UpdateNotificationText _localizedUpdateNotificationText(
+  /// 跑，slang 的 `t` 需要 Flutter binding），这里补上句子与按钮。
+  ///
+  /// 正文 = 副标题 · 发布时刻（`MM-dd HH:mm`，本地化无关——toast 一行放不下
+  /// 长格式，17 种语言一致）；多条时「第一条 等 N 项」。时刻只在**单条**时进正文：
+  /// 汇总条的时刻属于谁说不清。
+  static UpdateNotificationText localizedUpdateNotificationText(
     UpdateFeedKind kind,
     List<UpdateFeedDraft> fresh,
   ) {
     final UpdateFeedDraft first = fresh.first;
+    final String openLabel = _openActionLabel(kind);
+    final String viewAllLabel = t.updates_notification_view_all;
     if (fresh.length == 1) {
+      final int? publishedAt = first.publishedAt;
+      final String body = <String>[
+        if (first.subtitle case final String subtitle when subtitle.isNotEmpty)
+          subtitle,
+        if (publishedAt != null)
+          _shortMoment(DateTime.fromMillisecondsSinceEpoch(publishedAt)),
+      ].join(' · ');
       return UpdateNotificationText(
         title: first.title,
-        body: first.subtitle ?? '',
+        body: body,
+        openLabel: openLabel,
+        viewAllLabel: viewAllLabel,
       );
     }
     final String firstLine = first.subtitle == null || first.subtitle!.isEmpty
@@ -952,8 +1009,15 @@ class AppModel with ChangeNotifier {
         first: firstLine,
         count: fresh.length - 1,
       ),
+      openLabel: openLabel,
+      viewAllLabel: viewAllLabel,
     );
   }
+
+  /// `MM-dd HH:mm`：[FushiTimeFormat.dayKey] 去掉年份 + [FushiTimeFormat.hourMinute]。
+  static String _shortMoment(DateTime time) =>
+      '${FushiTimeFormat.dayKey(time).substring(5)} '
+      '${FushiTimeFormat.hourMinute(time)}';
 
   UpdateCheckScheduler? _updateCheckScheduler;
 
@@ -969,6 +1033,9 @@ class AppModel with ChangeNotifier {
   void startUpdateChecks() {
     if (_updateCheckScheduler != null) return;
     final UpdateFeedService feed = updateFeedService;
+    // 通知后端在这里（HomePage 已就绪、navigator 已存在）初始化：点击回调与
+    // 冷启动回放都要有可跳转的 context。
+    unawaited(feed.warmUpNotifier());
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,
       isKindEnabled: feed.isKindEnabled,

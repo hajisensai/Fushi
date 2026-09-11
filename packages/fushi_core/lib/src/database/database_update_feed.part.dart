@@ -56,6 +56,11 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
     return query.get();
   }
 
+  /// 按身份取一条（系统通知点击回流用：通知载荷只带 entryId，落点从这里还原）。
+  Future<UpdateFeedEntryRow?> getUpdateFeedEntry(String entryId) =>
+      (select(updateFeedEntries)..where((t) => t.entryId.equals(entryId)))
+          .getSingleOrNull();
+
   /// 把指定条目标记为已读（幂等：已读的行不再改写 seenAt，保留第一次看见的时刻）。
   Future<int> markUpdateFeedEntriesSeen(
     Iterable<String> entryIds, {

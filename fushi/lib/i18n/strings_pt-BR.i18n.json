@@ -4707,5 +4707,11 @@
   "popup_history_back": "Back",
   "popup_history_forward": "Forward",
   "manga_cover_cache_max_age": "Cover cache retention",
-  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days"
+  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days",
+  "updates_notification_open_video_episode": "Play",
+  "updates_notification_open_manga_chapter": "Read",
+  "updates_notification_open_manga_extension": "Update",
+  "updates_notification_open_app_release": "Download",
+  "updates_notification_view_all": "View updates",
+  "updates_notification_header": "Subscription updates"
 }
