@@ -17,7 +17,8 @@
 ///    `manga_json_writeback_test.dart` 的锁覆盖守卫）：
 ///    - `replaceMangaBlocksInRegion`（框选区域重识别回写，本文件，自带锁）
 ///    - `restoreMangaPage`（撤销区域重识别，本文件，自带锁）
-///    - `manga_fushi_page.dart` 的 `_finishWholeVolumeOcr`（整卷 OCR 落盘）
+///    - `ocr/manga_ocr_job_registry.dart` 的 `_ingest`（整卷 OCR 完成落盘；BUG-2449 起
+///      任务归 app 级注册表，落盘随所有权一起离开阅读页）
 ///    - `manga_fushi_page.dart` 的 `_persistOnlinePayloadGeometry`（在线几何回填）
 ///    - `manga_fushi_page.dart` 的在线章节引导重写与 `_invalidateOnlineChapterPayload`
 ///    - `manga_ocr_wizard_dialog.dart` 的 `_writeManagedMangaJson`（向导对已入库书落盘）

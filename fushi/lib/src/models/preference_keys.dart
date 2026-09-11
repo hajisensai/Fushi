@@ -132,6 +132,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'low_memory_mode',
+  // int（天，BUG-2450）：在线漫画封面磁盘缓存的保留天数（Mihon 封面缓存
+  // MihonCoverCache.maxAge）。默认 180，范围 30..360。
+  'manga_cover_cache_max_age_days',
   'manga_external_mokuro_path',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',

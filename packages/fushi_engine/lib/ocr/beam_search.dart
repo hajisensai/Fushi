@@ -1,18 +1,22 @@
 /// Beam search 解码（纯函数，不依赖 ONNX runtime）。
 ///
 /// 语义对齐 HuggingFace `transformers` 的 `generate`（BeamSearchScorer +
-/// NoRepeatNGramLogitsProcessor，early_stopping=False），manga-ocr 原版
-/// generation_config：num_beams=4, length_penalty=2.0, no_repeat_ngram_size=3,
-/// max_length=300。已实测该配置与原版输出逐字一致（贪心解码只有 ~97.8%）。
+/// NoRepeatNGramLogitsProcessor），manga-ocr 原版 generation_config：
+/// num_beams=4, length_penalty=2.0, no_repeat_ngram_size=3, max_length=300,
+/// **early_stopping=true**（kha-white/manga-ocr-base 的 config.json 顶层与
+/// mayocream/manga-ocr-onnx 的 generation_config.json 均如此；BUG-2457）。
+/// 已实测该配置与原版输出逐字一致（贪心解码只有 ~97.8%）。
 ///
 /// 与 HF 对齐的关键细节：
 /// - 序列长度计数**包含** decoder 起始 token（[CLS]），max_length 同口径；
 /// - 每步取 top `2 * numBeams` 候选；候选 rank >= numBeams 的 EOS 直接丢弃；
 /// - EOS 候选完成时：分数 = 累计 logprob（含 EOS 那一步的 logprob）除以
 ///   `len ** lengthPenalty`，其中 `len` 是**不含 EOS** 的序列长度；
-/// - early_stopping=False 的终止判据：已有 numBeams 条完成假设，且其中最差
-///   分数 >= 当前存活 beam 可能达到的最好分数
-///   （maxAliveScore / curLen ** lengthPenalty）；
+/// - 终止判据（HF `BeamHypotheses.is_done`）：先要有 numBeams 条完成假设；
+///   early_stopping=true 到此即停；false 还要求其中最差分数 >= 当前存活 beam
+///   可能达到的最好分数（maxAliveScore / curLen ** lengthPenalty）。
+///   正常图两者逐字相同；退化图（横幅 / 噪声框）false 会跑满 max_length 编
+///   小作文（实测 299 步 10.6s vs 21 步 126ms），既慢又错——所以默认 true。
 /// - 到达 max_length 时把存活 beam 按同样的长度惩罚公式收编进完成集。
 library;
 
@@ -35,6 +39,7 @@ class BeamSearchConfig {
     this.lengthPenalty = 2.0,
     this.noRepeatNgramSize = 3,
     this.maxLength = 300,
+    this.earlyStopping = true,
   })  : assert(numBeams >= 1),
         assert(maxLength >= 2);
 
@@ -49,6 +54,10 @@ class BeamSearchConfig {
 
   /// 0 表示不启用 no-repeat-ngram。
   final int noRepeatNgramSize;
+
+  /// HF `early_stopping`：凑齐 numBeams 条完成假设就停，不再等存活 beam 证明
+  /// 自己追不上。原版 generation_config 是 true；false 只留给对拍旧行为。
+  final bool earlyStopping;
 
   /// 序列最大长度（含起始 token，对齐 HF max_length 口径）。
   final int maxLength;
@@ -248,8 +257,11 @@ Future<BeamSearchResult> beamSearchDecode({
     }
     curLen++;
 
-    // early_stopping=False 的 is_done 判据。
-    if (finished.length >= numBeams) {
+    // HF BeamHypotheses.is_done：凑齐 numBeams 条完成假设是前提；early_stopping
+    // 为 true 到此即停，false 再比一次「最差完成分 vs 存活 beam 上限」。
+    if (finished.length >= numBeams && config.earlyStopping) {
+      searchDone = true;
+    } else if (finished.length >= numBeams) {
       double bestAlive = double.negativeInfinity;
       for (int b = 0; b < numBeams; b++) {
         bestAlive = math.max(bestAlive, beamScores[b]);

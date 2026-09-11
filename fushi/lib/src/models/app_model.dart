@@ -4052,6 +4052,7 @@ class AppModel with ChangeNotifier {
       database: database,
       rootDirectory: root,
       runtime: MihonRuntimeFactory.create(root),
+      coverCacheMaxAge: Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays),
       // 只有真实 app 启动这一处装默认扩展仓库（用户诉求：漫画扩展仓库默认带
       // keiyoushi）。别把它挪进 MihonManager 的默认值——那会让每个构造 manager
       // 的单测都去拉真实网络索引，见 MihonManager.seedDefaultStore 的说明。
@@ -7956,6 +7957,15 @@ class AppModel with ChangeNotifier {
   int get mangaZoomPercent => prefsRepo.mangaZoomPercent;
   Future<void> setMangaZoomPercent(int value) =>
       prefsRepo.setMangaZoomPercent(value);
+
+  /// 在线漫画封面磁盘缓存保留天数（BUG-2450）。manager 已建时同步改到缓存实例，
+  /// 不必重启；未建时下次懒建从偏好读。
+  int get mangaCoverCacheMaxAgeDays => prefsRepo.mangaCoverCacheMaxAgeDays;
+  Future<void> setMangaCoverCacheMaxAgeDays(int value) async {
+    await prefsRepo.setMangaCoverCacheMaxAgeDays(value);
+    _mihonManager?.coverCache.maxAge =
+        Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays);
+  }
 
   int get mangaZoomSensitivity => prefsRepo.mangaZoomSensitivity;
   Future<void> setMangaZoomSensitivity(int value) =>

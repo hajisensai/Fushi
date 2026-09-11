@@ -4705,5 +4705,7 @@
   "browser_extension_test_page_server_off": "Enable the lookup server first, then try again.",
   "video_source_scrape_locale_follow_ui": "Leave empty to follow the interface language",
   "popup_history_back": "Back",
-  "popup_history_forward": "Forward"
+  "popup_history_forward": "Forward",
+  "manga_cover_cache_max_age": "Cover cache retention",
+  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days"
 }

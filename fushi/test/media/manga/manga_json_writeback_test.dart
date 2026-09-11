@@ -398,6 +398,8 @@ void main() {
     const List<String> consumers = <String>[
       'lib/src/media/manga/reader/manga_fushi_page.dart',
       'lib/src/media/manga/manga_ocr_wizard_dialog.dart',
+      // BUG-2449：整卷 OCR 的完成落盘随任务所有权搬到了注册表。
+      'lib/src/media/manga/ocr/manga_ocr_job_registry.dart',
     ];
 
     test('每处 writeMangaJsonAtomically 调用都由 runExclusiveOnMangaJson 包住', () {

@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/manga_cover_failure.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -545,24 +546,13 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
           );
         }
         if (snapshot.hasError) {
-          return ColoredBox(
-            color: Color(0xff303030),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(Icons.broken_image_outlined),
-                  MihonCloudflareAction(
-                    runtime: widget.runtime,
-                    error: snapshot.error,
-                    compact: true,
-                    onVerified: () async {
-                      if (mounted) setState(_reload);
-                    },
-                  ),
-                ],
-              ),
-            ),
+          // 缓存层的自动退避已经用尽（或错误本就不该自动重试）：这里给手动入口。
+          return MangaCoverFailure(
+            runtime: widget.runtime,
+            error: snapshot.error,
+            onRetry: () {
+              if (mounted) setState(_reload);
+            },
           );
         }
         return const ColoredBox(
@@ -574,6 +564,17 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
   }
 }
 
+/// 封面在并发闸门里最多排多久（BUG-2450）。
+///
+/// 桌面封面单张首响应 / 空闲超时各 90s，4 并发 × 90s 串行排队时整页封面会一起
+/// 转圈几分钟；排到 30s 还没轮上就直接落失败态（可点重试），把慢源的代价限制在
+/// 它自己那几格上。
+const Duration kMihonSourceImageQueueWaitTimeout = Duration(seconds: 30);
+
+/// 排队超时的错误码；[isTransientMihonImageError] 明确不对它自动退避——队列
+/// 本身已经等满了一档，再排一次只会把失败态往后推。
+const String kMihonImageQueueTimeoutCode = 'IMAGE_QUEUE_TIMEOUT';
+
 /// 漫画源封面的轻量共享并发闸门。
 ///
 /// `GridView.builder` 虽然懒建，但仍会为当前视口和 cacheExtent 同时创建多张封面；
@@ -581,10 +582,15 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
 /// 缓存未命中网络任务；命中磁盘的封面不占用网络并发名额，图片仍由各自 widget
 /// 独立解码与渲染。
 class MihonSourceImageLoadQueue {
-  MihonSourceImageLoadQueue({required this.maxConcurrent})
-    : assert(maxConcurrent > 0);
+  MihonSourceImageLoadQueue({
+    required this.maxConcurrent,
+    this.waitTimeout = kMihonSourceImageQueueWaitTimeout,
+  }) : assert(maxConcurrent > 0);
 
   final int maxConcurrent;
+
+  /// 等待名额的上限；超时的等待者以 [kMihonImageQueueTimeoutCode] 失败。
+  final Duration waitTimeout;
   final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
   int _active = 0;
 
@@ -607,7 +613,23 @@ class MihonSourceImageLoadQueue {
     }
     final Completer<void> waiter = Completer<void>();
     _waiters.addLast(waiter);
-    await waiter.future;
+    // 超时判据是「还在等待队列里」：_release 一旦把名额交给它就从队列移走，
+    // 定时器再响也只会空转，不会既拿了名额又报失败（那会把名额永久漏掉）。
+    final Timer timer = Timer(waitTimeout, () {
+      if (_waiters.remove(waiter)) {
+        waiter.completeError(
+          const MihonRuntimeException(
+            kMihonImageQueueTimeoutCode,
+            'The source image waited too long for a load slot',
+          ),
+        );
+      }
+    });
+    try {
+      await waiter.future;
+    } finally {
+      timer.cancel();
+    }
   }
 
   void _release() {

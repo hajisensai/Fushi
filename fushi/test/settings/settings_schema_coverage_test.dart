@@ -115,6 +115,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // BUG-2450：在线源封面磁盘缓存保留天数。写 prefsRepo（changed=true），生效点是
+  // MihonCoverCache.maxAge（过期条目下次读取删掉重取），harness 里没有封面缓存
+  // 目录可探。由专项测试咬住：过期封面重新联网、未过期命中磁盘、偏好改动即时
+  // 写穿到已建 manager 的缓存实例。
+  'manga/Cover cache retention':
+      'test/media/manga/manga_cover_retry_test.dart（maxAge 过期重取 + 偏好写穿）',
   // galgame 窗口超分三态开关（PR#430）。写 prefsRepo（changed=true），生效点整条在
   // 本进程之外 —— 改写 Magpie 自己的 config.json、拉起 / 收掉一个独立的 Magpie 进程、
   // 由它去做全屏缩放，widget harness 里没有任何可探的渲染输入；而且它 Windows-only，
