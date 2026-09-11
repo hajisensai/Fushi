@@ -85,6 +85,13 @@
 					</array>
 				</dict>
 			</dict>
+		<!-- BUG-2456：关掉引擎自带的 deep linking（Flutter ≥ 3.27 缺省为开）。
+		     fushi:// 的每一条 URL（AnkiMobile x-callback、OAuth 回跳）都由
+		     SceneDelegate → app.fushi.reader/url_events 通道自己处理，从来不是
+		     Navigator 路由名；引擎若再把它推成 pushRouteInformation，框架会
+		     pushNamed('/') 在当前页面上面再压一个 HomePage（「跳回主页」）。 -->
+		<key>FlutterDeepLinkingEnabled</key>
+		<false/>
 			<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
