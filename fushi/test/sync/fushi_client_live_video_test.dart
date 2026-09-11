@@ -628,11 +628,11 @@ void main() {
           reason: '指纹不符必须被钉扎拒绝，绝不放行任意自签证书');
     });
 
-    // BUG-2448：https host 解析成功即把 (host, port) → 指纹登记给 app 内置中继，
+    // BUG-2455：https host 解析成功即把 (host, port) → 指纹登记给 app 内置中继，
     // 播放页交给 native 的 stream URL 才会被降成明文 http、由中继钉扎升回 https。
     // 没有这一步，nativePlaybackUri 原样返回 https，libmpv（curl 后端）自己校验
     // 自签证书 → 互联视频打不开。
-    test('BUG-2448: resolved https host is registered as a pinned native origin',
+    test('BUG-2455: resolved https host is registered as a pinned native origin',
         () async {
       clearPinnedNativeOriginsForTesting();
       addTearDown(clearPinnedNativeOriginsForTesting);
@@ -651,7 +651,7 @@ void main() {
     });
   });
 
-  test('BUG-2448: plaintext http host registers no pinned native origin',
+  test('BUG-2455: plaintext http host registers no pinned native origin',
       () async {
     clearPinnedNativeOriginsForTesting();
     addTearDown(clearPinnedNativeOriginsForTesting);
@@ -659,6 +659,24 @@ void main() {
         await _buildBackend(base: base, token: token);
     await backend.listRemoteVideos();
     final Uri parsed = Uri.parse(base);
+    expect(pinnedNativeOriginFingerprint(parsed.host, parsed.port), isNull);
+  });
+
+  // host 关了 TLS、同一端口改回明文后重新配对：解析成 http 必须撤销旧登记，否则
+  // 中继会把 native 的明文请求硬升 https 去握手明文端口，视频 502 直到重启 app。
+  test('BUG-2455: resolving the same host:port as plaintext http drops a stale pin',
+      () async {
+    clearPinnedNativeOriginsForTesting();
+    addTearDown(clearPinnedNativeOriginsForTesting);
+    final Uri parsed = Uri.parse(base);
+    registerPinnedNativeOrigin(
+      host: parsed.host,
+      port: parsed.port,
+      fingerprintSha256: 'aa:bb',
+    );
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    await backend.listRemoteVideos();
     expect(pinnedNativeOriginFingerprint(parsed.host, parsed.port), isNull);
   });
 

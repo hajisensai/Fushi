@@ -35,6 +35,7 @@
 |---|:--:|:--:|---|
 | [BUG-2458](bugs/BUG-2458-shelf-remote-multiselect.md) | ✅ | ✅ | 书架多选态点云书直接下载而非勾选 |
 | [BUG-2457](bugs/BUG-2457-manga-ocr-beam-early-stopping.md) | ✅ | ✅ | 漫画 OCR beam search 按 early_stopping=false 实现与原版 generation_config 不符，退化图跑满 300 步既慢又编造 |
+| [BUG-2456](bugs/BUG-2456-dict-link-furigana-query.md) | ✅ | ✅ | 词典正文链接点击查询词混入振假名，前缀扫描退化成首字汉字 |
 | [BUG-2455](bugs/BUG-2455-interconnect-video-native-tls-trust.md) | ✅ | ✅ | 互联远端视频打不开：随包 libmpv 换 libcurl 后默认校验自签证书 |
 | [BUG-2454](bugs/BUG-2454-scrape-image-language-ignores-locale.md) | ✅ | ✅ | 刮削图片语言写死中文，不看资料语言偏好 |
 | [BUG-2453](bugs/BUG-2453-synthetic-hover-device-leak.md) | ✅ | ✅ | 视频播放页合成 hover 设备退出后不注销，库页中心卡片被幽灵指针悬停放大 |

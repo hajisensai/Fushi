@@ -2541,9 +2541,11 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
             if (isExternal) {
                 openExternalLink(node.href);
             } else {
+                // BUG-2456：没有 ?query= 时以链接的**基字**文本为查询词，不能用裸
+                // textContent——它会把 <rt> 振假名拼进去（见 linkVisibleBaseText）。
                 const query = node.href.indexOf('?') >= 0
-                    ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || element.textContent || ''
-                    : element.textContent || '';
+                    ? new URLSearchParams(node.href.substring(node.href.indexOf('?'))).get('query') || linkVisibleBaseText(element)
+                    : linkVisibleBaseText(element);
                 const rect = element.getBoundingClientRect();
                 window.flutter_inappwebview.callHandler('onLinkClick', query, {
                     x: rect.left,
@@ -4869,6 +4871,23 @@ function __fushiReportedContentHeight(){
     return Math.ceil(__fushiScrollHeight() * __fushiPopupContentZoom());
 }
 
+// 弹窗内原地跳转（对齐 Hoshi Reader iOS 的 backStack/forwardStack）：后退 / 前进回到
+// 历史页时，Dart 在 renderPopup() 之前把该页离开时的 scrollTop 写进
+// window.__fushiPendingScrollTop（新词 / load-more 写 0 = 不恢复）。内容是分批进
+// DOM 的，首发 popupRendered 时文档往往还不够高、直接 scrollTo 会被夹到底；所以
+// 每个尾批切片后都试一次「够高就恢复」，尾批全部完成（final）时不管够不够高都
+// 应用一次兜底（浏览器自行夹紧）。应用后清零，同一份 pending 绝不影响下一次渲染。
+window.__fushiPendingScrollTop = 0;
+function __fushiApplyPendingScrollTop(isFinal) {
+    const y = window.__fushiPendingScrollTop || 0;
+    if (!(y > 0)) return;
+    const el = document.scrollingElement || document.documentElement;
+    if (!el) return;
+    if (!isFinal && (el.scrollHeight - el.clientHeight) < y) return;
+    el.scrollTop = y;
+    window.__fushiPendingScrollTop = 0;
+}
+
 // 性能（查词时延）：多词条渲染现在**双发**同一 token 的 popupRendered——首词条
 // 同步渲染完（build + 局部 postProcessRuby + applyCustomCSS）立即发第一次，宿主
 // 据此撤盖板/翻可见（首屏可见性只依赖首词条，Dart 侧全部消费方幂等）；尾批词条
@@ -4884,6 +4903,7 @@ function _firePopupRendered(stillRendering) {
         // Its own render signal owns the reveal gate; never let this stale
         // callback reveal the new card early.
         if (generation !== window._renderGeneration) return;
+        __fushiApplyPendingScrollTop(!stillRendering);
         _reportPopupHeight();
         // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
         // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
@@ -5477,6 +5497,8 @@ window.renderPopup = function() {
         } while ((activeEntryElement || nextEntryIndex < entries.length) &&
             performance.now() - sliceStart < TAIL_SLICE_BUDGET_MS);
         if (activeEntryElement || nextEntryIndex < entries.length) {
+            // 历史页回退：内容一够高就把滚动位恢复回去，不等尾批全部完成。
+            __fushiApplyPendingScrollTop(false);
             scheduleRenderTail(renderNextDictionaryBlock);
             return;
         }
@@ -6060,6 +6082,39 @@ function __fushiPopupMouseDown(e) {
 // openExternalLink，发音媒体节点忽略，其余内部交叉引用用可见词头 textContent 作查询词转成
 // onLinkClick 重查（与结构化内容链接、app 的干净词头索引一致）。抽成具名函数便于 test/js
 // jsdom 行为测试直接执行判据。
+// BUG-2456：词典正文里链接的「可见基字文本」——拿来当查询词时必须剥掉振假名。
+//
+// 交叉引用（明鏡逆引き列出的惯用句、MDX 類義語 等）多半带 <ruby>：
+//   <a><ruby>足<rt>あし</rt></ruby>が<ruby>棒<rt>ぼう</rt></ruby>になる</a>
+// 裸 textContent 把读音一起拼进来 → 「足あしが棒ぼうになる」。Dart 侧 searchDictionary
+// 是从串首由长到短的**前缀扫描**（scan_candidates 只产出前缀），这串能命中的最长前缀
+// 只剩首字「足」→ 单字查询 → 汉字卡。这就是用户报的「惯用句开头是汉字就进不去、
+// 被重定向到那个汉字」；开头是假名的链接读音跟在后面的汉字后，前缀恰好还能多命中
+// 一段，才显得时好时坏。postProcessRuby 还会给每个 rt 克隆一份 .ruby-reserve
+// （aria-hidden 占位孪生体），textContent 里读音其实是双份。
+//
+// 过滤集与 wrapExpressionInlineKanji 的 walker 一致：rt / rp / .ruby-rt / .ruby-reserve
+// 一律不收，只拼基字文本节点；空白折叠成单个空格后 trim（拉丁词典的多词链接仍保留
+// 词间空格）。故意用 childNodes 递归而不用 TreeWalker：结构化内容链接与 MDX 锚点两条
+// 路径共用，且能在无 TreeWalker 的极简 DOM 桩里执行（fushi/test/pages 的 node 行为测试）。
+function linkVisibleBaseText(root) {
+    if (!root) return '';
+    let out = '';
+    const walk = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+            out += node.textContent || '';
+            return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (node.tagName === 'RT' || node.tagName === 'RP') return;
+        const cls = node.classList;
+        if (cls && (cls.contains('ruby-rt') || cls.contains('ruby-reserve'))) return;
+        for (const child of node.childNodes) walk(child);
+    };
+    walk(root);
+    return out.replace(/\s+/g, ' ').trim();
+}
+
 function handleGlossaryAnchorClick(event, anchor) {
     event.preventDefault();
     const href = (anchor.getAttribute('href') || '').trim();
@@ -6083,7 +6138,8 @@ function handleGlossaryAnchorClick(event, anchor) {
         }
         return;
     }
-    const query = (anchor.textContent || '').trim();
+    // BUG-2456：查询词只取基字，不取振假名（见 linkVisibleBaseText）。
+    const query = linkVisibleBaseText(anchor);
     if (!query) return;
     const rect = anchor.getBoundingClientRect();
     window.flutter_inappwebview.callHandler('onLinkClick', query, {

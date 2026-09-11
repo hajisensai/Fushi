@@ -79,7 +79,8 @@ class FakeElement {
     this.tagName = tagName.toUpperCase();
     this.nodeType = 1;
     this.children = [];
-    this.childNodes = this.children;
+    // 显式 push 进来的非元素节点（见文件里 createTextNode 那处）。
+    this._extraNodes = [];
     this.dataset = {};
     this.style = new FakeStyle();
     this.attributes = {};
@@ -108,8 +109,20 @@ class FakeElement {
 
   set innerHTML(value) {
     this.children = [];
-    this.childNodes = this.children;
+    this._extraNodes = [];
     this.textContent = String(value);
+  }
+
+  /// 真 DOM 里 `<a>言語</a>` 的 childNodes 是**一个文本节点**；本桩的 textContent
+  /// 是直接赋值、不建文本节点，直接返回 children 会是空数组，于是
+  /// linkVisibleBaseText（BUG-2456，取基字跳过振假名）一个字也收不到、query 为空、
+  /// onLinkClick 根本不发。没有任何子节点时就地包一个文本节点还原真形状。
+  get childNodes() {
+    if (this.children.length || this._extraNodes.length) {
+      return [...this.children, ...this._extraNodes];
+    }
+    const text = this.textContent;
+    return text ? [{ nodeType: 3, textContent: text }] : [];
   }
 
   appendChild(child) {
@@ -276,7 +289,7 @@ function createPopupContext() {
     parentElement: new FakeElement('span'),
   };
   textNode.parentElement.classList.add('dict-name');
-  textNode.parentElement.childNodes.push(textNode);
+  textNode.parentElement._extraNodes.push(textNode);
   let caretStartContainer = textNode;
 
   const selection = {
@@ -379,7 +392,11 @@ function createPopupContext() {
         this._src = value;
       }
     },
-    Node: {TEXT_NODE: 3},
+    // ELEMENT_NODE 不能少：linkVisibleBaseText（BUG-2456）用
+    // `node.nodeType !== Node.ELEMENT_NODE` 提前 return，缺常量时 `1 !== undefined`
+    // 恒成立 → 遍历首行就退出、**静默返回空串**（不抛错），表现为「点交叉引用
+    // 不发 onLinkClick」这种看不出因果的红。
+    Node: {TEXT_NODE: 3, ELEMENT_NODE: 1},
     // BUG-1064: the in-page hint bubble (showInlineHint) fades in on the next
     // frame; without a rAF stand-in the hint path would throw ReferenceError.
     // Runs the callback synchronously — tests assert on the resulting DOM, not

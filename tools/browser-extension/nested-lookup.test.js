@@ -56,6 +56,15 @@ function makeEl(tag, doc) {
     attrs: Object.create(null),
     classes: new Set(),
     children: [],
+    // 真 DOM 里 `<a>言語</a>` 的 childNodes 是**一个文本节点**；本桩把文本放在
+    // textContent 上、不建文本节点，直接转发 children 会是空数组，于是
+    // linkVisibleBaseText（BUG-2456，取基字跳过振假名）一个字也收不到、
+    // query 为空、lookup 根本不发。没有子元素时就地包一个文本节点还原真形状。
+    get childNodes() {
+      if (el.children.length) return el.children;
+      const text = el.textContent;
+      return text ? [{ nodeType: 3, textContent: text }] : [];
+    },
     parentNode: null,
     parentElement: null,
     shadowRoot: null,

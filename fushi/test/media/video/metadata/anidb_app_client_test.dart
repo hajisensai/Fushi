@@ -13,7 +13,7 @@ void main() {
     addTearDown(prefs.dispose);
     final VideoSourceScrapeGlobalConfig config =
         VideoSourceScrapeGlobalConfig.fromPreferences(prefs,
-            resolvedTmdbApiKey: '');
+            resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
     expect(config.anidbClientName, 'fushiplayer');
     expect(config.anidbClientVersion, 1);
     expect(config.anidbUsername, isEmpty);
@@ -24,7 +24,7 @@ void main() {
     await prefs.setPref(kVideoAniDbPasswordPref, ' my password ');
     final VideoSourceScrapeGlobalConfig personal =
         VideoSourceScrapeGlobalConfig.fromPreferences(prefs,
-            resolvedTmdbApiKey: '');
+            resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
     expect(personal.anidbUdpConfig.isAvailable, isTrue);
     expect(personal.anidbPassword, ' my password ');
     expect(personal.hashEnabled, isFalse);

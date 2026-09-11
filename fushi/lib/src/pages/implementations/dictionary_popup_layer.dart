@@ -611,6 +611,25 @@ bool reanchorNestedPopupToWord({
 // dictionary_popup_controller.dart，经文件头 export 在此可用（_buildBody 的
 // `result ?? kPopupSearchingPlaceholderResult` 兜底与热槽 seed 是同一单例）。
 
+/// 弹窗顶栏「← →」（弹窗内原地跳转历史，对齐 Hoshi Reader iOS `PopupView.actionBar`）
+/// 的接线。宿主只在本层**发生过**原地跳转（[DictionaryPopupEntry.hasNavigationHistory]）
+/// 时传入：与 Hoshi 默认（`popupActionBar=false`）一致——没跳过就不占顶栏。两颗按钮
+/// 总是一起画，不可去的方向置灰（Hoshi：`.disabled` + `opacity(0.3)`），而不是消失，
+/// 否则 ← 一按到底按钮就跳位。
+class DictionaryPopupHistoryNav {
+  const DictionaryPopupHistoryNav({
+    required this.canGoBack,
+    required this.canGoForward,
+    required this.onBack,
+    required this.onForward,
+  });
+
+  final bool canGoBack;
+  final bool canGoForward;
+  final VoidCallback onBack;
+  final VoidCallback onForward;
+}
+
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
     required this.result,
@@ -652,6 +671,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.enableSwipeToClose = true,
     this.onClose,
     this.onBack,
+    this.historyNav,
+    this.restoreScrollTop,
     this.transparentDocumentBackground = false,
     this.showResizeGrip = false,
     this.onResizeStart,
@@ -786,6 +807,15 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// TODO-485：嵌套层左端"返回"按钮的回调。非空时弹窗顶栏渲染一个不依赖滑动
   /// 的返回入口，语义是关闭当前子层并回到父层。
   final VoidCallback? onBack;
+
+  /// 弹窗内原地跳转的 ← → 历史导航（见 [DictionaryPopupHistoryNav]）。null = 不画。
+  /// 与 [onBack] 语义不同：[onBack] 是关掉**一层**弹窗，这里是在**同一层**的历史页
+  /// 间来回。
+  final DictionaryPopupHistoryNav? historyNav;
+
+  /// 透传 [DictionaryPopupWebView.restoreScrollTop]：后退 / 前进回到历史页时该页离开
+  /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
+  final double? restoreScrollTop;
 
   /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
@@ -1085,14 +1115,18 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 不失效）。header 缺省（app 外覆盖窗）时中段退化成 [Spacer]，行为与旧的「只有 A−/A+ +
   /// 关闭」一致。
   Widget? _buildTopBar(BuildContext context) {
-    if (headerWidget == null && onClose == null && onBack == null) {
+    if (headerWidget == null &&
+        onClose == null &&
+        onBack == null &&
+        historyNav == null) {
       return null;
     }
 
     final String backTooltip =
         MaterialLocalizations.of(context).backButtonTooltip;
+    final DictionaryPopupHistoryNav? nav = historyNav;
 
-    // 左簇：返回（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
+    // 左簇：返回（可选）+ 历史 ← →（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -1105,6 +1139,28 @@ class DictionaryPopupLayer extends StatelessWidget {
             padding: EdgeInsets.zero,
             onTap: onBack,
           ),
+        if (nav != null) ...<Widget>[
+          FushiIconButton(
+            key: const ValueKey<String>('popup_history_back'),
+            icon: Icons.arrow_back,
+            size: 20,
+            tooltip: t.popup_history_back,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
+            enabled: nav.canGoBack,
+            onTap: nav.onBack,
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('popup_history_forward'),
+            icon: Icons.arrow_forward,
+            size: 20,
+            tooltip: t.popup_history_forward,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
+            enabled: nav.canGoForward,
+            onTap: nav.onForward,
+          ),
+        ],
         _buildZoomFontButton(context, zoomIn: false),
         _buildZoomFontButton(context, zoomIn: true),
       ],
@@ -1204,6 +1260,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             key: webViewKey,
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
+            restoreScrollTop: restoreScrollTop,
             hasChildPopup: hasChildPopup,
             onTapOutside: onTapOutside,
             onTextSelected: onTextSelected,
