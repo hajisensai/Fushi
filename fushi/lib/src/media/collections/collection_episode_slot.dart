@@ -3,7 +3,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show MediaCollectionItemRow, MediaKind, VideoBookRow;
+    show MediaCollectionItemRow, MediaCollectionRow, MediaKind, VideoBookRow;
 
 /// 合集的一个**成员槽**：本地视频行 [local] 或「只在对端、本机没有」的远端占位
 /// [remote]，二者恰一非空。
@@ -120,6 +120,7 @@ class CollectionRemoteContext {
     required this.loadRemoteVideos,
     required this.openEpisode,
     this.coverFetcher,
+    this.downloadMembers,
   });
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
@@ -135,4 +136,12 @@ class CollectionRemoteContext {
 
   /// 远端封面取数器（钉扎 HTTP 客户端）；null = 远端集只画占位图标。
   final RemoteCoverFetcher? coverFetcher;
+
+  /// 把本合集**只在对端**的成员整批下载到本机（串行排队，见
+  /// `InterconnectDownloadManager.startBatch`）。null = 该远端源不支持下载
+  /// 到本地库（详情页不出「下载远端集」入口）。
+  final Future<void> Function(
+    MediaCollectionRow collection,
+    List<RemoteVideoInfo> members,
+  )? downloadMembers;
 }

@@ -4707,5 +4707,9 @@
   "popup_history_back": "Back",
   "popup_history_forward": "Forward",
   "manga_cover_cache_max_age": "Cover cache retention",
-  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days"
+  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days",
+  "remote_collection_download_members": "Download remote episodes",
+  "remote_collection_download_nothing": "No remote episodes to download",
+  "remote_collection_download_started": "Downloading $count remote episode(s) in the background",
+  "remote_collection_download_done": "Downloaded $ok remote episode(s), $failed failed"
 }

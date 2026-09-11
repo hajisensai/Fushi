@@ -2210,33 +2210,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ref.read(interconnectDownloadManagerProvider);
     if (manager.isRunning(video.id)) return;
 
-    final File dest = await _remoteDownloadDestination(video);
-    // TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
-    // 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
-    // bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
-    // 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
-    Future<void> run(
-      File target, {
-      void Function(double progress)? onProgress,
-    }) =>
-        source.downloadRemoteVideo(video.id, target, onProgress: onProgress);
-    // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
-    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
-    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
-    final RemoteVideoClient? client = _remoteVideoClient;
-    final InterconnectDownloadComplete onComplete = client != null
-        ? (File downloaded) =>
-            _registerDownloadedVideo(client, video, downloaded)
-        : (File downloaded) =>
-            _registerDownloadedCloudVideo(cloud!, video, downloaded);
+    final Future<void> Function() start =
+        await _prepareRemoteDownload(video, source, manager);
     try {
-      await manager.startVideoDownload(
-        id: video.id,
-        title: video.title,
-        dest: dest,
-        run: run,
-        onComplete: onComplete,
-      );
+      await start();
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
@@ -2251,6 +2228,123 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_video_downloaded)),
     );
+  }
+
+  /// 把一条远端视频的下载装配成**可延迟启动**的启动器：目标路径、传输原语、收尾
+  /// 登记全在此刻解析，启动器本身不再碰 `ref` / 本页 State——合集批下载
+  /// （[_downloadRemoteMembers]）串行排队时，轮到后面的成员起跑时本页可能早已 dispose。
+  ///
+  /// TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
+  /// 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
+  /// bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
+  /// 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
+  Future<Future<void> Function()> _prepareRemoteDownload(
+    RemoteVideoInfo video,
+    RemoteVideoSource source,
+    InterconnectDownloadManager manager,
+  ) async {
+    final File dest = await _remoteDownloadDestination(video);
+    Future<void> run(
+      File target, {
+      void Function(double progress)? onProgress,
+    }) =>
+        source.downloadRemoteVideo(video.id, target, onProgress: onProgress);
+    // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
+    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
+    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
+    final RemoteVideoClient? client = _remoteVideoClient;
+    final InterconnectDownloadComplete onComplete = client != null
+        ? (File downloaded) =>
+            _registerDownloadedVideo(client, video, downloaded)
+        : (File downloaded) =>
+            _registerDownloadedCloudVideo(cloud!, video, downloaded);
+    return () => manager.startVideoDownload(
+          id: video.id,
+          title: video.title,
+          dest: dest,
+          run: run,
+          onComplete: onComplete,
+        );
+  }
+
+  /// 合集整体下载（#6）：把 [collection] 里**只在对端**的成员 [members] 串行排进
+  /// [InterconnectDownloadManager.startBatch]。成员清单来自本地
+  /// `media_collection_items`（合集清单经 `/api/library/collections` 跨端同步，
+  /// 客户端本地必然有 host 侧成员行）+ 共享远端视频清单，不需要新 wire 端点。
+  /// 已在跑的成员跳过；没有可下载成员时明确提示而不是静默。
+  Future<void> _downloadRemoteMembers(
+    MediaCollectionRow collection,
+    List<RemoteVideoInfo> members,
+  ) async {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    if (source == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_video_unavailable)),
+      );
+      return;
+    }
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    final String batchId =
+        InterconnectDownloadManager.collectionBatchId(collection.id);
+    if (manager.isBatchRunning(batchId)) return;
+    final List<RemoteVideoInfo> pending = <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in members)
+        if (!manager.isRunning(video.id)) video,
+    ];
+    if (pending.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_collection_download_nothing)),
+      );
+      return;
+    }
+    // 先把整批启动器解析完再起跑：启动器不依赖本页 State（见 _prepareRemoteDownload）。
+    final List<Future<void> Function()> starters = <Future<void> Function()>[
+      for (final RemoteVideoInfo video in pending)
+        await _prepareRemoteDownload(video, source, manager),
+    ];
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            t.remote_collection_download_started(count: pending.length),
+          ),
+        ),
+      );
+    }
+    final InterconnectDownloadBatch batch = await manager.startBatch(
+      id: batchId,
+      title: collection.name,
+      starters: starters,
+    );
+    if (!mounted) return;
+    _refresh();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(t.remote_collection_download_done(
+          ok: batch.completed,
+          failed: batch.failed,
+        )),
+      ),
+    );
+  }
+
+  /// 合集卡右键「下载远端集」：先按详情页同一路径解析成员槽，取远端子集交给
+  /// [_downloadRemoteMembers]。
+  Future<void> _downloadRemoteCollection(MediaCollectionRow collection) async {
+    final CollectionRemoteContext? remote = _collectionRemoteContext();
+    if (remote == null) return;
+    final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
+      repository: widget.repo,
+      collectionId: collection.id,
+      loadRemoteVideos: remote.loadRemoteVideos,
+    );
+    await _downloadRemoteMembers(collection, <RemoteVideoInfo>[
+      for (final CollectionEpisodeSlot slot in slots)
+        if (slot.remote case final RemoteVideoInfo info) info,
+    ]);
   }
 
   /// 把刚下载到本机的对端视频 [dest] 登记成本地 [VideoBooksCompanion] 行，使其出现在
@@ -6394,7 +6488,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           onPressed: () => _openCollectionSubtitles(collection),
-        )
+        ),
+        // 合集整体下载（#6）：只在有远端源时出现；成员全在本机时点了会明确提示
+        // 「没有可下载的远端集」。
+        if (_collectionRemoteContext() != null)
+          DialogListAction(
+            label: t.remote_collection_download_members,
+            icon: Icons.cloud_download_outlined,
+            onPressed: () => unawaited(_downloadRemoteCollection(collection)),
+          ),
       ],
     );
   }
@@ -6597,6 +6699,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         startIndex: index,
       )),
       coverFetcher: remoteCoverFetcherFor(_remoteVideoClient),
+      downloadMembers: _downloadRemoteMembers,
     );
   }
 
