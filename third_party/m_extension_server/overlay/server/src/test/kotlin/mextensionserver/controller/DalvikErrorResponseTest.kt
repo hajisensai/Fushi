@@ -2,6 +2,8 @@ package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import eu.kanade.tachiyomi.network.HttpException
+import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -49,5 +51,32 @@ class DalvikErrorResponseTest {
             assertEquals("bridge", body["errorKind"].asText())
             assertTrue(body["sourceStatusCode"].isNull)
         }
+    }
+
+    @Test
+    fun `a Cloudflare challenge is reported with the URL and User-Agent the browser must reuse`() {
+        val challenge =
+            CloudflareChallengeRequiredException(
+                "https://source.invalid/manga/list?page=2".toHttpUrl(),
+                "Mozilla/5.0 fixture",
+            )
+        // The interceptor's exception arrives wrapped by whichever adapter rethrew it.
+        for (error in listOf<Throwable>(challenge, RuntimeException("wrapped", challenge))) {
+            val response = DalvikHandler().errorResponse(error)
+            val body = response.data.use { jacksonObjectMapper().readTree(it) }
+            assertEquals("cloudflare", body["errorKind"].asText())
+            assertEquals("https://source.invalid/manga/list?page=2", body["challengeUrl"].asText())
+            assertEquals("Mozilla/5.0 fixture", body["userAgent"].asText())
+            assertTrue(body["sourceStatusCode"].isNull)
+        }
+    }
+
+    @Test
+    fun `ordinary failures carry no challenge fields`() {
+        val body =
+            DalvikHandler().errorResponse(HttpException(403)).data.use { jacksonObjectMapper().readTree(it) }
+        assertEquals("sourceHttp", body["errorKind"].asText())
+        assertTrue(body["challengeUrl"].isNull)
+        assertTrue(body["userAgent"].isNull)
     }
 }

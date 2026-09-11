@@ -1,6 +1,7 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import fi.iki.elonen.NanoHTTPD
@@ -79,6 +80,13 @@ class DalvikHandler {
 
     internal fun errorResponse(error: Throwable): NanoHTTPD.Response {
         logger.error(error) { "Error handling request" }
+        // The interceptor's exception is usually wrapped by the time it reaches here (Rx /
+        // coroutine adapters, extension-side catch-and-rethrow), so walk the cause chain
+        // rather than testing the top-level type -- the Android host does the same.
+        val challenge =
+            generateSequence(error) { it.cause }
+                .filterIsInstance<CloudflareChallengeRequiredException>()
+                .firstOrNull()
         // Only the typed source HTTP failure establishes an upstream status.
         // Exception messages (including ones mentioning HTTP) are not a protocol.
         val sourceStatusCode =
@@ -105,8 +113,17 @@ class DalvikHandler {
                     "error" to (error.message ?: error.javaClass.simpleName),
                     "errorType" to error.javaClass.name,
                     "stackTrace" to error.stackTraceToString().take(MAX_STACK_TRACE_CHARS),
-                    "errorKind" to if (sourceStatusCode != null) "sourceHttp" else "bridge",
+                    "errorKind" to
+                        when {
+                            challenge != null -> "cloudflare"
+                            sourceStatusCode != null -> "sourceHttp"
+                            else -> "bridge"
+                        },
                     "sourceStatusCode" to sourceStatusCode,
+                    // The host opens a browser at exactly this URL with exactly this
+                    // User-Agent; cf_clearance is issued against both.
+                    "challengeUrl" to challenge?.url?.toString(),
+                    "userAgent" to challenge?.userAgent,
                     "code" to
                         if (error is eu.kanade.tachiyomi.network.HttpException) {
                             error.code
