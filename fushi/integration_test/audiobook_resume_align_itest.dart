@@ -316,6 +316,14 @@ void main() {
               findsWidgets,
               reason: '顶部时段卡必须显示阅读速度行',
             );
+            // 总览是懒构建的 ListView：窄一点的窗口（Mac 1470×835）上「最近会话」区块
+            // 在四张卡之下、视口之外，根本没被 build。程序化滚到底再断言（不走手势）。
+            final ScrollableState overview = Scrollable.of(
+              tester.element(find.textContaining(cardLine).first),
+            );
+            overview.position.jumpTo(overview.position.maxScrollExtent);
+            await tester.pump(const Duration(milliseconds: 300));
+            await tester.pump(const Duration(milliseconds: 300));
             final Finder sessionRow = find.byWidgetPredicate((Widget w) {
               if (w is! Text) return false;
               final String? data = w.data;
