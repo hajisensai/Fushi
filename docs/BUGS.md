@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2275 条。点号进各自文件。
+> 共 2276 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2472](bugs/BUG-2472-webkit-ruby-paragraph-first-line-growth.md) | ✅ | ✅ | WebKit 上首行含振假名的段落被撑高一截 |
 | [BUG-2466](bugs/BUG-2466-reader-continuous-reveal-smooth-scroll-inflates-ledger.md) | ✅ | ✅ | 连续模式听书长距离平滑跟随滚动把途中视口计入阅读账本 |
 | [BUG-2465](bugs/BUG-2465-reader-reanchor-frozen-when-page-hidden.md) | ✅ | ✅ | 页面隐藏时阅读器重锚旗永不清（rAF 冻结）位置与进度不落库 |
 | [BUG-2464](bugs/BUG-2464-manga-online-download-first.md) | ✅ | ✅ | 在线漫画改为强制下载后才能看，删除在线直读与阅读期页图缓存 |
