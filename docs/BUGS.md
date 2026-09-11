@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2264 条。点号进各自文件。
+> 共 2265 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2455](bugs/BUG-2455-interconnect-video-native-tls-trust.md) | ✅ | ✅ | 互联远端视频打不开：随包 libmpv 换 libcurl 后默认校验自签证书 |
+| [BUG-2454](bugs/BUG-2454-scrape-image-language-ignores-locale.md) | ✅ | ✅ | 刮削图片语言写死中文，不看资料语言偏好 |
 | [BUG-2453](bugs/BUG-2453-synthetic-hover-device-leak.md) | ✅ | ✅ | 视频播放页合成 hover 设备退出后不注销，库页中心卡片被幽灵指针悬停放大 |
 | [BUG-2452](bugs/BUG-2452-desktop-mihon-cloudflare-challenge.md) | ✅ | ✅ | 桌面 Mihon 源被 Cloudflare 拦下时无法解题，源整个打不开 |
 | [BUG-2451](bugs/BUG-2451-manga-global-search-ganma-fuzzy.md) | 🚧 | 🚧 | 全局搜索里 GANMA! 返回与关键词无关的作品（未复现为本仓 bug：源站服务端分词模糊匹配） |

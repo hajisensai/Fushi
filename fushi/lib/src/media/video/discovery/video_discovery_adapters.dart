@@ -4,6 +4,7 @@ import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dar
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
@@ -20,7 +21,7 @@ class TmdbVideoDiscoveryProvider implements VideoDiscoveryProvider {
     VideoMetadataHttpClient? transport,
     this.baseUrl = 'https://api.themoviedb.org/3',
     this.imageBaseUrl = 'https://image.tmdb.org/t/p/original',
-    this.language = 'zh-CN',
+    this.language = kFallbackVideoMetadataLocale,
   })  : assert(client == null || transport == null),
         _apiKey = apiKey.trim(),
         _accessToken = accessToken.trim(),

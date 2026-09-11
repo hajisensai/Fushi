@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
@@ -66,28 +67,108 @@ void main() {
     expect(merged.seasons, hasLength(1));
   });
 
-  test('TMDB 图片先按评分票数排序且语言只作同分兜底', () {
+  test('海报按资料语言优先，高分外语海报压不住本语言海报', () {
+    // 用户报告的原始路径：资料语言 ja，TMDB 回来一张 8 分中文海报和一张低分
+    // 日文海报——评分先于语言时中文永远赢，「资料语言」对海报形同虚设。
+    const List<VideoMetadataImage> covers = <VideoMetadataImage>[
+      VideoMetadataImage(
+        kind: VideoMetadataImageKind.cover,
+        url: 'high-zh',
+        provider: VideoMetadataProviderKind.tmdb,
+        language: 'zh',
+        voteAverage: 8,
+        voteCount: 100,
+      ),
+      VideoMetadataImage(
+        kind: VideoMetadataImageKind.cover,
+        url: 'low-ja',
+        provider: VideoMetadataProviderKind.tmdb,
+        language: 'ja',
+        voteAverage: 5,
+        voteCount: 3,
+      ),
+      VideoMetadataImage(
+        kind: VideoMetadataImageKind.cover,
+        url: 'mid-neutral',
+        provider: VideoMetadataProviderKind.tmdb,
+        voteAverage: 6,
+        voteCount: 10,
+      ),
+    ];
+    expect(
+      selectVideoMetadataImages(
+        primary: covers,
+        languageOrder: const VideoMetadataLanguages('ja').imageLanguages,
+      ).single.url,
+      'low-ja',
+    );
+    // 同一批候选换成中文用户，选出来的就是中文那张：语言序真的在起作用，
+    // 不是恰好 ja 那张排前面。
+    expect(
+      selectVideoMetadataImages(
+        primary: covers,
+        languageOrder: const VideoMetadataLanguages('zh-CN').imageLanguages,
+      ).single.url,
+      'high-zh',
+    );
+    // 本语言没有海报时回落 en → 无语言纯图，而不是随便拿一张外语的。
+    expect(
+      selectVideoMetadataImages(
+        primary: covers,
+        languageOrder: const VideoMetadataLanguages('de-DE').imageLanguages,
+      ).single.url,
+      'mid-neutral',
+    );
+  });
+
+  test('同一语言内海报仍按评分票数排序', () {
     final List<VideoMetadataImage> selected = selectVideoMetadataImages(
       primary: const <VideoMetadataImage>[
         VideoMetadataImage(
           kind: VideoMetadataImageKind.cover,
-          url: 'low-zh',
+          url: 'low-ja',
           provider: VideoMetadataProviderKind.tmdb,
-          language: 'zh',
+          language: 'ja',
           voteAverage: 5,
           voteCount: 100,
         ),
         VideoMetadataImage(
           kind: VideoMetadataImageKind.cover,
-          url: 'high-neutral',
+          url: 'high-ja',
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'ja',
+          voteAverage: 9,
+          voteCount: 10,
+        ),
+      ],
+      languageOrder: const VideoMetadataLanguages('ja').imageLanguages,
+    );
+    expect(selected.single.url, 'high-ja');
+  });
+
+  test('背景图是画面不是文字：评分优先，语言只作同分兜底（与修复前一致）', () {
+    final List<VideoMetadataImage> selected = selectVideoMetadataImages(
+      primary: const <VideoMetadataImage>[
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.backdrop,
+          url: 'low-ja-backdrop',
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'ja',
+          voteAverage: 5,
+          voteCount: 100,
+        ),
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.backdrop,
+          url: 'high-neutral-backdrop',
           provider: VideoMetadataProviderKind.tmdb,
           voteAverage: 9,
           voteCount: 10,
         ),
       ],
+      languageOrder: const VideoMetadataLanguages('ja').imageLanguages,
+      maxBackdrops: 1,
     );
-
-    expect(selected.single.url, 'high-neutral');
+    expect(selected.single.url, 'high-neutral-backdrop');
   });
 
   test('续季单主源先重映射到本地季号再与 TMDB 全剧骨架合并', () {

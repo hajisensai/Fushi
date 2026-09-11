@@ -4625,6 +4625,7 @@ class AppModel with ChangeNotifier {
       config: VideoSourceScrapeGlobalConfig.fromPreferences(
         prefsRepo,
         resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
+        uiLocaleTag: appLocale.toLanguageTag(),
       ),
       // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
       enableOfflineTitleIndex: true,

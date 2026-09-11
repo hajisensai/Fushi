@@ -419,11 +419,19 @@ String _imageSlotKey(VideoMetadataImage image) => <Object?>[
       image.kind.name,
     ].join(':');
 
-/// 每个层级/图种只选一张（背景图可多张）。候选先按评分、票数，再按
-/// `zh → en → 无语言 → 其它` 和 likes 排序。
+/// 每个层级/图种只选一张（背景图可多张）。
+///
+/// 带文字的图（海报 / logo 等）先按 [languageOrder]（本语言 → en → 无语言 →
+/// 其它），同语言内再按评分、票数、likes；背景图是画面不是文字，语言标签只表示
+/// 「上面有没有印片名」，仍按评分优先、语言只作同分兜底（与修复前一致）。
+///
+/// [languageOrder] 必填：它此前有个 `['zh','en','']` 的默认值，而唯一调用点从不
+/// 传值——于是无论用户是谁、资料语言是什么，海报永远中文优先。默认值把「忘了接线」
+/// 伪装成了「有意的排序策略」，所以这里不再留默认值，强迫调用方说出用哪种语言。
+/// 派生用 `VideoMetadataLanguages.imageLanguages`。
 List<VideoMetadataImage> selectVideoMetadataImages({
   required Iterable<VideoMetadataImage> primary,
-  List<String> languageOrder = const <String>['zh', 'en', ''],
+  required List<String> languageOrder,
   int maxBackdrops = 3,
 }) {
   assert(maxBackdrops > 0);
@@ -479,12 +487,17 @@ int _compareImages(
     return languageOrder.length;
   }
 
+  final int language =
+      languageRank(a.language).compareTo(languageRank(b.language));
+  // 海报 / logo 上印的是片名，用户选了资料语言就是要那种文字的图：语言先于
+  // 评分，否则一张高分外语海报永远压住本语言海报（用户设 ja 仍拿到中文海报，
+  // 就是这条路径）。背景图是画面，评分继续做主。
+  final bool textual = a.kind != VideoMetadataImageKind.backdrop;
+  if (textual && language != 0) return language;
   final int rating = (b.voteAverage ?? -1).compareTo(a.voteAverage ?? -1);
   if (rating != 0) return rating;
   final int votes = (b.voteCount ?? -1).compareTo(a.voteCount ?? -1);
   if (votes != 0) return votes;
-  final int language =
-      languageRank(a.language).compareTo(languageRank(b.language));
   if (language != 0) return language;
   final int likes = (b.likes ?? -1).compareTo(a.likes ?? -1);
   if (likes != 0) return likes;
