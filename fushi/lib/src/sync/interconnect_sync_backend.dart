@@ -147,6 +147,14 @@ Future<bool> _defaultFushiProbe(String url, String token) async {
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
+/// 对端 host 没有视频刮削元数据端点（老版本）；UI 据此提示「对端不支持远程刮削」。
+class RemoteVideoMetadataUnsupported implements Exception {
+  const RemoteVideoMetadataUnsupported();
+
+  @override
+  String toString() => 'RemoteVideoMetadataUnsupported';
+}
+
 class InterconnectSyncBackend extends SyncBackend
     with
         SyncFolderCache,
@@ -188,14 +196,25 @@ class InterconnectSyncBackend extends SyncBackend
   @visibleForTesting
   Duration requestTimeout = const Duration(seconds: 15);
 
+  /// 视频刮削元数据端点专用超时（审查 PR#1431 #1）：7a 的 scrape 是 host 同步跑完
+  /// 整条刮削链（联网取详情 + 分季分集 + 下图 + sidecar，且排在 host 手动队列后面
+  /// 接棒），candidates 是 MAL→TMDB 双形态各搜一轮，全库 GET 是几百部作品逐表装载
+  /// ——都不是 15s 量级。仍然封顶，只是量级对齐 host 侧真实耗时。
+  @visibleForTesting
+  Duration metadataRequestTimeout = const Duration(minutes: 5);
+
   /// BUG-1567：把 [req] 发出并在 [requestTimeout] 内等到响应头；超时则中止请求
   /// （释放底层连接）并抛 [TimeoutException]，让挂死 host 降级为可重试失败。
-  Future<HttpClientResponse> _sendBounded(HttpClientRequest req) {
-    return req.close().timeout(requestTimeout, onTimeout: () {
+  Future<HttpClientResponse> _sendBounded(
+    HttpClientRequest req, {
+    Duration? timeout,
+  }) {
+    final Duration limit = timeout ?? requestTimeout;
+    return req.close().timeout(limit, onTimeout: () {
       req.abort();
       throw TimeoutException(
-        'interconnect request timed out after $requestTimeout',
-        requestTimeout,
+        'interconnect request timed out after $limit',
+        limit,
       );
     });
   }
@@ -1287,7 +1306,8 @@ class InterconnectSyncBackend extends SyncBackend
       'GET',
       '$_apiBase/api/library/metadata$query',
     );
-    final HttpClientResponse res = await _sendBounded(req);
+    final HttpClientResponse res =
+        await _sendBounded(req, timeout: metadataRequestTimeout);
     if (res.statusCode == 404) {
       await res.drain<void>();
       return null;
@@ -1370,7 +1390,14 @@ class InterconnectSyncBackend extends SyncBackend
         await _ops!.buildRequest(method, '$_apiBase$path');
     req.headers.set('Content-Type', 'application/json; charset=utf-8');
     req.add(utf8.encode(jsonEncode(body)));
-    final HttpClientResponse res = await _sendBounded(req);
+    final HttpClientResponse res =
+        await _sendBounded(req, timeout: metadataRequestTimeout);
+    // 老 host 没有元数据端点：归一成一种可识别异常，UI 提示「对端不支持」而不是
+    // 一句通用错误（审查 #8：客户端不消费能力位，按 404 现场判定同样零破坏）。
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      throw const RemoteVideoMetadataUnsupported();
+    }
     if (res.statusCode != 409) {
       _ops!.checkStatus(res.statusCode, '$method $path');
     }

@@ -113,17 +113,26 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
         VideoMetadataConflict.notPlanned,
       );
     }
-    await controller.rescrapeWorkWithLookup(
+    final SourceScrapeReport scrapeReport =
+        await controller.rescrapeWorkWithLookup(
       source: unit.source,
       workTitle: unit.work.title,
       workStableKey: unit.work.stableKey,
       lookup: lookup,
     );
+    // 刮削链的失败不抛、进 report（provider 挂 / 封禁 / 候选被类型门拒）；不能
+    // 因为库里还躺着上次的旧行就回 ok（审查 PR#1431 #5）。
+    if (scrapeReport.failedWorks > 0 ||
+        scrapeReport.errors.isNotEmpty ||
+        scrapeReport.succeededWorks == 0) {
+      return const VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.scrapeFailed,
+      );
+    }
     final VideoMetadataWorkEntry? entry = await _entryForTarget(unit.work);
     if (entry == null) {
-      // 刮完却没有作品行 = 刮削链自己判失败（候选被类型门拒等），如实报未落库。
       return const VideoMetadataWriteResult.conflict(
-        VideoMetadataConflict.notPlanned,
+        VideoMetadataConflict.scrapeFailed,
       );
     }
     return VideoMetadataWriteResult.ok(entry);
@@ -179,8 +188,23 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     required VideoMetadataWork work,
     bool replaceIdentity = false,
   }) async {
-    final VideoSourceScrapeWork? target =
-        await resolveMetadataWorkTarget(_db, key);
+    // 作品形态必须与计划器一致（BUG-2433 / 审查 PR#1431 #2）：一个合集在计划里
+    // 可能是 N 个成员级作品，直接按合集单元 apply 会新建合集级作品并**物理删掉**
+    // 全部成员作品行。所以先问计划器；多单元 → ambiguousWork 让客户端用户选；
+    // 单条目键没进计划（例如 host 上传的散片）才退回按行解析——单条目 apply
+    // 只动它自己的作品行。
+    final _PlannedUnitResolution resolved = await _plannedUnitForKey(key);
+    if (resolved.ambiguous.isNotEmpty) {
+      return VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.ambiguousWork,
+        ambiguousWorks: <VideoMetadataWorkKey>[
+          for (final VideoPendingScrapeWork u in resolved.ambiguous)
+            VideoMetadataWorkKey.book(u.work.members.single.bookUid),
+        ],
+      );
+    }
+    final VideoSourceScrapeWork? target = resolved.unit?.work ??
+        (key.isCollection ? null : await resolveMetadataWorkTarget(_db, key));
     if (target == null) {
       return const VideoMetadataWriteResult.conflict(
         VideoMetadataConflict.notPlanned,
@@ -199,9 +223,21 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
         currentLookup: current,
       );
     }
-    await _runExclusive(() async {
-      await store.apply(target, withLookupIdentity(work, lookup));
-    });
+    // 与 host 本地刮削同一道门：清理刮削资料期间拒绝新写入（审查 #7）。
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) {
+      return const VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.scrapeFailed,
+      );
+    }
+    try {
+      await _runExclusive(() async {
+        await store.apply(target, withLookupIdentity(work, lookup));
+      });
+    } finally {
+      lease.release();
+    }
     final VideoMetadataWorkEntry? entry = await _entryForTarget(target);
     if (entry == null) {
       return const VideoMetadataWriteResult.conflict(

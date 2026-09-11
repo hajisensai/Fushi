@@ -166,6 +166,10 @@ enum VideoMetadataConflict {
 
   /// 作品在 host 上没有可刮削的本地来源（成员全是远端占位 / 来源已删）。
   notPlanned,
+
+  /// host 跑了刮削链但失败（provider 挂 / 封禁 / 候选被类型门拒 / 资料清理中），
+  /// 库里没有新资料。
+  scrapeFailed,
 }
 
 /// [VideoMetadataHost] 写操作的结果：成功带 entry；拒绝带 conflict + 附加信息。

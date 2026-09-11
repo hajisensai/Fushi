@@ -13,10 +13,15 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) async {
     try {
+      // 增量：只拉 host updatedAt 晚于上次见过的作品（审查 #4：全库逐表装载 +
+      // 数 MB JSON 不能每轮重来）。基线按通道分槽，与合集基线同纪律。
+      final SyncRepository repo = SyncRepository(_db);
+      final int since = await repo.getVideoMetadataSyncSinceMs(_scope);
       final List<VideoMetadataWorkEntry>? entries =
-          await backend.getRemoteVideoMetadata();
+          await backend.getRemoteVideoMetadata(since: since > 0 ? since : null);
       if (entries == null || entries.isEmpty) return;
-      report.videoMetadataUpdated += await applyRemoteVideoMetadata(
+      final RemoteVideoMetadataApplyResult result =
+          await applyRemoteVideoMetadata(
         _db,
         entries,
         onError: (Object e, StackTrace stack) {
@@ -24,6 +29,17 @@ extension _SyncOrchestratorVideoMetadata on SyncOrchestrator {
           report.noteError('video metadata apply', e);
         },
       );
+      report.videoMetadataUpdated += result.applied;
+      // 有条目因本机目标缺失被延后（合集下一轮才同步到 / 视频还没下载）就不推进
+      // 基线，否则它们再也拉不到。
+      if (result.deferred > 0) return;
+      int newest = since;
+      for (final VideoMetadataWorkEntry e in entries) {
+        if (e.updatedAt > newest) newest = e.updatedAt;
+      }
+      if (newest > since) {
+        await repo.setVideoMetadataSyncSinceMs(_scope, newest);
+      }
     } catch (e) {
       report.noteError('video metadata live sync', e);
     }

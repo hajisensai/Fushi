@@ -24,7 +24,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
-    show VideoSourceScrapeConfirmationCandidate, VideoSourceScrapeTaskController;
+    show
+        SourceScrapeReport,
+        VideoSourceScrapeConfirmationCandidate,
+        VideoSourceScrapeTaskController;
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart'
     show SourceLibraryRow;

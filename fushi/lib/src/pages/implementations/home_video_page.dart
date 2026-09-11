@@ -6827,6 +6827,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
       }
       await _finishRemoteMetadataWrite(result);
+    } on RemoteVideoMetadataUnsupported {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.remote_collection_scrape_unavailable,
+        severity: ToastSeverity.warning,
+      );
     } on Object catch (e, stack) {
       ErrorLogService.instance.log('video.scrapeCollectionOnHost', e, stack);
       if (!mounted) return;
@@ -6897,6 +6903,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
       }
       await _finishRemoteMetadataWrite(result);
+    } on RemoteVideoMetadataUnsupported {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.remote_collection_scrape_unavailable,
+        severity: ToastSeverity.warning,
+      );
     } on Object catch (e, stack) {
       ErrorLogService.instance.log('video.scrapeCollectionForHost', e, stack);
       if (!mounted) return;
@@ -6914,14 +6926,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ) async {
     final VideoMetadataWorkEntry? entry = result.entry;
     if (entry != null) {
-      await applyRemoteVideoMetadata(
+      final RemoteVideoMetadataApplyResult applied =
+          await applyRemoteVideoMetadata(
         ref.read(appProvider).database,
         <VideoMetadataWorkEntry>[entry],
       );
       if (!mounted) return;
       _refresh();
+      // 本地被跳过（本地资料不比 host 旧 / 清理中）时不谎报「已更新」。
       FushiToast.show(
-        msg: t.remote_collection_scrape_done,
+        msg: applied.applied > 0
+            ? t.remote_collection_scrape_done
+            : t.collection_rescrape_not_planned,
         severity: ToastSeverity.info,
       );
       return;

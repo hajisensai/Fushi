@@ -57,11 +57,12 @@ void main() {
   tearDown(() => db.close());
 
   test('合集在本机 → 落作品行并带上 host 主身份；只在 host 的成员不阻断', () async {
-    final int applied = await applyRemoteVideoMetadata(
+    final RemoteVideoMetadataApplyResult applied =
+        await applyRemoteVideoMetadata(
       db,
       <VideoMetadataWorkEntry>[entry()],
     );
-    expect(applied, 1);
+    expect(applied.applied, 1);
     final VideoMetadataWorkRow row =
         (await db.getVideoMetadataWorkByCollection(collectionId))!;
     expect(row.overview, 'host plot');
@@ -75,25 +76,26 @@ void main() {
     final VideoMetadataWorkRow local =
         (await db.getVideoMetadataWorkByCollection(collectionId))!;
     // host 的 updatedAt 比本地落库时刻早：跳过。
-    final int skipped = await applyRemoteVideoMetadata(
+    final RemoteVideoMetadataApplyResult skipped =
+        await applyRemoteVideoMetadata(
       db,
       <VideoMetadataWorkEntry>[
         entry(plot: 'stale', updatedAt: local.updatedAt - 1),
       ],
     );
-    expect(skipped, 0);
+    expect(skipped.applied, 0);
     expect(
       (await db.getVideoMetadataWorkByCollection(collectionId))!.overview,
       'host plot',
     );
     // host 更新了：覆盖。
-    final int fresh = await applyRemoteVideoMetadata(
+    final RemoteVideoMetadataApplyResult fresh = await applyRemoteVideoMetadata(
       db,
       <VideoMetadataWorkEntry>[
         entry(plot: 'newer', updatedAt: local.updatedAt + 1),
       ],
     );
-    expect(fresh, 1);
+    expect(fresh.applied, 1);
     expect(
       (await db.getVideoMetadataWorkByCollection(collectionId))!.overview,
       'newer',
@@ -101,7 +103,8 @@ void main() {
   });
 
   test('本机没有的合集 / 单条目跳过，不抛', () async {
-    final int applied = await applyRemoteVideoMetadata(
+    final RemoteVideoMetadataApplyResult applied =
+        await applyRemoteVideoMetadata(
       db,
       <VideoMetadataWorkEntry>[
         entry(
@@ -113,7 +116,8 @@ void main() {
         entry(key: const VideoMetadataWorkKey.book('not-downloaded')),
       ],
     );
-    expect(applied, 0);
+    expect(applied.applied, 0);
+    expect(applied.deferred, 2, reason: '目标缺失计入 deferred，基线不得推进');
   });
 
   test('客户端自己锁的字段不被 host 覆盖', () async {

@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.d
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
@@ -311,6 +312,93 @@ void main() {
       VideoMetadataWriteResult.fromJson(res.json).entry!.lockedFields,
       <String>['overview'],
     );
+  });
+
+  // 审查 PR#1431 #2：合集在计划器里是 N 个成员级作品（无集号的电影合集）时，
+  // 7b 不得按合集单元 apply——那会新建合集级作品并物理删掉全部成员作品行。
+  test('7b PUT 到多作品单元的合集 → 409 ambiguousWork，成员作品行一条不少', () async {
+    final int sourceId = (await db.getMediaSourcesByKind('video')).single.id;
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoBookRow> films = <VideoBookRow>[];
+    for (final String stem in <String>['Movie A', 'Movie B']) {
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value<String>(stem),
+        title: Value<String>(stem),
+        videoPath: Value<String>('D:/Shows/Films/$stem.mkv'),
+        sourceId: Value<int?>(sourceId),
+      ));
+      films.add((await db.getVideoBookByBookUid(stem))!);
+    }
+    final int filmsId =
+        await db.createMediaCollection('Films', collectionType: 'collection');
+    for (final VideoBookRow m in films) {
+      await db.addToCollection(filmsId, MediaKind.video, m.bookUid);
+    }
+    final VideoMetadataDatabaseStore store = VideoMetadataDatabaseStore(db);
+    for (final VideoBookRow m in films) {
+      await store.apply(
+        VideoSourceScrapeWork(
+          source: source,
+          title: m.title,
+          members: <VideoBookRow>[m],
+        ),
+        work(title: m.title, externalId: m.bookUid.hashCode.toString())
+            .copyWith(kind: VideoMetadataMediaKind.movie),
+      );
+    }
+    expect(await db.getVideoMetadataWorkByBook('Movie A'), isNotNull);
+
+    final ({int status, Object? json}) res = await call(
+      'PUT',
+      '/api/library/metadata',
+      body: <String, Object?>{
+        'key': const VideoMetadataWorkKey.collection(
+          name: 'Films',
+          collectionType: 'collection',
+        ).toJson(),
+        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '9',
+          mediaKind: VideoMetadataMediaKind.movie,
+        )),
+        'work': encodeVideoMetadataWork(work(title: 'Films', externalId: '9')),
+      },
+    );
+    expect(res.status, 409);
+    final VideoMetadataWriteResult result =
+        VideoMetadataWriteResult.fromJson(res.json);
+    expect(result.conflict, VideoMetadataConflict.ambiguousWork);
+    expect(
+      result.ambiguousWorks.map((VideoMetadataWorkKey k) => k.bookUid),
+      unorderedEquals(<String>['Movie A', 'Movie B']),
+    );
+    expect(await db.getVideoMetadataWorkByBook('Movie A'), isNotNull,
+        reason: '成员作品行不得被合集级 apply 删掉');
+    expect(await db.getVideoMetadataWorkByBook('Movie B'), isNotNull);
+    expect(await db.getVideoMetadataWorkByCollection(filmsId), isNull);
+
+    // 客户端按 ambiguousWorks 用 bookUid 重发 → 只动那一部。
+    final ({int status, Object? json}) one = await call(
+      'PUT',
+      '/api/library/metadata',
+      body: <String, Object?>{
+        'key': const VideoMetadataWorkKey.book('Movie A').toJson(),
+        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '9',
+          mediaKind: VideoMetadataMediaKind.movie,
+        )),
+        'work': encodeVideoMetadataWork(
+          work(title: 'Movie A', plot: 'client', externalId: '9')
+              .copyWith(kind: VideoMetadataMediaKind.movie),
+        ),
+        'replaceIdentity': true,
+      },
+    );
+    expect(one.status, 200);
+    expect(
+        (await db.getVideoMetadataWorkByBook('Movie A'))!.overview, 'client');
+    expect((await db.getVideoMetadataWorkByBook('Movie B'))!.overview, 'plot');
   });
 
   test('坏请求：缺 key / 缺 lookup → 400；未知作品 → 409 notPlanned', () async {

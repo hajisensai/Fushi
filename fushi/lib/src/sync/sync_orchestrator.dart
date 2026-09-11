@@ -774,8 +774,8 @@ class SyncOrchestrator {
     final SyncRunReport report = SyncRunReport();
     final SyncBackend b = _backend;
     if (b is InterconnectSyncBackend) {
+      // 合集防抖轻量路径只同步合集；刮削元数据整库拉取留给完整 sweep（审查 #4）。
       await _syncCollectionsLive(report, b);
-      await _syncVideoMetadataLive(report, b);
     } else {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
       await _backend.findOrCreateRootFolder();
