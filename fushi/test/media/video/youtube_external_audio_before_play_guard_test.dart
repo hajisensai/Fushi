@@ -18,6 +18,10 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 真实音画同步只能在真机（可能 ANDROID_VR 流）复测；此守卫锁住「外挂音轨早于 seek/play」
 /// 的静态时序不变量，防止有人把它挪回 load 之后（回归无声）。
+/// 外挂音轨的调用形状（BUG-2448 起 URL 先过 nativePlaybackUri 收口）。
+const String _kAttachCall =
+    'AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))';
+
 void main() {
   String read(String relPath) {
     for (final String prefix in <String>['', '../']) {
@@ -38,14 +42,13 @@ void main() {
     });
 
     test('load() 内经 AudioTrack.uri 外挂 externalAudioTrackUrl', () {
-      expect(ctrl.contains('AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))'), isTrue,
-          reason:
-              '必须用 AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))（libmpv audio-add）外挂音轨');
+      // BUG-2448：URL 先过 nativePlaybackUri 收口，再 audio-add。
+      expect(ctrl.contains(_kAttachCall), isTrue,
+          reason: '必须用 $_kAttachCall（libmpv audio-add）外挂音轨');
     });
 
     test('外挂音轨 (audio-add) 出现在恢复 seek 与 play() 之前', () {
-      final int attachAt =
-          ctrl.indexOf('AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))');
+      final int attachAt = ctrl.indexOf(_kAttachCall);
       final int seekAt =
           ctrl.indexOf('player.seek(Duration(milliseconds: resolvedStartMs))');
       final int playAt = ctrl.indexOf('await player.play();');
@@ -61,8 +64,7 @@ void main() {
 
     test('外挂音轨在 http-header-fields 注入之后（audio-only 流同需 UA 防 403）', () {
       final int headerAt = ctrl.indexOf('applyHttpHeaderFieldsToPlayer');
-      final int attachAt =
-          ctrl.indexOf('AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl))');
+      final int attachAt = ctrl.indexOf(_kAttachCall);
       expect(headerAt, greaterThanOrEqualTo(0));
       expect(attachAt, greaterThan(headerAt),
           reason:

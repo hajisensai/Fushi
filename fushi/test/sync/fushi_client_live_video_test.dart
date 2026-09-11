@@ -662,6 +662,24 @@ void main() {
     expect(pinnedNativeOriginFingerprint(parsed.host, parsed.port), isNull);
   });
 
+  // host 关了 TLS、同一端口改回明文后重新配对：解析成 http 必须撤销旧登记，否则
+  // 中继会把 native 的明文请求硬升 https 去握手明文端口，视频 502 直到重启 app。
+  test('BUG-2448: resolving the same host:port as plaintext http drops a stale pin',
+      () async {
+    clearPinnedNativeOriginsForTesting();
+    addTearDown(clearPinnedNativeOriginsForTesting);
+    final Uri parsed = Uri.parse(base);
+    registerPinnedNativeOrigin(
+      host: parsed.host,
+      port: parsed.port,
+      fingerprintSha256: 'aa:bb',
+    );
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    await backend.listRemoteVideos();
+    expect(pinnedNativeOriginFingerprint(parsed.host, parsed.port), isNull);
+  });
+
   test('fetchRemoteCover still works over plaintext http (老路径零破坏)', () async {
     final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
