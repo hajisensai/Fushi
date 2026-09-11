@@ -112,6 +112,15 @@ overlay/.../HostProxyPolicy.kt and .../network/NetworkHelper.kt:
   closed without ever silently downgrading to DIRECT. The proxy authenticator
   answers a policy outage with no credentials for the same reason.
 
+overlay/.../network/interceptor/CloudflareInterceptor.kt:
+  Upstream's pass-through replaced with the Android host's detection, byte for
+  byte (403/429/503 + Server: cloudflare + cf-mitigated: challenge; a bare
+  403/503 from Cloudflare's CDN is not a challenge). Throws
+  CloudflareChallengeRequiredException carrying the blocked URL and the exact
+  User-Agent the request went out with; DalvikHandler walks the cause chain and
+  reports errorKind "cloudflare" + challengeUrl + userAgent so the host can open
+  a browser with the same identity -- cf_clearance is bound to both.
+
 overlay/.../AppModule.kt:
   Registers ProtoBuf alongside Json in the Injekt container. Extensions using
   protobuf APIs resolve it from a static initialiser, so the missing
@@ -161,6 +170,9 @@ overlay/ (full-file replacements):
                                                 preferences, cookies and cache
   .../AppModule.kt                              ProtoBuf registered in the
                                                 Injekt container next to Json
+  .../network/interceptor/CloudflareInterceptor.kt
+                                                detects Cloudflare challenges
+                                                and reports URL + User-Agent
 
 Security boundary (must not be weakened)
 ----------------------------------------
