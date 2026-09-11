@@ -130,50 +130,13 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     _pendingPokeHover = null;
     if (event == null || !mounted) return;
     // BUG-2453：真派发过就登记「设备在册」，本页失去栈顶时 [_retireSyntheticHoverDevice]
-    // 按此决定要不要排 post-frame 派 PointerRemovedEvent。
+    // 按此决定要不要派 PointerRemovedEvent。
     _syntheticHoverDeviceLive = true;
     GestureBinding.instance.handlePointerEvent(event);
   }
 
-  /// 给本页路由的两条动画挂「失去栈顶」监听（BUG-2453）；同一路由只挂一次。
-  ///
-  /// - 主动画进入 `reverse`：本页被 pop（ESC / 返回 / popUntil 连同上面的全屏路由一起
-  ///   出栈都走这条，`didPop` 同步 `_controller.reverse()`）。
-  /// - 次动画进入 `forward`：一条可衔接过渡的新路由压上来或替换本页——本地换集的
-  ///   `pushReplacement`（episode.part.dart）、app 外打开视频再压一个播放页都是它。
-  ///
-  /// 为什么不用 `RouteAware`：`AppModel.routeObserver` 从未挂到任何 Navigator；也不用
-  /// `ModalRoute.isCurrent`：pop 不会重建 `_ModalScope`，那个值在被 pop 的路由上是陈旧的。
-  void _attachSyntheticHoverRouteListeners(ModalRoute<Object?>? route) {
-    if (identical(route, _syntheticHoverRoute)) return;
-    _detachSyntheticHoverRouteListeners();
-    _syntheticHoverRoute = route;
-    route?.animation?.addStatusListener(_onSyntheticHoverOwnRouteStatus);
-    route?.secondaryAnimation
-        ?.addStatusListener(_onSyntheticHoverCoveringRouteStatus);
-  }
-
-  void _detachSyntheticHoverRouteListeners() {
-    final ModalRoute<Object?>? route = _syntheticHoverRoute;
-    if (route == null) return;
-    route.animation?.removeStatusListener(_onSyntheticHoverOwnRouteStatus);
-    route.secondaryAnimation
-        ?.removeStatusListener(_onSyntheticHoverCoveringRouteStatus);
-    _syntheticHoverRoute = null;
-  }
-
-  /// 本页路由自己的动画：`reverse` = 本页正被 pop。
-  void _onSyntheticHoverOwnRouteStatus(AnimationStatus status) {
-    if (status == AnimationStatus.reverse) _retireSyntheticHoverDevice();
-  }
-
-  /// 压在本页上面那条路由的动画：`forward` = 新路由正在入场（push-on-top / 替换）。
-  void _onSyntheticHoverCoveringRouteStatus(AnimationStatus status) {
-    if (status == AnimationStatus.forward) _retireSyntheticHoverDevice();
-  }
-
-  /// 注销合成 hover 设备（BUG-2453）——在本页失去栈顶那一帧的帧末派同设备的
-  /// `PointerRemovedEvent`。
+  /// 注销合成 hover 设备（BUG-2453）——由 build 里包住整页的 [RouteTopListener] 在本页
+  /// **失去栈顶**那一帧的帧末调用，派同设备的 `PointerRemovedEvent`。
   ///
   /// 根因：[_pokeControlsVisible] 派的合成 hover 在 Flutter `MouseTracker` 里会为
   /// [_VideoFushiPageState._syntheticHoverDevice] 建一条**真实的设备状态**（`_mouseStates`），
@@ -195,27 +158,23 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   /// - `pushReplacement` 换集时旧页 dispose 晚于新页入场，幽灵指针已进到新页 media_kit
   ///   的全画面 `MouseRegion`，remove 触发其 onExit 把新页刚露出的控制条和光标一起藏掉。
   ///
-  /// 改在失去栈顶那一刻排一个 post-frame 派发：该时刻由 `Navigator.pop / push` 同步触发
-  /// （可能正跑在某个 MouseRegion 回调、即 MouseTracker 迭代栈里，BUG-425 同族，故不能
-  /// 同步派），而 post-frame 回调不在 build / finalize 锁内，且**早于** MouseTracker 自己
-  /// 的帧末重命中（`RendererBinding` 在 `drawFrame` 之后才登记那一条），所以幽灵指针来
-  /// 不及进入下层页 / 新页的任何 region，onExit 只落在本页自己的控制条上（本页正在退场，
-  /// 藏掉无妨）。
+  /// 失去栈顶的帧末（[RouteTopListener] 的语义）不在 build / finalize 锁内，且**早于**
+  /// MouseTracker 自己的帧末重命中（`RendererBinding` 在 `drawFrame` 之后才登记那一条），
+  /// 所以幽灵指针来不及进入下层页 / 新页的任何 region，onExit 只落在本页自己的控制条上
+  /// （本页正在退场，藏掉无妨）。`RouteAware` 不可用——`AppModel.routeObserver` 从未挂到
+  /// 任何 Navigator，且 Flutter 的 `RouteObserver` 不报 `didReplace`。
   ///
-  /// 「在册」旗在真正派发的那一刻清零而不是排队时：排队到派发之间若又 poke 了一次，
-  /// 那条新 hover 同样会被这次 remove 删掉，旗必须与设备表同步为假。
+  /// 幂等：重回栈顶（弹窗关掉）再失去会再调，未在册时什么都不派。
   void _retireSyntheticHoverDevice() {
     _pendingPokeHover = null;
     if (!_syntheticHoverDeviceLive) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _syntheticHoverDeviceLive = false;
-      GestureBinding.instance.handlePointerEvent(
-        const PointerRemovedEvent(
-          device: _VideoFushiPageState._syntheticHoverDevice,
-          kind: PointerDeviceKind.mouse,
-        ),
-      );
-    });
+    _syntheticHoverDeviceLive = false;
+    GestureBinding.instance.handlePointerEvent(
+      const PointerRemovedEvent(
+        device: _VideoFushiPageState._syntheticHoverDevice,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
   }
 
   void _clearRailHover() {

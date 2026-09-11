@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/route_top_listener.dart';
 
 import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
@@ -19,22 +20,22 @@ import 'video_fushi_page_source_corpus.dart';
 /// 每帧帧末 `updateAllDevices` 都在那一点命中测试，落在那的 `MouseRegion`（库页卡片
 /// 的 [FushiHoverLift]）收到 onEnter → 放大。
 ///
-/// 修复：在本页**失去栈顶**那一刻（自己路由的动画进入 `reverse` = 被 pop；次动画进入
-/// `forward` = 新路由压上来 / `pushReplacement` 替换）排一个 post-frame 派同设备
-/// [PointerRemovedEvent]。**不能**放在 `dispose()` 里同步派：dispose 跑在 finalizeTree
-/// 锁态内，pop 过渡期间幽灵指针早已进到下层库页的卡上，remove 触发那张卡
+/// 修复：播放页 build 用 [RouteTopListener] 包住整页，在本页**失去栈顶**那一帧的帧末
+/// 派同设备 [PointerRemovedEvent]。**不能**放在 `dispose()` 里同步派：dispose 跑在
+/// finalizeTree 锁态内，pop 过渡期间幽灵指针早已进到下层库页的卡上，remove 触发那张卡
 /// `onExit → setState` 撞「widget tree was locked」断言；`pushReplacement` 时还会把新页
 /// 刚露出的控制条藏掉。也不能在每次 hover 后立刻注销：media_kit fork 的 `onExit`
 /// 无条件把控制条藏掉。
 ///
 /// 两层守卫：
-/// ① 行为层：真 Navigator（push / pop / pushReplacement 带过渡）+ 真 [FushiHoverLift]，
-///    在 Flutter 真实 `MouseTracker` 上复现「不注销 → pop 后下层中心卡被判 hover」，
-///    并证明「失去栈顶时注销（修复同构）→ pop 全程下层卡从未被判 hover、无任何断言、
-///    真实鼠标照常可悬停；pushReplacement 时新页 region 从未被幽灵指针进入」。
-///    media_kit 视频部件 headless 跑不了，故播放页本体走 ② 源码守卫。
-/// ② 源码层：钉住 `didChangeDependencies` 挂路由监听、两条监听各看哪个状态、
-///    注销走 post-frame、`dispose` 只摘监听不派事件、`_dispatchPokeHover` 派发前登记在册。
+/// ① 行为层：真 Navigator（push / pop / pushReplacement 带过渡）+ 真 [RouteTopListener]
+///    + 真 [FushiHoverLift]，在 Flutter 真实 `MouseTracker` 上复现「不注销 → pop 后下层
+///    中心卡被判 hover」，并证明「失去栈顶时注销 → pop 全程下层卡从未被判 hover、无任何
+///    断言、真实鼠标照常可悬停；pushReplacement 时新页 region 从未被幽灵指针进入」，外加
+///    [RouteTopListener] 自身的边沿语义。media_kit 视频部件 headless 跑不了，故播放页本体
+///    走 ② 源码守卫。
+/// ② 源码层：钉住 build 用 [RouteTopListener] 接 `_retireSyntheticHoverDevice`、注销派
+///    同设备 remove、`dispose` 不派事件、`_dispatchPokeHover` 派发前登记在册。
 void main() {
   group('行为复现：合成 hover 设备跨页残留（BUG-2453）', () {
     testWidgets('不注销：pop 后下层库页中心的 FushiHoverLift 被判 hover（复现）', (
@@ -62,9 +63,9 @@ void main() {
       expect(tester.takeException(), isNull,
           reason: '注销不得在 finalizeTree 锁态内触发下层卡 setState');
       expect(RendererBinding.instance.mouseTracker.mouseIsConnected, isFalse,
-          reason: 'post-frame 派了同设备 PointerRemovedEvent → 设备表已空');
+          reason: '帧末派了同设备 PointerRemovedEvent → 设备表已空');
       expect(probe.libraryEverHovered, isFalse,
-          reason: 'post-frame 注销早于 MouseTracker 帧末重命中，'
+          reason: '失去栈顶帧末的注销早于 MouseTracker 帧末重命中，'
               'pop 过渡的任何一帧下层卡都不该被判 hover');
       expect(probe.libraryHovered, isFalse);
 
@@ -139,6 +140,51 @@ void main() {
     });
   });
 
+  group('RouteTopListener 边沿语义', () {
+    testWidgets('被压 → 一次；对方弹走后重回栈顶不回调；自己被 pop → 再一次', (
+      WidgetTester tester,
+    ) async {
+      int lostTop = 0;
+      await tester.pumpWidget(
+        MaterialApp(home: _Anchor(onLostTop: () => lostTop++)),
+      );
+      final BuildContext anchor =
+          tester.element(find.byKey(const ValueKey<String>('anchor')));
+      expect(lostTop, 0, reason: '入场阶段本路由就是栈顶');
+
+      Navigator.of(anchor).push(
+        MaterialPageRoute<void>(builder: (_) => const SizedBox.expand()),
+      );
+      await tester.pumpAndSettle();
+      expect(lostTop, 1, reason: '新路由压上来 = 失去栈顶');
+
+      Navigator.of(anchor).pop();
+      await tester.pumpAndSettle();
+      expect(lostTop, 1, reason: '重回栈顶不是失去栈顶');
+
+      // 重回栈顶后再被压一次 → 再次失去栈顶，边沿再回调一次。
+      Navigator.of(anchor).push(
+        MaterialPageRoute<void>(builder: (_) => const SizedBox.expand()),
+      );
+      await tester.pumpAndSettle();
+      expect(lostTop, 2);
+    });
+
+    testWidgets('不在任何路由里（直接 pumpWidget）永不回调', (
+      WidgetTester tester,
+    ) async {
+      int lostTop = 0;
+      await tester.pumpWidget(
+        RouteTopListener(
+          onLostTop: () => lostTop++,
+          child: const SizedBox.expand(),
+        ),
+      );
+      await tester.pumpWidget(const SizedBox.expand());
+      expect(lostTop, 0);
+    });
+  });
+
   group('源码守卫：合成设备随播放页失去栈顶注销（BUG-2453）', () {
     late String src;
     setUpAll(() {
@@ -154,53 +200,26 @@ void main() {
       );
     });
 
-    test('didChangeDependencies 给本页路由挂失去栈顶监听', () {
-      final String body = methodBody(src, 'void didChangeDependencies()');
+    test('build 用 RouteTopListener 包整页，失去栈顶 → _retireSyntheticHoverDevice', () {
+      expect(containsCodeLine(src, 'child: RouteTopListener('), isTrue,
+          reason: '路由依赖必须落在透传叶子上，不能落在页面 State（每个弹窗整页重建）');
       expect(
-        containsCodeLine(body,
-            '_attachSyntheticHoverRouteListeners(ModalRoute.of(context));'),
+        containsCodeLine(src, 'onLostTop: _retireSyntheticHoverDevice,'),
         isTrue,
-        reason: 'BUG-2453：注销判据挂在本页路由的动画状态上',
+        reason: 'BUG-2453：注销挂在失去栈顶那一帧的帧末',
+      );
+      expect(
+        containsCodeLine(src, '_attachSyntheticHoverRouteListeners'),
+        isFalse,
+        reason:
+            '页面 State 不再自己 ModalRoute.of 挂监听（审查：整页成为 _ModalScopeStatus 依赖者）',
       );
     });
 
-    test('两条监听各看正确的状态：自身 reverse = 被 pop，覆盖者 forward = 被压 / 被替换', () {
-      final String own =
-          methodBody(src, 'void _onSyntheticHoverOwnRouteStatus(');
-      expect(containsCodeLine(own, 'AnimationStatus.reverse'), isTrue);
-      expect(containsCodeLine(own, '_retireSyntheticHoverDevice();'), isTrue);
-      final String covering =
-          methodBody(src, 'void _onSyntheticHoverCoveringRouteStatus(');
-      expect(containsCodeLine(covering, 'AnimationStatus.forward'), isTrue);
-      expect(
-          containsCodeLine(covering, '_retireSyntheticHoverDevice();'), isTrue);
-      final String attach =
-          methodBody(src, 'void _attachSyntheticHoverRouteListeners(');
-      expect(
-        containsCodeLine(attach,
-            'route?.animation?.addStatusListener(_onSyntheticHoverOwnRouteStatus);'),
-        isTrue,
-        reason: '自身动画 → own 监听',
-      );
-      expect(
-        containsCodeLine(attach,
-            '?.addStatusListener(_onSyntheticHoverCoveringRouteStatus);'),
-        isTrue,
-        reason: '次动画 → covering 监听',
-      );
-    });
-
-    test('_retireSyntheticHoverDevice 在 post-frame 里派同设备 PointerRemovedEvent',
-        () {
+    test('_retireSyntheticHoverDevice 派同设备的 PointerRemovedEvent', () {
       final String body = methodBody(src, 'void _retireSyntheticHoverDevice()');
       expect(containsCodeLine(body, '_pendingPokeHover = null;'), isTrue,
           reason: '注销同时丢弃待派发的 poke');
-      expect(
-        containsCodeLine(body, 'WidgetsBinding.instance.addPostFrameCallback('),
-        isTrue,
-        reason: '派发必须延到帧末：调用点可能在 MouseTracker 迭代栈里，'
-            '且 post-frame 早于 MouseTracker 帧末重命中',
-      );
       expect(containsCodeLine(body, 'PointerRemovedEvent('), isTrue,
           reason: '注销只能靠 PointerRemovedEvent：MouseTracker 只认它删设备');
       expect(
@@ -211,19 +230,22 @@ void main() {
       );
       expect(containsCodeLine(body, 'kind: PointerDeviceKind.mouse,'), isTrue,
           reason: 'kind 须与派发时一致（MouseTracker 只跟踪 mouse/stylus）');
+      expect(
+        containsCodeLine(body, 'GestureBinding.instance.handlePointerEvent('),
+        isTrue,
+        reason: '须经 GestureBinding 派发，走与合成 hover 相同的管线',
+      );
       final int flagOff = body.indexOf('_syntheticHoverDeviceLive = false;');
-      final int postFrame = body.indexOf('addPostFrameCallback(');
-      expect(flagOff, greaterThan(postFrame),
-          reason: '「在册」旗在真正派发那一刻清零（排队到派发之间的 poke 也会被删掉）');
+      final int dispatch =
+          body.indexOf('GestureBinding.instance.handlePointerEvent(');
+      expect(flagOff, greaterThanOrEqualTo(0));
+      expect(dispatch, greaterThan(flagOff), reason: '「在册」旗在派发前清零，派发抛异常也不会重复派');
     });
 
-    test('dispose 只摘路由监听、不派任何指针事件（finalizeTree 锁态）', () {
+    test('dispose 不派任何指针事件（finalizeTree 锁态）', () {
       // 语料主壳在前，首个 `void dispose()` 即播放页 State 的（另一处是文件末尾的
       // _VideoRepeatGestureButtonState）。
       final String body = methodBody(src, 'void dispose()');
-      expect(containsCodeLine(body, '_detachSyntheticHoverRouteListeners();'),
-          isTrue,
-          reason: '路由监听随 State 摘掉');
       expect(containsCodeLine(body, 'handlePointerEvent('), isFalse,
           reason: 'dispose 跑在锁态内，同步派指针事件会让下层卡 setState 撞断言');
       expect(containsCodeLine(body, '_retireSyntheticHoverDevice();'), isFalse,
@@ -247,8 +269,8 @@ void main() {
 const int _kSyntheticDevice = 0x6869626B;
 const String _kSyntheticDeviceLiteral = '0x6869626B';
 
-/// tearDown 兜底：避免复现用例把幽灵设备留给同进程的后续测试。对不在册的设备是框架层
-/// no-op。
+/// 与生产 `_retireSyntheticHoverDevice` 同构的注销；tearDown 里也用它兜底，避免复现用例
+/// 把幽灵设备留给同进程的后续测试。对不在册的设备是框架层 no-op。
 void _retireSyntheticDevice() {
   GestureBinding.instance.handlePointerEvent(
     const PointerRemovedEvent(
@@ -265,7 +287,7 @@ enum _RetireMode {
   /// 第一版修法：dispose 里同步派 remove（审查打回的形态）。
   syncInDispose,
 
-  /// 修复同构：失去栈顶那一刻排 post-frame 派 remove。
+  /// 修复同构：真 [RouteTopListener] 在失去栈顶帧末派 remove。
   onLostTop,
 }
 
@@ -295,7 +317,6 @@ Future<void> _pushPlayerAndPoke(
     ),
   );
   await tester.pumpAndSettle();
-  // 入场期间库页在下层，可能被空的设备表之外的东西……不会：此时还没有任何设备。
   probe.libraryEverHovered = false;
 
   final Offset center = tester.getCenter(find.byType(_PlayerStub));
@@ -342,58 +363,26 @@ class _PlayerStub extends StatefulWidget {
   State<_PlayerStub> createState() => _PlayerStubState();
 }
 
-/// 与生产 `_attachSyntheticHoverRouteListeners` / `_retireSyntheticHoverDevice` 同构。
+/// 播放页桩：只复刻「全画面 MouseRegion + 注销时机」，注销接线用**生产同款**
+/// [RouteTopListener]。
 class _PlayerStubState extends State<_PlayerStub> {
-  ModalRoute<Object?>? _route;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (identical(route, _route)) return;
-    _detach();
-    _route = route;
-    if (widget.retire == _RetireMode.onLostTop) {
-      route?.animation?.addStatusListener(_onOwnStatus);
-      route?.secondaryAnimation?.addStatusListener(_onCoveringStatus);
-    }
-  }
-
-  void _onOwnStatus(AnimationStatus status) {
-    if (status == AnimationStatus.reverse) _retireOnLostTop();
-  }
-
-  void _onCoveringStatus(AnimationStatus status) {
-    if (status == AnimationStatus.forward) _retireOnLostTop();
-  }
-
-  void _retireOnLostTop() {
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _retireSyntheticDevice());
-  }
-
-  void _detach() {
-    _route?.animation?.removeStatusListener(_onOwnStatus);
-    _route?.secondaryAnimation?.removeStatusListener(_onCoveringStatus);
-    _route = null;
-  }
-
   @override
   void dispose() {
-    _detach();
     if (widget.retire == _RetireMode.syncInDispose) _retireSyntheticDevice();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
+    final Widget region = SizedBox.expand(
       child: MouseRegion(
         onEnter: (_) => widget.probe.entered.add(widget.id),
         onExit: (_) => widget.probe.exited.add(widget.id),
         child: const ColoredBox(color: Colors.black),
       ),
     );
+    if (widget.retire != _RetireMode.onLostTop) return region;
+    return RouteTopListener(onLostTop: _retireSyntheticDevice, child: region);
   }
 }
 
@@ -419,6 +408,22 @@ class _LibraryStub extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// [RouteTopListener] 语义测试用的锚点页。
+class _Anchor extends StatelessWidget {
+  const _Anchor({required this.onLostTop})
+      : super(key: const ValueKey<String>('anchor'));
+
+  final VoidCallback onLostTop;
+
+  @override
+  Widget build(BuildContext context) {
+    return RouteTopListener(
+      onLostTop: onLostTop,
+      child: const Scaffold(body: SizedBox.expand()),
     );
   }
 }

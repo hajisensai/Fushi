@@ -193,6 +193,7 @@ import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/copy_feedback.dart';
 import 'package:fushi/src/utils/components/fading_chrome_gate.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/route_top_listener.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -954,16 +955,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   PointerHoverEvent? _pendingPokeHover;
 
   /// 合成 hover 设备是否已在 Flutter `MouseTracker` 里登记在册（BUG-2453）。
-  /// [_dispatchPokeHover] 真正派发即置真；[_retireSyntheticHoverDevice] 的 post-frame
-  /// 派发注销时清零。只在真派发过时才派 `PointerRemovedEvent`——从没造过这个设备
-  /// （移动端 / 从未 poke）就不往指针管线塞任何事件。
+  /// [_dispatchPokeHover] 真正派发即置真；[_retireSyntheticHoverDevice] 注销时清零。
+  /// 只在真派发过时才派 `PointerRemovedEvent`——从没造过这个设备（移动端 / 从未 poke）
+  /// 就不往指针管线塞任何事件。
   bool _syntheticHoverDeviceLive = false;
-
-  /// 本页所在的路由（BUG-2453）：在 [didChangeDependencies] 里对它的主动画（进入
-  /// `reverse` = 本页被 pop）与次动画（进入 `forward` = 新路由压上来 / `pushReplacement`
-  /// 换集替换本页）各挂一个状态监听，两者都是「本页失去栈顶」的时刻，合成 hover 设备在
-  /// 那一帧帧末注销。缓存是为了只挂一次、[dispose] 时能摘干净。
-  ModalRoute<Object?>? _syntheticHoverRoute;
   static const double _volumeStep = 5.0;
 
   /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。
@@ -4039,13 +4034,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // BUG-2453：合成 hover 设备随本页「失去栈顶」注销，判据挂在本页路由的动画状态上。
-    _attachSyntheticHoverRouteListeners(ModalRoute.of(context));
-  }
-
-  @override
   void dispose() {
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
@@ -4060,10 +4048,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
     WidgetsBinding.instance.removeObserver(this);
-    // BUG-2453：只摘路由动画监听，**不在这里派指针事件**——dispose 跑在 finalizeTree 的
+    // BUG-2453：**不在这里派指针事件**注销合成 hover 设备——dispose 跑在 finalizeTree 的
     // 锁态内，同步注销会让幽灵指针此刻悬停的那张下层卡 onExit → setState 撞「widget tree
-    // was locked」断言。注销本身发生在本页失去栈顶那一帧（[_retireSyntheticHoverDevice]）。
-    _detachSyntheticHoverRouteListeners();
+    // was locked」断言。注销发生在本页失去栈顶那一帧的帧末（build 里的 [RouteTopListener]
+    // → [_retireSyntheticHoverDevice]）。
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
@@ -7667,20 +7655,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // Android 原生手柄按键都能落到本页的视频动作（play/pause、seek、音量、字幕、全屏、
     // 返回）。放在 [PopScope] 之上 ⇒ 是 [_videoFocusNode] 及所有子焦点节点的祖先，
     // 冒泡/派发都能命中；wrapper 自身不夺焦（见 [_wrapVideoGamepadControls]）。
+    // BUG-2453：合成 hover 设备随本页失去栈顶注销。判据放在透传叶子 [RouteTopListener]
+    // 上而不是本 State 的 didChangeDependencies——`ModalRoute.of` 的 inherited 依赖若落在
+    // 本 State，每个弹窗压上来再弹走都会整页 build 两次。
     return WindowFullscreenHost(
-      child: _wrapVideoGamepadControls(
-        PopScope(
-          // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
-          // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
-          // 时，先**同步发起** `flushPosition()` 把退出瞬间位置排进 drift 队列，再手动
-          // pop（BUG-2119：不 await——退出不能被落库成败绑架；写请求一旦发出就在后台
-          // 完成，不随 State 销毁消失，后续页面对同一行的读排在它之后）。
-          canPop: false,
-          onPopInvokedWithResult: (bool didPop, Object? _) async {
-            if (didPop) return;
-            await _handleBackOrExit();
-          },
-          child: _buildScaffold(controller, videoController, cs),
+      child: RouteTopListener(
+        onLostTop: _retireSyntheticHoverDevice,
+        child: _wrapVideoGamepadControls(
+          PopScope(
+            // 始终 `canPop: false` 自管退出：① 浮层栈非空时 back 先关栈（一层一层退），
+            // 浮层在根 Overlay 退出视频路由不会自动清它，必须在 pop 前拦截；② 栈空真退出
+            // 时，先**同步发起** `flushPosition()` 把退出瞬间位置排进 drift 队列，再手动
+            // pop（BUG-2119：不 await——退出不能被落库成败绑架；写请求一旦发出就在后台
+            // 完成，不随 State 销毁消失，后续页面对同一行的读排在它之后）。
+            canPop: false,
+            onPopInvokedWithResult: (bool didPop, Object? _) async {
+              if (didPop) return;
+              await _handleBackOrExit();
+            },
+            child: _buildScaffold(controller, videoController, cs),
+          ),
         ),
       ),
     );
