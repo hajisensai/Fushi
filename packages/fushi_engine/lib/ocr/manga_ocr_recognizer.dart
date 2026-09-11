@@ -99,6 +99,7 @@ class MangaOcrRecognizer implements OcrRecognizer {
     this.lengthPenalty = 2.0,
     this.noRepeatNgramSize = 3,
     this.maxLength = 300,
+    this.earlyStopping = true,
     this.encoderInputName = 'pixel_values',
     this.encoderOutputName = 'last_hidden_state',
     this.decoderInputIdsName = 'input_ids',
@@ -115,6 +116,9 @@ class MangaOcrRecognizer implements OcrRecognizer {
   final double lengthPenalty;
   final int noRepeatNgramSize;
   final int maxLength;
+
+  /// 对齐原版 generation_config 的 early_stopping=true（BUG-2457）。
+  final bool earlyStopping;
 
   final String encoderInputName;
   final String encoderOutputName;
@@ -158,6 +162,7 @@ class MangaOcrRecognizer implements OcrRecognizer {
         lengthPenalty: lengthPenalty,
         noRepeatNgramSize: noRepeatNgramSize,
         maxLength: maxLength,
+        earlyStopping: earlyStopping,
       ),
       stepLogits: (List<List<int>> sequences) =>
           _decoderStep(sequences, hiddenTensor),

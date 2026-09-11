@@ -180,6 +180,9 @@ void main() {
         return null;
       }
 
+      // 钉的是 ngram 规则本身，用穷尽语义（earlyStopping=false）看完整偏好链；
+      // 默认的 early_stopping=true 会在 5→EOS 的旁路凑满 4 条完成假设时提前停
+      // （得到同样不含重复 3-gram 的 [2,3,4,5]），那属于 BUG-2457 的用例。
       final BeamSearchResult banned = await beamSearchDecode(
         config: const BeamSearchConfig(
           startTokenId: kStart,
@@ -188,6 +191,7 @@ void main() {
           lengthPenalty: 1.0,
           noRepeatNgramSize: 3,
           maxLength: 20,
+          earlyStopping: false,
         ),
         stepLogits: scriptedLogits(rule),
       );
@@ -202,6 +206,7 @@ void main() {
           lengthPenalty: 1.0,
           noRepeatNgramSize: 0,
           maxLength: 10,
+          earlyStopping: false,
         ),
         stepLogits: scriptedLogits(rule),
       );
@@ -223,6 +228,49 @@ void main() {
       );
       // 序列长度（含 start）到 5 截断 → 4 个生成 token。
       expect(result.tokens, <int>[2, 2, 2, 2]);
+    });
+
+    test('BUG-2457 early_stopping：凑齐 numBeams 条完成假设即停，false 会追到 maxLength',
+        () async {
+      // 每步 EOS 都是最优、token 2 紧随其后：第 1 步 beam0 的 EOS 完成 1 条，
+      // 第 2 步 [0,2] 的 EOS 再完成 1 条 → 完成集凑满 numBeams=2。此后存活 beam
+      // 的累计 logprob 仍很高（p(2)≈0.47/步），false 语义下「最差完成分 >= 存活
+      // 上限」迟迟不成立，只能一路追到 maxLength；true 语义第 2 步就该停。
+      double? rule(List<int> seq, int token) => switch (token) {
+            kEos => 5.0,
+            2 => 4.9,
+            _ => null,
+          };
+      Future<int> stepsWith({required bool earlyStopping}) async {
+        int steps = 0;
+        final BeamStepLogits scripted = scriptedLogits(rule);
+        await beamSearchDecode(
+          config: BeamSearchConfig(
+            startTokenId: kStart,
+            eosTokenId: kEos,
+            numBeams: 2,
+            lengthPenalty: 1.0,
+            noRepeatNgramSize: 0,
+            maxLength: 10,
+            earlyStopping: earlyStopping,
+          ),
+          stepLogits: (List<List<int>> sequences) {
+            steps++;
+            return scripted(sequences);
+          },
+        );
+        return steps;
+      }
+
+      expect(await stepsWith(earlyStopping: true), 2,
+          reason: '完成集凑满 numBeams 后必须立刻停');
+      expect(await stepsWith(earlyStopping: false), 9,
+          reason: '对照：旧语义要跑到 maxLength（curLen 1→10 共 9 步）');
+      // 默认值必须是 true：原版 generation_config 如此，false 只留给对拍。
+      expect(
+          const BeamSearchConfig(startTokenId: kStart, eosTokenId: kEos)
+              .earlyStopping,
+          isTrue);
     });
 
     test('每步回调收到 numBeams 条等长序列', () async {
