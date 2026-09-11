@@ -188,12 +188,22 @@ void main() {
       // video_control_layout_editor.dart（经 schema 投影接入面板），守卫改锁新位置。
       final String editor =
           read('lib/src/media/video/video_control_layout_editor.dart');
+      // 钉不变式而不是调用写法：BUG-2448（#1417）把宽窗舞台改成按行堆叠之后，
+      // 槽位是**变量**传进 `_buildStageRow(left: …, right: …)` 再转给
+      // `_buildSlotRegion(left, …)`，原先那句字面量匹配不到了，但顶部两槽一个
+      // 没少。这里改判「两个槽都出现在文件里，且造放置区的入口确实存在」。
+      for (final String slot in <String>['topLeft', 'topRight']) {
+        expect(editor.contains('VideoControlSlot.$slot'), isTrue,
+            reason: '编辑器应有 $slot 放置区（TODO-388）');
+      }
       expect(
-          editor.contains('_buildSlotRegion(VideoControlSlot.topLeft)'), isTrue,
-          reason: '编辑器应有 topLeft 放置区（TODO-388）');
-      expect(editor.contains('_buildSlotRegion(VideoControlSlot.topRight)'),
-          isTrue,
-          reason: '编辑器应有 topRight 放置区（TODO-388）');
+        editor.contains('_buildSlotRegion(') &&
+            (editor.contains('_buildStageRow(') ||
+                editor.contains('_buildCompactSlotGrid(')),
+        isTrue,
+        reason: '造放置区的入口不见了——上面两条只证明枚举值还被提到，'
+            '不证明它真的被做成了可投放区域',
+      );
       // 顶部两槽有面向用户的标签（i18n）。
       expect(editor.contains('t.video_control_slot_top_left'), isTrue);
       expect(editor.contains('t.video_control_slot_top_right'), isTrue);
