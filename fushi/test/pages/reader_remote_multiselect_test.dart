@@ -148,6 +148,19 @@ void main() {
       isFalse,
       reason: '组合是本地动作，纯远端选中集不能启用',
     );
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(
+              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}')))
+          .onPressed,
+      isNull,
+      reason: '多选态卡内右上角下载按钮必须禁用，否则点到它仍直接下载',
+    );
+    expect(
+      find.byKey(
+          ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}')),
+      findsOneWidget,
+    );
 
     // 再点一次 = 取消勾选（与本地卡同语义）。
     await tester.tap(remoteCard('Cloud One'));
@@ -179,22 +192,34 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    // 串行：第一本挂在闸门上时第二本还没起（审查 #2：批量不得一帧扇出 N 个）。
+    expect(client.fetched, <String>['Cloud One'],
+        reason: '批量下载逐本串行，第一本没完第二本不起');
+    expect(find.byIcon(Icons.checklist_outlined), findsOneWidget,
+        reason: '批量下载一开始就退出多选态（入口图标回到「选择」）');
+    // 多选态期间卡内右上角下载按钮必须是禁用态（审查 #1），此时已退出多选，
+    // 按钮回到可用——用另一张未勾选的卡核对壳与按钮都活着。
     expect(
-      client.fetched,
-      unorderedEquals(<String>['Cloud One', 'Cloud Three']),
-      reason: '只下勾选的两本，未勾的 Cloud Two 不动',
-    );
-    expect(
-      find.byIcon(Icons.checklist_outlined),
-      findsOneWidget,
-      reason: '批量下载后退出多选态（入口图标回到「选择」）',
+      tester
+          .widget<IconButton>(find.byKey(
+              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}')))
+          .onPressed,
+      isNotNull,
     );
 
-    // 放行挂着的下载体，让任务 future 在 teardown 前收尾；完成路径会弹
-    // SnackBar（有 4s 计时器），与 dedup 测试同款只 pump 不 settle。
+    // 放行闸门：第一本收尾后才轮到第三本；未勾的 Cloud Two 始终不动。
+    // 收尾有真实文件 IO（写盘 + 导入），fake zone 的 pump 送不到，走 runAsync。
+    // 收尾有真实文件 IO（写盘 + 导入）也有 fake zone 的计时器/帧回调，两种都要
+    // 驱动：runAsync 放真时间、pump 推帧，交替直到第二本起跑。
     client.release();
-    await tester.pump();
-    await tester.pump();
+    for (int i = 0; i < 200 && client.fetched.length < 2; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(client.fetched, <String>['Cloud One', 'Cloud Three'],
+        reason: '只下勾选的两本、按目录序串行，未勾的 Cloud Two 不动');
   });
 }
 

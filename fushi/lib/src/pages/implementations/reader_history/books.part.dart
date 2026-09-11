@@ -519,7 +519,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     // 勾过但被当前搜索/标签筛选挡住的那些不会被删，必须说出来。
-    final int hidden = _selection.hiddenSelectedCount;
+    // 只数本地键：远端占位键不是删除对象（BUG-2458 审查 #4）。
+    final int hidden = _selection.hiddenSelectedCountWhere(
+      (String key) => !_isRemoteSelectionKey(key),
+    );
     final String message = hidden == 0
         ? baseMessage
         : '$baseMessage\n\n${t.batch_hidden_by_filter_note(n: hidden)}';

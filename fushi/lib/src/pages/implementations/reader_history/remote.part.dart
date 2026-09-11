@@ -228,7 +228,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               iconSize: 18,
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.download_outlined),
-              onPressed: () => _downloadRemoteBook(book),
+              // 多选态卡内子按钮叠在壳 InkWell 之上、不经 handleTap；置空让点击
+              // 穿到壳走勾选，否则点到右上角仍是「没勾选直接下载」（审查 #1）。
+              onPressed: _selectionMode && selectable
+                  ? null
+                  : () => _downloadRemoteBook(book),
             ),
       ),
     );
@@ -236,29 +240,40 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
 
   /// BUG-2458：批量栏「下载」——把选中的远端占位卡（EPUB / 纯 SRT 有声书）逐个
   /// 交给既有单本下载链（[_downloadRemoteBook] / [_downloadRemoteSrtAudiobook]，
-  /// 任务归 [InterconnectDownloadManager] 所有、与本页生命周期无关），随后退出
+  /// 任务归 [InterconnectDownloadManager] 所有、与本页生命周期无关），先退出
   /// 多选态；进度 / 失败落在各卡角标上（[_remoteBookTaskBadge]）。
   ///
   /// 选中键只是身份，占位对象要回到最近一次远端目录里找：目录已刷新、该书已
-  /// 下载入库被去重隐藏的键自然找不到，跳过即可（与单本路径「已在下载中忽略」
-  /// 同一精神）。并发语义与用户逐张点下载按钮一致——各任务并行推进。
-  void _batchDownloadSelectedRemote() {
+  /// 下载入库被去重隐藏的键自然找不到，跳过即可。
+  ///
+  /// **串行**：管理器只按 id 去重、无并发上限，「全选 → 下载」若一帧内扇出 N 个
+  /// 并行 HTTP + N 个并行导入落库，对手机端互联 host 是真实压力；逐本 await
+  /// 让批量与用户逐张点的节奏等价。服务不可达在进循环前判一次，只提示一次
+  /// （单本路径每次各弹一条）。
+  Future<void> _batchDownloadSelectedRemote() async {
     final Set<String> keys = _selectedRemoteKeys;
     if (keys.isEmpty) return;
     final _RemoteBookState? state = _lastRemoteState;
-    if (state != null) {
-      for (final RemoteBookInfo book in state.books) {
-        if (keys.contains(_remoteBookSelectionKey(book))) {
-          unawaited(_downloadRemoteBook(book));
-        }
-      }
-      for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
-        if (keys.contains(_remoteSrtSelectionKey(book))) {
-          unawaited(_downloadRemoteSrtAudiobook(book));
-        }
-      }
-    }
     _exitSelectionMode();
+    if (state == null) return;
+    if (_remoteBookClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    // 页面卸载后停止派发：已起的任务归管理器继续跑到底，未起的不再用已 dispose
+    // 的 ref 去起。
+    for (final RemoteBookInfo book in state.books) {
+      if (!keys.contains(_remoteBookSelectionKey(book))) continue;
+      if (!mounted) return;
+      await _downloadRemoteBook(book);
+    }
+    for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
+      if (!keys.contains(_remoteSrtSelectionKey(book))) continue;
+      if (!mounted) return;
+      await _downloadRemoteSrtAudiobook(book);
+    }
   }
 
   /// 远端占位卡右上角的下载态角标（BUG-1561 书侧补齐）：进行中 → 进度环，失败 →
@@ -916,14 +931,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
             ),
           ],
         ),
-        leadingBadge: KeyedSubtree(
-          key: ValueKey<String>('remote_srt_type_badge_$safeKey'),
-          child: _cardBadge(
-            icon: Icons.headphones_outlined,
-            background: cs.secondaryContainer,
-            foreground: cs.onSecondaryContainer,
-          ),
-        ),
+        // 多选态左上角让位给壳的勾选框（与远端 EPUB 卡同规则）。
+        leadingBadge: _selectionMode && selectable
+            ? null
+            : KeyedSubtree(
+                key: ValueKey<String>('remote_srt_type_badge_$safeKey'),
+                child: _cardBadge(
+                  icon: Icons.headphones_outlined,
+                  background: cs.secondaryContainer,
+                  foreground: cs.onSecondaryContainer,
+                ),
+              ),
         coverBadge: _remoteBookTaskBadge(
               taskId:
                   InterconnectDownloadManager.srtAudiobookTaskId(book.identity),
@@ -936,7 +954,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               iconSize: 18,
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.download_outlined),
-              onPressed: () => _downloadRemoteSrtAudiobook(book),
+              onPressed: _selectionMode && selectable
+                  ? null
+                  : () => _downloadRemoteSrtAudiobook(book),
             ),
       ),
     );
