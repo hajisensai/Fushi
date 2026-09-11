@@ -1,0 +1,9 @@
+## BUG-2472 · WebKit 上首行含振假名的段落被撑高一截
+- **报告**：2026-09-11（用户：「振假名的显示有问题，会改变 epub 的行高；只有 WebKit（mac / iOS）有问题，Blink 没有」）
+- **真实性**：✅ 真 bug（WebKit 专属）。根因是引擎行为差异，落点 `fushi/lib/src/reader/reader_content_styles.dart:474`（`html { … }` 规则此前对所有引擎都只留默认 line-box 行为，BUG-611 把 `-webkit-line-box-contain` 整个删掉了）。
+  - 机制：`<rt>` 注音盒 = 0.45em × line-height normal ≈ 0.54em，超出根行盒上半 leading（(1.65−1)/2 = 0.325em）约 0.215em。Blink 让注音悬在 leading 里、行盒不动；WebKit 把段落**首行**往下推，段落块轴（横排=高、竖排=宽）多出 ≈0.215em，**行距不变**。竖排下即「首列有注音的段落更宽」，段落间距忽宽忽窄。
+  - Mac 真机（macOS 27.0，WebKit 605.1.15，`~/dev/hibiki` 隔离数据根）数据：合成素材四轮（横/竖 × 22/43）带注音段落块轴多出 4.73px（22 号）/ 6.05px（43 号），纯文本段 0；真书 無職転生 21 第 10 节（272 处注音）横/竖 × 22/46：首行含注音的段落中位多出 4.73 / 6.25px，纯文本段 0；Blink（Windows WebView2 153）同一探针全 0。相邻行行距在两端、所有轮次都相等（delta 0）——用户说的「行高」实际是段落首行/块高，不是逐行行距。
+  - 候选实测（Mac）：`ruby, rt { line-height: 1 }` 反而把行距撑大 4.9~6px；`block glyphs replaced`（BUG-611 删掉的那条）撑大 6~9px；抬 body 行高到 1.9 全局变疏；`rt { line-height: 1 }` 单独无效；**`html { -webkit-line-box-contain: block replaced }`** 四轮 + 真书全部归 0、行距不变、注音位置不变（截图 `observe-b-v43-C2-webview.png` / `observe-b-h43-C2-webview.png`）。
+- **[x] ① 已修复** — `1376273f4b`：`_webKitLineBoxCss()` 按 `defaultTargetPlatform` 只在 iOS / macOS 发出 `-webkit-line-box-contain: block replaced !important`，不带 `glyphs`；Android / Windows / Linux 一律不发（Blink 不解析；旧 Android WebView 解析且 BUG-611 实证 `glyphs` 会把竖排注音塌进基字列）。已知代价：WebKit 上比段落字号大的 inline 片段不再撑高所在行。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/vertical_ruby_line_box_contain_guard_test.dart`：iOS / macOS 生成的 CSS 必含 `block replaced` 且不含 `glyphs`；android / windows / linux 必不含该属性（BUG-611 守卫保留）。真渲染：`fushi/integration_test/reader_ruby_line_box_probe_itest.dart`（合成，量行距 + 段落块轴多出量，五个候选）与 `reader_ruby_line_box_realbook_itest.dart`（真书，按段落分桶），Mac 上用 `tool/run_mac_itest.ps1` 跑，读 `[ruby-line-box]` / `[ruby-realbook]` 行。
+- **备注**：探针设计：横排按行 top 聚类、竖排按列 left 聚类，逐字符 `Range.getClientRects()`；「多出量」= 段落块轴尺寸 − 行数 × 行距中位数。

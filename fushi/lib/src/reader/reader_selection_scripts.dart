@@ -1136,9 +1136,33 @@ window.fushiSelection = {
     }
     return null;
   },
+  // 振假名 toggle 态（ReaderSettings.furiganaMode == 'toggle'，CSS 把未揭示 ruby 的
+  // rt 设成 visibility:hidden）：命中这样的 ruby 时返回它，调用方只揭示不查词。
+  // 判据读注音的**计算样式**而不是某个模式旗——设置热切换只重发 CSS，读旗会过期；
+  // hidden 态 rt 是 display:none（不算），快捷键 show-all-rt 揭示后 visible（不算）。
+  _hiddenFuriganaRubyAt: function(x, y) {
+    var el = document.elementFromPoint(x, y);
+    var ruby = el && el.closest ? el.closest('ruby') : null;
+    if (!ruby || ruby.classList.contains('furigana-revealed')) return null;
+    var rt = ruby.querySelector('rt');
+    if (!rt) return null;
+    var cs = getComputedStyle(rt);
+    if (cs.display === 'none' || cs.visibility !== 'hidden') return null;
+    return ruby;
+  },
   selectText: function(x, y, maxLength, fromHover) {
     if (document.elementFromPoint(x, y)?.closest('a')) {
       return null;
+    }
+    // Hoshi Reader iOS Toggle 语义：点隐藏注音的 ruby = 揭示它，这一下不查词、
+    // 也不算点空白（不 fire onTapEmpty）；悬停查词（fromHover）不揭示。
+    if (!fromHover) {
+      var hiddenRuby = this._hiddenFuriganaRubyAt(x, y);
+      if (hiddenRuby) {
+        hiddenRuby.classList.add('furigana-revealed');
+        this.clearSelection();
+        return null;
+      }
     }
     var hit = this.getCharacterAtPoint(x, y);
     if (!hit) {

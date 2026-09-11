@@ -6,8 +6,9 @@ void main() {
     test('uses compact labels for furigana modes', () {
       final strings = AppLocale.zhCn.translations;
 
-      expect(strings.reader_furigana_partial, '部分');
-      expect(strings.reader_furigana_toggle, '切换');
+      expect(strings.reader_furigana_off, '关闭');
+      expect(strings.reader_furigana_toggle, '点击显示');
+      expect(strings.reader_furigana_hidden, '隐藏');
       expect(
         strings.reader_furigana_mode_hint,
         '',

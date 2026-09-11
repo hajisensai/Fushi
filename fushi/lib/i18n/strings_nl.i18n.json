@@ -2739,12 +2739,8 @@
   "reader_font_size": "Lettergrootte",
   "reader_font_vpal": "VPAL (vert. alt.)",
   "reader_font_weight": "Letterdikte",
-  "reader_furigana_hide": "Verbergen",
   "reader_furigana_mode": "Furigana",
   "reader_furigana_mode_hint": "",
-  "reader_furigana_partial": "Gedeeltelijk",
-  "reader_furigana_show": "Tonen",
-  "reader_furigana_toggle": "Wisselen",
   "reader_gallery": "Galerij",
   "reader_gallery_current": "Hier aan het lezen",
   "reader_gallery_empty": "Geen illustraties in dit boek",
@@ -4721,5 +4717,8 @@
   "stat_reading_speed": "Reading speed",
   "settings_study_diag_export": "Export study diagnostics log",
   "settings_study_diag_export_hint": "Page credits, segment open/close, audiobook resume and jump trace, for troubleshooting reading-speed anomalies. Saved as a text file.",
-  "study_diag_share_subject": "Fushi study diagnostics"
+  "study_diag_share_subject": "Fushi study diagnostics",
+  "reader_furigana_off": "Off",
+  "reader_furigana_toggle": "Toggle",
+  "reader_furigana_hidden": "Hidden"
 }

@@ -1754,7 +1754,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         getPreference<bool?>(key: 'hide_furigana', defaultValue: null);
     if (legacy != null) {
       final String oldStyle = _legacyFuriganaStyle;
-      final String mode = (legacy as bool) ? 'hide' : 'show';
+      final String mode = (legacy as bool) ? 'hidden' : 'off';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
             ? oldStyle
@@ -1769,7 +1769,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       return merged;
     }
     return normalizeFuriganaMode(
-      getPreference<String>(key: 'furigana_mode', defaultValue: 'show'),
+      getPreference<String>(key: 'furigana_mode', defaultValue: 'off'),
     );
   }
 

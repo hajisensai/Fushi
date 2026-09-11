@@ -1,4 +1,6 @@
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
@@ -56,6 +58,46 @@ void main() {
               '声明——它会抹掉竖排 ruby 交叉轴预留 → 振假名塌进基字(BUG-611)。'
               '删除后所有引擎回到默认 line-box 行为(为 ruby 预留空间)。',
         );
+      }
+    });
+
+    test(
+        'BUG-2472：只有 Apple 端（WebKit）发出 `block replaced`，且绝不带 glyphs；'
+        'Android / Windows / Linux 一律不发', () async {
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(
+              css.contains(
+                  '-webkit-line-box-contain: block replaced !important;'),
+              isTrue,
+              reason: '$p：WebKit 必须只按块 line-height + 替换元素算行盒，'
+                  '否则首行含注音的段落被撑高 ≈0.215em（BUG-2472）');
+          expect(css.contains('glyphs'), isFalse,
+              reason: '$p：不得带回 BUG-611 的 glyphs（实测把行距撑大 6~9px）');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css.contains('-webkit-line-box-contain'), isFalse,
+              reason: '$p：Blink / 旧 Android WebView 不得收到该属性（BUG-611）');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
       }
     });
 

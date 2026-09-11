@@ -305,13 +305,21 @@ class ReaderSettings {
   String get theme => _get<String>('theme', 'light-theme');
   Future<void> setTheme(String v) => _set<String>('theme', v);
 
+  /// 振假名显示形态，三态对齐 Hoshi Reader iOS `FuriganaMode`（2026-09-11 用户拍板）：
+  ///  * `off`    —— 原样显示（历史值 `show`）；
+  ///  * `toggle` —— 默认隐藏（`visibility:hidden`，注音轨占位保留、行高不抖），
+  ///                点一个 `<ruby>` 揭示一个，且那一下不查词（历史值 `partial`；
+  ///                历史 `toggle` 是「双击整页切换」，并入此态，整页揭示改由
+  ///                `readerToggleFurigana` 快捷键承担）；
+  ///  * `hidden` —— `display:none`（历史值 `hide`）。
+  /// 持久化键 `furigana_mode` 不变，旧值经 [normalizeFuriganaMode] 归一化。
   String get furiganaMode {
     final dynamic raw = _cache['hide_furigana'];
     final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
       final String oldStyle =
           _get<String>('furigana_style', 'partial').toLowerCase();
-      final String mode = legacy ? 'hide' : 'show';
+      final String mode = legacy ? 'hidden' : 'off';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
             ? oldStyle
@@ -324,7 +332,7 @@ class ReaderSettings {
       return merged;
     }
     return normalizeFuriganaMode(
-      _get<String>('furigana_mode', 'show'),
+      _get<String>('furigana_mode', 'off'),
     );
   }
 
@@ -859,16 +867,20 @@ class ReaderSettings {
   ({String fontFamily, String fontFaces}) buildCustomFontCss() =>
       customFontCssForEntries(customFonts);
 
+  /// 三态 `off` / `toggle` / `hidden`（见 [furiganaMode]）。历史四态映射：
+  /// `show`→`off`、`partial`→`toggle`、`toggle`→`toggle`、`hide`→`hidden`；
+  /// 其余一律 `off`。
   static String normalizeFuriganaMode(String mode) =>
-      switch (mode.toLowerCase()) {
-        'show' || 'hide' || 'partial' || 'toggle' => mode.toLowerCase(),
-        _ => 'show',
+      switch (mode.toLowerCase().trim()) {
+        'off' || 'show' => 'off',
+        'toggle' || 'partial' => 'toggle',
+        'hidden' || 'hide' => 'hidden',
+        _ => 'off',
       };
 
   static String furiganaModeToStyle(String mode) =>
       switch (normalizeFuriganaMode(mode)) {
-        'hide' => 'Hide',
-        'partial' => 'Partial',
+        'hidden' => 'Hide',
         'toggle' => 'Toggle',
         _ => 'Show',
       };

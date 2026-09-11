@@ -2739,12 +2739,8 @@
   "reader_font_size": "Tamaño de fuente",
   "reader_font_vpal": "VPAL (alt. vertical)",
   "reader_font_weight": "Grosor de fuente",
-  "reader_furigana_hide": "Ocultar",
   "reader_furigana_mode": "Furigana",
   "reader_furigana_mode_hint": "",
-  "reader_furigana_partial": "Parcial",
-  "reader_furigana_show": "Mostrar",
-  "reader_furigana_toggle": "Alternar",
   "reader_gallery": "Galería",
   "reader_gallery_current": "Leyendo aquí",
   "reader_gallery_empty": "No hay ilustraciones en este libro",
@@ -4721,5 +4717,8 @@
   "stat_reading_speed": "Reading speed",
   "settings_study_diag_export": "Export study diagnostics log",
   "settings_study_diag_export_hint": "Page credits, segment open/close, audiobook resume and jump trace, for troubleshooting reading-speed anomalies. Saved as a text file.",
-  "study_diag_share_subject": "Fushi study diagnostics"
+  "study_diag_share_subject": "Fushi study diagnostics",
+  "reader_furigana_off": "Off",
+  "reader_furigana_toggle": "Toggle",
+  "reader_furigana_hidden": "Hidden"
 }

@@ -63,6 +63,8 @@ flutter test integration_test/<t>_test.dart -d emulator-<port>     # 或 ci/inte
 #   ↑ 隐藏窗口下 WKWebView 页面常报 document.hidden=true、requestAnimationFrame 不跑（2026-09-12 探针多次 raf=0，
 #   非每次）。重锚落定已改经 _reanchorFrame（隐藏页走 setTimeout），位置 / 进度 / 账本在 Mac runner 上照常落地；
 #   若某测试仍卡 pending，给它加 WebView 探针（见 audiobook_resume_align_itest）打 raf/hidden 再判
+# iOS 模拟器（同一台 Mac 上的 iPhone 模拟器；WebKit + 真安全区 34pt；不传 -IosDevice 取第一台可用 iPhone）
+.\tool\run_mac_itest.ps1 integration_test/<t>_test.dart -Ios [-IosDevice <udid>]
 ```
 
 `reader_computer_use_flow` 在 Windows runner 下还会把可见验收证据（function-matrix、flutter-ui-tree、截图）写进 `.codex-test/windows-itest/<run-id>/computer-use/...`——产物清单、判读规则、「截图缺失≠功能失败」见 [computer-use-testing.md](computer-use-testing.md)。
