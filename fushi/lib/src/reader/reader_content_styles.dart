@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -173,6 +174,28 @@ class ReaderContentStyles {
   /// 中文字形渲染。接上 [contentFontFamilyCss] 后，语言已知就给该语言的衬线链；
   /// 语言未知（[language] 为 null 或非 CJK）时链为空，退回原来的 `serif`，与改造
   /// 前逐字节一致——不知道语言就不猜，理由见 `content_font_chain.dart`。
+  /// BUG-2472：WebKit（macOS / iOS WKWebView）把**首行含振假名的段落**整体撑高一截：
+  /// `<rt>` 注音盒（0.45em × line-height normal ≈ 0.54em）超出根行盒上半 leading
+  /// （(1.65−1)/2 = 0.325em）的部分，WebKit 不是像 Blink 那样让它悬在 leading 里，
+  /// 而是把段落首行往下推，段落块轴多出 ≈ 0.215em（22 号 4.73px、46 号 6.25px；
+  /// 行距本身不变，Blink 恒为 0）。竖排下就是「有注音的段落列更宽」，段落间距忽宽忽窄。
+  ///
+  /// 修法：只在 WebKit 上声明 `-webkit-line-box-contain: block replaced`——行盒高只由
+  /// 块的 line-height（strut）与替换元素决定，不再被 inline 盒（注音）撑开，注音照旧画
+  /// 在 leading 里；Mac 真机四轮（横/竖 × 22/43）与真书（無職転生 21，横/竖 × 22/46）
+  /// 实测段落多出量归 0、行距不变、注音位置不变。Blink 早已不解析该属性（BUG-611 记录
+  /// 的 `CSS.supports === false`），但旧版 Android WebView 仍解析且 BUG-611 实证
+  /// `block glyphs replaced` 会把竖排注音塌进基字列，故**按平台门控**只发给 Apple 端，
+  /// 且不带 `glyphs`（C3 实测反而把行距撑大 6~9px）。代价：WebKit 上比段落字号大的
+  /// inline 片段（如 `<span style="font-size:1.5em">`）不再撑高所在行；Blink 会撑。
+  static String _webKitLineBoxCss() => switch (defaultTargetPlatform) {
+        TargetPlatform.iOS ||
+        TargetPlatform.macOS =>
+          '  /* BUG-2472: WebKit only — see _webKitLineBoxCss. */\n'
+              '  -webkit-line-box-contain: block replaced !important;\n',
+        _ => '',
+      };
+
   static String _bodyFontFamily(String? customCssFamilies, String? language) {
     final String chain = contentFontFamilyCss(
       languageTag: language,
@@ -467,8 +490,12 @@ html {
      default line-box behaviour (which reserves ruby space) on every engine —
      exactly what current Blink already does correctly (zero regression there),
      and the BUG-108 lesson that Blink WebViews do not add ruby leading unless
-     the line box is allowed to grow. */
-  /* Themed scrollbar: the track stays transparent so it shows the page
+     the line box is allowed to grow.
+     BUG-2472 addendum: on WebKit (macOS / iOS) the SAME reserve is what makes a
+     paragraph whose first line carries furigana taller than its neighbours, so
+     `block replaced` (no `glyphs`) is emitted there and only there — see
+     _webKitLineBoxCss. */
+${_webKitLineBoxCss()}  /* Themed scrollbar: the track stays transparent so it shows the page
      background, and the thumb takes the theme text colour (already alpha<1),
      so dark themes get a light thumb and light themes a dark one. The standard
      props cover Firefox/Chromium 121+; the -webkit pseudo-elements below cover
