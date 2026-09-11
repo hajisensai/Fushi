@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2260 条。点号进各自文件。
+> 共 2261 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2453](bugs/BUG-2453-synthetic-hover-device-leak.md) | ✅ | ✅ | 视频播放页合成 hover 设备退出后不注销，库页中心卡片被幽灵指针悬停放大 |
 | [BUG-2451](bugs/BUG-2451-manga-global-search-ganma-fuzzy.md) | 🚧 | 🚧 | 全局搜索里 GANMA! 返回与关键词无关的作品（未复现为本仓 bug：源站服务端分词模糊匹配） |
 | [BUG-2450](bugs/BUG-2450-manga-online-image-timeout-no-retry.md) | 🚧 | 🚧 | 在线漫画封面与页图超时或失败后没有退避重试、没有重刷入口、加载队列排队无超时 |
 | [BUG-2449](bugs/BUG-2449-manga-ocr-job-dies-on-reader-exit.md) | 🚧 | 🚧 | 退出漫画阅读页会真停掉正在跑的整卷 OCR 任务 |
