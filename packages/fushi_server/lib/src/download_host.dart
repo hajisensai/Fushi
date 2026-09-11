@@ -126,6 +126,8 @@ class ServerDownloadHost implements HostDownloadHost {
       config: VideoSourceScrapeGlobalConfig.fromPreferences(
         prefs,
         resolvedTmdbApiKey: (prefs.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String).trim(),
+        // 无头服务端没有界面语言，资料语言来自 `metadata_locale` 配置项。
+        uiLocaleTag: config.metadataLocale,
       ),
     );
     _scrape = scrape;

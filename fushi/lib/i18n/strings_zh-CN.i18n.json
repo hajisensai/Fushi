@@ -4702,5 +4702,6 @@
   "browser_extension_test_page_sample_label": "练习句",
   "browser_extension_test_page_action": "打开试用网页",
   "browser_extension_test_page_action_desc": "在浏览器里打开一张由 Fushi 提供的网页，验证右上角弹窗与 Shift 查词。",
-  "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。"
+  "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。",
+  "video_source_scrape_locale_follow_ui": "留空 = 跟随界面语言"
 }

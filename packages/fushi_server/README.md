@@ -91,6 +91,7 @@ admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
 admin_token: "..."            # init 生成；忘了用 `fushi_server admin reset-token`
 subtitle_language: "ja"       # 扫描视频时 sidecar 字幕匹配语言
+metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海报语言由它派生；偏好表显式设过 video_metadata_locale 时以偏好为准
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
