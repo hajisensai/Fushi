@@ -11,6 +11,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -626,6 +627,39 @@ void main() {
       await expectLater(attempt(), throwsA(anything),
           reason: '指纹不符必须被钉扎拒绝，绝不放行任意自签证书');
     });
+
+    // BUG-2448：https host 解析成功即把 (host, port) → 指纹登记给 app 内置中继，
+    // 播放页交给 native 的 stream URL 才会被降成明文 http、由中继钉扎升回 https。
+    // 没有这一步，nativePlaybackUri 原样返回 https，libmpv（curl 后端）自己校验
+    // 自签证书 → 互联视频打不开。
+    test('BUG-2448: resolved https host is registered as a pinned native origin',
+        () async {
+      clearPinnedNativeOriginsForTesting();
+      addTearDown(clearPinnedNativeOriginsForTesting);
+      final Uri base = Uri.parse(tlsBase);
+      expect(pinnedNativeOriginFingerprint(base.host, base.port), isNull);
+      final InterconnectSyncBackend backend =
+          await buildPinnedBackend(fingerprint);
+      final RemoteVideoStreamUrls urls =
+          await backend.remoteVideoStreamUrls('video/sample');
+      expect(pinnedNativeOriginFingerprint(base.host, base.port), fingerprint);
+      expect(urls.streamUrl, startsWith('$tlsBase/'),
+          reason: 'Dart 侧下载通道仍拿真 https URL（钉扎客户端自己连）');
+      expect(nativePlaybackUri(urls.streamUrl),
+          'http://${base.host}:${base.port}${Uri.parse(urls.streamUrl).path}?${Uri.parse(urls.streamUrl).query}',
+          reason: '交给 native 的形式降成同 host 显式端口的明文 http');
+    });
+  });
+
+  test('BUG-2448: plaintext http host registers no pinned native origin',
+      () async {
+    clearPinnedNativeOriginsForTesting();
+    addTearDown(clearPinnedNativeOriginsForTesting);
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    await backend.listRemoteVideos();
+    final Uri parsed = Uri.parse(base);
+    expect(pinnedNativeOriginFingerprint(parsed.host, parsed.port), isNull);
   });
 
   test('fetchRemoteCover still works over plaintext http (老路径零破坏)', () async {

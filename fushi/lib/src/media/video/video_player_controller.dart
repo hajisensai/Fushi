@@ -1433,7 +1433,13 @@ class VideoPlayerController extends ChangeNotifier
     _mediaOpened = false;
     _bookUid = bookUid;
     _videoPath = videoFile?.path;
-    final String sourceUri = mediaUri ?? mediaUriForVideoPath(videoFile!.path);
+    // BUG-2455：交给 native 的 URL 统一过 [nativePlaybackUri]——互联 host 的自签
+    // https 流降成明文 http 交给中继，由中继按配对指纹钉扎升回 https；本地文件 /
+    // 公网流原样。native 侧从此不碰互联 host 的 TLS（随包 libmpv 换成 libcurl 后默认
+    // 校验证书，自签 host 直连必失败）。
+    final String sourceUri = nativePlaybackUri(
+      mediaUri ?? mediaUriForVideoPath(videoFile!.path),
+    );
     debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
     // TODO-1312：换片复位副字幕 cue 流（旧下标对新片失效；新集副字幕由页面
     // _restoreSecondarySubtitle 重挂）。在 setCues 之前复位，让 setCues 的单次
@@ -1666,7 +1672,10 @@ class VideoPlayerController extends ChangeNotifier
     // 与视频同步出声（修「初始无声、跳转后才有声」）。放在 header 注入之后——audio-only 流同走
     // googlevideo，UA 不匹配首个请求会 403（http-header-fields 已设为全局属性，audio-add 继承）。
     if (externalAudioTrackUrl != null && externalAudioTrackUrl.isNotEmpty) {
-      await player.setAudioTrack(AudioTrack.uri(externalAudioTrackUrl));
+      // 与主流同一收口（BUG-2455）：外挂音轨也是 native 自己去取的 URL。
+      await player.setAudioTrack(
+        AudioTrack.uri(nativePlaybackUri(externalAudioTrackUrl)),
+      );
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
     }
 

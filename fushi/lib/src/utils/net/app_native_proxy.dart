@@ -5,12 +5,60 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 Future<AppNativeProxy>? _sharedProxy;
 Future<AppNativeProxy>? _challengeProxy;
 final Set<String> _nativeProxySecrets = <String>{};
+
+/// 已登记的「钉扎原点」`host:port → 证书 SHA-256 指纹`。
+///
+/// 互联 host 用自签证书，信任判据是配对时 TOFU 记下的指纹——只有 Dart 侧知道它。
+/// native 播放器自己连 https 时，证书怎么判全看那份 libmpv 怎么编：ffmpeg 的 tls
+/// 从不校验（Android 随包 libmpv 仍是它），而 2026-08 起 Windows 随包的 libmpv 改用
+/// libcurl 取流、默认校验证书，自签 host 一律 `SSL peer certificate ... was not OK`
+/// → 互联视频整个打不开（BUG-2455）。同一条流在两端两种结局，说明信任根本不该放在
+/// native 侧。
+///
+/// 收口：交给 native 的 URL 经 [nativePlaybackUri] 降成**明文 http**（带显式端口），
+/// native 照常经本中继取流，[AppNativeProxy._forward] 按 `(host, port)` 查到指纹后
+/// 用 [createPinnedHttpClient] 升回 https 连真正的 host。native 无论哪个后端都只
+/// 看到 loopback 明文；证书信任只在 Dart 这一处裁决，和 API/字幕/封面通道同一判据。
+final Map<String, String> _pinnedNativeOrigins = <String, String>{};
+
+String _pinnedOriginKey(String host, int port) => '${host.toLowerCase()}:$port';
+
+/// 登记一个钉扎原点（互联 backend 每次解析出 https host 时调用，重复登记覆盖）。
+void registerPinnedNativeOrigin({
+  required String host,
+  required int port,
+  required String fingerprintSha256,
+}) {
+  _pinnedNativeOrigins[_pinnedOriginKey(host, port)] = fingerprintSha256;
+}
+
+/// `(host, port)` 已登记的钉扎指纹；未登记返回 null。
+String? pinnedNativeOriginFingerprint(String host, int port) =>
+    _pinnedNativeOrigins[_pinnedOriginKey(host, port)];
+
+@visibleForTesting
+void clearPinnedNativeOriginsForTesting() => _pinnedNativeOrigins.clear();
+
+/// 把要交给 native 播放器 / ffmpeg 的 URL 换成中继能识别的形式。
+///
+/// 已登记钉扎原点的 https URL → 同 host、**显式端口**的 http（中继据此升回钉扎
+/// https）；其它 URL（本地文件、公网流、未登记的 https）原样返回。端口必须显式：
+/// `https://h/x`（隐含 443）降成 `http://h/x` 会变成隐含 80，中继就查不到登记项。
+String nativePlaybackUri(String uri) {
+  final Uri? parsed = Uri.tryParse(uri);
+  if (parsed == null || !parsed.isScheme('https')) return uri;
+  if (pinnedNativeOriginFingerprint(parsed.host, parsed.port) == null) {
+    return uri;
+  }
+  return parsed.replace(scheme: 'http', port: parsed.port).toString();
+}
 
 /// Scrub native diagnostics before forwarding them to application logs/UI.
 String redactAppNativeProxySecrets(String value) {
@@ -219,12 +267,24 @@ class AppNativeProxy {
       return;
     }
     if (await _rejectPrivateTarget(request, uri)) return;
-    final HttpClient client = createAppHttpClient()..autoUncompress = false;
+    // 钉扎原点：native 拿到的是 [nativePlaybackUri] 降下来的明文 http，这里按
+    // (host, port) 查到指纹就升回 https、用钉扎客户端连——TLS 只在 Dart 这一处裁决。
+    final String? pinnedFingerprint = pinnedNativeOriginFingerprint(
+      uri.host,
+      uri.port,
+    );
+    final Uri upstreamUri = pinnedFingerprint == null
+        ? uri
+        : uri.replace(scheme: 'https', port: uri.port);
+    final HttpClient client = pinnedFingerprint == null
+        ? createAppHttpClient()
+        : createPinnedHttpClient(expectedFingerprint: pinnedFingerprint);
+    client.autoUncompress = false;
     _clients.add(client);
     try {
       final HttpClientRequest outbound = await client.openUrl(
         request.method,
-        uri,
+        upstreamUri,
       );
       outbound.followRedirects = false;
       _copyHeaders(request.headers, outbound.headers);
