@@ -152,22 +152,8 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 }
 
 /// 建一个装配好的转录服务。两个生产实例化点都调这里。
-///
-/// [alignGeneratedSubtitles] **默认关**。声学调轴是转录之后**再跑一遍**字符级
-/// CTC 模型、把每个 token 的时间重新按声学定位；它是精修不是必需——转录本身
-/// 已经产出完整 SRT（时间来自 VAD 段边界与 RNN-T 发射时刻）。
-///
-/// 打开它要付两笔账：日语包是 transducer 架构，调轴得另下 Omnilingual 1B
-/// （int8 约 985 MB），而识别模型才约 150 MB；整段音频还要多跑一遍推理。
-///
-/// 要重新打开，在调用点传 true 即可。上游已修掉「词表缺字直接抛异常炸掉整趟
-/// 转录」与「调轴模型缺失就不让转录」，再打开是安全的，但那 985 MB 与那一倍
-/// 推理时间仍旧要付。
-asr.AsrTranscriptionService createAsrTranscriptionService({
-  bool alignGeneratedSubtitles = false,
-}) =>
+asr.AsrTranscriptionService createAsrTranscriptionService() =>
     asr.AsrTranscriptionService(
-      alignGeneratedSubtitles: alignGeneratedSubtitles,
       // 有声书是干净朗读：语音与静默能量差 30 dB 以上、双模态可分，能量门限
       // 够用且免掉每 32 ms 一次 ONNX 前向。混音素材（动画/影视/带 BGM 的音源）
       // 必须换 mixedAudio，见 AsrAudioProfile。

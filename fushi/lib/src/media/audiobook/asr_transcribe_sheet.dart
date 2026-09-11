@@ -1053,10 +1053,6 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(t.audiobook_transcribe_intro, style: tokens.type.metadata),
-          // 声学调轴已默认关闭（见 createAsrTranscriptionService）：转录本身就
-          // 产出完整 SRT，调轴只是精修，代价是另下约 985 MB 的 CTC 模型 + 一倍
-          // 推理时间。文案先不渲染，i18n key（audiobook_transcribe_alignment_hint）
-          // 保留 17 种语言的既有翻译，重新打开调轴时原位恢复即可。
           SizedBox(height: tokens.spacing.rowVertical),
           Text(
             t.audiobook_transcribe_language_label,
