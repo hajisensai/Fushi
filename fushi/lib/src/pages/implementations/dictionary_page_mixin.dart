@@ -697,6 +697,9 @@ mixin DictionaryPageMixin {
     required DictionaryPopupController controller,
     required Future<int> Function(String text, Rect selectionRect) onPush,
     required void Function(int index) onPop,
+    // 词头 / 链接 / 汉字点击原地跳转时是否自动朗读首词条（视频页传 true，与其嵌套
+    // 查词的 autoRead 同口径；其余宿主默认 false）。
+    bool autoReadOnNavigate = false,
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
     final Rect pos = _calcMixinPopupPosition(
@@ -726,6 +729,7 @@ mixin DictionaryPageMixin {
       screen: screen,
       child: DictionaryPopupLayer(
         result: entry.result,
+        restoreScrollTop: entry.restoreScrollTop,
         isSearching: entry.isSearching,
         keepWebViewWarm: entry.isWarmSlot,
         webViewKey: entry.webViewKey,
@@ -749,6 +753,24 @@ mixin DictionaryPageMixin {
         onClose: () => onPop(index),
         // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
         onBack: null,
+        // 弹窗内原地跳转历史（词头 / 链接 / 汉字点击）：跳过才画 ← →。mixin 家族不
+        // 监听 controller，换页后自己 setState 重建。
+        historyNav: entry.hasNavigationHistory
+            ? DictionaryPopupHistoryNav(
+                canGoBack: entry.canGoBack,
+                canGoForward: entry.canGoForward,
+                onBack: () => navigatePopupHistory(
+                  controller: controller,
+                  entry: entry,
+                  forward: false,
+                ),
+                onForward: () => navigatePopupHistory(
+                  controller: controller,
+                  entry: entry,
+                  forward: true,
+                ),
+              )
+            : null,
         // Phase B：app 内弹窗右下角尺寸拖拽把手（video/首页/texthooker 共用此收口）。
         // 拖动 = 可视化改「最大宽高」偏好（与设置滑杆同一真值）；预览态在 mixin 级。
         showResizeGrip: true,
@@ -842,35 +864,17 @@ mixin DictionaryPageMixin {
             }
           }
         },
-        onLinkClick: (query, localRect) async {
-          final Rect childRect = localRect == Rect.zero
-              ? entry.selectionRect
-              : popupWordScreenRect(
-                  webViewKey: entry.webViewKey,
-                  localRect: localRect,
-                  fallback: entry.selectionRect,
-                );
-          setState(() => controller.truncateTo(index + 1));
-          // TODO-1190: symmetric with onTextSelected — highlight the clicked
-          // headword/link target in this parent card after the child search.
-          final int count = await onPush(query, childRect);
-          if (count > 0) {
-            // BUG-2054：与 onTextSelected 对称——点词头/链接同样按整词 bbox 重锚子层。
-            final Rect? wordRect =
-                await entry.webViewKey.currentState?.highlightSelection(count);
-            if (mounted &&
-                reanchorNestedPopupToWord(
-                  controller: controller,
-                  parentWebViewKey: entry.webViewKey,
-                  parentIndex: index,
-                  expectedTerm: query,
-                  wordLocalRect: wordRect,
-                  fallback: childRect,
-                )) {
-              setState(() {});
-            }
-          }
-        },
+        // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
+        // 子弹窗——对齐 Hoshi Reader iOS（`lookupRedirect` → `redirect(count)`：
+        // 同一个 WebView 换内容，← → 在历史页间来回）。释义正文点词（onTextSelected）
+        // 仍叠子层，也与 Hoshi 一致（那边 `textSelected` 走 `popups.append`）。
+        onLinkClick: (query, localRect) => navigatePopupInPlace(
+          controller: controller,
+          index: index,
+          entry: entry,
+          query: query,
+          autoRead: autoReadOnNavigate,
+        ),
         onMineEntry: onMineEntry,
         onUpdateEntry: onUpdateEntry,
         onDuplicateCheck: checkDuplicate,
@@ -1101,15 +1105,19 @@ mixin DictionaryPageMixin {
     // BUG-1478：按词头递增（见 base_source_page 同处注释）。
     final int current = entry.result!.headwordCount;
     final int newMax = current + mixinAppModel.maximumTerms;
+    final String term = entry.searchTerm;
     setState(() => entry.isSearching = true);
     try {
       final DictionarySearchResult result =
           await mixinAppModel.searchDictionary(
-        searchTerm: entry.searchTerm,
+        searchTerm: term,
         searchWithWildcards: true,
         overrideMaximumTerms: newMax,
       );
-      if (mounted && controller.entries.contains(entry)) {
+      // 原地跳转 / 后退 / 前进会在同一个 entry 上换词：词变了就丢弃这批续查结果。
+      if (mounted &&
+          controller.entries.contains(entry) &&
+          entry.searchTerm == term) {
         setState(() => controller.fillResult(
               entry,
               result: result,
@@ -1133,6 +1141,96 @@ mixin DictionaryPageMixin {
   /// TODO-834：关闭第 [index] 层**衍生的所有后代层**（index 更大的全部），保留本层
   /// + 祖先。线性扁平栈里 index 即 depth、无分叉，故后代 = `index+1..end`，用
   /// [DictionaryPopupController.truncateTo] 精确裁。点最顶层（无后代）= no-op 栈不变。
+  /// 弹窗内原地跳转（词头 / 交叉引用链接 / 汉字点击）：先裁掉 [index] 之上的子层，
+  /// 查 [query]，**有结果才**把 [entry] 当前页压进后退栈、在同一个 WebView 里换成
+  /// 新词（Hoshi iOS：`if (count > 0) redirect(count)`，空结果什么都不发生，弹窗
+  /// 不动）。弹窗位置 / 尺寸都不变：selectionRect 保留，外壳高度由新内容的
+  /// onContentMetrics 再伸缩。与 [BaseSourcePageState.navigatePopupInPlace] 同语义
+  /// （mixin 家族不监听 controller，换页后显式 setState）。
+  ///
+  /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
+  /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃。查询期间置
+  /// [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  Future<void> navigatePopupInPlace({
+    required DictionaryPopupController controller,
+    required int index,
+    required DictionaryPopupEntry entry,
+    required String query,
+    bool autoRead = false,
+  }) async {
+    final String trimmed = query.trim();
+    if (trimmed.isEmpty || entry.isSearching) return;
+    if (controller.entries.length > index + 1) {
+      setState(() => controller.truncateTo(index + 1));
+    }
+    // 离开当前页前记下它的滚动位（回来时恢复）；查询开始后再读会读到新内容。
+    final double scrollTop =
+        await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
+    if (!mounted || !controller.entries.contains(entry)) return;
+    final String termAtStart = entry.searchTerm;
+    entry.isSearching = true;
+    try {
+      final DictionarySearchResult result =
+          await mixinAppModel.searchDictionary(
+        searchTerm: trimmed,
+        searchWithWildcards: true,
+        overrideMaximumTerms: mixinAppModel.maximumTerms,
+      );
+      if (!mounted ||
+          !controller.entries.contains(entry) ||
+          entry.searchTerm != termAtStart) {
+        return;
+      }
+      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
+      mixinAppModel.addToSearchHistory(
+        historyKey: DictionaryMediaType.instance.uniqueKey,
+        searchTerm: trimmed,
+      );
+      mixinAppModel.addToDictionaryHistory(result: result);
+      setState(() {
+        controller.navigateInPlace(
+          entry,
+          term: trimmed,
+          result: result,
+          allLoaded: !result.truncated,
+          scrollTop: scrollTop,
+        );
+      });
+      if (autoRead &&
+          ReaderFushiSource.instance.autoReadOnLookup &&
+          result.entries.isNotEmpty) {
+        final DictionaryEntry first = result.entries.first;
+        if (first.word.isNotEmpty) {
+          autoReadWord(first.word, first.reading,
+              popupState: entry.webViewKey.currentState);
+        }
+      }
+    } finally {
+      // navigateInPlace 成功路径已清 isSearching；失败 / 提前 return 在此兜底复位。
+      if (mounted && controller.entries.contains(entry) && entry.isSearching) {
+        setState(() => entry.isSearching = false);
+      }
+    }
+  }
+
+  /// 顶栏 ← / →：在 [entry] 的原地跳转历史里后退 / 前进一页。先记当前页滚动位
+  /// （再往回走时恢复），换页后 setState 重建：WebView 按 result 身份重推、渲染完
+  /// 恢复该页滚动位。
+  Future<void> navigatePopupHistory({
+    required DictionaryPopupController controller,
+    required DictionaryPopupEntry entry,
+    required bool forward,
+  }) async {
+    if (entry.isSearching) return;
+    final double scrollTop =
+        await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
+    if (!mounted || !controller.entries.contains(entry)) return;
+    final bool moved = forward
+        ? controller.goForward(entry, scrollTop: scrollTop)
+        : controller.goBack(entry, scrollTop: scrollTop);
+    if (moved) setState(() {});
+  }
+
   /// 与基类 [BaseSourcePageState] 的同名 helper 同语义（mixin 路径不监听 controller，
   /// 故显式 setState 重建）。
   void _dismissDescendantsOfLayer(

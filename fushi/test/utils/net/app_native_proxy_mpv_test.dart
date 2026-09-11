@@ -72,7 +72,7 @@ void main() {
     timeout: const Timeout(Duration(seconds: 40)),
   );
 
-  // BUG-2448：互联 host 的形状——自签 https + 流 URL。随包 libmpv（curl 后端）直连
+  // BUG-2455：互联 host 的形状——自签 https + 流 URL。随包 libmpv（curl 后端）直连
   // 会因证书校验失败打不开；修复后 URL 经 nativePlaybackUri 降成明文 http，中继按
   // 登记指纹钉扎升回 https。这里用真自签证书 + 真 libmpv 端到端证明这条链。
   test(

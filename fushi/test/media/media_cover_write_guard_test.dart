@@ -93,6 +93,17 @@ const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
     // 本文件的封面路只派生 coversDir 交给 CoverMetaStore/extractVideoCover。
     '_moveFileInto',
   },
+  // 下载管线（#1427 起派生 coversDir 做新集提醒配图的来源准入）：三处裸写分别是
+  // torrent metainfo 与两条字幕 sidecar 的落地，都不是封面。
+  '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart':
+      <String>{
+    // 手动入队时把 .torrent 的 metainfo 字节落到任务目录。
+    'enqueueManual',
+    // 旧版暂存字幕搬到片子旁边（copy + rename）。
+    '_installLegacyStagedSubtitles',
+    // 新字幕 sidecar 的原子安装（临时文件 writeAsBytes + rename）。
+    '_installSidecarAtTargetAtomically',
+  },
 };
 
 /// **封面目的地派生点的完整注册表**（TODO-2715 ③）。
@@ -186,6 +197,14 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     '互联 host 收上传：派生 coversDir 只为 CoverMetaStore 的自动抽帧准入，封面字节'
         '由 extractVideoCover 写。文件里的裸写是 _moveFileInto 搬上传的视频本体与'
         '字幕，与封面无关（逐函数名单见 kNonCoverRawWriters）。',
+  ),
+  '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart':
+      (
+    CoverDeriverRole.rawWritesNonCoverAssets,
+    '订阅新集提醒的配图：派生 coversDir 只为 CoverMetaStore 判「这本书的封面是不是'
+        '自动抽帧来的、能不能覆盖」，真正的封面字节由 extractVideoCover 写（它自己'
+        '按 writesViaService 登记）。文件里的裸写是 torrent metainfo 与字幕 sidecar，'
+        '与封面无关（逐函数名单见 kNonCoverRawWriters）。',
   ),
 };
 
@@ -356,6 +375,15 @@ void main() {
     for (final File f in dartFiles()) {
       final String path = norm(f.path);
       if (allowed.contains(path)) continue;
+      // rawWritesNonCoverAssets 档：这些文件确实派生了封面目的地，但裸写搬的是
+      // 别的资产（上传的视频本体、字幕 sidecar、torrent metainfo）。它们的边界不是
+      // 在这里整文件放行，而是由 kNonCoverRawWriters 的**逐函数**名单 + 上面的角色
+      // 断言（实际裸写函数集合必须与登记完全一致）钉死——新增一个裸写函数就红。
+      // 在这里再报一次，只会逼人把文件塞进上面那张没有函数粒度的 allowed，反而更松。
+      if (kCoverPathDerivers[path]?.$1 ==
+          CoverDeriverRole.rawWritesNonCoverAssets) {
+        continue;
+      }
       // 互联层远端封面本轮不收编（协议 coverUrl 冻结，W 系列另册处理）。
       if (path.startsWith('lib/src/sync/') ||
           path.startsWith('../packages/fushi_engine/lib/sync/')) {

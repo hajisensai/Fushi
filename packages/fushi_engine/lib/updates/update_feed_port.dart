@@ -17,6 +17,9 @@ class UpdateFeedDraft {
     required this.title,
     this.subtitle,
     this.detailJson,
+    this.imagePath,
+    this.publishedAt,
+    this.notificationGroup,
   });
 
   final UpdateFeedKind kind;
@@ -24,6 +27,19 @@ class UpdateFeedDraft {
   final String title;
   final String? subtitle;
   final String? detailJson;
+
+  /// 系统通知配图的**本机绝对路径**（番剧域：该集抽帧，退作品海报）；null =
+  /// 纯文字通知。只进通知不落库——落库的持久投影由域侧按需写进 [detailJson]。
+  final String? imagePath;
+
+  /// 事件本身的发生时刻（毫秒戳；番剧域 = 资源发布时刻）。null = 只知道本机
+  /// 发现时刻，通知按发现时刻计时。
+  final int? publishedAt;
+
+  /// 系统通知合并组：**同域同组**的一批合成一条通知、同组再来替换同一条；
+  /// null = 整个域一条（v101 原行为）。番剧域按作品分组——「A 更新 3 集」和
+  /// 「B 更新 1 集」各占一格，配图和时间才有归属；漫画/扩展/app 三域不分组。
+  final String? notificationGroup;
 
   String get entryId => updateFeedEntryId(kind, targetKey);
 }

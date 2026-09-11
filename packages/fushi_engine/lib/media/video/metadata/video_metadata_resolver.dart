@@ -95,7 +95,9 @@ class VideoMetadataProviderRegistry {
     String? locale,
   }) =>
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-        MalVideoMetadataProvider(),
+        // 两个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
+        // 任一处漏传就是「刮削不同语言」。
+        MalVideoMetadataProvider(language: locale ?? config.locale),
         TmdbVideoMetadataProvider(
           apiKey: config.tmdbApiKey,
           language: locale ?? config.locale,

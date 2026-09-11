@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -19,6 +20,7 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
     http.Client? client,
     VideoMetadataHttpClient? transport,
     this.endpoint = 'https://api.jikan.moe/v4',
+    this.language = kFallbackVideoMetadataLocale,
     MalVideoMetadataRequestGate? requestGate,
   })  : assert(client == null || transport == null),
         _transport = transport ??
@@ -36,6 +38,18 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
   final bool _ownsTransport;
   final MalVideoMetadataRequestGate _gate;
   final String endpoint;
+
+  /// 资料语言（BCP-47），与 TMDB provider 同源。MAL 只有日文 / 英文 / 罗马字
+  /// 三种标题：`ja` 取 `title_japanese`，`en` 取 `title_english`，其它语言 MAL
+  /// 没有译名，先落**原文**（`title_japanese`），由合并层用按资料语言投影的
+  /// TMDB 补充源换成译名（见 `supplementVideoMetadata` 的标题语言感知）。
+  ///
+  /// 此前无论资料语言是什么都把 `title_japanese` 写进 `title`——海报、简介按
+  /// 资料语言走而标题恒日文，就是「刮削不同语言」的来源。
+  final String language;
+
+  /// [language] 的主子标签（`zh-CN` → `zh`）。
+  String get _titleLanguage => VideoMetadataLanguages(language).primarySubtag;
 
   @override
   VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.mal;
@@ -137,9 +151,13 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
       for (final Object? node in metadataList(payload['data'])) {
         final Map<String, Object?>? item = metadataObject(node);
         final int? number = metadataInt(item?['mal_id']);
-        final String? title = metadataString(item?['title_japanese']) ??
-            metadataString(item?['title']) ??
-            metadataString(item?['title_romanji']);
+        // MAL 分集只有日文 / 英文（`title`）/ 罗马字三种；阶梯与作品标题同一
+        // 规则：本语言有就用本语言，没有就落原文，由合并层换译名。
+        final String? title = _pickByLanguage(
+          japanese: metadataString(item?['title_japanese']),
+          english: metadataString(item?['title']),
+          romaji: metadataString(item?['title_romanji']),
+        );
         if (item == null || number == null || number < 1 || title == null) {
           continue;
         }
@@ -175,11 +193,28 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
           a.episodeNumber.compareTo(b.episodeNumber));
   }
 
+  /// 按资料语言在 MAL 的三种标题里选一个：本语言有就用本语言；`en` 缺英文名时
+  /// 退罗马字（同为拉丁字母）；其它语言 MAL 没有译名，落**原文**日文，让合并层用
+  /// TMDB 的译名替换——而不是落罗马字：对没匹配上 TMDB 的作品，原文比罗马字
+  /// 更接近「这部作品叫什么」。
+  String? _pickByLanguage({
+    required String? japanese,
+    required String? english,
+    required String? romaji,
+  }) =>
+      switch (_titleLanguage) {
+        'ja' => japanese ?? romaji ?? english,
+        'en' => english ?? romaji ?? japanese,
+        _ => japanese ?? romaji ?? english,
+      };
+
   VideoMetadataWork? _work(Map<String, Object?> item) {
     final int? id = metadataInt(item['mal_id']);
-    final String? title = metadataString(item['title_japanese']) ??
-        metadataString(item['title']) ??
-        metadataString(item['title_english']);
+    final String? title = _pickByLanguage(
+      japanese: metadataString(item['title_japanese']),
+      english: metadataString(item['title_english']),
+      romaji: metadataString(item['title']),
+    );
     if (id == null || id <= 0 || title == null) return null;
     final String? premiered = _date(metadataObject(item['aired'])?['from']);
     final String? cover = _image(item);
@@ -190,7 +225,10 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
             : VideoMetadataMediaKind.tv,
         title: title,
         originalTitle: metadataString(item['title_japanese']),
+        // 三种标题全部进别名池（选中的那个被过滤掉）：exact gate 比的是
+        // title / originalTitle / aliases，标题按语言换了，匹配面不能跟着缩。
         aliases: metadataUniqueStrings(<String?>[
+          metadataString(item['title_japanese']),
           metadataString(item['title']),
           metadataString(item['title_english']),
           for (final Object? node in metadataList(item['titles']))

@@ -2203,21 +2203,21 @@ mixin _FushiDbVideoDomain
                 ]))
               .get();
 
-  /// 这条下载任务是不是某条订阅拉起来的。
+  /// 拉起这条下载任务的订阅条目；null = 手动下载。
   ///
   /// v101 更新提醒的番剧侧判据：手动下载是用户自己刚点的，下载完成再提醒一次
   /// 只是复述他刚做过的动作；订阅下载则是他没盯着的时候悄悄完成的，那一条才值
   /// 得提醒。`video_download_jobs` 本身没有来源标记，唯一的关联是订阅条目回填的
-  /// `jobId`，所以判据只能反查这张边表。
-  Future<bool> isVideoDownloadJobFromSubscription(String jobId) async {
-    final VideoDownloadSubscriptionItemRow? row =
-        await (select(videoDownloadSubscriptionItems)
-              ..where(($VideoDownloadSubscriptionItemsTable t) =>
-                  t.jobId.equals(jobId))
-              ..limit(1))
-            .getSingleOrNull();
-    return row != null;
-  }
+  /// `jobId`，所以判据只能反查这张边表。返回整行而不是 bool：提醒还要它的
+  /// `publishedAt`（资源发布时刻）。
+  Future<VideoDownloadSubscriptionItemRow?> videoDownloadSubscriptionItemForJob(
+    String jobId,
+  ) =>
+      (select(videoDownloadSubscriptionItems)
+            ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                t.jobId.equals(jobId))
+            ..limit(1))
+          .getSingleOrNull();
 
   Stream<List<VideoDownloadSubscriptionItemRow>>
       watchVideoDownloadSubscriptionItems(String subscriptionId) =>

@@ -919,45 +919,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// `controlsTransitionDuration`（300ms，本页未覆盖），使刻度与 seek bar 同步显隐。
   static const Duration _videoChromeFadeDuration = Duration(milliseconds: 300);
 
-  /// 唤醒控制条用的合成 hover 设备 id（[_pokeControlsVisible]）。取一个不与真实
-  /// 鼠标/触控设备号冲突的固定值，使重复派发落在同一逻辑设备上。
-  static const int _syntheticHoverDevice = 0x6869626B; // 'hibk'
-
-  /// 合成 hover 位置的 ±1px 抖动开关（TODO-148/BUG-215）。Flutter `MouseTracker`
-  /// 对**同一设备落在同一坐标**的连续 hover 会去重（位置没变就不再回调 onHover），
-  /// 连按快进 / 跳句时 [_pokeControlsVisible] 每次都派发到控制条**固定中心点**，第二
-  /// 次起 media_kit 的 `MouseRegion.onHover` 不再触发、隐藏 `Timer` 不续命，控制条
-  /// 仍只活 2 秒就消失。每次派发翻转此标志、把 x 偏 ±1px，使坐标始终变化，强制
-  /// MouseTracker 每次都回调 onHover 续命。仅 1px 抖动不会偏出控制条命中区。
-  bool _pokeParity = false;
-
-  /// TODO-1059：移动端底部按钮栏按下时经 [_pokeControlsVisible] 触发本信号，续命
-  /// media_kit 控制条的自动隐藏计时（见 [_RestartHideTimerSignal] / 传入
-  /// [_mobileControlsTheme] 的 `restartHideTimerSignal`）。随本 State dispose 释放。
+  /// 控制条唤醒 / 续命信号，[_pokeControlsVisible] 的唯一出口（见
+  /// [_RestartHideTimerSignal]）。两端 fork 都订阅它：移动端（TODO-1059，
+  /// `restartHideTimerSignal`）只在控制条可见时续命隐藏 Timer；桌面端（BUG-2453，
+  /// `wakeSignal`）等价于一次 hover——唤起并重排隐藏 Timer。随本 State dispose 释放。
   final _RestartHideTimerSignal _restartHideTimerSignal =
       _RestartHideTimerSignal();
 
-  /// 合成 hover 派发去重旗（BUG-425）。[_pokeControlsVisible] 经
-  /// [GestureBinding.handlePointerEvent] 派发合成 [PointerHoverEvent] 唤醒控制条，但派发
-  /// 会同步进入 Flutter `MouseTracker.updateWithEvent` → 写 `_mouseStates[device]`。当
-  /// poke 由 **MouseRegion 自己的 onEnter/onHover 回调**触发（rail / 锁按钮 keep-alive、
-  /// 字幕盒 hover）时，这些回调本就跑在 `MouseTracker.updateAllDevices` 遍历 `_mouseStates`
-  /// 的 `_deviceUpdatePhase` 内 → 合成派发在迭代期增删该 Map → release 构建抛
-  /// `Concurrent modification during iteration: _Map len:2`（debug 是 `_debugDuringDeviceUpdate`
-  /// 断言）。修复：合成派发恒经 [scheduleMicrotask] 延迟到当前调用栈（含 MouseTracker 迭代）
-  /// 解开后再执行，绝不重入；此旗把同一微任务窗口内的多次 poke 折叠成一次派发（dedup）。
-  bool _pokeDispatchScheduled = false;
-
-  /// 待派发的合成 hover 事件（BUG-425）。[_pokeControlsVisible] 在命中区几何有效时同步构造，
-  /// [_dispatchPokeHover] 在微任务里取出派发。每次 poke 刷新为最新抖动位置，连按时去重为单
-  /// 次派发但派发的仍是最新位置（保 TODO-148/BUG-215 的去重续命）。
-  PointerHoverEvent? _pendingPokeHover;
-
-  /// 合成 hover 设备是否已在 Flutter `MouseTracker` 里登记在册（BUG-2453）。
-  /// [_dispatchPokeHover] 首次真正派发即置真；[_retireSyntheticHoverDevice] 注销后清零。
-  /// 只在真派发过时才派 `PointerRemovedEvent`——从没造过这个设备（移动端 / 从未 poke）
-  /// 就不往指针管线塞任何事件。
-  bool _syntheticHoverDeviceLive = false;
   static const double _volumeStep = 5.0;
 
   /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。
@@ -2165,8 +2133,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 查询失败必须与 autoApplyBinding 一样非致命：这条链绝不能打断视频加载。
     String? languageTag;
     try {
-      languageTag =
-          (await widget.repo.getByBookUid(widget.bookUid))?.language;
+      languageTag = (await widget.repo.getByBookUid(widget.bookUid))?.language;
     } catch (e, st) {
       debugPrint('[VideoFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
     }
@@ -4048,11 +4015,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
     WidgetsBinding.instance.removeObserver(this);
-    // BUG-2453：注销 [_pokeControlsVisible] 造出来的合成 hover 设备。它在 Flutter
-    // `MouseTracker` 里是一条真实的设备状态，只有 `PointerRemovedEvent` 才会删——
-    // 不注销就永远停在视频区中心，退出播放器后每帧都在那一点命中，库页中心那张卡
-    // 收到 onEnter 被当成「鼠标悬停」放大。
-    _retireSyntheticHoverDevice();
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
@@ -4494,21 +4456,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 命中同一字符（同句同 grapheme）短路去重，避免同词反复 `replaceStack` 闪烁 / 刷 FFI。
   /// 换词经 [_handleSubtitleLookupTap] → [_lookupAt]（`replaceStack: true` 复用热槽无缝替换）。
   void _onDismissBarrierHover(PointerHoverEvent event) {
-    // BUG-1798：先滤掉[_pokeControlsVisible]派发的**合成** hover。它不是用户的鼠标：位置恒为
-    // [_videoControlsContext]（整个视频区）的几何中心，设备是固定的 [_syntheticHoverDevice]。
-    // 浮层一开，全屏 opaque 的 dismiss barrier 就接管了命中测试，合成 hover 再也到不了
-    // media_kit 自己的 MouseRegion（poke 本该续命控制条，此时已必然哑火），却**全量落进本
-    // 回调**被当成真实鼠标消费，三处污染：
-    // ① `_lastGlobalPointerPos` 被写成画面正中 → BUG-880 的「静止光标 + 按 Shift 立即换词」
-    //    改在画面中心反查，用户光标下的词查不到；
-    // ② 未按 Shift 时下面那条分支把 `_barrierHoverLastPos/Sentence/Grapheme` 三个去重键清零
-    //    → 用户鼠标在**同一个字**上再抖一下就被判成新词，`_lookupAt(replaceStack: true)` 整栈
-    //    替换，正在看的弹窗内容被换掉、滚动位置丢失；
-    // ③ 按住 Shift / 开了「悬停即查词」时更直接：合成位置若命中字幕字符就立即换词。
-    // 且 [_handleSubtitleHover] 自己就调 [_pokeControlsVisible]，构成 hover→poke→hover 自激。
-    // 同页 [_handleVideoControlsHover] 早就用同一判据滤过合成事件（controls_visibility.part.dart），
-    // 本路径与它不对称纯属遗漏——这里补齐，语义即「合成事件不代表用户指针，不参与任何指针记账」。
-    if (_isSyntheticControlsHover(event)) return;
+    // 到这里的 hover 一定是用户的鼠标：BUG-1798 时代 [_pokeControlsVisible] 会派合成
+    // hover，浮层开着时它落不到 media_kit 的 MouseRegion、改落进本回调污染指针记账与换词
+    // 去重键，故曾按设备号过滤；BUG-2453 起控制条唤醒改走显式信号（fork `wakeSignal`），
+    // 页面不再合成任何指针事件，过滤随之删除。
     // BUG-880：浮层打开时 barrier 盖住一切、页面根 Listener 收不到 hover，故在此持续更新
     // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
     // 未按 Shift 也照常记录）。
@@ -4747,6 +4698,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         );
       },
       onPop: _popNestedPopupAt,
+      // 词头 / 链接 / 汉字点击原地跳转也自动朗读，与上面嵌套查词的 autoRead 同口径。
+      autoReadOnNavigate: true,
     );
   }
 
@@ -5648,13 +5601,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // BUG-880：页面根持续记录全局指针位置（不消费、不影响下层控制条 / 查词手势），供
         // Shift 按下时反查。浮层打开后 barrier 盖住这里收不到 hover，由 [_onDismissBarrierHover]
         // 接力更新同一字段。
-        // BUG-1798：与那个接力点用同一条判据滤掉合成 hover——[_pokeControlsVisible] 的合成事件
-        // 位置恒为视频区几何中心，写进来就是把「用户光标在哪」记成画面正中，Shift 反查随即查错
-        // 位置。合成事件不代表用户指针，两个记账点必须同时滤，只滤一个仍会从另一个漏进来。
+        // 到这里的 hover 一定是用户的鼠标（BUG-2453 起页面不再合成任何指针事件，BUG-1798
+        // 的按设备号过滤随之删除）。
         child: Listener(
           behavior: HitTestBehavior.translucent,
           onPointerHover: (PointerHoverEvent event) {
-            if (_isSyntheticControlsHover(event)) return;
             _lastGlobalPointerPos = event.position;
           },
           // BUG-1995：视频页此前**没有**「PointerDownEvent → MouseBinding → 派发」

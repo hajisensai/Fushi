@@ -4703,6 +4703,15 @@
   "browser_extension_test_page_action": "打开试用网页",
   "browser_extension_test_page_action_desc": "在浏览器里打开一张由 Fushi 提供的网页，验证右上角弹窗与 Shift 查词。",
   "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。",
+  "video_source_scrape_locale_follow_ui": "留空 = 跟随界面语言",
+  "popup_history_back": "后退",
+  "popup_history_forward": "前进",
   "manga_cover_cache_max_age": "封面缓存保留时长",
-  "manga_cover_cache_max_age_subtitle": "在线源封面超过此天数后重新下载"
+  "manga_cover_cache_max_age_subtitle": "在线源封面超过此天数后重新下载",
+  "updates_notification_open_video_episode": "播放",
+  "updates_notification_open_manga_chapter": "阅读",
+  "updates_notification_open_manga_extension": "更新",
+  "updates_notification_open_app_release": "下载",
+  "updates_notification_view_all": "查看更新",
+  "updates_notification_header": "订阅更新"
 }

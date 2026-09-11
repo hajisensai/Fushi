@@ -693,4 +693,174 @@ void main() {
       expect(identical(again.webViewKey, child.webViewKey), true);
     });
   });
+
+  group('弹窗内原地跳转历史（Hoshi iOS backStack/forwardStack 对齐）', () {
+    DictionarySearchResult resultFor(String term) =>
+        DictionarySearchResult(searchTerm: term);
+
+    DictionaryPopupEntry visibleTop(DictionaryPopupController c, String term) {
+      final DictionaryPopupEntry e = c.beginTop(
+        term: term,
+        rect: const Rect.fromLTWH(10, 20, 30, 40),
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+      );
+      c.fillResult(e, result: resultFor(term), allLoaded: true);
+      return e;
+    }
+
+    test('navigateInPlace：同一 entry 换词，当前页入后退栈、前进栈清空、弹窗不动', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, '足');
+      final DictionarySearchResult first = e.result!;
+      expect(e.hasNavigationHistory, false, reason: '没跳过不画 ← →');
+
+      int notified = 0;
+      c.addListener(() => notified++);
+      final bool ok = c.navigateInPlace(
+        e,
+        term: '揚げ足を取る',
+        result: resultFor('揚げ足を取る'),
+        allLoaded: false,
+        scrollTop: 120,
+      );
+      expect(ok, true);
+      expect(notified, 1);
+      expect(c.entries.length, 1, reason: '不叠子层，仍是同一层');
+      expect(identical(c.entries.single, e), true);
+      expect(e.searchTerm, '揚げ足を取る');
+      expect(e.allLoaded, false);
+      expect(e.isSearching, false);
+      expect(e.visible, true);
+      expect(e.selectionRect, const Rect.fromLTWH(10, 20, 30, 40),
+          reason: '弹窗锚点不变');
+      expect(e.restoreScrollTop, isNull, reason: '新词从顶部开始');
+      expect(e.canGoBack, true);
+      expect(e.canGoForward, false);
+      expect(e.hasNavigationHistory, true);
+
+      // 后退：回到「足」并带回离开时的滚动位；当前页进前进栈。
+      expect(c.goBack(e, scrollTop: 33), true);
+      expect(e.searchTerm, '足');
+      expect(identical(e.result, first), true,
+          reason: '回退用缓存的同一 result 对象（WebView 按身份重推）');
+      expect(e.allLoaded, true);
+      expect(e.restoreScrollTop, 120);
+      expect(e.canGoBack, false);
+      expect(e.canGoForward, true);
+
+      // 前进：回到「揚げ足を取る」，恢复的是刚才离开它时的 33。
+      expect(c.goForward(e, scrollTop: 0), true);
+      expect(e.searchTerm, '揚げ足を取る');
+      expect(e.restoreScrollTop, 33);
+      expect(e.canGoForward, false);
+
+      // 栈底 / 栈顶再走：no-op、不通知。
+      final int before = notified;
+      expect(c.goForward(e, scrollTop: 0), false);
+      expect(notified, before);
+    });
+
+    test('后退后再原地跳转：前进栈被清空（与浏览器 / Hoshi 同语义）', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, 'a');
+      c.navigateInPlace(e,
+          term: 'b', result: resultFor('b'), allLoaded: true, scrollTop: 0);
+      c.navigateInPlace(e,
+          term: 'c', result: resultFor('c'), allLoaded: true, scrollTop: 0);
+      c.goBack(e, scrollTop: 0);
+      c.goBack(e, scrollTop: 0);
+      expect(e.searchTerm, 'a');
+      expect(e.canGoForward, true);
+      c.navigateInPlace(e,
+          term: 'd', result: resultFor('d'), allLoaded: true, scrollTop: 0);
+      expect(e.canGoForward, false);
+      expect(c.goBack(e, scrollTop: 0), true);
+      expect(e.searchTerm, 'a');
+    });
+
+    test('fillResult（load-more）清掉 restoreScrollTop，不把历史页滚动位带进增量渲染', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, 'a');
+      c.navigateInPlace(e,
+          term: 'b', result: resultFor('b'), allLoaded: false, scrollTop: 50);
+      c.goBack(e, scrollTop: 0);
+      expect(e.restoreScrollTop, 50);
+      c.fillResult(e, result: resultFor('a'), allLoaded: true);
+      expect(e.restoreScrollTop, isNull);
+      expect(e.canGoForward, true, reason: 'load-more 不动历史');
+    });
+
+    test('历史不跨查词会话：复用热槽 / 关栈复位都清空', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, 'a');
+      c.navigateInPlace(e,
+          term: 'b', result: resultFor('b'), allLoaded: true, scrollTop: 0);
+      expect(e.hasNavigationHistory, true);
+
+      // 顶层新查词复用热槽：同一 entry，历史必须归零。
+      final DictionaryPopupEntry again = c.beginTop(
+        term: 'x',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: true,
+      );
+      expect(identical(again, e), true);
+      expect(e.hasNavigationHistory, false);
+      expect(e.restoreScrollTop, isNull);
+
+      c.navigateInPlace(e,
+          term: 'y', result: resultFor('y'), allLoaded: true, scrollTop: 0);
+      c.dismissAt(0);
+      expect(c.entries.single.isWarmSlot, true);
+      expect(c.entries.single.hasNavigationHistory, false,
+          reason: '热槽复位（_restoreWarmSeed）连历史一起清');
+    });
+
+    test('不在栈内的 entry：navigateInPlace / goBack 都 no-op', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, 'a');
+      c.navigateInPlace(e,
+          term: 'b', result: resultFor('b'), allLoaded: true, scrollTop: 0);
+      c.clear();
+      expect(
+          c.navigateInPlace(e,
+              term: 'c', result: resultFor('c'), allLoaded: true, scrollTop: 0),
+          false);
+      expect(c.goBack(e, scrollTop: 0), false);
+      expect(e.searchTerm, 'b', reason: '离栈 entry 内容不再被改');
+    });
+
+    test('每次原地跳转算一次查词（onLookupStarted）；后退 / 前进不算', () {
+      int started = 0;
+      final c = DictionaryPopupController(lowMemory: false);
+      c.onLookupStarted = () => started++;
+      c.seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, 'a');
+      expect(started, 1);
+      c.navigateInPlace(e,
+          term: 'b', result: resultFor('b'), allLoaded: true, scrollTop: 0);
+      expect(started, 2);
+      c.goBack(e, scrollTop: 0);
+      c.goForward(e, scrollTop: 0);
+      expect(started, 2);
+    });
+
+    test('面包屑：原地跳转 / 后退后栈顶词跟着变，深度仍是 1', () {
+      final List<(int, String?)> seen = <(int, String?)>[];
+      final c = DictionaryPopupController(
+        lowMemory: false,
+        onLookupStackDepthChanged: (int d, String? t) => seen.add((d, t)),
+      )..seedWarmSlot();
+      final DictionaryPopupEntry e = visibleTop(c, 'a');
+      seen.clear();
+      c.navigateInPlace(e,
+          term: 'b', result: resultFor('b'), allLoaded: true, scrollTop: 0);
+      expect(seen.last, (1, 'b'));
+      c.goBack(e, scrollTop: 0);
+      expect(seen.last, (1, 'a'));
+    });
+  });
 }
