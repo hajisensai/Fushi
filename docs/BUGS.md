@@ -35,7 +35,7 @@
 |---|:--:|:--:|---|
 | [BUG-2452](bugs/BUG-2452-desktop-mihon-cloudflare-challenge.md) | ✅ | ✅ | 桌面 Mihon 源被 Cloudflare 拦下时无法解题，源整个打不开 |
 | [BUG-2451](bugs/BUG-2451-manga-global-search-ganma-fuzzy.md) | 🚧 | 🚧 | 全局搜索里 GANMA! 返回与关键词无关的作品（未复现为本仓 bug：源站服务端分词模糊匹配） |
-| [BUG-2450](bugs/BUG-2450-manga-online-image-timeout-no-retry.md) | 🚧 | 🚧 | 在线漫画封面与页图超时或失败后没有退避重试、没有重刷入口、加载队列排队无超时 |
+| [BUG-2450](bugs/BUG-2450-manga-online-image-timeout-no-retry.md) | ✅ | ✅ | 在线漫画封面与页图超时或失败后没有退避重试、没有重刷入口、加载队列排队无超时 |
 | [BUG-2449](bugs/BUG-2449-manga-ocr-job-dies-on-reader-exit.md) | 🚧 | 🚧 | 退出漫画阅读页会真停掉正在跑的整卷 OCR 任务 |
 | [BUG-2447](bugs/BUG-2447-macos-summary-focus-steals-shortcuts.md) | ✅ | ✅ | macOS 查词弹窗展开/折叠词典分组后全局快捷键失灵 |
 | [BUG-2446](bugs/BUG-2446-ext-subtitle-drop-scope.md) | ✅ | ✅ | 浏览器扩展：任何网页拖文件都弹整屏「松开以加载字幕」 |
