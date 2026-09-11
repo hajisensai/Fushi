@@ -2516,6 +2516,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.fillMissing:
         _fillMissingEpisodes();
         return;
+      case _CollectionManageAction.downloadRemote:
+        // 批下载在 app 级管理器里跑到底；这里只等它排完，回来重载让新落地的
+        // 本地行替换远端占位。
+        await widget.remote?.downloadMembers?.call(_collection, _remoteMembers);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.scrapeOnHost:
+        await widget.remote?.scrapeOnHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.scrapeForHost:
+        await widget.remote?.scrapeForHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.splitBySeason:
         await _splitBySeason();
         return;
@@ -2630,6 +2644,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 Icons.playlist_add,
                 t.collection_episode_fill_missing,
                 enabled: _slots.isNotEmpty,
+              ),
+            // 合集整体下载（#6）：把只在对端的成员整批拉到本机。与「补齐缺集」
+            // （torrent 下载中心）是两条不同的路，入口分开、文案分开。
+            if (widget.remote?.downloadMembers != null)
+              _manageMenuItem(
+                _CollectionManageAction.downloadRemote,
+                Icons.cloud_download_outlined,
+                t.remote_collection_download_members,
+                enabled: _remoteMembers.isNotEmpty,
+              ),
+            // 互联刮削（7a / 7b）。
+            if (widget.remote?.scrapeOnHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrapeOnHost,
+                Icons.cloud_sync_outlined,
+                t.remote_collection_scrape_on_host,
+              ),
+            if (widget.remote?.scrapeForHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrapeForHost,
+                Icons.cloud_upload_outlined,
+                t.remote_collection_scrape_push_to_host,
               ),
             _manageMenuItem(
               _CollectionManageAction.splitBySeason,
@@ -2751,6 +2787,9 @@ enum _CollectionManageAction {
   subtitles,
   renameEpisodes,
   fillMissing,
+  downloadRemote,
+  scrapeOnHost,
+  scrapeForHost,
   splitBySeason,
   lockFields,
   rename,

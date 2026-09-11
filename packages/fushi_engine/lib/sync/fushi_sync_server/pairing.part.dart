@@ -360,6 +360,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // client 的漫画「来源」页把这一行标成「对端版本过低」，而不是让用户点进去
         // 对着一屏 404 反复重试。与既有 `mangaOcr` 能力位同一范式。
         'manga': _libraryService is MangaLibraryHost,
+        // 视频刮削元数据同步 / 远程刮削 / 代刮回写（`/api/library/metadata*`）。老
+        // host 无此字段 → client 跳过元数据同步并隐藏远程刮削入口。
+        'videoMetadata': _libraryService is VideoMetadataHost,
         'serviceConfig': _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。

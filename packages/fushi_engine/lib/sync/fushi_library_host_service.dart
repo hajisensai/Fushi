@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
+    show VideoMetadataLookup;
+import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -2087,6 +2092,43 @@ abstract interface class VideoDeletionHost {
   ///
   /// 幂等：[id] 不存在时静默返回。[id] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteVideo(String id);
+}
+
+/// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。
+///
+/// 与 [DeletionTombstoneHost] 同范式：主接口有十余个测试 fake 全量 implements，
+/// 新能力不扩大那个面。server 用 `is` 探测，不实现 → `/api/library/metadata*` 404，
+/// 能力位 `liveLibrary.videoMetadata=false`，client 静默跳过。
+abstract interface class VideoMetadataHost {
+  /// 7c：host 全部作品的刮削元数据（`VideoMetadataWorks` + 从属表反向装载）。
+  /// [since] 非 null 时只回 `updatedAt > since` 的作品。纯读。
+  Future<List<VideoMetadataWorkEntry>> listVideoMetadata({int? since});
+
+  /// 7a：在 host 上按 [query] 搜候选（host 自己的 provider 配置 / 主源选择 / 资料
+  /// 语言）。[key] 用来定作品形态（电影 / 剧集）与来源设置；host 无刮削链或作品
+  /// 不在任何本地来源的计划里时返回空列表。
+  Future<List<VideoMetadataCandidateEntry>> searchVideoMetadataCandidates({
+    required VideoMetadataWorkKey key,
+    required String query,
+  });
+
+  /// 7a：让 host 用用户选定的 [lookup] 重刮 [key] 对应作品（等价于 host 用户本地
+  /// 「手动指定身份重刮」），同步等到落库。合集对应多个作品单元时回
+  /// [VideoMetadataConflict.ambiguousWork]。
+  Future<VideoMetadataWriteResult> scrapeVideoMetadata({
+    required VideoMetadataWorkKey key,
+    required VideoMetadataLookup lookup,
+  });
+
+  /// 7b：把客户端本地刮好的 [work] 写进 host（`VideoMetadataDatabaseStore.apply`，
+  /// host 字段锁保留旧值）。host 已有与 [lookup] 不同的主身份且 [replaceIdentity]
+  /// 为 false → [VideoMetadataConflict.identity]，不动库。
+  Future<VideoMetadataWriteResult> putVideoMetadata({
+    required VideoMetadataWorkKey key,
+    required VideoMetadataLookup lookup,
+    required VideoMetadataWork work,
+    bool replaceIdentity = false,
+  });
 }
 
 /// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好

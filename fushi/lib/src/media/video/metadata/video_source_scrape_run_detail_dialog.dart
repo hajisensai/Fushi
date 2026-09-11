@@ -271,23 +271,47 @@ class _VideoSourceScrapeRunDetailDialogState
   }
 }
 
+/// 候选搜索原语：按用户输入（标题或 `mal:123` 这类身份串）返回候选。
+typedef VideoMetadataCandidateSearch
+    = Future<List<VideoSourceScrapeConfirmationCandidate>> Function(
+  String query,
+);
+
 /// 手动搜索资料源并挑一个作品（共享入口：run 详情与待确认队列都用它）。
-/// 返回选中的候选；取消返回 null。
+/// 返回选中的候选；取消返回 null。[source] 为 null = 本机没有这部作品的来源库
+/// （互联 7b 客户端代 host 刮削），provider 取全局主源。
 Future<VideoSourceScrapeConfirmationCandidate?>
     showVideoSourceScrapeManualBindingDialog({
   required BuildContext context,
   required VideoSourceScrapeTaskController controller,
-  required SourceLibraryRow source,
+  SourceLibraryRow? source,
   required String workTitle,
   String? workStableKey,
+}) =>
+        showVideoMetadataCandidateSearchDialog(
+          context: context,
+          workTitle: workTitle,
+          search: (String query) => controller.searchManualCandidates(
+            source: source,
+            workTitle: workTitle,
+            workStableKey: workStableKey,
+            query: query,
+          ),
+        );
+
+/// 同一个候选搜索 UI，但候选来源由 [search] 注入——互联 7a「在 host 上刮削」把
+/// 搜索打到对端端点，本机不需要有刮削链。
+Future<VideoSourceScrapeConfirmationCandidate?>
+    showVideoMetadataCandidateSearchDialog({
+  required BuildContext context,
+  required String workTitle,
+  required VideoMetadataCandidateSearch search,
 }) =>
         showAppDialog<VideoSourceScrapeConfirmationCandidate>(
           context: context,
           builder: (BuildContext context) => _ManualBindingDialog(
-            controller: controller,
-            source: source,
+            search: search,
             workTitle: workTitle,
-            workStableKey: workStableKey,
           ),
         );
 
@@ -295,16 +319,12 @@ Future<VideoSourceScrapeConfirmationCandidate?>
 /// [VideoSourceScrapeCandidateTile]，选中后返回同一种候选对象。
 class _ManualBindingDialog extends StatefulWidget {
   const _ManualBindingDialog({
-    required this.controller,
-    required this.source,
+    required this.search,
     required this.workTitle,
-    this.workStableKey,
   });
 
-  final VideoSourceScrapeTaskController controller;
-  final SourceLibraryRow source;
+  final VideoMetadataCandidateSearch search;
   final String workTitle;
-  final String? workStableKey;
 
   @override
   State<_ManualBindingDialog> createState() => _ManualBindingDialogState();
@@ -337,12 +357,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
     });
     try {
       final List<VideoSourceScrapeConfirmationCandidate> results =
-          await widget.controller.searchManualCandidates(
-        source: widget.source,
-        workTitle: widget.workTitle,
-        workStableKey: widget.workStableKey,
-        query: _manualQuery(),
-      );
+          await widget.search(_manualQuery());
       if (!mounted) return;
       setState(() => _results = results);
     } on Object catch (error) {

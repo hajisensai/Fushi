@@ -281,6 +281,14 @@ mixin _FushiDbVideoDomain
             ..where(($VideoMetadataWorksTable t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  /// 把作品行的 `updatedAt` 钉成远端给的戳（互联 7c 客户端落库后用 host 的
+  /// updatedAt 覆盖 apply 写的本机 now，新旧判定才能跨设备成立）。
+  Future<void> setVideoMetadataWorkUpdatedAt(int workId, int updatedAt) async {
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(updatedAt: Value<int>(updatedAt)));
+  }
+
   /// 写作品级字段锁（schema v99）。`null` = 清空全部锁。锁是纯用户意图，独立于
   /// 刮削产物，所以是自己的原语而不是 `upsertVideoMetadataWork` 的一个字段。
   Future<void> setVideoMetadataWorkLockedFields(

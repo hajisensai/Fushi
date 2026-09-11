@@ -14,6 +14,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -210,6 +211,57 @@ void main() {
     final List<dynamic> cues = await repo.loadCues('remote-clip');
     expect(cues, isNotEmpty);
   });
+
+  // 7c：host 已刮好的封面 / importedAt / completedAt 此前下载后全部丢失（无条件抽帧、
+  // importedAt 写本机 now、completedAt 不写）。
+  testWidgets('下载登记镜像 host 封面（coverUrl）、importedAt 与 completedAt',
+      (WidgetTester tester) async {
+    final _FakeCoverRemoteVideoClient client = _FakeCoverRemoteVideoClient(
+      videos: <RemoteVideoInfo>[
+        const RemoteVideoInfo(
+          id: 'remote-clip',
+          title: 'Remote Clip',
+          coverUrl: 'http://x/videos/remote-clip/cover',
+          importedAt: 1700000000000,
+          completedAt: 1700000500000,
+        ),
+      ],
+      coverBytes: <int>[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3],
+    );
+    await tester.pumpWidget(buildApp(client: client));
+    await tester.pumpAndSettle();
+
+    await tapDownloadAwaitRow(tester);
+
+    final VideoBookRow? row = await repo.getByBookUid('remote-clip');
+    expect(row, isNotNull);
+    expect(row!.importedAt, 1700000000000,
+        reason: 'importedAt 镜像 host 值，下载后不该在「按导入时间」里跳位');
+    expect(row.completedAt?.millisecondsSinceEpoch, 1700000500000,
+        reason: 'completedAt 镜像 host 值，已看完角标不丢');
+    expect(client.coverFetches, <String>['http://x/videos/remote-clip/cover'],
+        reason: 'host 有 coverUrl 时先拉 host 封面');
+    expect(row.coverPath, isNotNull);
+    expect(File(row.coverPath!).readAsBytesSync(),
+        <int>[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]);
+  });
+}
+
+class _FakeCoverRemoteVideoClient extends _FakeRemoteVideoClient
+    implements RemoteCoverFetcher {
+  _FakeCoverRemoteVideoClient({required super.videos, required this.coverBytes});
+
+  final List<int> coverBytes;
+  final List<String> coverFetches = <String>[];
+
+  @override
+  String get coverCacheNamespace => 'test';
+
+  @override
+  Future<Uint8List> fetchRemoteCover(String coverUrl) async {
+    coverFetches.add(coverUrl);
+    return Uint8List.fromList(coverBytes);
+  }
 }
 
 class _FakeRemoteVideoClient implements RemoteVideoClient {

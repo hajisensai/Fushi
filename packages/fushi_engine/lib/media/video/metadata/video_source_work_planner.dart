@@ -19,7 +19,11 @@ class VideoSourceScrapeWork {
     this.collection,
   });
 
-  final SourceLibraryRow source;
+  /// 作品所属的扫描来源。计划器产出的单元恒非 null；**null 只出现在不经计划器
+  /// 的元数据写入目标**（互联 7b 回写 / 7c 客户端同步，`resolveMetadataWorkTarget`）
+  /// ——那条路只走 `VideoMetadataDatabaseStore.apply`，它不读来源；任何要真的去
+  /// 刮（`scrapeSource`）的入口都要求非 null。
+  final SourceLibraryRow? source;
   final MediaCollectionRow? collection;
   final String title;
   final List<VideoBookRow> members;
