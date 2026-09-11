@@ -48,7 +48,7 @@
 - `VideoMetadataResolveRequest.fallbackProvider`（默认 null = 单源）；`providerChain`；`_acceptsIdentity` 按链。TMDB 补充查询与哈希映射重试仍单源。
 - 协调器 `primaryProvider` 缺省取 `config.primaryProvider`；`_EffectiveSourceSettings` 尊重 `provider_override`；手动搜索 / 手动 ID 按来源链；`hasProvider` 链上任一可用；歧义候选 lookup 按 `candidate.provider`；十几处 `== mal` 统一为 `twoSourcePolicy` / `chain.contains`。
 - `_titleCandidates`：文件派生候选若是纯集号标签（解析器无标题且解出集号）则丢弃；目录名候选保留。
-- 合并（`video_metadata_merge.dart`）：补充对称（TMDB 主源时 MAL 补评分 / 标签 / 制作方 / 日文原名）；genres / studios / tags 并集去重；`plot` / `tagline` 语言感知：主源给出的非首选语言简介可被兜底源的首选语言简介覆盖（Jellyfin `ResultLanguage` 规则），其余标量先到者独占。
+- 合并（`video_metadata_merge.dart`）：补充对称（TMDB 主源时 MAL 补评分 / 标签 / 制作方 / 日文原名）；genres / studios / tags 并集去重；`plot` / `tagline` 语言感知：主源给出的非首选语言简介可被兜底源的首选语言简介覆盖（Jellyfin `ResultLanguage` 规则）；**标题 / 分集名同一规则**（2026-09-11，BUG-2454 后续）：MAL 只有日/英/罗马字三种标题，资料语言为 `ja` / `en` 时取本语言，其它语言先落日文原文、再由按资料语言投影的 TMDB 译名替换，被换下的原文保留为 `original_title` 并进别名池；语言不明的主源（AniDB）标题不动。其余标量先到者独占。
 
 ## 5. 多季一张卡
 

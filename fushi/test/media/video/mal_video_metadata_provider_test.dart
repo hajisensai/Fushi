@@ -24,6 +24,8 @@ void main() {
       () async {
     final List<String> paths = <String>[];
     final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+        // 资料语言 ja：标题取 title_japanese。语言不再是隐含的，见下一条用例。
+        language: 'ja',
         requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
         client: MockClient((http.Request request) async {
           paths.add(request.url.path);
@@ -92,6 +94,50 @@ void main() {
     await provider.fetchWork(lookup);
     expect(paths.length, 3);
     provider.close();
+  });
+
+  test('MAL 标题按资料语言选：en 取英文名，其它语言 MAL 无译名落原文，三种都在别名池',
+      () async {
+    Future<VideoMetadataWork> fetch(String language) async {
+      final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+          language: language,
+          requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+          client: MockClient((http.Request request) async {
+            if (request.url.path.endsWith('/full')) {
+              return response(<String, Object?>{
+                'data': <String, Object?>{
+                  'mal_id': 1,
+                  'title': 'Sousou no Frieren',
+                  'title_japanese': '葬送のフリーレン',
+                  'title_english': "Frieren: Beyond Journey's End",
+                  'type': 'TV',
+                }
+              });
+            }
+            return response(<String, Object?>{'data': <Object?>[]});
+          }));
+      addTearDown(provider.close);
+      return (await provider.fetchWork(lookup))!;
+    }
+
+    final VideoMetadataWork english = await fetch('en-US');
+    expect(english.title, "Frieren: Beyond Journey's End");
+    expect(english.originalTitle, '葬送のフリーレン');
+    expect(english.aliases,
+        containsAll(<String>['葬送のフリーレン', 'Sousou no Frieren']));
+
+    // zh-CN：MAL 没有中文名，落原文；译名由合并层的 TMDB 补充源换上。
+    final VideoMetadataWork chinese = await fetch('zh-CN');
+    expect(chinese.title, '葬送のフリーレン');
+    expect(
+        chinese.aliases,
+        containsAll(
+            <String>['Sousou no Frieren', "Frieren: Beyond Journey's End"]));
+    expect(chinese.aliases, isNot(contains('葬送のフリーレン')),
+        reason: '选中的标题不重复进别名');
+
+    final VideoMetadataWork japanese = await fetch('ja');
+    expect(japanese.title, '葬送のフリーレン');
   });
 
   test(

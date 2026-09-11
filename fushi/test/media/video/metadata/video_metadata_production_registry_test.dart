@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -47,6 +48,11 @@ void main() {
                 as TmdbVideoMetadataProvider;
         expect(tmdb.isAvailable, isTrue);
         expect(tmdb.language, locale ?? 'zh-CN');
+        // MAL 与 TMDB 必须拿同一个资料语言，否则标题与简介/海报不同语言。
+        final MalVideoMetadataProvider mal =
+            registry.provider(VideoMetadataProviderKind.mal)!
+                as MalVideoMetadataProvider;
+        expect(mal.language, tmdb.language);
       }
     },
   );

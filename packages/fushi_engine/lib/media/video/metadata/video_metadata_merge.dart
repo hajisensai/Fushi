@@ -25,14 +25,32 @@ VideoMetadataWork supplementVideoMetadata(
     supplement.provider,
     preferredLanguage,
   );
+  final bool preferSupplementTitle = _preferSupplementTitle(
+    primary.provider,
+    supplement.provider,
+    preferredLanguage,
+  );
+  final String title = preferSupplementTitle && !_isBlank(supplement.title)
+      ? supplement.title
+      : primary.title;
+  final bool titleReplaced = title != primary.title;
   return primary.copyWith(
-    originalTitle: primary.originalTitle ?? supplement.originalTitle,
+    title: title,
+    // 换成译名后原文不能丢：主源自带原名优先，否则被换下来的主源标题就是原名。
+    originalTitle: primary.originalTitle ??
+        supplement.originalTitle ??
+        (titleReplaced ? primary.title : null),
     tagline: _pickText(
       primary.tagline,
       supplement.tagline,
       preferSupplement: preferSupplementText,
     ),
-    aliases: _unionStrings(primary.aliases, supplement.aliases),
+    // 被换下来的主源标题进别名池：exact gate 与去重比的是 title / original /
+    // aliases 三处，标题换语言不能让匹配面缩水。
+    aliases: _unionStrings(
+      <String>[...primary.aliases, if (titleReplaced) primary.title],
+      supplement.aliases,
+    ).where((String alias) => alias != title).toList(),
     year: primary.year ?? supplement.year,
     premiered: primary.premiered ?? supplement.premiered,
     endDate: primary.endDate ?? supplement.endDate,
@@ -57,10 +75,54 @@ VideoMetadataWork supplementVideoMetadata(
     countries: _unionStrings(primary.countries, supplement.countries),
     keywords: _unionStrings(primary.keywords, supplement.keywords),
     credits: _mergeCredits(primary.credits, supplement.credits),
-    seasons: _mergeSeasons(primary.seasons, supplement.seasons),
+    seasons: _mergeSeasons(
+      primary.seasons,
+      supplement.seasons,
+      preferSupplementTitle: preferSupplementTitle,
+    ),
     images: _mergeImagesFillingMissing(primary.images, supplement.images),
     extras: _mergeExtras(primary.extras, supplement.extras),
   );
+}
+
+/// 各 provider **标题**的语言约定（与简介的 [_providerTextLanguage] 分开：MAL
+/// 简介恒英文，标题却按资料语言在日/英之间选）：
+///  - TMDB：`name` 按请求 locale 投影 → 首选语言；
+///  - MAL：只有日 / 英 / 罗马字，`ja` / `en` 时给的就是本语言，其它语言 MAL 没有
+///    译名、落的是日文原文（见 `MalVideoMetadataProvider._pickByLanguage`）；
+///  - 其它源：未知（返回 null，合并时**不动**主源标题——不明语言不能当「不是首选
+///    语言」处理，AniDB 自己已按语言选过标题）。
+String? _providerTitleLanguage(
+  VideoMetadataProviderKind provider,
+  String? preferredLanguage,
+) {
+  switch (provider) {
+    case VideoMetadataProviderKind.tmdb:
+      return preferredLanguage;
+    case VideoMetadataProviderKind.mal:
+      final String? subtag = _primaryLanguageSubtag(preferredLanguage);
+      return subtag == 'ja' || subtag == 'en' ? subtag : 'ja';
+    default:
+      return null;
+  }
+}
+
+/// 标题版 [_preferSupplementText]：主源标题语言**已知**且不是首选、补充源标题是
+/// 首选 → 用补充源的。典型路径：资料语言 zh-CN、MAL 主源（日文原文）+ TMDB 补充
+/// （中文译名）→ 标题换成中文，与同一趟刮到的中文简介、中文海报同一种语言。
+bool _preferSupplementTitle(
+  VideoMetadataProviderKind primary,
+  VideoMetadataProviderKind supplement,
+  String? preferredLanguage,
+) {
+  final String? primaryLanguage =
+      _providerTitleLanguage(primary, preferredLanguage);
+  if (primaryLanguage == null) return false;
+  return !_matchesPreferredLanguage(primaryLanguage, preferredLanguage) &&
+      _matchesPreferredLanguage(
+        _providerTitleLanguage(supplement, preferredLanguage),
+        preferredLanguage,
+      );
 }
 
 /// 兼容旧调用方：等价 `supplementVideoMetadata(primary, tmdb)`；primary 已是
@@ -215,8 +277,9 @@ VideoMetadataWork remapStandaloneVideoMetadataSeason(
 
 List<VideoMetadataSeason> _mergeSeasons(
   Iterable<VideoMetadataSeason> primary,
-  Iterable<VideoMetadataSeason> supplement,
-) {
+  Iterable<VideoMetadataSeason> supplement, {
+  bool preferSupplementTitle = false,
+}) {
   final Map<int, VideoMetadataSeason> supplementByNumber =
       <int, VideoMetadataSeason>{
     for (final VideoMetadataSeason season in supplement)
@@ -228,7 +291,13 @@ List<VideoMetadataSeason> _mergeSeasons(
     final VideoMetadataSeason? matching =
         supplementByNumber[season.seasonNumber];
     consumed.add(season.seasonNumber);
-    result.add(matching == null ? season : _mergeSeason(season, matching));
+    result.add(matching == null
+        ? season
+        : _mergeSeason(
+            season,
+            matching,
+            preferSupplementTitle: preferSupplementTitle,
+          ));
   }
   for (final VideoMetadataSeason season in supplement) {
     if (!consumed.contains(season.seasonNumber)) result.add(season);
@@ -240,8 +309,9 @@ List<VideoMetadataSeason> _mergeSeasons(
 
 VideoMetadataSeason _mergeSeason(
   VideoMetadataSeason primary,
-  VideoMetadataSeason supplement,
-) =>
+  VideoMetadataSeason supplement, {
+  required bool preferSupplementTitle,
+}) =>
     primary.copyWith(
       plot: primary.plot ?? supplement.plot,
       airDate: primary.airDate ?? supplement.airDate,
@@ -250,13 +320,18 @@ VideoMetadataSeason _mergeSeason(
       rating: primary.rating ?? supplement.rating,
       ids: _mergeIds(primary.ids, supplement.ids),
       images: _mergeImagesFillingMissing(primary.images, supplement.images),
-      episodes: _mergeEpisodes(primary.episodes, supplement.episodes),
+      episodes: _mergeEpisodes(
+        primary.episodes,
+        supplement.episodes,
+        preferSupplementTitle: preferSupplementTitle,
+      ),
     );
 
 List<VideoMetadataEpisode> _mergeEpisodes(
   Iterable<VideoMetadataEpisode> primary,
-  Iterable<VideoMetadataEpisode> supplement,
-) {
+  Iterable<VideoMetadataEpisode> supplement, {
+  required bool preferSupplementTitle,
+}) {
   final Map<int, VideoMetadataEpisode> supplementByNumber =
       <int, VideoMetadataEpisode>{
     for (final VideoMetadataEpisode episode in supplement)
@@ -268,7 +343,13 @@ List<VideoMetadataEpisode> _mergeEpisodes(
     final VideoMetadataEpisode? matching =
         supplementByNumber[episode.episodeNumber];
     consumed.add(episode.episodeNumber);
-    result.add(matching == null ? episode : _mergeEpisode(episode, matching));
+    result.add(matching == null
+        ? episode
+        : _mergeEpisode(
+            episode,
+            matching,
+            preferSupplementTitle: preferSupplementTitle,
+          ));
   }
   for (final VideoMetadataEpisode episode in supplement) {
     if (!consumed.contains(episode.episodeNumber)) result.add(episode);
@@ -280,9 +361,15 @@ List<VideoMetadataEpisode> _mergeEpisodes(
 
 VideoMetadataEpisode _mergeEpisode(
   VideoMetadataEpisode primary,
-  VideoMetadataEpisode supplement,
-) =>
+  VideoMetadataEpisode supplement, {
+  required bool preferSupplementTitle,
+}) =>
     primary.copyWith(
+      // 分集名与作品名同一条语言规则：作品标题换了译名，分集名不能还留原文——
+      // 分集名会写穿进 video_books.title，显示层撤不回来。
+      title: preferSupplementTitle && !_isBlank(supplement.title)
+          ? supplement.title
+          : primary.title,
       plot: primary.plot ?? supplement.plot,
       airDate: primary.airDate ?? supplement.airDate,
       year: primary.year ?? supplement.year,
