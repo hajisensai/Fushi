@@ -222,7 +222,7 @@ SettingsDestination _buildAsrModelsDestination() {
     icon: Icons.record_voice_over_outlined,
     sections: const <SettingsSection>[],
     body: (SettingsContext _) => AsrModelsSettingsSection(
-      service: createAsrTranscriptionService(alignGeneratedSubtitles: false),
+      service: createAsrTranscriptionService(),
     ),
   );
 }

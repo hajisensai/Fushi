@@ -133,8 +133,6 @@ class AppleSpeechTranscriptionService extends AsrTranscriptionService {
   Stream<ModelDownloadEvent> downloadModel({
     required AsrLanguage language,
     required AsrEncoderVariant variant,
-    // 系统语音资产里没有「调轴模型」这回事，收下但忽略。
-    bool includeAlignment = false,
   }) async* {
     yield const ModelDownloadEvent(
       fileName: 'system speech assets',

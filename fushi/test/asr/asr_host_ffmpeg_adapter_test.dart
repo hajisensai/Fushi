@@ -50,20 +50,6 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const FushiAsrFfmpegBackend adapter = FushiAsrFfmpegBackend();
 
-  test('声学调轴默认关：转录本身就产出完整 SRT，调轴是精修不是必需', () {
-    // 曾经默认开，代价是：日语包是 transducer 架构，调轴要另下 Omnilingual 1B
-    // （int8 约 985 MB），而识别模型才约 150 MB —— 于是「选个小模型」被要求先下
-    // 近 1 GB，不下就不让转录。转录出来的时间取自 VAD 段边界与 RNN-T 发射时刻，
-    // 已经是一份可用的 SRT；调轴只是把每个 token 的时间再按声学定位一遍。
-    expect(createAsrTranscriptionService().alignGeneratedSubtitles, isFalse);
-    // 能力还在，一个参数就能打开。
-    expect(
-      createAsrTranscriptionService(alignGeneratedSubtitles: true)
-          .alignGeneratedSubtitles,
-      isTrue,
-    );
-  });
-
   test('有声书路径显式声明素材是干净朗读', () {
     // 能量门限是带前提的优化（语音与静默双模态可分），上游已把这个前提改成必填
     // 声明。有声书成立；混音素材（动画/影视）必须换 mixedAudio。

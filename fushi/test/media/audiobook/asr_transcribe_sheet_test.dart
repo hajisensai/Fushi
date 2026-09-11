@@ -133,7 +133,6 @@ class _FakeService extends AsrTranscriptionService {
   Stream<ModelDownloadEvent> downloadModel({
     required AsrLanguage language,
     required AsrEncoderVariant variant,
-    bool includeAlignment = false,
   }) async* {
     downloadCalls++;
     lastDownloadLanguage = language;
