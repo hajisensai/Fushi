@@ -129,7 +129,8 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
     final PointerHoverEvent? event = _pendingPokeHover;
     _pendingPokeHover = null;
     if (event == null || !mounted) return;
-    // BUG-2453：真派发过就登记「设备在册」，dispose 时按此决定要不要注销。
+    // BUG-2453：真派发过就登记「设备在册」，本页失去栈顶时 [_retireSyntheticHoverDevice]
+    // 按此决定要不要排 post-frame 派 PointerRemovedEvent。
     _syntheticHoverDeviceLive = true;
     GestureBinding.instance.handlePointerEvent(event);
   }
