@@ -538,9 +538,11 @@ const List<String> _deviceLocalTables = <String>[
   'web_mine_queue',
   'video_file_specs',
   'update_feed_entries',
+  'manga_download_jobs',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
+  'manga_download_jobs',
   'update_feed_entries',
   'video_file_specs',
   'web_mine_queue',

@@ -32,6 +32,7 @@ part 'database_statistics.part.dart';
 part 'database_content_misc.part.dart';
 part 'database_tags_sync.part.dart';
 part 'database_update_feed.part.dart';
+part 'database_manga_download.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -698,6 +699,7 @@ void _requireOneVideoMetadataOwner({
   WebMineQueue,
   VideoFileSpecs,
   UpdateFeedEntries,
+  MangaDownloadJobs,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -708,7 +710,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbContentMisc,
         _FushiDbStatistics,
         _FushiDbVideoDomain,
-        _FushiDbUpdateFeed {
+        _FushiDbUpdateFeed,
+        _FushiDbMangaDownload {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -729,7 +732,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 102;
+  int get schemaVersion => 103;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3106,6 +3109,27 @@ class FushiDatabase extends _$FushiDatabase
             await customStatement(
               'CREATE INDEX IF NOT EXISTS idx_update_feed_discovered '
               'ON update_feed_entries (discovered_at)',
+            );
+          }
+          if (from < 103) {
+            // v103（漫画先下载再读）：新表 manga_download_jobs——在线章节 /
+            // mokuro.moe 卷的持久化下载队列。与 v100、v102 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 一个任务都没有 = 下载 worker 空转，与升级前
+            // 逐字节一致；在线阅读改走本地目录是 B2 阶段的事，本步只加表。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('manga_download_jobs')) {
+              await m.createTable(mangaDownloadJobs);
+            }
+            // 索引与建表同步内联（升级路径不会自动补上）；fresh 库由
+            // `_ensureIndexes` 建同名索引，两处 SQL 必须逐字一致。
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_manga_download_jobs_identity '
+              'ON manga_download_jobs (kind, book_key, chapter_key)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
+              'ON manga_download_jobs (status, created_at)',
             );
           }
         },

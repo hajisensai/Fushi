@@ -5978,7 +5978,7 @@ class DictionaryMetaRow extends DataClass
   /// 走同一条继承通道（`preservedSettings`）。
   final String? languageOverride;
 
-  /// v95：用户给词典起的**显示名**（改名）。null / 空 = 没改过，显示 [name]。
+  /// v101：用户给词典起的**显示名**（改名）。null / 空 = 没改过，显示 [name]。
   ///
   /// 为什么是覆盖列而不是改 [name]：[name] 是本表主键，同时还是**磁盘目录名**
   /// （`dictionaryResourceDirectory/<name>`）、C++ 引擎的装载路径、查词结果里
@@ -51301,6 +51301,934 @@ class UpdateFeedEntriesCompanion extends UpdateCompanion<UpdateFeedEntryRow> {
   }
 }
 
+class $MangaDownloadJobsTable extends MangaDownloadJobs
+    with TableInfo<$MangaDownloadJobsTable, MangaDownloadJobRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaDownloadJobsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _jobIdMeta = const VerificationMeta('jobId');
+  @override
+  late final GeneratedColumn<String> jobId = GeneratedColumn<String>(
+    'job_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bookKeyMeta = const VerificationMeta(
+    'bookKey',
+  );
+  @override
+  late final GeneratedColumn<String> bookKey = GeneratedColumn<String>(
+    'book_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chapterKeyMeta = const VerificationMeta(
+    'chapterKey',
+  );
+  @override
+  late final GeneratedColumn<String> chapterKey = GeneratedColumn<String>(
+    'chapter_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _runtimeMeta = const VerificationMeta(
+    'runtime',
+  );
+  @override
+  late final GeneratedColumn<String> runtime = GeneratedColumn<String>(
+    'runtime',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chapterTitleMeta = const VerificationMeta(
+    'chapterTitle',
+  );
+  @override
+  late final GeneratedColumn<String> chapterTitle = GeneratedColumn<String>(
+    'chapter_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(MangaDownloadJobStatus.queued),
+  );
+  static const VerificationMeta _pagesDoneMeta = const VerificationMeta(
+    'pagesDone',
+  );
+  @override
+  late final GeneratedColumn<int> pagesDone = GeneratedColumn<int>(
+    'pages_done',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pagesTotalMeta = const VerificationMeta(
+    'pagesTotal',
+  );
+  @override
+  late final GeneratedColumn<int> pagesTotal = GeneratedColumn<int>(
+    'pages_total',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _attemptCountMeta = const VerificationMeta(
+    'attemptCount',
+  );
+  @override
+  late final GeneratedColumn<int> attemptCount = GeneratedColumn<int>(
+    'attempt_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _autoOcrMeta = const VerificationMeta(
+    'autoOcr',
+  );
+  @override
+  late final GeneratedColumn<bool> autoOcr = GeneratedColumn<bool>(
+    'auto_ocr',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_ocr" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _completedAtMeta = const VerificationMeta(
+    'completedAt',
+  );
+  @override
+  late final GeneratedColumn<int> completedAt = GeneratedColumn<int>(
+    'completed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    jobId,
+    kind,
+    bookKey,
+    chapterKey,
+    runtime,
+    title,
+    chapterTitle,
+    status,
+    pagesDone,
+    pagesTotal,
+    attemptCount,
+    lastError,
+    autoOcr,
+    createdAt,
+    updatedAt,
+    completedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_download_jobs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MangaDownloadJobRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('job_id')) {
+      context.handle(
+        _jobIdMeta,
+        jobId.isAcceptableOrUnknown(data['job_id']!, _jobIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_jobIdMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('book_key')) {
+      context.handle(
+        _bookKeyMeta,
+        bookKey.isAcceptableOrUnknown(data['book_key']!, _bookKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookKeyMeta);
+    }
+    if (data.containsKey('chapter_key')) {
+      context.handle(
+        _chapterKeyMeta,
+        chapterKey.isAcceptableOrUnknown(data['chapter_key']!, _chapterKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_chapterKeyMeta);
+    }
+    if (data.containsKey('runtime')) {
+      context.handle(
+        _runtimeMeta,
+        runtime.isAcceptableOrUnknown(data['runtime']!, _runtimeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_runtimeMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('chapter_title')) {
+      context.handle(
+        _chapterTitleMeta,
+        chapterTitle.isAcceptableOrUnknown(
+          data['chapter_title']!,
+          _chapterTitleMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_chapterTitleMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('pages_done')) {
+      context.handle(
+        _pagesDoneMeta,
+        pagesDone.isAcceptableOrUnknown(data['pages_done']!, _pagesDoneMeta),
+      );
+    }
+    if (data.containsKey('pages_total')) {
+      context.handle(
+        _pagesTotalMeta,
+        pagesTotal.isAcceptableOrUnknown(data['pages_total']!, _pagesTotalMeta),
+      );
+    }
+    if (data.containsKey('attempt_count')) {
+      context.handle(
+        _attemptCountMeta,
+        attemptCount.isAcceptableOrUnknown(
+          data['attempt_count']!,
+          _attemptCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    if (data.containsKey('auto_ocr')) {
+      context.handle(
+        _autoOcrMeta,
+        autoOcr.isAcceptableOrUnknown(data['auto_ocr']!, _autoOcrMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+        _completedAtMeta,
+        completedAt.isAcceptableOrUnknown(
+          data['completed_at']!,
+          _completedAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {jobId};
+  @override
+  MangaDownloadJobRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaDownloadJobRow(
+      jobId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}job_id'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      bookKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_key'],
+      )!,
+      chapterKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chapter_key'],
+      )!,
+      runtime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}runtime'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      chapterTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chapter_title'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      pagesDone: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}pages_done'],
+      )!,
+      pagesTotal: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}pages_total'],
+      )!,
+      attemptCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempt_count'],
+      )!,
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+      autoOcr: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_ocr'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      completedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}completed_at'],
+      ),
+    );
+  }
+
+  @override
+  $MangaDownloadJobsTable createAlias(String alias) {
+    return $MangaDownloadJobsTable(attachedDatabase, alias);
+  }
+}
+
+class MangaDownloadJobRow extends DataClass
+    implements Insertable<MangaDownloadJobRow> {
+  /// 调用方生成的稳定任务 id：`sha256(kind NUL bookKey NUL chapterKey)[:32]`，
+  /// 同章重复入队幂等；不能用自增 id 充当跨崩溃幂等键。
+  final String jobId;
+
+  /// 取 [MangaDownloadJobKind]。
+  final String kind;
+
+  /// 在线条目 bookKey；mokuro 卷为 `mokuro:<seriesName>`。
+  final String bookKey;
+
+  /// 章 key；mokuro 卷为卷名。
+  final String chapterKey;
+
+  /// `mihon` / `aidoku` / `interconnect` / `mokuro_moe`。
+  final String runtime;
+
+  /// 展示用作品名 / 章名。落快照而不是 join 回源表：源条目可能已被移出书架。
+  final String title;
+  final String chapterTitle;
+
+  /// 取 [MangaDownloadJobStatus]。
+  final String status;
+  final int pagesDone;
+  final int pagesTotal;
+
+  /// 自动重试次数（退避 2s/8s/20s，与 mokuro 队列既有语义一致）。
+  final int attemptCount;
+  final String? lastError;
+
+  /// 完成后自动起 OCR（Google Lens 引擎除外——它需要用户逐次同意）。
+  final bool autoOcr;
+
+  /// 时刻列均为毫秒。
+  final int createdAt;
+  final int updatedAt;
+  final int? completedAt;
+  const MangaDownloadJobRow({
+    required this.jobId,
+    required this.kind,
+    required this.bookKey,
+    required this.chapterKey,
+    required this.runtime,
+    required this.title,
+    required this.chapterTitle,
+    required this.status,
+    required this.pagesDone,
+    required this.pagesTotal,
+    required this.attemptCount,
+    this.lastError,
+    required this.autoOcr,
+    required this.createdAt,
+    required this.updatedAt,
+    this.completedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['job_id'] = Variable<String>(jobId);
+    map['kind'] = Variable<String>(kind);
+    map['book_key'] = Variable<String>(bookKey);
+    map['chapter_key'] = Variable<String>(chapterKey);
+    map['runtime'] = Variable<String>(runtime);
+    map['title'] = Variable<String>(title);
+    map['chapter_title'] = Variable<String>(chapterTitle);
+    map['status'] = Variable<String>(status);
+    map['pages_done'] = Variable<int>(pagesDone);
+    map['pages_total'] = Variable<int>(pagesTotal);
+    map['attempt_count'] = Variable<int>(attemptCount);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    map['auto_ocr'] = Variable<bool>(autoOcr);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<int>(completedAt);
+    }
+    return map;
+  }
+
+  MangaDownloadJobsCompanion toCompanion(bool nullToAbsent) {
+    return MangaDownloadJobsCompanion(
+      jobId: Value(jobId),
+      kind: Value(kind),
+      bookKey: Value(bookKey),
+      chapterKey: Value(chapterKey),
+      runtime: Value(runtime),
+      title: Value(title),
+      chapterTitle: Value(chapterTitle),
+      status: Value(status),
+      pagesDone: Value(pagesDone),
+      pagesTotal: Value(pagesTotal),
+      attemptCount: Value(attemptCount),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      autoOcr: Value(autoOcr),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
+    );
+  }
+
+  factory MangaDownloadJobRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaDownloadJobRow(
+      jobId: serializer.fromJson<String>(json['jobId']),
+      kind: serializer.fromJson<String>(json['kind']),
+      bookKey: serializer.fromJson<String>(json['bookKey']),
+      chapterKey: serializer.fromJson<String>(json['chapterKey']),
+      runtime: serializer.fromJson<String>(json['runtime']),
+      title: serializer.fromJson<String>(json['title']),
+      chapterTitle: serializer.fromJson<String>(json['chapterTitle']),
+      status: serializer.fromJson<String>(json['status']),
+      pagesDone: serializer.fromJson<int>(json['pagesDone']),
+      pagesTotal: serializer.fromJson<int>(json['pagesTotal']),
+      attemptCount: serializer.fromJson<int>(json['attemptCount']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      autoOcr: serializer.fromJson<bool>(json['autoOcr']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      completedAt: serializer.fromJson<int?>(json['completedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'jobId': serializer.toJson<String>(jobId),
+      'kind': serializer.toJson<String>(kind),
+      'bookKey': serializer.toJson<String>(bookKey),
+      'chapterKey': serializer.toJson<String>(chapterKey),
+      'runtime': serializer.toJson<String>(runtime),
+      'title': serializer.toJson<String>(title),
+      'chapterTitle': serializer.toJson<String>(chapterTitle),
+      'status': serializer.toJson<String>(status),
+      'pagesDone': serializer.toJson<int>(pagesDone),
+      'pagesTotal': serializer.toJson<int>(pagesTotal),
+      'attemptCount': serializer.toJson<int>(attemptCount),
+      'lastError': serializer.toJson<String?>(lastError),
+      'autoOcr': serializer.toJson<bool>(autoOcr),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'completedAt': serializer.toJson<int?>(completedAt),
+    };
+  }
+
+  MangaDownloadJobRow copyWith({
+    String? jobId,
+    String? kind,
+    String? bookKey,
+    String? chapterKey,
+    String? runtime,
+    String? title,
+    String? chapterTitle,
+    String? status,
+    int? pagesDone,
+    int? pagesTotal,
+    int? attemptCount,
+    Value<String?> lastError = const Value.absent(),
+    bool? autoOcr,
+    int? createdAt,
+    int? updatedAt,
+    Value<int?> completedAt = const Value.absent(),
+  }) => MangaDownloadJobRow(
+    jobId: jobId ?? this.jobId,
+    kind: kind ?? this.kind,
+    bookKey: bookKey ?? this.bookKey,
+    chapterKey: chapterKey ?? this.chapterKey,
+    runtime: runtime ?? this.runtime,
+    title: title ?? this.title,
+    chapterTitle: chapterTitle ?? this.chapterTitle,
+    status: status ?? this.status,
+    pagesDone: pagesDone ?? this.pagesDone,
+    pagesTotal: pagesTotal ?? this.pagesTotal,
+    attemptCount: attemptCount ?? this.attemptCount,
+    lastError: lastError.present ? lastError.value : this.lastError,
+    autoOcr: autoOcr ?? this.autoOcr,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    completedAt: completedAt.present ? completedAt.value : this.completedAt,
+  );
+  MangaDownloadJobRow copyWithCompanion(MangaDownloadJobsCompanion data) {
+    return MangaDownloadJobRow(
+      jobId: data.jobId.present ? data.jobId.value : this.jobId,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
+      chapterKey: data.chapterKey.present
+          ? data.chapterKey.value
+          : this.chapterKey,
+      runtime: data.runtime.present ? data.runtime.value : this.runtime,
+      title: data.title.present ? data.title.value : this.title,
+      chapterTitle: data.chapterTitle.present
+          ? data.chapterTitle.value
+          : this.chapterTitle,
+      status: data.status.present ? data.status.value : this.status,
+      pagesDone: data.pagesDone.present ? data.pagesDone.value : this.pagesDone,
+      pagesTotal: data.pagesTotal.present
+          ? data.pagesTotal.value
+          : this.pagesTotal,
+      attemptCount: data.attemptCount.present
+          ? data.attemptCount.value
+          : this.attemptCount,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      autoOcr: data.autoOcr.present ? data.autoOcr.value : this.autoOcr,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      completedAt: data.completedAt.present
+          ? data.completedAt.value
+          : this.completedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaDownloadJobRow(')
+          ..write('jobId: $jobId, ')
+          ..write('kind: $kind, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('chapterKey: $chapterKey, ')
+          ..write('runtime: $runtime, ')
+          ..write('title: $title, ')
+          ..write('chapterTitle: $chapterTitle, ')
+          ..write('status: $status, ')
+          ..write('pagesDone: $pagesDone, ')
+          ..write('pagesTotal: $pagesTotal, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('lastError: $lastError, ')
+          ..write('autoOcr: $autoOcr, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('completedAt: $completedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    jobId,
+    kind,
+    bookKey,
+    chapterKey,
+    runtime,
+    title,
+    chapterTitle,
+    status,
+    pagesDone,
+    pagesTotal,
+    attemptCount,
+    lastError,
+    autoOcr,
+    createdAt,
+    updatedAt,
+    completedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaDownloadJobRow &&
+          other.jobId == this.jobId &&
+          other.kind == this.kind &&
+          other.bookKey == this.bookKey &&
+          other.chapterKey == this.chapterKey &&
+          other.runtime == this.runtime &&
+          other.title == this.title &&
+          other.chapterTitle == this.chapterTitle &&
+          other.status == this.status &&
+          other.pagesDone == this.pagesDone &&
+          other.pagesTotal == this.pagesTotal &&
+          other.attemptCount == this.attemptCount &&
+          other.lastError == this.lastError &&
+          other.autoOcr == this.autoOcr &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.completedAt == this.completedAt);
+}
+
+class MangaDownloadJobsCompanion extends UpdateCompanion<MangaDownloadJobRow> {
+  final Value<String> jobId;
+  final Value<String> kind;
+  final Value<String> bookKey;
+  final Value<String> chapterKey;
+  final Value<String> runtime;
+  final Value<String> title;
+  final Value<String> chapterTitle;
+  final Value<String> status;
+  final Value<int> pagesDone;
+  final Value<int> pagesTotal;
+  final Value<int> attemptCount;
+  final Value<String?> lastError;
+  final Value<bool> autoOcr;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int?> completedAt;
+  final Value<int> rowid;
+  const MangaDownloadJobsCompanion({
+    this.jobId = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.bookKey = const Value.absent(),
+    this.chapterKey = const Value.absent(),
+    this.runtime = const Value.absent(),
+    this.title = const Value.absent(),
+    this.chapterTitle = const Value.absent(),
+    this.status = const Value.absent(),
+    this.pagesDone = const Value.absent(),
+    this.pagesTotal = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.autoOcr = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.completedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaDownloadJobsCompanion.insert({
+    required String jobId,
+    required String kind,
+    required String bookKey,
+    required String chapterKey,
+    required String runtime,
+    required String title,
+    required String chapterTitle,
+    this.status = const Value.absent(),
+    this.pagesDone = const Value.absent(),
+    this.pagesTotal = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.autoOcr = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.completedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : jobId = Value(jobId),
+       kind = Value(kind),
+       bookKey = Value(bookKey),
+       chapterKey = Value(chapterKey),
+       runtime = Value(runtime),
+       title = Value(title),
+       chapterTitle = Value(chapterTitle),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<MangaDownloadJobRow> custom({
+    Expression<String>? jobId,
+    Expression<String>? kind,
+    Expression<String>? bookKey,
+    Expression<String>? chapterKey,
+    Expression<String>? runtime,
+    Expression<String>? title,
+    Expression<String>? chapterTitle,
+    Expression<String>? status,
+    Expression<int>? pagesDone,
+    Expression<int>? pagesTotal,
+    Expression<int>? attemptCount,
+    Expression<String>? lastError,
+    Expression<bool>? autoOcr,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? completedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (jobId != null) 'job_id': jobId,
+      if (kind != null) 'kind': kind,
+      if (bookKey != null) 'book_key': bookKey,
+      if (chapterKey != null) 'chapter_key': chapterKey,
+      if (runtime != null) 'runtime': runtime,
+      if (title != null) 'title': title,
+      if (chapterTitle != null) 'chapter_title': chapterTitle,
+      if (status != null) 'status': status,
+      if (pagesDone != null) 'pages_done': pagesDone,
+      if (pagesTotal != null) 'pages_total': pagesTotal,
+      if (attemptCount != null) 'attempt_count': attemptCount,
+      if (lastError != null) 'last_error': lastError,
+      if (autoOcr != null) 'auto_ocr': autoOcr,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (completedAt != null) 'completed_at': completedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaDownloadJobsCompanion copyWith({
+    Value<String>? jobId,
+    Value<String>? kind,
+    Value<String>? bookKey,
+    Value<String>? chapterKey,
+    Value<String>? runtime,
+    Value<String>? title,
+    Value<String>? chapterTitle,
+    Value<String>? status,
+    Value<int>? pagesDone,
+    Value<int>? pagesTotal,
+    Value<int>? attemptCount,
+    Value<String?>? lastError,
+    Value<bool>? autoOcr,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int?>? completedAt,
+    Value<int>? rowid,
+  }) {
+    return MangaDownloadJobsCompanion(
+      jobId: jobId ?? this.jobId,
+      kind: kind ?? this.kind,
+      bookKey: bookKey ?? this.bookKey,
+      chapterKey: chapterKey ?? this.chapterKey,
+      runtime: runtime ?? this.runtime,
+      title: title ?? this.title,
+      chapterTitle: chapterTitle ?? this.chapterTitle,
+      status: status ?? this.status,
+      pagesDone: pagesDone ?? this.pagesDone,
+      pagesTotal: pagesTotal ?? this.pagesTotal,
+      attemptCount: attemptCount ?? this.attemptCount,
+      lastError: lastError ?? this.lastError,
+      autoOcr: autoOcr ?? this.autoOcr,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      completedAt: completedAt ?? this.completedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (jobId.present) {
+      map['job_id'] = Variable<String>(jobId.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (bookKey.present) {
+      map['book_key'] = Variable<String>(bookKey.value);
+    }
+    if (chapterKey.present) {
+      map['chapter_key'] = Variable<String>(chapterKey.value);
+    }
+    if (runtime.present) {
+      map['runtime'] = Variable<String>(runtime.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (chapterTitle.present) {
+      map['chapter_title'] = Variable<String>(chapterTitle.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (pagesDone.present) {
+      map['pages_done'] = Variable<int>(pagesDone.value);
+    }
+    if (pagesTotal.present) {
+      map['pages_total'] = Variable<int>(pagesTotal.value);
+    }
+    if (attemptCount.present) {
+      map['attempt_count'] = Variable<int>(attemptCount.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (autoOcr.present) {
+      map['auto_ocr'] = Variable<bool>(autoOcr.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<int>(completedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaDownloadJobsCompanion(')
+          ..write('jobId: $jobId, ')
+          ..write('kind: $kind, ')
+          ..write('bookKey: $bookKey, ')
+          ..write('chapterKey: $chapterKey, ')
+          ..write('runtime: $runtime, ')
+          ..write('title: $title, ')
+          ..write('chapterTitle: $chapterTitle, ')
+          ..write('status: $status, ')
+          ..write('pagesDone: $pagesDone, ')
+          ..write('pagesTotal: $pagesTotal, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('lastError: $lastError, ')
+          ..write('autoOcr: $autoOcr, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('completedAt: $completedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -51456,6 +52384,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $VideoFileSpecsTable videoFileSpecs = $VideoFileSpecsTable(this);
   late final $UpdateFeedEntriesTable updateFeedEntries =
       $UpdateFeedEntriesTable(this);
+  late final $MangaDownloadJobsTable mangaDownloadJobs =
+      $MangaDownloadJobsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -51545,6 +52475,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     webMineQueue,
     videoFileSpecs,
     updateFeedEntries,
+    mangaDownloadJobs,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -89796,6 +90727,438 @@ typedef $$UpdateFeedEntriesTableProcessedTableManager =
       UpdateFeedEntryRow,
       PrefetchHooks Function()
     >;
+typedef $$MangaDownloadJobsTableCreateCompanionBuilder =
+    MangaDownloadJobsCompanion Function({
+      required String jobId,
+      required String kind,
+      required String bookKey,
+      required String chapterKey,
+      required String runtime,
+      required String title,
+      required String chapterTitle,
+      Value<String> status,
+      Value<int> pagesDone,
+      Value<int> pagesTotal,
+      Value<int> attemptCount,
+      Value<String?> lastError,
+      Value<bool> autoOcr,
+      required int createdAt,
+      required int updatedAt,
+      Value<int?> completedAt,
+      Value<int> rowid,
+    });
+typedef $$MangaDownloadJobsTableUpdateCompanionBuilder =
+    MangaDownloadJobsCompanion Function({
+      Value<String> jobId,
+      Value<String> kind,
+      Value<String> bookKey,
+      Value<String> chapterKey,
+      Value<String> runtime,
+      Value<String> title,
+      Value<String> chapterTitle,
+      Value<String> status,
+      Value<int> pagesDone,
+      Value<int> pagesTotal,
+      Value<int> attemptCount,
+      Value<String?> lastError,
+      Value<bool> autoOcr,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int?> completedAt,
+      Value<int> rowid,
+    });
+
+class $$MangaDownloadJobsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MangaDownloadJobsTable> {
+  $$MangaDownloadJobsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get jobId => $composableBuilder(
+    column: $table.jobId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get bookKey => $composableBuilder(
+    column: $table.bookKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chapterKey => $composableBuilder(
+    column: $table.chapterKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get runtime => $composableBuilder(
+    column: $table.runtime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chapterTitle => $composableBuilder(
+    column: $table.chapterTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pagesDone => $composableBuilder(
+    column: $table.pagesDone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pagesTotal => $composableBuilder(
+    column: $table.pagesTotal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoOcr => $composableBuilder(
+    column: $table.autoOcr,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MangaDownloadJobsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MangaDownloadJobsTable> {
+  $$MangaDownloadJobsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get jobId => $composableBuilder(
+    column: $table.jobId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get bookKey => $composableBuilder(
+    column: $table.bookKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chapterKey => $composableBuilder(
+    column: $table.chapterKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get runtime => $composableBuilder(
+    column: $table.runtime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chapterTitle => $composableBuilder(
+    column: $table.chapterTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pagesDone => $composableBuilder(
+    column: $table.pagesDone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pagesTotal => $composableBuilder(
+    column: $table.pagesTotal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get autoOcr => $composableBuilder(
+    column: $table.autoOcr,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MangaDownloadJobsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MangaDownloadJobsTable> {
+  $$MangaDownloadJobsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get jobId =>
+      $composableBuilder(column: $table.jobId, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get bookKey =>
+      $composableBuilder(column: $table.bookKey, builder: (column) => column);
+
+  GeneratedColumn<String> get chapterKey => $composableBuilder(
+    column: $table.chapterKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get runtime =>
+      $composableBuilder(column: $table.runtime, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get chapterTitle => $composableBuilder(
+    column: $table.chapterTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get pagesDone =>
+      $composableBuilder(column: $table.pagesDone, builder: (column) => column);
+
+  GeneratedColumn<int> get pagesTotal => $composableBuilder(
+    column: $table.pagesTotal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<bool> get autoOcr =>
+      $composableBuilder(column: $table.autoOcr, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MangaDownloadJobsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MangaDownloadJobsTable,
+          MangaDownloadJobRow,
+          $$MangaDownloadJobsTableFilterComposer,
+          $$MangaDownloadJobsTableOrderingComposer,
+          $$MangaDownloadJobsTableAnnotationComposer,
+          $$MangaDownloadJobsTableCreateCompanionBuilder,
+          $$MangaDownloadJobsTableUpdateCompanionBuilder,
+          (
+            MangaDownloadJobRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MangaDownloadJobsTable,
+              MangaDownloadJobRow
+            >,
+          ),
+          MangaDownloadJobRow,
+          PrefetchHooks Function()
+        > {
+  $$MangaDownloadJobsTableTableManager(
+    _$FushiDatabase db,
+    $MangaDownloadJobsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaDownloadJobsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaDownloadJobsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MangaDownloadJobsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> jobId = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> bookKey = const Value.absent(),
+                Value<String> chapterKey = const Value.absent(),
+                Value<String> runtime = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> chapterTitle = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> pagesDone = const Value.absent(),
+                Value<int> pagesTotal = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<bool> autoOcr = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaDownloadJobsCompanion(
+                jobId: jobId,
+                kind: kind,
+                bookKey: bookKey,
+                chapterKey: chapterKey,
+                runtime: runtime,
+                title: title,
+                chapterTitle: chapterTitle,
+                status: status,
+                pagesDone: pagesDone,
+                pagesTotal: pagesTotal,
+                attemptCount: attemptCount,
+                lastError: lastError,
+                autoOcr: autoOcr,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                completedAt: completedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String jobId,
+                required String kind,
+                required String bookKey,
+                required String chapterKey,
+                required String runtime,
+                required String title,
+                required String chapterTitle,
+                Value<String> status = const Value.absent(),
+                Value<int> pagesDone = const Value.absent(),
+                Value<int> pagesTotal = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<bool> autoOcr = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<int?> completedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaDownloadJobsCompanion.insert(
+                jobId: jobId,
+                kind: kind,
+                bookKey: bookKey,
+                chapterKey: chapterKey,
+                runtime: runtime,
+                title: title,
+                chapterTitle: chapterTitle,
+                status: status,
+                pagesDone: pagesDone,
+                pagesTotal: pagesTotal,
+                attemptCount: attemptCount,
+                lastError: lastError,
+                autoOcr: autoOcr,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                completedAt: completedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MangaDownloadJobsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MangaDownloadJobsTable,
+      MangaDownloadJobRow,
+      $$MangaDownloadJobsTableFilterComposer,
+      $$MangaDownloadJobsTableOrderingComposer,
+      $$MangaDownloadJobsTableAnnotationComposer,
+      $$MangaDownloadJobsTableCreateCompanionBuilder,
+      $$MangaDownloadJobsTableUpdateCompanionBuilder,
+      (
+        MangaDownloadJobRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MangaDownloadJobsTable,
+          MangaDownloadJobRow
+        >,
+      ),
+      MangaDownloadJobRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -90012,4 +91375,6 @@ class $FushiDatabaseManager {
       $$VideoFileSpecsTableTableManager(_db, _db.videoFileSpecs);
   $$UpdateFeedEntriesTableTableManager get updateFeedEntries =>
       $$UpdateFeedEntriesTableTableManager(_db, _db.updateFeedEntries);
+  $$MangaDownloadJobsTableTableManager get mangaDownloadJobs =>
+      $$MangaDownloadJobsTableTableManager(_db, _db.mangaDownloadJobs);
 }
