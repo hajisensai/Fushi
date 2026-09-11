@@ -2354,9 +2354,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///
   /// 字幕：host 字幕原语 [RemoteVideoClient.getRemoteVideoSubtitle] 就绪，[video]
   /// 标记 [RemoteVideoInfo.hasSubtitle] 时下载外挂字幕落地、解析成 cue 一并写入，使
-  /// 下载来的视频可查词/句导航。封面：host 无封面文件下载原语（仅 coverUrl/coverPath
-  /// 元数据），故退回本地抽帧 [extractVideoCover]（桌面 ffmpeg；移动端无则留空占位），
-  /// 与本地导入一致。
+  /// 下载来的视频可查词/句导航。封面：host 下发 [RemoteVideoInfo.coverUrl]（`/cover`
+  /// 端点，含刮削封面），client 具备 [RemoteCoverFetcher] 能力时先拉 host 封面落盘；
+  /// 无 coverUrl / 拉取失败再退回本地抽帧 [extractVideoCover]（桌面 ffmpeg；移动端
+  /// 无则留空占位）。此前这里无条件抽帧，host 上刮好的封面下载后变成一帧截图（7c）。
+  ///
+  /// `importedAt` / `completedAt` 镜像 host 值（旧 host 不带 importedAt 时才用本机
+  /// now）：远端占位卡按 host 的 importedAt 排序、按 host 的 completedAt 画已看完角标，
+  /// 下载落地后同一条目不该在「按导入时间」里跳位、也不该丢掉已看完标记。
   Future<void> _registerDownloadedVideo(
     RemoteVideoClient client,
     RemoteVideoInfo video,
@@ -2374,7 +2379,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       embeddedSubtitleTrack: subtitle.source == null
           ? const Value<int?>(0)
           : const Value<int?>(null),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      importedAt:
+          Value(video.importedAt ?? DateTime.now().millisecondsSinceEpoch),
+      completedAt: Value<DateTime?>(
+        video.completedAt == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(video.completedAt!),
+      ),
     ));
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
@@ -2397,10 +2408,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         remoteTombstones: video.tagTombstones,
       );
     }
-    // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
-    // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
-    // 单独抽好后再 updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，
-    // 移动端无 ffmpeg 时留空占位，与本地导入一致）。
+    // 封面（先 host 封面、再抽帧）是慢的可选增强，绝不能挡在建行前——否则用户
+    // 「下载完」要等到封面结束才看到视频。这里建行已落库，封面单独落好后再
+    // updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，移动端无
+    // ffmpeg 时留空占位，与本地导入一致）。
     final VideoScrapeOperationLease? coverLease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (coverLease == null) return;
@@ -2411,10 +2422,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             bookUid,
           );
           if (coverMetaStore == null) return false;
-          final String? coverPath = await extractVideoCover(
-            videoPath: dest.path,
-            bookUid: bookUid,
-          );
+          final String? hostCover =
+              await _fetchHostCoverToDisk(client, video, bookUid);
+          final String? coverPath = hostCover ??
+              await extractVideoCover(
+                videoPath: dest.path,
+                bookUid: bookUid,
+              );
           if (coverPath == null) return false;
           await widget.repo.updateCover(bookUid, coverPath);
           return _commitAutoFrameCover(coverMetaStore, bookUid);
@@ -2423,6 +2437,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (wroteCover && mounted) _refresh();
     } finally {
       coverLease.release();
+    }
+  }
+
+  /// 把 host 下发的封面（[RemoteVideoInfo.coverUrl]，`/cover` 端点）拉到
+  /// `remote_videos/<uid>.cover.jpg`，返回落盘路径；无 coverUrl / client 不具备
+  /// [RemoteCoverFetcher] 能力 / 拉取失败 / 空响应一律返回 null 让调用方退回抽帧。
+  Future<String?> _fetchHostCoverToDisk(
+    RemoteVideoClient client,
+    RemoteVideoInfo video,
+    String bookUid,
+  ) async {
+    final String? coverUrl = video.coverUrl;
+    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(client);
+    if (coverUrl == null || coverUrl.isEmpty || fetcher == null) return null;
+    try {
+      final Uint8List bytes = await fetcher.fetchRemoteCover(coverUrl);
+      if (bytes.isEmpty) return null;
+      final File coverDest = await _remoteCoverDestination(bookUid);
+      await coverDest.writeAsBytes(bytes, flush: true);
+      return coverDest.path;
+    } catch (e) {
+      debugPrint('[home-video] host video cover download failed: $e');
+      return null;
     }
   }
 
@@ -2466,7 +2503,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           );
           if (coverMetaStore == null) return false;
           try {
-            final File coverDest = await _cloudCoverDestination(bookUid);
+            final File coverDest = await _remoteCoverDestination(bookUid);
             if (await cloud.getRemoteVideoCover(bookUid, coverDest)) {
               await widget.repo.updateCover(bookUid, coverDest.path);
               return _commitAutoFrameCover(coverMetaStore, bookUid);
@@ -2523,7 +2560,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 云视频封面下载落点：`<documents>/remote_videos/<safeUid>.cover.jpg`（与视频落点
   /// 同目录，重复下载覆盖同一副本）。
-  Future<File> _cloudCoverDestination(String bookUid) async {
+  /// 远端（互联 host / 云盘）封面的本机落盘路径。
+  Future<File> _remoteCoverDestination(String bookUid) async {
     final Directory dir = await AppPaths.remoteVideosDirectory();
     await dir.create(recursive: true);
     final String safeUid = safeWindowsFileName(bookUid);
@@ -2566,7 +2604,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Directory dir = await AppPaths.videoSubtitlesDirectory();
     await dir.create(recursive: true);
     // BUG-1125：旧手写字符集漏了反斜杠（`[\/:*?"<>|]` 只转义了 `/`），id 含 `\`
-    // 时字幕会落到与封面（[_cloudCoverDestination] 走全集）不同的目录。统一走
+    // 时字幕会落到与封面（[_remoteCoverDestination] 走全集）不同的目录。统一走
     // 共享 helper 根修。
     final String safeUid = safeWindowsFileName(video.id);
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
