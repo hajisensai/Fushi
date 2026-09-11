@@ -4702,5 +4702,6 @@
   "browser_extension_test_page_sample_label": "Practice sentence",
   "browser_extension_test_page_action": "Open the test page",
   "browser_extension_test_page_action_desc": "Opens a page served by Fushi in your browser to check the toolbar popup and Shift lookup.",
-  "browser_extension_test_page_server_off": "Enable the lookup server first, then try again."
+  "browser_extension_test_page_server_off": "Enable the lookup server first, then try again.",
+  "video_source_scrape_locale_follow_ui": "Leave empty to follow the interface language"
 }

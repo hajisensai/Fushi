@@ -19,7 +19,7 @@ void main() {
     await prefs.setPref(kVideoMetadataAniDbClientVersionPref, '3');
     final VideoSourceScrapeGlobalConfig config =
         VideoSourceScrapeGlobalConfig.fromPreferences(prefs,
-            resolvedTmdbApiKey: '');
+            resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
     expect(config.hashEnabled, isTrue);
     expect(config.anidbUdpConfig.isAvailable, isTrue);
     expect(config.anidbUdpConfig.username, 'tester');

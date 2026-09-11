@@ -34,25 +34,17 @@ const String kNoLanguageImageTag = '';
 ///
 /// 这两个是**领域事实**，不是语言默认值：`en-US` 是跨语言通用名，`ja-JP` 是本仓
 /// 主要内容（动画）的原名所在。
+///
+/// 不按查询串的文字再扩（曾有过一张「含汉字就并入 zh-CN」的表）：TMDB 搜索的
+/// **命中**与 `language` 无关，而 resolver 的 exact 门在**详情阶段**再判一次
+/// （`video_metadata_resolver.dart` `_searchWithProvider`），详情里的 aliases 已含
+/// `translations` + `alternative_titles` 全部语言的名字，搜索阶段投影成哪种语言
+/// 不影响判定结果。那张表只会让每个用日文/中文目录名的用户每次搜索多发一次请求。
 const List<String> kVideoMetadataAliasLocales = <String>['en-US', 'ja-JP'];
 
-/// 按查询串**自身的文字证据**追加的别名语言。
-///
-/// 为什么不能只按资料语言决定：TMDB 的**命中**与 `language` 无关，但响应里的
-/// title 只投影成请求的那一种语言。上层 exact gate 拿查询串去比 title /
-/// originalTitle / aliases，而 aliases 只来自这几次投影。于是「资料语言英语 + 库里
-/// 中文目录名」的用户会：TMDB 找得到 → 只投影出 en/ja 标题 → exact 集为空 →
-/// 自动应用门不过 → 整批记识别失败。
-///
-/// 所以扩别名的依据是**查询串里有什么字**，不是用户选了什么语言。多一次带
-/// cacheKey 的请求，换回来的是自动识别不掉。
-const Map<String, String> kVideoMetadataScriptAliasLocales = <String, String>{
-  // 汉字（含日文里的汉字，与假名一起出现时由下面的假名判据兜到 ja-JP）。
-  r'\p{Script=Han}': 'zh-CN',
-  // 假名只可能是日文，命中即并入日语（ja-JP 已在无条件表里，这里是显式冗余，
-  // 保留是为了让「为什么日文查询要请求 ja」有据可查）。
-  r'[぀-ヿ]': 'ja-JP',
-};
+/// [kFallbackVideoMetadataLocale] 的主语言子标签；`primarySubtag` 兜底用它，
+/// 而不是整个 `en-US` 串——TMDB 的图片语言只认子标签，整串会让它一张图都不返回。
+const String _kFallbackPrimarySubtag = 'en';
 
 /// 由一个 BCP-47 资料语言派生出的各 provider 语言参数。
 class VideoMetadataLanguages {
@@ -69,10 +61,16 @@ class VideoMetadataLanguages {
 
   /// 主语言子标签（`de-DE` → `de`）。TMDB 的图片语言只认这一级，地区标签会让
   /// 它一张图都不返回。
+  ///
+  /// 用户手填的 locale 没有格式校验（设置页与来源级覆盖都是裸文本框），`-DE` /
+  /// `_cn` 这种首段为空的串取**第一个非空段**；一个非空段都没有才回落
+  /// [_kFallbackPrimarySubtag]。
   String get primarySubtag {
-    final String primary =
-        normalizedLocale.toLowerCase().split(RegExp(r'[-_]')).first;
-    return primary.isEmpty ? kFallbackVideoMetadataLocale : primary;
+    final Iterable<String> parts = normalizedLocale
+        .toLowerCase()
+        .split(RegExp(r'[-_]+'))
+        .where((String part) => part.isNotEmpty);
+    return parts.isEmpty ? _kFallbackPrimarySubtag : parts.first;
   }
 
   /// 图片语言优先序：本语言 → 英文 → 无语言纯图。
@@ -100,13 +98,9 @@ class VideoMetadataLanguages {
   ///
   /// TMDB 的搜索会命中原名 / 译名 / 别名，但响应只把 title 投影成请求的
   /// language。只看一种语言的响应，会把「靠别名命中」的条目误判成不匹配。
-  ///
-  /// [query] 非空时按查询串自身的文字追加语言，见
-  /// [kVideoMetadataScriptAliasLocales]——资料语言决定不了用户的文件是用什么文字
-  /// 命名的。
-  List<String> searchLocalesForQuery([String query = '']) {
+  List<String> get searchLocales {
     final List<String> order = <String>[normalizedLocale];
-    void add(String tag) {
+    for (final String tag in kVideoMetadataAliasLocales) {
       // 去重按**主语言子标签**，不按整 tag：用户设的日语可能是无地区的 `ja`，
       // 与别名表里的 `ja-JP` 整串不等，按整串去重会对同一种语言发两次请求——
       // 正是本文件声讨的那种浪费。
@@ -116,15 +110,6 @@ class VideoMetadataLanguages {
         order.add(tag);
       }
     }
-
-    for (final MapEntry<String, String> entry
-        in kVideoMetadataScriptAliasLocales.entries) {
-      if (RegExp(entry.key, unicode: true).hasMatch(query)) add(entry.value);
-    }
-    kVideoMetadataAliasLocales.forEach(add);
     return List<String>.unmodifiable(order);
   }
-
-  /// 不带查询串证据的语言序（详情/分集等非搜索请求）。
-  List<String> get searchLocales => searchLocalesForQuery();
 }

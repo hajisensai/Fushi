@@ -146,6 +146,35 @@ void main() {
     expect(selected.single.url, 'high-ja');
   });
 
+  test('分集剧照是画面不是文字：0 票的 en 剧照压不住高分无标签剧照', () {
+    // TMDB 给剧照打的语言标签不代表上面印了字；按语言优先会选错。
+    final List<VideoMetadataImage> selected = selectVideoMetadataImages(
+      primary: const <VideoMetadataImage>[
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.thumb,
+          url: 'still-en-zero-votes',
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'en',
+          seasonNumber: 1,
+          episodeNumber: 1,
+          voteAverage: 0,
+          voteCount: 0,
+        ),
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.thumb,
+          url: 'still-untagged-high',
+          provider: VideoMetadataProviderKind.tmdb,
+          seasonNumber: 1,
+          episodeNumber: 1,
+          voteAverage: 8.5,
+          voteCount: 40,
+        ),
+      ],
+      languageOrder: const VideoMetadataLanguages('ja').imageLanguages,
+    );
+    expect(selected.single.url, 'still-untagged-high');
+  });
+
   test('背景图是画面不是文字：评分优先，语言只作同分兜底（与修复前一致）', () {
     final List<VideoMetadataImage> selected = selectVideoMetadataImages(
       primary: const <VideoMetadataImage>[

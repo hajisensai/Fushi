@@ -64,6 +64,7 @@ class ServerConfig {
     required this.adminToken,
     required this.uploadQuotaBytes,
     required this.subtitleLanguage,
+    required this.metadataLocale,
     required this.qbittorrentUrl,
     required this.qbittorrentUsername,
     required this.qbittorrentPassword,
@@ -88,6 +89,12 @@ class ServerConfig {
   static const String torrentEngineQbittorrent = 'qbittorrent';
   static const String defaultTorrentListen = '0.0.0.0:6881,[::]:6881';
 
+  /// `metadata_locale` 默认值。app 侧资料语言跟随界面语言，无头服务端没有界面
+  /// 语言，只能给一个**可见、可改**的配置默认；取 zh-CN 是延续本服务端此前的
+  /// 实际行为（WebUI 本身只有中文），不是把中文当隐含常量——那种写死在引擎里、
+  /// 用户无处可改的才是 BUG-2454 修掉的东西。
+  static const String defaultMetadataLocale = 'zh-CN';
+
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
         dataDir: dataDir,
         port: defaultPort,
@@ -101,6 +108,7 @@ class ServerConfig {
         adminToken: null,
         uploadQuotaBytes: 50 * 1024 * 1024 * 1024,
         subtitleLanguage: 'ja',
+        metadataLocale: defaultMetadataLocale,
         qbittorrentUrl: null,
         qbittorrentUsername: null,
         qbittorrentPassword: null,
@@ -133,6 +141,10 @@ class ServerConfig {
 
   /// 视频 sidecar 字幕匹配语言代码。
   final String subtitleLanguage;
+
+  /// 刮削资料语言（BCP-47，如 `ja` / `zh-CN`）：TMDB 文字与海报语言、简介语言
+  /// 感知都由它派生。偏好表里显式设过 `video_metadata_locale` 时以偏好为准。
+  final String metadataLocale;
   final String? qbittorrentUrl;
   final String? qbittorrentUsername;
   final String? qbittorrentPassword;
@@ -162,6 +174,7 @@ class ServerConfig {
     String? adminToken,
     int? uploadQuotaBytes,
     String? subtitleLanguage,
+    String? metadataLocale,
     String? qbittorrentUrl,
     String? qbittorrentUsername,
     String? qbittorrentPassword,
@@ -185,6 +198,7 @@ class ServerConfig {
         adminToken: adminToken ?? this.adminToken,
         uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
         subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
+        metadataLocale: metadataLocale ?? this.metadataLocale,
         qbittorrentUrl: qbittorrentUrl ?? this.qbittorrentUrl,
         qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
         qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
@@ -235,6 +249,8 @@ class ServerConfig {
       uploadQuotaBytes: _int(map['upload_quota_bytes']) ?? base.uploadQuotaBytes,
       subtitleLanguage:
           map['subtitle_language']?.toString() ?? base.subtitleLanguage,
+      metadataLocale:
+          map['metadata_locale']?.toString() ?? base.metadataLocale,
       qbittorrentUrl: qbMap['url']?.toString(),
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),
@@ -265,6 +281,7 @@ class ServerConfig {
     b.writeln('admin_port: $adminPort');
     b.writeln('admin_bind: ${_q(adminBind)}');
     b.writeln('subtitle_language: ${_q(subtitleLanguage)}');
+    b.writeln('metadata_locale: ${_q(metadataLocale)}');
     if (ffmpegPath != null) b.writeln('ffmpeg: ${_q(ffmpegPath!)}');
     if (ffprobePath != null) b.writeln('ffprobe: ${_q(ffprobePath!)}');
     if (ortLibraryPath != null) {

@@ -798,35 +798,28 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
-          // 资料语言默认**跟随界面语言**，不是写死的某一种语言。
+          // 资料语言默认**跟随界面语言**，不是写死的某一种语言（BUG-2454）。
           //
           // 这里曾经硬编码 'zh-CN'（默认值与 placeholder 各一份），于是每个德语、
           // 韩语、阿拉伯语用户装上就默认拉中文简介和中文海报。app 出 17 种语言，
-          // 没有哪种配当隐含默认值。appLocale 已经把「用户选过的 → 系统语言精确匹配
-          // → 语言码匹配 → 兜底」解析完了，直接复用，不另造一套。
+          // 没有哪种配当隐含默认值。
           //
-          // resetValue 给出「回到跟随界面语言」的一键还原：用户改乱了不必猜该填什么。
+          // 输入框显示的是**存的值**：空 = 跟随界面语言，占位文案说明这一点。不把
+          // 界面语言的具体串预填进去——预填后用户在没动过的框上按回车就会把
+          // `en-US` 这种具体串写进偏好，「跟随」从此变成「钉死」，而界面上看不出
+          // 区别。resetValue 写空串 = 一键回到跟随。
           SettingsTextItem(
             id: 'video.library.metadata_locale',
             title: t.video_source_scrape_locale,
             subtitle: t.video_source_scrape_locale_hint,
             icon: Icons.language_outlined,
-            // 显示的恒是**实际生效**的语言：存过就显示存的，没存过 / 已重置为空串
-            // 就显示界面语言（也就是此刻真正会用的那个）。
-            value: (SettingsContext settingsContext) {
-              final String stored = (settingsContext.appModel.prefsRepo.getPref(
-                kVideoMetadataLocalePref,
-                defaultValue: '',
-              ) as String)
-                  .trim();
-              return stored.isEmpty
-                  ? settingsContext.appModel.appLocale.toLanguageTag()
-                  : stored;
-            },
-            // 重置写**空串**而不是当前界面语言的具体串：后者是「钉死在 en-US」，
-            // 之后换界面语言就不再跟随，与按钮语义相反。空串由
-            // `VideoSourceScrapeGlobalConfig.fromPreferences` 的 locale.isEmpty
-            // 分支接住 → 真正回到跟随界面语言。
+            placeholder: t.video_source_scrape_locale_follow_ui,
+            value: (SettingsContext settingsContext) =>
+                (settingsContext.appModel.prefsRepo.getPref(
+              kVideoMetadataLocalePref,
+              defaultValue: '',
+            ) as String)
+                    .trim(),
             resetValue: (SettingsContext settingsContext) => '',
             onChanged: (SettingsContext settingsContext, String value) async {
               await commitVideoMetadataRuntimePreference(

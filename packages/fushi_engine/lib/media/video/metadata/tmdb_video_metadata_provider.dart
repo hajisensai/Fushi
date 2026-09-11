@@ -60,12 +60,10 @@ class TmdbVideoMetadataProvider
     // 在同一 TMDB 主源内合并常用动画元数据语言的展示名，仍由上层 exact gate
     // 决定是否自动应用；这不是跨 provider fallback，也不放宽成模糊匹配。
     //
-    // 兜底语言按**查询串自身的文字**扩，而不是无条件追加 zh-CN：TMDB 的命中与
-    // language 无关，但响应里的 title 只投影成请求的那一种语言，而上面的 exact
-    // gate 比的正是这些 title。无条件追加是让每个非中文用户每次搜索白搭一次
-    // 请求；按文字扩则让「资料语言英语 + 中文目录名」的用户照样判得出 exact。
-    final List<String> languages =
-        _languages.searchLocalesForQuery(request.title);
+    // 兜底语言只有 en-US / ja-JP 两个领域事实，不再无条件追加 zh-CN：那是让每个
+    // 非中文用户每次搜索白搭一次请求。中文目录名照样能识别——resolver 的 exact
+    // 门在详情阶段再判一次，详情 aliases 含全部语言的 translations。
+    final List<String> languages = _languages.searchLocales;
     final Map<String, VideoMetadataWork> merged = <String, VideoMetadataWork>{};
     for (int languageIndex = 0;
         languageIndex < languages.length;

@@ -3600,6 +3600,10 @@ class AppModel with ChangeNotifier {
     // 语法说明译文表即时换掉：不重启的桌面端也要跟着变（BUG-2038）。
     await applyTransformDescriptionLocale(localeTag);
     if (isDesktopPlatform) {
+      // 刮削资料语言默认跟随界面语言，而下载导入那条刮削链的配置在建管线时
+      // 冻结（BUG-2454）：不重建，桌面端换完界面语言后新下载的作品仍按旧语言
+      // 刮削，直到重启。移动端走下面的整 app 重启，不需要。
+      await reloadVideoDownloadPipelineRuntime();
       notifyListeners();
       return;
     }
