@@ -161,6 +161,44 @@ class ReaderEngineConfig {
             vnMergeCrossScreenSentenceAudioCues,
       };
 
+  /// 运行时可**热更新**的那一小份（BUG-2471）：`window.__fushiEngine.updateLive(patch)`
+  /// 把 patch 合并进已 install 的 `C`（`window.__fushiReaderConfig` 与 install 闭包里的
+  /// `C` 是同一个对象），并按需重算已物化的派生值（四个边距 → `--reader-margin-*`
+  /// 像素变量、`window.scanNonJapaneseText`）。
+  ///
+  /// 背景：BUG-1812 把边距百分比从 CSS 的 `vh/vw` 搬进 `C`，由引擎在 install 时物化成
+  /// `documentElement` 上的内联像素变量；此后「改边距」走的仍是只换 CSS 的
+  /// `onSettingsChangedLive`，新样式表里的 `var(--reader-margin-top, Xvh)` 回退值被
+  /// 停在旧值的内联变量遮住——改完没反应，要翻章 / 重开书才见效。滑动灵敏度阈值、
+  /// 滚轮静默窗、扫描非日文这些同样只在 install 时读一次。这里就是它们的热更新通道：
+  /// 设置一变，Dart 侧（`_applyStylesLive`）先下发这份 patch，再换 CSS + 重锚。
+  ///
+  /// 只放「引擎运行时按值读取、不需要重跑 install」的键；需要整章重载的
+  /// （view / writing mode、模糊图）仍走 `notifyReaderLayoutChanged`。
+  static String liveUpdateInvocation({
+    required double marginTop,
+    required double marginBottom,
+    required double marginLeft,
+    required double marginRight,
+    required int swipeDistThreshold,
+    required int swipeFastDistThreshold,
+    required int wheelGestureQuietMs,
+    required bool scanNonJapaneseText,
+  }) {
+    final String patch = jsonEncode(<String, Object?>{
+      'marginTop': marginTop,
+      'marginBottom': marginBottom,
+      'marginLeft': marginLeft,
+      'marginRight': marginRight,
+      'swipeDistThreshold': swipeDistThreshold,
+      'swipeFastDistThreshold': swipeFastDistThreshold,
+      'wheelGestureQuietMs': wheelGestureQuietMs,
+      'scanNonJapaneseText': scanNonJapaneseText,
+    });
+    return '(window.__fushiEngine && window.__fushiEngine.updateLive) '
+        '? window.__fushiEngine.updateLive($patch) : false;';
+  }
+
   /// 可直接嵌进 JS 的对象字面量。
   ///
   /// [sasayakiCuesJson] 本身已是合法 JSON（数组）文本，直接拼进来；其余字段走

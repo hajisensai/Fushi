@@ -6,7 +6,7 @@
 累积偏移」问题拿到了 P0（见 `docs/bugs/BUG-405-pagination-cumulative-offset.md`）。
 
 本目录用 headless Chrome 复刻竖排 reader 的真实 CSS（`reader_content_styles.dart` 的
-`column-width: max(F, V−mt·vh−mb·vh−F)` + `column-gap:22px` + padding），逐字符量
+`column-width: max(F, V−mt·vh−mb·vh)` + `column-gap:22px` + padding；BUG-2469 起不再多扣一个 F），逐字符量
 `getBoundingClientRect().top` 拼出真实列带顶序列，从而验证真实渲染层的两个不变量。
 
 ## 用法（本机，CI 跑不到真 WebView）

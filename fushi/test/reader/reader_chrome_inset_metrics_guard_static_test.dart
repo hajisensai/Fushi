@@ -30,6 +30,43 @@ void main() {
         reason: 'rapid/in-flight inset changes must not retain stale metrics');
   });
 
+  test(
+      'chrome inset changes re-derive the image max box in both shells (BUG-2468)',
+      () {
+    // --fushi-image-max-width/height 是 body content-box 的快照；chrome inset 改的正是
+    // body padding。initialize() 按初始 inset（底栏/顶栏尚未占位）取的快照若不在这里
+    // 重算，首次就绪补发 inset 后整页插图比列高多出一条 chrome 高，Blink 把整块 <img>
+    // 切到相邻三列：前一页底部一条、本页主体、后一页顶部一条。
+    final String source = File(
+      'lib/src/reader/reader_pagination_scripts.dart',
+    ).readAsStringSync();
+    const String marker = '  setChromeInsets: function(topPx, bottomPx) {';
+    final List<int> starts = <int>[];
+    int from = 0;
+    while (true) {
+      final int i = source.indexOf(marker, from);
+      if (i < 0) break;
+      starts.add(i);
+      from = i + marker.length;
+    }
+    expect(starts, hasLength(2), reason: '分页 + 连续两个 shell 各一份 setChromeInsets');
+    for (final int start in starts) {
+      final int end = source.indexOf('\n  },\n', start);
+      final String function = source.substring(start, end);
+      final int bottomInsetWrite = function.indexOf(
+        "document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');",
+      );
+      final int reset = function.indexOf('this._resetImageMaxVars();');
+      final int inFlightReturn =
+          function.indexOf('if (inFlight || charOffset < 0) return;');
+      expect(bottomInsetWrite, greaterThanOrEqualTo(0));
+      expect(reset, greaterThan(bottomInsetWrite),
+          reason: '图片 max 盒必须在 inset 写入之后按新 content-box 重算');
+      expect(inFlightReturn, greaterThan(reset),
+          reason: '重锚在飞 / 无锚点早返回也必须先重算图片 max 盒');
+    }
+  });
+
   test('partial terminal page uses the browser physical endpoint exactly once',
       () {
     final String source = File(

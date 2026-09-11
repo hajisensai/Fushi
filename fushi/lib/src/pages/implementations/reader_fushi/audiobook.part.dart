@@ -379,8 +379,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (uid.isEmpty) return;
     final SrtBookRow? row = await appModel.database.getSrtBookByUid(uid);
     if (!mounted) return;
+    _explicitContentLanguage = row?.language;
     final String? resolved = resolveContentLanguage(
-      explicit: row?.language,
+      explicit: _explicitContentLanguage,
       globalDefault: appModel.prefsRepo.defaultContentLanguage,
     );
     appModel.currentLookupLanguage = resolved;

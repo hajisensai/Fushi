@@ -1464,9 +1464,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       right: MediaQuery.viewPaddingOf(context).right,
       // 桌面端底栏（有声书播放条）唤出时盖住状态行，但把状态行的文字并进播放条右端
       // （[_buildBarStatusText]）——底部只有一条，而不是播放条 + 状态行叠两条。
-      bottom: _separatePlaybackStatus
-          ? _statusFooterReserve + _stableBottomInset
-          : 0,
+      // 窄屏读数独立成行时底栏坐在状态行的底部带之上（带已含系统底 inset）。
+      bottom: _separatePlaybackStatus ? _statusFooterBand : 0,
       // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
       // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
@@ -1926,12 +1925,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
           : null,
       // 有声书面板「资源」页：对齐文件 / 转录只对 EPUB 有声书开放（standalone
       // SRT 书走 _openSrtBookReimport 一条路）。
-      onPickAlignment: listeningEnabled &&
+      onPickAlignment:
+          listeningEnabled &&
               _srtBookUid == null &&
               _audiobookController != null
           ? () => unawaited(_openAlignmentImportDialog())
           : null,
-      onTranscribe: listeningEnabled &&
+      onTranscribe:
+          listeningEnabled &&
               _srtBookUid == null &&
               _audiobookController != null &&
               isAsrSupported
@@ -2278,7 +2279,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   pinned: true,
                   semanticsId: 'hibiki.reader.header.navigation',
                   onPressed: () => unawaited(
-                      _showAppearanceSheet(initialSubPage: 'location')),
+                    _showAppearanceSheet(initialSubPage: 'location'),
+                  ),
                 ),
               if (!lyrics)
                 ReaderHeaderAction(
@@ -2312,7 +2314,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   // 已挂有声书 → 居中面板；没有 → 直接进导入。
                   onPressed: _audiobookController != null
                       ? () => unawaited(
-                          _showAppearanceSheet(initialSubPage: 'audiobook'))
+                          _showAppearanceSheet(initialSubPage: 'audiobook'),
+                        )
                       : _openAudioImportDialog,
                 ),
               if (desktopWindowFullscreenSupported)
@@ -2460,24 +2463,31 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 绘制门控与底栏同源用 set-once `_hasEverLoaded`（不用每切章翻转的
   /// `_readerContentReady`，否则切章闪烁）；预留高**不**随它翻转，见 getter 注释。
   /// 悬浮底栏（默认形态）唤出时 `Positioned(bottom: 0)` 盖在状态行之上，与顶部进度
-  /// pill 被底栏盖住是同一形态；底栏挤压模式下状态行坐在底栏之上
-  /// （`bottom: _bottomChromeReserve + _stableBottomInset`）。
+  /// pill 被底栏盖住是同一形态。底栏挤压模式下：宽屏读数并进底栏右端，状态行整条
+  /// 让位（[_statusFooterAbsorbedByBar]，不画、不占预留，BUG-2467）；窄屏读数独立
+  /// 成行时底栏坐在状态行之上（[_wrapBottomChromeBar]）。
+  ///
+  /// 状态行贴屏底 `bottom: 0`，整条带高 = max(行高, 系统底 inset)：iPhone 上读数落进
+  /// home indicator 那 34pt 里，而不是在它上面再叠一条 28pt（BUG-2470）。
   ///
   /// 点状态行 = 点顶部进度 pill 的同义动作（悬浮态唤出 / 收起，挤压态切底栏）。
   /// 纯指针面，不进焦点遍历池（TODO-700 不变式）。
   Widget _buildStatusFooter() {
-    if (!_statusFooterEnabled || !_hasEverLoaded) {
+    if (!_statusFooterEnabled ||
+        !_hasEverLoaded ||
+        _statusFooterAbsorbedByBar) {
       return const SizedBox.shrink();
     }
     return Positioned(
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
-      bottom: _statusFooterBottomOffset,
+      bottom: 0,
       // BUG-1692：状态行排在 WebView **之后**绘制，必须自带 RepaintBoundary，否则并进
       // 页面级 PictureLayer 的整窗 cull rect，macOS 上整块 WebView 收不到鼠标事件。
       child: RepaintBoundary(
         child: ReaderStatusFooter(
           key: const ValueKey<String>('fushi_status_footer'),
+          bottomInset: _stableBottomInset,
           sessionTotals: _readingSessionTotals,
           currentChars: _progressCurrentChars,
           totalChars: _progressTotalChars,

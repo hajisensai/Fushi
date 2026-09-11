@@ -4,26 +4,28 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 /// TODO-734 纯 Dart 代数守卫（仓库无 headless 浏览器，几何正确性靠代数影子覆盖）。
 ///
 /// 竖排分页列高几何「成对」不变式：
-///  - CSS column-width(px) = V − mt − mb − F − cT − cB
+///  - CSS column-width(px) = V − mt − mb − cT − cB
 ///    （ReaderContentStyles.verticalColumnContentHeight，唯一真相源）。
 ///  - JS getScrollContext 的 contentBox = viewportHeight − paddingTop − paddingBottom，
-///    其中 viewportHeight=V、paddingTop=mt+cT、paddingBottom=mb+F+cB（镜像 CSS
-///    padding-top/padding-bottom）。代入得 contentBox = V − mt − mb − F − cT − cB。
+///    其中 viewportHeight=V、paddingTop=mt+cT、paddingBottom=mb+cB（镜像 CSS
+///    padding-top/padding-bottom）。代入得 contentBox = V − mt − mb − cT − cB。
+///    （BUG-2469 之前两边各多一个 F：那是 V+O 基准时代抵消 +O 的配对项，纯 V 基准下
+///    只剩一条 F 高的空带，已一并去掉。）
 ///
 /// 故 columnWidth == contentBox（不变式 1）。pageStep = contentBox + gap(22) == realPitch
 /// （保 TODO-729 防跳章）。
 ///
 /// 漏出量（不变式 2）：列在视口里从 chrome-top-inset 处起画，列底边相对视口顶 =
 /// cT + columnWidth。视口底部可用边界 = V − cB。默认页边距 mt=mb=0 时：
-///   leak = (cT + columnWidth) − (V − cB) = −F  （≤ 0 恒成立，且与 cT/cB 无关）。
-/// 即列底边永远比视口底高 F px（不漏字），无论字号 F 多大/多小。
+///   leak = (cT + columnWidth) − (V − cB) = 0  （恒成立，且与 F/cT/cB 无关）。
+/// 即列底边恰好贴在底栏上沿（不漏字、也不空一条），无论字号 F 多大/多小。
 void main() {
   const double viewportV = 800; // 任意视口高，代数不变式与具体 V 无关。
   const double gapPx = 22; // 固定 column-gap（TODO-729 不动）。
   const double bottomOverlapO = 22; // bottomOverlapPx，--page-height = V + O。
 
   /// JS 端竖排 contentBox 的代数影子：viewportHeight − paddingTop − paddingBottom，
-  /// padding 与 CSS 模板逐项镜像（paddingTop=mt+cT，paddingBottom=mb+F+cB）。
+  /// padding 与 CSS 模板逐项镜像（paddingTop=mt+cT，paddingBottom=mb+cB）。
   double jsContentBox({
     required double v,
     required double f,
@@ -33,7 +35,7 @@ void main() {
     required double cB,
   }) {
     final double paddingTop = mt + cT;
-    final double paddingBottom = mb + f + cB;
+    final double paddingBottom = mb + cB;
     return v - paddingTop - paddingBottom;
   }
 
@@ -95,7 +97,7 @@ void main() {
       }
     });
 
-    test('不变式2：漏出量 leak = −F ≤ 0 恒成立，且与 F/cT/cB 无关（不随 F 漂）', () {
+    test('不变式2：漏出量 leak = 0 恒成立，且与 F/cT/cB 无关（不随 F 漂，BUG-2469）', () {
       // 列底边相对视口顶 = cT + columnWidth；视口底可用 = V − cB；leak = 差值。
       for (final double f in const <double>[12, 22, 96, 128]) {
         for (final double cT in const <double>[0, 24, 48, 96]) {
@@ -112,10 +114,9 @@ void main() {
             final double columnBottomEdge = cT + columnWidth;
             final double viewportBottomUsable = viewportV - cB;
             final double leak = columnBottomEdge - viewportBottomUsable;
-            expect(leak, -f,
-                reason: 'F=$f cT=$cT cB=$cB: 漏出量必须恒等于 −F（列底边高于视口底 F px），'
-                    '不随 cT/cB 漂移');
-            expect(leak <= 0, isTrue, reason: 'F=$f: leak 必须 ≤ 0，绝不漏字进底栏');
+            expect(leak, 0,
+                reason: 'F=$f cT=$cT cB=$cB: 漏出量必须恒等于 0（列底边贴底栏上沿，'
+                    '既不漏字也不空一条 F），不随 F/cT/cB 漂移');
           }
         }
       }
@@ -225,7 +226,7 @@ void main() {
               chromeTopInsetPx: cT,
               chromeBottomInsetPx: cB,
             );
-            final double bare = viewportV - f - cT - cB;
+            final double bare = viewportV - cT - cB;
             expect(floored, bare,
                 reason: 'V=$viewportV f=$f cT=$cT cB=$cB: 宽裕视口下地板不应改变值'
                     '（max 取裸代数），保不变式 1/2 零行为变化');

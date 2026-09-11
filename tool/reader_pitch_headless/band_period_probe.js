@@ -24,20 +24,20 @@ const CHROME = process.env.CHROME_PATH
   || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 // Vertical reader CSS, mirroring reader_content_styles.dart:
-//   column-width: max(F, V - mt*vh - mb*vh - F)   (TODO-743 floor)
+//   column-width: max(F, V - mt*vh - mb*vh)   (TODO-743 floor; BUG-2469 去掉了 -F 空带)
 //   column-gap:   22px (ReaderLayoutDefaults.columnGapPx)
 //   padding-top:    mt*vh ; padding-bottom: mb*vh + F (the +F is the reader's bottom reserve)
 //   --page-height = V + O (O=bottomOverlap=22); viewport height = V + O.
 function buildHtml({ V, vw, F }) {
   const O = 22, mt = 2, mb = 2;
-  const colW = `max(${F}px, calc(${V}px - ${mt}vh - ${mb}vh - ${F}px))`;
+  const colW = `max(${F}px, calc(${V}px - ${mt}vh - ${mb}vh))`;
   let s = '';
   for (let i = 0; i < 40000; i++) s += '永';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 html,body{overflow:hidden !important;height:${V + O}px !important;width:${vw}px !important;margin:0 !important;padding:0 !important;writing-mode:vertical-rl !important;}
 body{font-family:serif !important;font-size:${F}px !important;line-height:1.5 !important;box-sizing:border-box !important;
 column-width:${colW} !important;column-gap:22px !important;
-padding-top:calc(${mt}vh) !important;padding-bottom:calc(${mb}vh + ${F}px) !important;padding-left:8px !important;padding-right:8px !important;}
+padding-top:calc(${mt}vh) !important;padding-bottom:calc(${mb}vh) !important;padding-left:8px !important;padding-right:8px !important;}
 div{margin:0 !important;}
 </style></head><body><div>${s}</div></body></html>`;
 }

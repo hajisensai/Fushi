@@ -68,8 +68,14 @@ class ReaderContentStyles {
   // 只该用纯视口高 V。原实现把列高建在含 +O 的 `--page-height` 上 → 列底边落
   // V−cB+(O−F)，字号 F<O(=22) 时漏出 (O−F) 进底栏。这里改用新变量
   // `--reader-viewport-height`(= 纯 V)，与 JS getScrollContext 的 viewportHeight
-  // 成对一致：column-width(CSS) == contentBox(JS) == V−F−cT−cB，pageStep==realPitch
-  // 保持，列底边 = V−F−cB ≤ V−cB（漏 0，且与 F 无关）。
+  // 成对一致：column-width(CSS) == contentBox(JS) == V−mt−mb−cT−cB，pageStep==realPitch
+  // 保持，列底边 = V−mb−cB（漏 0）。
+  //
+  // BUG-2469：padding-bottom 曾再多加一个字号 F（`+ ${fontSize}px`，列高相应
+  // `- ${fontSize}px`）。它是 TODO-734 之前「列高建在 V+O 上」时代的配对项——那时
+  // 列底边 = V−cB+(O−F)，F 用来抵消 +O 的虚高；基准改成纯 V 后 F 失去对象，变成
+  // 列底边与底栏之间一条谁也不占的空带（字号 43 就白扣 43px，页边距设 0 也贴不到
+  // 底）。现在上下 padding 只含页边距 + chrome inset，与连续 / VN 布局同构。
   //
   // 注意：JS 端必须把 viewportHeight 注入为 `--reader-viewport-height` 且
   // fushiReader.viewportHeight = V（见 reader_pagination_scripts.dart 的
@@ -88,7 +94,7 @@ class ReaderContentStyles {
     required double marginBottomVh,
     required int fontSizePx,
   }) =>
-      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${marginTopVh}vh) - var(--reader-margin-bottom, ${marginBottomVh}vh) - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
+      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${marginTopVh}vh) - var(--reader-margin-bottom, ${marginBottomVh}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
 
   /// TODO-1285：每页多列（pageColumns）的单个子列宽度。给定单列时的 content-box 基准
   /// 表达式 [baseContentBoxCss]（横排=宽、竖排=高，均为 CSS calc/max 串），当
@@ -114,7 +120,8 @@ class ReaderContentStyles {
 
   /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
   /// 的 `max(F, calc(...))` 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
-  /// V=视口高，F=字号，mt/mb=上下页边距(px)，cT/cB=chrome 上下 inset(px)。
+  /// V=视口高，F=字号（只作坍塌地板，不再从列高里扣，BUG-2469），mt/mb=上下页边距(px)，
+  /// cT/cB=chrome 上下 inset(px)。
   ///
   /// TODO-743（P0 坍塌地板）：与 CSS 的 `max(${fontSizePx}px, calc(...))` 成对——当
   /// cT + cB + F ≥ V（横屏短边小 + 大字号）时裸 calc 为负，浏览器把 column-width 钳
@@ -133,7 +140,6 @@ class ReaderContentStyles {
         viewportHeightPx -
             marginTopPx -
             marginBottomPx -
-            fontSizePx -
             chromeTopInsetPx -
             chromeBottomInsetPx,
       );
@@ -288,11 +294,11 @@ class ReaderContentStyles {
     // （固定视口帧，margin/border=0 即视口）为基准、裁到**正文内容盒**（= 全 padding：四边各等于
     // body 实际 padding），把滚进留白区的相邻列裁掉；正文在内容盒内侧不受影响，被裁的留白区显示
     // html/body 背景（同色）= 页边距照常空白。四边都裁：竖排消上下露、横排消左右露。padding 四边
-    // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+F+chromeBottom，
+    // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+chromeBottom，
     // 左右=ml/mr vw），裁边恰在列边缘、不切正文。
     final String contentClipCss =
         'inset(calc($marginTopCss + var(--chrome-top-inset, 0px)) $marginRightCss '
-        'calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) $marginLeftCss)';
+        'calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) $marginLeftCss)';
     // TODO-729：column-gap 固定为常量（= 安卓 calc(0vh + 22px)）。它只是相邻列之间
     // 的恒定空隙，**不再**承载 margin / fontSize / chrome inset —— 那些 inset 全部由
     // padding 承载（横排在 padding 左右 + perpendicular 的 padding-top/bottom；竖排在
@@ -309,7 +315,8 @@ class ReaderContentStyles {
     //  - 横排：宽 = page-width − 左右 padding(${ml}vw + ${mr}vw)。perpendicular 的
     //    padding-top/bottom(含 chrome inset)不影响横向列宽。
     //  - 竖排：高 = reader-viewport-height(=纯 V) − 上下 padding(${mt}vh + ${mb}vh +
-    //    fontSize + chrome top/bottom inset)，与 padding-top/padding-bottom 逐项对应。
+    //    chrome top/bottom inset)，与 padding-top/padding-bottom 逐项对应（BUG-2469：
+    //    不再多扣一个字号）。
     //    TODO-734：基准必须是纯视口高 V（--reader-viewport-height），不是含
     //    +bottomOverlap 的 --page-height（那是图片虚高用），否则列底边比视口底高
     //    (O−F)，字号 F<22 漏字进底栏。与 JS getScrollContext 的 viewportHeight 成对。
@@ -953,7 +960,7 @@ body {
   /* TODO-792 根因修复：多列容器(body)高度必须用纯视口高 V(--reader-viewport-height)，不是
      含 +bottomOverlap 的 --page-height(V+O)。html 仍 V+O(滚动/图片虚高用)，但 body 作为
      multicol 容器若是 V+O，其 content-box inline 高 = (V+O)−padding 比 column-width 基准
-     (纯 V−padding−F = verticalColumnWidthCss) 大一个 O → 浏览器把单列 used 高从 793 拉伸到
+     (纯 V−padding = verticalColumnWidthCss) 大一个 O → 浏览器把单列 used 高从 793 拉伸到
      815、相邻列顶差 = 真实列周期 837 > 名义 pageStep 815 → ① 页间翻页累积漂移 ② 页内 column-fill
      在溢出列上沿 inline(竖直)轴逐列下移 = 整体往下/斜的平行四边形。容器高对齐纯 V 后列不再拉伸、
      used 高回 793、realPitch 回 815 = 名义 pageStep，两症同消(故同时 revert getScrollContext 的
@@ -972,7 +979,7 @@ body {
   column-fill: auto !important;
   padding: $paddingCss !important;
   padding-top: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
-  padding-bottom: calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  padding-bottom: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
   /* TODO-810 + TODO-792：clip-path 以 body 边框盒（border-box·margin/border=0 即固定视口帧）为
      基准裁到**正文内容盒**（四边各 = body 实际 padding），一举两用：① 裁掉 notch/状态栏安全带里
      滚入的上一页文字（原 TODO-810 只裁 chrome inset 那一截）；② 裁掉分页模式因 viewport > 单列
@@ -1012,7 +1019,7 @@ html::before {
   border-color: ${colors.backgroundColor} !important;
   border-top-width: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
   border-right-width: $marginRightCss !important;
-  border-bottom-width: calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  border-bottom-width: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
   border-left-width: $marginLeftCss !important;
 }''';
   }
