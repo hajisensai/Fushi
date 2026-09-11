@@ -14,6 +14,12 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
+    show VideoMetadataLookup;
+import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
+import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
@@ -40,6 +46,7 @@ part 'fushi_sync_server/pairing.part.dart';
 part 'fushi_sync_server/lookup.part.dart';
 part 'fushi_sync_server/library.part.dart';
 part 'fushi_sync_server/video.part.dart';
+part 'fushi_sync_server/video_metadata.part.dart';
 part 'fushi_sync_server/sync_state.part.dart';
 part 'fushi_sync_server/webdav.part.dart';
 
@@ -547,6 +554,12 @@ class FushiSyncServer {
     if (reqPath == '/api/library/audiobooks' ||
         reqPath.startsWith('/api/library/audiobooks/')) {
       return _handleLibraryAudiobooks(request, method, reqPath);
+    }
+    // 视频刮削元数据（7c/7a/7b），必须排在 videos 前缀判定之前（互不为前缀，但
+    // 放一起读）；host 不实现 VideoMetadataHost → 404。
+    if (reqPath == '/api/library/metadata' ||
+        reqPath.startsWith('/api/library/metadata/')) {
+      return _handleLibraryVideoMetadata(request, method, reqPath);
     }
     if (reqPath == '/api/library/videos' ||
         reqPath.startsWith('/api/library/videos/')) {

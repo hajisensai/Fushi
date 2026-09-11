@@ -172,7 +172,8 @@ class VideoSourceScrapeCoordinator
     VideoSourceScrapeProgressCallback? onProgress,
   }) =>
       scrapeSource(
-        work.source,
+        // 下载导入器给的单元恒带来源；无来源的元数据写入目标不该走到真刮这里。
+        ArgumentError.checkNotNull(work.source, 'work.source'),
         cancellationToken:
             cancellationToken ?? VideoSourceScrapeCancellationToken(),
         onProgress: onProgress ?? (_) {},
@@ -185,7 +186,7 @@ class VideoSourceScrapeCoordinator
 
   @override
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
-    required SourceLibraryRow source,
+    SourceLibraryRow? source,
     required String workTitle,
     String? workStableKey,
     required String query,
@@ -197,9 +198,12 @@ class VideoSourceScrapeCoordinator
     // 作品可能已不在当前计划里（文件改名/移动/删除后标题漂移，BUG-1998）。
     // 搜索只需要「电影还是剧集」这一个参数：拿不到就双形态各搜一次再按身份
     // 去重合并，绝不让只读的候选搜索因为计划回查失败而整个抛异常。
-    final VideoSourceScrapeWork? work = await _plannedWorkOrNull(
-        source, workTitle,
-        workStableKey: workStableKey);
+    // [source] 为 null（互联客户端代 host 刮削，7b：本机没有这部作品的来源库）
+    // 时同样走双形态搜索，provider 取全局主源。
+    final VideoSourceScrapeWork? work = source == null
+        ? null
+        : await _plannedWorkOrNull(source, workTitle,
+            workStableKey: workStableKey);
     final List<VideoMetadataLookup> explicit = parseExplicitVideoMetadataIds(
       <String>[trimmed],
       fallbackMediaKind:
@@ -210,7 +214,8 @@ class VideoSourceScrapeCoordinator
         RegExp(r'^(?:mal|myanimelist|tmdb|anidb|aid)\s*[:=]',
                 caseSensitive: false)
             .hasMatch(trimmed);
-    final VideoMetadataProviderKind selected = await _sourceProvider(source);
+    final VideoMetadataProviderKind selected =
+        source == null ? primaryProvider : await _sourceProvider(source);
     final List<VideoMetadataProviderKind> chain = _providerChain(selected);
     if (identityInput) {
       final VideoMetadataLookup? lookup =
@@ -281,6 +286,14 @@ class VideoSourceScrapeCoordinator
       if (candidates.isNotEmpty) break;
     }
     return candidates;
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWorkForLookup(VideoMetadataLookup lookup) {
+    final VideoMetadataProvider? provider =
+        _manualSearchProvider(lookup.provider);
+    if (provider == null) return Future<VideoMetadataWork?>.value(null);
+    return provider.fetchWork(lookup);
   }
 
   @override

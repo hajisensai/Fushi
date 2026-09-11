@@ -188,9 +188,11 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
         '「这条路径上的图变了」，不驱逐就会在清理后继续画一张已不存在的封面。',
   ),
   'lib/src/pages/implementations/home_video_page.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '库页手选/重取封面时派生 coversDir 做来源准入与指针更新，字节落盘由被调用的'
-        '抽帧/服务侧完成，页面自身不写盘。',
+    CoverDeriverRole.writesViaService,
+    '库页手选/重取封面时派生 coversDir 做来源准入与指针更新，抽帧那条仍由服务侧'
+        '落盘；BUG-2463 起多一条「把 host 下发的封面镜像到 remote_videos/」，'
+        'bookUid 稳定 ⇒ 重下即同路径覆盖，故字节经 '
+        'MediaCoverService.applyCoverBytes 收口（写盘 + 驱逐同一函数）。',
   ),
   '../packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart': (
     CoverDeriverRole.rawWritesNonCoverAssets,

@@ -50,6 +50,10 @@ import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
+    show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -87,6 +91,8 @@ import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/video_metadata_manifest.dart';
+import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -113,7 +119,9 @@ import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
-    show showVideoSourceScrapeManualBindingDialog;
+    show
+        showVideoMetadataCandidateSearchDialog,
+        showVideoSourceScrapeManualBindingDialog;
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -2265,33 +2273,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ref.read(interconnectDownloadManagerProvider);
     if (manager.isRunning(video.id)) return;
 
-    final File dest = await _remoteDownloadDestination(video);
-    // TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
-    // 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
-    // bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
-    // 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
-    Future<void> run(
-      File target, {
-      void Function(double progress)? onProgress,
-    }) =>
-        source.downloadRemoteVideo(video.id, target, onProgress: onProgress);
-    // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
-    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
-    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
-    final RemoteVideoClient? client = _remoteVideoClient;
-    final InterconnectDownloadComplete onComplete = client != null
-        ? (File downloaded) =>
-            _registerDownloadedVideo(client, video, downloaded)
-        : (File downloaded) =>
-            _registerDownloadedCloudVideo(cloud!, video, downloaded);
+    final Future<void> Function() start =
+        await _prepareRemoteDownload(video, source, manager);
     try {
-      await manager.startVideoDownload(
-        id: video.id,
-        title: video.title,
-        dest: dest,
-        run: run,
-        onComplete: onComplete,
-      );
+      await start();
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
@@ -2336,6 +2321,123 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
   }
 
+  /// 把一条远端视频的下载装配成**可延迟启动**的启动器：目标路径、传输原语、收尾
+  /// 登记全在此刻解析，启动器本身不再碰 `ref` / 本页 State——合集批下载
+  /// （[_downloadRemoteMembers]）串行排队时，轮到后面的成员起跑时本页可能早已 dispose。
+  ///
+  /// TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
+  /// 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
+  /// bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
+  /// 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
+  Future<Future<void> Function()> _prepareRemoteDownload(
+    RemoteVideoInfo video,
+    RemoteVideoSource source,
+    InterconnectDownloadManager manager,
+  ) async {
+    final File dest = await _remoteDownloadDestination(video);
+    Future<void> run(
+      File target, {
+      void Function(double progress)? onProgress,
+    }) =>
+        source.downloadRemoteVideo(video.id, target, onProgress: onProgress);
+    // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
+    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
+    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
+    final RemoteVideoClient? client = _remoteVideoClient;
+    final InterconnectDownloadComplete onComplete = client != null
+        ? (File downloaded) =>
+            _registerDownloadedVideo(client, video, downloaded)
+        : (File downloaded) =>
+            _registerDownloadedCloudVideo(cloud!, video, downloaded);
+    return () => manager.startVideoDownload(
+          id: video.id,
+          title: video.title,
+          dest: dest,
+          run: run,
+          onComplete: onComplete,
+        );
+  }
+
+  /// 合集整体下载（#6）：把 [collection] 里**只在对端**的成员 [members] 串行排进
+  /// [InterconnectDownloadManager.startBatch]。成员清单来自本地
+  /// `media_collection_items`（合集清单经 `/api/library/collections` 跨端同步，
+  /// 客户端本地必然有 host 侧成员行）+ 共享远端视频清单，不需要新 wire 端点。
+  /// 已在跑的成员跳过；没有可下载成员时明确提示而不是静默。
+  Future<void> _downloadRemoteMembers(
+    MediaCollectionRow collection,
+    List<RemoteVideoInfo> members,
+  ) async {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    if (source == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_video_unavailable)),
+      );
+      return;
+    }
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    final String batchId =
+        InterconnectDownloadManager.collectionBatchId(collection.id);
+    if (manager.isBatchRunning(batchId)) return;
+    final List<RemoteVideoInfo> pending = <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in members)
+        if (!manager.isRunning(video.id)) video,
+    ];
+    if (pending.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_collection_download_nothing)),
+      );
+      return;
+    }
+    // 先把整批启动器解析完再起跑：启动器不依赖本页 State（见 _prepareRemoteDownload）。
+    final List<Future<void> Function()> starters = <Future<void> Function()>[
+      for (final RemoteVideoInfo video in pending)
+        await _prepareRemoteDownload(video, source, manager),
+    ];
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            t.remote_collection_download_started(count: pending.length),
+          ),
+        ),
+      );
+    }
+    final InterconnectDownloadBatch batch = await manager.startBatch(
+      id: batchId,
+      title: collection.name,
+      starters: starters,
+    );
+    if (!mounted) return;
+    _refresh();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(t.remote_collection_download_done(
+          ok: batch.completed,
+          failed: batch.failed,
+        )),
+      ),
+    );
+  }
+
+  /// 合集卡右键「下载远端集」：先按详情页同一路径解析成员槽，取远端子集交给
+  /// [_downloadRemoteMembers]。
+  Future<void> _downloadRemoteCollection(MediaCollectionRow collection) async {
+    final CollectionRemoteContext? remote = _collectionRemoteContext();
+    if (remote == null) return;
+    final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
+      repository: widget.repo,
+      collectionId: collection.id,
+      loadRemoteVideos: remote.loadRemoteVideos,
+    );
+    await _downloadRemoteMembers(collection, <RemoteVideoInfo>[
+      for (final CollectionEpisodeSlot slot in slots)
+        if (slot.remote case final RemoteVideoInfo info) info,
+    ]);
+  }
+
   /// 把刚下载到本机的对端视频 [dest] 登记成本地 [VideoBooksCompanion] 行，使其出现在
   /// 视频列表（TODO-820）。bookUid 直接取远端稳定 [RemoteVideoInfo.id]——与
   /// [dedupeRemoteVideos] 的去重键一致，故 upsert 语义下重复下载同一视频只覆盖同一行、
@@ -2343,9 +2445,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///
   /// 字幕：host 字幕原语 [RemoteVideoClient.getRemoteVideoSubtitle] 就绪，[video]
   /// 标记 [RemoteVideoInfo.hasSubtitle] 时下载外挂字幕落地、解析成 cue 一并写入，使
-  /// 下载来的视频可查词/句导航。封面：host 无封面文件下载原语（仅 coverUrl/coverPath
-  /// 元数据），故退回本地抽帧 [extractVideoCover]（桌面 ffmpeg；移动端无则留空占位），
-  /// 与本地导入一致。
+  /// 下载来的视频可查词/句导航。封面：host 下发 [RemoteVideoInfo.coverUrl]（`/cover`
+  /// 端点，含刮削封面），client 具备 [RemoteCoverFetcher] 能力时先拉 host 封面落盘；
+  /// 无 coverUrl / 拉取失败再退回本地抽帧 [extractVideoCover]（桌面 ffmpeg；移动端
+  /// 无则留空占位）。此前这里无条件抽帧，host 上刮好的封面下载后变成一帧截图（7c）。
+  ///
+  /// `importedAt` / `completedAt` 镜像 host 值（旧 host 不带 importedAt 时才用本机
+  /// now）：远端占位卡按 host 的 importedAt 排序、按 host 的 completedAt 画已看完角标，
+  /// 下载落地后同一条目不该在「按导入时间」里跳位、也不该丢掉已看完标记。
   Future<void> _registerDownloadedVideo(
     RemoteVideoClient client,
     RemoteVideoInfo video,
@@ -2363,7 +2470,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       embeddedSubtitleTrack: subtitle.source == null
           ? const Value<int?>(0)
           : const Value<int?>(null),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      importedAt:
+          Value(video.importedAt ?? DateTime.now().millisecondsSinceEpoch),
+      completedAt: Value<DateTime?>(
+        video.completedAt == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(video.completedAt!),
+      ),
     ));
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
@@ -2386,10 +2499,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         remoteTombstones: video.tagTombstones,
       );
     }
-    // 封面抽帧（extractVideoCover 走 ffmpeg 子进程，最长 30s）是慢的可选增强，绝不能
-    // 挡在建行前——否则用户「下载完」要等到抽帧结束才看到视频。这里建行已落库，封面
-    // 单独抽好后再 updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，
-    // 移动端无 ffmpeg 时留空占位，与本地导入一致）。
+    // 封面（先 host 封面、再抽帧）是慢的可选增强，绝不能挡在建行前——否则用户
+    // 「下载完」要等到封面结束才看到视频。这里建行已落库，封面单独落好后再
+    // updateCover 回写并刷新一次（extractVideoCover 内部已吞失败返 null，移动端无
+    // ffmpeg 时留空占位，与本地导入一致）。
     final VideoScrapeOperationLease? coverLease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (coverLease == null) return;
@@ -2400,10 +2513,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             bookUid,
           );
           if (coverMetaStore == null) return false;
-          final String? coverPath = await extractVideoCover(
-            videoPath: dest.path,
-            bookUid: bookUid,
-          );
+          final String? hostCover =
+              await _fetchHostCoverToDisk(client, video, bookUid);
+          final String? coverPath = hostCover ??
+              await extractVideoCover(
+                videoPath: dest.path,
+                bookUid: bookUid,
+              );
           if (coverPath == null) return false;
           await widget.repo.updateCover(bookUid, coverPath);
           return _commitAutoFrameCover(coverMetaStore, bookUid);
@@ -2412,6 +2528,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (wroteCover && mounted) _refresh();
     } finally {
       coverLease.release();
+    }
+  }
+
+  /// 把 host 下发的封面（[RemoteVideoInfo.coverUrl]，`/cover` 端点）拉到
+  /// `remote_videos/<uid>.cover.jpg`，返回落盘路径；无 coverUrl / client 不具备
+  /// [RemoteCoverFetcher] 能力 / 拉取失败 / 空响应一律返回 null 让调用方退回抽帧。
+  Future<String?> _fetchHostCoverToDisk(
+    RemoteVideoClient client,
+    RemoteVideoInfo video,
+    String bookUid,
+  ) async {
+    final String? coverUrl = video.coverUrl;
+    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(client);
+    if (coverUrl == null || coverUrl.isEmpty || fetcher == null) return null;
+    try {
+      final Uint8List bytes = await fetcher.fetchRemoteCover(coverUrl);
+      if (bytes.isEmpty) return null;
+      final File coverDest = await _remoteCoverDestination(bookUid);
+      // 经收口写：bookUid 稳定 ⇒ 同一远端视频重下就是**同路径覆盖**，裸
+      // writeAsBytes 不驱逐解码缓存，重下后照旧画旧封面（BUG-1118 的回归形态）。
+      // applyCoverBytes 把「落稳 rename + 双键 evict」收在一个函数里。
+      await MediaCoverService.applyCoverBytes(
+        bytes: bytes,
+        destPath: coverDest.path,
+      );
+      return coverDest.path;
+    } catch (e) {
+      debugPrint('[home-video] host video cover download failed: $e');
+      return null;
     }
   }
 
@@ -2455,7 +2600,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           );
           if (coverMetaStore == null) return false;
           try {
-            final File coverDest = await _cloudCoverDestination(bookUid);
+            final File coverDest = await _remoteCoverDestination(bookUid);
             if (await cloud.getRemoteVideoCover(bookUid, coverDest)) {
               await widget.repo.updateCover(bookUid, coverDest.path);
               return _commitAutoFrameCover(coverMetaStore, bookUid);
@@ -2512,7 +2657,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 云视频封面下载落点：`<documents>/remote_videos/<safeUid>.cover.jpg`（与视频落点
   /// 同目录，重复下载覆盖同一副本）。
-  Future<File> _cloudCoverDestination(String bookUid) async {
+  /// 远端（互联 host / 云盘）封面的本机落盘路径。
+  Future<File> _remoteCoverDestination(String bookUid) async {
     final Directory dir = await AppPaths.remoteVideosDirectory();
     await dir.create(recursive: true);
     final String safeUid = safeWindowsFileName(bookUid);
@@ -2555,7 +2701,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Directory dir = await AppPaths.videoSubtitlesDirectory();
     await dir.create(recursive: true);
     // BUG-1125：旧手写字符集漏了反斜杠（`[\/:*?"<>|]` 只转义了 `/`），id 含 `\`
-    // 时字幕会落到与封面（[_cloudCoverDestination] 走全集）不同的目录。统一走
+    // 时字幕会落到与封面（[_remoteCoverDestination] 走全集）不同的目录。统一走
     // 共享 helper 根修。
     final String safeUid = safeWindowsFileName(video.id);
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
@@ -6517,7 +6663,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           onPressed: () => _openCollectionSubtitles(collection),
-        )
+        ),
+        // 合集整体下载（#6）：只在有远端源时出现；成员全在本机时点了会明确提示
+        // 「没有可下载的远端集」。
+        if (_collectionRemoteContext() != null)
+          DialogListAction(
+            label: t.remote_collection_download_members,
+            icon: Icons.cloud_download_outlined,
+            onPressed: () => unawaited(_downloadRemoteCollection(collection)),
+          ),
+        // 互联刮削（7a / 7b）：只在互联源上出现。
+        if (_metadataBackend != null) ...<DialogListAction>[
+          DialogListAction(
+            label: t.remote_collection_scrape_on_host,
+            icon: Icons.cloud_sync_outlined,
+            onPressed: () => unawaited(_scrapeCollectionOnHost(collection)),
+          ),
+          if (widget.scrapeTaskController != null)
+            DialogListAction(
+              label: t.remote_collection_scrape_push_to_host,
+              icon: Icons.cloud_upload_outlined,
+              onPressed: () => unawaited(_scrapeCollectionForHost(collection)),
+            ),
+        ],
       ],
     );
   }
@@ -6720,6 +6888,231 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         startIndex: index,
       )),
       coverFetcher: remoteCoverFetcherFor(_remoteVideoClient),
+      downloadMembers: _downloadRemoteMembers,
+      scrapeOnHost:
+          _metadataBackend == null ? null : _scrapeCollectionOnHost,
+      scrapeForHost: _metadataBackend == null ||
+              widget.scrapeTaskController == null
+          ? null
+          : _scrapeCollectionForHost,
+    );
+  }
+
+  // ── 互联刮削元数据（7a / 7b）────────────────────────────────────────────
+  // `docs/specs/2026-09-12-interconnect-scrape-metadata.md` §3。
+
+  /// 元数据端点只在互联 backend 上有；云盘源没有。
+  InterconnectSyncBackend? get _metadataBackend {
+    final RemoteVideoClient? client = _remoteVideoClient;
+    return client is InterconnectSyncBackend ? client : null;
+  }
+
+  static VideoMetadataWorkKey _metadataKeyOf(MediaCollectionRow collection) =>
+      VideoMetadataWorkKey.collection(
+        name: collection.name,
+        collectionType: collection.collectionType,
+      );
+
+  /// 7a：候选搜索与重刮都在 host 上跑（host 自己的 provider / 主源 / 资料语言），
+  /// 客户端只负责让用户选身份，回来把 host 落好的作品条目落进本地并刷新。
+  Future<void> _scrapeCollectionOnHost(MediaCollectionRow collection) async {
+    final InterconnectSyncBackend? backend = _metadataBackend;
+    if (backend == null) return;
+    VideoMetadataWorkKey key = _metadataKeyOf(collection);
+    final VideoSourceScrapeConfirmationCandidate? candidate =
+        await showVideoMetadataCandidateSearchDialog(
+      context: context,
+      workTitle: collection.name,
+      search: (String query) async => <VideoSourceScrapeConfirmationCandidate>[
+        for (final VideoMetadataCandidateEntry c
+            in await backend.searchRemoteVideoMetadataCandidates(
+          key: key,
+          query: query,
+        ))
+          VideoSourceScrapeConfirmationCandidate(lookup: c.lookup, work: c.work),
+      ],
+    );
+    if (candidate == null || !mounted) return;
+    FushiToast.show(
+      msg: t.collection_rescrape_started,
+      severity: ToastSeverity.info,
+    );
+    try {
+      VideoMetadataWriteResult result =
+          await backend.requestRemoteVideoMetadataScrape(
+        key: key,
+        lookup: candidate.lookup,
+      );
+      // BUG-2433 同款：合集在 host 计划里是 N 个独立作品时让用户选，不默选第一个。
+      if (result.conflict == VideoMetadataConflict.ambiguousWork) {
+        if (!mounted) return;
+        final VideoMetadataWorkKey? picked =
+            await _pickRemoteWorkKey(result.ambiguousWorks);
+        if (picked == null) return;
+        key = picked;
+        result = await backend.requestRemoteVideoMetadataScrape(
+          key: key,
+          lookup: candidate.lookup,
+        );
+      }
+      await _finishRemoteMetadataWrite(result);
+    } on RemoteVideoMetadataUnsupported {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.remote_collection_scrape_unavailable,
+        severity: ToastSeverity.warning,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.scrapeCollectionOnHost', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
+  /// 7b：本机刮削链搜候选、拉完整资料，再 PUT 到 host（host 字段锁保留旧值；
+  /// host 已绑不同身份时先问用户是否替换——手动指定 ID 不静默换源）。
+  Future<void> _scrapeCollectionForHost(MediaCollectionRow collection) async {
+    final InterconnectSyncBackend? backend = _metadataBackend;
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (backend == null || controller == null) return;
+    final VideoMetadataWorkKey key = _metadataKeyOf(collection);
+    final VideoSourceScrapeConfirmationCandidate? candidate =
+        await showVideoSourceScrapeManualBindingDialog(
+      context: context,
+      controller: controller,
+      workTitle: collection.name,
+    );
+    if (candidate == null || !mounted) return;
+    FushiToast.show(
+      msg: t.collection_rescrape_started,
+      severity: ToastSeverity.info,
+    );
+    try {
+      final VideoMetadataWork work =
+          await controller.fetchWorkForLookup(candidate.lookup) ??
+              candidate.work;
+      VideoMetadataWriteResult result = await backend.putRemoteVideoMetadata(
+        key: key,
+        lookup: candidate.lookup,
+        work: work,
+      );
+      if (result.conflict == VideoMetadataConflict.identity) {
+        final VideoMetadataLookup? current = result.currentLookup;
+        if (!mounted) return;
+        final bool? replace = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog(
+            title: Text(collection.name),
+            content: Text(t.remote_collection_scrape_identity_conflict(
+              provider: current?.provider.name.toUpperCase() ?? '?',
+              id: current?.externalId ?? '?',
+            )),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_replace),
+              ),
+            ],
+          ),
+        );
+        if (replace != true) return;
+        result = await backend.putRemoteVideoMetadata(
+          key: key,
+          lookup: candidate.lookup,
+          work: work,
+          replaceIdentity: true,
+        );
+      }
+      await _finishRemoteMetadataWrite(result);
+    } on RemoteVideoMetadataUnsupported {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.remote_collection_scrape_unavailable,
+        severity: ToastSeverity.warning,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.scrapeCollectionForHost', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+    }
+  }
+
+  /// host 写操作的收尾：成功则把 host 回传的作品条目落本地（客户端立刻看到，
+  /// 不等下一轮同步）并刷新；可解释拒绝给对应提示。
+  Future<void> _finishRemoteMetadataWrite(
+    VideoMetadataWriteResult result,
+  ) async {
+    final VideoMetadataWorkEntry? entry = result.entry;
+    if (entry != null) {
+      final RemoteVideoMetadataApplyResult applied =
+          await applyRemoteVideoMetadata(
+        ref.read(appProvider).database,
+        <VideoMetadataWorkEntry>[entry],
+      );
+      if (!mounted) return;
+      _refresh();
+      // 本地被跳过（本地资料不比 host 旧 / 清理中）时不谎报「已更新」。
+      FushiToast.show(
+        msg: applied.applied > 0
+            ? t.remote_collection_scrape_done
+            : t.collection_rescrape_not_planned,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    if (!mounted) return;
+    FushiToast.show(
+      msg: result.conflict == VideoMetadataConflict.notPlanned
+          ? t.remote_collection_scrape_failed
+          : t.collection_rescrape_failed,
+      severity: ToastSeverity.error,
+    );
+  }
+
+  /// host 报合集对应多个作品单元时让用户选一个（标题取远端清单里该 bookUid 的
+  /// 标题，取不到退回 bookUid）。
+  Future<VideoMetadataWorkKey?> _pickRemoteWorkKey(
+    List<VideoMetadataWorkKey> works,
+  ) async {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    final Map<String, String> titles = <String, String>{};
+    if (source != null) {
+      try {
+        for (final RemoteVideoInfo v in await _remoteCache.read(
+          sourceId: source.remoteLibrarySourceId,
+          key: RemoteLibraryCacheKeys.videos,
+          fetch: source.listRemoteVideos,
+        )) {
+          titles[v.id] = v.title;
+        }
+      } catch (_) {
+        // 取不到标题就显示 bookUid，不阻断选择。
+      }
+    }
+    if (!mounted) return null;
+    return showAppDialog<VideoMetadataWorkKey>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(t.remote_collection_scrape_pick_work),
+        children: <Widget>[
+          for (final VideoMetadataWorkKey k in works)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, k),
+              child: Text(titles[k.bookUid] ?? k.bookUid ?? k.toString()),
+            ),
+        ],
+      ),
     );
   }
 

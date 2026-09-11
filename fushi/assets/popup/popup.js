@@ -6186,7 +6186,12 @@ function __fushiPopupClick(e) {
     // 是顶层节点，当年正是这个毛病。
     if (target?.closest('.grammar-tooltip')) return;
     if (target?.closest('summary')) return;
-    if (target?.closest('.glossary-content')) {
+    // 可点词查词的文本节点：词典释义正文 .glossary-content，以及汉字卡片的读音/stats
+    // 值（.kanji-card-value）与释义（.kanji-card-meanings）。汉字卡片正文与释义正文
+    // 同语义（点哪个字从哪个字扫词），selection.js 本就不分容器；此前它们落到下面的
+    // .kanji-card-section 卡片分支裸 return，点了没反应。大字 .kanji-card-char 自带
+    // onLinkClick + stopPropagation，不经这里。
+    if (target?.closest('.glossary-content, .kanji-card-value, .kanji-card-meanings')) {
         // BUG-767：glossary 内的锚点（MDX 原始 HTML 交叉引用/外链/发音）统一走
         // handleGlossaryAnchorClick——preventDefault 阻止默认导航（否则结果框架被导走→白屏），
         // 内部引用转 onLinkClick 重查。结构化内容链接自带 onclick + stopPropagation，永不冒泡到此。

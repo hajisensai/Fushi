@@ -263,13 +263,14 @@ class FakeElement {
   }
 
   closest(selector) {
-    if (!selector.startsWith('.')) {
+    // Supports a comma-separated list of simple class selectors only.
+    const classNames = selector.split(',').map((s) => s.trim());
+    if (classNames.some((s) => !s.startsWith('.'))) {
       return null;
     }
-    const className = selector.slice(1);
     let element = this;
     while (element) {
-      if (element.classList?.contains(className)) {
+      if (classNames.some((s) => element.classList?.contains(s.slice(1)))) {
         return element;
       }
       element = element.parentElement;
@@ -970,6 +971,62 @@ function testTapInKanjiSectionGapKeepsLayer() {
   const result = fireDocumentClick(context, sectionGap);
   assert.equal(result.tapOutsideCalls, 0,
     'tapping the kanji-card-section gap/margin must NOT fire tapOutside (layer kept)');
+}
+
+// (6) Kanji card BODY text (readings / stats values / meanings) is lookup text
+// with the same semantics as .glossary-content: tapping it must select a word
+// (fushiSelection.selectText → textSelected), not drop into the card-root
+// branch that only keeps the layer. DOM mirrors createKanjiReadingRow and
+// buildKanjiCards: body > .kanji-card-section > .kanji-card > .kanji-card-row >
+// .kanji-card-value, and .kanji-card > .kanji-card-meanings.
+function buildKanjiCardBody(context) {
+  const section = new FakeElement('div');
+  section.classList.add('kanji-card-section');
+  const kanjiCard = new FakeElement('div');
+  kanjiCard.classList.add('kanji-card');
+  const row = new FakeElement('div');
+  row.classList.add('kanji-card-row');
+  const label = new FakeElement('span');
+  label.classList.add('kanji-card-label');
+  const value = new FakeElement('span');
+  value.classList.add('kanji-card-value');
+  const meanings = new FakeElement('div');
+  meanings.classList.add('kanji-card-meanings');
+  context.document.body.appendChild(section);
+  section.appendChild(kanjiCard);
+  kanjiCard.appendChild(row);
+  row.appendChild(label);
+  row.appendChild(value);
+  kanjiCard.appendChild(meanings);
+  return {label, value, meanings};
+}
+
+function testTapOnKanjiCardValueSelectsWord() {
+  const context = loadPopup();
+  const {value, meanings, label} = buildKanjiCardBody(context);
+  for (const node of [value, meanings]) {
+    const result = fireDocumentClick(context, node);
+    assert.equal(result.selectCalls, 1,
+      'tapping kanji card reading/meaning text must call selectText (tap-to-lookup)');
+    assert.equal(result.tapOutsideCalls, 0,
+      'kanji card body text is inside the card: no tapOutside');
+  }
+  // The label column ("On", "Kun", ...) is UI chrome, not lookup text.
+  const labelResult = fireDocumentClick(context, label);
+  assert.equal(labelResult.selectCalls, 0,
+    'kanji card label column must not select text');
+  assert.equal(labelResult.tapOutsideCalls, 0,
+    'kanji card label is still inside the card root: layer kept');
+}
+
+function testTapOnKanjiCardValueWithChildFiresTapOutside() {
+  const context = loadPopup();
+  const {value} = buildKanjiCardBody(context);
+  const result = fireDocumentClick(context, value, 50, 50, {hasChild: true});
+  assert.equal(result.tapOutsideCalls, 1,
+    'with a child popup, tapping kanji card text closes descendants first');
+  assert.equal(result.selectCalls, 0,
+    'with a child popup, kanji card text must not also select a word');
 }
 
 // ── TODO-869：父弹窗有子弹窗时，点卡片本体也得发 tapOutside 关后代层 ───────────
@@ -2349,6 +2406,8 @@ testTapOnEntryCardWhitespaceKeepsLayer();
 testTapOnPopupBackgroundFiresTapOutside();
 testTapInsideKanjiCardKeepsLayer();
 testTapInKanjiSectionGapKeepsLayer();
+testTapOnKanjiCardValueSelectsWord();
+testTapOnKanjiCardValueWithChildFiresTapOutside();
 testEntryWhitespaceWithChildFiresTapOutside();
 testEntryWhitespaceWithoutChildKeepsLayer();
 testKanjiSectionWhitespaceWithChildFiresTapOutside();

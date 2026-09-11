@@ -51,6 +51,42 @@ class InterconnectDownloadTask {
   }
 }
 
+/// 一批互联下载（合集整体下载）的进度快照。成员任务本身仍各自记在
+/// [InterconnectDownloadManager.tasks] 里；批只记「排了几个、完成几个、失败几个」。
+@immutable
+class InterconnectDownloadBatch {
+  const InterconnectDownloadBatch({
+    required this.id,
+    required this.title,
+    required this.total,
+    this.completed = 0,
+    this.failed = 0,
+  });
+
+  /// 批键（合集用 [InterconnectDownloadManager.collectionBatchId]）。
+  final String id;
+
+  /// 展示标题（合集名）。
+  final String title;
+
+  final int total;
+  final int completed;
+  final int failed;
+
+  int get finished => completed + failed;
+  bool get isRunning => finished < total;
+
+  InterconnectDownloadBatch copyWith({int? completed, int? failed}) {
+    return InterconnectDownloadBatch(
+      id: id,
+      title: title,
+      total: total,
+      completed: completed ?? this.completed,
+      failed: failed ?? this.failed,
+    );
+  }
+}
+
 /// 执行一次实际下载到 [dest] 的原语（注入，便于测试与解耦具体 client）。
 /// [onProgress] 上报 0..1 进度。
 typedef InterconnectDownloadRunner = Future<void> Function(
@@ -82,8 +118,63 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// 不同值域，再隔一个域前缀）。
   static String srtAudiobookTaskId(String identity) => 'srt:$identity';
 
+  /// 合集整体下载的批键（本地 `media_collections.id`）。
+  static String collectionBatchId(int collectionId) =>
+      'collection:$collectionId';
+
   final Map<String, InterconnectDownloadTask> _tasks =
       <String, InterconnectDownloadTask>{};
+
+  final Map<String, InterconnectDownloadBatch> _batches =
+      <String, InterconnectDownloadBatch>{};
+
+  /// 取某批快照（无则 null）。
+  InterconnectDownloadBatch? batchFor(String id) => _batches[id];
+
+  /// 某批是否还在跑（UI 决定合集卡是否显示批进度）。
+  bool isBatchRunning(String id) => _batches[id]?.isRunning ?? false;
+
+  /// **串行**跑一批下载（合集整体下载）。每个 [starters] 项自己调
+  /// [startVideoDownload] / [startBookDownload]（目标路径、传输原语、收尾登记都
+  /// 由调用方在排队前解析好，启动器不再依赖页面 State——页面 dispose 后批照跑）。
+  ///
+  /// 串行是有意的：互联 host 是单台设备、客户端多为移动端，同时开 N 条 Range 流
+  /// 只会互抢带宽并让每条都看起来卡住；成员失败不中断后续成员，失败计入批快照
+  /// （成员自己的失败原因仍在其 [InterconnectDownloadTask.error]）。
+  /// 同 [id] 已在跑则忽略重复调用，返回当前批。
+  Future<InterconnectDownloadBatch> startBatch({
+    required String id,
+    required String title,
+    required List<Future<void> Function()> starters,
+  }) async {
+    final InterconnectDownloadBatch? existing = _batches[id];
+    if (existing != null && existing.isRunning) return existing;
+    _batches[id] = InterconnectDownloadBatch(
+      id: id,
+      title: title,
+      total: starters.length,
+    );
+    _notify();
+    for (final Future<void> Function() start in starters) {
+      try {
+        await start();
+        _updateBatch(id, completed: 1);
+      } catch (_) {
+        _updateBatch(id, failed: 1);
+      }
+    }
+    return _batches[id]!;
+  }
+
+  void _updateBatch(String id, {int completed = 0, int failed = 0}) {
+    final InterconnectDownloadBatch? batch = _batches[id];
+    if (batch == null) return;
+    _batches[id] = batch.copyWith(
+      completed: batch.completed + completed,
+      failed: batch.failed + failed,
+    );
+    _notify();
+  }
 
   /// 已结束（completed/failed）任务的**完成顺序**，用于有界保留（BUG-1561）。
   /// Dart 的 Map 迭代序是首次插入序，覆写同 key 不会把它挪到末尾，所以顺序得自己记。

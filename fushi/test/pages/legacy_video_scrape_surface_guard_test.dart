@@ -87,6 +87,11 @@ void main() {
     ]) {
       expect(workDetail, isNot(contains(retired)), reason: retired);
     }
+    // 按**标识符边界**判，不是裸子串：被退役的是叫 `scrape` 的那个枚举值 /
+    // 那个回调，不是「任何以它开头的名字」。裸 contains 会把新管线的
+    // `_CollectionManageAction.scrapeOnHost` / `scrapeForHost`（#7 远程刮削 /
+    // 代刮回写）一起判死——那是把守卫钉在写法上，而不是钉在「legacy 入口不许
+    // 回来」这条不变式上。名字后面紧跟标识符字符的即是另一个名字，放行。
     for (final String retired in <String>[
       'this.onScrape',
       'widget.onScrape',
@@ -94,7 +99,15 @@ void main() {
       '_CollectionManageAction.scrape',
       '_EpisodeMenuAction.scrapeInfo',
     ]) {
-      expect(collectionDetail, isNot(contains(retired)), reason: retired);
+      expect(
+        collectionDetail,
+        isNot(
+          matches(
+            RegExp('${RegExp.escape(retired)}(?![A-Za-z0-9_])'),
+          ),
+        ),
+        reason: retired,
+      );
     }
   });
 

@@ -325,11 +325,15 @@ abstract interface class VideoSourceScrapeManualBinding {
   /// 按用户输入的标题在资料源里搜索候选。作品的剧集/电影形态由来源计划决定，
   /// 调用方不需要（也不应该）自己猜。
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
-    required SourceLibraryRow source,
+    SourceLibraryRow? source,
     required String workTitle,
     String? workStableKey,
     required String query,
   });
+
+  /// 拉取 [lookup] 指向作品的完整资料（候选搜索结果只是摘要）。provider 不可用
+  /// 返回 null。互联 7b「客户端代 host 刮削」用它拿到要回写的完整模型。
+  Future<VideoMetadataWork?> fetchWorkForLookup(VideoMetadataLookup lookup);
 
   /// 按 [lookup] 重刮 [workTitle] 这一个作品。作品不在当前来源计划里时抛
   /// [VideoSourceScrapeWorkNotFound]。
@@ -493,7 +497,7 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
 
   /// 只读的候选搜索：不写库、不抢刮削互斥门，用户可以在批次跑着时先查。
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
-    required SourceLibraryRow source,
+    SourceLibraryRow? source,
     required String workTitle,
     String? workStableKey,
     required String query,
@@ -509,6 +513,15 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
       workStableKey: workStableKey,
       query: query,
     );
+  }
+
+  /// 拉取 [lookup] 的完整作品资料（7b 回写用）；实现不支持手动绑定时返回 null。
+  Future<VideoMetadataWork?> fetchWorkForLookup(VideoMetadataLookup lookup) {
+    if (_disposed || _runner is! VideoSourceScrapeManualBinding) {
+      return Future<VideoMetadataWork?>.value(null);
+    }
+    return (_runner as VideoSourceScrapeManualBinding)
+        .fetchWorkForLookup(lookup);
   }
 
   /// 按用户手动选中的身份重刮单个作品。
