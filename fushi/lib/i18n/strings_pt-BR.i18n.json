@@ -4704,5 +4704,7 @@
   "browser_extension_test_page_action_desc": "Opens a page served by Fushi in your browser to check the toolbar popup and Shift lookup.",
   "browser_extension_test_page_server_off": "Enable the lookup server first, then try again.",
   "manga_cover_cache_max_age": "Cover cache retention",
-  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days"
+  "manga_cover_cache_max_age_subtitle": "Online source covers are re-downloaded after this many days",
+  "video_setting_borderless_playback": "Immersive adaptive video",
+  "video_setting_borderless_playback_hint": "Hide the window title bar and fit the window to the video aspect ratio while playing."
 }

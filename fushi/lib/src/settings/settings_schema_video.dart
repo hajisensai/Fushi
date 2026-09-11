@@ -287,6 +287,19 @@ SettingsDestination buildVideoDestination() {
               await setVideoLockWindowAspectRatioDual(settingsContext, value);
             },
           ),
+          SettingsSwitchItem(
+            id: 'video.playback.borderless_playback',
+            title: t.video_setting_borderless_playback,
+            subtitle: t.video_setting_borderless_playback_hint,
+            icon: Icons.crop_free_outlined,
+            visible: (_) => isDesktopPlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 45),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoBorderlessPlayback,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoBorderlessPlayback(value);
+            },
+          ),
           // 长按倍速 / 跳转步长 / 句末暂停都落在 videoAsbplayerConfig；无 host 时是
           // 全局默认（下次播放生效），host 在场经页面回调即时生效（与播放页内调一致）。
           SettingsSliderItem(
@@ -814,11 +827,13 @@ SettingsDestination buildVideoDestination() {
             // 显示的恒是**实际生效**的语言：存过就显示存的，没存过 / 已重置为空串
             // 就显示界面语言（也就是此刻真正会用的那个）。
             value: (SettingsContext settingsContext) {
-              final String stored = (settingsContext.appModel.prefsRepo.getPref(
-                kVideoMetadataLocalePref,
-                defaultValue: '',
-              ) as String)
-                  .trim();
+              final String stored =
+                  (settingsContext.appModel.prefsRepo.getPref(
+                            kVideoMetadataLocalePref,
+                            defaultValue: '',
+                          )
+                          as String)
+                      .trim();
               return stored.isEmpty
                   ? settingsContext.appModel.appLocale.toLanguageTag()
                   : stored;

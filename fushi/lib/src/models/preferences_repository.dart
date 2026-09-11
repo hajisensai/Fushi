@@ -1379,6 +1379,16 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 无边框自适应播放（bool，默认 false）：桌面视频播放页隐藏自建桌面顶栏，并把
+  /// 当前窗口尺寸贴合视频宽高比，使画面铺满不留黑边。
+  bool get videoBorderlessPlayback =>
+      getPref('video_borderless_playback', defaultValue: false) as bool;
+
+  Future<void> setVideoBorderlessPlayback(bool value) async {
+    await setPref('video_borderless_playback', value);
+    notifyListeners();
+  }
+
   /// YouTube 显式画质目标高度（如 720/1080/2160）；0 = 自动（默认策略：编码优先、
   /// ≤1080p，见 pickPlaybackVideoStream）。消费方把 0 换算成 null 传解析器。
   int get youtubeQualityTargetHeight =>

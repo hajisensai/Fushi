@@ -3785,6 +3785,12 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoLockWindowAspectRatio(bool value) =>
       prefsRepo.setVideoLockWindowAspectRatio(value);
 
+  /// 沉浸式自适应视频：桌面视频页隐藏自建顶栏 + 窗口贴合视频宽高比，默认关闭。
+  bool get videoBorderlessPlayback => prefsRepo.videoBorderlessPlayback;
+
+  Future<void> setVideoBorderlessPlayback(bool value) =>
+      prefsRepo.setVideoBorderlessPlayback(value);
+
   /// YouTube 显式画质目标高度（0=自动；非 0 起播即选 ≤目标 的最高档，可达 1440p/4K）。
   int get youtubeQualityTargetHeight => prefsRepo.youtubeQualityTargetHeight;
 

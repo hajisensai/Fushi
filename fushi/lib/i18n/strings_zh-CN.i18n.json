@@ -4704,5 +4704,7 @@
   "browser_extension_test_page_action_desc": "在浏览器里打开一张由 Fushi 提供的网页，验证右上角弹窗与 Shift 查词。",
   "browser_extension_test_page_server_off": "请先开启查词服务器，再打开试用网页。",
   "manga_cover_cache_max_age": "封面缓存保留时长",
-  "manga_cover_cache_max_age_subtitle": "在线源封面超过此天数后重新下载"
+  "manga_cover_cache_max_age_subtitle": "在线源封面超过此天数后重新下载",
+  "video_setting_borderless_playback": "沉浸式自适应视频",
+  "video_setting_borderless_playback_hint": "播放时隐藏窗口顶栏，并按视频宽高比贴合窗口尺寸"
 }

@@ -498,6 +498,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_double_tap_seek_guard_test.dart + test/pages/video_immersive_mode_levels_guard_test.dart',
   'video/Lock window to video aspect':
       'test/pages/video_window_aspect_lock_static_test.dart',
+
+  'video/Immersive adaptive video':
+      'test/settings/video_borderless_window_fit_test.dart'
+      '（贴合宽高比的纯函数：比例正确、最小尺寸夹取、非法比例原样返回）',
   // 点击画面播放/暂停：生效点在 media_kit 控制条主题（桌面单击）与
   // _handleVideoPointerUp 的移动端双击 fallback，两者都是真实手势 arena，harness 里
   // 探不到。由 config round-trip（含默认 true / 旧档回落）+ 三条源码守卫（桌面主题
