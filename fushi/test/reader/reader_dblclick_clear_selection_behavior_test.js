@@ -42,13 +42,17 @@ const captureMatch = source.match(
 assert.ok(captureMatch, 'missing TODO-1028 capture-phase clear-selection dblclick listener');
 const captureListener = captureMatch[0];
 
-// (2) Extract the furigana 'toggle' dblclick handler from _buildFuriganaJs. It is
-// inside a Dart triple-quoted string; grab the addEventListener statement only.
-const toggleMatch = source.match(
-  /document\.addEventListener\('dblclick',\s*function\(\)\s*\{\s*var sel = window\.getSelection\(\);\s*if \(sel && !sel\.isCollapsed\) return;\s*document\.body\.classList\.toggle\('show-all-rt'\);\s*\}\);/,
-);
-assert.ok(toggleMatch, "missing _buildFuriganaJs 'toggle' dblclick handler");
-const furiganaListener = toggleMatch[0];
+// (2) The furigana whole-page dblclick toggle was removed with the three-state
+// furigana rework (whole-page reveal moved to the readerToggleFurigana
+// shortcut). The harness keeps a stand-in bubble-phase listener that mirrors the
+// old guard so the test still proves the ORDER contract: the capture clear runs
+// first, so a bubble listener guarded by `!sel.isCollapsed` is not tripped.
+const furiganaListener =
+  "document.addEventListener('dblclick', function() {" +
+  ' var sel = window.getSelection();' +
+  ' if (sel && !sel.isCollapsed) return;' +
+  " document.body.classList.toggle('show-all-rt');" +
+  ' });';
 
 function makeHarness() {
   // capture-phase listeners run before bubble-phase ones (browser order). The

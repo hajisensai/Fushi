@@ -10,10 +10,12 @@ import 'package:fushi/src/reader/reader_settings.dart';
 /// 并用源码守卫确认 source 端不再保留重复的 switch 分支。
 void main() {
   const inputs = <String>[
+    'off',
+    'toggle',
+    'hidden',
     'show',
     'hide',
     'partial',
-    'toggle',
     'SHOW',
     'Hide',
     'PARTIAL',
@@ -41,6 +43,69 @@ void main() {
         expect(
           ReaderFushiSource.furiganaModeToStyle(m),
           ReaderSettings.furiganaModeToStyle(m),
+          reason: 'input="$m"',
+        );
+      }
+    });
+
+    test('三态值域与历史四态映射（对齐 Hoshi Reader iOS Off/Toggle/Hidden）', () {
+      expect(ReaderSettings.normalizeFuriganaMode('off'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode('toggle'), 'toggle');
+      expect(ReaderSettings.normalizeFuriganaMode('hidden'), 'hidden');
+      // 历史值：show→off、partial→toggle（点一个揭示一个）、hide→hidden。
+      expect(ReaderSettings.normalizeFuriganaMode('show'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode('partial'), 'toggle');
+      expect(ReaderSettings.normalizeFuriganaMode('hide'), 'hidden');
+      expect(ReaderSettings.normalizeFuriganaMode('HIDE '), 'hidden');
+      expect(ReaderSettings.normalizeFuriganaMode('garbage'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode(''), 'off');
+      // 只剩三个规范值。
+      for (final m in inputs) {
+        expect(
+          <String>['off', 'toggle', 'hidden'],
+          contains(ReaderSettings.normalizeFuriganaMode(m)),
+          reason: 'input="$m"',
+        );
+      }
+    });
+
+    test('三态值域与历史四态映射（对齐 Hoshi Reader iOS Off/Toggle/Hidden）', () {
+      expect(ReaderSettings.normalizeFuriganaMode('off'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode('toggle'), 'toggle');
+      expect(ReaderSettings.normalizeFuriganaMode('hidden'), 'hidden');
+      // 历史值：show→off、partial→toggle（点一个揭示一个）、hide→hidden。
+      expect(ReaderSettings.normalizeFuriganaMode('show'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode('partial'), 'toggle');
+      expect(ReaderSettings.normalizeFuriganaMode('hide'), 'hidden');
+      expect(ReaderSettings.normalizeFuriganaMode('HIDE '), 'hidden');
+      expect(ReaderSettings.normalizeFuriganaMode('garbage'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode(''), 'off');
+      // 只剩三个规范值。
+      for (final m in inputs) {
+        expect(
+          <String>['off', 'toggle', 'hidden'],
+          contains(ReaderSettings.normalizeFuriganaMode(m)),
+          reason: 'input="$m"',
+        );
+      }
+    });
+
+    test('三态值域与历史四态映射（对齐 Hoshi Reader iOS Off/Toggle/Hidden）', () {
+      expect(ReaderSettings.normalizeFuriganaMode('off'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode('toggle'), 'toggle');
+      expect(ReaderSettings.normalizeFuriganaMode('hidden'), 'hidden');
+      // 历史值：show→off、partial→toggle（点一个揭示一个）、hide→hidden。
+      expect(ReaderSettings.normalizeFuriganaMode('show'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode('partial'), 'toggle');
+      expect(ReaderSettings.normalizeFuriganaMode('hide'), 'hidden');
+      expect(ReaderSettings.normalizeFuriganaMode('HIDE '), 'hidden');
+      expect(ReaderSettings.normalizeFuriganaMode('garbage'), 'off');
+      expect(ReaderSettings.normalizeFuriganaMode(''), 'off');
+      // 只剩三个规范值。
+      for (final m in inputs) {
+        expect(
+          <String>['off', 'toggle', 'hidden'],
+          contains(ReaderSettings.normalizeFuriganaMode(m)),
           reason: 'input="$m"',
         );
       }

@@ -61,21 +61,14 @@ void main() {
     );
   });
 
-  test('furigana whole-page double-click toggle is preserved', () {
+  test('furigana dblclick whole-page toggle stays removed (three-state)', () {
+    // 振假名三态改造：整页揭示改走 readerToggleFurigana 快捷键，dblclick 不再
+    // 切 show-all-rt；否则双击选词又会顺带翻振假名。
     final String src = webview.readAsStringSync();
-    final RegExp furiganaToggle = RegExp(
-      r"document\.addEventListener\('dblclick',\s*function\(\)\s*\{\s*"
-      r'var sel = window\.getSelection\(\);\s*'
-      r'if \(sel && !sel\.isCollapsed\) return;\s*'
-      r"document\.body\.classList\.toggle\('show-all-rt'\);\s*"
-      r'\}\);',
-    );
     expect(
-      furiganaToggle.hasMatch(src),
-      isTrue,
-      reason: 'the furigana whole-page toggle dblclick handler '
-          '(show-all-rt) must remain intact and must NOT be confused with the '
-          'TODO-1028 clear-selection listener',
+      src.contains("document.body.classList.toggle('show-all-rt')"),
+      isFalse,
+      reason: 'no dblclick furigana toggle in the engine setup script',
     );
   });
 }

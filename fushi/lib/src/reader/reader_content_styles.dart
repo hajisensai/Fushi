@@ -1175,29 +1175,32 @@ body::after {
     // still wins for hidden furigana. The shown modes also own <rtc> (see
     // _rtcAnnotationCss); `hide` hides rtc together with rt so a hidden
     // annotation container cannot keep reserving lane space.
+    // 三态对齐 Hoshi Reader iOS `FuriganaMode { off, toggle, hidden }`（值域见
+    // ReaderSettings.furiganaMode）。`toggle` 的隐藏纯由 CSS 承担，不再靠装载时 JS
+    // 给 ruby 打 class：正文动态换章 / 设置热更新都只重发 CSS，JS 标记会漏掉新
+    // 内容或在热切换后残留。揭示 = 点击那个 ruby 加 `furigana-revealed`
+    // （fushiSelection.selectText 入口，命中隐藏注音的 ruby 只揭示、不查词）；
+    // `body.show-all-rt` 是 readerToggleFurigana 快捷键（手柄 R3）的整页揭示。
     switch (mode) {
-      case 'hide':
+      case 'hidden':
         return 'rt, rtc { display: none !important; }';
-      case 'partial':
-        return '''
-rt {
-  display: ruby-text !important;
-  font-size: 0.45em;
-  visibility: hidden;
-}
-$_rtcAnnotationCss
-ruby.show-rt rt {
-  visibility: visible;
-}''';
       case 'toggle':
         return '''
-rt {
-  display: ruby-text !important;
-  font-size: 0.45em;
-  visibility: hidden;
-}
+rt { display: ruby-text !important; font-size: 0.45em; }
 $_rtcAnnotationCss
-body.show-all-rt rt {
+ruby:not(.furigana-revealed) > rt,
+ruby:not(.furigana-revealed) > rtc,
+ruby:not(.furigana-revealed) > rp {
+  visibility: hidden !important;
+}
+ruby:not(.furigana-revealed):has(rt) {
+  text-decoration-line: underline !important;
+  text-decoration-style: dotted !important;
+  text-decoration-color: rgba(160, 160, 160, 0.8) !important;
+  text-underline-offset: 0.05em !important;
+}
+body.show-all-rt ruby > rt,
+body.show-all-rt ruby > rtc {
   visibility: visible !important;
 }''';
       default:
@@ -1216,7 +1219,7 @@ $_rtcAnnotationCss''';
   /// the annotation into the base column as its own character slot (the
   /// 貫(かん)禄(ろく) screenshot: かん inline between 貫/禄, ろく below the
   /// word). `rtc > rt` is MORE specific than the bare `rt` rule, so it must
-  /// only be emitted in shown modes — in `hide` it would defeat
+  /// only be emitted in shown modes — in `hidden` it would defeat
   /// `rt { display: none !important }` and un-hide rtc furigana.
   static const String _rtcAnnotationCss = '''
 rtc {

@@ -277,7 +277,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       case 'theme':
         await src.setReaderTheme(value as String);
       case 'hideFurigana':
-        await src.setReaderFuriganaMode((value as bool) ? 'hide' : 'toggle');
+        // 布尔开关只能表达两态：开 = hidden，关 = off（旧实现关掉落到 toggle，
+        // 永远回不到显示态）。
+        await src.setReaderFuriganaMode((value as bool) ? 'hidden' : 'off');
       case 'textIndentation':
         await src.setReaderTextIndentation((value as num).toDouble());
       case 'marginTop':

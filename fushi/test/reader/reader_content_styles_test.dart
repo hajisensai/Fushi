@@ -300,26 +300,63 @@ void main() {
   });
 
   group('ReaderContentStyles furigana modes', () {
-    test('default mode shows furigana', () async {
+    test('default mode (off) shows furigana', () async {
       final ReaderSettings settings = await _defaultSettings();
+      expect(settings.furiganaMode, 'off');
       final String css = ReaderContentStyles.css(settings: settings);
-      // Default furigana mode is 'show' → rt { font-size: 0.45em; }
+      // Default furigana mode is 'off' → rt { font-size: 0.45em; }, nothing hidden.
       expect(css, contains('rt'));
       expect(css, contains('0.45em'));
+      expect(css, isNot(contains('furigana-revealed')));
+      expect(css, isNot(contains('rt, rtc { display: none !important; }')));
     });
 
-    test('hide furigana mode via themeOverride still renders rt rule',
+    test('hidden mode renders display:none for rt/rtc (legacy value "hide" too)',
         () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
+      await settings.setFuriganaMode('hidden');
+      expect(ReaderContentStyles.css(settings: settings),
+          contains('rt, rtc { display: none !important; }'));
       await settings.setFuriganaMode('hide');
+      expect(settings.furiganaMode, 'hidden');
+      expect(ReaderContentStyles.css(settings: settings),
+          contains('rt, rtc { display: none !important; }'));
+    });
 
+    test('toggle mode: CSS-owned hide + per-ruby reveal + dotted hint + '
+        'whole-page reveal (Hoshi Reader iOS Toggle)', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setFuriganaMode('toggle');
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('rt'));
-      expect(css, contains('display: none'));
+      // 未揭示的 ruby：注音 visibility:hidden（占位保留，行高不抖），不是 display:none。
+      expect(
+          css,
+          contains('ruby:not(.furigana-revealed) > rt,\n'
+              'ruby:not(.furigana-revealed) > rtc,\n'
+              'ruby:not(.furigana-revealed) > rp {\n'
+              '  visibility: hidden !important;\n}'));
+      expect(css, isNot(contains('rt, rtc { display: none !important; }')));
+      // 显示态仍强制 rt 为 ruby-text（TODO-1308），rtc 接管照旧。
+      expect(css, contains('rt { display: ruby-text !important; font-size: 0.45em; }'));
+      // 灰色虚线下划线提示可点（与 Hoshi iOS 同款）。
+      expect(css, contains('ruby:not(.furigana-revealed):has(rt) {'));
+      expect(css, contains('text-decoration-style: dotted !important;'));
+      expect(css, contains('text-decoration-color: rgba(160, 160, 160, 0.8) !important;'));
+      // readerToggleFurigana 快捷键的整页揭示。
+      expect(css, contains('body.show-all-rt ruby > rt,\nbody.show-all-rt ruby > rtc {\n  visibility: visible !important;\n}'));
+      // 旧四态残留不得复活。
+      expect(css, isNot(contains('show-rt rt')));
+      // 历史值 partial 归到 toggle。
+      await settings.setFuriganaMode('partial');
+      expect(settings.furiganaMode, 'toggle');
     });
   });
 

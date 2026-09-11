@@ -11,7 +11,7 @@ part of '../reader_fushi_page.dart';
 ///   (d) `_buildWebView` 里调 @protected 的 `prunePopupStack` / `topPopupState`
 ///       改走主壳新增的 `_webviewPrunePopupStack` / `_webviewTopPopupState` 转发器
 ///       （扩展不能直接读写基类 @protected 成员），与 caret 域的 `_caret*` 转发同款。
-///   (e) `_notFound` / `_forbidden` / `_isValidFontData` / `_buildFuriganaJs` /
+///   (e) `_notFound` / `_forbidden` / `_isValidFontData` /
 ///       `_stripScriptTags` 五个 static 连同其唯一调用者一起搬来，作扩展 static 保留
 ///       （裸名可解析）。
 /// 样式/主题域（`_buildStyleTag` / `_computeStyleTag` / `_applyStylesLive` 等）被
@@ -589,35 +589,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);
 
-  /// BUG-1140 第二阶段①：三种 furigana 模式的监听器全部随引擎发一份，运行时按
-  /// `C.furiganaMode` 选一个装（旧实现在 Dart 侧按 `s.furiganaMode` 三选一插值，
-  /// 那会让引擎源码随设置变化 → 外链缓存与编译复用同时失效）。
-  ///
-  /// 值域与分支判据逐条对齐旧的 `switch (mode)`：`partial` 装 click 切换单个 ruby、
-  /// `toggle` 装 dblclick 切换整页、其余（含 `off`）什么都不装。
-  static String _buildFuriganaJs() {
-    return '''
-  if (C.furiganaMode === 'partial') {
-    document.addEventListener('click', function(e) {
-      var sel = window.getSelection();
-      if (sel && !sel.isCollapsed) return;
-      var node = e.target;
-      while (node && node !== document.body) {
-        if (node.tagName === 'RUBY') {
-          node.classList.toggle('show-rt');
-          return;
-        }
-        node = node.parentElement;
-      }
-    }, true);
-  } else if (C.furiganaMode === 'toggle') {
-    document.addEventListener('dblclick', function() {
-      var sel = window.getSelection();
-      if (sel && !sel.isCollapsed) return;
-      document.body.classList.toggle('show-all-rt');
-    });
-  }''';
-  }
+  // 振假名三态（off / toggle / hidden）不再装任何 JS 监听器：隐藏由 CSS 承担，
+  // toggle 态的「点一个揭示一个」收进 fushiSelection.selectText（查词入口，
+  // 命中隐藏注音的 ruby 只揭示、不查词），整页揭示走 readerToggleFurigana 快捷键。
+  // 旧 `_buildFuriganaJs`（partial 的 click 切换 / toggle 的 dblclick 整页切换）已删。
 
   // ── Single IIFE setup script (mirrors Hoshi Android's readerSetupScript) ──
 
@@ -737,9 +712,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
       ),
     );
 
-    // 三种 furigana 模式的监听器全部随引擎发，运行时按 C.furiganaMode 选一个装。
-    final String furiganaJs = _buildFuriganaJs();
-
     final String caretJs = ReaderCaretScripts.source();
 
     return '''
@@ -786,7 +758,6 @@ install: function(C) {
     insetBottom: C.caretInsetBottom,
     scopeSelector: null
   });
-  $furiganaJs
   // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
   // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
   var fushiContinuousMode = C.continuousMode;
@@ -1374,7 +1345,8 @@ install: function(C) {
     if (hasStart && !_fushiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
   });
   // TODO-1028: 砍掉双击建立的原生框选——它会盖住单击查词、并绊住振假名 dblclick
-  // 切换（_buildFuriganaJs 'toggle' 分支带 `!sel.isCollapsed` 守卫）。原生双击选词在
+  // 切换（历史上 'toggle' 分支的 dblclick 整页切换带 `!sel.isCollapsed` 守卫，
+  // 该分支已随三态改造删除，本 capture 清选区仍是单击查词不被双击框选盖住的前提）。原生双击选词在
   // mousedown/selectstart 阶段已发生，dblclick 只是结果，preventDefault 拦不住，故改
   // removeAllRanges 清掉既成选区。用 capture 让它先于振假名 handler（bubble 阶段）跑，
   // 从而振假名切换反而恢复正常（守卫不再被双击选区绊住）。单击查词走 onTap/_selectTextAt

@@ -56,7 +56,7 @@ void main() {
     test('ruby 容器与 rp 在所有布局都强制 display(!important)', () async {
       for (final ({String wm, String vm}) c in layouts) {
         final String css = await _readerCss(
-            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'show');
+            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'off');
         expect(
             css.contains(
                 'ruby { display: ruby !important; ruby-position: over !important; }'),
@@ -81,7 +81,7 @@ void main() {
       // center=基字列)错位到振假名列。over 横排=基字上方、竖排=基字右侧，两写向都对。
       for (final ({String wm, String vm}) c in layouts) {
         final String css = await _readerCss(
-            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'show');
+            writingMode: c.wm, viewMode: c.vm, furiganaMode: 'off');
         expect(css.contains('ruby-position: over !important'), isTrue,
             reason: '${c.wm}/${c.vm}: 必须强制 ruby-position:over!important，否则书本 '
                 '`ruby{ruby-position:under}` 竖排把振假名翻到基字左侧 + 高亮带错位');
@@ -100,7 +100,7 @@ void main() {
       final String css = await _readerCss(
           writingMode: 'vertical-rl',
           viewMode: 'continuous',
-          furiganaMode: 'show');
+          furiganaMode: 'off');
       expect(css.contains('ruby-position: over !important'), isTrue,
           reason: '竖排必须 ruby-position:over(振假名在右、留在基字高亮盒外)');
       expect(
@@ -112,9 +112,8 @@ void main() {
           reason: 'BUG-716：不再有 narrow-lane 窄条(避免 left 落点在宽盒/含注音轨时偏移)');
     });
 
-    test('振假名显示态(show/partial/toggle) rt 强制 display:ruby-text(!important)',
-        () async {
-      for (final String fm in <String>['show', 'partial', 'toggle']) {
+    test('振假名显示态(off/toggle) rt 强制 display:ruby-text(!important)', () async {
+      for (final String fm in <String>['off', 'toggle']) {
         final String css = await _readerCss(
             writingMode: 'vertical-rl',
             viewMode: 'continuous',
@@ -134,7 +133,7 @@ void main() {
       // 会把 rtc 里的每个 <rt> 包进匿名 ruby，落在正文流原位=注音以整字格内联进基字列
       // (用户截图：かん挤在貫/禄之间、ろく掉到词下方)。修复=显示态把 rtc 整个映射为
       // 单一注音级(display:ruby-text)、其 rt 子元素归位 inline(在注音里当普通文本跑)。
-      for (final String fm in <String>['show', 'partial', 'toggle']) {
+      for (final String fm in <String>['off', 'toggle']) {
         final String css = await _readerCss(
             writingMode: 'vertical-rl',
             viewMode: 'continuous',
@@ -153,11 +152,11 @@ void main() {
       }
     });
 
-    test('振假名 hide 模式 rt 仍是 display:none(强制显示不得覆盖隐藏)', () async {
+    test('振假名 hidden 模式 rt 仍是 display:none(强制显示不得覆盖隐藏)', () async {
       final String css = await _readerCss(
           writingMode: 'vertical-rl',
           viewMode: 'continuous',
-          furiganaMode: 'hide');
+          furiganaMode: 'hidden');
       expect(css.contains('rt, rtc { display: none !important; }'), isTrue,
           reason: 'hide 模式必须保留 rt,rtc{display:none!important}(振假名与 rtc 注音容器'
               '一起隐藏，防空 rtc 注音盒继续占注音道)');
