@@ -395,14 +395,36 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 散卡组的多选键（与 [_selectAll] 同一套：EPUB 用 `mediaIdentifier`、SRT 用
-  /// `srt_` 前缀 uid）。远端占位卡不可多选，返回 null。
+  /// `srt_` 前缀 uid；远端占位卡用 [_remoteBookSelectionKey] /
+  /// [_remoteSrtSelectionKey]）。
+  ///
+  /// BUG-2458：远端占位卡此前返回 null = 不可多选，多选态点云书直接开下载。远端
+  /// 键与本地键同住一个选中集（卡片勾选态 / 计数 / Shift 区间选 / 长按扫选全复用），
+  /// 只在批量动作那层按 [_isRemoteSelectionKey] 分流：本地三动作只吃本地键、
+  /// 「下载」只吃远端键。
   String? _looseSelectionKey(_ShelfBookSlot slot) {
     final MediaItem? epub = slot.epub;
     if (epub != null) return epub.mediaIdentifier;
     final SrtBook? srt = slot.srt;
     if (srt != null) return 'srt_${srt.uid}';
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return _remoteBookSelectionKey(remote);
+    final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
+    if (remoteSrt != null) return _remoteSrtSelectionKey(remoteSrt);
     return null;
   }
+
+  /// 选中集里的本地条目键（EPUB / SRT）：组合 / 打标签 / 删除三个本地动作的输入。
+  Set<String> get _selectedLocalKeys => <String>{
+        for (final String key in _selectedKeys)
+          if (!_isRemoteSelectionKey(key)) key,
+      };
+
+  /// 选中集里的远端占位键：批量「下载」的输入。
+  Set<String> get _selectedRemoteKeys => <String>{
+        for (final String key in _selectedKeys)
+          if (_isRemoteSelectionKey(key)) key,
+      };
 
   @override
   void initState() {
@@ -1541,8 +1563,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     ];
     // Shift 区间选 / 长按扫选的顺序真值：与上面的合集顺序取自同一份 shelfGroups，
     // 故与用户屏幕上的排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。散卡组
-    // `collection == null` 且 items 长度恒 1；远端占位卡不参与多选（与 [_selectAll]
-    // 同判据），跳过。顺序一变，控制器自动清锚点。
+    // `collection == null` 且 items 长度恒 1；远端占位卡自 BUG-2458 起同样入序
+    // （[_looseSelectionKey] 给远端键）。顺序一变，控制器自动清锚点。
     final List<String> visibleLooseKeys = <String>[];
     for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups) {
       if (g.collection != null) continue;
@@ -1766,9 +1788,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 远端占位卡（EPUB / 纯 SRT）现可折进合集（经已同步的合集成员归属），成员卡也要
     // 分派到远端占位渲染，否则命中下面的 epub! 空断言。
     final RemoteBookInfo? remote = slot.remote;
-    if (remote != null) return _buildRemoteBookCard(remote);
+    if (remote != null) {
+      return _buildRemoteBookCard(remote, selectable: selectable);
+    }
     final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
-    if (remoteSrt != null) return _buildRemoteSrtCard(remoteSrt);
+    if (remoteSrt != null) {
+      return _buildRemoteSrtCard(remoteSrt, selectable: selectable);
+    }
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCard(srt,
@@ -2742,6 +2768,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 }
 
 /// 书架混排网格的单个排序槽（SRT / EPUB / 远端占位三类卡片到一个有序列表）。
+/// BUG-2458：远端占位卡的多选键（库级私有，parts 共用）。
+const String _kRemoteBookSelectionPrefix = 'remote_book_';
+const String _kRemoteSrtSelectionPrefix = 'remote_srt_';
+
+/// 远端 EPUB 占位卡的多选键：身份是 host 的 `downloadId`（与 [_ShelfBookSlot]
+/// 的 entryKey、下载任务 id 同源），不是可被 host 改名的显示名。
+String _remoteBookSelectionKey(RemoteBookInfo book) =>
+    '$_kRemoteBookSelectionPrefix${book.downloadId}';
+
+/// 纯 SRT 远端有声书占位卡的多选键：身份是 `identity`（与 entryKey 同源）。
+String _remoteSrtSelectionKey(RemoteAudiobookInfo book) =>
+    '$_kRemoteSrtSelectionPrefix${book.identity}';
+
+bool _isRemoteSelectionKey(String key) =>
+    key.startsWith(_kRemoteBookSelectionPrefix) ||
+    key.startsWith(_kRemoteSrtSelectionPrefix);
+
 /// [srt]/[epub]/[remote] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
 /// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-777）。
 ///

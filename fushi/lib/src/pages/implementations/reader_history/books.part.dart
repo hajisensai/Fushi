@@ -443,15 +443,19 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   Widget _buildBatchActionBar() {
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
+    // BUG-2458：散卡选中集里混着远端占位键——「已选 N」计全部，但组合 / 打标签 /
+    // 删除三个本地动作只按本地键判可用态与取目标；远端键只喂「下载」。
+    final Set<String> localKeys = _selectedLocalKeys;
+    final Set<String> remoteKeys = _selectedRemoteKeys;
     final int selectedCount =
         _selectedKeys.length + _selectedCollectionIds.length;
-    final bool hasSelection =
-        _selectedKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
+    final bool hasLocalSelection =
+        localKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
     // 只在真能组合（新建 / 并入 / 合并）时才可点，与 [_batchCombineIntoSeries] 同判据。
     final bool canCombine = classifyCombine(
           collectionCount: _selectedCollectionIds.length,
-          looseCount: _selectedKeys.length,
+          looseCount: localKeys.length,
         ) !=
         CombineTier.noop;
     return BatchActionBar(
@@ -459,6 +463,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       onSelectAll: _selectAll,
       onInvertSelection: _invertSelection,
       actions: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('reader_shelf_batch_download'),
+          enabled: remoteKeys.isNotEmpty,
+          onTap: _batchDownloadSelectedRemote,
+          icon: Icons.download_outlined,
+          tooltip: t.remote_book_download,
+        ),
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_combine'),
           enabled: canCombine,
@@ -469,15 +480,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           tooltip: t.combine_into_series,
         ),
         FushiIconButton(
-          // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
-          enabled: _selectedKeys.isNotEmpty,
+          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
+          enabled: localKeys.isNotEmpty,
           onTap: _batchShowTagPicker,
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
         ),
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_delete'),
-          enabled: hasSelection,
+          enabled: hasLocalSelection,
           onTap: _batchDeleteConfirm,
           icon: Icons.delete_outline,
           tooltip: t.dialog_delete,
@@ -497,7 +508,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // **在弹确认框之前就把目标定死**：选中集是只暴露当前可见项的派生视图，弹窗
     // 期间任何一次改变可见序的重建（筛选 provider 解析完成、书架刷新）都会让它
     // 自己变，跨 await 两侧各读一次会让确认框的数字与实际删除量对不上。
-    final Set<String> targetKeys = Set<String>.of(_selectedKeys);
+    final Set<String> targetKeys = _selectedLocalKeys;
     final Set<int> targetCollectionIds = Set<int>.of(_selectedCollectionIds);
     final int mediaCount = targetKeys.length;
     final int collectionCount = targetCollectionIds.length;
@@ -653,7 +664,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   /// 「同时删除本地文件」）。纯字幕书看自己的音频列，EPUB 看附带有声书 / 配对字幕书。
   Future<bool> _selectionHasLocalFiles() async {
     final FushiDatabase db = appModel.database;
-    for (final String key in _selectedKeys) {
+    for (final String key in _selectedLocalKeys) {
       if (key.startsWith('srt_')) {
         final SrtBook? book =
             await SrtBookRepository(db).findByUid(key.substring(4));
@@ -706,11 +717,20 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
     if (!mounted) return false;
+    // BUG-2458：远端占位键的存在性真值是最近一次拉到的远端目录（占位卡就是从它
+    // 渲染的），不在本地表里；不纳入就会被当幽灵键整批剔光。
+    final _RemoteBookState? remoteState = _lastRemoteState;
     final int dropped = _selection.retainExisting(
       loose: <String>{
         for (final EpubBookMeta row in epubBooks)
           ReaderFushiSource.mediaIdentifierFor(row.bookKey),
         for (final SrtBook book in srtBooks) 'srt_${book.uid}',
+        if (remoteState != null) ...<String>[
+          for (final RemoteBookInfo book in remoteState.books)
+            _remoteBookSelectionKey(book),
+          for (final RemoteAudiobookInfo book in remoteState.srtAudiobooks)
+            _remoteSrtSelectionKey(book),
+        ],
       },
       collections: <int>{for (final MediaCollectionRow c in collections) c.id},
     );
@@ -739,7 +759,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       context: context,
       builder: (_) => _BatchTagPickerDialog(
         allTags: allTags,
-        selectedKeys: _selectedKeys,
+        selectedKeys: _selectedLocalKeys,
         database: appModel.database,
         parseBookKey: _parseBookKey,
       ),
@@ -789,7 +809,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     };
     final List<ShelfEntryRef> looseRefs = sortNewCollectionMembersNaturally(
       <ShelfEntryRef>[
-        for (final String key in _selectedKeys)
+        for (final String key in _selectedLocalKeys)
           if (shelfSelectionToEntry(key, ShelfSelectionSurface.books)
               case final ShelfEntryRef ref)
             ref,

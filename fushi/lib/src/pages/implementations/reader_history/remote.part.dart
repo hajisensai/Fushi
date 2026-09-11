@@ -190,12 +190,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 云角标 ☁（[_remoteBookCoverWithCloudBadge]），混排进书架主网格（[_ShelfBookSlot.remote]
   /// → [_buildShelfGroupCard] 散卡路径）。短按/下载按钮复用现有下载→入库链
   /// （[_downloadRemoteBook]），完成后原地变正常卡（下载后 dedup 去重隐藏占位）。
-  Widget _buildRemoteBookCard(RemoteBookInfo book) {
+  ///
+  /// [selectable]（默认 true）= 多选态可勾选（BUG-2458：勾选后经批量栏「下载」一起
+  /// 下）；合集行成员卡传 false，与本地成员卡同规则。壳（[_bookCardShell]）在多选
+  /// 态把点击接成勾选，只有非多选态点击才走下载。
+  Widget _buildRemoteBookCard(RemoteBookInfo book, {bool selectable = true}) {
     final String safeKey = _safeRemoteBookKey(book.title);
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
       focusId: FushiFocusId('reader-shelf-remote-book-$safeKey'),
+      selectionKey: selectable ? _remoteBookSelectionKey(book) : null,
       onTap: () => _downloadRemoteBook(book),
       // 短按仍直接下载（无本地副本不能直接读，下载合理）；长按 / 桌面右键
       // （_bookCardShell.onSecondaryTap 同绑 onLongPress）改弹选项面板，与本地
@@ -208,7 +213,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         cover: _remoteBookCoverWithCloudBadge(book, safeKey),
         // TODO-655a：远端书卡右上角是下载按钮 / 下载进度，类型徽章（有声书耳机 /
         // 普通书本）放左上角，与本地书卡（buildMediaItemContent）的类型语义一致。
-        leadingBadge: _buildRemoteBookTypeBadge(book, safeKey),
+        // 多选态左上角被壳的勾选框占用（同位同尺寸），可勾选时让位不画。
+        leadingBadge: _selectionMode && selectable
+            ? null
+            : _buildRemoteBookTypeBadge(book, safeKey),
         coverBadge: _remoteBookTaskBadge(
               taskId: InterconnectDownloadManager.bookTaskId(book.downloadId),
               safeKey: safeKey,
@@ -224,6 +232,33 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
             ),
       ),
     );
+  }
+
+  /// BUG-2458：批量栏「下载」——把选中的远端占位卡（EPUB / 纯 SRT 有声书）逐个
+  /// 交给既有单本下载链（[_downloadRemoteBook] / [_downloadRemoteSrtAudiobook]，
+  /// 任务归 [InterconnectDownloadManager] 所有、与本页生命周期无关），随后退出
+  /// 多选态；进度 / 失败落在各卡角标上（[_remoteBookTaskBadge]）。
+  ///
+  /// 选中键只是身份，占位对象要回到最近一次远端目录里找：目录已刷新、该书已
+  /// 下载入库被去重隐藏的键自然找不到，跳过即可（与单本路径「已在下载中忽略」
+  /// 同一精神）。并发语义与用户逐张点下载按钮一致——各任务并行推进。
+  void _batchDownloadSelectedRemote() {
+    final Set<String> keys = _selectedRemoteKeys;
+    if (keys.isEmpty) return;
+    final _RemoteBookState? state = _lastRemoteState;
+    if (state != null) {
+      for (final RemoteBookInfo book in state.books) {
+        if (keys.contains(_remoteBookSelectionKey(book))) {
+          unawaited(_downloadRemoteBook(book));
+        }
+      }
+      for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
+        if (keys.contains(_remoteSrtSelectionKey(book))) {
+          unawaited(_downloadRemoteSrtAudiobook(book));
+        }
+      }
+    }
+    _exitSelectionMode();
   }
 
   /// 远端占位卡右上角的下载态角标（BUG-1561 书侧补齐）：进行中 → 进度环，失败 →
@@ -851,7 +886,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 纯 SRT 远端有声书占位卡：耳机类型徽章 + 云角标 + 下载按钮/进度。短按/下载按钮
   /// 走 [_downloadRemoteSrtAudiobook]（拉包 → importAudioDatabasePackage 纯 SRT 分支
   /// → 落 SrtBooks 行），完成后原地变本地 SRT 卡（重拉远端列表按 uid dedup 隐藏占位）。
-  Widget _buildRemoteSrtCard(RemoteAudiobookInfo book) {
+  Widget _buildRemoteSrtCard(RemoteAudiobookInfo book,
+      {bool selectable = true}) {
     final String title = book.title ?? book.identity;
     final String safeKey = _safeRemoteBookKey(title);
     final ColorScheme cs = theme.colorScheme;
@@ -859,6 +895,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
       focusId: FushiFocusId('reader-shelf-remote-srt-$safeKey'),
+      // BUG-2458：与远端 EPUB 卡同规则，多选态可勾选、批量下载。
+      selectionKey: selectable ? _remoteSrtSelectionKey(book) : null,
       onTap: () => _downloadRemoteSrtAudiobook(book),
       // 长按 / 右键：弹动作面板，与远端 EPUB 卡（[_showRemoteBookDialog]）一致
       // （巡检 PR-3——旧行为长按直接开始下载，重手势与轻点击等价且不可预览动作）。
