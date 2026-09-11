@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2256 条。点号进各自文件。
+> 共 2257 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2447](bugs/BUG-2447-macos-summary-focus-steals-shortcuts.md) | ✅ | ✅ | macOS 查词弹窗展开/折叠词典分组后全局快捷键失灵 |
 | [BUG-2446](bugs/BUG-2446-ext-subtitle-drop-scope.md) | ✅ | ✅ | 浏览器扩展：任何网页拖文件都弹整屏「松开以加载字幕」 |
 | [BUG-2445](bugs/BUG-2445-mihon-protobuf-not-registered.md) | ✅ | ✅ | Injekt 未注册 ProtoBuf 导致 5 个 protobuf 漫画源整源不可用 |
 | [BUG-2444](bugs/BUG-2444-mihon-proxy-policy-selector-throws.md) | ✅ | ✅ | 宿主代理策略故障时 ProxySelector 抛异常导致 sidecar 堆耗尽、请求挂死到超时 |
