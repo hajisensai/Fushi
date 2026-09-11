@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2261 条。点号进各自文件。
+> 共 2262 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2454](bugs/BUG-2454-scrape-image-language-ignores-locale.md) | ✅ | ✅ | 刮削图片语言写死中文，不看资料语言偏好 |
 | [BUG-2452](bugs/BUG-2452-desktop-mihon-cloudflare-challenge.md) | ✅ | ✅ | 桌面 Mihon 源被 Cloudflare 拦下时无法解题，源整个打不开 |
 | [BUG-2451](bugs/BUG-2451-manga-global-search-ganma-fuzzy.md) | 🚧 | 🚧 | 全局搜索里 GANMA! 返回与关键词无关的作品（未复现为本仓 bug：源站服务端分词模糊匹配） |
 | [BUG-2450](bugs/BUG-2450-manga-online-image-timeout-no-retry.md) | 🚧 | 🚧 | 在线漫画封面与页图超时或失败后没有退避重试、没有重刷入口、加载队列排队无超时 |

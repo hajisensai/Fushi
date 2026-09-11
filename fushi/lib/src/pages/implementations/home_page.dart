@@ -1494,6 +1494,7 @@ class _HomePageState extends BasePageState<HomePage>
         VideoSourceScrapeGlobalConfig.fromPreferences(
       appModelNoUpdate.prefsRepo,
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
+      uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
     );
     final String fingerprint = <Object>[
       config.tmdbApiKey,
@@ -2335,6 +2336,7 @@ class _HomePageState extends BasePageState<HomePage>
         VideoSourceScrapeGlobalConfig.fromPreferences(
       appModelNoUpdate.prefsRepo,
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
+      uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
     );
     final String fingerprint = <Object>[
       config.tmdbApiKey,
