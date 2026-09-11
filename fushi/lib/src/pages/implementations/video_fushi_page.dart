@@ -954,10 +954,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   PointerHoverEvent? _pendingPokeHover;
 
   /// 合成 hover 设备是否已在 Flutter `MouseTracker` 里登记在册（BUG-2453）。
-  /// [_dispatchPokeHover] 首次真正派发即置真；[_retireSyntheticHoverDevice] 注销后清零。
-  /// 只在真派发过时才派 `PointerRemovedEvent`——从没造过这个设备（移动端 / 从未 poke）
-  /// 就不往指针管线塞任何事件。
+  /// [_dispatchPokeHover] 真正派发即置真；[_retireSyntheticHoverDevice] 的 post-frame
+  /// 派发注销时清零。只在真派发过时才派 `PointerRemovedEvent`——从没造过这个设备
+  /// （移动端 / 从未 poke）就不往指针管线塞任何事件。
   bool _syntheticHoverDeviceLive = false;
+
+  /// 本页所在的路由（BUG-2453）：在 [didChangeDependencies] 里对它的主动画（进入
+  /// `reverse` = 本页被 pop）与次动画（进入 `forward` = 新路由压上来 / `pushReplacement`
+  /// 换集替换本页）各挂一个状态监听，两者都是「本页失去栈顶」的时刻，合成 hover 设备在
+  /// 那一帧帧末注销。缓存是为了只挂一次、[dispose] 时能摘干净。
+  ModalRoute<Object?>? _syntheticHoverRoute;
   static const double _volumeStep = 5.0;
 
   /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。
@@ -2165,8 +2171,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 查询失败必须与 autoApplyBinding 一样非致命：这条链绝不能打断视频加载。
     String? languageTag;
     try {
-      languageTag =
-          (await widget.repo.getByBookUid(widget.bookUid))?.language;
+      languageTag = (await widget.repo.getByBookUid(widget.bookUid))?.language;
     } catch (e, st) {
       debugPrint('[VideoFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
     }
@@ -4034,6 +4039,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // BUG-2453：合成 hover 设备随本页「失去栈顶」注销，判据挂在本页路由的动画状态上。
+    _attachSyntheticHoverRouteListeners(ModalRoute.of(context));
+  }
+
+  @override
   void dispose() {
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
@@ -4048,11 +4060,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
     }
     WidgetsBinding.instance.removeObserver(this);
-    // BUG-2453：注销 [_pokeControlsVisible] 造出来的合成 hover 设备。它在 Flutter
-    // `MouseTracker` 里是一条真实的设备状态，只有 `PointerRemovedEvent` 才会删——
-    // 不注销就永远停在视频区中心，退出播放器后每帧都在那一点命中，库页中心那张卡
-    // 收到 onEnter 被当成「鼠标悬停」放大。
-    _retireSyntheticHoverDevice();
+    // BUG-2453：只摘路由动画监听，**不在这里派指针事件**——dispose 跑在 finalizeTree 的
+    // 锁态内，同步注销会让幽灵指针此刻悬停的那张下层卡 onExit → setState 撞「widget tree
+    // was locked」断言。注销本身发生在本页失去栈顶那一帧（[_retireSyntheticHoverDevice]）。
+    _detachSyntheticHoverRouteListeners();
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
