@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 一条在线漫画书架条目**不可用**的原因。
@@ -173,9 +174,28 @@ abstract interface class OnlineMangaRuntimeAdapter {
   Future<List<int>> fetchCover(OnlineMangaLibraryEntry entry, String url);
 }
 
+/// 在 app 内登录源站所需的一切（[runtime] 交给 `mihonLoginTarget` 判能力）。
+typedef OnlineMangaLoginTarget = ({
+  Object runtime,
+  String sourceName,
+  String baseUrl,
+});
+
+/// 有「在 app 内登录源站」流程的适配器（BUG-2479）。
+///
+/// 独立于 [OnlineMangaRuntimeAdapter]：Aidoku / 互联对端没有这条流程，作品页
+/// 用 `is OnlineMangaLoginCapable` 判有没有，与运行时那边的 cookie 能力接口同一
+/// 套写法。
+abstract interface class OnlineMangaLoginCapable {
+  /// 该条目所属源的登录目标；源没登记 / 运行时不接受浏览器登录 / baseUrl 解析
+  /// 不出 host 时返回 null。
+  OnlineMangaLoginTarget? loginTarget(OnlineMangaLibraryEntry entry);
+}
+
 // ── Mihon ─────────────────────────────────────────────────────────────
 
-class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
+class MihonLibraryAdapter
+    implements OnlineMangaRuntimeAdapter, OnlineMangaLoginCapable {
   const MihonLibraryAdapter(this.manager, {this.presetContext});
 
   final MihonManager manager;
@@ -207,6 +227,30 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
     } on OnlineMangaUnavailable {
       return null;
     }
+  }
+
+  @override
+  OnlineMangaLoginTarget? loginTarget(OnlineMangaLibraryEntry entry) {
+    final MihonSourceContext? preset = presetContext;
+    String name;
+    String baseUrl;
+    if (preset != null) {
+      name = preset.source.name;
+      baseUrl = preset.source.baseUrl;
+    } else {
+      try {
+        final MangaOnlineSourceRow row = _sourceRow(entry);
+        name = row.name;
+        baseUrl = row.baseUrl;
+      } on OnlineMangaUnavailable {
+        return null;
+      }
+    }
+    final Object runtime = manager.runtime;
+    if (mihonLoginTarget(runtime: runtime, baseUrl: baseUrl) == null) {
+      return null;
+    }
+    return (runtime: runtime, sourceName: name, baseUrl: baseUrl);
   }
 
   @override
@@ -389,6 +433,7 @@ class MihonLibraryAdapter implements OnlineMangaRuntimeAdapter {
         scanlator: chapter.scanlator,
         number: chapter.number,
         uploadedAt: chapter.uploadedAt <= 0 ? null : chapter.uploadedAt,
+        locked: OnlineMangaChapter.isLockedChapterName(chapter.name),
         raw: chapter.toJson(),
       );
 
@@ -650,6 +695,7 @@ class AidokuLibraryAdapter implements OnlineMangaRuntimeAdapter {
           scanlator: scanlator.isEmpty ? null : scanlator,
           number: chapterNumber?.toDouble(),
           uploadedAt: uploadedAt <= 0 ? null : uploadedAt,
+          locked: map['locked'] == true,
           raw: map,
         ),
       );

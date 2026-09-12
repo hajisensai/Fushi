@@ -112,6 +112,11 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
   Future<int> deleteMangaDownloadJob(String jobId) =>
       (delete(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).go();
 
+  /// 删一本书的全部任务行（删书 / 移出书架时随 `deleteEpubBook` 级联；mokuro 卷
+  /// 的 `book_key` 是 `mokuro:<系列>`，不与任何书行同键，天然不受影响）。
+  Future<int> deleteMangaDownloadJobsForBook(String bookKey) =>
+      (delete(mangaDownloadJobs)..where((t) => t.bookKey.equals(bookKey))).go();
+
   /// 启动时把上次进程死亡留下的 `running` 复位成 `queued`，让 worker 续跑。
   /// 进度列不动：worker 重跑时按磁盘上已落地的页决定从哪续。
   Future<int> resetRunningMangaDownloadJobs({required int updatedAt}) =>

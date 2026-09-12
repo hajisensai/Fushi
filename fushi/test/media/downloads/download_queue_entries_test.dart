@@ -11,10 +11,8 @@ import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_tasks_section.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
@@ -27,46 +25,65 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   );
 }
 
+/// 不 start 的服务：行停在 queued，状态由测试直接写表。时钟单调递增，让
+/// `created_at` 与入队顺序一致（同毫秒入队会退化成按 job_id 哈希排序）。
+MangaDownloadService _service(FushiDatabase db) {
+  int tick = 0;
+  return MangaDownloadService(
+    database: db,
+    serviceFor: (_) => throw UnimplementedError('本测试不跑 worker'),
+    clock: () => DateTime.fromMillisecondsSinceEpoch(++tick),
+  );
+}
+
 void main() {
   test(
-    'manga selective cleanup preserves active and other finished tasks',
+    'manga selective cleanup removes only that row and keeps the others',
     () async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
-      final StreamController<MokuroMoeVolumeDownloadEvent> stream =
-          StreamController<MokuroMoeVolumeDownloadEvent>();
-      final MokuroMoeDownloadQueue queue = MokuroMoeDownloadQueue(
-        db: db,
-        clientFactory: () => MokuroMoeClient(),
-        runnerOverride:
-            ({required String seriesName, required String volumeName}) =>
-                stream.stream,
-      );
+      final MangaDownloadService service = _service(db);
       addTearDown(() async {
-        queue.dispose();
-        await stream.close();
+        service.dispose();
         await db.close();
       });
-      queue.enqueue(
-        seriesName: 'Series',
-        volumeNames: <String>['01', '02', '03'],
+      expect(
+        await service.enqueueMokuroVolumes(
+          seriesName: 'Series',
+          volumeNames: <String>['01', '02', '03'],
+        ),
+        3,
       );
-      final MokuroMoeDownloadTask running = queue.tasks[0];
-      final MokuroMoeDownloadTask removed = queue.tasks[1];
-      final MokuroMoeDownloadTask retained = queue.tasks[2];
-      removed.status = MokuroMoeTaskStatus.done;
-      retained.status = MokuroMoeTaskStatus.failed;
-      int notifications = 0;
-      queue.addListener(() => notifications++);
-      queue.removeFinished(running);
-      expect(queue.tasks, hasLength(3));
-      expect(notifications, 0);
-      queue.removeFinished(removed);
-      expect(queue.tasks, <MokuroMoeDownloadTask>[running, retained]);
-      expect(notifications, 1);
-      queue.removeFinished(removed);
-      expect(notifications, 1);
+      final List<MangaDownloadJobRow> rows = await service.listJobs();
+      final MangaDownloadJobRow running = rows[0];
+      final MangaDownloadJobRow removed = rows[1];
+      final MangaDownloadJobRow retained = rows[2];
+      await db.updateMangaDownloadJobStatus(
+        running.jobId,
+        status: MangaDownloadJobStatus.running,
+        updatedAt: 1,
+      );
+      await db.updateMangaDownloadJobStatus(
+        removed.jobId,
+        status: MangaDownloadJobStatus.done,
+        updatedAt: 1,
+      );
+      await db.updateMangaDownloadJobStatus(
+        retained.jobId,
+        status: MangaDownloadJobStatus.failed,
+        updatedAt: 1,
+      );
+      await service.remove(removed.jobId);
+      expect(
+        (await service.listJobs())
+            .map((MangaDownloadJobRow r) => r.jobId)
+            .toList(),
+        <String>[running.jobId, retained.jobId],
+      );
+      // 再删一次是空操作，不影响其它行。
+      await service.remove(removed.jobId);
+      expect(await service.listJobs(), hasLength(2));
     },
   );
 
@@ -160,49 +177,81 @@ void main() {
   );
 
   testWidgets(
-    'manga groups exact series and gives repeated volumes distinct task IDs',
+    'manga groups exact series and re-enqueue of a done volume reuses its row',
     (WidgetTester tester) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
-      final MokuroMoeDownloadQueue queue = MokuroMoeDownloadQueue(
-        db: db,
-        clientFactory: () => MokuroMoeClient(),
-        runnerOverride:
-            ({required String seriesName, required String volumeName}) =>
-                const Stream<MokuroMoeVolumeDownloadEvent>.empty(),
-      );
+      final MangaDownloadService service = _service(db);
       addTearDown(() async {
-        queue.dispose();
+        service.dispose();
         await db.close();
       });
       List<DownloadTaskEntry>? entries;
       await _pump(
         tester,
-        MokuroMoeTasksSection(
-          queueOverride: queue,
+        MangaDownloadTasksSection(
+          downloadsOverride: service,
           tasksBuilder: (BuildContext context, List<DownloadTaskEntry> tasks) {
             entries = tasks;
             return const SizedBox();
           },
         ),
       );
+      await tester.pump();
       expect(entries, isEmpty);
-      queue.enqueue(seriesName: 'Series', volumeNames: <String>['01', '02']);
-      queue.enqueue(seriesName: 'Series Special', volumeNames: <String>['01']);
+      await service.enqueueMokuroVolumes(
+        seriesName: 'Series',
+        volumeNames: <String>['01', '02'],
+      );
+      await service.enqueueMokuroVolumes(
+        seriesName: 'Series Special',
+        volumeNames: <String>['01'],
+      );
       await tester.pump();
       expect(entries, hasLength(3));
       expect(entries![0].collectionKey, entries![1].collectionKey);
       expect(entries![0].collectionKey, isNot(entries![2].collectionKey));
+      expect(entries![0].collectionKey, mokuroMoeBookKey('Series'));
       expect(entries![0].collectionTitle, 'Series');
+      expect(entries![2].collectionTitle, 'Series Special');
       expect(entries![0].kind, DownloadTaskKind.manga);
-      queue.tasks.first.status = MokuroMoeTaskStatus.done;
-      queue.enqueue(seriesName: 'Series', volumeNames: <String>['01']);
+      expect(entries![0].status, DownloadTaskStatus.queued);
+      expect(entries![0].actions.cancel, isNotNull);
+      expect(entries![0].actions.retry, isNull);
+      expect(entries![0].actions.clear, isNull);
+
+      // done 后再入队同卷：job_id 由身份派生 → 同一行复位 queued，不新建行。
+      final String firstId = entries![0].id;
+      final String jobId = firstId.substring('manga:'.length);
+      await db.updateMangaDownloadJobStatus(
+        jobId,
+        status: MangaDownloadJobStatus.done,
+        updatedAt: 1,
+        completedAt: 1,
+      );
+      // 表变更 → 信号流 → 重取 → setState：隔着一次异步读，多 pump 一帧。
       await tester.pump();
+      await tester.pump();
+      expect(entries![0].status, DownloadTaskStatus.completed);
+      expect(entries![0].actions.clear, isNotNull);
+      final ({MangaDownloadJobRow row, bool added}) again =
+          await service.enqueueMokuroVolume(
+        seriesName: 'Series',
+        volumeName: '01',
+      );
+      expect(again.added, isTrue);
+      expect(again.row.jobId, jobId);
+      await tester.pump();
+      await tester.pump();
+      expect(entries, hasLength(3));
       expect(
         entries!.map((DownloadTaskEntry entry) => entry.id).toSet(),
-        hasLength(4),
+        hasLength(3),
       );
+      expect(entries![0].id, firstId);
+      expect(entries![0].status, DownloadTaskStatus.queued);
+
       final BuildContext context = tester.element(find.byType(Scaffold));
       expect(entries!.first.builder(context), isA<DownloadTaskCard>());
     },

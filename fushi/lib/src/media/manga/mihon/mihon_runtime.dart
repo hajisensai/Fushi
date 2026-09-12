@@ -137,34 +137,41 @@ abstract interface class ChallengeMihonRuntime {
 
 /// 宿主自己持有源站登录 cookie 的运行时（桌面 sidecar，BUG-2425）。
 ///
-/// 只有实现了它的运行时才谈得上「在 app 里登录源站」：cookie 的真值落在宿主的
-/// [cookieJar] 里，每次调用重新注入 sidecar。Android **刻意不实现**——那边系统
-/// `CookieManager` 才是唯一所有者，宿主再存一份只会两份打架。
+/// cookie 的真值落在宿主的 [cookieJar] 里，每次调用重新注入 sidecar；在 app 内
+/// 浏览器登录完必须**导出**到 jar 才对扩展生效。Android **刻意不实现**——那边
+/// 系统 `CookieManager` 才是唯一所有者，宿主再存一份只会两份打架；它实现的是
+/// [BrowserCookieMihonRuntime]。
 ///
-/// UI 用 `is HostCookieMihonRuntime` 判断要不要显示登录入口，而不是写
-/// `Platform.isAndroid`：判据是「谁拥有 cookie」这个能力，不是操作系统。
+/// UI 用 `is HostCookieMihonRuntime` / `is BrowserCookieMihonRuntime` 判断登录页
+/// 该怎么收尾，而不是写 `Platform.isAndroid`：判据是「谁拥有 cookie」这个能力，
+/// 不是操作系统。
 abstract interface class HostCookieMihonRuntime {
   MangaCookieJar get cookieJar;
 }
 
+/// 源站 cookie 由**平台浏览器**持有、扩展直接读同一份的运行时（Android：扩展的
+/// okhttp 经 `AndroidCookieJar` 读系统 `CookieManager`，app 内 WebView 写的也是它，
+/// BUG-2479）。
+///
+/// 这类运行时同样能「在 app 里登录源站」，只是登录完**什么都不用导出**：关掉
+/// 登录页那一刻扩展就已经看得到会话。与 [HostCookieMihonRuntime] 互斥。
+abstract interface class BrowserCookieMihonRuntime {}
+
 Map<String, Object?> mihonBridgeContext(
   MihonSource source, {
   String? changedPreferenceKey,
-}) =>
-    <String, Object?>{
-      'key': '__mangatan_bridge_context__',
-      'sourceId': source.id,
-      if (changedPreferenceKey != null)
-        'changedPreferenceKey': changedPreferenceKey,
-    };
+}) => <String, Object?>{
+  'key': '__mangatan_bridge_context__',
+  'sourceId': source.id,
+  if (changedPreferenceKey != null)
+    'changedPreferenceKey': changedPreferenceKey,
+};
 
 List<Map<String, Object?>> mihonBridgePreferences(
   MihonSource source,
   List<MihonPreference> preferences, {
   String? changedPreferenceKey,
-}) =>
-    <Map<String, Object?>>[
-      mihonBridgeContext(source, changedPreferenceKey: changedPreferenceKey),
-      ...preferences
-          .map((MihonPreference preference) => preference.toBridgeJson()),
-    ];
+}) => <Map<String, Object?>>[
+  mihonBridgeContext(source, changedPreferenceKey: changedPreferenceKey),
+  ...preferences.map((MihonPreference preference) => preference.toBridgeJson()),
+];

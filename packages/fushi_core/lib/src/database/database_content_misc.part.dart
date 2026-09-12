@@ -1077,6 +1077,12 @@ mixin _FushiDbContentMisc
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
         }
+        // v103：章节下载任务按 bookKey 记（device-local、刻意无 FK），随书清掉，
+        // 否则删书后任务行僵在下载中心、worker 还会去续一本已不存在的书。
+        // （直接写表而不经 `deleteMangaDownloadJobsForBook`：那个 mixin 在 with 链上
+        // 排在本 mixin 之后，`on` 不到。）
+        await (delete(mangaDownloadJobs)..where((t) => t.bookKey.equals(bookKey)))
+            .go();
         // SRT books linked to this epub key their cues on srt_books.uid, NOT
         // the epub bookKey, so delete those cues before dropping the srt rows.
         // (HBK-AUDIT-041 follow-up: deleteEpubBook owns the full cascade; the

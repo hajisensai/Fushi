@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -58,7 +59,15 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 }
 
 class _TestAppModel extends AppModel {
-  _TestAppModel(this._db, this._library) : super(testPlatformServices());
+  _TestAppModel(this._db, this._library, Directory root)
+      : super(testPlatformServices()) {
+    // 阶段 C 起作品页读 `mangaDownloadAutoOcr`（经 prefsRepo）：把真仓库挂到同一个
+    // 内存 DB 上，否则 `prefsRepo!` 在 build 里炸。
+    wireLocalAudioForTesting(
+      prefsRepo: PreferencesRepository(_db),
+      databaseDirectory: root,
+    );
+  }
 
   final FushiDatabase _db;
   final OnlineMangaLibraryService _library;
@@ -182,7 +191,7 @@ void main() {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    final _TestAppModel appModel = _TestAppModel(db, library);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
 
     late String bookKey;
     await tester.runAsync(() async {
@@ -232,7 +241,7 @@ void main() {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    final _TestAppModel appModel = _TestAppModel(db, library);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
 
     late String bookKey;
     await tester.runAsync(() async {

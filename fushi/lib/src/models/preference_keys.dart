@@ -135,6 +135,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（天，BUG-2450）：在线漫画封面磁盘缓存的保留天数（Mihon 封面缓存
   // MihonCoverCache.maxAge）。默认 180，范围 30..360。
   'manga_cover_cache_max_age_days',
+  // bool（默认 false）：作品页「完成后自动识别」chip——章节下载任务入队时写进
+  // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
+  'manga_download_auto_ocr',
   'manga_external_mokuro_path',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
