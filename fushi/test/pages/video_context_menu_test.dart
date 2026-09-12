@@ -6,6 +6,11 @@ import 'video_fushi_page_source_corpus.dart';
 /// 源码守卫：桌面右键上下文菜单（TODO-048c）。整页 widget 测试依赖真实 libmpv
 /// player（测试宿主无 libmpv，`load()` / `Player` 构造即抛），故按既有视频守卫范式
 /// （见 video_player_keyboard_static_test.dart）在源码层钉死结构不变量。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   // TODO-590 batch16: 右键触发点 onSecondaryTapUp 在 _buildVideoControlsInner、
   // 截断锚点 _buildVideoBody 都已搬到 video_fushi/layout.part.dart，故改读「主壳 + 全部
@@ -82,16 +87,20 @@ void main() {
       final String body = showContextMenu;
       // 取 showMenu 实际使用的 Navigator(rootNavigator:false) 的 Overlay RenderBox。
       expect(
-          body.contains('Overlay.of(ctx).context.findRenderObject()'), isTrue,
+          _flat(body)
+              .contains(_flat('Overlay.of(ctx).context.findRenderObject()')),
+          isTrue,
           reason: '锚点须落在 showMenu 所用 Overlay 的坐标系，故取该 Overlay 的 RenderBox');
       // 用 ancestor 变换把右键点映射到 Overlay 空间，沿真实渲染链吸收 FittedBox 缩放。
-      expect(body.contains('ancestor: overlayObject'), isTrue,
+      expect(_flat(body).contains(_flat('ancestor: overlayObject')), isTrue,
           reason: 'localToGlobal(..., ancestor: overlay) 让锚点与菜单宿主同坐标系（吃掉缩放残差）');
       // RelativeRect 须基于 Overlay 尺寸 + 映射后的 anchor，而非中和后真实视口的尺寸/local。
-      expect(body.contains('overlaySize.width - anchor.dx'), isTrue,
+      expect(
+          _flat(body).contains(_flat('overlaySize.width - anchor.dx')), isTrue,
           reason: 'right/bottom 须以 Overlay 尺寸算（缩放画布空间），与 anchor 同系');
       // 不得回退到旧的「直接拿 controls 盒子真实 local 当锚点」写法（那正是 BUG-260 偏移源）。
-      expect(body.contains('renderObject.size.width - local.dx'), isFalse,
+      expect(_flat(body).contains(_flat('renderObject.size.width - local.dx')),
+          isFalse,
           reason: '旧的真实空间 local 锚点会偏离鼠标 factor≈scale，必须已替换');
     });
 

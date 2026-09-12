@@ -152,7 +152,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_sensitivity',
   'maximum_terms',
   'mine_to_server',
+  // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
+  'mining_audio_head_pad_ms',
   'mining_audio_quality',
+  'mining_audio_tail_pad_ms',
   'mining_image_quality',
   'module_books_enabled',
   'module_browser_extension_enabled',

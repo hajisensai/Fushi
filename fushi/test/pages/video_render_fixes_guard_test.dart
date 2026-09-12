@@ -10,6 +10,11 @@ import '../helpers/source_guard.dart';
 ///     用 FushiAppUiScaleNeutralizer 中和全局缩放，使 media_kit Texture 按原生密度渲染。
 ///  2. 「退视频红屏」——根 Overlay 浮层 builder 用自身 overlayContext + !mounted 守卫，
 ///     销毁期先摘 entry 再清栈，杜绝用失效 State context 重建浮层抛异常。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   const String videoPage =
       'lib/src/pages/implementations/video_fushi_page.dart';
@@ -19,8 +24,8 @@ void main() {
     // 工厂存在，且确实用 FushiAppUiScaleNeutralizer 包裹整页。
     expect(src, contains('static Widget neutralized('));
     expect(
-      src,
-      contains('FushiAppUiScaleNeutralizer(\n        child: VideoFushiPage('),
+      _flat(src),
+      contains(_flat('FushiAppUiScaleNeutralizer(child: VideoFushiPage(')),
       reason: 'neutralized() 必须在路由层用中和器包裹整页',
     );
 
