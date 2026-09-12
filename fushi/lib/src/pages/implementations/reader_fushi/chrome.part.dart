@@ -1248,8 +1248,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   void _applyHoverReveal({required bool isMouse}) {
     if (!_hasEverLoaded || _sideSheetOpen || _appearanceSheetOpen) return;
-    // 停在栏上：栏自己的 MouseRegion 已取消计时，这里不再 re-arm。
-    if (_chromeHovered) return;
+    // 停在栏上：栏自己的 MouseRegion 已取消计时，这里不再 re-arm。栏被卸载
+    // （快捷键收起 / 重锚置 false）时 MouseRegion 不发 onExit，旗会卡在 true——
+    // 栏不在场就当没停在上面。
+    if (_chromeHovered && _bottomBarShouldPaint) return;
+    if (!_bottomBarShouldPaint) _chromeHovered = false;
     switch (readerHoverRevealAction(
       floating: _anyChromeFloating,
       transientVisible: _chromeTransientVisible,
@@ -2266,7 +2269,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return toc[i].label;
       }
     }
-    return 'Ch. ${chapterIndex + 1}';
+    return t.auto_chapter(n: chapterIndex + 1);
   }
 
   List<TtuTocEntry> _buildTtuToc() {

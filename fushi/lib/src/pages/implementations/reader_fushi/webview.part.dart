@@ -1493,9 +1493,13 @@ $kPagedWheelGestureHelperJs
     _handlePagedWheelTick(e);
   }, {passive: false});
   // 鼠标移动唤出悬浮控制栏（JS 腿，非 Windows；Windows 由 Flutter 侧 Listener 承担，
-  // Dart 端按 hostOwnsWebViewPointerInput 互斥）。250ms 节流：唤出 / 续命不需要每帧。
+  // Dart 端按 hostOwnsWebViewPointerInput 互斥）。用 pointermove + pointerType 判
+  // 真鼠标：触屏一次 tap 之后 Chromium/WebKit 会合成 mousemove→mousedown→mouseup→
+  // click（正文空白点不 preventDefault），走 mousemove 会让「点空白收起」被紧跟的
+  // 合成移动又唤出。250ms 节流：唤出 / 续命不需要每帧。
   var _hoverRevealLast = 0;
-  document.addEventListener('mousemove', function(e) {
+  document.addEventListener('pointermove', function(e) {
+    if (e.pointerType !== 'mouse') return;
     var now = Date.now();
     if (now - _hoverRevealLast < 250) return;
     _hoverRevealLast = now;

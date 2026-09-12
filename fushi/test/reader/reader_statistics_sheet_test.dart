@@ -72,6 +72,8 @@ void main() {
           // 昨天 / 其它书都不进「今天」
           _counter(dateKey: '2026-09-05', lookups: 5, mines: 1),
           _counter(dateKey: today, lookups: 7, mines: 7, bookKey: 'other'),
+          // legacy：bookKey 为空，按 title 回退命中
+          _counter(dateKey: today, lookups: 2, mines: 1, bookKey: ''),
         ],
         bookKey: 'book-1',
         title: 'Book',
@@ -79,8 +81,8 @@ void main() {
       );
       expect(totals.todayChars, 1000);
       expect(totals.todayMs, 60000);
-      expect(totals.todayLookups, 83);
-      expect(totals.todayCards, 12);
+      expect(totals.todayLookups, 85);
+      expect(totals.todayCards, 13);
       expect(totals.allChars, 6700);
       expect(totals.allMs, 402000);
     });

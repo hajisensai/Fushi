@@ -70,8 +70,9 @@ typedef ReaderPositionSnapshot = ({
 /// 从阅读域日面事实里切出**本书**的今日 / 累计。身份优先 `mediaKey == bookKey`；
 /// legacy 无身份行按 title 回退（与阅读统计页的按书分组同一规则）。
 ///
-/// [counters] 是 per-book 查词 / 制卡计数面（`lookup_mining_counters`），只取
-/// 今日、只认 `bookKey` 精确匹配（那张表每行自带 bookKey，无需 title 回退）。
+/// [counters] 是 per-book 查词 / 制卡计数面（`lookup_mining_counters`），只取今日；
+/// 身份优先 `bookKey`，`bookKey` 为空的旧行（该列是后补的 `withDefault('')`）按
+/// title 回退——与 [dailyBooks] 同一口径。
 ReaderBookStatTotals summarizeReaderBookStats(
   Iterable<StatFact> dailyBooks, {
   Iterable<LookupMiningCounterRow> counters = const <LookupMiningCounterRow>[],
@@ -96,7 +97,10 @@ ReaderBookStatTotals summarizeReaderBookStats(
   int todayLookups = 0;
   int todayCards = 0;
   for (final LookupMiningCounterRow c in counters) {
-    if (c.bookKey != bookKey || !window.isToday(c.dateKey)) continue;
+    final bool mine = c.bookKey.isNotEmpty
+        ? c.bookKey == bookKey
+        : (title != null && title.isNotEmpty && c.title == title);
+    if (!mine || !window.isToday(c.dateKey)) continue;
     todayLookups += c.lookupCount;
     todayCards += c.mineCount;
   }
