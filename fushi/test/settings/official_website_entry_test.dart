@@ -9,7 +9,7 @@ import 'package:fushi/src/utils/misc/official_links.dart';
 
 /// 「设置 · 通用 · 官网」这一行真的打开官网，而不是复制粘贴 GitHub 那行时把 URL
 /// 也一起抄了过来。两行并排、图标相近、只差一个 URL，是最容易静默串线的形状，所以
-/// 两行都断言各自的落点。
+/// 相邻外链都断言各自的落点，防止复制入口时把 URL 一起抄错。
 ///
 /// 侧栏左上角品牌位的同一入口在 `test/widgets/nav_rail_brand_button_test.dart`。
 void main() {
@@ -66,6 +66,16 @@ void main() {
     await github.onTap(_StubSettingsContext());
 
     expect(launchedUrls, <String>['https://github.com/hajisensai/fushi']);
+  });
+
+  test('system.github_sponsors opens the public sponsorship page', () async {
+    final SettingsActionItem sponsors = actionItem('system.github_sponsors');
+    expect(sponsors.title, t.options_github_sponsors);
+
+    await sponsors.onTap(_StubSettingsContext());
+
+    expect(launchedUrls, <String>[kGitHubSponsorsUrl]);
+    expect(kGitHubSponsorsUrl, 'https://github.com/sponsors/hajisensai');
   });
 
   test('openOfficialDownloadPage 落在下载页，而不是首页', () async {

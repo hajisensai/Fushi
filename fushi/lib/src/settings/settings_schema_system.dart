@@ -263,6 +263,17 @@ SettingsDestination buildSystemDestination() {
               );
             },
           ),
+          SettingsActionItem(
+            id: 'system.github_sponsors',
+            title: t.options_github_sponsors,
+            icon: Icons.favorite_border,
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kGitHubSponsorsUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
           // TMDB 署名 —— **合约义务，不是可选的致谢**。
           //
           // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
