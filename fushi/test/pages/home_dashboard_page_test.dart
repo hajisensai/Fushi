@@ -240,6 +240,35 @@ void main() {
     expect(find.text(t.home_activity), findsOneWidget);
   });
 
+  testWidgets('窄屏（420）单列：「最近添加」排在「继续」与「活动」之间', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 仅导入（无播放断点）：让「最近添加」区块有内容而非被空库折叠。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('recent-narrow'),
+      title: const Value('窄屏新导入'),
+      videoPath: const Value('/abs/recent-narrow.mp4'),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    // 单列里三个标题的纵坐标必须严格递增：活动时间轴天然很长，最近添加若压在
+    // 它下面，用户得滚到底才看得见新入库条目。
+    double top(String text) =>
+        tester.getTopLeft(find.text(text, skipOffstage: false)).dy;
+    final double continueY = top(t.home_continue);
+    final double recentY = top(t.home_recently_added);
+    final double activityY = top(t.home_activity);
+    expect(continueY, lessThan(recentY));
+    expect(recentY, lessThan(activityY));
+  });
+
   testWidgets('宽屏 1280 + 真实载入数据（异步回填后）：下段两列渲染不抛无限高度',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);

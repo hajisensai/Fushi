@@ -1072,15 +1072,17 @@ class _HomeDashboardPageState
               SizedBox(height: tokens.spacing.card),
               continueCard,
               SizedBox(height: tokens.spacing.card),
+              // 与宽屏主列同序（继续 → 最近添加）：窄屏单列把最近添加压在活动
+              // 时间轴之下，时间轴天然很长，用户要滚到底才看得见新入库的条目。
+              if (recentCard != null) ...<Widget>[
+                recentCard,
+                SizedBox(height: tokens.spacing.card),
+              ],
               if (trackingCard != null) ...<Widget>[
                 trackingCard,
                 SizedBox(height: tokens.spacing.card),
               ],
               activityCard,
-              if (recentCard != null) ...<Widget>[
-                SizedBox(height: tokens.spacing.card),
-                recentCard,
-              ],
             ],
           );
         }
