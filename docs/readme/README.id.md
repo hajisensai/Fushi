@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> Minimum Android 7.0 (API 24). Bahasa yang tersedia untuk pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terlepas dari bahasa antarmuka.
+> Minimum Android 7.0 (API 24). Bahasa yang tersedia untuk pencarian kamus ditentukan oleh kamus yang diimpor dan tabel transformasi Yomitan, terlepas dari bahasa antarmuka. Versi iOS didistribusikan lewat TestFlight: tanpa fitur penemuan dan unduhan yang tidak diizinkan pedoman App Store, dan pembaruannya datang beberapa hari lebih lambat dari platform lain.
 
 ### Bahasa Antarmuka (17)
 

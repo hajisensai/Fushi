@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> Tối thiểu Android 7.0 (API 24). Các ngôn ngữ khả dụng để tra từ điển do các từ điển đã nhập và bảng biến đổi Yomitan quyết định, độc lập với ngôn ngữ giao diện.
+> Tối thiểu Android 7.0 (API 24). Các ngôn ngữ khả dụng để tra từ điển do các từ điển đã nhập và bảng biến đổi Yomitan quyết định, độc lập với ngôn ngữ giao diện. Bản iOS được phát hành qua TestFlight: không có các tính năng khám phá và tải xuống mà nguyên tắc App Store không cho phép, và bản cập nhật đến muộn hơn vài ngày so với các nền tảng khác.
 
 ### Ngôn ngữ giao diện (17)
 
