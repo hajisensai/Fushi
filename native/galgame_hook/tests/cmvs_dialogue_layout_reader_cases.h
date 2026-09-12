@@ -1,6 +1,8 @@
 #pragma once
 #include "../hook/adapters/cmvs_dialogue_layout_reader.h"
 #include "../hook/adapters/cmvs_dialogue_text_resolver.h"
+#include "../hook/adapters/cmvs_presentation_reader.h"
+#include "../hook/adapters/cmvs_sprite_geometry_reader.h"
 #include <cassert>
 #include <vector>
 
@@ -9,7 +11,7 @@ using namespace fushi_voice_hook::cmvs_layout;
 constexpr uint64_t kBase = 0x140000000;
 constexpr uint64_t kRoot = 0x1000, kOwner = 0x3000, kNodes = 0x4000;
 struct Memory {
-  std::vector<uint8_t> bytes = std::vector<uint8_t>(0x10000);
+  std::vector<uint8_t> bytes = std::vector<uint8_t>(0x20000);
   uint64_t changed_address = 0;
   size_t reads_at_changed = 0;
   template <typename T> void Put(uint64_t address, T value) {
@@ -95,5 +97,78 @@ inline void Run() {
   assert(capture(invalid_cp932) == Result::kInvalidNode);
   assert(Capture(Memory::Read, &good, kBase, kRoot, kSlotCount, &result) ==
          Result::kInvalidArgument);
+  Memory view;
+  view.Put(kRoot + 0x7b0, uint64_t{0xd000});
+  view.Put(0xd000, uint64_t{0xe000});
+  view.Put(0xd008, uint64_t{0xe200});
+  view.Put(0xe218, int32_t{1280});
+  view.Put(0xe21c, int32_t{720});
+  view.Put(0xe268, int32_t{3840}); // stale fullscreen destination
+  view.Put(0xe26c, int32_t{2160});
+  Presentation presentation{};
+  assert(CapturePresentation(Memory::Read, &view, kBase, kRoot, 1280, 720,
+                             &presentation) == Result::kCaptured);
+  assert(presentation.destination.width == 1280);
+  assert(CapturePresentation(Memory::Read, &view, kBase, kRoot, 852, 480,
+                             &presentation) == Result::kInvalidNode);
+  view.Put(0xe120, uint64_t{0xe400});
+  view.Put(0xe400, kBase + 0xd6f78);
+  view.Put(0xe408, int32_t{1});
+  view.Put(0xe2b8, int32_t{1});
+  view.Put(0xe2c8, int32_t{3840});
+  view.Put(0xe2cc, int32_t{2160});
+  view.Put(0xe258, int32_t{1280});
+  view.Put(0xe25c, int32_t{720});
+  assert(CapturePresentation(Memory::Read, &view, kBase, kRoot, 3840, 2160,
+                             &presentation) == Result::kCaptured);
+  assert(presentation.source.width == 1280 &&
+         presentation.destination.width == 3840);
+  view.Put(0xe268, int32_t{3841});
+  assert(CapturePresentation(Memory::Read, &view, kBase, kRoot, 3840, 2160,
+                             &presentation) == Result::kInvalidNode);
+  view.Put(0xe268, int32_t{3840});
+  view.changed_address = 0xe120;
+  assert(CapturePresentation(Memory::Read, &view, kBase, kRoot, 3840, 2160,
+                             &presentation) == Result::kChanged);
+  Memory sprites(1);
+  sprites.Put(kOwner, uint64_t{0x10000});
+  assert(capture(sprites) == Result::kCaptured);
+  sprites.Put(0x11808, uint64_t{0x13000});
+  sprites.Put(0x11830, uint64_t{0x12000});
+  sprites.Put(0x13008, int32_t{0});
+  sprites.Put(0x13010, uint64_t{0x14000});
+  sprites.Put(0x14000, uint64_t{0x10000});
+  sprites.Put(0x15830, uint64_t{0x16000});
+  for (uint64_t sprite : {uint64_t{0x10000}, uint64_t{0x14000}}) {
+    sprites.Put(sprite + 0x1860, int32_t{1});
+    sprites.Put(sprite + 0x1864, int32_t{1});
+    sprites.Put(sprite + 0x1868, int32_t{1});
+    sprites.Put(sprite + 0x186c, 1.0f);
+  }
+  for (uint64_t state : {uint64_t{0x12000}, uint64_t{0x16000}}) {
+    sprites.Put(state + 0x44, int32_t{255});
+    sprites.Put(state + 0x48, 1.0f);
+    sprites.Put(state + 0x4c, 1.0f);
+    sprites.Put(state + 0x54, int32_t{256});
+  }
+  sprites.Put(0x12020, int32_t{100});
+  sprites.Put(0x12024, int32_t{200});
+  sprites.Put(0x16020, int32_t{28});
+  sprites.Put(0x16024, int32_t{43});
+  sprites.Put(0x16010, int32_t{34});
+  sprites.Put(0x16014, int32_t{34});
+  Presentation pixels{{0, 0, 1280, 720}, {0, 0, 3840, 2160}, 3840, 2160};
+  std::array<PixelRect, kMaxGlyphs> quads{};
+  assert(CaptureQuads(Memory::Read, &sprites, result, pixels, &quads) == Result::kCaptured);
+  assert(quads[0].x == 384 && quads[0].y == 729 && quads[0].width == 102);
+  sprites.Put(0x11864, int32_t{0});
+  assert(CaptureQuads(Memory::Read, &sprites, result, pixels, &quads) == Result::kInvalidNode);
+  assert(quads[0].width == 0);
+  sprites.Put(0x11864, int32_t{1});
+  sprites.Put(0x16044, int32_t{0});
+  assert(CaptureQuads(Memory::Read, &sprites, result, pixels, &quads) == Result::kInvalidNode);
+  sprites.Put(0x16044, int32_t{255});
+  sprites.Put(0x16050, int32_t{90});
+  assert(CaptureQuads(Memory::Read, &sprites, result, pixels, &quads) == Result::kInvalidNode);
 }
 }  // namespace cmvs_reader_test

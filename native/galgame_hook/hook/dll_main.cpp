@@ -47,6 +47,9 @@
 #include "adapter.h"
 #include "module_settle.h"
 #include "host_executable_digest.h"
+#include "adapters/cmvs_lookup_profile.h"
+#include "adapters/cmvs_dialogue_text_resolver.h"
+#include "adapters/cmvs_sprite_geometry_reader.h"
 #include "lookup_overlay_geometry.h"
 #include "game_main_window.h"
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被

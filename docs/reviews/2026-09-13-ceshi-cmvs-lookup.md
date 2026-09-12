@@ -81,3 +81,20 @@ x64 CMake 配置及 hook、injector、lookup probe、ring probe 四个目标构�
 - 同句 Alt+Enter 后，PerMonitorV2 probe 读取真实 client 与 window 都为 `3840x2160`、DPI 144；主代理看到的截图展示为 `2560x1440`，两种坐标不可混用。owner 和字格设计坐标不变；渲染 surface `+0xb8` 从 0 变 1，`+0xc8/+0xcc` 为 3840/2160。没有把截图展示比例硬编码为 provider 投影。
 
 正文串身份现已通过，但完整绘制投影、可见字格状态与 frame 生命周期仍未达到生产 admission；新增 reader/resolver 无运行时接线、无支持矩阵变更。
+
+## 生产接线候选（待新会话查词 E2E）
+
+`cmvs_lookup.inc` 已接入现有 CMVS adapter，声明 provider `(engine_exact_layout,16)`；Dart 对应允许表由主代理在同分支提交 `65aa3ea2bb`，该提交须与 native 接线一起交付。IPC 没有结构/版本/偏移变化。支持矩阵仅登记 `implemented_unverified`。
+
+- 仅同一 x64 EXE SHA 启用 `0xd400` 原始主循环入口 Hook，覆盖脚本执行、布局更新、绘制及 Present；它的 root 来自真实函数参数，不扫描堆或绑定固定 slot 7。
+- 回调在循环结束后用固定 4 MiB 池复制有界原始内存块，遍历总计最多 512 字格及 512 子 sprite。没有文本解码、坐标运算、文件/IPC IO 或等待 worker。快照锁忙时丢弃本帧且递增完成代数，旧帧不能继续命中。
+- worker 从不可变副本复用 reader 与 selected-lane resolver；只有唯一可见布局与当前所选整句匹配、sprites 无旋转/淡出/其他未实现变换、presentation 成立才 OfferReady。读取字体栅格、窗口大小或源串任一部分，均不能单独建立准入。
+- 原始子 sprite 的绘制矩形用于命中。重叠字形区域没有唯一字格时不发布命中。选中源 UTF-16 index、文本道 event seq 与本帧代数独立传递；发布前再次核对 frame、selected event/text/thread 和 client 尺寸。
+- 当前只复用 Shift 触发、通用输入屏蔽事务及既有 overlay/direct-card 呈现；没有实现裸左键拦截，也没有宣称输入屏蔽实测通过。
+- 窗口模式的 physical client 为 1280x720，post 对象为空，严格采用 identity；全屏 physical client 3840x2160，post 对象存在且实际 D3D9 StretchRect 读取 surface `+0x50` 的 `(0,0,1280,720) → (0,0,3840,2160)`。恢复窗口后旧 StretchRect 字段仍留在内存，但 post 对象已销毁，resolver 明确忽略这些旧值。
+
+候选构建目录为 `native/galgame_hook/build-cmvs-runtime-x64/Release/`。DLL SHA `92ABD313E8B73AC5239513A49C7F66B96B35E1A3DDFF1526C1523AC3BBB6DEE9`，injector SHA `E62486C156B50E2B0B5B34A3F620620F1A36CE96FF868F633FB32995EDD35D33`。旧 build-x64 DLL 被第二会话加载，链接出现 LNK1104，因此使用新的独立构建输出；不把被锁旧 DLL 的运行当本候选验收。
+
+候选已完成双架构 hook DLL 编译，x64 / Win32 的 CMVS、geometry registry、line text match 定向 CTest 各 3/3；manifest 23、结构 50、workflow 6 条 Python 测试通过。新增 presentation/quad 合成负例覆盖旧全屏矩形残留、客户端尺寸不符、目标越界、post 生存期变化、隐藏父 sprite、透明子 sprite 与旋转。正在补充全量 native 构建/CTest；新候选尚未记录真实 geometry OfferReady/Shift hit/popup/input/card 结果。
+
+正式 `tools/build_distribution.ps1 -RunTests` 已执行成功（退出 0）：`build/x64` 全量 CTest **111/111**、`build/x86` 全量 **115/115**。两个正式 zip 与 source fingerprint 位于 `native/galgame_hook/dist/`；x64 zip SHA `791305cf0bb321b3080e76bff85fb6e1070ab3a102e79c2390e51204e3e2d930`，x86 zip SHA `3ac4cf7db0a09e85fca2ecb5f0333015e67633d7802cc13b7eaf91d419a44aae`。正式输出 x64 DLL SHA `D4309F049381E8F892B5964AC9A24C5E9F88AB034BA7F5775975E099E3EC88F9`；此前 92ABD 候选来自另一构建路径，E2E 必须记录实际安装/加载的正式包哈希。主代理负责安装至同 worktree 的新 Flutter Windows bundle 并执行真实查词验收。
