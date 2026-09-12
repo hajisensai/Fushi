@@ -196,14 +196,20 @@ void main() {
         expect(editor.contains('VideoControlSlot.$slot'), isTrue,
             reason: '编辑器应有 $slot 放置区（TODO-388）');
       }
+      // 放置区本体现在由泛型 ControlLayoutEditor（src/controls/）造，视频编辑器经
+      // stageBuilder 拿到 buildSlotRegion 回调再按槽位排布；两边各守一半。
       expect(
-        editor.contains('_buildSlotRegion(') &&
+        editor.contains('buildSlotRegion(') &&
             (editor.contains('_buildStageRow(') ||
                 editor.contains('_buildCompactSlotGrid(')),
         isTrue,
         reason: '造放置区的入口不见了——上面两条只证明枚举值还被提到，'
             '不证明它真的被做成了可投放区域',
       );
+      final String genericEditor =
+          read('lib/src/controls/control_layout_editor.dart');
+      expect(genericEditor.contains('Widget _buildSlotRegion('), isTrue,
+          reason: '泛型编辑器必须提供槽位放置区的实现');
       // 顶部两槽有面向用户的标签（i18n）。
       expect(editor.contains('t.video_control_slot_top_left'), isTrue);
       expect(editor.contains('t.video_control_slot_top_right'), isTrue);
