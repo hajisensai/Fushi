@@ -4768,5 +4768,6 @@
   "shortcut_action_global_scroll_to_top": "Scroll to top",
   "shortcut_action_global_scroll_to_bottom": "Scroll to bottom",
   "audiobook_transcribe_model_scope_dedicated": "Dedicated — most accurate for this language",
-  "audiobook_transcribe_model_scope_multilingual": "Multilingual — wide coverage, less accurate per language"
+  "audiobook_transcribe_model_scope_multilingual": "Multilingual — wide coverage, less accurate per language",
+  "audiobook_transcribe_elapsed_total": "Total time $elapsed"
 }

@@ -347,6 +347,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   StreamSubscription<AsrTranscribeEvent>? _runSub;
   AsrTranscribeProgress? _progress;
   AsrTranscribeResult? _result;
+
+  /// 本次「开始」到拿到结果的墙钟（含装模型 / 远端上传）。只在本 sheet 里跑过
+  /// 一轮才有值——上一轮会话留下的完成产物没有可信的耗时，不显示。
+  Stopwatch? _runClock;
+  Duration? _elapsedTotal;
   OnnxProviderResolution? _resolution;
 
   /// 远程 host（能力位含 asr）；null = 只有本机。
@@ -498,6 +503,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   }
 
   Future<void> _startTranscription() async {
+    _runClock = Stopwatch()..start();
+    _elapsedTotal = null;
     if (_runRemote && _remoteTarget != null) return _startRemoteTranscription();
     final AsrTranscribePlan? plan = _plan;
     if (plan == null) return;
@@ -543,6 +550,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               setState(() {
                 _result = r;
                 _finishedSrt = r.srtPath;
+                _elapsedTotal = _runClock?.elapsed;
                 _phase = _Phase.finished;
               });
           }
@@ -665,6 +673,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             setState(() {
               _finishedSrt = srt?.path;
               _remoteProgress = 1;
+              _elapsedTotal = srt == null ? null : _runClock?.elapsed;
               _phase = srt == null ? _Phase.error : _Phase.finished;
               if (srt == null) _error = 'no subtitle in remote result';
             });
@@ -686,6 +695,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (language == _language) return;
     _language = language;
     _result = null;
+    _elapsedTotal = null;
     _progress = null;
     unawaited(widget.languageSetter?.call(language.tag));
     _refreshPlan();
@@ -832,6 +842,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     }
     if (!mounted) return;
     _result = null;
+    _elapsedTotal = null;
     _progress = null;
     await _refreshPlan();
   }
@@ -857,6 +868,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     await _service.discard(widget.audioPaths, _language);
     if (!mounted) return;
     _result = null;
+    _elapsedTotal = null;
     _finishedSrt = null;
     _progress = null;
     await _refreshPlan();
@@ -989,13 +1001,25 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         return sb.toString().trimRight();
       case _Phase.finished:
         final AsrTranscribeResult? r = _result;
-        if (r != null) {
-          return t.audiobook_transcribe_done(
-            cues: r.cueCount,
-            segments: r.segmentCount,
-          );
+        final StringBuffer sb = StringBuffer(
+          r != null
+              ? t.audiobook_transcribe_done(
+                  cues: r.cueCount,
+                  segments: r.segmentCount,
+                )
+              : t.audiobook_transcribe_result_name,
+        );
+        final Duration? elapsed = _elapsedTotal;
+        if (elapsed != null) {
+          sb
+            ..writeln()
+            ..write(
+              t.audiobook_transcribe_elapsed_total(
+                elapsed: _fmtDuration(elapsed),
+              ),
+            );
         }
-        return t.audiobook_transcribe_result_name;
+        return sb.toString();
       case _Phase.error:
         return t.audiobook_transcribe_failed(error: _error ?? '');
     }
