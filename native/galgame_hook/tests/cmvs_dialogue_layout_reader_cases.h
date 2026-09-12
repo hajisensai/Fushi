@@ -3,6 +3,7 @@
 #include "../hook/adapters/cmvs_dialogue_text_resolver.h"
 #include "../hook/adapters/cmvs_presentation_reader.h"
 #include "../hook/adapters/cmvs_sprite_geometry_reader.h"
+#include "../hook/adapters/cmvs_hook_installation.h"
 #include <cassert>
 #include <vector>
 
@@ -48,6 +49,41 @@ struct Memory {
   }
 };
 inline void Run() {
+  // The real HookFn failure contract: CreateHook populates the trampoline,
+  // EnableHook fails, and HookFn returns false without clearing the pointer.
+  int hook_target = 0, hook_detour = 0;
+  void* trampoline = nullptr;
+  HookInstallation failed_install;
+  const auto create_then_fail_enable = [](void* target, void*, void** original) {
+    *original = target;
+    return false;
+  };
+  assert(!failed_install.Install(create_then_fail_enable, &hook_target,
+                                 &hook_detour, &trampoline));
+  assert(trampoline == &hook_target && !failed_install.enabled());
+  // A subsequent availability/install query must not reinterpret that nonnull
+  // trampoline as success or retry an unresolved installation implicitly.
+  const auto unexpected_retry = [](void*, void*, void**) -> bool {
+    assert(false && "failed installation must stay failed");
+    return true;
+  };
+  assert(!failed_install.Install(unexpected_retry, &hook_target,
+                                 &hook_detour, &trampoline));
+  HookInstallation successful_install;
+  const auto enable_success = [](void* target, void*, void** original) {
+    *original = target;
+    return true;
+  };
+  assert(successful_install.Install(enable_success, &hook_target,
+                                    &hook_detour, &trampoline));
+  assert(successful_install.enabled());
+  successful_install.Shutdown();
+  assert(!successful_install.enabled() && trampoline != nullptr);
+  HookInstallation missing_trampoline;
+  trampoline = nullptr;
+  const auto success_without_forwarding = [](void*, void*, void**) { return true; };
+  assert(!missing_trampoline.Install(success_without_forwarding, &hook_target,
+                                     &hook_detour, &trampoline));
   Snapshot result{};
   const auto capture = [&](Memory& memory) {
     return Capture(Memory::Read, &memory, kBase, kRoot, 0, &result);

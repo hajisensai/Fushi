@@ -11,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AdapterStructureTest(unittest.TestCase):
+    def test_cmvs_install_success_is_independent_of_trampoline(self) -> None:
+        adapters = ROOT / "hook" / "adapters"
+        adapter = self._strip_comments((adapters / "cmvs_adapter.inc").read_text(encoding="utf-8"))
+        runtime = self._strip_comments((adapters / "cmvs_lookup.inc").read_text(encoding="utf-8"))
+        for signature in (
+            "bool lookup_sensor_available() const",
+            "fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override",
+        ):
+            body = self._function_body(adapter, signature)
+            self.assertIn("g_cmvs_hook_installation.enabled()", body)
+            self.assertNotIn("g_cmvs_frame_original", body)
+        tick = self._function_body(runtime, "void ProcessCmvsLookupTick()")
+        self.assertIn("!g_cmvs_hook_installation.enabled()", tick)
+        self.assertNotIn("g_cmvs_frame_original", tick)
+        install = self._function_body(runtime, "bool InstallCmvsLookup()")
+        self.assertIn("g_cmvs_hook_installation.Install(HookFn,", install)
+        self.assertNotIn("if (g_cmvs_frame_original)", install)
+
     @staticmethod
     def _siglus_source() -> str:
         adapters = ROOT / "hook" / "adapters"

@@ -5,6 +5,7 @@
 namespace cmvs_lookup = fushi_voice_hook::cmvs_layout;
 using CmvsFrameFn = void(__fastcall*)(void*);
 CmvsFrameFn g_cmvs_frame_original = nullptr;
+cmvs_lookup::HookInstallation g_cmvs_hook_installation;
 std::atomic<uint64_t> g_cmvs_frame_sequence{0};
 bool g_cmvs_identity_checked = false;
 bool g_cmvs_identity_matched = false;
@@ -126,10 +127,10 @@ bool InstallCmvsLookup() {
     g_cmvs_identity_checked = true;
   }
   if (!g_cmvs_identity_matched) return false;
-  if (g_cmvs_frame_original) return true;
 #ifdef _WIN64
   const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-  return HookFn(reinterpret_cast<void*>(base + 0xd400),
+  return g_cmvs_hook_installation.Install(HookFn,
+                reinterpret_cast<void*>(base + 0xd400),
                 reinterpret_cast<void*>(&CmvsFrameDetour),
                 reinterpret_cast<void**>(&g_cmvs_frame_original));
 #else
@@ -197,7 +198,7 @@ void RetireCmvsLookup() {
 }
 
 void ProcessCmvsLookupTick() {
-  if (!g_cmvs_identity_matched || !g_cmvs_frame_original) return;
+  if (!g_cmvs_identity_matched || !g_cmvs_hook_installation.enabled()) return;
   const bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
   const bool submit = shift && !g_cmvs_shift_down;
   g_cmvs_shift_down = shift;

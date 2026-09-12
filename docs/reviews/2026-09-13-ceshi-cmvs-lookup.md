@@ -98,3 +98,11 @@ x64 CMake 配置及 hook、injector、lookup probe、ring probe 四个目标构�
 候选已完成双架构 hook DLL 编译，x64 / Win32 的 CMVS、geometry registry、line text match 定向 CTest 各 3/3；manifest 23、结构 50、workflow 6 条 Python 测试通过。新增 presentation/quad 合成负例覆盖旧全屏矩形残留、客户端尺寸不符、目标越界、post 生存期变化、隐藏父 sprite、透明子 sprite 与旋转。正在补充全量 native 构建/CTest；新候选尚未记录真实 geometry OfferReady/Shift hit/popup/input/card 结果。
 
 正式 `tools/build_distribution.ps1 -RunTests` 已执行成功（退出 0）：`build/x64` 全量 CTest **111/111**、`build/x86` 全量 **115/115**。两个正式 zip 与 source fingerprint 位于 `native/galgame_hook/dist/`；x64 zip SHA `791305cf0bb321b3080e76bff85fb6e1070ab3a102e79c2390e51204e3e2d930`，x86 zip SHA `3ac4cf7db0a09e85fca2ecb5f0333015e67633d7802cc13b7eaf91d419a44aae`。正式输出 x64 DLL SHA `D4309F049381E8F892B5964AC9A24C5E9F88AB034BA7F5775975E099E3EC88F9`；此前 92ABD 候选来自另一构建路径，E2E 必须记录实际安装/加载的正式包哈希。主代理负责安装至同 worktree 的新 Flutter Windows bundle 并执行真实查词验收。
+
+## 安装启用失败状态修复
+
+主代理复核确认：公共 `HookFn` 在 `MH_CreateHook` 成功、`MH_EnableHook` 失败时，会留下非空 trampoline 并返回 false。CMVS 原先把非空 trampoline 当成功缓存，导致后续安装查询、sensor available 与 admission 可错误报告 `SensorInstalled`。
+
+本轮仅在 CMVS 增加独立 `HookInstallation` 状态：只有安装调用返回 true 且具备 forwarding trampoline 才 enabled；失败保持失败，不因残留指针或后续查询转为成功。三个生产判据均读取 enabled，shutdown 清除 enabled；公共 `HookFn` 未改。C++ 回归通过注入真实失败契约（先填 original、再返回 false）验证非空指针不会产生成功，另测成功/缺失 trampoline/shutdown；结构守卫钉住 adapter admission、sensor available 和 worker 的接线。
+
+正式 `build_distribution.ps1 -RunTests` 重包退出 0；x64 全量 **111/111**、x86 全量 **115/115**，Python 结构 **51/51**、manifest **23/23**。新的 `dist/voice_hook_x64.zip` SHA 为 `1fe048d1a4721f29569e64ca3d1d50564a7ea339778f4e39e26177d5fa49134c`，x86 zip SHA `51bf5330ad98254dcbed40e135ecb7d35e50ba37161a68b9a2623481d40feb48`；source fingerprint `f49ae4c545d7b53ab67f0bdaa683468bc1e80d369887b89780b60243f33128f2`。正式 x64 DLL SHA 更新为 `F4E06503B3D45DCA4F4A8D197FDDD7A9693A03B5201323F15ADA0F1DEEB7ABF0`。尚未注入新 DLL，GUI 等用户处理防火墙弹窗；没有新增真实查词验收声明。

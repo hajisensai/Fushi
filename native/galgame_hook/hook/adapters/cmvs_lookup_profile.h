@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include "cmvs_dialogue_layout_reader.h"
+#include "cmvs_hook_installation.h"
 
 namespace fushi_voice_hook::cmvs_layout {
 
