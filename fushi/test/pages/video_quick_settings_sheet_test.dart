@@ -2315,20 +2315,23 @@ void main() {
           reason: 'control editor must size from current constraints');
       expect(src, contains('Widget _buildCompactSlotGrid('),
           reason: 'narrow controls page needs a true compact slot layout');
-      final int paletteStart = src.indexOf('Widget _buildControlPalette(');
+      // 调色板 / 槽位放置区本体在泛型 ControlLayoutEditor（src/controls/）里，
+      // 视频编辑器只排舞台；下面两段守卫改扫泛型文件。
+      final String generic = File('lib/src/controls/control_layout_editor.dart')
+          .readAsStringSync();
+      final int paletteStart = generic.indexOf('Widget _buildPalette(');
       expect(paletteStart, greaterThanOrEqualTo(0));
       final int paletteEnd =
-          src.indexOf('Widget _buildHiddenSlotTray', paletteStart);
+          generic.indexOf('Widget _buildSlotRegion(', paletteStart);
       expect(paletteEnd, greaterThan(paletteStart));
-      final String paletteBody = src.substring(paletteStart, paletteEnd);
+      final String paletteBody = generic.substring(paletteStart, paletteEnd);
       expect(paletteBody, contains('Wrap('),
           reason:
               'palette chips should wrap instead of hiding in a horizontal tail');
-      final int start = src.indexOf('Widget _buildSlotRegion(');
-      expect(start, greaterThanOrEqualTo(0));
-      final int end = src.indexOf('Widget _buildPlacedControlChip', start);
+      final int start = paletteEnd;
+      final int end = generic.indexOf('Widget _buildPlacedChip', start);
       expect(end, greaterThan(start));
-      final String body = src.substring(start, end);
+      final String body = generic.substring(start, end);
       expect(body, contains('SingleChildScrollView('),
           reason:
               'slot chip Wrap must be scrollable when many buttons are present');

@@ -44,13 +44,27 @@ void main() {
         reason: '外部布局改经 layout + didUpdateWidget 同步（重置行是并列 schema action）');
     expect(editor, contains('didUpdateWidget'));
 
+    // 拖放状态机 / 调色板 / 隐藏托盘抽成了泛型 ControlLayoutEditor（src/controls/），
+    // 视频编辑器只剩舞台几何 + 域文案，并把 VideoControlLayout 的 core 交给它。
     expect(editor, contains('_buildControlStagePreview'));
-    expect(editor, contains('DragTarget<VideoControlDragData>'));
-    expect(editor, contains('Draggable<VideoControlDragData>'));
+    expect(
+      editor,
+      contains('ControlLayoutEditor<VideoControlSlot, VideoControlItem>('),
+    );
+    expect(editor, contains('layout: widget.layout.core'));
+    expect(editor, contains("keyPrefix: 'video-control'"),
+        reason: 'widget key 前缀决定 video-control-edit-slot-* 等测试定位 key');
     expect(editor, contains('VideoControlSlot.hidden'));
-    expect(editor, contains('Tooltip('));
-    expect(editor, contains('Semantics('));
     expect(editor, isNot(contains('Icons.drag_indicator')));
+    final String genericEditor =
+        read('lib/src/controls/control_layout_editor.dart');
+    expect(genericEditor, contains('DragTarget<ControlDragData<S, I>>'));
+    expect(genericEditor, contains('Draggable<ControlDragData<S, I>>'));
+    expect(genericEditor, contains('Tooltip('));
+    expect(genericEditor, contains('Semantics('));
+    expect(genericEditor, isNot(contains('Icons.drag_indicator')));
+    expect(genericEditor, isNot(contains('package:fushi/src/media/')),
+        reason: '泛型编辑器不得反向依赖视频域');
 
     // schema 声明编辑器行，actions builder 把 host 权威布局 + 回调接进编辑器。
     final String schema = read('lib/src/settings/settings_schema_video.dart');
@@ -130,7 +144,10 @@ void main() {
       () {
     final String model =
         read('lib/src/media/video/video_control_customization.dart');
-    final int enumStart = model.indexOf('enum VideoControlItem {');
+    // 枚举实现泛型 ControlItemSpec（src/controls/control_layout.dart）。
+    final int enumStart = model.indexOf(
+      'enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {',
+    );
     expect(enumStart, greaterThanOrEqualTo(0));
     final int enumEnd =
         model.indexOf(';\n\n  const VideoControlItem', enumStart);
@@ -169,11 +186,18 @@ void main() {
   });
 
   test('drag payload carries source index for same-slot reorder', () {
+    // VideoControlDragData 是泛型 ControlDragData<VideoControlSlot, VideoControlItem>
+    // 的别名（src/controls/control_layout.dart）；载荷字段守在泛型那份上。
     final String model =
         read('lib/src/media/video/video_control_customization.dart');
-    expect(model, contains('final int? sourceIndex'));
-    expect(model, contains('VideoControlDragData({'));
-    expect(model, contains('sourceIndex'));
+    expect(model, contains('typedef VideoControlDragData'));
+    expect(
+        model, contains('ControlDragData<VideoControlSlot, VideoControlItem>'));
+    final String generic = read('lib/src/controls/control_layout.dart');
+    expect(generic, contains('final int? sourceIndex'));
+    expect(generic, contains('ControlDragData({'));
+    expect(generic, isNot(contains("import 'package:flutter")),
+        reason: '泛型布局模型必须是纯 Dart');
   });
 
   test('player chrome includes right rail, bottom custom buttons and fallbacks',
@@ -397,8 +421,8 @@ void main() {
     expect(page, contains('miningClipTimeMs('));
     expect(page,
         contains('miningClipTimeMs(paddedRange?.startMs ?? 0, clipDelayMs)'));
-    expect(
-        page, contains('miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs)'));
+    expect(page,
+        contains('miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs)'));
     expect(page, contains('_lastLookupCue ??'));
     expect(page, contains('_mineVideoCard('));
     // TODO-270 D：清草稿以「制卡成功」信号 result.ankiConnect 为判据（两后端成功时都
