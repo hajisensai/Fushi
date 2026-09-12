@@ -77,6 +77,15 @@ enum BackupCategory {
   /// audio), so the UI leaves this opt-in by default like videos.
   localAudio,
 
+  /// Galgame library (`galgames` + its `galgame_sources` scrape snapshots) and
+  /// the game cover files (`<documents>/game_covers/<id>.<ext>`, packed under
+  /// the `game_covers/` archive prefix). Before this category existed the game
+  /// rows always rode the whole-DB blob (never excludable, never skippable on
+  /// import) while the covers never travelled at all. Play-session facts
+  /// (`galgame_sessions`, game-kind `study_segments` / `activity_events`) are
+  /// STATISTICS and follow that category, not this one. Included by default.
+  games,
+
   /// Reading progress: where you left off in every book. Covers the
   /// `reader_positions` + `bookmarks` tables and the `audiobook_pos_*`
   /// preference rows. When unticked these rows are stripped from the exported
@@ -300,10 +309,13 @@ class BackupMeta {
     this.audiobooksRoot,
     this.fontsRoot,
     this.localAudioRoot,
+    this.gameCoversRoot,
     this.videoFiles = const <String, String>{},
     this.excludedCategories = const <String>{},
     this.videoBookCount,
     this.audiobookCount,
+    this.gameCount,
+    this.progressCount,
   });
 
   final String appVersion;
@@ -328,6 +340,20 @@ class BackupMeta {
   /// back to a DB-blob peek (BUG-781).
   final int? audiobookCount;
 
+  /// Number of `galgames` rows carried in this backup's DB blob (0 when the
+  /// games category was unticked → every row stripped on export). Same role as
+  /// [videoBookCount]: lets the import dialog offer the games toggle even when
+  /// no cover FILES were packed. Null for older backups → import falls back to
+  /// a DB-blob peek.
+  final int? gameCount;
+
+  /// Number of progress rows (`reader_positions` + `bookmarks`) carried in this
+  /// backup's DB blob (0 when the progress category was unticked). Progress is
+  /// DB-only — it has no archive file tree to count — so without this the
+  /// import dialog could never tell whether the backup carries any progress and
+  /// never offered the toggle. Null for older backups → DB-blob peek.
+  final int? progressCount;
+
   /// Absolute root of the extracted-books tree on the SOURCE device
   /// (`<appDoc>/hoshi_books`), captured so import can rebase stored book paths
   /// to this device's root. Null for legacy (db-only) backups → import skips
@@ -350,6 +376,12 @@ class BackupMeta {
   /// `local_audio_dbs` preference paths onto this device's root. Null when the
   /// local-audio category was not packed (or a legacy backup).
   final String? localAudioRoot;
+
+  /// Absolute root of the game-cover tree on the SOURCE device
+  /// (`<documents>/game_covers`), captured so import can rebase the stored
+  /// `galgames.cover_path` values onto this device's root. Null when the games
+  /// category was not packed (or a legacy backup).
+  final String? gameCoversRoot;
 
   /// Exact source video path -> archive-relative path under `videos/`.
   ///
@@ -376,11 +408,14 @@ class BackupMeta {
         if (audiobooksRoot != null) 'audiobooksRoot': audiobooksRoot,
         if (fontsRoot != null) 'fontsRoot': fontsRoot,
         if (localAudioRoot != null) 'localAudioRoot': localAudioRoot,
+        if (gameCoversRoot != null) 'gameCoversRoot': gameCoversRoot,
         if (videoFiles.isNotEmpty) 'videoFiles': videoFiles,
         if (excludedCategories.isNotEmpty)
           'excludedCategories': excludedCategories.toList(),
         if (videoBookCount != null) 'videoBookCount': videoBookCount,
         if (audiobookCount != null) 'audiobookCount': audiobookCount,
+        if (gameCount != null) 'gameCount': gameCount,
+        if (progressCount != null) 'progressCount': progressCount,
       };
 
   factory BackupMeta.fromJson(Map<String, dynamic> json) => BackupMeta(
@@ -394,6 +429,7 @@ class BackupMeta {
         audiobooksRoot: json['audiobooksRoot'] as String?,
         fontsRoot: json['fontsRoot'] as String?,
         localAudioRoot: json['localAudioRoot'] as String?,
+        gameCoversRoot: json['gameCoversRoot'] as String?,
         videoFiles: (json['videoFiles'] as Map?)?.map(
                 (dynamic k, dynamic v) => MapEntry(k as String, v as String)) ??
             const <String, String>{},
@@ -403,6 +439,8 @@ class BackupMeta {
             const <String>{},
         videoBookCount: json['videoBookCount'] as int?,
         audiobookCount: json['audiobookCount'] as int?,
+        gameCount: json['gameCount'] as int?,
+        progressCount: json['progressCount'] as int?,
       );
 
   static BackupMeta? tryParse(String source) {
@@ -460,6 +498,10 @@ const String _audiobooksPrefix = 'audiobooks';
 const String _fontsPrefix = 'custom_fonts';
 const String _videosPrefix = 'videos';
 const String _localAudioPrefix = 'localAudio';
+
+/// Game cover files (`<documents>/game_covers/<galgames.id>.<ext>`) in the
+/// archive. Same name as the on-disk directory so the tree restores 1:1.
+const String _gameCoversPrefix = 'game_covers';
 
 /// Preference key (in the `preferences` table) whose JSON value is the
 /// local-audio library list `[{path, displayName, enabled, sources}]`. The
@@ -568,9 +610,13 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 /// `activity_events` / `galgame_sessions` are session-granularity FACT
 /// streams, not aggregates, but they are what the statistics pages render
 /// from — the untick promise ("my stats don't travel") must cover them too.
-/// The `galgames` library rows stay: games are content, their sessions are
-/// statistics (mirrors `clearAllGalgameStatistics`, which deletes only the
-/// session facts).
+/// The `galgames` library rows stay: games are content (the `games`
+/// category), their sessions are statistics (mirrors
+/// `clearAllGalgameStatistics`, which deletes only the session facts).
+///
+/// v92 added `study_segments` (the ONLY study-time fact table the statistics
+/// pages read from since then) and its identity tombstones; both were missing
+/// here, so an "exclude statistics" export still leaked every study segment.
 const List<String> _statisticsTables = <String>[
   'reading_statistics',
   'reading_hourly_logs',
@@ -582,6 +628,8 @@ const List<String> _statisticsTables = <String>[
   'favorite_words',
   'activity_events',
   'galgame_sessions',
+  'study_segments',
+  'study_segment_tombstones',
 ];
 
 /// The five profile-layer tables in CHILD-first order, so a DELETE sweep of
@@ -782,6 +830,53 @@ Future<void> _retainAudiobooks(
   }
 }
 
+/// Games analogue of [_retainVideos]: DELETEs every `galgames` row whose `id`
+/// is NOT in [keep] (its `galgame_sources` / `galgame_sessions` follow via FK
+/// cascade) plus the game-kind rows of the logical-FK tables that never cascade
+/// (`tag_assignments`, `media_collection_items`, `study_segments`,
+/// `study_segment_tombstones`, `activity_events`, keyed by
+/// `media_kind`/`media_type` = 'game'). [keep]
+/// empty strips every game (the games category was unticked). Shared by the
+/// export strip and the overwrite-import strip so the two never diverge.
+Future<void> _retainGames(
+  String dbDirectory,
+  Set<String> keep,
+) async {
+  final FushiDatabase db = FushiDatabase(dbDirectory);
+  try {
+    final String notKept = keep.isEmpty
+        ? ''
+        : ' WHERE id NOT IN '
+            '(${List<String>.filled(keep.length, '?').join(', ')})';
+    await db.customStatement('DELETE FROM galgames$notKept', keep.toList());
+    // Logical (non-FK) game references: orphaned once their host is gone.
+    await db.customStatement(
+        'DELETE FROM tag_assignments WHERE media_kind = ? AND entry_key '
+        'NOT IN (SELECT id FROM galgames)',
+        <Object>[TagHostKind.game.dbValue]);
+    await db.customStatement(
+        'DELETE FROM media_collection_items WHERE media_type = ? AND '
+        'entry_key NOT IN (SELECT id FROM galgames)',
+        <Object>[MediaKind.game.dbValue]);
+    await db.customStatement(
+        'DELETE FROM study_segments WHERE media_kind = ? AND media_key '
+        'NOT IN (SELECT id FROM galgames)',
+        <Object>[kActivityMediaGame]);
+    await db.customStatement(
+        'DELETE FROM study_segment_tombstones WHERE media_kind = ? AND '
+        'media_key NOT IN (SELECT id FROM galgames)',
+        <Object>[kActivityMediaGame]);
+    await db.customStatement(
+        'DELETE FROM activity_events WHERE media_type = ? AND '
+        '(media_key IS NULL OR media_key NOT IN (SELECT id FROM galgames))',
+        <Object>[kActivityMediaGame]);
+    await db.customStatement('VACUUM');
+    await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+  } finally {
+    await db.close();
+  }
+}
+
 /// 一次导出里词典的**逐本**打包计划（BUG-2193）。
 ///
 /// 存在的理由：以前判据是一个 bool（`_hasCompleteDictionaryResources`），语义是
@@ -818,12 +913,14 @@ class BackupService {
     String? booksRootDirectory,
     String? audiobooksRootDirectory,
     String? fontsRootDirectory,
+    String? gameCoversRootDirectory,
   })  : _db = db,
         _dbDirectory = dbDirectory,
         _dictionaryResourceDirectory = dictionaryResourceDirectory,
         _booksRootDirectory = booksRootDirectory,
         _audiobooksRootDirectory = audiobooksRootDirectory,
         _fontsRootDirectory = fontsRootDirectory,
+        _gameCoversRootDirectory = gameCoversRootDirectory,
         _appVersion = appVersion;
 
   final FushiDatabase _db;
@@ -845,6 +942,11 @@ class BackupService {
   /// crossed over).
   final String? _fontsRootDirectory;
 
+  /// Root of the game-cover tree (`<documents>/game_covers`). When provided,
+  /// the cover files are packed into the backup alongside the `galgames` rows
+  /// whose `cover_path` points at them; null packs the rows without covers.
+  final String? _gameCoversRootDirectory;
+
   final String _appVersion;
 
   String get _dbPath => p.join(_dbDirectory, _dbName);
@@ -862,6 +964,21 @@ class BackupService {
         await _db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
     return row.data['c'] as int;
   }
+
+  /// Progress rows on the live DB (`reader_positions` + `bookmarks`), the
+  /// natural unit of the `progress` category for the export/import manifests.
+  Future<int> _countProgressRows() async =>
+      await _countRows('reader_positions') + await _countRows('bookmarks');
+
+  /// Statistics records on the live DB: the legacy day aggregates the old
+  /// `statsCount` already summed PLUS the v92 `study_segments` fact table —
+  /// since v92 new study time lands ONLY there, so a count that ignored it
+  /// reported "0 statistics" for every post-v92 library.
+  Future<int> _countStatisticsRows() async =>
+      await _countRows('reading_statistics') +
+      await _countRows('video_watch_statistics') +
+      await _countRows('mining_statistics') +
+      await _countRows('study_segments');
 
   /// Builds the export "what's inside" summary from the live DB + this device's
   /// content roots (TODO-1358). Counts are the natural unit per category; a root
@@ -887,6 +1004,9 @@ class BackupService {
     // count, the packed content and the import readback all agree.
     final int fonts = (await _referencedFontFiles()).length;
     final int localAudio = await _countLocalAudioDbs();
+    final int games = await _countRows('galgames');
+    final int progress = await _countProgressRows();
+    final int statistics = await _countStatisticsRows();
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       BackupCategory.dictionary: dictionaries,
       BackupCategory.books: books,
@@ -894,6 +1014,9 @@ class BackupService {
       BackupCategory.fonts: fonts,
       BackupCategory.videos: videos,
       BackupCategory.localAudio: localAudio,
+      BackupCategory.games: games,
+      BackupCategory.progress: progress,
+      BackupCategory.statistics: statistics,
     };
     return BackupContentSummary(
       counts: counts,
@@ -1130,6 +1253,14 @@ class BackupService {
       if (!includeAudiobooks) {
         await _retainAudiobooks(tmpDir.path, const <String>{});
       }
+      // Games mirror videos/audiobooks: unticking strips every `galgames` row
+      // (+ FK cascade + the logical game-kind rows) from the DB COPY, so the
+      // game library never travels uninvited (before this category existed it
+      // ALWAYS rode the whole-DB blob).
+      final bool includeGames = wants(BackupCategory.games);
+      if (!includeGames) {
+        await _retainGames(tmpDir.path, const <String>{});
+      }
 
       // TODO-1193: the four data categories (progress / statistics / settings /
       // profiles) live only in the DB blob, so when the user unticks any of
@@ -1181,7 +1312,6 @@ class BackupService {
       );
 
       final books = await _db.getAllEpubBooks();
-      final stats = await _db.getAllReadingStatistics();
       // The count reported to the import confirm dialog must reflect what is
       // actually exported, not the live library — a book whose record was
       // stripped above must not be counted (TODO-1195 part C/A).
@@ -1239,13 +1369,16 @@ class BackupService {
       final int blobAudiobookCount =
           includeAudiobooks ? (await _db.getAllAudiobooks()).length : 0;
 
-      // "Statistics records" spans reading + video + mining buckets, not reading
-      // alone, so a video-watcher's backup no longer reports "0 statistics".
-      final int totalStatsCount = includeStatistics
-          ? stats.length +
-              await _countRows('video_watch_statistics') +
-              await _countRows('mining_statistics')
-          : 0;
+      // "Statistics records" spans reading + video + mining buckets + the v92
+      // study-segment facts, not reading alone, so a video-watcher's (or any
+      // post-v92) backup no longer reports "0 statistics".
+      final int totalStatsCount =
+          includeStatistics ? await _countStatisticsRows() : 0;
+      // Rows remaining in the exported DB blob for the DB-only categories, so
+      // the import dialog can offer their toggles without peeking the blob.
+      final int blobGameCount = includeGames ? await _countRows('galgames') : 0;
+      final int blobProgressCount =
+          includeProgress ? await _countProgressRows() : 0;
 
       // Record the SOURCE-device content roots so import can rebase the stored
       // absolute paths (epubPath/extractDir/coverPath/audioRoot/...) onto the
@@ -1267,9 +1400,12 @@ class BackupService {
             wants(BackupCategory.audiobooks) ? _audiobooksRootDirectory : null,
         fontsRoot: wants(BackupCategory.fonts) ? _fontsRootDirectory : null,
         localAudioRoot: wants(BackupCategory.localAudio) ? _dbDirectory : null,
+        gameCoversRoot: includeGames ? _gameCoversRootDirectory : null,
         videoFiles: videoFiles,
         videoBookCount: blobVideoBookCount,
         audiobookCount: blobAudiobookCount,
+        gameCount: blobGameCount,
+        progressCount: blobProgressCount,
         // Record every unticked category by enum name so import knows a layer is
         // empty BY CHOICE (vs a genuinely empty DB). Only settings/profiles are
         // acted on at import; the rest is diagnostic / future-proofing.
@@ -1304,6 +1440,10 @@ class BackupService {
       }
       if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
         await _collectReferencedFontFiles(files);
+      }
+      if (_gameCoversRootDirectory != null && includeGames) {
+        await _collectTreeFiles(
+            Directory(_gameCoversRootDirectory), _gameCoversPrefix, files);
       }
 
       final String metaJson =

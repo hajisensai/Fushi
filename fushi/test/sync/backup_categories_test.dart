@@ -369,8 +369,8 @@ void main() {
         reason: 'audio tree absent from backup → existing tree untouched');
   });
   test(
-      'BackupCategory enumerates the six sidecar trees plus the four DB-only '
-      'data categories (db is never itself a category)', () {
+      'BackupCategory enumerates the seven content categories plus the four '
+      'DB-only data categories (db is never itself a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
       BackupCategory.books,
@@ -378,6 +378,7 @@ void main() {
       BackupCategory.fonts,
       BackupCategory.videos,
       BackupCategory.localAudio,
+      BackupCategory.games,
       BackupCategory.progress,
       BackupCategory.statistics,
       BackupCategory.settings,

@@ -2669,8 +2669,9 @@ class StudySegmentTombstones extends Table {
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
 // （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
 // 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，
-// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync /
-// 备份合并导入（合并层按 kind 过滤），全量备份恢复走整库文件拷贝原样还原。）
+// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync；
+// 备份合并导入自 `BackupCategory.games` 起经游戏身份映射（同 id / 刮削身份 /
+// exe 路径）落到本机游戏行上，见 backup_merge_engine.dart 的 `_buildGameIdMap`。）
 
 // ── manga_extension_stores ──────────────────────────────────────────
 /// v65：用户自行添加的 Mihon 扩展仓库。Fushi 不预置第三方仓库。

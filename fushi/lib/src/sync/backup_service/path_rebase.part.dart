@@ -19,6 +19,7 @@ Future<void> _rebaseAllPaths({
   required String? newFontsRoot,
   required String? newLocalAudioRoot,
   required String? newVideosRoot,
+  required String? newGameCoversRoot,
 }) async {
   await _rebaseContentPaths(
     dbDirectory: dbDirectory,
@@ -41,6 +42,39 @@ Future<void> _rebaseAllPaths({
     meta: meta,
     newVideosRoot: newVideosRoot,
   );
+  await _rebaseGameCoverPaths(
+    dbDirectory: dbDirectory,
+    meta: meta,
+    newGameCoversRoot: newGameCoversRoot,
+  );
+}
+
+/// Rebases every `galgames.cover_path` from the backup's
+/// [BackupMeta.gameCoversRoot] onto this device's [newGameCoversRoot]. No-op
+/// for a backup that packed no games / covers (meta root null) or an unticked
+/// games import (new root null). A cover not under the source root (a
+/// same-device merge, or the device's own rows) is left untouched by
+/// [rebasePath].
+Future<void> _rebaseGameCoverPaths({
+  required String dbDirectory,
+  required BackupMeta meta,
+  required String? newGameCoversRoot,
+}) async {
+  final String? oldRoot = meta.gameCoversRoot;
+  if (oldRoot == null || newGameCoversRoot == null) return;
+  final FushiDatabase db = FushiDatabase(dbDirectory);
+  try {
+    for (final GalgameRow g in await db.getAllGalgames()) {
+      final String? cover = g.coverPath;
+      if (cover == null) continue;
+      final String rebased = rebasePath(cover, oldRoot, newGameCoversRoot);
+      if (rebased == cover) continue;
+      await db.setGalgameCoverPath(g.id, rebased);
+    }
+    await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+  } finally {
+    await db.close();
+  }
 }
 
 /// Rebases the imported DB's stored absolute content paths from the backup's

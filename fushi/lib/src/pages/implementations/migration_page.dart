@@ -105,6 +105,8 @@ class _MigrationPageState extends State<MigrationPage> {
         audiobooksRootDirectory:
             p.join(appModel.appDirectory.path, 'audiobooks'),
         fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+        gameCoversRootDirectory:
+            p.join(appModel.appDirectory.path, 'game_covers'),
       );
       final MigrationExporter exporter = MigrationExporter(
         backupService: service,

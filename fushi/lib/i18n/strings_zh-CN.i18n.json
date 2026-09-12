@@ -4759,5 +4759,7 @@
   "manga_chapter_ocr_status_running": "识别中 ${done}/${total}",
   "manga_chapter_ocr_status_queued": "等待识别",
   "manga_ocr_boxes_toggle": "显示识别范围",
-  "remote_manga_added_to_shelf": "已加入漫画书架，章节从对端下载"
+  "remote_manga_added_to_shelf": "已加入漫画书架，章节从对端下载",
+  "backup_category_games": "游戏",
+  "backup_category_games_desc": "游戏库、元数据来源与封面"
 }
