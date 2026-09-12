@@ -68,6 +68,16 @@ class BackupRestoreService {
   /// files; videos = packed video files ([BackupMeta.videoFiles], else leaf
   /// files); localAudio = `local_audio_<n>.db` files (the `-wal`/`-shm` siblings
   /// are not separate databases).
+  ///
+  /// The DB-blob categories (videos / audiobooks / games / progress /
+  /// statistics) are decided by ROW counts: [meta] first, else the `db*Count`
+  /// peek. [peekFailed] = the caller needed the peek and it did not run — then
+  /// every such category whose count is still unknown is marked PRESENT
+  /// (offered as a ticked toggle) with no count. Fail-safe by construction:
+  /// an absent DB-blob category is not offered → not in the chosen set →
+  /// `!wants(c)` → the overwrite path STRIPS it (`_retainGames` & co.), so
+  /// "unknown" collapsing to "absent" would turn a failed temp-file extraction
+  /// into deleting the device's own games / progress / statistics.
   static BackupContentSummary summarizeBackupEntries(
     Iterable<String> archiveFileNames,
     BackupMeta? meta, {
@@ -76,6 +86,7 @@ class BackupRestoreService {
     int? dbGameCount,
     int? dbProgressCount,
     int? dbStatisticsCount,
+    bool peekFailed = false,
   }) {
     final Set<String> dictDirs = <String>{};
     final Set<String> bookDirs = <String>{};
@@ -159,7 +170,24 @@ class BackupRestoreService {
       if (progressCount > 0) BackupCategory.progress: progressCount,
       if (statisticsCount > 0) BackupCategory.statistics: statisticsCount,
     };
-    return BackupContentSummary(counts: counts, present: counts.keys.toSet());
+    // Peek needed but absent → the row counts meta lacks are UNKNOWN, and
+    // unknown must read as present (see doc). `statsCount` is always set on
+    // a parsed meta, so for statistics "meta lacks the count" means "meta
+    // predates progressCount" (the same generation that summed only the
+    // legacy aggregate tables).
+    final Set<BackupCategory> unknownPresent = <BackupCategory>{
+      if (peekFailed && meta?.videoBookCount == null) BackupCategory.videos,
+      if (peekFailed && meta?.audiobookCount == null)
+        BackupCategory.audiobooks,
+      if (peekFailed && meta?.gameCount == null) BackupCategory.games,
+      if (peekFailed && meta?.progressCount == null) BackupCategory.progress,
+      if (peekFailed && meta?.progressCount == null)
+        BackupCategory.statistics,
+    };
+    return BackupContentSummary(
+      counts: counts,
+      present: <BackupCategory>{...counts.keys, ...unknownPresent},
+    );
   }
 
   /// First path segment directly under `<prefix>/` in [posixName], or null when
@@ -209,7 +237,11 @@ class BackupRestoreService {
           dbAudiobookCount: peek?.audiobooks,
           dbGameCount: peek?.games,
           dbProgressCount: peek?.progress,
-          dbStatisticsCount: peek?.statistics);
+          dbStatisticsCount: peek?.statistics,
+          // A failed peek must never read as "the backup has none" — that
+          // would hide the toggles and the overwrite import would strip the
+          // device's own rows (see summarizeBackupEntries doc).
+          peekFailed: needPeek && peek == null);
     } catch (e, st) {
       debugPrint(
           'BackupRestoreService.summarizeBackupFile failed for $zipPath: $e\n$st');

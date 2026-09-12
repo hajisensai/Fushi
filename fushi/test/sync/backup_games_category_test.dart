@@ -124,6 +124,8 @@ void main() {
     );
     final int tagId = await db.createTag('fav', 0xff0000);
     await db.addTagToGame(gameId, tagId);
+    final int collectionId = await db.createMediaCollection('gal-col');
+    await db.addToCollection(collectionId, MediaKind.game, gameId);
     await db.addActivityEvent(
       eventType: kActivityGame,
       mediaType: kActivityMediaGame,
@@ -209,6 +211,15 @@ void main() {
       expect(
         await countRows(db, 'tag_assignments', "WHERE media_kind = 'game'"),
         0,
+      );
+      expect(
+        await countRows(
+          db,
+          'media_collection_items',
+          "WHERE media_type = 'game'",
+        ),
+        0,
+        reason: '合集里的游戏成员随宿主一起裁掉，不留孤儿成员',
       );
       expect(
         await countRows(db, 'study_segments', "WHERE media_kind = 'game'"),
@@ -363,6 +374,74 @@ void main() {
       );
     },
   );
+
+  test('旧包窥探失败：未知按「存在」处理，games/progress/statistics 仍在 present', () async {
+    // 纯函数面：peekFailed 且 meta 缺计数 → present 含全部 DB-blob 类别（无计数）。
+    final BackupContentSummary pure =
+        BackupRestoreService.summarizeBackupEntries(
+      const <String>['fushi.db'],
+      BackupMeta(
+        appVersion: '1',
+        schemaVersion: 1,
+        createdAt: DateTime(2026),
+        bookCount: 0,
+        statsCount: 0,
+      ),
+      peekFailed: true,
+    );
+    expect(
+      pure.present,
+      containsAll(<BackupCategory>[
+        BackupCategory.games,
+        BackupCategory.progress,
+        BackupCategory.statistics,
+        BackupCategory.videos,
+        BackupCategory.audiobooks,
+      ]),
+      reason: '窥探失败若按 0 处理，开关不出现 → 类别集不含 games → 覆盖导入会把'
+          '本机游戏库删光；未知必须按存在处理',
+    );
+    expect(pure.countFor(BackupCategory.games), 0, reason: '无计数，只标存在');
+    // 新格式 meta（有计数）不受 peekFailed 影响：计数是权威。
+    final BackupContentSummary known =
+        BackupRestoreService.summarizeBackupEntries(
+      const <String>['fushi.db'],
+      BackupMeta(
+        appVersion: '1',
+        schemaVersion: 1,
+        createdAt: DateTime(2026),
+        bookCount: 0,
+        statsCount: 0,
+        videoBookCount: 0,
+        audiobookCount: 0,
+        gameCount: 0,
+        progressCount: 0,
+      ),
+      peekFailed: true,
+    );
+    expect(known.present, isEmpty);
+
+    // 真实文件面：旧 meta + 损坏的 fushi.db 条目 → _peekContentRowCounts 返回
+    // null → summarizeBackupFile 必须把 games 标成存在。
+    final String zip = p.join(dst.path, 'legacy_bad_db.zip');
+    final Archive out = Archive();
+    final List<int> metaBytes = utf8.encode(jsonEncode(<String, Object?>{
+      'appVersion': '1.0.0',
+      'schemaVersion': 1,
+      'createdAt': DateTime(2026).toIso8601String(),
+      'bookCount': 0,
+      'statsCount': 0,
+    }));
+    out.addFile(ArchiveFile('backup_meta.json', metaBytes.length, metaBytes));
+    final List<int> junk = utf8.encode('this is not a sqlite database at all');
+    out.addFile(ArchiveFile('fushi.db', junk.length, junk));
+    File(zip).writeAsBytesSync(ZipEncoder().encode(out)!);
+    final BackupContentSummary viaFile =
+        await BackupRestoreService.summarizeBackupFile(zip);
+    expect(viaFile.has(BackupCategory.games), isTrue);
+    expect(viaFile.has(BackupCategory.progress), isTrue);
+    expect(viaFile.has(BackupCategory.statistics), isTrue);
+  });
 
   test('覆盖导入 games 勾选：游戏行落地、封面树恢复、cover_path 重定位到本机', () async {
     final s = await seedSource(src);
@@ -598,6 +677,24 @@ void main() {
           "WHERE media_kind = 'game' AND entry_key = 'G1'",
         ),
         0,
+      );
+      expect(
+        await countRows(
+          cur,
+          'media_collection_items',
+          "WHERE media_type = 'game' AND entry_key = 'T1'",
+        ),
+        1,
+        reason: '合集成员与标签/会话同律：经身份映射落到 T1',
+      );
+      expect(
+        await countRows(
+          cur,
+          'media_collection_items',
+          "WHERE media_type = 'game' AND entry_key = 'G1'",
+        ),
+        0,
+        reason: '不得留下指向不存在游戏的孤儿成员',
       );
       // 全库不存在指向 G1 的任何引用。
       expect(

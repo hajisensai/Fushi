@@ -714,12 +714,20 @@ class BackupMergeEngine {
           'FROM $_srcAlias.media_collection_items',
         )
         .get();
+    // game 成员的 entry_key 是 src 的 galgames.id：与标签 / 会话 / 学习段同律，经
+    // [_gameMapTable] 落到本机游戏 id；无宿主的成员跳过（否则落成永久孤儿）。
+    final Map<String, String> gameIdMap = await _readGameIdMap();
     for (final QueryRow it in srcItems) {
       final int srcCollectionId = it.read<int>('collection_id');
       final int? tgt = srcToTargetId[srcCollectionId];
       if (tgt == null) continue; // 合集被删除墓碑跳过或未映射：连带跳过成员。
       final String mediaType = it.read<String>('media_type');
-      final String entryKey = it.read<String>('entry_key');
+      String entryKey = it.read<String>('entry_key');
+      if (mediaType == MediaKind.game.dbValue) {
+        final String? mapped = gameIdMap[entryKey];
+        if (mapped == null) continue;
+        entryKey = mapped;
+      }
       final bool isEpub = mediaType == MediaKind.epub.dbValue;
       // 墓碑匹配在 bookKey 域：本地成员墓碑 entry_key 冻结在 bookKey 域（§4），
       // src epub 成员先归一再比；非 epub 键值自身即稳定键，直比。
@@ -745,6 +753,18 @@ class BackupMergeEngine {
         ],
       );
     }
+  }
+
+  /// [_gameMapTable] 读成 Dart 映射（src game id → 本机 game id），给逐行 Dart
+  /// 侧合并（合集成员）用；SQL 侧合并直接 JOIN 该表。
+  Future<Map<String, String>> _readGameIdMap() async {
+    final List<QueryRow> rows = await _db
+        .customSelect('SELECT src_id, dst_id FROM $_gameMapTable')
+        .get();
+    return <String, String>{
+      for (final QueryRow r in rows)
+        r.read<String>('src_id'): r.read<String>('dst_id'),
+    };
   }
 
   /// 目标（当前设备）DB 是否有名为 [table] 的表。与 [_srcTableExists] 对称，但查

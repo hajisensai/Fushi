@@ -833,8 +833,9 @@ Future<void> _retainAudiobooks(
 /// Games analogue of [_retainVideos]: DELETEs every `galgames` row whose `id`
 /// is NOT in [keep] (its `galgame_sources` / `galgame_sessions` follow via FK
 /// cascade) plus the game-kind rows of the logical-FK tables that never cascade
-/// (`tag_assignments`, `study_segments`, `study_segment_tombstones`,
-/// `activity_events`, keyed by `media_kind`/`media_type` = 'game'). [keep]
+/// (`tag_assignments`, `media_collection_items`, `study_segments`,
+/// `study_segment_tombstones`, `activity_events`, keyed by
+/// `media_kind`/`media_type` = 'game'). [keep]
 /// empty strips every game (the games category was unticked). Shared by the
 /// export strip and the overwrite-import strip so the two never diverge.
 Future<void> _retainGames(
@@ -853,6 +854,10 @@ Future<void> _retainGames(
         'DELETE FROM tag_assignments WHERE media_kind = ? AND entry_key '
         'NOT IN (SELECT id FROM galgames)',
         <Object>[TagHostKind.game.dbValue]);
+    await db.customStatement(
+        'DELETE FROM media_collection_items WHERE media_type = ? AND '
+        'entry_key NOT IN (SELECT id FROM galgames)',
+        <Object>[MediaKind.game.dbValue]);
     await db.customStatement(
         'DELETE FROM study_segments WHERE media_kind = ? AND media_key '
         'NOT IN (SELECT id FROM galgames)',
