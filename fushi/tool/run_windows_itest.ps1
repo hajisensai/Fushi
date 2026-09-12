@@ -45,7 +45,10 @@ param(
   # any one of them alone breaks hardware PlayReady with Netflix D7702/D7703
   # 0x80070003 path-not-found). -KeepUserDirs keeps those three real while still
   # isolating APPDATA (the app DB) and the WebView2 profile.
-  [switch]$KeepUserDirs
+  [switch]$KeepUserDirs,
+  # Extra --dart-define=KEY=VALUE pairs forwarded to `flutter test` (e.g.
+  # -DartDefine FUSHI_PROBE_EPUB=D:/books/x.epub for the real-book probes).
+  [string[]]$DartDefine = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -359,6 +362,7 @@ $flutterArgs = @(
   "--dart-define=FUSHI_TEST_ROOT=$($Paths.isolatedRoot)",
   "--dart-define=FUSHI_TEST_RUN_ID=$RunId"
 )
+foreach ($d in $DartDefine) { $flutterArgs += "--dart-define=$d" }
 $commandLine = "$FlutterExe $((@($flutterArgs) | ForEach-Object { ConvertTo-CommandArgument $_ }) -join ' ')"
 $commandLog = Join-Path $EvidenceDir "command.log"
 $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"

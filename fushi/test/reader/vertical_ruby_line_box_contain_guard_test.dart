@@ -37,6 +37,17 @@ Future<String> _readerCss({
   return ReaderContentStyles.css(settings: settings);
 }
 
+/// 「含 `rt` 的选择器块里带一个负的 `margin-block-start`」——BUG-2472 现行修法的
+/// 不变式。刻意不钉数值、单位、`!important` 与排版：那些都是等价可换的写法，
+/// 钉住它们只会让下一次无害改写假红（本仓反复踩过的「钉写法不钉不变式」）。
+final RegExp _kNegativeRtMarginBlockStart = RegExp(
+    r'rt\b[^{}]*\{[^}]*margin-block-start:\s*-\s*[\d.]+[a-z]+',
+    dotAll: true);
+
+/// 「压根没有负的 `margin-block-start`」——非 Apple 端的不变式。用它而不是某个
+/// 具体数值，Apple 端换值时这条不会跟着退化成恒真空壳。
+final RegExp _kAnyNegativeMarginBlockStart = RegExp(r'margin-block-start:\s*-');
+
 void main() {
   group('BUG-611 竖排 ruby 不被 -webkit-line-box-contain 抹掉标注预留', () {
     test(
@@ -62,8 +73,9 @@ void main() {
     });
 
     test(
-        'BUG-2472：只有 Apple 端（WebKit）发出 `block replaced`，且绝不带 glyphs；'
-        'Android / Windows / Linux 一律不发', () async {
+        'BUG-2472 / BUG-2482：任何平台都不再发出 -webkit-line-box-contain；'
+        'Apple 端（WebKit）改发 ruby 注音盒的负 margin-block-start，'
+        'Android / Windows / Linux 不发', () async {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
@@ -72,14 +84,17 @@ void main() {
         try {
           final String css = _stripCssComments(await _readerCss(
               writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css.contains('-webkit-line-box-contain'), isFalse,
+              reason: '$p：`block replaced` 在 quirks 模式下把整行 strut 一并剔掉，'
+                  '整行文字都在 inline 盒里的行与 <br/> 空行行盒归零'
+                  '（BUG-2482：目录列叠印、空行消失）——任何平台都不得再发');
           expect(
-              css.contains(
-                  '-webkit-line-box-contain: block replaced !important;'),
-              isTrue,
-              reason: '$p：WebKit 必须只按块 line-height + 替换元素算行盒，'
-                  '否则首行含注音的段落被撑高 ≈0.215em（BUG-2472）');
-          expect(css.contains('glyphs'), isFalse,
-              reason: '$p：不得带回 BUG-611 的 glyphs（实测把行距撑大 6~9px）');
+              css,
+              matches(_kNegativeRtMarginBlockStart),
+              reason: '$p：WebKit 首行含注音的段落被撑高 ≈0.215em（BUG-2472），'
+                  '修法是只把注音盒在流中的高度用负 margin 抵消掉，不碰行盒 strut。'
+                  '钉的是「注音选择器块里有负的 margin-block-start」这条不变式，'
+                  '不是具体数值/单位/排版——换等价写法不该假红');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
@@ -95,6 +110,10 @@ void main() {
               writingMode: 'vertical-rl', viewMode: 'paginated'));
           expect(css.contains('-webkit-line-box-contain'), isFalse,
               reason: '$p：Blink / 旧 Android WebView 不得收到该属性（BUG-611）');
+          expect(css, isNot(matches(_kAnyNegativeMarginBlockStart)),
+              reason: '$p：Blink 本就不为注音长高，负 margin 只发给 WebKit。'
+                  '钉「任何负 margin-block-start 都不得出现」而不是钉某个数值——'
+                  '否则 Apple 端一改数值，这条就退化成恒真空壳');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }

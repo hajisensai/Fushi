@@ -186,19 +186,35 @@ class ReaderContentStyles {
   /// 而是把段落首行往下推，段落块轴多出 ≈ 0.215em（22 号 4.73px、46 号 6.25px；
   /// 行距本身不变，Blink 恒为 0）。竖排下就是「有注音的段落列更宽」，段落间距忽宽忽窄。
   ///
-  /// 修法：只在 WebKit 上声明 `-webkit-line-box-contain: block replaced`——行盒高只由
-  /// 块的 line-height（strut）与替换元素决定，不再被 inline 盒（注音）撑开，注音照旧画
-  /// 在 leading 里；Mac 真机四轮（横/竖 × 22/43）与真书（無職転生 21，横/竖 × 22/46）
-  /// 实测段落多出量归 0、行距不变、注音位置不变。Blink 早已不解析该属性（BUG-611 记录
-  /// 的 `CSS.supports === false`），但旧版 Android WebView 仍解析且 BUG-611 实证
-  /// `block glyphs replaced` 会把竖排注音塌进基字列，故**按平台门控**只发给 Apple 端，
-  /// 且不带 `glyphs`（C3 实测反而把行距撑大 6~9px）。代价：WebKit 上比段落字号大的
-  /// inline 片段（如 `<span style="font-size:1.5em">`）不再撑高所在行；Blink 会撑。
-  static String _webKitLineBoxCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS ||
-        TargetPlatform.macOS =>
-          '  /* BUG-2472: WebKit only — see _webKitLineBoxCss. */\n'
-              '  -webkit-line-box-contain: block replaced !important;\n',
+  /// 第一版修法（`1376273f4b`）是 `html { -webkit-line-box-contain: block replaced }`，
+  /// 让行盒只按块 strut + 替换元素算高。它在 Mac 真机上把注音段落的多出量归了 0，但
+  /// BUG-2482 实证它同时把**整条行盒**的 strut 也剔掉了：EPUB 的 XHTML 当 text/html
+  /// 端上、多数没有 DOCTYPE（`document.compatMode === "BackCompat"`），quirks 模式下
+  /// WebKit 只给「根 inline 盒里直接有文本节点」的行加 strut，于是整行文字都住在
+  /// inline 盒里的行（`<p><a><span>…</span></a></p>`、`<p><span>…</span></p>`、
+  /// `<p><em>…</em></p>`、`<p><span><ruby>…</ruby></span></p>`）和只有 `<br/>` 的空行
+  /// 行盒高恒为 0——無職転生 22 目录页 17 条章节标题叠印在同一列、正文 57 个
+  /// `<p><br/></p>` 空行消失（Mac 真书探针 `reader_mushoku22_layout_probe_itest.dart`
+  /// 的 `[m22] SUMMARY` 行：目录 17/18 个 `<p>` 宽 0，切回默认值 0/18）。
+  ///
+  /// 现行修法只碰**注音盒自己**：WebKit 的 ruby 是「基字行内盒 + 注音块」拼成的一个
+  /// 行内块，行盒为它长高是因为注音块在流中占了 0.54em 的高度；给 `<rt>` 一个足够大的
+  /// 负 `margin-block-start`（注音所在的那一侧：横排=上、竖排=右），注音块在流中的高度
+  /// 被抵消成 0，行盒不再为它长高，注音照旧画在原位（Mac 真书探针横/竖 × 22/46 ×
+  /// 行高 1.65/1.0 六轮：段落多出量 0 / 0 / 0 / −0.16，注音盒相对基字的位置
+  /// `rtGap` / `rtCenter` 与第一版修法逐像素相同，行距不变；目录页零高段落 0/18）。
+  /// 取 −2em（以注音字号计）：注音盒高 = line-height normal ≈ 1.2em，行高 1.0 时要抵消
+  /// 的是整个注音盒，−1.5em 已够，WebKit 对超出的负 margin 只是钳掉（−3em 与 −1.5em
+  /// 结果逐字节相同），留余量给 normal 行高更大的字体。Blink 本就不长高，且旧版
+  /// Android WebView 的 ruby 实现不同，故仍**按平台门控**只发给 Apple 端；
+  /// `-webkit-line-box-contain` 在任何平台都不再发出（BUG-611 / BUG-2482 两道守卫）。
+  static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
+        TargetPlatform.iOS || TargetPlatform.macOS => '''
+/* BUG-2472 / BUG-2482: WebKit only — see _webKitRubyAnnotationCss. */
+ruby > rt, ruby > rtc {
+  margin-block-start: -2em !important;
+}
+''',
         _ => '',
       };
 
@@ -499,10 +515,14 @@ html {
      and the BUG-108 lesson that Blink WebViews do not add ruby leading unless
      the line box is allowed to grow.
      BUG-2472 addendum: on WebKit (macOS / iOS) the SAME reserve is what makes a
-     paragraph whose first line carries furigana taller than its neighbours, so
-     `block replaced` (no `glyphs`) is emitted there and only there — see
-     _webKitLineBoxCss. */
-${_webKitLineBoxCss()}  /* Themed scrollbar: the track stays transparent so it shows the page
+     paragraph whose first line carries furigana taller than its neighbours. The
+     first fix emitted `block replaced` here for Apple only; BUG-2482 showed that
+     in quirks mode it also drops the strut of every line whose text lives only
+     inside inline boxes (TOC entries, `<p><br/></p>` blank lines collapse to
+     zero height). The property is therefore emitted on NO engine any more; the
+     WebKit-only ruby fix lives in _webKitRubyAnnotationCss (a negative
+     margin-block-start on the annotation box). */
+  /* Themed scrollbar: the track stays transparent so it shows the page
      background, and the thumb takes the theme text colour (already alpha<1),
      so dark themes get a light thumb and light themes a dark one. The standard
      props cover Firefox/Chromium 121+; the -webkit pseudo-elements below cover
@@ -662,7 +682,7 @@ ruby {
   display: ruby !important;
   ruby-position: over !important;
 }
-ruby rp {
+${_webKitRubyAnnotationCss()}ruby rp {
   display: none !important;
 }
 ruby rb {
