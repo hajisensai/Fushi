@@ -61,6 +61,7 @@ import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
+import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -3915,6 +3916,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) =>
       prefsRepo.setVideoControlLayout(layout);
+
+  /// 阅读器顶栏 / 底栏按钮布局（ReaderControlLayout，2026-09-13）。
+  ReaderControlLayout get readerControlLayout => prefsRepo.readerControlLayout;
+
+  Future<void> setReaderControlLayout(ReaderControlLayout layout) =>
+      prefsRepo.setReaderControlLayout(layout);
 
   /// 视频「快捷键 1..4」自定义动作按钮的绑定（槽位 → 视频动作）。
   VideoCustomActionBindings get videoCustomActionBindings =>

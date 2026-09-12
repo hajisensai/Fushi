@@ -4800,5 +4800,12 @@
   "reader_stats_cards": "制卡 $n",
   "reader_stats_remaining_chapter": "本章还需",
   "reader_stats_remaining_book": "全书还需",
-  "reader_stats_full_records_open": "打开完整记录"
+  "reader_stats_full_records_open": "打开完整记录",
+  "reader_control_title": "书名",
+  "reader_control_slot_hidden": "移出阅读器",
+  "reader_control_reject_required": "必选按钮必须保留在阅读器上。",
+  "reader_control_reject_title": "书名只能放在顶栏中间，其它按钮不能放那里。",
+  "reader_control_editor_title": "阅读器按钮布局",
+  "reader_control_editor_hint": "把按钮拖到顶栏或底栏的任意位置，或移出。",
+  "reader_control_reset_layout": "恢复默认阅读器按钮布局"
 }

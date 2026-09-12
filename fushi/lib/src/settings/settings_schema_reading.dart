@@ -2,6 +2,8 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -794,6 +796,34 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeChanged(c);
             },
           ),
+          // 阅读器顶栏 / 底栏按钮拖拽编辑器（与视频页 video.player.controls_editor
+          // 同一套泛型编辑器，用户 2026-09-13 要求「和视频一样支持可视化调整」）。
+          // 写 appModel.setReaderControlLayout → prefsRepo 通知 → 阅读器页重建，
+          // 开着的书立即换布局，不需要重锚（按钮增删不改预留高）。
+          SettingsCustomItem(
+            id: 'reading_controls.controls_editor',
+            searchTitle: t.reader_control_editor_title,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 14,
+            ),
+            builder: buildReaderControlLayoutEditor,
+          ),
+          SettingsActionItem(
+            id: 'reading_controls.reset_control_layout',
+            title: t.reader_control_reset_layout,
+            icon: Icons.restart_alt_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 15,
+            ),
+            onTap: (SettingsContext c) async {
+              await c.appModel.setReaderControlLayout(
+                ReaderControlLayout.defaults,
+              );
+              c.refresh();
+            },
+          ),
         ],
       ),
       // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
@@ -932,6 +962,31 @@ SettingsDestination buildReadingDestination() {
       // 的合并说明。放在阅读各组之后：同一本 EPUB 的「读」与「听」从此在一个分类里。
       // 这两个分区自带听书模块门，关掉模块时它们不渲染、也不进搜索索引。
       ...buildListeningSections(),
+    ],
+  );
+}
+
+/// 阅读器按钮布局编辑器（设置页 / 书内设置抽屉共用）：读 appModel 当前布局，改动
+/// 立刻写穿偏好；桌面按鼠标手感、其余按触屏。
+Widget buildReaderControlLayoutEditor(SettingsContext context) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          t.reader_control_editor_hint,
+          style: Theme.of(context.context).textTheme.bodySmall,
+        ),
+      ),
+      ReaderControlLayoutEditor(
+        layout: context.appModel.readerControlLayout,
+        onLayoutChanged: (ReaderControlLayout layout) async {
+          await context.appModel.setReaderControlLayout(layout);
+          context.refresh();
+        },
+        isTouchControls: !isDesktopPlatform,
+      ),
     ],
   );
 }

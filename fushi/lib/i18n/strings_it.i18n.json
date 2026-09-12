@@ -4800,5 +4800,12 @@
   "reader_stats_cards": "Cards $n",
   "reader_stats_remaining_chapter": "Chapter remaining",
   "reader_stats_remaining_book": "Book remaining",
-  "reader_stats_full_records_open": "Open full records"
+  "reader_stats_full_records_open": "Open full records",
+  "reader_control_title": "Book title",
+  "reader_control_slot_hidden": "Remove from reader",
+  "reader_control_reject_required": "Required buttons must stay on the reader.",
+  "reader_control_reject_title": "The book title only fits the top center; nothing else goes there.",
+  "reader_control_editor_title": "Reader button layout",
+  "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
+  "reader_control_reset_layout": "Restore default reader button layout"
 }
