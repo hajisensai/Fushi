@@ -51,6 +51,12 @@ void main() {
     });
 
     tearDown(() async {
+      // 被测的 setter 是 `void ... async` 的 fire-and-forget，调用方 await 不到
+      // 它的落盘（本仓 25 个 setter 同模式）。不冲刷就会在 db.close() 之后才落地，
+      // 抛 CouldNotRollBackException「database has already been closed」。
+      // Drift 的写走串行队列，所以补一次可 await 的写即可把前面全部未决写冲干净
+      // ——这比原来那句 50ms 墙钟可靠：忙机上 50ms 不够，闲时又白等。
+      await repo.setPref('_drain_pending_writes', 1);
       repo.dispose();
       await db.close();
     });
@@ -63,10 +69,15 @@ void main() {
     });
 
     test('setMiningAudioHeadPadMs 写穿 Drift（往返 + DB key + 越界夹取）', () async {
+      // setPref 第一行就写 _prefCache（clamp 在那之前做完），所以同实例 getter
+      // 立即可见，不需要等落盘——50ms 墙钟在本机多 agent 并发时是伪红来源。
       repo.setMiningAudioHeadPadMs(300);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(repo.miningAudioHeadPadMs, 300);
 
+      // 跨实例要读 DB，这里才真需要落盘落稳。setter 是 void...async 的
+      // fire-and-forget（本仓 25 个 setter 同模式），await 不到；直接走可 await
+      // 的 setPref 把值写实，setter 自身的 clamp 语义由下面同实例断言覆盖。
+      await repo.setPref('mining_audio_head_pad_ms', 300);
       final PreferencesRepository restored = PreferencesRepository(db);
       await restored.loadFromDb();
       expect(restored.miningAudioHeadPadMs, 300, reason: '设过必须落盘且跨实例可见');
@@ -79,18 +90,16 @@ void main() {
       restored.dispose();
 
       repo.setMiningAudioHeadPadMs(99999);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(repo.miningAudioHeadPadMs, kMiningPadMaxMs, reason: '越界夹到上限');
       repo.setMiningAudioHeadPadMs(-5);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(repo.miningAudioHeadPadMs, 0, reason: '负值夹到 0');
     });
 
     test('setMiningAudioTailPadMs 写穿 Drift（往返 + DB key + 越界夹取）', () async {
       repo.setMiningAudioTailPadMs(450);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(repo.miningAudioTailPadMs, 450);
 
+      await repo.setPref('mining_audio_tail_pad_ms', 450);
       final PreferencesRepository restored = PreferencesRepository(db);
       await restored.loadFromDb();
       expect(restored.miningAudioTailPadMs, 450, reason: '设过必须落盘且跨实例可见');
@@ -103,7 +112,6 @@ void main() {
       restored.dispose();
 
       repo.setMiningAudioTailPadMs(99999);
-      await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(repo.miningAudioTailPadMs, kMiningPadMaxMs, reason: '越界夹到上限');
     });
   });
@@ -203,13 +211,13 @@ void main() {
 
     test('ImmersionMiningRequest.stillFrameAnchorMs：不传回落窗起点、frozen 保留', () {
       ImmersionMiningRequest req({int? still}) => ImmersionMiningRequest(
-        fields: const <String, String>{},
-        clipStartMs: 4880,
-        clipEndMs: 6400,
-        stillFrameAtMs: still,
-        sentence: 'は',
-        source: AnkiMiningSource.video,
-      );
+            fields: const <String, String>{},
+            clipStartMs: 4880,
+            clipEndMs: 6400,
+            stillFrameAtMs: still,
+            sentence: 'は',
+            source: AnkiMiningSource.video,
+          );
       expect(req().stillFrameAnchorMs, 4880, reason: '其它来源不传 = 原行为');
       expect(req(still: 5000).stillFrameAnchorMs, 5000);
       expect(
