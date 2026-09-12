@@ -90,6 +90,26 @@ enum AsrModelFit {
   heavyOnMobile,
 }
 
+/// 模型的定位：专用（一语言一包）还是通用（一包多语言）。
+///
+/// 与 [AsrModelFit] 正交：fit 说的是「多重」，这里说的是「多准」。只报 fit 会让
+/// 用户把「大模型」读成「更好」——而事实相反：每种语言的专用 transducer 包在
+/// 自己那门语言上比 Omnilingual 1B 更准，后者的长处只是语言覆盖面。
+enum AsrModelScope {
+  /// 一语言一包：为这门语言训练，识别最准。
+  dedicated,
+
+  /// 一包多语言：覆盖面广，单语言精度不如专用包。
+  multilingual,
+}
+
+/// 纯函数：按包服务的语言数判定位。不钉 id——自带包与将来新增包同样适用。
+AsrModelScope asrModelScopeFor(AsrModelPack pack) {
+  return pack.languages.length == 1
+      ? AsrModelScope.dedicated
+      : AsrModelScope.multilingual;
+}
+
 /// 「大包」门槛：int8 全套超过 700 MB。
 ///
 /// 取值依据是内置表本身的分布——8 个 transducer 包 int8 全套都在 200 MB 上下，

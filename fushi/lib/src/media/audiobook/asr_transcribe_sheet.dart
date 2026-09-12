@@ -59,7 +59,9 @@ Future<String?> showAsrTranscribeSheet({
   String Function() getter = languageGetter ?? () => '';
   Future<void> Function(String) setter = languageSetter ?? (String _) async {};
   AppModel? appModel;
-  if (languageGetter == null || languageSetter == null || remoteClient == null) {
+  if (languageGetter == null ||
+      languageSetter == null ||
+      remoteClient == null) {
     try {
       appModel =
           ProviderScope.containerOf(context, listen: false).read(appProvider);
@@ -298,6 +300,7 @@ class AsrTranscribeSheet extends StatefulWidget {
 
   /// 互联通用任务客户端；null = 不提供「在 host 上运行」。
   final InterconnectJobClient? remoteClient;
+
   /// 模型目录（每语言选了谁 + 自带包）的读写口。默认读写本进程的那份并落盘；
   /// widget 测试注入内存实现，不碰数据根。
   final AsrModelCatalog Function() catalogGetter;
@@ -728,7 +731,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     setState(() => _systemSpeechAvailable = available);
   }
 
-  /// 下拉每项的副标题：平台适配度 + int8 全套大小。
+  /// 下拉每项的副标题：模型定位 + 平台适配度 + int8 全套大小。
+  ///
+  /// 定位排第一：只报「轻量 / 大模型」会让用户把大的读成更好的，而专用包在自己
+  /// 那门语言上比通用的 Omnilingual 更准（见 [AsrModelScope]）。
   ///
   /// 「多大」用 int8 那套：它是手机与无 GPU 桌面实际会下的一套，也是两套里小的
   /// 那个——把大的报给用户会让「Omnilingual 在手机上要 4 GB」这种吓人的数字出现在
@@ -738,6 +744,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     // 系统语音没有包、没有大小可报——说清它的真实代价（系统会下自己的语言资产），
     // 别编一个字节数，也别吹成零下载。
     if (pack == null) return t.audiobook_transcribe_engine_system_hint;
+    final String scope = switch (asrModelScopeFor(pack)) {
+      AsrModelScope.dedicated => t.audiobook_transcribe_model_scope_dedicated,
+      AsrModelScope.multilingual =>
+        t.audiobook_transcribe_model_scope_multilingual,
+    };
     final String fit = switch (asrModelFitFor(pack, mobile: _isMobile)) {
       AsrModelFit.light => t.audiobook_transcribe_model_fit_light,
       AsrModelFit.desktop => t.audiobook_transcribe_model_fit_desktop,
@@ -749,7 +760,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     final bool custom = pack.id.startsWith(kAsrCustomPackIdPrefix);
     final String badge =
         custom ? ' · ${t.audiobook_transcribe_model_custom_badge}' : '';
-    return '$fit · $size$badge';
+    return '$scope · $fit · $size$badge';
   }
 
   /// 当前选中的是不是系统语音引擎。

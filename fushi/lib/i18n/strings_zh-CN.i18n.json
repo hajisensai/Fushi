@@ -4766,5 +4766,7 @@
   "shortcut_action_global_scroll_line_down": "向下滚动一行",
   "shortcut_action_global_scroll_line_up": "向上滚动一行",
   "shortcut_action_global_scroll_to_top": "滚动到顶部",
-  "shortcut_action_global_scroll_to_bottom": "滚动到底部"
+  "shortcut_action_global_scroll_to_bottom": "滚动到底部",
+  "audiobook_transcribe_model_scope_dedicated": "专用模型 · 这门语言识别最准",
+  "audiobook_transcribe_model_scope_multilingual": "通用模型 · 语言覆盖广，单语言精度不如专用模型"
 }
