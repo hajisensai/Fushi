@@ -57,6 +57,8 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show shouldOpenInWebVideoPlayer;
+import 'package:fushi/src/media/video/youtube_range_relay.dart'
+    show relayYoutubeStreamUrl;
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart'
     show WebVideoFushiPage;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
