@@ -5,7 +5,7 @@
   "channel": "debug",
   "prerelease": true,
   "releaseSequence": 14680,
-  "notes": "Automated desktop debug-channel build from develop @ 2cf1321. Push releases are always prerelease and never Latest.",
+  "notes": "Automated release-signed debug-channel build from develop @ 2cf1321. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.5.0-debug.14680-2cf1321-debug.apk",
@@ -14,7 +14,7 @@
       "tag": "v2.5.0-debug.14680+2cf1321",
       "version": "2.5.0-debug.14680",
       "size": 271094539,
-      "sha256": "755a32c0bc28780b6ca220a1efda1e4bb6dea272881b1ca4729fc82f8a35d65b"
+      "sha256": "c0aca24103e21955f8952a648c9f5aa9172d39bb80b3c020426fbe672b58e6ed"
     },
     {
       "name": "fushi-2.5.0-debug.14680-ios.ipa",
