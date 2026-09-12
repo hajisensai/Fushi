@@ -55,6 +55,7 @@ const Key _kContentReadyKey = ValueKey<String>('fushi_content_ready');
 const Key _kPlayBarKey = ValueKey<String>('fushi_play_bar');
 const Key _kBarProgressKey = ValueKey<String>('fushi_bar_status_progress');
 const Key _kStatusFooterKey = ValueKey<String>('fushi_status_footer');
+const Key _kEdgeLineKey = ValueKey<String>('fushi_progress_edge_line');
 const Key _kFooterProgressKey = ValueKey<String>('fushi_status_progress');
 
 bool _webViewShown() => find.byKey(_kWebViewKey).evaluate().isNotEmpty;
@@ -382,15 +383,16 @@ void main() {
                 reason: 'squeeze bar must occupy layout (bottom inset ≈ bar '
                     'height, no extra footer row)');
 
-            // 切回悬浮态：底栏不占位 → 状态行回来（底栏隐藏后它是唯一读数）。
+            // 切回悬浮态（2026-09-13 语义）：底栏 / 状态行都不占位、随控制栏一起
+            // 收起，正文满屏；屏底只剩一条 2px 细进度线当读数。
             ReaderFushiSource.instance.toggleTapEmptyToHideChrome();
             await _pumpForPref(tester);
             expect(ReaderFushiSource.instance.tapEmptyToHideChrome, isTrue);
             ReaderFushiSource.onChromeReanchorLive?.call();
             await _waitFor(
                 tester,
-                () => find.byKey(_kStatusFooterKey).evaluate().isNotEmpty,
-                'status footer (floating mode)',
+                () => find.byKey(_kEdgeLineKey).evaluate().isNotEmpty,
+                'progress edge line (floating mode, chrome hidden)',
                 maxPolls: 40);
             final _InsetProbe floating =
                 await _settledProbe(tester, runJsB, 'B floating (bar hidden)');
@@ -401,19 +403,23 @@ void main() {
                 find.byKey(_kFooterProgressKey).evaluate().length;
             final int playBarsFloating =
                 find.byKey(_kPlayBarKey).evaluate().length;
+            final int edgeLines = find.byKey(_kEdgeLineKey).evaluate().length;
             debugPrint('[inset-probe] B floating: playBar=$playBarsFloating '
                 'statusFooter=$footersFloating '
-                'footerProgress=$footerProgressFloating '
+                'footerProgress=$footerProgressFloating edgeLine=$edgeLines '
                 'bottomInset=${_f(floating.bottomInset)}');
-            expect(footersFloating, 1,
-                reason: 'floating mode: the status footer must be back');
-            expect(footerProgressFloating, 1,
-                reason: 'floating mode: the footer carries the readout again');
+            expect(footersFloating, 0,
+                reason: 'floating mode (chrome hidden): the status footer hides '
+                    'with the rest of the chrome — body goes full-bleed');
+            expect(footerProgressFloating, 0);
+            expect(edgeLines, 1,
+                reason: 'floating mode: the 2px edge line is the only readout '
+                    'left while the chrome is hidden');
             expect(floating.bottomInset, lessThan(squeeze.bottomInset - 20),
-                reason: 'floating bar no longer occupies layout: bottom inset '
-                    'drops to the footer reserve');
+                reason: 'floating chrome no longer occupies layout: bottom '
+                    'inset drops to the system inset');
             debugPrint('[inset-probe] B PASS: squeeze → footer absorbed '
-                '(1 readout); floating → footer back');
+                '(1 readout); floating → chrome hidden, edge line only');
           } finally {
             if (ReaderFushiSource.instance.tapEmptyToHideChrome !=
                 originalTapEmpty) {

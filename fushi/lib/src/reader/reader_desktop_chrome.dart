@@ -26,9 +26,6 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
 /// reader_chrome_floating.dart 文件头）。
 const double kReaderDesktopHeaderHeight = 48;
 
-/// 悬浮 chrome 收起时顶边悬停热区高度（逻辑 px）：鼠标移进即唤出工具栏。
-const double kReaderHoverRevealStripHeight = 6;
-
 /// 工具栏书名字号（逻辑 px）。阅读器 chrome 的排版活在**阅读面自己的尺度**上，
 /// 不跟随 app 全局 MD3 排版令牌——它要和顶部进度胶囊
 /// （[kTopProgressFontSize] = 12）、底部状态行（[kReaderStatusFooterFontSize]）
@@ -39,9 +36,13 @@ const double kReaderDesktopHeaderTitleFontSize = 14;
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
 
-/// 有声书面板的容器按可用空间选择：桌面/宽窗居中，手机保留全高底部面板。
-/// 此判断独立于导航和设置，两者在所有平台均使用侧栏。
-bool readerAudiobookUsesDialog({required bool desktop, required Size window}) =>
+/// 有声书面板的容器按可用空间选择：桌面/宽窗走右侧侧栏（与设置侧栏同一容器
+/// [showReaderSideSheet]，用户 2026-09-13 拍板：不再弹居中对话框），手机保留全高
+/// 底部面板（面板内部 `Flexible` 需要有界高度，bottom sheet 给得起）。
+bool readerAudiobookUsesSideSheet({
+  required bool desktop,
+  required Size window,
+}) =>
     desktop ||
     (window.width >= kFushiSettingsWideThreshold &&
         window.height >= kFushiSettingsWideMinHeight);
@@ -64,31 +65,32 @@ bool readerNavigationAutofocusesSearch({
 /// 顶部工具栏的顶部预留高。
 ///
 ///  * 未启用 / 未占位（`_hasEverLoaded && _showChrome`）→ 0；
-///  * 否则 → [headerHeight]，**不分悬浮/挤压**。
+///  * 悬浮 → 0：顶栏隐藏时正文满屏，唤出时以半透明面**盖在正文上**
+///    （[readerChromeSurfaceColor]），与视频播放器的浮动控制栏同一语义；
+///  * 挤压且占位 → [headerHeight]（视觉高度 == 预留高度，正文永不排到它下面）。
 ///
-/// BUG-2387：这里曾有一条 `floating → 0` 的特例（照抄底栏与顶部进度的悬浮模型）。
-/// 它对那两者成立、对顶栏不成立，因为顶栏是 **48px 的不透明面**（底栏同样不透明但
-/// 画在底部、压住的是页尾留白；顶部进度只有 18px 且是半透明毛玻璃）。顶栏画在
-/// `Positioned(top: _stableTopInset)`、高 [kReaderDesktopHeaderHeight]，而正文内容盒
-/// 顶部 = `marginTop`(默认 0vh) + `--chrome-top-inset`(悬浮态恒等于 `_stableTopInset`)
-/// —— 二者起点相同，唤出时整条 48px 压在正文首行上。实测（Android API34 全屏 +
-/// Windows 桌面）重叠恒为 48.0 逻辑 px。
-///
-/// 为什么去掉特例不会破坏「悬浮显隐不重锚」（`reader_chrome_floating.dart` 文件头
-/// 的设计律）：悬浮态的显隐走 `_handleFloatingChromeReveal`，**从不翻转
-/// `_showChrome`**，故 `barOccupiesLayout` 在悬浮态恒定 ⇒ 本函数的返回值恒定 ⇒
-/// 唤出/收起不改预留高、不 reflow、不重锚。被去掉的只是「正文可以被盖」这一条，
-/// 而那从来不是悬浮态的收益，是它的代价。
+/// 历史：BUG-2387（2026-09-09）曾删掉 `floating → 0`，让悬浮态也恒定预留 48px，
+/// 换来的是「顶栏收起后正文顶上一直留一条空带」——用户 2026-09-13 明确要求回到
+/// 「隐藏满屏、唤出覆盖」。「不盖字」的契约只对挤压态成立。悬浮态显隐仍不翻
+/// `_showChrome`、不改本函数返回值，故仍不 reflow、不重锚。
 ///
 /// 与 `bottomChromeReserve` 同构：工具栏和底栏是同一台显隐状态机的上下两端。
 double readerDesktopHeaderReserve({
   required bool enabled,
   required bool barOccupiesLayout,
+  required bool floating,
   required double headerHeight,
 }) {
-  if (!enabled || !barOccupiesLayout) return 0;
+  if (!enabled || !barOccupiesLayout || floating) return 0;
   return headerHeight;
 }
+
+/// 悬浮态 chrome（顶栏 / 底栏 / 状态行）盖在正文上时的底色：主题背景抬到 0.92
+/// 不透明度——既让盖住的那几行字隐约可见（用户知道下面还有正文），又保证按钮与
+/// 读数可辨。不用 BackdropFilter：它每帧重采样重模糊（BUG-969），三块面一起开代价
+/// 可测。挤压态原样返回（正文本就不在它下面）。
+Color readerChromeSurfaceColor(Color background, {required bool floating}) =>
+    floating ? background.withValues(alpha: 0.92) : background;
 
 /// 抽屉实际宽度：窄窗留 48px 空白给「点外面关掉」的手势，不让抽屉铺满整窗。
 double readerSideSheetWidth(double windowWidth) {

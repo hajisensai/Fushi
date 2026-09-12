@@ -65,6 +65,11 @@ void main() {
         reason: 'BUG-2467：读数已并进挤压态底栏，状态行不再另占一条预留',
       );
       expect(
+        readerStatusFooterReserve(enabled: true, footerHeight: 28, floating: true),
+        0,
+        reason: '悬浮态状态行随控制栏显隐、不占预留（隐藏满屏、唤出覆盖）',
+      );
+      expect(
           kReaderStatusFooterHeight, greaterThan(kReaderStatusFooterFontSize),
           reason: '预留高必须装得下文字行盒（视觉高度 == 预留高度铁律）');
     });
@@ -113,6 +118,95 @@ void main() {
             inlineStatus: false, bottomChromeReserve: 56),
         isFalse,
       );
+      // 悬浮态有声书播放条画着且读数并进其右端 → 同样吸收（底部只留一条）。
+      expect(
+        readerStatusFooterAbsorbedByBar(
+          inlineStatus: true,
+          bottomChromeReserve: 0,
+          floatingBarPainted: true,
+        ),
+        isTrue,
+      );
+      expect(
+        readerStatusFooterAbsorbedByBar(
+          inlineStatus: false,
+          bottomChromeReserve: 0,
+          floatingBarPainted: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('visible: squeeze always; floating follows the chrome reveal', () {
+      bool vis({
+        bool floating = false,
+        bool transient = false,
+        bool absorbed = false,
+        bool loaded = true,
+      }) =>
+          readerStatusFooterVisible(
+            enabled: true,
+            hasEverLoaded: loaded,
+            absorbedByBar: absorbed,
+            floating: floating,
+            transientVisible: transient,
+          );
+      expect(vis(), isTrue);
+      expect(vis(loaded: false), isFalse);
+      expect(vis(absorbed: true), isFalse);
+      expect(vis(floating: true), isFalse, reason: '悬浮收起 → 不画');
+      expect(vis(floating: true, transient: true), isTrue);
+      expect(vis(floating: true, transient: true, absorbed: true), isFalse);
+    });
+
+    test('edge line: only while the floating footer is hidden', () {
+      expect(
+        readerProgressEdgeLineVisible(
+          floating: true,
+          footerVisible: false,
+          showProgress: true,
+          hasTotal: true,
+        ),
+        isTrue,
+      );
+      expect(
+        readerProgressEdgeLineVisible(
+          floating: true,
+          footerVisible: true,
+          showProgress: true,
+          hasTotal: true,
+        ),
+        isFalse,
+        reason: '状态行唤出时它让位',
+      );
+      expect(
+        readerProgressEdgeLineVisible(
+          floating: false,
+          footerVisible: false,
+          showProgress: true,
+          hasTotal: true,
+        ),
+        isFalse,
+        reason: '挤压态状态行常驻，不需要细线',
+      );
+      expect(
+        readerProgressEdgeLineVisible(
+          floating: true,
+          footerVisible: false,
+          showProgress: false,
+          hasTotal: true,
+        ),
+        isFalse,
+      );
+      expect(
+        readerProgressEdgeLineVisible(
+          floating: true,
+          footerVisible: false,
+          showProgress: true,
+          hasTotal: false,
+        ),
+        isFalse,
+      );
     });
 
     test('chars per hour: 0 when nothing read; rounded otherwise', () {
@@ -135,25 +229,27 @@ void main() {
       expect(formatReadingSessionClock(3600000 * 10 + 61000), '10:01:01');
     });
 
-    test('tracker label mirrors ttu: "<cph> / h  <clock>"', () {
+    test('tracker label is just the session clock (chars/h moved to the sheet)',
+        () {
       expect(
         readerTrackerLabel((durationMs: 0, chars: 0, active: false)),
-        '0 / h  0:00',
+        '0:00',
       );
       expect(
         readerTrackerLabel((durationMs: 120000, chars: 400, active: true)),
-        '12000 / h  2:00',
+        '2:00',
       );
     });
 
-    test('progress label: same format as the top pill; null when unknown', () {
-      expect(readerProgressLabel(current: 64988, total: 123962),
-          '64988 / 123962  52.43%');
+    test('progress label: percent only, one decimal; null when unknown', () {
+      expect(readerProgressLabel(current: 64988, total: 123962), '52.4%');
       expect(readerProgressLabel(current: 5, total: 0), isNull);
       expect(readerProgressLabel(current: null, total: 10), isNull);
       expect(readerProgressLabel(current: 10, total: null), isNull);
-      expect(readerProgressLabel(current: 20, total: 10), '20 / 10  100.00%',
+      expect(readerProgressLabel(current: 20, total: 10), '100.0%',
           reason: '超出总数时百分比钳到 100');
+      expect(readerProgressRatio(current: 25, total: 100), 0.25);
+      expect(readerProgressRatio(current: 1, total: 0), isNull);
     });
   });
 
@@ -162,8 +258,6 @@ void main() {
       required StudySessionTotals Function() totals,
       int? current = 64988,
       int? total = 123962,
-      int? chapterCurrent,
-      int? chapterTotal,
       bool showTimer = true,
       bool showProgress = true,
       VoidCallback? onTap,
@@ -178,8 +272,6 @@ void main() {
               sessionTotals: totals,
               currentChars: current,
               totalChars: total,
-              chapterCurrentChars: chapterCurrent,
-              chapterTotalChars: chapterTotal,
               showTimer: showTimer,
               showProgress: showProgress,
               textColor: Colors.white,
@@ -200,13 +292,15 @@ void main() {
       await tester.pumpWidget(host(
         totals: () => (durationMs: ms, chars: 0, active: true),
       ));
-      expect(find.text('0 / h  0:00'), findsOneWidget);
-      expect(find.text('64988 / 123962  52.43%'), findsOneWidget);
+      expect(find.text('0:00'), findsOneWidget);
+      expect(find.text('52.4%'), findsOneWidget);
+      expect(find.byType(ReaderStatusProgressTrack), findsOneWidget,
+          reason: '百分比前带一段短进度条');
       expect(find.byIcon(Icons.timer_outlined), findsOneWidget);
 
       ms = 61000;
       await tester.pump(const Duration(milliseconds: 150));
-      expect(find.text('0 / h  1:01'), findsOneWidget,
+      expect(find.text('1:01'), findsOneWidget,
           reason: '秒表由组件自己的 tick 驱动，不依赖父级重建');
     });
 
@@ -293,8 +387,6 @@ void main() {
         totals: () => (durationMs: 360000000, chars: 999999999, active: true),
         current: 123456789,
         total: 999999999,
-        chapterCurrent: 12345678,
-        chapterTotal: 99999999,
         onTapTracker: () => trackerTaps++,
         onTapProgress: () => progressTaps++,
       ));
@@ -329,11 +421,14 @@ void main() {
           .getRect(find.byKey(const ValueKey<String>('fushi_status_tracker')));
       final Rect progress = tester
           .getRect(find.byKey(const ValueKey<String>('fushi_status_progress')));
+      // 进度段 = 短进度条 + 百分比；与计时块的间距量到进度条左缘。
+      final Rect track = tester.getRect(
+          find.byKey(const ValueKey<String>('fushi_status_progress_track')));
 
-      expect(tracker.right, lessThanOrEqualTo(progress.left),
+      expect(tracker.right, lessThanOrEqualTo(track.left),
           reason: '与 inline 形态同序：计时块在进度左边');
       // 判据是「两段挨在一起」而不是「都在右半边」——两段文字合起来本就可能超过半屏。
-      expect(progress.left - tracker.right, lessThanOrEqualTo(24),
+      expect(track.left - tracker.right, lessThanOrEqualTo(24),
           reason: '两段之间只隔一个间距，不再被撑成左右两角');
       expect(strip.right - progress.right, closeTo(16, 0.5),
           reason: '右端内边距仍是 16，进度贴着右缘');
@@ -414,9 +509,24 @@ void main() {
         '    return Positioned(',
       );
       expect(
-        footerBuild.contains('_statusFooterAbsorbedByBar'),
+        footerBuild.contains('_statusFooterShouldPaint'),
         isTrue,
-        reason: '挤压态底栏已并入读数时状态行整条不画（不再叠两行同样的数字）',
+        reason: '绘制门控走单一真相源 readerStatusFooterVisible',
+      );
+      final String shouldPaint = _slice(
+        src,
+        '  bool get _statusFooterShouldPaint => readerStatusFooterVisible(',
+        '  double get _statusFooterPaintedBand',
+      );
+      expect(
+        shouldPaint.contains('absorbedByBar: _statusFooterAbsorbedByBar,'),
+        isTrue,
+        reason: '底栏已并入读数时状态行整条不画（不再叠两行同样的数字）',
+      );
+      expect(
+        shouldPaint.contains('transientVisible: _chromeTransientVisible,'),
+        isTrue,
+        reason: '悬浮态状态行随控制栏唤出 / 收起',
       );
       final String barBuild = _slice(
         src,
@@ -463,8 +573,15 @@ void main() {
       );
       expect(build.contains('RepaintBoundary('), isTrue);
       expect(build.contains('ReaderStatusFooter('), isTrue);
-      expect(build.contains('!_hasEverLoaded'), isTrue,
-          reason: '绘制门控与底栏同源用 set-once _hasEverLoaded（切章不闪烁）');
+      expect(
+        _slice(
+          src,
+          '  bool get _statusFooterShouldPaint => readerStatusFooterVisible(',
+          '  double get _statusFooterPaintedBand',
+        ).contains('hasEverLoaded: _hasEverLoaded,'),
+        isTrue,
+        reason: '绘制门控与底栏同源用 set-once _hasEverLoaded（切章不闪烁）',
+      );
       expect(build.contains('_readerContentReady'), isFalse);
       expect(
         build.contains('bottom: 0,'),
