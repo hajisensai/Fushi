@@ -38,6 +38,9 @@ class MangaChapterList extends StatelessWidget {
     this.onDeleteDownload,
     this.onRetryDownload,
     this.onOcr,
+    this.ocrRunningChapterKey,
+    this.ocrProgress,
+    this.ocrQueuedChapterKeys = const <String>{},
   });
 
   final OnlineMangaLibraryEntry? entry;
@@ -69,6 +72,11 @@ class MangaChapterList extends StatelessWidget {
 
   /// 「识别本章」（只对已下载的章出现）；null = 不出现。
   final void Function(OnlineMangaChapter chapter)? onOcr;
+
+  /// OCR 状态位（BUG-2481）：正在识别的那一章 + 页进度，以及排队中的章。
+  final String? ocrRunningChapterKey;
+  final ({int done, int total})? ocrProgress;
+  final Set<String> ocrQueuedChapterKeys;
 
   /// 一章的下载状态：磁盘判据优先（真正决定能不能读），其次看任务行。
   _ChapterDownloadState _downloadStateOf(OnlineMangaChapter chapter) {
@@ -238,6 +246,13 @@ class MangaChapterList extends StatelessWidget {
         _ChapterDownloadState.failed => _failedLabel(job?.lastError),
         _ChapterDownloadState.notDownloaded => t.manga_chapter_not_downloaded,
       },
+      if (chapter.key == ocrRunningChapterKey)
+        t.manga_chapter_ocr_status_running(
+          done: '${ocrProgress?.done ?? 0}',
+          total: '${ocrProgress?.total ?? 0}',
+        )
+      else if (ocrQueuedChapterKeys.contains(chapter.key))
+        t.manga_chapter_ocr_status_queued,
       if (partial)
         state!.pageCount != null
             ? t.manga_series_read_progress(
@@ -307,7 +322,10 @@ class MangaChapterList extends StatelessWidget {
                 value: 'retry-download',
                 label: t.manga_chapter_download_retry_action,
               ),
-            if (onOcr != null && download == _ChapterDownloadState.downloaded)
+            if (onOcr != null &&
+                download == _ChapterDownloadState.downloaded &&
+                chapter.key != ocrRunningChapterKey &&
+                !ocrQueuedChapterKeys.contains(chapter.key))
               FushiPopupMenuItem<String>(
                 key: const ValueKey<String>('manga_chapter_ocr'),
                 value: 'ocr',

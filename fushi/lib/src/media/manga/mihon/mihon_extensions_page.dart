@@ -128,7 +128,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             // 半角地址；否则全角输入会让 `scheme == 'http'` 判空而漏掉
             // 明文确认。
             onPressed: () => Navigator.pop(
-                dialogContext, normalizeUrlInput(controller.text)),
+              dialogContext,
+              normalizeUrlInput(controller.text),
+            ),
             child: Text(t.mihon_store_add),
           ),
         ],
@@ -145,11 +147,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       await _manager!.addStore(url, allowInsecure: allowInsecure);
     } catch (error) {
       if (mounted) {
-        unawaited(showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: error,
-        ));
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.mihon_extension_error,
+            error: error,
+          ),
+        );
       }
     }
   }
@@ -157,8 +161,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 改仓库地址（BUG-1806）。输入框预填当前地址——改地址的典型场景是
   /// 「同一个仓库换了路径」，从零重打一遍长 URL 没有道理。
   Future<void> _editStore(MangaExtensionStoreRow store) async {
-    final TextEditingController controller =
-        TextEditingController(text: store.indexUrl);
+    final TextEditingController controller = TextEditingController(
+      text: store.indexUrl,
+    );
     final String? url = await showAppDialog<String>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -180,7 +185,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             context: dialogContext,
             isDefaultAction: true,
             onPressed: () => Navigator.pop(
-                dialogContext, normalizeUrlInput(controller.text)),
+              dialogContext,
+              normalizeUrlInput(controller.text),
+            ),
             child: Text(t.mihon_store_edit),
           ),
         ],
@@ -201,11 +208,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       );
     } catch (error) {
       if (mounted) {
-        unawaited(showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: error,
-        ));
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.mihon_extension_error,
+            error: error,
+          ),
+        );
       }
     }
   }
@@ -240,32 +249,38 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     if (!mounted || path == null) return;
     try {
-      final MihonInstallProposal proposal =
-          await _manager!.prepareLocalInstall(path);
+      final MihonInstallProposal proposal = await _manager!.prepareLocalInstall(
+        path,
+      );
       await _confirmAndInstall(proposal);
     } catch (error) {
       if (mounted) {
-        unawaited(showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: error,
-        ));
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.mihon_extension_error,
+            error: error,
+          ),
+        );
       }
     }
   }
 
   Future<void> _install(MihonAvailableExtension extension) async {
     try {
-      final MihonInstallProposal proposal =
-          await _manager!.prepareStoreInstall(extension);
+      final MihonInstallProposal proposal = await _manager!.prepareStoreInstall(
+        extension,
+      );
       await _confirmAndInstall(proposal);
     } catch (error) {
       if (mounted) {
-        unawaited(showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: error,
-        ));
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.mihon_extension_error,
+            error: error,
+          ),
+        );
       }
     }
   }
@@ -297,8 +312,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     MihonInstallProposal? proposal;
     try {
       proposal = await _manager!.prepareStoreInstall(extension);
-      final MihonPreviewSession started =
-          await _manager!.beginPreview(proposal);
+      final MihonPreviewSession started = await _manager!.beginPreview(
+        proposal,
+      );
       session = started;
       final MihonSource? source = await _pickPreviewSource(started);
       if (source == null) {
@@ -327,11 +343,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         }
       }
       if (mounted) {
-        unawaited(showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: error,
-        ));
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.mihon_extension_error,
+            error: error,
+          ),
+        );
       }
     }
   }
@@ -357,7 +375,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                     source.baseUrl.isEmpty
                         ? source.language.toUpperCase()
                         : '${source.language.toUpperCase()} · '
-                            '${source.baseUrl}',
+                              '${source.baseUrl}',
                   ),
                   onTap: () => Navigator.pop(dialogContext, source),
                 ),
@@ -445,11 +463,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       return true;
     } catch (error) {
       if (mounted) {
-        unawaited(showErrorDetails(
-          context,
-          title: t.mihon_extension_error,
-          error: error,
-        ));
+        unawaited(
+          showErrorDetails(
+            context,
+            title: t.mihon_extension_error,
+            error: error,
+          ),
+        );
       }
       return false;
     }
@@ -511,26 +531,25 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
 
   /// 页头三动作。内嵌时降级成本节顶部的按钮行，能力一个不少。
   List<Widget> _actions(MihonManager manager) => <Widget>[
-        FushiIconButton(
-          tooltip: t.mihon_store_refresh,
-          label: t.mihon_store_refresh,
-          icon: Icons.refresh,
-          onTap:
-              manager.loading ? null : () => unawaited(manager.refreshStores()),
-        ),
-        FushiIconButton(
-          tooltip: t.mihon_extension_import,
-          label: t.mihon_extension_import,
-          icon: Icons.file_open_outlined,
-          onTap: manager.loading ? null : _importApk,
-        ),
-        FushiIconButton(
-          tooltip: t.mihon_store_add,
-          label: t.mihon_store_add,
-          icon: Icons.add_link,
-          onTap: manager.loading ? null : _addStore,
-        ),
-      ];
+    FushiIconButton(
+      tooltip: t.mihon_store_refresh,
+      label: t.mihon_store_refresh,
+      icon: Icons.refresh,
+      onTap: manager.loading ? null : () => unawaited(manager.refreshStores()),
+    ),
+    FushiIconButton(
+      tooltip: t.mihon_extension_import,
+      label: t.mihon_extension_import,
+      icon: Icons.file_open_outlined,
+      onTap: manager.loading ? null : _importApk,
+    ),
+    FushiIconButton(
+      tooltip: t.mihon_store_add,
+      label: t.mihon_store_add,
+      icon: Icons.add_link,
+      onTap: manager.loading ? null : _addStore,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -540,11 +559,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       return SliverMainAxisGroup(
         slivers: <Widget>[
           SliverToBoxAdapter(
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _actions(manager),
-            ),
+            child: Wrap(spacing: 8, runSpacing: 8, children: _actions(manager)),
           ),
           if (manager.loading)
             const SliverToBoxAdapter(
@@ -598,9 +613,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   List<Widget> _buildContentSlivers(MihonManager manager) {
     final Map<String, MangaExtensionRow> installed =
         <String, MangaExtensionRow>{
-      for (final MangaExtensionRow row in manager.installed)
-        row.packageName: row,
-    };
+          for (final MangaExtensionRow row in manager.installed)
+            row.packageName: row,
+        };
     if (manager.stores.isEmpty && manager.installed.isEmpty) {
       final Widget empty = Padding(
         padding: const EdgeInsets.all(24),
@@ -609,10 +624,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           children: <Widget>[
             const Icon(Icons.extension_outlined, size: 48),
             const SizedBox(height: 12),
-            Text(
-              t.mihon_store_empty,
-              textAlign: TextAlign.center,
-            ),
+            Text(t.mihon_store_empty, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             Wrap(
               spacing: 12,
@@ -639,7 +651,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           SliverToBoxAdapter(child: empty)
         else
           SliverFillRemaining(
-              hasScrollBody: false, child: Center(child: empty)),
+            hasScrollBody: false,
+            child: Center(child: empty),
+          ),
       ];
     }
     final Set<String> availablePackages = manager.available
@@ -649,29 +663,35 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     // `all`（多语言扩展）是**一个普通语言项**，不再被强行混进每一种语言里——
     // 选 JA 却整屏都是 `all`（而且 keiyoushi 的 `all` 大多是聚合站）正是用户说的
     // 「筛选不生效」的一半（BUG-1441）。要看它就在下拉里选 ALL。
-    final List<String> languages = manager.available
-        .map((MihonAvailableExtension extension) =>
-            extension.language.toLowerCase())
-        .where((String language) => language.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
-    final List<MihonAvailableExtension> visibleAvailable =
-        _filteredAvailable(manager);
+    final List<String> languages =
+        manager.available
+            .map(
+              (MihonAvailableExtension extension) =>
+                  extension.language.toLowerCase(),
+            )
+            .where((String language) => language.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+    final List<MihonAvailableExtension> visibleAvailable = _filteredAvailable(
+      manager,
+    );
     final List<MangaExtensionRow> localOnly = manager.installed
-        .where((MangaExtensionRow row) =>
-            !availablePackages.contains(row.packageName) &&
-            (_language == '*' || row.language.toLowerCase() == _language))
+        .where(
+          (MangaExtensionRow row) =>
+              !availablePackages.contains(row.packageName) &&
+              (_language == '*' || row.language.toLowerCase() == _language),
+        )
         .toList(growable: false);
     final List<MangaExtensionRow> visibleLocalOnly =
         filterByMediaSearch<MangaExtensionRow>(
-      localOnly,
-      _searchQuery,
-      (MangaExtensionRow extension) => <String>[
-        extension.name,
-        extension.packageName,
-      ],
-    );
+          localOnly,
+          _searchQuery,
+          (MangaExtensionRow extension) => <String>[
+            extension.name,
+            extension.packageName,
+          ],
+        );
     final List<MihonExtensionListRow> groupedRows = buildMihonGroupedRows(
       stores: manager.stores,
       extensions: visibleAvailable,
@@ -692,7 +712,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           // 进程第一次进这页、在整个刷新窗口内（单次预算 30s）都会给每张正常仓库
           // 卡挂上「返回 0 个扩展，地址可能指向了旧版索引」——正好把用户推去改一个
           // 完全没问题的地址。误报比无声更糟。
-          final bool returnedNothing = store.enabled &&
+          final bool returnedNothing =
+              store.enabled &&
               !manager.loading &&
               store.lastError == null &&
               !manager.available.any(
@@ -762,8 +783,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           final MihonAvailableExtension extension =
               (entry as MihonExtensionEntryRow).extension;
           final MangaExtensionRow? row = installed[extension.packageName];
-          final bool busy =
-              manager.isExtensionActionBusy(extension.packageName);
+          final bool busy = manager.isExtensionActionBusy(
+            extension.packageName,
+          );
           return _AvailableExtensionTile(
             // 身份键，**必需**：这个 tile 是 StatefulWidget，自己持有
             // `_showAllSources`（「展开全部源 / 收起源列表」）。
@@ -780,23 +802,19 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             showPreview: row == null,
             onInstall: busy
                 ? null
-                : () => _runExtensionAction(
-                      extension,
-                      () => _install(extension),
-                    ),
+                : () =>
+                      _runExtensionAction(extension, () => _install(extension)),
             // 只对未安装的开放：Android 的 native install 会覆盖 exts/ 里同包名的
             // 文件，对已装扩展预览等于拿未确认的版本顶掉用户正在用的那份。
             onPreview: row == null && !busy
-                ? () => _runExtensionAction(
-                      extension,
-                      () => _preview(extension),
-                    )
+                ? () =>
+                      _runExtensionAction(extension, () => _preview(extension))
                 : null,
             onUninstall: row == null ? null : () => unawaited(_uninstall(row)),
             onEnabledChanged: row == null
                 ? null
                 : (bool value) =>
-                    unawaited(manager.setExtensionEnabled(row, value)),
+                      unawaited(manager.setExtensionEnabled(row, value)),
           );
         },
       ),
@@ -807,9 +825,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           return _InstalledExtensionTile(
             extension: extension,
             onUninstall: () => unawaited(_uninstall(extension)),
-            onEnabledChanged: (bool value) => unawaited(
-              manager.setExtensionEnabled(extension, value),
-            ),
+            onEnabledChanged: (bool value) =>
+                unawaited(manager.setExtensionEnabled(extension, value)),
           );
         },
       ),
@@ -854,37 +871,38 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   ///
   /// 列表渲染和批量安装**必须**共用这一份判据：批量安装的语义就是「把你现在看见
   /// 的这些装上」，两处各写一遍过滤链迟早会分叉成「看到的和装上的不是一批」。
-  List<MihonAvailableExtension> _filteredAvailable(MihonManager manager) =>
-      filterByMediaSearch<MihonAvailableExtension>(
-        manager.available
-            .where((MihonAvailableExtension extension) =>
-                _language == '*' ||
-                extension.language.toLowerCase() == _language)
-            // 下载量筛选只对**有数据**的条目成立：没有公开计数的（自建仓库、
-            // API 限流）在设了门槛时一律排除，否则「至少 500 次下载」会把一整个
-            // 没有计数的仓库全放进来，用户按下批量安装就装了一堆来路不明的源。
-            .where((MihonAvailableExtension extension) =>
-                _minDownloads == 0 ||
-                (extension.downloadCount ?? -1) >= _minDownloads)
-            .toList(growable: false),
-        _searchQuery,
-        // 🔴 可搜字段只能是**条目自身**的标识。`storeUrl` 是仓库级字段，同一仓库的
-        // 每个扩展都一样：keiyoushi 的索引地址是
-        // `https://github.com/keiyoushi/extensions/raw/repo/index.pb`，归一化后含
-        // `raw`/`github`/`repo`/`index`，于是搜「raw」整个仓库 1900 个扩展全部命中，
-        // 看起来就是「筛选完全没生效」（BUG-1441）。`language` 同理是低基数共享值，
-        // 且已有专门的语言下拉，留在这里只会把「all」这类查询打成全命中。
-        (MihonAvailableExtension extension) => <String>[
-          extension.name,
-          extension.packageName,
-          ...extension.sources.expand(
-            (MihonAvailableSource source) => <String>[
-              source.name,
-              source.baseUrl,
-            ],
-          ),
-        ],
-      );
+  List<MihonAvailableExtension> _filteredAvailable(
+    MihonManager manager,
+  ) => filterByMediaSearch<MihonAvailableExtension>(
+    manager.available
+        .where(
+          (MihonAvailableExtension extension) =>
+              _language == '*' || extension.language.toLowerCase() == _language,
+        )
+        // 下载量筛选只对**有数据**的条目成立：没有公开计数的（自建仓库、
+        // API 限流）在设了门槛时一律排除，否则「至少 500 次下载」会把一整个
+        // 没有计数的仓库全放进来，用户按下批量安装就装了一堆来路不明的源。
+        .where(
+          (MihonAvailableExtension extension) =>
+              _minDownloads == 0 ||
+              (extension.downloadCount ?? -1) >= _minDownloads,
+        )
+        .toList(growable: false),
+    _searchQuery,
+    // 🔴 可搜字段只能是**条目自身**的标识。`storeUrl` 是仓库级字段，同一仓库的
+    // 每个扩展都一样：keiyoushi 的索引地址是
+    // `https://github.com/keiyoushi/extensions/raw/repo/index.pb`，归一化后含
+    // `raw`/`github`/`repo`/`index`，于是搜「raw」整个仓库 1900 个扩展全部命中，
+    // 看起来就是「筛选完全没生效」（BUG-1441）。`language` 同理是低基数共享值，
+    // 且已有专门的语言下拉，留在这里只会把「all」这类查询打成全命中。
+    (MihonAvailableExtension extension) => <String>[
+      extension.name,
+      extension.packageName,
+      ...extension.sources.expand(
+        (MihonAvailableSource source) => <String>[source.name, source.baseUrl],
+      ),
+    ],
+  );
 
   /// 把当前筛选结果里**还没装**的扩展一次装完。
   ///
@@ -897,26 +915,30 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         .map((MangaExtensionRow row) => row.packageName)
         .toSet();
     final List<MihonAvailableExtension> targets = _filteredAvailable(manager)
-        .where((MihonAvailableExtension extension) =>
-            !installedPackages.contains(extension.packageName))
+        .where(
+          (MihonAvailableExtension extension) =>
+              !installedPackages.contains(extension.packageName),
+        )
         .toList(growable: false);
     if (targets.isEmpty) {
       if (mounted) {
-        unawaited(showAppDialog<void>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-            title: Text(t.mihon_extension_bulk_install),
-            content: Text(t.mihon_extension_bulk_install_nothing),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(dialogContext),
-                child: Text(t.dialog_ok),
-              ),
-            ],
+        unawaited(
+          showAppDialog<void>(
+            context: context,
+            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+              title: Text(t.mihon_extension_bulk_install),
+              content: Text(t.mihon_extension_bulk_install_nothing),
+              actions: <Widget>[
+                adaptiveDialogAction(
+                  context: dialogContext,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(t.dialog_ok),
+                ),
+              ],
+            ),
           ),
-        ));
+        );
       }
       return;
     }
@@ -943,61 +965,142 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    await _runBulk(targets, upgrade: false);
+  }
+
+  /// 「一键更新」（BUG-2481）：已装且仓库里版本更高的全部更新。判据与角标 / 更新
+  /// 提醒共用 [mihonExtensionUpdates]，同一包多仓库取版本最高的那条。
+  /// 签名换了的那条不顺手信任（`trustSigner: false`），以 `SIGNER_NOT_TRUSTED`
+  /// 进失败清单，让用户回到单条流程看着指纹确认。
+  Future<void> _updateAll() async {
+    final MihonManager manager = _manager!;
+    final List<MihonAvailableExtension> targets = mihonExtensionUpdates(
+      available: manager.available,
+      installed: manager.installed,
+    ).map((MihonExtensionUpdate update) => update.available).toList();
+    if (targets.isEmpty) {
+      if (mounted) {
+        unawaited(
+          showAppDialog<void>(
+            context: context,
+            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+              title: Text(t.mihon_extension_update_all),
+              content: Text(t.mihon_extension_update_all_nothing),
+              actions: <Widget>[
+                adaptiveDialogAction(
+                  context: dialogContext,
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(t.dialog_ok),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        title: Text(t.mihon_extension_update_all),
+        content: Text(
+          t.mihon_extension_update_all_confirm(count: targets.length),
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: dialogContext,
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(t.mihon_extension_update),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _runBulk(targets, upgrade: true);
+  }
+
+  /// 批量安装 / 一键更新共用的执行体：进度框 → [MihonManager.installMany] →
+  /// 结果框。两条入口只在「选哪些」和「信不信新签名」上不同。
+  Future<void> _runBulk(
+    List<MihonAvailableExtension> targets, {
+    required bool upgrade,
+  }) async {
+    final MihonManager manager = _manager!;
+    final String title = upgrade
+        ? t.mihon_extension_update_all
+        : t.mihon_extension_bulk_install;
     setState(() {
       _bulkInstalling = true;
       _bulkCancelled = false;
     });
     _bulkProgress.value = (0, targets.length, targets.first.name);
     BuildContext? progressContext;
-    unawaited(showAppDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) {
-        progressContext = dialogContext;
-        return AlertDialog.adaptive(
-          title: Text(t.mihon_extension_bulk_install),
-          content: ValueListenableBuilder<(int, int, String)?>(
-            valueListenable: _bulkProgress,
-            builder: (BuildContext context, (int, int, String)? progress, _) {
-              final (int done, int total, String name) =
-                  progress ?? (0, targets.length, '');
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  LinearProgressIndicator(
-                    value: total == 0 ? null : done / total,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    t.mihon_extension_bulk_install_progress(
-                      current: done + 1 > total ? total : done + 1,
-                      total: total,
-                      name: name,
+    unawaited(
+      showAppDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          progressContext = dialogContext;
+          return AlertDialog.adaptive(
+            title: Text(title),
+            content: ValueListenableBuilder<(int, int, String)?>(
+              valueListenable: _bulkProgress,
+              builder: (BuildContext context, (int, int, String)? progress, _) {
+                final (int done, int total, String name) =
+                    progress ?? (0, targets.length, '');
+                final int current = done + 1 > total ? total : done + 1;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    LinearProgressIndicator(
+                      value: total == 0 ? null : done / total,
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              // 只置位取消闸，不 pop：正在下载的那一条要跑完才收得干净，
-              // 对话框由安装流程自己关。
-              onPressed: () => _bulkCancelled = true,
-              child: Text(t.dialog_cancel),
+                    const SizedBox(height: 12),
+                    Text(
+                      upgrade
+                          ? t.mihon_extension_update_all_progress(
+                              current: current,
+                              total: total,
+                              name: name,
+                            )
+                          : t.mihon_extension_bulk_install_progress(
+                              current: current,
+                              total: total,
+                              name: name,
+                            ),
+                    ),
+                  ],
+                );
+              },
             ),
-          ],
-        );
-      },
-    ));
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                // 只置位取消闸，不 pop：正在下载的那一条要跑完才收得干净，
+                // 对话框由安装流程自己关。
+                onPressed: () => _bulkCancelled = true,
+                child: Text(t.dialog_cancel),
+              ),
+            ],
+          );
+        },
+      ),
+    );
     MihonBulkInstallReport? report;
     Object? failure;
     try {
       report = await manager.installMany(
         targets,
-        trustSigner: true,
+        trustSigner: !upgrade,
+        upgrade: upgrade,
         onProgress: (int done, int total, MihonAvailableExtension current) {
           _bulkProgress.value = (done, total, current.name);
         },
@@ -1012,45 +1115,55 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
     if (!mounted) return;
     if (failure != null) {
-      unawaited(showErrorDetails(
-        context,
-        title: t.mihon_extension_error,
-        error: failure,
-      ));
+      unawaited(
+        showErrorDetails(
+          context,
+          title: t.mihon_extension_error,
+          error: failure,
+        ),
+      );
       return;
     }
     final MihonBulkInstallReport finished = report!;
-    unawaited(showAppDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-        title: Text(t.mihon_extension_bulk_install),
-        content: SingleChildScrollView(
-          child: SelectableText(
-            <String>[
-              t.mihon_extension_bulk_install_done(
-                installed: finished.installed.length,
-                skipped: finished.skipped.length,
-                failed: finished.failed.length,
-              ),
-              // 失败原因逐条列出来：批量里最常见的失败是上游删了某个 release
-              // 或某个源换了签名，只报一个总数用户无从判断要不要重试。
-              ...finished.failed.entries.map(
-                (MapEntry<String, String> entry) =>
-                    '${entry.key}: ${entry.value}',
-              ),
-            ].join('\n'),
+    unawaited(
+      showAppDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              <String>[
+                upgrade
+                    ? t.mihon_extension_update_all_done(
+                        installed: finished.installed.length,
+                        skipped: finished.skipped.length,
+                        failed: finished.failed.length,
+                      )
+                    : t.mihon_extension_bulk_install_done(
+                        installed: finished.installed.length,
+                        skipped: finished.skipped.length,
+                        failed: finished.failed.length,
+                      ),
+                // 失败原因逐条列出来：批量里最常见的失败是上游删了某个 release
+                // 或某个源换了签名，只报一个总数用户无从判断要不要重试。
+                ...finished.failed.entries.map(
+                  (MapEntry<String, String> entry) =>
+                      '${entry.key}: ${entry.value}',
+                ),
+              ].join('\n'),
+            ),
           ),
+          actions: <Widget>[
+            adaptiveDialogAction(
+              context: dialogContext,
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(t.dialog_ok),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDefaultAction: true,
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(t.dialog_ok),
-          ),
-        ],
       ),
-    ));
+    );
   }
 
   Widget _buildFilters(List<String> languages) {
@@ -1074,7 +1187,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 for (final int option in _minDownloadOptions)
                   DropdownMenuItem<int>(
                     key: ValueKey<String>(
-                        'mihon_extension_min_downloads_$option'),
+                      'mihon_extension_min_downloads_$option',
+                    ),
                     value: option,
                     child: Text(
                       option == 0
@@ -1089,6 +1203,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               onPressed: _bulkInstalling ? null : _bulkInstall,
               icon: const Icon(Icons.playlist_add_check),
               label: Text(t.mihon_extension_bulk_install),
+            ),
+            OutlinedButton.icon(
+              key: const ValueKey<String>('mihon_extension_update_all'),
+              onPressed: _bulkInstalling ? null : _updateAll,
+              icon: const Icon(Icons.system_update_alt),
+              label: Text(t.mihon_extension_update_all),
             ),
           ],
         ),
@@ -1143,8 +1263,9 @@ const int kMihonStoreAutoCollapseThreshold = 20;
 List<MihonAvailableExtension> sortMihonExtensionsByDownloads(
   List<MihonAvailableExtension> extensions,
 ) {
-  final List<MihonAvailableExtension> sorted =
-      List<MihonAvailableExtension>.of(extensions);
+  final List<MihonAvailableExtension> sorted = List<MihonAvailableExtension>.of(
+    extensions,
+  );
   sorted.sort((MihonAvailableExtension a, MihonAvailableExtension b) {
     final int? left = a.downloadCount;
     final int? right = b.downloadCount;
@@ -1180,12 +1301,14 @@ List<MihonExtensionListRow> buildMihonGroupedRows({
     final List<MihonAvailableExtension>? group = byStore.remove(indexUrl);
     if (group == null || group.isEmpty) return;
     final bool isExpanded = expanded(indexUrl, group.length);
-    rows.add(MihonStoreHeaderRow(
-      indexUrl: indexUrl,
-      label: label,
-      count: group.length,
-      expanded: isExpanded,
-    ));
+    rows.add(
+      MihonStoreHeaderRow(
+        indexUrl: indexUrl,
+        label: label,
+        count: group.length,
+        expanded: isExpanded,
+      ),
+    );
     if (!isExpanded) return;
     for (final MihonAvailableExtension extension
         in sortMihonExtensionsByDownloads(group)) {
@@ -1329,8 +1452,10 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
     final ThemeData theme = Theme.of(context);
     final int hiddenSources = _showAllSources
         ? 0
-        : (extension.sources.length - _sourcePreviewCount)
-            .clamp(0, extension.sources.length);
+        : (extension.sources.length - _sourcePreviewCount).clamp(
+            0,
+            extension.sources.length,
+          );
     final List<MihonAvailableSource> shownSources = _showAllSources
         ? extension.sources
         : extension.sources.take(_sourcePreviewCount).toList(growable: false);
@@ -1346,10 +1471,11 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
       primaryLabel: installed == null
           ? t.mihon_extension_install
           : update
-              ? t.mihon_extension_update
-              : t.mihon_extension_uninstall,
-      onPrimary:
-          installed == null || update ? widget.onInstall : widget.onUninstall,
+          ? t.mihon_extension_update
+          : t.mihon_extension_uninstall,
+      onPrimary: installed == null || update
+          ? widget.onInstall
+          : widget.onUninstall,
       // 这一行的副标题是可展开的「包含的源」清单，不是一行元信息。
       subtitleMaxLines: 2,
       subtitle: Column(
@@ -1379,7 +1505,7 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
                 source.baseUrl.isEmpty
                     ? '· ${source.name} (${source.language})'
                     : '· ${source.name} (${source.language}) — '
-                        '${source.baseUrl}',
+                          '${source.baseUrl}',
                 style: theme.textTheme.bodySmall,
               ),
             if (hiddenSources > 0 || _showAllSources)
@@ -1415,10 +1541,7 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
 /// （否则不可能有内容），它与安装的差别是「有没有写进你的库」，不是「有没有执行」。
 /// 说清楚，用户才知道自己在同意什么。
 class _PreviewFooter extends StatelessWidget {
-  const _PreviewFooter({
-    required this.onDiscard,
-    required this.onInstall,
-  });
+  const _PreviewFooter({required this.onDiscard, required this.onInstall});
 
   final VoidCallback onDiscard;
   final VoidCallback onInstall;
@@ -1482,14 +1605,14 @@ class _InstalledExtensionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MangaExtensionManagementTile(
-        title: extension.name,
-        subtitle: Text(
-          '${extension.language} · ${extension.versionName} · '
-          'lib ${extension.libVersion}',
-        ),
-        enabled: extension.enabled,
-        onEnabledChanged: onEnabledChanged,
-        primaryLabel: t.mihon_extension_uninstall,
-        onPrimary: onUninstall,
-      );
+    title: extension.name,
+    subtitle: Text(
+      '${extension.language} · ${extension.versionName} · '
+      'lib ${extension.libVersion}',
+    ),
+    enabled: extension.enabled,
+    onEnabledChanged: onEnabledChanged,
+    primaryLabel: t.mihon_extension_uninstall,
+    onPrimary: onUninstall,
+  );
 }

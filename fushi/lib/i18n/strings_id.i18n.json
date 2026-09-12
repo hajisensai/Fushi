@@ -4741,5 +4741,22 @@
   "manga_series_download_all_locked_skipped": "Skipped $count locked chapters",
   "mihon_sources_search_hint": "Search sources",
   "mihon_source_login_forward": "Forward",
-  "reader_furigana_dimmed": "Dimmed"
+  "reader_furigana_dimmed": "Dimmed",
+  "mihon_source_login_import_browser": "Import from browser",
+  "mihon_source_login_import_hint": "The site was opened in your browser. The Fushi extension will send its session here; sign in there if needed, then tap Done.",
+  "mihon_source_login_import_received": "Imported $count cookies from the browser",
+  "mihon_source_login_import_none": "No session received from the browser yet",
+  "mihon_extension_update_all": "Update all",
+  "mihon_extension_update_all_nothing": "Every installed extension is already up to date.",
+  "mihon_extension_update_all_confirm": "Update ${count} installed extensions to the newest version in their repositories?",
+  "mihon_extension_update_all_progress": "Updating ${current}/${total}: ${name}",
+  "mihon_extension_update_all_done": "Updated ${installed}, skipped ${skipped}, failed ${failed}",
+  "mihon_sources_sort_by_downloads": "Sort by downloads",
+  "mihon_sources_sort_by_downloads_done": "Sources reordered by extension downloads",
+  "mihon_sources_sort_by_downloads_no_data": "No download counts available yet; refresh the extension repositories first",
+  "manga_series_ocr_running": "Recognizing ${chapter}: page ${done}/${total}",
+  "manga_series_ocr_queued_count": "${count} chapters waiting",
+  "manga_chapter_ocr_status_running": "Recognizing ${done}/${total}",
+  "manga_chapter_ocr_status_queued": "Waiting for recognition",
+  "manga_ocr_boxes_toggle": "Show recognized text regions"
 }

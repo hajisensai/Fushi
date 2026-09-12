@@ -17,90 +17,146 @@ void main() {
 
   group('extension dict-media rewrite present', () {
     mirrors.forEach((String name, String root) {
-      test('[$name] vendor/dict-media.js gates image:// -> http media endpoint',
-          () {
-        final String src =
-            File('$root/vendor/dict-media.js').readAsStringSync();
-        // Extension branch: env-gated http rewrite to the server media endpoint.
-        expect(src.contains('__fushiDictMedia'), isTrue,
-            reason: '$root dict-media.js missing extension env gate');
-        expect(src.contains('/api/media/dictionary'), isTrue,
-            reason: '$root dict-media.js missing http media endpoint rewrite');
-        // App branch preserved: in-app still emits image:// (must not break app).
-        expect(src.contains('image://?dictionary='), isTrue,
-            reason: '$root dict-media.js dropped the in-app image:// fallback');
-      });
+      test(
+        '[$name] vendor/dict-media.js gates image:// -> http media endpoint',
+        () {
+          final String src = File(
+            '$root/vendor/dict-media.js',
+          ).readAsStringSync();
+          // Extension branch: env-gated http rewrite to the server media endpoint.
+          expect(
+            src.contains('__fushiDictMedia'),
+            isTrue,
+            reason: '$root dict-media.js missing extension env gate',
+          );
+          expect(
+            src.contains('/api/media/dictionary'),
+            isTrue,
+            reason: '$root dict-media.js missing http media endpoint rewrite',
+          );
+          // App branch preserved: in-app still emits image:// (must not break app).
+          expect(
+            src.contains('image://?dictionary='),
+            isTrue,
+            reason: '$root dict-media.js dropped the in-app image:// fallback',
+          );
+        },
+      );
 
       test('[$name] bridge-shim.js fetches dict media config into window', () {
         final String src = File('$root/bridge-shim.js').readAsStringSync();
-        expect(src.contains("type: 'dictMediaConfig'"), isTrue,
-            reason: '$root bridge-shim.js does not request dictMediaConfig');
-        expect(src.contains('window.__fushiDictMedia'), isTrue,
-            reason:
-                '$root bridge-shim.js does not set window.__fushiDictMedia');
+        expect(
+          src.contains("type: 'dictMediaConfig'"),
+          isTrue,
+          reason: '$root bridge-shim.js does not request dictMediaConfig',
+        );
+        expect(
+          src.contains('window.__fushiDictMedia'),
+          isTrue,
+          reason: '$root bridge-shim.js does not set window.__fushiDictMedia',
+        );
       });
 
-      test('[$name] background.js answers dictMediaConfig with base + token',
-          () {
-        final String src = File('$root/background.js').readAsStringSync();
-        expect(src.contains("msg.type === 'dictMediaConfig'"), isTrue,
-            reason: '$root background.js does not handle dictMediaConfig');
-        expect(src.contains('sendResponse({ ok: true, base, token })'), isTrue,
+      test(
+        '[$name] background.js answers dictMediaConfig with base + token',
+        () {
+          final String src = File('$root/background.js').readAsStringSync();
+          expect(
+            src.contains("msg.type === 'dictMediaConfig'"),
+            isTrue,
+            reason: '$root background.js does not handle dictMediaConfig',
+          );
+          expect(
+            src.contains('sendResponse({ ok: true, base, token })'),
+            isTrue,
             reason:
-                '$root background.js dictMediaConfig must return base+token');
-      });
+                '$root background.js dictMediaConfig must return base+token',
+          );
+        },
+      );
 
       // TODO-1219 P1：Netflix 整集字幕拦截链存在性守卫（数据源 + 解析器 + 跨世界桥 + run_at）。
       test('[$name] netflix-bridge.js hooks manifest & bridges cues', () {
         final String src = File('$root/netflix-bridge.js').readAsStringSync();
-        expect(src.contains('JSON.parse'), isTrue,
-            reason: '$root netflix-bridge.js missing JSON.parse hook');
-        expect(src.contains('timedtexttracks'), isTrue,
-            reason: '$root netflix-bridge.js missing timedtexttracks sniff');
-        expect(src.contains("__fushiNf: 'cues'"), isTrue,
-            reason: '$root netflix-bridge.js missing cross-world cues bridge');
+        expect(
+          src.contains('JSON.parse'),
+          isTrue,
+          reason: '$root netflix-bridge.js missing JSON.parse hook',
+        );
+        expect(
+          src.contains('timedtexttracks'),
+          isTrue,
+          reason: '$root netflix-bridge.js missing timedtexttracks sniff',
+        );
+        expect(
+          src.contains("__fushiNf: 'cues'"),
+          isTrue,
+          reason: '$root netflix-bridge.js missing cross-world cues bridge',
+        );
       });
 
       test('[$name] subtitle-adapters.js exposes VTT/TTML parsers', () {
-        final String src =
-            File('$root/subtitle-adapters.js').readAsStringSync();
-        expect(src.contains('function parseWebVtt'), isTrue,
-            reason: '$root subtitle-adapters.js missing parseWebVtt');
-        expect(src.contains('function parseTtml'), isTrue,
-            reason: '$root subtitle-adapters.js missing parseTtml');
+        final String src = File(
+          '$root/subtitle-adapters.js',
+        ).readAsStringSync();
+        expect(
+          src.contains('function parseWebVtt'),
+          isTrue,
+          reason: '$root subtitle-adapters.js missing parseWebVtt',
+        );
+        expect(
+          src.contains('function parseTtml'),
+          isTrue,
+          reason: '$root subtitle-adapters.js missing parseTtml',
+        );
       });
 
       // 网页播放器（app 内 WebView2）与扩展共用 subtitle-providers.js：store + 全部 provider
       // 从 content.js 抽出到该文件，content.js 只剩 chrome.* 绑定的制卡/设置/查词。
       test('[$name] subtitle-providers.js receives full-episode cues', () {
-        final String src =
-            File('$root/subtitle-providers.js').readAsStringSync();
-        expect(src.contains("e.data.__fushiNf !== 'cues'"), isTrue,
-            reason:
-                '$root subtitle-providers.js missing full-episode cues receiver');
-        expect(src.contains('fushiEpisodeCues'), isTrue,
-            reason: '$root subtitle-providers.js missing fushiEpisodeCues store');
+        final String src = File(
+          '$root/subtitle-providers.js',
+        ).readAsStringSync();
+        expect(
+          src.contains("e.data.__fushiNf !== 'cues'"),
+          isTrue,
+          reason:
+              '$root subtitle-providers.js missing full-episode cues receiver',
+        );
+        expect(
+          src.contains('fushiEpisodeCues'),
+          isTrue,
+          reason: '$root subtitle-providers.js missing fushiEpisodeCues store',
+        );
       });
 
-      test('[$name] subtitle-providers.js stays free of extension-only APIs',
-          () {
+      test('[$name] subtitle-providers.js stays free of extension-only APIs', () {
         // 它要原样注入 app 内 WebView2 主世界跑：一旦引用 chrome.* 就在 app 里直接 ReferenceError。
-        final String src =
-            File('$root/subtitle-providers.js').readAsStringSync();
+        final String src = File(
+          '$root/subtitle-providers.js',
+        ).readAsStringSync();
         // 只认 API 调用形状（chrome.runtime / storage / tabs / tabCapture …），
         // 注释里提到 chrome.* 字样不算。
-        final RegExp extApi =
-            RegExp(r'\bchrome\.(runtime|storage|tabs|tabCapture|offscreen|scripting|sidePanel)\b');
-        expect(extApi.hasMatch(src), isFalse,
-            reason: '$root subtitle-providers.js must not touch chrome.* '
-                '(shared with the in-app web video player)');
+        final RegExp extApi = RegExp(
+          r'\bchrome\.(runtime|storage|tabs|tabCapture|offscreen|scripting|sidePanel)\b',
+        );
+        expect(
+          extApi.hasMatch(src),
+          isFalse,
+          reason:
+              '$root subtitle-providers.js must not touch chrome.* '
+              '(shared with the in-app web video player)',
+        );
       });
 
       test('[$name] netflix-bridge runs at document_start', () {
         final String src = File('$root/manifest.json').readAsStringSync();
-        expect(src.contains('"run_at": "document_start"'), isTrue,
-            reason:
-                '$root manifest.json netflix-bridge must run at document_start');
+        expect(
+          src.contains('"run_at": "document_start"'),
+          isTrue,
+          reason:
+              '$root manifest.json netflix-bridge must run at document_start',
+        );
       });
 
       // TODO-1219 P2：字幕列表面板存在性守卫（面板文件 + content.js 契约 + manifest bundle + CSS）。
@@ -109,96 +165,151 @@ void main() {
       // 面板正是「干扰网页布局 / 吃掉双击选词」的来源）。守卫方向随之反转。
       test('[$name] subtitle-panel.js drives the native side panel', () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains("'fushi-subtitle-panel'"), isFalse,
-            reason:
-                '$root subtitle-panel.js must not re-inject the in-page list panel');
-        expect(src.contains('window.fushiEpisodeCues'), isTrue,
-            reason: '$root subtitle-panel.js must consume fushiEpisodeCues');
-        expect(src.contains("__fushiNf: 'seek'"), isTrue,
-            reason: '$root subtitle-panel.js must reuse the P1 seek bridge');
-        expect(src.contains('window.fushiSubtitlePanelOnCues'), isTrue,
-            reason: '$root subtitle-panel.js missing cues-update subscription');
+        expect(
+          src.contains("'fushi-subtitle-panel'"),
+          isFalse,
+          reason:
+              '$root subtitle-panel.js must not re-inject the in-page list panel',
+        );
+        expect(
+          src.contains('window.fushiEpisodeCues'),
+          isTrue,
+          reason: '$root subtitle-panel.js must consume fushiEpisodeCues',
+        );
+        expect(
+          src.contains("__fushiNf: 'seek'"),
+          isTrue,
+          reason: '$root subtitle-panel.js must reuse the P1 seek bridge',
+        );
+        expect(
+          src.contains('window.fushiSubtitlePanelOnCues'),
+          isTrue,
+          reason: '$root subtitle-panel.js missing cues-update subscription',
+        );
       });
 
       // Side Panel 三件套必须齐全，否则 manifest 指过去是空页。
-      test('[$name] side panel ships html/css/js and is declared in manifest',
-          () {
-        final String manifest = File('$root/manifest.json').readAsStringSync();
-        expect(manifest.contains('"side_panel"'), isTrue,
-            reason: '$root manifest.json missing side_panel declaration');
-        expect(manifest.contains('"default_path": "side-panel.html"'), isTrue,
+      test(
+        '[$name] side panel ships html/css/js and is declared in manifest',
+        () {
+          final String manifest = File(
+            '$root/manifest.json',
+          ).readAsStringSync();
+          expect(
+            manifest.contains('"side_panel"'),
+            isTrue,
+            reason: '$root manifest.json missing side_panel declaration',
+          );
+          expect(
+            manifest.contains('"default_path": "side-panel.html"'),
+            isTrue,
             reason:
-                '$root manifest.json side_panel must point at side-panel.html');
-        expect(manifest.contains('"sidePanel"'), isTrue,
-            reason: '$root manifest.json missing the sidePanel permission');
-        final String html = File('$root/side-panel.html').readAsStringSync();
-        expect(html.contains('side-panel.css'), isTrue,
-            reason: '$root side-panel.html must load side-panel.css');
-        expect(html.contains('side-panel.js'), isTrue,
-            reason: '$root side-panel.html must load side-panel.js');
-        final String css = File('$root/side-panel.css').readAsStringSync();
-        expect(css.contains('.subtitle-row'), isTrue,
-            reason: '$root side-panel.css missing the subtitle row styles');
-      });
+                '$root manifest.json side_panel must point at side-panel.html',
+          );
+          expect(
+            manifest.contains('"sidePanel"'),
+            isTrue,
+            reason: '$root manifest.json missing the sidePanel permission',
+          );
+          final String html = File('$root/side-panel.html').readAsStringSync();
+          expect(
+            html.contains('side-panel.css'),
+            isTrue,
+            reason: '$root side-panel.html must load side-panel.css',
+          );
+          expect(
+            html.contains('side-panel.js'),
+            isTrue,
+            reason: '$root side-panel.html must load side-panel.js',
+          );
+          final String css = File('$root/side-panel.css').readAsStringSync();
+          expect(
+            css.contains('.subtitle-row'),
+            isTrue,
+            reason: '$root side-panel.css missing the subtitle row styles',
+          );
+        },
+      );
 
-      test('[$name] providers expose cues store, content.js exposes lookup entry',
-          () {
-        final String providers =
-            File('$root/subtitle-providers.js').readAsStringSync();
-        expect(
+      test(
+        '[$name] providers expose cues store, content.js exposes lookup entry',
+        () {
+          final String providers = File(
+            '$root/subtitle-providers.js',
+          ).readAsStringSync();
+          expect(
             providers.contains('window.fushiEpisodeCues = fushiEpisodeCues'),
             isTrue,
             reason:
-                '$root subtitle-providers.js must expose fushiEpisodeCues on window');
-        expect(providers.contains('window.fushiSubtitlePanelOnCues'), isTrue,
+                '$root subtitle-providers.js must expose fushiEpisodeCues on window',
+          );
+          expect(
+            providers.contains('window.fushiSubtitlePanelOnCues'),
+            isTrue,
             reason:
-                '$root subtitle-providers.js must notify the panel on new cues');
-        final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('window.fushiLookupAtPoint'), isTrue,
+                '$root subtitle-providers.js must notify the panel on new cues',
+          );
+          final String src = File('$root/content.js').readAsStringSync();
+          expect(
+            src.contains('window.fushiLookupAtPoint'),
+            isTrue,
             reason:
-                '$root content.js must expose fushiLookupAtPoint for panel row lookup');
-      });
+                '$root content.js must expose fushiLookupAtPoint for panel row lookup',
+          );
+        },
+      );
 
       test('[$name] manifest bundles subtitle-panel.js after content.js', () {
         final String src = File('$root/manifest.json').readAsStringSync();
         final int content = src.indexOf('content.js');
         final int panel = src.indexOf('subtitle-panel.js');
-        expect(panel > content && content >= 0, isTrue,
-            reason:
-                '$root manifest.json must list subtitle-panel.js after content.js in the isolated bundle');
+        expect(
+          panel > content && content >= 0,
+          isTrue,
+          reason:
+              '$root manifest.json must list subtitle-panel.js after content.js in the isolated bundle',
+        );
       });
 
       // PR #804：列表面板不再注入宿主页，它的样式必须从注入用的 content.css 里彻底
       // 消失（留着就意味着有人又把面板塞回了网页），改由 side-panel.css 承载。
-      test('[$name] content.css no longer ships the in-page subtitle panel',
-          () {
+      test('[$name] content.css no longer ships the in-page subtitle panel', () {
         final String src = File('$root/vendor/content.css').readAsStringSync();
-        expect(src.contains('#fushi-subtitle-panel'), isFalse,
-            reason:
-                '$root vendor/content.css must not restyle an in-page subtitle panel');
+        expect(
+          src.contains('#fushi-subtitle-panel'),
+          isFalse,
+          reason:
+              '$root vendor/content.css must not restyle an in-page subtitle panel',
+        );
       });
 
       // TODO-1219 P3：精确窗制卡——面板行制卡用该行整集拦截的精确 [startMs,endMs] 覆盖 DOM 采样窗。
       test('[$name] content.js mines with the panel row precise window', () {
         final String src = File('$root/content.js').readAsStringSync();
         // fushiEnqueue 优先消费面板行查词设下的精确窗（fushiPendingCueWindow），否则回落 DOM 采样。
-        expect(src.contains('fushiPendingCueWindow'), isTrue,
-            reason:
-                '$root content.js must thread a precise cue window for panel-row mining');
         expect(
-            src.contains(
-                '{ text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs }'),
-            isTrue,
-            reason:
-                '$root content.js fushiEnqueue must keep the panel-row precise window branch');
+          src.contains('fushiPendingCueWindow'),
+          isTrue,
+          reason:
+              '$root content.js must thread a precise cue window for panel-row mining',
+        );
+        expect(
+          src.contains(
+            '{ text: cw.text || \'\', startV: cw.startMs, endV: cw.endMs }',
+          ),
+          isTrue,
+          reason:
+              '$root content.js fushiEnqueue must keep the panel-row precise window branch',
+        );
         // 整轨优先仲裁三层：面板行精确窗 → 整轨按播放时间查 → DOM 采样兜底。整轨必须在
         // `||` 左边——实时采集只能是降级，不能反过来当主路径。这里用单行片段而非跨行
         // 字面串：多行字面量在 CRLF 检出下恒不匹配，守卫会退化成零断言空转。
         expect(
-            src.contains('fushiFullTrackWindowAt() || fushiCurrentCueWindowV()'),
-            isTrue,
-            reason:
-                '$root content.js fushiEnqueue must prefer the full-episode track over DOM sampling');
+          src.contains('fushiFullTrackWindowAt() || fushiCurrentCueWindowV()'),
+          isTrue,
+          reason:
+              '$root content.js fushiEnqueue must prefer the full-episode track over DOM sampling',
+        );
         // 录制边距 + 去重不得丢（复核修订 5 红线）。PR#1172 把边距收成共享原语
         // 锚点里**不带声明关键字**（不是 `var FUSHI_...`）：不变式是「默认边距仍是 200ms」，
         // var/let/const 是格式而非语义。带上关键字只会让一次 `var`→`const` 的 lint 清理
@@ -208,38 +319,57 @@ void main() {
         // 200ms」——同一条不变式，锚点换了位置。
         // 多句合一制卡后裁切基准是「上下文并集 || 当前句窗」（clipBase），原语不变。
         expect(
-            src.contains(
-                'fushiClipWindowWithMargin(clipBase.startV, clipBase.endV)'),
-            isTrue,
-            reason: '$root content.js must take its clip window from the '
-                'shared margin primitive');
-        expect(src.contains('const clipBase = ctx.contextWindow || w;'), isTrue,
-            reason: '$root content.js fushiEnqueue must clip the sentence-context '
-                'union when a draft is set, else the current cue window');
+          src.contains(
+            'fushiClipWindowWithMargin(clipBase.startV, clipBase.endV)',
+          ),
+          isTrue,
+          reason:
+              '$root content.js must take its clip window from the '
+              'shared margin primitive',
+        );
         expect(
-            File('$root/subtitle-providers.js')
-                .readAsStringSync()
-                .contains('FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
-            isTrue,
-            reason: '$root must keep the 200ms clip-window margin');
-        expect(src.contains('fushiQueueKey'), isTrue,
-            reason: '$root content.js must keep TODO-1222 dedup');
+          src.contains('const clipBase = ctx.contextWindow || w;'),
+          isTrue,
+          reason:
+              '$root content.js fushiEnqueue must clip the sentence-context '
+              'union when a draft is set, else the current cue window',
+        );
+        expect(
+          File(
+            '$root/subtitle-providers.js',
+          ).readAsStringSync().contains('FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
+          isTrue,
+          reason: '$root must keep the 200ms clip-window margin',
+        );
+        expect(
+          src.contains('fushiQueueKey'),
+          isTrue,
+          reason: '$root content.js must keep TODO-1222 dedup',
+        );
       });
 
       // TODO-1219 P3：录制前撤推挤——批量录制整标签页前恢复播放器全宽（录制画面不带面板黑边）。
       test('[$name] batch capture suspends and resumes the panel push', () {
         final String src = File('$root/content.js').readAsStringSync();
-        expect(src.contains('window.fushiSubtitlePanelSuspendPush()'), isTrue,
-            reason:
-                '$root content.js fushiRunNetflixBatch must un-push the player before capture');
-        expect(src.contains('window.fushiSubtitlePanelResumePush()'), isTrue,
-            reason:
-                '$root content.js must re-apply the panel push after capture');
+        expect(
+          src.contains('window.fushiSubtitlePanelSuspendPush()'),
+          isTrue,
+          reason:
+              '$root content.js fushiRunNetflixBatch must un-push the player before capture',
+        );
+        expect(
+          src.contains('window.fushiSubtitlePanelResumePush()'),
+          isTrue,
+          reason: '$root content.js must re-apply the panel push after capture',
+        );
         final int suspend = src.indexOf('fushiSubtitlePanelSuspendPush()');
         final int resume = src.indexOf('fushiSubtitlePanelResumePush()');
-        expect(suspend >= 0 && resume > suspend, isTrue,
-            reason:
-                '$root content.js must suspend push before capture and resume after');
+        expect(
+          suspend >= 0 && resume > suspend,
+          isTrue,
+          reason:
+              '$root content.js must suspend push before capture and resume after',
+        );
       });
 
       // PR #804：宿主页不再有被面板挤开的播放器，applyPush / st.pushSuspended 一并消失，
@@ -247,70 +377,112 @@ void main() {
       // 仍然有意义的事：兼容入口不能消失（content.js 仍在调），以及悬浮字幕查词必须
       // 继续携带该行精确 [startMs,endMs]（丢了就退化成 DOM 采样窗，制卡剪错句）。
       test(
-          '[$name] subtitle-panel.js keeps the batch-capture hooks + precise window',
-          () {
-        final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains('window.fushiSubtitlePanelSuspendPush'), isTrue,
-            reason:
-                '$root subtitle-panel.js must keep the SuspendPush hook content.js calls');
-        expect(src.contains('window.fushiSubtitlePanelResumePush'), isTrue,
-            reason:
-                '$root subtitle-panel.js must keep the ResumePush hook content.js calls');
-        expect(src.contains("'fushi-subtitle-panel'"), isFalse,
-            reason:
-                '$root subtitle-panel.js must not resurrect the in-page panel push layout');
-        expect(
-            src.contains(
-                'startMs: cue.startMs, endMs: cue.endMs, text: cue.text'),
+        '[$name] subtitle-panel.js keeps the batch-capture hooks + precise window',
+        () {
+          final String src = File('$root/subtitle-panel.js').readAsStringSync();
+          expect(
+            src.contains('window.fushiSubtitlePanelSuspendPush'),
             isTrue,
             reason:
-                '$root subtitle-panel.js overlay lookup must carry the precise cue window');
-      });
+                '$root subtitle-panel.js must keep the SuspendPush hook content.js calls',
+          );
+          expect(
+            src.contains('window.fushiSubtitlePanelResumePush'),
+            isTrue,
+            reason:
+                '$root subtitle-panel.js must keep the ResumePush hook content.js calls',
+          );
+          expect(
+            src.contains("'fushi-subtitle-panel'"),
+            isFalse,
+            reason:
+                '$root subtitle-panel.js must not resurrect the in-page panel push layout',
+          );
+          expect(
+            src.contains(
+              'startMs: cue.startMs, endMs: cue.endMs, text: cue.text',
+            ),
+            isTrue,
+            reason:
+                '$root subtitle-panel.js overlay lookup must carry the precise cue window',
+          );
+        },
+      );
 
       // TODO-1219 用户诉求②：字幕列表面板默认关闭，由扩展 options 的开关（netflixSubtitlePanel）
       // 驱动；键缺省或非 true 一律不显示。锁死「默认关 + 开关门控」防回归成默认打开。
-      test('[$name] subtitle-panel.js is gated off by default via a setting',
-          () {
+      test('[$name] subtitle-panel.js is gated off by default via a setting', () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains("'netflixSubtitlePanel'"), isTrue,
-            reason:
-                '$root subtitle-panel.js must read the netflixSubtitlePanel setting');
-        expect(src.contains('enabled: false'), isTrue,
-            reason:
-                '$root subtitle-panel.js must default the panel to disabled (off)');
-        expect(src.contains('if (!st.enabled) return;'), isTrue,
-            reason:
-                '$root subtitle-panel.js cue hook must no-op while disabled (no panel, no reopen chip)');
-        expect(src.contains('readEnabled(applyEnabled)'), isTrue,
-            reason:
-                '$root subtitle-panel.js must consult the setting on load instead of auto-showing');
-        expect(src.contains('chrome.storage.onChanged.addListener'), isTrue,
-            reason:
-                '$root subtitle-panel.js must react to the toggle live via storage.onChanged');
+        expect(
+          src.contains("'netflixSubtitlePanel'"),
+          isTrue,
+          reason:
+              '$root subtitle-panel.js must read the netflixSubtitlePanel setting',
+        );
+        expect(
+          src.contains('enabled: false'),
+          isTrue,
+          reason:
+              '$root subtitle-panel.js must default the panel to disabled (off)',
+        );
+        expect(
+          src.contains('if (!st.enabled) return;'),
+          isTrue,
+          reason:
+              '$root subtitle-panel.js cue hook must no-op while disabled (no panel, no reopen chip)',
+        );
+        expect(
+          src.contains('readEnabled(applyEnabled)'),
+          isTrue,
+          reason:
+              '$root subtitle-panel.js must consult the setting on load instead of auto-showing',
+        );
+        expect(
+          src.contains('chrome.storage.onChanged.addListener'),
+          isTrue,
+          reason:
+              '$root subtitle-panel.js must react to the toggle live via storage.onChanged',
+        );
       });
 
       test('[$name] options expose the Netflix subtitle-list toggle', () {
         final String html = File('$root/options.html').readAsStringSync();
         final String js = File('$root/options.js').readAsStringSync();
-        expect(html.contains('id="nfSubList"'), isTrue,
-            reason: '$root options.html missing the subtitle-list toggle');
-        expect(js.contains('netflixSubtitlePanel'), isTrue,
-            reason:
-                '$root options.js must persist the netflixSubtitlePanel setting');
+        expect(
+          html.contains('id="nfSubList"'),
+          isTrue,
+          reason: '$root options.html missing the subtitle-list toggle',
+        );
+        expect(
+          js.contains('netflixSubtitlePanel'),
+          isTrue,
+          reason:
+              '$root options.js must persist the netflixSubtitlePanel setting',
+        );
       });
 
       test(
-          '[$name] options start directly with settings, without promotional hero copy',
-          () {
-        final String html = File('$root/options.html').readAsStringSync();
-        final String css = File('$root/options.css').readAsStringSync();
-        expect(html.contains('class="hero"'), isFalse,
-            reason: '$root options.html must not render the promotional hero');
-        expect(html.contains('让字幕留在观看现场'), isFalse,
-            reason: '$root options.html must remove the discarded hero copy');
-        expect(css.contains('.hero {'), isFalse,
-            reason: '$root options.css must not retain dead hero layout rules');
-      });
+        '[$name] options start directly with settings, without promotional hero copy',
+        () {
+          final String html = File('$root/options.html').readAsStringSync();
+          final String css = File('$root/options.css').readAsStringSync();
+          expect(
+            html.contains('class="hero"'),
+            isFalse,
+            reason: '$root options.html must not render the promotional hero',
+          );
+          expect(
+            html.contains('让字幕留在观看现场'),
+            isFalse,
+            reason: '$root options.html must remove the discarded hero copy',
+          );
+          expect(
+            css.contains('.hero {'),
+            isFalse,
+            reason: '$root options.css must not retain dead hero layout rules',
+          );
+        },
+      );
 
       test('[$name] options expose subtitle lookup controls', () {
         final String html = File('$root/options.html').readAsStringSync();
@@ -322,36 +494,59 @@ void main() {
           'subtitlePauseOnLookup',
           'subtitleOverlayAutoLookup',
         ]) {
-          expect(html.contains('id="$id"'), isTrue,
-              reason: '$root options.html missing $id');
-          expect(js.contains(id), isTrue,
-              reason: '$root options.js must persist $id');
+          expect(
+            html.contains('id="$id"'),
+            isTrue,
+            reason: '$root options.html missing $id',
+          );
+          expect(
+            js.contains(id),
+            isTrue,
+            reason: '$root options.js must persist $id',
+          );
         }
-        expect(js.contains("type: 'connectionStatus'"), isTrue,
-            reason: '$root options.js must display live connection health');
+        expect(
+          js.contains("type: 'connectionStatus'"),
+          isTrue,
+          reason: '$root options.js must display live connection health',
+        );
       });
 
       test('[$name] subtitle-panel accepts and renders user subtitles', () {
         final String src = File('$root/subtitle-panel.js').readAsStringSync();
         // PR #804：选文件的入口迁到 Side Panel 自己的 <input type=file>（还加了 multiple），
         // 页面侧只保留拖放。两条入口都不许丢。
-        final String sidePanelHtml =
-            File('$root/side-panel.html').readAsStringSync();
+        final String sidePanelHtml = File(
+          '$root/side-panel.html',
+        ).readAsStringSync();
         expect(
-            sidePanelHtml.contains(
-                '<input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt"'),
-            isTrue,
-            reason: '$root side-panel.html missing supported file picker');
-        expect(src.contains("document.addEventListener('drop'"), isTrue,
-            reason: '$root subtitle-panel.js missing drag-and-drop loading');
-        expect(src.contains("'fushi-subtitle-overlay'"), isTrue,
-            reason: '$root subtitle-panel.js missing video subtitle overlay');
-        expect(src.contains('st.overlayAutoLookup'), isTrue,
-            reason:
-                '$root subtitle-panel.js missing floating-subtitle auto lookup');
-        expect(src.contains('applyPlaybackMode'), isFalse,
-            reason:
-                '$root subtitle-panel.js must remove legacy playback modes');
+          sidePanelHtml.contains(
+            '<input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt"',
+          ),
+          isTrue,
+          reason: '$root side-panel.html missing supported file picker',
+        );
+        expect(
+          src.contains("document.addEventListener('drop'"),
+          isTrue,
+          reason: '$root subtitle-panel.js missing drag-and-drop loading',
+        );
+        expect(
+          src.contains("'fushi-subtitle-overlay'"),
+          isTrue,
+          reason: '$root subtitle-panel.js missing video subtitle overlay',
+        );
+        expect(
+          src.contains('st.overlayAutoLookup'),
+          isTrue,
+          reason:
+              '$root subtitle-panel.js missing floating-subtitle auto lookup',
+        );
+        expect(
+          src.contains('applyPlaybackMode'),
+          isFalse,
+          reason: '$root subtitle-panel.js must remove legacy playback modes',
+        );
       });
 
       test('[$name] video shortcuts are configured per action', () {
@@ -369,28 +564,49 @@ void main() {
           'videoShortcutRateDown',
           'videoShortcutRateUp',
         ]) {
-          expect(html.contains('id="$id"'), isTrue,
-              reason: '$root options.html missing independent shortcut $id');
-          expect(js.contains(id), isTrue,
-              reason: '$root options.js must persist independent shortcut $id');
+          expect(
+            html.contains('id="$id"'),
+            isTrue,
+            reason: '$root options.html missing independent shortcut $id',
+          );
+          expect(
+            js.contains(id),
+            isTrue,
+            reason: '$root options.js must persist independent shortcut $id',
+          );
         }
-        expect(html.contains('id="videoShortcutsEnabled"'), isFalse,
-            reason:
-                '$root options must not retain the all-in-one shortcut row');
+        expect(
+          html.contains('id="videoShortcutsEnabled"'),
+          isFalse,
+          reason: '$root options must not retain the all-in-one shortcut row',
+        );
       });
 
       test('[$name] background diagnoses Hibiki/Yomitan port ownership', () {
         final String src = File('$root/background.js').readAsStringSync();
-        final String diagnostic =
-            File('$root/connection-diagnostics.js').readAsStringSync();
-        expect(src.contains("msg.type === 'connectionStatus'"), isTrue,
-            reason: '$root background.js missing connectionStatus handler');
-        expect(src.contains("'/api/extension/status'"), isTrue,
-            reason: '$root background.js must identify Hibiki explicitly');
-        expect(src.contains("'/serverVersion'"), isTrue,
-            reason: '$root background.js must probe Yomitan API conflicts');
-        expect(diagnostic.contains('yomitan-conflict'), isTrue,
-            reason: '$root connection diagnostic missing conflict state');
+        final String diagnostic = File(
+          '$root/connection-diagnostics.js',
+        ).readAsStringSync();
+        expect(
+          src.contains("msg.type === 'connectionStatus'"),
+          isTrue,
+          reason: '$root background.js missing connectionStatus handler',
+        );
+        expect(
+          src.contains("'/api/extension/status'"),
+          isTrue,
+          reason: '$root background.js must identify Hibiki explicitly',
+        );
+        expect(
+          src.contains("'/serverVersion'"),
+          isTrue,
+          reason: '$root background.js must probe Yomitan API conflicts',
+        );
+        expect(
+          diagnostic.contains('yomitan-conflict'),
+          isTrue,
+          reason: '$root connection diagnostic missing conflict state',
+        );
       });
 
       // TODO-1219 方案 B：字幕列表面板开关也放进扩展 action-popup（点扩展图标即可开），读写同一
@@ -398,76 +614,111 @@ void main() {
       // PR #804：弹窗里的「字幕列表」从「往网页注入面板的开关」改成「打开浏览器原生
       // 侧边栏的按钮」。入口本身不得丢（丢了用户就再也打不开字幕列表），且必须走 sidePanel API。
       test('[$name] action-popup opens the native subtitle side panel', () {
-        final String html =
-            File('$root/vendor/action-popup.html').readAsStringSync();
-        final String js =
-            File('$root/vendor/action-popup.js').readAsStringSync();
-        expect(html.contains('id="hp-nf-sublist"'), isTrue,
-            reason:
-                '$root action-popup.html missing the subtitle side-panel entry');
-        expect(html.contains('type="checkbox" id="hp-nf-sublist"'), isFalse,
-            reason:
-                '$root action-popup.html must not go back to an in-page panel checkbox');
-        expect(js.contains('chrome.sidePanel'), isTrue,
-            reason: '$root action-popup.js must open the native side panel');
-        expect(js.contains('netflixSubtitlePanel'), isTrue,
-            reason:
-                '$root action-popup.js must still enable the subtitle controller setting');
+        final String html = File(
+          '$root/vendor/action-popup.html',
+        ).readAsStringSync();
+        final String js = File(
+          '$root/vendor/action-popup.js',
+        ).readAsStringSync();
+        expect(
+          html.contains('id="hp-nf-sublist"'),
+          isTrue,
+          reason:
+              '$root action-popup.html missing the subtitle side-panel entry',
+        );
+        expect(
+          html.contains('type="checkbox" id="hp-nf-sublist"'),
+          isFalse,
+          reason:
+              '$root action-popup.html must not go back to an in-page panel checkbox',
+        );
+        expect(
+          js.contains('chrome.sidePanel'),
+          isTrue,
+          reason: '$root action-popup.js must open the native side panel',
+        );
+        expect(
+          js.contains('netflixSubtitlePanel'),
+          isTrue,
+          reason:
+              '$root action-popup.js must still enable the subtitle controller setting',
+        );
       });
 
       // TODO-1219 用户诉求①：整集字幕拦截必须与语言无关——harvest 遍历清单里的**每一条**
       // timedtexttracks（用户选哪种字幕语言都在内），绝不硬编码只处理某种语言（如日语）。
       test(
-          '[$name] netflix-bridge harvests every language track (no lang filter)',
-          () {
-        final String src = File('$root/netflix-bridge.js').readAsStringSync();
-        expect(
+        '[$name] netflix-bridge harvests every language track (no lang filter)',
+        () {
+          final String src = File('$root/netflix-bridge.js').readAsStringSync();
+          expect(
             src.contains(
-                'for (var i = 0; i < tracks.length; i++) fetchCues(videoId, tracks[i]);'),
+              'for (var i = 0; i < tracks.length; i++) fetchCues(videoId, tracks[i]);',
+            ),
             isTrue,
             reason:
-                '$root netflix-bridge.js must harvest every timedtext track, not one language');
-        expect(RegExp("['\"]ja['\"]").hasMatch(src), isFalse,
+                '$root netflix-bridge.js must harvest every timedtext track, not one language',
+          );
+          expect(
+            RegExp("['\"]ja['\"]").hasMatch(src),
+            isFalse,
             reason:
-                '$root netflix-bridge.js must not hard-code a Japanese-only language filter');
-      });
+                '$root netflix-bridge.js must not hard-code a Japanese-only language filter',
+          );
+        },
+      );
 
       // TODO-1219 复诉（勾选要刷新 + 面板空列表）根因守卫：主世界 bridge document_start 抓字幕，
       // 隔离世界 content.js document_idle 才注册接收端——先于接收端 post 的 cue 消息永久丢失。
       // bridge 必须存档已抓 cue 并响应 replayCues 重放；content.js 就绪后必须请求重放。
       test('[$name] bridge archives cues and replays them on request', () {
         final String src = File('$root/netflix-bridge.js').readAsStringSync();
-        expect(src.contains('cueArchive'), isTrue,
-            reason:
-                '$root netflix-bridge.js must archive fetched cue payloads');
-        expect(src.contains("d.__fushiNf === 'replayCues'"), isTrue,
-            reason:
-                '$root netflix-bridge.js must replay archived cues on replayCues');
+        expect(
+          src.contains('cueArchive'),
+          isTrue,
+          reason: '$root netflix-bridge.js must archive fetched cue payloads',
+        );
+        expect(
+          src.contains("d.__fushiNf === 'replayCues'"),
+          isTrue,
+          reason:
+              '$root netflix-bridge.js must replay archived cues on replayCues',
+        );
       });
 
       test(
-          '[$name] subtitle-providers.js requests a cue replay once its receiver is up',
-          () {
-        final String src =
-            File('$root/subtitle-providers.js').readAsStringSync();
-        final int receiver = src.indexOf("e.data.__fushiNf !== 'cues'");
-        final int replay = src.indexOf("{ __fushiNf: 'replayCues' }");
-        expect(receiver >= 0 && replay > receiver, isTrue,
+        '[$name] subtitle-providers.js requests a cue replay once its receiver is up',
+        () {
+          final String src = File(
+            '$root/subtitle-providers.js',
+          ).readAsStringSync();
+          final int receiver = src.indexOf("e.data.__fushiNf !== 'cues'");
+          final int replay = src.indexOf("{ __fushiNf: 'replayCues' }");
+          expect(
+            receiver >= 0 && replay > receiver,
+            isTrue,
             reason:
                 '$root subtitle-providers.js must post replayCues after registering '
-                'the cues receiver (injection-order race, TODO-1219)');
-      });
+                'the cues receiver (injection-order race, TODO-1219)',
+          );
+        },
+      );
 
-      test('[$name] manifest bundles subtitle-providers.js before content.js',
-          () {
-        final String src = File('$root/manifest.json').readAsStringSync();
-        final int providers = src.indexOf('subtitle-providers.js');
-        final int content = src.indexOf('"content.js"');
-        expect(providers >= 0 && content > providers, isTrue,
+      test(
+        '[$name] manifest bundles subtitle-providers.js before content.js',
+        () {
+          final String src = File('$root/manifest.json').readAsStringSync();
+          final int providers = src.indexOf('subtitle-providers.js');
+          final int content = src.indexOf('"content.js"');
+          expect(
+            providers >= 0 && content > providers,
+            isTrue,
             reason:
                 '$root manifest.json must list subtitle-providers.js before '
-                'content.js (content.js calls into the shared providers)');
-      });
+                'content.js (content.js calls into the shared providers)',
+          );
+        },
+      );
 
       // BUG-769 根因守卫：跨世界自投消息在 file:// 页 opaque origin 下会炸。opaque origin 序列化成
       // 'null'，但 location.origin 返回 'file://' → 二者不匹配 → postMessage 抛 SyntaxError/静默丢弃，
@@ -481,60 +732,94 @@ void main() {
           'subtitle-providers.js',
           'content.js',
         ];
-        final RegExp badTarget =
-            RegExp(r'postMessage\([^;]*?,\s*(window\.)?location\.origin\s*\)');
+        final RegExp badTarget = RegExp(
+          r'postMessage\([^;]*?,\s*(window\.)?location\.origin\s*\)',
+        );
         for (final String rel in selfPostFiles) {
           final String src = File('$root/$rel').readAsStringSync();
-          expect(badTarget.hasMatch(src), isFalse,
-              reason:
-                  '$root $rel must not use location.origin as a postMessage '
-                  'targetOrigin (BUG-769: throws on file:// opaque origin — '
-                  'use a bare-slash targetOrigin instead)');
+          expect(
+            badTarget.hasMatch(src),
+            isFalse,
+            reason:
+                '$root $rel must not use location.origin as a postMessage '
+                'targetOrigin (BUG-769: throws on file:// opaque origin — '
+                'use a bare-slash targetOrigin instead)',
+          );
         }
         // 接收端期望源改用 window.origin，绝不能退回 window.location.origin（file:// 会错序列化成 'file://'）。
-        final String bridge =
-            File('$root/netflix-bridge.js').readAsStringSync();
-        expect(bridge.contains('var ORIGIN = window.origin;'), isTrue,
-            reason: '$root netflix-bridge.js receiver must compare against '
-                'window.origin (opaque-origin safe), not location.origin');
-        expect(bridge.contains('window.location.origin'), isFalse,
-            reason:
-                '$root netflix-bridge.js must not read window.location.origin '
-                '(BUG-769: mis-serializes opaque file:// origin)');
+        final String bridge = File(
+          '$root/netflix-bridge.js',
+        ).readAsStringSync();
+        expect(
+          bridge.contains('var ORIGIN = window.origin;'),
+          isTrue,
+          reason:
+              '$root netflix-bridge.js receiver must compare against '
+              'window.origin (opaque-origin safe), not location.origin',
+        );
+        expect(
+          bridge.contains('window.location.origin'),
+          isFalse,
+          reason:
+              '$root netflix-bridge.js must not read window.location.origin '
+              '(BUG-769: mis-serializes opaque file:// origin)',
+        );
       });
 
       // TODO-1363 通用化守卫：面板不再是 Netflix 专属——数据源抽象（provider 全在 content.js，
       // 面板消费同一个 store），面板文件不得再按 hostname 早退。
-      test('[$name] subtitle-panel.js is universal (no Netflix hostname gate)',
-          () {
-        final String src = File('$root/subtitle-panel.js').readAsStringSync();
-        expect(src.contains('.test(location.hostname)) return;'), isFalse,
+      test(
+        '[$name] subtitle-panel.js is universal (no Netflix hostname gate)',
+        () {
+          final String src = File('$root/subtitle-panel.js').readAsStringSync();
+          expect(
+            src.contains('.test(location.hostname)) return;'),
+            isFalse,
             reason:
                 '$root subtitle-panel.js must not early-return on non-Netflix '
-                'hosts (TODO-1363 universal panel)');
-        expect(src.contains('window.fushiVideoKey'), isTrue,
-            reason: '$root subtitle-panel.js must key tracks via the shared '
-                'fushiVideoKey contract');
-        expect(src.contains('v.currentTime = ms / 1000'), isTrue,
-            reason: '$root subtitle-panel.js must seek generic sites via '
-                'video.currentTime (Netflix keeps the DRM bridge)');
-      });
+                'hosts (TODO-1363 universal panel)',
+          );
+          expect(
+            src.contains('window.fushiVideoKey'),
+            isTrue,
+            reason:
+                '$root subtitle-panel.js must key tracks via the shared '
+                'fushiVideoKey contract',
+          );
+          expect(
+            src.contains('v.currentTime = ms / 1000'),
+            isTrue,
+            reason:
+                '$root subtitle-panel.js must seek generic sites via '
+                'video.currentTime (Netflix keeps the DRM bridge)',
+          );
+        },
+      );
 
-      test('[$name] subtitle-providers.js provides universal subtitle providers',
-          () {
-        final String src =
-            File('$root/subtitle-providers.js').readAsStringSync();
-        expect(src.contains('function fushiHarvestTextTracks'), isTrue,
-            reason:
-                '$root subtitle-providers.js must harvest HTML5 video.textTracks '
-                '(generic full-track provider, TODO-1363)');
-        expect(src.contains('FUSHI_LIVE_LANG'), isTrue,
-            reason:
-                '$root subtitle-providers.js must promote DOM-sampled cues into a '
-                'live track (YouTube/self-drawn captions, TODO-1363)');
-        expect(src.contains('window.fushiVideoKey = fushiVideoKey'), isTrue,
-            reason:
-                '$root subtitle-providers.js must expose the shared video-key contract');
+      test('[$name] subtitle-providers.js provides universal subtitle providers', () {
+        final String src = File(
+          '$root/subtitle-providers.js',
+        ).readAsStringSync();
+        expect(
+          src.contains('function fushiHarvestTextTracks'),
+          isTrue,
+          reason:
+              '$root subtitle-providers.js must harvest HTML5 video.textTracks '
+              '(generic full-track provider, TODO-1363)',
+        );
+        expect(
+          src.contains('FUSHI_LIVE_LANG'),
+          isTrue,
+          reason:
+              '$root subtitle-providers.js must promote DOM-sampled cues into a '
+              'live track (YouTube/self-drawn captions, TODO-1363)',
+        );
+        expect(
+          src.contains('window.fushiVideoKey = fushiVideoKey'),
+          isTrue,
+          reason:
+              '$root subtitle-providers.js must expose the shared video-key contract',
+        );
       });
     });
   });
@@ -545,6 +830,8 @@ void main() {
       'bridge-shim.js',
       'background.js',
       'connection-diagnostics.js',
+      // BUG-2480：漫画源登录「从浏览器导入」的纯函数模块。
+      'site-cookie-export.js',
       // TODO-1219 P1：Netflix 整集字幕拦截链改动的共享文件，纳入字节守卫防两镜像漂移。
       'netflix-bridge.js',
       'subtitle-adapters.js',
@@ -566,12 +853,17 @@ void main() {
       'vendor/action-popup.js',
     ]) {
       test(rel, () {
-        final List<int> tools =
-            File('../tools/browser-extension/$rel').readAsBytesSync();
-        final List<int> assets =
-            File('assets/browser_extension/$rel').readAsBytesSync();
-        expect(assets, tools,
-            reason: 'assets/browser_extension/$rel out of sync with tools/');
+        final List<int> tools = File(
+          '../tools/browser-extension/$rel',
+        ).readAsBytesSync();
+        final List<int> assets = File(
+          'assets/browser_extension/$rel',
+        ).readAsBytesSync();
+        expect(
+          assets,
+          tools,
+          reason: 'assets/browser_extension/$rel out of sync with tools/',
+        );
       });
     }
   });
@@ -589,11 +881,17 @@ void main() {
     String extractConstructDictCss(String src, String label) {
       const String marker = 'function constructDictCss(';
       final int start = src.indexOf(marker);
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '$label is missing constructDictCss');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: '$label is missing constructDictCss',
+      );
       final int braceStart = src.indexOf('{', start);
-      expect(braceStart, greaterThan(start),
-          reason: '$label constructDictCss has no body');
+      expect(
+        braceStart,
+        greaterThan(start),
+        reason: '$label constructDictCss has no body',
+      );
       int depth = 0;
       int i = braceStart;
       int end = -1;
@@ -631,25 +929,35 @@ void main() {
         }
         i++;
       }
-      expect(end, greaterThan(braceStart),
-          reason: '$label constructDictCss braces never close — extraction '
-              'heuristic broke; update this guard alongside the function.');
+      expect(
+        end,
+        greaterThan(braceStart),
+        reason:
+            '$label constructDictCss braces never close — extraction '
+            'heuristic broke; update this guard alongside the function.',
+      );
       return src.substring(start, end + 1);
     }
 
     test('app assets/popup vs both extension vendor mirrors', () {
       final String app = extractConstructDictCss(
-          File('assets/popup/dict-media.js').readAsStringSync(),
-          'assets/popup/dict-media.js');
+        File('assets/popup/dict-media.js').readAsStringSync(),
+        'assets/popup/dict-media.js',
+      );
       for (final MapEntry<String, String> mirror in mirrors.entries) {
         final String vendor = extractConstructDictCss(
-            File('${mirror.value}/vendor/dict-media.js').readAsStringSync(),
-            '${mirror.value}/vendor/dict-media.js');
-        expect(vendor, app,
-            reason: '[${mirror.key}] vendor/dict-media.js constructDictCss '
-                'drifted from assets/popup/dict-media.js — the scoping/at-rule '
-                'logic must stay identical across app and extension (only the '
-                'TODO-1215 media-URL rewrite outside this function may fork).');
+          File('${mirror.value}/vendor/dict-media.js').readAsStringSync(),
+          '${mirror.value}/vendor/dict-media.js',
+        );
+        expect(
+          vendor,
+          app,
+          reason:
+              '[${mirror.key}] vendor/dict-media.js constructDictCss '
+              'drifted from assets/popup/dict-media.js — the scoping/at-rule '
+              'logic must stay identical across app and extension (only the '
+              'TODO-1215 media-URL rewrite outside this function may fork).',
+        );
       }
     });
   });

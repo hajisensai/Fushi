@@ -350,11 +350,7 @@ Future<int?> showMangaPageJumpDialog(
 /// [mangaWindowDocument]（调 `fushiSelection.selectFromPosition(node, 0, 40, x, y)`，
 /// 第三参 maxLength 漏传会让扫描 gate 恒假、查词全程哑火），本页绝不再注册第二个。
 class MangaFushiPage extends BaseSourcePage {
-  const MangaFushiPage({
-    super.key,
-    required super.item,
-    required this.bookKey,
-  });
+  const MangaFushiPage({super.key, required super.item, required this.bookKey});
 
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
   ///
@@ -794,6 +790,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   MangaPageAnimation _pageAnimation = MangaPageAnimation.slide;
   bool _tapZonePaging = true;
 
+  /// 「显示识别范围」（BUG-2481）：把 OCR 块框画出来。会话内状态，不落偏好——
+  /// 它是检查识别质量用的，不是阅读姿势。
+  bool _showOcrBoxes = false;
+
   /// 最近一次实际生效的布局（由 [_buildSpreadsFor] 记账），didChangeMetrics
   /// 只在解析结果真变时才重建 spread 序列，避免键盘弹出等无关 metrics 抖动。
   MangaPageLayout _pageLayout = MangaPageLayout.single;
@@ -1011,12 +1011,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _resolveAndApplyMangaProfile() async {
     String? languageTag;
     try {
-      languageTag =
-          (await appModel.database.getEpubBook(widget.bookKey))?.language;
+      languageTag = (await appModel.database.getEpubBook(
+        widget.bookKey,
+      ))?.language;
     } catch (e, st) {
       debugPrint('[MangaFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
     }
-    await ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+    await ref
+        .read(profileViewModelProvider.notifier)
+        .autoApplyBinding(
           bookUid: widget.bookKey,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.manga,
@@ -1858,6 +1861,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       zoomSensitivity: _zoomSensitivity,
       pageAnimation: _pageAnimation,
       tapZonePaging: _tapZonePaging,
+      showOcrBoxes: _showOcrBoxes,
     );
   }
 
@@ -2067,7 +2071,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String? chapterKey = _shelfChapterKey;
     // 没装载正文（「本章未下载」态）就没有进度可写：写一行 lastPage 0 会把这章
     // 的 updatedAt 推到最新，让作品页「继续阅读」误落到一章没读过的上面。
-    if (row == null || chapterKey == null || row.uid.isEmpty || _payload == null) {
+    if (row == null ||
+        chapterKey == null ||
+        row.uid.isEmpty ||
+        _payload == null) {
       return;
     }
     await appModel.database.saveMangaChapterState(
@@ -2913,6 +2920,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 页内切换 spread/webtoon，并把用户覆盖写进 `EpubBooks.mangaReadingMode`
   /// （之后开书恒用覆盖值，不再自动判定）。跨布局保当前页。
+  /// 切换识别范围显示：当前文档直接改 body class，之后重建的文档由
+  /// [_buildWindowDocument] 按状态带上 class。
+  Future<void> _toggleOcrBoxes() async {
+    final bool next = !_showOcrBoxes;
+    setState(() => _showOcrBoxes = next);
+    try {
+      await _controller?.evaluateJavascript(
+        source:
+            "document.body.classList.toggle('ocr-boxes-visible', ${next ? 'true' : 'false'});",
+      );
+    } catch (_) {
+      // WebView 还没就绪 / 已报废：下一份文档会按状态带上 class。
+    }
+  }
+
   Future<void> _toggleReadingMode() async {
     final MokuroPayload? payload = _payload;
     if (_bookRow == null || payload == null) return;
@@ -3344,8 +3366,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         exitAfterPersist(
           persist: onWillPop,
           exit: () => navigator.pop(),
-          onPersistError: (Object error, StackTrace stack) =>
-              ErrorLogService.instance.log('MangaFushi.exitFlush', error, stack),
+          onPersistError: (Object error, StackTrace stack) => ErrorLogService
+              .instance
+              .log('MangaFushi.exitFlush', error, stack),
         );
       },
       child: Scaffold(
@@ -3528,10 +3551,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             message: t.dialog_cancel,
             child: IconButton(
               key: const ValueKey<String>('manga_ocr_cancel_button'),
-              icon: const Icon(
-                Icons.stop_circle_outlined,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.stop_circle_outlined, color: Colors.white),
               onPressed: _cancelWholeVolumeOcr,
             ),
           ),
@@ -3629,6 +3649,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               color: Colors.white,
             ),
             onPressed: () => unawaited(_toggleReadingMode()),
+          ),
+        ),
+        Tooltip(
+          message: t.manga_ocr_boxes_toggle,
+          child: IconButton(
+            key: const ValueKey<String>('manga_ocr_boxes_toggle'),
+            icon: Icon(
+              _showOcrBoxes
+                  ? Icons.highlight_alt
+                  : Icons.highlight_alt_outlined,
+              color: _showOcrBoxes ? Colors.amberAccent : Colors.white,
+            ),
+            onPressed: () => unawaited(_toggleOcrBoxes()),
           ),
         ),
         // BUG-1888：隐藏界面。与快捷键（默认 M / 手柄 Y）同一个执行体。

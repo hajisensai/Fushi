@@ -155,6 +155,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Set<String> _downloaded = const <String>{};
   StreamSubscription<void>? _jobsWatch;
 
+  /// OCR 进度（BUG-2481）：注册表的「任务集合变了」信号 + 当前任务的事件流。
+  /// 页面只观察，不拥有任务（所有权在注册表，BUG-2449）。
+  StreamSubscription<void>? _ocrChangesWatch;
+  StreamSubscription<MangaOcrBackgroundEvent>? _ocrEventsWatch;
+  MangaOcrRunningJob? _ocrJob;
+  MangaOcrBackgroundEvent? _ocrEvent;
+  List<String> _ocrQueued = const <String>[];
+  String? _bookDir;
+
   AppModel get _appModel => ref.read(appProvider);
 
   Widget _challengeAction(Object? error) => MihonCloudflareAction(
@@ -218,7 +227,125 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   void dispose() {
     unawaited(_jobsWatch?.cancel());
     _jobsWatch = null;
+    unawaited(_ocrChangesWatch?.cancel());
+    unawaited(_ocrEventsWatch?.cancel());
     super.dispose();
+  }
+
+  /// 首次拿到 bookKey 后挂上注册表；之后任务起停都会把页面重新对到当前任务。
+  void _watchOcr(String bookKey) {
+    if (_ocrChangesWatch != null) return;
+    final MangaOcrJobRegistry registry = ref.read(mangaOcrJobRegistryProvider);
+    _ocrChangesWatch = registry.changes.listen((_) => _syncOcrJob(bookKey));
+    _syncOcrJob(bookKey);
+  }
+
+  void _syncOcrJob(String bookKey) {
+    if (!mounted) return;
+    final MangaOcrJobRegistry registry = ref.read(mangaOcrJobRegistryProvider);
+    final MangaOcrRunningJob? job = registry.running(bookKey);
+    final List<String> queued = registry.queuedDirectories(bookKey);
+    if (!identical(job, _ocrJob)) {
+      unawaited(_ocrEventsWatch?.cancel());
+      _ocrEventsWatch = job?.events.listen(
+        (MangaOcrBackgroundEvent event) {
+          if (mounted) setState(() => _ocrEvent = event);
+        },
+        onError: (Object _, StackTrace __) => _syncOcrJob(bookKey),
+        onDone: () => _syncOcrJob(bookKey),
+      );
+      _ocrEvent = job?.lastEvent;
+    }
+    setState(() {
+      _ocrJob = job;
+      _ocrQueued = queued;
+    });
+  }
+
+  /// 任务目录 → 章节 key（任务只认目录，章节行只认 key）。
+  String? _chapterKeyForDirectory(String directory) {
+    final String? bookDir = _bookDir;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (bookDir == null || entry == null) return null;
+    for (final OnlineMangaChapter chapter in entry.chapters) {
+      if (p.equals(
+        mangaChapterDirectory(bookDir, chapter.key).path,
+        directory,
+      )) {
+        return chapter.key;
+      }
+    }
+    return null;
+  }
+
+  Set<String> get _ocrQueuedChapterKeys => <String>{
+    for (final String directory in _ocrQueued)
+      if (_chapterKeyForDirectory(directory) case final String key) key,
+  };
+
+  String? get _ocrRunningChapterKey {
+    final MangaOcrRunningJob? job = _ocrJob;
+    if (job == null) return null;
+    return _chapterKeyForDirectory(job.job.managedDirectory);
+  }
+
+  Future<void> _cancelOcr() async {
+    final String? bookKey = _bookKey;
+    if (bookKey == null) return;
+    await ref.read(mangaOcrJobRegistryProvider).cancel(bookKey);
+  }
+
+  /// 识别进度横幅：当前章 + 页进度 + 排队数 + 取消。没任务、没排队时不出现。
+  Widget? _buildOcrBanner(BuildContext context) {
+    final MangaOcrRunningJob? job = _ocrJob;
+    final int queuedCount = _ocrQueued.length;
+    if (job == null && queuedCount == 0) return null;
+    final ThemeData theme = Theme.of(context);
+    final MangaOcrBackgroundEvent? event = _ocrEvent;
+    final int done = event?.pagesDone ?? 0;
+    final int total = event?.pagesTotal ?? 0;
+    final String? runningKey = _ocrRunningChapterKey;
+    final OnlineMangaChapter? running = runningKey == null
+        ? null
+        : _entry?.chapters.cast<OnlineMangaChapter?>().firstWhere(
+            (OnlineMangaChapter? chapter) => chapter?.key == runningKey,
+            orElse: () => null,
+          );
+    final List<String> lines = <String>[
+      if (job != null)
+        t.manga_series_ocr_running(
+          chapter: running == null ? '' : mangaChapterDisplayName(running),
+          done: '$done',
+          total: '$total',
+        ),
+      if (queuedCount > 0) t.manga_series_ocr_queued_count(count: queuedCount),
+    ];
+    return FushiCard(
+      key: const ValueKey<String>('manga_series_ocr_banner'),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(lines.join(' · '), style: theme.textTheme.bodyMedium),
+                const SizedBox(height: 8),
+                LinearProgressIndicator(
+                  value: job == null || total <= 0 ? null : done / total,
+                ),
+              ],
+            ),
+          ),
+          if (job != null)
+            IconButton(
+              key: const ValueKey<String>('manga_series_ocr_cancel'),
+              tooltip: t.dialog_cancel,
+              onPressed: () => unawaited(_cancelOcr()),
+              icon: const Icon(Icons.close),
+            ),
+        ],
+      ),
+    );
   }
 
   /// 重算下载状态位并（首次）订阅任务表。只对在库条目有意义：未入库的作品既没有
@@ -242,15 +369,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final Map<String, MangaDownloadJobRow> jobs = await downloads.jobsForBook(
       row.bookKey,
     );
+    final String bookDir = await MangaStorage.bookPath(row.bookKey);
     final Set<String> downloaded = await downloadedChapterKeys(
-      await MangaStorage.bookPath(row.bookKey),
+      bookDir,
       entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
     );
     if (!mounted) return;
     setState(() {
       _jobs = jobs;
       _downloaded = downloaded;
+      _bookDir = bookDir;
     });
+    _watchOcr(row.bookKey);
   }
 
   Future<void> _enqueueChapter(OnlineMangaChapter chapter) async {
@@ -1106,6 +1236,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (loadError != null && _hasNothingToShow) {
       return _buildLoadError(context, loadError);
     }
+    final Widget? ocrBanner = _isLocal ? null : _buildOcrBanner(context);
     return ListView(
       // BUG-2440：scaffold 的 body 不再扣底部安全区，章节列表得自己把这段补进
       // 滚动 padding，否则最后一章静止时压在手势条底下点不到。
@@ -1119,6 +1250,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         const SizedBox(height: 16),
         _buildActions(context),
         const SizedBox(height: 24),
+        if (ocrBanner != null) ...<Widget>[
+          ocrBanner,
+          const SizedBox(height: 12),
+        ],
         if (_isLocal)
           _buildLocalDetails(context)
         else
@@ -1145,6 +1280,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                       unawaited(_markUpToRead(chapter)),
             downloadedChapterKeys: _downloaded,
             jobsByChapterKey: _jobs,
+            ocrRunningChapterKey: _ocrRunningChapterKey,
+            ocrProgress: _ocrJob == null
+                ? null
+                : (
+                    done: _ocrEvent?.pagesDone ?? 0,
+                    total: _ocrEvent?.pagesTotal ?? 0,
+                  ),
+            ocrQueuedChapterKeys: _ocrQueuedChapterKeys,
             onDownload: _bookKey == null
                 ? null
                 : (OnlineMangaChapter chapter) =>
