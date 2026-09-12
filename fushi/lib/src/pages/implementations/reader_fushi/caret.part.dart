@@ -56,6 +56,18 @@ extension _ReaderCaret on _ReaderFushiPageState {
   Set<ModifierKey> _activeModifiers() => activeModifierKeys();
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // BUG-2490（对齐视频页 BUG-880）：Shift 按下瞬间在最后指针位置直接查词，根治
+    // 「光标停在词上不动、按 Shift 却不出词」——两条悬停腿都只在指针移动时派发。
+    // 不消费按键：Shift 组合快捷键、光标 Shift+方向等行为不变。macOS 上 WKWebView
+    // 持有 first responder 时 Flutter 收不到 flagsChanged，下一次鼠标事件由嵌入层
+    // 同步修饰键、合成同款 KeyDownEvent 送到这里，仍能触发。文本框聚焦时放行
+    // （focusedEditableText != null）：在弹窗搜索框里打大写字母按的 Shift 不是查词。
+    if (event is KeyDownEvent &&
+        (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+            event.logicalKey == LogicalKeyboardKey.shiftRight) &&
+        focusedEditableText() == null) {
+      _triggerShiftLookupAtLastPointer();
+    }
     // The popup header toolbar (sibling of the popup content). Down returns to
     // the content caret; B/Escape dismiss the popup (ascend out of it). Left/
     // Right/Enter fall through to the framework so the buttons traverse and

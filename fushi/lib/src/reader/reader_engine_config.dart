@@ -26,6 +26,7 @@ class ReaderEngineConfig {
     required this.vnClickAdvance,
     required this.scanNonJapaneseText,
     required this.hoverAutoLookup,
+    this.hostHoverLookup = false,
     required this.highlightOnTap,
     required this.showChrome,
     required this.debugLogging,
@@ -70,6 +71,11 @@ class ReaderEngineConfig {
   final bool vnClickAdvance;
   final bool scanNonJapaneseText;
   final bool hoverAutoLookup;
+
+  /// BUG-2490：true = 宿主（Flutter）侧接管 Shift-悬停 / 纯悬停查词，文档内的
+  /// mousemove 腿整条关掉（macOS 等 WebView 为原生视图的平台）；false = 维持 JS 腿
+  /// （Windows：WebView2 是 Flutter 纹理，hover 由 fork 转发进文档）。
+  final bool hostHoverLookup;
   final bool highlightOnTap;
   final bool showChrome;
   final bool debugLogging;
@@ -129,6 +135,7 @@ class ReaderEngineConfig {
         'vnClickAdvance': vnClickAdvance,
         'scanNonJapaneseText': scanNonJapaneseText,
         'hoverAutoLookup': hoverAutoLookup,
+        'hostHoverLookup': hostHoverLookup,
         'highlightOnTap': highlightOnTap,
         'showChrome': showChrome,
         'debugLogging': debugLogging,
