@@ -101,7 +101,7 @@ class MangaStorage {
       kImagesDirName,
       ...segments.sublist(0, segments.length - 1),
     ];
-    for (int i = 2;; i++) {
+    for (int i = 2; ; i++) {
       candidate = <String>[...prefix, '$stem ($i)$ext'].join('/');
       key = candidate.toLowerCase();
       if (!used.contains(key)) {
@@ -141,6 +141,13 @@ class MangaStorage {
   /// 纯路径解析 + 穿越守卫：[relative] 在 [imagesRoot] 内解析到**存在的**文件时返回
   /// 规范绝对路径（保留磁盘真实大小写），越界或缺文件一律 null。
   ///
+  /// [relative] 是**裸**相对路径（`manga.json` 里 [pageRelativePath] 之后的原样文件
+  /// 名），本层不做任何 percent 解码：解码只属于造过 URL 的那一侧（阅读器 WebView
+  /// 拦截器 / `manga.local` URL 解析）。BUG-2484：此前在这里无条件
+  /// `Uri.decodeComponent`，而五个调用点里三个直接传 `manga.json` 的裸文件名——
+  /// 图名含 `%`（`100%.jpg`）时翻页/选字/制卡三条链全抛
+  /// `Illegal percent encoding`，形如 `%41.jpg` 的合法名还会被静默解码成 `A.jpg`。
+  ///
   /// BUG-1221 的两种路径形式必须并存：越界判定用 `p.canonicalize`（Windows 上整体
   /// 小写化，`../` 逃逸不会被大小写差异绕过），返回值用 `p.absolute` + `p.normalize`
   /// （同样绝对化并折叠 `.`/`..`，但保留大小写——返回值会流出本次读取，被制卡当作
@@ -149,8 +156,7 @@ class MangaStorage {
   /// 归位到本层（原先是阅读器 widget 的静态方法）是因为互联 host 供图必须用**同一条**
   /// 穿越守卫：安全边界靠复制粘贴维持，抄漏一处就是真漏洞。
   static String? resolvePageFilePath(String imagesRoot, String relative) {
-    final String decoded = Uri.decodeComponent(relative);
-    final String joined = p.join(imagesRoot, decoded);
+    final String joined = p.join(imagesRoot, relative);
     if (!p.isWithin(p.canonicalize(imagesRoot), p.canonicalize(joined))) {
       return null;
     }
