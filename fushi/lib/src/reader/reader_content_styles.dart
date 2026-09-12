@@ -1209,12 +1209,20 @@ body::after {
     // still wins for hidden furigana. The shown modes also own <rtc> (see
     // _rtcAnnotationCss); `hide` hides rtc together with rt so a hidden
     // annotation container cannot keep reserving lane space.
-    // 三态对齐 Hoshi Reader iOS `FuriganaMode { off, toggle, hidden }`（值域见
-    // ReaderSettings.furiganaMode）。`toggle` 的隐藏纯由 CSS 承担，不再靠装载时 JS
-    // 给 ruby 打 class：正文动态换章 / 设置热更新都只重发 CSS，JS 标记会漏掉新
-    // 内容或在热切换后残留。揭示 = 点击那个 ruby 加 `furigana-revealed`
+    // 四态（值域见 ReaderSettings.furiganaMode）：前三态 off / toggle / hidden
+    // 对齐 Hoshi Reader iOS `FuriganaMode`，`dimmed` 是 2026-09-12 用户追加的
+    // 「显示但淡」。`toggle` 的隐藏纯由 CSS 承担，不再靠装载时 JS 给 ruby 打
+    // class：正文动态换章 / 设置热更新都只重发 CSS，JS 标记会漏掉新内容或在热
+    // 切换后残留。揭示 = 点击那个 ruby 加 `furigana-revealed`
     // （fushiSelection.selectText 入口，命中隐藏注音的 ruby 只揭示、不查词）；
     // `body.show-all-rt` 是 readerToggleFurigana 快捷键（手柄 R3）的整页揭示。
+    //
+    // `dimmed` 的淡显只用 `opacity`，**不改 color**：注音色如果写死成某个灰，在
+    // 深浅主题 / 自定义正文色之间总有一边对比失衡（浅底上的浅灰几乎不可读、深底
+    // 上的深灰直接消失）；opacity 是对当前正文色的相对衰减，两边都成立，也不和
+    // 主题色变量、有声书高亮的背景填充打架。同一颗 `readerToggleFurigana` 快捷键
+    // 在 `dimmed` 下的语义是「临时恢复全亮」——`body.show-all-rt` 把 opacity 拉回
+    // 1，与 `toggle` 下「整页揭示」同构（都是一次性看清全页注音）。
     switch (mode) {
       case 'hidden':
         return 'rt, rtc { display: none !important; }';
@@ -1236,6 +1244,18 @@ ruby:not(.furigana-revealed):has(rt) {
 body.show-all-rt ruby > rt,
 body.show-all-rt ruby > rtc {
   visibility: visible !important;
+}''';
+      case 'dimmed':
+        return '''
+rt { display: ruby-text !important; font-size: 0.45em; }
+$_rtcAnnotationCss
+ruby > rt,
+ruby > rtc {
+  opacity: 0.45 !important;
+}
+body.show-all-rt ruby > rt,
+body.show-all-rt ruby > rtc {
+  opacity: 1 !important;
 }''';
       default:
         return '''

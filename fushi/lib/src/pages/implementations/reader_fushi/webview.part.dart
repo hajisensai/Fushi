@@ -589,9 +589,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);
 
-  // 振假名三态（off / toggle / hidden）不再装任何 JS 监听器：隐藏由 CSS 承担，
-  // toggle 态的「点一个揭示一个」收进 fushiSelection.selectText（查词入口，
-  // 命中隐藏注音的 ruby 只揭示、不查词），整页揭示走 readerToggleFurigana 快捷键。
+  // 振假名四态（off / toggle / hidden / dimmed）不再装任何 JS 监听器：隐藏 / 淡显
+  // 都由 CSS 承担，toggle 态的「点一个揭示一个」收进 fushiSelection.selectText
+  // （查词入口，命中隐藏注音的 ruby 只揭示、不查词），整页揭示 / dimmed 的临时全亮
+  // 走 readerToggleFurigana 快捷键。
   // 旧 `_buildFuriganaJs`（partial 的 click 切换 / toggle 的 dblclick 整页切换）已删。
 
   // ── Single IIFE setup script (mirrors Hoshi Android's readerSetupScript) ──

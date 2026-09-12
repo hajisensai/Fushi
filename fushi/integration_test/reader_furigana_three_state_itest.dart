@@ -20,8 +20,10 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// 振假名三态（`src:reader_fushi:furigana_mode` = `off` / `toggle` / `hidden`）
-/// 真 app 证据（Windows 离屏 runner，真 WebView2 + 真分页 JS + 真 CSS 注入）。
+/// 振假名四态（`src:reader_fushi:furigana_mode` =
+/// `off` / `toggle` / `hidden` / `dimmed`）真 app 证据（Windows 离屏 runner，
+/// 真 WebView2 + 真分页 JS + 真 CSS 注入）。文件名保留 `three_state`（docs 里
+/// 有引用），覆盖面已是四态。
 ///
 /// 被测契约（`ReaderContentStyles._furiganaCss` + `fushiSelection.selectText`）：
 ///  1. `toggle`：未揭示 `<ruby>` 的 `rt` 是 `visibility:hidden`、ruby 带灰色虚线下划线
@@ -36,7 +38,10 @@ import 'test_helpers.dart';
 ///  4. 热切到 `hidden`（`setReaderFuriganaMode` → `onSettingsChangedLive`，与设置页
 ///     `notifyReaderSettingsChanged` 同一条路）：rt `display:none`；再热切到 `off`：
 ///     rt `visibility:visible` 且 ruby 无虚线下划线；
-///  5. 偏好在 `finally` 还原。
+///  5. 热切到 `dimmed`：rt 仍 `display:ruby-text`（结构与 `off` 一致，不是隐藏），
+///     但 `opacity` 被淡到 0.45；`body.show-all-rt`（readerToggleFurigana 快捷键
+///     在此态的语义 = 临时恢复全亮）把 opacity 拉回 1；切回 `off` opacity 回到 1；
+///  6. 偏好在 `finally` 还原。
 ///
 /// 素材是本文件现生成的一本**横排分页**单章 EPUB，正文前几段混有 `<ruby>…<rt>…</rt>
 /// </ruby>`（首屏即可命中，不依赖任何章节导航）。全程不点控件：开书走
@@ -240,6 +245,7 @@ String _probeJs(int index) => '''
     revealed: ruby.classList.contains('furigana-revealed'),
     rtVisibility: rtCs.visibility,
     rtDisplay: rtCs.display,
+    rtOpacity: rtCs.opacity,
     rubyDecorationLine: rubyCs.textDecorationLine,
     rubyDecorationStyle: rubyCs.textDecorationStyle,
     baseCx: (br.left + br.right) / 2,
@@ -278,6 +284,8 @@ class _RubyProbe {
   bool get revealed => raw['revealed'] == true;
   String get rtVisibility => raw['rtVisibility']?.toString() ?? '';
   String get rtDisplay => raw['rtDisplay']?.toString() ?? '';
+  double get rtOpacity =>
+      double.tryParse(raw['rtOpacity']?.toString() ?? '') ?? -1;
   String get rubyDecorationLine => raw['rubyDecorationLine']?.toString() ?? '';
   String get rubyDecorationStyle =>
       raw['rubyDecorationStyle']?.toString() ?? '';
@@ -295,6 +303,7 @@ class _RubyProbe {
   @override
   String toString() => 'base="$baseText" rt="$rtText" revealed=$revealed '
       'rtVisibility=$rtVisibility rtDisplay=$rtDisplay '
+      'rtOpacity=$rtOpacity '
       'rubyDecoration=$rubyDecorationLine/$rubyDecorationStyle '
       'baseCenter=(${_f(baseCx)},${_f(baseCy)}) inViewport=$inViewport '
       'baseRect=${raw['baseRect']} rubyRect=${raw['rubyRect']} '
@@ -364,8 +373,8 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'furigana_mode three-state: toggle hides rt + dotted underline, first tap '
-    'reveals without lookup, second tap looks up; hidden/off hot-switch',
+    'furigana_mode four-state: toggle hides rt + dotted underline, first tap '
+    'reveals without lookup, second tap looks up; hidden/off/dimmed hot-switch',
     timeout: const Timeout(Duration(minutes: 12)),
     (WidgetTester tester) async {
       await runFushiItest(
@@ -521,11 +530,67 @@ void main() {
             expect(s4b1.revealed, isFalse, reason: 'ruby #1 was never tapped');
             expect(s4b0.rtVisibility, 'visible');
             expect(s4b0.rtDisplay, 'ruby-text');
+            expect(s4b1.rtOpacity, closeTo(1.0, 0.001),
+                reason: '4b. off: rt 不淡显（opacity 1）');
             await _captureWeb('observe-a5-off-webview');
+
+            // ── 4c. 热切 dimmed：结构同 off，但 opacity 淡到 0.45 ──────
+            await source.setReaderFuriganaMode('dimmed');
+            await _pumpForPref(tester);
+            expect(ReaderFushiSource.readerSettings?.furiganaMode, 'dimmed');
+            final _RubyProbe s4c1 = await _probeUntil(
+                tester,
+                runJs,
+                1,
+                (p) => p.rtDisplay == 'ruby-text' && p.rtOpacity < 0.9,
+                '4c dimmed #1');
+            expect(s4c1.rtDisplay, 'ruby-text',
+                reason: '4c. dimmed 是「显示但淡」，注音结构必须与 off 一致，'
+                    '不得退化成 display:none / visibility:hidden');
+            expect(s4c1.rtVisibility, 'visible',
+                reason: '4c. dimmed: rt 仍 visible');
+            expect(s4c1.rtOpacity, closeTo(0.45, 0.01),
+                reason: '4c. dimmed: rt 淡显到 opacity 0.45（实测 '
+                    '${s4c1.rtOpacity}）');
+            expect(s4c1.rubyDecorationLine, isNot(contains('underline')),
+                reason: '4c. dimmed 不画 toggle 的虚线下划线');
+            await _captureWeb('observe-a6-dimmed-webview');
+            await _captureFrame(tester, 'observe-a6-dimmed');
+
+            // ── 4d. dimmed 下 show-all-rt（readerToggleFurigana 快捷键的
+            //        CSS 落点）= 临时恢复全亮 ─────────────────────────
+            await runJs("document.body.classList.add('show-all-rt');");
+            final _RubyProbe s4d = await _probeUntil(tester, runJs, 1,
+                (p) => p.rtOpacity > 0.9, '4d dimmed + show-all-rt');
+            expect(s4d.rtOpacity, closeTo(1.0, 0.001),
+                reason: '4d. dimmed + show-all-rt 必须把 opacity 拉回 1（'
+                    'readerToggleFurigana 在此态 = 临时恢复全亮），实测 '
+                    '${s4d.rtOpacity}');
+            expect(s4d.rtDisplay, 'ruby-text');
+            await _captureWeb('observe-a7-dimmed-show-all-webview');
+            await runJs("document.body.classList.remove('show-all-rt');");
+
+            // ── 4e. 切回 off：opacity 回到 1 ─────────────────────────
+            await source.setReaderFuriganaMode('off');
+            await _pumpForPref(tester);
+            expect(ReaderFushiSource.readerSettings?.furiganaMode, 'off');
+            final _RubyProbe s4e = await _probeUntil(
+                tester,
+                runJs,
+                1,
+                (p) => p.rtDisplay == 'ruby-text' && p.rtOpacity > 0.9,
+                '4e back to off');
+            expect(s4e.rtOpacity, closeTo(1.0, 0.001),
+                reason: '4e. 切回 off 后淡显必须完全撤掉（opacity 1），实测 '
+                    '${s4e.rtOpacity}');
+            expect(s4e.rtDisplay, 'ruby-text');
+            expect(s4e.rtVisibility, 'visible');
+            await _captureWeb('observe-a8-off-again-webview');
 
             debugPrint('[furigana3] PASS: toggle(hidden rt, dotted) → tap '
                 'reveals w/o lookup → tap looks up → hidden(display:none) → '
-                'off(visible, no underline)');
+                'off(visible, no underline) → dimmed(opacity 0.45) → '
+                'show-all-rt(opacity 1) → off(opacity 1)');
           } finally {
             await _closeReader(tester);
             await source.setReaderFuriganaMode(originalMode);

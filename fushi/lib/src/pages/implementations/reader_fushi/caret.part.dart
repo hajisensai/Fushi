@@ -688,8 +688,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleFurigana:
         // 振假名 toggle 态的整页揭示 / 收回（CSS `body.show-all-rt`）：键盘 / 手柄
-        // (R3) 没有「点一个揭示一个」的指针，这颗键一次揭示全页；off / hidden 态
-        // 没有对应 CSS，按下是 no-op。
+        // (R3) 没有「点一个揭示一个」的指针，这颗键一次揭示全页；dimmed 态同一颗键
+        // 是「临时恢复全亮」（opacity 拉回 1）；off / hidden 态没有对应 CSS，按下是
+        // no-op。
         _controller?.evaluateJavascript(
           source: "document.body.classList.toggle('show-all-rt');",
         );
