@@ -45,3 +45,12 @@
 - macOS Release 构建与 `codesign --verify --deep --strict` 通过；安装到 `/Applications/fushi.app`，432 个文件 SHA256 与构建产物全部一致，新进程启动成功。
 - 停止旧进程后经 SQLite backup API 备份，再通过同一 engine 服务升级/修复真实库；`quick_check=ok`，两合集 12/9 成员，重复执行幂等，15 条墓碑未变。备份和数据证据位于忽略目录 `.codex-test/install-backup`，不进提交。
 - 数据库目录共执行 685 个测试，唯一旧迁移测试新表白名单缺失已补；对应文件 4 个测试重跑通过。其余无迁移/数据库运行时错误。
+
+## 验证限制与交接
+
+整仓额外测试在执行 5440 个测试后主动停止，**不声明全量通过**。已暴露的 schema 103 等值断言和新增表白名单均已由数据库目录回归修复闭环。仍有两个不在本次变更域的检查失败：
+
+- `reader_favorite_coordinates_test.dart`：Chrome headless DOM 用例 60 秒超时，单独复跑也超时；测试及其引用的阅读器脚本与基线一致。
+- `fushi_desktop_title_bar_subtree_identity_test.dart`：单独复跑 1 通过 / 1 失败；测试无条件期待顶边三把手，而已有生产逻辑在 macOS 返回空集合。测试和生产代码在本次提交均未修改，父提交相同，来源为 `fc67f55f1d`。
+
+安装后的旧合集、旧成员与视频行逐行对比备份均保持不变。工作分支 `codex/remote-collection-adoption-20260913` 保留，未合入 develop，未推送远端。实际界面复核因 Mac 锁屏尚未完成；解锁后继续。
