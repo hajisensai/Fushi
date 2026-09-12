@@ -114,10 +114,14 @@ class ChildResizeGate {
   }
 
   // Called right after the child was resized to the last kDeliver size.
-  // `elapsed_ms` is how long the synchronous MoveWindow took.
-  void DeliveryFinished(int64_t elapsed_ms) {
+  // `elapsed_ms` is how long the synchronous MoveWindow took. Returns the size
+  // that was parked and must be delivered next (then call DeliveryFinished
+  // again), if this delivery got confirmed and something is still parked —
+  // only the watchdog path (ReleaseStuckDeferred) leaves a deferral parked
+  // across a delivery, so for ordinary deliveries this is always empty.
+  std::optional<ChildSize> DeliveryFinished(int64_t elapsed_ms) {
     if (!pending_.has_value()) {
-      return;
+      return std::nullopt;
     }
     if (elapsed_ms < kEngineResizeTimeoutMs ||
         (last_rasterized_.has_value() && *last_rasterized_ == *pending_)) {
@@ -125,7 +129,54 @@ class ChildResizeGate {
       // size already arrived while the platform thread was inside the
       // engine's wait loop (it pumps platform tasks).
       Confirm();
+      return TakeDeferred();
     }
+    return std::nullopt;
+  }
+
+  // Watchdog valve for a deferral whose confirmation never arrives. The gate
+  // is otherwise a pure "wait for Dart's report" machine: if the report of the
+  // pending size is lost (the Dart-side frame tracker evicts a frame before
+  // its FrameTiming lands and Dart then idles; a batch dropped on the way),
+  // the parked size stays parked and the child keeps the pending size while
+  // the window has moved on — until some *new* size comes along.
+  //
+  // The valve must NOT simply deliver the parked size: the engine's surface
+  // may still be that size (Dart never got to rasterise the pending one), and
+  // delivering it would hit the same-size early return with the old target
+  // still armed — turning "child a few pixels off but live" into "every frame
+  // dropped". Instead deliver a *fresh* size the surface cannot be (the parked
+  // size nudged by one pixel, skipping every candidate): it replaces the armed
+  // target unconditionally, and once Dart presents it the parked size follows
+  // as a plain delivery. Costs one extra resize; never pins.
+  //
+  // Returns the nudge size to deliver now (then call DeliveryFinished, which
+  // hands back the parked size on a fast confirm), or nothing when there is
+  // no stuck deferral.
+  std::optional<ChildSize> ReleaseStuckDeferred() {
+    if (!pending_.has_value() || !deferred_.has_value()) {
+      return std::nullopt;
+    }
+    const ChildSize parked = *deferred_;
+    ChildSize nudge = parked;
+    // Walk away from the parked height until the size is neither the pending
+    // one nor any surface candidate. Bounded: at most kMaxCandidates + 2
+    // sizes can be excluded.
+    for (int32_t step = 1; step <= static_cast<int32_t>(kMaxCandidates) + 2;
+         ++step) {
+      nudge.height = parked.height > step ? parked.height - step
+                                          : parked.height + step;
+      if (nudge != *pending_ && !MayBeSurface(nudge)) {
+        break;
+      }
+    }
+    // The superseded pending size may have been rasterised meanwhile.
+    AddCandidate(*pending_);
+    last_rasterized_.reset();
+    child_ = nudge;
+    pending_ = nudge;
+    // deferred_ stays parked: it is released when the nudge is confirmed.
+    return nudge;
   }
 
   // Dart reported that a frame of this size was rasterised. Returns the size
@@ -149,17 +200,7 @@ class ChildResizeGate {
     // delivers a size the surface may already have), so a rasterised frame of
     // it was accepted and the surface is now exactly this size.
     Confirm();
-    if (!deferred_.has_value()) {
-      return std::nullopt;
-    }
-    const ChildSize next = *deferred_;
-    deferred_.reset();
-    if (child_.has_value() && next == *child_) {
-      return std::nullopt;
-    }
-    child_ = next;
-    pending_ = next;
-    return next;
+    return TakeDeferred();
   }
 
   // The child's current (last delivered) size, if any.
@@ -181,6 +222,21 @@ class ChildResizeGate {
   void Confirm() {
     SetSurface(*pending_);
     pending_.reset();
+  }
+
+  // With nothing pending, hand the parked size over as the next delivery.
+  std::optional<ChildSize> TakeDeferred() {
+    if (!deferred_.has_value()) {
+      return std::nullopt;
+    }
+    const ChildSize next = *deferred_;
+    deferred_.reset();
+    if (child_.has_value() && next == *child_) {
+      return std::nullopt;
+    }
+    child_ = next;
+    pending_ = next;
+    return next;
   }
 
   void SetSurface(ChildSize size) {

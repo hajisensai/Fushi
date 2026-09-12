@@ -407,6 +407,14 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
 
+    case WM_TIMER:
+      if (wparam == kStuckDeferralTimerId) {
+        KillTimer(window_handle_, kStuckDeferralTimerId);
+        ReleaseStuckChildDeferral();
+        return 0;
+      }
+      break;
+
     case WM_DISPLAYCHANGE:
       // Display topology / resolution / depth changed (e.g. a monitor came
       // back). Invalidate and ask the renderer for a fresh frame so the window
@@ -485,30 +493,34 @@ void Win32Window::SyncChildToClientArea() {
       DeliverChildSize(size);
       break;
     case ChildResizeGate::Decision::kNoChange:
+      break;
     case ChildResizeGate::Decision::kDefer:
-      // kDefer: the size the engine currently presents at is being requested
-      // while an earlier delivery is still unconfirmed — exactly the sequence
-      // that pins the engine's resize target and drops every frame. The child
-      // keeps its current size until Dart confirms the pending one
+      // The size the engine currently presents at is being requested while an
+      // earlier delivery is still unconfirmed — exactly the sequence that pins
+      // the engine's resize target and drops every frame. The child keeps its
+      // current size until Dart confirms the pending one
       // (OnChildFrameRasterized), which then delivers this request.
       break;
   }
+  ArmStuckDeferralWatchdog();
 }
 
 void Win32Window::DeliverChildSize(ChildSize size) {
-  if (child_content_ == nullptr) {
-    return;
+  // A confirmed delivery may hand back a parked size to deliver next (only
+  // after the watchdog nudge); loop until the gate has nothing more to say.
+  std::optional<ChildSize> next = size;
+  while (next.has_value() && child_content_ != nullptr) {
+    // MoveWindow sends the child's WM_SIZE synchronously; the engine blocks
+    // inside it for up to kWindowResizeTimeout waiting for a frame of the new
+    // size. The measured duration therefore tells the gate whether that wait
+    // succeeded (see ChildResizeGate::DeliveryFinished).
+    const auto start = std::chrono::steady_clock::now();
+    MoveWindow(child_content_, 0, 0, next->width, next->height, TRUE);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now() - start)
+                             .count();
+    next = child_resize_gate_.DeliveryFinished(elapsed);
   }
-  // MoveWindow sends the child's WM_SIZE synchronously; the engine blocks
-  // inside it for up to kWindowResizeTimeout waiting for a frame of the new
-  // size. The measured duration therefore tells the gate whether that wait
-  // succeeded (see ChildResizeGate::DeliveryFinished).
-  const auto start = std::chrono::steady_clock::now();
-  MoveWindow(child_content_, 0, 0, size.width, size.height, TRUE);
-  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                           std::chrono::steady_clock::now() - start)
-                           .count();
-  child_resize_gate_.DeliveryFinished(elapsed);
 }
 
 void Win32Window::OnChildFrameRasterized(int32_t width, int32_t height) {
@@ -517,6 +529,34 @@ void Win32Window::OnChildFrameRasterized(int32_t width, int32_t height) {
   if (deferred.has_value()) {
     DeliverChildSize(*deferred);
   }
+  ArmStuckDeferralWatchdog();
+}
+
+void Win32Window::ArmStuckDeferralWatchdog() {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+  // One timer, re-armed whenever a deferral is (still) parked and cleared as
+  // soon as it is not: SetTimer with the same id replaces the previous timer,
+  // so the watchdog measures "parked for this long without progress" from the
+  // last gate event, not from the first.
+  if (child_resize_gate_.has_deferred()) {
+    SetTimer(window_handle_, kStuckDeferralTimerId, kStuckDeferralTimeoutMs,
+             nullptr);
+  } else {
+    KillTimer(window_handle_, kStuckDeferralTimerId);
+  }
+}
+
+void Win32Window::ReleaseStuckChildDeferral() {
+  const std::optional<ChildSize> nudge =
+      child_resize_gate_.ReleaseStuckDeferred();
+  if (nudge.has_value()) {
+    DeliverChildSize(*nudge);
+  }
+  // The nudge itself may have timed out (Dart still busy): keep watching, the
+  // parked size is released when the nudge gets confirmed.
+  ArmStuckDeferralWatchdog();
 }
 
 RECT Win32Window::GetClientArea() {
