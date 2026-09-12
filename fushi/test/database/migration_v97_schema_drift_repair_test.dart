@@ -116,7 +116,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 103);
+      expect(probe.select('PRAGMA user_version').first.values.first, 104);
       for (final (String table, String column) in <(String, String)>[
         ('epub_books', 'language'),
         ('dictionary_metadata', 'language_override'),
@@ -159,7 +159,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 103);
+      expect(probe.select('PRAGMA user_version').first.values.first, 104);
     } finally {
       probe.dispose();
     }

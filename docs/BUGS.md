@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2294 条。点号进各自文件。
+> 共 2295 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2492](bugs/BUG-2492-remote-collection-adoption.md) | ✅ | ✅ | 远端媒体下载后合集归属丢失 |
 | [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
 | [BUG-2484](bugs/BUG-2484-manga-percent-filename.md) | ✅ | ✅ | 漫画页文件名含裸百分号时翻页/选字/制卡全抛 Illegal percent encoding |
 | [BUG-2482](bugs/BUG-2482-webkit-line-box-contain-zero-height-lines.md) | ✅ | ✅ | WebKit 上 BUG-2472 的 line-box-contain 把嵌套 inline / 空行行盒压成零高：目录列叠印、空行消失 |

@@ -20,8 +20,8 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 多端库联合视图 §2.3 任务10：远端书占位卡的合集归属。host 下发的
-/// [RemoteBookInfo.collection]（自然键 name+type）解析到本地合集 → 远端占位折进该合集
-/// 横排行；解析不到本地合集 → 散卡降级（进散卡网格，不硬造行）。
+/// [RemoteBookInfo.collection] 经统一收养服务写入本地合集与占位成员；
+/// 渲染按持久关系和顺序折叠，尊重本地墓碑及手动排序。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -95,6 +95,50 @@ void main() {
   String safeKey(String title) =>
       sanitizeTtuFilename(title).replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
+  testWidgets('远端 DTO 不能绕过成员墓碑把移除的书折回合集', (WidgetTester tester) async {
+    final int cid = await db.createMediaCollection('Removed series');
+    await db.upsertCollectionItemAt(cid, 'epub', 'Removed book', 0);
+    await db.removeFromCollectionRaw(cid, 'epub', 'Removed book');
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[RemoteBookInfo(title: 'Removed book', hasContent: true,
+        collection: RemoteCollectionMembership(collectionName: 'Removed series',
+          collectionType: 'collection', sortIndex: 0))],
+    )));
+    await tester.pumpAndSettle();
+    expect(await db.getCollectionItems(cid), isEmpty);
+    final Finder card = find.byKey(const ValueKey<String>('remote_book_card_Removed_book'));
+    expect(card, findsOneWidget);
+    expect(find.ancestor(of: card, matching: find.byType(SliverGrid)), findsOneWidget);
+  });
+
+  testWidgets('远端无时间戳顺序不能覆盖本地手动排序的渲染', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final int cid = await db.createMediaCollection('Sorted series');
+    await db.upsertCollectionItemAt(cid, 'epub', 'First', 0);
+    await db.upsertCollectionItemAt(cid, 'epub', 'Second', 1);
+    await db.reorderCollectionItems(cid, <CollectionMemberKey>[
+      (mediaType: 'epub', entryKey: 'Second'),
+      (mediaType: 'epub', entryKey: 'First'),
+    ]);
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(title: 'First', hasContent: true,
+          collection: RemoteCollectionMembership(collectionName: 'Sorted series',
+            collectionType: 'collection', sortIndex: 0)),
+        RemoteBookInfo(title: 'Second', hasContent: true,
+          collection: RemoteCollectionMembership(collectionName: 'Sorted series',
+            collectionType: 'collection', sortIndex: 1)),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    final Finder first = find.byKey(const ValueKey<String>('remote_book_card_First'));
+    final Finder second = find.byKey(const ValueKey<String>('remote_book_card_Second'));
+    expect(tester.getTopLeft(second).dx, lessThan(tester.getTopLeft(first).dx));
+  });
+
   testWidgets('远端书归属命中本地合集 → 占位卡折进该合集横排行', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -163,7 +207,7 @@ void main() {
         reason: '只数本地成员会显示 0，与所见 1 张远端卡割裂');
   });
 
-  testWidgets('远端书归属解析不到本地合集 → 散卡降级（进散卡网格）', (WidgetTester tester) async {
+  testWidgets('远端目录建立缺失合集壳和未下载成员占位', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -188,14 +232,26 @@ void main() {
     final Finder remoteCard = find
         .byKey(ValueKey<String>('remote_book_card_${safeKey('Orphan Book')}'));
     expect(remoteCard, findsOneWidget);
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections, hasLength(1));
+    expect(collections.single.name, 'Ghost');
     expect(
-      find.ancestor(of: remoteCard, matching: find.byType(SliverGrid)),
+      (await db.getCollectionItems(collections.single.id)).single.entryKey,
+      'Orphan Book',
+    );
+    expect(
+      find.ancestor(of: remoteCard, matching: find.byKey(
+          ValueKey<String>(
+            'reader_shelf_collection_row_${collections.single.id}',
+          ),
+        )),
       findsOneWidget,
-      reason: '归属解析不到本地合集 → 占位卡落散卡网格（散卡降级）',
+      reason: '不需要先跑完整同步，未下载条目也必须成组',
     );
   });
 
-  testWidgets('BUG-1699：host 归属名解析不到但透传成员行已同步落库 → 兜底救回折进合集',
+  testWidgets('BUG-1699：旧 host 无归属 DTO 时复用已同步的透传成员行',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -213,11 +269,6 @@ void main() {
         RemoteBookInfo(
           title: 'Remote Vol3',
           hasContent: true,
-          collection: RemoteCollectionMembership(
-            collectionName: 'MyShow', // 本地已改名，(name,type) 解析不到
-            collectionType: 'collection',
-            sortIndex: 0,
-          ),
         ),
       ],
     )));
@@ -249,11 +300,6 @@ void main() {
         RemoteBookInfo(
           title: 'Late Vol1',
           hasContent: true,
-          collection: RemoteCollectionMembership(
-            collectionName: 'LateShow',
-            collectionType: 'collection',
-            sortIndex: 0,
-          ),
         ),
       ],
     )));
@@ -269,6 +315,7 @@ void main() {
     // 模拟后台合集同步落库（任意写入者：互联 live / 云清单 / 备份导入）。
     final int cid = await db.createMediaCollection('LateShow',
         collectionType: 'collection');
+    await db.upsertCollectionItemAt(cid, 'epub', 'Late Vol1', 0);
     // 合集表 watch 有 300ms 合并窗口，等它触发映射重载。
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();

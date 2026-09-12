@@ -14,6 +14,9 @@ import 'package:fushi/pages.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
@@ -1036,19 +1039,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 多端库联合视图 §2.3 任务10：按 (name, collectionType) 自然键把远端合集归属解析成
-  /// 本地合集 id（折叠归属同「最小 collectionId」规则，多个同键取最小）；本地无此合集则
-  /// 返 null（远端占位散卡降级，不硬造合集行）。
-  int? _resolveLocalCollectionId(String name, String type) {
-    int? best;
-    for (final MediaCollectionRow c in _collectionsById.values) {
-      if (c.name == name && c.collectionType == type) {
-        if (best == null || c.id < best) best = c.id;
-      }
-    }
-    return best;
-  }
-
   void _toggleFilter(int tagId) {
     final current = Set<int>.from(ref.read(selectedTagIdsProvider));
     if (current.contains(tagId)) {
@@ -1495,34 +1485,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       );
     }
-    // §2.3 任务10：注入远端书的主合集归属（host 下发的 RemoteBookInfo.collection）到折叠
-    // 映射，使远端占位卡折进对应本地合集行。远端合集本地无 id——按 (name, type) 对本地合集
-    // 表解析（[_resolveLocalCollectionId]），解析不到 = 散卡降级（不硬造合集行）。局部拷贝
-    // 页级映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
+    // 归属和顺序以 DAO 裁决后的持久关系为准，DTO 不得绕过墓碑或本地排序。
     final Map<String, int> primaryByEntry =
         Map<String, int>.of(_primaryCollectionByEntry);
     final Map<String, int> memberSortIndex =
         Map<String, int>.of(_memberSortIndex);
     for (final RemoteBookInfo book in remoteBooks) {
       final String key = MediaKind.epub.compositeKey(book.downloadId);
-      final RemoteCollectionMembership? membership = book.collection;
-      if (membership != null) {
-        // 互联/host 路径：host 下发 RemoteBookInfo.collection，按 (name,type) 解析
-        // 本地合集 id 注入折叠归属。
-        final int? cid = _resolveLocalCollectionId(
-          membership.collectionName,
-          membership.collectionType,
-        );
-        if (cid != null) {
-          primaryByEntry[key] = cid;
-          memberSortIndex[key] = membership.sortIndex;
-          continue;
-        }
-        // BUG-1699：(name,type) 在本地解析不到（合集清单还没同步落库 / 用户改过
-        // 本地合集名）不能直接散卡——合集同步若已把透传成员行（键=对端 bookKey）
-        // 落进本地 MediaCollectionItems，下方按本地已同步归属回查的兜底照样能
-        // 救回。此前这里 continue 把兜底整个跳过了。
-      }
+      if (book.collection != null || primaryByEntry.containsKey(key)) continue;
       // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
       // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。
       // 远端占位卡的 title 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠
