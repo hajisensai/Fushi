@@ -313,6 +313,7 @@ class RemoteBookInfo {
     this.kind = MediaKind.epub,
     this.format = 'epub',
     this.hasMangaContent = false,
+    this.hasMangaChapters = false,
     this.mangaReadingMode,
   });
 
@@ -327,6 +328,14 @@ class RemoteBookInfo {
   /// hasContent，漫画对它保持 false（完全无感知，行为与从前一致）；新 client 用
   /// 本字段在漫画架渲染远端占位卡 + 走同一 books 端点下载漫画包。
   final bool hasMangaContent;
+
+  /// host 端这本在线漫画（Mihon / Aidoku 书架条目）有**已下载的章**可以经互联漫画源
+  /// 逐章翻页（BUG-2474）。与 [hasMangaContent] 互斥的另一半：在线条目的书目录根
+  /// 只有占位 `manga.json`（pages 为空），按 hasMangaContent 判永远是 false——修复前
+  /// 它们因此从对端的漫画架整体消失。additive 键 `hasMangaChapters`：旧 client 不认
+  /// 识就当 false（行为与从前一致），新 client 据此把它当多章在线作品加进本机书架，
+  /// 章节表走 `/api/library/manga/<bookKey>/manifest` 的 `chapters`。
+  final bool hasMangaChapters;
 
   /// host 端该漫画的按本阅读模式（`EpubBooks.mangaReadingMode`；null = 跟随自动
   /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
@@ -430,6 +439,7 @@ class RemoteBookInfo {
         if (kind != MediaKind.epub) 'kind': kind.dbValue,
         if (format != 'epub') 'format': format,
         if (hasMangaContent) 'hasMangaContent': true,
+        if (hasMangaChapters) 'hasMangaChapters': true,
         if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
       };
 
@@ -450,6 +460,7 @@ class RemoteBookInfo {
     MediaKind? kind,
     String? format,
     bool? hasMangaContent,
+    bool? hasMangaChapters,
     String? mangaReadingMode,
   }) =>
       RemoteBookInfo(
@@ -471,6 +482,7 @@ class RemoteBookInfo {
         kind: kind ?? this.kind,
         format: format ?? this.format,
         hasMangaContent: hasMangaContent ?? this.hasMangaContent,
+        hasMangaChapters: hasMangaChapters ?? this.hasMangaChapters,
         mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       );
 
@@ -505,6 +517,7 @@ class RemoteBookInfo {
       // 互联完整支持批次（漫画）：缺失（旧 host）回落 'epub' / false / null。
       format: _jsonString(json['format']) ?? 'epub',
       hasMangaContent: json['hasMangaContent'] == true,
+      hasMangaChapters: json['hasMangaChapters'] == true,
       mangaReadingMode: _jsonString(json['mangaReadingMode']),
     );
   }
@@ -722,6 +735,7 @@ class RemoteMangaManifest {
     required this.title,
     required this.pages,
     this.readingMode,
+    this.chapters = const <RemoteMangaChapterInfo>[],
   });
 
   /// 对端 `epub_books.bookKey`：既是清单里的身份，也是页图端点的路径段。
@@ -733,6 +747,15 @@ class RemoteMangaManifest {
 
   final List<RemoteMangaPageInfo> pages;
 
+  /// 章节式在线漫画（host 的 Mihon / Aidoku 书架条目，BUG-2474）在 host 上**已完整
+  /// 下载**的章。非空时 [pages] 为空——页表按章取，走
+  /// `/api/library/manga/<bookKey>/chapters/<digest>/manifest`。单卷本地漫画恒为空
+  /// （wire 不写键，旧 client 字节不变）。只列已下载的章是刻意的：host 自己也是
+  /// 「先下载再读」，没下的章在 host 上同样翻不开，端给对端只会得到一张必然失败的卡。
+  final List<RemoteMangaChapterInfo> chapters;
+
+  bool get hasChapters => chapters.isNotEmpty;
+
   Map<String, Object?> toJson() => <String, Object?>{
         'bookKey': bookKey,
         'title': title,
@@ -740,10 +763,16 @@ class RemoteMangaManifest {
         'pages': <Map<String, Object?>>[
           for (final RemoteMangaPageInfo page in pages) page.toJson(),
         ],
+        if (chapters.isNotEmpty)
+          'chapters': <Map<String, Object?>>[
+            for (final RemoteMangaChapterInfo chapter in chapters)
+              chapter.toJson(),
+          ],
       };
 
   static RemoteMangaManifest fromJson(Map<String, Object?> json) {
     final Object? rawPages = json['pages'];
+    final Object? rawChapters = json['chapters'];
     return RemoteMangaManifest(
       bookKey: json['bookKey']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
@@ -754,6 +783,66 @@ class RemoteMangaManifest {
             if (page is Map<Object?, Object?>)
               RemoteMangaPageInfo.fromJson(page.cast<String, Object?>()),
       ],
+      chapters: <RemoteMangaChapterInfo>[
+        if (rawChapters is List<Object?>)
+          for (final Object? chapter in rawChapters)
+            if (chapter is Map<Object?, Object?>)
+              if (RemoteMangaChapterInfo.fromJson(
+                      chapter.cast<String, Object?>())
+                  case final RemoteMangaChapterInfo parsed)
+                parsed,
+      ],
+    );
+  }
+}
+
+/// [RemoteMangaManifest.chapters] 里的一章：host 书架条目 `chaptersJson` 里的那一条
+/// （key / name / number / scanlator / uploadedAt 逐字透传），外加 host 上该章的页数。
+///
+/// **不带目录摘要**：章目录名 = `sha256(key)[:24]`（`mangaChapterDigest`，引擎与 app
+/// 同一份实现），client 拿 [key] 自己算，两端目录名天然一致；wire 上再传一份只是
+/// 第二真相源。
+class RemoteMangaChapterInfo {
+  const RemoteMangaChapterInfo({
+    required this.key,
+    required this.name,
+    required this.pageCount,
+    this.number,
+    this.scanlator,
+    this.uploadedAt,
+  });
+
+  /// 源内章节身份（Mihon = url；Aidoku = chapter key）。
+  final String key;
+  final String name;
+  final int pageCount;
+  final double? number;
+  final String? scanlator;
+
+  /// 上传时刻（毫秒）；未知为 null。
+  final int? uploadedAt;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'key': key,
+        'name': name,
+        'pageCount': pageCount,
+        if (number != null) 'number': number,
+        if (_isNonEmpty(scanlator)) 'scanlator': scanlator,
+        if (uploadedAt != null && uploadedAt! > 0) 'uploadedAt': uploadedAt,
+      };
+
+  /// 缺 key 的条目返回 null（调用方丢弃：没有 key 就没有目录、没有进度锚）。
+  static RemoteMangaChapterInfo? fromJson(Map<String, Object?> json) {
+    final String key = json['key']?.toString() ?? '';
+    if (key.isEmpty) return null;
+    final int? uploadedAt = _jsonInt(json['uploadedAt']);
+    return RemoteMangaChapterInfo(
+      key: key,
+      name: json['name']?.toString() ?? '',
+      pageCount: _jsonInt(json['pageCount']) ?? 0,
+      number: (json['number'] as num?)?.toDouble(),
+      scanlator: _jsonString(json['scanlator']),
+      uploadedAt: uploadedAt == null || uploadedAt <= 0 ? null : uploadedAt,
     );
   }
 }
@@ -829,6 +918,22 @@ abstract interface class MangaLibraryHost {
   /// 越界、缺文件、或解析出的路径逃出该书 `images/` 目录时抛 [StateError] → 端点 404
   /// （穿越只在 host 侧这一道守卫上判，client 永远不参与路径解析）。
   Future<File> mangaPageFile(String bookKey, int index);
+
+  /// 章节式在线漫画 [bookKey] 中目录摘要为 [chapterDigest] 的那一章的页表
+  /// （BUG-2474）。该章不存在 / 未完整下载 / 该书不是章节式漫画时抛 [StateError] →
+  /// 404；[chapterDigest] 不是 24 位十六进制时抛 [ArgumentError]（digest 是路径段，
+  /// 判形即穿越守卫）。
+  Future<RemoteMangaManifest> mangaChapterManifest(
+    String bookKey,
+    String chapterDigest,
+  );
+
+  /// [mangaChapterManifest] 页表里第 [index] 页的页图文件；判据同 [mangaPageFile]。
+  Future<File> mangaChapterPageFile(
+    String bookKey,
+    String chapterDigest,
+    int index,
+  );
 }
 
 /// 书籍阅读进度跨设备冲突解决（TODO-767）——「取较新时间戳」last-write-wins，

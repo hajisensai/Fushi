@@ -79,6 +79,13 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         format: format.dbValue,
         hasMangaContent: format == BookFormat.manga &&
             hasExportableMangaContent(r.extractDir),
+        // BUG-2474：在线书架条目（Mihon / Aidoku）根目录只有占位 manga.json，
+        // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
+        // 下——标 hasMangaChapters，对端以多章在线作品收下、逐章从这里拉。清单级
+        // 只做一次目录列举（廉价判据），逐章完整性在按章端点上把关。
+        hasMangaChapters: format == BookFormat.manga &&
+            r.extractDir.isNotEmpty &&
+            hasAnyChapterDirSync(r.extractDir),
         mangaReadingMode: r.mangaReadingMode,
         hasEmbeddedCover: coverPath != null,
         coverPath: coverPath,

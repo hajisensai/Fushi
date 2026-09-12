@@ -4758,5 +4758,6 @@
   "manga_series_ocr_queued_count": "${count} chapters waiting",
   "manga_chapter_ocr_status_running": "Recognizing ${done}/${total}",
   "manga_chapter_ocr_status_queued": "Waiting for recognition",
-  "manga_ocr_boxes_toggle": "Show recognized text regions"
+  "manga_ocr_boxes_toggle": "Show recognized text regions",
+  "remote_manga_added_to_shelf": "Added to the manga shelf; chapters download from the peer"
 }

@@ -4758,5 +4758,6 @@
   "manga_series_ocr_queued_count": "${count} 章排队中",
   "manga_chapter_ocr_status_running": "识别中 ${done}/${total}",
   "manga_chapter_ocr_status_queued": "等待识别",
-  "manga_ocr_boxes_toggle": "显示识别范围"
+  "manga_ocr_boxes_toggle": "显示识别范围",
+  "remote_manga_added_to_shelf": "已加入漫画书架，章节从对端下载"
 }
