@@ -191,6 +191,23 @@ void main() {
     });
   });
 
+  group('asrModelScopeFor', () {
+    test('一语言一包是专用；Omnilingual 与基础清单里的它都是通用', () {
+      expect(asrModelScopeFor(kAsrJapanesePack), AsrModelScope.dedicated);
+      expect(asrModelScopeFor(kAsrOmnilingualPack), AsrModelScope.multilingual);
+      final AsrModelPack widened = fushiAsrBasePacks()
+          .firstWhere((AsrModelPack p) => p.id == kAsrOmnilingualPack.id);
+      expect(asrModelScopeFor(widened), AsrModelScope.multilingual);
+    });
+
+    test('自带包按它登记的语言数判，不看 id', () {
+      expect(
+        asrModelScopeFor(_fakePack('custom-mine', AsrLanguage.japanese)),
+        AsrModelScope.dedicated,
+      );
+    });
+  });
+
   group('AsrModelCatalog JSON', () {
     test('往返：自带包与选择都原样回来', () {
       final AsrModelCatalog before = AsrModelCatalog.empty

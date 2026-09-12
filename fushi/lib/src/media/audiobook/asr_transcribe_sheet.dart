@@ -59,7 +59,9 @@ Future<String?> showAsrTranscribeSheet({
   String Function() getter = languageGetter ?? () => '';
   Future<void> Function(String) setter = languageSetter ?? (String _) async {};
   AppModel? appModel;
-  if (languageGetter == null || languageSetter == null || remoteClient == null) {
+  if (languageGetter == null ||
+      languageSetter == null ||
+      remoteClient == null) {
     try {
       appModel =
           ProviderScope.containerOf(context, listen: false).read(appProvider);
@@ -298,6 +300,7 @@ class AsrTranscribeSheet extends StatefulWidget {
 
   /// 互联通用任务客户端；null = 不提供「在 host 上运行」。
   final InterconnectJobClient? remoteClient;
+
   /// 模型目录（每语言选了谁 + 自带包）的读写口。默认读写本进程的那份并落盘；
   /// widget 测试注入内存实现，不碰数据根。
   final AsrModelCatalog Function() catalogGetter;
@@ -344,6 +347,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   StreamSubscription<AsrTranscribeEvent>? _runSub;
   AsrTranscribeProgress? _progress;
   AsrTranscribeResult? _result;
+
+  /// 本次「开始」到拿到结果的墙钟（含装模型 / 远端上传）。只在本 sheet 里跑过
+  /// 一轮才有值——上一轮会话留下的完成产物没有可信的耗时，不显示。
+  Stopwatch? _runClock;
+  Duration? _elapsedTotal;
   OnnxProviderResolution? _resolution;
 
   /// 远程 host（能力位含 asr）；null = 只有本机。
@@ -495,6 +503,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   }
 
   Future<void> _startTranscription() async {
+    _runClock = Stopwatch()..start();
+    _elapsedTotal = null;
     if (_runRemote && _remoteTarget != null) return _startRemoteTranscription();
     final AsrTranscribePlan? plan = _plan;
     if (plan == null) return;
@@ -540,6 +550,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               setState(() {
                 _result = r;
                 _finishedSrt = r.srtPath;
+                _elapsedTotal = _runClock?.elapsed;
                 _phase = _Phase.finished;
               });
           }
@@ -662,6 +673,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             setState(() {
               _finishedSrt = srt?.path;
               _remoteProgress = 1;
+              _elapsedTotal = srt == null ? null : _runClock?.elapsed;
               _phase = srt == null ? _Phase.error : _Phase.finished;
               if (srt == null) _error = 'no subtitle in remote result';
             });
@@ -683,6 +695,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (language == _language) return;
     _language = language;
     _result = null;
+    _elapsedTotal = null;
     _progress = null;
     unawaited(widget.languageSetter?.call(language.tag));
     _refreshPlan();
@@ -728,7 +741,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     setState(() => _systemSpeechAvailable = available);
   }
 
-  /// 下拉每项的副标题：平台适配度 + int8 全套大小。
+  /// 下拉每项的副标题：模型定位 + 平台适配度 + int8 全套大小。
+  ///
+  /// 定位排第一：只报「轻量 / 大模型」会让用户把大的读成更好的，而专用包在自己
+  /// 那门语言上比通用的 Omnilingual 更准（见 [AsrModelScope]）。
   ///
   /// 「多大」用 int8 那套：它是手机与无 GPU 桌面实际会下的一套，也是两套里小的
   /// 那个——把大的报给用户会让「Omnilingual 在手机上要 4 GB」这种吓人的数字出现在
@@ -738,6 +754,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     // 系统语音没有包、没有大小可报——说清它的真实代价（系统会下自己的语言资产），
     // 别编一个字节数，也别吹成零下载。
     if (pack == null) return t.audiobook_transcribe_engine_system_hint;
+    final String scope = switch (asrModelScopeFor(pack)) {
+      AsrModelScope.dedicated => t.audiobook_transcribe_model_scope_dedicated,
+      AsrModelScope.multilingual =>
+        t.audiobook_transcribe_model_scope_multilingual,
+    };
     final String fit = switch (asrModelFitFor(pack, mobile: _isMobile)) {
       AsrModelFit.light => t.audiobook_transcribe_model_fit_light,
       AsrModelFit.desktop => t.audiobook_transcribe_model_fit_desktop,
@@ -749,7 +770,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     final bool custom = pack.id.startsWith(kAsrCustomPackIdPrefix);
     final String badge =
         custom ? ' · ${t.audiobook_transcribe_model_custom_badge}' : '';
-    return '$fit · $size$badge';
+    return '$scope · $fit · $size$badge';
   }
 
   /// 当前选中的是不是系统语音引擎。
@@ -821,6 +842,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     }
     if (!mounted) return;
     _result = null;
+    _elapsedTotal = null;
     _progress = null;
     await _refreshPlan();
   }
@@ -846,6 +868,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     await _service.discard(widget.audioPaths, _language);
     if (!mounted) return;
     _result = null;
+    _elapsedTotal = null;
     _finishedSrt = null;
     _progress = null;
     await _refreshPlan();
@@ -978,13 +1001,25 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         return sb.toString().trimRight();
       case _Phase.finished:
         final AsrTranscribeResult? r = _result;
-        if (r != null) {
-          return t.audiobook_transcribe_done(
-            cues: r.cueCount,
-            segments: r.segmentCount,
-          );
+        final StringBuffer sb = StringBuffer(
+          r != null
+              ? t.audiobook_transcribe_done(
+                  cues: r.cueCount,
+                  segments: r.segmentCount,
+                )
+              : t.audiobook_transcribe_result_name,
+        );
+        final Duration? elapsed = _elapsedTotal;
+        if (elapsed != null) {
+          sb
+            ..writeln()
+            ..write(
+              t.audiobook_transcribe_elapsed_total(
+                elapsed: _fmtDuration(elapsed),
+              ),
+            );
         }
-        return t.audiobook_transcribe_result_name;
+        return sb.toString();
       case _Phase.error:
         return t.audiobook_transcribe_failed(error: _error ?? '');
     }

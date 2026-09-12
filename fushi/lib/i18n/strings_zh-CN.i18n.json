@@ -4771,5 +4771,8 @@
   "mining_audio_head_pad_hint": "字幕开始前多保留这么多音频，避免首音被切掉；不会越过上一句。",
   "mining_audio_tail_pad": "句子音频结尾余量",
   "mining_audio_tail_pad_hint": "字幕结束后多保留这么多音频，避免句尾被切短；不会越过下一句。",
-  "mining_audio_pad_readout": "${ms} 毫秒"
+  "mining_audio_pad_readout": "${ms} 毫秒",
+  "audiobook_transcribe_model_scope_dedicated": "专用模型 · 这门语言识别最准",
+  "audiobook_transcribe_model_scope_multilingual": "通用模型 · 语言覆盖广，单语言精度不如专用模型",
+  "audiobook_transcribe_elapsed_total": "总耗时 $elapsed"
 }

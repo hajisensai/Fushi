@@ -449,6 +449,8 @@ void main() {
       find.textContaining(t.audiobook_transcribe_done(cues: 1, segments: 1)),
       findsOneWidget,
     );
+    // 本 sheet 里跑完的一轮要报总耗时（数值随机器而变，只认文案前缀）。
+    expect(find.textContaining(_elapsedTotalPrefix()), findsOneWidget);
     await tester.tap(
       find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
     );
@@ -655,6 +657,8 @@ void main() {
       find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
       findsOneWidget,
     );
+    // 上一轮会话留下的产物：本 sheet 没计过时，不能编一个耗时出来。
+    expect(find.textContaining(_elapsedTotalPrefix()), findsNothing);
     await tester.tap(
       find.widgetWithText(TextButton, t.audiobook_transcribe_discard),
     );
@@ -840,4 +844,13 @@ void main() {
       expect(asrModelRegistry.packForLanguage(AsrLanguage.japanese)?.id, id);
     });
   });
+}
+
+/// 「总耗时 …」文案里占位符之前的那段，用来在不知道具体秒数时匹配。
+String _elapsedTotalPrefix() {
+  const String marker = '\u0000';
+  return t
+      .audiobook_transcribe_elapsed_total(elapsed: marker)
+      .split(marker)
+      .first;
 }

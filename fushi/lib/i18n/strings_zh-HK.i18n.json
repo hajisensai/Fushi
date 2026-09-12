@@ -4771,5 +4771,8 @@
   "mining_audio_head_pad_hint": "Extra audio kept before the subtitle starts, so the first syllable is not clipped. Never runs into the previous line.",
   "mining_audio_tail_pad": "Audio padding after sentence",
   "mining_audio_tail_pad_hint": "Extra audio kept after the subtitle ends, so trailing sounds are not cut short. Never runs into the next line.",
-  "mining_audio_pad_readout": "${ms} ms"
+  "mining_audio_pad_readout": "${ms} ms",
+  "audiobook_transcribe_model_scope_dedicated": "Dedicated — most accurate for this language",
+  "audiobook_transcribe_model_scope_multilingual": "Multilingual — wide coverage, less accurate per language",
+  "audiobook_transcribe_elapsed_total": "Total time $elapsed"
 }
