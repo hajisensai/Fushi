@@ -62,7 +62,10 @@ class _MangaHost extends Fake
       ];
 
   /// 章节式条目在 host 上已下载的章（key → 页字节）。
-  static const List<String> chapterKeys = <String>['/manga/csm/1', '/manga/csm/2'];
+  static const List<String> chapterKeys = <String>[
+    '/manga/csm/1',
+    '/manga/csm/2'
+  ];
 
   @override
   Future<RemoteMangaManifest> mangaChapterManifest(
@@ -251,7 +254,8 @@ void main() {
         series.map((RemoteBookInfo b) => b.bookKey),
         containsAll(<String>['yotsuba-1', 'mihon-csm']),
       );
-      expect(series.map((RemoteBookInfo b) => b.bookKey), isNot(contains('empty')));
+      expect(series.map((RemoteBookInfo b) => b.bookKey),
+          isNot(contains('empty')));
       expect(InterconnectMangaCatalog.isReadableRemoteManga(csm()), isTrue);
       expect(
         InterconnectMangaCatalog.isReadableRemoteManga(const RemoteBookInfo(
@@ -310,7 +314,8 @@ void main() {
         chapter: entry.chapters[1],
       );
       expect(pages, hasLength(2));
-      final InterconnectMangaPageRef ref = pages.last as InterconnectMangaPageRef;
+      final InterconnectMangaPageRef ref =
+          pages.last as InterconnectMangaPageRef;
       expect(ref.chapterDigest, mangaChapterDigest('/manga/csm/2'));
       expect(await adapter.fetchChapterPage(pages.first), <int>[0xC0, 1, 0]);
       expect(await adapter.fetchChapterPage(pages.last), <int>[0xC0, 1, 1]);
@@ -358,8 +363,8 @@ void main() {
     );
     expect(bookKey, startsWith('interconnect-'));
     // 同一本反复推导必须逐字稳定——它同时是主键和磁盘目录名。
-    expect(
-        bookKey, OnlineMangaLibraryService.bookKeyOf(entryOf(volumeOf(series))));
+    expect(bookKey,
+        OnlineMangaLibraryService.bookKeyOf(entryOf(volumeOf(series))));
   });
 
   test('refresh 给出整卷那一章', () async {
