@@ -40,7 +40,7 @@ Các tệp APK có tên bắt đầu bằng `bridge-` là cầu nối chuyển �
 
 ### 1. Nhập các từ điển được đề xuất (từ điển từ vựng + trọng âm cao độ + tần suất) và âm thanh cục bộ (cơ sở dữ liệu âm thanh tiếng Nhật và tiếng Anh) (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing)
+[fushi.moe/download](https://fushi.moe/download)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 
