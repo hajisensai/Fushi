@@ -531,6 +531,32 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
+        } else if (call.method_name() == "reportRasterizedFrameSize") {
+          // BUG-2462: Dart's rasterised-frame size report, the authoritative
+          // "the engine now presents at this size" signal for the child
+          // resize gate (child_resize_gate.h). Sent only when the rasterised
+          // size changes, so this is not a per-frame cost.
+          const auto* size_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          int32_t width = 0;
+          int32_t height = 0;
+          if (size_args != nullptr) {
+            const auto w_it = size_args->find(flutter::EncodableValue("width"));
+            const auto h_it =
+                size_args->find(flutter::EncodableValue("height"));
+            if (w_it != size_args->end()) {
+              if (const int32_t* v = std::get_if<int32_t>(&w_it->second)) {
+                width = *v;
+              }
+            }
+            if (h_it != size_args->end()) {
+              if (const int32_t* v = std::get_if<int32_t>(&h_it->second)) {
+                height = *v;
+              }
+            }
+          }
+          OnChildFrameRasterized(width, height);
+          result->Success();
         } else if (call.method_name() == "setWindowIcon") {
           // Runtime window/taskbar icon (preset or user-picked image). Decodes
           // the file to big+small HICONs and WM_SETICONs them. Cannot change the

@@ -77,7 +77,7 @@ const Map<String, String> _forbidden = <String, String>{
 ///
 /// 顺序是关键：先剥字符串，这样 (a) 字符串里的 '#' 不会把后面的真代码误删；
 /// (b) 作为**数据**传给 bash / GitHub Actions 表达式的 '&&' '||'（仓库里
-/// tool/run_mac_itest.ps1、tool/check_release_policy.ps1 就有）不会误报。
+/// tool/check_release_policy.ps1 就有）不会误报。
 String _codeOnly(String line) {
   String s = line
       .replaceAll(RegExp(r"'[^']*'"), "''")

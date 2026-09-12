@@ -38,6 +38,7 @@ import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
+import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/adaptive/fushi_macos_theme.dart';
@@ -245,6 +246,9 @@ void main([List<String> args = const <String>[]]) {
         debugPrint('[Fushi] Android launcher icon restore failed: $e');
       }
     }
+    // BUG-2462：Windows 子窗 resize 闸门的确认信号。必须在 runApp 之前挂——
+    // 首帧起 runner 就在等这条上报来确认它交付的第一个尺寸。
+    installRasterizedFrameSizeReporter();
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       await windowManager.ensureInitialized();
       if (Platform.isWindows || Platform.isMacOS) {

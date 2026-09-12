@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include "child_resize_gate.h"
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -43,6 +45,12 @@ class Win32Window {
 
   // Inserts |content| into the window tree.
   void SetChildContent(HWND content);
+
+  // BUG-2462: Dart reported that a frame of this size (physical pixels) was
+  // rasterised. Feeds the child resize gate and delivers a deferred child
+  // resize when that report confirms the pending one. See
+  // child_resize_gate.h for the engine hazard this closes.
+  void OnChildFrameRasterized(int32_t width, int32_t height);
 
   // Returns the backing Window handle to enable clients to set icon and other
   // window properties. Returns nullptr if the window has been destroyed.
@@ -129,6 +137,14 @@ class Win32Window {
 
   // window handle for hosted content.
   HWND child_content_ = nullptr;
+
+  // BUG-2462: the only path that resizes |child_content_|. Reads the client
+  // area, asks |child_resize_gate_| whether delivering it is safe right now,
+  // and performs the (timed) MoveWindow when it is. Every place that used to
+  // MoveWindow the child directly goes through here.
+  void SyncChildToClientArea();
+  void DeliverChildSize(ChildSize size);
+  ChildResizeGate child_resize_gate_;
 
   // BUG-1916: fills |dc| over the whole client rect with |backdrop_brush_|.
   // Whether the Flutter view is excluded depends on the DC: a BeginPaint /

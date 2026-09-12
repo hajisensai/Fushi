@@ -48,23 +48,23 @@ void main() {
     // 原判据漏掉的那些表，每条只写这一张。
     const Map<String, String> missedTables = <String, String>{
       'reading_hourly_logs':
-          "INSERT INTO reading_hourly_logs (date_key, hour, reading_time_ms) "
+          'INSERT INTO reading_hourly_logs (date_key, hour, reading_time_ms) '
               "VALUES ('2026-09-12', 9, 60000)",
       'video_hourly_logs':
-          "INSERT INTO video_hourly_logs (date_key, hour, watch_time_ms) "
+          'INSERT INTO video_hourly_logs (date_key, hour, watch_time_ms) '
               "VALUES ('2026-09-12', 9, 60000)",
       'lookup_mining_counters':
-          "INSERT INTO lookup_mining_counters (source_type, date_key, "
+          'INSERT INTO lookup_mining_counters (source_type, date_key, '
               "lookup_count, mine_count) VALUES ('book', '2026-09-12', 3, 1)",
       'mined_sentences':
-          "INSERT INTO mined_sentences (source, date_key, created_at) "
+          'INSERT INTO mined_sentences (source, date_key, created_at) '
               "VALUES ('book', '2026-09-12', 1)",
       'favorite_words':
-          "INSERT INTO favorite_words (expression, source_type, date_key, "
+          'INSERT INTO favorite_words (expression, source_type, date_key, '
               "created_at) VALUES ('猫', 'book', '2026-09-12', 1)",
       'activity_events':
-          "INSERT INTO activity_events (event_type, media_type, title, "
-              "date_key, timestamp_ms) "
+          'INSERT INTO activity_events (event_type, media_type, title, '
+              'date_key, timestamp_ms) '
               "VALUES ('read', 'book', 'T', '2026-09-12', 1)",
     };
 
@@ -91,7 +91,7 @@ void main() {
       FushiDatabase db,
     ) async {
       await db.customStatement(
-        "INSERT INTO preferences (key, value) "
+        'INSERT INTO preferences (key, value) '
         "VALUES ('audiobook_pos_abc', '12345')",
       );
     });

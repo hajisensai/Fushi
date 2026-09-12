@@ -383,6 +383,10 @@ extension ShortcutActionIcon on ShortcutAction {
       case ShortcutAction.globalBack:
         return Icons.arrow_back;
 
+      // 全 app 共用全屏键（F11）：视频页把它接成与 F / 双击同一个视频全屏（BUG-2462）。
+      case ShortcutAction.globalToggleFullscreen:
+        return Icons.fullscreen;
+
       // 右键菜单（按钮归属声明，执行体在各卡片 / 各媒体表面自己的 showMenu）。
       case ShortcutAction.globalContextMenu:
         return Icons.menu_open;
