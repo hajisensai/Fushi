@@ -140,48 +140,8 @@ bool InstallCmvsLookup() {
 
 bool ReadCmvsSelectedText(std::wstring* line, uint64_t* event,
                           uint64_t* selected_thread) {
-  if (!line || !event || !selected_thread || !g_header ||
-      g_header->text_lane_count != fushi_voice_hook::kTextLaneCount ||
-      g_header->text_lane_slot_count != fushi_voice_hook::kTextLaneSlotCount)
-    return false;
-  *selected_thread = fushi_voice_hook::AtomicLoadPreview64(
-      &g_header->selected_text_thread_id);
-  if (!*selected_thread) return false;
-  const auto* lanes = fushi_voice_hook::TextLanesOf(g_header);
-  if (!lanes) return false;
-  for (uint32_t i = 0; i < g_header->text_lane_count; ++i) {
-    if (fushi_voice_hook::AtomicLoadPreview64(&lanes[i].thread_id) != *selected_thread)
-      continue;
-    const uint64_t sequence = fushi_voice_hook::AtomicLoadPreview64(&lanes[i].write_count);
-    const auto* bytes = fushi_voice_hook::TextLaneSlotAt(g_header, i, sequence);
-    if (!bytes) return false;
-    const auto* slot = reinterpret_cast<const fushi_voice_hook::TextSlot*>(bytes);
-    if (fushi_voice_hook::AtomicLoadPreview64(&slot->lane_seq) != sequence) return false;
-    alignas(8) std::array<uint8_t, fushi_voice_hook::kTextSlotBytes> copy{};
-    memcpy(copy.data(), bytes, copy.size());
-    MemoryBarrier();
-    const auto* saved = reinterpret_cast<const fushi_voice_hook::TextSlot*>(copy.data());
-    if (fushi_voice_hook::AtomicLoadPreview64(&slot->lane_seq) != sequence ||
-        saved->lane_seq != sequence || saved->thread_id != *selected_thread ||
-        saved->event_kind != fushi_voice_hook::kTextEventLine ||
-        saved->byte_len == 0 || saved->byte_len > copy.size() - sizeof(*saved)) return false;
-    const auto* payload = reinterpret_cast<const char*>(copy.data() + sizeof(*saved));
-    if (saved->is_utf8) {
-      const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-          payload, saved->byte_len, nullptr, 0);
-      if (count <= 0 || count > static_cast<int>(cmvs_lookup::kMaxGlyphs)) return false;
-      line->resize(count);
-      if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, payload,
-          saved->byte_len, line->data(), count) != count) return false;
-    } else {
-      if (saved->byte_len % 2 || saved->byte_len / 2 > cmvs_lookup::kMaxGlyphs) return false;
-      line->resize(saved->byte_len / 2);
-      memcpy(line->data(), payload, saved->byte_len);
-    }
-    *event = saved->seq;
-    return *event != 0;
-  }
-  return false;
+  return fushi_voice_hook::ReadSelectedLookupText(g_header, line, event,
+      selected_thread, cmvs_lookup::kMaxGlyphs);
 }
 
 struct CmvsDpiScope {
