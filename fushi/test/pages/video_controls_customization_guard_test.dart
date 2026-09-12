@@ -392,12 +392,13 @@ void main() {
         contains(
             '}) _resolveVideoMiningRange(VideoPlayerController controller) {'));
     // TODO-680/BUG-392：两端点在裁音频/封面前都经 miningClipTimeMs(...clipDelayMs)
-    // 逆变换回播放器轴（dart format 会把 clipEndMs 的调用换行，故按实参锚定）。
+    // 逆变换回播放器轴；输入是已加头/尾 padding 的 paddedRange（先 pad 再 shift，
+    // 夹边界/偏好接线由 test/settings/mining_audio_padding_guard_test.dart 守）。
     expect(page, contains('miningClipTimeMs('));
     expect(page,
-        contains('mergedRange?.startMs ?? cue?.startMs ?? 0, clipDelayMs)'));
+        contains('miningClipTimeMs(paddedRange?.startMs ?? 0, clipDelayMs)'));
     expect(
-        page, contains('mergedRange?.endMs ?? cue?.endMs ?? 0, clipDelayMs)'));
+        page, contains('miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs)'));
     expect(page, contains('_lastLookupCue ??'));
     expect(page, contains('_mineVideoCard('));
     // TODO-270 D：清草稿以「制卡成功」信号 result.ankiConnect 为判据（两后端成功时都

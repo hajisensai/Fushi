@@ -1126,6 +1126,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       sentenceNormCharOffset: normOffset,
       sentenceNormCharLength: normLength,
       delayMs: audioController?.delayMs.value ?? 0,
+      headPadMs: appModel.miningAudioHeadPadMs,
+      tailPadMs: appModel.miningAudioTailPadMs,
     );
     if (clip == null ||
         clip.audioFileIndex < 0 ||

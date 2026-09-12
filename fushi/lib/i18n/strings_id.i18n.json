@@ -4766,5 +4766,10 @@
   "shortcut_action_global_scroll_line_down": "Scroll down one step",
   "shortcut_action_global_scroll_line_up": "Scroll up one step",
   "shortcut_action_global_scroll_to_top": "Scroll to top",
-  "shortcut_action_global_scroll_to_bottom": "Scroll to bottom"
+  "shortcut_action_global_scroll_to_bottom": "Scroll to bottom",
+  "mining_audio_head_pad": "Audio padding before sentence",
+  "mining_audio_head_pad_hint": "Extra audio kept before the subtitle starts, so the first syllable is not clipped. Never runs into the previous line.",
+  "mining_audio_tail_pad": "Audio padding after sentence",
+  "mining_audio_tail_pad_hint": "Extra audio kept after the subtitle ends, so trailing sounds are not cut short. Never runs into the next line.",
+  "mining_audio_pad_readout": "${ms} ms"
 }
