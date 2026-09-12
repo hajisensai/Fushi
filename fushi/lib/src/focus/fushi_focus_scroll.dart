@@ -148,22 +148,44 @@ class FushiFocusScroll {
         : position.pixels > position.minScrollExtent + 0.5;
   }
 
-  /// [position] 所在的滚动视图是否属于**当前**路由。
+  /// [position] 所在的滚动视图此刻是否真的呈现给用户：属于**当前**路由，且祖先
+  /// 里没有藏起它的 `Offstage(offstage: true)` / 不可见的 [Visibility]。
   ///
   /// [PageScrollRegistry] 是一个栈：书架页登记的控制器在阅读器 / 对话框压上来之后
   /// 仍是栈顶且仍有 position（页面被 maintainState 保活）。不查路由就会把 Home/End
-  /// 打到被盖住的页面上——用户看不见任何变化，却把书架偷偷滚走了。无路由（widget
-  /// 测试直接 pump 的宿主）视为当前。
-  static bool _positionInCurrentRoute(ScrollPosition position) {
+  /// 打到被盖住的页面上——用户看不见任何变化，却把书架偷偷滚走了。同理，
+  /// `MediaLibraryShell` 对各视图「惰性构建 + Offstage 保活」：漫画库进过一次
+  /// 「发现」再切回「书架」，栈顶仍是发现页（FushiPageScaffold）的控制器，不查
+  /// Offstage 就会把可见书架晾着、去滚看不见的发现页。无路由（widget 测试直接
+  /// pump 的宿主）视为当前。
+  static bool _positionIsPresented(ScrollPosition position) {
     final BuildContext? context = position.context.notificationContext;
     if (context == null || !context.mounted) return false;
-    return ModalRoute.of(context)?.isCurrent ?? true;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    bool hidden = false;
+    context.visitAncestorElements((Element ancestor) {
+      if (_hidesSubtree(ancestor.widget)) {
+        hidden = true;
+        return false;
+      }
+      return true;
+    });
+    return !hidden;
   }
 
-  /// [canScrollToward] 且属于当前路由——阶梯前三级的统一准入。
+  /// [widget] 是否把整棵子树藏起来了：`Offstage(offstage: true)`，或不可见的
+  /// [Visibility]（它的 maintainSize 形态仍有几何，光看 Offstage 抓不到；而
+  /// [IndexedStack] 的非当前 child 正是用它包的——SDK 里 IndexedStack 只是把每个
+  /// child 裹一层 `Visibility(visible: i == index, maintainState/Size: true)`，
+  /// 所以不需要也不能对 IndexedStack 自己做「按 index 挑子元素」的特例）。
+  static bool _hidesSubtree(Widget widget) =>
+      (widget is Offstage && widget.offstage) ||
+      (widget is Visibility && !widget.visible);
+
+  /// [canScrollToward] 且真的呈现在用户面前——阶梯前三级的统一准入。
   static bool _eligible(ScrollPosition position, {required bool towardEnd}) =>
       canScrollToward(position, towardEnd: towardEnd) &&
-      _positionInCurrentRoute(position);
+      _positionIsPresented(position);
 
   /// 解析「当前页面该被键盘 / 手柄 / 鼠标滚动动作滚的那个 ScrollPosition」。
   ///
@@ -176,9 +198,10 @@ class FushiFocusScroll {
   ///   3. [focusContext] 的 [PrimaryScrollController] —— `primary: true` 的滚动视图；
   ///   4. **零登记兜底**：从 [navigator] 当前可见路由的子树里按 element 树顺序找
   ///      第一个纵向 Scrollable。跳过非当前路由（被整页 / 对话框盖住的页面不能被
-  ///      滚）、`Offstage`（首页各 tab 靠它隐藏未选中者）、[IndexedStack] 的非当前
-  ///      child，并要求 viewport 真的与 Navigator 可见区域相交（排除 [PageView] /
-  ///      [TabBarView] 里已布局但滑到屏幕外的相邻页）。
+  ///      滚）、`Offstage`（首页各 tab 靠它隐藏未选中者）、不可见的 `Visibility`
+  ///      （[IndexedStack] 用它包非当前 child），并要求 viewport 真的与 Navigator
+  ///      可见区域相交（排除 [PageView] / [TabBarView] 里已布局但滑到屏幕外的
+  ///      相邻页）。
   ///
   /// 前三级是 2026-05 手柄 LB/RB 翻屏就有的路径；第 4 级是本次新增的兜底——
   /// 全仓只有 9 个页面登记 [PageScrollRegistry]，而桌面端的 ListView 默认**不**挂
@@ -232,7 +255,7 @@ class FushiFocusScroll {
     void visit(Element element) {
       if (found != null) return;
       final Widget widget = element.widget;
-      if (widget is Offstage && widget.offstage) return;
+      if (_hidesSubtree(widget)) return;
       if (widget is FocusScope) {
         // 每个 ModalRoute 的子树根部都是它自己的 FocusScope；非当前路由（被整页
         // 或对话框盖住）整棵剪掉——盖在下面的页面不能被滚。页面内部自己包的
@@ -250,15 +273,6 @@ class FushiFocusScroll {
           return;
         }
         // 外层滚不动（NestedScrollView 头已收起 / 空壳容器）就继续往里找。
-      }
-      if (widget is IndexedStack) {
-        final int? index = widget.index;
-        if (index == null) return;
-        int i = 0;
-        element.visitChildren((Element child) {
-          if (i++ == index) visit(child);
-        });
-        return;
       }
       element.visitChildren(visit);
     }

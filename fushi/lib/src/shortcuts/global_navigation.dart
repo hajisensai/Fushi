@@ -21,6 +21,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         arrowFocusMoveDirection,
         arrowKeyClaimedByFocus,
         arrowTraversalDirection,
+        directionalFocusOrigin,
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
         gamepadMoveFocusInDirection,
@@ -385,9 +386,13 @@ bool get desktopWindowFullscreenSupported =>
 ///      上且该方向有目标就移焦不滚；只有没目标（列表边缘 / 纯展示页 / 焦点停在
 ///      兜底节点）才滚。实验性焦点导航开启且焦点已在受管控件上的情形根本到不了
 ///      这里——[_handleGlobalArrowFocus] 在前面已经 handled（它的尽头同样落到滚动）；
-///   3. 解析到了但当前页没有任何能朝该方向滚的 Scrollable → 返回 ignored 而不是
-///      handled：对话框里的 ↓ 仍能让框架把焦点 bootstrap 到第一个按钮上，纯展示页
-///      到底之后方向键也不变成黑洞。
+///   3. 弹层（对话框 / bottom sheet）里焦点还停在路由 FocusScope 上时，方向键
+///      **先让框架 bootstrap 焦点**（ignored → WidgetsApp 的 DirectionalFocusAction
+///      把焦点送进第一个按钮），而不是先滚内容：否则同一个对话框内容溢出时 ↓ 永远
+///      在滚、焦点进不了按钮，不溢出时才 bootstrap——语义随窗口高度漂移。焦点一旦
+///      落到按钮上，再按 ↓ 走规则 2，无目标时照常滚对话框内容；
+///   4. 解析到了但当前页没有任何能朝该方向滚的 Scrollable → 返回 ignored 而不是
+///      handled：纯展示页到底之后方向键也不变成黑洞。
 KeyEventResult _handleGlobalScroll(
   GlobalKey<NavigatorState> navigatorKey,
   FushiShortcutRegistry registry,
@@ -407,6 +412,9 @@ KeyEventResult _handleGlobalScroll(
     final BuildContext? arbiter = focusContext ?? navigatorKey.currentContext;
     if (arbiter != null && arrowKeyClaimedByFocus(arbiter, arrow)) {
       return KeyEventResult.handled;
+    }
+    if (directionalFocusOrigin() == null && _topRouteIsPopup(navigatorKey)) {
+      return KeyEventResult.ignored;
     }
   }
   final bool scrolled = executePageScroll(

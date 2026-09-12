@@ -84,8 +84,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
         arrowKeyClaimedByFocus,
         arrowTraversalDirection,
         dispatchNativeGamepadButtonIntent,
-        focusedEditableText,
-        gamepadMoveFocusInDirection;
+        focusedEditableText;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction, resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -891,10 +890,15 @@ class _HomePageState extends BasePageState<HomePage>
     // private `is EditableText` check missed every field (the primary focus is
     // EditableText's inner Focus, not the EditableText), so it never actually
     // guarded the search field's caret.
+    // 按下沿与上面的重复沿走**同一条**判据 [arrowKeyClaimedByFocus]：有焦点目标才
+    // 移焦并认领，没有就放行冒泡给 app 根（↑/↓ 在那里落到页面滚动；←/→ 没有
+    // global 绑定则交给框架）。此前按下沿单独走 gamepadMoveFocusInDirection 的
+    // 阅读顺序回退，焦点导航关闭时同一个 ← 按一下会跳焦点、按住却不动。
     final TraversalDirection? dir = arrowTraversalDirection(event.logicalKey);
     if (dir != null && focusedEditableText() == null) {
-      gamepadMoveFocusInDirection(context, dir);
-      return KeyEventResult.handled;
+      return arrowKeyClaimedByFocus(context, dir)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
     }
     return KeyEventResult.ignored;
   }

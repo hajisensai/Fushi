@@ -898,10 +898,11 @@ bool gamepadMoveFocusInDirection(
 ///
 ///   · 焦点导航开启（有 [FushiFocusRoot] 控制器）且本页登记了受管目标：走与 D-pad
 ///     完全相同的 [gamepadMoveFocusInDirection]（几何目标 → 阅读顺序 → 「列表内
-///     只有自己可聚焦」时的边缘接管）。零目标的纯展示页直接让位——`move()` 在
-///     零目标时返回的 true 是「焦点已收回兜底节点」，不是接管，见
-///     [FushiFocusController.hasFocusableTargets]。
-///   · 焦点导航关闭（默认安装）：没有引擎做 bootstrap，也**不该**有——用户裁定
+///     只有自己可聚焦」时的边缘接管）。零受管目标时**不能**直接判「无目标」：
+///     `move()` 在零目标时返回的 true 是「焦点已收回兜底节点」（见
+///     [FushiFocusController.hasFocusableTargets]），而焦点仍可能停在一个未登记的
+///     原生控件上（可滚对话框里的 RadioListTile），那要落到下面的原生判据去移焦。
+///   · 焦点导航关闭（默认安装）或本页零受管目标：没有引擎做 bootstrap，也**不该**有——用户裁定
 ///     关闭时 Tab 不遍历焦点，方向键同理不该从空焦点凭空跳到首个控件（那会把
 ///     「按 ↓ 想滚页」变成「焦点跳走 + 页面被 ensureVisible 甩到别处」）。只有焦点
 ///     已经停在一个真实控件上（非 scope / 非 skipTraversal / 可聚焦）且该方向真有
@@ -912,18 +913,17 @@ bool arrowKeyClaimedByFocus(
     BuildContext context, TraversalDirection direction) {
   final FushiFocusController? controller =
       FushiFocusRoot.maybeControllerOf(context, listen: false);
-  if (controller != null) {
-    if (!controller.hasFocusableTargets) return false;
+  if (controller != null && controller.hasFocusableTargets) {
     return gamepadMoveFocusInDirection(context, direction);
   }
-  final FocusNode? origin = _directionalFocusOrigin();
+  final FocusNode? origin = directionalFocusOrigin();
   return origin != null && origin.focusInDirection(direction);
 }
 
 /// 当前主焦点若是一个能作为方向移焦起点的真实控件就返回它；null、scope、不可
 /// 聚焦、skip-traversal 的整页键事件 sink（从它的全屏矩形出发「往某个方向」没有
 /// 意义）都返回 null。[_movePrimaryFocusInDirection] 的 bootstrap 判据与此同一份。
-FocusNode? _directionalFocusOrigin() {
+FocusNode? directionalFocusOrigin() {
   final FocusNode? primary = FocusManager.instance.primaryFocus;
   if (primary == null ||
       primary is FocusScopeNode ||
@@ -943,7 +943,7 @@ bool _movePrimaryFocusInDirection(
   // node, or a skip-traversal wrapper (e.g. a full-page key-event sink — moving
   // "in a direction" from its whole-screen rect is meaningless, so jump to the
   // first real control instead).
-  final FocusNode? primary = _directionalFocusOrigin();
+  final FocusNode? primary = directionalFocusOrigin();
   if (primary == null) {
     return allowReadingOrderFallback && FocusScope.of(context).nextFocus();
   }

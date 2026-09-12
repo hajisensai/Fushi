@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -279,6 +280,200 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.offset, visibleScrolled,
           reason: '登记栈顶仍是被盖住页面的控制器，但它不在当前路由，不得被滚');
+    });
+  });
+
+  group('审查返工：可见性判据', () {
+    testWidgets('IndexedStack 停在 index≥1 的子区：滚可见子区，不滚隐藏子区',
+        (WidgetTester tester) async {
+      final ScrollController hidden = ScrollController();
+      final ScrollController shown = ScrollController();
+      addTearDown(hidden.dispose);
+      addTearDown(shown.dispose);
+      Widget list(ScrollController c, String tag) => ListView.builder(
+            controller: c,
+            primary: false,
+            itemCount: 200,
+            itemExtent: 40,
+            itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+          );
+      await pumpApp(
+        tester,
+        page: Scaffold(
+          body: IndexedStack(
+            index: 1,
+            children: <Widget>[list(hidden, 'hidden'), list(shown, 'shown')],
+          ),
+        ),
+        registry: desktopRegistry(),
+      );
+      expect(await tester.sendKeyEvent(LogicalKeyboardKey.pageDown), isTrue);
+      await tester.pumpAndSettle();
+      expect(shown.offset, greaterThan(0), reason: '可见子区（index 1）被滚');
+      expect(hidden.offset, 0, reason: 'Visibility 藏起来的子区不得被滚');
+      await tester.sendKeyEvent(LogicalKeyboardKey.end);
+      await tester.pumpAndSettle();
+      expect(shown.offset, shown.position.maxScrollExtent);
+      expect(hidden.offset, 0);
+    });
+
+    testWidgets('已登记但被 Offstage 藏起的控制器不占栈顶语义：滚可见列表',
+        (WidgetTester tester) async {
+      final ScrollController offstage = ScrollController();
+      final ScrollController visible = ScrollController();
+      addTearDown(offstage.dispose);
+      addTearDown(visible.dispose);
+      // 模拟 MediaLibraryShell「惰性构建 + Offstage 保活」下 FushiPageScaffold
+      // 已 push 的发现页控制器：栈顶是它，但它整棵在 Offstage 里。
+      PageScrollRegistry.push(offstage);
+      addTearDown(() => PageScrollRegistry.pop(offstage));
+      await pumpApp(
+        tester,
+        page: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Offstage(
+                offstage: true,
+                child: ListView.builder(
+                  controller: offstage,
+                  primary: false,
+                  itemCount: 200,
+                  itemExtent: 40,
+                  itemBuilder: (BuildContext context, int i) => Text('off $i'),
+                ),
+              ),
+              ListView.builder(
+                controller: visible,
+                primary: false,
+                itemCount: 200,
+                itemExtent: 40,
+                itemBuilder: (BuildContext context, int i) => Text('on $i'),
+              ),
+            ],
+          ),
+        ),
+        registry: desktopRegistry(),
+      );
+      expect(await tester.sendKeyEvent(LogicalKeyboardKey.pageDown), isTrue);
+      await tester.pumpAndSettle();
+      expect(visible.offset, greaterThan(0), reason: '可见列表经兜底被滚');
+      expect(offstage.offset, 0, reason: '登记栈顶但 Offstage 的控制器不得被滚');
+    });
+
+    testWidgets('焦点导航开启、本页零受管目标、焦点在原生控件上：↓ 移焦不滚', (WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      final FocusNode first = FocusNode(debugLabel: 'first');
+      final FocusNode second = FocusNode(debugLabel: 'second');
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navKey,
+        home: Scaffold(
+          body: ListView(
+            controller: controller,
+            primary: false,
+            children: <Widget>[
+              SizedBox(
+                height: 60,
+                child: TextButton(
+                  focusNode: first,
+                  onPressed: () {},
+                  child: const Text('first'),
+                ),
+              ),
+              SizedBox(
+                height: 60,
+                child: TextButton(
+                  focusNode: second,
+                  onPressed: () {},
+                  child: const Text('second'),
+                ),
+              ),
+              const SizedBox(height: 2000),
+            ],
+          ),
+        ),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(
+          navigatorKey: navKey,
+          registry: desktopRegistry(),
+          focusNavigationEnabled: true,
+          // 生产结构：FushiFocusRoot 在全局导航层之内、Navigator 之上。
+          child: FushiFocusRoot(enabled: true, child: child!),
+        ),
+      ));
+      await tester.pumpAndSettle();
+      first.requestFocus();
+      await tester.pump();
+      expect(first.hasPrimaryFocus, isTrue);
+      expect(await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown), isTrue);
+      await tester.pumpAndSettle();
+      expect(second.hasPrimaryFocus, isTrue,
+          reason: '零受管目标不等于零焦点目标：原生控件之间照常移焦');
+      expect(controller.offset, 0, reason: '目标在视口内，不该滚');
+    });
+
+    testWidgets('内容溢出的对话框：焦点停在路由 scope 时 ↓ 先进第一个按钮，再按才滚',
+        (WidgetTester tester) async {
+      final ScrollController page = ScrollController();
+      final ScrollController dialogScroll = ScrollController();
+      addTearDown(page.dispose);
+      addTearDown(dialogScroll.dispose);
+      final FocusNode ok = FocusNode(debugLabel: 'ok');
+      addTearDown(ok.dispose);
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(MaterialApp(
+        navigatorKey: navKey,
+        home: displayOnlyList(page),
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(
+          navigatorKey: navKey,
+          registry: desktopRegistry(),
+          focusNavigationEnabled: false,
+          child: child!,
+        ),
+      ));
+      await tester.pumpAndSettle();
+      showDialog<void>(
+        context: tester.element(find.byType(Scaffold)),
+        builder: (BuildContext context) => AlertDialog(
+          content: SizedBox(
+            width: 300,
+            height: 300,
+            child: ListView.builder(
+              controller: dialogScroll,
+              primary: false,
+              itemCount: 100,
+              itemExtent: 30,
+              itemBuilder: (BuildContext context, int i) => Text('line $i'),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              focusNode: ok,
+              onPressed: () {},
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(ok.hasPrimaryFocus, isFalse, reason: '前置：焦点还停在对话框 scope');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(ok.hasPrimaryFocus, isTrue,
+          reason: '弹层里焦点未落到控件时，↓ 先由框架 bootstrap 进第一个按钮');
+      expect(dialogScroll.offset, 0, reason: '第一下不滚');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(ok.hasPrimaryFocus, isTrue, reason: '按钮下方无目标，焦点不动');
+      expect(dialogScroll.offset, greaterThan(0),
+          reason: '焦点已在控件上、无目标 → 滚对话框内容');
+      expect(page.offset, 0, reason: '被盖住的页面不动');
     });
   });
 
