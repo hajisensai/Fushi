@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> En az Android 7.0 (API 24). Aramada kullanılabilen diller, arayüz dilinden bağımsız olarak içe aktarılan sözlükler ve Yomitan dönüşüm tabloları tarafından belirlenir.
+> En az Android 7.0 (API 24). Aramada kullanılabilen diller, arayüz dilinden bağımsız olarak içe aktarılan sözlükler ve Yomitan dönüşüm tabloları tarafından belirlenir. iOS sürümü TestFlight üzerinden dağıtılır: App Store yönergelerinin izin vermediği keşif ve indirme özelliklerini içermez ve güncellemeleri diğer platformlardan birkaç gün sonra gelir.
 
 ### Arayüz Dilleri (17)
 

@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> Mínimo Android 7.0 (API 24). Los idiomas disponibles para la búsqueda en diccionarios los determinan los diccionarios importados y las tablas de transformación de Yomitan, con independencia del idioma de la interfaz.
+> Mínimo Android 7.0 (API 24). Los idiomas disponibles para la búsqueda en diccionarios los determinan los diccionarios importados y las tablas de transformación de Yomitan, con independencia del idioma de la interfaz. La versión para iOS se distribuye por TestFlight: no incluye las funciones de descubrimiento y descarga que las directrices de la App Store no permiten, y sus actualizaciones llegan unos días más tarde que en las demás plataformas.
 
 ### Idiomas de interfaz (17)
 

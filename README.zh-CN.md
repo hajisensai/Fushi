@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> 最低 Android 7.0（API 24）。Galgame 语音制卡仅限 Windows。词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。
+> 最低 Android 7.0（API 24）。Galgame 语音制卡仅限 Windows。词典查词的语言由导入的词典与 Yomitan 变换表决定，与界面语言相互独立。iOS 版通过 TestFlight 分发：相比其他平台少了发现、下载等 App Store 审核指南不允许的功能，更新也会晚几天。
 
 ### 界面语言（17 种）
 
@@ -36,7 +36,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安装
 
-从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包，以及 macOS、iOS 构建。Linux 暂无预编译包，需自行从源码构建。
+从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包与 macOS 构建；iOS 通过 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安装。Linux 暂无预编译包，需自行从源码构建。
 
 > 最低 Android 7.0（API 24）。
 

@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> Mindestens Android 7.0 (API 24). Welche Sprachen zum Nachschlagen verfügbar sind, hängt von den importierten Wörterbüchern und den Yomitan-Transformationstabellen ab — unabhängig von der Oberflächensprache.
+> Mindestens Android 7.0 (API 24). Welche Sprachen zum Nachschlagen verfügbar sind, hängt von den importierten Wörterbüchern und den Yomitan-Transformationstabellen ab — unabhängig von der Oberflächensprache. Die iOS-Version wird über TestFlight verteilt: Sie enthält die Entdeckungs- und Download-Funktionen nicht, die die App-Store-Richtlinien nicht zulassen, und ihre Updates erscheinen einige Tage später als auf den anderen Plattformen.
 
 ### Oberflächensprachen (17)
 

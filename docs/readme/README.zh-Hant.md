@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> 最低 Android 7.0（API 24）。詞典查詞的語言由匯入的詞典與 Yomitan 變換表決定，與介面語言相互獨立。
+> 最低 Android 7.0（API 24）。詞典查詞的語言由匯入的詞典與 Yomitan 變換表決定，與介面語言相互獨立。iOS 版透過 TestFlight 發佈：相比其他平台少了發現、下載等 App Store 審核指南不允許的功能，更新也會晚幾天。
 
 ### 介面語言（17 種）
 
@@ -36,7 +36,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安裝
 
-從 [Fushi 官網](https://fushi.moe/) 下載最新版本，支援 Android APK 和 Windows 安裝包。
+從 [Fushi 官網](https://fushi.moe/) 下載最新版本，支援 Android APK、Windows 安裝包與 macOS 構建；iOS 透過 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安裝。
 
 > 最低 Android 7.0（API 24）。
 

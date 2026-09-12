@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> 最小要件は Android 7.0（API 24）です。辞書検索で利用できる言語は、インポートした辞書と Yomitan の変換テーブルによって決まり、インターフェース言語とは独立しています。
+> 最小要件は Android 7.0（API 24）です。辞書検索で利用できる言語は、インポートした辞書と Yomitan の変換テーブルによって決まり、インターフェース言語とは独立しています。iOS 版は TestFlight で配布しています。App Store の審査ガイドラインが認めていない発見・ダウンロード機能は含まれず、更新も他のプラットフォームより数日遅れます。
 
 ### インターフェース言語（17）
 

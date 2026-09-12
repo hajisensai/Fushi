@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> الحدّ الأدنى Android 7.0 (API 24). تُحدَّد اللغات المتاحة للبحث في القاموس بناءً على القواميس المُستورَدة وجداول تحويل Yomitan، بشكل مستقلّ عن لغة الواجهة.
+> الحدّ الأدنى Android 7.0 (API 24). تُحدَّد اللغات المتاحة للبحث في القاموس بناءً على القواميس المُستورَدة وجداول تحويل Yomitan، بشكل مستقلّ عن لغة الواجهة. يُوزَّع إصدار iOS عبر TestFlight: لا يتضمّن ميزات الاكتشاف والتنزيل التي لا تسمح بها إرشادات App Store، وتصل تحديثاته بعد المنصّات الأخرى ببضعة أيام.
 
 ### لغات الواجهة (17)
 

@@ -26,9 +26,9 @@
 | Windows | ✅ | Material Design 3 |
 | macOS | ✅ | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
-| iOS | ✅ | Material Design 3 |
+| iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
-> Minimum Android 7.0 (API 24). Galgame voice mining is Windows-only. The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language.
+> Minimum Android 7.0 (API 24). Galgame voice mining is Windows-only. The languages available for dictionary lookup are determined by the imported dictionaries and Yomitan transformation tables, independently of the interface language. The iOS build is distributed through TestFlight: it omits the discovery and download features that the App Store guidelines do not allow, and its updates arrive a few days later than on the other platforms.
 
 ### Interface Languages (17)
 
@@ -36,7 +36,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, macOS, and iOS builds are available. Linux has no prebuilt release yet; build it from source.
+Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt release yet; build it from source.
 
 > Requires Android 7.0 (API 24) or higher.
 
