@@ -142,7 +142,13 @@ void main() {
       (WidgetTester tester) async {
     final _FakeRemoteVideoClient client = _FakeRemoteVideoClient(
       videos: <RemoteVideoInfo>[
-        const RemoteVideoInfo(id: 'remote-clip', title: 'Remote Clip'),
+        const RemoteVideoInfo(id: 'remote-clip', title: 'Remote Clip',
+          collection: RemoteCollectionMembership(
+            collectionName: 'Series',
+            collectionType: 'playlist',
+            sortIndex: 3,
+          ),
+        ),
       ],
     );
     await tester.pumpWidget(buildApp(client: client));
@@ -150,6 +156,14 @@ void main() {
 
     // 下载前列表无该行（根因：下载前视频不在 VideoBooks）。
     expect(await repo.getByBookUid('remote-clip'), isNull);
+    final List<MediaCollectionRow> listedCollections =
+        await db.getAllMediaCollections();
+    expect(listedCollections, hasLength(1), reason: '目录加载建立合集壳');
+    expect((await db.getCollectionItems(listedCollections.single.id)).single.entryKey,
+        'remote-clip');
+    // 模拟目录之后关系缺失，证明下载登记自身也走收养服务。
+    await db.delete(db.mediaCollectionItems).go();
+    await db.delete(db.mediaCollections).go();
 
     await tapDownloadAwaitRow(tester);
 
@@ -157,6 +171,13 @@ void main() {
     final VideoBookRow? row = await repo.getByBookUid('remote-clip');
     expect(row, isNotNull);
     expect(row!.title, 'Remote Clip');
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections, hasLength(1));
+    expect(
+      (await db.getCollectionItems(collections.single.id)).single.entryKey,
+      row.bookUid,
+    );
     expect(
       row.videoPath,
       '${pathProviderDir.path}/${'remote-clip'.hashCode}.mp4',

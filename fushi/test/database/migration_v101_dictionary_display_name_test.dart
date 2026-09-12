@@ -102,7 +102,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 103);
+      expect(probe.select('PRAGMA user_version').first.values.first, 104);
       expect(hasColumn(probe, 'dictionary_metadata', 'display_name'), isTrue);
     } finally {
       probe.dispose();

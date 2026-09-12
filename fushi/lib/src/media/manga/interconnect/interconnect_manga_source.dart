@@ -68,6 +68,7 @@ class InterconnectMangaCatalog {
         raw: <String, Object?>{
           'bookKey': seriesKey,
           'title': book.title,
+          if (book.collection != null) 'collection': book.collection!.toJson(),
           if (book.mangaReadingMode != null)
             'readingMode': book.mangaReadingMode,
           if (book.hasMangaChapters) 'chaptered': true,

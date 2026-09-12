@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -56,6 +59,8 @@ void main() {
   late File remoteBookCover;
   // 注入的本地 EPUB bookKey（importer 返回它，音频导入据此作 bookKeyOverride）。
   late String? importedBookKey;
+  bool useRealImporter = false;
+  bool failNextAudiobook = false;
   // 有声书接线观测：fetcher 收到的远端 bookKey + importer 收到的 (file, override)。
   late List<String> fetchedAudiobookKeys;
   late List<({File package, String? bookKeyOverride})> importedAudiobooks;
@@ -65,6 +70,8 @@ void main() {
   Completer<void>? audiobookDownloadGate;
 
   setUp(() async {
+    useRealImporter = false;
+    failNextAudiobook = false;
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
@@ -123,7 +130,9 @@ void main() {
         remoteBookDownloadDestination: (RemoteBookInfo book) async => File(
           '${pathProviderDir.path}/${book.title.hashCode}.epub',
         ),
-        remoteBookImporter: (File file) async {
+        remoteBookImporter: useRealImporter
+            ? null
+            : (File file) async {
           importedFiles.add(file);
           final String? key = importedBookKey;
           // 真 importer 是「落库 + 返回 bookKey」；假 importer 以前只返回
@@ -148,6 +157,10 @@ void main() {
         },
         remoteAudiobookFetcher: (String remoteBookKey) async {
           fetchedAudiobookKeys.add(remoteBookKey);
+          if (failNextAudiobook) {
+            failNextAudiobook = false;
+            throw StateError('fixture audiobook failure after book import');
+          }
           // BUG-990：闸门非空时卡在有声书下载阶段（模拟空窗期），供断言本地卡
           // 加载覆盖层；测试 complete 后放行。
           if (audiobookDownloadGate != null) {
@@ -168,6 +181,100 @@ void main() {
 
   Widget buildApp({bool mangaOnly = false}) =>
       wrapScope(buildPage(mangaOnly: mangaOnly));
+
+  for (final bool manga in <bool>[false, true]) {
+    testWidgets('真实${manga ? '漫画包' : 'EPUB'}下载将占位提升为入库 UID', (
+      WidgetTester tester,
+    ) async {
+      useRealImporter = true;
+      failNextAudiobook = true;
+      final Directory booksRoot = Directory.systemTemp.createTempSync(
+        'adoption-books',
+      );
+      EpubStorage.debugBaseDirectoryOverride = booksRoot.path;
+      addTearDown(() {
+        EpubStorage.debugBaseDirectoryOverride = null;
+        booksRoot.deleteSync(recursive: true);
+      });
+      remoteClient = _FakeRemoteBookClient(
+        coverPath: remoteBookCover.path,
+        title: 'Download fixture',
+        bookKey: 'host-download-key',
+        hasAudiobook: true,
+        mangaTitle: manga ? 'Download fixture' : null,
+        collection: const RemoteCollectionMembership(
+          collectionName: 'Imported series',
+          collectionType: 'collection',
+          sortIndex: 4,
+        ),
+        downloadBytes: _collectionDownloadFixture(manga: manga),
+      );
+      await tester.pumpWidget(buildApp(mangaOnly: manga));
+      await tester.pumpAndSettle();
+      final InterconnectDownloadManager manager = ProviderScope.containerOf(
+        tester.element(find.byType(ReaderFushiHistoryPage)),
+      ).read(interconnectDownloadManagerProvider);
+      final VoidCallback retryDownload = tester.widget<IconButton>(find.byKey(
+        const ValueKey<String>('remote_book_download_Download_fixture'),
+      )).onPressed!;
+      await tester.runAsync(() async {
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>('remote_book_download_Download_fixture'),
+          ),
+        );
+        final Stopwatch watch = Stopwatch()..start();
+        while (watch.elapsed < const Duration(seconds: 15)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          final InterconnectDownloadTask? task =
+              manager.tasks[InterconnectDownloadManager.bookTaskId(
+            'host-download-key',
+          )];
+          if (task != null &&
+              task.status != InterconnectDownloadStatus.running) {
+            expect(task.status, InterconnectDownloadStatus.failed);
+            break;
+          }
+        }
+      });
+      await tester.pump();
+      final List<EpubBookRow> rows = await db.getAllEpubBooks();
+      expect(rows, hasLength(1));
+      expect(rows.single.format, manga ? 'manga' : 'epub');
+      final List<MediaCollectionRow> collections =
+          await db.getAllMediaCollections();
+      expect(collections, hasLength(1));
+      final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+        collections.single.id,
+      );
+      expect(members, hasLength(1));
+      expect(members.single.entryKey, rows.single.uid);
+      expect(members.single.entryKey, isNot('Download fixture'));
+      await tester.runAsync(() async {
+        retryDownload();
+        final Stopwatch watch = Stopwatch()..start();
+        while (watch.elapsed < const Duration(seconds: 15)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          if (manager.tasks[InterconnectDownloadManager.bookTaskId(
+            'host-download-key')]?.status == InterconnectDownloadStatus.completed) {
+            break;
+          }
+        }
+      });
+      await tester.pump();
+      expect(importedAudiobooks, hasLength(1), reason: '重试必须继续下载有声书');
+      expect((await db.getAllEpubBooks()).map((EpubBookRow row) => row.uid),
+          <String>[rows.single.uid], reason: '重试不能生成带后缀的第二本书');
+      await tester.pumpWidget(wrapScope(const SizedBox.shrink()));
+      await tester.pumpWidget(buildApp(mangaOnly: manga));
+      await tester.pumpAndSettle();
+      expect((await db.getCollectionItems(collections.single.id))
+          .map((MediaCollectionItemRow item) => item.entryKey), <String>[rows.single.uid],
+          reason: '重新读取目录不能重新引入远端占位');
+      expect(find.byKey(const ValueKey<String>('remote_book_card_Download_fixture')),
+          findsNothing, reason: '本地入库键不同也不能重复展示远端卡');
+    });
+  }
 
   testWidgets('bookshelf mixes interconnect remote books into the main grid',
       (WidgetTester tester) async {
@@ -766,11 +873,15 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     this.progress = RemoteBookProgress.empty,
     this.mangaTitle,
     this.chapteredMangaTitle,
+    this.collection,
+    this.downloadBytes,
   });
 
   final String coverPath;
   final String title;
   final String? bookKey;
+  final RemoteCollectionMembership? collection;
+  final List<int>? downloadBytes;
   final bool hasAudiobook;
   final RemoteBookSourceKind sourceKind;
   // BUG-1640 wire：非空时清单额外带一条 host 漫画。漫画走漫画包通道，host 的
@@ -801,15 +912,19 @@ class _FakeRemoteBookClient implements RemoteBookClient {
         'title': title,
         if (bookKey != null) 'bookKey': bookKey,
         'hasContent': true,
+        if (collection != null) 'collection': collection!.toJson(),
         'coverPath': coverPath,
         if (hasAudiobook) 'hasAudiobook': true,
       }),
       if (mangaTitle != null)
         RemoteBookInfo.fromJson(<String, Object?>{
           'title': mangaTitle,
+          if (bookKey != null) 'bookKey': bookKey,
           'hasContent': false,
           'hasMangaContent': true,
+          if (hasAudiobook) 'hasAudiobook': true,
           'format': 'manga',
+          if (collection != null) 'collection': collection!.toJson(),
           'coverPath': coverPath,
         }),
       if (chapteredMangaTitle != null)
@@ -831,7 +946,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     void Function(double progress)? onProgress,
   }) async {
     downloadedTitles.add(title);
-    await destination.writeAsBytes(<int>[1, 2, 3]);
+    await destination.writeAsBytes(downloadBytes ?? <int>[1, 2, 3]);
     onProgress?.call(1);
   }
 
@@ -849,3 +964,48 @@ class _FakeRemoteBookClient implements RemoteBookClient {
 final List<int> _tinyPngBytes =
     base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
         'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==');
+
+List<int> _collectionDownloadFixture({required bool manga}) {
+  final Archive archive = Archive();
+  void addText(String name, String text) {
+    final List<int> bytes = utf8.encode(text);
+    archive.addFile(ArchiveFile(name, bytes.length, bytes));
+  }
+
+  if (manga) {
+    addText(
+      'manga.json',
+      jsonEncode(<String, Object?>{
+        'pages': <Object?>[
+          <String, Object?>{
+            'url': 'page.png',
+            'width': 1,
+            'height': 1,
+            'blocks': <Object?>[],
+          },
+        ],
+      }),
+    );
+    archive.addFile(
+      ArchiveFile('page.png', _tinyPngBytes.length, _tinyPngBytes),
+    );
+  } else {
+    addText('mimetype', 'application/epub+zip');
+    addText(
+      'META-INF/container.xml',
+      '''
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+<rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>''',
+    );
+    addText('book.opf', '''
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Download fixture</dc:title></metadata>
+<manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+<spine><itemref idref="chapter"/></spine></package>''');
+    addText(
+      'chapter.xhtml',
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Test.</p></body></html>',
+    );
+  }
+  return ZipEncoder().encode(archive)!;
+}

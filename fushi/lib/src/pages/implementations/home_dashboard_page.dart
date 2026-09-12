@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
+import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb;
 import 'package:flutter/material.dart';
@@ -897,6 +899,14 @@ class _HomeDashboardPageState
           results[0] as List<RemoteBookInfo>;
       final List<RemoteVideoInfo> remoteVideos =
           results[1] as List<RemoteVideoInfo>;
+      final RemoteCollectionAdoptionService adoption =
+          RemoteCollectionAdoptionService(appModel.database);
+      for (final RemoteBookInfo book in remoteBooks) {
+        await adoption.adoptBook(book);
+      }
+      for (final RemoteVideoInfo video in remoteVideos) {
+        await adoption.adoptVideo(video);
+      }
       final List<RemoteActivityEvent> remoteActivity =
           results[2] as List<RemoteActivityEvent>;
       if (!mounted) return;
@@ -908,6 +918,10 @@ class _HomeDashboardPageState
           ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
               item.mediaIdentifier,
       };
+      localBookKeys.addAll(
+        (await CollectionBookIdentityIndex.load(appModel.database)).uidByKey.keys,
+      );
+      if (!mounted) return;
       final Set<String> localVideoUids = <String>{
         for (final VideoBookRow v in _videos) v.bookUid,
       };

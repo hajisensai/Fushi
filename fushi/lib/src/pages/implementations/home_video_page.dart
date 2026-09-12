@@ -11,6 +11,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
@@ -1285,6 +1286,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // BUG-1891：Jellyfin/Emby 关掉「自动列出条目」且手里还没有清单 → 本轮一个
       // 请求都不发，也不渲染远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
       if (videos == null) return null;
+      final RemoteCollectionAdoptionService adoption =
+          RemoteCollectionAdoptionService(appModelNoUpdate.database);
+      for (final RemoteVideoInfo video in videos) {
+        await adoption.adoptVideo(video);
+      }
+      if (mounted) await _loadLibraryMaps();
       // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
       final Set<String> localUids =
@@ -2459,6 +2466,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     File dest,
   ) async {
     final String bookUid = video.id;
+    final RemoteCollectionAdoptionService adoption =
+        RemoteCollectionAdoptionService(appModelNoUpdate.database);
     final ({String? source, String? format, List<AudioCue> cues}) subtitle =
         await _downloadRemoteSubtitleForBook(client, video, bookUid);
     await widget.repo.saveVideoBook(VideoBooksCompanion(
@@ -2478,6 +2487,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : DateTime.fromMillisecondsSinceEpoch(video.completedAt!),
       ),
     ));
+    await adoption.adoptVideo(video);
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
     }
@@ -2579,6 +2589,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       embeddedSubtitleTrack: const Value<int?>(0),
       importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
+    await RemoteCollectionAdoptionService(appModelNoUpdate.database)
+        .adoptVideo(video);
     // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
     if (video.tagsAddedAt.isNotEmpty || video.tagTombstones.isNotEmpty) {
       await widget.repo.mergeRemoteVideoTags(
@@ -4018,25 +4030,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   // 「视频首页没完全互联」。改成统一用 [_VideoSlot]：取组内序 / 取观看态 / 取封面 /
   // 点开这四件事按来源分流，其余逻辑（下一集选集、最近添加窗口、排序）两边同一份。
 
-  /// 远端条目解析到的本地合集 id；host 未给归属或本地没有同名合集 → null（散卡）。
-  int? _remoteCollectionId(RemoteVideoInfo video) {
-    final RemoteCollectionMembership? membership = video.collection;
-    if (membership == null) return null;
-    return _resolveLocalCollectionId(
-      membership.collectionName,
-      membership.collectionType,
-    );
-  }
+  /// 远端占位同样使用经过 DAO 墓碑裁决的持久归属。
+  int? _remoteCollectionId(RemoteVideoInfo video) =>
+      _primaryCollectionByEntry[MediaKind.video.compositeKey(video.id)];
 
-  /// 组内序：本地取页级 [_memberSortIndex]，远端取 host 下发的 sortIndex。
-  int _slotSortIndex(_VideoSlot slot) {
-    final VideoBookRow? local = slot.local;
-    if (local != null) {
-      return _memberSortIndex[MediaKind.video.compositeKey(local.bookUid)] ??
-          1 << 30;
-    }
-    return slot.remote!.collection?.sortIndex ?? 1 << 30;
-  }
+  /// 本地与远端成员共享本地保存的组内顺序。
+  int _slotSortIndex(_VideoSlot slot) =>
+      _memberSortIndex[MediaKind.video.compositeKey(
+        slot.local?.bookUid ?? slot.remote!.id,
+      )] ?? 1 << 30;
 
   /// 最近观看时刻（epoch 毫秒，0 = 没看过）。远端的真相源是 host 下发的
   /// [RemoteVideoInfo.positionUpdatedAtMs]（与「继续观看」行同一口径）。
@@ -4823,29 +4825,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return _emptyStateSlivers(_buildFilteredEmpty());
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 多端库联合视图 §2.3 任务10：把「远端有本地无」视频的**主合集归属**（host 下发的
-    // RemoteVideoInfo.collection）注入折叠映射，使远端占位卡折进对应本地合集行。远端合集
-    // 本地无 id——按 (name, type) 对本地合集表解析（[_resolveLocalCollectionId]），解析不到
-    // = 散卡降级（不硬造合集行）。云视频占位 collection 恒 null（散卡）。局部拷贝页级
-    // 映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
-    final Map<String, int> primaryByEntry = Map<String, int>.of(
-      _primaryCollectionByEntry,
-    );
-    final Map<String, int> memberSortIndex = Map<String, int>.of(
-      _memberSortIndex,
-    );
-    for (final RemoteVideoInfo video in groupedRemoteVideos) {
-      final RemoteCollectionMembership? membership = video.collection;
-      if (membership == null) continue;
-      final int? cid = _resolveLocalCollectionId(
-        membership.collectionName,
-        membership.collectionType,
-      );
-      if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
-      final String key = MediaKind.video.compositeKey(video.id);
-      primaryByEntry[key] = cid;
-      memberSortIndex[key] = membership.sortIndex;
-    }
+    // DTO 的归属已在目录加载时原子收养，渲染只读取本地裁决结果。
+    final Map<String, int> primaryByEntry = _primaryCollectionByEntry;
+    final Map<String, int> memberSortIndex = _memberSortIndex;
     final List<CollectionGroup<_VideoSlot>> groups =
         <CollectionGroup<_VideoSlot>>[
       for (final CollectionGroup<_VideoSlot> group in _groupVideos(
@@ -5269,18 +5251,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (provider != null) return provider;
     }
     return null;
-  }
-
-  /// 按 (name, collectionType) 自然键把远端合集归属解析成本地合集 id（折叠归属同「最小
-  /// collectionId」规则，多个同键取最小）；本地无此合集则返 null（散卡降级，不硬造行）。
-  int? _resolveLocalCollectionId(String name, String type) {
-    int? best;
-    for (final MediaCollectionRow c in _collectionsById.values) {
-      if (c.name == name && c.collectionType == type) {
-        if (best == null || c.id < best) best = c.id;
-      }
-    }
-    return best;
   }
 
   /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。远端占位

@@ -10,6 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:path/path.dart' as p;
@@ -100,6 +102,35 @@ void main() {
     final EpubBookRow again = await service.add(entryFor(chapters: chapters));
     expect(again.bookKey, row.bookKey);
     expect(await database.getAllEpubBooks(), hasLength(1));
+  });
+
+  test('互联在线漫画加入书架用实际 UID 收养主合集且重复加入幂等', () async {
+    final OnlineMangaLibraryEntry entry = InterconnectMangaCatalog.entryFor(
+      const RemoteBookInfo(
+        title: 'Remote manga',
+        bookKey: 'host-manga-key',
+        hasContent: false,
+        hasMangaChapters: true,
+        format: 'manga',
+        collection: RemoteCollectionMembership(
+          collectionName: 'Remote series',
+          collectionType: 'collection',
+          sortIndex: 7,
+        ),
+      ),
+    );
+    final EpubBookRow row = await service.add(entry);
+    expect(row.bookKey, isNot('host-manga-key'));
+    final List<MediaCollectionRow> collections =
+        await database.getAllMediaCollections();
+    expect(collections, hasLength(1));
+    final List<MediaCollectionItemRow> members =
+        await database.getCollectionItems(collections.single.id);
+    expect(members.single.entryKey, row.uid);
+    expect(members.single.sortIndex, 7);
+    await service.add(entry);
+    expect(
+      await database.getCollectionItems(collections.single.id), hasLength(1));
   });
 
   test('刷出空章节列表不得覆盖书架：抛失败、库里旧描述符原样保留', () async {

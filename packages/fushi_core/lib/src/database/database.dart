@@ -15,6 +15,7 @@ import '../utils/video_book_uid.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
+import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
@@ -649,6 +650,7 @@ void _requireOneVideoMetadataOwner({
   MediaCollections,
   MediaCollectionItems,
   CollectionMemberTombstones,
+  CollectionBookAliases,
   FushiPairedPeers,
   BookTombstones,
   LookupMiningCounters,
@@ -732,7 +734,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 103;
+  int get schemaVersion => 104;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3131,6 +3133,11 @@ class FushiDatabase extends _$FushiDatabase
               'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
               'ON manga_download_jobs (status, created_at)',
             );
+          }
+          if (from < 104) {
+            if (!await _tableExists('collection_book_aliases')) {
+              await m.createTable(collectionBookAliases);
+            }
           }
         },
         onCreate: (m) async {

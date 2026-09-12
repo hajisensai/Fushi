@@ -78,11 +78,19 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         forceRefresh: forceRefresh,
         fetch: client.listRemoteBooks,
       );
+      final RemoteCollectionAdoptionService adoption =
+          RemoteCollectionAdoptionService(appModel.database);
+      for (final RemoteBookInfo book in books) {
+        await adoption.adoptBook(book);
+      }
       // #6: 远端与本地是同一本书时（同 bookKey）不在混排网格重复展示（只显示本地卡）。
       final List<EpubBookMeta> localBooks =
           await appModel.database.getEpubBookMetas();
-      final Set<String> localKeys =
-          localBooks.map((EpubBookMeta r) => r.bookKey).toSet();
+      final Set<String> localKeys = <String>{
+        ...localBooks.map((EpubBookMeta r) => r.bookKey),
+        ...(await CollectionBookIdentityIndex.load(appModel.database))
+            .uidByKey.keys,
+      };
       // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
       // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
       // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
@@ -664,8 +672,29 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           onProgress?.call(book.hasAudiobook ? progress * 0.5 : progress);
         },
       );
-      final String? localBookKey =
+      // 后续有声书失败可重试，已经落地的 EPUB/漫画必须复用实际行。
+      final CollectionBookIdentityIndex identities =
+          await CollectionBookIdentityIndex.load(appModel.database);
+      final String? existingUid = identities.uidByKey[book.downloadId];
+      final EpubBookRow? existingBook = existingUid == null
+          ? null
+          : await appModel.database.getEpubBookByUid(existingUid);
+      final bool hasExistingContent = existingBook != null &&
+          (existingBook.format == BookFormat.manga.dbValue
+              ? hasExportableMangaContent(existingBook.extractDir)
+              : resolveExtractedEpubRoot(existingBook.extractDir) != null);
+      final String? localBookKey = (hasExistingContent ? existingBook.bookKey : null) ??
           await _importRemoteBookFile(dest, mangaTitleHint: book.title);
+      if (localBookKey != null) {
+        final EpubBookRow? localBook = await appModel.database.getEpubBook(
+          localBookKey,
+        );
+        if (localBook != null) {
+          await RemoteCollectionAdoptionService(
+            appModel.database,
+          ).adoptBook(book, localBook: localBook);
+        }
+      }
       // 漫画：把 host 端按本阅读模式作为初始值落地（互联完整支持批次；一次性，
       // 之后两端各自记忆）。best-effort，不阻塞下载主流程。
       if (localBookKey != null &&
