@@ -1545,14 +1545,6 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         buildVideoPlayerShortcutsFromRegistry(
           _appModel.shortcutRegistry,
           _shortcutActions(),
-          // BUG-2462 把 F11（globalToggleFullscreen）变成了可绑定的视频动作，
-          // 这页的 toggleFullscreen 走的却是 media_kit 的 defaultEnterNativeFullscreen——
-          // 剥 WS_CAPTION，正是 BUG-1933 闪一帧白的那条路径。排除掉让 F11 继续
-          // 冒泡到 app 根的 WindowCaptionChannel（保边框实现），与本 PR 之前的行为一致；
-          // 页内内容全屏仍由该页自己的按钮与 Esc 触发，不受影响。
-          exclude: const <ShortcutAction>{
-            ShortcutAction.globalToggleFullscreen,
-          },
         ),
         isPopupVisible: () => _popup.hasVisiblePopup,
         dismissPopup: () => _popNestedPopupAt(_popup.lastVisibleIndex),
