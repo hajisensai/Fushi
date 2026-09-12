@@ -824,7 +824,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               'fushi_cover_',
             )
           : Future<String?>.value(null),
-      context.sentenceAudioPath != null
+      context.sentenceAudioPath != null && !context.synchronizedVideo
           ? _storeLocalMedia(
               service,
               mediaTransaction,

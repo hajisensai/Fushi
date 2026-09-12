@@ -415,7 +415,7 @@ class AnkiRepository extends BaseAnkiRepository {
       context.coverPath != null
           ? _addCoverImage(context.coverPath!)
           : Future<String?>.value(null),
-      context.sentenceAudioPath != null
+      context.sentenceAudioPath != null && !context.synchronizedVideo
           ? _addSentenceAudio(context.sentenceAudioPath!)
           : Future<String?>.value(null),
       payload.audio.isNotEmpty

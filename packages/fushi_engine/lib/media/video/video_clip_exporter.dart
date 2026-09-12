@@ -389,7 +389,6 @@ List<String> buildClipStreamMapArgs({
 /// `-movflags` 是 mov/mp4 muxer 的**私有选项**，给 matroska 之类的输出会硬失败
 /// （`Option movflags not found`），所以按输出扩展名门控。当前 [exportVideoClip] 输出
 /// 恒 `.mp4`，这层门控是留给纯函数被别的容器调用时的安全边界。
-@visibleForTesting
 List<String> buildClipFaststartArgs(String outputPath) {
   switch (p.extension(outputPath).toLowerCase()) {
     case '.mp4':

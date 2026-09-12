@@ -9,6 +9,8 @@ import 'package:fushi/src/mining/immersion_mining_engine.dart'
         extractAnimatedClipWithFallback,
         extractStillWithFallback;
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/media/video/video_clip_exporter.dart';
+import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
@@ -16,8 +18,9 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
 /// 第二层B（TODO-1000）：驱动后台专用软解 WebView2 实例抓 Netflix 片段音画。仅 Windows。
 /// native 缺失（未构建 / 非 Windows）时 [capture] 返回 error，seam 降级为 2A 截图卡。
 abstract final class ImmersionCaptureChannel {
-  static const MethodChannel _channel =
-      MethodChannel('app.fushi.reader/immersion_capture');
+  static const MethodChannel _channel = MethodChannel(
+    'app.fushi.reader/immersion_capture',
+  );
 
   static Future<ImmersionCaptureResult> capture({
     required String netflixVideoId,
@@ -27,23 +30,21 @@ abstract final class ImmersionCaptureChannel {
     int width = 320,
   }) async {
     try {
-      final Map<Object?, Object?>? r =
-          await _channel.invokeMethod<Map<Object?, Object?>>(
-        'capture',
-        <String, Object?>{
-          'videoId': netflixVideoId,
-          'startMs': clipStartMs,
-          'endMs': clipEndMs,
-          'fps': fps,
-          'width': width,
-        },
-      );
+      final Map<Object?, Object?>? r = await _channel
+          .invokeMethod<Map<Object?, Object?>>('capture', <String, Object?>{
+        'videoId': netflixVideoId,
+        'startMs': clipStartMs,
+        'endMs': clipEndMs,
+        'fps': fps,
+        'width': width,
+      });
       return ImmersionCaptureResult.fromMap(r ?? const <Object?, Object?>{});
     } on PlatformException catch (e) {
       return ImmersionCaptureResult(error: e.message ?? 'capture failed');
     } on MissingPluginException {
       return const ImmersionCaptureResult(
-          error: 'immersion_capture unavailable');
+        error: 'immersion_capture unavailable',
+      );
     }
   }
 }
@@ -110,6 +111,7 @@ class ImmersionCaptureResult {
     this.error,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.coverIsStill = false,
+    this.coverIsVideo = false,
     this.stillFormat = MiningStillFormat.jpg,
   });
 
@@ -136,6 +138,9 @@ class ImmersionCaptureResult {
   /// 与 [animatedFormat] 同样是「实际产出物的自描述」。
   /// [animatedFormat] 在本值为 true 时不参与文件名（改由 [stillFormat] 参与）。
   final bool coverIsStill;
+
+  /// The legacy cover byte channel contains one MP4 with its sentence audio.
+  final bool coverIsVideo;
 
   /// [coverIsStill] 为 true 时，[gifBytes] 里那张静态帧**实际被编码成的**格式。
   ///
@@ -184,10 +189,15 @@ ImmersionMiningRequest buildImmersionRequest(
   ImmersionMinePayload p,
   ImmersionCaptureResult cap, {
   required bool audioExpected,
+  VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
 }) {
   final bool useCapture = cap.ok;
-  final Uint8List? cover =
-      useCapture ? (cap.gifBytes ?? p.screenshotBytes) : p.screenshotBytes;
+  final bool synchronizedVideo = imageMode == VideoMiningImageMode.videoClip;
+  final Uint8List? cover = synchronizedVideo
+      ? (useCapture && cap.coverIsVideo ? cap.gifBytes : null)
+      : useCapture
+          ? (cap.gifBytes ?? p.screenshotBytes)
+          : p.screenshotBytes;
   final bool coverFromCapture = useCapture && cap.gifBytes != null;
   final bool coverIsAnimated = coverFromCapture && !cap.coverIsStill;
   // 媒体临时文件名的前缀 = **这份字节哪来的**（[ImmersionMiningEngine] 文件头把
@@ -201,11 +211,13 @@ ImmersionMiningRequest buildImmersionRequest(
   // BUG-1416：三种封面各自的名字（Anki 按扩展名判 MIME），分开命名——媒体库里一眼看得出
   // 这张卡的封面是哪条路产出的。片段里抽的静态帧跟随 [ImmersionCaptureResult.stillFormat]
   // （用户偏好，降级后为实际格式）；2A 截图是扩展直接给的字节、不经我们编码，恒 JPEG。
-  final String coverName = coverIsAnimated
-      ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
-      : coverFromCapture
-          ? '${origin}_frame.${cap.stillFormat.fileExtension}'
-          : '${origin}_shot.jpg';
+  final String coverName = synchronizedVideo
+      ? '${origin}_clip.mp4'
+      : coverIsAnimated
+          ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
+          : coverFromCapture
+              ? '${origin}_frame.${cap.stillFormat.fileExtension}'
+              : '${origin}_shot.jpg';
   final Uint8List? audio = useCapture ? cap.audioBytes : null;
   return ImmersionMiningRequest(
     fields: p.fields,
@@ -224,6 +236,7 @@ ImmersionMiningRequest buildImmersionRequest(
     // 老版扩展/标题为空时触发。
     documentTitle: p.documentTitle ?? (fromNetflix ? 'Netflix' : 'Web'),
     source: AnkiMiningSource.video,
+    imageMode: imageMode,
     providedCoverBytes: cover,
     // 扩展名跟随**实际产出格式**，不是用户所选：编码器缺失时捕获内部已降级 GIF，按所选
     // 格式拼名会写出 `.avif` 里装 GIF 字节的卡（Anki 按扩展名判 MIME → 封面不显示）。
@@ -232,7 +245,7 @@ ImmersionMiningRequest buildImmersionRequest(
     providedAudioName: audio == null
         ? null
         : '${origin}_audio.${immersionMiningAudioExtension()}',
-    requireAudio: audioExpected,
+    requireAudio: synchronizedVideo || audioExpected,
   );
 }
 
@@ -261,11 +274,21 @@ ImmersionMiningRequest buildImmersionRequest(
 /// 输入定位会落到最近关键帧）。
 ///
 /// [gifExtractor] / [audioExtractor] / [frameExtractor] 供测试注入，默认指向 ffmpeg 真身。
+typedef CaptureVideoExporter = Future<VideoClipExportResult> Function({
+  required String videoPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  bool decodeFromStart,
+  String? cropFilter,
+});
+
 Future<ImmersionCaptureResult> transcodeClipToCapture(
   Uint8List clipBytes, {
   required int durationMs,
   required MiningMediaCompression compression,
   required String tempDir,
+  VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   MiningStillFormat stillFormat = MiningStillFormat.jpg,
   ClipStillTarget? stillTarget,
@@ -273,6 +296,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
   GifExtractor gifExtractor = extractClipGifViaFfmpeg,
   AudioExtractor audioExtractor = extractAudioSegmentViaFfmpeg,
   ClipFrameExtractor frameExtractor = extractVideoFrameViaFfmpeg,
+  CaptureVideoExporter videoExporter = exportSynchronizedVideoClip,
 }) async {
   // BUG-2192：网飞录屏片段四周是播放器黑底——按扩展给的可见画面比例矩形先 crop 再
   // 抽动图/静帧。只对默认的 ffmpeg 真身包一层（注入的测试假件签名不带 crop，原样不动），
@@ -334,6 +358,26 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     final File clip = File('${dir.path}/clip.webm');
     await clip.writeAsBytes(clipBytes, flush: true);
     final int endMs = durationMs > 0 ? durationMs : 6000;
+    if (imageMode == VideoMiningImageMode.videoClip) {
+      final VideoClipExportResult video = await videoExporter(
+        videoPath: clip.path,
+        startMs: 0,
+        endMs: endMs,
+        outputPath: '${dir.path}/clip.mp4',
+        decodeFromStart: true,
+        cropFilter: cropFilter,
+      );
+      if (!video.isSuccess) {
+        return ImmersionCaptureResult(
+          error: 'synchronized video transcode failed: '
+              '${video.detail ?? video.failure?.name}',
+        );
+      }
+      return ImmersionCaptureResult(
+        gifBytes: await File(video.outputPath!).readAsBytes(),
+        coverIsVideo: true,
+      );
+    }
     // 静态帧模式：片段内定点抽一帧，**不进** extractAnimatedClipWithFallback（既是行为正确
     // 性，也避免顶格档动图编码那种大体积开销 —— 静态帧不吃 gifFps/gifWidth）。
     // 输出扩展名由 [MiningStillFormat.fileExtension] 给（ffmpeg 按扩展名选编码器），降级
@@ -391,7 +435,8 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
         audioPath != null ? await File(audioPath).readAsBytes() : null;
     if (cover == null && audio == null) {
       return const ImmersionCaptureResult(
-          error: 'clip transcode produced nothing');
+        error: 'clip transcode produced nothing',
+      );
     }
     return ImmersionCaptureResult(
       gifBytes: cover,
