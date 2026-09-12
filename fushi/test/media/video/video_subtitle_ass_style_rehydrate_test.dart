@@ -101,6 +101,11 @@ void main() {
       '_loadSingle re-parses external text subtitle files to recover markup '
       '(TODO-1246 call-site guard)', () {
     final String src = readVideoFushiSource();
+    // 压掉空白再比对：dart format 按行宽重排会把调用的参数拆到下一行
+    // （`_loadExternalSubtitleCues(\n  rehydratePath,` ...），任何逐字包含判据
+    // 都会被下一次重排打翻——本守卫就这么红过一次，而接线其实没动。
+    String flat(String v) =>
+        v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
 
     // 助手存在且严格门控：仅磁盘上存在的外挂文本格式档案才可重解析（内嵌轨/哨兵/缺档不重解析）。
     final int helperAt =
@@ -109,9 +114,10 @@ void main() {
         reason: 'missing _rehydratableExternalSubtitlePath helper');
     final int helperEnd = src.indexOf('\n  }', helperAt);
     final String helper = src.substring(helperAt, helperEnd);
-    expect(helper.contains('subtitleFormatForPath(source) == null'), isTrue,
+    expect(flat(helper).contains(flat('subtitleFormatForPath(source) == null')),
+        isTrue,
         reason: 'must reject embedded:<n> / non-text sources');
-    expect(helper.contains('File(source).existsSync()'), isTrue,
+    expect(flat(helper).contains(flat('File(source).existsSync()')), isTrue,
         reason: 'must reject vanished files (nothing to re-parse)');
 
     // _loadSingle 用助手驱动重解析分支，走 _loadExternalSubtitleCues（文本档案廉价重解析，
@@ -122,10 +128,13 @@ void main() {
         src.indexOf('_relocateSingleMediaPaths(VideoBookRow row)', start);
     final String body = src.substring(start, end);
     expect(
-        body.contains('_rehydratableExternalSubtitlePath(externalSub)'), isTrue,
+        flat(body)
+            .contains(flat('_rehydratableExternalSubtitlePath(externalSub)')),
+        isTrue,
         reason:
             '_loadSingle must decide rehydration from the persisted source');
-    expect(body.contains('_loadExternalSubtitleCues(rehydratePath'), isTrue,
+    expect(flat(body).contains(flat('_loadExternalSubtitleCues(rehydratePath')),
+        isTrue,
         reason:
             'rehydration must re-parse the external file to restore markup');
   });

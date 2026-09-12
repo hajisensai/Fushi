@@ -10,6 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 首帧真机联网测速（>25s -> ~getManifest）需真设备，见 TODO-1307 报告；此处落最强可落地层：
 /// 源码语料守卫（切片断言快解析/后置/A1/A2/阶段反馈均在位，删任一即红），与 1302 守卫同构。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   // 归一 CRLF -> LF（去掉 CR），避免行尾差异影响子串断言（不用字符串转义字面量）。
   String read(String p) =>
@@ -21,7 +26,8 @@ void main() {
   setUpAll(() {
     launchSrc = read('lib/src/media/video/stream_video_launch.dart');
     pageSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
-    resolverSrc = read('../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart');
+    resolverSrc = read(
+        '../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart');
   });
 
   test('① 快解析 gate：buildStreamVideoLaunch 的 YouTube 分支用 withCaptions:false',
@@ -60,29 +66,30 @@ void main() {
     // TODO-1302 回归修复：字幕轨**列表**（非单条 cue）后置解析，列表回填不依赖 cue 就绪 →
     // 修「快加载 withCaptions:false 后字幕整个消失」。
     expect(
-      pageSrc.contains(
-          'unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq))'),
+      _flat(pageSrc).contains(_flat(
+          'unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq))')),
       isTrue,
       reason: 'load 后必须异步 kick 字幕轨列表解析（不阻塞首帧）',
     );
     expect(
-      pageSrc.contains('resolveYoutubeCaptionTracks('),
+      _flat(pageSrc).contains(_flat('resolveYoutubeCaptionTracks(')),
       isTrue,
       reason:
           'track-list-first 必须走 resolveYoutubeCaptionTracks 入口（单次 getPlayerResponse 取轨表）',
     );
     expect(
-      pageSrc.contains('client.setYoutubeCaptionTracks(tracks)'),
+      _flat(pageSrc).contains(_flat('client.setYoutubeCaptionTracks(tracks)')),
       isTrue,
       reason: '字幕轨列表必须回填 client.youtubeCaptionTracks，供字幕轨选择器渲染（不依赖 cue 就绪）',
     );
     expect(
-      pageSrc.contains('pickBestYoutubeCaptionTrack(tracks'),
+      _flat(pageSrc).contains(_flat('pickBestYoutubeCaptionTrack(tracks')),
       isTrue,
       reason: '默认自动应用必须按 A3（人工>ASR·精确语言）选最佳轨',
     );
     expect(
-      pageSrc.contains('_applyYoutubeCaptionTrack(controller, best'),
+      _flat(pageSrc)
+          .contains(_flat('_applyYoutubeCaptionTrack(controller, best')),
       isTrue,
       reason: '选中轨必须经 _applyYoutubeCaptionTrack 懒下载其 cue 挂 overlay',
     );
@@ -93,13 +100,13 @@ void main() {
     // （preresolvedCues.isEmpty 门控），一次解析空/失败 → 选择器与 overlay 双空。新模型只以
     // youtubeCaptionsUrl 非空触发轨列表解析，列表回填与 cue 下载解耦。
     expect(
-      pageSrc.contains(
-          'client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null'),
+      _flat(pageSrc).contains(_flat(
+          'client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null')),
       isTrue,
       reason: '字幕轨后置只以 youtubeCaptionsUrl 非空触发，不再用 preresolvedCues.isEmpty 门控',
     );
     expect(
-      pageSrc.contains('client.preresolvedCues.isEmpty &&'),
+      _flat(pageSrc).contains(_flat('client.preresolvedCues.isEmpty &&')),
       isFalse,
       reason: '不得再用 preresolvedCues.isEmpty 门控字幕轨后置（那把列表吊死在一次 cue 解析上）',
     );
@@ -124,9 +131,12 @@ void main() {
   });
 
   test('④ 阶段反馈提前：connecting 在 buildStreamVideoLaunch 调用之前', () {
-    final int iConnect = pageSrc.indexOf('// TODO-1307：把「正在连接视频流…」阶段反馈提前');
+    // 注释本身也会被 dart format 折行，锚点同样走归一化。
+    final int iConnect =
+        _flat(pageSrc).indexOf(_flat('// TODO-1307：把「正在连接视频流…」阶段反馈提前'));
     // 画质目标加参后调用折行：锚到 `(row` 前缀（不含收尾括号）。
-    final int iBuild = pageSrc.indexOf('await buildStreamVideoLaunch(row');
+    final int iBuild =
+        _flat(pageSrc).indexOf(_flat('await buildStreamVideoLaunch(row'));
     expect(iConnect, greaterThan(0),
         reason: 'stream book 分支必须提前置 connecting 阶段反馈');
     expect(iBuild, greaterThan(0));

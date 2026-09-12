@@ -258,7 +258,9 @@ void main() {
     expect(meta.gameCount, 1);
     expect(meta.gameCoversRoot, s.coversRoot);
     expect(meta.progressCount, 1);
-    expect(meta.statsCount, 2, reason: 'study_segments 计入统计记录数');
+    expect(meta.statsCount, 5,
+        reason: 'statistics 的计数面 = 它的裁剪面 _statisticsTables 整份清单：'
+            'study_segments 2 行 + galgame_sessions 等同属该类别的行');
     final Archive archive = await readZip(zip);
     expect(archive.findFile('game_covers/G1.png'), isNotNull);
     final FushiDatabase db = await openBackupDb(zip, dst);
@@ -302,7 +304,7 @@ void main() {
     await s.db.close();
     expect(summary.countFor(BackupCategory.games), 1);
     expect(summary.countFor(BackupCategory.progress), 1);
-    expect(summary.countFor(BackupCategory.statistics), 2);
+    expect(summary.countFor(BackupCategory.statistics), 5);
     expect(
       summary.present,
       containsAll(<BackupCategory>[
@@ -325,7 +327,7 @@ void main() {
           await BackupRestoreService.summarizeBackupFile(zip);
       expect(viaMeta.countFor(BackupCategory.games), 1);
       expect(viaMeta.countFor(BackupCategory.progress), 1);
-      expect(viaMeta.countFor(BackupCategory.statistics), 2);
+      expect(viaMeta.countFor(BackupCategory.statistics), 5);
 
       // 旧包：meta 没有 gameCount / progressCount / gameCoversRoot（且
       // excludedCategories 里没有 games）——重打一个只改 meta 的 zip。

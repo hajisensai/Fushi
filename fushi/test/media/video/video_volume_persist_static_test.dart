@@ -13,6 +13,11 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// - controller.load receives and applies initialVolume before autoPlay;
 /// - real volume changes persist, but temporary M mute does not;
 /// - pending writes debounce and flush on lifecycle / dispose / process exit.
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// 收回去。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   final File controllerFile = File(
     'lib/src/media/video/video_player_controller.dart',
@@ -76,8 +81,11 @@ void main() {
       expect(page, contains('double _playbackVolume = 100.0'),
           reason: 'new videos default to 100 volume');
       final String read = methodBody(page, 'double _readPersistedVolume()');
-      expect(read, contains('getPref(_volumePrefKey, defaultValue: 100.0)'));
-      expect(read, contains('clamp(0.0, 100.0)'));
+      // dart format 的 tall style 会把这个调用拆成多行并补尾随逗号，逐字
+      // contains 会假红（接线没动）。归一化后钉调用形态本身。
+      expect(_flat(read),
+          contains(_flat('getPref(_volumePrefKey, defaultValue: 100.0)')));
+      expect(_flat(read), contains(_flat('clamp(0.0, 100.0)')));
     });
 
     test('local and remote init read volume before loading media', () {

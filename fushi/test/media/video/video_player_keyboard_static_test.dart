@@ -22,6 +22,11 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// shortcuts source for LogicalKeyboardKey.xxx strings now assert the registry
 /// defaults (using the real enum / InputBinding, stronger than string scans);
 /// the page behaviour assertions are unchanged.
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   String read(String relPath) => File(relPath).readAsStringSync();
 
@@ -502,10 +507,11 @@ void main() {
       final String b = body!.group(1)!;
       // BUG-910：barrier 关闭判定用 exactOnly:true（跳过查词裙边容差），点字幕行周围空白
       // halo 不误判成切词重查。查词/悬停仍用宽容差（不在本方法体）。
-      final int hitAt =
-          b.indexOf('_subtitleHitTester.hitTest(globalPos, exactOnly: true)');
-      final int handlerAt = b.indexOf('_handleSubtitleLookupTap(');
-      final int popAt = b.indexOf('_popNestedPopupAt(0)');
+      final String fb = _flat(b);
+      final int hitAt = fb.indexOf(
+          _flat('_subtitleHitTester.hitTest(globalPos, exactOnly: true)'));
+      final int handlerAt = fb.indexOf(_flat('_handleSubtitleLookupTap('));
+      final int popAt = fb.indexOf(_flat('_popNestedPopupAt(0)'));
       expect(hitAt, greaterThanOrEqualTo(0),
           reason: 'hit-test the char first with exactOnly (BUG-910)');
       expect(handlerAt, greaterThan(hitAt),
