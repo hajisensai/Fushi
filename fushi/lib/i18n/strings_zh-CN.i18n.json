@@ -4761,5 +4761,6 @@
   "manga_ocr_boxes_toggle": "显示识别范围",
   "remote_manga_added_to_shelf": "已加入漫画书架，章节从对端下载",
   "backup_category_games": "游戏",
-  "backup_category_games_desc": "游戏库、元数据来源与封面"
+  "backup_category_games_desc": "游戏库、元数据来源与封面",
+  "options_github_sponsors": "通过 GitHub Sponsors 赞助 Fushi"
 }
