@@ -62,8 +62,9 @@ void main() {
     });
 
     test(
-        'BUG-2472：只有 Apple 端（WebKit）发出 `block replaced`，且绝不带 glyphs；'
-        'Android / Windows / Linux 一律不发', () async {
+        'BUG-2472 / BUG-2474：任何平台都不再发出 -webkit-line-box-contain；'
+        'Apple 端（WebKit）改发 ruby 注音盒的负 margin-block-start，'
+        'Android / Windows / Linux 不发', () async {
       for (final TargetPlatform p in <TargetPlatform>[
         TargetPlatform.iOS,
         TargetPlatform.macOS,
@@ -72,14 +73,19 @@ void main() {
         try {
           final String css = _stripCssComments(await _readerCss(
               writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css.contains('-webkit-line-box-contain'), isFalse,
+              reason: '$p：`block replaced` 在 quirks 模式下把整行 strut 一并剔掉，'
+                  '整行文字都在 inline 盒里的行与 <br/> 空行行盒归零'
+                  '（BUG-2474：目录列叠印、空行消失）——任何平台都不得再发');
           expect(
-              css.contains(
-                  '-webkit-line-box-contain: block replaced !important;'),
+              css.contains('ruby > rt, ruby > rtc {'
+                  '\n'
+                  '  margin-block-start: -2em !important;'
+                  '\n'
+                  '}'),
               isTrue,
-              reason: '$p：WebKit 必须只按块 line-height + 替换元素算行盒，'
-                  '否则首行含注音的段落被撑高 ≈0.215em（BUG-2472）');
-          expect(css.contains('glyphs'), isFalse,
-              reason: '$p：不得带回 BUG-611 的 glyphs（实测把行距撑大 6~9px）');
+              reason: '$p：WebKit 首行含注音的段落被撑高 ≈0.215em（BUG-2472），'
+                  '修法是只把注音盒在流中的高度用负 margin 抵消掉，不碰行盒 strut');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
@@ -95,6 +101,8 @@ void main() {
               writingMode: 'vertical-rl', viewMode: 'paginated'));
           expect(css.contains('-webkit-line-box-contain'), isFalse,
               reason: '$p：Blink / 旧 Android WebView 不得收到该属性（BUG-611）');
+          expect(css.contains('margin-block-start: -2em'), isFalse,
+              reason: '$p：Blink 本就不为注音长高，负 margin 只发给 WebKit');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }

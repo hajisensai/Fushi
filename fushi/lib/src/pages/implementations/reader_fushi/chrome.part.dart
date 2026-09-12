@@ -1110,6 +1110,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // + 系统 inset），取代散落的 `_showChrome ? height+inset : inset` 三元式。
     final double top = _readerTopOffset;
     final double bottom = _readerBottomReserve;
+    // 下发给 WebView 的 chrome 预留是「正文顶部/底部空带」的唯一来源；用户报「悬浮态
+    // 顶部空带依旧在」时，导出的诊断日志里能直接看到每次下发的分项，不必再猜。
+    studyDiag(
+      'chrome',
+      'insets top=$top bottom=$bottom '
+          'sysTop=$_stableTopInset sysBottom=$_stableBottomInset '
+          'header=$_desktopHeaderReserve progress=$_topProgressReserve '
+          'bar=$_bottomChromeReserve footerBand=$_statusFooterBand '
+          'floating=$_bottomBarFloating showChrome=$_showChrome',
+    );
     await _controller!.evaluateJavascript(
       source: ReaderPaginationScripts.setChromeInsetsInvocation(top, bottom),
     );
