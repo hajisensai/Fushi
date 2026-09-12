@@ -117,6 +117,25 @@ class MangaOcrJobRegistry {
   /// 按 bookKey 的排队链尾（[enqueue] 用）；链上没人时不留条目。
   final Map<String, Future<void>> _queues = <String, Future<void>>{};
 
+  /// 按 bookKey 排着队、还没轮到的任务目录（[MangaOcrBackgroundJob.managedDirectory]），
+  /// 按入队序。作品页据此给章节行标「等待识别」（BUG-2481）。
+  final Map<String, List<String>> _queuedDirectories = <String, List<String>>{};
+
+  /// 任务集合变了（起了 / 结束了 / 入队了 / 轮到了）就发一下；进度本身走各任务的
+  /// [MangaOcrRunningJob.events]。作品页订阅它决定「要不要重新挂到当前任务上」。
+  final StreamController<void> _changes = StreamController<void>.broadcast();
+
+  Stream<void> get changes => _changes.stream;
+
+  void _notifyChanged() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
+
+  /// 这本书排着队、还没开始的任务目录（按入队序）；没有则空。
+  List<String> queuedDirectories(String bookKey) => List<String>.unmodifiable(
+    _queuedDirectories[bookKey] ?? const <String>[],
+  );
+
   /// 这本书正在跑的任务；没有则 null。已结束的任务不会留在这里。
   MangaOcrRunningJob? running(String bookKey) => _jobs[bookKey];
 
@@ -141,36 +160,37 @@ class MangaOcrJobRegistry {
       sessions: sessions,
     );
     _jobs[job.bookKey] = running;
+    _notifyChanged();
     // asyncMap 串行化事件处理：finished 的落盘有 await，期间源流被暂停，观察者
     // 收到 finished 时文件已经在盘上。
     running._source = job.events
         .asyncMap((MangaOcrBackgroundEvent event) => _ingest(running, event))
         .listen(
-      (MangaOcrBackgroundEvent event) {
-        running._lastEvent = event;
-        if (!running._observers.isClosed) {
-          running._observers.add(event);
-        }
-      },
-      onError: (Object error, StackTrace stack) {
-        ErrorLogService.instance.log(
-          'MangaOcrJobRegistry.${job.engine.name}',
-          error,
-          stack,
+          (MangaOcrBackgroundEvent event) {
+            running._lastEvent = event;
+            if (!running._observers.isClosed) {
+              running._observers.add(event);
+            }
+          },
+          onError: (Object error, StackTrace stack) {
+            ErrorLogService.instance.log(
+              'MangaOcrJobRegistry.${job.engine.name}',
+              error,
+              stack,
+            );
+            running._error = error;
+            if (!running._observers.isClosed) {
+              running._observers.addError(error, stack);
+            }
+            _forget(running);
+            unawaited(running._end());
+          },
+          onDone: () {
+            _forget(running);
+            unawaited(running._end());
+          },
+          cancelOnError: true,
         );
-        running._error = error;
-        if (!running._observers.isClosed) {
-          running._observers.addError(error, stack);
-        }
-        _forget(running);
-        unawaited(running._end());
-      },
-      onDone: () {
-        _forget(running);
-        unawaited(running._end());
-      },
-      cancelOnError: true,
-    );
     return running;
   }
 
@@ -188,7 +208,13 @@ class MangaOcrJobRegistry {
         _queues[bookKey] ?? _jobs[bookKey]?.whenEnded ?? Future<void>.value();
     final Completer<MangaOcrRunningJob> started =
         Completer<MangaOcrRunningJob>();
+    final String directory = job.managedDirectory;
+    _queuedDirectories.putIfAbsent(bookKey, () => <String>[]).add(directory);
+    _notifyChanged();
     final Future<void> tail = previous.then((_) async {
+      final List<String>? queue = _queuedDirectories[bookKey];
+      queue?.remove(directory);
+      if (queue != null && queue.isEmpty) _queuedDirectories.remove(bookKey);
       // 前一个刚 _forget 时 running() 可能已为空，但也可能仍是「刚结束还没被
       // 清掉」的那一个；start 只认 _jobs 里的，_forget 与 _end 同步发生，安全。
       final MangaOcrRunningJob running = start(
@@ -199,9 +225,11 @@ class MangaOcrJobRegistry {
       await running.whenEnded;
     });
     _queues[bookKey] = tail;
-    unawaited(tail.whenComplete(() {
-      if (identical(_queues[bookKey], tail)) _queues.remove(bookKey);
-    }));
+    unawaited(
+      tail.whenComplete(() {
+        if (identical(_queues[bookKey], tail)) _queues.remove(bookKey);
+      }),
+    );
     return started.future;
   }
 
@@ -209,6 +237,7 @@ class MangaOcrJobRegistry {
   Future<void> cancel(String bookKey) async {
     final MangaOcrRunningJob? running = _jobs.remove(bookKey);
     if (running == null) return;
+    _notifyChanged();
     await running.cancel();
   }
 
@@ -224,6 +253,7 @@ class MangaOcrJobRegistry {
   void _forget(MangaOcrRunningJob running) {
     if (identical(_jobs[running.bookKey], running)) {
       _jobs.remove(running.bookKey);
+      _notifyChanged();
     }
   }
 
@@ -238,8 +268,9 @@ class MangaOcrJobRegistry {
       throw StateError('OCR finished without a result path');
     }
     final String source = await File(resultPath).readAsString();
-    final MokuroPayload payload =
-        event.external ? parseMokuro(source) : parseMangaJson(source);
+    final MokuroPayload payload = event.external
+        ? parseMokuro(source)
+        : parseMangaJson(source);
     if (payload.images.isEmpty) {
       throw StateError('OCR result has no pages');
     }

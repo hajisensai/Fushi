@@ -998,7 +998,21 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                             const SizedBox(height: 8),
                             if (onlineSourcesAvailable &&
                                 manager != null) ...<Widget>[
-                              _buildSourceSearchField(),
+                              Row(
+                                children: <Widget>[
+                                  Expanded(child: _buildSourceSearchField()),
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    key: const ValueKey<String>(
+                                      'mihon_sources_sort_by_downloads',
+                                    ),
+                                    tooltip: t.mihon_sources_sort_by_downloads,
+                                    onPressed: () =>
+                                        unawaited(_sortSourcesByDownloads()),
+                                    icon: const Icon(Icons.sort),
+                                  ),
+                                ],
+                              ),
                               const SizedBox(height: 8),
                             ],
                             // 内置在线源：与扩展提供的源同节同级（见类文档）。
@@ -1047,6 +1061,27 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         ],
       ),
     );
+  }
+
+  /// 「按下载量排序」（BUG-2481）：一次性按扩展下载量重写 sort_order。目录快照
+  /// 还没刷出来时提示先刷新仓库，不偷偷按 null 排。
+  Future<void> _sortSourcesByDownloads() async {
+    final MihonManager? manager = _manager;
+    if (manager == null) return;
+    try {
+      final bool sorted = await manager.sortSourcesByDownloads();
+      if (!mounted) return;
+      FushiToast.show(
+        msg: sorted
+            ? t.mihon_sources_sort_by_downloads_done
+            : t.mihon_sources_sort_by_downloads_no_data,
+        severity: sorted ? ToastSeverity.success : ToastSeverity.warning,
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    }
   }
 
   /// 搜索按名称 / 语言 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）。

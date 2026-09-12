@@ -53,16 +53,16 @@ class _FakeSession implements MangaReaderSession {
 }
 
 String _resultJson(int pages) => jsonEncode(<String, Object?>{
-      'pages': <Map<String, Object?>>[
-        for (int i = 0; i < pages; i++)
-          <String, Object?>{
-            'url': 'images/p$i.jpg',
-            'width': 100,
-            'height': 150,
-            'blocks': <Object?>[],
-          },
-      ],
-    });
+  'pages': <Map<String, Object?>>[
+    for (int i = 0; i < pages; i++)
+      <String, Object?>{
+        'url': 'images/p$i.jpg',
+        'width': 100,
+        'height': 150,
+        'blocks': <Object?>[],
+      },
+  ],
+});
 
 MangaOcrBackgroundEvent _progress(int done, int total) =>
     MangaOcrBackgroundEvent.progress(pagesDone: done, pagesTotal: total);
@@ -92,10 +92,10 @@ void main() {
         mangaJsonPath: mangaJsonPath,
       );
       final List<int> seenByPage = <int>[];
-      final StreamSubscription<MangaOcrBackgroundEvent> pageSub =
-          running.events.listen((MangaOcrBackgroundEvent e) {
-        seenByPage.add(e.pagesDone);
-      });
+      final StreamSubscription<MangaOcrBackgroundEvent> pageSub = running.events
+          .listen((MangaOcrBackgroundEvent e) {
+            seenByPage.add(e.pagesDone);
+          });
       source.controller.add(_progress(1, 5));
       await Future<void>.delayed(Duration.zero);
       expect(seenByPage, <int>[1]);
@@ -153,17 +153,20 @@ void main() {
       );
       File(resultPath).writeAsStringSync(_resultJson(3));
       final Future<void> done = running.events.drain<void>();
-      source.controller.add(MangaOcrBackgroundEvent.finished(
-        pagesTotal: 3,
-        resultPath: resultPath,
-        external: false,
-      ));
+      source.controller.add(
+        MangaOcrBackgroundEvent.finished(
+          pagesTotal: 3,
+          resultPath: resultPath,
+          external: false,
+        ),
+      );
       await source.controller.close();
       await done;
 
       expect(File(mangaJsonPath).existsSync(), isTrue, reason: '页面不在也要落盘');
-      final MokuroPayload written =
-          parseMangaJson(File(mangaJsonPath).readAsStringSync());
+      final MokuroPayload written = parseMangaJson(
+        File(mangaJsonPath).readAsStringSync(),
+      );
       expect(written.images, hasLength(3));
       expect(running.result?.images, hasLength(3));
       expect(running.isEnded, isTrue);
@@ -187,11 +190,13 @@ void main() {
           got.complete();
         }
       });
-      source.controller.add(MangaOcrBackgroundEvent.finished(
-        pagesTotal: 2,
-        resultPath: resultPath,
-        external: false,
-      ));
+      source.controller.add(
+        MangaOcrBackgroundEvent.finished(
+          pagesTotal: 2,
+          resultPath: resultPath,
+          external: false,
+        ),
+      );
       await got.future;
       expect(existedOnFinish, isTrue);
       await source.controller.close();
@@ -237,10 +242,55 @@ void main() {
         mangaJsonPath: mangaJsonPath,
       );
       expect(b, same(a));
-      expect(second.controller.hasListener, isFalse,
-          reason: '第二份根本不该被订阅（订阅即启动）');
+      expect(
+        second.controller.hasListener,
+        isFalse,
+        reason: '第二份根本不该被订阅（订阅即启动）',
+      );
       await registry.cancelAll();
       expect(first.cancelled, isTrue);
     });
+
+    test(
+      'changes / queuedDirectories：入队、轮到、结束都发信号，排队目录按序可查（BUG-2481）',
+      () async {
+        final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+        int changes = 0;
+        final StreamSubscription<void> watch = registry.changes.listen(
+          (_) => changes++,
+        );
+        final _FakeSource first = _FakeSource();
+        final _FakeSource second = _FakeSource();
+        final String dirA = p.join(tmp.path, 'a');
+        final String dirB = p.join(tmp.path, 'b');
+
+        final Future<MangaOcrRunningJob> startedA = registry.enqueue(
+          job: first.job('book', dirA),
+          mangaJsonPath: mangaJsonPath,
+        );
+        final Future<MangaOcrRunningJob> startedB = registry.enqueue(
+          job: second.job('book', dirB),
+          mangaJsonPath: mangaJsonPath,
+        );
+        await startedA;
+        await Future<void>.delayed(Duration.zero);
+        // A 在跑、B 排队：排队目录只有 B。
+        expect(registry.running('book')!.job.managedDirectory, dirA);
+        expect(registry.queuedDirectories('book'), <String>[dirB]);
+        expect(changes, greaterThan(0));
+        final int beforeEnd = changes;
+
+        // A 结束 → B 轮到：排队清空、running 换成 B、又有信号。
+        await first.controller.close();
+        await startedB;
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.running('book')!.job.managedDirectory, dirB);
+        expect(registry.queuedDirectories('book'), isEmpty);
+        expect(changes, greaterThan(beforeEnd));
+
+        await registry.cancelAll();
+        await watch.cancel();
+      },
+    );
   });
 }

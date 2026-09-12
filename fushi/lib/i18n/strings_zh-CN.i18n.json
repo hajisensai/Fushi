@@ -4744,5 +4744,18 @@
   "mihon_source_login_import_browser": "从浏览器导入",
   "mihon_source_login_import_hint": "已在系统浏览器打开源站，Fushi 扩展会把会话送过来；还没登录就在浏览器里登录，然后点「完成」。",
   "mihon_source_login_import_received": "已从浏览器导入 $count 条 cookie",
-  "mihon_source_login_import_none": "还没收到浏览器送来的会话"
+  "mihon_source_login_import_none": "还没收到浏览器送来的会话",
+  "mihon_extension_update_all": "一键更新",
+  "mihon_extension_update_all_nothing": "已安装的扩展都是最新版。",
+  "mihon_extension_update_all_confirm": "把 ${count} 个已安装扩展更新到仓库里的最新版？",
+  "mihon_extension_update_all_progress": "正在更新 ${current}/${total}：${name}",
+  "mihon_extension_update_all_done": "已更新 ${installed} 个，跳过 ${skipped} 个，失败 ${failed} 个",
+  "mihon_sources_sort_by_downloads": "按下载量排序",
+  "mihon_sources_sort_by_downloads_done": "已按扩展下载量重排源",
+  "mihon_sources_sort_by_downloads_no_data": "还没有下载量数据，先刷新扩展仓库",
+  "manga_series_ocr_running": "识别中 ${chapter}：第 ${done}/${total} 页",
+  "manga_series_ocr_queued_count": "${count} 章排队中",
+  "manga_chapter_ocr_status_running": "识别中 ${done}/${total}",
+  "manga_chapter_ocr_status_queued": "等待识别",
+  "manga_ocr_boxes_toggle": "显示识别范围"
 }
