@@ -1,6 +1,6 @@
 ## BUG-2485 · jellyfin-link-opens-services-root
-- **报告**：2026-09-12（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
-- **备注**：
+- **报告**：2026-09-12（用户：设置 → 在线服务 → 「媒体服务器（Jellyfin / Emby）」区块的「Jellyfin · Emby / 未配置」行，点开后跳到的是整页「在线服务」，不是 Jellyfin/Emby 配置页）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/settings/settings_schema_services.dart:523`（`_JellyfinSettingsLinkState._open`）：用默认构造 `SettingsDetailPage(destination: SettingsDestination(id: SettingsDestinationId.services, body: JellyfinConfigWidget))` 推页；而 `fushi/lib/src/settings/settings_detail_page.dart:134` `_freshDestination` 在 `subPageBuilder == null` 时**按 id 回顶层 schema 找「最新声明」并整个替换**，合成页复用了父分类 `services` 的 id，于是被换成整页「在线服务」。`SettingsDetailPage.subPage` 的注释早已写明「子页共用父分类的 id，按 id 找会把父页渲染出来」，`SettingsNavigationItem.child`（Dandanplay 等）都走 `.subPage`，这是全仓唯一一个合成 destination 却用默认构造的调用点（`24efe3a710` 引入，早于 `.subPage` 构造器 `5630783f11`）。
+- **[x] ① 已修复** — `_open` 改为 `SettingsDetailPage.subPage(() => SettingsDestination(...))`（提交 b45df5c5e5）。
+- **[x] ② 已加自动化测试** — `fushi/test/settings/jellyfin_link_opens_subpage_test.dart`：内存 DB + 真 schema 取出 `services.media_server.jellyfin` 行、真点击、真 push，断言落地页有 `JellyfinConfigWidget` 且没有父页的 Dandanplay 行。变异实测：把构造器换回旧写法，测试红在「Found 1 widget with text "Dandanplay"」上，即复现了用户看到的症状。
+- **备注**：`SettingsDetailPage(destination:)` 只用于顶级栏目（`buildXxxDestination()` 的返回值）；任何自己合成、复用父 id 的页面一律 `.subPage`。

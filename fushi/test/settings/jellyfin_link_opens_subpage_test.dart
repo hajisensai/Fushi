@@ -43,11 +43,11 @@ void main() {
         db: db,
         appModel: appModel,
         builder: (SettingsContext settingsContext) {
-          final SettingsDestination services = buildSettingsSchema(
-            settingsContext,
-          ).firstWhere(
-            (SettingsDestination d) => d.id == SettingsDestinationId.services,
-          );
+          final SettingsDestination services =
+              buildSettingsSchema(settingsContext).firstWhere(
+                (SettingsDestination d) =>
+                    d.id == SettingsDestinationId.services,
+              );
           final SettingsCustomItem link =
               services.sections
                       .expand((SettingsSection s) => s.items)
@@ -69,6 +69,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
 
+    expect(
+      find.text('Dandanplay'),
+      findsNothing,
+      reason: 'Dandanplay 是在线服务根页的行；它出现即说明落地页被换成了父页',
+    );
+    expect(find.byType(JellyfinConfigWidget), findsOneWidget);
     final SettingsDetailPage page = tester.widget<SettingsDetailPage>(
       find.byType(SettingsDetailPage),
     );
@@ -76,12 +82,6 @@ void main() {
       page.subPageBuilder,
       isNotNull,
       reason: '合成的子页 destination 复用父分类 id，必须走 .subPage 才不会被按 id 换成父页',
-    );
-    expect(find.byType(JellyfinConfigWidget), findsOneWidget);
-    expect(
-      find.text('Dandanplay'),
-      findsNothing,
-      reason: 'Dandanplay 是在线服务根页的行；它出现即说明落地页被换成了父页',
     );
   });
 }

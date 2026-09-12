@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | 🚧 | 🚧 | jellyfin-link-opens-services-root |
+| [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
 | [BUG-2482](bugs/BUG-2482-webkit-line-box-contain-zero-height-lines.md) | ✅ | ✅ | WebKit 上 BUG-2472 的 line-box-contain 把嵌套 inline / 空行行盒压成零高：目录列叠印、空行消失 |
 | [BUG-2481](bugs/BUG-2481-manga-ocr-progress-boxes-update-all-sort.md) | ✅ | ✅ | 作品页 OCR 无进度显示；阅读器无识别范围显示；扩展无一键更新；源列表无按下载量排序 |
 | [BUG-2480](bugs/BUG-2480-manga-login-import-from-browser-extension.md) | ✅ | ✅ | 漫画源登录：从系统浏览器（经 Fushi 扩展）导入已登录会话，不必在 app 内重登 |
