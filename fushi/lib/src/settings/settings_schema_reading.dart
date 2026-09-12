@@ -799,7 +799,8 @@ SettingsDestination buildReadingDestination() {
           // 阅读器顶栏 / 底栏按钮拖拽编辑器（与视频页 video.player.controls_editor
           // 同一套泛型编辑器，用户 2026-09-13 要求「和视频一样支持可视化调整」）。
           // 写 appModel.setReaderControlLayout → prefsRepo 通知 → 阅读器页重建，
-          // 开着的书立即换布局，不需要重锚（按钮增删不改预留高）。
+          // 开着的书立即换布局。底栏「空 ↔ 非空」会翻转挤压态的底栏预留高
+          // （_bottomChromeReserve），所以走重锚通道重下 chrome insets。
           SettingsCustomItem(
             id: 'reading_controls.controls_editor',
             searchTitle: t.reader_control_editor_title,
@@ -821,7 +822,7 @@ SettingsDestination buildReadingDestination() {
               await c.appModel.setReaderControlLayout(
                 ReaderControlLayout.defaults,
               );
-              c.refresh();
+              notifyReaderChromeReanchored(c);
             },
           ),
         ],
@@ -983,7 +984,7 @@ Widget buildReaderControlLayoutEditor(SettingsContext context) {
         layout: context.appModel.readerControlLayout,
         onLayoutChanged: (ReaderControlLayout layout) async {
           await context.appModel.setReaderControlLayout(layout);
-          context.refresh();
+          notifyReaderChromeReanchored(context);
         },
         isTouchControls: !isDesktopPlatform,
       ),
