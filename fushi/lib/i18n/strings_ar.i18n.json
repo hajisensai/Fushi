@@ -4734,5 +4734,9 @@
   "manga_series_auto_download": "Auto-download new chapters",
   "manga_online_download_all": "Download all",
   "manga_online_select_all": "Select all",
-  "manga_series_download_all_queued": "$count chapters queued"
+  "manga_series_download_all_queued": "$count chapters queued",
+  "shortcut_action_global_scroll_line_down": "Scroll down one step",
+  "shortcut_action_global_scroll_line_up": "Scroll up one step",
+  "shortcut_action_global_scroll_to_top": "Scroll to top",
+  "shortcut_action_global_scroll_to_bottom": "Scroll to bottom"
 }

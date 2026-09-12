@@ -79,6 +79,14 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_scroll_page_down;
       case ShortcutAction.globalScrollPageUp:
         return t.shortcut_action_global_scroll_page_up;
+      case ShortcutAction.globalScrollLineDown:
+        return t.shortcut_action_global_scroll_line_down;
+      case ShortcutAction.globalScrollLineUp:
+        return t.shortcut_action_global_scroll_line_up;
+      case ShortcutAction.globalScrollToTop:
+        return t.shortcut_action_global_scroll_to_top;
+      case ShortcutAction.globalScrollToBottom:
+        return t.shortcut_action_global_scroll_to_bottom;
       case ShortcutAction.globalToggleFullscreen:
         return t.shortcut_action_global_toggle_fullscreen;
       case ShortcutAction.globalContextMenu:

@@ -81,6 +81,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         GamepadButtonIntent,
         arrowFocusMoveDirection,
+        arrowKeyClaimedByFocus,
         arrowTraversalDirection,
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
@@ -799,12 +800,18 @@ class _HomePageState extends BasePageState<HomePage>
     // focus — re-resolving a bound shortcut on every repeat would fire it
     // repeatedly. Skipped while a text field is focused so the field's own caret
     // keeps the arrows (same guard as the KeyDown arrow branch below).
+    //
+    // 仲裁走 [arrowKeyClaimedByFocus]：有焦点目标才移焦并认领；没有（列表边缘 /
+    // 焦点还停在本页键事件 sink 上）就放行冒泡，让 app 根的页面滚动兜底接住
+    // ——按下沿的 ↑/↓ 早已按注册表解析成 globalScrollLine* 走了同一条路，重复
+    // 沿若还自己 bootstrap 焦点，就成了「按一下滚页、按住却把焦点甩到首个卡片」。
     final TraversalDirection? repeatDir =
         event is KeyRepeatEvent ? arrowFocusMoveDirection(event) : null;
     if (repeatDir != null) {
       if (focusedEditableText() != null) return KeyEventResult.ignored;
-      gamepadMoveFocusInDirection(context, repeatDir);
-      return KeyEventResult.handled;
+      return arrowKeyClaimedByFocus(context, repeatDir)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 

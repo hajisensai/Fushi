@@ -163,6 +163,13 @@ class FushiFocusController extends ChangeNotifier {
     return false;
   }
 
+  /// 当前路由上是否登记了**至少一个**可聚焦的受管目标。
+  ///
+  /// [move] 在零目标时会把焦点收回兜底节点并返回 true（「焦点已归位」），键盘
+  /// 方向键的「先移焦、无目标才滚动」仲裁不能拿那个 true 当「焦点引擎接管了」——
+  /// 纯展示页（统计 / 日志）上 ↑/↓ 必须落到滚动，这个 getter 就是那道门。
+  bool get hasFocusableTargets => _focusableEntries().isNotEmpty;
+
   bool get activeIsOnlyFocusableInNearestScrollable {
     final FushiFocusTargetEntry? active = _currentEntry();
     if (active == null || !active.context.mounted) return false;
