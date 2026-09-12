@@ -1,38 +1,20 @@
 {
   "schemaVersion": 1,
-  "version": "2.5.0-beta.14675",
-  "tag": "v2.5.0-beta.14675",
+  "version": "2.6.0-beta.14741",
+  "tag": "v2.6.0-beta.14741",
   "channel": "beta",
   "prerelease": true,
-  "releaseSequence": 14675,
-  "notes": "Manual desktop beta/test build from develop @ d5bf183. Beta/test releases are prerelease and never Latest.",
+  "releaseSequence": 14741,
+  "notes": "Manual desktop beta/test build from develop @ c5b4fb7. Beta/test releases are prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.5.0-beta.14675-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.5.0-beta.14675/fushi-2.5.0-beta.14675-ios.ipa",
-      "releaseSequence": 14675,
-      "tag": "v2.5.0-beta.14675",
-      "version": "2.5.0-beta.14675",
-      "size": 59528762,
-      "sha256": "e7e6b6f13e8d4d27183c1b271fe5df598e02b1e52c1da4452a550417f400d5e7"
-    },
-    {
-      "name": "fushi-2.5.0-beta.14675-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.5.0-beta.14675/fushi-2.5.0-beta.14675-macos.zip",
-      "releaseSequence": 14675,
-      "tag": "v2.5.0-beta.14675",
-      "version": "2.5.0-beta.14675",
-      "size": 336754458,
-      "sha256": "165a61816c230c0348cfb578b08e760765e3ca77f7d8b4d84167e85ab97e1b74"
-    },
-    {
-      "name": "fushi-2.5.0-beta.14675-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.5.0-beta.14675/fushi-2.5.0-beta.14675-windows-setup.exe",
-      "releaseSequence": 14675,
-      "tag": "v2.5.0-beta.14675",
-      "version": "2.5.0-beta.14675",
-      "size": 265426752,
-      "sha256": "b8525dd601bca02d10342265e8574355abdbe78343c60376f974fde1d8fb384f"
+      "name": "fushi-2.6.0-beta.14741-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v2.6.0-beta.14741/fushi-2.6.0-beta.14741-windows-setup.exe",
+      "releaseSequence": 14741,
+      "tag": "v2.6.0-beta.14741",
+      "version": "2.6.0-beta.14741",
+      "size": 265473944,
+      "sha256": "3abbb8214f49e59cc244b4f2f0e452723147eab80d33c4b9a3f2c14519cfa907"
     }
   ]
 }
