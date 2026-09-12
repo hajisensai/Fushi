@@ -422,7 +422,8 @@ class ImmersionMiningEngine {
             _frame(
           inputPath: src,
           outputPath: '$tempDir/immersion_frame.${attempt.fileExtension}',
-          atSeconds: req.clipStartMs / 1000.0,
+          // 静态帧锚点与音频窗起点分离：窗起点含用户头 padding，封面不该跟着往前。
+          atSeconds: req.stillFrameAnchorMs / 1000.0,
           // 由收口原语决定这次尝试要不要报告（能力探测那次是 null）。
           onFailure: onFailure,
           tlsPinSha256: req.mediaSourceTlsPinSha256,

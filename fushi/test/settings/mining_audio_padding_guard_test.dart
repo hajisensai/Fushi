@@ -5,6 +5,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show AnkiMiningSource;
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show ImmersionMiningRequest;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -165,6 +168,54 @@ void main() {
         src,
         isNot(contains('mergedRange?.startMs ?? cue?.startMs')),
         reason: '旧的未 pad 区间不能再直接进 shift',
+      );
+    });
+
+    test('「字幕起始帧」封面锚点用未 pad 的字幕起点，不跟音频头 padding 往前退', () {
+      // 审查 M1：clipStartMs 同时是音频窗起点与 subtitleStart 静态帧取帧时刻；pad 后
+      // 封面会抽到字幕开始前那一帧（切镜处 = 上一个镜头）。锚点必须独立成字段。
+      final String src = File(
+        'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains(
+          'stillFrameAtMs: miningClipTimeMs(mergedRange?.startMs ?? 0, clipDelayMs)',
+        ),
+        reason: '锚点 = 未 pad 的合并区间起点，经同一 A/V 逆变换',
+      );
+      expect(
+        src,
+        contains('stillFrameAtMs: stillFrameAtMs,'),
+        reason: '锚点必须真的进 ImmersionMiningRequest',
+      );
+
+      final String engine = File(
+        'lib/src/mining/immersion_mining_engine.dart',
+      ).readAsStringSync();
+      expect(engine, contains('atSeconds: req.stillFrameAnchorMs / 1000.0'));
+      expect(
+        engine,
+        isNot(contains('atSeconds: req.clipStartMs / 1000.0')),
+        reason: '静态帧不能再直接取音频窗起点',
+      );
+    });
+
+    test('ImmersionMiningRequest.stillFrameAnchorMs：不传回落窗起点、frozen 保留', () {
+      ImmersionMiningRequest req({int? still}) => ImmersionMiningRequest(
+        fields: const <String, String>{},
+        clipStartMs: 4880,
+        clipEndMs: 6400,
+        stillFrameAtMs: still,
+        sentence: 'は',
+        source: AnkiMiningSource.video,
+      );
+      expect(req().stillFrameAnchorMs, 4880, reason: '其它来源不传 = 原行为');
+      expect(req(still: 5000).stillFrameAnchorMs, 5000);
+      expect(
+        req(still: 5000).frozen().stillFrameAnchorMs,
+        5000,
+        reason: '入队冻结不能丢锚点',
       );
     });
 

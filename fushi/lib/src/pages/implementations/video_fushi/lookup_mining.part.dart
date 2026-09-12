@@ -97,6 +97,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
   ({
     int clipStartMs,
     int clipEndMs,
+    int stillFrameAtMs,
     String sentence,
     String? cueSentence,
   }) _resolveVideoMiningRange(VideoPlayerController controller) {
@@ -150,6 +151,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
     return (
       clipStartMs: miningClipTimeMs(paddedRange?.startMs ?? 0, clipDelayMs),
       clipEndMs: miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs),
+      // 「字幕起始帧」封面锚点用**未 pad** 的字幕起点（同一逆变换）：封面承诺的是字幕
+      // 开始那一刻的画面，不能跟着音频头 padding 往前退到上一个镜头。
+      stillFrameAtMs: miningClipTimeMs(mergedRange?.startMs ?? 0, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
       sentence: mergedSentence,
@@ -163,6 +167,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final ({
       int clipStartMs,
       int clipEndMs,
+      int stillFrameAtMs,
       String sentence,
       String? cueSentence,
     }) range = _resolveVideoMiningRange(controller);
@@ -185,6 +190,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 音频/封面区间 = 合并后的首句起→末句止（单句即该 cue 时间窗，两端相等→不抽）。
       clipStartMs: range.clipStartMs,
       clipEndMs: range.clipEndMs,
+      stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
     );
@@ -213,6 +219,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final ({
       int clipStartMs,
       int clipEndMs,
+      int stillFrameAtMs,
       String sentence,
       String? cueSentence,
     }) range = _resolveVideoMiningRange(controller);
@@ -222,6 +229,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       fields: fields,
       clipStartMs: range.clipStartMs,
       clipEndMs: range.clipEndMs,
+      stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
       updateNoteId: noteId,
@@ -253,6 +261,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required Map<String, String> fields,
     required int clipStartMs,
     required int clipEndMs,
+    required int stillFrameAtMs,
     required String sentence,
     String? cueSentence,
     int? updateNoteId,
@@ -380,6 +389,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
+        stillFrameAtMs: stillFrameAtMs,
         sentence: sentence,
         cueSentence: cueSentence,
         // TODO-761（方案 B）：播放列表下拼「系列名 - 剧集名」，单视频/远端仍是剧集名，零变化。
