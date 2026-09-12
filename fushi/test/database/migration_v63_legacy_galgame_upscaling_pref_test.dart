@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 103);
-    expect(db.schemaVersion, 103);
+    expect(version.read<int>('user_version'), 104);
+    expect(db.schemaVersion, 104);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -245,6 +245,7 @@ void main() {
     expect(
       schemaAfter.keys.toSet().difference(schemaBefore.keys.toSet()),
       <String>{
+        'collection_book_aliases',
         'collection_scrape_meta',
         'manga_extension_stores',
         'manga_extensions',
@@ -313,7 +314,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 103);
+    expect(version.read<int>('user_version'), 104);
   });
 
   test(
@@ -344,7 +345,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 103);
+      expect(probe.select('PRAGMA user_version').first.values.first, 104);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

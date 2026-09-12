@@ -1061,6 +1061,9 @@ mixin _FushiDbContentMisc
             .map((r) => r.read(epubBooks.uid))
             .getSingleOrNull();
         if (bookUid != null && bookUid.isNotEmpty) {
+          await (delete(collectionBookAliases)
+                ..where((t) => t.localUid.equals(bookUid)))
+              .go();
           await (delete(readerPositions)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();

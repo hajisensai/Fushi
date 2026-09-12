@@ -116,7 +116,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(path, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 103);
+      expect(probe.select('PRAGMA user_version').first.values.first, 104);
       expect(
         hasColumn(probe, 'video_source_scrape_settings', 'metadata_locale'),
         isTrue,
@@ -131,7 +131,7 @@ void main() {
     final String path = newDbPath('fushi_v99_fresh');
     final FushiDatabase fresh =
         FushiDatabase.atFile(path, isMainProcess: false);
-    expect(fresh.schemaVersion, 103);
+    expect(fresh.schemaVersion, 104);
     final int sourceId = await fresh.into(fresh.mediaSources).insert(
           MediaSourcesCompanion.insert(
             label: '本地番剧',

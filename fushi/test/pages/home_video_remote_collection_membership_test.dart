@@ -25,16 +25,8 @@ import '../helpers/fake_anki_repository.dart';
 import '../helpers/series_scrape_seed.dart';
 import '../helpers/test_platform_services.dart';
 
-/// 多端库联合视图 §2.3 任务10：远端视频占位卡的合集归属。
-///
-/// ⚠️ 契约在 2026-08-24（PR #954 的「系列只收 AniDB 已刮削作品」）**变了**：
-/// 远端占位没有本机 canonical identity，不得仅凭同名合集混进「系列」墙
-/// （`home_video_page._buildLocalVideoSlivers` 的 `groupedRemoteVideos` 在
-/// series 分区恒空）。于是「远端占位折进本地合集卡、计进集数角标、卡带云角标」
-/// 这条能力**已不存在**：远端占位现在只出现在「全部视频」与首页远端联合视图，
-/// 而那两处不做合集折叠。本文件因此改为守新契约——系列墙渲染本地合集卡但不含
-/// 远端、全部视频渲染远端散卡但不折合集——原来的折叠断言不是被放宽，是它守的
-/// 那个行为被有意移除了。
+/// 远端视频目录在本地建立合集与占位成员；系列墙按持久关系折叠，
+/// 全部视频维持散卡布局。DTO 不能覆盖本地成员墓碑或用户顺序。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -115,6 +107,20 @@ void main() {
           ),
         ),
       );
+
+  testWidgets('成员墓碑阻止 DTO 把远端视频重新折进系列墙', (WidgetTester tester) async {
+    final int cid = await db.createMediaCollection('Removed series');
+    await db.upsertCollectionItemAt(cid, 'video', 'remote-removed', 0);
+    await db.removeFromCollectionRaw(cid, 'video', 'remote-removed');
+    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
+      const <RemoteVideoInfo>[RemoteVideoInfo(id: 'remote-removed', title: 'Removed',
+        collection: RemoteCollectionMembership(collectionName: 'Removed series',
+          collectionType: 'collection', sortIndex: 0))],
+    ), section: VideoLibrarySection.series));
+    await tester.pumpAndSettle();
+    expect(await db.getCollectionItems(cid), isEmpty);
+    expect(find.byKey(ValueKey<String>('home_video_collection_card_$cid')), findsNothing);
+  });
 
   testWidgets('系列墙：远端占位照常折进本地合集（BUG-1839 准入不再看 canonical 身份）',
       (WidgetTester tester) async {
@@ -245,9 +251,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // BUG-1699 守的是「_collectionsById 不能停在首帧快照」，与「谁被折叠」无关。
-    // 原用例拿远端占位当被折叠方，而远端占位已不进系列墙（见文件头契约变更），
-    // 于是改用**本地视频**：它同样只有在合集表变化被监听到之后才会折进合集卡。
+    // 本地视频验证合集表变化被监听到后自动折进合集卡。
     await db.upsertVideoBook(const VideoBooksCompanion(
       bookUid: Value('video/late-ep1'),
       title: Value('Late Ep1'),

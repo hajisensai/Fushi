@@ -3033,3 +3033,14 @@ class MangaDownloadJobs extends Table {
         'CHECK (attempt_count >= 0)',
       ];
 }
+
+/// v104：合集域远端书键与实际导入 UID 的持久一对一关系。
+/// uid 父表索引是 partial，不能作为 SQLite FK；deleteEpubBook 显式级联。
+@DataClassName('CollectionBookAliasRow')
+class CollectionBookAliases extends Table {
+  TextColumn get localUid => text()();
+  TextColumn get remoteKey => text().unique()();
+
+  @override
+  Set<Column> get primaryKey => {localUid};
+}

@@ -12,6 +12,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 
@@ -110,7 +112,9 @@ class OnlineMangaLibraryService {
         series: entry.series,
         chapters: entry.chapters,
       );
-      return (await database.getEpubBook(bookKey))!;
+      final EpubBookRow row = (await database.getEpubBook(bookKey))!;
+      await _adoptRemoteCollection(entry, row);
+      return row;
     }
 
     final Directory directory = Directory(
@@ -151,7 +155,24 @@ class OnlineMangaLibraryService {
         format: const Value<String>('manga'),
       ),
     );
-    return (await database.getEpubBook(bookKey))!;
+    final EpubBookRow row = (await database.getEpubBook(bookKey))!;
+    await _adoptRemoteCollection(entry, row);
+    return row;
+  }
+
+  Future<void> _adoptRemoteCollection(
+    OnlineMangaLibraryEntry entry,
+    EpubBookRow row,
+  ) async {
+    if (entry.runtime != OnlineMangaRuntimeKind.interconnect) return;
+    await RemoteCollectionAdoptionService(database).adoptMembership(
+      membership: RemoteCollectionMembership.fromJson(
+        entry.series.raw['collection'],
+      ),
+      mediaType: MediaKind.epub,
+      remoteEntryKey: entry.series.key,
+      localEntryKey: row.uid,
+    );
   }
 
   /// 用一次刷新的结果覆盖库里的描述符。

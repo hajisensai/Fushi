@@ -1,3 +1,4 @@
+import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -467,15 +468,11 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   // entry_key 本就是对端 bookKey，照抄即闭环。仅 epub 门控——srt/video/game 键
   // 天然稳定且不在 uid 值域，误换算即数据损坏。
   // 墓碑（CollectionMemberTombstones.entryKey）已拍板冻结在 bookKey 域（写墓碑
-  // 时由 removeFromCollectionRaw 反查落 bookKey），出 wire 零换算。
-  final Map<String, String> bookKeyByUid = <String, String>{
-    for (final EpubBookRow b in await db.getAllEpubBooks())
-      if (b.uid.isNotEmpty) b.uid: b.bookKey,
-  };
+  // 时由 removeFromCollectionRaw 反查）；存量本地键墓碑也经同一索引规范化。
+  final CollectionBookIdentityIndex identities =
+      await CollectionBookIdentityIndex.load(db);
   String wireEntryKey(String mediaType, String entryKey) =>
-      mediaType == MediaKind.epub.dbValue
-          ? (bookKeyByUid[entryKey] ?? entryKey)
-          : entryKey;
+      identities.wireKey(mediaType, entryKey);
 
   // 墓碑按自然键分组；哨兵行单独归为合集级 deletedAt。
   final Map<String, List<CollectionMemberTombstoneRow>> memberTombsByKey =
@@ -533,13 +530,13 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
         for (final CollectionMemberTombstoneRow t
             in memberTombsByKey[key] ?? const <CollectionMemberTombstoneRow>[])
           // 空键 / 负 deletedAt 是脏数据：跳过（对端 codec 会拒之）。
-          // v83：墓碑 entryKey 冻结在 bookKey 域（= wire 域），零换算直发。
+          // 墓碑仍冻结 wire 域；升级前遗留的本地键在可解析时规范化。
           if (t.mediaType.isNotEmpty &&
               t.entryKey.isNotEmpty &&
               t.deletedAt >= 0)
             CollectionMemberTombstone(
               mediaType: t.mediaType,
-              entryKey: t.entryKey,
+              entryKey: wireEntryKey(t.mediaType, t.entryKey),
               removedAt: t.deletedAt,
             ),
       ],
@@ -574,7 +571,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
                     t.deletedAt >= 0)
                   CollectionMemberTombstone(
                     mediaType: t.mediaType,
-                    entryKey: t.entryKey,
+                    entryKey: wireEntryKey(t.mediaType, t.entryKey),
                     removedAt: t.deletedAt,
                   ),
             ],
@@ -605,14 +602,10 @@ Future<int> applyCollectionLocalChanges(
   // 变成 uid → diff 自动删 bookKey 行、插 uid 行，归属收敛，无需专用改键。
   // 仅 epub 门控——srt/video/game 键误换算即数据损坏。事务内不增删书行，map
   // 在事务外构建一次是安全的。
-  final Map<String, String> uidByBookKey = <String, String>{
-    for (final EpubBookRow b in await db.getAllEpubBooks())
-      if (b.uid.isNotEmpty) b.bookKey: b.uid,
-  };
+  final CollectionBookIdentityIndex identities =
+      await CollectionBookIdentityIndex.load(db);
   String localEntryKey(String mediaType, String entryKey) =>
-      mediaType == MediaKind.epub.dbValue
-          ? (uidByBookKey[entryKey] ?? entryKey)
-          : entryKey;
+      identities.localKey(mediaType, entryKey);
   await db.transaction(() async {
     for (final CollectionManifestEntry e in changes.entries) {
       final MediaCollectionRow? row =
