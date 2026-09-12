@@ -552,12 +552,28 @@ class MangaFushiPage extends BaseSourcePage {
   static String? resolveMangaResource(String imagesRoot, String relative) =>
       MangaStorage.resolvePageFilePath(imagesRoot, relative);
 
+  /// `manga.local/img/` 之后的 percent-encoded 段 → 裸相对路径；非法编码 → null。
+  ///
+  /// 解码只在这里（URL 边界）做一次，与 [mangaImageUrl] 的逐段 `encodeComponent`
+  /// 对称；[resolveMangaResource] 只吃裸路径（BUG-2484）。外来 URL 编码非法是输入
+  /// 校验失败，按「解析不到」处理，不让 `ArgumentError` 掀翻拦截器。
+  static String? decodeMangaImagePath(String encodedRelative) {
+    try {
+      return Uri.decodeComponent(encodedRelative);
+    } on ArgumentError {
+      return null;
+    }
+  }
+
   /// 纯函数：`manga.local` 图片 URL → 树内文件路径；host 不对/越界/缺文件 → null。
   static String? resolveImageUrlToFile(String imagesRoot, String imgUrl) {
     final Uri? uri = Uri.tryParse(imgUrl);
     if (uri == null || uri.host != kMangaHost) return null;
     if (!uri.path.startsWith('/img/')) return null;
-    final String relative = uri.path.substring('/img/'.length);
+    final String? relative = decodeMangaImagePath(
+      uri.path.substring('/img/'.length),
+    );
+    if (relative == null) return null;
     return resolveMangaResource(imagesRoot, relative);
   }
 
@@ -1701,8 +1717,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (url.host != MangaFushiPage.kMangaHost) return null;
     final String path = url.path;
     if (!path.startsWith('/img/')) return _notFound('unknown path: $path');
-    final String relative = path.substring('/img/'.length);
-    final String decodedRelative = Uri.decodeComponent(relative);
+    final String? decodedRelative = MangaFushiPage.decodeMangaImagePath(
+      path.substring('/img/'.length),
+    );
+    if (decodedRelative == null) return _notFound('bad encoding: $path');
     final MangaReaderSession? pageSession = _pageSession;
     final int? pageIndex = _localPageIndices[_localPageKey(decodedRelative)];
     if (pageSession != null && pageIndex != null) {
@@ -1734,18 +1752,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     final String? filePath = MangaFushiPage.resolveMangaResource(
       imagesDir,
-      relative,
+      decodedRelative,
     );
     if (filePath == null) {
       // 区分穿越（403）与缺文件（404）：规范化 join 后越界即穿越企图。
       final String canonicalRoot = p.canonicalize(imagesDir);
       final String candidate = p.canonicalize(
-        p.join(canonicalRoot, Uri.decodeComponent(relative)),
+        p.join(canonicalRoot, decodedRelative),
       );
       if (!p.isWithin(canonicalRoot, candidate)) {
-        return _forbidden('path traversal blocked: $relative');
+        return _forbidden('path traversal blocked: $decodedRelative');
       }
-      return _notFound('resource not found: $relative');
+      return _notFound('resource not found: $decodedRelative');
     }
     return WebResourceResponse(
       contentType: _mangaMimeForPath(filePath),
