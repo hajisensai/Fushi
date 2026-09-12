@@ -632,6 +632,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    // 远端去重（notAdopted）只在 _loadRemoteBooks 里算：不重载一次，占位卡会与刚
+    // 落地的本地卡并排到切 tab 为止（正是上面注释说要避免的）。TTL 内不打网络。
+    _refreshRemoteBooks();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_manga_added_to_shelf)),
     );

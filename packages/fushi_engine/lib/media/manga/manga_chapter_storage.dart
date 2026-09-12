@@ -115,11 +115,18 @@ Future<Set<String>> downloadedChapterKeys(
 /// 偶尔把半成品算进来只会让清单多一张卡，翻页端点照样拒绝。
 bool hasAnyChapterDirSync(String bookDir) {
   final Directory chapters = Directory(p.join(bookDir, kMangaChaptersDirName));
-  if (!chapters.existsSync()) return false;
-  for (final FileSystemEntity entity in chapters.listSync()) {
-    if (entity is! Directory) continue;
-    if (!isMangaChapterDigest(p.basename(entity.path))) continue;
-    if (mangaChapterJsonFile(entity).existsSync()) return true;
+  // 与 hasExportableMangaContent 同口径吞 IO 异常：清单对每本漫画都问一次，书目录
+  // 在两次调用之间被删（host 上「移出书架」）或权限错误时，这一本按「无章」处理，
+  // 不能让整个 /api/library/books 500、对端所有远端卡一起消失。
+  try {
+    if (!chapters.existsSync()) return false;
+    for (final FileSystemEntity entity in chapters.listSync()) {
+      if (entity is! Directory) continue;
+      if (!isMangaChapterDigest(p.basename(entity.path))) continue;
+      if (mangaChapterJsonFile(entity).existsSync()) return true;
+    }
+  } on FileSystemException {
+    return false;
   }
   return false;
 }

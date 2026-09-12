@@ -316,8 +316,7 @@ void main() {
       expect(await adapter.fetchChapterPage(pages.last), <int>[0xC0, 1, 1]);
     });
 
-    test('对端没下载的章：分类成 sourceDisabled（不是无限重试的 runtimeFailure）',
-        () async {
+    test('对端没下载的章：可重试的 runtimeFailure（不是「源被禁用」）', () async {
       final InterconnectLibraryAdapter adapter =
           InterconnectLibraryAdapter(backend: backend);
       final OnlineMangaLibraryEntry seed = entryOf(csm());
@@ -333,7 +332,7 @@ void main() {
         throwsA(isA<OnlineMangaUnavailable>().having(
           (OnlineMangaUnavailable e) => e.reason,
           'reason',
-          OnlineMangaUnavailableReason.sourceDisabled,
+          OnlineMangaUnavailableReason.runtimeFailure,
         )),
       );
     });

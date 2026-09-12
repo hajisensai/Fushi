@@ -248,16 +248,33 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
   ) =>
       _guarded(stage, () => backend.remoteMangaManifest(entry.series.key));
 
-  /// 章节式条目某一章的页表；对端没下这一章 → 404 → 与老 host 同一分类
-  /// （sourceDisabled：作品页据此说「对端还没下载这一章」而不是无限重试）。
+  /// 章节式条目某一章的页表。对端没下（或只下了一半）这一章 → 404，但这**不是**
+  /// 源不可用：对端下完就有了，所以分类成可重试的 runtimeFailure 而不是
+  /// sourceDisabled（作品页对后者渲染「源被禁用」且不给重试）。章端点只会在新
+  /// host 上被调用（老 host 不会在 manifest 里给出 chapters），故这里的 404 不可能
+  /// 是「对端版本过低」。
   Future<RemoteMangaManifest> _chapterManifest(
     OnlineMangaLibraryEntry entry,
     String digest,
-  ) =>
-      _guarded(
-        'pages',
-        () => backend.remoteMangaChapterManifest(entry.series.key, digest),
+  ) async {
+    try {
+      return await backend.remoteMangaChapterManifest(entry.series.key, digest);
+    } on MangaInterconnectUnsupported catch (error) {
+      throw OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.runtimeFailure,
+        'The peer has not downloaded this chapter yet',
+        cause: error,
+        stage: 'pages',
       );
+    } on Object catch (error) {
+      throw OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.runtimeFailure,
+        '$error',
+        cause: error,
+        stage: 'pages',
+      );
+    }
+  }
 
   Future<RemoteMangaManifest> _guarded(
     String stage,
