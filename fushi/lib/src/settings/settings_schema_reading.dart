@@ -185,7 +185,8 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.translate_outlined,
             controlBelow: true,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 13),
-            // 三态对齐 Hoshi Reader iOS：Off / Toggle / Hidden。
+            // 四态：Off / Toggle / Hidden（对齐 Hoshi Reader iOS）+ Dimmed
+            // （2026-09-12 用户追加的「显示但淡」）。
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'off',
@@ -201,6 +202,11 @@ SettingsDestination buildReadingDestination() {
                 value: 'hidden',
                 label: t.reader_furigana_hidden,
                 tooltip: t.reader_furigana_hidden,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'dimmed',
+                label: t.reader_furigana_dimmed,
+                tooltip: t.reader_furigana_dimmed,
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerFuriganaMode,

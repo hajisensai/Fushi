@@ -77,8 +77,9 @@ class ReaderEngineConfig {
   final int swipeFastDistThreshold;
   final int wheelGestureQuietMs;
 
-  /// `off` / `toggle` / `hidden`（`ReaderSettings.furiganaMode` 的值域）。JS 侧
-  /// 现已不按它分支（隐藏由 CSS 承担），仍随 config 下发供探针 / 日志读。
+  /// `off` / `toggle` / `hidden` / `dimmed`（`ReaderSettings.furiganaMode` 的
+  /// 值域）。JS 侧现已不按它分支（隐藏 / 淡显都由 CSS 承担），仍随 config 下发
+  /// 供探针 / 日志读。
   final String furiganaMode;
 
   // ── caret ─────────────────────────────────────────────────────────

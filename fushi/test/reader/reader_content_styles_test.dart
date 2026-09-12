@@ -358,6 +358,47 @@ void main() {
       await settings.setFuriganaMode('partial');
       expect(settings.furiganaMode, 'toggle');
     });
+
+    test('dimmed mode: rt stays ruby-text but is faded via opacity; '
+        'show-all-rt restores full opacity', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setFuriganaMode('dimmed');
+      expect(settings.furiganaMode, 'dimmed');
+      final String css = ReaderContentStyles.css(settings: settings);
+      // 显示态：rt 仍强制 ruby-text（TODO-1308），rtc 接管照旧 —— dimmed 只是淡，
+      // 不是隐藏，注音结构与 off 完全一致。
+      expect(css,
+          contains('rt { display: ruby-text !important; font-size: 0.45em; }'));
+      expect(
+          css,
+          contains('rtc {\n'
+              '  display: ruby-text !important;\n'
+              '  font-size: 0.45em;\n}'));
+      expect(css, isNot(contains('rt, rtc { display: none !important; }')));
+      expect(css, isNot(contains('furigana-revealed')),
+          reason: 'dimmed 不走 toggle 的逐个揭示机制');
+      // 淡显只用 opacity（不改 color）：深浅主题 / 自定义正文色都成立。
+      expect(
+          css,
+          contains('ruby > rt,\n'
+              'ruby > rtc {\n'
+              '  opacity: 0.45 !important;\n}'));
+      // readerToggleFurigana 快捷键在 dimmed 下 = 临时恢复全亮。
+      expect(
+          css,
+          contains('body.show-all-rt ruby > rt,\n'
+              'body.show-all-rt ruby > rtc {\n'
+              '  opacity: 1 !important;\n}'));
+      // off 态不得漏出淡显规则（否则四态互相污染）。
+      await settings.setFuriganaMode('off');
+      final String offCss = ReaderContentStyles.css(settings: settings);
+      expect(offCss, isNot(contains('opacity: 0.45 !important')));
+      expect(offCss, isNot(contains('body.show-all-rt ruby > rt')));
+    });
   });
 
   group('ReaderContentStyles audiobook/selection highlight fill', () {

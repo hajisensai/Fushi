@@ -9,6 +9,7 @@ void main() {
       expect(strings.reader_furigana_off, '关闭');
       expect(strings.reader_furigana_toggle, '点击显示');
       expect(strings.reader_furigana_hidden, '隐藏');
+      expect(strings.reader_furigana_dimmed, '淡显');
       expect(
         strings.reader_furigana_mode_hint,
         '',

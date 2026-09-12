@@ -112,8 +112,9 @@ void main() {
           reason: 'BUG-716：不再有 narrow-lane 窄条(避免 left 落点在宽盒/含注音轨时偏移)');
     });
 
-    test('振假名显示态(off/toggle) rt 强制 display:ruby-text(!important)', () async {
-      for (final String fm in <String>['off', 'toggle']) {
+    test('振假名显示态(off/toggle/dimmed) rt 强制 display:ruby-text(!important)',
+        () async {
+      for (final String fm in <String>['off', 'toggle', 'dimmed']) {
         final String css = await _readerCss(
             writingMode: 'vertical-rl',
             viewMode: 'continuous',
@@ -133,7 +134,7 @@ void main() {
       // 会把 rtc 里的每个 <rt> 包进匿名 ruby，落在正文流原位=注音以整字格内联进基字列
       // (用户截图：かん挤在貫/禄之间、ろく掉到词下方)。修复=显示态把 rtc 整个映射为
       // 单一注音级(display:ruby-text)、其 rt 子元素归位 inline(在注音里当普通文本跑)。
-      for (final String fm in <String>['off', 'toggle']) {
+      for (final String fm in <String>['off', 'toggle', 'dimmed']) {
         final String css = await _readerCss(
             writingMode: 'vertical-rl',
             viewMode: 'continuous',

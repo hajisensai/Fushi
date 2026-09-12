@@ -25,6 +25,9 @@ void main() {
     'unknown',
     'HIDE ',
     'Show',
+    'dimmed',
+    'Dimmed',
+    ' DIMMED ',
   ];
 
   group('furigana 模式映射单一真相 (ReaderSettings)', () {
@@ -48,10 +51,13 @@ void main() {
       }
     });
 
-    test('三态值域与历史四态映射（对齐 Hoshi Reader iOS Off/Toggle/Hidden）', () {
+    test('四态值域与历史值映射（Off/Toggle/Hidden 对齐 Hoshi Reader iOS + Dimmed）', () {
       expect(ReaderSettings.normalizeFuriganaMode('off'), 'off');
       expect(ReaderSettings.normalizeFuriganaMode('toggle'), 'toggle');
       expect(ReaderSettings.normalizeFuriganaMode('hidden'), 'hidden');
+      // 第四态 dimmed（显示但淡）：2026-09-12 用户追加，大小写/空白同样归一。
+      expect(ReaderSettings.normalizeFuriganaMode('dimmed'), 'dimmed');
+      expect(ReaderSettings.normalizeFuriganaMode(' DIMMED '), 'dimmed');
       // 历史值：show→off、partial→toggle（点一个揭示一个）、hide→hidden。
       expect(ReaderSettings.normalizeFuriganaMode('show'), 'off');
       expect(ReaderSettings.normalizeFuriganaMode('partial'), 'toggle');
@@ -59,56 +65,22 @@ void main() {
       expect(ReaderSettings.normalizeFuriganaMode('HIDE '), 'hidden');
       expect(ReaderSettings.normalizeFuriganaMode('garbage'), 'off');
       expect(ReaderSettings.normalizeFuriganaMode(''), 'off');
-      // 只剩三个规范值。
+      // 只剩四个规范值。
       for (final m in inputs) {
         expect(
-          <String>['off', 'toggle', 'hidden'],
+          <String>['off', 'toggle', 'hidden', 'dimmed'],
           contains(ReaderSettings.normalizeFuriganaMode(m)),
           reason: 'input="$m"',
         );
       }
     });
 
-    test('三态值域与历史四态映射（对齐 Hoshi Reader iOS Off/Toggle/Hidden）', () {
-      expect(ReaderSettings.normalizeFuriganaMode('off'), 'off');
-      expect(ReaderSettings.normalizeFuriganaMode('toggle'), 'toggle');
-      expect(ReaderSettings.normalizeFuriganaMode('hidden'), 'hidden');
-      // 历史值：show→off、partial→toggle（点一个揭示一个）、hide→hidden。
-      expect(ReaderSettings.normalizeFuriganaMode('show'), 'off');
-      expect(ReaderSettings.normalizeFuriganaMode('partial'), 'toggle');
-      expect(ReaderSettings.normalizeFuriganaMode('hide'), 'hidden');
-      expect(ReaderSettings.normalizeFuriganaMode('HIDE '), 'hidden');
-      expect(ReaderSettings.normalizeFuriganaMode('garbage'), 'off');
-      expect(ReaderSettings.normalizeFuriganaMode(''), 'off');
-      // 只剩三个规范值。
-      for (final m in inputs) {
-        expect(
-          <String>['off', 'toggle', 'hidden'],
-          contains(ReaderSettings.normalizeFuriganaMode(m)),
-          reason: 'input="$m"',
-        );
-      }
-    });
-
-    test('三态值域与历史四态映射（对齐 Hoshi Reader iOS Off/Toggle/Hidden）', () {
-      expect(ReaderSettings.normalizeFuriganaMode('off'), 'off');
-      expect(ReaderSettings.normalizeFuriganaMode('toggle'), 'toggle');
-      expect(ReaderSettings.normalizeFuriganaMode('hidden'), 'hidden');
-      // 历史值：show→off、partial→toggle（点一个揭示一个）、hide→hidden。
-      expect(ReaderSettings.normalizeFuriganaMode('show'), 'off');
-      expect(ReaderSettings.normalizeFuriganaMode('partial'), 'toggle');
-      expect(ReaderSettings.normalizeFuriganaMode('hide'), 'hidden');
-      expect(ReaderSettings.normalizeFuriganaMode('HIDE '), 'hidden');
-      expect(ReaderSettings.normalizeFuriganaMode('garbage'), 'off');
-      expect(ReaderSettings.normalizeFuriganaMode(''), 'off');
-      // 只剩三个规范值。
-      for (final m in inputs) {
-        expect(
-          <String>['off', 'toggle', 'hidden'],
-          contains(ReaderSettings.normalizeFuriganaMode(m)),
-          reason: 'input="$m"',
-        );
-      }
+    test('furiganaModeToStyle 四态各自有别（dimmed 不得降级成 Show）', () {
+      expect(ReaderSettings.furiganaModeToStyle('off'), 'Show');
+      expect(ReaderSettings.furiganaModeToStyle('toggle'), 'Toggle');
+      expect(ReaderSettings.furiganaModeToStyle('hidden'), 'Hide');
+      expect(ReaderSettings.furiganaModeToStyle('dimmed'), 'Dimmed');
+      expect(ReaderSettings.furiganaModeToStyle('garbage'), 'Show');
     });
 
     test('source 端转调 ReaderSettings 且不再保留重复 switch', () {
