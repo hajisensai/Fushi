@@ -769,6 +769,9 @@ abstract final class MangaArchiveImporter {
     } on ArgumentError {
       // Keep the literal name; invalid percent escapes may still be valid ZIP
       // entry characters and can be matched byte-for-byte.
+    } on FormatException {
+      // Same, for escapes that are syntactically valid but decode to invalid
+      // UTF-8 (`%FF`): ArgumentError does not cover those.
     }
     return normalized;
   }
@@ -860,6 +863,8 @@ abstract final class MangaArchiveImporter {
           } on ArgumentError {
             // Keep the original href; the missing-resource error below is more
             // useful than an invalid percent-escape error.
+          } on FormatException {
+            // Same, for `%FF`-style escapes (valid syntax, invalid UTF-8).
           }
         }
         if (bytes == null) {

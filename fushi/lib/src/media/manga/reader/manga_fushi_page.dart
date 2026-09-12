@@ -183,9 +183,8 @@ class MangaTurnQueue {
     required Future<void> Function(int step) applyStep,
   }) async {
     if (delta == 0 || maxMagnitude <= 0) return;
-    _pendingDelta = (_pendingDelta + delta)
-        .clamp(-maxMagnitude, maxMagnitude)
-        .toInt();
+    _pendingDelta =
+        (_pendingDelta + delta).clamp(-maxMagnitude, maxMagnitude).toInt();
     await drain(canApply: canApply, applyStep: applyStep);
   }
 
@@ -224,10 +223,10 @@ class MangaWindowGeneration {
   /// WebView 桥在不同平台上分别回 num / String，解析不出一律 null（fail-closed，
   /// 后续比较必然不等，回调被丢弃）。
   static int? parse(Object? raw) => switch (raw) {
-    final num value => value.round(),
-    final String value => int.tryParse(value),
-    _ => null,
-  };
+        final num value => value.round(),
+        final String value => int.tryParse(value),
+        _ => null,
+      };
 
   /// 回报值与 [current] 严格相等才放行。
   ///
@@ -255,8 +254,7 @@ Future<void> dispatchMangaSelection(
     String term,
     Rect selectionRect,
     bool verticalWriting,
-  )
-  search,
+  ) search,
 }) async {
   if (data.text.isEmpty) {
     return;
@@ -437,9 +435,8 @@ class MangaFushiPage extends BaseSourcePage {
   }
 
   static MangaReaderInputAction? wheelInputAction(Offset delta) {
-    final double dominant = delta.dy.abs() >= delta.dx.abs()
-        ? delta.dy
-        : delta.dx;
+    final double dominant =
+        delta.dy.abs() >= delta.dx.abs() ? delta.dy : delta.dx;
     if (dominant.abs() < 2) return null;
     return dominant > 0
         ? MangaReaderInputAction.next
@@ -501,11 +498,11 @@ class MangaFushiPage extends BaseSourcePage {
   /// 中键/右键各触发两次（翻页会翻两页）。
   @visibleForTesting
   static String mouseBridgeScript(List<int> buttons) => webViewKeyBridgeScript(
-    handlerName: 'onMangaMouseButton',
-    mouseButtons: buttons,
-    installMouseListeners: true,
-    stopPropagation: true,
-  );
+        handlerName: 'onMangaMouseButton',
+        mouseButtons: buttons,
+        installMouseListeners: true,
+        stopPropagation: true,
+      );
 
   /// 本页鼠标桥要拦截的按钮号：manga / universal / global 三段阶梯上**所有**已绑
   /// 按钮的并集（与 [_kMangaMouseLadder] 同源）。
@@ -556,11 +553,19 @@ class MangaFushiPage extends BaseSourcePage {
   ///
   /// 解码只在这里（URL 边界）做一次，与 [mangaImageUrl] 的逐段 `encodeComponent`
   /// 对称；[resolveMangaResource] 只吃裸路径（BUG-2484）。外来 URL 编码非法是输入
-  /// 校验失败，按「解析不到」处理，不让 `ArgumentError` 掀翻拦截器。
+  /// 校验失败，按「解析不到」处理，不让异常掀翻拦截器。
+  ///
+  /// **两类异常都要接**（实测）：`100%.jpg` / `%.jpg` / `%2` / `%GG` 这类 percent
+  /// 语法本身非法的抛 `ArgumentError`；`%FF` / `%C3%28` 这类语法合法、解出来却不是
+  /// 合法 UTF-8 的抛 `FormatException`。WebView 可以请求任意 `manga.local` URL，
+  /// 后者同样可达。不能合并写成 `on Exception`——`ArgumentError` 继承 `Error`
+  /// 而不是 `Exception`，那样反而会把前一半漏掉。
   static String? decodeMangaImagePath(String encodedRelative) {
     try {
       return Uri.decodeComponent(encodedRelative);
     } on ArgumentError {
+      return null;
+    } on FormatException {
       return null;
     }
   }
@@ -607,10 +612,8 @@ class MangaFushiPage extends BaseSourcePage {
     bool useCustomScheme = false,
   }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
-    final String encoded = normalized
-        .split('/')
-        .map(Uri.encodeComponent)
-        .join('/');
+    final String encoded =
+        normalized.split('/').map(Uri.encodeComponent).join('/');
     final String scheme = useCustomScheme ? kMangaResourceScheme : 'https';
     return '$scheme://$kMangaHost/img/$encoded';
   }
@@ -1029,13 +1032,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       languageTag = (await appModel.database.getEpubBook(
         widget.bookKey,
-      ))?.language;
+      ))
+          ?.language;
     } catch (e, st) {
       debugPrint('[MangaFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
     }
-    await ref
-        .read(profileViewModelProvider.notifier)
-        .autoApplyBinding(
+    await ref.read(profileViewModelProvider.notifier).autoApplyBinding(
           bookUid: widget.bookKey,
           languageTag: languageTag,
           mediaType: ProfileMediaKind.manga,
@@ -1100,8 +1102,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!desktopWindowFullscreenSupported || _fullscreenTransitioning) return;
     _fullscreenTransitioning = true;
     try {
-      final bool fullscreen =
-          requested ??
+      final bool fullscreen = requested ??
           !((await readDesktopWindowFullscreen()) ?? _isWindowFullscreen);
       if (!mounted) return;
       // Claim ownership before the native transition starts. If the route is
@@ -1332,7 +1333,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
     final MangaReadingMode mode =
         MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-        detectReadingMode(payload);
+            detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
     final List<String> relativePagePaths = payload.images
         .map(
@@ -1435,8 +1436,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     OnlineMangaLibraryEntry entry,
   ) async {
     try {
-      final OnlineMangaLibraryService service = appModel
-          .onlineMangaLibraryService(entry.runtime);
+      final OnlineMangaLibraryService service =
+          appModel.onlineMangaLibraryService(entry.runtime);
       int chapterIndex = OnlineMangaLibraryService.initialChapterIndex(entry);
       if (chapterIndex < 0) {
         throw StateError('The manga has no chapters');
@@ -1953,9 +1954,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _applyMangaTurnStep(int delta) async {
-    final int target = (_currentSpread + delta)
-        .clamp(0, _spreads.length - 1)
-        .toInt();
+    final int target =
+        (_currentSpread + delta).clamp(0, _spreads.length - 1).toInt();
     if (target == _currentSpread) {
       // 到头了。v88 前这里就是死钳位直接 return——于是在线漫画读完最后一页就
       // 走不动了，既不翻章也没有任何提示，配合「书架永远开同一章」构成了
@@ -1965,8 +1965,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     _currentSpread = target;
     await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaApplyTranslate && '
+      source: 'window.__mangaApplyTranslate && '
           'window.__mangaApplyTranslate($target);',
     );
     await _replaceSpreadOcr(target);
@@ -2045,8 +2044,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
         if (mounted) {
           FushiToast.show(
-            msg:
-                '${t.manga_chapter_not_downloaded} · '
+            msg: '${t.manga_chapter_not_downloaded} · '
                 '${t.manga_chapter_download_queued}',
           );
         }
@@ -2136,8 +2134,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           '$pageIndex': mangaOcrBoxesHtml(_payload!.images[pageIndex]),
     };
     await controller.evaluateJavascript(
-      source:
-          '''
+      source: '''
 (function(){
   var keep = new Set(${jsonEncode(pageIndices.toList())});
   var htmlByPage = ${jsonEncode(htmlByPage)};
@@ -2163,15 +2160,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _jumpToPageAnchor(String dir) async {
     if (_spreads.isEmpty || _navigating) return;
     final int delta = dir == 'next' ? 1 : -1;
-    final int target = (_currentSpread + delta)
-        .clamp(0, _spreads.length - 1)
-        .toInt();
+    final int target =
+        (_currentSpread + delta).clamp(0, _spreads.length - 1).toInt();
     if (target == _currentSpread) return;
     _currentSpread = target;
     _currentFraction = 0;
     await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaScrollToSpread && '
+      source: 'window.__mangaScrollToSpread && '
           'window.__mangaScrollToSpread($target, 0);',
     );
     await _replaceSpreadOcr(target);
@@ -2254,8 +2249,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (panStep != null) {
       unawaited(
         _controller?.evaluateJavascript(
-              source:
-                  'window.__mangaPanBy && '
+              source: 'window.__mangaPanBy && '
                   'window.__mangaPanBy(${panStep.dx}, ${panStep.dy});',
             ) ??
             Future<void>.value(),
@@ -2366,8 +2360,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     Set<ModifierKey> modifiers,
   ) {
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
-    final ShortcutAction? bound =
-        registry.resolveKeyboard(
+    final ShortcutAction? bound = registry.resolveKeyboard(
           key,
           modifiers: modifiers,
           scope: ShortcutScope.manga,
@@ -2384,8 +2377,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           modifiers: modifiers,
           scope: ShortcutScope.global,
         );
-    final ShortcutAction? corrected =
-        resolveMangaArrowPageTurn(
+    final ShortcutAction? corrected = resolveMangaArrowPageTurn(
           key: key,
           modifiers: modifiers,
           rtl: _spreadDirection == 'rtl',
@@ -2394,8 +2386,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         bound;
     return MangaFushiPage.inputActionForShortcut(
       action: corrected,
-      crossPageStep:
-          key == LogicalKeyboardKey.arrowLeft ||
+      crossPageStep: key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight,
       dictionaryShown: isDictionaryShown,
       mode: _mode,
@@ -2416,10 +2407,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
     final ShortcutAction? bound =
         registry.resolveGamepad(button, scope: ShortcutScope.manga) ??
-        registry.resolveGamepad(button, scope: ShortcutScope.universal) ??
-        registry.resolveGamepad(button, scope: ShortcutScope.global);
-    final ShortcutAction? corrected =
-        resolveMangaDpadPageTurn(
+            registry.resolveGamepad(button, scope: ShortcutScope.universal) ??
+            registry.resolveGamepad(button, scope: ShortcutScope.global);
+    final ShortcutAction? corrected = resolveMangaDpadPageTurn(
           button: button,
           rtl: _spreadDirection == 'rtl',
           boundAction: bound,
@@ -2626,31 +2616,30 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrAcceleration = null;
       _wholeVolumeOcrDegradeNotified = false;
     });
-    _wholeVolumeOcrSubscription = running.events
-        .asyncMap(_handleWholeVolumeOcrEvent)
-        .listen(
-          (_) {},
-          onError: (Object error, StackTrace stack) {
-            ErrorLogService.instance.log(
-              'MangaFushiPage.wholeVolumeOcr',
-              error,
-              stack,
-            );
-            if (!mounted) return;
-            setState(() => _wholeVolumeOcrRunning = false);
-            FushiToast.show(
-              msg: '${t.manga_ocr_wizard_failed}: $error',
-              severity: ToastSeverity.error,
-            );
-          },
-          onDone: () {
-            _wholeVolumeOcrSubscription = null;
-            _observedOcrJob = null;
-            if (mounted && _wholeVolumeOcrRunning) {
-              setState(() => _wholeVolumeOcrRunning = false);
-            }
-          },
+    _wholeVolumeOcrSubscription =
+        running.events.asyncMap(_handleWholeVolumeOcrEvent).listen(
+      (_) {},
+      onError: (Object error, StackTrace stack) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.wholeVolumeOcr',
+          error,
+          stack,
         );
+        if (!mounted) return;
+        setState(() => _wholeVolumeOcrRunning = false);
+        FushiToast.show(
+          msg: '${t.manga_ocr_wizard_failed}: $error',
+          severity: ToastSeverity.error,
+        );
+      },
+      onDone: () {
+        _wholeVolumeOcrSubscription = null;
+        _observedOcrJob = null;
+        if (mounted && _wholeVolumeOcrRunning) {
+          setState(() => _wholeVolumeOcrRunning = false);
+        }
+      },
+    );
   }
 
   Future<void> _handleWholeVolumeOcrEvent(MangaOcrBackgroundEvent event) async {
@@ -2704,8 +2693,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _replacePageOcrOverlay(int pageIndex, MokuroImage page) async {
     final String boxes = mangaOcrBoxesHtml(page);
     await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaReplaceOcr && '
+      source: 'window.__mangaReplaceOcr && '
           'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)});',
     );
   }
@@ -2814,9 +2802,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       final File? file = await session.localFile(pageIndex);
       if (!mounted || generation != _miningPageGeneration) return;
-      _miningPageImagePath = file != null && await file.exists()
-          ? file.path
-          : null;
+      _miningPageImagePath =
+          file != null && await file.exists() ? file.path : null;
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaFushiPage.selectedCardImage',
@@ -2839,9 +2826,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // TODO-956 下限兜底：句子派生不出时退回词本身，绝不让收藏/制卡拿到空句。
         final String resolved =
             ReaderSelectionScripts.resolveCurrentSentenceText(
-              sentence,
-              data.text,
-            );
+          sentence,
+          data.text,
+        );
         _lastSentence = resolved;
         _lastSentenceOffset = data.sentenceOffset;
         appModel.currentMediaSource?.setCurrentSentence(
@@ -2869,9 +2856,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     try {
-      final String sentence = _lastSentence.isNotEmpty
-          ? _lastSentence
-          : (fields['sentence'] ?? '');
+      final String sentence =
+          _lastSentence.isNotEmpty ? _lastSentence : (fields['sentence'] ?? '');
 
       String? coverPath;
       final String? pageImage = _miningPageIndex == null
@@ -2965,7 +2951,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     try {
       await (db.update(
         db.epubBooks,
-      )..where(($EpubBooksTable t) => t.bookKey.equals(widget.bookKey))).write(
+      )..where(($EpubBooksTable t) => t.bookKey.equals(widget.bookKey)))
+          .write(
         EpubBooksCompanion(
           mangaReadingMode: Value<String?>(MangaFushiPage.modeToDbString(next)),
         ),
@@ -3170,8 +3157,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _zoomPreferenceDebouncer?.discard();
     await appModel.setMangaZoomPercent(normalized);
     await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaSetZoom && '
+      source: 'window.__mangaSetZoom && '
           'window.__mangaSetZoom($normalized);',
     );
   }
@@ -3179,7 +3165,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _queueZoomPreferencePersist(int value) {
     (_zoomPreferenceDebouncer ??= MangaZoomPreferenceDebouncer(
       persist: appModel.setMangaZoomPercent,
-    )).queue(value);
+    ))
+        .queue(value);
   }
 
   Future<void> _jumpToPage(int oneBasedPage) async {
@@ -3191,15 +3178,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _currentFraction = 0;
     if (_mode == MangaReadingMode.webtoon) {
       await _controller?.evaluateJavascript(
-        source:
-            'window.__mangaScrollToSpread && '
+        source: 'window.__mangaScrollToSpread && '
             'window.__mangaScrollToSpread($target, 0);',
       );
       await _replaceSpreadOcr(target);
     } else {
       await _controller?.evaluateJavascript(
-        source:
-            'window.__mangaApplyTranslate && '
+        source: 'window.__mangaApplyTranslate && '
             'window.__mangaApplyTranslate($target);',
       );
       await _replaceSpreadOcr(target);
@@ -3523,9 +3508,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!Platform.isAndroid && !Platform.isIOS) return;
     SystemChrome.setEnabledSystemUIMode(
       _chromeVisible ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
-      overlays: _chromeVisible
-          ? SystemUiOverlay.values
-          : const <SystemUiOverlay>[],
+      overlays:
+          _chromeVisible ? SystemUiOverlay.values : const <SystemUiOverlay>[],
     );
   }
 
@@ -3545,11 +3529,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             );
             final MangaSpreadEntry? entry =
                 (spreadIndex >= 0 && spreadIndex < _spreads.length)
-                ? _spreads[spreadIndex]
-                : null;
+                    ? _spreads[spreadIndex]
+                    : null;
             final String label = (entry != null && entry.isSpread)
                 ? '${entry.pageIndices.first + 1}-'
-                      '${entry.pageIndices.last + 1} / $pageCount'
+                    '${entry.pageIndices.last + 1} / $pageCount'
                 : '${page + 1} / $pageCount';
             return TextButton(
               key: const ValueKey<String>('manga_page_jump_button'),
@@ -3591,10 +3575,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               _wholeVolumeOcrAcceleration!.label,
               key: const ValueKey<String>('manga_ocr_acceleration_label'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: _wholeVolumeOcrAcceleration!.degraded
-                    ? Colors.amberAccent
-                    : Colors.white70,
-              ),
+                    color: _wholeVolumeOcrAcceleration!.degraded
+                        ? Colors.amberAccent
+                        : Colors.white70,
+                  ),
             ),
           ),
         if (kDebugMode && _debugOcrHitOrientation != null)
@@ -3640,22 +3624,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 unawaited(_setSpreadPreference(preference)),
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<MangaSpreadPreference>>[
-                  CheckedPopupMenuItem<MangaSpreadPreference>(
-                    value: MangaSpreadPreference.auto,
-                    checked: _spreadPreference == MangaSpreadPreference.auto,
-                    child: Text(t.spread_auto),
-                  ),
-                  CheckedPopupMenuItem<MangaSpreadPreference>(
-                    value: MangaSpreadPreference.single,
-                    checked: _spreadPreference == MangaSpreadPreference.single,
-                    child: Text(t.spread_off),
-                  ),
-                  CheckedPopupMenuItem<MangaSpreadPreference>(
-                    value: MangaSpreadPreference.double,
-                    checked: _spreadPreference == MangaSpreadPreference.double,
-                    child: Text(t.spread_on),
-                  ),
-                ],
+              CheckedPopupMenuItem<MangaSpreadPreference>(
+                value: MangaSpreadPreference.auto,
+                checked: _spreadPreference == MangaSpreadPreference.auto,
+                child: Text(t.spread_auto),
+              ),
+              CheckedPopupMenuItem<MangaSpreadPreference>(
+                value: MangaSpreadPreference.single,
+                checked: _spreadPreference == MangaSpreadPreference.single,
+                child: Text(t.spread_off),
+              ),
+              CheckedPopupMenuItem<MangaSpreadPreference>(
+                value: MangaSpreadPreference.double,
+                checked: _spreadPreference == MangaSpreadPreference.double,
+                child: Text(t.spread_on),
+              ),
+            ],
           ),
         Tooltip(
           message: t.manga_mode_toggle,
@@ -3745,8 +3729,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 无条件提供，这里不再画第二个。
   Widget _buildChapterNotDownloaded() {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
-    final String chapterName =
-        entry != null &&
+    final String chapterName = entry != null &&
             _shelfChapterIndex >= 0 &&
             _shelfChapterIndex < entry.chapters.length
         ? entry.chapters[_shelfChapterIndex].name
@@ -3965,20 +3948,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       onLoadResourceWithCustomScheme:
           (InAppWebViewController controller, WebResourceRequest request) =>
               _loadMangaCustomScheme(request),
-      onReceivedError:
-          (
-            InAppWebViewController controller,
-            WebResourceRequest request,
-            WebResourceError error,
-          ) async {
-            if (!(request.isForMainFrame ?? false)) return;
-            // Windows WebView2 对未解析虚拟域的主帧导航报错，即使 shouldInterceptRequest
-            // 已提供文档。视作加载完成（镜像 reader_fushi 的同款处理）。
-            if (Platform.isWindows &&
-                request.url.host == MangaFushiPage.kMangaHost) {
-              unawaited(_markWindowReady(controller));
-            }
-          },
+      onReceivedError: (
+        InAppWebViewController controller,
+        WebResourceRequest request,
+        WebResourceError error,
+      ) async {
+        if (!(request.isForMainFrame ?? false)) return;
+        // Windows WebView2 对未解析虚拟域的主帧导航报错，即使 shouldInterceptRequest
+        // 已提供文档。视作加载完成（镜像 reader_fushi 的同款处理）。
+        if (Platform.isWindows &&
+            request.url.host == MangaFushiPage.kMangaHost) {
+          unawaited(_markWindowReady(controller));
+        }
+      },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await _markWindowReady(controller);
       },
@@ -3986,11 +3968,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(
-                _webViewDeathGuard.handleDeath(
-                  didCrash: detail.didCrash,
-                  rendererPriorityAtExit: detail.rendererPriorityAtExit,
-                ),
-              ),
+        _webViewDeathGuard.handleDeath(
+          didCrash: detail.didCrash,
+          rendererPriorityAtExit: detail.rendererPriorityAtExit,
+        ),
+      ),
     );
   }
 
@@ -4050,14 +4032,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (_mode == MangaReadingMode.webtoon) {
       await controller.evaluateJavascript(
-        source:
-            'window.__mangaScrollToSpread && '
+        source: 'window.__mangaScrollToSpread && '
             'window.__mangaScrollToSpread($_currentSpread, $_currentFraction);',
       );
     } else {
       await controller.evaluateJavascript(
-        source:
-            'window.__mangaApplyTranslate && '
+        source: 'window.__mangaApplyTranslate && '
             'window.__mangaApplyTranslate($_currentSpread);',
       );
     }

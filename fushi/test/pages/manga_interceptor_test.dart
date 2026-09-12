@@ -119,12 +119,33 @@ void main() {
       expect(p.basename(resolved!), '100%.jpg');
     });
 
-    test('BUG-2484：URL 编码非法回 null 而不是抛 ArgumentError', () {
-      expect(MangaFushiPage.decodeMangaImagePath('100%.jpg'), isNull);
+    test('BUG-2484：URL 编码非法回 null 而不是抛异常（两类异常都要接）', () {
+      // `Uri.decodeComponent` 对非法输入抛两种**不同层级**的东西（实测）：
+      //   percent 语法本身非法（`100%`/`%`/`%2`/`%GG`） -> ArgumentError（是 Error）
+      //   语法合法但解出来不是合法 UTF-8（`%FF`/`%C3%28`） -> FormatException（是 Exception）
+      // 起初只接了前者，`%FF` 这类照样掀翻拦截器——WebView 可以请求任意
+      // manga.local URL，这条路径可达。也不能合并写成 `on Exception`：
+      // ArgumentError 继承 Error 而非 Exception，那样会把前一半漏掉。
+      for (final String bad in <String>[
+        '100%.jpg', // ArgumentError
+        '%.jpg', // ArgumentError
+        '%2', // ArgumentError
+        '%GG.jpg', // ArgumentError
+        '%FF.jpg', // FormatException
+        '%C3%28.jpg', // FormatException
+      ]) {
+        expect(
+          MangaFushiPage.decodeMangaImagePath(bad),
+          isNull,
+          reason: '$bad 必须回 null 而不是抛出',
+        );
+      }
+      // 走完整 URL 边界：`%FF` 能原样穿过 Uri.parse（不像孤立的 `%` 会被重编码成
+      // `%25`），所以这一条真的会打到解码分支上。
       expect(
         MangaFushiPage.resolveImageUrlToFile(
           root.path,
-          'https://manga.local/img/100%.jpg',
+          'https://manga.local/img/%FF.jpg',
         ),
         isNull,
       );
