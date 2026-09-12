@@ -763,6 +763,7 @@ class AnkiMiningContext {
   const AnkiMiningContext({
     required this.sentence,
     this.cueSentence,
+    this.secondaryCueSentence,
     this.documentTitle,
     this.coverPath,
     this.sentenceAudioPath,
@@ -776,6 +777,16 @@ class AnkiMiningContext {
   });
   final String sentence;
   final String? cueSentence;
+
+  /// 副字幕轨在本卡片时间窗 `[clipStartMs, clipEndMs]` 内的全部 cue 文本（多条按
+  /// 时间顺序换行拼接），渲染 `{secondary-cue-sentence}` 用——对齐 asbplayer 的
+  /// 「字幕轨道 2 字段」（典型用法：主轨学习语言、副轨母语翻译，卡片两轨并列）。
+  ///
+  /// 只有视频页有值：由调用方按副轨**自己的生效调轴**把时间窗换算回副轨坐标后取
+  /// 重叠 cue（`secondaryCueSentenceForClip`）。无副字幕 / 时间窗内无副 cue / 非视频
+  /// 来源恒 `null`，占位符渲染成空串。**严格等于副字幕轨文本**：用户在副字幕上查词或
+  /// 主轨关闭只开副轨（BUG-1592）时它与 [cueSentence] 同值，不猜「另一轨」。
+  final String? secondaryCueSentence;
   final String? documentTitle;
   final String? coverPath;
   final String? sentenceAudioPath;
@@ -845,6 +856,7 @@ class AnkiMiningContext {
       AnkiMiningContext(
         sentence: sentence,
         cueSentence: cueSentence,
+        secondaryCueSentence: secondaryCueSentence,
         documentTitle: documentTitle,
         coverPath: coverRef,
         sentenceAudioPath: sentenceAudioRef,
@@ -937,6 +949,8 @@ class AnkiHandlebarRenderer {
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
         return _cueSentenceValue(payload, context);
+      case '{secondary-cue-sentence}':
+        return _boldMatched(context.secondaryCueSentence ?? '', payload);
       case '{frequencies}':
         return payload.frequenciesHtml;
       case '{frequency-harmonic-rank}':
@@ -1042,7 +1056,13 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     AnkiMiningContext context,
   ) {
-    final String text = context.cueSentence ?? context.sentence;
+    return _boldMatched(context.cueSentence ?? context.sentence, payload);
+  }
+
+  /// [text] 里首个 [AnkiMiningPayload.matched] 加粗；无匹配词或不含时原样返回。
+  /// `{cue-sentence}` / `{secondary-cue-sentence}` 共用（副轨是翻译时通常不含原词，
+  /// 自然落到原样返回）。
+  static String _boldMatched(String text, AnkiMiningPayload payload) {
     final String matched = payload.matched;
     if (matched.isEmpty) return text;
     return text.replaceFirst(matched, '<b>$matched</b>');
@@ -1062,6 +1082,7 @@ class AnkiHandlebarOptions {
     '{popup-selection-text}',
     '{sentence}',
     '{cue-sentence}',
+    '{secondary-cue-sentence}',
     '{frequencies}',
     '{frequency-harmonic-rank}',
     '{pitch-accent-positions}',

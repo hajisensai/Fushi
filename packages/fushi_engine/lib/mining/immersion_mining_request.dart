@@ -290,6 +290,7 @@ class ImmersionMiningRequest {
     this.mediaSource,
     this.audioSource,
     this.cueSentence,
+    this.secondaryCueSentence,
     this.documentTitle,
     this.audioStreamIndex,
     this.audioStreamCount,
@@ -322,6 +323,10 @@ class ImmersionMiningRequest {
   /// YouTube 分离流时 = audio-only 流 URL（视频流无音轨，音频得从这里裁）。
   final String? audioSource;
   final String? cueSentence;
+
+  /// 副字幕轨在 `[clipStartMs, clipEndMs]` 内的文本（→ `AnkiMiningContext.secondaryCueSentence`
+  /// → `{secondary-cue-sentence}`）。只有视频页填；其余来源 null。
+  final String? secondaryCueSentence;
   final String? documentTitle;
   final int? audioStreamIndex;
   final int? audioStreamCount;
@@ -422,6 +427,7 @@ class ImmersionMiningRequest {
         mediaSource: mediaSource,
         audioSource: audioSource,
         cueSentence: cueSentence,
+        secondaryCueSentence: secondaryCueSentence,
         documentTitle: documentTitle,
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: audioStreamCount,

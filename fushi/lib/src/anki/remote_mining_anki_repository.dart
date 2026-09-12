@@ -179,6 +179,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       rawPayloadJson: rawPayloadJson,
       sentence: context.sentence,
       cueSentence: context.cueSentence,
+      secondaryCueSentence: context.secondaryCueSentence,
       documentTitle: context.documentTitle,
       sentenceOffset: context.sentenceOffset,
       source: context.source?.name,

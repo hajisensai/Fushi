@@ -4740,5 +4740,6 @@
   "manga_chapter_locked_download_anyway": "Download anyway",
   "manga_series_download_all_locked_skipped": "Skipped $count locked chapters",
   "mihon_sources_search_hint": "Search sources",
-  "mihon_source_login_forward": "Forward"
+  "mihon_source_login_forward": "Forward",
+  "handlebar_secondary_cue_sentence": "Secondary cue sentence"
 }

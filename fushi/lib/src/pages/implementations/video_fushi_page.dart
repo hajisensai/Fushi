@@ -350,6 +350,37 @@ int resolveMiningCueIndexForPosition({
 int miningClipTimeMs(int subtitleTimeMs, int delayMs) =>
     (subtitleTimeMs + delayMs).clamp(0, 1 << 30);
 
+/// 副字幕轨在制卡时间窗内的文本（→ `{secondary-cue-sentence}`，「副字幕例句」）。
+///
+/// [clipStartMs] / [clipEndMs] 是**播放器轴**的裁剪窗（已由 [miningClipTimeMs] 按锚定
+/// cue 所属流逆变换过）；副轨有独立调轴（[VideoPlayerController.effectiveSecondaryDelayMs]），
+/// 这里先按 [secondaryDelayMs] 用 [effectiveSubtitlePositionMs] 同一方向把窗换算回
+/// **副轨字幕坐标**，再取与之重叠（半开区间 `start < end`）的全部副 cue，按时间顺序经
+/// [joinMinedSentences] 换行拼接——多句合一草稿的宽窗自然覆盖多条翻译行，不加特例。
+///
+/// 空窗（`clipEndMs <= clipStartMs`，无锚定 cue）/ 无副字幕 / 窗内无副 cue → `null`，
+/// 占位符渲染成空串；不退回主轨文本（那是 `{cue-sentence}` 的事）。[secondaryCues]
+/// 须按 startMs 升序（[VideoPlayerController.setSecondaryCues] 保证）。
+@visibleForTesting
+String? secondaryCueSentenceForClip({
+  required List<AudioCue> secondaryCues,
+  required int clipStartMs,
+  required int clipEndMs,
+  required int secondaryDelayMs,
+}) {
+  if (secondaryCues.isEmpty || clipEndMs <= clipStartMs) return null;
+  final int startMs =
+      effectiveSubtitlePositionMs(clipStartMs, secondaryDelayMs);
+  final int endMs = effectiveSubtitlePositionMs(clipEndMs, secondaryDelayMs);
+  final List<String> texts = <String>[];
+  for (final AudioCue cue in secondaryCues) {
+    if (cue.startMs >= endMs) break;
+    if (cue.endMs > startMs) texts.add(cue.text);
+  }
+  final String joined = joinMinedSentences(texts);
+  return joined.isEmpty ? null : joined;
+}
+
 /// 判定一个**字位簇**（grapheme cluster）是否属于「拉丁单词字符」：拉丁字母
 /// （含 café 的 é、连字号外的重音字母）或 ASCII 数字。用字位簇的首个码点的
 /// Unicode `Script=Latin` 属性判定，故 NFC/NFD 的重音字母都按基字母（拉丁）归类。

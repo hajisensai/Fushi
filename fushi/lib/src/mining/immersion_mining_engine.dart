@@ -544,6 +544,7 @@ class ImmersionMiningEngine {
     final AnkiMiningContext context = AnkiMiningContext(
       sentence: req.sentence,
       cueSentence: req.cueSentence,
+      secondaryCueSentence: req.secondaryCueSentence,
       documentTitle: req.documentTitle,
       coverPath: coverPath,
       sentenceAudioPath: audioPath,

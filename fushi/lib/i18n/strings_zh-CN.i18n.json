@@ -4740,5 +4740,6 @@
   "manga_chapter_locked_download_anyway": "仍然下载",
   "manga_series_download_all_locked_skipped": "已跳过 $count 个锁定章节",
   "mihon_sources_search_hint": "搜索漫画源",
-  "mihon_source_login_forward": "前进"
+  "mihon_source_login_forward": "前进",
+  "handlebar_secondary_cue_sentence": "副字幕例句"
 }

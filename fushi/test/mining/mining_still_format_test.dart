@@ -562,6 +562,18 @@ void main() {
   });
 
   group('请求值对象', () {
+    test('frozen() 保留 secondaryCueSentence（入队后不得丢副字幕例句）', () {
+      const ImmersionMiningRequest req = ImmersionMiningRequest(
+        source: AnkiMiningSource.video,
+        fields: <String, String>{'expression': 'x'},
+        clipStartMs: 0,
+        clipEndMs: 1000,
+        sentence: 's',
+        secondaryCueSentence: 'translated',
+      );
+      expect(req.frozen().secondaryCueSentence, 'translated');
+    });
+
     test('frozen() 保留 stillFormat（入队后不得丢偏好）', () {
       const ImmersionMiningRequest req = ImmersionMiningRequest(
         source: AnkiMiningSource.video,

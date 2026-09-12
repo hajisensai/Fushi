@@ -23,6 +23,7 @@ class ForwardedMinePayload {
     required this.rawPayloadJson,
     required this.sentence,
     this.cueSentence,
+    this.secondaryCueSentence,
     this.documentTitle,
     this.sentenceOffset,
     this.source,
@@ -43,6 +44,11 @@ class ForwardedMinePayload {
   final String rawPayloadJson;
   final String sentence;
   final String? cueSentence;
+
+  /// `AnkiMiningContext.secondaryCueSentence`：副字幕轨在片段时间窗内的文本。可空 =
+  /// 无副字幕 / 非视频来源，或对端是尚未带这个键的旧版本——服务端解析成 null，
+  /// `{secondary-cue-sentence}` 渲染成空串，卡照建。
+  final String? secondaryCueSentence;
   final String? documentTitle;
   final int? sentenceOffset;
 
@@ -75,6 +81,8 @@ class ForwardedMinePayload {
         'rawPayloadJson': rawPayloadJson,
         'sentence': sentence,
         if (cueSentence != null) 'cueSentence': cueSentence,
+        if (secondaryCueSentence != null)
+          'secondaryCueSentence': secondaryCueSentence,
         if (documentTitle != null) 'documentTitle': documentTitle,
         if (sentenceOffset != null) 'sentenceOffset': sentenceOffset,
         if (source != null) 'source': source,
@@ -116,6 +124,7 @@ class ForwardedMinePayload {
       rawPayloadJson: raw,
       sentence: json['sentence'] as String? ?? '',
       cueSentence: json['cueSentence'] as String?,
+      secondaryCueSentence: json['secondaryCueSentence'] as String?,
       documentTitle: json['documentTitle'] as String?,
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt(),
       source: json['source'] as String?,

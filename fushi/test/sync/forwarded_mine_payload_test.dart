@@ -15,6 +15,7 @@ void main() {
         rawPayloadJson: '{"expression":"猫"}',
         sentence: '猫がいる',
         cueSentence: 'cue',
+        secondaryCueSentence: '猫がいます',
         documentTitle: 'Book',
         sentenceOffset: 42,
         source: 'book',
@@ -42,6 +43,7 @@ void main() {
       expect(r.rawPayloadJson, p.rawPayloadJson);
       expect(r.sentence, '猫がいる');
       expect(r.cueSentence, 'cue');
+      expect(r.secondaryCueSentence, '猫がいます');
       expect(r.documentTitle, 'Book');
       expect(r.sentenceOffset, 42);
       expect(r.source, 'book');
@@ -57,6 +59,20 @@ void main() {
       expect(r.dictionaryMedia.single.dictionary, '明鏡');
       expect(r.dictionaryMedia.single.path, 'a/b.svg');
       expect(r.dictionaryMedia.single.bytes, <int>[7, 8]);
+    });
+
+    test('副字幕例句：不带该键的旧对端 → null；null 时不写进 wire', () {
+      final ForwardedMinePayload r =
+          ForwardedMinePayload.fromJson(<String, dynamic>{
+        'rawPayloadJson': '{"expression":"猫"}',
+        'sentence': 'x',
+      });
+      expect(r.secondaryCueSentence, isNull);
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{"expression":"猫"}',
+        sentence: '猫がいる',
+      );
+      expect(p.toJson().containsKey('secondaryCueSentence'), isFalse);
     });
 
     test('片段时间窗：不带两键的旧对端 → 解析成 null，卡照建', () {

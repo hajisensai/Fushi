@@ -1693,6 +1693,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_sentence;
     case '{cue-sentence}':
       return t.handlebar_cue_sentence;
+    case '{secondary-cue-sentence}':
+      return t.handlebar_secondary_cue_sentence;
     case '{frequencies}':
       return t.handlebar_frequencies;
     case '{frequency-harmonic-rank}':

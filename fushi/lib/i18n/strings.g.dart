@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 80614 (4742 per locale)
+/// Strings: 80631 (4743 per locale)
 ///
-/// Built on 2026-09-12 at 04:45 UTC
+/// Built on 2026-09-12 at 06:35 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6594,6 +6594,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Skipped ${count} locked chapters';
   String get mihon_sources_search_hint => 'Search sources';
   String get mihon_source_login_forward => 'Forward';
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -17758,6 +17759,8 @@ class _StringsAr extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -29148,6 +29151,8 @@ class _StringsDe extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -40592,6 +40597,8 @@ class _StringsEs extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -52069,6 +52076,8 @@ class _StringsFr extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -63350,6 +63359,8 @@ class _StringsId extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -74722,6 +74733,8 @@ class _StringsIt extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -85476,6 +85489,8 @@ class _StringsJa extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => '副字幕の例文';
 }
 
 // Path: <root>
@@ -96240,6 +96255,8 @@ class _StringsKo extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => '보조 자막 예문';
 }
 
 // Path: <root>
@@ -107570,6 +107587,8 @@ class _StringsNl extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -118953,6 +118972,8 @@ class _StringsPtBr extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -130313,6 +130334,8 @@ class _StringsRu extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -141474,6 +141497,8 @@ class _StringsTh extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -152750,6 +152775,8 @@ class _StringsTr extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -163996,6 +164023,8 @@ class _StringsVi extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => 'Secondary cue sentence';
 }
 
 // Path: <root>
@@ -174316,6 +174345,8 @@ class _StringsZhCn extends _StringsEn {
   String get mihon_sources_search_hint => '搜索漫画源';
   @override
   String get mihon_source_login_forward => '前进';
+  @override
+  String get handlebar_secondary_cue_sentence => '副字幕例句';
 }
 
 // Path: <root>
@@ -184754,6 +184785,8 @@ class _StringsZhHk extends _StringsEn {
   String get mihon_sources_search_hint => 'Search sources';
   @override
   String get mihon_source_login_forward => 'Forward';
+  @override
+  String get handlebar_secondary_cue_sentence => '副字幕例句';
 }
 
 /// Flat map(s) containing all translations.
@@ -194522,6 +194555,8 @@ extension on _StringsEn {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -204285,6 +204320,8 @@ extension on _StringsAr {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -214093,6 +214130,8 @@ extension on _StringsDe {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -223892,6 +223931,8 @@ extension on _StringsEs {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -233700,6 +233741,8 @@ extension on _StringsFr {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -243479,6 +243522,8 @@ extension on _StringsId {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -253280,6 +253325,8 @@ extension on _StringsIt {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -263008,6 +263055,8 @@ extension on _StringsJa {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return '副字幕の例文';
       default:
         return null;
     }
@@ -272740,6 +272789,8 @@ extension on _StringsKo {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return '보조 자막 예문';
       default:
         return null;
     }
@@ -282534,6 +282585,8 @@ extension on _StringsNl {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -292323,6 +292376,8 @@ extension on _StringsPtBr {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -302119,6 +302174,8 @@ extension on _StringsRu {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -311887,6 +311944,8 @@ extension on _StringsTh {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -321670,6 +321729,8 @@ extension on _StringsTr {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -331447,6 +331508,8 @@ extension on _StringsVi {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return 'Secondary cue sentence';
       default:
         return null;
     }
@@ -341137,6 +341200,8 @@ extension on _StringsZhCn {
         return '搜索漫画源';
       case 'mihon_source_login_forward':
         return '前进';
+      case 'handlebar_secondary_cue_sentence':
+        return '副字幕例句';
       default:
         return null;
     }
@@ -350843,6 +350908,8 @@ extension on _StringsZhHk {
         return 'Search sources';
       case 'mihon_source_login_forward':
         return 'Forward';
+      case 'handlebar_secondary_cue_sentence':
+        return '副字幕例句';
       default:
         return null;
     }

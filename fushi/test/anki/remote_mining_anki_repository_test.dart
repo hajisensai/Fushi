@@ -223,6 +223,33 @@ void main() {
       expect(sender.captured!.charPositionTag, isNull);
     });
 
+    test('副字幕例句从 context 搬进转发 payload', () async {
+      final _FakeSender sender =
+          _FakeSender(<String, dynamic>{'result': 'success'});
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: sender,
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '猫'}),
+        context: const AnkiMiningContext(
+          sentence: '猫がいる',
+          source: AnkiMiningSource.video,
+          secondaryCueSentence: '有一只猫',
+        ),
+      );
+      expect(sender.captured!.secondaryCueSentence, '有一只猫');
+
+      await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '犬'}),
+        context: const AnkiMiningContext(sentence: '犬がいる'),
+      );
+      expect(sender.captured!.secondaryCueSentence, isNull);
+    });
+
     test('http 单词音频不搬字节（留给服务端下载）', () async {
       final _FakeSender sender =
           _FakeSender(<String, dynamic>{'result': 'success'});

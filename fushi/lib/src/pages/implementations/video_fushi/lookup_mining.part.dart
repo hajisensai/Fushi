@@ -99,6 +99,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     int clipEndMs,
     String sentence,
     String? cueSentence,
+    String? secondaryCueSentence,
   }) _resolveVideoMiningRange(VideoPlayerController controller) {
     // 查词窗口多句合一（TODO-270 E）。当前 cue 多段兜底（含 gap，BUG-188）。
     // BUG-1592：按位置兜底走**有效流**（主字幕流为空即副字幕流）。命中项已带 cue 的入口
@@ -131,13 +132,22 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 按锚定 cue 所属流取轴（查副字幕词制卡时用副轨生效轴；无 cue 回落有效流轴）。
     final int clipDelayMs =
         cue == null ? controller.miningDelayMs : controller.delayMsForCue(cue);
+    final int clipStartMs = miningClipTimeMs(
+        mergedRange?.startMs ?? cue?.startMs ?? 0, clipDelayMs);
+    final int clipEndMs =
+        miningClipTimeMs(mergedRange?.endMs ?? cue?.endMs ?? 0, clipDelayMs);
     return (
-      clipStartMs: miningClipTimeMs(
-          mergedRange?.startMs ?? cue?.startMs ?? 0, clipDelayMs),
-      clipEndMs:
-          miningClipTimeMs(mergedRange?.endMs ?? cue?.endMs ?? 0, clipDelayMs),
+      clipStartMs: clipStartMs,
+      clipEndMs: clipEndMs,
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
+      // 副字幕例句：副轨在同一播放器窗内的全部 cue（按副轨自己的生效调轴换算）。
+      secondaryCueSentence: secondaryCueSentenceForClip(
+        secondaryCues: controller.secondaryCues,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        secondaryDelayMs: controller.effectiveSecondaryDelayMs,
+      ),
       sentence: mergedSentence,
     );
   }
@@ -151,6 +161,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       int clipEndMs,
       String sentence,
       String? cueSentence,
+      String? secondaryCueSentence,
     }) range = _resolveVideoMiningRange(controller);
     final int queuedEpisode = _currentEpisode;
     final AudioCue? historyCue = _lastLookupCue;
@@ -173,6 +184,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       clipEndMs: range.clipEndMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
+      secondaryCueSentence: range.secondaryCueSentence,
     );
     // result.ankiConnect 是「制卡成功」信号（两后端成功时都置 true；noteId 仅
     // AnkiConnect 非空，故清选中句不能以 noteId 为判据，否则 AnkiDroid 成功也不清）。
@@ -201,6 +213,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       int clipEndMs,
       String sentence,
       String? cueSentence,
+      String? secondaryCueSentence,
     }) range = _resolveVideoMiningRange(controller);
     final int queuedEpisode = _currentEpisode;
 
@@ -210,6 +223,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       clipEndMs: range.clipEndMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
+      secondaryCueSentence: range.secondaryCueSentence,
       updateNoteId: noteId,
     );
     if (result.ankiConnect) {
@@ -241,6 +255,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required int clipEndMs,
     required String sentence,
     String? cueSentence,
+    String? secondaryCueSentence,
     int? updateNoteId,
   }) async {
     final VideoPlayerController? controller = _controller;
@@ -368,6 +383,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         clipEndMs: clipEndMs,
         sentence: sentence,
         cueSentence: cueSentence,
+        secondaryCueSentence: secondaryCueSentence,
         // TODO-761（方案 B）：播放列表下拼「系列名 - 剧集名」，单视频/远端仍是剧集名，零变化。
         documentTitle: documentTitle,
         audioStreamIndex: audioStreamIndex,

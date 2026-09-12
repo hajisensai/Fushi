@@ -8292,6 +8292,7 @@ class _AppModelRemoteLookupService
       final AnkiMiningContext context = AnkiMiningContext(
         sentence: payload.sentence,
         cueSentence: payload.cueSentence,
+        secondaryCueSentence: payload.secondaryCueSentence,
         documentTitle: payload.documentTitle,
         coverPath: coverPath,
         sentenceAudioPath: sentenceAudioPath,
