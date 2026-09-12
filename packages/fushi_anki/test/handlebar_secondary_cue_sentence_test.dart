@@ -69,11 +69,15 @@ void main() {
       );
     });
 
-    test('副轨含匹配词时加粗（与 {cue-sentence} 同规则）', () {
+    test('副轨恒原样输出、不按原语言 matched 加粗', () {
+      // 副轨是翻译：原语言的 matched 拿去 replaceFirst 只会误伤无关子串
+      // （西语查 no → 英文副轨 I do <b>no</b>t know）。含同形字也不加粗。
       expect(
         render('{secondary-cue-sentence}', ctx(secondary: 'この時代は')),
-        'この<b>時代</b>は',
+        'この時代は',
       );
+      // 对照：主轨 {cue-sentence} 才做加粗。
+      expect(render('{cue-sentence}', ctx()), contains('<b>時代</b>'));
     });
 
     test('无副字幕 → 空串，不退回主轨句子', () {

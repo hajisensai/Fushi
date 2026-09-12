@@ -949,8 +949,10 @@ class AnkiHandlebarRenderer {
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
         return _cueSentenceValue(payload, context);
+      // 副轨是另一种语言的翻译：拿原语言的 matched 去 replaceFirst 会误加粗无关子串
+      // （学西语查 no → 英文副轨「I do <b>no</b>t know」），故原样输出、不加粗。
       case '{secondary-cue-sentence}':
-        return _boldMatched(context.secondaryCueSentence ?? '', payload);
+        return context.secondaryCueSentence ?? '';
       case '{frequencies}':
         return payload.frequenciesHtml;
       case '{frequency-harmonic-rank}':
@@ -1056,13 +1058,7 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     AnkiMiningContext context,
   ) {
-    return _boldMatched(context.cueSentence ?? context.sentence, payload);
-  }
-
-  /// [text] 里首个 [AnkiMiningPayload.matched] 加粗；无匹配词或不含时原样返回。
-  /// `{cue-sentence}` / `{secondary-cue-sentence}` 共用（副轨是翻译时通常不含原词，
-  /// 自然落到原样返回）。
-  static String _boldMatched(String text, AnkiMiningPayload payload) {
+    final String text = context.cueSentence ?? context.sentence;
     final String matched = payload.matched;
     if (matched.isEmpty) return text;
     return text.replaceFirst(matched, '<b>$matched</b>');
