@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:fushi/src/anki/source_review_navigation.dart';
+import 'package:fushi/src/anki/source_review_session.dart';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -82,6 +84,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void initState() {
     super.initState();
 
+    ExternalMediaNavigation.instance.register(
+      this,
+      _closeForSourceReturn,
+      returnToReading: SourceReviewScope.read(context)?.onReturnToReading,
+      isSourceReview: () => SourceReviewScope.read(context)?.isReview ?? false,
+    );
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _seedWarmPopup();
     });
@@ -106,6 +115,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @override
   void dispose() {
+    ExternalMediaNavigation.instance.unregister(this);
     _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
     _popup.dispose();
@@ -248,6 +258,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// Handles leaving a source page. All sources should
   /// use this and wrap their [build] function with a [PopScope].
   Future<bool> onWillPop() async {
+    final bool isSourceReview =
+        SourceReviewScope.read(context)?.isReview ?? false;
     final mediaSource = appModel.currentMediaSource;
     final item = widget.item;
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -261,7 +273,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       );
     }
 
-    if (item != null && messenger != null) {
+    if (!isSourceReview && item != null && messenger != null) {
       triggerAutoSyncAfterClose(
         db: appModel.database,
         mediaIdentifier: item.mediaIdentifier,
@@ -269,6 +281,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onReport: appModel.presentSyncPrompts,
       );
     }
+    return true;
+  }
+
+  Future<bool> _closeForSourceReturn() async {
+    if (!mounted) return true;
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) return false;
+    final NavigatorState navigator = Navigator.of(context);
+    if (!await onWillPop()) return false;
+    if (mounted && route.isCurrent) navigator.pop();
+    await route.completed;
     return true;
   }
 
@@ -1385,6 +1408,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// [onUpdateFromPopup] 执行。
   Future<MinePopupResult> onMinedCardActionFromPopup(
       Map<String, String> fields) async {
+    if (SourceReviewScope.read(context) != null) {
+      return onMineFromPopup(fields);
+    }
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
@@ -1433,6 +1459,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// （顶层 / 嵌套 / 重复查各一次）累加 [FushiDatabase.addLookupCount]。best-effort，
   /// 失败吞掉并记日志（与 [addMiningCount] 记账同容错口径）。
   void _recordLookupCounter() {
+    if (SourceReviewScope.read(context)?.isReview ?? false) return;
     // best-effort：连同同步阶段（[AppModel.database] late 字段 getter 在 DB 未初始化
     // 时会抛 LateInitializationError）一起吞掉——查词计数是旁路埋点，任何异常都不得
     // 打断弹窗查词流程（否则 [DictionaryPopupController.beginTop] 会随查词一起崩）。

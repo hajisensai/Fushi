@@ -92,6 +92,9 @@ class _TestAppModel extends AppModel {
     bool pushReplacement = false,
     MediaItem? item,
     Bookmark? initialBookmarkJump,
+    bool recordHistory = true,
+    bool waitUntilClosed = true,
+    Widget Function()? launchPageBuilder,
   }) async {
     opened.add(item);
   }

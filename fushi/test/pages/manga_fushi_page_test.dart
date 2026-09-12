@@ -24,6 +24,8 @@ import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
@@ -110,7 +112,8 @@ class _FakeMangaOcrService implements MangaOcrService {
 }
 
 Widget _harness(AppModel appModel, MediaItem item, String bookKey,
-    {List<Override> extraOverrides = const <Override>[]}) {
+    {List<Override> extraOverrides = const <Override>[],
+    CardSourceLink? sourceReview}) {
   return ProviderScope(
     overrides: <Override>[
       // TODO-2936 起页面 initState 会读 profileViewModelProvider（媒体类型绑定），
@@ -123,7 +126,11 @@ Widget _harness(AppModel appModel, MediaItem item, String bookKey,
       child: MaterialApp(
         builder: (BuildContext context, Widget? child) =>
             child ?? const SizedBox.shrink(),
-        home: MangaFushiPage(item: item, bookKey: bookKey),
+        home: MangaFushiPage(
+          item: item,
+          bookKey: bookKey,
+          sourceReview: sourceReview,
+        ),
       ),
     ),
   );
@@ -261,6 +268,94 @@ void main() {
     expect(find.text('2 / 2'), findsOneWidget,
         reason: 'ReaderPositions.sectionIndex 必须恢复为当前页（0-based → 1-based 显示）');
   });
+
+  testWidgets(
+    'card source opens the requested page without writing reading progress',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final _MangaTestAppModel appModel = _MangaTestAppModel(db);
+      final Directory directory = Directory.systemTemp.createTempSync(
+        'manga_source_review_',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      File(
+        p.join(directory.path, 'manga.json'),
+      ).writeAsStringSync(_mangaJson());
+      Directory(p.join(directory.path, 'images')).createSync();
+      File(
+        p.join(directory.path, 'images', 'p001.jpg'),
+      ).writeAsBytesSync(<int>[1]);
+      File(
+        p.join(directory.path, 'images', 'p002.jpg'),
+      ).writeAsBytesSync(<int>[2]);
+      const String bookKey = 'source-review-manga';
+      await tester.runAsync(() async {
+        await db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: bookKey,
+            title: bookKey,
+            epubPath: 'manga.json',
+            extractDir: directory.path,
+            chapterCount: 2,
+            chaptersJson: '[]',
+            importedAt: 1,
+            format: const Value<String>('manga'),
+          ),
+        );
+        final String uid = (await db.resolveEpubBookUid(bookKey))!;
+        final ReaderPositionRepository positions = ReaderPositionRepository(db);
+        await positions.save(
+          bookUid: uid,
+          sectionIndex: 0,
+          normCharOffset: 0,
+          charOffset: 0,
+        );
+        final ReaderPosition? original = await positions.findByBookUid(uid);
+        await tester.pumpWidget(
+          _harness(
+            appModel,
+            _item(bookKey),
+            bookKey,
+            sourceReview: CardSourceLink(
+              kind: CardSourceKind.manga,
+              uid: uid,
+              sourceId: CardSourceLink.newSourceId(),
+              pageIndex: 1,
+            ),
+          ),
+        );
+        for (int attempt = 0; attempt < 50; attempt++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await tester.pump();
+          if (find
+              .byKey(const ValueKey<String>('manga_content_ready'))
+              .evaluate()
+              .isNotEmpty) {
+            break;
+          }
+        }
+        expect(find.text('2 / 2'), findsOneWidget);
+        await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
+        final ReaderPosition? afterFlush = await positions.findByBookUid(uid);
+        expect(afterFlush?.sectionIndex, original?.sectionIndex);
+        expect((await db.getEpubBook(bookKey))?.completedAt, isNull);
+        final List<Map<String, Object?>> segments =
+            (await db.customSelect('SELECT * FROM study_segments').get())
+                .map((row) => row.data)
+                .toList();
+        expect(segments, isEmpty);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await ExitFlushRegistry.instance.flushAll();
+        expect((await positions.findByBookUid(uid))?.sectionIndex, 0);
+      });
+    },
+  );
 
   testWidgets('阅读器内无 OCR 入口：书加载成功后 chrome 没有整卷/框选按钮，返回按钮仍在',
       (WidgetTester tester) async {

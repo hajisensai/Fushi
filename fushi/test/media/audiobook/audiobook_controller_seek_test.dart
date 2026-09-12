@@ -230,6 +230,77 @@ void main() {
       expect(controller.currentCue, same(cue));
       expect(controller.currentCueIdx, 0);
     });
+
+    test(
+      'source restoration uses the target file and original offset without delay or old-file clamp',
+      () async {
+        final _HangingJustAudioPlatform platform = _installHangingAudioPlatform(
+          ready: true,
+        );
+        final AudiobookPlayerController controller =
+            AudiobookPlayerController();
+        addTearDown(controller.dispose);
+        await controller.load(
+          audiobook: _audiobook(),
+          audioFiles: <File>[
+            File('${Directory.systemTemp.path}/source-short.mp3'),
+            File('${Directory.systemTemp.path}/source-long.mp3'),
+          ],
+          initialDelayMs: 900,
+        );
+        await controller.play();
+        await controller.pause();
+        expect(controller.duration, const Duration(seconds: 2));
+        await controller.restoreToFileOffset(fileIndex: 1, positionMs: 45000);
+        final SeekRequest seek = platform.player!.seeks.last;
+        expect(seek.index, 1);
+        expect(seek.position, const Duration(seconds: 45));
+        expect(controller.explicitSeekInFlightForTesting, isTrue);
+        final int calls = platform.player!.seeks.length;
+        await expectLater(
+          controller.restoreToFileOffset(fileIndex: 0, positionMs: 3000),
+          throwsRangeError,
+        );
+        expect(platform.player!.seeks.length, calls);
+      },
+    );
+
+    test(
+      'source restoration rejects invalid file indices and negative offsets',
+      () async {
+        _installHangingAudioPlatform();
+        final AudiobookPlayerController controller =
+            AudiobookPlayerController();
+        addTearDown(controller.dispose);
+        await controller.load(
+          audiobook: _audiobook(),
+          audioFiles: <File>[
+            File('${Directory.systemTemp.path}/source-only.mp3'),
+          ],
+        );
+        await expectLater(
+          controller.restoreToFileOffset(fileIndex: -1, positionMs: 0),
+          throwsRangeError,
+        );
+        await expectLater(
+          controller.restoreToFileOffset(fileIndex: 1, positionMs: 0),
+          throwsRangeError,
+        );
+        await expectLater(
+          controller.restoreToFileOffset(fileIndex: 0, positionMs: -1),
+          throwsRangeError,
+        );
+        expect(controller.explicitSeekInFlightForTesting, isFalse);
+        await controller.restoreToFileOffset(fileIndex: 0, positionMs: 55000);
+        expect(
+          controller.position.inMilliseconds,
+          55000,
+          reason:
+              'unknown duration must not clamp an original file offset to zero',
+        );
+        expect(controller.explicitSeekInFlightForTesting, isTrue);
+      },
+    );
   });
 }
 
@@ -259,7 +330,7 @@ Audiobook _audiobook() {
     ..alignmentPath = '';
 }
 
-_HangingJustAudioPlatform _installHangingAudioPlatform() {
+_HangingJustAudioPlatform _installHangingAudioPlatform({bool ready = false}) {
   const MethodChannel audioSessionChannel =
       MethodChannel('com.ryanheise.audio_session');
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -270,7 +341,9 @@ _HangingJustAudioPlatform _installHangingAudioPlatform() {
   });
 
   final JustAudioPlatform previousPlatform = JustAudioPlatform.instance;
-  final _HangingJustAudioPlatform platform = _HangingJustAudioPlatform();
+  final _HangingJustAudioPlatform platform = _HangingJustAudioPlatform(
+    ready: ready,
+  );
   JustAudioPlatform.instance = platform;
   addTearDown(() {
     JustAudioPlatform.instance = previousPlatform;
@@ -279,11 +352,13 @@ _HangingJustAudioPlatform _installHangingAudioPlatform() {
 }
 
 class _HangingJustAudioPlatform extends JustAudioPlatform {
+  _HangingJustAudioPlatform({this.ready = false});
+  final bool ready;
   _HangingAudioPlayer? player;
 
   @override
   Future<AudioPlayerPlatform> init(InitRequest request) async {
-    player = _HangingAudioPlayer(request.id);
+    player = _HangingAudioPlayer(request.id, ready: ready);
     return player!;
   }
 
@@ -305,7 +380,24 @@ class _HangingJustAudioPlatform extends JustAudioPlatform {
 }
 
 class _HangingAudioPlayer extends AudioPlayerPlatform {
-  _HangingAudioPlayer(super.id);
+  _HangingAudioPlayer(super.id, {this.ready = false});
+  final bool ready;
+  final List<SeekRequest> seeks = <SeekRequest>[];
+
+  void emitPosition(int index, Duration position) {
+    _events.add(
+      PlaybackEventMessage(
+        processingState: ProcessingStateMessage.ready,
+        updateTime: DateTime.now(),
+        updatePosition: position,
+        bufferedPosition: position,
+        duration: Duration(seconds: index == 0 ? 2 : 120),
+        icyMetadata: null,
+        currentIndex: index,
+        androidAudioSessionId: null,
+      ),
+    );
+  }
 
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
@@ -317,6 +409,15 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<LoadResponse> load(LoadRequest request) {
     loadCalls++;
+    if (ready) {
+      emitPosition(
+        request.initialIndex ?? 0,
+        request.initialPosition ?? Duration.zero,
+      );
+      return Future<LoadResponse>.value(
+        LoadResponse(duration: const Duration(seconds: 2)),
+      );
+    }
     return Completer<LoadResponse>().future;
   }
 
@@ -332,6 +433,10 @@ class _HangingAudioPlayer extends AudioPlayerPlatform {
 
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
+    seeks.add(request);
+    if (ready) {
+      emitPosition(request.index ?? 0, request.position ?? Duration.zero);
+    }
     return SeekResponse();
   }
 

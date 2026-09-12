@@ -8,6 +8,30 @@ import '../../tool/test_flow/test_fixture_generator.dart';
 
 void main() {
   group('comprehensive test matrix', () {
+    test(
+      'emulator drive runner preserves installed app after every target',
+      () {
+        // BUG-2484: inspect the executable invocation, not a nearby comment.
+        final String script = File(
+          '../ci/integration-test.sh',
+        ).readAsStringSync();
+        final RegExpMatch? drive = RegExp(
+          r'^\s*if "\$FLUTTER" drive ([\s\S]*?)&& grep',
+          multiLine: true,
+        ).firstMatch(script);
+        expect(drive, isNotNull);
+        final List<String> args = drive!
+            .group(1)!
+            .replaceAll(RegExp(r'\\\r?\n'), ' ')
+            .split(RegExp(r'\s+'));
+        expect(
+          args.where((String arg) => arg == '--keep-app-running'),
+          hasLength(1),
+        );
+        expect(args, isNot(contains('--no-keep-app-running')));
+      },
+    );
+
     test('covers android, windows, and macos', () {
       final List<PlatformPlan> matrix = buildComprehensiveMatrix();
 

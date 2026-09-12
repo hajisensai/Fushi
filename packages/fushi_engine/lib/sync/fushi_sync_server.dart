@@ -485,6 +485,10 @@ class FushiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _lookupRoutes.handleAnkiNoteType(request, reqPath);
     }
+    if (reqPath.startsWith('/api/anki/source/')) {
+      if (method != 'POST') return shelf.Response(405);
+      return _lookupRoutes.handleSourceNote(request, reqPath);
+    }
     if (reqPath.startsWith('/api/anki/media/dedup/')) {
       if (method != 'POST') return shelf.Response(405);
       return _handleAnkiMediaDedup(request, reqPath);

@@ -333,8 +333,28 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       controller = await session.start(
         info: req.info,
         audioFiles: req.audioFiles,
-        prefs: req.prefs,
-        persist: req.persist,
+        prefs: _sourceReviewActive
+            ? SessionPrefs(
+                followAudio: false,
+                delayMs: req.prefs.delayMs,
+                speed: req.prefs.speed,
+                positionMs: 0,
+                imagePauseSec: req.prefs.imagePauseSec,
+                volume: req.prefs.volume,
+              )
+            : req.prefs,
+        persist: SessionPersistCallbacks(
+          onPositionWrite: (String key, int positionMs) async {
+            if (!_sourceReviewActive) {
+              await req.persist.onPositionWrite(key, positionMs);
+            }
+          },
+          onDelayPersist: req.persist.onDelayPersist,
+          onSpeedPersist: req.persist.onSpeedPersist,
+          onVolumePersist: req.persist.onVolumePersist,
+          onImagePausePersist: req.persist.onImagePausePersist,
+          onFollowAudioPersist: req.persist.onFollowAudioPersist,
+        ),
         // 灌扁平全书 cue 作初值（_primeAudioCuesForCurrentBook 随后按章节精确覆盖）；
         // 与后台听书路径共用 req.cues，使 attach 前的瞬态也有 cue（TODO-354）。
         cues: req.cues,
@@ -352,7 +372,35 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
     if (controller == null) return;
     if (!mounted) {
-      // 页面在 await 期间被弃：会话仍可在后台续播（用户决策①后台继续），不 stop。
+      if (_sourceReviewSession != null &&
+          identical(session.controller, controller)) {
+        await session.stop();
+      }
+      return;
+    }
+    final CardSourceLink? source = _sourceReviewSession?.link;
+    if (source?.startMs != null && source?.audioFileIndex != null) {
+      try {
+        await controller.restoreToFileOffset(
+          fileIndex: source!.audioFileIndex!,
+          positionMs: source.startMs!,
+        );
+      } catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'ReaderFushi.restoreCardSource',
+          error,
+          stackTrace,
+        );
+        if (identical(session.controller, controller)) await session.stop();
+        if (mounted) FushiToast.show(msg: t.card_source_review_invalid);
+        return;
+      }
+    }
+    if (!mounted) {
+      if (_sourceReviewSession != null &&
+          identical(session.controller, controller)) {
+        await session.stop();
+      }
       return;
     }
     if (req.info.isSrtBookSource) {

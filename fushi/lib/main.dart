@@ -63,7 +63,9 @@ import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/anki/card_source_router.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
@@ -105,6 +107,7 @@ String? _pendingExternalVideoPath;
 /// 冷启动时从 `main(args)` 暂存待查词；app 初始化完成后由 [_FushiReaderAppState]
 /// 经 [DesktopLookupService.triggerLookup] 排队查词。null = 本次启动非深链查词。
 String? _pendingLookupDeepLinkWord;
+final List<String> _pendingCardSourceUrls = <String>[];
 
 /// 外部打开新视频时的自动封面锁边界。maintenance 已开始时 [action] 仍可按
 /// `allowAutoCover == false` 建立无封面的媒体行，但不得产生自动封面文件。
@@ -172,6 +175,10 @@ void main([List<String> args = const <String>[]]) {
     // BUG-1666：系统协议注册把 `fushi://lookup?word=<词>` 交给 `fushi.exe "%1"`，
     // 冷启动时该 URL 就在 argv 里；与视频路径互斥判定（URL 不会命中视频白名单）。
     for (final String arg in args) {
+      if (SourceUrlChannel.isSourceUrl(arg)) {
+        _pendingCardSourceUrls.add(arg);
+        break;
+      }
       final String? word = lookupWordFromDeepLink(arg);
       if (word != null) {
         _pendingLookupDeepLinkWord = word;
@@ -684,6 +691,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
   bool _lookupDeepLinkHandled = false;
+  StreamSubscription<String>? _sourceUrlSubscription;
+  bool _sourceNavigationScheduled = false;
+  bool _sourceNavigationRunning = false;
+  String? _openingCardSourceUrl;
 
   /// TODO-904 P0 回归：Windows 单实例守卫下，第二实例（文件关联 / 拖到 exe / CLI
   /// `hibiki.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
@@ -842,6 +853,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           ),
         );
       });
+    }
+    if (Platform.isMacOS) {
+      _sourceUrlSubscription =
+          SourceUrlChannel.urls.listen(_queueCardSourceUrl);
     }
     if (Platform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -1088,6 +1103,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   @override
   void dispose() {
+    _sourceUrlSubscription?.cancel();
     _intentsSubscription?.cancel();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
@@ -1127,6 +1143,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     required bool isInitial,
   }) async {
     if (data == null || !mounted) return false;
+    if (SourceUrlChannel.isSourceUrl(data)) {
+      _queueCardSourceUrl(data);
+      return true;
+    }
     final String normalized = data.toLowerCase();
     if (normalized.startsWith('fushi://auth/')) {
       await _handleOAuthRedirect(data);
@@ -1140,6 +1160,57 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     return false;
+  }
+
+  void _queueCardSourceUrl(String url) {
+    if (_openingCardSourceUrl == url) return;
+    if (!_pendingCardSourceUrls.contains(url)) _pendingCardSourceUrls.add(url);
+    if (!mounted) return;
+    if (!ref.read(appProvider).isInitialised) {
+      setState(() {});
+      return;
+    }
+    _scheduleCardSourceNavigation();
+  }
+
+  void _scheduleCardSourceNavigation() {
+    if (_sourceNavigationScheduled ||
+        _sourceNavigationRunning ||
+        _pendingCardSourceUrls.isEmpty) {
+      return;
+    }
+    _sourceNavigationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sourceNavigationScheduled = false;
+      if (mounted) unawaited(_drainCardSourceNavigation());
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _drainCardSourceNavigation() async {
+    if (_sourceNavigationRunning) return;
+    _sourceNavigationRunning = true;
+    try {
+      while (mounted && _pendingCardSourceUrls.isNotEmpty) {
+        final String url = _pendingCardSourceUrls.removeAt(0);
+        final CardSourceLink? link = CardSourceLink.tryParse(url);
+        if (link == null) {
+          FushiToast.show(msg: t.card_source_review_invalid);
+          continue;
+        }
+        try {
+          _openingCardSourceUrl = url;
+          await openCardSource(ref: ref, link: link);
+        } catch (error, stackTrace) {
+          ErrorLogService.instance.log('CardSource.open', error, stackTrace);
+          FushiToast.show(msg: t.card_source_review_failed);
+        } finally {
+          _openingCardSourceUrl = null;
+        }
+      }
+    } finally {
+      _sourceNavigationRunning = false;
+    }
   }
 
   Future<void> _handleAnkiMobileInfoCallback() async {
@@ -1226,6 +1297,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (raw is! String) return null;
     final String videoPath = raw;
     if (videoPath.isEmpty) return null;
+    if (SourceUrlChannel.isSourceUrl(videoPath)) {
+      _queueCardSourceUrl(videoPath);
+      return null;
+    }
     // BUG-1666：单实例转交的是「候选 argv 字符串」，不只视频路径——Anki 卡片上的
     // `fushi://lookup?word=<词>` 协议启动第二实例后经同一 WM_COPYDATA 通道到这里。
     // 深链先于视频白名单分流：查词请求交 DesktopLookupService（explicit 起源，
@@ -1864,6 +1939,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         ),
       );
     }
+
+    _scheduleCardSourceNavigation();
 
     // app 已初始化完成（走到这里说明 home 即将渲染）：若本次启动是「从 app 外
     // 打开视频」，在首帧后建/取 VideoBook 并打开播放页。只触发一次。

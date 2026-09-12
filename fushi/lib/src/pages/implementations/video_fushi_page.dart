@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/source_review_session.dart';
+import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:media_kit/media_kit.dart';
@@ -40,6 +42,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -503,6 +506,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required this.repo,
     this.playlistCollectionId,
     this.initialCueStartMs,
+    this.sourceReview,
+    this.sourceReviewSession,
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     this.initialFullscreen = false,
@@ -516,6 +521,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required this.repo,
     required RemoteVideoClient client,
     this.initialCueStartMs,
+    this.sourceReview,
+    this.sourceReviewSession,
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     this.remoteCollectionMembers,
@@ -542,6 +549,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 本地专用；远端播放列表走 host 驱动的 episodeIndex，不用此字段。
   final int? playlistCollectionId;
   final int? initialCueStartMs;
+  final CardSourceLink? sourceReview;
+  final SourceReviewSession? sourceReviewSession;
   final int? initialEpisodeIndex;
   final bool initialSubtitleListVisible;
 
@@ -563,6 +572,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required VideoBookRepository repo,
     int? playlistCollectionId,
     int? initialCueStartMs,
+    CardSourceLink? sourceReview,
+    SourceReviewSession? sourceReviewSession,
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
@@ -573,6 +584,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
           repo: repo,
           playlistCollectionId: playlistCollectionId,
           initialCueStartMs: initialCueStartMs,
+          sourceReview: sourceReview,
+          sourceReviewSession: sourceReviewSession,
           initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
           initialFullscreen: initialFullscreen,
@@ -584,6 +597,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required VideoBookRepository repo,
     required RemoteVideoClient client,
     int? initialCueStartMs,
+    CardSourceLink? sourceReview,
+    SourceReviewSession? sourceReviewSession,
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
     List<RemoteVideoInfo>? remoteCollectionMembers,
@@ -594,6 +609,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
           repo: repo,
           client: client,
           initialCueStartMs: initialCueStartMs,
+          sourceReview: sourceReview,
+          sourceReviewSession: sourceReviewSession,
           initialEpisodeIndex: initialEpisodeIndex,
           initialSubtitleListVisible: initialSubtitleListVisible,
           remoteCollectionMembers: remoteCollectionMembers,
@@ -716,6 +733,9 @@ class _VideoLevelHudState {
 abstract class VideoFushiTestHooks {
   /// 当前播放位置（毫秒）；未就绪为 null。
   int? get debugPositionMs;
+
+  /// 直接读取播放器真实播放态，避免测试从控制条图标推断。
+  bool get debugIsPlaying;
 
   /// 当前 controller 读到的内封章节数量。
   int get debugChapterCount;
@@ -1000,6 +1020,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
+
+  @override
+  bool get debugIsPlaying => _controller?.isPlaying ?? false;
 
   @override
   int get debugChapterCount => _controller?.chapters.length ?? 0;
@@ -1513,6 +1536,62 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 观看统计采集器（观看时长 + 字幕字数 + 完成标记）；首次 load 建，dispose 释放。
   VideoWatchTracker? _watchTracker;
+  SourceReviewSession? _sourceReviewSession;
+  bool _reviewContinued = false;
+  bool _sourceReviewPlayPending = false;
+  bool _disposedDuringSourceReview = false;
+  bool get _sourceReviewActive =>
+      _disposedDuringSourceReview ||
+      (_sourceReviewSession?.isReview ??
+          widget.sourceReviewSession?.isReview ??
+          (widget.sourceReview != null && !_reviewContinued));
+
+  @override
+  void recordLookup() {
+    if (_sourceReviewActive) return;
+    super.recordLookup();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final SourceReviewSession? session =
+        widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
+    if (identical(session, _sourceReviewSession)) return;
+    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
+    _sourceReviewSession = session;
+    // A manually opened next episode can inherit an already-continued session.
+    // Its later draft/busy notifications are not another request to play.
+    _reviewContinued = session != null && !session.isReview;
+    session?.addListener(_onSourceReviewChanged);
+    _registerExternalNavigation();
+  }
+
+  void _onSourceReviewChanged() {
+    if (!mounted || _sourceReviewActive || _reviewContinued) return;
+    _reviewContinued = true;
+    _sourceReviewPlayPending = true;
+    _playAfterSourceReviewIfReady();
+    setState(() {});
+  }
+
+  /// BUG-2487: continuing a paused source review is an explicit play action.
+  /// Keep it pending while load() is in flight: that load may already have
+  /// captured autoPlay=false, and notification alone cannot change it.
+  void _playAfterSourceReviewIfReady() {
+    final VideoPlayerController? controller = _controller;
+    if (!mounted ||
+        _sourceReviewActive ||
+        !_sourceReviewPlayPending ||
+        controller == null) {
+      return;
+    }
+    _sourceReviewPlayPending = false;
+    _ensureWatchTracker(controller, _title ?? '');
+    unawaited(controller.play());
+    unawaited(controller.flushPosition());
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.chromeToggled);
+  }
 
   /// 进程退出 flush 回调引用（TODO-086/BUG-191）：initState 登记到
   /// [ExitFlushRegistry]，dispose 注销。保证未落库的播放位置 + 观看统计在
@@ -1978,6 +2057,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void initState() {
     super.initState();
+    _registerExternalNavigation();
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown);
     }
@@ -2321,6 +2401,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 的远端播放路径（_initRemote）。YouTube 会在 buildStreamVideoLaunch 里重解析（临时流
     // URL 会过期）；重建失败按打开失败处理。放在读 row 后、本地字幕/进度恢复前短路。
     if (isStreamVideoBook(row)) {
+      // Block before the webpage player replacement or stream resolver: both
+      // may establish an external playback session before media_kit opens.
+      if (_sourceReviewActive) {
+        if (mounted) {
+          setState(() {
+            _failed = true;
+            _failReason = t.card_source_review_local_required;
+          });
+        }
+        return;
+      }
       // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
       // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
       // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
@@ -2491,7 +2582,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 建 _episodes，绕开 info.isPlaylist 门控。换集换的是成员 id（见 _loadRemoteEpisode）。
     if (_isRemoteCollection) {
       final int startIndex =
-          (widget.initialEpisodeIndex ?? 0).clamp(0, _remoteMembers.length - 1);
+          (widget.sourceReview?.episodeIndex ?? widget.initialEpisodeIndex ?? 0)
+              .clamp(0, _remoteMembers.length - 1);
       _episodes = <_PlaylistEpisodeRef>[
         for (final RemoteVideoInfo m in _remoteMembers)
           // 远端合集成员自带封面（host 下发 coverUrl + 稳定 id 作缓存键）——
@@ -2513,9 +2605,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _remoteMembers[startIndex], _remoteMembers[startIndex].id);
       await _loadRemoteEpisode(
         startIndex,
-        startIntent: EpisodeStartIntent.initialOpen,
-        initialPositionMsOverride: _resolveRemoteInitialPositionMs(
-            _remoteMembers[startIndex], startIndex),
+        startIntent: widget.sourceReview == null
+            ? EpisodeStartIntent.initialOpen
+            : EpisodeStartIntent.explicitCue,
+        initialPositionMsOverride: widget.sourceReview?.startMs ??
+            _resolveRemoteInitialPositionMs(
+                _remoteMembers[startIndex], startIndex),
       );
       return;
     }
@@ -2524,7 +2619,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // _episodes（path 留空，切集靠 episodeIndex 向 host 重新建流），复用既有 _isPlaylist / 剧集
     // 面板 / 上下集。
     final int startIndex = info.isPlaylist
-        ? (widget.initialEpisodeIndex ?? info.currentEpisode)
+        ? (widget.sourceReview?.episodeIndex ??
+                widget.initialEpisodeIndex ??
+                info.currentEpisode)
             .clamp(0, info.episodes.length - 1)
         : 0;
     if (info.isPlaylist) {
@@ -2535,9 +2632,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     await _loadRemoteEpisode(
       startIndex,
-      startIntent: EpisodeStartIntent.initialOpen,
+      startIntent: widget.sourceReview == null
+          ? EpisodeStartIntent.initialOpen
+          : EpisodeStartIntent.explicitCue,
       // 起播集恢复其按集断点（host 真相 vs 本地 prefs 取较新者）。
-      initialPositionMsOverride:
+      initialPositionMsOverride: widget.sourceReview?.startMs ??
           _resolveRemoteInitialPositionMs(info, startIndex),
     );
   }
@@ -2575,6 +2674,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _resolveRemoteInitialSecondarySource(secInfo, secUid);
     _secondaryDelayMs = _resolveRemoteInitialSecondaryDelayMs(secInfo, secUid);
     final RemoteVideoClient client = _effectiveRemoteClient!;
+    // Remote negotiation may report Started/Played, and no transport supplies
+    // a locally verified full-file identity. Download before source review.
+    if (_sourceReviewActive) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _failReason = t.card_source_review_local_required;
+        });
+      }
+      return;
+    }
     final int seq = ++_episodeLoadSeq;
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
@@ -2986,6 +3096,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// TODO-653：同时把进度 best-effort 上报到 host（跨设备同步真相源）。上报失败
   /// （离线 / 旧 host 无端点）只记日志不抛——本地 prefs 已写，不阻塞播放也不丢进度。
   Future<void> _persistRemotePosition(String uid, int posMs) async {
+    if (_sourceReviewActive) return;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final int clamped = posMs < 0 ? 0 : posMs;
     // BUG-996：位置低于「真观看」阈值（近视频起点）时不落本地带戳断点、也不上报 host。
@@ -3036,6 +3147,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required int positionMs,
     required int generation,
   }) async {
+    if (_sourceReviewActive) return;
     final Object? stopClient = client;
     if (info == null || stopClient is! RemoteVideoPlaybackStop) return;
     if (!_remotePlaybackStopGenerations.add(generation)) return;
@@ -3211,8 +3323,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       videoPath: paths.videoPath,
       cues: cues,
       title: row.title,
-      initialPositionMs: widget.initialCueStartMs ?? row.lastPositionMs,
-      startIntent: widget.initialCueStartMs == null
+      initialPositionMs: widget.sourceReview?.startMs ??
+          widget.initialCueStartMs ??
+          row.lastPositionMs,
+      startIntent: widget.sourceReview?.startMs == null &&
+              widget.initialCueStartMs == null
           ? EpisodeStartIntent.initialOpen
           : EpisodeStartIntent.explicitCue,
       externalSubtitlePath: externalSub,
@@ -3458,6 +3573,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
     bool detectHls = true,
   }) async {
+    // The locator describes exact bytes, not merely a same-named library row.
+    // Manual cross-episode navigation retains the session, without reusing the
+    // original episode's locator or fingerprint for the newly selected file.
+    final CardSourceLink? source = widget.sourceReview;
+    if (source != null) {
+      bool matches = false;
+      try {
+        matches = VideoSourceFingerprint.isLocalPath(videoPath) &&
+            source.fingerprint != null &&
+            await VideoSourceFingerprint.instance.matches(
+              videoPath!,
+              source.fingerprint!,
+            );
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log('video.sourceFingerprint', error, stack);
+      }
+      if (!mounted) return;
+      if (!matches) {
+        setState(() {
+          _failed = true;
+          _failReason = t.card_source_review_fingerprint_mismatch;
+        });
+        return;
+      }
+    }
     // TODO-897：本地视频资源缺失（被移动 / 删除 / 所在盘未挂载）前置短路。
     // libmpv 对失效本地路径静默失败（不抛、不回调），下面的 try/catch 与页级
     // spinner 都救不了→media_kit 自带缓冲圈无限转。故在 controller.load 之前判定：
@@ -3536,7 +3676,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         luaScriptPaths: luaScriptPaths,
         mpvConfig: mpvConfig,
         httpHeaderFields: _streamHttpHeaderFields,
-        autoPlay: true,
+        autoPlay: !_sourceReviewActive,
         externalAudioTrackUrl: externalAudioTrackUrl,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
@@ -3673,6 +3813,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _prewarmNextEpisodeSubtitleCache();
 
+    _ensureWatchTracker(controller, title);
+    _playAfterSourceReviewIfReady();
+    unawaited(_restoreAudioTrack(controller));
+    unawaited(_restoreSecondarySubtitle(controller));
+  }
+
+  /// Start fresh at the explicit continue action; review playback never feeds
+  /// the watch coverage ledger, completion callbacks, or study clock.
+  void _ensureWatchTracker(VideoPlayerController controller, String title) {
+    if (_sourceReviewActive) return;
     // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
     // 判据 [_bookRow] 非空 = 书架书（本地视频 + TODO-1157 流媒体书都有 VideoBooks 行）：
     // 流媒体书（YouTube 等）在本机播放同样计观看时长/字幕字数/看完标记（用户在 app 内
@@ -3716,13 +3866,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ..attach(controller)
         ..start();
     }
-
-    // 恢复用户选过的音轨（含多集换集复用）：audioTracks 在 player open 后才填充，
-    // 延迟一拍再读，按 id 匹配；找不到（轨不存在/未选过）就跳过保留 libmpv 默认。
-    unawaited(_restoreAudioTrack(controller));
-    // TODO-857 / TODO-1312：恢复用户选过的副字幕轨（Flutter overlay 副层 cue 流）。与主
-    // 字幕独立，仅内嵌轨；其内部 _waitUntilSubtitleTracksReady 等轨就绪。
-    unawaited(_restoreSecondarySubtitle(controller));
   }
 
   /// TODO-897 / BUG-805：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 /
@@ -3905,6 +4048,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 播放列表也按集镜像到 `video_remote_position_<uid>#ep<N>`，让 client 按集恢复 host
   /// 自看进度（与远端剧集列表的按集 key 同源）。
   Future<void> _persistPosition(String uid, int posMs) async {
+    if (_sourceReviewActive) return;
     final int clamped = posMs < 0 ? 0 : posMs;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     // 统一合集 Phase 3：每集是独立 VideoBooks 行 → 恒单视频持久化（写该集自己的
@@ -4002,6 +4146,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    _disposedDuringSourceReview = _sourceReviewActive;
+    ExternalMediaNavigation.instance.unregister(this);
+    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
     _releaseHandedOverNativeFullscreen();
@@ -4829,6 +4976,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
 
+  @override
+  Future<MinePopupResult> onMinedCardAction(Map<String, String> fields) =>
+      _sourceReviewSession != null
+          ? onMineEntry(fields)
+          : super.onMinedCardAction(fields);
+
+  Future<MineOutcome> _mineSourceReview(
+    SourceReviewSession session, {
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) =>
+      runWithLookupPopupHidden(
+        () => session.mine(rawPayloadJson: rawPayloadJson, context: context),
+      );
+
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）。视频页覆写了 [onMineEntry] 绕过
   /// mixin，故覆盖路径也在本页复用视频媒体链路（GIF 封面 + 区间音频），按 id 真实
   /// 覆盖而非删旧建新（[_mineVideoCard] 的 `updateNoteId` 分支）。覆盖同样吃多句合一
@@ -4889,6 +5051,67 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           .instance
           .log('VideoFushiPage.exitFlushPosition', error, stack),
     );
+  }
+
+  /// External links must finish the old media session before opening another
+  /// one. A persistence failure cancels navigation without losing this page.
+  void _registerExternalNavigation() {
+    ExternalMediaNavigation.instance.register(
+      this,
+      _closeForExternalNavigation,
+      videoUid: () => widget.remoteInfo == null ? widget.bookUid : null,
+      isSourceReview: () => _sourceReviewActive,
+      returnToReading: (_sourceReviewSession ?? widget.sourceReviewSession)
+          ?.onReturnToReading,
+    );
+  }
+
+  Future<bool> _closeForExternalNavigation() async {
+    if (!mounted || _videoFullscreenTransitioning) return false;
+    final NavigatorState navigator = Navigator.of(context);
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    final BuildContext? controlsContext = _videoControlsContext;
+    final bool fullscreen = controlsContext != null &&
+        controlsContext.mounted &&
+        isFullscreen(controlsContext);
+    // A dialog may own the top route. Popping it would leave this video alive
+    // and wait forever for its completed future, locking external navigation.
+    if (route == null ||
+        (!route.isCurrent &&
+            !(controlsContext != null &&
+                fullscreen &&
+                ModalRoute.of(controlsContext)?.isCurrent == true))) {
+      return false;
+    }
+    while (_dismissTopForegroundLayer()) {}
+    _cancelAutoAdvanceCountdown();
+    final VideoPlayerController? controller = _controller;
+    try {
+      await controller?.pause();
+      await _flushPositionAndReportRemotePlaybackStopped(
+        controller: controller,
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        positionMs: controller?.positionMs,
+        generation: _remotePlaybackGeneration,
+      );
+      if (controlsContext != null && fullscreen && controlsContext.mounted) {
+        await _exitVideoFullscreen(controlsContext);
+      }
+      if (!mounted) return true;
+      if (!route.isCurrent) return false;
+      await _watchTracker?.stop();
+      navigator.pop();
+      await route.completed;
+      return true;
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'VideoFushiPage.externalNavigation',
+        error,
+        stack,
+      );
+      return false;
+    }
   }
 
   /// 逐级退出的**唯一**层级表（BUG-1862）：从最前台到最后台关掉一层并返回 true；一层
@@ -7637,11 +7860,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // [_mobileControlsTheme]），与播放控制一起随鼠标/触摸显隐，单一顶栏。
     // HDR 直通（video_hdr_output.dart）：libmpv 宿主窗钉在主窗正后方，视频洞必须
     // 一路透到底，页面底色随之透明；失败 / 加载 / 缺资源态与非 HDR 播放不受影响。
+    // 横幅卸载后会话仍在：继续观看期间的制卡/覆写照样走 [SourceReviewSession]，
+    // 它的失败提示只认最后一次 attach 的 context。横幅是唯一 attach 点时，继续观看
+    // 那一帧起 context 就是已卸载的，提示会被静默吞掉——由页面自己接管。
+    _sourceReviewSession?.attachContext(context);
     return ValueListenableBuilder<bool>(
       valueListenable: controller?.hdrHostActive ?? _kHdrHostInactive,
       builder: (BuildContext _, bool hdrHost, Widget? body) => Scaffold(
         backgroundColor: hdrHost ? Colors.transparent : cs.surface,
-        body: body,
+        body: Column(
+          children: <Widget>[
+            // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
+            // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
+            // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。
+            if (_sourceReviewSession case final SourceReviewSession session
+                when session.isReview)
+              SafeArea(
+                bottom: false,
+                child: SourceReviewBanner(
+                  runHidden: runWithLookupPopupHidden,
+                  session: session,
+                  onReturn: () => unawaited(_handleBackOrExit()),
+                ),
+              ),
+            Expanded(child: body ?? const SizedBox.shrink()),
+          ],
+        ),
       ),
       child: _failed
           ? _buildFailedBody(cs)

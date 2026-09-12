@@ -2,10 +2,11 @@
 #
 # The script never touches user-owned Fushi instances (e.g.
 # D:\APP\Fushi\fushi.exe) or IDE dart/flutter processes: those are only recorded
-# as evidence. It DOES reap stale TEST-RUNNER processes from a previous crashed run
-# of this same runner, scoped strictly to this worktree's build\windows\x64\runner
-# path (a stuck prior runner locks the build/debug port -> "Unable to start the
-# app"). The test runner then starts with a unique run id, off-screen window mode,
+# as evidence. An existing process at the exact Debug output path blocks a new
+# run; a build-directory path never proves that a process belongs to a test.
+# No pre-existing process is terminated. The runner starts with a unique run id,
+# and captures only new Debug processes descended from its own launcher, with
+# off-screen window mode,
 # isolated app data/log/temp roots, and an isolated WebView2 profile.
 #
 # Usage (from fushi/):
@@ -148,10 +149,32 @@ function Write-JsonFile {
     Out-File -LiteralPath $Path -Encoding UTF8
 }
 
+function Test-RunnerProcessAncestry {
+  param(
+    [int]$ParentProcessId,
+    [int]$LauncherProcessId
+  )
+  if ($LauncherProcessId -le 0) { return $false }
+  $ancestorId = $ParentProcessId
+  $seen = @{}
+  for ($depth = 0; $depth -lt 32 -and $ancestorId -gt 0; $depth++) {
+    if ($ancestorId -eq $LauncherProcessId) { return $true }
+    if ($seen.ContainsKey($ancestorId)) { return $false }
+    $seen[$ancestorId] = $true
+    $ancestor = Get-CimInstance Win32_Process `
+      -Filter "ProcessId = $ancestorId" -ErrorAction SilentlyContinue
+    if ($null -eq $ancestor) { return $false }
+    $ancestorId = [int]$ancestor.ParentProcessId
+  }
+  return $false
+}
+
 function Get-FushiProcessSnapshot {
   param(
     [Parameter(Mandatory = $true)][string]$CurrentRunId,
-    [Parameter(Mandatory = $true)][string]$RunnerPathPrefix
+    [Parameter(Mandatory = $true)][string]$ExpectedRunnerPath,
+    [int[]]$BeforeProcessIds = @(),
+    [int]$LauncherProcessId = 0
   )
   $processes = @(Get-Process -Name "fushi" -ErrorAction SilentlyContinue)
   $byId = @{}
@@ -167,11 +190,11 @@ function Get-FushiProcessSnapshot {
     $id = [int]$cim.ProcessId
     $process = $byId[$id]
     $path = [string]$cim.ExecutablePath
-    $isRunner = $false
-    if ($path) {
-      $isRunner = $path.StartsWith($RunnerPathPrefix,
-        [System.StringComparison]::OrdinalIgnoreCase)
-    }
+    $matchesRunnerPath = [string]::Equals($path, $ExpectedRunnerPath,
+      [System.StringComparison]::OrdinalIgnoreCase)
+    $isRunner = $matchesRunnerPath -and ($BeforeProcessIds -notcontains $id) -and
+      (Test-RunnerProcessAncestry -ParentProcessId ([int]$cim.ParentProcessId) `
+        -LauncherProcessId $LauncherProcessId)
     [pscustomobject]@{
       runId = $CurrentRunId
       pid = $id
@@ -181,6 +204,7 @@ function Get-FushiProcessSnapshot {
       creationDate = [string]$cim.CreationDate
       mainWindowTitle = if ($process) { [string]$process.MainWindowTitle } else { "" }
       mainWindowHandle = if ($process) { [string]$process.MainWindowHandle } else { "" }
+      isExpectedRunnerPath = $matchesRunnerPath
       isTestRunner = $isRunner
     }
   }
@@ -338,9 +362,11 @@ foreach ($path in @(
   New-Item -ItemType Directory -Force -Path $path | Out-Null
 }
 
-$RunnerPathPrefix = Join-Path $AppRoot "build\windows\x64\runner"
 $before = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
-  -RunnerPathPrefix $RunnerPathPrefix)
+  -ExpectedRunnerPath $Paths.expectedRunnerPath)
+$BeforeProcessIds = @($before | ForEach-Object { [int]$_.pid })
+$BlockingRunnerProcesses = @($before | Where-Object { $_.isExpectedRunnerPath })
+$LauncherProcessId = 0
 Write-JsonFile $before (Join-Path $EvidenceDir "process-before.json") -AsArray
 Write-JsonFile $Paths (Join-Path $EvidenceDir "paths.json")
 
@@ -380,29 +406,6 @@ $runnerInfoPath = Join-Path $EvidenceDir "runner-info.json"
   "[itest] keepUserDirs=$($KeepUserDirs.IsPresent)"
 ) | Out-File -LiteralPath $commandLog -Encoding UTF8
 
-# Reap stale TEST-RUNNER processes left by a PREVIOUS crashed run of THIS runner.
-# Scope is strictly this worktree's build\windows\x64\runner path (isTestRunner is
-# set by exact path-prefix match in Get-FushiProcessSnapshot), so this NEVER kills
-# the user's installed Fushi (e.g. D:\APP\Fushi\fushi.exe) or IDE dart/flutter
-# processes. A stuck prior test-runner locks the build output / debug port and is a
-# known cause of "Unable to start the app on the device". Never hand-kill by name.
-if (-not $DryRun) {
-  foreach ($proc in $before) {
-    if ($proc.isTestRunner) {
-      try {
-        Stop-Process -Id ([int]$proc.pid) -Force -ErrorAction Stop
-        Add-Content -LiteralPath $commandLog `
-          -Value "[itest] reaped stale test-runner pid=$($proc.pid) path=$($proc.path)"
-        Write-Host "[itest] reaped stale test-runner pid=$($proc.pid)" `
-          -ForegroundColor DarkYellow
-      } catch {
-        Add-Content -LiteralPath $commandLog `
-          -Value "[itest] could not reap pid=$($proc.pid): $($_.Exception.Message)"
-      }
-    }
-  }
-}
-
 $runnerRecords = [System.Collections.ArrayList]::new()
 Write-JsonFile ([pscustomobject]@{
   runId = $RunId
@@ -414,6 +417,16 @@ Write-JsonFile ([pscustomobject]@{
 $exitCode = 0
 if ($DryRun) {
   Add-Content -LiteralPath $commandLog -Value "[itest] dry run: runner not started"
+} elseif ($BlockingRunnerProcesses.Count -gt 0) {
+  # BUG-2486: even an exact Debug binary may be a user-owned manual session.
+  # Refuse the conflicting build instead of guessing ownership and killing it.
+  $exitCode = 1
+  foreach ($existing in $BlockingRunnerProcesses) {
+    $blockedMessage = "[itest] blocked: existing process pid=$($existing.pid) " +
+      "uses Debug output $($existing.path); no process was terminated."
+    Add-Content -LiteralPath $commandLog -Value $blockedMessage
+    Write-Host $blockedMessage -ForegroundColor Red
+  }
 } else {
   $oldHidden = $env:FUSHI_TEST_HIDDEN
   $oldOnscreen = $env:FUSHI_TEST_ONSCREEN
@@ -501,6 +514,7 @@ if ($DryRun) {
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $psi
     [void]$process.Start()
+    $LauncherProcessId = [int]$process.Id
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
 
@@ -508,7 +522,8 @@ if ($DryRun) {
     $shotCount = 0
     while (-not $process.HasExited) {
       $snapshot = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
-        -RunnerPathPrefix $RunnerPathPrefix)
+        -ExpectedRunnerPath $Paths.expectedRunnerPath `
+        -BeforeProcessIds $BeforeProcessIds -LauncherProcessId $LauncherProcessId)
       Add-RunnerSnapshot -RunnerRecords $runnerRecords -Snapshot $snapshot
       # Throttled OS screen-grab of the runner window: ~1 shot / 2s, capped at
       # 12. -Visible uses CopyFromScreen (real on-screen pixels incl. WebView);
@@ -571,7 +586,8 @@ if ($DryRun) {
 }
 
 $after = @(Get-FushiProcessSnapshot -CurrentRunId $RunId `
-  -RunnerPathPrefix $RunnerPathPrefix)
+  -ExpectedRunnerPath $Paths.expectedRunnerPath `
+  -BeforeProcessIds $BeforeProcessIds -LauncherProcessId $LauncherProcessId)
 Write-JsonFile $after (Join-Path $EvidenceDir "process-after.json") -AsArray
 Write-JsonFile ([pscustomobject]@{
   runId = $RunId

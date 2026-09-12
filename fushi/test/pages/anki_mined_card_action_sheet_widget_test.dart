@@ -175,6 +175,10 @@ void main() {
     // Open the viewer via the view icon.
     await tester.tap(find.byIcon(Icons.open_in_new));
     await tester.pumpAndSettle();
+    // BUG-2483: the viewer replaces candidate content in the same dialog route.
+    expect(find.byType(AlertDialog, skipOffstage: false), findsOneWidget);
+    expect(
+        find.text(t.anki_mined_card_title, skipOffstage: false), findsNothing);
     // Field names + values are shown read-only.
     expect(find.text('Expression'), findsOneWidget);
     expect(find.text('日本語'), findsWidgets);
@@ -184,6 +188,56 @@ void main() {
     await tester.tap(find.text(t.anki_note_viewer_open_in_anki));
     await tester.pumpAndSettle();
     expect(repo.openedNoteId, 300);
+    // Closing the viewer must finish this action, not reveal a second modal.
+    final BuildContext viewerContext = tester.element(find.byType(AlertDialog));
+    await tester.tap(
+        find.text(MaterialLocalizations.of(viewerContext).closeButtonLabel));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog, skipOffstage: false), findsNothing);
+  });
+
+  testWidgets(
+      'source field changes expose complete values and return only explicitly selected fields',
+      (WidgetTester tester) async {
+    final String original =
+        '${List<String>.filled(1000, 'original ').join()}original end';
+    final String candidate =
+        '${List<String>.filled(1000, 'candidate ').join()}candidate end';
+    Map<String, String>? selected;
+    await tester.pumpWidget(_host((BuildContext context) async {
+      selected = await showAnkiSourceNoteChanges(
+          context: context,
+          original: <String, String>{
+            'Sentence': original,
+            'Meaning': 'manual meaning'
+          },
+          candidate: <String, String>{
+            'Sentence': candidate,
+            'Meaning': 'automatic meaning',
+            'Unknown': 'ignored'
+          });
+    }));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog, skipOffstage: false), findsOneWidget);
+    expect(find.text('Unknown'), findsNothing);
+    expect(find.text(t.card_source_review_conflict_warning), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(
+        tester
+            .widget<FilledButton>(
+                find.widgetWithText(FilledButton, t.card_source_review_save))
+            .onPressed,
+        isNull);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('anki-source-change-Sentence')));
+    await tester.tap(find.text('Sentence'));
+    await tester.pumpAndSettle();
+    expect(find.text(original), findsOneWidget);
+    expect(find.text(candidate), findsOneWidget);
+    await tester.tap(find.text(t.card_source_review_save));
+    await tester.pumpAndSettle();
+    expect(selected, <String, String>{'Sentence': candidate});
   });
 
   // TODO-1007 健壮性：宿主回调抛错时，action sheet 不能卡在 _busy 进度条无反馈。

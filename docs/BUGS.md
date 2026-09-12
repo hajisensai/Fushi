@@ -29,10 +29,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2288 条。点号进各自文件。
+> 共 2295 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2489](bugs/BUG-2489-source-url-stale-windows-association.md) | ✅ | ✅ | 来源链接仍启动旧安装版Fushi |
+| [BUG-2488](bugs/BUG-2488-lapis-source-leading-break.md) | ✅ | ✅ | Lapis来源模板更新残留前导空行 |
+| [BUG-2487](bugs/BUG-2487-video-source-review-playback.md) | ✅ | ✅ | 视频来源回看无法继续播放且导航使用阅读文案 |
+| [BUG-2486](bugs/BUG-2486-windows-itest-kills-preexisting-app.md) | ✅ | ✅ | Windows集成测试按build目录误杀用户已运行的应用 |
+| [BUG-2485](bugs/BUG-2485-card-source-root-url.md) | ✅ | ✅ | Windows 来源链接规范化后被错误判无效 |
+| [BUG-2484](bugs/BUG-2484-integration-drive-uninstalls-app.md) | ✅ | ✅ | 集成测试成功后 flutter drive 清理卸载应用并删除私有数据 |
+| [BUG-2483](bugs/BUG-2483-anki-note-dialog-stacking.md) | ✅ | ✅ | 已制卡候选与卡片查看器重复堆叠弹窗 |
 | [BUG-2482](bugs/BUG-2482-webkit-line-box-contain-zero-height-lines.md) | ✅ | ✅ | WebKit 上 BUG-2472 的 line-box-contain 把嵌套 inline / 空行行盒压成零高：目录列叠印、空行消失 |
 | [BUG-2481](bugs/BUG-2481-manga-ocr-progress-boxes-update-all-sort.md) | ✅ | ✅ | 作品页 OCR 无进度显示；阅读器无识别范围显示；扩展无一键更新；源列表无按下载量排序 |
 | [BUG-2480](bugs/BUG-2480-manga-login-import-from-browser-extension.md) | ✅ | ✅ | 漫画源登录：从系统浏览器（经 Fushi 扩展）导入已登录会话，不必在 app 内重登 |

@@ -1,0 +1,6 @@
+## BUG-2484 · 集成测试成功后 flutter drive 清理卸载应用并删除私有数据
+- **报告**：2026-09-10（本轮来源回跳 Android 集成验证发现：测试结束后 emulator 原 Fushi 私有测试数据被删除）。
+- **真实性**：✅ 真 bug。`ci/integration-test.sh:283` 的 `flutter drive` 调用未显式保留应用。本机 Flutter 3.44 源码 `packages/flutter_tools/lib/src/commands/drive.dart:400-404` 在 `_keepAppRunningWhenComplete` 为 false 时调用 `driverService.stop()`；同文件 `424-433` 显示未传 `--use-existing-app` 时默认 false。`packages/flutter_tools/lib/src/drive/drive_service.dart:279-287` 的 `stop()` 在停止应用后还调用 `uninstallApp()`，会清理已安装应用及其私有数据。
+- **[x] ① 已修复** — `ci/integration-test.sh:284` 为每个 target 的实际 drive 调用加 `--keep-app-running`，跳过测试完成后的 stop/uninstall。保留本轮已有 `card_source_return` target，与来源回跳功能同批提交。
+- **[x] ② 已加自动化测试** — 扩展相邻 `fushi/test/integration/comprehensive_test_matrix_test.dart`，从可执行 drive 命令中解析参数，要求恰好一个 `--keep-app-running` 并拒绝反向参数；不依赖注释中的同名字符串。已通过 Git Bash `bash -n ci/integration-test.sh`、同等参数契约检查与删参负例、`git diff --check`；Windows E2E 释放 runner 后单独执行上述新增守卫（`--plain-name`）：1/1 通过，退出码 0。
+- **备注**：此参数不保证所有安装路径都保留数据。Flutter 3.44 `packages/flutter_tools/lib/src/android/android_device.dart:411-425` 在首次安装失败且旧应用仍存在时，会卸载旧版本后再安装；该回退发生于测试之前，独立于完成后的 cleanup。普通 `install -r` 保留数据，不能据此断言失败回退也安全。本次未修改 SDK、未操作 AVD、未尝试重建或恢复已删除数据。

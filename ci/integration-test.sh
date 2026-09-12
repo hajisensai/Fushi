@@ -188,6 +188,7 @@ done
 # selected targets actually need — e.g. a `--only=app_smoke` run must not boot
 # and onboard AnkiDroid.
 ALL_TARGETS=(
+  card_source_return
   app_smoke settings_validation navigation_stability home_keyboard
   gamepad_navigation feature_flows
   comprehensive_imports comprehensive_reader_lookup comprehensive_settings
@@ -245,10 +246,11 @@ if [ -z "$DICT_ZIP" ] || [ ! -f "$DICT_ZIP" ]; then
     DICT_ZIP="$(find "$DICT_DIR" -maxdepth 1 -name '*.zip' 2>/dev/null | head -1)"
 fi
 if [ -n "$DICT_ZIP" ] && [ -f "$DICT_ZIP" ]; then
-  # Push to shared /sdcard/Download (NOT the app external-files dir): flutter
-  # drive reinstalls the app, which wipes /sdcard/Android/data/<pkg>/, so a file
-  # staged there before the run is gone by test time. Shared storage survives
-  # reinstall; the app reads it via the MANAGE_EXTERNAL_STORAGE grant above.
+  # Push to shared /sdcard/Download (NOT the app external-files dir): ordinary
+  # install -r preserves data, but Flutter's failed-install recovery can uninstall
+  # the old app first and clear its private/external app directories. The flag
+  # below only disables post-test cleanup, not that separate installation risk.
+  # The app reads this shared fixture via MANAGE_EXTERNAL_STORAGE granted above.
   DICT_DEST="/sdcard/Download/test_dict.zip"
   echo ">>> Pushing dictionary fixture ($(basename "$DICT_ZIP")) to $DICT_DEST..."
   # Push from a Windows-form source path (see win_path) under MSYS_NO_PATHCONV.
@@ -276,7 +278,10 @@ run_target() {
   # A target passes only if flutter drive exits 0, the log shows "All tests
   # passed", and it does NOT also report "Some tests failed" (belt-and-
   # suspenders against a 0-test run that exits 0 with no clear verdict).
+  # BUG-2484: Flutter drive's default completion cleanup stops AND uninstalls
+  # the app. Keep it installed/running so each target preserves app data.
   if "$FLUTTER" drive \
+        --keep-app-running \
         --driver=test_driver/integration_test.dart \
         --target="$file" -d "$DEVICE" >"$log" 2>&1 \
      && grep -q "All tests passed" "$log" \

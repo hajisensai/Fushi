@@ -714,6 +714,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
         // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
         charPositionTag: context.charPositionTag,
+        sourceLink: context.sourceLink,
       );
 
       // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -880,6 +881,43 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    final AnkiSettings settings = await loadSettings();
+    final AnkiMiningPayload payload = AnkiMiningPayload.fromJson(
+      Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map),
+    );
+    final _PreparedMinedFields prepared = await _renderMinedFields(
+      service: _serviceForSettings(settings),
+      settings: settings,
+      payload: payload,
+      context: context,
+      keepEmpty: true,
+    );
+    if (prepared.rendered.audioWarning != null) {
+      throw StateError(prepared.rendered.audioWarning!);
+    }
+    return prepared.rendered.fields;
+  }
+
+  @override
+  Future<List<int>> findSourceNoteIds(String markerTag) async {
+    final AnkiSettings settings = await loadSettings();
+    return _serviceForSettings(settings).findNotesBySourceMarker(markerTag);
+  }
+
+  @override
+  Future<void> writeSourceNoteFields(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final AnkiSettings settings = await loadSettings();
+    await _serviceForSettings(settings).updateNoteFields(noteId, fields);
+  }
+
   /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
   ///
   /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体上传链路）从
@@ -899,6 +937,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }) async {
     try {
       final settings = await loadSettings();
+      if (context.sourceLink != null ||
+          settings.fieldMappings.values.any(
+            (String mapping) => mapping.contains('{source-link}'),
+          )) {
+        context = await contextForExistingSourceNote(noteId, context);
+      }
       final service = _serviceForSettings(settings);
 
       final AnkiMiningPayload payload;

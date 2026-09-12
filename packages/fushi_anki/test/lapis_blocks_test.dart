@@ -23,6 +23,21 @@ String _previewBack(List<LapisCustomBlock> blocks) {
 }
 
 void main() {
+  test('默认来源区域保留兼容字段且不再显示Details分隔行', () {
+    expect(LapisNoteType.back, contains('<summary>来源</summary>'));
+    expect(LapisNoteType.back, contains('{{MiscInfo}}'));
+    expect(LapisNoteType.back, isNot(contains('=== Details ===')));
+    // BUG-2488: removing the Details text must also remove its line break.
+    expect(
+      RegExp(r'<div class="misc-info">\s*\{\{MiscInfo\}\}')
+          .hasMatch(LapisNoteType.back),
+      isTrue,
+    );
+    expect(
+      LapisNoteType.back,
+      isNot(contains('<summary>Misc. info</summary>')),
+    );
+  });
   group('锚点', () {
     test('每个锚串在 vendored 背面模板里恰好出现一次', () {
       for (final LapisBlockAnchor anchor in LapisBlockAnchor.values) {

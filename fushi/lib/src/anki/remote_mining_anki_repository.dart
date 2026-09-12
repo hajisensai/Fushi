@@ -34,6 +34,8 @@ typedef RemoteMiningAuthReporter = void Function(String message);
 /// [noteFields]/[openNoteInAnki]）保留基类降级默认（不委派本地——那会在远端制卡时错误地
 /// 操作**本机** Anki 的卡片；远端 note id 本就为 null，本会话覆写第三态不激活，与 AnkiDroid
 /// 现状一致）。
+/// 来源回跳使用 [readSourceNote]/[prepareSourceNoteFields]/[patchSourceNote] 的
+/// 独立链路：按来源 marker 唯一读取后绑定主机，失败不得回退到本机或另一台主机。
 ///
 /// 媒体的四个来源在客户端就地读成字节再随请求发出（服务端未必装同款词典/无法访问本机文件）：
 /// 封面 ← `context.coverPath`；句子音频 ← `context.sasayakiAudioPath`；单词音频 ←
@@ -182,7 +184,9 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       documentTitle: context.documentTitle,
       sentenceOffset: context.sentenceOffset,
       source: context.source?.name,
+      sourceLink: context.sourceLink,
       bookTitleTag: context.bookTitleTag,
+      collectionTag: context.collectionTag,
       charPositionTag: context.charPositionTag,
       clipStartMs: context.clipStartMs,
       clipEndMs: context.clipEndMs,
@@ -274,6 +278,61 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       return outcome;
     }
   }
+
+  RemoteSourceNoteSender get _sourceClient {
+    final RemoteMineSender client = _client;
+    if (client is! RemoteSourceNoteSender) {
+      throw UnsupportedError(
+        'The paired device does not support source editing.',
+      );
+    }
+    return client as RemoteSourceNoteSender;
+  }
+
+  /// Safe display identity for the peer bound when the original note was read.
+  String? sourcePeerUrl(String sourceId) {
+    final RemoteMineSender client = _client;
+    return client is RemoteSourceNoteSender
+        ? (client as RemoteSourceNoteSender).sourcePeerUrl(sourceId)
+        : null;
+  }
+
+  String? sourcePeerIdentity(String sourceId) =>
+      _sourceClient.sourcePeerIdentity(sourceId);
+
+  @override
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) =>
+      _sourceClient.readSourceNote(sourceId);
+
+  Future<void> bindSourcePeer(
+    String sourceId,
+    String peerUrl, {
+    required String pairingIdentity,
+  }) =>
+      _sourceClient.bindSourcePeer(
+        sourceId,
+        peerUrl,
+        pairingIdentity: pairingIdentity,
+      );
+
+  @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async =>
+      _sourceClient.prepareForwardedSourceNote(
+        await _buildForwardedPayload(
+          rawPayloadJson: rawPayloadJson,
+          context: context,
+        ),
+      );
+
+  @override
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  }) =>
+      _sourceClient.patchSourceNote(original: original, fields: fields);
 
   // ---- 配置类：委派本地仓库，保持设置页可配置本地 Anki ----
 

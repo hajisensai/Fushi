@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
+import 'card_source_link.dart';
 
 class AnkiDeck {
   const AnkiDeck({required this.id, required this.name});
@@ -773,6 +774,7 @@ class AnkiMiningContext {
     this.charPositionTag,
     this.clipStartMs,
     this.clipEndMs,
+    this.sourceLink,
   });
   final String sentence;
   final String? cueSentence;
@@ -828,6 +830,27 @@ class AnkiMiningContext {
   final int? clipStartMs;
   final int? clipEndMs;
 
+  /// Portable card origin; survives media upload and backend forwarding.
+  final CardSourceLink? sourceLink;
+
+  /// Used when updating an existing note: its marker identity must survive a
+  /// newly captured position, and legacy notes must not acquire dangling URLs.
+  AnkiMiningContext withSourceLink(CardSourceLink? value) => AnkiMiningContext(
+        sentence: sentence,
+        cueSentence: cueSentence,
+        documentTitle: documentTitle,
+        coverPath: coverPath,
+        sentenceAudioPath: sentenceAudioPath,
+        sentenceOffset: sentenceOffset,
+        source: source,
+        bookTitleTag: bookTitleTag,
+        collectionTag: collectionTag,
+        charPositionTag: charPositionTag,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        sourceLink: value,
+      );
+
   /// 渲染前把两个**本地媒体路径**换成 backend 落盘后的媒体引用
   /// （`<img src=...>` / `[sound:...]`），其余字段原样带过。
   ///
@@ -855,6 +878,7 @@ class AnkiMiningContext {
         charPositionTag: charPositionTag,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
+        sourceLink: sourceLink,
       );
 }
 
@@ -949,6 +973,8 @@ class AnkiHandlebarRenderer {
         return payload.phoneticTranscriptions;
       case '{document-title}':
         return context.documentTitle ?? '';
+      case '{source-link}':
+        return renderSourceLink(context);
       case '{clip-timestamp}':
         return formatClipTimestamp(context.clipStartMs, context.clipEndMs);
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
@@ -971,6 +997,16 @@ class AnkiHandlebarRenderer {
       default:
         return '';
     }
+  }
+
+  /// 作品标题自身作为来源链接；无定位时保留普通标题，不额外重复标题。
+  static String renderSourceLink(AnkiMiningContext context) {
+    final String title = context.documentTitle ?? '';
+    final CardSourceLink? source = context.sourceLink;
+    if (source == null) {
+      return const HtmlEscape(HtmlEscapeMode.element).convert(title);
+    }
+    return source.toHtml(label: title.trim().isEmpty ? '来源' : title);
   }
 
   /// 把媒体片段起止（毫秒偏移）渲染成人类可读的 `HH:MM:SS - HH:MM:SS`。
@@ -1068,6 +1104,7 @@ class AnkiHandlebarOptions {
     '{pitch-accent-categories}',
     '{phonetic-transcriptions}',
     '{document-title}',
+    '{source-link}',
     '{clip-timestamp}',
     '{card-image}',
     '{book-cover}',

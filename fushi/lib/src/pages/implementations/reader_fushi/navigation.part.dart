@@ -1682,11 +1682,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   }
 
   /// 时钟此刻可跑（[studyClockMayRun]）。
-  bool get _studyClockMayRun => studyClockMayRun(
-    manualPause: _studyClockManualPause,
-    lifecycleStopped: _studyClockLifecycleStopped,
-    modalDepth: _studyClockModalDepth,
-  );
+  bool get _studyClockMayRun =>
+      !_sourceReviewActive &&
+      studyClockMayRun(
+        manualPause: _studyClockManualPause,
+        lifecycleStopped: _studyClockLifecycleStopped,
+        modalDepth: _studyClockModalDepth,
+      );
 
   /// 把时钟运行态对齐到判据：可跑 → `start()`（对已在跑的是 no-op），不可跑 →
   /// `stop()`（结算部分窗口 + 封段落库；对已停的是 no-op）。三枚旗任一翻转后调用。
