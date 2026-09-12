@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/manga/manga_chapter_storage.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
@@ -207,5 +208,189 @@ void main() {
       svc.mangaPageFile('../etc/passwd', 0),
       throwsA(isA<ArgumentError>()),
     );
+  });
+
+  /// 一条在线书架条目（Mihon / Aidoku 加入书架的形状）：根 `manga.json` 是占位
+  /// `{"pages":[]}`，章表在 `chaptersJson`，已下载的章在 `chapters/<digest>/`。
+  Future<String> insertOnlineManga({
+    required String bookKey,
+    required List<String> chapterKeys,
+    required Set<String> downloaded,
+    Set<String> halfDownloaded = const <String>{},
+  }) async {
+    final Directory dir = Directory(p.join(tmp.path, bookKey))
+      ..createSync(recursive: true);
+    File(p.join(dir.path, kMangaPackageMarker))
+        .writeAsStringSync('{"pages":[]}');
+    for (final String key in chapterKeys) {
+      if (!downloaded.contains(key) && !halfDownloaded.contains(key)) continue;
+      final Directory chapterDir = mangaChapterDirectory(dir.path, key)
+        ..createSync(recursive: true);
+      final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
+      for (int i = 0; i < 2; i++) {
+        final String url = 'images/page-00000${i + 1}.jpg';
+        if (downloaded.contains(key)) {
+          final File image = File(
+            p.join(chapterDir.path, 'images', 'page-00000${i + 1}.jpg'),
+          )..parent.createSync(recursive: true);
+          image.writeAsBytesSync(<int>[0xFF, 0xD8, key.length, i]);
+        }
+        pages.add(<String, Object?>{
+          'url': url,
+          'width': 700,
+          'height': 1000,
+          'blocks': <Object?>[],
+        });
+      }
+      mangaChapterJsonFile(chapterDir)
+          .writeAsStringSync(jsonEncode(<String, Object?>{'pages': pages}));
+    }
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: kMangaPackageMarker,
+        extractDir: dir.path,
+        chapterCount: chapterKeys.length,
+        chaptersJson: jsonEncode(<Map<String, Object?>>[
+          for (int i = 0; i < chapterKeys.length; i++)
+            <String, Object?>{
+              'key': chapterKeys[i],
+              'name': 'Chapter ${i + 1}',
+              'number': i + 1,
+              'scanlator': i == 0 ? 'group' : null,
+              'raw': <String, Object?>{'url': chapterKeys[i]},
+            },
+        ]),
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: Value(BookFormat.manga.dbValue),
+        sourceMetadata: const Value<String?>('{"type":"online"}'),
+      ),
+    );
+    return dir.path;
+  }
+
+  group('章节式在线漫画（BUG-2474）', () {
+    test('清单：占位根目录不算 hasMangaContent，但有已下载的章即 hasMangaChapters',
+        () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-abc',
+        chapterKeys: const <String>['/c/1', '/c/2'],
+        downloaded: const <String>{'/c/1'},
+      );
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final List<RemoteBookInfo> books = await svc.listBooks();
+      final RemoteBookInfo withChapters =
+          books.firstWhere((RemoteBookInfo b) => b.bookKey == 'mihon-abc');
+      expect(withChapters.hasMangaContent, isFalse);
+      expect(withChapters.hasMangaChapters, isTrue);
+      expect(withChapters.toJson()['hasMangaChapters'], isTrue);
+      final RemoteBookInfo none =
+          books.firstWhere((RemoteBookInfo b) => b.bookKey == 'mihon-none');
+      expect(none.hasMangaChapters, isFalse);
+      // 旧 wire 字节不变：没下载任何章的行不写这个键。
+      expect(none.toJson().containsKey('hasMangaChapters'), isFalse);
+    });
+
+    test('页表：只列**完整**下载的章（半成品与未下载都不出现），页表为空',
+        () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-abc',
+        chapterKeys: const <String>['/c/1', '/c/2', '/c/3'],
+        downloaded: const <String>{'/c/1', '/c/3'},
+        halfDownloaded: const <String>{'/c/2'},
+      );
+      final RemoteMangaManifest manifest =
+          await svc.mangaManifest('mihon-abc');
+      expect(manifest.pages, isEmpty);
+      expect(manifest.hasChapters, isTrue);
+      expect(
+        manifest.chapters.map((RemoteMangaChapterInfo c) => c.key),
+        <String>['/c/1', '/c/3'],
+      );
+      final RemoteMangaChapterInfo first = manifest.chapters.first;
+      expect(first.name, 'Chapter 1');
+      expect(first.number, 1);
+      expect(first.scanlator, 'group');
+      expect(first.pageCount, 2);
+      // 经 wire 往返不丢字段。
+      final RemoteMangaManifest roundTrip =
+          RemoteMangaManifest.fromJson(manifest.toJson());
+      expect(roundTrip.chapters.length, 2);
+      expect(roundTrip.chapters.last.key, '/c/3');
+      expect(roundTrip.chapters.last.scanlator, isNull);
+    });
+
+    test('一章都没完整下载 → 页表 StateError（与清单 hasMangaChapters 同源）',
+        () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-half',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+        halfDownloaded: const <String>{'/c/1'},
+      );
+      await expectLater(
+        svc.mangaManifest('mihon-half'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('按章页表 + 按章页图：digest 与 app 侧目录名同算法', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-abc',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{'/c/1'},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      final RemoteMangaManifest chapter =
+          await svc.mangaChapterManifest('mihon-abc', digest);
+      expect(chapter.bookKey, 'mihon-abc');
+      expect(
+        chapter.pages.map((RemoteMangaPageInfo e) => e.index),
+        <int>[0, 1],
+      );
+      expect(chapter.pages.first.name, 'page-000001.jpg');
+      final File page =
+          await svc.mangaChapterPageFile('mihon-abc', digest, 1);
+      expect(page.readAsBytesSync(), <int>[0xFF, 0xD8, 4, 1]);
+      await expectLater(
+        svc.mangaChapterPageFile('mihon-abc', digest, 2),
+        throwsA(isA<StateError>()),
+      );
+      // 单卷通道对章节式条目不给页：根 manga.json 是占位。
+      await expectLater(
+        svc.mangaPageFile('mihon-abc', 0),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('未下载的章是 404 形状；不成形的 digest 是 403 形状', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-abc',
+        chapterKeys: const <String>['/c/1', '/c/2'],
+        downloaded: const <String>{'/c/1'},
+      );
+      await expectLater(
+        svc.mangaChapterManifest('mihon-abc', mangaChapterDigest('/c/2')),
+        throwsA(isA<StateError>()),
+      );
+      final List<String> bad = <String>['..', 'ABCDEF', '../../x', '0' * 23];
+      for (final String digest in bad) {
+        await expectLater(
+          svc.mangaChapterManifest('mihon-abc', digest),
+          throwsA(isA<ArgumentError>()),
+          reason: digest,
+        );
+        await expectLater(
+          svc.mangaChapterPageFile('mihon-abc', digest, 0),
+          throwsA(isA<ArgumentError>()),
+          reason: digest,
+        );
+      }
+    });
   });
 }

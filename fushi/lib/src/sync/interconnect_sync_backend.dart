@@ -1106,10 +1106,25 @@ class InterconnectSyncBackend extends SyncBackend
   /// 老 host（没有 `/api/library/manga/**`）与关掉库服务的 host 都返回 404，这里
   /// 统一抛 [MangaInterconnectUnsupported]，由源页翻译成「对端 Fushi 版本过低」，
   /// 而不是退化成一本没有页的空章节让阅读器对着空白转圈。
-  Future<RemoteMangaManifest> remoteMangaManifest(String bookKey) async {
+  Future<RemoteMangaManifest> remoteMangaManifest(String bookKey) =>
+      _fetchMangaManifest(
+        '/api/library/manga/${Uri.encodeComponent(bookKey)}/manifest',
+      );
+
+  /// 对端章节式在线漫画 [bookKey] 中目录摘要 [chapterDigest] 那一章的页表
+  /// （BUG-2474）。老 host / 该章对端没下载 → 404 → [MangaInterconnectUnsupported]
+  /// 由调用方按阶段分类。
+  Future<RemoteMangaManifest> remoteMangaChapterManifest(
+    String bookKey,
+    String chapterDigest,
+  ) =>
+      _fetchMangaManifest(
+        '/api/library/manga/${Uri.encodeComponent(bookKey)}'
+        '/chapters/$chapterDigest/manifest',
+      );
+
+  Future<RemoteMangaManifest> _fetchMangaManifest(String path) async {
     await _ensureResolved();
-    final String path =
-        '/api/library/manga/${Uri.encodeComponent(bookKey)}/manifest';
     final HttpClientRequest req =
         await _ops!.buildRequest('GET', '$_apiBase$path');
     final HttpClientResponse res = await _sendBounded(req);
@@ -1136,10 +1151,24 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 走 [requestTimeout] 封顶而不是大文件那套 stall 超时：一页图是几百 KB 量级，
   /// 且阅读器等着它渲染——挂住不如尽早失败让上层重试。
-  Future<Uint8List> fetchRemoteMangaPage(String bookKey, int index) async {
+  Future<Uint8List> fetchRemoteMangaPage(String bookKey, int index) =>
+      _fetchMangaPageBytes(
+        '/api/library/manga/${Uri.encodeComponent(bookKey)}/pages/$index',
+      );
+
+  /// 章节式在线漫画的页图（BUG-2474），判据同 [fetchRemoteMangaPage]。
+  Future<Uint8List> fetchRemoteMangaChapterPage(
+    String bookKey,
+    String chapterDigest,
+    int index,
+  ) =>
+      _fetchMangaPageBytes(
+        '/api/library/manga/${Uri.encodeComponent(bookKey)}'
+        '/chapters/$chapterDigest/pages/$index',
+      );
+
+  Future<Uint8List> _fetchMangaPageBytes(String path) async {
     await _ensureResolved();
-    final String path =
-        '/api/library/manga/${Uri.encodeComponent(bookKey)}/pages/$index';
     final HttpClientRequest req =
         await _ops!.buildRequest('GET', '$_apiBase$path');
     final HttpClientResponse res = await _sendBounded(req);

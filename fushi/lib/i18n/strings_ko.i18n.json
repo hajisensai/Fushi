@@ -4734,5 +4734,6 @@
   "manga_series_auto_download": "Auto-download new chapters",
   "manga_online_download_all": "Download all",
   "manga_online_select_all": "Select all",
-  "manga_series_download_all_queued": "$count chapters queued"
+  "manga_series_download_all_queued": "$count chapters queued",
+  "remote_manga_added_to_shelf": "Added to the manga shelf; chapters download from the peer"
 }

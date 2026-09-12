@@ -622,6 +622,48 @@ void main() {
     );
   });
 
+  testWidgets('BUG-2474: host 的在线书架漫画（只有已下载的章）也出现在漫画书架',
+      (WidgetTester tester) async {
+    // 修复前：在线条目的根目录只有占位 manga.json，host 报 hasMangaContent=false，
+    // 漫画架按 hasMangaContent 过滤把它整个丢掉；普通书架又按 hasContent 过滤——
+    // 两架都不显示，用户看到的就是「书架漫画没同步」。
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      chapteredMangaTitle: 'Remote Online Manga',
+    );
+
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpWidget(buildApp(mangaOnly: true));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey<String>('remote_book_card_Remote_Online_Manga'),
+      ),
+      findsOneWidget,
+      reason: '漫画书架要渲染 host 的章节式在线漫画占位卡（hasMangaChapters）',
+    );
+  });
+
+  testWidgets('BUG-2474: 普通书架不收 host 的在线书架漫画',
+      (WidgetTester tester) async {
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      chapteredMangaTitle: 'Remote Online Manga',
+    );
+
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey<String>('remote_book_card_Remote_Online_Manga'),
+      ),
+      findsNothing,
+      reason: '章节式漫画（hasContent=false）不得流进普通书架',
+    );
+  });
+
   testWidgets('BUG-1640: 普通书架不收 host 的漫画', (WidgetTester tester) async {
     // 漫画的 hasContent 恒 false（host 按 format 门控的坏包防线），普通书架按
     // hasContent 过滤，于是漫画绝不会以「点了下不到 EPUB」的死卡出现在这里。
@@ -723,6 +765,7 @@ class _FakeRemoteBookClient implements RemoteBookClient {
     this.sourceKind = RemoteBookSourceKind.interconnect,
     this.progress = RemoteBookProgress.empty,
     this.mangaTitle,
+    this.chapteredMangaTitle,
   });
 
   final String coverPath;
@@ -733,6 +776,10 @@ class _FakeRemoteBookClient implements RemoteBookClient {
   // BUG-1640 wire：非空时清单额外带一条 host 漫画。漫画走漫画包通道，host 的
   // hasContent 按 format 门控恒 false（坏包防线），可下载性由 hasMangaContent 表达。
   final String? mangaTitle;
+  // BUG-2474 wire：非空时清单额外带一条 host 的在线书架漫画（Mihon / Aidoku 条目）：
+  // 根目录只有占位 manga.json → hasMangaContent 恒 false，可读性由 hasMangaChapters
+  // 表达（host 已按章下载）。
+  final String? chapteredMangaTitle;
   // BUG-813：host 端该书的阅读进度，供「下载回填进度」用例配置。
   final RemoteBookProgress progress;
   final List<String> downloadedTitles = <String>[];
@@ -762,6 +809,15 @@ class _FakeRemoteBookClient implements RemoteBookClient {
           'title': mangaTitle,
           'hasContent': false,
           'hasMangaContent': true,
+          'format': 'manga',
+          'coverPath': coverPath,
+        }),
+      if (chapteredMangaTitle != null)
+        RemoteBookInfo.fromJson(<String, Object?>{
+          'title': chapteredMangaTitle,
+          'bookKey': 'mihon-remote',
+          'hasContent': false,
+          'hasMangaChapters': true,
           'format': 'manga',
           'coverPath': coverPath,
         }),

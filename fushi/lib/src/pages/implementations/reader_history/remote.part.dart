@@ -84,15 +84,25 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       final Set<String> localKeys =
           localBooks.map((EpubBookMeta r) => r.bookKey).toSet();
       // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
-      // 书架 = 可下载漫画（format='manga' + hasMangaContent，漫画包通道）。两架互斥，
-      // 同一条目绝不重复出现。
+      // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
+      // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
+      // 按 hasMangaContent 判永远 false，修复前整体从漫画架消失）。判据与互联漫画源
+      // 的清单过滤共用一条（[InterconnectMangaCatalog.isReadableRemoteManga]）。
+      // 两架互斥，同一条目绝不重复出现。
       final List<RemoteBookInfo> withContent = _mangaOnly
-          ? books
-              .where((RemoteBookInfo book) =>
-                  book.format == BookFormat.manga.dbValue &&
-                  book.hasMangaContent)
-              .toList()
+          ? books.where(InterconnectMangaCatalog.isReadableRemoteManga).toList()
           : books.where((RemoteBookInfo book) => book.hasContent).toList();
+      // 章节式条目加入本机后是一条 runtime=interconnect 的在线书架行，bookKey 由
+      // 身份推导（与对端 bookKey 不同），按对端键去重永远命不中——按本机会得到的
+      // 键再去一次重，否则加入后占位卡与本地卡并排出现。
+      final List<RemoteBookInfo> notAdopted = <RemoteBookInfo>[
+        for (final RemoteBookInfo book in withContent)
+          if (!book.hasMangaChapters ||
+              !localKeys.contains(OnlineMangaLibraryService.bookKeyOf(
+                InterconnectMangaCatalog.entryFor(book),
+              )))
+            book,
+      ];
       // 纯 SRT（standalone）远端有声书：仅互联后端有 live 有声书 API。列出对端全部
       // 有声书，只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项，
       // 作为可下载占位卡。云盘后端无此 API → 空列表（占位卡不出现，与能力边界一致）。
@@ -106,7 +116,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                 );
       return _RemoteBookState(
         books: dedupeRemoteBooks(
-          remote: withContent,
+          remote: notAdopted,
           localBookKeys: localKeys,
           keyOf: sanitizeTtuFilename,
         ),
@@ -524,6 +534,12 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       );
       return;
     }
+    // BUG-2474：对端的在线漫画没有可搬的整卷包——「下载」= 以互联运行时加入本机
+    // 漫画书架，之后章节走既有的在线章下载链（先下载再读）从对端逐章拉。
+    if (book.hasMangaChapters) {
+      await _adoptRemoteChapteredManga(book, client);
+      return;
+    }
     final InterconnectDownloadManager manager =
         ref.read(interconnectDownloadManagerProvider);
     // 同一本书已在下载中：忽略重复点击（卡片 tap/长按/按钮都指向这里；管理器
@@ -568,6 +584,56 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     _refreshSrtBooks();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_book_downloaded)),
+    );
+  }
+
+  /// 把对端的章节式在线漫画收进本机漫画书架（BUG-2474）。
+  ///
+  /// 走 `AppModel.onlineMangaLibraryService(interconnect)` 这条唯一分派点：入库后它
+  /// 就是一条普通的在线书架条目，作品页 / 章节下载 / 阅读器对它零特判。加入前先经
+  /// adapter 刷新一次拿对端已下载的章表（清单条目本身不带章），失败则不建行——空章
+  /// 条目对用户毫无意义，且作品页会再刷新一次，重复建行只会留下一张空卡。
+  ///
+  /// 只有互联对端能端章节（云盘后端的清单不会带 hasMangaChapters），非互联 client
+  /// 走不可达提示而不是静默。
+  Future<void> _adoptRemoteChapteredManga(
+    RemoteBookInfo book,
+    RemoteBookClient client,
+  ) async {
+    if (client is! InterconnectSyncBackend) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    final OnlineMangaLibraryService service = appModel
+        .onlineMangaLibraryService(OnlineMangaRuntimeKind.interconnect);
+    final OnlineMangaLibraryEntry seed =
+        InterconnectMangaCatalog.entryFor(book);
+    try {
+      final OnlineMangaRefreshResult refreshed =
+          await service.adapter.refresh(seed);
+      await service.add(OnlineMangaLibraryEntry(
+        runtime: seed.runtime,
+        extensionPackage: seed.extensionPackage,
+        sourceId: seed.sourceId,
+        series: refreshed.series,
+        chapters: refreshed.chapters,
+      ));
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('ReaderFushiHistoryPage.adoptRemoteChapteredManga', e, stack);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_download_failed)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.remote_manga_added_to_shelf)),
     );
   }
 

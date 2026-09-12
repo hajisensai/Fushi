@@ -131,12 +131,17 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
     required super.index,
     required this.bookKey,
     required this.remoteIndex,
+    this.chapterDigest,
   });
 
   final String bookKey;
 
   /// 对端页表里的 `index`（通常与 [index] 相同，但以对端报的为准）。
   final int remoteIndex;
+
+  /// 章节式在线漫画的章目录摘要（BUG-2474）；null = 单卷本地漫画，页走
+  /// `/pages/<i>`，非 null 走 `/chapters/<digest>/pages/<i>`。
+  final String? chapterDigest;
 }
 
 /// 把「某个在线漫画运行时」收成书架侧需要的几件事。

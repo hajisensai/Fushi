@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2282 条。点号进各自文件。
+> 共 2283 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2474](bugs/BUG-2474-interconnect-online-manga-shelf.md) | ✅ | ✅ | 互联漫画架不显示对端的在线书架漫画 |
 | [BUG-2473](bugs/BUG-2473-manga-download-all-subscription-download-center.md) | ✅ | ✅ | 作品页下载全部/自动识别/订阅自动下载，mokuro 队列并入持久任务表，下载中心分区 |
 | [BUG-2472](bugs/BUG-2472-webkit-ruby-paragraph-first-line-growth.md) | ✅ | ✅ | WebKit 上首行含振假名的段落被撑高一截 |
 | [BUG-2471](bugs/BUG-2471-reader-settings-live-engine-config.md) | ✅ | ✅ | 阅读器边距等设置改完不实时生效 |

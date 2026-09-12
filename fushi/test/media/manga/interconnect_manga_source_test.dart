@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi_engine/media/manga/manga_chapter_storage.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -50,11 +51,87 @@ class _MangaHost extends Fake
           bookKey: 'neko',
           hasContent: true,
         ),
+        // 对端的在线书架条目（BUG-2474）：根目录占位、按章下载了两章。
+        const RemoteBookInfo(
+          title: 'チェンソーマン',
+          bookKey: 'mihon-csm',
+          hasContent: false,
+          format: 'manga',
+          hasMangaChapters: true,
+        ),
       ];
+
+  /// 章节式条目在 host 上已下载的章（key → 页字节）。
+  static const List<String> chapterKeys = <String>['/manga/csm/1', '/manga/csm/2'];
+
+  @override
+  Future<RemoteMangaManifest> mangaChapterManifest(
+    String bookKey,
+    String chapterDigest,
+  ) async {
+    if (!isMangaChapterDigest(chapterDigest)) {
+      throw ArgumentError.value(chapterDigest, 'chapterDigest');
+    }
+    final int chapter = _chapterIndex(bookKey, chapterDigest);
+    return RemoteMangaManifest(
+      bookKey: bookKey,
+      title: 'チェンソーマン',
+      pages: <RemoteMangaPageInfo>[
+        for (int i = 0; i < 2; i++)
+          RemoteMangaPageInfo(index: i, name: 'c${chapter}p$i.jpg'),
+      ],
+    );
+  }
+
+  @override
+  Future<File> mangaChapterPageFile(
+    String bookKey,
+    String chapterDigest,
+    int index,
+  ) async {
+    if (!isMangaChapterDigest(chapterDigest)) {
+      throw ArgumentError.value(chapterDigest, 'chapterDigest');
+    }
+    final int chapter = _chapterIndex(bookKey, chapterDigest);
+    if (index < 0 || index >= 2) {
+      throw StateError('manga page out of range');
+    }
+    final File file = File(
+      '${Directory.systemTemp.createTempSync('hbk_cpage').path}/p$index.jpg',
+    );
+    file.writeAsBytesSync(<int>[0xC0, chapter, index]);
+    return file;
+  }
+
+  int _chapterIndex(String bookKey, String digest) {
+    if (bookKey != 'mihon-csm') {
+      throw StateError('manga book not found: $bookKey');
+    }
+    for (int i = 0; i < chapterKeys.length; i++) {
+      if (mangaChapterDigest(chapterKeys[i]) == digest) return i;
+    }
+    throw StateError('manga chapter not downloaded: $digest');
+  }
 
   @override
   Future<RemoteMangaManifest> mangaManifest(String bookKey) async {
     manifestCalls++;
+    if (bookKey == 'mihon-csm') {
+      return RemoteMangaManifest(
+        bookKey: 'mihon-csm',
+        title: 'チェンソーマン',
+        pages: const <RemoteMangaPageInfo>[],
+        chapters: <RemoteMangaChapterInfo>[
+          for (int i = 0; i < chapterKeys.length; i++)
+            RemoteMangaChapterInfo(
+              key: chapterKeys[i],
+              name: '第${i + 1}話',
+              number: (i + 1).toDouble(),
+              pageCount: 2,
+            ),
+        ],
+      );
+    }
     if (bookKey != 'yotsuba-1') {
       throw StateError('manga book not found: $bookKey');
     }
@@ -154,11 +231,123 @@ void main() {
   OnlineMangaLibraryEntry entryOf(RemoteBookInfo book) =>
       InterconnectMangaCatalog.entryFor(book);
 
+  /// 清单里那本单卷漫画（BUG-2474 起清单还会有章节式条目，不能再 `.single`）。
+  RemoteBookInfo volumeOf(List<RemoteBookInfo> series) =>
+      series.firstWhere((RemoteBookInfo b) => b.bookKey == 'yotsuba-1');
+
+  group('章节式在线条目（BUG-2474）', () {
+    RemoteBookInfo csm() => const RemoteBookInfo(
+          title: 'チェンソーマン',
+          bookKey: 'mihon-csm',
+          hasContent: false,
+          format: 'manga',
+          hasMangaChapters: true,
+        );
+
+    test('清单放行 hasMangaChapters 的条目；占位空合集仍不放行', () async {
+      final List<RemoteBookInfo> series =
+          await InterconnectMangaCatalog(backend).listSeries();
+      expect(
+        series.map((RemoteBookInfo b) => b.bookKey),
+        containsAll(<String>['yotsuba-1', 'mihon-csm']),
+      );
+      expect(series.map((RemoteBookInfo b) => b.bookKey), isNot(contains('empty')));
+      expect(InterconnectMangaCatalog.isReadableRemoteManga(csm()), isTrue);
+      expect(
+        InterconnectMangaCatalog.isReadableRemoteManga(const RemoteBookInfo(
+          title: 'x',
+          bookKey: 'empty',
+          hasContent: false,
+          format: 'manga',
+        )),
+        isFalse,
+      );
+    });
+
+    test('种子条目没有章；refresh 后章表 = 对端已下载的章，字段逐字透传', () async {
+      final OnlineMangaLibraryEntry seed = entryOf(csm());
+      expect(seed.chapters, isEmpty);
+      expect(seed.series.raw['chaptered'], isTrue);
+      final OnlineMangaRefreshResult refreshed =
+          await InterconnectLibraryAdapter(backend: backend).refresh(seed);
+      expect(
+        refreshed.chapters.map((OnlineMangaChapter c) => c.key),
+        _MangaHost.chapterKeys,
+      );
+      expect(refreshed.chapters.first.name, '第1話');
+      expect(refreshed.chapters.first.number, 1);
+      expect(refreshed.chapters.first.raw['pageCount'], 2);
+      expect(refreshed.series.raw['chaptered'], isTrue);
+      // 单卷条目刷新后仍是整卷那一章（chaptered=false），两种形状不互相污染。
+      final OnlineMangaRefreshResult volume =
+          await InterconnectLibraryAdapter(backend: backend).refresh(entryOf(
+        const RemoteBookInfo(
+          title: 'よつばと！1',
+          bookKey: 'yotsuba-1',
+          hasContent: false,
+          format: 'manga',
+          hasMangaContent: true,
+        ),
+      ));
+      expect(volume.chapters.single.key, 'yotsuba-1');
+      expect(volume.series.raw['chaptered'], isFalse);
+    });
+
+    test('按章解析页表 → 走 /chapters/<digest>/… 端点取到该章该页的字节', () async {
+      final InterconnectLibraryAdapter adapter =
+          InterconnectLibraryAdapter(backend: backend);
+      final OnlineMangaLibraryEntry seed = entryOf(csm());
+      final OnlineMangaRefreshResult refreshed = await adapter.refresh(seed);
+      final OnlineMangaLibraryEntry entry = OnlineMangaLibraryEntry(
+        runtime: seed.runtime,
+        extensionPackage: seed.extensionPackage,
+        sourceId: seed.sourceId,
+        series: refreshed.series,
+        chapters: refreshed.chapters,
+      );
+      final List<OnlineMangaPageRef> pages = await adapter.resolveChapterPages(
+        entry: entry,
+        chapter: entry.chapters[1],
+      );
+      expect(pages, hasLength(2));
+      final InterconnectMangaPageRef ref = pages.last as InterconnectMangaPageRef;
+      expect(ref.chapterDigest, mangaChapterDigest('/manga/csm/2'));
+      expect(await adapter.fetchChapterPage(pages.first), <int>[0xC0, 1, 0]);
+      expect(await adapter.fetchChapterPage(pages.last), <int>[0xC0, 1, 1]);
+    });
+
+    test('对端没下载的章：分类成 sourceDisabled（不是无限重试的 runtimeFailure）',
+        () async {
+      final InterconnectLibraryAdapter adapter =
+          InterconnectLibraryAdapter(backend: backend);
+      final OnlineMangaLibraryEntry seed = entryOf(csm());
+      await expectLater(
+        adapter.resolveChapterPages(
+          entry: seed,
+          chapter: const OnlineMangaChapter(
+            key: '/manga/csm/99',
+            name: '',
+            raw: <String, Object?>{},
+          ),
+        ),
+        throwsA(isA<OnlineMangaUnavailable>().having(
+          (OnlineMangaUnavailable e) => e.reason,
+          'reason',
+          OnlineMangaUnavailableReason.sourceDisabled,
+        )),
+      );
+    });
+  });
+
   test('源清单只留「是漫画且有内容」的对端条目', () async {
     final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
       backend,
     ).listSeries();
-    expect(series.map((RemoteBookInfo b) => b.bookKey), <String>['yotsuba-1']);
+    // 单卷漫画 + 章节式在线条目都算「有内容」；占位空合集与 EPUB 不进源。
+    expect(
+      series.map((RemoteBookInfo b) => b.bookKey),
+      <String>['yotsuba-1', 'mihon-csm'],
+    );
   });
 
   test('书架身份用 interconnect 前缀，与其它运行时天然不撞键空间', () async {
@@ -166,12 +355,12 @@ void main() {
       backend,
     ).listSeries();
     final String bookKey = OnlineMangaLibraryService.bookKeyOf(
-      entryOf(series.single),
+      entryOf(volumeOf(series)),
     );
     expect(bookKey, startsWith('interconnect-'));
     // 同一本反复推导必须逐字稳定——它同时是主键和磁盘目录名。
     expect(
-        bookKey, OnlineMangaLibraryService.bookKeyOf(entryOf(series.single)));
+        bookKey, OnlineMangaLibraryService.bookKeyOf(entryOf(volumeOf(series))));
   });
 
   test('refresh 给出整卷那一章', () async {
@@ -180,7 +369,7 @@ void main() {
     ).listSeries();
     final OnlineMangaRefreshResult result =
         await InterconnectLibraryAdapter(backend: backend).refresh(
-      entryOf(series.single),
+      entryOf(volumeOf(series)),
     );
     expect(result.series.title, 'よつばと！1');
     expect(result.chapters.length, 1);
@@ -192,7 +381,7 @@ void main() {
     final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
       backend,
     ).listSeries();
-    final OnlineMangaLibraryEntry entry = entryOf(series.single);
+    final OnlineMangaLibraryEntry entry = entryOf(volumeOf(series));
     final InterconnectLibraryAdapter adapter =
         InterconnectLibraryAdapter(backend: backend);
     final List<OnlineMangaPageRef> pages = await adapter.resolveChapterPages(
@@ -217,7 +406,7 @@ void main() {
     final List<RemoteBookInfo> series = await InterconnectMangaCatalog(
       backend,
     ).listSeries();
-    final OnlineMangaLibraryEntry entry = entryOf(series.single);
+    final OnlineMangaLibraryEntry entry = entryOf(volumeOf(series));
     final InterconnectLibraryAdapter adapter =
         InterconnectLibraryAdapter(backend: backend);
     final List<OnlineMangaPageRef> pages = await adapter.resolveChapterPages(

@@ -28,7 +28,12 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
+    show OnlineMangaRefreshResult;
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_feature_flags.dart';

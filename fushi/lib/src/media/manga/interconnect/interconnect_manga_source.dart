@@ -4,17 +4,23 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
+    show mangaChapterDigest;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 
 /// 互联漫画源里的一部「作品」。
 ///
-/// 对端的漫画在本仓是 `EpubBooks` 里 `format=='manga'` 的一行，**一本 = 一卷**、卷内
-/// 无章节结构。所以这里一部作品 = 对端的一本，其唯一一章就是整卷；这与 mokuro 那套
-/// 「一卷一个 `.mokuro`」的现实一致，不为了凑「多章」去猜卷号。
+/// 对端的漫画在本仓是 `EpubBooks` 里 `format=='manga'` 的一行，有两种形状：
+///   · **单卷本地漫画**（mokuro 导入）：**一本 = 一卷**、卷内无章节结构，所以一部作品
+///     = 对端的一本，其唯一一章就是整卷；与 mokuro 「一卷一个 `.mokuro`」的现实一致，
+///     不为了凑「多章」去猜卷号。
+///   · **章节式在线漫画**（对端 Mihon / Aidoku 书架条目，BUG-2474）：对端按章下载在
+///     自己机器上，章表由页表端点的 `chapters` 给出（只列对端已完整下载的章），每章
+///     的 key 与对端逐字相同，目录摘要（`sha256(key)[:24]`）两端自然一致。
 ///
 /// 清单不新开端点：漫画本来就在 `/api/library/books` 里带 `format=='manga'` +
-/// `hasMangaContent` 出现（那两个 additive 字段是互联漫画包批次留下的）。
+/// `hasMangaContent` / `hasMangaChapters` 出现（三个 additive 字段）。
 class InterconnectMangaCatalog {
   const InterconnectMangaCatalog(this.backend);
 
@@ -23,19 +29,29 @@ class InterconnectMangaCatalog {
   /// 对端库里**有内容可读**的漫画。
   ///
   /// `hasMangaContent` 是 host 侧 `hasExportableMangaContent` 的结论（非空页表 + 每页
-  /// 图都在），与页表端点的准入判据同源——所以列出来的每一本都翻得开，不会出现
+  /// 图都在），`hasMangaChapters` 是「`chapters/` 下至少一章有 `manga.json`」，各与
+  /// 自己那条页表端点的准入判据同源——所以列出来的每一本都翻得开，不会出现
   /// BUG-2400 那种「清单说有、点开说没有」的占位空合集。
   Future<List<RemoteBookInfo>> listSeries() async {
     final List<RemoteBookInfo> books = await backend.listRemoteBooks();
     return <RemoteBookInfo>[
       for (final RemoteBookInfo book in books)
-        if (BookFormat.parseOrEpub(book.format) == BookFormat.manga &&
-            book.hasMangaContent)
-          book,
+        if (isReadableRemoteManga(book)) book,
     ];
   }
 
+  /// 该远端条目是否能经互联漫画源读（单卷有页表，或章节式有已下载的章）。
+  ///
+  /// 漫画架的远端过滤与本源的清单过滤**共用**这一条，两处判据不会漂开。
+  static bool isReadableRemoteManga(RemoteBookInfo book) =>
+      BookFormat.parseOrEpub(book.format) == BookFormat.manga &&
+      (book.hasMangaContent || book.hasMangaChapters);
+
   /// 把一条对端漫画做成书架条目（加入书架 / 直接开读共用同一份身份推导）。
+  ///
+  /// 章节式条目（[RemoteBookInfo.hasMangaChapters]）在这里**没有章**：章表要问页表
+  /// 端点，加入书架前先经 [InterconnectLibraryAdapter.refresh] 补全（作品页打开时也
+  /// 会刷新）。单卷条目的唯一一章就是整卷。
   static OnlineMangaLibraryEntry entryFor(RemoteBookInfo book) {
     // downloadId = bookKey 优先、title 兜底，与 books 端点的路径段取值逐字同源。
     final String seriesKey = book.downloadId;
@@ -54,9 +70,12 @@ class InterconnectMangaCatalog {
           'title': book.title,
           if (book.mangaReadingMode != null)
             'readingMode': book.mangaReadingMode,
+          if (book.hasMangaChapters) 'chaptered': true,
         },
       ),
-      chapters: <OnlineMangaChapter>[chapterFor(seriesKey)],
+      chapters: book.hasMangaChapters
+          ? const <OnlineMangaChapter>[]
+          : <OnlineMangaChapter>[chapterFor(seriesKey)],
     );
   }
 
@@ -69,6 +88,18 @@ class InterconnectMangaCatalog {
         key: seriesKey,
         name: '',
         raw: <String, Object?>{'bookKey': seriesKey},
+      );
+
+  /// 对端章表里的一章 → 书架章节。key / name / number / scanlator / uploadedAt 逐字
+  /// 透传（对端的 `chaptersJson` 就是这几列），`raw` 只记页数供作品页显示。
+  static OnlineMangaChapter chapterFromRemote(RemoteMangaChapterInfo chapter) =>
+      OnlineMangaChapter(
+        key: chapter.key,
+        name: chapter.name,
+        number: chapter.number,
+        scanlator: chapter.scanlator,
+        uploadedAt: chapter.uploadedAt,
+        raw: <String, Object?>{'pageCount': chapter.pageCount},
       );
 }
 
@@ -103,6 +134,17 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
     OnlineMangaLibraryEntry entry,
   ) async {
     final RemoteMangaManifest manifest = await _manifest(entry, 'details');
+    // 章节式（BUG-2474）：章表 = 对端已下载的章，对端每多下一章、这里刷新一次就多
+    // 一章；单卷：唯一一章仍是整卷。判据是对端**这次**答了什么，不是书架上记的
+    // 形状——对端把一本单卷漫画换成在线条目（或反过来）时刷新即收敛。
+    final List<OnlineMangaChapter> chapters = manifest.hasChapters
+        ? <OnlineMangaChapter>[
+            for (final RemoteMangaChapterInfo chapter in manifest.chapters)
+              InterconnectMangaCatalog.chapterFromRemote(chapter),
+          ]
+        : <OnlineMangaChapter>[
+            InterconnectMangaCatalog.chapterFor(entry.series.key),
+          ];
     return OnlineMangaRefreshResult(
       series: OnlineMangaSeries(
         key: entry.series.key,
@@ -113,11 +155,10 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
         raw: <String, Object?>{
           ...entry.series.raw,
           if (manifest.readingMode != null) 'readingMode': manifest.readingMode,
+          'chaptered': manifest.hasChapters,
         },
       ),
-      chapters: <OnlineMangaChapter>[
-        InterconnectMangaCatalog.chapterFor(entry.series.key),
-      ],
+      chapters: chapters,
     );
   }
 
@@ -126,11 +167,17 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
   }) async {
-    final RemoteMangaManifest manifest = await _manifest(entry, 'pages');
+    // 整卷那一章的 key 就是作品 key（[InterconnectMangaCatalog.chapterFor]）；其它
+    // key 一律是对端章节式条目的章，按摘要走章端点。
+    final bool isVolume = chapter.key == entry.series.key;
+    final String? digest = isVolume ? null : mangaChapterDigest(chapter.key);
+    final RemoteMangaManifest manifest = digest == null
+        ? await _manifest(entry, 'pages')
+        : await _chapterManifest(entry, digest);
     if (manifest.pages.isEmpty) {
       throw const OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.runtimeFailure,
-        'The peer returned a manga volume with no pages',
+        'The peer returned a manga chapter with no pages',
         stage: 'pages',
       );
     }
@@ -142,6 +189,7 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
           index: index,
           bookKey: bookKey,
           remoteIndex: manifest.pages[index].index,
+          chapterDigest: digest,
         ),
     ];
   }
@@ -158,10 +206,14 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
         'not an interconnect page reference',
       );
     }
-    final Uint8List bytes = await backend.fetchRemoteMangaPage(
-      page.bookKey,
-      page.remoteIndex,
-    );
+    final String? digest = page.chapterDigest;
+    final Uint8List bytes = digest == null
+        ? await backend.fetchRemoteMangaPage(page.bookKey, page.remoteIndex)
+        : await backend.fetchRemoteMangaChapterPage(
+            page.bookKey,
+            digest,
+            page.remoteIndex,
+          );
     if (bytes.isEmpty) {
       throw StateError(
         'Peer returned an empty manga page: ${page.bookKey}#${page.index}',
@@ -193,9 +245,26 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
   Future<RemoteMangaManifest> _manifest(
     OnlineMangaLibraryEntry entry,
     String stage,
+  ) =>
+      _guarded(stage, () => backend.remoteMangaManifest(entry.series.key));
+
+  /// 章节式条目某一章的页表；对端没下这一章 → 404 → 与老 host 同一分类
+  /// （sourceDisabled：作品页据此说「对端还没下载这一章」而不是无限重试）。
+  Future<RemoteMangaManifest> _chapterManifest(
+    OnlineMangaLibraryEntry entry,
+    String digest,
+  ) =>
+      _guarded(
+        'pages',
+        () => backend.remoteMangaChapterManifest(entry.series.key, digest),
+      );
+
+  Future<RemoteMangaManifest> _guarded(
+    String stage,
+    Future<RemoteMangaManifest> Function() request,
   ) async {
     try {
-      return await backend.remoteMangaManifest(entry.series.key);
+      return await request();
     } on MangaInterconnectUnsupported catch (error) {
       // 对端能力缺失 ≠ 这一本坏了：分类成 sourceDisabled，作品页据此引导用户去升级
       // 对端 / 打开对端的库服务，而不是给一个永远不会成功的「重试」。

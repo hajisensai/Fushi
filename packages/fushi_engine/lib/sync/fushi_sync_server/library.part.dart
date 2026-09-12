@@ -299,6 +299,51 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     final String rest = reqPath.substring(prefix.length);
     const String manifestSuffix = '/manifest';
     const String pagesMarker = '/pages/';
+    const String chaptersMarker = '/chapters/';
+
+    // 章节式在线漫画（BUG-2474）：`<bookKey>/chapters/<digest>/manifest` 与
+    // `<bookKey>/chapters/<digest>/pages/<i>`。digest 是 24 位十六进制目录名，形状
+    // 校验在 host 服务里（`ArgumentError` → 403），这里只切路径段。
+    final int chapterAt = rest.indexOf(chaptersMarker);
+    if (chapterAt > 0) {
+      final String bookKey = rest.substring(0, chapterAt);
+      final shelf.Response? unsafe = _rejectUnsafeAssetId(bookKey, 'book key');
+      if (unsafe != null) return unsafe;
+      final String tail = rest.substring(chapterAt + chaptersMarker.length);
+      if (tail.endsWith(manifestSuffix)) {
+        final String digest =
+            tail.substring(0, tail.length - manifestSuffix.length);
+        try {
+          final RemoteMangaManifest manifest =
+              await svc.mangaChapterManifest(bookKey, digest);
+          return shelf.Response.ok(
+            jsonEncode(manifest.toJson()),
+            headers: <String, String>{'Content-Type': 'application/json'},
+          );
+        } on StateError {
+          return shelf.Response.notFound('Manga chapter not found');
+        } on ArgumentError {
+          return shelf.Response.forbidden('Invalid chapter digest');
+        }
+      }
+      final int pageAt = tail.indexOf(pagesMarker);
+      if (pageAt > 0) {
+        final String digest = tail.substring(0, pageAt);
+        final int? index =
+            int.tryParse(tail.substring(pageAt + pagesMarker.length));
+        if (index == null) return shelf.Response.notFound('Missing page index');
+        try {
+          final File page =
+              await svc.mangaChapterPageFile(bookKey, digest, index);
+          return serveFileWithRange(page, request);
+        } on StateError {
+          return shelf.Response.notFound('Manga chapter page not found');
+        } on ArgumentError {
+          return shelf.Response.forbidden('Invalid chapter digest');
+        }
+      }
+      return shelf.Response.notFound('Unknown manga chapter route');
+    }
 
     if (rest.endsWith(manifestSuffix)) {
       final String bookKey =
