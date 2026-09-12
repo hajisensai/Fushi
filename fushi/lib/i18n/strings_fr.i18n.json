@@ -4757,5 +4757,8 @@
   "manga_series_ocr_queued_count": "${count} chapters waiting",
   "manga_chapter_ocr_status_running": "Recognizing ${done}/${total}",
   "manga_chapter_ocr_status_queued": "Waiting for recognition",
-  "manga_ocr_boxes_toggle": "Show recognized text regions"
+  "manga_ocr_boxes_toggle": "Show recognized text regions",
+  "manga_ocr_settings_open": "OCR settings",
+  "manga_chrome_floating": "Floating toolbar",
+  "manga_chrome_floating_subtitle": "Hide the toolbar over the page; tap the middle of the page or hover at the top edge to reveal it. Off keeps the toolbar pinned above the page."
 }

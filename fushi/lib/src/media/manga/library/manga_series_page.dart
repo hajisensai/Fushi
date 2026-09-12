@@ -20,6 +20,7 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -1554,6 +1555,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             icon: const Icon(Icons.document_scanner_outlined),
             label: Text(t.manga_ocr_wizard_run),
           ),
+          _ocrSettingsButton(),
         ],
       );
     }
@@ -1609,9 +1611,28 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             icon: const Icon(Icons.document_scanner_outlined),
             label: Text(t.manga_series_ocr_all_downloaded),
           ),
+          _ocrSettingsButton(),
         ],
       ],
     );
+  }
+
+  /// 「OCR 设置」：作品页是阅读器外触发 OCR 的入口（BUG-2461），引擎偏好 / 模型
+  /// 下载 / Lens 语言 / 外部 mokuro 路径必须就在触发点旁边可达——否则解析不到引擎
+  /// 时用户只看到一条红 toast，不知道该去哪配。返回后重建：偏好是 AppModel 上的
+  /// 状态，下一次「识别」按新偏好解析。
+  Widget _ocrSettingsButton() {
+    return OutlinedButton.icon(
+      key: const ValueKey<String>('manga_series_ocr_settings'),
+      onPressed: () => unawaited(_openOcrSettings()),
+      icon: const Icon(Icons.tune_outlined),
+      label: Text(t.manga_ocr_settings_open),
+    );
+  }
+
+  Future<void> _openOcrSettings() async {
+    await MangaOcrSettingsPage.push(context);
+    if (mounted) setState(() {});
   }
 
   /// 本地卷没有章节，章节区换成「这一卷有多少页、读到哪」。

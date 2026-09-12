@@ -98,6 +98,10 @@ class _MangaTestAppModel extends AppModel {
   String get mangaPageAnimation => MangaPageAnimation.slide.key;
   @override
   bool get mangaTapZonePaging => true;
+
+  // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
+  @override
+  bool get mangaChromeFloating => false;
   @override
   bool get mangaVolumeKeyPaging => false;
 }

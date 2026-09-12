@@ -4757,5 +4757,8 @@
   "manga_series_ocr_queued_count": "${count} 章排队中",
   "manga_chapter_ocr_status_running": "识别中 ${done}/${total}",
   "manga_chapter_ocr_status_queued": "等待识别",
-  "manga_ocr_boxes_toggle": "显示识别范围"
+  "manga_ocr_boxes_toggle": "显示识别范围",
+  "manga_ocr_settings_open": "OCR 设置",
+  "manga_chrome_floating": "悬浮工具栏",
+  "manga_chrome_floating_subtitle": "工具栏收起不遮挡页面，点页面中央或鼠标移到顶边唤出；关闭则常驻在页面上方"
 }
