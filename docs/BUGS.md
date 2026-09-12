@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2295 条。点号进各自文件。
+> 共 2296 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2489](bugs/BUG-2489-floating-dict-lossy-shadow-payload.md) | 🚧 | 🚧 | floating-dict-lossy-shadow-payload |
 | [BUG-2488](bugs/BUG-2488-floating-dict-word-audio.md) | ✅ | ✅ | floating-dict-word-audio |
 | [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
 | [BUG-2484](bugs/BUG-2484-manga-percent-filename.md) | ✅ | ✅ | 漫画页文件名含裸百分号时翻页/选字/制卡全抛 Illegal percent encoding |
