@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -149,7 +150,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 下载状态位（设计稿 2026-09-12 §5）：任务行 + 磁盘判据，两份合成章节行上
   /// 的一个状态。任务表一变就整体重算。
-  Map<String, MangaDownloadJobRow> _jobs = const <String, MangaDownloadJobRow>{};
+  Map<String, MangaDownloadJobRow> _jobs =
+      const <String, MangaDownloadJobRow>{};
   Set<String> _downloaded = const <String>{};
   StreamSubscription<void>? _jobsWatch;
 
@@ -237,8 +239,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         );
       },
     );
-    final Map<String, MangaDownloadJobRow> jobs =
-        await downloads.jobsForBook(row.bookKey);
+    final Map<String, MangaDownloadJobRow> jobs = await downloads.jobsForBook(
+      row.bookKey,
+    );
     final Set<String> downloaded = await downloadedChapterKeys(
       await MangaStorage.bookPath(row.bookKey),
       entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
@@ -305,13 +308,29 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry? entry = _entry;
     final AppModel? appModel = _appModelOrNull;
     if (entry == null || appModel == null || _bookKey == null) return;
-    final List<OnlineMangaChapter> pending = <OnlineMangaChapter>[
-      for (final OnlineMangaChapter chapter in entry.chapters.reversed)
-        if (!_downloaded.contains(chapter.key) && !_isChapterPending(chapter))
-          chapter,
-    ];
+    // 锁定章（未登录 / 未购买）入队必败，整批跳过并说清楚跳了几个；用户登录并
+    // 刷新后它们会脱锁，再点一次即可（BUG-2479）。
+    int lockedSkipped = 0;
+    final List<OnlineMangaChapter> pending = <OnlineMangaChapter>[];
+    for (final OnlineMangaChapter chapter in entry.chapters.reversed) {
+      if (_downloaded.contains(chapter.key) || _isChapterPending(chapter)) {
+        continue;
+      }
+      if (chapter.locked) {
+        lockedSkipped++;
+        continue;
+      }
+      pending.add(chapter);
+    }
+    if (lockedSkipped > 0) {
+      FushiToast.show(
+        msg: t.manga_series_download_all_locked_skipped(count: lockedSkipped),
+      );
+    }
     if (pending.isEmpty) {
-      FushiToast.show(msg: t.manga_series_download_all_none);
+      if (lockedSkipped == 0) {
+        FushiToast.show(msg: t.manga_series_download_all_none);
+      }
       return;
     }
     try {
@@ -332,6 +351,78 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       }
     }
     await _refreshDownloadState();
+  }
+
+  /// 点了锁定章：源站要登录并购买 / 租借才给页。弹窗给三条路——登录该源、
+  /// 仍然下载（用户确信自己已解锁、只是列表没刷新）、取消。
+  ///
+  /// 返回 true = 继续入队下载。选「登录」时登录完自动刷新章节列表（锁位跟着
+  /// 变），本次不入队。
+  Future<bool> _promptLockedChapter(OnlineMangaChapter chapter) async {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final OnlineMangaLoginTarget? login = switch (_adapter) {
+      OnlineMangaLoginCapable(:final loginTarget) when entry != null =>
+        loginTarget(entry),
+      _ => null,
+    };
+    if (!mounted) return false;
+    final _LockedChapterChoice? choice =
+        await showAppDialog<_LockedChapterChoice>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            key: const ValueKey<String>('manga_chapter_locked_dialog'),
+            title: Text(t.manga_chapter_locked_title),
+            content: Text('${chapter.name}\n\n${t.manga_chapter_locked_hint}'),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () =>
+                    Navigator.pop(dialogContext, _LockedChapterChoice.download),
+                child: Text(t.manga_chapter_locked_download_anyway),
+              ),
+              if (login != null)
+                KeyedSubtree(
+                  key: const ValueKey<String>('manga_chapter_locked_login'),
+                  child: adaptiveDialogAction(
+                    context: dialogContext,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(
+                      dialogContext,
+                      _LockedChapterChoice.login,
+                    ),
+                    child: Text(t.mihon_source_login),
+                  ),
+                ),
+            ],
+          ),
+        );
+    switch (choice) {
+      case _LockedChapterChoice.download:
+        return true;
+      case _LockedChapterChoice.login:
+        if (login != null) await _loginToSource(login);
+        return false;
+      case null:
+        return false;
+    }
+  }
+
+  Future<void> _loginToSource(OnlineMangaLoginTarget target) async {
+    final bool saved = await openMihonWebLogin(
+      context,
+      runtime: target.runtime,
+      sourceName: target.sourceName,
+      baseUrl: target.baseUrl,
+    );
+    if (!mounted || !saved) return;
+    FushiToast.show(msg: t.mihon_source_login_saved);
+    // 登录态变了，章节的锁位跟着变：立刻从源重取，用户不用自己想到去点刷新。
+    await _refreshFromSource();
   }
 
   bool _isChapterPending(OnlineMangaChapter chapter) {
@@ -359,9 +450,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (row == null || entry == null || _busy) return;
     final String bookDir = await MangaStorage.bookPath(row.bookKey);
     if (!await isChapterDownloaded(bookDir, chapter.key)) return;
-    final int queued = await _enqueueChapterOcr(entry, row, <OnlineMangaChapter>[
-      chapter,
-    ]);
+    final int queued = await _enqueueChapterOcr(
+      entry,
+      row,
+      <OnlineMangaChapter>[chapter],
+    );
     if (queued > 0 && mounted) {
       FushiToast.show(msg: t.manga_series_ocr_queued);
     }
@@ -390,7 +483,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 章 `manga.json` 里一个 block 都没有 = 还没识别过。读不出来按「不需要」处理
   /// （坏文件不该被整卷 OCR 悄悄覆盖）。
-  static Future<bool> _chapterNeedsOcr(String bookDir, String chapterKey) async {
+  static Future<bool> _chapterNeedsOcr(
+    String bookDir,
+    String chapterKey,
+  ) async {
     try {
       final File json = mangaChapterJsonFile(
         mangaChapterDirectory(bookDir, chapterKey),
@@ -412,10 +508,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   ) async {
     final AppModel? appModel = _appModelOrNull;
     if (appModel == null) return 0;
-    final MangaOcrWizardEngines engines = widget.ocrEnginesOverride ??
+    final MangaOcrWizardEngines engines =
+        widget.ocrEnginesOverride ??
         MangaOcrWizardEngines.resolve(context: context, db: appModel.database);
-    final MangaOcrEngineAvailability availability =
-        await probeMangaOcrEngines(engines);
+    final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
+      engines,
+    );
     final MangaOcrEnginePreference preference =
         MangaOcrEnginePreferenceKey.fromKey(appModel.mangaOcrEnginePreference);
     final MangaOcrEngineId? engine = resolveMangaOcrEngine(
@@ -447,7 +545,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         engines: engines,
         imageDirPath: chapterDir.path,
         lensLanguage: appModel.mangaOcrLensLanguage,
-        volumeTitle: '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
+        volumeTitle:
+            '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
         remoteTarget: availability.remoteTarget,
       );
       // 刻意不 await 启动：同书上一章还在识别时 enqueue 要等它结束。
@@ -749,6 +848,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       final OnlineMangaChapter chapter = entry.chapters[index];
       final String bookDir = await MangaStorage.bookPath(bookKey);
       if (!await isChapterDownloaded(bookDir, chapter.key)) {
+        if (chapter.locked && !await _promptLockedChapter(chapter)) return;
         await _enqueueChapter(chapter);
         return;
       }
@@ -928,8 +1028,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget build(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
-    final bool canSubscribe =
-        entry != null && _row != null && _service != null;
+    final bool canSubscribe = entry != null && _row != null && _service != null;
     return FushiPageScaffold(
       title: title,
       subtitle: _subtitle(),
@@ -942,9 +1041,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 : t.manga_series_subscribe,
             onPressed: _busy ? null : () => unawaited(_toggleSubscription()),
             icon: Icon(
-              entry.subscribed
-                  ? Icons.bookmark
-                  : Icons.bookmark_add_outlined,
+              entry.subscribed ? Icons.bookmark : Icons.bookmark_add_outlined,
             ),
           ),
         if (entry != null)
@@ -1400,3 +1497,6 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 }
+
+/// 锁定章弹窗的三条路；取消 = null。
+enum _LockedChapterChoice { login, download }

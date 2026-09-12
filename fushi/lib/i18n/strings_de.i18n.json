@@ -4734,5 +4734,11 @@
   "manga_series_auto_download": "Auto-download new chapters",
   "manga_online_download_all": "Download all",
   "manga_online_select_all": "Select all",
-  "manga_series_download_all_queued": "$count chapters queued"
+  "manga_series_download_all_queued": "$count chapters queued",
+  "manga_chapter_locked_title": "Chapter locked",
+  "manga_chapter_locked_hint": "The source requires signing in and purchasing or renting this chapter before it can be downloaded.",
+  "manga_chapter_locked_download_anyway": "Download anyway",
+  "manga_series_download_all_locked_skipped": "Skipped $count locked chapters",
+  "mihon_sources_search_hint": "Search sources",
+  "mihon_source_login_forward": "Forward"
 }

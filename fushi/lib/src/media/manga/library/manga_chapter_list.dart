@@ -233,7 +233,9 @@ class MangaChapterList extends StatelessWidget {
           ),
         _ChapterDownloadState.downloaded =>
           t.manga_chapter_download_status_downloaded,
-        _ChapterDownloadState.failed => t.manga_chapter_download_status_failed,
+        // 失败原因原样露出来：扩展抛的 `Log in via WebView ...` 之类正是用户要
+        // 知道的下一步；只写「下载失败」等于把答案藏起来（BUG-2479）。
+        _ChapterDownloadState.failed => _failedLabel(job?.lastError),
         _ChapterDownloadState.notDownloaded => t.manga_chapter_not_downloaded,
       },
       if (partial)
@@ -247,7 +249,17 @@ class MangaChapterList extends StatelessWidget {
               ),
     ];
     if (parts.isEmpty) return null;
-    return Text(parts.join(' · '));
+    return Text(
+      parts.join(' · '),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  static String _failedLabel(String? lastError) {
+    final String reason = lastError?.trim() ?? '';
+    if (reason.isEmpty) return t.manga_chapter_download_status_failed;
+    return '${t.manga_chapter_download_status_failed} · $reason';
   }
 
   Widget _buildTrailing(
@@ -257,7 +269,8 @@ class MangaChapterList extends StatelessWidget {
   ) {
     final ThemeData theme = Theme.of(context);
     final _ChapterDownloadState download = _downloadStateOf(chapter);
-    final bool hasMenu = onToggleRead != null ||
+    final bool hasMenu =
+        onToggleRead != null ||
         onMarkUpToRead != null ||
         onDownload != null ||
         onDeleteDownload != null ||
@@ -337,30 +350,30 @@ class MangaChapterList extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Widget icon = switch (download) {
       _ChapterDownloadState.downloaded => Icon(
-          Icons.download_done,
-          size: 20,
-          color: scheme.primary,
-        ),
+        Icons.download_done,
+        size: 20,
+        color: scheme.primary,
+      ),
       _ChapterDownloadState.queued => Icon(
-          Icons.schedule,
-          size: 20,
-          color: scheme.onSurfaceVariant,
-        ),
+        Icons.schedule,
+        size: 20,
+        color: scheme.onSurfaceVariant,
+      ),
       _ChapterDownloadState.downloading => const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
       _ChapterDownloadState.failed => Icon(
-          Icons.error_outline,
-          size: 20,
-          color: scheme.error,
-        ),
+        Icons.error_outline,
+        size: 20,
+        color: scheme.error,
+      ),
       _ChapterDownloadState.notDownloaded => Icon(
-          Icons.cloud_outlined,
-          size: 20,
-          color: scheme.onSurfaceVariant,
-        ),
+        Icons.cloud_outlined,
+        size: 20,
+        color: scheme.onSurfaceVariant,
+      ),
     };
     return Padding(
       key: ValueKey<String>('manga_chapter_download_${download.name}'),

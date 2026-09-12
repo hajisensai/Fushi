@@ -14,13 +14,11 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_repository_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
-import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
+import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
@@ -54,10 +52,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 /// `AppModel.mihonManager` 在这些平台会抛 [UnsupportedError]，故一切读它的路径
 /// 都必须先过 [MihonRuntimeFactory.isSupported]。
 class MangaSourcesPage extends ConsumerStatefulWidget {
-  const MangaSourcesPage({
-    super.key,
-    this.navigation,
-  });
+  const MangaSourcesPage({super.key, this.navigation});
 
   /// 库页视图导航条（由 `MediaLibraryShell` 传入，作为页头主内容）。
   final Widget? navigation;
@@ -77,6 +72,10 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   List<AidokuSavedRepository>? _aidokuRepositories;
   List<AidokuRepositoryIndex> _aidokuIndexes = const <AidokuRepositoryIndex>[];
   final TextEditingController _aidokuSearchController = TextEditingController();
+
+  /// 已安装在线源列表的搜索（BUG-2479）：源一多，找「要登录的那一个」得翻半天。
+  final TextEditingController _sourceSearchController = TextEditingController();
+  String _sourceSearchQuery = '';
   String _aidokuLanguage = '*';
   String _aidokuSearchQuery = '';
   String? _aidokuInstallingSourceId;
@@ -98,8 +97,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       final AidokuRepositoryStore repositoryStore =
           await AidokuRepositoryStore.open();
       final List<AidokuInstalledPackage> packages = await store.listInstalled();
-      final List<AidokuSavedRepository> repositories =
-          await repositoryStore.list();
+      final List<AidokuSavedRepository> repositories = await repositoryStore
+          .list();
       if (!mounted) return;
       setState(() {
         _aidokuStore = store;
@@ -130,6 +129,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     _manager?.removeListener(_changed);
     _aidokuRepositoryClient.close();
     _aidokuSearchController.dispose();
+    _sourceSearchController.dispose();
     super.dispose();
   }
 
@@ -153,7 +153,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
 
   Future<void> _importAidoku() async {
     if (!AidokuRuntimeFactory.isSupported || _aidokuBusy) return;
-    final bool acceptedRisk = await showAppDialog<bool>(
+    final bool acceptedRisk =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog.adaptive(
             title: Text(t.aidoku_extension_import),
@@ -197,7 +198,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         );
       }
       final Map<String, Object?> info = inspection.sourceInfo;
-      final bool confirmed = await showAppDialog<bool>(
+      final bool confirmed =
+          await showAppDialog<bool>(
             context: context,
             builder: (BuildContext dialogContext) => AlertDialog.adaptive(
               title: Text(t.aidoku_extension_confirm_title),
@@ -225,8 +227,10 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       final AidokuPackageStore store =
           _aidokuStore ?? await AidokuPackageStore.open();
       _aidokuStore = store;
-      final AidokuInstalledPackage installed =
-          await store.install(File(path), inspection);
+      final AidokuInstalledPackage installed = await store.install(
+        File(path),
+        inspection,
+      );
       final List<AidokuInstalledPackage> packages = await store.listInstalled();
       if (!mounted) return;
       setState(() => _aidokuPackages = packages);
@@ -257,13 +261,14 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       _aidokuError = null;
     });
     try {
-      final AidokuRepositoryIndex index =
-          await _aidokuRepositoryClient.fetch(repositoryUrl);
+      final AidokuRepositoryIndex index = await _aidokuRepositoryClient.fetch(
+        repositoryUrl,
+      );
       final AidokuRepositoryStore repositoryStore =
           _aidokuRepositoryStore ?? await AidokuRepositoryStore.open();
       _aidokuRepositoryStore = repositoryStore;
-      final List<AidokuSavedRepository> repositories =
-          await repositoryStore.add(index);
+      final List<AidokuSavedRepository> repositories = await repositoryStore
+          .add(index);
       if (!mounted) return;
       setState(() {
         _aidokuRepositories = repositories;
@@ -274,8 +279,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         severity: ToastSeverity.success,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('Aidoku.repository.add[$repositoryUrl]', error, stack);
+      ErrorLogService.instance.log(
+        'Aidoku.repository.add[$repositoryUrl]',
+        error,
+        stack,
+      );
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -285,23 +293,25 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     }
   }
 
-  Future<void> _browseAidokuRepository(
-    AidokuSavedRepository repository,
-  ) async {
+  Future<void> _browseAidokuRepository(AidokuSavedRepository repository) async {
     if (_aidokuBusy) return;
     setState(() {
       _aidokuBusy = true;
       _aidokuError = null;
     });
     try {
-      final AidokuRepositoryIndex index =
-          await _aidokuRepositoryClient.fetch(repository.indexUrl);
+      final AidokuRepositoryIndex index = await _aidokuRepositoryClient.fetch(
+        repository.indexUrl,
+      );
       if (!mounted) return;
       setState(() => _upsertAidokuIndex(index));
       await _showAidokuRepository(index);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
-          'Aidoku.repository.browse[${repository.indexUrl}]', error, stack);
+        'Aidoku.repository.browse[${repository.indexUrl}]',
+        error,
+        stack,
+      );
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -330,11 +340,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     try {
       final List<AidokuRepositoryIndex> indexes =
           await Future.wait<AidokuRepositoryIndex>(
-        repositories.map(
-          (AidokuSavedRepository repository) =>
-              _aidokuRepositoryClient.fetch(repository.indexUrl),
-        ),
-      );
+            repositories.map(
+              (AidokuSavedRepository repository) =>
+                  _aidokuRepositoryClient.fetch(repository.indexUrl),
+            ),
+          );
       if (mounted) setState(() => _aidokuIndexes = indexes);
     } on Object catch (error) {
       if (mounted) setState(() => _aidokuError = error);
@@ -347,8 +357,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     final AidokuPackageStore packageStore =
         _aidokuStore ?? await AidokuPackageStore.open();
     _aidokuStore = packageStore;
-    final List<AidokuInstalledPackage> installed =
-        await packageStore.listInstalled();
+    final List<AidokuInstalledPackage> installed = await packageStore
+        .listInstalled();
     if (!mounted) return;
     await showAppDialog<void>(
       context: context,
@@ -369,10 +379,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     if (mounted) setState(() => _aidokuPackages = packages);
   }
 
-  Future<void> _removeAidokuRepository(
-    AidokuSavedRepository repository,
-  ) async {
-    final bool confirmed = await showAppDialog<bool>(
+  Future<void> _removeAidokuRepository(AidokuSavedRepository repository) async {
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog.adaptive(
             title: Text(t.aidoku_repository_remove),
@@ -416,7 +425,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   }
 
   Future<void> _removeAidoku(AidokuInstalledPackage package) async {
-    final bool confirmed = await showAppDialog<bool>(
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog.adaptive(
             title: Text(t.aidoku_extension_remove),
@@ -440,8 +450,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     if (!confirmed || !mounted) return;
     try {
       await _aidokuStore!.remove(package);
-      final List<AidokuInstalledPackage> packages =
-          await _aidokuStore!.listInstalled();
+      final List<AidokuInstalledPackage> packages = await _aidokuStore!
+          .listInstalled();
       if (mounted) setState(() => _aidokuPackages = packages);
     } on Object catch (error) {
       if (mounted) {
@@ -469,7 +479,8 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
 
   Future<void> _installAidokuSource(AidokuRepositorySource source) async {
     if (_aidokuInstallingSourceId != null) return;
-    final bool confirmed = await showAppDialog<bool>(
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog.adaptive(
             title: Text('${t.aidoku_repository_install}: ${source.name}'),
@@ -497,8 +508,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     });
     Directory? temporaryDirectory;
     try {
-      temporaryDirectory =
-          await Directory.systemTemp.createTemp('fushi-aidoku-repository-');
+      temporaryDirectory = await Directory.systemTemp.createTemp(
+        'fushi-aidoku-repository-',
+      );
       final File downloaded = await _aidokuRepositoryClient.download(
         source,
         File('${temporaryDirectory.path}/source.aix'),
@@ -522,16 +534,21 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       final AidokuPackageStore store =
           _aidokuStore ?? await AidokuPackageStore.open();
       _aidokuStore = store;
-      final AidokuInstalledPackage installed =
-          await store.install(downloaded, inspection);
+      final AidokuInstalledPackage installed = await store.install(
+        downloaded,
+        inspection,
+      );
       await _reloadAidokuPackages();
       FushiToast.show(
         msg: '${t.aidoku_extension_imported}: ${installed.name}',
         severity: ToastSeverity.success,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('Aidoku.install.repository[${source.id}]', error, stack);
+      ErrorLogService.instance.log(
+        'Aidoku.install.repository[${source.id}]',
+        error,
+        stack,
+      );
       if (mounted) {
         setState(() => _aidokuError = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -580,28 +597,17 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   /// 两个条件缺一不可：运行时是「宿主持有 cookie」那一类（桌面 sidecar；Android
   /// 由系统 `CookieManager` 拥有 cookie，不需要也不该走这条），以及该源报出了
   /// 可解析出 host 的 baseUrl（有些源的 baseUrl 是空串或相对地址）。
-  Uri? _loginTargetFor(MangaOnlineSourceRow source) => mihonLoginTarget(
-        runtime: _manager?.runtime,
-        baseUrl: source.baseUrl,
-      );
+  Uri? _loginTargetFor(MangaOnlineSourceRow source) =>
+      mihonLoginTarget(runtime: _manager?.runtime, baseUrl: source.baseUrl);
 
   Future<void> _openWebLogin(MangaOnlineSourceRow source) async {
-    final Uri? target = _loginTargetFor(source);
-    final Object? runtime = _manager?.runtime;
-    if (target == null || runtime is! HostCookieMihonRuntime) return;
-    final MangaCookieJar jar = runtime.cookieJar;
-    if (jar is! MihonCookieJar) return;
-    final bool? saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        fullscreenDialog: true,
-        builder: (BuildContext _) => MihonWebLoginPage(
-          sourceName: source.name,
-          baseUrl: target,
-          jar: jar,
-        ),
-      ),
+    final bool saved = await openMihonWebLogin(
+      context,
+      runtime: _manager?.runtime,
+      sourceName: source.name,
+      baseUrl: source.baseUrl,
     );
-    if (!mounted || saved != true) return;
+    if (!mounted || !saved) return;
     FushiToast.show(msg: t.mihon_source_login_saved);
     // 登录态变了，源的章节归属会跟着变；让下一次进源重新取，而不是继续用锁着的
     // 那份缓存。
@@ -611,19 +617,15 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   void _openPreferences(MangaOnlineSourceRow source) {
     showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => MihonPreferencesDialog(
-        manager: _manager!,
-        source: source,
-      ),
+      builder: (BuildContext context) =>
+          MihonPreferencesDialog(manager: _manager!, source: source),
     );
   }
 
-  Future<void> _moveSource(
-    MangaOnlineSourceRow source,
-    int delta,
-  ) async {
-    final List<MangaOnlineSourceRow> rows =
-        List<MangaOnlineSourceRow>.of(_manager!.sources);
+  Future<void> _moveSource(MangaOnlineSourceRow source, int delta) async {
+    final List<MangaOnlineSourceRow> rows = List<MangaOnlineSourceRow>.of(
+      _manager!.sources,
+    );
     final int index = rows.indexWhere(
       (MangaOnlineSourceRow row) =>
           row.extensionPackage == source.extensionPackage &&
@@ -632,20 +634,12 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     final int target = index + delta;
     if (index < 0 || target < 0 || target >= rows.length) return;
     final MangaOnlineSourceRow other = rows[target];
-    await _manager!.updateSourceSettings(
-      source,
-      sortOrder: other.sortOrder,
-    );
-    await _manager!.updateSourceSettings(
-      other,
-      sortOrder: source.sortOrder,
-    );
+    await _manager!.updateSourceSettings(source, sortOrder: other.sortOrder);
+    await _manager!.updateSourceSettings(other, sortOrder: source.sortOrder);
   }
 
-  Widget _sectionTitle(String title) => Text(
-        title,
-        style: Theme.of(context).textTheme.titleLarge,
-      );
+  Widget _sectionTitle(String title) =>
+      Text(title, style: Theme.of(context).textTheme.titleLarge);
 
   /// 页头。与 `MediaSourcesPage` 同一范式：库页视图导航条存在时它就是页头主位，
   /// **不再另渲染一个页面大标题**——导航条自己已经标明了当前在哪个视图，标题只是
@@ -655,10 +649,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     const List<Widget> actions = <Widget>[];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
-      return FushiPageHeader.customTitle(
-        title: navigation,
-        actions: actions,
-      );
+      return FushiPageHeader.customTitle(title: navigation, actions: actions);
     }
     return FushiPageHeader(
       title: t.media_source_manage_title,
@@ -668,22 +659,16 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
 
   /// 扩展宿主不可用时统一的占位（iOS / Linux）。结构不变，只是这一节没内容。
   Widget _unavailableNote() => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          t.mihon_runtime_unavailable,
-          textAlign: TextAlign.center,
-        ),
-      );
+    padding: const EdgeInsets.all(24),
+    child: Text(t.mihon_runtime_unavailable, textAlign: TextAlign.center),
+  );
 
   Widget _buildAidokuSection() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (!AidokuRuntimeFactory.isSupported) {
       return Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          t.aidoku_runtime_unavailable,
-          textAlign: TextAlign.center,
-        ),
+        child: Text(t.aidoku_runtime_unavailable, textAlign: TextAlign.center),
       );
     }
     final Map<String, AidokuRepositorySource> availableById =
@@ -697,21 +682,24 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       }
     }
     final List<AidokuRepositorySource> available = availableById.values.toList()
-      ..sort((AidokuRepositorySource a, AidokuRepositorySource b) =>
-          a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      ..sort(
+        (AidokuRepositorySource a, AidokuRepositorySource b) =>
+            a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
     final Map<String, AidokuInstalledPackage> installed =
         <String, AidokuInstalledPackage>{
-      for (final AidokuInstalledPackage package
-          in _aidokuPackages ?? const <AidokuInstalledPackage>[])
-        package.id: package,
-    };
-    final List<String> languages = available
-        .expand((AidokuRepositorySource source) => source.languages)
-        .map((String language) => language.toLowerCase())
-        .where((String language) => language.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+          for (final AidokuInstalledPackage package
+              in _aidokuPackages ?? const <AidokuInstalledPackage>[])
+            package.id: package,
+        };
+    final List<String> languages =
+        available
+            .expand((AidokuRepositorySource source) => source.languages)
+            .map((String language) => language.toLowerCase())
+            .where((String language) => language.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     final String query = _aidokuSearchQuery.trim().toLowerCase();
     bool matchesLanguage(List<String> values) =>
         _aidokuLanguage == '*' ||
@@ -727,11 +715,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         .where(
           (AidokuRepositorySource source) =>
               matchesLanguage(source.languages) &&
-              matchesSearch(<String?>[
-                source.name,
-                source.id,
-                source.baseUrl,
-              ]),
+              matchesSearch(<String?>[source.name, source.id, source.baseUrl]),
         )
         .toList(growable: false);
     final List<AidokuInstalledPackage> visibleLocalOnly = installed.values
@@ -805,18 +789,14 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                     tooltip: t.aidoku_repository_browse,
                     onPressed: _aidokuBusy
                         ? null
-                        : () => unawaited(
-                              _browseAidokuRepository(repository),
-                            ),
+                        : () => unawaited(_browseAidokuRepository(repository)),
                     icon: const Icon(Icons.view_list_outlined),
                   ),
                   IconButton(
                     tooltip: t.aidoku_repository_remove,
                     onPressed: _aidokuBusy
                         ? null
-                        : () => unawaited(
-                              _removeAidokuRepository(repository),
-                            ),
+                        : () => unawaited(_removeAidokuRepository(repository)),
                     icon: const Icon(Icons.delete_outline),
                   ),
                 ],
@@ -867,17 +847,17 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                 onEnabledChanged: package == null
                     ? null
                     : (bool value) =>
-                        unawaited(_setAidokuEnabled(package, value)),
+                          unawaited(_setAidokuEnabled(package, value)),
                 primaryLabel: package == null
                     ? t.aidoku_repository_install
                     : update
-                        ? t.aidoku_repository_update
-                        : t.aidoku_extension_remove,
+                    ? t.aidoku_repository_update
+                    : t.aidoku_extension_remove,
                 onPrimary: _aidokuInstallingSourceId != null
                     ? null
                     : package == null || update
-                        ? () => unawaited(_installAidokuSource(source))
-                        : () => unawaited(_removeAidoku(package)),
+                    ? () => unawaited(_installAidokuSource(source))
+                    : () => unawaited(_removeAidoku(package)),
               );
             },
           ),
@@ -1016,6 +996,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                             const SizedBox(height: 28),
                             _sectionTitle(t.mihon_sources_title),
                             const SizedBox(height: 8),
+                            if (onlineSourcesAvailable &&
+                                manager != null) ...<Widget>[
+                              _buildSourceSearchField(),
+                              const SizedBox(height: 8),
+                            ],
                             // 内置在线源：与扩展提供的源同节同级（见类文档）。
                             if (onlineSourcesAvailable) ...<Widget>[
                               const MokuroMoeSourceRow(),
@@ -1035,14 +1020,23 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                         ),
                       ),
                       if (onlineSourcesAvailable && manager != null)
-                        SliverList.builder(
-                          itemCount: manager.sources.length,
-                          itemBuilder: (BuildContext context, int index) =>
-                              _buildOnlineSource(
-                            manager,
-                            manager.sources[index],
-                            index,
-                          ),
+                        Builder(
+                          builder: (BuildContext context) {
+                            final List<MangaOnlineSourceRow> visible =
+                                _visibleOnlineSources(manager);
+                            return SliverList.builder(
+                              itemCount: visible.length,
+                              itemBuilder: (BuildContext context, int index) =>
+                                  _buildOnlineSource(
+                                    manager,
+                                    visible[index],
+                                    manager.sources.indexOf(visible[index]),
+                                    reorderable: _sourceSearchQuery
+                                        .trim()
+                                        .isEmpty,
+                                  ),
+                            );
+                          },
                         ),
                     ],
                   ),
@@ -1055,19 +1049,53 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     );
   }
 
+  /// 搜索按名称 / 语言 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）。
+  List<MangaOnlineSourceRow> _visibleOnlineSources(MihonManager manager) =>
+      filterByMediaSearch<MangaOnlineSourceRow>(
+        manager.sources,
+        _sourceSearchQuery,
+        (MangaOnlineSourceRow source) => <String>[
+          source.name,
+          source.language,
+          source.extensionPackage,
+        ],
+      );
+
+  Widget _buildSourceSearchField() => TextField(
+    key: const ValueKey<String>('mihon_sources_search_field'),
+    controller: _sourceSearchController,
+    decoration: InputDecoration(
+      prefixIcon: const Icon(Icons.search),
+      hintText: t.mihon_sources_search_hint,
+      border: const OutlineInputBorder(),
+      suffixIcon: _sourceSearchQuery.isEmpty
+          ? null
+          : IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                _sourceSearchController.clear();
+                setState(() => _sourceSearchQuery = '');
+              },
+            ),
+    ),
+    onChanged: (String value) => setState(() => _sourceSearchQuery = value),
+  );
+
+  /// [index] 是该源在**完整**列表里的位置（排序按钮据此判首尾）；筛选中列表
+  /// 顺序已不是真实顺序，[reorderable] 为 false 时不显示排序按钮。
   Widget _buildOnlineSource(
     MihonManager manager,
     MangaOnlineSourceRow source,
-    int index,
-  ) {
+    int index, {
+    bool reorderable = true,
+  }) {
     return FushiCard(
       padding: EdgeInsets.zero,
       child: FushiListItem(
         leading: Switch.adaptive(
           value: source.enabled,
-          onChanged: (bool value) => unawaited(
-            manager.updateSourceSettings(source, enabled: value),
-          ),
+          onChanged: (bool value) =>
+              unawaited(manager.updateSourceSettings(source, enabled: value)),
         ),
         title: Text(source.name),
         subtitle: Text(
@@ -1076,19 +1104,22 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         trailing: Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            IconButton(
-              tooltip: t.sort_by,
-              onPressed:
-                  index == 0 ? null : () => unawaited(_moveSource(source, -1)),
-              icon: const Icon(Icons.keyboard_arrow_up),
-            ),
-            IconButton(
-              tooltip: t.sort_by,
-              onPressed: index == manager.sources.length - 1
-                  ? null
-                  : () => unawaited(_moveSource(source, 1)),
-              icon: const Icon(Icons.keyboard_arrow_down),
-            ),
+            if (reorderable) ...<Widget>[
+              IconButton(
+                tooltip: t.sort_by,
+                onPressed: index == 0
+                    ? null
+                    : () => unawaited(_moveSource(source, -1)),
+                icon: const Icon(Icons.keyboard_arrow_up),
+              ),
+              IconButton(
+                tooltip: t.sort_by,
+                onPressed: index == manager.sources.length - 1
+                    ? null
+                    : () => unawaited(_moveSource(source, 1)),
+                icon: const Icon(Icons.keyboard_arrow_down),
+              ),
+            ],
             if (_loginTargetFor(source) != null)
               IconButton(
                 key: ValueKey<String>('mihon_source_login_${source.sourceId}'),
@@ -1109,10 +1140,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
             IconButton(
               tooltip: t.sort_by,
               onPressed: () => unawaited(
-                manager.updateSourceSettings(
-                  source,
-                  pinned: !source.pinned,
-                ),
+                manager.updateSourceSettings(source, pinned: !source.pinned),
               ),
               icon: Icon(
                 source.pinned ? Icons.push_pin : Icons.push_pin_outlined,
@@ -1152,43 +1180,43 @@ class _AidokuRepositoryUrlDialogState
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(t.aidoku_repository_add),
-        content: SizedBox(
-          width: 560,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(t.aidoku_repository_hint),
-              const SizedBox(height: 12),
-              TextField(
-                key: const ValueKey<String>('aidoku_repository_url'),
-                controller: _controller,
-                autofocus: true,
-                keyboardType: TextInputType.url,
-                decoration: InputDecoration(
-                  labelText: t.aidoku_repository_url,
-                  prefixIcon: const Icon(Icons.link),
-                ),
-                onSubmitted: (_) => _submit(),
-              ),
-            ],
-          ),
-        ),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: context,
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: context,
-            isDefaultAction: true,
-            onPressed: _submit,
-            child: Text(t.dialog_add),
+    title: Text(t.aidoku_repository_add),
+    content: SizedBox(
+      width: 560,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(t.aidoku_repository_hint),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey<String>('aidoku_repository_url'),
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              labelText: t.aidoku_repository_url,
+              prefixIcon: const Icon(Icons.link),
+            ),
+            onSubmitted: (_) => _submit(),
           ),
         ],
-      );
+      ),
+    ),
+    actions: <Widget>[
+      adaptiveDialogAction(
+        context: context,
+        onPressed: () => Navigator.pop(context),
+        child: Text(t.dialog_cancel),
+      ),
+      adaptiveDialogAction(
+        context: context,
+        isDefaultAction: true,
+        onPressed: _submit,
+        child: Text(t.dialog_add),
+      ),
+    ],
+  );
 }
 
 class _AidokuRepositorySourcesDialog extends StatefulWidget {
@@ -1215,9 +1243,9 @@ class _AidokuRepositorySourcesDialogState
     extends State<_AidokuRepositorySourcesDialog> {
   late final Map<String, AidokuInstalledPackage> _installed =
       <String, AidokuInstalledPackage>{
-    for (final AidokuInstalledPackage package in widget.installed)
-      package.id: package,
-  };
+        for (final AidokuInstalledPackage package in widget.installed)
+          package.id: package,
+      };
   String _query = '';
   String? _installingSourceId;
   Object? _error;
@@ -1239,7 +1267,8 @@ class _AidokuRepositorySourcesDialogState
 
   Future<void> _install(AidokuRepositorySource source) async {
     if (_installingSourceId != null) return;
-    final bool confirmed = await showAppDialog<bool>(
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) => AlertDialog.adaptive(
             title: Text('${t.aidoku_repository_install}: ${source.name}'),
@@ -1268,8 +1297,9 @@ class _AidokuRepositorySourcesDialogState
     });
     Directory? temporaryDirectory;
     try {
-      temporaryDirectory =
-          await Directory.systemTemp.createTemp('fushi-aidoku-repository-');
+      temporaryDirectory = await Directory.systemTemp.createTemp(
+        'fushi-aidoku-repository-',
+      );
       final File downloaded = await widget.client.download(
         source,
         File('${temporaryDirectory.path}/source.aix'),
@@ -1290,8 +1320,8 @@ class _AidokuRepositorySourcesDialogState
           t.aidoku_webview_unsupported,
         );
       }
-      final AidokuInstalledPackage installed =
-          await widget.packageStore.install(downloaded, inspection);
+      final AidokuInstalledPackage installed = await widget.packageStore
+          .install(downloaded, inspection);
       if (!mounted) return;
       setState(() => _installed[installed.id] = installed);
       await widget.onInstalled();
@@ -1300,8 +1330,11 @@ class _AidokuRepositorySourcesDialogState
         severity: ToastSeverity.success,
       );
     } on Object catch (error, stack) {
-      ErrorLogService.instance
-          .log('Aidoku.install.dialog[${source.id}]', error, stack);
+      ErrorLogService.instance.log(
+        'Aidoku.install.dialog[${source.id}]',
+        error,
+        stack,
+      );
       if (mounted) {
         setState(() => _error = error);
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
@@ -1314,13 +1347,10 @@ class _AidokuRepositorySourcesDialogState
     }
   }
 
-  Future<void> _setEnabled(
-    AidokuInstalledPackage package,
-    bool enabled,
-  ) async {
+  Future<void> _setEnabled(AidokuInstalledPackage package, bool enabled) async {
     try {
-      final AidokuInstalledPackage updated =
-          await widget.packageStore.setEnabled(package, enabled);
+      final AidokuInstalledPackage updated = await widget.packageStore
+          .setEnabled(package, enabled);
       if (!mounted) return;
       setState(() => _installed[updated.id] = updated);
       await widget.onInstalled();
@@ -1356,9 +1386,7 @@ class _AidokuRepositorySourcesDialogState
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   '$_error',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             const SizedBox(height: 8),
@@ -1373,13 +1401,14 @@ class _AidokuRepositorySourcesDialogState
                             _installed[source.id];
                         final bool isInstalling =
                             _installingSourceId == source.id;
-                        final bool isCurrent = installed != null &&
+                        final bool isCurrent =
+                            installed != null &&
                             installed.version >= source.version;
                         final String actionLabel = isCurrent
                             ? t.aidoku_repository_installed
                             : installed == null
-                                ? t.aidoku_repository_install
-                                : t.aidoku_repository_update;
+                            ? t.aidoku_repository_install
+                            : t.aidoku_repository_update;
                         final List<String> metadata = <String>[
                           source.languages.join(', ').toUpperCase(),
                           '${t.aidoku_extension_version} ${source.version}',
@@ -1400,9 +1429,8 @@ class _AidokuRepositorySourcesDialogState
                           enabled: installed?.enabled,
                           onEnabledChanged: installed == null
                               ? null
-                              : (bool value) => unawaited(
-                                    _setEnabled(installed, value),
-                                  ),
+                              : (bool value) =>
+                                    unawaited(_setEnabled(installed, value)),
                           primaryLabel: actionLabel,
                           onPrimary: isCurrent || _installingSourceId != null
                               ? null
@@ -1416,8 +1444,9 @@ class _AidokuRepositorySourcesDialogState
       ),
       actions: <Widget>[
         TextButton(
-          onPressed:
-              _installingSourceId == null ? () => Navigator.pop(context) : null,
+          onPressed: _installingSourceId == null
+              ? () => Navigator.pop(context)
+              : null,
           child: Text(t.dialog_close),
         ),
       ],
@@ -1440,8 +1469,7 @@ class MihonPreferencesDialog extends StatefulWidget {
   final MangaOnlineSourceRow source;
 
   @override
-  State<MihonPreferencesDialog> createState() =>
-      _MihonPreferencesDialogState();
+  State<MihonPreferencesDialog> createState() => _MihonPreferencesDialogState();
 }
 
 class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
@@ -1459,22 +1487,21 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
 
   Future<void> _load() async {
     try {
-      final List<MihonPreference> preferences =
-          await widget.manager.getPreferences(widget.source);
+      final List<MihonPreference> preferences = await widget.manager
+          .getPreferences(widget.source);
       if (mounted) setState(() => _preferences = preferences);
     } on Object catch (error) {
       if (mounted) setState(() => _error = error);
     }
   }
 
-  Future<void> _save(
-    MihonPreference original,
-    Object? value,
-  ) async {
+  Future<void> _save(MihonPreference original, Object? value) async {
     setState(() => _savingKey = original.key);
     try {
-      final List<MihonPreference> preferences =
-          await _persistPreference(original, value);
+      final List<MihonPreference> preferences = await _persistPreference(
+        original,
+        value,
+      );
       if (mounted) {
         setState(() {
           _preferences = preferences;
@@ -1543,16 +1570,16 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
         child: _error != null
             ? Text('$_error')
             : preferences == null
-                ? Center(child: adaptiveIndicator(context: context))
-                : preferences.isEmpty
-                    ? Text(t.mihon_source_no_results)
-                    : ListView(
-                        shrinkWrap: true,
-                        children: <Widget>[
-                          for (final MihonPreference preference in preferences)
-                            _buildPreference(preference),
-                        ],
-                      ),
+            ? Center(child: adaptiveIndicator(context: context))
+            : preferences.isEmpty
+            ? Text(t.mihon_source_no_results)
+            : ListView(
+                shrinkWrap: true,
+                children: <Widget>[
+                  for (final MihonPreference preference in preferences)
+                    _buildPreference(preference),
+                ],
+              ),
       ),
       actions: <Widget>[
         TextButton(
@@ -1560,8 +1587,11 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
           child: Text(t.dialog_close),
         ),
         FilledButton(
-          onPressed: preferences == null || _error != null ||
-                  _savingKey != null || _savingAll
+          onPressed:
+              preferences == null ||
+                  _error != null ||
+                  _savingKey != null ||
+                  _savingAll
               ? null
               : () => unawaited(_saveAllAndClose()),
           child: Text(t.dialog_save),
@@ -1574,86 +1604,83 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
     final bool busy = _savingAll || _savingKey == preference.key;
     return switch (preference.kind) {
       MihonPreferenceKind.checkBox ||
-      MihonPreferenceKind.switchControl =>
-        SwitchListTile.adaptive(
-          title: Text(preference.title),
-          subtitle:
-              preference.summary.isEmpty ? null : Text(preference.summary),
-          value: preference.value == true,
-          onChanged:
-              busy ? null : (bool value) => unawaited(_save(preference, value)),
-        ),
+      MihonPreferenceKind.switchControl => SwitchListTile.adaptive(
+        title: Text(preference.title),
+        subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
+        value: preference.value == true,
+        onChanged: busy
+            ? null
+            : (bool value) => unawaited(_save(preference, value)),
+      ),
       MihonPreferenceKind.text => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: TextFormField(
-            key: ValueKey<String>(
-              '${preference.key}:${preference.value}',
-            ),
-            initialValue: preference.value?.toString() ?? '',
-            enabled: !busy,
-            decoration: InputDecoration(
-              labelText: preference.title,
-              helperText:
-                  preference.summary.isEmpty ? null : preference.summary,
-            ),
-            onChanged: (String value) => _textDrafts[preference.key] = value,
-            onFieldSubmitted: (String value) =>
-                unawaited(_save(preference, value)),
-          ),
-        ),
-      MihonPreferenceKind.list => DropdownButtonFormField<int>(
-          value: (preference.value as int? ?? 0)
-              .clamp(0, preference.entries.length - 1),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: TextFormField(
+          key: ValueKey<String>('${preference.key}:${preference.value}'),
+          initialValue: preference.value?.toString() ?? '',
+          enabled: !busy,
           decoration: InputDecoration(
             labelText: preference.title,
             helperText: preference.summary.isEmpty ? null : preference.summary,
           ),
-          items: <DropdownMenuItem<int>>[
-            for (int index = 0; index < preference.entries.length; index++)
-              DropdownMenuItem<int>(
-                value: index,
-                child: Text(preference.entries[index]),
-              ),
-          ],
-          onChanged: busy
-              ? null
-              : (int? value) => unawaited(_save(preference, value ?? 0)),
+          onChanged: (String value) => _textDrafts[preference.key] = value,
+          onFieldSubmitted: (String value) =>
+              unawaited(_save(preference, value)),
         ),
+      ),
+      MihonPreferenceKind.list => DropdownButtonFormField<int>(
+        value: (preference.value as int? ?? 0).clamp(
+          0,
+          preference.entries.length - 1,
+        ),
+        decoration: InputDecoration(
+          labelText: preference.title,
+          helperText: preference.summary.isEmpty ? null : preference.summary,
+        ),
+        items: <DropdownMenuItem<int>>[
+          for (int index = 0; index < preference.entries.length; index++)
+            DropdownMenuItem<int>(
+              value: index,
+              child: Text(preference.entries[index]),
+            ),
+        ],
+        onChanged: busy
+            ? null
+            : (int? value) => unawaited(_save(preference, value ?? 0)),
+      ),
       MihonPreferenceKind.multiSelect => ExpansionTile(
-          title: Text(preference.title),
-          subtitle:
-              preference.summary.isEmpty ? null : Text(preference.summary),
-          children: <Widget>[
-            for (int index = 0; index < preference.entries.length; index++)
-              _MihonMultiSelectRow(
-                label: preference.entries[index],
-                selected:
-                    (preference.value as List<Object?>? ?? const <Object?>[])
-                        .map((Object? value) => value.toString())
-                        .contains(preference.entryValues[index]),
-                onChanged: busy
-                    ? null
-                    : (bool? selected) {
-                        final Set<String> values =
-                            (preference.value as List<Object?>? ??
-                                    const <Object?>[])
-                                .map((Object? value) => value.toString())
-                                .toSet();
-                        if (selected == true) {
-                          values.add(preference.entryValues[index]);
-                        } else {
-                          values.remove(preference.entryValues[index]);
-                        }
-                        unawaited(_save(preference, values.toList()));
-                      },
-              ),
-          ],
-        ),
+        title: Text(preference.title),
+        subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
+        children: <Widget>[
+          for (int index = 0; index < preference.entries.length; index++)
+            _MihonMultiSelectRow(
+              label: preference.entries[index],
+              selected:
+                  (preference.value as List<Object?>? ?? const <Object?>[])
+                      .map((Object? value) => value.toString())
+                      .contains(preference.entryValues[index]),
+              onChanged: busy
+                  ? null
+                  : (bool? selected) {
+                      final Set<String> values =
+                          (preference.value as List<Object?>? ??
+                                  const <Object?>[])
+                              .map((Object? value) => value.toString())
+                              .toSet();
+                      if (selected == true) {
+                        values.add(preference.entryValues[index]);
+                      } else {
+                        values.remove(preference.entryValues[index]);
+                      }
+                      unawaited(_save(preference, values.toList()));
+                    },
+            ),
+        ],
+      ),
       MihonPreferenceKind.unsupported => FushiListItem(
-          leading: const Icon(Icons.warning_amber_outlined),
-          title: Text(preference.title),
-          subtitle: Text(t.mihon_extension_incompatible),
-        ),
+        leading: const Icon(Icons.warning_amber_outlined),
+        title: Text(preference.title),
+        subtitle: Text(t.mihon_extension_incompatible),
+      ),
     };
   }
 }

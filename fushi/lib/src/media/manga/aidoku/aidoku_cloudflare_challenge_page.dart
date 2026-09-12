@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
+import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
@@ -99,6 +100,7 @@ class AidokuCloudflareChallengePage extends StatefulWidget {
     this.pollInterval = const Duration(seconds: 1),
     this.cookieReader,
     this.webViewBuilder,
+    this.environmentFactory,
   });
 
   final Uri challengeUrl;
@@ -117,6 +119,10 @@ class AidokuCloudflareChallengePage extends StatefulWidget {
 
   /// 测试注入：替掉真 [InAppWebView]（widget 测试环境没有平台视图）。
   final Widget Function(BuildContext context)? webViewBuilder;
+
+  /// 测试注入：默认 [MangaWebViewEnvironment.obtain]。WebView 与 [CookieManager]
+  /// 必须绑同一个环境，否则 Windows 上永远轮询不到 `cf_clearance`（BUG-2477）。
+  final Future<WebViewEnvironment?> Function()? environmentFactory;
 
   @override
   State<AidokuCloudflareChallengePage> createState() =>
@@ -147,11 +153,31 @@ class _AidokuCloudflareChallengePageState
   /// 共享 cookie 存储还留着旧账，不算解完。null = 基线未就绪，先不判。
   Set<String>? _staleClearance;
 
+  /// 环境就绪前不建 WebView、也不轮询（cookie 查询要绑它）。
+  bool _environmentReady = false;
+  WebViewEnvironment? _environment;
+
   @override
   void initState() {
     super.initState();
     _poll = Timer.periodic(widget.pollInterval, (_) => unawaited(_check()));
     unawaited(_initBaseline());
+    unawaited(_prepareEnvironment());
+  }
+
+  Future<void> _prepareEnvironment() async {
+    WebViewEnvironment? environment;
+    try {
+      environment =
+          await (widget.environmentFactory ?? MangaWebViewEnvironment.obtain)();
+    } on Object {
+      environment = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _environment = environment;
+      _environmentReady = true;
+    });
   }
 
   @override
@@ -175,7 +201,9 @@ class _AidokuCloudflareChallengePageState
 
   Future<List<Cookie>> _readCookies(WebUri url) =>
       widget.cookieReader?.call(url) ??
-      CookieManager.instance().getCookies(url: url);
+      CookieManager.instance(
+        webViewEnvironment: _environment,
+      ).getCookies(url: url);
 
   /// 挑战页是在站点根域发 cookie 的，用 origin 查而不是带路径的原始 URL。
   WebUri get _origin => WebUri.uri(
@@ -189,7 +217,13 @@ class _AidokuCloudflareChallengePageState
 
   Future<void> _check() async {
     final Set<String>? staleClearance = _staleClearance;
-    if (_checking || _done || !mounted || staleClearance == null) return;
+    if (_checking ||
+        _done ||
+        !mounted ||
+        staleClearance == null ||
+        !_environmentReady) {
+      return;
+    }
     _checking = true;
     try {
       final List<Cookie> cookies = await _readCookies(_origin);
@@ -259,35 +293,38 @@ class _AidokuCloudflareChallengePageState
           Expanded(
             child:
                 widget.webViewBuilder?.call(context) ??
-                KeyedSubtree(
-                  // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正
-                  // 重建出新的 platform view，而不动 WebView 自己的锚点。
-                  key: _deathGuard.rebuildKey,
-                  child: InAppWebView(
-                    initialUrlRequest: URLRequest(
-                      url: WebUri.uri(widget.challengeUrl),
-                    ),
-                    initialSettings: InAppWebViewSettings(
-                      // 与被拦请求逐字节一致，见 [AidokuCloudflareResolver]。
-                      userAgent: widget.userAgent,
-                      javaScriptEnabled: true,
-                      sharedCookiesEnabled: true,
-                    ),
-                    onLoadStop: (_, __) => unawaited(_check()),
-                    // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
-                    onRenderProcessGone:
-                        (
-                          InAppWebViewController _,
-                          RenderProcessGoneDetail detail,
-                        ) => unawaited(
-                          _deathGuard.handleDeath(
-                            didCrash: detail.didCrash,
-                            rendererPriorityAtExit:
-                                detail.rendererPriorityAtExit,
+                (!_environmentReady
+                    ? const Center(child: CircularProgressIndicator())
+                    : KeyedSubtree(
+                        // 重建 key 挂在 WebView **之上**：renderer 死后换 key 才能真正
+                        // 重建出新的 platform view，而不动 WebView 自己的锚点。
+                        key: _deathGuard.rebuildKey,
+                        child: InAppWebView(
+                          webViewEnvironment: _environment,
+                          initialUrlRequest: URLRequest(
+                            url: WebUri.uri(widget.challengeUrl),
                           ),
+                          initialSettings: InAppWebViewSettings(
+                            // 与被拦请求逐字节一致，见 [AidokuCloudflareResolver]。
+                            userAgent: widget.userAgent,
+                            javaScriptEnabled: true,
+                            sharedCookiesEnabled: true,
+                          ),
+                          onLoadStop: (_, __) => unawaited(_check()),
+                          // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+                          onRenderProcessGone:
+                              (
+                                InAppWebViewController _,
+                                RenderProcessGoneDetail detail,
+                              ) => unawaited(
+                                _deathGuard.handleDeath(
+                                  didCrash: detail.didCrash,
+                                  rendererPriorityAtExit:
+                                      detail.rendererPriorityAtExit,
+                                ),
+                              ),
                         ),
-                  ),
-                ),
+                      )),
           ),
         ],
       ),

@@ -4734,5 +4734,11 @@
   "manga_series_auto_download": "新章自动下载",
   "manga_online_download_all": "下载全部",
   "manga_online_select_all": "全选",
-  "manga_series_download_all_queued": "已加入 $count 章到下载队列"
+  "manga_series_download_all_queued": "已加入 $count 章到下载队列",
+  "manga_chapter_locked_title": "章节已锁定",
+  "manga_chapter_locked_hint": "源站要求登录并购买或租借后才能下载本章。",
+  "manga_chapter_locked_download_anyway": "仍然下载",
+  "manga_series_download_all_locked_skipped": "已跳过 $count 个锁定章节",
+  "mihon_sources_search_hint": "搜索漫画源",
+  "mihon_source_login_forward": "前进"
 }

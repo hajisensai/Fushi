@@ -60,7 +60,20 @@ class OnlineMangaChapter {
     this.scanlator,
     this.number,
     this.uploadedAt,
+    this.locked = false,
   });
+
+  /// Mihon 扩展给锁定（未购买 / 未登录）章节的章名前缀约定。
+  ///
+  /// Mihon 的 `SChapter` 没有「锁」字段，keiyoushi 全家（BookWalker、Comikey、
+  /// ebookjapan……）的做法是把这个 emoji 拼在章名开头、取页时抛
+  /// `Log in via WebView ...`。这是宿主能拿到的**唯一**锁信号，所以判据只写在
+  /// [isLockedChapterName] 这一处。
+  static const String mihonLockPrefix = '\u{1F512}';
+
+  /// 章名带锁前缀 = 源站标记为锁定。
+  static bool isLockedChapterName(String name) =>
+      name.trimLeft().startsWith(mihonLockPrefix);
 
   /// 源内章节身份。Mihon = `url`；Aidoku = `chapter['key']`。
   ///
@@ -74,6 +87,12 @@ class OnlineMangaChapter {
   /// 上传时刻（毫秒）。0 或缺失记 null，避免 UI 把「未知」显示成 1970。
   final int? uploadedAt;
 
+  /// 源站标记为锁定（要登录并购买 / 租借才能取页，BUG-2479）。
+  ///
+  /// Mihon 取自章名前缀约定（[isLockedChapterName]），Aidoku 取自章节 `locked`
+  /// 字段。锁着的章入队下载必败，UI 据此在点击时引导登录、「下载全部」跳过它。
+  final bool locked;
+
   /// 运行时原生 payload，原样回灌 `getPages`。
   final Map<String, Object?> raw;
 
@@ -83,6 +102,7 @@ class OnlineMangaChapter {
     if (scanlator != null) 'scanlator': scanlator,
     if (number != null) 'number': number,
     if (uploadedAt != null) 'uploadedAt': uploadedAt,
+    if (locked) 'locked': true,
     'raw': raw,
   };
 
@@ -97,6 +117,7 @@ class OnlineMangaChapter {
       scanlator: json['scanlator']?.toString(),
       number: (json['number'] as num?)?.toDouble(),
       uploadedAt: uploadedAt == null || uploadedAt <= 0 ? null : uploadedAt,
+      locked: json['locked'] == true,
       raw: raw is Map<Object?, Object?>
           ? raw.cast<String, Object?>()
           : const <String, Object?>{},
@@ -111,12 +132,14 @@ class OnlineMangaChapter {
     final String url = json['url']?.toString() ?? '';
     if (url.isEmpty) return null;
     final int uploadedAt = (json['date_upload'] as num?)?.toInt() ?? 0;
+    final String name = json['name']?.toString() ?? '';
     return OnlineMangaChapter(
       key: url,
-      name: json['name']?.toString() ?? '',
+      name: name,
       scanlator: json['scanlator']?.toString(),
       number: (json['chapter_number'] as num?)?.toDouble(),
       uploadedAt: uploadedAt <= 0 ? null : uploadedAt,
+      locked: isLockedChapterName(name),
       raw: json,
     );
   }
