@@ -24,8 +24,11 @@ import 'package:fushi_core/fushi_core.dart';
 ///   per-bucket MAX-union, so re-importing the same backup is idempotent and
 ///   never double-counts.
 /// - favorites / mined sentences / activity events -> dedupe-UNION (both kept,
-///   duplicates dropped). galgame_sessions deliberately do NOT merge (their
-///   `galgames` hosts are machine-local and never travel; see merge()).
+///   duplicates dropped).
+/// - galgames -> push-only UNION keyed by a cross-device game identity (same
+///   id / same scrape identity / same exe path, see [_buildGameIdMap]); every
+///   game-keyed child row (sources, sessions, study segments, activity rows,
+///   tags) is remapped through that one map.
 /// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
 ///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
 ///   ATTACH SQL cannot merge a JSON blob, so this used to be dropped entirely).
@@ -152,6 +155,13 @@ class BackupMergeEngine {
             skipBookTombstones: true);
         await _insertAudioCues();
       }
+      // Game identity map (src game id → target game id) is built for EVERY
+      // merge: it is what every game-keyed child row (tags / study segments /
+      // activity rows / sessions) resolves through, whether or not the games
+      // category itself is ticked. Ticking games additionally inserts the
+      // unmatched src games (extending the map) + their scrape snapshots.
+      await _buildGameIdMap();
+      if (_wants('games')) await _insertMissingGalgames();
       // Media collections (unified-collections Phase 5) have no dialog toggle:
       // always merge the grouping itself; orphan members are kept and folded in
       // the UI. Self-guards against missing src tables (pre-migration backups).
@@ -173,12 +183,9 @@ class BackupMergeEngine {
         await _mergeActivityEvents();
         // v92：学习事实段按 uid LWW + 按身份墓碑（与 legacy 统计家族并行、互不触碰）。
         await _mergeStudySegments();
-        // galgame_sessions 刻意不合并（成文决策，不是遗漏）：游戏是本机局域
-        // 身份，galgames 行本身就不搬运（见 tables.dart 的 GalgameTagMappings
-        // 注释——整套游戏数据不进 live-sync 也不进备份合并导入，全量备份恢复
-        // 走整库文件拷贝原样还原），src 会话行的 game_id 在目标库没有宿主，
-        // 并进来只会造出悬空引用。唯一例外是游戏标签：它经刮削身份二跳落到
-        // 目标库自己的游戏行上（[_mergeTagsAndMappings] 的 v79 二跳）。
+        // 游玩会话事实随统计类别走：src 的 game_id 经 [_buildGameIdMap] 落到
+        // 目标库对应的游戏行上（2026-09 用户推翻旧的「游戏不参与合并」决策）。
+        await _mergeGalgameSessions();
       }
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
@@ -211,7 +218,138 @@ class BackupMergeEngine {
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
       if (_adoptSourcePreferences) await _adoptMissingPreferences();
+      await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
     });
+  }
+
+  /// TEMP table `(src_id, dst_id)` mapping every src `galgames.id` that has a
+  /// counterpart on this device to that counterpart's id. Connection-local and
+  /// dropped at the end of [merge].
+  static const String _gameMapTable = 'temp.merge_game_map';
+
+  /// Builds [_gameMapTable] — the ONE cross-device game identity every
+  /// game-keyed row resolves through. A src game maps to a target game when,
+  /// in priority order:
+  ///  1. the same `id` exists on the target (same-device restore / re-merge of
+  ///     a backup that was itself merged before — ids are µs-timestamp strings
+  ///     minted once per game, so an id collision IS the same game);
+  ///  2. any scrape identity `(source, external_id)` in `galgame_sources`
+  ///     matches — a bgm/vndb subject id is the stable cross-device identity
+  ///     (two machines scraping the same game get the same id);
+  ///  3. the exact `exe_path` matches (same install path on both sides).
+  /// A src game with several target candidates (the user added the same game
+  /// twice) maps to the smallest id, deterministically. Unmatched src games
+  /// stay out of the map until [_insertMissingGalgames] inserts them; while
+  /// games are unticked their child rows therefore have no host and are
+  /// skipped instead of dangling.
+  Future<void> _buildGameIdMap() async {
+    await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
+    await _db.customStatement(
+      'CREATE TEMP TABLE merge_game_map '
+      '(src_id TEXT PRIMARY KEY, dst_id TEXT NOT NULL)',
+    );
+    await _db.customStatement(
+      'INSERT INTO $_gameMapTable (src_id, dst_id) '
+      'SELECT s.id, s.id FROM $_srcAlias.galgames AS s '
+      'WHERE EXISTS (SELECT 1 FROM galgames AS t WHERE t.id = s.id)',
+    );
+    await _db.customStatement(
+      'INSERT OR IGNORE INTO $_gameMapTable (src_id, dst_id) '
+      'SELECT ss.game_id, MIN(ts.game_id) '
+      'FROM $_srcAlias.galgame_sources AS ss '
+      'JOIN galgame_sources AS ts '
+      'ON ts.source = ss.source AND ts.external_id = ss.external_id '
+      "WHERE ss.external_id IS NOT NULL AND ss.external_id != '' "
+      'AND NOT EXISTS '
+      '(SELECT 1 FROM $_gameMapTable AS m WHERE m.src_id = ss.game_id) '
+      'GROUP BY ss.game_id',
+    );
+    await _db.customStatement(
+      'INSERT OR IGNORE INTO $_gameMapTable (src_id, dst_id) '
+      'SELECT s.id, MIN(t.id) FROM $_srcAlias.galgames AS s '
+      'JOIN galgames AS t ON t.exe_path = s.exe_path '
+      'WHERE NOT EXISTS '
+      '(SELECT 1 FROM $_gameMapTable AS m WHERE m.src_id = s.id) '
+      'GROUP BY s.id',
+    );
+  }
+
+  /// Galgames push-only UNION: inserts every src game that [_buildGameIdMap]
+  /// could not match (keeping its src id — the id is a stable string minted
+  /// once, not an autoincrement), extends the map with the identity mapping
+  /// for those rows, then unions `galgame_sources` under the remapped game id
+  /// (the target keeps its own snapshot for a `(game, source)` it already has).
+  /// `cover_path` is inserted verbatim (source-device path) and re-homed by the
+  /// caller's `_rebaseGameCoverPaths` after the covers are copied in.
+  Future<void> _insertMissingGalgames() async {
+    final List<String> cols = await _allColumns('galgames');
+    final String colList = cols.join(', ');
+    await _db.customStatement(
+      'INSERT INTO galgames ($colList) '
+      'SELECT $colList FROM $_srcAlias.galgames AS s '
+      'WHERE NOT EXISTS '
+      '(SELECT 1 FROM $_gameMapTable AS m WHERE m.src_id = s.id)',
+    );
+    await _db.customStatement(
+      'INSERT OR IGNORE INTO $_gameMapTable (src_id, dst_id) '
+      'SELECT s.id, s.id FROM $_srcAlias.galgames AS s',
+    );
+    // OR IGNORE: several src games can map to ONE target game (duplicate
+    // library entries on the source), yielding the same (game, source) twice
+    // within this single INSERT — the PK then keeps the first.
+    await _db.customStatement(
+      'INSERT OR IGNORE INTO galgame_sources '
+      '(game_id, source, external_id, data_json, score, rank, fetched_at) '
+      'SELECT m.dst_id, ss.source, ss.external_id, ss.data_json, ss.score, '
+      'ss.rank, ss.fetched_at '
+      'FROM $_srcAlias.galgame_sources AS ss '
+      'JOIN $_gameMapTable AS m ON m.src_id = ss.game_id '
+      'WHERE NOT EXISTS (SELECT 1 FROM galgame_sources AS t '
+      'WHERE t.game_id = m.dst_id AND t.source = ss.source)',
+    );
+  }
+
+  /// Play-session facts dedupe-UNION under the remapped game id. Natural key =
+  /// `(game, start_ms, end_ms)`: a session is one launch with an exact start
+  /// and end instant, so re-importing the same backup is idempotent. Src
+  /// sessions whose game has no host on this device are skipped (never a
+  /// dangling `game_id`).
+  Future<void> _mergeGalgameSessions() async {
+    await _db.customStatement(
+      'INSERT INTO galgame_sessions '
+      '(game_id, start_ms, end_ms, duration_seconds, date_key) '
+      'SELECT m.dst_id, s.start_ms, s.end_ms, s.duration_seconds, s.date_key '
+      'FROM $_srcAlias.galgame_sessions AS s '
+      'JOIN $_gameMapTable AS m ON m.src_id = s.game_id '
+      'WHERE NOT EXISTS (SELECT 1 FROM galgame_sessions AS t '
+      'WHERE t.game_id = m.dst_id AND t.start_ms = s.start_ms '
+      'AND t.end_ms = s.end_ms)',
+    );
+  }
+
+  /// SQL fragment (src alias [s]) resolving a `media_kind`/`media_key` pair to
+  /// this device's key: game keys go through [_gameMapTable] (LEFT JOIN alias
+  /// [m], see [_gameMapJoin]); every other kind is its own cross-device key.
+  static String _mappedMediaKey(String s, String m) =>
+      'COALESCE($m.dst_id, $s.media_key)';
+
+  /// LEFT JOIN of [_gameMapTable] as [m] for the game rows of src alias [s]
+  /// (`media_kind` column [kindColumn]). Non-game rows get a NULL [m] side.
+  String _gameMapJoin(String s, String m, {String kindColumn = 'media_kind'}) =>
+      'LEFT JOIN $_gameMapTable AS $m '
+      "ON $s.$kindColumn = '$kActivityMediaGame' AND $m.src_id = $s.media_key ";
+
+  /// WHERE fragment keeping every non-game row plus the game rows whose host
+  /// resolved through the map (an unmatched game row would dangle).
+  static String _hasHost(String s, String m,
+          {String kindColumn = 'media_kind'}) =>
+      "($s.$kindColumn <> '$kActivityMediaGame' OR $m.dst_id IS NOT NULL)";
+
+  /// Every column of [table] (quoted), for tables whose primary key is a
+  /// stable business string rather than an autoincrement `id`.
+  Future<List<String>> _allColumns(String table) async {
+    final rows = await _db.customSelect('PRAGMA table_info($table)').get();
+    return rows.map((r) => '"${r.data['name'] as String}"').toList();
   }
 
   /// 把源库里**本机还没有**的 `preferences` 行补进来（insert-if-absent）。
@@ -934,30 +1072,33 @@ class BackupMergeEngine {
   ///     （LWW，同值重放 no-op）；
   ///  ③ 删掉目标里被（合并后）墓碑压制的段（`start_at < deleted_at`，
   ///     BUG-2214 / BUG-2220：删除之前开始的段出局，之后开始的存活）。
-  /// 游戏段 / 碑（BUG-2221）不从备份搬入——与 galgame_sessions 同律，src 的
-  /// game_id 在目标库没有宿主。
+  /// 游戏段 / 碑的 media_key 是 src 的 galgames.id，经 [_gameMapTable] 落到本机
+  /// 对应游戏；没有宿主的游戏行跳过（不造悬空键）。
   /// 旧备份（v92 前）没有这两张表：ATTACH 前已迁到当前 schema，两侧必有表。
   Future<void> _mergeStudySegments() async {
+    final String key = _mappedMediaKey('s', 'm');
+    final String join = _gameMapJoin('s', 'm');
+    final String hasHost = _hasHost('s', 'm');
+    // 几个 src 游戏可能映射到同一个本机游戏 → 同 (kind, key) 多条碑，取 MAX。
     await _db.customStatement(
-      'INSERT INTO study_segment_tombstones (media_kind, media_key, deleted_at) '
-      'SELECT media_kind, media_key, deleted_at '
-      'FROM $_srcAlias.study_segment_tombstones AS s '
-      'WHERE s.media_kind <> ? '
-      'AND NOT EXISTS (SELECT 1 FROM study_segment_tombstones AS t '
-      'WHERE t.media_kind = s.media_kind AND t.media_key = s.media_key)',
-      <Object>[kActivityMediaGame],
+      'INSERT OR IGNORE INTO study_segment_tombstones '
+      '(media_kind, media_key, deleted_at) '
+      'SELECT s.media_kind, $key, MAX(s.deleted_at) '
+      'FROM $_srcAlias.study_segment_tombstones AS s $join'
+      'WHERE $hasHost '
+      'GROUP BY s.media_kind, $key',
     );
     await _db.customStatement(
       'UPDATE study_segment_tombstones SET deleted_at = ('
-      'SELECT s.deleted_at FROM $_srcAlias.study_segment_tombstones AS s '
+      'SELECT MAX(s.deleted_at) '
+      'FROM $_srcAlias.study_segment_tombstones AS s $join'
       'WHERE s.media_kind = study_segment_tombstones.media_kind '
-      'AND s.media_key = study_segment_tombstones.media_key) '
-      'WHERE study_segment_tombstones.media_kind <> ? '
-      'AND EXISTS (SELECT 1 FROM $_srcAlias.study_segment_tombstones AS s '
+      'AND $key = study_segment_tombstones.media_key) '
+      'WHERE EXISTS (SELECT 1 '
+      'FROM $_srcAlias.study_segment_tombstones AS s $join'
       'WHERE s.media_kind = study_segment_tombstones.media_kind '
-      'AND s.media_key = study_segment_tombstones.media_key '
+      'AND $key = study_segment_tombstones.media_key '
       'AND s.deleted_at > study_segment_tombstones.deleted_at)',
-      <Object>[kActivityMediaGame],
     );
     final List<String> cols = <String>[
       'uid',
@@ -975,27 +1116,27 @@ class BackupMergeEngine {
       'pages',
       'updated_at',
     ];
+    String srcCol(String c) => c == 'media_key' ? '$key AS media_key' : 's.$c';
     final String colList = cols.join(', ');
+    final String srcColList = cols.map(srcCol).join(', ');
     await _db.customStatement(
       'INSERT INTO study_segments ($colList) '
-      'SELECT $colList FROM $_srcAlias.study_segments AS s '
-      'WHERE s.media_kind <> ? '
+      'SELECT $srcColList FROM $_srcAlias.study_segments AS s $join'
+      'WHERE $hasHost '
       'AND NOT EXISTS (SELECT 1 FROM study_segments AS t WHERE t.uid = s.uid)',
-      <Object>[kActivityMediaGame],
     );
     final String setClause = cols
         .where((String c) => c != 'uid')
         .map((String c) =>
-            '$c = (SELECT s.$c FROM $_srcAlias.study_segments AS s '
+            '$c = (SELECT ${srcCol(c)} FROM $_srcAlias.study_segments AS s '
+            '${c == 'media_key' ? join : ''}'
             'WHERE s.uid = study_segments.uid)')
         .join(', ');
     await _db.customStatement(
       'UPDATE study_segments SET $setClause '
-      'WHERE study_segments.media_kind <> ? '
-      'AND EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s '
-      'WHERE s.uid = study_segments.uid '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
+      'WHERE s.uid = study_segments.uid AND $hasHost '
       'AND s.updated_at > study_segments.updated_at)',
-      <Object>[kActivityMediaGame],
     );
     await _db.customStatement(
       'DELETE FROM study_segments WHERE EXISTS ('
@@ -1006,13 +1147,23 @@ class BackupMergeEngine {
     );
   }
 
+  /// ActivityEvents dedupe-UNION（语义见 [_mergeStudySegments] 上方的成段说明）。
+  /// game 行的 media_key 是 src 的 galgames.id：经 [_gameMapTable] 落到本机游戏；
+  /// 带 key 却无宿主的跳过，legacy 的无 key（只有 title）行原样并入。
   Future<void> _mergeActivityEvents() async {
     final List<String> cols = await _columnsExceptId('activity_events');
     final String colList = cols.join(', ');
+    final String key = _mappedMediaKey('s', 'm');
+    final String srcColList = cols
+        .map((String c) => c == '"media_key"' ? '$key AS media_key' : 's.$c')
+        .join(', ');
     await _db.customStatement(
       'INSERT INTO activity_events ($colList) '
-      'SELECT $colList FROM $_srcAlias.activity_events AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM activity_events AS t '
+      'SELECT $srcColList FROM $_srcAlias.activity_events AS s '
+      '${_gameMapJoin('s', 'm', kindColumn: 'media_type')}'
+      "WHERE (s.media_type <> '$kActivityMediaGame' OR s.media_key IS NULL "
+      'OR m.dst_id IS NOT NULL) '
+      'AND NOT EXISTS (SELECT 1 FROM activity_events AS t '
       'WHERE t.event_type = s.event_type AND t.media_type = s.media_type '
       'AND t.title = s.title AND t.timestamp_ms = s.timestamp_ms)',
     );
@@ -1088,15 +1239,12 @@ class BackupMergeEngine {
   ///
   /// v79（五表合一 + 用户令全 kind 合并）：src 在 ATTACH 前已迁到当前 schema，
   /// 五张旧映射表已并成 tag_assignments——这里按 kind 分三路：
-  ///  - epub/srt/video/**game 直键**：entry_key 本身跨库可比（bookKey / srt uid /
-  ///    bookUid / game id），宿主存在性逐 kind 校验后直插。game 的 id 是本机
-  ///    局域身份且 galgames 行不参与备份合并——直键只在 target 恰好有同 id 游戏
-  ///    （同机恢复 / 整库迁移后补合并）时命中；
-  ///  - **game 二跳**（用户令跨机也要并）：直键不命中的游戏标签行，经
-  ///    「src 该游戏的刮削身份 (source, external_id) → target 拥有同刮削身份的
-  ///    游戏」二跳落地——bgm/vndb 条目 id 是游戏唯一的跨机稳定身份（两机各自
-  ///    刮削同一部游戏得到同一个 subject id）。两侧任一没刮削/未命中 → 仍丢
-  ///    （按名/按路径猜会把标签打到别的游戏头上，宁缺毋错）；
+  ///  - epub/srt/video 直键：entry_key 本身跨库可比（bookKey / srt uid /
+  ///    bookUid），宿主存在性逐 kind 校验后直插；
+  ///  - game：entry_key 是 src 的 galgames.id，经 [_gameMapTable]（同 id /
+  ///    刮削身份 / exe 路径三级匹配 + games 勾选时新插入的游戏）落到本机游戏。
+  ///    旧版这里有「直键 + 刮削身份二跳」两条路，现在与游戏行合并共用一张映射
+  ///    表；无宿主的游戏标签行仍丢（按名猜会打到别的游戏头上，宁缺毋错）；
   ///  - collection：src 本地 id 无跨库意义，经 media_collections
   ///    (name, collection_type) 自然键映射到 target id（JOIN 不命中——被删除
   ///    墓碑跳过、target 无同名合集——天然不插入）。
@@ -1121,34 +1269,25 @@ class BackupMergeEngine {
       "OR (sm.media_kind = 'srt' AND EXISTS "
       '(SELECT 1 FROM srt_books AS sb WHERE sb.uid = sm.entry_key)) '
       "OR (sm.media_kind = 'video' AND EXISTS "
-      '(SELECT 1 FROM video_books AS v WHERE v.book_uid = sm.entry_key)) '
-      "OR (sm.media_kind = 'game' AND EXISTS "
-      '(SELECT 1 FROM galgames AS g WHERE g.id = sm.entry_key))'
+      '(SELECT 1 FROM video_books AS v WHERE v.book_uid = sm.entry_key))'
       ') '
       'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
       'WHERE m.media_kind = sm.media_kind AND m.entry_key = sm.entry_key '
       'AND m.tag_id = tt.id)',
     );
-    // game 二跳：直键不命中（target 无同 id 游戏 = 跨机场景）的游戏标签行，
-    // 按刮削身份重定位到 target 的对应游戏。DISTINCT 防同一 (game, tag) 经
-    // bgm+vndb 双源命中同一 target 游戏时重复；同一 externalId 在 target 命中
-    // 多个游戏（用户重复添加同一部）时每个都打上——标签是并集语义，多打不为错。
+    // game：经映射表落到本机游戏。几个 src 游戏可能映射到同一本机游戏 → 同
+    // (game, tag) 多行，INSERT OR IGNORE 吃掉重复（PK = kind+entry+tag）。
     await _db.customStatement(
-      'INSERT INTO tag_assignments (media_kind, entry_key, tag_id, added_at) '
-      "SELECT DISTINCT 'game', ts.game_id, tt.id, sm.added_at "
+      'INSERT OR IGNORE INTO tag_assignments '
+      '(media_kind, entry_key, tag_id, added_at) '
+      "SELECT '${TagHostKind.game.dbValue}', gm.dst_id, tt.id, "
+      'MIN(sm.added_at) '
       'FROM $_srcAlias.tag_assignments AS sm '
-      'JOIN $_srcAlias.galgame_sources AS ss '
-      'ON ss.game_id = sm.entry_key '
-      "AND ss.external_id IS NOT NULL AND ss.external_id != '' "
-      'JOIN galgame_sources AS ts '
-      'ON ts.source = ss.source AND ts.external_id = ss.external_id '
+      'JOIN $_gameMapTable AS gm ON gm.src_id = sm.entry_key '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
-      "WHERE sm.media_kind = 'game' "
-      'AND NOT EXISTS (SELECT 1 FROM galgames AS g WHERE g.id = sm.entry_key) '
-      'AND NOT EXISTS (SELECT 1 FROM tag_assignments AS m '
-      "WHERE m.media_kind = 'game' AND m.entry_key = ts.game_id "
-      'AND m.tag_id = tt.id)',
+      "WHERE sm.media_kind = '${TagHostKind.game.dbValue}' "
+      'GROUP BY gm.dst_id, tt.id',
     );
   }
 

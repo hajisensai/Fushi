@@ -26,6 +26,8 @@ String backupCategoryLabel(BackupCategory category) {
       return t.backup_category_videos;
     case BackupCategory.localAudio:
       return t.backup_category_local_audio;
+    case BackupCategory.games:
+      return t.backup_category_games;
     case BackupCategory.progress:
       return t.backup_category_progress;
     case BackupCategory.statistics:
@@ -53,6 +55,8 @@ String backupCategoryDescription(BackupCategory category) {
       return t.backup_category_videos_desc;
     case BackupCategory.localAudio:
       return t.backup_category_local_audio_desc;
+    case BackupCategory.games:
+      return t.backup_category_games_desc;
     case BackupCategory.progress:
       return t.backup_category_progress_desc;
     case BackupCategory.statistics:
@@ -78,6 +82,7 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.fonts,
   BackupCategory.videos,
   BackupCategory.localAudio,
+  BackupCategory.games,
   BackupCategory.progress,
   BackupCategory.statistics,
 };
@@ -160,6 +165,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       // config; otherwise the restored config points at files that never
       // crossed over and the fonts silently never apply.
       fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+      // Game covers travel with the `games` category (rows + cover files).
+      gameCoversRootDirectory:
+          p.join(appModel.appDirectory.path, 'game_covers'),
     );
     // TODO-1358: summarize what is on this device so the category picker shows
     // per-category counts (the database itself is always included).
@@ -200,30 +208,6 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     // Per-video selection (the books analogue). Mutated by the nested video
     // picker; written back to [_selectedVideoKeys] only on confirm.
     Set<String>? chosenVideos = _selectedVideoKeys;
-    String labelFor(BackupCategory c) {
-      switch (c) {
-        case BackupCategory.dictionary:
-          return t.backup_category_dictionary;
-        case BackupCategory.books:
-          return t.backup_category_books;
-        case BackupCategory.audiobooks:
-          return t.backup_category_audiobooks;
-        case BackupCategory.fonts:
-          return t.backup_category_fonts;
-        case BackupCategory.videos:
-          return t.backup_category_videos;
-        case BackupCategory.localAudio:
-          return t.backup_category_local_audio;
-        case BackupCategory.progress:
-          return t.backup_category_progress;
-        case BackupCategory.statistics:
-          return t.backup_category_statistics;
-        case BackupCategory.settings:
-          return t.backup_category_settings;
-        case BackupCategory.profiles:
-          return t.backup_category_profiles;
-      }
-    }
 
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -268,7 +252,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                   for (final BackupCategory c
                       in BackupCategory.values) ...<Widget>[
                     AdaptiveSettingsSwitchRow(
-                      title: labelFor(c),
+                      title: backupCategoryLabel(c),
                       subtitle: summary.counts.containsKey(c)
                           ? '${backupCategoryDescription(c)} '
                               '(${summary.countFor(c)})'
@@ -987,6 +971,8 @@ Future<void> runBackupImportFlowForFile({
       p.join(appModel.appDirectory.path, 'audiobooks');
   final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
   final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+  final String gameCoversRoot =
+      p.join(appModel.appDirectory.path, 'game_covers');
 
   try {
     // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
@@ -1016,6 +1002,7 @@ Future<void> runBackupImportFlowForFile({
         audiobooksRootDirectory: audiobooksRoot,
         fontsRootDirectory: fontsRoot,
         videosRootDirectory: videosRoot,
+        gameCoversRootDirectory: gameCoversRoot,
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
       );
@@ -1034,6 +1021,7 @@ Future<void> runBackupImportFlowForFile({
         // config paths onto this device's root.
         fontsRootDirectory: fontsRoot,
         videosRootDirectory: videosRoot,
+        gameCoversRootDirectory: gameCoversRoot,
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
       );

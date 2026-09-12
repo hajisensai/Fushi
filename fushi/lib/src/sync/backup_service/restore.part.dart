@@ -1,5 +1,15 @@
 part of '../backup_service.dart';
 
+/// Row counts peeked from a backup's DB blob for the import "what's inside"
+/// manifest when the meta predates the corresponding count field.
+typedef _ContentRowCounts = ({
+  int videos,
+  int audiobooks,
+  int games,
+  int progress,
+  int statistics,
+});
+
 /// 备份的恢复 / 合并 / 预览 / 崩溃恢复 / 读包摘要（B1 从 [BackupService] 分家）。
 ///
 /// 全部 static：恢复侧不需要导出侧的实例状态（库目录等都是参数）。共用的常量与
@@ -63,6 +73,9 @@ class BackupRestoreService {
     BackupMeta? meta, {
     int? dbVideoBookCount,
     int? dbAudiobookCount,
+    int? dbGameCount,
+    int? dbProgressCount,
+    int? dbStatisticsCount,
   }) {
     final Set<String> dictDirs = <String>{};
     final Set<String> bookDirs = <String>{};
@@ -70,6 +83,7 @@ class BackupRestoreService {
     int fontFiles = 0;
     int videoFiles = 0;
     int localAudioDbs = 0;
+    int gameCoverFiles = 0;
     for (final String raw in archiveFileNames) {
       final String name = raw.replaceAll(r'\', '/');
       final String? dictSeg =
@@ -100,6 +114,10 @@ class BackupRestoreService {
       if (name.startsWith('$_localAudioPrefix/')) {
         final String base = name.substring(_localAudioPrefix.length + 1);
         if (_localAudioDbOnly.hasMatch(base)) localAudioDbs++;
+        continue;
+      }
+      if (name.startsWith('$_gameCoversPrefix/')) {
+        if (name.length > _gameCoversPrefix.length + 1) gameCoverFiles++;
       }
     }
     // Video presence is decided by DB rows, NOT packed files: videos live in the
@@ -118,6 +136,18 @@ class BackupRestoreService {
     // a row-only / old backup and import ghost audiobooks un-skippably.
     final int audiobookCount =
         meta?.audiobookCount ?? dbAudiobookCount ?? audioDirs.length;
+    // Games decided by DB rows too: the `galgames` table rides the overwrite
+    // blob whether or not any cover file was packed. Same priority chain.
+    final int gameCount = meta?.gameCount ?? dbGameCount ?? gameCoverFiles;
+    // Progress / statistics are DB-ONLY categories (no archive tree at all),
+    // so without a row count the dialog could never show their toggles and
+    // they imported uninvited & un-skippable. meta first (new backups), else
+    // the DB-blob peek; a legacy backup with neither stays absent.
+    final int progressCount = meta?.progressCount ?? dbProgressCount ?? 0;
+    // The peek (old backups) counts the v92 `study_segments` too; an old
+    // meta's `statsCount` summed only the legacy day aggregates, so prefer the
+    // peek when it ran and fall back to meta (new backups, no peek needed).
+    final int statisticsCount = dbStatisticsCount ?? meta?.statsCount ?? 0;
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       if (dictDirs.isNotEmpty) BackupCategory.dictionary: dictDirs.length,
       if (bookDirs.isNotEmpty) BackupCategory.books: bookDirs.length,
@@ -125,6 +155,9 @@ class BackupRestoreService {
       if (fontFiles > 0) BackupCategory.fonts: fontFiles,
       if (videoCount > 0) BackupCategory.videos: videoCount,
       if (localAudioDbs > 0) BackupCategory.localAudio: localAudioDbs,
+      if (gameCount > 0) BackupCategory.games: gameCount,
+      if (progressCount > 0) BackupCategory.progress: progressCount,
+      if (statisticsCount > 0) BackupCategory.statistics: statisticsCount,
     };
     return BackupContentSummary(counts: counts, present: counts.keys.toSet());
   }
@@ -160,21 +193,23 @@ class BackupRestoreService {
       // (BUG-779 video / BUG-781 audiobooks). Peek the DB blob for the row counts
       // so the dialog can still offer the toggles. New backups carry the counts
       // in meta, so the (one-time) peek is skipped for them.
-      int? dbVideoBookCount;
-      int? dbAudiobookCount;
+      _ContentRowCounts? peek;
       final ArchiveFile? dbEntry = _findDbEntry(archive);
-      final bool needPeek =
-          (meta?.videoBookCount == null || meta?.audiobookCount == null) &&
-              dbEntry != null;
+      final bool needPeek = (meta == null ||
+              meta.videoBookCount == null ||
+              meta.audiobookCount == null ||
+              meta.gameCount == null ||
+              meta.progressCount == null) &&
+          dbEntry != null;
       if (needPeek) {
-        final ({int videos, int audiobooks})? peek =
-            await _peekContentRowCounts(zipPath, dbEntry.name);
-        dbVideoBookCount = peek?.videos;
-        dbAudiobookCount = peek?.audiobooks;
+        peek = await _peekContentRowCounts(zipPath, dbEntry.name);
       }
       return summarizeBackupEntries(names, meta,
-          dbVideoBookCount: dbVideoBookCount,
-          dbAudiobookCount: dbAudiobookCount);
+          dbVideoBookCount: peek?.videos,
+          dbAudiobookCount: peek?.audiobooks,
+          dbGameCount: peek?.games,
+          dbProgressCount: peek?.progress,
+          dbStatisticsCount: peek?.statistics);
     } catch (e, st) {
       debugPrint(
           'BackupRestoreService.summarizeBackupFile failed for $zipPath: $e\n$st');
@@ -192,7 +227,7 @@ class BackupRestoreService {
   /// [BackupMeta.audiobookCount] (BUG-779 / BUG-781). Reuses the isolate-backed
   /// [_extractEntriesStreaming] so a large metadata DB never materializes on
   /// the UI isolate.
-  static Future<({int videos, int audiobooks})?> _peekContentRowCounts(
+  static Future<_ContentRowCounts?> _peekContentRowCounts(
     String zipPath,
     String dbEntryName,
   ) async {
@@ -212,6 +247,13 @@ class BackupRestoreService {
         return (
           videos: _countTableIfPresent(db, 'video_books'),
           audiobooks: _countTableIfPresent(db, 'audiobooks'),
+          games: _countTableIfPresent(db, 'galgames'),
+          progress: _countTableIfPresent(db, 'reader_positions') +
+              _countTableIfPresent(db, 'bookmarks'),
+          statistics: _countTableIfPresent(db, 'reading_statistics') +
+              _countTableIfPresent(db, 'video_watch_statistics') +
+              _countTableIfPresent(db, 'mining_statistics') +
+              _countTableIfPresent(db, 'study_segments'),
         );
       } finally {
         db.dispose();
@@ -637,6 +679,7 @@ class BackupRestoreService {
     String? audiobooksRootDirectory,
     String? fontsRootDirectory,
     String? videosRootDirectory,
+    String? gameCoversRootDirectory,
     void Function(double progress)? onProgress,
   }) async {
     final dbPath = p.join(dbDirectory, _dbName);
@@ -723,6 +766,8 @@ class BackupRestoreService {
           wants(BackupCategory.videos) ? videosRootDirectory : null;
       final String? effLocalAudioRoot =
           wants(BackupCategory.localAudio) ? dbDirectory : null;
+      final String? effGameCoversRoot =
+          wants(BackupCategory.games) ? gameCoversRootDirectory : null;
 
       final sidecar = File(p.join(dbDirectory, _preserveSidecar));
       final String bakPath = '$dbPath.pre-restore.bak';
@@ -841,6 +886,12 @@ class BackupRestoreService {
                 onBytes: reportBytes)) {
           toCommit.add(effVideosRoot);
         }
+        if (effGameCoversRoot != null &&
+            await _prepareTreeReapply(
+                zipPath, archive, _gameCoversPrefix, effGameCoversRoot,
+                onBytes: reportBytes)) {
+          toCommit.add(effGameCoversRoot);
+        }
       } catch (_) {
         // A write failed: drop every staged temp dir; no tree was swapped.
         if (booksRootDirectory != null) {
@@ -854,6 +905,9 @@ class BackupRestoreService {
         }
         if (effVideosRoot != null) {
           await _abortPreparedTree(effVideosRoot);
+        }
+        if (effGameCoversRoot != null) {
+          await _abortPreparedTree(effGameCoversRoot);
         }
         rethrow;
       }
@@ -930,6 +984,7 @@ class BackupRestoreService {
           newFontsRoot: effFontsRoot,
           newLocalAudioRoot: effLocalAudioRoot,
           newVideosRoot: effVideosRoot,
+          newGameCoversRoot: effGameCoversRoot,
         );
       }
 
@@ -962,6 +1017,13 @@ class BackupRestoreService {
         // (effAudiobooksRoot=null) alone left ghost audiobooks (shelf + alignment
         // rows pointing at audio that never travelled).
         await _retainAudiobooks(dbDirectory, const <String>{});
+      }
+      if (!wants(BackupCategory.games)) {
+        // Games ride the overwrite DB blob like videos/audiobooks (galgames +
+        // FK cascade + logical game-kind rows); the cover tree restore was
+        // skipped above (effGameCoversRoot=null), so strip the rows too or the
+        // library would land as cover-less ghosts.
+        await _retainGames(dbDirectory, const <String>{});
       }
       if (!wants(BackupCategory.statistics) ||
           !wants(BackupCategory.progress)) {
@@ -1021,6 +1083,7 @@ class BackupRestoreService {
     String? audiobooksRootDirectory,
     String? fontsRootDirectory,
     String? videosRootDirectory,
+    String? gameCoversRootDirectory,
     void Function(double progress)? onProgress,
     bool adoptSourcePreferences = false,
   }) async {
@@ -1142,6 +1205,11 @@ class BackupRestoreService {
             zipPath, archive, _videosPrefix, videosRootDirectory,
             onBytes: reportBytes);
       }
+      if (gameCoversRootDirectory != null && wants(BackupCategory.games)) {
+        await _copyTreeIfAbsent(
+            zipPath, archive, _gameCoversPrefix, gameCoversRootDirectory,
+            onBytes: reportBytes);
+      }
       // Local-audio DBs are copy-if-absent into the support directory (never
       // overwrite the device's own local_audio_*.db files).
       if (wants(BackupCategory.localAudio)) {
@@ -1161,6 +1229,7 @@ class BackupRestoreService {
           newFontsRoot: fontsRootDirectory,
           newLocalAudioRoot: dbDirectory,
           newVideosRoot: videosRootDirectory,
+          newGameCoversRoot: gameCoversRootDirectory,
         );
       }
 

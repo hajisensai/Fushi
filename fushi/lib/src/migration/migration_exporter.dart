@@ -30,12 +30,15 @@ enum MigrationBatch {
 
 /// 每批的 [BackupService] 类别集合。
 ///
-/// 每批都带核心四类（progress/statistics/settings/profiles）：DB 始终整库随
+/// 每批都带核心五类（games/progress/statistics/settings/profiles）：DB 始终整库随
 /// 归档走，[BackupService] 的防幽灵语义会把「本批未带文件树」的内容行从 DB
 /// 复制件剥除（如 books 未勾 → epub_books 行不travel），因此各内容行恰好随
 /// **自己的批次**落地，合并引擎按业务键幂等 upsert，多批导入互不覆盖。
+/// games 归核心批：游戏库在 games 成为独立类别前一直随整库走，迁移语义不变
+/// （封面小，随核心批一起打包）。
 Set<BackupCategory> categoriesForBatch(MigrationBatch batch) {
   const Set<BackupCategory> core = <BackupCategory>{
+    BackupCategory.games,
     BackupCategory.progress,
     BackupCategory.statistics,
     BackupCategory.settings,

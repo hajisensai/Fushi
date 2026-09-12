@@ -156,6 +156,7 @@ void main() {
   group('MigrationExporter 纯逻辑', () {
     test('categoriesForBatch：每批都带核心四类，videos 永不出现', () {
       const Set<BackupCategory> core = <BackupCategory>{
+        BackupCategory.games,
         BackupCategory.progress,
         BackupCategory.statistics,
         BackupCategory.settings,

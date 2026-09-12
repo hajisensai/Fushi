@@ -179,6 +179,8 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       final String fontsRoot =
           p.join(appModel.appDirectory.path, 'custom_fonts');
       final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+      final String gameCoversRoot =
+          p.join(appModel.appDirectory.path, 'game_covers');
       for (final MigrationImportBatch batch in scan.ready) {
         // **不能裸调 setState**：beginBackupImport() 上的是全屏遮罩，本页已被
         // 移出 widget 树（State 进入 defunct）。循环第一句就会抛
@@ -200,6 +202,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           audiobooksRootDirectory: audiobooksRoot,
           fontsRootDirectory: fontsRoot,
           videosRootDirectory: videosRoot,
+          gameCoversRootDirectory: gameCoversRoot,
           onProgress: appModel.reportBackupImportProgress,
           // 同机换包名：用户期望「一切原样搬过来」，而 merge 默认只搬内容、
           // 不搬设置（那是给「另一台设备的备份」用的语义）。不开这个开关，
