@@ -965,20 +965,43 @@ class BackupService {
     return row.data['c'] as int;
   }
 
-  /// Progress rows on the live DB (`reader_positions` + `bookmarks`), the
-  /// natural unit of the `progress` category for the export/import manifests.
+  /// `_countRows` 的带条件版——给「某个类别只裁一张表里的部分行」那种裁剪面用
+  /// （目前是 progress 的 `preferences` 里的 `audiobook_pos_*`）。
+  Future<int> _countRowsWhere(String table, String where) async {
+    final row = await _db
+        .customSelect('SELECT COUNT(*) AS c FROM $table WHERE $where')
+        .getSingle();
+    return row.data['c'] as int;
+  }
+
+  /// Progress rows on the live DB — counted over **exactly** what the
+  /// `progress` category strips (`_stripExcludedDataCategories`): the two
+  /// tables plus the `audiobook_pos_*` preference rows.
+  ///
+  /// 判据面必须等于裁剪面。少数一样东西，纯有声书用户就会被算成「没有进度数据」，
+  /// 类别不出现在导入 UI 上 → 不进 chosen set → 覆盖导入按「用户没选 progress」
+  /// 把包里的听书进度裁掉。静默丢数据。
   Future<int> _countProgressRows() async =>
-      await _countRows('reader_positions') + await _countRows('bookmarks');
+      await _countRows('reader_positions') +
+      await _countRows('bookmarks') +
+      await _countRowsWhere('preferences', "key LIKE 'audiobook_pos_%'");
 
   /// Statistics records on the live DB: the legacy day aggregates the old
   /// `statsCount` already summed PLUS the v92 `study_segments` fact table —
   /// since v92 new study time lands ONLY there, so a count that ignored it
   /// reported "0 statistics" for every post-v92 library.
-  Future<int> _countStatisticsRows() async =>
-      await _countRows('reading_statistics') +
-      await _countRows('video_watch_statistics') +
-      await _countRows('mining_statistics') +
-      await _countRows('study_segments');
+  ///
+  /// 数的是 `_statisticsTables` 整份清单——与 `_stripExcludedDataCategories` 裁掉的
+  /// 完全同一组表。原来只数其中 4 张，于是「只有 favorite_words / mined_sentences /
+  /// activity_events 的库」会被算成 0 → statistics 类别不出现在导入 UI 上 →
+  /// 不进 chosen set → 覆盖导入把包里这些行裁掉。判据面与裁剪面必须是同一份清单。
+  Future<int> _countStatisticsRows() async {
+    int total = 0;
+    for (final String table in _statisticsTables) {
+      total += await _countRows(table);
+    }
+    return total;
+  }
 
   /// Builds the export "what's inside" summary from the live DB + this device's
   /// content roots (TODO-1358). Counts are the natural unit per category; a root
@@ -991,12 +1014,12 @@ class BackupService {
     // BUG-2193：**只数打得出来的那些**。旧实现数的是 dictionary_metadata 行数，
     // 与打包判据不同源，于是勾选框显示「词典 (12)」、导出后一本都没有，用户完全
     // 无从察觉。与下面字体那一条同一条纪律：预览计数 = 实际打包内容。
-    final int dictionaries =
-        (await _planDictionaryPack(_dictionaryResourceDirectory == null
+    final int dictionaries = (await _planDictionaryPack(
+            _dictionaryResourceDirectory == null
                 ? null
                 : Directory(_dictionaryResourceDirectory)))
-            .packable
-            .length;
+        .packable
+        .length;
     // Count the fonts the USER manages (catalog entries whose file lives under
     // custom_fonts/), not every file in the tree: failed `_tmp_*` downloads and
     // replaced-but-unreferenced old files inflated the count (a user with 2
@@ -1531,9 +1554,8 @@ class BackupService {
     final db = FushiDatabase(dbDirectory);
     try {
       final Map<String, String> allPrefs = await db.getAllPrefs();
-      final List<String> redactedPrefKeys = allPrefs.keys
-          .where(_isDeviceLocalPrefKey)
-          .toList(growable: false);
+      final List<String> redactedPrefKeys =
+          allPrefs.keys.where(_isDeviceLocalPrefKey).toList(growable: false);
       if (redactedPrefKeys.isNotEmpty) {
         await (db.delete(db.preferences)
               ..where((t) => t.key.isIn(redactedPrefKeys)))
@@ -2163,7 +2185,6 @@ class BackupService {
       }
     });
   }
-
 
   /// 逐本盘点词典资源，产出 [_DictionaryPackPlan]（BUG-2193）。
   ///

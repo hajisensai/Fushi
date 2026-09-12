@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2289 条。点号进各自文件。
+> 共 2291 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,8 @@
 | [BUG-2479](bugs/BUG-2479-manga-locked-chapter-login-guidance.md) | ✅ | ✅ | 锁定章节无登录引导；Android 无登录入口；登录页无前进后退；源列表无搜索 |
 | [BUG-2478](bugs/BUG-2478-manga-webview2-ignores-app-proxy.md) | ✅ | ✅ | Windows 漫画源登录页/Cloudflare 页的 WebView2 不走 app 代理设置 |
 | [BUG-2477](bugs/BUG-2477-manga-webview-cookie-env-mismatch.md) | ✅ | ✅ | Windows 漫画源登录页/Cloudflare 页的 CookieManager 与 WebView 不同环境，登录后「没有捕获到会话 cookie」 |
+| [BUG-2476](bugs/BUG-2476-backup-import-progress-statistics-switches-hidden.md) | ✅ | ✅ | 备份导入对话框永不显示「进度」「统计」开关 |
+| [BUG-2475](bugs/BUG-2475-backup-statistics-category-leaks-study-segments.md) | ✅ | ✅ | 备份取消勾选「统计」仍外泄 study_segments |
 | [BUG-2474](bugs/BUG-2474-interconnect-online-manga-shelf.md) | ✅ | ✅ | 互联漫画架不显示对端的在线书架漫画 |
 | [BUG-2473](bugs/BUG-2473-manga-download-all-subscription-download-center.md) | ✅ | ✅ | 作品页下载全部/自动识别/订阅自动下载，mokuro 队列并入持久任务表，下载中心分区 |
 | [BUG-2472](bugs/BUG-2472-webkit-ruby-paragraph-first-line-growth.md) | ✅ | ✅ | WebKit 上首行含振假名的段落被撑高一截 |
