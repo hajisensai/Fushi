@@ -40,7 +40,7 @@ APK yang namanya diawali `bridge-` adalah jembatan migrasi untuk **pengguna Hibi
 
 ### 1. Mengimpor kamus yang direkomendasikan (kamus kata + aksen nada + frekuensi) dan audio lokal (basis data audio bahasa Jepang dan Inggris) (Sangat direkomendasikan untuk pemula!!! · opsional)
 
-[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing)
+[fushi.moe/download](https://fushi.moe/download)
 
 Di dalam aplikasi: Pengaturan -> Sinkronisasi & Cadangan -> ketuk **Impor Cadangan**.
 
