@@ -342,9 +342,21 @@ enum ShortcutAction {
   //   · 其它页：maybePop（PopupRoute 让框架自己的 Esc 语义优先，见 global_navigation）
   globalBack(ShortcutScope.universal, 'global_back'),
 
-  // Global
+  // Global —— 页面滚动六件套（整屏 / 单步 / 到顶到底）。
+  //
+  // 三通道共用一个执行体 `page_scroll_shortcuts.dart`（键盘在
+  // wrapWithGlobalNavigation、手柄在 gamepad_service、鼠标在 app 根兜底），滚动目标
+  // 一律经 `FushiFocusScroll.resolveActivePageScrollable` 解析——页面**不必**登记
+  // PageScrollRegistry 也能被滚到（从 Navigator 当前路由子树里找第一个纵向
+  // Scrollable 兜底）。单步上下（默认 ↑/↓）与焦点导航共存：焦点在真实控件上且该
+  // 方向有几何目标时仍归焦点导航，只有没目标（列表边缘 / 纯展示页 / 焦点停在
+  // 兜底节点）才滚动；文本框聚焦时一律放行给光标。
   globalScrollPageDown(ShortcutScope.global, 'global_scroll_page_down'),
   globalScrollPageUp(ShortcutScope.global, 'global_scroll_page_up'),
+  globalScrollLineDown(ShortcutScope.global, 'global_scroll_line_down'),
+  globalScrollLineUp(ShortcutScope.global, 'global_scroll_line_up'),
+  globalScrollToTop(ShortcutScope.global, 'global_scroll_to_top'),
+  globalScrollToBottom(ShortcutScope.global, 'global_scroll_to_bottom'),
   // TODO-1093：窗口级/app 级「全屏切换」（区别于视频播放器内的
   // videoToggleFullscreen——那个只切视频表面）。执行体在 wrapWithGlobalNavigation
   // 里读本 action 的键盘绑定，命中时调 toggleDesktopWindowFullscreen()（macOS 走

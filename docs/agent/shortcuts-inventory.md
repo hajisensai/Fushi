@@ -61,8 +61,23 @@
 | Action | 键盘默认 | 手柄默认 | 功能 |
 |---|---|---|---|
 | globalBack | Alt+← | —（手柄留空，避免被 reader B 遮蔽） | 返回上一级 |
-| globalScrollPageDown | （无键盘默认） | RB | 整页下滚 |
-| globalScrollPageUp | （无键盘默认） | LB | 整页上滚 |
+| globalScrollPageDown | PageDown | RB | 整页下滚（0.9 viewport） |
+| globalScrollPageUp | PageUp | LB | 整页上滚 |
+| globalScrollLineDown | ↓ | — | 单步下滚（0.15 viewport；焦点在真实控件上且下方有几何目标时让给焦点导航） |
+| globalScrollLineUp | ↑ | — | 单步上滚（同上） |
+| globalScrollToBottom | End | — | 滚到底 |
+| globalScrollToTop | Home | — | 滚到顶 |
+
+> 页面滚动六件套（2026-09-12）：键盘 / 手柄 / 鼠标三通道共用执行体
+> `shortcuts/page_scroll_shortcuts.dart`，目标解析唯一入口
+> `FushiFocusScroll.resolveActivePageScrollable`——焦点最近纵向 Scrollable →
+> `PageScrollRegistry` → 焦点的 `PrimaryScrollController` → **零登记兜底**：从
+> Navigator 当前路由子树里找第一个可见、可滚的纵向 Scrollable（剪掉非当前路由 /
+> Offstage / IndexedStack 非当前 child / 滑到屏幕外的 PageView 页）。三级都要求
+> 滚动视图属于**当前**路由，避免 Home/End 打到被阅读器或对话框盖住的书架上。
+> 文本框聚焦时六个键一律放行；解析到但当前页没有可滚的 Scrollable 时返回 ignored
+> （对话框里的 ↓ 仍由框架把焦点 bootstrap 到首个按钮）。reader / manga / video
+> 三页在自己的 scope 先消费 PageUp/PageDown/↑/↓，global 只兜它们没绑的键。
 
 ### audiobook scope（有声书激活时，在 reader scope 之后解析）
 
@@ -114,7 +129,8 @@
 |---|---|
 | Esc（在 Navigator 之上） | 退出全页路由层级。**已不再硬编码**：现按注册表解析 `globalBack`（`_handleGlobalBack`），Esc 落在弹层上仍让给框架的 barrierDismissible 契约 |
 | 方向键（单行文本框聚焦时按上/下，press 边） | 逃出文本框焦点（框架把方向键全吞成 caret intent 的补救） |
-| 方向键（无文本框聚焦，OS 自动重复 KeyRepeat） | 持续移动焦点（带面板几何 + 阅读顺序回退） |
+| 方向键（无文本框聚焦，OS 自动重复 KeyRepeat） | 持续移动焦点（带面板几何 + 阅读顺序回退）；受管控件到了尽头（该方向再无目标）时落到注册表的 globalScrollLine*（默认 ↑/↓ = 单步滚页） |
+| ↑/↓（焦点导航关闭，或焦点不在受管控件上） | 先问 `arrowKeyClaimedByFocus`（焦点在真实控件上且该方向有几何目标 → 移焦），否则按 global scope 解析成 globalScrollLineUp/Down 滚页。**不受**焦点导航开关门控 |
 | 裸 Space | 中和为 DoNothingIntent（不触发激活，焦点确认统一走 Enter / 手柄 A） |
 
 ### 2c. 有声书 Space 覆写（`reader_space_override.dart`）

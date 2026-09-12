@@ -176,11 +176,34 @@ class ShortcutDefaults {
       _gB
     ]),
 
-    // LB/RB = 整页翻屏（gamepad-only；键盘留空，避免与 reader PageDown 在不同
-    // scope 的重复语义）。global scope，对所有非阅读器页通用；reader 页只解析
-    // reader+audiobook，不会被遮蔽。执行体见 wrapWithGlobalNavigation。
-    ShortcutAction.globalScrollPageDown: _kb([], [_gRB]),
-    ShortcutAction.globalScrollPageUp: _kb([], [_gLB]),
+    // 页面滚动六件套（global scope，对所有非媒体页通用）：
+    //   整屏 PageDown / PageUp（+ 手柄 RB / LB）、单步 ↓ / ↑、到底 End / 到顶 Home。
+    // 以前键盘位留空是怕与 reader 的 PageDown 撞语义——但 reader / manga / video 三页
+    // 都在自己的 scope 先解析并消费这些键，global 只兜它们没绑的键，撞不上。
+    // home+global 是同一 co-active 组，home 没绑任何裸方向 / 翻页键，不冲突。
+    // 执行体见 page_scroll_shortcuts.dart（键盘 / 手柄 / 鼠标三通道共用）。
+    ShortcutAction.globalScrollPageDown: _kb([
+      _key(LogicalKeyboardKey.pageDown),
+    ], [
+      _gRB
+    ]),
+    ShortcutAction.globalScrollPageUp: _kb([
+      _key(LogicalKeyboardKey.pageUp),
+    ], [
+      _gLB
+    ]),
+    ShortcutAction.globalScrollLineDown: _kb([
+      _key(LogicalKeyboardKey.arrowDown),
+    ]),
+    ShortcutAction.globalScrollLineUp: _kb([
+      _key(LogicalKeyboardKey.arrowUp),
+    ]),
+    ShortcutAction.globalScrollToTop: _kb([
+      _key(LogicalKeyboardKey.home),
+    ]),
+    ShortcutAction.globalScrollToBottom: _kb([
+      _key(LogicalKeyboardKey.end),
+    ]),
     // TODO-1093：窗口级全屏切换默认 F11（桌面惯例）。global scope、home+global
     // co-active 组内 F11 未被占用；手柄留空（gamepad 键在 home/global 组已被翻页/
     // 返回占用，用户可自绑）。移动端无窗口全屏语义，执行体在移动端 no-op。

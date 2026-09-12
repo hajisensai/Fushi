@@ -163,6 +163,15 @@ class FushiFocusController extends ChangeNotifier {
     return false;
   }
 
+  /// 当前路由上是否登记了**至少一个**可聚焦的受管目标。
+  ///
+  /// [move] 在零目标时走 [ensureFocus]：把焦点从页面自己的键事件 sink 踢到 app 级
+  /// [fallbackNode]（兜底节点已持焦时才返回 true）。键盘方向键的「先移焦、无目标才
+  /// 滚动」仲裁在零目标时根本不该调 [move]——纯展示页（统计 / 日志）上 ↑/↓ 必须
+  /// 落到滚动，且不能顺手把持焦的页面 sink 废掉（页面快捷键从此收不到键），这个
+  /// getter 就是那道门。
+  bool get hasFocusableTargets => _focusableEntries().isNotEmpty;
+
   bool get activeIsOnlyFocusableInNearestScrollable {
     final FushiFocusTargetEntry? active = _currentEntry();
     if (active == null || !active.context.mounted) return false;

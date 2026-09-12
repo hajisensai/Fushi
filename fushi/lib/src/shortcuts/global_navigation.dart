@@ -6,13 +6,12 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:macos_ui/macos_ui.dart' show WindowManipulator;
 import 'package:window_manager/window_manager.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/focus/fushi_focus_scroll.dart';
-import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
+import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
@@ -20,6 +19,9 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         arrowFocusMoveDirection,
+        arrowKeyClaimedByFocus,
+        arrowTraversalDirection,
+        directionalFocusOrigin,
         dispatchNativeGamepadButtonIntent,
         focusedEditableText,
         gamepadMoveFocusInDirection,
@@ -105,6 +107,7 @@ bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
 ///    门控之外常驻生效。
 KeyEventResult _handleGlobalArrowFocus(
   GlobalKey<NavigatorState> navigatorKey,
+  FushiShortcutRegistry? registry,
   KeyEvent event,
 ) {
   final TraversalDirection? dir = arrowFocusMoveDirection(event);
@@ -133,22 +136,31 @@ KeyEventResult _handleGlobalArrowFocus(
     if (controller == null || !controller.primaryFocusIsManagedTarget) {
       return KeyEventResult.ignored;
     }
-    return _moveFocusForArrow(navigatorKey, dir);
+    return _moveFocusForArrow(navigatorKey, registry, event, dir);
   }
 
   // Part 1: single-line field escape, press edge only.
   if (event is! KeyDownEvent || _caretKeepsArrow(editable, dir)) {
     return KeyEventResult.ignored;
   }
-  return _moveFocusForArrow(navigatorKey, dir);
+  return _moveFocusForArrow(navigatorKey, registry, event, dir);
 }
 
 /// Moves directional focus one step in [dir] from whichever route is on top,
 /// then ALWAYS consumes the arrow: at a scroll/list edge the move is a no-op but
 /// the arrow has still been "spent" (so it never falls back to the caret or to
 /// the framework's fallback that lacks Hibiki's reading-order step).
+///
+/// 到了焦点目标的尽头（该方向再无受管控件、也没触发手柄式边缘接管）时，把这次
+/// 按键交给页面滚动：按注册表解析 [event]（默认 ↑/↓ = 单步滚动），命中就经
+/// [executePageScroll] 滚当前页。这样受管控件列表的末尾之后还有非聚焦内容
+/// （长说明文字 / 纯展示区）时，↓ 仍能把它们滚出来，而不是死在最后一个控件上。
+/// 无论滚没滚成都保持 handled（见上）。单行文本框逃逸那条路（Part 1）到这里时
+/// 文本框仍持焦，此时不滚：文本框聚焦下六个滚动键一律不接管。
 KeyEventResult _moveFocusForArrow(
   GlobalKey<NavigatorState> navigatorKey,
+  FushiShortcutRegistry? registry,
+  KeyEvent event,
   TraversalDirection dir,
 ) {
   // Mirror the gamepad service's dispatch context: the focused widget's context
@@ -157,7 +169,19 @@ KeyEventResult _moveFocusForArrow(
   final BuildContext? context = FocusManager.instance.primaryFocus?.context ??
       navigatorKey.currentContext;
   if (context == null) return KeyEventResult.ignored;
-  gamepadMoveFocusInDirection(context, dir);
+  if (!gamepadMoveFocusInDirection(context, dir) &&
+      registry != null &&
+      focusedEditableText() == null) {
+    final PageScrollRequest? request =
+        pageScrollRequestFor(_resolveGlobalKeyboardAction(registry, event));
+    if (request != null) {
+      executePageScroll(
+        request,
+        focusContext: FocusManager.instance.primaryFocus?.context,
+        navigator: navigatorKey.currentState,
+      );
+    }
+  }
   return KeyEventResult.handled;
 }
 
@@ -198,18 +222,40 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
 ///   · 其余触发键（Alt+← / 手柄 B / 用户自绑键）⇒ 一律 [Navigator.maybePop]，弹层
 ///     上也照 pop —— 旧 `_handleGlobalBack` 行为（手柄用户靠它关对话框）。
 /// [Navigator.maybePop] 保证页面自己的 [PopScope] 闸门仍然先跑。
-KeyEventResult _handleGlobalBack(
-  GlobalKey<NavigatorState> navigatorKey,
-  FushiShortcutRegistry registry,
-  KeyEvent event,
-) {
-  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+/// 此刻按住的修饰键集合（Ctrl / Shift / Alt / Meta），供本文件各注册表解析共用。
+Set<ModifierKey> _pressedModifiers() {
   final Set<ModifierKey> modifiers = <ModifierKey>{};
   final HardwareKeyboard hw = HardwareKeyboard.instance;
   if (hw.isControlPressed) modifiers.add(ModifierKey.ctrl);
   if (hw.isShiftPressed) modifiers.add(ModifierKey.shift);
   if (hw.isAltPressed) modifiers.add(ModifierKey.alt);
   if (hw.isMetaPressed) modifiers.add(ModifierKey.meta);
+  return modifiers;
+}
+
+/// 按 [ShortcutScope.global] 解析一次键盘事件。
+///
+/// TODO-847: IME 激活时 logicalKey 被改写成 process，传 physicalKey 让 registry
+/// 走物理键回退；文本框 composing 时传 null 关闭回退。
+ShortcutAction? _resolveGlobalKeyboardAction(
+  FushiShortcutRegistry registry,
+  KeyEvent event,
+) {
+  return registry.resolveKeyboard(
+    event.logicalKey,
+    modifiers: _pressedModifiers(),
+    scope: ShortcutScope.global,
+    physicalKey: focusedEditableText() == null ? event.physicalKey : null,
+  );
+}
+
+KeyEventResult _handleGlobalBack(
+  GlobalKey<NavigatorState> navigatorKey,
+  FushiShortcutRegistry registry,
+  KeyEvent event,
+) {
+  if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  final Set<ModifierKey> modifiers = _pressedModifiers();
   // TODO-847: IME 激活时 logicalKey 被改写成 process，传 physicalKey 让 registry
   // 走物理键回退还原 globalBack（默认 Esc）；文本框 composing 时传 null 关闭回退。
   final PhysicalKeyboardKey? imeFallbackPhysicalKey =
@@ -302,20 +348,7 @@ KeyEventResult _handleGlobalToggleFullscreen(
   KeyEvent event,
 ) {
   if (event is! KeyDownEvent) return KeyEventResult.ignored;
-  final Set<ModifierKey> modifiers = <ModifierKey>{};
-  final HardwareKeyboard hw = HardwareKeyboard.instance;
-  if (hw.isControlPressed) modifiers.add(ModifierKey.ctrl);
-  if (hw.isShiftPressed) modifiers.add(ModifierKey.shift);
-  if (hw.isAltPressed) modifiers.add(ModifierKey.alt);
-  if (hw.isMetaPressed) modifiers.add(ModifierKey.meta);
-  final PhysicalKeyboardKey? imeFallbackPhysicalKey =
-      focusedEditableText() == null ? event.physicalKey : null;
-  ShortcutAction? action = registry.resolveKeyboard(
-    event.logicalKey,
-    modifiers: modifiers,
-    scope: ShortcutScope.global,
-    physicalKey: imeFallbackPhysicalKey,
-  );
+  ShortcutAction? action = _resolveGlobalKeyboardAction(registry, event);
   if (action == null) {
     final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
     if (gamepad != null) {
@@ -337,6 +370,60 @@ KeyEventResult _handleGlobalToggleFullscreen(
 /// be toggled via [WindowManager] (mirrors [DesktopWindowPlacement] desktop gate).
 bool get desktopWindowFullscreenSupported =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+/// 键盘的页面滚动兜底（global scope 六件套：默认 PageUp/PageDown 整屏、↑/↓ 单步、
+/// Home/End 到顶到底）。服务所有自己没有键盘滚动语义的表面——库页 / 设置 / 统计 /
+/// 详情 / 对话框……阅读器 / 漫画 / 视频三页在更近的处理器里先消费了自己绑定的键
+/// （翻页 / 音量 / 章节），到不了这里；它们没绑的键（如视频页的 Home/End）落到这里
+/// 也只会滚它们路由里真实可见的纵向列表，没有就放行。
+///
+/// 按下沿与 OS 自动重复都接：按住 ↓ 要连续滚，与「按住方向键连续移焦」同款
+/// （[arrowFocusMoveDirection] 的理由）。
+///
+/// 三条**让位**规则，缺一条就是回归：
+///   1. 文本框聚焦 → 一律放行（↑/↓ 归光标 / 逃出单行框，Home/End 归行首行尾）；
+///   2. 触发键是方向键 → 先问焦点引擎（[arrowKeyClaimedByFocus]）：焦点在真实控件
+///      上且该方向有目标就移焦不滚；只有没目标（列表边缘 / 纯展示页 / 焦点停在
+///      兜底节点）才滚。实验性焦点导航开启且焦点已在受管控件上的情形根本到不了
+///      这里——[_handleGlobalArrowFocus] 在前面已经 handled（它的尽头同样落到滚动）；
+///   3. 弹层（对话框 / bottom sheet）里焦点还停在路由 FocusScope 上时，方向键
+///      **先让框架 bootstrap 焦点**（ignored → WidgetsApp 的 DirectionalFocusAction
+///      把焦点送进第一个按钮），而不是先滚内容：否则同一个对话框内容溢出时 ↓ 永远
+///      在滚、焦点进不了按钮，不溢出时才 bootstrap——语义随窗口高度漂移。焦点一旦
+///      落到按钮上，再按 ↓ 走规则 2，无目标时照常滚对话框内容；
+///   4. 解析到了但当前页没有任何能朝该方向滚的 Scrollable → 返回 ignored 而不是
+///      handled：纯展示页到底之后方向键也不变成黑洞。
+KeyEventResult _handleGlobalScroll(
+  GlobalKey<NavigatorState> navigatorKey,
+  FushiShortcutRegistry registry,
+  KeyEvent event,
+) {
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    return KeyEventResult.ignored;
+  }
+  if (focusedEditableText() != null) return KeyEventResult.ignored;
+  final PageScrollRequest? request =
+      pageScrollRequestFor(_resolveGlobalKeyboardAction(registry, event));
+  if (request == null) return KeyEventResult.ignored;
+  final BuildContext? focusContext =
+      FocusManager.instance.primaryFocus?.context;
+  final TraversalDirection? arrow = arrowTraversalDirection(event.logicalKey);
+  if (arrow != null) {
+    final BuildContext? arbiter = focusContext ?? navigatorKey.currentContext;
+    if (arbiter != null && arrowKeyClaimedByFocus(arbiter, arrow)) {
+      return KeyEventResult.handled;
+    }
+    if (directionalFocusOrigin() == null && _topRouteIsPopup(navigatorKey)) {
+      return KeyEventResult.ignored;
+    }
+  }
+  final bool scrolled = executePageScroll(
+    request,
+    focusContext: focusContext,
+    navigator: navigatorKey.currentState,
+  );
+  return scrolled ? KeyEventResult.handled : KeyEventResult.ignored;
+}
 
 /// app 根的**鼠标绑定兜底派发**：服务那些自己没有鼠标派发入口的表面（设置页 / 书架 /
 /// 统计页 / 对话框……）。
@@ -376,9 +463,9 @@ void _handleGlobalPointerDown(
 ///   · [ShortcutAction.globalBack] → [Navigator.maybePop]（与 [_handleGlobalBack] 同）；
 ///   · [ShortcutAction.globalToggleFullscreen] → [_toggleWindowFullscreen]（与
 ///     [_handleGlobalToggleFullscreen] 同，移动端无窗口时有意 no-op）；
-///   · [ShortcutAction.globalScrollPageUp] / [ShortcutAction.globalScrollPageDown] →
-///     与手柄 LB/RB 完全同一条 [PageScrollRegistry] → [FushiFocusScroll] 路径
-///     （`gamepad_service._tryScrollPage`）。
+///   · 页面滚动六件套（[ShortcutAction.globalScrollPageUp] 等）→ 与键盘 / 手柄
+///     LB/RB 完全同一个执行体 [executePageScroll]（目标解析在
+///     `FushiFocusScroll.resolveActivePageScrollable`）。
 ///
 /// global scope 里只有 [ShortcutAction.globalContextMenu] 有意落在 `default` 上并返回
 /// **false**：它是「哪个鼠标键唤出右键菜单」的按钮归属声明，执行体分散在各表面自己的
@@ -410,25 +497,22 @@ bool _executeGlobalMouseAction(
       }
       return true;
     case ShortcutAction.globalScrollPageUp:
-      return _scrollActivePage(context, -0.9);
     case ShortcutAction.globalScrollPageDown:
-      return _scrollActivePage(context, 0.9);
+    case ShortcutAction.globalScrollLineUp:
+    case ShortcutAction.globalScrollLineDown:
+    case ShortcutAction.globalScrollToTop:
+    case ShortcutAction.globalScrollToBottom:
+      // 鼠标没有「焦点在哪」的语义，前三级按 [context]（app 根，Navigator 之上，
+      // 查不到任何 Scrollable / PrimaryScrollController）自然落空，实际靠已登记的
+      // PageScrollRegistry 与当前路由子树兜底——与改造前的可达面只增不减。
+      return executePageScroll(
+        pageScrollRequestFor(action)!,
+        focusContext: FocusManager.instance.primaryFocus?.context ?? context,
+        navigator: navigatorKey.currentState,
+      );
     default:
       return false;
   }
-}
-
-/// 整页滚动：优先已登记的当前页 [ScrollController]，退回按 context 找
-/// [PrimaryScrollController]。与手柄 LB/RB 同一实现，理由见
-/// `gamepad_service._tryScrollPage` 的注释（纯展示页的焦点节点在页面 scaffold 的
-/// PrimaryScrollController **之上**，只按 context 找必然找不到）。
-bool _scrollActivePage(BuildContext context, double signedFraction) {
-  final ScrollController? pageController = PageScrollRegistry.current;
-  if (pageController != null &&
-      FushiFocusScroll.scrollController(pageController, signedFraction)) {
-    return true;
-  }
-  return FushiFocusScroll.scrollPrimary(context, signedFraction);
 }
 
 /// 裸空格中和：焦点确认永不走空格（确认键统一 Enter / 手柄 A，由框架默认提供），故在
@@ -680,7 +764,7 @@ Widget wrapWithGlobalNavigation({
       }
       if (focusNavigationEnabled) {
         final KeyEventResult arrowResult =
-            _handleGlobalArrowFocus(navigatorKey, event);
+            _handleGlobalArrowFocus(navigatorKey, registry, event);
         if (arrowResult == KeyEventResult.handled) return arrowResult;
       }
       // TODO-700 T1：注册表驱动的全局返回回退（Esc / Alt+← / B，或用户改键后的
@@ -700,6 +784,12 @@ Widget wrapWithGlobalNavigation({
         if (fullscreenResult == KeyEventResult.handled) {
           return fullscreenResult;
         }
+        // 页面滚动六件套（默认 PageUp/PageDown、↑/↓、Home/End）。同样**不受**
+        // [focusNavigationEnabled] 门控——「用键盘滚页面」与实验性焦点导航无关，
+        // 默认安装就得能用；方向键与焦点导航的让位规则见 [_handleGlobalScroll]。
+        final KeyEventResult scrollResult =
+            _handleGlobalScroll(navigatorKey, registry, event);
+        if (scrollResult == KeyEventResult.handled) return scrollResult;
       }
       // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。对手柄 B 必须
       // 就地消费，绝不能放行——见 [gamepadBackMustBeSwallowed] 的完整理由。

@@ -81,12 +81,14 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         GamepadButtonIntent,
         arrowFocusMoveDirection,
+        arrowKeyClaimedByFocus,
         arrowTraversalDirection,
         dispatchNativeGamepadButtonIntent,
-        focusedEditableText,
-        gamepadMoveFocusInDirection;
+        focusedEditableText;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction, resolveMouseBindingAction;
+import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart'
+    show pageScrollRequestFor;
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -799,12 +801,18 @@ class _HomePageState extends BasePageState<HomePage>
     // focus — re-resolving a bound shortcut on every repeat would fire it
     // repeatedly. Skipped while a text field is focused so the field's own caret
     // keeps the arrows (same guard as the KeyDown arrow branch below).
+    //
+    // 仲裁走 [arrowKeyClaimedByFocus]：有焦点目标才移焦并认领；没有（列表边缘 /
+    // 焦点还停在本页键事件 sink 上）就放行冒泡，让 app 根的页面滚动兜底接住
+    // ——按下沿的四个方向键在下面走的是**同一个**仲裁（六件套不在本页 return），
+    // 重复沿若还自己 bootstrap 焦点，就成了「按一下滚页、按住却把焦点甩到首个卡片」。
     final TraversalDirection? repeatDir =
         event is KeyRepeatEvent ? arrowFocusMoveDirection(event) : null;
     if (repeatDir != null) {
       if (focusedEditableText() != null) return KeyEventResult.ignored;
-      gamepadMoveFocusInDirection(context, repeatDir);
-      return KeyEventResult.handled;
+      return arrowKeyClaimedByFocus(context, repeatDir)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
@@ -872,9 +880,17 @@ class _HomePageState extends BasePageState<HomePage>
       }
     }
 
-    if (action != null) return _executeShortcutAction(action);
+    // 页面滚动六件套（global scope，默认 ↑/↓ 单步）不由本页执行——执行体在 app 根
+    // [wrapWithGlobalNavigation]，而且它对方向键的规则是「先问焦点、无目标才滚」。
+    // 解析到六件套时**不能**在这里 return：`_executeShortcutAction` 对它们落 default
+    // → ignored 冒泡到根固然也能滚，但下面那段方向键仲裁就对 ↑/↓ 永远不可达，按下沿
+    // （根用 primaryFocus.context 仲裁）与重复沿（本页 context 仲裁）走成两条路。
+    // 让六件套穿过来、与重复沿同走一条仲裁；用户改绑到其它动作的键仍照常先执行。
+    if (action != null && pageScrollRequestFor(action) == null) {
+      return _executeShortcutAction(action);
+    }
 
-    // Arrow keys are unbound on home, so drive robust directional focus
+    // Arrow keys carry no home-scope binding, so drive robust directional focus
     // navigation through the SAME helper the gamepad D-pad/stick uses — keyboard
     // and gamepad therefore behave identically. Skipped while a text field is
     // focused so the field's own cursor movement keeps working (up/down then
@@ -884,10 +900,15 @@ class _HomePageState extends BasePageState<HomePage>
     // private `is EditableText` check missed every field (the primary focus is
     // EditableText's inner Focus, not the EditableText), so it never actually
     // guarded the search field's caret.
+    // 按下沿与上面的重复沿走**同一条**判据 [arrowKeyClaimedByFocus]：有焦点目标才
+    // 移焦并认领，没有就放行冒泡给 app 根（↑/↓ 在那里按六件套落到页面滚动；←/→
+    // 没有 global 绑定则交给框架）。此前按下沿单独走 gamepadMoveFocusInDirection 的
+    // 阅读顺序回退，焦点导航关闭时同一个 ← 按一下会跳焦点、按住却不动。
     final TraversalDirection? dir = arrowTraversalDirection(event.logicalKey);
     if (dir != null && focusedEditableText() == null) {
-      gamepadMoveFocusInDirection(context, dir);
-      return KeyEventResult.handled;
+      return arrowKeyClaimedByFocus(context, dir)
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
     }
     return KeyEventResult.ignored;
   }
