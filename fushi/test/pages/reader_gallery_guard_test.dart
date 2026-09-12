@@ -18,14 +18,14 @@ void main() {
     src = chrome.readAsStringSync();
   });
 
-  test('gallery button is wired into the bottom settings bar (barItems)', () {
-    final int barItemsIdx = src.indexOf('final List<Widget> barItems');
-    expect(barItemsIdx, greaterThan(-1));
-    final int onPressedIdx =
-        src.indexOf('onPressed: _openGallery,', barItemsIdx);
+  test('gallery button is a layout item wired to _openGallery', () {
+    // 顶栏 / 底栏按钮全部来自 ReaderControlLayout；动作真相源 _readerControlAction。
+    final int caseIdx = src.indexOf('case ReaderControlItem.gallery:');
+    expect(caseIdx, greaterThan(-1));
+    final int onPressedIdx = src.indexOf('onPressed: _openGallery,', caseIdx);
     expect(onPressedIdx, greaterThan(-1),
-        reason: 'gallery IconButton must call _openGallery from barItems');
-    expect(src.contains('tooltip: t.reader_gallery_tooltip'), isTrue);
+        reason: 'gallery action must call _openGallery');
+    expect(src.contains('t.reader_gallery_tooltip'), isTrue);
   });
 
   test('_openGallery reuses _openImageViewer (no second zoom path)', () {

@@ -1582,12 +1582,188 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (_audiobookController != null) {
       return _buildAudiobookBar();
     }
-    // 桌面端（ッツ 形态）：设置栏的全部职能搬到顶部工具栏 [_buildDesktopHeader]，
-    // 不再画底部设置栏；有声书播放条是媒体传输面，仍留在底部。
-    if (_desktopChromeEnabled) {
+    // 底栏三个槽位（用户在布局编辑器里拖进来的按钮）有货才画；默认布局底栏为空，
+    // 全部职能在顶部工具栏 [_buildDesktopHeader]。有声书播放条是媒体传输面，
+    // 在场时底栏槽位的按钮并进它的右端（[_buildAudiobookBar]）。
+    if (!_bottomSlotsHaveButtons) {
       return const SizedBox.shrink();
     }
     return _buildSettingsBar();
+  }
+
+  // ── 按钮布局（ReaderControlLayout，与视频页同一套泛型模型）──────────────
+
+  ReaderControlLayout get _controlLayout => appModel.readerControlLayout;
+
+  /// 按钮在当前运行态下是否渲染（与布局正交：布局说「放哪」，这里说「此刻有没有」）。
+  bool _shouldRenderReaderControl(ReaderControlItem item) {
+    switch (item) {
+      case ReaderControlItem.back:
+      case ReaderControlItem.statistics:
+      case ReaderControlItem.title:
+      case ReaderControlItem.settings:
+        return true;
+      // 歌词模式必须挂着有声书控制器（[_toggleLyricsMode] 进入分支的前置），没有
+      // 控制器就没有可切的歌词，这颗键整个不出现。
+      case ReaderControlItem.modeToggle:
+        return _audiobookController != null;
+      case ReaderControlItem.navigation:
+      case ReaderControlItem.gallery:
+        return !_lyricsMode;
+      // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
+      case ReaderControlItem.audiobook:
+        return _moduleVisibility.isEnabled(ModuleId.listening);
+      // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
+      case ReaderControlItem.fullscreen:
+        return desktopWindowFullscreenSupported;
+    }
+  }
+
+  List<ReaderControlItem> _renderableControlsIn(ReaderControlSlot slot) =>
+      _controlLayout
+          .itemsIn(slot)
+          .where(_shouldRenderReaderControl)
+          .toList(growable: false);
+
+  bool get _bottomSlotsHaveButtons => ReaderControlSlot.values
+      .where((ReaderControlSlot s) => s.isBottom)
+      .any((ReaderControlSlot s) => _renderableControlsIn(s).isNotEmpty);
+
+  /// 一颗按钮的动作描述（图标按运行态、文案带快捷键、pinned 决定窄窗是否折进 ⋮）。
+  /// 布局只决定它在哪个槽；这里是「按下去干什么」的唯一真相源。
+  ReaderHeaderAction _readerControlAction(ReaderControlItem item) {
+    final bool lyrics = _lyricsMode;
+    switch (item) {
+      case ReaderControlItem.back:
+        return ReaderHeaderAction(
+          icon: Icons.arrow_back,
+          label: t.back,
+          pinned: true,
+          semanticsId: 'hibiki.reader.header.back',
+          // 与面板「退出」同一条路：maybePop 触发 PopScope → onWillPop
+          // （落位置 flush / closeMedia / 关书同步，BUG-782）。
+          onPressed: () => unawaited(Navigator.of(context).maybePop()),
+        );
+      case ReaderControlItem.modeToggle:
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_lyrics_mode_button'),
+          icon: lyrics ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
+          label: lyrics ? t.book_mode : t.lyrics_mode,
+          pinned: lyrics,
+          semanticsId: 'hibiki.reader.header.lyrics_mode',
+          onPressed: () => unawaited(_toggleLyricsMode()),
+        );
+      case ReaderControlItem.navigation:
+        return ReaderHeaderAction(
+          icon: Icons.format_list_bulleted,
+          label: _labelWithShortcut(
+            t.section_navigation,
+            ShortcutAction.readerOpenNavigation,
+          ),
+          pinned: true,
+          semanticsId: 'hibiki.reader.header.navigation',
+          onPressed: () => unawaited(
+            _showAppearanceSheet(initialSubPage: 'location'),
+          ),
+        );
+      case ReaderControlItem.gallery:
+        return ReaderHeaderAction(
+          icon: Icons.collections_outlined,
+          label: _labelWithShortcut(
+            t.reader_gallery_tooltip,
+            ShortcutAction.readerOpenGallery,
+          ),
+          onPressed: _openGallery,
+        );
+      case ReaderControlItem.statistics:
+        return ReaderHeaderAction(
+          icon: Icons.insights_outlined,
+          label: _labelWithShortcut(
+            t.reading_statistics,
+            ShortcutAction.readerOpenStatistics,
+          ),
+          semanticsId: 'hibiki.reader.header.statistics',
+          onPressed: _openReadingStatistics,
+        );
+      case ReaderControlItem.title:
+        // 书名不是按钮：顶栏由 showsTitle 决定画不画，底栏槽位不接受它。
+        return ReaderHeaderAction(
+          icon: Icons.title,
+          label: _book?.title ?? '',
+          onPressed: null,
+        );
+      case ReaderControlItem.audiobook:
+        return ReaderHeaderAction(
+          icon: Icons.headphones_outlined,
+          label: _labelWithShortcut(
+            t.section_audiobook,
+            ShortcutAction.readerOpenAudiobook,
+          ),
+          semanticsId: 'hibiki.reader.header.audiobook',
+          // 已挂有声书 → 侧栏面板；没有 → 直接进导入。
+          onPressed: _audiobookController != null
+              ? () => unawaited(
+                    _showAppearanceSheet(initialSubPage: 'audiobook'),
+                  )
+              : _openAudioImportDialog,
+        );
+      case ReaderControlItem.fullscreen:
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_fullscreen_button'),
+          icon: _isWindowFullscreen
+              ? Icons.fullscreen_exit_rounded
+              : Icons.fullscreen_rounded,
+          label: t.shortcut_action_global_toggle_fullscreen,
+          semanticsId: 'hibiki.reader.bottom.fullscreen',
+          onPressed: () => unawaited(_changeReaderWindowFullscreen()),
+        );
+      case ReaderControlItem.settings:
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_settings_button'),
+          icon: Icons.tune_outlined,
+          label: _labelWithShortcut(
+            t.reader_settings_section,
+            ShortcutAction.readerOpenMenu,
+          ),
+          pinned: true,
+          semanticsId: 'hibiki.reader.bottom.settings',
+          onPressed: () => unawaited(_showAppearanceSheet()),
+        );
+    }
+  }
+
+  List<ReaderHeaderAction> _readerControlActionsIn(ReaderControlSlot slot) =>
+      <ReaderHeaderAction>[
+        for (final ReaderControlItem item in _renderableControlsIn(slot))
+          if (item != ReaderControlItem.title) _readerControlAction(item),
+      ];
+
+  /// 底栏槽位里的一颗按钮（与顶栏同款图标按钮）。
+  Widget _readerControlButton(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
+        key: a.key,
+        icon: a.icon,
+        tooltip: a.label,
+        color: _themeTextColor(),
+        semanticsId: a.semanticsId,
+        onPressed: a.onPressed,
+      );
+
+  /// 底栏三槽（左 / 中 / 右）排成一行：`[左…] Spacer [中…] Spacer [右…]`；
+  /// 中槽为空时只剩左右两端。
+  List<Widget> _bottomSlotButtons() {
+    final List<ReaderHeaderAction> left =
+        _readerControlActionsIn(ReaderControlSlot.bottomLeft);
+    final List<ReaderHeaderAction> center =
+        _readerControlActionsIn(ReaderControlSlot.bottomCenter);
+    final List<ReaderHeaderAction> right =
+        _readerControlActionsIn(ReaderControlSlot.bottomRight);
+    return <Widget>[
+      for (final ReaderHeaderAction a in left) _readerControlButton(a),
+      const Spacer(),
+      for (final ReaderHeaderAction a in center) _readerControlButton(a),
+      if (center.isNotEmpty) const Spacer(),
+      for (final ReaderHeaderAction a in right) _readerControlButton(a),
+    ];
   }
 
   Widget _buildAudiobookBar() {
@@ -1610,13 +1786,33 @@ extension _ReaderChrome on _ReaderFushiPageState {
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端；传输键与
             // 有声书面板同一套（-10s / 上一句 / 播放 / 下一句 / +10s）。
-            trailing: _playbackStatusInline ? _buildBarStatusText() : null,
+            // 底栏槽位里的按钮并进播放条右端（播放条在场时底栏只有这一条），
+            // 状态读数仍在最右。
+            trailing: _buildAudiobookBarTrailing(),
             showSeekButtons:
                 _desktopChromeEnabled && _readerControlsWidth >= 308,
             showSettingsButton: !_desktopChromeEnabled,
           ),
         );
       },
+    );
+  }
+
+  Widget? _buildAudiobookBarTrailing() {
+    final List<Widget> buttons = <Widget>[
+      for (final ReaderControlSlot slot in ReaderControlSlot.values)
+        if (slot.isBottom)
+          for (final ReaderHeaderAction a in _readerControlActionsIn(slot))
+            _readerControlButton(a),
+    ];
+    final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
+    if (buttons.isEmpty) return status;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        ...buttons,
+        if (status != null) ...<Widget>[const SizedBox(width: 8), status],
+      ],
     );
   }
 
@@ -1686,101 +1882,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _rebuild(() => _isWindowFullscreen = fullscreen);
   }
 
+  /// 底栏（无有声书播放条时）：只在用户把按钮拖进底栏槽位后才出现，内容全部
+  /// 来自 [ReaderControlLayout]（默认布局底栏为空，职能都在顶部工具栏）。
+  /// 「反转底栏」（reverseReaderBottomBar）仍是整体镜像。
   Widget _buildSettingsBar() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool reversed = appModel.reverseReaderBottomBar;
-    final List<Widget> barItems = <Widget>[
-      // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
-      if (_moduleVisibility.isEnabled(ModuleId.listening))
-        IconButton(
-          icon: Icon(Icons.headphones_outlined, color: _themeTextColor()),
-          iconSize: 22,
-          tooltip: t.audio_import,
-          onPressed: _openAudioImportDialog,
-        ),
-      // TODO-723: illustration gallery -- browse every image in the book around
-      // the current reading position. Reuses the existing image viewer + chapter
-      // navigation; never touches WebView pagination/restore/lookup.
-      IconButton(
-        icon: Icon(Icons.collections_outlined, color: _themeTextColor()),
-        iconSize: 22,
-        tooltip: t.reader_gallery_tooltip,
-        onPressed: _openGallery,
-      ),
-      const Spacer(),
-      // 小说页此前**没有任何全屏入口**，只能靠全局快捷键（默认 F11）。全屏收窄到内容
-      // 模块之后，一个看得见的入口是必需的，否则「小说能全屏」这件事对不用快捷键的
-      // 用户等于不存在。与漫画页同图标、同 tooltip（复用同一条快捷键文案）。
-      // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
-      if (desktopWindowFullscreenSupported)
-        Semantics(
-          identifier: 'hibiki.reader.bottom.fullscreen',
-          child: IconButton(
-            key: const ValueKey<String>('fushi_reader_fullscreen_button'),
-            icon: Icon(
-              _isWindowFullscreen
-                  ? Icons.fullscreen_exit_rounded
-                  : Icons.fullscreen_rounded,
-              color: _themeTextColor(),
-            ),
-            iconSize: 22,
-            tooltip: t.shortcut_action_global_toggle_fullscreen,
-            onPressed: () => unawaited(_changeReaderWindowFullscreen()),
-          ),
-        ),
-      // 阅读统计直达键：一颗**够大**的入口，不是移动端唯一的入口。
-      //
-      // 别把它写成「移动端此前没有统计入口」——不成立，核过：状态行
-      // [ReaderStatusFooter] 的启用判据是 `readerStatusFooterEnabled = !lyricsMode`
-      // （`desktop` 参数只留着兼容调用方），**各平台都画**；它右端的进度数字点一下就
-      // 开统计浮层（`onTapProgress: _openReadingStatistics`），左边的计时块点一下是
-      // 手动停 / 续表。所以这颗键补的是**触摸目标**：状态行整条只有 28px 高
-      // （`kReaderStatusFooterHeight`，视觉高度 == 预留高度是 chrome 铁律，不能为
-      // 命中区加高），而这里是 iconSize 22 + IconButton 默认 48dp 命中区，与底栏其余
-      // 键同级（底栏基高 56 容得下）。
-      //
-      // 位置在底栏右端、设置齿轮左侧：齿轮仍是最右那颗（移动端唯一的面板入口，肌肉
-      // 记忆不动）。底栏整体反转（reverseReaderBottomBar）时随 barItems.reversed 一起
-      // 镜像，与其它键同待遇。
-      //
-      // 图标读的真值**必须与状态行那颗计时图标同源**（都是
-      // `_readingSessionTotals().active`）：两者同屏可见（chrome 唤出时），各读各的就会
-      // 出现「状态行说没在计时、这颗说在」——切后台回来或弹层压着正文时
-      // `studyClockMayRun` 为假但 `_studyClockManualPause` 仍是 false，正是那种分叉。
-      // 点击语义恒为「打开统计浮层」，手动停 / 续表在状态行的计时块上做
-      // （[_toggleStudyClockManualPause] 的唯一入口），不给同一颗键塞两种动作。
-      //
-      // 歌词模式不画：那是独立 HTML 文档，进度与阅读追踪都不适用（状态行在歌词模式同样
-      // 不画，见 readerStatusFooterEnabled），浮层里的「预计读完本章 / 全书」在那儿没有
-      // 意义。
-      if (!_lyricsMode)
-        Semantics(
-          identifier: 'hibiki.reader.bottom.statistics',
-          child: IconButton(
-            key: const ValueKey<String>('fushi_reader_statistics_button'),
-            icon: Icon(
-              _readingSessionTotals().active
-                  ? Icons.insights_outlined
-                  : Icons.timer_off_outlined,
-              color: _themeTextColor(),
-            ),
-            iconSize: 22,
-            tooltip: t.reading_statistics,
-            onPressed: _openReadingStatistics,
-          ),
-        ),
-      Semantics(
-        identifier: 'hibiki.reader.bottom.settings',
-        child: IconButton(
-          key: const ValueKey<String>('fushi_reader_settings_button'),
-          icon: Icon(Icons.tune_outlined, color: _themeTextColor()),
-          iconSize: 20,
-          tooltip: t.reader_settings_section,
-          onPressed: _showAppearanceSheet,
-        ),
-      ),
-    ];
+    final List<Widget> barItems = _bottomSlotButtons();
     return _wrapBottomChromeBar(
+      key: const ValueKey<String>('fushi_reader_bottom_slots_bar'),
       bar: ColoredBox(
         color: _chromeSurfaceColor(),
         child: SizedBox(
@@ -2298,19 +2408,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return const SizedBox.shrink();
     }
     final Color fg = _themeTextColor();
-    // 歌词模式必须挂着有声书控制器（[_toggleLyricsMode] 进入分支的前置），没有控制器
-    // 就没有可切的歌词，这颗键整个不出现。
-    final bool lyrics = _lyricsMode;
-    final ReaderHeaderAction? modeToggle = _audiobookController == null
-        ? null
-        : ReaderHeaderAction(
-            key: const ValueKey<String>('fushi_reader_lyrics_mode_button'),
-            icon: lyrics ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
-            label: lyrics ? t.book_mode : t.lyrics_mode,
-            pinned: lyrics,
-            semanticsId: 'hibiki.reader.header.lyrics_mode',
-            onPressed: () => unawaited(_toggleLyricsMode()),
-          );
+    final ReaderControlLayout layout = _controlLayout;
     return Positioned(
       top: _stableTopInset,
       left: MediaQuery.viewPaddingOf(context).left,
@@ -2324,92 +2422,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
           onExit: (_) => _onChromeHoverChanged(false),
           child: ReaderDesktopHeader(
             key: const ValueKey<String>('fushi_desktop_header'),
-            title: _book?.title ?? '',
+            title: layout.showsTitle ? (_book?.title ?? '') : '',
             textColor: fg,
             backgroundColor: _chromeSurfaceColor(),
-            // pinned = 窄窗紧凑形态仍保留的按钮；其余收进 ⋮ 溢出菜单。
-            leading: <ReaderHeaderAction>[
-              ReaderHeaderAction(
-                icon: Icons.arrow_back,
-                label: t.back,
-                pinned: true,
-                semanticsId: 'hibiki.reader.header.back',
-                // 与面板「退出」同一条路：maybePop 触发 PopScope → onWillPop
-                // （落位置 flush / closeMedia / 关书同步，BUG-782）。
-                onPressed: () => unawaited(Navigator.of(context).maybePop()),
-              ),
-              if (modeToggle != null) modeToggle,
-              if (!lyrics)
-                ReaderHeaderAction(
-                  icon: Icons.format_list_bulleted,
-                  label: _labelWithShortcut(
-                    t.section_navigation,
-                    ShortcutAction.readerOpenNavigation,
-                  ),
-                  pinned: true,
-                  semanticsId: 'hibiki.reader.header.navigation',
-                  onPressed: () => unawaited(
-                    _showAppearanceSheet(initialSubPage: 'location'),
-                  ),
-                ),
-              if (!lyrics)
-                ReaderHeaderAction(
-                  icon: Icons.collections_outlined,
-                  label: _labelWithShortcut(
-                    t.reader_gallery_tooltip,
-                    ShortcutAction.readerOpenGallery,
-                  ),
-                  onPressed: _openGallery,
-                ),
-              ReaderHeaderAction(
-                icon: Icons.insights_outlined,
-                label: _labelWithShortcut(
-                  t.reading_statistics,
-                  ShortcutAction.readerOpenStatistics,
-                ),
-                semanticsId: 'hibiki.reader.header.statistics',
-                onPressed: _openReadingStatistics,
-              ),
-            ],
-            trailing: <ReaderHeaderAction>[
-              // 「听书」模块关掉时整条不渲染（与底栏耳机键同一范式）。
-              if (_moduleVisibility.isEnabled(ModuleId.listening))
-                ReaderHeaderAction(
-                  icon: Icons.headphones_outlined,
-                  label: _labelWithShortcut(
-                    t.section_audiobook,
-                    ShortcutAction.readerOpenAudiobook,
-                  ),
-                  semanticsId: 'hibiki.reader.header.audiobook',
-                  // 已挂有声书 → 居中面板；没有 → 直接进导入。
-                  onPressed: _audiobookController != null
-                      ? () => unawaited(
-                          _showAppearanceSheet(initialSubPage: 'audiobook'),
-                        )
-                      : _openAudioImportDialog,
-                ),
-              if (desktopWindowFullscreenSupported)
-                ReaderHeaderAction(
-                  key: const ValueKey<String>('fushi_reader_fullscreen_button'),
-                  icon: _isWindowFullscreen
-                      ? Icons.fullscreen_exit_rounded
-                      : Icons.fullscreen_rounded,
-                  label: t.shortcut_action_global_toggle_fullscreen,
-                  semanticsId: 'hibiki.reader.bottom.fullscreen',
-                  onPressed: () => unawaited(_changeReaderWindowFullscreen()),
-                ),
-              ReaderHeaderAction(
-                key: const ValueKey<String>('fushi_reader_settings_button'),
-                icon: Icons.tune_outlined,
-                label: _labelWithShortcut(
-                  t.reader_settings_section,
-                  ShortcutAction.readerOpenMenu,
-                ),
-                pinned: true,
-                semanticsId: 'hibiki.reader.bottom.settings',
-                onPressed: () => unawaited(_showAppearanceSheet()),
-              ),
-            ],
+            // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；
+            // pinned = 窄窗紧凑形态仍保留的按钮，其余收进 ⋮ 溢出菜单。
+            leading: _readerControlActionsIn(ReaderControlSlot.topLeft),
+            trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
           ),
         ),
       ),

@@ -23,6 +23,7 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
@@ -1432,6 +1433,17 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoControlLayout(VideoControlLayout layout) async {
     await setPref('video_control_customization', layout.encode());
+    notifyListeners();
+  }
+
+  /// 阅读器顶栏 / 底栏按钮布局（与视频页同一套泛型模型，2026-09-13）。持久化键
+  /// `reader_control_layout`，空 / 坏值回出厂布局。
+  ReaderControlLayout get readerControlLayout => ReaderControlLayout.decode(
+        getPref('reader_control_layout', defaultValue: '') as String,
+      );
+
+  Future<void> setReaderControlLayout(ReaderControlLayout layout) async {
+    await setPref('reader_control_layout', layout.encode());
     notifyListeners();
   }
 

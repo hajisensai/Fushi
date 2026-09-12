@@ -533,9 +533,18 @@ void main() {
         '  Widget _buildAudiobookBar() {',
         '  /// 小说页的窗口全屏切换',
       );
+      // 播放条右端 = 底栏槽位按钮 + 状态读数（_buildAudiobookBarTrailing）。
       expect(
-        barBuild.contains(
-            'trailing: _playbackStatusInline ? _buildBarStatusText() : null,'),
+        barBuild.contains('trailing: _buildAudiobookBarTrailing(),'),
+        isTrue,
+      );
+      final String trailing = _slice(
+        src,
+        '  Widget? _buildAudiobookBarTrailing() {',
+        '  /// 小说页的窗口全屏切换',
+      );
+      expect(
+        trailing.contains('_playbackStatusInline ? _buildBarStatusText() : null'),
         isTrue,
         reason: '底栏右端仍是读数的唯一落点',
       );

@@ -152,7 +152,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_sensitivity',
   'maximum_terms',
   'mine_to_server',
+  // int 毫秒：制卡音频裁片段前后垫（#1447 引入时漏登记，守卫在 develop 上红）。
+  'mining_audio_head_pad_ms',
   'mining_audio_quality',
+  'mining_audio_tail_pad_ms',
   'mining_image_quality',
   'module_books_enabled',
   'module_browser_extension_enabled',
@@ -186,6 +189,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_max_width',
   'popup_wheel_speed',
   'qb_connection_config',
+  // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
+  'reader_control_layout',
   'reading_goal_daily_chars',
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',

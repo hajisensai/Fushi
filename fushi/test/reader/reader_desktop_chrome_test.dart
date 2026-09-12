@@ -19,10 +19,11 @@ void main() {
     expect(chrome, contains('? _statusFooterPaintedBand : 0'));
     expect(chrome,
         contains('height: _separatePlaybackStatus ? 0 : _stableBottomInset'));
+    // 底栏只在「有声书播放条在场」或「用户把按钮拖进底栏槽位」时占位。
     expect(
         page,
         contains(
-            'chromeHeight: _desktopChromeEnabled && _audiobookController == null'));
+            'chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons'));
   });
 
   testWidgets('320 wide header keeps navigation and folds secondary actions',
@@ -260,8 +261,8 @@ void main() {
       isTrue,
       reason: '挤压态工具栏预留高必须并入 _readerTopOffset',
     );
-    // 桌面端不再画底部设置栏（有声书播放条保留）。
-    final int gate = chrome.indexOf('if (_desktopChromeEnabled) {');
+    // 底栏（无播放条时）只在布局的底栏槽位有按钮时才画（默认布局为空）。
+    final int gate = chrome.indexOf('if (!_bottomSlotsHaveButtons) {');
     final int bar = chrome.indexOf('return _buildSettingsBar();');
     expect(gate, greaterThan(-1));
     expect(gate, lessThan(bar));

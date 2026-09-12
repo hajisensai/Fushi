@@ -57,7 +57,15 @@ void main() {
   });
 
   group('顶栏上的模式键', () {
-    final String header = methodBody(src, '  Widget _buildDesktopHeader()');
+    // 顶栏按钮的动作真相源在 _readerControlAction（顶栏本体只按布局槽位取）。
+    final String header = methodBody(
+      src,
+      '  ReaderHeaderAction _readerControlAction(ReaderControlItem item)',
+    );
+    final String render = methodBody(
+      src,
+      '  bool _shouldRenderReaderControl(ReaderControlItem item)',
+    );
 
     test('歌词模式下顶栏有一颗回正文的键，且强制 pinned（窄窗不许折进溢出菜单）', () {
       expect(
@@ -72,7 +80,12 @@ void main() {
     });
 
     test('导航 / 插图只在正文模式挂（歌词页翻章会把歌词文档换成 EPUB 章节）', () {
-      expect(header, contains('if (!lyrics)'));
+      final String navGroup = render.substring(
+        render.indexOf('case ReaderControlItem.navigation:'),
+        render.indexOf('case ReaderControlItem.audiobook:'),
+      );
+      expect(navGroup, contains('case ReaderControlItem.gallery:'));
+      expect(navGroup, contains('return !_lyricsMode;'));
     });
   });
 
