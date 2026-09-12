@@ -46,6 +46,7 @@ public class FloatingDictService extends BaseFloatingService {
     private TextView resultView;
     private ScrollView resultScroll;
     private ImageButton ankiButton;
+    private ImageButton audioButton;
 
     private ClipboardManager clipboardManager;
     private ClipboardManager.OnPrimaryClipChangedListener clipListener;
@@ -267,6 +268,21 @@ public class FloatingDictService extends BaseFloatingService {
         bottomBar.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         bottomBar.setPadding(dp4, dp4, dp4, dp4);
 
+        // 单词发音：与 app 内查词弹窗同一条 Dart 播放链（playLookupAudio），
+        // 悬浮窗只发事件，不自己解析音频源。
+        audioButton = new ImageButton(this);
+        audioButton.setImageResource(android.R.drawable.ic_lock_silent_mode_off);
+        audioButton.setBackgroundColor(FloatingColors.DICT_ANKI_BUTTON_BG);
+        audioButton.getDrawable().mutate().setTint(Color.WHITE);
+        audioButton.setContentDescription("Play audio");
+        audioButton.setPadding(dp12, dp4, dp12, dp4);
+        audioButton.setOnClickListener(v -> playWordAudio());
+        LinearLayout.LayoutParams audioLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dpToPx(36));
+        audioLp.rightMargin = dp4;
+        bottomBar.addView(audioButton, audioLp);
+
         ankiButton = new ImageButton(this);
         ankiButton.setImageResource(android.R.drawable.ic_input_add);
         ankiButton.setBackgroundColor(FloatingColors.DICT_ANKI_BUTTON_BG);
@@ -430,6 +446,17 @@ public class FloatingDictService extends BaseFloatingService {
                 resultView.setText("Error parsing results.");
             }
         });
+    }
+
+    private void playWordAudio() {
+        if (currentWord.isEmpty()) {
+            Toast.makeText(this, "No word to play", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        java.util.HashMap<String, Object> args = new java.util.HashMap<>();
+        args.put("word", currentWord);
+        args.put("reading", currentReading);
+        MainActivity.notifyFloatingDictEvent("playAudio", args);
     }
 
     private void exportToAnki() {

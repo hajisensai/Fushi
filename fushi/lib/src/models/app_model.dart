@@ -7983,11 +7983,20 @@ class AppModel with ChangeNotifier {
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
         final BaseAnkiRepository repo = platformServices.createAnkiRepository();
-        final Map<String, String> fields = <String, String>{
-          'expression': word,
-          'reading': reading,
-          'glossary': DictionaryEntry.meaningToPlainText(meaning),
-        };
+        // 悬浮窗不经 popup.js 的 buildMinePayload（那边制卡前会重新解析单词音频），
+        // 这里必须自己走同一个解析器，否则 {audio} 字段恒空。解析失败不阻断制卡。
+        String? audioRef;
+        try {
+          audioRef = await resolveLookupAudioUrl(this, word, reading);
+        } catch (e, stack) {
+          ErrorLogService.instance.log('FloatingDict.wordAudio', e, stack);
+        }
+        final Map<String, String> fields = buildFloatingDictMinePayload(
+          word: word,
+          reading: reading,
+          meaning: meaning,
+          audioRef: audioRef,
+        );
         try {
           final MineOutcome outcome = await repo.mineEntry(
             rawPayloadJson: jsonEncode(fields),
@@ -8010,6 +8019,14 @@ class AppModel with ChangeNotifier {
             msg: t.card_export_failed,
             severity: ToastSeverity.error,
           );
+        }
+      },
+      // 悬浮窗 ♪：与 app 内查词弹窗自动发音同一条链（启用源、顺序、音量）。
+      onPlayAudio: (String word, String reading) async {
+        try {
+          await playLookupAudio(this, word, reading);
+        } catch (e, stack) {
+          ErrorLogService.instance.log('FloatingDict.playAudio', e, stack);
         }
       },
     );
