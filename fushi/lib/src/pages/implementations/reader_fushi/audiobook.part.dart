@@ -1063,7 +1063,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   }
 
   void _syncCueSentence() {
-    final String cueText = _lookupCue?.text ?? '';
+    final AudioCue? cue = _lookupCue;
+    final EpubBook? book = _book;
+    final String cueText = cue == null
+        ? ''
+        : _lyricsMode && book != null
+            ? LyricsCueTextResolver(book).textForCue(cue)
+            : cue.text;
     if (cueText.isNotEmpty) {
       appModel.currentMediaSource?.setCurrentCueSentence(
         selection: FushiTextSelection(text: cueText),
