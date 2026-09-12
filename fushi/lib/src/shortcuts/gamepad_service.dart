@@ -898,8 +898,8 @@ bool gamepadMoveFocusInDirection(
 ///
 ///   · 焦点导航开启（有 [FushiFocusRoot] 控制器）且本页登记了受管目标：走与 D-pad
 ///     完全相同的 [gamepadMoveFocusInDirection]（几何目标 → 阅读顺序 → 「列表内
-///     只有自己可聚焦」时的边缘接管）。零受管目标时**不能**直接判「无目标」：
-///     `move()` 在零目标时返回的 true 是「焦点已收回兜底节点」（见
+///     只有自己可聚焦」时的边缘接管）。零受管目标时**不能**调 `move()`：它会经
+///     ensureFocus 把持焦的页面 sink 踢到 app 级兜底节点（见
 ///     [FushiFocusController.hasFocusableTargets]），而焦点仍可能停在一个未登记的
 ///     原生控件上（可滚对话框里的 RadioListTile），那要落到下面的原生判据去移焦。
 ///   · 焦点导航关闭（默认安装）或本页零受管目标：没有引擎做 bootstrap，也**不该**有——用户裁定
