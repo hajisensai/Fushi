@@ -247,6 +247,91 @@ bool TestRequestsWhileDeferred() {
   return ok;
 }
 
+// Review finding on the second cut: the gate had no valve for a deferral whose
+// confirmation never arrives (report lost) — the child stayed at the pending
+// size forever. The valve must not deliver the parked size itself (surface may
+// still be it → same-size early return → target pinned); it delivers a fresh
+// nudge size first.
+bool TestStuckDeferralReleasedViaNudge() {
+  bool ok = true;
+  ChildResizeGate gate;
+  ok &= Expect(!gate.ReleaseStuckDeferred().has_value(),
+               "nothing parked: nothing to release");
+  Deliver(gate, kMaximized, kFast);                  // A confirmed
+  Deliver(gate, kUnzoomed, kTimedOut);               // B pending
+  ok &= Expect(gate.Request(kFullscreen) == Decision::kDefer, "A parked");
+  const std::optional<ChildSize> nudge = gate.ReleaseStuckDeferred();
+  ok &= Expect(nudge.has_value(), "watchdog hands out a nudge size");
+  ok &= Expect(nudge.has_value() && *nudge != kFullscreen &&
+                   *nudge != kUnzoomed,
+               "the nudge is neither the parked nor the pending size");
+  ok &= Expect(nudge.has_value() && nudge->width == kFullscreen.width &&
+                   nudge->height == kFullscreen.height - 1,
+               "the nudge is the parked size one pixel shorter");
+  ok &= Expect(gate.has_pending() && gate.has_deferred(),
+               "nudge pending, parked size still parked");
+  ok &= Expect(gate.child_size().has_value() && *gate.child_size() == *nudge,
+               "child now carries the nudge");
+  // Fast confirm of the nudge hands the parked size straight back.
+  const std::optional<ChildSize> next = gate.DeliveryFinished(kFast);
+  ok &= Expect(next.has_value() && *next == kFullscreen,
+               "confirming the nudge releases the parked size");
+  ok &= Expect(!gate.DeliveryFinished(kFast).has_value(),
+               "the parked size's own delivery hands back nothing more");
+  ok &= Expect(!gate.has_pending() && !gate.has_deferred(), "settled");
+  ok &= Expect(gate.child_size().has_value() &&
+                   *gate.child_size() == kFullscreen,
+               "child ends at the requested size");
+  return ok;
+}
+
+// The nudge itself may time out (Dart still busy); the parked size is then
+// released by Dart's report of the nudge — and not by a late report of the
+// superseded original pending size.
+bool TestStuckDeferralNudgeConfirmedByReport() {
+  bool ok = true;
+  ChildResizeGate gate;
+  Deliver(gate, kMaximized, kFast);
+  Deliver(gate, kUnzoomed, kTimedOut);
+  gate.Request(kFullscreen);
+  const std::optional<ChildSize> nudge = gate.ReleaseStuckDeferred();
+  ok &= Expect(nudge.has_value(), "nudge issued");
+  ok &= Expect(!gate.DeliveryFinished(kTimedOut).has_value(),
+               "timed-out nudge releases nothing yet");
+  ok &= Expect(gate.has_deferred(), "still parked");
+  ok &= Expect(!gate.OnFrameRasterized(kUnzoomed).has_value(),
+               "late report of the superseded B releases nothing");
+  ok &= Expect(gate.Request(kUnzoomed) == Decision::kDefer,
+               "B may have become the surface meanwhile: hazardous");
+  // The latest parked request wins (B replaced A), as in normal deferral.
+  const std::optional<ChildSize> next = gate.OnFrameRasterized(*nudge);
+  ok &= Expect(next.has_value() && *next == kUnzoomed,
+               "report of the nudge releases the parked size");
+  gate.DeliveryFinished(kFast);
+  ok &= Expect(!gate.has_pending() && !gate.has_deferred(), "settled");
+  return ok;
+}
+
+// The nudge must skip every size the surface may have, not just the parked
+// and pending ones: if the one-pixel-shorter size is itself a candidate, walk
+// further.
+bool TestStuckDeferralNudgeSkipsCandidates() {
+  bool ok = true;
+  ChildResizeGate gate;
+  constexpr ChildSize kOnePxShorter{kMaximized.width, kMaximized.height - 1};
+  Deliver(gate, kMaximized, kFast);         // A confirmed
+  Deliver(gate, kOnePxShorter, kTimedOut);  // A-1 pending
+  Deliver(gate, kUnzoomed, kTimedOut);      // B supersedes; A-1 now candidate
+  ok &= Expect(gate.Request(kMaximized) == Decision::kDefer, "A parked");
+  const std::optional<ChildSize> nudge = gate.ReleaseStuckDeferred();
+  ok &= Expect(nudge.has_value() && *nudge != kOnePxShorter &&
+                   *nudge != kUnzoomed && *nudge != kMaximized,
+               "nudge avoids the candidate A-1, the pending B and parked A");
+  ok &= Expect(nudge.has_value() && nudge->height == kMaximized.height - 2,
+               "walked one step further");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -261,6 +346,9 @@ int main() {
   passed &= TestDeferredEqualToConfirmedIsDropped();
   passed &= TestUnknownSurfaceDeliversUnseenSizes();
   passed &= TestRequestsWhileDeferred();
+  passed &= TestStuckDeferralReleasedViaNudge();
+  passed &= TestStuckDeferralNudgeConfirmedByReport();
+  passed &= TestStuckDeferralNudgeSkipsCandidates();
 
   if (!passed) {
     std::cerr << "child_resize_gate_test FAILED\n";

@@ -7,3 +7,4 @@
   - 全屏观感变化：不再有 window_manager 的去边框态；窗口保留（悬屏外的）边框与标题栏，Alt+Space 系统菜单仍可用。任务栏靠 TOPMOST 覆盖而非 shell 全屏检测——通知弹窗（同为 topmost 带）仍能显示在上面。
   - 用户装的 2.2.2-debug.12578（含 BUG-1916 修复）在深色主题下这帧是深色、不易察觉；浅色主题下即白帧——修复不分主题，直接消灭露出本身。
   - 探针与证据：`C:\Users\wrds\.claude\jobs\307b888c\tmp\fsprobe.cs`（洋红/白检测 + maxfs/alttab/tbshot 模式）、`fs_*.png`。isFullscreen 状态查询走 runner；window_manager 的 `isFullScreen()` 在 Windows 恒 false（不破坏其余平台）。
+  - **2026-09-12 补漏（PR #1430 审查）**：当初「Dart 三个入口」漏了网页视频页 `web_video_fushi_page.dart` 的 `_toggleFullscreen`——它的 Windows 分支一直走 media_kit `defaultEnterNativeFullscreen`（剥风格路径），F 键从未修好；BUG-2462 把 F11 也交给该页后 F11 一并回归。已切到 `WindowCaptionChannel.setFullscreen`（与 `fullscreen.part.dart` 同序），退页时亲手退出 runner 全屏；守卫加扫该文件。

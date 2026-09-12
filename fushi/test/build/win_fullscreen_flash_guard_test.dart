@@ -29,6 +29,7 @@ void main() {
   late String flutterWindow;
   late String navDart;
   late String videoFullscreenDart;
+  late String webVideoDart;
   late String placementDart;
   late String channelDart;
 
@@ -46,6 +47,11 @@ void main() {
     videoFullscreenDart = maskComments(
       File(
         'lib/src/pages/implementations/video_fushi/fullscreen.part.dart',
+      ).readAsStringSync(),
+    );
+    webVideoDart = maskComments(
+      File(
+        'lib/src/pages/implementations/web_video_fushi_page.dart',
       ).readAsStringSync(),
     );
     placementDart = maskComments(
@@ -278,6 +284,52 @@ void main() {
       );
       expect(exitRouteAt, isNonNegative);
       expect(exitDefaultAt, greaterThan(exitRouteAt));
+
+      // Web video page: the entry BUG-1933 originally missed. Its F key always
+      // took media_kit's style-stripping path, and once F11 was routed to the
+      // page's own toggle (BUG-2462) F11 regressed to it too. One toggle body
+      // serves F / F11 / the button, so a single Windows branch covers all.
+      final int webToggleAt = webVideoDart.indexOf(
+        'Future<void> _toggleFullscreen()',
+      );
+      expect(webToggleAt, isNonNegative);
+      final int webEnterAt = webVideoDart.indexOf(
+        'WindowCaptionChannel.setFullscreen(true)',
+        webToggleAt,
+      );
+      final int webExitAt = webVideoDart.indexOf(
+        'WindowCaptionChannel.setFullscreen(false)',
+        webToggleAt,
+      );
+      final int webDefaultAt = webVideoDart.indexOf(
+        'defaultEnterNativeFullscreen()',
+        webToggleAt,
+      );
+      expect(webEnterAt, isNonNegative);
+      expect(webExitAt, isNonNegative);
+      expect(
+        webDefaultAt,
+        greaterThan(webEnterAt),
+        reason:
+            'Windows branch (runner fullscreen) must come before the '
+            'media_kit default that the other desktops keep',
+      );
+      // Leaving the page while fullscreen must hand the window back: the
+      // runner-owned state does not go away with the route.
+      final int disposeAt = webVideoDart.indexOf('void dispose()');
+      expect(disposeAt, isNonNegative);
+      final int disposeExitAt = webVideoDart.indexOf(
+        'WindowCaptionChannel.setFullscreen(false)',
+        disposeAt,
+      );
+      expect(disposeExitAt, isNonNegative);
+      expect(
+        disposeExitAt,
+        lessThan(webToggleAt),
+        reason:
+            'dispose() precedes _toggleFullscreen() in the file; the '
+            'exit call found after dispose() must be the one in dispose()',
+      );
     });
 
     test('bounds saving skips the runner-owned fullscreen state', () {

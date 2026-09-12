@@ -145,6 +145,17 @@ class Win32Window {
   void SyncChildToClientArea();
   void DeliverChildSize(ChildSize size);
   ChildResizeGate child_resize_gate_;
+  // Watchdog for a parked deferral whose confirmation never arrives (see
+  // ChildResizeGate::ReleaseStuckDeferred). Armed while something is parked,
+  // re-armed on every gate event, cleared once nothing is parked. The timeout
+  // must exceed the longest healthy Dart round trip: release builds batch
+  // FrameTiming for up to a second before the rasterised-size report can
+  // reach us, so anything shorter would fire on a merely slow confirmation
+  // (harmless — one extra 1 px resize — but pointless).
+  static constexpr UINT_PTR kStuckDeferralTimerId = 0x2462;
+  static constexpr UINT kStuckDeferralTimeoutMs = 1500;
+  void ArmStuckDeferralWatchdog();
+  void ReleaseStuckChildDeferral();
 
   // BUG-1916: fills |dc| over the whole client rect with |backdrop_brush_|.
   // Whether the Flutter view is excluded depends on the DC: a BeginPaint /
