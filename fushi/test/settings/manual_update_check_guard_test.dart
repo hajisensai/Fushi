@@ -6,9 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 不变量：
 /// - 系统设置在 `t.section_update` 分区有 `id: 'system.check_update_now'` 动作项。
-/// - 编排函数 `_checkUpdateNow` 传 `neverRemind: false` + `autoInstall: false`
-///   （手动语义，防回归成「点一下就静默自动装」/「被免提醒吞掉」）。
+/// - 编排函数 `checkAppUpdateNow`（`updates/app_update_check.dart`，设置页与更新
+///   中心共用）传 `neverRemind: false` + `autoInstall: false`（手动语义，防回归成
+///   「点一下就静默自动装」/「被免提醒吞掉」）。
 /// - 防连点靠模块级 `_manualCheckInFlight` 旗标。
+/// - 更新中心的 app 新版本条目落到同一条应用内链路，不 `launchUrl` 跳浏览器。
 /// - `UpdateChecker.scheduleCheck` 仍带默认 null 的 onUpToDate/onError 回调
 ///   （向后兼容，自动检查零变化）。
 void main() {
@@ -19,7 +21,7 @@ void main() {
     final String systemDest = _functionSource(
       src,
       'SettingsDestination buildSystemDestination() {',
-      'bool _manualCheckInFlight',
+      'Future<void> _exportStudyDiagLog(',
     );
     final int updateSectionIdx = systemDest.indexOf('title: t.section_update,');
     expect(updateSectionIdx, isNonNegative,
@@ -36,12 +38,16 @@ void main() {
   test('manual orchestration uses manual semantics (no silent auto-install)',
       () {
     final String src =
-        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
+        File('lib/src/updates/app_update_check.dart').readAsStringSync();
     final String orchestration = _functionSource(
       src,
-      'Future<void> _checkUpdateNow(',
-      'UpdateChannel _channelFromSettings(',
+      'Future<void> checkAppUpdateNow(',
+      'UpdateChannel appUpdateChannelOf(',
     );
+    // 设置页按钮必须委托到这条共用编排，不再各自复制一份。
+    final String settings =
+        File('lib/src/settings/settings_schema_system.dart').readAsStringSync();
+    expect(settings, contains('checkAppUpdateNow('));
     expect(orchestration, contains('neverRemind: false'), reason: '手动检查无视免提醒');
     expect(orchestration, contains('autoInstall: false'),
         reason: '手动检查走确认弹窗，不静默自动装');
@@ -55,6 +61,22 @@ void main() {
     expect(orchestration, contains('if (_manualCheckInFlight) return;'));
     expect(orchestration, contains('_manualCheckInFlight = true;'));
     expect(orchestration, contains('_manualCheckInFlight = false;'));
+  });
+
+  test('updates center lands app release on in-app update, not the browser',
+      () {
+    final String src =
+        File('lib/src/pages/implementations/updates_center_open.dart')
+            .readAsStringSync();
+    final String appRelease = _functionSource(
+      src,
+      'case UpdateFeedKind.appRelease:',
+      'case UpdateFeedKind.videoEpisode:',
+    );
+    expect(appRelease, contains('checkAppUpdateNow('),
+        reason: 'app 新版本必须走应用内检查 → 下载 → 安装');
+    expect(src, isNot(contains('launchUrl(')),
+        reason: '更新中心的落点全在 app 内，不该把用户送到浏览器');
   });
 
   test('scheduleCheck keeps default-null callbacks (auto-check unchanged)', () {

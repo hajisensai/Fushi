@@ -12,6 +12,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
@@ -220,9 +221,7 @@ SettingsDestination buildSystemDestination() {
             searchTitle: t.onboarding_step_pack_title,
             subtitle: t.onboarding_pack_intro,
             visible: (SettingsContext settingsContext) => settingsContext
-                .appModel
-                .recommendedPackDownloadController
-                .isActive,
+                .appModel.recommendedPackDownloadController.isActive,
             builder: _buildRecommendedPackDownloadRow,
           ),
           SettingsSwitchItem(
@@ -450,8 +449,12 @@ SettingsDestination buildSystemDestination() {
         id: 'system.section.update_notifications',
         title: t.updates_notify_section,
         items: <SettingsItem>[
-          for (final (UpdateFeedKind kind, String title, String hint, IconData icon)
-              in <(UpdateFeedKind, String, String, IconData)>[
+          for (final (
+                UpdateFeedKind kind,
+                String title,
+                String hint,
+                IconData icon,
+              ) in <(UpdateFeedKind, String, String, IconData)>[
             (
               UpdateFeedKind.videoEpisode,
               t.updates_notify_video_episode,
@@ -483,11 +486,15 @@ SettingsDestination buildSystemDestination() {
               subtitle: hint,
               icon: icon,
               value: (SettingsContext settingsContext) =>
-                  settingsContext.appModel.prefsRepo
-                      .getPref(kind.enabledPrefKey, defaultValue: true) as bool,
+                  settingsContext.appModel.prefsRepo.getPref(
+                kind.enabledPrefKey,
+                defaultValue: true,
+              ) as bool,
               onChanged: (SettingsContext settingsContext, bool value) async {
-                await settingsContext.appModel.prefsRepo
-                    .setPref(kind.enabledPrefKey, value);
+                await settingsContext.appModel.prefsRepo.setPref(
+                  kind.enabledPrefKey,
+                  value,
+                );
                 settingsContext.refresh();
               },
             ),
@@ -498,12 +505,14 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.notifications_active_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.prefsRepo.getPref(
-                  kUpdateSystemNotificationsPref,
-                  defaultValue: true,
-                ) as bool,
+              kUpdateSystemNotificationsPref,
+              defaultValue: true,
+            ) as bool,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.prefsRepo
-                  .setPref(kUpdateSystemNotificationsPref, value);
+              await settingsContext.appModel.prefsRepo.setPref(
+                kUpdateSystemNotificationsPref,
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -579,16 +588,6 @@ SettingsDestination buildSystemDestination() {
   );
 }
 
-/// TODO-898：手动「立即检查更新」防连点旗标（模块级）。UI 重入保护真正靠它——
-/// UpdateChecker 内部的 `_activeCheckCancellation` 是「中断」语义、不挡重入。
-bool _manualCheckInFlight = false;
-
-/// 手动「立即检查更新」编排（TODO-898）。
-///
-/// 手动语义：`neverRemind: false`（无视用户「免提醒」偏好，主动点就要看到结果）+
-/// `autoInstall: false`（发现新版只弹确认对话框，不沿用自动安装偏好静默装）。
-/// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
-/// UpdateChecker 既有对话框/打开发布页（零改动）。
 /// 设置 › 诊断 › 导出统计诊断日志（正文见 [buildStudyDiagExport]）。
 Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
   final AppModel appModel = settingsContext.appModel;
@@ -607,80 +606,10 @@ Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
   );
 }
 
-Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
-  if (_manualCheckInFlight) return;
-  _manualCheckInFlight = true;
-  // TODO-1024 / BUG-479：缓存优先即时反馈——先读上次检查结果（按当前通道），据它立刻给
-  // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后
-  // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
-  // 原「正在检查…」提示。
-  // BUG-1836：同 home_page，半更新态下 exe 版本资源谎报新版本，
-  // 据它比较会永判「已是最新」，用户困在旧代码里没有出路。
-  final String currentVersion = resolveCurrentAppVersion(
-    settingsContext.appModel.packageInfo.version,
-  );
-  final String currentBuildNumber =
-      settingsContext.appModel.packageInfo.buildNumber;
-  final UpdateChannel channel = _channelFromSettings(settingsContext);
-  // BUG-846「谁后用谁」：缓存乐观比较用本机 release sequence（无后缀 `X.Y.Z` 正式版包 /
-  // beta/debug 包都能取到），与网络路径 scheduleCheck 同源。远端 seq 从缓存的 latestTag 串
-  // 自取（beta/debug 带尾号；正式版无 → 保守走基版本比较，网络刷新随后收口）。
-  final int? currentReleaseSeq = currentReleaseSequence(
-    version: currentVersion,
-    buildNumber: currentBuildNumber,
-  );
-  final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
-    settingsContext.appModel.updateCheckCache,
-    channel,
-  );
-  if (cached != null) {
-    final bool newer = updateTagIsNewerThanCurrent(
-      cached.latestTag,
-      currentVersion,
-      channel,
-      localSeq: currentReleaseSeq,
-    );
-    FushiToast.show(
-      msg: newer
-          ? t.update_cached_newer(version: cached.latestTag)
-          : t.update_cached_up_to_date(version: cached.latestTag),
-      severity: ToastSeverity.info,
-    );
-  } else {
-    FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
-  }
-  try {
-    await UpdateChecker.scheduleCheck(
-      settingsContext.context,
-      currentVersion,
-      currentBuildNumber: currentBuildNumber,
-      neverRemind: false,
-      autoInstall: false,
-      betaChannel: settingsContext.appModel.updateBetaChannel,
-      debugChannel: settingsContext.appModel.updateDebugChannel,
-      customProxy: settingsContext.appModel.updateCustomProxy,
-      // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
-      cacheWriter: settingsContext.appModel.setUpdateCheckCache,
-      onUpToDate: () => FushiToast.show(
-        msg: t.update_already_latest,
-        severity: ToastSeverity.info,
-      ),
-      onError: (Object _) => FushiToast.show(
-        msg: t.update_check_failed,
-        severity: ToastSeverity.error,
-      ),
-    );
-  } finally {
-    _manualCheckInFlight = false;
-  }
-}
-
-/// 当前设置选中的更新通道（与 [scheduleCheck] 内的 debug>beta>stable 优先级一致）。
-UpdateChannel _channelFromSettings(SettingsContext settingsContext) {
-  if (settingsContext.appModel.updateDebugChannel) return UpdateChannel.debug;
-  if (settingsContext.appModel.updateBetaChannel) return UpdateChannel.beta;
-  return UpdateChannel.stable;
-}
+/// 手动「立即检查更新」：编排在 [checkAppUpdateNow]（与更新中心的 app 新版本
+/// 条目共用同一条应用内下载安装链路）。
+Future<void> _checkUpdateNow(SettingsContext settingsContext) =>
+    checkAppUpdateNow(settingsContext.context, settingsContext.appModel);
 
 String _selectedUpdateChannel(SettingsContext settingsContext) {
   if (settingsContext.appModel.updateDebugChannel) return 'debug';
