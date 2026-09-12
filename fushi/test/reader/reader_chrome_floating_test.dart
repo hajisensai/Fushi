@@ -100,6 +100,85 @@ void main() {
       );
     });
 
+    test('bottom visible: floating ignores the squeeze switch (2026-09-13)', () {
+      // 挤压态收起过一次再切悬浮开关，_showChrome 以 false 残留——此前这里先判
+      // !chromeExpanded → false，任何唤出通道都翻了 transientVisible 却一像素不画。
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: true,
+          chromeExpanded: false,
+          floating: true,
+          transientVisible: true,
+        ),
+        isTrue,
+      );
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: true,
+          chromeExpanded: true,
+          floating: true,
+          transientVisible: false,
+        ),
+        isFalse,
+      );
+      // 挤压态照旧随 chromeExpanded；未冷加载恒不画。
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: true,
+          chromeExpanded: false,
+          floating: false,
+          transientVisible: true,
+        ),
+        isFalse,
+      );
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: false,
+          chromeExpanded: true,
+          floating: true,
+          transientVisible: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('hover reveal: mouse move reveals when hidden, re-arms when shown', () {
+      expect(
+        readerHoverRevealAction(
+          floating: true,
+          transientVisible: false,
+          isMouse: true,
+        ),
+        ReaderHoverRevealAction.reveal,
+      );
+      expect(
+        readerHoverRevealAction(
+          floating: true,
+          transientVisible: true,
+          isMouse: true,
+        ),
+        ReaderHoverRevealAction.rearm,
+      );
+      expect(
+        readerHoverRevealAction(
+          floating: false,
+          transientVisible: false,
+          isMouse: true,
+        ),
+        ReaderHoverRevealAction.none,
+        reason: '挤压常驻，没有东西可唤',
+      );
+      expect(
+        readerHoverRevealAction(
+          floating: true,
+          transientVisible: false,
+          isMouse: false,
+        ),
+        ReaderHoverRevealAction.none,
+        reason: '触屏 / 手写笔悬停不唤出',
+      );
+    });
+
     test('autoHide millis: default 3000, clamps to 1000..10000', () {
       expect(kDefaultAutoHideChromeMillis, 3000);
       expect(normalizeAutoHideChromeMillis(3000), 3000);

@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 81192 (4776 per locale)
+/// Strings: 81634 (4802 per locale)
 ///
-/// Built on 2026-09-12 at 15:46 UTC
+/// Built on 2026-09-12 at 17:41 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3924,8 +3924,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get reader_font_weight => 'Font weight';
   String get reader_furigana_mode => 'Furigana';
   String get reader_furigana_mode_hint => '';
-  String get reader_gallery => 'Gallery';
-  String get reader_gallery_current => 'Reading here';
   String get reader_gallery_empty => 'No illustrations in this book';
   String get reader_gallery_jump => 'Jump to this illustration';
   String get reader_gallery_tooltip => 'Browse illustrations';
@@ -6657,6 +6655,40 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Multilingual — wide coverage, less accurate per language';
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  String get reader_gallery_title => 'Illustrations';
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  String get reader_gallery_filter_all => 'All';
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  String get reader_gallery_position_current => 'Current reading position';
+  String get reader_gallery_locked_title => 'Not reached yet';
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  String get reader_gallery_locked_back => 'Back to last seen';
+  String get reader_gallery_locked_reveal => 'View anyway';
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  String get reader_stats_title => 'Book statistics';
+  String get reader_stats_clock_running => 'Timing';
+  String get reader_stats_clock_paused => 'Paused';
+  String get reader_stats_clock_pause => 'Pause timer';
+  String get reader_stats_clock_resume => 'Resume timer';
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  String get reader_stats_position => 'Reading position';
+  String get reader_stats_position_chapter => 'Chapter';
+  String get reader_stats_position_book => 'Book';
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  String get reader_stats_book_total => 'Book total';
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  String get reader_stats_remaining_book => 'Book remaining';
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -13154,10 +13186,6 @@ class _StringsAr extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'المعرض';
-  @override
-  String get reader_gallery_current => 'تقرأ هنا';
-  @override
   String get reader_gallery_empty => 'لا توجد رسوم توضيحية في هذا الكتاب';
   @override
   String get reader_gallery_jump => 'الانتقال إلى هذا الرسم';
@@ -17918,6 +17946,68 @@ class _StringsAr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -24553,10 +24643,6 @@ class _StringsDe extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galerie';
-  @override
-  String get reader_gallery_current => 'Aktuelle Leseposition';
-  @override
   String get reader_gallery_empty => 'Keine Illustrationen in diesem Buch';
   @override
   String get reader_gallery_jump => 'Zu dieser Illustration springen';
@@ -29405,6 +29491,68 @@ class _StringsDe extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -36060,10 +36208,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galería';
-  @override
-  String get reader_gallery_current => 'Leyendo aquí';
-  @override
   String get reader_gallery_empty => 'No hay ilustraciones en este libro';
   @override
   String get reader_gallery_jump => 'Ir a esta ilustración';
@@ -40946,6 +41090,68 @@ class _StringsEs extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -47621,10 +47827,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galerie';
-  @override
-  String get reader_gallery_current => 'Lecture ici';
-  @override
   String get reader_gallery_empty => 'Aucune illustration dans ce livre';
   @override
   String get reader_gallery_jump => 'Aller à cette illustration';
@@ -52520,6 +52722,68 @@ class _StringsFr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -59082,10 +59346,6 @@ class _StringsId extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galeri';
-  @override
-  String get reader_gallery_current => 'Sedang membaca di sini';
-  @override
   String get reader_gallery_empty => 'Tidak ada ilustrasi di buku ini';
   @override
   String get reader_gallery_jump => 'Lompat ke ilustrasi ini';
@@ -63898,6 +64158,68 @@ class _StringsId extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -70511,10 +70833,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galleria';
-  @override
-  String get reader_gallery_current => 'Stai leggendo qui';
-  @override
   String get reader_gallery_empty => 'Nessuna illustrazione in questo libro';
   @override
   String get reader_gallery_jump => 'Vai a questa illustrazione';
@@ -75367,6 +75685,68 @@ class _StringsIt extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -81622,10 +82002,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'ギャラリー';
-  @override
-  String get reader_gallery_current => '現在の閲覧位置';
-  @override
   String get reader_gallery_empty => 'この本にはイラストがありません';
   @override
   String get reader_gallery_jump => 'このイラストに移動';
@@ -86218,6 +86594,68 @@ class _StringsJa extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -92477,10 +92915,6 @@ class _StringsKo extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => '갤러리';
-  @override
-  String get reader_gallery_current => '현재 읽는 위치';
-  @override
   String get reader_gallery_empty => '이 책에 삽화가 없습니다';
   @override
   String get reader_gallery_jump => '이 삽화로 이동';
@@ -97079,6 +97513,68 @@ class _StringsKo extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -103668,10 +104164,6 @@ class _StringsNl extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galerij';
-  @override
-  String get reader_gallery_current => 'Hier aan het lezen';
-  @override
   String get reader_gallery_empty => 'Geen illustraties in dit boek';
   @override
   String get reader_gallery_jump => 'Naar deze illustratie springen';
@@ -108506,6 +108998,68 @@ class _StringsNl extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -115127,10 +115681,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galeria';
-  @override
-  String get reader_gallery_current => 'Lendo aqui';
-  @override
   String get reader_gallery_empty => 'Sem ilustrações neste livro';
   @override
   String get reader_gallery_jump => 'Ir para esta ilustração';
@@ -119986,6 +120536,68 @@ class _StringsPtBr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -126588,10 +127200,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Галерея';
-  @override
-  String get reader_gallery_current => 'Вы читаете здесь';
-  @override
   String get reader_gallery_empty => 'В этой книге нет иллюстраций';
   @override
   String get reader_gallery_jump => 'Перейти к этой иллюстрации';
@@ -131443,6 +132051,68 @@ class _StringsRu extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -137931,10 +138601,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'แกลเลอรี';
-  @override
-  String get reader_gallery_current => 'กำลังอ่านที่นี่';
-  @override
   String get reader_gallery_empty => 'ไม่มีภาพประกอบในหนังสือเล่มนี้';
   @override
   String get reader_gallery_jump => 'ข้ามไปที่ภาพประกอบนี้';
@@ -142701,6 +143367,68 @@ class _StringsTh extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -149265,10 +149993,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Galeri';
-  @override
-  String get reader_gallery_current => 'Burada okunuyor';
-  @override
   String get reader_gallery_empty => 'Bu kitapta illüstrasyon yok';
   @override
   String get reader_gallery_jump => 'Bu illüstrasyona git';
@@ -154074,6 +154798,68 @@ class _StringsTr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -160624,10 +161410,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => 'Bộ sưu tập';
-  @override
-  String get reader_gallery_current => 'Đang đọc tại đây';
-  @override
   String get reader_gallery_empty => 'Không có hình minh họa trong sách này';
   @override
   String get reader_gallery_jump => 'Nhảy đến hình minh họa này';
@@ -165417,6 +166199,68 @@ class _StringsVi extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 // Path: <root>
@@ -171423,10 +172267,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => '插图';
-  @override
-  String get reader_gallery_current => '正在阅读';
-  @override
   String get reader_gallery_empty => '本书没有插图';
   @override
   String get reader_gallery_jump => '跳转到此插图';
@@ -175825,6 +176665,67 @@ class _StringsZhCn extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       '总耗时 ${elapsed}';
+  @override
+  String get reader_gallery_title => '插图册';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      '已解锁 ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => '已解锁';
+  @override
+  String get reader_gallery_filter_all => '全部';
+  @override
+  String get reader_gallery_position_jump => '跳到当前阅读位置';
+  @override
+  String get reader_gallery_position_current => '当前阅读位置';
+  @override
+  String get reader_gallery_locked_title => '这张插图尚未读到';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      '读到${chapter}后自动解锁';
+  @override
+  String get reader_gallery_locked_blur_hint => '已开启图片模糊，揭开后可见';
+  @override
+  String get reader_gallery_locked_back => '回到最近已看';
+  @override
+  String get reader_gallery_locked_reveal => '仍要查看';
+  @override
+  String get reader_gallery_unlocked_empty => '还没有已解锁的插图';
+  @override
+  String get reader_stats_title => '书内统计';
+  @override
+  String get reader_stats_clock_running => '计时中';
+  @override
+  String get reader_stats_clock_paused => '已暂停';
+  @override
+  String get reader_stats_clock_pause => '暂停计时';
+  @override
+  String get reader_stats_clock_resume => '继续计时';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} 字/时';
+  @override
+  String get reader_stats_position => '阅读位置';
+  @override
+  String get reader_stats_position_chapter => '本章';
+  @override
+  String get reader_stats_position_book => '全书';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} 字';
+  @override
+  String get reader_stats_book_total => '本书累计';
+  @override
+  String reader_stats_lookups({required Object n}) => '查词 ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => '制卡 ${n}';
+  @override
+  String get reader_stats_remaining_chapter => '本章还需';
+  @override
+  String get reader_stats_remaining_book => '全书还需';
+  @override
+  String get reader_stats_full_records_open => '打开完整记录';
 }
 
 // Path: <root>
@@ -181877,10 +182778,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get reader_furigana_mode_hint => '';
   @override
-  String get reader_gallery => '插圖';
-  @override
-  String get reader_gallery_current => '正在閱讀';
-  @override
   String get reader_gallery_empty => '本書沒有插圖';
   @override
   String get reader_gallery_jump => '跳轉到此插圖';
@@ -186360,6 +187257,68 @@ class _StringsZhHk extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get reader_gallery_title => 'Illustrations';
+  @override
+  String reader_gallery_unlocked_count(
+          {required Object unlocked, required Object total}) =>
+      'Unlocked ${unlocked} / ${total}';
+  @override
+  String get reader_gallery_filter_unlocked => 'Unlocked';
+  @override
+  String get reader_gallery_filter_all => 'All';
+  @override
+  String get reader_gallery_position_jump => 'Jump to current reading position';
+  @override
+  String get reader_gallery_position_current => 'Current reading position';
+  @override
+  String get reader_gallery_locked_title => 'Not reached yet';
+  @override
+  String reader_gallery_locked_unlock_hint({required Object chapter}) =>
+      'Unlocks automatically once you reach ${chapter}';
+  @override
+  String get reader_gallery_locked_blur_hint =>
+      'Image blur is on; reveal to view';
+  @override
+  String get reader_gallery_locked_back => 'Back to last seen';
+  @override
+  String get reader_gallery_locked_reveal => 'View anyway';
+  @override
+  String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  @override
+  String get reader_stats_title => 'Book statistics';
+  @override
+  String get reader_stats_clock_running => 'Timing';
+  @override
+  String get reader_stats_clock_paused => 'Paused';
+  @override
+  String get reader_stats_clock_pause => 'Pause timer';
+  @override
+  String get reader_stats_clock_resume => 'Resume timer';
+  @override
+  String reader_stats_chars_per_hour({required Object n}) => '${n} chars/h';
+  @override
+  String get reader_stats_position => 'Reading position';
+  @override
+  String get reader_stats_position_chapter => 'Chapter';
+  @override
+  String get reader_stats_position_book => 'Book';
+  @override
+  String reader_stats_position_progress(
+          {required Object current, required Object total}) =>
+      '${current} / ${total} chars';
+  @override
+  String get reader_stats_book_total => 'Book total';
+  @override
+  String reader_stats_lookups({required Object n}) => 'Lookups ${n}';
+  @override
+  String reader_stats_cards({required Object n}) => 'Cards ${n}';
+  @override
+  String get reader_stats_remaining_chapter => 'Chapter remaining';
+  @override
+  String get reader_stats_remaining_book => 'Book remaining';
+  @override
+  String get reader_stats_full_records_open => 'Open full records';
 }
 
 /// Flat map(s) containing all translations.
@@ -192017,10 +192976,6 @@ extension on _StringsEn {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Gallery';
-      case 'reader_gallery_current':
-        return 'Reading here';
       case 'reader_gallery_empty':
         return 'No illustrations in this book';
       case 'reader_gallery_jump':
@@ -196211,6 +197166,65 @@ extension on _StringsEn {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -201866,10 +202880,6 @@ extension on _StringsAr {
         return 'فوريغانا';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'المعرض';
-      case 'reader_gallery_current':
-        return 'تقرأ هنا';
       case 'reader_gallery_empty':
         return 'لا توجد رسوم توضيحية في هذا الكتاب';
       case 'reader_gallery_jump':
@@ -206057,6 +207067,65 @@ extension on _StringsAr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -211741,10 +212810,6 @@ extension on _StringsDe {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galerie';
-      case 'reader_gallery_current':
-        return 'Aktuelle Leseposition';
       case 'reader_gallery_empty':
         return 'Keine Illustrationen in diesem Buch';
       case 'reader_gallery_jump':
@@ -215948,6 +217013,65 @@ extension on _StringsDe {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -221625,10 +222749,6 @@ extension on _StringsEs {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galería';
-      case 'reader_gallery_current':
-        return 'Leyendo aquí';
       case 'reader_gallery_empty':
         return 'No hay ilustraciones en este libro';
       case 'reader_gallery_jump':
@@ -225830,6 +226950,65 @@ extension on _StringsEs {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -231514,10 +232693,6 @@ extension on _StringsFr {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galerie';
-      case 'reader_gallery_current':
-        return 'Lecture ici';
       case 'reader_gallery_empty':
         return 'Aucune illustration dans ce livre';
       case 'reader_gallery_jump':
@@ -235721,6 +236896,65 @@ extension on _StringsFr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -241386,10 +242620,6 @@ extension on _StringsId {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galeri';
-      case 'reader_gallery_current':
-        return 'Sedang membaca di sini';
       case 'reader_gallery_empty':
         return 'Tidak ada ilustrasi di buku ini';
       case 'reader_gallery_jump':
@@ -245583,6 +246813,65 @@ extension on _StringsId {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -251257,10 +252546,6 @@ extension on _StringsIt {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galleria';
-      case 'reader_gallery_current':
-        return 'Stai leggendo qui';
       case 'reader_gallery_empty':
         return 'Nessuna illustrazione in questo libro';
       case 'reader_gallery_jump':
@@ -255467,6 +256752,65 @@ extension on _StringsIt {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -261106,10 +262450,6 @@ extension on _StringsJa {
         return 'ふりがな';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'ギャラリー';
-      case 'reader_gallery_current':
-        return '現在の閲覧位置';
       case 'reader_gallery_empty':
         return 'この本にはイラストがありません';
       case 'reader_gallery_jump':
@@ -265278,6 +266618,65 @@ extension on _StringsJa {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -270918,10 +272317,6 @@ extension on _StringsKo {
         return '후리가나';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return '갤러리';
-      case 'reader_gallery_current':
-        return '현재 읽는 위치';
       case 'reader_gallery_empty':
         return '이 책에 삽화가 없습니다';
       case 'reader_gallery_jump':
@@ -275093,6 +276488,65 @@ extension on _StringsKo {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -280766,10 +282220,6 @@ extension on _StringsNl {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galerij';
-      case 'reader_gallery_current':
-        return 'Hier aan het lezen';
       case 'reader_gallery_empty':
         return 'Geen illustraties in dit boek';
       case 'reader_gallery_jump':
@@ -284970,6 +286420,65 @@ extension on _StringsNl {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -290642,10 +292151,6 @@ extension on _StringsPtBr {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galeria';
-      case 'reader_gallery_current':
-        return 'Lendo aqui';
       case 'reader_gallery_empty':
         return 'Sem ilustrações neste livro';
       case 'reader_gallery_jump':
@@ -294842,6 +296347,65 @@ extension on _StringsPtBr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -300521,10 +302085,6 @@ extension on _StringsRu {
         return 'Фуригана';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Галерея';
-      case 'reader_gallery_current':
-        return 'Вы читаете здесь';
       case 'reader_gallery_empty':
         return 'В этой книге нет иллюстраций';
       case 'reader_gallery_jump':
@@ -304721,6 +306281,65 @@ extension on _StringsRu {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -310379,10 +311998,6 @@ extension on _StringsTh {
         return 'ฟุริงานะ';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'แกลเลอรี';
-      case 'reader_gallery_current':
-        return 'กำลังอ่านที่นี่';
       case 'reader_gallery_empty':
         return 'ไม่มีภาพประกอบในหนังสือเล่มนี้';
       case 'reader_gallery_jump':
@@ -314572,6 +316187,65 @@ extension on _StringsTh {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -320240,10 +321914,6 @@ extension on _StringsTr {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Galeri';
-      case 'reader_gallery_current':
-        return 'Burada okunuyor';
       case 'reader_gallery_empty':
         return 'Bu kitapta illüstrasyon yok';
       case 'reader_gallery_jump':
@@ -324438,6 +326108,65 @@ extension on _StringsTr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -330102,10 +331831,6 @@ extension on _StringsVi {
         return 'Furigana';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return 'Bộ sưu tập';
-      case 'reader_gallery_current':
-        return 'Đang đọc tại đây';
       case 'reader_gallery_empty':
         return 'Không có hình minh họa trong sách này';
       case 'reader_gallery_jump':
@@ -334298,6 +336023,65 @@ extension on _StringsVi {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }
@@ -339919,10 +341703,6 @@ extension on _StringsZhCn {
         return '振假名';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return '插图';
-      case 'reader_gallery_current':
-        return '正在阅读';
       case 'reader_gallery_empty':
         return '本书没有插图';
       case 'reader_gallery_jump':
@@ -344069,6 +345849,64 @@ extension on _StringsZhCn {
         return '通用模型 · 语言覆盖广，单语言精度不如专用模型';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => '总耗时 ${elapsed}';
+      case 'reader_gallery_title':
+        return '插图册';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            '已解锁 ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return '已解锁';
+      case 'reader_gallery_filter_all':
+        return '全部';
+      case 'reader_gallery_position_jump':
+        return '跳到当前阅读位置';
+      case 'reader_gallery_position_current':
+        return '当前阅读位置';
+      case 'reader_gallery_locked_title':
+        return '这张插图尚未读到';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) => '读到${chapter}后自动解锁';
+      case 'reader_gallery_locked_blur_hint':
+        return '已开启图片模糊，揭开后可见';
+      case 'reader_gallery_locked_back':
+        return '回到最近已看';
+      case 'reader_gallery_locked_reveal':
+        return '仍要查看';
+      case 'reader_gallery_unlocked_empty':
+        return '还没有已解锁的插图';
+      case 'reader_stats_title':
+        return '书内统计';
+      case 'reader_stats_clock_running':
+        return '计时中';
+      case 'reader_stats_clock_paused':
+        return '已暂停';
+      case 'reader_stats_clock_pause':
+        return '暂停计时';
+      case 'reader_stats_clock_resume':
+        return '继续计时';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} 字/时';
+      case 'reader_stats_position':
+        return '阅读位置';
+      case 'reader_stats_position_chapter':
+        return '本章';
+      case 'reader_stats_position_book':
+        return '全书';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} 字';
+      case 'reader_stats_book_total':
+        return '本书累计';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => '查词 ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => '制卡 ${n}';
+      case 'reader_stats_remaining_chapter':
+        return '本章还需';
+      case 'reader_stats_remaining_book':
+        return '全书还需';
+      case 'reader_stats_full_records_open':
+        return '打开完整记录';
       default:
         return null;
     }
@@ -349697,10 +351535,6 @@ extension on _StringsZhHk {
         return '振假名';
       case 'reader_furigana_mode_hint':
         return '';
-      case 'reader_gallery':
-        return '插圖';
-      case 'reader_gallery_current':
-        return '正在閱讀';
       case 'reader_gallery_empty':
         return '本書沒有插圖';
       case 'reader_gallery_jump':
@@ -353858,6 +355692,65 @@ extension on _StringsZhHk {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'reader_gallery_title':
+        return 'Illustrations';
+      case 'reader_gallery_unlocked_count':
+        return ({required Object unlocked, required Object total}) =>
+            'Unlocked ${unlocked} / ${total}';
+      case 'reader_gallery_filter_unlocked':
+        return 'Unlocked';
+      case 'reader_gallery_filter_all':
+        return 'All';
+      case 'reader_gallery_position_jump':
+        return 'Jump to current reading position';
+      case 'reader_gallery_position_current':
+        return 'Current reading position';
+      case 'reader_gallery_locked_title':
+        return 'Not reached yet';
+      case 'reader_gallery_locked_unlock_hint':
+        return ({required Object chapter}) =>
+            'Unlocks automatically once you reach ${chapter}';
+      case 'reader_gallery_locked_blur_hint':
+        return 'Image blur is on; reveal to view';
+      case 'reader_gallery_locked_back':
+        return 'Back to last seen';
+      case 'reader_gallery_locked_reveal':
+        return 'View anyway';
+      case 'reader_gallery_unlocked_empty':
+        return 'No unlocked illustrations yet';
+      case 'reader_stats_title':
+        return 'Book statistics';
+      case 'reader_stats_clock_running':
+        return 'Timing';
+      case 'reader_stats_clock_paused':
+        return 'Paused';
+      case 'reader_stats_clock_pause':
+        return 'Pause timer';
+      case 'reader_stats_clock_resume':
+        return 'Resume timer';
+      case 'reader_stats_chars_per_hour':
+        return ({required Object n}) => '${n} chars/h';
+      case 'reader_stats_position':
+        return 'Reading position';
+      case 'reader_stats_position_chapter':
+        return 'Chapter';
+      case 'reader_stats_position_book':
+        return 'Book';
+      case 'reader_stats_position_progress':
+        return ({required Object current, required Object total}) =>
+            '${current} / ${total} chars';
+      case 'reader_stats_book_total':
+        return 'Book total';
+      case 'reader_stats_lookups':
+        return ({required Object n}) => 'Lookups ${n}';
+      case 'reader_stats_cards':
+        return ({required Object n}) => 'Cards ${n}';
+      case 'reader_stats_remaining_chapter':
+        return 'Chapter remaining';
+      case 'reader_stats_remaining_book':
+        return 'Book remaining';
+      case 'reader_stats_full_records_open':
+        return 'Open full records';
       default:
         return null;
     }

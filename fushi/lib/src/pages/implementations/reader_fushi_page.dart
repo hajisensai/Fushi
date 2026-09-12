@@ -8,6 +8,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -83,7 +84,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_open_trace.dart';
 import 'package:fushi/src/reader/reader_progress_state.dart';
-import 'package:fushi/src/reader/reader_statistics_dialog.dart';
+import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
@@ -1520,6 +1521,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
 
+  /// 鼠标此刻是否停在顶栏 / 底栏上（两处 MouseRegion 进出翻它）。悬停在栏上时
+  /// 自动收起计时暂停（[_ReaderChrome._handleReaderPointerHover] 也不再 re-arm），
+  /// 离开后重新武装——否则鼠标静止在栏上 3 秒它就自己收掉。
+  bool _chromeHovered = false;
+
   /// 底栏内容行的自然（未缩放）高度。
   static const double _readerChromeBaseHeight = 56;
 
@@ -1973,13 +1979,48 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     enabled: _statusFooterEnabled,
     footerHeight: kReaderStatusFooterHeight,
     absorbedByBar: _statusFooterAbsorbedByBar,
+    // 悬浮态状态行随控制栏显隐、不占预留（2026-09-13）。
+    floating: _bottomBarFloating,
   );
 
-  /// 状态行是否被挤压态底栏吸收（既不画也不占预留），单一真相源
-  /// [readerStatusFooterAbsorbedByBar]。
+  /// 状态行是否被底栏吸收（既不画也不占预留），单一真相源
+  /// [readerStatusFooterAbsorbedByBar]：挤压态看底栏预留；悬浮态看有声书播放条
+  /// 此刻是否画着（读数并进播放条右端，底部只留一条）。
   bool get _statusFooterAbsorbedByBar => readerStatusFooterAbsorbedByBar(
     inlineStatus: _playbackStatusInline,
     bottomChromeReserve: _bottomChromeReserve,
+    floatingBarPainted: _bottomBarFloating &&
+        _bottomBarShouldPaint &&
+        _audiobookController != null,
+  );
+
+  /// 状态行此刻是否绘制（单一真相源 [readerStatusFooterVisible]）。
+  bool get _statusFooterShouldPaint => readerStatusFooterVisible(
+    enabled: _statusFooterEnabled,
+    hasEverLoaded: _hasEverLoaded,
+    absorbedByBar: _statusFooterAbsorbedByBar,
+    floating: _bottomBarFloating,
+    transientVisible: _chromeTransientVisible,
+  );
+
+  /// 状态行**画出来**占的底部带高（悬浮态唤出时 28px，收起时 0），是底栏在窄屏
+  /// 坐落的高度；与 [_statusFooterBand]（预留口径）的区别只在悬浮态。
+  double get _statusFooterPaintedBand => readerStatusFooterBandHeight(
+    footerReserve: _statusFooterShouldPaint ? kReaderStatusFooterHeight : 0,
+    bottomInset: _stableBottomInset,
+  );
+
+  /// 屏底细进度线此刻是否绘制（[readerProgressEdgeLineVisible]）。
+  bool get _progressEdgeLineShouldPaint => readerProgressEdgeLineVisible(
+    floating: _bottomBarFloating,
+    footerVisible: _statusFooterShouldPaint,
+    showProgress: _statusFooterEnabled &&
+        ReaderFushiSource.instance.showTopProgressBar,
+    hasTotal: readerProgressRatio(
+          current: _progressCurrentChars,
+          total: _progressTotalChars,
+        ) !=
+        null,
   );
 
   /// ッツ 形态共用 chrome（顶部工具栏 + 右侧抽屉）是否启用：**所有平台、两种模式**。
@@ -1995,11 +2036,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 冻住的旧数。
   bool get _desktopChromeEnabled => true;
 
-  /// 顶部工具栏的顶部预留高：占位时恒占工具栏高（悬浮/挤压同值，BUG-2387——
-  /// 顶栏是不透明面，正文不得排到它下面），并入 [_readerTopOffset]。
+  /// 顶部工具栏的顶部预留高：挤压态占位时占工具栏高；悬浮态 0（隐藏满屏、唤出
+  /// 盖在正文上，用户 2026-09-13 拍板；历史见 [readerDesktopHeaderReserve]），
+  /// 并入 [_readerTopOffset]。
   double get _desktopHeaderReserve => readerDesktopHeaderReserve(
     enabled: _desktopChromeEnabled,
     barOccupiesLayout: _hasEverLoaded && _showChrome,
+    floating: _bottomBarFloating,
     headerHeight: kReaderDesktopHeaderHeight,
   );
 
@@ -3145,6 +3188,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: _handleReaderPointerDown,
+              // 鼠标在正文上移动即唤出悬浮 chrome（Flutter 腿，见
+              // [_handleReaderPointerHover]）。
+              onPointerHover: _handleReaderPointerHover,
               child: PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
@@ -3270,9 +3316,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       _buildTopProgressBar(),
                       // 桌面端顶边悬停热区（收起时才存在）+ 顶部工具栏（ッツ 形态）：与底栏
                       // 同一显隐状态机，排在词典弹层之前。
-                      _buildHoverRevealLayer(),
                       _buildDesktopHeader(),
-                      // 桌面端底部状态行：排在词典弹层 / 底栏之前，让它们盖在其上。
+                      // 底部状态行 / 悬浮态收起后的屏底细进度线：排在词典弹层 /
+                      // 底栏之前，让它们盖在其上。
+                      _buildProgressEdgeLine(),
                       _buildStatusFooter(),
                       buildDictionary(),
                       // The bottom chrome returns a Positioned; it MUST stay a direct

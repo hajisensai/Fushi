@@ -13,7 +13,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show readerAudiobookUsesDialog;
+    show readerAudiobookUsesSideSheet;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -307,7 +307,7 @@ void main() {
   });
 
   // BUG-2166 批：桌面 ッツ 形态把书内设置从「宽窗 master-detail」改成了左右
-  // 抽屉。路由真相源是 readerAudiobookUsesDialog（reader_desktop_chrome.dart），它
+  // 抽屉。路由真相源是 readerAudiobookUsesSideSheet（reader_desktop_chrome.dart），它
   // 与 master-detail 外壳判宽用的是**同一对阈值** 560×440 —— 所以窗口一旦够宽
   // 就走抽屉，sheet 形态永远到不了宽窗分支（代码注释里也写明「宽窗不再有
   // master-detail」）。原来这两条测试是直接 pump ReaderQuickSettingsSheet
@@ -318,18 +318,18 @@ void main() {
   // 不变式另有 master_detail_settings_sheet_test 与
   // video_player_settings_master_detail_guard_test 两处仍在守。
   test('有声书面板容器独立于各平台共用的设置抽屉', () {
-    // 有声书宽窗 → dialog；窄窗 → sheet，保持手机的空间利用。
+    // 有声书宽窗 → 右侧侧栏；窄窗 → bottom sheet，保持手机的空间利用。
     expect(
-        readerAudiobookUsesDialog(
+        readerAudiobookUsesSideSheet(
             desktop: false, window: const Size(1000, 800)),
         isTrue);
     expect(
-        readerAudiobookUsesDialog(
+        readerAudiobookUsesSideSheet(
             desktop: false, window: const Size(420, 1600)),
         isFalse);
-    // 桌面端有声书恒走 dialog。
+    // 桌面端有声书恒走侧栏。
     expect(
-        readerAudiobookUsesDialog(desktop: true, window: const Size(420, 400)),
+        readerAudiobookUsesSideSheet(desktop: true, window: const Size(420, 400)),
         isTrue);
   });
 

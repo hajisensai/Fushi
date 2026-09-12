@@ -35,9 +35,14 @@ import 'test_helpers.dart';
 /// Windows 桌面（`OVERLAP=48.0`，两者皆 0）**都是满 48px**。小窗只是让它更刺眼
 /// ——可读行数本就少，被吃掉一行占比大得多。
 ///
-/// 修复：删掉 `floating → 0` 特例，占位即预留工具栏高。因为悬浮态的显隐走
-/// `_handleFloatingChromeReveal`、**从不翻转 `_showChrome`**，预留值仍恒定 ⇒
-/// 「悬浮显隐不重锚」的设计律不受影响（本测试的多次采样即钉这一条）。
+/// BUG-2387 当时的修法是删掉 `floating → 0`、让悬浮态也恒定预留 48px；代价是
+/// 顶栏收起后正文顶上常驻一条空带。**2026-09-13 用户拍板改回**：悬浮态「隐藏满屏、
+/// 唤出盖在正文上」（顶栏半透明），`floating → 0` 恢复。本测试的契约随之改为：
+///  * 悬浮态 `--chrome-top-inset == 系统顶 inset`（正文满屏，不给顶栏让位）；
+///  * 唤出时顶栏**恰好**盖住正文顶部一条 [kReaderDesktopHeaderHeight]（这是有意
+///    的覆盖，不是重叠 bug）；
+///  * 显隐多次不改 `--chrome-top-inset`（「悬浮显隐不重锚」设计律不受影响）。
+/// 挤压态「不盖字」由 reader_desktop_chrome_test 的纯函数契约钉住。
 ///
 /// 本测试在默认（悬浮）配置下唤出工具栏，量三件事：
 ///  1. `--chrome-top-inset`（注入 WebView 的正文顶部让位）；
@@ -61,7 +66,7 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('BUG-2387: 顶部工具栏既不压住正文首行，其上方也不露出正文',
+  testWidgets('BUG-2387 契约 2026-09-13：悬浮顶栏隐藏满屏、唤出恰好覆盖正文顶部',
       timeout: const Timeout(Duration(minutes: 6)),
       (WidgetTester tester) async {
     final List<FlutterErrorDetails> errors = [];
@@ -237,16 +242,19 @@ void main() {
       debugPrint('[HDROVL] === FINAL ===');
       debugPrint('[HDROVL] $last');
 
-      // 不变式 1：工具栏上方那条带必须是空白让位区，不得露出正文。
+      // 不变式 1（悬浮态正文满屏）：正文顶部让位只有系统顶 inset，没有顶栏那 48px。
+      expect(last.chromeTopInset, closeTo(last.viewPaddingTop, 1.0),
+          reason: '悬浮态 --chrome-top-inset 必须等于系统顶 inset（隐藏满屏）；'
+              '多出来的就是 BUG-2387 时代那条常驻空带。$last');
+
+      // 不变式 2（唤出即覆盖）：顶栏上沿之上不露正文，下沿正好盖住正文顶部一条
+      // 顶栏高——覆盖是悬浮态的语义，不是重叠 bug。
       expect(last.aboveBar, lessThanOrEqualTo(1.0),
           reason: '工具栏上沿(${last.headerRect.top}) 之上露出了正文'
-              '（首行上沿 ${last.firstTopLogical}），露出 ${last.aboveBar} 逻辑 px。'
-              '那条带本该是空白让位区。$last');
-
-      // 不变式 2：工具栏下沿必须不越过正文首行上沿。
-      expect(last.overlap, lessThanOrEqualTo(1.0),
-          reason: '悬浮顶部工具栏下沿(${last.headerRect.bottom}) 压过正文首行上沿'
-              '(${last.firstTopLogical})，重叠 ${last.overlap} 逻辑 px。$last');
+              '（首行上沿 ${last.firstTopLogical}），露出 ${last.aboveBar} 逻辑 px。$last');
+      expect(last.overlap, closeTo(kReaderDesktopHeaderHeight, 2.0),
+          reason: '悬浮顶栏唤出时应恰好盖住正文顶部 $kReaderDesktopHeaderHeight px'
+              '（实测重叠 ${last.overlap}）。$last');
 
       final NavigatorState nav =
           Navigator.of(tester.element(find.byType(Scaffold).first));

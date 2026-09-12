@@ -159,6 +159,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             onChanged: (String id) => setState(() => _tab = id),
           ),
           SizedBox(height: tokens.spacing.gap),
+          // 侧栏 / bottom sheet 形态：标题行的 × 与点外面即关已够，底部不再摆一颗
+          // 整宽「关闭」（那是居中对话框时代的产物，在 400px 侧栏里只是占掉一行
+          // 章节）。
           Flexible(
             child: SingleChildScrollView(
               key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
@@ -167,15 +170,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 key: ValueKey<String>('fushi_audiobook_tab_$_tab'),
                 child: tabContent,
               ),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap * 1.5),
-          Semantics(
-            identifier: 'hibiki.reader.audiobook_panel.close',
-            child: FilledButton(
-              key: const ValueKey<String>('fushi_audiobook_panel_close_button'),
-              onPressed: () => Navigator.of(context).maybePop(),
-              child: Text(MaterialLocalizations.of(context).closeButtonLabel),
             ),
           ),
         ],

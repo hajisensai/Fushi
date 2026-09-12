@@ -9,10 +9,16 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart'
 
 /// 各平台共用的阅读器底部状态行。
 ///
-/// 一条极简、常驻、**挤压式**（占预留高、正文永不压到它下面）的状态行。两段读数都
-/// 贴**右下角**，顺序与播放条唤出时的 [ReaderStatusInline] 一致：
-///  * 阅读追踪——计时器图标 + `<字/时> / h <本次时长>`（如 `0 / h 0:00`）；
-///  * 字数进度——`<已读> / <总字数>  <百分比>%`。
+/// 一条极简的状态行。挤压态常驻、占预留高（正文永不压到它下面）；悬浮态
+/// （`tap_empty_hide_chrome`）不占预留、随控制栏一起唤出 / 收起，收起期间屏底只剩
+/// 一条 [ReaderProgressEdgeLine] 细进度线。两段读数都贴**右下角**，顺序与播放条唤出
+/// 时的 [ReaderStatusInline] 一致：
+///  * 阅读追踪——计时器图标 + `<本次时长>`（如 `0:00`）；
+///  * 字数进度——一段短进度条 + `<百分比>%`。
+///
+/// 2026-09-13 精简：此前是 `<字/时> / h <时长>  <已读> / <总字数>  <百分比>%
+/// (<本章已读> / <本章总字数> <本章百分比>%)` 六个数一串，用户要「简洁 + 进度条」。
+/// 字/时、字数、本章进度全部进统计侧栏（`ReaderStatisticsSheet`）。
 ///
 /// 追踪块此前独自钉在**左**下角：底部信息被劈成左右两个角，视线要在两角之间跳；而
 /// 有声书播放条一唤出（[ReaderStatusInline]），同一串数字又整体飞到右端，两条底部形态
@@ -54,20 +60,67 @@ bool readerStatusFooterEnabled({
 /// [kReaderStatusFooterHeight] 的正文高度（BUG-2467）。悬浮态底栏不占位
 /// （[bottomChromeReserve] == 0），状态行照常在场，底栏唤出时盖在其上、收起后露出。
 /// 窄屏（读数不并进底栏）状态行仍独立成行，坐在底栏之上，不吸收。
+///
+/// 悬浮态底栏不占位（[bottomChromeReserve] == 0），改看 [floatingBarPainted]——
+/// 有声书播放条此刻画着且读数并进了它右端，状态行同样让位；播放条收起后状态行
+/// 与顶栏一起收起（[readerStatusFooterVisible]），屏底只剩细进度线。
 bool readerStatusFooterAbsorbedByBar({
   required bool inlineStatus,
   required double bottomChromeReserve,
+  bool floatingBarPainted = false,
 }) =>
-    inlineStatus && bottomChromeReserve > 0;
+    inlineStatus && (bottomChromeReserve > 0 || floatingBarPainted);
 
-/// 状态行的底部预留高：启用且未被底栏吸收（[absorbedByBar]，见
-/// [readerStatusFooterAbsorbedByBar]）时占 [footerHeight]，否则 0。
+/// 状态行的底部预留高：启用、未被底栏吸收（[absorbedByBar]，见
+/// [readerStatusFooterAbsorbedByBar]）且**非悬浮**时占 [footerHeight]，否则 0。
+///
+/// 悬浮态（[floating]）状态行与顶栏 / 底栏同一台显隐状态机：收起时正文满屏、唤出时
+/// 盖在正文上——与 `readerDesktopHeaderReserve` / `bottomChromeReserve` 的悬浮语义
+/// 一致（用户 2026-09-13 拍板「隐藏满屏、唤出覆盖」）。
 double readerStatusFooterReserve({
   required bool enabled,
   required double footerHeight,
   bool absorbedByBar = false,
+  bool floating = false,
 }) =>
-    enabled && !absorbedByBar ? footerHeight : 0;
+    enabled && !absorbedByBar && !floating ? footerHeight : 0;
+
+/// 状态行是否此刻绘制：启用、首屏已就绪、未被底栏吸收；悬浮态额外随
+/// [transientVisible]（与 `bottomBarVisible` 同一唤出 / 收起真值）。
+bool readerStatusFooterVisible({
+  required bool enabled,
+  required bool hasEverLoaded,
+  required bool absorbedByBar,
+  required bool floating,
+  required bool transientVisible,
+}) {
+  if (!enabled || !hasEverLoaded || absorbedByBar) return false;
+  if (floating) return transientVisible;
+  return true;
+}
+
+/// 屏底细进度线是否绘制：只在悬浮态、状态行收起、进度开关开着且总字数已知时——
+/// 它是状态行收起后唯一留在屏上的进度指示（2px，不占预留、不参与命中）。
+bool readerProgressEdgeLineVisible({
+  required bool floating,
+  required bool footerVisible,
+  required bool showProgress,
+  required bool hasTotal,
+}) =>
+    floating && !footerVisible && showProgress && hasTotal;
+
+/// 屏底细进度线高度（逻辑 px）。
+const double kReaderProgressEdgeLineHeight = 2;
+
+/// 状态行里进度条的宽 / 高（逻辑 px）。
+const double kReaderStatusProgressTrackWidth = 72;
+const double kReaderStatusProgressTrackHeight = 3;
+
+/// 全书进度比例（0–1）；总字数未知 / 为 0 时 null。
+double? readerProgressRatio({required int? current, required int? total}) {
+  if (current == null || total == null || total <= 0) return null;
+  return (current / total).clamp(0.0, 1.0);
+}
 
 /// 状态行**底部带**的高度：状态行坐进系统底部安全区（iPhone home indicator 34pt /
 /// Android 手势条）里，带高 = max(状态行预留 [footerReserve], 系统底 inset
@@ -104,33 +157,88 @@ String formatReadingSessionClock(int durationMs) {
   return '$minutes:$ss';
 }
 
-/// 阅读追踪文案：`<字/时> / h <本次时长>`。
-String readerTrackerLabel(StudySessionTotals totals) {
-  final int cph = readingCharsPerHour(
-    chars: totals.chars,
-    durationMs: totals.durationMs,
-  );
-  return '$cph / h  ${formatReadingSessionClock(totals.durationMs)}';
+/// 阅读追踪文案：`<本次时长>`（`m:ss` / `h:mm:ss`）。字/时不再挤在状态行里
+/// （进统计侧栏）；[readingCharsPerHour] 仍是它的口径。
+String readerTrackerLabel(StudySessionTotals totals) =>
+    formatReadingSessionClock(totals.durationMs);
+
+/// 进度文案：`<百分比>%`（一位小数）。总字数未知 / 为 0 时返回 null（不画这一段）。
+/// 已读 / 总字数与本章进度在统计侧栏里看。
+String? readerProgressLabel({required int? current, required int? total}) {
+  final double? ratio = readerProgressRatio(current: current, total: total);
+  if (ratio == null) return null;
+  return '${(ratio * 100).toStringAsFixed(1)}%';
 }
 
-/// 进度文案：`<已读> / <总字数>  <百分比>%`，与顶部进度 pill 同一格式；
-/// 本章字数已知时再接一段括号 `(<本章已读> / <本章总字数> <本章百分比>%)`。
-/// 总字数未知 / 为 0 时返回 null（不画这一段）。
-String? readerProgressLabel({
-  required int? current,
-  required int? total,
-  int? chapterCurrent,
-  int? chapterTotal,
-}) {
-  if (current == null || total == null || total <= 0) return null;
-  final double ratio = (current / total).clamp(0.0, 1.0);
-  final String book = '$current / $total  ${(ratio * 100).toStringAsFixed(2)}%';
-  if (chapterCurrent == null || chapterTotal == null || chapterTotal <= 0) {
-    return book;
+/// 状态行 / 播放条里的短进度条：一段圆角轨道 + 已读比例填充。
+class ReaderStatusProgressTrack extends StatelessWidget {
+  const ReaderStatusProgressTrack({
+    super.key,
+    required this.ratio,
+    required this.color,
+    this.width = kReaderStatusProgressTrackWidth,
+    this.height = kReaderStatusProgressTrackHeight,
+  });
+
+  final double ratio;
+  final Color color;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(height),
+        ),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FractionallySizedBox(
+            widthFactor: ratio.clamp(0.0, 1.0),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(height),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
-  final int c = chapterCurrent.clamp(0, chapterTotal);
-  final double chapterRatio = (c / chapterTotal).clamp(0.0, 1.0);
-  return '$book  ($c / $chapterTotal ${(chapterRatio * 100).toStringAsFixed(2)}%)';
+}
+
+/// 悬浮态状态行收起后留在屏底的细进度线（[kReaderProgressEdgeLineHeight]）：
+/// 不占预留、不吃指针（[IgnorePointer]），只是一条随全书进度增长的色带。
+class ReaderProgressEdgeLine extends StatelessWidget {
+  const ReaderProgressEdgeLine({
+    super.key,
+    required this.ratio,
+    required this.color,
+  });
+
+  final double ratio;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SizedBox(
+        height: kReaderProgressEdgeLineHeight,
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FractionallySizedBox(
+            widthFactor: ratio.clamp(0.0, 1.0),
+            child: ColoredBox(color: color.withValues(alpha: 0.55)),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class ReaderStatusFooter extends StatefulWidget {
@@ -141,8 +249,6 @@ class ReaderStatusFooter extends StatefulWidget {
     required this.totalChars,
     required this.showTimer,
     required this.showProgress,
-    this.chapterCurrentChars,
-    this.chapterTotalChars,
     required this.textColor,
     required this.backgroundColor,
     this.height = kReaderStatusFooterHeight,
@@ -160,11 +266,7 @@ class ReaderStatusFooter extends StatefulWidget {
   final int? currentChars;
   final int? totalChars;
 
-  /// 本章已读 / 本章总字数（进度后的括号段；任一未知则不画括号）。
-  final int? chapterCurrentChars;
-  final int? chapterTotalChars;
-
-  /// 阅读追踪（计时器图标 + 字/时 + 本次时长）是否显示（「显示阅读计时器」开关落到
+  /// 阅读追踪（计时器图标 + 本次时长）是否显示（「显示阅读计时器」开关落到
   /// 这里）。关掉只是不画这一段——[StudyClock] 照常计时、照常落库，隐藏读数不等于
   /// 停表（停表是点这一段本身的手动暂停）。
   final bool showTimer;
@@ -251,14 +353,18 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
       color: muted,
       height: 1.0,
     );
-    final String? progress = widget.showProgress
-        ? readerProgressLabel(
+    final double? ratio = widget.showProgress
+        ? readerProgressRatio(
             current: widget.currentChars,
             total: widget.totalChars,
-            chapterCurrent: widget.chapterCurrentChars,
-            chapterTotal: widget.chapterTotalChars,
           )
         : null;
+    final String? progress = ratio == null
+        ? null
+        : readerProgressLabel(
+            current: widget.currentChars,
+            total: widget.totalChars,
+          );
     final double bandHeight = readerStatusFooterBandHeight(
       footerReserve: widget.height,
       bottomInset: widget.bottomInset,
@@ -322,13 +428,27 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
                             left: widget.showTimer ? 8 : 0),
                         child: _hitTarget(
                           onTap: widget.onTapProgress,
-                          child: Text(
-                            progress,
-                            key:
-                                const ValueKey<String>('fushi_status_progress'),
-                            style: style,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              ReaderStatusProgressTrack(
+                                key: const ValueKey<String>(
+                                    'fushi_status_progress_track'),
+                                ratio: ratio!,
+                                color: muted,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  progress,
+                                  key: const ValueKey<String>(
+                                      'fushi_status_progress'),
+                                  style: style,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -354,16 +474,12 @@ class ReaderStatusInline extends StatefulWidget {
     required this.showTimer,
     required this.showProgress,
     required this.textColor,
-    this.chapterCurrentChars,
-    this.chapterTotalChars,
     this.tick = const Duration(seconds: 1),
   });
 
   final StudySessionTotals Function() sessionTotals;
   final int? currentChars;
   final int? totalChars;
-  final int? chapterCurrentChars;
-  final int? chapterTotalChars;
   final bool showTimer;
   final bool showProgress;
   final Color textColor;
@@ -405,14 +521,18 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline> {
       color: muted,
       height: 1.0,
     );
-    final String? progress = widget.showProgress
-        ? readerProgressLabel(
+    final double? ratio = widget.showProgress
+        ? readerProgressRatio(
             current: widget.currentChars,
             total: widget.totalChars,
-            chapterCurrent: widget.chapterCurrentChars,
-            chapterTotal: widget.chapterTotalChars,
           )
         : null;
+    final String? progress = ratio == null
+        ? null
+        : readerProgressLabel(
+            current: widget.currentChars,
+            total: widget.totalChars,
+          );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -432,6 +552,12 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline> {
         ],
         if (progress != null) ...<Widget>[
           if (widget.showTimer) const SizedBox(width: 16),
+          ReaderStatusProgressTrack(
+            key: const ValueKey<String>('fushi_bar_status_progress_track'),
+            ratio: ratio!,
+            color: muted,
+          ),
+          const SizedBox(width: 8),
           Text(
             progress,
             key: const ValueKey<String>('fushi_bar_status_progress'),

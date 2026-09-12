@@ -1492,6 +1492,15 @@ $kPagedWheelGestureHelperJs
     // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
     _handlePagedWheelTick(e);
   }, {passive: false});
+  // 鼠标移动唤出悬浮控制栏（JS 腿，非 Windows；Windows 由 Flutter 侧 Listener 承担，
+  // Dart 端按 hostOwnsWebViewPointerInput 互斥）。250ms 节流：唤出 / 续命不需要每帧。
+  var _hoverRevealLast = 0;
+  document.addEventListener('mousemove', function(e) {
+    var now = Date.now();
+    if (now - _hoverRevealLast < 250) return;
+    _hoverRevealLast = now;
+    window.flutter_inappwebview.callHandler('onPointerHoverReveal');
+  }, {passive: true});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {
     // TODO-756b：开了 window.__hoverAutoLookup 则纯悬停即查词（不要求 Shift）；
@@ -2049,6 +2058,11 @@ updateLive: function(patch) {
             // not reclaim here or we would fight the popup for focus.
             _selectTextAt(x, y);
           },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onPointerHoverReveal',
+          callback: (_) => _handleJsHoverReveal(),
         );
 
         controller.addJavaScriptHandler(

@@ -1116,22 +1116,16 @@ void main() {
           'Status strip font size is kReaderStatusFooterFontSize == '
           'kTopProgressFontSize: the footer must match the top progress '
           'pill exactly — same reviewed exception class as '
-          'reader_fushi/chrome.part.dart.',
-      'lib/src/reader/reader_gallery_page.dart':
-          'Thumbnail grid is image content: the placeholder surface and the '
-          'thumbnail corner radii size to the image cells, not to page '
-          'chrome — same reviewed exception class as '
-          'reader_fushi/chrome.part.dart.',
+          'reader_fushi/chrome.part.dart. The 3px progress track / 2px edge '
+          'line round their own height (chart content, not page chrome).',
       'lib/src/reader/reader_audiobook_panel.dart':
           'Audiobook cue list is dense reader content (tonal cue track + cue '
           'row corners) — same reviewed exception class as '
           'reader_fushi/chrome.part.dart.',
-      'lib/src/reader/reader_statistics_dialog.dart':
-          'Reading-session metric bars are chart content (progress-track '
-          'surface) — same reviewed exception class as '
-          'reading_statistics_page / video_statistics_page. The compact '
-          'chart controls are gone: the dialog now uses full-width shared '
-          'components, so VisualDensity.compact is no longer exempted.',
+      'lib/src/reader/reader_statistics_sheet.dart':
+          'Reading-position progress bars are chart content (progress-track '
+          'surface + clipped track corners) — same reviewed exception class '
+          'as reading_statistics_page / video_statistics_page.',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'In-book quick settings sheet packs reader controls at reader '
           'density — same reviewed exception class as '
@@ -1310,7 +1304,7 @@ void main() {
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart': <String>{
         'BorderRadius.circular(',
         // VisualDensity.compact 已随 BUG-2166 批的 chrome 拆分搬到
-        // lib/src/reader/reader_statistics_dialog.dart，本文件已无此 token，
+        // lib/src/reader/reader_statistics_sheet.dart，本文件已无此 token，
         // 留着就是死豁免（会给它无声开着回来的门）。
         'surfaceContainerHigh',
         // BUG-2434：查词弹窗覆盖主题的中性梯度（surfaceContainerHighest /
@@ -1319,17 +1313,17 @@ void main() {
         'fontSize:',
       },
       'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
-      'lib/src/reader/reader_status_footer.dart': <String>{'fontSize:'},
-      'lib/src/reader/reader_gallery_page.dart': <String>{
+      'lib/src/reader/reader_status_footer.dart': <String>{
+        'fontSize:',
         'BorderRadius.circular(',
-        'surfaceContainerHighest',
       },
       'lib/src/reader/reader_audiobook_panel.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
       },
-      'lib/src/reader/reader_statistics_dialog.dart': <String>{
+      'lib/src/reader/reader_statistics_sheet.dart': <String>{
         'surfaceContainerHighest',
+        'BorderRadius.circular(',
       },
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
         'VisualDensity.compact',
