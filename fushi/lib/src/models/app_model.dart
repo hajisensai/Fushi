@@ -7060,6 +7060,12 @@ class AppModel with ChangeNotifier {
   void setGalMiningStillFormat(MiningStillFormat format) =>
       prefsRepo.setGalMiningStillFormat(format);
 
+  /// 制卡句子音频头/尾 padding（毫秒），视频字幕与有声书两条制卡链共用。
+  int get miningAudioHeadPadMs => prefsRepo.miningAudioHeadPadMs;
+  void setMiningAudioHeadPadMs(int ms) => prefsRepo.setMiningAudioHeadPadMs(ms);
+  int get miningAudioTailPadMs => prefsRepo.miningAudioTailPadMs;
+  void setMiningAudioTailPadMs(int ms) => prefsRepo.setMiningAudioTailPadMs(ms);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

@@ -25,6 +25,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
+    show padSentenceRange;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'

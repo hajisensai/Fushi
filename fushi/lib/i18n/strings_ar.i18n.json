@@ -4761,5 +4761,10 @@
   "manga_ocr_boxes_toggle": "Show recognized text regions",
   "remote_manga_added_to_shelf": "Added to the manga shelf; chapters download from the peer",
   "backup_category_games": "Games",
-  "backup_category_games_desc": "Game library, metadata sources and covers"
+  "backup_category_games_desc": "Game library, metadata sources and covers",
+  "mining_audio_head_pad": "Audio padding before sentence",
+  "mining_audio_head_pad_hint": "Extra audio kept before the subtitle starts, so the first syllable is not clipped. Never runs into the previous line.",
+  "mining_audio_tail_pad": "Audio padding after sentence",
+  "mining_audio_tail_pad_hint": "Extra audio kept after the subtitle ends, so trailing sounds are not cut short. Never runs into the next line.",
+  "mining_audio_pad_readout": "${ms} ms"
 }

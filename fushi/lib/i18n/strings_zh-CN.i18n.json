@@ -4761,5 +4761,10 @@
   "manga_ocr_boxes_toggle": "显示识别范围",
   "remote_manga_added_to_shelf": "已加入漫画书架，章节从对端下载",
   "backup_category_games": "游戏",
-  "backup_category_games_desc": "游戏库、元数据来源与封面"
+  "backup_category_games_desc": "游戏库、元数据来源与封面",
+  "mining_audio_head_pad": "句子音频开头余量",
+  "mining_audio_head_pad_hint": "字幕开始前多保留这么多音频，避免首音被切掉；不会越过上一句。",
+  "mining_audio_tail_pad": "句子音频结尾余量",
+  "mining_audio_tail_pad_hint": "字幕结束后多保留这么多音频，避免句尾被切短；不会越过下一句。",
+  "mining_audio_pad_readout": "${ms} 毫秒"
 }

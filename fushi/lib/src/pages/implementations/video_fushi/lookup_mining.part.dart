@@ -131,11 +131,25 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 按锚定 cue 所属流取轴（查副字幕词制卡时用副轨生效轴；无 cue 回落有效流轴）。
     final int clipDelayMs =
         cue == null ? controller.miningDelayMs : controller.delayMsForCue(cue);
+    // 头/尾 padding（用户偏好，对齐 asbplayer）：字幕 cue 的时间窗通常比实际发声短，
+    // 尾音直接被硬切。与有声书制卡共用 [padSentenceRange]：在字幕文件时基（未加
+    // delay）上加 padding，并夹在锚定 cue 所属流的相邻 cue 边界内，不把邻句混进来；
+    // 之后再整体逆变换回播放器轴（先 pad 再 shift，与有声书链同序）。非正区间（无
+    // cue → `0..0`）不 pad——那是下游「不抽媒体」的哨兵，pad 了会把哨兵变成真区间。
+    final AudioPlaybackRange? paddedRange =
+        (mergedRange == null || mergedRange.endMs <= mergedRange.startMs)
+            ? mergedRange
+            : padSentenceRange(
+                mergedRange,
+                cues: cue == null
+                    ? controller.miningCues
+                    : controller.cueStreamOwning(cue),
+                headPadMs: appModel.miningAudioHeadPadMs,
+                tailPadMs: appModel.miningAudioTailPadMs,
+              );
     return (
-      clipStartMs: miningClipTimeMs(
-          mergedRange?.startMs ?? cue?.startMs ?? 0, clipDelayMs),
-      clipEndMs:
-          miningClipTimeMs(mergedRange?.endMs ?? cue?.endMs ?? 0, clipDelayMs),
+      clipStartMs: miningClipTimeMs(paddedRange?.startMs ?? 0, clipDelayMs),
+      clipEndMs: miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
       sentence: mergedSentence,

@@ -345,6 +345,18 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.mining_audio_quality_hint,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_audio_head_pad',
+          hasRevealTarget: true,
+          title: t.mining_audio_head_pad,
+          subtitle: t.mining_audio_head_pad_hint,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_audio_tail_pad',
+          hasRevealTarget: true,
+          title: t.mining_audio_tail_pad,
+          subtitle: t.mining_audio_tail_pad_hint,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_image_mode',
           hasRevealTarget: true,
           title: t.video_mining_image_mode,

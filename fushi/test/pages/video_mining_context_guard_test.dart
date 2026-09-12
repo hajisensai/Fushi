@@ -90,11 +90,14 @@ void main() {
     expect(resolve, contains('controller.currentCue ??'));
     expect(resolve, contains('resolveMiningCueForPosition('),
         reason: 'currentCue 为空（gap/末句后）时须按位置解析，制卡才有句子音频。');
-    // 制卡区间 = 合并后的首句起→末句止（单句即该 cue 时间窗）；草稿空时退回单 cue 起止。
-    expect(resolve, contains('mergedRange?.startMs ?? cue?.startMs ?? 0'),
-        reason: '制卡音频/封面区间起点 = 合并区间起点（单句即该 cue 的 startMs）。');
-    expect(resolve, contains('mergedRange?.endMs ?? cue?.endMs ?? 0'),
-        reason: '制卡音频/封面区间终点 = 合并区间终点（单句即该 cue 的 endMs）。');
+    // 制卡区间 = 合并后的首句起→末句止（单句即该 cue 时间窗）再加用户头/尾 padding
+    // （padSentenceRange 夹相邻 cue 边界）；无 cue 且草稿空时 mergedRange 为 null → 0..0。
+    expect(resolve, contains('padSentenceRange('),
+        reason: '制卡区间必须经头/尾 padding（与有声书链同一函数）。');
+    expect(resolve, contains('miningClipTimeMs(paddedRange?.startMs ?? 0'),
+        reason: '制卡音频/封面区间起点 = 加 padding 后的合并区间起点。');
+    expect(resolve, contains('miningClipTimeMs(paddedRange?.endMs ?? 0'),
+        reason: '制卡音频/封面区间终点 = 加 padding 后的合并区间终点。');
 
     // onMineEntry 把解析结果喂给落卡链路 _mineVideoCard（单句/多句同一出口）。
     // TODO-590 batch14: onMineEntry 体搬进 part 的 `_onMineEntryImpl`；end marker
