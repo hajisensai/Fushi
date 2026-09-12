@@ -24,8 +24,11 @@ import 'package:path/path.dart' as p;
 /// Range），所以这条只能是它。别把它改成 fushi.moe 下的路径，那只会得到 404。
 const String kRecommendedPackWholeFileUrl =
     kRecommendedPackGoogleDriveDirectUrl;
+// 2026-09-12 起指向重打的干净包（`pack-2026-09-12`：`fushi.db` 只剩词典元数据与本地
+// 音频注册项，旧包里混进的 galgames / clipboard_history 等个人数据已剔除）。清单
+// （`manifest.json` 的 `url`）也指同一个文件；这里只是清单两个主机都挂掉时的回退。
 const String kRecommendedPackGoogleDriveFileId =
-    '1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp';
+    '14VmMk0a0tCDT_P2uejsteyflmYUS8x3v';
 const String kRecommendedPackGoogleDriveUrl =
     'https://drive.google.com/file/d/$kRecommendedPackGoogleDriveFileId/view?usp=sharing';
 
