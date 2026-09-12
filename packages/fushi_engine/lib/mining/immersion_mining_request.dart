@@ -58,17 +58,17 @@ class VideoMiningHistorySnapshot {
   final String dateKey;
 }
 
-/// 视频制卡的封面图片模式（用户在 Anki 设置里三选一，默认 [gif]=现状零破坏）：
+/// 视频制卡的封面模式（用户在 Anki 设置里选择，默认 [gif]）：
 /// - [gif]：字幕区间动图（现默认，`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
 ///   静态帧，并弹「降级为静态帧」OSD。
 /// - [currentFrame]：制卡那一刻的当前解码帧（`controller.screenshot`，点词已自动暂停）。
 ///   用户主动选的静态图，非降级 → 不弹降级 OSD。
 /// - [subtitleStart]：当前字幕 cue 起始时间点的帧（`extractVideoFrameViaFfmpeg`，
 ///   `atSeconds = clipStartMs/1000`）。同为主动选择的静态图。
-/// - [videoClip]：**仅 galgame 场景卡**——从台词出现到制卡这段时间的游戏窗口录制帧
-///   编成 mp4（H.264 + 句子音频 AAC 混流，`galgame_window_video.dart`）。视频页的设置
-///   项不渲染它；引擎侧遇到它按 [gif] 阶梯走（视频 cue 本身就是「一段画面」，无需再
-///   录），`resolveClipStillTarget` 视为非静图。录制未启动 / 帧不足时协调器降级动图。
+/// - [videoClip]：普通视频从源文件按同一时间段截取画面与声音，封装为一个 MP4，
+///   由 Anki 媒体播放器保持音画同步。galgame 场景卡仍把台词出现到制卡这段时间的
+///   游戏窗口录制帧编成 MP4（H.264 + 句子音频 AAC 混流，`galgame_window_video.dart`）；
+///   录制未启动 / 帧不足时仍由 galgame 协调器降级动图。
 ///
 /// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]（未知值回退 [gif]，
 /// 向后兼容）。远端来源（Netflix providedCoverBytes / YouTube）请求不设本字段，保持 [gif]
@@ -97,7 +97,7 @@ enum VideoMiningImageMode {
       this == VideoMiningImageMode.currentFrame ||
       this == VideoMiningImageMode.subtitleStart;
 
-  /// 是否为 galgame 视频片段模式（录制帧 + 句子音频编成 mp4）。
+  /// 是否为音画同步的视频片段模式（MP4）。
   bool get isVideoClip => this == VideoMiningImageMode.videoClip;
 }
 

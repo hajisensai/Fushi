@@ -85,6 +85,18 @@ String coverMediaRef(String mediaName) {
   return '<img src="${const HtmlEscape().convert(mediaName)}">';
 }
 
+/// Replay the native sentence video without adding a second autoplay entry.
+/// Uses client-created buttons instead of undocumented client URL schemes.
+const String synchronizedVideoReplayHtml =
+    '<button type="button" class="fushi-synced-video-replay" '
+    'aria-label="Replay video" onclick="event.stopPropagation();'
+    "var p=document.querySelector('.fushi-synced-sentence-media "
+    ".replay-button, .fushi-synced-sentence-media .replaybutton, "
+    ".fushi-synced-sentence-media .soundLink, "
+    ".fushi-sentence-audio .replay-button, .fushi-sentence-audio .replaybutton, "
+    ".fushi-sentence-audio .soundLink');"
+    'if(p){p.click();}return false;">&#9654;</button>';
+
 abstract class BaseAnkiRepository {
   @protected
   static const settingsKey = 'fushi_anki_settings';
@@ -824,6 +836,21 @@ abstract class BaseAnkiRepository {
     String? audioWarning,
     bool keepEmpty = false,
   }) {
+    // A muxed video owns sentence playback. Keep only one native sound tag:
+    // Lapis renders Picture three times, but SentenceAudio is interpolated once
+    // after ExpressionAudio and its already-rendered replay buttons are copied.
+    if (context.synchronizedVideo && coverRef != null) {
+      if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+        settings.fieldMappings,
+      )) {
+        sentenceAudioRef =
+            '<span class="fushi-synced-sentence-media">$coverRef</span>';
+        coverRef = synchronizedVideoReplayHtml;
+      } else {
+        // Custom templates without sentence audio retain a playable Picture.
+        sentenceAudioRef = null;
+      }
+    }
     final AnkiMiningContext mediaContext = context.withMediaRefs(
       coverRef: coverRef,
       sentenceAudioRef: sentenceAudioRef,

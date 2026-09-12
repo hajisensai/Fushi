@@ -14,6 +14,76 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
+  test(
+    'synchronized video keeps one bare download URL and snapshots its bytes',
+    () async {
+      final temp = Directory.systemTemp.createTempSync('anki_synced_video_');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final video = File('${temp.path}/sentence.mp4')
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final launched = <Uri>[];
+      final repo = AnkiMobileRepository(
+        openUrl: (uri) async {
+          launched.add(uri);
+          // The media server must own a snapshot before switching apps.
+          video.deleteSync();
+          final media = Uri.parse(uri.queryParameters['fldSentenceAudio']!);
+          final socket = await Socket.connect(media.host, media.port);
+          socket.add(utf8.encode('GET ${media.path} HTTP/1.1\r\nHost: ${media.host}\r\nConnection: close\r\n\r\n'));
+          await socket.flush();
+          final response = await socket.fold<List<int>>(<int>[], (bytes, chunk) => bytes..addAll(chunk));
+          final headerEnd = _indexOfBytes(response, utf8.encode('\r\n\r\n'));
+          final header = utf8.decode(response.sublist(0, headerEnd));
+          expect(header, startsWith('HTTP/1.1 200'));
+          expect(header, contains('video/mp4'));
+          expect(response.sublist(headerEnd + 4), <int>[1, 2, 3]);
+          return true;
+        },
+        readInfoForAddingJson: () async =>
+            const AnkiMobilePasteboardRead.empty(),
+        mediaServerLifetime: const Duration(seconds: 1),
+        beginMediaImportBackgroundTask: () async {},
+        endMediaImportBackgroundTask: () async {},
+      );
+      await repo.saveSettings(
+        const AnkiSettings(
+          selectedDeckId: 0,
+          selectedDeckName: 'Japanese',
+          selectedNoteTypeId: 0,
+          selectedNoteTypeName: 'Lapis',
+          availableDecks: <AnkiDeck>[AnkiDeck(id: 0, name: 'Japanese')],
+          availableNoteTypes: <AnkiNoteType>[
+            AnkiNoteType(
+              id: 0,
+              name: 'Lapis',
+              fields: <String>['SentenceAudio', 'Picture'],
+            ),
+          ],
+          fieldMappings: <String, String>{
+            'SentenceAudio': '{sentence-audio}',
+            'Picture': '{card-image}',
+          },
+        ),
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: '{"expression":"猫"}',
+        context: AnkiMiningContext(
+          sentence: '猫です。',
+          coverPath: video.path,
+          sentenceAudioPath: video.path,
+          synchronizedVideo: true,
+        ),
+      );
+      expect(outcome.result, MineResult.success, reason: outcome.errorDetail);
+      final fields = launched.single.queryParameters;
+      expect(
+        fields['fldSentenceAudio'],
+        matches(RegExp(r'^http://127\.0\.0\.1:\d+/media/[^/]+\.mp4$')),
+      );
+      expect(fields['fldPicture'], synchronizedVideoReplayHtml);
+    },
+  );
+
   test('builds an AnkiMobile addnote URL with deck type fields and callback',
       () {
     final successCallback = Uri.parse('hibiki://ankisuccess').replace(

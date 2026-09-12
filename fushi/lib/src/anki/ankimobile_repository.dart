@@ -435,7 +435,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       context.coverPath != null
           ? localMediaRef(context.coverPath!)
           : Future<String?>.value(null),
-      context.sentenceAudioPath != null
+      context.sentenceAudioPath != null && !context.synchronizedVideo
           ? localMediaRef(context.sentenceAudioPath!)
           : Future<String?>.value(null),
       _audioFieldForAnkiMobile(payload.audio, localMediaRef),
@@ -452,9 +452,21 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     final Map<String, String> dictionaryMediaTags =
         mediaResults[3] as Map<String, String>;
 
+    final bool videoInSentence =
+        context.synchronizedVideo &&
+        coverUrl != null &&
+        AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+          settings.fieldMappings,
+        );
     final AnkiMiningContext mediaContext = context.withMediaRefs(
-      coverRef: coverUrl,
-      sentenceAudioRef: sentenceAudioUrl,
+      coverRef: videoInSentence ? synchronizedVideoReplayHtml : coverUrl,
+      // AnkiMobile downloads a bare URL and replaces it with [sound:filename].
+      // Wrapping the URL in HTML would prevent that media import.
+      sentenceAudioRef: videoInSentence
+          ? coverUrl
+          : context.synchronizedVideo
+          ? null
+          : sentenceAudioUrl,
     );
 
     final mediaPayload = AnkiMiningPayload(

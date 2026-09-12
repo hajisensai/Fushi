@@ -8277,8 +8277,8 @@ class _AppModelRemoteLookupService
         coverPath = f.path;
       }
       // ② 句子音频 → 临时文件 → context.sasayakiAudioPath
-      String? sentenceAudioPath;
-      if (payload.sentenceAudioBytes != null) {
+      String? sentenceAudioPath = payload.synchronizedVideo ? coverPath : null;
+      if (payload.sentenceAudioBytes != null && !payload.synchronizedVideo) {
         final File f = File(
             '${tmp.path}/sentence_audio.${payload.sentenceAudioExt ?? 'bin'}');
         await f.writeAsBytes(payload.sentenceAudioBytes!, flush: true);
@@ -8301,6 +8301,7 @@ class _AppModelRemoteLookupService
         documentTitle: payload.documentTitle,
         coverPath: coverPath,
         sentenceAudioPath: sentenceAudioPath,
+        synchronizedVideo: payload.synchronizedVideo,
         sentenceOffset: payload.sentenceOffset,
         source: _forwardedSourceFromName(payload.source),
         bookTitleTag: payload.bookTitleTag,
@@ -8553,6 +8554,15 @@ class _AppModelRemoteLookupService
         payload.clipSourceId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
+      if (_appModel.videoMiningImageMode == VideoMiningImageMode.videoClip) {
+        return remoteMineError(
+          'Anki.mineImmersion.bilibili',
+          'bilibili 网页制卡暂未提供视频轨，无法生成同步视频；请在应用内打开视频后制卡',
+          detail:
+              'synchronized video requires a video stream; '
+              'the browser resolver currently supplies audio only',
+        );
+      }
       // 零/负长度窗（字幕时间异常）→ 直接失败，不出无声卡：这条路 requireAudio=true，
       // 而 requireAudio 在 hasRange=false 时不会中止 → 否则静默降级成一张只有图的卡。
       if (payload.clipEndMs! <= payload.clipStartMs!) {
@@ -8663,6 +8673,7 @@ class _AppModelRemoteLookupService
       }
       cap = await transcodeClipToCapture(
         payload.clipBytes!,
+        imageMode: _appModel.videoMiningImageMode,
         durationMs: clipDurationMs,
         compression: compression,
         tempDir: Directory.systemTemp.path,
@@ -8676,7 +8687,8 @@ class _AppModelRemoteLookupService
         // BUG-2192：裁掉录屏片段四周的播放器黑底（扩展按 <video> 几何给的比例矩形）。
         crop: payload.clipCrop,
       );
-    } else if (payload.netflixVideoId != null &&
+    } else if (_appModel.videoMiningImageMode != VideoMiningImageMode.videoClip &&
+        payload.netflixVideoId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
       cap = await ImmersionCaptureChannel.capture(
@@ -8685,12 +8697,25 @@ class _AppModelRemoteLookupService
         clipEndMs: payload.clipEndMs!,
       );
     }
+    if (_appModel.videoMiningImageMode == VideoMiningImageMode.videoClip &&
+        (!cap.ok || !cap.coverIsVideo || cap.gifBytes == null)) {
+      return remoteMineError(
+        'Anki.mineImmersion.video',
+        '同步视频制卡失败：需要包含声音的录制片段；请重新录制，或在应用内打开视频后制卡',
+        detail: cap.error ?? 'capture did not provide synchronized video',
+      );
+    }
     // TODO-1303：录制片段（clipBytes）来源本应带音频（Netflix 播放必有音轨）→ audioExpected，
     // 引擎在最终无音频（转码丢音轨）时中止而非静默出无声卡；2A 截图 / 后台软解不可用 → 不强求
     // （截图卡本就无音频不算失败）。
     final bool audioExpected = payload.clipBytes != null;
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
-      buildImmersionRequest(payload, cap, audioExpected: audioExpected),
+      buildImmersionRequest(
+        payload,
+        cap,
+        audioExpected: audioExpected,
+        imageMode: _appModel.videoMiningImageMode,
+      ),
       compression: compression,
       tempDir: Directory.systemTemp.path,
       repo: repo,

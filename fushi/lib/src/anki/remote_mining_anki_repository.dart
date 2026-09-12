@@ -147,7 +147,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     // 封面 + 句子音频：context 里是本地文件路径，读成字节。
     final Uint8List? coverBytes = await _readPath(context.coverPath);
     final Uint8List? sentenceAudioBytes =
-        await _readPath(context.sentenceAudioPath);
+        context.synchronizedVideo ? null : await _readPath(context.sentenceAudioPath);
 
     // 单词音频 + 词典外字：从 rawPayloadJson 解析。解析失败不致命——仍转发文本卡。
     Uint8List? wordAudioBytes;
@@ -190,6 +190,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       coverExt: _extOf(context.coverPath),
       sentenceAudioBytes: sentenceAudioBytes,
       sentenceAudioExt: _extOf(context.sentenceAudioPath),
+      synchronizedVideo: context.synchronizedVideo,
       wordAudioBytes: wordAudioBytes,
       wordAudioExt: wordAudioExt,
       dictionaryMedia: dictMedia,

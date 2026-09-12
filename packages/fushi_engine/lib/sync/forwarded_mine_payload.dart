@@ -34,6 +34,7 @@ class ForwardedMinePayload {
     this.coverExt,
     this.sentenceAudioBytes,
     this.sentenceAudioExt,
+    this.synchronizedVideo = false,
     this.wordAudioBytes,
     this.wordAudioExt,
     this.dictionaryMedia = const <ForwardedDictMedia>[],
@@ -67,6 +68,10 @@ class ForwardedMinePayload {
   final String? coverExt;
   final Uint8List? sentenceAudioBytes;
   final String? sentenceAudioExt;
+
+  /// The cover already contains sentence audio; transfer and materialize it once.
+  /// Missing on older peers means independent cover/audio, preserving their contract.
+  final bool synchronizedVideo;
   final Uint8List? wordAudioBytes;
   final String? wordAudioExt;
   final List<ForwardedDictMedia> dictionaryMedia;
@@ -84,9 +89,11 @@ class ForwardedMinePayload {
         if (clipEndMs != null) 'clipEndMs': clipEndMs,
         if (coverBytes != null) 'coverBase64': base64Encode(coverBytes!),
         if (coverExt != null) 'coverExt': coverExt,
-        if (sentenceAudioBytes != null)
+        if (synchronizedVideo) 'synchronizedVideo': true,
+        if (sentenceAudioBytes != null && !synchronizedVideo)
           'sentenceAudioBase64': base64Encode(sentenceAudioBytes!),
-        if (sentenceAudioExt != null) 'sentenceAudioExt': sentenceAudioExt,
+        if (sentenceAudioExt != null && !synchronizedVideo)
+          'sentenceAudioExt': sentenceAudioExt,
         if (wordAudioBytes != null)
           'wordAudioBase64': base64Encode(wordAudioBytes!),
         if (wordAudioExt != null) 'wordAudioExt': wordAudioExt,
@@ -127,6 +134,7 @@ class ForwardedMinePayload {
       coverExt: sanitizeExt(json['coverExt']),
       sentenceAudioBytes: tryDecodeBase64(json['sentenceAudioBase64']),
       sentenceAudioExt: sanitizeExt(json['sentenceAudioExt']),
+      synchronizedVideo: json['synchronizedVideo'] == true,
       wordAudioBytes: tryDecodeBase64(json['wordAudioBase64']),
       wordAudioExt: sanitizeExt(json['wordAudioExt']),
       dictionaryMedia: media,

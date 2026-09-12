@@ -7,6 +7,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
+import 'package:fushi_engine/media/video/video_clip_exporter.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
@@ -79,6 +82,16 @@ typedef AudioExtractor = Future<String?> Function({
   int audioChannels,
   String audioBitrate,
   String? tlsPinSha256,
+});
+
+/// 音频已经按选定音轨/时间窗裁好；视频只裁同一个窗，不能再次 seek 音频。
+typedef SynchronizedVideoExtractor = Future<VideoClipExportResult> Function({
+  required String videoPath,
+  required String audioPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  required String? tlsPinSha256,
 });
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
@@ -248,6 +261,16 @@ String _withRootCause(String symptom, String? rootCause) {
 /// 见 [_withRootCause]：拼进中止原因的根因摘要上限。
 const int _kRootCauseMaxChars = 300;
 
+/// A media snapshot is already owned by Anki after import; cleanup must never
+/// turn a successful note into an apparent failure (and invite duplicate notes).
+Future<void> _cleanupSynchronizedVideo(Directory directory) async {
+  try {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  } on FileSystemException catch (error) {
+    engineLog.logDiagnostic('Anki.synchronizedVideo.cleanup', error);
+  }
+}
+
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -258,15 +281,37 @@ class ImmersionMiningEngine {
     AudioExtractor? audioExtractor,
     FrameExtractor? frameExtractor,
     RemoteAudioMaterializer? audioMaterializer,
+    SynchronizedVideoExtractor? synchronizedVideoExtractor,
   })  : _gif = gifExtractor ?? extractClipGifViaFfmpeg,
         _audio = audioExtractor ?? extractAudioSegmentViaFfmpeg,
         _frame = frameExtractor ?? extractVideoFrameViaFfmpeg,
-        _materialize = audioMaterializer ?? _defaultAudioMaterializer;
+        _materialize = audioMaterializer ?? _defaultAudioMaterializer,
+        _synchronizedVideo =
+            synchronizedVideoExtractor ?? _exportSynchronizedVideo;
 
   final GifExtractor _gif;
   final AudioExtractor _audio;
   final FrameExtractor _frame;
   final RemoteAudioMaterializer _materialize;
+  final SynchronizedVideoExtractor _synchronizedVideo;
+
+  static Future<VideoClipExportResult> _exportSynchronizedVideo({
+    required String videoPath,
+    required String audioPath,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    required String? tlsPinSha256,
+  }) =>
+      exportSynchronizedVideoClip(
+        videoPath: videoPath,
+        audioPath: audioPath,
+        audioStartMs: 0,
+        startMs: startMs,
+        endMs: endMs,
+        outputPath: outputPath,
+        tlsPinSha256: tlsPinSha256,
+      );
 
   /// 所有沉浸制卡共享同一条事务队列。抽媒体会写固定的临时文件名，AnkiConnect 也只有
   /// 一个 GUI 端点；必须把「抽 GIF/音频 → 上传 → add/update note」整体串行化。队列是
@@ -335,7 +380,10 @@ class ImmersionMiningEngine {
     FfmpegFailureReporter? onAudioFailure,
   }) async {
     String? coverPath;
+    Directory? exportedVideoDir;
     bool degradedToStill = false;
+    final bool synchronizedVideo =
+        req.source == AnkiMiningSource.video && req.imageMode.isVideoClip;
 
     // 按来源分流的两个上报口：各自先喂专属回调，再合流进 [onFailure]（保持既有语义）。
     // BUG-1664：两个上报口流经的**精确**失败摘要（含 `ffmpeg launch failed:
@@ -376,6 +424,16 @@ class ImmersionMiningEngine {
     }
 
     final String? src = req.mediaSource;
+    final bool providedVideo = synchronizedVideo &&
+        coverPath != null &&
+        coverPath.toLowerCase().endsWith('.mp4');
+    if (synchronizedVideo && !providedVideo && !req.hasRange) {
+      return const ImmersionMiningResult(
+        aborted: true,
+        abortReason:
+            'synchronized video requires a video source and sentence range',
+      );
+    }
 
     // 三种封面来源封成本地闭包（各自带前置守卫，源不可用即返 null）。三个 [VideoMiningImageMode]
     // 只是它们的不同优先级排列，把原来手写的三段 `if (coverPath == null && ...)` 阶梯归一成
@@ -467,24 +525,25 @@ class ImmersionMiningEngine {
     final String? audioSrc = req.audioSource ?? src;
     Object? audioError;
     StackTrace? audioStack;
-    final Future<String?> audioFuture = _resolveAudioPath(
-      req,
-      compression: compression,
-      tempDir: tempDir,
-      audioSrc: audioSrc,
-      reportAudio: reportAudio,
-    ).catchError((Object e, StackTrace st) {
+    final Future<String?> audioFuture = (providedVideo
+            ? Future<String?>.value(coverPath)
+            : _resolveAudioPath(
+                req,
+                compression: compression,
+                tempDir: tempDir,
+                audioSrc: audioSrc,
+                reportAudio: reportAudio,
+              ))
+        .catchError((Object e, StackTrace st) {
       audioError = e;
       audioStack = st;
       return null;
     });
 
-    if (coverPath == null) {
+    if (coverPath == null && !synchronizedVideo) {
       switch (req.imageMode) {
         case VideoMiningImageMode.gif:
-        // videoClip 只对 galgame 场景卡有意义（协调器在进引擎前已把 mp4 放进
-        // providedCoverBytes，不会落到这里）；视频源若带着它进来，cue 动图就是
-        // 「一段画面」的既有答案，按 GIF 阶梯走。
+        // 普通视频的同步模式已在外层分流；保留其他来源既有的动图降级阶梯。
         case VideoMiningImageMode.videoClip:
           // 现状阶梯：GIF 主 → 起点单帧降级 → 当前帧兜底（逐字等价于旧三段 if）。
           coverPath = await tryGif();
@@ -509,9 +568,46 @@ class ImmersionMiningEngine {
     }
 
     // BUG-1205：收割上面已并行跑完的音频抽取（异常在此重抛，语义与串行版一致）。
-    final String? audioPath = await audioFuture;
+    String? audioPath = await audioFuture;
     if (audioError != null) {
       Error.throwWithStackTrace(audioError!, audioStack!);
+    }
+
+    if (synchronizedVideo && !providedVideo) {
+      if (audioPath == null) {
+        return ImmersionMiningResult(
+          aborted: true,
+          abortReason:
+              _withRootCause('required audio missing', firstAudioFailure),
+        );
+      }
+      exportedVideoDir = await Directory(tempDir).createTemp('synced_video_');
+      final VideoClipExportResult video;
+      try {
+        video = await _synchronizedVideo(
+          videoPath: src!,
+          audioPath: audioPath,
+          startMs: req.clipStartMs,
+          endMs: req.clipEndMs,
+          outputPath: '${exportedVideoDir.path}/immersion_video.mp4',
+          tlsPinSha256: req.mediaSourceTlsPinSha256,
+        );
+      } catch (_) {
+        await _cleanupSynchronizedVideo(exportedVideoDir);
+        rethrow;
+      }
+      if (!video.isSuccess) {
+        await _cleanupSynchronizedVideo(exportedVideoDir);
+        final String reason = video.detail ?? video.failure!.name;
+        reportCover(reason);
+        return ImmersionMiningResult(
+          aborted: true,
+          abortReason:
+              _withRootCause('synchronized video export failed', reason),
+        );
+      }
+      coverPath = video.outputPath;
+      audioPath = coverPath;
     }
 
     // TODO-1303：无音频中止——需要音频却最终没有音轨（不建无音频卡）。音频来自两条路：
@@ -548,6 +644,7 @@ class ImmersionMiningEngine {
       documentTitle: req.documentTitle,
       coverPath: coverPath,
       sentenceAudioPath: audioPath,
+      synchronizedVideo: synchronizedVideo,
       source: req.source,
       bookTitleTag: req.bookTitleTag,
       collectionTag: req.collectionTag,
@@ -561,13 +658,21 @@ class ImmersionMiningEngine {
       clipEndMs: req.clipEndMs,
     );
 
-    final MineOutcome outcome = req.updateNoteId == null
-        ? await repo.mineEntry(
-            rawPayloadJson: jsonEncode(req.fields), context: context)
-        : await repo.updateMinedNote(
-            noteId: req.updateNoteId!,
-            rawPayloadJson: jsonEncode(req.fields),
-            context: context);
+    final MineOutcome outcome;
+    try {
+      outcome = req.updateNoteId == null
+          ? await repo.mineEntry(
+              rawPayloadJson: jsonEncode(req.fields), context: context)
+          : await repo.updateMinedNote(
+              noteId: req.updateNoteId!,
+              rawPayloadJson: jsonEncode(req.fields),
+              context: context);
+    } finally {
+      // Upload/import has completed before removing this job's private MP4.
+      if (exportedVideoDir != null) {
+        await _cleanupSynchronizedVideo(exportedVideoDir);
+      }
+    }
 
     return ImmersionMiningResult(
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);
