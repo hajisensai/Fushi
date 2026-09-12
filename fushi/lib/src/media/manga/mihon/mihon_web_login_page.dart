@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 该源能不能在 app 里登录，以及登录页要打开哪个地址；不能则返回 null。
 ///
@@ -78,6 +80,15 @@ Future<bool> openMihonWebLogin(
 /// [jar] 为空（Android）：扩展读的就是这张 WebView 写的系统 `CookieManager`，
 /// 没有东西要导出，点「完成」直接关页。
 ///
+/// ## 从浏览器导入（BUG-2480）
+///
+/// 用户在系统浏览器里早就登录过的站，不该再登一次。点「从浏览器导入」：向
+/// [BrowserCookieImportGate] 登记本站 → 在系统浏览器打开源站 → Fushi 浏览器扩展
+/// 看到登记后 `chrome.cookies.getAll` 送回来 → 过同一套「只收同站点」过滤写进
+/// [jar]。登记活到本页关闭：用户在浏览器里登完，页面再加载一次就再送一次，
+/// 点「完成」时只要收到过就直接关页。只在 [jar] 非空（桌面 sidecar）时提供——
+/// Android 那边扩展根本连不上手机。
+///
 /// ## 域原样保留
 ///
 /// 导出的条目**保留浏览器给的真实域**（`member.bookwalker.jp` 就存成它自己），
@@ -98,6 +109,7 @@ class MihonWebLoginPage extends StatefulWidget {
     this.cookieReader,
     this.webViewBuilder,
     this.environmentFactory,
+    this.openExternal,
     super.key,
   });
 
@@ -117,6 +129,9 @@ class MihonWebLoginPage extends StatefulWidget {
 
   /// 测试注入：默认 [MangaWebViewEnvironment.obtain]。
   final Future<WebViewEnvironment?> Function()? environmentFactory;
+
+  /// 测试注入：默认用系统浏览器打开（[launchUrl]）。
+  final Future<void> Function(Uri url)? openExternal;
 
   @override
   State<MihonWebLoginPage> createState() => _MihonWebLoginPageState();
@@ -147,12 +162,60 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
   bool _canGoForward = false;
   String _currentUrl = '';
 
+  /// 「从浏览器导入」的登记；null = 没开始。收到过的条数用来决定「完成」怎么收尾。
+  BrowserCookieImportRequestHandle? _import;
+  StreamSubscription<BrowserCookieDelivery>? _importSubscription;
+  int _importedCount = 0;
+
   @override
   void initState() {
     super.initState();
     _visited.add(_originOf(widget.baseUrl));
     _currentUrl = widget.baseUrl.toString();
     unawaited(_prepareEnvironment());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_importSubscription?.cancel());
+    _import?.end();
+    super.dispose();
+  }
+
+  /// 登记导入并把源站交给系统浏览器；扩展送来的每一批都直接写 jar。
+  Future<void> _beginBrowserImport(MihonCookieJar jar) async {
+    if (_import != null) return;
+    final BrowserCookieImportRequestHandle handle =
+        BrowserCookieImportGate.begin(widget.baseUrl.host);
+    _import = handle;
+    _importSubscription = handle.deliveries.listen(
+      (BrowserCookieDelivery delivery) =>
+          unawaited(_applyDelivery(jar, delivery)),
+    );
+    setState(() {});
+    try {
+      await (widget.openExternal ?? _launchExternal)(widget.baseUrl);
+    } on Object {
+      // 打不开浏览器不撤登记：用户可以自己把站点打开，扩展照样会送。
+    }
+  }
+
+  static Future<void> _launchExternal(Uri url) async {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _applyDelivery(
+    MihonCookieJar jar,
+    BrowserCookieDelivery delivery,
+  ) async {
+    final List<MangaCookie> cookies = browserCookiesForSite(
+      delivery.cookies,
+      widget.baseUrl.host,
+    );
+    if (cookies.isEmpty) return;
+    await jar.replaceForSite(widget.baseUrl.host, cookies);
+    if (!mounted) return;
+    setState(() => _importedCount = cookies.length);
   }
 
   Future<void> _prepareEnvironment() async {
@@ -285,6 +348,13 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       }
       return;
     }
+    if (_importedCount > 0) {
+      // 浏览器扩展已经把会话送进 jar，WebView 里多半什么都没有；不再导出。
+      if (ModalRoute.of(context)?.isCurrent ?? false) {
+        Navigator.of(context).pop(true);
+      }
+      return;
+    }
     setState(() => _saving = true);
     int saved = 0;
     Object? failure;
@@ -346,14 +416,58 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
-                '${widget.baseUrl.host} · ${t.mihon_source_login_hint}',
+                '${widget.baseUrl.host} · ${_hintText()}',
                 style: theme.textTheme.bodyMedium,
               ),
             ),
+            if (widget.jar != null) _buildBrowserImportRow(context),
             _buildNavigationBar(context),
             Expanded(child: _buildWebView(context)),
           ],
         ),
+      ),
+    );
+  }
+
+  String _hintText() {
+    if (_import == null) return t.mihon_source_login_hint;
+    if (_importedCount > 0) {
+      return t.mihon_source_login_import_received(count: _importedCount);
+    }
+    return t.mihon_source_login_import_hint;
+  }
+
+  /// 「从浏览器导入」：开始后按钮变成状态文字，不能重复登记。
+  Widget _buildBrowserImportRow(BuildContext context) {
+    final MihonCookieJar jar = widget.jar!;
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        children: <Widget>[
+          OutlinedButton.icon(
+            key: const ValueKey<String>('mihon_login_import_browser'),
+            onPressed: _import == null
+                ? () => unawaited(_beginBrowserImport(jar))
+                : null,
+            icon: const Icon(Icons.extension_outlined),
+            label: Text(t.mihon_source_login_import_browser),
+          ),
+          if (_import != null) ...<Widget>[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _importedCount > 0
+                    ? t.mihon_source_login_import_received(
+                        count: _importedCount,
+                      )
+                    : t.mihon_source_login_import_none,
+                key: const ValueKey<String>('mihon_login_import_status'),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

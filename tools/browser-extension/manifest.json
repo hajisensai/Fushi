@@ -3,7 +3,7 @@
   "name": "Fushi Reader Bridge",
   "version": "0.1.0",
   "description": "Look up words on web pages using Fushi's dictionaries.",
-  "permissions": ["storage", "activeTab", "tabCapture", "offscreen", "scripting", "alarms", "sidePanel"],
+  "permissions": ["storage", "activeTab", "tabCapture", "offscreen", "scripting", "alarms", "sidePanel", "cookies"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [

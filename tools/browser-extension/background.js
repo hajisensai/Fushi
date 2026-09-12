@@ -1,6 +1,6 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-update.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-update.js', 'site-cookie-export.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
@@ -377,7 +377,75 @@ maybeReinjectAfterReload(); // BUG-1047：若上一轮是自更新 reload，补�
 try { chrome.alarms.create('fushiHeartbeat', { periodInMinutes: 1 }); } catch (_) { /* 无 alarms 权限：跳过心跳 */ }
 if (chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm && alarm.name === 'fushiHeartbeat') checkVersionOnStartup();
+    if (alarm && alarm.name === 'fushiHeartbeat') {
+      checkVersionOnStartup();
+      maybeExportSiteCookies(null);
+    }
+  });
+}
+
+// BUG-2480：漫画源登录——把浏览器里已登录的站点会话送给 Fushi。
+// app 登录页点「从浏览器导入」后在 status 回包里登记 { host, nonce } 并在系统浏览器打开
+// 该站；这边在该站页面加载完成 / 心跳时看到登记就 getAll 后回传。见 site-cookie-export.js。
+let siteCookieExportInflight = null;
+async function fetchCookieImportRequest() {
+  const api = self.FUSHI_SITE_COOKIES;
+  if (!api) return null;
+  const { base, token } = await cfg();
+  try {
+    const r = await fetch(base + '/api/extension/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+      body: statusRequestBody(),
+    });
+    if (!r.ok) return null;
+    return api.parseImportRequest(await responseJson(r));
+  } catch (_) {
+    return null;
+  }
+}
+async function siteHasOpenTab(host) {
+  const api = self.FUSHI_SITE_COOKIES;
+  try {
+    const tabs = await chrome.tabs.query({});
+    return tabs.some((tab) => api.hostBelongsTo(api.hostOfUrl(tab && tab.url), host));
+  } catch (_) {
+    return false;
+  }
+}
+// 只在「登记的站点确实开着标签页」时才送：登记存在但站点没打开，说明用户还没走到
+// 浏览器那一步，送一份陈旧会话只会让 app 那边误以为已导入。
+async function maybeExportSiteCookies(loadedUrl) {
+  const api = self.FUSHI_SITE_COOKIES;
+  if (!api || !chrome.cookies) return;
+  if (siteCookieExportInflight) return;
+  siteCookieExportInflight = (async () => {
+    const request = await fetchCookieImportRequest();
+    if (!request) return;
+    if (loadedUrl != null) {
+      if (!api.hostBelongsTo(api.hostOfUrl(loadedUrl), request.host)) return;
+    } else if (!(await siteHasOpenTab(request.host))) {
+      return;
+    }
+    let cookies = [];
+    try {
+      cookies = await chrome.cookies.getAll({ domain: request.host });
+    } catch (_) {
+      return;
+    }
+    const { base, token } = await cfg();
+    try {
+      await fetch(base + '/api/extension/site-cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+        body: JSON.stringify(api.toPayload(request, cookies)),
+      });
+    } catch (_) { /* app 没开 / 登记已撤：下次再说 */ }
+  })().finally(() => { siteCookieExportInflight = null; });
+}
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info && info.status === 'complete' && tab && tab.url) maybeExportSiteCookies(tab.url);
   });
 }
 

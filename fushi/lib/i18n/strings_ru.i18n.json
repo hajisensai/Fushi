@@ -4740,5 +4740,9 @@
   "manga_chapter_locked_download_anyway": "Download anyway",
   "manga_series_download_all_locked_skipped": "Skipped $count locked chapters",
   "mihon_sources_search_hint": "Search sources",
-  "mihon_source_login_forward": "Forward"
+  "mihon_source_login_forward": "Forward",
+  "mihon_source_login_import_browser": "Import from browser",
+  "mihon_source_login_import_hint": "The site was opened in your browser. The Fushi extension will send its session here; sign in there if needed, then tap Done.",
+  "mihon_source_login_import_received": "Imported $count cookies from the browser",
+  "mihon_source_login_import_none": "No session received from the browser yet"
 }

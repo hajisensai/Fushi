@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -37,6 +39,7 @@ void main() {
     required MihonCookieJar? store,
     required Future<List<Cookie>> Function(WebUri url) cookieReader,
     Uri? baseUrl,
+    Future<void> Function(Uri url)? openExternal,
   }) async {
     bool? popped;
     await tester.pumpWidget(
@@ -52,6 +55,7 @@ void main() {
                     jar: store,
                     cookieReader: cookieReader,
                     environmentFactory: () async => null,
+                    openExternal: openExternal,
                     webViewBuilder: (_) =>
                         const SizedBox(key: ValueKey<String>('stub-webview')),
                   ),
@@ -377,10 +381,122 @@ void main() {
     // 地址栏显示当前地址。
     expect(find.text('https://bookwalker.jp'), findsOneWidget);
   });
+  group('从浏览器导入（BUG-2480）', () {
+    setUp(BrowserCookieImportGate.resetForTesting);
+    tearDown(BrowserCookieImportGate.resetForTesting);
+
+    testWidgets('点按钮 → 登记本站 + 在系统浏览器打开源站；扩展送来后写 jar、「完成」直接关页', (
+      WidgetTester tester,
+    ) async {
+      final MihonCookieJar store = jar();
+      final List<Uri> opened = <Uri>[];
+      bool readWebView = false;
+      await pumpLogin(
+        tester,
+        store: store,
+        cookieReader: (WebUri url) async {
+          readWebView = true;
+          return const <Cookie>[];
+        },
+        openExternal: (Uri url) async => opened.add(url),
+      );
+      expect(BrowserCookieImportGate.pending, isNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+      );
+      await tester.pump();
+      expect(opened, <Uri>[Uri.parse('https://bookwalker.jp')]);
+      final BrowserCookieImportRequest? request =
+          BrowserCookieImportGate.pending;
+      expect(request, isNotNull);
+      expect(request!.host, 'bookwalker.jp');
+      // 按钮变禁用（不能重复登记），状态文字先是「还没收到」。
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(find.text(t.mihon_source_login_import_none), findsOneWidget);
+
+      // 扩展回传（含一条第三方域，必须被挡）。送达 → 写 jar 是真实文件 IO，
+      // 整段放进 runAsync，fake zone 里等不到 dart:io 的完成事件。
+      await tester.runAsync(() async {
+        final bool accepted = BrowserCookieImportGate.deliver(
+          nonce: request.nonce,
+          host: 'bookwalker.jp',
+          cookies:
+              <Object?>[
+                    _browserCookie('session', '.bookwalker.jp'),
+                    _browserCookie('member', 'member.bookwalker.jp'),
+                    _browserCookie('_ga', '.google-analytics.com'),
+                  ]
+                  .map(BrowserSiteCookie.fromJson)
+                  .whereType<BrowserSiteCookie>()
+                  .toList(),
+        );
+        expect(accepted, isTrue);
+      });
+      // 写 jar 的每一步 IO 续体都排在 fake zone 里：与 tapDone 同一节奏，
+      // 真实等待 + pump 交替，直到状态文字出现。
+      final Finder received = find.text(
+        t.mihon_source_login_import_received(count: 2),
+      );
+      final Stopwatch clock = Stopwatch()..start();
+      while (received.evaluate().isEmpty &&
+          clock.elapsed < const Duration(seconds: 10)) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 5)),
+        );
+        await tester.pump();
+      }
+      expect(received, findsWidgets);
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://bookwalker.jp/')),
+        'session=v-session',
+      );
+      expect(
+        store.cookieHeaderFor(Uri.parse('https://member.bookwalker.jp/')),
+        contains('member=v-member'),
+      );
+
+      await tester.tap(find.byKey(const ValueKey<String>('mihon_login_done')));
+      await tester.pumpAndSettle();
+      expect(readWebView, isFalse, reason: '会话已从浏览器来，不再导出 WebView');
+      expect(find.byKey(const ValueKey<String>('stub-webview')), findsNothing);
+      expect(BrowserCookieImportGate.pending, isNull, reason: '关页即撤登记');
+    });
+
+    testWidgets('jar 为 null（Android）没有导入按钮', (WidgetTester tester) async {
+      await pumpLogin(
+        tester,
+        store: null,
+        cookieReader: (WebUri url) async => const <Cookie>[],
+      );
+      expect(
+        find.byKey(const ValueKey<String>('mihon_login_import_browser')),
+        findsNothing,
+      );
+    });
+  });
 }
 
 /// 只为判据测试存在：实现「浏览器持有 cookie」这个能力即可。
 class _BrowserCookieRuntime implements BrowserCookieMihonRuntime {}
+
+Map<String, Object?> _browserCookie(String name, String domain) =>
+    <String, Object?>{
+      'name': name,
+      'value': 'v-$name',
+      'domain': domain,
+      'path': '/',
+      'secure': true,
+      'httpOnly': true,
+      'hostOnly': !domain.startsWith('.'),
+    };
 
 /// 只为判据测试存在：实现「宿主持有 cookie」这个能力即可，不需要真的是运行时。
 class _HostCookieRuntime implements HostCookieMihonRuntime {

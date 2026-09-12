@@ -4740,5 +4740,9 @@
   "manga_chapter_locked_download_anyway": "仍然下载",
   "manga_series_download_all_locked_skipped": "已跳过 $count 个锁定章节",
   "mihon_sources_search_hint": "搜索漫画源",
-  "mihon_source_login_forward": "前进"
+  "mihon_source_login_forward": "前进",
+  "mihon_source_login_import_browser": "从浏览器导入",
+  "mihon_source_login_import_hint": "已在系统浏览器打开源站，Fushi 扩展会把会话送过来；还没登录就在浏览器里登录，然后点「完成」。",
+  "mihon_source_login_import_received": "已从浏览器导入 $count 条 cookie",
+  "mihon_source_login_import_none": "还没收到浏览器送来的会话"
 }
