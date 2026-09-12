@@ -24,7 +24,11 @@ bool _manualCheckInFlight = false;
 /// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
 /// UpdateChecker 既有对话框 → 应用内下载安装。
 Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
-  if (_manualCheckInFlight) return;
+  if (_manualCheckInFlight) {
+    // 更新中心条目 / 系统通知也从这里进来：在飞时静默早退等于「点了没反应」。
+    FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
+    return;
+  }
   _manualCheckInFlight = true;
   // TODO-1024 / BUG-479：缓存优先即时反馈——先读上次检查结果（按当前通道），据它立刻给
   // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后

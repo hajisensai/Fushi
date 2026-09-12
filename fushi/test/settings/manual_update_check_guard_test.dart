@@ -58,7 +58,8 @@ void main() {
     expect(orchestration, contains('t.update_check_failed'));
     // 防连点旗标。
     expect(src, contains('bool _manualCheckInFlight = false;'));
-    expect(orchestration, contains('if (_manualCheckInFlight) return;'));
+    // 在飞时不是静默早退：更新中心 / 系统通知也从这里进来，得有一句反馈。
+    expect(orchestration, contains('if (_manualCheckInFlight) {'));
     expect(orchestration, contains('_manualCheckInFlight = true;'));
     expect(orchestration, contains('_manualCheckInFlight = false;'));
   });
@@ -77,6 +78,33 @@ void main() {
         reason: 'app 新版本必须走应用内检查 → 下载 → 安装');
     expect(src, isNot(contains('launchUrl(')),
         reason: '更新中心的落点全在 app 内，不该把用户送到浏览器');
+  });
+
+  test('update dialog / download are one per-version exclusive flow', () {
+    // BUG-2487 审查：启动期自动检查弹对话框的同时更新中心 toast 已发出，点 toast
+    // 触发第二轮检查——不按版本互斥就是两个「发现新版本」叠在一起。
+    final String src = File('lib/src/utils/misc/update_checker_release.dart')
+        .readAsStringSync();
+    final String check = _functionSource(
+      src,
+      'static Future<void> _check(',
+      'static Future<bool> _shouldBackOffWindowsAutoInstall(',
+    );
+    expect('_notifyIfUpdateFlowActive(context, version)'.allMatches(check),
+        hasLength(2),
+        reason: '有包 / 无包两条弹框路径都要先问该版本的流是否已活跃');
+    for (final String fn in <String>[
+      'static Future<void> _showUpdateDialog(',
+      'static Future<void> _showFallbackDialog(',
+      'static Future<void> _downloadAndInstall(',
+    ]) {
+      final int at = src.indexOf(fn);
+      expect(at, isNonNegative, reason: fn);
+      final String body = src.substring(at, at + 1200);
+      expect(body, contains('_runExclusiveUpdateFlow('), reason: '$fn 必须走互斥流');
+      expect(body, contains('_updateFlowKey(version)'),
+          reason: '$fn 必须挂在同一把版本锁上');
+    }
   });
 
   test('scheduleCheck keeps default-null callbacks (auto-check unchanged)', () {
