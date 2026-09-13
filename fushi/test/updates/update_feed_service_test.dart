@@ -113,7 +113,7 @@ void main() {
     expect(notifier.sent.single.body, contains('+2'));
     expect(await service.unseenTotal(), 3);
 
-    await service.setSystemNotificationsEnabled(false);
+    await service.disableSystemNotifications();
     await service.publishBatch(
         UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('4')]);
     expect(notifier.sent, hasLength(1), reason: '总开关关掉后不再发通知');
@@ -270,10 +270,65 @@ void main() {
     expect(notifier.ensureReadyCalls, 1, reason: '发通知复用启动期的初始化');
 
     final UpdateFeedService cold = await makeService();
-    await cold.setSystemNotificationsEnabled(false);
+    await cold.disableSystemNotifications();
     await cold.warmUpNotifier();
-    expect(notifier.ensureReadyCalls, 0,
-        reason: '关着总开关时不初始化（Android 13+ 初始化会弹权限）');
+    expect(notifier.ensureReadyCalls, 0, reason: '关着总开关时不初始化');
+  });
+
+  test('BUG-2498：启动期 warm-up 只查询权限，绝不申请；申请只跟着用户打开开关',
+      () async {
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    final RecordingUpdateNotifier fresh =
+        RecordingUpdateNotifier(permission: false);
+    final UpdateFeedService service = UpdateFeedService(
+      database: db,
+      prefs: prefs,
+      notifier: fresh,
+      now: () => DateTime.utc(2026, 9, 13, 12),
+    );
+
+    await service.warmUpNotifier();
+    expect(fresh.ensureReadyCalls, 1);
+    expect(fresh.requestPermissionCalls, 0,
+        reason: '退出新手引导那一帧不得弹系统权限框——MIUI 的权限界面会崩并连坐杀掉我们');
+    expect(service.systemNotificationsEnabled, isTrue, reason: '偏好默认开');
+    expect(service.systemNotificationsActive, isFalse,
+        reason: '系统没授权时开关显示为关，不假装能发');
+
+    final UpdateFeedPublishResult result = await service
+        .publishBatch(UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[
+      episode('1'),
+    ]);
+    expect(result.hasNew, isTrue);
+    expect(result.notificationSent, isFalse);
+    expect(fresh.requestPermissionCalls, 0, reason: '发通知也不趁机申请');
+    expect(await service.unseenTotal(), 1, reason: '没权限只是不发通知，红点照常');
+
+    // 用户在设置里打开开关：这才是唯一的申请点。系统拒绝 → 开关仍显示为关。
+    expect(await service.enableSystemNotifications(), isFalse);
+    expect(fresh.requestPermissionCalls, 1);
+    expect(service.systemNotificationsActive, isFalse);
+
+    // 关掉再打开 = 再申请一次（用户改了主意，系统也可能已在设置里放行）。
+    await service.disableSystemNotifications();
+    expect(service.systemNotificationsEnabled, isFalse);
+    expect(await service.enableSystemNotifications(), isFalse);
+    expect(fresh.requestPermissionCalls, 2);
+  });
+
+  test('BUG-2498：用户打开开关且系统放行 → 开关显示开、通知照发', () async {
+    final UpdateFeedService service = await makeService();
+    expect(service.systemNotificationsActive, isFalse,
+        reason: '还没 warm-up/申请，权限状态未知，不能显示为开');
+    expect(await service.enableSystemNotifications(), isTrue);
+    expect(notifier.requestPermissionCalls, 1);
+    expect(service.systemNotificationsActive, isTrue);
+    await service.publishBatch(
+        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    expect(notifier.sent, hasLength(1));
   });
 
   test('通知 id：无组回落到域固定值；有组跨进程稳定且不与其它域撞', () {

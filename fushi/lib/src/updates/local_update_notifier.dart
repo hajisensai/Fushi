@@ -6,7 +6,8 @@ library;
 
 import 'dart:io' show Directory, File, Platform;
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:path/path.dart' as p;
 
@@ -171,43 +172,96 @@ class LocalUpdateNotifier implements UpdateNotifier {
       ),
       onDidReceiveNotificationResponse: _dispatch,
     );
-    if (initialised == false) return false;
-    return _requestPermission();
+    return initialised != false;
   }
 
   void _dispatch(NotificationResponse response) {
     onResponse?.call(decodeNotificationResponse(response));
   }
 
-  /// 权限申请。三个平台三种口径，返回「现在能不能发」。
+  /// 系统当前允不允许发。只查询，不弹界面。
+  ///
+  /// 平台分派用 [defaultTargetPlatform] 而不是 `dart:io` 的 `Platform`：插件自己
+  /// 的 `resolvePlatformSpecificImplementation` 就按它分派，两边必须是同一个答案，
+  /// 单测也才能用 `debugDefaultTargetPlatformOverride` 走到 Android 分支。
   ///
   /// Linux / Windows 没有运行时权限概念，初始化成功即可发。
-  Future<bool> _requestPermission() async {
-    if (Platform.isAndroid) {
-      final AndroidFlutterLocalNotificationsPlugin? android =
-          _plugin.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      if (android == null) return false;
-      // API 33+ 才有 POST_NOTIFICATIONS；更低版本这里返回 null，视作已授权
-      // （清单里的权限在安装时就给了）。
-      final bool? granted = await android.requestNotificationsPermission();
-      return granted ?? true;
+  @override
+  Future<bool> hasPermission() async {
+    if (!isSupportedPlatform) return false;
+    try {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          // 全 API 级别都有效：API 33+ 反映 POST_NOTIFICATIONS，更低版本反映系统
+          // 设置里的应用通知总开关。null = 平台实现缺席，按不允许处理。
+          final bool? enabled = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin>()
+              ?.areNotificationsEnabled();
+          return enabled ?? false;
+        case TargetPlatform.iOS:
+          final NotificationsEnabledOptions? options = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  IOSFlutterLocalNotificationsPlugin>()
+              ?.checkPermissions();
+          return options?.isEnabled ?? false;
+        case TargetPlatform.macOS:
+          final NotificationsEnabledOptions? options = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  MacOSFlutterLocalNotificationsPlugin>()
+              ?.checkPermissions();
+          return options?.isEnabled ?? false;
+        case TargetPlatform.linux:
+        case TargetPlatform.windows:
+        case TargetPlatform.fuchsia:
+          return true;
+      }
+    } on Object catch (error) {
+      debugPrint('LocalUpdateNotifier: permission query failed. $error');
+      return false;
     }
-    if (Platform.isIOS) {
-      final bool? granted = await _plugin
-          .resolvePlatformSpecificImplementation<
-              IOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(alert: true, badge: true, sound: false);
-      return granted ?? false;
+  }
+
+  /// 向系统申请通知权限。**会弹系统对话框**——只能由用户的显式动作触发，绝不放
+  /// 进 [ensureReady] / 启动期（BUG-2498：MIUI 的权限界面崩溃会连坐杀掉我们）。
+  ///
+  /// 三个平台三种口径，返回申请后「现在能不能发」。
+  @override
+  Future<bool> requestPermission() async {
+    if (!await ensureReady()) return false;
+    try {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          final AndroidFlutterLocalNotificationsPlugin? android =
+              _plugin.resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin>();
+          if (android == null) return false;
+          // API 33+ 才有 POST_NOTIFICATIONS；更低版本这里返回 null，此时真正的
+          // 答案是系统设置里的应用通知总开关——交给查询侧。
+          final bool? granted = await android.requestNotificationsPermission();
+          if (granted != null) return granted;
+          return hasPermission();
+        case TargetPlatform.iOS:
+          final bool? granted = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  IOSFlutterLocalNotificationsPlugin>()
+              ?.requestPermissions(alert: true, badge: true, sound: false);
+          return granted ?? false;
+        case TargetPlatform.macOS:
+          final bool? granted = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  MacOSFlutterLocalNotificationsPlugin>()
+              ?.requestPermissions(alert: true, badge: true, sound: false);
+          return granted ?? false;
+        case TargetPlatform.linux:
+        case TargetPlatform.windows:
+        case TargetPlatform.fuchsia:
+          return true;
+      }
+    } on Object catch (error) {
+      debugPrint('LocalUpdateNotifier: permission request failed. $error');
+      return false;
     }
-    if (Platform.isMacOS) {
-      final bool? granted = await _plugin
-          .resolvePlatformSpecificImplementation<
-              MacOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(alert: true, badge: true, sound: false);
-      return granted ?? false;
-    }
-    return true;
   }
 
   @override

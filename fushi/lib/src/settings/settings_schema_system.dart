@@ -12,6 +12,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
@@ -491,19 +492,23 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.refresh();
               },
             ),
+          // 显示值 = 偏好开 && 系统已授权；打开 = 唯一会弹系统权限框的地方
+          // （BUG-2498：启动期不再申请，申请只跟着用户这一下）。
           SettingsSwitchItem(
             id: 'system.updates.system_notifications',
             title: t.updates_system_notifications,
             subtitle: t.updates_system_notifications_hint,
             icon: Icons.notifications_active_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.prefsRepo.getPref(
-                  kUpdateSystemNotificationsPref,
-                  defaultValue: true,
-                ) as bool,
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel.updateFeedService.systemNotificationsActive,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.prefsRepo
-                  .setPref(kUpdateSystemNotificationsPref, value);
+              final UpdateFeedService feed =
+                  settingsContext.appModel.updateFeedService;
+              if (value) {
+                await feed.enableSystemNotifications();
+              } else {
+                await feed.disableSystemNotifications();
+              }
               settingsContext.refresh();
             },
           ),
