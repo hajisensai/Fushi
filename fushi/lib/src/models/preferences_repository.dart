@@ -1946,22 +1946,27 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   // ── audio sources ────────────────────────────────────────────────────
 
-  static const List<String> defaultAudioSources = [
+  /// 已退役的内置远端音频源 URL。曾经随新装默认写入用户的音频源列表；2026-09-13
+  /// 用户拍板不再依赖任何第三方网络音频库，内置默认远端源整个删掉。老用户列表里
+  /// 残留的这些 URL 在读取时剔除——只删默认值而不清持久化，就等于只对新装生效。
+  /// 消费方一律经 [audioSourceConfigs] 读，这里是唯一咽喉。
+  static const Set<String> retiredAudioSourceUrls = <String>{
     'https://fushi-reader.manhhaoo-do.workers.dev/?term={term}&reading={reading}',
-  ];
+  };
 
   /// Anki 本地音频服务器（local-audio-yomichan，默认端口 5050）的内置预设 URL。
   /// 用户装了该服务器后，在「管理音频来源」里打开开关即用；默认关闭——本地第三方
-  /// 服务不经用户同意不参与查词发音（与 fushiRemote / worker 默认源同策）。
+  /// 服务不经用户同意不参与查词发音（与 fushiRemote 同策）。
   /// 由 [_withDefaultAudioSources] 对所有用户「缺则补」为一条 disabled 源。
   static const String ankiLocalAudioUrl =
       'http://localhost:5050/?term={term}&reading={reading}';
 
+  /// legacy `audio_sources`（只存已启用的远端 URL）。无内置默认远端源，未写过即空。
   List<String> get audioSources {
-    final result = getPref('audio_sources', defaultValue: defaultAudioSources);
+    final result = getPref('audio_sources', defaultValue: const <String>[]);
     if (result is List<String>) return result;
     if (result is List) return result.cast<String>();
-    return List<String>.from(defaultAudioSources);
+    return <String>[];
   }
 
   List<AudioSourceConfig> get audioSourceConfigs {
@@ -1978,31 +1983,23 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
           .toList();
       if (configs.isNotEmpty) return _withDefaultAudioSources(configs);
     }
-    // 纯新装（typed config 与 legacy audio_sources 两个 pref 都未写过）下，内置的
-    // 远端音频源（fushi-reader.manhhaoo worker）默认**关闭**：第三方私有远端服务不
-    // 应未经用户同意就默认参与查词发音。一旦用户存过任一 pref（老用户/已配置过），
-    // 走下面的 legacy 装配，按其保存值原样还原（fromLegacyUrls 默认 enabled，保留
-    // 老用户已启用的 URL，向后兼容）。
-    if (!containsKey('audio_source_configs') && !containsKey('audio_sources')) {
-      return _withDefaultAudioSources(_defaultDisabledRemoteSources());
-    }
+    // 没写过 typed config 就按 legacy audio_sources 装配（fromLegacyUrls 默认
+    // enabled，保留老用户已启用的 URL）；纯新装两个 pref 都空，走同一条路。
     return _withDefaultAudioSources(
       AudioSourceConfig.fromLegacyUrls(audioSources),
     );
   }
 
-  /// 新装默认远端音频源装配：把 [defaultAudioSources] 的 URL 装成 remoteAudio，但
-  /// 全部标记为 disabled（新装默认不启用第三方远端发音）。
-  List<AudioSourceConfig> _defaultDisabledRemoteSources() {
-    return AudioSourceConfig.fromLegacyUrls(defaultAudioSources)
-        .map((AudioSourceConfig source) => source.copyWith(enabled: false))
-        .toList();
-  }
-
   List<AudioSourceConfig> _withDefaultAudioSources(
     List<AudioSourceConfig> sources,
   ) {
-    final List<AudioSourceConfig> result = <AudioSourceConfig>[...sources];
+    // 已退役的内置远端源（见 [retiredAudioSourceUrls]）从老用户列表里剔除。
+    final List<AudioSourceConfig> result = <AudioSourceConfig>[
+      for (final AudioSourceConfig source in sources)
+        if (source.kind != AudioSourceKind.remoteAudio ||
+            !retiredAudioSourceUrls.contains(source.url))
+          source,
+    ];
 
     // fushiRemote 恒在列首（缺则补），历史行为不变。
     final bool hasFushiRemote = result.any(

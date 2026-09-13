@@ -264,11 +264,11 @@ void main() {
         final String dirA = p.join(tmp.path, 'a');
         final String dirB = p.join(tmp.path, 'b');
 
-        final Future<MangaOcrRunningJob> startedA = registry.enqueue(
+        final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
           job: first.job('book', dirA),
           mangaJsonPath: mangaJsonPath,
         );
-        final Future<MangaOcrRunningJob> startedB = registry.enqueue(
+        final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
           job: second.job('book', dirB),
           mangaJsonPath: mangaJsonPath,
         );
@@ -292,5 +292,39 @@ void main() {
         await watch.cancel();
       },
     );
+
+    test('cancel(bookKey) 连排队的一起放弃：A 停后 B 不启动、enqueue 以 null 完成', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+        job: first.job('book', dirA),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book', dirB),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await startedA, isNotNull);
+      expect(registry.queuedDirectories('book'), <String>[dirB]);
+
+      await registry.cancel('book');
+      expect(first.cancelled, isTrue);
+      expect(registry.queuedDirectories('book'), isEmpty);
+      expect(await startedB, isNull, reason: '排队者被放弃，不该启动');
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.running('book'), isNull);
+      expect(second.controller.hasListener, isFalse, reason: '订阅即启动：B 根本不该被订阅');
+      // 另一本书不受影响；同书再 enqueue 仍能正常启动。
+      final _FakeSource third = _FakeSource();
+      final MangaOcrRunningJob? c = await registry.enqueue(
+        job: third.job('book', dirA),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(c, isNotNull);
+      await registry.cancelAll();
+    });
   });
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_episode_rail.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 
 export 'package:fushi/src/media/video/video_episode_rail.dart'
     show VideoEpisodeEntry, VideoEpisodeRail;
@@ -22,6 +24,7 @@ class VideoEpisodePanel extends StatefulWidget {
     required this.colorScheme,
     required this.title,
     required this.emptyHint,
+    this.seasonLabelOf,
     this.fontSize = 14,
     this.width = double.infinity,
     this.height = 220,
@@ -46,6 +49,11 @@ class VideoEpisodePanel extends StatefulWidget {
 
   /// 列表为空时的占位提示。
   final String emptyHint;
+
+  /// 季 chip 文案（组键 → 「第 N 季」/「PV·特典」，页面层接 i18n）。null 时
+  /// 直接显示组键（仅测试/兜底）。多季判据看 [VideoEpisodeEntry.groupKey]：
+  /// 派生组数 ≥ 2 才出 chip 行，单季合集整个头部与从前一样。
+  final String Function(String groupKey)? seasonLabelOf;
   final double fontSize;
   final double width;
   final double height;
@@ -55,12 +63,74 @@ class VideoEpisodePanel extends StatefulWidget {
 }
 
 class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
+  /// 按季切成的分节（元素是**全局下标**；季升序、PV/特典殿后，与合集详情页
+  /// 季 tab 同序）。单季 → 1 节，不出 chip。
+  List<CollectionSeasonSection<int>> _sections =
+      const <CollectionSeasonSection<int>>[];
+  int _selectedSection = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildSections(followCurrent: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoEpisodePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 换集（含跨季自动连播 / 上下集）→ chip 跟到当前集所在季；列表整体换掉也
+    // 重算。用户手动切到别的季浏览、当前集没变时不打扰。
+    final bool episodesChanged = !identical(
+      oldWidget.episodes,
+      widget.episodes,
+    );
+    final bool currentChanged = oldWidget.currentIndex != widget.currentIndex;
+    if (episodesChanged || currentChanged) {
+      _rebuildSections(followCurrent: currentChanged || episodesChanged);
+    }
+  }
+
+  void _rebuildSections({required bool followCurrent}) {
+    final List<int> all = List<int>.generate(
+      widget.episodes.length,
+      (int i) => i,
+    );
+    _sections = sortCollectionSeasonSections<int>(
+      buildCollectionSeasonSections<int>(
+        members: all,
+        keyOf: (int i) => widget.episodes[i].groupKey,
+      ),
+    );
+    if (followCurrent) {
+      final int owner = _sections.indexWhere(
+        (CollectionSeasonSection<int> s) =>
+            s.items.contains(widget.currentIndex),
+      );
+      if (owner >= 0) _selectedSection = owner;
+    }
+    if (_sections.isEmpty) {
+      _selectedSection = 0;
+    } else {
+      _selectedSection = _selectedSection.clamp(0, _sections.length - 1);
+    }
+  }
+
+  bool get _hasSeasonChips => _sections.length >= 2;
+
+  /// 当前 chip 下可见的全局下标；无 chip = 全表。
+  List<int>? get _visibleIndices =>
+      _hasSeasonChips ? _sections[_selectedSection].items : null;
+
+  String _labelOf(String groupKey) =>
+      widget.seasonLabelOf?.call(groupKey) ?? groupKey;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = widget.colorScheme;
     final double minimumHeight = 150 + widget.fontSize * 3;
-    final double panelHeight =
-        widget.height < minimumHeight ? minimumHeight : widget.height;
+    final double panelHeight = widget.height < minimumHeight
+        ? minimumHeight
+        : widget.height;
     return Material(
       color: Colors.transparent,
       child: SizedBox(
@@ -82,9 +152,11 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _buildHeader(cs),
+              if (_hasSeasonChips) _buildSeasonChips(cs),
               Expanded(
-                child:
-                    widget.episodes.isEmpty ? _buildEmpty(cs) : _buildRail(cs),
+                child: widget.episodes.isEmpty
+                    ? _buildEmpty(cs)
+                    : _buildRail(cs),
               ),
               const SizedBox(height: 12),
             ],
@@ -146,6 +218,41 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     );
   }
 
+  /// 季 chip 行（多季合集才渲染）：横向可滚，键盘/手柄经 Tab 落到 chip 上按
+  /// Enter 切季。切季只换轨道内容，不换当前集、不触发播放。
+  Widget _buildSeasonChips(ColorScheme cs) {
+    return SizedBox(
+      height: widget.fontSize * 2 + 16,
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          key: const ValueKey<String>('video-episode-season-chips'),
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsetsDirectional.only(
+            start: 20,
+            end: 20,
+            bottom: 8,
+          ),
+          itemCount: _sections.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (BuildContext context, int i) {
+            final String key = _sections[i].groupKey;
+            return ChoiceChip(
+              key: ValueKey<String>('video-episode-season-chip-$key'),
+              label: Text(_labelOf(key)),
+              labelStyle: TextStyle(fontSize: widget.fontSize - 1),
+              selected: i == _selectedSection,
+              visualDensity: VisualDensity.compact,
+              onSelected: (bool _) {
+                if (i == _selectedSection) return;
+                setState(() => _selectedSection = i);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmpty(ColorScheme cs) {
     return Center(
       child: Padding(
@@ -168,7 +275,13 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     return Align(
       alignment: AlignmentDirectional.centerStart,
       child: VideoEpisodeRail(
-        episodes: widget.episodes,
+        key: ValueKey<String>('video-episode-rail-$_selectedSection'),
+        episodes: _visibleIndices == null
+            ? widget.episodes
+            : <VideoEpisodeEntry>[
+                for (final int i in _visibleIndices!) widget.episodes[i],
+              ],
+        indices: _visibleIndices,
         currentIndex: widget.currentIndex,
         onTapEpisode: widget.onTapEpisode,
         colorScheme: cs,

@@ -198,23 +198,29 @@ class MangaOcrJobRegistry {
   ///
   /// 下载完成钩子的自动 OCR 用这条：同书连下三章、上一章还在识别时，[start] 会
   /// 直接把已在跑的那个返回、本章被静默吞掉。这里按 bookKey 串成 FIFO，每章都
-  /// 轮得到。返回的 Future 在**本任务真正启动**时完成（不等它跑完）。
-  Future<MangaOcrRunningJob> enqueue({
+  /// 轮得到。返回的 Future 在**本任务真正启动**时完成（不等它跑完）；排队期间
+  /// 被 [cancel] 放弃的以 null 完成。
+  Future<MangaOcrRunningJob?> enqueue({
     required MangaOcrBackgroundJob job,
     required String mangaJsonPath,
   }) {
     final String bookKey = job.bookKey;
     final Future<void> previous =
         _queues[bookKey] ?? _jobs[bookKey]?.whenEnded ?? Future<void>.value();
-    final Completer<MangaOcrRunningJob> started =
-        Completer<MangaOcrRunningJob>();
+    final Completer<MangaOcrRunningJob?> started =
+        Completer<MangaOcrRunningJob?>();
     final String directory = job.managedDirectory;
     _queuedDirectories.putIfAbsent(bookKey, () => <String>[]).add(directory);
     _notifyChanged();
     final Future<void> tail = previous.then((_) async {
       final List<String>? queue = _queuedDirectories[bookKey];
-      queue?.remove(directory);
-      if (queue != null && queue.isEmpty) _queuedDirectories.remove(bookKey);
+      if (queue == null || !queue.remove(directory)) {
+        // 排队期间被 cancel(bookKey) 整本放弃：不启动。目录可能已随「移出书架」
+        // 被删，对着空目录跑只会产出一条失败日志。
+        started.complete(null);
+        return;
+      }
+      if (queue.isEmpty) _queuedDirectories.remove(bookKey);
       // 前一个刚 _forget 时 running() 可能已为空，但也可能仍是「刚结束还没被
       // 清掉」的那一个；start 只认 _jobs 里的，_forget 与 _end 同步发生，安全。
       final MangaOcrRunningJob running = start(
@@ -233,12 +239,15 @@ class MangaOcrJobRegistry {
     return started.future;
   }
 
-  /// 用户取消这本书的任务；没有任务在跑则 no-op。
+  /// 用户取消这本书的任务：正在跑的真停，排着队还没轮到的一并放弃；两者都没有
+  /// 则 no-op。只停正在跑的那一个是不够的——它一结束链尾就把下一个 start 起来
+  /// （BUG-2513「移出书架」删完目录后排队者仍会对空目录开跑）。
   Future<void> cancel(String bookKey) async {
+    final bool hadQueued = _queuedDirectories.remove(bookKey) != null;
     final MangaOcrRunningJob? running = _jobs.remove(bookKey);
-    if (running == null) return;
+    if (running == null && !hadQueued) return;
     _notifyChanged();
-    await running.cancel();
+    await running?.cancel();
   }
 
   /// 退出 app / 切换 Profile 等整体拆栈：把所有任务真停掉。

@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "排除",
   "mihon_filter_ignore": "忽略",
   "mihon_filter_include": "包含",
-  "mihon_in_bookshelf": "已加入漫画书架",
   "mihon_runtime_unavailable": "此平台暂不支持 Mihon 扩展。",
   "mihon_signer_fingerprint": "签名者 SHA-256",
   "mihon_signer_trust_title": "信任扩展签名者？",
@@ -4807,5 +4806,10 @@
   "card_source_review_video_return": "返回原观看位置",
   "card_source_review_video_continue": "从这里继续观看",
   "handlebar_source_link": "来源链接",
-  "remote_book_audiobook_download": "从互联对端下载有声书"
+  "remote_book_audiobook_download": "从互联对端下载有声书",
+  "manga_series_no_chapters_in_language": "该源只收录 ${language} 语言的章节",
+  "manga_series_try_sibling_language": "试试 ${language}",
+  "manga_series_remove_from_bookshelf": "移出漫画书架",
+  "manga_series_remove_confirm": "把这部作品移出书架？已下载的章节和阅读进度会一并删除。",
+  "manga_chapter_locked_login_unsupported_hint": "本章需在源站购买或租借；这类作品暂不支持在应用内登录解锁。"
 }

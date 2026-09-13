@@ -311,6 +311,11 @@ extension _VideoEpisode on _VideoFushiPageState {
           // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
           // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
           episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
+          // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
+          // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
+          groupKey: collectionGroupKeyForFilename(
+            e.path.isNotEmpty ? e.path : e.title,
+          ),
           cover: resolveMediaCoverImage(
                 kind: MediaKind.video,
                 localPath: e.coverPath,
@@ -323,6 +328,15 @@ extension _VideoEpisode on _VideoFushiPageState {
           started: e.started,
         ),
     ];
+  }
+
+  /// 季 chip 文案：`s<N>` → 「第 N 季」；extras → 「PV·特典」（与合集详情页
+  /// `_groupLabel` 同一套 i18n）。
+  String _episodeSeasonLabel(String groupKey) {
+    final int? season = seasonNumberOfGroupKey(groupKey);
+    return season == null
+        ? t.collection_group_extras
+        : t.collection_group_season(n: season);
   }
 
   /// 剧集卡封面回退链的合集段（v68）：合集带字横图 → 无字背景；全缺 → null
@@ -387,6 +401,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                   colorScheme: cs,
                   title: t.video_episode_list,
                   emptyHint: t.video_episode_list_empty,
+                  seasonLabelOf: _episodeSeasonLabel,
                   fontSize: 14 * _videoUiScale,
                   height: panelHeight,
                 ),

@@ -8,6 +8,13 @@
 /// - 识别器取 mayocream/manga-ocr-onnx（Apache-2.0）双模型导出 + 词表：
 ///   `encoder_model.onnx`（343,454,249 B）/ `decoder_model.onnx`
 ///   （117,480,262 B）/ `vocab.txt`（30,216 B）。
+/// - 横排行路径（2026-09-13，`routing_ocr_recognizer.dart`）取 PaddlePaddle 官方
+///   PP-OCRv6 small ONNX（Apache-2.0）：`PP-OCRv6_small_det_onnx/inference.onnx`
+///   （9,880,512 B）/ `PP-OCRv6_small_rec_onnx/inference.onnx`（21,159,378 B）+
+///   同仓 `inference.yml`（150,579 B，含 CTC 字典）。三条 URL 钉 HF **revision
+///   sha** 而不是 `main`：上游重新导出时旧装机与新装机拿到的必须是同一份权重
+///   （`main` 可变 ref 曾让缓存指纹形同虚设，BUG-1173）。远端 basename 都叫
+///   `inference.*`，落盘名改带 `ppocrv6_small_` 前缀区分。
 ///
 /// 本层是纯数据 + 纯函数（就绪判定），没有 IO 副作用；下载与磁盘管理见
 /// `manga_ocr_model_downloader.dart` / `manga_ocr_service_impl.dart`。
@@ -73,7 +80,37 @@ const List<MangaOcrModelFile> kMangaOcrModelManifest = <MangaOcrModelFile>[
     expectedBytes: 30216,
     role: MangaOcrModelRole.recognizer,
   ),
+  MangaOcrModelFile(
+    fileName: kPpOcrDetFileName,
+    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
+        'resolve/$kPpOcrDetRevision/inference.onnx',
+    expectedBytes: 9880512,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: kPpOcrRecFileName,
+    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
+        'resolve/$kPpOcrRecRevision/inference.onnx',
+    expectedBytes: 21159378,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: kPpOcrRecDictFileName,
+    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
+        'resolve/$kPpOcrRecRevision/inference.yml',
+    expectedBytes: 150579,
+    role: MangaOcrModelRole.recognizer,
+  ),
 ];
+
+/// PP-OCRv6 small 三文件的落盘名（清单与 `MangaOcrModelPaths` 解析共用）。
+const String kPpOcrDetFileName = 'ppocrv6_small_det.onnx';
+const String kPpOcrRecFileName = 'ppocrv6_small_rec.onnx';
+const String kPpOcrRecDictFileName = 'ppocrv6_small_rec.yml';
+
+/// HF 仓 commit（2026-09-13 核实；换 revision 等于换模型，指纹会跟着变）。
+const String kPpOcrDetRevision = '28fe5895c24fd108c19eb3e8479f4ab385fbfc62';
+const String kPpOcrRecRevision = 'b8f84f0b80c529de40b4fbb3544b84fa7233a513';
 
 /// 最终文件是否就绪：存在且非空。
 ///
