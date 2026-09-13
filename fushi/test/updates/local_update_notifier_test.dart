@@ -21,7 +21,7 @@ import 'package:fushi_engine/updates/update_feed_kind.dart';
 ///   上把 payload 与 actionId 都填成被点元素的 arguments，本体载荷会丢）；
 /// ② 本地化文案：单条带发布时刻与两个按钮，多条汇总不带时刻。
 /// 外加一条 method channel 级守卫（BUG-2498）：初始化绝不向系统申请权限。
-/// 再加两条 Windows 图片路径守卫（BUG-2499）：头部图标路径分隔符归一；toast
+/// 再加一组 Windows 图片路径守卫（BUG-2499）：头部图标路径分隔符归一；toast
 /// 配图 `src` 不得百分号编码（渲染器不解码非 ASCII，图会静默丢）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
