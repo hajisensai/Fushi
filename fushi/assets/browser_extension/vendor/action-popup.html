@@ -150,6 +150,21 @@
     .hp-side-panel { width: 100%; padding: 9px 10px; border: 1px solid rgba(128,128,128,.45); border-radius: 8px; background: rgba(128,128,128,.10); color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
     .hp-side-panel:hover { background: rgba(128,128,128,.20); border-color: rgba(128,128,128,.7); }
     .hp-toggle-hint { margin: 4px 0 0; font-size: 11px; opacity: 0.55; }
+    /* 「Fushi 字幕」开关：读写 subtitleOverlayEnabled（options 页「在视频上显示外挂字幕」同一个键），
+       让用户不进设置页就能在「Fushi 自绘字幕 ↔ 站点自带字幕」之间切。开态圆点绿、边框着色，
+       与上方连接行的状态点同一套视觉语言。 */
+    .hp-overlay-toggle {
+      display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 10px;
+      padding: 9px 10px; border: 1px solid rgba(128,128,128,.45); border-radius: 8px;
+      background: rgba(128,128,128,.10); color: inherit; font: inherit; font-size: 12px;
+      cursor: pointer; text-align: left;
+    }
+    .hp-overlay-toggle:hover { background: rgba(128,128,128,.20); border-color: rgba(128,128,128,.7); }
+    .hp-overlay-toggle-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: rgba(128,128,128,.55); }
+    .hp-overlay-toggle[data-on="1"] { border-color: rgba(120, 199, 159, 0.7); background: rgba(120, 199, 159, 0.12); }
+    .hp-overlay-toggle[data-on="1"] .hp-overlay-toggle-dot { background: #78c79f; }
+    .hp-overlay-toggle-label { flex: 1 1 auto; min-width: 0; }
+    .hp-overlay-toggle-state { flex: 0 0 auto; font-weight: 600; opacity: .85; }
   </style>
 </head>
 <body>
@@ -174,6 +189,13 @@
   <div class="hp-gen-hint" id="hp-gen-hint" hidden></div>
   <div class="hp-list" id="hp-list"></div>
   <div class="hp-settings">
+    <!-- 「Fushi 字幕」开关（subtitleOverlayEnabled）：此前只能进 options 页翻，看片中途想切回站点
+         字幕/切回 Fushi 字幕要跑一趟设置页。这里一键开关；「一句都不看」的纯听力模式仍是 Shift+H。 -->
+    <button class="hp-overlay-toggle" id="hp-overlay-toggle" type="button" data-on="" aria-pressed="false">
+      <span class="hp-overlay-toggle-dot" aria-hidden="true"></span>
+      <span class="hp-overlay-toggle-label">Fushi 字幕</span>
+      <span class="hp-overlay-toggle-state" id="hp-overlay-toggle-state">…</span>
+    </button>
     <button class="hp-side-panel" id="hp-nf-sublist" type="button">▤ 打开字幕侧边栏</button>
     <div class="hp-toggle-hint">使用浏览器原生侧边栏，不向视频网页注入列表或修改布局。</div>
     <!-- 用户反馈「扩展配置根本看不见」：此前通往设置页的唯一入口，是上方连接行里一个无边框、
