@@ -292,6 +292,7 @@ void main() {
 
     await service.warmUpNotifier();
     expect(fresh.ensureReadyCalls, 1);
+    expect(fresh.replayLaunchCalls, 1, reason: '冷启动点击回放只在启动期');
     expect(fresh.requestPermissionCalls, 0,
         reason: '退出新手引导那一帧不得弹系统权限框——MIUI 的权限界面会崩并连坐杀掉我们');
     expect(service.systemNotificationsEnabled, isTrue, reason: '偏好默认开');
@@ -310,6 +311,7 @@ void main() {
     // 用户在设置里打开开关：这才是唯一的申请点。系统拒绝 → 开关仍显示为关。
     expect(await service.enableSystemNotifications(), isFalse);
     expect(fresh.requestPermissionCalls, 1);
+    expect(fresh.replayLaunchCalls, 1, reason: '打开开关不回放旧的冷启动点击');
     expect(service.systemNotificationsActive, isFalse);
 
     // 关掉再打开 = 再申请一次（用户改了主意，系统也可能已在设置里放行）。

@@ -444,9 +444,12 @@ SettingsDestination buildSystemDestination() {
       ),
       // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
       //
-      // 这一节**不经 `AppModel.updateFeedService`**，直接读写同一批 pref 键：
-      // service 本身也只是这些键的读写者，而 schema 会在没有数据库的 widget
-      // 测试里被构建，走 service 等于给一个纯偏好项挂上整条 DB 依赖。
+      // 四个域开关**不经 `AppModel.updateFeedService`**，直接读写 pref 键：
+      // service 本身也只是这些键的读写者，走它等于给纯偏好项挂上整条 DB 依赖。
+      // **例外是「系统通知」总开关**：它的显示值要合并系统权限状态、打开时要
+      // 申请权限，这两件事只有 service 知道（BUG-2498）。所以渲染系统页的
+      // widget 测试必须 `wireDatabaseForTesting`——`updateFeedService` 首次访问
+      // 会解引用数据库。
       SettingsSection(
         id: 'system.section.update_notifications',
         title: t.updates_notify_section,

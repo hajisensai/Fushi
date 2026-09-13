@@ -122,15 +122,17 @@ class LocalUpdateNotifier implements UpdateNotifier {
       );
       _ready = false;
     }
-    if (_ready) await _replayLaunchResponse();
     return _ready;
   }
 
   /// 冷启动是被通知拉起来的（Android 进程被杀后点通知）：初始化时回调还没挂
-  /// 上，那次点击只留在 launch details 里，这里补投一次。只在启动期的
-  /// [ensureReady]（`UpdateFeedService.warmUpNotifier`）里走到——时机确定，不会
-  /// 在几小时后第一次发通知时突然回放一次旧点击。
-  Future<void> _replayLaunchResponse() async {
+  /// 上，那次点击只留在 launch details 里，这里补投一次。**只由启动期的**
+  /// `UpdateFeedService.warmUpNotifier` 调——时机确定；不挂在 [ensureReady] 里，
+  /// 否则几小时后用户在设置页打开开关（第二个 `ensureReady` 入口）会突然回放
+  /// 一次旧点击、被莫名跳去播放。
+  @override
+  Future<void> replayLaunchResponse() async {
+    if (!await ensureReady()) return;
     if (onResponse == null) return;
     try {
       final NotificationAppLaunchDetails? details =
@@ -236,8 +238,8 @@ class LocalUpdateNotifier implements UpdateNotifier {
               _plugin.resolvePlatformSpecificImplementation<
                   AndroidFlutterLocalNotificationsPlugin>();
           if (android == null) return false;
-          // API 33+ 才有 POST_NOTIFICATIONS；更低版本这里返回 null，此时真正的
-          // 答案是系统设置里的应用通知总开关——交给查询侧。
+          // 插件在 API < 33 上直接回 areNotificationsEnabled（非 null）；null 只
+          // 出现在平台实现缺席时——那就交给查询侧，两边同一口径。
           final bool? granted = await android.requestNotificationsPermission();
           if (granted != null) return granted;
           return hasPermission();

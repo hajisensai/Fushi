@@ -129,6 +129,10 @@ class UpdateFeedService implements UpdateFeedPublisher {
   Future<void> warmUpNotifier() async {
     if (!systemNotificationsEnabled) return;
     _notifierReady ??= await _notifier.ensureReady();
+    if (_notifierReady != true) return;
+    // 冷启动点击只在这里回放：别的 ensureReady 入口（发通知、打开开关）都可能
+    // 晚上几小时，那时回放旧点击是莫名其妙的跳转。
+    await _notifier.replayLaunchResponse();
     _permissionGranted = await _notifier.hasPermission();
   }
 

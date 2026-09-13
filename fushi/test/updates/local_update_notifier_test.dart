@@ -66,6 +66,9 @@ void main() {
         windowsIconPath: 'unused',
       );
       expect(await notifier.ensureReady(), isTrue);
+      expect(calls, <String>['initialize'],
+          reason: '初始化不回放冷启动点击——回放是启动期单独一步');
+      await notifier.replayLaunchResponse();
       expect(calls, <String>['initialize', 'getNotificationAppLaunchDetails']);
       expect(calls, isNot(contains('requestNotificationsPermission')),
           reason: '启动期弹系统权限框 = 退出新手引导即在 MIUI 上被连坐杀掉');

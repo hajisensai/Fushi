@@ -67,6 +67,10 @@ abstract class UpdateNotifier {
   /// 杀掉（BUG-2498）。申请权限走 [requestPermission]，只由用户的显式动作触发。
   Future<bool> ensureReady();
 
+  /// 回放「被通知冷启动」的那次点击（[ensureReady] 时回调还没挂上）。只在启动
+  /// 期调一次；不并进 [ensureReady]——它还有用户打开开关这个晚得多的入口。
+  Future<void> replayLaunchResponse();
+
   /// 系统当前是否允许本应用发通知。只查询、不弹任何界面。
   Future<bool> hasPermission();
 
@@ -88,6 +92,9 @@ class NoopUpdateNotifier implements UpdateNotifier {
 
   @override
   Future<bool> ensureReady() async => false;
+
+  @override
+  Future<void> replayLaunchResponse() async {}
 
   @override
   Future<bool> hasPermission() async => false;
@@ -118,12 +125,18 @@ class RecordingUpdateNotifier implements UpdateNotifier {
   final List<UpdateNotification> sent = <UpdateNotification>[];
   final List<int> cancelled = <int>[];
   int ensureReadyCalls = 0;
+  int replayLaunchCalls = 0;
   int requestPermissionCalls = 0;
 
   @override
   Future<bool> ensureReady() async {
     ensureReadyCalls++;
     return ready;
+  }
+
+  @override
+  Future<void> replayLaunchResponse() async {
+    replayLaunchCalls++;
   }
 
   @override
