@@ -1377,6 +1377,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   EpubBook? _book;
 
+  /// 歌词模式下按 cue 反查 EPUB 原文的解析器，与 [_book] 同生命周期；只经
+  /// `_lyricsCueTextResolverFor` 取（audiobook.part.dart）。
+  LyricsCueTextResolver? _lyricsCueTextResolver;
+
   /// TODO-1204：查词计数归属本书——[title] 与阅读统计 tile 的聚合键（[EpubBook.title]，
   /// 见 study_segments 的 mediaKey）对齐，[bookKey] 存书身份。
   @override
@@ -1499,10 +1503,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     studyDiag(
       'reader',
       'open resume point chapter=$chapter '
-      'progress=${progress.toStringAsFixed(4)} charOffset=$charOffset '
-      'source=$source',
+          'progress=${progress.toStringAsFixed(4)} charOffset=$charOffset '
+          'source=$source',
     );
   }
+
   // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内抑制 ReaderPosition
   // 持久化——用户从收藏 / 制卡历史点进来看某句，不应把该书真实阅读进度覆盖成跳转锚。
   // 由 widget.initialBookmarkJump.preserveSavedPosition 在开书时置位；普通打开 / 真实
@@ -3172,10 +3177,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                     exit: () => nav.pop(),
                     onPersistError: (Object error, StackTrace stack) =>
                         ErrorLogService.instance.log(
-                      'ReaderFushi.exitFlush',
-                      error,
-                      stack,
-                    ),
+                          'ReaderFushi.exitFlush',
+                          error,
+                          stack,
+                        ),
                   );
                 },
                 child: Scaffold(

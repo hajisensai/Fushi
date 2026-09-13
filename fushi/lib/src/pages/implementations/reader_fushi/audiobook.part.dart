@@ -1068,10 +1068,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     return cue != null ? <AudioCue>[cue] : const <AudioCue>[];
   }
 
-  /// 歌词模式下按 cue 反查 EPUB 原文的解析器，与 [_book] 同生命周期：它自带三章
-  /// LRU 缓存，每次查词都 new 一个等于每次查词整章重解析 DOM，白白叠在查词延迟上。
-  LyricsCueTextResolver? _lyricsCueTextResolver;
-
+  /// 取与 [_book] 同生命周期的 [LyricsCueTextResolver]（字段在 State 上，见
+  /// [_lyricsCueTextResolver]）：它自带三章 LRU 缓存，每次查词都 new 一个等于
+  /// 每次查词整章重解析 DOM，白白叠在查词延迟上。
   LyricsCueTextResolver _lyricsCueTextResolverFor(EpubBook book) {
     final LyricsCueTextResolver? cached = _lyricsCueTextResolver;
     if (cached != null && identical(cached.book, book)) return cached;
