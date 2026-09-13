@@ -134,6 +134,11 @@ body { font-family: $bodyFontFamily; }
 }
 /* 振假名：只有正文自带 ruby 的 cue 才有。选区脚本自己跳过 rt/rp（查词拿基底），
    这里不动 user-select——页面级守卫要求原生选区始终可用。 */
+.cue ruby {
+  /* 读音比基底宽时（艦長/かんちょう）默认 space-around 会把基底两个字撑散成
+     「艦 長」；居中让基底保持紧凑、读音悬在上方。 */
+  ruby-align: center;
+}
 .cue rt {
   font-size: 0.5em;
   line-height: 1;
