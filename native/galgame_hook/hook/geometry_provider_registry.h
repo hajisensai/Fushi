@@ -87,6 +87,8 @@ inline constexpr LookupGeometryProviderIdentity
          kLookupGeometryProviderIdHunexGge},
         {kLookupGeometryProviderEngineExactLayout,
          kLookupGeometryProviderIdSmashFzmedia},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdCmvs},
         {kLookupGeometryProviderPositionedTextApi,
          kLookupGeometryProviderIdGdiPositioned},
         {kLookupGeometryProviderPositionedTextApi,

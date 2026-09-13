@@ -52,6 +52,7 @@
 | `hunex_gge` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `sgre` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `smash_fzmedia` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `cmvs` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `unavailable` |
 
 证据边界：
 
@@ -103,6 +104,9 @@
 - `smash_fzmedia` geometry：The calibrated fallback and a fail-closed exact provider are implemented. Glyph cells come from the KAG TextLayerBase::layoutChar detour in layer units; they are projected with the uniform 1920x1080 stage fit plus a host-solved layer origin (PublishLookupLayerLine / ReadLookupLayerOrigin). Readiness requires a solved origin for the current client size and every inked cell inside the client rect (8 px tolerance); no real-session hit, lookup or card E2E is recorded.
   - verified shield：Generic shielding plus a GWLP_WNDPROC subclass of the GLFW30 game window (bare left down/up on a glyph consumed and queued as Submit; every client-area left down/up swallowed while a card is published or a v19 transaction targets the window; Shift-move hover never consumed) are implemented, but the real-build click, Shift and popup transaction gates have not run. XInput / joystick input has no shield.
   - risky left click：Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded.
+- `cmvs` geometry：ChronoClock trial v2 x64 exact-hash frame observer, bounded live glyph/sprite reader, selected EmbedCMVS lane identity, and explicit presentation rectangles. Real card and input shielding E2E remain unverified.
+  - verified shield：Reuses the generic public input surface transaction protocol; no CMVS popup/input transaction corpus has passed.
+  - risky left click：This CMVS sensor implements Shift lookup only; it does not intercept bare left clicks.
 
 ## 识别与能力明细
 
@@ -246,7 +250,7 @@ Tests：`tests/reallive_adapter_test.cpp`
 
 文本能力：
 
-- `luna_hook`：`implemented_unverified` — Vendored LunaHook32/64 both carry the EmbedCMVS engine hook; no real-session dialogue thread has been observed yet.
+- `luna_hook`：`implemented_unverified` — Observed and selected EmbedCMVS dialogue lane in the 2026-09-13 trial x64 session; its UTF-16 text exactly matched the live glyph reader. Card/audio pairing E2E remains unverified.
 - codepage：932
 - 线程提示：Prefer the LunaHook EmbedCMVS thread once observed; the adapter installs no text hook of its own.
 
@@ -262,7 +266,7 @@ Tests：`tests/reallive_adapter_test.cpp`
 
 - Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.
 - Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.
-- In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
+- In-game Shift lookup is wired only for the measured ChronoClock trial v2 x64 executable hash. Other CMVS builds, transformed/faded/ambiguous sprites and unproved presentation modes fail closed; real popup/input/card E2E is pending.
 
 Fixtures：`tests/fixtures/cmvs_replay.json`
 
