@@ -33,10 +33,17 @@ void main() {
     final RegExp use = RegExp(
       r'\{"expiresDate",\s*cookieExpiresDateMs\(jsonCookie\)\}',
     );
+    // BUG-2511 起读侧两处共用 cookieToEncodableMap，换算只写一次；
+    // getCookie / getCookies 必须都经它出结果。
     expect(
       use.allMatches(src).length,
+      1,
+      reason: 'cookieToEncodableMap 里唯一一处经 cookieExpiresDateMs',
+    );
+    expect(
+      RegExp(r'cookieToEncodableMap\(jsonCookie\)').allMatches(src).length,
       2,
-      reason: 'getCookie + getCookies 两处都必须经 cookieExpiresDateMs',
+      reason: 'getCookie + getCookies 两处都必须经 cookieToEncodableMap',
     );
     expect(src, contains('expiresSec * 1000.0'), reason: '秒 → 毫秒');
     expect(src, contains('if (expiresSec < 0)'), reason: '会话 cookie（-1）回 null');
