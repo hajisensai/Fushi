@@ -98,7 +98,9 @@ void main() {
 
     expect(main, contains('IosUrlEventChannel'));
     expect(main, contains('fushiAnkiFetchCallback'));
-    expect(main, contains('consumeInfoForAddingPasteboard'));
+    // BUG-2493：入口改成带往返去重的 consumeInfoForAddingReturn（URL 回调与
+    // 回到前台两条路共用），裸读取只留给测试。
+    expect(main, contains('consumeInfoForAddingReturn('));
     expect(main, contains('ankiViewModelProvider.notifier'));
     expect(vm, contains('Future<void> applyFetchedConfiguration()'));
     // BUG-2150：失败文案必须过本地化入口（此前是硬编码英文，中文 UI 里原样显示）。

@@ -6,15 +6,14 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 typedef AnkiMobileUrlOpener = Future<bool> Function(Uri uri);
 typedef AnkiMobileInfoReader = Future<AnkiMobilePasteboardRead> Function();
 typedef AnkiMobileBackgroundTaskHandler = Future<void> Function();
-typedef _AnkiMobileLocalMediaRefBuilder = Future<String?> Function(
-  String filePath, {
-  String? mimePath,
-});
+typedef _AnkiMobileLocalMediaRefBuilder =
+    Future<String?> Function(String filePath, {String? mimePath});
 
 const String ankiMobileInfoCallback = 'anki://x-callback-url/infoForAdding';
 const String ankiMobileAddNoteCallback = 'anki://x-callback-url/addnote';
@@ -48,31 +47,138 @@ class AnkiMobilePasteboardRead {
   const AnkiMobilePasteboardRead(this.status, {this.json});
 
   const AnkiMobilePasteboardRead.ok(String json)
-      : this(AnkiMobilePasteboardStatus.ok, json: json);
+    : this(AnkiMobilePasteboardStatus.ok, json: json);
 
   const AnkiMobilePasteboardRead.empty()
-      : this(AnkiMobilePasteboardStatus.empty);
+    : this(AnkiMobilePasteboardStatus.empty);
 
   const AnkiMobilePasteboardRead.denied()
-      : this(AnkiMobilePasteboardStatus.denied);
+    : this(AnkiMobilePasteboardStatus.denied);
 
   const AnkiMobilePasteboardRead.notActive()
-      : this(AnkiMobilePasteboardStatus.notActive);
+    : this(AnkiMobilePasteboardStatus.notActive);
 
   final AnkiMobilePasteboardStatus status;
   final String? json;
 }
 
-const MethodChannel _ankiMobileChannel =
-    MethodChannel('app.fushi.reader/ankimobile');
+const MethodChannel _ankiMobileChannel = MethodChannel(
+  'app.fushi.reader/ankimobile',
+);
+
+/// 谁触发了「去读 AnkiMobile 回传结果」（BUG-2493）。
+enum AnkiMobileInfoReturnTrigger {
+  /// AnkiMobile 的 `x-success=fushi://ankiFetch` 真的送达了。
+  urlCallback,
+
+  /// app 回到前台（`AppLifecycleState.resumed`）——x-success 没送达时的兜底。
+  appResumed,
+}
+
+/// 一次 `infoForAdding` 往返的状态机（BUG-2493）。
+///
+/// 往返有两个可能的终点：AnkiMobile 的 `x-success` 回调，以及 app 单纯回到前台
+/// （回调没送达、用户手动切回、或 AnkiMobile 那侧根本没同意）。两条路都要能触发
+/// 读剪贴板，但**同一次往返只许读一次**——剪贴板取走即清空，第二次读必然是
+/// `empty`，会把刚刚成功落地的结果又用一条「AnkiMobile 没有回传配置」盖掉。
+///
+/// 进程级单例：`ankiRepositoryProvider` 会随「制卡到已配对设备」开关重建仓库实例，
+/// 状态挂在实例上会在往返途中丢失。
+class AnkiMobileInfoReturnCoordinator {
+  AnkiMobileInfoReturnCoordinator();
+
+  static final AnkiMobileInfoReturnCoordinator instance =
+      AnkiMobileInfoReturnCoordinator();
+
+  /// 已打开 AnkiMobile、结果还没取回。
+  bool _awaitingReturn = false;
+
+  /// 本进程内是否发起过请求或消费过一次回传。没发起过却收到 URL 回调 = 冷启动
+  /// （进程被杀后由 x-success 拉起），这时内存里的 [_awaitingReturn] 已丢，仍应读
+  /// 一次——但只读一次，冷启动后重复送达的同一条 URL 不再算数。
+  bool _requestedThisProcess = false;
+
+  Future<AnkiFetchResult>? _inFlight;
+
+  bool get awaitingReturn => _awaitingReturn;
+
+  void markRequested() {
+    _awaitingReturn = true;
+    _requestedThisProcess = true;
+  }
+
+  /// 该不该为这次 [trigger] 去读。
+  bool shouldConsume(AnkiMobileInfoReturnTrigger trigger) {
+    if (_inFlight != null) return false;
+    switch (trigger) {
+      case AnkiMobileInfoReturnTrigger.urlCallback:
+        return _awaitingReturn || !_requestedThisProcess;
+      case AnkiMobileInfoReturnTrigger.appResumed:
+        return _awaitingReturn;
+    }
+  }
+
+  /// 按状态机决定是否执行 [read]；不该读时返回 null（调用方什么都不做）。
+  /// `notActive`（原生侧等前台超时、根本没读过剪贴板）不算终点：保留等待态，
+  /// 让下一次回到前台再试。
+  Future<AnkiFetchResult?> consume(
+    AnkiMobileInfoReturnTrigger trigger,
+    Future<AnkiFetchResult> Function() read,
+  ) async {
+    if (!shouldConsume(trigger)) return null;
+    _awaitingReturn = false;
+    _requestedThisProcess = true;
+    final Future<AnkiFetchResult> future = read();
+    _inFlight = future;
+    try {
+      final AnkiFetchResult result = await future;
+      if (!_isRoundTripTerminal(trigger, result)) _awaitingReturn = true;
+      return result;
+    } finally {
+      _inFlight = null;
+    }
+  }
+
+  /// 这次读能不能关掉往返。
+  ///
+  /// - `notActive`（原生侧等前台超时、根本没读剪贴板）任何触发都不算终点。
+  /// - **回到前台的兜底读只有真拿到结果才算终点**：用户打开 AnkiMobile 后先手动
+  ///   切回来看一眼，这时 AnkiMobile 还没写剪贴板，读到 `empty`/`denied` 若就此
+  ///   关闭往返，随后用户在 AnkiMobile 点同意送达的 `x-success` 回调会被
+  ///   [shouldConsume] 拒掉——把 BUG-2493 描述的「回调送达却被丢弃」换个形态重引。
+  /// - URL 回调是 AnkiMobile 写完剪贴板才发的权威信号，读到什么都是终点；
+  ///   「同一往返只读一次」只需防它成功之后的 resume 重读。
+  static bool _isRoundTripTerminal(
+    AnkiMobileInfoReturnTrigger trigger,
+    AnkiFetchResult result,
+  ) {
+    if (result is! AnkiFetchError) return true;
+    if (result.code == AnkiErrorCode.ankiMobileNotActive) return false;
+    return trigger == AnkiMobileInfoReturnTrigger.urlCallback;
+  }
+}
+
+/// 从 `ankiRepositoryProvider` 给出的仓库里找出真正的 [AnkiMobileRepository]
+/// （BUG-2493）：开了「制卡到已配对设备」时它被 [RemoteMiningAnkiRepository]
+/// 包着，直接 `is` 判型会把整条回传链静默丢掉。不是 AnkiMobile 后端时返回 null
+/// （iOS 改用 AnkiConnect 时就是这样，回传无事可做）。
+AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
+  final BaseAnkiRepository unwrapped = repo is RemoteMiningAnkiRepository
+      ? repo.local
+      : repo;
+  return unwrapped is AnkiMobileRepository ? unwrapped : null;
+}
 
 String _encodeAnkiMobileQueryComponent(String value) =>
     Uri.encodeComponent(value);
 
 String _buildAnkiMobileQuery(Iterable<MapEntry<String, String>> entries) {
   return entries
-      .map((entry) => '${_encodeAnkiMobileQueryComponent(entry.key)}='
-          '${_encodeAnkiMobileQueryComponent(entry.value)}')
+      .map(
+        (entry) =>
+            '${_encodeAnkiMobileQueryComponent(entry.key)}='
+            '${_encodeAnkiMobileQueryComponent(entry.value)}',
+      )
       .join('&');
 }
 
@@ -95,7 +201,8 @@ Uri buildAnkiMobileAddNoteUri({
       MapEntry('x-success', successCallback.toString()),
   ];
   return Uri.parse(
-      '$ankiMobileAddNoteCallback?${_buildAnkiMobileQuery(query)}');
+    '$ankiMobileAddNoteCallback?${_buildAnkiMobileQuery(query)}',
+  );
 }
 
 class AnkiMobileRepository extends BaseAnkiRepository {
@@ -105,16 +212,22 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     Duration mediaServerLifetime = const Duration(seconds: 60),
     AnkiMobileBackgroundTaskHandler? beginMediaImportBackgroundTask,
     AnkiMobileBackgroundTaskHandler? endMediaImportBackgroundTask,
-  })  : _openUrl = openUrl ?? _openExternalUrl,
-        _readInfoForAddingJson =
-            readInfoForAddingJson ?? _readInfoForAddingJsonFromPlatform,
-        _mediaServerLifetime = mediaServerLifetime,
-        _beginMediaImportBackgroundTask = beginMediaImportBackgroundTask ??
-            _beginMediaImportBackgroundTaskFromPlatform,
-        _endMediaImportBackgroundTask = endMediaImportBackgroundTask ??
-            _endMediaImportBackgroundTaskFromPlatform;
+    AnkiMobileInfoReturnCoordinator? infoReturnCoordinator,
+  }) : _openUrl = openUrl ?? _openExternalUrl,
+       _infoReturnCoordinator =
+           infoReturnCoordinator ?? AnkiMobileInfoReturnCoordinator.instance,
+       _readInfoForAddingJson =
+           readInfoForAddingJson ?? _readInfoForAddingJsonFromPlatform,
+       _mediaServerLifetime = mediaServerLifetime,
+       _beginMediaImportBackgroundTask =
+           beginMediaImportBackgroundTask ??
+           _beginMediaImportBackgroundTaskFromPlatform,
+       _endMediaImportBackgroundTask =
+           endMediaImportBackgroundTask ??
+           _endMediaImportBackgroundTaskFromPlatform;
 
   final AnkiMobileUrlOpener _openUrl;
+  final AnkiMobileInfoReturnCoordinator _infoReturnCoordinator;
   final AnkiMobileInfoReader _readInfoForAddingJson;
   final Duration _mediaServerLifetime;
   final AnkiMobileBackgroundTaskHandler _beginMediaImportBackgroundTask;
@@ -126,7 +239,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   /// BUG-2150：原生侧返回 `{status, json}`，而不再是裸 JSON 字符串——「没读到」
   /// 必须能区分「AnkiMobile 没写」与「系统不让读」。未知/缺失一律按 empty 处理。
   static Future<AnkiMobilePasteboardRead>
-      _readInfoForAddingJsonFromPlatform() async {
+  _readInfoForAddingJsonFromPlatform() async {
     final Map<Object?, Object?>? raw = await _ankiMobileChannel
         .invokeMethod<Map<Object?, Object?>>('consumeInfoForAddingPasteboard');
     if (raw == null) return const AnkiMobilePasteboardRead.empty();
@@ -177,7 +290,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       MapEntry('x-success', fushiAnkiFetchCallback),
     ];
     final uri = Uri.parse(
-        '$ankiMobileInfoCallback?${_buildAnkiMobileQuery(query)}');
+      '$ankiMobileInfoCallback?${_buildAnkiMobileQuery(query)}',
+    );
     final opened = await _openUrl(uri);
     if (!opened) {
       return const AnkiFetchResult.error(
@@ -186,13 +300,23 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       );
     }
     // 不是失败，是「等用户去 AnkiMobile 里点同意」的中间态：真正的结果随后经
-    // `fushi://ankiFetch` 回调进 [consumeInfoForAddingPasteboard]。
+    // `fushi://ankiFetch` 回调、或 app 回到前台（BUG-2493 兜底）进
+    // [consumeInfoForAddingReturn]。
+    _infoReturnCoordinator.markRequested();
     return const AnkiFetchResult.error(
       'AnkiMobile opened. Approve the request, then return to Fushi.',
       code: AnkiErrorCode.ankiMobileOpened,
     );
   }
 
+  /// 往返终点的统一入口（BUG-2493）：由 [AnkiMobileInfoReturnCoordinator] 决定
+  /// 这次 [trigger] 该不该真的去读剪贴板；不该读时返回 null，调用方不动 UI。
+  Future<AnkiFetchResult?> consumeInfoForAddingReturn(
+    AnkiMobileInfoReturnTrigger trigger,
+  ) => _infoReturnCoordinator.consume(trigger, consumeInfoForAddingPasteboard);
+
+  /// 无条件读一次剪贴板并落库。生产路径走 [consumeInfoForAddingReturn]，
+  /// 这里保留为裸读取以便测试三态契约。
   Future<AnkiFetchResult> consumeInfoForAddingPasteboard() async {
     final read = await _readInfoForAddingJson();
     final String? raw = read.json;
@@ -238,8 +362,10 @@ class AnkiMobileRepository extends BaseAnkiRepository {
 
     final updated = await updateSettings((current) {
       final selectedDeck = selectDeckAfterFetch(info.decks, current);
-      final selectedNoteType =
-          selectNoteTypeAfterFetch(info.noteTypes, current);
+      final selectedNoteType = selectNoteTypeAfterFetch(
+        info.noteTypes,
+        current,
+      );
       return current.copyWith(
         selectedDeckId: selectedDeck.id,
         selectedDeckName: selectedDeck.name,
@@ -284,11 +410,14 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     final AnkiDeck? deck = resolveSelectedDeck(settings);
     if (deck == null) return const MineOutcome.notConfigured();
 
-    final noteType = settings.availableNoteTypes
-            .firstWhereOrNull((t) => t.id == settings.selectedNoteTypeId) ??
+    final noteType =
+        settings.availableNoteTypes.firstWhereOrNull(
+          (t) => t.id == settings.selectedNoteTypeId,
+        ) ??
         (settings.selectedNoteTypeName != null
             ? settings.availableNoteTypes.firstWhereOrNull(
-                (t) => t.name == settings.selectedNoteTypeName)
+                (t) => t.name == settings.selectedNoteTypeName,
+              )
             : null);
     if (noteType == null) return const MineOutcome.notConfigured();
 
@@ -352,10 +481,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       }
     }
 
-    Future<String?> localMediaRef(
-      String filePath, {
-      String? mimePath,
-    }) async {
+    Future<String?> localMediaRef(String filePath, {String? mimePath}) async {
       final file = File(filePath);
       if (!file.existsSync()) return null;
       mediaServerFuture ??= _AnkiMobileMediaServer.start();
@@ -503,13 +629,17 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         // 快照）转成 AnkiMobile 可取的 URL，与 localFile 走同一入库通道。
         final data = AnkiAudioRef.decodeDataUri(audio);
         if (data == null) return const _AnkiMobileAudioField('');
-        final tempFile = File('${Directory.systemTemp.path}'
-            '${Platform.pathSeparator}fushi_word_audio_'
-            '${DateTime.now().microsecondsSinceEpoch}.${data.extension}');
+        final tempFile = File(
+          '${Directory.systemTemp.path}'
+          '${Platform.pathSeparator}fushi_word_audio_'
+          '${DateTime.now().microsecondsSinceEpoch}.${data.extension}',
+        );
         try {
           await tempFile.writeAsBytes(data.bytes);
-          final url = await localMediaRef(tempFile.path,
-              mimePath: 'word_audio.${data.extension}');
+          final url = await localMediaRef(
+            tempFile.path,
+            mimePath: 'word_audio.${data.extension}',
+          );
           if (url != null) return _AnkiMobileAudioField(url);
           return const _AnkiMobileAudioField('');
         } finally {
@@ -531,8 +661,10 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     DictionaryMedia media,
     _AnkiMobileLocalMediaRefBuilder localMediaRef,
   ) {
-    final filename =
-        ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
+    final filename = ankiDictionaryMediaCacheFilename(
+      media.dictionary,
+      media.path,
+    );
     final path = '${ankiDictionaryMediaCacheDirPath()}/$filename';
     return localMediaRef(path, mimePath: filename);
   }
@@ -560,8 +692,9 @@ class _AnkiMobileMediaServer {
   var _closed = false;
 
   static Future<_AnkiMobileMediaServer> start() async {
-    final tempDir =
-        await Directory.systemTemp.createTemp('fushi_ankimobile_media_');
+    final tempDir = await Directory.systemTemp.createTemp(
+      'fushi_ankimobile_media_',
+    );
     try {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       return _AnkiMobileMediaServer._(server, tempDir);
@@ -577,8 +710,10 @@ class _AnkiMobileMediaServer {
     final sourceName = _safeMediaBasename(mimePath ?? file.path);
     final id = _nextId++;
     final path = '/media/$id-$sourceName';
-    final snapshot = File('${_tempDir.path}${Platform.pathSeparator}'
-        '$id-$sourceName');
+    final snapshot = File(
+      '${_tempDir.path}${Platform.pathSeparator}'
+      '$id-$sourceName',
+    );
     file.copySync(snapshot.path);
     _files[path] = _ServedAnkiMobileMedia(
       file: snapshot,
@@ -610,8 +745,10 @@ class _AnkiMobileMediaServer {
 
   Future<void> _handleRequest(HttpRequest request) async {
     try {
-      request.response.headers
-          .set(HttpHeaders.accessControlAllowOriginHeader, '*');
+      request.response.headers.set(
+        HttpHeaders.accessControlAllowOriginHeader,
+        '*',
+      );
       request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
       if (request.method == 'OPTIONS') {
         request.response.statusCode = HttpStatus.noContent;
@@ -656,10 +793,7 @@ class _AnkiMobileMediaServer {
 }
 
 class _ServedAnkiMobileMedia {
-  const _ServedAnkiMobileMedia({
-    required this.file,
-    required this.mimeType,
-  });
+  const _ServedAnkiMobileMedia({required this.file, required this.mimeType});
 
   final File file;
   final String mimeType;
@@ -672,20 +806,14 @@ class _AnkiMobileAudioField {
 }
 
 class AnkiMobileInfoForAdding {
-  const AnkiMobileInfoForAdding({
-    required this.decks,
-    required this.noteTypes,
-  });
+  const AnkiMobileInfoForAdding({required this.decks, required this.noteTypes});
 
   factory AnkiMobileInfoForAdding.fromJson(Map<String, dynamic> json) {
     final decksRaw = (json['decks'] as List? ?? const <Object?>[]);
     final noteTypesRaw = (json['notetypes'] as List? ?? const <Object?>[]);
     final decks = <AnkiDeck>[
       for (var i = 0; i < decksRaw.length; i++)
-        AnkiDeck(
-          id: i,
-          name: _nameFromJsonItem(decksRaw[i]),
-        ),
+        AnkiDeck(id: i, name: _nameFromJsonItem(decksRaw[i])),
     ].where((deck) => deck.name.isNotEmpty).toList(growable: false);
     final noteTypes = <AnkiNoteType>[
       for (var i = 0; i < noteTypesRaw.length; i++)
@@ -700,7 +828,10 @@ class AnkiMobileInfoForAdding {
   static AnkiNoteType _noteTypeFromJsonItem(int id, Object? raw) {
     if (raw is! Map) {
       return AnkiNoteType(
-          id: id, name: raw?.toString() ?? '', fields: const []);
+        id: id,
+        name: raw?.toString() ?? '',
+        fields: const [],
+      );
     }
     final fieldsRaw = raw['fields'] as List? ?? const <Object?>[];
     return AnkiNoteType(
