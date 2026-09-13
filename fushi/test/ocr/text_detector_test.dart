@@ -212,12 +212,24 @@ void main() {
       expect(kept.single.score, 0.9);
     });
 
-    test('不同类同位置都保留（bubble 与 text_bubble 天然套叠）', () {
+    test('bubble 与 text_bubble 同位置都保留（天然套叠）', () {
       final List<RawDetection> kept = applyClassAwareNms(<RawDetection>[
         const RawDetection(rect: boxA, score: 0.8, classId: 0),
         const RawDetection(rect: boxB, score: 0.9, classId: 1),
       ]);
       expect(kept, hasLength(2));
+    });
+
+    test('text_bubble 与 text_free 同框只留高分（同一 query 双类过线）', () {
+      // 解码按 (query, class) 过阈值，同一 query 两个文字类都过线时 rect 逐字节
+      // 相同；旧实现按 classId 分组互不抑制，同一块文字被写两次。
+      final List<RawDetection> kept = applyClassAwareNms(<RawDetection>[
+        const RawDetection(rect: boxA, score: 0.6, classId: 1),
+        const RawDetection(rect: boxA, score: 0.7, classId: 2),
+      ]);
+      expect(kept, hasLength(1));
+      expect(kept.single.classId, 2);
+      expect(kept.single.score, 0.7);
     });
   });
 
