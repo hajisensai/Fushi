@@ -142,6 +142,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
   'manga_download_auto_ocr',
   'manga_external_mokuro_path',
+  // 漫画「Fushi 互联」来源合集（本机偏好，不随服务配置同步）：合集总开关 /
+  // 「对端漫画库」子项 / 用户关掉的对端扩展源 id（换行分隔）。
+  'manga_interconnect_disabled_source_ids',
+  'manga_interconnect_library_enabled',
+  'manga_interconnect_sources_enabled',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
   'manga_online_catalog_base_url',

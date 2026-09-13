@@ -71,6 +71,10 @@ import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_client.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_host_impl.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_registry.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_library_adapter.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart';
@@ -79,6 +83,8 @@ import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart'
+    show AidokuRuntimeFactory;
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -562,6 +568,15 @@ class AppModel with ChangeNotifier {
     // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
     mangaOcrServiceFactory: createMangaOcrService,
+    // 把本机已启用的 Mihon / Aidoku 扩展源借给对端浏览。Mihon 宿主只在桌面 / 安卓、
+    // Aidoku 只在 macOS：哪个有就接哪个，两个都没有（iOS / Linux）就整个不接线。
+    mangaSourceHostFactory: () => MihonRuntimeFactory.isSupported ||
+            AidokuRuntimeFactory.isSupported
+        ? InterconnectMangaSourceHostImpl(
+            mihonManager: () =>
+                MihonRuntimeFactory.isSupported ? mihonManager : null,
+          )
+        : null,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -4341,8 +4356,30 @@ class AppModel with ChangeNotifier {
           rootDirectory: interconnectMangaLibraryRoot,
           adapter: const InterconnectLibraryAdapter(),
         );
+      // 对端借出的扩展源：同样不碰 [mihonManager]（扩展跑在对端）。
+      case OnlineMangaRuntimeKind.interconnectSource:
+        return OnlineMangaLibraryService(
+          database: database,
+          rootDirectory: interconnectMangaLibraryRoot,
+          adapter: InterconnectSourceLibraryAdapter(
+            registry: interconnectMangaSourceRegistry,
+            transport: interconnectMangaSourceClient,
+          ),
+          updateFeed: updateFeedService,
+        );
     }
   }
+
+  /// 「Fushi 互联」漫画来源合集的对端源客户端 / 注册表（懒建，进程内一份）。
+  late final InterconnectMangaSourceClient interconnectMangaSourceClient =
+      InterconnectMangaSourceClient(repo: SyncRepository(database));
+
+  late final InterconnectMangaSourceRegistry interconnectMangaSourceRegistry =
+      InterconnectMangaSourceRegistry(
+    transport: interconnectMangaSourceClient,
+    syncRepository: SyncRepository(database),
+    prefs: prefsRepo,
+  );
 
   /// 互联漫画源书架条目的本地落盘根（占位 manga.json、封面、章节页缓存）。
   ///

@@ -10,6 +10,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/manga_sources/host_manga_source_host.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
@@ -65,6 +66,7 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
+    HostMangaSourceHost? Function()? mangaSourceHostFactory,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
         _database = database,
@@ -74,6 +76,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
         _mangaOcrServiceFactory = mangaOcrServiceFactory,
+        _mangaSourceHostFactory = mangaSourceHostFactory,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
         // per-platform service so mobile hosts advertise their model, not
@@ -91,6 +94,11 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
+
+  /// 把本机已启用的 Mihon / Aidoku 扩展源借给对端（`/api/manga-sources/**` +
+  /// capabilities `mangaSources`）。工厂返回 null（无扩展宿主的平台）或工厂缺席
+  /// = 不接线，端点 404、能力位不出现。
+  final HostMangaSourceHost? Function()? _mangaSourceHostFactory;
   final PlatformDeviceInfoService _deviceInfo;
 
   FushiSyncServer? _server;
@@ -366,6 +374,7 @@ class FushiSyncServerController extends ChangeNotifier {
       // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
       // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
       mangaOcrJobs: _buildMangaOcrJobManager(),
+      mangaSources: _mangaSourceHostFactory?.call(),
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
       deviceName: deviceName,

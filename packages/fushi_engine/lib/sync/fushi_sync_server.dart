@@ -30,6 +30,8 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
+import 'package:fushi_engine/sync/manga_sources/host_manga_source_host.dart';
+import 'package:fushi_engine/sync/manga_sources/host_manga_source_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
@@ -218,6 +220,7 @@ class FushiSyncServer {
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
+    HostMangaSourceHost? mangaSources,
     SecurityContext? securityContext,
     String? hostFingerprint,
     String? deviceName,
@@ -239,6 +242,7 @@ class FushiSyncServer {
         _hostJobs = hostJobs,
         _downloads = downloads,
         _subscriptions = subscriptions,
+        _mangaSources = mangaSources,
         _dictionaryMediaProvider = dictionaryMediaProvider,
         _now = now ?? DateTime.now;
 
@@ -276,6 +280,10 @@ class FushiSyncServer {
 
   /// 内容订阅（host 自建自跑）。null = 不提供，`/api/subscriptions` 404、能力位无 `subscriptions`。
   final HostSubscriptionHost? _subscriptions;
+
+  /// 代理浏览本机在线漫画源（Mihon / Aidoku 扩展借给对端）。null = 本 host 没有
+  /// 扩展宿主（iOS / 无头服务端），`/api/manga-sources` 404、能力位无 `mangaSources`。
+  final HostMangaSourceHost? _mangaSources;
 
   /// TODO-1215: dictionary media (gaiji/accent SVG, etc.) byte provider.
   /// Injected rather than depending on the FushiDicts singleton directly, so
@@ -539,6 +547,14 @@ class FushiSyncServer {
       final HostSubscriptionHost? subscriptions = _subscriptions;
       if (subscriptions == null) return shelf.Response.notFound('Host subscriptions off');
       return handleHostSubscriptionRequest(subscriptions, request, method, reqPath);
+    }
+    if (reqPath == kMangaSourcesApiPrefix ||
+        reqPath.startsWith('$kMangaSourcesApiPrefix/')) {
+      final HostMangaSourceHost? mangaSources = _mangaSources;
+      if (mangaSources == null) {
+        return shelf.Response.notFound('Host manga sources off');
+      }
+      return handleHostMangaSourceRequest(mangaSources, request, method, reqPath);
     }
     if (reqPath == '/api/library/dictionaries' ||
         reqPath.startsWith('/api/library/dictionaries/')) {

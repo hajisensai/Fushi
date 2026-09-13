@@ -2844,6 +2844,55 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  // ── 漫画「Fushi 互联」来源合集（与 mokuro.moe 同款「源开关」，只管漫画）─────
+  //
+  // 合集总开关 + 「对端漫画库」子项 + 各对端扩展源子项各自可关。三者都是本机偏好，
+  // 与互联总开关（`SyncRepository.isInterconnectEnabled`，全应用一个）正交：总开关
+  // 关着时这些一律不生效，开着时再按这里决定发现页列什么。默认全开——配对本来就是
+  // 用户主动做的事，对端的源不需要再点一次「启用」才出现（mokuro 默认开的同一理由）。
+
+  bool get mangaInterconnectSourcesEnabled =>
+      getPref('manga_interconnect_sources_enabled', defaultValue: true) as bool;
+
+  Future<void> setMangaInterconnectSourcesEnabled(bool value) async {
+    await setPref('manga_interconnect_sources_enabled', value);
+    notifyListeners();
+  }
+
+  bool get mangaInterconnectLibraryEnabled =>
+      getPref('manga_interconnect_library_enabled', defaultValue: true) as bool;
+
+  Future<void> setMangaInterconnectLibraryEnabled(bool value) async {
+    await setPref('manga_interconnect_library_enabled', value);
+    notifyListeners();
+  }
+
+  /// 用户关掉的对端扩展源 id 集合（`mihon:<pkg>:<id>` / `aidoku:<id>`）。存「关掉的」
+  /// 而不是「开着的」：对端新装的源自然是开的，不需要本机先知道它存在。
+  Set<String> get mangaInterconnectDisabledSourceIds {
+    final String raw = getPref(
+      'manga_interconnect_disabled_source_ids',
+      defaultValue: '',
+    ) as String;
+    return <String>{
+      for (final String s in raw.split('\n'))
+        if (s.trim().isNotEmpty) s.trim(),
+    };
+  }
+
+  Future<void> setMangaInterconnectSourceEnabled(
+    String sourceId,
+    bool enabled,
+  ) async {
+    final Set<String> disabled = mangaInterconnectDisabledSourceIds;
+    if (enabled ? !disabled.remove(sourceId) : !disabled.add(sourceId)) return;
+    await setPref(
+      'manga_interconnect_disabled_source_ids',
+      (disabled.toList()..sort()).join('\n'),
+    );
+    notifyListeners();
+  }
+
   // 旧版单框 Gemini 云端识别的三对 getter/setter（`manga_cloud_ocr_enabled` /
   // `manga_cloud_ocr_api_key` / `manga_cloud_ocr_model`）随 PR#474 删掉框选补扫
   // 实现后已零消费方，本轮一并清掉（BUG-1164）。

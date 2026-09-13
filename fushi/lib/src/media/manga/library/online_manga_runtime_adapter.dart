@@ -145,6 +145,23 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
   final String? chapterDigest;
 }
 
+/// 互联对端借出的扩展源：作品 / 章节 / 页三份对端运行时 JSON 原样回灌
+/// `page-image` 端点，本机不解释。
+class InterconnectSourceMangaPageRef extends OnlineMangaPageRef {
+  const InterconnectSourceMangaPageRef({
+    required super.index,
+    required this.sourceId,
+    required this.series,
+    required this.chapter,
+    required this.page,
+  });
+
+  final String sourceId;
+  final Map<String, Object?> series;
+  final Map<String, Object?> chapter;
+  final Map<String, Object?> page;
+}
+
 /// 把「某个在线漫画运行时」收成书架侧需要的几件事。
 ///
 /// 书架、作品页、下载服务和阅读器只跟这个契约打交道，因此加第三个运行时不需要

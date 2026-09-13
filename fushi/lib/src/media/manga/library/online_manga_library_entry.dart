@@ -14,7 +14,14 @@ enum OnlineMangaRuntimeKind {
   ///
   /// 它没有「扩展包」，`extensionPackage` 恒是 [kInterconnectMangaPackage]、
   /// `sourceId` 恒是对端库那一维的常量，`seriesKey` = 对端 `bookKey`。
-  interconnect('interconnect');
+  interconnect('interconnect'),
+
+  /// 已配对对端**借出的扩展源**（对端跑 Mihon / Aidoku，本机经它代理浏览）。
+  ///
+  /// `extensionPackage` 恒是 [kInterconnectMangaPackage]，`sourceId` 是对端侧的源
+  /// 身份（`mihon:<包名>:<源 id>` / `aidoku:<包 id>`）——**不含对端设备**：同一个源
+  /// 经哪台对端代理都是同一本书，对端只是传输层，运行时按「谁在线且有这个源」选。
+  interconnectSource('interconnect_source');
 
   const OnlineMangaRuntimeKind(this.wireValue);
 
