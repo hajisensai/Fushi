@@ -568,8 +568,11 @@ void main() {
     });
 
     test('page _loadVideo passes autoPlay: true', () {
-      expect(page.contains('autoPlay: true'), isTrue,
-          reason: 'enter page / episode switch should start playing');
+      // 卡片来源回看会话（BUG-2503）进页不自动播：条件从字面量 true 变成
+      // `!_sourceReviewActive`，普通进页 / 换集仍为 true。
+      expect(page.contains('autoPlay: !_sourceReviewActive,'), isTrue,
+          reason: 'enter page / episode switch should start playing '
+              '(only a card-source review session opens paused)');
     });
   });
 }

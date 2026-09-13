@@ -194,7 +194,9 @@ void main() {
       final int guardIndex = source.indexOf(
         'if (requestedSentenceAudioClip && sentenceAudioPath == null)',
       );
-      final int mineIndex = source.indexOf('outcome = await repo.mineEntry');
+      // 回看会话（BUG-2503）走 review.mine，普通路径仍是 repo.mineEntry；两条腿在
+      // 同一个三元里，锚 `outcome = review == null` 那一行。
+      final int mineIndex = source.indexOf('outcome = review == null');
       expect(guardIndex, greaterThanOrEqualTo(0));
       expect(mineIndex, greaterThan(guardIndex));
     });

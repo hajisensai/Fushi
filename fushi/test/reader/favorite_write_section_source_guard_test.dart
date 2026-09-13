@@ -47,8 +47,13 @@ void main() {
         reason: '桌面右键收藏传递本次捕获的章号');
     expect(chrome, contains('selectionSection: selectionSection'),
         reason: '移动端收藏传递菜单创建时的选区章号');
-    expect(mining, contains('final int section = _favoriteSectionIndex;'),
-        reason: '制卡历史落库的 section 必须来自选区快照 getter');
+    // 回看会话（BUG-2503）把卡片自带的章号放在前面：回写到原卡的 section 必须是
+    // 那张卡的章，不是当前查词位置；普通制卡仍取选区快照 getter。
+    expect(mining, contains(
+          'final int section =\n'
+          '          context.sourceLink?.chapterIndex ?? _favoriteSectionIndex;',
+        ),
+        reason: '制卡历史落库的 section 必须来自选区快照 getter（回看时卡片章号优先）');
     // 不得再在这两处直接用裸 _lookupSectionIndex 当 section 写入。
     expect(chrome.contains('final int section = _lookupSectionIndex;'), isFalse,
         reason: '收藏写入点不得回退裸 _lookupSectionIndex');

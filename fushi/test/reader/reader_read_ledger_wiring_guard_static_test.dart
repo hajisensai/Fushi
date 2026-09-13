@@ -280,8 +280,14 @@ void main() {
       expect(reset, greaterThan(adopt), reason: '先换口径再清账本');
     });
 
-    test('全语料只有补算落定调 reset', () {
-      expect('_readLedger.reset('.allMatches(masked), hasLength(1));
+    test('全语料只有补算落定与「回看转正常阅读」调 reset', () {
+      // 第二处：卡片来源回看会话（BUG-2503）是隔离回看、不计统计，用户点「继续阅读」
+      // 转成正常阅读那一刻清掉回看期间的并集，从下一次采样重新起单元。
+      expect('_readLedger.reset('.allMatches(masked), hasLength(2));
+      final int review = masked.indexOf('void _onSourceReviewChanged() {');
+      expect(review, isNonNegative);
+      final String body = masked.substring(review, masked.indexOf('\n  }\n', review));
+      expect(body, contains('_readLedger.reset();'));
     });
   });
 

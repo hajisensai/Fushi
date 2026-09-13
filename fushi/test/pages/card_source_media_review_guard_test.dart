@@ -149,7 +149,6 @@ void main() {
         'void _ensureStudyClock(FushiDatabase db) {',
         'Future<void> _persistPosition(int page, double fraction) async {',
         'Future<void> _saveCurrentChapterState({int? readAt}) async {',
-        'Future<void> _flushReadingStats() async {',
       ]) {
         expect(
           manga,
