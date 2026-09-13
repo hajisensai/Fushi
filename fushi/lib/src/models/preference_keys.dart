@@ -192,6 +192,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_max_width',
   'popup_wheel_speed',
   'qb_connection_config',
+  // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
+  'reader_control_layout',
   'reading_goal_daily_chars',
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',

@@ -382,12 +382,12 @@ void main() {
       '  Future<void> _showAppearanceSheet(',
       '  Widget _buildQuickSettingsSheet(',
     );
-    expect(route, contains('readerAudiobookUsesDialog('));
+    expect(route, contains('readerAudiobookUsesSideSheet('));
     expect(route, contains('showReaderSideSheet<void>('));
     expect(route, contains('ReaderSideSheetSide.left'));
     expect(route, contains('ReaderSideSheetSide.right'));
     expect(route, isNot(contains('ReaderQuickSettingsPresentation.sheet')));
-    expect(route, contains('FushiDialogFrame('));
+    expect(route, isNot(contains('FushiDialogFrame(')));
     expect(route, contains('adaptiveModalSheet<void>'));
   });
 
@@ -401,7 +401,7 @@ void main() {
 
     // 桌面端与平板宽窗在到达本面板之前就被路由到左右抽屉；面板内的宽窗左右
     // master-detail（左父菜单 + 右详情）已删除，共享外壳的 wideBuilder 只兜底铺窄窗内容。
-    expect(chrome, contains('readerAudiobookUsesDialog('));
+    expect(chrome, contains('readerAudiobookUsesSideSheet('));
     expect(source, contains('FushiMasterDetailSettingsSheet('));
     expect(source, contains('wideBuilder:'));
     expect(source, isNot(contains('MaterialSupportingPaneLayout(')));

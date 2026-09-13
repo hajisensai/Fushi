@@ -12,7 +12,7 @@ void main() {
       // TODO-737: _paginate 签名加了 {int throttleMs = 0} 改多行，起点标记收窄到
       // 方法定义首行（含 Future<void> 前缀，唯一）。
       '  Future<void> _paginate(',
-      '  void _openImageViewer(String imgUrl)',
+      '  void _openImageViewer(String imgUrl',
     );
 
     expect(

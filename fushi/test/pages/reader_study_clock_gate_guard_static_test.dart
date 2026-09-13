@@ -99,11 +99,11 @@ void main() {
 
     const List<String> entries = <String>[
       '  Future<void> _showAppearanceSheet({String? initialSubPage}) async {',
-      '  void _openReadingStatistics() {',
+      '  Future<void> _openStatisticsCenter() async {',
       '  Future<void> _openAlignmentImportDialog(',
       '  Future<void> _openAudioImportDialog() async {',
       '  Future<void> _openSrtBookReimport() async {',
-      '  void _openImageViewer(String imgUrl) {',
+      '  void _openImageViewer(String imgUrl, {File? resolvedFile}) {',
       '  void _openGallery() {',
       '  Future<void> _transcribeFromAudiobookPanel() async {',
       '  void _showLyricsModeHintIfNeeded() {',
@@ -114,10 +114,25 @@ void main() {
         expect(
           body,
           contains('_withStudyClockPaused('),
-          reason: '外观 / 导航 / 搜索 / 统计 / 导入 / 看图 / 画廊都不是阅读，压住期间必须停表',
+          reason: '外观 / 导航 / 搜索 / 统计中心 / 导入 / 看图 / 画廊都不是阅读，'
+              '压住期间必须停表',
         );
       });
     }
+
+    test('书内统计侧栏（_openReadingStatistics）有意不停表——侧栏不遮正文', () {
+      // 2026-09-13 chrome 重做：统计从 640px 居中对话框改成右侧侧栏，正文照常可读，
+      // 侧栏里就是一块实时走的秒表 + 暂停键（_toggleStudyClockManualPause）。停表
+      // 会让那块秒表永远不动。「打开完整记录」那条全页路由仍在上面的停表清单里。
+      final String body = _functionSource(
+        corpus,
+        '  void _openReadingStatistics() {',
+        '\n  }\n',
+      );
+      expect(body, contains('_presentSideSheet('));
+      expect(body, isNot(contains('_withStudyClockPaused(')));
+      expect(body, contains('onTogglePause: _toggleStudyClockManualPause,'));
+    });
 
     test('查词浮窗 / Anki 制卡（mining.part）不停表——那是阅读的一部分', () {
       final String mining = maskComments(

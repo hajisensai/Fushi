@@ -279,21 +279,34 @@ void main() {
           ),
         );
         await tester.pump();
-        expect(find.text('1 / 2'), findsOneWidget);
+        // 网格形态：c0 已读到、c1 在当前章之后锁着 → 已解锁 1 / 2。
+        expect(find.text('Unlocked 1 / 2'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey<String>('reader-gallery-volume-chips')),
+          findsOneWidget,
+        );
 
-        // 当前卷「跳到此插图」仍走原回调。
+        // 当前卷：点已解锁卡进查看器，「跳到此插图」仍走原回调。
+        await tester.tap(
+          find.byKey(const ValueKey<String>('fushi_gallery_card_c0.png')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('1 / 1'), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey<String>('fushi_gallery_jump')),
         );
         expect(jumpedCurrent.single.src, 'c0.png');
         expect(jumpedVolume, isEmpty);
 
+        // 查看器盖住整页（含卷 chip 行），先 Esc 关掉再切卷。
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
         await tester.tap(
           find.byKey(const ValueKey<String>('reader-gallery-volume-chip-1')),
         );
         await tester.pump();
+        // 装载中主体转圈。
         expect(find.byType(CircularProgressIndicator), findsOneWidget);
-        expect(find.text('1 / 2'), findsNothing);
 
         sibling.complete(
           ReaderGalleryVolumeImages(
@@ -302,13 +315,19 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('1 / 3'), findsOneWidget);
-        // 「当前章」标记只属于当前卷。
+        // 兄弟卷没有阅读进度：全部视为已解锁，也没有「当前阅读位置」与过滤 / 定位。
+        expect(find.text('Unlocked 3 / 3'), findsOneWidget);
+        expect(find.text('Current reading position'), findsNothing);
         expect(
-          find.byKey(const ValueKey<String>('fushi_gallery_jump')),
-          findsOneWidget,
+          find.byKey(const ValueKey<String>('fushi_gallery_position')),
+          findsNothing,
         );
 
+        await tester.tap(
+          find.byKey(const ValueKey<String>('fushi_gallery_card_s0.png')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('1 / 3'), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey<String>('fushi_gallery_jump')),
         );
@@ -319,12 +338,14 @@ void main() {
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         expect(openedVolume, <(int, String)>[(1, 's0.png')]);
 
-        // 回到当前卷：舞台恢复本书插图。
+        // 回到当前卷：网格恢复本书插图与解锁判据。
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
         await tester.tap(
           find.byKey(const ValueKey<String>('reader-gallery-volume-chip-0')),
         );
         await tester.pumpAndSettle();
-        expect(find.text('1 / 2'), findsOneWidget);
+        expect(find.text('Unlocked 1 / 2'), findsOneWidget);
       },
     );
   });

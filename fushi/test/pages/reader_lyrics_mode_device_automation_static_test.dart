@@ -28,10 +28,18 @@ void main() {
         File('lib/src/media/audiobook/audiobook_play_bar.dart')
             .readAsStringSync();
 
+    // 2026-09-13 阅读器 chrome 重做后设置齿轮是 ReaderControlLayout 的一个 item，
+    // 语义 id 经 ReaderHeaderAction.semanticsId → ReaderDesktopHeaderButton 落成
+    // Semantics(identifier:)；两段合起来才是「真落地」，缺一段都只是字符串。
     expect(
       readerSource,
-      contains("identifier: 'hibiki.reader.bottom.settings'"),
+      contains("semanticsId: 'hibiki.reader.bottom.settings'"),
       reason: 'XCUITest needs a stable id for the non-audiobook settings gear.',
+    );
+    expect(
+      File('lib/src/reader/reader_desktop_chrome.dart').readAsStringSync(),
+      contains('Semantics(identifier: semanticsId'),
+      reason: 'semanticsId 必须由 ReaderDesktopHeaderButton 真落成 Semantics 节点。',
     );
     expect(
       playBarSource,

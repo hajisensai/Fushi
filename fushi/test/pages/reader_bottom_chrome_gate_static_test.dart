@@ -53,9 +53,15 @@ void main() {
     );
     expect(
       pureGate,
-      contains('if (!hasEverLoaded || !chromeExpanded) return false'),
-      reason: '纯函数里「未冷加载完成 / 底栏收起 ⇒ 不画」必须是硬门，'
+      contains('if (!hasEverLoaded) return false'),
+      reason: '纯函数里「未冷加载完成 ⇒ 不画」必须是硬门，'
           '否则页侧喂对了参数也拦不住切章闪烁。',
+    );
+    expect(
+      pureGate,
+      contains('if (floating) return transientVisible'),
+      reason: '悬浮态只随 transientVisible，不读挤压态的 chromeExpanded '
+          '（残留 false 会把悬浮底栏钉死在永远唤不出，2026-09-13）。',
     );
     final String buildChrome = _functionSource(
       src,

@@ -1517,6 +1517,22 @@ $kPagedWheelGestureHelperJs
     // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
     _handlePagedWheelTick(e);
   }, {passive: false});
+  // 鼠标移动唤出悬浮控制栏（JS 腿，非 Windows / 非 macOS；Windows 由 Flutter 侧
+  // Listener 承担，macOS 的 DOM 收不到 pointermove、同样走宿主腿，Dart 端按
+  // hostOwnsWebViewPointerInput / hostOwnsWebViewHoverLookup 互斥）。用 pointermove
+  // + pointerType 判真鼠标：触屏一次 tap 之后 Chromium/WebKit 会合成 mousemove→mousedown→mouseup→
+  // click（正文空白点不 preventDefault），走 mousemove 会让「点空白收起」被紧跟的
+  // 合成移动又唤出。250ms 节流：唤出 / 续命不需要每帧。
+  var _hoverRevealLast = 0;
+  document.addEventListener('pointermove', function(e) {
+    // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
+    if (window.__fushiHostHoverLookup) return;
+    if (e.pointerType !== 'mouse') return;
+    var now = Date.now();
+    if (now - _hoverRevealLast < 250) return;
+    _hoverRevealLast = now;
+    window.flutter_inappwebview.callHandler('onPointerHoverReveal');
+  }, {passive: true});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
   document.addEventListener('mousemove', function(e) {
     // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
@@ -2092,6 +2108,11 @@ updateLive: function(patch) {
             // not reclaim here or we would fight the popup for focus.
             _selectTextAt(x, y);
           },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'onPointerHoverReveal',
+          callback: (_) => _handleJsHoverReveal(),
         );
 
         controller.addJavaScriptHandler(
