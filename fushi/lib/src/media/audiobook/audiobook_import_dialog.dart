@@ -7,9 +7,9 @@ import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show
         attachAsrCueTokenTiming,
+        finalizeAlignedCues,
         loadEpubSectionsInBackground,
-        parseCuesForFormat,
-        resegmentCuesBySentence;
+        parseCuesForFormat;
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -972,30 +972,22 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         searchWindow: _searchWindow,
         similarityThreshold: _similarityThreshold,
       );
-      if (hasTokenTiming) {
-        // 与 alignAndPersistAudiobook 同一规则：命中 cue 按正文句界重切，
-        // 就地换掉调用方持有的列表内容。
-        final CueResegmentResult resegmented = resegmentCuesBySentence(
-          sections: sections,
-          cues: cues,
-          result: result,
-        );
+      // 重切 / 换正文 / 编码匹配结果 / 写对齐版 SRT：与 alignAndPersistAudiobook
+      // 同一处收尾；就地换掉调用方持有的列表内容。
+      final ({List<AudioCue> cues, MatchResult result}) finalized =
+          await finalizeAlignedCues(
+        sections: sections,
+        cues: cues,
+        result: result,
+        subtitlePath: alignment ?? '',
+        hasTokenTiming: hasTokenTiming,
+      );
+      if (!identical(finalized.cues, cues)) {
         cues
           ..clear()
-          ..addAll(resegmented.cues);
-        result = resegmented.result;
+          ..addAll(finalized.cues);
       }
-      if (alignment != null &&
-          AsrTranscriptionService.isAsrGeneratedSubtitlePath(alignment)) {
-        // 设备端转录产物：命中 cue 的听写文本换成正文（与 alignAndPersistAudiobook
-        // 同一规则），阅读器 DOM 重定位才精确。
-        replaceMatchedCueTextWithBookText(
-          sections: sections,
-          cues: cues,
-          result: result,
-        );
-      }
-      SubtitleRematchCodec.applyToCues(cues: cues, result: result);
+      result = finalized.result;
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,
