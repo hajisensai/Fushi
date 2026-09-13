@@ -1574,6 +1574,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 统计诊断流水上次记过的单元（`_traceArrive` 去重用）。
   (int, int)? _lastTracedUnit;
 
+  /// 上次记过的「起点未通过页上校验、未入账」采样起点（BUG-2492；同页重复采样只记一行）。
+  int _lastTracedSkipStart = -1;
+
   List<int> get _chapterCharCounts => _progress.chapterCharCounts;
   set _chapterCharCounts(List<int> v) => _progress.chapterCharCounts = v;
   List<int> get _chapterCumulativeChars => _progress.chapterCumulativeChars;
