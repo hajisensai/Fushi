@@ -42,8 +42,20 @@
     // 预取进 store 了，只是渲染侧默认不用（站点自带轨不叠加，避免双份字幕）。
     // replaceNativeActive = 本轮判定「替代确实生效中」，推给 content.js 决定藏不藏原生。
     replaceNative: false, replaceNativeActive: false,
+    // 覆盖层位置：用户拖过后存 {x, y}，都是**视频矩形的分数**（x = 水平中心、y = 底边锚点），
+    // 不存像素——全屏/退全屏/窗口缩放/换清晰度时视频盒会变，分数坐标让字幕在画面里的相对
+    // 位置不变。null = 没拖过，走默认（居中、底锚 88%）。
+    overlayPos: null,
+    // 进行中的拖拽会话（null = 没在拖）；overlayDragMoved 记「刚才那次按下确实拖动了」，
+    // 用来吞掉松手后浏览器合成的那一次 click——否则每次拖完都会顺手查一次词。
+    overlayDrag: null, overlayDragMoved: false,
   };
   var EXT_PREFIX = '外挂:';
+  var OVERLAY_POS_KEY = 'subtitleOverlayPosition';
+  var OVERLAY_POS_DEFAULT = { x: 0.5, y: 0.88 };
+  // 按下后位移小于这个值仍算点击（查词），超过才进入拖动；与 content.js Shift 悬停的
+  // 4px 限流同量级，略放宽以免手指/鼠标微抖把查词变成挪字幕。
+  var OVERLAY_DRAG_THRESHOLD = 6;
 
   // 键名保留旧名以兼容既有用户设置，语义已是启用原生 Side Panel 字幕能力。
   var SETTING_KEY = 'netflixSubtitlePanel';
@@ -58,6 +70,7 @@
     } catch (_) { cb(false); }
   }
   function teardownAll() {
+    endOverlayDrag(false);
     hideSubtitleOverlay();
     hideDropHint();
     // 面板整体被关掉时替代模式也随之失效（replaceNativeEffective 已含 st.enabled），
@@ -202,8 +215,20 @@
     st.overlayBlur = c.subtitleOverlayBlur === true;
     st.overlayAllTracks = c.subtitleOverlayAllTracks === true;
     st.replaceNative = c.subtitleReplaceNative === true;
+    st.overlayPos = normalizeOverlayPos(c[OVERLAY_POS_KEY]);
     if (!st.overlayEnabled) hideSubtitleOverlay();
+    // 位置变了（另一标签页拖过 / options 页重置）立刻重摆，不等下一个 200ms tick。
+    else if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
     syncNativeSubtitleReplacement();
+  }
+
+  // 存储里的位置只认「两个有限数、都落在 [0,1]」的形状；坏值（旧版本写错、手改 storage）
+  // 一律当没拖过——绝不能把 NaN 写进 style.left 让字幕直接消失。
+  function normalizeOverlayPos(v) {
+    if (!v || typeof v !== 'object') return null;
+    var x = Number(v.x), y = Number(v.y);
+    if (!isFinite(x) || !isFinite(y)) return null;
+    return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
   }
 
   // 当前偏好快照（快捷键 toggle 用：改一个键、其余保持现值，绝不把用户已关的项刷回默认）。
@@ -216,6 +241,7 @@
       subtitleOverlayBlur: st.overlayBlur,
       subtitleOverlayAllTracks: st.overlayAllTracks,
       subtitleReplaceNative: st.replaceNative,
+      subtitleOverlayPosition: st.overlayPos,
     };
   }
 
@@ -224,6 +250,7 @@
       'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
       'subtitleOverlayAutoLookup',
       'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleReplaceNative',
+      OVERLAY_POS_KEY,
     ];
     try {
       var p = chrome.storage.local.get(keys);
@@ -283,8 +310,11 @@
       var el = document.createElement('div');
       el.id = 'fushi-subtitle-overlay';
       el.setAttribute('data-theme', resolveTheme());
+      el.addEventListener('pointerdown', overlayPointerDown);
       el.addEventListener('click', function (e) {
         e.stopPropagation();
+        // 刚拖完字幕松手：这次 click 是拖动的尾巴，不是查词。
+        if (st.overlayDragMoved) { st.overlayDragMoved = false; return; }
         var cue = st.overlayCue;
         if (cue && typeof window.fushiLookupAtPoint === 'function') {
           window.fushiLookupAtPoint(e.clientX, e.clientY, {
@@ -301,6 +331,8 @@
       el.addEventListener('mousemove', function (e) {
         if (!st.overlayAutoLookup || !st.overlayCue ||
             typeof window.fushiLookupAtPoint !== 'function') return;
+        // 拖动中指针在字幕上划过的每个词都不该被自动查——那是在挪字幕，不是在读。
+        if (st.overlayDrag && st.overlayDrag.moved) return;
         if (Math.abs(e.clientX - st.autoLookupLastX) < 4 &&
             Math.abs(e.clientY - st.autoLookupLastY) < 4) return;
         st.autoLookupLastX = e.clientX;
@@ -365,19 +397,115 @@
     el.setAttribute('data-theme', resolveTheme());
     if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
     else el.textContent = cue.text;
-    // 中心恒定贴视频（拖拽跟随的关键；上一版把中心夹到视口中央，就是「字幕不跟拖拉」的病根）；行宽从
-    // 视频中心向两侧屏缘撑开、被较近一侧屏缘夹住：非全屏小播放器左右空 → 撑到近满屏不折行；全屏开
+    placeOverlay(el, rect, currentOverlayPos());
+    applyOverlayBlur(el);
+  }
+
+  // 本刻应生效的位置：拖动中用会话里的实时值（tick 每 200ms 重摆也不会把字幕拽回原位），
+  // 否则用持久化的用户位置，没拖过走默认。
+  function currentOverlayPos() {
+    if (st.overlayDrag && st.overlayDrag.pos) return st.overlayDrag.pos;
+    return st.overlayPos || OVERLAY_POS_DEFAULT;
+  }
+
+  // 把分数坐标落成像素。x 是水平中心、y 是底边锚点（CSS transform 是 translate(-50%,-100%)）。
+  function placeOverlay(el, rect, pos) {
+    // 中心贴视频（抽屉拖动跟随的关键；上一版把中心夹到视口中央，就是「字幕不跟拖拉」的病根）；行宽从
+    // 中心向两侧屏缘撑开、被较近一侧屏缘夹住：非全屏小播放器左右空 → 撑到近满屏不折行；全屏开
     // 抽屉 → 近侧即屏缘，行宽约等视频盒，永不探进抽屉盖画面（60% 上限保证最窄视频区也 ≥40% 屏）。
+    // 用户把字幕拖向屏缘时同一条规则让行宽收窄折行，永远不出视口。
     var vv = window.innerWidth || (rect.left + rect.right);
-    var cx = rect.left + rect.width / 2;
+    var cx = rect.left + rect.width * pos.x;
     var halfToEdge = Math.max(0, Math.min(cx, vv - cx));
     var maxW = Math.max(200, Math.min(vv * 0.94, (halfToEdge - 6) * 2));
     el.style.left = cx + 'px';
-    // 底边锚定（CSS transform 是 -100%）：文本块从这条线**往上**长。旧版中心锚 84% 时，
-    // 非全屏矮视频（~200px 高）会垂出视频底缘压住进度条——底锚后任何视频高度都出不了界。
-    el.style.top = (rect.top + rect.height * 0.88) + 'px';
+    // 底边锚定：文本块从这条线**往上**长。旧版中心锚 84% 时，非全屏矮视频（~200px 高）会垂出
+    // 视频底缘压住进度条——底锚后任何视频高度都出不了界。
+    el.style.top = (rect.top + rect.height * pos.y) + 'px';
     el.style.maxWidth = Math.round(maxW) + 'px';
-    applyOverlayBlur(el);
+  }
+
+  // 把拖到的像素点夹回视频盒内再换算成分数：中心至少离视频左右缘 8px；底边锚不低于视频底缘、
+  // 不高于「文本块整个还在视频里」的那条线（块高未知/为 0 时退化为不高于视频顶缘）。
+  function overlayPosFromPoint(el, rect, cx, by) {
+    var pad = Math.min(8, rect.width / 2);
+    cx = Math.min(rect.right - pad, Math.max(rect.left + pad, cx));
+    var h = el && typeof el.offsetHeight === 'number' ? el.offsetHeight : 0;
+    var minBy = rect.top + Math.min(h, rect.height);
+    by = Math.min(rect.bottom, Math.max(minBy, by));
+    return { x: (cx - rect.left) / rect.width, y: (by - rect.top) / rect.height };
+  }
+
+  // ── 覆盖层拖拽：按住字幕拖动即挪位；松手按视频分数坐标持久化，点击（位移 < 阈值）仍是查词 ──
+  // 监听挂 window 而不只靠 setPointerCapture：老内核上 capture 静默失败过（见 mobile-drawer.js），
+  // 挂 window 全程收得到 move/up；capture 仍尝试一下，多一层保险。
+  function overlayPointerDown(e) {
+    if (e.button !== undefined && e.button !== null && e.button !== 0) return;
+    if (st.overlayDrag) endOverlayDrag(false);
+    st.overlayDragMoved = false;
+    var from = st.overlayPos || OVERLAY_POS_DEFAULT;
+    st.overlayDrag = {
+      id: e.pointerId, x0: e.clientX, y0: e.clientY,
+      from: from, pos: null, moved: false,
+    };
+    window.addEventListener('pointermove', overlayPointerMove);
+    window.addEventListener('pointerup', overlayPointerUp);
+    window.addEventListener('pointercancel', overlayPointerCancel);
+    try { if (st.overlayEl) st.overlayEl.setPointerCapture(e.pointerId); } catch (_) {}
+    // 不 preventDefault：让点击/取词的默认链路照常；过阈值进入拖动后才接管。
+  }
+  function overlayPointerMove(e) {
+    var d = st.overlayDrag;
+    if (!d || e.pointerId !== d.id) return;
+    var dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+    if (!d.moved) {
+      if (dx * dx + dy * dy < OVERLAY_DRAG_THRESHOLD * OVERLAY_DRAG_THRESHOLD) return;
+      d.moved = true;
+      if (st.overlayEl) st.overlayEl.setAttribute('data-dragging', '');
+      // 过阈值前浏览器可能已经拉出一小段文字选区（覆盖层 user-select:text），拖动一开始就清掉。
+      try { window.getSelection().removeAllRanges(); } catch (_) {}
+    }
+    var video = videoEl();
+    if (!video || typeof video.getBoundingClientRect !== 'function') return;
+    var rect = video.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    d.pos = overlayPosFromPoint(st.overlayEl, rect,
+      rect.left + rect.width * d.from.x + dx, rect.top + rect.height * d.from.y + dy);
+    if (st.overlayEl && st.overlayCue) placeOverlay(st.overlayEl, rect, d.pos);
+    try { e.preventDefault(); } catch (_) {}
+  }
+  function overlayPointerUp(e) {
+    var d = st.overlayDrag;
+    if (!d || e.pointerId !== d.id) return;
+    endOverlayDrag(true);
+  }
+  function overlayPointerCancel(e) {
+    var d = st.overlayDrag;
+    if (!d || e.pointerId !== d.id) return;
+    endOverlayDrag(false);
+  }
+  // commit=true：把会话位置写成用户位置并持久化；false（取消/面板关闭）：丢弃、回到原位。
+  function endOverlayDrag(commit) {
+    var d = st.overlayDrag;
+    if (!d) return;
+    st.overlayDrag = null;
+    window.removeEventListener('pointermove', overlayPointerMove);
+    window.removeEventListener('pointerup', overlayPointerUp);
+    window.removeEventListener('pointercancel', overlayPointerCancel);
+    if (st.overlayEl) {
+      try { st.overlayEl.removeAttribute('data-dragging'); } catch (_) {}
+    }
+    if (!d.moved) return;
+    // 真拖过：紧随其后的那次合成 click 要吞掉（不查词）。下一次 pointerdown 会清这个标记，
+    // 所以拖出界没产生 click 也不会误吞后面无关的点击。
+    st.overlayDragMoved = true;
+    if (commit && d.pos) {
+      st.overlayPos = d.pos;
+      var patch = {};
+      patch[OVERLAY_POS_KEY] = d.pos;
+      try { chrome.storage.local.set(patch); } catch (_) {}
+    }
+    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
   }
 
   function firstCueAfter(ms) {
@@ -833,6 +961,7 @@
         'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
         'subtitleOverlayAutoLookup',
         'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleReplaceNative',
+        OVERLAY_POS_KEY,
       ];
       for (var i = 0; i < keys.length; i++) {
         if (changes[keys[i]]) { prefs[keys[i]] = changes[keys[i]].newValue; changed = true; }

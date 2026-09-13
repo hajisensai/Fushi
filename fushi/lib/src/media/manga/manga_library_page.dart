@@ -73,9 +73,11 @@ class MangaLibraryPage extends StatelessWidget {
           label: t.settings,
           builder: (BuildContext context, Widget navigation) =>
               ModuleSettingsView(
-            destinationId: SettingsDestinationId.reading,
-            navigation: navigation,
-          ),
+                // 漫画有独立的「漫画」设置分类（观看偏好 + OCR 引擎/模型 + 在线目录）；
+                // 此前误指 reading（EPUB 字体/排版），漫画库页的设置标签里根本找不到 OCR。
+                destinationId: SettingsDestinationId.manga,
+                navigation: navigation,
+              ),
         ),
       ],
     );

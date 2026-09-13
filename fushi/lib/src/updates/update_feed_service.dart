@@ -70,8 +70,12 @@ class UpdateFeedService implements UpdateFeedPublisher {
   final UpdateNotificationText Function(UpdateFeedKind, List<UpdateFeedDraft>)
       _notificationText;
 
-  /// 通知权限只申请一次；null = 还没问过。
+  /// 通知后端只初始化一次；null = 还没初始化过。
   bool? _notifierReady;
+
+  /// 系统权限的最近一次查询结果；null = 还没查过。启动期 [warmUpNotifier] 与
+  /// [enableSystemNotifications] 之后刷新，设置页的开关同步读它。
+  bool? _permissionGranted;
 
   /// 本进程内发过的通知 id，按域——[markAllSeen] 撤通知时要知道该域挂着哪些
   /// （分组通知的 id 由组名派生，事先不可枚举）。
@@ -85,21 +89,51 @@ class UpdateFeedService implements UpdateFeedPublisher {
   Future<void> setKindEnabled(UpdateFeedKind kind, bool enabled) =>
       _prefs.setPref(kind.enabledPrefKey, enabled);
 
-  /// 系统通知总开关。默认开；关掉后仍照常投递、照常出红点。
+  /// 系统通知总开关（用户偏好）。默认开；关掉后仍照常投递、照常出红点。
+  ///
+  /// 只是偏好的一半：真能不能发还要系统点头（[systemNotificationsGranted]）。
+  /// 设置页显示 [systemNotificationsActive]，发通知也以它为准。
   bool get systemNotificationsEnabled =>
       _prefs.getPref(kUpdateSystemNotificationsPref, defaultValue: true) as bool;
 
-  Future<void> setSystemNotificationsEnabled(bool enabled) async {
-    await _prefs.setPref(kUpdateSystemNotificationsPref, enabled);
+  /// 系统当前允不允许发（最近一次查询的结果；没查过按不允许）。
+  bool get systemNotificationsGranted => _permissionGranted ?? false;
+
+  /// 偏好开着 **且** 系统已授权——设置页开关显示的就是这个值。开关只有一种
+  /// 「开」：两边都开；缺任一边都显示为关，用户再打开就是一次申请。
+  bool get systemNotificationsActive =>
+      systemNotificationsEnabled && systemNotificationsGranted;
+
+  /// 用户关掉「系统通知」。不碰系统权限（撤回权限只能在系统设置里做）。
+  Future<void> disableSystemNotifications() async {
+    await _prefs.setPref(kUpdateSystemNotificationsPref, false);
+  }
+
+  /// 用户打开「系统通知」——**这是唯一会弹系统权限对话框的地方**。偏好先写开，
+  /// 再向系统申请；被拒的话偏好仍是开的，但 [systemNotificationsActive] 为假，
+  /// 开关显示为关，下次再打开就再申请一次（系统「不再询问」之后申请立即返回
+  /// 拒绝，用户得去系统设置授权）。返回申请后的最终状态。
+  Future<bool> enableSystemNotifications() async {
+    await _prefs.setPref(kUpdateSystemNotificationsPref, true);
+    _notifierReady ??= await _notifier.ensureReady();
+    if (_notifierReady != true) return _permissionGranted = false;
+    return _permissionGranted = await _notifier.requestPermission();
   }
 
   /// 启动期把通知后端初始化好：注册点击回调、回放「被通知冷启动」的那次点击、
   /// 让上个进程留下的通知能被撤销。没有这一步，回调只在本进程**第一次发通知**
-  /// 时才挂上——重启后点昨晚那条「播放」什么都不发生。总开关关着就不初始化
-  /// （Android 13+ 初始化会弹权限）。
+  /// 时才挂上——重启后点昨晚那条「播放」什么都不发生。总开关关着就不初始化。
+  ///
+  /// **不申请权限，只查询**：这里跑在 HomePage 就绪那一帧，用户没做任何动作。
+  /// 权限申请只在 [enableSystemNotifications]（BUG-2498）。
   Future<void> warmUpNotifier() async {
     if (!systemNotificationsEnabled) return;
     _notifierReady ??= await _notifier.ensureReady();
+    if (_notifierReady != true) return;
+    // 冷启动点击只在这里回放：别的 ensureReady 入口（发通知、打开开关）都可能
+    // 晚上几小时，那时回放旧点击是莫名其妙的跳转。
+    await _notifier.replayLaunchResponse();
+    _permissionGranted = await _notifier.hasPermission();
   }
 
   /// 投递一批事件。**同一域**的一批合成**一条**汇总通知。
@@ -179,6 +213,10 @@ class UpdateFeedService implements UpdateFeedPublisher {
     if (!systemNotificationsEnabled) return false;
     _notifierReady ??= await _notifier.ensureReady();
     if (_notifierReady != true) return false;
+    // 每次发前问一次系统（用户可能在系统设置里改过），顺手刷新缓存。
+    final bool granted = await _notifier.hasPermission();
+    _permissionGranted = granted;
+    if (!granted) return false;
     final UpdateNotificationText text = _notificationText(kind, fresh);
     final UpdateFeedDraft first = fresh.first;
     final int id = updateNotificationId(kind, group);

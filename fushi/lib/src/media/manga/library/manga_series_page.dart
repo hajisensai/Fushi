@@ -20,6 +20,7 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -489,12 +490,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 返回 true = 继续入队下载。选「登录」时登录完自动刷新章节列表（锁位跟着
   /// 变），本次不入队。
   Future<bool> _promptLockedChapter(OnlineMangaChapter chapter) async {
-    final OnlineMangaLibraryEntry? entry = _entry;
-    final OnlineMangaLoginTarget? login = switch (_adapter) {
-      OnlineMangaLoginCapable(:final loginTarget) when entry != null =>
-        loginTarget(entry),
-      _ => null,
-    };
+    final OnlineMangaLoginTarget? login = _loginTarget;
     if (!mounted) return false;
     final _LockedChapterChoice? choice =
         await showAppDialog<_LockedChapterChoice>(
@@ -540,6 +536,17 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       case null:
         return false;
     }
+  }
+
+  /// 当前条目所属源的登录目标；适配器没这条流程（Aidoku / 互联对端）或源不接受
+  /// 浏览器登录时为 null——AppBar 的登录按钮与锁章弹窗的「登录」项共用这一判据。
+  OnlineMangaLoginTarget? get _loginTarget {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    return switch (_adapter) {
+      OnlineMangaLoginCapable(:final loginTarget) when entry != null =>
+        loginTarget(entry),
+      _ => null,
+    };
   }
 
   Future<void> _loginToSource(OnlineMangaLoginTarget target) async {
@@ -1159,10 +1166,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
     final bool canSubscribe = entry != null && _row != null && _service != null;
+    final OnlineMangaLoginTarget? login = _loginTarget;
     return FushiPageScaffold(
       title: title,
       subtitle: _subtitle(),
       actions: <Widget>[
+        // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
+        // 不必先点一条锁章再从弹窗里找。
+        if (login != null)
+          IconButton(
+            key: const ValueKey<String>('manga_series_login'),
+            tooltip: t.mihon_source_login,
+            onPressed: _busy || _refreshing
+                ? null
+                : () => unawaited(_loginToSource(login)),
+            icon: const Icon(Icons.login),
+          ),
         if (canSubscribe)
           IconButton(
             key: const ValueKey<String>('manga_series_subscribe'),
@@ -1520,7 +1539,21 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         coverPath: row.coverPath,
       );
       if (resolved != null) {
-        return Image.file(File(resolved), fit: BoxFit.cover);
+        return Image.file(
+          File(resolved),
+          fit: BoxFit.cover,
+          // BUG-2496：坏封面文件解码失败退回占位块，不当致命 FlutterError。
+          errorBuilder: (_, Object error, __) {
+            ErrorLogService.instance.logDiagnostic(
+              'MangaSeriesPage.coverDecode',
+              '$resolved: $error',
+            );
+            return const ColoredBox(
+              color: Color(0xff303030),
+              child: Icon(Icons.menu_book_outlined),
+            );
+          },
+        );
       }
     }
     final MangaSeriesTarget target = widget.target;
@@ -1554,6 +1587,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             icon: const Icon(Icons.document_scanner_outlined),
             label: Text(t.manga_ocr_wizard_run),
           ),
+          _ocrSettingsButton(),
         ],
       );
     }
@@ -1609,9 +1643,28 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             icon: const Icon(Icons.document_scanner_outlined),
             label: Text(t.manga_series_ocr_all_downloaded),
           ),
+          _ocrSettingsButton(),
         ],
       ],
     );
+  }
+
+  /// 「OCR 设置」：作品页是阅读器外触发 OCR 的入口（BUG-2461），引擎偏好 / 模型
+  /// 下载 / Lens 语言 / 外部 mokuro 路径必须就在触发点旁边可达——否则解析不到引擎
+  /// 时用户只看到一条红 toast，不知道该去哪配。返回后重建：偏好是 AppModel 上的
+  /// 状态，下一次「识别」按新偏好解析。
+  Widget _ocrSettingsButton() {
+    return OutlinedButton.icon(
+      key: const ValueKey<String>('manga_series_ocr_settings'),
+      onPressed: () => unawaited(_openOcrSettings()),
+      icon: const Icon(Icons.tune_outlined),
+      label: Text(t.manga_ocr_settings_open),
+    );
+  }
+
+  Future<void> _openOcrSettings() async {
+    await MangaOcrSettingsPage.push(context);
+    if (mounted) setState(() {});
   }
 
   /// 本地卷没有章节，章节区换成「这一卷有多少页、读到哪」。

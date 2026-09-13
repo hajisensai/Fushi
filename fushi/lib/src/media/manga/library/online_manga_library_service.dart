@@ -9,8 +9,11 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
@@ -127,10 +130,24 @@ class OnlineMangaLibraryService {
     if (coverUrl != null && coverUrl.isNotEmpty) {
       try {
         final List<int> bytes = await adapter.fetchCover(entry, coverUrl);
-        final String extension = _imageExtension(bytes);
-        final File cover = File(p.join(directory.path, 'cover$extension'));
-        await cover.writeAsBytes(bytes, flush: true);
-        coverPath = p.basename(cover.path);
+        // BUG-2496：未知魔数（源返回的 Cloudflare 拦截页 / HTML 错误页）直接不落盘，
+        // 不再回落成 `cover.jpg`——那种文件一到渲染层就是 `Invalid image data`。
+        final String? extension = _imageExtension(bytes);
+        if (extension == null) {
+          throw const CoverImageInvalidException(
+            'online manga cover is not PNG/WebP/GIF/JPEG',
+          );
+        }
+        final String coverFile = p.join(directory.path, 'cover$extension');
+        // 收口再查一次完整性（截断 JPEG/PNG）+ 原子写 + 驱逐解码缓存。
+        await MediaCoverService.applyCoverBytes(
+          bytes: bytes,
+          destPath: coverFile,
+        );
+        coverPath = p.basename(coverFile);
+      } on CoverImageInvalidException catch (e) {
+        ErrorLogService.instance
+            .logDiagnostic('OnlineMangaLibraryService.cover', e);
       } on Object {
         // 封面失败不能挡住「追这部作品」。作品页仍会经源的运行时按需取图。
       }
@@ -437,7 +454,8 @@ class OnlineMangaLibraryService {
     await temporary.rename(target.path);
   }
 
-  static String _imageExtension(List<int> bytes) {
+  /// 按魔数定封面扩展名；不是 PNG / WebP / GIF / JPEG 返回 null（调用方不落盘）。
+  static String? _imageExtension(List<int> bytes) {
     if (bytes.length >= 8 &&
         bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
@@ -452,6 +470,12 @@ class OnlineMangaLibraryService {
     if (bytes.length >= 6 && String.fromCharCodes(bytes.take(3)) == 'GIF') {
       return '.gif';
     }
-    return '.jpg';
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xff &&
+        bytes[1] == 0xd8 &&
+        bytes[2] == 0xff) {
+      return '.jpg';
+    }
+    return null;
   }
 }

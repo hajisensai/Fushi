@@ -124,8 +124,20 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       if (i < 0 || i >= widget.images.length) continue;
       final File? file = widget.fileForRef(widget.images[i]);
       if (file == null) continue;
+      // BUG-2496：precacheImage 不传 onError 时解码失败会自己
+      // FlutterError.reportError（silent）——前后两张相邻图同帧预热正是错误日志里
+      // 「两条同毫秒 Invalid image data」的形状。这里接住只留诊断痕迹。
       unawaited(
-        precacheImage(FileImage(file), context).catchError((Object _) {}),
+        precacheImage(
+          FileImage(file),
+          context,
+          onError: (Object error, StackTrace? _) {
+            ErrorLogService.instance.logDiagnostic(
+              'ReaderGalleryPage.precache.coverDecode',
+              '${file.path}: $error',
+            );
+          },
+        ),
       );
     }
   }
@@ -282,6 +294,18 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             key: ValueKey<String>('fushi_gallery_stage_${current.src}'),
             fit: BoxFit.contain,
             gaplessPlayback: true,
+            // BUG-2496：坏图解码失败退回占位图标，不再当致命 FlutterError。
+            errorBuilder: (_, Object error, __) {
+              ErrorLogService.instance.logDiagnostic(
+                'ReaderGalleryPage.stage.coverDecode',
+                '${file.path}: $error',
+              );
+              return Icon(
+                Icons.broken_image_outlined,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant,
+              );
+            },
           );
     return Stack(
       children: <Widget>[
@@ -377,18 +401,30 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final EpubImageRef ref = widget.images[index];
     final bool selected = index == _index;
     final File? file = widget.fileForRef(ref);
+    final Widget missing = ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          size: 18,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
     final Widget thumbnail = file == null
-        ? ColoredBox(
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Center(
-              child: Icon(
-                Icons.broken_image_outlined,
-                size: 18,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          )
-        : Image.file(file, fit: BoxFit.cover);
+        ? missing
+        : Image.file(
+            file,
+            fit: BoxFit.cover,
+            // BUG-2496：坏图解码失败与「文件缺失」同一占位，不再当致命 FlutterError。
+            errorBuilder: (_, Object error, __) {
+              ErrorLogService.instance.logDiagnostic(
+                'ReaderGalleryPage.thumb.coverDecode',
+                '${file.path}: $error',
+              );
+              return missing;
+            },
+          );
     return GestureDetector(
       onTap: () => _select(index),
       child: AnimatedContainer(

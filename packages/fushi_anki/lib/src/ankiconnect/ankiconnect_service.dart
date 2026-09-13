@@ -835,6 +835,45 @@ class AnkiConnectService {
     return fields;
   }
 
+  /// Search candidates then verify the literal tag: Anki's tag search may also
+  /// return descendants in its tag hierarchy. Never infer identity from that.
+  Future<List<int>> findNotesBySourceMarker(String markerTag) async {
+    if (!RegExp(r'^fushi_source_[0-9a-f]{32}$').hasMatch(markerTag)) {
+      throw const FormatException('Invalid source marker');
+    }
+    final List<int> candidates = await findNotesByQuery('tag:$markerTag');
+    if (candidates.isEmpty) return <int>[];
+    final Set<int> matches = <int>{};
+    for (int offset = 0; offset < candidates.length; offset += 100) {
+      final List<int> batch = candidates.sublist(
+        offset,
+        (offset + 100).clamp(0, candidates.length),
+      );
+      final Object? response = await _request('notesInfo', <String, Object>{
+        'notes': batch,
+      });
+      if (response is! List || response.length != batch.length) {
+        throw AnkiConnectException('Invalid source note lookup response');
+      }
+      for (final Object? item in response) {
+        if (item is! Map) {
+          throw AnkiConnectException('Invalid source note lookup entry');
+        }
+        if (item.isEmpty) continue; // Deleted after candidate search.
+        final Object? id = item['noteId'];
+        final Object? tags = item['tags'];
+        if (id is! int ||
+            !batch.contains(id) ||
+            tags is! List ||
+            tags.any((dynamic tag) => tag is! String)) {
+          throw AnkiConnectException('Invalid source note identity response');
+        }
+        if (tags.contains(markerTag)) matches.add(id);
+      }
+    }
+    return matches.toList();
+  }
+
   // TODO-1007/1008：批量读取多张 note 的字段（字段名 -> 值），供命中多张时一次往返
   // 拉全部预览。AnkiConnect `notesInfo` 接收 `{notes: [id...]}`，按 id 顺序返回每项
   // `{noteId, fields:{<name>:{value,order}}}`。返回 `noteId -> (name -> value)`；

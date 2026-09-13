@@ -27,6 +27,8 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
+    show kMiningHeadPadMs, kMiningPadMaxMs, kMiningTailPadMs;
 import 'package:fushi/src/mining/galgame_library.dart';
 // 迁移判据要用「这个存量代理地址归一得出来吗」，与 applyAppProxy 同一份实现，
 // 不在这里重写一遍（重写就会漂移，而漂移的后果是存量用户升级即断网）。
@@ -1812,6 +1814,32 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  // 制卡句子音频的头/尾 padding（毫秒）。对齐 asbplayer 的 audio padding：字幕 cue 的
+  // 时间窗通常比实际发声短，尾音/助词/呼吸直接被硬切。视频字幕与有声书两条制卡链共用
+  // 这一对值（同一个人听同一种语言，句首/句尾余量的需求不随媒体种类变），裁剪时都走
+  // [padSentenceRange] 夹相邻 cue 边界，所以填大了也不会把下一句混进来。
+  // 默认值 = 原有声书硬编码常量（头 120 / 尾 200，[kMiningHeadPadMs]/[kMiningTailPadMs]），
+  // 有声书用户行为零变化；视频链此前完全没 padding，默认即获得余量。
+  int get miningAudioHeadPadMs =>
+      (getPref('mining_audio_head_pad_ms', defaultValue: kMiningHeadPadMs)
+              as int)
+          .clamp(0, kMiningPadMaxMs);
+
+  void setMiningAudioHeadPadMs(int ms) async {
+    await setPref('mining_audio_head_pad_ms', ms.clamp(0, kMiningPadMaxMs));
+    notifyListeners();
+  }
+
+  int get miningAudioTailPadMs =>
+      (getPref('mining_audio_tail_pad_ms', defaultValue: kMiningTailPadMs)
+              as int)
+          .clamp(0, kMiningPadMaxMs);
+
+  void setMiningAudioTailPadMs(int ms) async {
+    await setPref('mining_audio_tail_pad_ms', ms.clamp(0, kMiningPadMaxMs));
+    notifyListeners();
+  }
+
   bool get deduplicatePitchAccents =>
       getPref('deduplicate_pitch_accents', defaultValue: true) as bool;
 
@@ -2761,6 +2789,17 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setMangaVolumeKeyPaging(bool value) async {
     await setPref('manga_volume_key_paging', value);
+    notifyListeners();
+  }
+
+  /// 漫画阅读器顶栏是否悬浮（默认开，与 EPUB 阅读器「点空白隐藏控制栏」同默认）。
+  /// 悬浮 = 顶栏不占布局、默认收起、点页面中央 / 顶边悬停唤出并自动收起；
+  /// 关 = 顶栏常驻并占 48px 布局高，页图在它下方排布。
+  bool get mangaChromeFloating =>
+      getPref('manga_chrome_floating', defaultValue: true) as bool;
+
+  Future<void> setMangaChromeFloating(bool value) async {
+    await setPref('manga_chrome_floating', value);
     notifyListeners();
   }
 

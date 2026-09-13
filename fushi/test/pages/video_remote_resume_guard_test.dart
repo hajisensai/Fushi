@@ -30,6 +30,11 @@ FushiDatabase _testDb() =>
 String remotePositionPrefKey(String bookUid) =>
     'video_remote_position_$bookUid';
 
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   group('TODO-559 remote video resume — behavioral round-trip', () {
     late FushiDatabase db;
@@ -136,8 +141,8 @@ void main() {
         'if (!mounted)',
       );
       expect(
-        region2.contains(
-          '_isRemote ? _persistRemotePosition : _persistPosition',
+        _flat(region2).contains(
+          _flat('_isRemote ? _persistRemotePosition : _persistPosition'),
         ),
         isTrue,
         reason: 'remote save must go through _persistRemotePosition',

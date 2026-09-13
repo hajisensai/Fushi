@@ -251,10 +251,17 @@ void main() {
         isTrue,
         reason: '终点必须来自 shell 的 getLastVisibleCharOffset（传已算好的 start）',
       );
+      // BUG-2492：起点是否在本页由 getLastVisibleCharOffset(start) 校验（不在 → -1），
+      // atEnd 的 total 钳位只能盖在已校验通过的 end 上，不能绕过 -1。
       expect(
-        body.contains('var end = atEnd ? total : (hasEnd ? '),
+        body.contains('var end = hasEnd ? r.getLastVisibleCharOffset(off) : -1;'),
         isTrue,
-        reason: 'atEnd 时 end 必须钳到 total',
+        reason: 'end 必须先经 getLastVisibleCharOffset(start) 校验，atEnd 不得直接取 total',
+      );
+      expect(
+        body.contains('if (atEnd && end >= 0) end = total;'),
+        isTrue,
+        reason: 'atEnd 时已校验通过的 end 必须钳到 total（-1 保持 -1）',
       );
       expect(
         body.contains(

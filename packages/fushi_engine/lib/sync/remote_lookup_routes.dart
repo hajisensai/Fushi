@@ -256,6 +256,34 @@ class RemoteLookupRoutes {
     }
   }
 
+  /// Exposed only by the paired-device server, after its authentication gate.
+  Future<shelf.Response> handleSourceNote(
+    shelf.Request request,
+    String path,
+  ) async {
+    final FushiRemoteMiningService? service = mining;
+    if (service is! FushiRemoteSourceNoteService) {
+      return shelf.Response.notFound('Source editing unavailable');
+    }
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    try {
+      return jsonResponse(
+        await buildSourceNoteResponse(
+          path,
+          body,
+          mining: service as FushiRemoteSourceNoteService,
+        ),
+      );
+    } on FormatException catch (error) {
+      return shelf.Response(400, body: error.message);
+    } catch (error) {
+      // Explicit application failure is a response, never permission to try a
+      // second host's Anki collection with the same note id.
+      return jsonResponse(<String, dynamic>{'ok': false, 'message': '$error'});
+    }
+  }
+
   /// Lapis 客制化：客户端（手机 AnkiDroid 等无模板 API 的平台）读写本机 Anki 的
   /// note type（读定义 / 写 styling / 写卡模板）。未注入挖词 service → 404（旧版主机
   /// 对新客户端返回 404 → 客户端按「后端不支持」降级）；modelName/css/templates

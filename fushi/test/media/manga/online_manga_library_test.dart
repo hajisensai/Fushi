@@ -13,12 +13,17 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:path/path.dart' as p;
+import 'package:transparent_image/transparent_image.dart';
 
 /// 身份串的分隔符是 NUL。测试里也用 `String.fromCharCode(0)` 而不是源码字面量：
 /// 裸 NUL 会让 git 把 .dart 判成 binary，diff/merge 会静默丢改动。
 final String _nul = String.fromCharCode(0);
 
 void main() {
+  // 封面经收口落盘后要驱逐 PaintingBinding.imageCache：没有 binding 会在写完之后抛，
+  // 被 add 的 on Object 吞掉，表现为「文件在、coverPath 却是 null」的假红。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late Directory root;
   late FushiDatabase database;
   late OnlineMangaLibraryService service;
@@ -59,15 +64,18 @@ void main() {
     ),
   ];
 
+  late _FixtureAdapter adapter;
+
   setUp(() async {
     root = await Directory.systemTemp.createTemp('hibiki-online-manga-');
     // 2026-09-12 起在线条目直接落 `<fushi_books>/<bookKey>`；测试里把书根钉到临时目录。
     EpubStorage.debugBaseDirectoryOverride = root.path;
     database = FushiDatabase.forTesting(NativeDatabase.memory());
+    adapter = _FixtureAdapter();
     service = OnlineMangaLibraryService(
       database: database,
       rootDirectory: root,
-      adapter: _FixtureAdapter(),
+      adapter: adapter,
     );
   });
 
@@ -100,6 +108,32 @@ void main() {
     final EpubBookRow again = await service.add(entryFor(chapters: chapters));
     expect(again.bookKey, row.bookKey);
     expect(await database.getAllEpubBooks(), hasLength(1));
+  });
+
+  test('BUG-2496：源返回 HTML 错误页当封面 → 不落盘、coverPath 为空、入库照常', () async {
+    adapter.coverBytes = utf8.encode('<html><body>403 Forbidden</body></html>');
+
+    final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+
+    expect(row.coverPath, isNull);
+    final List<String> coverFiles = Directory(row.extractDir)
+        .listSync()
+        .map((FileSystemEntity e) => p.basename(e.path))
+        .where((String name) => name.startsWith('cover'))
+        .toList();
+    expect(coverFiles, isEmpty,
+        reason: 'HTML 不得再以 cover.jpg 落盘——渲染层只判 existsSync，'
+            '坏文件每次重建都报 Invalid image data');
+    expect(row.format, 'manga', reason: '封面坏了不能挡住「追这部作品」');
+  });
+
+  test('BUG-2496：截断 PNG（只有魔数）同样不落盘', () async {
+    adapter.coverBytes = kTransparentImage.sublist(0, 8);
+
+    final EpubBookRow row = await service.add(entryFor(chapters: chapters));
+
+    expect(row.coverPath, isNull);
+    expect(File(p.join(row.extractDir, 'cover.png')).existsSync(), isFalse);
   });
 
   test('刷出空章节列表不得覆盖书架：抛失败、库里旧描述符原样保留', () async {
@@ -510,6 +544,9 @@ class _FixtureAdapter implements OnlineMangaRuntimeAdapter {
     OnlineMangaLibraryEntry entry,
     String url,
   ) async =>
-      // PNG 魔数：让 _imageExtension 判成 .png。
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      coverBytes;
+
+  /// 默认是完整 1×1 PNG（BUG-2496 起写侧收口拒收只有魔数的截断 PNG）；用例可换成
+  /// HTML / 截断字节验证「不落盘、coverPath 为空」。
+  List<int> coverBytes = kTransparentImage;
 }

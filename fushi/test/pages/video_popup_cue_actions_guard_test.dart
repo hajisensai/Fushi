@@ -14,9 +14,13 @@ import 'package:flutter_test/flutter_test.dart';
 /// 顶栏是纯 Flutter widget（`DictionaryPopupLayer._buildTopBar` 的 headerWidget 注入点），
 /// 但要立起来需要整个视频页 State + media_kit + DB，widget 测试代价远超收益；接线层
 /// 的回归（按钮被误删、handler 接错）源码扫描即可咬死。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
-  final File page =
-      File('lib/src/pages/implementations/video_fushi_page.dart');
+  final File page = File('lib/src/pages/implementations/video_fushi_page.dart');
   final File part = File(
     'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart',
   );
@@ -188,11 +192,13 @@ void main() {
         reason: '复制按钮必须有就地 ✓ 反馈——OSD 在视频区，弹窗里看不见',
       );
       expect(
-        button.contains('if (_copyLookupSentence()) markCopied();'),
+        _flat(button)
+            .contains(_flat('if (_copyLookupSentence()) markCopied();')),
         isTrue,
       );
       expect(
-        button.contains('copied ? Icons.check : Icons.content_copy_outlined'),
+        _flat(button).contains(
+            _flat('copied ? Icons.check : Icons.content_copy_outlined')),
         isTrue,
       );
       expect(button.contains('copied ? t.copied : t.copy'), isTrue);

@@ -296,14 +296,40 @@ void main() {
       expect(received, isEmpty);
     });
 
+    test(
+      'CMVS exact hit crosses native channel with its source span',
+      () async {
+        final List<GalLookupHit> received = <GalLookupHit>[];
+        GalHookTextOverlayChannel.setEventHandlers(
+          onGalLookupHit: received.add,
+        );
+        final Map<String, Object?> payload = _wireHit()
+          ..['providerKind'] = 2
+          ..['providerId'] = 16
+          ..['coordinateSpace'] = 1;
+        await invokeFromNative('onGalLookupHit', payload);
+        expect(received, hasLength(1));
+        expect(received.single.providerId, 16);
+        expect(received.single.charIndex, payload['charIndex']);
+        expect(received.single.sourceLength, payload['sourceLength']);
+        await invokeFromNative('onGalLookupHit', <String, Object?>{
+          ...payload,
+          'providerKind': 1,
+        });
+        expect(received, hasLength(1));
+      },
+    );
+
     test('production provider whitelist matches native kind/id pairs', () {
       expect(isGalLookupProductionProviderPair(1, 1), isTrue);
       expect(isGalLookupProductionProviderPair(2, 14), isTrue);
       expect(isGalLookupProductionProviderPair(2, 15), isTrue);
+      expect(isGalLookupProductionProviderPair(2, 16), isTrue);
       expect(isGalLookupProductionProviderPair(3, 10), isTrue);
       expect(isGalLookupProductionProviderPair(1, 3), isFalse);
       expect(isGalLookupProductionProviderPair(2, 1), isFalse);
       expect(isGalLookupProductionProviderPair(1, 15), isFalse);
+      expect(isGalLookupProductionProviderPair(1, 16), isFalse);
       expect(isGalLookupProductionProviderPair(3, 11), isFalse);
     });
 
@@ -601,8 +627,11 @@ void main() {
 
     test('翻到上方时底边贴台词：实际卡比 cap 矮 314 px 也不留空隙（修前顶边停在 569）', () {
       final GalRootPlacement placement = resolvePlacement(hit4k, 1933, 1087);
-      final ({int x, int y}) rendered =
-          resolveGalRootTopLeft(placement, 773, hit4k.viewH);
+      final ({int x, int y}) rendered = resolveGalRootTopLeft(
+        placement,
+        773,
+        hit4k.viewH,
+      );
       expect(rendered.y + 773, placement.edgeY, reason: '底边必须贴在字形顶上方');
       expect(rendered.y, 1656 - 773);
       // cap 高度本身回到旧实现的落点：布局原点与修前逐字节一致。
@@ -649,8 +678,11 @@ void main() {
       expect(placement.edgeY, hit.glyphY + hit.glyphH + _kCardGap);
       expect(placement.x, 300);
       // 反推实现在这里会给 (above: true, edgeY: 720) → 根卡 200 高时落到 520。
-      final ({int x, int y}) rendered =
-          resolveGalRootTopLeft(placement, 200, hit.viewH);
+      final ({int x, int y}) rendered = resolveGalRootTopLeft(
+        placement,
+        200,
+        hit.viewH,
+      );
       expect(rendered.y, 344);
       expect(rendered.y, hit.glyphY + hit.glyphH + _kCardGap);
     });

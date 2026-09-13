@@ -2304,6 +2304,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     return _epubExtraActions(item);
   }
 
+  /// 本地 [bookKey] 这本书在对端的「只缺有声书」候选（BUG-2505）：最近一次远端清单
+  /// 里对端有配套有声书、本端只有书没有有声书时非 null。远端清单没拉到 / 非互联 /
+  /// 本端已有有声书都是 null → 菜单不露这一项。
+  ///
+  /// 与远端卡同一道门（[_shouldLoadRemoteBooks]）：`_lastRemoteState` 只在成功快照时
+  /// 被替换、关掉「显示远端条目」/ 同步模块后不会清空，若只看它，远端卡已经消失、
+  /// 本地书卡菜单还露着「从互联对端下载有声书」，点下去只能弹「不可用」。
+  RemoteBookInfo? _remoteAudiobookOnlyFor(String bookKey) =>
+      _shouldLoadRemoteBooks ? _lastRemoteState?.audiobookOnly[bookKey] : null;
+
   /// EPUB 书卡长按菜单动作真身。[inCollectionDetail] = 合集详情页成员卡语境
   /// （菜单已注入「移出合集」）——该语境下隐藏「加入合集」，同一条目在详情页
   /// 语境下再加合集没有意义。
@@ -2331,6 +2341,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           label: t.audiobook_import,
           icon: Icons.headphones_outlined,
           onPressed: () => _openAudiobookImport(item, bookKey),
+        ),
+      // BUG-2505：本地已有这本书、还没有它的有声书、而对端有配套有声书 → 给一个
+      // 显式的补拉入口。远端卡按「本端已有」被整条藏掉后，这里是唯一能到达对端
+      // 有声书的地方（候选表由 _loadRemoteBooks 随远端清单一起算，见
+      // [_RemoteBookState.audiobookOnly]）。同受听书模块门控。
+      if (modules.isEnabled(ModuleId.listening) &&
+          _remoteAudiobookOnlyFor(bookKey) != null)
+        DialogQuickAction(
+          label: t.remote_book_audiobook_download,
+          icon: Icons.cloud_download_outlined,
+          onPressed: () => _downloadRemoteAudiobookOnly(
+              _remoteAudiobookOnlyFor(bookKey)!, bookKey),
         ),
       // 三库页对称：视频卡/游戏卡的菜单里「重命名」都排在列表项首位，书卡对齐。
       DialogListAction(

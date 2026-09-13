@@ -29,11 +29,34 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2293 条。点号进各自文件。
+> 共 2316 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2490](bugs/BUG-2490-mac-reader-shift-hover-lookup-dead.md) | ✅ | ✅ | macOS 阅读器 Shift 悬停查词无反应（WebKit 只在 WKWebView 为最顶命中视图时才派发 mousemove） |
+| [BUG-2507](bugs/BUG-2507-youtube-stream-bounded-range.md) | ✅ | ✅ | YouTube 直连流只接受有界 Range，libmpv/ffmpeg 无 Range 首请求 403 → 打不开 |
+| [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |
+| [BUG-2505](bugs/BUG-2505-remote-audiobook-entry-lost-after-book-only.md) | ✅ | ✅ | 互联只下到书没下到有声书后再无补拉有声书入口 |
+| [BUG-2504](bugs/BUG-2504-dictionary-load-blocks-on-cloud-evicted-files.md) | ✅ | ✅ | 云盘「仅云端」词典文件让冷启动同步 FFI 装载无限期卡死 |
+| [BUG-2503](bugs/BUG-2503-anki-note-dialog-stacking.md) | ✅ | ✅ | 已制卡候选与卡片查看器重复堆叠弹窗 |
+| [BUG-2502](bugs/BUG-2502-video-source-review-playback.md) | ✅ | ✅ | 视频来源回看无法继续播放且导航使用阅读文案 |
+| [BUG-2501](bugs/BUG-2501-card-source-root-url.md) | ✅ | ✅ | Windows 来源链接规范化后被错误判无效 |
+| [BUG-2500](bugs/BUG-2500-integration-drive-uninstalls-app.md) | ✅ | ✅ | 集成测试成功后 flutter drive 清理卸载应用并删除私有数据 |
+| [BUG-2498](bugs/BUG-2498-miui-notification-permission-prompt-at-startup.md) | ✅ | ✅ | 退出新手引导即向系统申请通知权限，MIUI 权限界面崩溃连坐杀掉 Fushi |
+| [BUG-2497](bugs/BUG-2497-manga-series-login-entry.md) | ✅ | ✅ | manga-series-login-entry |
+| [BUG-2496](bugs/BUG-2496-cover-decode-invalid-image-data-nonatomic-writes.md) | ✅ | ✅ | 封面/图片文件非空但不可解码：写侧无校验、非原子直写，渲染侧无兜底当致命错误落盘 |
+| [BUG-2495](bugs/BUG-2495-desktop-audio-warmup-timeout-tears-down-cold-player.md) | ✅ | ✅ | 桌面查词发音预热 2s 预算到期，反把正在冷启动的播放器拆掉（BUG-1015 复发） |
+| [BUG-2494](bugs/BUG-2494-interconnect-dictionary-transfer-entry.md) | ✅ | ✅ | 互联页没有词典下载入口：显式词典传输动作跳过互联通道 |
+| [BUG-2493](bugs/BUG-2493-ios-ankimobile-info-return-not-applied.md) | ✅ | ✅ | iOS AnkiMobile 回跳后牌组/笔记类型不刷新：x-success 未送达时无兜底、互联制卡包裹层静默丢弃回调 |
+| [BUG-2492](bugs/BUG-2492-reader-first-visible-fallback-phantom-chars.md) | ✅ | ✅ | 分页首字探针兜底返章首 0 把整段前文计成已读 |
+| [BUG-2491](bugs/BUG-2491-android-web-search-ignores-default-browser.md) | ✅ | ✅ | 安卓选区「网页搜索」无视默认浏览器跳自带浏览器 |
+| [BUG-2490](bugs/BUG-2490-lyrics-original-text.md) | ✅ | ✅ | 歌词模式显示转录文本而非已匹配的原文 |
+| [BUG-2489](bugs/BUG-2489-source-url-stale-windows-association.md) | ✅ | ✅ | 来源链接仍启动旧安装版Fushi |
+| [BUG-2488](bugs/BUG-2488-lapis-source-leading-break.md) | ✅ | ✅ | Lapis来源模板更新残留前导空行 |
+| [BUG-2487](bugs/BUG-2487-update-toast-icon-inapp.md) | ✅ | ✅ | Windows 更新 toast 无应用图标，app 新版本条目跳浏览器而非应用内更新 |
+| [BUG-2486](bugs/BUG-2486-windows-itest-kills-preexisting-app.md) | ✅ | ✅ | Windows集成测试按build目录误杀用户已运行的应用 |
+| [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
+| [BUG-2484](bugs/BUG-2484-manga-percent-filename.md) | ✅ | ✅ | 漫画页文件名含裸百分号时翻页/选字/制卡全抛 Illegal percent encoding |
+| [BUG-2483](bugs/BUG-2483-manga-library-settings-tab-wrong-destination.md) | ✅ | ✅ | manga-library-settings-tab-wrong-destination |
 | [BUG-2482](bugs/BUG-2482-webkit-line-box-contain-zero-height-lines.md) | ✅ | ✅ | WebKit 上 BUG-2472 的 line-box-contain 把嵌套 inline / 空行行盒压成零高：目录列叠印、空行消失 |
 | [BUG-2481](bugs/BUG-2481-manga-ocr-progress-boxes-update-all-sort.md) | ✅ | ✅ | 作品页 OCR 无进度显示；阅读器无识别范围显示；扩展无一键更新；源列表无按下载量排序 |
 | [BUG-2480](bugs/BUG-2480-manga-login-import-from-browser-extension.md) | ✅ | ✅ | 漫画源登录：从系统浏览器（经 Fushi 扩展）导入已登录会话，不必在 app 内重登 |

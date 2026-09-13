@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 List<EpubImageRef> _images(int n) => <EpubImageRef>[
       for (int i = 0; i < n; i++)
@@ -120,6 +121,55 @@ void main() {
     await tester.tap(thumbs.at(2));
     await tester.pumpAndSettle();
     expect(find.text('3 / 3'), findsOneWidget);
+  });
+
+  // BUG-2496：坏图（写着 <html> 字节的 .jpg）解码失败不再是致命 FlutterError——
+  // 舞台与缩略图都退回 broken 占位，只在诊断段留一条带路径的痕迹。
+  // Image.file 的解码是真 IO + isolate，fake async 送不到完成事件，pump 放进 runAsync。
+  testWidgets('坏图文件：解码失败走 errorBuilder 占位，不抛未捕获 FlutterError', (tester) async {
+    final Directory dir = Directory.systemTemp.createTempSync('fushi_gallery_bad_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final File bad = File('${dir.path}/bad.jpg')
+      ..writeAsStringSync('<html><body>not an image</body></html>');
+    final int diagBefore = ErrorLogService.instance.diagnosticEntries.length;
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(_host(ReaderGalleryPage(
+        images: _images(2),
+        currentChapter: 0,
+        fileForRef: (_) => bad,
+        onOpenImage: (_) {},
+        onJumpTo: (_) {},
+      )));
+      // 等解码真的失败并回调到 errorBuilder（同一 completer 上的两个缩略图 + 舞台）。
+      for (int i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+        if (find.byIcon(Icons.broken_image_outlined).evaluate().length >= 3) {
+          break;
+        }
+      }
+    });
+
+    expect(tester.takeException(), isNull,
+        reason: '坏图解码失败必须被 errorBuilder 接住，不得逃成未捕获 FlutterError');
+    // 2 张缩略图 + 舞台 = 3 个 broken 占位。
+    expect(find.byIcon(Icons.broken_image_outlined), findsNWidgets(3));
+    final List<ErrorLogEntry> diag =
+        ErrorLogService.instance.diagnosticEntries.sublist(diagBefore);
+    final Set<String> sources =
+        diag.map((ErrorLogEntry e) => e.source).toSet();
+    // 舞台 / 缩略图 errorBuilder + 相邻图 precacheImage 的 onError 各留一条痕迹。
+    expect(sources, contains('ReaderGalleryPage.stage.coverDecode'));
+    expect(sources, contains('ReaderGalleryPage.thumb.coverDecode'));
+    expect(sources, contains('ReaderGalleryPage.precache.coverDecode'),
+        reason: 'precacheImage 不接 onError 会自己 FlutterError.reportError');
+    expect(
+        diag
+            .where((ErrorLogEntry e) => e.source.endsWith('.coverDecode'))
+            .every((ErrorLogEntry e) => e.error.contains(bad.path)),
+        isTrue,
+        reason: '诊断痕迹必须带路径，不然坏文件无从定位');
   });
 
   test('fileForRef 允许返回 File（类型契约）', () {

@@ -1,5 +1,6 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
+import 'package:fushi/src/anki/source_review_session.dart';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
@@ -31,6 +32,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
@@ -73,6 +75,7 @@ import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_restore_anchor.dart';
+import 'package:fushi/src/reader/reader_source_locator.dart';
 import 'package:fushi/src/reader/reader_search_navigation.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
@@ -1377,6 +1380,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   EpubBook? _book;
 
+  /// 歌词模式下按 cue 反查 EPUB 原文的解析器，与 [_book] 同生命周期；只经
+  /// `_lyricsCueTextResolverFor` 取（audiobook.part.dart）。
+  LyricsCueTextResolver? _lyricsCueTextResolver;
+
   /// TODO-1204：查词计数归属本书——[title] 与阅读统计 tile 的聚合键（[EpubBook.title]，
   /// 见 study_segments 的 mediaKey）对齐，[bookKey] 存书身份。
   @override
@@ -1499,15 +1506,35 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     studyDiag(
       'reader',
       'open resume point chapter=$chapter '
-      'progress=${progress.toStringAsFixed(4)} charOffset=$charOffset '
-      'source=$source',
+          'progress=${progress.toStringAsFixed(4)} charOffset=$charOffset '
+          'source=$source',
     );
   }
+
   // BUG-459: 临时浏览跳转（收藏句 / 制卡历史跳回原文）整页生命周期内抑制 ReaderPosition
   // 持久化——用户从收藏 / 制卡历史点进来看某句，不应把该书真实阅读进度覆盖成跳转锚。
   // 由 widget.initialBookmarkJump.preserveSavedPosition 在开书时置位；普通打开 / 真实
   // 书签跳转恒 false，照常 debounce / 退出 flush 保存。
   bool _suppressPositionPersist = false;
+  SourceReviewSession? _sourceReviewSession;
+  bool _sourceReviewWasActive = false;
+  bool _sourceReviewClosed = false;
+  bool get _sourceReviewActive =>
+      _sourceReviewClosed || (_sourceReviewSession?.isReview ?? false);
+
+  void _onSourceReviewChanged() {
+    if (!mounted) return;
+    if (_sourceReviewWasActive && !_sourceReviewActive) {
+      _saveDebounce?.cancel();
+      _readLedger.reset();
+      _suppressPositionPersist = false;
+      _syncStudyClockRunState();
+      unawaited(_syncAndFlushPosition());
+    }
+    _sourceReviewWasActive = _sourceReviewActive;
+    setState(() {});
+  }
+
   String? _initialFragment;
   // TODO-1309: 跨章「文本搜索跳转」落定目标章后要执行的章内精确定位（scrollToSearchMatch
   // 的 JS）+ 绑定的导航代际。旧两段式（调用方在 restore 完成微任务里抢发 scrollToSearchMatch）
@@ -1574,6 +1601,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 统计诊断流水上次记过的单元（`_traceArrive` 去重用）。
   (int, int)? _lastTracedUnit;
+
+  /// 上次记过的「起点未通过页上校验、未入账」采样起点（BUG-2492；同页重复采样只记一行）。
+  int _lastTracedSkipStart = -1;
 
   List<int> get _chapterCharCounts => _progress.chapterCharCounts;
   set _chapterCharCounts(List<int> v) => _progress.chapterCharCounts = v;
@@ -2125,6 +2155,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void initState() {
     super.initState();
+    _sourceReviewSession = SourceReviewScope.read(context);
+    _sourceReviewWasActive = _sourceReviewActive;
+    _suppressPositionPersist = _sourceReviewActive;
+    _sourceReviewSession?.addListener(_onSourceReviewChanged);
     // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
     _chrome.addListener(_onChromeControllerChanged);
     assert(() {
@@ -2337,6 +2371,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
     _openTrace.mark('parsed');
 
+    // Source links must resolve exactly. Ordinary stale bookmarks may fall
+    // back to a saved position, which would show unrelated text for this card.
+    final CardSourceLink? sourceLink = _sourceReviewSession?.link;
+    if (sourceLink != null) {
+      validateReaderSourceLocator(_book!, sourceLink);
+    }
+
     if (charsFromDb != null) {
       // TODO-1192: 先立刻用命中的计数（即便是旧口径 v1，先让进度/总字数有值不闪 0）；
       // 若该缓存不是当前口径（[kChapterCharCountCaliber]），后台按新口径重算并回写 DB，
@@ -2397,7 +2438,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 底栏切）。无句长（制卡行 / 老收藏）→ -1 退回单点句首锚（旧行为）。
       // BUG-459: 临时浏览跳转（收藏 / 制卡历史）进入后不覆盖该书已保存的阅读进度——
       // 用户点进来看某句不该毁掉真正的阅读位置。普通书签跳转照常持久化。
-      _suppressPositionPersist = bm.preserveSavedPosition;
+      _suppressPositionPersist = _sourceReviewSession != null
+          ? _sourceReviewActive
+          : bm.preserveSavedPosition;
       final int? charAnchor = bm.charAnchor;
       final int? len = bm.charAnchorLength;
       final bool precise = charAnchor != null && charAnchor >= 0;
@@ -2474,7 +2517,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 这里把「上次是歌词模式」记成待恢复意图（保留偏好、不再抹除），等 EPUB 内容就绪
     // + 有声书已挂载后（见 _onChapterLoadComplete）再切歌词，等价用户手动切、已知安全。
     _lyricsMode = false;
-    _pendingLyricsRestore = ReaderFushiSource.instance.lyricsMode;
+    _pendingLyricsRestore =
+        _sourceReviewSession == null && ReaderFushiSource.instance.lyricsMode;
 
     _audioSlotResolved = true;
 
@@ -2729,6 +2773,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    _sourceReviewClosed = _sourceReviewActive;
+    _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只停表。
     //
     // 全程零 DB IO：dispose 是同步的，在这里发起的事务没有任何人持有它的 future，
@@ -2807,7 +2853,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // - 开启（=true）：只 detachReader，控制器留在 [AudiobookSession] 进程级常驻
     //   持有者里继续后台播放（保 TODO-291 阶段2 的后台续播）。
     appModel.audiobookSession.detachReader(this);
-    if (!appModel.audiobookBackgroundPlay) {
+    if ((_sourceReviewSession != null || !appModel.audiobookBackgroundPlay) &&
+        _audiobookController != null &&
+        identical(appModel.audiobookSession.controller, _audiobookController)) {
       // fire-and-forget 必须 catchError：dispose 同步签名无法 await，stop 内
       // stopPlayback 在 await 边界后若抛平台异常（native 解码器半销毁），会逃进
       // 当前 zone 成未捕获异步错误。与本文件其它 unawaited future 惯例对齐。
@@ -2872,7 +2920,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 返回无效，等句子停了那次返回才生效」。会话可见状态由同步首段负责，native 资源
     // 释放与「用户已经离开这一页」无因果关系，改 fire-and-forget（catchError 兜住
     // 平台异常，语义与 dispose 路径一致）。
-    if (!appModel.audiobookBackgroundPlay) {
+    if ((_sourceReviewSession != null || !appModel.audiobookBackgroundPlay) &&
+        _audiobookController != null &&
+        identical(appModel.audiobookSession.controller, _audiobookController)) {
       unawaited(
         appModel.audiobookSession.stop().catchError((Object e, StackTrace s) {
           ErrorLogService.instance.log('ReaderFushi.popStopAudiobook', e, s);
@@ -3172,15 +3222,27 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                     exit: () => nav.pop(),
                     onPersistError: (Object error, StackTrace stack) =>
                         ErrorLogService.instance.log(
-                      'ReaderFushi.exitFlush',
-                      error,
-                      stack,
-                    ),
+                          'ReaderFushi.exitFlush',
+                          error,
+                          stack,
+                        ),
                   );
                 },
                 child: Scaffold(
                   backgroundColor: bgColor,
                   resizeToAvoidBottomInset: false,
+                  appBar: _sourceReviewSession == null
+                      ? null
+                      : PreferredSize(
+                          preferredSize: const Size.fromHeight(100),
+                          child: SourceReviewBanner(
+                            session: _sourceReviewSession!,
+                            runHidden: runWithLookupPopupHidden,
+                            onReturn: () {
+                              Navigator.of(context).maybePop();
+                            },
+                          ),
+                        ),
                   body: Stack(
                     fit: StackFit.expand,
                     children: <Widget>[
@@ -3781,6 +3843,19 @@ $liveConfigJs
       next: <MiningDraftSentence>[for (final s in parsed.next) toEntry(s)],
     );
     return _miningDraft.length;
+  }
+
+  /// 「选择句子上下文」对话框里手改某一句文本：只把草稿里 [slot] 第 [index] 句的
+  /// **文本**换成 [text]，音频区间（该句从哪儿到哪儿、属哪个音频文件）原样保留——
+  /// 用户改的是会写进卡片的那行字（错别字、补主语、去掉说话人名），不是这句是哪句。
+  /// 故这里直接转调草稿模型，不重新跑 DOM 取句、也不重算区间。
+  @override
+  Future<void> onEditSentenceContextText(
+    SentenceContextSlot slot,
+    int index,
+    String text,
+  ) async {
+    _miningDraft.editSentence(slot: slot, index: index, text: text);
   }
 
   /// TODO-382 / TODO-393：弹窗点「清空已加句子」清掉本次查词的上下文选择（回到只制

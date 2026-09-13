@@ -216,6 +216,7 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
   required AppModel appModel,
   required SyncAssetKind kind,
   required SyncAssetDirection direction,
+  SyncAssetChannelScope scope = SyncAssetChannelScope.cloud,
 }) =>
     _runWithSyncFeedback(
       context: context,
@@ -227,6 +228,7 @@ Future<ManualSyncOutcome> runAssetTransferWithFeedback({
         db: appModel.database,
         kind: kind,
         direction: direction,
+        scope: scope,
         dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
         audioDatabaseRoot:
             Directory('${appModel.appDirectory.path}/audiobooks'),

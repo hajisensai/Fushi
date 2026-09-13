@@ -115,6 +115,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // 顶栏悬浮/固定：写 prefsRepo（changed=true），生效点是阅读器打开书时读一次
+  // appModel.mangaChromeFloating 决定栏形态与正文让位——harness 里没有阅读器。
+  // 由 manga_reader_chrome_test 咬住让位/绘制两条纯函数，manga_fushi_page_test
+  // 「悬浮顶栏」用例咬住偏好 → 页面形态的接线。
+  'manga/Floating toolbar':
+      'test/media/manga/manga_reader_chrome_test.dart + '
+          'test/pages/manga_fushi_page_test.dart（悬浮顶栏）',
   // BUG-2450：在线源封面磁盘缓存保留天数。写 prefsRepo（changed=true），生效点是
   // MihonCoverCache.maxAge（过期条目下次读取删掉重取），harness 里没有封面缓存
   // 目录可探。由专项测试咬住：过期封面重新联网、未过期命中磁盘、偏好改动即时
@@ -399,6 +406,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   'cardCreation/Audio quality':
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  // 句子音频头/尾 padding：效果在裁剪区间（padSentenceRange），纯函数 + 偏好写穿 +
+  // 两条制卡链调用点源码守卫都在专项测试里。
+  'cardCreation/Audio padding before sentence':
+      'test/settings/mining_audio_padding_guard_test.dart',
+  'cardCreation/Audio padding after sentence':
+      'test/settings/mining_audio_padding_guard_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡

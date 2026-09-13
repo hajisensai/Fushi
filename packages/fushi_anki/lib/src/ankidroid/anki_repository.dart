@@ -323,6 +323,7 @@ class AnkiRepository extends BaseAnkiRepository {
       // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
       // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
       charPositionTag: context.charPositionTag,
+      sourceLink: context.sourceLink,
     );
 
     try {
@@ -469,6 +470,12 @@ class AnkiRepository extends BaseAnkiRepository {
       // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
       await _ensurePermission();
       final settings = await loadSettings();
+      if (context.sourceLink != null ||
+          settings.fieldMappings.values.any(
+            (String mapping) => mapping.contains('{source-link}'),
+          )) {
+        context = await contextForExistingSourceNote(noteId, context);
+      }
 
       final AnkiMiningPayload payload;
       try {
@@ -542,6 +549,49 @@ class AnkiRepository extends BaseAnkiRepository {
       'noteId': noteId,
       'fieldValues': fields,
     });
+  }
+
+  @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    await _ensurePermission();
+    final AnkiSettings settings = await loadSettings();
+    final AnkiMiningPayload payload = AnkiMiningPayload.fromJson(
+      Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map),
+    );
+    final RenderedMinedFields rendered = await _renderMinedFields(
+      settings: settings,
+      payload: payload,
+      context: context,
+      keepEmpty: true,
+    );
+    if (rendered.audioWarning != null) throw StateError(rendered.audioWarning!);
+    return rendered.fields;
+  }
+
+  @override
+  Future<List<int>> findSourceNoteIds(String markerTag) async {
+    await _ensurePermission();
+    final Object? raw = await _channel.invokeMethod<Object?>(
+      'findNotesBySourceMarker',
+      <String, Object>{'markerTag': markerTag},
+    );
+    if (raw is! List ||
+        raw.any((dynamic value) => value is! int || value <= 0)) {
+      throw StateError('Invalid source marker lookup response');
+    }
+    return raw.cast<int>();
+  }
+
+  @override
+  Future<void> writeSourceNoteFields(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    await _ensurePermission();
+    await updateNoteFields(noteId, fields);
   }
 
   /// TODO-270 C2：读取 [noteId] 对应 note 的现有字段（字段名 → 值），用于覆盖前

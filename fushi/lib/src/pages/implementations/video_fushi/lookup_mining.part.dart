@@ -79,6 +79,17 @@ extension _VideoLookupMining on _VideoFushiPageState {
     return _miningDraft.length;
   }
 
+  /// 手改草稿里某一句的文本（[DictionaryPageMixin.onEditSentenceContextText] 的私有
+  /// 目标）。**只改文本，不动区间**：这句仍是原来那条 cue、仍是同一段时间窗，GIF 与
+  /// 句子音频的裁法一字不改，改的只是最终写进卡片 sentence 字段的那行字。
+  Future<void> _editSentenceContextText(
+    SentenceContextSlot slot,
+    int index,
+    String text,
+  ) async {
+    _miningDraft.editSentence(slot: slot, index: index, text: text);
+  }
+
   Future<int> _clearSentenceDraft() async {
     _miningDraft.clear();
     return _miningDraft.length;
@@ -97,9 +108,37 @@ extension _VideoLookupMining on _VideoFushiPageState {
   ({
     int clipStartMs,
     int clipEndMs,
+    int stillFrameAtMs,
     String sentence,
     String? cueSentence,
   }) _resolveVideoMiningRange(VideoPlayerController controller) {
+    final CardSourceLink? restored = widget.sourceReview;
+    final (String currentUid, int currentEpisode) = _isRemote
+        ? _remotePositionKeyForIndex(_currentEpisode)
+        : (widget.bookUid, 0);
+    if (restored?.startMs != null &&
+        restored?.endMs != null &&
+        restored?.uid == currentUid &&
+        restored?.episodeIndex == currentEpisode &&
+        _lastLookupCue == null &&
+        _miningDraft.isEmpty) {
+      final String text = controller.miningCues
+          .where((AudioCue cue) {
+            final int delayMs = controller.delayMsForCue(cue);
+            return miningClipTimeMs(cue.endMs, delayMs) > restored!.startMs! &&
+                miningClipTimeMs(cue.startMs, delayMs) < restored.endMs!;
+          })
+          .map((AudioCue cue) => cue.text)
+          .join('\n');
+      return (
+        clipStartMs: restored!.startMs!,
+        clipEndMs: restored.endMs!,
+        // 回看会话没有「未 pad 的字幕起点」可用，封面锚在卡片自己记的片段起点。
+        stillFrameAtMs: restored.startMs!,
+        sentence: text,
+        cueSentence: text,
+      );
+    }
     // 查词窗口多句合一（TODO-270 E）。当前 cue 多段兜底（含 gap，BUG-188）。
     // BUG-1592：按位置兜底走**有效流**（主字幕流为空即副字幕流）。命中项已带 cue 的入口
     // （点击 / hover / 手柄光标 / 列表）走 [_lastLookupCue]，这条只服务「没有命中项」的
@@ -131,11 +170,28 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 按锚定 cue 所属流取轴（查副字幕词制卡时用副轨生效轴；无 cue 回落有效流轴）。
     final int clipDelayMs =
         cue == null ? controller.miningDelayMs : controller.delayMsForCue(cue);
+    // 头/尾 padding（用户偏好，对齐 asbplayer）：字幕 cue 的时间窗通常比实际发声短，
+    // 尾音直接被硬切。与有声书制卡共用 [padSentenceRange]：在字幕文件时基（未加
+    // delay）上加 padding，并夹在锚定 cue 所属流的相邻 cue 边界内，不把邻句混进来；
+    // 之后再整体逆变换回播放器轴（先 pad 再 shift，与有声书链同序）。非正区间（无
+    // cue → `0..0`）不 pad——那是下游「不抽媒体」的哨兵，pad 了会把哨兵变成真区间。
+    final AudioPlaybackRange? paddedRange =
+        (mergedRange == null || mergedRange.endMs <= mergedRange.startMs)
+            ? mergedRange
+            : padSentenceRange(
+                mergedRange,
+                cues: cue == null
+                    ? controller.miningCues
+                    : controller.cueStreamOwning(cue),
+                headPadMs: appModel.miningAudioHeadPadMs,
+                tailPadMs: appModel.miningAudioTailPadMs,
+              );
     return (
-      clipStartMs: miningClipTimeMs(
-          mergedRange?.startMs ?? cue?.startMs ?? 0, clipDelayMs),
-      clipEndMs:
-          miningClipTimeMs(mergedRange?.endMs ?? cue?.endMs ?? 0, clipDelayMs),
+      clipStartMs: miningClipTimeMs(paddedRange?.startMs ?? 0, clipDelayMs),
+      clipEndMs: miningClipTimeMs(paddedRange?.endMs ?? 0, clipDelayMs),
+      // 「字幕起始帧」封面锚点用**未 pad** 的字幕起点（同一逆变换）：封面承诺的是字幕
+      // 开始那一刻的画面，不能跟着音频头 padding 往前退到上一个镜头。
+      stillFrameAtMs: miningClipTimeMs(mergedRange?.startMs ?? 0, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
       cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
       sentence: mergedSentence,
@@ -149,6 +205,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final ({
       int clipStartMs,
       int clipEndMs,
+      int stillFrameAtMs,
       String sentence,
       String? cueSentence,
     }) range = _resolveVideoMiningRange(controller);
@@ -171,6 +228,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 音频/封面区间 = 合并后的首句起→末句止（单句即该 cue 时间窗，两端相等→不抽）。
       clipStartMs: range.clipStartMs,
       clipEndMs: range.clipEndMs,
+      stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
     );
@@ -180,7 +238,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // TODO-633: success also lands one mined-sentence history row with the
       // video locator (bookUid + episode + cue time window), mirroring the
       // favorite-sentence anchors so collections can jump back via the video page.
-      unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
+      if (_sourceReviewSession == null) {
+        unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
+      }
       if (!mounted || _currentEpisode != queuedEpisode) return result;
       // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
       // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
@@ -199,6 +259,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final ({
       int clipStartMs,
       int clipEndMs,
+      int stillFrameAtMs,
       String sentence,
       String? cueSentence,
     }) range = _resolveVideoMiningRange(controller);
@@ -208,6 +269,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       fields: fields,
       clipStartMs: range.clipStartMs,
       clipEndMs: range.clipEndMs,
+      stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
       updateNoteId: noteId,
@@ -239,6 +301,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required Map<String, String> fields,
     required int clipStartMs,
     required int clipEndMs,
+    required int stillFrameAtMs,
     required String sentence,
     String? cueSentence,
     int? updateNoteId,
@@ -263,6 +326,33 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final int? audioStreamIndex = controller.currentAudioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
     final int episode = _currentEpisode;
+    final SourceReviewSession? reviewSession = _sourceReviewSession;
+    final (String sourceUid, int sourceEpisode) =
+        _isRemote ? _remotePositionKeyForIndex(episode) : (widget.bookUid, 0);
+    final String sourceId =
+        reviewSession?.link.sourceId ?? CardSourceLink.newSourceId();
+    final String? localSourcePath = controller.videoPath;
+    // A still-only card has no subtitle range, but its source is the frame
+    // being viewed now; it must not accidentally link to the start of the film.
+    final int sourceStartMs = clipEndMs > clipStartMs
+        ? clipStartMs
+        : (controller.positionMs ?? clipStartMs);
+    final int sourceEndMs = clipEndMs > clipStartMs ? clipEndMs : sourceStartMs;
+    Future<CardSourceLink?> resolveSourceLink() async {
+      if (!VideoSourceFingerprint.isLocalPath(localSourcePath)) return null;
+      final String fingerprint =
+          await VideoSourceFingerprint.instance.fingerprint(localSourcePath!);
+      return CardSourceLink(
+        kind: CardSourceKind.video,
+        uid: sourceUid,
+        sourceId: sourceId,
+        episodeIndex: sourceEpisode,
+        startMs: sourceStartMs,
+        endMs: sourceEndMs,
+        fingerprint: fingerprint,
+      );
+    }
+
     final String? documentTitle = _videoMiningDocumentTitle();
     final VideoMiningImageMode imageMode = appModel.videoMiningImageMode;
     final MiningAnimatedFormat animatedFormat =
@@ -366,6 +456,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
+        stillFrameAtMs: stillFrameAtMs,
         sentence: sentence,
         cueSentence: cueSentence,
         // TODO-761（方案 B）：播放列表下拼「系列名 - 剧集名」，单视频/远端仍是剧集名，零变化。
@@ -374,6 +465,18 @@ extension _VideoLookupMining on _VideoFushiPageState {
         audioStreamCount: audioStreamCount,
         // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
         source: AnkiMiningSource.video,
+        sourceLinkResolver: resolveSourceLink,
+        sourceReviewMine: reviewSession == null
+            ? null
+            : ({
+                required String rawPayloadJson,
+                required AnkiMiningContext context,
+              }) =>
+                _mineSourceReview(
+                  reviewSession,
+                  rawPayloadJson: rawPayloadJson,
+                  context: context,
+                ),
         // TODO-681 / BUG-393：番名/标题作书名标签，开关关闭或无标题时 null 不追加。
         bookTitleTag: bookTitleTag,
         // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
@@ -403,9 +506,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
       if (mounted) {
         _showOsd(
           t.card_export_failed_detail(
-            reason: audioFailure == null
-                ? 'sentence audio export failed'
-                : 'sentence audio export failed: $audioFailure',
+            reason: res.abortReason ??
+                (audioFailure == null
+                    ? 'sentence audio export failed'
+                    : 'sentence audio export failed: $audioFailure'),
           ),
           severity: ToastSeverity.error,
         );
@@ -431,11 +535,13 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 新制 → card_exported + record=true（消息/记账判定统一在 describeMineOutcome）。
     final described = describeMineOutcome(
       outcome,
-      overwrite: updateNoteId != null,
+      overwrite: reviewSession != null || updateNoteId != null,
     );
     // 新制成功计入视频统计（dictionarySourceType=video）；覆盖 record=false 故不记账。
     // 本页覆写了 onMineEntry、绕过基类成功分支，故在此显式记账（与 mixin 同一路径）。
-    if (described.record) unawaited(_recordMinedForVideo());
+    if (described.record && reviewSession == null) {
+      unawaited(_recordMinedForVideo());
+    }
     // TODO-971：制卡成功（card_exported / card_overwritten，含牌组名）走突出 OSD——
     // 居中、更大、停留更久，区别于音量/亮度小角标，避免用户「制卡了没反馈」。
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色

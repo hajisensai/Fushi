@@ -11,6 +11,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AdapterStructureTest(unittest.TestCase):
+    def test_cmvs_install_success_is_independent_of_trampoline(self) -> None:
+        adapters = ROOT / "hook" / "adapters"
+        adapter = self._strip_comments((adapters / "cmvs_adapter.inc").read_text(encoding="utf-8"))
+        runtime = self._strip_comments((adapters / "cmvs_lookup.inc").read_text(encoding="utf-8"))
+        for signature in (
+            "bool lookup_sensor_available() const",
+            "fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override",
+        ):
+            body = self._function_body(adapter, signature)
+            self.assertIn("g_cmvs_hook_installation.enabled()", body)
+            self.assertNotIn("g_cmvs_frame_original", body)
+        tick = self._function_body(runtime, "void ProcessCmvsLookupTick()")
+        self.assertIn("!g_cmvs_hook_installation.enabled()", tick)
+        self.assertNotIn("g_cmvs_frame_original", tick)
+        install = self._function_body(runtime, "bool InstallCmvsLookup()")
+        self.assertIn("g_cmvs_hook_installation.Install(HookFn,", install)
+        self.assertNotIn("if (g_cmvs_frame_original)", install)
+
+    def test_cmvs_shift_is_owned_before_native_keyboard_consumption(self) -> None:
+        source = self._strip_comments((ROOT / "hook/adapters/cmvs_lookup.inc").read_text(encoding="utf-8"))
+        consumer = self._function_body(source, "void __fastcall CmvsInputDetour(")
+        self.assertIn("OwnsReadyProvider", consumer)
+        self.assertIn("AtomicLoadPreview64(&g_header->selected_text_thread_id)", consumer)
+        self.assertIn("g_cmvs_shift_target.thread", consumer)
+        self.assertIn("CmvsTargetStillLive(target)", consumer)
+        self.assertLess(consumer.index("MaskCmvsShift(input)"), consumer.rindex("g_cmvs_input_original(input, a, b)"))
+        tick = self._function_body(source, "void ProcessCmvsLookupTick()")
+        self.assertNotIn("GetAsyncKeyState", tick)
+        pending = self._function_body(source, "void ProcessPendingCmvsShift(")
+        self.assertIn("SameShiftTarget(request.target, current)", pending)
+        self.assertIn("PublishCmvsShiftTarget(request.target, frame)", pending)
+        self.assertNotIn("raw_frame", pending)
+
     @staticmethod
     def _siglus_source() -> str:
         adapters = ROOT / "hook" / "adapters"
@@ -139,7 +172,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(7, len(publishers), publishers)
+        self.assertEqual(8, len(publishers), publishers)
+        self.assertIn("cmvs_lookup.inc", publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
         self.assertIn("smash_fzmedia_lookup.inc", publishers)
 
@@ -196,7 +230,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(7, len(seen), seen)
+        self.assertEqual(8, len(seen), seen)
+        self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
         # PrimaryLayer 是唯一需要 host 做画布→客户区缩放的域；它多一个成员就意味着
         # 多一个引擎走那条缩放路径，必须连同 host 的映射与其单测一起复核。
         primary = sorted(

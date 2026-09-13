@@ -318,7 +318,8 @@ void main() {
       <SettingsDestination>[],
       panelId: 'card_creation.media.open',
     );
-    expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2));
+    // 图片质量 / 音频质量 + 句子音频头/尾 padding 两对滑块。
+    expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(4));
     expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
   });
 

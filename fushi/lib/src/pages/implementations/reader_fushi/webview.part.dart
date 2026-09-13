@@ -1548,8 +1548,12 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 统计「翻走即计 + 覆盖并集」逐次采样记区间；atEnd 时钳到 total。三种 shell 都实现
     // getLastVisibleCharOffset（分页版接受已算好的 start 免二次 caret）；没有该函数的
     // reader（旧 shell / 测试桩）不追加第四段，Dart 解析按缺省 -1 处理。
+    // BUG-2492：第三段的 start 只保证「尽力」（分页版 caret 落插图 / 空行 / 章容器时走兜底），
+    // 是否真在本页由 getLastVisibleCharOffset(start) 校验（不在 → -1 → Dart 不 arrive）；
+    // atEnd 的 total 钳位必须在校验之后——末页起点错时 [假起点, total) 同样是整段幻象。
     var hasEnd = typeof r.getLastVisibleCharOffset === 'function';
-    var end = atEnd ? total : (hasEnd ? r.getLastVisibleCharOffset(off) : -1);
+    var end = hasEnd ? r.getLastVisibleCharOffset(off) : -1;
+    if (atEnd && end >= 0) end = total;
     return (atEnd ? total : Math.round(p * total)) + ',' + total + ',' + off
         + (hasEnd ? ',' + end : '');
   };

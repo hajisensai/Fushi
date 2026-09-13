@@ -20,6 +20,18 @@ import 'package:fushi/utils.dart';
 /// 2. 点「使用」→ fetchById 补全 → saveScrapeResult 真写穿 DB（primarySource
 ///    单源记该源 key），弹窗以 true 关闭；
 /// 3. 空结果给弹窗内空态（可改词重试），全源失败给错误行且重搜可恢复。
+/// 封面写侧唯一入口只收「可解码」字节（BUG-2496：PNG 须以 IEND 收尾）——纯填充
+/// 字节会被拒收、coverPath 不改写。造一个够长的假 PNG：魔数 + 填充 + IEND。
+List<int> _fakePngBytes(int length) {
+  const List<int> magic = <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+  const List<int> iend = <int>[0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
+  return <int>[
+    ...magic,
+    ...List<int>.filled(length - magic.length - iend.length, 7),
+    ...iend,
+  ];
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -154,7 +166,7 @@ void main() {
     final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
     await repo.setCoverPath('g1', oldCover.path);
 
-    final List<int> imageBytes = List<int>.filled(2048, 7);
+    final List<int> imageBytes = _fakePngBytes(2048);
     final _FakeCoverHttpClient http = _FakeCoverHttpClient(imageBytes);
     const String url = 'https://example.com/covers/alpha.png';
     final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
@@ -228,7 +240,7 @@ void main() {
     final GalgameScrapeController controller =
         GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
     final _FakeCoverHttpClient http =
-        _FakeCoverHttpClient(List<int>.filled(2048, 7));
+        _FakeCoverHttpClient(_fakePngBytes(2048));
 
     final bool applied = await applyGalgameScrapeCandidate(
       repo: repo,

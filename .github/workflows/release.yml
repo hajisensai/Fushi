@@ -909,7 +909,12 @@ jobs:
   tests:
     if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 2026-09-12：60 → 90。全量套件（25k+ 条）实测 57~58 分钟跑完，60 分钟上限只剩
+    # 2 分钟余量，合入 #1438/#1430② 多几条测试后连续四次 60 分钟整点被 cancel——
+    # 表现与「某条测试挂死」一模一样，但同 run 的 build job（上限 90）14 分钟就绿。
+    # 这里跟 build 对齐；真正的出路是给 tool/flutter_test_failures.dart 加
+    # --shard-index/--shard-total 再上 matrix 并行（TODO），不是继续抬上限。
+    timeout-minutes: 90
     steps:
     - uses: actions/checkout@v6
 

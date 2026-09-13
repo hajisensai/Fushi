@@ -2033,10 +2033,7 @@ void main() {
     expect(sharedBar, isNot(contains('const SizedBox(width: 12)')));
     expect(sharedBar, isNot(contains('const SizedBox(width: 8)')));
 
-    for (final String section in <String>[
-      placeholder,
-      batchTagIntentRow,
-    ]) {
+    for (final String section in <String>[placeholder, batchTagIntentRow]) {
       expect(section, contains('FushiDesignTokens'));
       expect(section, contains('tokens.spacing'));
       expect(section, isNot(contains('const SizedBox(height: 12)')));
@@ -2448,16 +2445,16 @@ void main() {
     ).readAsStringSync();
     final String updateFlow = _functionSource(
       releaseSource,
-      'static void _showUpdateDialog(',
+      'static Future<void> _showUpdateDialog(',
       // 终止锚点用**方法签名**而不是下一个方法的文档注释首行：注释是会被重写的
       // （iOS 更新落地入口分流那次就把这行英文注释换成了中文），锚点跟着失效，
       // 守卫拿 -1 当窗口末尾直接红，而被守的 chrome 其实一点没变。签名不会因为
       // 改注释而漂。
-      '  static void _showFallbackDialog(',
+      '  static Future<void> _showFallbackDialog(',
     );
     final String fallbackFlow = _functionSource(
       releaseSource,
-      'static void _showFallbackDialog(',
+      'static Future<void> _showFallbackDialog(',
       '  static Future<void> _downloadAndInstall(',
     );
     final String dialogSource = _sectionSource(
@@ -2664,27 +2661,29 @@ void main() {
     }
   });
 
-  test('selected list items use primary foreground without stacking an outline',
-      () {
-    final String components = File(
-      'lib/src/utils/components/fushi_material_components.dart',
-    ).readAsStringSync();
-    final String listItem = _sectionSource(
-      components,
-      'class FushiListItem',
-      'class FushiSearchField',
-    );
+  test(
+    'selected list items use primary foreground without stacking an outline',
+    () {
+      final String components = File(
+        'lib/src/utils/components/fushi_material_components.dart',
+      ).readAsStringSync();
+      final String listItem = _sectionSource(
+        components,
+        'class FushiListItem',
+        'class FushiSearchField',
+      );
 
-    expect(listItem, contains('selectedForeground'));
-    expect(listItem, contains('tokens.surfaces.primary'));
-    expect(listItem, contains('FontWeight.w700'));
-    // pill 的边框两态都画、非 eink 下两态都透明：几何恒定（1px 占位）以免选中后
-    // 行高跳变，而填充已经是选中信号，再叠一圈 primary 细边就是填充之上的第二
-    // 条线。eink 下填充塌缩，那里才换成实描边色。
-    expect(listItem, contains('Border.all('));
-    expect(listItem, contains('Colors.transparent'));
-    expect(listItem, isNot(contains('withValues(alpha: 0.20)')));
-  });
+      expect(listItem, contains('selectedForeground'));
+      expect(listItem, contains('tokens.surfaces.primary'));
+      expect(listItem, contains('FontWeight.w700'));
+      // pill 的边框两态都画、非 eink 下两态都透明：几何恒定（1px 占位）以免选中后
+      // 行高跳变，而填充已经是选中信号，再叠一圈 primary 细边就是填充之上的第二
+      // 条线。eink 下填充塌缩，那里才换成实描边色。
+      expect(listItem, contains('Border.all('));
+      expect(listItem, contains('Colors.transparent'));
+      expect(listItem, isNot(contains('withValues(alpha: 0.20)')));
+    },
+  );
 
   test('dictionary and popup surfaces use shared MD3 primitives', () {
     final String dictionaryManager = File(

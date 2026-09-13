@@ -17,6 +17,8 @@ import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
+    show kMiningPadMaxMs;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -590,6 +592,26 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           child: _buildMiningAudioQualityRow(),
         ),
         SettingsSearchTarget(
+          id: 'card_creation.anki.mining_audio_head_pad',
+          child: _buildMiningAudioPadRow(
+            title: t.mining_audio_head_pad,
+            subtitle: t.mining_audio_head_pad_hint,
+            icon: Icons.first_page,
+            value: appModel.miningAudioHeadPadMs,
+            onChanged: appModel.setMiningAudioHeadPadMs,
+          ),
+        ),
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_audio_tail_pad',
+          child: _buildMiningAudioPadRow(
+            title: t.mining_audio_tail_pad,
+            subtitle: t.mining_audio_tail_pad_hint,
+            icon: Icons.last_page,
+            value: appModel.miningAudioTailPadMs,
+            onChanged: appModel.setMiningAudioTailPadMs,
+          ),
+        ),
+        SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
         ),
@@ -675,6 +697,38 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       readout: labels[tier],
       onChanged: (double value) {
         appModel.setMiningAudioQuality(value.round());
+        setState(() {});
+      },
+    );
+  }
+
+  /// 制卡句子音频头/尾 padding 滑块（对齐 asbplayer 的 audio padding）。0..[kMiningPadMaxMs]
+  /// 毫秒、步进 50；透传 [AppModel.miningAudioHeadPadMs] / [miningAudioTailPadMs]，视频字幕与
+  /// 有声书两条制卡链共用。实际裁剪时还会夹在相邻 cue 边界内（[padSentenceRange]），所以填
+  /// 大了也不会把邻句混进来——hint 文案即由此而来。
+  Widget _buildMiningAudioPadRow({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required int value,
+    required void Function(int ms) onChanged,
+  }) {
+    const int step = 50;
+    final int clamped = value.clamp(0, kMiningPadMaxMs);
+    final String readout = t.mining_audio_pad_readout(ms: clamped);
+    return AdaptiveSettingsSliderRow(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      value: clamped.toDouble(),
+      min: 0,
+      max: kMiningPadMaxMs.toDouble(),
+      divisions: kMiningPadMaxMs ~/ step,
+      step: step.toDouble(),
+      label: readout,
+      readout: readout,
+      onChanged: (double v) {
+        onChanged((v / step).round() * step);
         setState(() {});
       },
     );
@@ -1450,8 +1504,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ? t.anki_reposition_auto_hint
           : t.anki_reposition_unsupported,
       value: supported && settings.autoRepositionEnabled,
-      onChanged:
-          supported ? (bool v) => vm.setAutoRepositionEnabled(v) : null,
+      onChanged: supported ? (bool v) => vm.setAutoRepositionEnabled(v) : null,
     );
   }
 
@@ -1707,6 +1760,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_document_title;
     case '{clip-timestamp}':
       return t.handlebar_clip_timestamp;
+    case '{source-link}':
+      return t.handlebar_source_link;
     case '{card-image}':
       return t.handlebar_card_image;
     case '{book-cover}':

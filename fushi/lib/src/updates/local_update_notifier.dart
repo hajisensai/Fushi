@@ -6,7 +6,13 @@ library;
 
 import 'dart:io' show Directory, File, Platform;
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show
+        TargetPlatform,
+        debugPrint,
+        defaultTargetPlatform,
+        kIsWeb,
+        visibleForTesting;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:path/path.dart' as p;
 
@@ -79,6 +85,19 @@ class LocalUpdateNotifier implements UpdateNotifier {
   final FlutterLocalNotificationsPlugin _plugin;
   final String? _windowsIconPath;
 
+  /// 确认存在的 Windows 图标绝对路径；null = 非 Windows 或没有可用图标。
+  ///
+  /// 图标文件不在（开发期从别的 cwd 起、包被裁过）就不用：插件会把不存在的路径
+  /// 原样写进注册表，头部反而显示一个坏图。
+  late final String? _windowsIconFile = _resolveWindowsIconFile();
+
+  String? _resolveWindowsIconFile() {
+    if (!Platform.isWindows) return null;
+    final String path =
+        _windowsIconPath ?? bundledAssetPath(kWindowsNotificationIconAsset);
+    return File(path).existsSync() ? path : null;
+  }
+
   bool _ready = false;
   bool _initialised = false;
 
@@ -97,12 +116,16 @@ class LocalUpdateNotifier implements UpdateNotifier {
 
   /// 随包资产在磁盘上的绝对路径：`<exe 目录>/data/flutter_assets/<asset>`。
   /// 按 exe 定位而不是 cwd——从文件关联 / 开始菜单启动时 cwd 不是安装目录。
-  static String bundledAssetPath(String asset) => p.join(
+  ///
+  /// asset 名按 `/` 拆段再拼：直接 `p.join` 会把 `assets/meta/icon.png` 里的 `/`
+  /// 原样混进 Windows 路径（`...lutter_assetsssets/meta/icon.png`），这串混合
+  /// 斜杠写进注册表 `IconUri` 后 toast 头部就是空的。
+  static String bundledAssetPath(String asset) => p.joinAll(<String>[
         p.dirname(Platform.resolvedExecutable),
         'data',
         'flutter_assets',
-        asset,
-      );
+        ...asset.split('/'),
+      ]);
 
   @override
   Future<bool> ensureReady() async {
@@ -121,15 +144,17 @@ class LocalUpdateNotifier implements UpdateNotifier {
       );
       _ready = false;
     }
-    if (_ready) await _replayLaunchResponse();
     return _ready;
   }
 
   /// 冷启动是被通知拉起来的（Android 进程被杀后点通知）：初始化时回调还没挂
-  /// 上，那次点击只留在 launch details 里，这里补投一次。只在启动期的
-  /// [ensureReady]（`UpdateFeedService.warmUpNotifier`）里走到——时机确定，不会
-  /// 在几小时后第一次发通知时突然回放一次旧点击。
-  Future<void> _replayLaunchResponse() async {
+  /// 上，那次点击只留在 launch details 里，这里补投一次。**只由启动期的**
+  /// `UpdateFeedService.warmUpNotifier` 调——时机确定；不挂在 [ensureReady] 里，
+  /// 否则几小时后用户在设置页打开开关（第二个 `ensureReady` 入口）会突然回放
+  /// 一次旧点击、被莫名跳去播放。
+  @override
+  Future<void> replayLaunchResponse() async {
+    if (!await ensureReady()) return;
     if (onResponse == null) return;
     try {
       final NotificationAppLaunchDetails? details =
@@ -144,8 +169,6 @@ class LocalUpdateNotifier implements UpdateNotifier {
   }
 
   Future<bool> _initialise() async {
-    final String iconPath =
-        _windowsIconPath ?? bundledAssetPath(kWindowsNotificationIconAsset);
     final bool? initialised = await _plugin.initialize(
       settings: InitializationSettings(
         android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
@@ -164,50 +187,101 @@ class LocalUpdateNotifier implements UpdateNotifier {
           appName: appName,
           appUserModelId: 'com.hibiki.fushi',
           guid: kWindowsNotificationGuid,
-          // 图标文件不在（开发期从别的 cwd 起、包被裁过）就不传：插件会把不存在
-          // 的路径原样写进注册表，头部反而显示一个坏图。
-          iconPath: File(iconPath).existsSync() ? iconPath : null,
+          iconPath: _windowsIconFile,
         ),
       ),
       onDidReceiveNotificationResponse: _dispatch,
     );
-    if (initialised == false) return false;
-    return _requestPermission();
+    return initialised != false;
   }
 
   void _dispatch(NotificationResponse response) {
     onResponse?.call(decodeNotificationResponse(response));
   }
 
-  /// 权限申请。三个平台三种口径，返回「现在能不能发」。
+  /// 系统当前允不允许发。只查询，不弹界面。
+  ///
+  /// 平台分派用 [defaultTargetPlatform] 而不是 `dart:io` 的 `Platform`：插件自己
+  /// 的 `resolvePlatformSpecificImplementation` 就按它分派，两边必须是同一个答案，
+  /// 单测也才能用 `debugDefaultTargetPlatformOverride` 走到 Android 分支。
   ///
   /// Linux / Windows 没有运行时权限概念，初始化成功即可发。
-  Future<bool> _requestPermission() async {
-    if (Platform.isAndroid) {
-      final AndroidFlutterLocalNotificationsPlugin? android =
-          _plugin.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      if (android == null) return false;
-      // API 33+ 才有 POST_NOTIFICATIONS；更低版本这里返回 null，视作已授权
-      // （清单里的权限在安装时就给了）。
-      final bool? granted = await android.requestNotificationsPermission();
-      return granted ?? true;
+  @override
+  Future<bool> hasPermission() async {
+    if (!isSupportedPlatform) return false;
+    try {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          // 全 API 级别都有效：API 33+ 反映 POST_NOTIFICATIONS，更低版本反映系统
+          // 设置里的应用通知总开关。null = 平台实现缺席，按不允许处理。
+          final bool? enabled = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin>()
+              ?.areNotificationsEnabled();
+          return enabled ?? false;
+        case TargetPlatform.iOS:
+          final NotificationsEnabledOptions? options = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  IOSFlutterLocalNotificationsPlugin>()
+              ?.checkPermissions();
+          return options?.isEnabled ?? false;
+        case TargetPlatform.macOS:
+          final NotificationsEnabledOptions? options = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  MacOSFlutterLocalNotificationsPlugin>()
+              ?.checkPermissions();
+          return options?.isEnabled ?? false;
+        case TargetPlatform.linux:
+        case TargetPlatform.windows:
+        case TargetPlatform.fuchsia:
+          return true;
+      }
+    } on Object catch (error) {
+      debugPrint('LocalUpdateNotifier: permission query failed. $error');
+      return false;
     }
-    if (Platform.isIOS) {
-      final bool? granted = await _plugin
-          .resolvePlatformSpecificImplementation<
-              IOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(alert: true, badge: true, sound: false);
-      return granted ?? false;
+  }
+
+  /// 向系统申请通知权限。**会弹系统对话框**——只能由用户的显式动作触发，绝不放
+  /// 进 [ensureReady] / 启动期（BUG-2498：MIUI 的权限界面崩溃会连坐杀掉我们）。
+  ///
+  /// 三个平台三种口径，返回申请后「现在能不能发」。
+  @override
+  Future<bool> requestPermission() async {
+    if (!await ensureReady()) return false;
+    try {
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          final AndroidFlutterLocalNotificationsPlugin? android =
+              _plugin.resolvePlatformSpecificImplementation<
+                  AndroidFlutterLocalNotificationsPlugin>();
+          if (android == null) return false;
+          // 插件在 API < 33 上直接回 areNotificationsEnabled（非 null）；null 只
+          // 出现在平台实现缺席时——那就交给查询侧，两边同一口径。
+          final bool? granted = await android.requestNotificationsPermission();
+          if (granted != null) return granted;
+          return hasPermission();
+        case TargetPlatform.iOS:
+          final bool? granted = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  IOSFlutterLocalNotificationsPlugin>()
+              ?.requestPermissions(alert: true, badge: true, sound: false);
+          return granted ?? false;
+        case TargetPlatform.macOS:
+          final bool? granted = await _plugin
+              .resolvePlatformSpecificImplementation<
+                  MacOSFlutterLocalNotificationsPlugin>()
+              ?.requestPermissions(alert: true, badge: true, sound: false);
+          return granted ?? false;
+        case TargetPlatform.linux:
+        case TargetPlatform.windows:
+        case TargetPlatform.fuchsia:
+          return true;
+      }
+    } on Object catch (error) {
+      debugPrint('LocalUpdateNotifier: permission request failed. $error');
+      return false;
     }
-    if (Platform.isMacOS) {
-      final bool? granted = await _plugin
-          .resolvePlatformSpecificImplementation<
-              MacOSFlutterLocalNotificationsPlugin>()
-          ?.requestPermissions(alert: true, badge: true, sound: false);
-      return granted ?? false;
-    }
-    return true;
   }
 
   @override
@@ -330,9 +404,17 @@ class LocalUpdateNotifier implements UpdateNotifier {
     );
   }
 
+  /// 测试缝：直接看 Windows 详情怎么拼（应用图标 / hero 图 / 按钮），不经插件。
+  @visibleForTesting
+  WindowsNotificationDetails windowsDetailsForTesting(
+    UpdateNotification notification,
+  ) =>
+      _windowsDetails(notification);
+
   WindowsNotificationDetails _windowsDetails(UpdateNotification notification) {
     final String? image = _existingImage(notification);
     final String? groupTitle = this.groupTitle;
+    final String? appLogo = _windowsIconFile;
     return WindowsNotificationDetails(
       audio: WindowsNotificationAudio.silent(),
       timestamp: notification.timestamp,
@@ -344,6 +426,15 @@ class LocalUpdateNotifier implements UpdateNotifier {
               arguments: notification.payload ?? '',
             ),
       images: <WindowsImage>[
+        // 头部应用图标随每条 toast 自带（`appLogoOverride`）：注册表 `IconUri`
+        // 那条路取决于 shell 对路径的解析，实测同一台机上头部可以是空的；
+        // toast 自己声明的图片则是文档保证的显示位。
+        if (appLogo != null)
+          WindowsImage(
+            Uri.file(appLogo, windows: true),
+            altText: appName,
+            placement: WindowsImagePlacement.appLogoOverride,
+          ),
         if (image != null)
           WindowsImage(
             Uri.file(image, windows: true),

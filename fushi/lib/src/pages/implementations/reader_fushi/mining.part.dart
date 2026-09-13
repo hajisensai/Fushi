@@ -55,6 +55,26 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 同一条快照纪律：制卡位置读的是 _cachedSentenceRange / _lastProgressCharOffset，
     // 两个都会被 await 悬挂期间的第二次查词（或一次翻页）改写，必须在这里定格。
     final int? snapshotCharPosition = _miningCharPosition();
+    final ({int offset, int length})? sourceRange = _miningSpanRange();
+    final AudioPlaybackRange? sourceAudioRange = _miningDraft.composeAudioRange(
+      _currentSentenceAudioRange(),
+    );
+    final String? sourceUid = _bookUid;
+    final int sourceOffset = sourceRange?.offset ?? _lastProgressCharOffset;
+    final CardSourceLink? sourceLink = sourceUid == null || sourceOffset < 0
+        ? null
+        : CardSourceLink(
+            kind: CardSourceKind.book,
+            uid: sourceUid,
+            sourceId: _sourceReviewSession?.link.sourceId ??
+                CardSourceLink.newSourceId(),
+            chapterIndex: _favoriteSectionIndex,
+            charOffset: sourceOffset,
+            charLength: sourceRange?.length,
+            audioFileIndex: sourceAudioRange?.audioFileIndex,
+            startMs: sourceAudioRange?.startMs,
+            endMs: sourceAudioRange?.endMs,
+          );
 
     String? sentenceAudioPath;
     Directory? sentenceAudioTempDir;
@@ -181,6 +201,7 @@ extension _ReaderMining on _ReaderFushiPageState {
         ? null
         : displayTitleForBook(bookKey: widget.bookKey, rawTitle: _book!.title);
     final AnkiMiningContext miningContext = AnkiMiningContext(
+      sourceLink: sourceLink,
       sentence: sentence,
       cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null,
       documentTitle: displayDocumentTitle,
@@ -285,16 +306,27 @@ extension _ReaderMining on _ReaderFushiPageState {
 
     final MineOutcome outcome;
     try {
-      outcome = await repo.mineEntry(
-        rawPayloadJson: jsonEncode(fields),
-        context: miningContext,
-      );
+      final SourceReviewSession? review = _sourceReviewSession;
+      outcome = review == null
+          ? await repo.mineEntry(
+              rawPayloadJson: jsonEncode(fields),
+              context: miningContext,
+            )
+          : await runWithLookupPopupHidden<MineOutcome>(
+              () => review.mine(
+                rawPayloadJson: jsonEncode(fields),
+                context: miningContext,
+              ),
+            );
     } finally {
       prepared.cleanup();
     }
 
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
-    final described = describeMineOutcome(outcome);
+    final described = describeMineOutcome(
+      outcome,
+      overwrite: _sourceReviewSession != null,
+    );
     // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，不
     // mixin DictionaryPageMixin，故自调 recordMiningEvent，来源固定 book）。失败吞掉记日志。
     if (described.record) unawaited(_recordMined());
@@ -323,6 +355,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     int noteId,
     Map<String, String> fields,
   ) async {
+    if (_sourceReviewSession != null) return _onMineFromPopupInner(fields);
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final prepared = await _prepareMiningContext();
     final AnkiMiningContext? miningContext = prepared.context;
@@ -442,7 +475,8 @@ extension _ReaderMining on _ReaderFushiPageState {
     int? noteId,
   ) async {
     try {
-      final int section = _favoriteSectionIndex;
+      final int section =
+          context.sourceLink?.chapterIndex ?? _favoriteSectionIndex;
       final sentenceRange = _cachedSentenceRange ??
           (_cachedSelectionRange != null
               ? (
@@ -465,8 +499,8 @@ extension _ReaderMining on _ReaderFushiPageState {
         chapterLabel: _currentChapterLabelFor(section),
         bookKey: widget.bookKey,
         sectionIndex: section,
-        normCharOffset: sentenceRange?.offset,
-        normCharLength: sentenceRange?.length,
+        normCharOffset: context.sourceLink?.charOffset ?? sentenceRange?.offset,
+        normCharLength: context.sourceLink?.charLength ?? sentenceRange?.length,
         noteId: noteId,
       );
     } catch (e, st) {

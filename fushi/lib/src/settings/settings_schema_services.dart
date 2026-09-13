@@ -521,10 +521,12 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
   }
 
   Future<void> _open() async {
+    // 必须走 `.subPage`：默认构造器按 id 回顶层 schema 找「最新声明」，而这页
+    // 复用父分类 `services` 的 id，按 id 找回来的是整页「在线服务」（BUG-2485）。
     await pushSettingsPage(
       widget.settingsContext,
-      (_) => SettingsDetailPage(
-        destination: SettingsDestination(
+      (_) => SettingsDetailPage.subPage(
+        () => SettingsDestination(
           id: SettingsDestinationId.services,
           title: 'Jellyfin · Emby',
           icon: Icons.cloud_outlined,

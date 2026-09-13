@@ -38,6 +38,42 @@ class CropImageDialogPage extends BasePage {
 class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
   late final CropController _controller =
       CropController(aspectRatio: widget.aspectRatio);
+  late final ImageProvider _provider = FileImage(widget.imageFile);
+
+  /// BUG-2496：[CropImage] 只拿传入 `Image` 的 provider 自己 `resolve`，从不把那个
+  /// `Image` 挂进树，所以 `errorBuilder` 在这里是死代码；它自己挂的监听器又没有
+  /// `onError`——坏文件（截断/非图片字节）解码失败时 completer 上没有任何错误监听者，
+  /// 只能走 `FlutterError.reportError` 变成致命错误，裁剪框还永远转圈。这里由对话框
+  /// 自己在同一个 completer 上挂带 `onError` 的监听者接住：留诊断痕迹、切成占位、
+  /// 禁用「裁剪」。
+  late final ImageStreamListener _decodeListener = ImageStreamListener(
+    (ImageInfo _, bool __) {},
+    onError: _onDecodeError,
+  );
+  ImageStream? _stream;
+  Object? _decodeError;
+
+  @override
+  void initState() {
+    super.initState();
+    _stream = _provider.resolve(ImageConfiguration.empty)
+      ..addListener(_decodeListener);
+  }
+
+  @override
+  void dispose() {
+    _stream?.removeListener(_decodeListener);
+    super.dispose();
+  }
+
+  void _onDecodeError(Object error, StackTrace? stack) {
+    ErrorLogService.instance.logDiagnostic(
+      'CropImageDialogPage.coverDecode',
+      '${widget.imageFile.path}: $error',
+    );
+    if (!mounted) return;
+    setState(() => _decodeError = error);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,19 +118,28 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
       ];
 
   Widget buildContent() {
+    if (_decodeError != null) {
+      return Center(
+        child: Icon(
+          Icons.broken_image_outlined,
+          size: 64,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
     return Center(
       child: CropImage(
           minimumImageSize: 25,
           gridColor: Theme.of(context).colorScheme.onSurfaceVariant,
           controller: _controller,
-          image: Image(image: FileImage(widget.imageFile))),
+          image: Image(image: _provider)),
     );
   }
 
   Widget buildCropButton() {
     return adaptiveDialogAction(
       context: context,
-      onPressed: executeCrop,
+      onPressed: _decodeError == null ? executeCrop : null,
       child: Text(t.dialog_crop),
     );
   }

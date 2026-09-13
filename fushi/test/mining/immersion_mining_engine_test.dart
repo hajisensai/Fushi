@@ -119,6 +119,70 @@ void main() {
           bool diagnosticOnly = false}) async =>
       null;
 
+  test(
+    'queued source review preserves identity and updates its bound note',
+    () async {
+      final repo = _FakeRepo();
+      final source = CardSourceLink(
+        kind: CardSourceKind.video,
+        uid: 'video/中文 第1话',
+        sourceId: CardSourceLink.newSourceId(),
+        episodeIndex: 0,
+        startMs: 1000,
+        endMs: 3000,
+        fingerprint: List<String>.filled(64, 'a').join(),
+      );
+      AnkiMiningContext? edited;
+      final res = await build(gif: okGif, audio: okAudio, frame: okFrame).mine(
+        ImmersionMiningRequest(
+          source: AnkiMiningSource.video,
+          fields: const {'expression': '走る'},
+          mediaSource: '/fake/video.mp4',
+          clipStartMs: 1000,
+          clipEndMs: 3000,
+          sentence: '走り出した。',
+          sourceLinkResolver: () async => source,
+          sourceReviewMine:
+              ({
+                required String rawPayloadJson,
+                required AnkiMiningContext context,
+              }) async {
+                edited = context;
+                return const MineOutcome.success(noteId: 77);
+              },
+        ),
+        compression: MiningMediaCompression.compressed,
+        tempDir: tmp.path,
+        repo: repo,
+      );
+      expect(res.aborted, isFalse);
+      expect(edited!.sourceLink, same(source));
+      expect(repo.minedContext, isNull);
+      expect((res.outcome as MineOutcome).noteId, 77);
+    },
+  );
+
+  test('failed source fingerprint aborts before creating any note', () async {
+    final repo = _FakeRepo();
+    final res = await build(gif: okGif, audio: okAudio, frame: okFrame).mine(
+      ImmersionMiningRequest(
+        source: AnkiMiningSource.video,
+        fields: const {'expression': '走る'},
+        clipStartMs: 1000,
+        clipEndMs: 3000,
+        sentence: '走る',
+        sourceLinkResolver: () async =>
+            throw const FileSystemException('changed'),
+      ),
+      compression: MiningMediaCompression.compressed,
+      tempDir: tmp.path,
+      repo: repo,
+    );
+    expect(res.aborted, isTrue);
+    expect(res.abortReason, contains('identity could not be verified'));
+    expect(repo.minedContext, isNull);
+  });
+
   test('gif+audio success builds context and calls mineEntry', () async {
     final repo = _FakeRepo();
     final res = await build(gif: okGif, audio: okAudio, frame: okFrame).mine(

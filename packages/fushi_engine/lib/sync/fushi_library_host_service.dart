@@ -961,6 +961,110 @@ RemoteBookProgress resolveBookProgressSync({
   return remoteFurther ? remote : local;
 }
 
+/// 互联书籍进度三方判定的结论（BUG-2506）。
+///
+/// 互联 live 路径此前是纯「取较新时间戳」LWW（[resolveBookProgressSync]），没有
+/// 冲突概念：host 上哪怕只是重开一次书、位置没动，`reader_positions.updatedAt`
+/// 也会刷新（它同时是书架「最近阅读」排序键，不能改成位置不变就不刷新），下一轮
+/// sweep 就把 client 读到的位置静默盖掉。三方判定用**位置基线**而不是时间戳：
+/// 只有两端都偏离上次达成一致的位置、且互不相同，才算真分叉。
+enum BookProgressSyncAction {
+  /// 两端位置一致（时间戳可不同）：只需把时间戳对齐到较新者并记基线。
+  synced,
+
+  /// 只有本端偏离基线：把本端进度推给 host。
+  pushLocal,
+
+  /// 只有 host 偏离基线：把 host 进度落回本端。
+  applyRemote,
+
+  /// 两端都偏离基线且互不相同：真分叉，谁都不覆盖，交冲突弹窗让用户选。
+  conflict,
+}
+
+/// 上次两端达成一致的**位置**基线（BUG-2506）：sectionIndex + normCharOffset。
+///
+/// 落库形态是 `sync_baselines` 表里一个 int（`baseVersion` 列，与云通道的进度
+/// 时间戳基线同表不同 dimension），[encode] / [decode] 把两个非负整数打包进 63 位：
+/// 高位 sectionIndex、低 32 位 normCharOffset（后者是本 section 内的字符计数，
+/// 永远远小于 2^32）。不存时间戳：判定不看它。
+class BookProgressBaseline {
+  const BookProgressBaseline({
+    required this.sectionIndex,
+    required this.normCharOffset,
+  });
+
+  final int sectionIndex;
+  final int normCharOffset;
+
+  static const int _offsetSpan = 1 << 32;
+
+  /// 从一条进度取它的位置基线。
+  factory BookProgressBaseline.of(RemoteBookProgress progress) =>
+      BookProgressBaseline(
+        sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
+        normCharOffset:
+            progress.normCharOffset < 0 ? 0 : progress.normCharOffset,
+      );
+
+  /// 打包成一个非负 int（供 `sync_baselines.baseVersion`）。
+  int encode() =>
+      sectionIndex * _offsetSpan + (normCharOffset % _offsetSpan);
+
+  /// [encode] 的逆；负数 / 非法值返回 null（当作没有基线）。
+  static BookProgressBaseline? decode(int? raw) {
+    if (raw == null || raw < 0) return null;
+    return BookProgressBaseline(
+      sectionIndex: raw ~/ _offsetSpan,
+      normCharOffset: raw % _offsetSpan,
+    );
+  }
+
+  /// [progress] 是否仍停在这个基线位置。
+  bool matches(RemoteBookProgress progress) =>
+      progress.sectionIndex == sectionIndex &&
+      progress.normCharOffset == normCharOffset;
+}
+
+/// 两条进度是否指向同一阅读位置（只比 section + normCharOffset；charOffset 是
+/// 同一位置的精确锚坐标，两端测得与否不构成分歧）。
+bool sameBookPosition(RemoteBookProgress a, RemoteBookProgress b) =>
+    a.sectionIndex == b.sectionIndex && a.normCharOffset == b.normCharOffset;
+
+/// 互联书籍进度的三方判定（BUG-2506）。纯函数。
+///
+/// - 一端「无记录」（updatedAtMs<=0）→ 另一端直接胜出（不是分叉）；
+/// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
+/// - 没有基线（第一次经三方路径）且两端位置不同 → 无法知道谁动了，按
+///   [BookProgressSyncAction.conflict] 交用户（与云通道 SyncManager「无 base 且
+///   双边不等 → 冲突」同口径，只发生一次，之后基线就有了）；
+/// - 有基线：只一端偏离 → 那端胜出；两端都偏离 → 冲突。
+BookProgressSyncAction resolveBookProgressThreeWay({
+  required RemoteBookProgress local,
+  required RemoteBookProgress remote,
+  required BookProgressBaseline? base,
+}) {
+  final bool localEmpty = local.updatedAtMs <= 0;
+  final bool remoteEmpty = remote.updatedAtMs <= 0;
+  if (localEmpty && remoteEmpty) return BookProgressSyncAction.synced;
+  if (remoteEmpty) return BookProgressSyncAction.pushLocal;
+  if (localEmpty) return BookProgressSyncAction.applyRemote;
+  if (sameBookPosition(local, remote)) return BookProgressSyncAction.synced;
+  if (base == null) return BookProgressSyncAction.conflict;
+  final bool localMoved = !base.matches(local);
+  final bool remoteMoved = !base.matches(remote);
+  if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;
+  if (localMoved) return BookProgressSyncAction.pushLocal;
+  if (remoteMoved) return BookProgressSyncAction.applyRemote;
+  // 两端都「没动」却不相等——基线与两端都不符，理论上不可达；退回取较新者，
+  // 不让一条坏基线把这本书永远卡住。
+  final RemoteBookProgress winner =
+      resolveBookProgressSync(local: local, remote: remote);
+  return identical(winner, remote)
+      ? BookProgressSyncAction.applyRemote
+      : BookProgressSyncAction.pushLocal;
+}
+
 /// 从远端书清单 [remote] 里剔除本端已存在的书（按 [localBookKeys] 去重）。
 ///
 /// 纯函数。远端书的去重键 = `sanitizeTtuFilename(title)`（与 `EpubBooks.bookKey`
@@ -975,6 +1079,31 @@ List<RemoteBookInfo> dedupeRemoteBooks({
     for (final RemoteBookInfo book in remote)
       if (!localBookKeys.contains(keyOf(book.title))) book,
   ];
+}
+
+/// 从远端书清单 [remote] 里挑出「本端已有这本书、却还没有它的有声书，而对端有配套
+/// 有声书」的条目，按本端 bookKey 索引（BUG-2505）。
+///
+/// 纯函数。这些书被 [dedupeRemoteBooks] 按「本端已有」整条藏掉，远端卡上的下载动作
+/// 随之消失；与书配对的 host 有声书 `bookKey` 非空、不满足 standalone 判据，也不会
+/// 以独立占位卡出现——「只下到书、没下到有声书」（有声书包拉取失败 / host 后来才配
+/// 音）之后书架上就没有任何补拉入口。本函数把这批条目单独挑出来，喂给本地书卡菜单
+/// 的「从对端下载有声书」动作。同 key 多条远端书只取首条（与去重同口径）。
+Map<String, RemoteBookInfo> remoteAudiobookOnlyCandidates({
+  required List<RemoteBookInfo> remote,
+  required Set<String> localBookKeys,
+  required Set<String> localAudiobookKeys,
+  required String Function(String title) keyOf,
+}) {
+  final Map<String, RemoteBookInfo> out = <String, RemoteBookInfo>{};
+  for (final RemoteBookInfo book in remote) {
+    if (!book.hasAudiobook) continue;
+    final String key = keyOf(book.title);
+    if (!localBookKeys.contains(key)) continue;
+    if (localAudiobookKeys.contains(key)) continue;
+    out.putIfAbsent(key, () => book);
+  }
+  return out;
 }
 
 // ── 视频 ──────────────────────────────────────────────────────────────────────

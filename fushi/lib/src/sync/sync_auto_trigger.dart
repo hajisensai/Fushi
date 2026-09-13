@@ -840,8 +840,21 @@ Future<ManualSyncResult> runManualFullSync({
   }
 }
 
-/// 用户在设置页点「上传」/「下载」：只跑**一类资产、一个方向**，且**只在云备份通道**
-/// 上跑（互联通道被显式跳过，见循环里的注释）。
+/// 手动资产传输要跑在哪条通道上（BUG-2494）。
+///
+/// 云备份页那行「词典 / 本地音频数据库 · 传输 ▾」只跑云通道（[cloud]）；互联页自己
+/// 那行只跑互联通道（[interconnect]）。两页各管各的通道，绝不跨：在云备份页点一下
+/// 「上传词典」不能把词典推给一台用户从没同意共享的对端（BUG-988 立的规矩）。
+enum SyncAssetChannelScope {
+  /// 只跑云备份通道（Google Drive / WebDAV / …）。
+  cloud,
+
+  /// 只跑互联通道（已配对的 Fushi 对端 host）。
+  interconnect,
+}
+
+/// 用户在设置页点「上传」/「下载」：只跑**一类资产、一个方向**，且只在 [scope] 指定
+/// 的那一类通道上跑（另一类被显式跳过，见循环里的注释）。
 ///
 /// 与 [runManualFullSync] 同纪律：绕过自动同步开关与冷却（显式意图恒放行），与后台
 /// 同步共用 [_autoSyncMutex]（避免并发改 singleton backend 状态），**逐通道**隔离异常
@@ -863,6 +876,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
   required List<LocalAudioDbEntry> localAudioEntries,
   required Future<void> Function(LocalAudioPackageContents)
       onLocalAudioImported,
+  SyncAssetChannelScope scope = SyncAssetChannelScope.cloud,
   SyncPostRunCallback? onPostRun,
   SyncProgressCallback? onProgress,
 }) async {
@@ -882,12 +896,15 @@ Future<ManualSyncResult> runManualAssetTransfer({
       StackTrace? firstStack;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
-        // **只跑云备份通道**。这四行按钮长在云备份设置页上，而「要不要把内容送给
-        // 互联对端」是互联页上一组独立的 opt-in（默认全关，BUG-988 立的规矩：互联
-        // 的事互联自己决定）。跑遍所有通道 = 用户在云备份页点一下「上传词典」，就
-        // 把词典推给了一台他从没同意共享的对端；本地音频数据库更糟，它现在连互联
-        // 侧的开关都没有，多 GB 的 .db 会直接塞给 host。
-        if (channel.isInterconnect) continue;
+        // **只跑 [scope] 指定的那类通道**。云备份页那几行按钮只跑云通道，而「要不要
+        // 把内容送给互联对端」是互联页上一组独立的 opt-in（默认全关，BUG-988 立的
+        // 规矩：互联的事互联自己决定）。跑遍所有通道 = 用户在云备份页点一下「上传
+        // 词典」，就把词典推给了一台他从没同意共享的对端；本地音频数据库更糟，它现在
+        // 连互联侧的开关都没有，多 GB 的 .db 会直接塞给 host。反过来，互联页那行
+        // 「词典 · 传输 ▾」（BUG-2494）只跑互联通道，不会顺手把词典推上云盘。
+        final bool wantInterconnect =
+            scope == SyncAssetChannelScope.interconnect;
+        if (channel.isInterconnect != wantInterconnect) continue;
         try {
           final SyncRunReport? report = await _runAssetTransferChannel(
             db: db,

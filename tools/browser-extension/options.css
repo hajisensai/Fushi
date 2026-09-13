@@ -134,6 +134,9 @@ summary:focus-visible {
 
 .setting-row:first-child { border-top: 0; }
 
+/* 不是开关、只带一颗按钮的行：整行不该显示成可点的手形。 */
+.setting-row-static { cursor: default; }
+
 .setting-row:hover .setting-copy strong { color: var(--primary-strong); }
 
 .setting-copy {

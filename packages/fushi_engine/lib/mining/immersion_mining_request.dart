@@ -1,7 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi_anki/fushi_anki_core.dart' show AnkiMiningSource;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show AnkiMiningSource, AnkiMiningContext, CardSourceLink, MineOutcome;
 
 /// 沉浸制卡片段音频的容器扩展名，按平台分（TODO-1217 / BUG-460）：
 /// - iOS：`m4a`——AnkiMobile 只自动下载它识别为媒体的 localhost URL，`.aac` 裸流会被当成
@@ -286,6 +287,7 @@ class ImmersionMiningRequest {
     required this.fields,
     required this.clipStartMs,
     required this.clipEndMs,
+    this.stillFrameAtMs,
     required this.sentence,
     this.mediaSource,
     this.audioSource,
@@ -299,6 +301,9 @@ class ImmersionMiningRequest {
     this.bookTitleTag,
     this.collectionTag,
     this.updateNoteId,
+    this.sourceLink,
+    this.sourceLinkResolver,
+    this.sourceReviewMine,
     this.stillFallback,
     this.providedCoverBytes,
     this.providedCoverName,
@@ -315,6 +320,18 @@ class ImmersionMiningRequest {
   final Map<String, String> fields;
   final int clipStartMs;
   final int clipEndMs;
+
+  /// 「字幕起始帧」静态封面的取帧时刻（播放器轴，毫秒）。null = 用 [clipStartMs]。
+  ///
+  /// 为什么单独一个字段：`[clipStartMs, clipEndMs]` 是**音频/动图窗**，会被用户的句子
+  /// 音频头 padding 往前扩；而「字幕起始帧」承诺的是字幕**开始那一刻**的画面——台词
+  /// 起点常与切镜重合，往前哪怕 120ms 抽到的就是上一个镜头。两层语义只共用一对数字
+  /// 时，padding 一旦可调就会把封面带偏；视频调用方传未 pad 的 cue 起点，其余来源
+  /// （无 padding 概念）不传即回落到窗起点，行为零变化。
+  final int? stillFrameAtMs;
+
+  /// 静态起始帧实际取帧时刻：[stillFrameAtMs] 优先，否则窗起点 [clipStartMs]。
+  int get stillFrameAnchorMs => stillFrameAtMs ?? clipStartMs;
   final String sentence;
   final String? mediaSource;
 
@@ -335,6 +352,14 @@ class ImmersionMiningRequest {
 
   /// 非 null = 覆盖现有卡（走 updateMinedNote，不计统计）。
   final int? updateNoteId;
+  final CardSourceLink? sourceLink;
+
+  /// Computes full-file identity inside the mining queue from frozen inputs.
+  final Future<CardSourceLink?> Function()? sourceLinkResolver;
+  final Future<MineOutcome> Function({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  })? sourceReviewMine;
 
   /// 当前解码帧兜底（本地路径链全失败时）。本地传 `controller.screenshot`。
   final Future<Uint8List?> Function()? stillFallback;
@@ -418,6 +443,7 @@ class ImmersionMiningRequest {
         ),
         clipStartMs: clipStartMs,
         clipEndMs: clipEndMs,
+        stillFrameAtMs: stillFrameAtMs,
         sentence: sentence,
         mediaSource: mediaSource,
         audioSource: audioSource,
@@ -429,6 +455,9 @@ class ImmersionMiningRequest {
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
         updateNoteId: updateNoteId,
+        sourceLink: sourceLink,
+        sourceLinkResolver: sourceLinkResolver,
+        sourceReviewMine: sourceReviewMine,
         stillFallback: stillFallback,
         providedCoverBytes: providedCoverBytes == null
             ? null

@@ -7,8 +7,9 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// Human speech onset (attack of the first mora) is short, so a small lead-in is
 /// enough to keep the very first sound from being clipped. Kept intentionally
 /// smaller than [kMiningTailPadMs] because a long head easily bleeds the previous
-/// sentence's tail into the clip. Phase 0: a constant (not yet a setting) so the
-/// intent and the value stay in one place.
+/// sentence's tail into the clip. This is the DEFAULT of the user preference
+/// `mining_audio_head_pad_ms` (PreferencesRepository.miningAudioHeadPadMs); the
+/// value lives here so the default and the padding logic stay in one place.
 const int kMiningHeadPadMs = 120;
 
 /// Default tail padding (ms) appended to a mining audio clip.
@@ -16,8 +17,15 @@ const int kMiningHeadPadMs = 120;
 /// Sentence endings decay slowly (trailing vowels, particles, breath), so the
 /// tail needs more room than the head to avoid a hard cut that swallows the final
 /// mora. Larger than [kMiningHeadPadMs] for that reason. Clamped against the next
-/// same-file cue so it never bleeds the following sentence's onset in.
+/// same-file cue so it never bleeds the following sentence's onset in. DEFAULT of
+/// the user preference `mining_audio_tail_pad_ms`.
 const int kMiningTailPadMs = 200;
+
+/// Upper bound (ms) for either padding edge, shared by the preference clamp and
+/// the settings slider so the two cannot drift apart. One second is already far
+/// past any realistic onset/decay; the neighbouring-cue clamp in
+/// [padSentenceRange] bounds it further in practice.
+const int kMiningPadMaxMs = 1000;
 
 /// Resolves the audio range used when exporting sentence audio for Anki.
 ///
@@ -25,7 +33,9 @@ const int kMiningTailPadMs = 200;
 /// the reader's full normalized sentence range; when that is unavailable, match
 /// Hoshi Android's behavior by expanding to adjacent cues whose text belongs to
 /// the selected sentence. [delayMs] is the user's global A/V sync offset and is
-/// applied to both edges, not as a sentence-tail padding.
+/// applied to both edges, not as a sentence-tail padding. [headPadMs] /
+/// [tailPadMs] are the user's clip padding preferences (defaults = the Phase 0
+/// constants); see [padSentenceRange] for how they are clamped.
 ///
 /// [cue] is the cue the looked-up word fell inside. It can be null: audiobook
 /// cue alignment leaves gaps (titles, captions, alignment misses, chapter
@@ -43,6 +53,8 @@ AudioPlaybackRange? miningSentenceAudioRange({
   int? sentenceNormCharOffset,
   int? sentenceNormCharLength,
   int delayMs = 0,
+  int headPadMs = kMiningHeadPadMs,
+  int tailPadMs = kMiningTailPadMs,
 }) {
   final AudioPlaybackRange? positionRange = _rangeFromSentencePosition(
     cues: cues,
@@ -89,8 +101,8 @@ AudioPlaybackRange? miningSentenceAudioRange({
   final AudioPlaybackRange paddedRange = padSentenceRange(
     positiveRange,
     cues: cues,
-    headPadMs: kMiningHeadPadMs,
-    tailPadMs: kMiningTailPadMs,
+    headPadMs: headPadMs,
+    tailPadMs: tailPadMs,
   );
   return _shiftRange(paddedRange, delayMs);
 }

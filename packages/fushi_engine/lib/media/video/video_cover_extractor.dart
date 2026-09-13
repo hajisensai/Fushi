@@ -100,28 +100,38 @@ Future<String?> extractEmbeddedVideoCoverViaFfmpeg({
   bool diagnosticOnly = false,
 }) async {
   if (!File(inputPath).existsSync()) return null;
-  final File output = File(outputPath);
+  // BUG-2496：与 [extractVideoFrameViaFfmpeg] 同款——ffmpeg 写 staged 文件，校验是
+  // 完整图片后原子发布。原实现让 ffmpeg 直写 outputPath，且非零退出只要文件非空就
+  // 当成功：损坏的 attached_pic 解码到一半报错退出，留下的半截 JPEG 照样被当封面。
+  final File staged = File(stagedCoverPath(outputPath));
   try {
-    output.parent.createSync(recursive: true);
+    staged.parent.createSync(recursive: true);
     final FfmpegRunResult result = await resolveFfmpegBackend().run(
       buildFfmpegEmbeddedCoverArgs(
         inputPath: inputPath,
-        outputPath: outputPath,
+        outputPath: staged.path,
       ),
       const Duration(seconds: 30),
     );
     final int? code = result.returnCode;
-    if (code == null) {
-      if (output.existsSync()) {
-        try {
-          output.deleteSync();
-        } catch (_) {}
-      }
-      return null;
-    }
     // No-cover containers exit non-zero ("Stream map matches no streams") and
-    // write nothing; rely on the output file to discriminate.
-    if (output.existsSync() && output.lengthSync() > 0) return outputPath;
+    // write nothing; a timeout (null code) or a write that stopped midway
+    // leaves a staged file that must not survive. Publishing validates the
+    // bytes, so "wrote something" is no longer mistaken for "wrote a cover".
+    if (code != null && staged.existsSync() && staged.lengthSync() > 0) {
+      try {
+        await publishStagedCoverFile(staged: staged, destPath: outputPath);
+        return outputPath;
+      } on CoverImageInvalidException catch (e, stack) {
+        _logEmbeddedCoverFailure(e, stack, diagnosticOnly: diagnosticOnly);
+        return null;
+      }
+    }
+    if (staged.existsSync()) {
+      try {
+        staged.deleteSync();
+      } catch (_) {}
+    }
     return null;
   } on ProcessException catch (e, stack) {
     _logEmbeddedCoverFailure(e, stack, diagnosticOnly: diagnosticOnly);

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'anki_media_dedup.dart';
 import 'anki_models.dart';
 import 'anki_note_type_definition.dart';
+import 'card_source_link.dart';
 import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
 
@@ -101,17 +102,21 @@ abstract class BaseAnkiRepository {
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
   /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
-  /// `{document-title}` 时，补成新出厂默认 `{document-title} {clip-timestamp}`，
-  /// 让卡片底部「=== Details ===」栏带上片段时间窗（见 [LapisNoteType]）。
+  /// （纯标题、标题+时间、标题+时间+独立链接）时，改为标题自身作为来源链接，
+  /// 同时保留片段时间（见 [LapisNoteType]）。
   ///
   /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
-  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、已经含
-  /// `{clip-timestamp}`、或自己拼过别的组合——一律不动，不覆盖用户意图。
+  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、或自己拼过别的
+  /// 组合——一律不动，不覆盖用户意图。不会修改已经导出的旧卡。
   /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
   /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
   static const String _legacyMiscInfoMapping = '{document-title}';
   static const String _miscInfoMappingWithClipTime =
       '{document-title} {clip-timestamp}';
+  static const String _miscInfoMappingWithSource =
+      '{document-title} {clip-timestamp} {source-link}';
+  static const String _miscInfoMappingWithLinkedTitle =
+      '{source-link} {clip-timestamp}';
 
   /// 读原始设置 JSON 的**唯一通道**：三个载入期迁移（W2-7 键搬移 + W2-2 别名改写
   /// + MiscInfo 补片段时间窗）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的
@@ -145,7 +150,7 @@ abstract class BaseAnkiRepository {
     return raw;
   }
 
-  /// [_legacyMiscInfoMapping] → [_miscInfoMappingWithClipTime] 的纯改写。
+  /// 精确旧默认 → [_miscInfoMappingWithSource] 的纯改写。
   /// 返回改写后的 JSON 串；**不需要改写时返回 `null`**（调用方据此决定要不要回写
   /// 持久层，避免每次启动都白写一遍）。
   ///
@@ -162,7 +167,11 @@ abstract class BaseAnkiRepository {
     // 的话已迁移的用户仍会每次解析，门等于没加。形态依据是 `saveSettings` 恒用
     // `jsonEncode`（无空格）；万一哪天形态变了，最坏结果是这条迁移不触发（用户手动改
     // 一次映射），不会误改也不会崩——真正的判据仍是下面的结构化比较。
-    if (!raw.contains('"MiscInfo":"$_legacyMiscInfoMapping"')) return null;
+    if (!raw.contains('"MiscInfo":"$_legacyMiscInfoMapping"') &&
+        !raw.contains('"MiscInfo":"$_miscInfoMappingWithClipTime"') &&
+        !raw.contains('"MiscInfo":"$_miscInfoMappingWithSource"')) {
+      return null;
+    }
     final Object? decoded;
     try {
       decoded = jsonDecode(raw);
@@ -172,8 +181,10 @@ abstract class BaseAnkiRepository {
     if (decoded is! Map<String, dynamic>) return null;
     final Object? mappings = decoded['fieldMappings'];
     if (mappings is! Map) return null;
-    if (mappings['MiscInfo'] != _legacyMiscInfoMapping) return null;
-    mappings['MiscInfo'] = _miscInfoMappingWithClipTime;
+    if (mappings['MiscInfo'] != _legacyMiscInfoMapping &&
+        mappings['MiscInfo'] != _miscInfoMappingWithClipTime &&
+        mappings['MiscInfo'] != _miscInfoMappingWithSource) return null;
+    mappings['MiscInfo'] = _miscInfoMappingWithLinkedTitle;
     return jsonEncode(decoded);
   }
 
@@ -271,6 +282,109 @@ abstract class BaseAnkiRepository {
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
   /// ContentProvider getNote）。note 不存在 / 后端不支持时返回 `null`。
   Future<Map<String, String>?> noteFields(int noteId) async => null;
+
+  /// Updating an ordinary freshly mined card can capture another locator UUID.
+  /// Retain the original note's identity, because field updates never add tags.
+  /// Legacy notes have no source marker/link and are not silently migrated.
+  @protected
+  Future<AnkiMiningContext> contextForExistingSourceNote(
+    int noteId,
+    AnkiMiningContext context,
+  ) async {
+    final Map<String, String>? fields = await noteFields(noteId);
+    if (fields == null) throw StateError('Existing note could not be read');
+    final Map<String, CardSourceLink> sources = <String, CardSourceLink>{
+      for (final String field in fields.values)
+        for (final CardSourceLink link in CardSourceLink.fromHtml(field))
+          link.sourceId: link,
+    };
+    if (sources.length > 1) {
+      throw StateError('Existing source identity is ambiguous');
+    }
+    if (sources.isEmpty) return context.withSourceLink(null);
+    final CardSourceLink previous = sources.values.single;
+    return context.withSourceLink(
+      context.sourceLink?.withSourceId(previous.sourceId) ?? previous,
+    );
+  }
+
+  /// Prepare mapped fields/media for an explicit field-diff editor. Never adds
+  /// a note or changes an existing note. Uploaded unused media may be cleaned
+  /// by Anki's normal unused-media cleanup if the user cancels the editor.
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async =>
+      throw UnsupportedError('Source note editing is unavailable');
+
+  /// Exact marker lookup must propagate backend failure instead of reporting
+  /// "not found". A word match or an unscoped numeric note ID is insufficient.
+  @protected
+  Future<List<int>> findSourceNoteIds(String markerTag) async =>
+      throw UnsupportedError('Source note lookup is unavailable');
+
+  @protected
+  Future<void> writeSourceNoteFields(
+    int noteId,
+    Map<String, String> fields,
+  ) async =>
+      throw UnsupportedError('Source note editing is unavailable');
+
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
+    final List<int> matches = await findSourceNoteIds(
+      CardSourceLink.markerForSourceId(sourceId),
+    );
+    final Set<int> ids = matches.toSet();
+    if (ids.isEmpty) return null;
+    if (ids.length != 1 || ids.single <= 0) {
+      throw StateError('Card source marker is not unique');
+    }
+    final Map<String, String>? fields = await noteFields(ids.single);
+    if (fields == null) throw StateError('Source note could not be read');
+    return AnkiSourceNote(
+      sourceId: sourceId,
+      noteId: ids.single,
+      fields: fields,
+    );
+  }
+
+  /// Optimistic conflict check immediately before a partial field update.
+  /// AnkiConnect exposes no atomic compare-and-swap operation; edits made in
+  /// another Anki window between this check and write cannot be locked out.
+  /// Untouched fields, tags and card scheduling are never submitted.
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  }) async {
+    if (fields.isEmpty) return;
+    final Map<String, String> patch = Map<String, String>.of(fields);
+    final AnkiSourceNote? current = await readSourceNote(original.sourceId);
+    if (current == null || current.noteId != original.noteId) {
+      throw StateError('Source note identity changed');
+    }
+    for (final String field in patch.keys) {
+      if (!original.fields.containsKey(field) ||
+          !current.fields.containsKey(field) ||
+          current.fields[field] != original.fields[field]) {
+        throw StateError('Source note field changed: $field');
+      }
+    }
+    await writeSourceNoteFields(current.noteId, patch);
+    // Never retry or restore the old snapshot after a mismatch: another editor
+    // may already have saved a newer value. The caller retains its draft and
+    // asks the user to resolve the conflict explicitly.
+    final AnkiSourceNote? verified = await readSourceNote(original.sourceId);
+    if (verified == null || verified.noteId != current.noteId) {
+      throw StateError('Source note identity changed after writing');
+    }
+    for (final MapEntry<String, String> entry in patch.entries) {
+      if (verified.fields[entry.key] != entry.value) {
+        throw StateError(
+          'Source note field changed after writing: ${entry.key}',
+        );
+      }
+    }
+  }
 
   /// TODO-1007/1008：在 Anki 中打开 / 浏览 [noteId] 对应的卡片（AnkiConnect 用
   /// `guiBrowse(nid:<id>)`；AnkiDroid 用 ACTION_VIEW intent 跳 ContentProvider note）。
@@ -578,6 +692,7 @@ abstract class BaseAnkiRepository {
     String? titleTag,
     String? collectionTag,
     String? charPositionTag,
+    CardSourceLink? sourceLink,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -585,6 +700,8 @@ abstract class BaseAnkiRepository {
       if (tag.isEmpty || !seen.add(tag)) continue;
       result.add(tag);
     }
+    final String? marker = sourceLink?.markerTag;
+    if (marker != null && seen.add(marker)) result.add(marker);
     if (includeHibiki && seen.add(fushiTag)) result.add(fushiTag);
     if (includeCategory) {
       final categoryTag = _categoryTagForSource(source);

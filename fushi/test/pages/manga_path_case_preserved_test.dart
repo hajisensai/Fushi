@@ -27,10 +27,9 @@ void main() {
 
   /// 磁盘上真实存在的、相对 [root] 的正斜杠路径集合（大小写原样）。
   Set<String> onDiskEntries() => <String>{
-        for (final FileSystemEntity e in root.listSync(recursive: true))
-          if (e is File)
-            p.relative(e.path, from: root.path).replaceAll('\\', '/'),
-      };
+    for (final FileSystemEntity e in root.listSync(recursive: true))
+      if (e is File) p.relative(e.path, from: root.path).replaceAll('\\', '/'),
+  };
 
   void writeImage(String relative) {
     final File f = File(p.join(root.path, p.joinAll(relative.split('/'))));
@@ -50,14 +49,20 @@ void main() {
   ]) {
     test('解析「$entry」保留真实大小写，与磁盘条目逐字节一致', () {
       writeImage(entry);
-      final String? resolved =
-          MangaFushiPage.resolveMangaResource(root.path, entry);
+      final String? resolved = MangaFushiPage.resolveMangaResource(
+        root.path,
+        entry,
+      );
 
       expect(resolved, isNotNull, reason: '文件真实存在，解析不该返回 null');
-      expect(onDiskEntries(), contains(relOf(resolved!)),
-          reason: '解析出的「${relOf(resolved)}」与磁盘大小写不符 —— 大小写敏感的 '
-              'Android/Linux 上 existsSync 会失败（页图 404、制卡无封面），'
-              '在 Windows 上则让 Anki 封面媒体名被小写化');
+      expect(
+        onDiskEntries(),
+        contains(relOf(resolved!)),
+        reason:
+            '解析出的「${relOf(resolved)}」与磁盘大小写不符 —— 大小写敏感的 '
+            'Android/Linux 上 existsSync 会失败（页图 404、制卡无封面），'
+            '在 Windows 上则让 Anki 封面媒体名被小写化',
+      );
       // 返回值契约：绝对路径（canonicalize 会绝对化，normalize 不会，故实现里
       // 显式补了 p.absolute；这条断言锁住那个补偿别被删掉）。
       expect(p.isAbsolute(resolved), isTrue);
@@ -74,11 +79,12 @@ void main() {
     expect(onDiskEntries(), contains(relOf(resolved!)));
   });
 
-  test('百分号编码的混合大小写条目解码后仍保留大小写', () {
+  test('百分号编码的混合大小写条目在 URL 入口解码后仍保留大小写', () {
     writeImage('Vol 1/P001.JPG');
-    final String? resolved = MangaFushiPage.resolveMangaResource(
+    // 解码只在 URL 边界做（BUG-2484），裸路径入口不认 percent-encoding。
+    final String? resolved = MangaFushiPage.resolveImageUrlToFile(
       root.path,
-      'Vol%201/P001.JPG',
+      'https://manga.local/img/Vol%201/P001.JPG',
     );
     expect(resolved, isNotNull);
     expect(onDiskEntries(), contains(relOf(resolved!)));
@@ -93,7 +99,9 @@ void main() {
       );
       expect(
         MangaFushiPage.resolveMangaResource(
-            root.path, 'Vol1/../../escaped.jpg'),
+          root.path,
+          'Vol1/../../escaped.jpg',
+        ),
         isNull,
       );
     });
@@ -101,15 +109,19 @@ void main() {
     test('大小写不同的 ../ 逃逸也被拒绝（校验侧仍走 canonicalize）', () {
       // 逃逸判定不能因为大小写差异被绕过：即便根目录名大小写写反，
       // 越界校验用的 canonicalize 仍把两侧折平，`../` 照样拦下。
-      final Directory outside =
-          Directory.systemTemp.createTempSync('manga_outside_');
+      final Directory outside = Directory.systemTemp.createTempSync(
+        'manga_outside_',
+      );
       addTearDown(() {
         if (outside.existsSync()) outside.deleteSync(recursive: true);
       });
-      File(p.join(outside.path, 'Secret.JPG'))
-          .writeAsBytesSync(<int>[0xFF, 0xD8]);
-      final String escape =
-          p.relative(p.join(outside.path, 'Secret.JPG'), from: root.path);
+      File(
+        p.join(outside.path, 'Secret.JPG'),
+      ).writeAsBytesSync(<int>[0xFF, 0xD8]);
+      final String escape = p.relative(
+        p.join(outside.path, 'Secret.JPG'),
+        from: root.path,
+      );
       expect(
         MangaFushiPage.resolveMangaResource(root.path, escape),
         isNull,
