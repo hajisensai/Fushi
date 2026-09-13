@@ -177,6 +177,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
     final String html = LyricsModeHtml.generate(
       cues: _lyricsCueList,
+      book: _book,
       currentIndex: cueWindow.currentIndex,
       loadGeneration: loadGeneration,
       backgroundColor: colorToCss(bg),
