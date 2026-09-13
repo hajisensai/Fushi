@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
+import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 一条在线漫画书架条目**不可用**的原因。
@@ -124,6 +125,23 @@ class AidokuMangaPageRef extends OnlineMangaPageRef {
 
   /// 作品页 URL（https 才带），作为取图的 Referer。
   final String? referer;
+}
+
+/// 源补丁（quirk）产出的裸 https 页：URL 自带签名，只需 Referer（BUG-2514）。
+///
+/// 与 [MihonMangaPageRef] 的区别是**不经**扩展的 OkHttp——这些页根本不是扩展
+/// 解析出来的，扩展对它们一无所知。
+class HttpMangaPageRef extends OnlineMangaPageRef {
+  const HttpMangaPageRef({
+    required super.index,
+    required this.url,
+    required this.referer,
+  });
+
+  final String url;
+
+  /// 源站 baseUrl（不带尾斜杠），作为 Referer。
+  final String referer;
 }
 
 /// 互联对端：`bookKey` + 页序即是端点路径段。
@@ -248,9 +266,19 @@ class MihonLibraryAdapter
         OnlineMangaRuntimeAdapter,
         OnlineMangaLoginCapable,
         OnlineMangaLanguageScoped {
-  const MihonLibraryAdapter(this.manager, {this.presetContext});
+  const MihonLibraryAdapter(
+    this.manager, {
+    this.presetContext,
+    this.comicoQuirk,
+  });
 
   final MihonManager manager;
+
+  /// 测试缝：null = 生产装配（走应用代理出口的 http 客户端）。
+  final ComicoMagazineComicQuirk? comicoQuirk;
+
+  ComicoMagazineComicQuirk get _comico =>
+      comicoQuirk ?? ComicoMagazineComicQuirk();
 
   /// 调用方**已经解析好**的源上下文。
   ///
@@ -410,19 +438,16 @@ class MihonLibraryAdapter
         preferences: context.preferences,
       );
       stage = 'chapters';
-      final List<MihonChapter> chapters = await manager.runtime.getChapters(
-        context.extension,
-        context.source,
+      final List<OnlineMangaChapter> chapters = await _chapters(
+        context,
         details,
-        preferences: context.preferences,
+        seriesKey: entry.series.key,
       );
       return OnlineMangaRefreshResult(
         // `mangaDetailsParse` 返回的是增量、可能不带 url（BUG-1767），所以身份
         // 一律用手上这条已知条目的 key，不读返回值的 url。
         series: _seriesFrom(details, fallbackKey: entry.series.key),
-        chapters: <OnlineMangaChapter>[
-          for (final MihonChapter chapter in chapters) _chapterFrom(chapter),
-        ],
+        chapters: chapters,
       );
     } on Object catch (error) {
       throw OnlineMangaUnavailable(
@@ -435,6 +460,48 @@ class MihonLibraryAdapter
     }
   }
 
+  /// 扩展拉章节；コミコ `magazine_comic` 作品扩展报 Not Found 时换本仓的
+  /// quirk 路由再拉一次（BUG-2514），产出的章带标记、取页也走 quirk。
+  Future<List<OnlineMangaChapter>> _chapters(
+    MihonSourceContext context,
+    MihonManga details, {
+    required String seriesKey,
+  }) async {
+    try {
+      final List<MihonChapter> chapters = await manager.runtime.getChapters(
+        context.extension,
+        context.source,
+        details,
+        preferences: context.preferences,
+      );
+      return <OnlineMangaChapter>[
+        for (final MihonChapter chapter in chapters) _chapterFrom(chapter),
+      ];
+    } on Object catch (error) {
+      final int? contentId = ComicoMagazineComicQuirk.contentIdOf(seriesKey);
+      if (contentId == null ||
+          !ComicoMagazineComicQuirk.matches(context.source) ||
+          !ComicoMagazineComicQuirk.isNotFound(error)) {
+        rethrow;
+      }
+      final List<MihonChapter> chapters = await _comico.chapters(
+        contentId: contentId,
+        baseUrl: context.source.baseUrl,
+        language: context.source.language,
+      );
+      return <OnlineMangaChapter>[
+        for (final MihonChapter chapter in chapters)
+          _chapterFrom(
+            chapter,
+            extraRaw: const <String, Object?>{
+              ComicoMagazineComicQuirk.rawMarkerKey:
+                  ComicoMagazineComicQuirk.rawMarkerValue,
+            },
+          ),
+      ];
+    }
+  }
+
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
@@ -443,6 +510,21 @@ class MihonLibraryAdapter
     final MihonSourceContext context = await _context(entry);
     final MihonChapter native = MihonChapter.fromJson(chapter.raw);
     try {
+      if (ComicoMagazineComicQuirk.ownsChapter(chapter.raw)) {
+        final List<String> urls = await _comico.pageUrls(
+          chapterUrl: native.url,
+          baseUrl: context.source.baseUrl,
+          language: context.source.language,
+        );
+        return <OnlineMangaPageRef>[
+          for (int index = 0; index < urls.length; index++)
+            HttpMangaPageRef(
+              index: index,
+              url: urls[index],
+              referer: context.source.baseUrl,
+            ),
+        ];
+      }
       final List<MihonPage> pages = await manager.runtime.getPages(
         context.extension,
         context.source,
@@ -475,6 +557,9 @@ class MihonLibraryAdapter
   /// 客户端，绝不能换成裸 HTTP——会丢掉扩展拦截器、cookie 与按请求头。
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
+    if (page is HttpMangaPageRef) {
+      return _comico.fetchImage(page.url, baseUrl: page.referer);
+    }
     if (page is! MihonMangaPageRef) {
       throw ArgumentError.value(page, 'page', 'not a Mihon page reference');
     }
@@ -566,16 +651,18 @@ class MihonLibraryAdapter
     );
   }
 
-  static OnlineMangaChapter _chapterFrom(MihonChapter chapter) =>
-      OnlineMangaChapter(
-        key: chapter.url,
-        name: chapter.name,
-        scanlator: chapter.scanlator,
-        number: chapter.number,
-        uploadedAt: chapter.uploadedAt <= 0 ? null : chapter.uploadedAt,
-        locked: OnlineMangaChapter.isLockedChapterName(chapter.name),
-        raw: chapter.toJson(),
-      );
+  static OnlineMangaChapter _chapterFrom(
+    MihonChapter chapter, {
+    Map<String, Object?> extraRaw = const <String, Object?>{},
+  }) => OnlineMangaChapter(
+    key: chapter.url,
+    name: chapter.name,
+    scanlator: chapter.scanlator,
+    number: chapter.number,
+    uploadedAt: chapter.uploadedAt <= 0 ? null : chapter.uploadedAt,
+    locked: OnlineMangaChapter.isLockedChapterName(chapter.name),
+    raw: <String, Object?>{...chapter.toJson(), ...extraRaw},
+  );
 
   /// 供源浏览页在「加入书架」时把已在手的原生对象直接归一化。
   static OnlineMangaSeries seriesOf(MihonManga manga) =>

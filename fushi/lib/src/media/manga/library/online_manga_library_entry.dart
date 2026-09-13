@@ -68,12 +68,16 @@ class OnlineMangaChapter {
   /// Mihon 的 `SChapter` 没有「锁」字段，keiyoushi 全家（BookWalker、Comikey、
   /// ebookjapan……）的做法是把这个 emoji 拼在章名开头、取页时抛
   /// `Log in via WebView ...`。这是宿主能拿到的**唯一**锁信号，所以判据只写在
-  /// [isLockedChapterName] 这一处。
+  /// [isLockedChapterName] 这一处。コミコ（`Comico.LOCK = " 🔒"`）是拼在**结尾**
+  /// 的，同样认（BUG-2514）。
   static const String mihonLockPrefix = '\u{1F512}';
 
-  /// 章名带锁前缀 = 源站标记为锁定。
-  static bool isLockedChapterName(String name) =>
-      name.trimLeft().startsWith(mihonLockPrefix);
+  /// 章名带锁 emoji（开头或结尾）= 源站标记为锁定。
+  static bool isLockedChapterName(String name) {
+    final String trimmed = name.trim();
+    return trimmed.startsWith(mihonLockPrefix) ||
+        trimmed.endsWith(mihonLockPrefix);
+  }
 
   /// 源内章节身份。Mihon = `url`；Aidoku = `chapter['key']`。
   ///
