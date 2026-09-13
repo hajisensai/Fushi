@@ -192,8 +192,8 @@ void main() {
       final String msg = logMineFailure(outcome);
 
       expect(msg, t.anki_error_paired_device_unreachable);
-      expect(msg, contains('配对设备上的 Fushi 正在运行'));
-      expect(msg, contains('关闭「制卡到已配对设备」'));
+      expect(msg, contains('服务端上的 Fushi 正在运行'));
+      expect(msg, contains('关闭「制卡到 Fushi 互联服务端」'));
       expect(msg, isNot(contains('server-side mining')));
     });
 
