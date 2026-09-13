@@ -3776,7 +3776,7 @@
   "video_download_target_source_empty": "لا يوجد مصدر فيديو محلي متاح. أضف واحداً في تبويب المصادر أولاً.",
   "video_download_target_source_hint": "يتم تنظيم التحميلات الجديدة في مصدر الفيديو المحلي هذا.",
   "video_download_target_source_none": "اختر مصدر فيديو محلي",
-  "video_download_target_source_title": "مصدر الفيديو المُدار الافتراضي",
+  "video_download_target_source_title": "المجلد الافتراضي",
   "video_drop_audio_unsupported": "أفلت ملفات الترجمة على الفيديو الحالي. لا يمكن إرفاق ملفات الصوت هنا.",
   "video_drop_subtitle_only": "أفلت ملفات الترجمة على الفيديو الحالي.",
   "video_episode_list": "الحلقات",

@@ -3776,7 +3776,7 @@
   "video_download_target_source_empty": "Tidak ada sumber video yang dapat diakses secara lokal. Tambahkan satu di tab Sumber terlebih dahulu.",
   "video_download_target_source_hint": "Unduhan baru diorganisir ke sumber video lokal ini.",
   "video_download_target_source_none": "Pilih sumber video lokal",
-  "video_download_target_source_title": "Sumber video terkelola default",
+  "video_download_target_source_title": "Folder default",
   "video_drop_audio_unsupported": "Jatuhkan file subtitle ke video saat ini. File audio tidak bisa dilampirkan di sini.",
   "video_drop_subtitle_only": "Jatuhkan file subtitle ke video saat ini.",
   "video_episode_list": "Episode",

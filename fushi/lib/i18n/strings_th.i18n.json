@@ -3776,7 +3776,7 @@
   "video_download_target_source_empty": "ไม่มีแหล่งวิดีโอในเครื่องที่เข้าถึงได้ เพิ่มในแท็บแหล่งข้อมูลก่อน",
   "video_download_target_source_hint": "ดาวน์โหลดใหม่จะถูกจัดระเบียบไว้ในแหล่งวิดีโอในเครื่องนี้",
   "video_download_target_source_none": "เลือกแหล่งวิดีโอในเครื่อง",
-  "video_download_target_source_title": "แหล่งวิดีโอจัดการเริ่มต้น",
+  "video_download_target_source_title": "โฟลเดอร์เริ่มต้น",
   "video_drop_audio_unsupported": "ลากไฟล์คำบรรยายไปวางบนวิดีโอปัจจุบัน ไฟล์เสียงไม่สามารถแนบที่นี่ได้",
   "video_drop_subtitle_only": "ลากไฟล์คำบรรยายไปวางบนวิดีโอปัจจุบัน",
   "video_episode_list": "ตอน",

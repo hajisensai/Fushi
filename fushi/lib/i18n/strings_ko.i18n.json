@@ -3776,7 +3776,7 @@
   "video_download_target_source_empty": "로컬에서 접근 가능한 동영상 소스가 없습니다. 먼저 소스 탭에서 추가하세요.",
   "video_download_target_source_hint": "새 다운로드는 이 로컬 동영상 소스에 정리됩니다.",
   "video_download_target_source_none": "로컬 동영상 소스 선택",
-  "video_download_target_source_title": "기본 관리 동영상 소스",
+  "video_download_target_source_title": "기본 폴더",
   "video_drop_audio_unsupported": "현재 비디오 위에 자막 파일을 놓으세요. 오디오 파일은 여기에 연결할 수 없습니다.",
   "video_drop_subtitle_only": "현재 비디오 위에 자막 파일을 놓으세요.",
   "video_episode_list": "에피소드",

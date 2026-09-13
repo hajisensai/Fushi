@@ -3776,7 +3776,7 @@
   "video_download_target_source_empty": "Geen lokaal toegankelijke videobron beschikbaar. Voeg er eerst een toe op het tabblad Bronnen.",
   "video_download_target_source_hint": "Nieuwe downloads worden in deze lokale videobron georganiseerd.",
   "video_download_target_source_none": "Kies een lokale videobron",
-  "video_download_target_source_title": "Standaard beheerde videobron",
+  "video_download_target_source_title": "Standaardmap",
   "video_drop_audio_unsupported": "Sleep ondertitelbestanden op de huidige video. Audiobestanden kunnen hier niet worden gekoppeld.",
   "video_drop_subtitle_only": "Sleep ondertitelbestanden op de huidige video.",
   "video_episode_list": "Afleveringen",

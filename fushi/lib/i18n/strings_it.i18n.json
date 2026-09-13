@@ -3776,7 +3776,7 @@
   "video_download_target_source_empty": "Nessuna fonte video accessibile localmente disponibile. Aggiungine una nella scheda Fonti.",
   "video_download_target_source_hint": "I nuovi download vengono organizzati in questa fonte video locale.",
   "video_download_target_source_none": "Scegli una fonte video locale",
-  "video_download_target_source_title": "Fonte video gestita predefinita",
+  "video_download_target_source_title": "Cartella predefinita",
   "video_drop_audio_unsupported": "Trascina i file di sottotitoli sul video corrente. I file audio non possono essere allegati qui.",
   "video_drop_subtitle_only": "Trascina i file di sottotitoli sul video corrente.",
   "video_episode_list": "Episodi",
