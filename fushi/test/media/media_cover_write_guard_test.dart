@@ -51,12 +51,14 @@ final RegExp kRawWrite =
     RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');
 
 /// 「经收口落盘」的判据：app 的 `MediaCoverService.applyCover*`，或引擎的
-/// writer 本体 `writeCoverBytesAtomically` / `copyCoverFileAtomically`（前者是
-/// 后者的薄委派；写盘→驱逐的结构在 writer 里，见 cover_file_writer.dart）。
+/// writer 本体 `writeCoverBytesAtomically` / `copyCoverFileAtomically` /
+/// `publishStagedCoverFile`（前者是后者的薄委派；写盘→驱逐的结构在 writer 里，见
+/// cover_file_writer.dart；第三个是外部进程 staged 文件的发布口，BUG-2496）。
 bool _viaCoverSink(String maskedSrc) =>
     maskedSrc.contains('MediaCoverService.applyCover') ||
     maskedSrc.contains('writeCoverBytesAtomically(') ||
-    maskedSrc.contains('copyCoverFileAtomically(');
+    maskedSrc.contains('copyCoverFileAtomically(') ||
+    maskedSrc.contains('publishStagedCoverFile(');
 
 /// 一个「封面目的地派生点」文件在收口体系里的角色（TODO-2715 ③）。
 enum CoverDeriverRole {
@@ -413,9 +415,12 @@ void main() {
       '../packages/fushi_engine/lib/media/cover_file_writer.dart': <String>{
         'writeCoverBytesAtomically',
         'copyCoverFileAtomically',
+        // BUG-2496：ffmpeg 写 staged 文件后由这里校验 + rename 发布 + 驱逐。
+        'publishStagedCoverFile',
       },
-      // ffmpeg 两条路由子进程写盘，Dart 侧无字节；下载路已改走
-      // MediaCoverService.applyCoverBytes，故本文件不该再有任何裸写。
+      // ffmpeg 两条路由子进程写 staged 文件、经 publishStagedCoverFile 发布，
+      // Dart 侧无字节；下载路已改走 MediaCoverService.applyCoverBytes，故本文件
+      // 不该再有任何裸写。
       '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': <String>{},
     };
     final RegExp rawWrite =
@@ -457,15 +462,29 @@ void main() {
     expect(service.contains('applyCoverBytes'), isTrue);
     expect(service.contains('copyCoverFileAtomically('), isTrue);
     expect(service.contains('writeCoverBytesAtomically('), isTrue);
-    // 写盘→驱逐的结构在引擎 writer：两个函数各自 rename 成功后必须驱逐 dest。
+    // 写盘→驱逐的结构在引擎 writer：三个入口各自 rename 成功后必须驱逐 dest。
     final String writer = maskComments(
         File('../packages/fushi_engine/lib/media/cover_file_writer.dart')
             .readAsStringSync());
     expect(
         RegExp(r'await evictImageCacheForFile\(dest\);').allMatches(writer).length,
-        2,
-        reason: '引擎 writer 的两个入口都必须在 rename 之后驱逐 destPath 的解码缓存'
+        3,
+        reason: '引擎 writer 的三个入口都必须在 rename 之后驱逐 destPath 的解码缓存'
             '（BUG-1118 的不变量搬进引擎后就住在这里）');
+    // BUG-2496：「落盘的必须是完整可解码图片」的判据也只住在这三个入口——字节路查
+    // isDecodableImageBytes，文件路（copy / staged 发布）查 isDecodableImageFile；
+    // 判据放调用点各写一遍正是当年漏掉 ffmpeg 抽帧 / PDF / SRT 封面三处的形状。
+    expect(
+        RegExp(r'if \(!isDecodableImageBytes\(bytes\)\)').hasMatch(writer), isTrue,
+        reason: 'writeCoverBytesAtomically 必须先拒收非图片/截断字节');
+    expect(
+        RegExp(r'if \(!await isDecodableImageFile\(source\)\)').hasMatch(writer),
+        isTrue,
+        reason: 'copyCoverFileAtomically 必须先校验源文件是完整图片');
+    expect(
+        RegExp(r'if \(!await isDecodableImageFile\(staged\)\)').hasMatch(writer),
+        isTrue,
+        reason: 'publishStagedCoverFile 必须先校验 staged 文件是完整图片');
     // 钩子在 app 侧必须绑到双键 evict（不是整表 clear——那是删除路的锁释放提示）。
     final String bindings =
         maskComments(File('lib/src/engine_bindings.dart').readAsStringSync());

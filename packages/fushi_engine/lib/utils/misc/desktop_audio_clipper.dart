@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
@@ -785,13 +786,16 @@ Future<String?> extractVideoFrameViaFfmpeg({
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
     return null;
   }
-  final File output = File(outputPath);
+  // BUG-2496：ffmpeg 不直写 outputPath。书架/更新中心在它写到一半时重建就会读到
+  // 半截 JPEG（头合法、无 EOI）→ 渲染层 `Invalid image data`。先写同扩展名的
+  // staged 文件，校验完整后再原子发布（发布入口顺带驱逐该路径解码缓存）。
+  final File staged = File(stagedCoverPath(outputPath));
   try {
-    output.parent.createSync(recursive: true);
+    staged.parent.createSync(recursive: true);
     final FfmpegRunResult result = await _runFfmpeg(
       buildFfmpegFrameArgs(
         inputPath: inputPath,
-        outputPath: outputPath,
+        outputPath: staged.path,
         atSeconds: atSeconds,
         decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
@@ -801,16 +805,39 @@ Future<String?> extractVideoFrameViaFfmpeg({
       const Duration(seconds: 30),
     );
     final int? code = result.returnCode;
-    if (code == 0 && output.existsSync() && output.lengthSync() > 0) {
-      return outputPath;
-    }
-    if (output.existsSync()) {
+    if (code == 0 && staged.existsSync() && staged.lengthSync() > 0) {
       try {
-        output.deleteSync();
+        await publishStagedCoverFile(staged: staged, destPath: outputPath);
+        return outputPath;
+      } on CoverImageInvalidException catch (e) {
+        // ffmpeg 退出 0 却给了个不完整的图（极罕见：磁盘满 / 被杀）——按失败走，
+        // 与下面的非零退出同一条报告链，不留坏文件。
+        _reportFfmpegFailure(
+          'extractVideoFrameViaFfmpeg',
+          FfmpegRunResult(
+            returnCode: code,
+            output: '${result.output}\n$e',
+            executable: result.executable,
+            attemptedExecutables: result.attemptedExecutables,
+            fallbackReason: result.fallbackReason,
+          ),
+          onFailure,
+          diagnosticOnly: diagnosticOnly,
+        );
+        return null;
+      }
+    }
+    if (staged.existsSync()) {
+      try {
+        staged.deleteSync();
       } catch (_) {}
     }
-    _reportFfmpegFailure('extractVideoFrameViaFfmpeg', result, onFailure,
-        diagnosticOnly: diagnosticOnly);
+    _reportFfmpegFailure(
+      'extractVideoFrameViaFfmpeg',
+      result,
+      onFailure,
+      diagnosticOnly: diagnosticOnly,
+    );
     return null;
   } on ProcessException catch (e, stack) {
     _reportFfmpegProcessException(
