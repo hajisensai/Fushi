@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2498](bugs/BUG-2498-miui-notification-permission-prompt-at-startup.md) | 🚧 | 🚧 | 退出新手引导即向系统申请通知权限，MIUI 权限界面崩溃连坐杀掉 Fushi |
+| [BUG-2498](bugs/BUG-2498-miui-notification-permission-prompt-at-startup.md) | ✅ | ✅ | 退出新手引导即向系统申请通知权限，MIUI 权限界面崩溃连坐杀掉 Fushi |
 | [BUG-2496](bugs/BUG-2496-cover-decode-invalid-image-data-nonatomic-writes.md) | ✅ | ✅ | 封面/图片文件非空但不可解码：写侧无校验、非原子直写，渲染侧无兜底当致命错误落盘 |
 | [BUG-2495](bugs/BUG-2495-desktop-audio-warmup-timeout-tears-down-cold-player.md) | ✅ | ✅ | 桌面查词发音预热 2s 预算到期，反把正在冷启动的播放器拆掉（BUG-1015 复发） |
 | [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
