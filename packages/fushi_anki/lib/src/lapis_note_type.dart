@@ -291,7 +291,18 @@ class LapisNoteType {
     // Hack to add multiple buttons without Anki playing them multiple times
     function addAudioButtons() {
         const audioContainers = document.querySelectorAll(".audio-buttons, .audio-buttons-alt");
-        audioContainers.forEach(audio => audio.innerHTML = `{{ExpressionAudio}}{{SentenceAudio}}`);
+        audioContainers.forEach(audio => audio.innerHTML = `{{ExpressionAudio}}<span class="fushi-sentence-audio">{{SentenceAudio}}</span>`);
+        // Hibiki synchronized video: delegate replay to the client's native
+        // media button. Never start a separate HTML video/audio player.
+        document.querySelectorAll(".sentence, .sentence-alt").forEach(sentence => {
+            sentence.addEventListener("click", event => {
+                if (event.target.closest("a, button, video, audio")) return;
+                if (window.getSelection && String(window.getSelection()).length) return;
+                if (!document.querySelector(".fushi-synced-video-replay")) return;
+                const replay = document.querySelector(".fushi-sentence-audio .replay-button, .fushi-sentence-audio .replaybutton, .fushi-sentence-audio .soundLink");
+                if (replay) replay.click();
+            });
+        });
     }
 
     function getPitchCategories() {

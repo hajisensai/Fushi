@@ -615,14 +615,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
         ),
-        SettingsSearchTarget(
-          id: 'card_creation.anki.video_mining_animated_format',
-          child: _buildVideoMiningAnimatedFormatPicker(),
-        ),
-        SettingsSearchTarget(
-          id: 'card_creation.anki.video_mining_still_format',
-          child: _buildVideoMiningStillFormatPicker(),
-        ),
+        if (!appModel.videoMiningImageMode.isVideoClip) ...[
+          SettingsSearchTarget(
+            id: 'card_creation.anki.video_mining_animated_format',
+            child: _buildVideoMiningAnimatedFormatPicker(),
+          ),
+          SettingsSearchTarget(
+            id: 'card_creation.anki.video_mining_still_format',
+            child: _buildVideoMiningStillFormatPicker(),
+          ),
+        ],
         if (Platform.isWindows) ...[
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_image_mode',
@@ -734,12 +736,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  /// 视频制卡封面图片模式三选一：gif=字幕区间动图（默认，现状零破坏）；currentFrame=
+  /// 视频制卡封面模式：gif=字幕区间动图（默认）；currentFrame=
   /// 制卡那一刻的当前解码帧（点词已自动暂停）；subtitleStart=当前字幕 cue 起始时间点的帧。
+  /// videoClip 将同一时间段的画面与例句声音封装为一个 MP4，由 Anki 媒体播放器播放。
   /// 全局设置，透传 [AppModel.videoMiningImageMode]，所有视频制卡生效。
   Widget _buildVideoMiningImageModePicker() {
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
       title: t.video_mining_image_mode,
+      subtitle: appModel.videoMiningImageMode.isVideoClip
+          ? t.video_mining_image_mode_video_clip_hint
+          : null,
       icon: Icons.photo_library_outlined,
       controlBelow: true,
       selected: appModel.videoMiningImageMode,
@@ -747,6 +753,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsPickerOption<VideoMiningImageMode>(
           value: VideoMiningImageMode.gif,
           label: t.video_mining_image_mode_gif,
+        ),
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.videoClip,
+          label: t.video_mining_image_mode_video_clip,
         ),
         AdaptiveSettingsPickerOption<VideoMiningImageMode>(
           value: VideoMiningImageMode.currentFrame,
@@ -769,8 +779,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 二十遍。共用一个开关会逼用户为一边将就另一边。
   ///
   /// galgame 没有「字幕区间」，所以给 gif / 静态截图 / 视频片段三档——不渲染
-  /// subtitleStart，免得暗示能选一个对这个场景无意义的模式。视频片段（mp4）反过来
-  /// 只在这里渲染：它靠 hook 会话的窗口录制 + 台词时间戳，视频页没有这两样。
+  /// subtitleStart，免得暗示能选一个对这个场景无意义的模式。这里的视频片段（mp4）
+  /// 来自 hook 会话的窗口录制 + 台词时间戳；普通视频页直接截取源视频。
   Widget _buildGalMiningImageModePicker() {
     final VideoMiningImageMode current = appModel.galMiningImageMode;
     return AdaptiveSettingsPickerRow<VideoMiningImageMode>(

@@ -10,6 +10,29 @@ import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 ///   才是真正的坏请求 → FormatException → 400）。
 void main() {
   group('ForwardedMinePayload', () {
+    test('synchronized video wire flag preserves one media payload', () {
+      final payload = ForwardedMinePayload(
+        rawPayloadJson: '{}', sentence: 's', synchronizedVideo: true,
+        coverBytes: Uint8List.fromList(<int>[1]), coverExt: 'mp4',
+        sentenceAudioBytes: Uint8List.fromList(<int>[1]), sentenceAudioExt: 'mp4',
+      );
+      final json = payload.toJson();
+      expect(json['synchronizedVideo'], isTrue);
+      expect(json.containsKey('sentenceAudioBase64'), isFalse);
+      expect(json.containsKey('sentenceAudioExt'), isFalse);
+      final parsed = ForwardedMinePayload.fromJson(json);
+      expect(parsed.synchronizedVideo, isTrue);
+      expect(parsed.coverBytes, <int>[1]);
+      expect(parsed.sentenceAudioBytes, isNull);
+    });
+
+    test('older peers omit synchronized video and retain independent audio', () {
+      const payload = ForwardedMinePayload(rawPayloadJson: '{}', sentence: 's');
+      final json = payload.toJson();
+      expect(json.containsKey('synchronizedVideo'), isFalse);
+      expect(ForwardedMinePayload.fromJson(json).synchronizedVideo, isFalse);
+    });
+
     test('全字段（含四类媒体字节）round-trip', () {
       final ForwardedMinePayload p = ForwardedMinePayload(
         rawPayloadJson: '{"expression":"猫"}',

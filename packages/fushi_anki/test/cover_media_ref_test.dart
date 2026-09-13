@@ -105,6 +105,53 @@ void main() {
     );
   });
 
+  for (final bool hasSentenceMapping in <bool>[true, false]) {
+    test(
+      'synchronized video uploads once, sentence mapping=$hasSentenceMapping',
+      () async {
+        final service = _RecordingAnkiConnectService();
+        final repo = _ConfiguredAnkiConnectRepository(
+          service: service,
+          settings: settings.copyWith(
+            availableNoteTypes: const <AnkiNoteType>[
+              AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression', 'Picture', 'SentenceAudio']),
+            ],
+            fieldMappings: <String, String>{
+              ...settings.fieldMappings,
+              if (hasSentenceMapping) 'SentenceAudio': '{sentence-audio}',
+            },
+          ),
+        );
+        final outcome = await repo.mineEntry(
+          rawPayloadJson: payload,
+          context: AnkiMiningContext(
+            sentence: 'これは言葉です。',
+            coverPath: mp4.path,
+            sentenceAudioPath: mp4.path,
+            synchronizedVideo: true,
+            source: AnkiMiningSource.video,
+          ),
+        );
+        expect(outcome.result, MineResult.success);
+        expect(service.existingMedia, hasLength(1));
+        final fields = service.addedFields.single;
+        expect('[sound:'.allMatches(fields.values.join()).length, 1);
+        if (hasSentenceMapping) {
+          expect(fields['Picture'], synchronizedVideoReplayHtml);
+          expect(fields['SentenceAudio'], contains('[sound:fushi_cover_'));
+          // Lapis' three picture placements must not enqueue the video thrice.
+          final back = LapisNoteType.back
+              .replaceAll('{{Picture}}', fields['Picture']!)
+              .replaceAll('{{SentenceAudio}}', fields['SentenceAudio']!);
+          expect('[sound:'.allMatches(back).length, 1);
+        } else {
+          expect(fields['Picture'], startsWith('[sound:'));
+          expect(fields['SentenceAudio'], isNull);
+        }
+      },
+    );
+  }
+
   test('AnkiDroid：mp4 封面落卡为 [sound:fushi_cover_<sha>.mp4]', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
@@ -154,6 +201,30 @@ void main() {
       matches(RegExp(r'^\[sound:fushi_cover_[0-9a-f]{64}\.mp4\]$')),
     );
     expect(mimeTypes, contains('video/mp4'));
+
+    final int uploadsBefore = mimeTypes.length;
+    final synchronized = await _ConfiguredAnkiRepository(settings.copyWith(
+      availableNoteTypes: const <AnkiNoteType>[
+        AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression', 'Picture', 'SentenceAudio']),
+      ],
+      fieldMappings: <String, String>{
+        ...settings.fieldMappings,
+        'SentenceAudio': '{sentence-audio}',
+      },
+    )).mineEntry(
+      rawPayloadJson: payload,
+      context: AnkiMiningContext(
+        sentence: 'これは言葉です。', coverPath: mp4.path,
+        sentenceAudioPath: mp4.path, synchronizedVideo: true,
+        source: AnkiMiningSource.video,
+      ),
+    );
+    expect(synchronized.result, MineResult.success);
+    expect(mimeTypes.length - uploadsBefore, 1);
+    final List<String> fields = addedFieldArrays.last;
+    expect(fields[1], synchronizedVideoReplayHtml);
+    expect(fields[2], contains('[sound:fushi_cover_'));
+    expect('[sound:'.allMatches(fields.join()).length, 1);
   });
 }
 

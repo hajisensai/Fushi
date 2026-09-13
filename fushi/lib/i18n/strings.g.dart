@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 81192 (4776 per locale)
+/// Strings: 81226 (4778 per locale)
 ///
-/// Built on 2026-09-12 at 15:46 UTC
+/// Built on 2026-09-12 at 17:26 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6657,6 +6657,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Multilingual — wide coverage, less accurate per language';
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -17918,6 +17921,11 @@ class _StringsAr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -29405,6 +29413,11 @@ class _StringsDe extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -40946,6 +40959,11 @@ class _StringsEs extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -52520,6 +52538,11 @@ class _StringsFr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -63898,6 +63921,11 @@ class _StringsId extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -75367,6 +75395,11 @@ class _StringsIt extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -86218,6 +86251,11 @@ class _StringsJa extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -97079,6 +97117,11 @@ class _StringsKo extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -108506,6 +108549,11 @@ class _StringsNl extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -119986,6 +120034,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -131443,6 +131496,11 @@ class _StringsRu extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -142701,6 +142759,11 @@ class _StringsTh extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -154074,6 +154137,11 @@ class _StringsTr extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -165417,6 +165485,11 @@ class _StringsVi extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 // Path: <root>
@@ -175825,6 +175898,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       '总耗时 ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => '带声音的视频片段';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      '将画面与例句声音导出为同一个 MP4，由 Anki 媒体播放器同步播放；自动播放遵循卡片设置。不同客户端可能在独立播放器中打开。';
 }
 
 // Path: <root>
@@ -186360,6 +186438,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String audiobook_transcribe_elapsed_total({required Object elapsed}) =>
       'Total time ${elapsed}';
+  @override
+  String get video_mining_image_mode_video_clip => 'Video clip with sound';
+  @override
+  String get video_mining_image_mode_video_clip_hint =>
+      'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
 }
 
 /// Flat map(s) containing all translations.
@@ -196211,6 +196294,10 @@ extension on _StringsEn {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -206057,6 +206144,10 @@ extension on _StringsAr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -215948,6 +216039,10 @@ extension on _StringsDe {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -225830,6 +225925,10 @@ extension on _StringsEs {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -235721,6 +235820,10 @@ extension on _StringsFr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -245583,6 +245686,10 @@ extension on _StringsId {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -255467,6 +255574,10 @@ extension on _StringsIt {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -265278,6 +265389,10 @@ extension on _StringsJa {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -275093,6 +275208,10 @@ extension on _StringsKo {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -284970,6 +285089,10 @@ extension on _StringsNl {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -294842,6 +294965,10 @@ extension on _StringsPtBr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -304721,6 +304848,10 @@ extension on _StringsRu {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -314572,6 +314703,10 @@ extension on _StringsTh {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -324438,6 +324573,10 @@ extension on _StringsTr {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -334298,6 +334437,10 @@ extension on _StringsVi {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }
@@ -344069,6 +344212,10 @@ extension on _StringsZhCn {
         return '通用模型 · 语言覆盖广，单语言精度不如专用模型';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => '总耗时 ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return '带声音的视频片段';
+      case 'video_mining_image_mode_video_clip_hint':
+        return '将画面与例句声音导出为同一个 MP4，由 Anki 媒体播放器同步播放；自动播放遵循卡片设置。不同客户端可能在独立播放器中打开。';
       default:
         return null;
     }
@@ -353858,6 +354005,10 @@ extension on _StringsZhHk {
         return 'Multilingual — wide coverage, less accurate per language';
       case 'audiobook_transcribe_elapsed_total':
         return ({required Object elapsed}) => 'Total time ${elapsed}';
+      case 'video_mining_image_mode_video_clip':
+        return 'Video clip with sound';
+      case 'video_mining_image_mode_video_clip_hint':
+        return 'Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.';
       default:
         return null;
     }

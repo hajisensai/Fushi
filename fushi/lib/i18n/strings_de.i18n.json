@@ -4774,5 +4774,7 @@
   "mining_audio_pad_readout": "${ms} ms",
   "audiobook_transcribe_model_scope_dedicated": "Dedicated — most accurate for this language",
   "audiobook_transcribe_model_scope_multilingual": "Multilingual — wide coverage, less accurate per language",
-  "audiobook_transcribe_elapsed_total": "Total time $elapsed"
+  "audiobook_transcribe_elapsed_total": "Total time $elapsed",
+  "video_mining_image_mode_video_clip": "Video clip with sound",
+  "video_mining_image_mode_video_clip_hint": "Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client."
 }

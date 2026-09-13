@@ -1,6 +1,8 @@
 # fushi（Flutter 主应用）
 
 Fushi 的 Flutter 多平台主应用：EPUB 阅读器 + 划词查词 + 有声书同步 + 视频/漫画/galgame 沉浸学习 + Anki 制卡 + 阅读统计。
+
+视频制卡可选择带声音的 MP4，以同一文件同步播放例句与画面。配置、模板更新和三端验证边界见 [Anki 例句音画同步](../docs/specs/2026-09-13-anki-synchronized-video.md)。
 Android / iOS / macOS / Windows / Linux 五端出包。项目介绍、下载、构建命令、致谢见仓库根 [README.md](../README.md)；
 进入本目录改代码前先读 [CLAUDE.md](CLAUDE.md)（模块规则）与根 [CLAUDE.md](../CLAUDE.md)（全仓规则）。
 
