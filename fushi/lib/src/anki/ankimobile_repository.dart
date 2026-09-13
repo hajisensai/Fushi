@@ -6,6 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -158,15 +159,29 @@ class AnkiMobileInfoReturnCoordinator {
   }
 }
 
-/// 从 `ankiRepositoryProvider` 给出的仓库里找出真正的 [AnkiMobileRepository]
-/// （BUG-2493）：开了「制卡到已配对设备」时它被 [RemoteMiningAnkiRepository]
-/// 包着，直接 `is` 判型会把整条回传链静默丢掉。不是 AnkiMobile 后端时返回 null
-/// （iOS 改用 AnkiConnect 时就是这样，回传无事可做）。
+/// 从 `ankiRepositoryProvider` 给出的仓库里剥开所有包装层，找出真正的
+/// [AnkiMobileRepository]（BUG-2493）。不是 AnkiMobile 后端时返回 null（iOS 改用
+/// AnkiConnect 时就是这样，回传无事可做）。
+///
+/// provider 现在**恒**把本地仓库包在 [AutoRepositionAnkiRepository] 里（制卡后自动
+/// 重排，d55752a5e1 起），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
+/// 此前 `main.dart` 直接 `is! AnkiMobileRepository` 判型——自动重排那层一进来，
+/// iOS 上**每个人**的 `fushi://ankiFetch` 回调都被静默丢弃（模拟器实测第一步就撞上）。
+/// 新增包装层必须在这里登记，守卫见 ankimobile_info_return_coordinator_test.dart。
 AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
-  final BaseAnkiRepository unwrapped = repo is RemoteMiningAnkiRepository
-      ? repo.local
-      : repo;
-  return unwrapped is AnkiMobileRepository ? unwrapped : null;
+  BaseAnkiRepository current = repo;
+  while (true) {
+    if (current is AnkiMobileRepository) return current;
+    if (current is AutoRepositionAnkiRepository) {
+      current = current.inner;
+      continue;
+    }
+    if (current is RemoteMiningAnkiRepository) {
+      current = current.local;
+      continue;
+    }
+    return null;
+  }
 }
 
 String _encodeAnkiMobileQueryComponent(String value) =>
