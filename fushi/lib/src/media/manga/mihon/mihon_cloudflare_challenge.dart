@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_gate.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [MihonCloudflareGate.resolver]。
 /// 在 app 根 navigator 就绪后调用一次；桌面 Mihon 运行时的 `solveCloudflare`
@@ -51,13 +52,16 @@ Future<bool> _solveChallenge(
   if (navigator == null) return false;
   final bool? solved = await navigator.push<bool>(
     MaterialPageRoute<bool>(
-      builder: (BuildContext context) =>
-          pageBuilder?.call(challengeUrl, userAgent, jar) ??
-          AidokuCloudflareChallengePage(
-            challengeUrl: challengeUrl,
-            userAgent: userAgent,
-            jar: jar,
-          ),
+      // 路由层中和界面整体缩放，WebView 才按真实视口栅格化（BUG-2522）。
+      builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
+        child:
+            pageBuilder?.call(challengeUrl, userAgent, jar) ??
+            AidokuCloudflareChallengePage(
+              challengeUrl: challengeUrl,
+              userAgent: userAgent,
+              jar: jar,
+            ),
+      ),
       fullscreenDialog: true,
     ),
   );

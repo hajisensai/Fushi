@@ -9,7 +9,7 @@ import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:path/path.dart' as p;
 
-/// 与真实清单同名同形（detector + encoder/decoder/vocab），尺寸缩成几字节，
+/// 与真实清单同名同形（detector + encoder/decoder/vocab + PP-OCRv6 det/rec/yml），尺寸缩成几字节，
 /// 让 modelStatus/_resolveModelPaths 的路径逻辑全程走真实分支。
 const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
   MangaOcrModelFile(
@@ -34,6 +34,24 @@ const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
     fileName: 'vocab.txt',
     url: 'http://unused.invalid/vocab.txt',
     expectedBytes: 7,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: kPpOcrDetFileName,
+    url: 'http://unused.invalid/$kPpOcrDetFileName',
+    expectedBytes: 8,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: kPpOcrRecFileName,
+    url: 'http://unused.invalid/$kPpOcrRecFileName',
+    expectedBytes: 9,
+    role: MangaOcrModelRole.recognizer,
+  ),
+  MangaOcrModelFile(
+    fileName: kPpOcrRecDictFileName,
+    url: 'http://unused.invalid/$kPpOcrRecDictFileName',
+    expectedBytes: 10,
     role: MangaOcrModelRole.recognizer,
   ),
 ];
@@ -118,7 +136,7 @@ void main() {
       expect(status.recognizerReady, isFalse);
       expect(status.allReady, isFalse);
       expect(status.diskBytes, 0);
-      expect(status.totalBytes, 4 + 5 + 6 + 7);
+      expect(status.totalBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10);
     });
 
     test('只有检测器就绪：detectorReady 单独为真', () async {
@@ -197,11 +215,11 @@ void main() {
 
       final MangaOcrModelStatus status = await impl.modelStatus();
       expect(status.allReady, isTrue);
-      expect(status.totalBytes, 4 + 5 + 6 + 7);
-      expect(status.diskBytes, 4 + 5 + 6 + 7 + 1000 + 500);
+      expect(status.totalBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10);
+      expect(status.diskBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10 + 1000 + 500);
       expect(status.hasAnyFiles, isTrue);
 
-      expect(await impl.deleteModels(), 4 + 5 + 6 + 7 + 1000 + 500);
+      expect(await impl.deleteModels(), 4 + 5 + 6 + 7 + 8 + 9 + 10 + 1000 + 500);
       expect(modelsDir.existsSync(), isFalse);
     });
 
@@ -321,6 +339,9 @@ void main() {
       expect(p.basename(paths.encoderPath), 'encoder_model.onnx');
       expect(p.basename(paths.decoderPath), 'decoder_model.onnx');
       expect(p.basename(paths.vocabPath), 'vocab.txt');
+      expect(p.basename(paths.ppDetPath), kPpOcrDetFileName);
+      expect(p.basename(paths.ppRecPath), kPpOcrRecFileName);
+      expect(p.basename(paths.ppRecDictPath), kPpOcrRecDictFileName);
 
       runner.lastOnProgress!(1, 2);
       runner.lastOnProgress!(2, 2);

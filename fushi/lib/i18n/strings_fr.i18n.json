@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "Mis en attente pour la création de cartes ($count en attente)",
   "web_video_mine_switch_builtin": "Passer en mode intégré pour créer $count cartes en attente",
   "web_video_no_tracks": "Aucun sous-titre capturé pour l’instant",
-  "web_video_platform_unsupported": "Le lecteur web intégré n’est disponible que sous Windows pour le moment.",
   "web_video_track_live": "Sous-titres en direct (capturés sur la page)",
   "web_video_track_menu": "Piste de sous-titres",
   "wheel_page_turn_interval": "Intervalle de changement de page à la molette",
@@ -4811,5 +4810,8 @@
   "manga_series_try_sibling_language": "Try ${language}",
   "manga_series_remove_from_bookshelf": "Remove from manga shelf",
   "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
-  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet."
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
+  "reader_volume_open": "Open this volume",
+  "reader_volume_peek_failed": "Could not read this volume",
+  "web_video_player_unavailable": "The built-in web page player is temporarily disabled; this address cannot be played inside the app for now."
 }

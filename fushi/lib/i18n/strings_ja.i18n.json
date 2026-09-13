@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "カード作成のキューに追加しました（残り $count 件）",
   "web_video_mine_switch_builtin": "内蔵モードに切り替えて $count 件のカードを作成",
   "web_video_no_tracks": "字幕はまだ取得されていません",
-  "web_video_platform_unsupported": "内蔵 Web プレーヤーは現在 Windows でのみ利用できます。",
   "web_video_track_live": "ライブ字幕（ページから取得）",
   "web_video_track_menu": "字幕トラック",
   "wheel_page_turn_interval": "マウスホイールのページめくり間隔",
@@ -4811,5 +4810,8 @@
   "manga_series_try_sibling_language": "Try ${language}",
   "manga_series_remove_from_bookshelf": "Remove from manga shelf",
   "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
-  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet."
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
+  "reader_volume_open": "Open this volume",
+  "reader_volume_peek_failed": "Could not read this volume",
+  "web_video_player_unavailable": "内蔵ウェブページプレーヤーは一時的に無効化されています。このアドレスは今のところアプリ内で再生できません。"
 }

@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "카드 만들기 대기열에 추가됨($count개 대기)",
   "web_video_mine_switch_builtin": "내장 모드로 전환하여 대기 중인 카드 $count개 만들기",
   "web_video_no_tracks": "아직 수집된 자막이 없습니다",
-  "web_video_platform_unsupported": "내장 웹 플레이어는 현재 Windows에서만 사용할 수 있습니다.",
   "web_video_track_live": "실시간 자막(페이지에서 수집)",
   "web_video_track_menu": "자막 트랙",
   "wheel_page_turn_interval": "마우스 휠 페이지 넘김 간격",
@@ -4811,5 +4810,8 @@
   "manga_series_try_sibling_language": "Try ${language}",
   "manga_series_remove_from_bookshelf": "Remove from manga shelf",
   "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
-  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet."
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
+  "reader_volume_open": "Open this volume",
+  "reader_volume_peek_failed": "Could not read this volume",
+  "web_video_player_unavailable": "The built-in web page player is temporarily disabled; this address cannot be played inside the app for now."
 }

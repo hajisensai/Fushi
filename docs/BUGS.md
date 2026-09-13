@@ -29,12 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2326 条。点号进各自文件。
+> 共 2332 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2523](bugs/BUG-2523-nyaa-comments-link-title.md) | ✅ | ✅ | 搜索资源丢集：nyaa 带评论的条目标题被抓成「1 comment」 |
+| [BUG-2522](bugs/BUG-2522-manga-login-webview-blur-ui-scale.md) | ✅ | ✅ | manga-login-webview-blur-ui-scale |
+| [BUG-2521](bugs/BUG-2521-reader-collection-volume-switch.md) | ✅ | ✅ | 阅读器章节列表 / 插图画廊缺少同合集卷切换 |
 | [BUG-2520](bugs/BUG-2520-video-episode-panel-season-switcher.md) | ✅ | ✅ | 播放器「选集」面板对多季合集没有季切换 |
+| [BUG-2519](bugs/BUG-2519-manga-ocr-chapter-rerun-replays-cache.md) | ✅ | ✅ | 作品页「识别本章」对已识别的章只回放旧结果，不重新识别 |
+| [BUG-2518](bugs/BUG-2518-manga-ocr-detector-labels-int64-server.md) | ✅ | ✅ | 无头服务端漫画 OCR 第一页空指针：检测器 labels 只认 float |
+| [BUG-2517](bugs/BUG-2517-manga-ocr-duplicate-text-block-nms.md) | ✅ | ✅ | 漫画 OCR 同一块文字在 manga.json 里写两次（NMS 文字两类互不抑制） |
+| [BUG-2516](bugs/BUG-2516-manga-ocr-horizontal-block-hallucination.md) | ✅ | ✅ | 本地漫画 OCR 横排段落整段幻觉（扉页简介 / 人物介绍 / 作者栏） |
 | [BUG-2514](bugs/BUG-2514-mihon-comico-magazine-comic-not-found.md) | ✅ | ✅ | コミコ源章节阶段报 Not Found |
 | [BUG-2513](bugs/BUG-2513-manga-series-remove-from-bookshelf.md) | ✅ | ✅ | 漫画作品页加入书架后无法取消 |
 | [BUG-2512](bugs/BUG-2512-manga-source-dropdown-same-name-languages.md) | ✅ | ✅ | 漫画发现页来源下拉与热门行同名多语言源分不清 |

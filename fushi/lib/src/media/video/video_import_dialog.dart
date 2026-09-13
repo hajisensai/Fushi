@@ -697,13 +697,16 @@ class _VideoImportDialogState extends State<VideoImportDialog>
               style: Theme.of(context).textTheme.bodySmall,
             ),
             // 网页视频站软提示（kKnownWebPageVideoHosts 的文档承诺、此前从未接线）：
-            // Windows 走内置网页播放器；其它平台说明暂不支持但**不硬拒**导入。
-            if (isKnownWebPageVideoUrl(_streamUrlController.text)) ...<Widget>[
+            // 进得了内置网页播放器就说明会用它打开；否则（总开关关着 / 非 Windows）
+            // 说明暂不可用但**不硬拒**导入。YouTube 不在此列：mpv 路径本来就经
+            // youtube_explode 解析直播，提示「无法在应用内播放」是假话。
+            if (isKnownWebPageVideoUrl(_streamUrlController.text) &&
+                !isYoutubeUrl(_streamUrlController.text)) ...<Widget>[
               const SizedBox(height: 4),
               Text(
                 shouldOpenInWebVideoPlayer(_streamUrlController.text)
                     ? t.web_video_import_hint
-                    : t.web_video_platform_unsupported,
+                    : t.web_video_player_unavailable,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.primary,
                     ),

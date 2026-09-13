@@ -1,0 +1,6 @@
+## BUG-2522 · manga-login-webview-blur-ui-scale
+- **报告**：2026-09-13（用户：「在线漫画源的内置登录 WebView 好糊」）
+- **真实性**：✅ 真 bug。根因不在 WebView / DPI：`FushiAppUiScale`（`fushi/lib/src/utils/app_ui_scale.dart`）用 FittedBox 把整棵 navigator 子树按界面缩放 s 放大，所有承载 WebView 的页面（阅读器 / 漫画 / PDF / 词典 / 视频 / 网页播放器）都在**路由层**包 `FushiAppUiScaleNeutralizer` 让 WebView 按真实视口布局；三条推 WebView 的漫画路由漏了：`openMihonWebLogin`（`fushi/lib/src/media/manga/mihon/mihon_web_login_page.dart:55`）、Aidoku 的 `_solveChallenge`（`fushi/lib/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart:72`）、Mihon 的 `_solveChallenge`（`fushi/lib/src/media/manga/mihon/mihon_cloudflare_challenge.dart:52`）。WebView 纹理按 view/s 的画布栅格化、再被 FittedBox 拉伸 s 倍 → 整页发糊。旁证：用户机 `%LOCALAPPDATA%\Fushi\wgc_capture.log` 的 set-size 逻辑宽 `1208.533`（= 1280 / 1.0591，非整数正是 view/s 的痕迹）。
+- **[x] ① 已修复** — 三处路由的 `builder` 包 `FushiAppUiScaleNeutralizer`（与 `manga_series_page.dart` 同范式）；`openMihonWebLogin` 加 `@visibleForTesting pageBuilder` 测试缝。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_webview_routes_ui_scale_test.dart`：在 `MaterialApp.builder` 里按 `main.dart` 同形状包 `FushiAppUiScale(scale: 1.5)`，把探针当页面经三条真实入口推入，断言探针布局尺寸 = 真实视口 800×600（对照用例证明不中和时只拿到 533×400）。
+- **备注**：同一 commit 顺手把「内置网页播放器」（app 内 WebView2 打开 Netflix 等站点并登录）按用户 2026-09-13 拍板暂时砍掉：`kWebVideoPlayerEnabled = false`（`web_video_bridge.dart`），页面代码保留。

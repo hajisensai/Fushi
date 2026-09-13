@@ -16,6 +16,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show kWebVideoPlayerEnabled;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart';
@@ -38,6 +40,10 @@ void main() {
   testWidgets(
     'YouTube URL import lands a stream book and opens in the web player',
     (WidgetTester tester) async {
+      if (!kWebVideoPlayerEnabled) {
+        markTestSkipped('内置网页播放器总开关关着（kWebVideoPlayerEnabled=false）');
+        return;
+      }
       final List<String> errors = <String>[];
       final FlutterExceptionHandler? oldHandler = FlutterError.onError;
       FlutterError.onError = (FlutterErrorDetails details) {

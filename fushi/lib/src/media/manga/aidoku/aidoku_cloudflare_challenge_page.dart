@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
 /// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
@@ -70,13 +71,16 @@ Future<bool> _solveChallenge(
   }
   final bool? solved = await navigator.push<bool>(
     MaterialPageRoute<bool>(
-      builder: (BuildContext context) =>
-          pageBuilder?.call(challengeUrl, userAgent) ??
-          AidokuCloudflareChallengePage(
-            challengeUrl: challengeUrl,
-            userAgent: userAgent,
-            jar: AidokuCookieJar.shared,
-          ),
+      // 路由层中和界面整体缩放，WebView 才按真实视口栅格化（BUG-2522）。
+      builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
+        child:
+            pageBuilder?.call(challengeUrl, userAgent) ??
+            AidokuCloudflareChallengePage(
+              challengeUrl: challengeUrl,
+              userAgent: userAgent,
+              jar: AidokuCookieJar.shared,
+            ),
+      ),
       fullscreenDialog: true,
     ),
   );
