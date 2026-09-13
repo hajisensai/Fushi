@@ -40,7 +40,7 @@ class ComicoMagazineComicQuirk {
 
   /// 挂在 [OnlineMangaChapter.raw] / [MihonChapter] JSON 上的标记：这一章由本
   /// quirk 产出，取页也走本 quirk。
-  static const String rawMarkerKey = 'hibikiQuirk';
+  static const String rawMarkerKey = 'fushiQuirk';
   static const String rawMarkerValue = 'comico_magazine_comic';
 
   // 与 keiyoushi Comico.kt 的 companion object 逐字一致。

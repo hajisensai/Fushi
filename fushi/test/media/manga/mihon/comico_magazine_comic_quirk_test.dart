@@ -92,7 +92,7 @@ void main() {
     );
     expect(
       ComicoMagazineComicQuirk.ownsChapter(<String, Object?>{
-        'hibikiQuirk': 'comico_magazine_comic',
+        'fushiQuirk': 'comico_magazine_comic',
       }),
       isTrue,
     );
