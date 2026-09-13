@@ -1,0 +1,2 @@
+# BUG-2493 iOS 模拟器实测产物（替身 app 编译输出 / xcodegen 生成工程 / XCUITest 派生数据）
+build/
