@@ -99,6 +99,15 @@ void main() {
       isFalse,
       reason: 'TestFlight 门不得放行 push 事件',
     );
+    // testflight_only 的 run 唯一目的就是上传：门关着（缺密钥等）必须红，不能绿着跳过，
+    // 否则定时通道看 App Store Connect 的号没涨会每 8 小时白派一次。
+    expect(
+      RegExp(
+        r'if \[ "\$\{INPUT_TESTFLIGHT_ONLY:-\}" = true \] && \[ "\$TESTFLIGHT" != true \]; then\n\s+echo "::error[^\n]*\n\s+exit 1',
+      ).hasMatch(content),
+      isTrue,
+      reason: 'testflight_only 且上传门关闭时必须 ::error + exit 1',
+    );
   });
 
   test('testflight_only 只做签名 iOS + 传 TestFlight，其余全跳', () {
@@ -181,6 +190,37 @@ void main() {
       yml,
       contains('ref: develop'),
       reason: '定时 workflow 只从 main 触发，检查对象必须显式指向 develop',
+    );
+
+    // 检查 job 校验的密钥必须与 release-desktop ios job 的 CREDS 门同一组六个，
+    // 少一个就是「dispatch 出去绿着跳过、号不涨、8 小时后再派」。
+    for (final String secret in const [
+      'APPSTORE_API_KEY_ID',
+      'APPSTORE_API_ISSUER_ID',
+      'APPSTORE_API_PRIVATE_KEY',
+      'IOS_DIST_CERT_P12_BASE64',
+      'IOS_PROVISIONING_PROFILE_BASE64',
+      'APPLE_TEAM_ID',
+    ]) {
+      expect(
+        yml,
+        contains('$secret: \${{ secrets.$secret }}'),
+        reason: '检查 job 必须把 $secret 喂进 env 并校验',
+      );
+    }
+    // 一个 sha 只试一次：dispatch 前必须按 head sha 查既有 dispatch run，
+    // 否则 altool 持续拒收会变成一天三次的固定重试。
+    expect(
+      yml,
+      contains(
+        'gh run list --workflow release-desktop.yml --event workflow_dispatch',
+      ),
+      reason: 'dispatch 前必须查同 sha 的既有 run',
+    );
+    expect(
+      yml,
+      contains(r'--commit "$HEAD_SHA"'),
+      reason: '既有 run 的查询必须按 head sha 过滤',
     );
 
     // dispatch 到 release-desktop，且只传 TestFlight。

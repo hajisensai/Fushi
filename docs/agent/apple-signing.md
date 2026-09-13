@@ -155,8 +155,16 @@ TestFlight 里的短版本与 beta 相同（Apple 只收三段），靠构建号
 
 构建号是 commit 计数 + 地板、沿 develop 单调，debug / beta / formal 共用一条序列。所以
 从**比 develop 头更旧的 commit** 手动发 beta 时，构建号会比已传的 debug 小、altool 拒收
-——beta 一律从 develop 头发。定时 workflow 只从默认分支 `main` 触发，合进 main 之前只能
-手动 dispatch（输入 `force` 可跳过判新，但 altool 仍会拒绝不更高的构建号）。
+——beta 一律从 develop 头发。
+
+一个 sha 只试一次：dispatch 前查同 sha 的 `workflow_dispatch` run，有排队 / 进行中 /
+失败的就跳过，新提交自然重试；`testflight_only` 的 run 缺任一 Apple 密钥直接红（普通
+push / beta 的「缺密钥不红」规则不适用，否则定时通道会每 8 小时白派一次）。手动 dispatch
+输入 `force` 可跳过判新，altool 仍会拒绝不更高的构建号。
+
+**定时 workflow 只从默认分支 `main` 触发**，而默认分支上不存在的 workflow 连
+`gh workflow run` 都是 404：`testflight-debug.yml` 合进 develop 后既不会自动跑也无法手动
+验，要等下次正式发布同步到 main，或单独把这一个文件先落到 main。
 
 上传后 App Store Connect 处理通常 5–30 分钟，之后才出现在测试员列表里。
 

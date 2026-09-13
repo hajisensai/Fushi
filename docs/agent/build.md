@@ -151,8 +151,12 @@ gh release view v<version> --repo hajisensai/Fushi --json assets \
   `gh workflow run release-desktop.yml --ref develop -f channel=debug -f testflight_only=true`。
   `testflight_only` 只跑 ios job 的签名 + 上传，Windows / macOS / publish 全跳、未签名 IPA
   不打、rolling debug 与更新清单一概不碰。判新的状态拥有者是 Apple（不是 tag / cache），
-  所以 beta 刚从同一 commit 传过也会正确判成不用再传。定时 workflow 只从默认分支 `main`
-  触发（GitHub 规则），文件合进 main 之前不会自动跑；手动 dispatch 它可立即验一次。
+  所以 beta 刚从同一 commit 传过也会正确判成不用再传。一个 sha 只试一次：同 sha 已有排队 /
+  进行中 / 失败的 dispatch run 就不再派（altool 持续拒收不会变成一天三次的固定重试），
+  新提交自然重试；`testflight_only` 的 run 缺任一 Apple 密钥直接红，不允许「绿着跳过」。
+  **定时 workflow 只从默认分支 `main` 触发**，且默认分支上不存在的 workflow 连
+  `gh workflow run` 都是 404——所以 `testflight-debug.yml` 合进 develop 后既不会自动跑
+  也无法手动验，要等下次正式发布同步到 main，或单独把这一个文件先落到 main。
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
   App Store 签名包。TestFlight 用的是另一次、只在手动 beta/formal 时才发生的签名构建，

@@ -1945,6 +1945,13 @@ jobs:
              && [ "$CHANNEL_OK" = true ]; then
             echo "::warning title=TestFlight upload skipped::Apple signing secrets are incomplete. See docs/agent/apple-signing.md for the required secret names."
           fi
+          # testflight_only 的 run 唯一目的就是上传；密钥不全时「绿着跳过」会让定时通道
+          # 看到 App Store Connect 的号没涨、8 小时后再派一次，无限白烧 macOS runner。
+          # 「缺密钥不红」只给 push / beta / formal 保 fork，这条必须红。
+          if [ "${INPUT_TESTFLIGHT_ONLY:-}" = true ] && [ "$TESTFLIGHT" != true ]; then
+            echo "::error title=TestFlight-only run cannot upload::testflight_only=true but the upload gate is closed (creds=$CREDS channel=$RELEASE_CHANNEL build_only=${INPUT_BUILD_ONLY:-} upload_testflight=${INPUT_UPLOAD_TESTFLIGHT:-true})."
+            exit 1
+          fi
           echo "testflight=$TESTFLIGHT" >> "$GITHUB_OUTPUT"
           echo "TestFlight upload: $TESTFLIGHT (channel=$RELEASE_CHANNEL event=$GITHUB_EVENT_NAME creds=$CREDS)"
       - name: Import iOS distribution certificate
