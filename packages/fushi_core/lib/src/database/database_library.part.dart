@@ -710,6 +710,133 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     return last == null ? 0 : last.sortIndex + 1;
   }
 
+  /// 持久化合集专用书键映射。首次有效绑定是 canonical，不抢占其它存量书。
+  Future<void> setCollectionBookAlias(String localUid, String remoteKey) =>
+      transaction(() async {
+        if (localUid.isEmpty || remoteKey.isEmpty) return;
+        final EpubBookRow? book = await (select(epubBooks)
+              ..where((t) => t.uid.equals(localUid)))
+            .getSingleOrNull();
+        if (book == null) return;
+        await customUpdate(
+          'DELETE FROM collection_book_aliases WHERE NOT EXISTS '
+          '(SELECT 1 FROM epub_books WHERE epub_books.uid = collection_book_aliases.local_uid)',
+          updates: {collectionBookAliases},
+        );
+        await into(collectionBookAliases).insert(
+          CollectionBookAliasesCompanion.insert(localUid: localUid, remoteKey: remoteKey),
+          mode: InsertMode.insertOrIgnore,
+        );
+      });
+
+  /// 只返回父书仍存在的 remoteKey → 本地 UID 映射。
+  Future<Map<String, String>> getCollectionBookAliases() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT a.remote_key, a.local_uid FROM collection_book_aliases a '
+      'INNER JOIN epub_books b ON b.uid = a.local_uid',
+      readsFrom: {collectionBookAliases, epubBooks},
+    ).get();
+    return <String, String>{
+      for (final QueryRow row in rows)
+        row.read<String>('remote_key'): row.read<String>('local_uid'),
+    };
+  }
+
+  /// 收养 DTO 携带的主合集成员；远端刷新没有撤销删除或覆盖手动排序的权限。
+  /// 返回自然键对应的最小合集 ID；任一身份被墓碑阻止时返回 null。
+  /// 占位提升和去重在同一事务完成，不产生用户删除墓碑。
+  Future<int?> adoptRemoteCollectionMember({
+    required String name,
+    required String collectionType,
+    required MediaKind mediaType,
+    required String remoteEntryKey,
+    required int sortIndex,
+    String? localEntryKey,
+  }) => transaction(() async {
+    if (await hasCollectionDeletionTombstone(name, collectionType)) {
+      return null;
+    }
+    final Set<String> keys = <String>{remoteEntryKey};
+    if (localEntryKey != null) {
+      keys.add(localEntryKey);
+      keys.add(await _tombstoneEntryKeyOf(mediaType.dbValue, localEntryKey));
+      // Older EPUB removals used the actual local bookKey before a remote
+      // alias was known. Keep respecting that domain as well.
+      if (mediaType == MediaKind.epub) {
+        final EpubBookRow? book = await (select(
+          epubBooks,
+        )..where((t) => t.uid.equals(localEntryKey))).getSingleOrNull();
+        if (book != null) keys.add(book.bookKey);
+      }
+    }
+    final CollectionMemberTombstoneRow? removed =
+        await (select(collectionMemberTombstones)
+              ..where(
+                (t) =>
+                    t.collectionName.equals(name) &
+                    t.collectionType.equals(collectionType) &
+                    t.mediaType.equals(mediaType.dbValue) &
+                    t.entryKey.isIn(keys),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    if (removed != null) return null;
+
+    final MediaCollectionRow? existing = await getMediaCollectionByNaturalKey(
+      name,
+      collectionType,
+    );
+    final int collectionId =
+        existing?.id ??
+        await into(mediaCollections).insert(
+          MediaCollectionsCompanion.insert(
+            name: name,
+            collectionType: Value(collectionType),
+            sortOrder: Value(await _nextMediaCollectionSortOrder()),
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+    final String targetKey = localEntryKey ?? remoteEntryKey;
+    final List<MediaCollectionItemRow> members =
+        await (select(mediaCollectionItems)..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.mediaType.equals(mediaType.dbValue) &
+                  t.entryKey.isIn(<String>{remoteEntryKey, targetKey}),
+            ))
+            .get();
+    MediaCollectionItemRow? placeholder;
+    bool targetExists = false;
+    for (final MediaCollectionItemRow member in members) {
+      if (member.entryKey == remoteEntryKey) placeholder = member;
+      if (member.entryKey == targetKey) targetExists = true;
+    }
+    if (!targetExists) {
+      final int index =
+          placeholder?.sortIndex ??
+          ((existing?.orderUpdatedAt ?? 0) == 0
+              ? sortIndex
+              : await _nextCollectionSortIndex(collectionId));
+      await into(mediaCollectionItems).insert(
+        MediaCollectionItemsCompanion.insert(
+          collectionId: collectionId,
+          mediaType: mediaType.dbValue,
+          entryKey: targetKey,
+          sortIndex: Value(index),
+        ),
+        mode: InsertMode.insertOrIgnore,
+      );
+    }
+    if (targetKey != remoteEntryKey && placeholder != null) {
+      await deleteCollectionItemRaw(
+        collectionId,
+        mediaType.dbValue,
+        remoteEntryKey,
+      );
+    }
+    return collectionId;
+  });
+
   /// 加条目进合集（尾插；重复成员 INSERT OR IGNORE 幂等）。同事务清同键成员墓碑
   /// （schema v40：重新加入 = 撤销移出——否则跨端同步的成员墓碑会把刚加回的成员
   /// 再删掉，防复活变成禁重加）。
@@ -767,7 +894,18 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 是对端 bookKey）照抄即闭环。非 epub 域键原样。
   Future<String> _tombstoneEntryKeyOf(String mediaType, String entryKey) async {
     if (mediaType != MediaKind.epub.dbValue) return entryKey;
-    return await resolveEpubBookKeyByUid(entryKey) ?? entryKey;
+    final EpubBookRow? book = await (select(
+      epubBooks,
+    )..where((t) => t.uid.equals(entryKey))).getSingleOrNull();
+    if (book == null) return entryKey;
+    final CollectionBookAliasRow? alias = await (select(collectionBookAliases)
+          ..where((t) => t.localUid.equals(entryKey)))
+        .getSingleOrNull();
+    if (alias != null) return alias.remoteKey;
+    return collectionBookWireKey(
+      bookKey: book.bookKey,
+      sourceMetadata: book.sourceMetadata,
+    );
   }
 
   /// 移出成员；移空后自动删该合集（沿用旧 removeEntryFromSeries 语义，避免留 0 成员

@@ -3,6 +3,7 @@ library fushi_core;
 export 'src/database/activity_event_types.dart';
 export 'src/database/book_format.dart';
 export 'src/database/collection_order.dart';
+export 'src/database/collection_book_identity.dart';
 export 'src/database/database.dart';
 export 'src/database/epub_book_meta.dart';
 export 'src/database/media_image_kind.dart';

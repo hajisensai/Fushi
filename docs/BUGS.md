@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2332 条。点号进各自文件。
+> 共 2333 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2524](bugs/BUG-2524-remote-collection-adoption.md) | ✅ | ✅ | 远端媒体下载后合集归属丢失 |
 | [BUG-2523](bugs/BUG-2523-nyaa-comments-link-title.md) | ✅ | ✅ | 搜索资源丢集：nyaa 带评论的条目标题被抓成「1 comment」 |
 | [BUG-2522](bugs/BUG-2522-manga-login-webview-blur-ui-scale.md) | ✅ | ✅ | manga-login-webview-blur-ui-scale |
 | [BUG-2521](bugs/BUG-2521-reader-collection-volume-switch.md) | ✅ | ✅ | 阅读器章节列表 / 插图画廊缺少同合集卷切换 |

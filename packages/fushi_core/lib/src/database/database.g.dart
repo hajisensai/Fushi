@@ -16933,6 +16933,232 @@ class CollectionMemberTombstonesCompanion
   }
 }
 
+class $CollectionBookAliasesTable extends CollectionBookAliases
+    with TableInfo<$CollectionBookAliasesTable, CollectionBookAliasRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CollectionBookAliasesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _localUidMeta = const VerificationMeta(
+    'localUid',
+  );
+  @override
+  late final GeneratedColumn<String> localUid = GeneratedColumn<String>(
+    'local_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _remoteKeyMeta = const VerificationMeta(
+    'remoteKey',
+  );
+  @override
+  late final GeneratedColumn<String> remoteKey = GeneratedColumn<String>(
+    'remote_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [localUid, remoteKey];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'collection_book_aliases';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<CollectionBookAliasRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('local_uid')) {
+      context.handle(
+        _localUidMeta,
+        localUid.isAcceptableOrUnknown(data['local_uid']!, _localUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_localUidMeta);
+    }
+    if (data.containsKey('remote_key')) {
+      context.handle(
+        _remoteKeyMeta,
+        remoteKey.isAcceptableOrUnknown(data['remote_key']!, _remoteKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_remoteKeyMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {localUid};
+  @override
+  CollectionBookAliasRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CollectionBookAliasRow(
+      localUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_uid'],
+      )!,
+      remoteKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_key'],
+      )!,
+    );
+  }
+
+  @override
+  $CollectionBookAliasesTable createAlias(String alias) {
+    return $CollectionBookAliasesTable(attachedDatabase, alias);
+  }
+}
+
+class CollectionBookAliasRow extends DataClass
+    implements Insertable<CollectionBookAliasRow> {
+  final String localUid;
+  final String remoteKey;
+  const CollectionBookAliasRow({
+    required this.localUid,
+    required this.remoteKey,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['local_uid'] = Variable<String>(localUid);
+    map['remote_key'] = Variable<String>(remoteKey);
+    return map;
+  }
+
+  CollectionBookAliasesCompanion toCompanion(bool nullToAbsent) {
+    return CollectionBookAliasesCompanion(
+      localUid: Value(localUid),
+      remoteKey: Value(remoteKey),
+    );
+  }
+
+  factory CollectionBookAliasRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CollectionBookAliasRow(
+      localUid: serializer.fromJson<String>(json['localUid']),
+      remoteKey: serializer.fromJson<String>(json['remoteKey']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'localUid': serializer.toJson<String>(localUid),
+      'remoteKey': serializer.toJson<String>(remoteKey),
+    };
+  }
+
+  CollectionBookAliasRow copyWith({String? localUid, String? remoteKey}) =>
+      CollectionBookAliasRow(
+        localUid: localUid ?? this.localUid,
+        remoteKey: remoteKey ?? this.remoteKey,
+      );
+  CollectionBookAliasRow copyWithCompanion(
+    CollectionBookAliasesCompanion data,
+  ) {
+    return CollectionBookAliasRow(
+      localUid: data.localUid.present ? data.localUid.value : this.localUid,
+      remoteKey: data.remoteKey.present ? data.remoteKey.value : this.remoteKey,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionBookAliasRow(')
+          ..write('localUid: $localUid, ')
+          ..write('remoteKey: $remoteKey')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(localUid, remoteKey);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CollectionBookAliasRow &&
+          other.localUid == this.localUid &&
+          other.remoteKey == this.remoteKey);
+}
+
+class CollectionBookAliasesCompanion
+    extends UpdateCompanion<CollectionBookAliasRow> {
+  final Value<String> localUid;
+  final Value<String> remoteKey;
+  final Value<int> rowid;
+  const CollectionBookAliasesCompanion({
+    this.localUid = const Value.absent(),
+    this.remoteKey = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CollectionBookAliasesCompanion.insert({
+    required String localUid,
+    required String remoteKey,
+    this.rowid = const Value.absent(),
+  }) : localUid = Value(localUid),
+       remoteKey = Value(remoteKey);
+  static Insertable<CollectionBookAliasRow> custom({
+    Expression<String>? localUid,
+    Expression<String>? remoteKey,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (localUid != null) 'local_uid': localUid,
+      if (remoteKey != null) 'remote_key': remoteKey,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CollectionBookAliasesCompanion copyWith({
+    Value<String>? localUid,
+    Value<String>? remoteKey,
+    Value<int>? rowid,
+  }) {
+    return CollectionBookAliasesCompanion(
+      localUid: localUid ?? this.localUid,
+      remoteKey: remoteKey ?? this.remoteKey,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (localUid.present) {
+      map['local_uid'] = Variable<String>(localUid.value);
+    }
+    if (remoteKey.present) {
+      map['remote_key'] = Variable<String>(remoteKey.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionBookAliasesCompanion(')
+          ..write('localUid: $localUid, ')
+          ..write('remoteKey: $remoteKey, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $FushiPairedPeersTable extends FushiPairedPeers
     with TableInfo<$FushiPairedPeersTable, FushiPairedPeerRow> {
   @override
@@ -52289,6 +52515,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MediaCollectionItemsTable(this);
   late final $CollectionMemberTombstonesTable collectionMemberTombstones =
       $CollectionMemberTombstonesTable(this);
+  late final $CollectionBookAliasesTable collectionBookAliases =
+      $CollectionBookAliasesTable(this);
   late final $FushiPairedPeersTable fushiPairedPeers = $FushiPairedPeersTable(
     this,
   );
@@ -52425,6 +52653,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mediaCollections,
     mediaCollectionItems,
     collectionMemberTombstones,
+    collectionBookAliases,
     fushiPairedPeers,
     bookTombstones,
     lookupMiningCounters,
@@ -65049,6 +65278,168 @@ typedef $$CollectionMemberTombstonesTableProcessedTableManager =
         >,
       ),
       CollectionMemberTombstoneRow,
+      PrefetchHooks Function()
+    >;
+typedef $$CollectionBookAliasesTableCreateCompanionBuilder =
+    CollectionBookAliasesCompanion Function({
+      required String localUid,
+      required String remoteKey,
+      Value<int> rowid,
+    });
+typedef $$CollectionBookAliasesTableUpdateCompanionBuilder =
+    CollectionBookAliasesCompanion Function({
+      Value<String> localUid,
+      Value<String> remoteKey,
+      Value<int> rowid,
+    });
+
+class $$CollectionBookAliasesTableFilterComposer
+    extends Composer<_$FushiDatabase, $CollectionBookAliasesTable> {
+  $$CollectionBookAliasesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get localUid => $composableBuilder(
+    column: $table.localUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteKey => $composableBuilder(
+    column: $table.remoteKey,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CollectionBookAliasesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $CollectionBookAliasesTable> {
+  $$CollectionBookAliasesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get localUid => $composableBuilder(
+    column: $table.localUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteKey => $composableBuilder(
+    column: $table.remoteKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CollectionBookAliasesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $CollectionBookAliasesTable> {
+  $$CollectionBookAliasesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get localUid =>
+      $composableBuilder(column: $table.localUid, builder: (column) => column);
+
+  GeneratedColumn<String> get remoteKey =>
+      $composableBuilder(column: $table.remoteKey, builder: (column) => column);
+}
+
+class $$CollectionBookAliasesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $CollectionBookAliasesTable,
+          CollectionBookAliasRow,
+          $$CollectionBookAliasesTableFilterComposer,
+          $$CollectionBookAliasesTableOrderingComposer,
+          $$CollectionBookAliasesTableAnnotationComposer,
+          $$CollectionBookAliasesTableCreateCompanionBuilder,
+          $$CollectionBookAliasesTableUpdateCompanionBuilder,
+          (
+            CollectionBookAliasRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $CollectionBookAliasesTable,
+              CollectionBookAliasRow
+            >,
+          ),
+          CollectionBookAliasRow,
+          PrefetchHooks Function()
+        > {
+  $$CollectionBookAliasesTableTableManager(
+    _$FushiDatabase db,
+    $CollectionBookAliasesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CollectionBookAliasesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$CollectionBookAliasesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$CollectionBookAliasesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> localUid = const Value.absent(),
+                Value<String> remoteKey = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CollectionBookAliasesCompanion(
+                localUid: localUid,
+                remoteKey: remoteKey,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String localUid,
+                required String remoteKey,
+                Value<int> rowid = const Value.absent(),
+              }) => CollectionBookAliasesCompanion.insert(
+                localUid: localUid,
+                remoteKey: remoteKey,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CollectionBookAliasesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $CollectionBookAliasesTable,
+      CollectionBookAliasRow,
+      $$CollectionBookAliasesTableFilterComposer,
+      $$CollectionBookAliasesTableOrderingComposer,
+      $$CollectionBookAliasesTableAnnotationComposer,
+      $$CollectionBookAliasesTableCreateCompanionBuilder,
+      $$CollectionBookAliasesTableUpdateCompanionBuilder,
+      (
+        CollectionBookAliasRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $CollectionBookAliasesTable,
+          CollectionBookAliasRow
+        >,
+      ),
+      CollectionBookAliasRow,
       PrefetchHooks Function()
     >;
 typedef $$FushiPairedPeersTableCreateCompanionBuilder =
@@ -91235,6 +91626,8 @@ class $FushiDatabaseManager {
         _db,
         _db.collectionMemberTombstones,
       );
+  $$CollectionBookAliasesTableTableManager get collectionBookAliases =>
+      $$CollectionBookAliasesTableTableManager(_db, _db.collectionBookAliases);
   $$FushiPairedPeersTableTableManager get fushiPairedPeers =>
       $$FushiPairedPeersTableTableManager(_db, _db.fushiPairedPeers);
   $$BookTombstonesTableTableManager get bookTombstones =>
