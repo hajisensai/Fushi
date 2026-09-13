@@ -12,12 +12,18 @@ class VideoEpisodeEntry {
     required this.title,
     this.cover,
     this.episodeNumber,
+    this.groupKey,
     this.completed = false,
     this.started = false,
   });
 
   final String title;
   final ImageProvider? cover;
+
+  /// 季分组键（`collectionGroupKeyForFilename` 派生：`s<N>` / extras）。面板据此
+  /// 把多季合集切成季 chip；null 或全表同键 = 单季，面板零变化。与合集详情页
+  /// 的季 tab 同一真相源（文件名纯函数，不落库）。
+  final String? groupKey;
 
   /// 卡片角标显示的**真实集号**（从文件名解析，见 `parsedEpisodeNumberOf`）。
   /// null = 解析不出（PV / 特典 / 远端无路径），卡片回落列表顺位号。
@@ -43,10 +49,17 @@ class VideoEpisodeRail extends StatefulWidget {
     this.fontSize = 14,
     this.cardWidth = 184,
     this.padding = const EdgeInsets.symmetric(horizontal: 20),
+    this.indices,
   });
 
   final List<VideoEpisodeEntry> episodes;
+
+  /// 当前集的**全局**下标（与 [indices] 同口径）。
   final int currentIndex;
+
+  /// 每张卡对应的全局下标（面板按季切片时 [episodes] 只是一节，卡片 key /
+  /// 选中态 / 点击回调都必须报全局下标）。null = 恒等映射（未切片）。
+  final List<int>? indices;
   final ValueChanged<int> onTapEpisode;
   final ColorScheme colorScheme;
   final double fontSize;
@@ -82,17 +95,27 @@ class _VideoEpisodeRailState extends State<VideoEpisodeRail> {
     super.dispose();
   }
 
-  void _revealCurrent() {
-    if (!mounted ||
-        !_controller.hasClients ||
-        widget.currentIndex < 0 ||
-        widget.currentIndex >= widget.episodes.length) {
-      return;
+  int _globalIndexAt(int position) => widget.indices?[position] ?? position;
+
+  /// 当前集在本轨道里的位置；不在本轨道（当前集属于另一季）→ -1。
+  int get _currentPosition {
+    final List<int>? indices = widget.indices;
+    if (indices == null) {
+      return widget.currentIndex < widget.episodes.length
+          ? widget.currentIndex
+          : -1;
     }
+    return indices.indexOf(widget.currentIndex);
+  }
+
+  void _revealCurrent() {
+    if (!mounted || !_controller.hasClients) return;
+    final int current = _currentPosition;
+    if (current < 0) return;
     final ScrollPosition position = _controller.position;
     final double itemExtent = widget.cardWidth + _gap;
     final double target =
-        (widget.currentIndex * itemExtent - position.viewportDimension * 0.18)
+        (current * itemExtent - position.viewportDimension * 0.18)
             .clamp(0.0, position.maxScrollExtent);
     if ((position.pixels - target).abs() < 1) return;
     _controller.animateTo(
@@ -118,16 +141,20 @@ class _VideoEpisodeRailState extends State<VideoEpisodeRail> {
           padding: widget.padding,
           itemCount: widget.episodes.length,
           separatorBuilder: (_, __) => const SizedBox(width: _gap),
-          itemBuilder: (BuildContext context, int index) => _EpisodeRailCard(
-            key: ValueKey<String>('video-episode-card-$index'),
-            entry: widget.episodes[index],
-            index: index,
-            selected: index == widget.currentIndex,
-            width: widget.cardWidth,
-            fontSize: widget.fontSize,
-            colorScheme: widget.colorScheme,
-            onTap: () => widget.onTapEpisode(index),
-          ),
+          itemBuilder: (BuildContext context, int position) {
+            final int index = _globalIndexAt(position);
+            return _EpisodeRailCard(
+              key: ValueKey<String>('video-episode-card-$index'),
+              entry: widget.episodes[position],
+              // 顺位号回落取**轨道内**位置：切成季后 PV/特典组从 01 数起。
+              index: position,
+              selected: index == widget.currentIndex,
+              width: widget.cardWidth,
+              fontSize: widget.fontSize,
+              colorScheme: widget.colorScheme,
+              onTap: () => widget.onTapEpisode(index),
+            );
+          },
         ),
       ),
     );
