@@ -211,10 +211,22 @@ List<RawDetection> decodeRtdetrOutputs({
   return detections;
 }
 
+/// `labels` 输出按会话实现可能是 float32（flutter_onnxruntime 插件把一切读成
+/// float）也可能是 int64 / int32（服务端 FFI 会话按 ORT 报的元素类型原样返回）。
+/// 三型都吃；只认 float 曾让无头服务端在第一页就空指针。
+List<num> _labelValues(OcrTensor labels) {
+  final List<num>? values =
+      labels.floatData ?? labels.intData ?? labels.int32Data;
+  if (values == null) {
+    throw StateError('detector labels output has no readable data');
+  }
+  return values;
+}
+
 /// 解码已经在 ONNX 图内完成 sigmoid/top-k/xyxy 转换的 RT-DETR 输出。
 List<RawDetection> decodeProcessedRtdetrOutputs({
   required Float32List scores,
-  required Float32List labels,
+  required List<num> labels,
   required Float32List boxes,
   required LetterboxTransform transform,
   double scoreThreshold = 0.3,
@@ -371,7 +383,7 @@ class TextDetector implements OcrDetector {
     } else if (scores != null && labels != null && processedBoxes != null) {
       raw = decodeProcessedRtdetrOutputs(
         scores: scores.floatData!,
-        labels: labels.floatData!,
+        labels: _labelValues(labels),
         boxes: processedBoxes.floatData!,
         transform: transform,
         scoreThreshold: scoreThreshold,

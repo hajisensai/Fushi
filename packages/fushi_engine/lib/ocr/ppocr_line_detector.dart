@@ -15,8 +15,9 @@
 /// - 后处理：`thresh=0.2` 二值化 → 连通域 → 域内概率均值 `box_thresh=0.45` →
 ///   `unclip_ratio=1.4` 外扩。原版对每个轮廓取最小外接旋转矩形再用 Clipper
 ///   偏移多边形；本实现只产**轴对齐**框：连通域的外接矩形 + 按
-///   `d = area * ratio / perimeter` 四边外扩（对轴对齐矩形这是 Clipper 偏移的
-///   精确解）。横排段落的行天然轴对齐，丢掉旋转信息对本用途没有损失。
+///   `d = 像素数 * ratio / 外接矩形周长` 四边外扩（轴对齐矩形上与 Clipper 偏移
+///   精确相等；倾斜行按真实像素数算面积，外扩量与原版同量级）。横排段落的行
+///   天然轴对齐，丢掉旋转信息对本用途没有损失。
 library;
 
 import 'dart:math' as math;
@@ -166,8 +167,10 @@ List<PpTextLine> ppDetPostprocess(
     if (w < 2 || h < 2) {
       continue;
     }
-    // Clipper 偏移距离：area * ratio / perimeter，对矩形四边等距外扩即精确解。
-    final double d = w * h * unclipRatio / (2 * (w + h));
+    // Clipper 偏移距离 area * ratio / perimeter，对轴对齐矩形四边等距外扩即精确解。
+    // 面积用连通域真实像素数而不是 w*h：轴对齐时两者恒等，倾斜行的外接矩形面积
+    // 虚大（12° 倾斜实测 d 从 58 涨到 101），会把邻行吞进来让识别串行。
+    final double d = count * unclipRatio / (2 * (w + h));
     lines.add(
       PpTextLine(
         rect: OcrRect(

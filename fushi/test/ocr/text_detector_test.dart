@@ -320,6 +320,29 @@ void main() {
       expect(result.textRegions.single.rect.bottom, closeTo(120, 0.01));
     });
 
+    test('图内后处理导出的 labels 是 int64 时同样解码（服务端 FFI 会话）', () async {
+      final FakeSession session = FakeSession(<String, OcrTensor>{
+        'scores': OcrTensor.float32(
+          Float32List.fromList(<double>[0.9]),
+          const <int>[1, 1],
+        ),
+        'labels': OcrTensor.int64(
+          Int64List.fromList(<int>[2]),
+          const <int>[1, 1],
+        ),
+        'boxes': OcrTensor.float32(
+          Float32List.fromList(<double>[64, 64, 128, 128]),
+          const <int>[1, 1, 4],
+        ),
+      });
+      final TextDetector detector = TextDetector(session);
+      final PageDetections page =
+          await detector.detect(img.Image(width: 640, height: 640));
+      expect(page.textRegions, hasLength(1));
+      expect(page.textRegions.single.classId, kDetClassTextFree);
+      expect(page.textRegions.single.rect.left, closeTo(64, 1e-6));
+    });
+
     test('输出名缺失时报错而非静默', () async {
       final FakeSession session = FakeSession(<String, OcrTensor>{
         'wrong': OcrTensor.float32(Float32List(3), <int>[1, 1, 3]),
