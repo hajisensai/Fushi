@@ -4813,5 +4813,7 @@
   "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
   "reader_volume_open": "Open this volume",
   "reader_volume_peek_failed": "Could not read this volume",
-  "web_video_player_unavailable": "内蔵ウェブページプレーヤーは一時的に無効化されています。このアドレスは今のところアプリ内で再生できません。"
+  "web_video_player_unavailable": "内蔵ウェブページプレーヤーは一時的に無効化されています。このアドレスは今のところアプリ内で再生できません。",
+  "video_mining_image_mode_video_clip": "Video clip with sound",
+  "video_mining_image_mode_video_clip_hint": "Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client."
 }

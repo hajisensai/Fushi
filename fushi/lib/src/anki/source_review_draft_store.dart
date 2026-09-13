@@ -414,6 +414,9 @@ class SourceReviewDraftStore {
         'documentTitle': context.documentTitle,
         'coverPath': context.coverPath,
         'sentenceAudioPath': context.sentenceAudioPath,
+        // 同步视频卡（画面与例句声音是同一个 MP4）：丢了这个位，回看落卡会按普通卡
+        // 把同一视频当 Picture 与 SentenceAudio 各传一份、自动播放两次。
+        'synchronizedVideo': context.synchronizedVideo,
         'sentenceOffset': context.sentenceOffset,
         'source': context.source?.name,
         'bookTitleTag': context.bookTitleTag,
@@ -437,6 +440,7 @@ class SourceReviewDraftStore {
       documentTitle: json['documentTitle'] as String?,
       coverPath: json['coverPath'] as String?,
       sentenceAudioPath: json['sentenceAudioPath'] as String?,
+      synchronizedVideo: json['synchronizedVideo'] == true,
       sentenceOffset: json['sentenceOffset'] as int?,
       source: json['source'] == null
           ? null

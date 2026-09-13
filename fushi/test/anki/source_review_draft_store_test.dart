@@ -61,6 +61,7 @@ void main() {
         charPositionTag: 'chars_42',
         clipStartMs: 10,
         clipEndMs: 20,
+        synchronizedVideo: true,
         sourceLink: link,
       );
       await store.saveMining(
@@ -96,6 +97,8 @@ void main() {
       expect(restored.charPositionTag, context.charPositionTag);
       expect(restored.clipStartMs, context.clipStartMs);
       expect(restored.clipEndMs, context.clipEndMs);
+      expect(restored.synchronizedVideo, isTrue,
+          reason: '同步视频位丢了，回看落卡会把同一 MP4 当图与声各传一份');
       expect(restored.sourceLink!.toUri(), context.sourceLink!.toUri());
       expect(await File(restored.coverPath!).readAsBytes(), <int>[1, 2]);
       expect(await File(restored.sentenceAudioPath!).readAsBytes(), <int>[

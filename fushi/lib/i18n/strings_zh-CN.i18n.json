@@ -4813,5 +4813,7 @@
   "manga_chapter_locked_login_unsupported_hint": "本章需在源站购买或租借；这类作品暂不支持在应用内登录解锁。",
   "reader_volume_open": "打开本卷",
   "reader_volume_peek_failed": "读取本卷失败",
-  "web_video_player_unavailable": "内置网页播放器已暂时停用，此地址暂时无法在应用内播放。"
+  "web_video_player_unavailable": "内置网页播放器已暂时停用，此地址暂时无法在应用内播放。",
+  "video_mining_image_mode_video_clip": "带声音的视频片段",
+  "video_mining_image_mode_video_clip_hint": "将画面与例句声音导出为同一个 MP4，由 Anki 媒体播放器同步播放；自动播放遵循卡片设置。不同客户端可能在独立播放器中打开。"
 }

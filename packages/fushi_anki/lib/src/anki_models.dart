@@ -765,6 +765,7 @@ class AnkiMiningContext {
     this.documentTitle,
     this.coverPath,
     this.sentenceAudioPath,
+    this.synchronizedVideo = false,
     this.sentenceOffset,
     this.source,
     this.bookTitleTag,
@@ -779,6 +780,11 @@ class AnkiMiningContext {
   final String? documentTitle;
   final String? coverPath;
   final String? sentenceAudioPath;
+
+  /// Explicit opt-in for a cover video muxed with this sentence's audio.
+  /// The shared renderer references it once in the native playback queue.
+  /// Existing image and galgame callers keep their original media behavior.
+  final bool synchronizedVideo;
   final int? sentenceOffset;
 
   /// 制卡来源类别；决定追加哪个分类标签（见 [AnkiMiningSource]）。`null` 时不追加分类标签。
@@ -839,6 +845,7 @@ class AnkiMiningContext {
     documentTitle: documentTitle,
     coverPath: coverPath,
     sentenceAudioPath: sentenceAudioPath,
+    synchronizedVideo: synchronizedVideo,
     sentenceOffset: sentenceOffset,
     source: source,
     bookTitleTag: bookTitleTag,
@@ -868,6 +875,7 @@ class AnkiMiningContext {
     documentTitle: documentTitle,
     coverPath: coverRef,
     sentenceAudioPath: sentenceAudioRef,
+    synchronizedVideo: synchronizedVideo,
     sentenceOffset: sentenceOffset,
     source: source,
     bookTitleTag: bookTitleTag,
