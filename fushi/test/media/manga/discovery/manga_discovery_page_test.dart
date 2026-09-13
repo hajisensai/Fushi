@@ -142,12 +142,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text(t.manga_discovery_source_popular(source: '好源')),
+      find.text(t.manga_discovery_source_popular(source: '好源 (JA)')),
       findsOneWidget,
     );
     expect(find.text('源里的热门作品'), findsOneWidget);
     expect(
-      find.text(t.manga_discovery_source_popular(source: '坏源')),
+      find.text(t.manga_discovery_source_popular(source: '坏源 (JA)')),
       findsNothing,
       reason: '失败的来源行整行收起，不立错误牌坊',
     );
@@ -182,7 +182,7 @@ void main() {
     await tester.pump();
 
     final Finder header =
-        find.text(t.manga_discovery_source_popular(source: '慢源'));
+        find.text(t.manga_discovery_source_popular(source: '慢源 (JA)'));
     expect(header, findsOneWidget, reason: '加载中就要能看出在等哪个源');
     expect(
       find.descendant(
@@ -288,7 +288,7 @@ void main() {
 
     expect(find.text(t.manga_discovery_section_publishing), findsOneWidget);
     expect(
-      find.text(t.manga_discovery_source_popular(source: '某在线源')),
+      find.text(t.manga_discovery_source_popular(source: '某在线源 (JA)')),
       findsOneWidget,
     );
     expect(find.text(t.mihon_source_browse_mokuro), findsOneWidget);
@@ -308,7 +308,7 @@ void main() {
       reason: 'MAL 是跨来源元数据，按单个来源筛选时整体收起',
     );
     expect(
-      find.text(t.manga_discovery_source_popular(source: '某在线源')),
+      find.text(t.manga_discovery_source_popular(source: '某在线源 (JA)')),
       findsNothing,
       reason: '没选中的来源，它的热门行也要跟着收起',
     );

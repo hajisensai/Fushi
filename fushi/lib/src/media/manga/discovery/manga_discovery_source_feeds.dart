@@ -8,6 +8,7 @@ library;
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/discovery/manga_source_display_name.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -40,6 +41,10 @@ class MangaDiscoverySourceFeed {
   final String name;
   final String language;
   final Future<List<MangaDiscoverySourceItem>> Function() loadPopular;
+
+  /// 行标题用的展示名（带语言码；同名多语言源只有这样才分得开）。
+  String get displayName =>
+      mangaSourceDisplayName(name: name, language: language);
 }
 
 /// 把全部已启用 Mihon 在线来源适配成热门行。每行首次可见才真正 getPopular

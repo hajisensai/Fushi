@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/discovery/manga_source_display_name.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/utils.dart';
@@ -89,7 +90,10 @@ class MangaSourceCatalog {
         for (final MangaOnlineSourceRow source in mihonSources)
           DiscoverySourceOption(
             id: mihonSourceId(source),
-            label: source.name,
+            label: mangaSourceDisplayName(
+              name: source.name,
+              language: source.language,
+            ),
           ),
       ];
 

@@ -651,7 +651,9 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
               children: <Widget>[
                 Expanded(
                   child: Text(
-                    t.manga_discovery_source_popular(source: widget.feed.name),
+                    t.manga_discovery_source_popular(
+                      source: widget.feed.displayName,
+                    ),
                     style: Theme.of(context).textTheme.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
