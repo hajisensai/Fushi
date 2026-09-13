@@ -101,5 +101,53 @@ void main() {
       expect(tts.contains('warmUpLookupAudioPlayer'), isFalse,
           reason: 'TtsChannel 不得再暴露启动预热入口');
     });
+
+    test(
+        'BUG-2495: warm-up wait is driven by player terminal states, '
+        'not a fixed budget clock', () {
+      final String desktop = File(
+        'lib/src/utils/misc/desktop_audio_playback.dart',
+      ).readAsStringSync();
+      final RegExp body = RegExp(
+        r'static\s+void\s+_ensureWarmUpQueued\(\)\s*\{[\s\S]*?\n  \}\n',
+      );
+      final String? warmUp = body.firstMatch(desktop)?.group(0);
+      expect(warmUp, isNotNull, reason: '找不到 _ensureWarmUpQueued 方法体');
+
+      // 终态必须同时接受 completed（播完）与 idle（平台出错被 just_audio 停用）：
+      // just_audio 0.9.x 丢掉平台 errorCode，出错只剩 idle 这一个信号；只等 completed
+      // 会让设备打不开时白等到保险丝。
+      final RegExp terminal = RegExp(
+        r'firstWhere\([\s\S]*?ProcessingState\.completed[\s\S]*?\|\|'
+        r'[\s\S]*?ProcessingState\.idle',
+      );
+      expect(terminal.hasMatch(warmUp!), isTrue,
+          reason: '预热等待的终态必须是 completed || idle');
+
+      // 不得再用固定的短预算时钟截断等待：2s 到期 → 队列放行 → 真实周期 stop() 把
+      // 正在冷启动的 mpv 播放器拆掉，BUG-1015 复发。时钟只允许是卡死保险丝常量。
+      expect(warmUp.contains('.timeout(_warmUpStuckValve)'), isTrue,
+          reason: '等待超时只能引用卡死保险丝 _warmUpStuckValve');
+      expect(RegExp(r'timeout\(\s*const\s+Duration').hasMatch(warmUp), isFalse,
+          reason: '预热 body 不得内联固定 Duration 作为等待预算');
+      final RegExp valve = RegExp(
+        r'static\s+const\s+Duration\s+_warmUpStuckValve\s*=\s*'
+        r'Duration\(seconds:\s*(\d+)\)',
+      );
+      final Match? valveMatch = valve.firstMatch(desktop);
+      expect(valveMatch, isNotNull, reason: '缺少 _warmUpStuckValve 常量');
+      expect(int.parse(valveMatch!.group(1)!), greaterThanOrEqualTo(10),
+          reason: '保险丝必须远大于任何真实设备唤醒耗时（≥10s），否则又变回预算');
+
+      // 无论结果都要记一条带耗时的诊断：这是下次定量判断「设备冷启动多慢」的唯一证据。
+      expect(
+          warmUp.contains(
+            "logDiagnostic(\n          'DesktopAudioPlayback.warmUp'",
+          ),
+          isTrue,
+          reason: '预热必须 logDiagnostic 记录终态与耗时');
+      expect(warmUp.contains('elapsedMilliseconds'), isTrue,
+          reason: '诊断必须带耗时');
+    });
   });
 }
