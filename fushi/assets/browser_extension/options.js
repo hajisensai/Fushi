@@ -232,6 +232,13 @@ on('reset', 'click', async () => {
   await refreshConnection(true);
 });
 
+// 覆盖层位置：拖过的位置存 subtitleOverlayPosition（视频分数坐标）；删键即回默认（居中、底锚 88%），
+// 已打开的视频页经 storage.onChanged 立刻重摆。
+on('resetSubtitleOverlayPosition', 'click', async () => {
+  await chrome.storage.local.remove('subtitleOverlayPosition');
+  toast('字幕位置已重置');
+});
+
 on('showToken', 'click', () => {
   const token = $('token');
   const visible = token.type === 'text';
