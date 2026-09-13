@@ -106,3 +106,21 @@ x64 CMake 配置及 hook、injector、lookup probe、ring probe 四个目标构�
 本轮仅在 CMVS 增加独立 `HookInstallation` 状态：只有安装调用返回 true 且具备 forwarding trampoline 才 enabled；失败保持失败，不因残留指针或后续查询转为成功。三个生产判据均读取 enabled，shutdown 清除 enabled；公共 `HookFn` 未改。C++ 回归通过注入真实失败契约（先填 original、再返回 false）验证非空指针不会产生成功，另测成功/缺失 trampoline/shutdown；结构守卫钉住 adapter admission、sensor available 和 worker 的接线。
 
 正式 `build_distribution.ps1 -RunTests` 重包退出 0；x64 全量 **111/111**、x86 全量 **115/115**，Python 结构 **51/51**、manifest **23/23**。新的 `dist/voice_hook_x64.zip` SHA 为 `1fe048d1a4721f29569e64ca3d1d50564a7ea339778f4e39e26177d5fa49134c`，x86 zip SHA `51bf5330ad98254dcbed40e135ecb7d35e50ba37161a68b9a2623481d40feb48`；source fingerprint `f49ae4c545d7b53ab67f0bdaa683468bc1e80d369887b89780b60243f33128f2`。正式 x64 DLL SHA 更新为 `F4E06503B3D45DCA4F4A8D197FDDD7A9693A03B5201323F15ADA0F1DEEB7ABF0`。尚未注入新 DLL，GUI 等用户处理防火墙弹窗；没有新增真实查词验收声明。
+
+## Shift 输入所有权：真实失败、判因与修复候选
+
+主代理在 PID 64596、host PID 67840 中选定 `EmbedCMVS` thread `2591956086751223238`，确认 provider `2/16` ready 且 hover 与正文逐字位置一致。单次工具 Shift 短按后正文推进，第一次 hits 仍为 0；受控第二次复现时 text_writes 6→8、hits 0→1、frames 仍为 0。后者不能视为词典验收通过。
+
+主代理加载不入库的只读 observer（SHA `434F12586C763734159D40921C9F1323D3725ACA379F4ABC6AB4683A3430EFB1`）后，两个已证明入口只转发和记录，不改键盘/消息。受控复现记录：tick 48915000，`0x53fe0` 收到缓存 VK_SHIFT/LShift 为 0x80/0x80，将 input `+0x660` 从 0 升为 1；同 tick `0x16e80` 处理 Shift WM_KEYDOWN，TranslateAccelerator 返回 0。15ms 后 WM_KEYUP 返回 0，输入计数 1→0。命中 wire 无时间戳，未编造 hit 相对毫秒时间。静态主链是 `0x18430 → 0x53f60(GetKeyboardState, input+0x258) → 0x53fe0 → 0x52ac0`；现场 input `+0x3f6` 绑定值 23 恰索引 `+0x604+23*4=+0x660`，生成 mapped down/held/up。原 worker 独立轮询 GetAsyncKeyState 没有键盘所有权：可漏掉 15ms 短按，也允许引擎原动作与 lookup 并发。
+
+修复仅对同一已验证 CMVS x64 hash，在 `0x53fe0` 消费缓存之前建立 Shift 事务：
+
+- frame Hook 与 input Hook 都明确启用成功才报告 SensorInstalled。
+- 只在有效已投影正文目标、所选 thread 原子一致、registry native admission 允许、当前物理指针仍在该字格且队列可预留时取得首次 down 所有权。
+- 按下在外部/无效区或队列不可用时，整个 held 周期不再中途抢键。已认领的 Shift 只清除缓存中 VK_SHIFT/LShift/RShift 的 high bit，其他键与低位保持原样；owned 状态跨移出/失焦保留直到物理及缓存 release，形成完整 down/up 配对。
+- 回调只做固定目标复制、轻量身份/指针检查和有界四槽入队；不解码、不发布 IPC、不做延时或轮询重试。callback 的 shift_lock→registry shared read 没有对应的 worker 反向持锁路径：worker 均先释放一个锁再取得另一个。
+- 队列绑定原正文 event/thread、owner/head/node、字格身份、UTF-16 source index、窗口与投影；普通 redraw 的 raw frame 序号不是逻辑身份。worker 对真换句/字格/窗口变化取消原请求，绝不取 latest 别句替代。暂时的 raw buffer 竞争保留待消费请求；不依赖瞬时 worker Shift 电平。
+
+新增回归覆盖上述配对/外部按下/失焦/队列满、down+up 均早于 worker 的短按、同句普通重绘可消费、真换句与几何变化拒绝，以及只屏蔽三个 Shift 键的边界。结构守卫确认消费者先 mask 再调用原函数、worker 不再采样 Shift、按原 request 发布。结构 **52/52**、manifest **23/23** 通过；正式重包 `-RunTests` x64 **112/112**、x86 **116/116**，退出 0。
+
+最新正式 dist：x64 DLL SHA `4AA5048A83E0908B472EC412189B88BC90829D3B977A84F7AF95476D0F71D275`；x64 zip `182b9d7ba3453a5a9d623e8be9d750cbc60324706e231fbf5ec218f8a08797ea`；x86 zip `d18f2e9007a3a1a22ef3d9156c3dff4698d4aff5d0823fa92a0bdca0fd7da093`；source fingerprint `eb5ef02733f2f953a0d9e047db5e24930ff34d26f73d5595984fbf5fda3062a4`。需要新 CMVS 会话复测，不能与当前 passive observer 在同一 0x53fe0 地址叠加；词典弹窗与输入/制卡 E2E 尚未升级为通过。

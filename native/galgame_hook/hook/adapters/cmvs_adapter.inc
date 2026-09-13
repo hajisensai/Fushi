@@ -19,11 +19,13 @@ class CmvsAdapter final : public fushi_voice_hook::EngineAdapter {
     if (installed_) InstallCmvsLookup();
     return installed_;
   }
-  bool lookup_sensor_available() const { return g_cmvs_hook_installation.enabled(); }
+  bool lookup_sensor_available() const {
+    return g_cmvs_hook_installation.enabled() && g_cmvs_input_installation.enabled();
+  }
   void ProcessPendingEvents() { ProcessCmvsLookupTick(); }
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     fushi_voice_hook::LookupAdmissionReport report;
-    report.state = g_cmvs_hook_installation.enabled()
+    report.state = (g_cmvs_hook_installation.enabled() && g_cmvs_input_installation.enabled())
         ? fushi_voice_hook::kLookupAdmissionSensorInstalled
         : g_cmvs_identity_matched ? fushi_voice_hook::kLookupAdmissionIdentityAccepted
                                  : fushi_voice_hook::kLookupAdmissionEngineUnsupported;
@@ -39,6 +41,7 @@ class CmvsAdapter final : public fushi_voice_hook::EngineAdapter {
   }
   void shutdown() override {
     g_cmvs_hook_installation.Shutdown();
+    g_cmvs_input_installation.Shutdown();
     RetireCmvsLookup();
     AcquireSRWLockExclusive(&g_cmvs_raw_lock);
     g_cmvs_raw_frame.valid = false;

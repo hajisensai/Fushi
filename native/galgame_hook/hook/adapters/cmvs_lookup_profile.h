@@ -3,6 +3,7 @@
 #include <bcrypt.h>
 #include "cmvs_dialogue_layout_reader.h"
 #include "cmvs_hook_installation.h"
+#include "cmvs_shift_transaction.h"
 
 namespace fushi_voice_hook::cmvs_layout {
 

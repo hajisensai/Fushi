@@ -4,6 +4,7 @@
 #include "../hook/adapters/cmvs_presentation_reader.h"
 #include "../hook/adapters/cmvs_sprite_geometry_reader.h"
 #include "../hook/adapters/cmvs_hook_installation.h"
+#include "../hook/adapters/cmvs_shift_transaction.h"
 #include <cassert>
 #include <vector>
 
@@ -49,6 +50,62 @@ struct Memory {
   }
 };
 inline void Run() {
+  ShiftGesture gesture;
+  auto action = SampleShift(&gesture, true, false, true);
+  assert(!action.suppress && !action.enqueue);  // down outside / no admission
+  action = SampleShift(&gesture, true, true, true);
+  assert(!action.suppress && !action.enqueue);  // entering while held is not ownership
+  SampleShift(&gesture, false, false, true);
+  action = SampleShift(&gesture, true, true, true);
+  assert(action.suppress && action.enqueue);
+  action = SampleShift(&gesture, true, false, false); // moved out / focus lost
+  assert(action.suppress && !action.enqueue);
+  action = SampleShift(&gesture, false, false, false);
+  assert(action.suppress && !action.enqueue && !gesture.owned);
+  action = SampleShift(&gesture, true, true, false); // queue full: cannot reserve
+  assert(!action.suppress && !action.enqueue);
+  action = SampleShift(&gesture, true, true, true);
+  assert(!action.suppress && !action.enqueue); // cannot steal halfway through
+  SampleShift(&gesture, false, false, false);
+
+  uint8_t keys[256]{};
+  keys[0x10] = 0x80; keys[0xa0] = 0x81; keys[0xa1] = 0x80;
+  keys[0x11] = 0x81; keys[0x41] = 0x80;
+  assert(MaskShiftKeys(keys, sizeof(keys)));
+  assert(keys[0x10] == 0 && keys[0xa0] == 1 && keys[0xa1] == 0);
+  assert(keys[0x11] == 0x81 && keys[0x41] == 0x80);
+  assert(!MaskShiftKeys(keys, 161));
+
+  ShiftTarget pressed;
+  pressed.event = 41; pressed.thread = 9; pressed.text_units = 1;
+  pressed.text[0] = L'A'; pressed.raw_frame = 20;
+  pressed.node = 100; pressed.game = 200; pressed.rectangle.width = 30;
+  ShiftQueue queue;
+  action = SampleShift(&gesture, true, true, queue.available());
+  assert(action.enqueue && queue.Push(pressed));
+  // Native down/up both finish before the 16ms worker runs: the request survives.
+  assert(SampleShift(&gesture, false, false, true).suppress);
+  assert(queue.Peek() && queue.Peek()->target.event == 41);
+  ShiftTarget redraw = pressed; redraw.raw_frame = 300;
+  assert(SameShiftTarget(queue.Peek()->target, redraw));
+  redraw.event = 42;
+  assert(!SameShiftTarget(pressed, redraw));
+  redraw = pressed; redraw.text[0] = L'B';
+  assert(!SameShiftTarget(pressed, redraw));
+  redraw = pressed; redraw.node++;
+  assert(!SameShiftTarget(pressed, redraw));
+  redraw = pressed; redraw.origin_x++;
+  assert(!SameShiftTarget(pressed, redraw));
+  redraw = pressed; redraw.view_width++;
+  assert(!SameShiftTarget(pressed, redraw));
+  redraw = pressed; redraw.rectangle.x++;
+  assert(!SameShiftTarget(pressed, redraw));
+  queue.Pop(queue.Peek()->sequence);
+  assert(!queue.Peek());
+  for (int i = 0; i < 4; ++i) assert(queue.Push(pressed));
+  assert(!queue.Push(pressed));
+  queue.Clear(); assert(queue.available() && !queue.Peek());
+
   // The real HookFn failure contract: CreateHook populates the trampoline,
   // EnableHook fails, and HookFn returns false without clearing the pointer.
   int hook_target = 0, hook_detour = 0;
