@@ -438,7 +438,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 序列化契约（远端制卡仓库包装 + 转发载荷 + 服务端 handler）。
   // 归属：开关已从「制卡」分类移到「Hibiki 互联」→「交给已配对设备」（它的前置条件、
   // 目标设备、失效条件全由互联决定），故登记键的 destId 随之从 cardCreation 变 interconnect。
-  'interconnect/Mine to paired device':
+  'interconnect/Mine to Fushi Interconnect server':
       'test/anki/remote_mining_anki_repository_test.dart + '
           'test/sync/forwarded_mine_payload_test.dart + '
           'test/sync/fushi_remote_mining_service_test.dart',

@@ -661,6 +661,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 「识别本章」：已下载的章目录排一个整卷 OCR 任务（阅读器外触发，设计稿 §1.3）。
   ///
+  /// 已有识别结果的章 = **重新识别**（丢掉逐页缓存重跑）；还没结果的章沿用缓存
+  /// 续跑。此前不分这两种，模型没换时整卷缓存命中直接回放旧结果，用户点了
+  /// 「识别本章」什么都不会变。
+  ///
   /// 引擎解析与向导 / 下载钩子共用同一份探测（`manga_ocr_engine_probe.dart`）；
   /// 与后台钩子的差别只有「用户在场」：Lens 可以选，但要先过一次上传同意闸门。
   /// 任务经 `MangaOcrJobRegistry.enqueue` 按 bookKey 排队（BUG-2449 所有权 +
@@ -675,6 +679,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       entry,
       row,
       <OnlineMangaChapter>[chapter],
+      // 只有「确实已有识别结果」才丢缓存重跑；没结果或 manga.json 读不出都续跑
+      // ——读不出的坏文件不该被整章重跑悄悄覆盖。
+      onlyMissing: await _chapterOcrState(bookDir, chapter.key) !=
+          _ChapterOcrState.hasResult,
     );
     if (queued > 0 && mounted) {
       FushiToast.show(msg: t.manga_series_ocr_queued);
@@ -690,7 +698,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final List<OnlineMangaChapter> targets = <OnlineMangaChapter>[];
     for (final OnlineMangaChapter chapter in entry.chapters.reversed) {
       if (!_downloaded.contains(chapter.key)) continue;
-      if (await _chapterNeedsOcr(bookDir, chapter.key)) targets.add(chapter);
+      if (await _chapterOcrState(bookDir, chapter.key) ==
+          _ChapterOcrState.empty) {
+        targets.add(chapter);
+      }
     }
     if (targets.isEmpty) {
       FushiToast.show(msg: t.manga_series_ocr_all_none);
@@ -702,9 +713,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     }
   }
 
-  /// 章 `manga.json` 里一个 block 都没有 = 还没识别过。读不出来按「不需要」处理
-  /// （坏文件不该被整卷 OCR 悄悄覆盖）。
-  static Future<bool> _chapterNeedsOcr(
+  /// 章 `manga.json` 的识别状态：一个 block 都没有 = 还没识别过（[empty]）；
+  /// 读不出来单独一态（[unreadable]）——坏文件既不排进「识别全部」，也不当作
+  /// 「已有结果」去丢缓存重跑。
+  static Future<_ChapterOcrState> _chapterOcrState(
     String bookDir,
     String chapterKey,
   ) async {
@@ -713,10 +725,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         mangaChapterDirectory(bookDir, chapterKey),
       );
       final MokuroPayload payload = parseMangaJson(await json.readAsString());
-      return payload.images.isNotEmpty &&
+      final bool empty = payload.images.isNotEmpty &&
           payload.images.every((MokuroImage image) => image.blocks.isEmpty);
+      return empty ? _ChapterOcrState.empty : _ChapterOcrState.hasResult;
     } on Object {
-      return false;
+      return _ChapterOcrState.unreadable;
     }
   }
 
@@ -725,8 +738,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<int> _enqueueChapterOcr(
     OnlineMangaLibraryEntry entry,
     EpubBookRow row,
-    List<OnlineMangaChapter> chapters,
-  ) async {
+    List<OnlineMangaChapter> chapters, {
+    bool onlyMissing = true,
+  }) async {
     final AppModel? appModel = _appModelOrNull;
     if (appModel == null) return 0;
     final MangaOcrWizardEngines engines =
@@ -766,6 +780,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         engines: engines,
         imageDirPath: chapterDir.path,
         lensLanguage: appModel.mangaOcrLensLanguage,
+        onlyMissing: onlyMissing,
         volumeTitle:
             '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
         remoteTarget: availability.remoteTarget,
@@ -1887,3 +1902,6 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
 /// 锁定章弹窗的三条路；取消 = null。
 enum _LockedChapterChoice { login, download }
+
+/// 章 `manga.json` 的识别状态（见 `_chapterOcrState`）。
+enum _ChapterOcrState { empty, hasResult, unreadable }

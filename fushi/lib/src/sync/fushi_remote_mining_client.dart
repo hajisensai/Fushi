@@ -210,7 +210,8 @@ class FushiRemoteMiningClient
       path: '/api/anki/source/read',
       body: <String, dynamic>{'sourceId': sourceId},
       timeout: _noteTypeTimeout,
-      authErrorMessage: 'The paired device rejected source editing.',
+      authErrorMessage:
+          'The Fushi Interconnect server rejected source editing.',
       onlyCandidate: _sourcePeers[sourceId],
     );
     final Map<String, dynamic> json = _requireSourceResponse(outcome);
@@ -270,7 +271,8 @@ class FushiRemoteMiningClient
         path: path,
         body: body,
         timeout: _mineTimeout,
-        authErrorMessage: 'The paired device rejected source editing.',
+        authErrorMessage:
+            'The Fushi Interconnect server rejected source editing.',
         onlyCandidate: peer,
       ),
     );
@@ -280,7 +282,7 @@ class FushiRemoteMiningClient
     final Map<String, dynamic>? json = outcome.json;
     if (json == null) {
       throw StateError(
-        'The paired device is unavailable or does not support source editing.',
+        'The Fushi Interconnect server is unavailable or does not support source editing.',
       );
     }
     if (json['ok'] != true) {
@@ -426,7 +428,7 @@ class FushiRemoteMiningClient
     );
     if (outcome.json == null && outcome.allUnreachable) {
       throw StateError(
-          'No paired device is reachable for Lapis template editing.');
+          'No Fushi Interconnect server is reachable for Lapis template editing.');
     }
     return outcome.json;
   }

@@ -936,9 +936,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
   }
 
-  void _openImageViewer(String imgUrl) {
-    final File? file = _readerImageFileForUrl(imgUrl);
+  /// [resolvedFile] 非空 = 兄弟卷插图（BUG-2521）：文件由卷上下文解析、不经本书
+  /// 解压目录，右键分享菜单也不挂（它按 [imgUrl] 在本书目录里找文件，找不到）。
+  void _openImageViewer(String imgUrl, {File? resolvedFile}) {
+    final File? file = resolvedFile ?? _readerImageFileForUrl(imgUrl);
     if (file == null) return;
+    final bool contextMenu = resolvedFile == null;
     // BUG-2208：全屏看图期间停表（路由 pop 后按判据续表）。
     unawaited(
       _withStudyClockPaused(
@@ -953,7 +956,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             pageBuilder: (BuildContext routeContext, __, ___) =>
                 ContextMenuTrigger(
               // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-              onInvoke: isWindowsPlatform
+              onInvoke: isWindowsPlatform && contextMenu
                   ? (Offset position) => unawaited(
                         _showReaderImageContextMenuAtGlobalPosition(
                           imgUrl,
@@ -1046,6 +1049,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 Navigator.pop(routeContext);
                 unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
               },
+              volumeSwitch: _galleryVolumeSwitch(routeContext),
             ),
           ),
         ),
@@ -2089,6 +2093,144 @@ extension _ReaderChrome on _ReaderFushiPageState {
       initialSideSheetTab: _chrome.lastSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
+      volumeSwitch: _tocVolumeSwitch(),
+    );
+  }
+
+  // ── 同合集卷切换（BUG-2521） ──────────────────────────────────────────
+
+  /// 开书后装载同合集卷上下文；当前书的已解析结构 seed 进缓存（不重复解析）。
+  Future<void> _loadVolumeContext(FushiDatabase db) async {
+    final String? uid = _bookUid;
+    final EpubBook? book = _book;
+    if (uid == null || book == null) return;
+    try {
+      final ReaderVolumeContext? ctx =
+          await loadReaderVolumeContext(db, bookUid: uid);
+      if (!mounted || ctx == null) return;
+      _volumeBooks.seed(ctx.current, book);
+      _volumeContext = ctx;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.loadVolumeContext', e, stack);
+    }
+  }
+
+  /// 兄弟卷目录（不可查看的 PDF / 漫画卷给空表 → 面板只剩「打开本卷」）。
+  Future<List<TtuTocEntry>> _volumeTocOf(int volume) async {
+    final ReaderVolume v = _volumeContext!.volumes[volume];
+    if (!v.canPeek) return const <TtuTocEntry>[];
+    final EpubBook book = await _volumeBooks.bookFor(v);
+    return buildTtuTocForBook(
+      book,
+      autoLabel: (int n) => t.auto_chapter(n: n),
+    );
+  }
+
+  ReaderTocVolumeSwitch? _tocVolumeSwitch() {
+    final ReaderVolumeContext? ctx = _volumeContext;
+    if (ctx == null) return null;
+    return ReaderTocVolumeSwitch(
+      labels: <String>[for (final ReaderVolume v in ctx.volumes) v.title],
+      currentIndex: ctx.currentIndex,
+      tocOf: _volumeTocOf,
+      onJump: (int volume, int? chapterIndex) =>
+          _switchToVolume(volume, chapterIndex: chapterIndex),
+    );
+  }
+
+  ReaderGalleryVolumeSwitch? _galleryVolumeSwitch(BuildContext routeContext) {
+    final ReaderVolumeContext? ctx = _volumeContext;
+    if (ctx == null) return null;
+    return ReaderGalleryVolumeSwitch(
+      labels: <String>[for (final ReaderVolume v in ctx.volumes) v.title],
+      currentIndex: ctx.currentIndex,
+      imagesOf: (int volume) async {
+        final ReaderVolume v = ctx.volumes[volume];
+        if (!v.canPeek) {
+          return const ReaderGalleryVolumeImages(
+            images: <EpubImageRef>[],
+            fileForRef: _noVolumeImage,
+          );
+        }
+        final EpubBook book = await _volumeBooks.bookFor(v);
+        return ReaderGalleryVolumeImages(
+          images: book.images,
+          fileForRef: (EpubImageRef ref) => volumeImageFile(v, ref),
+        );
+      },
+      onJumpTo: (int volume, EpubImageRef ref) {
+        Navigator.pop(routeContext);
+        unawaited(_switchToVolume(volume, chapterIndex: ref.chapterIndex));
+      },
+      onOpenImage: (int volume, EpubImageRef ref, File file) =>
+          _openImageViewer(
+        ReaderFushiSource.epubUrl(ref.src),
+        resolvedFile: file,
+      ),
+    );
+  }
+
+  static File? _noVolumeImage(EpubImageRef _) => null;
+
+  /// 切到同合集第 [volume] 卷：与返回键同一条退出链，只是末尾从 `nav.pop()` 换成
+  /// `openMedia(pushReplacement)`——不能裸换路由，否则本书最终位置丢、
+  /// `_currentMediaItem` 仍指旧书。链的三段按各自性质分开等：
+  /// - 位置 / 统计 flush（[onSourcePagePop]）是 drift 写，**不等**（BUG-2119 口径：
+  ///   一条毒化连接能让它永远挂住，等它 = 切卷按钮静默失灵）；
+  /// - [AppModel.closeMedia] 是平台态复位（wakelock / 系统栏 / 会话指针），**必须等
+  ///   完再 open**：它在后台跑会把新书刚设好的 `mediaOpenNotifier` / wakelock 复位；
+  /// - 关书自动同步照旧触发。
+  ///
+  /// [chapterIndex] null = 按该卷保存位置打开；非 null = 落到该章章首（Bookmark
+  /// 无章内锚，跨卷只能到章首）。调用方须先 pop 自己的面板 / 画廊路由，让阅读器
+  /// 路由回到栈顶。与返回键共用 [_popInProgress] 单飞门（只上不下：跑完本页就没了）。
+  Future<void> _switchToVolume(int volume, {int? chapterIndex}) async {
+    final ReaderVolumeContext? ctx = _volumeContext;
+    if (ctx == null || volume == ctx.currentIndex || !mounted) return;
+    if (_popInProgress) return;
+    _popInProgress = true;
+    final ReaderVolume target = ctx.volumes[volume];
+    final MediaItem item = buildCollectionReaderMediaItem(
+      bookKey: target.bookKey,
+      title: target.title,
+      format: target.format,
+    );
+    final Bookmark? bookmark = chapterIndex == null
+        ? null
+        : Bookmark(
+            sectionIndex: chapterIndex,
+            normCharOffset: 0,
+            label: '',
+            createdAt: DateTime.now(),
+          );
+    final MediaSource? closing = appModel.currentMediaSource;
+    final MediaItem? closingItem = widget.item;
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+    persistInBackground(
+      persist: onSourcePagePop,
+      onPersistError: (Object error, StackTrace stack) => ErrorLogService
+          .instance
+          .log('ReaderFushi.switchVolumeFlush', error, stack),
+    );
+    if (closing != null) {
+      await appModel.closeMedia(ref: ref, mediaSource: closing, item: closingItem);
+    }
+    if (closingItem != null && messenger != null) {
+      triggerAutoSyncAfterClose(
+        db: appModel.database,
+        mediaIdentifier: closingItem.mediaIdentifier,
+        messenger: messenger,
+        onReport: appModel.presentSyncPrompts,
+      );
+    }
+    if (!mounted) return;
+    await appModel.openMedia(
+      ref: ref,
+      mediaSource: item.getMediaSource(appModel: appModel),
+      item: item,
+      initialBookmarkJump: bookmark,
+      pushReplacement: true,
+      waitUntilClosed: false,
     );
   }
 

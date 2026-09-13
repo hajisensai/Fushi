@@ -15,6 +15,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -73,6 +75,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_restore_anchor.dart';
 import 'package:fushi/src/reader/reader_source_locator.dart';
@@ -83,6 +86,7 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_collection_volumes.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_open_trace.dart';
 import 'package:fushi/src/reader/reader_progress_state.dart';
@@ -1416,6 +1420,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// resolveEpubBookUid 的契约一致）。
   String? _bookUid;
 
+  /// 同合集卷上下文（BUG-2521）：开书后由 [_loadVolumeContext] 一次装载；null =
+  /// 不在多卷合集里。消费点：章节列表卷 chip、画廊卷 chip、[_switchToVolume]。
+  ReaderVolumeContext? _volumeContext;
+
+  /// 兄弟卷 EPUB 结构缓存（isolate 解析、按卷一次）；当前书开书后 seed 进去。
+  final ReaderVolumeBookCache _volumeBooks = ReaderVolumeBookCache();
+
   /// 库内 part 文件（extension）改状态的入口：扩展不被视作 State 子类实例成员，
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
   /// 子类持有的这个转发器统一承接。part 中的异步回调可能在 route dispose 后才返回；
@@ -2369,6 +2380,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final List<String> hrefs = _book!.chapters.map((ch) => ch.href).toList();
     debugPrint('[ReaderFushi] chapter hrefs: $hrefs');
     _openTrace.mark('parsed');
+    // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
+    unawaited(_loadVolumeContext(db));
 
     // Source links must resolve exactly. Ordinary stale bookmarks may fall
     // back to a saved position, which would show unrelated text for this card.

@@ -281,7 +281,7 @@ void main() {
         RemoteMiningAnkiRepository.pairedDeviceUnreachableMessage,
       );
       expect(outcome.errorDetail, contains('Fushi is running'));
-      expect(outcome.errorDetail, contains('Mine to paired device'));
+      expect(outcome.errorDetail, contains('Mine to Fushi Interconnect server'));
       expect(outcome.errorDetail, isNot(contains('server-side mining')));
     });
 

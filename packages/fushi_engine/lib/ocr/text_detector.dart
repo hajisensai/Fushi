@@ -211,10 +211,22 @@ List<RawDetection> decodeRtdetrOutputs({
   return detections;
 }
 
+/// `labels` 输出按会话实现可能是 float32（flutter_onnxruntime 插件把一切读成
+/// float）也可能是 int64 / int32（服务端 FFI 会话按 ORT 报的元素类型原样返回）。
+/// 三型都吃；只认 float 曾让无头服务端在第一页就空指针。
+List<num> _labelValues(OcrTensor labels) {
+  final List<num>? values =
+      labels.floatData ?? labels.intData ?? labels.int32Data;
+  if (values == null) {
+    throw StateError('detector labels output has no readable data');
+  }
+  return values;
+}
+
 /// 解码已经在 ONNX 图内完成 sigmoid/top-k/xyxy 转换的 RT-DETR 输出。
 List<RawDetection> decodeProcessedRtdetrOutputs({
   required Float32List scores,
-  required Float32List labels,
+  required List<num> labels,
   required Float32List boxes,
   required LetterboxTransform transform,
   double scoreThreshold = 0.3,
@@ -252,7 +264,16 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
   return detections;
 }
 
-/// 同类贪心 NMS：按分数降序，IoU >= [iouThreshold] 的低分框剔除。
+/// NMS 分组：气泡（0 类）一组，文字（1/2 类）一组。
+///
+/// 解码按 (query, class) 对过阈值，同一个 query 在 text_bubble 与 text_free 上
+/// 都过线时会产出两个 **rect 完全相同** 的检测；若按 classId 分组，两者互不抑制，
+/// 同一块文字会被识别两次、写进 manga.json 两次（实测 mihon 下载的扉页人物名栏）。
+/// 内/外只是同一块文字的属性，不是两种物体——所以文字两类共用一组，高分者带着
+/// 自己的 classId 存活。气泡与其中的文字天然套叠，仍分组保留。
+int nmsGroupOf(int classId) => classId == kDetClassBubble ? 0 : 1;
+
+/// 分组贪心 NMS：按分数降序，同组内 IoU >= [iouThreshold] 的低分框剔除。
 List<RawDetection> applyClassAwareNms(
   List<RawDetection> detections, {
   double iouThreshold = 0.7,
@@ -263,7 +284,7 @@ List<RawDetection> applyClassAwareNms(
   for (final RawDetection candidate in sorted) {
     bool suppressed = false;
     for (final RawDetection keep in kept) {
-      if (keep.classId == candidate.classId &&
+      if (nmsGroupOf(keep.classId) == nmsGroupOf(candidate.classId) &&
           keep.rect.iou(candidate.rect) >= iouThreshold) {
         suppressed = true;
         break;
@@ -362,7 +383,7 @@ class TextDetector implements OcrDetector {
     } else if (scores != null && labels != null && processedBoxes != null) {
       raw = decodeProcessedRtdetrOutputs(
         scores: scores.floatData!,
-        labels: labels.floatData!,
+        labels: _labelValues(labels),
         boxes: processedBoxes.floatData!,
         transform: transform,
         scoreThreshold: scoreThreshold,
