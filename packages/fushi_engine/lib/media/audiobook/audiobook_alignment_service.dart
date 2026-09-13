@@ -8,6 +8,8 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_engine/media/video/video_clip_subtitle.dart'
+    show formatSrtTimestamp;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
 
@@ -100,6 +102,87 @@ Future<bool> attachAsrCueTokenTiming(
   return true;
 }
 
+/// 转录产物对齐后另写的一份字幕：命中 cue 已换成正文原文（标点、引号在内）、
+/// 已按句界重切。与原始 `transcript.srt` 同目录并存——原始那份不能覆盖，它是
+/// `transcript.tokens.jsonl` 的行号基准，也是重匹配的输入。
+const String kAsrAlignedTranscriptFileName = 'transcript.aligned.srt';
+
+/// [srtPath] 旁边对齐版字幕的路径（不检查存在）。
+String asrAlignedTranscriptPathFor(String srtPath) =>
+    p.join(p.dirname(srtPath), kAsrAlignedTranscriptFileName);
+
+/// 「导出 SRT」该拷哪个文件：对齐版存在就是它，否则原始听写稿。第一次导出
+/// 发生在「使用字幕」之前（对齐还没跑），拿到的必然是原始稿；这不是 bug。
+String preferredTranscriptExportPath(String srtPath) {
+  final String aligned = asrAlignedTranscriptPathFor(srtPath);
+  return File(aligned).existsSync() ? aligned : srtPath;
+}
+
+/// 匹配之后、落库之前的收尾。书导入 service（[alignAndPersistAudiobook]）与
+/// 有声书导入对话框原先各持一份逐行相同的三步链，现在只有这一处：
+///
+/// 1. 有逐 token 时间 → 命中 cue 按正文句界重切（cue 列表与匹配结果一起换新）；
+/// 2. 字幕是设备端转录产物 → 命中 cue 的听写文本换成正文原文（阅读器按 cue 文本
+///    在 DOM 里重定位，听写差会让高亮漂移；未命中的保留听写）；
+/// 3. 匹配结果编进 cue；
+/// 4. 转录产物把对齐后的 cue 另写成 [kAsrAlignedTranscriptFileName]，供「导出
+///    SRT」优先拷——之前替换后的文本只活在 DB 里，用户导出拿到的永远是没标点的
+///    听写稿。写盘失败只记日志：它是导出的便利品，不是落库链路的一部分。
+Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
+  required List<EpubSection> sections,
+  required List<AudioCue> cues,
+  required MatchResult result,
+  required String subtitlePath,
+  required bool hasTokenTiming,
+}) async {
+  if (hasTokenTiming) {
+    final CueResegmentResult resegmented = resegmentCuesBySentence(
+      sections: sections,
+      cues: cues,
+      result: result,
+    );
+    cues = resegmented.cues;
+    result = resegmented.result;
+  }
+  final bool asrGenerated =
+      AsrTranscriptionService.isAsrGeneratedSubtitlePath(subtitlePath);
+  if (asrGenerated) {
+    replaceMatchedCueTextWithBookText(
+      sections: sections,
+      cues: cues,
+      result: result,
+    );
+  }
+  SubtitleRematchCodec.applyToCues(cues: cues, result: result);
+  if (asrGenerated) {
+    try {
+      await File(asrAlignedTranscriptPathFor(subtitlePath))
+          .writeAsString(serializeAudioCuesToSrt(cues));
+    } catch (e, stack) {
+      engineLog.log('AudiobookAlignmentService.writeAlignedSrt', e, stack);
+    }
+  }
+  return (cues: cues, result: result);
+}
+
+/// [AudioCue] 列表 → SRT 文本（序号从 1 起、`HH:MM:SS,mmm`、cue 间空行）。
+/// 与 `SrtParser` 的解析契约一致；空文本 cue 跳过（与 `serializeAsrCuesToSrt`
+/// 同规则）。
+String serializeAudioCuesToSrt(List<AudioCue> cues) {
+  final StringBuffer sb = StringBuffer();
+  int index = 1;
+  for (final AudioCue cue in cues) {
+    if (cue.text.isEmpty) continue;
+    sb
+      ..writeln(index++)
+      ..writeln('${formatSrtTimestamp(cue.startMs)} --> '
+          '${formatSrtTimestamp(cue.endMs)}')
+      ..writeln(cue.text.replaceAll('\n', ' '))
+      ..writeln();
+  }
+  return sb.toString();
+}
+
 /// 转录产物的命中 cue 按正文句界重切（见 `CueSentenceResegmenter`）；三个
 /// 匹配入口共用这一处，统计打进日志便于真机对照。
 CueResegmentResult resegmentCuesBySentence({
@@ -182,8 +265,8 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// 配对 SrtBook + cue + health overlay）；对话框只保留 UI 相关的 EPUB 导入、
 /// 封面、同名书弹窗，导入完拿到 [bookKey] 后调本函数，行为逐字节等价。
 ///
-/// [replaceCueTextWithBookText]：字幕是设备端转录产物时置 true，命中 cue 的文本
-/// 落库前换成正文原文（见 `replaceMatchedCueTextWithBookText`）。
+/// 字幕是设备端转录产物时（`AsrTranscriptionService.isAsrGeneratedSubtitlePath`，
+/// 由 [finalizeAlignedCues] 自行判定），命中 cue 的文本落库前换成正文原文。
 ///
 /// 入参均为已就位的本地绝对路径（[subtitlePath] 必给；[audioPaths] 可空）。
 /// [autoWindow] / [searchWindow] / [similarityThreshold] 与对话框同名字段语义
@@ -203,7 +286,6 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   AudiobookAlignmentProgress? onProgress,
   AudiobookAlignmentMessages messages = const AudiobookAlignmentMessages(),
-  bool replaceCueTextWithBookText = false,
 }) async {
   void report(double f, String m) => onProgress?.call(f, m);
 
@@ -253,27 +335,16 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       searchWindow: chosenWindow,
       similarityThreshold: similarityThreshold,
     );
-    if (hasTokenTiming) {
-      // 命中 cue 按正文句界重切（词中切开的合并、一条盖两句的拆开），边界时间
-      // 取 token 发射时间；cue 列表与匹配结果一起换新。
-      final CueResegmentResult resegmented = resegmentCuesBySentence(
-        sections: sections,
-        cues: cues,
-        result: matchResult,
-      );
-      cues = resegmented.cues;
-      matchResult = resegmented.result;
-    }
-    if (replaceCueTextWithBookText) {
-      // ASR 听写文本 → 正文原文：阅读器按 cue 文本在 DOM 里重定位，听写差会让
-      // 高亮漂移；换成正文后逐字精确（未命中的保留听写文本）。
-      replaceMatchedCueTextWithBookText(
-        sections: sections,
-        cues: cues,
-        result: matchResult,
-      );
-    }
-    SubtitleRematchCodec.applyToCues(cues: cues, result: matchResult);
+    final ({List<AudioCue> cues, MatchResult result}) finalized =
+        await finalizeAlignedCues(
+      sections: sections,
+      cues: cues,
+      result: matchResult,
+      subtitlePath: subtitlePath,
+      hasTokenTiming: hasTokenTiming,
+    );
+    cues = finalized.cues;
+    matchResult = finalized.result;
     final int pct = (matchResult.matchRate * 100).round();
     health = AudiobookHealth.fromRatePct(
       ratePct: pct,

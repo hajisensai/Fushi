@@ -19,6 +19,8 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
+    show preferredTranscriptExportPath;
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/apple_speech_transcription_service.dart';
 import 'package:fushi/src/asr_host/asr_engine_options.dart';
@@ -195,6 +197,10 @@ class _SubtitleSourceChooser extends StatelessWidget {
 /// 导出转录产物：桌面走存盘对话框（默认文件名 = 首个音频同名 `.srt`、起始目录 =
 /// 音频所在目录），移动端走系统分享。返回是否真的导出了（用户取消返回 false）。
 /// [saveFilePicker] 可注入，测试里替换掉真的平台对话框。
+///
+/// 拷的是 [srtPath] 旁的对齐版 `transcript.aligned.srt`（「使用字幕」跑过正文匹配
+/// 后才有：命中 cue 已换成带标点的正文原文），没有才回退原始听写稿
+/// （[preferredTranscriptExportPath]）。原始 `transcript.srt` 永不覆盖。
 Future<bool> exportTranscribedSrt({
   required String srtPath,
   required List<String> audioPaths,
@@ -204,6 +210,7 @@ Future<bool> exportTranscribedSrt({
   })? saveFilePicker,
   bool? desktop,
 }) async {
+  srtPath = preferredTranscriptExportPath(srtPath);
   final String suggestedName = suggestedTranscriptFileName(audioPaths);
   if (desktop ?? isDesktopPlatform) {
     final String? initialDirectory =
