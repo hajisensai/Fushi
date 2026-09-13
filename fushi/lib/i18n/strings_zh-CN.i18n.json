@@ -4774,5 +4774,8 @@
   "mining_audio_pad_readout": "${ms} 毫秒",
   "audiobook_transcribe_model_scope_dedicated": "专用模型 · 这门语言识别最准",
   "audiobook_transcribe_model_scope_multilingual": "通用模型 · 语言覆盖广，单语言精度不如专用模型",
-  "audiobook_transcribe_elapsed_total": "总耗时 $elapsed"
+  "audiobook_transcribe_elapsed_total": "总耗时 $elapsed",
+  "manga_ocr_settings_open": "OCR 设置",
+  "manga_chrome_floating": "悬浮工具栏",
+  "manga_chrome_floating_subtitle": "工具栏收起不遮挡页面，点页面中央或鼠标移到顶边唤出；关闭则常驻在页面上方"
 }

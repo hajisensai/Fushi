@@ -127,6 +127,17 @@ SettingsDestination buildMangaDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaTapZonePaging(value),
           ),
+          // 顶栏悬浮/常驻：与 EPUB 阅读器「点空白隐藏控制栏」同一模型（悬浮 = 不占
+          // 布局、默认收起、点页面中央或顶边悬停唤出后自动收起；关 = 常驻并让位）。
+          SettingsSwitchItem(
+            id: 'manga.chrome_floating',
+            title: t.manga_chrome_floating,
+            subtitle: t.manga_chrome_floating_subtitle,
+            icon: Icons.vertical_align_top_outlined,
+            value: (SettingsContext c) => c.appModel.mangaChromeFloating,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMangaChromeFloating(value),
+          ),
           // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
           // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
           SettingsSwitchItem(

@@ -8128,6 +8128,10 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaVolumeKeyPaging(bool value) =>
       prefsRepo.setMangaVolumeKeyPaging(value);
 
+  bool get mangaChromeFloating => prefsRepo.mangaChromeFloating;
+  Future<void> setMangaChromeFloating(bool value) =>
+      prefsRepo.setMangaChromeFloating(value);
+
   bool get mangaTapZonePaging => prefsRepo.mangaTapZonePaging;
   Future<void> setMangaTapZonePaging(bool value) =>
       prefsRepo.setMangaTapZonePaging(value);

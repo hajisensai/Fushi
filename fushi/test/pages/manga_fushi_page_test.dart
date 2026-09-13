@@ -17,6 +17,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
+    show kMangaChromeBarHeight;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -73,8 +75,20 @@ class _MangaTestAppModel extends AppModel {
   @override
   bool get mangaTapZonePaging => true;
 
+  // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
+  @override
+  bool get mangaChromeFloating => false;
+
   @override
   bool get mangaVolumeKeyPaging => false;
+}
+
+/// 悬浮顶栏偏好开的 fake。
+class _FloatingChromeAppModel extends _MangaTestAppModel {
+  _FloatingChromeAppModel(super.db);
+
+  @override
+  bool get mangaChromeFloating => true;
 }
 
 /// 整卷 OCR 入口测试用 fake 服务（只有 modelStatus 有意义）。
@@ -329,6 +343,77 @@ void main() {
     expect(find.byKey(const ValueKey<String>('manga_ocr_cancel_button')),
         findsNothing,
         reason: '没有外部任务在跑时不显示取消按钮');
+  });
+
+  testWidgets('悬浮顶栏：偏好开 → 书就绪后栏默认收起、正文全出血；固定 → 栏常驻且正文让位',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    final Directory bookDir =
+        Directory.systemTemp.createTempSync('manga_floating_chrome_');
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+    const String bookKey = '悬浮顶栏テスト';
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: bookKey,
+      epubPath: 'manga.json',
+      extractDir: bookDir.path,
+      chapterCount: 2,
+      chaptersJson: '[]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+      format: const Value<String>('manga'),
+    ));
+
+    Future<void> pumpReady(AppModel appModel) async {
+      await tester.runAsync(() async {
+        await tester.pumpWidget(_harness(appModel, _item(bookKey), bookKey));
+        for (int i = 0; i < 50; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await tester.pump();
+          if (find
+              .byKey(const ValueKey<String>('manga_content_ready'))
+              .evaluate()
+              .isNotEmpty) {
+            break;
+          }
+        }
+      });
+      await tester.pump();
+      expect(find.byKey(const ValueKey<String>('manga_content_ready')),
+          findsOneWidget);
+    }
+
+    // 固定：栏常驻，正文顶部让出栏高（无状态栏 → 恰好 kMangaChromeBarHeight）。
+    await pumpReady(_MangaTestAppModel(db));
+    final Finder bar = find.byKey(const ValueKey<String>('manga_reader_top_bar'));
+    expect(bar, findsOneWidget, reason: '固定态顶栏常驻');
+    expect(
+      tester.getTopLeft(
+          find.byKey(const ValueKey<String>('manga_content_ready'))),
+      const Offset(0, kMangaChromeBarHeight),
+      reason: '固定态正文必须让出与栏同高的空间（BUG-2387 同款铁律）',
+    );
+
+    // 悬浮：栏默认收起（没有唤出手势前不画），正文全出血。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpReady(_FloatingChromeAppModel(db));
+    expect(bar, findsNothing, reason: '悬浮态默认收起');
+    expect(
+      tester.getTopLeft(
+          find.byKey(const ValueKey<String>('manga_content_ready'))),
+      Offset.zero,
+      reason: '悬浮态正文全出血',
+    );
   });
 
   testWidgets('加载失败（无书行）时 chrome 不构建 → 无 OCR 相关按钮，但返回按钮仍在',

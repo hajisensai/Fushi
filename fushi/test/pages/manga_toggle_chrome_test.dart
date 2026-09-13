@@ -79,13 +79,12 @@ void main() {
       required bool dictionaryShown,
       required MangaReadingMode mode,
       bool crossPageStep = false,
-    }) =>
-        MangaFushiPage.inputActionForShortcut(
-          action: ShortcutAction.mangaToggleChrome,
-          crossPageStep: crossPageStep,
-          dictionaryShown: dictionaryShown,
-          mode: mode,
-        );
+    }) => MangaFushiPage.inputActionForShortcut(
+      action: ShortcutAction.mangaToggleChrome,
+      crossPageStep: crossPageStep,
+      dictionaryShown: dictionaryShown,
+      mode: mode,
+    );
 
     test('spread 模式、无弹窗：解析成 toggleChrome', () {
       expect(
@@ -160,17 +159,25 @@ void main() {
         isTrue,
         reason: '可见性必须是页面自己的状态字段',
       );
-      // 顶栏画的是页码 / 框选 OCR / 单双页，没有内容时它们无意义——继续挂内容门控
-      // （「本章未下载」态同样没有正文，2026-09-12 起一并门掉）。
+      // 顶栏里的动作组（页码 / 单双页 / OCR 取消）没有内容时无意义——继续挂内容
+      // 门控（「本章未下载」态同样没有正文，2026-09-12 起一并门掉）。顶栏重设计后
+      // 门控收进 `_chromeActionsEnabled` 一个 getter：栏本体（含返回键）只看
+      // `_chromeVisible`（固定态）/ 悬浮唤出态，动作组才问它。
       expect(
         pageSrc.contains(
-          '_bookRow != null &&\n'
-          '                      !_loadFailed &&\n'
-          '                      !_chapterNotDownloaded &&\n'
-          '                      _chromeVisible',
+          'bool get _chromeActionsEnabled =>\n'
+          '      _bookRow != null &&\n'
+          '      !_loadFailed &&\n'
+          '      !_chapterNotDownloaded &&\n'
+          '      _chromeVisible;',
         ),
         isTrue,
-        reason: '顶栏（页码/OCR/单双页）在没有内容时不该画',
+        reason: '顶栏动作组（页码/OCR/单双页）在没有内容时不该画',
+      );
+      expect(
+        pageSrc.contains('groups: ready ? _chromeActionGroups()'),
+        isTrue,
+        reason: '内容门控必须落在动作组上，而不是整条栏（返回键在栏里）',
       );
       // 出口不是内容的一部分。返回键与唤回键**不得**再出现内容门控：
       // 加载失败或迟迟未就绪时它们一起消失，iOS 上就是「只能杀进程」
@@ -199,7 +206,8 @@ void main() {
       expect(
         pageSrc.contains("'manga_chrome_show_button'"),
         isTrue,
-        reason: '漫画正文是原生 WebView、空白点击已被翻页占用，'
+        reason:
+            '漫画正文是原生 WebView、空白点击已被翻页占用，'
             '没有这个按钮触屏设备再无第二条通道唤回界面',
       );
       expect(pageSrc.contains("'manga_chrome_hide_button'"), isTrue);
@@ -218,10 +226,7 @@ void main() {
     });
 
     test('快捷键执行体走同一个 _toggleMangaChrome', () {
-      expect(
-        pageSrc.contains('MangaReaderInputAction.toggleChrome'),
-        isTrue,
-      );
+      expect(pageSrc.contains('MangaReaderInputAction.toggleChrome'), isTrue);
       expect(pageSrc.contains('_toggleMangaChrome();'), isTrue);
       expect(
         pageSrc.contains('onPressed: _toggleMangaChrome,'),

@@ -135,7 +135,16 @@ abstract final class MangaModule {
     );
     return showAppDialog<String>(
       context: context,
-      builder: (_) => MangaOcrWizardDialog(engines: engines, db: db),
+      builder: (_) => MangaOcrWizardDialog(
+        engines: engines,
+        db: db,
+        resolveEngines: (BuildContext ctx) => MangaOcrWizardEngines.resolve(
+          context: ctx,
+          db: db,
+          remoteRunnerOverride: remoteRunnerOverride,
+          desktopOverride: desktopOverride,
+        ),
+      ),
     );
   }
 
@@ -168,6 +177,12 @@ abstract final class MangaModule {
         startPage: startPage,
         onlyMissing: true,
         launchInBackground: true,
+        resolveEngines: (BuildContext ctx) => MangaOcrWizardEngines.resolve(
+          context: ctx,
+          db: db,
+          remoteRunnerOverride: remoteRunnerOverride,
+          desktopOverride: desktopOverride,
+        ),
       ),
     );
   }

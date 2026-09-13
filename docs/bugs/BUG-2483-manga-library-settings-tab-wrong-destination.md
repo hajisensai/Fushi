@@ -1,0 +1,6 @@
+## BUG-2483 · manga-library-settings-tab-wrong-destination
+- **报告**：2026-09-12（用户：「书架里面的漫画打开 OCR 的地方，缺少配置 OCR 的设置」）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/manga/manga_library_page.dart:76` 漫画库页「设置」标签的 `ModuleSettingsView` 指向 `SettingsDestinationId.reading`（EPUB 字体/排版），而漫画 OCR（引擎偏好 / 模型下载 / Lens 语言 / 外部 mokuro 路径）在拆出「漫画」一级分类时已搬到 `SettingsDestinationId.manga`（`settings_schema_manga.dart`），库页设置标签里根本找不到 OCR。另外作品页（`manga_series_page.dart` 的「识别本章 / 识别全部已下载 / 开始 OCR」，BUG-2461 后是阅读器外唯一的 OCR 触发点）与 OCR 向导（`manga_ocr_wizard_dialog.dart`）解析不到引擎时只给一行红字，没有任何通向设置的入口。
+- **[x] ① 已修复** — `fe7131792c`：库页设置标签改指 `SettingsDestinationId.manga`；作品页动作行（本地卷 / 在线条目）与向导各加「OCR 设置」按钮直达 `MangaOcrSettingsPage`（同一个 `MangaOcrSettingsSection`）；向导返回后经新增的 `resolveEngines` 回调重新装配引擎（`MangaOcrWizardEngines.resolve()` 把 mokuro 路径 / 偏好快照进依赖集，只重探探不到刚配好的路径）。
+- **[x] ② 已加自动化测试** — `fushi/test/settings/settings_schema_coverage_test.dart`（`manga/Floating toolbar` 登记）、`fushi/test/pages/module_top_settings_tabs_guard_test.dart`（库页设置标签存在）；同轮顶栏重设计的守卫见 `fushi/test/pages/manga_toggle_chrome_test.dart` / `fushi/test/media/manga/manga_reader_chrome_test.dart`。
+- **备注**：同一轮把漫画阅读器顶栏重设计为 `MangaReaderTopBar`（悬浮/固定两态，偏好 `manga_chrome_floating`），见同一提交。

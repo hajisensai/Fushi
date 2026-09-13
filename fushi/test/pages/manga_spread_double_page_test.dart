@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -67,6 +66,10 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaTapZonePaging => true;
+
+  // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
+  @override
+  bool get mangaChromeFloating => false;
 
   @override
   bool get mangaVolumeKeyPaging => false;
@@ -197,8 +200,11 @@ void main() {
         findsOneWidget);
     expect(find.text('2-3 / 4'), findsOneWidget,
         reason: '横屏 auto 双页 + 封面独占：恢复到含第 3 页的跨页，指示区间 2-3');
-    // 布局偏好菜单在 spread 模式下可见。
-    expect(find.byType(PopupMenuButton<MangaSpreadPreference>), findsOneWidget);
+    // 布局偏好（自动/单页/双页循环）按钮在 spread 模式下可见。
+    expect(
+      find.byKey(const ValueKey<String>('manga_spread_preference_button')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('竖屏视口自动单页：页码保持单页显示', (WidgetTester tester) async {
