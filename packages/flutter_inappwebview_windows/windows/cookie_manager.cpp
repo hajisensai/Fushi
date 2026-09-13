@@ -1,3 +1,4 @@
+#include <cctype>
 #include <ctime>
 #include <nlohmann/json.hpp>
 #include <Shlwapi.h>
@@ -114,6 +115,148 @@ namespace flutter_inappwebview_plugin
     return make_fl_value(static_cast<int64_t>(expiresSec * 1000.0));
   }
 
+  // 一条 CDP cookie 对象是否对 `url` 生效（RFC 6265 §5.4：域匹配 + 路径前缀 + Secure 只发 https）。
+  //
+  // 读侧**不能**用 `Network.getCookies({urls})`：它按当前 target 的 cookie 访问语义筛，会把
+  // 分区（CHIPS，`Partitioned` 属性）cookie 整个筛掉——Cloudflare 现在发的 `cf_clearance`
+  // 就是分区 cookie，于是站点验证页轮询永远读不到已经落库的放行 cookie（BUG-2511）。改用
+  // `Storage.getCookies` 拿整个 browser context 的全量（含分区，带 `partitionKey`），再在这里
+  // 按 URL 自己匹配；分区键不参与匹配——调用方要的是「这个站点名下有什么」，而不是某个
+  // 顶层站点视角下浏览器会发什么。
+  struct ParsedCookieUrl {
+    std::string host;
+    std::string path;
+    bool secure = false;
+  };
+
+  static std::string toLowerAscii(std::string value)
+  {
+    for (auto& ch : value) {
+      ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+  }
+
+  static ParsedCookieUrl parseCookieUrl(const std::string& url)
+  {
+    ParsedCookieUrl parsed;
+    const auto schemeEnd = url.find("://");
+    std::string rest = schemeEnd == std::string::npos ? url : url.substr(schemeEnd + 3);
+    parsed.secure = schemeEnd != std::string::npos && toLowerAscii(url.substr(0, schemeEnd)) == "https";
+    const auto pathStart = rest.find_first_of("/?#");
+    std::string authority = pathStart == std::string::npos ? rest : rest.substr(0, pathStart);
+    parsed.path = pathStart == std::string::npos || rest[pathStart] != '/' ? "/" : rest.substr(pathStart);
+    const auto queryStart = parsed.path.find_first_of("?#");
+    if (queryStart != std::string::npos) {
+      parsed.path = parsed.path.substr(0, queryStart);
+    }
+    const auto at = authority.rfind('@');
+    if (at != std::string::npos) {
+      authority = authority.substr(at + 1);
+    }
+    const auto colon = authority.rfind(':');
+    if (colon != std::string::npos && authority.find(']') == std::string::npos) {
+      authority = authority.substr(0, colon);
+    }
+    parsed.host = toLowerAscii(authority);
+    return parsed;
+  }
+
+  static bool cookieDomainMatches(const std::string& host, std::string domain)
+  {
+    domain = toLowerAscii(domain);
+    const bool hostOnly = !domain.empty() && domain[0] != '.';
+    if (!hostOnly && !domain.empty()) {
+      domain = domain.substr(1);
+    }
+    if (domain.empty()) {
+      return false;
+    }
+    if (host == domain) {
+      return true;
+    }
+    if (hostOnly) {
+      return false;
+    }
+    return host.size() > domain.size()
+      && host.compare(host.size() - domain.size(), domain.size(), domain) == 0
+      && host[host.size() - domain.size() - 1] == '.';
+  }
+
+  static bool cookiePathMatches(const std::string& requestPath, const std::string& cookiePath)
+  {
+    if (cookiePath.empty() || cookiePath == "/") {
+      return true;
+    }
+    if (requestPath == cookiePath) {
+      return true;
+    }
+    if (requestPath.compare(0, cookiePath.size(), cookiePath) != 0) {
+      return false;
+    }
+    return cookiePath.back() == '/' || requestPath[cookiePath.size()] == '/';
+  }
+
+  static bool cookieMatchesUrl(const nlohmann::json& jsonCookie, const ParsedCookieUrl& url)
+  {
+    if (!jsonCookie.contains("domain") || !jsonCookie["domain"].is_string()) {
+      return false;
+    }
+    if (!cookieDomainMatches(url.host, jsonCookie["domain"].get<std::string>())) {
+      return false;
+    }
+    const std::string path = jsonCookie.contains("path") && jsonCookie["path"].is_string()
+      ? jsonCookie["path"].get<std::string>() : "/";
+    if (!cookiePathMatches(url.path, path)) {
+      return false;
+    }
+    const bool secure = jsonCookie.contains("secure") && jsonCookie["secure"].is_boolean() && jsonCookie["secure"].get<bool>();
+    return !secure || url.secure;
+  }
+
+  static flutter::EncodableMap cookieToEncodableMap(const nlohmann::json& jsonCookie)
+  {
+    return flutter::EncodableMap{
+      {"name", jsonCookie["name"].get<std::string>()},
+      {"value", jsonCookie["value"].get<std::string>()},
+      {"domain", jsonCookie["domain"].get<std::string>()},
+      {"path", jsonCookie["path"].get<std::string>()},
+      {"expiresDate", cookieExpiresDateMs(jsonCookie)},
+      {"isHttpOnly", jsonCookie["httpOnly"].get<bool>()},
+      {"isSecure", jsonCookie["secure"].get<bool>()},
+      {"isSessionOnly", jsonCookie["session"].get<bool>()},
+      {"sameSite", jsonCookie.contains("sameSite") ? jsonCookie["sameSite"].get<std::string>() : make_fl_value()}
+    };
+  }
+
+  // 对 `url` 生效的全部 cookie（含分区 cookie），见 [cookieMatchesUrl]。
+  static void collectCookiesForUrl(WebViewEnvironment* webViewEnvironment, const std::string& url, std::function<void(std::vector<nlohmann::json>)> completionHandler)
+  {
+    const ParsedCookieUrl parsed = parseCookieUrl(url);
+    auto hr = webViewEnvironment->getWebView()->CallDevToolsProtocolMethod(L"Storage.getCookies", L"{}", Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+      [completionHandler, parsed](HRESULT errorCode, LPCWSTR returnObjectAsJson)
+      {
+        std::vector<nlohmann::json> matched;
+        if (succeededOrLog(errorCode)) {
+          nlohmann::json json = nlohmann::json::parse(wide_to_utf8(returnObjectAsJson));
+          if (json.contains("cookies") && json["cookies"].is_array()) {
+            for (auto& jsonCookie : json["cookies"]) {
+              if (cookieMatchesUrl(jsonCookie, parsed)) {
+                matched.push_back(jsonCookie);
+              }
+            }
+          }
+        }
+        completionHandler(std::move(matched));
+        return S_OK;
+      }
+    ).Get());
+
+    if (failedAndLog(hr)) {
+      completionHandler({});
+    }
+  }
+
   void CookieManager::setCookie(WebViewEnvironment* webViewEnvironment, const flutter::EncodableMap& map, std::function<void(const bool&)> completionHandler) const
   {
     if (!plugin || !plugin->webViewEnvironmentManager) {
@@ -184,44 +327,20 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    nlohmann::json parameters = {
-      {"urls", std::vector<std::string>{url}}
-    };
-
-    auto hr = webViewEnvironment->getWebView()->CallDevToolsProtocolMethod(L"Network.getCookies", utf8_to_wide(parameters.dump()).c_str(), Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
-      [completionHandler, name](HRESULT errorCode, LPCWSTR returnObjectAsJson)
+    collectCookiesForUrl(webViewEnvironment, url, [completionHandler, name](std::vector<nlohmann::json> cookies)
       {
-        if (succeededOrLog(errorCode)) {
-          nlohmann::json json = nlohmann::json::parse(wide_to_utf8(returnObjectAsJson));
-          auto jsonCookies = json["cookies"].get<std::vector<nlohmann::json>>();
-          for (auto& jsonCookie : jsonCookies) {
-            auto cookieName = jsonCookie["name"].get<std::string>();
-            if (string_equals(name, cookieName)) {
-              completionHandler(flutter::EncodableMap{
-                {"name", cookieName},
-                {"value", jsonCookie["value"].get<std::string>()},
-                {"domain", jsonCookie["domain"].get<std::string>()},
-                {"path", jsonCookie["path"].get<std::string>()},
-                {"expiresDate", cookieExpiresDateMs(jsonCookie)},
-                {"isHttpOnly", jsonCookie["httpOnly"].get<bool>()},
-                {"isSecure", jsonCookie["secure"].get<bool>()},
-                {"isSessionOnly", jsonCookie["session"].get<bool>()},
-                {"sameSite", jsonCookie.contains("sameSite") ? jsonCookie["sameSite"].get<std::string>() : make_fl_value()}
-                });
-              return S_OK;
+        for (auto& jsonCookie : cookies) {
+          if (string_equals(name, jsonCookie["name"].get<std::string>())) {
+            if (completionHandler) {
+              completionHandler(cookieToEncodableMap(jsonCookie));
             }
+            return;
           }
         }
         if (completionHandler) {
           completionHandler(make_fl_value());
         }
-        return S_OK;
-      }
-    ).Get());
-
-    if (failedAndLog(hr) && completionHandler) {
-      completionHandler(make_fl_value());
-    }
+      });
   }
 
   void CookieManager::getCookies(WebViewEnvironment* webViewEnvironment, const std::string& url, std::function<void(const flutter::EncodableList&)> completionHandler) const
@@ -233,41 +352,16 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    nlohmann::json parameters = {
-      {"urls", std::vector<std::string>{url}}
-    };
-
-    auto hr = webViewEnvironment->getWebView()->CallDevToolsProtocolMethod(L"Network.getCookies", utf8_to_wide(parameters.dump()).c_str(), Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
-      [completionHandler](HRESULT errorCode, LPCWSTR returnObjectAsJson)
+    collectCookiesForUrl(webViewEnvironment, url, [completionHandler](std::vector<nlohmann::json> matched)
       {
         std::vector<flutter::EncodableValue> cookies = {};
-        if (succeededOrLog(errorCode)) {
-          nlohmann::json json = nlohmann::json::parse(wide_to_utf8(returnObjectAsJson));
-          auto jsonCookies = json["cookies"].get<std::vector<nlohmann::json>>();
-          for (auto& jsonCookie : jsonCookies) {
-            cookies.push_back(flutter::EncodableMap{
-              {"name", jsonCookie["name"].get<std::string>()},
-              {"value", jsonCookie["value"].get<std::string>()},
-              {"domain", jsonCookie["domain"].get<std::string>()},
-              {"path", jsonCookie["path"].get<std::string>()},
-              {"expiresDate", cookieExpiresDateMs(jsonCookie)},
-              {"isHttpOnly", jsonCookie["httpOnly"].get<bool>()},
-              {"isSecure", jsonCookie["secure"].get<bool>()},
-              {"isSessionOnly", jsonCookie["session"].get<bool>()},
-              {"sameSite", jsonCookie.contains("sameSite") ? jsonCookie["sameSite"].get<std::string>() : make_fl_value()}
-              });
-          }
+        for (auto& jsonCookie : matched) {
+          cookies.push_back(cookieToEncodableMap(jsonCookie));
         }
         if (completionHandler) {
           completionHandler(cookies);
         }
-        return S_OK;
-      }
-    ).Get());
-
-    if (failedAndLog(hr) && completionHandler) {
-      completionHandler({});
-    }
+      });
   }
 
   void CookieManager::deleteCookie(WebViewEnvironment* webViewEnvironment, const std::string& url, const std::string& name, const std::string& path, const std::optional<std::string>& domain, std::function<void(const bool&)> completionHandler) const

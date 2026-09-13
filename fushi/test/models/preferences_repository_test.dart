@@ -135,23 +135,22 @@ void main() {
       expect(repo.lowMemoryMode, false);
     });
 
-    test('audioSources returns default URL list', () {
-      expect(repo.audioSources, PreferencesRepository.defaultAudioSources);
+    test('audioSources defaults to an empty list (no built-in remote source)',
+        () {
+      expect(repo.audioSources, isEmpty);
     });
 
     test(
-        'audioSourceConfigs on a fresh install ships the default remote '
-        'audio source DISABLED (TODO-083)', () {
-      // 纯新装（两个 audio pref 都没写过）：内置远端音频源（manhhaoo worker）
-      // 必须默认关闭，fushiRemote 也默认关闭。任何源都不应自动启用。
+        'audioSourceConfigs on a fresh install ships NO third-party remote '
+        'audio source, and nothing enabled', () {
+      // 纯新装（两个 audio pref 都没写过）：不再内置任何第三方网络音频库
+      // （2026-09-13 拍板删掉 manhhaoo worker 默认源）；只有 fushiRemote 与 Anki
+      // 本地预设，且全部默认关闭。任何源都不应自动启用。
       final List<AudioSourceConfig> configs = repo.audioSourceConfigs;
       expect(
         configs,
         <AudioSourceConfig>[
           AudioSourceConfig.fushiRemote(),
-          ...AudioSourceConfig.fromLegacyUrls(
-            PreferencesRepository.defaultAudioSources,
-          ).map((AudioSourceConfig s) => s.copyWith(enabled: false)),
           // 内置 Anki 本地音频服务器（5050）预设，追加在列尾、默认关闭。
           AudioSourceConfig.remoteAudio(
             url: PreferencesRepository.ankiLocalAudioUrl,
@@ -193,6 +192,51 @@ void main() {
         'https://legacy.test/?term={term}&reading={reading}',
       );
       repo2.dispose();
+    });
+
+    test(
+        'retired built-in remote audio URL is purged from persisted typed '
+        'configs and legacy audio_sources', () async {
+      // 老用户列表里残留的已退役内置 worker URL（曾随新装默认写入、用户可能已
+      // 启用）必须在读取咽喉剔除；只删默认值不清持久化 = 只对新装生效。
+      // 用户自填的其它远端 URL 原样保留。
+      final String retired = PreferencesRepository.retiredAudioSourceUrls.first;
+      await repo.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.fushiRemote(),
+        AudioSourceConfig.remoteAudio(url: retired, enabled: true),
+        AudioSourceConfig.remoteAudio(
+          url: 'https://mine.test/?term={term}',
+          enabled: true,
+        ),
+      ]);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      final List<String?> typedUrls = repo2.audioSourceConfigs
+          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.remoteAudio)
+          .map((AudioSourceConfig s) => s.url)
+          .toList();
+      expect(typedUrls, isNot(contains(retired)));
+      expect(typedUrls, contains('https://mine.test/?term={term}'));
+      repo2.dispose();
+
+      // legacy 路径：typed config 为空、只有 audio_sources 的老用户同样剔除。
+      final PreferencesRepository repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      await repo3.setPref('audio_source_configs', <Object?>[]);
+      repo3
+          .setAudioSources(<String>[retired, 'https://mine.test/?term={term}']);
+      await Future<void>.delayed(Duration.zero);
+      final PreferencesRepository repo4 = PreferencesRepository(db);
+      await repo4.loadFromDb();
+      final List<String?> legacyUrls = repo4.audioSourceConfigs
+          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.remoteAudio)
+          .map((AudioSourceConfig s) => s.url)
+          .toList();
+      expect(legacyUrls, isNot(contains(retired)));
+      expect(legacyUrls, contains('https://mine.test/?term={term}'));
+      repo3.dispose();
+      repo4.dispose();
     });
 
     test(

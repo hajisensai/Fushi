@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
+    show OnlineMangaSiblingSource, OnlineMangaSourceLanguageScope;
 import 'package:fushi/utils.dart';
 
 /// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
@@ -41,6 +43,8 @@ class MangaChapterList extends StatelessWidget {
     this.ocrRunningChapterKey,
     this.ocrProgress,
     this.ocrQueuedChapterKeys = const <String>{},
+    this.languageScope,
+    this.onSiblingSourceTap,
   });
 
   final OnlineMangaLibraryEntry? entry;
@@ -78,6 +82,12 @@ class MangaChapterList extends StatelessWidget {
   final ({int done, int total})? ocrProgress;
   final Set<String> ocrQueuedChapterKeys;
 
+  /// 空章节列表的解释（BUG-2510）：该源只取哪种语言的章 + 同扩展其它语言的源。
+  /// null = 不知道 / 不适用，空态沿用「还没有章节」。作品页只在「刷新已结束、
+  /// 无错、0 话」时给，刷新途中或失败时都是 null——那两种情况各有自己的提示。
+  final OnlineMangaSourceLanguageScope? languageScope;
+  final void Function(OnlineMangaSiblingSource sibling)? onSiblingSourceTap;
+
   /// 一章的下载状态：磁盘判据优先（真正决定能不能读），其次看任务行。
   _ChapterDownloadState _downloadStateOf(OnlineMangaChapter chapter) {
     if (downloadedChapterKeys.contains(chapter.key)) {
@@ -110,7 +120,7 @@ class MangaChapterList extends StatelessWidget {
           const SizedBox(height: 8),
         ],
         if (chapters.isEmpty)
-          _buildEmpty(context, t.manga_series_no_chapters)
+          _buildEmptyChapters(context)
         else if (visible.isEmpty)
           _buildEmpty(context, t.manga_series_all_read)
         else
@@ -160,6 +170,55 @@ class MangaChapterList extends StatelessWidget {
             onSelected: (_) => onUnreadOnlyToggled!(),
           ),
       ],
+    );
+  }
+
+  Widget _buildEmptyChapters(BuildContext context) {
+    final OnlineMangaSourceLanguageScope? scope = languageScope;
+    if (scope == null) return _buildEmpty(context, t.manga_series_no_chapters);
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: <Widget>[
+          Text(t.manga_series_no_chapters, style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 4),
+          Text(
+            t.manga_series_no_chapters_in_language(
+              language: scope.language.toUpperCase(),
+            ),
+            key: const ValueKey<String>('manga_series_language_scope'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (scope.siblings.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: <Widget>[
+                for (final OnlineMangaSiblingSource sibling in scope.siblings)
+                  ActionChip(
+                    key: ValueKey<String>(
+                      'manga_series_sibling_${sibling.sourceId}',
+                    ),
+                    label: Text(
+                      t.manga_series_try_sibling_language(
+                        language: sibling.language.toUpperCase(),
+                      ),
+                    ),
+                    onPressed: onSiblingSourceTap == null
+                        ? null
+                        : () => onSiblingSourceTap!(sibling),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 

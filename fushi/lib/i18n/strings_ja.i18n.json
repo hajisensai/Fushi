@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ローカルONNX",
   "manga_ocr_engine_local_onnx_desc": "完全オフライン、最高品質。初回のモデルダウンロードが必要で、古いハードウェアでは遅くなります。",
   "manga_ocr_engine_none": "OCRエンジンがありません。内蔵モデルをダウンロードするか、設定でmokuro CLIのパスを指定してください。",
-  "manga_ocr_engine_paired_host_desc": "ネットワーク上のペアリング済みデバイスに処理を委託します。この端末にはダウンロード不要です。",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "端末の OCR",
   "manga_ocr_engine_system_desc": "端末に内蔵された文字認識を使います。ダウンロード不要、完全にオフラインで、何もアップロードしません。ただし縦書きの吹き出しや手書き文字ではローカルモデルよりはっきり弱くなります。",
   "manga_ocr_engine_system_unavailable": "この端末では内蔵の文字認識を利用できません",
@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "除外",
   "mihon_filter_ignore": "無視",
   "mihon_filter_include": "含める",
-  "mihon_in_bookshelf": "マンガ本棚に追加済み",
   "mihon_runtime_unavailable": "このプラットフォームではMihon拡張機能は利用できません。",
   "mihon_signer_fingerprint": "署名者 SHA-256",
   "mihon_signer_trust_title": "拡張機能の署名者を信頼しますか？",
@@ -4808,6 +4807,11 @@
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
   "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_series_no_chapters_in_language": "This source only lists ${language} chapters",
+  "manga_series_try_sibling_language": "Try ${language}",
+  "manga_series_remove_from_bookshelf": "Remove from manga shelf",
+  "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
   "reader_volume_open": "Open this volume",
   "reader_volume_peek_failed": "Could not read this volume"
 }

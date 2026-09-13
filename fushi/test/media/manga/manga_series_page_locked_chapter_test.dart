@@ -64,12 +64,23 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
 /// 能登录的适配器：登录目标指向一个「浏览器持有 cookie」的运行时。
 class _LoginAdapter extends _FakeAdapter implements OnlineMangaLoginCapable {
+  _LoginAdapter({this.loginUnlocksChapters = true});
+
+  /// false = 源能登录，但登录解不开任何一章（BUG-2514 quirk 章的形态）。
+  final bool loginUnlocksChapters;
+
   @override
   OnlineMangaLoginTarget? loginTarget(OnlineMangaLibraryEntry entry) => (
     runtime: _BrowserCookieRuntime(),
     sourceName: 'Fake',
     baseUrl: 'https://example.org',
   );
+
+  @override
+  OnlineMangaLoginTarget? loginTargetForChapter(
+    OnlineMangaLibraryEntry entry,
+    OnlineMangaChapter chapter,
+  ) => loginUnlocksChapters ? loginTarget(entry) : null;
 }
 
 class _BrowserCookieRuntime implements BrowserCookieMihonRuntime {}
@@ -263,6 +274,24 @@ void main() {
       await _settle(tester);
       expect(find.byKey(dialogKey), findsOneWidget);
       expect(find.byKey(loginKey), findsOneWidget);
+    });
+  });
+
+  // BUG-2514：源能登录、但这一章登录也解不开 → 弹窗不给「登录」、提示说清楚；
+  // AppBar 的登录按钮（按源）照常在。
+  testWidgets('登录解不开这一章 → 弹窗无「登录」按钮、提示换成不支持解锁', (WidgetTester tester) async {
+    await tester.runAsync(() async {
+      await openPage(tester, _LoginAdapter(loginUnlocksChapters: false));
+      expect(find.byKey(appBarLoginKey), findsOneWidget);
+      await tester.tap(find.text('\u{1F512} Chapter 2'));
+      await _settle(tester);
+      expect(find.byKey(dialogKey), findsOneWidget);
+      expect(find.byKey(loginKey), findsNothing);
+      expect(
+        find.textContaining(t.manga_chapter_locked_login_unsupported_hint),
+        findsOneWidget,
+      );
+      expect(find.textContaining(t.manga_chapter_locked_hint), findsNothing);
     });
   });
 

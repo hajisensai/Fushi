@@ -57,14 +57,14 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   /// 主机拒绝互联 token 时给用户看的话。制卡失败与查重失败共用同一句，
   /// 因为它们是同一个 token 被同一台主机拒绝。
   static const String tokenRejectedMessage =
-      'The paired device rejected the interconnect token. Re-pair the device.';
+      'The Fushi Interconnect server rejected the interconnect token. Re-pair the device.';
 
   /// 没有互联主机可接收制卡请求时，同时说明失败结果和两条恢复路径。
   /// 避免把内部术语 "server-side mining" 暴露给只想完成制卡的用户。
   static const String pairedDeviceUnreachableMessage =
-      "Couldn't create the card because no paired device could be reached. "
-      'Make sure Fushi is running on the paired device, or turn off '
-      'Mine to paired device in Anki settings to create cards locally.';
+      "Couldn't create the card because the Fushi Interconnect server could not be reached. "
+      'Make sure Fushi is running there, or turn off '
+      'Mine to Fushi Interconnect server in Anki settings to create cards locally.';
 
   final BaseAnkiRepository _local;
   final RemoteMineSender _client;
@@ -108,7 +108,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       );
     } catch (e, st) {
       return MineOutcome.failure(
-        'Failed to forward the card to the paired device: $e',
+        'Failed to forward the card to the Fushi Interconnect server: $e',
         errorCode: AnkiErrorCode.connectionUnknown,
         error: e,
         stackTrace: st,
@@ -251,7 +251,9 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       return const MineOutcome.notConfigured();
     }
     return MineOutcome.failure(
-      message ?? detail ?? 'The paired device failed to create the card.',
+      message ??
+          detail ??
+          'The Fushi Interconnect server failed to create the card.',
     );
   }
 
@@ -283,7 +285,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     final RemoteMineSender client = _client;
     if (client is! RemoteSourceNoteSender) {
       throw UnsupportedError(
-        'The paired device does not support source editing.',
+        'The Fushi Interconnect server does not support source editing.',
       );
     }
     return client as RemoteSourceNoteSender;

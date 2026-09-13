@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX محلي",
   "manga_ocr_engine_local_onnx_desc": "غير متصل بالكامل، أفضل جودة. يحتاج تحميل نموذج لمرة واحدة وبطيء على الأجهزة القديمة.",
   "manga_ocr_engine_none": "لا يوجد محرك OCR متاح. حمّل النماذج المدمجة أو عيّن مسار Mokuro CLI في الإعدادات.",
-  "manga_ocr_engine_paired_host_desc": "يُسند العمل إلى جهاز مقترن على شبكتك. لا يتم تحميل شيء هنا.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR الجهاز",
   "manga_ocr_engine_system_desc": "يستخدم التعرف على النص المدمج في جهازك. بلا تنزيل، ويعمل دون اتصال تمامًا، ولا يُرفع أي شيء — لكنه أضعف بوضوح من النموذج المحلي مع الفقاعات الرأسية والخط اليدوي.",
   "manga_ocr_engine_system_unavailable": "لا يتوفر في هذا الجهاز تعرف مدمج على النص",
@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "استبعاد",
   "mihon_filter_ignore": "تجاهل",
   "mihon_filter_include": "تضمين",
-  "mihon_in_bookshelf": "في رف المانغا",
   "mihon_runtime_unavailable": "إضافات Mihon غير متوفرة على هذه المنصة.",
   "mihon_signer_fingerprint": "بصمة SHA-256 للموقّع",
   "mihon_signer_trust_title": "الوثوق بموقّع الإضافة؟",
@@ -4808,6 +4807,11 @@
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
   "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_series_no_chapters_in_language": "This source only lists ${language} chapters",
+  "manga_series_try_sibling_language": "Try ${language}",
+  "manga_series_remove_from_bookshelf": "Remove from manga shelf",
+  "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
   "reader_volume_open": "Open this volume",
   "reader_volume_peek_failed": "Could not read this volume"
 }

@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "Локальный ONNX",
   "manga_ocr_engine_local_onnx_desc": "Полностью офлайн, лучшее качество. Требуется однократная загрузка модели, на старом оборудовании работает медленно.",
   "manga_ocr_engine_none": "Нет доступного движка OCR. Скачайте встроенные модели или укажите путь к mokuro CLI в настройках.",
-  "manga_ocr_engine_paired_host_desc": "Передаёт работу сопряжённому устройству в вашей сети. Ничего не загружается на это устройство.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR устройства",
   "manga_ocr_engine_system_desc": "Использует распознавание текста, встроенное в ваше устройство. Ничего не нужно скачивать, работает полностью офлайн, ничего не отправляется — но с вертикальными облачками и рукописным текстом справляется заметно хуже локальной модели.",
   "manga_ocr_engine_system_unavailable": "На этом устройстве нет доступного встроенного распознавания текста",
@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "Исключить",
   "mihon_filter_ignore": "Игнорировать",
   "mihon_filter_include": "Включить",
-  "mihon_in_bookshelf": "На полке манги",
   "mihon_runtime_unavailable": "Расширения Mihon недоступны на этой платформе.",
   "mihon_signer_fingerprint": "SHA-256 подписанта",
   "mihon_signer_trust_title": "Доверять подписанту расширения?",
@@ -4808,6 +4807,11 @@
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
   "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_series_no_chapters_in_language": "This source only lists ${language} chapters",
+  "manga_series_try_sibling_language": "Try ${language}",
+  "manga_series_remove_from_bookshelf": "Remove from manga shelf",
+  "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
   "reader_volume_open": "Open this volume",
   "reader_volume_peek_failed": "Could not read this volume"
 }

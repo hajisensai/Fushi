@@ -15,8 +15,16 @@ void main() {
       expect(OnlineMangaChapter.isLockedChapterName('  \u{1F512}x'), isTrue);
       expect(OnlineMangaChapter.isLockedChapterName('Vol.3'), isFalse);
       expect(OnlineMangaChapter.isLockedChapterName(''), isFalse);
-      // 锁在中间不算：只认前缀，和扩展的写法一致。
-      expect(OnlineMangaChapter.isLockedChapterName('Vol \u{1F512}'), isFalse);
+      // コミコ（Comico.LOCK = " 🔒"）拼在结尾，同样算（BUG-2514）；真在中间的不算。
+      expect(OnlineMangaChapter.isLockedChapterName('Vol \u{1F512}'), isTrue);
+      expect(
+        OnlineMangaChapter.isLockedChapterName('Vol.3 \u{1F512}  '),
+        isTrue,
+      );
+      expect(
+        OnlineMangaChapter.isLockedChapterName('Vol \u{1F512} extra'),
+        isFalse,
+      );
     });
 
     test('v3 描述符往返保留 locked；缺省 false', () {

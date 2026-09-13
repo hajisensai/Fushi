@@ -35,6 +35,9 @@ import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_tokenizer.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
+import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
+import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
+import 'package:fushi_engine/ocr/routing_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/text_detector.dart';
 import 'package:fushi_engine/utils/misc/directory_bytes.dart';
 
@@ -56,19 +59,27 @@ OcrPlatform resolveOcrPlatform(String operatingSystem) {
   }
 }
 
-/// 四个模型文件的绝对路径（isolate 参数，字段全 String 可跨 isolate 发送）。
+/// 七个模型文件的绝对路径（isolate 参数，字段全 String 可跨 isolate 发送）。
 class MangaOcrModelPaths {
   const MangaOcrModelPaths({
     required this.detectorPath,
     required this.encoderPath,
     required this.decoderPath,
     required this.vocabPath,
+    required this.ppDetPath,
+    required this.ppRecPath,
+    required this.ppRecDictPath,
   });
 
   final String detectorPath;
   final String encoderPath;
   final String decoderPath;
   final String vocabPath;
+
+  /// 横排行路径：PP-OCRv6 small det / rec / rec 字典（`inference.yml`）。
+  final String ppDetPath;
+  final String ppRecPath;
+  final String ppRecDictPath;
 }
 
 /// 整卷任务请求。
@@ -271,7 +282,10 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   args.events.send(_JobControlPortMessage(control.sendPort));
 
   TextDetector? detector;
-  MangaOcrRecognizer? recognizer;
+  MangaOcrRecognizer? mangaOcr;
+  PpOcrLineDetector? lineDetector;
+  PpOcrLineRecognizer? lineRecognizer;
+  RoutingOcrRecognizer? recognizer;
   try {
     // 宿主引导（app：BackgroundIsolateBinaryMessenger.ensureInitialized(token)；
     // 服务端：null）。没装引导而宿主又需要它时，第一次 ORT 调用会以
@@ -353,10 +367,34 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     final MangaOcrTokenizer tokenizer = MangaOcrTokenizer.fromVocabText(
       await File(args.modelPaths.vocabPath).readAsString(),
     );
-    recognizer = MangaOcrRecognizer(
+    mangaOcr = MangaOcrRecognizer(
       encoderSession: encoder,
       decoderSession: decoder,
       tokenizer: tokenizer,
+    );
+    // 横排行路径：PP-OCRv6 small det/rec 与 manga-ocr 同一组 provider（都是识别侧、
+    // 都是纯 CPU 档）；建会话时的降级同样经 record 留痕。
+    lineDetector = PpOcrLineDetector(await factory.createSession(
+      args.modelPaths.ppDetPath,
+      providers: recognitionProviders,
+      onProviderResolved: (OcrProviderResolution resolution) =>
+          record('line detector', resolution),
+    ));
+    lineRecognizer = PpOcrLineRecognizer(
+      await factory.createSession(
+        args.modelPaths.ppRecPath,
+        providers: recognitionProviders,
+        onProviderResolved: (OcrProviderResolution resolution) =>
+            record('line recognizer', resolution),
+      ),
+      vocab: buildPpOcrCtcVocab(parsePpOcrCharacterDict(
+        await File(args.modelPaths.ppRecDictPath).readAsString(),
+      )),
+    );
+    recognizer = RoutingOcrRecognizer(
+      mangaOcr: mangaOcr,
+      lineDetector: lineDetector,
+      lineRecognizer: lineRecognizer,
     );
 
     // 缓存目录带上本机已安装模型的内容指纹：上游换模型后旧页缓存自然失效，
@@ -387,7 +425,15 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       await detector?.close();
     } catch (_) {}
     try {
-      await recognizer?.close();
+      await mangaOcr?.close();
+    } catch (_) {}
+    // 三个 PP 侧对象各自持有会话：建到一半抛异常时 recognizer 还是 null，
+    // 只关它会漏掉已建好的 det / rec 会话，所以逐个关。
+    try {
+      await lineDetector?.close();
+    } catch (_) {}
+    try {
+      await lineRecognizer?.close();
     } catch (_) {}
   }
 }
@@ -668,6 +714,10 @@ class MangaOcrServiceImpl implements MangaOcrService {
       encoderPath: pathOf(MangaOcrModelRole.recognizer, 'encoder_model.onnx'),
       decoderPath: pathOf(MangaOcrModelRole.recognizer, 'decoder_model.onnx'),
       vocabPath: pathOf(MangaOcrModelRole.recognizer, 'vocab.txt'),
+      ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
+      ppRecPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrRecFileName),
+      ppRecDictPath:
+          pathOf(MangaOcrModelRole.recognizer, kPpOcrRecDictFileName),
     );
   }
 

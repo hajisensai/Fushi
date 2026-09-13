@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX cục bộ",
   "manga_ocr_engine_local_onnx_desc": "Hoàn toàn ngoại tuyến, chất lượng tốt nhất. Cần tải mô hình một lần và chạy chậm trên phần cứng cũ.",
   "manga_ocr_engine_none": "Không có công cụ OCR. Tải xuống mô hình tích hợp hoặc đặt đường dẫn CLI mokuro trong cài đặt.",
-  "manga_ocr_engine_paired_host_desc": "Chuyển công việc cho thiết bị ghép đôi trên mạng. Không cần tải xuống gì ở đây.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR của thiết bị",
   "manga_ocr_engine_system_desc": "Dùng khả năng nhận dạng văn bản có sẵn trên thiết bị. Không cần tải về, hoàn toàn ngoại tuyến, không gửi gì đi — nhưng kém hơn hẳn mô hình cục bộ với bong bóng thoại dọc và chữ viết tay.",
   "manga_ocr_engine_system_unavailable": "Thiết bị này không có sẵn khả năng nhận dạng văn bản",
@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "Loại trừ",
   "mihon_filter_ignore": "Bỏ qua",
   "mihon_filter_include": "Bao gồm",
-  "mihon_in_bookshelf": "Trong kệ truyện tranh",
   "mihon_runtime_unavailable": "Tiện ích Mihon không khả dụng trên nền tảng này.",
   "mihon_signer_fingerprint": "SHA-256 nhà phát hành",
   "mihon_signer_trust_title": "Tin tưởng nhà phát hành tiện ích?",
@@ -4808,6 +4807,11 @@
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
   "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_series_no_chapters_in_language": "This source only lists ${language} chapters",
+  "manga_series_try_sibling_language": "Try ${language}",
+  "manga_series_remove_from_bookshelf": "Remove from manga shelf",
+  "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
   "reader_volume_open": "Open this volume",
   "reader_volume_peek_failed": "Could not read this volume"
 }

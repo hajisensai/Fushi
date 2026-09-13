@@ -146,8 +146,10 @@ class OnlineMangaLibraryService {
         );
         coverPath = p.basename(coverFile);
       } on CoverImageInvalidException catch (e) {
-        ErrorLogService.instance
-            .logDiagnostic('OnlineMangaLibraryService.cover', e);
+        ErrorLogService.instance.logDiagnostic(
+          'OnlineMangaLibraryService.cover',
+          e,
+        );
       } on Object {
         // 封面失败不能挡住「追这部作品」。作品页仍会经源的运行时按需取图。
       }
@@ -240,25 +242,22 @@ class OnlineMangaLibraryService {
       current: current,
     );
     if (fresh.isEmpty) return;
-    await feed.publishBatch(
-      UpdateFeedKind.mangaChapter,
-      <UpdateFeedDraft>[
-        for (final OnlineMangaChapter chapter in fresh)
-          UpdateFeedDraft(
-            kind: UpdateFeedKind.mangaChapter,
-            targetKey: mangaChapterTargetKey(
-              bookKey: bookKey,
-              chapterKey: chapter.key,
-            ),
-            title: title,
-            subtitle: mangaChapterDisplayName(chapter),
-            detailJson: jsonEncode(<String, Object?>{
-              'bookKey': bookKey,
-              'chapterKey': chapter.key,
-            }),
+    await feed.publishBatch(UpdateFeedKind.mangaChapter, <UpdateFeedDraft>[
+      for (final OnlineMangaChapter chapter in fresh)
+        UpdateFeedDraft(
+          kind: UpdateFeedKind.mangaChapter,
+          targetKey: mangaChapterTargetKey(
+            bookKey: bookKey,
+            chapterKey: chapter.key,
           ),
-      ],
-    );
+          title: title,
+          subtitle: mangaChapterDisplayName(chapter),
+          detailJson: jsonEncode(<String, Object?>{
+            'bookKey': bookKey,
+            'chapterKey': chapter.key,
+          }),
+        ),
+    ]);
   }
 
   /// 联网刷新一条书架条目，成功则落库。
@@ -390,7 +389,9 @@ class OnlineMangaLibraryService {
 
   static Future<void> _copyTree(Directory source, Directory destination) async {
     await destination.create(recursive: true);
-    await for (final FileSystemEntity entity in source.list(followLinks: false)) {
+    await for (final FileSystemEntity entity in source.list(
+      followLinks: false,
+    )) {
       final String name = p.basename(entity.path);
       final String targetPath = p.join(destination.path, name);
       if (entity is Directory) {

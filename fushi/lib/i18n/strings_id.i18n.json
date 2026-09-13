@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX lokal",
   "manga_ocr_engine_local_onnx_desc": "Sepenuhnya offline, kualitas terbaik. Perlu unduhan model satu kali dan lambat di perangkat keras lama.",
   "manga_ocr_engine_none": "Tidak ada mesin OCR yang tersedia. Unduh model bawaan atau atur jalur CLI mokuro di pengaturan.",
-  "manga_ocr_engine_paired_host_desc": "Menyerahkan pekerjaan ke perangkat pasangan di jaringan Anda. Tidak ada yang diunduh di sini.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR perangkat",
   "manga_ocr_engine_system_desc": "Memakai pengenalan teks bawaan perangkat Anda. Tanpa unduhan, sepenuhnya luring, tidak ada yang diunggah — tetapi jelas lebih lemah pada balon percakapan vertikal dan tulisan tangan dibanding model lokal.",
   "manga_ocr_engine_system_unavailable": "Perangkat ini tidak punya pengenalan teks bawaan yang tersedia",
@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "Kecualikan",
   "mihon_filter_ignore": "Abaikan",
   "mihon_filter_include": "Sertakan",
-  "mihon_in_bookshelf": "Di rak manga",
   "mihon_runtime_unavailable": "Ekstensi Mihon tidak tersedia di platform ini.",
   "mihon_signer_fingerprint": "SHA-256 penanda tangan",
   "mihon_signer_trust_title": "Percayai penanda tangan ekstensi?",
@@ -4808,6 +4807,11 @@
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
   "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_series_no_chapters_in_language": "This source only lists ${language} chapters",
+  "manga_series_try_sibling_language": "Try ${language}",
+  "manga_series_remove_from_bookshelf": "Remove from manga shelf",
+  "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
   "reader_volume_open": "Open this volume",
   "reader_volume_peek_failed": "Could not read this volume"
 }

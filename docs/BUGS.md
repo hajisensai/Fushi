@@ -29,12 +29,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2319 条。点号进各自文件。
+> 共 2327 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2521](bugs/BUG-2521-reader-collection-volume-switch.md) | ✅ | ✅ | 阅读器章节列表 / 插图画廊缺少同合集卷切换 |
 | [BUG-2520](bugs/BUG-2520-video-episode-panel-season-switcher.md) | ✅ | ✅ | 播放器「选集」面板对多季合集没有季切换 |
+| [BUG-2519](bugs/BUG-2519-manga-ocr-chapter-rerun-replays-cache.md) | ✅ | ✅ | 作品页「识别本章」对已识别的章只回放旧结果，不重新识别 |
+| [BUG-2518](bugs/BUG-2518-manga-ocr-detector-labels-int64-server.md) | ✅ | ✅ | 无头服务端漫画 OCR 第一页空指针：检测器 labels 只认 float |
+| [BUG-2517](bugs/BUG-2517-manga-ocr-duplicate-text-block-nms.md) | ✅ | ✅ | 漫画 OCR 同一块文字在 manga.json 里写两次（NMS 文字两类互不抑制） |
+| [BUG-2516](bugs/BUG-2516-manga-ocr-horizontal-block-hallucination.md) | ✅ | ✅ | 本地漫画 OCR 横排段落整段幻觉（扉页简介 / 人物介绍 / 作者栏） |
+| [BUG-2514](bugs/BUG-2514-mihon-comico-magazine-comic-not-found.md) | ✅ | ✅ | コミコ源章节阶段报 Not Found |
+| [BUG-2513](bugs/BUG-2513-manga-series-remove-from-bookshelf.md) | ✅ | ✅ | 漫画作品页加入书架后无法取消 |
+| [BUG-2511](bugs/BUG-2511-cloudflare-partitioned-clearance-invisible-to-getcookies.md) | ✅ | ✅ | Windows 上 Cloudflare 的 Partitioned cf_clearance 对 CookieManager.getCookies 不可见，站点验证页永远不关 |
+| [BUG-2510](bugs/BUG-2510-manga-empty-chapters-language-scope.md) | ✅ | ✅ | 在线漫画作品页空章节不解释源按语言过滤 |
 | [BUG-2507](bugs/BUG-2507-youtube-stream-bounded-range.md) | ✅ | ✅ | YouTube 直连流只接受有界 Range，libmpv/ffmpeg 无 Range 首请求 403 → 打不开 |
 | [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |
 | [BUG-2505](bugs/BUG-2505-remote-audiobook-entry-lost-after-book-only.md) | ✅ | ✅ | 互联只下到书没下到有声书后再无补拉有声书入口 |
