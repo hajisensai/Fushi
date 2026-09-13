@@ -13,6 +13,7 @@ export 'src/anki_models.dart';
 export 'src/anki_note_type_definition.dart';
 export 'src/anki_remote_media_http.dart';
 export 'src/anki_template_render.dart';
+export 'src/card_source_link.dart';
 export 'src/ankiconnect/ankiconnect_service.dart';
 export 'src/lapis_blocks.dart';
 export 'src/lapis_note_type.dart';

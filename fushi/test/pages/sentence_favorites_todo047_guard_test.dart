@@ -189,7 +189,9 @@ void main() {
       );
       expect(
         videoSrc,
-        contains('widget.initialCueStartMs ?? row.lastPositionMs'),
+        contains('widget.sourceReview?.startMs ??\n'
+            '          widget.initialCueStartMs ??\n'
+            '          row.lastPositionMs,'),
         reason: '收藏 cue 起点 / 续播由 _loadSingle 消费',
       );
     });

@@ -65,11 +65,14 @@ void main() {
     // 来源仍由 dictionarySourceType => kStatSourceVideo 决定。
     expect(containsIdentifierCall(src, 'describeMineOutcome'), isTrue,
         reason: 'video 应经 describeMineOutcome 判定制卡结果');
+    // 回看会话（BUG-2503）里的制卡是对已有卡的回写，不记新卡账，故多一个
+    // `reviewSession == null` 门；普通路径仍按 described.record 记账。
     expect(
         containsCodeLine(
-            src, 'if (described.record) unawaited(_recordMinedForVideo());'),
+            src, 'if (described.record && reviewSession == null) {'),
         isTrue,
         reason: 'video 成功（described.record）必须记账，否则视频统计「制卡」恒为 0');
+    expect(containsCodeLine(src, 'unawaited(_recordMinedForVideo());'), isTrue);
     // 主壳的 _recordMinedForVideo 必须是 recordMined 的纯转发器（不得吞掉记账）。
     expect(
         containsCodeLine(

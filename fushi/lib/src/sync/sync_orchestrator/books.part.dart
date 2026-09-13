@@ -119,69 +119,61 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     }
   }
 
-  /// 互联书籍阅读进度 live 双向同步（TODO-767）。
+  /// 互联书籍阅读进度 live 双向同步（TODO-767 → BUG-2506 三方判定）。
   ///
   /// 遍历本地 `epub_books`，对每本书：GET host 真相源进度（[RemoteBookClient
   /// .remoteBookProgress]，host 直读自己的 `reader_positions`）+ 读本地
-  /// `reader_positions`，用 [resolveBookProgressSync]「取较新时间戳」选胜者；胜者
-  /// 严格新于 host 时 PUT 上报 host（[RemoteBookClient.putRemoteBookProgress]，host
-  /// 再防御性取较新落自己的 DB），胜者不同于本地时 upsert 回本地。
+  /// `reader_positions` + 读上次两端达成一致的**位置基线**，用
+  /// [resolveBookProgressThreeWay] 判定：只一端偏离基线 → 那端胜出并落到另一端；
+  /// 两端位置一致 → 只对齐时间戳；**两端都偏离且互不相同 → 冲突**，谁都不覆盖，
+  /// 记进 [report.conflicts] 交冲突弹窗（[SyncCompareDialog]）让用户选。
   ///
-  /// 修复根因：互联「立即同步」此前书籍进度只走 SyncManager 的 WebDAV 文件箱
-  /// （progress_*.json），host 从不读回自己的 reader_positions DB，故进度不过去。
-  /// 这里补对称视频 TODO-653 的 live 端点 + host-apply，让进度真正落 host DB。
+  /// 修复根因（BUG-2506）：此前这里是纯「取较新时间戳」LWW，没有冲突概念——host 上
+  /// 只要重开过书（位置没动时间戳也刷新）就在下一轮 sweep 把 client 的位置静默盖掉；
+  /// 而带三方冲突门的 SyncManager 路径对互联只比较 host 上的 WebDAV 文件箱
+  /// （client 自己写的），冲突条件结构上永远为假。IO 落地在
+  /// [InterconnectBookProgressSync]，与冲突弹窗的手动解决共用同一份。
   ///
   /// 逐本错误进 [report.errors] 不中断整体。
   Future<void> _syncBookProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
+    final InterconnectBookProgressSync sync =
+        InterconnectBookProgressSync(db: _db, backend: backend);
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     for (final EpubBookRow book in localBooks) {
       try {
-        final RemoteBookProgress remote =
-            await backend.remoteBookProgress(book.bookKey);
-        // v82：wire 键仍是 bookKey（REST 路径冻结），本地子表键是书 uid。
-        final ReaderPositionRow? localRow =
-            await _db.getReaderPosition(book.uid);
-        final RemoteBookProgress local = localRow == null
-            ? RemoteBookProgress.empty
-            : RemoteBookProgress(
-                sectionIndex: localRow.sectionIndex,
-                normCharOffset: localRow.normCharOffset,
-                charOffset: localRow.charOffset,
-                updatedAtMs: localRow.updatedAt,
-              );
-        final RemoteBookProgress winner =
-            resolveBookProgressSync(local: local, remote: remote);
-
-        // 本地→host：胜者严格新于 host 时上报（host 端再取较新，幂等安全）。
-        if (winner.updatedAtMs > remote.updatedAtMs ||
-            (winner.updatedAtMs == remote.updatedAtMs &&
-                (winner.sectionIndex != remote.sectionIndex ||
-                    winner.normCharOffset != remote.normCharOffset ||
-                    winner.charOffset != remote.charOffset))) {
-          await backend.putRemoteBookProgress(book.bookKey, winner);
-        }
-
-        // host→本地：胜者不同于本地时 upsert 回本地 reader_positions。
-        final bool localChanged = winner.sectionIndex != local.sectionIndex ||
-            winner.normCharOffset != local.normCharOffset ||
-            winner.charOffset != local.charOffset ||
-            winner.updatedAtMs != local.updatedAtMs;
-        if (localChanged && winner.updatedAtMs > 0) {
-          await _db.upsertReaderPosition(ReaderPositionsCompanion(
-            bookUid: Value(book.uid),
-            sectionIndex: Value(winner.sectionIndex),
-            normCharOffset: Value(winner.normCharOffset),
-            charOffset: Value(winner.charOffset),
-            updatedAt: Value(winner.updatedAtMs),
-          ));
-          // BUG-686: a host-newer progress pull lands in reader_positions but
-          // writes no book content, so it must still flag the shelf for a
-          // refresh — the cached fushiBooksProvider otherwise keeps showing the
-          // pre-sync progress bar and the sync looks like it did nothing.
-          report.localBookProgressPulled++;
+        final RemoteBookProgress remote = await sync.remoteProgress(book);
+        final RemoteBookProgress local = await sync.localProgress(book);
+        final BookProgressBaseline? base = await sync.baseline(book);
+        final BookProgressSyncAction action = resolveBookProgressThreeWay(
+          local: local,
+          remote: remote,
+          base: base,
+        );
+        switch (action) {
+          case BookProgressSyncAction.synced:
+            // BUG-686: a host-newer progress pull lands in reader_positions but
+            // writes no book content, so it must still flag the shelf for a
+            // refresh — the cached fushiBooksProvider otherwise keeps showing
+            // the pre-sync progress bar and the sync looks like it did nothing.
+            if (await sync.alignSynced(book, local: local, remote: remote)) {
+              report.localBookProgressPulled++;
+            }
+          case BookProgressSyncAction.pushLocal:
+            await sync.pushLocal(book, local: local, remote: remote);
+          case BookProgressSyncAction.applyRemote:
+            await sync.applyRemote(book, remote);
+            report.localBookProgressPulled++;
+          case BookProgressSyncAction.conflict:
+            report.conflicts.add(SyncConflict(
+              assetKey: book.bookKey,
+              dimension: kInterconnectBookProgressDimension,
+              title: book.title,
+              localVersion: local.updatedAtMs,
+              remoteVersion: remote.updatedAtMs,
+            ));
         }
       } catch (e) {
         report.noteError('live book progress "${book.title}"', e);

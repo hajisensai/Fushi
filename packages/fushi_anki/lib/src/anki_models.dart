@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
+import 'card_source_link.dart';
 
 class AnkiDeck {
   const AnkiDeck({required this.id, required this.name});
@@ -28,10 +29,10 @@ class AnkiNoteType {
   });
 
   factory AnkiNoteType.fromJson(Map<String, dynamic> json) => AnkiNoteType(
-        id: json['id'] as int,
-        name: json['name'] as String,
-        fields: List<String>.from(json['fields'] as List),
-      );
+    id: json['id'] as int,
+    name: json['name'] as String,
+    fields: List<String>.from(json['fields'] as List),
+  );
   final int id;
   final String name;
   final List<String> fields;
@@ -141,9 +142,9 @@ class MinedNoteRef {
   const MinedNoteRef({required this.noteId, this.preview = ''});
 
   factory MinedNoteRef.fromJson(Map<String, dynamic> json) => MinedNoteRef(
-        noteId: (json['noteId'] as num).toInt(),
-        preview: json['preview']?.toString() ?? '',
-      );
+    noteId: (json['noteId'] as num).toInt(),
+    preview: json['preview']?.toString() ?? '',
+  );
 
   /// Anki note id（创建时间戳毫秒，越大越新）。
   final int noteId;
@@ -152,9 +153,9 @@ class MinedNoteRef {
   final String preview;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'noteId': noteId,
-        'preview': preview,
-      };
+    'noteId': noteId,
+    'preview': preview,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -225,69 +226,69 @@ class AnkiSettings {
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
-        selectedDeckId: json['selectedDeckId'] as int?,
-        selectedDeckName: json['selectedDeckName'] as String?,
-        selectedNoteTypeId: json['selectedNoteTypeId'] as int?,
-        selectedNoteTypeName: json['selectedNoteTypeName'] as String?,
-        availableDecks: (json['availableDecks'] as List?)
-                ?.map((e) => AnkiDeck.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        availableNoteTypes: (json['availableNoteTypes'] as List?)
-                ?.map((e) => AnkiNoteType.fromJson(e as Map<String, dynamic>))
-                .toList() ??
-            [],
-        fieldMappings: Map<String, String>.from(
-          json['fieldMappings'] as Map? ?? {},
-        ),
-        tags: json['tags'] as String? ?? '',
-        tagIncludeHibiki: json['tagIncludeHibiki'] as bool? ?? true,
-        tagIncludeCategory: json['tagIncludeCategory'] as bool? ?? true,
-        allowDupes: json['allowDupes'] as bool? ?? false,
-        compactGlossaries: json['compactGlossaries'] as bool? ?? false,
-        embedMedia: json['embedMedia'] as bool? ?? true,
-        overwriteScope: ankiOverwriteScopeFromName(
-          json['overwriteScope'] as String?,
-        ),
-        duplicateScope: ankiDuplicateScopeFromName(
-          json['duplicateScope'] as String?,
-        ),
-        ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
-        ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
-        ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
-        ankiConnectUseHttps: json['ankiConnectUseHttps'] as bool? ?? false,
-        // 持久化键名冻结成 `useAnkiConnectOnAndroid`（存量偏好键不追改）。这个
-        // 选项现在对 Android 与 iOS 同义，Dart 侧已改名 useAnkiConnectOnMobile；
-        // 改键名会让所有老装置的选择在升级后静默丢失。
-        useAnkiConnectOnMobile:
-            json['useAnkiConnectOnAndroid'] as bool? ?? false,
-        lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
-        lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
-        lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
-        lapisMigratedBaselineSha: json['lapisMigratedBaselineSha'] as String?,
-        lapisCustomBlocks: lapisBlocksFromJson(json['lapisCustomBlocks']),
-        lapisAppliedTemplateSha: json['lapisAppliedTemplateSha'] as String?,
-        lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
-        lastMediaDedupScanAtMs: json['lastMediaDedupScanAtMs'] as int?,
-        // 缺键 = 老装置升级上来：两个自动开关都默认关，升级不会凭空获得
-        // 一条会动 Anki 媒体文件的自动路径。
-        mediaDedupAutoEnabled: json['mediaDedupAutoEnabled'] as bool? ?? false,
-        mediaDedupAutoDelete: json['mediaDedupAutoDelete'] as bool? ?? false,
-        repositionSource: AnkiRepositionSource.fromName(
-          json['repositionSource'] as String?,
-        ),
-        repositionDictionaries: (json['repositionDictionaries'] as List?)
-                ?.map((Object? e) => e.toString())
-                .toList() ??
-            const <String>[],
-        repositionAggregate:
-            json['repositionAggregate'] as String? ?? 'harmonic',
-        repositionRareFirst: json['repositionRareFirst'] as bool? ?? false,
-        // 缺键 = 老装置升级上来：自动重排默认关，升级不会凭空获得
-        // 一条会动 Anki 新卡队列位置的自动路径。
-        autoRepositionEnabled:
-            json['autoRepositionEnabled'] as bool? ?? false,
-      );
+    selectedDeckId: json['selectedDeckId'] as int?,
+    selectedDeckName: json['selectedDeckName'] as String?,
+    selectedNoteTypeId: json['selectedNoteTypeId'] as int?,
+    selectedNoteTypeName: json['selectedNoteTypeName'] as String?,
+    availableDecks:
+        (json['availableDecks'] as List?)
+            ?.map((e) => AnkiDeck.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+    availableNoteTypes:
+        (json['availableNoteTypes'] as List?)
+            ?.map((e) => AnkiNoteType.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [],
+    fieldMappings: Map<String, String>.from(
+      json['fieldMappings'] as Map? ?? {},
+    ),
+    tags: json['tags'] as String? ?? '',
+    tagIncludeHibiki: json['tagIncludeHibiki'] as bool? ?? true,
+    tagIncludeCategory: json['tagIncludeCategory'] as bool? ?? true,
+    allowDupes: json['allowDupes'] as bool? ?? false,
+    compactGlossaries: json['compactGlossaries'] as bool? ?? false,
+    embedMedia: json['embedMedia'] as bool? ?? true,
+    overwriteScope: ankiOverwriteScopeFromName(
+      json['overwriteScope'] as String?,
+    ),
+    duplicateScope: ankiDuplicateScopeFromName(
+      json['duplicateScope'] as String?,
+    ),
+    ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
+    ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
+    ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
+    ankiConnectUseHttps: json['ankiConnectUseHttps'] as bool? ?? false,
+    // 持久化键名冻结成 `useAnkiConnectOnAndroid`（存量偏好键不追改）。这个
+    // 选项现在对 Android 与 iOS 同义，Dart 侧已改名 useAnkiConnectOnMobile；
+    // 改键名会让所有老装置的选择在升级后静默丢失。
+    useAnkiConnectOnMobile: json['useAnkiConnectOnAndroid'] as bool? ?? false,
+    lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
+    lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
+    lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
+    lapisMigratedBaselineSha: json['lapisMigratedBaselineSha'] as String?,
+    lapisCustomBlocks: lapisBlocksFromJson(json['lapisCustomBlocks']),
+    lapisAppliedTemplateSha: json['lapisAppliedTemplateSha'] as String?,
+    lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
+    lastMediaDedupScanAtMs: json['lastMediaDedupScanAtMs'] as int?,
+    // 缺键 = 老装置升级上来：两个自动开关都默认关，升级不会凭空获得
+    // 一条会动 Anki 媒体文件的自动路径。
+    mediaDedupAutoEnabled: json['mediaDedupAutoEnabled'] as bool? ?? false,
+    mediaDedupAutoDelete: json['mediaDedupAutoDelete'] as bool? ?? false,
+    repositionSource: AnkiRepositionSource.fromName(
+      json['repositionSource'] as String?,
+    ),
+    repositionDictionaries:
+        (json['repositionDictionaries'] as List?)
+            ?.map((Object? e) => e.toString())
+            .toList() ??
+        const <String>[],
+    repositionAggregate: json['repositionAggregate'] as String? ?? 'harmonic',
+    repositionRareFirst: json['repositionRareFirst'] as bool? ?? false,
+    // 缺键 = 老装置升级上来：自动重排默认关，升级不会凭空获得
+    // 一条会动 Anki 新卡队列位置的自动路径。
+    autoRepositionEnabled: json['autoRepositionEnabled'] as bool? ?? false,
+  );
   final int? selectedDeckId;
   final String? selectedDeckName;
   final int? selectedNoteTypeId;
@@ -437,8 +438,9 @@ class AnkiSettings {
     // 选中的牌组还在不在 Anki 里。清单为空 = 这次没拉到清单（离线/没连过），
     // 无从判断，不拦。
     if (availableDecks.isNotEmpty &&
-        availableDecks.every((AnkiDeck d) =>
-            d.id != selectedDeckId && d.name != selectedDeckName)) {
+        availableDecks.every(
+          (AnkiDeck d) => d.id != selectedDeckId && d.name != selectedDeckName,
+        )) {
       return false;
     }
     final AnkiNoteType? noteType = selectedNoteType;
@@ -496,105 +498,101 @@ class AnkiSettings {
     String? repositionAggregate,
     bool? repositionRareFirst,
     bool? autoRepositionEnabled,
-  }) =>
-      AnkiSettings(
-        selectedDeckId:
-            clearSelectedDeck ? null : (selectedDeckId ?? this.selectedDeckId),
-        selectedDeckName: clearSelectedDeck
-            ? null
-            : (selectedDeckName ?? this.selectedDeckName),
-        selectedNoteTypeId: clearSelectedNoteType
-            ? null
-            : (selectedNoteTypeId ?? this.selectedNoteTypeId),
-        selectedNoteTypeName: clearSelectedNoteType
-            ? null
-            : (selectedNoteTypeName ?? this.selectedNoteTypeName),
-        availableDecks: availableDecks ?? this.availableDecks,
-        availableNoteTypes: availableNoteTypes ?? this.availableNoteTypes,
-        fieldMappings: fieldMappings ?? this.fieldMappings,
-        tags: tags ?? this.tags,
-        tagIncludeHibiki: tagIncludeHibiki ?? this.tagIncludeHibiki,
-        tagIncludeCategory: tagIncludeCategory ?? this.tagIncludeCategory,
-        allowDupes: allowDupes ?? this.allowDupes,
-        compactGlossaries: compactGlossaries ?? this.compactGlossaries,
-        embedMedia: embedMedia ?? this.embedMedia,
-        overwriteScope: overwriteScope ?? this.overwriteScope,
-        duplicateScope: duplicateScope ?? this.duplicateScope,
-        ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
-        ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
-        ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
-        ankiConnectUseHttps: ankiConnectUseHttps ?? this.ankiConnectUseHttps,
-        useAnkiConnectOnMobile:
-            useAnkiConnectOnMobile ?? this.useAnkiConnectOnMobile,
-        lapisFontScalePercent:
-            lapisFontScalePercent ?? this.lapisFontScalePercent,
-        lapisCustomCss: lapisCustomCss ?? this.lapisCustomCss,
-        // 恢复「无标记区段」的备份时需要把指纹清回 null（视 Anki 端为来历
-        // 不明，自动迁移不再动它），?? 链表达不了清空，故给显式清空开关。
-        lapisAppliedCssSha: clearLapisAppliedCssSha
-            ? null
-            : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
-        lapisMigratedBaselineSha:
-            lapisMigratedBaselineSha ?? this.lapisMigratedBaselineSha,
-        lapisCustomBlocks: lapisCustomBlocks ?? this.lapisCustomBlocks,
-        lapisAppliedTemplateSha: clearLapisAppliedTemplateSha
-            ? null
-            : (lapisAppliedTemplateSha ?? this.lapisAppliedTemplateSha),
-        lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
-        lastMediaDedupScanAtMs:
-            lastMediaDedupScanAtMs ?? this.lastMediaDedupScanAtMs,
-        mediaDedupAutoEnabled:
-            mediaDedupAutoEnabled ?? this.mediaDedupAutoEnabled,
-        mediaDedupAutoDelete: mediaDedupAutoDelete ?? this.mediaDedupAutoDelete,
-        repositionSource: repositionSource ?? this.repositionSource,
-        repositionDictionaries:
-            repositionDictionaries ?? this.repositionDictionaries,
-        repositionAggregate: repositionAggregate ?? this.repositionAggregate,
-        repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
-        autoRepositionEnabled:
-            autoRepositionEnabled ?? this.autoRepositionEnabled,
-      );
+  }) => AnkiSettings(
+    selectedDeckId: clearSelectedDeck
+        ? null
+        : (selectedDeckId ?? this.selectedDeckId),
+    selectedDeckName: clearSelectedDeck
+        ? null
+        : (selectedDeckName ?? this.selectedDeckName),
+    selectedNoteTypeId: clearSelectedNoteType
+        ? null
+        : (selectedNoteTypeId ?? this.selectedNoteTypeId),
+    selectedNoteTypeName: clearSelectedNoteType
+        ? null
+        : (selectedNoteTypeName ?? this.selectedNoteTypeName),
+    availableDecks: availableDecks ?? this.availableDecks,
+    availableNoteTypes: availableNoteTypes ?? this.availableNoteTypes,
+    fieldMappings: fieldMappings ?? this.fieldMappings,
+    tags: tags ?? this.tags,
+    tagIncludeHibiki: tagIncludeHibiki ?? this.tagIncludeHibiki,
+    tagIncludeCategory: tagIncludeCategory ?? this.tagIncludeCategory,
+    allowDupes: allowDupes ?? this.allowDupes,
+    compactGlossaries: compactGlossaries ?? this.compactGlossaries,
+    embedMedia: embedMedia ?? this.embedMedia,
+    overwriteScope: overwriteScope ?? this.overwriteScope,
+    duplicateScope: duplicateScope ?? this.duplicateScope,
+    ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
+    ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
+    ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
+    ankiConnectUseHttps: ankiConnectUseHttps ?? this.ankiConnectUseHttps,
+    useAnkiConnectOnMobile:
+        useAnkiConnectOnMobile ?? this.useAnkiConnectOnMobile,
+    lapisFontScalePercent: lapisFontScalePercent ?? this.lapisFontScalePercent,
+    lapisCustomCss: lapisCustomCss ?? this.lapisCustomCss,
+    // 恢复「无标记区段」的备份时需要把指纹清回 null（视 Anki 端为来历
+    // 不明，自动迁移不再动它），?? 链表达不了清空，故给显式清空开关。
+    lapisAppliedCssSha: clearLapisAppliedCssSha
+        ? null
+        : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
+    lapisMigratedBaselineSha:
+        lapisMigratedBaselineSha ?? this.lapisMigratedBaselineSha,
+    lapisCustomBlocks: lapisCustomBlocks ?? this.lapisCustomBlocks,
+    lapisAppliedTemplateSha: clearLapisAppliedTemplateSha
+        ? null
+        : (lapisAppliedTemplateSha ?? this.lapisAppliedTemplateSha),
+    lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
+    lastMediaDedupScanAtMs:
+        lastMediaDedupScanAtMs ?? this.lastMediaDedupScanAtMs,
+    mediaDedupAutoEnabled: mediaDedupAutoEnabled ?? this.mediaDedupAutoEnabled,
+    mediaDedupAutoDelete: mediaDedupAutoDelete ?? this.mediaDedupAutoDelete,
+    repositionSource: repositionSource ?? this.repositionSource,
+    repositionDictionaries:
+        repositionDictionaries ?? this.repositionDictionaries,
+    repositionAggregate: repositionAggregate ?? this.repositionAggregate,
+    repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
+    autoRepositionEnabled: autoRepositionEnabled ?? this.autoRepositionEnabled,
+  );
 
   Map<String, dynamic> toJson() => {
-        'selectedDeckId': selectedDeckId,
-        'selectedDeckName': selectedDeckName,
-        'selectedNoteTypeId': selectedNoteTypeId,
-        'selectedNoteTypeName': selectedNoteTypeName,
-        'availableDecks': availableDecks.map((d) => d.toJson()).toList(),
-        'availableNoteTypes':
-            availableNoteTypes.map((t) => t.toJson()).toList(),
-        'fieldMappings': fieldMappings,
-        'tags': tags,
-        'tagIncludeHibiki': tagIncludeHibiki,
-        'tagIncludeCategory': tagIncludeCategory,
-        'allowDupes': allowDupes,
-        'compactGlossaries': compactGlossaries,
-        'embedMedia': embedMedia,
-        'overwriteScope': overwriteScope.name,
-        'duplicateScope': duplicateScope.name,
-        'ankiConnectHost': ankiConnectHost,
-        'ankiConnectPort': ankiConnectPort,
-        'ankiConnectApiKey': ankiConnectApiKey,
-        'ankiConnectUseHttps': ankiConnectUseHttps,
-        // 键名冻结（见 fromJson 的说明）：Dart 侧是 useAnkiConnectOnMobile，
-        // 落盘仍写 `useAnkiConnectOnAndroid`，老装置升级后选择不丢。
-        'useAnkiConnectOnAndroid': useAnkiConnectOnMobile,
-        'lapisFontScalePercent': lapisFontScalePercent,
-        'lapisCustomCss': lapisCustomCss,
-        'lapisAppliedCssSha': lapisAppliedCssSha,
-        'lapisMigratedBaselineSha': lapisMigratedBaselineSha,
-        'lapisCustomBlocks': lapisBlocksToJson(lapisCustomBlocks),
-        'lapisAppliedTemplateSha': lapisAppliedTemplateSha,
-        'lastMediaDedupAtMs': lastMediaDedupAtMs,
-        'lastMediaDedupScanAtMs': lastMediaDedupScanAtMs,
-        'mediaDedupAutoEnabled': mediaDedupAutoEnabled,
-        'mediaDedupAutoDelete': mediaDedupAutoDelete,
-        'repositionSource': repositionSource.name,
-        'repositionDictionaries': repositionDictionaries,
-        'repositionAggregate': repositionAggregate,
-        'repositionRareFirst': repositionRareFirst,
-        'autoRepositionEnabled': autoRepositionEnabled,
-      };
+    'selectedDeckId': selectedDeckId,
+    'selectedDeckName': selectedDeckName,
+    'selectedNoteTypeId': selectedNoteTypeId,
+    'selectedNoteTypeName': selectedNoteTypeName,
+    'availableDecks': availableDecks.map((d) => d.toJson()).toList(),
+    'availableNoteTypes': availableNoteTypes.map((t) => t.toJson()).toList(),
+    'fieldMappings': fieldMappings,
+    'tags': tags,
+    'tagIncludeHibiki': tagIncludeHibiki,
+    'tagIncludeCategory': tagIncludeCategory,
+    'allowDupes': allowDupes,
+    'compactGlossaries': compactGlossaries,
+    'embedMedia': embedMedia,
+    'overwriteScope': overwriteScope.name,
+    'duplicateScope': duplicateScope.name,
+    'ankiConnectHost': ankiConnectHost,
+    'ankiConnectPort': ankiConnectPort,
+    'ankiConnectApiKey': ankiConnectApiKey,
+    'ankiConnectUseHttps': ankiConnectUseHttps,
+    // 键名冻结（见 fromJson 的说明）：Dart 侧是 useAnkiConnectOnMobile，
+    // 落盘仍写 `useAnkiConnectOnAndroid`，老装置升级后选择不丢。
+    'useAnkiConnectOnAndroid': useAnkiConnectOnMobile,
+    'lapisFontScalePercent': lapisFontScalePercent,
+    'lapisCustomCss': lapisCustomCss,
+    'lapisAppliedCssSha': lapisAppliedCssSha,
+    'lapisMigratedBaselineSha': lapisMigratedBaselineSha,
+    'lapisCustomBlocks': lapisBlocksToJson(lapisCustomBlocks),
+    'lapisAppliedTemplateSha': lapisAppliedTemplateSha,
+    'lastMediaDedupAtMs': lastMediaDedupAtMs,
+    'lastMediaDedupScanAtMs': lastMediaDedupScanAtMs,
+    'mediaDedupAutoEnabled': mediaDedupAutoEnabled,
+    'mediaDedupAutoDelete': mediaDedupAutoDelete,
+    'repositionSource': repositionSource.name,
+    'repositionDictionaries': repositionDictionaries,
+    'repositionAggregate': repositionAggregate,
+    'repositionRareFirst': repositionRareFirst,
+    'autoRepositionEnabled': autoRepositionEnabled,
+  };
 }
 
 class AnkiMiningPayload {
@@ -684,8 +682,9 @@ class AnkiMiningPayload {
       pitchCategories: json['pitchCategories'] as String? ?? '',
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
-      glossarySelectionHighlighted:
-          _boolFromPayloadWire(json['glossarySelectionHighlighted']),
+      glossarySelectionHighlighted: _boolFromPayloadWire(
+        json['glossarySelectionHighlighted'],
+      ),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
@@ -773,6 +772,7 @@ class AnkiMiningContext {
     this.charPositionTag,
     this.clipStartMs,
     this.clipEndMs,
+    this.sourceLink,
   });
   final String sentence;
   final String? cueSentence;
@@ -828,6 +828,27 @@ class AnkiMiningContext {
   final int? clipStartMs;
   final int? clipEndMs;
 
+  /// Portable card origin; survives media upload and backend forwarding.
+  final CardSourceLink? sourceLink;
+
+  /// Used when updating an existing note: its marker identity must survive a
+  /// newly captured position, and legacy notes must not acquire dangling URLs.
+  AnkiMiningContext withSourceLink(CardSourceLink? value) => AnkiMiningContext(
+    sentence: sentence,
+    cueSentence: cueSentence,
+    documentTitle: documentTitle,
+    coverPath: coverPath,
+    sentenceAudioPath: sentenceAudioPath,
+    sentenceOffset: sentenceOffset,
+    source: source,
+    bookTitleTag: bookTitleTag,
+    collectionTag: collectionTag,
+    charPositionTag: charPositionTag,
+    clipStartMs: clipStartMs,
+    clipEndMs: clipEndMs,
+    sourceLink: value,
+  );
+
   /// 渲染前把两个**本地媒体路径**换成 backend 落盘后的媒体引用
   /// （`<img src=...>` / `[sound:...]`），其余字段原样带过。
   ///
@@ -841,21 +862,21 @@ class AnkiMiningContext {
   AnkiMiningContext withMediaRefs({
     required String? coverRef,
     required String? sentenceAudioRef,
-  }) =>
-      AnkiMiningContext(
-        sentence: sentence,
-        cueSentence: cueSentence,
-        documentTitle: documentTitle,
-        coverPath: coverRef,
-        sentenceAudioPath: sentenceAudioRef,
-        sentenceOffset: sentenceOffset,
-        source: source,
-        bookTitleTag: bookTitleTag,
-        collectionTag: collectionTag,
-        charPositionTag: charPositionTag,
-        clipStartMs: clipStartMs,
-        clipEndMs: clipEndMs,
-      );
+  }) => AnkiMiningContext(
+    sentence: sentence,
+    cueSentence: cueSentence,
+    documentTitle: documentTitle,
+    coverPath: coverRef,
+    sentenceAudioPath: sentenceAudioRef,
+    sentenceOffset: sentenceOffset,
+    source: source,
+    bookTitleTag: bookTitleTag,
+    collectionTag: collectionTag,
+    charPositionTag: charPositionTag,
+    clipStartMs: clipStartMs,
+    clipEndMs: clipEndMs,
+    sourceLink: sourceLink,
+  );
 }
 
 class AnkiHandlebarRenderer {
@@ -867,16 +888,15 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     AnkiMiningContext context, {
     bool yieldSelectionText = false,
-  }) =>
-      template.replaceAllMapped(
-        _handlebarRegex,
-        (match) => _handlebarToValue(
-          match.group(0)!,
-          payload,
-          context,
-          yieldSelectionText: yieldSelectionText,
-        ),
-      );
+  }) => template.replaceAllMapped(
+    _handlebarRegex,
+    (match) => _handlebarToValue(
+      match.group(0)!,
+      payload,
+      context,
+      yieldSelectionText: yieldSelectionText,
+    ),
+  );
 
   static String _handlebarToValue(
     String handlebar,
@@ -949,6 +969,8 @@ class AnkiHandlebarRenderer {
         return payload.phoneticTranscriptions;
       case '{document-title}':
         return context.documentTitle ?? '';
+      case '{source-link}':
+        return renderSourceLink(context);
       case '{clip-timestamp}':
         return formatClipTimestamp(context.clipStartMs, context.clipEndMs);
       // {card-image} 是通用图片键（书籍封面 / 视频 GIF 共用，语义中性、名副其实）：
@@ -971,6 +993,19 @@ class AnkiHandlebarRenderer {
       default:
         return '';
     }
+  }
+
+  /// 作品标题自身作为来源链接；无定位时保留普通标题，不额外重复标题。
+  static String renderSourceLink(AnkiMiningContext context) {
+    final String title = context.documentTitle ?? '';
+    final CardSourceLink? source = context.sourceLink;
+    if (source == null) {
+      return const HtmlEscape(HtmlEscapeMode.element).convert(title);
+    }
+    // 无标题时退回 toHtml 的语言中性缺省标签：这是写进用户 Anki 卡面的文本，
+    // 17 种界面语言共用一份模板，不能落任何一种自然语言。
+    if (title.trim().isEmpty) return source.toHtml();
+    return source.toHtml(label: title);
   }
 
   /// 把媒体片段起止（毫秒偏移）渲染成人类可读的 `HH:MM:SS - HH:MM:SS`。
@@ -1068,6 +1103,7 @@ class AnkiHandlebarOptions {
     '{pitch-accent-categories}',
     '{phonetic-transcriptions}',
     '{document-title}',
+    '{source-link}',
     '{clip-timestamp}',
     '{card-image}',
     '{book-cover}',
@@ -1076,9 +1112,9 @@ class AnkiHandlebarOptions {
   ];
 
   static List<String> forTermDictionaries(List<String> dictionaryNames) => [
-        ...coreOptions,
-        ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
-      ];
+    ...coreOptions,
+    ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
+  ];
 
   /// 旧别名（历史命名）：语义与新键完全等价、渲染同一个值，保留只为兼容老配置与
   /// 老卡片模板——`{book-cover}` / `{video-clip}` → `{card-image}`（都读
@@ -1101,14 +1137,13 @@ class AnkiHandlebarOptions {
   static List<String> optionsForField({
     required List<String> dictionaryNames,
     required String currentValue,
-  }) =>
-      forTermDictionaries(dictionaryNames)
-          .where(
-            (String option) =>
-                !deprecatedAliases.contains(option) ||
-                currentValue.contains(option),
-          )
-          .toList();
+  }) => forTermDictionaries(dictionaryNames)
+      .where(
+        (String option) =>
+            !deprecatedAliases.contains(option) ||
+            currentValue.contains(option),
+      )
+      .toList();
 
   /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
   /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
@@ -1122,8 +1157,7 @@ class AnkiHandlebarOptions {
   static bool anyFieldConsumesToken(
     Map<String, String> fieldMappings,
     String token,
-  ) =>
-      fieldMappings.values.any((String template) => template.contains(token));
+  ) => fieldMappings.values.any((String template) => template.contains(token));
 
   /// TODO-948/952：是否有字段消费句子文本（`{sentence}` 或语义等价的
   /// `{cue-sentence}`，后者在有声书 cue 场景下也渲染句子文本）。两者任一被引用即视为
@@ -1136,8 +1170,7 @@ class AnkiHandlebarOptions {
   /// 已由载入期迁移一次性改写，不再参与判定。
   static bool anyFieldConsumesSentenceAudio(
     Map<String, String> fieldMappings,
-  ) =>
-      anyFieldConsumesToken(fieldMappings, '{sentence-audio}');
+  ) => anyFieldConsumesToken(fieldMappings, '{sentence-audio}');
 
   /// 是否有字段消费卡片图片（`{card-image}` 或语义等价的旧别名 `{book-cover}` /
   /// `{video-clip}`）。三者任一被引用即视为「卡片图片有去处」，避免把 TODO-1298
@@ -1402,7 +1435,8 @@ String normalizeAnkiDictionaryHtml(String value) {
 // test/anki/anki_gaiji_style_test.dart。
 const _ankiGaijiSel =
     '.yomitan-glossary [data-dictionary] span[data-sc-img][data-sc-class="gaiji"]';
-const _ankiGaijiImageStyle = '<style>'
+const _ankiGaijiImageStyle =
+    '<style>'
     '$_ankiGaijiSel'
     '{display:inline!important;white-space:nowrap!important;vertical-align:baseline!important}'
     '$_ankiGaijiSel .gloss-image-link'
@@ -1595,31 +1629,31 @@ class MineOutcome {
   /// `loadSettings().selectedDeckName` 猜，旧存档/旧 Profile 快照只有 id 没有
   /// name 时（AnkiConnect 按 id 照样落卡成功）toast 显示空引号。
   const MineOutcome.success({this.noteId, this.deckName, this.audioWarning})
-      : result = MineResult.success,
-        errorDetail = null,
-        errorCode = null,
-        error = null,
-        stackTrace = null;
+    : result = MineResult.success,
+      errorDetail = null,
+      errorCode = null,
+      error = null,
+      stackTrace = null;
 
   const MineOutcome.duplicate()
-      : result = MineResult.duplicate,
-        noteId = null,
-        deckName = null,
-        audioWarning = null,
-        errorDetail = null,
-        errorCode = null,
-        error = null,
-        stackTrace = null;
+    : result = MineResult.duplicate,
+      noteId = null,
+      deckName = null,
+      audioWarning = null,
+      errorDetail = null,
+      errorCode = null,
+      error = null,
+      stackTrace = null;
 
   const MineOutcome.notConfigured()
-      : result = MineResult.notConfigured,
-        noteId = null,
-        deckName = null,
-        audioWarning = null,
-        errorDetail = null,
-        errorCode = null,
-        error = null,
-        stackTrace = null;
+    : result = MineResult.notConfigured,
+      noteId = null,
+      deckName = null,
+      audioWarning = null,
+      errorDetail = null,
+      errorCode = null,
+      error = null,
+      stackTrace = null;
 
   /// 失败：[detail] 简短原因（toast 的**回退**文案），[error]/[stackTrace] 完整诊断
   /// （错误日志）。[errorCode] 非空时表示这是一个**已分类**的失败（见 [AnkiErrorCode]），
@@ -1630,14 +1664,14 @@ class MineOutcome {
     String? errorCode,
     Object? error,
     StackTrace? stackTrace,
-  })  : result = MineResult.error,
-        noteId = null,
-        deckName = null,
-        audioWarning = null,
-        errorDetail = detail,
-        errorCode = errorCode,
-        error = error,
-        stackTrace = stackTrace;
+  }) : result = MineResult.error,
+       noteId = null,
+       deckName = null,
+       audioWarning = null,
+       errorDetail = detail,
+       errorCode = errorCode,
+       error = error,
+       stackTrace = stackTrace;
 
   final MineResult result;
 
@@ -1752,8 +1786,10 @@ class AnkiCardDueUpdate {
   final int cardId;
   final int due;
 
-  Map<String, dynamic> toJson() =>
-      <String, dynamic>{'cardId': cardId, 'due': due};
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'cardId': cardId,
+    'due': due,
+  };
 
   static AnkiCardDueUpdate? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -1766,10 +1802,7 @@ class AnkiCardDueUpdate {
 
 /// 批量写位置的结果：哪些卡没写进去（AnkiConnect 逐条报告，一条失败不吞整批）。
 class AnkiCardDueWriteResult {
-  const AnkiCardDueWriteResult({
-    required this.written,
-    required this.failures,
-  });
+  const AnkiCardDueWriteResult({required this.written, required this.failures});
 
   final int written;
 

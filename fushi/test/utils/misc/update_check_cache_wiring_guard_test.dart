@@ -50,7 +50,8 @@ void main() {
   });
 
   test('manual check reads cache optimistically before the network', () {
-    final String src = read('lib/src/settings/settings_schema_system.dart');
+    // 手动检查编排住在 updates/app_update_check.dart（设置页与更新中心共用）。
+    final String src = read('lib/src/updates/app_update_check.dart');
     expect(src, contains('cachedEntryForChannel('), reason: '手动检查先读缓存');
     expect(src, contains('updateTagIsNewerThanCurrent('),
         reason: '据缓存 tag 判断给「发现新版」/「已是最新」乐观反馈（公开通道感知判定）');
@@ -58,8 +59,7 @@ void main() {
     expect(src, contains('t.update_cached_up_to_date('));
     // 无缓存才退回原「正在检查…」。
     expect(src, contains('t.update_checking_now'));
-    expect(src,
-        contains('cacheWriter: settingsContext.appModel.setUpdateCheckCache,'));
+    expect(src, contains('cacheWriter: appModel.setUpdateCheckCache,'));
   });
 
   test('cache lives in the preferences table (no schema bump)', () {

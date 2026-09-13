@@ -277,6 +277,24 @@
           "status": "implemented_unverified",
           "evidence": "Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded."
         }
+      },
+      {
+        "engine_id": "cmvs",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "ChronoClock trial v2 x64 exact-hash frame observer, bounded live glyph/sprite reader, selected EmbedCMVS lane identity, and explicit presentation rectangles. Real card and input shielding E2E remain unverified."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Reuses the generic public input surface transaction protocol; no CMVS popup/input transaction corpus has passed."
+        },
+        "risky_left_click": {
+        "status": "unavailable",
+          "evidence": "This CMVS sensor implements Shift lookup only; it does not intercept bare left clicks."
+        }
       }
     ]
   },
@@ -755,7 +773,7 @@
           {
             "kind": "luna_hook",
             "status": "implemented_unverified",
-            "verification": "Vendored LunaHook32/64 both carry the EmbedCMVS engine hook; no real-session dialogue thread has been observed yet."
+            "verification": "Observed and selected EmbedCMVS dialogue lane in the 2026-09-13 trial x64 session; its UTF-16 text exactly matched the live glyph reader. Card/audio pairing E2E remains unverified."
           }
         ],
         "codepage": "932",
@@ -782,7 +800,7 @@
       "known_limitations": [
         "Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.",
         "Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.",
-        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+        "In-game Shift lookup is wired only for the measured ChronoClock trial v2 x64 executable hash. Other CMVS builds, transformed/faded/ambiguous sprites and unproved presentation modes fail closed; real popup/input/card E2E is pending."
       ],
       "adapter_path": "hook/adapters/cmvs_adapter.inc",
       "fixture_paths": [
@@ -2720,7 +2738,7 @@
         "directory_files_all": {
           "values": [
             "Content/Paks/global.utoc",
-          "Content/Paks/global.ucas"
+            "Content/Paks/global.ucas"
           ],
           "evidence": {
             "kind": "real_sample",

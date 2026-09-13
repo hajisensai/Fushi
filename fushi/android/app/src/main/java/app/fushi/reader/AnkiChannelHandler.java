@@ -93,6 +93,7 @@ public class AnkiChannelHandler {
                 final String model = call.argument("model");
                 final String deck = call.argument("deck");
                 final String key = call.argument("key");
+                final String markerTag = call.argument("markerTag");
                 final String reading = call.argument("reading");
                 final ArrayList<Integer> readingFieldIndices = call.argument("readingFieldIndices");
                 final ArrayList<String> fields = call.argument("fields");
@@ -185,6 +186,18 @@ public class AnkiChannelHandler {
                             } catch (Exception e) {
                                 result.error(providerErrorCode(e),
                                     e.getMessage(), null);
+                            }
+                        }
+                        break;
+                    case "findNotesBySourceMarker":
+                        if (markerTag == null
+                                || !markerTag.matches("^fushi_source_[0-9a-f]{32}$")) {
+                            result.error("INVALID_ARG", "Invalid source marker tag", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(findNotesBySourceMarker(markerTag));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e), e.getMessage(), null);
                             }
                         }
                         break;
@@ -831,6 +844,42 @@ public class AnkiChannelHandler {
             out.add(entry);
         }
         return out;
+    }
+
+    /**
+     * Resolve a synced source identity without guessing by word or local note id.
+     * The notes URI accepts Anki browser syntax (notes_v2 accepts SQL instead).
+     * Rebase to the selected installation so parallel AnkiDroid builds work too.
+     */
+    private List<Long> findNotesBySourceMarker(String markerTag) {
+        final AnkiDroidTarget target = AnkiDroidTarget.resolve(context);
+        if (target == null) {
+            throw new IllegalStateException("AnkiDroid is unavailable");
+        }
+        final List<Long> ids = new ArrayList<>();
+        try (Cursor cursor = context.getContentResolver().query(
+                target.rebase(FlashCardsContract.Note.CONTENT_URI),
+                new String[] {FlashCardsContract.Note._ID, FlashCardsContract.Note.TAGS},
+                "tag:" + markerTag, null, null)) {
+            // A null cursor means lookup failed, never a trustworthy empty match.
+            if (cursor == null) {
+                throw new IllegalStateException("AnkiDroid source lookup returned no cursor");
+            }
+            final int idIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID);
+            final int tagsIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.TAGS);
+            while (cursor.moveToNext()) {
+                final String rawTags = cursor.getString(tagsIndex);
+                // Browser tag searches may include child tags. Only the exact
+                // marker authorizes editing; a prefix/hierarchy match does not.
+                if (rawTags == null
+                        || !Arrays.asList(rawTags.trim().split("\\s+")).contains(markerTag)) {
+                    continue;
+                }
+                final long id = cursor.getLong(idIndex);
+                if (id > 0 && !ids.contains(id)) ids.add(id);
+            }
+        }
+        return ids;
     }
 
     /**

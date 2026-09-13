@@ -7,7 +7,12 @@ library;
 import 'dart:io' show Directory, File, Platform;
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
+    show
+        TargetPlatform,
+        debugPrint,
+        defaultTargetPlatform,
+        kIsWeb,
+        visibleForTesting;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:path/path.dart' as p;
 
@@ -80,6 +85,19 @@ class LocalUpdateNotifier implements UpdateNotifier {
   final FlutterLocalNotificationsPlugin _plugin;
   final String? _windowsIconPath;
 
+  /// 确认存在的 Windows 图标绝对路径；null = 非 Windows 或没有可用图标。
+  ///
+  /// 图标文件不在（开发期从别的 cwd 起、包被裁过）就不用：插件会把不存在的路径
+  /// 原样写进注册表，头部反而显示一个坏图。
+  late final String? _windowsIconFile = _resolveWindowsIconFile();
+
+  String? _resolveWindowsIconFile() {
+    if (!Platform.isWindows) return null;
+    final String path =
+        _windowsIconPath ?? bundledAssetPath(kWindowsNotificationIconAsset);
+    return File(path).existsSync() ? path : null;
+  }
+
   bool _ready = false;
   bool _initialised = false;
 
@@ -99,17 +117,16 @@ class LocalUpdateNotifier implements UpdateNotifier {
   /// 随包资产在磁盘上的绝对路径：`<exe 目录>/data/flutter_assets/<asset>`。
   /// 按 exe 定位而不是 cwd——从文件关联 / 开始菜单启动时 cwd 不是安装目录。
   ///
-  /// 必须 [p.normalize]：asset 键是 `/` 分隔的，`p.join` 不会改写它，直接拼出
-  /// `…\flutter_assets\assets/meta/icon.png`。Windows 的通知渲染器把这种混合
-  /// 分隔符的 `IconUri` 当坏路径——头部只剩文字（BUG-2499）；纯反斜杠才出图标。
-  static String bundledAssetPath(String asset) => p.normalize(
-        p.join(
-          p.dirname(Platform.resolvedExecutable),
-          'data',
-          'flutter_assets',
-          asset,
-        ),
-      );
+  /// asset 名按 `/` 拆段再拼：直接 `p.join` 会把 `assets/meta/icon.png` 里的 `/`
+  /// 原样混进 Windows 路径（`…\flutter_assets\assets/meta/icon.png`）。Windows 的
+  /// 通知渲染器把这种混合分隔符的 `IconUri` 当坏路径——头部只剩文字、没有图标
+  /// （BUG-2487 / BUG-2499 两边各撞到一次）；纯反斜杠才出图标。
+  static String bundledAssetPath(String asset) => p.joinAll(<String>[
+        p.dirname(Platform.resolvedExecutable),
+        'data',
+        'flutter_assets',
+        ...asset.split('/'),
+      ]);
 
   @override
   Future<bool> ensureReady() async {
@@ -153,8 +170,6 @@ class LocalUpdateNotifier implements UpdateNotifier {
   }
 
   Future<bool> _initialise() async {
-    final String iconPath =
-        _windowsIconPath ?? bundledAssetPath(kWindowsNotificationIconAsset);
     final bool? initialised = await _plugin.initialize(
       settings: InitializationSettings(
         android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
@@ -173,9 +188,7 @@ class LocalUpdateNotifier implements UpdateNotifier {
           appName: appName,
           appUserModelId: 'com.hibiki.fushi',
           guid: kWindowsNotificationGuid,
-          // 图标文件不在（开发期从别的 cwd 起、包被裁过）就不传：插件会把不存在
-          // 的路径原样写进注册表，头部反而显示一个坏图。
-          iconPath: File(iconPath).existsSync() ? iconPath : null,
+          iconPath: _windowsIconFile,
         ),
       ),
       onDidReceiveNotificationResponse: _dispatch,
@@ -392,9 +405,17 @@ class LocalUpdateNotifier implements UpdateNotifier {
     );
   }
 
+  /// 测试缝：直接看 Windows 详情怎么拼（应用图标 / hero 图 / 按钮），不经插件。
+  @visibleForTesting
+  WindowsNotificationDetails windowsDetailsForTesting(
+    UpdateNotification notification,
+  ) =>
+      _windowsDetails(notification);
+
   WindowsNotificationDetails _windowsDetails(UpdateNotification notification) {
     final String? image = _existingImage(notification);
     final String? groupTitle = this.groupTitle;
+    final String? appLogo = _windowsIconFile;
     return WindowsNotificationDetails(
       audio: WindowsNotificationAudio.silent(),
       timestamp: notification.timestamp,
@@ -410,6 +431,16 @@ class LocalUpdateNotifier implements UpdateNotifier {
         // 渲染器不解码它——日文/中文标题的封面就静默丢图。真正落进 XML 的 `src`
         // 由 ci/patches 里的插件补丁还原成裸路径（BUG-2499），这里别改成别的
         // Uri 构造，也别在这层自己拼字符串。
+        //
+        // 头部应用图标随每条 toast 自带（`appLogoOverride`）：注册表 `IconUri`
+        // 那条路取决于 shell 对路径的解析，实测同一台机上头部可以是空的；
+        // toast 自己声明的图片则是文档保证的显示位（BUG-2487）。
+        if (appLogo != null)
+          WindowsImage(
+            Uri.file(appLogo, windows: true),
+            altText: appName,
+            placement: WindowsImagePlacement.appLogoOverride,
+          ),
         if (image != null)
           WindowsImage(
             Uri.file(image, windows: true),

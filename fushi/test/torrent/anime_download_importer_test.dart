@@ -27,11 +27,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/fake_image_bytes.dart';
 /// 最小合法 PNG 魔数字节。
-const List<int> _fakePng = <int>[
-  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
-  0x00, 0x01, 0x02, 0x03,
-];
+// 写侧唯一入口只收可解码字节（BUG-2496）：PNG 须以 IEND 收尾、JPEG 须以 FF D9 收尾。
+final List<int> _fakePng = fakePngBytes();
 
 AnimeDownloadPlan _plan({String? coverUrl}) => AnimeDownloadPlan(
       id: 'plan-1',
@@ -63,11 +62,11 @@ void main() {
   Future<AnimeDownloadImportOutcome?> Function(
     AnimeDownloadPlan,
     List<String>,
-  ) importer({List<int> bytes = _fakePng}) => buildAnimeDownloadImporter(
+  ) importer({List<int>? bytes}) => buildAnimeDownloadImporter(
         db,
         httpClient: MockClient(
           (http.Request req) async => http.Response.bytes(
-            bytes,
+            bytes ?? _fakePng,
             200,
             headers: const <String, String>{'content-type': 'image/png'},
           ),
@@ -119,7 +118,7 @@ void main() {
   });
 
   test('重放导入覆盖同名合集封面：内容真被换掉（收口的原子写，非裸 writeAsBytes）', () async {
-    const List<int> jpeg = <int>[0xFF, 0xD8, 0xFF, 0xAA, 0xBB];
+    final List<int> jpeg = fakeJpegBytes(fill: 0xAA);
     final AnimeDownloadImportOutcome? first = await importer()(
       _plan(coverUrl: 'https://img.anili.st/poster.jpg'),
       <String>[p.join('D:', 'dl', '某番剧 - 01.mkv')],

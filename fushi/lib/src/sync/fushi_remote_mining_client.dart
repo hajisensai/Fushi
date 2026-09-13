@@ -1,5 +1,9 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi_engine/sync/remote_source_note.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -24,6 +28,49 @@ enum RemoteDuplicateCheck {
 
 /// 「制卡到服务端」发送器的窄接口（供 [RemoteMiningAnkiRepository] 依赖，便于单测注入假实现，
 /// 不必拉起真实 HTTP + SyncRepository）。生产实现是 [FushiRemoteMiningClient]。
+abstract class RemoteSourceNoteSender {
+  String? sourcePeerUrl(String sourceId);
+  String? sourcePeerIdentity(String sourceId);
+  Future<void> bindSourcePeer(
+    String sourceId,
+    String peerUrl, {
+    required String pairingIdentity,
+  });
+  Future<AnkiSourceNote?> readSourceNote(String sourceId);
+  Future<Map<String, String>> prepareForwardedSourceNote(
+    ForwardedMinePayload payload,
+  );
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  });
+}
+
+/// Non-secret identity of an authenticated pairing. A reused network address
+/// must not let a draft move to another device after the client restarts.
+/// [peer.token] must be the effective credential (including legacy fallback).
+String sourcePeerPairingIdentity(FushiClientUrl peer) {
+  final Uri uri = Uri.parse(peer.url);
+  final String? token = peer.token;
+  if (token == null || token.isEmpty) {
+    throw StateError('Source pairing has no effective credential');
+  }
+  return sha256
+      .convert(
+        utf8.encode(
+          jsonEncode(<Object?>[
+            'fushi-source-pairing-v1',
+            uri.scheme,
+            uri.host,
+            uri.port,
+            token,
+            peer.fingerprintSha256,
+          ]),
+        ),
+      )
+      .toString();
+}
+
 abstract class RemoteMineSender {
   /// 转发一次制卡；返回服务端 `{result, message?, detail?}`，无可达候选/全失败返回 null，
   /// token 被拒抛 [SyncAuthError]。
@@ -69,7 +116,8 @@ abstract class RemoteMineSender {
 /// （enabled 候选按序 fallback / `Basic base64(hibiki:token)` / https 带指纹走钉扎 client /
 /// 每候选独立回收），本类只管端点 `/api/mine/forward` 与 `/api/duplicate`，以及更长的
 /// 默认超时（制卡请求体带媒体字节，LAN 上可能几 MB）。
-class FushiRemoteMiningClient implements RemoteMineSender {
+class FushiRemoteMiningClient
+    implements RemoteMineSender, RemoteSourceNoteSender {
   FushiRemoteMiningClient({
     required SyncRepository repo,
     http.Client? httpClient,
@@ -93,6 +141,153 @@ class FushiRemoteMiningClient implements RemoteMineSender {
   final InterconnectPostTransport _transport;
   final Duration _mineTimeout;
   final Duration _duplicateTimeout;
+  final Map<String, FushiClientUrl> _sourcePeers = <String, FushiClientUrl>{};
+
+  /// Public display identity only; credentials stay in the transport snapshot.
+  @override
+  String? sourcePeerUrl(String sourceId) => _sourcePeers[sourceId]?.url;
+
+  @override
+  String? sourcePeerIdentity(String sourceId) {
+    final FushiClientUrl? peer = _sourcePeers[sourceId];
+    return peer == null ? null : sourcePeerPairingIdentity(peer);
+  }
+
+  @override
+  Future<void> bindSourcePeer(
+    String sourceId,
+    String peerUrl, {
+    required String pairingIdentity,
+  }) async {
+    CardSourceLink.markerForSourceId(sourceId);
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(pairingIdentity)) {
+      throw const FormatException('Missing or invalid saved pairing identity');
+    }
+    final Uri? saved = Uri.tryParse(peerUrl);
+    if (saved == null ||
+        saved.userInfo.isNotEmpty ||
+        saved.hasQuery ||
+        saved.hasFragment ||
+        (saved.path.isNotEmpty && saved.path != '/') ||
+        !<String>['http', 'https'].contains(saved.scheme) ||
+        saved.host.isEmpty) {
+      throw const FormatException('Invalid saved peer URL');
+    }
+    final String? fallbackToken = await _repo.getFushiClientToken();
+    final List<FushiClientUrl> matches = <FushiClientUrl>[];
+    for (final FushiClientUrl candidate in await _repo.getFushiClientUrls()) {
+      final Uri? uri = Uri.tryParse(candidate.url);
+      final String? token = interconnectTokenFor(candidate, fallbackToken);
+      if (candidate.enabled &&
+          token != null &&
+          uri != null &&
+          uri.scheme == saved.scheme &&
+          uri.host == saved.host &&
+          uri.port == saved.port) {
+        matches.add(candidate.copyWith(token: token));
+      }
+    }
+    if (matches.length != 1) {
+      throw StateError('The saved peer is not uniquely paired and enabled.');
+    }
+    if (sourcePeerPairingIdentity(matches.single) != pairingIdentity) {
+      throw StateError('The saved draft belongs to a different pairing.');
+    }
+    final FushiClientUrl? bound = _sourcePeers[sourceId];
+    if (bound != null &&
+        (bound.url != matches.single.url ||
+            bound.token != matches.single.token ||
+            bound.fingerprintSha256 != matches.single.fingerprintSha256)) {
+      throw StateError('This source edit is already bound to another pairing.');
+    }
+    _sourcePeers[sourceId] = matches.single;
+  }
+
+  @override
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
+    CardSourceLink.markerForSourceId(sourceId);
+    final InterconnectPostOutcome outcome = await _transport.post(
+      path: '/api/anki/source/read',
+      body: <String, dynamic>{'sourceId': sourceId},
+      timeout: _noteTypeTimeout,
+      authErrorMessage: 'The paired device rejected source editing.',
+      onlyCandidate: _sourcePeers[sourceId],
+    );
+    final Map<String, dynamic> json = _requireSourceResponse(outcome);
+    if (!json.containsKey('note')) {
+      throw const FormatException('Missing source note response');
+    }
+    if (json['note'] == null) return null;
+    final AnkiSourceNote note = decodeRemoteSourceNote(json['note']);
+    if (note.sourceId != sourceId || outcome.candidate == null) {
+      throw const FormatException('Source note identity mismatch');
+    }
+    _sourcePeers[sourceId] = outcome.candidate!;
+    return note;
+  }
+
+  @override
+  Future<Map<String, String>> prepareForwardedSourceNote(
+    ForwardedMinePayload payload,
+  ) async {
+    final String? sourceId = payload.sourceLink?.sourceId;
+    if (sourceId == null) throw StateError('Missing source identity');
+    final Map<String, dynamic> json = await _postBoundSource(
+      sourceId: sourceId,
+      path: '/api/anki/source/prepare',
+      body: payload.toJson(),
+    );
+    return decodeRemoteSourceFields(json['fields']);
+  }
+
+  @override
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  }) async {
+    if (fields.isEmpty) return;
+    await _postBoundSource(
+      sourceId: original.sourceId,
+      path: '/api/anki/source/patch',
+      body: <String, dynamic>{
+        'original': encodeRemoteSourceNote(original),
+        'fields': fields,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _postBoundSource({
+    required String sourceId,
+    required String path,
+    required Map<String, dynamic> body,
+  }) async {
+    final FushiClientUrl? peer = _sourcePeers[sourceId];
+    if (peer == null) {
+      throw StateError('Read the source note before editing it.');
+    }
+    return _requireSourceResponse(
+      await _transport.post(
+        path: path,
+        body: body,
+        timeout: _mineTimeout,
+        authErrorMessage: 'The paired device rejected source editing.',
+        onlyCandidate: peer,
+      ),
+    );
+  }
+
+  Map<String, dynamic> _requireSourceResponse(InterconnectPostOutcome outcome) {
+    final Map<String, dynamic>? json = outcome.json;
+    if (json == null) {
+      throw StateError(
+        'The paired device is unavailable or does not support source editing.',
+      );
+    }
+    if (json['ok'] != true) {
+      throw StateError(json['message'] as String? ?? 'Source edit failed.');
+    }
+    return json;
+  }
 
   /// Lapis 模板读写的超时：请求体是纯文本（CSS/模板最多几百 KB），LAN 上比制卡
   /// （媒体字节几 MB）快得多，但仍留出比查重宽裕的窗口。

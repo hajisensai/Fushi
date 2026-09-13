@@ -841,6 +841,7 @@ constexpr uint32_t kLookupGeometryProviderIdTypewriterDiffExperimental = 13u;
 constexpr uint32_t kLookupGeometryProviderIdHunexGge = 14u;
 // smash/fzmedia KAG text-layer exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdSmashFzmedia = 15u;
+constexpr uint32_t kLookupGeometryProviderIdCmvs = 16u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

@@ -403,6 +403,9 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
     'fushiExport',
     // 同上：旧名存量目录走迁移常量。
     kLegacyExportDirectoryName,
+    // 卡片来源回看的待回写草稿（临时音频 / 图片 / 字段）：本质是等着写回 Anki 的
+    // 导出产物，回写或丢弃即删。
+    'card_source_drafts',
   ],
   StorageCategoryId.database: <String>['onboarding_tutorial'],
   StorageCategoryId.ocrModels: <String>[],

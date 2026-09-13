@@ -43,6 +43,8 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"
                 />
+            <!-- ReceiveIntent owns URL dispatch; do not also create a Flutter route. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <!-- OAuth redirect callback for cloud sync backends
                  (fushi://auth/onedrive, fushi://auth/dropbox). -->
             <intent-filter>
@@ -50,6 +52,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fushi" android:host="auth" />
+            </intent-filter>
+            <!-- Source links share ReceiveIntent's existing cold/warm delivery. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fushi" android:host="source" />
             </intent-filter>
         </activity>
 
@@ -304,5 +313,13 @@
         <package android:name="com.ichi2.anki.debug" />
         <!-- Hibiki→Fushi 迁移：Android 11+ 包可见性，不声明则 getPackageInfo 查不到新包 -->
         <package android:name="app.hibiki.reader" />
+        <!-- 选区「网页搜索」要先解析出默认浏览器再定向 ACTION_WEB_SEARCH（BUG-2491）。
+             Android 11+ 包可见性：不声明这条 VIEW https，resolveActivity 看不到任何浏览器，
+             只能退回裸 intent、落到自带浏览器。 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
     </queries>
 </manifest>

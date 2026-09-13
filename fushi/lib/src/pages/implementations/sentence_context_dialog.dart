@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 
@@ -12,13 +13,15 @@ import 'package:fushi/utils.dart';
 /// 改为真正的 Flutter 顶层对话框（[showAppDialog]），主题/焦点与 app 一致，句子框不再受
 /// 弹窗表面约束。
 ///
-/// 纯 UI + 三个注入回调，不持有任何宿主状态：
+/// 纯 UI + 注入回调，不持有任何宿主状态：
 ///   * [fetchPreview]：拉当前草稿的真实上下文预览（宿主 `onSentenceContextPreview*`，
 ///     结构 `{prev:[str], current:str, currentOffset:int?, next:[str], total:int}`）。
 ///   * [setContext]：把「上 prev 句 / 下 next 句」整体设进宿主草稿（`onSetSentenceContextToDraft`），
 ///     返回上下文句总数。**整体替换**语义（非累积）。
 ///   * [onConfirm]：确认制卡——回该词条的查词弹窗制卡按钮
 ///     （`DictionaryPopupWebViewState.mineEntryByIndex`，复用全部制卡/查重/覆写逻辑）。
+///   * [editSentence]（可选）：把某一句手改后的文本写回草稿。每张句子卡右上角一个编辑
+///     按钮 → 就地变输入框 → 卡内「确认修改」落地，最后仍由底部「确认制卡」收尾。
 class SentenceContextDialog extends StatefulWidget {
   const SentenceContextDialog({
     super.key,
@@ -26,6 +29,7 @@ class SentenceContextDialog extends StatefulWidget {
     required this.fetchPreview,
     required this.setContext,
     required this.onConfirm,
+    this.editSentence,
     this.previewAudio,
     this.stopAudioPreview,
   });
@@ -41,6 +45,17 @@ class SentenceContextDialog extends StatefulWidget {
 
   /// 确认制卡（回该词条 WebView 制卡按钮）。
   final VoidCallback onConfirm;
+
+  /// 把某一句手改后的文本写回宿主草稿（`MiningSentenceDraft.editSentence`）。
+  ///
+  /// 用户报「加个编辑按钮 → 进入编辑状态 → 最终确认」：每张句子卡（前文各句 / 当前句 /
+  /// 后文各句）都能就地改文本，改完点卡内的「确认修改」落回草稿，再由 `composeText`
+  /// 带进卡片。**只改卡片文本、不改音频身份**——音频区间仍是宿主按原句算出来的，
+  /// 试听与写卡的音频不随手改漂移。
+  ///
+  /// null = 该表面不支持编辑（不渲染任何编辑按钮），与 [previewAudio] 同一处置。
+  final Future<void> Function(SentenceContextSlot slot, int index, String text)?
+      editSentence;
 
   /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**（不是「当前句的 cue」——
   /// 写进卡的区间还合并了在这个对话框里加减出来的上下文句，并带首尾留白与 A/V
@@ -78,10 +93,32 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   bool _prevAtMax = false;
   bool _nextAtMax = false;
 
+  // 当前处于编辑态的那一句（null = 没有任何一句在编辑）。同一时刻只允许一句可编辑：
+  // 多句同时开输入框会让「确认」指向不明，也会把矮窗里的句子预览挤没。
+  SentenceContextSlot? _editSlot;
+  int _editIndex = 0;
+  TextEditingController? _editController;
+
+  /// 是否有一句正在编辑。编辑态下 ±上下文 / 试听 / 确认制卡 / 关闭全部禁用——
+  /// 用户的心智是「进入编辑状态 → 改 → 确认」，中途让他能点走或改句数，改到一半的
+  /// 文本要么丢要么贴错句（±会让宿主整体重解析上下文）。
+  bool get _editing => _editSlot != null;
+
+  /// 外层控件（±上下文 / 试听 / 取消 / 确认制卡 / 关闭）是否该禁用：正在跟宿主
+  /// 通信，或有一句正在编辑。编辑器自身的两颗按钮只看 [_busy]，否则一进编辑态就
+  /// 把「确认修改」自己锁死了。
+  bool get _locked => _busy || _editing;
+
   @override
   void initState() {
     super.initState();
     _refresh(initial: true);
+  }
+
+  @override
+  void dispose() {
+    _editController?.dispose();
+    super.dispose();
   }
 
   static List<String> _stringList(Object? v) => v is List
@@ -192,6 +229,48 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     if (mounted) setState(() => _previewing = false);
   }
 
+  /// 进入某一句的编辑态：把该句当前文本灌进输入框。
+  void _startEdit(SentenceContextSlot slot, int index, String text) {
+    if (_busy || _editing) return;
+    _editController?.dispose();
+    setState(() {
+      _editSlot = slot;
+      _editIndex = index;
+      _editController = TextEditingController(text: text)
+        ..selection = TextSelection.collapsed(offset: text.length);
+    });
+  }
+
+  /// 退出编辑态（不落地）。
+  void _cancelEdit() {
+    if (!_editing) return;
+    _editController?.dispose();
+    setState(() {
+      _editSlot = null;
+      _editIndex = 0;
+      _editController = null;
+    });
+  }
+
+  /// 确认修改：写回宿主草稿，再重新拉一次预览（宿主是唯一真值——它可能把空白句
+  /// 还原成原句，UI 不自作主张地把输入框里的文本直接当成结果显示）。
+  Future<void> _commitEdit() async {
+    final SentenceContextSlot? slot = _editSlot;
+    final Future<void> Function(SentenceContextSlot, int, String)? edit =
+        widget.editSentence;
+    if (slot == null || edit == null) return;
+    final String text = _editController?.text ?? '';
+    final int index = _editIndex;
+    _cancelEdit();
+    setState(() => _busy = true);
+    try {
+      await edit(slot, index, text);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   /// 当前句里把查到的词高亮：offset 命中优先（offset 处正好是 matched），失配回退
   /// indexOf，再失配整句无高亮——与旧 popup.js `buildHighlightedCurrentText` 同容错。
   Widget _highlightedCurrent(ThemeData theme) {
@@ -237,13 +316,74 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     );
   }
 
+  /// 句子卡右上角的「编辑」按钮。收到最小尺寸（28）+ compact 密度：它挂在 labelSmall
+  /// 那一行上，默认 48 的命中框会把每张卡都顶高一截，矮窗里几张卡就把句子挤出屏。
+  Widget _editButton(SentenceContextSlot slot, int index, String text) =>
+      IconButton(
+        tooltip: t.popup_ctx_edit_start,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+        onPressed:
+            _busy || _editing ? null : () => _startEdit(slot, index, text),
+        icon: const Icon(Icons.edit_outlined, size: 16),
+      );
+
+  /// 编辑态的卡内容：多行输入框 + 「放弃修改 / 确认修改」。
+  ///
+  /// 确认按钮独立于底部的「确认制卡」：用户要的是「先确认这一句改完了」，改完还能继续
+  /// 加减上下文、再改别的句子，最后才按底部主按钮制卡。
+  Widget _editor(ThemeData theme) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          TextField(
+            controller: _editController,
+            autofocus: true,
+            minLines: 2,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            style: theme.textTheme.bodyMedium,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              TextButton(
+                onPressed: _busy ? null : _cancelEdit,
+                child: Text(t.popup_ctx_edit_cancel),
+              ),
+              FilledButton(
+                onPressed: _busy ? null : () => unawaited(_commitEdit()),
+                child: Text(t.popup_ctx_edit_confirm),
+              ),
+            ],
+          ),
+        ],
+      );
+
   Widget _box(
     ThemeData theme, {
     required String label,
     required Widget child,
+    required SentenceContextSlot slot,
+    required String editText,
+    int index = 0,
     bool current = false,
+    bool editable = true,
   }) {
     final ColorScheme scheme = theme.colorScheme;
+    // 这一张卡是不是正被编辑：编辑态换成输入框，且不再走下面的缩略/降透明层
+    // （改文本时该看清楚它，不该比别的卡更淡）。
+    final bool editingThis = _editSlot == slot && _editIndex == index;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 走共享 MD3 卡片外壳（FushiCard）而非裸 Container+BoxDecoration：
     // 当前句用更高一档的容器令牌 surfaces.search + primary 描边区分，上/下句用
@@ -258,17 +398,26 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            label,
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
+              // 编辑入口只在宿主真的能落地编辑时出现（editSentence == null 整颗不渲染）。
+              if (editable && widget.editSentence != null && !editingThis)
+                _editButton(slot, index, editText),
+            ],
           ),
           const SizedBox(height: 4),
-          child,
+          if (editingThis) _editor(theme) else child,
         ],
       ),
     );
-    if (current) return card;
+    if (current || editingThis) return card;
     // 非当前句略缩略淡，做出「当前句浮在上下文之上」的层次（Niratan 卡叠效果）。
     return Opacity(
       opacity: 0.82,
@@ -294,13 +443,31 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     ThemeData theme, {
     required String label,
     required List<String> sentences,
+    required SentenceContextSlot slot,
   }) {
     if (sentences.isEmpty) {
-      return <Widget>[_box(theme, label: label, child: _emptyText(theme))];
+      // 「(无)」卡没有可改的句子——不给编辑入口（改一句不存在的句子没有落点）。
+      return <Widget>[
+        _box(
+          theme,
+          label: label,
+          slot: slot,
+          editText: '',
+          editable: false,
+          child: _emptyText(theme),
+        ),
+      ];
     }
     return <Widget>[
-      for (final String s in sentences)
-        _box(theme, label: label, child: _sentenceText(theme, s)),
+      for (int i = 0; i < sentences.length; i++)
+        _box(
+          theme,
+          label: label,
+          slot: slot,
+          index: i,
+          editText: sentences[i],
+          child: _sentenceText(theme, sentences[i]),
+        ),
     ];
   }
 
@@ -331,14 +498,26 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
 
     // 一句一卡：前文各句 → 当前句（高亮卡）→ 后文各句，卡间统一 6px 留白。
     final List<Widget> cards = <Widget>[
-      ..._directionCards(theme, label: t.popup_ctx_box_prev, sentences: _prev),
+      ..._directionCards(
+        theme,
+        label: t.popup_ctx_box_prev,
+        sentences: _prev,
+        slot: SentenceContextSlot.prev,
+      ),
       _box(
         theme,
         label: t.popup_ctx_box_current,
+        slot: SentenceContextSlot.current,
+        editText: _current,
         current: true,
         child: _highlightedCurrent(theme),
       ),
-      ..._directionCards(theme, label: t.popup_ctx_box_next, sentences: _next),
+      ..._directionCards(
+        theme,
+        label: t.popup_ctx_box_next,
+        sentences: _next,
+        slot: SentenceContextSlot.next,
+      ),
     ];
     final List<Widget> spacedCards = <Widget>[];
     for (int i = 0; i < cards.length; i++) {
@@ -377,7 +556,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
           ),
           IconButton(
             tooltip: t.popup_ctx_cancel,
-            onPressed: _busy ? null : _cancel,
+            onPressed: _locked ? null : _cancel,
             icon: const Icon(Icons.close, size: 20),
           ),
         ],
@@ -416,14 +595,14 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                             _adjustButton(
                               icon: Icons.remove,
                               label: t.popup_ctx_prev_minus,
-                              onPressed: _busy || _prev.isEmpty
+                              onPressed: _locked || _prev.isEmpty
                                   ? null
                                   : () => _adjust(prevDir: true, plus: false),
                             ),
                             _adjustButton(
                               icon: Icons.add,
                               label: t.popup_ctx_prev_plus,
-                              onPressed: _busy || _prevAtMax
+                              onPressed: _locked || _prevAtMax
                                   ? null
                                   : () => _adjust(prevDir: true, plus: true),
                             ),
@@ -440,14 +619,14 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                             _adjustButton(
                               icon: Icons.remove,
                               label: t.popup_ctx_next_minus,
-                              onPressed: _busy || _next.isEmpty
+                              onPressed: _locked || _next.isEmpty
                                   ? null
                                   : () => _adjust(prevDir: false, plus: false),
                             ),
                             _adjustButton(
                               icon: Icons.add,
                               label: t.popup_ctx_next_plus,
-                              onPressed: _busy || _nextAtMax
+                              onPressed: _locked || _nextAtMax
                                   ? null
                                   : () => _adjust(prevDir: false, plus: true),
                             ),
@@ -465,7 +644,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         // 的表面才有这个按钮（previewAudio == null 时整颗不渲染）。
         if (widget.previewAudio != null)
           TextButton.icon(
-            onPressed: _busy ? null : _togglePreview,
+            onPressed: _locked ? null : _togglePreview,
             icon: Icon(
               _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
             ),
@@ -474,12 +653,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             ),
           ),
         TextButton(
-          onPressed: _busy ? null : _cancel,
+          onPressed: _locked ? null : _cancel,
           child: Text(t.popup_ctx_cancel),
         ),
         FilledButton(
           autofocus: true,
-          onPressed: _busy ? null : _confirm,
+          onPressed: _locked ? null : _confirm,
           child: Text(t.popup_ctx_confirm),
         ),
       ],

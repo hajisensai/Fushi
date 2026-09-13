@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
+import '../../helpers/fake_image_bytes.dart';
+
 /// TODO-1281：YouTube 导入时「视频名不对（恒 "watch"）+ 无封面」的守卫。
 ///
 /// 覆盖两块可离线单测的纯逻辑 / IO 分支：
@@ -48,8 +50,8 @@ void main() {
     });
 
     test('2xx with bytes writes the file and returns the path', () async {
-      // JPEG 魔数：收口前先过 looksLikeImageBytes（错误页 HTML 不许当封面落盘）。
-      final Uint8List bytes = Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 4, 5]);
+      // 合法 JPEG 外形（魔数 + EOI）：写侧唯一入口只收可解码字节（BUG-2496）。
+      final Uint8List bytes = fakeJpegBytes();
       final MockClient client = MockClient((http.Request req) async {
         expect(req.url.host, 'i.ytimg.com');
         return http.Response.bytes(bytes, 200);
@@ -67,7 +69,11 @@ void main() {
           reason: '收口的原子写不该留 .tmp');
     });
 
-    test('content-type image/* 即便字节非图片魔数也放行（服务端权威）', () async {
+    test('content-type image/* 但字节不可解码：拒收、不落盘（BUG-2496，服务端头不算数）',
+        () async {
+      // 此前的契约是「服务端 content-type 权威」；BUG-2496 后写侧唯一入口按字节判
+      // 可解码性，头说 image/jpeg 而正文是截断/占位字节的一律不落盘——落了就是
+      // 下次 Image.file 的「Invalid image data」。
       final Uint8List bytes = Uint8List.fromList(<int>[1, 2, 3, 4, 5]);
       final MockClient client = MockClient(
         (http.Request req) async => http.Response.bytes(
@@ -83,8 +89,9 @@ void main() {
           outputPath: outputPath,
           httpClient: client,
         ),
-        outputPath,
+        isNull,
       );
+      expect(File(outputPath).existsSync(), isFalse);
     });
 
     test('非图片响应（错误页 HTML）返回 null 且不落盘', () async {
@@ -109,9 +116,8 @@ void main() {
 
     test('覆盖写同名文件：内容真被换掉、不留 .tmp（BUG-1118 形状）', () async {
       final String outputPath = p.join(tmp.path, 'cover.jpg');
-      await File(outputPath).writeAsBytes(<int>[0x89, 0x50, 0x4E, 0x47, 0xAA]);
-      final Uint8List fresh =
-          Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 0xBE, 0xEF]);
+      await File(outputPath).writeAsBytes(fakePngBytes());
+      final Uint8List fresh = fakeJpegBytes(fill: 0xBE);
       final MockClient client = MockClient(
         (http.Request req) async => http.Response.bytes(fresh, 200),
       );

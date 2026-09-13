@@ -49,6 +49,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "hunex_gge",
     "sgre",
     "smash_fzmedia",
+    "cmvs",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -101,6 +102,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdSmashFzmedia",
     ): ("smash_fzmedia", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdCmvs",
+    ): ("cmvs", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

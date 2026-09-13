@@ -1423,17 +1423,21 @@ window.__fushiInstallShell = function(C) {
   // 页顶常落 ruby / 图片 / 折叠盒 → caretRangeFromPoint 返 null → 分页版三个失败出口
   // 裸 return -1 → beginStyleReanchor 返 -1 → Dart 跳过 commit → CSS 已换但 scrollTop
   // 停残值不滚回 → 文字漂移。连续版在相同三失败点早已回退 firstVisibleCharOffsetByScan，
-  // 但**不能裸抄连续版**：连续版判据用 window 量纲（window.innerWidth），而分页几何是
-  // body-relative（getScrollContext scrollEl=document.body / 分页版 caret 探边用
-  // document.body.clientWidth-pr，刻意不用 window.innerWidth）。分页模式下 body
-  // overflow:hidden + margin:0 + width:--page-width 使 body 填满视口左上角(0,0)，故横排
-  // 视口首边(top)仍是 viewport-y 0（与连续同），唯一差异是竖排首边(right)：连续用
-  // window.innerWidth，分页必须用 document.body.clientWidth（与分页 caret 探边同量纲），
-  // 否则 body 不满窗时判据相差几像素→兜底锚到错列。故另立分页专版（option a），保持连续
-  // 版 window 量纲三件套零改动，各路径量纲就地可见（不靠参数分支）。仅分页 shell 调用。
+  // 但**不能裸抄连续版**：连续版沿书写轴的块方向滚动（横排上下 / 竖排左右），首边是
+  // window 量纲的 0 / window.innerWidth；分页是 CSS multicol 沿**翻页轴**排列（与
+  // getScrollContext / buildPaginationMetrics 同轴：横排列沿 x 左→右、scrollLeft 翻页；
+  // 竖排列沿 y 上→下、scrollTop 翻页），前页在横排的**左侧** / 竖排的**上方**，首边是
+  // body content-box 的起点（横排 padding-left / 竖排 padding-top，与分页 caret 探点
+  // `pl + 2` / `pt + 2` 同量纲）。
+  //
+  // BUG-2492：此前这三件套抄了连续版的轴（横排比 rect.bottom<=0、竖排比
+  // rect.left>=body.clientWidth），在分页几何下前页永远不满足「在首边之前」→ 逐节点累加
+  // 恒为 0 → 兜底把任何页都报成章首 0。重锚路径被 scrollToCharOffset 的 `<=0 → 保当前页`
+  // 掩住看不出来；统计接入后（fushiProgressDetails 第三/四段）页首角落在插图 / 空行时
+  // 整段 [0, 页尾) 被当成本页可见区间，翻走一次就把几千字前文计成已读。仅分页 shell 调用。
   firstVisibleCharOffsetByScanPaged: function() {
     var vertical = this.isVertical();
-    var firstEdge = vertical ? document.body.clientWidth : 0;
+    var firstEdge = this.pagedFirstEdge(vertical);
     var walker = this.createWalker();
     var explored = 0;
     var node;
@@ -1444,10 +1448,28 @@ window.__fushiInstallShell = function(C) {
     }
     return explored;
   },
+  // 分页翻页轴上「当前页 content-box 起点」（body-relative）：横排 = padding-left、竖排 =
+  // padding-top。前页的末列在它之前（中间还隔一个 column-gap），当前页的首列从它开始。
+  // 分页 caret 探点（getFirstVisibleCharOffset 的 `pl + 2` / `pt + 2`）与扫描兜底、
+  // 页上校验（charOffsetOnCurrentPage）都以它为首边，三处同量纲。
+  pagedFirstEdge: function(vertical) {
+    var cs = getComputedStyle(document.body);
+    return vertical
+      ? (parseFloat(cs.paddingTop) || 0)
+      : (parseFloat(cs.paddingLeft) || 0);
+  },
+  // 分页翻页轴上「当前页 content-box 终点」（body-relative）：横排 = clientWidth −
+  // padding-right、竖排 = clientHeight − padding-bottom。下一页的首列在它之后。
+  pagedLastEdge: function(vertical) {
+    var cs = getComputedStyle(document.body);
+    return vertical
+      ? document.body.clientHeight - (parseFloat(cs.paddingBottom) || 0)
+      : document.body.clientWidth - (parseFloat(cs.paddingRight) || 0);
+  },
   // TODO-773 P0：countCharsBeforeViewport 的分页版（body-relative 首边）。与连续版逐字
-  // 二分定位同算法，仅把视口首边参照从 window.innerWidth（竖排）/ 0（横排）改为传入的
-  // firstEdge（竖排=document.body.clientWidth / 横排=0），其余三态短路、零尺寸跳过、
-  // 代理对迭代全部一致。
+  // 二分定位同算法，只换轴：分页「在首边之前」= 沿翻页轴落在当前页 content-box 起点之前
+  // （横排 rect.right <= firstEdge / 竖排 rect.bottom <= firstEdge，BUG-2492），其余三态
+  // 短路、零尺寸跳过、代理对迭代全部一致。
   countCharsBeforeViewportPaged: function(node, vertical, firstEdge) {
     var text = node.textContent || '';
     var totalChars = this.countChars(text);
@@ -1461,18 +1483,14 @@ window.__fushiInstallShell = function(C) {
     for (var i = 0; i < rects.length; i++) {
       var rect = rects[i];
       if (rect.width <= 0 || rect.height <= 0) continue;
-      var start = vertical ? rect.left : rect.top;
-      var end = vertical ? rect.right : rect.bottom;
+      // 翻页轴：横排 x（列左→右）、竖排 y（列上→下）。
+      var start = vertical ? rect.top : rect.left;
+      var end = vertical ? rect.bottom : rect.right;
       minStart = Math.min(minStart, start);
       maxEnd = Math.max(maxEnd, end);
     }
-    if (vertical) {
-      if (minStart >= firstEdge) return totalChars;
-      if (maxEnd <= firstEdge || minStart === Infinity) return 0;
-    } else {
-      if (maxEnd <= firstEdge) return totalChars;
-      if (minStart >= firstEdge || minStart === Infinity) return 0;
-    }
+    if (maxEnd <= firstEdge) return totalChars;
+    if (minStart >= firstEdge || minStart === Infinity) return 0;
     var offsets = [];
     var prefixCounts = [0];
     var count = 0;
@@ -1499,8 +1517,10 @@ window.__fushiInstallShell = function(C) {
     }
     return prefixCounts[firstVisible];
   },
-  // TODO-773 P0：isTextOffsetBeforeViewport 的分页版（body-relative 首边）。竖排判
-  // rect.left>=firstEdge（=document.body.clientWidth）、横排判 rect.bottom<=firstEdge（=0）。
+  // TODO-773 P0：isTextOffsetBeforeViewport 的分页版（body-relative 首边）。沿翻页轴判
+  // 该字是否整个落在当前页 content-box 起点之前：横排 rect.right<=firstEdge（=padding-left）、
+  // 竖排 rect.bottom<=firstEdge（=padding-top）（BUG-2492：不是连续版的 bottom<=0 /
+  // left>=clientWidth）。
   isTextOffsetBeforeViewportPaged: function(node, offset, text, vertical, firstEdge) {
     var char = String.fromCodePoint(text.codePointAt(offset));
     if (!char) return false;
@@ -1509,7 +1529,59 @@ window.__fushiInstallShell = function(C) {
     range.setEnd(node, offset + char.length);
     var rect = this.getRect(range);
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-    return vertical ? rect.left >= firstEdge : rect.bottom <= firstEdge;
+    return (vertical ? rect.bottom : rect.right) <= firstEdge;
+  },
+  // BUG-2492：章内偏移 [charOffset] 处那个学习单位是否画在**当前页**上（沿翻页轴与
+  // 当前页 content-box [firstEdge, lastEdge) 相交）。fushiProgressDetails 把
+  // getFirstVisibleCharOffset 的结果当可见区间起点喂统计账本，而该函数的三条兜底
+  // （caret 失败 / 探点落元素 / 节点基址缺失）各自算出的偏移只保证「尽力」，不保证在
+  // 本页；起点若不在本页，[起点, 页尾) 就不是一页而是一整段前文，翻走一次整段入账
+  // （iOS 真机一页记了 5172 字）。走 scrollToCharOffset 同款的逐节点走查定位到字、取
+  // 其 rect 校验；定位不到 / 零尺寸都按「不在本页」返 false——统计宁可不计。
+  charOffsetOnCurrentPage: function(charOffset) {
+    if (typeof charOffset !== 'number' || charOffset < 0) return false;
+    var walker = this.createWalker();
+    var node;
+    var runningOffset = 0;
+    var targetNode = null;
+    var remaining = 0;
+    while (node = walker.nextNode()) {
+      var nodeChars = this.countChars(node.textContent);
+      if (runningOffset + nodeChars > charOffset) {
+        targetNode = node;
+        remaining = charOffset - runningOffset;
+        break;
+      }
+      runningOffset += nodeChars;
+    }
+    if (!targetNode) return false;
+    var text = targetNode.textContent;
+    var charIdx = 0;
+    var textOffset = 0;
+    for (var i = 0; i < text.length && charIdx < remaining; i++) {
+      var cp = text.codePointAt(i);
+      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
+      if (cp > 0xFFFF) i++;
+      textOffset = i + 1;
+    }
+    // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：西文空格分词的
+    // 分隔空格、`<p>\n本文` 的前导折叠空白都落在这里。空白永远不是单元首字，而软换行
+    // 处的尾随空格还可能带着一个落在**前页末行**的非零 rect——先按码元跳过空白，
+    // 再交给 characterAnchorRect 跳零尺寸盒（scrollToCharOffset 同款）。
+    while (textOffset < text.length && /\s/.test(text[textOffset])) textOffset++;
+    if (textOffset >= text.length) return false;
+    var cpAt = text.codePointAt(textOffset);
+    var range = document.createRange();
+    range.setStart(targetNode, textOffset);
+    range.setEnd(targetNode, textOffset + (cpAt > 0xFFFF ? 2 : 1));
+    var rect = this.characterAnchorRect(range);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    var vertical = this.isVertical();
+    var firstEdge = this.pagedFirstEdge(vertical);
+    var lastEdge = this.pagedLastEdge(vertical);
+    var start = vertical ? rect.top : rect.left;
+    var end = vertical ? rect.bottom : rect.right;
+    return end > firstEdge && start < lastEdge;
   },
   buildSentenceAudioNormIndex: function() {
     // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
@@ -2683,6 +2755,13 @@ $_sharedJs
   getLastVisibleCharOffset: function(startOffset) {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     if (metrics.totalChars <= 0) return -1;
+    // BUG-2492：调用方传入的起点必须真的画在本页，否则 [起点, 页尾) 不是本页可见区间、
+    // 不能交给统计（返 -1 → Dart 不 arrive）。先于 isAtEnd 短路：末页起点错时钳到
+    // total 同样是整段幻象。
+    if (typeof startOffset === 'number' && startOffset >= 0
+        && !this.charOffsetOnCurrentPage(startOffset)) {
+      return -1;
+    }
     if (this.isAtEnd()) return metrics.totalChars;
     var context = this.getScrollContext();
     var start = (typeof startOffset === 'number' && startOffset >= 0)
@@ -2889,11 +2968,11 @@ $_sharedJs
     // firstVisibleCharOffsetByScan）。连续版三失败点早有同形兜底。
     if (!range || !range.startContainer) return this.firstVisibleCharOffsetByScanPaged();
     var target = range.startContainer;
-    if (target.nodeType !== Node.TEXT_NODE) {
-      var walker = this.createWalker(target);
-      target = walker.nextNode();
-      if (!target) return this.firstVisibleCharOffsetByScanPaged();
-    }
+    // BUG-2492：探点落在元素上（插图 `<p><img>` / 空行 / 章容器 `<div>` / body）时，
+    // caret 的 startOffset 是子节点下标不是字符下标；旧写法取该元素**子树首个文本节点**
+    // 再拿子节点下标当字符数，落在章容器上会算出章首附近的假偏移。几何扫描兜底按翻页
+    // 轴数出前页字数，才是这一页真正的首字。
+    if (target.nodeType !== Node.TEXT_NODE) return this.firstVisibleCharOffsetByScanPaged();
     var baseOffset = this.nodeStartOffsets.get(target);
     if (baseOffset === undefined) {
       this.buildNodeOffsets();

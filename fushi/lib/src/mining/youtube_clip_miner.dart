@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/media/video/youtube_range_relay.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// 解析好的「一句 YouTube 片段制卡请求」的裸值：喂给引擎的 ffmpeg 输入 + 视频时间窗 + 文本。
@@ -39,13 +40,19 @@ typedef YoutubeResolver = Future<YoutubeResolvedSource> Function(String url);
 class YoutubeClipMiner {
   YoutubeClipMiner({
     YoutubeResolver? resolve,
+    YoutubeStreamRelay? relay,
     DateTime Function()? now,
     this.ttl = const Duration(minutes: 3),
   })  : _resolve = resolve ??
             ((String url) => resolveYoutubeSource(url, withCaptions: false)),
+        _relay = relay ?? relayYoutubeStreamUrl,
         _now = now ?? DateTime.now;
 
   final YoutubeResolver _resolve;
+
+  /// BUG-2507：ffmpeg 与 libmpv 一样发不出有界 Range，googlevideo 直链交给它前换成本地
+  /// 分块中继地址（默认 [relayYoutubeStreamUrl]；测试注入假件）。
+  final YoutubeStreamRelay _relay;
   final DateTime Function() _now;
   final Duration ttl;
   final Map<String, _CachedSource> _cache = <String, _CachedSource>{};
@@ -62,8 +69,14 @@ class YoutubeClipMiner {
     final YoutubeResolvedSource src = await _resolvedFor(videoId);
     return YoutubeClipRequest(
       // GIF/帧从低分辨率挖矿流（miningVideoUrl，无则回落播放流）。
-      mediaSource: src.miningVideoUrl ?? src.streamUrl,
+      mediaSource:
+          await _relay(src.miningVideoUrl ?? src.streamUrl, src.httpHeaders),
       // muxed 挖矿流自带音轨 → audioSource=null（引擎从视频源抽音频）；分离流 → audio-only URL。
+      // **分离音轨不走中继**：引擎按 `audioSourceNeedsRangeMaterialization` 只认
+      // googlevideo host 才走 TODO-1314 的 `range=` 查询参数分片整段物化（那一路不受
+      // 有界 Range 限制、也不限速）；换成 127.0.0.1 中继地址会让判据恒 false，退化成
+      // ffmpeg 直接对流 `-ss`——把两道既有防线一起绕开。物化失败的回退路径行为与
+      // PR 前一致（同样 403），不在本次范围。
       audioSource: src.miningVideoHasAudio ? null : src.audioStreamUrl,
       clipStartMs: startMs,
       clipEndMs: endMs,

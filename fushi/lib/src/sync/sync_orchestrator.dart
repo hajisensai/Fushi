@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -17,6 +16,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         repackageMangaBook;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';

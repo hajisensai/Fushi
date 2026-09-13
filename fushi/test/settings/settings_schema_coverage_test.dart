@@ -115,6 +115,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // 顶栏悬浮/固定：写 prefsRepo（changed=true），生效点是阅读器打开书时读一次
+  // appModel.mangaChromeFloating 决定栏形态与正文让位——harness 里没有阅读器。
+  // 由 manga_reader_chrome_test 咬住让位/绘制两条纯函数，manga_fushi_page_test
+  // 「悬浮顶栏」用例咬住偏好 → 页面形态的接线。
+  'manga/Floating toolbar':
+      'test/media/manga/manga_reader_chrome_test.dart + '
+          'test/pages/manga_fushi_page_test.dart（悬浮顶栏）',
   // BUG-2450：在线源封面磁盘缓存保留天数。写 prefsRepo（changed=true），生效点是
   // MihonCoverCache.maxAge（过期条目下次读取删掉重取），harness 里没有封面缓存
   // 目录可探。由专项测试咬住：过期封面重新联网、未过期命中磁盘、偏好改动即时

@@ -103,6 +103,9 @@ class _TestAppModel extends AppModel {
     bool pushReplacement = false,
     MediaItem? item,
     Bookmark? initialBookmarkJump,
+    bool recordHistory = true,
+    bool waitUntilClosed = true,
+    Widget Function()? launchPageBuilder,
   }) async {
     opened.add(item);
   }
@@ -201,6 +204,9 @@ void main() {
   const ValueKey<String> loginKey = ValueKey<String>(
     'manga_chapter_locked_login',
   );
+  const ValueKey<String> appBarLoginKey = ValueKey<String>(
+    'manga_series_login',
+  );
 
   Future<String> openPage(
     WidgetTester tester,
@@ -257,6 +263,25 @@ void main() {
       await _settle(tester);
       expect(find.byKey(dialogKey), findsOneWidget);
       expect(find.byKey(loginKey), findsOneWidget);
+    });
+  });
+
+  // BUG-2497：登录入口要在作品页 AppBar 上直接可见，不能只藏在锁章弹窗里。
+  testWidgets('适配器给得出登录目标 → AppBar 有「登录」按钮', (WidgetTester tester) async {
+    await tester.runAsync(() async {
+      await openPage(tester, _LoginAdapter());
+      expect(find.byKey(appBarLoginKey), findsOneWidget);
+      expect(
+        tester.widget<IconButton>(find.byKey(appBarLoginKey)).onPressed,
+        isNotNull,
+      );
+    });
+  });
+
+  testWidgets('适配器不给登录目标 → AppBar 没有「登录」按钮', (WidgetTester tester) async {
+    await tester.runAsync(() async {
+      await openPage(tester, _FakeAdapter());
+      expect(find.byKey(appBarLoginKey), findsNothing);
     });
   });
 

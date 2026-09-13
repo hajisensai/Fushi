@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include "siglus_eightarg_glyph_batch.h"
 #include <cstdio>
 #include <cstdlib>

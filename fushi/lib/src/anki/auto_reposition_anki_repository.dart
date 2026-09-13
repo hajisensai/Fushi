@@ -116,6 +116,35 @@ class AutoRepositionAnkiRepository extends BaseAnkiRepository {
   Future<bool> openNoteInAnki(int noteId) => _inner.openNoteInAnki(noteId);
 
   @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) =>
+      _inner.prepareSourceNoteFields(
+        rawPayloadJson: rawPayloadJson,
+        context: context,
+      );
+
+  @override
+  Future<List<int>> findSourceNoteIds(String markerTag) =>
+      _inner.findSourceNoteIds(markerTag);
+
+  @override
+  Future<void> writeSourceNoteFields(int noteId, Map<String, String> fields) =>
+      _inner.writeSourceNoteFields(noteId, fields);
+
+  @override
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) =>
+      _inner.readSourceNote(sourceId);
+
+  @override
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  }) =>
+      _inner.patchSourceNote(original: original, fields: fields);
+
+  @override
   Future<AnkiOpenWordOutcome> openWordInAnki(
     String expression,
     String reading,

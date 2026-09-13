@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include "launcher_wait.h"
 
 #include <cstdio>

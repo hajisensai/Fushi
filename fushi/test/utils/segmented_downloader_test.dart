@@ -246,7 +246,9 @@ void main() {
         ..chunkSize = partSize // 一片一块，慢的那家每片正好吃一次延迟
         ..resources[fast] = body
         ..resources[slow] = body
-        ..slowUrls[slow] = const Duration(milliseconds: 25);
+        // 慢源只慢 25ms 时，CI runner 一忙快源也能慢到同一量级，派活退化成 6 : 6
+        // （develop@a0c71341 实测）。差距拉到 120ms 让「按吞吐派活」与调度噪声分得开。
+        ..slowUrls[slow] = const Duration(milliseconds: 120);
 
       final DownloadPlan plan = DownloadPlan.ranged(
         urls: const <String>[fast, slow],

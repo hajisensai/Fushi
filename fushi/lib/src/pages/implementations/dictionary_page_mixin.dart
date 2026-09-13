@@ -11,6 +11,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
+    show SentenceContextSlot;
 import 'package:fushi/src/pages/base_source_page.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -163,6 +165,16 @@ mixin DictionaryPageMixin {
   Future<Map<String, Object?>> Function()?
       get onSentenceContextPreviewToDraft => null;
 
+  /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
+  /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
+  ///
+  /// 只改**会写进卡片的那段文本**，不动该句的音频/画面区间与身份——改完仍是同一条
+  /// cue、同一段时间窗，GIF 与句子音频的裁法完全不变。默认 null = 不支持（纯查词页
+  /// 无草稿），对话框据此不渲染编辑入口。视频页覆写返回非空闭包。与 reader 车道
+  /// （[BaseSourcePageState.onEditSentenceContextText]）对称。
+  Future<void> Function(SentenceContextSlot slot, int index, String text)?
+      get onEditSentenceContextText => null;
+
   /// BUG-797 / BUG-1040：有多少个「必须盖住查词弹窗」的 Flutter 对话框正开着。
   ///
   /// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），靠 airspace 永远
@@ -219,6 +231,9 @@ mixin DictionaryPageMixin {
           matched: matched,
           fetchPreview: preview,
           setContext: setter,
+          // 手改某一句文本：只改这次会写进卡片的**文本**，cue 的时间窗（音频/画面
+          // 身份）原样保留。宿主没接就传 null，对话框不渲染编辑入口。
+          editSentence: onEditSentenceContextText,
           onConfirm: () =>
               webViewKey.currentState?.mineEntryByIndex(entryIndex),
         ),

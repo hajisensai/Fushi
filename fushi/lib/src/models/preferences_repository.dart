@@ -2792,6 +2792,17 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 漫画阅读器顶栏是否悬浮（默认开，与 EPUB 阅读器「点空白隐藏控制栏」同默认）。
+  /// 悬浮 = 顶栏不占布局、默认收起、点页面中央 / 顶边悬停唤出并自动收起；
+  /// 关 = 顶栏常驻并占 48px 布局高，页图在它下方排布。
+  bool get mangaChromeFloating =>
+      getPref('manga_chrome_floating', defaultValue: true) as bool;
+
+  Future<void> setMangaChromeFloating(bool value) async {
+    await setPref('manga_chrome_floating', value);
+    notifyListeners();
+  }
+
   /// 点击页面左右边缘翻页。默认开：触屏此前完全没有点击翻页手段。
   bool get mangaTapZonePaging =>
       getPref('manga_tap_zone_paging', defaultValue: true) as bool;

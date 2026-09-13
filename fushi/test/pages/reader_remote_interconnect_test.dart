@@ -77,6 +77,10 @@ void main() {
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     appModel.populateLanguages();
+    // BUG-2505 用例要长按本地书卡开 MediaItemDialogPage，它按 mediaTypes /
+    // mediaSources 解析条目来源。
+    appModel.populateMediaTypes();
+    appModel.populateMediaSources();
     remoteClient = _FakeRemoteBookClient(coverPath: remoteBookCover.path);
     importedFiles = <File>[];
     importedBookKey = 'local-book-key';
@@ -753,6 +757,175 @@ void main() {
     expect(importedFiles.single.existsSync(), isTrue);
     expect(fetchedAudiobookKeys, isEmpty);
     expect(importedAudiobooks, isEmpty);
+  });
+
+  testWidgets(
+      'BUG-2505: 本地已有书、对端有配套有声书 → 本地书卡菜单露「从对端下载有声书」，'
+      '只拉音频不重下 EPUB', (WidgetTester tester) async {
+    // 场景：这本书之前从对端只下到了 EPUB（有声书包当时失败 / host 后来才配音）。
+    // 远端卡按「本端已有」被去重藏掉，配套有声书不是 standalone 占位卡——修复前
+    // 书架上没有任何入口能再拿到它。
+    const String title = 'Remote Book';
+    const String hostRealKey = 'Remote_Book_host_key';
+    final String localKey = sanitizeTtuFilename(title);
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: localKey,
+      title: title,
+      epubPath: '${pathProviderDir.path}/remote_book.epub',
+      extractDir: pathProviderDir.path,
+      chapterCount: 1,
+      chaptersJson: '["a"]',
+      importedAt: 0,
+    ));
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      title: title,
+      bookKey: hostRealKey,
+      hasAudiobook: true,
+    );
+    final MediaItem localItem = MediaItem(
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(localKey),
+      title: title,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      position: 0,
+      duration: 100,
+      canDelete: true,
+      canEdit: true,
+    );
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((ref) => appModel),
+        fushiBooksProvider.overrideWith(
+          (ref, language) => Future<List<MediaItem>>.value(
+            <MediaItem>[localItem],
+          ),
+        ),
+        srtBooksProvider.overrideWith(
+          (ref) => Future<List<SrtBook>>.value(shelfSrtBooks),
+        ),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          builder: (BuildContext context, Widget? child) =>
+              child ?? const SizedBox.shrink(),
+          home: Scaffold(body: buildPage()),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // 远端卡确实被去重藏掉（前提成立）；本地卡在场。
+    expect(find.byTooltip(t.remote_book_download), findsNothing);
+    final Finder localCard = find.byKey(
+      ValueKey<String>('book_entry_${localItem.mediaIdentifier}'),
+    );
+    expect(localCard, findsOneWidget);
+
+    await tester.longPress(localCard);
+    await tester.pumpAndSettle();
+    final Finder action = find.text(t.remote_book_audiobook_download);
+    expect(action, findsOneWidget,
+        reason: '本地已有书 + 对端有配套有声书 + 本端无有声书 → 菜单必须露补拉入口');
+
+    // 与远端卡同一道门：关掉「显示远端条目」后远端卡消失，这条入口不能还挂在
+    // 本地书卡菜单上（_lastRemoteState 不会因开关关闭而清空，点下去只会弹不可用）。
+    Navigator.of(tester.element(action)).pop();
+    await tester.pumpAndSettle();
+    await appModel.prefsRepo.setShowRemoteEntries(false);
+    await tester.pumpAndSettle();
+    await tester.longPress(localCard);
+    await tester.pumpAndSettle();
+    expect(find.text(t.remote_book_audiobook_download), findsNothing,
+        reason: '远端条目关掉后补拉入口必须一起消失');
+    Navigator.of(tester.element(find.text(t.audiobook_import))).pop();
+    await tester.pumpAndSettle();
+    await appModel.prefsRepo.setShowRemoteEntries(true);
+    await tester.pumpAndSettle();
+    await tester.longPress(localCard);
+    await tester.pumpAndSettle();
+    expect(action, findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(action);
+      for (int i = 0; i < 40; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (importedAudiobooks.isNotEmpty) break;
+      }
+    });
+    await tester.pump();
+
+    // 只拉音频：EPUB 一个字节都不重下。
+    expect(importedFiles, isEmpty);
+    // 用 host 的真实 bookKey（downloadId）拉包（BUG-414 契约），绑到本地 bookKey。
+    expect(fetchedAudiobookKeys, <String>[hostRealKey]);
+    expect(importedAudiobooks, hasLength(1));
+    expect(importedAudiobooks.single.bookKeyOverride, localKey);
+  });
+
+  testWidgets('BUG-2505: 本端已有有声书时书卡菜单不露「从对端下载有声书」',
+      (WidgetTester tester) async {
+    const String title = 'Remote Book';
+    final String localKey = sanitizeTtuFilename(title);
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: localKey,
+      title: title,
+      epubPath: '${pathProviderDir.path}/remote_book2.epub',
+      extractDir: pathProviderDir.path,
+      chapterCount: 1,
+      chaptersJson: '["a"]',
+      importedAt: 0,
+    ));
+    await db.upsertAudiobook(AudiobooksCompanion.insert(
+      bookKey: localKey,
+      alignmentFormat: 'srt',
+      alignmentPath: '${pathProviderDir.path}/a.srt',
+    ));
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      title: title,
+      hasAudiobook: true,
+    );
+    final MediaItem localItem = MediaItem(
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(localKey),
+      title: title,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      position: 0,
+      duration: 100,
+      canDelete: true,
+      canEdit: true,
+    );
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((ref) => appModel),
+        fushiBooksProvider.overrideWith(
+          (ref, language) => Future<List<MediaItem>>.value(
+            <MediaItem>[localItem],
+          ),
+        ),
+        srtBooksProvider.overrideWith(
+          (ref) => Future<List<SrtBook>>.value(shelfSrtBooks),
+        ),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          builder: (BuildContext context, Widget? child) =>
+              child ?? const SizedBox.shrink(),
+          home: Scaffold(body: buildPage()),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byKey(
+      ValueKey<String>('book_entry_${localItem.mediaIdentifier}'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(t.remote_book_audiobook_download), findsNothing,
+        reason: '已经有有声书的书不该再露补拉入口');
+    // 既有的本地导入入口仍在（菜单其余部分不受影响）。
+    expect(find.text(t.audiobook_import), findsOneWidget);
   });
 }
 

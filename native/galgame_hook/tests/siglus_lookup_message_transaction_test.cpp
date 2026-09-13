@@ -1,3 +1,4 @@
+#undef NDEBUG
 // Reuse the real target, registry and Win32 seams; exercise both production
 // entrypoints through click_policy, which includes message_transaction.inc.
 // The imported standalone test entry is deliberately not invoked here.

@@ -2155,12 +2155,16 @@
     opacity: 0.6;
 }
 
-/* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词。 */
+/* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词；
+   按住拖动可挪位（subtitle-panel.js，位置按视频分数坐标记住）。 */
 #fushi-subtitle-overlay {
     position: fixed;
     z-index: 2147483637;
-    /* top 给的是底边锚点（JS 写 88% 处）：-100% 让文字向上长，短视频不溢出视频下缘。 */
+    /* top 给的是底边锚点（JS 默认写 88% 处，用户拖过则是记住的分数）：-100% 让文字向上长，
+       短视频不溢出视频下缘。 */
     transform: translate(-50%, -100%);
+    /* 触屏拖字幕时不让浏览器把手势抢去滚页面/缩放：覆盖层压在视频上，本就不该从这里滚页。 */
+    touch-action: none;
     padding: 6px 12px 7px;
     border-radius: 8px;
     color: #f7f8f2;
@@ -2173,6 +2177,12 @@
     white-space: pre-wrap;
     user-select: text;
     cursor: text;
+}
+
+/* 拖动中：抓手光标 + 禁选区（否则移动指针会同时拉出一条文字选区）。 */
+#fushi-subtitle-overlay[data-dragging] {
+    cursor: grabbing;
+    user-select: none;
 }
 
 /* 覆盖层里的振假名：与字幕列表同一套取向——读音在正文上方、不参与选择/取词。 */

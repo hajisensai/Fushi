@@ -114,8 +114,7 @@ void main() {
         launched.add(uri);
         return true;
       },
-      readInfoForAddingJson: () async =>
-          const AnkiMobilePasteboardRead.empty(),
+      readInfoForAddingJson: () async => const AnkiMobilePasteboardRead.empty(),
       mediaServerLifetime: Duration.zero,
     );
     await repo.saveSettings(const AnkiSettings(
@@ -152,6 +151,64 @@ void main() {
     expect(launched.single.queryParameters['fldSentence'], '黒い猫です。');
     expect(launched.single.queryParameters['tags'], 'custom fushi book');
     expect(launched.single.queryParameters, isNot(contains('dupes')));
+  });
+
+  test(
+      'source card addnote URI carries both MiscInfo locator and stable marker',
+      () async {
+    final CardSourceLink link = CardSourceLink(
+      kind: CardSourceKind.book,
+      uid: 'book-uid',
+      sourceId: '12345678-1234-4234-8234-123456789abc',
+      chapterIndex: 2,
+      charOffset: 456,
+      charLength: 12,
+    );
+    final List<Uri> launched = <Uri>[];
+    final AnkiMobileRepository repo = AnkiMobileRepository(
+      openUrl: (Uri uri) async {
+        launched.add(uri);
+        return true;
+      },
+      readInfoForAddingJson: () async => const AnkiMobilePasteboardRead.empty(),
+      mediaServerLifetime: Duration.zero,
+    );
+    await repo.saveSettings(const AnkiSettings(
+      selectedDeckId: 0,
+      selectedDeckName: 'Japanese',
+      selectedNoteTypeId: 0,
+      selectedNoteTypeName: 'Lapis',
+      availableDecks: <AnkiDeck>[AnkiDeck(id: 0, name: 'Japanese')],
+      availableNoteTypes: <AnkiNoteType>[
+        AnkiNoteType(
+            id: 0, name: 'Lapis', fields: <String>['Expression', 'MiscInfo']),
+      ],
+      fieldMappings: <String, String>{
+        'Expression': '{expression}',
+        'MiscInfo': '{document-title} {source-link}',
+      },
+      tags: 'custom',
+      tagIncludeHibiki: false,
+      tagIncludeCategory: false,
+    ));
+    final MineOutcome outcome = await repo.mineEntry(
+      rawPayloadJson: jsonEncode(<String, String>{'expression': '猫'}),
+      context: AnkiMiningContext(
+          sentence: '黒い猫です。',
+          documentTitle: '原作',
+          source: AnkiMiningSource.book,
+          sourceLink: link),
+    );
+    expect(outcome.result, MineResult.success);
+    expect(launched, hasLength(1));
+    final Uri uri = launched.single;
+    expect(uri.scheme, 'anki');
+    expect(uri.path, '/addnote');
+    final String info = uri.queryParameters['fldMiscInfo']!;
+    expect(info, startsWith('原作 '));
+    expect(CardSourceLink.fromHtml(info).single.toUri(), link.toUri());
+    expect(uri.queryParameters['tags']!.split(' '),
+        <String>['custom', link.markerTag]);
   });
 
   test('mineEntry exposes local media as downloadable URLs for AnkiMobile',
@@ -196,8 +253,7 @@ void main() {
         launched.add(uri);
         return true;
       },
-      readInfoForAddingJson: () async =>
-          const AnkiMobilePasteboardRead.empty(),
+      readInfoForAddingJson: () async => const AnkiMobilePasteboardRead.empty(),
       mediaServerLifetime: Duration.zero,
       beginMediaImportBackgroundTask: () async {
         events.add('begin-background-task');
@@ -306,8 +362,7 @@ void main() {
         launched.add(uri);
         return true;
       },
-      readInfoForAddingJson: () async =>
-          const AnkiMobilePasteboardRead.empty(),
+      readInfoForAddingJson: () async => const AnkiMobilePasteboardRead.empty(),
       mediaServerLifetime: const Duration(milliseconds: 500),
       beginMediaImportBackgroundTask: () async {},
       endMediaImportBackgroundTask: () async {

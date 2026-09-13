@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include "siglus_eightarg_owner.h"
 
 #include <cstdio>

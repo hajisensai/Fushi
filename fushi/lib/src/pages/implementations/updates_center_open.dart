@@ -2,6 +2,9 @@
 ///
 /// 与页面分开：`UpdatesCenterPage` 只认识「一条更新」，跳转要认识四个域各自的页面
 /// 与它们的装配，塞进页面就等于把四棵依赖树焊进一个本该能独立构建的 widget。
+///
+/// 四个域的落点都在 app 内：番剧播那一集、漫画开作品页、扩展开扩展页、app 新版本
+/// 走应用内检查 + 下载安装。这里没有 `launchUrl`——「更新」不该把人送出 app。
 library;
 
 import 'package:flutter/material.dart';
@@ -9,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, UpdateFeedEntryRow;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
@@ -17,6 +19,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
+import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/utils.dart';
 
@@ -56,9 +59,8 @@ Future<void> openUpdateFeedEntry(
       await Navigator.of(context).push(
         adaptivePageRoute<void>(
           context: context,
-          builder: (_) => MangaSeriesPage(
-            target: ShelfMangaSeriesTarget(bookKey),
-          ),
+          builder: (_) =>
+              MangaSeriesPage(target: ShelfMangaSeriesTarget(bookKey)),
         ),
       );
     case UpdateFeedKind.mangaExtension:
@@ -70,9 +72,15 @@ Future<void> openUpdateFeedEntry(
         ),
       );
     case UpdateFeedKind.appRelease:
-      final String? url = detail['releaseUrl'] as String?;
-      if (url == null || url.isEmpty) return;
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      // app 新版本走应用内更新：检查 → 「发现新版本」对话框 → 下载 + 安装。
+      // detailJson 里的 releaseUrl 只是投递时的元数据，**不是**落点——把用户丢
+      // 到浏览器手动下载，等于绕过 UpdateChecker 已有的整条安装链路。
+      if (!context.mounted) return;
+      final AppModel appModel = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider);
+      await checkAppUpdateNow(context, appModel);
     case UpdateFeedKind.videoEpisode:
       final String? bookUid = detail['bookUid'] as String?;
       final int? collectionId = detail['collectionId'] as int?;

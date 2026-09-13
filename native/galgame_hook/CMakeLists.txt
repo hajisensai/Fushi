@@ -887,6 +887,9 @@ target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
 
+add_executable(fushi_lookup_selected_text_test "tests/lookup_selected_text_test.cpp")
+target_include_directories(fushi_lookup_selected_text_test PRIVATE "include")
+add_test(NAME fushi_lookup_selected_text_test COMMAND fushi_lookup_selected_text_test)
 add_executable(fushi_smash_fzmedia_adapter_test "tests/smash_fzmedia_adapter_test.cpp")
 target_include_directories(fushi_smash_fzmedia_adapter_test PRIVATE "hook")
 add_test(NAME fushi_smash_fzmedia_adapter_test COMMAND fushi_smash_fzmedia_adapter_test)

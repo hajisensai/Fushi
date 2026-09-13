@@ -112,7 +112,10 @@ void main() {
     // ~30 行到 2065，故把 release 天花板从 2050 上调到 2090（留 ~25 行合理余量，与既有
     // 余量风格一致）。
     const int kDownloadCeiling = 1780;
-    const int kReleaseCeiling = 2090;
+    // BUG-2487：「发现新版本」对话框与下载安装并成按版本互斥的一条流（启动期
+    // 自动检查与更新中心 toast 点击是必然并发，不互斥就是两个对话框叠着），
+    // release 净增 ~50 行，天花板 2090 → 2150。
+    const int kReleaseCeiling = 2150;
     const int kDefaultCeiling = 1500;
     for (final String path in <String>[barrel, ...parts]) {
       final int ceiling = path == download
@@ -168,7 +171,8 @@ void main() {
   /// part 没法被外部按需 import，于是同步层只能裸连，在开着代理的机器上必然
   /// `errno = 121` 超时。守卫随之调头：**禁止**代理实现回流到 part 里。
   test('the proxy layer lives in its own library, not in the net part', () {
-    const String appProxy = '../packages/fushi_engine/lib/utils/net/app_proxy.dart';
+    const String appProxy =
+        '../packages/fushi_engine/lib/utils/net/app_proxy.dart';
     expect(File(appProxy).existsSync(), isTrue,
         reason: '$appProxy must exist — the sync layer imports it directly');
 

@@ -50,7 +50,9 @@ void main() {
       reason: 'charAnchor 精确时交给起点的 charOffset → restoreToCharOffset 精确恢复',
     );
     expect(
-        src, contains('_suppressPositionPersist = bm.preserveSavedPosition;'),
+        src, contains('_suppressPositionPersist = _sourceReviewSession != null\n'
+            '          ? _sourceReviewActive\n'
+            '          : bm.preserveSavedPosition;'),
         reason: '临时浏览跳转据 preserveSavedPosition 置位抑制标记');
     // BUG-162 分数兜底路径仍在（真实书签 charAnchor==null）。
     expect(

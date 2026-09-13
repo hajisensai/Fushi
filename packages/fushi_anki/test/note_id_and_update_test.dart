@@ -21,6 +21,7 @@ class _RecordingService extends AnkiConnectService {
   _RecordingService({this.addNoteId = 42});
 
   final int? addNoteId;
+  Map<String, String> existingFields = <String, String>{};
   final List<String> storedFilenames = <String>[];
   final List<({int noteId, Map<String, String> fields})> updateCalls =
       <({int noteId, Map<String, String> fields})>[];
@@ -30,6 +31,9 @@ class _RecordingService extends AnkiConnectService {
 
   @override
   Future<bool> mediaFileExists(String filename) async => false;
+
+  @override
+  Future<Map<String, String>?> notesInfo(int noteId) async => existingFields;
 
   @override
   Future<void> storeMediaFile({
@@ -254,6 +258,45 @@ void main() {
 
   group('updateMinedNote reuses the field render (task C1, repository layer)',
       () {
+    test('source-less overwrite preserves the old MiscInfo return link',
+        () async {
+      final CardSourceLink link = CardSourceLink(
+        kind: CardSourceKind.book,
+        uid: 'book-uid',
+        sourceId: '12345678-1234-4234-8234-123456789abc',
+        chapterIndex: 3,
+        charOffset: 456,
+        charLength: 8,
+      );
+      final _RecordingService service = _RecordingService()
+        ..existingFields = <String, String>{
+          'Expression': 'old',
+          'MiscInfo': 'Old title ${link.toHtml()}',
+        };
+      final _ConfiguredRepo repo = _ConfiguredRepo(
+        service: service,
+        settings: _settings().copyWith(
+          fieldMappings: <String, String>{
+            'Expression': '{expression}',
+            'MiscInfo': LapisNoteType.defaultFieldMappings['MiscInfo']!,
+          },
+        ),
+      );
+      final MineOutcome outcome = await repo.updateMinedNote(
+        noteId: 888,
+        rawPayloadJson: _payload,
+        context: const AnkiMiningContext(
+          sentence: '',
+          documentTitle: 'Updated title',
+        ),
+      );
+      expect(outcome.result, MineResult.success);
+      final String info = service.updateCalls.single.fields['MiscInfo']!;
+      expect(CardSourceLink.fromHtml(info).single.toUri(), link.toUri());
+      expect(info, link.toHtml(label: 'Updated title'));
+      expect(service.addNoteCalls, isEmpty);
+    });
+
     test('renders fields like mineEntry and calls updateNoteFields by id',
         () async {
       final service = _RecordingService();
