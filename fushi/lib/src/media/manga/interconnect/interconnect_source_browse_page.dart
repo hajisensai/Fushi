@@ -432,7 +432,7 @@ class InterconnectSourceCover extends StatelessWidget {
     return Image(
       image: RemoteCoverImage(
         url,
-        adapter.coverFetcher(source),
+        adapter.coverFetcher(source, series),
         cacheKey: series.key,
       ),
       fit: BoxFit.cover,

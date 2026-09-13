@@ -90,7 +90,7 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
     final List<RemoteMangaSourceInfo> out = <RemoteMangaSourceInfo>[];
     final MihonManager? manager = _mihonManager();
     if (manager != null) {
-      await manager.initialise();
+      await _guard(manager.initialise);
       for (final MangaOnlineSourceRow row in enabledMangaOnlineSources(
         manager,
       )) {
@@ -288,8 +288,12 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
     ];
   }
 
-  static Map<String, Object?> _seriesRaw(Map<String, Object?> series) =>
-      OnlineMangaSeries.fromJson(series)?.raw ?? series;
+  /// 作品 JSON 里给运行时的原生 payload；对端没带 `raw`（或整个 map 解析不了）
+  /// 时把整个 map 当 payload——比传一个空 map 给运行时强。
+  static Map<String, Object?> _seriesRaw(Map<String, Object?> series) {
+    final Map<String, Object?>? raw = OnlineMangaSeries.fromJson(series)?.raw;
+    return raw == null || raw.isEmpty ? series : raw;
+  }
 
   @override
   Future<RemoteMangaImage> pageImage(
@@ -299,21 +303,25 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
     Map<String, Object?> page,
   ) async {
     final _Resolved resolved = await _resolve(sourceId);
-    final OnlineMangaPageRef ref = _pageFromWire(resolved, series, page);
+    // 还原页引用也在 _guard 里：Aidoku 对非图片页会抛运行时异常，不能漏成 500。
     final Uint8List bytes = await _guard(
-      () => resolved.adapter.fetchChapterPage(ref),
+      () => resolved.adapter.fetchChapterPage(
+        _pageFromWire(resolved, series, page),
+      ),
     );
     return RemoteMangaImage(bytes: bytes, contentType: _sniffImageType(bytes));
   }
 
   @override
-  Future<RemoteMangaImage> coverImage(String sourceId, String url) async {
+  Future<RemoteMangaImage> coverImage(
+    String sourceId,
+    Map<String, Object?> series,
+    String url,
+  ) async {
     final _Resolved resolved = await _resolve(sourceId);
+    // 作品原样带过来：Aidoku 的 fetchCover 从 `series.raw['url']` 取 Referer。
     final List<int> bytes = await _guard(
-      () => resolved.adapter.fetchCover(
-        _entryFor(resolved, <String, Object?>{'key': url, 'title': ''}),
-        url,
-      ),
+      () => resolved.adapter.fetchCover(_entryFor(resolved, series), url),
     );
     final Uint8List typed = Uint8List.fromList(bytes);
     return RemoteMangaImage(bytes: typed, contentType: _sniffImageType(typed));
@@ -325,7 +333,7 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
     if (sourceId.startsWith(_mihonPrefix)) {
       final MihonManager? manager = _mihonManager();
       if (manager != null) {
-        await manager.initialise();
+        await _guard(manager.initialise);
         for (final MangaOnlineSourceRow row in enabledMangaOnlineSources(
           manager,
         )) {

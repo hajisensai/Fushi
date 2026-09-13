@@ -152,8 +152,13 @@ class _FakeHost implements HostMangaSourceHost {
   }
 
   @override
-  Future<RemoteMangaImage> coverImage(String sourceId, String url) async {
+  Future<RemoteMangaImage> coverImage(
+    String sourceId,
+    Map<String, Object?> series,
+    String url,
+  ) async {
     _require(sourceId);
+    calls.add('cover:${series['key']}:$url');
     return RemoteMangaImage(
       bytes: Uint8List.fromList(<int>[0x89, 0x50, ...utf8.encode(url)]),
       contentType: 'image/png',
@@ -327,7 +332,13 @@ void main() {
     final Uint8List cover = await client.coverImage(
       peer,
       id,
+      popular.items.single,
       'https://rawkuma.example/c1.jpg',
+    );
+    // 作品随封面请求一起到对端（Aidoku 封面要作品页当 Referer）。
+    expect(
+      host.calls,
+      contains('cover:/manga/1-popular:https://rawkuma.example/c1.jpg'),
     );
     expect(cover.sublist(0, 2), <int>[0x89, 0x50]);
     expect(utf8.decode(cover.sublist(2)), 'https://rawkuma.example/c1.jpg');

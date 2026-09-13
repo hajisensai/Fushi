@@ -132,12 +132,20 @@ class InterconnectSourceLibraryAdapter implements OnlineMangaRuntimeAdapter {
   Future<List<int>> fetchCover(OnlineMangaLibraryEntry entry, String url) =>
       _guarded('cover', () async {
         final InterconnectRemoteSource source = await _resolve(entry);
-        return transport.coverImage(source.peer, source.id, url);
+        return transport.coverImage(
+          source.peer,
+          source.id,
+          entry.series.toJson(),
+          url,
+        );
       });
 
   /// 浏览页 / 作品页未入库时的封面取图器（磁盘缓存命名空间按源分槽）。
-  RemoteCoverFetcher coverFetcher(InterconnectRemoteSource source) =>
-      _SourceCoverFetcher(transport, source);
+  /// [series] 随请求带给对端（Aidoku 封面要作品页当 Referer）。
+  RemoteCoverFetcher coverFetcher(
+    InterconnectRemoteSource source,
+    OnlineMangaSeries series,
+  ) => _SourceCoverFetcher(transport, source, series.toJson());
 
   Future<InterconnectRemoteSource> _resolve(OnlineMangaLibraryEntry entry) =>
       _resolveSource(entry.sourceId);
@@ -199,14 +207,15 @@ class InterconnectSourceLibraryAdapter implements OnlineMangaRuntimeAdapter {
 }
 
 class _SourceCoverFetcher implements RemoteCoverFetcher {
-  const _SourceCoverFetcher(this._transport, this._source);
+  const _SourceCoverFetcher(this._transport, this._source, this._series);
 
   final InterconnectMangaSourceTransport _transport;
   final InterconnectRemoteSource _source;
+  final Map<String, Object?> _series;
 
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) =>
-      _transport.coverImage(_source.peer, _source.id, coverUrl);
+      _transport.coverImage(_source.peer, _source.id, _series, coverUrl);
 
   /// 按源分槽：同一封面 URL 在不同源下可能是不同图；同源经不同对端走则是同一张。
   @override

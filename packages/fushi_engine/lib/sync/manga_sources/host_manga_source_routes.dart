@@ -7,7 +7,7 @@
 /// POST /api/manga-sources/<id>/details       {series} → {series, chapters}
 /// POST /api/manga-sources/<id>/pages         {series, chapter} → {pages: [page json]}
 /// POST /api/manga-sources/<id>/page-image    {series, chapter, page} → 图片字节
-/// POST /api/manga-sources/<id>/cover         {url} → 图片字节
+/// POST /api/manga-sources/<id>/cover         {series, url} → 图片字节
 /// ```
 ///
 /// 除清单 / 过滤器外一律 POST + JSON body：作品 / 章节 / 页的 `raw` 是对端运行时
@@ -115,7 +115,9 @@ Future<shelf.Response> handleHostMangaSourceRequest(
       case 'cover':
         final String url = body['url']?.toString() ?? '';
         if (url.isEmpty) return shelf.Response(400, body: 'url required');
-        return _image(await host.coverImage(sourceId, url));
+        return _image(
+          await host.coverImage(sourceId, jsonMap(body['series']), url),
+        );
     }
     return shelf.Response.notFound('Unknown route');
   } on HostMangaSourceException catch (error) {

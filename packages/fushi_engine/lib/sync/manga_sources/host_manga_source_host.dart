@@ -183,7 +183,13 @@ abstract interface class HostMangaSourceHost {
     Map<String, Object?> page,
   );
 
-  Future<RemoteMangaImage> coverImage(String sourceId, String url);
+  /// 封面字节。[series] 是作品 JSON：Aidoku 封面是普通 https 资源，取图要带作品页
+  /// 当 Referer（防盗链站点没有它整站封面全碎），所以 wire 上必须把作品一起带。
+  Future<RemoteMangaImage> coverImage(
+    String sourceId,
+    Map<String, Object?> series,
+    String url,
+  );
 }
 
 /// JSON 解码后的 `Map<Object?,Object?>` 收窄成 `Map<String,Object?>`（非 map → 空）。

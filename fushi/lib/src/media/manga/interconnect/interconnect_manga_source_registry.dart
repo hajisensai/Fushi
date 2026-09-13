@@ -50,6 +50,10 @@ class InterconnectMangaSourceRegistry extends ChangeNotifier {
   DateTime? _refreshedAt;
   Future<void>? _inFlight;
 
+  /// 探测在飞时又来了「必须重探」的信号（互联总开关切换）：并发合并会把它吞掉，
+  /// 记下来等这一轮完成后再跑一轮。
+  bool _refreshAgain = false;
+
   /// 互联总开关（全应用一个）当前是否开着；关着时 [sources] 恒空。
   bool get interconnectEnabled => _interconnectEnabled;
   bool get loading => _loading;
@@ -96,12 +100,15 @@ class InterconnectMangaSourceRegistry extends ChangeNotifier {
   bool isSourceEnabled(String sourceId) =>
       !_prefs.mangaInterconnectDisabledSourceIds.contains(sourceId);
 
-  /// 按源 id 定位它此刻经哪台对端走；快照里没有就重探一次（书架上的条目可能是
-  /// 上次会话加的，本次还没探过）。仍没有 → null（对端离线 / 已停用该源）。
+  /// 按源 id 定位它此刻经哪台对端走；快照里没有且快照已过期就重探一次（书架上的
+  /// 条目可能是上次会话加的，本次还没探过）。仍没有 → null（对端离线 / 已停用）。
+  ///
+  /// 走 [ensureFresh] 而不是无条件 [refresh]：对端离线时作品页 / 下载 worker 每页
+  /// 都会来问一次，不节流就是一章 N 页 × 全对端探测超时。
   Future<InterconnectRemoteSource?> resolve(String sourceId) async {
     InterconnectRemoteSource? found = _find(sourceId);
     if (found != null) return found;
-    await refresh();
+    await ensureFresh();
     found = _find(sourceId);
     return found;
   }
@@ -130,6 +137,10 @@ class InterconnectMangaSourceRegistry extends ChangeNotifier {
     _inFlight = job;
     return job.whenComplete(() {
       if (identical(_inFlight, job)) _inFlight = null;
+      if (_refreshAgain) {
+        _refreshAgain = false;
+        unawaited(refresh());
+      }
     });
   }
 
@@ -154,6 +165,7 @@ class InterconnectMangaSourceRegistry extends ChangeNotifier {
   void _onInterconnectToggled() {
     // 真值在 preferences 里；广播不带载荷，重读 + 重探（关掉 → 清空快照）。
     _refreshedAt = null;
+    if (_inFlight != null) _refreshAgain = true;
     unawaited(refresh());
   }
 

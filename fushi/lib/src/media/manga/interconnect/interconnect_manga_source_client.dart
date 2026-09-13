@@ -128,6 +128,7 @@ abstract class InterconnectMangaSourceTransport {
   Future<Uint8List> coverImage(
     InterconnectMangaSourcePeer peer,
     String sourceId,
+    Map<String, Object?> series,
     String url,
   );
 }
@@ -296,8 +297,10 @@ class InterconnectMangaSourceClient
   Future<Uint8List> coverImage(
     InterconnectMangaSourcePeer peer,
     String sourceId,
+    Map<String, Object?> series,
     String url,
   ) => _postBytes(peer, _sourcePath(sourceId, 'cover'), <String, Object?>{
+    'series': series,
     'url': url,
   });
 

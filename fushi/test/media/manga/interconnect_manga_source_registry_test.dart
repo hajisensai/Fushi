@@ -2,6 +2,7 @@
 /// 书架侧适配器（entry → 对端 → 归一化 / 错误分类）的契约，全走假传输层。
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
@@ -46,9 +47,17 @@ class _FakeTransport implements InterconnectMangaSourceTransport {
   Exception? failWith;
   final List<String> calls = <String>[];
 
+  /// 非空时 probe 先等它完成（模拟慢对端）。
+  Future<void>? probeGate;
+
   @override
   Future<List<InterconnectMangaSourcePeer>> probe() async {
     probes++;
+    final Future<void>? gate = probeGate;
+    if (gate != null) {
+      probeGate = null;
+      await gate;
+    }
     return peers;
   }
 
@@ -128,8 +137,12 @@ class _FakeTransport implements InterconnectMangaSourceTransport {
   Future<Uint8List> coverImage(
     InterconnectMangaSourcePeer peer,
     String sourceId,
+    Map<String, Object?> series,
     String url,
-  ) async => Uint8List.fromList(<int>[9]);
+  ) async {
+    calls.add('cover:${peer.deviceName}:${series['key']}:$url');
+    return Uint8List.fromList(<int>[9]);
+  }
 }
 
 void main() {
@@ -138,6 +151,7 @@ void main() {
   late PreferencesRepository prefs;
   late _FakeTransport transport;
   late InterconnectMangaSourceRegistry registry;
+  DateTime clock = DateTime(2026, 9, 13, 12);
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -155,6 +169,7 @@ void main() {
       transport: transport,
       syncRepository: repo,
       prefs: prefs,
+      now: () => clock,
     );
   });
 
@@ -226,12 +241,18 @@ void main() {
           ),
         ]),
       ];
+      // 快照没过期：未命中不重探（对端离线时不能每次都探）。
+      expect(await registry.resolve('mihon:new:7'), isNull);
+      expect(transport.probes, 2);
+      // 过期后未命中才重探一次，探到新源。
+      clock = clock.add(registry.staleAfter + const Duration(seconds: 1));
       final InterconnectRemoteSource? found = await registry.resolve(
         'mihon:new:7',
       );
       expect(found?.name, 'New');
       expect(transport.probes, 3);
       expect(await registry.resolve('mihon:none:0'), isNull);
+      expect(transport.probes, 3);
     });
   });
 
@@ -293,8 +314,34 @@ void main() {
         expect(await adapter.fetchChapterPage(pages[1]), <int>[1, 1]);
         expect(transport.calls, contains('image:mac:aidoku:multi.mangadex:p1'));
         expect(await adapter.sourceLabel(entry), 'MangaDex · mac');
+        expect(await adapter.fetchCover(entry, 'https://x/c.jpg'), <int>[9]);
+        expect(transport.calls, contains('cover:mac:series-1:https://x/c.jpg'));
       },
     );
+
+    test('resolve 未命中按 staleAfter 节流：对端离线时不会每页都重探', () async {
+      await registry.refresh();
+      final int before = transport.probes;
+      for (int i = 0; i < 5; i++) {
+        expect(await registry.resolve('mihon:none:$i'), isNull);
+      }
+      expect(transport.probes, before);
+    });
+
+    test('探测在飞时切互联总开关：本轮完成后自动再探一轮', () async {
+      final Completer<void> gate = Completer<void>();
+      transport.probeGate = gate.future;
+      final Future<void> first = registry.refresh();
+      await repo.setInterconnectEnabled(false);
+      await Future<void>.delayed(Duration.zero);
+      gate.complete();
+      await first;
+      // 第二轮读到总开关已关 → 快照清空、不再探对端。
+      await Future<void>.delayed(Duration.zero);
+      await registry.refresh();
+      expect(registry.interconnectEnabled, isFalse);
+      expect(registry.sources, isEmpty);
+    });
 
     test('没有对端提供该源 → sourceDisabled；对端运行时错误 → runtimeFailure', () async {
       final OnlineMangaLibraryEntry orphan = OnlineMangaLibraryEntry(
