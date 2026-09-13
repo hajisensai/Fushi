@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ 3508610. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.6.0-debug.14794-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.6.0-debug.14794-ios.ipa",
-      "releaseSequence": 14794,
-      "tag": "v2.6.0-debug.14794+113d44e",
-      "version": "2.6.0-debug.14794",
-      "size": 59724961,
-      "sha256": "92d631f04d49b11292da5594c3accfc4d1c774e52c5287b56217f0184d38d756"
-    },
-    {
-      "name": "fushi-2.6.0-debug.14794-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.6.0-debug.14794-macos.zip",
-      "releaseSequence": 14794,
-      "tag": "v2.6.0-debug.14794+113d44e",
-      "version": "2.6.0-debug.14794",
-      "size": 337114129,
-      "sha256": "868118c70d3e25af882870cbaddc0975f973c550846b286e46e97233d8f301fb"
-    },
-    {
       "name": "fushi-2.6.0-debug.14803-3508610-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.6.0-debug.14803-3508610-debug.apk",
       "releaseSequence": 14803,
@@ -33,6 +15,24 @@
       "version": "2.6.0-debug.14803",
       "size": 271493397,
       "sha256": "59a906b912c22eecef6407fd29aeb63fde4c5924036661f8ea5f8cb571dd23d7"
+    },
+    {
+      "name": "fushi-2.6.0-debug.14803-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.6.0-debug.14803-ios.ipa",
+      "releaseSequence": 14803,
+      "tag": "v2.6.0-debug.14803+3508610",
+      "version": "2.6.0-debug.14803",
+      "size": 59728515,
+      "sha256": "a64e23ea7948c5f31b1932a9a5183c38168be68bcd4187c5e4c2e7624eb9ee65"
+    },
+    {
+      "name": "fushi-2.6.0-debug.14803-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.6.0-debug.14803-macos.zip",
+      "releaseSequence": 14803,
+      "tag": "v2.6.0-debug.14803+3508610",
+      "version": "2.6.0-debug.14803",
+      "size": 337141253,
+      "sha256": "f8541c04bc9e82b66ead07c6a34163f12de204a30f2f21467e803578653fb21b"
     },
     {
       "name": "fushi-2.6.0-debug.14803-windows-setup.exe",
