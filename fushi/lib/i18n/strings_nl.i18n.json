@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "In wachtrij voor kaart aanmaken ($count wachtend)",
   "web_video_mine_switch_builtin": "Schakel naar ingebouwde modus om $count wachtende kaarten aan te maken",
   "web_video_no_tracks": "Nog geen ondertitels vastgelegd",
-  "web_video_platform_unsupported": "De ingebouwde webspeler is voorlopig alleen beschikbaar op Windows.",
   "web_video_track_live": "Live-ondertitels (van de pagina)",
   "web_video_track_menu": "Ondertitelspoor",
   "wheel_page_turn_interval": "Interval voor bladeren met muiswiel",
@@ -4811,5 +4810,6 @@
   "manga_series_try_sibling_language": "Try ${language}",
   "manga_series_remove_from_bookshelf": "Remove from manga shelf",
   "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
-  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet."
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
+  "web_video_player_unavailable": "The built-in web page player is temporarily disabled; this address cannot be played inside the app for now."
 }

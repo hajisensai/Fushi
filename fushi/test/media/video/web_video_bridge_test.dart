@@ -8,9 +8,22 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 void main() {
   group('shouldOpenInWebVideoPlayer', () {
-    test('Windows + 已知网页视频站 → 网页播放器', () {
+    test('总开关关着（2026-09-13 暂时砍掉内置网页播放器）：Windows 命中站点也不进', () {
+      expect(kWebVideoPlayerEnabled, isFalse);
       expect(
         shouldOpenInWebVideoPlayer(
+          'https://www.netflix.com/watch/81236554',
+          platform: TargetPlatform.windows,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('isWebVideoPlayerEligible（平台 / 站点判据，不含总开关）', () {
+    test('Windows + 已知网页视频站 → 够格', () {
+      expect(
+        isWebVideoPlayerEligible(
           'https://www.netflix.com/watch/81236554',
           platform: TargetPlatform.windows,
         ),
@@ -26,7 +39,7 @@ void main() {
         TargetPlatform.linux,
       ]) {
         expect(
-          shouldOpenInWebVideoPlayer(
+          isWebVideoPlayerEligible(
             'https://www.netflix.com/watch/1',
             platform: p,
           ),
@@ -38,17 +51,14 @@ void main() {
 
     test('直链 / 非白名单 host 不进网页播放器（保持 mpv 路径零破坏）', () {
       expect(
-        shouldOpenInWebVideoPlayer(
+        isWebVideoPlayerEligible(
           'https://cdn.example.com/a.m3u8',
           platform: TargetPlatform.windows,
         ),
         isFalse,
       );
       expect(
-        shouldOpenInWebVideoPlayer(
-          'not a url',
-          platform: TargetPlatform.windows,
-        ),
+        isWebVideoPlayerEligible('not a url', platform: TargetPlatform.windows),
         isFalse,
       );
     });

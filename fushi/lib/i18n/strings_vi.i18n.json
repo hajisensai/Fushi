@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "Đã xếp hàng để tạo thẻ ($count đang chờ)",
   "web_video_mine_switch_builtin": "Chuyển sang chế độ tích hợp để tạo $count thẻ đang chờ",
   "web_video_no_tracks": "Chưa bắt được phụ đề nào",
-  "web_video_platform_unsupported": "Trình phát web tích hợp hiện chỉ có trên Windows.",
   "web_video_track_live": "Phụ đề trực tiếp (lấy từ trang)",
   "web_video_track_menu": "Rãnh phụ đề",
   "wheel_page_turn_interval": "Khoảng cách lật trang bằng con lăn chuột",
@@ -4811,5 +4810,6 @@
   "manga_series_try_sibling_language": "Try ${language}",
   "manga_series_remove_from_bookshelf": "Remove from manga shelf",
   "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
-  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet."
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
+  "web_video_player_unavailable": "The built-in web page player is temporarily disabled; this address cannot be played inside the app for now."
 }

@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -43,6 +44,8 @@ Future<bool> openMihonWebLogin(
   required Object? runtime,
   required String sourceName,
   required String baseUrl,
+  @visibleForTesting
+  Widget Function(Uri target, MihonCookieJar? jar)? pageBuilder,
 }) async {
   final Uri? target = mihonLoginTarget(runtime: runtime, baseUrl: baseUrl);
   if (target == null) return false;
@@ -55,8 +58,17 @@ Future<bool> openMihonWebLogin(
   final bool? saved = await Navigator.of(context).push<bool>(
     MaterialPageRoute<bool>(
       fullscreenDialog: true,
-      builder: (BuildContext _) =>
-          MihonWebLoginPage(sourceName: sourceName, baseUrl: target, jar: jar),
+      // 路由层中和界面整体缩放（BUG-2522）：不包的话 WebView 纹理按 view/s 的画布
+      // 栅格化、再被 FittedBox 拉伸 s 倍，登录页整个发糊。与阅读器 / 漫画页同一范式。
+      builder: (BuildContext _) => FushiAppUiScaleNeutralizer(
+        child:
+            pageBuilder?.call(target, jar) ??
+            MihonWebLoginPage(
+              sourceName: sourceName,
+              baseUrl: target,
+              jar: jar,
+            ),
+      ),
     ),
   );
   return saved ?? false;

@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "Masuk antrean pembuatan kartu ($count menunggu)",
   "web_video_mine_switch_builtin": "Beralih ke mode bawaan untuk membuat $count kartu yang antre",
   "web_video_no_tracks": "Belum ada subtitel yang ditangkap",
-  "web_video_platform_unsupported": "Pemutar web bawaan saat ini hanya tersedia di Windows.",
   "web_video_track_live": "Teks langsung (diambil dari halaman)",
   "web_video_track_menu": "Trek subtitel",
   "wheel_page_turn_interval": "Interval ganti halaman roda mouse",
@@ -4811,5 +4810,6 @@
   "manga_series_try_sibling_language": "Try ${language}",
   "manga_series_remove_from_bookshelf": "Remove from manga shelf",
   "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted.",
-  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet."
+  "manga_chapter_locked_login_unsupported_hint": "This chapter must be purchased or rented on the site; signing in inside the app cannot unlock this kind of series yet.",
+  "web_video_player_unavailable": "The built-in web page player is temporarily disabled; this address cannot be played inside the app for now."
 }

@@ -4434,7 +4434,6 @@
   "web_video_mine_queued": "已加入制卡队列（待制 $count 张）",
   "web_video_mine_switch_builtin": "切到内置模式制作 $count 张排队卡片",
   "web_video_no_tracks": "尚未采集到字幕",
-  "web_video_platform_unsupported": "内置网页播放器目前仅支持 Windows。",
   "web_video_track_live": "实时采集（页面字幕）",
   "web_video_track_menu": "字幕轨",
   "wheel_page_turn_interval": "滚轮翻页间隔",
@@ -4811,5 +4810,6 @@
   "manga_series_try_sibling_language": "试试 ${language}",
   "manga_series_remove_from_bookshelf": "移出漫画书架",
   "manga_series_remove_confirm": "把这部作品移出书架？已下载的章节和阅读进度会一并删除。",
-  "manga_chapter_locked_login_unsupported_hint": "本章需在源站购买或租借；这类作品暂不支持在应用内登录解锁。"
+  "manga_chapter_locked_login_unsupported_hint": "本章需在源站购买或租借；这类作品暂不支持在应用内登录解锁。",
+  "web_video_player_unavailable": "内置网页播放器已暂时停用，此地址暂时无法在应用内播放。"
 }
