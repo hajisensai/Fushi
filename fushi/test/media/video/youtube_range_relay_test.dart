@@ -260,12 +260,13 @@ void main() {
         final int seenAtDisconnect = slow.seenRanges.length;
         // 给「修复前」的错误行为足够时间把剩余三块全拉完。
         await Future<void>.delayed(const Duration(milliseconds: 1200));
-        // CI 上内核读走 64KB 的时刻不稳定（可能已进第 2/3 块），只钉「断连之后」
-        // 这半句：最多再发起正在飞的那一块，且绝不能把 4 块全拉完。
+        // 断连信号（response.done）只在下一次真写到死 socket 时才触发：断连时正在飞
+        // 的那一块 + 触发信号的那一块，最多再向上游要 2 块（CI 实测 1→3）；钉的是
+        // 「不会把 4 块全拉完」——修复前 bytes=0- 的剩余整段会被拉光。
         expect(
           slow.seenRanges.length,
-          lessThanOrEqualTo(seenAtDisconnect + 1),
-          reason: '断连后最多再发起正在飞的那一块，不能继续把整段拉完',
+          lessThanOrEqualTo(seenAtDisconnect + 2),
+          reason: '断连后最多再发起两块（在飞的 + 触发 done 的），不能继续把整段拉完',
         );
         expect(slow.seenRanges.length, lessThan(4));
       } finally {
