@@ -135,7 +135,8 @@ void main() {
 
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
-      await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
+      await BackupRestoreService.restoreBackup(
+          dbDirectory: dstDbDir, zipPath: zip);
 
       expect(File(p.join(dstDbDir, 'local_audio_111.db')).existsSync(), isTrue);
 
@@ -200,7 +201,8 @@ void main() {
       Directory(dstDbDir).createSync(recursive: true);
       // Fresh device (no current DB), so there is nothing to preserve from bak;
       // the imported registry is simply absent.
-      await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
+      await BackupRestoreService.restoreBackup(
+          dbDirectory: dstDbDir, zipPath: zip);
 
       final FushiDatabase restored = FushiDatabase(dstDbDir);
       try {

@@ -296,10 +296,15 @@ class _FushiListItemState extends State<FushiListItem> {
     // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
     // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
     // 列表里逐行错位）。几何恒定，颜色才是唯一的选中信号。
+    //
+    // 非 eink 下选中边也保持透明：secondaryContainer 填充已经把选中态说清楚了，
+    // 再叠一圈 primary 20% 的细边只是填充之上的第二条线（设置页左栏里它和分组卡
+    // 描边、行分隔线一起凑成三层线）。eink 下选中填充塌缩成背景色，边是唯一信号，
+    // 那里保留并换成实描边色。
     final BoxBorder? pillBorder = pill
         ? Border.all(
-            color: widget.selected
-                ? tokens.surfaces.primary.withValues(alpha: 0.20)
+            color: widget.selected && isEinkTheme(context)
+                ? tokens.surfaces.outline
                 : Colors.transparent,
           )
         : null;
@@ -404,6 +409,8 @@ class FushiSearchField extends StatelessWidget {
             context: context,
             controller: controller,
             onChanged: onChanged,
+            iconSize: kFushiSearchFieldIconSize,
+            padding: const EdgeInsets.all(4),
           );
           final List<Widget> trailing = <Widget>[
             if (onClear != null && value.text.isNotEmpty)
@@ -411,6 +418,8 @@ class FushiSearchField extends StatelessWidget {
                 key: clearButtonKey,
                 icon: Icons.close,
                 tooltip: t.clear,
+                size: kFushiSearchFieldIconSize,
+                padding: const EdgeInsets.all(4),
                 onTap: () {
                   onClear?.call();
                   if (focusNode.canRequestFocus) {
@@ -420,24 +429,40 @@ class FushiSearchField extends StatelessWidget {
               ),
             if (inputSuffix != null) inputSuffix,
           ];
-          return SearchBar(
-            key: fieldKey,
-            controller: controller,
-            focusNode: focusNode,
-            hintText: hintText,
-            leading: const Icon(Icons.search),
-            trailing: trailing.isEmpty ? null : trailing,
-            elevation: const WidgetStatePropertyAll<double>(0),
-            backgroundColor:
-                WidgetStatePropertyAll<Color>(tokens.surfaces.search),
-            shape: WidgetStatePropertyAll<OutlinedBorder>(
-              RoundedRectangleBorder(borderRadius: tokens.radii.controlRadius),
+          return SizedBox(
+            height: kFushiSearchFieldHeight,
+            child: TextField(
+              key: fieldKey,
+              controller: controller,
+              focusNode: focusNode,
+              style: tokens.type.listTitle,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: hintText,
+                hintStyle: tokens.type.listSubtitle,
+                prefixIcon: const Icon(
+                  Icons.search,
+                  size: kFushiSearchFieldIconSize,
+                ),
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                suffixIcon: trailing.isEmpty
+                    ? null
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: trailing,
+                      ),
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+              ),
+              onChanged: onChanged,
+              onSubmitted: onSubmitted,
             ),
-            textStyle: WidgetStatePropertyAll<TextStyle>(tokens.type.listTitle),
-            hintStyle:
-                WidgetStatePropertyAll<TextStyle>(tokens.type.listSubtitle),
-            onChanged: onChanged,
-            onSubmitted: onSubmitted,
           );
         },
       );
@@ -451,6 +476,20 @@ class FushiSearchField extends StatelessWidget {
     );
   }
 }
+
+/// 搜索框统一形态（2026-09）：与三大媒体库页（书架 / 视频库 / 游戏库）的工具条搜索框
+/// 逐字对齐——固定 40 高、[OutlineInputBorder] 描边、透明底、18px 图标 + `isDense`。
+/// 此前 [FushiSearchField] 用的是 MD3 搜索条形态（高填充容器色、圆角 12、高约 56），
+/// 导致同一导航里「发现」页与「全部视频」页两种外观，且比同行的筛选按钮更高。
+///
+/// 常量定义放在类之后：`md3_design_system_static_test` 用 `class FushiSearchField`
+/// 这个字面量当上一段切片的终点，插在类前会把这段注释卷进它的扫描面。
+const double kFushiSearchFieldHeight = 40;
+
+/// 搜索框内前缀/后缀图标尺寸。[FushiIconButton] 默认 24px 图标 + `spacing.gap` 内边距
+/// 合计约 40 高，正好撑破 [kFushiSearchFieldHeight] 的内容区，故 trailing 按钮必须同时
+/// 收窄 size 与 padding。
+const double kFushiSearchFieldIconSize = 18;
 
 class FushiTextField extends StatefulWidget {
   const FushiTextField({
@@ -587,10 +626,15 @@ class _FushiTextFieldState extends State<FushiTextField> {
 /// long-press). [onChanged] is forwarded so a programmatic edit (on-screen
 /// keyboard input or paste) still updates reactive fields — Flutter does not
 /// fire `onChanged` on programmatic controller mutations.
+/// [iconSize] / [padding] 为空时保持 [FushiIconButton] 的默认尺寸（[FushiTextField]
+/// 等常规输入框沿用原样）；[FushiSearchField] 传紧凑值，否则默认按钮会撑破 40 高的
+/// 搜索框内容区。
 Widget? _hibikiTextFieldInputSuffix({
   required BuildContext context,
   required TextEditingController? controller,
   ValueChanged<String>? onChanged,
+  double? iconSize,
+  EdgeInsets? padding,
 }) {
   if (controller == null) return null;
   final TargetPlatform platform = Theme.of(context).platform;
@@ -601,6 +645,8 @@ Widget? _hibikiTextFieldInputSuffix({
     return FushiIconButton(
       icon: Icons.keyboard_outlined,
       tooltip: t.on_screen_keyboard,
+      size: iconSize,
+      padding: padding,
       onTap: () =>
           showGamepadKeyboard(context, controller, onChanged: onChanged),
     );
@@ -608,6 +654,8 @@ Widget? _hibikiTextFieldInputSuffix({
   return FushiIconButton(
     icon: Icons.content_paste_outlined,
     tooltip: t.paste,
+    size: iconSize,
+    padding: padding,
     onTap: () async {
       if (await gamepadKeyboardPaste(controller)) {
         onChanged?.call(controller.text);
@@ -657,15 +705,25 @@ class FushiSelectableChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color foreground =
-        selected ? colors.onPrimaryContainer : tokens.surfaces.onSurface;
+    final bool eink = isEinkTheme(context);
+    // E-ink：`primaryContainer` 与 `onPrimaryContainer` 双双塌缩到页面底色/前景，
+    // 于是选中态既没有填充差异、边框还从 outlineVariant 变成了底色——选中的
+    // chip 比未选中的更没有边，是个负信号。反色填充是墨水屏上唯一稳定可辨的
+    // 选中通道（与 segmentedButtonTheme / chipTheme 的处理同源）。
+    final Color selectedFill =
+        eink ? colors.onSurface : colors.primaryContainer;
+    final Color foreground = selected
+        ? (eink ? colors.surface : colors.onPrimaryContainer)
+        : tokens.surfaces.onSurface;
     // 仅图标模式（TODO-640）：图标当作 chip 的 label（不再放进 avatar + 文字），
     // chip 收成正方裸图标；需 leadingIcon 非空才生效，否则退化为普通文字 chip。
     final bool effectiveIconOnly = iconOnly && leadingIcon != null;
     final Widget? effectiveAvatar = effectiveIconOnly
         ? null
         : (avatar ??
-            (leadingIcon == null ? null : Icon(leadingIcon, size: 18)));
+            (leadingIcon == null
+                ? null
+                : Icon(leadingIcon, size: 18, color: foreground)));
     final Widget labelWidget = effectiveIconOnly
         ? Icon(leadingIcon, size: 18, color: foreground)
         : Text(
@@ -683,11 +741,13 @@ class FushiSelectableChip extends StatelessWidget {
       labelPadding: effectiveIconOnly ? EdgeInsets.zero : null,
       selected: selected,
       showCheckmark: false,
-      selectedColor: colors.primaryContainer,
+      selectedColor: selectedFill,
       backgroundColor: Colors.transparent,
       labelStyle: tokens.type.controlLabel.copyWith(color: foreground),
       side: BorderSide(
-        color: selected ? colors.primaryContainer : colors.outlineVariant,
+        color: selected
+            ? (eink ? colors.outline : colors.primaryContainer)
+            : colors.outlineVariant,
       ),
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
       visualDensity: VisualDensity.compact,
@@ -1786,15 +1846,18 @@ class FushiPageHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // TODO-667: 顶部留白分三档。
+    // TODO-667 / BUG-2402: 顶部留白按「页头主位是什么」先分两类，标题类再分三档。
+    // - 页头主位是嵌入的分段 tab 行（[titleWidget] 非空）：顶距恒 0，与窗口宽度
+    //   无关，理由见下方 [resolvedTop] 处的注释。
+    // 以下三档只适用于纯文字大标题（[title]）：
     // - [compact] 模式（上方已有 AppBar，由 [FushiPageScaffold] 传入）顶距最小，
     //   只留一个 gap，标题紧贴 AppBar 下沿。
     // - 非 compact 但窗口是手机竖屏 / 窄窗（[WindowSizeClass.compact]，宽 < 600）：
     //   页头本身就是顶部锚点，外层 [SafeArea] 已让出状态栏 / 刘海，再叠
-    //   `page + 8 = 24` 会让标题离顶部空出一行（用户反馈「和摄像头差一行」）。
-    //   收到普通 `page = 16`，保留必要呼吸又不顶到摄像头。
+    //   `page + 8` 会让标题离顶部空出一行（用户反馈「和摄像头差一行」）。
+    //   收到普通 `page`，保留必要呼吸又不顶到摄像头。
     // - 非 compact 的中 / 宽窗（桌面 / 平板，宽 >= 600）：窗口顶部无系统栏遮挡、
-    //   内容区另有左右留白，`page + 8 = 24` 的标题区呼吸感合适，保持不变。
+    //   内容区另有左右留白，`page + 8` 的标题区呼吸感合适。
     // BUG-401: classify on the real physical width. FushiPageHeader renders
     // inside FushiAppUiScale, so MediaQuery.sizeOf here is the inflated
     // logical width; multiply by the net app UI scale to recover the real
@@ -1804,9 +1867,18 @@ class FushiPageHeader extends StatelessWidget {
           FushiAppUiScale.of(context),
         ) ==
         WindowSizeClass.compact;
-    final double resolvedTop = compact
-        ? tokens.spacing.gap
-        : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
+    // Embedded tabs already own a touch-height row, so the header is a seam
+    // between the shell chrome and those tabs, not a title band. Whatever sits
+    // above it already yields the space that seam needs -- SafeArea for the
+    // status bar / notch on phones, FushiDesktopTitleBar's real 32px caption row
+    // on desktop -- and the tabs carry their own 13px of centring slack inside
+    // the 46px MD3 TabBar. A title margin here is therefore a second, redundant
+    // one at every window size, which is why this arm ignores [narrowWindow].
+    final double resolvedTop = titleWidget != null
+        ? 0
+        : compact
+            ? tokens.spacing.gap
+            : (narrowWindow ? tokens.spacing.page : tokens.spacing.page + 8);
     final EdgeInsetsGeometry resolvedPadding = padding ??
         EdgeInsets.fromLTRB(
           tokens.spacing.page,
@@ -2162,6 +2234,28 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
   }
 }
 
+/// 底部安全区（iOS home indicator / Android 手势条）的高度。
+///
+/// [FushiPageScaffold] / [FushiToolScaffold] 的 body 外层 `SafeArea` 是
+/// `bottom: false`——底部 inset **不扣 viewport**，让内容能一直画到屏幕最底（否则那条
+/// 34pt 就是一条谁也用不了的底色空白，滚动内容在切线处被拦腰截断，BUG-2440）。代价是
+/// body 自己得把这段补进滚动 padding，不然末项静止时被手势条压住。
+///
+/// 取 `padding` 而不是 `viewPadding`：键盘弹出时 `padding.bottom` 归零（那段已被
+/// `viewInsets` 接管），跟着归零才不会在键盘上方多顶一块空白；桌面与无手势条的设备上
+/// 本来就是 0，本函数与整套改动一并成为空操作。
+double bottomSafeInsetOf(BuildContext context) =>
+    MediaQuery.paddingOf(context).bottom;
+
+/// 把底部安全区补进 [base] 的下边（**相加**，不是取 max）。
+///
+/// 这里与 BUG-383「逐边 max、不相加」的口径**故意不同**，因为语义不同：那边两个值描述
+/// 的是同一段「离屏幕边缘的距离」（控件 margin vs 系统 inset），取大的即可；这里 [base]
+/// 是内容与内容之间的呼吸位（卡片间距 / 页边距），系统 inset 是被手势条吃掉的不可用区，
+/// 两段各自成立——只取 max 会让末项贴着手势条，视觉上比别的项少一截间距。
+EdgeInsets withBottomSafeInset(BuildContext context, EdgeInsets base) =>
+    base.copyWith(bottom: base.bottom + bottomSafeInsetOf(context));
+
 class FushiPageScaffold extends StatefulWidget {
   const FushiPageScaffold({
     required this.title,
@@ -2246,6 +2340,16 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
         floatingActionButtonLocation: widget.floatingActionButtonLocation,
         bottomNavigationBar: widget.bottomNavigationBar,
         body: SafeArea(
+          // bottom:false —— 底部安全区（iOS home indicator / Android 手势条）**不在这里
+          // 扣**，交给 body 自己按 [bottomSafeInsetOf] 加进内容 padding（BUG-2440）。
+          // SafeArea 扣底是把 viewport 硬切在手势条之上：那条 34pt 变成一条谁也用不了的
+          // 底色空白，滚动内容在切线处被拦腰截断（卡片边框、文字切一半），怎么滚都进不去；
+          // 更糟的是它同时 removePadding 把 padding.bottom 清零，让 body 里**已经写好**的
+          // `+ mediaPadding.bottom` 集体变成死代码（settings 三处渲染器都中招）。
+          // 让内容滚过安全区、只在滚动 padding 里补偿，才是这两条诉求（不留空白 + 末项
+          // 不被压）唯一同时成立的形态。与 BUG-383 / BUG-1783 同一范式：拿掉 SafeArea、
+          // 改走显式 inset，逐边取值不相加。
+          bottom: false,
           // stretch (not start) so every page body receives a tight full-width
           // constraint. Under start the cross axis stays loose, and any body
           // that shrink-wraps its width (e.g. a vertical SingleChildScrollView
@@ -2343,6 +2447,10 @@ class FushiToolScaffold extends StatelessWidget {
       backgroundColor: backgroundColor ?? tokens.surfaces.page,
       bottomNavigationBar: bottomNavigationBar,
       body: SafeArea(
+        // 与 [FushiPageScaffold] 同一口径（BUG-2440）：底部 inset 不扣 viewport。
+        // 本脚手架的底部动作条走 [Scaffold.bottomNavigationBar]（在这层 SafeArea 之外、
+        // 各自已套 SafeArea），不受影响；body 的滚动内容按 [withBottomSafeInset] 补偿。
+        bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -3191,6 +3299,7 @@ class FushiPopupSurface extends StatelessWidget {
     this.showBorder = true,
     this.clipBehavior = Clip.antiAlias,
     this.borderOnForeground = true,
+    this.borderRadius,
   });
 
   final Widget child;
@@ -3199,6 +3308,13 @@ class FushiPopupSurface extends StatelessWidget {
   final double elevation;
   final bool showBorder;
   final Clip clipBehavior;
+
+  /// 圆角覆写。默认 null = 走设计令牌的卡片圆角（10）。
+  ///
+  /// 唯一的现实用途是**贴边的 surface**：查词弹窗的底部 dock 面板铺满屏幕最左到最右
+  /// （BUG-2439），此时左右两侧的圆角弧会在屏幕边缘露出背景，看起来就是「没铺满」。
+  /// 贴哪条边就把那两个角摊平，别整块改令牌——其余 surface 的圆角是全局一致的。
+  final BorderRadius? borderRadius;
 
   /// BUG-1692：描边画在子节点**之前**还是**之后**。
   ///
@@ -3209,10 +3325,55 @@ class FushiPopupSurface extends StatelessWidget {
   /// 落在其中的点 `hitTest:` 直接 return nil，于是**整块 WebView 收不到任何鼠标事件**
   /// ——用户看到的就是「查词框点哪都没反应」。
   ///
-  /// 装平台视图的 surface 传 false，把描边挪到子节点之前绘制即可解除。透明背景的
-  /// WebView 仍能透出下面的描边，观感不变。纯 Flutter 子树无须改动（描边盖在不透明
-  /// 子节点上才需要 foreground）。
+  /// 装平台视图的 surface 传 false，把描边挪到子节点之前绘制即可解除。纯 Flutter
+  /// 子树无须改动（描边盖在不透明子节点上才需要 foreground）。
+  ///
+  /// BUG-2166：改成「之前绘制」的代价是**不透明的子节点会把描边整条盖掉**。查词浮层
+  /// 的 WebView 铺满顶栏以下的整块 surface 且文档背景不透明，于是四边描边只剩顶栏那
+  /// 一小段、以及圆角弧被 [clipBehavior] 裁出 WebView 的那几段还看得见——用户看到的
+  /// 就是「查词框没包边」。修法见 [_borderInsetChild]：为 false 时把子节点沿描边内缩
+  /// 一圈并按内圈半径再裁一次，描边环永远落在子节点之外，两个 bug 同时成立。
   final bool borderOnForeground;
+
+  /// [BorderSide] 的默认笔宽，也是 [borderOnForeground] 为 false 时子节点内缩的量。
+  static const double _borderWidth = 1;
+
+  /// BUG-2166：描边画在子节点之前（[borderOnForeground] = false）时，给子节点让出
+  /// 描边所占的那一圈——沿四边内缩 [_borderWidth]，再按**内圈**半径
+  /// （`cardRadius - _borderWidth`）裁一次。不这样做，铺满 surface 的不透明子节点
+  /// （查词浮层的 WebView）会把描边直边段整条盖住，只在圆角处漏出几段弧。
+  ///
+  /// 描边走 [BorderSide.strokeAlignInside]（[RoundedRectangleBorder] 的默认），
+  /// 占 shape 内侧 `[0, _borderWidth]`，因此内缩一个笔宽即可完全避让。
+  ///
+  /// 描边仍画在子节点**之前**，BUG-1692 的 macOS 命中测试修复不受影响。
+  Widget _borderInsetChild(FushiDesignTokens tokens, Widget content) {
+    if (!showBorder || borderOnForeground) return content;
+    return Padding(
+      padding: const EdgeInsets.all(_borderWidth),
+      child: ClipRRect(
+        borderRadius: _deflate(_outerRadius(tokens)),
+        child: content,
+      ),
+    );
+  }
+
+  BorderRadius _outerRadius(FushiDesignTokens tokens) =>
+      borderRadius ?? tokens.radii.cardRadius;
+
+  /// 内圈半径 = 外圈逐角减一个笔宽（摊平的角保持摊平，不会被减成负数）。
+  static BorderRadius _deflate(BorderRadius outer) {
+    Radius shrink(Radius r) => Radius.elliptical(
+          math.max(0, r.x - _borderWidth),
+          math.max(0, r.y - _borderWidth),
+        );
+    return BorderRadius.only(
+      topLeft: shrink(outer.topLeft),
+      topRight: shrink(outer.topRight),
+      bottomLeft: shrink(outer.bottomLeft),
+      bottomRight: shrink(outer.bottomRight),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3221,16 +3382,19 @@ class FushiPopupSurface extends StatelessWidget {
       color: color ?? tokens.surfaces.card,
       elevation: elevation,
       shape: RoundedRectangleBorder(
-        borderRadius: tokens.radii.cardRadius,
+        borderRadius: _outerRadius(tokens),
         side: showBorder
-            ? BorderSide(color: tokens.surfaces.outline)
+            ? BorderSide(color: tokens.surfaces.outline, width: _borderWidth)
             : BorderSide.none,
       ),
       clipBehavior: clipBehavior,
       borderOnForeground: borderOnForeground,
-      child: Padding(
-        padding: padding,
-        child: child,
+      child: _borderInsetChild(
+        tokens,
+        Padding(
+          padding: padding,
+          child: child,
+        ),
       ),
     );
   }

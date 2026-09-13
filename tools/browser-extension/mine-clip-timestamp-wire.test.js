@@ -116,3 +116,15 @@ test('BUG-2080：content.js 的 mineClip 发的是字幕窗，不是录制余量
   assert.ok(!/clipStartMs:\s*\(typeof q\.startV/.test(src),
       '卡面窗不得取带录制余量的 q.startV');
 });
+
+
+// BUG-2192：可见画面比例矩形随 mineClip 上 wire；没有/非对象就不发（服务端不裁，旧行为）。
+test('BUG-2192：mineClip 带 clipCrop 时原样进 /api/mine；缺失/非对象不发', async () => {
+  const crop = { x: 0.0556, y: 0, w: 0.8889, h: 1 };
+  const body = await postFor({ clipCrop: crop });
+  assert.deepEqual(body.clipCrop, crop);
+  const none = await postFor({});
+  assert.ok(!('clipCrop' in none));
+  const bad = await postFor({ clipCrop: 'x' });
+  assert.ok(!('clipCrop' in bad));
+});

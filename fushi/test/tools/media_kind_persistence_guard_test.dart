@@ -63,13 +63,20 @@ Directory _repoRoot() {
 }
 
 /// 扫描范围：本仓自有生产代码根（不含 third_party / vendored）。
+///
+/// `fushi_engine` / `fushi_server` 必须在内：`MediaKind` 的消费点大半随引擎搬走了
+/// （media/tracking、media/discovery、media/video/metadata 等 20+ 个文件），
+/// 扫描面不跟着搬，断言②「禁止拿 MediaKind.name 落库/拼键」对它们就是瞎的。
 const List<String> _libRoots = <String>[
   'fushi/lib',
+  'packages/fushi_engine/lib',
+  'packages/fushi_server/lib',
   'packages/fushi_core/lib',
   'packages/fushi_dictionary/lib',
   'packages/fushi_anki/lib',
   'packages/fushi_audio/lib',
   'packages/fushi_platform/lib',
+  'packages/fushi_torrent/lib',
 ];
 
 /// 手写复合键字面量：以**字面种类串紧跟 `|`** 开头的字符串。
@@ -357,7 +364,7 @@ void main() {
 
   test('扫描规模哨兵：6 个生产 lib 根确实都被枚举到了', () {
     expectScanScale(_dartFiles(root).length,
-        what: '6 个生产 lib 根下的 .dart（已排除生成物）', atLeast: 850, measured: 1034);
+        what: '6 个生产 lib 根下的 .dart（已排除生成物）', atLeast: 1220, measured: 1528);
   });
 
   test('lib/ 不得手写 <kind>|... 复合键字面量（只走 MediaKind.compositeKey）', () {

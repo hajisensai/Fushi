@@ -297,6 +297,8 @@ class GalAttachedTextController extends ChangeNotifier {
   bool _textPushStagesProviderPending = false;
   int _textPushOperation = 0;
   int _operationGeneration = 0;
+  ({GalAttachedSurfaceTarget target, Future<GalAttachedCallResult> completion})?
+  _modeDetach;
   bool _activationDeferred = false;
   bool _attachedProviderClaimed = false;
   bool _forceAttachedProvider = false;
@@ -336,7 +338,15 @@ class GalAttachedTextController extends ChangeNotifier {
   bool get forceAttachedProvider => _forceAttachedProvider;
   GalLookupNormalizedRectV1? get draftBodyRect => _draftBodyRect;
   GalLookupTextLayoutV1? get draftLayout => _draftLayout;
+
+  /// 手动校准只在用户显式把模式切到「仅贴附层」之后才存在。自动模式下原生几何
+  /// 缺席时不再把校准入口推到用户面前——那条路的第一步就是往游戏正文上盖一个
+  /// 预置矩形，属于用户没要过的干扰。
+  bool get calibrationManuallyEnabled =>
+      (_profile?.mode ?? GalLookupSurfaceMode.auto) ==
+      GalLookupSurfaceMode.attachedOnly;
   bool get canCalibrate =>
+      calibrationManuallyEnabled &&
       _target != null &&
       _currentClient != null &&
       _exePath != null &&
@@ -345,6 +355,7 @@ class GalAttachedTextController extends ChangeNotifier {
   bool get isReady =>
       _status == GalAttachedTextStatus.activeAttached ||
       _status == GalAttachedTextStatus.activeNative;
+
   /// 裸左击风险恒为已接受（BUG-2154，用户 2026-09-05 拍板去掉这道门）。
   ///
   /// 为什么是「恒定接受」而不是「删掉这个概念」：`riskAccepted` 不只是 UI，它作为
@@ -639,6 +650,7 @@ class GalAttachedTextController extends ChangeNotifier {
       _activationFailure('input_shield_faulted');
       return;
     }
+    if (_suspendNativeActivationIfPending(mode, _nativeStatus)) return;
     if (_nativeProviderReady(
       mode: mode,
       providerKind: _providerKind,
@@ -646,15 +658,6 @@ class GalAttachedTextController extends ChangeNotifier {
       providerStatus: _providerStatus,
     )) {
       _activateNativeOrRequestRisk();
-      return;
-    }
-    if (_nativeProviderPending(mode, _nativeStatus)) {
-      _activeVariant = null;
-      _surfaceVisible = false;
-      _setStatus(
-        GalAttachedTextStatus.suspended,
-        reason: 'nativeProviderPendingNeutral',
-      );
       return;
     }
     if (mode == GalLookupSurfaceMode.nativeOnly) {
@@ -678,6 +681,17 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     if (profile == null) {
       _setAttachedProviderClaim(false);
+      // 没有档案时只有「仅贴附层」才提示去校准；其余模式安静挂起，不再引导用户
+      // 走那条会在游戏上画框的路。
+      if (mode != GalLookupSurfaceMode.attachedOnly) {
+        _activeVariant = null;
+        _surfaceVisible = false;
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: 'evaluate_calibration_manual_only',
+        );
+        return;
+      }
       _setStatus(
         GalAttachedTextStatus.needsCalibration,
         reason: 'evaluate_profile_missing',
@@ -693,6 +707,17 @@ class GalAttachedTextController extends ChangeNotifier {
     );
     if (variant == null) {
       _setAttachedProviderClaim(false);
+      // 已有档案但当前客户区没有匹配 variant：同样只在手动模式下提示重新校准。
+      // 老用户已校准过的 variant 走的是上面 `variant != null` 那条，不受影响。
+      if (mode != GalLookupSurfaceMode.attachedOnly) {
+        _activeVariant = null;
+        _surfaceVisible = false;
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: 'evaluate_variant_manual_only',
+        );
+        return;
+      }
       _setStatus(
         GalAttachedTextStatus.needsCalibration,
         reason: 'evaluate_no_variant_for_client',
@@ -733,6 +758,7 @@ class GalAttachedTextController extends ChangeNotifier {
       }
       return;
     }
+    if (_suspendNativeActivationIfPending(mode, result.status)) return;
     if (_nativeProviderReady(
       mode: mode,
       providerKind: result.providerKind,
@@ -751,15 +777,6 @@ class GalAttachedTextController extends ChangeNotifier {
       _activeVariant = null;
       _surfaceVisible = false;
       _setStatus(GalAttachedTextStatus.activeNative);
-      return;
-    }
-    if (_nativeProviderPending(mode, result.status)) {
-      _activeVariant = null;
-      _surfaceVisible = false;
-      _setStatus(
-        GalAttachedTextStatus.suspended,
-        reason: 'nativeProviderPendingNeutral',
-      );
       return;
     }
     if (result.status == 'geometryProviderPending') {
@@ -833,6 +850,10 @@ class GalAttachedTextController extends ChangeNotifier {
     if (target == null || client == null || _latestSourceText.isEmpty) {
       return false;
     }
+    // UI 门控之外再守一道：校准只能由「仅贴附层」这一显式手动模式触发，
+    // 任何其它入口（自动模式下的残留回调、测试、真机驱动）都不得把游戏窗口
+    // 拖进校准态。
+    if (!calibrationManuallyEnabled) return false;
     if (!acceptUnsafeLeftClick) {
       _setStatus(
         GalAttachedTextStatus.needsRiskAcceptance,
@@ -1072,6 +1093,10 @@ class GalAttachedTextController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (_suspendNativeActivationIfPending(mode, event.status)) {
+      notifyListeners();
+      return;
+    }
     if (_nativeProviderReady(
       mode: mode,
       providerKind: event.providerKind,
@@ -1079,13 +1104,6 @@ class GalAttachedTextController extends ChangeNotifier {
       providerStatus: event.providerStatus,
     )) {
       _activateNativeOrRequestRisk(reason: event.reason);
-      notifyListeners();
-      return;
-    }
-    if (_nativeProviderPending(mode, event.status)) {
-      _activeVariant = null;
-      _surfaceVisible = false;
-      _setStatus(GalAttachedTextStatus.suspended, reason: event.status);
       notifyListeners();
       return;
     }
@@ -1376,6 +1394,11 @@ class GalAttachedTextController extends ChangeNotifier {
   Future<void> setMode(GalLookupSurfaceMode mode) async {
     GalLookupSurfaceProfileV1? profile = _profile;
     final GalAttachedSurfaceTarget? target = _target;
+    final pendingDetach = _modeDetach;
+    final bool joiningDetach =
+        pendingDetach != null &&
+        target != null &&
+        _sameLogicalSurface(pendingDetach.target, target);
     if (profile == null) {
       final String? exePath = _exePath;
       final String? exeSha256 = _exeSha256;
@@ -1398,16 +1421,58 @@ class GalAttachedTextController extends ChangeNotifier {
       _surfaceVisible = false;
       _setAttachedProviderClaim(false);
       _setStatus(GalAttachedTextStatus.disabled);
+    } else if (mode == GalLookupSurfaceMode.nativeOnly || joiningDetach) {
+      // Detach retires the runner's HWND/epoch handshake as well as its layout.
+      // Close native input before that await, then inspect for a fresh probe.
+      _nativeStatus = 'shieldHandshakePending';
+      _shieldStatus = const GalAttachedShieldStatus();
+      _suspendNativeActivationIfPending(mode, _nativeStatus);
     }
     notifyListeners();
     final Future<void> persistence = _persistProfile(updated);
     try {
       if (target != null) {
         if (mode == GalLookupSurfaceMode.off ||
-            mode == GalLookupSurfaceMode.nativeOnly) {
+            mode == GalLookupSurfaceMode.nativeOnly ||
+            joiningDetach) {
           _setAttachedProviderClaim(false);
-          await _surfacePort.detach(target);
-          _surfaceVisible = false;
+          final Future<GalAttachedCallResult> detaching = joiningDetach
+              ? pendingDetach.completion
+              : _surfacePort.detach(target);
+          _modeDetach = (target: target, completion: detaching);
+          try {
+            final GalAttachedCallResult detached = await detaching;
+            if (_unsafeRiskAcceptanceLifecycleRevision != modeRevision ||
+                !_isCurrent(modeOperation, target)) {
+              return;
+            }
+            _adoptNativeMetadata(detached);
+            _surfaceVisible = false;
+            if (!detached.ok) {
+              _activationFailure(detached.error ?? 'mode_detach_failed');
+              return;
+            }
+          } finally {
+            if (_unsafeRiskAcceptanceLifecycleRevision == modeRevision &&
+                identical(_modeDetach?.completion, detaching)) {
+              _modeDetach = null;
+            }
+          }
+        }
+        if (mode != GalLookupSurfaceMode.off &&
+            (mode == GalLookupSurfaceMode.nativeOnly ||
+                _nativeStatus == 'detached')) {
+          final GalAttachedCallResult inspection = await _surfacePort
+              .inspectTarget(target, launchExePath: _launchExePath);
+          if (_unsafeRiskAcceptanceLifecycleRevision != modeRevision ||
+              !_isCurrent(modeOperation, target)) {
+            return;
+          }
+          _adoptNativeMetadata(inspection);
+          if (!inspection.ok) {
+            _activationFailure(inspection.error ?? 'invalid_target_inspection');
+            return;
+          }
         }
         if (_unsafeRiskAcceptanceLifecycleRevision == modeRevision &&
             _isCurrent(modeOperation, target)) {
@@ -2088,13 +2153,24 @@ class GalAttachedTextController extends ChangeNotifier {
     _setStatus(GalAttachedTextStatus.activeNative, reason: reason);
   }
 
-  static bool _nativeProviderPending(
+  bool _suspendNativeActivationIfPending(
     GalLookupSurfaceMode mode,
     String? status,
-  ) =>
-      (mode == GalLookupSurfaceMode.auto ||
-          mode == GalLookupSurfaceMode.nativeOnly) &&
-      status == 'nativeProviderPendingNeutral';
+  ) {
+    if ((mode != GalLookupSurfaceMode.auto &&
+            mode != GalLookupSurfaceMode.nativeOnly) ||
+        (status != 'nativeProviderPendingNeutral' &&
+            status != 'shieldHandshakePending' &&
+            status != 'detached')) {
+      return false;
+    }
+    // Geometry readiness is discovery, not permission to consume a game click.
+    // BUG-2154: default risk acceptance does not acknowledge a pending probe.
+    _activeVariant = null;
+    _surfaceVisible = false;
+    _setStatus(GalAttachedTextStatus.suspended, reason: status);
+    return true;
+  }
 
   static bool _attachedRegistryProviderReady(
     int? providerKind,
@@ -2120,15 +2196,9 @@ class GalAttachedTextController extends ChangeNotifier {
         providerId != null &&
         isGalLookupProductionProviderPair(providerKind, providerId);
     final bool readyOrActive = providerStatus == 1 || providerStatus == 2;
-    // `status` belongs to the optional desktop attached surface, not to the
-    // in-process geometry provider. In particular, switching to nativeOnly
-    // deliberately detaches that surface while SGRE/Siglus/Leaf remains the
-    // registry's Ready/Active owner. Requiring an attached-surface token here
-    // leaves a coherent native provider permanently suspended after that
-    // handoff. The production kind/id pair and provider lifecycle are the
-    // authoritative native readiness proof. Callers still pass the shield
-    // fault gate and [_activateNativeOrRequestRisk], so this does not weaken
-    // per-executable risk acceptance.
+    // This proves geometry availability only. Callers separately reject fault,
+    // pending handshake and provider retirement before activating input. A
+    // nativeOnly handoff re-inspects the target without configuring a layout.
     return productionPair && readyOrActive;
   }
 }

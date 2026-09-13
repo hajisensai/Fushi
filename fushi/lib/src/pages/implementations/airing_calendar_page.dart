@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -8,11 +8,12 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi/src/media/torrent/download_timeouts.dart';
+import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/video/airing_calendar_cache.dart';
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
+import 'package:fushi/src/media/video/anilist_failure_notice.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
@@ -59,6 +60,10 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   bool _showAll = false;
   bool _loading = true;
   String? _errorDetail;
+
+  /// 失败类别：决定错误页的主文案说的是「AniList 官方停服」「被限流」还是
+  /// 「连不上」。与 [_errorDetail] 同生共死（一起赋值、一起清空）。
+  AniListFailureKind? _errorKind;
   List<AniListAiringEpisode> _episodes = const <AniListAiringEpisode>[];
 
   /// 本地相关性只影响「在库/订阅中」徽章与默认过滤集；条目动作一律走发现
@@ -87,6 +92,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     setState(() {
       _loading = true;
       _errorDetail = null;
+      _errorKind = null;
     });
     try {
       final List<MediaCollectionRow> collections =
@@ -123,6 +129,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       setState(() {
         _loading = false;
         _errorDetail = error.toString();
+        _errorKind = classifyAniListError(error);
       });
     }
   }
@@ -307,7 +314,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     }
     final String? errorDetail = _errorDetail;
     if (errorDetail != null) {
-      return _buildError(theme, errorDetail);
+      return _buildError(theme, errorDetail, _errorKind);
     }
     if (!_showAll &&
         _libraryAnilistIds.isEmpty &&
@@ -341,7 +348,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   }
 
   /// 网络失败：如实展示错误详情 + 重试按钮（不吞、不静默降级）。
-  Widget _buildError(ThemeData theme, String detail) {
+  Widget _buildError(ThemeData theme, String detail, AniListFailureKind? kind) {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
@@ -357,6 +364,15 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
                 style: theme.textTheme.titleMedium,
                 textAlign: TextAlign.center,
               ),
+              if (anilistFailureNotice(kind)
+                  case final String notice) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  notice,
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: TextAlign.center,
+                ),
+              ],
               const SizedBox(height: 8),
               Text(
                 detail,
@@ -543,7 +559,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         child: url.isEmpty
             ? placeholder
             : PortraitCoverImage(
-                image: CachedNetworkImageProvider(url),
+                image: AppCachedHttpImage(url),
                 errorBuilder: (_) => placeholder,
               ),
       ),

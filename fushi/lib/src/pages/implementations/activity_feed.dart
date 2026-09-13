@@ -1,3 +1,4 @@
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 首页 Activity 时间轴的纯数据层：把 [ActivityEventRow] 事件流聚合成「按日期分组、
@@ -32,8 +33,9 @@ class ActivityRelativeTime {
   String toString() => 'ActivityRelativeTime($unit, $value)';
 }
 
-/// 相邻两次活动间隔超过此值才算两个 session（否则归并成一次连续活动）。
-const Duration kActivitySessionGap = Duration(minutes: 30);
+/// 相邻两次活动间隔超过此值才算两个 session（否则归并成一次连续活动）。与统计页
+/// 会话流的归并阈值是同一个常量（[kStudySessionGap]）：一条纪律，两处消费。
+const Duration kActivitySessionGap = kStudySessionGap;
 
 /// 纯函数：[timestampMs]（epoch 毫秒）相对 [now] 的相对时间描述。
 /// <1 分钟 = justNow；<60 分钟 = minutesAgo；<24 小时 = hoursAgo；否则 daysAgo。

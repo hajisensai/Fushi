@@ -1,0 +1,4 @@
+# xcodegen 生成物与构建派生数据；project.yml 才是源
+AlertTapper.xcodeproj/
+Host/Info.plist
+dd/

@@ -20,6 +20,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
   const RecommendedPackDownloadRow({
     required this.controller,
     required this.onImport,
+    required this.onDiscard,
     super.key,
   });
 
@@ -29,6 +30,10 @@ class RecommendedPackDownloadRow extends StatelessWidget {
   /// 由宿主（设置页 / 新手引导）传进来。
   final VoidCallback onImport;
 
+  /// 放弃已暂停的下载（确认后删半截包）。同 [onImport]：删几 GB 要用户在确认框里
+  /// 按，controller 只提供原语，弹框由宿主传进来。
+  final VoidCallback onDiscard;
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -37,6 +42,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
         controller.progress,
         controller.receivedBytes,
         controller.error,
+        controller.isDeleting,
       ]),
       builder: (BuildContext context, _) {
         switch (controller.stage.value) {
@@ -71,24 +77,36 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               ),
             );
           case RecommendedPackDownloadStage.paused:
-            final String? failure = controller.error.value;
+            final String? failure = controller.failureMessage;
             return AdaptiveSettingsRow(
-              title: t.onboarding_pack_status_paused,
+              title: controller.isDeleting.value
+                  ? t.onboarding_pack_discard_running
+                  : t.onboarding_pack_status_paused,
               // 失败原因优先于通用说明：断在 8 GB 的人最需要知道断在什么上。
               subtitle: failure == null
-                  ? '${recommendedPackProgressLabel(
-                      progress: controller.progress.value,
-                      receivedBytes: controller.receivedBytes.value,
-                    )} · ${t.onboarding_pack_paused_desc}'
-                  : '${recommendedPackProgressLabel(
-                      progress: controller.progress.value,
-                      receivedBytes: controller.receivedBytes.value,
-                    )} · ${t.onboarding_pack_download_failed(message: failure)}',
+                  ? '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · ${t.onboarding_pack_paused_desc}'
+                  : '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · $failure',
               icon: Icons.pause_circle_outline,
               showIcon: true,
-              trailing: FilledButton.tonal(
-                onPressed: () => unawaited(controller.start()),
-                child: Text(t.onboarding_pack_download_resume),
+              // 「放弃」在左、「继续」在右：主动作靠右，误触代价（重下几 GB）落在
+              // 次动作上。两颗按钮挤不下时整体下移，不做省略。
+              controlBelow: true,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  TextButton(
+                    onPressed: controller.isDeleting.value ? null : onDiscard,
+                    child: Text(t.onboarding_pack_download_discard),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.tonal(
+                    onPressed: controller.isDeleting.value
+                        ? null
+                        : () => unawaited(controller.start()),
+                    child: Text(t.onboarding_pack_download_resume),
+                  ),
+                ],
               ),
             );
           case RecommendedPackDownloadStage.downloaded:
@@ -98,7 +116,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               icon: Icons.inventory_2_outlined,
               showIcon: true,
               trailing: FilledButton(
-                onPressed: onImport,
+                onPressed: controller.isDeleting.value ? null : onImport,
                 child: Text(t.onboarding_pack_import_now),
               ),
             );

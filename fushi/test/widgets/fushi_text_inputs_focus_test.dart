@@ -27,8 +27,10 @@ void main() {
     ));
     await tester.pump();
 
+    // 搜索框已从 MD3 SearchBar 换成与媒体库页一致的描边 TextField，
+    // 这里取的是同一棵子树里的输入控件元素，断言意图不变。
     final FushiFocusController root = FushiFocusRoot.controllerOf(
-      tester.element(find.byType(SearchBar)),
+      tester.element(find.byType(TextField)),
     );
     expect(root.requestById(const FushiFocusId('search')), isTrue);
     await tester.pump();

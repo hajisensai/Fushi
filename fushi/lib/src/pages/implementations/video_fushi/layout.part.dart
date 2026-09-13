@@ -86,11 +86,21 @@ extension _VideoLayout on _VideoFushiPageState {
       // Row[Expanded(Video), 面板列]，画面真挤窄、不被遮（见 [_videoWithSubtitlePanel]）。
       child: _videoWithSubtitlePanel(
         controller,
-        // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
-        // 进入直通那一刻就有正确矩形可用）。
-        HdrHostRectReporter(
-          onRect: controller.reportHdrHostRect,
-          child: Video(
+        // macOS Retina：让 mpv 直接渲染到画面实际占用的物理像素（IINA 同款做法），
+        // 否则 1080p 片源在 Retina 上永远是「原生纹理被 Flutter 双线性拉大」= 发虚。
+        // 非 macOS 恒透传（见 [VideoBackingRenderSize]）。
+        VideoBackingRenderSize(
+          controller: videoController,
+          videoSize: videoNativeSizeOf(
+            controller.videoWidth,
+            controller.videoHeight,
+          ),
+          fit: videoFitModeToBoxFit(_videoFitMode),
+          // HDR 直通：把 Video 的物理像素矩形喂给 runner 宿主窗（非 HDR 时只是记着，
+          // 进入直通那一刻就有正确矩形可用）。
+          child: HdrHostRectReporter(
+            onRect: controller.reportHdrHostRect,
+            child: Video(
           controller: videoController,
           // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
@@ -138,6 +148,7 @@ extension _VideoLayout on _VideoFushiPageState {
           onEnterFullscreen: _enterVideoNativeFullscreen,
           onExitFullscreen: _exitVideoNativeFullscreen,
         ),
+          ),
         ),
       ),
     );
@@ -327,6 +338,13 @@ extension _VideoLayout on _VideoFushiPageState {
               },
               child: Listener(
                 behavior: HitTestBehavior.translucent,
+                // BUG-2403：按下侧记下「这次是不是非主键」。[PointerUpEvent.buttons]
+                // 抬起时恒为 0，按钮号只在按下事件里有，所以 [_handleVideoPointerUp]
+                // 的「只有左键双击才切全屏」这个判据只能靠这条记账成立。必须与
+                // onPointerUp 挂在同一个 Listener 上：换一层挂载点两者命中集合就不再
+                // 一致，会出现「记了账收不到抬起」或反过来。
+                onPointerDown: _recordVideoPointerButton,
+                onPointerCancel: _forgetVideoPointerButton,
                 onPointerUp: _handleVideoPointerUp,
                 // TODO-1058：桌面在画面上滚鼠标滚轮调音量（门控见 _handleVideoWheelSignal）。
                 // PointerSignal 不进手势竞技场，与单击暂停 / 长按横拖 seek 正交、互不干扰。
@@ -337,6 +355,9 @@ extension _VideoLayout on _VideoFushiPageState {
                 // 与它双触发。阶梯用本页那条（video 先、universal / global 兜底）。左键双击全屏
                 // 仍走外层 Listener.onPointerUp（两路指针语义互不干扰）。触屏按下折不出鼠标
                 // 按钮号、永不触发，[_handleSecondaryTap] 内另有一道平台门控（双保险）。
+                // 「左键双击全屏」这句在 BUG-2403 之前只是注释：双击判定不看按钮号，
+                // 右键 / 中键 / 侧键双击画面同样切全屏。判据现在由上面的
+                // onPointerDown 记账真的写进了实现。
                 child: ContextMenuTrigger(
                   // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
                   onInvoke: (Offset position) => _handleSecondaryTap(position),
@@ -462,6 +483,14 @@ extension _VideoLayout on _VideoFushiPageState {
                             secondaryHidden:
                                 appModel.videoSecondarySubtitleObscureMode ==
                                     VideoSubtitleObscureMode.hide,
+                            // 遮蔽态「悬停 / 点击显形」总闸（默认开）：关掉后模糊 /
+                            // 隐藏不再被悬停或点击临时揭开，主 / 副字幕同时生效。
+                            obscureRevealOnInteraction:
+                                appModel.videoSubtitleObscureReveal,
+                            // BUG-2235：查词浮层还开着就算「用户在看」，遮蔽让位到
+                            // 关栈为止——否则浮层顶栏「重播本句」一起播，刚让位的
+                            // 字幕在重播那几秒又被遮回去（用户正对着浮层核对原句）。
+                            lookupPopupVisible: _hasVisiblePopup,
                             // TODO-1199：字幕字号=用户基准 × 屏幕自适应因子。用户设置的
                             // fontSize 仍是基准（手动可调、不被改写），渲染时乘按视口短边
                             // 算出的 [subtitleScreenScaleFactor]，使字幕占屏比例在小屏手机 /

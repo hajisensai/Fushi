@@ -44,6 +44,140 @@ Future<Dio> createDictionaryDio() async {
   return dio;
 }
 
+/// 候选地址解析钩子（BUG-2188）：把 catalog 里的**一个**下载地址展开成按优先级排序的
+/// 候选序列（首位必须是原址）。app 在启动时接线成 GitHub 公共镜像展开
+/// （`installDictionaryUrlCandidatesResolver`）；未接线时（单测 / popup 等精简入口）
+/// 回退成「只有原址」，行为与接线前逐字等价。
+///
+/// **为什么是钩子而不是包内常量**：镜像清单的唯一真相源是 app 侧
+/// `utils/net/github_mirrors.dart`（更新检查 / Mihon / 着色器三条链路共用），而
+/// `fushi_dictionary` 是它的**下游**包，反向 import 不了。与 [dictionaryDioFactory]
+/// 同一套装配方向。
+List<String> Function(String url)? dictionaryUrlCandidatesResolver;
+
+/// [url] 的候选地址序列。恒非空、首位恒为 [url]、无重复。
+List<String> dictionaryDownloadCandidates(String url) {
+  final List<String> resolved =
+      dictionaryUrlCandidatesResolver?.call(url) ?? const <String>[];
+  return <String>{url, ...resolved}.toList(growable: false);
+}
+
+/// 下载失败的传输层归因。UI 据此选人话文案，**不再把 `DioError.toString()` 直接甩给
+/// 用户**（BUG-2188：那串英文被单行标题截成 `DioError [connection ...`）。
+enum DictionaryDownloadFailureKind {
+  /// 连不上：DNS / TCP / TLS 在 [kDictionaryConnectTimeout] 内没建起来。
+  /// 国内直连 huggingface.co / github.com 的典型形态。
+  connectTimeout,
+
+  /// 连上了但服务器把连接晾着：两个数据块间隔超过 [kDictionaryStallTimeout]。
+  stallTimeout,
+
+  /// 连接被拒 / 中断 / 证书失败。
+  connectionError,
+
+  /// 服务器**已经答复**了一个错误状态（404 / 403 / 5xx）。换镜像没用。
+  badResponse,
+
+  /// 用户取消。
+  cancelled,
+
+  /// 其它（含解压/落盘等非传输失败）。
+  other,
+}
+
+/// 把任意异常归因成 [DictionaryDownloadFailureKind]。
+DictionaryDownloadFailureKind classifyDictionaryDownloadFailure(Object error) {
+  if (error is DictionaryDownloadException) return error.kind;
+  if (error is! DioError) return DictionaryDownloadFailureKind.other;
+  switch (error.type) {
+    case DioErrorType.connectionTimeout:
+      return DictionaryDownloadFailureKind.connectTimeout;
+    case DioErrorType.receiveTimeout:
+    case DioErrorType.sendTimeout:
+      return DictionaryDownloadFailureKind.stallTimeout;
+    case DioErrorType.connectionError:
+    case DioErrorType.badCertificate:
+      return DictionaryDownloadFailureKind.connectionError;
+    case DioErrorType.badResponse:
+      return DictionaryDownloadFailureKind.badResponse;
+    case DioErrorType.cancel:
+      return DictionaryDownloadFailureKind.cancelled;
+    case DioErrorType.unknown:
+      // dio 5.1 把 SocketException / TlsException 一律塞进 unknown 的 `error` 里。
+      final Object? inner = error.error;
+      if (inner is SocketException || inner is TlsException) {
+        return DictionaryDownloadFailureKind.connectionError;
+      }
+      return DictionaryDownloadFailureKind.other;
+  }
+}
+
+/// [error] 是否「这一跳根本没送到 / 没拿到响应」——只有这种失败才值得换下一个候选
+/// 重来。服务器已答复的状态错误（404 / 403）换镜像拿到的是同一份 404，回退只会
+/// 掩盖真正原因；取消更不该重试。与 app 侧 `isTransportFailure` 同一条判据。
+bool isDictionaryTransportFailure(Object error) {
+  switch (classifyDictionaryDownloadFailure(error)) {
+    case DictionaryDownloadFailureKind.connectTimeout:
+    case DictionaryDownloadFailureKind.stallTimeout:
+    case DictionaryDownloadFailureKind.connectionError:
+      return true;
+    case DictionaryDownloadFailureKind.badResponse:
+    case DictionaryDownloadFailureKind.cancelled:
+    case DictionaryDownloadFailureKind.other:
+      return false;
+  }
+}
+
+/// 词典下载失败（BUG-2188）。
+///
+/// 存在的理由：调用方以前只能拿到最后一个 `DioError`，既不知道**试过哪些地址**，也
+/// 没有稳定的归因可用来选文案。这个异常把三件事一起带出来：归因 [kind]、原始地址
+/// [url]、实际试过的 [attemptedUrls]，[toString] 则给出可直接进错误日志/详情框的全文。
+class DictionaryDownloadException implements Exception {
+  DictionaryDownloadException({
+    required this.url,
+    required this.attemptedUrls,
+    required this.cause,
+  }) : kind = classifyDictionaryDownloadFailure(cause);
+
+  /// catalog 里的原始地址。
+  final String url;
+
+  /// 本次实际试过的地址（含原址与镜像），按尝试顺序。
+  final List<String> attemptedUrls;
+
+  /// 最后一个候选抛出的异常。
+  final Object cause;
+
+  final DictionaryDownloadFailureKind kind;
+
+  /// 原始地址的主机名，UI 用来说清「连不上的是谁」。
+  String get host => Uri.tryParse(url)?.host ?? '';
+
+  /// 服务器答复的 HTTP 状态码（仅 [DictionaryDownloadFailureKind.badResponse] 有值）。
+  int? get statusCode {
+    final Object c = cause;
+    return c is DioError ? c.response?.statusCode : null;
+  }
+
+  @override
+  String toString() {
+    final StringBuffer buffer = StringBuffer()
+      ..writeln('DictionaryDownloadException: ${kind.name}')
+      ..writeln('url: $url');
+    if (attemptedUrls.length > 1) {
+      buffer.writeln('attempted (${attemptedUrls.length}):');
+      for (final String attempt in attemptedUrls) {
+        buffer.writeln('  - $attempt');
+      }
+    }
+    final int? status = statusCode;
+    if (status != null) buffer.writeln('status: $status');
+    buffer.write('cause: $cause');
+    return buffer.toString();
+  }
+}
+
 enum DictionaryCategory {
   jaEn,
   jaJa,
@@ -811,6 +945,12 @@ class DictionaryDownloader {
   /// 下载 [url] 到 [tempDir]。[progressNotifier] 收 0..1 的比例（供进度条），
   /// [onBytes] 收原始字节数（供「x / y MB」这类可归因文案，BUG-1493）——服务器不给
   /// `Content-Length` 时 `total` 为 -1，调用方据此退化成只显示已收字节。
+  ///
+  /// BUG-2188：按 [dictionaryDownloadCandidates] 逐个候选尝试。只有**传输层**失败
+  /// （连不上 / 超时 / 连接被拒，见 [isDictionaryTransportFailure]）才换下一个候选；
+  /// 服务器已答复的 404/403 与用户取消都立即停。全部候选失败时抛
+  /// [DictionaryDownloadException]，它带着归因、原址与试过的地址——调用方因此能给出
+  /// 人话原因，而不是把 `DioError [connection ...` 甩给用户。
   static Future<File> download({
     required String url,
     required Directory tempDir,
@@ -822,29 +962,65 @@ class DictionaryDownloader {
       tempDir.createSync(recursive: true);
     }
 
+    // 落盘文件名恒取自**原址**：镜像候选是「前缀 + 原址」，路径尾段虽然相同，但让
+    // 产物名字随候选变化只会让后续导入路径难以复现。
     final String fileName = Uri.parse(url).pathSegments.last;
     final String destPath = path.join(tempDir.path, fileName);
-    final Dio dio = await createDictionaryDio();
+    final List<String> candidates = dictionaryDownloadCandidates(url);
+    final List<String> attempted = <String>[];
 
-    try {
-      await dio.download(
-        url,
-        destPath,
-        cancelToken: cancelToken,
-        options: Options(
-          followRedirects: true,
-          maxRedirects: 5,
-        ),
-        onReceiveProgress: (int received, int total) {
-          if (total > 0) {
-            progressNotifier.value = received / total;
+    Object? lastError;
+    for (final String candidate in candidates) {
+      attempted.add(candidate);
+      final Dio dio = await createDictionaryDio();
+      try {
+        await dio.download(
+          candidate,
+          destPath,
+          cancelToken: cancelToken,
+          options: Options(
+            followRedirects: true,
+            maxRedirects: 5,
+          ),
+          onReceiveProgress: (int received, int total) {
+            if (total > 0) {
+              progressNotifier.value = received / total;
+            }
+            onBytes?.call(received, total);
+          },
+        );
+        return File(destPath);
+      } catch (e) {
+        lastError = e;
+        // 上一跳可能已经写了半个文件；不删掉的话下一个候选的 `dio.download` 会在
+        // 同一路径上继续写，产出一个前半段来自 A、后半段来自 B 的坏包。
+        final File partial = File(destPath);
+        if (partial.existsSync()) {
+          try {
+            partial.deleteSync();
+          } catch (_) {
+            // 删不掉不该盖住真正的下载失败；下一跳的 download 会覆盖写。
           }
-          onBytes?.call(received, total);
-        },
-      );
-      return File(destPath);
-    } finally {
-      dio.close();
+        }
+        // 取消**原样抛出**，绝不包进 [DictionaryDownloadException]：全仓的
+        // `DictionaryDownloadController.isCancellation` 按 `DioError.type == cancel`
+        // 判「取消不是失败」，一旦包起来，用户点取消会被记成一条下载失败。
+        if (classifyDictionaryDownloadFailure(e) ==
+            DictionaryDownloadFailureKind.cancelled) {
+          rethrow;
+        }
+        if (!isDictionaryTransportFailure(e)) break;
+        // 进度条归零，否则下一个候选从上一跳的比例开始往回跳。
+        progressNotifier.value = 0;
+      } finally {
+        dio.close();
+      }
     }
+
+    throw DictionaryDownloadException(
+      url: url,
+      attemptedUrls: attempted,
+      cause: lastError ?? StateError('no download candidate for $url'),
+    );
   }
 }

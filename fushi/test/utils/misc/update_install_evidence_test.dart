@@ -308,7 +308,8 @@ void main() {
       // 绕过任一入口，那条路径就在半更新态下永判「已是最新」。
       const List<String> sources = <String>[
         'lib/src/pages/implementations/home_page.dart',
-        'lib/src/settings/settings_schema_system.dart',
+        // 手动检查编排（设置页 + 更新中心共用）。
+        'lib/src/updates/app_update_check.dart',
       ];
       for (final String path in sources) {
         final File file = File(path);
@@ -341,8 +342,7 @@ void main() {
           expect(
             argsEnd,
             isNot(-1),
-            reason:
-                '$path 的 scheduleCheck 不再传 currentBuildNumber，'
+            reason: '$path 的 scheduleCheck 不再传 currentBuildNumber，'
                 '位置参数边界没法定位了',
           );
           final String positionalArgs = code.substring(argsStart, argsEnd);
@@ -350,8 +350,7 @@ void main() {
             expect(
               positionalArgs.contains('resolveCurrentAppVersion('),
               isTrue,
-              reason:
-                  '$path 把 exe 版本资源直接喂给了更新检查（位置参数 '
+              reason: '$path 把 exe 版本资源直接喂给了更新检查（位置参数 '
                   '`${positionalArgs.trim()}`）；半更新态下 exe 版本资源谎报新版本，'
                   '客户端会据它永判「已是最新」',
             );
@@ -406,10 +405,10 @@ void main() {
 
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(
-            markerFile: marker,
-            currentVersion: exeVersion,
-            runningCodeVersionDefine: target,
-          );
+        markerFile: marker,
+        currentVersion: exeVersion,
+        runningCodeVersionDefine: target,
+      );
 
       expect(result, isNotNull);
       expect(
@@ -420,8 +419,7 @@ void main() {
       expect(
         result.record.lastPromptedAppVersion,
         target,
-        reason:
-            '幂等键要用带 -debug.N 的代码版本，exe 版本资源的 `2.2.1` '
+        reason: '幂等键要用带 -debug.N 的代码版本，exe 版本资源的 `2.2.1` '
             '在同 base 的两个构建之间无法区分',
       );
     });
@@ -431,10 +429,10 @@ void main() {
 
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(
-            markerFile: marker,
-            currentVersion: exeVersion,
-            runningCodeVersionDefine: oldCode,
-          );
+        markerFile: marker,
+        currentVersion: exeVersion,
+        runningCodeVersionDefine: oldCode,
+      );
 
       expect(result, isNotNull);
       expect(result!.status, WindowsUpdateHandoffStatus.launchFailed);
@@ -445,10 +443,10 @@ void main() {
 
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(
-            markerFile: marker,
-            currentVersion: exeVersion,
-            runningCodeVersionDefine: '',
-          );
+        markerFile: marker,
+        currentVersion: exeVersion,
+        runningCodeVersionDefine: '',
+      );
 
       expect(result, isNotNull);
       expect(result!.status, WindowsUpdateHandoffStatus.launchFailed);

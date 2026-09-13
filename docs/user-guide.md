@@ -44,7 +44,7 @@ The APKs whose names start with `bridge-` are migration bridges for **legacy Hib
 
 ### 1. Import recommended dictionaries (word + pitch-accent + frequency dictionaries) and local audio (Japanese and English audio databases) (Highly recommended for beginners!!! · optional)
 
-[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing)
+[fushi.moe/download](https://fushi.moe/download)
 
 In the app: Settings -> Sync & Backup -> tap **Import Backup**.
 

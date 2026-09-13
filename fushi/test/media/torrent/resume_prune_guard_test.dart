@@ -21,7 +21,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:path/path.dart' as p;
 
 String _read(String relPath) => File(relPath).readAsStringSync();
@@ -98,7 +98,7 @@ void main() {
 
     setUpAll(() {
       appModel = _read('lib/src/models/app_model.dart');
-      host = _read('lib/src/media/torrent/embedded_torrent_host.dart');
+      host = _read('../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart');
     });
 
     test('计划 id 集合是可空哨兵，不许退化成 const {}', () {
@@ -166,7 +166,8 @@ void main() {
       expect(i, greaterThanOrEqualTo(0));
       final int end = host.indexOf('\n  }', i);
       final String body = host.substring(i, end > i ? end : i + 2500);
-      expect(body.contains('debugPrint('), isTrue,
+      // 引擎不依赖 Flutter：debugPrint 经 fushi_core 的 fushiDebugPrint 装配点。
+      expect(body.contains('fushiDebugPrint('), isTrue,
           reason: 'resume 长期写不进去 = 重启后所有下载蒸发，必须可见');
       expect(body.contains('} on Object {'), isFalse,
           reason: '回归：裸 `on Object { return 0; }` 把 native 的 '

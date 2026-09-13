@@ -5,8 +5,8 @@
 /// （脱敏、部分成功），与视频发现/资源 provider 同一套，不再发明新错误形状。
 library;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 
 abstract class MediaDiscoverySource {
   const MediaDiscoverySource();

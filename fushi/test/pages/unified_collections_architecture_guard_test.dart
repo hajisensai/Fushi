@@ -422,14 +422,23 @@ void main() {
         reason: '当前远端视频来源必须是单一真相字段');
   });
 
-  test('多端库联合视图 §2.3 任务10：合集行成员占位归属解析不到 → 散卡降级（不硬造行）', () {
-    // 两页都必须按 (name, type) 自然键把远端合集归属解析成本地合集 id，解析不到就
-    // continue（散卡降级），绝不硬造本地无 id 的合集行。撤降级守卫即转红。
+  test('多端库联合视图 §2.3 任务10：远端占位的合集归属在目录加载时原子收养，渲染只读本地裁决', () {
+    // PR #1456（BUG-2524）：不再在渲染期按 (name, type) 解析本地合集 id、解析不到就
+    // 散卡降级——那条路线让在线漫画与下载入库的占位各造一份身份。现在两页在目录
+    // 加载时经 RemoteCollectionAdoptionService 把 DTO 的主合集归属写进本地合集表
+    // （DAO 在事务里裁决墓碑 / 自然键 / 排序），渲染只读 _primaryCollectionByEntry。
+    // 退回渲染期解析（撤收养、或重新出现 _resolveLocalCollectionId）即转红。
+    expect(homeSrc.contains('adoption.adoptVideo(video)'), isTrue,
+        reason: '视频远端占位的合集归属须在目录加载时持久化收养');
+    // 书架的远端清单加载在 reader_history/remote.part.dart（主体的 part）。
+    final String historyRemoteSrc = File(
+      'lib/src/pages/implementations/reader_history/remote.part.dart',
+    ).readAsStringSync();
+    expect(historyRemoteSrc.contains('adoption.adoptBooks('), isTrue,
+        reason: '书远端占位的合集归属须在目录加载时持久化收养（整份清单一次）');
     for (final String src in <String>[homeSrc, historySrc]) {
-      expect(src.contains('_resolveLocalCollectionId('), isTrue,
-          reason: '远端合集归属须按 (name, type) 解析本地合集 id');
-      expect(src.contains('if (cid == null) continue;'), isTrue,
-          reason: '归属解析不到本地合集必须散卡降级（continue），不硬造合集行');
+      expect(src.contains('_resolveLocalCollectionId('), isFalse,
+          reason: '渲染期按 (name, type) 解析本地合集 id 的路线已废，归属只认 DAO 裁决');
     }
     // 视频侧用 _VideoSlot union 把远端占位与本地成员折进同一合集行。
     expect(homeSrc.contains('_VideoSlot'), isTrue,

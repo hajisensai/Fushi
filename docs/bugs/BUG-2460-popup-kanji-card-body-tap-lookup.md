@@ -1,0 +1,6 @@
+## BUG-2460 · 查词弹窗汉字卡片读音/释义点词无反应
+- **报告**：2026-09-12（用户：查词弹窗顶部米黄底汉字卡片 `.kanji-card` 里的音读/训读/释义/相关词（如 JPDB Kanji 的「一軒, 軒並み, 軒先…」）点了没反应，只有大字有点击）
+- **真实性**：✅ 真 bug。根因在 document 级点击委托 `fushi/assets/popup/popup.js` `__fushiPopupClick`：`fushiSelection.selectText`（tap-to-lookup 唯一入口）只在 `closest('.glossary-content')` 分支里调；汉字卡片正文节点（`createKanjiReadingRow` 建的 `.kanji-card-value`、`.kanji-card-meanings`）不在 `.glossary-content` 内，落到 `closest('.entry') || closest('.kanji-card-section')` 卡片分支——那里只做「有子窗则 tapOutside」然后裸 `return`，从不选词。节点本身也无 onclick（只有大字 `.kanji-card-char` 直接绑 `onLinkClick`）。selection.js 对这些文本节点本来就能工作（无容器门控，`、`/`,` 在分隔符集里），Dart 两宿主（`dictionary_popup_webview.dart` / `global_lookup_controller.dart`）`textSelected` 均已注册，缺的只是委托那一句派发。
+- **[x] ① 已修复** — `.glossary-content` 分支选择器扩为 `'.glossary-content, .kanji-card-value, .kanji-card-meanings'`，卡片正文与释义正文同语义（有子窗先 tapOutside，否则 selectText）；label 列与大字不受影响。三处 popup.js 镜像同步。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/popup_asset_behavior_test.js` 新增 `testTapOnKanjiCardValueSelectsWord`（value/meanings → selectText 且不 tapOutside；label 列不选词）与 `testTapOnKanjiCardValueWithChildFiresTapOutside`（有子窗只 tapOutside）；`fushi/test/pages/dictionary_child_popup_close_guard_test.dart` 字面量跟进。
+- **备注**：真机验证缺口——两宿主（app 内弹窗 / galgame 悬浮窗）点读音后 `%TEMP%\hibiki_glookup.log` 出现 nested lookup 记录尚未实测。

@@ -8,9 +8,9 @@ library;
 
 import 'dart:async';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
 
 /// 一个源贡献的结果分片。

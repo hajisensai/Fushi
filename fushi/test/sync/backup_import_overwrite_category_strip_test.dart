@@ -74,7 +74,7 @@ void main() {
       {required Directory curRoot}) async {
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       importSettings: true,

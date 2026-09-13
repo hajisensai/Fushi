@@ -25,7 +25,7 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 
 /// 一个来源被拒绝的原因。
 enum MangaOcrModelImportRejectReason {
@@ -97,17 +97,39 @@ class MangaOcrModelImportResult {
 
 /// basename → 清单条目。大小写不敏感：用户可能从别处拿到大小写不同的同一个档，
 /// 而清单里的名字本就是唯一标识，没必要为大小写把人挡在门外。
+///
+/// 名字不命中且给了 [sizeBytes] 时按**字节数唯一命中**：PP-OCRv6 三份文件在
+/// HF 上都叫 `inference.onnx` / `inference.yml`，落盘名带前缀区分，离线用户拿
+/// 上游原文件进来靠名字永远对不上；字节数本来就是导入的硬校验，唯一命中时
+/// 它就是身份。多于一个候选同尺寸（当前清单没有）按不认识处理，不猜。
 MangaOcrModelFile? matchMangaOcrModelFile(
   String fileName,
-  List<MangaOcrModelFile> manifest,
-) {
+  List<MangaOcrModelFile> manifest, {
+  int? sizeBytes,
+}) {
   final String target = p.basename(fileName).toLowerCase();
   for (final MangaOcrModelFile model in manifest) {
     if (model.fileName.toLowerCase() == target) {
       return model;
     }
   }
-  return null;
+  if (sizeBytes == null || sizeBytes <= 0) {
+    return null;
+  }
+  final List<MangaOcrModelFile> bySize = <MangaOcrModelFile>[
+    for (final MangaOcrModelFile model in manifest)
+      if (model.expectedBytes == sizeBytes) model,
+  ];
+  return bySize.length == 1 ? bySize.single : null;
+}
+
+/// 目录扫描时的字节数（stat 失败当不知道：让名字规则单独决定）。
+int? _sizeOrNull(File file) {
+  try {
+    return file.lengthSync();
+  } on Object {
+    return null;
+  }
 }
 
 /// 模型目录里某个清单文件是否**已经是好档**（存在且字节数等于预期）。
@@ -199,7 +221,13 @@ class MangaOcrModelImporter {
               if (entity is! File) continue;
               final String name = p.basename(entity.path);
               final bool isZip = p.extension(name).toLowerCase() == '.zip';
-              if (!isZip && matchMangaOcrModelFile(name, _manifest) == null) {
+              if (!isZip &&
+                  matchMangaOcrModelFile(
+                        name,
+                        _manifest,
+                        sizeBytes: _sizeOrNull(entity),
+                      ) ==
+                      null) {
                 continue;
               }
               visitFile(entity);
@@ -230,7 +258,19 @@ class MangaOcrModelImporter {
     List<MangaOcrModelImportRejection> rejected,
   ) async {
     final String name = p.basename(file.path);
-    final MangaOcrModelFile? model = matchMangaOcrModelFile(name, _manifest);
+    final int actual;
+    try {
+      actual = await file.length();
+    } on Object catch (error) {
+      rejected.add(MangaOcrModelImportRejection(
+        source: name,
+        reason: MangaOcrModelImportRejectReason.unreadable,
+        detail: '$error',
+      ));
+      return;
+    }
+    final MangaOcrModelFile? model =
+        matchMangaOcrModelFile(name, _manifest, sizeBytes: actual);
     if (model == null) {
       rejected.add(MangaOcrModelImportRejection(
         source: name,
@@ -242,18 +282,6 @@ class MangaOcrModelImporter {
     final File target = File(p.join(targetDir.path, model.fileName));
     if (isMangaOcrModelFileExact(target, model)) {
       skipped.add(model.fileName);
-      return;
-    }
-
-    final int actual;
-    try {
-      actual = await file.length();
-    } on Object catch (error) {
-      rejected.add(MangaOcrModelImportRejection(
-        source: name,
-        reason: MangaOcrModelImportRejectReason.unreadable,
-        detail: '$error',
-      ));
       return;
     }
     if (model.expectedBytes > 0 && actual != model.expectedBytes) {
@@ -294,12 +322,17 @@ class MangaOcrModelImporter {
     final List<String> wanted = <String>[
       for (final MangaOcrModelFile m in _manifest) m.fileName,
     ];
+    final List<int> wantedSizes = <int>[
+      for (final MangaOcrModelFile m in _manifest)
+        if (m.expectedBytes > 0) m.expectedBytes,
+    ];
 
     // 只把 zip 相关的重活丢给 isolate——inflate 是 CPU 密集活，留在主 isolate
     // 会把 UI 冻住几十秒。
     final List<_ZipEntry> entries;
     try {
-      entries = await Isolate.run(() => _scanZipEntries(zipPath, wanted));
+      entries = await Isolate.run(
+          () => _scanZipEntries(zipPath, wanted, wantedSizes));
     } on Object catch (error) {
       rejected.add(MangaOcrModelImportRejection(
         source: zipName,
@@ -318,8 +351,11 @@ class MangaOcrModelImporter {
     }
 
     for (final _ZipEntry entry in entries) {
-      final MangaOcrModelFile? model =
-          matchMangaOcrModelFile(entry.name, _manifest);
+      final MangaOcrModelFile? model = matchMangaOcrModelFile(
+        entry.name,
+        _manifest,
+        sizeBytes: entry.size,
+      );
       if (model == null) {
         continue;
       }
@@ -404,15 +440,22 @@ class _ZipEntry {
 }
 
 /// isolate 侧：扫 zip 目录区，挑出 basename 命中清单的 entry。只读头，不解压。
-List<_ZipEntry> _scanZipEntries(String zipPath, List<String> wantedNames) {
+List<_ZipEntry> _scanZipEntries(
+  String zipPath,
+  List<String> wantedNames,
+  List<int> wantedSizes,
+) {
   final Set<String> wanted =
       wantedNames.map((String n) => n.toLowerCase()).toSet();
+  final Set<int> sizes = wantedSizes.toSet();
   final InputFileStream input = InputFileStream(zipPath);
   try {
     final Archive archive = ZipDecoder().decodeBuffer(input);
     return <_ZipEntry>[
       for (final ArchiveFile file in archive.files)
-        if (file.isFile && wanted.contains(p.basename(file.name).toLowerCase()))
+        if (file.isFile &&
+            (wanted.contains(p.basename(file.name).toLowerCase()) ||
+                sizes.contains(file.size)))
           _ZipEntry(name: file.name, size: file.size),
     ];
   } finally {

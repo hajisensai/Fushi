@@ -4,6 +4,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 void main() {
@@ -294,4 +295,173 @@ void main() {
       );
     },
   );
+
+  group('推荐字体页多选', () {
+    Future<List<RecommendedFont>?> openPage(
+      WidgetTester tester, {
+      Set<String> alreadyAdded = const <String>{},
+    }) async {
+      List<RecommendedFont>? result;
+      await tester.pumpWidget(
+        buildApp(
+          Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  key: const ValueKey<String>('open'),
+                  onPressed: () async {
+                    result = await Navigator.push<List<RecommendedFont>>(
+                      context,
+                      MaterialPageRoute<List<RecommendedFont>>(
+                        builder: (_) =>
+                            RecommendedFontsPage(alreadyAdded: alreadyAdded),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+      return result;
+    }
+
+    testWidgets('进页就是勾选列表，没选东西时不显示批量栏', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 1400);
+      addTearDown(tester.view.reset);
+
+      await openPage(tester);
+      expect(find.byType(Checkbox), findsWidgets);
+      expect(
+        find.byType(BatchActionBar),
+        findsNothing,
+        reason: '一条都没勾时底栏是多余的',
+      );
+    });
+
+    testWidgets('勾选多条后一次返回全部选中项（不再选一个就把整页弹掉）', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 1400);
+      addTearDown(tester.view.reset);
+
+      List<RecommendedFont>? picked;
+      await tester.pumpWidget(
+        buildApp(
+          Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  key: const ValueKey<String>('open'),
+                  onPressed: () async {
+                    picked = await Navigator.push<List<RecommendedFont>>(
+                      context,
+                      MaterialPageRoute<List<RecommendedFont>>(
+                        builder: (_) => const RecommendedFontsPage(
+                          alreadyAdded: <String>{},
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+
+      final List<RecommendedFont> catalog = recommendedFontsCatalog;
+      for (final RecommendedFont font in <RecommendedFont>[
+        catalog[0],
+        catalog[1],
+      ]) {
+        await tester.tap(
+          find.byKey(ValueKey<String>('recommended-font-${font.name}')),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(find.byType(BatchActionBar), findsOneWidget);
+      expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('recommended-fonts-download')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(picked, isNotNull);
+      expect(
+        picked!.map((RecommendedFont f) => f.name).toList(),
+        <String>[catalog[0].name, catalog[1].name],
+      );
+    });
+
+    testWidgets('已添加的字体不可勾选，也不被「全选」卷进来', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 1400);
+      addTearDown(tester.view.reset);
+
+      final List<RecommendedFont> catalog = recommendedFontsCatalog;
+      final String addedName = catalog.first.name;
+      List<RecommendedFont>? picked;
+      await tester.pumpWidget(
+        buildApp(
+          Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  key: const ValueKey<String>('open'),
+                  onPressed: () async {
+                    picked = await Navigator.push<List<RecommendedFont>>(
+                      context,
+                      MaterialPageRoute<List<RecommendedFont>>(
+                        builder: (_) => RecommendedFontsPage(
+                          alreadyAdded: <String>{addedName},
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+
+      // 先勾一条别的把批量栏叫出来，再点全选。
+      await tester.tap(
+        find.byKey(ValueKey<String>('recommended-font-${catalog[1].name}')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.batch_select_all));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('recommended-fonts-download')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(picked, isNotNull);
+      expect(
+        picked!.any((RecommendedFont f) => f.name == addedName),
+        isFalse,
+        reason: '已装的再下一遍只是白跑一趟下载 + 导入',
+      );
+      expect(picked!.length, catalog.length - 1);
+    });
+  });
 }

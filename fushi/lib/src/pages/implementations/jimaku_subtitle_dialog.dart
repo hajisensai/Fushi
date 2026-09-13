@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
@@ -79,7 +79,10 @@ class JimakuSubtitleDialog extends StatelessWidget {
         debugInitialCandidates: debugInitialCandidates,
         debugInitialSeriesMatches: debugInitialSeriesMatches,
         debugInitialSeriesLookupFailed: debugInitialSeriesLookupFailed,
-        onDownloaded: (String path) => Navigator.pop(context, path),
+        // 这个存量对话框壳仍是单值出口（调用方只应用一条）：多选下载时
+        // 取第一条，其余已落盘、由字幕轨列表承载。
+        onDownloaded: (List<String> paths) =>
+            Navigator.pop(context, paths.isEmpty ? null : paths.first),
         onCancel: () => Navigator.pop(context),
       ),
     );

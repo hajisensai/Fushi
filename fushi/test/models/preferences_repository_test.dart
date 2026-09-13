@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
 FushiDatabase _testDb() {
@@ -56,29 +57,38 @@ void main() {
       expect(repo.onboardingCompleted, true);
     });
 
-    test('module tab toggles default to true and round-trip', () async {
+    test('module toggles default to true and round-trip', () async {
       // 「功能模块」显隐默认全开——升级用户底栏不变（Never break userspace）。
-      expect(repo.moduleBooksEnabled, true);
-      expect(repo.moduleMangaEnabled, true);
-      expect(repo.moduleVideoEnabled, true);
-      expect(repo.moduleGamesEnabled, true);
-      expect(repo.moduleBrowserExtensionEnabled, true);
-      expect(repo.moduleDownloadsEnabled, true);
-      expect(repo.moduleDictionariesEnabled, true);
-      await repo.setModuleBooksEnabled(false);
-      await repo.setModuleMangaEnabled(false);
-      await repo.setModuleVideoEnabled(false);
-      await repo.setModuleGamesEnabled(false);
-      await repo.setModuleBrowserExtensionEnabled(false);
-      await repo.setModuleDownloadsEnabled(false);
-      await repo.setModuleDictionariesEnabled(false);
-      expect(repo.moduleBooksEnabled, false);
-      expect(repo.moduleMangaEnabled, false);
-      expect(repo.moduleVideoEnabled, false);
-      expect(repo.moduleGamesEnabled, false);
-      expect(repo.moduleBrowserExtensionEnabled, false);
-      expect(repo.moduleDownloadsEnabled, false);
-      expect(repo.moduleDictionariesEnabled, false);
+      // 按 [ModuleId.values] 遍历而非手抄七个模块：加模块时本用例自动覆盖到它，
+      // 也钉住「一个模块一个键」（同键复用会在写全 false 后被读回暴露）。
+      for (final ModuleId module in ModuleId.values) {
+        expect(
+          repo.moduleEnabled(module),
+          true,
+          reason: '${module.name} 默认应为开',
+        );
+      }
+      for (final ModuleId module in ModuleId.values) {
+        await repo.setModuleEnabled(module, false);
+      }
+      for (final ModuleId module in ModuleId.values) {
+        expect(
+          repo.moduleEnabled(module),
+          false,
+          reason: '${module.name} 关闭后应读回 false',
+        );
+      }
+      // 单个模块翻回开不得连带别人（键必须互不复用）。
+      await repo.setModuleEnabled(ModuleId.books, true);
+      expect(repo.moduleEnabled(ModuleId.books), true);
+      for (final ModuleId module in ModuleId.values) {
+        if (module == ModuleId.books) continue;
+        expect(
+          repo.moduleEnabled(module),
+          false,
+          reason: '${module.name} 不该跟着 books 一起被打开',
+        );
+      }
     });
 
     test('currentHomeTabIndex defaults to 0', () {
@@ -125,23 +135,22 @@ void main() {
       expect(repo.lowMemoryMode, false);
     });
 
-    test('audioSources returns default URL list', () {
-      expect(repo.audioSources, PreferencesRepository.defaultAudioSources);
+    test('audioSources defaults to an empty list (no built-in remote source)',
+        () {
+      expect(repo.audioSources, isEmpty);
     });
 
     test(
-        'audioSourceConfigs on a fresh install ships the default remote '
-        'audio source DISABLED (TODO-083)', () {
-      // 纯新装（两个 audio pref 都没写过）：内置远端音频源（manhhaoo worker）
-      // 必须默认关闭，fushiRemote 也默认关闭。任何源都不应自动启用。
+        'audioSourceConfigs on a fresh install ships NO third-party remote '
+        'audio source, and nothing enabled', () {
+      // 纯新装（两个 audio pref 都没写过）：不再内置任何第三方网络音频库
+      // （2026-09-13 拍板删掉 manhhaoo worker 默认源）；只有 fushiRemote 与 Anki
+      // 本地预设，且全部默认关闭。任何源都不应自动启用。
       final List<AudioSourceConfig> configs = repo.audioSourceConfigs;
       expect(
         configs,
         <AudioSourceConfig>[
           AudioSourceConfig.fushiRemote(),
-          ...AudioSourceConfig.fromLegacyUrls(
-            PreferencesRepository.defaultAudioSources,
-          ).map((AudioSourceConfig s) => s.copyWith(enabled: false)),
           // 内置 Anki 本地音频服务器（5050）预设，追加在列尾、默认关闭。
           AudioSourceConfig.remoteAudio(
             url: PreferencesRepository.ankiLocalAudioUrl,
@@ -183,6 +192,51 @@ void main() {
         'https://legacy.test/?term={term}&reading={reading}',
       );
       repo2.dispose();
+    });
+
+    test(
+        'retired built-in remote audio URL is purged from persisted typed '
+        'configs and legacy audio_sources', () async {
+      // 老用户列表里残留的已退役内置 worker URL（曾随新装默认写入、用户可能已
+      // 启用）必须在读取咽喉剔除；只删默认值不清持久化 = 只对新装生效。
+      // 用户自填的其它远端 URL 原样保留。
+      final String retired = PreferencesRepository.retiredAudioSourceUrls.first;
+      await repo.setAudioSourceConfigs(<AudioSourceConfig>[
+        AudioSourceConfig.fushiRemote(),
+        AudioSourceConfig.remoteAudio(url: retired, enabled: true),
+        AudioSourceConfig.remoteAudio(
+          url: 'https://mine.test/?term={term}',
+          enabled: true,
+        ),
+      ]);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      final List<String?> typedUrls = repo2.audioSourceConfigs
+          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.remoteAudio)
+          .map((AudioSourceConfig s) => s.url)
+          .toList();
+      expect(typedUrls, isNot(contains(retired)));
+      expect(typedUrls, contains('https://mine.test/?term={term}'));
+      repo2.dispose();
+
+      // legacy 路径：typed config 为空、只有 audio_sources 的老用户同样剔除。
+      final PreferencesRepository repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      await repo3.setPref('audio_source_configs', <Object?>[]);
+      repo3
+          .setAudioSources(<String>[retired, 'https://mine.test/?term={term}']);
+      await Future<void>.delayed(Duration.zero);
+      final PreferencesRepository repo4 = PreferencesRepository(db);
+      await repo4.loadFromDb();
+      final List<String?> legacyUrls = repo4.audioSourceConfigs
+          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.remoteAudio)
+          .map((AudioSourceConfig s) => s.url)
+          .toList();
+      expect(legacyUrls, isNot(contains(retired)));
+      expect(legacyUrls, contains('https://mine.test/?term={term}'));
+      repo3.dispose();
+      repo4.dispose();
     });
 
     test(
@@ -779,54 +833,68 @@ void main() {
   // reload, NOT by this process's own setPref calls — hence the assertions
   // below read the DB, not the in-memory getter.
   group('prefsVersion (TODO-855)', () {
-    test('starts at 0 on a fresh install', () async {
-      expect(repo.prefsVersion, 0);
-      expect(await repo.readPrefsVersionFromDb(), 0);
+    // 这组钉的是**增量**而不是绝对数：`loadFromDb()` 自己就会写偏好
+    // （`_repairOpenSubtitlesEnabledOnce` 在全新库上也打一次标记，见那里的注释
+    // ——不打就得每次启动重解析），所以「新装 == 0」不是不变式，只是当年恰好成立
+    // 的一个数。真不变式是「每一次 setPref 让持久化版本号单调 +1，而进程内 getter
+    // 只在整体 reload 时跟上」，与起点是几无关。
+    //
+    // 唯一保留绝对数的是「直接写版本键」那条：它钉的本来就是「值就是你写的那个数」。
+    test('a fresh load leaves the counter consistent between DB and memory',
+        () async {
+      final int baseline = await repo.readPrefsVersionFromDb();
+      expect(repo.prefsVersion, baseline,
+          reason: 'loadFromDb 之后，进程内值必须等于 DB 值');
     });
 
     test('setPref bumps the persisted version monotonically', () async {
-      expect(await repo.readPrefsVersionFromDb(), 0);
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       await repo.setPref('k2', 'b');
-      expect(await repo.readPrefsVersionFromDb(), 2);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 2);
       // Same key written again still counts as a change.
       await repo.setPref('k1', 'c');
-      expect(await repo.readPrefsVersionFromDb(), 3);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 3);
     });
 
     test('the in-memory getter reflects the DB only after a full reload',
         () async {
       // A same-process write does NOT advance the in-memory getter (bump is
       // in the DB layer); a reload picks it up.
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
-      expect(repo.prefsVersion, 0,
+      expect(repo.prefsVersion, baseline,
           reason: 'in-memory getter is stale until the next loadFromDb');
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       await repo.refreshFromDb();
-      expect(repo.prefsVersion, 1);
+      expect(repo.prefsVersion, baseline + 1);
     });
 
     test('the version itself is persisted to DB and survives a reload',
         () async {
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
       await repo.setPref('k2', 'b');
-      expect(await repo.readPrefsVersionFromDb(), 2);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 2);
 
       final PreferencesRepository repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       addTearDown(repo2.dispose);
       // A second process loading the same DB sees the persisted counter.
-      expect(repo2.prefsVersion, 2);
-      expect(await repo2.readPrefsVersionFromDb(), 2);
+      // 注意 repo2.loadFromDb() 自己不再写（修复标记已在上面打过），所以这里
+      // 仍是 baseline + 2。
+      expect(repo2.prefsVersion, baseline + 2);
+      expect(await repo2.readPrefsVersionFromDb(), baseline + 2);
     });
 
     test('writing the version key directly does NOT recurse / double-bump',
         () async {
       // The DB-layer choke point guards the version key against re-bumping
       // itself. A direct write of prefsVersionKey must not increment further.
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       // The version key is a PrefCodec int; a direct int write of it must be
       // parsed back correctly and must NOT trigger an extra bump on top.
       await repo.setPref(PreferencesRepository.prefsVersionKey, 99);
@@ -838,21 +906,22 @@ void main() {
       // Writers that bypass PreferencesRepository (ThemeNotifier, MediaSource,
       // profile switch) go straight through FushiDatabase.setPref and must
       // still bump — that is the whole point of sinking the bump down a layer.
-      expect(await repo.readPrefsVersionFromDb(), 0);
+      final int baseline = await repo.readPrefsVersionFromDb();
       await db.setPref('app_ui_scale', PrefCodec.encode(1.25));
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
       await db.setPref('src:reader_fushi:font_size', PrefCodec.encode(20));
-      expect(await repo.readPrefsVersionFromDb(), 2);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 2);
     });
 
     test(
         'readPrefsVersionFromDb sees a cross-process write the in-memory '
         'cache has not yet observed', () async {
+      final int baseline = await repo.readPrefsVersionFromDb();
       await repo.setPref('k1', 'a');
       // In-memory cache is stale (no same-process bump tracking)...
-      expect(repo.prefsVersion, 0);
+      expect(repo.prefsVersion, baseline);
       // ...but the cheap DB read sees the write's bump.
-      expect(await repo.readPrefsVersionFromDb(), 1);
+      expect(await repo.readPrefsVersionFromDb(), baseline + 1);
 
       // Simulate the MAIN app process bumping the counter further while THIS
       // (popup) process holds a stale cache: write straight to the DB row
@@ -862,7 +931,7 @@ void main() {
         PreferencesRepository.prefsVersionKey,
         PrefCodec.encode(7),
       );
-      expect(repo.prefsVersion, 0);
+      expect(repo.prefsVersion, baseline);
       expect(await repo.readPrefsVersionFromDb(), 7);
     });
   });

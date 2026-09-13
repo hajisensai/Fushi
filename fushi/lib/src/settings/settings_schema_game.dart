@@ -8,6 +8,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
@@ -26,9 +27,10 @@ import 'package:fushi/utils.dart';
 /// 而是复用既有跳转真相源——`homeShellTabNotifier` 切 tab + `gameSectionNotifier`
 /// 选子区（与原生 Hook 浮窗 `openWorkbench` / 首页 dashboard 卡片同一条路径）。
 ///
-/// 门控：与 games 顶层 tab 完全一致（`homeActiveTabs` 的
-/// `gamesEnabled: Platform.isWindows`——galgame 引擎-hook 注入 Windows-only）。
-/// 非 Windows 平台整个分类不可见、不进搜索索引。
+/// 门控：与 games 顶层 tab 完全一致——同一个 `ModuleId.games`。Windows-only 的平台
+/// 判据（galgame 引擎-hook 注入）已收进 `ModuleId.availableOn`，与用户在设置 → 外观
+/// → 功能模块里的意愿一并合成为 `moduleVisibility`；此处不再另判平台，否则又是一份
+/// 会漂移的抄件。非 Windows 平台、或用户关掉游戏模块时，整个分类不可见、不进搜索索引。
 ///
 /// 浏览器扩展页不属于游戏域（它是查词域的桌面扩展安装助手），其搜索入口登记在
 /// 「查词」分类（settings_schema_lookup 的 `lookup.browser_extension`），不在此处。
@@ -38,7 +40,10 @@ SettingsDestination buildGameDestination() {
     title: t.nav_game,
     summary: t.game_home_subtitle,
     icon: Icons.sports_esports_outlined,
-    visible: (SettingsContext settingsContext) => Platform.isWindows,
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.game,
+      c.appModel.moduleVisibility,
+    ),
     sections: <SettingsSection>[
       SettingsSection(
         items: <SettingsItem>[

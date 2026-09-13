@@ -1,0 +1,6 @@
+## BUG-2477 · Windows 漫画源登录页/Cloudflare 页的 CookieManager 与 WebView 不同环境，登录后「没有捕获到会话 cookie」
+- **报告**：2026-09-12（用户：截图——BookWalker 已登录（页面显示「登録完了」），点「完成」却 toast「没有捕获到会话 cookie，未保存」）
+- **真实性**：✅ 真 bug。Windows 上 WebView2 的 cookie 归**环境**（user data folder）所有。登录页 `mihon_web_login_page.dart` 的 `InAppWebView` 不传环境，走 fork 的默认建站点 `in_app_webview.cpp:184`（带 `--autoplay-policy` 参数）；`CookieManager.instance()` 不传环境，走 `webview_environment_manager.cpp:77` 另建的默认环境（**不带**参数）。同一 user data folder 两套 options，WebView2 拒绝后建的那个（`0x8007139F`）→ `cookie_manager.cpp:33` 报 `Cannot obtain the WebViewEnvironment!` → `_export` 抛错 → 「没有捕获到会话 cookie」。Cloudflare 解题页 `aidoku_cloudflare_challenge_page.dart` 同一写法，Windows 上永远轮询不到 `cf_clearance`。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/media/manga/cookie/manga_web_view_environment.dart`：漫画站点浏览器页在 Windows 上共用一个显式 `WebViewEnvironment`（独立 user data folder `%LOCALAPPDATA%\Fushi\MangaWebView2`），登录页与 Cloudflare 页的 `InAppWebView` 和 `CookieManager` 都绑它；环境就绪前不建 WebView、不轮询。非 Windows 返回 null 走平台默认（那边 cookie 本来就是同一份）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/mihon_web_login_page_test.dart` / `aidoku_cloudflare_challenge_page_test.dart` 经 `environmentFactory` 注入跑通两页的导出/轮询路径；环境本身是 WebView2 原生行为，只能真机验（Windows）。
+- **备注**：与 BUG-2478（同一环境上挂代理参数）同一份 helper。手动代理的 Basic 认证凭据接不进 WebView2（fork 未暴露 `BasicAuthenticationRequested`），见 BUG-2478。

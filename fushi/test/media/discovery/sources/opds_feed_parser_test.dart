@@ -3,7 +3,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_atom_parser.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_feed.dart';
 import 'package:fushi/src/media/discovery/sources/opds/opds_json_parser.dart';

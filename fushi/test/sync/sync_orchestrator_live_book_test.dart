@@ -18,17 +18,17 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -272,7 +272,7 @@ void main() {
       final String hostExtract = p.join(work.path, 'host_extract_Y');
       await _seedBook(db: hostDb, title: 'BookY', extractDir: hostExtract);
 
-      final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+      final LocalLibraryHostService libSvc = LocalLibraryHostService(
         db: hostDb,
         dictionaryResourceRoot: Directory(work.path),
         packages: SyncAssetPackageService(db: hostDb),
@@ -300,6 +300,39 @@ void main() {
     });
 
     tearDown(() async => server.stop());
+
+    test('空在线漫画合集正常跳过，不上传空包或记录同步失败', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      final Directory source = Directory(p.join(work.path, 'online_manga'))
+        ..createSync();
+      File(p.join(source.path, 'manga.json')).writeAsStringSync('{"pages":[]}');
+      await localDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'OnlineManga',
+        title: 'OnlineManga',
+        epubPath: 'manga.json',
+        extractDir: source.path,
+        chapterCount: 0,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('manga'),
+      ));
+      final Directory tmp = Directory(p.join(work.path, 'tmp_empty_manga'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _bookOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncContent: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBooksContentLiveForTest(report, backend);
+      expect(report.errors, isEmpty);
+      expect(await hostDb.getEpubBook('OnlineManga'), isNull);
+      expect(tmp.listSync(), isEmpty);
+    });
 
     test('本地无 BookY，syncContent=true → 不自动拉取远端独有 BookY', () async {
       // 本地：只有 BookX，没有 BookY
@@ -443,7 +476,7 @@ void main() {
       final String hostExtract = p.join(work.path, 'host_extract_Y_b');
       await _seedBook(db: hostDb, title: 'BookY', extractDir: hostExtract);
 
-      final AppModelLibraryHostService libSvc = AppModelLibraryHostService(
+      final LocalLibraryHostService libSvc = LocalLibraryHostService(
         db: hostDb,
         dictionaryResourceRoot: Directory(work.path),
         packages: SyncAssetPackageService(db: hostDb),

@@ -40,7 +40,10 @@ void main() {
     // progress + charOffset 必须透传给 _navigateToChapter（否则烘进导航失效、退回章首）。
     // TODO-1308 问题②：转发调用升级为多参（progress/charOffset/charOffsetEnd），
     // 收藏跳转靠 charOffset 走精确字符锚，书签/字符跳转仍可走 progress。
-    expect(body, contains('_navigateToChapter(index,'),
+    // 格式无关：dart format tall style 会把这条实参表折成多行
+    // （`_navigateToChapter(` + 换行 + `index,`），判据只钉
+    // 「index 作为第一个位置实参转发出去」。
+    expect(body, matches(RegExp(r'_navigateToChapter\(\s*index,')),
         reason:
             'progress/charOffset 必须转发给 _navigateToChapter → _beginNavigation');
     expect(body, contains('charOffset: charOffset,'),
@@ -158,9 +161,12 @@ void main() {
     // 0-10000 分数），跨章烘进 _navigateToChapterAndWait(charOffset:)、同章直接
     // restoreToCharOffset。原子链（单次恢复、跨章分支不滞后抢发）语义不变，只是
     // 恢复目标由分数换成精确字符锚。闭包已抽成 _jumpToFavoriteSentence 方法。
+    // 结束锚点原来是 _ReaderGalleryPage，BUG-2166 批把它抽去了
+    // lib/src/reader/reader_gallery_page.dart（不在本语料里），锚点永久失效。
+    // 换成语料内紧随其后的下一个方法，切片反而更紧、负向断言只会更严。
     final String fav = slice(
         'Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {',
-        'class _ReaderGalleryPage extends StatefulWidget {');
+        'String? _favoritePositionLabel(FavoriteSentence fav) {');
     expect(fav, contains('_navigateToChapterAndWait('),
         reason: '收藏跨章走 navigate-with-baked-charOffset（原子恢复链）');
     expect(fav, contains('charOffset: useOffset ? normCharOffset :'),

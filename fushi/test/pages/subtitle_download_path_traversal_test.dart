@@ -9,9 +9,9 @@ import 'package:http/testing.dart' as http_testing;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
 /// BUG-1845：在线字幕落盘不得让**远端给的文件名**逃出保存目录。

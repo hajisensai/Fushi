@@ -9,14 +9,19 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
-    show buildManageAudioSourcesItem, buildRemoteDictionaryLookupItem;
+    show buildLookupDestination;
+import 'package:fushi/src/settings/settings_search.dart'
+    show SettingsSearchReveal;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart';
@@ -31,20 +36,20 @@ import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
-import 'package:fushi/src/sync/pairing/fushi_pair_v2_client.dart';
-import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
-import 'package:fushi/src/sync/pairing/discovered_pairing_probe.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_v2_client.dart';
+import 'package:fushi_engine/sync/pairing/fushi_ping_client.dart';
+import 'package:fushi_engine/sync/pairing/discovered_pairing_probe.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
-import 'package:fushi/src/sync/tls/fushi_pinning_http.dart'
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart'
     show fingerprintEquals;
-import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
+import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -66,7 +71,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），
@@ -83,6 +88,12 @@ part 'sync_settings_schema/data_root.part.dart';
 SettingsDestination buildSyncBackupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.syncBackup,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.syncBackup,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_sync_backup,
     summary: t.sync_summary,
     icon: Icons.sync,
@@ -92,6 +103,8 @@ SettingsDestination buildSyncBackupDestination() {
       // OAuth account row for cloud backends; credential box for WebDAV/FTP/
       // SFTP; URL list + LAN discovery for the Hibiki P2P backend.
       SettingsSection(
+        id: 'sync.method.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.sync_section_method,
         items: <SettingsItem>[
           SettingsCustomItem(
@@ -108,68 +121,38 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _SyncAccountWidget(settingsContext: ctx),
           ),
-          SettingsCustomItem(
-            id: 'sync.webdav_config',
+          // WebDAV / FTP / SFTP 的凭据表单挪进子页「服务器设置」（C1）：主页只留
+          // 一行入口，不再随所选后端伸缩。三套表单本身（_CredentialConfigWidget）
+          // 不动，可见性谓词逐字搬进 _buildSyncServerSettingsPage。
+          SettingsNavigationItem(
+            id: 'sync.server_settings',
+            title: t.sync_server_settings,
+            subtitle: t.sync_server_settings_hint,
             icon: Icons.dns_outlined,
             visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.webDav,
-            builder: (SettingsContext ctx) =>
-                _WebDavConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.ftp_config',
-            icon: Icons.dns_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.ftp,
-            builder: (SettingsContext ctx) =>
-                _FtpConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.sftp_config',
-            icon: Icons.dns_outlined,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType == SyncBackendType.sftp,
-            builder: (SettingsContext ctx) =>
-                _SftpConfigWidget(settingsContext: ctx),
+                hasServerSettings(_syncSettings(ctx).backendType),
+            child: _buildSyncServerSettingsPage,
           ),
           // 互联被选为同步方式时的指引行（BUG-1088）：连接配置（URL/token/配对/
           // LAN 发现/host 开关）在独立的「Hibiki 互联」分类里，这里只指路不复制。
-          SettingsCustomItem(
+          SettingsStatusItem(
             id: 'sync.interconnect_config_note',
+            title: t.sync_backend_fushi_server,
+            subtitle: t.interconnect_moved_note,
             icon: Icons.devices_outlined,
             visible: (SettingsContext ctx) =>
                 _syncSettings(ctx).backendType == SyncBackendType.fushiServer,
-            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.sync_backend_fushi_server,
-              subtitle: t.interconnect_moved_note,
-              icon: Icons.devices_outlined,
-            ),
           ),
         ],
       ),
-      // ── Group 3: What to sync — global, applies to every backend ──────
+      // ── Group 2: What to sync — five same-shaped switches, every backend ─
+      // 同形态的开关一组；动作行（资产传输）与时机（自动同步/立即同步）各自成节，
+      // 不再与开关混排（C1：「分组乱」的直接来源）。
       SettingsSection(
+        id: 'sync.content.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.sync_section_content,
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'sync.auto_sync',
-            title: t.sync_auto_sync,
-            icon: Icons.sync_outlined,
-            // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
-            // book-close pushes through the resolved backend. Outbound only
-            // vanishes when the selected sync method IS the interconnect and
-            // this device is the host (clients pull from / push to it, BUG-084).
-            // A cloud backend keeps its outbound regardless of hosting — hiding
-            // on host identity alone blanked Google Drive users' toggle
-            // (BUG-1088).
-            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
-            value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).autoSync = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setAutoSyncEnabled(value);
-            },
-          ),
           SettingsSwitchItem(
             id: 'sync.statistics',
             title: t.sync_statistics,
@@ -177,86 +160,10 @@ SettingsDestination buildSyncBackupDestination() {
             value: (SettingsContext ctx) => _syncSettings(ctx).syncStats,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncStats = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncStatsEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncStatsEnabled(value);
             },
-          ),
-          // 词典与本地音频源数据库不再是「开关 + 自动双向同步」，而是两个显式动作行：
-          // 上传把本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这
-          // 台机器的词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄
-          // 搬几百 MB —— 方向该由用户在点的那一刻给出。
-          //
-          // 可见性与相邻三个「上传X文件」同因：这四行只在**云备份通道**上跑
-          // （见 runManualAssetTransfer），同步方式被选成互联时那条通道没有出站
-          // 语义，留着就是四个死按钮。互联对端的内容上传由互联页自己那组开关管。
-          // 一次性告知，排在四个传输动作之前：升级前开着那两个自动同步开关的存量
-          // 用户，升级后同步会静默停下（见 SyncRepository 里废弃键那段注释）。只对
-          // 读到遗留 true 的库占位，用户确认后彻底消失。可见性与下面四行同因——只有
-          // 云备份通道跑这四个动作，互联通道上说明也无处可指。
-          SettingsCustomItem(
-            id: 'sync.asset_legacy_notice',
-            searchTitle: t.sync_asset_legacy_notice_title,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.info_outline,
-            builder: (SettingsContext ctx) =>
-                _LegacyAssetSyncNotice(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.dictionary_upload',
-            searchTitle: t.sync_asset_dictionary_upload,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.menu_book_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.dictionary,
-              direction: SyncAssetDirection.upload,
-              title: t.sync_asset_dictionary_upload,
-              icon: Icons.menu_book_outlined,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'sync.dictionary_download',
-            searchTitle: t.sync_asset_dictionary_download,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.menu_book_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.dictionary,
-              direction: SyncAssetDirection.download,
-              title: t.sync_asset_dictionary_download,
-              icon: Icons.menu_book_outlined,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'sync.local_audio_upload',
-            searchTitle: t.sync_asset_local_audio_upload,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.graphic_eq_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.localAudio,
-              direction: SyncAssetDirection.upload,
-              title: t.sync_asset_local_audio_upload,
-              icon: Icons.graphic_eq_outlined,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'sync.local_audio_download',
-            searchTitle: t.sync_asset_local_audio_download,
-            visible: (SettingsContext ctx) =>
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            icon: Icons.graphic_eq_outlined,
-            builder: (SettingsContext ctx) => _AssetTransferWidget(
-              settingsContext: ctx,
-              kind: SyncAssetKind.localAudio,
-              direction: SyncAssetDirection.download,
-              title: t.sync_asset_local_audio_download,
-              icon: Icons.graphic_eq_outlined,
-            ),
           ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
@@ -275,8 +182,9 @@ SettingsDestination buildSyncBackupDestination() {
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncContent = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncContentEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncContentEnabled(value);
             },
           ),
           SettingsSwitchItem(
@@ -290,8 +198,9 @@ SettingsDestination buildSyncBackupDestination() {
                 _syncSettings(ctx).syncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncAudioBookFiles = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncAudioBookFilesEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncAudioBookFilesEnabled(value);
             },
           ),
           // 上传视频文件（多端库联合视图 §2.6）：默认关。云后端走 syncVideoAssets 的
@@ -309,8 +218,9 @@ SettingsDestination buildSyncBackupDestination() {
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncVideoFiles = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setSyncVideoFilesEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncVideoFilesEnabled(value);
             },
           ),
           // 远端占位卡开关抽成共享 builder：同步内容分类与 Hibiki 互联分类共享同一份
@@ -318,24 +228,43 @@ SettingsDestination buildSyncBackupDestination() {
           buildShowRemoteEntriesItem(),
         ],
       ),
-      // ── Group 4: Manual sync actions — global ────────────────────────
+      // ── Group 3: When to sync — auto-sync + manual actions ────────────
       SettingsSection(
-        title: t.sync_section_actions,
+        id: 'sync.when.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.sync_section_when,
         items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'sync.auto_sync',
+            title: t.sync_auto_sync,
+            icon: Icons.sync_outlined,
+            // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
+            // book-close pushes through the resolved backend. Outbound only
+            // vanishes when the selected sync method IS the interconnect and
+            // this device is the host (clients pull from / push to it, BUG-084).
+            // A cloud backend keeps its outbound regardless of hosting — hiding
+            // on host identity alone blanked Google Drive users' toggle
+            // (BUG-1088).
+            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
+            value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).autoSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setAutoSyncEnabled(value);
+            },
+          ),
           // Sync-method-is-interconnect + hosting has no OUTBOUND sync: the host
           // is a passive data source that connected clients pull from / push to,
           // so "sync now" / "compare" would misleadingly say "set up sync
           // first". Hide them for that combination only and explain instead
           // (BUG-084); a cloud backend keeps outbound while hosting (BUG-1088).
-          SettingsCustomItem(
+          SettingsStatusItem(
             id: 'sync.server_mode_note',
-            icon: Icons.router_outlined,
             visible: (SettingsContext ctx) => _cloudOutboundUnavailable(ctx),
-            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
-              title: t.sync_server_mode_active,
-              subtitle: t.sync_server_mode_clients_drive,
-              icon: Icons.router_outlined,
-            ),
+            title: t.sync_server_mode_active,
+            subtitle: t.sync_server_mode_clients_drive,
+            icon: Icons.router_outlined,
           ),
           SettingsCustomItem(
             id: 'sync.sync_now',
@@ -361,10 +290,66 @@ SettingsDestination buildSyncBackupDestination() {
           ),
         ],
       ),
+      // ── Group 4: Dictionaries & local audio transfer — explicit actions ─
+      // 词典与本地音频源数据库不再是「开关 + 自动双向同步」，而是显式动作：上传把
+      // 本机独有的推上去，下载把远端独有的拉下来。开关表达不了「现在把这台机器的
+      // 词典推过去」这种一次性意图，而它一旦开着就会在每轮 sweep 里悄悄搬几百 MB
+      // —— 方向该由用户在点的那一刻给出。一类资产一行，方向在行尾菜单里选（C1，
+      // 焦点模型见 _AssetTransferMenuRow）。
+      //
+      // 可见性与「上传X文件」三个开关同因：只在**云备份通道**上跑（见
+      // runManualAssetTransfer），同步方式被选成互联时那条通道没有出站语义，留着
+      // 就是死按钮。互联对端的内容上传由互联页自己那组开关管。
+      SettingsSection(
+        id: 'sync.assets.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.sync_section_assets,
+        items: <SettingsItem>[
+          // 一次性告知，排在传输动作之前：升级前开着那两个自动同步开关的存量用户，
+          // 升级后同步会静默停下（见 SyncRepository 里废弃键那段注释）。只对读到
+          // 遗留 true 的库占位，用户确认后彻底消失。
+          SettingsCustomItem(
+            id: 'sync.asset_legacy_notice',
+            searchTitle: t.sync_asset_legacy_notice_title,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.info_outline,
+            builder: (SettingsContext ctx) =>
+                _LegacyAssetSyncNotice(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.dictionary_transfer',
+            searchTitle: t.sync_asset_dictionary,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              title: t.sync_asset_dictionary,
+              icon: Icons.menu_book_outlined,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'sync.local_audio_transfer',
+            searchTitle: t.sync_asset_local_audio,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            icon: Icons.graphic_eq_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              title: t.sync_asset_local_audio,
+              icon: Icons.graphic_eq_outlined,
+            ),
+          ),
+        ],
+      ),
       // ── Group 5: Local backup — independent of sync ──────────────────
       SettingsSection(
+        id: 'sync.backup.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.sync_section_backup,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.backup_export',
@@ -413,6 +398,58 @@ SettingsDestination buildSyncBackupDestination() {
   );
 }
 
+/// 凭据式后端（WebDAV / FTP / SFTP）才有「服务器设置」子页；OAuth 后端在浏览器
+/// 里登录（账号行），互联的连接配置在自己的分类里。
+@visibleForTesting
+bool hasServerSettings(SyncBackendType type) =>
+    type == SyncBackendType.webDav ||
+    type == SyncBackendType.ftp ||
+    type == SyncBackendType.sftp;
+
+/// 「服务器设置」子页（C1）：所选后端的凭据表单 + 连接测试。三套表单及其可见性
+/// 谓词与原先在主页「同步方式」节里时逐字相同，只是搬了个地方。子页共用父分类的
+/// id、靠闭包取新鲜树（见 [SettingsNavigationItem.child]）；零参、构造期只读
+/// i18n 常量，与顶层分类同一条 schema 缓存纪律。
+SettingsDestination _buildSyncServerSettingsPage() {
+  return SettingsDestination(
+    id: SettingsDestinationId.syncBackup,
+    title: t.sync_server_settings,
+    icon: Icons.dns_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'sync.webdav.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.webdav_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.webDav,
+            builder: (SettingsContext ctx) =>
+                _WebDavConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.ftp_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.ftp,
+            builder: (SettingsContext ctx) =>
+                _FtpConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.sftp_config',
+            icon: Icons.dns_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.sftp,
+            builder: (SettingsContext ctx) =>
+                _SftpConfigWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
 /// 桌面端「数据存储位置」小节（TODO-935 E2）。历史上挂在同步备份大类尾部，
 /// 2026-07-26 用户拍板挪出同步备份（数据根是设备级存储配置，与备份无关），
 /// 2026-08-22「存储」大类落地后再从「系统」挪到「存储」——与磁盘占用同页：
@@ -424,9 +461,10 @@ SettingsDestination buildSyncBackupDestination() {
 /// DataRootMigrator 整目录迁移 + 迁移成功后自动重启。
 SettingsSection buildDataStorageLocationSection() {
   return SettingsSection(
+    id: 'storage.location.section',
+    presentation: SettingsSectionPresentation.alwaysExpanded,
     title: t.settings_section_data_storage,
     visible: (SettingsContext ctx) => isDesktopPlatform,
-    collapsedByDefault: true,
     items: <SettingsItem>[
       SettingsCustomItem(
         id: 'sync.data_storage_location',
@@ -448,6 +486,12 @@ SettingsDestination buildInterconnectDestination() {
       _syncSettings(ctx).interconnectEnabled;
   return SettingsDestination(
     id: SettingsDestinationId.interconnect,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.interconnect,
+      c.appModel.moduleVisibility,
+    ),
     title: t.settings_destination_interconnect,
     summary: t.interconnect_summary,
     icon: Icons.devices_outlined,
@@ -457,6 +501,8 @@ SettingsDestination buildInterconnectDestination() {
       // 哪台连接、角色互斥）——此前整页没有任何地方交代这一点，用户面对平铺的
       // client/host 两大区不知道该在哪台设备上动哪个开关。
       SettingsSection(
+        id: 'interconnect.enabled.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         footer: t.interconnect_enable_footer,
         items: <SettingsItem>[
           SettingsSwitchItem(
@@ -471,23 +517,26 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // 连接到其他设备：client 连接配置（URL/token/配对）+ LAN 自动发现。
-      // item id 沿用 'sync.' 前缀（历史命名，非持久化 key，保持稳定便于排查）。
+      // 连接到其他设备：client 连接配置（URL/token/配对）+ LAN 自动发现，整块挪进
+      // 子页「配对与设备」（C2）——对端列表与 LAN 发现是整页最高的两个 widget，正是
+      // BUG-037 说的高度悬殊来源；主页只留一行带实时摘要的入口。
       SettingsSection(
+        id: 'interconnect.client.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.interconnect_section_client,
         visible: interconnectActive,
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.hibiki_server_config',
+          SettingsNavigationItem(
+            id: 'interconnect.devices',
+            title: t.interconnect_devices_page,
+            subtitle: t.interconnect_devices_hint,
+            // 有对端就报数量，没有就留提示（告诉用户子页里能做什么）。
+            subtitleBuilder: (SettingsContext ctx) {
+              final int n = _syncSettings(ctx).peerCount;
+              return n == 0 ? null : t.interconnect_devices_paired_count(n: n);
+            },
             icon: Icons.devices_outlined,
-            builder: (SettingsContext ctx) =>
-                _FushiServerConfigWidget(settingsContext: ctx),
-          ),
-          SettingsCustomItem(
-            id: 'sync.lan_devices',
-            icon: Icons.wifi_find_outlined,
-            builder: (SettingsContext ctx) =>
-                _LanDiscoveryWidget(settingsContext: ctx),
+            child: _buildInterconnectDevicesPage,
           ),
         ],
       ),
@@ -496,6 +545,8 @@ SettingsDestination buildInterconnectDestination() {
       // 默认全关：用户开互联只为远端看/读时不会被自动上传裹挟，想传哪类自己勾。与云备份
       // 上传开关同为 OUTBOUND，host 模式（本机做服务端，client 往它推）无 outbound → 隐藏。
       SettingsSection(
+        id: 'interconnect.upload.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.interconnect_upload_section,
         footer: t.interconnect_upload_section_footer,
         visible: (SettingsContext ctx) =>
@@ -510,8 +561,9 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectSyncContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectSyncContent = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectSyncContentEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncContentEnabled(value);
             },
           ),
           SettingsSwitchItem(
@@ -523,9 +575,27 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectSyncDictionary,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectSyncDictionary = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectSyncDictionaryEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncDictionaryEnabled(value);
             },
+          ),
+          // BUG-2494：互联页没有任何「把对端的词典拉下来」的入口——上面那个开关虽然
+          // 实际驱动的是双向 union，但文案是「上传」，用户不会把它当成下载；云备份页
+          // 那行「词典 · 传输 ▾」在同步方式=互联时被藏掉、且 runManualAssetTransfer
+          // 显式跳过互联通道。这里给互联通道自己一行显式的上传/下载动作，跑在
+          // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
+          SettingsCustomItem(
+            id: 'interconnect.dictionary_transfer',
+            searchTitle: t.sync_asset_dictionary,
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              title: t.sync_asset_dictionary,
+              icon: Icons.menu_book_outlined,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
           ),
           SettingsSwitchItem(
             id: 'interconnect.upload_audiobook_files',
@@ -536,8 +606,9 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectSyncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectSyncAudioBookFiles = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectSyncAudioBookFilesEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncAudioBookFilesEnabled(value);
             },
           ),
           SettingsSwitchItem(
@@ -549,8 +620,9 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectSyncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectSyncVideoFiles = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectSyncVideoFilesEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncVideoFilesEnabled(value);
             },
           ),
         ],
@@ -561,6 +633,8 @@ SettingsDestination buildInterconnectDestination() {
       // 在跟着云备份的「同步统计」无条件流动，只是用户看不见也关不掉）。混在一起会
       // 让那句脚注当场变成假话。
       SettingsSection(
+        id: 'interconnect.share.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.interconnect_share_section,
         footer: t.interconnect_share_section_footer,
         visible: (SettingsContext ctx) =>
@@ -575,8 +649,9 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectSyncStats,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectSyncStats = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectSyncStatsEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncStatsEnabled(value);
             },
           ),
           SettingsSwitchItem(
@@ -588,8 +663,9 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectSyncFavorites,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectSyncFavorites = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectSyncFavoritesEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncFavoritesEnabled(value);
             },
           ),
         ],
@@ -601,6 +677,8 @@ SettingsDestination buildInterconnectDestination() {
       //     条件、目标设备、失效条件全由互联决定，互联关掉时在制卡页是个纯死开关）。
       //   · 用互联做备份后端：把云备份通道也指向对端（详见 _InterconnectBackupBackendWidget）。
       SettingsSection(
+        id: 'interconnect.delegate.section',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.interconnect_section_delegate,
         visible: (SettingsContext ctx) =>
             interconnectActive(ctx) && !_isHostingInterconnect(ctx),
@@ -634,8 +712,9 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectServiceConfigSync,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectServiceConfigSync = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectServiceConfigSyncEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectServiceConfigSyncEnabled(value);
             },
           ),
           // 「配置文件」（Profile）双向搬运：用户诉求是把一台设备调好的配置搬到另一
@@ -649,9 +728,9 @@ SettingsDestination buildInterconnectDestination() {
             icon: Icons.settings_backup_restore_outlined,
             builder: (SettingsContext ctx) =>
                 _InterconnectProfileTransferWidget(
-              settingsContext: ctx,
-              direction: _ProfileTransferDirection.upload,
-            ),
+                  settingsContext: ctx,
+                  direction: _ProfileTransferDirection.upload,
+                ),
           ),
           SettingsCustomItem(
             id: 'interconnect.profile_download',
@@ -659,18 +738,108 @@ SettingsDestination buildInterconnectDestination() {
             icon: Icons.settings_backup_restore_outlined,
             builder: (SettingsContext ctx) =>
                 _InterconnectProfileTransferWidget(
-              settingsContext: ctx,
-              direction: _ProfileTransferDirection.download,
-            ),
+                  settingsContext: ctx,
+                  direction: _ProfileTransferDirection.download,
+                ),
           ),
         ],
       ),
-      // 本机作为服务器：host 模式开关（与 client 角色互斥，见 _SyncSettingsState
-      // 的 roleRevision 互斥锁）。
+      // 本机作为服务器：host 模式（开关 + 端口 + TLS + token + 已配对列表）整块挪进
+      // 子页「主机服务」（C2）；主页只留一行带运行状态的入口。角色互斥见
+      // _SyncSettingsState 的 roleRevision。
       SettingsSection(
+        id: 'interconnect.host.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.sync_section_host_server,
         footer: t.sync_section_host_server_footer,
         visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'interconnect.host',
+            title: t.interconnect_host_page,
+            subtitle: t.interconnect_host_hint,
+            subtitleBuilder: (SettingsContext ctx) {
+              final _SyncSettingsState s = _syncSettings(ctx);
+              return s.serverEnabled
+                  ? t.interconnect_host_running(port: s.serverPort)
+                  : t.interconnect_host_off;
+            },
+            icon: Icons.router_outlined,
+            child: _buildInterconnectHostPage,
+          ),
+        ],
+      ),
+      // 互联相关配置（远端词典查询 / 音频来源 / 远端占位卡）散落在查词、同步分类，
+      // 逻辑上都作用于互联对端。此前在这里镜像三行同一 builder；用户拍板（2026-09-06）
+      // 改成一行指路——不再重复渲染开关，点进去落到查词分类并定位到远端查词那一行。
+      SettingsSection(
+        id: 'interconnect.related.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.interconnect_section_related,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'interconnect.related_settings',
+            title: t.interconnect_related_entry,
+            subtitle: t.interconnect_related_entry_hint,
+            icon: Icons.travel_explore_outlined,
+            onTap: (SettingsContext ctx) async {
+              SettingsSearchReveal.pendingItemId = 'lookup.remote_lookup';
+              await pushSettingsPage(
+                ctx,
+                (_) =>
+                    SettingsDetailPage(destination: buildLookupDestination()),
+              );
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「配对与设备」子页（C2）：client 连接配置（URL/token/配对）+ LAN 自动发现，
+/// 两个 widget 原样搬入。item id 沿用 'sync.' 前缀（历史命名，非持久化 key，
+/// 保持稳定便于排查）。
+SettingsDestination _buildInterconnectDevicesPage() {
+  return SettingsDestination(
+    id: SettingsDestinationId.interconnect,
+    title: t.interconnect_devices_page,
+    icon: Icons.devices_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'interconnect.server_config.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'sync.hibiki_server_config',
+            icon: Icons.devices_outlined,
+            builder: (SettingsContext ctx) =>
+                _FushiServerConfigWidget(settingsContext: ctx),
+          ),
+          SettingsCustomItem(
+            id: 'sync.lan_devices',
+            icon: Icons.wifi_find_outlined,
+            builder: (SettingsContext ctx) =>
+                _LanDiscoveryWidget(settingsContext: ctx),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「主机服务」子页（C2）：host 模式开关 + 端口 + TLS + token + 已配对列表，以及
+/// host 侧「配置文件」读写许可，原样搬入。
+SettingsDestination _buildInterconnectHostPage() {
+  return SettingsDestination(
+    id: SettingsDestinationId.interconnect,
+    title: t.interconnect_host_page,
+    icon: Icons.router_outlined,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'interconnect.server_mode.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.server_mode',
@@ -690,24 +859,11 @@ SettingsDestination buildInterconnectDestination() {
                 _syncSettings(ctx).interconnectProfileTransfer,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).interconnectProfileTransfer = value;
-              await SyncRepository(ctx.appModel.database)
-                  .setInterconnectProfileTransferEnabled(value);
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectProfileTransferEnabled(value);
             },
           ),
-        ],
-      ),
-      // 互联相关配置镜像：这些项散落在查词/同步分类，但逻辑上都作用于互联对端
-      // （远端词典查询直连对端词典、音频来源含互联音频源 fushiRemote、远端占位卡
-      // 渲染对端条目）。在互联分类也提供同一入口，用户配互联时一站式可改（原分类
-      // 保留，共享同一 builder 单一真相源，非复制）。与其它互联 section 一致，仅在
-      // 互联被选为同步方式时可见。
-      SettingsSection(
-        title: t.interconnect_section_related,
-        visible: interconnectActive,
-        items: <SettingsItem>[
-          buildRemoteDictionaryLookupItem(),
-          buildManageAudioSourcesItem(),
-          buildShowRemoteEntriesItem(),
         ],
       ),
     ],
@@ -743,6 +899,17 @@ SettingsItem buildShowRemoteEntriesItem() {
 // dispose 而失效，从根本上消除 "重建即回退默认值" 的竞态窗口。
 _SyncSettingsState? _activeSyncState;
 AppModel? _activeSyncOwner;
+
+/// 测试钩子：丢掉按 AppModel 缓存的同步设置内存态，并解除它挂在
+/// [SyncRepository.interconnectEnabledRevision] 上的全局监听。每个用例各建一份
+/// AppModel + 内存库时，上一份状态的监听会在下一个用例的 setInterconnectEnabled
+/// 广播里去读已关闭的库（生产里 AppModel 与库同寿命，不会触发）。
+@visibleForTesting
+void resetSyncSettingsStateForTest() {
+  _activeSyncState?.dispose();
+  _activeSyncState = null;
+  _activeSyncOwner = null;
+}
 
 /// Whether this device is actively HOSTING a Hibiki interconnect server — the
 /// only role with no outbound "sync now" / "compare" (BUG-084). Requires BOTH
@@ -780,12 +947,13 @@ void _showSnackBar(BuildContext context, String message) {
 
 class _SyncSettingsState {
   _SyncSettingsState(this._settingsContext)
-      : _repo = SyncRepository(_settingsContext.appModel.database) {
+    : _repo = SyncRepository(_settingsContext.appModel.database) {
     // BUG-1560：互联总开关还有第二个写入口（库页来源视图的互联虚拟来源行）。
     // 本状态按 AppModel 缓存、[load] 一辈子只跑一次，不订阅就永远停在开页那一刻
     // 的值——开关本身和互联各 section 的显隐一起显示旧值，直到重启 app。
-    SyncRepository.interconnectEnabledRevision
-        .addListener(_onInterconnectEnabledChanged);
+    SyncRepository.interconnectEnabledRevision.addListener(
+      _onInterconnectEnabledChanged,
+    );
   }
 
   final SettingsContext _settingsContext;
@@ -814,6 +982,7 @@ class _SyncSettingsState {
   // apikey 同步设定重设计（2026-08-17）：service-config（host 的外部服务 API key）
   // 接收开关。默认 true = 既有行为；此前这条通道无 UI 无开关，用户不可见也关不掉。
   bool interconnectServiceConfigSync = true;
+
   /// host 侧：是否允许已配对设备读写本机「配置文件」（Profile）。默认 false。
   bool interconnectProfileTransfer = false;
   bool _loaded = false;
@@ -825,7 +994,25 @@ class _SyncSettingsState {
   /// truth replacing the previous "loaded once in initState" stale state.
   final ValueNotifier<int> clientConfigRevision = ValueNotifier<int>(0);
 
-  void reloadClientConfig() => clientConfigRevision.value++;
+  /// 主页「配对与设备」入口行的实时摘要（C2）：已配对对端数。随 [load] 读入，
+  /// 配对/删除对端后经 [reloadClientConfig] 重读。
+  int peerCount = 0;
+
+  /// 主页「主机服务」入口行的实时摘要（C2）：服务端口。随 [load] 读入，改端口
+  /// 时由 _ServerModeWidget 就地更新。
+  int serverPort = 0;
+
+  void reloadClientConfig() {
+    clientConfigRevision.value++;
+    unawaited(_reloadPeerCount());
+  }
+
+  Future<void> _reloadPeerCount() async {
+    final int count = (await _repo.getFushiClientUrls()).length;
+    if (peerCount == count) return;
+    peerCount = count;
+    _settingsContext.refresh();
+  }
 
   /// Mutual-exclusion role state for the Hibiki interconnect: a device may be a
   /// host (server on, others connect to it) OR a client (connected outward to a
@@ -877,8 +1064,9 @@ class _SyncSettingsState {
   /// 解除全局监听。缓存被换 owner 顶掉时调用；两个 ValueNotifier 仍有 widget 在
   /// 监听（它们各自在 State.dispose 里摘钩），故这里**不**dispose 它们。
   void dispose() {
-    SyncRepository.interconnectEnabledRevision
-        .removeListener(_onInterconnectEnabledChanged);
+    SyncRepository.interconnectEnabledRevision.removeListener(
+      _onInterconnectEnabledChanged,
+    );
   }
 
   Future<void> load() async {
@@ -894,21 +1082,24 @@ class _SyncSettingsState {
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
-      interconnectSyncDictionary =
-          await _repo.isInterconnectSyncDictionaryEnabled();
-      interconnectSyncAudioBookFiles =
-          await _repo.isInterconnectSyncAudioBookFilesEnabled();
-      interconnectSyncVideoFiles =
-          await _repo.isInterconnectSyncVideoFilesEnabled();
+      interconnectSyncDictionary = await _repo
+          .isInterconnectSyncDictionaryEnabled();
+      interconnectSyncAudioBookFiles = await _repo
+          .isInterconnectSyncAudioBookFilesEnabled();
+      interconnectSyncVideoFiles = await _repo
+          .isInterconnectSyncVideoFilesEnabled();
       interconnectSyncStats = await _repo.isInterconnectSyncStatsEnabled();
-      interconnectSyncFavorites =
-          await _repo.isInterconnectSyncFavoritesEnabled();
-      interconnectServiceConfigSync =
-          await _repo.isInterconnectServiceConfigSyncEnabled();
-      interconnectProfileTransfer =
-          await _repo.isInterconnectProfileTransferEnabled();
+      interconnectSyncFavorites = await _repo
+          .isInterconnectSyncFavoritesEnabled();
+      interconnectServiceConfigSync = await _repo
+          .isInterconnectServiceConfigSyncEnabled();
+      interconnectProfileTransfer = await _repo
+          .isInterconnectProfileTransferEnabled();
       serverEnabled = await _repo.isServerEnabled();
-      hasClientConnection = (await _repo.getFushiClientUrls()).isNotEmpty;
+      serverPort = await _repo.getServerPort();
+      final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
+      hasClientConnection = urls.isNotEmpty;
+      peerCount = urls.length;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

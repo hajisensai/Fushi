@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 刮削封面落地：把合并层算出的 `coverUrl`（`galgame_metadata_merge.dart`）真正
 /// 下载落盘。此前刮削只落元数据快照，`coverUrl` 无人消费——用户刮完元数据齐了、

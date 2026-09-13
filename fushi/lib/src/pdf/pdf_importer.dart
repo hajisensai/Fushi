@@ -5,12 +5,15 @@ import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
 /// PDF 阅读器（Phase 1）的导入器：把一份 PDF 作为「第二种书」落进 `EpubBooks`
 /// 表（`format='pdf'`），复用整套书架 / 进度 / 删除管线，而非另建平行表。
@@ -67,9 +70,9 @@ class PdfImporter {
     }
 
     // 解析标题冲突 → bookKey（与 EpubImporter 同口径：净化标题即主键，保证本地唯一）。
-    final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
+    final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
     final String storedTitle = await resolveDuplicateTitle(
-      existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
+      existingTitles: existingBooks.map((EpubBookMeta b) => b.title).toList(),
       proposedTitle: title,
       policy: policy,
     );
@@ -81,11 +84,20 @@ class PdfImporter {
       // 把 PDF 拷进书目录（原文件在缓存/外部目录，阅读器需稳定内部副本）。
       await File(filePath).copy(p.join(bookDir, kPdfFileName));
 
+      // BUG-2496：封面走收口（校验完整可解码 + 原子写 + 驱逐）。pdfrx 渲染出的字节
+      // 理应是完整 PNG，但栅格化失败/半截时不能让整本 PDF 导入失败——记诊断、
+      // coverPath 留空，书架回落占位图。
       String? coverRel;
       if (coverPng != null) {
-        await File(p.join(bookDir, kCoverFileName))
-            .writeAsBytes(coverPng, flush: true);
-        coverRel = kCoverFileName;
+        try {
+          await MediaCoverService.applyCoverBytes(
+            bytes: coverPng,
+            destPath: p.join(bookDir, kCoverFileName),
+          );
+          coverRel = kCoverFileName;
+        } on CoverImageInvalidException catch (e) {
+          ErrorLogService.instance.logDiagnostic('PdfImporter.cover', e);
+        }
       }
 
       final int importedAtMs = DateTime.now().millisecondsSinceEpoch;

@@ -345,8 +345,9 @@ void main() {
         () {
       final String js = read('assets/popup/popup.js');
       // 取 .glossary-content 分支体（到下一个分支 .entry 卡片判定之前）。
-      final int start =
-          js.indexOf("if (target?.closest('.glossary-content')) {");
+      // BUG-2460 起该分支也覆盖汉字卡片正文（.kanji-card-value / -meanings）。
+      final int start = js.indexOf(
+          "if (target?.closest('.glossary-content, .kanji-card-value, .kanji-card-meanings')) {");
       expect(start, greaterThanOrEqualTo(0),
           reason: 'glossary-content branch present');
       final int end = js.indexOf("if (target?.closest('.entry')", start);

@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi/src/utils/misc/local_audio_db.dart' show LocalAudioDb;
+
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
-import 'package:fushi/src/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -283,6 +285,8 @@ void main() {
 
     expect(manager.entries, isEmpty); // 条目已移除
     expect(original.existsSync(), isTrue); // 但用户原文件绝不被删
+    // 绑定时的后台索引探测仍可持有外部文件；测试清理必须等待其结束。
+    await LocalAudioDb.waitForPendingIndexing(original.path);
     await ext.delete(recursive: true);
   });
 

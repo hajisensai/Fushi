@@ -324,14 +324,27 @@ const List<double> _kFontScaleSteps = <double>[
 /// 的 `videoSubtitleListFontScaleIndex` 默认值一致。
 const int _kDefaultFontScaleIndex = 1;
 
-/// 字幕列表行内点击命中的字符：被点 grapheme 下标 + 该字符的全局屏幕矩形。
-/// 供 [VideoSubtitleJumpPanel.onLookupCue] 精确查词（TODO-340）。
-typedef SubtitleListCharHit = ({int graphemeIndex, Rect charRect});
+/// 字幕列表行内点击命中的字符：被点 grapheme 下标 + 该字符的全局屏幕矩形 +
+/// 查词浮层锚点矩形。供 [VideoSubtitleJumpPanel.onLookupCue] 精确查词（TODO-340）。
+///
+/// [charRect] 是被点字符本身的盒（命中语义、去重与调试用）；[anchorRect] 是喂给
+/// 查词浮层定位的锚（BUG-2367，见 [subtitleListLookupAnchorRect]）。两者只在
+/// 被查词跨行时不同。
+typedef SubtitleListCharHit = ({
+  int graphemeIndex,
+  Rect charRect,
+  Rect anchorRect,
+});
 
-/// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形。
-/// 比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier 直接切换查词
-/// （BUG-874）。
-typedef SubtitleListHit = ({AudioCue cue, int graphemeIndex, Rect charRect});
+/// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形 +
+/// 浮层锚点矩形。比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier
+/// 直接切换查词（BUG-874）。
+typedef SubtitleListHit = ({
+  AudioCue cue,
+  int graphemeIndex,
+  Rect charRect,
+  Rect anchorRect,
+});
 
 /// 给上层（查词浮层的 dismiss barrier）按全局坐标反查「点到的是字幕列表哪行哪个字符」
 /// 用的句柄。[VideoSubtitleJumpPanel] 每帧 build 把命中实现绑进来；上层持有同一对象、
@@ -396,6 +409,33 @@ Rect _subtitleUnionBoxes(List<TextBox> boxes) {
   return rect;
 }
 
+/// 查词浮层的锚点矩形（BUG-2367）：被点字位 [graphemeIndex] 起、直到句末的所有字形盒
+/// 并集（[rects] 是本行每个 grapheme 的渲染盒，行内坐标）。
+///
+/// 浮层定位的不变式是「绝不盖住被查词」（BUG-098，`calcPopupPosition` 只按锚点的
+/// top/bottom 往上或往下贴）。而**被查词的长度在推浮层时还不知道**——查询串恒是
+/// 「被点字位 → 句末」，引擎回报的最长匹配（`matchedRunes`）要等查完才有。若拿被点
+/// 的**单个字**当锚，词被换行拆开时第二排就不在锚里，浮层贴在第一排下方正好压住它
+/// （列表面板窄、行文本满宽，长句常年换行，这是常态不是边角）。
+///
+/// 取「被点字位到句末」的并集即可让锚**必然包含**被查词——匹配串恒是这段的前缀，
+/// 不需要知道它到底多长，也不需要查完再挪浮层（挪＝肉眼可见的跳）。纵向只会多让出
+/// 被点字位之后的那几行，横向不影响（横排避让只读 top/bottom）。
+///
+/// 拉丁词点在词中间时起点会回退到词首（`subtitleLookupSpan`），但 Flutter 软换行不
+/// 在单词内部断行，词首与被点字母恒在同一视觉行，锚的上边界因此不会漏。
+@visibleForTesting
+Rect subtitleListLookupAnchorRect(List<Rect> rects, int graphemeIndex) {
+  if (graphemeIndex < 0 || graphemeIndex >= rects.length) return Rect.zero;
+  Rect anchor = rects[graphemeIndex];
+  for (int i = graphemeIndex + 1; i < rects.length; i++) {
+    final Rect r = rects[i];
+    if (r.isEmpty) continue;
+    anchor = anchor.expandToInclude(r);
+  }
+  return anchor;
+}
+
 /// 在一个已布局的行文本 [RenderParagraph] 上，按行内 [localPosition] 反查命中的字符
 /// （BUG-874，供 [VideoSubtitleListHitTester] 用）。逻辑与 [VideoSubtitleJumpPanel] 行内 tap
 /// 的 `hitAt` 同构（同一 grapheme 映射 + 选区盒并集 + 1px 容差），只是取位置 / 选区盒改用
@@ -444,9 +484,14 @@ SubtitleListCharHit? subtitleListCharHitFromParagraph(
     );
   }
   final Offset globalOrigin = globalPosition - localPosition;
+  // BUG-2367：浮层锚取「被点字位→句末」并集（含容差扩过的 localRect），保证被查词
+  // 换行后的第二排也在锚里、不会被浮层压住。
+  final Rect anchor = subtitleListLookupAnchorRect(rects, graphemeIndex)
+      .expandToInclude(localRect);
   return (
     graphemeIndex: graphemeIndex,
     charRect: localRect.shift(globalOrigin),
+    anchorRect: anchor.shift(globalOrigin),
   );
 }
 
@@ -931,7 +976,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _lastRowHoverPos = event.position;
     _lastRowHoverCueKey = hit.cue;
     _lastRowHoverGrapheme = hit.graphemeIndex;
-    onLookup(hit.cue, hit.graphemeIndex, hit.charRect);
+    onLookup(hit.cue, hit.graphemeIndex, hit.anchorRect);
   }
 
   @override
@@ -1013,6 +1058,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         cue: cue,
         graphemeIndex: hit.graphemeIndex,
         charRect: hit.charRect,
+        anchorRect: hit.anchorRect,
       );
     }
     return null;
@@ -1986,9 +2032,15 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               );
             }
             final Offset globalOrigin = globalPosition - localPosition;
+            // BUG-2367：浮层锚 = 被点字位→句末的字形盒并集（见
+            // [subtitleListLookupAnchorRect]），跨行词的第二排不再被浮层压住。
+            final Rect anchor =
+                subtitleListLookupAnchorRect(rects, graphemeIndex)
+                    .expandToInclude(localRect);
             return (
               graphemeIndex: graphemeIndex,
               charRect: localRect.shift(globalOrigin),
+              anchorRect: anchor.shift(globalOrigin),
             );
           } finally {
             painter.dispose();
@@ -2011,7 +2063,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             // 用返回的 charRect 定位，不再额外 `contains` 二次收窄（那会把容差内命中又判成
             // 空白误退 seek，正是「点了不出词」的一半病因）。
             if (hit != null) {
-              onLookup(cue, hit.graphemeIndex, hit.charRect);
+              onLookup(cue, hit.graphemeIndex, hit.anchorRect);
               return;
             }
             widget.onTapCue(cue);

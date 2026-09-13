@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -10,10 +11,10 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
-import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
@@ -22,7 +23,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -239,6 +240,35 @@ void main() {
     expect(find.text(t.home_activity), findsOneWidget);
   });
 
+  testWidgets('窄屏（420）单列：「最近添加」排在「继续」与「活动」之间', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 仅导入（无播放断点）：让「最近添加」区块有内容而非被空库折叠。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('recent-narrow'),
+      title: const Value('窄屏新导入'),
+      videoPath: const Value('/abs/recent-narrow.mp4'),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+
+    // 单列里三个标题的纵坐标必须严格递增：活动时间轴天然很长，最近添加若压在
+    // 它下面，用户得滚到底才看得见新入库条目。
+    double top(String text) =>
+        tester.getTopLeft(find.text(text, skipOffstage: false)).dy;
+    final double continueY = top(t.home_continue);
+    final double recentY = top(t.home_recently_added);
+    final double activityY = top(t.home_activity);
+    expect(continueY, lessThan(recentY));
+    expect(recentY, lessThan(activityY));
+  });
+
   testWidgets('宽屏 1280 + 真实载入数据（异步回填后）：下段两列渲染不抛无限高度',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
@@ -391,6 +421,37 @@ void main() {
     // 散卡：标题=书名，副标题=「阅读 · 50%」。
     expect(find.text('横滑测试书'), findsOneWidget);
     expect(find.text('${t.home_filter_read} · 50%'), findsOneWidget);
+
+    // 悬停绘制须超出卡片原始边界，同时完整落在列表视口内，不被截平。
+    final Finder card = find.ancestor(
+      of: find.text('横滑测试书'),
+      matching: find.byType(InkWell),
+    ).first;
+    final Finder row = find.ancestor(
+      of: card,
+      matching: find.byType(ListView),
+    ).first;
+    final Rect viewport = tester.getRect(row);
+    final Rect originalRect = tester.getRect(card);
+    final Size originalSize = tester.getSize(card);
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('横滑测试书')));
+    await pumpDashboard(tester);
+    final Rect liftedRect = tester.getRect(card);
+    expect(liftedRect.top, lessThan(originalRect.top));
+    expect(liftedRect.left, lessThan(originalRect.left));
+    expect(liftedRect.top, greaterThanOrEqualTo(viewport.top - 0.01));
+    expect(liftedRect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+    expect(liftedRect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+    expect(liftedRect.right, lessThanOrEqualTo(viewport.right + 0.01));
+    expect(tester.getSize(card), originalSize);
+    await mouse.moveTo(Offset.zero);
+    await pumpDashboard(tester);
+    expect(tester.getRect(card), originalRect);
+    await mouse.removePointer();
   });
 
   testWidgets('显示名统一：合集成员的继续卡标题=合集名，活动时间轴拼「合集名 - 名字」',
@@ -557,11 +618,19 @@ void main() {
     expect(opened.last, ('v1', cid));
     // 旧行为（只把首页切到视频 tab）不再发生。
     expect(homeShellTabNotifier.value, tabBefore);
-    // 活动条前置已是视频封面缩略槽（68×40，占位图标兜底），不再是裸 20px 图标。
+    // 活动条前置已是视频封面缩略槽（占位图标兜底），不再是裸 20px 图标；且槽是
+    // **竖版 40×56**，与同列表的书/游戏同槽——刮削回来的 2:3 海报塞进旧的 68×40
+    // 横槽会被 PortraitCoverImage 判为不合槽，缩成模糊垫底里的一小条。
+    expect(
+      find.byWidgetPredicate(
+          (Widget w) => w is SizedBox && w.width == 40 && w.height == 56),
+      findsWidgets,
+    );
     expect(
       find.byWidgetPredicate(
           (Widget w) => w is SizedBox && w.width == 68 && w.height == 40),
-      findsWidgets,
+      findsNothing,
+      reason: '视频活动条不得回退横版槽（竖版海报会被缩成模糊垫底里的一小条）',
     );
     expect(tester.takeException(), isNull);
   });
@@ -651,11 +720,49 @@ void main() {
         reason: '${row.$1} 行的视频卡应随横版封面自适应成 16:9 横槽，'
             '恒竖槽会把 16:9 抽帧模糊垫底成白条',
       );
+      await tester.ensureVisible(card);
+      await pumpDashboard(tester);
+      final Finder list = find.ancestor(
+        of: card,
+        matching: find.byType(ListView),
+      ).first;
+      final Rect viewport = tester.getRect(list);
+      final Rect original = tester.getRect(card);
+      final TestGesture mouse =
+          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(card));
+      await pumpDashboard(tester);
+      final Rect lifted = tester.getRect(card);
+      expect(lifted.width, greaterThan(original.width));
+      expect(lifted.top, greaterThanOrEqualTo(viewport.top - 0.01));
+      expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
+      expect(lifted.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+      expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
+      await mouse.removePointer();
+      await pumpDashboard(tester);
     }
   });
 
   /// BUG-1111/BUG-1112 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
   /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
+  /// 让本用例以 **Windows** 语义组装 [AppModel]。
+  ///
+  /// galgame 只做 Windows 端，判据收在 [ModuleId.availableOn]（`games => isWindows`），
+  /// 而仪表盘自「功能模块关闭全部入口」那批起会按 [ModuleVisibility] 过滤条目种类。
+  /// 于是「游戏出现在继续区 / 最近添加 / 活动时间轴」这一整类断言**只在 Windows 上
+  /// 成立**：本机是 Windows 所以全绿，CI 跑 Linux 所以全红（develop 上实测 4 条）。
+  ///
+  /// 更阴的是另外两条只做否定断言的用例（封面反查、活动身份门禁）：在 Linux 上游戏
+  /// 整块不渲染，`findsNothing` 恒真、照样绿，等于在 CI 上从来没跑过。所以凡是喂了
+  /// 游戏数据的用例一律显式声明平台，不靠宿主平台碰运气。
+  void useWindowsPlatform() {
+    platformServices = testPlatformServices(isWindows: true, isDesktop: true);
+    appModel = AppModel(platformServices)
+      ..wireDatabaseForTesting(db)
+      ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
+  }
+
   Future<void> seedGame({
     required String id,
     required String name,
@@ -683,6 +790,7 @@ void main() {
   }
 
   testWidgets('BUG-1111：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -731,6 +839,7 @@ void main() {
 
   testWidgets('BUG-1111：同合集的多个游戏在「继续」区收敛成一张卡（与视频侧同口径）',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -771,6 +880,7 @@ void main() {
   });
 
   testWidgets('BUG-1111：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -793,6 +903,7 @@ void main() {
 
   testWidgets('BUG-1112/BUG-1284：旧 exePath 活动身份也能反查并渲染游戏封面',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -849,6 +960,7 @@ void main() {
 
   testWidgets('BUG-1412：活动身份门禁——不因重复标题、deleted id 或脏 key 误绑现存游戏封面',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -931,6 +1043,7 @@ void main() {
 
   testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',
       (WidgetTester tester) async {
+    useWindowsPlatform();
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);

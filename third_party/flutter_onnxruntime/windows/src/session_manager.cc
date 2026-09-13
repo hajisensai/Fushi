@@ -20,11 +20,16 @@ SessionManager::~SessionManager() {
   sessions_.clear();
 }
 
-std::string SessionManager::createSession(const char *model_path, const Ort::SessionOptions &session_options) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  // Generate a session ID
-  std::string session_id = generateSessionId();
+std::string SessionManager::createSession(const char *model_path, const Ort::SessionOptions &session_options,
+                                          bool is_gpu) {
+  // Only the id allocation and the final insert take the lock: building a
+  // session can take seconds (static-shape DirectML graphs), and holding the
+  // lock that long would stall every run on the other worker queue.
+  std::string session_id;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    session_id = generateSessionId();
+  }
 
   try {
     // On Windows, need to convert the model path from char* to wchar_t*
@@ -39,12 +44,13 @@ std::string SessionManager::createSession(const char *model_path, const Ort::Ses
     }
 
     // Create a new session with the provided options
-    std::unique_ptr<Ort::Session> ort_session =
-        std::make_unique<Ort::Session>(env_, wide_model_path.c_str(), session_options);
+    std::shared_ptr<Ort::Session> ort_session =
+        std::make_shared<Ort::Session>(env_, wide_model_path.c_str(), session_options);
 
     // Create session info
     SessionInfo session_info;
     session_info.session = std::move(ort_session);
+    session_info.is_gpu = is_gpu;
 
     // Get input names
     Ort::AllocatorWithDefaultOptions allocator;
@@ -66,7 +72,10 @@ std::string SessionManager::createSession(const char *model_path, const Ort::Ses
     }
 
     // Store the session info
-    sessions_[session_id] = std::move(session_info);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      sessions_[session_id] = std::move(session_info);
+    }
 
     return session_id;
   } catch (const Ort::Exception &e) {
@@ -88,6 +97,12 @@ bool SessionManager::closeSession(const std::string &session_id) {
   }
 
   return false;
+}
+
+bool SessionManager::isGpuSession(const std::string &session_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = sessions_.find(session_id);
+  return it != sessions_.end() && it->second.is_gpu;
 }
 
 bool SessionManager::hasSession(const std::string &session_id) {
@@ -302,15 +317,23 @@ std::vector<Ort::Value> SessionManager::runInference(const std::string &session_
                                                      const std::vector<std::string> &input_names,
                                                      Ort::RunOptions *run_options) {
 
-  std::lock_guard<std::mutex> lock(mutex_);
   std::vector<Ort::Value> output_tensors;
 
-  auto it = sessions_.find(session_id);
-  if (it == sessions_.end()) {
-    throw Ort::Exception("Session not found", ORT_INVALID_ARGUMENT);
+  // Hold the lock only to look the session up: Run() itself may take hundreds
+  // of milliseconds and the GPU and CPU queues must be able to run at once.
+  std::shared_ptr<Ort::Session> session_ref;
+  std::vector<std::string> output_names;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session_id);
+    if (it == sessions_.end()) {
+      throw Ort::Exception("Session not found", ORT_INVALID_ARGUMENT);
+    }
+    session_ref = it->second.session;
+    output_names = it->second.output_names;
   }
 
-  Ort::Session *session = it->second.session.get();
+  Ort::Session *session = session_ref.get();
   if (!session) {
     throw Ort::Exception("Session is invalid", ORT_INVALID_ARGUMENT);
   }
@@ -331,7 +354,7 @@ std::vector<Ort::Value> SessionManager::runInference(const std::string &session_
 
   // Prepare output names
   std::vector<const char *> output_names_char;
-  for (const auto &name : it->second.output_names) {
+  for (const auto &name : output_names) {
     output_names_char.push_back(name.c_str());
   }
 

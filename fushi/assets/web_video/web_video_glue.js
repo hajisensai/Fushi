@@ -128,12 +128,33 @@
   }
   // 全屏元素换了父节点时 <style> 仍在 head 里全局生效，无需迁移。
 
+  // ── Netflix 年龄分级/内容提示 overlay（左上角 "RATED 13+ / 暴力, 自杀"）：常驻隐藏 ──
+  // BUG-2260：2026-09-08 用登录态 WebView2 探针实测，当前 DOM 是
+  //   div.watch-video--advisories-container > div.advisory-container > div.advisory >
+  //   [data-uia="advisory-content"] > h4.advisory-header
+  // 旧的 .watch-video--evidence-overlay-container / *maturity* 选择器一个都不再命中（静默失效）。
+  // Netflix 在开播和 seek 后都会重弹，制卡逐句 seek 时每张卡都可能撞上，所以不只在录制期藏，
+  // 而是 document-start 就常驻藏（本文件每份文档都重新注入，整页换集也不会丢）。
+  // 旧选择器保留作兜底，Netflix 回滚类名时仍生效。
+  var NETFLIX_ADVISORY_SELECTORS =
+    '.watch-video--advisories-container,[class*="watch-video--advisories"],' +
+    '.watch-video--evidence-overlay-container';
+  var HIDE_ADVISORY_ID = 'fushi-web-video-hide-advisory';
+  if (site() === 'netflix' && !document.getElementById(HIDE_ADVISORY_ID)) {
+    var advisoryStyle = document.createElement('style');
+    advisoryStyle.id = HIDE_ADVISORY_ID;
+    advisoryStyle.textContent = NETFLIX_ADVISORY_SELECTORS + '{display:none !important}';
+    (document.head || document.documentElement).appendChild(advisoryStyle);
+  }
+
   // 制卡重放期间隐藏站点播放器 chrome（进度条 / 按钮 / 顶栏）：Dart 驱动的 seek/pause 会让
   // 控件浮出来，cue 中点截的封面就带一条控制栏。只藏 chrome 不藏 <video>；字幕层另有开关。
+  // 注意：这段 <style> 属于当前文档，整页导航（换集 loadUrl）后就没了——Dart 侧 onLoadStop
+  // 必须按 _mineRunning 重挂（BUG-2260 第二根因），与 setNativeSubtitlesHidden 同款。
   var HIDE_CHROME_ID = 'fushi-web-video-hide-chrome';
   var HIDE_CHROME_CSS =
     '.watch-video--bottom-controls-container,.watch-video--back-container,' +
-    '.watch-video--flag-container,.watch-video--evidence-overlay-container,' +
+    '.watch-video--flag-container,' + NETFLIX_ADVISORY_SELECTORS + ',' +
     '[data-uia="player-controls"],[data-uia="controls-standard"],' +
     '.ytp-chrome-bottom,.ytp-chrome-top,.ytp-gradient-bottom,.ytp-gradient-top,' +
     '.bpx-player-control-wrap,.bpx-player-sending-bar,.vjs-control-bar,.shaka-controls-container' +

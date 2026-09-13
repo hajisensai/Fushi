@@ -10,9 +10,9 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
@@ -127,6 +127,8 @@ SettingsDestination buildLookupDestination() {
     icon: Icons.manage_search_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'lookup.section.dictionaries',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.manager,
         items: <SettingsItem>[
           SettingsNavigationItem(
@@ -152,32 +154,14 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
-          // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
-          // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
-          buildManageAudioSourcesItem(),
-          // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
-          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
-          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
-          SettingsNavigationItem(
-            id: 'lookup.browser_extension',
-            title: t.nav_browser_extension,
-            icon: Icons.extension_outlined,
-            showIcon: true,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const BrowserExtensionPage(),
-              );
-            },
-          ),
         ],
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
       // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、
       // onChanged、ReaderPlacement 全部不变。
       SettingsSection(
+        id: 'lookup.section.trigger',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_trigger,
         items: <SettingsItem>[
           SettingsSwitchItem(
@@ -192,8 +176,9 @@ SettingsDestination buildLookupDestination() {
             },
           ),
           // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
-          // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。重进
-          // 阅读器章节后注入端生效（window.scanNonJapaneseText）。
+          // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。开着的
+          // 阅读器经 notifyReaderSettingsChanged → updateLive 热更新
+          // window.scanNonJapaneseText（BUG-2471），不必重进章节。
           SettingsSwitchItem(
             id: 'lookup.scan_non_japanese',
             title: t.scan_non_japanese_text,
@@ -203,7 +188,7 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.scanNonJapaneseText,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setScanNonJapaneseText(value);
-              settingsContext.refresh();
+              notifyReaderSettingsChanged(settingsContext);
             },
           ),
           // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文
@@ -292,8 +277,9 @@ SettingsDestination buildLookupDestination() {
       //（弹窗容器的尺寸与交互，含从行为区移来的滑动关闭手势对——它们改的是
       // 弹窗窗口的关闭手势，与尺寸/停靠为伍）。
       SettingsSection(
+        id: 'lookup.section.content',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_content,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'lookup.collapse_dictionaries',
@@ -409,6 +395,21 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 对齐 Hoshi Reader Android 的 "Compact Glossaries"。popup.js 的
+          // createDictionaryBlock 一直按 window.compactGlossaries 产出紧凑释义 CSS，
+          // 但此前没有任何偏好写入那个全局（恒 undefined = 恒关）；这里补上开关。
+          SettingsSwitchItem(
+            id: 'lookup.compact_glossaries',
+            title: t.popup_compact_glossaries,
+            subtitle: t.popup_compact_glossaries_hint,
+            icon: Icons.compress,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.compactGlossaries,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              settingsContext.appModel.toggleCompactGlossaries();
+              settingsContext.refresh();
+            },
+          ),
           SettingsNumberItem(
             id: 'lookup.dictionary_font_size',
             title: t.dictionary_font_size,
@@ -431,8 +432,13 @@ SettingsDestination buildLookupDestination() {
       ),
       // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
       SettingsSection(
+        id: 'lookup.section.audio',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_audio,
         items: <SettingsItem>[
+          // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
+          // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
+          buildManageAudioSourcesItem(),
           SettingsSwitchItem(
             id: 'lookup.auto_read_on_lookup',
             title: t.auto_read_on_lookup,
@@ -481,8 +487,9 @@ SettingsDestination buildLookupDestination() {
         ],
       ),
       SettingsSection(
+        id: 'lookup.section.popup_window',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.settings_section_lookup_popup_window,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           SettingsSliderItem(
             id: 'lookup.popup_max_width',
@@ -689,6 +696,25 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
+          // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
+          // 就得连带吃下纯黑白主题。与上面两项同属查词弹窗滑关行为，紧邻摆放。
+          // 默认 true = 保持既有手感；墨水屏模式下无论本开关如何都已归零。
+          SettingsSwitchItem(
+            id: 'reading_controls.popup_dismiss_animation',
+            title: t.popup_dismiss_animation,
+            subtitle: t.popup_dismiss_animation_hint,
+            icon: Icons.animation_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 6),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.popupDismissAnimation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setPopupDismissAnimation(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
@@ -715,8 +741,27 @@ SettingsDestination buildLookupDestination() {
       // 外部集成：远程查词 / Yomitan API / texthooker——都是「让别的程序或设备
       // 参与查词」的接线项，与本机查词触发行为分开。
       SettingsSection(
+        id: 'lookup.section.integrations',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_integrations,
         items: <SettingsItem>[
+          // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
+          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
+          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
+          SettingsNavigationItem(
+            id: 'lookup.browser_extension',
+            title: t.nav_browser_extension,
+            icon: Icons.extension_outlined,
+            showIcon: true,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const BrowserExtensionPage(),
+              );
+            },
+          ),
           // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
           // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
           buildRemoteDictionaryLookupItem(),
@@ -746,6 +791,7 @@ SettingsDestination buildLookupDestination() {
           // API 服务（若已开启）。
           SettingsTextItem(
             id: 'lookup.yomitan_api_key',
+            visible: (SettingsContext c) => c.appModel.yomitanApiServerEnabled,
             title: t.yomitan_api_key,
             icon: Icons.key_outlined,
             secret: true,
@@ -814,6 +860,60 @@ Future<void> showAudioSourcesManagerDialog({
   required AppModel appModel,
   VoidCallback? onLocalSourcesEdited,
 }) {
+  final Map<String, List<LocalAudioSourcePref>> replacementPrefs =
+      <String, List<LocalAudioSourcePref>>{};
+  Future<AudioSourceConfig?> pickLocalDb(bool reference) async {
+    // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
+    // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
+    // android.db 常见 1~6 GB）。安卓上 file_picker 会先把整份文件同步复制进
+    // app cache 再返回缓存路径，随后 `importFile` 又复制一份进库目录 →
+    // 峰值需要 **2 倍库体积的内部存储**，6 GB 的库要 12 GB，且全程只有一个
+    // 转圈、无进度无取消，多数手机直接失败或看起来永久卡死 = 「安卓上用
+    // android.db 配本地音频怎么都跑不通」。视频/书/有声书/漫画/字幕/制卡音频
+    // 早已统一走 [pickRealFilePathDetailed]（安卓 SAF 解析真实路径、零复制），
+    // 这条是最后的漏网。
+    final PickedFilePath? picked;
+    try {
+      picked = await pickRealFilePathDetailed(
+        context: context,
+        appModel: appModel,
+      );
+    } on PickedFileWithoutPathException catch (e) {
+      // BUG-446：平台交回了条目却没给可用 path（只回 bytes）**不是取消**，
+      // 是失败。记完整诊断（含条目数）后显式抛出，交给上层弹可见反馈——
+      // 静默返回会让用户以为自己没选中，真因全丢。
+      ErrorLogService.instance.log(
+        'AudioSourcesDialog.pickLocalDb',
+        'unexpected file selection: count=${e.count}, pathNull=true',
+      );
+      throw Exception(
+        'picked audio db has no file path (platform '
+        'returned bytes without a path)',
+      );
+    }
+    // 用户取消选择：返回 null，正常无声返回（不是失败）。
+    if (picked == null) return null;
+    // 引用只在**事实上拿到用户真实路径**时才成立（BUG-1667）。安卓未授予
+    // 全文件访问时降级回 file_picker，拿到的是 app cache 临时副本——引用它
+    // 等于引用一个清缓存就消失的文件，必须落回复制，并告诉用户为什么。
+    final bool canReference = picked.isRealPath;
+    if (reference && !canReference && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.local_audio_reference_unavailable)),
+      );
+    }
+    final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
+      picked.path,
+      displayName: p.basename(picked.path),
+      reference: reference && canReference,
+    );
+    return AudioSourceConfig.localAudio(
+      label: entry.displayName,
+      path: entry.path,
+      enabled: true,
+    );
+  }
+
   return showAppDialog(
     context: context,
     builder: (_) => AudioSourcesDialog(
@@ -823,58 +923,19 @@ Future<void> showAudioSourcesManagerDialog({
       // 列表编辑式 UX 无单条删除确认时机，故不在源端逐条弹选择。
       onSave: (List<AudioSourceConfig> next) => appModel.setAudioSourceConfigs(
         next,
+        sourcesByPath: replacementPrefs,
         scope: DeleteScope.syncEverywhere,
       ),
-      onPickLocalDb: (bool reference) async {
-        // BUG-1667：本地音频库曾是全 app 唯一还在用裸 `FilePicker.pickFiles()`
-        // 的大文件导入入口，偏偏承载体积最大的文件（Yomitan 本地音频服务器的
-        // android.db 常见 1~6 GB）。安卓上 file_picker 会先把整份文件同步复制进
-        // app cache 再返回缓存路径，随后 `importFile` 又复制一份进库目录 →
-        // 峰值需要 **2 倍库体积的内部存储**，6 GB 的库要 12 GB，且全程只有一个
-        // 转圈、无进度无取消，多数手机直接失败或看起来永久卡死 = 「安卓上用
-        // android.db 配本地音频怎么都跑不通」。视频/书/有声书/漫画/字幕/制卡音频
-        // 早已统一走 [pickRealFilePathDetailed]（安卓 SAF 解析真实路径、零复制），
-        // 这条是最后的漏网。
-        final PickedFilePath? picked;
-        try {
-          picked = await pickRealFilePathDetailed(
-            context: context,
-            appModel: appModel,
-          );
-        } on PickedFileWithoutPathException catch (e) {
-          // BUG-446：平台交回了条目却没给可用 path（只回 bytes）**不是取消**，
-          // 是失败。记完整诊断（含条目数）后显式抛出，交给上层弹可见反馈——
-          // 静默返回会让用户以为自己没选中，真因全丢。
-          ErrorLogService.instance.log(
-            'AudioSourcesDialog.pickLocalDb',
-            'unexpected file selection: count=${e.count}, pathNull=true',
-          );
-          throw Exception(
-            'picked audio db has no file path (platform '
-            'returned bytes without a path)',
+      isLocalDbAvailable: appModel.isLocalAudioDbAvailable,
+      onPickLocalDb: pickLocalDb,
+      onReplaceLocalDb: (String oldPath) async {
+        final AudioSourceConfig? replacement = await pickLocalDb(false);
+        if (replacement != null) {
+          replacementPrefs[replacement.path!] = appModel.sourcePrefsForLocalDb(
+            oldPath,
           );
         }
-        // 用户取消选择：返回 null，正常无声返回（不是失败）。
-        if (picked == null) return null;
-        // 引用只在**事实上拿到用户真实路径**时才成立（BUG-1667）。安卓未授予
-        // 全文件访问时降级回 file_picker，拿到的是 app cache 临时副本——引用它
-        // 等于引用一个清缓存就消失的文件，必须落回复制，并告诉用户为什么。
-        final bool canReference = picked.isRealPath;
-        if (reference && !canReference && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(t.local_audio_reference_unavailable)),
-          );
-        }
-        final LocalAudioDbEntry entry = await appModel.importLocalAudioDbFile(
-          picked.path,
-          displayName: p.basename(picked.path),
-          reference: reference && canReference,
-        );
-        return AudioSourceConfig.localAudio(
-          label: entry.displayName,
-          path: entry.path,
-          enabled: true,
-        );
+        return replacement;
       },
       onEditLocalSources: (String path) async {
         await showAppDialog(

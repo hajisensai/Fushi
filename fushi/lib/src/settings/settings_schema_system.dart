@@ -4,14 +4,20 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/onboarding/recommended_pack_discard.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
+import 'package:fushi/src/updates/app_update_check.dart';
+import 'package:fushi/src/updates/update_feed_service.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
+import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/utils.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -20,11 +26,127 @@ import 'package:url_launcher/url_launcher.dart';
 SettingsDestination buildSystemDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.system,
-    title: t.settings_destination_system,
+    title: t.settings_destination_system_about,
     summary: t.settings_destination_system_summary,
     icon: Icons.settings_suggest_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'system.section.updates',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_update,
+        // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
+        // 仅在支持应用内安装的平台显示（platformSupportsInAppInstall，见
+        // platform_updater.dart 单一真相源）。
+        visible: (_) => platformSupportsUpdateCheck(),
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'system.update_channel',
+            title: t.settings_section_update_channel,
+            icon: Icons.system_update_alt_outlined,
+            controlBelow: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'stable',
+                label: t.update_channel_stable,
+                icon: Icons.verified_outlined,
+                tooltip: t.update_channel_stable,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'beta',
+                label: t.update_channel_beta,
+                icon: Icons.science_outlined,
+                tooltip: t.update_channel_beta,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'debug',
+                label: t.update_channel_debug,
+                icon: Icons.bug_report_outlined,
+                tooltip: t.update_channel_debug,
+              ),
+            ],
+            selected: _selectedUpdateChannel,
+            onChanged: setUpdateChannel,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'system.update_download_source',
+            title: t.update_download_source_preference,
+            subtitle: t.update_download_source_preference_hint,
+            icon: Icons.cloud_download_outlined,
+            dropdown: true,
+            // 标签走 updateDownloadSourceLabel 这一份真相源：下载遮罩的「本次没用上
+            // 所选来源」通告要说出同一个名字，两处各写一套迟早对不上。
+            options: <SettingsSegmentOption<String>>[
+              for (final String value in <String>[
+                updateDownloadSourceAutomatic,
+                updateDownloadSourceCloudflare,
+                updateDownloadSourceGitHub,
+                for (final String prefix in updateCheckProxyPrefixes)
+                  updateDownloadSourceForProxy(prefix),
+              ])
+                SettingsSegmentOption<String>(
+                  value: value,
+                  label: updateDownloadSourceLabel(value),
+                  tooltip: updateDownloadSourceLabel(value),
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.updateDownloadSource,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setUpdateDownloadSource(value);
+              c.refresh();
+            },
+          ),
+          // TODO-898：手动「立即检查更新」。分区已被 platformSupportsUpdateCheck()
+          // 网关，按钮全平台可见（不能自装的平台仍可「检查→打开发布页」）。
+          SettingsActionItem(
+            id: 'system.check_update_now',
+            title: t.settings_check_update_now,
+            icon: Icons.system_update_outlined,
+            onTap: _checkUpdateNow,
+          ),
+          // TODO-1310：应用内查看更新日志。推 ChangelogPage，在线拉本仓库 GitHub
+          // releases 列表并用 Markdown 渲染各版本说明；customProxy 透传设置里现有的
+          // 更新代理项，与「立即检查更新」同源。
+          SettingsNavigationItem(
+            id: 'system.view_changelog',
+            title: t.settings_view_changelog,
+            icon: Icons.history_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => ChangelogPage(
+                  customProxy: settingsContext.appModel.updateCustomProxy,
+                ),
+              );
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.update_never_remind',
+            title: t.update_never_remind,
+            icon: Icons.notifications_off_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.updateNeverRemind,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setUpdateNeverRemind(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'system.update_auto_install',
+            title: t.update_auto_install,
+            icon: Icons.download_done_outlined,
+            visible: (_) => platformSupportsInAppInstall(),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.updateAutoInstall,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setUpdateAutoInstall(value);
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'system.section.general',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         // 文案统一（阶段 F/G）：本 section 原标题与 destination 标题同为「系统」，
         // 搜索面包屑显示「系统 › 系统」语义重复。改为「通用」——本区聚的是版本 /
         // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
@@ -71,8 +193,9 @@ SettingsDestination buildSystemDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.startupDefaultDictionaryTab,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setStartupDefaultDictionaryTab(value);
+              await settingsContext.appModel.setStartupDefaultDictionaryTab(
+                value,
+              );
               settingsContext.refresh();
             },
           ),
@@ -99,7 +222,9 @@ SettingsDestination buildSystemDestination() {
             searchTitle: t.onboarding_step_pack_title,
             subtitle: t.onboarding_pack_intro,
             visible: (SettingsContext settingsContext) => settingsContext
-                .appModel.recommendedPackDownloadController.isActive,
+                .appModel
+                .recommendedPackDownloadController
+                .isActive,
             builder: _buildRecommendedPackDownloadRow,
           ),
           SettingsSwitchItem(
@@ -140,6 +265,17 @@ SettingsDestination buildSystemDestination() {
               );
             },
           ),
+          SettingsActionItem(
+            id: 'system.github_sponsors',
+            title: t.options_github_sponsors,
+            icon: Icons.favorite_border,
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kGitHubSponsorsUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
           // TMDB 署名 —— **合约义务，不是可选的致谢**。
           //
           // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
@@ -171,6 +307,8 @@ SettingsDestination buildSystemDestination() {
         ],
       ),
       SettingsSection(
+        id: 'system.section.network',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.section_network,
         items: <SettingsItem>[
           // 全应用唯一的代理项：自动 = env > 系统代理 > 直连；直连 = 明确禁用；
@@ -305,121 +443,97 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
+      // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
+      //
+      // 四个域开关**不经 `AppModel.updateFeedService`**，直接读写 pref 键：
+      // service 本身也只是这些键的读写者，走它等于给纯偏好项挂上整条 DB 依赖。
+      // **例外是「系统通知」总开关**：它的显示值要合并系统权限状态、打开时要
+      // 申请权限，这两件事只有 service 知道（BUG-2498）。所以渲染系统页的
+      // widget 测试必须 `wireDatabaseForTesting`——`updateFeedService` 首次访问
+      // 会解引用数据库。
       SettingsSection(
-        title: t.section_update,
-        // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
-        // 仅在支持应用内安装的平台显示（platformSupportsInAppInstall，见
-        // platform_updater.dart 单一真相源）。
-        visible: (_) => platformSupportsUpdateCheck(),
+        id: 'system.section.update_notifications',
+        title: t.updates_notify_section,
         items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
-            id: 'system.update_channel',
-            title: t.settings_section_update_channel,
-            icon: Icons.system_update_alt_outlined,
-            controlBelow: true,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'stable',
-                label: t.update_channel_stable,
-                icon: Icons.verified_outlined,
-                tooltip: t.update_channel_stable,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'beta',
-                label: t.update_channel_beta,
-                icon: Icons.science_outlined,
-                tooltip: t.update_channel_beta,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'debug',
-                label: t.update_channel_debug,
-                icon: Icons.bug_report_outlined,
-                tooltip: t.update_channel_debug,
-              ),
-            ],
-            selected: _selectedUpdateChannel,
-            onChanged: setUpdateChannel,
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'system.update_download_source',
-            title: t.update_download_source_preference,
-            subtitle: t.update_download_source_preference_hint,
-            icon: Icons.cloud_download_outlined,
-            dropdown: true,
-            // 标签走 updateDownloadSourceLabel 这一份真相源：下载遮罩的「本次没用上
-            // 所选来源」通告要说出同一个名字，两处各写一套迟早对不上。
-            options: <SettingsSegmentOption<String>>[
-              for (final String value in <String>[
-                updateDownloadSourceAutomatic,
-                updateDownloadSourceCloudflare,
-                updateDownloadSourceGitHub,
-                for (final String prefix in updateCheckProxyPrefixes)
-                  updateDownloadSourceForProxy(prefix),
+          for (final (
+                UpdateFeedKind kind,
+                String title,
+                String hint,
+                IconData icon,
+              )
+              in <(UpdateFeedKind, String, String, IconData)>[
+                (
+                  UpdateFeedKind.videoEpisode,
+                  t.updates_notify_video_episode,
+                  t.updates_notify_video_episode_hint,
+                  Icons.movie_outlined,
+                ),
+                (
+                  UpdateFeedKind.mangaChapter,
+                  t.updates_notify_manga_chapter,
+                  t.updates_notify_manga_chapter_hint,
+                  Icons.photo_library_outlined,
+                ),
+                (
+                  UpdateFeedKind.mangaExtension,
+                  t.updates_notify_manga_extension,
+                  t.updates_notify_manga_extension_hint,
+                  Icons.extension_outlined,
+                ),
+                (
+                  UpdateFeedKind.appRelease,
+                  t.updates_notify_app_release,
+                  t.updates_notify_app_release_hint,
+                  Icons.system_update_outlined,
+                ),
               ])
-                SettingsSegmentOption<String>(
-                  value: value,
-                  label: updateDownloadSourceLabel(value),
-                  tooltip: updateDownloadSourceLabel(value),
-                ),
-            ],
-            selected: (SettingsContext c) => c.appModel.updateDownloadSource,
-            onChanged: (SettingsContext c, String value) async {
-              await c.appModel.setUpdateDownloadSource(value);
-              c.refresh();
-            },
-          ),
-          // TODO-898：手动「立即检查更新」。分区已被 platformSupportsUpdateCheck()
-          // 网关，按钮全平台可见（不能自装的平台仍可「检查→打开发布页」）。
-          SettingsActionItem(
-            id: 'system.check_update_now',
-            title: t.settings_check_update_now,
-            icon: Icons.system_update_outlined,
-            onTap: _checkUpdateNow,
-          ),
-          // TODO-1310：应用内查看更新日志。推 ChangelogPage，在线拉本仓库 GitHub
-          // releases 列表并用 Markdown 渲染各版本说明；customProxy 透传设置里现有的
-          // 更新代理项，与「立即检查更新」同源。
-          SettingsNavigationItem(
-            id: 'system.view_changelog',
-            title: t.settings_view_changelog,
-            icon: Icons.history_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => ChangelogPage(
-                  customProxy: settingsContext.appModel.updateCustomProxy,
-                ),
-              );
-            },
-          ),
+            SettingsSwitchItem(
+              id: 'system.updates.${kind.dbValue}',
+              title: title,
+              subtitle: hint,
+              icon: icon,
+              value: (SettingsContext settingsContext) =>
+                  settingsContext.appModel.prefsRepo.getPref(
+                        kind.enabledPrefKey,
+                        defaultValue: true,
+                      )
+                      as bool,
+              onChanged: (SettingsContext settingsContext, bool value) async {
+                await settingsContext.appModel.prefsRepo.setPref(
+                  kind.enabledPrefKey,
+                  value,
+                );
+                settingsContext.refresh();
+              },
+            ),
+          // 显示值 = 偏好开 && 系统已授权；打开 = 唯一会弹系统权限框的地方
+          // （BUG-2498：启动期不再申请，申请只跟着用户这一下）。
           SettingsSwitchItem(
-            id: 'system.update_never_remind',
-            title: t.update_never_remind,
-            icon: Icons.notifications_off_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.updateNeverRemind,
+            id: 'system.updates.system_notifications',
+            title: t.updates_system_notifications,
+            subtitle: t.updates_system_notifications_hint,
+            icon: Icons.notifications_active_outlined,
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel
+                .updateFeedService
+                .systemNotificationsActive,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setUpdateNeverRemind(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'system.update_auto_install',
-            title: t.update_auto_install,
-            icon: Icons.download_done_outlined,
-            visible: (_) => platformSupportsInAppInstall(),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.updateAutoInstall,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setUpdateAutoInstall(value);
+              final UpdateFeedService feed =
+                  settingsContext.appModel.updateFeedService;
+              if (value) {
+                await feed.enableSystemNotifications();
+              } else {
+                await feed.disableSystemNotifications();
+              }
               settingsContext.refresh();
             },
           ),
         ],
       ),
       SettingsSection(
+        id: 'system.section.diagnostics',
+        presentation: SettingsSectionPresentation.collapsed,
         title: t.settings_destination_diagnostics,
-        collapsedByDefault: true,
         items: <SettingsItem>[
           // 标题里的实时条数走 titleBuilder（渲染时求值）。写成构造期插值会把整棵
           // schema 变成「每次 setState 都得重建才能刷新计数」的状态载体——那正是
@@ -470,95 +584,44 @@ SettingsDestination buildSystemDestination() {
                 DebugLogService.instance.entries.isNotEmpty,
             builder: (_) => const DebugLogPage(),
           ),
+          // 用户 2026-09-12：导出统计诊断日志排查阅读速度异常。正文 = 头信息 +
+          // 最近会话快照（字/时一列）+ StudyClock / 阅读器账本 / 有声书恢复流水；
+          // 桌面弹保存对话框、移动端走系统分享（saveLogToFile 内部分流）。
+          SettingsActionItem(
+            id: 'diagnostics.study_diag_export',
+            title: t.settings_study_diag_export,
+            subtitle: t.settings_study_diag_export_hint,
+            icon: Icons.save_alt_outlined,
+            onTap: _exportStudyDiagLog,
+          ),
         ],
       ),
     ],
   );
 }
 
-/// TODO-898：手动「立即检查更新」防连点旗标（模块级）。UI 重入保护真正靠它——
-/// UpdateChecker 内部的 `_activeCheckCancellation` 是「中断」语义、不挡重入。
-bool _manualCheckInFlight = false;
-
-/// 手动「立即检查更新」编排（TODO-898）。
-///
-/// 手动语义：`neverRemind: false`（无视用户「免提醒」偏好，主动点就要看到结果）+
-/// `autoInstall: false`（发现新版只弹确认对话框，不沿用自动安装偏好静默装）。
-/// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
-/// UpdateChecker 既有对话框/打开发布页（零改动）。
-Future<void> _checkUpdateNow(SettingsContext settingsContext) async {
-  if (_manualCheckInFlight) return;
-  _manualCheckInFlight = true;
-  // TODO-1024 / BUG-479：缓存优先即时反馈——先读上次检查结果（按当前通道），据它立刻给
-  // 「已是最新已知 vX」/「发现新版 vY」（校验中…）的乐观提示，不等网络；网络刷新随后
-  // 在后台校验，结果以既有 onUpToDate / 对话框收口。无缓存（首检/畸形/换通道）才退回
-  // 原「正在检查…」提示。
-  // BUG-1836：同 home_page，半更新态下 exe 版本资源谎报新版本，
-  // 据它比较会永判「已是最新」，用户困在旧代码里没有出路。
-  final String currentVersion =
-      resolveCurrentAppVersion(settingsContext.appModel.packageInfo.version);
-  final String currentBuildNumber =
-      settingsContext.appModel.packageInfo.buildNumber;
-  final UpdateChannel channel = _channelFromSettings(settingsContext);
-  // BUG-846「谁后用谁」：缓存乐观比较用本机 release sequence（无后缀 `X.Y.Z` 正式版包 /
-  // beta/debug 包都能取到），与网络路径 scheduleCheck 同源。远端 seq 从缓存的 latestTag 串
-  // 自取（beta/debug 带尾号；正式版无 → 保守走基版本比较，网络刷新随后收口）。
-  final int? currentReleaseSeq = currentReleaseSequence(
-    version: currentVersion,
-    buildNumber: currentBuildNumber,
+/// 设置 › 诊断 › 导出统计诊断日志（正文见 [buildStudyDiagExport]）。
+Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
+  final AppModel appModel = settingsContext.appModel;
+  final String log = await buildStudyDiagExport(
+    appModel.database,
+    appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
+    readingIdleTimeoutMinutes: appModel.readingIdleTimeoutMinutes,
+    statDayResetHour: appModel.statDayResetHour,
   );
-  final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
-    settingsContext.appModel.updateCheckCache,
-    channel,
+  if (!settingsContext.context.mounted) return;
+  await saveLogToFile(
+    context: settingsContext.context,
+    log: log,
+    fileName: 'fushi_study_diag_log.txt',
+    subject: t.study_diag_share_subject,
   );
-  if (cached != null) {
-    final bool newer = updateTagIsNewerThanCurrent(
-        cached.latestTag, currentVersion, channel,
-        localSeq: currentReleaseSeq);
-    FushiToast.show(
-      msg: newer
-          ? t.update_cached_newer(version: cached.latestTag)
-          : t.update_cached_up_to_date(version: cached.latestTag),
-      severity: ToastSeverity.info,
-    );
-  } else {
-    FushiToast.show(
-      msg: t.update_checking_now,
-      severity: ToastSeverity.info,
-    );
-  }
-  try {
-    await UpdateChecker.scheduleCheck(
-      settingsContext.context,
-      currentVersion,
-      currentBuildNumber: currentBuildNumber,
-      neverRemind: false,
-      autoInstall: false,
-      betaChannel: settingsContext.appModel.updateBetaChannel,
-      debugChannel: settingsContext.appModel.updateDebugChannel,
-      customProxy: settingsContext.appModel.updateCustomProxy,
-      // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
-      cacheWriter: settingsContext.appModel.setUpdateCheckCache,
-      onUpToDate: () => FushiToast.show(
-        msg: t.update_already_latest,
-        severity: ToastSeverity.info,
-      ),
-      onError: (Object _) => FushiToast.show(
-        msg: t.update_check_failed,
-        severity: ToastSeverity.error,
-      ),
-    );
-  } finally {
-    _manualCheckInFlight = false;
-  }
 }
 
-/// 当前设置选中的更新通道（与 [scheduleCheck] 内的 debug>beta>stable 优先级一致）。
-UpdateChannel _channelFromSettings(SettingsContext settingsContext) {
-  if (settingsContext.appModel.updateDebugChannel) return UpdateChannel.debug;
-  if (settingsContext.appModel.updateBetaChannel) return UpdateChannel.beta;
-  return UpdateChannel.stable;
-}
+/// 手动「立即检查更新」：编排在 [checkAppUpdateNow]（与更新中心的 app 新版本
+/// 条目共用同一条应用内下载安装链路）。
+Future<void> _checkUpdateNow(SettingsContext settingsContext) =>
+    checkAppUpdateNow(settingsContext.context, settingsContext.appModel);
 
 String _selectedUpdateChannel(SettingsContext settingsContext) {
   if (settingsContext.appModel.updateDebugChannel) return 'debug';
@@ -640,6 +703,14 @@ Widget _buildRecommendedPackDownloadRow(SettingsContext settingsContext) {
     // 导入编排是库级共享的（[importDownloadedRecommendedPack]）：设置这一行、
     // 新手引导那一步、首页迷你条三个发起点同一个真相源。
     onImport: () => unawaited(importDownloadedRecommendedPack(appModel)),
+    // 放弃编排同样库级共享（[confirmAndDiscardRecommendedPack]）：确认框漏在任何
+    // 一个发起点上，那一处就成了不带确认直接删几 GB 的按钮。
+    onDiscard: () => unawaited(
+      confirmAndDiscardRecommendedPack(
+        settingsContext.context,
+        appModel.recommendedPackDownloadController,
+      ),
+    ),
   );
 }
 

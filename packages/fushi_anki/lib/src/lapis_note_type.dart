@@ -74,12 +74,9 @@ class LapisNoteType {
     'PitchCategories': '{pitch-accent-categories}',
     'Frequency': '{frequencies}',
     'FreqSort': '{frequency-harmonic-rank}',
-    // MiscInfo 是卡片底部「Misc. info → === Details ===」栏，语义是「这张卡出自
-    // 哪儿」。只给媒体名的话，卡片攒多了回溯不到原片位置，故出厂就带上片段时间窗
-    // （`{clip-timestamp}` 在无时间轴来源上渲染成空串，书 / galgame 的卡片不会多出
-    // 尾巴）。渲染器是整模板正则替换，一个字段里放多个占位符 + 字面文本是原生支持的。
-    // 存量用户由 `BaseAnkiRepository.readSettingsJson` 的载入期迁移补齐。
-    'MiscInfo': '{document-title} {clip-timestamp}',
+    // 「来源」中作品标题就是回跳链接；无定位时仍显示标题。时间轴来源保留片段时间，
+    // 不另加一个重复的 Fushi 链接。只迁移精确旧默认，用户自定义组合保持不变。
+    'MiscInfo': '{source-link} {clip-timestamp}',
     'IsWordAndSentenceCard': 'x',
   };
 
@@ -263,10 +260,8 @@ class LapisNoteType {
 
         {{#MiscInfo}}
         <details>
-            <summary>Misc. info</summary>
+            <summary>Source</summary>
             <div class="misc-info">
-                === Details ===
-                <br />
                 {{MiscInfo}}
             </div>
         </details>
@@ -291,7 +286,18 @@ class LapisNoteType {
     // Hack to add multiple buttons without Anki playing them multiple times
     function addAudioButtons() {
         const audioContainers = document.querySelectorAll(".audio-buttons, .audio-buttons-alt");
-        audioContainers.forEach(audio => audio.innerHTML = `{{ExpressionAudio}}{{SentenceAudio}}`);
+        audioContainers.forEach(audio => audio.innerHTML = `{{ExpressionAudio}}<span class="fushi-sentence-audio">{{SentenceAudio}}</span>`);
+        // Hibiki synchronized video: delegate replay to the client's native
+        // media button. Never start a separate HTML video/audio player.
+        document.querySelectorAll(".sentence, .sentence-alt").forEach(sentence => {
+            sentence.addEventListener("click", event => {
+                if (event.target.closest("a, button, video, audio")) return;
+                if (window.getSelection && String(window.getSelection()).length) return;
+                if (!document.querySelector(".fushi-synced-video-replay")) return;
+                const replay = document.querySelector(".fushi-sentence-audio .replay-button, .fushi-sentence-audio .replaybutton, .fushi-sentence-audio .soundLink");
+                if (replay) replay.click();
+            });
+        });
     }
 
     function getPitchCategories() {

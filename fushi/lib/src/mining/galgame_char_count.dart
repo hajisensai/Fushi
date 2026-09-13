@@ -15,7 +15,7 @@
 /// "hook 到即读过"，不做阅读器式高水位。
 library;
 
-import 'package:fushi/src/stats/study_char_count.dart';
+import 'package:fushi_engine/stats/study_char_count.dart';
 
 /// galgame 行文本的字数：直接走全仓唯一口径 [countStudyChars]。
 ///

@@ -13,6 +13,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 页面依赖 media_kit 原生播放器，widget 层不可离线测试 → 落最强可落地层：源码切片守卫
 /// （删掉任一步即红），与 TODO-1307 守卫同构。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉的是调用形态本身，不是它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   final String pageSrc =
       File('lib/src/pages/implementations/video_fushi_page.dart')
@@ -39,8 +44,9 @@ void main() {
       reason: '书架书判据必须是 _bookRow != null（本地/流媒体书有行，互联远端无行）',
     );
     expect(
-      // dart format 会按行宽折行，去掉全部空白后断言完整调用形态。
-      slice.replaceAll(RegExp(r'\s+'), '').contains(
+      // dart format 会按行宽折行，**并在拆行时补尾随逗号**——所以归一化要同时
+      // 压掉空白和把 `,)` 收成 `)`，否则「差一个逗号」就让守卫假红（实测过一次）。
+      _flat(slice).contains(
           'widget.repo.updatePosition(widget.bookUid,clamped,playedAt:nowMs)'),
       isTrue,
       reason: '书架流媒体书必须把断点写穿 VideoBooks（lastPositionMs/lastPlayedAt），'

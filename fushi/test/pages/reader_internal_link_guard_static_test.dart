@@ -58,22 +58,30 @@ void main() {
     final String fn = _functionSource(
       readerSource,
       '  Future<void> _handleInternalLinkUrl(String url) async {',
-      '  Future<void> _navigateToChapterWithFragment(',
+      '  Future<void> _jumpToChapterAnchor(',
     );
-    // 同章带 fragment → 原地跳；异章 → 重载并跳；解析不到 → 交外链处理（自家虚拟
-    // host 在 _openExternalUrl 内被吞，不弹空白浏览器，见 BUG-097）。
+    // 解析到内链 → 交给共用的「章号 + 章内锚」落地口；解析不到 → 交外链处理
+    // （自家虚拟 host 在 _openExternalUrl 内被吞，不弹空白浏览器，见 BUG-097）。
     expect(fn, contains('resolveInternalLink'));
-    expect(fn, contains('_jumpToFragmentInPlace'));
-    expect(fn, contains('_navigateToChapterWithFragment'));
+    expect(fn, contains('_jumpToChapterAnchor'));
     expect(fn, contains('_openExternalUrl'));
 
-    final int jumpInPlaceIdx = fn.indexOf('_jumpToFragmentInPlace');
-    final int navIdx = fn.indexOf('_navigateToChapterWithFragment');
+    final int anchorIdx = fn.indexOf('_jumpToChapterAnchor');
     final int externalIdx = fn.indexOf('_openExternalUrl');
-    expect(jumpInPlaceIdx, isNonNegative);
-    expect(navIdx, isNonNegative);
-    // 内链分支（跳/导航）必须在外链兜底之前。
-    expect(navIdx, lessThan(externalIdx), reason: '内链导航必须先于外链兜底');
+    expect(anchorIdx, isNonNegative);
+    // 内链分支必须在外链兜底之前。
+    expect(anchorIdx, lessThan(externalIdx), reason: '内链导航必须先于外链兜底');
+
+    // BUG-2385：三分支本身搬进了 _jumpToChapterAnchor（目录点击与内链共用同一个
+    // 落地口）。同章带锚 → 原地跳；异章带锚 → 重载并跳；无锚 → 普通跳章。
+    final String anchor = _functionSource(
+      readerSource,
+      '  Future<void> _jumpToChapterAnchor(',
+      '  Future<void> _navigateToChapterWithFragment(',
+    );
+    expect(anchor, contains('_navigateToChapter(index, manual: true)'));
+    expect(anchor, contains('_jumpToFragmentInPlace(fragment)'));
+    expect(anchor, contains('_navigateToChapterWithFragment(index, fragment'));
   });
 
   test('shouldOverrideUrlLoading delegates to the same shared resolver', () {

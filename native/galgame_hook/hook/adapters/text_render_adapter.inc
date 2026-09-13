@@ -39,20 +39,22 @@ int g_last_flushed_len = 0;
 // 原子写者交错时会互相覆盖计数、丢行或读到半写槽）。写序：原子占号 → 填文本字节 + 字段 →
 // **最后**写 seq=占到的号作完成标记（reader 校验 slot.seq==text_write_count 才取该槽；x86/x64
 // store 有序 TSO，前面的数据写对 reader 先于 seq 可见）。首次 flush 置 text_hooked=1。
-void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
+uint64_t WriteTextRingEntryLocked(const wchar_t* text, int char_len,
                               uint64_t thread_id, uint64_t thread_address,
                               uint64_t thread_context, uint32_t source_kind,
                               const char* hook_name,
-                              const wchar_t* hook_code) {
+                              const wchar_t* hook_code,
+                              uint64_t* committed_tick_ms = nullptr) {
+  if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
   if (g_text_base == nullptr || g_header == nullptr || char_len <= 0) {
-    return;
+    return 0;
   }
   // LunaHook（引擎精确、干净）一旦活跃，GDI 文本 hook 让位，不再写文本环——否则游戏为粗体/描边
   // 每字重画会让 GetGlyphOutlineW 累加出「ここのの」式伪影，与 LunaHook 干净行混在一起污染卡片。
   // GDI 仅在 LunaHook 覆盖不到的引擎（luna_active==0）时作兜底文本源。音频 hook 不看此标志。
   if (source_kind == fushi_voice_hook::kTextSourceGdi &&
       g_header->luna_active != 0) {
-    return;
+    return 0;
   }
   // v13：写进本线程自己那条道（游戏内 writer 用高段下标，与 injector 里的 LunaHook 互斥）。
   // 调用方已持 g_text_cs，认领与道内占号因此在本进程内串行；跨进程隔离靠区段划分。
@@ -68,9 +70,9 @@ void WriteTextRingEntryLocked(const wchar_t* text, int char_len,
                    static_cast<uint32_t>(sizeof(wchar_t));
   write.hook_name = hook_name;
   write.hook_code = hook_code;
-  fushi_voice_hook::WriteTextLaneEvent(
+  return fushi_voice_hook::WriteTextLaneEvent(
       g_header, fushi_voice_hook::kNativeThreadPreviewStart,
-      fushi_voice_hook::kTextLaneCount, write);
+      fushi_voice_hook::kTextLaneCount, write, committed_tick_ms);
 }
 
 void WriteTextRingLocked(const wchar_t* text, int char_len) {
@@ -130,9 +132,14 @@ void FlushGlyphAccumLocked() {
 
 void ObserveSiglusLookupExactText(const wchar_t* text, uint32_t text_units,
                                   uint64_t callsite_rva,
-                                  uintptr_t function_rva);
+                                  uintptr_t function_rva,
+                                  uint64_t text_event_id, uint64_t thread_id);
 bool IsSiglusLookupProfileMatched();
+bool IsSiglusLookupIdentityUndecided();
 const fushi_voice_hook::SiglusLookupProfile* ActiveSiglusLookupProfile();
+bool TryHookSiglusMessageText();
+bool IsSiglusMessageTextInstalled();
+bool IsSiglusMessageTextOwnershipBlocked();
 
 // Siglus 3 使用与 32 位 MSVC std::wstring 相同的 24-byte 小字符串布局。当前 Luna 的
 // EmbedSiglus2 也从该函数入口的 ECX 读取此对象；在引擎逻辑层拿整句可彻底避开 GDI
@@ -150,7 +157,13 @@ static_assert(sizeof(SiglusTextUnionW) == 24,
 
 using SiglusExactTextFn = uintptr_t(__thiscall*)(SiglusTextUnionW* self);
 SiglusExactTextFn g_orig_SiglusExactText = nullptr;
+bool g_siglus_exact_text_installed = false;
 uintptr_t g_siglus_text_function_rva = 0;
+
+bool IsSiglusExactTextInstalled() {
+  return (g_siglus_exact_text_installed && g_orig_SiglusExactText != nullptr) ||
+      IsSiglusMessageTextInstalled();
+}
 
 bool IsReadableSpan(const void* pointer, size_t bytes) {
   if (pointer == nullptr || bytes == 0) return false;
@@ -211,14 +224,16 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
                  L"EXBWX0@%llX:SiglusEngine.exe",
                  static_cast<unsigned long long>(g_siglus_text_function_rva));
 
-    ObserveSiglusLookupExactText(text, length, callsite_rva,
-                                 g_siglus_text_function_rva);
-
     EnterCriticalSection(&g_text_cs);
-    WriteTextRingEntryLocked(
+    const uint64_t text_event_id = WriteTextRingEntryLocked(
         text, static_cast<int>(length), thread_id,
         g_siglus_text_function_rva, callsite_rva,
         fushi_voice_hook::kTextSourceSiglus, "SiglusEngine exact", hook_code);
+    // Carry the committed event identity from this exact write. The global
+    // counter may already belong to a concurrent Luna writer, so never reread it.
+    ObserveSiglusLookupExactText(text, length, callsite_rva,
+                                 g_siglus_text_function_rva, text_event_id,
+                                 thread_id);
     LeaveCriticalSection(&g_text_cs);
     if (g_header != nullptr) {
       g_header->luna_active = 1;  // 精确引擎文本已实锤，GDI 兜底从此让位。
@@ -228,22 +243,55 @@ uintptr_t __fastcall Detour_SiglusExactText(SiglusTextUnionW* self, void*) {
   return g_orig_SiglusExactText(self);
 }
 
+bool InstallSiglusExactTextAt(void* target, uintptr_t rva) {
+  g_siglus_text_function_rva = rva;
+  if (!HookFn(target, reinterpret_cast<void*>(&Detour_SiglusExactText),
+              reinterpret_cast<void**>(&g_orig_SiglusExactText)) ||
+      g_orig_SiglusExactText == nullptr) {
+    g_siglus_text_function_rva = 0;
+    return false;
+  }
+  g_siglus_exact_text_installed = true;
+  if (g_header != nullptr) {
+    g_header->text_hooked = 1;
+    g_header->hook_diagnostics |= kDiagSiglusExactTextHookReady;
+  }
+  return true;
+}
+
 bool TryHookSiglusExactText() {
   if (!IsSiglusEngine()) return true;
-  if (g_orig_SiglusExactText != nullptr) return true;
-  // Some admitted Siglus builds expose scenario text through Luna with a
-  // different function ABI. Do not install the native ECX/TextUnion detour on
-  // those builds; the lookup sensor consumes their exact Luna lane instead.
-  if (IsSiglusLookupProfileMatched()) {
-    const auto* profile = ActiveSiglusLookupProfile();
-    if (profile != nullptr &&
-        profile->text_feed !=
-            fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) {
-      return true;
-    }
-  }
+  if (IsSiglusExactTextInstalled()) return true;
+  if (fushi_voice_hook::ReadSiglusTextOwner(g_header) !=
+      fushi_voice_hook::SiglusTextOwner::kPending) return true;
+  const bool resolved = IsSiglusLookupProfileMatched();
+  // Do not let the historical first-match text locator patch an entry while
+  // the lookup resolver is still checking whole-image uniqueness and its ABI.
+  if (!resolved && IsSiglusLookupIdentityUndecided()) return false;
   HMODULE module = GetModuleHandleW(nullptr);
   if (module == nullptr) return false;
+  if (resolved) {
+    const auto* profile = ActiveSiglusLookupProfile();
+    if (profile == nullptr) return false;
+    if (profile->text_feed ==
+        fushi_voice_hook::SiglusLookupTextFeed::kLunaScenarioLane) {
+      // Resolve the full message/owner/frame contract before claiming this
+      // scenario entry. A rejected family remains available to Luna.
+      TryHookSiglusMessageText();
+      return true;
+    }
+    if (profile->text_feed !=
+        fushi_voice_hook::SiglusLookupTextFeed::kNativeEcxTextUnion) return true;
+    TryHookSiglusMessageText();
+    if (IsSiglusMessageTextInstalled() || IsSiglusMessageTextOwnershipBlocked())
+      return true;
+    // Capture and lookup must use the same structurally admitted entry.
+    return InstallSiglusExactTextAt(
+        reinterpret_cast<uint8_t*>(module) + profile->exact_text_rva,
+        profile->exact_text_rva);
+  }
+  // Preserve the existing text-only fallback after lookup is conclusively
+  // unavailable. It cannot publish a geometry profile or enable lookup input.
   const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
   if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
   const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(
@@ -263,18 +311,8 @@ bool TryHookSiglusExactText() {
       continue;
     }
     void* target = const_cast<uint8_t*>(section_base + offset);
-    g_siglus_text_function_rva =
-        static_cast<uintptr_t>(section[i].VirtualAddress) + offset;
-    if (!HookFn(target, reinterpret_cast<void*>(&Detour_SiglusExactText),
-                reinterpret_cast<void**>(&g_orig_SiglusExactText))) {
-      g_siglus_text_function_rva = 0;
-      return false;
-    }
-    if (g_header != nullptr) {
-      g_header->text_hooked = 1;
-      g_header->hook_diagnostics |= kDiagSiglusExactTextHookReady;
-    }
-    return true;
+    return InstallSiglusExactTextAt(target,
+        static_cast<uintptr_t>(section[i].VirtualAddress) + offset);
   }
   return false;
 }
@@ -282,6 +320,7 @@ bool TryHookSiglusExactText() {
 #else
 
 bool TryHookSiglusExactText() { return true; }
+bool IsSiglusExactTextInstalled() { return false; }
 
 #endif  // _M_IX86
 

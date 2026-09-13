@@ -41,6 +41,9 @@ private:
   void HandleGetAvailableProviders(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                                    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
+  void HandleGetDeviceMemoryInfo(const flutter::MethodCall<flutter::EncodableValue> &method_call,
+                                 std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
   void HandleRunInference(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                           std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 

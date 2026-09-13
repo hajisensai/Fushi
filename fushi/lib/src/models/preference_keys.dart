@@ -31,6 +31,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // media/audiobook/audiobook_material_library.dart。
   'audiobook_material_dirs',
   'auto_add_book_name_to_tags',
+  // bool：小说阅读器制卡时给卡片追加「制卡所在字符数」标签（`chars_12345`，
+  // countStudyChars 口径的全书绝对位置）。默认开。
+  'auto_add_char_position_to_tags',
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
@@ -51,6 +54,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
+  // bool（默认 true）：发现页隐藏疑似漫画（`DiscoveryContentHint.manga`）的
+  // 条目；undecided 保留。读写见 PreferencesRepository。
+  'discovery_hide_suspected_manga',
+  // bool（默认 true）：发现页隐藏 0 做种的种子条目。读写见 PreferencesRepository。
+  'discovery_hide_zero_seeders',
+  // int（0 全部 / 1 排除 remake / 2 仅 trusted，默认 0）：发现页 Nyaa 过滤三态，
+  // 透传为 nyaa `f`。读写见 PreferencesRepository。
+  'discovery_nyaa_quality_filter',
   // 用户自配的 OPDS 书目服务器清单（JSON 数组：id/name/url/username/
   // passwordB64/enabled/allowInsecureHttp）。String，读写见
   // PreferencesRepository。与 discovery_disabled_sources 的分界同 Torznab：
@@ -121,6 +132,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'low_memory_mode',
+  // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
+  // 还是常驻钉在页图上方。
+  'manga_chrome_floating',
+  // int（天，BUG-2450）：在线漫画封面磁盘缓存的保留天数（Mihon 封面缓存
+  // MihonCoverCache.maxAge）。默认 180，范围 30..360。
+  'manga_cover_cache_max_age_days',
+  // bool（默认 false）：作品页「完成后自动识别」chip——章节下载任务入队时写进
+  // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
+  'manga_download_auto_ocr',
   'manga_external_mokuro_path',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
@@ -129,15 +149,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_page_animation',
   'manga_reading_direction',
   'manga_spread_preference',
-  'manga_tap_to_ocr',
-  'manga_tap_to_ocr_notice_shown',
   'manga_tap_zone_paging',
   'manga_volume_key_paging',
   'manga_zoom_percent',
   'manga_zoom_sensitivity',
   'maximum_terms',
   'mine_to_server',
+  // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
+  'mining_audio_head_pad_ms',
   'mining_audio_quality',
+  'mining_audio_tail_pad_ms',
   'mining_image_quality',
   'module_books_enabled',
   'module_browser_extension_enabled',
@@ -162,12 +183,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',
+  // bool：查词弹窗释义紧凑排版（对齐 Hoshi Reader Android
+  // "Compact Glossaries"）。默认 false。
+  'popup_compact_glossaries',
   'popup_dictionary_columns',
   'popup_instant_scroll',
   'popup_max_height',
   'popup_max_width',
   'popup_wheel_speed',
   'qb_connection_config',
+  // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
+  'reader_control_layout',
   'reading_goal_daily_chars',
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
@@ -195,6 +221,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'update_debug_channel',
   'update_download_source',
   'update_never_remind',
+  // bool ×5（v101 统一更新提醒）：四个域各一个「要不要提醒」开关 + 系统通知总
+  // 开关。默认全 true（装了订阅功能就是想被告知）。域开关关掉 = 该域整批不投递
+  // （不进更新页、不出红点、不发通知）；总开关只掐系统通知，红点照常。
+  // 调用点走 `UpdateFeedKind.enabledPrefKey` / [kUpdateSystemNotificationsPref]
+  // 常量，不是裸字面量——守卫扫不到，但纪律要求登记。
+  'updates_notify_app_release',
+  'updates_notify_manga_chapter',
+  'updates_notify_manga_extension',
+  'updates_notify_video_episode',
+  'updates_system_notifications',
   'video_anime4k_prompt_shown',
   'video_asbplayer_config',
   'video_auto_play_next',
@@ -246,6 +282,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_list_font_scale_index',
   'video_subtitle_list_width',
   'video_subtitle_obscure_hide',
+  // bool（默认 true）：遮蔽（模糊 / 隐藏）态是否允许悬停 / 点击临时显形。关掉后
+  // 遮蔽在整句期间恒定生效，不被误触破功。
+  'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
   'video_youtube_quality_height',
@@ -278,6 +317,9 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'gal_lookup_surface_v1::',
   'media_source_secret_',
   'src:',
+  // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
+  // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
+  'updates_last_check_',
   'video_danmaku_episode/',
   // 视频远端断点/播放偏好三件套族（PositionPrefKeys，fushi_library_host_service.dart）：
   // `<前缀><bookUid>` 值键 + `<前缀>at_<bookUid>` 时间戳键，逐字段 LWW 跨设备同步

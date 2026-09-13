@@ -185,6 +185,17 @@ class MediaSelectionController {
   /// 丢掉——他会以为 5 个都删了。
   int get hiddenSelectedCount => retainedLength - length;
 
+  /// [hiddenSelectedCount] 的散卡子集版：只数满足 [looseWhere] 的散卡键（合集照数）。
+  /// 书架的散卡选中集里混着远端占位键（BUG-2458），删除确认框只该报「本地键里被
+  /// 筛选挡住的」——远端键本来就不是删除对象，计进去数字误导。
+  int hiddenSelectedCountWhere(bool Function(String looseKey) looseWhere) {
+    int hidden = _collectionIds.length - collectionIds.length;
+    for (final String key in _looseKeys) {
+      if (looseWhere(key) && !_visibleLooseSet.contains(key)) hidden++;
+    }
+    return hidden;
+  }
+
   bool isSelected(SelectionSlot slot) => slot.isCollection
       ? _collectionIds.contains(slot.collectionId) &&
           _visibleCollectionSet.contains(slot.collectionId)

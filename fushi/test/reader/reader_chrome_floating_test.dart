@@ -100,6 +100,85 @@ void main() {
       );
     });
 
+    test('bottom visible: floating ignores the squeeze switch (2026-09-13)', () {
+      // 挤压态收起过一次再切悬浮开关，_showChrome 以 false 残留——此前这里先判
+      // !chromeExpanded → false，任何唤出通道都翻了 transientVisible 却一像素不画。
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: true,
+          chromeExpanded: false,
+          floating: true,
+          transientVisible: true,
+        ),
+        isTrue,
+      );
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: true,
+          chromeExpanded: true,
+          floating: true,
+          transientVisible: false,
+        ),
+        isFalse,
+      );
+      // 挤压态照旧随 chromeExpanded；未冷加载恒不画。
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: true,
+          chromeExpanded: false,
+          floating: false,
+          transientVisible: true,
+        ),
+        isFalse,
+      );
+      expect(
+        bottomBarVisible(
+          hasEverLoaded: false,
+          chromeExpanded: true,
+          floating: true,
+          transientVisible: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('hover reveal: mouse move reveals when hidden, re-arms when shown', () {
+      expect(
+        readerHoverRevealAction(
+          floating: true,
+          transientVisible: false,
+          isMouse: true,
+        ),
+        ReaderHoverRevealAction.reveal,
+      );
+      expect(
+        readerHoverRevealAction(
+          floating: true,
+          transientVisible: true,
+          isMouse: true,
+        ),
+        ReaderHoverRevealAction.rearm,
+      );
+      expect(
+        readerHoverRevealAction(
+          floating: false,
+          transientVisible: false,
+          isMouse: true,
+        ),
+        ReaderHoverRevealAction.none,
+        reason: '挤压常驻，没有东西可唤',
+      );
+      expect(
+        readerHoverRevealAction(
+          floating: true,
+          transientVisible: false,
+          isMouse: false,
+        ),
+        ReaderHoverRevealAction.none,
+        reason: '触屏 / 手写笔悬停不唤出',
+      );
+    });
+
     test('autoHide millis: default 3000, clamps to 1000..10000', () {
       expect(kDefaultAutoHideChromeMillis, 3000);
       expect(normalizeAutoHideChromeMillis(3000), 3000);
@@ -195,17 +274,31 @@ void main() {
     final String src = readReaderPageSource();
 
     test('reserve truth source: _readerTopOffset uses _topProgressReserve', () {
-      expect(
-        src.contains(
-            '_stableTopInset + _macosWindowTitlebarInset + _topProgressReserve'),
-        isTrue,
-        reason: '顶部预留必须经派生 getter（关进度回收空白），并避开 macOS 拖拽区',
+      // 按项断言而不是钉整行字面串：BUG-2166 批给桌面 ッツ 顶栏加了
+      // _desktopHeaderReserve，四项相加后 formatter 折了行，单行串就永远对不上。
+      // 顺手把新项也纳入守卫——否则谁把它从 _readerTopOffset 里删掉都没人管。
+      final String topOffset = _slice(
+        src,
+        '  double get _readerTopOffset =>',
+        '  double get _readerBottomReserve =>',
       );
+      // macOS 那条 28pt 自绘拖拽带（BUG-1343）随「macOS 改用应用级 MD3 顶栏」
+      // 删除，顶部预留不再含 _macosWindowTitlebarInset；派生 getter 本身仍是
+      // 唯一真相源（关掉进度 / 桌面顶栏挤压都靠它回收空白）。
+      for (final String term in <String>[
+        '_stableTopInset',
+        '_topProgressReserve',
+        '_desktopHeaderReserve',
+      ]) {
+        expect(topOffset.contains(term), isTrue,
+            reason: '顶部预留必须经派生 getter（关进度回收空白 / 桌面顶栏挤压）：'
+                '缺 $term');
+      }
       expect(
         src.contains(
-            '_readerBottomReserve => _bottomChromeReserve + _stableBottomInset'),
+            '_readerBottomReserve => _bottomChromeReserve + _statusFooterBand;'),
         isTrue,
-        reason: '底栏预留必须经派生 getter（悬浮归零），单一真相源',
+        reason: '底栏预留必须经派生 getter（悬浮归零 + 状态行底部带），单一真相源',
       );
     });
 
@@ -284,8 +377,11 @@ void main() {
         reason: '拖 slider 每 tick 直跑「CSS 注入+重锚+整页 setState」会一次拖动上百趟 '
             'WebView 往返（BUG-969 根因），必须经合并执行器收敛',
       );
+      // 格式无关：tall style 会把 `CoalescedAsyncRunner(() async {` 折成
+      // `CoalescedAsyncRunner(` + 换行 + `() async {`，判据只钉
+      // 「runner 直接持有异步动作闭包」。
       expect(
-        src.contains('CoalescedAsyncRunner(() async {'),
+        RegExp(r'CoalescedAsyncRunner\(\s*\(\)\s*async\s*\{').hasMatch(src),
         isTrue,
         reason: '合并动作本体（错误处理/tap-gate/setState）必须收在 runner 内',
       );

@@ -564,10 +564,14 @@ class AppPaths {
     // 新手引导推荐包的下载暂存目录（含 .part 半截文件，随根搬走以免续传丢进度；
     // 导入成功后由向导 initState 整目录删除，常态下为空/不存在）。
     'recommended_pack',
+    'onboarding_tutorial',
     // 下载页「手动添加任务」落的 .torrent 元数据，随任务长期持久化，必须随数据根走
     // （留在旧根 = 换根后任务恢复不出种子）。派生点：AppModel 的
     // manualTorrentDirectory。
     'manual_torrents',
+    // 卡片来源回看的待回写草稿（临时音频/图片/字段，`card_source_drafts/<sourceId>`），
+    // 失败后可恢复提交，必须随数据根走。派生点：card_source_router.dart。
+    'card_source_drafts',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台

@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:http/http.dart' as http;
 
@@ -97,16 +97,29 @@ class InterconnectPostTransport {
   /// 返回的 `allUnreachable` 仅当「至少发起过一次请求，且所有候选都没拿到**任何**
   /// HTTP 响应」时为 true——未配对 / 无 token / 候选 URL 全畸形都**不**算不可达。
   /// 这条区分是音频源失败冷却（BUG-575）的依据：设备可达但没这个词 ≠ 设备死了。
+  /// [onlyCandidate] limits a source-edit continuation to the exact URL, pin and
+  /// effective credential used for the original read. Revocation/re-pairing
+  /// invalidates the session; it never permits fallback to a different library.
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
     required Duration timeout,
     required String authErrorMessage,
+    FushiClientUrl? onlyCandidate,
   }) async {
     final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
+        .toList();
     final String? fallbackToken = await _repo.getFushiClientToken();
+    if (onlyCandidate != null) {
+      candidates.removeWhere(
+        (FushiClientUrl candidate) =>
+            candidate.url != onlyCandidate.url ||
+            candidate.fingerprintSha256 != onlyCandidate.fingerprintSha256 ||
+            interconnectTokenFor(candidate, fallbackToken) !=
+                onlyCandidate.token,
+      );
+    }
     if (candidates.isEmpty) {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
       return (json: null, allUnreachable: false, candidate: null);
@@ -146,7 +159,14 @@ class InterconnectPostTransport {
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
         if (response.statusCode == 401) {
-          authError = SyncAuthError(authErrorMessage);
+          // BUG-2377：这条通道的凭据只可能是配对 token（地址行自带的 per-peer
+          // token，或全局回落键）——本文件从头到尾只服务互联。语义写死成
+          // [SyncAuthFailureKind.pairingRejected]，别再让上层从消息字面量去猜：
+          // 猜的结果是「登录已过期，请重新登录」，而互联没有登录这个操作。
+          authError = SyncAuthError(
+            authErrorMessage,
+            kind: SyncAuthFailureKind.pairingRejected,
+          );
           continue;
         }
         if (response.statusCode == 404 || response.statusCode == 405) {
@@ -157,13 +177,17 @@ class InterconnectPostTransport {
         }
         final dynamic decoded = jsonDecode(response.body);
         if (decoded is Map<String, dynamic>) {
-          return (json: decoded, allUnreachable: false, candidate: candidate);
+          return (
+            json: decoded,
+            allUnreachable: false,
+            candidate: candidate.copyWith(token: token),
+          );
         }
         if (decoded is Map) {
           return (
             json: Map<String, dynamic>.from(decoded),
             allUnreachable: false,
-            candidate: candidate,
+            candidate: candidate.copyWith(token: token),
           );
         }
       } catch (_) {

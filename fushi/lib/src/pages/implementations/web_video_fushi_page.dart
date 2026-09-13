@@ -18,7 +18,7 @@ import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
@@ -33,13 +33,13 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -55,12 +55,13 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
     show WindowFullscreenHost;
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show videoRemotePositionEpisodeAtPrefKey, videoRemotePositionEpisodePrefKey;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/app_ui_scale.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
@@ -447,7 +448,29 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       WebVideoFushiPage.debugSelectShaderTier = _selectShaderTier;
       return true;
     }());
-    unawaited(_init());
+    // BUG-2230：`_init` 的异常必须有归宿。它是 fire-and-forget，内部又有几处**真会抛**
+    // 的 await（`rootBundle.loadString` 资源缺失、`WebViewEnvironment.create` 在 WebView2
+    // Runtime 缺失 / 用户数据目录被占用时直接抛、`_copyLoginCookiesFromBuiltin` 的 IO）。
+    // 从前抛出后 `_failReason` 恒 null、`_row` 恒 null ⇒ 页面永久停在**无 AppBar 的转圈**
+    // 分支上，桌面端没有系统返回键 ⇒ 用户进来就出不去（与 BUG-2229 同构）。
+    unawaited(_initGuarded());
+  }
+
+  /// [_init] 的异常边界：任何未预期失败都落进已有的**带 AppBar** 失败态，
+  /// 而不是把用户锁在无出口的加载态里。
+  Future<void> _initGuarded() async {
+    try {
+      await _init();
+    } catch (e, st) {
+      // release 版 Windows 上 stdout 无人接收，debugPrint 等于丢弃——而 BUG-2230
+      // 的立论就是「异常无归宿」。给了用户归宿（失败终态）就不能把诊断也扔了：
+      // WebViewEnvironment.create 失败 / 资源缺失 / cookie 拷贝 IO 错这三类根因
+      // 只有落进 error_log 才区分得出来。
+      ErrorLogService.instance.log('web_video', 'init failed: $e', st);
+      debugPrint('WebVideoFushiPage init failed: $e\n$st');
+      if (!mounted) return;
+      setState(() => _failReason = t.video_load_failed_generic);
+    }
   }
 
   @override
@@ -481,7 +504,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _popupOverlayEntry = null;
     }
     if (_fullscreen && Platform.isWindows) {
-      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: false);
+      // 全屏中退页：runner 拥有的窗口全屏态不随路由消失，这里必须亲手退出，
+      // 否则回到书架的是一扇没有标题栏、盖着任务栏的巨窗。
+      unawaited(WindowCaptionChannel.setFullscreen(false));
+      FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
     }
     _controller.removeListener(_onControllerChanged);
     _controller.dispose();
@@ -779,10 +805,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           mediaKey: widget.bookUid,
           title: row.title,
           accrual: StudyAccrual.explicit,
-          onWriteError: (Object e, StackTrace st) =>
-              ErrorLogService.instance.log('StudyClock.write(web-video)', e, st),
+          onWriteError: (Object e, StackTrace st) => ErrorLogService.instance
+              .log('StudyClock.write(web-video)', e, st),
         ),
-        loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
+        loadCoverage: () =>
+            db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
         saveCoverage: (String json) =>
             db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
         markCompleted: (String uid) =>
@@ -855,7 +882,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final DateTime until = DateTime.now().add(const Duration(seconds: 30));
     while (DateTime.now().isBefore(until)) {
       if (!mounted || _mineStopRequested) return false;
-      if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) return true;
+      if (_videoKey == row.videoKey && (_state?.hasVideo ?? false)) {
+        // 画面就绪可能早于 onLoadStop；开录前再挂一次（页面侧按 style id 幂等）。
+        await _setPlayerChromeHidden(true);
+        return true;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     return false;
@@ -1355,7 +1386,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       exactOnly: true,
     );
     if (listHit != null) {
-      _handleListLookup(listHit.cue, listHit.graphemeIndex, listHit.charRect);
+      _handleListLookup(listHit.cue, listHit.graphemeIndex, listHit.anchorRect);
       return;
     }
     _popNestedPopupAt(0);
@@ -1536,21 +1567,39 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (!_listVisible) _listHitTester.unbind();
   }
 
+  /// 本页全屏的唯一执行体：F 键 / 全屏按钮 / F11（[buildVideoPlayerShortcutsFromRegistry]
+  /// 把 `globalToggleFullscreen` 映射到这里，BUG-2462）三者同路。
+  ///
+  /// Windows 走 runner 自有的保边框全屏 [WindowCaptionChannel.setFullscreen]
+  /// （BUG-1933）：media_kit 的 `defaultEnterNativeFullscreen` 与 window_manager 同技法
+  /// ——剥 `WS_CAPTION|WS_THICKFRAME` 迫使 DWM 重建窗口 visual，Flutter 子窗图层缺席
+  /// 一帧、露出表面色（浅色主题 = 白帧）。BUG-1933 当初只改了 app 根 F11 与视频页
+  /// 两个入口，本页被漏掉，F 键一直闪白；F11 改由本页接管后（BUG-2462）连 F11 也
+  /// 落回了那条路。与 `fullscreen.part.dart` 同序：进入前先藏 app frame，退出时
+  /// 等 runner 同步还原窗口矩形后再亮出 frame（早亮会在退出过程闪一下标题栏）。
+  /// macOS / Linux 保留 media_kit 默认回调。
   Future<void> _toggleFullscreen() async {
     if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) return;
     final bool enter = !_fullscreen;
     setState(() => _fullscreen = enter);
     if (Platform.isWindows) {
-      FushiWindowsTitleBar.setContentFullscreen(owner: this, enabled: enter);
-    }
-    try {
       if (enter) {
-        await defaultEnterNativeFullscreen();
+        FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: true);
+        await WindowCaptionChannel.setFullscreen(true);
       } else {
-        await defaultExitNativeFullscreen();
+        await WindowCaptionChannel.setFullscreen(false);
+        FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
       }
-    } catch (e) {
-      ErrorLogService.instance.log('web_video', 'fullscreen: $e');
+    } else {
+      try {
+        if (enter) {
+          await defaultEnterNativeFullscreen();
+        } else {
+          await defaultExitNativeFullscreen();
+        }
+      } catch (e) {
+        ErrorLogService.instance.log('web_video', 'fullscreen: $e');
+      }
     }
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.chromeToggled);
   }
@@ -1576,7 +1625,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final VideoBookRow? row = _row;
     final UnmodifiableListView<UserScript>? scripts = _userScripts;
     if (row == null || scripts == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      // BUG-2230：加载态也必须带 AppBar（= 返回键）。出口不是内容的一部分、不随内容
+      // 存亡（漫画页 manga_fushi_page 早已是这个口径）：本页的正常退出入口在
+      // [_buildAppBar]，而那只挂在下面的**就绪**分支上；WebView2 环境创建 / 资源加载
+      // 慢或悬挂时，桌面端没有系统返回键，用户就被钉在这个转圈上。
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
     // 网页流媒体页属于视频模块，同样是**窗口全屏的合法宿主**（见
     // [WindowFullscreenHosts]）。上面两条早退分支（加载失败 / 尚未就绪）故意不声明：
@@ -1676,7 +1732,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 unawaited(_selectShaderTier(tier)),
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<VideoShaderTier>>[
-                  for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+                  for (final VideoShaderTierSpec spec in shaderTiersFor())
                     if (spec.tier != VideoShaderTier.low)
                       CheckedPopupMenuItem<VideoShaderTier>(
                         value: spec.tier,
@@ -1802,6 +1858,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
+        // BUG-2260：队列换集走 loadUrl 整页重载，上一份文档里的 chrome 隐藏 <style> 随之消失，
+        // 之后每张卡都带控制条/分级提示。隐藏态归 Dart 所有，新文档就绪时按 _mineRunning 重挂。
+        unawaited(_setPlayerChromeHidden(_mineRunning));
         unawaited(_js('window.__fushiWebVideo.replayCues()'));
         unawaited(_syncDomSubtitles());
       },

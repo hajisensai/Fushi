@@ -1,0 +1,10 @@
+## BUG-2505 · 互联只下到书没下到有声书后再无补拉有声书入口
+- **报告**：2026-09-13（用户：「如果只下了书没下载有声书，后面打开后会找不到有声书下载入口，即便远端有有声书」）
+- **真实性**：✅ 真 bug。互联拉书没有「同时下载有声书」选项：远端 `hasAudiobook` 时 EPUB 落库后**自动**接着拉有声书包（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart` `_runRemoteBookDownload` → `_downloadRemoteAudiobook`），拉包失败只弹一条 SnackBar、EPUB 保留（或 host 后来才给这本书配音）。之后：
+  - 远端清单按「本端已有同 key」整条去重藏掉（`packages/fushi_engine/lib/sync/fushi_library_host_service.dart` `dedupeRemoteBooks`），远端卡上的「下载」动作随之消失；
+  - 与书配对的 host 有声书 `bookKey` 非空、不满足 standalone 判据（`remote.part.dart` `_loadStandaloneRemoteSrtAudiobooks` 只留 `isStandaloneSrt`），不会以独立占位卡出现；
+  - 本地书卡长按菜单（`reader_fushi_history_page.dart` `_epubExtraActions`）与阅读器 / 有声书导入对话框（`audiobook_import_dialog.dart`）只有本地文件 / ASR 来源；
+  - 本地书记录不存任何远端信息，唯一的自动补拉藏在「上传有声书文件」开关驱动的 sweep（`sync_orchestrator/audiobooks.part.dart` `toPullAudioOnly`）里，文案只说上传；对比弹窗的补音频只对「远端独有书」生效（`sync_compare_dialog.dart` `_downloadRemoteOnlyBook`）。
+- **[x] ① 已修复** —（本 PR）纯函数 `remoteAudiobookOnlyCandidates(remote, localBookKeys, localAudiobookKeys, keyOf)`（`fushi_library_host_service.dart`，与 `dedupeRemoteBooks` 同键口径）挑出「本端有书 ∧ 本端无有声书 ∧ 对端 hasAudiobook」的远端条目，按本端 bookKey 索引；`_loadRemoteBooks` 随远端清单一起算进 `_RemoteBookState.audiobookOnly`（本端有声书键来自 `getAllAudiobooks()`，漫画架不查）。本地 EPUB 书卡菜单在「导入有声书」之后新增「从互联对端下载有声书」（`t.remote_book_audiobook_download`，同受听书模块门控），点击走 `_downloadRemoteAudiobookOnly`：任务挂 app 级 `InterconnectDownloadManager`（键与整书下载同为 `bookTaskId`，同一本书两种任务互斥），拉包 + 解包复用 `_downloadRemoteAudiobook`（用 host 真实 `downloadId` 拉、绑到本地 bookKey，BUG-414 契约），完成后与整书下载同样回填 host 端听书断点，刷新书架并重载远端候选表。`_downloadRemoteAudiobook` 的进度改报原始 0..1，整书任务由调用方映射到后半段。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/remote_audiobook_only_candidates_test.dart`（纯函数 6 例：入选 / 本端已有有声书不入选 / 对端无有声书不入选 / 本端无书不入选 / 与 dedupe 同键口径互补 / 同 key 取首条）；`fushi/test/pages/reader_remote_interconnect_test.dart` 两条 widget 行为测试：本地已有书 + 对端 hasAudiobook + 本端无有声书 → 远端卡确被去重藏掉、长按本地卡菜单露「从互联对端下载有声书」、点击后 EPUB 一个字节不重下、`remoteAudiobookFetcher` 收到 host 真实 key、`remoteAudiobookImporter` 绑到本地 bookKey；本端已有有声书 → 菜单不露该项、「导入有声书」仍在。
+- **备注**：真机复测（互联对端 + 只有书的本地条目）待用户侧确认；widget 测试覆盖的是接线与显示条件。

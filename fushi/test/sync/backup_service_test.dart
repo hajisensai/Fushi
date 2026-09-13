@@ -89,40 +89,25 @@ void main() {
     });
 
     test('validateBackup returns null for non-zip file', () async {
-      final service = BackupService(
-        db: db,
-        dbDirectory: tmpDir.path,
-        appVersion: '1.0.0',
-      );
       final fakePath = '${tmpDir.path}/fake.zip';
       await File(fakePath).writeAsString('not a zip file');
-      final result = await service.validateBackup(fakePath);
+      final result = await BackupRestoreService.validateBackup(fakePath);
       expect(result, isNull);
     });
 
     test('validateBackup returns null for zip without metadata', () async {
-      final service = BackupService(
-        db: db,
-        dbDirectory: tmpDir.path,
-        appVersion: '1.0.0',
-      );
       final archive = Archive();
       archive.addFile(ArchiveFile('random.txt', 5, utf8.encode('hello')));
       final zipData = ZipEncoder().encode(archive)!;
       final zipPath = '${tmpDir.path}/no_meta.zip';
       await File(zipPath).writeAsBytes(zipData);
 
-      final result = await service.validateBackup(zipPath);
+      final result = await BackupRestoreService.validateBackup(zipPath);
       expect(result, isNull);
     });
 
     test('validateBackup returns null for zip with metadata but no db',
         () async {
-      final service = BackupService(
-        db: db,
-        dbDirectory: tmpDir.path,
-        appVersion: '1.0.0',
-      );
       final meta = BackupMeta(
         appVersion: '1.0.0',
         schemaVersion: 13,
@@ -138,16 +123,11 @@ void main() {
       final zipPath = '${tmpDir.path}/no_db.zip';
       await File(zipPath).writeAsBytes(zipData);
 
-      final result = await service.validateBackup(zipPath);
+      final result = await BackupRestoreService.validateBackup(zipPath);
       expect(result, isNull);
     });
 
     test('validateBackup returns metadata for valid backup zip', () async {
-      final service = BackupService(
-        db: db,
-        dbDirectory: tmpDir.path,
-        appVersion: '1.0.0',
-      );
       final meta = BackupMeta(
         appVersion: '1.0.0',
         schemaVersion: 13,
@@ -165,7 +145,7 @@ void main() {
       final zipPath = '${tmpDir.path}/valid.zip';
       await File(zipPath).writeAsBytes(zipData);
 
-      final result = await service.validateBackup(zipPath);
+      final result = await BackupRestoreService.validateBackup(zipPath);
       expect(result, isNotNull);
       expect(result!.appVersion, '1.0.0');
       expect(result.schemaVersion, 13);
@@ -174,13 +154,8 @@ void main() {
     });
 
     test('validateBackup returns null for nonexistent file', () async {
-      final service = BackupService(
-        db: db,
-        dbDirectory: tmpDir.path,
-        appVersion: '1.0.0',
-      );
-      final result =
-          await service.validateBackup('${tmpDir.path}/nonexistent.zip');
+      final result = await BackupRestoreService.validateBackup(
+          '${tmpDir.path}/nonexistent.zip');
       expect(result, isNull);
     });
 
@@ -213,7 +188,7 @@ void main() {
       final zipPath = '${tmpDir.path}/restore.zip';
       await File(zipPath).writeAsBytes(zipData);
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: tmpDir.path,
         zipPath: zipPath,
       );
@@ -259,7 +234,7 @@ void main() {
         expect(meta.bookCount, 1);
 
         // Validate the produced zip
-        final result = await service.validateBackup(outputPath);
+        final result = await BackupRestoreService.validateBackup(outputPath);
         expect(result, isNotNull);
         expect(result!.bookCount, 1);
         expect(result.appVersion, '2.0.0');
@@ -419,7 +394,7 @@ void main() {
         final restoredDictDir = await Directory.systemTemp
             .createTemp('backup_dict_enabled_resources_r_');
         await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
-        await BackupService.restoreBackup(
+        await BackupRestoreService.restoreBackup(
           dbDirectory: restoreDir.path,
           zipPath: outputPath,
           dictionaryResourceDirectory: restoredDictDir.path,
@@ -550,7 +525,7 @@ void main() {
           await File('${dstDictDir.path}/OldDict/media/old.png')
               .writeAsString('stale image');
 
-          await BackupService.restoreBackup(
+          await BackupRestoreService.restoreBackup(
             dbDirectory: dstDir.path,
             zipPath: outputPath,
             dictionaryResourceDirectory: dstDictDir.path,
@@ -619,7 +594,7 @@ void main() {
             .writeAsString('stale index');
 
         await expectLater(
-          BackupService.restoreBackup(
+          BackupRestoreService.restoreBackup(
             dbDirectory: dstDir.path,
             zipPath: zipPath,
             dictionaryResourceDirectory: dstDictDir.path,
@@ -680,7 +655,7 @@ void main() {
       // Restore into a fresh directory and reopen — data must survive.
       final dstDir = await Directory.systemTemp.createTemp('backup_dst_');
       try {
-        await BackupService.restoreBackup(
+        await BackupRestoreService.restoreBackup(
           dbDirectory: dstDir.path,
           zipPath: '${tmpDir.path}/round_trip.zip',
         );
@@ -706,11 +681,6 @@ void main() {
     });
 
     test('validateBackup rejects oversized files', () async {
-      final service = BackupService(
-        db: db,
-        dbDirectory: tmpDir.path,
-        appVersion: '1.0.0',
-      );
       // Create a file larger than 512 MB check
       // We can't actually create 512MB in a test, but we can verify the size
       // check path by confirming a valid small zip passes.
@@ -733,7 +703,7 @@ void main() {
       await File(zipPath).writeAsBytes(zipData);
 
       // Small file should pass
-      final result = await service.validateBackup(zipPath);
+      final result = await BackupRestoreService.validateBackup(zipPath);
       expect(result, isNotNull);
     });
   });
@@ -774,7 +744,7 @@ void main() {
       // verbatim with nothing preserved — exposing exactly what the ZIP holds.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_strip_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
       );
@@ -849,7 +819,7 @@ void main() {
 
       final dstDir = await Directory.systemTemp.createTemp('hibiki_ns_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
       final dstDb = FushiDatabase(dstDir.path);
@@ -912,7 +882,7 @@ void main() {
 
       final dstDir = await Directory.systemTemp.createTemp('hibiki_ps_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
       final dstDb = FushiDatabase(dstDir.path);
@@ -964,7 +934,7 @@ void main() {
       }
       await localDb.close();
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
       final dstDb = FushiDatabase(dstDir.path);
@@ -1041,12 +1011,12 @@ void main() {
       await srcDb.close();
 
       // ── Import keeping local settings, then simulate the startup restore ──
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: curDir.path,
         zipPath: zipPath,
         importSettings: false,
       );
-      await BackupService.recoverPendingRestore(curDir.path);
+      await BackupRestoreService.recoverPendingRestore(curDir.path);
 
       final after = FushiDatabase(curDir.path);
       addTearDown(after.close);
@@ -1115,12 +1085,12 @@ void main() {
       // Import into an EMPTY dir (no current DB) with importSettings:false.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_fresh_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
         importSettings: false,
       );
-      await BackupService.recoverPendingRestore(dstDir.path);
+      await BackupRestoreService.recoverPendingRestore(dstDir.path);
 
       final after = FushiDatabase(dstDir.path);
       addTearDown(after.close);
@@ -1146,7 +1116,8 @@ void main() {
       await File('${dir.path}/fushi.db.sync-preserve.json')
           .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
 
-      await BackupService.recoverPendingRestore(dir.path); // must not throw
+      await BackupRestoreService.recoverPendingRestore(
+          dir.path); // must not throw
 
       final after = FushiDatabase(dir.path);
       addTearDown(after.close);

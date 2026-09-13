@@ -1,0 +1,7 @@
+## BUG-2286 · 文件名只剩集号时每集各成一张卡，整部番被拆成一堆分开的条目
+- **报告**：2026-09-08（用户：Mac 升 2.3 后「有些番剧识别的了但是全都被当成分开的剧集而不是放在一起」）
+- **真实性**：✅ 真 bug，且**不是 2.3 回归**（该文件自 v2.2.4 未改，老库老行为）。根因 `fushi/lib/src/media/video/video_filename_parser.dart` 的 `groupVideosIntoPlaylists`：分组键取 `parseVideoFilename(basename).series`，而番名写在**目录**上、文件名只剩集号（`01.mp4` / `第01集.mp4` / `S01E01.mkv`）时，规则引擎给不出标题、`series` 回落成整个 stem（`_fallbackSeries`），于是 `01`、`02`、`03` 各自成键 → 每个都是单集组（`isPlaylist == false`）→ `video_folder_group_coordinator` 的 `:263` 单集组不建合集 → `VideoSourceWorkPlanner` 里每个 book 单独成 work → 每集一次刮削、每集一张卡。
+  - 实测（改前，仓内解析器跑真实命名）：`葬送的芙莉莲/01.mp4 + 02.mp4` → `SPLIT(2) "01"x1 | "02"x1`；带番名的命名（字幕组括号、中文第二季、SxxEyy、绝对集号）14 组全部正确归组，所以这条只打在「纯集号」这一种整理方式上。
+- **[x] ① 已修复** — 分组键在「文件名解不出标题**且**解出了集号」时回落到父目录名（与 `parseVideoPath` 把季号回落父目录同源）：父目录名同样过一遍规则引擎剥字幕组/画质块；父目录自己也解不出标题时（`Season 1`、`01`）用父目录**原名**——它至少把同一目录归到一起，且不会把两个季目录并成一组（并了会让 S1E01 与 S2E01 撞键、后者被 `putIfAbsent` 丢掉）。网络来源的百分号编码目录段与 `decodedSourceBasename` 同口径解码。文件名自带番名时一个字节都不变。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_filename_parser_test.dart` 新增 7 条：纯集号归一组（含集号排序）、`第NN集` / `SxxEyy` 形态、季目录不并季、同目录混番仍按目录归组（可由用户拆分）、文件名自带番名时不看目录、URL 编码目录名解码、裸文件名无父目录段保持原样。既有 `groupVideosIntoPlaylists` 6 条与 `video_folder_group_coordinator_test` / `source_library` 全部保持绿（137 条）。
+- **备注**：改的是**扫描期**归组，已入库的老条目要重扫该来源才会归组；`video_folder_group_coordinator` 的 BUG-1739 墓碑门仍然生效（用户删过的同名 playlist 合集不会被重扫复活）。同一目录下混着不同番的纯集号文件会被并到一组——这是有意的取舍（那种整理方式本来就无法从文件名区分），用户可在合集里拆分。

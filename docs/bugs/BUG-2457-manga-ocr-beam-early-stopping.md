@@ -1,0 +1,6 @@
+## BUG-2457 · 漫画 OCR beam search 按 early_stopping=false 实现与原版 generation_config 不符，退化图跑满 300 步既慢又编造
+- **报告**：2026-09-11（用户：「手机/电脑本地 OCR 又慢又不准」；2026-09-03 与 09-11 两轮本机对拍复现）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/ocr/beam_search.dart` 的终止判据按 HF `early_stopping=False` 实现（文件头注释也这么写），而 manga-ocr 原版配置是 `early_stopping: true`：`kha-white/manga-ocr-base` 的 `config.json` 顶层 `early_stopping: True`（decoder 子配置里的 False 是子模型默认值，不是 generate 用的那份），`mayocream/manga-ocr-onnx`（本仓实际下载的导出）的 `generation_config.json` 同为 `true`。两种语义在正常裁块上逐字相同；在退化图（横幅、噪声框、整气泡大裁块）上 False 要等「最差完成分 >= 存活 beam 上限」才停，模型编小作文时存活分一直很高，于是跑满 `max_length=300`：本机实测 03 横幅 299 步 / 10.6 s（int8 4.6 s）输出一整段编造文字，True 语义 21 步 / 126 ms。5 张样本均值 2398 → 269 ms/张，其余 4 张输出与步数完全一致。这是「又慢又不准」同时出现的直接根因之一（另一个是整气泡整块喂，对拍报告在 `C:\Users\wrds\.claude\jobs\cce6bd03\tmp\bench\REPORT.md`，未入库）。
+- **[x] ① 已修复** — `BeamSearchConfig.earlyStopping`（默认 `true`）+ `MangaOcrRecognizer.earlyStopping` 透传；`is_done` 改为「凑齐 numBeams 条完成假设即停」，`false` 保留旧比较作对拍。文件头注释同步改成官方口径。提交哈希见本文件同批提交。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/beam_search_test.dart`「BUG-2457 early_stopping」：脚本化 logits 让完成集第 2 步凑满，断言 `true` 恰 2 步、`false` 追到 maxLength 9 步、默认值为 `true`。
+- **备注**：对拍的第二个结论「大区域按行切块再逐行喂 manga-ocr（26% → 9% CER）」是独立改动，不在本 bug 内；不换识别模型（PP-OCRv6 medium 12.5% 但 0/5 全对，小假名/异体字/引号错法对查词致命）。

@@ -126,6 +126,34 @@ void main() {
       expect(parseReaderStableProgressDetails('0,0,0'), isNull);
       expect(parseReaderStableProgressDetails('not-progress'), isNull);
     });
+
+    test('四段协议 current,total,start,end：第四段 = 可见区间终点（ReadUnitLedger）', () {
+      final snapshot = parseReaderStableProgressDetails('"250,1000,345,812"');
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.progress, 0.25);
+      expect(snapshot.charOffset, 345);
+      expect(snapshot.charOffsetEnd, 812);
+    });
+
+    test('三段输入向后兼容：终点缺省 -1（调用方不 arrive）', () {
+      expect(
+        parseReaderStableProgressDetails('250,1000,345')!.charOffsetEnd,
+        -1,
+      );
+      expect(parseReaderStableProgressDetails('250,1000')!.charOffset, -1);
+      expect(parseReaderStableProgressDetails('250,1000')!.charOffsetEnd, -1);
+    });
+
+    test('第四段非法 / JS 显式 -1 → -1，不影响前三段', () {
+      final snapshot = parseReaderStableProgressDetails('250,1000,345,x');
+      expect(snapshot!.charOffset, 345);
+      expect(snapshot.charOffsetEnd, -1);
+      expect(
+        parseReaderStableProgressDetails('1000,1000,900,-1')!.charOffsetEnd,
+        -1,
+      );
+    });
   });
 
   // TODO-2527：本组四个窗口原来全是**定长字符窗口**（`idx + 700` / `+2700` / `+1400`

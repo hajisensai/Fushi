@@ -117,11 +117,36 @@ function fushiUpdateNotice(stale) {
   };
 }
 
+// 「Fushi 字幕」开关的显示状态（纯函数，供 node 测试）。读 chrome.storage.local 的
+// subtitleOverlayEnabled——subtitle-panel.js 自绘覆盖层的总开关（外挂轨 / 替代原生 / 全轨覆盖层
+// 都经它出画），与 options 页「在视频上显示外挂字幕」同一个键。判据与
+// subtitle-panel.js applySubtitlePreferences 同型：只有显式 false 才算关，缺省 = 开。
+function fushiOverlayToggleState(stored) {
+  const on = !(stored && stored.subtitleOverlayEnabled === false);
+  return {
+    on,
+    state: on ? '开' : '关',
+    title: on
+      ? '点击关闭 Fushi 自绘字幕（回到站点自带字幕）'
+      : '点击在视频上显示 Fushi 字幕（外挂轨 / 替代原生字幕）',
+  };
+}
+
+// 点击后要写入 storage 的键（纯函数）。关→开时顺带把字幕能力总门 netflixSubtitlePanel 打开：
+// 覆盖层受它门控（subtitle-panel.js st.enabled=false 时 teardownAll），用户从没开过字幕侧边栏
+// 就单开覆盖层等于什么都不发生。开→关只翻自己，不动总门（用户可能还在用侧边栏列表）。
+function fushiOverlayToggleWrite(currentlyOn) {
+  return currentlyOn
+    ? { subtitleOverlayEnabled: false }
+    : { subtitleOverlayEnabled: true, netflixSubtitlePanel: true };
+}
+
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
     fushiQueueItemUrl, fushiTabSite, fushiGenButtonState, fushiUpdateNotice,
+    fushiOverlayToggleState, fushiOverlayToggleWrite,
   };
 }
 
@@ -380,11 +405,40 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     });
   }
 
+  // 「Fushi 字幕」开关：翻 subtitleOverlayEnabled，subtitle-panel.js 的 storage.onChanged 会
+  // 立即在视频页藏/显自绘覆盖层（替代原生模式下站点字幕随之放回/藏掉）。popup 不关——
+  // 用户要看到状态翻过去；写盘失败也不会留下假状态，因为下面 onChanged 只认真正落盘的值。
+  const overlayEl = document.getElementById('hp-overlay-toggle');
+  const overlayStateEl = document.getElementById('hp-overlay-toggle-state');
+  let overlayOn = true;
+  function renderOverlayToggle(stored) {
+    const s = fushiOverlayToggleState(stored);
+    overlayOn = s.on;
+    if (!overlayEl) return;
+    overlayEl.dataset.on = s.on ? '1' : '';
+    overlayEl.setAttribute('aria-pressed', s.on ? 'true' : 'false');
+    overlayEl.title = s.title;
+    if (overlayStateEl) overlayStateEl.textContent = s.state;
+  }
+  try {
+    chrome.storage.local.get(['subtitleOverlayEnabled'], (r) => renderOverlayToggle(r || {}));
+  } catch (_) { renderOverlayToggle({}); }
+  if (overlayEl) {
+    overlayEl.addEventListener('click', () => {
+      const write = fushiOverlayToggleWrite(overlayOn);
+      renderOverlayToggle(write); // 先按目标态画（点击即反馈），落盘后 onChanged 再对一次
+      try { chrome.storage.local.set(write); } catch (_) {}
+    });
+  }
+
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。
   // TODO-1881：fushiNfBatch 变化（生成开始/结束/取消）也要刷新按钮状态（取消↔生成切换）。
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if (changes.subtitleOverlayEnabled) {
+        renderOverlayToggle({ subtitleOverlayEnabled: changes.subtitleOverlayEnabled.newValue });
+      }
       if (changes.fushiQueue) {
         render(Array.isArray(changes.fushiQueue.newValue) ? changes.fushiQueue.newValue : []);
       } else if (changes.fushiNfBatch) {

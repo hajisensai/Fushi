@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.network
 
+import app.fushi.reader.mihon.HostProxyPolicy
 import android.content.Context
 import android.webkit.WebSettings
 import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
@@ -18,7 +19,7 @@ class NetworkHelper(context: Context) {
     val cookieJar = AndroidCookieJar()
 
     val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        HostProxyPolicy.configureClient(OkHttpClient.Builder())
             .cookieJar(cookieJar)
             .addInterceptor(UncaughtExceptionInterceptor())
             .addInterceptor(UserAgentInterceptor(::defaultUserAgentProvider))

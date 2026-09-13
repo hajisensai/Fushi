@@ -21,6 +21,32 @@ import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 final DictionarySearchResult kPopupSearchingPlaceholderResult =
     DictionarySearchResult(searchTerm: '');
 
+/// 弹窗**原地跳转**历史里的一页（对齐 Hoshi Reader iOS `popup.js` 的
+/// `backStack/forwardStack` 快照：条目 + 滚动位）。
+///
+/// 点弹窗内的词头 / 交叉引用链接 / 汉字（`onLinkClick` 通道）不再叠一层子弹窗，
+/// 而是把本层正在显示的这一页存进后退栈、在**同一个** WebView 里换成新词；顶栏
+/// ← → 在栈间来回。Hoshi 存的是渲染好的 DOM 节点，这里存 Dart 侧真值
+/// （[result]）：Dart 才是 `entry.result` / load-more / 面包屑 / 制卡上下文的
+/// 事实源，JS 单独换 DOM 会让这些全部指向旧词。回到某页 = 重推该页 result（同一
+/// 对象身份 ⇒ `didUpdateWidget` 全量 renderPopup）+ 渲染完把滚动位恢复到
+/// [scrollTop]。
+class DictionaryPopupHistoryPage {
+  const DictionaryPopupHistoryPage({
+    required this.searchTerm,
+    required this.result,
+    required this.allLoaded,
+    required this.scrollTop,
+  });
+
+  final String searchTerm;
+  final DictionarySearchResult? result;
+  final bool allLoaded;
+
+  /// 离开该页时弹窗内容的 `scrollTop`（CSS px，WebView 局部）；回来时恢复。
+  final double scrollTop;
+}
+
 /// 统一的查词弹窗条目（合并旧 `_PopupStackItem`（base_source_page）与
 /// `NestedPopupEntry`（dictionary_page_mixin）两份近乎重复的类型）。
 class DictionaryPopupEntry {
@@ -57,6 +83,25 @@ class DictionaryPopupEntry {
   /// BUG-1651：本层按 DOM 内容测量得到的外壳总高度（Flutter 逻辑像素）。null 表示
   /// 尚未测量，先按用户最大高度布局；每次新顶层查词重置，增量结果则在当前高度上伸缩。
   double? autoFitHeight;
+
+  /// 原地跳转的后退 / 前进栈（栈顶在末尾）。只由 [DictionaryPopupController]
+  /// 写；随本层一起消亡（关层 / 热槽复位 / 顶层新查词都清空，不跨查词会话）。
+  final List<DictionaryPopupHistoryPage> _backHistory =
+      <DictionaryPopupHistoryPage>[];
+  final List<DictionaryPopupHistoryPage> _forwardHistory =
+      <DictionaryPopupHistoryPage>[];
+
+  bool get canGoBack => _backHistory.isNotEmpty;
+  bool get canGoForward => _forwardHistory.isNotEmpty;
+
+  /// 本层发生过原地跳转（任一方向还有页可去）。宿主据此决定顶栏是否画 ← →：
+  /// 与 Hoshi iOS 默认（`popupActionBar=false`）同——没跳过就不占顶栏。
+  bool get hasNavigationHistory => canGoBack || canGoForward;
+
+  /// 下一次推本层 result 渲染完成后要恢复到的 `scrollTop`；null = 归零（新词从
+  /// 顶部开始）。只有后退 / 前进回到历史页时非空，由 [DictionaryPopupWebView]
+  /// 经 `window.__fushiPendingScrollTop` 交给 popup.js 在渲染尾批应用。
+  double? restoreScrollTop;
 
   /// 仅常驻热槽为 true：其 WebView 全程挂载复用，关栈时隐藏而非销毁。
   final bool isWarmSlot;
@@ -298,6 +343,15 @@ class DictionaryPopupController extends ChangeNotifier {
       ..isSearching = false
       ..allLoaded = false;
     e.autoFitHeight = null;
+    _clearHistory(e);
+  }
+
+  /// 清掉 [e] 的原地跳转历史与待恢复滚动位。所有「本层换成一个新查词会话」的路径
+  /// （复用热槽 / 热槽复位）都要经这里，历史绝不跨会话残留。
+  void _clearHistory(DictionaryPopupEntry e) {
+    e._backHistory.clear();
+    e._forwardHistory.clear();
+    e.restoreScrollTop = null;
   }
 
   /// 顶层查词目标：能复用常驻热槽（首条且 isWarmSlot）就原地复用并丢弃子层；
@@ -328,6 +382,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..isSearching = true
         ..revealOnRender = false
         ..visible = visible;
+      _clearHistory(e);
     } else {
       if (replaceStack) {
         _retireEntries(_entries);
@@ -418,8 +473,95 @@ class DictionaryPopupController extends ChangeNotifier {
     e
       ..result = result
       ..allLoaded = allLoaded
-      ..isSearching = false;
+      ..isSearching = false
+      // 新结果 / load-more 都从当前滚动位出发；只有历史页回退才带恢复位
+      //（[goBack] / [goForward] 自己设）。
+      ..restoreScrollTop = null;
     notifyListeners();
+  }
+
+  // ── 原地跳转历史（Hoshi Reader iOS 的 backStack/forwardStack）────────────
+
+  DictionaryPopupHistoryPage _snapshot(
+      DictionaryPopupEntry e, double scrollTop) {
+    return DictionaryPopupHistoryPage(
+      searchTerm: e.searchTerm,
+      result: e.result,
+      allLoaded: e.allLoaded,
+      scrollTop: scrollTop,
+    );
+  }
+
+  void _applyPage(
+    DictionaryPopupEntry e,
+    DictionaryPopupHistoryPage page, {
+    required double? restoreScrollTop,
+  }) {
+    e
+      ..searchTerm = page.searchTerm
+      ..result = page.result
+      ..allLoaded = page.allLoaded
+      ..isSearching = false
+      ..restoreScrollTop = restoreScrollTop;
+    // 弹窗不动：selectionRect / autoFitHeight 都保留。高度由新内容的
+    // onContentMetrics 再伸缩，先重置会让外壳先跳到最大高再收回来。
+  }
+
+  /// 本层原地跳到 [term]：当前页（连同离开时的 [scrollTop]）压入后退栈、前进栈
+  /// 清空（与浏览器 / Hoshi 同语义），本层换成 [result]。宿主已经查完才调——空
+  /// 结果不跳（Hoshi：`if (count > 0) redirect(count)`），所以这里不存在
+  /// 「搜索期」中间态，`isSearching` 由宿主自己在查询期间置位。
+  ///
+  /// [e] 已不在栈内（查询期间被关掉 / 顶层换词）→ no-op，返回 false。
+  bool navigateInPlace(
+    DictionaryPopupEntry e, {
+    required String term,
+    required DictionarySearchResult result,
+    required bool allLoaded,
+    required double scrollTop,
+  }) {
+    if (!_entries.contains(e)) return false;
+    onLookupStarted?.call();
+    e._backHistory.add(_snapshot(e, scrollTop));
+    e._forwardHistory.clear();
+    _applyPage(
+      e,
+      DictionaryPopupHistoryPage(
+        searchTerm: term,
+        result: result,
+        allLoaded: allLoaded,
+        scrollTop: 0,
+      ),
+      restoreScrollTop: null,
+    );
+    notifyListeners();
+    _notifyLookupStackDepth();
+    return true;
+  }
+
+  /// 后退一页；[scrollTop] 是当前页离开时的滚动位（进前进栈，再前进时恢复）。
+  bool goBack(DictionaryPopupEntry e, {required double scrollTop}) =>
+      _navigate(e,
+          from: e._backHistory, to: e._forwardHistory, scrollTop: scrollTop);
+
+  /// 前进一页；[scrollTop] 同 [goBack]。
+  bool goForward(DictionaryPopupEntry e, {required double scrollTop}) =>
+      _navigate(e,
+          from: e._forwardHistory, to: e._backHistory, scrollTop: scrollTop);
+
+  bool _navigate(
+    DictionaryPopupEntry e, {
+    required List<DictionaryPopupHistoryPage> from,
+    required List<DictionaryPopupHistoryPage> to,
+    required double scrollTop,
+  }) {
+    if (!_entries.contains(e) || from.isEmpty) return false;
+    to.add(_snapshot(e, scrollTop));
+    final DictionaryPopupHistoryPage page = from.removeLast();
+    _applyPage(e, page, restoreScrollTop: page.scrollTop);
+    notifyListeners();
+    _notifyLookupStackDepth();
+    return true;
   }
 
   /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。

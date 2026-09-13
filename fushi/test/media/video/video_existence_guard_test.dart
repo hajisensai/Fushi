@@ -57,7 +57,7 @@ void main() {
         reason: '缺失态删除必须复用仓储的完整删除入口，不得在页面另写删除序列');
 
     final String repo = File(
-      'lib/src/media/video/video_book_repository.dart',
+      '../packages/fushi_engine/lib/media/video/video_book_repository.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
     const String implSignature =
         'Future<int> _deleteVideoBooksAndReclaimAssetsUnlocked(';

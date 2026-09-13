@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show charCountsFromChaptersJson, countChapterChars, parseBookOnly;
 

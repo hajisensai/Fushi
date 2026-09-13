@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'dart:isolate';
 
 import '../audiobook/audiobook_model.dart';
 import 'anchor_gap_filler.dart';
@@ -38,7 +38,7 @@ class EpubCueMatcher {
       maxConsecutiveMisses: maxConsecutiveMisses,
       gapFiller: gapFiller,
     );
-    return compute(_matchAndFillEntrypoint, req);
+    return Isolate.run(() => _matchAndFillEntrypoint(req));
   }
 
   /// 同步匹配 + 回填，**只给测试 / 小数据场景**：第一遍匹配对全书是 O(cue 数 ×
@@ -86,7 +86,7 @@ class EpubCueMatcher {
       maxConsecutiveMisses: maxConsecutiveMisses,
       gapFiller: gapFiller,
     );
-    return compute(_probeAndFillEntrypoint, req);
+    return Isolate.run(() => _probeAndFillEntrypoint(req));
   }
 }
 

@@ -3,7 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class _FakeCandidate extends VideoSubtitleCandidate {
   _FakeCandidate({

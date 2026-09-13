@@ -31,10 +31,10 @@ int main() {
   ok &= Check(environment.hook_ui_language_api == 0, "UI language hook");
   ok &= Check(environment.timezone.bias == -540, "Tokyo timezone bias");
   ok &= Check(std::wcscmp(environment.timezone.standard_name,
-                          L"Tokyo Standard Time") == 0,
+                          L"\u6771\u4eac (\u6a19\u6e96\u6642)") == 0,
               "standard timezone name");
   ok &= Check(std::wcscmp(environment.timezone.daylight_name,
-                          L"Tokyo Standard Time") == 0,
+                          L"\u6771\u4eac (\u590f\u6642\u9593)") == 0,
               "daylight timezone name");
   ok &= Check(environment.registry_redirection_count == 0,
               "registry redirect count");

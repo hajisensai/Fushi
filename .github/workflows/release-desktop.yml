@@ -67,13 +67,51 @@ on:
         required: false
         default: true
         type: boolean
+      # 与 release.yml 的同名输入成对，语义必须一致：两条 workflow 同 tag 共用一个
+      # concurrency 组、产出同一个 release 的不同平台资产，一边发一边不发会造出
+      # 「只有一半平台的正式版」。改一边就要改另一边（守卫测试钉住这条对偶）。
+      build_only:
+        description: 'Build the channel artifacts but publish nothing: no GitHub Release, no update manifest, no TestFlight upload. Artifacts stay downloadable from the run page. Use to hand a release candidate out for testing before committing to the publish.'
+        required: false
+        default: false
+        type: boolean
+      kazumi_adhoc:
+        description: 'One-off: sign the upstream Kazumi 2.3.0 IPA for two registered devices.'
+        required: false
+        default: false
+        type: boolean
+      kazumi_device_1_name:
+        description: 'Kazumi Ad Hoc device 1 name.'
+        required: false
+      kazumi_device_1_udid:
+        description: 'Kazumi Ad Hoc device 1 UDID.'
+        required: false
+      kazumi_device_2_name:
+        description: 'Kazumi Ad Hoc device 2 name.'
+        required: false
+      kazumi_device_2_udid:
+        description: 'Kazumi Ad Hoc device 2 UDID.'
+        required: false
 
 concurrency:
-  group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  # 组名带 workflow 名（2026-09-08，用户要求正式版并行发包）：Android（release.yml）与
+  # 桌面/Apple（release-desktop.yml）是两条产出不相交的 workflow，而 GitHub 的 concurrency
+  # 组是**仓库级**的——两条 workflow 只要组名算出来一样就串行，且同组「1 个 in-progress +
+  # 1 个 pending」的语义会让第二个 pending 把第一个 pending **取消**（2026-09-03 实测：同
+  # sha 先后 dispatch Android beta 与桌面 beta，Android 那条 5 秒内 cancelled、0 个 job）。
+  # 正式版靠 `release: published` 同时点燃两条、同 tag 同组必串行：桌面/Apple 包要等
+  # Android 整条跑完才开始（v2.2.4：Android 13:44 上传，Windows/macOS/iOS 14:52）。
+  # 两条并行上传同一个 GitHub Release 是安全的，上传侧本就按此设计：rolling debug 的
+  # prune 只删本平台资产（TODO-1131）；softprops 建 release 撞车会重取（同一条 workflow
+  # 里 windows/macos/ios 早就并行上传同一个 release）；update-manifest 推送有「重取远端
+  # tip 再合并」循环（TODO-781）。同一条 workflow 内仍按 tag/sha 串行，同 tag 两次 dispatch
+  # 不会互相踩。守卫：fushi/test/build/release_workflow_concurrency_guard_test.dart。
+  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
 
 jobs:
   windows:
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: windows-2022
     permissions:
       contents: write
@@ -93,6 +131,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -192,6 +231,19 @@ jobs:
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
 
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
+
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
             debug)
@@ -283,6 +335,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache media_kit's pre-built libmpv + ANGLE .7z archives it
       # downloads from GitHub into the CMake binary dir (fushi/build/windows/x64).
       # media_kit's download_and_verify skips the download when the archive exists
@@ -719,6 +772,78 @@ jobs:
       # 判据是**能力探测**，不是版本号：ISCC.exe 的版本资源是 0.0.0.0，命令行 banner
       # 也只印「Inno Setup 6 Command-Line Compiler」不带小版本（6.7.3 本机实测），
       # 没有可靠的版本读法。直接拿一个只用 6.7 指令的最小脚本编一次：编得过就够新。
+      # 代码签名走 Certum 云端 HSM（SimplySign）。私钥按 CA/B Forum 规则留在硬件里、
+      # 导不出 .pfx，所以这里不能用 signtool /f cert.pfx —— 早先那条
+      # WINDOWS_CERT_BASE64 -> cert.pfx 的路径对这类证书永远走不通，
+      # 表现是 signcheck 恒判 false、签名步骤被静默跳过、发出去的包其实没签名。
+      # 现在的通路：装 SimplySign Desktop（注册 CSP/KSP）-> 用 TOTP seed 无人值守
+      # 登录 -> signtool /sha1 通过命名管道让云端 HSM 完成签名运算。
+      - name: Check signing availability
+        id: signcheck
+        shell: bash
+        env:
+          SEED: ${{ secrets.CERTUM_OTP_URI }}
+        run: |
+          if [ -n "$SEED" ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "have=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -z "$SEED" ]; then
+            echo "::warning title=Windows installer unsigned::CERTUM_OTP_URI secret 未配置，本次产物不会被签名。"
+          fi
+      # MSI 有 274MB，每次重下既慢又给 Certum 添负担。按版本号缓存。
+      - name: Cache SimplySign Desktop installer
+        if: steps.signcheck.outputs.have == 'true'
+        id: ssdcache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\SimplySignDesktop.msi
+          key: simplysign-desktop-9.4.4.92-64bit-en
+      - name: Install SimplySign Desktop
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        run: |
+          $msi = "$env:RUNNER_TEMP\SimplySignDesktop.msi"
+          # 上游文件应当是不可变的（URL 带版本号）。哈希对不上就停 —— 这是签名
+          # 凭据链路，宁可发不出版本，也不能把来路不明的 CSP/KSP 装进签名环境。
+          $expected = '8EC420FC27798B86078B7BD02FE7152097E1B3005BAB51820EACA8E57DF84DA3'
+          if (-not (Test-Path -LiteralPath $msi)) {
+            $url = 'https://files.certum.eu/software/SimplySignDesktop/Windows/9.4.4.92/SimplySignDesktop-9.4.4.92-64-bit-en.msi'
+            Write-Host "下载 SimplySign Desktop…"
+            Invoke-WebRequest -Uri $url -OutFile $msi -UseBasicParsing
+          }
+          $actual = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash
+          if ($actual -ne $expected) {
+            throw "SimplySign MSI 哈希不符。expected=$expected actual=$actual"
+          }
+          Write-Host "MSI 哈希校验通过。"
+          $p = Start-Process msiexec -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec 安装失败，退出码 $($p.ExitCode)" }
+          Write-Host "SimplySign Desktop 安装完成。"
+      - name: Connect SimplySign (unattended)
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_OTP_URI: ${{ secrets.CERTUM_OTP_URI }}
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          & "$PWD\tool\simplysign_connect.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "SimplySign 登录失败，退出码 $LASTEXITCODE" }
+      # 给 bundle 里的所有 exe/dll 签名，必须在 Inno 打包**之前** —— 打包之后再签
+      # 只能签到外壳，里面的程序仍是未签名的。
+      # 只签外壳时的实际缺口：fushi.exe、fushi_update_launcher.exe、voice_hook/ 下的
+      # 注入器与 hook DLL、ffmpeg/ffprobe 全部无签名，杀软扫描已安装目录照样报毒；
+      # galgame 注入器尤其容易被盯上，而它恰恰是最需要签名背书的那个。
+      # -SkipValidlySigned：bundle 里混着微软的 VC++ CRT 运行库，重签会把微软签名
+      # 换成我们的，那是倒退不是补齐。
+      - name: Sign Windows bundle binaries
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          & "$PWD\tool\sign_windows_release.ps1" `
+            -Path "$PWD\fushi\build\windows\x64\runner\Release" `
+            -Recurse -SkipValidlySigned `
+            -Description 'Fushi'
+          if ($LASTEXITCODE -ne 0) { throw "bundle 签名失败，退出码 $LASTEXITCODE" }
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |
@@ -773,23 +898,88 @@ jobs:
             "/DOutputDir=$PWD\fushi\build\installer" `
             "fushi\windows\installer\fushi.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
-      - name: Check signing availability
-        id: signcheck
-        shell: bash
-        env:
-          CERT: ${{ secrets.WINDOWS_CERT_BASE64 }}
-        run: |
-          if [ -n "$CERT" ]; then echo "have=true" >> "$GITHUB_OUTPUT"; else echo "have=false" >> "$GITHUB_OUTPUT"; fi
-      - name: Sign installer (optional)
+      - name: Sign Windows installer
         if: steps.signcheck.outputs.have == 'true'
-        env:
-          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
         run: |
-          [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
-          $st = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
-          & "$st" sign /fd SHA256 /f "$PWD\cert.pfx" /p $env:WINDOWS_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+          & "$PWD\tool\sign_windows_release.ps1" `
+            -Path "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe" `
+            -Description 'Fushi'
+          if ($LASTEXITCODE -ne 0) { throw "签名失败，退出码 $LASTEXITCODE" }
+      # 打包后回验：把刚签好的安装器真的装进 runner 的临时目录，检查**装出来的**
+      # 每个 exe/dll 都带签名。
+      # 「Sign Windows bundle binaries」验的是打包**前**的文件，证明不了 Inno 把它们
+      # 原样收了进去 —— 只要 iss 的 Source 规则漏掉某个子目录、或哪一步在打包前又
+      # 覆盖了文件，那一步照样全绿，而用户装出来的仍是无签名程序。这一步验的是
+      # 用户实际拿到的东西，等价于把「更新装完是什么样」搬进 CI。
+      - name: Verify installed payload is signed
+        if: steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
+        run: |
+          $thumb = if ($env:CERTUM_CERT_THUMBPRINT) { $env:CERTUM_CERT_THUMBPRINT } else { 'D717A3F6A12F50B75E9D04072A69B1BCB590AE14' }
+          $setup = "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe"
+          $dst   = "$env:RUNNER_TEMP\payload-verify"
+          # 不能用 Start-Process -Wait：它等的是「该进程**及其所有子孙进程**」退出
+          # （PowerShell 的文档行为）。fushi.iss 的 [Run] 段带 postinstall，静默安装下
+          # Inno 照样执行它、拉起 fushi.exe；那是 GUI 进程，永远不会自己退出，
+          # 于是 -Wait 永远返回不了。iss 里的 nowait 只约束 Inno 自己不等，
+          # 管不住 PowerShell 等子孙。实测：这一步曾就地挂死 45 分钟没有任何输出。
+          # 改为只等安装器本体，并给上限；超时视为失败而不是无声拖到 job 超时。
+          # 逐段打点：上一版整步 45 分钟零输出，除了「卡住了」什么都推断不出来。
+          Write-Host "[verify] 开始静默安装到 $dst"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $p = Start-Process -FilePath $setup -ArgumentList @(
+            '/VERYSILENT', '/SP-', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=$dst"
+          ) -PassThru
+          if (-not $p.WaitForExit(600000)) {
+            try { $p.Kill() } catch { }
+            throw "静默安装 10 分钟未结束，已终止。"
+          }
+          if ($p.ExitCode -ne 0) { throw "静默安装失败，退出码 $($p.ExitCode)" }
+          # 收掉被 postinstall 拉起来的 fushi.exe：留着它会占住刚装出来的文件，
+          # 后续读签名和 runner 清理都可能被卡。
+          Get-Process -Name 'fushi' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Write-Host "[verify] 安装完成，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1))s"
+          if (-not (Test-Path -LiteralPath "$dst\fushi.exe")) { throw "装出来的目录里没有 fushi.exe: $dst" }
+
+          $files = Get-ChildItem -LiteralPath $dst -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.dll' } |
+            # unins*.exe 是 Inno 在**安装时**现生成的卸载器，我们签不到它。
+            Where-Object { $_.Name -notlike 'unins*.exe' }
+
+          Write-Host "[verify] 待校验 exe/dll $($files.Count) 个，开始逐个读签名…"
+          $ours = 0; $others = 0; [string[]] $unsigned = @()
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
+            if ($s.Status -eq 'Valid' -and $s.SignerCertificate.Thumbprint -eq $thumb) { $ours++ }
+            elseif ($s.Status -eq 'Valid' -and $s.SignerCertificate) { $others++ }
+            else { $unsigned += $f.FullName.Substring($dst.Length + 1) }
+          }
+          Write-Host "装出的 exe/dll 共 $($files.Count) 个：本证书签名 $ours，他方签名 $others，未签名 $($unsigned.Count)"
+
+          $main = Get-AuthenticodeSignature -LiteralPath "$dst\fushi.exe"
+          Write-Host "fushi.exe -> $($main.Status) / $($main.SignatureType) / $($main.SignerCertificate.Subject)"
+          if ($main.Status -ne 'Valid' -or $main.SignerCertificate.Thumbprint -ne $thumb) {
+            throw "fushi.exe 未被本证书签名 —— 安装包外壳签了但里面没签，等于没补齐。"
+          }
+          if ($unsigned.Count -gt 0) {
+            $unsigned | ForEach-Object { Write-Host "  未签名: $_" }
+            throw "装出来的目录里还有 $($unsigned.Count) 个无签名 exe/dll。"
+          }
+          Write-Host "回验通过：安装后目录内无任何未签名 exe/dll。"
+      # 登录会话留在 runner 上没有意义，且 GitHub 托管 runner 用完即毁；
+      # 自托管 runner 上不断开则会把会话泄给下一个 job。
+      - name: Disconnect SimplySign
+        if: always() && steps.signcheck.outputs.have == 'true'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $exe = Get-ChildItem $env:ProgramFiles, ${env:ProgramFiles(x86)} -Filter 'SimplySignDesktop.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exe) { Start-Process $exe.FullName -ArgumentList '/close' -Wait -ErrorAction SilentlyContinue }
       - name: Prepare Windows installer release asset
         shell: bash
         env:
@@ -834,6 +1024,7 @@ jobs:
           retention-days: 14
 
   macos:
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -850,6 +1041,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -949,6 +1141,19 @@ jobs:
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
 
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
+
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
             debug)
@@ -1031,6 +1236,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
@@ -1075,7 +1281,7 @@ jobs:
             fi
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
-          tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
+          tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       # BUG-1922：这一步以前根本不存在。tool/aidoku/build_macos_runtime.sh 只被本地
@@ -1384,6 +1590,7 @@ jobs:
           retention-days: 14
 
   ios:
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -1395,15 +1602,12 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
-      - name: Install Rust toolchain for physical iOS devices
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios
       - name: Resolve desktop release channel
         id: channel
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -1503,6 +1707,19 @@ jobs:
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
 
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
+
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
             debug)
@@ -1585,6 +1802,7 @@ jobs:
           dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
       # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
       # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
@@ -1676,6 +1894,7 @@ jobs:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           RELEASE_CHANNEL: ${{ steps.channel.outputs.channel }}
           INPUT_UPLOAD_TESTFLIGHT: ${{ github.event.inputs.upload_testflight }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
         run: |
           set -euo pipefail
           CREDS=false
@@ -1687,9 +1906,13 @@ jobs:
           # 只在手动 beta/formal 发布时上传。push 触发的 debug 通道每次提交都会跑，
           # 传 TestFlight 只会白烧 App Store Connect 的处理配额并把构建号推高，
           # 而构建号在同一个 CFBundleShortVersionString 下必须单调，浪费不可回收。
+          # build_only 也必须挡住这条：TestFlight 上传是**不可回收**的外发——
+          # 同一个 CFBundleShortVersionString 下构建号必须单调，传上去就再也拿不
+          # 回来，而 build_only 的语义是「先出包给人测、还没决定要不要发」。
           TESTFLIGHT=false
           if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
              && { [ "$RELEASE_CHANNEL" = beta ] || [ "$RELEASE_CHANNEL" = formal ]; } \
+             && [ "${INPUT_BUILD_ONLY:-}" != true ] \
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
             TESTFLIGHT=true
           fi
@@ -1856,12 +2079,45 @@ jobs:
             --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
+  kazumi-adhoc:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Sign Kazumi for registered devices
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          KAZUMI_DEVICE_1_NAME: ${{ github.event.inputs.kazumi_device_1_name }}
+          KAZUMI_DEVICE_1_UDID: ${{ github.event.inputs.kazumi_device_1_udid }}
+          KAZUMI_DEVICE_2_NAME: ${{ github.event.inputs.kazumi_device_2_name }}
+          KAZUMI_DEVICE_2_UDID: ${{ github.event.inputs.kazumi_device_2_udid }}
+          KAZUMI_OUTPUT_DIR: ${{ runner.temp }}/kazumi-output
+        run: bash tool/sign_kazumi_adhoc.sh
+      - name: Upload signed Kazumi IPA
+        uses: actions/upload-artifact@v7
+        with:
+          name: kazumi-2.3.0-internal-adhoc
+          path: ${{ runner.temp }}/kazumi-output/*
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     needs: [windows, macos, ios]
-    if: ${{ always() }}
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
+      # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
+      actions: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -1874,6 +2130,7 @@ jobs:
         shell: bash
         env:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
@@ -1972,6 +2229,19 @@ jobs:
           # CHANNEL and manifest publishes whenever the managed release does.
           if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
           if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in

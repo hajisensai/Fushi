@@ -14,7 +14,7 @@ import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_rate_limit.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:http/http.dart' as http;
 
 /// Bangumi 条目类型：4 = 游戏。

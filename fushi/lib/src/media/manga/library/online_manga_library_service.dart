@@ -6,10 +6,19 @@ import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_reader_chapter.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
+import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
+import 'package:fushi/src/updates/update_feed_service.dart';
 
 /// 从一个已就绪的 [MihonManager] 直接建服务。
 ///
@@ -33,14 +42,24 @@ class OnlineMangaLibraryService {
     required this.database,
     required this.rootDirectory,
     required this.adapter,
+    this.updateFeed,
   });
 
   final FushiDatabase database;
 
-  /// 在线漫画的本地落盘根（占位 manga.json、封面、章节页缓存）。
+  /// **旧**落盘根（`<runtimeRoot>/library/<bookKey>` 与 `reader-cache/`）。
+  ///
+  /// 2026-09-12 起在线条目统一住进 `<fushi_books>/<bookKey>`（设计稿 §2.1），这个根
+  /// 只剩两个用途：[ensureBookDirectory] 识别还没迁走的旧目录，以及顺手清掉该书的
+  /// 旧 `reader-cache/`。新条目不再往这里写任何东西。
   final Directory rootDirectory;
 
   final OnlineMangaRuntimeAdapter adapter;
+
+  /// 更新提醒的投递口（v101）。可空是**刻意**的：源浏览页临时建的服务实例、
+  /// 单测里的实例都不需要提醒，而「刷新出新章」这件事的判据不该因为少一个可选
+  /// 依赖就走两条路径。null = 只落库不提醒。
+  final UpdateFeedService? updateFeed;
 
   /// 身份串的分隔符：NUL。
   ///
@@ -96,14 +115,18 @@ class OnlineMangaLibraryService {
         series: entry.series,
         chapters: entry.chapters,
       );
-      return (await database.getEpubBook(bookKey))!;
+      final EpubBookRow row = (await database.getEpubBook(bookKey))!;
+      await _adoptRemoteCollection(entry, row);
+      return row;
     }
 
     final Directory directory = Directory(
-      p.join(rootDirectory.path, 'library', bookKey),
+      await MangaStorage.bookDirectory(bookKey),
     );
     await Directory(p.join(directory.path, 'chapters')).create(recursive: true);
-    final File placeholder = File(p.join(directory.path, 'manga.json'));
+    final File placeholder = File(
+      p.join(directory.path, MangaStorage.kMangaJsonFileName),
+    );
     await _writeAtomic(placeholder, '{"pages":[]}');
 
     String? coverPath;
@@ -111,10 +134,26 @@ class OnlineMangaLibraryService {
     if (coverUrl != null && coverUrl.isNotEmpty) {
       try {
         final List<int> bytes = await adapter.fetchCover(entry, coverUrl);
-        final String extension = _imageExtension(bytes);
-        final File cover = File(p.join(directory.path, 'cover$extension'));
-        await cover.writeAsBytes(bytes, flush: true);
-        coverPath = p.basename(cover.path);
+        // BUG-2496：未知魔数（源返回的 Cloudflare 拦截页 / HTML 错误页）直接不落盘，
+        // 不再回落成 `cover.jpg`——那种文件一到渲染层就是 `Invalid image data`。
+        final String? extension = _imageExtension(bytes);
+        if (extension == null) {
+          throw const CoverImageInvalidException(
+            'online manga cover is not PNG/WebP/GIF/JPEG',
+          );
+        }
+        final String coverFile = p.join(directory.path, 'cover$extension');
+        // 收口再查一次完整性（截断 JPEG/PNG）+ 原子写 + 驱逐解码缓存。
+        await MediaCoverService.applyCoverBytes(
+          bytes: bytes,
+          destPath: coverFile,
+        );
+        coverPath = p.basename(coverFile);
+      } on CoverImageInvalidException catch (e) {
+        ErrorLogService.instance.logDiagnostic(
+          'OnlineMangaLibraryService.cover',
+          e,
+        );
       } on Object {
         // 封面失败不能挡住「追这部作品」。作品页仍会经源的运行时按需取图。
       }
@@ -135,7 +174,24 @@ class OnlineMangaLibraryService {
         format: const Value<String>('manga'),
       ),
     );
-    return (await database.getEpubBook(bookKey))!;
+    final EpubBookRow row = (await database.getEpubBook(bookKey))!;
+    await _adoptRemoteCollection(entry, row);
+    return row;
+  }
+
+  Future<void> _adoptRemoteCollection(
+    OnlineMangaLibraryEntry entry,
+    EpubBookRow row,
+  ) async {
+    if (entry.runtime != OnlineMangaRuntimeKind.interconnect) return;
+    await RemoteCollectionAdoptionService(database).adoptMembership(
+      membership: RemoteCollectionMembership.fromJson(
+        entry.series.raw['collection'],
+      ),
+      mediaType: MediaKind.epub,
+      remoteEntryKey: entry.series.key,
+      localEntryKey: row.uid,
+    );
   }
 
   /// 用一次刷新的结果覆盖库里的描述符。
@@ -168,13 +224,12 @@ class OnlineMangaLibraryService {
       );
       if (found >= 0) nextIndex = found;
     }
-    final OnlineMangaLibraryEntry updated = OnlineMangaLibraryEntry(
-      runtime: existing.runtime,
-      extensionPackage: existing.extensionPackage,
-      sourceId: existing.sourceId,
+    // copyWith 而不是重新构造：订阅两位（v3）必须跟着刷新活下来。
+    final OnlineMangaLibraryEntry updated = existing.copyWith(
       series: series,
       chapters: List<OnlineMangaChapter>.unmodifiable(chapters),
       currentChapterIndex: nextIndex,
+      clearCurrentChapter: nextIndex == null,
     );
     await database.updateEpubBookMihonState(
       bookKey,
@@ -182,7 +237,48 @@ class OnlineMangaLibraryService {
       chapterCount: chapters.length,
       chaptersJson: _chaptersJson(chapters),
     );
+    await _publishNewChapters(
+      bookKey: bookKey,
+      title: series.title,
+      previous: existing.chapters,
+      current: chapters,
+    );
     return updated;
+  }
+
+  /// 把这次刷新新出现的章投递成更新提醒。
+  ///
+  /// 挂在**落库之后**：先保证库里已经是新状态，再提醒——反过来的话，提醒发出去
+  /// 而落库失败，用户点进来会看到一部没有那章的书。
+  Future<void> _publishNewChapters({
+    required String bookKey,
+    required String title,
+    required List<OnlineMangaChapter> previous,
+    required List<OnlineMangaChapter> current,
+  }) async {
+    final UpdateFeedService? feed = updateFeed;
+    if (feed == null) return;
+    final List<OnlineMangaChapter> fresh = newlyAppearedChapters(
+      previous: previous,
+      current: current,
+    );
+    if (fresh.isEmpty) return;
+    await feed.publishBatch(UpdateFeedKind.mangaChapter, <UpdateFeedDraft>[
+      for (final OnlineMangaChapter chapter in fresh)
+        UpdateFeedDraft(
+          kind: UpdateFeedKind.mangaChapter,
+          targetKey: mangaChapterTargetKey(
+            bookKey: bookKey,
+            chapterKey: chapter.key,
+          ),
+          title: title,
+          subtitle: mangaChapterDisplayName(chapter),
+          detailJson: jsonEncode(<String, Object?>{
+            'bookKey': bookKey,
+            'chapterKey': chapter.key,
+          }),
+        ),
+    ]);
   }
 
   /// 联网刷新一条书架条目，成功则落库。
@@ -226,31 +322,106 @@ class OnlineMangaLibraryService {
     return updated;
   }
 
-  /// 某一章页图的落盘目录。
-  Directory chapterDirectory(String bookKey, OnlineMangaChapter chapter) {
-    final String digest = sha256
-        .convert(utf8.encode(chapter.key))
-        .toString()
-        .substring(0, 24);
-    return Directory(
-      p.join(rootDirectory.path, 'reader-cache', 'chapters', bookKey, digest),
-    );
-  }
-
-  /// 打开某一章，交给共享阅读器。
-  Future<OnlineMangaReaderChapter> openChapter({
+  /// 写订阅位（设计稿 2026-09-12 §2.3）：只改 `sourceMetadata` 里的两个布尔，
+  /// 章节列表 / 当前章原样。返回写回后的描述符。
+  Future<OnlineMangaLibraryEntry> setSubscription({
     required String bookKey,
     required OnlineMangaLibraryEntry entry,
-    required OnlineMangaChapter chapter,
-    bool persistProgress = true,
-    int? initialPage,
-  }) => adapter.openChapter(
-    entry: entry,
-    chapter: chapter,
-    managedDirectory: chapterDirectory(bookKey, chapter),
-    persistProgress: persistProgress,
-    initialPage: initialPage,
-  );
+    required bool subscribed,
+    required bool autoDownload,
+  }) async {
+    final OnlineMangaLibraryEntry updated = entry.copyWith(
+      subscribed: subscribed,
+      autoDownload: autoDownload,
+    );
+    await database.updateEpubBookMihonState(
+      bookKey,
+      sourceMetadata: updated.encode(),
+      chapterCount: updated.chapters.length,
+      chaptersJson: _chaptersJson(updated.chapters),
+    );
+    return updated;
+  }
+
+  /// 保证这条在线条目的书目录住在 `<fushi_books>/<bookKey>`，返回**当前**行。
+  ///
+  /// 2026-09-12 前在线条目落在 `<runtimeRoot>/library/<bookKey>`；章节页图只是
+  /// `reader-cache/` 里的临时缓存。改成「先下载再读」后章目录成了正式内容，必须
+  /// 和封面、占位 manga.json 一起住进标准书根，删书 / 备份 / 数据根迁移才能
+  /// 按 `extractDir` 一并处理。首次访问时把旧目录整个搬过去（跨卷用复制 + 删除），
+  /// 再改 `extractDir`；`bookKey` / `uid` 不变，进度零迁移。
+  ///
+  /// 已在标准位置的行原样返回（零 IO 之外的一次路径比较）。
+  Future<EpubBookRow> ensureBookDirectory(EpubBookRow row) async {
+    final String target = await MangaStorage.bookPath(row.bookKey);
+    if (p.equals(row.extractDir, target)) return row;
+    final Directory source = Directory(row.extractDir);
+    final Directory destination = Directory(target);
+    if (await source.exists()) {
+      await _moveDirectory(source, destination);
+    } else {
+      await destination.create(recursive: true);
+    }
+    await Directory(p.join(target, 'chapters')).create(recursive: true);
+    final File placeholder = File(
+      p.join(target, MangaStorage.kMangaJsonFileName),
+    );
+    if (!await placeholder.exists()) {
+      await _writeAtomic(placeholder, '{"pages":[]}');
+    }
+    await database.updateEpubBookContentPaths(row.bookKey, extractDir: target);
+    // 旧的阅读期页缓存对新布局毫无价值，顺手清掉——失败只记日志，不挡打开。
+    final Directory staleCache = Directory(
+      p.join(rootDirectory.path, 'reader-cache', 'chapters', row.bookKey),
+    );
+    try {
+      if (await staleCache.exists()) await staleCache.delete(recursive: true);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'OnlineMangaLibraryService.cleanReaderCache',
+        error,
+        stack,
+      );
+    }
+    return (await database.getEpubBook(row.bookKey)) ??
+        row.copyWith(extractDir: target);
+  }
+
+  /// 目录搬家：同卷直接 rename，跨卷（`rename` 抛 `FileSystemException`）退回
+  /// 递归复制 + 删源。
+  static Future<void> _moveDirectory(
+    Directory source,
+    Directory destination,
+  ) async {
+    await destination.parent.create(recursive: true);
+    if (await destination.exists()) {
+      // 目标已有东西（半次迁移中断过）：合并进去而不是覆盖。
+      await _copyTree(source, destination);
+      await source.delete(recursive: true);
+      return;
+    }
+    try {
+      await source.rename(destination.path);
+    } on FileSystemException {
+      await _copyTree(source, destination);
+      await source.delete(recursive: true);
+    }
+  }
+
+  static Future<void> _copyTree(Directory source, Directory destination) async {
+    await destination.create(recursive: true);
+    await for (final FileSystemEntity entity in source.list(
+      followLinks: false,
+    )) {
+      final String name = p.basename(entity.path);
+      final String targetPath = p.join(destination.path, name);
+      if (entity is Directory) {
+        await _copyTree(entity, Directory(targetPath));
+      } else if (entity is File) {
+        await entity.copy(targetPath);
+      }
+    }
+  }
 
   /// 新读者从哪一章开始。
   ///
@@ -305,7 +476,8 @@ class OnlineMangaLibraryService {
     await temporary.rename(target.path);
   }
 
-  static String _imageExtension(List<int> bytes) {
+  /// 按魔数定封面扩展名；不是 PNG / WebP / GIF / JPEG 返回 null（调用方不落盘）。
+  static String? _imageExtension(List<int> bytes) {
     if (bytes.length >= 8 &&
         bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
@@ -320,6 +492,12 @@ class OnlineMangaLibraryService {
     if (bytes.length >= 6 && String.fromCharCodes(bytes.take(3)) == 'GIF') {
       return '.gif';
     }
-    return '.jpg';
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xff &&
+        bytes[1] == 0xd8 &&
+        bytes[2] == 0xff) {
+      return '.jpg';
+    }
+    return null;
   }
 }

@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/media/torrent/qbittorrent_client.dart';
+import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 
 void main() {
   test('uploads metainfo as qBittorrent multipart torrents field', () async {

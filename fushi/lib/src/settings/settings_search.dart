@@ -26,20 +26,27 @@ class SettingsSearchEntry {
     required this.item,
     this.sectionTitle,
     this.isBodyEntry = false,
+    this.hasRevealTarget = true,
+    this.subPagePath = const <SettingsNavigationItem>[],
     String? resolvedTitle,
   }) : _resolvedTitle = resolvedTitle;
 
   /// 展平时就地求好的标题（带 [SettingsItem.titleBuilder] 的行才有意义）。
   final String? _resolvedTitle;
 
+  /// 所属**顶层**分类（子页里的行也指向其顶层分类——宽屏切换主从选中、窄屏
+  /// push 详情页都以它为起点）。
   final SettingsDestination destination;
   final String? sectionTitle;
   final SettingsItem item;
 
-  /// true = 由 [SettingsDestination.bodySearchEntries] 合成（body 逃生口正文
-  /// 里的行）。命中后只跳转分类，不登记滚动定位挂点——body 行不是 schema item，
-  /// 挂点永远不会被消费。
+  /// 从顶层分类走到 [item] 所在页要依次推入的子页（[SettingsNavigationItem.child]
+  /// 链）；空 = 行就在顶层分类里。
+  final List<SettingsNavigationItem> subPagePath;
+
+  /// 由自绘正文元数据合成。是否可精确定位由 hasRevealTarget 单独声明。
   final bool isBodyEntry;
+  final bool hasRevealTarget;
 
   /// 打分与结果展示用的标题（custom 项取 searchTitle，见
   /// [settingsItemSearchTitle]）。
@@ -73,27 +80,40 @@ List<SettingsSearchEntry> flattenVisibleSettings(
   final List<SettingsSearchEntry> entries = <SettingsSearchEntry>[];
   for (final SettingsDestination destination in destinations) {
     if (!destination.isVisible(context)) continue;
-    for (final SettingsSection section
-        in destination.visibleSections(context)) {
-      for (final SettingsItem item in section.items) {
-        final String title = settingsItemSearchTitle(item, context);
-        if (title.isEmpty) continue;
-        entries.add(SettingsSearchEntry(
-          destination: destination,
-          sectionTitle: section.title,
-          item: item,
-          resolvedTitle: title,
-        ));
-      }
-    }
-    // body 逃生口正文（如「制卡」的 AnkiSettingsBody）不走 sections，索引器
-    // 看不见其中的行；把 destination 声明的 bodySearchEntries 合成为普通搜索
-    // 条目（复用 custom 项的 searchTitle 通道），命中后跳转到该分类正文。
-    for (final SettingsBodySearchEntry bodyEntry
-        in destination.bodySearchEntries) {
-      if (!bodyEntry.isVisible(context)) continue;
-      entries.add(SettingsSearchEntry(
-        destination: destination,
+    _flattenPageInto(
+      entries,
+      root: destination,
+      page: destination,
+      context: context,
+      subPagePath: const <SettingsNavigationItem>[],
+      pageTitle: null,
+    );
+  }
+  return entries;
+}
+
+/// 子页最大嵌套层数（见 [_flattenPageInto] 里为什么必须有上限）。
+const int _kSubPageMaxDepth = 3;
+
+/// 展平一页（顶层分类或子页）的可见行；遇到带 [SettingsNavigationItem.child] 的
+/// 导航行就递归进子页——子页的行也是 schema item，与顶层行同等进索引，面包屑
+/// 变成「分类 › 子页 › 分区」。
+void _flattenPageInto(
+  List<SettingsSearchEntry> entries, {
+  required SettingsDestination root,
+  required SettingsDestination page,
+  required SettingsContext context,
+  required List<SettingsNavigationItem> subPagePath,
+  required String? pageTitle,
+}) {
+  // Body forms use the same recursive navigation path as schema controls.
+  for (final SettingsBodySearchEntry bodyEntry in page.bodySearchEntries) {
+    if (!bodyEntry.isVisible(context)) continue;
+    entries.add(
+      SettingsSearchEntry(
+        destination: root,
+        sectionTitle: pageTitle,
+        subPagePath: subPagePath,
         item: SettingsCustomItem(
           id: bodyEntry.id,
           searchTitle: bodyEntry.title,
@@ -101,10 +121,58 @@ List<SettingsSearchEntry> flattenVisibleSettings(
           builder: (_) => const SizedBox.shrink(),
         ),
         isBodyEntry: true,
-      ));
+        hasRevealTarget: bodyEntry.hasRevealTarget,
+      ),
+    );
+  }
+  for (final SettingsSection section in page.visibleSections(context)) {
+    final String? sectionTitle = _joinBreadcrumb(pageTitle, section.title);
+    for (final SettingsItem item in section.items) {
+      final String title = settingsItemSearchTitle(item, context);
+      if (title.isNotEmpty) {
+        entries.add(
+          SettingsSearchEntry(
+            destination: root,
+            sectionTitle: sectionTitle,
+            item: item,
+            resolvedTitle: title,
+            subPagePath: subPagePath,
+          ),
+        );
+      }
+      if (item is! SettingsNavigationItem) continue;
+      final SettingsDestination Function()? childBuilder = item.child;
+      if (childBuilder == null) continue;
+      // 深度上限：`child` 是闭包，每次调用返回**新实例**，所以基于 identical 的
+      // 环检测无效。A 的子页是 B、B 的子页又是 A 这种写法会让索引器在用户往搜索框
+      // 敲第一个字符时直接栈溢出（`_buildSearchResults` 每次击键都重新展平）。
+      // 三层已经远超现有形态（分类 › 子页 › 子页）。
+      if (subPagePath.length >= _kSubPageMaxDepth) {
+        assert(
+          false,
+          '设置子页嵌套超过 $_kSubPageMaxDepth 层：'
+          '要么 schema 真的这么深，要么 child 闭包成了环',
+        );
+        continue;
+      }
+      final SettingsDestination child = childBuilder();
+      if (!child.isVisible(context)) continue;
+      _flattenPageInto(
+        entries,
+        root: root,
+        page: child,
+        context: context,
+        subPagePath: <SettingsNavigationItem>[...subPagePath, item],
+        pageTitle: _joinBreadcrumb(pageTitle, child.title),
+      );
     }
   }
-  return entries;
+}
+
+String? _joinBreadcrumb(String? head, String? tail) {
+  if (head == null || head.isEmpty) return tail;
+  if (tail == null || tail.isEmpty) return head;
+  return '$head › $tail';
 }
 
 /// 纯过滤：大小写不敏感子串匹配，命中位置决定排序权重
@@ -125,6 +193,10 @@ List<SettingsSearchEntry> filterSettingsEntries(
       e.item.subtitle,
       e.sectionTitle,
       e.destination.title,
+      // 分类副标题也算命中面：它就印在一级列表上、是用户看得见的分类描述，
+      // 搜不到它才是意外。合并类分类尤其依赖这条——「听书」并入「阅读」后，
+      // 「听书」只剩在阅读的 summary 里出现（见 buildReadingDestination）。
+      e.destination.summary,
     ].whereType<String>().join('\n').toLowerCase();
     if (haystack.contains(q)) return 2;
     return -1;
@@ -150,13 +222,42 @@ List<SettingsSearchEntry> filterSettingsEntries(
 /// 跨页面传递「进入详情后要滚到并高亮哪一项」的一次性挂点。
 ///
 /// 搜索结果点击时写入目标 item id；目标行随后在任意详情容器里被
-/// [SettingsSchemaItem] 构建时消费（包上 [SettingsRevealTarget] 滚动定位 +
+/// [SettingsSearchTarget] 构建时消费（包上 [SettingsRevealTarget] 滚动定位 +
 /// 短暂高亮），消费即清除。模块级单槽足够：同一时刻只可能有一个"跳转中"的
 /// 目标，且消费点唯一。
 class SettingsSearchReveal {
   SettingsSearchReveal._();
 
-  static String? pendingItemId;
+  static String? _pendingItemId;
+  static int generation = 0;
+  static String? get pendingItemId => _pendingItemId;
+  static set pendingItemId(String? value) {
+    _pendingItemId = value;
+    if (value != null) generation++;
+  }
+}
+
+/// Real row anchor for both schema controls and custom configuration forms.
+class SettingsSearchTarget extends StatelessWidget {
+  const SettingsSearchTarget({
+    super.key,
+    required this.id,
+    required this.child,
+  });
+
+  final String id;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (SettingsSearchReveal.pendingItemId != id) return child;
+    final int generation = SettingsSearchReveal.generation;
+    SettingsSearchReveal.pendingItemId = null;
+    return SettingsRevealTarget(
+      key: ValueKey<String>('settings-reveal.$id.$generation'),
+      child: child,
+    );
+  }
 }
 
 /// 搜索跳转的落点包装：首帧后把自己滚进视口（滚动统一委托 FushiFocusScroll——
@@ -190,8 +291,9 @@ class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
   Widget build(BuildContext context) {
     final Color highlight = Theme.of(context).colorScheme.primary;
     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
-    final BorderRadius radius =
-        FushiDesignTokens.of(context).radii.controlRadius;
+    final BorderRadius radius = FushiDesignTokens.of(
+      context,
+    ).radii.controlRadius;
     // eink 下闪烁衰减动画归零：TweenAnimationBuilder duration zero 直接落在
     // end（透明），不闪不残影；定位仍由上面的滚动完成。
     return TweenAnimationBuilder<double>(

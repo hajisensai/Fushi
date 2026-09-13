@@ -16,9 +16,9 @@ void main() {
     expect(f.existsSync(), isTrue, reason: 'run from the fushi/ package root');
     final String s = f.readAsStringSync();
 
-    // The device-local table registry names both tables.
-    final int listStart =
-        s.indexOf('static const List<String> _deviceLocalTables =');
+    // The device-local table registry names both tables. B1 分家后它是导出侧与
+    // 恢复侧共用的库级顶层常量（不再是 BackupService 的 static 成员）。
+    final int listStart = s.indexOf('const List<String> _deviceLocalTables =');
     expect(listStart, greaterThan(-1),
         reason: '_deviceLocalTables constant must exist');
     final int listEnd = s.indexOf('];', listStart);
@@ -58,7 +58,7 @@ void main() {
     }
 
     final int parentListStart = s.indexOf(
-      'static const List<String> _deviceLocalTablesParentFirst =',
+      'const List<String> _deviceLocalTablesParentFirst =',
     );
     expect(parentListStart, greaterThan(-1));
     final int parentListEnd = s.indexOf('];', parentListStart);

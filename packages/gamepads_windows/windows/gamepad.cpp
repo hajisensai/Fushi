@@ -13,6 +13,10 @@
 
 Gamepads gamepads;
 
+// ~Gamepads() 在进程退出路径上等 reaper 收尾的上界（BUG-2167）。reaper 被
+// notify 后立刻返回，正常是毫秒级；这个值只是「绝不卡住退出」的兜底。
+static constexpr DWORD kExitReaperJoinTimeoutMs = 1000;
+
 static IGameInput* g_gameInput = nullptr;
 static IGameInputDevice* g_gamepad = nullptr;
 
@@ -280,6 +284,43 @@ void Gamepads::stop() {
 std::list<GamepadData*> Gamepads::get_gamepads() {
   std::lock_guard<std::mutex> lock(gamepads_mutex);
   return this->gamepads;
+}
+
+// BUG-2167：只在进程退出时执行，见 gamepad.h 的声明注释。目标只有一个 ——
+// 让 reaper_thread 在被 std::thread 的析构函数看到之前不再 joinable。
+//
+// 这里**刻意不调用 stop()**。stop() 是给插件析构（正常 teardown）准备的：它要
+// `UnregisterCallback(..., 5000)` 并 join 每一个轮询线程，而轮询线程可能正停在
+// GameInput 自己的锁里（见 read_gamepad 里 BUG-1541 的注释）。在退出路径上阻塞
+// 等它返回，等于把「崩溃」换成「卡死」—— 对上面那条更新交接链没有任何改善，
+// 因为它等的同样是这个进程消失。
+//
+// 也**刻意不动轮询线程**：它们的 GamepadData 是裸指针，本就不随本对象析构；给
+// 它们置停止位反而会让它们在 CRT 已开始拆解的时刻去跑 neutralize_inputs /
+// std::cout。马上就要 ExitProcess，由 OS 统一回收才是最短也最安全的路径。
+//
+// reaper 不同：它只等在 reaper_cv 上，被唤醒后立刻从 reap_loop 返回（毫秒级），
+// 收尾过程不碰 GameInput。所以这里给它一个**有界**的等待：等到了就 join（干净
+// 收尾），等不到就 detach —— 析构函数因此既不会 terminate，也不会卡死。
+Gamepads::~Gamepads() {
+  if (!reaper_thread.joinable()) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(reaper_mutex);
+    reaper_stop = true;
+  }
+  reaper_cv.notify_all();
+
+  // std::thread 没有带超时的 join；用底层句柄等，等到了再 join（此时立即返回）。
+  const HANDLE handle = static_cast<HANDLE>(reaper_thread.native_handle());
+  if (handle != nullptr &&
+      ::WaitForSingleObject(handle, kExitReaperJoinTimeoutMs) ==
+          WAIT_OBJECT_0) {
+    reaper_thread.join();
+  } else {
+    reaper_thread.detach();
+  }
 }
 
 void Gamepads::on_gamepad_connected(IGameInputDevice* device) {

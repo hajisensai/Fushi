@@ -30,3 +30,4 @@
 - **备注**：fragment（内链/脚注）跳转的水位播种需要 JS 侧回报落点字符位置，属独立
   改造；当前由速度封顶把单次虚增封在 ≤4800 字内。与 BUG-1761（漫画停留门）、
   BUG-1763（视频播放停留门）同批产品规则。
+- **2026-09-06 追记**：速度封顶（`kMaxReadCharsPerSecond` 令牌桶）与跳转播种整套被 `ReadUnitLedger`（翻走即计 + 会话覆盖并集，用户裁定对齐 Hoshi）取代并删除；`session_char_speed_cap_test` / `reader_chars_arrival_cap_guard_test` 随之删除。见 `docs/plans/2026-09-06-read-unit-ledger.md`。

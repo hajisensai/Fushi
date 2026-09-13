@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
-import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 
 /// 假服务器：按 URL 路由资源，支持 Range，可注入「忽略 Range」「超发字节」「404」
@@ -246,7 +246,9 @@ void main() {
         ..chunkSize = partSize // 一片一块，慢的那家每片正好吃一次延迟
         ..resources[fast] = body
         ..resources[slow] = body
-        ..slowUrls[slow] = const Duration(milliseconds: 25);
+        // 慢源只慢 25ms 时，CI runner 一忙快源也能慢到同一量级，派活退化成 6 : 6
+        // （develop@a0c71341 实测）。差距拉到 120ms 让「按吞吐派活」与调度噪声分得开。
+        ..slowUrls[slow] = const Duration(milliseconds: 120);
 
       final DownloadPlan plan = DownloadPlan.ranged(
         urls: const <String>[fast, slow],

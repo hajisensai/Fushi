@@ -8,3 +8,5 @@
     cmvs_.install();
     unreal_iostore_.install();
     aos_sfa_.install();
+    unity_mono_.install();
+    smash_fzmedia_.install();

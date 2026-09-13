@@ -23,12 +23,13 @@ int main() {
   PutLe32(&archive, 0, 1);
   PutLe32(&archive, 4, 31);
   PutLe32(&archive, 8, 20);
-  PutLe32(&archive, 12, 250);
-  PutLe32(&archive, 16, 7);
+  PutLe32(&archive, 12, 7);
+  PutLe32(&archive, 16, 250);
   fushi_voice_hook::visual_arts::OvkEntry entry;
   if (!fushi_voice_hook::visual_arts::FindEntryAtOffset(
           archive.data(), archive.size(), 51, 20, &entry)) {
     return 2;
   }
-  return entry.byte_len == 31 && entry.id == 7 ? 0 : 3;
+  return entry.byte_len == 31 && entry.member_id == 7 &&
+                 entry.sample_count == 250 ? 0 : 3;
 }

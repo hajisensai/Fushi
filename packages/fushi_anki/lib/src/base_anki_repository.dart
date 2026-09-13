@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'anki_media_dedup.dart';
 import 'anki_models.dart';
 import 'anki_note_type_definition.dart';
+import 'card_source_link.dart';
 import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
 
@@ -85,6 +86,18 @@ String coverMediaRef(String mediaName) {
   return '<img src="${const HtmlEscape().convert(mediaName)}">';
 }
 
+/// Replay the native sentence video without adding a second autoplay entry.
+/// Uses client-created buttons instead of undocumented client URL schemes.
+const String synchronizedVideoReplayHtml =
+    '<button type="button" class="fushi-synced-video-replay" '
+    'aria-label="Replay video" onclick="event.stopPropagation();'
+    "var p=document.querySelector('.fushi-synced-sentence-media "
+    ".replay-button, .fushi-synced-sentence-media .replaybutton, "
+    ".fushi-synced-sentence-media .soundLink, "
+    ".fushi-sentence-audio .replay-button, .fushi-sentence-audio .replaybutton, "
+    ".fushi-sentence-audio .soundLink');"
+    'if(p){p.click();}return false;">&#9654;</button>';
+
 abstract class BaseAnkiRepository {
   @protected
   static const settingsKey = 'fushi_anki_settings';
@@ -101,17 +114,21 @@ abstract class BaseAnkiRepository {
   static const String _legacySentenceAudioAlias = '{sasayaki-audio}';
 
   /// 载入期一次性迁移：存量配置里 `MiscInfo` 的映射**一字不差**还是旧出厂默认
-  /// `{document-title}` 时，补成新出厂默认 `{document-title} {clip-timestamp}`，
-  /// 让卡片底部「=== Details ===」栏带上片段时间窗（见 [LapisNoteType]）。
+  /// （纯标题、标题+时间、标题+时间+独立链接）时，改为标题自身作为来源链接，
+  /// 同时保留片段时间（见 [LapisNoteType]）。
   ///
   /// 为什么只认「等于旧默认」：这等价于「用户从没碰过这个字段」，补齐是在替他
-  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、已经含
-  /// `{clip-timestamp}`、或自己拼过别的组合——一律不动，不覆盖用户意图。
+  /// 跟进出厂默认。凡是被改过的值——清空、换成别的占位符、或自己拼过别的
+  /// 组合——一律不动，不覆盖用户意图。不会修改已经导出的旧卡。
   /// 幂等：改写后值不再等于旧默认。清理条件：无（SharedPreferences 无版本阶梯，
   /// 载入期改写即是它的迁移通道，与上面的别名改写同构）。
   static const String _legacyMiscInfoMapping = '{document-title}';
   static const String _miscInfoMappingWithClipTime =
       '{document-title} {clip-timestamp}';
+  static const String _miscInfoMappingWithSource =
+      '{document-title} {clip-timestamp} {source-link}';
+  static const String _miscInfoMappingWithLinkedTitle =
+      '{source-link} {clip-timestamp}';
 
   /// 读原始设置 JSON 的**唯一通道**：三个载入期迁移（W2-7 键搬移 + W2-2 别名改写
   /// + MiscInfo 补片段时间窗）都收敛在这里。子类若覆写 [loadSettings]（AnkiDroid 的
@@ -145,7 +162,7 @@ abstract class BaseAnkiRepository {
     return raw;
   }
 
-  /// [_legacyMiscInfoMapping] → [_miscInfoMappingWithClipTime] 的纯改写。
+  /// 精确旧默认 → [_miscInfoMappingWithSource] 的纯改写。
   /// 返回改写后的 JSON 串；**不需要改写时返回 `null`**（调用方据此决定要不要回写
   /// 持久层，避免每次启动都白写一遍）。
   ///
@@ -162,7 +179,11 @@ abstract class BaseAnkiRepository {
     // 的话已迁移的用户仍会每次解析，门等于没加。形态依据是 `saveSettings` 恒用
     // `jsonEncode`（无空格）；万一哪天形态变了，最坏结果是这条迁移不触发（用户手动改
     // 一次映射），不会误改也不会崩——真正的判据仍是下面的结构化比较。
-    if (!raw.contains('"MiscInfo":"$_legacyMiscInfoMapping"')) return null;
+    if (!raw.contains('"MiscInfo":"$_legacyMiscInfoMapping"') &&
+        !raw.contains('"MiscInfo":"$_miscInfoMappingWithClipTime"') &&
+        !raw.contains('"MiscInfo":"$_miscInfoMappingWithSource"')) {
+      return null;
+    }
     final Object? decoded;
     try {
       decoded = jsonDecode(raw);
@@ -172,8 +193,10 @@ abstract class BaseAnkiRepository {
     if (decoded is! Map<String, dynamic>) return null;
     final Object? mappings = decoded['fieldMappings'];
     if (mappings is! Map) return null;
-    if (mappings['MiscInfo'] != _legacyMiscInfoMapping) return null;
-    mappings['MiscInfo'] = _miscInfoMappingWithClipTime;
+    if (mappings['MiscInfo'] != _legacyMiscInfoMapping &&
+        mappings['MiscInfo'] != _miscInfoMappingWithClipTime &&
+        mappings['MiscInfo'] != _miscInfoMappingWithSource) return null;
+    mappings['MiscInfo'] = _miscInfoMappingWithLinkedTitle;
     return jsonEncode(decoded);
   }
 
@@ -271,6 +294,109 @@ abstract class BaseAnkiRepository {
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
   /// ContentProvider getNote）。note 不存在 / 后端不支持时返回 `null`。
   Future<Map<String, String>?> noteFields(int noteId) async => null;
+
+  /// Updating an ordinary freshly mined card can capture another locator UUID.
+  /// Retain the original note's identity, because field updates never add tags.
+  /// Legacy notes have no source marker/link and are not silently migrated.
+  @protected
+  Future<AnkiMiningContext> contextForExistingSourceNote(
+    int noteId,
+    AnkiMiningContext context,
+  ) async {
+    final Map<String, String>? fields = await noteFields(noteId);
+    if (fields == null) throw StateError('Existing note could not be read');
+    final Map<String, CardSourceLink> sources = <String, CardSourceLink>{
+      for (final String field in fields.values)
+        for (final CardSourceLink link in CardSourceLink.fromHtml(field))
+          link.sourceId: link,
+    };
+    if (sources.length > 1) {
+      throw StateError('Existing source identity is ambiguous');
+    }
+    if (sources.isEmpty) return context.withSourceLink(null);
+    final CardSourceLink previous = sources.values.single;
+    return context.withSourceLink(
+      context.sourceLink?.withSourceId(previous.sourceId) ?? previous,
+    );
+  }
+
+  /// Prepare mapped fields/media for an explicit field-diff editor. Never adds
+  /// a note or changes an existing note. Uploaded unused media may be cleaned
+  /// by Anki's normal unused-media cleanup if the user cancels the editor.
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async =>
+      throw UnsupportedError('Source note editing is unavailable');
+
+  /// Exact marker lookup must propagate backend failure instead of reporting
+  /// "not found". A word match or an unscoped numeric note ID is insufficient.
+  @protected
+  Future<List<int>> findSourceNoteIds(String markerTag) async =>
+      throw UnsupportedError('Source note lookup is unavailable');
+
+  @protected
+  Future<void> writeSourceNoteFields(
+    int noteId,
+    Map<String, String> fields,
+  ) async =>
+      throw UnsupportedError('Source note editing is unavailable');
+
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
+    final List<int> matches = await findSourceNoteIds(
+      CardSourceLink.markerForSourceId(sourceId),
+    );
+    final Set<int> ids = matches.toSet();
+    if (ids.isEmpty) return null;
+    if (ids.length != 1 || ids.single <= 0) {
+      throw StateError('Card source marker is not unique');
+    }
+    final Map<String, String>? fields = await noteFields(ids.single);
+    if (fields == null) throw StateError('Source note could not be read');
+    return AnkiSourceNote(
+      sourceId: sourceId,
+      noteId: ids.single,
+      fields: fields,
+    );
+  }
+
+  /// Optimistic conflict check immediately before a partial field update.
+  /// AnkiConnect exposes no atomic compare-and-swap operation; edits made in
+  /// another Anki window between this check and write cannot be locked out.
+  /// Untouched fields, tags and card scheduling are never submitted.
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  }) async {
+    if (fields.isEmpty) return;
+    final Map<String, String> patch = Map<String, String>.of(fields);
+    final AnkiSourceNote? current = await readSourceNote(original.sourceId);
+    if (current == null || current.noteId != original.noteId) {
+      throw StateError('Source note identity changed');
+    }
+    for (final String field in patch.keys) {
+      if (!original.fields.containsKey(field) ||
+          !current.fields.containsKey(field) ||
+          current.fields[field] != original.fields[field]) {
+        throw StateError('Source note field changed: $field');
+      }
+    }
+    await writeSourceNoteFields(current.noteId, patch);
+    // Never retry or restore the old snapshot after a mismatch: another editor
+    // may already have saved a newer value. The caller retains its draft and
+    // asks the user to resolve the conflict explicitly.
+    final AnkiSourceNote? verified = await readSourceNote(original.sourceId);
+    if (verified == null || verified.noteId != current.noteId) {
+      throw StateError('Source note identity changed after writing');
+    }
+    for (final MapEntry<String, String> entry in patch.entries) {
+      if (verified.fields[entry.key] != entry.value) {
+        throw StateError(
+          'Source note field changed after writing: ${entry.key}',
+        );
+      }
+    }
+  }
 
   /// TODO-1007/1008：在 Anki 中打开 / 浏览 [noteId] 对应的卡片（AnkiConnect 用
   /// `guiBrowse(nid:<id>)`；AnkiDroid 用 ACTION_VIEW intent 跳 ContentProvider note）。
@@ -414,6 +540,28 @@ abstract class BaseAnkiRepository {
   }) async =>
       null;
 
+  // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
+
+  /// 本后端能不能读某卡组的新卡并改写它们的队列位置。
+  ///
+  /// **后端不对称（有意）**：只有 AnkiConnect 有卡片级读写（`findCards` /
+  /// `cardsInfo` / `setSpecificValueOfCard`）。AnkiDroid ContentProvider 与
+  /// AnkiMobile 的 URL scheme 都没有改 `due` 的接口；互联「制卡到已配对设备」
+  /// 也没有对应端点。这些后端默认 false，UI 据此把入口置灰并说明原因。
+  bool get supportsDeckReposition => false;
+
+  /// 列出 [deckName]（含子卡组、排除筛选牌组）里的全部**新卡**。
+  /// 默认实现 = 不支持，抛 [UnsupportedError]；调用前先看
+  /// [supportsDeckReposition]。
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async =>
+      throw UnsupportedError('This Anki backend cannot list deck cards.');
+
+  /// 批量写回新卡位置。默认实现 = 不支持。
+  Future<AnkiCardDueWriteResult> setNewCardPositions(
+    List<AnkiCardDueUpdate> updates,
+  ) async =>
+      throw UnsupportedError('This Anki backend cannot reposition cards.');
+
   /// BUG-1549：按设置解析**当前制卡目标牌组**（id 优先、name 兜底）的单一真相。
   /// 此前这段两级 firstWhereOrNull 在 AnkiConnect / AnkiDroid / AnkiMobile 三个
   /// mine 路径各复制一份；解析结果的 `name` 现在还要随 [MineOutcome.success] 带回
@@ -496,6 +644,24 @@ abstract class BaseAnkiRepository {
   /// `video` 的旧卡不迁移不重写。
   static const String gameTag = 'game';
 
+  /// 「制卡所在字符数」标签的前缀（`chars_12345`）。下划线而非 `::`：Anki 里
+  /// `chars::12345` 会在标签树下堆出成千上万个一次性子节点，而扁平 `chars_12345`
+  /// 既能被 `tag:chars_*` 整体检索，也能按字面量排序看出制卡是在书的哪一段。
+  static const String charPositionTagPrefix = 'chars_';
+
+  /// 把制卡时的**全书绝对学习字数位置**格式化成单个 Anki tag（`chars_12345`）。
+  ///
+  /// 口径是 `countStudyChars`（全仓唯一计字口径，见 `stats/study_char_count.dart`），
+  /// 与阅读进度条分子、`study_segments.chars` 同一根数轴——所以卡片上的数字和用户在
+  /// 状态行看到的「已读字数」是同一个数，能直接对上。
+  ///
+  /// [absoluteChars] 为 `null` / 负数时返回 `null`：那是「锚点没取到」（章字数还没算完、
+  /// JS 拿不到 caret），不是「在第 0 字」。宁可不打标签，也不打一个 `chars_0` 冒充书首。
+  static String? formatCharPositionTag(int? absoluteChars) {
+    if (absoluteChars == null || absoluteChars < 0) return null;
+    return '$charPositionTagPrefix$absoluteChars';
+  }
+
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
     switch (source) {
@@ -525,6 +691,9 @@ abstract class BaseAnkiRepository {
   /// - [collectionTag]（同「自动添加书名到标签」开关）非空时追加**已清洗的合集/系列名
   ///   标签**（去重后）：视频=播放列表系列名，书籍=所属合集名。与 [titleTag] 并列，二者
   ///   字面量不同则各成一个 tag，相同时由 [seen] 去重合并。
+  /// - [charPositionTag]（「自动添加制卡位置到标签」开关）非空时追加**制卡所在字符数
+  ///   标签**（`chars_12345`，由 [formatCharPositionTag] 产出）：小说阅读器制卡时这张
+  ///   卡在全书第几个学习字处制的。只有书籍来源会注入；开关关闭或锚点取不到时为 `null`。
   /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
@@ -534,6 +703,8 @@ abstract class BaseAnkiRepository {
     bool includeCategory = true,
     String? titleTag,
     String? collectionTag,
+    String? charPositionTag,
+    CardSourceLink? sourceLink,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -541,6 +712,8 @@ abstract class BaseAnkiRepository {
       if (tag.isEmpty || !seen.add(tag)) continue;
       result.add(tag);
     }
+    final String? marker = sourceLink?.markerTag;
+    if (marker != null && seen.add(marker)) result.add(marker);
     if (includeHibiki && seen.add(fushiTag)) result.add(fushiTag);
     if (includeCategory) {
       final categoryTag = _categoryTagForSource(source);
@@ -557,6 +730,14 @@ abstract class BaseAnkiRepository {
     final cleanCollection = sanitizeTitleTag(collectionTag);
     if (cleanCollection != null && seen.add(cleanCollection)) {
       result.add(cleanCollection);
+    }
+    // 制卡所在字符数标签（`chars_12345`）：排在最后，因为它是这批 tag 里唯一**每张卡
+    // 都不同**的——放前面会把 Anki 标签列表里稳定的那几个挤到看不见的地方。同样过
+    // [sanitizeTitleTag]：字面量本该由 [formatCharPositionTag] 产出（无空白），但互联
+    // 转发端送来的值是外部输入，带空格会被 Anki 拆成两个垃圾 tag。
+    final cleanCharPosition = sanitizeTitleTag(charPositionTag);
+    if (cleanCharPosition != null && seen.add(cleanCharPosition)) {
+      result.add(cleanCharPosition);
     }
     return result;
   }
@@ -772,6 +953,21 @@ abstract class BaseAnkiRepository {
     String? audioWarning,
     bool keepEmpty = false,
   }) {
+    // A muxed video owns sentence playback. Keep only one native sound tag:
+    // Lapis renders Picture three times, but SentenceAudio is interpolated once
+    // after ExpressionAudio and its already-rendered replay buttons are copied.
+    if (context.synchronizedVideo && coverRef != null) {
+      if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+        settings.fieldMappings,
+      )) {
+        sentenceAudioRef =
+            '<span class="fushi-synced-sentence-media">$coverRef</span>';
+        coverRef = synchronizedVideoReplayHtml;
+      } else {
+        // Custom templates without sentence audio retain a playable Picture.
+        sentenceAudioRef = null;
+      }
+    }
     final AnkiMiningContext mediaContext = context.withMediaRefs(
       coverRef: coverRef,
       sentenceAudioRef: sentenceAudioRef,

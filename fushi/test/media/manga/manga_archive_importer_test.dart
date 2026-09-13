@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -33,6 +32,36 @@ void main() {
     EpubStorage.debugBaseDirectoryOverride = null;
     if (root.existsSync()) root.deleteSync(recursive: true);
     if (app.existsSync()) app.deleteSync(recursive: true);
+  });
+
+  test('CBZ with a corrupt page entry fails on CRC instead of importing junk',
+      () async {
+    // 流式打开只读中央目录、不整包 verify；写盘条目必须补 CRC 校验，否则位翻转
+    // 的坏页会被当正常页写进书。STORE 条目：翻转数据区一个字节，中央目录仍完好。
+    final Uint8List png = Uint8List.fromList(
+      img.encodePng(img.Image(width: 40, height: 80)),
+    );
+    final Archive archive = Archive()
+      ..addFile(ArchiveFile('1.png', png.length, png)..compress = false)
+      ..addFile(ArchiveFile('2.png', png.length, png)..compress = false);
+    final Uint8List bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
+    // 本地文件头 30 字节 + 文件名 5 字节后就是第一页的原始数据；翻转其中间一个字节。
+    const int dataStart = 30 + '1.png'.length;
+    bytes[dataStart + png.length ~/ 2] ^= 0xFF;
+    final String path = p.join(root.path, 'corrupt.cbz');
+    File(path).writeAsBytesSync(bytes);
+
+    expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue,
+        reason: '探测只看条目名，不为坏页整包解压');
+    await expectLater(
+      MangaArchiveImporter.importArchive(db: db, archivePath: path),
+      throwsA(isA<MangaImportException>().having(
+        (MangaImportException e) => e.message,
+        'message',
+        contains('CRC'),
+      )),
+    );
+    expect(await db.getEpubBookMetas(), isEmpty, reason: '不落任何行');
   });
 
   test('CBZ images import in natural order', () async {
@@ -84,7 +113,10 @@ void main() {
         runProcess: (String executable, List<String> arguments) async {
           calls.add(arguments);
           if (arguments.first == 'l') {
-            return ProcessResult(1, 0, '''
+            return ProcessResult(
+                1,
+                0,
+                '''
 Path = $archivePath
 Type = Rar
 
@@ -96,7 +128,8 @@ Attributes = A
 Path = notes.txt
 Size = 5000000000
 Attributes = A
-''', '');
+''',
+                '');
           }
           final String outputArg = arguments.firstWhere(
             (String arg) => arg.startsWith('-o'),
@@ -131,7 +164,10 @@ Attributes = A
       sevenZipOverride: 'fake-7z',
       runProcess: (String executable, List<String> arguments) async {
         if (arguments.first == 'l') {
-          return ProcessResult(1, 0, '''
+          return ProcessResult(
+              1,
+              0,
+              '''
 Path = $archivePath
 Type = Rar
 
@@ -139,7 +175,8 @@ Type = Rar
 Path = ..\\escape.png
 Size = 3
 Attributes = A
-''', '');
+''',
+              '');
         }
         extracted = true;
         return ProcessResult(2, 0, '', '');
@@ -163,11 +200,14 @@ Attributes = A
       final Uint8List png = Uint8List.fromList(
         img.encodePng(img.Image(width: 40, height: 80)),
       );
-      final String path = _writeArchive(root, <ArchiveFile>[
-        _textEntry('book.mokuro', _mokuroJson('images/001.png', '埋め込み')),
-        _textEntry('legacy.html', '<html>legacy mokuro reader</html>'),
-        ArchiveFile('images/001.png', png.length, png),
-      ], name: 'book$extension');
+      final String path = _writeArchive(
+          root,
+          <ArchiveFile>[
+            _textEntry('book.mokuro', _mokuroJson('images/001.png', '埋め込み')),
+            _textEntry('legacy.html', '<html>legacy mokuro reader</html>'),
+            ArchiveFile('images/001.png', png.length, png),
+          ],
+          name: 'book$extension');
       expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
 
       final String key = await MangaArchiveImporter.importArchive(
@@ -180,7 +220,7 @@ Attributes = A
       expect(payload.images.single.size.width, 40);
       final MokuroBlock block = payload.images.single.blocks.single;
       expect(block.lines, <String>['埋め込み']);
-      expect(block.rectangle, const Rect.fromLTRB(1, 2, 30, 40));
+      expect(block.rectangle, const MokuroRect.fromLTRB(1, 2, 30, 40));
       expect(block.isVertical, isTrue);
       expect(block.fontSize, 17);
       expect(block.linesCoords, isNotNull);

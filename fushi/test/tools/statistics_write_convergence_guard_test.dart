@@ -9,7 +9,7 @@
 //
 //  ① 本地写入面零直写 legacy 表：`setReadingStatistic` / `setVideoWatchStatistic` /
 //     `setReadingHourlyLog` / `setVideoHourlyLog` / `addUnattributedHourlyReadingTime`
-//     只允许 `lib/src/sync/**`（legacy wire 家族的 MAX-union 落地面）调用；
+//     只允许 `sync/**`（legacy wire 家族的 MAX-union 落地面，app 与引擎两处）调用；
 //  ② `upsertStudySegment` 只允许两个写入方：`StudyClock`（fushi_audio）与
 //     galgame hook 的 chars-only 段；页面不得自己拼段；
 //  ③ 页面不得直读 legacy 统计表 / 活动表做统计（只许经 `loadStatFacts`）；
@@ -52,13 +52,26 @@ const List<String> kLegacyStatReaders = <String>[
   'getRecentActivityEvents',
 ];
 
+/// legacy wire 家族的落地面：`sync/**`。
+///
+/// 这批文件（aggregate_sync_service 等）原本住 `fushi/lib/src/sync/`，随引擎抽取
+/// 搬到了 `packages/fushi_engine/lib/sync/`——**是同一批文件、同一条豁免理由**，
+/// 所以判据要认两个位置。只认旧路径会让它们在新家变成「违规」（误报）；
+/// 而把整个引擎包豁免掉则会放宽原意，所以只放 `sync/` 这一层。
+///
+/// `fushi_server` 不在豁免内：服务端若直读 legacy 表，本守卫**应该**红。
+bool _isSyncDomain(String path) =>
+    path.startsWith('lib/src/sync/') ||
+    path.startsWith('../packages/fushi_engine/lib/sync/');
+
 /// ③ 的豁免（记录在案，逐条有理由）：
-///  - `lib/src/stats/stat_facts.dart`：统一事实面的唯一加载器；
-///  - `lib/src/sync/**`：legacy wire 物化 / 备份 / 比对；
+///  - `../packages/fushi_engine/lib/stats/stat_facts.dart`：统一事实面的唯一加载器；
+///  - `sync/**`（app 的 `lib/src/sync/` 与引擎的 `packages/fushi_engine/lib/sync/`，
+///    见 [_isSyncDomain]）：legacy wire 物化 / 备份 / 比对；
 ///  - `home_video_page.dart`：只取 `video_watch_statistics.lastModified` 做「最近观看」
 ///    排序（不是统计展示），v92 起与 `getLatestStudyEndAtByMedia` 并集。
 const List<String> kLegacyReaderExemptFiles = <String>[
-  'lib/src/stats/stat_facts.dart',
+  '../packages/fushi_engine/lib/stats/stat_facts.dart',
   'lib/src/pages/implementations/home_video_page.dart',
 ];
 
@@ -89,17 +102,27 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/stat_activity.dart',
   'lib/src/pages/implementations/stat_source_totals.dart',
   'lib/src/pages/implementations/activity_feed.dart',
+  // 阅读器内统计浮层：今日 / 累计卡按 StatWindow.isToday 切片（BUG-2218 起走统计口径）。
+  'lib/src/reader/reader_statistics_sheet.dart',
 ];
 
 void main() {
-  final Directory libDir = Directory('lib');
+  // 统计写入收敛的核心加载器 stat_facts.dart / study_sessions.dart 都已搬进引擎，
+  // 扫描面必须跟过去，否则「绕开唯一写入口」在引擎里不会红。
+  const List<String> scanRoots = <String>[
+    'lib',
+    '../packages/fushi_engine/lib',
+    '../packages/fushi_server/lib',
+  ];
 
-  List<File> dartFiles() => libDir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((File f) => f.path.endsWith('.dart'))
-      .toList()
-    ..sort((File a, File b) => a.path.compareTo(b.path));
+  List<File> dartFiles() => <File>[
+        for (final String rel in scanRoots)
+          if (Directory(rel).existsSync())
+            ...Directory(rel)
+                .listSync(recursive: true)
+                .whereType<File>()
+                .where((File f) => f.path.endsWith('.dart')),
+      ]..sort((File a, File b) => a.path.compareTo(b.path));
 
   String norm(String path) => p.split(path).join('/');
   String read(String path) => maskComments(File(path).readAsStringSync());
@@ -108,8 +131,8 @@ void main() {
     expectScanScale(
       dartFiles().length,
       what: 'lib/ 下的 .dart',
-      atLeast: 800,
-      measured: 1021,
+      atLeast: 1120,
+      measured: 1401,
     );
   });
 
@@ -117,7 +140,7 @@ void main() {
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
       final String path = norm(f.path);
-      if (path.startsWith('lib/src/sync/')) continue;
+      if (_isSyncDomain(path)) continue;
       final String src = f.readAsStringSync();
       for (final String name in kLegacySyncOnlyWriters) {
         if (containsIdentifierCall(src, name, allowNamedConstructor: false)) {
@@ -165,7 +188,7 @@ void main() {
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
       final String path = norm(f.path);
-      if (path.startsWith('lib/src/sync/')) continue;
+      if (_isSyncDomain(path)) continue;
       if (kLegacyReaderExemptFiles.contains(path)) continue;
       final String src = f.readAsStringSync();
       for (final String name in kLegacyStatReaders) {
@@ -270,10 +293,10 @@ void main() {
     expect(
       containsCodeLine(
         read('lib/src/pages/implementations/reader_fushi/navigation.part.dart'),
-        '_ensureStudyClock().addChars(delta.charsAdded)',
+        '_readLedger.arrive(',
       ),
       isTrue,
-      reason: 'EPUB 新读字数直接记进当前段',
+      reason: 'EPUB 新读字数经 ReadUnitLedger（翻走即计）记进当前段',
     );
     final String manga = read(
       'lib/src/media/manga/reader/manga_fushi_page.dart',
@@ -304,13 +327,23 @@ void main() {
       expect(resumed, greaterThan(inactive), reason: path);
       final String bg = body.substring(inactive, resumed);
       final String fg = body.substring(resumed);
+      // EPUB 面（BUG-2209）：start / stop 决策收敛到统一判据 studyClockMayRun——生命
+      // 周期分支只置旗再 _syncStudyClockRunState()（后台听书跟随经 _ensureStudyClock
+      // 到达时看到旗子不会重新起表）。PDF / 漫画仍是直接 stop / start。
+      final bool unifiedGate = path.endsWith('reader_fushi_page.dart');
       expect(
-        bg.contains('_studyClock?.stop()'),
+        unifiedGate
+            ? bg.contains('_studyClockLifecycleStopped = true;') &&
+                  bg.contains('_syncStudyClockRunState();')
+            : bg.contains('_studyClock?.stop()'),
         isTrue,
         reason: '$path：失焦 / 进后台必须停表（切屏自动暂停，用户拍板只对阅读面）',
       );
       expect(
-        fg.contains('_studyClock?.start()'),
+        unifiedGate
+            ? fg.contains('_studyClockLifecycleStopped = false;') &&
+                  fg.contains('_syncStudyClockRunState();')
+            : fg.contains('_studyClock?.start()'),
         isTrue,
         reason: '$path：回前台重启（后台段靠停表丢弃，不靠重锚）',
       );

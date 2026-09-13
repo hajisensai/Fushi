@@ -71,9 +71,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 总开关恒在；`online` / `max_active` 自本轮起受 `visible: videoDanmakuEnabled`
+    // 门控，而该 pref **默认关闭**，所以要先打开才能看到子项。
     expect(find.text(t.video_setting_danmaku_enabled), findsOneWidget);
-    expect(find.text(t.video_setting_danmaku_online), findsOneWidget);
-    expect(find.text(t.video_setting_danmaku_max_active), findsOneWidget);
 
     final AdaptiveSettingsSwitchRow enabledRow =
         tester.widget<AdaptiveSettingsSwitchRow>(
@@ -82,9 +82,12 @@ void main() {
         t.video_setting_danmaku_enabled,
       ),
     );
-    enabledRow.onChanged!(false);
-    await tester.pump();
-    expect(enabled, isFalse);
+    enabledRow.onChanged!(true);
+    await tester.pumpAndSettle();
+    expect(enabled, isTrue);
+
+    expect(find.text(t.video_setting_danmaku_online), findsOneWidget);
+    expect(find.text(t.video_setting_danmaku_max_active), findsOneWidget);
 
     final AdaptiveSettingsSwitchRow onlineRow =
         tester.widget<AdaptiveSettingsSwitchRow>(
@@ -107,6 +110,14 @@ void main() {
     maxRow.onChanged(120);
     await tester.pump();
     expect(maxActive, 120);
+
+    // 门控本身也要钉：关掉总开关，两个子项必须收起来——否则用户关了弹幕还看得见
+    // 「在线匹配 / 同屏上限」，改了也没有任何效果。
+    enabledRow.onChanged!(false);
+    await tester.pumpAndSettle();
+    expect(enabled, isFalse);
+    expect(find.text(t.video_setting_danmaku_online), findsNothing);
+    expect(find.text(t.video_setting_danmaku_max_active), findsNothing);
   });
 
   testWidgets('video settings exposes danmaku style, filter and manual match',

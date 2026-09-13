@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 缩略图预览浮层的四态（TODO-669）。把所有 if 分支收敛成一个枚举，浮层只 switch
 /// 一次，消除「在显示 / 在加载 / 取帧失败 / 移动端降级」各写一套条件的特殊情况。

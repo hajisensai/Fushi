@@ -5,7 +5,7 @@
 /// 且写入点跨层（lookup 浮窗 / 阅读器 / 视频页 / core DAO），故挪进 fushi_core
 /// （同 activity_event_types.dart 的理由）。
 ///
-/// ⚠️ 与合集/书架域（`MediaKind`）**互不通用**：本域只有 book / video 两桶
+/// ⚠️ 与合集/书架域（`MediaKind`）**互不通用**：本域有 book / video / game 三桶
 /// （`book` 涵盖 EPUB / 字幕书 / PDF / 漫画等一切「阅读」表面），`book` ≠ `epub`。
 library;
 
@@ -15,15 +15,26 @@ const String kStatSourceBook = 'book';
 /// 视频统计来源（落 DB 串，永不改变）。
 const String kStatSourceVideo = 'video';
 
+/// galgame 统计来源（落 DB 串，永不改变）。指**有归属的 galgame hook 会话在跑
+/// 时**产生的查词 / 制卡 / 收藏词 / 收藏句。此前这四类一律记成 [kStatSourceBook]，
+/// 数字全堆进阅读域，统计中心「游戏」tab 只剩「游玩次数」一行。
+///
+/// 与游玩时长/次数的真相源 `galgame_sessions` 正交：那张表记「玩了多久」，本桶
+/// 记「玩的时候学了什么」，两者都进游戏域但走各自的表。
+const String kStatSourceGame = 'game';
+
 /// 统计来源的**内存态**枚举（命名统一 Phase 3.4，模式照 `SentenceSourceKind` /
-/// `MediaKind`）。落库仍存 [kStatSourceBook] / [kStatSourceVideo] 原字符串
-/// （字节不变），本枚举供边界显式解析 / 穷尽 switch。
+/// `MediaKind`）。落库仍存 [kStatSourceBook] / [kStatSourceVideo] /
+/// [kStatSourceGame] 原字符串（字节不变），本枚举供边界显式解析 / 穷尽 switch。
 enum StatSourceKind {
-  /// 书内阅读（EPUB / 字幕书 / PDF / 漫画 / 独立查词等一切非视频表面）。
+  /// 书内阅读（EPUB / 字幕书 / PDF / 漫画 / 独立查词等一切非视频、非游戏表面）。
   book(kStatSourceBook),
 
   /// 视频。
-  video(kStatSourceVideo);
+  video(kStatSourceVideo),
+
+  /// galgame（hook 会话期间的查词 / 制卡 / 收藏）。
+  game(kStatSourceGame);
 
   const StatSourceKind(this.dbValue);
 
@@ -31,7 +42,7 @@ enum StatSourceKind {
   /// 场景只用本字段，绝不用 `.name`。
   final String dbValue;
 
-  /// 严格解析：精确匹配两个落库值之一，未知 / null → null，绝不抛。
+  /// 严格解析：精确匹配三个落库值之一，未知 / null → null，绝不抛。
   static StatSourceKind? tryParse(String? raw) {
     for (final StatSourceKind kind in StatSourceKind.values) {
       if (kind.dbValue == raw) return kind;

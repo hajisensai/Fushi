@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// Connection-establishment timeout for cloud sync HTTP requests.
 const Duration kSyncConnectionTimeout = Duration(seconds: 60);

@@ -104,20 +104,28 @@ double bottomChromeReserve({
 ///    （`_hasEverLoaded && _showChrome`，与 [bottomChromeReserve] 同一门控），
 ///    [bottomReserve] 已含悬浮态恒 0 的语义（悬浮不占正文位置）。
 ///    spread 不需要底部留白：它没有文档级滚动条，底栏叠在整页图上是既有可接受形态。
-///  * **顶部**（BUG-1343）：macOS 顶部 DragToMoveArea 叠在 WebView 之上，独立文档若不
-///    缩进，首行歌词 / 整页图会落到拖拽区下面且无法交互。[titlebarInset] 在非 macOS 恒 0。
+///  * **顶部**（歌词顶栏对齐）：歌词模式过去整块关掉顶部工具栏，文档从 y=0 起画，
+///    连系统状态栏 / 刘海都压在歌词首行上。顶栏在歌词模式恢复在场后，独立文档必须
+///    像正文一样给它让位：[topReserve] 由调用方喂「此刻顶部 chrome 真占掉多少」
+///    （系统顶 inset + 挤压态顶栏高；悬浮态顶栏不占正文位置，那笔本就是 0）。
+///    它**不含**顶部进度 pill 的预留——歌词模式不画那颗 pill（`_buildTopProgressBar`
+///    对歌词早返回），算进来就是在文档顶上留一条谁也不占的空带。
+///    （更早还有一笔 `titlebarInset`（BUG-1343，macOS 自绘 28pt DragToMoveArea），
+///    macOS 改用 `FushiDesktopTitleBar` 后那条带子连同这笔留白一起删了。）
+///    spread 不需要顶部留白：它是整页图，顶栏叠在图上与底栏叠在图上是同一形态。
 ///
 /// 返回 [EdgeInsets.zero] 表示「无需任何留白」，调用方据此跳过 `Padding` 包装。
+/// 判据只认 [lyricsMode]：spread 与「完全没有独立文档」在留白上不可区分（两者都是
+/// 零），所以 `spreadDocumentLoaded` 不在签名里——留一个不影响任何返回值的必填参数
+/// 只会让调用方以为它还有作用。
 EdgeInsets independentDocumentInsets({
   required bool lyricsMode,
-  required bool spreadDocumentLoaded,
   required bool chromeOccupiesLayout,
+  required double topReserve,
   required double bottomReserve,
-  required double titlebarInset,
 }) {
-  final bool independentDocument = lyricsMode || spreadDocumentLoaded;
   return EdgeInsets.only(
-    top: independentDocument ? titlebarInset : 0,
+    top: lyricsMode ? topReserve : 0,
     bottom: lyricsMode && chromeOccupiesLayout ? bottomReserve : 0,
   );
 }
@@ -139,10 +147,15 @@ bool topProgressVisible({
 
 /// Whether the bottom control bar should be painted right now.
 ///
-/// 挤压态随 [chromeExpanded]（`_showChrome`）；悬浮态额外受 [transientVisible]
-/// 门控（点击唤出、计时自动收起）。[hasEverLoaded] 是首次冷加载完成前不画底栏的
+/// 挤压态随 [chromeExpanded]（`_showChrome`）；悬浮态**只**受 [transientVisible]
+/// 门控（唤出、计时自动收起）。[hasEverLoaded] 是首次冷加载完成前不画底栏的
 /// 既有门控。与 [topProgressVisible] 同构，是「底栏此刻可见吗」的唯一真相源
 /// （`_bottomBarShouldPaint` 委托到这里，BUG-1195）。
+///
+/// 悬浮态不读 [chromeExpanded]：`_showChrome` 在悬浮态是不可见旗（悬浮显隐从不翻
+/// 它），而挤压态收起过一次再切到悬浮开关，它会以 false 残留——此前这里先判
+/// `!chromeExpanded → false`，于是任何唤出通道都翻了 [transientVisible] 却一像素
+/// 不画，用户看到的就是「悬浮控制栏再也叫不回来」（2026-09-13 用户报告）。
 ///
 /// [readerVnBlankTapAction] 读取同一个 [transientVisible] 真值，保证“本次是在唤栏”
 /// 与“本次可以推进”不会漂成两个同时发生的动作。
@@ -152,9 +165,35 @@ bool bottomBarVisible({
   required bool floating,
   required bool transientVisible,
 }) {
-  if (!hasEverLoaded || !chromeExpanded) return false;
-  if (!floating) return true;
-  return transientVisible;
+  if (!hasEverLoaded) return false;
+  if (floating) return transientVisible;
+  return chromeExpanded;
+}
+
+/// 鼠标在正文上移动时对悬浮 chrome 的处置（与视频播放器同一手感：移动即唤出、
+/// 持续移动期间常驻、停手后按计时收起）。
+enum ReaderHoverRevealAction {
+  /// 非悬浮态（挤压常驻）：什么都不做。
+  none,
+
+  /// 悬浮态已收起：唤出并武装自动收起。
+  reveal,
+
+  /// 悬浮态已可见：重新武装计时（移动中不收起）。
+  rearm,
+}
+
+/// 鼠标移动 → [ReaderHoverRevealAction]。只认真实鼠标（[isMouse]）：触屏没有
+/// hover，手写笔悬停也不该把控制栏顶出来。
+ReaderHoverRevealAction readerHoverRevealAction({
+  required bool floating,
+  required bool transientVisible,
+  required bool isMouse,
+}) {
+  if (!floating || !isMouse) return ReaderHoverRevealAction.none;
+  return transientVisible
+      ? ReaderHoverRevealAction.rearm
+      : ReaderHoverRevealAction.reveal;
 }
 
 /// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
@@ -200,13 +239,14 @@ ReaderVnBlankTapAction readerVnBlankTapAction({
   required bool bottomBarFloating,
   required bool transientVisible,
 }) {
-  if (!chromeExpanded) return ReaderVnBlankTapAction.expandChrome;
-  if (bottomBarFloating && !transientVisible) {
-    return ReaderVnBlankTapAction.revealChrome;
-  }
+  // 悬浮态与 [bottomBarVisible] 同一口径：不读 chromeExpanded（那是挤压态的
+  // 持久开关，在悬浮态可能以 false 残留）。
   if (bottomBarFloating) {
-    return ReaderVnBlankTapAction.advanceAndRevealChrome;
+    return transientVisible
+        ? ReaderVnBlankTapAction.advanceAndRevealChrome
+        : ReaderVnBlankTapAction.revealChrome;
   }
+  if (!chromeExpanded) return ReaderVnBlankTapAction.expandChrome;
   return ReaderVnBlankTapAction.advance;
 }
 

@@ -208,6 +208,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       {VoidCallback? removeFromCollection}) {
     final String bookKey = book.bookKey;
     final MediaItem item = _srtBookMediaItem(book);
+    // 与 EPUB 卡菜单同款：一次快照，逐条按模块过滤通往别的模块的项。
+    final ModuleVisibility modules = _moduleVisibility;
     return [
       DialogDangerAction(
         label: t.dialog_delete,
@@ -215,6 +217,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           Navigator.pop(dialogContext);
           await _confirmDeleteSrtBook(book);
         },
+      ),
+      // 三库页对称：与 EPUB / 视频 / 游戏卡一样，「重命名」排在列表项首位。落的是
+      // 显示名覆盖层，SrtBooks.title 不动（同 bookKey 换身份的理由）。
+      DialogListAction(
+        label: t.book_rename,
+        icon: Icons.drive_file_rename_outline,
+        onPressed: () => _renameBook(dialogContext, item),
       ),
       // 合集详情页成员卡：给可聚焦长按对话框补「移出合集」（键盘/手柄移出入口）。
       if (removeFromCollection != null)
@@ -226,7 +235,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             removeFromCollection();
           },
         ),
-      if (_srtBookHasMissingAudio(book))
+      if (_srtBookHasMissingAudio(book) &&
+          modules.isEnabled(ModuleId.listening))
         DialogQuickAction(
           label: t.audiobook_relocate,
           icon: Icons.find_replace_outlined,
@@ -281,14 +291,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // 字幕书的字幕在首次导入后全仓无处可换（用户报「有声书没办法重新导入 /
       // 导不了字幕文件」）。对 bookKey 为空的孤儿字幕书同样可见——它们才是最需要
       // 换字幕的一类（首次导入 cue 解析失败才会落成孤儿）。
-      DialogQuickAction(
-        label: t.srt_book_reimport,
-        icon: Icons.headphones_outlined,
-        onPressed: () async {
-          Navigator.pop(dialogContext);
-          await _openSrtBookReimport(book);
-        },
-      ),
+      if (modules.isEnabled(ModuleId.listening))
+        DialogQuickAction(
+          label: t.srt_book_reimport,
+          icon: Icons.headphones_outlined,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _openSrtBookReimport(book);
+          },
+        ),
       if (bookKey.isNotEmpty) ...[
         // 与 EPUB 卡菜单对称：手动「标记为已读完 / 取消」。有声书完成状态与 EPUB 共用
         // 同一 EpubBooks.completedAt（按配对 bookKey），故复用同一 [_toggleBookCompleted]。
@@ -328,7 +339,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // TODO-1068：SRT/有声书卡长按菜单对称补「悬浮字幕」项（与 EPUB 侧
         // extraActions 一致）。复用同一 i18n key、同一回调、同一平台门控；
         // bookKey 非空才可用，_toggleFloatingLyricFromShelf 按 bookKey 解析。
-        if (Platform.isAndroid || Platform.isWindows)
+        if ((Platform.isAndroid || Platform.isWindows) &&
+            modules.isEnabled(ModuleId.listening))
           DialogListAction(
             label: _isBackgroundListeningBook(bookKey)
                 ? '${t.floating_lyric_toggle_action} ✓'
@@ -430,90 +442,59 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   }
 
   Widget _buildBatchActionBar() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。
+    // BUG-2458：散卡选中集里混着远端占位键——「已选 N」计全部，但组合 / 打标签 /
+    // 删除三个本地动作只按本地键判可用态与取目标；远端键只喂「下载」。
+    final Set<String> localKeys = _selectedLocalKeys;
+    final Set<String> remoteKeys = _selectedRemoteKeys;
     final int selectedCount =
         _selectedKeys.length + _selectedCollectionIds.length;
-    final bool hasSelection =
-        _selectedKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
+    final bool hasLocalSelection =
+        localKeys.isNotEmpty || _selectedCollectionIds.isNotEmpty;
     // 复查 #5：组合按钮 noop 档（0 合集 0 散卡 / 仅 1 合集且无散卡）不再当启用态死按钮，
     // 只在真能组合（新建 / 并入 / 合并）时才可点，与 [_batchCombineIntoSeries] 同判据。
     final bool canCombine = classifyCombine(
           collectionCount: _selectedCollectionIds.length,
-          looseCount: _selectedKeys.length,
+          looseCount: localKeys.length,
         ) !=
         CombineTier.noop;
-
-    // 全 app elevation 0 纪律：去阴影改上边框分隔（巡检 PR-3）；窄屏 + 大字体下
-    // 「已选 N / 全选 / 反选」改 Wrap 自动换行（旧 Row 全员不可收缩必溢出）。
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        border: Border(
-          top: BorderSide(color: theme.colorScheme.outlineVariant),
+    return BatchActionBar(
+      selectedCount: selectedCount,
+      onSelectAll: _selectAll,
+      onInvertSelection: _invertSelection,
+      actions: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('reader_shelf_batch_download'),
+          enabled: remoteKeys.isNotEmpty,
+          onTap: _batchDownloadSelectedRemote,
+          icon: Icons.download_outlined,
+          tooltip: t.remote_book_download,
         ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.gap,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: tokens.spacing.gap,
-                  children: <Widget>[
-                    Text(
-                      t.batch_selected_count(n: selectedCount),
-                      style: textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _selectAll,
-                      child: Text(t.batch_select_all),
-                    ),
-                    TextButton(
-                      onPressed: _invertSelection,
-                      child: Text(t.batch_invert_selection),
-                    ),
-                  ],
-                ),
-              ),
-              FushiIconButton(
-                key: const ValueKey<String>('reader_shelf_batch_combine'),
-                enabled: canCombine,
-                onTap: _batchCombineIntoSeries,
-                // 组合成系列用 playlist_add，与页头「收藏夹」入口的
-                // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
-                icon: Icons.playlist_add,
-                tooltip: t.combine_into_series,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                // 打标签只作用于散卡媒体（合集无直接标签），故按散卡选中集可用态。
-                enabled: _selectedKeys.isNotEmpty,
-                onTap: _batchShowTagPicker,
-                icon: Icons.sell_outlined,
-                tooltip: t.tag_label,
-              ),
-              SizedBox(width: tokens.spacing.gap / 2),
-              FushiIconButton(
-                key: const ValueKey<String>('reader_shelf_batch_delete'),
-                enabled: hasSelection,
-                onTap: _batchDeleteConfirm,
-                icon: Icons.delete_outline,
-                tooltip: t.dialog_delete,
-                enabledColor: theme.colorScheme.error,
-              ),
-            ],
-          ),
+        FushiIconButton(
+          key: const ValueKey<String>('reader_shelf_batch_combine'),
+          enabled: canCombine,
+          onTap: _batchCombineIntoSeries,
+          // 组合成系列用 playlist_add，与页头「收藏夹」入口的
+          // collections_bookmark_outlined 区分开（二者语义无关，避免同图标歧义）。
+          icon: Icons.playlist_add,
+          tooltip: t.combine_into_series,
         ),
-      ),
+        FushiIconButton(
+          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
+          enabled: localKeys.isNotEmpty,
+          onTap: _batchShowTagPicker,
+          icon: Icons.sell_outlined,
+          tooltip: t.tag_label,
+        ),
+        FushiIconButton(
+          key: const ValueKey<String>('reader_shelf_batch_delete'),
+          enabled: hasLocalSelection,
+          onTap: _batchDeleteConfirm,
+          icon: Icons.delete_outline,
+          tooltip: t.dialog_delete,
+          enabledColor: theme.colorScheme.error,
+        ),
+      ],
     );
   }
 
@@ -527,7 +508,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // **在弹确认框之前就把目标定死**：选中集是只暴露当前可见项的派生视图，弹窗
     // 期间任何一次改变可见序的重建（筛选 provider 解析完成、书架刷新）都会让它
     // 自己变，跨 await 两侧各读一次会让确认框的数字与实际删除量对不上。
-    final Set<String> targetKeys = Set<String>.of(_selectedKeys);
+    final Set<String> targetKeys = _selectedLocalKeys;
     final Set<int> targetCollectionIds = Set<int>.of(_selectedCollectionIds);
     final int mediaCount = targetKeys.length;
     final int collectionCount = targetCollectionIds.length;
@@ -538,7 +519,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             ? t.batch_dissolve_confirm(m: collectionCount)
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     // 勾过但被当前搜索/标签筛选挡住的那些不会被删，必须说出来。
-    final int hidden = _selection.hiddenSelectedCount;
+    // 只数本地键：远端占位键不是删除对象（BUG-2458 审查 #4）。
+    final int hidden = _selection.hiddenSelectedCountWhere(
+      (String key) => !_isRemoteSelectionKey(key),
+    );
     final String message = hidden == 0
         ? baseMessage
         : '$baseMessage\n\n${t.batch_hidden_by_filter_note(n: hidden)}';
@@ -683,7 +667,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   /// 「同时删除本地文件」）。纯字幕书看自己的音频列，EPUB 看附带有声书 / 配对字幕书。
   Future<bool> _selectionHasLocalFiles() async {
     final FushiDatabase db = appModel.database;
-    for (final String key in _selectedKeys) {
+    for (final String key in _selectedLocalKeys) {
       if (key.startsWith('srt_')) {
         final SrtBook? book =
             await SrtBookRepository(db).findByUid(key.substring(4));
@@ -724,23 +708,32 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // bookKey 的真值在 `epub_books`（`fushiBooksProvider` 也是从这里取的）；
     // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
     // 会把全部选中项误判成幽灵键而整批剔光。
-    final List<EpubBookRow> epubBooks = await db.getAllEpubBooks();
+    final List<EpubBookMeta> epubBooks = await db.getEpubBookMetas();
     // v83：合集成员表 epub entryKey = `epub_books.uid`，而选择键解码出的身份仍是
     // bookKey。批量组合/加合集都在本剪枝之后立即落库，借同一批行顺带刷新
     // bookKey→uid 换算表（[_loadShelfMaps] 同款口径），保证写库前换算不吃旧值。
     _epubUidByKey = <String, String>{
-      for (final EpubBookRow row in epubBooks)
+      for (final EpubBookMeta row in epubBooks)
         if (row.uid.isNotEmpty) row.bookKey: row.uid,
     };
     final List<SrtBook> srtBooks = await SrtBookRepository(db).listAll();
     final List<MediaCollectionRow> collections =
         await db.getAllMediaCollections();
     if (!mounted) return false;
+    // BUG-2458：远端占位键的存在性真值是最近一次拉到的远端目录（占位卡就是从它
+    // 渲染的），不在本地表里；不纳入就会被当幽灵键整批剔光。
+    final _RemoteBookState? remoteState = _lastRemoteState;
     final int dropped = _selection.retainExisting(
       loose: <String>{
-        for (final EpubBookRow row in epubBooks)
+        for (final EpubBookMeta row in epubBooks)
           ReaderFushiSource.mediaIdentifierFor(row.bookKey),
         for (final SrtBook book in srtBooks) 'srt_${book.uid}',
+        if (remoteState != null) ...<String>[
+          for (final RemoteBookInfo book in remoteState.books)
+            _remoteBookSelectionKey(book),
+          for (final RemoteAudiobookInfo book in remoteState.srtAudiobooks)
+            _remoteSrtSelectionKey(book),
+        ],
       },
       collections: <int>{for (final MediaCollectionRow c in collections) c.id},
     );
@@ -769,7 +762,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       context: context,
       builder: (_) => _BatchTagPickerDialog(
         allTags: allTags,
-        selectedKeys: _selectedKeys,
+        selectedKeys: _selectedLocalKeys,
         database: appModel.database,
         parseBookKey: _parseBookKey,
       ),
@@ -819,7 +812,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     };
     final List<ShelfEntryRef> looseRefs = sortNewCollectionMembersNaturally(
       <ShelfEntryRef>[
-        for (final String key in _selectedKeys)
+        for (final String key in _selectedLocalKeys)
           if (shelfSelectionToEntry(key, ShelfSelectionSurface.books)
               case final ShelfEntryRef ref)
             ref,
@@ -1260,6 +1253,19 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       files: files,
       cardHit: hitBookKey != null,
     );
+    // 跨模块落点一次快照。被关掉的模块不再打开它的导入对话框，而是给一条与
+    // [DropIntent.unsupportedSurface] 同形态的 SnackBar——拖放没有「不渲染入口」
+    // 这个选项（落点就是整块书架），所以必须给可见反馈，绝不静默吞掉。
+    final ModuleVisibility modules = _moduleVisibility;
+    void showModuleDisabled() {
+      // 闭包里重判一次 mounted：本函数在 await 之后才走到这里，闭包体外的流分析
+      // 结论传不进来（use_build_context_synchronously）。
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+    }
+
     switch (intent) {
       // 书架/漫画库不产出这个意图：目录在这两个表面仍是「一本漫画的页图文件夹」
       // （importNewManga），把整个目录登记成扫描根是视频页的语义。列出来只为让
@@ -1278,6 +1284,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
         // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
         // 对话框；现在落点跟着 intent 走，载体身份不再在半路丢失。
+        if (!modules.isEnabled(ModuleId.manga)) {
+          showModuleDisabled();
+          return;
+        }
         _openMangaImportPrefilled(mangaPath: files.mangas.first);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
@@ -1287,6 +1297,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           SnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
         );
       case DropIntent.attachToBookCard:
+        // 往书卡上拖音频/字幕 = 给这本书挂有声书，属听书模块。
+        if (!modules.isEnabled(ModuleId.listening)) {
+          showModuleDisabled();
+          return;
+        }
         _openAudiobookPrefilled(
           bookKey: hitBookKey!,
           audioPaths: files.audios,
@@ -1301,16 +1316,28 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.importNewVideo:
         // 书架拖入视频 → 自动切到视频导入流程，带上文件（不再只提示让用户手动切，
         // TODO-558）。视频卡与书卡同页渲染，无需跨 tab 通信。
+        if (!modules.isEnabled(ModuleId.video)) {
+          showModuleDisabled();
+          return;
+        }
         _openVideoImportPrefilled(
           videoPath: files.videos.first,
           subtitlePath:
               files.subtitles.isNotEmpty ? files.subtitles.first : null,
         );
       case DropIntent.importNewPlaylist:
+        if (!modules.isEnabled(ModuleId.video)) {
+          showModuleDisabled();
+          return;
+        }
         _openPlaylistImportPrefilled(playlistPath: files.playlists.first);
       case DropIntent.importVideoUrl:
         // 书架拖入网络流 URL → 自动切到视频导入（预填 URL 并入库），与拖视频文件的
         // 自动切换一致（TODO-1306）。
+        if (!modules.isEnabled(ModuleId.video)) {
+          showModuleDisabled();
+          return;
+        }
         _openStreamImportPrefilled(streamUrl: files.urls.first);
       case DropIntent.unsupportedSurface:
         debugPrint('[fushi-drop] [reader-shelf] intent=unsupportedSurface');

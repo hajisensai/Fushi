@@ -34,11 +34,11 @@ void main() {
 
   test('video_clip_exporter 的音轨 -map 全部带 ? 容错', () {
     assertEveryAudioMapIsTolerant(
-        'lib/src/media/video/video_clip_exporter.dart');
+        '../packages/fushi_engine/lib/media/video/video_clip_exporter.dart');
   });
 
   test('desktop_audio_clipper 的音轨 -map 全部带 ? 容错', () {
     assertEveryAudioMapIsTolerant(
-        'lib/src/utils/misc/desktop_audio_clipper.dart');
+        '../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart');
   });
 }

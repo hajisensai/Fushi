@@ -85,7 +85,7 @@ void main() {
     await srcDb.close();
 
     // ── Overwrite import KEEPING this device's settings (DB already closed). ──
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       importSettings: false,

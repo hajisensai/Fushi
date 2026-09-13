@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/stats/study_char_count.dart';
+import 'package:fushi_engine/stats/study_char_count.dart';
 
 /// 学习统计字数口径 [countStudyChars] 的行为锁定。
 ///

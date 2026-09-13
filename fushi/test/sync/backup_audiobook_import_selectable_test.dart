@@ -90,7 +90,8 @@ void main() {
 
     test('meta.audiobookCount>0 shows audiobooks even with NO packed files',
         () {
-      final BackupContentSummary s = BackupService.summarizeBackupEntries(
+      final BackupContentSummary s =
+          BackupRestoreService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(audiobookCount: 3),
       );
@@ -99,7 +100,8 @@ void main() {
     });
 
     test('meta.audiobookCount==0 hides audiobooks (unticked new backup)', () {
-      final BackupContentSummary s = BackupService.summarizeBackupEntries(
+      final BackupContentSummary s =
+          BackupRestoreService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(audiobookCount: 0),
         dbAudiobookCount: 9, // authoritative meta 0 wins over any peek
@@ -108,7 +110,8 @@ void main() {
     });
 
     test('old backup (meta lacks the field) falls back to the DB peek', () {
-      final BackupContentSummary s = BackupService.summarizeBackupEntries(
+      final BackupContentSummary s =
+          BackupRestoreService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(), // audiobookCount == null
         dbAudiobookCount: 2,
@@ -145,12 +148,8 @@ void main() {
     final String zip = p.join(src.path, 'old_backup.zip');
     File(zip).writeAsBytesSync(ZipEncoder().encode(archive)!);
 
-    final FushiDatabase dummy =
-        FushiDatabase.forTesting(NativeDatabase.memory());
-    final BackupService service =
-        BackupService(db: dummy, dbDirectory: src.path, appVersion: '1.0.0');
-    final BackupContentSummary summary = await service.summarizeBackupFile(zip);
-    await dummy.close();
+    final BackupContentSummary summary =
+        await BackupRestoreService.summarizeBackupFile(zip);
 
     expect(summary.has(BackupCategory.audiobooks), isTrue,
         reason: 'the DB-blob peek must reveal the 2 audiobook rows');
@@ -178,7 +177,7 @@ void main() {
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip,
         categories: BackupCategory.values.toSet()
@@ -195,7 +194,7 @@ void main() {
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip, // null categories = restore everything (incl. audiobooks)
       );

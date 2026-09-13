@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/ocr/ocr_inference.dart';
-import 'package:fushi/src/ocr/ocr_types.dart';
-import 'package:fushi/src/ocr/text_detector.dart';
+import 'package:fushi_engine/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/ocr/text_detector.dart';
 import 'package:image/image.dart' as img;
 
 /// 回放固定输出的 fake 会话，并记录收到的输入。
@@ -212,12 +212,24 @@ void main() {
       expect(kept.single.score, 0.9);
     });
 
-    test('不同类同位置都保留（bubble 与 text_bubble 天然套叠）', () {
+    test('bubble 与 text_bubble 同位置都保留（天然套叠）', () {
       final List<RawDetection> kept = applyClassAwareNms(<RawDetection>[
         const RawDetection(rect: boxA, score: 0.8, classId: 0),
         const RawDetection(rect: boxB, score: 0.9, classId: 1),
       ]);
       expect(kept, hasLength(2));
+    });
+
+    test('text_bubble 与 text_free 同框只留高分（同一 query 双类过线）', () {
+      // 解码按 (query, class) 过阈值，同一 query 两个文字类都过线时 rect 逐字节
+      // 相同；旧实现按 classId 分组互不抑制，同一块文字被写两次。
+      final List<RawDetection> kept = applyClassAwareNms(<RawDetection>[
+        const RawDetection(rect: boxA, score: 0.6, classId: 1),
+        const RawDetection(rect: boxA, score: 0.7, classId: 2),
+      ]);
+      expect(kept, hasLength(1));
+      expect(kept.single.classId, 2);
+      expect(kept.single.score, 0.7);
     });
   });
 
@@ -306,6 +318,29 @@ void main() {
       expect(result.textRegions.single.rect.top, closeTo(80, 0.01));
       expect(result.textRegions.single.rect.right, closeTo(60, 0.01));
       expect(result.textRegions.single.rect.bottom, closeTo(120, 0.01));
+    });
+
+    test('图内后处理导出的 labels 是 int64 时同样解码（服务端 FFI 会话）', () async {
+      final FakeSession session = FakeSession(<String, OcrTensor>{
+        'scores': OcrTensor.float32(
+          Float32List.fromList(<double>[0.9]),
+          const <int>[1, 1],
+        ),
+        'labels': OcrTensor.int64(
+          Int64List.fromList(<int>[2]),
+          const <int>[1, 1],
+        ),
+        'boxes': OcrTensor.float32(
+          Float32List.fromList(<double>[64, 64, 128, 128]),
+          const <int>[1, 1, 4],
+        ),
+      });
+      final TextDetector detector = TextDetector(session);
+      final PageDetections page =
+          await detector.detect(img.Image(width: 640, height: 640));
+      expect(page.textRegions, hasLength(1));
+      expect(page.textRegions.single.classId, kDetClassTextFree);
+      expect(page.textRegions.single.rect.left, closeTo(64, 1e-6));
     });
 
     test('输出名缺失时报错而非静默', () async {

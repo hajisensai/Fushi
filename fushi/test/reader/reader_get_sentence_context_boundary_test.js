@@ -423,5 +423,54 @@ let passed = 0;
   passed++;
 })();
 
+// CASE 11 (BUG-2196): a source-code hard wrap inside one <p>. This is the
+// user's actual report: the EPUB text node is
+//   "...shepherds abiding in the field,\n keeping watch over their flock..."
+// BEFORE the fix '\n' was a sentenceDelimiter, so looking up any word in the
+// first half returned the half sentence "shepherds abiding in the field,"
+// (comma-terminated -- exactly what the user's screenshot shows), and the
+// per-sentence audio range cut from it missed the rest of the line.
+// AFTER: the whole line up to the real '.' is one sentence, and the newline
+// itself is normalised to a space (EQUAL LENGTH, so offsets never shift).
+(function case11_hard_wrap_is_not_a_sentence_boundary() {
+  const p = makeElement('p');
+  const text = makeText(
+    'And there were in the same country shepherds abiding in the field,'
+      + '\n keeping watch over their flock by night.',
+    p,
+  );
+  const document = buildDocument(p);
+  const sel = loadFushiSelection(document);
+  // Caret on 'abiding' (before the wrap) and on 'watch' (after it) must
+  // both yield the SAME full sentence.
+  const onAbiding = sel.getSentenceContext(text, 55);
+  const onWatch = sel.getSentenceContext(text, 76);
+  record('case11_before_wrap', { sentence: onAbiding.sentence });
+  record('case11_after_wrap', { sentence: onWatch.sentence });
+  assert.ok(
+    onAbiding.sentence.indexOf('keeping watch') >= 0,
+    'CASE11: a hard wrap must not end the sentence (the audio range cut '
+      + 'from a half sentence is what dropped the spoken words)',
+  );
+  assert.strictEqual(
+    onAbiding.sentence,
+    onWatch.sentence,
+    'CASE11: both halves of a wrapped line belong to one sentence',
+  );
+  assert.ok(
+    onAbiding.sentence.indexOf('\n') < 0,
+    'CASE11: the newline must be normalised away, not shipped into {sentence}',
+  );
+  assert.ok(
+    onAbiding.sentence.indexOf('field,  keeping') >= 0,
+    'CASE11: normalisation is an EQUAL-LENGTH swap to a space, so offsets '
+      + 'stay valid. TWO spaces here is the proof: the newline became one '
+      + 'space and the original space is still there. A collapsing replace '
+      + 'would leave one space and shift every later offset, breaking the '
+      + 'normOffset/normLength fed to miningSentenceAudioRange.',
+  );
+  passed++;
+})();
+
 console.log('passed ' + passed + ' cases');
 console.log('all assertions passed');

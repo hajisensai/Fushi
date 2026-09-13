@@ -10,16 +10,29 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 import 'package:fushi/src/media/video/url_stream_video.dart';
 
-/// 一本流媒体书是否该用内置网页播放器打开（而非 mpv 视频页）。
+/// 内置网页播放器（app 内 WebView2 打开 Netflix / YouTube 页面并登录站点）的总开关。
+///
+/// 2026-09-13 用户拍板**暂时砍掉**这条入口：关掉后网页视频站的书与其它平台一样走
+/// mpv 页（由其失败路径提示），导入对话框提示「暂已停用」。页面 / 桥接 / 宿主档代码
+/// 原样保留，翻回 `true` 即恢复；[isWebVideoPlayerEligible] 仍独立成立，守卫测试
+/// 继续钉住平台 / 站点判据不漂移。
+const bool kWebVideoPlayerEnabled = false;
+
+/// 一本流媒体书**按平台与站点判据**是否够格进内置网页播放器（不含总开关）。
 ///
 /// 判据 = `videoPath` 命中已知网页视频站（[isKnownWebPageVideoUrl]，mpv 解不出 HTML）∧
 /// 平台是 Windows（fork 的 WebView2 纹理链路只有 Windows；其它平台照旧走 mpv 页、
 /// 由其失败路径提示）。[platform] 可注入以便 widget test 覆盖两端。
-bool shouldOpenInWebVideoPlayer(String url, {TargetPlatform? platform}) {
+bool isWebVideoPlayerEligible(String url, {TargetPlatform? platform}) {
   final TargetPlatform p = platform ?? defaultTargetPlatform;
   if (kIsWeb || p != TargetPlatform.windows) return false;
   return isKnownWebPageVideoUrl(url);
 }
+
+/// 一本流媒体书是否该用内置网页播放器打开（而非 mpv 视频页）：
+/// [kWebVideoPlayerEnabled] ∧ [isWebVideoPlayerEligible]。所有入口只问这一个函数。
+bool shouldOpenInWebVideoPlayer(String url, {TargetPlatform? platform}) =>
+    kWebVideoPlayerEnabled && isWebVideoPlayerEligible(url, platform: platform);
 
 /// 扩展 manifest 里三个主世界 bridge 的站点覆盖（`tools/browser-extension/manifest.json`
 /// `content_scripts[].matches`）。app 内没有 manifest 的按站分发，这里手动对齐；守卫测试

@@ -47,8 +47,10 @@ void main() {
       expect(
         // 全程用 \s* 容忍 dart format 的换行：缩进变深时连 `(value)` 的括号内部都会被
         // 折行（接线没变、只是排版变了），写死紧邻会让这条守卫在无关改动上假红。
+        // `,?`：tall style 拆行时会把 `(value)` 写成 `(\n  value,\n)`，尾随逗号
+        // 也是排版不是接线。
         RegExp(r'onFontScaleIndexChanged:\s*\(int value\)\s*=>\s*unawaited\(\s*'
-                r'appModel\s*\.\s*setVideoSubtitleListFontScaleIndex\(\s*value\s*\)')
+                r'appModel\s*\.\s*setVideoSubtitleListFontScaleIndex\(\s*value\s*,?\s*\)')
             .hasMatch(src),
         isTrue,
         reason: '字号档位变化必须经 appModel setter 持久化（BUG-878）',

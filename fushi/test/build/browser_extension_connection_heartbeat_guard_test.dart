@@ -14,6 +14,13 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// flutter test cwd is the hibiki package root. background.js / manifest.json 的两镜像
 /// 字节一致由 browser_extension_dict_media_mirror_guard_test.dart 守卫，这里只锁行为存在性。
+/// 「`fushiHeartbeat` 这条分支里调了 `checkVersionOnStartup()`」——心跳真的会去 ping
+/// 服务器刷 last-seen 的不变式。刻意只锁「命中判断 → 调用」的先后，不锁单行/多行、
+/// 不锁同一分支里还顺带干了什么别的事。
+final RegExp _kHeartbeatPingsServer = RegExp(
+    r"name\s*===\s*'fushiHeartbeat'[^}]*checkVersionOnStartup\(\)",
+    dotAll: true);
+
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',
@@ -32,18 +39,18 @@ void main() {
       test('[$name] background registers a periodic heartbeat alarm', () {
         final String src = File('$root/background.js').readAsStringSync();
         expect(src.contains("chrome.alarms.create('fushiHeartbeat'"), isTrue,
-            reason:
-                '$root background.js must create the fushiHeartbeat alarm');
+            reason: '$root background.js must create the fushiHeartbeat alarm');
         expect(src.contains('periodInMinutes: 1'), isTrue,
             reason: '$root background.js heartbeat must fire ~every 60s '
                 '(< the 150s app-side seen window)');
         expect(src.contains('chrome.alarms.onAlarm.addListener'), isTrue,
             reason: '$root background.js must handle the heartbeat alarm');
         // 心跳复用 checkVersionOnStartup —— 既刷 last-seen 又顺带比对版本。
-        expect(
-            src.contains(
-                "if (alarm && alarm.name === 'fushiHeartbeat') checkVersionOnStartup();"),
-            isTrue,
+        // 钉「命中 fushiHeartbeat 的那条分支里调了 checkVersionOnStartup」这条不变式，
+        // 不钉单行写法：BUG-2481 往同一个回调里加了 maybeExportSiteCookies(null)，
+        // 把单行 if 拆成多行块，原来逐字节钉死的断言当场假红（develop 上躺了 2 个
+        // commit、功能其实一直是好的）。分支体里只要还 ping 服务器就算达标。
+        expect(src, matches(_kHeartbeatPingsServer),
             reason:
                 '$root background.js heartbeat must ping the server (refresh '
                 'last-seen) via checkVersionOnStartup');

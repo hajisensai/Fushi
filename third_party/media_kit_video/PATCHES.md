@@ -563,3 +563,41 @@ Net effect: a problem that only affects zero-copy now costs only zero-copy,
 instead of costing hardware rendering and every shader with it.
 
 Source-guard test: `fushi/test/third_party/media_kit_video_angle_interop_guard_test.dart`.
+
+## BUG-2453: host-driven wake signal for desktop controls (`wakeSignal`)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart` only, both the
+theme data class (`MaterialDesktopVideoControlsThemeData`) and the desktop
+control State (`_MaterialDesktopVideoControlsState`).
+
+The desktop controls are shown / kept alive only by real pointer traffic on
+their `MouseRegion` (`onHover` / `onEnter`). Hibiki used to reach that path from
+keyboard seeks, panel closes etc. by dispatching a *synthetic*
+`PointerHoverEvent` on a fixed fake mouse device (`0x6869626B`) into the
+controls' centre. That fake device is a real entry in Flutter's `MouseTracker`
+(only a matching `PointerRemovedEvent` removes it, and nothing ever sent one),
+so it outlived the player page: after leaving the player the ghost pointer kept
+"hovering" whatever sat at the screen centre — library cards were hover-lifted
+with no mouse over them. Every attempt to retire it at the right moment
+(dispose, losing the top route) was a patch on top of the wrong abstraction
+(lock-state asserts, episode-switch clobbering, one-shot retirement vs.
+unbounded re-pokes, routes that never drive the secondary animation).
+
+The patch adds an optional `final Listenable? wakeSignal;` to
+`MaterialDesktopVideoControlsThemeData` (constructor + `copyWith`). The desktop
+State subscribes to it in `didChangeDependencies` (re-binding when the theme's
+listenable identity changes) and detaches in `dispose`. On fire, `_onWakeSignal`
+calls the existing `onHover()` — show the bar (`mount`/`visible` = true) and
+restart the auto-hide timer — i.e. exactly what the synthetic hover used to
+trigger, without inventing an input device. If the host fires the signal during
+a build/layout pass (where `setState` is illegal) the wake is deferred to the end
+of the frame. When no signal is injected the behaviour is identical to pub.dev.
+Desktop counterpart of the mobile `restartHideTimerSignal` (TODO-1059); unlike
+that one it un-hides, because on desktop keyboard seek / panel close is expected
+to reveal the bar (the host gates "only keep alive while visible" itself).
+
+Hibiki injects the same `_RestartHideTimerSignal` into the desktop theme
+(`wakeSignal:` in `_desktopControlsTheme`); `_pokeControlsVisible()` no longer
+dispatches any pointer event on either platform.
+
+Source-guard test: `fushi/test/pages/video_controls_wake_signal_guard_test.dart`.

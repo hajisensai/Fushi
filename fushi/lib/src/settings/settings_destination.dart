@@ -14,7 +14,6 @@ enum SettingsDestinationId {
   lookup,
   cardCreation,
   video,
-  listening,
   mediaTracking,
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
@@ -82,8 +81,11 @@ enum VideoGroup { playback, audio, subtitle, shaders, mpv, danmaku, controls }
 /// 描述某个 [SettingsItem] 在视频快捷面板里的放置位置。
 /// 为 null 表示该项不出现在视频面板（仅全局可见）。
 class VideoPlacement {
-  const VideoPlacement(
-      {required this.group, required this.order, this.section});
+  const VideoPlacement({
+    required this.group,
+    required this.order,
+    this.section,
+  });
 
   final VideoGroup group;
 
@@ -105,18 +107,13 @@ typedef SettingsVisibility = bool Function(SettingsContext context);
 typedef SettingsSubtitleBuilder = String? Function(SettingsContext context);
 typedef SettingsItemAction = FutureOr<void> Function(SettingsContext context);
 typedef SettingsItemBuilder = Widget Function(SettingsContext context);
-typedef SettingsValueGetter<T extends Object> = T Function(
-  SettingsContext context,
-);
-typedef SettingsValueChanged<T extends Object> = FutureOr<void> Function(
-  SettingsContext context,
-  T value,
-);
+typedef SettingsValueGetter<T extends Object> =
+    T Function(SettingsContext context);
+typedef SettingsValueChanged<T extends Object> =
+    FutureOr<void> Function(SettingsContext context, T value);
 typedef SettingsSwitchGetter = bool Function(SettingsContext context);
-typedef SettingsSwitchChanged = FutureOr<void> Function(
-  SettingsContext context,
-  bool value,
-);
+typedef SettingsSwitchChanged =
+    FutureOr<void> Function(SettingsContext context, bool value);
 typedef SettingsDoubleFormatter = String Function(double value);
 
 class SettingsDestination {
@@ -128,6 +125,7 @@ class SettingsDestination {
     this.summary,
     this.visible,
     this.body,
+    this.bodyBeforeSections = false,
     this.bodySearchEntries = const <SettingsBodySearchEntry>[],
   });
 
@@ -145,9 +143,12 @@ class SettingsDestination {
   /// **不得**自带脚手架/独立滚动（外层渲染器已提供滚动与内边距）。
   final SettingsItemBuilder? body;
 
-  /// [body] 逃生口里设置行的搜索元数据。设置搜索索引器只遍历 [sections]，
-  /// body 自绘正文里的行对它不可见；在此登记行标题让它们进入搜索。命中后跳转
-  /// 到本分类正文即可——body 行不是 schema item，没有滚动定位挂点。
+  /// Allows an existing grouped form to precede navigation without nesting its
+  /// surfaces inside a synthetic schema row.
+  final bool bodyBeforeSections;
+
+  /// 自绘正文的搜索元数据。索引器沿子页路径递归收集；声明 hasRevealTarget 的
+  /// 行使用真实 SettingsSearchTarget 定位，其余兼容条目只导航到所在页。
   final List<SettingsBodySearchEntry> bodySearchEntries;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
@@ -171,14 +172,17 @@ class SettingsBodySearchEntry {
     required this.title,
     this.subtitle,
     this.visible,
+    this.hasRevealTarget = false,
   });
 
-  /// 全局唯一 id（约定带所属 destination 前缀，如 `card_creation.anki.deck`）。
-  /// 只用于搜索条目身份，不对应任何 schema item。
+  /// 全局唯一 id（如 `card_creation.anki.deck`），与真实正文挂点使用相同身份。
   final String id;
   final String title;
   final String? subtitle;
   final SettingsVisibility? visible;
+
+  /// True only when the real body row is wrapped in SettingsSearchTarget.
+  final bool hasRevealTarget;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 }
@@ -189,35 +193,50 @@ class SettingsBodySearchEntry {
 /// 削弱这道覆盖守卫。凡「枚举/驱动全部设置行」的测试须在 setUp 里置 true、tearDown 复位。
 bool debugSettingsForceExpandAllSections = false;
 
+/// Core controls remain visible; secondary groups explicitly opt into folding.
+enum SettingsSectionPresentation { alwaysExpanded, expanded, collapsed }
+
 class SettingsSection {
   const SettingsSection({
     required this.items,
+    this.id,
     this.title,
     this.footer,
     this.visible,
-    this.collapsedByDefault = false,
-  });
+    bool collapsedByDefault = false,
+    SettingsSectionPresentation? presentation,
+    this.summaryBuilder,
+  }) : presentation =
+           presentation ??
+           (collapsedByDefault
+               ? SettingsSectionPresentation.collapsed
+               : SettingsSectionPresentation.alwaysExpanded);
+
+  /// Stable identity independent of translated titles or visible row positions.
+  final String? id;
+  final SettingsSectionPresentation presentation;
+  final SettingsSubtitleBuilder? summaryBuilder;
 
   final String? title;
   final String? footer;
   final SettingsVisibility? visible;
   final List<SettingsItem> items;
 
-  /// 为 true 时本 section 进入详情页默认收起，标题头带可点击的展开箭头（触摸/鼠标
-  /// 点头 + 焦点驱动 Enter/手柄 A 都能展开）。只对带 [title] 的 section 生效——无题
-  /// section（如互联未激活指引）没有可点的头，永远平铺。搜索命中折叠 section 内的项
-  /// 时渲染器强制展开定位（见 SettingsSchemaSection）。仅影响显示，不改 item 集合/顺序/
-  /// 持久化。
-  final bool collapsedByDefault;
+  /// 旧调用点的兼容读取；新代码显式使用 presentation。折叠仅影响展示，
+  /// 搜索可临时展开，业务配置值不受影响。
+  bool get collapsedByDefault =>
+      presentation == SettingsSectionPresentation.collapsed;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 
   SettingsSection visibleCopy(SettingsContext context) {
     return SettingsSection(
+      id: id ?? (items.isEmpty ? null : 'section.${items.first.id}'),
       title: title,
       footer: footer,
       visible: visible,
-      collapsedByDefault: collapsedByDefault,
+      presentation: presentation,
+      summaryBuilder: summaryBuilder,
       items: items
           .where((SettingsItem item) => item.isVisible(context))
           .toList(growable: false),
@@ -295,17 +314,58 @@ class SettingsNavigationItem extends SettingsItem {
     super.titleBuilder,
     this.builder,
     this.onTap,
+    this.child,
     this.showIcon = false,
     super.subtitle,
+    super.subtitleBuilder,
     super.icon,
     super.visible,
     super.reader,
     super.video,
-  }) : assert(builder != null || onTap != null);
+  }) : assert(builder != null || onTap != null || child != null);
 
   final WidgetBuilder? builder;
   final SettingsItemAction? onTap;
+
+  /// 子 schema 页：点本行推一个与顶层分类同一套详情壳的 [SettingsDestination]
+  /// （`SettingsDetailPage.subPage`）。与 [builder] / [SettingsDestination.body]
+  /// 逃生口的区别：子页的行是真正的 schema item——进设置搜索索引（命中后先进父页
+  /// 再推子页定位）、进焦点覆盖遍历，不需要 `bodySearchEntries` 手工登记。
+  ///
+  /// 子页共用父分类的 [SettingsDestination.id]（枚举不为子页扩容）；它靠本闭包而非
+  /// id 取新鲜树，所以闭包必须是零参、构造期只读 i18n 常量（与顶层分类同一条
+  /// `settings_schema_cache_test` 纪律）。
+  final SettingsDestination Function()? child;
   final bool showIcon;
+}
+
+/// 只读状态行：图标 + 标题 + 状态文本 + 可选一个行尾动作按钮。
+///
+/// 存在的理由：设置页里「当前账号 / 服务在跑在哪个端口 / 此项已挪到别处」这类
+/// 指路与状态行此前只能用 [SettingsCustomItem] 手拼 `AdaptiveSettingsRow`——四处
+/// 各写一份、且默认进不了搜索。收成一等 item 后渲染、搜索、焦点遍历都走框架。
+/// 状态文本随运行期变化时用 [subtitleBuilder]；无动作时整行不可点。
+class SettingsStatusItem extends SettingsItem {
+  const SettingsStatusItem({
+    required super.id,
+    required super.title,
+    super.titleBuilder,
+    super.subtitle,
+    super.subtitleBuilder,
+    super.icon,
+    super.visible,
+    super.reader,
+    super.video,
+    this.actionLabel,
+    this.onAction,
+  }) : assert(
+         (actionLabel == null) == (onAction == null),
+         'actionLabel 与 onAction 必须同时给或同时不给',
+       );
+
+  /// 行尾动作按钮文案；null = 无按钮。
+  final String? actionLabel;
+  final SettingsItemAction? onAction;
 }
 
 class SettingsActionItem extends SettingsItem {
@@ -340,7 +400,6 @@ class SettingsSwitchItem extends SettingsItem {
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
-
 }
 
 class SettingsSegmentOption<T extends Object> {
@@ -409,9 +468,9 @@ class SettingsSliderItem extends SettingsItem {
     this.titleReadout = false,
     this.commitOnRelease = false,
   }) : assert(
-          !commitOnRelease || onChangeEnd == null,
-          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
-        );
+         !commitOnRelease || onChangeEnd == null,
+         'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
+       );
 
   final double Function(SettingsContext context) value;
   final double min;

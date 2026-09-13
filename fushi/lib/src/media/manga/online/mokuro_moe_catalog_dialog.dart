@@ -6,7 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/utils.dart';
 
 /// mokuro.moe「在线目录」对话框（O1）：薄壳——外框 chrome 与 footer 动作按钮
@@ -15,24 +15,24 @@ import 'package:fushi/utils.dart';
 ///
 /// 对话框只负责浏览与 enqueue：下载在共享队列里后台执行，**关闭对话框不
 /// 中断**；进度既在对话框内联面板显示，也与「下载」页任务 tab 同源可见。
-/// 书架刷新不依赖关闭回传——书架页直接监听队列的 importedCount 增量。
+/// 书架刷新不依赖关闭回传——书架页直接监听服务的 mokuroImportedCount 增量。
 class MokuroMoeCatalogDialog extends StatefulWidget {
   const MokuroMoeCatalogDialog({
     required this.db,
     this.clientOverride,
-    this.queueOverride,
+    this.downloadsOverride,
     this.enabledOverride,
     super.key,
   });
 
-  /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
+  /// 目标数据库（查已在库书目用；下载落库由服务持有的 db 完成）。
   final FushiDatabase db;
 
   /// 测试用 client（null = 按偏好 base URL 构造真实 client）。
   final MokuroMoeClient? clientOverride;
 
-  /// 测试用队列（null = 取 AppModel.mokuroMoeDownloadQueue 共享实例）。
-  final MokuroMoeDownloadQueue? queueOverride;
+  /// 测试用下载服务（null = 取 AppModel.mangaDownloadService 共享实例）。
+  final MangaDownloadService? downloadsOverride;
 
   /// Test/embedding source gate. Null reads the live AppModel preference.
   final bool? enabledOverride;
@@ -70,7 +70,7 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
         key: _viewKey,
         db: widget.db,
         clientOverride: widget.clientOverride,
-        queueOverride: widget.queueOverride,
+        downloadsOverride: widget.downloadsOverride,
         enabledOverride: widget.enabledOverride,
         embedded: false,
         onClose: _close,
@@ -111,6 +111,13 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
         context: context,
         onPressed: () => _viewKey.currentState?.backToBrowse(),
         child: Text(t.back),
+      ),
+      adaptiveDialogAction(
+        context: context,
+        onPressed: !snapshot.canDownloadAll
+            ? null
+            : () => _viewKey.currentState?.enqueueAll(),
+        child: Text(t.manga_online_download_all),
       ),
       adaptiveDialogAction(
         context: context,

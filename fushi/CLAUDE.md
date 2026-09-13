@@ -102,7 +102,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
   - **WebView 架构**: `InAppWebView` + `fushi.local` 虚拟域名拦截（`shouldInterceptRequest`），EPUB HTML/CSS/字体/图片全部经过安全校验后在拦截器中提供。
   - **分页系统**: JS 端 `fushiReader` 分页引擎 + Dart 端 `ReaderPaginationScripts`，支持分页/连续两种模式。
   - **文本选择**: JS `onTextSelected` → Dart `ReaderSelectionData` → 词典查询 → 浮层展示。
-  - **手势系统**: 触摸/指针/滚轮统一处理（滑动翻页、点击高亮、双击振假名切换、图片点击查看）。
+  - **手势系统**: 触摸/指针/滚轮统一处理（滑动翻页、点击高亮、振假名三态 off/toggle/hidden（toggle 态点隐藏注音的 ruby 揭示、不查词）、图片点击查看）。
   - **有声书集成**: `AudiobookPlayerController` + `AudiobookBridge` + `HighlightBridge`，支持 cue 同步高亮、跨章节追踪、音量键句子导航。
   - **歌词模式**: 独立 HTML 页面（`LyricsModeHtml`），支持收藏句子高亮、实时样式更新。
   - **位置保存**: section + normCharOffset (0-10000) 双维度，debounce 写入 DB。

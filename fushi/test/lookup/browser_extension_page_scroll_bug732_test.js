@@ -66,7 +66,12 @@ function loadWheelHandler(opts) {
     getComputedStyle() { return {}; },
   };
   // __fushiRoot.host is the shadow host; only present when a popup is open.
-  windowObj.__fushiRoot = opts.popupOpen ? { host: hostEl } : undefined;
+  // A real ShadowRoot is an EventTarget — popup.js binds the shared body
+  // mousedown/click/mousemove delegation onto it in the extension context
+  // (BUG-2244), so the fake must answer addEventListener too.
+  windowObj.__fushiRoot = opts.popupOpen
+    ? { host: hostEl, addEventListener() {}, removeEventListener() {} }
+    : undefined;
   if (opts.flutter) {
     windowObj.flutter_inappwebview = { callHandler() { return Promise.resolve(false); } };
   }

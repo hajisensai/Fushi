@@ -14,7 +14,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 与各 parser 共用的默认章节标识（`srt://default`）。

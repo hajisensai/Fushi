@@ -1,0 +1,13 @@
+## BUG-2420 · 书籍导入 UI 通篇写死 EPUB，实际支持 18 种格式
+- **报告**：2026-09-10（用户：「书架导入时，选择 epub 标题很奇怪，因为实际好像可以支持很多其他格式，比如 md 和 html」）
+- **真实性**：✅ 真 bug（用词层面成立，且其中一条是事实错误而非措辞粗糙）。
+  - 选择器白名单 `book_import_dialog.dart:557-570` 的 `_bookExtensions` = `epub, pdf, mokuro, cbz, zip` + `TextToEpub.supportedExtensions`（`text_to_epub.dart:16-30`：`txt, html, htm, xhtml, md, markdown, rst, org, csv, tsv, log, json, xml`）。**全集 18 个扩展名，只有 1 个是 EPUB。**
+  - 用户可见文案里的 EPUB：`srt_import_pick_epub`（`:399` 行标题 / `:406` tooltip，最刺眼的一处）、`srt_import_hint_epub_or_srt`（`:323` 顶部说明）、`srt_import_missing_input`（`:896` 校验 toast）、`srt_import_audio_needs_subtitle`（`:921`）。
+  - **其中 `import_step_importing_epub` 被 PDF 分支复用（`:1098`）是事实错误**：PDF 走 `PdfImporter` 直接渲染、落库 `format='pdf'`，完全不经 EPUB 管线。这条错误文案还有实际代价——它正是 BUG-2419 里用户看到的那句「导入 EPUB…」，把排查引向了 EPUB 转换而不是 PDFium。
+  - 对话框标题本身没问题（`t.srt_import` = 「导入书籍」）；系统文件选择器也没问题（`real_path_directory_picker.dart:298` 不传 dialogTitle，Windows 渲染成完整扩展名列表）。**用户看到的 EPUB 全部来自 Hibiki 自己的 i18n 文案。**
+  - `import_step_converting_epub`（「转换为 EPUB…」）**应当保留** EPUB 字样：那 13 种文本格式确实被转成 EPUB，它描述的是真实发生的事。
+- **[x] ① 已修复** — 纯文案，`allowedExtensions` 不用动（白名单本来就覆盖全部真实支持的格式，偏差只在措辞）：
+  - 四条改中英文值（key 名不出现在 UI，故不需要 `--rename`）：`srt_import_pick_epub` → `Pick book file`/「选择书籍文件」；`srt_import_hint_epub_or_srt`、`srt_import_missing_input`、`srt_import_audio_needs_subtitle` 里的 EPUB → book/书籍。
+  - 新增中性 key `import_step_importing_book`（走 `i18n_sync.dart --add`，17 语言齐全），`book_import_dialog.dart` 的 PDF 分支与 `manga_import_dialog.dart:427` 改用它。
+- **[ ] ② 未加自动化测试** — 未加。这是纯文案改值，可落地的守卫只有「PDF/漫画分支不得使用 `import_step_importing_epub`」这一条源码扫描；BUG-2419 的守卫已从更根本的层面（bundle 缺件 + 挂死形态）钉住了真正会造成用户损失的部分，为一条文案再加一条字面量守卫属于钉写法而非钉不变式，故不加。若日后再出现「PDF 分支复用 EPUB 文案」的回归，再按行为补。
+- **备注**：其余 15 种语言的这四条仍写着 EPUB（`i18n_sync --add/--remove` 之外无法批量改译），属既有的 i18n 欠账形态，不影响 key 完整性。相邻同源问题未在本轮处理：`source_description_epub`（「EPUB reading & dictionary lookup」）被 reader / PDF / manga **三个源**共用，PDF 源与漫画源都自称 EPUB；`section_epub`（「EPUB 书库」）已无引用且中文「书库」违反命名表，是死 key。

@@ -90,6 +90,30 @@ class WindowCaptionChannel {
     }
   }
 
+  /// BUG-2462：告诉 runner「引擎刚光栅化了一帧、视图物理尺寸是这个」。
+  ///
+  /// runner 的子窗 resize 闸门（`child_resize_gate.h`）以此确认它交付的尺寸已被
+  /// 引擎 surface 采用；发送方是 `rasterized_frame_size_reporter.dart`，只在尺寸
+  /// 变化时调。旧 runner / 非 window 宿主静默忽略。
+  static Future<void> reportRasterizedFrameSize({
+    required int width,
+    required int height,
+  }) async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>(
+        'reportRasterizedFrameSize',
+        <String, int>{'width': width, 'height': height},
+      );
+    } on PlatformException {
+      // 旧 runner 不实现该方法：闸门不存在，也就没有要确认的东西。
+    } on MissingPluginException {
+      // 通道未注册（widget 测试 / 非 window runner 宿主）时静默忽略。
+    }
+  }
+
   /// BUG-1933：当前是否处于 runner 自有实现的全屏态。非 Windows / 通道不可用
   /// 恒 false（window_manager 在 Windows 上不再进入全屏，其 isFullScreen 也
   /// 恒 false，两边不会都为 true）。

@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/collections/collection_relation.dart';
@@ -32,7 +33,10 @@ class CollectionRelationsSection extends StatefulWidget {
   final void Function(int targetCollectionId) onOpenCollection;
 
   /// 「去下载」：以关系边标题预填打开下载对话框。
-  final void Function(CollectionRelationRow relation) onDownload;
+  ///
+  /// null = 本平台/本配置没有下载中心（模块关掉，或 iOS 按 App Store 合规不提供），
+  /// 此时小菜单里不出这一项——留着就是一个点了会推进不存在流程的按钮。
+  final void Function(CollectionRelationRow relation)? onDownload;
 
   @override
   State<CollectionRelationsSection> createState() =>
@@ -48,8 +52,35 @@ class _CollectionRelationsSectionState
 
   final ScrollController _controller = ScrollController();
 
-  /// 绑定后自增，强制 FutureBuilder 重取（与 detailTagsRefresh 同范式）。
-  int _refresh = 0;
+  /// 关系边查询。**必须持久化在 State 里，不能写在 build 里现取**（BUG-2010）：
+  /// 写在 build 里 = 每次重建都对库多发一次查询，而重建源不受本页控制——app 一
+  /// 拉到前台就走 `AppLifecycleState.resumed` → 重取系统调色板 → 通知主题 →
+  /// 全树重建。
+  ///
+  /// 注意本区**不会**因此闪：builder 只读 `snap.data`，而 FutureBuilder 换
+  /// future 时走的是 `_snapshot.inState(ConnectionState.none)`——data 会保留，
+  /// 只有像 `VideoWorkDetailPage` 那样判 `connectionState` 的才会退回加载态。
+  /// 这里省下的是白查库，不是闪。future 的身份只由 collectionId 决定。
+  late Future<List<CollectionRelationRow>> _relationsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _relationsFuture = widget.database.getCollectionRelations(
+      widget.collectionId,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant CollectionRelationsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.collectionId != widget.collectionId ||
+        oldWidget.database != widget.database) {
+      _relationsFuture = widget.database.getCollectionRelations(
+        widget.collectionId,
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -91,16 +122,17 @@ class _CollectionRelationsSectionState
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_RelationMenuAction>>[
-        PopupMenuItem<_RelationMenuAction>(
-          value: _RelationMenuAction.download,
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.download_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(t.collection_relation_download),
-            ],
+        if (widget.onDownload != null)
+          PopupMenuItem<_RelationMenuAction>(
+            value: _RelationMenuAction.download,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.download_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_relation_download),
+              ],
+            ),
           ),
-        ),
         PopupMenuItem<_RelationMenuAction>(
           value: _RelationMenuAction.bind,
           child: Row(
@@ -116,7 +148,7 @@ class _CollectionRelationsSectionState
     if (!mounted) return;
     switch (action) {
       case _RelationMenuAction.download:
-        widget.onDownload(relation);
+        widget.onDownload?.call(relation);
       case _RelationMenuAction.bind:
         await _bindToExisting(relation);
       case null:
@@ -154,14 +186,20 @@ class _CollectionRelationsSectionState
       msg: t.collection_relation_bound(name: chosen.name),
       severity: ToastSeverity.success,
     );
-    setState(() => _refresh++);
+    // 重取即刷新：future 的身份变化本身就是「该重建」的信号，不再需要一个只为
+    // 翻 key 而存在的计数器。
+    setState(() {
+      _relationsFuture = widget.database.getCollectionRelations(
+        widget.collectionId,
+      );
+    });
   }
 
   Widget _buildCard(
     BuildContext context,
     CollectionRelationRow relation,
   ) {
-    // 封面三级回落：coverPath 本地文件 → coverUrl 网络（Image.network 是刮削
+    // 封面三级回落：coverPath 本地文件 → coverUrl 网络（AppHttpImage 是刮削
     // 候选封面的既有口径，见 scrape_cover_preview.dart）→ 占位图标。
     final ImageProvider? localCover = resolveMediaCoverImage(
       kind: MediaKind.video,
@@ -175,8 +213,8 @@ class _CollectionRelationsSectionState
         errorBuilder: (BuildContext _) => _coverPlaceholder(context),
       );
     } else if (coverUrl != null && coverUrl.isNotEmpty) {
-      coverWidget = Image.network(
-        coverUrl,
+      coverWidget = Image(
+        image: AppHttpImage(coverUrl),
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => _coverPlaceholder(context),
       );
@@ -263,8 +301,7 @@ class _CollectionRelationsSectionState
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FutureBuilder<List<CollectionRelationRow>>(
-      key: ValueKey<int>(_refresh),
-      future: widget.database.getCollectionRelations(widget.collectionId),
+      future: _relationsFuture,
       builder: (
         BuildContext context,
         AsyncSnapshot<List<CollectionRelationRow>> snap,

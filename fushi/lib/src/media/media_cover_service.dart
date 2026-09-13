@@ -1,18 +1,22 @@
 import 'dart:io';
-
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show setVideoCoverFromPickedFile;
-import 'package:fushi/src/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/mining/galgame_cover_resolver.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
+    show videoCoverFileName;
+import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 
 /// 媒体统一路线 P3：三个媒体岛（书 / 视频 / 游戏）封面「选图 → 落盘 → 缓存驱逐」
 /// 的统一服务入口。
@@ -41,8 +45,6 @@ import 'package:fushi/src/utils/misc/gallery_image_picker.dart';
 class MediaCoverService {
   const MediaCoverService._();
 
-  static int _temporarySerial = 0;
-
   /// 统一落盘入口（文件源）：把 [source] 原子地写到 [destPath]（先写
   /// `<dest>.tmp` 再删旧文件 rename——Windows rename 不覆盖；失败清 .tmp、
   /// **不动旧封面**并 rethrow），成功后**必然**双键驱逐旧解码缓存
@@ -54,46 +56,18 @@ class MediaCoverService {
   static Future<void> applyCoverFile({
     required File source,
     required String destPath,
-  }) async {
-    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
-    try {
-      await source.copy(tmp.path);
-      final File dest = File(destPath);
-      if (await dest.exists()) await dest.delete();
-      await tmp.rename(destPath);
-    } catch (_) {
-      try {
-        if (await tmp.exists()) await tmp.delete();
-      } catch (_) {
-        // .tmp 清理失败不掩盖原始写盘异常。
-      }
-      rethrow;
-    }
-    await evictLocalCoverCache(destPath);
-  }
+  }) =>
+      // 写盘 + 驱逐都在引擎 writer 里（驱逐经 evictImageCacheForFile 钩子回到
+      // evictLocalCoverCache 的双键 evict）；这里不再重复 evict，一份真相。
+      copyCoverFileAtomically(source: source, destPath: destPath);
 
   /// 统一落盘入口（内存字节源，下载场景）：语义同 [applyCoverFile]，
   /// 只是源换成 [bytes]（`flush: true` 落稳后 rename）。
   static Future<void> applyCoverBytes({
     required List<int> bytes,
     required String destPath,
-  }) async {
-    final File tmp = File('$destPath.tmp.$pid.${_temporarySerial++}');
-    try {
-      await tmp.writeAsBytes(bytes, flush: true);
-      final File dest = File(destPath);
-      if (await dest.exists()) await dest.delete();
-      await tmp.rename(destPath);
-    } catch (_) {
-      try {
-        if (await tmp.exists()) await tmp.delete();
-      } catch (_) {
-        // .tmp 清理失败不掩盖原始写盘异常。
-      }
-      rethrow;
-    }
-    await evictLocalCoverCache(destPath);
-  }
+  }) =>
+      writeCoverBytesAtomically(bytes: bytes, destPath: destPath);
 
   /// 统一「封面已消失」入口：[destPath] 上的封面文件**已经被删除**时调用，
   /// 双键驱逐它的解码缓存。
@@ -164,6 +138,49 @@ class MediaCoverService {
           pickedPath: pickedPath,
           coversDirectory: covers,
         );
+      });
+    } finally {
+      lease.release();
+    }
+  }
+
+  /// 合集：用用户手选的图片设置**合集自有**封面，返回落盘路径。
+  ///
+  /// 落 `video_covers/collections/<collectionId>.jpg`
+  /// （[VideoStorage.collectionCoversDir] + [videoCoverFileName]，与番剧下载导入
+  /// 器写合集海报**同目录同命名**），再写 [MediaCollections.coverPath]。固定文件
+  /// 名意味着换封面就是同路径覆盖，不留孤儿；扩展名恒 `.jpg` 只是沿用视频封面的
+  /// 命名约定（内容按原字节拷贝、不转码，解码不看扩展名）。
+  ///
+  /// 为什么不需要额外的「手动封面」保护标记（对比 [applyVideoCoverManual] 的
+  /// [CoverOrigin.manual]）：合集封面的刮削覆盖判据是
+  /// `coverPath == null || isUnmodifiedGeneratedArtifact(coverPath)` ——后者按
+  /// `video_sidecar_artifacts` 登记表的 sha256 比对，手选图从不进那张表，因而
+  /// **结构性**不会被在线刮削覆盖。
+  ///
+  /// 与刮削并发的互斥沿用视频侧同一对门：[VideoScrapeOperationGate]（清理期禁写）
+  /// + [VideoCoverMutationGate]（封面写互斥），与
+  /// `video_source_scrape_coordinator` 写同一路径时不打架。
+  /// [collectionCoversDirectory] 是测试接缝。
+  static Future<String> applyCollectionCover({
+    required FushiDatabase database,
+    required int collectionId,
+    required String pickedPath,
+    Directory? collectionCoversDirectory,
+  }) async {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
+    try {
+      return await VideoCoverMutationGate.runExclusive(() async {
+        final Directory covers = collectionCoversDirectory ??
+            await VideoStorage.collectionCoversDir();
+        await covers.create(recursive: true);
+        final String destPath =
+            p.join(covers.path, videoCoverFileName('$collectionId'));
+        await applyCoverFile(source: File(pickedPath), destPath: destPath);
+        await database.updateMediaCollectionCoverPath(collectionId, destPath);
+        return destPath;
       });
     } finally {
       lease.release();

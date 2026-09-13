@@ -1,10 +1,11 @@
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/collections/collection_season_groups.dart'
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
-import 'package:fushi/src/media/tracking/bangumi_api_client.dart';
+import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
-import 'package:fushi/src/media/tracking/media_tracking_repository.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -653,8 +654,8 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                     padding: EdgeInsets.zero,
                     leading: subject.coverUrl == null
                         ? const Icon(Icons.auto_stories_outlined)
-                        : Image.network(
-                            subject.coverUrl!,
+                        : Image(
+                          image: AppHttpImage(subject.coverUrl!),
                             width: 42,
                             height: 56,
                             fit: BoxFit.cover,

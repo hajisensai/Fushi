@@ -31,7 +31,9 @@ void main() {
     expect(
       initSource,
       contains(
-          '_pendingLyricsRestore = ReaderFushiSource.instance.lyricsMode;'),
+          '_pendingLyricsRestore =\n'
+            '        _sourceReviewSession == null && '
+            'ReaderFushiSource.instance.lyricsMode;'),
       reason: 'fresh open 应把持久化歌词模式记成待恢复意图。',
     );
     expect(

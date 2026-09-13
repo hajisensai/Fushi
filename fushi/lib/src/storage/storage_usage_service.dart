@@ -403,8 +403,11 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
     'fushiExport',
     // 同上：旧名存量目录走迁移常量。
     kLegacyExportDirectoryName,
+    // 卡片来源回看的待回写草稿（临时音频 / 图片 / 字段）：本质是等着写回 Anki 的
+    // 导出产物，回写或丢弃即删。
+    'card_source_drafts',
   ],
-  StorageCategoryId.database: <String>[],
+  StorageCategoryId.database: <String>['onboarding_tutorial'],
   StorageCategoryId.ocrModels: <String>[],
 };
 
@@ -530,6 +533,9 @@ class StorageUsageService {
   Stream<StorageCategoryUsage> scanCategories({
     required final List<StorageBookRef> books,
     required final List<String> dictionaryNames,
+    /// 词典改名（v95）：真名 -> 显示名，只含改过名的。**只翻译给人看的 label**；
+    /// 条目 `id` 与磁盘路径一律仍用真名（真名就是磁盘目录名，也是删除路由主键）。
+    final Map<String, String> dictionaryDisplayNames = const <String, String>{},
   }) async* {
     final Directory docs = await _documentsRoot();
     final Directory support = await _supportRoot();
@@ -541,9 +547,10 @@ class StorageUsageService {
         case StorageCategoryId.books:
           yield await _scanBooks(docs, books);
         case StorageCategoryId.dictionaries:
-          yield await _scanDictionaries(docs, dictionaryNames);
+          yield await _scanDictionaries(
+              docs, dictionaryNames, dictionaryDisplayNames);
         case StorageCategoryId.database:
-          yield await _scanDatabase(support);
+          yield await _scanDatabase(support, docs);
         case StorageCategoryId.ocrModels:
           yield await _scanGeneric(id, <String>[
             p.join(support.path, kOcrModelsSupportChild),
@@ -642,6 +649,7 @@ class StorageUsageService {
   Future<StorageCategoryUsage> _scanDictionaries(
     final Directory docs,
     final List<String> dictionaryNames,
+    final Map<String, String> dictionaryDisplayNames,
   ) async {
     final List<String> categoryRoots = <String>[
       for (final String child
@@ -667,8 +675,10 @@ class StorageUsageService {
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
       for (int i = 0; i < dictionaryNames.length; i++)
         StorageEntryUsage(
+          // id 必须是真名：删除路由（settings_schema_storage）按它找目录。
           id: dictionaryNames[i],
-          label: dictionaryNames[i],
+          label:
+              dictionaryDisplayNames[dictionaryNames[i]] ?? dictionaryNames[i],
           bytes: sizes[i],
           paths: <String>[perDictPaths[i]],
           kind: StorageEntryKind.dictionary,
@@ -694,7 +704,8 @@ class StorageUsageService {
   /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
   static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
 
-  Future<StorageCategoryUsage> _scanDatabase(final Directory support) async {
+  Future<StorageCategoryUsage> _scanDatabase(
+      final Directory support, final Directory docs) async {
     // support 根的直接子项，减去 OCR 模型子目录（后者单列一类）。明细里因此
     // 能看到主库 `fushi.db`、本地发音库副本 `local_audio_*.db` 等具体大件。
     //
@@ -719,7 +730,16 @@ class StorageUsageService {
     final List<String> snapshotPaths = <String>[
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
+    final StorageCategoryUsage localState = await _scanGeneric(
+      StorageCategoryId.database,
+      <String>[
+        for (final String child
+            in kStorageCategoryDocumentsChildren[StorageCategoryId.database]!)
+          p.join(docs.path, child),
+      ],
+    );
     final List<StorageEntryUsage> entries = <StorageEntryUsage>[
+      ...localState.entries,
       ..._childEntries(raw, excludePaths: <String>{
         p.join(support.path, kOcrModelsSupportChild),
         ...snapshotPaths,
@@ -838,8 +858,7 @@ class StorageUsageService {
           entry,
     ];
     final List<String> paths = <String>[
-      for (final Map<String, Object> entry in backups)
-        entry['path'] as String,
+      for (final Map<String, Object> entry in backups) entry['path'] as String,
     ];
     final int bytes = backups.fold<int>(0,
         (int sum, Map<String, Object> entry) => sum + (entry['bytes'] as int));

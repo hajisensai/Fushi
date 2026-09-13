@@ -173,13 +173,21 @@ Rect computeFloatingLyricPopupRect({
 }
 
 /// TODO-108：底部固定（dock）模式下的弹窗矩形——忽略选区位置，把弹窗放成屏幕底部
-/// 一条全宽面板。[screen] 是可用区域大小；[inset] 是左右及离屏底的内边距；[dockedHeight]
-/// 是面板目标高度（会按可用高度 clamp）；[bottomReserve]/[topReserve] 与跟随模式同义
-/// （底栏/状态栏等预留），保证 dock 面板不被这些区域遮住。纯函数，reader 与 video 两个
-/// 收口点共用同一实现，保证两表面 dock 行为一致。
+/// 一条全宽面板。[screen] 是可用区域大小；[dockedHeight] 是面板目标高度（会按可用高度
+/// clamp）；[bottomReserve]/[topReserve] 与跟随模式同义（底栏/状态栏等预留），保证 dock
+/// 面板不被这些区域遮住。纯函数，reader 与 video 两个收口点共用同一实现，保证两表面
+/// dock 行为一致。
+///
+/// 两个内边距**分轴**（BUG-2439）：
+///   * [horizontalInset] 默认 **0** —— 「整宽面板」就该从屏幕最左铺到最右。此前它与
+///     纵向共用一个 [inset]，而两个收口点都把跟随模式的贴边避让 padding（6）转发进来，
+///     于是 dock 面板左右各缺 6px，怎么调设置都补不上。跟随模式的 padding 是「别贴着
+///     屏幕边缘弹出」，与 dock 的「铺满」诉求相反，不该共用同一个数。
+///   * [inset] 只管纵向：面板与屏幕底（或 [bottomReserve] 上沿）之间的留白。
 Rect dockedPopupRect({
   required Size screen,
   double inset = 6.0,
+  double horizontalInset = 0.0,
   double dockedHeight = 360.0,
   double bottomReserve = 0.0,
   double topReserve = 0.0,
@@ -187,18 +195,17 @@ Rect dockedPopupRect({
   final double reserve = bottomReserve.clamp(0, screen.height);
   final double effectiveTop = topReserve.clamp(0, screen.height);
   final double effectiveBottom = screen.height - reserve;
-  final double horizontalInset = inset.clamp(0, screen.width / 2);
+  final double sideInset = horizontalInset.clamp(0, screen.width / 2);
   final double verticalInset =
       inset.clamp(0, (effectiveBottom).clamp(0, screen.height) / 2);
-  final double width =
-      (screen.width - horizontalInset * 2).clamp(0, screen.width);
+  final double width = (screen.width - sideInset * 2).clamp(0, screen.width);
   final double maxAvail = (effectiveBottom - effectiveTop - verticalInset * 2)
       .clamp(0, screen.height);
   final double height = dockedHeight.clamp(0, maxAvail);
   final double top = (effectiveBottom - verticalInset - height)
       .clamp(effectiveTop + verticalInset, effectiveBottom)
       .toDouble();
-  return Rect.fromLTWH(horizontalInset, top, width, height);
+  return Rect.fromLTWH(sideInset, top, width, height);
 }
 
 /// 查词弹窗位置分流的单一收口：[bottomDocked] 时忽略选区返回屏幕底部全宽 dock 面板
@@ -224,6 +231,7 @@ Rect resolvePopupRect({
   if (bottomDocked) {
     return dockedPopupRect(
       screen: screen,
+      // [padding] 只喂纵向。横向留默认 0：dock 面板铺满屏幕最左到最右（BUG-2439）。
       inset: padding,
       dockedHeight: maxHeight,
       bottomReserve: bottomReserve,
@@ -277,7 +285,7 @@ double resolveAutoFitPopupHeight({
 /// mixin 家族（video / 首页词典 / texthooker / 网页视频）把查词浮层插进根 Overlay，
 /// 再用 [FushiAppUiScaleNeutralizer] 中和回净缩放 1；选区矩形则来自被点字符的
 /// `localToGlobal`。两者只有在根 Overlay 原点与屏幕原点重合时才同系。Windows 上
-/// `FushiWindowsTitleBar` 把整个导航器（含根 Overlay）压在一条 32 逻辑像素的自绘
+/// `FushiDesktopTitleBar` 把整个导航器（含根 Overlay）压在一条 32 逻辑像素的自绘
 /// 标题栏之下（main.dart），根 Overlay 原点就比屏幕原点低一个标题栏：浮层按
 /// 「屏幕 rect」摆到 Overlay 坐标里，整栈集体下移 32px，贴在被查词上方的弹窗底边
 /// 正好压进词里。中和层的原点与根 Overlay 原点重合（FittedBox 左上对齐、净缩放 1），
@@ -521,15 +529,29 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
 /// chain, accounting for the header offset, border inset, and any scale in one
 /// shot. Falls back to [fallback] only when the render box is unavailable
 /// (should not happen at selection time — the parent popup is on-screen).
+/// With [coordinateSpaceKey], return coordinates in that popup Stack instead.
+/// BUG-2416: reader popup placement must not apply screen offsets/scale twice.
 Rect popupWordScreenRect({
   required GlobalKey webViewKey,
   required Rect localRect,
   required Rect fallback,
+  GlobalKey? coordinateSpaceKey,
 }) {
   final RenderObject? obj = webViewKey.currentContext?.findRenderObject();
   if (obj is RenderBox && obj.attached && obj.hasSize) {
     final Offset topLeft = obj.localToGlobal(localRect.topLeft);
     final Offset bottomRight = obj.localToGlobal(localRect.bottomRight);
+    if (coordinateSpaceKey != null) {
+      final RenderObject? target = coordinateSpaceKey.currentContext
+          ?.findRenderObject();
+      if (target is! RenderBox || !target.attached || !target.hasSize) {
+        return fallback;
+      }
+      return Rect.fromPoints(
+        target.globalToLocal(topLeft),
+        target.globalToLocal(bottomRight),
+      );
+    }
     return Rect.fromPoints(topLeft, bottomRight);
   }
   return fallback;
@@ -567,25 +589,46 @@ bool reanchorNestedPopupToWord({
   required String expectedTerm,
   required Rect? wordLocalRect,
   required Rect fallback,
+  GlobalKey? coordinateSpaceKey,
 }) {
   if (wordLocalRect == null || wordLocalRect.isEmpty) return false;
   final int childIndex = parentIndex + 1;
   if (childIndex <= 0 || childIndex >= controller.entries.length) return false;
   final DictionaryPopupEntry child = controller.entries[childIndex];
   if (child.searchTerm != expectedTerm.trim()) return false;
-  final Rect screenRect = popupWordScreenRect(
+  final Rect targetRect = popupWordScreenRect(
     webViewKey: parentWebViewKey,
     localRect: wordLocalRect,
     fallback: fallback,
+    coordinateSpaceKey: coordinateSpaceKey,
   );
-  if (screenRect == fallback || screenRect == child.selectionRect) return false;
-  controller.reanchorEntry(child, screenRect);
+  if (targetRect == fallback || targetRect == child.selectionRect) return false;
+  controller.reanchorEntry(child, targetRect);
   return true;
 }
 
 // [kPopupSearchingPlaceholderResult]（BUG-080 搜索期预挂载共享空结果）现声明于
 // dictionary_popup_controller.dart，经文件头 export 在此可用（_buildBody 的
 // `result ?? kPopupSearchingPlaceholderResult` 兜底与热槽 seed 是同一单例）。
+
+/// 弹窗顶栏「← →」（弹窗内原地跳转历史，对齐 Hoshi Reader iOS `PopupView.actionBar`）
+/// 的接线。宿主只在本层**发生过**原地跳转（[DictionaryPopupEntry.hasNavigationHistory]）
+/// 时传入：与 Hoshi 默认（`popupActionBar=false`）一致——没跳过就不占顶栏。两颗按钮
+/// 总是一起画，不可去的方向置灰（Hoshi：`.disabled` + `opacity(0.3)`），而不是消失，
+/// 否则 ← 一按到底按钮就跳位。
+class DictionaryPopupHistoryNav {
+  const DictionaryPopupHistoryNav({
+    required this.canGoBack,
+    required this.canGoForward,
+    required this.onBack,
+    required this.onForward,
+  });
+
+  final bool canGoBack;
+  final bool canGoForward;
+  final VoidCallback onBack;
+  final VoidCallback onForward;
+}
 
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({
@@ -594,8 +637,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     required this.onDismiss,
     required this.onTextSelected,
     required this.onLinkClick,
-    required this.onMineEntry,
-    required this.onDuplicateCheck,
+    this.onMineEntry,
+    this.onDuplicateCheck,
     this.onOverwriteTargetNoteId,
     this.onMinedCardAction,
     this.onOpenInAnki,
@@ -623,10 +666,13 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.isDark = false,
     this.overrideFillColor,
     this.showBorder = true,
+    this.bottomDocked = false,
     this.swipeDismissible = true,
     this.enableSwipeToClose = true,
     this.onClose,
     this.onBack,
+    this.historyNav,
+    this.restoreScrollTop,
     this.transparentDocumentBackground = false,
     this.showResizeGrip = false,
     this.onResizeStart,
@@ -655,15 +701,30 @@ class DictionaryPopupLayer extends StatelessWidget {
   final VoidCallback onDismiss;
   final void Function(String text, Rect localRect) onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
-  final Future<MinePopupResult> Function(Map<String, String> fields)
-      onMineEntry;
+
+  /// 制卡（「+」按钮）回调。**可空**：宿主没有制卡能力（或「制卡」功能模块被关掉）
+  /// 时传 null，与 [onAppendSentence] 等一样走「回调为 null 就不接线」的既有契约，
+  /// 而不是挂一个点了没反应的 no-op。
+  ///
+  /// 注意按钮**渲不渲染**由 popup.js 的 `window.__fushiMiningEnabled` 决定
+  /// （注入点 popup_settings_injection.dart，判据是 ModuleId.cardCreation）——
+  /// 那是 in-app 与 app 外两类表面共用的唯一注入点；本回调为空只是宿主侧的第二道
+  /// 闸（桥调用无人接管时不做任何事），两者正交。
+  final Future<MinePopupResult> Function(Map<String, String> fields)?
+  onMineEntry;
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId] + 新字段）。null 时弹窗不进
   /// 「最新可改」第三态，点 ✓ 仍走旧的查重/再制流程（向后兼容）。
   final Future<MinePopupResult> Function(
-      int noteId, Map<String, String> fields)? onUpdateEntry;
-  final Future<bool> Function(String expression, String reading)
-      onDuplicateCheck;
+    int noteId,
+    Map<String, String> fields,
+  )?
+  onUpdateEntry;
+
+  /// 查重（词条渲染时问 Anki「这张卡已经有了吗」）。**可空**：与 [onMineEntry] 同
+  /// 进同退——制卡不可用时传 null，弹窗既不画 ✓ 也不发查重探测。
+  final Future<bool> Function(String expression, String reading)?
+  onDuplicateCheck;
 
   /// TODO-614：覆写范围=「全部」时按内容反查可覆写的已存在 note id（多张取最近），
   /// 透传给 [DictionaryPopupWebView] 让更早的卡也能进「✓↩ 最新可改」态。null 时弹窗
@@ -747,6 +808,15 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 的返回入口，语义是关闭当前子层并回到父层。
   final VoidCallback? onBack;
 
+  /// 弹窗内原地跳转的 ← → 历史导航（见 [DictionaryPopupHistoryNav]）。null = 不画。
+  /// 与 [onBack] 语义不同：[onBack] 是关掉**一层**弹窗，这里是在**同一层**的历史页
+  /// 间来回。
+  final DictionaryPopupHistoryNav? historyNav;
+
+  /// 透传 [DictionaryPopupWebView.restoreScrollTop]：后退 / 前进回到历史页时该页离开
+  /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
+  final double? restoreScrollTop;
+
   /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
   /// in-app 行为，见 DictionaryPopupWebView.transparentDocumentBackground）。
@@ -775,6 +845,14 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 拖拽把手的测试锚点（widget 测试用 `find.byKey` 定位后模拟 pan）。
   static const Key resizeGripKey =
       ValueKey<String>('dictionary-popup-resize-grip');
+
+  /// 本层是否是「底部停靠」的整宽面板（`popup_bottom_docked`）。
+  ///
+  /// 只影响**贴边处的观感**：dock 面板的矩形铺满屏幕最左到最右（见 [dockedPopupRect]
+  /// 的 `horizontalInset`），此时卡片圆角的四段弧会在屏幕左右缘露出背景色，看起来就是
+  /// 「全宽没铺满」。为真时把圆角摊平成直角，让 surface 真正边到边（BUG-2439）。跟随
+  /// 选区的普通弹窗四周都有留白，保持既有圆角。
+  final bool bottomDocked;
 
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
@@ -830,6 +908,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     final Widget surface = FushiPopupSurface(
       color: fillColor,
       showBorder: showBorder,
+      // dock 面板贴着屏幕左右缘，圆角摊平才是真正的「整宽」（BUG-2439）。
+      borderRadius: bottomDocked ? BorderRadius.zero : null,
       clipBehavior: showBorder ? Clip.antiAlias : Clip.none,
       // BUG-1692：本 surface 里装的是原生 WebView（平台视图）。描边默认走
       // foregroundPainter、画在 WebView **之后**且 bounds 覆盖整个浮层，macOS engine
@@ -1035,14 +1115,18 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 不失效）。header 缺省（app 外覆盖窗）时中段退化成 [Spacer]，行为与旧的「只有 A−/A+ +
   /// 关闭」一致。
   Widget? _buildTopBar(BuildContext context) {
-    if (headerWidget == null && onClose == null && onBack == null) {
+    if (headerWidget == null &&
+        onClose == null &&
+        onBack == null &&
+        historyNav == null) {
       return null;
     }
 
     final String backTooltip =
         MaterialLocalizations.of(context).backButtonTooltip;
+    final DictionaryPopupHistoryNav? nav = historyNav;
 
-    // 左簇：返回（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
+    // 左簇：返回（可选）+ 历史 ← →（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -1055,6 +1139,28 @@ class DictionaryPopupLayer extends StatelessWidget {
             padding: EdgeInsets.zero,
             onTap: onBack,
           ),
+        if (nav != null) ...<Widget>[
+          FushiIconButton(
+            key: const ValueKey<String>('popup_history_back'),
+            icon: Icons.arrow_back,
+            size: 20,
+            tooltip: t.popup_history_back,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
+            enabled: nav.canGoBack,
+            onTap: nav.onBack,
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('popup_history_forward'),
+            icon: Icons.arrow_forward,
+            size: 20,
+            tooltip: t.popup_history_forward,
+            constraints: _topActionConstraints,
+            padding: EdgeInsets.zero,
+            enabled: nav.canGoForward,
+            onTap: nav.onForward,
+          ),
+        ],
         _buildZoomFontButton(context, zoomIn: false),
         _buildZoomFontButton(context, zoomIn: true),
       ],
@@ -1154,6 +1260,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             key: webViewKey,
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
+            restoreScrollTop: restoreScrollTop,
             hasChildPopup: hasChildPopup,
             onTapOutside: onTapOutside,
             onTextSelected: onTextSelected,
@@ -1317,6 +1424,10 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
         ReaderFushiSource.instance.dismissSwipeSensitivity,
       );
 
+  /// 用户关掉「弹窗关闭动画」= 整条滑关不画（[popupSwipeDismissIsInstant]）：跟手期
+  /// 不重绘、不位移，抬手过阈值当帧关。**用时取值**，理由同 [_applyDismissDuration]。
+  bool get _instant => popupSwipeDismissIsInstant();
+
   @override
   void initState() {
     super.initState();
@@ -1325,13 +1436,18 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       ..addStatusListener(_onStatus);
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // 墨水屏模式：滑出/弹回补间归零（Duration.zero 的 forward 立即 complete，
-    // onDismiss 时序不变，只是不再画补间帧）。跟随主题切换双向生效。
-    _controller.duration =
-        isEinkTheme(context) ? Duration.zero : _kSlideDuration;
+  /// 滑出/弹回补间的时长**用时取值**，不缓存（`Duration.zero` 的 forward 立即
+  /// complete，onDismiss 时序不变，只是不再画补间帧）。
+  ///
+  /// 曾经写在 `didChangeDependencies` 里，但那只在**依赖**（这里是 `Theme`）变化时
+  /// 重跑：用户在设置里翻「弹窗关闭动画」只触发 rebuild、不触发
+  /// `didChangeDependencies`，控制器会一直留着上一次的 200ms，表现成「关了没用」的
+  /// 空开关。取值改在每次启动补间前一刻，两条来源（用户开关 / 墨水屏）都当场生效。
+  void _applyDismissDuration() {
+    _controller.duration = popupDismissAnimationDuration(
+      context,
+      _kSlideDuration,
+    );
   }
 
   @override
@@ -1401,6 +1517,9 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       _pointerIsHorizontal = delta.dx.abs() > delta.dy.abs() * 1.5;
     }
     if (_pointerIsHorizontal != true) return;
+    // instant：跟手期一帧都不重画（[build] 也不挂 Transform/Opacity），弹窗按住不动；
+    // 判定所需的累计位移在抬手时由 [_onPointerUp] 从指针位置重算，不依赖 [_dragX]。
+    if (_instant) return;
     setState(() => _dragX = delta.dx);
   }
 
@@ -1408,10 +1527,17 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
     final bool shouldFinish = _pointerIsHorizontal == true;
+    // instant 下 [_dragX] 恒 0（跟手期不更新），累计位移只能从起点重算。
+    final double accumulated =
+        _pointerStart == null ? _dragX : event.position.dx - _pointerStart!.dx;
     _clearTrackedPointer();
-    if (shouldFinish) {
-      _finishHorizontalDrag();
+    if (!shouldFinish) return;
+    if (_instant) {
+      // 抬手当帧判定：过阈值直接关（无滑出补间），没过什么都不用做（弹窗没动过）。
+      if (accumulated.abs() > _threshold) widget.onDismiss();
+      return;
     }
+    _finishHorizontalDrag();
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
@@ -1431,6 +1557,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _finishHorizontalDrag() {
+    _applyDismissDuration();
     final double accumulated = _dragX;
     // 双向水平：左右皆可，对齐手机 `_dragX.abs()`。
     if (accumulated.abs() > _threshold) {
@@ -1449,6 +1576,12 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _springBack() {
+    // instant：跟手期没位移过，没有可弹回的距离，也不该起一次 0→0 的补间。
+    if (_instant) {
+      if (_dragX != 0 && mounted) setState(() => _dragX = 0);
+      return;
+    }
+    _applyDismissDuration();
     _dragStartX = _dragX;
     _dragTargetX = 0;
     _dismissing = false;
@@ -1465,7 +1598,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
-      child: widget.enableSwipeToClose
+      child: widget.enableSwipeToClose && !_instant
           ? LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
                 if (constraints.maxWidth.isFinite) {

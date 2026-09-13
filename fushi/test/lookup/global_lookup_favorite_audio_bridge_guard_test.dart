@@ -32,8 +32,12 @@ void main() {
     setUpAll(() {
       // spec 2026-07-10: 桥 handler 抽到 overlay_bridge_handlers.dart 与剪贴板
       // 面板共享（红线：两表面不复制不漂移）；守卫扫 controller+共享实现拼接。
+      // 收藏的真 DB 读写又下沉了一层到 overlay_stat_source.dart（跨源 ★ 一致性
+      // 的三条纪律要能用内存 DB 直接测，见 overlay_stat_source_test.dart），故
+      // 语料补上第三个文件——扫描面覆盖的仍是同一条链路。
       src = read('lib/src/lookup/global_lookup_controller.dart') +
-          read('lib/src/lookup/overlay_bridge_handlers.dart');
+          read('lib/src/lookup/overlay_bridge_handlers.dart') +
+          read('lib/src/lookup/overlay_stat_source.dart');
     });
 
     test(

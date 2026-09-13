@@ -53,24 +53,27 @@ void main() {
   });
 
   group('StatSourceKind（4 张统计表 source_type）', () {
-    test('dbValue 集合守卫：恰为 {book, video}，与移入 core 的常量一致', () {
+    test('dbValue 集合守卫：恰为 {book, video, game}，与移入 core 的常量一致', () {
       expect(
         StatSourceKind.values.map((StatSourceKind k) => k.dbValue).toSet(),
-        <String>{'book', 'video'},
+        <String>{'book', 'video', 'game'},
       );
       expect(StatSourceKind.book.dbValue, kStatSourceBook);
       expect(StatSourceKind.video.dbValue, kStatSourceVideo);
+      expect(StatSourceKind.game.dbValue, kStatSourceGame);
       expect(kStatSourceBook, 'book');
       expect(kStatSourceVideo, 'video');
+      expect(kStatSourceGame, 'game');
     });
 
-    test('tryParse：两个已知值命中，null/未知/它域串返 null 不抛', () {
+    test('tryParse：三个已知值命中，null/未知/它域串返 null 不抛', () {
       expect(StatSourceKind.tryParse('book'), StatSourceKind.book);
       expect(StatSourceKind.tryParse('video'), StatSourceKind.video);
+      expect(StatSourceKind.tryParse('game'), StatSourceKind.game,
+          reason: 'galgame hook 会话期间的查词/制卡/收藏进游戏统计域');
       expect(StatSourceKind.tryParse(null), isNull);
       expect(StatSourceKind.tryParse('epub'), isNull);
-      expect(StatSourceKind.tryParse('game'), isNull,
-          reason: '游戏不入 book/video 统计域');
+      expect(StatSourceKind.tryParse('Game'), isNull, reason: '严格解析不做大小写归一');
     });
   });
 
@@ -216,12 +219,12 @@ void main() {
       expect(all.length, MediaKind.values.length, reason: '无重复归属');
     });
 
-    test('statSourceKindOf 穷尽且冻结：epub/srt→book, video→video, game→null', () {
+    test('statSourceKindOf 穷尽且冻结：epub/srt→book, video→video, game→game', () {
       expect(statSourceKindOf(MediaKind.epub), StatSourceKind.book);
       expect(statSourceKindOf(MediaKind.srt), StatSourceKind.book);
       expect(statSourceKindOf(MediaKind.video), StatSourceKind.video);
-      expect(statSourceKindOf(MediaKind.game), isNull,
-          reason: '游戏不入 book/video 统计');
+      expect(statSourceKindOf(MediaKind.game), StatSourceKind.game,
+          reason: '游戏自 kStatSourceGame 起有独立统计桶（此前返 null）');
     });
   });
 }

@@ -8,18 +8,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/fake_image_bytes.dart';
 
 /// TODO-820：互联下载对端视频后必须建 VideoBooks 行，否则下载好的文件躺磁盘但视频
 /// 列表（唯一数据源是 VideoBooks 行）根本看不到。这里在真实下载路径上断言「下载完
@@ -141,7 +143,13 @@ void main() {
       (WidgetTester tester) async {
     final _FakeRemoteVideoClient client = _FakeRemoteVideoClient(
       videos: <RemoteVideoInfo>[
-        const RemoteVideoInfo(id: 'remote-clip', title: 'Remote Clip'),
+        const RemoteVideoInfo(id: 'remote-clip', title: 'Remote Clip',
+          collection: RemoteCollectionMembership(
+            collectionName: 'Series',
+            collectionType: 'playlist',
+            sortIndex: 3,
+          ),
+        ),
       ],
     );
     await tester.pumpWidget(buildApp(client: client));
@@ -149,6 +157,14 @@ void main() {
 
     // 下载前列表无该行（根因：下载前视频不在 VideoBooks）。
     expect(await repo.getByBookUid('remote-clip'), isNull);
+    final List<MediaCollectionRow> listedCollections =
+        await db.getAllMediaCollections();
+    expect(listedCollections, hasLength(1), reason: '目录加载建立合集壳');
+    expect((await db.getCollectionItems(listedCollections.single.id)).single.entryKey,
+        'remote-clip');
+    // 模拟目录之后关系缺失，证明下载登记自身也走收养服务。
+    await db.delete(db.mediaCollectionItems).go();
+    await db.delete(db.mediaCollections).go();
 
     await tapDownloadAwaitRow(tester);
 
@@ -156,6 +172,13 @@ void main() {
     final VideoBookRow? row = await repo.getByBookUid('remote-clip');
     expect(row, isNotNull);
     expect(row!.title, 'Remote Clip');
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections, hasLength(1));
+    expect(
+      (await db.getCollectionItems(collections.single.id)).single.entryKey,
+      row.bookUid,
+    );
     expect(
       row.videoPath,
       '${pathProviderDir.path}/${'remote-clip'.hashCode}.mp4',
@@ -210,6 +233,57 @@ void main() {
     final List<dynamic> cues = await repo.loadCues('remote-clip');
     expect(cues, isNotEmpty);
   });
+
+  // 7c：host 已刮好的封面 / importedAt / completedAt 此前下载后全部丢失（无条件抽帧、
+  // importedAt 写本机 now、completedAt 不写）。
+  testWidgets('下载登记镜像 host 封面（coverUrl）、importedAt 与 completedAt',
+      (WidgetTester tester) async {
+    final _FakeCoverRemoteVideoClient client = _FakeCoverRemoteVideoClient(
+      videos: <RemoteVideoInfo>[
+        const RemoteVideoInfo(
+          id: 'remote-clip',
+          title: 'Remote Clip',
+          coverUrl: 'http://x/videos/remote-clip/cover',
+          importedAt: 1700000000000,
+          completedAt: 1700000500000,
+        ),
+      ],
+      // 写侧唯一入口只收可解码字节（BUG-2496）：JPEG 须以 FF D9 收尾。
+      coverBytes: fakeJpegBytes(fill: 0xE0),
+    );
+    await tester.pumpWidget(buildApp(client: client));
+    await tester.pumpAndSettle();
+
+    await tapDownloadAwaitRow(tester);
+
+    final VideoBookRow? row = await repo.getByBookUid('remote-clip');
+    expect(row, isNotNull);
+    expect(row!.importedAt, 1700000000000,
+        reason: 'importedAt 镜像 host 值，下载后不该在「按导入时间」里跳位');
+    expect(row.completedAt?.millisecondsSinceEpoch, 1700000500000,
+        reason: 'completedAt 镜像 host 值，已看完角标不丢');
+    expect(client.coverFetches, <String>['http://x/videos/remote-clip/cover'],
+        reason: 'host 有 coverUrl 时先拉 host 封面');
+    expect(row.coverPath, isNotNull);
+    expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
+  });
+}
+
+class _FakeCoverRemoteVideoClient extends _FakeRemoteVideoClient
+    implements RemoteCoverFetcher {
+  _FakeCoverRemoteVideoClient({required super.videos, required this.coverBytes});
+
+  final List<int> coverBytes;
+  final List<String> coverFetches = <String>[];
+
+  @override
+  String get coverCacheNamespace => 'test';
+
+  @override
+  Future<Uint8List> fetchRemoteCover(String coverUrl) async {
+    coverFetches.add(coverUrl);
+    return Uint8List.fromList(coverBytes);
+  }
 }
 
 class _FakeRemoteVideoClient implements RemoteVideoClient {

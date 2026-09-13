@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +10,7 @@ import 'package:fushi/src/pages/implementations/dict_style_preview.dart';
 import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
 @visibleForTesting
@@ -18,11 +20,13 @@ class AudioSourcesDialog extends StatefulWidget {
     required this.onSave,
     this.onPickLocalDb,
     this.onEditLocalSources,
+    this.isLocalDbAvailable,
+    this.onReplaceLocalDb,
     super.key,
   });
 
   final List<AudioSourceConfig> sources;
-  final void Function(List<AudioSourceConfig>) onSave;
+  final FutureOr<void> Function(List<AudioSourceConfig>) onSave;
 
   /// 选文件并导入为一个 localAudio 源（未持久化）；返回 null 表示用户取消。
   ///
@@ -33,6 +37,9 @@ class AudioSourcesDialog extends StatefulWidget {
 
   /// 打开某个本地音频库的「子来源顺序 + 逐源启用」编辑器（按库路径）。
   final Future<void> Function(String path)? onEditLocalSources;
+
+  final Future<bool> Function(String path)? isLocalDbAvailable;
+  final Future<AudioSourceConfig?> Function(String path)? onReplaceLocalDb;
 
   /// 自定义远端音频 URL 合法性：必须是 http(s) 链接，且至少含一个
   /// `{term}` / `{reading}` 占位符（否则播放时无法代入查词参数）。
@@ -87,6 +94,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   /// 写到**别人**那行上。[AudioSourceConfig] 是 `@immutable` 且实现了 `==`，提交时用
   /// `indexOf` 现场定位即可；该行被删掉则 `indexOf` 返回 -1，编辑态在删除处即时清空。
   AudioSourceConfig? _editingSource;
+
+  final Map<String, Future<bool>> _localAvailability = <String, Future<bool>>{};
 
   @override
   void initState() {
@@ -236,6 +245,39 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   Widget _buildSourceRow(FushiDesignTokens tokens, int index) {
+    final AudioSourceConfig source = _sources[index];
+    final String? dbPath = source.path;
+    if (source.kind != AudioSourceKind.localAudio ||
+        dbPath == null ||
+        widget.isLocalDbAvailable == null) {
+      return _buildSourceRowContent(tokens, index);
+    }
+    return FutureBuilder<bool>(
+      future: _localAvailability.putIfAbsent(
+          dbPath, () => widget.isLocalDbAvailable!(dbPath)),
+      builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
+        final bool unavailable = snapshot.hasError || snapshot.data == false;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _buildSourceRowContent(tokens, index),
+            if (unavailable) ...<Widget>[
+              Text(t.local_audio_file_unavailable,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              if (widget.onReplaceLocalDb != null)
+                TextButton.icon(
+                  onPressed: _importing ? null : () => _replaceLocalDb(dbPath),
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: Text(t.local_audio_file_reselect),
+                ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSourceRowContent(FushiDesignTokens tokens, int index) {
     final AudioSourceConfig source = _sources[index];
     final bool isHibiki = source.kind == AudioSourceKind.fushiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
@@ -476,7 +518,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
         // 导入即落盘：拷贝本地库是离散动作，当场持久化才让「导入成功」名副其实，
         // 且此后即便不经任何关闭路径退出（甚至杀进程）也不丢（BUG-053）；dispose
         // 的兜底保存仍覆盖此后的排序/开关/URL 等批量编辑。
-        widget.onSave(_sources);
+        await widget.onSave(List<AudioSourceConfig>.of(_sources));
+        if (!mounted) return;
         _showSnack(t.local_audio_imported);
       }
       // added == null 表示用户取消选择，不弹反馈。
@@ -497,6 +540,36 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     }
   }
 
+  Future<void> _replaceLocalDb(String oldPath) async {
+    setState(() => _importing = true);
+    try {
+      final AudioSourceConfig? replacement =
+          await widget.onReplaceLocalDb!(oldPath);
+      if (!mounted || replacement == null) return;
+      // 选择器打开期间允许排序/切换；按路径重新定位，保留用户最新的开关状态。
+      final int index = _sources.indexWhere((AudioSourceConfig source) =>
+          source.kind == AudioSourceKind.localAudio && source.path == oldPath);
+      if (index < 0) return;
+      setState(() {
+        _sources[index] = _sources[index].copyWith(path: replacement.path);
+        _localAvailability.remove(oldPath);
+      });
+      await widget.onSave(List<AudioSourceConfig>.of(_sources));
+      if (!mounted) return;
+      _showSnack(t.local_audio_imported);
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('AudioSourcesDialog.replaceLocalDb', e, stack);
+      if (mounted) {
+        _showSnack(e is InvalidLocalAudioDbException
+            ? t.local_audio_invalid_db
+            : t.local_audio_import_failed_detail(reason: '$e'));
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   void _resetToDefaults() {
     setState(() {
       // 整表重建 → 编辑目标不再属于新列表，编辑态必须一起清掉。
@@ -508,7 +581,6 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           .toList();
       _sources = <AudioSourceConfig>[
         if (hadHibiki) AudioSourceConfig.fushiRemote(),
-        ...AudioSourceConfig.fromLegacyUrls(AppModel.defaultAudioSources),
         // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
         AudioSourceConfig.remoteAudio(
           url: AppModel.ankiLocalAudioUrl,
@@ -584,6 +656,10 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   late int _selectedIndex;
   late TextEditingController _cssController;
   late List<String> _dictNames;
+
+  /// 与 [_dictNames] 同序的**显示名**，只喂给下拉的 label。作用域主键、CSS
+  /// 选择器、草稿里存的 selectedDictionaryName 一律仍用 [_dictNames] 的真名。
+  late List<String> _dictDisplayNames;
   late AppModel _appModel;
   late ProfileDraftCoordinator _profileDraftCoordinator;
   late _DictCssDraftSession _draft;
@@ -605,6 +681,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     ).read(profileDraftCoordinatorProvider);
     final Object profileDraftScope = _profileDraftCoordinator.draftScope;
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
+    _dictDisplayNames =
+        _appModel.dictionaries.map((d) => d.effectiveDisplayName).toList();
     final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
     if (existingDraft != null &&
         identical(existingDraft.appModel, _appModel) &&
@@ -938,7 +1016,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
       entries: <GamepadDropdownEntry<int>>[
         (value: 0, label: t.custom_dict_css_global),
         for (int i = 0; i < _dictNames.length; i++)
-          (value: i + 1, label: _dictNames[i]),
+          (value: i + 1, label: _dictDisplayNames[i]),
       ],
     );
   }

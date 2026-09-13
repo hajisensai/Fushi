@@ -1,14 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart'
-    show kAsrSuggestedSimilarityThreshold;
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
-    show epubSectionsFromExtractDir, parseCuesForFormat;
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
+    show
+        attachAsrCueTokenTiming,
+        finalizeAlignedCues,
+        loadEpubSectionsInBackground,
+        parseCuesForFormat;
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
-import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -23,7 +26,7 @@ import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi/utils.dart';
 
@@ -470,7 +473,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           isWideTapArea: true,
           onTap: _pickAlignment,
         ),
-        if (AsrTranscriptionService.isSupported)
+        if (isAsrSupported)
           FushiIconButton(
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
@@ -485,7 +488,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Future<void> _onAlignmentRowTap() async {
     if (importing) return;
     if (!shouldOfferSubtitleSourceChooser(
-      asrSupported: AsrTranscriptionService.isSupported,
+      asrSupported: isAsrSupported,
       hasAudio: _audioPaths?.isNotEmpty ?? false,
     )) {
       await _pickAlignment();
@@ -631,7 +634,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return const <EpubSection>[];
     }
     try {
-      return epubSectionsFromExtractDir(widget.extractDir!);
+      return await loadEpubSectionsInBackground(widget.extractDir!);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
       debugPrint('[fushi-audiobook] probe loadSections failed: $e');
@@ -663,6 +666,16 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   Future<void> _doImport() async {
     if (!_hasAudioSource || (!widget.audioOnly && _alignmentPath == null)) {
+      // 选了音频但缺对齐文件（走到这里 [_hasAudioSource] 为真就必然是这种情形）：
+      // 交给点对齐文件行的同一条路，它自己按本机能否转录分流成「字幕来源」选择或
+      // 文件选择器；拿到对齐文件后接着导入。一句泛泛的「导入失败」是死胡同——
+      // 转录入口只是行尾一枚无字图标，用户根本找不到（BUG-2266）。
+      // 「导入失败」只留给真的什么都没选（[_hasAudioSource] 为假，含 audioOnly）。
+      if (_hasAudioSource) {
+        await _onAlignmentRowTap();
+        if (!mounted || _alignmentPath == null) return;
+        return _doImport();
+      }
       FushiToast.show(
         msg: t.audiobook_import_error,
         severity: ToastSeverity.error,
@@ -787,7 +800,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             .writeHealth(bookKey: widget.bookKey, health: parsed.health);
       }
       // TODO-1288：EPUB-backed 有声书导入必须补写一条配对 srt_books 行，否则互联
-      // host 的 hasAudiobook 判据（app_model_library_host_service
+      // host 的 hasAudiobook 判据（local_library_host_service
       // ._srtBackedAudiobookKeys 要求 audiobooks + srt_books 两表齐备）认不出这本
       // 书 → 对端下载后显示成普通书、且 exportAudiobook 抛 StateError → 音频永不
       // 同步。book_import_dialog / audiobook_alignment_service / v29 backfill 三处
@@ -936,8 +949,13 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     try {
       reportProgress(0.2, t.import_step_reading_idb);
-      final List<EpubSection> sections =
-          epubSectionsFromExtractDir(widget.extractDir!);
+      // 自动匹配探测已经解析出章节的话直接复用，否则后台 isolate 解析。探测
+      // 失败时记忆的是空列表（`_loadSectionsForProbe` 吞异常回空），不能拿它
+      // 短路导入——那会把一次瞬时读失败变成「EPUB has 0 chapters」。
+      final List<EpubSection>? probed = _probedSections;
+      final List<EpubSection> sections = probed != null && probed.isNotEmpty
+          ? probed
+          : await loadEpubSectionsInBackground(widget.extractDir!);
       if (sections.isEmpty) {
         return AudiobookHealth.failed(
           reason: 'EPUB has 0 chapters',
@@ -945,24 +963,31 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       }
       reportProgress(0.3, t.import_step_matching);
       // 匹配器放 isolate 跑，主线程不能被大书的 bigram 扫描挤出 ANR。
-      final MatchResult result = await EpubCueMatcher.matchInIsolate(
+      final String? alignment = _alignmentPath;
+      final bool hasTokenTiming =
+          alignment != null && await attachAsrCueTokenTiming(cues, alignment);
+      MatchResult result = await EpubCueMatcher.matchInIsolate(
         sections: sections,
         cues: cues,
         searchWindow: _searchWindow,
         similarityThreshold: _similarityThreshold,
       );
-      final String? alignment = _alignmentPath;
-      if (alignment != null &&
-          AsrTranscriptionService.isAsrGeneratedSubtitlePath(alignment)) {
-        // 设备端转录产物：命中 cue 的听写文本换成正文（与 alignAndPersistAudiobook
-        // 同一规则），阅读器 DOM 重定位才精确。
-        replaceMatchedCueTextWithBookText(
-          sections: sections,
-          cues: cues,
-          result: result,
-        );
+      // 重切 / 换正文 / 编码匹配结果 / 写对齐版 SRT：与 alignAndPersistAudiobook
+      // 同一处收尾；就地换掉调用方持有的列表内容。
+      final ({List<AudioCue> cues, MatchResult result}) finalized =
+          await finalizeAlignedCues(
+        sections: sections,
+        cues: cues,
+        result: result,
+        subtitlePath: alignment ?? '',
+        hasTokenTiming: hasTokenTiming,
+      );
+      if (!identical(finalized.cues, cues)) {
+        cues
+          ..clear()
+          ..addAll(finalized.cues);
       }
-      SubtitleRematchCodec.applyToCues(cues: cues, result: result);
+      result = finalized.result;
       final int pct = (result.matchRate * 100).round();
       return AudiobookHealth.fromRatePct(
         ratePct: pct,

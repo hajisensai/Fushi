@@ -38,6 +38,11 @@ class LrcParser {
   /// 元数据标签：`[letters:anything]`（tag 全为字母）。
   static final RegExp _metaTag = RegExp(r'^\[([a-zA-Z]+):[^\]]*\]$');
 
+  /// 时间码（每个时间标签都要跑，编译一次）。
+  static final RegExp _fullTimecodeRe =
+      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+  static final RegExp _shortTimecodeRe = RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$');
+
   /// 读取 [lrcFile] 并返回 [AudioCue] 列表。
   ///
   /// 走 [readTextWithEncoding] 自动识别编码，兼容 Shift-JIS / CP932 等非 UTF-8 源。
@@ -149,8 +154,7 @@ class LrcParser {
     final String normalized = timecode.replaceAll(',', '.');
 
     // 尝试 HH:MM:SS.xxx
-    final RegExp fullRe = RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
-    final RegExpMatch? fullMatch = fullRe.firstMatch(normalized);
+    final RegExpMatch? fullMatch = _fullTimecodeRe.firstMatch(normalized);
     if (fullMatch != null) {
       final int h = int.parse(fullMatch.group(1)!);
       final int m = int.parse(fullMatch.group(2)!);
@@ -161,8 +165,7 @@ class LrcParser {
     }
 
     // 尝试 MM:SS.xx 或 MM:SS.xxx（标准 LRC）
-    final RegExp shortRe = RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$');
-    final RegExpMatch? shortMatch = shortRe.firstMatch(normalized);
+    final RegExpMatch? shortMatch = _shortTimecodeRe.firstMatch(normalized);
     if (shortMatch != null) {
       final int m = int.parse(shortMatch.group(1)!);
       final int s = int.parse(shortMatch.group(2)!);

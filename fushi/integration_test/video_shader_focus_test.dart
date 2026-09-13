@@ -24,7 +24,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';

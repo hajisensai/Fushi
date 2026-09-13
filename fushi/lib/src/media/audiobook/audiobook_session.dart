@@ -194,6 +194,11 @@ class AudiobookSession extends ChangeNotifier {
     }
 
     final AudiobookPlayerController controller = AudiobookPlayerController();
+    // BUG-2330：全书 cue 必须在 load **之前**灌进去——load 恢复保存位置时要靠
+    // cue 推出的各文件时长把全书毫秒拆成（文件下标, 文件内偏移），否则多文件书
+    // 只能裸 seek 进文件 0。setAllBookCues 不碰播放器，提前调无副作用；按位置解析
+    // currentCue 的 setChapterCues 仍留在 load 之后（见下）。
+    if (cues.isNotEmpty) controller.setAllBookCues(cues);
     try {
       await controller.load(
         audiobook: info.audiobook,
@@ -216,7 +221,6 @@ class AudiobookSession extends ChangeNotifier {
     // 后续 attach 时仍会按章节重新 setChapterCues 覆盖，行为不变。cues 为空（如 reader
     // 自己接管 cue 加载的路径）时不动控制器，保留既有逻辑。
     if (cues.isNotEmpty) {
-      controller.setAllBookCues(cues);
       controller.setChapterCues(cues);
     }
 

@@ -9,7 +9,7 @@ import 'package:fushi/src/mining/metadata/adapters/vndb_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 /// mixed 解析结果：各源快照 + 合并后的展示 draft + 逐源失败原因。
 class GalgameMixedResolution {

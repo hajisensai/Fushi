@@ -35,10 +35,10 @@ export 'src/utils/popup_theme_css.dart';
 
 export 'src/utils/misc/fushi_byte_format.dart';
 export 'src/utils/misc/fushi_color.dart';
-export 'src/utils/misc/fushi_time_format.dart';
-export 'src/utils/misc/safe_file_name.dart';
+export 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+export 'package:fushi_engine/utils/misc/safe_file_name.dart';
 export 'src/utils/misc/fushi_audio_handler.dart';
-export 'package:fushi_core/src/models/fushi_text_selection.dart';
+export 'package:fushi_dictionary/fushi_dictionary.dart' show FushiTextSelection;
 export 'src/utils/misc/volume_key_channel.dart';
 export 'src/utils/misc/tts_channel.dart';
 export 'src/utils/misc/word_audio_resolver.dart';
@@ -49,9 +49,9 @@ export 'src/utils/misc/show_app_dialog.dart';
 export 'src/utils/misc/update_checker.dart';
 // 全应用出站代理解析层。原先是 update_checker 的 part（随上一行一起被导出），BUG-1348
 // 把它提成独立库供同步层复用，故这里显式补一条 export，消费方 import 路径零变化。
-export 'src/utils/net/app_proxy.dart';
+export 'package:fushi_engine/utils/net/app_proxy.dart';
 // BUG-1498：公网出站的单一装配点（同步工厂），以及两个下游包的接线文件。
-export 'src/utils/net/app_http.dart';
+export 'package:fushi_engine/utils/net/app_http.dart';
 export 'src/utils/net/dictionary_dio.dart';
 export 'src/utils/net/anki_remote_media_http.dart';
 export 'src/utils/net/anki_addon_download_http.dart';

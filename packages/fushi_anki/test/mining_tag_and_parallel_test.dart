@@ -740,6 +740,133 @@ void main() {
     },
   );
 
+  group(
+    'charPositionTag appends the mining position tag (`chars_12345`), '
+    'de-duped, sanitised',
+    () {
+      Future<List<String>> tagsForConnect(
+        String configured, {
+        AnkiMiningSource? source,
+        String? bookTitleTag,
+        String? collectionTag,
+        String? charPositionTag,
+      }) async {
+        final service = _RecordingAnkiConnectService();
+        final repo = _ConfiguredAnkiConnectRepository(
+          service: service,
+          settings: _settingsWithTags(configured),
+        );
+        final outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: AnkiMiningContext(
+            sentence: '',
+            source: source,
+            bookTitleTag: bookTitleTag,
+            collectionTag: collectionTag,
+            charPositionTag: charPositionTag,
+          ),
+        );
+        expect(outcome.result, MineResult.success);
+        return service.addedTags.single;
+      }
+
+      test('formatCharPositionTag：位置 → 单个 tag 字面量', () {
+        expect(BaseAnkiRepository.formatCharPositionTag(12345), 'chars_12345');
+        // 书首第 0 字是**合法位置**（真的在开头制的卡），必须出标签——与「锚点取不到」
+        // 是两回事，后者由调用方传 null 表达。
+        expect(BaseAnkiRepository.formatCharPositionTag(0), 'chars_0');
+        expect(BaseAnkiRepository.charPositionTagPrefix, 'chars_');
+      });
+
+      test('formatCharPositionTag：null / 负数 → null（锚点取不到，不打假标签）', () {
+        // 撤掉那个判空、改成直出 `chars_$absoluteChars`，这里会拿到 `chars_-1` 转红。
+        // -1 是 absoluteCharOffsetOf 的「取不到锚点」哨兵，绝不能变成标签。
+        expect(BaseAnkiRepository.formatCharPositionTag(null), isNull);
+        expect(BaseAnkiRepository.formatCharPositionTag(-1), isNull);
+      });
+
+      test('位置标签排在所有稳定标签之后（每张卡都不同的那个放最后）', () async {
+        // 撤掉 buildNoteTags 的 charPositionTag 追加（或 reader 调用方不传）此处转红。
+        expect(
+          await tagsForConnect(
+            'jp',
+            source: AnkiMiningSource.book,
+            bookTitleTag: 'Kokoro',
+            collectionTag: 'Natsume_Souseki',
+            charPositionTag: BaseAnkiRepository.formatCharPositionTag(48210),
+          ),
+          <String>[
+            'jp',
+            'fushi',
+            'book',
+            'Kokoro',
+            'Natsume_Souseki',
+            'chars_48210',
+          ],
+        );
+      });
+
+      test('null 位置标签什么都不追加（非小说来源 / 开关关闭 / 锚点取不到）', () async {
+        expect(
+          await tagsForConnect(
+            'jp',
+            source: AnkiMiningSource.video,
+            bookTitleTag: 'Ep',
+          ),
+          <String>['jp', 'fushi', 'video', 'Ep'],
+        );
+        expect(
+          await tagsForConnect(
+            'jp',
+            source: AnkiMiningSource.book,
+            charPositionTag: '',
+          ),
+          <String>['jp', 'fushi', 'book'],
+        );
+      });
+
+      test('用户已手配同名标签时去重（不出现两个 chars_1）', () async {
+        expect(
+          await tagsForConnect(
+            'chars_1',
+            source: AnkiMiningSource.book,
+            charPositionTag: 'chars_1',
+          ),
+          <String>['chars_1', 'fushi', 'book'],
+        );
+      });
+
+      test('外部输入里的空白被清洗成单个 tag（互联转发端送来的值不可信）', () async {
+        // 转发 payload 的 charPositionTag 是对端送来的字符串，带空格会被 Anki 拆成
+        // 两个垃圾 tag；撤掉 buildNoteTags 里那次 sanitizeTitleTag 此处转红。
+        expect(
+          await tagsForConnect(
+            '',
+            source: AnkiMiningSource.book,
+            charPositionTag: 'chars 4 2',
+          ),
+          <String>['fushi', 'book', 'chars_4_2'],
+        );
+      });
+
+      test('withMediaRefs 原样带过位置标签（媒体落盘不该丢标签）', () {
+        // AnkiMiningContext 每新增一个字段就漏抄一次的老坑（见该类注释）：落卡路径
+        // 统一经 withMediaRefs 重建 context，漏抄这一行 → 带媒体的卡恒无位置标签。
+        const AnkiMiningContext context = AnkiMiningContext(
+          sentence: 'x',
+          source: AnkiMiningSource.book,
+          charPositionTag: 'chars_777',
+        );
+        expect(
+          context
+              .withMediaRefs(coverRef: null, sentenceAudioRef: null)
+              .charPositionTag,
+          'chars_777',
+        );
+      });
+    },
+  );
+
   group('media uploads run in parallel (timing proof for the 6s fix)', () {
     late Directory dir;
 

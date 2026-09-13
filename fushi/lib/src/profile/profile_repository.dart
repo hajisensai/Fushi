@@ -5,6 +5,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
@@ -341,6 +342,37 @@ class ProfileRepository {
   Future<void> removeMediaTypeBinding(ProfileMediaKind mediaType) =>
       _db.deleteMediaTypeProfile(mediaType.dbValue);
 
+  /// 全部语言绑定（key = **归一化后**的语言标签，如 `ja` / `zh-Hant`）。
+  ///
+  /// 读侧也过一次 [normalizeLanguageBinding]：存量行理论上都是写侧归一过的，
+  /// 但 DB 是自由文本列，手工改库 / 旧备份导入都可能塞进未归一的键。读侧再归一
+  /// 一次让它们至少能被 UI 看见并改掉，而不是变成一行永远命不中的幽灵绑定。
+  /// 归一后为空的行（`und` / 垃圾串）直接丢弃——它们不对应任何可路由的语言。
+  Future<Map<String, int>> getAllLanguageBindings() async {
+    final rows = await _db.getAllLanguageProfiles();
+    final Map<String, int> out = <String, int>{};
+    for (final r in rows) {
+      final String key = normalizeLanguageBinding(r.languageTag);
+      if (key.isEmpty) continue;
+      out[key] = r.profileId;
+    }
+    return out;
+  }
+
+  /// 绑定一种内容语言到某 Profile。[languageTag] 可以是任意形态的 BCP-47 串，
+  /// 落库前统一归一；归一后为空（语言不可识别）时不写入。
+  Future<void> setLanguageBinding(String languageTag, int profileId) async {
+    final String key = normalizeLanguageBinding(languageTag);
+    if (key.isEmpty) return;
+    await _db.setLanguageProfile(key, profileId);
+  }
+
+  Future<void> removeLanguageBinding(String languageTag) async {
+    final String key = normalizeLanguageBinding(languageTag);
+    if (key.isEmpty) return;
+    await _db.deleteLanguageProfile(key);
+  }
+
   Future<int?> getBookProfileId(String bookUid) async {
     final row = await _db.getBookProfile(bookUid);
     return row?.profileId;
@@ -352,13 +384,31 @@ class ProfileRepository {
   Future<void> removeBookProfile(String bookUid) =>
       _db.deleteBookProfile(bookUid);
 
+  /// 解析该打开哪个 Profile：**book > language > mediaType > active**。
+  ///
+  /// 语言排在 book 之下、mediaType 之上：book 级是用户对单个条目的明确指令，压过
+  /// 一切；而「用哪套词典 / 哪个 Anki 牌组」由内容语言决定的程度，远高于由「这是
+  /// EPUB 还是视频」决定的程度——300 本书不可能一本本绑 book 级，媒体类型又粗到
+  /// 把日文书和英文书归成同一个 `epub`。
+  ///
+  /// [languageTag] 传原始内容语言串即可（内部归一）。**为空 / 不可识别时整级跳过**，
+  /// 落到 mediaType，行为与语言绑定引入前逐字节一致。调用方绝不应为了「填一个值」
+  /// 而把全局默认内容语言喂进来：那会让所有未标注条目一起路由到同一个 Profile，
+  /// 且用户改一次全局默认就整批跳档——那不是按语言绑定，是多了一个全局开关。
   Future<int> resolveProfileId({
     required String? bookUid,
+    String? languageTag,
     required ProfileMediaKind? mediaType,
   }) async {
     if (bookUid != null) {
       final bookProfileId = await getBookProfileId(bookUid);
       if (bookProfileId != null) return bookProfileId;
+    }
+
+    final String languageKey = normalizeLanguageBinding(languageTag);
+    if (languageKey.isNotEmpty) {
+      final langRow = await _db.getLanguageProfile(languageKey);
+      if (langRow != null) return langRow.profileId;
     }
 
     if (mediaType != null) {

@@ -6,6 +6,21 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 /// T-220 最近、且非 BGM/SE 的 OGG。
 void main() {
   group('pickPairedVoiceOgg', () {
+    test('Siglus old sample-count and new member-ID names remain readable', () {
+      const List<String> files = <String>[
+        '1000_z0001.ovk_48000.ogg',
+        '2000_z0001.ovk_9001.ogg',
+      ];
+      expect(
+        pickPairedVoiceOgg(oggFileNames: files, textTsMs: 1000),
+        files.first,
+      );
+      expect(
+        pickPairedVoiceOgg(oggFileNames: files, textTsMs: 2000),
+        files.last,
+      );
+    });
+
     test('KiriKiri 显式 TextSlot seq 优先于附近旧式时间候选', () {
       final List<String> files = <String>[
         '32146998_legacy_guess.ogg',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
 
 /// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
@@ -12,8 +13,8 @@ import 'package:fushi/utils.dart' show t, FushiToast, ToastSeverity;
 /// 必须由持有弹窗层的宿主页面在对话框期间把弹窗停靠屏外。两条查词车道
 /// （`BaseSourcePageState` / `DictionaryPageMixin`）各实现一份并传进来；为 null 时
 /// 原样执行（无弹窗层的宿主，如纯查词页）。
-typedef LookupPopupHiddenRunner = Future<T> Function<T>(
-    Future<T> Function() body);
+typedef LookupPopupHiddenRunner =
+    Future<T> Function<T>(Future<T> Function() body);
 
 /// [LookupPopupHiddenRunner] 缺省实现：直接跑，不动任何层级。
 Future<T> _runDirect<T>(Future<T> Function() body) => body();
@@ -37,9 +38,9 @@ class AnkiMinedCardActionResult {
   });
 
   const AnkiMinedCardActionResult.unchanged()
-      : mined = true,
-        ankiConnect = false,
-        noteId = null;
+    : mined = true,
+      ankiConnect = false,
+      noteId = null;
 
   final bool mined;
   final bool ankiConnect;
@@ -93,6 +94,7 @@ class _MinedCardActionDialog extends StatefulWidget {
 
 class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
   bool _busy = false;
+  int? _viewingNoteId;
 
   Future<void> _runMineNew() async {
     if (_busy) return;
@@ -112,11 +114,13 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(AnkiMinedCardActionResult(
-      mined: true,
-      ankiConnect: r.ankiConnect,
-      noteId: r.noteId,
-    ));
+    Navigator.of(context).pop(
+      AnkiMinedCardActionResult(
+        mined: true,
+        ankiConnect: r.ankiConnect,
+        noteId: r.noteId,
+      ),
+    );
   }
 
   Future<void> _runOverwrite(int noteId) async {
@@ -136,27 +140,34 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(AnkiMinedCardActionResult(
-      mined: true,
-      ankiConnect: r.ankiConnect,
-      noteId: r.noteId,
-    ));
+    Navigator.of(context).pop(
+      AnkiMinedCardActionResult(
+        mined: true,
+        ankiConnect: r.ankiConnect,
+        noteId: r.noteId,
+      ),
+    );
   }
 
-  Future<void> _viewNote(int noteId) async {
+  void _viewNote(int noteId) {
     if (_busy) return;
-    final viewerResult = await showAnkiNoteViewer(
-      context: context,
-      repo: widget.repo,
-      noteId: noteId,
-      overwrite: widget.overwrite,
-    );
-    if (!mounted || viewerResult == null) return;
-    Navigator.of(context).pop(viewerResult);
+    // BUG-2503: viewing a candidate is a state transition inside this route,
+    // not a second modal placed over the still-open candidate dialog.
+    setState(() => _viewingNoteId = noteId);
   }
 
   @override
   Widget build(BuildContext context) {
+    final int? viewingNoteId = _viewingNoteId;
+    if (viewingNoteId != null) {
+      return _AnkiNoteViewerDialog(
+        key: ValueKey<int>(viewingNoteId),
+        repo: widget.repo,
+        noteId: viewingNoteId,
+        overwrite: widget.overwrite,
+        onBack: () => setState(() => _viewingNoteId = null),
+      );
+    }
     final theme = Theme.of(context);
     final matches = widget.matches;
     // 窄屏（手机）时不硬撑 420，取可用宽度的九成，避免对话框横向溢出。
@@ -186,26 +197,32 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                 itemCount: matches.length,
                 itemBuilder: (context, i) {
                   final note = matches[i];
-                  final preview =
-                      note.preview.isEmpty ? '#${note.noteId}' : note.preview;
+                  final preview = note.preview.isEmpty
+                      ? '#${note.noteId}'
+                      : note.preview;
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: Text(preview,
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    title: Text(
+                      preview,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
                           tooltip: t.anki_mined_action_overwrite,
                           icon: const Icon(Icons.edit_outlined),
-                          onPressed:
-                              _busy ? null : () => _runOverwrite(note.noteId),
+                          onPressed: _busy
+                              ? null
+                              : () => _runOverwrite(note.noteId),
                         ),
                         IconButton(
                           tooltip: t.anki_mined_action_view,
                           icon: const Icon(Icons.open_in_new),
-                          onPressed:
-                              _busy ? null : () => _viewNote(note.noteId),
+                          onPressed: _busy
+                              ? null
+                              : () => _viewNote(note.noteId),
                         ),
                       ],
                     ),
@@ -224,8 +241,12 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
+          // 制卡请求期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既没有
+          // 系统返回键、对话框路由也没有侧滑返回，而远端制卡 POST 的超时是 60 秒
+          // ——禁用这颗按钮就是「点了制卡，整屏冻住一分钟」。关闭只解绑 UI，请求
+          // 继续跑完（下面每处 setState 都有 mounted 守卫）。
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_busy ? t.dialog_background_close : t.dialog_cancel),
         ),
         FilledButton.tonalIcon(
           onPressed: _busy ? null : _runMineNew,
@@ -245,26 +266,27 @@ Future<AnkiMinedCardActionResult?> showAnkiNoteViewer({
   required int noteId,
   required Future<AnkiCardMutationResult> Function(int noteId) overwrite,
 }) {
-  return showDialog<AnkiMinedCardActionResult>(
+  return showAppDialog<AnkiMinedCardActionResult>(
     context: context,
-    builder: (_) => _AnkiNoteViewerDialog(
-      repo: repo,
-      noteId: noteId,
-      overwrite: overwrite,
-    ),
+    barrierDismissible: false,
+    builder: (_) =>
+        _AnkiNoteViewerDialog(repo: repo, noteId: noteId, overwrite: overwrite),
   );
 }
 
 class _AnkiNoteViewerDialog extends StatefulWidget {
   const _AnkiNoteViewerDialog({
+    super.key,
     required this.repo,
     required this.noteId,
     required this.overwrite,
+    this.onBack,
   });
 
   final BaseAnkiRepository repo;
   final int noteId;
   final Future<AnkiCardMutationResult> Function(int noteId) overwrite;
+  final VoidCallback? onBack;
 
   @override
   State<_AnkiNoteViewerDialog> createState() => _AnkiNoteViewerDialogState();
@@ -282,7 +304,15 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
   }
 
   Future<void> _load() async {
-    final fields = await widget.repo.noteFields(widget.noteId);
+    Map<String, String>? fields;
+    try {
+      fields = await widget.repo.noteFields(widget.noteId);
+    } catch (e, stack) {
+      // 拉字段失败（主机掉线 / Anki 没开 / 请求超时）不能就停在转圈上：一个永远
+      // 转圈、又没有关闭按钮的框，在 iOS 上和卡死没有区别（见下面 actions 里补的
+      // 关闭键）。失败落错误日志，UI 退出加载态。
+      ErrorLogService.instance.log('AnkiNoteViewer.load', e, stack);
+    }
     if (!mounted) return;
     setState(() {
       _fields = fields;
@@ -321,59 +351,64 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
       return;
     }
     if (!mounted) return;
-    Navigator.of(context).pop(AnkiMinedCardActionResult(
-      mined: true,
-      ankiConnect: r.ankiConnect,
-      noteId: r.noteId,
-    ));
+    Navigator.of(context).pop(
+      AnkiMinedCardActionResult(
+        mined: true,
+        ankiConnect: r.ankiConnect,
+        noteId: r.noteId,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final fields = _fields;
     final List<MapEntry<String, String>> nonEmpty = fields == null
         ? const []
         : fields.entries.where((e) => e.value.trim().isNotEmpty).toList();
     return AlertDialog(
-      title: Text(t.anki_note_viewer_title),
+      title: Row(
+        children: <Widget>[
+          if (widget.onBack != null)
+            IconButton(
+              onPressed: _busy ? null : widget.onBack,
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              icon: const Icon(Icons.arrow_back),
+            ),
+          Expanded(child: Text(t.anki_note_viewer_title)),
+        ],
+      ),
       content: SizedBox(
         width: 420,
         child: _loading
             ? const SizedBox(
-                height: 80, child: Center(child: CircularProgressIndicator()))
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              )
             : nonEmpty.isEmpty
-                ? Text(t.anki_note_viewer_empty)
-                : SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final e in nonEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(e.key,
-                                    style: theme.textTheme.labelMedium
-                                        ?.copyWith(
-                                            color: theme.colorScheme.primary)),
-                                const SizedBox(height: 2),
-                                Text(
-                                  BaseAnkiRepository.previewFromFieldValue(
-                                      e.value,
-                                      maxLen: 4000),
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+            ? Text(t.anki_note_viewer_empty)
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final e in nonEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _AnkiNoteField(label: e.key, value: e.value),
+                      ),
+                  ],
+                ),
+              ),
       ),
       actions: [
+        // 本框先前只有「在 Anki 中打开」「覆写」两颗按钮，没有任何关闭入口，全靠
+        // barrier 可点兜底；iOS 上没有系统返回键、对话框路由也没有侧滑返回，用户
+        // 看不到出口就会当成卡死（尤其字段还在转圈时）。
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_close),
+        ),
         TextButton(
           onPressed: _busy ? null : _openInAnki,
           child: Text(t.anki_note_viewer_open_in_anki),
@@ -381,6 +416,146 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
         FilledButton(
           onPressed: _busy ? null : _overwrite,
           child: Text(t.anki_mined_action_overwrite),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shared original-note field UI for source review and the existing viewer.
+/// Values remain selectable in view mode and retain their complete HTML in
+/// diff mode; no hidden truncation is permitted when approving a patch.
+class _AnkiNoteField extends StatelessWidget {
+  const _AnkiNoteField({
+    required this.label,
+    required this.value,
+    this.raw = false,
+  });
+  final String label;
+  final String value;
+  final bool raw;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String preview = BaseAnkiRepository.previewFromFieldValue(
+      value,
+      maxLen: value.length + 1,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        SelectableText(
+          raw || preview.isEmpty ? value : preview,
+          style: theme.textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+/// Select the specific original-note fields to patch; no Anki mutation occurs
+/// here. The repository verifies the snapshot before and after the write.
+Future<Map<String, String>?> showAnkiSourceNoteChanges({
+  required BuildContext context,
+  required Map<String, String> original,
+  required Map<String, String> candidate,
+}) => showAppDialog<Map<String, String>>(
+  context: context,
+  barrierDismissible: false,
+  builder: (_) =>
+      _AnkiSourceNoteChangesDialog(original: original, candidate: candidate),
+);
+
+class _AnkiSourceNoteChangesDialog extends StatefulWidget {
+  const _AnkiSourceNoteChangesDialog({
+    required this.original,
+    required this.candidate,
+  });
+  final Map<String, String> original;
+  final Map<String, String> candidate;
+  @override
+  State<_AnkiSourceNoteChangesDialog> createState() =>
+      _AnkiSourceNoteChangesDialogState();
+}
+
+class _AnkiSourceNoteChangesDialogState
+    extends State<_AnkiSourceNoteChangesDialog> {
+  final Set<String> _selected = <String>{};
+  @override
+  Widget build(BuildContext context) {
+    final List<String> changed = widget.candidate.keys
+        .where(
+          (String key) =>
+              widget.original.containsKey(key) &&
+              widget.original[key] != widget.candidate[key],
+        )
+        .toList();
+    return AlertDialog(
+      title: Text(t.card_source_review_changes),
+      content: SizedBox(
+        width: 640,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.card_source_review_conflict_warning),
+              const SizedBox(height: 12),
+              if (changed.isEmpty) Text(t.card_source_review_no_changes),
+              for (final String field in changed)
+                ExpansionTile(
+                  key: ValueKey<String>('anki-source-expand-$field'),
+                  title: Text(field),
+                  leading: Checkbox(
+                    key: ValueKey<String>('anki-source-change-$field'),
+                    value: _selected.contains(field),
+                    onChanged: (bool? value) => setState(() {
+                      if (value == true) {
+                        _selected.add(field);
+                      } else {
+                        _selected.remove(field);
+                      }
+                    }),
+                  ),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: <Widget>[
+                    _AnkiNoteField(
+                      label: t.card_source_review_before,
+                      value: widget.original[field]!,
+                      raw: true,
+                    ),
+                    const SizedBox(height: 12),
+                    _AnkiNoteField(
+                      label: t.card_source_review_after,
+                      value: widget.candidate[field]!,
+                      raw: true,
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.of(context).pop(<String, String>{
+                  for (final String field in _selected)
+                    field: widget.candidate[field]!,
+                }),
+          child: Text(t.card_source_review_save),
         ),
       ],
     );

@@ -59,7 +59,7 @@ void main() {
     'lib/src/pages/implementations/home_page.dart':
         'resumed 生命周期里用固定的 helloWorld 串 + useCache:false 预热词典引擎，'
             '不是用户查词，也没有结果呈现。',
-    'lib/src/sync/fushi_remote_api_handlers.dart':
+    '../packages/fushi_engine/lib/sync/fushi_remote_api_handlers.dart':
         '互联对端 / 浏览器扩展经 HTTP 拉词的服务端 handler：结果序列化给**远端**渲染，'
             '本机屏幕上什么都没发生，出声等于对着空气念。',
     'lib/src/sync/yomitan_api_server.dart':
@@ -67,7 +67,7 @@ void main() {
     'lib/src/sync/fushi_remote_lookup_client.dart':
         '本机作为 client 向 host 查词的传输层封装，返回给上层表面渲染；'
             '朗读由那个表面负责，这里重复朗读会双读。',
-    'lib/src/sync/fushi_remote_lookup_service.dart':
+    '../packages/fushi_engine/lib/sync/fushi_remote_lookup_service.dart':
         '上一条的抽象接口声明（FushiRemoteLookupService），只有方法签名没有实现体，'
             '不产生任何结果也不呈现 UI，谈不上朗读。',
   };
@@ -77,8 +77,11 @@ void main() {
   Set<String> collectCallSiteFiles() {
     final Set<String> hits = <String>{};
     scannedFiles = 0;
-    for (final FileSystemEntity e
-        in Directory('lib').listSync(recursive: true)) {
+    // 互联远程查词服务已抽到 fushi_engine：两棵树都在扫描面里，rel 路径与表键同形。
+    for (final FileSystemEntity e in <Directory>[
+      Directory('lib'),
+      Directory('../packages/fushi_engine/lib'),
+    ].expand((Directory d) => d.listSync(recursive: true))) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       scannedFiles++;
       final String rel = e.path.replaceAll('\\', '/');
@@ -108,7 +111,7 @@ void main() {
   test('每个查词调用点都必须显式声明接不接自动朗读', () {
     final Set<String> found = collectCallSiteFiles();
     expectScanScale(scannedFiles,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        what: 'lib/ + fushi_engine/lib 下的 .dart', atLeast: 750, measured: 939);
     // `found` 才是判据的真分母：扫描面还在、但预筛/掩码把命中全滤没了，同样是
     // 「守卫在对着空气跑」，而 isNotEmpty 放行到只剩 1 个都不会响。
     // 2026-08-28 删桌面剪贴板查词后 clipboard_panel_controller.dart 整文件删除，

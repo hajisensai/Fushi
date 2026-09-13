@@ -20,6 +20,14 @@ void main() {
               'must be removed');
     });
 
+    test('no per-duplicate 2-second dwell remains', () {
+      // 「已是最新」分支曾在每本上硬睡 2 秒只为让进度文字停留：重导一个 30 本
+      // 已装词典的目录 = 60 秒纯等待。改为 toast 提示，循环不阻塞。
+      expect(manager.contains('Duration(seconds: 2)'), isFalse,
+          reason: 'the alreadyUpToDate branch must not sleep per dictionary; '
+              'surface the skip via toast instead');
+    });
+
     test('import failures are rethrown as a typed exception', () {
       expect(manager.contains('throw DictionaryImportException'), isTrue,
           reason:
@@ -35,8 +43,10 @@ void main() {
 
   group('dictionary_dialog_page.dart batch loop', () {
     test('collects failed names and shows one summary', () {
-      expect(dialog.contains('failedNames'), isTrue,
-          reason: 'the multi-file import loop must collect failures');
+      // BUG-2188：同上，收集必须带着异常本体。
+      expect(dialog.contains('DictionaryTaskFailure('), isTrue,
+          reason: 'the multi-file import loop must collect failures with their '
+              'error attached');
       expect(dialog.contains('formatImportFailureSummary'), isTrue,
           reason: 'and present them via the shared summary formatter');
     });

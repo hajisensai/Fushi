@@ -94,6 +94,18 @@ class ShortcutDefaults {
     ShortcutAction.readerOpenNavigation: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
     ]),
+    // 工具栏三入口：G 画廊 / I 统计 / B 有声书。reader+audiobook co-active 组内未被
+    // 占用（M 底栏、T 菜单、Ctrl+F 导航、方向 / PageUp/Down / Enter 系已占）。手柄
+    // 留空，用户可自绑。
+    ShortcutAction.readerOpenGallery: _kb([
+      _key(LogicalKeyboardKey.keyG),
+    ]),
+    ShortcutAction.readerOpenStatistics: _kb([
+      _key(LogicalKeyboardKey.keyI),
+    ]),
+    ShortcutAction.readerOpenAudiobook: _kb([
+      _key(LogicalKeyboardKey.keyB),
+    ]),
     // 「只关词典、绝不退出」的可选专用动作：**默认空绑定**。
     //
     // Esc 已交给 universal 的 globalBack（一键阶梯：有词典先关词典、没词典才退书），
@@ -164,11 +176,34 @@ class ShortcutDefaults {
       _gB
     ]),
 
-    // LB/RB = 整页翻屏（gamepad-only；键盘留空，避免与 reader PageDown 在不同
-    // scope 的重复语义）。global scope，对所有非阅读器页通用；reader 页只解析
-    // reader+audiobook，不会被遮蔽。执行体见 wrapWithGlobalNavigation。
-    ShortcutAction.globalScrollPageDown: _kb([], [_gRB]),
-    ShortcutAction.globalScrollPageUp: _kb([], [_gLB]),
+    // 页面滚动六件套（global scope，对所有非媒体页通用）：
+    //   整屏 PageDown / PageUp（+ 手柄 RB / LB）、单步 ↓ / ↑、到底 End / 到顶 Home。
+    // 以前键盘位留空是怕与 reader 的 PageDown 撞语义——但 reader / manga / video 三页
+    // 都在自己的 scope 先解析并消费这些键，global 只兜它们没绑的键，撞不上。
+    // home+global 是同一 co-active 组，home 没绑任何裸方向 / 翻页键，不冲突。
+    // 执行体见 page_scroll_shortcuts.dart（键盘 / 手柄 / 鼠标三通道共用）。
+    ShortcutAction.globalScrollPageDown: _kb([
+      _key(LogicalKeyboardKey.pageDown),
+    ], [
+      _gRB
+    ]),
+    ShortcutAction.globalScrollPageUp: _kb([
+      _key(LogicalKeyboardKey.pageUp),
+    ], [
+      _gLB
+    ]),
+    ShortcutAction.globalScrollLineDown: _kb([
+      _key(LogicalKeyboardKey.arrowDown),
+    ]),
+    ShortcutAction.globalScrollLineUp: _kb([
+      _key(LogicalKeyboardKey.arrowUp),
+    ]),
+    ShortcutAction.globalScrollToTop: _kb([
+      _key(LogicalKeyboardKey.home),
+    ]),
+    ShortcutAction.globalScrollToBottom: _kb([
+      _key(LogicalKeyboardKey.end),
+    ]),
     // TODO-1093：窗口级全屏切换默认 F11（桌面惯例）。global scope、home+global
     // co-active 组内 F11 未被占用；手柄留空（gamepad 键在 home/global 组已被翻页/
     // 返回占用，用户可自绑）。移动端无窗口全屏语义，执行体在移动端 no-op。
@@ -474,6 +509,15 @@ class ShortcutDefaults {
     // co-active 组，Ctrl+Alt+D 不与任何应用内页面键冲突。
     ShortcutAction.globalExternalLookup: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl, ModifierKey.alt}),
+    ]),
+    // 用户请求：把主窗唤到前台并直接落在查词页上。默认 Ctrl+Alt+F（F = find，与
+    // 同一 scope 里已占的 Ctrl+Alt+D 相邻好记）。跟 globalExternalLookup 一样是
+    // 键盘-only：鼠标侧键 3/4 已被那条占掉，手柄在 app 外只有一条单槽派发链
+    // （GlobalExternalLookupRoute）且只认那条，给了绑定也永不触发。
+    // macOS 表自动把 Ctrl→Meta（见 _macOS）；移动端整个 globalExternal scope 返回
+    // 空绑定（见 _mobile），系统不允许第三方注册全局热键。
+    ShortcutAction.globalExternalOpenLookupPage: _kb([
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮

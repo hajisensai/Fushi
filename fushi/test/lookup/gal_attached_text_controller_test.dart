@@ -53,6 +53,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     exeSha256: _sha,
     referenceClient: _client,
   );
+  Completer<GalAttachedCallResult>? inspectionCompleter;
   GalAttachedCallResult configureResult = const GalAttachedCallResult(
     status: 'ready',
     providerKind: 4,
@@ -76,6 +77,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   GalAttachedCallResult detachResult = const GalAttachedCallResult(
     status: 'detached',
   );
+  Completer<GalAttachedCallResult>? detachCompleter;
 
   @override
   Future<GalAttachedCallResult> inspectTarget(
@@ -84,6 +86,8 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   }) async {
     lastInspectLaunchExePath = launchExePath;
     calls.add('inspect');
+    final Completer<GalAttachedCallResult>? completer = inspectionCompleter;
+    if (completer != null) return completer.future;
     return inspection;
   }
 
@@ -201,6 +205,8 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   @override
   Future<GalAttachedCallResult> detach(GalAttachedSurfaceTarget target) async {
     calls.add('detach');
+    final Completer<GalAttachedCallResult>? completer = detachCompleter;
+    if (completer != null) return completer.future;
     return detachResult;
   }
 }
@@ -542,16 +548,23 @@ void main() {
   );
 
   test(
-    'missing profile calibrates only after unsafe risk and three probes',
+    'missing profile calibrates only in manual mode after three probes',
     () async {
       await sync();
+      // 自动模式不再引导校准：没有档案时安静挂起，校准入口也不给。
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.canCalibrate, isFalse);
+      expect(
+        await controller.beginCalibration(acceptUnsafeLeftClick: true),
+        isFalse,
+        reason: '自动模式下即便已接受风险也不得进入校准态',
+      );
+      // 切进手动模式：档案由 setMode 建出，校准入口此时可用。这条以前停在
+      // needsRiskAcceptance——那道门是 BUG-2154 拆掉的（风险恒定接受），拆掉后
+      // 手动模式直接落到「未校准」。
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
       expect(controller.status, GalAttachedTextStatus.needsCalibration);
       expect(controller.canCalibrate, isTrue);
-      expect(
-        await controller.beginCalibration(acceptUnsafeLeftClick: false),
-        isFalse,
-      );
-      expect(controller.status, GalAttachedTextStatus.needsRiskAcceptance);
       expect(
         await controller.beginCalibration(acceptUnsafeLeftClick: true),
         isTrue,
@@ -593,7 +606,7 @@ void main() {
 
       expect(controller.status, GalAttachedTextStatus.activeAttached);
       expect(controller.profile?.variants.single.bodyRect, committed);
-      expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
+      expect(controller.profile?.mode, GalLookupSurfaceMode.attachedOnly);
       expect(
         GalLookupSurfaceProfileV1.tryFromJson(
           jsonDecode(preferences[key()]! as String),
@@ -605,7 +618,12 @@ void main() {
 
   test('incomplete or invalid probe positions cannot commit', () async {
     await sync();
-    await controller.beginCalibration(acceptUnsafeLeftClick: true);
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    expect(
+      await controller.beginCalibration(acceptUnsafeLeftClick: true),
+      isTrue,
+      reason: '手动模式下校准必须真起来，否则下面的断言全是空转',
+    );
     const GalAttachedCalibrationProbes invalid = GalAttachedCalibrationProbes(
       startIndex: 0,
       middleIndex: 0,
@@ -620,7 +638,12 @@ void main() {
 
   test('calibration updates accumulate partial probe confirmations', () async {
     await sync();
-    await controller.beginCalibration(acceptUnsafeLeftClick: true);
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    expect(
+      await controller.beginCalibration(acceptUnsafeLeftClick: true),
+      isTrue,
+      reason: '手动模式下校准必须真起来，否则下面的断言全是空转',
+    );
     const GalAttachedCalibrationProbes startOnly = GalAttachedCalibrationProbes(
       startIndex: 0,
       middleIndex: 3,
@@ -650,6 +673,8 @@ void main() {
 
   test('empty selected thread waits and cannot start calibration', () async {
     await sync(text: '');
+    // 先切到手动模式，把「模式不对」这条门排除掉，剩下的唯一拦截理由才是空正文。
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
     expect(controller.status, GalAttachedTextStatus.waitingForBodyThread);
     expect(controller.canCalibrate, isFalse);
     expect(
@@ -729,6 +754,163 @@ void main() {
     },
   );
 
+  for (final String pendingStatus in <String>[
+    'shieldHandshakePending',
+    'nativeProviderPendingNeutral',
+    'detached',
+  ]) {
+    test('BUG-2154 native discovery waits for $pendingStatus', () async {
+      port.inspection = GalAttachedCallResult(
+        status: pendingStatus,
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: const GalAttachedShieldStatus(
+          available: true,
+          statusFlags: 0x02,
+        ),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, pendingStatus);
+      expect(controller.needsUnsafeRiskAcceptance, isFalse);
+      expect(controller.profile, isNull);
+      expect(port.calls, <String>['inspect']);
+      expect(port.texts, isEmpty);
+    });
+  }
+
+  test(
+    'BUG-2154 Partial native activates without profile and suspends on rehandshake',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'ready',
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(controller.profile, isNull);
+      expect(controller.needsUnsafeRiskAcceptance, isFalse);
+      expect(port.calls, <String>['inspect']);
+
+      for (final String status in <String>['shieldHandshakePending', 'ready']) {
+        controller.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: controller.target!,
+            state: status == 'ready' ? 'targetReady' : 'suspended',
+            status: status,
+            providerKind: 2,
+            providerId: 3,
+            providerStatus: 1,
+            shield: const GalAttachedShieldStatus(
+              available: true,
+              statusFlags: 0x02,
+            ),
+          ),
+        );
+        expect(
+          controller.status,
+          status == 'ready'
+              ? GalAttachedTextStatus.activeNative
+              : GalAttachedTextStatus.suspended,
+        );
+      }
+      expect(port.texts, isEmpty);
+    },
+  );
+
+  test(
+    'BUG-2154 configure cannot activate a ready native provider before handshake',
+    () async {
+      preferences[key()] = jsonEncode(
+        _profile(mode: GalLookupSurfaceMode.auto).toJson(),
+      );
+      port.configureResult = const GalAttachedCallResult(
+        status: 'shieldHandshakePending',
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, 'shieldHandshakePending');
+      expect(port.texts, isEmpty);
+    },
+  );
+
+  test(
+    'BUG-2154 nativeOnly re-inspects after detach without attached configure',
+    () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'ready',
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      port.calls.clear();
+      port.inspectionCompleter = Completer<GalAttachedCallResult>();
+      final Future<void> changing = controller.setMode(
+        GalLookupSurfaceMode.nativeOnly,
+      );
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      await pumpEventQueue();
+      expect(port.calls, <String>['detach', 'inspect']);
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      port.inspectionCompleter!.complete(port.inspection);
+      await changing;
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(port.texts, isEmpty);
+    },
+  );
+
+  for (final GalLookupSurfaceMode firstMode in <GalLookupSurfaceMode>[
+    GalLookupSurfaceMode.nativeOnly,
+    GalLookupSurfaceMode.off,
+  ]) {
+    test('BUG-2154 auto joins pending ${firstMode.name} detach before inspect', () async {
+      port.inspection = const GalAttachedCallResult(
+        status: 'ready',
+        exePath: _exePath,
+        exeSha256: _sha,
+        referenceClient: _client,
+        providerKind: 2,
+        providerId: 3,
+        providerStatus: 1,
+        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+      );
+      await sync();
+      port.calls.clear();
+      port.detachCompleter = Completer<GalAttachedCallResult>();
+      final Future<void> first = controller.setMode(firstMode);
+      final Future<void> latest = controller.setMode(GalLookupSurfaceMode.auto);
+      await pumpEventQueue();
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(port.calls, <String>['detach']);
+      port.detachCompleter!.complete(port.detachResult);
+      await Future.wait<void>(<Future<void>>[first, latest]);
+      expect(port.calls, <String>['detach', 'inspect']);
+      expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
+      expect(controller.status, GalAttachedTextStatus.activeNative);
+      expect(port.texts, isEmpty);
+    });
+  }
+
   test('mismatched native provider kind/id pair cannot win auto', () async {
     port.inspection = const GalAttachedCallResult(
       status: 'activeNative',
@@ -743,7 +925,9 @@ void main() {
 
     await sync();
 
-    expect(controller.status, GalAttachedTextStatus.needsCalibration);
+    // kind/id 配对不合法 → 不得赢下 auto；自动模式没有档案时安静挂起，
+    // 不再报 needsCalibration 去引导用户开校准。
+    expect(controller.status, GalAttachedTextStatus.suspended);
     expect(controller.surfaceVisible, isFalse);
     expect(port.calls, <String>['inspect']);
     expect(port.texts, isEmpty);

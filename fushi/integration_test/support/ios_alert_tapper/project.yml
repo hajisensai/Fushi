@@ -1,0 +1,40 @@
+name: AlertTapper
+options:
+  bundleIdPrefix: app.fushi.test
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+targets:
+  TapperHost:
+    type: application
+    platform: iOS
+    sources: [Host]
+    info:
+      path: Host/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: TapperHost
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        PRODUCT_BUNDLE_IDENTIFIER: app.fushi.test.tapperhost
+  AlertTapperUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: TapperHost
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        PRODUCT_BUNDLE_IDENTIFIER: app.fushi.test.alerttapper
+schemes:
+  AlertTapper:
+    build:
+      targets:
+        TapperHost: all
+        AlertTapperUITests: [test]
+    test:
+      targets: [AlertTapperUITests]

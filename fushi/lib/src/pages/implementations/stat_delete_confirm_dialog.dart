@@ -9,10 +9,18 @@ import 'package:fushi/utils.dart';
 /// 与书架删除确认（`ReaderHistoryDeleteDialog` / `_SeriesConfirmDialog`）同结构。
 @visibleForTesting
 class StatDeleteConfirmDialog extends StatelessWidget {
-  const StatDeleteConfirmDialog({required this.itemTitle, super.key});
+  const StatDeleteConfirmDialog({
+    required this.itemTitle,
+    this.message,
+    super.key,
+  });
 
   /// 被删项的展示名（书 / 视频标题），显示在正文首行。
   final String itemTitle;
+
+  /// 正文说明；null = 默认的「删该项全部统计」文案（`stat_delete_message`）。会话流
+  /// 删单次会话传 `stat_session_delete_message`。
+  final String? message;
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +44,7 @@ class StatDeleteConfirmDialog extends StatelessWidget {
           tokens.spacing.card,
         ),
         body: Text(
-          '$itemTitle\n\n${t.stat_delete_message}',
+          '$itemTitle\n\n${message ?? t.stat_delete_message}',
           style: tokens.type.listSubtitle,
         ),
         footer: Wrap(
@@ -65,12 +73,13 @@ class StatDeleteConfirmDialog extends StatelessWidget {
 /// 弹出统计删除确认框；仅当用户点「删除」时返回 true（取消 / 点外面关闭返回 false）。
 Future<bool> confirmDeleteStatistics(
   BuildContext context,
-  String itemTitle,
-) async {
+  String itemTitle, {
+  String? message,
+}) async {
   final bool? confirmed = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext ctx) =>
-        StatDeleteConfirmDialog(itemTitle: itemTitle),
+        StatDeleteConfirmDialog(itemTitle: itemTitle, message: message),
   );
   return confirmed == true;
 }
@@ -142,4 +151,53 @@ Future<bool> confirmClearAllStatistics(
     builder: (BuildContext ctx) => StatClearAllConfirmDialog(message: message),
   );
   return confirmed == true;
+}
+
+/// 「清除全部会话记录」的**防呆**确认弹窗（用户 2026-09-10：「再加个清除所有会话
+/// 记录并且防呆」）。
+///
+/// 不自己造第五个确认框：全 app 的破坏性确认早已收口到
+/// [FushiDestructiveConfirmDialog]（docs/reviews/2026-07-22-ui-ux-survey.md 巡检把
+/// 四种并存实现合成了它），这里只是给它开**防呆闸**（`requireCheckboxToConfirm`）。
+/// 闸的理由：这颗按钮就长在会话区块的标题行上（四个 tab 都有），紧挨着「全部会话」
+/// ——一个纯确认框在这种位置等同于「点两下删光半年数据」。勾选项把条数复述一遍，
+/// 用户至少得读到那个数字。
+///
+/// 与顶栏那颗「清空全部统计」（[StatClearAllConfirmDialog]）的范围差着一个数量级：
+/// 这里只清会话事实，收藏 / 制卡历史 / 查词计数 / 游戏库一个都不动。
+@visibleForTesting
+class StatClearSessionsConfirmDialog extends StatelessWidget {
+  const StatClearSessionsConfirmDialog({required this.count, super.key});
+
+  /// 待清除的会话条数（正文与勾选项都复述它）。
+  final int count;
+
+  /// 勾选行的 key（widget 测试与集成测试焦点驱动都按它定位）。
+  static const Key ackKey = ValueKey<String>('stat-clear-sessions-ack');
+
+  @override
+  Widget build(BuildContext context) => FushiDestructiveConfirmDialog(
+        title: t.stat_sessions_clear_all_title,
+        message: t.stat_sessions_clear_all_message(n: count),
+        leadingIcon: Icons.playlist_remove,
+        confirmLabel: t.stat_clear_all_confirm,
+        checkboxLabel: t.stat_sessions_clear_all_ack(n: count),
+        checkboxKey: ackKey,
+        requireCheckboxToConfirm: true,
+      );
+}
+
+/// 弹出「清除全部会话」的防呆确认框；仅当用户**勾了确认再点清除**时返回 true。
+/// [count] <= 0 时连框都不弹（没有会话可清，弹一个空框只是噪音）。
+Future<bool> confirmClearAllStatSessions(
+  BuildContext context,
+  int count,
+) async {
+  if (count <= 0) return false;
+  final FushiDestructiveConfirmResult? result =
+      await showAppDialog<FushiDestructiveConfirmResult>(
+    context: context,
+    builder: (BuildContext ctx) => StatClearSessionsConfirmDialog(count: count),
+  );
+  return result != null;
 }

@@ -77,7 +77,8 @@ test('无 stale → null（提示行隐藏）', () => {
 const bg = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
 
 test('background 经 importScripts 装载 self-update 状态机并用它决策', () => {
-  assert.match(bg, /importScripts\('fushi-defaults\.js', 'connection-diagnostics\.js', 'self-update\.js'\)/);
+  // 只认 self-update.js 在 importScripts 参数里（调用会随功能增参，BUG-2480 加了 site-cookie-export.js）。
+  assert.match(bg, /importScripts\([^)]*'self-update\.js'[^)]*\)/);
   assert.match(bg, /FUSHI_SELF_UPDATE\.decide\(/);
 });
 

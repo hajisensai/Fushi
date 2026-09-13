@@ -11,7 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 // 发版或本地跑脚本时炸。实际发生过的三批：
 //   * proguard-rules.pro 的 -keep class <旧包名>.**：R8 对匹配零个类的 keep
 //     规则不告警 → release 包启动即闪退（见 android_app_package_keep_rule_guard_test）；
-//   * run.sh / run.ps1 / 根 .bat 指向已被 git mv 掉的旧应用目录；
 //   * ci/*.sh 的 PKG 默认值、tool/*_sweep.sh 的 REPO 默认值仍是旧身份 →
 //     adb / gh 全部打空。
 //
@@ -87,8 +86,6 @@ const List<_ScanRoot> _scriptRoots = <_ScanRoot>[
   _ScanRoot('../scripts', extensions: <String>{'.py'}),
   _ScanRoot('../.codex-test/tools', extensions: <String>{'.ps1'}),
   _ScanRoot('tool', extensions: <String>{'.ps1', '.sh'}),
-  _ScanRoot('../run.sh'),
-  _ScanRoot('../run.ps1'),
   // workspace 根 pubspec：melos 段带仓库身份（A/B 要扫），overrides 的 vendor
   // 说明里带外部真名（C 不能扫）。理由见 _buildConfigRoots 末尾。
   _ScanRoot('../pubspec.yaml'),
@@ -136,6 +133,17 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
     reason:
         'hajisensai/Magpie 是外部 fork 仓库真名（slim 包从它的 release 下载），'
         '与本仓改名无关。',
+  ),
+  _Exemption(
+    pathSuffix: '../pubspec.yaml',
+    context: RegExp('fushi-subtitles'),
+    reason:
+        'hajisensai/fushi-subtitles 是 ASR 算法层的**独立仓库**真名（GPL-3.0，'
+        '按 sha 钉的 git 依赖），不是本仓改名前的旧 slug。根 pubspec 里这条 '
+        'dependency_overrides 把 fushi_asr_core 钉回同仓同 sha —— 新引进的 '
+        'fushi_asr_subtitles 的 pubspec 写的是 `^0.1.0`（上游靠 workspace 解析），'
+        '单包从 git 引进来时 pub 会当 hosted 去 pub.dev 找而解析失败。'
+        '行级 context 只放行这一行，同文件里新长出来的其它失效 slug 照样报。',
   ),
 ];
 

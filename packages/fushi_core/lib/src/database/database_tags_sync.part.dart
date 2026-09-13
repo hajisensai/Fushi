@@ -743,6 +743,29 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       (delete(mediaTypeProfiles)..where((t) => t.mediaType.equals(mediaType)))
           .go();
 
+  // ── language profiles ────────────────────────────────────────────
+  // 键是**归一化后**的语言标签（`normalizeLanguageBinding`），不是内容语言列里
+  // 的原始 BCP-47 串。归一在 fushi 侧的 ProfileRepository 做，这层只存取。
+  Future<List<LanguageProfileRow>> getAllLanguageProfiles() =>
+      select(languageProfiles).get();
+
+  Future<LanguageProfileRow?> getLanguageProfile(String languageTag) =>
+      (select(languageProfiles)
+            ..where((t) => t.languageTag.equals(languageTag)))
+          .getSingleOrNull();
+
+  Future<void> setLanguageProfile(String languageTag, int profileId) =>
+      into(languageProfiles).insertOnConflictUpdate(
+        LanguageProfilesCompanion.insert(
+          languageTag: languageTag,
+          profileId: profileId,
+        ),
+      );
+
+  Future<int> deleteLanguageProfile(String languageTag) =>
+      (delete(languageProfiles)..where((t) => t.languageTag.equals(languageTag)))
+          .go();
+
   // ── book profiles ────────────────────────────────────────────────
   Future<BookProfileRow?> getBookProfile(String bookKey) =>
       (select(bookProfiles)..where((t) => t.bookKey.equals(bookKey)))

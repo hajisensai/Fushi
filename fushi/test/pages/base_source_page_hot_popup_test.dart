@@ -28,7 +28,6 @@ class HotPopupTestAppModel extends AppModel {
   // popupMaxWidth/Height 同属弹窗布局路径，照例覆写避免 prefsRepo 空指针。
   @override
   bool get popupBottomDocked => false;
-
   // 该 fake 不跑 initialise()，themeNotifier 是未初始化的 late；弹窗盒子尺寸现在
   // 会乘 appUiScale（base_source_page），故覆写成默认 1.0，避免 LateInitError。
   @override

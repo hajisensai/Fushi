@@ -105,17 +105,22 @@ List<String> _codeHits(List<String> roots, RegExp pattern) {
 }
 
 void main() {
+  // 引擎里已经有真实的 format 落库点（manga_importer.dart 的
+  // `format: Value(BookFormat.manga.dbValue)`）与大量判定点（media_tracking_*、
+  // local_library_host_service）。扫描面不含引擎 = 在那儿写回裸字面量不会红。
   const List<String> roots = <String>[
     'lib',
     'test',
+    '../packages/fushi_engine/lib',
+    '../packages/fushi_server/lib',
     '../packages/fushi_core/lib',
   ];
 
   test('扫描规模哨兵：三个扫描根确实都被枚举到了', () {
     expectScanScale(_scannedDartFiles(roots).length,
         what: 'lib/ + test/ + hibiki_core/lib 下的 .dart（已排除生成物与冻结文件）',
-        atLeast: 2500,
-        measured: 3163);
+        atLeast: 3590,
+        measured: 4492);
   });
 
   test('落库入口收 BookFormat 而非裸 String（未知值编译期不可表达）', () {

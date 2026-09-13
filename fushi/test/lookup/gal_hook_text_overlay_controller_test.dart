@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
+import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
@@ -79,6 +81,7 @@ void main() {
   // 那不是 harness 缺口而是真实现网状态。单条用例把这个置上就能验证：查词侧
   // 拿到错误回执时，台词浮窗必须照常显示。
   Map<String, Object?>? geometryAdmissionOverride;
+  Map<String, Object?>? attachedInspectionOverride;
 
   setUp(() {
     nativeCalls = <MethodCall>[];
@@ -86,9 +89,14 @@ void main() {
     nativeShowing = false;
     lookupRequestSeq = 0;
     geometryAdmissionOverride = null;
+    attachedInspectionOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
           nativeCalls.add(call);
+          if (call.method == 'attachedInspectTarget' &&
+              attachedInspectionOverride != null) {
+            return attachedInspectionOverride;
+          }
           if (call.method == 'show') {
             nativeShowing = true;
             return true;
@@ -158,6 +166,83 @@ void main() {
           (_) {},
         );
   }
+
+  test(
+    'BUG-2154 native input waits for the current shield handshake',
+    () async {
+      preferences['gal_hook_ingame_lookup_enabled'] = true;
+      attachedInspectionOverride = <String, Object?>{
+        'status': 'shieldHandshakePending',
+        'exePath': r'C:\Games\Sample\game.exe',
+        'exeSha256':
+            '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        'referenceClient': const GalLookupReferenceClientV1(
+          widthPx: 1920,
+          heightPx: 1080,
+          dpi: 96,
+        ).toJson(),
+        'providerKind': 2,
+        'providerId': 3,
+        'providerStatus': 1,
+        'shield': <String, Object?>{'available': true, 'statusFlags': 0x02},
+      };
+      List<bool> nativeInputWrites() => nativeCalls
+          .where(
+            (MethodCall call) => call.method == 'galLookupSetGeometryAdmission',
+          )
+          .map(
+            (MethodCall call) =>
+                (call.arguments
+                    as Map<Object?, Object?>)['nativeInputAllowed'] ==
+                true,
+          )
+          .toList();
+      await controller.start(appModel: AppModel(testPlatformServices()));
+      await startSession();
+      textService.appendLine('テスト', source: TexthookerLineSource.websocket);
+      await _waitUntil(
+        () =>
+            controller.attachedText.status == GalAttachedTextStatus.suspended &&
+            nativeInputWrites().isNotEmpty,
+      );
+      expect(nativeInputWrites(), everyElement(isFalse));
+      expect(controller.attachedText.profile, isNull);
+      expect(controller.attachedText.needsUnsafeRiskAcceptance, isFalse);
+
+      void emitShieldState(String status) {
+        controller.attachedText.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: controller.attachedText.target!,
+            state: status == 'ready' ? 'targetReady' : 'suspended',
+            status: status,
+            providerKind: 2,
+            providerId: 3,
+            providerStatus: 1,
+            shield: const GalAttachedShieldStatus(
+              available: true,
+              statusFlags: 0x02,
+            ),
+          ),
+        );
+      }
+
+      emitShieldState('ready');
+      await _waitUntil(() => nativeInputWrites().contains(true));
+      expect(
+        controller.attachedText.status,
+        GalAttachedTextStatus.activeNative,
+      );
+      emitShieldState('shieldHandshakePending');
+      await _waitUntil(() => nativeInputWrites().last == false);
+      expect(controller.attachedText.status, GalAttachedTextStatus.suspended);
+      expect(
+        nativeCalls.where(
+          (MethodCall call) => call.method == 'attachedConfigure',
+        ),
+        isEmpty,
+      );
+    },
+  );
 
   test('查词 route 退役失败不得连坐台词浮窗', () async {
     // 换局时要先退役上一局的查词 route。这里让 runner 明确回 control_rejected
@@ -294,7 +379,8 @@ void main() {
     expect(
       controller.isSuppressedForSession,
       isFalse,
-      reason: '窗口被外部销毁不是用户不想要它 —— 那是 close 的语义，两条事件'
+      reason:
+          '窗口被外部销毁不是用户不想要它 —— 那是 close 的语义，两条事件'
           '不能合并',
     );
 
@@ -329,11 +415,10 @@ void main() {
     }
 
     expect(
-      nativeCalls
-          .where((MethodCall call) => call.method == 'isShowing')
-          .length,
+      nativeCalls.where((MethodCall call) => call.method == 'isShowing').length,
       probesAfterShow,
-      reason: '窗口在不在是 native 的事实，它会用 overlayDestroyed 推过来；'
+      reason:
+          '窗口在不在是 native 的事实，它会用 overlayDestroyed 推过来；'
           '按行回头问就是把派生状态退化成轮询',
     );
   });

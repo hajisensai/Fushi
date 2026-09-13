@@ -292,7 +292,11 @@ void main() {
     });
   });
 
-  group('BUG-2054 源码守卫：四条嵌套车道都不得再丢弃 highlightSelection 的 bbox', () {
+  // 2026-09 弹窗内原地跳转（对齐 Hoshi Reader iOS）后，onLinkClick 通道不再叠子层
+  // （同一 WebView 换词，无子层可重锚），四条车道收成两条：只剩两家宿主的
+  // onTextSelected。计数从 ≥2 改成 ≥1，其余判据不变。
+  group('BUG-2054 源码守卫：嵌套（onTextSelected）车道都不得再丢弃 highlightSelection 的 bbox',
+      () {
     // flutter test 的 cwd 是 fushi 包根。
     final File webview = File(
       'lib/src/pages/implementations/dictionary_popup_webview.dart',
@@ -321,51 +325,51 @@ void main() {
       );
     });
 
-    test('mixin 车道两个回调都取回 bbox 并重锚子层', () {
+    test('mixin 车道 onTextSelected 取回 bbox 并重锚子层', () {
       final String src = mixin.readAsStringSync();
       expect(
         'await entry.webViewKey.currentState?.highlightSelection(count)'
             .allMatches(src)
             .length,
-        greaterThanOrEqualTo(2),
-        reason: 'onTextSelected / onLinkClick 未各自取回整词 bbox',
+        greaterThanOrEqualTo(1),
+        reason: 'onTextSelected 未取回整词 bbox',
       );
       expect(
         'reanchorNestedPopupToWord('.allMatches(src).length,
-        greaterThanOrEqualTo(2),
-        reason: 'mixin 两个回调未各自重锚子层',
+        greaterThanOrEqualTo(1),
+        reason: 'mixin onTextSelected 未重锚子层',
       );
       // 身份门：eval 往返期间同一下标可能已被另一个词的子层占住。
       expect(
         'expectedTerm:'.allMatches(src).length,
-        greaterThanOrEqualTo(2),
+        greaterThanOrEqualTo(1),
         reason: 'mixin 重锚未带身份门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
       );
     });
 
-    test('阅读器车道两个回调都取回 bbox 并重锚子层', () {
+    test('阅读器车道 onTextSelected 取回 bbox 并重锚子层', () {
       final String src = base.readAsStringSync();
       expect(
         'await item.webViewKey.currentState?.highlightSelection(count)'
             .allMatches(src)
             .length,
-        greaterThanOrEqualTo(2),
-        reason: 'onTextSelected / onLinkClick 未各自取回整词 bbox',
+        greaterThanOrEqualTo(1),
+        reason: 'onTextSelected 未取回整词 bbox',
       );
       expect(
         'reanchorNestedPopupToWord('.allMatches(src).length,
-        greaterThanOrEqualTo(2),
-        reason: 'base_source_page 两个回调未各自重锚子层',
+        greaterThanOrEqualTo(1),
+        reason: 'base_source_page onTextSelected 未重锚子层',
       );
       // 身份门：词形 + BUG-717② 的查词代次快照两道。
       expect(
         'expectedTerm:'.allMatches(src).length,
-        greaterThanOrEqualTo(2),
+        greaterThanOrEqualTo(1),
         reason: 'base 重锚未带词形门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
       );
       expect(
         'generation == activeLookupGeneration'.allMatches(src).length,
-        greaterThanOrEqualTo(2),
+        greaterThanOrEqualTo(1),
         reason: 'base 重锚未带代次门（BUG-717② 已有的现成守卫）',
       );
     });

@@ -2073,6 +2073,37 @@ html.eink .mine-button {
     opacity: 1;
 }
 
+/* 正文侧的静息半透明：半透明黑字在墨水屏上就是抖动灰，10px 的 `.dict-label`
+   （词典名）尤其糊。与上面顶部动作按钮同一处理，统一压到全不透明；层次改由
+   字号 / 描边 / 位置承担（对齐 Hoshi 弹窗——它的正文一律零 opacity、纯 #000/#fff，
+   清晰度全靠「不制造灰」而非任何增锐手段）。
+   刻意**不**动三类：`:active` / `:hover` 的即时反馈、`:disabled` 与
+   `.audio-unavailable` 的失效态（弱化本身就是它要传达的信息）、以及
+   `.audio-hint` 那种 `opacity: 0` 的隐藏态（压平会让提示常驻）。 */
+html.eink .sentence-context-picker .context-label,
+html.eink .sentence-context-picker .context-stepper-btn,
+html.eink .sentence-context-picker .context-count,
+html.eink .clear-draft-button,
+html.eink .deinflection-tag:not(:first-child)::before,
+html.eink .glossary-group > summary::before,
+html.eink .dict-label,
+html.eink .pitch-entries > li:not(:last-child)::after,
+html.eink .pitch-transcription-tag,
+html.eink .no-results,
+html.eink .no-results-icon,
+html.eink .kanji-card-dict,
+html.eink .ctx-adjust-button,
+html.eink .mined-action-subtitle {
+    opacity: 1;
+}
+
+/* 亚像素位移：0.5px 把该按钮的字形推到半个物理像素上，墨水屏没有灰阶去表现，
+   只能糊成两行。整数位移（`.audio-button` 的 1px）落点仍是整像素，不受影响，
+   故只归零这一条。 */
+html.eink .mine-button.duplicate {
+    transform: none;
+}
+
 /* 特例态的彩色（收藏金 / 最新可改绿）在灰阶屏上失义，回归前景色。 */
 html.eink .favorite-button.favorited,
 html.eink .mine-button.latest {

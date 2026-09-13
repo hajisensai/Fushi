@@ -117,10 +117,13 @@ void main() {
     }
   });
 
-  test('Android 构建脚本把 overlay triplets 传给 cmake（否则静默降到 API 28）', () {
+  test('Android / Linux 构建脚本把 overlay triplets 传给 cmake（否则静默降到 API 28 / 非 -fPIC）', () {
     for (final String name in <String>[
       'build_android_so.sh',
       'build_android_so.ps1',
+      // Linux 静态链：overlay 不参与就退回 vcpkg 自带 x64-linux（静态库不保证
+      // -fPIC），链进 .so 时 relocation R_X86_64_32 直接失败——同一类静默降级。
+      'build_linux_so.sh',
     ]) {
       final String text = File('$nativeDir/$name').readAsStringSync();
       expect(text.contains('VCPKG_OVERLAY_TRIPLETS'), isTrue,
@@ -179,6 +182,18 @@ void main() {
       if (!hasPullRequestTrigger(text)) continue;
       gates.add(wf.uri.pathSegments.last);
     }
+    // Linux 静态 .so 同款：无头服务端随包的 bridge 只在 build-multiplatform.yml 的
+    // linux job 编（有 pull_request 触发），改 native/fushi_torrent 的 PR 在合并前
+    // 必须过这一条。
+    const String linuxScript = 'native/fushi_torrent/build_linux_so.sh';
+    final List<String> linuxGates = <String>[
+      for (final File wf in workflows)
+        if (consumesScript(wf.readAsStringSync(), linuxScript) &&
+            hasPullRequestTrigger(wf.readAsStringSync()))
+          wf.uri.pathSegments.last,
+    ];
+    expect(linuxGates, isNotEmpty,
+        reason: '没有任何带 pull_request 触发的 workflow 跑 $linuxScript');
 
     expect(gates, isNotEmpty,
         reason: '没有任何带 pull_request 触发的 workflow 跑 $script。'

@@ -16,7 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 /// 某游戏的游玩聚合（[FushiDatabase.getGalgamePlayTotals] 的一行）。
 typedef GalgamePlayTotals = (

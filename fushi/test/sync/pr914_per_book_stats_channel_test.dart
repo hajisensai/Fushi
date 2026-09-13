@@ -61,7 +61,24 @@ void main() {
       final String backend =
           _readSource('lib/src/sync/interconnect_sync_backend.dart');
       expect(backend, contains('updateStatsFile'));
-      expect(backend, contains("'statistics_'"));
+
+      // `statistics_` 前缀的解析在 A2 之后搬进了 WebDavPathBackendMixin（WebDAV 与
+      // 互联 client 共用的三件套）。通道还在，只是不再由单个文件独占——所以断言得
+      // 跟到组合面上，而不是继续扫一个已经不含该字面量的文件。两半都要：后端不
+      // mix in 它就没有这条通道，mixin 不解这个前缀则通道是空的。
+      final int classAt = backend.indexOf('class InterconnectSyncBackend ');
+      expect(classAt, isNonNegative, reason: '类改名了，守卫需更新');
+      final int braceAt = backend.indexOf('{', classAt);
+      expect(braceAt, greaterThan(classAt), reason: '扫不到类头结尾，守卫需更新');
+      expect(backend.substring(classAt, braceAt),
+          contains('WebDavPathBackendMixin'),
+          reason: 'per-book 统计的文件解析由该 mixin 提供，'
+              '后端的 with 列表里没有它 = 这条通道根本不存在');
+
+      final String mixin =
+          _readSource('lib/src/sync/webdav_path_backend_mixin.dart');
+      expect(mixin, contains("findSyncFileByPrefix(files, 'statistics_')"),
+          reason: 'mixin 必须把 statistics_ 前缀解成三件套的 statistics 槽');
     });
   });
 }

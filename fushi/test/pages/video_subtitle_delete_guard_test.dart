@@ -20,6 +20,11 @@ import 'video_fushi_page_source_corpus.dart';
 ///    （不是 `off:` 显式关闭——删错档
 ///    ≠ 不要字幕，下次起播仍要自动选 sidecar / 内嵌轨），副字幕复用既有关闭路径；
 ///    再从枚举 / 登记两份列表都移除（渲染是两份合并，只删一份会合回来）。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   final String src = readVideoFushiSource();
 
@@ -94,7 +99,9 @@ void main() {
         reason: '行本身在抽取期间是 enabled: false，菜单要一致，'
             '否则能删掉正在抽取 / 解析的那个档案');
     expect(
-        menu.contains('Overlay.of(context).context.findRenderObject()'), isTrue,
+        _flat(menu)
+            .contains(_flat('Overlay.of(context).context.findRenderObject()')),
+        isTrue,
         reason: '菜单锚点要落在根 Navigator Overlay 坐标系');
     expect(menu.contains('overlay.globalToLocal(globalPosition)'), isTrue,
         reason: '界面大小≠100% 时视口坐标直接喂 showMenu 会偏移（BUG-781 同族）');
@@ -108,13 +115,16 @@ void main() {
         reason: '裸 PopupMenuItem 是 md3 收口前的旧形态');
     expect(menu.contains('label: t.video_subtitle_delete,'), isTrue);
     expect(
-        RegExp(r'_focusOwnership\.guardOverlay\(\s*\(\) => showMenu<bool>\(')
+        // `\s*\.\s*`：tall style 会在 `.` 之前换行（`await _focusOwnership\n    .guardOverlay(`）。
+        RegExp(r'_focusOwnership\s*\.\s*guardOverlay\(\s*\(\)\s*=>\s*showMenu<bool>\(')
             .hasMatch(menu),
         isTrue,
         reason: '菜单是覆盖层、会夺焦；按 docs/agent/focus-ownership.md 用 '
             'guardOverlay 包 await 点，任何退出路径都归还焦点');
     expect(
-        menu.contains('await _deleteSubtitleFile(controller, source);'), isTrue,
+        _flat(menu)
+            .contains(_flat('await _deleteSubtitleFile(controller, source);')),
+        isTrue,
         reason: '选中删除项后必须进入带二次确认的删除路径');
   });
 
@@ -125,38 +135,44 @@ void main() {
     // `await file.delete()`）在同一函数的注释里往往还留着一份，未剥注释的
     // indexOf 会先命中注释那一份，顺序断言随之失真——这条守卫就被这样假红过。
     // 剥离一律走 helpers/source_guard.dart，不手写（source_guard_adoption_test）。
-    final String del = maskComments(region(
+    // 剥完注释再归一化：下面六个 indexOf 互相比先后，每个字面量都可能被 tall
+    // style 拆行，整段切进同一个归一化空间偏移才可比。
+    final String del = _flat(maskComments(region(
       'Future<void> _deleteSubtitleFile(',
       'Future<void> _forgetDeletedSubtitleSelection(',
-    ));
+    )));
     final int confirm =
-        del.indexOf('t.video_subtitle_delete_confirm(path: path)');
-    final int deleteFile = del.indexOf('await file.delete()');
-    final int forgetPrimary =
-        del.indexOf('await _forgetDeletedSubtitleSelection(controller);');
+        del.indexOf(_flat('t.video_subtitle_delete_confirm(path: path)'));
+    final int deleteFile = del.indexOf(_flat('await file.delete()'));
+    final int forgetPrimary = del
+        .indexOf(_flat('await _forgetDeletedSubtitleSelection(controller);'));
     final int offSecondary =
-        del.indexOf('_selectSecondarySubtitleOff(controller)');
+        del.indexOf(_flat('_selectSecondarySubtitleOff(controller)'));
     final int removeEnumerated = del.indexOf(
-        '_subtitleMenuSources = _subtitleMenuSources.where(notDeleted)');
+        _flat('_subtitleMenuSources = _subtitleMenuSources.where(notDeleted)'));
     final int removeImported =
-        del.indexOf('_importedSubtitleSources.where(notDeleted)');
+        del.indexOf(_flat('_importedSubtitleSources.where(notDeleted)'));
     expect(confirm, greaterThanOrEqualTo(0),
         reason: '删磁盘文件是不可逆操作，必须二次确认并把完整路径给用户看');
-    expect(del.contains('FushiDestructiveConfirmDialog('), isTrue,
+    expect(del.contains(_flat('FushiDestructiveConfirmDialog(')), isTrue,
         reason: '确认框用全 app 统一的 FushiDestructiveConfirmDialog，'
             '不再手搓裸 AlertDialog + TextButton');
-    expect(del.contains('AlertDialog('), isFalse);
+    expect(del.contains(_flat('AlertDialog(')), isFalse);
     expect(
-        RegExp(r'_focusOwnership\.guardOverlay\(\s*\(\) => showAppDialog<FushiDestructiveConfirmResult>\(')
+        RegExp(r'_focusOwnership\s*\.\s*guardOverlay\(\s*\(\)\s*=>\s*'
+                r'showAppDialog<FushiDestructiveConfirmResult>\(')
             .hasMatch(del),
         isTrue,
         reason: '对话框是覆盖层、会夺焦；guardOverlay 在任何退出路径归还焦点');
     expect(deleteFile, greaterThan(confirm), reason: '确认在删文件之前');
     // 光有对话框不够：结果必须真的门住删除（变异实测「去掉这行守卫仍绿」补的）。
-    final int gate = del.indexOf('if (confirmed == null || !mounted) return;');
+    final int gate =
+        del.indexOf(_flat('if (confirmed == null || !mounted) return;'));
     expect(gate, greaterThan(confirm), reason: '确认结果要在对话框返回之后判');
     expect(gate, lessThan(deleteFile), reason: '用户取消时不得走到 file.delete()');
-    expect(del.contains("'[video-playback] delete external subtitle failed"),
+    expect(
+        del.contains(
+            _flat("'[video-playback] delete external subtitle failed")),
         isTrue,
         reason: '删除失败要留日志，占用 / 只读 / 权限才能从日志判型');
     expect(forgetPrimary, lessThan(deleteFile),
@@ -165,23 +181,25 @@ void main() {
             '**持久化清理**一起挡掉：文件没了而 subtitleSource 仍指向它、cue 还在库里，'
             '重开会把已删字幕显示回来且列表里找不到它关不掉（BUG-081 同型）。'
             '把清理提到删除之前，这个窗口根本不存在，不需要再配守卫');
-    expect(del.contains('_selectSubtitleOff(controller)'), isFalse,
+    expect(del.contains(_flat('_selectSubtitleOff(controller)')), isFalse,
         reason: '主字幕不能落 off: 显式关闭哨兵——「删了个下错的字幕」≠「我不要字幕」，'
             'off: 会短路下次起播的 sidecar / 内嵌轨自动选择（TODO-818）');
-    expect(del.contains('_clearRemoteSubtitle(controller)'), isFalse,
+    expect(del.contains(_flat('_clearRemoteSubtitle(controller)')), isFalse,
         reason: '远端同理，_clearRemoteSubtitle 也落 off: 并置 userDismissed');
     expect(offSecondary, lessThan(deleteFile),
         reason: '副字幕的清理与主字幕同因，同样必须在 file.delete() 之前。'
             '副字幕没有自动选择，null 与 off: 恢复行为相同，'
             '所以直接复用既有 _selectSecondarySubtitleOff');
-    expect(del.contains('_clearRemoteSecondarySubtitle(controller)'), isTrue,
+    expect(del.contains(_flat('_clearRemoteSecondarySubtitle(controller)')),
+        isTrue,
         reason: '远端模式副字幕的关闭路径是 _clearRemoteSecondarySubtitle');
     expect(removeEnumerated, greaterThan(offSecondary),
         reason: '列表移除在清字幕之后（清理路径读的是当前源指针，不依赖列表）');
     expect(removeImported, greaterThan(removeEnumerated),
         reason: '渲染是 mergeImportedSubtitleSourcesForMenu 两份合并，'
             '只从枚举列表删、登记列表还会把它合回来');
-    expect(del.contains('sameExternalSubtitlePathForMenu(source, primary)'),
+    expect(
+        del.contains(_flat('sameExternalSubtitlePathForMenu(source, primary)')),
         isTrue,
         reason: '判「是否当前源」用与列表高亮同一份路径归一判据');
   });

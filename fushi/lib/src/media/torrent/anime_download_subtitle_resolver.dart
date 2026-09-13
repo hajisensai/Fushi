@@ -7,10 +7,10 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 
 /// 延迟字幕解析的结果：配好的字幕 + 失败原因（二选一有值）。
 class ResolvedPlanSubtitles {

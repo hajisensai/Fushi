@@ -40,7 +40,9 @@ void main() {
     expect(idx, greaterThan(0));
     final int end = src.indexOf('\n  }', idx);
     final String body = src.substring(idx, end);
-    expect(body.contains('appModel.buildColorScheme('), isTrue,
+    // 容忍 formatter 在 `appModel` 与 `.buildColorScheme(` 之间折行（BUG-2187
+    // 主题重设计后这段被重排），但仍钉死「取自 appModel 的那一条」。
+    expect(RegExp(r'appModel\s*\.\s*buildColorScheme\(').hasMatch(body), isTrue,
         reason:
             'accent 浅色支必须取自 appModel.buildColorScheme（与 ThemeData 同源、context-free）');
     expect(body.contains('context'), isFalse,

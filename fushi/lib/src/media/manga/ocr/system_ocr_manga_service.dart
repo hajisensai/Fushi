@@ -10,16 +10,15 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show Rect, Size;
 
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart'
     show GoogleLensPageCache;
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 
 /// 单页识别超时。系统识别器正常是几百毫秒级，30 秒只用来兜住「彻底卡住」。
@@ -192,7 +191,7 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
                 url: pages[index].relativeUrl,
                 // 还没轮到的页先占位。尺寸未知时给 0——展示层按比例定位，
                 // 空 blocks 不会用到它。
-                size: Size.zero,
+                size: MokuroSize.zero,
                 blocks: const <MokuroBlock>[],
               ),
       ],
@@ -228,7 +227,7 @@ MokuroImage buildSystemOcrPage(
   final List<MokuroBlock> blocks = <MokuroBlock>[];
   for (int index = 0; index < result.lines.length; index++) {
     final SystemOcrTextLine line = result.lines[index];
-    final Rect rect = Rect.fromLTRB(
+    final MokuroRect rect = MokuroRect.fromLTRB(
       line.rect.left.clamp(0, width),
       line.rect.top.clamp(0, height),
       line.rect.right.clamp(0, width),
@@ -253,7 +252,7 @@ MokuroImage buildSystemOcrPage(
   }
   return MokuroImage(
     url: relativeUrl,
-    size: Size(width, height),
+    size: MokuroSize(width, height),
     blocks: blocks,
   );
 }

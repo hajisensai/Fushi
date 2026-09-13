@@ -18,59 +18,80 @@ void main() {
       // 第 N 章 sentenceIndex 范围 10..20，cue=15 → (15-10)/(20-10)=0.5
       expect(
         audiobookSrtCrossChapterProgress(
-            sentenceIndex: 15, first: 10, last: 20),
+          sentenceIndex: 15,
+          first: 10,
+          last: 20,
+        ),
         0.5,
       );
     });
     test('cue 是该章首句 → 0.0 (章首是真实位置，非归零哨兵)', () {
       expect(
         audiobookSrtCrossChapterProgress(
-            sentenceIndex: 10, first: 10, last: 20),
+          sentenceIndex: 10,
+          first: 10,
+          last: 20,
+        ),
         0.0,
       );
     });
     test('cue 是该章末句 → 1.0', () {
       expect(
         audiobookSrtCrossChapterProgress(
-            sentenceIndex: 20, first: 10, last: 20),
+          sentenceIndex: 20,
+          first: 10,
+          last: 20,
+        ),
         1.0,
       );
     });
     test('单句章 span=0 → null (拿不到句内偏移，调用方保位)', () {
       expect(
         audiobookSrtCrossChapterProgress(
-            sentenceIndex: 10, first: 10, last: 10),
+          sentenceIndex: 10,
+          first: 10,
+          last: 10,
+        ),
         isNull,
       );
     });
     test('越界保护：cue 超出范围 → clamp 不溢出', () {
       expect(
         audiobookSrtCrossChapterProgress(
-            sentenceIndex: 99, first: 10, last: 20),
+          sentenceIndex: 99,
+          first: 10,
+          last: 20,
+        ),
         1.0,
       );
     });
   });
 
   group('sentenceAudioHighlight 跨章章内进度 (TODO-746)', () {
-    test('frag 落在该章中段 → normCharStart/chapterChars，不归 0', () {
+    test('转换后的学习单位锚落在章中段 → studyOffset/chapterChars', () {
       expect(
         audiobookSentenceAudioCrossChapterProgress(
-            normCharStart: 250, chapterChars: 1000),
+          studyCharOffset: 250,
+          chapterChars: 1000,
+        ),
         0.25,
       );
     });
     test('章字符数为 0 (未知/空章) → null (调用方退回该章章首 0.0，非归到第一章)', () {
       expect(
         audiobookSentenceAudioCrossChapterProgress(
-            normCharStart: 250, chapterChars: 0),
+          studyCharOffset: 250,
+          chapterChars: 0,
+        ),
         isNull,
       );
     });
-    test('clamp 上界：normCharStart 超章字符 → 1.0 不溢出', () {
+    test('clamp 上界：学习单位锚超章总单位 → 1.0 不溢出', () {
       expect(
         audiobookSentenceAudioCrossChapterProgress(
-            normCharStart: 2000, chapterChars: 1000),
+          studyCharOffset: 2000,
+          chapterChars: 1000,
+        ),
         1.0,
       );
     });
@@ -84,11 +105,11 @@ void main() {
       ).readAsStringSync();
     });
 
-    test('sentenceAudioHighlight 跨章 (_handleCueCrossChapter) 复用章内进度纯函数', () {
+    test('sentenceAudioHighlight 跨章使用转换后的精确学习单位锚', () {
       expect(
-        src.contains('audiobookSentenceAudioCrossChapterProgress('),
+        src.contains('_navigateToChapter(newSection, charOffset: studyOffset)'),
         isTrue,
-        reason: '跨章必须复用进度公式落到 cue 真实位置，不得走缺省 progress=0.0',
+        reason: '跨章必须转换字符坐标，不得把音频字符直接除以学习单位',
       );
     });
 

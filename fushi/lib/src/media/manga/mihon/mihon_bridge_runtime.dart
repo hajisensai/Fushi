@@ -4,11 +4,18 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
 abstract class MihonBridgeRuntime implements MihonRuntime {
+  /// [source] 是本次调用**打给哪个源**。桌面端据它挑出该源站的登录 cookie 注入
+  /// 请求头（BUG-2425）——sidecar 侧的 domain 也是从 `source.getBaseUrl()` 推的，
+  /// 两边必须看同一个 baseUrl，否则注进去的 cookie 域对不上、等于没注。
+  ///
+  /// 可空是因为 [listSources] 发生在「还不知道有哪些源」之前；那一步不出网到源站，
+  /// 没有 cookie 可言。Android 忽略这个参数（系统 `CookieManager` 是唯一所有者）。
   Future<Object?> invokeBridge(
     MihonExtensionRef extension,
     String method,
-    Map<String, Object?> arguments,
-  );
+    Map<String, Object?> arguments, {
+    MihonSource? source,
+  });
 
   @override
   Future<List<MihonSource>> listSources(
@@ -36,6 +43,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
       extension,
       'filtersManga',
       _sourceArguments(source, preferences),
+      source: source,
     );
     final List<Object?> filters = response is List<Object?>
         ? response
@@ -65,6 +73,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
               ..._sourceArguments(source, preferences),
               'page': page,
             },
+            source: source,
           ),
         ),
       );
@@ -85,6 +94,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
               ..._sourceArguments(source, preferences),
               'page': page,
             },
+            source: source,
           ),
         ),
       );
@@ -111,6 +121,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
                   .map((MihonFilter filter) => filter.toBridgeJson())
                   .toList(growable: false),
             },
+            source: source,
           ),
         ),
       );
@@ -131,6 +142,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
             ..._sourceArguments(source, preferences),
             'mangaData': manga.toJson(),
           },
+          source: source,
         ),
       ),
     );
@@ -151,6 +163,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
         ..._sourceArguments(source, preferences),
         'mangaData': manga.toJson(),
       },
+      source: source,
     );
     return _asMapList(response)
         .map(MihonChapter.fromJson)
@@ -171,6 +184,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
         ..._sourceArguments(source, preferences),
         'chapterData': chapter.toJson(),
       },
+      source: source,
     );
     return _asMapList(response).map(MihonPage.fromJson).toList(growable: false);
   }
@@ -186,6 +200,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
           extension,
           'preferencesManga',
           _sourceArguments(source, persisted),
+          source: source,
         ),
       );
 
@@ -212,6 +227,7 @@ abstract class MihonBridgeRuntime implements MihonRuntime {
             changedPreferenceKey: preference.key,
           ),
         },
+        source: source,
       ),
     );
   }

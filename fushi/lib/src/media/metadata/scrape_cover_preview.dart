@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/utils.dart';
@@ -28,8 +29,8 @@ class ScrapeCoverPreview extends StatelessWidget {
         borderRadius: FushiBorderRadius.chip,
         child: normalized == null
             ? _buildPlaceholder(tokens)
-            : Image.network(
-                normalized,
+            : Image(
+                image: AppHttpImage(normalized),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _buildPlaceholder(tokens),
               ),
@@ -94,8 +95,8 @@ Future<void> _showLargePreview(BuildContext context, String url) async {
                 child: InteractiveViewer(
                   minScale: 1,
                   maxScale: 5,
-                  child: Image.network(
-                    url,
+                  child: Image(
+                    image: AppHttpImage(url),
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) =>
                         _buildPlaceholder(tokens, iconSize: 48),

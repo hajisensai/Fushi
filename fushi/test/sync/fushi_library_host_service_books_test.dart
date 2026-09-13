@@ -5,11 +5,11 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -58,13 +58,13 @@ Future<String> _insertBookWithExtractDir({
   );
 }
 
-/// 构造一个 [AppModelLibraryHostService]，[importBookFromFile] 为 fake（记录调用）。
-AppModelLibraryHostService _buildSvc({
+/// 构造一个 [LocalLibraryHostService]，[importBookFromFile] 为 fake（记录调用）。
+LocalLibraryHostService _buildSvc({
   required FushiDatabase db,
   List<File>? importedFiles,
   List<EpubBookRow>? deletedRows,
 }) {
-  return AppModelLibraryHostService(
+  return LocalLibraryHostService(
     db: db,
     dictionaryResourceRoot: Directory.systemTemp,
     packages: SyncAssetPackageService(db: db),
@@ -173,8 +173,8 @@ void main() {
     });
   });
 
-  // ── AppModelLibraryHostService 书籍 round-trip ─────────────────────────
-  group('AppModelLibraryHostService books', () {
+  // ── LocalLibraryHostService 书籍 round-trip ─────────────────────────
+  group('LocalLibraryHostService books', () {
     late Directory tmp;
     late FushiDatabase db;
 
@@ -239,7 +239,7 @@ void main() {
         extractDir: p.join(tmp.path, 'MangaVol1'),
         mangaReadingMode: 'webtoon',
       );
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final RemoteBookInfo info = (await svc.listBooks()).single;
       expect(info.format, 'manga');
       expect(info.hasMangaContent, isTrue, reason: '新 client 据此在漫画架渲染可下载占位卡');
@@ -257,6 +257,34 @@ void main() {
       expect(legacy.hasMangaContent, isFalse);
     });
 
+    test('listBooks 在线漫画合集只有空 pages 标记时不可下载', () async {
+      final String extractDir = p.join(tmp.path, 'OnlineSeries');
+      await insertMangaBook(title: 'OnlineSeries', extractDir: extractDir);
+      // OnlineMangaLibraryService.add 的占位布局；封面存在也不代表有正文。
+      File(p.join(extractDir, 'manga.json')).writeAsStringSync('{"pages":[]}');
+
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      final RemoteBookInfo info = (await svc.listBooks()).single;
+      expect(info.format, 'manga');
+      expect(info.hasEmbeddedCover, isTrue);
+      expect(info.hasContent, isFalse);
+      expect(info.hasMangaContent, isFalse, reason: '未下载的作品合集不应成为远端可下载漫画卡');
+      expect(RemoteBookInfo.fromJson(info.toJson()).hasMangaContent, isFalse);
+    });
+
+    test('listBooks 漫画清单中的页图缺失时不可下载', () async {
+      final String extractDir = p.join(tmp.path, 'MissingMangaPage');
+      await insertMangaBook(title: 'MissingMangaPage', extractDir: extractDir);
+      File(p.join(extractDir, 'images', 'p1.jpg')).deleteSync();
+
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      final RemoteBookInfo info = (await svc.listBooks()).single;
+      expect(info.format, 'manga');
+      expect(info.hasContent, isFalse);
+      expect(info.hasMangaContent, isFalse,
+          reason: '只有 manifest 但正文页图缺失的包无法成功导入');
+    });
+
     test('EPUB 转化漫画（extractDir 残留 container.xml）hasContent 必须 false（坏包防线）',
         () async {
       await insertMangaBook(
@@ -264,7 +292,7 @@ void main() {
         extractDir: p.join(tmp.path, 'ConvertedManga'),
         withEpubTree: true,
       );
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final RemoteBookInfo info = (await svc.listBooks()).single;
       expect(info.hasContent, isFalse,
           reason: '旧判据会把它当可下载 EPUB 打包——client 落地成夹带整套页图的'
@@ -277,7 +305,7 @@ void main() {
         title: 'ExportManga',
         extractDir: p.join(tmp.path, 'ExportManga'),
       );
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportBook('ExportManga');
       addTearDown(() => pkg.parent.deleteSync(recursive: true));
       expect(await isMangaPackage(pkg), isTrue,
@@ -312,7 +340,7 @@ void main() {
         extractDir: extractDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
 
       expect(list, hasLength(1));
@@ -359,7 +387,7 @@ void main() {
         bookKey: Value(audioKey),
       ));
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
       final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
         for (final RemoteBookInfo b in list) b.title: b,
@@ -393,7 +421,7 @@ void main() {
       ));
       // 故意不插 SrtBooks 行。
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
       final RemoteBookInfo orphan =
           list.firstWhere((RemoteBookInfo b) => b.title == 'OrphanAudio');
@@ -426,7 +454,7 @@ void main() {
       // DB 里存的是相对 href（与 EpubImporter 写入 coverHref 一致）。
       await db.updateEpubBookContentPaths(bookKey, coverPath: coverRel);
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
 
       // 解析后是磁盘存在的绝对路径，hasCover==true，server 据此能下发 coverUrl。
@@ -445,7 +473,7 @@ void main() {
         ..writeAsBytesSync(<int>[1, 2, 3, 4]);
       await db.updateEpubBookContentPaths(bookKey, coverPath: cover.path);
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
 
       expect(list.single.toJson()['hasCover'], isTrue);
@@ -464,7 +492,7 @@ void main() {
         ),
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
 
       expect(list.first.hasContent, isFalse);
@@ -479,7 +507,7 @@ void main() {
         extractDir: extractDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportBook('ExportMe');
       addTearDown(() => pkg.parent.deleteSync(recursive: true));
 
@@ -500,7 +528,7 @@ void main() {
         extractDir: extractDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportBook(bookKey);
       addTearDown(() => pkg.parent.deleteSync(recursive: true));
 
@@ -522,7 +550,7 @@ void main() {
         extractDir: outerDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
 
       expect(list.single.hasContent, isTrue);
@@ -536,7 +564,7 @@ void main() {
     });
 
     test('exportBook 对不存在的书抛 StateError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportBook('NonExistent'),
         throwsA(isA<StateError>()),
@@ -556,7 +584,7 @@ void main() {
         ),
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportBook('NoContent'),
         throwsA(isA<StateError>()),
@@ -564,7 +592,7 @@ void main() {
     });
 
     test('exportBook 对 "../evil" 路径穿越抛 ArgumentError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.exportBook('../evil'),
         throwsA(isA<ArgumentError>()),
@@ -581,7 +609,7 @@ void main() {
       );
 
       final List<EpubBookRow> deletedRows = <EpubBookRow>[];
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _buildSvc(db: db, deletedRows: deletedRows);
 
       await svc.deleteBook('DeleteMe');
@@ -595,13 +623,13 @@ void main() {
     });
 
     test('deleteBook 不存在的书静默跳过（幂等）', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       // 不抛异常
       await svc.deleteBook('NonExistent');
     });
 
     test('deleteBook 对路径穿越名抛 ArgumentError', () async {
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       await expectLater(
         svc.deleteBook('../evil'),
         throwsA(isA<ArgumentError>()),
@@ -611,7 +639,7 @@ void main() {
     // ── importBook（fake importer 回调）─────────────────────────────────────
     test('importBook 调用注入的 importer 回调', () async {
       final List<File> imported = <File>[];
-      final AppModelLibraryHostService svc =
+      final LocalLibraryHostService svc =
           _buildSvc(db: db, importedFiles: imported);
 
       final File fakeEpub = File(p.join(tmp.path, 'fake.epub'))
@@ -624,7 +652,7 @@ void main() {
     });
 
     test('importBook 无回调时抛 UnsupportedError', () async {
-      final AppModelLibraryHostService svc = AppModelLibraryHostService(
+      final LocalLibraryHostService svc = LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
         packages: SyncAssetPackageService(db: db),
@@ -651,7 +679,7 @@ void main() {
         extractDir: extractDir,
       );
 
-      final AppModelLibraryHostService svc = _buildSvc(db: db);
+      final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportBook('RoundTrip');
       addTearDown(() => pkg.parent.deleteSync(recursive: true));
 

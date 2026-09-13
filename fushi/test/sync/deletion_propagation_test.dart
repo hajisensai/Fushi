@@ -2,7 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 
 void main() {
   // 墓碑值 = deletedAt；在库值 = 存在起始时刻（null = 该类资产不记时刻）。

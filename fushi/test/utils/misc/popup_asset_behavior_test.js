@@ -79,7 +79,8 @@ class FakeElement {
     this.tagName = tagName.toUpperCase();
     this.nodeType = 1;
     this.children = [];
-    this.childNodes = this.children;
+    // 显式 push 进来的非元素节点（见文件里 createTextNode 那处）。
+    this._extraNodes = [];
     this.dataset = {};
     this.style = new FakeStyle();
     this.attributes = {};
@@ -108,8 +109,20 @@ class FakeElement {
 
   set innerHTML(value) {
     this.children = [];
-    this.childNodes = this.children;
+    this._extraNodes = [];
     this.textContent = String(value);
+  }
+
+  /// 真 DOM 里 `<a>言語</a>` 的 childNodes 是**一个文本节点**；本桩的 textContent
+  /// 是直接赋值、不建文本节点，直接返回 children 会是空数组，于是
+  /// linkVisibleBaseText（BUG-2456，取基字跳过振假名）一个字也收不到、query 为空、
+  /// onLinkClick 根本不发。没有任何子节点时就地包一个文本节点还原真形状。
+  get childNodes() {
+    if (this.children.length || this._extraNodes.length) {
+      return [...this.children, ...this._extraNodes];
+    }
+    const text = this.textContent;
+    return text ? [{ nodeType: 3, textContent: text }] : [];
   }
 
   appendChild(child) {
@@ -250,13 +263,14 @@ class FakeElement {
   }
 
   closest(selector) {
-    if (!selector.startsWith('.')) {
+    // Supports a comma-separated list of simple class selectors only.
+    const classNames = selector.split(',').map((s) => s.trim());
+    if (classNames.some((s) => !s.startsWith('.'))) {
       return null;
     }
-    const className = selector.slice(1);
     let element = this;
     while (element) {
-      if (element.classList?.contains(className)) {
+      if (classNames.some((s) => element.classList?.contains(s.slice(1)))) {
         return element;
       }
       element = element.parentElement;
@@ -276,7 +290,7 @@ function createPopupContext() {
     parentElement: new FakeElement('span'),
   };
   textNode.parentElement.classList.add('dict-name');
-  textNode.parentElement.childNodes.push(textNode);
+  textNode.parentElement._extraNodes.push(textNode);
   let caretStartContainer = textNode;
 
   const selection = {
@@ -379,7 +393,11 @@ function createPopupContext() {
         this._src = value;
       }
     },
-    Node: {TEXT_NODE: 3},
+    // ELEMENT_NODE 不能少：linkVisibleBaseText（BUG-2456）用
+    // `node.nodeType !== Node.ELEMENT_NODE` 提前 return，缺常量时 `1 !== undefined`
+    // 恒成立 → 遍历首行就退出、**静默返回空串**（不抛错），表现为「点交叉引用
+    // 不发 onLinkClick」这种看不出因果的红。
+    Node: {TEXT_NODE: 3, ELEMENT_NODE: 1},
     // BUG-1064: the in-page hint bubble (showInlineHint) fades in on the next
     // frame; without a rAF stand-in the hint path would throw ReferenceError.
     // Runs the callback synchronously — tests assert on the resulting DOM, not
@@ -786,6 +804,96 @@ function buildEntryCardDom(context) {
   return {entry, glossary, cardGap};
 }
 
+function testExtensionPopupHandlesNestedLookupBeforeHostPageBubbling() {
+  const context = loadPopup((value) => {
+    value.chrome = { runtime: { id: 'extension-test' } };
+  });
+  assert.equal(context.__listeners.click, undefined,
+    'extension lookup must not wait for document bubbling behind player listeners');
+  const root = new FakeElement('shadow-root');
+  root.host = new FakeElement('div');
+  context.window.__fushiRoot = root;
+  context.window.__fushiBindPopupInteractions(root);
+  context.window.__fushiBindPopupInteractions(root);
+  assert.equal(root.listeners.click.length, 1, 'rebinding must not duplicate lookups');
+  const {glossary} = buildEntryCardDom(context);
+  root.appendChild(glossary);
+  const selected = [];
+  const bridgeCalls = [];
+  context.window.fushiSelection = { selectText: (...args) => selected.push(args) };
+  context.window.flutter_inappwebview.callHandler = (...args) => {
+    bridgeCalls.push(args);
+    return Promise.resolve(null);
+  };
+  let hostPlayerClicks = 0;
+  context.document.addEventListener('click', () => { hostPlayerClicks++; });
+  function bubble(type, target, extra = {}) {
+    const event = {
+      target, clientX: 50, clientY: 50, ...extra,
+      composedPath: () => [target, glossary, root, root.host, context.document],
+      stopPropagation() { this.stopped = true; },
+      preventDefault() { this.prevented = true; },
+    };
+    for (const handler of root.listeners[type]) handler(event);
+    if (!event.stopped) {
+      for (const handler of context.__listeners[type] || []) handler(event);
+    }
+    return event;
+  }
+  bubble('mousedown', glossary);
+  bubble('click', glossary);
+  assert.deepEqual(selected, [[50, 50, 20]], 'definition click still selects a nested word');
+  bubble('mousemove', glossary, { shiftKey: true });
+  assert.equal(selected.length, 2, 'Shift lookup must also remain inside the popup');
+  const anchor = new FakeElement('a');
+  anchor.setAttribute('href', 'entry://計画');
+  anchor.textContent = '計画';
+  anchor.closest = function(selector) {
+    if (selector === 'a[href]') return this;
+    return FakeElement.prototype.closest.call(this, selector);
+  };
+  glossary.appendChild(anchor);
+  const linkEvent = bubble('click', anchor);
+  assert.ok(linkEvent.prevented, 'dictionary reference must not navigate the page');
+  assert.equal(bridgeCalls[0][0], 'onLinkClick');
+  assert.equal(bridgeCalls[0][1], '計画');
+  assert.equal(hostPlayerClicks, 0, 'nested lookup must not resume the host player');
+  assert.ok(!bridgeCalls.some(([name]) => name === 'tapOutside'),
+    'nested text and cross-reference clicks must not dismiss the popup');
+  const reopened = new FakeElement('shadow-root');
+  reopened.host = new FakeElement('div');
+  context.window.__fushiRoot = reopened;
+  context.window.__fushiBindPopupInteractions(reopened);
+  assert.equal(reopened.listeners.click.length, 1,
+    'a recreated popup root must receive fresh delegated handlers');
+  let stopped = false;
+  reopened.listeners.click[0]({
+    target: glossary, clientX: 50, clientY: 50,
+    composedPath: () => [glossary, reopened, reopened.host, context.document],
+    stopPropagation() { stopped = true; },
+  });
+  assert.ok(stopped);
+  assert.equal(selected.length, 3, 'nested selection still works after reopening');
+}
+
+testExtensionPopupHandlesNestedLookupBeforeHostPageBubbling();
+
+function testExtensionBindsRootCreatedBeforePopupScript() {
+  const root = new FakeElement('shadow-root');
+  root.host = new FakeElement('div');
+  const context = loadPopup((value) => {
+    value.chrome = { runtime: { id: 'extension-test' } };
+    value.window.__fushiRoot = root;
+  });
+  assert.equal(root.listeners.click.length, 1,
+    'side panel creates its root before loading the shared popup script');
+  assert.equal(context.__listeners.click, undefined);
+  context.window.__fushiBindPopupInteractions(root);
+  assert.equal(root.listeners.click.length, 1);
+}
+
+testExtensionBindsRootCreatedBeforePopupScript();
+
 // (1) Tapping the definition TEXT body still routes to word selection.
 function testTapOnGlossaryTextSelectsWord() {
   const context = loadPopup();
@@ -863,6 +971,62 @@ function testTapInKanjiSectionGapKeepsLayer() {
   const result = fireDocumentClick(context, sectionGap);
   assert.equal(result.tapOutsideCalls, 0,
     'tapping the kanji-card-section gap/margin must NOT fire tapOutside (layer kept)');
+}
+
+// (6) Kanji card BODY text (readings / stats values / meanings) is lookup text
+// with the same semantics as .glossary-content: tapping it must select a word
+// (fushiSelection.selectText → textSelected), not drop into the card-root
+// branch that only keeps the layer. DOM mirrors createKanjiReadingRow and
+// buildKanjiCards: body > .kanji-card-section > .kanji-card > .kanji-card-row >
+// .kanji-card-value, and .kanji-card > .kanji-card-meanings.
+function buildKanjiCardBody(context) {
+  const section = new FakeElement('div');
+  section.classList.add('kanji-card-section');
+  const kanjiCard = new FakeElement('div');
+  kanjiCard.classList.add('kanji-card');
+  const row = new FakeElement('div');
+  row.classList.add('kanji-card-row');
+  const label = new FakeElement('span');
+  label.classList.add('kanji-card-label');
+  const value = new FakeElement('span');
+  value.classList.add('kanji-card-value');
+  const meanings = new FakeElement('div');
+  meanings.classList.add('kanji-card-meanings');
+  context.document.body.appendChild(section);
+  section.appendChild(kanjiCard);
+  kanjiCard.appendChild(row);
+  row.appendChild(label);
+  row.appendChild(value);
+  kanjiCard.appendChild(meanings);
+  return {label, value, meanings};
+}
+
+function testTapOnKanjiCardValueSelectsWord() {
+  const context = loadPopup();
+  const {value, meanings, label} = buildKanjiCardBody(context);
+  for (const node of [value, meanings]) {
+    const result = fireDocumentClick(context, node);
+    assert.equal(result.selectCalls, 1,
+      'tapping kanji card reading/meaning text must call selectText (tap-to-lookup)');
+    assert.equal(result.tapOutsideCalls, 0,
+      'kanji card body text is inside the card: no tapOutside');
+  }
+  // The label column ("On", "Kun", ...) is UI chrome, not lookup text.
+  const labelResult = fireDocumentClick(context, label);
+  assert.equal(labelResult.selectCalls, 0,
+    'kanji card label column must not select text');
+  assert.equal(labelResult.tapOutsideCalls, 0,
+    'kanji card label is still inside the card root: layer kept');
+}
+
+function testTapOnKanjiCardValueWithChildFiresTapOutside() {
+  const context = loadPopup();
+  const {value} = buildKanjiCardBody(context);
+  const result = fireDocumentClick(context, value, 50, 50, {hasChild: true});
+  assert.equal(result.tapOutsideCalls, 1,
+    'with a child popup, tapping kanji card text closes descendants first');
+  assert.equal(result.selectCalls, 0,
+    'with a child popup, kanji card text must not also select a word');
 }
 
 // ── TODO-869：父弹窗有子弹窗时，点卡片本体也得发 tapOutside 关后代层 ───────────
@@ -2242,6 +2406,8 @@ testTapOnEntryCardWhitespaceKeepsLayer();
 testTapOnPopupBackgroundFiresTapOutside();
 testTapInsideKanjiCardKeepsLayer();
 testTapInKanjiSectionGapKeepsLayer();
+testTapOnKanjiCardValueSelectsWord();
+testTapOnKanjiCardValueWithChildFiresTapOutside();
 testEntryWhitespaceWithChildFiresTapOutside();
 testEntryWhitespaceWithoutChildKeepsLayer();
 testKanjiSectionWhitespaceWithChildFiresTapOutside();
@@ -2876,3 +3042,60 @@ testBridgeRejectionIsNeverSilent().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
+  const context = loadPopup();
+  let queued = false;
+  let mines = 0;
+  let duplicates = 0;
+  context.window.fushiIsEntryQueued = () => queued;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') { duplicates++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      mines++;
+      queued = true;
+      return Promise.resolve({ queued: true, ankiConnect: false });
+    }
+    return Promise.resolve(null);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  const before = duplicates;
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  assert.equal(button.textContent, '✓');
+  assert.ok(button.classList.contains('duplicate'), 'queued mark must hide the CSS plus');
+  assert.notEqual(button.dataset.mined, '1', 'queued is not an Anki card');
+  assert.equal(button.title, '已加入制卡队列');
+  assert.equal(duplicates, before, 'queue success must not probe Anki');
+  await button.onclick();
+  assert.equal(mines, 1, 'repeated click must not enqueue again');
+  const reopened = buildMineHeaderFor(context, '猫');
+  await flush();
+  assert.equal(reopened.dataset.queued, '1', 'reopened popup reads the real queue');
+  queued = false;
+  await button.onclick();
+  assert.equal(mines, 2, 'removing the item permits a new enqueue');
+}
+
+async function testQueueFailureKeepsPlusAndAllowsRetry() {
+  const context = loadPopup();
+  let calls = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'mineEntry') { calls++; return Promise.resolve({ queued: false, ankiConnect: false }); }
+    return Promise.resolve(false);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  await button.onclick();
+  assert.equal(button.textContent, '+');
+  assert.notEqual(button.dataset.queued, '1');
+  await button.onclick();
+  assert.equal(calls, 2);
+}
+
+Promise.all([
+  testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
+  testQueueFailureKeepsPlusAndAllowsRetry(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });

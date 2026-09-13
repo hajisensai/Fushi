@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "engine_id": "smash_fzmedia",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": "smash-exact-kag-text-layer",
+    "pair_tolerance_ms": 500,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {
+      "kind": "text",
+      "id": "synthetic-system-line",
+      "timestamp_ms": 900,
+      "thread": "smash-system-ui-thread",
+      "text": "synthetic system ui text"
+    },
+    {
+      "kind": "resource_audio",
+      "id": "synthetic-fcd-ogg-early",
+      "timestamp_ms": 920,
+      "available_at_ms": 920,
+      "format": "ogg_vorbis",
+      "container": "synthetic fcd -> ogg",
+      "category": 5
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-paragraph-line",
+      "timestamp_ms": 1000,
+      "thread": "smash-exact-kag-text-layer",
+      "text": "synthetic merged paragraph text"
+    },
+    {
+      "kind": "loopback",
+      "id": "synthetic-loopback",
+      "timestamp_ms": 1010,
+      "format": "s16le",
+      "sample_rate_hz": 48000,
+      "channels": 2
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-paragraph-line-duplicate",
+      "timestamp_ms": 1400,
+      "thread": "smash-exact-kag-text-layer",
+      "text": "synthetic merged paragraph text"
+    },
+    {
+      "kind": "text",
+      "id": "synthetic-second-line",
+      "timestamp_ms": 3000,
+      "thread": "smash-exact-kag-text-layer",
+      "text": "synthetic second paragraph text"
+    },
+    {
+      "kind": "pcm",
+      "id": "synthetic-second-pcm",
+      "timestamp_ms": 3010,
+      "format": "s16le",
+      "sample_rate_hz": 48000,
+      "channels": 1,
+      "bits_per_sample": 16
+    },
+    {
+      "kind": "resource_audio",
+      "id": "synthetic-fcd-ogg-late",
+      "timestamp_ms": 3020,
+      "available_at_ms": 3400,
+      "format": "ogg_vorbis",
+      "container": "synthetic fcd -> ogg",
+      "category": 5
+    },
+    {
+      "kind": "session_end",
+      "timestamp_ms": 4000
+    }
+  ],
+  "expected": {
+    "cards": [
+      {
+        "text_id": "synthetic-paragraph-line",
+        "audio_backend": "resource_audio",
+        "audio_id": "synthetic-fcd-ogg-early"
+      },
+      {
+        "text_id": "synthetic-second-line",
+        "audio_backend": "resource_audio",
+        "audio_id": "synthetic-fcd-ogg-late"
+      }
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

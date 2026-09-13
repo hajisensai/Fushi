@@ -3,13 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
-import 'package:fushi/src/onnx/model_file_downloader.dart';
-import 'package:fushi/src/onnx/onnx_inference.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -18,6 +13,11 @@ import 'package:path/path.dart' as p;
 class _FakeService extends AsrTranscriptionService {
   _FakeService({required this.root, required this.readyByLanguage})
       : super(
+        audioProfile: AsrAudioProfile.cleanSpeech,
+        backend: const AsrIsolateBackend(
+          buildFactory: _unusedOnnxFactory,
+        ),
+
           openStore: (AsrLanguage l) async => AsrModelStore(
             Directory(p.join(root.path, asrModelPackFor(l).id)),
             asrModelPackFor(l),
@@ -63,6 +63,11 @@ class _FakeService extends AsrTranscriptionService {
     readyByLanguage[language] = true;
   }
 }
+
+/// 这几组用例都走进程内路径（`runInIsolate: false`）或只碰 UI，不会真起后台
+/// isolate。真被调到说明用例走错了路径，直接炸比默默建个真后端好。
+OnnxSessionFactory _unusedOnnxFactory() =>
+    throw UnimplementedError('本用例不该在 isolate 里建 ONNX 后端');
 
 void main() {
   late Directory tmp;
@@ -114,12 +119,12 @@ void main() {
       ),
       findsNothing,
     );
-    // 英语未下载：副标题报需要多少，给下载。
+    // 日语之外的包都未下载：副标题各报需要多少，给下载。
     expect(
       find.textContaining(
         t.asr_models_status_missing(size: FushiByteFormat.bytes(4096)),
       ),
-      findsOneWidget,
+      findsNWidgets(kAsrModelPacks.length - 1),
     );
     expect(
       find.byKey(ValueKey<String>('asr-models-download-${kAsrEnglishPack.id}')),

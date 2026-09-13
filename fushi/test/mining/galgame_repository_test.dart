@@ -6,7 +6,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 /// 游戏库仓储守卫：`galgameEntryFromRow` 的合成（纯函数）+ 仓储对 Drift 表的
 /// 增删改与聚合读取。真相源自 v54 起是表，不再是偏好 JSON。

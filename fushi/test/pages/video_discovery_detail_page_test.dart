@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 
 VideoDiscoveryItem _item(String id, String title) {
@@ -35,7 +35,9 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   testWidgets('详情固定提供资源、字幕、订阅动作并呈现实时状态', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
+    // 高度给足：hero 按 backdrop 16:9 派生（BUG-2431），1280 宽下自身就要 720，
+    // 900 的视口会把演职员条挤出构建范围，本用例断言的是内容齐全而非首屏可见。
+    tester.view.physicalSize = const Size(1280, 1800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);

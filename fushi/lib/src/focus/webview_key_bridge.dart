@@ -29,6 +29,26 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 /// 监听（否则中键/右键会被两条路各触发一次：关词典幂等看不出来，漫画翻页会翻两页）。
 bool get hostOwnsWebViewPointerInput => isWindowsPlatform;
 
+/// 阅读器 Shift-悬停 / 纯悬停查词由**宿主 Flutter** 而非页内 JS `mousemove` 腿驱动
+/// （BUG-2508）。
+///
+/// 只有 **macOS** 为 true。这不是 [hostOwnsWebViewPointerInput] 的反面：那条讲的是
+/// 鼠标**按下**先到谁手里，这条讲的是**悬停**——两者机制不同：
+/// * macOS：WebKit 的 `WKMouseTrackingObserver.mouseMoved:` 先对窗口 contentView 做
+///   AppKit 命中测试，只有命中视图是 WKWebView 后代才把 mouseMoved 交给页面；而
+///   Flutter 嵌入层把平台视图之上的任何 Flutter 绘制写进 `_hitTestIgnoreRegion`
+///   （BUG-1692 同机制）——页面 DOM 收不到 `mousemove`，JS 腿是死的。宿主的
+///   `NSTrackingArea` 不经这道门，[PointerHoverEvent] 照常到达，且嵌入层在每个鼠标
+///   事件上同步修饰键，`HardwareKeyboard.isShiftPressed` 在 hover 时可靠。
+/// * Windows：WebView2 是 Flutter 纹理，hover 由 fork 逐个转发进文档，JS 腿已验证可用。
+/// * Android / iOS / Linux：JS 腿一直在用（外接鼠标 / DeX），宿主腿在 hybrid
+///   composition 下能否收到 hover 未验证——**不借 `!hostOwnsWebViewPointerInput`
+///   反推**把它们的唯一一条腿关掉。
+///
+/// 两条腿互斥（BUG-2031 纪律：一平台一条腿）：本 getter 为 true 时 JS 腿由
+/// `window.__fushiHostHoverLookup` 关掉。
+bool get hostOwnsWebViewHoverLookup => isMacOSPlatform;
+
 /// 生成拦截 [keys] / [mouseButtons] 并回传 Dart 的输入监听脚本。
 ///
 /// - [handlerName]：`callHandler` 的 handler 名，Dart 侧须 `addJavaScriptHandler`
@@ -106,20 +126,24 @@ String webViewKeyBridgeScript({
   );
   final String keyList = keys.map(_jsStringLiteral).join(', ');
   final String buttonList = mouseButtons.join(', ');
-  final String installFlag =
-      _jsStringLiteral('__fushiKeyBridgeInstalled_$handlerName');
+  final String installFlag = _jsStringLiteral(
+    '__fushiKeyBridgeInstalled_$handlerName',
+  );
   final String keysVar = _jsStringLiteral('__fushiKeyBridgeKeys_$handlerName');
-  final String buttonsVar =
-      _jsStringLiteral('__fushiKeyBridgeButtons_$handlerName');
-  final String repeatGuard =
-      forwardRepeats ? '' : '\n    if (e.repeat) return;';
+  final String buttonsVar = _jsStringLiteral(
+    '__fushiKeyBridgeButtons_$handlerName',
+  );
+  final String repeatGuard = forwardRepeats
+      ? ''
+      : '\n    if (e.repeat) return;';
   // 模态让位对键盘与鼠标同时成立：面板开着时点它上面的按钮，侧键也不该把整个查词窗
   // 关掉。故各监听体内统一先判这一条。
   const String modalGuard =
       '\n    if ((window.__fushiPopupModalDepth || 0) > 0) return;';
   final String popupModalGuard = deferToPopupModal ? modalGuard : '';
-  final String propagationGuard =
-      stopPropagation ? '\n    e.stopImmediatePropagation();' : '';
+  final String propagationGuard = stopPropagation
+      ? '\n    e.stopImmediatePropagation();'
+      : '';
   final String mouseListeners = installMouseListeners
       ? '''
   document.addEventListener('mousedown', function(e) {

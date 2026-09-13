@@ -57,9 +57,11 @@ void main() {
     final js = read('assets/popup/popup.js');
     // The lookup-time detection must probe overwriteTargetNoteId and feed a real
     // id into rememberLatestMined so an earlier card can become the editable ✓↩.
-    final int scheduledCheckIdx = js.indexOf(
-      'scheduleEntryStateCheck(\n        mineButton,',
-    );
+    // 用正则而不是带精确缩进的字面量：制卡模块关掉时这段被包进
+    // `if (miningEnabled) { ... }`，缩进从 8 格变 12 格，调用本身没变。
+    final int scheduledCheckIdx =
+        RegExp(r'scheduleEntryStateCheck\(\s*mineButton,').firstMatch(js)?.start ??
+            -1;
     expect(scheduledCheckIdx, greaterThanOrEqualTo(0));
     final int duplicateBridgeIdx = js.indexOf(
       "'duplicateCheck', { expression, reading }",

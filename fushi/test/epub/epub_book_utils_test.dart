@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 import '../pages/reader_fushi_page_source_corpus.dart';
@@ -157,7 +157,7 @@ void main() {
 
       test('the shared predicate has no parallel copy in the parser', () {
         final String parser =
-            File('lib/src/epub/epub_parser.dart').readAsStringSync();
+            File('../packages/fushi_engine/lib/epub/epub_parser.dart').readAsStringSync();
         expect(parser.contains('_isHtmlMediaType'), isFalse,
             reason: '解析器又抄回了一份私有谓词——两份判据必然漂开，'
                 '一边认怪 media-type 另一边不认就是静默空白页');

@@ -1,9 +1,8 @@
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 漫画覆盖层三条注入层不变式（Discord 反馈第二轮）。
 ///
@@ -19,7 +18,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 ///    动不了（贴边）才落入翻页累计；否则放大阅读时滚轮全是误翻页。
 MokuroImage _page(String url) => MokuroImage(
       url: url,
-      size: const Size(1000, 1400),
+      size: const MokuroSize(1000, 1400),
       blocks: const <MokuroBlock>[],
     );
 

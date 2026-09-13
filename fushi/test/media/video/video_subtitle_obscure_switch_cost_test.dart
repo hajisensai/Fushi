@@ -25,13 +25,12 @@ void main() {
     tearDown(() async => db.close());
 
     test('setPrefs 多键只 bump 一次版本（逐个 setPref 是每键一次）', () async {
-      final int before =
-          await db.getPref(FushiDatabase.prefsVersionKey) == null
-              ? 0
-              : int.parse(
-                  (await db.getPref(FushiDatabase.prefsVersionKey))!
-                      .replaceFirst('i:', ''),
-                );
+      final int before = await db.getPref(FushiDatabase.prefsVersionKey) == null
+          ? 0
+          : int.parse(
+              (await db.getPref(FushiDatabase.prefsVersionKey))!
+                  .replaceFirst('i:', ''),
+            );
 
       await db.setPrefs(<String, String>{'k_a': 'b:true', 'k_b': 'b:false'});
 
@@ -145,24 +144,37 @@ void main() {
     test('视频页：先 setState 再 await 落盘（两个遮蔽入口都是）', () {
       final String src =
           readSrc('lib/src/pages/implementations/video_fushi_page.dart');
+      // 压掉全部空白再比对：dart format 按行宽重排（tall style 会把调用链拆成
+      // `appModel\n    .setVideoX(mode);`，参数也可能单独成行），任何只对部分位置
+      // 放宽空白的正则都会被下一次重排打翻——本守卫就这么红过一次。而且下面的
+      // 回潮判据与正向判据必须用同一套归一化，否则重排后正向假红、反向同时退化
+      // 成恒真空壳（真退回旧写法也照样绿）。
+      String flat(String v) =>
+          v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+      final String flatSrc = flat(src);
       for (final String setter in <String>[
         'appModel.setVideoSubtitleObscureMode(mode)',
         'appModel.setVideoSecondarySubtitleObscureMode(mode)',
       ]) {
-        // 换行/缩进不敏感（dart format 会按行宽重排，CRLF 检出也不能让守卫失真）。
-        final RegExp bound = RegExp(
-          'final Future<void> persisted =\\s*${RegExp.escape(setter)};',
+        expect(
+          flatSrc.contains(flat('final Future<void> persisted = $setter;')),
+          isTrue,
+          reason: '$setter 的落盘 Future 必须先接住、setState 之后再 await',
         );
-        expect(bound.hasMatch(src), isTrue,
-            reason: '$setter 的落盘 Future 必须先接住、setState 之后再 await');
       }
       // 回潮判据：`await appModel.setVideoS...ObscureMode(` 直接跟在 await 后即为旧写法。
       expect(
-          src, isNot(contains('await appModel.setVideoSubtitleObscureMode(')));
+        flatSrc,
+        isNot(contains(flat('await appModel.setVideoSubtitleObscureMode('))),
+      );
       expect(
-          src,
-          isNot(contains(
-              'await appModel.setVideoSecondarySubtitleObscureMode(')));
+        flatSrc,
+        isNot(
+          contains(
+            flat('await appModel.setVideoSecondarySubtitleObscureMode('),
+          ),
+        ),
+      );
     });
 
     test('全局设置页路径显式补广播（host 缺席时行为不回归）', () {

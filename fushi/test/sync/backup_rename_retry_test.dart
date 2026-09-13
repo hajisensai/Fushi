@@ -8,7 +8,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 /// just-written tree briefly locks it, so the rename fails with
 /// ERROR_ACCESS_DENIED(5) / SHARING_VIOLATION(32) / DIR_NOT_EMPTY(145) — the
 /// "备份导入失败: Rename failed … 拒绝访问" the user hit.
-/// [BackupService.renameDirectoryWithRetry] must bounded-retry those transient
+/// [renameDirectoryWithRetry] must bounded-retry those transient
 /// codes (rethrow when exhausted), and ONLY on Windows / ONLY for transient
 /// codes (non-Windows or non-transient rethrows immediately).
 void main() {
@@ -18,11 +18,11 @@ void main() {
         OSError('拒绝访问。', code),
       );
 
-  group('BackupService.renameDirectoryWithRetry', () {
+  group('renameDirectoryWithRetry', () {
     test('happy path: 一次成功，不重试', () async {
       int renameCalls = 0;
       int sleepCalls = 0;
-      await BackupService.renameDirectoryWithRetry(
+      await renameDirectoryWithRetry(
         rename: () async => renameCalls++,
         sleep: (_) async => sleepCalls++,
         isWindows: true,
@@ -34,7 +34,7 @@ void main() {
     test('Windows 瞬时 errno 5 两次后成功：重试救回', () async {
       int renameCalls = 0;
       int sleepCalls = 0;
-      await BackupService.renameDirectoryWithRetry(
+      await renameDirectoryWithRetry(
         rename: () async {
           renameCalls++;
           if (renameCalls <= 2) throw winError(5);
@@ -49,7 +49,7 @@ void main() {
     test('Windows SHARING_VIOLATION(32) / DIR_NOT_EMPTY(145) 也当瞬时重试', () async {
       for (final int code in <int>[32, 145]) {
         int renameCalls = 0;
-        await BackupService.renameDirectoryWithRetry(
+        await renameDirectoryWithRetry(
           rename: () async {
             renameCalls++;
             if (renameCalls == 1) throw winError(code);
@@ -65,7 +65,7 @@ void main() {
       int renameCalls = 0;
       int sleepCalls = 0;
       await expectLater(
-        BackupService.renameDirectoryWithRetry(
+        renameDirectoryWithRetry(
           rename: () async {
             renameCalls++;
             throw winError(5);
@@ -82,7 +82,7 @@ void main() {
     test('Windows 非瞬时码（如 2 not found）立即抛', () async {
       int renameCalls = 0;
       await expectLater(
-        BackupService.renameDirectoryWithRetry(
+        renameDirectoryWithRetry(
           rename: () async {
             renameCalls++;
             throw winError(2);
@@ -98,7 +98,7 @@ void main() {
     test('用尽 maxAttempts 后抛出最后一个异常', () async {
       int renameCalls = 0;
       await expectLater(
-        BackupService.renameDirectoryWithRetry(
+        renameDirectoryWithRetry(
           rename: () async {
             renameCalls++;
             throw winError(5);

@@ -1,4 +1,6 @@
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 class LyricsModeHtml {
@@ -7,6 +9,7 @@ class LyricsModeHtml {
   static String generate({
     required List<AudioCue> cues,
     required int currentIndex,
+    EpubBook? book,
     int loadGeneration = 0,
     required String backgroundColor,
     required String textColor,
@@ -22,18 +25,26 @@ class LyricsModeHtml {
     String fontFaceCss = '',
   }) {
     final StringBuffer cueHtml = StringBuffer();
+    final LyricsCueTextResolver? textResolver = book == null
+        ? null
+        : LyricsCueTextResolver(book);
     for (int i = 0; i < cues.length; i++) {
-      final String escaped = _escapeHtml(cues[i].text);
+      final LyricsCueText cueText =
+          textResolver?.resolveForCue(cues[i]) ??
+          LyricsCueText.plain(cues[i].text);
+      final String escaped = _cueInnerHtml(cueText);
+      // 无读音的纯文本：收藏标记按它比对（textContent 会把 <rt> 读音混进来）。
+      final String plainText = _escapeAttr(cueText.text);
       final String fragId = _escapeAttr(cues[i].textFragmentId);
       final int dist = (i - currentIndex).abs();
       final String cls = dist == 0
           ? 'cue current'
           : dist <= 3
-              ? 'cue near-$dist'
-              : 'cue';
+          ? 'cue near-$dist'
+          : 'cue';
       cueHtml.write(
         '<div class="$cls" data-cue-index="$i" '
-        'data-text-fragment-id="$fragId">'
+        'data-text-fragment-id="$fragId" data-text="$plainText">'
         '$escaped</div>\n',
       );
     }
@@ -54,14 +65,16 @@ class LyricsModeHtml {
     // 由 writing-mode 决定读序，无需翻 padding 值。
     final double padTop = vertical ? marginTop : 45 + marginTop;
     final double padBottom = vertical ? marginBottom : 45 + marginBottom;
-    final double padLeft =
-        vertical ? 45 + marginLeft : (marginLeft > 0 ? marginLeft : 2.5);
-    final double padRight =
-        vertical ? 45 + marginRight : (marginRight > 0 ? marginRight : 2.5);
+    final double padLeft = vertical
+        ? 45 + marginLeft
+        : (marginLeft > 0 ? marginLeft : 2.5);
+    final double padRight = vertical
+        ? 45 + marginRight
+        : (marginRight > 0 ? marginRight : 2.5);
     final String containerPaddingCss = vertical
         ? 'padding: ${padTop}vh ${padRight}vw ${padBottom}vh ${padLeft}vw;'
         : 'padding: calc(45vh + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
-            'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
+              'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
     // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
     final String verticalJs = vertical ? 'true' : 'false';
     // TODO-908 / BUG-852：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS
@@ -120,6 +133,17 @@ body { font-family: $bodyFontFamily; }
   $containerAxisCss
   $containerPaddingCss
   gap: 0;
+}
+/* 振假名：只有正文自带 ruby 的 cue 才有。选区脚本自己跳过 rt/rp（查词拿基底），
+   这里不动 user-select——页面级守卫要求原生选区始终可用。 */
+.cue ruby {
+  /* 读音比基底宽时（艦長/かんちょう）默认 space-around 会把基底两个字撑散成
+     「艦 長」；居中让基底保持紧凑、读音悬在上方。 */
+  ruby-align: center;
+}
+.cue rt {
+  font-size: 0.5em;
+  line-height: 1;
 }
 .cue {
   position: relative;
@@ -479,6 +503,9 @@ _lc.addEventListener('pointerup', function(e) {
 // 短路处理，不闪不叠层。__hoverAutoLookup 初值由 Dart 在歌词页就绪时下发。
 var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
 document.addEventListener('mousemove', function(e) {
+  // BUG-2508：宿主（Flutter）侧接管悬停查词的平台上本腿让路（开关由 Dart 与
+  // __hoverAutoLookup 一起在歌词页就绪时下发）。
+  if (window.__fushiHostHoverLookup) return;
   if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
   var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
   if (dx * dx + dy * dy < 64) return;
@@ -527,7 +554,8 @@ window.__lyricsMarkFavorites = function(texts) {
   var set = new Set(texts || []);
   var cues = document.querySelectorAll('.cue');
   for (var i = 0; i < cues.length; i++) {
-    var t = cues[i].textContent.trim();
+    // data-text 是无读音的纯文本；textContent 会把 <rt> 振假名拼进来，永不相等。
+    var t = (cues[i].dataset.text || cues[i].textContent).trim();
     if (set.has(t)) cues[i].classList.add('favorited');
     else cues[i].classList.remove('favorited');
   }
@@ -610,6 +638,26 @@ if ($currentIndex >= 0 && $currentIndex < _cues.length) {
 </body>
 </html>
 ''';
+  }
+
+  /// cue 正文 → HTML：正文里的 ruby 画回 `<ruby>基底<rt>读音</rt></ruby>`
+  /// （振假名）。区间已相对 [LyricsCueText.text]、互不重叠、按序。
+  static String _cueInnerHtml(LyricsCueText cue) {
+    if (cue.rubies.isEmpty) return _escapeHtml(cue.text);
+    final StringBuffer sb = StringBuffer();
+    int cursor = 0;
+    for (final EpubRubyAnnotation r in cue.rubies) {
+      sb
+        ..write(_escapeHtml(cue.text.substring(cursor, r.start)))
+        ..write('<ruby>')
+        ..write(_escapeHtml(cue.text.substring(r.start, r.end)))
+        ..write('<rt>')
+        ..write(_escapeHtml(r.reading))
+        ..write('</rt></ruby>');
+      cursor = r.end;
+    }
+    sb.write(_escapeHtml(cue.text.substring(cursor)));
+    return sb.toString();
   }
 
   static String _escapeHtml(String text) {

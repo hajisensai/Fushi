@@ -327,7 +327,7 @@ void main() {
           ]));
       await cur0.close();
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: curDbDir,
         zipPath: zip,
         importSettings: true,

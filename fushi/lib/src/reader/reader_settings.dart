@@ -9,6 +9,7 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
@@ -185,6 +186,14 @@ class ReaderSettings {
   double get fontSize => _get<double>('font_size', 22);
   Future<void> setFontSize(double v) => _set<double>('font_size', v);
 
+  /// 正文字重（CSS `font-weight` 数值轴 100~900，步进 100）。默认 400 = CSS
+  /// `normal`，此时 [ReaderContentStyles] **不发** `font-weight` 声明——书自带
+  /// 样式表按原样生效，零行为变化（与 `text_indentation`/`paragraph_spacing`
+  /// 的「默认值不注入」同一约定）。存 int 而非 double：字重是整数轴，存 double
+  /// 会让 `toString()` 落 `400.0` 并直接生成非法 CSS。
+  int get fontWeight => _get<int>('font_weight', 400);
+  Future<void> setFontWeight(int v) => _set<int>('font_weight', v);
+
   double get lyricsFontSize => _get<double>('lyrics_font_size', 24);
   Future<void> setLyricsFontSize(double v) =>
       _set<double>('lyrics_font_size', v);
@@ -249,8 +258,8 @@ class ReaderSettings {
 
   // ── VN (Visual-Novel) settings (TODO-909) ──────────────────────────────
   // Defaults copied from hoshi a ReaderSettings.kt (🔒③). per-Profile global,
-  // same `src:reader_fushi:` Drift mechanism as view_mode. M0 wires these into
-  // the VN shell; the dedicated settings UI for them lands in M1.
+  // same `src:reader_fushi:` Drift mechanism as view_mode. All six values are
+  // exposed by the reading settings schema and consumed by the VN shell.
 
   /// Typewriter reveal speed in chars/sec (0 = instant). hoshi default 45.
   int get visualNovelRevealSpeed =>
@@ -282,13 +291,12 @@ class ReaderSettings {
       _set<bool>('vn_preserve_dialogue', v);
 
   /// Advance to the next screen on a blank tap. hoshi default false
-  /// (commit `42c0bab`). M0 force-enables the tap binding in the host for
-  /// device verification; this getter is the M1 default it falls back to.
+  /// (commit `42c0bab`).
   bool get visualNovelClickAdvance => _get<bool>('vn_click_advance', false);
   Future<void> setVisualNovelClickAdvance(bool v) =>
       _set<bool>('vn_click_advance', v);
 
-  /// Merge Sasayaki cues that straddle a screen boundary (M1 feature).
+  /// Merge Sasayaki cues that straddle a screen boundary.
   bool get visualNovelMergeCrossScreenSentenceAudioCues =>
       _get<bool>('vn_merge_cross_screen_cues', false);
   Future<void> setVisualNovelMergeCrossScreenSentenceAudioCues(bool v) =>
@@ -297,13 +305,24 @@ class ReaderSettings {
   String get theme => _get<String>('theme', 'light-theme');
   Future<void> setTheme(String v) => _set<String>('theme', v);
 
+  /// 振假名显示形态，四态（前三态对齐 Hoshi Reader iOS `FuriganaMode`，
+  /// 2026-09-11 用户拍板；`dimmed` 是 2026-09-12 用户追加的第四态）：
+  ///  * `off`    —— 原样显示（历史值 `show`）；
+  ///  * `toggle` —— 默认隐藏（`visibility:hidden`，注音轨占位保留、行高不抖），
+  ///                点一个 `<ruby>` 揭示一个，且那一下不查词（历史值 `partial`；
+  ///                历史 `toggle` 是「双击整页切换」，并入此态，整页揭示改由
+  ///                `readerToggleFurigana` 快捷键承担）；
+  ///  * `hidden` —— `display:none`（历史值 `hide`）；
+  ///  * `dimmed` —— 照常显示但淡显（`opacity`，不改颜色，深浅主题都成立），
+  ///                `readerToggleFurigana` 快捷键在此态是「临时恢复全亮」。
+  /// 持久化键 `furigana_mode` 不变，旧值经 [normalizeFuriganaMode] 归一化。
   String get furiganaMode {
     final dynamic raw = _cache['hide_furigana'];
     final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
       final String oldStyle =
           _get<String>('furigana_style', 'partial').toLowerCase();
-      final String mode = legacy ? 'hide' : 'show';
+      final String mode = legacy ? 'hidden' : 'off';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
             ? oldStyle
@@ -316,7 +335,7 @@ class ReaderSettings {
       return merged;
     }
     return normalizeFuriganaMode(
-      _get<String>('furigana_mode', 'show'),
+      _get<String>('furigana_mode', 'off'),
     );
   }
 
@@ -433,6 +452,12 @@ class ReaderSettings {
   Future<void> setDismissSwipeSensitivity(double v) =>
       _set<double>('dismiss_swipe_sensitivity', v);
 
+  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
+  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。
+  bool get popupDismissAnimation => _get<bool>('popup_dismiss_animation', true);
+  Future<void> setPopupDismissAnimation(bool v) =>
+      _set<bool>('popup_dismiss_animation', v);
+
   /// TODO-407②：查词弹窗是否允许"水平滑动关闭"（[SwipeDismissWrapper]）。桌面端
   /// （Windows/Linux）鼠标左键框选正文与滑动手势的位移序列同形，默认关闭滑动关闭、
   /// 用顶栏 X 兜底；触摸为主的平台（macOS/iOS/Android）默认开启。未持久化覆盖时
@@ -518,6 +543,14 @@ class ReaderSettings {
   bool get showTopProgressBar => _get<bool>('show_top_progress_bar', true);
   Future<void> toggleShowTopProgressBar() =>
       _set<bool>('show_top_progress_bar', !showTopProgressBar);
+
+  /// 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）是否显示
+  /// （per-reader，每本书各自记忆）。默认 true = 现状。与 [showTopProgressBar]
+  /// 正交；两个都关时整条状态行不画也不占预留（见 `readerStatusFooterEnabled`）。
+  /// 只关显示，不停表——计时账仍在 `StudyClock` 照记。
+  bool get showReadingTimer => _get<bool>('show_reading_timer', true);
+  Future<void> toggleShowReadingTimer() =>
+      _set<bool>('show_reading_timer', !showReadingTimer);
 
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
@@ -837,17 +870,23 @@ class ReaderSettings {
   ({String fontFamily, String fontFaces}) buildCustomFontCss() =>
       customFontCssForEntries(customFonts);
 
+  /// 四态 `off` / `toggle` / `hidden` / `dimmed`（见 [furiganaMode]）。历史值
+  /// 映射：`show`→`off`、`partial`→`toggle`、`toggle`→`toggle`、`hide`→`hidden`；
+  /// 其余一律 `off`。
   static String normalizeFuriganaMode(String mode) =>
-      switch (mode.toLowerCase()) {
-        'show' || 'hide' || 'partial' || 'toggle' => mode.toLowerCase(),
-        _ => 'show',
+      switch (mode.toLowerCase().trim()) {
+        'off' || 'show' => 'off',
+        'toggle' || 'partial' => 'toggle',
+        'hidden' || 'hide' => 'hidden',
+        'dimmed' => 'dimmed',
+        _ => 'off',
       };
 
   static String furiganaModeToStyle(String mode) =>
       switch (normalizeFuriganaMode(mode)) {
-        'hide' => 'Hide',
-        'partial' => 'Partial',
+        'hidden' => 'Hide',
         'toggle' => 'Toggle',
+        'dimmed' => 'Dimmed',
         _ => 'Show',
       };
 
@@ -950,7 +989,8 @@ class ReaderSettings {
 }
 
 class ReaderCustomFontCss {
-  static const String kReaderResourceHost = 'fushi.local';
+  /// 值住在引擎（`EpubBook.resolveInternalLink` 也按它识别内链），这里只是别名。
+  static const String kReaderResourceHost = engine_host.kReaderResourceHost;
   static const String kReaderResourceScheme = 'fushi-reader';
 
   static ({String fontFamily, String fontFaces}) build(

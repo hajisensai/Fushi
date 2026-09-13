@@ -4,19 +4,20 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/media_extensions.dart';
-import 'package:fushi/src/media/torrent/nyaa_resource_provider.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -27,6 +28,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
+import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 
 // 集数解析下沉后的源兼容出口（订阅聚合与既有测试从本文件 import 它）。
 export 'package:fushi/src/media/video/download/video_resource_version_groups.dart'
@@ -110,6 +112,30 @@ class VideoDiscoverySubscriptionSelection {
   final StrictVideoSubscriptionFilter filter;
   final int? startAfterEpisode;
 }
+
+/// 订阅交给已配对 host 跑（host 自己搜、自己下到自己的库）。没有本地落地源
+/// （`MediaSourceRow`）这一维——落点是 host 的下载目录。
+class VideoDiscoveryRemoteSubscriptionSelection {
+  const VideoDiscoveryRemoteSubscriptionSelection({
+    required this.target,
+    required this.media,
+    required this.resource,
+    required this.filter,
+    required this.subtitlePolicy,
+    this.startAfterEpisode,
+  });
+
+  final HostSubscriptionTarget target;
+  final VideoMediaReference media;
+  final VideoResourceCandidate resource;
+  final StrictVideoSubscriptionFilter filter;
+  final VideoDownloadSubtitlePolicy subtitlePolicy;
+  final int? startAfterEpisode;
+}
+
+typedef VideoDiscoveryRemoteSubscriptionSubmit = Future<void> Function(
+  VideoDiscoveryRemoteSubscriptionSelection selection,
+);
 
 enum SubtitleInstallTarget { activeTask, existingVideo, directory }
 
@@ -574,6 +600,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
     required this.onSubmit,
     this.defaultSourceId,
     this.onConfigureBackend,
+    this.remoteTargets = const <HostSubscriptionTarget>[],
+    this.onRemoteSubmit,
     super.key,
   });
 
@@ -583,6 +611,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
   final int? defaultSourceId;
   final VideoDiscoverySubscriptionSubmit onSubmit;
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+  final List<HostSubscriptionTarget> remoteTargets;
+  final VideoDiscoveryRemoteSubscriptionSubmit? onRemoteSubmit;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -594,6 +624,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
             sources: sources,
             defaultSourceId: defaultSourceId,
             onSubscriptionSubmit: onSubmit,
+            remoteTargets: remoteTargets,
+            onRemoteSubscriptionSubmit: onRemoteSubmit,
             onConfigureBackend: onConfigureBackend,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
@@ -611,6 +643,8 @@ class VideoResourceSearchSurface extends StatefulWidget {
     this.defaultSourceId,
     this.onSubmit,
     this.onSubscriptionSubmit,
+    this.remoteTargets = const <HostSubscriptionTarget>[],
+    this.onRemoteSubscriptionSubmit,
     this.onConfigureBackend,
     this.onClose,
     this.pageMode = false,
@@ -623,6 +657,11 @@ class VideoResourceSearchSurface extends StatefulWidget {
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit? onSubmit;
   final VideoDiscoverySubscriptionSubmit? onSubscriptionSubmit;
+
+  /// 宣告支持内容订阅的已配对 host（只在订阅模式有意义）。非空时多出「运行位置」
+  /// 下拉：本机 / 某台 host；没有本地落地源时默认落到第一台 host。
+  final List<HostSubscriptionTarget> remoteTargets;
+  final VideoDiscoveryRemoteSubscriptionSubmit? onRemoteSubscriptionSubmit;
 
   /// 见 [VideoDownloadBackendSetupPrompt]：提交失败在「后端没配好 / 后端运行时缺失」
   /// 时的可执行出口。null = 宿主没接线，失败态只报事实不给按钮。
@@ -642,24 +681,60 @@ class _VideoResourceSearchSurfaceState
   final TextEditingController _queryController = TextEditingController();
   final TextEditingController _manualIdController = TextEditingController();
   final TextEditingController _manualYearController = TextEditingController();
-  final TextEditingController _startAfterController = TextEditingController();
+
+  /// 订阅起始集号的默认值。新版（`organizationPolicy == 'library'`）订阅把
+  /// `startAfterEpisode` 按「从该集开始」解释（见
+  /// `video_download_subscription_service.dart` 的 `inclusiveStart`），所以默认
+  /// 第 1 集与「留空 = 不限」落到同一个窗口；显式填出来用户才看得见起点。
+  static const String _defaultStartEpisode = '1';
+
+  final TextEditingController _startAfterController =
+      TextEditingController(text: _defaultStartEpisode);
   VideoDiscoveryCategory _manualCategory = VideoDiscoveryCategory.anime;
   VideoMetadataMediaKind _manualMediaKind = VideoMetadataMediaKind.tv;
   String _manualProvider = 'anidb';
   ProviderBatchResult<VideoResourceCandidate>? _result;
-  VideoResourceCandidate? _selected;
+  /// 已选中的候选，按点选顺序（入队顺序就按这个走，与用户看到的顺序一致）。
+  ///
+  /// 只有**下载模式**才可能多于一条：订阅是「一条规则跟一个 release 模板」，
+  /// 多选在那里没有意义，所以订阅模式下选新的直接替换旧的（见 [_select]）。
+  /// 用一个集合而不是「单值 + 集合」两份状态，是为了不再有两处要同步。
+  final List<VideoResourceCandidate> _selectedCandidates =
+      <VideoResourceCandidate>[];
+
+  VideoResourceCandidate? get _selected =>
+      _selectedCandidates.isEmpty ? null : _selectedCandidates.last;
+
+  bool _isSelected(VideoResourceCandidate candidate) =>
+      _selectedCandidates.any(
+        (VideoResourceCandidate c) => c.identityKey == candidate.identityKey,
+      );
+
+  Set<String> get _selectedIdentityKeys => <String>{
+        for (final VideoResourceCandidate c in _selectedCandidates)
+          c.identityKey,
+      };
   int? _sourceId;
   VideoDownloadSubtitlePolicy _subtitlePolicy =
       VideoDownloadSubtitlePolicy.bestEffort;
   bool _loading = false;
   bool _submitting = false;
-  bool _strictConfirmed = false;
+
+  /// 「加入订阅」开关（追踪当前 release 的字幕组 + 分辨率）。默认打开：进这个
+  /// 面板本来就是为了订阅，再要求用户手工确认一次只是多一步（提交按钮此前一直
+  /// 因为它是 false 而禁用）。用户显式关掉后不再被换候选/重新搜索拉回来。
+  bool _strictConfirmed = true;
   int _generation = 0;
+
+  /// 订阅运行位置：null = 本机。
+  HostSubscriptionTarget? _remoteTarget;
+  bool get _remote => _remoteTarget != null;
 
   @override
   void initState() {
     super.initState();
     final VideoMediaReference? reference = widget.initialItem?.reference;
+    if (reference != null) _manualCategory = reference.discoveryCategory;
     final List<String> preferredQueries = reference == null
         ? const <String>[]
         : preferredNyaaSearchQueries(
@@ -673,6 +748,11 @@ class _VideoResourceSearchSurfaceState
     )
         ? widget.defaultSourceId
         : widget.sources.firstOrNull?.id;
+    if (widget.subscription &&
+        widget.sources.isEmpty &&
+        widget.remoteTargets.isNotEmpty) {
+      _remoteTarget = widget.remoteTargets.first;
+    }
     if (widget.initialItem != null) unawaited(_search());
   }
 
@@ -687,7 +767,9 @@ class _VideoResourceSearchSurfaceState
 
   VideoMediaReference? get _media {
     final VideoDiscoveryItem? item = widget.initialItem;
-    if (item != null) return item.reference;
+    if (item != null) {
+      return item.reference.withDiscoveryCategory(_manualCategory);
+    }
     return buildManualVideoMediaReference(
       providerId: _manualProvider,
       mediaId: _manualIdController.text,
@@ -708,11 +790,52 @@ class _VideoResourceSearchSurfaceState
 
   void _invalidateManualSearch() {
     setState(() {
+      ++_generation;
+      _loading = false;
       _result = null;
-      _selected = null;
-      _strictConfirmed = false;
+      _selectedCandidates.clear();
     });
   }
+
+  void _changeCategory(VideoDiscoveryCategory? value) {
+    if (value == null || value == _manualCategory || _submitting) return;
+    setState(() {
+      _manualCategory = value;
+      if (widget.initialItem == null) {
+        if (value == VideoDiscoveryCategory.movie) {
+          _manualMediaKind = VideoMetadataMediaKind.movie;
+        } else if (value == VideoDiscoveryCategory.tv) {
+          _manualMediaKind = VideoMetadataMediaKind.tv;
+        }
+        _manualProvider =
+            value == VideoDiscoveryCategory.anime ? 'anidb' : 'tmdb';
+      }
+    });
+    _invalidateManualSearch();
+    if (widget.initialItem != null) unawaited(_search());
+  }
+
+  Widget _buildCategorySelector() =>
+      DropdownButtonFormField<VideoDiscoveryCategory>(
+        key: const ValueKey<String>('video-resource-category'),
+        initialValue: _manualCategory,
+        decoration: InputDecoration(labelText: t.media_tracking_kind),
+        items: <DropdownMenuItem<VideoDiscoveryCategory>>[
+          DropdownMenuItem<VideoDiscoveryCategory>(
+            value: VideoDiscoveryCategory.anime,
+            child: Text(t.media_tracking_anime),
+          ),
+          DropdownMenuItem<VideoDiscoveryCategory>(
+            value: VideoDiscoveryCategory.movie,
+            child: Text(t.collection_relation_movie),
+          ),
+          DropdownMenuItem<VideoDiscoveryCategory>(
+            value: VideoDiscoveryCategory.tv,
+            child: Text(t.series),
+          ),
+        ],
+        onChanged: _submitting ? null : _changeCategory,
+      );
 
   Future<void> _search() async {
     final VideoMediaReference? media = _media;
@@ -720,8 +843,7 @@ class _VideoResourceSearchSurfaceState
     final int generation = ++_generation;
     setState(() {
       _loading = true;
-      _selected = null;
-      _strictConfirmed = false;
+      _selectedCandidates.clear();
     });
     final ProviderBatchResult<VideoResourceCandidate> result =
         await widget.registry.search(
@@ -739,10 +861,24 @@ class _VideoResourceSearchSurfaceState
 
   void _select(VideoResourceCandidate candidate) {
     setState(() {
-      _selected = candidate;
-      _strictConfirmed = false;
-      final int? episode = episodeNumberFromReleaseTitle(candidate.title);
-      _startAfterController.text = episode?.toString() ?? '';
+      if (widget.subscription) {
+        // 订阅只跟一条模板：选新的直接替换，不累积。
+        _selectedCandidates
+          ..clear()
+          ..add(candidate);
+      } else if (!_selectedCandidates.remove(
+        _selectedCandidates.firstWhereOrNull(
+          (VideoResourceCandidate c) => c.identityKey == candidate.identityKey,
+        ),
+      )) {
+        _selectedCandidates.add(candidate);
+      }
+      // 起始集号只对订阅有意义，且要跟着「当前这一条」走；下载模式多选时用最后
+      // 点的那条填，反正提交时不读它。
+      final VideoResourceCandidate? current = _selected;
+      final int? episode =
+          current == null ? null : episodeNumberFromReleaseTitle(current.title);
+      _startAfterController.text = episode?.toString() ?? _defaultStartEpisode;
     });
   }
 
@@ -754,22 +890,29 @@ class _VideoResourceSearchSurfaceState
   }
 
   Future<void> _submit() async {
+    if (_remote) return _submitRemote();
     final VideoMediaReference? media = _media;
-    final VideoResourceCandidate? resource = _selected;
     final MediaSourceRow? source = _source;
-    if (media == null || resource == null || source == null || _submitting) {
+    // 目标集在任何 await 之前定死：提交期间搜索结果会被刷新重建，跨 await 重读
+    // 会让「按钮上写的 N」与实际入队条数对不上。
+    final List<VideoResourceCandidate> resources =
+        List<VideoResourceCandidate>.of(_selectedCandidates);
+    if (media == null || resources.isEmpty || source == null || _submitting) {
       return;
     }
-    final VideoDiscoveryDownloadSelection download =
+    VideoDiscoveryDownloadSelection downloadFor(
+      VideoResourceCandidate resource,
+    ) =>
         VideoDiscoveryDownloadSelection(
-      media: media,
-      resource: resource,
-      source: source,
-      subtitlePolicy: _subtitlePolicy,
-    );
+          media: media,
+          resource: resource,
+          source: source,
+          subtitlePolicy: _subtitlePolicy,
+        );
     setState(() => _submitting = true);
     try {
       if (widget.subscription) {
+        final VideoResourceCandidate resource = resources.first;
         final StrictVideoSubscriptionFilter? filter =
             deriveStrictVideoSubscriptionFilter(resource);
         if (filter == null || !_strictConfirmed) return;
@@ -778,13 +921,31 @@ class _VideoResourceSearchSurfaceState
             : int.tryParse(_startAfterController.text.trim());
         await widget.onSubscriptionSubmit!(
           VideoDiscoverySubscriptionSelection(
-            download: download,
+            download: downloadFor(resource),
             filter: filter,
             startAfterEpisode: startAfter,
           ),
         );
       } else {
-        await widget.onSubmit!(download);
+        // 串行：入队最终落到同一张 video_download_jobs 表，并发只会把一批提交
+        // 变成一批竞态。首条失败直接抛给下面的 catch（后端不可用 / 没配好这类
+        // 前置问题对整批都成立，逐条重复报 N 次没有意义）；后续条目的失败聚合成
+        // 一句，不让一条挂掉把其余的也废掉。
+        int failed = 0;
+        for (int i = 0; i < resources.length; i++) {
+          try {
+            await widget.onSubmit!(downloadFor(resources[i]));
+          } on Object catch (error, stackTrace) {
+            if (i == 0) rethrow;
+            failed++;
+            debugPrint(
+              '[fushi-discovery] batch enqueue failed: $error\n$stackTrace',
+            );
+          }
+        }
+        if (failed > 0 && mounted) {
+          _showSubmitFailure(t.download_batch_failed(n: failed), null);
+        }
       }
       if (mounted) widget.onClose?.call();
     } on VideoDownloadBackendUnavailable catch (error) {
@@ -803,6 +964,61 @@ class _VideoResourceSearchSurfaceState
       // 设置页可跳；唯一确定有意义的动作是「按用户修好外部条件后再来一次」。
       _showSubmitFailure(
         error.message,
+        SnackBarAction(label: t.retry, onPressed: () => unawaited(_submit())),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// 订阅交给 host：不经本地后端，失败原因来自 host（provider 不在 / 没配后端 /
+  /// 网络），按 host 的结构化 reason 给文案。
+  Future<void> _submitRemote() async {
+    final HostSubscriptionTarget? target = _remoteTarget;
+    final VideoMediaReference? media = _media;
+    final VideoResourceCandidate? resource = _selected;
+    final VideoDiscoveryRemoteSubscriptionSubmit? submit =
+        widget.onRemoteSubscriptionSubmit;
+    if (target == null ||
+        media == null ||
+        resource == null ||
+        submit == null ||
+        _submitting) {
+      return;
+    }
+    final StrictVideoSubscriptionFilter? filter =
+        deriveStrictVideoSubscriptionFilter(resource);
+    if (filter == null || !_strictConfirmed) return;
+    final String providerId = persistedVideoResourceProviderId(resource);
+    if (!target.supportsResourceProvider(providerId)) {
+      _showSubmitFailure(
+        t.subscription_remote_provider_unavailable(provider: providerId),
+        null,
+      );
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      await submit(VideoDiscoveryRemoteSubscriptionSelection(
+        target: target,
+        media: media,
+        resource: resource,
+        filter: filter,
+        subtitlePolicy: _subtitlePolicy,
+        startAfterEpisode: media.mediaKind == VideoMetadataMediaKind.movie
+            ? null
+            : int.tryParse(_startAfterController.text.trim()),
+      ));
+      if (mounted) widget.onClose?.call();
+    } on HostSubscriptionException catch (error) {
+      final String message = switch (error.reason) {
+        'provider_unavailable' =>
+          t.subscription_remote_provider_unavailable(provider: providerId),
+        'unsupported' => t.subscription_remote_unsupported,
+        _ => error.detail ?? error.code,
+      };
+      _showSubmitFailure(
+        message,
         SnackBarAction(label: t.retry, onPressed: () => unawaited(_submit())),
       );
     } finally {
@@ -870,6 +1086,10 @@ class _VideoResourceSearchSurfaceState
             ),
             SizedBox(height: tokens.spacing.card),
           ],
+          if (!manual && !widget.pageMode) ...<Widget>[
+            _buildCategorySelector(),
+            SizedBox(height: tokens.spacing.gap),
+          ],
           if (!manual && widget.pageMode) ...<Widget>[
             Row(
               children: <Widget>[
@@ -893,16 +1113,15 @@ class _VideoResourceSearchSurfaceState
                 ),
               ],
             ),
-            if (widget.initialItem!.reference.discoveryCategory ==
-                VideoDiscoveryCategory.anime) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            _buildCategorySelector(),
+            if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               Wrap(
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
                 children: preferredNyaaSearchQueries(
-                  VideoResourceSearchRequest(
-                    media: widget.initialItem!.reference,
-                  ),
+                  VideoResourceSearchRequest(media: _media),
                 )
                     .map(
                       (String query) => ActionChip(
@@ -934,41 +1153,7 @@ class _VideoResourceSearchSurfaceState
                   onChanged: (_) => _invalidateManualSearch(),
                   onSubmitted: (_) => unawaited(_search()),
                 );
-                final Widget category =
-                    DropdownButtonFormField<VideoDiscoveryCategory>(
-                  key: const ValueKey<String>('video-resource-category'),
-                  initialValue: _manualCategory,
-                  items: <DropdownMenuItem<VideoDiscoveryCategory>>[
-                    DropdownMenuItem<VideoDiscoveryCategory>(
-                      value: VideoDiscoveryCategory.anime,
-                      child: Text(t.media_tracking_anime),
-                    ),
-                    DropdownMenuItem<VideoDiscoveryCategory>(
-                      value: VideoDiscoveryCategory.movie,
-                      child: Text(t.collection_relation_movie),
-                    ),
-                    DropdownMenuItem<VideoDiscoveryCategory>(
-                      value: VideoDiscoveryCategory.tv,
-                      child: Text(t.series),
-                    ),
-                  ],
-                  onChanged: (VideoDiscoveryCategory? value) {
-                    if (value == null) return;
-                    setState(() {
-                      _manualCategory = value;
-                      if (value == VideoDiscoveryCategory.movie) {
-                        _manualMediaKind = VideoMetadataMediaKind.movie;
-                      } else if (value == VideoDiscoveryCategory.tv) {
-                        _manualMediaKind = VideoMetadataMediaKind.tv;
-                      }
-                      _manualProvider = value == VideoDiscoveryCategory.anime
-                          ? 'anidb'
-                          : 'tmdb';
-                      _result = null;
-                      _selected = null;
-                    });
-                  },
-                );
+                final Widget category = _buildCategorySelector();
                 if (constraints.maxWidth < 520) {
                   return Column(
                     children: <Widget>[
@@ -1028,8 +1213,7 @@ class _VideoResourceSearchSurfaceState
                   setState(() {
                     _manualMediaKind = value;
                     _result = null;
-                    _selected = null;
-                    _strictConfirmed = false;
+                    _selectedCandidates.clear();
                   });
                 },
               ),
@@ -1062,7 +1246,7 @@ class _VideoResourceSearchSurfaceState
                     setState(() {
                       _manualProvider = value;
                       _result = null;
-                      _selected = null;
+                      _selectedCandidates.clear();
                     });
                   },
                 );
@@ -1155,7 +1339,13 @@ class _VideoResourceSearchSurfaceState
                 label: Text(
                   widget.subscription
                       ? t.video_discovery_subscribe
-                      : t.dialog_done,
+                      : _selectedCandidates.length > 1
+                          // 选了多条时按钮上直接写清楚这一下会入队几条，
+                          // 免得用户以为只下最后点的那一条。
+                          ? t.batch_selected_count(
+                              n: _selectedCandidates.length,
+                            )
+                          : t.dialog_done,
                 ),
               ),
             ],
@@ -1168,8 +1358,9 @@ class _VideoResourceSearchSurfaceState
   bool _canSubmit(StrictVideoSubscriptionFilter? filter) =>
       !_loading &&
       !_submitting &&
-      _selected != null &&
-      _source != null &&
+      _selectedCandidates.isNotEmpty &&
+      // 远端下载目标不需要本地 source：任务整条交给对端执行。
+      (_source != null || _remote) &&
       (!widget.subscription || (filter != null && _strictConfirmed));
 
   Widget _buildResults() {
@@ -1226,7 +1417,8 @@ class _VideoResourceSearchSurfaceState
             Expanded(
               child: VideoResourceVersionGroupList(
                 groups: buildVideoResourceVersionGroups(result.items),
-                selectedIdentityKey: _selected?.identityKey,
+                selectedIdentityKeys: _selectedIdentityKeys,
+                multiSelect: !widget.subscription,
                 onSelect: _select,
                 compact: !widget.pageMode,
               ),
@@ -1294,10 +1486,17 @@ class _VideoResourceSearchSurfaceState
           density: widget.pageMode
               ? FushiListDensity.standard
               : FushiListDensity.compact,
-          selected: identical(_selected, candidate),
-          leading: Icon(candidate.trusted
-              ? Icons.verified_rounded
-              : Icons.cloud_download_outlined),
+          selected: _isSelected(candidate),
+          // 下载模式给勾选框（可多选整季分集）；订阅模式仍是单选，摆勾选框会
+          // 让人以为能订阅一批。
+          leading: widget.subscription
+              ? Icon(candidate.trusted
+                  ? Icons.verified_rounded
+                  : Icons.cloud_download_outlined)
+              : Checkbox(
+                  value: _isSelected(candidate),
+                  onChanged: (_) => _select(candidate),
+                ),
           onTap: () => _select(candidate),
         );
       },
@@ -1306,15 +1505,50 @@ class _VideoResourceSearchSurfaceState
 
   Widget _buildOptions(StrictVideoSubscriptionFilter? filter) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool showRunLocation =
+        widget.subscription && widget.remoteTargets.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (showRunLocation) ...<Widget>[
+          DropdownButtonFormField<HostSubscriptionTarget?>(
+            key: const ValueKey<String>('video-subscription-run-location'),
+            initialValue: _remoteTarget,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: t.subscription_run_location,
+            ),
+            items: <DropdownMenuItem<HostSubscriptionTarget?>>[
+              if (widget.sources.isNotEmpty)
+                DropdownMenuItem<HostSubscriptionTarget?>(
+                  value: null,
+                  child: Text(t.subscription_run_local),
+                ),
+              for (final HostSubscriptionTarget target in widget.remoteTargets)
+                DropdownMenuItem<HostSubscriptionTarget?>(
+                  value: target,
+                  child: Text(
+                    t.subscription_run_remote(device: target.label),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: _submitting
+                ? null
+                : (HostSubscriptionTarget? value) =>
+                    setState(() => _remoteTarget = value),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+        ],
         Row(
           // 左侧带 helperText、右侧没有：默认的居中对齐会把右侧输入框往下挤
           // 半个 helper 高（两个框底边错位）。顶对齐让两个框同高齐边，helper
           // 自然挂在左框下方。
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            // 交给 host 跑时落点是 host 的下载目录，本地来源不参与。
+            if (!_remote)
             Expanded(
               child: DropdownButtonFormField<int>(
                 key: const ValueKey<String>('video-resource-source'),
@@ -1344,7 +1578,7 @@ class _VideoResourceSearchSurfaceState
                     : (int? value) => setState(() => _sourceId = value),
               ),
             ),
-            SizedBox(width: tokens.spacing.gap),
+            if (!_remote) SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: DropdownButtonFormField<VideoDownloadSubtitlePolicy>(
                 key: const ValueKey<String>('video-resource-subtitle-policy'),
@@ -1419,7 +1653,7 @@ class _VideoResourceSearchSurfaceState
                 labelText: t.video_jimaku_episode,
                 helperText: t.download_subscription_start_episode(
                   episode: _startAfterController.text.trim().isEmpty
-                      ? '1'
+                      ? _defaultStartEpisode
                       : _startAfterController.text.trim(),
                 ),
               ),

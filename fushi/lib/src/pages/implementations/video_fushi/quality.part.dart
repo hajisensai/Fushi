@@ -165,7 +165,16 @@ extension _VideoQuality on _VideoFushiPageState {
       _hideVideoSidePanel();
       return;
     }
-    final String videoUrl = _youtubeVariants[effectiveIndex].videoUrl;
+    // BUG-2507：googlevideo 直链只接受有界 Range，交给内核前换成本地分块中继地址
+    // （与 [UrlStreamVideoClient.remoteVideoStreamUrls] 同一口径）。
+    final Map<String, String> headers = _streamHttpHeaderFields;
+    final String videoUrl = await relayYoutubeStreamUrl(
+        _youtubeVariants[effectiveIndex].videoUrl, headers);
+    final String? audioRaw = _youtubeVariantsAudioUrl;
+    final String? audioUrl = audioRaw == null
+        ? null
+        : await relayYoutubeStreamUrl(audioRaw, headers);
+    if (!mounted) return;
     final VideoPlayerController? controller = _controller;
     final int posMs = controller?.positionMs ?? 0;
     final List<AudioCue> cues = controller != null
@@ -184,7 +193,7 @@ extension _VideoQuality on _VideoFushiPageState {
       initialPositionMs: posMs,
       startIntent: EpisodeStartIntent.explicitCue,
       externalSubtitlePath: _currentSubtitleSource,
-      externalAudioTrackUrl: _youtubeVariantsAudioUrl,
+      externalAudioTrackUrl: audioUrl,
       detectHls: false,
     );
     if (!mounted) return;

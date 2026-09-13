@@ -33,6 +33,7 @@
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 #include "../../../native/galgame_hook/include/voice_hook_utterance_window.h"
 #include "lookup_hit_validation.h"
+#include "lookup_geometry_snapshot.h"
 
 // galgame 一键制卡 C 阶段 —— 引擎-hook 共享内存读侧实现。见 voice_hook_reader.h。
 // 纯 Win32 文件映射，无 COM、无异常（runner 以 _HAS_EXCEPTIONS=0 编译，全程句柄/契约校验）。
@@ -829,7 +830,8 @@ void PumpLookupOnce() {
       geometry.lookup_diag != pump.last_geometry_status.lookup_diag ||
       geometry.generation != pump.last_geometry_status.generation ||
       geometry.text_generation != pump.last_geometry_status.text_generation;
-  if (geometry_changed) {
+  if (geometry_changed &&
+      geometry.error != VoiceHookLookupError::kGeometrySnapshotConflicted) {
     pump.last_geometry_status = geometry;
     pump.has_last_geometry_status = true;
     if (pump.geometry_status_sink != nullptr)
@@ -1994,6 +1996,8 @@ const char* VoiceHookLookupErrorToken(VoiceHookLookupError error) {
       return "frame_rejected";
     case VoiceHookLookupError::kControlRejected:
       return "control_rejected";
+    case VoiceHookLookupError::kGeometrySnapshotConflicted:
+      return "geometry_snapshot_conflicted";
   }
   return "unknown";
 }
@@ -2362,58 +2366,34 @@ VoiceHookLookupGeometryStatus VoiceHookReader::LookupGeometryStatus() {
   const SharedHeader* h = st.header;
   out.error = LookupGateLocked(h, false);
   if (out.error != VoiceHookLookupError::kNone) return out;
-  for (int attempt = 0; attempt < 4; ++attempt) {
-    const uint64_t generation_before =
-        fushi_voice_hook::AtomicLoadPreview64(
-            &h->lookup_geometry_generation);
-    const uint32_t provider_kind = fushi_voice_hook::AtomicLoadShared32(
+  lookup_geometry_snapshot::Identity identity;
+  const bool sampled = lookup_geometry_snapshot::TryRead([h]() {
+    lookup_geometry_snapshot::Identity sample;
+    sample.generation = fushi_voice_hook::AtomicLoadPreview64(
+        &h->lookup_geometry_generation);
+    sample.provider_kind = fushi_voice_hook::AtomicLoadShared32(
         &h->lookup_geometry_active_kind);
-    const uint32_t provider_id = fushi_voice_hook::AtomicLoadShared32(
+    sample.provider_id = fushi_voice_hook::AtomicLoadShared32(
         &h->lookup_geometry_active_id);
-    const uint32_t provider_status = fushi_voice_hook::AtomicLoadShared32(
+    sample.provider_status = fushi_voice_hook::AtomicLoadShared32(
         &h->lookup_geometry_status);
-    const uint64_t text_generation =
-        fushi_voice_hook::AtomicLoadPreview64(
-            &h->lookup_geometry_text_generation);
-    const uint32_t lookup_diag =
-        fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
+    sample.text_generation = fushi_voice_hook::AtomicLoadPreview64(
+        &h->lookup_geometry_text_generation);
     MemoryBarrier();
-    const uint64_t generation_after =
-        fushi_voice_hook::AtomicLoadPreview64(
-            &h->lookup_geometry_generation);
-    // Ready is intentionally published before the first geometry and keeps
-    // generation at zero.  Generation alone therefore cannot fence that
-    // provider-state publication.  Re-read the complete identity/lifecycle
-    // tuple as well, so the host never promotes a kind/id/status combination
-    // assembled across OfferReady/Retire stores.
-    const uint32_t provider_kind_after =
-        fushi_voice_hook::AtomicLoadShared32(
-            &h->lookup_geometry_active_kind);
-    const uint32_t provider_id_after =
-        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_active_id);
-    const uint32_t provider_status_after =
-        fushi_voice_hook::AtomicLoadShared32(&h->lookup_geometry_status);
-    const uint64_t text_generation_after =
-        fushi_voice_hook::AtomicLoadPreview64(
-            &h->lookup_geometry_text_generation);
-    const uint32_t lookup_diag_after =
-        fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
-    if (generation_before != generation_after ||
-        provider_kind != provider_kind_after ||
-        provider_id != provider_id_after ||
-        provider_status != provider_status_after ||
-        text_generation != text_generation_after ||
-        lookup_diag != lookup_diag_after) {
-      continue;
-    }
-    out.provider_kind = provider_kind;
-    out.provider_id = provider_id;
-    out.provider_status = provider_status;
-    out.lookup_diag = lookup_diag;
-    out.generation = generation_after;
-    out.text_generation = text_generation;
+    return sample;
+  }, &identity);
+  if (!sampled) {
+    out.error = VoiceHookLookupError::kGeometrySnapshotConflicted;
     return out;
   }
+  out.provider_kind = identity.provider_kind;
+  out.provider_id = identity.provider_id;
+  out.provider_status = identity.provider_status;
+  out.generation = identity.generation;
+  out.text_generation = identity.text_generation;
+  // Diagnostic bits may change on any input/render callback. They do not
+  // invalidate an otherwise coherent provider ownership snapshot.
+  out.lookup_diag = fushi_voice_hook::AtomicLoadShared32(&h->lookup_diag);
   return out;
 }
 

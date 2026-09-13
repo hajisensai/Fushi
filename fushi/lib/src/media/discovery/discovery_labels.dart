@@ -1,4 +1,4 @@
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/utils.dart';
 
 /// 发现域的用户可见名。

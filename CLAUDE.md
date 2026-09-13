@@ -19,25 +19,31 @@
 - 函数和新增 Dart helper 要有明确类型签名。
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
 - 发现问题直接说，不要为了顺滑把风险说轻。
+- **合并 PR 要看作者**：只有 `hajisensai`（仓库所有者）与 `W1ght` 的 PR 可以在常规审查后直接合并；**其他任何人的 PR 一律先问用户拿许可再合**，哪怕用户说过「全部合并」——那句话不覆盖后来新出现的第三方 PR。许可的可追溯形态是给 PR 打 `merge-approved` 标签。CI 侧有一条会变红的门 `.github/workflows/pr-merge-gate.yml`（白名单被守卫测试 `fushi/test/tools/pr_merge_gate_allowlist_guard_test.dart` 钉死）；它默认是建议性的——本仓刻意不设分支保护，因为日常大量直推 develop，加 required check 会把直推一起挡掉。要改白名单必须用户点头。
 - 用户报 bug：按 [docs/BUGS.md](docs/BUGS.md)（文件头有完整流程）——先沿真实代码路径**验真伪**。**一 bug 一文件**：真 bug 用 `dart run tool/bug.dart new <slug> [标题...]` 新建独立文件 `docs/bugs/BUG-NNN[-slug].md`（自动取下一个空号、生成骨架、重建索引；**禁止手动往 `docs/BUGS.md` 加正文**——它只是头部约定 + 自动索引表），在该文件里记根因 `file:line`，再 **① 根因修复**、**② 在最强可落地层加自动化测试**（widget 行为 / CSS 生成器 / 源码扫描守卫），两步各把 `[ ]` 勾成 `[x]` 并记提交哈希/测试文件，改完跑 `dart run tool/bug.dart reindex` 重建索引；**撞号别手改**——跑 `dart run tool/bug.dart renumber <old> <new>`（文件名/正文 H2/代码引用/测试名四处一起改 + reindex + 自校验零残留；只改文件名不改正文 H2 会让守卫测试 CI 红）。取号扫「全部本地+远端分支的 commit 树 **+ 本机每个 git 工作区磁盘上还没提交的 `docs/bugs/*.md`**」（后者是并发撞号的大头：`new` 写文件到 commit 之间隔着几十分钟到几小时，BUG-1429），但那不是分布式锁，开 PR 前和每次 rebase 后仍要重跑 `check`——`check` 现在会跨分支/工作区复核并报出「我新引入的号还被谁占着、在哪个 ref/工作区」，想当硬门用 `check --strict`（默认只让本地不变式决定退出码）；非真 bug/无法复现也建一条标「未复现」。这套 per-file 结构消除并发 agent 撞号 + 顶部插入的 git 冲突（守卫 `fushi/test/tools/bugs_per_file_guard_test.dart`）。与本地不入库的 `docs/REGRESSION_BUGS.md` 区分。
 
 ## 仓库地图
 
 - 仓库根：`D:\APP\vs_claude_code\hibiki`（Melos workspace，名 `fushi_workspace`）。Flutter app：`fushi/`；Android 工程：`fushi/android/`。
+- **无头引擎与服务端（2026-09-08 起）**：`packages/fushi_engine/`（纯 Dart，app 与服务端共用的互联 host / OCR / ASR 任务 / 下载管线 / 库服务；**禁 import `package:flutter`、`dart:ui`、任何插件、`package:fushi`**，守卫 `fushi/test/build/fushi_engine_purity_guard_test.dart`；平台边界全走全局装配点 `engineLog` / `enginePaths` / `PrefStore` / `ffmpegPlatformBackendProvider` / `ocrSessionFactoryBuilder` 等，app 在 `fushi/lib/src/engine_bindings.dart` 的 `installEngineHostBindings()` 一次接线）；`packages/fushi_server/`（CLI `fushi_server`：互联 host + WebUI/admin API + 分块上传 + 内置 torrent/qBittorrent 代下载 + ASR/OCR 任务；`dart build cli` 出 bundle，**`dart compile exe` 缺 sqlite3 native asset 会运行时崩**；随包原生库按 `bin/../lib/<裸名>` 定位；Linux 的内置 torrent 引擎是 `native/fushi_torrent/build_linux_so.sh` 静态链出的 `.so`；发布走 `release-server.yml`（手动，永不 Latest，版本取该包 pubspec）；用法见 [packages/fushi_server/README.md](packages/fushi_server/README.md)，设计见 `docs/specs/2026-09-08-fushi-server-headless-design.md`）。**引擎文件不放 `src/`**（`implementation_imports` 在 CI 致命），import 形如 `package:fushi_engine/sync/fushi_sync_server.dart`。互联 host 的实现只有引擎这一份，app 侧 `FushiSyncServerController` 只是装配。
 - 阅读器页面：`fushi/lib/src/pages/implementations/reader_fushi_page.dart`（`ReaderFushiPage`，3242 行主体 + `reader_fushi/` 下 8 个域 part 共 9583 行：WebView 拦截 + JS 分页 + 有声书同步）。
 - 视频页面：`fushi/lib/src/pages/implementations/video_fushi_page.dart`（6358 行主体 + `video_fushi/` 下 18 个 part 共 6966 行）；视频首页 `home_video_page.dart`（3080 行）。
 - 书架页面：`fushi/lib/src/pages/implementations/reader_fushi_history_page.dart`；首页 dashboard：`pages/implementations/home_dashboard_page.dart`。
 - reader source：`fushi/lib/src/media/sources/reader_fushi_source.dart`（`ReaderFushiSource`）。
 - 阅读器 JS/CSS：`fushi/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.fushiReader`（2026-08 终局清算已改名；`hoshiCaret`/`__hoshi*` 等其余 hoshi 前缀运行时符号待后续批次）。
 - 全局状态：`fushi/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v62，53 张表，WAL）。
+- Drift 数据库：`packages/fushi_core/lib/src/database/database.dart` 和 `tables.dart`（schema v104，86 张表，WAL）。
 - 词典：Dart 封装 `packages/fushi_dictionary/lib/src/engine/fushidicts.dart` + FFI 绑定 `lib/src/ffi/fushidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/fushidicts/`（包内已无 C++），`fushidicts_external/` 是 vendored 第三方，上游同步基线见 `native/fushidicts/UPSTREAM.md`。
-- 有声书：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。设备端语音转录生成字幕在 `fushi/lib/src/asr/`（按语言分模型包 `asr_model_manifest.dart`：日语 ReazonSpeech k2-v2 字符级 / 英语 LibriHeavy BPE 带标点大小写，都是 zipformer RNN-T + silero-vad v4，经 `flutter_onnxruntime`；用户在转录弹层选语言、按需下载，设置页「语音识别模型」可删；Windows fp32 编码器走 DirectML，其余 int8 CPU；PCM 抽取走 ffmpeg `asr_pcm_source.dart`，任务可暂停续跑 `asr_transcribe_job.dart`，产物是单时间轴 SRT 喂既有匹配链路；UI 入口 `media/audiobook/asr_transcribe_sheet.dart`）。OCR/ASR 共用的 ONNX 会话抽象与模型下载器在 `fushi/lib/src/onnx/`。
+- 有声书：`packages/fushi_audio/` + `fushi/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。设备端语音转录生成字幕的**算法层已抽成独立仓库** [`hajisensai/fushi-subtitles`](https://github.com/hajisensai/fushi-subtitles)（GPL-3.0，纯 Dart，包 `fushi_asr_core` / `fushi_asr_align` / `fushi_asr_subtitles` / `fushi_asr_onnx_ffi`）。**六处 git 依赖钉同一个 sha**：`fushi/pubspec.yaml` 两条（`fushi_asr_core` / `fushi_asr_subtitles`）、`packages/fushi_engine/pubspec.yaml` 一条、`packages/fushi_server/pubspec.yaml` 两条（多一个 `fushi_asr_onnx_ffi`）、根 `pubspec.yaml` 的 `dependency_overrides` 一条；**任一处不一致同一份算法会被解析成两个副本**。app 侧 ONNX 走 Flutter 插件后端，只有无头服务端用纯 Dart 的 `fushi_asr_onnx_ffi`——它把 `archive` 钉成 `^4.0.0` 而本仓钉 `^3.6.1`（升 4 实测要动 76 个文件，`archive_io` 在 4.x 已移除），所以根 `pubspec.yaml` 一条 `archive` override 钉回本仓版本，外加 `ci/patches/git/fushi-subtitles-<sha>/` 一行兼容补丁把上游唯一的 4.x 专有调用 `entry.readBytes()` 换成 `entry.content`——**两者是一套，缺一个就编译不过**；上游放宽约束后一起删。本仓只留三样：Flutter 插件后端 `fushi/lib/src/onnx/onnx_inference_ort.dart`（method channel → `flutter_onnxruntime`）、装配层 `fushi/lib/src/asr_host/asr_host.dart`、UI （`media/audiobook/asr_transcribe_sheet.dart` 等）。**改 ASR 算法一律去那个仓库改，本仓只改装配与 UI。**
+  - 装配点（都在 `asr_host.dart`，两个生产实例化点共用 `createAsrTranscriptionService()`）：数据根 `asrSupportRootResolver`、出站 `asrHttpClientFactory`（必须经 `createAppHttpClient`，否则模型下载绕过全应用代理装配）、日志 `asrLogSink`、ffmpeg `FushiAsrFfmpegBackend`（**五端一律注入本仓后端**，包自带的裸 CLI 后端会丢掉子进程登记表、`FUSHI_FFMPEG` 覆盖与捆绑损坏回退；移动端更没有 ffmpeg CLI），以及后台 isolate 的 `AsrIsolateBackend`（顶层函数 `buildFushiOnnxFactory` + `BackgroundIsolateBinaryMessenger` 引导——**根 isolate 的全局装配点一个都带不过 isolate 边界**，那边只认这条）。
+  - `installAsrHostBindings()` 在 `main()` 里调一次，**不放 `AppModel.initialise()`**：弹窗词典与悬浮词典是另外两个 entry point，不经 `initialise()`。
+  - 转录产物是单时间轴 SRT 喂既有匹配链路，旁边同序写逐 token 时间 sidecar `transcript.tokens.jsonl`；`attachAsrCueTokenTiming`（`audiobook_alignment_service.dart`）把它挂到 `AudioCue.tokenTiming` 上，**行数与 cue 数不符时一条都不挂**（行号错位比没有更糟，下游照样跑完、照样落库，只是跳播全偏）。
+  - OCR 也经 `fushi/lib/src/ocr/ocr_inference.dart` 复用同一套 ONNX 抽象（那层的 re-export 是**窄的 show 清单**，整份 re-export 会和本仓同名符号撞成 ambiguous import）。
 - 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
 - galgame 制卡：Flutter 侧 `fushi/lib/src/lookup/`（overlay 浮窗）+ `fushi/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip，再由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地，运行期不下载任何组件。helper **不链接进 `fushi.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
 - 动画刮削上游参考：`references/ShokoServer/`（官方 ShokoServer git submodule，只作只读架构参考，不参与本仓构建/运行）。
-- 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1` / `run_mac_itest.ps1`；`fushi/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart`。
+- 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1`；`fushi/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart`。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
 
 ## 当前技术事实
@@ -45,12 +51,13 @@
 - Flutter 版本分两处：本地钉 `.fvmrc` = `3.41.6`（pubspec `flutter: "^3.41.6"`），CI workflows 用 `3.44.0`；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
 - torrent 走内部包 `packages/fushi_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/fushi_torrent/`；Windows 预编译 DLL / Android arm64 `.so` 随包，缺失时回退外接 qBittorrent；iOS 无内置引擎）。
-- 主存储是 Drift SQLite（`FushiDatabase`，schema v62），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- 主存储是 Drift SQLite（`FushiDatabase`，schema v104），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_fushi 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。（旧文档提过的 `ttuBookId` 列在当前 schema 已不存在，只活在迁移阶梯里。）
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_fushi 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
 - 国际化用 Slang，源文件 `fushi/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
 - 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。桌面端依赖 fork 的 `flutter_inappwebview_windows` 渲染 EPUB。
+- **iOS 版按 App Store 合规少三类能力**，其余四平台不受影响：① 内置外部发现源与书/漫画/视频三个库页的「发现」视图（含用户自配 OPDS、视频域资源索引器与在线发现 provider）；② 在线漫画源宿主（Aidoku 仓库 / Mihon 扩展 / mokuro.moe 卷下载）；③ 下载中心（torrent / 磁力 / 直链队列，含外接 qBittorrent）。理由都不是「iOS 做不到」而是审核指南不允许，所以判据**只在 `fushi/lib/src/models/store_compliance.dart` 的 `StoreRestrictedCapability` 写一次**，`ModuleId.downloads` 的 `availableOn` 委托到它，消费端一律问这两处、不各自写 `Platform.isIOS`。Aidoku 的 iOS 宿主（内嵌 Rust 静态库 + Swift 桥 + Xcode build phase + CI rust target）已整条移除，**macOS 宿主不受影响**；漫画/视频/书的本地库与阅读播放能力一概保留。守卫 `fushi/test/build/ios_store_compliance_guard_test.dart`——这条边界失效是静默的（本地与 CI 全绿、上架才被拒），改动这三块前先读它。
 
 ## 命名术语表（2026-07 定案，新代码遵守）
 
@@ -90,9 +97,10 @@
 ## 动画刮削参考与 provider 边界
 
 - `references/ShokoServer/` 固定官方 `ShokoAnime/ShokoServer`，是动画文件识别、作品/分集模型、缓存和补源编排的长期参考。它是 git submodule：不得复制进 Fushi 构建、不得修改其源码来实现 Hibiki 功能；升级 gitlink 前必须先审上游差异并在本仓提交中说明采用了什么架构变化。
-- 动画**元数据刮削**对齐 Shoko 的生产 provider 边界：AniDB 是文件、作品、分集身份的核心；TMDB 只能在 AniDB 身份之后提供交叉映射、图片、演职员、别名和分集排序等补充。新增或重构时优先参考 `Shoko.Server/Providers/AniDB/`、`Shoko.Server/Providers/TMDB/`、`Scheduling/Jobs/AniDB/`、`Scheduling/Jobs/TMDB/` 与 `Services/VideoHashingService.cs` 的分层，不照搬 C# 实现。
-- 动画元数据刮削不得重新引入 Bangumi、Douban、AniList、Jikan/MAL、Fanart.tv 等并行主源或补源。历史数据库 provider 字符串属于兼容输入，可读、可迁移，但不能据此重新装配网络 client 或在新 UI 暴露来源。
-- 本地 `.nfo` sidecar 是用户已有资料的离线兼容输入，可以继续作为字段权威来源；其中遗留的 Bangumi/Douban/AniList 等 ID 只能保留、迁移或作为无网络的交叉引用提示，不能触发对应 provider client，也不能越过 AniDB 作品身份门控。
+- 用户于 2026-09-07 明确调整：动画**作品资料以 MAL 为主，TMDB 兜底**；2026-09-08 再调整为**主源用户可选**（全局偏好 `video_metadata_primary_provider` + 来源级 `provider_override`，默认仍 MAL），MAL ↔ TMDB 互为兜底、单源语义（AniDB）不传兜底。识别链只在**唯一精确命中**时终止：主源歧义继续问兜底源，双歧义合并候选交人工，不再「主源一歧义就截止」（BUG-2268）。MAL 经 Jikan 只读接口取得，匹配成功保留主源已有字段，缺项可由严格匹配的另一源补充。手动指定的 MAL/TMDB ID 不得静默换源。设计与分批见 `docs/specs/2026-09-08-scrape-provider-choice.md`。
+- **AniDB 保留真实 ED2K 文件哈希识别**，返回文件/作品/分集原生身份；不得把标题匹配称作哈希识别。作品资料层仍为 MAL/TMDB。跨站映射仅唯一明确 ID 才自动采用，AniDB 集号不能未经验证直接套到 MAL/TMDB 集号。Shoko 是哈希/协议/缓存分层参考，不再是作品资料源清单。
+- 动画元数据刮削不装配 Bangumi、Douban、AniList、Fanart.tv 等并行资料源。历史 provider 字符串和 AniDB 资料模块可读兼容，不因旧库身份重新恢复旧生产链；Jikan 是 MAL 传输接口，持久身份统一使用 `mal`。
+- 本地 `.nfo` sidecar 是用户已有资料的离线兼容输入。同一作品可保持字段权威；与手动确认的新身份冲突时不混入新作品，保留原文件并提示，继续遵守覆盖保护。历史 ID 不能触发已退役 provider 网络请求。
 - 发现、字幕、资源搜索与元数据刮削是不同域：AniList 若仍用于发现/字幕身份，不得进入刮削 registry；Nyaa/Torznab/OpenSubtitles/Jimaku 等资源或字幕模块不受“刮削 provider”清单约束。Fushi 发现页不得装配或展示 Bangumi source。
 - AniDB 协议必须遵守其客户端注册、限流和缓存规则；没有已登记的 client identity 或所需凭据时必须在发请求前判 unavailable，不得冒用 Shoko 的 client 标识，也不得靠无界重试绕过限流。
 
@@ -106,11 +114,11 @@
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
-- Dart/Flutter 改动（在 `fushi/` 下）：`dart format` 改动文件 + push 前全量 `flutter analyze`（含 test 目录，CI 把 warning 当致命）+ **按爆炸半径分级的测试**——分支上跑改动覆盖 + 相邻功能的定向 `flutter test <目标> --no-pub`，全量套件由 PR CI 兜底（真单测门是 Build Release APK 的 Run unit tests）；**合入 `develop` 前仍必须本地全量测试，且必须走 `dart run tool/flutter_test_failures.dart --no-pub`**——它是唯一会把「一个测试都没跑成」判为失败的入口（native asset 下载失败、编译失败、tag 过滤把测试全滤掉都算失败），并在 stdout 末行打 `FLUTTER TEST VERDICT: PASSED - N tests ran` / `FAILED - <原因>`。**判绿只认这行 + 退出码**：裸 `flutter test ... | tail -N` 的退出码是 `tail` 的、恒为 0，构建失败时零测试执行会被伪装成通过（BUG-1157）。分级判据见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。**测试红了不等于代码坏了**：本机 5~10 个 agent 并发，实测有三类并发伪红（互抢 `sqlite3.dll` / 宿主 IPC 崩溃致 suite 装载失败 / 结果文件被抢致零输出），**遇红先分型再动手**，且**不许拿「可能是伪红」当借口跳过真红**、**零测试执行的红也不算红**——症状、定性办法和三条判别纪律见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「并发伪红判别」。（工具链钉定：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`。）
+- Dart/Flutter 改动（在 `fushi/` 下）：`dart format` 改动文件 + push 前全量 `flutter analyze`（含 test 目录，CI 把 warning 当致命）+ **按爆炸半径分级的测试**——分支上跑改动覆盖 + 相邻功能的定向 `flutter test <目标> --no-pub`，全量套件由 PR CI 兜底（真单测门是 Build Release APK 的 Run unit tests）；**本地不跑全量测试门**（用户 2026-09-06 拍板：合入 `develop` 前**不再**本地跑 `dart run tool/flutter_test_failures.dart --no-pub` 或裸 `flutter test` 全量，太慢；以后任何任务都不要主动跑，也不要拿它当合并前置条件），本地只跑定向测试。定向跑也**判绿只认退出码 + 实际执行数**：裸 `flutter test ... | tail -N` 的退出码是 `tail` 的、恒为 0，构建失败时零测试执行会被伪装成通过（BUG-1157）。分级判据见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。**测试红了不等于代码坏了**：本机 5~10 个 agent 并发，实测有三类并发伪红（互抢 `sqlite3.dll` / 宿主 IPC 崩溃致 suite 装载失败 / 结果文件被抢致零输出），**遇红先分型再动手**，且**不许拿「可能是伪红」当借口跳过真红**、**零测试执行的红也不算红**——症状、定性办法和三条判别纪律见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「并发伪红判别」。（工具链钉定：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`。）
 - **每条 PR 合入 `develop` 后固定加跑「目录枚举型守卫」整批**（51 条，一条命令 ~62 秒）——这批守卫用 `listSync(recursive: true)` 扫 `lib/` / `test/` / `integration_test/` 全树，**新 PR 的新文件自动落进它们的扫描面，而定向测试按功能域挑，结构上永远挑不到它们**。实测代价：不跑就是「刚合的 PR 把红带进 develop」，一天翻车四次、其中一条在 develop 上躺了一整天跨 5 条 PR；跑了之后累计 30 条合并零红。完整清单、单条命令、以及「清单过期了怎么按行为反向枚举重新推导」见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「合并后必跑：目录枚举型守卫清单」。
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `fushi/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
-- 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `fushi/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试三端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `fushi/tool/run_windows_itest.ps1` / Mac 跨机 `tool/run_mac_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
+- 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `fushi/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试两端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `fushi/tool/run_windows_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
 
 ## 提交
 
@@ -151,6 +159,8 @@
 | `packages/fushi_platform/` | Dart | TTS/平台集成/存储路径抽象 | [CLAUDE.md](packages/fushi_platform/CLAUDE.md) |
 | `packages/flutter_inappwebview_windows/` | Dart+C++ | inappwebview Windows fork | [CLAUDE.md](packages/flutter_inappwebview_windows/CLAUDE.md) |
 | `packages/fushi_torrent/` | Dart | 内置 torrent 引擎 FFI 绑定 + `EmbeddedTorrentEngine`（path 依赖） | — |
+| `packages/fushi_engine/` | Dart | 无 Flutter 的共享引擎：互联 host / 库服务 / OCR / ASR 任务 / 下载管线 / EPUB 导入 / 视频元数据（app 与服务端共用；纯度守卫在 fushi/test/build） | 设计 `docs/specs/2026-09-08-fushi-server-headless-design.md` |
+| `packages/fushi_server/` | Dart | 无头服务端 CLI + WebUI（Linux/Windows/macOS）；`dart build cli` 出 bundle，CI linux job 随包 torrent bridge `.so` + onnxruntime | [README.md](packages/fushi_server/README.md) |
 | `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |
 | `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
 | `native/fushidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`fushidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](native/fushidicts/UPSTREAM.md) |

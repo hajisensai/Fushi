@@ -11,9 +11,13 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `manifest.json` | — | MV3 清单；content script 注入顺序有语义（先桥后消费者） |
 | `background.js` | service worker | 唯一网络出口：查词/制卡/字幕等所有 HTTP 请求 + 连接诊断 + 自更新执行 + 心跳 + Netflix 录制编排 |
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
-| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层 + 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `nested-popup-host.js` | 隔离 | 嵌套父子栈、子 iframe 定位、按层桥接、异步结果归属；只关闭根层时恢复视频 |
+| `nested-popup.html/js` | 扩展 iframe | 每层独立的共享词典 renderer、选区、制卡和滚动状态；经专用 MessageChannel 与宿主通信 |
+| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（可按住拖动挪位，位置按视频分数坐标存 `subtitleOverlayPosition`，点击仍查词）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
+| `touch-lookup.js` | 隔离 | 触屏点按/长按查词：单指点正文=查词（默认开）、长按≈0.5s=查词（默认关）；复用 content.js 的 `fushiLookupAtPoint`，零新增查词链路，只认 touch 主指针，绝不影响鼠标行为 |
+| `mobile-drawer.js` | 隔离 | 移动端字幕列表抽屉：安卓无 chrome.sidePanel，触屏视频页挂边缘 ☰ 钮 + 隐形手势带（点=开关、按住=拖宽自由停位）；横屏右挂仅全屏（页面态让位形态太杂已禁用）、竖屏底挂，内容为 iframe 内嵌 `side-panel.html?fushiEmbed=1`（选轨/跳转/偏移/制卡/查词全套复用）；全屏态压播放器让位并以 adopt 跟随其自重排，几何存 `mobileSubtitleDrawerGeom` |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `youtube-bridge.js` | MAIN | YouTube 专用：按 asbplayer 顺序读取播放器运行态 captionTracks（含 POT）→ Android Innertube → player response，并一次下载完整 srv3/json3 轨；只读、不改宿主 DOM |
 | `stream-bridge.js` | MAIN | 通用流媒体字幕桥（asb 移植）：TVer / Bilibili.tv / Hulu JP / Prime Video 整集字幕拦截 |
@@ -202,6 +206,16 @@ YouTube 的自动生成（ASR）字幕在 DOM 里是**逐词滚动**渲染的—
 「原生藏了、自绘也没有」。执行在 `content.js`：遮蔽状态是**原因集合**而非 bool，
 `'manual'`（Shift+H / 设置开关）藏原生 + 自绘，`'replace'` 只藏原生。
 行为测试 `subtitle-replace-native.test.js`（9 条不变式已变异实测）。
+
+### 工具栏弹窗里的「Fushi 字幕」开关（`subtitleOverlayEnabled`）
+
+自绘覆盖层的总开关（外挂轨 / 替代原生 / 全轨覆盖层都经它出画）原本只在 options 页有一个
+「在视频上显示外挂字幕」开关，看片中途想在 Fushi 字幕 ↔ 站点自带字幕之间切要跑一趟设置页。
+现在点工具栏 Fushi 图标 → 页脚第一项「Fushi 字幕 开/关」直接翻同一个键（同一个
+`chrome.storage.local` 键，options 页开关、视频页都经 `storage.onChanged` 同步）。关→开时
+顺带把总门 `netflixSubtitlePanel` 打开——覆盖层受它门控，从没开过侧边栏的用户单开覆盖层
+等于什么都不发生；开→关只翻自己。它**不是** Shift+H：关掉后回到站点自带字幕，一句都不看的
+纯听力模式仍用 Shift+H / options「隐藏字幕」。行为测试 `popup-overlay-toggle.test.js`。
 
 ## 站点适配状态
 

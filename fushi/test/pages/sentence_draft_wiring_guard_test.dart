@@ -68,9 +68,19 @@ void main() {
     final String src = readSource('lib/src/pages/base_source_page.dart');
     expect(src, contains('supportsSentenceDraft'));
     expect(src, contains('onSetSentenceContextToDraft'));
+    // 本条守卫的立意是「只在支持草稿的表面接线」。门控变量改名成
+    // sentenceDraftEnabled 后，立意靠两条一起钉：接线读它，且它必须 AND 上
+    // supportsSentenceDraft —— 只钉接线的话，表面判据被丢了也照样绿。
     expect(
-      src,
-      contains('supportsSentenceDraft ? onSetSentenceContextToDraft : null'),
+      RegExp(r'sentenceDraftEnabled\s*\?\s*onSetSentenceContextToDraft\s*:\s*null')
+          .hasMatch(src),
+      isTrue,
+    );
+    expect(
+      RegExp(r'sentenceDraftEnabled\s*=[\s\S]{0,80}?supportsSentenceDraft')
+          .hasMatch(src),
+      isTrue,
+      reason: '草稿门控必须仍然 AND 上「该表面支持草稿」，不能退化成只看模块闸',
     );
     // Default: no draft support (pure dictionary / home lookup).
     expect(src, contains('bool get supportsSentenceDraft => false;'));
@@ -98,6 +108,46 @@ void main() {
     // Mine composes draft + current for both text and audio range.
     expect(src, contains('_miningDraft.composeText(currentSentence)'));
     expect(src, contains('_miningDraft.composeAudioRange(currentRange)'));
+  });
+
+  test('reader snapshots merged cue text before awaiting media export', () {
+    final String mining = readSource(
+      'lib/src/pages/implementations/reader_fushi/mining.part.dart',
+    );
+    final String body = maskComments(
+      methodBody(mining, '_prepareMiningContext() async {'),
+    );
+    final RegExpMatch? firstAwait = RegExp(
+      r'\bawait\b',
+    ).firstMatch(maskCommentsAndStrings(body));
+    expect(firstAwait, isNotNull);
+    final int firstAwaitAt = firstAwait!.start;
+    final String snapshotBody = body.substring(0, firstAwaitAt);
+    expect(
+      snapshotBody,
+      contains(
+        'final String sentence = _miningDraft.composeText(currentSentence);',
+      ),
+    );
+    expect(
+      RegExp(
+        r'final\s+String\s+snapshotCueSentence\s*=\s*'
+        r'_miningDraft\.isEmpty\s*\?\s*'
+        r"appModel\.currentMediaSource\?\.currentCueSentence\.text\s*\?\?\s*''"
+        r'\s*:\s*sentence\s*;',
+      ).hasMatch(snapshotBody),
+      isTrue,
+      reason:
+          '选取上下文后 cue-sentence 必须与合并文本一致；单句仍保留原 cue 文本，'
+          '并在音频导出的首次 await 前快照，避免换词或清草稿改变本次制卡内容。',
+    );
+    expect(
+      body.substring(firstAwaitAt),
+      contains(
+        'cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null',
+      ),
+      reason: '最终 Anki 上下文必须消费先前快照，不能重新读取当前 cue 或草稿。',
+    );
   });
 
   test('reader clears the draft on a new lookup, after mine, and on dismiss',
@@ -186,5 +236,39 @@ void main() {
     expect(renderCall, greaterThanOrEqualTo(0));
     // 归零调用排在 renderPopup() 之前，保证重建的选择器读到的是已归零的标量。
     expect(resetCall, lessThan(renderCall));
+  });
+
+  // BUG-2196 ②：制卡上下文对话框的「试听」。这三个覆写没有任何编译期依赖——基类
+  // `base_source_page.dart` 给了安全默认值（`supportsSentenceAudioPreview => false`
+  // 时 previewAudio 直接传 null），所以整块丢掉时 analyze / CI 全绿、按钮悄悄消失。
+  // 它确实丢过一次（#1272 的陈旧副本覆盖），故用源码守卫钉住。
+  test('reader overrides sentence-audio preview with the very range fed to ffmpeg',
+      () {
+    final String reader = readReaderPageSource();
+    expect(
+      reader,
+      contains('bool get supportsSentenceAudioPreview => true;'),
+      reason: '基类默认 false = 对话框拿不到 previewAudio 回调，试听按钮直接没了',
+    );
+    expect(reader, contains('Future<bool> onPreviewSentenceAudio() async {'));
+    expect(reader, contains('Future<void> onStopSentenceAudioPreview() async {'));
+    // 真不变式：试听的区间与 `_prepareMiningContext` 喂给 ffmpeg 的是**同一个表达式**
+    // ——听到什么就会压出什么。播「当前句的 cue」只能证明这句有音频，证明不了裁出来
+    // 的那段念全了，而用户报的正是后者。
+    expect(
+      reader,
+      contains('_miningDraft.composeAudioRange(_currentSentenceAudioRange())'),
+      reason: '试听区间必须现求，且与制卡实际裁片同源',
+    );
+    final String mining = readSource(
+      'lib/src/pages/implementations/reader_fushi/mining.part.dart',
+    );
+    expect(
+      mining,
+      contains('_miningDraft.composeAudioRange(currentRange)'),
+      reason: 'ffmpeg 侧仍走同一个 composeAudioRange，两侧同源才成立',
+    );
+    // 停止试听不得顺手续播正文：用户是在制卡对话框里点的。
+    expect(reader, contains('stopClip(resumeMain: false)'));
   });
 }

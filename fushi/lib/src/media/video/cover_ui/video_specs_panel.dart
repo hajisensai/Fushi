@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart'
     show isProbableStreamUrl;
-import 'package:fushi/src/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';

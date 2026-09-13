@@ -55,10 +55,14 @@ void main() {
       expect(bar, contains('t.selection_web_search'));
       expect(bar, contains("case 'share':"));
       expect(bar, contains("case 'webSearch':"));
-      expect(bar,
-          contains('SelectionExternalActions.instance.shareText(data.text)'));
-      expect(bar,
-          contains('SelectionExternalActions.instance.searchWeb(data.text)'));
+      expect(
+          RegExp(r'SelectionExternalActions\.instance\.shareText\(\s*data\.text\s*,?\s*\)')
+              .hasMatch(bar),
+          isTrue);
+      expect(
+          RegExp(r'SelectionExternalActions\.instance\.searchWeb\(\s*data\.text\s*,?\s*\)')
+              .hasMatch(bar),
+          isTrue);
       expect(bar, contains('t.selection_web_search_unavailable'));
       expect(bar, contains('await _clearReaderAppSelection()'));
     });

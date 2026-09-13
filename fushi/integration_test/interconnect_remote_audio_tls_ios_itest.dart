@@ -8,10 +8,10 @@ import 'package:integration_test/integration_test.dart';
 import 'support/test_app_launcher.dart';
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/tls/fushi_tls_identity.dart';
+import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
     show audioRefToWebViewUrl;
 import 'package:fushi/src/utils/misc/tts_channel.dart' show TtsChannel;

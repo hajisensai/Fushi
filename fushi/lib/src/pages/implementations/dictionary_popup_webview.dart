@@ -205,9 +205,18 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.inputSpec = const DictionaryPopupInputSpec(),
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
+    this.restoreScrollTop,
   });
 
   final DictionarySearchResult result;
+
+  /// 弹窗内原地跳转（[DictionaryPopupEntry.restoreScrollTop]）：后退 / 前进回到历史
+  /// 页时，[result] 渲染完成后要恢复到的 `scrollTop`（CSS px）。null（新词 / load-more
+  /// / 常态）= 每次全量渲染照旧从顶部开始。只在 [_pushResults] 推全量渲染的那一刻读
+  /// 一次，交给 popup.js 的 `window.__fushiPendingScrollTop`，由渲染管线在内容够高时
+  /// 应用（尾批渲染完兜底应用一次）——Dart 侧渲染后直接 scrollTo 不可靠：内容分批
+  /// 进 DOM，首发 popupRendered 时文档往往还不够高，滚不到目标位。
+  final double? restoreScrollTop;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -977,6 +986,30 @@ JSON.stringify((function(){
     );
   }
 
+  /// 弹窗内容当前的 `scrollTop`（CSS px）。原地跳转 / 后退 / 前进前由宿主读一次，
+  /// 存进被离开那一页的历史快照（[DictionaryPopupHistoryPage.scrollTop]）。WebView
+  /// 未就绪 / 通道已废 / 返回值非数 → null，调用方按 0 处理（回来时停在顶部，只是
+  /// 少恢复一次滚动位，绝不打断跳转）。
+  Future<double?> currentScrollTop() async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return null;
+    try {
+      final Object? raw = await controller.evaluateJavascript(
+        source: '(document.scrollingElement || document.documentElement)'
+            '.scrollTop',
+      );
+      if (raw is num) return raw.toDouble();
+      if (raw is String) return double.tryParse(raw);
+      return null;
+    } catch (e, stack) {
+      // 与 highlightSelection 同理：半销毁的 WebView 通道已摘，evaluateJavascript
+      // 抛 MissingPluginException；滚动位是锦上添花，吞掉记日志即可。
+      ErrorLogService.instance
+          .log('DictPopupWebview.currentScrollTop', e, stack);
+      return null;
+    }
+  }
+
   /// 手柄右摇杆：连续滚动弹窗内容 [dy] CSS 像素（正=向下）。
   Future<void> scrollContentBy(double dy) async {
     await _controller?.evaluateJavascript(
@@ -1219,10 +1252,14 @@ JSON.stringify((function(){
     final bool popupInstantScroll = appModel.popupInstantScroll;
 
     final bool needsScrollCheck = widget.onScrolledToBottom != null;
+    // 原地跳转回到历史页：渲染管线在内容够高 / 尾批完成时把滚动位恢复到该页离开时
+    // 的位置（popup.js `__fushiApplyPendingScrollTop`）。其余全量渲染 0 = 不恢复。
+    final double pendingScrollTop = widget.restoreScrollTop ?? 0;
     final String beforeRenderJs = isLoadMore
         ? 'window.updatePopupIncremental();'
         : '''
           window.__fushiResetPopupScroll();
+          window.__fushiPendingScrollTop = ${pendingScrollTop.toStringAsFixed(1)};
           // BUG-297 / TODO-393：换词复用常驻热槽 WebView 时只重注入 lookupEntries 不重载
           // 页面，popup.js 句子上下文镜像标量（sentenceCtxPrev/Next）不会自动归零。宿主
           // 已在换词处清空草稿（reader/video 的 _miningDraft.clear()），这里同步把 JS 镜像

@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:path/path.dart' as p;
 
@@ -27,9 +26,9 @@ void main() {
 
     MokuroPayload payload() => const MokuroPayload(images: <MokuroImage>[
           MokuroImage(
-              url: 'p001.jpg', size: Size(1000, 1500), blocks: <MokuroBlock>[]),
+              url: 'p001.jpg', size: MokuroSize(1000, 1500), blocks: <MokuroBlock>[]),
           MokuroImage(
-              url: 'p002.jpg', size: Size(1000, 1500), blocks: <MokuroBlock>[]),
+              url: 'p002.jpg', size: MokuroSize(1000, 1500), blocks: <MokuroBlock>[]),
         ]);
 
     String? coverFor(int currentSpread) {

@@ -14,13 +14,25 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// ① 上游 N 字漂移自愈（用 cue 原文在 DOM 就近重定位，不用死的偏移）；
 /// ② 漂移不传播（每条 cue 独立锚定）；
 /// ③ 窗口受限 + 单调 ⇒ 不跳到远处重复句；④ 未命中回落提示偏移。
-List<int> _resolve(String fullNorm, List<SentenceAudioCueHint> cues,
-        {int window = 256}) =>
-    ReaderPaginationScripts.resolveCueNormStartsForTesting(
-      fullNorm: fullNorm,
-      cues: cues,
-      window: window,
-    );
+List<int> _resolve(
+  String fullNorm,
+  List<SentenceAudioCueHint> cues, {
+  int window = 256,
+}) => ReaderPaginationScripts.resolveCueNormStartsForTesting(
+  fullNorm: fullNorm,
+  cues: cues,
+  window: window,
+);
+
+List<(int, int)> _resolveSpans(
+  String fullNorm,
+  List<SentenceAudioCueHint> cues, {
+  int window = 256,
+}) => ReaderPaginationScripts.resolveCueNormSpansForTesting(
+  fullNorm: fullNorm,
+  cues: cues,
+  window: window,
+);
 
 void main() {
   group('resolveCueNormStarts (BUG-060)', () {
@@ -67,7 +79,10 @@ void main() {
       final out = _resolve(full, const <SentenceAudioCueHint>[
         SentenceAudioCueHint(needle: 'かきくけこ', hint: 0, length: 5), // → 0
         SentenceAudioCueHint(
-            needle: 'かきくけこ', hint: 10, length: 5), // → 10（不回退到 0）
+          needle: 'かきくけこ',
+          hint: 10,
+          length: 5,
+        ), // → 10（不回退到 0）
       ]);
       expect(out, <int>[0, 10]);
     });
@@ -105,6 +120,48 @@ void main() {
       expect(out[1], 5, reason: '可命中 cue 必须自愈到 5，不被前一条回落 cue 的游标污染');
     });
 
+    // BUG-2204：ASR 前句多带下一句首字，前句命中后游标越过后句真实起点。
+    // full: エリスだけは好きそうだけどな高い所(0..17) とはいえ今は(17..) ... とはいえ冒険者区(远处)
+    test('BUG-2204 前句多吃下一句首字：后句回吃 1 字在真实位置命中，前句 span 被裁短', () {
+      final String full =
+          'エリスだけは好きそうだけどな高い所とはいえ今はそれを考慮している暇はない'
+          '${'を' * 150}とはいえ冒険者区も広い';
+      final int second = full.indexOf('とはいえ', 20);
+      final List<(int, int)> out = _resolveSpans(full, <SentenceAudioCueHint>[
+        const SentenceAudioCueHint(
+          needle: 'エリスだけは好きそうだけどな高い所と',
+          hint: 0,
+          length: 18,
+        ),
+        // 旧数据的 hint 指着远处第二个「とはいえ」（matcher 当年就撞错了）。
+        SentenceAudioCueHint(needle: 'とはいえ', hint: second, length: 4),
+        const SentenceAudioCueHint(
+          needle: '今はそれを考慮している暇はない',
+          hint: 21,
+          length: 15,
+        ),
+      ]);
+      expect(out[0], (0, 17), reason: '前句被裁到「と」之前');
+      expect(out[1], (17, 4), reason: '「とはいえ」紧接前句：延续优先，不跳远处');
+      expect(out[2].$1, 21, reason: '后续句子继续单调命中');
+    });
+
+    test('BUG-2204 回吃有上限：不退到前一句中段；无延续时仍按 hint 就近', () {
+      const String full = 'かきくけこさしすせそたちつてと';
+      final List<(int, int)> out = _resolveSpans(
+        full,
+        const <SentenceAudioCueHint>[
+          SentenceAudioCueHint(needle: 'かきくけこさし', hint: 0, length: 7),
+          // 「くけこ」在前句中段（起点 2，比游标 7 早 5 字 > OVERLAP 4）：不许回退。
+          SentenceAudioCueHint(needle: 'くけこ', hint: 2, length: 3),
+          SentenceAudioCueHint(needle: 'すせそ', hint: 7, length: 3),
+        ],
+      );
+      expect(out[0], (0, 7), reason: '前句不被裁');
+      expect(out[1].$1, 7, reason: '未命中回落到裁剪后的 hint（不小于游标）');
+      expect(out[2], (7, 3));
+    });
+
     test('回落不污染游标：连续两条不可命中后，真实可命中句仍命中', () {
       const String full = 'あいうえおかきくけこさしすせそたちつてと';
       final out = _resolve(full, const <SentenceAudioCueHint>[
@@ -127,24 +184,39 @@ void main() {
       ).readAsStringSync();
 
       // 运行时按 DOM 文本建归一化反查表。
-      expect(src.contains('buildSentenceAudioNormIndex:'), isTrue,
-          reason: '需一次性构建实时 DOM 的归一化全文 + 反查表');
+      expect(
+        src.contains('buildSentenceAudioNormIndex:'),
+        isTrue,
+        reason: '需一次性构建实时 DOM 的归一化全文 + 反查表',
+      );
       // 反查表必须按 UTF-16 码元粒度（代理对 push 两条），与 full.indexOf 的
       // 码元偏移对齐，否则 CJK 扩展 B+ 汉字后高亮错位（W-1）。
-      expect(src.contains('for (var u = 0; u < ch.length'), isTrue,
-          reason: 'map 必须按码元粒度建，与 full(码元串) 同空间');
+      expect(
+        src.contains('for (var u = 0; u < ch.length'),
+        isTrue,
+        reason: 'map 必须按码元粒度建，与 full(码元串) 同空间',
+      );
       // 用 cue 原文 needle 在全文里搜索（而非按 start 死偏移数 cursor）。
       // TODO-630/BUG-366：needle 现经 foldNormalize（剥+值折叠），仍来自 cue 原文。
-      expect(src.contains('this.foldNormalize(cue.text'), isTrue,
-          reason: 'needle 必须来自 cue 原文（经 foldNormalize），靠 DOM 文本自校正');
-      expect(src.contains('full.indexOf(needle'), isTrue,
-          reason: '在 DOM 归一化全文里搜索 cue 原文');
+      expect(
+        src.contains('this.foldNormalize(cue.text'),
+        isTrue,
+        reason: 'needle 必须来自 cue 原文（经 foldNormalize），靠 DOM 文本自校正',
+      );
+      expect(
+        src.contains('full.indexOf(needle'),
+        isTrue,
+        reason: '在 DOM 归一化全文里搜索 cue 原文',
+      );
       // 提示仅作 hint（就近 + 有界窗口），不再是权威坐标。
       expect(src.contains('cue.start'), isTrue, reason: 'start 降级为提示位置');
       expect(RegExp(r'WINDOW').hasMatch(src), isTrue, reason: '搜索半径有界，防跳远处重复句');
       // 回落仍走 rangesForNormSpan（绝不空高亮整章）。
-      expect(src.contains('rangesForNormSpan('), isTrue,
-          reason: '命中/回落都经统一的 span→DOM range 映射');
+      expect(
+        src.contains('rangesForNormSpan('),
+        isTrue,
+        reason: '命中/回落都经统一的 span→DOM range 映射',
+      );
     });
 
     // BUG-282 源码守卫：JS collectSasayakiCueRanges 的回落分支**不得**再推进
@@ -156,18 +228,23 @@ void main() {
       ).readAsStringSync();
 
       // 锁定 collectSasayakiCueRanges 函数体。
-      final int fnStart =
-          src.indexOf('collectSentenceAudioCueRanges: function');
+      final int fnStart = src.indexOf(
+        'collectSentenceAudioCueRanges: function',
+      );
       expect(fnStart, greaterThanOrEqualTo(0));
-      final int fnEnd =
-          src.indexOf('applySentenceAudioCues: function', fnStart);
+      final int fnEnd = src.indexOf(
+        'applySentenceAudioCues: function',
+        fnStart,
+      );
       expect(fnEnd, greaterThan(fnStart));
       final String fnBody = src.substring(fnStart, fnEnd);
 
       // 命中分支必须推进游标（best>=0 时 cursor = best + normLen）。
       expect(
-        RegExp(r'best\s*>=\s*0.*cursor\s*=\s*best\s*\+\s*normLen', dotAll: true)
-            .hasMatch(fnBody),
+        RegExp(
+          r'best\s*>=\s*0.*cursor\s*=\s*best\s*\+\s*normLen',
+          dotAll: true,
+        ).hasMatch(fnBody),
         isTrue,
         reason: '命中分支仍应推进游标',
       );
@@ -176,6 +253,52 @@ void main() {
         fnBody.contains('cursor = spanStart + len'),
         isFalse,
         reason: '回落不得推进游标，否则越过后续可命中句重新引入累积漂移（BUG-282）',
+      );
+    });
+
+    test('JS 延续优先 + 回吃前句尾巴（BUG-2204），常量与 Dart 影子同值', () {
+      final String src = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
+      final int fnStart = src.indexOf(
+        'collectSentenceAudioCueRanges: function',
+      );
+      final int fnEnd = src.indexOf(
+        'applySentenceAudioCues: function',
+        fnStart,
+      );
+      final String fnBody = src.substring(fnStart, fnEnd);
+      expect(
+        fnBody,
+        contains(
+          'var OVERLAP = ${ReaderPaginationScripts.kSentenceAudioTailOverlap};',
+        ),
+      );
+      expect(
+        fnBody,
+        contains(
+          'var ADJACENT = ${ReaderPaginationScripts.kSentenceAudioAdjacent};',
+        ),
+      );
+      expect(
+        fnBody,
+        contains('Math.max(lastHitStart + 1, cursor - OVERLAP)'),
+        reason: '回吃只到前一条命中起点之后',
+      );
+      expect(
+        fnBody,
+        contains('if (adjacent >= 0) best = adjacent;'),
+        reason: '紧接前一条命中处的延续优先于离 hint 最近者',
+      );
+      expect(
+        fnBody,
+        contains('spans[lastHit].len = best - spans[lastHit].start;'),
+        reason: '回吃后前一条 span 裁短，range 不重叠',
+      );
+      expect(
+        fnBody.contains('this.rangesForNormSpan(map, spanStart, spanLen)'),
+        isFalse,
+        reason: 'range 必须在全部 span 定稿（含裁短）之后统一生成',
       );
     });
   });
@@ -198,10 +321,7 @@ void main() {
     }
 
     test('片假名折叠成平假名（与平假名书同形）', () {
-      expect(
-        ReaderPaginationScripts.foldNormalizeForTesting('カタカナ'),
-        'かたかな',
-      );
+      expect(ReaderPaginationScripts.foldNormalizeForTesting('カタカナ'), 'かたかな');
       expectParity('カタカナ');
     });
 
@@ -234,85 +354,118 @@ void main() {
   // 修复前 JS needle 只剥不折 = 「カタカナ」，在平假名 full 里 indexOf 落空 → 回落 hint。
   // 修复后 needle 折叠成「かたかな」→ 命中真实位置。
   group(
-      'folding-class cue relocation hits via folded needle (TODO-630/BUG-366)',
-      () {
-    test('片假名 cue 在平假名 DOM 全文里命中（折叠后 indexOf 不落空）', () {
-      // full 由 DOM 折叠产生（平假名）：あ0 い1 う2 え3 お4 か5 た6 か7 な8 ...
-      const String full = 'あいうえおかたかなさしすせそ';
-      // cue 原文是片假名「カタカナ」，先折叠成 needle「かたかな」（运行期 foldNormalize）。
-      final String needle =
-          ReaderPaginationScripts.foldNormalizeForTesting('カタカナ');
-      final out = _resolve(full, <SentenceAudioCueHint>[
-        // hint 故意给 0（不准），靠 DOM 文本就近重定位到真实位置 5。
-        SentenceAudioCueHint(needle: needle, hint: 0, length: 4),
-      ]);
-      expect(out.single, 5, reason: '折叠后 needle 必须命中真实位置 5，而非回落 hint=0');
-    });
+    'folding-class cue relocation hits via folded needle (TODO-630/BUG-366)',
+    () {
+      test('片假名 cue 在平假名 DOM 全文里命中（折叠后 indexOf 不落空）', () {
+        // full 由 DOM 折叠产生（平假名）：あ0 い1 う2 え3 お4 か5 た6 か7 な8 ...
+        const String full = 'あいうえおかたかなさしすせそ';
+        // cue 原文是片假名「カタカナ」，先折叠成 needle「かたかな」（运行期 foldNormalize）。
+        final String needle = ReaderPaginationScripts.foldNormalizeForTesting(
+          'カタカナ',
+        );
+        final out = _resolve(full, <SentenceAudioCueHint>[
+          // hint 故意给 0（不准），靠 DOM 文本就近重定位到真实位置 5。
+          SentenceAudioCueHint(needle: needle, hint: 0, length: 4),
+        ]);
+        expect(out.single, 5, reason: '折叠后 needle 必须命中真实位置 5，而非回落 hint=0');
+      });
 
-    test('未折叠的片假名 needle 在平假名全文里落空（证伪：这正是修复前症状）', () {
-      const String full = 'あいうえおかたかなさしすせそ';
-      // 不经折叠（模拟旧 JS：normalizeText 只剥），片假名 needle 在平假名全文里搜不到。
-      final out = _resolve(full, const <SentenceAudioCueHint>[
-        SentenceAudioCueHint(needle: 'カタカナ', hint: 0, length: 4),
-      ]);
-      expect(out.single, 0, reason: '未折叠时 indexOf 落空 → 回落 hint=0（这是被修复的错误行为）');
-    });
-  });
+      test('未折叠的片假名 needle 在平假名全文里落空（证伪：这正是修复前症状）', () {
+        const String full = 'あいうえおかたかなさしすせそ';
+        // 不经折叠（模拟旧 JS：normalizeText 只剥），片假名 needle 在平假名全文里搜不到。
+        final out = _resolve(full, const <SentenceAudioCueHint>[
+          SentenceAudioCueHint(needle: 'カタカナ', hint: 0, length: 4),
+        ]);
+        expect(
+          out.single,
+          0,
+          reason: '未折叠时 indexOf 落空 → 回落 hint=0（这是被修复的错误行为）',
+        );
+      });
+    },
+  );
 
   // 源码守卫：JS 运行期归一化必须做值折叠并用于 needle + full（防回归删回「只剥不折」）。
   group(
-      'JS sentenceAudioHighlight value-folding wiring guard (TODO-630/BUG-366)',
-      () {
-    final String src = File(
-      'lib/src/reader/reader_pagination_scripts.dart',
-    ).readAsStringSync();
+    'JS sentenceAudioHighlight value-folding wiring guard (TODO-630/BUG-366)',
+    () {
+      final String src = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
 
-    test('JS 定义 foldCodePoint / foldNormalize 值折叠函数', () {
-      expect(src.contains('foldCodePoint: function'), isTrue,
-          reason: '需 JS 值折叠码点函数（片假名→平假名/大小写/全角→ASCII）');
-      expect(src.contains('foldNormalize: function'), isTrue,
-          reason: '需 JS 剥+折叠组合函数供 needle 用');
-    });
+      test('JS 定义 foldCodePoint / foldNormalize 值折叠函数', () {
+        expect(
+          src.contains('foldCodePoint: function'),
+          isTrue,
+          reason: '需 JS 值折叠码点函数（片假名→平假名/大小写/全角→ASCII）',
+        );
+        expect(
+          src.contains('foldNormalize: function'),
+          isTrue,
+          reason: '需 JS 剥+折叠组合函数供 needle 用',
+        );
+      });
 
-    test('needle 经 foldNormalize（而非只剥的 normalizeText）', () {
-      expect(src.contains('this.foldNormalize(cue.text'), isTrue,
-          reason: 'needle 必须折叠，否则折叠类书 indexOf 落空');
-    });
+      test('needle 经 foldNormalize（而非只剥的 normalizeText）', () {
+        expect(
+          src.contains('this.foldNormalize(cue.text'),
+          isTrue,
+          reason: 'needle 必须折叠，否则折叠类书 indexOf 落空',
+        );
+      });
 
-    test('full 索引也折叠（与 needle 同坐标系）', () {
-      expect(src.contains('this.foldCodePoint(text.codePointAt(i))'), isTrue,
+      test('full 索引也折叠（与 needle 同坐标系）', () {
+        expect(
+          src.contains('this.foldCodePoint(text.codePointAt(i))'),
+          isTrue,
           reason:
-              'buildSentenceAudioNormIndex 的 full 也须折叠，否则 needle/full 坐标系分叉');
-    });
-  });
+              'buildSentenceAudioNormIndex 的 full 也须折叠，否则 needle/full 坐标系分叉',
+        );
+      });
+    },
+  );
 
   // 源码守卫：观测日志（解定位僵局）必须存在于关键节点（防回归删）。
-  group('JS sentenceAudioHighlight highlight observability guard (TODO-630)',
-      () {
-    final String src = File(
-      'lib/src/reader/reader_pagination_scripts.dart',
-    ).readAsStringSync();
+  group(
+    'JS sentenceAudioHighlight highlight observability guard (TODO-630)',
+    () {
+      final String src = File(
+        'lib/src/reader/reader_pagination_scripts.dart',
+      ).readAsStringSync();
 
-    test('applySentenceAudioCues 打 payload cue 数 + 一次性诊断（cssHighlights/背景色）',
+      test(
+        'applySentenceAudioCues 打 payload cue 数 + 一次性诊断（cssHighlights/背景色）',
         () {
-      expect(
-          src.contains(
-              '[sentence-audio-hl] applySentenceAudioCues payloadCues='),
-          isTrue);
-      expect(src.contains('[sentence-audio-hl] diag cssHighlightsSupported='),
-          isTrue);
-      expect(src.contains('--fushi-sentence-audio-background-color'), isTrue,
-          reason: '一次性诊断须读 sentenceAudioHighlight 背景色变量（透明/缺失也是「看不见」原因）');
-    });
+          expect(
+            src.contains(
+              '[sentence-audio-hl] applySentenceAudioCues payloadCues=',
+            ),
+            isTrue,
+          );
+          expect(
+            src.contains('[sentence-audio-hl] diag cssHighlightsSupported='),
+            isTrue,
+          );
+          expect(
+            src.contains('--fushi-sentence-audio-background-color'),
+            isTrue,
+            reason: '一次性诊断须读 sentenceAudioHighlight 背景色变量（透明/缺失也是「看不见」原因）',
+          );
+        },
+      );
 
-    test('collectSentenceAudioCueRanges 打 cue 数 + 空 range 计数', () {
-      expect(src.contains('[sentence-audio-hl] collectRanges cues='), isTrue);
-      expect(src.contains('emptyRanges'), isTrue);
-    });
+      test('collectSentenceAudioCueRanges 打 cue 数 + 空 range 计数', () {
+        expect(src.contains('[sentence-audio-hl] collectRanges cues='), isTrue);
+        expect(src.contains('emptyRanges'), isTrue);
+      });
 
-    test('highlightSentenceAudioCue 打 range/ruby 数（或为何 return null）', () {
-      expect(src.contains('[sentence-audio-hl] highlightCue ranges='), isTrue);
-      expect(src.contains('RETURN_NULL_no_segments'), isTrue);
-    });
-  });
+      test('highlightSentenceAudioCue 打 range/ruby 数（或为何 return null）', () {
+        expect(
+          src.contains('[sentence-audio-hl] highlightCue ranges='),
+          isTrue,
+        );
+        expect(src.contains('RETURN_NULL_no_segments'), isTrue);
+      });
+    },
+  );
 }

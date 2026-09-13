@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -42,6 +43,7 @@ typedef _LayoutCssArgs = ({
   bool isVertical,
   _ThemeColors colors,
   String resolvedFontFamily,
+  String fontWeightCss,
   String textSpacingCss,
   String paddingCss,
   String gridCss,
@@ -66,8 +68,14 @@ class ReaderContentStyles {
   // 只该用纯视口高 V。原实现把列高建在含 +O 的 `--page-height` 上 → 列底边落
   // V−cB+(O−F)，字号 F<O(=22) 时漏出 (O−F) 进底栏。这里改用新变量
   // `--reader-viewport-height`(= 纯 V)，与 JS getScrollContext 的 viewportHeight
-  // 成对一致：column-width(CSS) == contentBox(JS) == V−F−cT−cB，pageStep==realPitch
-  // 保持，列底边 = V−F−cB ≤ V−cB（漏 0，且与 F 无关）。
+  // 成对一致：column-width(CSS) == contentBox(JS) == V−mt−mb−cT−cB，pageStep==realPitch
+  // 保持，列底边 = V−mb−cB（漏 0）。
+  //
+  // BUG-2469：padding-bottom 曾再多加一个字号 F（`+ ${fontSize}px`，列高相应
+  // `- ${fontSize}px`）。它是 TODO-734 之前「列高建在 V+O 上」时代的配对项——那时
+  // 列底边 = V−cB+(O−F)，F 用来抵消 +O 的虚高；基准改成纯 V 后 F 失去对象，变成
+  // 列底边与底栏之间一条谁也不占的空带（字号 43 就白扣 43px，页边距设 0 也贴不到
+  // 底）。现在上下 padding 只含页边距 + chrome inset，与连续 / VN 布局同构。
   //
   // 注意：JS 端必须把 viewportHeight 注入为 `--reader-viewport-height` 且
   // fushiReader.viewportHeight = V（见 reader_pagination_scripts.dart 的
@@ -86,7 +94,7 @@ class ReaderContentStyles {
     required double marginBottomVh,
     required int fontSizePx,
   }) =>
-      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${marginTopVh}vh) - var(--reader-margin-bottom, ${marginBottomVh}vh) - ${fontSizePx}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
+      'max(${fontSizePx}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${marginTopVh}vh) - var(--reader-margin-bottom, ${marginBottomVh}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))';
 
   /// TODO-1285：每页多列（pageColumns）的单个子列宽度。给定单列时的 content-box 基准
   /// 表达式 [baseContentBoxCss]（横排=宽、竖排=高，均为 CSS calc/max 串），当
@@ -112,7 +120,8 @@ class ReaderContentStyles {
 
   /// TODO-734：竖排列高 content-box 的纯代数值（px），与 [verticalColumnWidthCss]
   /// 的 `max(F, calc(...))` 逐项同构。仅供代数守卫核算漏出量用，不参与 CSS 生成。
-  /// V=视口高，F=字号，mt/mb=上下页边距(px)，cT/cB=chrome 上下 inset(px)。
+  /// V=视口高，F=字号（只作坍塌地板，不再从列高里扣，BUG-2469），mt/mb=上下页边距(px)，
+  /// cT/cB=chrome 上下 inset(px)。
   ///
   /// TODO-743（P0 坍塌地板）：与 CSS 的 `max(${fontSizePx}px, calc(...))` 成对——当
   /// cT + cB + F ≥ V（横屏短边小 + 大字号）时裸 calc 为负，浏览器把 column-width 钳
@@ -131,7 +140,6 @@ class ReaderContentStyles {
         viewportHeightPx -
             marginTopPx -
             marginBottomPx -
-            fontSizePx -
             chromeTopInsetPx -
             chromeBottomInsetPx,
       );
@@ -172,6 +180,44 @@ class ReaderContentStyles {
   /// 中文字形渲染。接上 [contentFontFamilyCss] 后，语言已知就给该语言的衬线链；
   /// 语言未知（[language] 为 null 或非 CJK）时链为空，退回原来的 `serif`，与改造
   /// 前逐字节一致——不知道语言就不猜，理由见 `content_font_chain.dart`。
+  /// BUG-2472：WebKit（macOS / iOS WKWebView）把**首行含振假名的段落**整体撑高一截：
+  /// `<rt>` 注音盒（0.45em × line-height normal ≈ 0.54em）超出根行盒上半 leading
+  /// （(1.65−1)/2 = 0.325em）的部分，WebKit 不是像 Blink 那样让它悬在 leading 里，
+  /// 而是把段落首行往下推，段落块轴多出 ≈ 0.215em（22 号 4.73px、46 号 6.25px；
+  /// 行距本身不变，Blink 恒为 0）。竖排下就是「有注音的段落列更宽」，段落间距忽宽忽窄。
+  ///
+  /// 第一版修法（`1376273f4b`）是 `html { -webkit-line-box-contain: block replaced }`，
+  /// 让行盒只按块 strut + 替换元素算高。它在 Mac 真机上把注音段落的多出量归了 0，但
+  /// BUG-2482 实证它同时把**整条行盒**的 strut 也剔掉了：EPUB 的 XHTML 当 text/html
+  /// 端上、多数没有 DOCTYPE（`document.compatMode === "BackCompat"`），quirks 模式下
+  /// WebKit 只给「根 inline 盒里直接有文本节点」的行加 strut，于是整行文字都住在
+  /// inline 盒里的行（`<p><a><span>…</span></a></p>`、`<p><span>…</span></p>`、
+  /// `<p><em>…</em></p>`、`<p><span><ruby>…</ruby></span></p>`）和只有 `<br/>` 的空行
+  /// 行盒高恒为 0——無職転生 22 目录页 17 条章节标题叠印在同一列、正文 57 个
+  /// `<p><br/></p>` 空行消失（Mac 真书探针 `reader_mushoku22_layout_probe_itest.dart`
+  /// 的 `[m22] SUMMARY` 行：目录 17/18 个 `<p>` 宽 0，切回默认值 0/18）。
+  ///
+  /// 现行修法只碰**注音盒自己**：WebKit 的 ruby 是「基字行内盒 + 注音块」拼成的一个
+  /// 行内块，行盒为它长高是因为注音块在流中占了 0.54em 的高度；给 `<rt>` 一个足够大的
+  /// 负 `margin-block-start`（注音所在的那一侧：横排=上、竖排=右），注音块在流中的高度
+  /// 被抵消成 0，行盒不再为它长高，注音照旧画在原位（Mac 真书探针横/竖 × 22/46 ×
+  /// 行高 1.65/1.0 六轮：段落多出量 0 / 0 / 0 / −0.16，注音盒相对基字的位置
+  /// `rtGap` / `rtCenter` 与第一版修法逐像素相同，行距不变；目录页零高段落 0/18）。
+  /// 取 −2em（以注音字号计）：注音盒高 = line-height normal ≈ 1.2em，行高 1.0 时要抵消
+  /// 的是整个注音盒，−1.5em 已够，WebKit 对超出的负 margin 只是钳掉（−3em 与 −1.5em
+  /// 结果逐字节相同），留余量给 normal 行高更大的字体。Blink 本就不长高，且旧版
+  /// Android WebView 的 ruby 实现不同，故仍**按平台门控**只发给 Apple 端；
+  /// `-webkit-line-box-contain` 在任何平台都不再发出（BUG-611 / BUG-2482 两道守卫）。
+  static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
+        TargetPlatform.iOS || TargetPlatform.macOS => '''
+/* BUG-2472 / BUG-2482: WebKit only — see _webKitRubyAnnotationCss. */
+ruby > rt, ruby > rtc {
+  margin-block-start: -2em !important;
+}
+''',
+        _ => '',
+      };
+
   static String _bodyFontFamily(String? customCssFamilies, String? language) {
     final String chain = contentFontFamilyCss(
       languageTag: language,
@@ -264,11 +310,11 @@ class ReaderContentStyles {
     // （固定视口帧，margin/border=0 即视口）为基准、裁到**正文内容盒**（= 全 padding：四边各等于
     // body 实际 padding），把滚进留白区的相邻列裁掉；正文在内容盒内侧不受影响，被裁的留白区显示
     // html/body 背景（同色）= 页边距照常空白。四边都裁：竖排消上下露、横排消左右露。padding 四边
-    // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+F+chromeBottom，
+    // 与 body 的 padding-top/right/bottom/left 逐项一致（上=mt vh+chromeTop，下=mb vh+chromeBottom，
     // 左右=ml/mr vw），裁边恰在列边缘、不切正文。
     final String contentClipCss =
         'inset(calc($marginTopCss + var(--chrome-top-inset, 0px)) $marginRightCss '
-        'calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) $marginLeftCss)';
+        'calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) $marginLeftCss)';
     // TODO-729：column-gap 固定为常量（= 安卓 calc(0vh + 22px)）。它只是相邻列之间
     // 的恒定空隙，**不再**承载 margin / fontSize / chrome inset —— 那些 inset 全部由
     // padding 承载（横排在 padding 左右 + perpendicular 的 padding-top/bottom；竖排在
@@ -285,7 +331,8 @@ class ReaderContentStyles {
     //  - 横排：宽 = page-width − 左右 padding(${ml}vw + ${mr}vw)。perpendicular 的
     //    padding-top/bottom(含 chrome inset)不影响横向列宽。
     //  - 竖排：高 = reader-viewport-height(=纯 V) − 上下 padding(${mt}vh + ${mb}vh +
-    //    fontSize + chrome top/bottom inset)，与 padding-top/padding-bottom 逐项对应。
+    //    chrome top/bottom inset)，与 padding-top/padding-bottom 逐项对应（BUG-2469：
+    //    不再多扣一个字号）。
     //    TODO-734：基准必须是纯视口高 V（--reader-viewport-height），不是含
     //    +bottomOverlap 的 --page-height（那是图片虚高用），否则列底边比视口底高
     //    (O−F)，字号 F<22 漏字进底栏。与 JS getScrollContext 的 viewportHeight 成对。
@@ -314,6 +361,17 @@ class ReaderContentStyles {
 
     final String textSpacingCss =
         'line-height: ${settings.lineHeight} !important;';
+
+    // 正文字重。只声明在 `body` 上，靠继承覆盖正文——不下放到 `p`/`*`，因为 UA
+    // 样式表给 `<strong>`/`<b>` 的是相对值 `bolder`：挂在 body 上时加粗仍相对用户
+    // 选定的基准再上一档（400→700、600→900），书里的强调不会被抹平；一旦改成
+    // 通配选择器 + !important 就会把 `<strong>` 一起钉死成同一字重。
+    // 400 = CSS `normal` 是默认值，此时整条声明不注入：书自带样式表原样生效，
+    // 与本功能引入前的渲染完全一致（零回归），与 `textIndentCss`/`gridCss` 的
+    // 「默认值产出空串」同构。
+    final int fontWeight = settings.fontWeight;
+    final String fontWeightCss =
+        fontWeight == 400 ? '' : 'font-weight: $fontWeight !important;';
 
     final String gridCss = settings.enableTextJustification
         ? ''
@@ -399,6 +457,7 @@ svg.block-img.blurred {
       isVertical: isVertical,
       colors: colors,
       resolvedFontFamily: resolvedFontFamily,
+      fontWeightCss: fontWeightCss,
       textSpacingCss: textSpacingCss,
       paddingCss: paddingCss,
       gridCss: gridCss,
@@ -454,7 +513,15 @@ html {
      default line-box behaviour (which reserves ruby space) on every engine —
      exactly what current Blink already does correctly (zero regression there),
      and the BUG-108 lesson that Blink WebViews do not add ruby leading unless
-     the line box is allowed to grow. */
+     the line box is allowed to grow.
+     BUG-2472 addendum: on WebKit (macOS / iOS) the SAME reserve is what makes a
+     paragraph whose first line carries furigana taller than its neighbours. The
+     first fix emitted `block replaced` here for Apple only; BUG-2482 showed that
+     in quirks mode it also drops the strut of every line whose text lives only
+     inside inline boxes (TOC entries, `<p><br/></p>` blank lines collapse to
+     zero height). The property is therefore emitted on NO engine any more; the
+     WebKit-only ruby fix lives in _webKitRubyAnnotationCss (a negative
+     margin-block-start on the annotation box). */
   /* Themed scrollbar: the track stays transparent so it shows the page
      background, and the thumb takes the theme text colour (already alpha<1),
      so dark themes get a light thumb and light themes a dark one. The standard
@@ -615,7 +682,7 @@ ruby {
   display: ruby !important;
   ruby-position: over !important;
 }
-ruby rp {
+${_webKitRubyAnnotationCss()}ruby rp {
   display: none !important;
 }
 ruby rb {
@@ -762,10 +829,14 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   /// 设计对齐 Hoshi-Reader-Android 的 E-ink 适配：
   /// - 高亮全部从「半透明色块背景」改为**线式标记**——色块在墨水屏上是一大片
   ///   抖动灰阶，且每次高亮移动都触发大面积刷新；下划线只刷新贴近文字的一条线。
-  ///   查词选区=粗实线、有声书跟随=虚线、搜索命中=双线、收藏句=保留原下划线但
+  ///   查词选区=粗实线、有声书跟随=细实线、搜索命中=双线、收藏句=保留原下划线但
   ///   去掉色块（五色在灰阶屏上不可分，线本身就是收藏语义）。
-  /// - `--fushi-reader-eink-mode: 1` 点亮 JS 侧既有的 isEInkMode() 分支
-  ///   （reader_visual_novel_scripts / 连续模式滚动缓动短路）。
+  /// - 跟读线用**实线**而非虚线：上游 HSA 的墨水屏跟读高亮是 overlay 层画的
+  ///   1.5px 实心直线条（reader-popup-host.js `renderSasayakiHighlight`），
+  ///   虚线在慢刷新屏上每段短划都是独立的黑白跳变，既更脏也更难一眼定位当前句。
+  /// - `--fushi-reader-eink-mode: 1` 供 JS 侧读：连续模式跟随滚动短路成瞬时
+  ///   （reader_pagination_scripts）。VN 侧不再据此分流——跟读高亮在所有模式
+  ///   下都走同一条 inline wrapper 路径，正是本文件这些线式规则的作用对象。
   /// - 关掉书籍自带的 transition/animation，慢刷新屏上任何补间都是残影。
   static String _einkOverrideCss({required bool einkDark}) {
     final String fg = einkDark ? '#fff' : '#000';
@@ -809,7 +880,7 @@ ruby.fushi-selection-ruby-active {
   background-color: transparent;
   color: inherit;
   text-decoration-line: underline;
-  text-decoration-style: dashed;
+  text-decoration-style: solid;
   text-decoration-color: $fg;
   text-decoration-thickness: 0.10em;
   text-underline-offset: 0.18em;
@@ -818,7 +889,7 @@ ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
-  text-decoration-style: dashed !important;
+  text-decoration-style: solid !important;
   text-decoration-color: $fg !important;
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
@@ -827,7 +898,7 @@ ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
   color: inherit !important;
   text-decoration-line: underline !important;
-  text-decoration-style: dashed !important;
+  text-decoration-style: solid !important;
   text-decoration-color: $fg !important;
   text-decoration-thickness: 0.10em !important;
   text-underline-offset: 0.18em !important;
@@ -869,6 +940,7 @@ a {
     final ReaderSettings settings = a.settings;
     final _ThemeColors colors = a.colors;
     final String resolvedFontFamily = a.resolvedFontFamily;
+    final String fontWeightCss = a.fontWeightCss;
     final String textSpacingCss = a.textSpacingCss;
     final String paddingCss = a.paddingCss;
     final String gridCss = a.gridCss;
@@ -900,6 +972,7 @@ html, body {
 body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
+  $fontWeightCss
   -webkit-text-size-adjust: none !important;
   overflow-wrap: anywhere !important;
   $textSpacingCss
@@ -907,7 +980,7 @@ body {
   /* TODO-792 根因修复：多列容器(body)高度必须用纯视口高 V(--reader-viewport-height)，不是
      含 +bottomOverlap 的 --page-height(V+O)。html 仍 V+O(滚动/图片虚高用)，但 body 作为
      multicol 容器若是 V+O，其 content-box inline 高 = (V+O)−padding 比 column-width 基准
-     (纯 V−padding−F = verticalColumnWidthCss) 大一个 O → 浏览器把单列 used 高从 793 拉伸到
+     (纯 V−padding = verticalColumnWidthCss) 大一个 O → 浏览器把单列 used 高从 793 拉伸到
      815、相邻列顶差 = 真实列周期 837 > 名义 pageStep 815 → ① 页间翻页累积漂移 ② 页内 column-fill
      在溢出列上沿 inline(竖直)轴逐列下移 = 整体往下/斜的平行四边形。容器高对齐纯 V 后列不再拉伸、
      used 高回 793、realPitch 回 815 = 名义 pageStep，两症同消(故同时 revert getScrollContext 的
@@ -926,7 +999,7 @@ body {
   column-fill: auto !important;
   padding: $paddingCss !important;
   padding-top: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
-  padding-bottom: calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  padding-bottom: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
   /* TODO-810 + TODO-792：clip-path 以 body 边框盒（border-box·margin/border=0 即固定视口帧）为
      基准裁到**正文内容盒**（四边各 = body 实际 padding），一举两用：① 裁掉 notch/状态栏安全带里
      滚入的上一页文字（原 TODO-810 只裁 chrome inset 那一截）；② 裁掉分页模式因 viewport > 单列
@@ -966,7 +1039,7 @@ html::before {
   border-color: ${colors.backgroundColor} !important;
   border-top-width: calc($marginTopCss + var(--chrome-top-inset, 0px)) !important;
   border-right-width: $marginRightCss !important;
-  border-bottom-width: calc($marginBottomCss + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;
+  border-bottom-width: calc($marginBottomCss + var(--chrome-bottom-inset, 0px)) !important;
   border-left-width: $marginLeftCss !important;
 }''';
   }
@@ -983,6 +1056,7 @@ html::before {
     final bool isVertical = a.isVertical;
     final _ThemeColors colors = a.colors;
     final String resolvedFontFamily = a.resolvedFontFamily;
+    final String fontWeightCss = a.fontWeightCss;
     final String textSpacingCss = a.textSpacingCss;
     final String paddingCss = a.paddingCss;
     final String gridCss = a.gridCss;
@@ -1014,6 +1088,7 @@ html, body {
 body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
+  $fontWeightCss
   -webkit-text-size-adjust: none !important;
   overflow-wrap: anywhere !important;
   box-sizing: border-box !important;
@@ -1068,6 +1143,7 @@ body {
     final bool isVertical = a.isVertical;
     final _ThemeColors colors = a.colors;
     final String resolvedFontFamily = a.resolvedFontFamily;
+    final String fontWeightCss = a.fontWeightCss;
     final String textSpacingCss = a.textSpacingCss;
     final String paddingCss = a.paddingCss;
     final String gridCss = a.gridCss;
@@ -1116,6 +1192,7 @@ html, body {
 body {
   font-family: $resolvedFontFamily !important;
   font-size: ${settings.fontSize}px !important;
+  $fontWeightCss
   -webkit-text-size-adjust: none !important;
   overflow-wrap: anywhere !important;
   $textSpacingCss
@@ -1152,30 +1229,53 @@ body::after {
     // still wins for hidden furigana. The shown modes also own <rtc> (see
     // _rtcAnnotationCss); `hide` hides rtc together with rt so a hidden
     // annotation container cannot keep reserving lane space.
+    // 四态（值域见 ReaderSettings.furiganaMode）：前三态 off / toggle / hidden
+    // 对齐 Hoshi Reader iOS `FuriganaMode`，`dimmed` 是 2026-09-12 用户追加的
+    // 「显示但淡」。`toggle` 的隐藏纯由 CSS 承担，不再靠装载时 JS 给 ruby 打
+    // class：正文动态换章 / 设置热更新都只重发 CSS，JS 标记会漏掉新内容或在热
+    // 切换后残留。揭示 = 点击那个 ruby 加 `furigana-revealed`
+    // （fushiSelection.selectText 入口，命中隐藏注音的 ruby 只揭示、不查词）；
+    // `body.show-all-rt` 是 readerToggleFurigana 快捷键（手柄 R3）的整页揭示。
+    //
+    // `dimmed` 的淡显只用 `opacity`，**不改 color**：注音色如果写死成某个灰，在
+    // 深浅主题 / 自定义正文色之间总有一边对比失衡（浅底上的浅灰几乎不可读、深底
+    // 上的深灰直接消失）；opacity 是对当前正文色的相对衰减，两边都成立，也不和
+    // 主题色变量、有声书高亮的背景填充打架。同一颗 `readerToggleFurigana` 快捷键
+    // 在 `dimmed` 下的语义是「临时恢复全亮」——`body.show-all-rt` 把 opacity 拉回
+    // 1，与 `toggle` 下「整页揭示」同构（都是一次性看清全页注音）。
     switch (mode) {
-      case 'hide':
+      case 'hidden':
         return 'rt, rtc { display: none !important; }';
-      case 'partial':
-        return '''
-rt {
-  display: ruby-text !important;
-  font-size: 0.45em;
-  visibility: hidden;
-}
-$_rtcAnnotationCss
-ruby.show-rt rt {
-  visibility: visible;
-}''';
       case 'toggle':
         return '''
-rt {
-  display: ruby-text !important;
-  font-size: 0.45em;
-  visibility: hidden;
-}
+rt { display: ruby-text !important; font-size: 0.45em; }
 $_rtcAnnotationCss
-body.show-all-rt rt {
+ruby:not(.furigana-revealed) > rt,
+ruby:not(.furigana-revealed) > rtc,
+ruby:not(.furigana-revealed) > rp {
+  visibility: hidden !important;
+}
+ruby:not(.furigana-revealed):has(rt) {
+  text-decoration-line: underline !important;
+  text-decoration-style: dotted !important;
+  text-decoration-color: rgba(160, 160, 160, 0.8) !important;
+  text-underline-offset: 0.05em !important;
+}
+body.show-all-rt ruby > rt,
+body.show-all-rt ruby > rtc {
   visibility: visible !important;
+}''';
+      case 'dimmed':
+        return '''
+rt { display: ruby-text !important; font-size: 0.45em; }
+$_rtcAnnotationCss
+ruby > rt,
+ruby > rtc {
+  opacity: 0.45 !important;
+}
+body.show-all-rt ruby > rt,
+body.show-all-rt ruby > rtc {
+  opacity: 1 !important;
 }''';
       default:
         return '''
@@ -1193,7 +1293,7 @@ $_rtcAnnotationCss''';
   /// the annotation into the base column as its own character slot (the
   /// 貫(かん)禄(ろく) screenshot: かん inline between 貫/禄, ろく below the
   /// word). `rtc > rt` is MORE specific than the bare `rt` rule, so it must
-  /// only be emitted in shown modes — in `hide` it would defeat
+  /// only be emitted in shown modes — in `hidden` it would defeat
   /// `rt { display: none !important }` and un-hide rtc furigana.
   static const String _rtcAnnotationCss = '''
 rtc {

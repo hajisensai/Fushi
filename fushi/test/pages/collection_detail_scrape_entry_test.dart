@@ -9,7 +9,13 @@ import 'package:fushi/src/pages/implementations/media_collection_detail_page.dar
 import 'package:fushi_core/fushi_core.dart';
 
 /// legacy cover scraper 已退出生产 UI：合集详情的管理菜单和集卡菜单都不得再
-/// 暴露旧在线匹配/重刮入口；canonical 刮削统一从媒体来源页发起。
+/// 暴露旧在线匹配/重刮入口（旧 TMDB 标题匹配 `showCollectionScrapeDialog`）。
+///
+/// 但「不得走 legacy」 ≠ 「合集不能重刮」：`1637876c64` 把 legacy 入口删掉时
+/// **连带删光了合集语境下的一切重刮入口**，用户手上一个刮错的合集在库页和详情页
+/// 都成了断头路（来源页的作用域是扫描根，替代不了「重刮这一个合集」）。所以本
+/// 守卫是双向的：既钉死 legacy 不复活，也钉死 canonical 入口必须在场——只有否定
+/// 断言的守卫，被人把功能整个删光时照样是绿的（BUG-2374）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -55,7 +61,10 @@ void main() {
     ];
   }
 
-  Widget buildApp() => TranslationProvider(
+  Widget buildApp({
+    Future<void> Function(MediaCollectionRow collection)? onRescrapeCollection,
+  }) =>
+      TranslationProvider(
         child: MaterialApp(
           home: MediaCollectionDetailPage(
             database: db,
@@ -74,6 +83,7 @@ void main() {
             ],
             onOpenEpisode: (VideoBookRow _) {},
             onChanged: () {},
+            onRescrapeCollection: onRescrapeCollection,
           ),
         ),
       );
@@ -99,8 +109,10 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('合集管理菜单不暴露 legacy 刮削入口', (WidgetTester tester) async {
+  testWidgets('没有刮削 controller 时不渲染任何重刮入口', (WidgetTester tester) async {
     useSurface(tester);
+    // 不注入 onRescrapeCollection = 拿不到刮削 controller 的装配，此时菜单里
+    // 一条重刮入口都不该有。
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
@@ -108,11 +120,53 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text(t.video_collection_scrape),
+      find.text(t.collection_rescrape),
       findsNothing,
-      reason: '合集在线刮削必须从来源页进入，详情页不得再走 legacy 标题匹配',
+      reason: '没有 controller 就渲染重刮入口 = 点了必然什么都不发生',
     );
     expect(find.text(t.collection_sort_by_season), findsOneWidget);
+  });
+
+  testWidgets('注入 controller 后管理菜单必须有 canonical 重刮入口',
+      (WidgetTester tester) async {
+    useSurface(tester);
+    final List<int> rescraped = <int>[];
+    await tester.pumpWidget(buildApp(
+      onRescrapeCollection: (MediaCollectionRow collection) async =>
+          rescraped.add(collection.id),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.collection_rescrape),
+      findsOneWidget,
+      reason: '「重刮这一个合集」是 BUG-1662 的诉求，来源页的扫描根作用域替代不了',
+    );
+
+    await tester.tap(find.text(t.collection_rescrape));
+    await tester.pumpAndSettle();
+    expect(rescraped, <int>[collectionId],
+        reason: '菜单项必须真的把当前合集交给注入的重刮实现，不能只是长得像');
+  });
+
+  testWidgets('管理菜单提供合集封面设置，且未设封面时不显示恢复默认', (WidgetTester tester) async {
+    useSurface(tester);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.collection_cover_set), findsOneWidget,
+        reason: '合集封面此前没有任何用户入口，只有刮削和下载导入会写');
+    expect(
+      find.text(t.collection_cover_reset),
+      findsNothing,
+      reason: 'coverPath 为空时没有可恢复的东西，不该占一行菜单',
+    );
   });
 
   testWidgets('集卡菜单不暴露 legacy 条目信息重刮入口', (WidgetTester tester) async {

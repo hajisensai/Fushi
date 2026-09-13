@@ -6,6 +6,8 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/dictionary/dict_style_preview_sample.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiEinkTheme;
 import 'package:fushi/src/utils/misc/webview_asset_url.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
@@ -56,6 +58,42 @@ class _DictStylePreviewState extends State<DictStylePreview> {
       WebViewDeathGuard(surface: 'dict-style-preview');
   bool _ready = false;
 
+  /// 上一次真正推给 WebView 的主题标识，避免每次依赖变化都重复 evaluateJavascript。
+  bool? _pushedDark;
+  bool? _pushedEink;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    unawaited(_pushTheme());
+  }
+
+  /// 预览与真弹窗同源，`eink` class 就也必须同源。
+  ///
+  /// 真弹窗由 popup_settings_injection 的主题变量段 toggle 这个 class，而
+  /// popup.css 的整个 `html.eink` 覆盖块（纯黑白变量 / 去阴影 / 去半透明卡底 /
+  /// 方角 / 线式高亮）全挂在它上面。预览此前只设 `data-theme`、从不设 eink：
+  /// 墨水屏下用户是照着一份灰阶 + 圆角 + 阴影的预览去调样式，而真弹窗是另一个
+  /// 样子——正是本文件开头「不自绘近似渲染」要避免的那种失真。
+  ///
+  /// 用 `toggle` 而非 `add`：主题来回切时要能摘除（与真弹窗同款）。
+  Future<void> _pushTheme() async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_ready) return;
+    final ThemeData theme = Theme.of(context);
+    final bool dark = theme.brightness == Brightness.dark;
+    final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
+    if (_pushedDark == dark && _pushedEink == eink) return;
+    _pushedDark = dark;
+    _pushedEink = eink;
+    await controller.evaluateJavascript(
+      source: '''
+        document.documentElement.setAttribute('data-theme', '${dark ? 'dark' : 'light'}');
+        document.documentElement.classList.toggle('eink', $eink);
+      ''',
+    );
+  }
+
   @override
   void didUpdateWidget(DictStylePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -105,6 +143,7 @@ class _DictStylePreviewState extends State<DictStylePreview> {
       ''',
     );
     _ready = true;
+    await _pushTheme();
     await _pushStyles();
   }
 

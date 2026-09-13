@@ -36,6 +36,7 @@ void main() {
     await File(p.join(sourceRoot.path, 'poster.jpg')).writeAsBytes(<int>[8, 9]);
 
     final MediaSourceRow source = MediaSourceRow(
+      videoGroupingMode: 'series',
       id: 7,
       label: 'Private Anime',
       mediaKind: 'video',
@@ -125,6 +126,7 @@ void main() {
         .writeAsBytes(List<int>.filled(16, 65));
     final File output = File(p.join(temp.path, 'limited.zip'));
     final MediaSourceRow source = MediaSourceRow(
+      videoGroupingMode: 'series',
       id: 1,
       label: 'Anime',
       mediaKind: 'video',

@@ -36,6 +36,21 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
+  // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
+  // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
+  // 扩展索引、版本检查都要联网），观测不到。行为由服务层用例逐条咬住：
+  // 「关掉的域整批丢弃」「系统通知总开关只关通知不关红点」。
+  'system/Notify about new anime episodes':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/Notify about new manga chapters':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/Notify about manga extension updates':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/Notify about app releases':
+      'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
+  'system/System notifications':
+      'test/updates/update_feed_service_test.dart（总开关只关通知不关红点）',
   // v92 阅读空闲门（分钟）：写 prefsRepo（changed=true），生效点是阅读器建
   // StudyClock 时读一次 appModel.readingIdleTimeout——harness 里没有阅读器。
   // 空闲门行为由 study_clock_test「阅读空闲门」用例咬住，接线由
@@ -43,10 +58,20 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Idle timeout':
       'test/media/audiobook/study_clock_test.dart（空闲门）+ '
           'test/tools/statistics_write_convergence_guard_test.dart',
-  // 「功能模块」七开关（五库页 + 下载/查词两个工具 tab）。写 prefsRepo
-  // （changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness 里没有
-  // 挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
-  // =false 各自隐藏对应 tab、首页/设置恒在。
+  // 「今日」重置时刻（整点）：写 prefsRepo（changed=true），生效点是
+  // AppModel._applyStatDayResetHour 镜像到 FushiDatabase.statDayResetHour——之后
+  // 每次 statDateKeyOf 派生 dateKey 才会前移，harness 的渲染输入观测不到。行为由
+  // stat_date_key_test（dateKey 前移 / 边界时长）+ stat_window_test / stat_summary_test /
+  // 热力图用例（读取面 key 算术）咬住。
+  'reading/Day starts at':
+      'test/stats/stat_date_key_test.dart + test/stats/stat_window_test.dart + '
+      'test/pages/stat_summary_test.dart + '
+      'test/widgets/stat_contribution_heatmap_test.dart',
+  // 「功能模块」里**有底栏 tab 的七个**（五库页 + 下载/查词两个工具 tab）。写
+  // prefsRepo（changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness
+  // 里没有挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
+  // =false 各自隐藏对应 tab、首页/设置恒在。（这七个同时也会藏掉自己的设置分类，那一
+  // 半由 settings_module_gating_test 一并咬住。）
   //
   // 键的两半都随「功能模块」搬家改过：destId `system` → `appearance`（本区管底栏
   // 出现哪些 tab，与「反转导航栏」同域），行标题不再是手抄的 module_*_label，而是
@@ -68,6 +93,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
   'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
   'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
+  // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
+  // tab**，homeActiveTabs 那套用例咬不到；写 prefsRepo（changed=true）之后能观测到的
+  // 生效点是**设置一级分类整条消失**（列表 + 搜索索引），而 harness 观测的是本行自己
+  // 所在的那棵渲染树，看不到「另一条 destination 没了」。由专项测试逐个模块咬住：
+  // 关掉它 → 名下分类从可见列表消失、从搜索索引消失，且不波及别的分类。
+  'appearance/Listening': 'test/settings/settings_module_gating_test.dart',
+  'appearance/Card creation': 'test/settings/settings_module_gating_test.dart',
+  'appearance/Online services':
+      'test/settings/settings_module_gating_test.dart',
+  'appearance/Sync & backup': 'test/settings/settings_module_gating_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
@@ -80,6 +115,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // 顶栏悬浮/固定：写 prefsRepo（changed=true），生效点是阅读器打开书时读一次
+  // appModel.mangaChromeFloating 决定栏形态与正文让位——harness 里没有阅读器。
+  // 由 manga_reader_chrome_test 咬住让位/绘制两条纯函数，manga_fushi_page_test
+  // 「悬浮顶栏」用例咬住偏好 → 页面形态的接线。
+  'manga/Floating toolbar':
+      'test/media/manga/manga_reader_chrome_test.dart + '
+          'test/pages/manga_fushi_page_test.dart（悬浮顶栏）',
+  // BUG-2450：在线源封面磁盘缓存保留天数。写 prefsRepo（changed=true），生效点是
+  // MihonCoverCache.maxAge（过期条目下次读取删掉重取），harness 里没有封面缓存
+  // 目录可探。由专项测试咬住：过期封面重新联网、未过期命中磁盘、偏好改动即时
+  // 写穿到已建 manager 的缓存实例。
+  'manga/Cover cache retention':
+      'test/media/manga/manga_cover_retry_test.dart（maxAge 过期重取 + 偏好写穿）',
   // galgame 窗口超分三态开关（PR#430）。写 prefsRepo（changed=true），生效点整条在
   // 本进程之外 —— 改写 Magpie 自己的 config.json、拉起 / 收掉一个独立的 Magpie 进程、
   // 由它去做全屏缩放，widget harness 里没有任何可探的渲染输入；而且它 Windows-only，
@@ -198,10 +246,38 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'game/Window corner radius':
       'test/build/gal_overlay_appearance_guard_test.dart + '
           'DEVICE: native hook overlay corner radius',
+  // AniDB ED2K 文件哈希识别总闸（commit 9e7c1e322d「MAL 主源 + TMDB 兜底 + AniDB
+  // ED2K」新增，落在新的 services destination·「元数据刮削」分区）。写 prefsRepo
+  // kVideoAniDbHashEnabledPref（changed=true），生效点是
+  // VideoSourceScrapeGlobalConfig.hashEnabled → AnidbHashIdentityService.identifyFile
+  // 开头的进场门（关=不算 ED2K、不发一个 AniDB UDP 包），既不在 reader CSS 也不在
+  // 主题树，harness 里没有待识别文件也没有 UDP 对端，无适用探针。由两层专项测试咬住：
+  // ① 偏好 → runtime 快照（含默认 false、密码字节不被 trim）；② 服务层负向守卫
+  // 「disabled and unconfigured skip file hashing」——关着时直接回 disabled、不哈希。
+  'services/Identify files with AniDB ED2K':
+      'test/media/video/metadata/anidb_hash_config_test.dart + '
+          'test/media/video/metadata/anidb_app_client_test.dart（默认关）+ '
+          'test/media/video/anidb_hash_identity_service_test.dart'
+          '（disabled 直接 skip file hashing）',
+  // 字幕遮蔽的「暂停 / 悬停时显形」开关（BUG-2256「暂停 / 查词的自动显形并入
+  // 显形总闸」新增）。写 prefsRepo（changed=true），生效点在
+  // VideoSubtitleOverlay 的显形门：关掉之后**所有**显形来源都不再揭开被遮蔽的
+  // 字幕——悬停（MouseRegion 的 onEnter/onExit）、点击、以及暂停 / 查词浮层触发的
+  // 自动显形。harness 里没有真播放器、没有指针悬停、也没有查词浮层，无适用探针；
+  // 由专项 widget 测试咬住四条显形来源与总闸的关系。
+  'video/Reveal when paused or hovered':
+      'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
+          '（悬停 / 点击 / 暂停 / 查词四条显形来源同属一个总闸）',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
   // 同一实例下轮即刮）。
+  // BUG-2268：作品资料的主源二选一（MAL ↔ TMDB，另一源恒为兜底）。写 prefsRepo
+  // （changed=true），生效点在下一批刮削时协调器选哪家问、歧义时问不问兜底源——
+  // 要网络、要一次完整识别链，不是 reader CSS / 主题树，无适用探针；由专项测试
+  // 直接驱动协调器咬住（全局偏好 / 来源级 override / 双源歧义合并候选）。
+  'video/Primary metadata source':
+      'test/media/video/metadata/video_source_scrape_provider_override_test.dart',
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
   // 库内自动补刮总闸。写 prefsRepo（changed=true），生效点在
@@ -312,6 +388,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Auto-add book title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
           'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
+  // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo
+  // （changed=true），真正的消费点在制卡路径 reader_fushi/mining.part.dart 的
+  // charPositionTag（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
+  // 也没有 Anki，探不到「卡上真带了这个 tag」。两端各有专项测试咬住：注入点由源码
+  // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），tag 装配由
+  // hibiki_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
+  'cardCreation/Auto-add mining position to tags':
+      'test/pages/reader_mining_char_position_tag_guard_test.dart + '
+          'packages/fushi_anki/test/mining_tag_and_parallel_test.dart '
+          '(charPositionTag group)',
   // TODO-1650: 制卡图片/GIF 清晰度 + 音频质量两滑块（替代旧「压缩」开关）。写
   // AppModel.miningImageQuality / miningAudioQuality（prefsRepo），焦点遍历能切到
   // 并写穿 DB（changed=true），但消费点在 ffmpeg/截图编码参数（非 reader CSS / 主题
@@ -320,6 +406,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   'cardCreation/Audio quality':
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  // 句子音频头/尾 padding：效果在裁剪区间（padSentenceRange），纯函数 + 偏好写穿 +
+  // 两条制卡链调用点源码守卫都在专项测试里。
+  'cardCreation/Audio padding before sentence':
+      'test/settings/mining_audio_padding_guard_test.dart',
+  'cardCreation/Audio padding after sentence':
+      'test/settings/mining_audio_padding_guard_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡
@@ -346,7 +438,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 序列化契约（远端制卡仓库包装 + 转发载荷 + 服务端 handler）。
   // 归属：开关已从「制卡」分类移到「Hibiki 互联」→「交给已配对设备」（它的前置条件、
   // 目标设备、失效条件全由互联决定），故登记键的 destId 随之从 cardCreation 变 interconnect。
-  'interconnect/Mine to paired device':
+  'interconnect/Mine to Fushi Interconnect server':
       'test/anki/remote_mining_anki_repository_test.dart + '
           'test/sync/forwarded_mine_payload_test.dart + '
           'test/sync/fushi_remote_mining_service_test.dart',
@@ -354,6 +446,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 FushiFocusRoot/Ring',
   'lookup/Swipe dismiss sensitivity':
+      'test/widgets/swipe_dismiss_wrapper_test.dart',
+  // BUG-2418：滑动关闭弹窗的「关闭动画」开关（默认 true，关掉＝松手当帧就关）。与上面
+  // 两项滑关设置同源、同一条 MediaSource 偏好通道，harness 里同样观测不到写穿与生效：
+  // 生效点是 AnimationController.duration 被设成 Duration.zero，既不是 reader CSS
+  // 也不是主题树，没有适用的 T4 渲染探针。由专项 widget 行为测试覆盖（「只 pump 一帧」
+  // 判别：开着当帧仍在补间、关掉当帧就 onDismiss，另含 eink 不被开关覆盖一条）。
+  'lookup/Popup close animation':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
   'reading/Reverse keyboard left/right page-turn direction':
       'test/reader/reader_space_pause_test.dart + test/shortcuts/global_navigation_test.dart',
@@ -423,6 +522,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_subtitle_obscure_mode_test.dart + test/media/video/video_subtitle_overlay_test.dart + test/shortcuts/video_shortcut_registry_test.dart',
   'video/Obscure secondary subtitle':
       'test/media/video/video_secondary_subtitle_obscure_test.dart + test/media/video/video_subtitle_overlay_test.dart',
+  // 遮蔽态「悬停 / 点击显形」总闸（默认开）：写 prefsRepo（changed=true），生效点在
+  // [VideoSubtitleOverlay] 的显形状态机——门控落在 MouseRegion 的 onEnter/onExit 与
+  // 遮蔽态热区的 onTap 上，harness 里既没有播放器也没有字幕层，没有可探的渲染输入。
+  // 由专项测试第 ⑩ 组咬住：关掉后悬停 / 点击对模糊与隐藏都不再揭开、开着时两者照常
+  // 显形（两条防恒真基准）、关掉后热区仍拦住盒面上的字符点击、播放中关掉立刻收回
+  // 已有的显形态。
+  'video/Reveal on hover or tap':
+      'test/media/video/video_subtitle_hide_hover_reveal_test.dart',
   // TODO-286: pref-only video settings surfaced in home settings for parity with
   // the in-player sheet. Schema coverage here proves focus/change/persist/restore
   // through the DB; the runtime effect of each underlying config is guarded by the
@@ -554,12 +661,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'downloads/Ban relative progress cheat':
       'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
-  // 「点一下没识别的对话框就地开跑 OCR」。生效点整条都在 WebView 里：JS 空白点
-  // 带落页 payload 回传 → Dart 起任务 → 该页文字层热替换 → 回放点击查词。widget
-  // 树上看不到任何变化，故由 JS 契约守卫 + 引擎选择单测覆盖。
-  'manga/Tap to recognise':
-      'test/media/manga/manga_tap_ocr_overlay_contract_test.dart + '
-          'test/media/manga/ocr/manga_ocr_auto_start_test.dart',
   'reading/Spread direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
   // TODO-1029：开关显示名改为「悬浮控制栏」(en: 'Floating control bar')，覆盖 map
@@ -572,6 +673,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 显隐，非 reader CSS / 主题树）；由专项 getter 真值表 + 源码守卫覆盖。默认 true=保持现状。
   'reading/Reading progress indicator':
       'test/settings/top_progress_toggle_guard_test.dart',
+  // 底部状态行左段「阅读计时器」（计时器图标 + 字/时 + 本次时长）的显隐开关。生效点
+  // 在状态行组件自身的 showTimer 门控与 readerStatusFooterEnabled（两段都关时整条行
+  // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
+  // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
+  'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。
@@ -617,45 +723,54 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Auto-expand rows':
       'test/pages/popup_auto_expand_dictionaries_test.js (popup.js node behaviour guard) + test/pages/popup_auto_expand_dictionaries_test.dart',
   'lookup/Show expression tags': 'DEVICE: popup.js expression tags',
+  // BUG-2284：紧凑释义。效果在 popup.js 的释义排版（WebView 渲染，widget 测不到），
+  // 与同组的 collapse / expression tags 同一类；注入侧由
+  // test/dictionary/popup_instant_scroll_guard_test.dart 与
+  // test/pages/popup_settings_injection_memo_test.dart 钉住。
+  'lookup/Compact glossaries': 'DEVICE: popup.js compact glossaries',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
+  // 下面这批「有声书 / 悬浮字幕」项的 key 前缀在 2026-08-24 从 `listening/` 变成
+  // `reading/`：听书并入阅读一级分类，本表的 key 是「destination/标题」，归属换了
+  // key 就得跟着换（item id 仍是 `listening.*`，没动）。
+  //
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
   // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/
   // persist/restore 经 DB，运行时分流由偏好默认 + dispose 源码守卫覆盖。
-  'listening/Keep playing after exit':
+  'reading/Keep playing after exit':
       'test/models/preferences_repository_test.dart + test/media/audiobook/audiobook_exit_stop_policy_static_test.dart',
-  'listening/Show media notification':
+  'reading/Show media notification':
       'DEVICE: native AudioHandler notification',
   // TODO-038: now visible on Windows desktop too (no longer Android-only). The
   // strip is a runner-owned Win32 window, so the real overlay needs a desktop;
   // covered by source guards + device backlog.
-  'listening/Floating lyric overlay':
+  'reading/Floating lyric overlay':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + test/settings/floating_lyric_settings_visibility_guard_test.dart + DEVICE: native always-on-top strip',
-  'listening/Floating subtitle font size':
+  'reading/Floating subtitle font size':
       'test/media/audiobook/desktop_floating_lyric_test.dart + DEVICE: native strip font size',
   // TODO-370: 文字 / 按钮底色透明度作用于 ARGB alpha 通道，效果由 scaleAlpha 纯函数测试
   // 覆盖；落到原生悬浮窗的实际像素需真机。
-  'listening/Floating subtitle text opacity':
+  'reading/Floating subtitle text opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip text alpha',
-  'listening/Floating subtitle button background opacity':
+  'reading/Floating subtitle button background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip button alpha',
   // TODO-576: 条背景透明度（默认 70=更不挡视野）作用于条背景 ARGB alpha；缩放由
   // scaleAlpha 纯函数测试覆盖，落到原生悬浮窗的实际像素需真机。
-  'listening/Floating subtitle background opacity':
+  'reading/Floating subtitle background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + test/settings/floating_lyric_bg_opacity_test.dart + DEVICE: native strip bg alpha',
   // TODO-708 P2: 圆角半径 / 宽度（dp，0=平台原生观感）。偏好往返 + 默认哨兵 + 两个样式
   // 构造点喂入由专项测试覆盖；落到原生悬浮窗的实际圆角/窗宽像素需真机点验。
-  'listening/Floating subtitle corner radius':
+  'reading/Floating subtitle corner radius':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip corner radius (Android GradientDrawable / Windows D2D)',
-  'listening/Floating subtitle width':
+  'reading/Floating subtitle width':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip window width (Android LayoutParams / Windows SetWindowPos)',
   // TODO-708 P4: 悬浮字幕前后 N 行上下文块（N=0 单行）。偏好往返 + 上下文行区间
   // 构建（当前行 start/length 高亮）由专项测试覆盖；落到原生悬浮窗的多行渲染 +
   // 当前行明暗需真机点验。
-  'listening/Floating subtitle context lines':
+  'reading/Floating subtitle context lines':
       'test/media/audiobook/floating_lyric_context_pref_test.dart + test/media/audiobook/floating_lyric_context_test.dart + DEVICE: native strip multi-line context + current-line highlight (Android FloatingLyricService / Windows floating_lyric_window)',
-  'listening/Tap floating subtitle to look up':
+  'reading/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
-  'listening/Volume key sentence navigation':
+  'reading/Volume key sentence navigation':
       'DEVICE: native volume-key cue nav',
   'system/Update channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
@@ -755,6 +870,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'profiles/Manga': _kMediaTypeBindingEvidence,
   'profiles/Game': _kMediaTypeBindingEvidence,
   'profiles/Browser': _kMediaTypeBindingEvidence,
+  // 语言绑定（v99）与上面八行同理：写的是 `language_profiles` 表，prefs diff 里
+  // 结构上看不到。行标签是内容语言选择器的自称显示名（`contentLanguageLabelOf`），
+  // 与 `kContentLanguageOptions` 一一对应——那份候选变了，这里要跟着变。
+  'profiles/日本語 (ja)': _kLanguageBindingEvidence,
+  'profiles/简体中文 (zh-Hans)': _kLanguageBindingEvidence,
+  'profiles/繁體中文 (zh-Hant)': _kLanguageBindingEvidence,
+  'profiles/한국어 (ko)': _kLanguageBindingEvidence,
+  'profiles/English (en)': _kLanguageBindingEvidence,
   // 制卡字号写的是 SharedPreferences 里的 AnkiSettings JSON blob（与本表既有的
   // cardCreation 开关同因），消费点是 composeLapisCss(fontScalePercent:)。
   'cardCreation/Card font scale':
@@ -812,6 +935,13 @@ const String _kMediaTypeBindingEvidence =
     'test/profile/media_type_binding_video_guard_test.dart + '
     'test/profile/profile_repository_test.dart + '
     'test/database/profiles_test.dart';
+
+/// 语言级 Profile 绑定（v99）的证据链：归一化键的契约、四级优先级（book >
+/// language > mediaType > active）、以及建表 + cascade 的迁移测试。
+const String _kLanguageBindingEvidence =
+    'test/profile/language_binding_test.dart + '
+    'test/profile/profile_repository_test.dart + '
+    'test/database/migration_v99_language_profiles_test.dart';
 
 /// 焦点驱动的 settings schema **全分组**覆盖测试（Phase 1 Task 4）。
 ///
@@ -941,7 +1071,11 @@ void main() {
               readerSource: ReaderFushiSource.instance,
               refresh: () {},
             );
-            final List<SettingsDestination> all = buildSettingsSchema(sctx);
+            // 子 schema 页（SettingsNavigationItem.child）里的行也要进遍历：
+            // 顶层枚举不到它们，覆盖会静默缩水。展平走 [_withSubPages]（带深度
+            // 上限——child 是闭包、每次返回新实例，基于 identical 的环检测无效）。
+            final List<SettingsDestination> all =
+                _withSubPages(buildSettingsSchema(sctx));
             destinations = all;
             return ValueListenableBuilder<SettingsDestination?>(
               valueListenable: destNotifier,
@@ -1108,10 +1242,29 @@ void main() {
         .toList();
     expect(pickers.length, greaterThanOrEqualTo(20),
         reason: '全仓下拉型设置项应被遍历到（认出来这一步）');
-    expect(pickers.where((ItemVerdict v) => v.persisted).length,
-        greaterThanOrEqualTo(18),
-        reason: '下拉行必须真的被驱动并写穿 DB（驱动那一步）。未写穿的: '
-            '${pickers.where((ItemVerdict v) => !v.persisted).map((ItemVerdict v) => v.id).join(", ")}');
+    // 「驱动那一步」以前钉的是绝对数（写穿 >= 18）——那数的是**当前平台恰好有
+    // 多少行**，不是不变式。下拉行里有 4 条挂着 `Platform.isWindows`
+    // （`game/Lookup trigger` 与 cardCreation 的三条 Game* 卡图格式），于是本机
+    // 36 条里 21 条写穿、Linux CI 少掉那 4 条只剩 17，同一份代码 Win 绿 Linux 红。
+    //
+    // 真正要守的是「驱动序列没退化」，那与平台无关，直接钉两条：
+    // ① 凡是真被驱动动了的下拉行（changed），必须写穿 DB —— 一条都不许漏；
+    // ② 至少一半被认出来的下拉行真的驱动得动 —— `_driveDropdownRow` 退化成
+    //    认得出、动不了（changed 全 false）时这条先红。
+    // 剩下驱动不动的是 `profiles/*`（changed=false，见下）与
+    // `cardCreation/Card font scale`（`SettingsBodySearchEntry`，真控件在 Lapis
+    // 模板编辑器自绘 body 里，本来就不经通用驱动器）。
+    final List<ItemVerdict> drivenPickers =
+        pickers.where((ItemVerdict v) => v.changed).toList();
+    final List<ItemVerdict> drivenNotPersisted =
+        drivenPickers.where((ItemVerdict v) => !v.persisted).toList();
+    expect(drivenNotPersisted, isEmpty,
+        reason: '被驱动动了却没写穿 DB 的下拉行: '
+            '${drivenNotPersisted.map((ItemVerdict v) => v.id).join(", ")}');
+    expect(drivenPickers.length * 2, greaterThanOrEqualTo(pickers.length),
+        reason: '下拉行必须真的驱动得动（驱动那一步）：认出 ${pickers.length} 条、'
+            '只驱动得动 ${drivenPickers.length} 条。驱动不动的: '
+            '${pickers.where((ItemVerdict v) => !v.changed).map((ItemVerdict v) => v.id).join(", ")}');
     expect(globallyRestored, isTrue,
         reason: '全部设置必须能还原到初始快照。diff: ${restoreDiff.join("; ")}');
   });
@@ -1322,4 +1475,38 @@ class _CoverageAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => _packageInfo;
+}
+
+/// 顶层 destination + 它们经 [SettingsNavigationItem.child] 挂出来的**子 schema 页**。
+///
+/// C0 引入子页之后，本 harness 如果只枚举 `buildSettingsSchema()` 的顶层结果，
+/// 那么 C1/C2 把同步/互联的行搬进子页的那一刻，这些行就**静默退出**了覆盖面——
+/// 测试照样绿，只是少测了 N 行。而本文件头部写的契约恰恰是「no silent caps：
+/// 每个 changed 但未 effect-verified 的设置都必须有去处」，静默缩小枚举面正是
+/// 它要防的事。
+///
+/// 子页复用 [SettingsDetailPage] 同一套详情壳，所以在这里把它们展平成同级
+/// destination 喂给同一个渲染 + Tab 遍历循环即可（子页共用父分类的 id，
+/// `probeFor(dest.id)` 因此继续命中父分类的探针）。
+///
+/// 深度上限 3：`child` 是闭包，每次调用返回新实例，基于 identical 的环检测无效，
+/// A→B→A 这种写法会直接栈溢出。
+List<SettingsDestination> _withSubPages(List<SettingsDestination> tops) {
+  final List<SettingsDestination> out = <SettingsDestination>[];
+  void visit(SettingsDestination destination, int depth) {
+    out.add(destination);
+    if (depth >= 3) return;
+    for (final SettingsSection section in destination.sections) {
+      for (final SettingsItem item in section.items) {
+        if (item is SettingsNavigationItem && item.child != null) {
+          visit(item.child!(), depth + 1);
+        }
+      }
+    }
+  }
+
+  for (final SettingsDestination destination in tops) {
+    visit(destination, 0);
+  }
+  return out;
 }

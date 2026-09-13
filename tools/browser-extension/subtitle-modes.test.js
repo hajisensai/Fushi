@@ -90,11 +90,15 @@ function loadPanel(opts) {
     fushiLookupAtPoint: (...args) => lookups.push(args),
     fushiResetAutoLookupDedupe: () => { autoLookupResets++; },
   };
+  // 同 external-subtitle.test.js：覆盖层挂在 documentElement 上，fake 补真实树形。
+  const htmlRoot = makeEl('html');
+  htmlRoot.appendChild(body);
   const documentObj = {
     body,
+    documentElement: htmlRoot,
     fullscreenElement: null,
     addEventListener() {},
-    getElementById: (id) => findByIdDeep(body, id),
+    getElementById: (id) => findByIdDeep(htmlRoot, id),
     querySelector: (sel) => (sel === 'video' ? video : null),
     querySelectorAll: () => [],
     createElement: (t) => makeEl(t),
@@ -135,7 +139,7 @@ function loadPanel(opts) {
     body, video, windowObj, toasts, storageSets, clipboard, lookups,
     autoLookupResets: () => autoLookupResets,
     panel: () => findByIdDeep(body, 'fushi-subtitle-panel'),
-    overlay: () => findByIdDeep(body, 'fushi-subtitle-overlay'),
+    overlay: () => findByIdDeep(htmlRoot, 'fushi-subtitle-overlay'),
     tick: () => { const t = intervals.find((it) => it.ms === 200); if (t) t.fn(); },
     shortcut: (a) => windowObj.fushiSubtitleShortcut(a),
     message,

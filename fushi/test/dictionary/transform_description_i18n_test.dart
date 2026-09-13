@@ -15,7 +15,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 const String _kTransformsDir = 'assets/transforms';
 
 /// transforms 资产里出现过的全部英文说明原文。
-Set<String> _allDescriptions() {
+Set<String> _allDescriptions({bool includeNames = false}) {
   final Set<String> out = <String>{};
   for (final FileSystemEntity e in Directory(_kTransformsDir).listSync()) {
     if (e is! File || !e.path.endsWith('.json')) continue;
@@ -28,6 +28,8 @@ Set<String> _allDescriptions() {
       if (t is! Map) continue;
       final Object? d = t['description'];
       if (d is String && d.isNotEmpty) out.add(d);
+      final Object? name = t['name'];
+      if (includeNames && name is String && name.isNotEmpty) out.add(name);
     }
   }
   return out;
@@ -116,15 +118,18 @@ void main() {
     setUp(() {
       TransformDescriptionCatalog.apply(
         localeTag: 'zh-CN',
-        translations: const <String, String>{english: '表示让某人做某事的意图。'},
+        translations: const <String, String>{
+          english: '表示让某人做某事的意图。',
+          'causative': '使役形',
+        },
       );
     });
 
-    test('localizeDeinflectionTags 只改说明、不动变形名', () {
+    test('localizeDeinflectionTags 同时翻译名称和说明', () {
       final List<DeinflectionTag> out = localizeDeinflectionTags(
         <DeinflectionTag>[(name: 'causative', description: english)],
       );
-      expect(out.single.name, 'causative', reason: '变形名是语言学标签，不翻译');
+      expect(out.single.name, '使役形');
       expect(out.single.description, '表示让某人做某事的意图。');
     });
 
@@ -145,6 +150,10 @@ void main() {
         ],
       };
       final List<DeinflectionTag> tags = deinflectionTagsFromExtra(extra);
+      expect(tags.single.name, '使役形');
+      expect((extra['deinflectionTrace'] as List).first['name'], 'causative');
+      TransformDescriptionCatalog.clear();
+      expect(deinflectionTagsFromExtra(extra).single.name, 'causative');
       expect(
         tags.single.description,
         '表示让某人做某事的意图。',
@@ -161,8 +170,39 @@ void main() {
   });
 
   group('译文资产与 transforms 资产不漂移', () {
+    test('日语每项变形都有可显示说明，英文标签都有中文译名', () {
+      final Map<String, dynamic> asset =
+          jsonDecode(File('$_kTransformsDir/ja.json').readAsStringSync())
+              as Map<String, dynamic>;
+      final Map<String, dynamic> transforms =
+          asset['transforms'] as Map<String, dynamic>;
+      TransformDescriptionCatalog.apply(
+        localeTag: 'zh-CN',
+        translations: _loadTable('zh-CN'),
+      );
+      for (final dynamic value in transforms.values) {
+        final Map<String, dynamic> transform = value as Map<String, dynamic>;
+        final String name = transform['name'] as String;
+        final String description = transform['description'] as String;
+        final DeinflectionTag tag = localizeDeinflectionTags([
+          (name: name, description: description),
+        ]).single;
+        expect(tag.description.trim(), isNotEmpty, reason: name);
+        expect(tag.description, isNot(description), reason: name);
+        if (RegExp(r'[A-Za-z]').hasMatch(name)) {
+          expect(tag.name, isNot(name), reason: name);
+        } else {
+          expect(tag.name, name, reason: '保留日语接续形式');
+        }
+      }
+      expect(
+        TransformDescriptionCatalog.localize('potential or passive'),
+        '可能形或被动形',
+      );
+    });
+
     test('zh-CN.json 的每个键都还是现存的英文原文', () {
-      final Set<String> descriptions = _allDescriptions();
+      final Set<String> descriptions = _allDescriptions(includeNames: true);
       expect(descriptions, isNotEmpty, reason: '没读到任何 transforms 说明，判据失效');
       final Map<String, String> table = _loadTable('zh-CN');
       final List<String> stale = table.keys

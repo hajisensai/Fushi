@@ -8,6 +8,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/creator.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 
 /// Returns audio information from context.
 class ImageField extends ImageExportField {
@@ -108,6 +109,22 @@ class ImageField extends ImageExportField {
     );
   }
 
+  /// 长按预览的全屏遮罩层。**必须是字段而不是 `buildCarousel` 里的局部变量**：
+  /// 局部变量随每一轮 build 重新创建，按住期间 carousel 只要重建一次（页码
+  /// notifier 变化、建卡器 setState），`onLongPressEnd` 拿到的就是新一轮那个
+  /// 恒为 null 的变量，旧遮罩永远留在 overlay 最上层。它不是路由，iOS 既没有
+  /// 系统返回键、侧滑返回也只作用于路由，用户唯一的出路是杀进程重启。
+  OverlayEntry? _longPressPreview;
+
+  void _dismissLongPressPreview() {
+    final OverlayEntry? entry = _longPressPreview;
+    if (entry == null) {
+      return;
+    }
+    _longPressPreview = null;
+    removeAndDisposeOwnedOverlayEntry(entry);
+  }
+
   /// Build the image carousel.
   Widget buildCarousel({
     required int itemCount,
@@ -146,7 +163,6 @@ class ImageField extends ImageExportField {
               );
             }
 
-            OverlayEntry? popup;
             ImageProvider<Object> image = currentImageSuggestions![index];
 
             return GestureDetector(
@@ -169,20 +185,27 @@ class ImageField extends ImageExportField {
                 if (index != indexNotifier.value) {
                   return;
                 }
-                popup = OverlayEntry(
-                  builder: (context) => ColoredBox(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .scrim
-                        .withValues(alpha: 0.5),
-                    child: buildImage(image: image, fit: BoxFit.contain),
+                _dismissLongPressPreview();
+                final OverlayEntry preview = OverlayEntry(
+                  builder: (context) => GestureDetector(
+                    // 遮罩自己也要能点掉：手势状态机漏掉 end/cancel（按住期间
+                    // carousel 重建、指针被系统手势抢走）时，这是仅剩的出口。
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _dismissLongPressPreview,
+                    child: ColoredBox(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .scrim
+                          .withValues(alpha: 0.5),
+                      child: buildImage(image: image, fit: BoxFit.contain),
+                    ),
                   ),
                 );
-                Overlay.of(context).insert(popup!);
+                _longPressPreview = preview;
+                Overlay.of(context).insert(preview);
               },
-              onLongPressEnd: (details) {
-                popup?.remove();
-              },
+              onLongPressEnd: (details) => _dismissLongPressPreview(),
+              onLongPressCancel: _dismissLongPressPreview,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: buildImage(

@@ -7,8 +7,8 @@
 library;
 
 import 'package:fushi/src/media/video/anilist_client.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart'
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 
 /// AniList MediaFormat → 持久化 movie/tv 归类。只有 MOVIE 是电影；TV_SHORT/

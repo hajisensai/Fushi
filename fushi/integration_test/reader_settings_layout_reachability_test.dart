@@ -90,7 +90,7 @@ Future<void> _pumpSheet(
               controller: null,
               toc: const <TtuTocEntry>[],
               readerProgress: const (1, 3),
-              onJumpSection: (_) async {},
+              onJumpSection: (_, __) async {},
               onExitReader: () {},
               webViewController: _FakeInAppWebViewController(),
               appModel: _testAppModel(),

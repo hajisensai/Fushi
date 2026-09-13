@@ -86,11 +86,54 @@ mixin _FushiDbContentMisc
       (select(epubBooks)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
           .get();
 
+  /// 全部书的瘦投影（[EpubBookMeta]，与 [getAllEpubBooks] 同序：importedAt 降序）。
+  ///
+  /// 只要 title / uid / importedAt / format 等小列的调用方（书架映射、统计事实面、
+  /// 导入重复检查、远端去重）走这里，不再把每本几十 KB 的 `chaptersJson` / `tocJson`
+  /// 整库拉一遍再丢掉。
+  Future<List<EpubBookMeta>> getEpubBookMetas() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.uid,
+            epubBooks.title,
+            epubBooks.format,
+            epubBooks.importedAt,
+            epubBooks.extractDir,
+            epubBooks.completedAt,
+          ])
+          ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
+    final List<TypedResult> rows = await query.get();
+    return rows
+        .map(
+          (TypedResult row) => EpubBookMeta(
+            bookKey: row.read(epubBooks.bookKey)!,
+            uid: row.read(epubBooks.uid)!,
+            title: row.read(epubBooks.title)!,
+            format: row.read(epubBooks.format)!,
+            importedAt: row.read(epubBooks.importedAt)!,
+            extractDir: row.read(epubBooks.extractDir)!,
+            completedAt: row.read(epubBooks.completedAt),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   /// 监听 EPUB 书 bookKey 集合，供书架在任意导入路径落库后自动刷新（同
   /// [watchVideoBookUids]，BUG-793）。消费方按集合 `.distinct` 去重，改作者/封面等
   /// 纯列更新（集合不变）不触发重算。
-  Stream<List<String>> watchEpubBookKeys() =>
-      select(epubBooks).map((EpubBookRow row) => row.bookKey).watch();
+  ///
+  /// 只投影 bookKey 列：这条流在 `epub_books` 每次写入时都重跑，之前是全列
+  /// `select` 把整库 `chaptersJson` 拉出来只为取 key（批量导入 N 本 = N 次全库大列读）。
+  Stream<List<String>> watchEpubBookKeys() => (selectOnly(epubBooks)
+        ..addColumns(<Expression<Object>>[epubBooks.bookKey]))
+      .watch()
+      .map(
+        (List<TypedResult> rows) => rows
+            .map((TypedResult row) => row.read(epubBooks.bookKey)!)
+            .toList(growable: false),
+      );
 
   Future<EpubBookRow?> getEpubBook(String bookKey) =>
       (select(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
@@ -138,13 +181,17 @@ mixin _FushiDbContentMisc
         (book.uid.present && book.uid.value.isNotEmpty)
             ? book
             : book.copyWith(uid: Value(generateEpubBookUid()));
-    await into(epubBooks).insert(withUid);
-    // Re-adding a book cancels any prior deletion tombstone so a later merge
-    // may bring its data again (TODO-1195 part B).
-    await clearBookTombstone(book.bookKey.value);
-    // 删除传播：重新导入同 bookKey 的书清除其 sync 删除墓碑（防「删了又加、墓碑还在」
-    // 被 compare 误判成待删）。
-    await clearSyncDeletionTombstone('book', book.bookKey.value);
+    // 三条语句一个事务：一次 fsync 而非三次，且 `watchEpubBookKeys` 之类的表级
+    // 监听只在提交时收到一次失效，而不是每条语句各触发一次书架重算。
+    await transaction(() async {
+      await into(epubBooks).insert(withUid);
+      // Re-adding a book cancels any prior deletion tombstone so a later merge
+      // may bring its data again (TODO-1195 part B).
+      await clearBookTombstone(book.bookKey.value);
+      // 删除传播：重新导入同 bookKey 的书清除其 sync 删除墓碑（防「删了又加、墓碑还在」
+      // 被 compare 误判成待删）。
+      await clearSyncDeletionTombstone('book', book.bookKey.value);
+    });
     return book.bookKey.value;
   }
 
@@ -205,8 +252,33 @@ mixin _FushiDbContentMisc
         ),
       );
 
-  /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。段
-  /// `updatedAt > deletedAt` 的后续新写自然复活，不需要显式清碑。
+  /// 写入 / 抬高一条按身份墓碑：同键只在 [deletedAt] 严格更大时覆盖（碑戳只增
+  /// 不减，BUG-2220）。本机删除与同步 / 备份落地都经这里。
+  Future<void> upsertStudySegmentTombstone({
+    required String mediaKind,
+    required String mediaKey,
+    required int deletedAt,
+  }) =>
+      into(studySegmentTombstones).insert(
+        StudySegmentTombstonesCompanion.insert(
+          mediaKind: mediaKind,
+          mediaKey: mediaKey,
+          deletedAt: deletedAt,
+        ),
+        onConflict: DoUpdate(
+          (old) => StudySegmentTombstonesCompanion(deletedAt: Value(deletedAt)),
+          target: [
+            studySegmentTombstones.mediaKind,
+            studySegmentTombstones.mediaKey,
+          ],
+          where: (old) => old.deletedAt.isSmallerThanValue(deletedAt),
+        ),
+      );
+
+  /// v92：删某媒体的 `study_segments` 事实 + 立按身份的墓碑（同一事务）。墓碑
+  /// 语义（BUG-2214 / BUG-2220）：压制 `startAt < deletedAt` 的段——删除之后开始的
+  /// 新段（时钟下一次开段）自然存活，墓碑不需要清、也永不退场；碑戳只增不减
+  /// （重复删只抬高、绝不倒退）。
   Future<int> deleteStudySegmentsForMedia({
     required String mediaKind,
     required String mediaKey,
@@ -216,20 +288,37 @@ mixin _FushiDbContentMisc
               ..where((t) =>
                   t.mediaKind.equals(mediaKind) & t.mediaKey.equals(mediaKey)))
             .go();
-        await into(studySegmentTombstones).insertOnConflictUpdate(
-          StudySegmentTombstonesCompanion.insert(
-            mediaKind: mediaKind,
-            mediaKey: mediaKey,
-            deletedAt: DateTime.now().millisecondsSinceEpoch,
-          ),
+        await upsertStudySegmentTombstone(
+          mediaKind: mediaKind,
+          mediaKey: mediaKey,
+          deletedAt: DateTime.now().millisecondsSinceEpoch,
         );
         return removed;
       });
 
-  /// v92：清空某媒体种类的全部段（统计页「清空全部」）。与 legacy 的 clearAll* 同律：
-  /// 整体重置不逐媒体立碑（会永久毒化身份空间）。
+  /// v92：清空某媒体种类的全部段（统计页「清空全部」）。BUG-2215：清空前对该种类
+  /// **每个身份**逐一立碑（`deletedAt = now`）再删行——否则互联 / 云同步下次聚合把
+  /// 对端持有的全部历史整批回灌。新墓碑语义只压制 `startAt < deletedAt` 的段，立碑
+  /// 不再「毒化身份空间」：之后再读同一本书开的新段照常存活。返回删掉的段数。
   Future<int> clearStudySegments(String mediaKind) =>
-      (delete(studySegments)..where((t) => t.mediaKind.equals(mediaKind))).go();
+      transaction(() async {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        final List<QueryRow> keys = await customSelect(
+          'SELECT DISTINCT media_key FROM study_segments WHERE media_kind = ?',
+          variables: [Variable.withString(mediaKind)],
+          readsFrom: {studySegments},
+        ).get();
+        for (final QueryRow row in keys) {
+          await upsertStudySegmentTombstone(
+            mediaKind: mediaKind,
+            mediaKey: row.read<String>('media_key'),
+            deletedAt: now,
+          );
+        }
+        return (delete(studySegments)
+              ..where((t) => t.mediaKind.equals(mediaKind)))
+            .go();
+      });
 
   /// 用户在时段明细里删某媒体某几天的统计：段**写零**而不是删行——零值就是一次新的
   /// 绝对值写（`updatedAt = now`），经既有 LWW 同步（`upsertStudySegmentsIfNewer` /
@@ -254,6 +343,101 @@ mixin _FushiDbContentMisc
       updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
   }
+
+  /// 按 uid 写零（会话流「删这一次会话」的段侧原语，与 [zeroStudySegmentsOnDays]
+  /// 同语义：零值 = 一次新的绝对值写，经 uid LWW 同步传到对端；**不**立按身份的
+  /// 墓碑——墓碑压制 `startAt < deletedAt` 的全部段，会连这本书的整段历史一起压死）。
+  /// 返回改写的行数。
+  Future<int> zeroStudySegmentsByUids(Set<String> uids) {
+    if (uids.isEmpty) return Future<int>.value(0);
+    return (update(studySegments)..where((t) => t.uid.isIn(uids)))
+        .write(StudySegmentsCompanion(
+      durationMs: const Value(0),
+      chars: const Value(0),
+      pages: const Value(0),
+      updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ));
+  }
+
+  /// 删一次学习会话（统计页会话流每行的垃圾桶）：组成它的段写零（同步安全）；游戏
+  /// 会话另有 `galgame_sessions` 骨架行 [gameSessionId]，硬删（游戏统计不出本机，
+  /// BUG-2221）。同一事务。不动收藏 / 制卡历史 / 查词计数、不立墓碑、不动视频覆盖并集
+  /// （与按天删同一「只清纯统计」边界）。
+  Future<void> deleteStudySession({
+    required Set<String> segmentUids,
+    int? gameSessionId,
+  }) =>
+      transaction(() async {
+        await zeroStudySegmentsByUids(segmentUids);
+        if (gameSessionId != null) {
+          await (delete(galgameSessions)
+                ..where((t) => t.id.equals(gameSessionId)))
+              .go();
+        }
+      });
+
+  /// 批量删学习会话（统计页会话区块的「清除全部会话」）：语义与 [deleteStudySession]
+  /// 逐条调用逐字节一致（段写零 + 游戏骨架行硬删、不立墓碑），只是收进**一个**事务
+  /// ——会话流常年几十上百条，逐条一个事务在移动端能卡住整个 UI 帧。
+  Future<void> deleteStudySessions({
+    required Set<String> segmentUids,
+    List<int> gameSessionIds = const <int>[],
+  }) =>
+      transaction(() async {
+        await zeroStudySegmentsByUids(segmentUids);
+        if (gameSessionIds.isNotEmpty) {
+          await (delete(galgameSessions)
+                ..where((t) => t.id.isIn(gameSessionIds)))
+              .go();
+        }
+      });
+
+  /// 编辑一次学习会话（统计页会话流每行的铅笔）：按 uid 逐段写**绝对值**
+  /// （起止时刻 / dateKey / hour / 字数），游戏会话另有 `galgame_sessions` 骨架行
+  /// 同步平移。同一事务。
+  ///
+  /// 与 [deleteStudySession] 同一条纪律：调用方**不要**直接进这里，走
+  /// `fushi/lib/src/stats/study_sessions.dart` 的 `applyStudySessionEdit`——它先让
+  /// 段 uid 在在跑的 `StudyClock` 上退役，否则时钟下一个 tick 会把刚改完的段按旧
+  /// 绝对值原样写回去（「改了又弹回来」）。
+  ///
+  /// [insertSegments] 是游戏会话的特例：游玩骨架行可能一条字数段都没有（纯时长
+  /// 会话），此时改字数没有任何行可写，只能新建一条与骨架区间相交的 chars-only 段
+  /// ——正是 hook 记字数时写的那种行，下次派生会被同一个骨架吸收回去。
+  ///
+  /// 段墓碑（`startAt < deletedAt` 压制）在这里**不**拦：编辑是用户的显式绝对值写。
+  /// 只有「先清空该媒体统计立了碑、又把老会话往更早的日期改」这一条极窄路径能撞上
+  /// ——那种行本地存活、下次同步落地时被碑压掉，与手动改早任何一段的结果一致。
+  Future<void> updateStudySession({
+    required List<StudySegmentsCompanion> segments,
+    List<StudySegmentsCompanion> insertSegments =
+        const <StudySegmentsCompanion>[],
+    int? gameSessionId,
+    int? gameStartMs,
+    int? gameEndMs,
+    String? gameDateKey,
+  }) =>
+      transaction(() async {
+        for (final StudySegmentsCompanion row in segments) {
+          await (update(studySegments)..where((t) => t.uid.equals(row.uid.value)))
+              .write(row);
+        }
+        for (final StudySegmentsCompanion row in insertSegments) {
+          await into(studySegments).insertOnConflictUpdate(row);
+        }
+        if (gameSessionId != null &&
+            gameStartMs != null &&
+            gameEndMs != null &&
+            gameDateKey != null) {
+          await (update(galgameSessions)
+                ..where((t) => t.id.equals(gameSessionId)))
+              .write(GalgameSessionsCompanion(
+            startMs: Value(gameStartMs),
+            endMs: Value(gameEndMs),
+            dateKey: Value(gameDateKey),
+          ));
+        }
+      });
 
   /// 时段明细 sheet 的「删这一条」（BUG-2108 用户诉求：看着不对的数据要能删）：
   /// 删某媒体在 [dateKeys] 这几天的**全部统计事实**——正是 sheet 那一行求和用到的
@@ -282,8 +466,8 @@ mixin _FushiDbContentMisc
         switch (mediaKind) {
           case kActivityMediaBook:
             await (delete(readingStatistics)
-                  ..where((t) =>
-                      t.title.equals(title) & t.dateKey.isIn(dateKeys)))
+                  ..where(
+                      (t) => t.title.equals(title) & t.dateKey.isIn(dateKeys)))
                 .go();
           case kActivityMediaVideo:
             await (delete(videoWatchStatistics)
@@ -394,7 +578,8 @@ mixin _FushiDbContentMisc
           await deleteStudySegmentsForMedia(
               mediaKind: kActivityMediaVideo, mediaKey: bookUid);
           await (delete(preferences)
-                ..where((t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
+                ..where(
+                    (t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
               .go();
         }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
@@ -503,10 +688,11 @@ mixin _FushiDbContentMisc
   /// (mined_sentences，收藏夹页展示、可跳回原文)、书籍 / 词典本体一律保留（与 per-book
   /// [deleteReadingStatisticsForTitle] 同一「只清纯统计」边界）。
   ///
-  /// 与 per-book 删除不同：这是**本地整体重置**，不逐标题写墓碑——墓碑是定向删除的防
-  /// 同步复活机制，全量重置若逐 title 立碑会永久毒化标题命名空间、阻断以后重新导入这些
-  /// 书的统计。云同步开启时下次聚合仍可能从云端 MAX-union 回灌（清空是本地动作，云端为
-  /// 权威源）——属已知边界，不在本方法处理。
+  /// 与 per-book 删除不同：这是**本地整体重置**，legacy 家族不逐标题写墓碑——title
+  /// 墓碑是定向删除的防同步复活机制，全量重置若逐 title 立碑会永久毒化标题命名空间、
+  /// 阻断以后重新导入这些书的统计；legacy 行云同步下次聚合仍可能从云端 MAX-union 回灌
+  /// （旧数据的旧口径，已知边界）。v92 段则**逐身份立碑**（[clearStudySegments]，
+  /// BUG-2215）：新墓碑语义只压制清空之前开始的段，之后再读照常计。
   Future<void> clearAllReadingStatistics() => transaction(() async {
         await clearStudySegments(kActivityMediaBook);
         await delete(readingStatistics).go();
@@ -522,8 +708,8 @@ mixin _FushiDbContentMisc
   /// TODO-1322: 一键清空**全部视频统计**（video 域纯统计数字）：观看时长 / 字幕字数
   /// (video_watch_statistics)、按小时时段日志 (video_hourly_logs)、per-video 查词 / 制卡
   /// 计数 (lookup_mining_counters 的 video 行) 与全局按日制卡计数 (mining_statistics 的
-  /// video 行)。与 [clearAllReadingStatistics] 对称，同样不动收藏 / 制卡历史 / 视频本体，
-  /// 也不写墓碑。
+  /// video 行)。与 [clearAllReadingStatistics] 对称，同样不动收藏 / 制卡历史 / 视频本体；
+  /// legacy 家族不写 title 墓碑，v92 段逐身份立碑（[clearStudySegments]，BUG-2215）。
   Future<void> clearAllVideoStatistics() => transaction(() async {
         await clearStudySegments(kActivityMediaVideo);
         // BUG-2108：清统计 = 全部当没看过，覆盖并集一并清。
@@ -875,6 +1061,9 @@ mixin _FushiDbContentMisc
             .map((r) => r.read(epubBooks.uid))
             .getSingleOrNull();
         if (bookUid != null && bookUid.isNotEmpty) {
+          await (delete(collectionBookAliases)
+                ..where((t) => t.localUid.equals(bookUid)))
+              .go();
           await (delete(readerPositions)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
@@ -891,6 +1080,12 @@ mixin _FushiDbContentMisc
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();
         }
+        // v103：章节下载任务按 bookKey 记（device-local、刻意无 FK），随书清掉，
+        // 否则删书后任务行僵在下载中心、worker 还会去续一本已不存在的书。
+        // （直接写表而不经 `deleteMangaDownloadJobsForBook`：那个 mixin 在 with 链上
+        // 排在本 mixin 之后，`on` 不到。）
+        await (delete(mangaDownloadJobs)..where((t) => t.bookKey.equals(bookKey)))
+            .go();
         // SRT books linked to this epub key their cues on srt_books.uid, NOT
         // the epub bookKey, so delete those cues before dropping the srt rows.
         // (HBK-AUDIT-041 follow-up: deleteEpubBook owns the full cascade; the

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/pairing/discovered_pairing_probe.dart';
-import 'package:fushi/src/sync/pairing/fushi_ping_client.dart';
-import 'package:fushi/src/sync/tls/fushi_tofu_probe.dart';
+import 'package:fushi_engine/sync/pairing/discovered_pairing_probe.dart';
+import 'package:fushi_engine/sync/pairing/fushi_ping_client.dart';
+import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 
 /// TODO-961：发现配对的 scheme 选择 + 探测编排单测。
 ///

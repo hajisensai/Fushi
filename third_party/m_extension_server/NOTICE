@@ -8,6 +8,7 @@ Significant Hibiki modifications:
 
 - loopback-only listener;
 - mandatory random Bearer authentication for all routes;
+- authenticated host-owned per-URL outbound proxy policy and proxy credentials;
 - authenticated APK inspection using apksig;
 - authenticated source image and source data clearing routes;
 - Hibiki bridge capability identifier;

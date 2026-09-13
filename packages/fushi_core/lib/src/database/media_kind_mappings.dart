@@ -39,12 +39,15 @@ List<MediaKind> shelfKindsOfActivityMedia(ActivityMediaKind kind) =>
       ActivityMediaKind.game => const <MediaKind>[MediaKind.game],
     };
 
-/// 合集/书架种类 → 统计来源种类（epub / srt 都归 `book` 桶；游戏不入
-/// book / video 统计 → null）。
+/// 合集/书架种类 → 统计来源种类（epub / srt 都归 `book` 桶）。
+///
+/// 返回类型仍可空（签名冻结）：值域将来再加 kind 时，「没有对应统计桶」必须还能
+/// 表达；当前四个 kind 都有桶，故实际不返 null。game 自 [StatSourceKind.game]
+/// 起有了自己的桶——此前返 null 是因为统计域只有 book / video 两桶。
 StatSourceKind? statSourceKindOf(MediaKind kind) => switch (kind) {
       MediaKind.epub || MediaKind.srt => StatSourceKind.book,
       MediaKind.video => StatSourceKind.video,
-      MediaKind.game => null,
+      MediaKind.game => StatSourceKind.game,
     };
 
 /// 标签宿主种类 → 标签墓碑域（[BookTagMembershipTombstones].mediaType 的值域，

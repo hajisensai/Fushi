@@ -313,6 +313,9 @@ void main() {
     });
 
     test('达标的字幕字数记进时钟当前段（与观看时长同一段）', () {
+      // BUG-2210 起 StudyClock.addChars 在停表期间直接丢弃；生产里视频页开页即
+      // `_watchTracker.start()`（时钟随之起表），这里对齐生产先起表再播。
+      clock.start();
       src.currentCueIndex = 0;
       src.currentCue = _cue('あいう');
       _playThrough(src, fromMs: 0, toMs: 2000);

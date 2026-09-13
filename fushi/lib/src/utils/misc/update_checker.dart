@@ -25,7 +25,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
-import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_landing.dart';
 import 'package:fushi/src/utils/net/github_mirrors.dart';

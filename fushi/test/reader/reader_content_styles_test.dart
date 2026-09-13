@@ -300,26 +300,104 @@ void main() {
   });
 
   group('ReaderContentStyles furigana modes', () {
-    test('default mode shows furigana', () async {
+    test('default mode (off) shows furigana', () async {
       final ReaderSettings settings = await _defaultSettings();
+      expect(settings.furiganaMode, 'off');
       final String css = ReaderContentStyles.css(settings: settings);
-      // Default furigana mode is 'show' → rt { font-size: 0.45em; }
+      // Default furigana mode is 'off' → rt { font-size: 0.45em; }, nothing hidden.
       expect(css, contains('rt'));
       expect(css, contains('0.45em'));
+      expect(css, isNot(contains('furigana-revealed')));
+      expect(css, isNot(contains('rt, rtc { display: none !important; }')));
     });
 
-    test('hide furigana mode via themeOverride still renders rt rule',
+    test('hidden mode renders display:none for rt/rtc (legacy value "hide" too)',
         () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final ReaderSettings settings = ReaderSettings(db);
       await settings.refreshFromDb();
+      await settings.setFuriganaMode('hidden');
+      expect(ReaderContentStyles.css(settings: settings),
+          contains('rt, rtc { display: none !important; }'));
       await settings.setFuriganaMode('hide');
+      expect(settings.furiganaMode, 'hidden');
+      expect(ReaderContentStyles.css(settings: settings),
+          contains('rt, rtc { display: none !important; }'));
+    });
 
+    test('toggle mode: CSS-owned hide + per-ruby reveal + dotted hint + '
+        'whole-page reveal (Hoshi Reader iOS Toggle)', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setFuriganaMode('toggle');
       final String css = ReaderContentStyles.css(settings: settings);
-      expect(css, contains('rt'));
-      expect(css, contains('display: none'));
+      // 未揭示的 ruby：注音 visibility:hidden（占位保留，行高不抖），不是 display:none。
+      expect(
+          css,
+          contains('ruby:not(.furigana-revealed) > rt,\n'
+              'ruby:not(.furigana-revealed) > rtc,\n'
+              'ruby:not(.furigana-revealed) > rp {\n'
+              '  visibility: hidden !important;\n}'));
+      expect(css, isNot(contains('rt, rtc { display: none !important; }')));
+      // 显示态仍强制 rt 为 ruby-text（TODO-1308），rtc 接管照旧。
+      expect(css, contains('rt { display: ruby-text !important; font-size: 0.45em; }'));
+      // 灰色虚线下划线提示可点（与 Hoshi iOS 同款）。
+      expect(css, contains('ruby:not(.furigana-revealed):has(rt) {'));
+      expect(css, contains('text-decoration-style: dotted !important;'));
+      expect(css, contains('text-decoration-color: rgba(160, 160, 160, 0.8) !important;'));
+      // readerToggleFurigana 快捷键的整页揭示。
+      expect(css, contains('body.show-all-rt ruby > rt,\nbody.show-all-rt ruby > rtc {\n  visibility: visible !important;\n}'));
+      // 旧四态残留不得复活。
+      expect(css, isNot(contains('show-rt rt')));
+      // 历史值 partial 归到 toggle。
+      await settings.setFuriganaMode('partial');
+      expect(settings.furiganaMode, 'toggle');
+    });
+
+    test('dimmed mode: rt stays ruby-text but is faded via opacity; '
+        'show-all-rt restores full opacity', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
+      await settings.setFuriganaMode('dimmed');
+      expect(settings.furiganaMode, 'dimmed');
+      final String css = ReaderContentStyles.css(settings: settings);
+      // 显示态：rt 仍强制 ruby-text（TODO-1308），rtc 接管照旧 —— dimmed 只是淡，
+      // 不是隐藏，注音结构与 off 完全一致。
+      expect(css,
+          contains('rt { display: ruby-text !important; font-size: 0.45em; }'));
+      expect(
+          css,
+          contains('rtc {\n'
+              '  display: ruby-text !important;\n'
+              '  font-size: 0.45em;\n}'));
+      expect(css, isNot(contains('rt, rtc { display: none !important; }')));
+      expect(css, isNot(contains('furigana-revealed')),
+          reason: 'dimmed 不走 toggle 的逐个揭示机制');
+      // 淡显只用 opacity（不改 color）：深浅主题 / 自定义正文色都成立。
+      expect(
+          css,
+          contains('ruby > rt,\n'
+              'ruby > rtc {\n'
+              '  opacity: 0.45 !important;\n}'));
+      // readerToggleFurigana 快捷键在 dimmed 下 = 临时恢复全亮。
+      expect(
+          css,
+          contains('body.show-all-rt ruby > rt,\n'
+              'body.show-all-rt ruby > rtc {\n'
+              '  opacity: 1 !important;\n}'));
+      // off 态不得漏出淡显规则（否则四态互相污染）。
+      await settings.setFuriganaMode('off');
+      final String offCss = ReaderContentStyles.css(settings: settings);
+      expect(offCss, isNot(contains('opacity: 0.45 !important')));
+      expect(offCss, isNot(contains('body.show-all-rt ruby > rt')));
     });
   });
 
@@ -570,7 +648,7 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
     });
 
     test('continuous layout contains --chrome-top-inset in padding-top',
@@ -643,13 +721,13 @@ void main() {
       final ReaderSettings settings = await _defaultSettings();
       final String css = ReaderContentStyles.css(settings: settings);
       // TODO-734：竖排 content-box 高 = reader-viewport-height(纯 V) − 上下 padding
-      // （margin + fontSize + chrome insets），与 padding-top/padding-bottom 逐项镜像。
-      // 基准是 --reader-viewport-height 不是 --page-height（后者含 +bottomOverlap 给图片）。
+      // （margin + chrome insets），与 padding-top/padding-bottom 逐项镜像（BUG-2469：
+      // 不再多扣一个字号）。基准是 --reader-viewport-height 不是 --page-height。
       // TODO-743：竖排 column-width 现包一层 max(<F>px, calc(...)) 坍塌地板。
       expect(
           css,
           contains(
-              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - ${settings.fontSize.round()}px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+              'column-width: max(${settings.fontSize.round()}px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
     });
 
     test('horizontal paginated column-gap is the same fixed constant',
@@ -835,7 +913,7 @@ void main() {
       expect(
           css,
           contains(
-              'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + ${settings.fontSize.round()}px + var(--chrome-bottom-inset, 0px)) !important;'));
+              'border-bottom-width: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px)) !important;'));
       expect(css,
           contains('border-left-width: var(--reader-margin-left, ${settings.marginLeft}vw) !important;'));
       // 覆盖条色 == 页背景色（不透明覆盖泄露文字）。
@@ -1045,10 +1123,10 @@ void main() {
       expect(ReaderSettings.normalizeMarginPercent(double.infinity), 0);
     });
 
-    // ② 回归守卫：底部预留用 ${fontSize}px（跟字号），不是硬编码常量。把字号抬到接近
-    // TODO-299 的上限 128，断言底部预留 = 128px（不是 22px），否则大字号竖排正文被底栏遮挡。
-    test('vertical bottom reserve scales with fontSize, not a hardcoded const',
-        () async {
+    // ② 回归守卫（BUG-2469 改写）：底部 padding 只含页边距 + chrome inset，**不再**
+    // 多留一个字号或旧的 22px 常量——那是 TODO-734 之前列高建在 V+O 上的配对项，基准
+    // 改纯 V 后只剩一条空带。把字号抬到 128 断言 padding-bottom / column-width 都不含它。
+    test('vertical bottom reserve has no font-size band (BUG-2469)', () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -1058,26 +1136,27 @@ void main() {
       await settings.setFontSize(128);
 
       final String css = ReaderContentStyles.css(settings: settings);
-      // 分页竖排 padding-bottom 跟随字号。
+      // 分页竖排 padding-bottom = 页边距 + chrome inset，不含字号。
       expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + 128px + var(--chrome-bottom-inset, 0px))'));
-      // TODO-729：字号缩放从 column-gap 移到 column-width(content-box)——gap 固定 22px。
-      // TODO-734：基准改为 --reader-viewport-height(纯 V)。竖排 content-box 高扣掉
-      // fontSize(128px) 一项，列周期随字号变。
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
+      expect(css, isNot(contains('+ 128px + var(--chrome-bottom-inset')));
+      // TODO-729：gap 固定 22px。TODO-734：基准改为 --reader-viewport-height(纯 V)。
+      // 列高 = V − 上下页边距 − chrome inset；128px 只作 TODO-743 坍塌地板。
       // TODO-743：max(128px, calc(...)) 坍塌地板；宽裕视口下 max 取 calc，零变化。
       expect(
           css,
           contains(
-              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - 128px - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
+              'column-width: max(128px, calc(var(--reader-viewport-height, 100vh) - var(--reader-margin-top, ${settings.marginTop}vh) - var(--reader-margin-bottom, ${settings.marginBottom}vh) - var(--chrome-top-inset, 0px) - var(--chrome-bottom-inset, 0px)))'));
       // column-gap 固定常量，不再把 fontSize 塞进去。
       expect(css, contains('column-gap: 22px !important;'));
       // 防回归：底部预留(padding-bottom)绝不能退化成 22px（旧 bottomOverlapPx 常量）。
       expect(css, isNot(contains('+ 22px + var(--chrome-bottom-inset')));
     });
 
-    test('horizontal bottom reserve also scales with fontSize', () async {
+    test('horizontal bottom reserve has no font-size band either (BUG-2469)',
+        () async {
       final FushiDatabase db =
           FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
@@ -1090,7 +1169,8 @@ void main() {
       expect(
           css,
           contains(
-              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + 96px + var(--chrome-bottom-inset, 0px))'));
+              'padding-bottom: calc(var(--reader-margin-bottom, ${settings.marginBottom}vh) + var(--chrome-bottom-inset, 0px))'));
+      expect(css, isNot(contains('+ 96px + var(--chrome-bottom-inset')));
     });
 
     test('source margin getters fall back to the 2% defaults', () async {

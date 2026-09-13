@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'audiobook_health.dart';
 import 'audiobook_model.dart';
@@ -117,7 +116,7 @@ class AudiobookRepository {
     if (audioChanged) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
-    debugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
+    fushiDebugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
         'files=${audioPaths.length} audioChanged=$audioChanged');
   }
 
@@ -221,11 +220,21 @@ class AudiobookRepository {
 
   /// 写位置（毫秒）并同时写入当前时刻为更新时间戳（BUG-471）。位置与时间戳是同一
   /// 进度的两个 pref，必须一起写，否则 LWW 无依据。
+  ///
+  /// 位置**没变就什么都不写**（BUG-2328）：时间戳的语义是「位置最后一次变动的时刻」，
+  /// 不是「最后一次有人调本方法的时刻」。控制器在暂停 / 退后台 / 关书 / stop 都会强制
+  /// flush 一次（durability 契约，见 [AudiobookPlayerController.flushPosition]），而 reader
+  /// 关书时先落阅读位置再 flush 音频——若每次 flush 都重盖时间戳，音频进度就永远比
+  /// 阅读进度「更新」，开书 LWW 仲裁会被写入顺序而不是用户行为决定（暂停在第 3 章、
+  /// 静读到第 10 章关书，重开跳回第 3 章）。
   Future<void> updatePositionMs({
     required String bookKey,
     required int positionMs,
   }) async {
-    await _db.setPrefTyped('$_kPositionMsKeyPrefix$bookKey', positionMs);
+    final String posKey = '$_kPositionMsKeyPrefix$bookKey';
+    final int current = await _db.getPrefTyped<int>(posKey, 0);
+    if (current == positionMs) return;
+    await _db.setPrefTyped(posKey, positionMs);
     await _db.setPrefTyped('$_kPositionAtMsKeyPrefix$bookKey',
         DateTime.now().millisecondsSinceEpoch);
   }
@@ -311,6 +320,24 @@ class AudiobookRepository {
 
   Future<AudiobookHealth?> readHealthOverlay(String bookKey) async {
     final raw = await _db.getPref('$_kHealthOverlayKeyPrefix$bookKey');
+    return _parseHealthOverlay(raw);
+  }
+
+  /// 全部健康度覆盖一次取完（bookKey → 覆盖）。书架列表页为每本有声书各查一次
+  /// [readHealthOverlay] 是 N+1（每次都是一条真 SELECT），这里一条前缀查询取完。
+  Future<Map<String, AudiobookHealth>> readAllHealthOverlays() async {
+    final Map<String, String> raw =
+        await _db.getPrefsByPrefix(_kHealthOverlayKeyPrefix);
+    final Map<String, AudiobookHealth> result = <String, AudiobookHealth>{};
+    for (final MapEntry<String, String> e in raw.entries) {
+      final AudiobookHealth? health = _parseHealthOverlay(e.value);
+      if (health == null) continue;
+      result[e.key.substring(_kHealthOverlayKeyPrefix.length)] = health;
+    }
+    return result;
+  }
+
+  static AudiobookHealth? _parseHealthOverlay(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
@@ -331,8 +358,8 @@ class AudiobookRepository {
             : DateTime.now(),
       );
     } catch (e, stack) {
-      debugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
-      debugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
+      fushiDebugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
+      fushiDebugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }
   }
@@ -354,6 +381,18 @@ class AudiobookRepository {
     final overlay = await readHealthOverlay(ab.bookKey);
     if (overlay != null) return overlay;
     return AudiobookHealth.fromAudiobook(ab);
+  }
+
+  /// [resolveHealth] 的批量口径（书架一次算完全部有声书）：覆盖一次前缀查询取完，
+  /// 判据与单本版逐字一致——有覆盖用覆盖，否则按行自身推导。
+  Future<Map<String, AudiobookHealth>> resolveAllHealth(
+    Map<String, Audiobook> byBookKey,
+  ) async {
+    final Map<String, AudiobookHealth> overlays = await readAllHealthOverlays();
+    return <String, AudiobookHealth>{
+      for (final MapEntry<String, Audiobook> e in byBookKey.entries)
+        e.key: overlays[e.key] ?? AudiobookHealth.fromAudiobook(e.value),
+    };
   }
 
   // ── conversions ─────────────────────────────────────────────────

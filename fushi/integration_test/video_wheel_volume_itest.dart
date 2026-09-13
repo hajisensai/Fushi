@@ -25,7 +25,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart'
+import 'package:fushi_engine/media/video/video_book_repository.dart'
     show VideoBookRepository;
 import 'package:fushi/src/media/video/video_volume_overlays.dart'
     show videoVolumeHudProgressKey;

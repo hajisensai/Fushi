@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 
 /// BUG-2017 回归：EPUB 章节是 XML（`application/xhtml+xml`），WebView 按该 MIME

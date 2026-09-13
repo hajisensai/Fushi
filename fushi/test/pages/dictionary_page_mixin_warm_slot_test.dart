@@ -34,7 +34,6 @@ class MixinTestAppModel extends AppModel {
   // popupMaxWidth/Height 同属弹窗布局路径，照例覆写避免 prefsRepo 空指针。
   @override
   bool get popupBottomDocked => false;
-
   @override
   double get appUiScale => 1.0;
 

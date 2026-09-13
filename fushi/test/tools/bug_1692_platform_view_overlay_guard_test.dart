@@ -134,17 +134,24 @@ void main() {
       );
     });
 
-    test('阅读器 macOS 标题栏拖拽区必须自带 RepaintBoundary', () {
+    test('阅读器页内已无 macOS 专用拖拽区（该形态随自绘顶栏一并删除）', () {
+      // 这条原本守「阅读器自绘的 28pt macOS 标题栏拖拽区必须自带 RepaintBoundary」。
+      // macOS 改用应用级 MD3 顶栏（FushiDesktopTitleBar，包在整个 Navigator 之上、
+      // 不在阅读器页的 Stack 里）后，那条带子整块删除：窗口抓手由顶栏的
+      // DragToMoveArea 提供，交通灯也在 main() 里被永久隐藏。
+      //
+      // 判据因此反过来——页内不得再出现这个拖拽区。它若复活而没带
+      // RepaintBoundary，就会并进页面级 cull rect = 整窗的 PictureLayer，macOS
+      // engine 据此把整窗加进 FlutterMutatorView 的 _hitTestIgnoreRegion，正文
+      // WebView 整块收不到鼠标事件（BUG-1692 的原始症状）。
       final String page = File(
         'lib/src/pages/implementations/reader_fushi_page.dart',
       ).readAsStringSync();
-      final int at = page.indexOf('fushi_reader_window_drag_area');
-      expect(at, greaterThan(-1), reason: '拖拽区 key 改了，守卫需同步更新');
-      final String before = page.substring((at - 600).clamp(0, at), at);
       expect(
-        before.contains('RepaintBoundary'),
-        isTrue,
-        reason: 'macOS 标题栏拖拽区画在阅读器 WebView 之后，同上（BUG-1692）',
+        page.contains('fushi_reader_window_drag_area'),
+        isFalse,
+        reason: '阅读器页内又出现 macOS 拖拽区 = 自绘顶栏之下再压一条不透明带；'
+            '若确要恢复，必须同时恢复它的 RepaintBoundary 与本守卫的正向判据',
       );
     });
   });

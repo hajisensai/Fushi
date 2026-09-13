@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         videoRemoteAudioTrackAtPrefKey,
         videoRemoteAudioTrackPrefKey,

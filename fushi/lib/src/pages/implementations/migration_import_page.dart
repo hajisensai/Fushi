@@ -19,7 +19,7 @@ import 'package:path/path.dart' as p;
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
 ///
 /// 扫描老包写下的中转目录 → 逐批校验（清单 sha256+size）→ 走
-/// [BackupService.mergeRestoreBackup] 逐批合并（关库一次、批间不重启）→
+/// [BackupRestoreService.mergeRestoreBackup] 逐批合并（关库一次、批间不重启）→
 /// 行数聚合校验 → 删除已导入批文件 → 重启。**任一批校验不符：保留文件、
 /// 提示回老包重传、绝不进入卸载流程**。
 ///
@@ -179,6 +179,8 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       final String fontsRoot =
           p.join(appModel.appDirectory.path, 'custom_fonts');
       final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+      final String gameCoversRoot =
+          p.join(appModel.appDirectory.path, 'game_covers');
       for (final MigrationImportBatch batch in scan.ready) {
         // **不能裸调 setState**：beginBackupImport() 上的是全屏遮罩，本页已被
         // 移出 widget 树（State 进入 defunct）。循环第一句就会抛
@@ -191,7 +193,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           setState(() => _status =
               t.migration_import_running(batch: _batchLabel(batch.batch)));
         }
-        await BackupService.mergeRestoreBackup(
+        await BackupRestoreService.mergeRestoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: batch.archivePath,
           dictionaryResourceDirectory:
@@ -200,6 +202,7 @@ class _MigrationImportPageState extends State<MigrationImportPage>
           audiobooksRootDirectory: audiobooksRoot,
           fontsRootDirectory: fontsRoot,
           videosRootDirectory: videosRoot,
+          gameCoversRootDirectory: gameCoversRoot,
           onProgress: appModel.reportBackupImportProgress,
           // 同机换包名：用户期望「一切原样搬过来」，而 merge 默认只搬内容、
           // 不搬设置（那是给「另一台设备的备份」用的语义）。不开这个开关，

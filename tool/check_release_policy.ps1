@@ -56,8 +56,12 @@ $workflowPaths = @(
 foreach ($relativePath in $workflowPaths) {
   $content = Read-RepoFile $relativePath
 
-  Require-Text $relativePath $content 'concurrency:' 'release publishers must share a cross-workflow lock'
-  Require-Text $relativePath $content 'group: fushi-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize instead of racing separate releases'
+  Require-Text $relativePath $content 'concurrency:' 'release publishers must serialize same-tag runs within each workflow'
+  # 2026-09-08：组名带 workflow 名。GitHub 的 concurrency 组是仓库级的，两条 workflow 同名组会串行，
+  # 且同组第二个 pending 会取消第一个 pending；正式版 release:published 同时点燃两条时桌面/Apple 要等
+  # Android 整条跑完。带上 workflow 名后两条并行、同一条内仍按 tag/sha 串行。
+  # Dart 侧同一不变式：fushi/test/build/release_workflow_concurrency_guard_test.dart。
+  Require-Text $relativePath $content 'group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize within a workflow while Android and desktop publishers run in parallel'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
   Require-Text $relativePath $content 'fetch-depth: 0' 'release sequence uses full git history'
   Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'release sequence must be shared by Android and desktop workflows'
@@ -225,6 +229,25 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
   Require-Text $relativePath $content $entry.Payload 'Windows bundle payload must contain magpie_bundle/ or window upscaling can never install (BUG-1292)'
   Require-Text $relativePath $content 'Magpie-hibiki-slim-x64.zip.sha256' 'the bundled Magpie archive must ship with its sha256 sidecar; the installer refuses an unverified package (BUG-1292)'
 }
+
+# release-server.yml (headless server) is a separate product line: no push/debug
+# channel, no update manifest, no rolling tag. It only shares the release sequence
+# source and the hard rule that a non-app release must never become Latest (the app
+# stable-channel updater resolves releases/latest; a server Latest would stall it).
+$serverWorkflow = '.github/workflows/release-server.yml'
+$serverContent = Read-RepoFile $serverWorkflow
+Require-Text $serverWorkflow $serverContent 'concurrency:' 'server publisher must serialize same-tag runs'
+Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a server publish must run to completion'
+Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'
+Require-Text $serverWorkflow $serverContent 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'server release sequence must come from the shared script'
+Require-Text $serverWorkflow $serverContent 'MAKE_LATEST=false' 'server releases are never Latest, formal included'
+Require-Text $serverWorkflow $serverContent 'make_latest: ${{ needs.channel.outputs.make_latest }}' 'make_latest must flow from the channel output (never a literal)'
+Require-Text $serverWorkflow $serverContent 'fushi-server-*) : ;;' 'server release tags must be validated to start with fushi-server- so they never collide with app tags'
+Forbid-Pattern $serverWorkflow $serverContent 'RELEASE_SEQUENCE=\$\(git rev-list' 'release sequence must go through tool/release_sequence.sh'
+Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
+Forbid-Pattern $serverWorkflow $serverContent 'github\.run_number' 'workflow-local run_number is not a release sequence'
+Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'a server release must never be Latest'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only (workflow_dispatch); no push trigger'
 
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'

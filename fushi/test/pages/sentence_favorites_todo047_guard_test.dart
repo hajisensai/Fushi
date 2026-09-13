@@ -189,7 +189,9 @@ void main() {
       );
       expect(
         videoSrc,
-        contains('widget.initialCueStartMs ?? row.lastPositionMs'),
+        contains('widget.sourceReview?.startMs ??\n'
+            '          widget.initialCueStartMs ??\n'
+            '          row.lastPositionMs,'),
         reason: '收藏 cue 起点 / 续播由 _loadSingle 消费',
       );
     });
@@ -264,7 +266,16 @@ void main() {
       );
       expect(src, contains('_favoritedSentences'));
       expect(src, contains('t.stat_favorited_sentence'));
-      expect(src, contains('FavoriteSentenceRepository'));
+      expect(
+        src,
+        contains('favoriteSentenceEvents(source: StatSourceKind.book)'),
+        reason: '取数与分桶判据收敛进 StatCounterFacts（三个统计 tab 共用一份）',
+      );
+    });
+
+    test('收藏语句的来源切分与日期回退判据只在 StatCounterFacts 里', () {
+      // stat_facts 已随引擎抽取搬走（cwd 是 fushi/，所以往上一级）。
+      final String src = read('../packages/fushi_engine/lib/stats/stat_facts.dart');
       expect(
         src,
         contains('s.source != kFavoriteSentenceSourceVideo'),
@@ -272,9 +283,14 @@ void main() {
       );
       expect(
         src,
-        contains('s.dateKey ?? statDateKey(s.createdAt)'),
-        reason: 'BUG-893：书内旧收藏无 dateKey 按 createdAt 回退归桶'
-            '（旧的 `dateKey != null` 过滤把所有书内收藏滤光 → 统计恒 0，已根治）',
+        contains('s.source == kFavoriteSentenceSourceVideo'),
+        reason: '视频来源归视频统计',
+      );
+      expect(
+        src,
+        contains('s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt)'),
+        reason: 'BUG-893：旧收藏无 dateKey 按 createdAt 回退归桶'
+            '（旧的 `dateKey != null` 过滤把它们滤光 → 统计恒 0，已根治）',
       );
     });
 
@@ -284,8 +300,17 @@ void main() {
       );
       expect(src, contains('_favoritedSentences'));
       expect(src, contains('t.stat_favorited_sentence'));
-      expect(src, contains('s.source == kFavoriteSentenceSourceVideo'));
-      expect(src, contains('s.dateKey != null'));
+      expect(
+        src,
+        contains('favoriteSentenceEvents(source: StatSourceKind.video)'),
+      );
+      expect(
+        src,
+        isNot(contains('s.dateKey != null')),
+        reason: 'BUG-893 的读取端回退此前只修了阅读侧；视频侧也不许再按 '
+            'dateKey 非空过滤（写入端补 dateKey 之前的视频收藏会被整批漏掉，'
+            '且总览的跨域和会不等于两个域 tab 之和）',
+      );
     });
   });
 }

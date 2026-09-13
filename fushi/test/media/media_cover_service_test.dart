@@ -18,10 +18,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/scraper/cover_meta_store.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -433,6 +433,166 @@ void main() {
       );
       expect(File(filename).existsSync(), isFalse);
       await expectBothCoverKeysEvicted(filename);
+    });
+
+    test('BUG-2496：选到非图片（HTML 改名 .jpg）→ 不落盘、不动旧 override、不抛', () async {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      final MediaItem item = srtItem('srtbook_svc_cover_invalid');
+      final String filename = source.getOverrideThumbnailFilename(
+        appModel: appModel,
+        item: item,
+      );
+
+      // 先有一张合法 override，再喂坏文件：旧图必须原样保留。
+      await MediaCoverService.applyBookCoverOverride(
+        appModel: appModel,
+        mediaSource: source,
+        item: item,
+        file: writePng(tempDir, 'good.png'),
+        clearOverrideImage: false,
+      );
+      final List<int> before = File(filename).readAsBytesSync();
+
+      final File html = File(p.join(tempDir.path, 'error_page.jpg'))
+        ..writeAsStringSync('<html><body>403 Forbidden</body></html>');
+      await MediaCoverService.applyBookCoverOverride(
+        appModel: appModel,
+        mediaSource: source,
+        item: item,
+        file: html,
+        clearOverrideImage: false,
+      );
+
+      expect(File(filename).readAsBytesSync(), before,
+          reason: '坏文件不得覆盖旧 override（渲染层只判 existsSync）');
+      expect(
+        Directory(p.dirname(filename))
+            .listSync()
+            .where((FileSystemEntity e) => e.path.contains('.tmp.')),
+        isEmpty,
+        reason: '拒收时不得留 .tmp 残片',
+      );
+    });
+
+    test('BUG-2496：无旧 override 时喂坏文件 → 路径上不出现任何文件', () async {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      final MediaItem item = srtItem('srtbook_svc_cover_invalid_fresh');
+      final String filename = source.getOverrideThumbnailFilename(
+        appModel: appModel,
+        item: item,
+      );
+      final File truncated = File(p.join(tempDir.path, 'truncated.png'))
+        ..writeAsBytesSync(kTransparentImage.sublist(0, 8));
+
+      await MediaCoverService.applyBookCoverOverride(
+        appModel: appModel,
+        mediaSource: source,
+        item: item,
+        file: truncated,
+        clearOverrideImage: false,
+      );
+
+      expect(File(filename).existsSync(), isFalse);
+    });
+  });
+
+  group('applyCollectionCover（video_covers/collections/<id>.jpg）', () {
+    late FushiDatabase db;
+
+    setUp(() {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+    });
+
+    test('落盘到合集封面目录并写 media_collections.cover_path', () async {
+      final int id = await db.createMediaCollection('Show');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections'));
+      final File source = writePng(tempDir, 'poster.png');
+
+      final String saved = await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: source.path,
+        collectionCoversDirectory: covers,
+      );
+
+      expect(saved, p.join(covers.path, videoCoverFileName('$id')));
+      expect(File(saved).existsSync(), isTrue);
+      expect((await db.getMediaCollectionById(id))!.coverPath, saved,
+          reason: '只落盘不写库 = 用户换了封面但界面永远看不到');
+    });
+
+    test('只写 media_collections 一行，一个成员的封面都不动（BUG-1211）', () async {
+      final int id = await db.createMediaCollection('Show');
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/e1'),
+          title: const Value('E1'),
+          videoPath: const Value('/v/e1.mkv'),
+          coverPath: const Value('/covers/e1.jpg'),
+        ),
+      );
+      await db.addToCollection(id, MediaKind.video, 'video/e1');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections2'));
+
+      await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: writePng(tempDir, 'poster2.png').path,
+        collectionCoversDirectory: covers,
+      );
+
+      expect(
+        (await db.getVideoBookByBookUid('video/e1'))!.coverPath,
+        '/covers/e1.jpg',
+        reason: '「匹配的是合集的封面，谁说应用到本机里面的视频了」——BUG-1211',
+      );
+    });
+
+    test('换封面是同路径覆盖写，落盘后双键驱逐解码缓存', () async {
+      final int id = await db.createMediaCollection('Show');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections3'));
+      final String saved = await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: writePng(tempDir, 'a.png').path,
+        collectionCoversDirectory: covers,
+      );
+      await populateBothCoverKeys(saved);
+
+      final String again = await MediaCoverService.applyCollectionCover(
+        database: db,
+        collectionId: id,
+        pickedPath: writePng(tempDir, 'b.png').path,
+        collectionCoversDirectory: covers,
+      );
+
+      expect(again, saved, reason: '文件名恒为 <id>.jpg，换图不留孤儿');
+      await expectBothCoverKeysEvicted(saved);
+    });
+
+    test('源文件不可读时抛出，且不写库、不留 .tmp', () async {
+      final int id = await db.createMediaCollection('Show');
+      final Directory covers = Directory(p.join(tempDir.path, 'collections4'));
+
+      await expectLater(
+        MediaCoverService.applyCollectionCover(
+          database: db,
+          collectionId: id,
+          pickedPath: p.join(tempDir.path, 'missing.png'),
+          collectionCoversDirectory: covers,
+        ),
+        throwsA(isA<Object>()),
+      );
+
+      expect((await db.getMediaCollectionById(id))!.coverPath, isNull,
+          reason: '写盘失败还写库 = DB 指着一个不存在的文件');
+      expect(
+        covers
+            .listSync()
+            .where((FileSystemEntity e) => e.path.contains('.tmp')),
+        isEmpty,
+      );
     });
   });
 }

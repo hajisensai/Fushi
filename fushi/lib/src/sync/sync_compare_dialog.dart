@@ -1,15 +1,17 @@
 import 'dart:developer' as developer;
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
@@ -17,11 +19,13 @@ import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/sync/manga_sync_package.dart'
+    show importMangaPackageFile, isMangaPackage;
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -42,6 +46,7 @@ class SyncCompareEntry {
     this.localAudioPosMs,
     this.remoteAudioPosSec,
     this.base,
+    this.liveAction,
   });
 
   final String title;
@@ -80,21 +85,42 @@ class SyncCompareEntry {
   /// 共同祖先基线（progress 维度时间戳）；用于把「时间戳不等」收紧为「真分叉」。
   final int? base;
 
+  /// 互联 live 进度的三方判定结论（BUG-2506）。非 null 表示这一行的远端进度
+  /// 来自 host DB（`/api/library/books/<key>/progress`）而不是 WebDAV 文件箱，
+  /// 冲突 / 方向 / 应用都按它走：文件箱里 `progress_*.json` 只有 client 自己写、
+  /// host 从不读回，对互联通道它描述不了「host 与本机的分歧」。
+  final BookProgressSyncAction? liveAction;
+
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
 
   /// 冲突 = 双边都偏离共同祖先 base（真分叉），不再是简单的时间戳不等。
   /// 单边改动（一边等于 base）由 [resolveProgressSync] 判为自动方向，不算冲突。
-  bool get hasConflict => resolveProgressSync(
-        local: localUpdatedAt,
-        remote: remoteUpdatedAt,
-        base: base,
-      ).isConflict;
-  bool get isSynced =>
-      hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
+  /// 互联 live 行按位置基线三方判定（[liveAction]，BUG-2506）。
+  bool get hasConflict => liveAction != null
+      ? liveAction == BookProgressSyncAction.conflict
+      : resolveProgressSync(
+          local: localUpdatedAt,
+          remote: remoteUpdatedAt,
+          base: base,
+        ).isConflict;
+  bool get isSynced => liveAction != null
+      ? liveAction == BookProgressSyncAction.synced
+      : hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
   bool get needsManualChoice => hasConflict;
 
   SyncDirection get autoDirection {
+    switch (liveAction) {
+      case BookProgressSyncAction.synced:
+        return SyncDirection.synced;
+      case BookProgressSyncAction.pushLocal:
+        return SyncDirection.exportToTtu;
+      case BookProgressSyncAction.applyRemote:
+        return SyncDirection.importFromTtu;
+      case BookProgressSyncAction.conflict:
+      case null:
+        break;
+    }
     if (!hasLocal && !hasRemote) return SyncDirection.synced;
     if (!hasLocal) return SyncDirection.importFromTtu;
     if (!hasRemote) return SyncDirection.exportToTtu;
@@ -110,10 +136,20 @@ class SyncDictEntry {
     required this.name,
     required this.hasLocal,
     this.remoteAssetId,
+    this.displayName,
   });
 
   final String name;
   final bool hasLocal;
+
+  /// 词典改名（v95）：本地那本改过名时的显示名，只用于渲染这一行的标题。
+  /// [name] 是身份（远端资产名 `<name>.fushidict`、本地删除的键），永不翻译。
+  /// 远端独有的条目本地没有元数据行 → null → 显示 [name]。
+  final String? displayName;
+
+  String get shownName => (displayName?.trim().isNotEmpty ?? false)
+      ? displayName!.trim()
+      : name;
 
   /// 远端词典资产（`<name>.fushidict`）定位符；远端没有则 null。
   final String? remoteAssetId;
@@ -179,7 +215,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   final remoteByTitle = <String, SyncFileRef>{};
   for (final f in remoteBooks) {
     remoteByTitle[f.name] = f;
-    final cleaned = _unsanitize(f.name);
+    final cleaned = unsanitizeTtuFilename(f.name);
     if (cleaned != f.name) remoteByTitle[cleaned] = f;
     allTitles.add(cleaned);
   }
@@ -213,6 +249,31 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     );
     for (var j = 0; j < batch.length; j++) {
       remoteDataMap[batch[j].key] = results[j];
+    }
+  }
+
+  // BUG-2506：互联通道的书进度真相在 host DB，不在 WebDAV 文件箱。对「本机有、
+  // host 也有」的书按 live 端点取 host 进度 + 位置基线做三方判定，与 sweep
+  // （SyncOrchestrator._syncBookProgressLive）同一份纯函数、同一份 IO 层，弹出来
+  // 的冲突和 sweep 报出来的冲突才是同一批。
+  final Map<String, _LiveProgressRow> liveProgressByTitle =
+      <String, _LiveProgressRow>{};
+  if (backend is InterconnectSyncBackend) {
+    final InterconnectBookProgressSync liveSync =
+        InterconnectBookProgressSync(db: db, backend: backend);
+    final List<EpubBookRow> liveJobs = <EpubBookRow>[
+      for (final EpubBookRow b in localBooks)
+        if (liveByTitle.containsKey(b.title)) b,
+    ];
+    for (var i = 0; i < liveJobs.length; i += batchSize) {
+      final List<EpubBookRow> batch = liveJobs.skip(i).take(batchSize).toList();
+      final List<_LiveProgressRow?> rows = await Future.wait(
+        batch.map((EpubBookRow b) => _fetchLiveProgress(liveSync, b)),
+      );
+      for (var j = 0; j < batch.length; j++) {
+        final _LiveProgressRow? row = rows[j];
+        if (row != null) liveProgressByTitle[batch[j].title] = row;
+      }
     }
   }
 
@@ -266,13 +327,30 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final bool remoteHasContent = local == null
         ? (remote != null
             ? await _remoteFolderHasContent(backend, remote.id)
-            : (live?.hasContent ?? true))
+            // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
+            // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
+            // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
+            : (live == null
+                ? true
+                : (live.hasContent || live.hasMangaContent)))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
     // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。
     final int? base =
         await db.getSyncBaseline(sanitizeTtuFilename(title), 'progress');
+
+    // 互联 live 行：远端进度 / 时间戳换成 host DB 的（BUG-2506）；host 无记录时
+    // 远端显示「无数据」而不是文件箱里 client 自己上次导出的旧值。
+    final _LiveProgressRow? liveRow = liveProgressByTitle[title];
+    final double? remoteProg = liveRow != null
+        ? (liveRow.remote.updatedAtMs > 0 && local != null
+            ? _fractionOf(liveRow.remote, local)
+            : null)
+        : remoteData?.progress;
+    final int? remoteUpdatedAt = liveRow != null
+        ? (liveRow.remote.updatedAtMs > 0 ? liveRow.remote.updatedAtMs : null)
+        : remoteData?.updatedAt;
 
     entries.add(SyncCompareEntry(
       title: title,
@@ -283,13 +361,14 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       remoteAudioBookId: remoteData?.audioBookId,
       localProgress: localProg,
       localUpdatedAt: localUpdatedAt,
-      remoteProgress: remoteData?.progress,
-      remoteUpdatedAt: remoteData?.updatedAt,
+      remoteProgress: remoteProg,
+      remoteUpdatedAt: remoteUpdatedAt,
       localStatsCount: localStatsCount,
       remoteStatsCount: remoteData?.statsCount,
       localAudioPosMs: localAudioMs,
       remoteAudioPosSec: remoteData?.audioPosSec,
       base: base,
+      liveAction: liveRow?.action,
     ));
   }
 
@@ -327,9 +406,15 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
           e.id;
     }
   }
+  final List<DictionaryMetaRow> localRows = await db.getAllDictionaryMetadata();
   final Set<String> localNames = <String>{
-    for (final DictionaryMetaRow d in await db.getAllDictionaryMetadata())
-      d.name,
+    for (final DictionaryMetaRow d in localRows) d.name,
+  };
+  // 只用于这张列表的显示；同步身份仍是真名。
+  final Map<String, String> localDisplayNames = <String, String>{
+    for (final DictionaryMetaRow d in localRows)
+      if (d.displayName != null && d.displayName!.trim().isNotEmpty)
+        d.name: d.displayName!.trim(),
   };
 
   final Set<String> allNames = <String>{...localNames, ...remoteByName.keys};
@@ -339,6 +424,7 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
         name: n,
         hasLocal: localNames.contains(n),
         remoteAssetId: remoteByName[n],
+        displayName: localDisplayNames[n],
       ),
   ];
   // 纯本地项（远端没有、这里没得删）曾被「词典同步开关关着」过滤掉，理由是别用
@@ -365,6 +451,61 @@ class _RemoteBookData {
 
   /// 远端有声书资产（audiobook.fushiaudio）的原生定位符；无则 null。
   final String? audioBookId;
+}
+
+/// 互联 live 行的取数结果（BUG-2506）：host 进度 + 本机进度 + 三方判定结论。
+class _LiveProgressRow {
+  const _LiveProgressRow({
+    required this.local,
+    required this.remote,
+    required this.action,
+  });
+
+  final RemoteBookProgress local;
+  final RemoteBookProgress remote;
+  final BookProgressSyncAction action;
+}
+
+/// 取一本书的 host 进度并做三方判定；网络失败返回 null（这一行退回文件箱口径，
+/// 不让一本书的 GET 失败把整个对比弹窗炸掉）。
+Future<_LiveProgressRow?> _fetchLiveProgress(
+  InterconnectBookProgressSync sync,
+  EpubBookRow book,
+) async {
+  try {
+    final RemoteBookProgress remote = await sync.remoteProgress(book);
+    final RemoteBookProgress local = await sync.localProgress(book);
+    final BookProgressBaseline? base = await sync.baseline(book);
+    return _LiveProgressRow(
+      local: local,
+      remote: remote,
+      action: resolveBookProgressThreeWay(
+        local: local,
+        remote: remote,
+        base: base,
+      ),
+    );
+  } catch (e) {
+    developer.log(
+      'Failed to fetch live progress for "${book.title}"',
+      error: e,
+      name: 'SyncCompare',
+    );
+    return null;
+  }
+}
+
+/// host 进度 → 阅读分数（与本机列同一算法：按本机书的章节字符表折算）。
+double _fractionOf(RemoteBookProgress progress, EpubBookRow book) {
+  final chapters = parseChaptersJson(book.chaptersJson);
+  final int total = totalCharacterCount(chapters);
+  if (total <= 0) return 0;
+  final int explored = toExploredCharCount(
+    sectionIndex: progress.sectionIndex,
+    normCharOffset: progress.normCharOffset,
+    chapters: chapters,
+  );
+  return explored / total;
 }
 
 Future<_RemoteBookData> _fetchRemoteBookData(
@@ -431,17 +572,6 @@ Future<String> _ensureRoot(
   final savedCache = await repo.getFolderCache(scope);
   backend.restoreCache(rootFolderId: savedRoot, titleToFolderId: savedCache);
   return backend.findOrCreateRootFolder();
-}
-
-String _unsanitize(String name) {
-  return name
-      .replaceAll('~ttu-spc~', ' ')
-      .replaceAll('~ttu-dend~', '.')
-      .replaceAll('~ttu-star~', '*')
-      .replaceAllMapped(
-        RegExp(r'%([0-9A-Fa-f]{2})'),
-        (m) => String.fromCharCode(int.parse(m[1]!, radix: 16)),
-      );
 }
 
 Future<void> showSyncCompareDialog(
@@ -551,6 +681,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   double? _progress;
   String? _progressLabel;
 
+  /// 「只看冲突」筛选（C3）：默认模式下用户可开关；冲突解决弹窗
+  /// （[SyncCompareDialog.conflictsOnly]）恒为只看冲突。参与渲染 / 计数 / Apply 的
+  /// 集合都跟着它走——渲染集 = 应用集，不给「看到的和应用的不一样」留口子。
+  bool _filterConflicts = false;
+  bool get _showOnlyConflicts => widget.conflictsOnly || _filterConflicts;
+
+  int get _conflictCount =>
+      _entries?.where((SyncCompareEntry e) => e.hasConflict).length ?? 0;
+
   @override
   void initState() {
     super.initState();
@@ -608,7 +747,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   List<SyncCompareEntry> get _entriesInPlay {
     final entries = _entries;
     if (entries == null) return const <SyncCompareEntry>[];
-    if (!widget.conflictsOnly) return entries;
+    if (!_showOnlyConflicts) return entries;
     return entries.where((e) => e.hasConflict).toList();
   }
 
@@ -719,6 +858,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               ? SyncDirection.exportToTtu
               : SyncDirection.importFromTtu;
 
+          SyncApplyOutcome outcome;
           try {
             final result = await manager.syncBook(
               book: book,
@@ -728,22 +868,46 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               syncAudioBook: syncAudioBook,
               syncContent: syncContent,
             );
-            switch (classifySyncApply(result)) {
-              case SyncApplyOutcome.applied:
-                applied++;
-              case SyncApplyOutcome.failed:
-                errors.add(entry.title);
-              case SyncApplyOutcome.noop:
-                // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
-                break;
-            }
+            outcome = classifySyncApply(result);
           } catch (e) {
-            errors.add(entry.title);
+            outcome = SyncApplyOutcome.failed;
             developer.log(
               'Failed to sync "${entry.title}"',
               error: e,
               name: 'SyncCompare',
             );
+          }
+          // BUG-2506：互联 live 行的**书进度**按用户的选择经 live 端点落地
+          // （host DB ↔ 本机 reader_positions），并记下新的位置基线。放在
+          // SyncManager 之后——它对互联仍会把文件箱里 client 自己的旧进度导回
+          // 本机，这里最后一步用用户选的那一侧把它盖正；也不依赖它成败——文件箱
+          // 那步对互联是 dead weight，它失败不该把用户刚做的选择判成失败。
+          if (entry.liveAction != null &&
+              widget.backend is InterconnectSyncBackend) {
+            try {
+              if (await _applyLiveProgressChoice(
+                book: book,
+                useLocal: choice == SyncChoice.useLocal,
+              )) {
+                outcome = SyncApplyOutcome.applied;
+              }
+            } catch (e) {
+              outcome = SyncApplyOutcome.failed;
+              developer.log(
+                'Failed to apply live progress for "${entry.title}"',
+                error: e,
+                name: 'SyncCompare',
+              );
+            }
+          }
+          switch (outcome) {
+            case SyncApplyOutcome.applied:
+              applied++;
+            case SyncApplyOutcome.failed:
+              errors.add(entry.title);
+            case SyncApplyOutcome.noop:
+              // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
+              break;
           }
           done++;
           if (mounted) setState(() => _progress = done / total);
@@ -767,6 +931,30 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         });
       }
     }
+  }
+
+  /// 互联 live 行的书进度按用户选择落地（BUG-2506）：选本机 → 推给 host（时间戳
+  /// 抬到严格新于 host，见 [InterconnectBookProgressSync.pushLocal]）；选远端 →
+  /// host 进度落回本机。两者都记下新的位置基线，这本书不再以同一分叉重复弹出。
+  /// 返回是否真的写了东西（host 无记录且本机也无记录时无事可做）。
+  Future<bool> _applyLiveProgressChoice({
+    required EpubBookRow book,
+    required bool useLocal,
+  }) async {
+    final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
+      db: widget.db,
+      backend: widget.backend as InterconnectSyncBackend,
+    );
+    final RemoteBookProgress local = await sync.localProgress(book);
+    final RemoteBookProgress remote = await sync.remoteProgress(book);
+    if (useLocal) {
+      if (local.updatedAtMs <= 0) return false;
+      await sync.pushLocal(book, local: local, remote: remote);
+      return true;
+    }
+    if (remote.updatedAtMs <= 0) return false;
+    await sync.applyRemote(book, remote);
+    return true;
   }
 
   /// 750a：互联下载远端独有书时补下其有声书包（若有）。
@@ -842,11 +1030,21 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       try {
         await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-        final String localBookKey = await EpubImporter.importFromPath(
-          db: widget.db,
-          filePath: tmp.path,
-          fileName: '${entry.title}.epub',
-        );
+        // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
+        // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
+        // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
+        // raw title（bookKey 由它派生），不用本地临时文件名。
+        final String localBookKey = (await isMangaPackage(tmp))
+            ? await importMangaPackageFile(
+                db: widget.db,
+                file: tmp,
+                title: entry.remoteLiveTitle,
+              )
+            : await EpubImporter.importFromPath(
+                db: widget.db,
+                filePath: tmp.path,
+                fileName: '${entry.title}.epub',
+              );
         // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
         // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
         await _downloadLiveAudiobookFor(backend, entry, localBookKey);
@@ -1024,37 +1222,54 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           child: CircularProgressIndicator.adaptive(),
         ),
       );
-    } else if (widget.conflictsOnly
+    } else if (_showOnlyConflicts
         ? _entriesInPlay.isEmpty
         : (_entries!.isEmpty && (_dicts?.isEmpty ?? true))) {
-      // 空态判定按「参与项」：conflictsOnly 下基于冲突项，无冲突即「无可解冲突」。
+      // 空态判定按「参与项」：只看冲突时基于冲突项，无冲突即「无可解冲突」。
       body = Center(child: Text(t.sync_compare_empty));
     } else {
       final conflicts = _entriesInPlay.where((e) => e.hasConflict).toList();
-      // conflictsOnly 模式只渲染冲突分组：隐藏自动可解的书与全部词典分组。
-      final others = widget.conflictsOnly
+      // 只看冲突时只渲染冲突分组：隐藏自动可解的书与全部词典分组。
+      final others = _showOnlyConflicts
           ? const <SyncCompareEntry>[]
           : _entries!.where((e) => !e.hasConflict).toList();
-      final bool showDicts = !widget.conflictsOnly;
+      final bool showDicts = !_showOnlyConflicts;
+      final List<SyncDictEntry> dicts =
+          showDicts ? (_dicts ?? const <SyncDictEntry>[]) : const [];
 
-      body = ListView(
-        children: [
-          if (conflicts.isNotEmpty) ...[
-            _sectionHeader(t.sync_compare_conflicts, theme, isConflict: true),
-            for (final e in conflicts) _buildEntry(e, theme),
-            if (others.isNotEmpty ||
-                (showDicts && (_dicts?.isNotEmpty ?? false)))
-              const Divider(height: 16),
+      // C3：段头 pinned 在滚动容器顶上并带计数，长列表滚到哪都知道在看哪一段；
+      // 批量选择挪到冲突段头——它只作用于需要人工裁决的冲突项，放标题行是错位。
+      body = CustomScrollView(
+        slivers: <Widget>[
+          if (conflicts.isNotEmpty) ...<Widget>[
+            _stickyHeader(
+              t.sync_compare_conflicts,
+              theme,
+              count: conflicts.length,
+              isConflict: true,
+              trailing: _bulkChoiceMenu(conflicts),
+            ),
+            SliverList.list(
+              children: <Widget>[
+                for (final e in conflicts) _buildEntry(e, theme)
+              ],
+            ),
           ],
-          if (others.isNotEmpty) ...[
-            if (conflicts.isNotEmpty)
-              _sectionHeader(t.sync_compare_all_books, theme),
-            for (final e in others) _buildEntry(e, theme),
+          if (others.isNotEmpty) ...<Widget>[
+            _stickyHeader(t.sync_compare_all_books, theme,
+                count: others.length),
+            SliverList.list(
+              children: <Widget>[for (final e in others) _buildEntry(e, theme)],
+            ),
           ],
-          if (showDicts && _dicts != null && _dicts!.isNotEmpty) ...[
-            const Divider(height: 16),
-            _sectionHeader(t.sync_compare_dictionaries, theme),
-            for (final SyncDictEntry d in _dicts!) _buildDictEntry(d, theme),
+          if (dicts.isNotEmpty) ...<Widget>[
+            _stickyHeader(t.sync_compare_dictionaries, theme,
+                count: dicts.length),
+            SliverList.list(
+              children: <Widget>[
+                for (final SyncDictEntry d in dicts) _buildDictEntry(d, theme),
+              ],
+            ),
           ],
         ],
       );
@@ -1085,37 +1300,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                   ),
                 ),
               ),
-              if (_entries != null && _entries!.isNotEmpty)
-                FushiOverflowMenu<SyncChoice>(
-                  iconWidget: const Icon(Icons.checklist, size: 20),
-                  tooltip: t.sync_compare_select_all,
-                  onSelected: (choice) {
-                    setState(() {
-                      for (final e in _entries!) {
-                        if (e.bookKey != null && e.needsManualChoice) {
-                          _choices[e.title] = choice;
-                        }
-                      }
-                    });
-                  },
-                  items: [
-                    FushiPopupMenuItem<SyncChoice>(
-                      label: t.sync_compare_all_local,
-                      icon: Icons.phone_android_outlined,
-                      value: SyncChoice.useLocal,
-                    ),
-                    FushiPopupMenuItem<SyncChoice>(
-                      label: t.sync_compare_all_remote,
-                      icon: Icons.cloud_outlined,
-                      value: SyncChoice.useRemote,
-                    ),
-                    FushiPopupMenuItem<SyncChoice>(
-                      label: t.sync_compare_all_skip,
-                      icon: Icons.block_outlined,
-                      value: SyncChoice.skip,
-                    ),
-                  ],
-                ),
+              // 冲突解决弹窗本就只有冲突，筛选无意义；默认模式下有冲突才给开关。
+              // `|| _filterConflicts`：一个开关不能在自己是 ON 的时候把自己的 OFF
+              // 入口删掉。可达路径：开着筛选时把最后一条冲突的远端副本删掉
+              // （冲突行本身就带删除菜单），_conflictCount 归零、chip 消失，而
+              // _filterConflicts 仍是 true —— 于是 _showOnlyConflicts 恒真、
+              // _entriesInPlay 为空，非冲突的书和词典段全部不可见也不可达，
+              // Apply 恒为 0，只能关掉对话框重开。
+              if (!widget.conflictsOnly &&
+                  (_conflictCount > 0 || _filterConflicts))
+                _conflictFilterChip(theme),
             ],
           ),
           SizedBox(height: tokens.spacing.card),
@@ -1145,8 +1339,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             overflowSpacing: tokens.spacing.gap,
             children: [
               TextButton(
-                onPressed: _applying ? null : () => Navigator.pop(context),
-                child: Text(t.sync_compare_close),
+                // 应用期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既
+                // 没有系统返回键、对话框路由也没有侧滑返回，而 `_applyChoices` 先
+                // 抢全局同步互斥锁（后台自动云同步在跑就一直等）、拿到锁后逐本做
+                // 网络传输，全程没有取消令牌——禁用这颗按钮等于把用户锁死在框里。
+                // 由 [SyncConflictPrompter] 自动弹出的那条更严重：用户根本没主动
+                // 进来。关闭只解绑 UI，传输继续在后台跑完（下面每处 setState /
+                // Navigator.pop 都有 mounted 守卫）。
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  _applying ? t.dialog_background_close : t.sync_compare_close,
+                ),
               ),
               if (_entries != null && _entries!.isNotEmpty)
                 FilledButton(
@@ -1166,26 +1369,119 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _sectionHeader(String text, ThemeData theme,
-      {bool isConflict = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: Row(
-        children: [
-          if (isConflict) ...[
-            Icon(Icons.warning_amber_rounded,
-                size: 16, color: theme.colorScheme.error),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            text,
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: isConflict
-                  ? theme.colorScheme.error
-                  : theme.colorScheme.primary,
-            ),
+  /// 「只看冲突」筛选 chip。与 [FushiOverflowMenu] 同款接线：在焦点根下注册成方向
+  /// 导航目标，Activate（Enter / 手柄 A）即切换；否则裸 chip 对手柄不可达。
+  Widget _conflictFilterChip(ThemeData theme) {
+    final Widget chip = FilterChip(
+      label: Text('${t.sync_compare_only_conflicts} · $_conflictCount'),
+      selected: _filterConflicts,
+      onSelected: (bool value) => setState(() => _filterConflicts = value),
+    );
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return chip;
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            setState(() => _filterConflicts = !_filterConflicts);
+            return null;
+          },
+        ),
+      },
+      child: FushiFocusTarget(
+        id: const FushiFocusId('sync-compare-only-conflicts'),
+        child: chip,
+      ),
+    );
+  }
+
+  /// 批量裁决菜单：只作用于需要人工选择的冲突项，故挂在冲突段头上（C3）。
+  /// 批量裁决作用于 [targets]——**调用方段头下面渲染的那一批**，不是全集。
+  ///
+  /// 菜单挂在冲突段头上，语义就该是「把这个段头下面的都裁了」。原来写成遍历
+  /// `_entries!` 全集再靠 `needsManualChoice` 兜住，正确性押在「needsManualChoice
+  /// 恒等于 hasConflict」这条没人写下来的约定上（今天成立：前者就是后者的字面
+  /// 别名）。哪天有人把它放宽——比如把 remote-only 也算「需人工确认」——批量就会
+  /// 静默改写被筛选隐藏的行的裁决，而且没有任何测试会红。作用域交给调用方，
+  /// 这条约定就不必再存在。
+  Widget _bulkChoiceMenu(List<SyncCompareEntry> targets) {
+    return FushiOverflowMenu<SyncChoice>(
+      iconWidget: const Icon(Icons.checklist, size: 20),
+      tooltip: t.sync_compare_select_all,
+      onSelected: (choice) {
+        setState(() {
+          for (final e in targets) {
+            if (e.bookKey != null && e.needsManualChoice) {
+              _choices[e.title] = choice;
+            }
+          }
+        });
+      },
+      items: [
+        FushiPopupMenuItem<SyncChoice>(
+          label: t.sync_compare_all_local,
+          icon: Icons.phone_android_outlined,
+          value: SyncChoice.useLocal,
+        ),
+        FushiPopupMenuItem<SyncChoice>(
+          label: t.sync_compare_all_remote,
+          icon: Icons.cloud_outlined,
+          value: SyncChoice.useRemote,
+        ),
+        FushiPopupMenuItem<SyncChoice>(
+          label: t.sync_compare_all_skip,
+          icon: Icons.block_outlined,
+          value: SyncChoice.skip,
+        ),
+      ],
+    );
+  }
+
+  /// pinned 段头：标题 + 计数 chip（+ 可选行尾控件）。背景取对话框底色，滚动时
+  /// 内容从它下面穿过而不透出来。
+  Widget _stickyHeader(
+    String text,
+    ThemeData theme, {
+    required int count,
+    bool isConflict = false,
+    Widget? trailing,
+  }) {
+    final ColorScheme cs = theme.colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Color accent = isConflict ? cs.error : cs.primary;
+    return SliverPersistentHeader(
+      pinned: true,
+      delegate: _CompareSectionHeaderDelegate(
+        height: 40,
+        child: Container(
+          // 与对话框同底色：先跟主题的 DialogTheme，否则回落到 token（M3 对话框
+          // 默认底色 surfaceContainerHigh 在 token 里就是 surfaces.search 那一档）。
+          color:
+              DialogTheme.of(context).backgroundColor ?? tokens.surfaces.search,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          alignment: AlignmentDirectional.centerStart,
+          child: Row(
+            children: <Widget>[
+              if (isConflict) ...<Widget>[
+                Icon(Icons.warning_amber_rounded, size: 16, color: accent),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                text,
+                style: theme.textTheme.labelLarge?.copyWith(color: accent),
+              ),
+              const SizedBox(width: 8),
+              FushiTag(
+                text: '$count',
+                backgroundColor:
+                    isConflict ? cs.errorContainer : cs.secondaryContainer,
+                foregroundColor:
+                    isConflict ? cs.onErrorContainer : cs.onSecondaryContainer,
+              ),
+              const Spacer(),
+              if (trailing != null) trailing,
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1208,11 +1504,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             children: [
               _directionIcon(entry, theme),
               const SizedBox(width: 6),
+              // 书名是这一行唯一的身份（`_choices` 也按 title 索引），而轻小说 /
+              // 有声书标题动辄二三十字。单行省略后同一系列的多条冲突只剩下
+              // 同一个前缀（「無職転生 ～異世界行った…」），用户无法分辨自己在给
+              // 哪一本裁决。改成换行展示，3 行封顶以免异常长的标题把卡片拉得无界。
               Expanded(
                 child: Text(
                   entry.title,
                   style: theme.textTheme.titleSmall,
-                  maxLines: 1,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1335,7 +1635,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              d.name,
+              d.shownName,
               style: theme.textTheme.titleSmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1480,4 +1780,33 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     if (h > 0) return '${h}h${_pad(m)}m';
     return '${m}m${_pad(s)}s';
   }
+}
+
+/// 固定高度的 pinned 段头（[CustomScrollView] 用）。
+class _CompareSectionHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _CompareSectionHeaderDelegate({
+    required this.child,
+    required this.height,
+  });
+
+  final Widget child;
+  final double height;
+
+  @override
+  double get minExtent => height;
+
+  @override
+  double get maxExtent => height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) =>
+      child;
+
+  @override
+  bool shouldRebuild(_CompareSectionHeaderDelegate oldDelegate) =>
+      oldDelegate.child != child || oldDelegate.height != height;
 }

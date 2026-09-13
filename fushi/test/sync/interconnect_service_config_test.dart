@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/tracking/media_tracking_service.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -300,9 +300,12 @@ void main() {
     // 源码守卫（orchestrator 的 _syncServiceConfigLive 是私有方法，行为面在
     // run() 全流水线深处）：门控必须出现在 getRemoteServiceConfig 之前——
     // 「拉回来再丢弃」或「拉了不应用」都不满足「关掉就不发请求」的语义。
-    final String src = File('lib/src/sync/sync_orchestrator.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    // B2 拆分后该方法定义在 aggregate.part.dart（主库里只剩 run() 的调用点，
+    // 从调用点往后找门控会假阴）。
+    final String src =
+        File('lib/src/sync/sync_orchestrator/aggregate.part.dart')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n');
     final int methodStart = src.indexOf('_syncServiceConfigLive(');
     expect(methodStart, greaterThan(0));
     final int gate =

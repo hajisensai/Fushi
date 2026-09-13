@@ -1,14 +1,18 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_auto_reposition.dart';
+import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
+import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 
 class AnkiUiState {
@@ -271,8 +275,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   Future<LapisSetupResult> createLapisSetup() async {
     state = state.copyWith(isFetching: true, clearError: true);
     try {
-      final created = await _repository.createNoteType(LapisNoteType.template);
-      await _repository.createDeck(LapisNoteType.deckName);
+      // BUG-2380：牌组的返回值此前被丢掉，于是「笔记类型早就有、这次只补了牌组」
+      // 会报成「已存在」。两者任一是新建的就算这次创建过。
+      final bool noteTypeCreated =
+          await _repository.createNoteType(LapisNoteType.template);
+      final bool deckCreated =
+          await _repository.createDeck(LapisNoteType.deckName);
+      final bool created = noteTypeCreated || deckCreated;
 
       final fetch = await _repository.fetchConfiguration();
       if (fetch is AnkiFetchError) {
@@ -290,12 +299,27 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       }
 
       final settings = await _repository.loadSettings();
-      final noteType = settings.availableNoteTypes.firstWhere(
-          (t) => t.name == LapisNoteType.modelName,
-          orElse: () => settings.availableNoteTypes.first);
-      final deck = settings.availableDecks.firstWhere(
-          (d) => d.name == LapisNoteType.deckName,
-          orElse: () => settings.availableDecks.first);
+      // BUG-2380：建完之后必须在后端**回读的清单里真的看见** Lapis 才算数。
+      //
+      // 旧实现这两行是 `firstWhere(..., orElse: () => list.first)`。后端把创建静默
+      // 吞掉时（AnkiDroid 的 `addNewDeck` 失败返回 null、native 侧照样报成功，是
+      // 已知形态），兜底会把用户自己的**第一个**牌组/笔记类型当成 Lapis 选中，
+      // 顺手套上 Lapis 的字段映射，最后还返回 `created` ——「创建成功」的 toast +
+      // 选中的却是用户自己的『日语』牌组，字段映射还全是按 Lapis 排的。
+      // 找不到就必须失败，绝不能拿别的牌组顶替。
+      final noteType = settings.availableNoteTypes
+          .firstWhereOrNull((t) => t.name == LapisNoteType.modelName);
+      final deck = settings.availableDecks
+          .firstWhereOrNull((d) => d.name == LapisNoteType.deckName);
+      if (noteType == null || deck == null) {
+        final String message = t.anki_create_lapis_not_found;
+        state = state.copyWith(isFetching: false, errorMessage: message);
+        return LapisSetupResult(
+          LapisSetupOutcome.failed,
+          message,
+          AnkiErrorCode.lapisSetupMissing,
+        );
+      }
 
       final updated = await _repository.updateSettings((s) => s.copyWith(
             selectedDeckId: deck.id,
@@ -419,6 +443,44 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   AnkiMediaDedupRunner get mediaDedupRunner =>
       AnkiMediaDedupRunner(_repository);
 
+  // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
+
+  /// 当前设置快照（弹窗初始化用；后续变化仍以 [state] 为准）。
+  AnkiSettings get settings => state.settings;
+
+  /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
+  bool get supportsDeckReposition => _repository.supportsDeckReposition;
+
+  /// 与当前仓库绑定的重排编排器（无状态，随用随建）。
+  AnkiDeckRepositionRunner get deckRepositionRunner =>
+      AnkiDeckRepositionRunner(_repository);
+
+  /// 记住用户上次选的词频来源 / 词典 / 复合方式，下次打开弹窗直接复用。
+  Future<void> setRepositionOptions({
+    required AnkiRepositionSource source,
+    required List<String> dictionaries,
+    required String aggregate,
+    required bool rareFirst,
+  }) async {
+    final updated = await _repository.updateSettings((s) => s.copyWith(
+          repositionSource: source,
+          repositionDictionaries: dictionaries,
+          repositionAggregate: aggregate,
+          repositionRareFirst: rareFirst,
+        ));
+    state = state.copyWith(settings: updated);
+  }
+
+  /// 打开/关闭「制卡后自动重排新卡」。默认关。
+  ///
+  /// 只写设置，不碰调度器：调度器每轮跑之前重新读这个值，所以关掉是立即生效的
+  /// （连正在等防抖的那一批也会在到期时被挡下），不需要在这里去把它叫醒。
+  Future<void> setAutoRepositionEnabled(bool enabled) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(autoRepositionEnabled: enabled));
+    state = state.copyWith(settings: updated);
+  }
+
   /// 打开/关闭去重的自动处理。默认关；打开后自动路径**仍然只做干跑并提示**，
   /// 要真删得由用户在确认弹窗里点，或另外打开 [setMediaDedupAutoDelete]。
   Future<void> setMediaDedupAutoEnabled(bool enabled) async {
@@ -511,9 +573,9 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
       ref.watch(platformServicesProvider).createAnkiRepository();
   final bool mineToServer =
       ref.watch(appProvider.select((AppModel m) => m.mineToServerEnabled));
-  if (!mineToServer) return local;
+  if (!mineToServer) return _withAutoReposition(ref, local);
   final AppModel appModel = ref.read(appProvider);
-  return RemoteMiningAnkiRepository(
+  final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
     client: appModel.createRemoteMiningClient(),
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
@@ -523,7 +585,37 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
       status: MineToastStatus.failed,
     ),
   );
+  // 远端制卡的仓库 `supportsDeckReposition` 为 false，装饰器里的判据会跳过——
+  // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
+  return _withAutoReposition(ref, remote);
 });
+
+/// 给 [repo] 套上「制卡后自动重排新卡」。
+///
+/// 调度器随 provider 生命周期走：provider 被 invalidate（切 Profile、改 Anki 连接
+/// 设置）时旧的必须 [AnkiAutoRepositionScheduler.dispose]，否则它手里的防抖 Timer
+/// 会在一个已经废弃的仓库上触发一次重排。
+///
+/// runner 与 loadSettings 都绑**被包装的 [repo]** 而不是包装后的自己：重排只读写
+/// 卡片位置、不制卡，绑自己不会递归，但多绕一层没有意义。
+///
+/// 这里**不**看 `autoRepositionEnabled`：开关由调度器每轮重新读。若在此处按开关
+/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
+/// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
+BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
+  final AnkiAutoRepositionScheduler scheduler = AnkiAutoRepositionScheduler(
+    runner: AnkiDeckRepositionRunner(repo),
+    loadSettings: repo.loadSettings,
+    // 文案在这一层渲染：调度器本身够不到 `t.*`（它要保持无 Flutter 依赖），
+    // 在那边拼字面量等于让 17 种语言的用户都看英文。
+    onFailure: (String deckName) => FushiToast.showMine(
+      msg: t.anki_reposition_auto_failed(deck: deckName),
+      status: MineToastStatus.failed,
+    ),
+  );
+  ref.onDispose(scheduler.dispose);
+  return AutoRepositionAnkiRepository(inner: repo, scheduler: scheduler);
+}
 
 final ankiViewModelProvider =
     StateNotifierProvider<AnkiViewModel, AnkiUiState>((ref) {

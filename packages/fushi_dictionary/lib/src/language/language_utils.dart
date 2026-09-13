@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:kana_kit/kana_kit.dart';
 import 'package:fushi_dictionary/src/language/ruby_text.dart';
 
@@ -139,7 +139,7 @@ class LanguageUtils {
         return segments;
       }
     } catch (e) {
-      debugPrint('[LanguageUtils.rubySegments] $e');
+      fushiDebugPrint('[LanguageUtils.rubySegments] $e');
 
       /// This is the fallback upon failure.
       return [RubyTextData(term, ruby: reading)];

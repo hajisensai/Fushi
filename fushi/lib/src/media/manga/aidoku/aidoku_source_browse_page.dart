@@ -1,19 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
+import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_reader_chapter.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
@@ -236,7 +232,9 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
         return GridView.builder(
-          padding: const EdgeInsets.all(16),
+          // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
+          // 补出手势条那一段，否则静止时被压住点不到。
+          padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             childAspectRatio: 0.62,
@@ -263,7 +261,7 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Expanded(
-                    child: _AidokuCover(
+                    child: AidokuCoverImage(
                       url: manga['cover']?.toString(),
                       referer: _sourceBaseUrl,
                     ),
@@ -353,105 +351,11 @@ class AidokuMangaDetailPage extends ConsumerWidget {
           chapters: const <OnlineMangaChapter>[],
         ),
         sourceLabel: package.name,
-        remoteCoverBuilder: (BuildContext context) => _AidokuCover(
+        remoteCoverBuilder: (BuildContext context) => AidokuCoverImage(
           url: manga['cover']?.toString(),
           referer: _aidokuHttpsUrl(manga['url']) ?? sourceBaseUrl,
         ),
       ),
-    );
-  }
-}
-
-class _AidokuChapterReaderPage extends StatefulWidget {
-  const _AidokuChapterReaderPage({
-    required this.package,
-    required this.runtime,
-    required this.manga,
-    required this.chapter,
-  });
-
-  final AidokuInstalledPackage package;
-  final AidokuRuntime runtime;
-  final Map<String, Object?> manga;
-  final Map<String, Object?> chapter;
-
-  @override
-  State<_AidokuChapterReaderPage> createState() =>
-      _AidokuChapterReaderPageState();
-}
-
-class _AidokuChapterReaderPageState extends State<_AidokuChapterReaderPage> {
-  AidokuReaderChapter? _resolved;
-  Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final List<Object?> result = await widget.runtime.getPages(
-        widget.package.packagePath,
-        widget.manga,
-        widget.chapter,
-      );
-      final List<AidokuImagePage> pages = result
-          .whereType<Map<Object?, Object?>>()
-          .map((Map<Object?, Object?> value) =>
-              AidokuImagePage.fromJson(value.cast<String, Object?>()))
-          .toList(growable: false);
-      if (pages.isEmpty) {
-        throw const AidokuRuntimeException(
-          'EMPTY_CHAPTER',
-          'Aidoku returned no readable image pages for this chapter',
-        );
-      }
-      if (mounted) {
-        setState(() {
-          _resolved = AidokuReaderChapter(
-            package: widget.package,
-            manga: widget.manga,
-            chapter: widget.chapter,
-            pages: pages,
-          );
-        });
-      }
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'AidokuReader.pages ${widget.package.id} ${widget.chapter['key']}',
-        error,
-        stack,
-      );
-      if (mounted) setState(() => _error = error);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final String chapterTitle = aidokuChapterDisplayTitle(widget.chapter);
-    final AidokuReaderChapter? resolved = _resolved;
-    if (resolved != null) {
-      final String identity = <String>[
-        widget.package.id,
-        widget.manga['key']?.toString() ?? '',
-        widget.chapter['key']?.toString() ?? '',
-      ].join('\u001f');
-      return FushiAppUiScaleNeutralizer(
-        child: MangaFushiPage(
-          item: null,
-          bookKey: 'aidoku-${sha256.convert(utf8.encode(identity))}',
-          onlineChapter: resolved,
-        ),
-      );
-    }
-    return FushiPageScaffold(
-      title: chapterTitle,
-      subtitle: widget.manga['title']?.toString(),
-      body: _error != null
-          ? Center(child: Text('$_error'))
-          : Center(child: adaptiveIndicator(context: context)),
     );
   }
 }
@@ -494,36 +398,6 @@ String _aidokuNumber(Object? value) {
   final double number = value.toDouble();
   if (number == number.truncateToDouble()) return number.toInt().toString();
   return number.toString().replaceFirst(RegExp(r'0+$'), '');
-}
-
-class _AidokuCover extends StatelessWidget {
-  const _AidokuCover({required this.url, this.referer});
-
-  final String? url;
-  final String? referer;
-
-  @override
-  Widget build(BuildContext context) {
-    final String value = url?.trim() ?? '';
-    if (value.isEmpty) {
-      return const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.image_not_supported_outlined)),
-      );
-    }
-    return Image.network(
-      value,
-      fit: BoxFit.cover,
-      headers: <String, String>{
-        'User-Agent': kAidokuUserAgent,
-        if (referer != null) 'Referer': referer!,
-      },
-      errorBuilder: (_, __, ___) => const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.broken_image_outlined)),
-      ),
-    );
-  }
 }
 
 String? _aidokuHttpsUrl(Object? value) {

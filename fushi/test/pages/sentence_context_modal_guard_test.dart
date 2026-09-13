@@ -107,8 +107,20 @@ void main() {
 
     test('reader 车道 (base) 弹原生对话框 + 确认回点 mineEntryByIndex', () {
       final String src = read('lib/src/pages/base_source_page.dart');
-      expect(src.contains('onOpenSentenceContextModal: supportsSentenceDraft'),
-          isTrue);
+      // 门控变量改名成 sentenceDraftEnabled（= supportsSentenceDraft && 制卡模块开）。
+      // 「只在支持草稿的表面接线」这条不变式没变，所以除了接线本身，再单独钉它的
+      // 定义 —— 只钉接线的话，哪天有人把表面判据从定义里丢了，这条照样绿。
+      expect(
+        RegExp(r'onOpenSentenceContextModal:\s*sentenceDraftEnabled')
+            .hasMatch(src),
+        isTrue,
+      );
+      expect(
+        RegExp(r'sentenceDraftEnabled\s*=[\s\S]{0,80}?supportsSentenceDraft')
+            .hasMatch(src),
+        isTrue,
+        reason: '草稿门控必须仍然 AND 上「该表面支持草稿」，不能只剩模块闸',
+      );
       expect(src.contains('showAppDialog<void>'), isTrue);
       expect(src.contains('SentenceContextDialog('), isTrue);
       expect(src.contains('webViewKey.currentState?.mineEntryByIndex('), isTrue);

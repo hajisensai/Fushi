@@ -345,6 +345,21 @@ class DictionaryMetadata extends Table {
   /// 走同一条继承通道（`preservedSettings`）。
   TextColumn get languageOverride => text().nullable()();
 
+  /// v101：用户给词典起的**显示名**（改名）。null / 空 = 没改过，显示 [name]。
+  ///
+  /// 为什么是覆盖列而不是改 [name]：[name] 是本表主键，同时还是**磁盘目录名**
+  /// （`dictionaryResourceDirectory/<name>`）、C++ 引擎的装载路径、查词结果里
+  /// 的 `dictName`，并被一串东西当外键使用——每词典自定义 CSS 的 map key、
+  /// 样式规则的 `dictionaryName`、弹窗的 `data-dictionary` 选择器、词典媒体
+  /// URL 的 `dictionary=` 参数、Anki 的 `{single-glossary-<名>}` token、
+  /// 存储占用条目 id、同步资产名。改 [name] 会让上述全部静默失配（用户样式
+  /// 丢失、图/音 404、已配置的制卡字段失效），所以真名冻结，只加显示层覆盖。
+  ///
+  /// 为什么不塞进 [metadataJson]：同 [languageOverride] 的理由——重导/在线更新
+  /// 时 metadata 被包内 index.json 整体重建，用户设置会蒸发。它属于「用户设置」，
+  /// 走 `preservedSettings` 继承通道。
+  TextColumn get displayName => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {name};
 }
@@ -577,6 +592,24 @@ class BookProfiles extends Table {
   Set<Column> get primaryKey => {bookKey};
 }
 
+// ── language_profiles ───────────────────────────────────────────────
+// 「这种内容语言用哪个 Profile」。与 [MediaTypeProfiles] 同构、同性质：都是
+// Profile 的自动解析绑定，只是路由键不同（语言 vs 媒体类型）。
+//
+// [languageTag] 是**归一化后**的键（`normalizeLanguageBinding`：保留 language +
+// script、丢 region，如 `ja` / `zh-Hant`），不是内容语言列里的原始 BCP-47 串。
+// 写入与查询两侧都必须过那个函数，否则用户绑了 `ja` 而书里写 `ja-JP` 会静默
+// 不生效。
+@DataClassName('LanguageProfileRow')
+class LanguageProfiles extends Table {
+  TextColumn get languageTag => text()();
+  IntColumn get profileId =>
+      integer().references(Profiles, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  Set<Column> get primaryKey => {languageTag};
+}
+
 // ── sync_baselines ──────────────────────────────────────────────────
 // 每本书每个同步维度「上次同步成功时双方一致的版本」（共同祖先），
 // 用于三方分叉检测。assetKey = sanitizeTtuFilename(book.title)（跨设备稳定）。
@@ -593,6 +626,10 @@ class SyncBaselines extends Table {
 // ── video_books ─────────────────────────────────────────────────────
 @DataClassName('VideoBookRow')
 class VideoBooks extends Table {
+  /// 最近一次导入的分组选择（schema v98）；来源删除后仍保留目录/作品模式。
+  /// NULL 是旧视频，按作品模式处理；存在来源时以来源当前设置为准。
+  TextColumn get videoGroupingMode => text().nullable()();
+
   // Primary key is book_uid (content-derived), aligned with the name-PK model
   // (EpubBooks keys on bookKey). No autoincrement id: a video book's identity
   // is its book_uid so it stays stable across devices/reimports.
@@ -857,6 +894,11 @@ class MediaSources extends Table {
   /// 是否递归扫描子目录。
   BoolColumn get recursive => boolean().withDefault(const Constant(true))();
 
+  /// 视频分组方式（schema v98）：'series' 按作品识别，'folder' 按导入目录合集。
+  /// 与网络连接参数独立；旧来源保持作品识别行为。
+  TextColumn get videoGroupingMode =>
+      text().withDefault(const Constant('series'))();
+
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
@@ -926,6 +968,10 @@ class ShelfEntries extends Table {
 @DataClassName('MediaCollectionRow')
 class MediaCollections extends Table {
   IntColumn get id => integer().autoIncrement()();
+
+  /// 目录自动合集的本机目录身份（schema v98）；NULL 表示非目录自动合集。
+  /// 与来源根一样属于用户外部路径，不跨端同步，不据合集名称推断归属。
+  TextColumn get sourceFolderPath => text().nullable()();
 
   /// 合集名（必填）。
   TextColumn get name => text()();
@@ -1558,6 +1604,12 @@ class VideoMetadataWorks extends Table {
 
   /// TMDB 电视剧分组规则；NULL = 使用源默认季集编排。
   TextColumn get episodeGroupId => text().nullable()();
+
+  /// v99 字段锁（对标 Jellyfin `LockedFields`）：逗号分隔的可锁字段名集合，
+  /// 例如 `title,overview,cover`。NULL / 空 = 无锁。用户手改过的字段进这里，
+  /// 下一次刮削一律保留旧值。值域由 `VideoMetadataLockableField` 维护，未知值
+  /// 静默忽略以保持前向兼容（新版本加的锁在旧版本里只是不生效，不会炸库）。
+  TextColumn get lockedFields => text().nullable()();
   IntColumn get updatedAt => integer()();
 
   @override
@@ -1900,6 +1952,11 @@ class VideoSourceScrapeSettings extends Table {
 
   /// NULL = 继承全局默认；非空 = tmdb / douban / bangumi / anilist。
   TextColumn get providerOverride => text().nullable()();
+
+  /// v99 来源级资料语言覆盖（对标 Jellyfin `LibraryOptions
+  /// .PreferredMetadataLanguage` / Kodi 的 per-path 设置）：BCP-47 语言标签，
+  /// NULL / 空白 = 跟随全局 `video_metadata_locale`。
+  TextColumn get metadataLocale => text().nullable()();
   BoolColumn get autoAfterScan =>
       boolean().withDefault(const Constant(false))();
   BoolColumn get writeNfo => boolean().withDefault(const Constant(true))();
@@ -2416,8 +2473,11 @@ class Galgames extends Table {
 
   /// 该游戏的「日语区域（转区）」档位：`'auto'` / `'on'` / `'off'`（BUG-1477）。
   ///
-  /// 空串 = 用户没设过，解析层回落 `auto`（**不是** off —— 转区是用户明确要过的
-  /// 功能，老行/老用户不能因为加了这一列就被莫名关掉）。
+  /// 空串 = 用户没设过，解析层回落 `off`（见 `galgame_japanese_locale.dart` 的
+  /// `kGalDefaultJapaneseLocaleMode`）。**注意这与 v75 落地时的语义相反**：当时
+  /// 空串回落 `auto`，2026-09-07 按用户要求改为 `off`——不能在用户没选过的时候
+  /// 就替他用 CP932 重新拉起游戏进程。主动选过自动的行落的是字面量 `'auto'`，
+  /// 不受影响。
   ///
   /// 与 [upscalingMode] / [launchArgs] 同类，都是「用户为该游戏设的启动期配置」。
   /// 为什么必须每游戏一档而不是全局开关：同一个库里日文原版和汉化版并存，
@@ -2590,9 +2650,12 @@ class StudySegments extends Table {
 /// v92：按**媒体身份**的统计删除墓碑，取代按 (title, sourceType) 的
 /// [StatisticsTombstones]（那张只为 legacy 表的 title 粒度 wire 服务，冻结）。
 ///
-/// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁：段 `updatedAt > deletedAt`
-/// → 段胜（用户又读了 = 自然复活，不用显式清碑）；否则墓碑胜（同步 / 备份里的旧段不
-/// 复活）。
+/// 删某媒体统计 = 删其全部 [StudySegments] + 立本碑。仲裁（BUG-2214 / BUG-2220）：
+/// 段 `startAt < deletedAt` → 被压制（同步 / 备份里的旧段不复活）；`startAt >= deletedAt`
+/// 的段（删后又读）照常存活。**碑永不退场**、时间戳只增不减——旧口径「段
+/// `updatedAt > deletedAt` 则段胜」已废：同步回写会刷新 `updatedAt`，让删掉的旧段
+/// 借道复活。真实实现见 `database_statistics.part.dart` 的 `_isStudySegmentTombstoned`
+/// 与 `aggregate_merge_service.dart`。
 @DataClassName('StudySegmentTombstoneRow')
 class StudySegmentTombstones extends Table {
   TextColumn get mediaKind => text()();
@@ -2606,8 +2669,9 @@ class StudySegmentTombstones extends Table {
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
 // （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
 // 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，
-// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync /
-// 备份合并导入（合并层按 kind 过滤），全量备份恢复走整库文件拷贝原样还原。）
+// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync；
+// 备份合并导入自 `BackupCategory.games` 起经游戏身份映射（同 id / 刮削身份 /
+// exe 路径）落到本机游戏行上，见 backup_merge_engine.dart 的 `_buildGameIdMap`。）
 
 // ── manga_extension_stores ──────────────────────────────────────────
 /// v65：用户自行添加的 Mihon 扩展仓库。Fushi 不预置第三方仓库。
@@ -2828,4 +2892,155 @@ class VideoFileSpecs extends Table {
 
   @override
   Set<Column> get primaryKey => {filePath};
+}
+
+// ── update_feed_entries ─────────────────────────────────────────────
+/// v101：全应用**统一的更新事件流**。番剧新集、漫画新章、漫画扩展新版本、
+/// Hibiki 自身新版本，四个域投递到同一张表，UI 只消费这一处。
+///
+/// 为什么必须是一张表而不是四套提醒：在此之前「有更新」这个事实散在四个互不
+/// 知情的地方——番剧靠首页一行现算（`video_subscription_updates.dart`）、扩展靠
+/// 打开扩展页现算（`mihon_extensions_page.dart`）、app 版本靠 `UpdateChecker`
+/// 自己弹窗、在线漫画**根本不存在**这个概念（刷新直接覆盖章节列表，旧集合丢掉）。
+/// 四份各自为政的判据意味着红点、通知、已读状态都要写四遍，且永远对不齐。
+///
+/// 身份 [entryId] = `'<kind>|<targetKey>'`，由投递方拼好（见 `UpdateFeedKind`）。
+/// 投递是 upsert 且**不覆盖 [seenAt]**，所以同一集/同一章重复发现不会让已读的
+/// 条目重新变红——幂等性靠主键本身，而不是靠投递方先查一次再决定写不写。
+///
+/// 设备本地表（同列于 backup 的 device-local 清单）：提醒是「这台设备还没告诉过
+/// 用户」的本机状态，跨设备各自提醒一次是正确行为，不进备份也不进同步。
+@DataClassName('UpdateFeedEntryRow')
+class UpdateFeedEntries extends Table {
+  /// `'<kind>|<targetKey>'`。
+  TextColumn get entryId => text()();
+
+  /// 域，取 `UpdateFeedKind.dbValue`（videoEpisode / mangaChapter /
+  /// mangaExtension / appRelease）。开关按域过滤、UI 按域分组都读它。
+  TextColumn get kind => text()();
+
+  /// 域内身份。番剧 = `'<合集id>|<集号>'`；漫画章 = `'<bookUid>|<chapterKey>'`；
+  /// 扩展 = `'<pkgName>|<versionCode>'`；app = 版本串。带版本/集号是**刻意**的：
+  /// 同一作品的下一集是另一条事件，不该复用上一条的已读状态。
+  TextColumn get targetKey => text()();
+
+  /// 主标题（作品名）。落成快照而不是每次 join 回源表：源行可能已被删除
+  /// （取消订阅、移出书架），而「这条提醒说过什么」不该因此变成空白。
+  TextColumn get title => text()();
+
+  /// 副标题（第几集 / 章名 / 版本号）。无则 NULL。
+  TextColumn get subtitle => text().nullable()();
+
+  /// 跳转所需的身份 JSON（合集 id、bookUid、chapterKey、release 页地址等）。
+  /// **不含本地文件路径**，故不参与数据根重定位（见 `kPathRebaseColumns` 登记）。
+  TextColumn get detailJson => text().nullable()();
+
+  /// 发现时刻（毫秒）。列表倒序、通知节流都读它。
+  IntColumn get discoveredAt => integer()();
+
+  /// 用户看见的时刻（毫秒）。NULL = 未读，红点只数它。
+  IntColumn get seenAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {entryId};
+}
+
+/// 漫画章节下载任务的种类值域（`manga_download_jobs.kind`）。
+abstract final class MangaDownloadJobKind {
+  /// 在线来源（Mihon / Aidoku / 互联）的单章。
+  static const String chapter = 'chapter';
+
+  /// mokuro.moe 整卷（替代原内存队列 `MokuroMoeDownloadQueue`）。
+  static const String mokuroVolume = 'mokuro_volume';
+}
+
+/// 漫画下载任务状态值域（`manga_download_jobs.status`）。
+abstract final class MangaDownloadJobStatus {
+  static const String queued = 'queued';
+  static const String running = 'running';
+  static const String done = 'done';
+  static const String failed = 'failed';
+  static const String cancelled = 'cancelled';
+}
+
+/// 漫画章节 / mokuro 卷的下载任务队列（schema v103，device-local）。
+///
+/// 设计稿 `docs/specs/2026-09-12-manga-download-first-design.md` §2.2。
+/// 在线漫画改成「先下载再读」后，每个待下载的章（或 mokuro.moe 卷）在这里占
+/// 一行；单 worker 按 `(status, created_at)` 串行取任务，进程死亡后 `running`
+/// 行由 `resetRunningMangaDownloadJobs` 复位回 `queued` 续跑。
+///
+/// **不复用 `video_download_jobs`**：那张表的 CHECK 强制 magnet / backend /
+/// fingerprint 非空、stage 限 torrent 六段，塞章节任务要造假值。
+///
+/// 设备本地表（同列于 backup 的 device-local 清单、merge 跳过清单）：任务对应的
+/// 是本机磁盘上的章目录，另一台设备既没有这份半成品也不该替它续跑。
+/// 无路径列：章目录由消费方按 `(bookKey, chapterKey)` 在当前数据根下解析，
+/// 见 `kPathRebaseColumns` 的登记。
+@DataClassName('MangaDownloadJobRow')
+class MangaDownloadJobs extends Table {
+  /// 调用方生成的稳定任务 id：`sha256(kind NUL bookKey NUL chapterKey)[:32]`，
+  /// 同章重复入队幂等；不能用自增 id 充当跨崩溃幂等键。
+  TextColumn get jobId => text()();
+
+  /// 取 [MangaDownloadJobKind]。
+  TextColumn get kind => text()();
+
+  /// 在线条目 bookKey；mokuro 卷为 `mokuro:<seriesName>`。
+  TextColumn get bookKey => text()();
+
+  /// 章 key；mokuro 卷为卷名。
+  TextColumn get chapterKey => text()();
+
+  /// `mihon` / `aidoku` / `interconnect` / `mokuro_moe`。
+  TextColumn get runtime => text()();
+
+  /// 展示用作品名 / 章名。落快照而不是 join 回源表：源条目可能已被移出书架。
+  TextColumn get title => text()();
+  TextColumn get chapterTitle => text()();
+
+  /// 取 [MangaDownloadJobStatus]。
+  TextColumn get status =>
+      text().withDefault(const Constant(MangaDownloadJobStatus.queued))();
+
+  IntColumn get pagesDone => integer().withDefault(const Constant(0))();
+  IntColumn get pagesTotal => integer().withDefault(const Constant(0))();
+
+  /// 自动重试次数（退避 2s/8s/20s，与 mokuro 队列既有语义一致）。
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+
+  /// 完成后自动起 OCR（Google Lens 引擎除外——它需要用户逐次同意）。
+  BoolColumn get autoOcr => boolean().withDefault(const Constant(false))();
+
+  /// 时刻列均为毫秒。
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+  IntColumn get completedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{jobId};
+
+  @override
+  List<String> get customConstraints => <String>[
+        "CHECK (job_id != '' AND book_key != '' AND chapter_key != '' "
+            "AND runtime != '')",
+        "CHECK (kind IN ('chapter', 'mokuro_volume'))",
+        "CHECK (status IN ('queued', 'running', 'done', 'failed', "
+            "'cancelled'))",
+        'CHECK (pages_done >= 0 AND pages_total >= 0 '
+            'AND pages_done <= pages_total)',
+        'CHECK (attempt_count >= 0)',
+      ];
+}
+
+/// v104：合集域远端书键与实际导入 UID 的持久一对一关系。
+/// uid 父表索引是 partial，不能作为 SQLite FK；deleteEpubBook 显式级联。
+@DataClassName('CollectionBookAliasRow')
+class CollectionBookAliases extends Table {
+  TextColumn get localUid => text()();
+  TextColumn get remoteKey => text().unique()();
+
+  @override
+  Set<Column> get primaryKey => {localUid};
 }

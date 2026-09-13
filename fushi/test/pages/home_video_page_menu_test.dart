@@ -13,12 +13,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
-import 'package:fushi/src/media/video/video_storage.dart';
-import 'package:fushi/src/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
@@ -243,6 +243,17 @@ void main() {
     return db.createTag('Anime', 0xFF2196F3);
   }
 
+  /// 定位某一行视频的库页卡片。
+  ///
+  /// 不能用 `find.byType(FushiCard).first`：页面正文之上还挂着若干横幅
+  /// （`VideoOnlineServicesBanner` 的「配置可选在线服务」、待确认身份提醒条…），
+  /// 它们同样是 [FushiCard]、且排在墙卡之前，`.first` 会落到一张没有任何手势
+  /// 回调的横幅上——长按/右键于是什么都不弹，断言只会说「面板没出现」，看不出
+  /// 是找错了卡。卡片 key 是 `home_video_<bookUid>`（`_buildVideoCard`），按它
+  /// 定位与横幅数量无关。
+  Finder videoCard(String bookUid) =>
+      find.byKey(ValueKey<String>('home_video_$bookUid'));
+
   Widget buildApp({
     bool captureToasts = false,
     VideoBookRepository? repo,
@@ -302,7 +313,7 @@ void main() {
     // 筛选条里的同名标签冲突。
     expect(
       find.descendant(
-        of: find.byType(FushiCard),
+        of: videoCard('video/1'),
         matching: find.widgetWithText(FushiTagChip, 'Anime'),
       ),
       findsOneWidget,
@@ -320,7 +331,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await openCardMenu(tester, find.byType(FushiCard).first);
+    await openCardMenu(tester, videoCard('video/1'));
 
     expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
         reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选');
@@ -346,7 +357,7 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      await openCardMenu(tester, find.byType(FushiCard).first);
+      await openCardMenu(tester, videoCard('video/1'));
 
       expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
       expect(find.byType(FushiDialogFrame), findsOneWidget);
@@ -364,7 +375,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(FushiCard).first, buttons: kSecondaryButton);
+    await tester.tap(videoCard('video/1'), buttons: kSecondaryButton);
     await tester.pumpAndSettle();
 
     // 右键与长按同链路（都走 _showVideoMenu）：应弹出同一封面背景动作面板。
@@ -436,6 +447,38 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('本地视频卡菜单含「打开文件位置」', (WidgetTester tester) async {
+    // 书架书卡早有这条动作，视频卡没有（用户实报）。flutter_test 宿主恒为桌面
+    // （Windows / Linux / macOS），[currentRevealHost] 必非 null，所以这里断言在场；
+    // 移动端那道门由 media_open_file_location_gate_guard_test 在源码层守。
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+
+    expect(find.text(t.media_file_location_open), findsOneWidget);
+  });
+
+  testWidgets('流媒体书卡菜单不出现「打开文件位置」', (WidgetTester tester) async {
+    // videoPath 是 URL 的行（粘贴 URL 导入 / 远端库）本机根本没有文件可定位，
+    // 画出来就是一个点了必然失败的按钮。这条用例是该门控的唯一行为级判据——
+    // 上一条只能证明「桌面上会出现」，证明不了「没有本地文件时不出现」。
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/stream'),
+      title: Value('Stream Episode'),
+      videoPath: Value('https://example.com/live/ep1.m3u8'),
+    ));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/stream'));
+
+    expect(find.byType(FushiDialogFrame), findsOneWidget,
+        reason: '菜单本身仍要弹出，缺的只是这一条动作');
+    expect(find.text(t.media_file_location_open), findsNothing);
   });
 
   testWidgets('顶部标签可拖到视频卡并写入视频标签映射', (WidgetTester tester) async {

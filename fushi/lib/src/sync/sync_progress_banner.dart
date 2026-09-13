@@ -18,7 +18,10 @@ import 'package:fushi/src/sync/sync_progress.dart';
 ///
 /// 没有同步在跑时收成零高度（[SizedBox.shrink]），不占布局、不改现有几何。
 class SyncProgressBanner extends StatelessWidget {
-  const SyncProgressBanner({super.key});
+  const SyncProgressBanner({this.compact = false, super.key});
+
+  /// Use the compact status strip in mobile book libraries.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -42,12 +45,17 @@ class SyncProgressBanner extends StatelessWidget {
                   children: <Widget>[
                     if (line != null)
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                        padding: compact
+                            ? const EdgeInsets.fromLTRB(12, 0, 12, 2)
+                            : const EdgeInsets.fromLTRB(16, 0, 16, 4),
                         child: Text(
                           line,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
+                          style: (compact
+                                  ? theme.textTheme.labelSmall
+                                  : theme.textTheme.bodySmall)
+                              ?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),

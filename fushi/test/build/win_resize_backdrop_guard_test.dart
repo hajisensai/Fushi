@@ -82,13 +82,27 @@ void main() {
       expect(eraseAt, greaterThan(sizeAt));
       final String body = cpp.substring(sizeAt, eraseAt);
       final int fillAt = body.indexOf('FillSurfaceBackdrop();');
-      final int moveAt = body.indexOf('MoveWindow(child_content_');
+      // 子窗 resize 的写法变过一次：BUG-2462 把裸 MoveWindow 换成了经
+      // ChildResizeGate 的 SyncChildToClientArea()（裸 MoveWindow 会让引擎的
+      // resize 同步器被 A->B->A 钉死目标、整窗冻结）。要守的不变式不是「调了哪个
+      // 函数」，而是「动子窗之前 surface 已经是主题色」——两种写法都会阻塞到引擎
+      // 呈现新尺寸的那一帧，在那之前 surface 不能是黑的。所以认任一种。
+      final List<int> moveCandidates = <int>[
+        body.indexOf('SyncChildToClientArea()'),
+        body.indexOf('MoveWindow(child_content_'),
+      ].where((int i) => i >= 0).toList();
       expect(fillAt, isNonNegative);
+      expect(
+        moveCandidates,
+        isNotEmpty,
+        reason: 'WM_SIZE must resize the child view (gate or bare MoveWindow)',
+      );
+      final int moveAt = moveCandidates.reduce((int a, int b) => a < b ? a : b);
       expect(
         moveAt,
         greaterThan(fillAt),
         reason:
-            'MoveWindow blocks until the engine presents; the resized '
+            'resizing the child blocks until the engine presents; the resized '
             'surface must already be theme-coloured before that.',
       );
     });
@@ -101,8 +115,7 @@ void main() {
       expect(
         body.contains('GetDCEx(window_handle_, nullptr, DCX_CACHE)'),
         isTrue,
-        reason:
-            'GetDC honours WS_CLIPCHILDREN and would skip the pixels under '
+        reason: 'GetDC honours WS_CLIPCHILDREN and would skip the pixels under '
             'the view, which is exactly where the stale splash fill lives.',
       );
       expect(body.contains('PaintBackdrop(dc)'), isTrue);
@@ -129,7 +142,8 @@ void main() {
       },
     );
 
-    test('backdrop brush starts as the splash colour, follows the theme, and '
+    test(
+        'backdrop brush starts as the splash colour, follows the theme, and '
         'refills the surface when replaced', () {
       expect(header.contains('void SetBackdropColor(COLORREF color);'), isTrue);
       expect(header.contains('void FillSurfaceBackdrop();'), isTrue);
@@ -147,8 +161,7 @@ void main() {
       expect(
         cpp.substring(setAt, setEnd).contains('FillSurfaceBackdrop();'),
         isTrue,
-        reason:
-            'replacing the brush without repainting leaves the splash '
+        reason: 'replacing the brush without repainting leaves the splash '
             'colour under the view until the first maximize shows it.',
       );
       final int applyAt = flutterWindow.indexOf(
@@ -162,8 +175,7 @@ void main() {
             .substring(applyAt, applyEnd)
             .contains('SetBackdropColor(caption)'),
         isTrue,
-        reason:
-            'the theme surface colour pushed by Dart must drive the '
+        reason: 'the theme surface colour pushed by Dart must drive the '
             'backdrop, or the transition frame stays teal.',
       );
     });
@@ -182,8 +194,7 @@ void main() {
       expect(
         RegExp(r'caption:\s*cs\.surface(?![A-Za-z0-9_])').hasMatch(call),
         isTrue,
-        reason:
-            'the caption/backdrop colour must be the theme surface colour '
+        reason: 'the caption/backdrop colour must be the theme surface colour '
             '(the page background), not any other role.',
       );
     });

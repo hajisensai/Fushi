@@ -736,6 +736,10 @@ void TryInstallGenericKeyAndRawInputShield() {
   // 代价不对称时，站在可逆的那一边。
   const bool reserve_get_key_state =
       IsSiglusLookupProfileMatched() || IsSiglusLookupIdentityUndecided();
+  // Legacy Siglus samples the entire key table. Reserve that export while
+  // resolving its family; modern Siglus and rejected identities release it.
+  const bool reserve_get_keyboard_state =
+      ShouldReserveSiglusKeyboardState();
   const bool hunex_exact_owner = IsHunexGgeProfileMatched();
   const bool reserve_get_async_key_state =
       IsLeafAquaplusProfileMatched() || IsLeafAquaplusIdentityUndecided() ||
@@ -780,13 +784,18 @@ void TryInstallGenericKeyAndRawInputShield() {
 
   void *get_keyboard_state =
       reinterpret_cast<void *>(GetProcAddress(user32, "GetKeyboardState"));
-  if ((coverage & kGenericKeyCoverageGetKeyboardState) == 0 &&
-      HookGenericExport(
+  if ((coverage & kGenericKeyCoverageGetKeyboardState) == 0) {
+    if (IsHookTargetTrackedByThisDll(get_keyboard_state)) {
+      // The exact adapter owns the trampoline and publishes EnginePrivate
+      // readiness. A duplicate HookFn call cannot supply a second trampoline.
+      coverage |= kGenericKeyCoverageGetKeyboardState;
+    } else if (!reserve_get_keyboard_state && HookGenericExport(
           get_keyboard_state,
           reinterpret_cast<void *>(&Detour_GenericGetKeyboardState),
           reinterpret_cast<void **>(&g_generic_get_keyboard_state_original),
           fushi_voice_hook::kLookupShieldSurfaceKeyState)) {
-    coverage |= kGenericKeyCoverageGetKeyboardState;
+      coverage |= kGenericKeyCoverageGetKeyboardState;
+    }
   }
   g_generic_key_coverage.store(coverage, std::memory_order_relaxed);
   if (fushi_voice_hook::IsCompleteGenericKeyStateCoverage(
@@ -1006,6 +1015,11 @@ void AbandonGenericShieldLatchesForInvalidTarget() {
 struct ExactSampledShieldState {
   uint32_t declared = 0;
   uint32_t ready = 0;
+  // Surfaces beyond EnginePrivate that the declared exact contract physically
+  // owns (e.g. Win32 messages for a window-procedure subclass).  Required
+  // whenever declared; ready only when the contract's Ready property is set.
+  uint32_t extra_required_surfaces = 0;
+  uint32_t extra_ready_surfaces = 0;
   bool pending_publication = false;
 };
 
@@ -1019,28 +1033,38 @@ ExactSampledShieldState ReadExactSampledShieldState(HWND game) {
     const wchar_t *ready;
     uintptr_t ready_value;
     const wchar_t *window;
+    uint32_t extra_surfaces;
   };
   const Contract contracts[] = {
       {fushi_voice_hook::kSgreDirectInputShieldRequiredProperty,
        fushi_voice_hook::kSgreDirectInputShieldRequiredValue,
        fushi_voice_hook::kSgreDirectInputShieldReadyProperty,
        fushi_voice_hook::kSgreDirectInputShieldReadyValue,
-       fushi_voice_hook::kSgreDirectInputShieldWindowProperty},
+       fushi_voice_hook::kSgreDirectInputShieldWindowProperty, 0u},
       {fushi_voice_hook::kSiglusSampledInputShieldRequiredProperty,
        fushi_voice_hook::kSiglusSampledInputShieldRequiredValue,
        fushi_voice_hook::kSiglusSampledInputShieldReadyProperty,
        fushi_voice_hook::kSiglusSampledInputShieldReadyValue,
-       fushi_voice_hook::kSiglusSampledInputShieldWindowProperty},
+       fushi_voice_hook::kSiglusSampledInputShieldWindowProperty, 0u},
       {fushi_voice_hook::kLeafAquaplusSampledInputShieldRequiredProperty,
        fushi_voice_hook::kLeafAquaplusSampledInputShieldRequiredValue,
        fushi_voice_hook::kLeafAquaplusSampledInputShieldReadyProperty,
        fushi_voice_hook::kLeafAquaplusSampledInputShieldReadyValue,
-       fushi_voice_hook::kLeafAquaplusSampledInputShieldWindowProperty},
+       fushi_voice_hook::kLeafAquaplusSampledInputShieldWindowProperty, 0u},
       {fushi_voice_hook::kHunexGgeSampledInputShieldRequiredProperty,
        fushi_voice_hook::kHunexGgeSampledInputShieldRequiredValue,
        fushi_voice_hook::kHunexGgeSampledInputShieldReadyProperty,
        fushi_voice_hook::kHunexGgeSampledInputShieldReadyValue,
-       fushi_voice_hook::kHunexGgeSampledInputShieldWindowProperty},
+       fushi_voice_hook::kHunexGgeSampledInputShieldWindowProperty, 0u},
+      // smash/fzmedia consumes clicks in a GWLP_WNDPROC subclass: the Win32
+      // message surface is owned by the injected runtime, not by the host's
+      // low-level hook, so it is required (and ready with the subclass).
+      {fushi_voice_hook::kSmashFzmediaSampledInputShieldRequiredProperty,
+       fushi_voice_hook::kSmashFzmediaSampledInputShieldRequiredValue,
+       fushi_voice_hook::kSmashFzmediaSampledInputShieldReadyProperty,
+       fushi_voice_hook::kSmashFzmediaSampledInputShieldReadyValue,
+       fushi_voice_hook::kSmashFzmediaSampledInputShieldWindowProperty,
+       fushi_voice_hook::kLookupShieldSurfaceWin32Messages},
   };
   for (const auto &contract : contracts) {
     if (reinterpret_cast<uintptr_t>(GetPropW(game, contract.required)) !=
@@ -1048,9 +1072,11 @@ ExactSampledShieldState ReadExactSampledShieldState(HWND game) {
       continue;
     }
     ++out.declared;
+    out.extra_required_surfaces |= contract.extra_surfaces;
     if (reinterpret_cast<uintptr_t>(GetPropW(game, contract.ready)) ==
         contract.ready_value) {
       ++out.ready;
+      out.extra_ready_surfaces |= contract.extra_surfaces;
     }
     if (GetPropW(game, contract.window) != nullptr) {
       out.pending_publication = true;
@@ -1124,10 +1150,12 @@ void ProcessGenericLookupInputShield() {
   const ExactSampledShieldState exact =
       ReadExactSampledShieldState(target_valid ? game : nullptr);
   if (exact.declared != 0) {
-    status.required_mask |= fushi_voice_hook::kLookupShieldSurfaceEnginePrivate;
+    status.required_mask |= fushi_voice_hook::kLookupShieldSurfaceEnginePrivate |
+                            exact.extra_required_surfaces;
     if (exact.declared == 1 && exact.ready == 1) {
       status.ready_mask |= fushi_voice_hook::kLookupShieldSurfaceEnginePrivate |
-                           fushi_voice_hook::kLookupShieldSurfaceKeyState;
+                           fushi_voice_hook::kLookupShieldSurfaceKeyState |
+                           exact.extra_ready_surfaces;
     } else if (exact.declared > 1) {
       status.fault_mask |= fushi_voice_hook::kLookupShieldSurfaceEnginePrivate;
     }

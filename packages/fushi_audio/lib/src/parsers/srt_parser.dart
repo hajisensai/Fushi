@@ -103,18 +103,18 @@ class SrtParser {
       }
 
       // 跳过序号行（第 0 行），解析第 1 行时间码
-      final String? timeLine = _findTimeLine(lines);
-      if (timeLine == null) {
+      final int timeLineIndex = _findTimeLineIndex(lines);
+      if (timeLineIndex < 0) {
         continue;
       }
 
-      final (int startMs, int endMs)? times = _parseTimeLine(timeLine);
+      final (int startMs, int endMs)? times =
+          _parseTimeLine(lines[timeLineIndex]);
       if (times == null) {
         continue;
       }
 
       // 时间行之后的所有行合并为文本（多行字幕 → 空格连接），并剥离 HTML 标签
-      final int timeLineIndex = lines.indexOf(timeLine);
       final String rawText =
           lines.skip(timeLineIndex + 1).where((l) => l.isNotEmpty).join(' ');
       // 先剥 HTML 标签（`<i>` / `<b>` / `<font>` 等，共享 [stripHtmlTags]），
@@ -145,14 +145,20 @@ class SrtParser {
   }
 
   /// 在 block 的各行中找到时间码行（包含 ` --> `）。
-  static String? _findTimeLine(List<String> lines) {
-    for (final String line in lines) {
-      if (line.contains('-->')) {
-        return line;
+  /// 时间行下标；找不到返回 -1（调用方直接用下标，不再 `indexOf` 二次扫描）。
+  static int _findTimeLineIndex(List<String> lines) {
+    for (int i = 0; i < lines.length; i++) {
+      if (lines[i].contains('-->')) {
+        return i;
       }
     }
-    return null;
+    return -1;
   }
+
+  /// `HH:MM:SS.mmm`。编译一次：以前在 [_parseTimecodeToMs] 里逐次 `RegExp(...)`，
+  /// 每条 cue 起止各一次 = 每文件 2N 次正则编译。
+  static final RegExp _timecodeRe =
+      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
 
   /// 解析时间码行 `HH:MM:SS,mmm --> HH:MM:SS,mmm`，返回 (startMs, endMs)。
   static (int, int)? _parseTimeLine(String line) {
@@ -174,8 +180,7 @@ class SrtParser {
     // 统一分隔符：将 ',' 替换为 '.'
     final String normalized = timecode.replaceAll(',', '.');
     // 格式：HH:MM:SS.mmm
-    final RegExp re = RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
-    final RegExpMatch? match = re.firstMatch(normalized);
+    final RegExpMatch? match = _timecodeRe.firstMatch(normalized);
     if (match == null) {
       return null;
     }

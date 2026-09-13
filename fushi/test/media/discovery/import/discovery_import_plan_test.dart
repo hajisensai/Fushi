@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/import/discovery_archive_extractor.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
 void main() {
   group('classifyDiscoveryFile', () {

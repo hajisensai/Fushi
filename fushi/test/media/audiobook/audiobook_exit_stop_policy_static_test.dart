@@ -44,7 +44,10 @@ void main() {
       RegExp(
         // `{` 与 unawaited 之间允许注释；stop() 后允许 .catchError 收口（与本文件
         // 其它 unawaited future 惯例对齐），故不强求紧跟 `);`。
-        r'if\s*\(\s*!appModel\.audiobookBackgroundPlay\s*\)\s*\{[\s\S]*?'
+        // 卡片来源回看会话（BUG-2503）无论开关一律止声：条件多了一个
+        // `_sourceReviewSession != null ||` 前缀，只钉「!audiobookBackgroundPlay
+        // 在同一个 if 条件里」。
+        r'if\s*\([^{]*!appModel\.audiobookBackgroundPlay[^{]*\)\s*\{[\s\S]*?'
         r'unawaited\(\s*appModel\.audiobookSession\.stop\(\)',
       ).hasMatch(dispose),
       isTrue,
@@ -90,7 +93,7 @@ void main() {
     final String pop = body!.group(1)!;
     expect(
       RegExp(
-        r'if\s*\(\s*!appModel\.audiobookBackgroundPlay\s*\)\s*\{[\s\S]*?'
+        r'if\s*\([^{]*!appModel\.audiobookBackgroundPlay[^{]*\)\s*\{[\s\S]*?'
         r'unawaited\(\s*appModel\.audiobookSession\.stop\(\)',
       ).hasMatch(pop),
       isTrue,

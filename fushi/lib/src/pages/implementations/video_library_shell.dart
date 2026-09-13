@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -30,6 +32,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onVideoScanCompleted,
     required this.onOpenScrapeTasks,
     required this.onLibraryChanged,
+    this.loadPendingScrapeWorks,
     this.discoveryController,
     this.discoveryActions = const VideoDiscoveryActions(),
     this.localLibraryPageBuilder,
@@ -49,6 +52,10 @@ class VideoLibraryShell extends StatefulWidget {
   ) onVideoScanCompleted;
   final VoidCallback onOpenScrapeTasks;
   final VoidCallback onLibraryChanged;
+
+  /// 跑一轮库内自动补刮并回传当前待确认作品清单（见 [HomeVideoPage]）。
+  /// null = 不接线（宿主测试），视频页的待确认提醒条静默不显示。
+  final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
 
   /// 在线发现的数据端口。生产环境由发现聚合服务注入；null 时页面呈现可重试的空态。
   final VideoDiscoveryController? discoveryController;
@@ -143,10 +150,15 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         // **也同位**：本地库的各视图排完才是在线发现，最后才是管理类分区。此前发现夹在
         // 首页与系列 / 全部视频之间，一排里「自己的库 → 推荐 → 自己的库」来回跳，是四个
         // 模块里唯一的例外（2026-08-24 用户反馈）。
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.discover,
-          label: t.library_view_browse,
-        ),
+        //
+        // iOS 上整段不声明（[StoreRestrictedCapability.externalDiscovery]）：发现页的
+        // 番剧条目全部通向资源索引器与种子获取，索引器不装配后它只剩空列表。分区不进
+        // tabs 列表，`_discoverVisited` 就永远是 false，下面 Stack 里那段也不会构建。
+        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.discover,
+            label: t.library_view_browse,
+          ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
           label: t.library_view_import,
@@ -197,6 +209,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       libraryRefreshSignal: widget.libraryRefreshSignal,
                       onOpenScrapeTasks: widget.onOpenScrapeTasks,
                       scrapeTaskController: widget.scrapeTaskController,
+                      loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
                       onOpenSources: () => _select(VideoLibrarySection.sources),
                     ),
               ),

@@ -20,14 +20,15 @@ double? audiobookSrtCrossChapterProgress({
 /// TODO-746　sasayaki cue cross-chapter in-chapter progress (0..1). When
 /// `chapterChars <= 0` (chapter char count unknown / empty chapter) returns
 /// null — callers must then preserve the current scroll and never zero.
-/// Reuses the restore-path formula `normCharStart / chapterChars`.
+/// Both values use learning units; audio character positions must be converted
+/// with ReaderAudioPositionIndex before calling this helper.
 @visibleForTesting
 double? audiobookSentenceAudioCrossChapterProgress({
-  required int normCharStart,
+  required int studyCharOffset,
   required int chapterChars,
 }) {
   if (chapterChars <= 0) return null;
-  return (normCharStart / chapterChars).clamp(0.0, 1.0);
+  return (studyCharOffset / chapterChars).clamp(0.0, 1.0);
 }
 
 /// 普通 EPUB + SRT 音频在 matcher 未能落到 EPUB 章节时，cue 仍保留
@@ -131,10 +132,18 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     ProfileMediaKind? mediaTypeOverride,
   }) async {
     try {
-      final ProfileViewModel profileVm =
-          ref.read(profileViewModelProvider.notifier);
+      final ProfileViewModel profileVm = ref.read(
+        profileViewModelProvider.notifier,
+      );
 
       final String bookKey = widget.bookKey;
+
+      // 两张内容表都查一次：媒体类型判定只需要知道「有没有」，但语言级绑定要读
+      // 它们的 language 列。`audiobooks` 表自身**没有** language 列——有声书的
+      // 语言跟着它配对的 srt_books / epub_books 行走，所以这里不按 mediaType
+      // 分支去取，两张都取、SRT 优先（有声书多数配 SRT）。
+      final srtRow = await db.getSrtBookByBookKey(bookKey);
+      final epubRow = await db.getEpubBook(bookKey);
 
       ProfileMediaKind mediaType;
       if (mediaTypeOverride != null) {
@@ -144,21 +153,20 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         final abRow = await db.getAudiobookByBookKey(bookKey);
         if (abRow != null) {
           mediaType = ProfileMediaKind.audiobook;
-        } else {
-          final srtRow = await db.getSrtBookByBookKey(bookKey);
-          if (srtRow != null) {
-            mediaType = ProfileMediaKind.srtbook;
-          }
+        } else if (srtRow != null) {
+          mediaType = ProfileMediaKind.srtbook;
         }
       }
 
       await profileVm.autoApplyBinding(
         bookUid: bookKey,
+        languageTag: srtRow?.language ?? epubRow?.language,
         mediaType: mediaType,
       );
     } catch (e, st) {
       debugPrint(
-          '[ReaderFushi] profile resolution failed (non-fatal): $e\n$st');
+        '[ReaderFushi] profile resolution failed (non-fatal): $e\n$st',
+      );
     }
   }
 
@@ -181,8 +189,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       onVolumeDown: () => _onVolumeKey(isUp: false),
     );
     VolumeKeyChannel.instance.setInterceptEnabled(true);
-    debugPrint('[ReaderFushi] volume key handlers installed '
-        '(inverted=${src.volumePageTurningInverted})');
+    debugPrint(
+      '[ReaderFushi] volume key handlers installed '
+      '(inverted=${src.volumePageTurningInverted})',
+    );
   }
 
   void _onVolumeKey({required bool isUp}) {
@@ -196,8 +206,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       // 句子导航分支自带节流：沿用时间戳语义（HBK-AUDIT-120），与翻页节流不混。
       // speedMs<=0 关闭节流；读 speedMs 即生效，无残留 timer。
       if (speedMs > 0 && _lastVolumeKeyTime != null) {
-        final int elapsedMs =
-            DateTime.now().difference(_lastVolumeKeyTime!).inMilliseconds;
+        final int elapsedMs = DateTime.now()
+            .difference(_lastVolumeKeyTime!)
+            .inMilliseconds;
         if (elapsedMs < speedMs) return;
       }
       if (goForward) {
@@ -230,6 +241,19 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// [forceReload] = true 时（导入新音频后重解析）先 stop 旧会话，逼 session 重新 load
   /// 新音频；首次开书 = false，优先复用既有后台会话。
   Future<void> _resolveAudioSlot({bool forceReload = false}) async {
+    // 「听书」模块关闭：本函数是 reader 侧**唯一**会 initialiseAudioHandler +
+    // 起/接管 [AudiobookSession]（媒体通知 + 后台播放）的地方，在这里早退即满足
+    // 「模块专属后台下次启动不再拉起」——已在跑的会话不受影响（本函数只在开书 /
+    // 换源时调用，不碰 session 已有的播放）。
+    if (!_moduleVisibility.isEnabled(ModuleId.listening)) {
+      // 歌词模式靠有声书 cue 活着；没有控制器就把它复位，与函数末尾那条
+      // 「_audiobookController == null → 关歌词」是同一条不变式。
+      if (_lyricsMode) {
+        _lyricsMode = false;
+        await ReaderFushiSource.instance.setLyricsMode(false);
+      }
+      return;
+    }
     // TODO-perf（开媒体反馈）：openMedia 已改为不阻塞等 audio_service 冷启，这里
     // 是 handler 的真正消费点（session attach/start 挂媒体通知与控制流）——await
     // 同一份记忆化 future 补齐时序契约；已就绪时立即返回，零额外开销。
@@ -310,8 +334,28 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       controller = await session.start(
         info: req.info,
         audioFiles: req.audioFiles,
-        prefs: req.prefs,
-        persist: req.persist,
+        prefs: _sourceReviewActive
+            ? SessionPrefs(
+                followAudio: false,
+                delayMs: req.prefs.delayMs,
+                speed: req.prefs.speed,
+                positionMs: 0,
+                imagePauseSec: req.prefs.imagePauseSec,
+                volume: req.prefs.volume,
+              )
+            : req.prefs,
+        persist: SessionPersistCallbacks(
+          onPositionWrite: (String key, int positionMs) async {
+            if (!_sourceReviewActive) {
+              await req.persist.onPositionWrite(key, positionMs);
+            }
+          },
+          onDelayPersist: req.persist.onDelayPersist,
+          onSpeedPersist: req.persist.onSpeedPersist,
+          onVolumePersist: req.persist.onVolumePersist,
+          onImagePausePersist: req.persist.onImagePausePersist,
+          onFollowAudioPersist: req.persist.onFollowAudioPersist,
+        ),
         // 灌扁平全书 cue 作初值（_primeAudioCuesForCurrentBook 随后按章节精确覆盖）；
         // 与后台听书路径共用 req.cues，使 attach 前的瞬态也有 cue（TODO-354）。
         cues: req.cues,
@@ -321,13 +365,43 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] audiobook session start failed: $e');
       if (mounted) {
         FushiToast.show(
-            msg: t.audiobook_load_error, severity: ToastSeverity.error);
+          msg: t.audiobook_load_error,
+          severity: ToastSeverity.error,
+        );
       }
       return;
     }
     if (controller == null) return;
     if (!mounted) {
-      // 页面在 await 期间被弃：会话仍可在后台续播（用户决策①后台继续），不 stop。
+      if (_sourceReviewSession != null &&
+          identical(session.controller, controller)) {
+        await session.stop();
+      }
+      return;
+    }
+    final CardSourceLink? source = _sourceReviewSession?.link;
+    if (source?.startMs != null && source?.audioFileIndex != null) {
+      try {
+        await controller.restoreToFileOffset(
+          fileIndex: source!.audioFileIndex!,
+          positionMs: source.startMs!,
+        );
+      } catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'ReaderFushi.restoreCardSource',
+          error,
+          stackTrace,
+        );
+        if (identical(session.controller, controller)) await session.stop();
+        if (mounted) FushiToast.show(msg: t.card_source_review_invalid);
+        return;
+      }
+    }
+    if (!mounted) {
+      if (_sourceReviewSession != null &&
+          identical(session.controller, controller)) {
+        await session.stop();
+      }
       return;
     }
     if (req.info.isSrtBookSource) {
@@ -354,8 +428,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (uid.isEmpty) return;
     final SrtBookRow? row = await appModel.database.getSrtBookByUid(uid);
     if (!mounted) return;
+    _explicitContentLanguage = row?.language;
     final String? resolved = resolveContentLanguage(
-      explicit: row?.language,
+      explicit: _explicitContentLanguage,
       globalDefault: appModel.prefsRepo.defaultContentLanguage,
     );
     appModel.currentLookupLanguage = resolved;
@@ -426,8 +501,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     final List<List<AudioCue>> chapters = CuesToEpub.splitChapters(cues);
     final List<(int, int)> ranges = <(int, int)>[];
     for (int ch = 0; ch < chapters.length; ch++) {
-      ranges.add(
-          (chapters[ch].first.sentenceIndex, chapters[ch].last.sentenceIndex));
+      ranges.add((
+        chapters[ch].first.sentenceIndex,
+        chapters[ch].last.sentenceIndex,
+      ));
       for (final AudioCue cue in chapters[ch]) {
         map[cue.sentenceIndex] = ch;
       }
@@ -435,29 +512,76 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     return (map, ranges);
   }
 
-  void _restoreFromCurrentAudioCue() {
-    final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
-    if (cue == null || _book == null) return;
+  ({int offset, int length})? _studyRangeForAudioFragment(
+    SubtitleRematchFragment frag,
+  ) {
+    final EpubBook? book = _book;
+    if (book == null ||
+        frag.sectionIndex < 0 ||
+        frag.sectionIndex >= book.chapters.length) {
+      return null;
+    }
+    final String html = book.chapters[frag.sectionIndex].html;
+    final ({String html, ReaderAudioPositionIndex index})? cached =
+        _audioPositionIndices.remove(frag.sectionIndex);
+    final ReaderAudioPositionIndex index = cached?.html == html
+        ? cached!.index
+        : ReaderAudioPositionIndex.fromChapterHtml(html);
+    _audioPositionIndices[frag.sectionIndex] = (html: html, index: index);
+    // The current and adjacent chapters suffice; avoid retaining a whole-book
+    // per-character index when playback moves through a long audiobook.
+    while (_audioPositionIndices.length > 3) {
+      _audioPositionIndices.remove(_audioPositionIndices.keys.first);
+    }
+    return index.studyRangeForFragment(
+      matchableStart: frag.normCharStart,
+      matchableEnd: frag.normCharEnd,
+    );
+  }
 
-    final SubtitleRematchFragment? frag =
-        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+  /// 以播放器**当前位置**对应的 cue 作开书起点。返回 false = 算不出（无控制器 /
+  /// 无 cue / cue 反查不到章），调用方据此回退阅读进度（BUG-2328）。
+  ///
+  /// 三条反查路径（sasayaki fragment → SRT 切章表 → href/正文兜底）统一由
+  /// [_setOpenResumePoint] 落到起点字段：那里一次写齐七个字段，存档分支残留的锚不会
+  /// 在 restoreToCharOffset 里压过分数、把视口拽回旧位置。
+  ///
+  /// BUG-2333 起 fragment 那条路还经 [_studyRangeForAudioFragment] 把**音频 UTF-16
+  /// 坐标**映射成学习单位偏移，因此它能给出精确字符锚（charOffset）；无 fragment 的正文兜底也必须
+  /// 唯一匹配正文来取得字符锚，SRT 切章表仍使用章内分数。
+  bool _restoreFromCurrentAudioCue() {
+    final AudioCue? cue = _audiobookController?.cueAtCurrentPositionInBook();
+    if (cue == null || _book == null) return false;
+
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
     if (frag != null &&
         frag.sectionIndex >= 0 &&
         frag.sectionIndex < _book!.chapters.length) {
-      _currentChapter = frag.sectionIndex;
       // TODO-746: reuse the shared in-chapter progress helper (DRY). On initial
       // open a null (unknown char count) falls back to 0.0 = chapter start,
       // which is a sane initial anchor and preserves the original behaviour.
-      _initialProgress = audiobookSentenceAudioCrossChapterProgress(
-            normCharStart: frag.normCharStart,
-            chapterChars: _chapterCharCounts[frag.sectionIndex],
-          ) ??
-          0.0;
-      _lastProgressSection = _currentChapter;
-      _lastProgressValue = _initialProgress;
-      debugPrint('[ReaderFushi] restore from audio cue: '
-          'chapter=$_currentChapter progress=$_initialProgress');
-      return;
+      //
+      // BUG-2333：`frag.normCharStart` 是**音频 UTF-16 坐标**，不能直接当章内学习
+      // 单位偏移用（那正是本轮修的混用）。先经 [_studyRangeForAudioFragment] 映射
+      // 成学习范围，映射不出就不动起点、让调用方回退阅读进度。
+      final int? studyOffset = _studyRangeForAudioFragment(frag)?.offset;
+      if (studyOffset == null) return false;
+      _setOpenResumePoint(
+        chapter: frag.sectionIndex,
+        progress:
+            audiobookSentenceAudioCrossChapterProgress(
+              studyCharOffset: studyOffset,
+              chapterChars: _chapterCharCounts[frag.sectionIndex],
+            ) ??
+            0.0,
+        // 有了上面的映射，cue 派生的起点也有精确字符锚了（旧注释说的「没有锚、
+        // charOffset 取 -1」是映射存在之前的事实）。
+        charOffset: studyOffset,
+        source: 'audio cue',
+      );
+      return true;
     }
 
     if (_srtCueChapterMap != null && _srtChapterRanges != null) {
@@ -466,35 +590,49 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           srtChapter >= 0 &&
           srtChapter < _srtChapterRanges!.length &&
           srtChapter < _book!.chapters.length) {
-        _currentChapter = srtChapter;
         final (int first, int last) = _srtChapterRanges![srtChapter];
         // TODO-746: reuse the shared in-chapter progress helper (DRY). On
         // initial open a null (single-cue chapter) falls back to 0.0 =
         // chapter start, preserving the original restore behaviour.
-        _initialProgress = audiobookSrtCrossChapterProgress(
-              sentenceIndex: cue.sentenceIndex,
-              first: first,
-              last: last,
-            ) ??
-            0.0;
-        _lastProgressSection = srtChapter;
-        _lastProgressValue = _initialProgress;
-        debugPrint('[ReaderFushi] restore from SRT cue: '
-            'chapter=$srtChapter progress=$_initialProgress');
-        return;
+        _setOpenResumePoint(
+          chapter: srtChapter,
+          progress:
+              audiobookSrtCrossChapterProgress(
+                sentenceIndex: cue.sentenceIndex,
+                first: first,
+                last: last,
+              ) ??
+              0.0,
+          source: 'SRT cue',
+        );
+        return true;
       }
     }
 
     final int chapter = _chapterIndexForCue(cue);
-    final int fallbackChapter =
-        chapter >= 0 ? chapter : _chapterIndexForText(cue.text);
-    if (fallbackChapter < 0) return;
-    _currentChapter = fallbackChapter;
-    _initialProgress = 0.0;
-    _lastProgressSection = fallbackChapter;
-    _lastProgressValue = 0.0;
-    debugPrint('[ReaderFushi] restore from audio cue chapter: '
-        'chapter=$_currentChapter href=${cue.chapterHref}');
+    final int fallbackChapter = chapter >= 0
+        ? chapter
+        : _chapterIndexForText(cue.text);
+    if (fallbackChapter < 0) return false;
+    // 章节命中只完成了第一步。无持久化字符坐标的 cue 需继续在正文中唯一定位，
+    // 在创建 WebView 前直接给出字符锚；找不到/重复时保留阅读存档。
+    final ({int offset, int length})? range =
+        ReaderAudioPositionIndex.fromChapterHtml(
+          _book!.chapters[fallbackChapter].html,
+        ).studyRangeForUniqueText(cue.text);
+    if (range == null || range.length <= 0) return false;
+    _setOpenResumePoint(
+      chapter: fallbackChapter,
+      progress:
+          audiobookSentenceAudioCrossChapterProgress(
+            studyCharOffset: range.offset,
+            chapterChars: _chapterCharCounts[fallbackChapter],
+          ) ??
+          0.0,
+      charOffset: range.offset,
+      source: 'audio cue text href=${cue.chapterHref}',
+    );
+    return true;
   }
 
   int _chapterIndexForCue(AudioCue cue) {
@@ -539,6 +677,11 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (!mounted || _controller == null) return;
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null) return;
+    // BUG-2212：听书播放态是阅读输入——每次 cue 推进喂一次空闲门。歌词模式没有
+    // 滚动回传（不经 _refreshProgressFromScroll），听一小时只计到空闲门 10 分钟；
+    // 非歌词模式的跟随也顺带经过（无害，与滚动回传的 touch 幂等）。暂停态的被动
+    // 高亮（重开 / 手动跳句）不算播放，不喂。
+    if (controller.isPlaying) _studyClock?.touch();
 
     if (_lyricsMode) {
       // BUG-757: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
@@ -564,13 +707,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
             // 歌词）。forceReveal（切「跟随音频」ON 触发的 snap 回中）也放行滚动。
             final bool scroll = controller.followAudio.value || forceReveal;
             _controller!.evaluateJavascript(
-              source: 'if(window.__lyricsSetCue)'
+              source:
+                  'if(window.__lyricsSetCue)'
                   'window.__lyricsSetCue($idx, $scroll);'
                   // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的
                   // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
                   // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
                   '${forceReveal ? 'if(window.__lyricsScrollToCue)'
-                      'window.__lyricsScrollToCue($idx);' : ''}',
+                            'window.__lyricsScrollToCue($idx);' : ''}',
             );
           } else if (_lyricsCueWindowUsesAllBookCues) {
             // cue 真的移出已载窗口（sourceIdx>=0 但落在窗外）→ 重开窗口居中当前 cue。
@@ -585,8 +729,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
     final AudioCue? cue = controller.currentCue;
     if (cue != null) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
       if (frag != null && frag.sectionIndex != _currentChapter) {
         AudiobookBridge.highlight(_controller!);
         return;
@@ -662,6 +807,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       reveal: reveal,
       pauseEnabled: pauseEnabled,
     );
+    // reveal 落定后的进度补刷（B-3 窗吃掉了跟随滚动的 scroll 回传，见方法注释）。
+    if (reveal) _scheduleReanchorSettleProgressRefresh();
     // TODO-718（真机铁证·2026-06-25）：只有 cue 权威驱动视图时（reveal=播放跟随 / 显式
     // reveal / forceReveal）才用 cue 位置覆盖落库的阅读位置。**被动高亮**——重开 / 暂停态把
     // 当前 cue 高亮上去（reveal=false）——绝不覆盖用户的滚动阅读位置：否则恢复后的位置被
@@ -694,26 +841,18 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController?.cancelChapterTransition();
       return;
     }
-    // TODO-746: reuse the same sasayaki in-chapter progress formula the restore
-    // path already uses, so cross-chapter playback lands on the cue's real
-    // in-chapter position instead of _navigateToChapter's default progress=0.0
-    // → restoreProgress(0) → scrollToChapterStart six-fold clear (the "slides to
-    // chapter 1" symptom). newSection here is the matched cue's own declared
-    // section (frag.sectionIndex; a text-missing cue has a null/cleared fragment
-    // and never reaches this path), so it legitimately belongs in newSection —
-    // we only need its offset, not a chapter switch. A null progress (chapter
-    // char count transiently 0 before the lazy recompute lands) falls back to
-    // 0.0 = that chapter's own start, which is the original behaviour for a
-    // matched cue and is NOT a zero-to-chapter-1 (it is its real chapter).
+    // Validate the matched fragment against the target chapter and convert its audio
+    // coordinate to a learning-unit anchor before entering the restore chain.
     final AudioCue? cue = _audiobookController?.currentCue;
-    final SubtitleRematchFragment? frag =
-        cue == null ? null : SubtitleRematchCodec.tryDecode(cue.textFragmentId);
-    double? progress;
-    if (frag != null && newSection < _chapterCharCounts.length) {
-      progress = audiobookSentenceAudioCrossChapterProgress(
-        normCharStart: frag.normCharStart,
-        chapterChars: _chapterCharCounts[newSection],
-      );
+    final SubtitleRematchFragment? frag = cue == null
+        ? null
+        : SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+    final int? studyOffset = cue != null && frag?.sectionIndex == newSection
+        ? _studyRangeForAudioFragment(frag!)?.offset
+        : null;
+    if (studyOffset == null) {
+      _audiobookController?.cancelChapterTransition();
+      return;
     }
     // TODO-1037：cue 驱动的跨章会一步跳过「独立成章的纯图片页」（无 cue 故从不
     // 被推进看见），图片等待对它彻底失效。跨章落定前先把中间纯图片章逐个导航过去
@@ -727,7 +866,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController?.cancelChapterTransition();
       return;
     }
-    await _navigateToChapter(newSection, progress: progress ?? 0.0);
+    await _navigateToChapter(newSection, charOffset: studyOffset);
   }
 
   /// TODO-1037：跨章推进若跨过「独立成章的纯图片章」，且图片等待开启
@@ -811,8 +950,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (_book == null || targetSec < 0 || targetSec >= _book!.chapters.length) {
       return;
     }
-    final List<AudioCue> targetCues =
-        controller.sentenceAudioCuesForSection(targetSec);
+    final List<AudioCue> targetCues = controller.sentenceAudioCuesForSection(
+      targetSec,
+    );
     if (targetCues.isEmpty) {
       await _navigateToChapter(targetSec);
       return;
@@ -822,84 +962,86 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
   /// BUG-1107（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]
   /// 漏斗——音量键句子导航 / 快捷键 / 底栏「上一句·下一句」/ 媒体通知按钮全部汇聚
-  /// 到那里）落定目标后，把本 session 统计字数水位抬到目标 cue 的绝对字符位置。
+  /// 到那里）在物理 seek 之前回调到此。
   ///
-  /// 语义：**音频跳过的段落不算已读**。不抬水位时，跳句后的 WebView 跟随滚动会让
-  /// `_refreshProgress` 把「旧位置 → 目标 cue」之间整段正文误计成本次读到的新字数。
-  /// 后跳（上一句）目标位置低于水位，[sessionWatermarkAfterRestore] 的只升不降
-  /// 语义天然 no-op（重听不重复计也不回退）。
+  /// 语义：**音频跳过的段落不算已读**。账本 `leave()`：结算当前页（用户在这页，翻走
+  /// 即计），并清空当前单元——跟随滚动落到目标 cue 后的首个 `_refreshProgress` 只是
+  /// 「到达」新单元，旧位置 → 目标 cue 之间被跳过的正文从未成为当前单元、不计。
+  /// 后跳（上一句）同理：目标页若已在会话并集里，翻走时结算为 0（重听不重复计）。
   void _handleExplicitCueJump(AudioCue cue) {
-    final int target = _absoluteCharPositionForCue(cue);
-    _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
-      _sessionMaxAbsoluteChars,
-      target,
+    studyDiag(
+      'reader',
+      'explicit cue jump → sentence=${cue.sentenceIndex} '
+          '${cue.startMs}ms (leave current unit)',
     );
+    _readLedger.leave();
   }
 
-  /// 目标 cue 的绝对字符位置（全书累计口径）。解析不出时返回 0（水位取 max，
-  /// 0 恒为 no-op，fail-open 不影响统计）。
+  /// 听书跟随 reveal（`AudiobookBridge.highlight(reveal: true)`）落定后补刷一次进度。
   ///
-  /// - sasayaki cue：`textFragmentId` 解码出章号 + 章内 normCharStart（与章字数
-  ///   同一归一化口径），走 [computeCharWatermark] 的精确锚分支。
-  /// - SRT cue：无字符锚，按句号在本章 cue 区间内的比例（与跨章恢复共用的
-  ///   [audiobookSrtCrossChapterProgress] 公式）折算成分数口径。
-  int _absoluteCharPositionForCue(AudioCue cue) {
-    if (_book == null || _chapterCumulativeChars.isEmpty) return 0;
-    final SubtitleRematchFragment? frag =
-        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
-    if (frag != null) {
-      return computeCharWatermark(
-        chapterCumulativeChars: _chapterCumulativeChars,
-        chapterCharCounts: _chapterCharCounts,
-        chapter: frag.sectionIndex,
-        progress: 0.0,
-        charOffset: frag.normCharStart,
-      );
-    }
-    final int? srtChapter = _srtCueChapterMap?[cue.sentenceIndex];
-    final List<(int, int)>? ranges = _srtChapterRanges;
-    if (srtChapter == null ||
-        ranges == null ||
-        srtChapter < 0 ||
-        srtChapter >= ranges.length) {
-      return 0;
-    }
-    final (int first, int last) = ranges[srtChapter];
-    final double progress = audiobookSrtCrossChapterProgress(
-          sentenceIndex: cue.sentenceIndex,
-          first: first,
-          last: last,
-        ) ??
-        0.0;
-    return computeCharWatermark(
-      chapterCumulativeChars: _chapterCumulativeChars,
-      chapterCharCounts: _chapterCharCounts,
-      chapter: srtChapter,
-      progress: progress,
-      charOffset: -1,
+  /// reveal 前打点 `_reanchorClearedAt` 武装了 B-3 settle 窗（TODO-825 治闪屏）：分页 /
+  /// VN 的 reveal 是瞬时翻页（JS 调用内落定），连续模式是 smooth 动画（多帧）——两者
+  /// 落定那几帧的 scroll 回传都落在窗内被 `_handleReaderScroll` 直接 return，新页不会
+  /// 经 scroll 通道 arrive，只能等 10s 轮询；`ReadUnitLedger` 是翻走即计，晚 arrive 就
+  /// 晚结算上一页（且期间若关书 / 跳句，新页整页漏计）。这里按同一个窗常量
+  /// [kReaderReanchorSettleMs] 排在窗关之后补刷一次：瞬时 reveal 此刻早已落定；smooth
+  /// 动画若还没停，窗关后的尾沿 scroll 回传本就会照常再刷（同单元重复采样是 no-op）。
+  /// 单 Timer 复位：连续 cue 推进只保留最后一次。BUG-2227 起 `_handleReaderScroll`
+  /// 在 B-3 窗内丢弃 scroll 回传时也排这一个 Timer（同一个窗、同一个补刷语义）。
+  void _scheduleReanchorSettleProgressRefresh() {
+    _revealProgressRefreshTimer?.cancel();
+    _revealProgressRefreshTimer = Timer(
+      const Duration(milliseconds: kReaderReanchorSettleMs),
+      () {
+        _revealProgressRefreshTimer = null;
+        if (!mounted) return;
+        unawaited(_refreshProgress());
+      },
     );
   }
 
   int get _lookupSectionIndex {
     if (_lyricsMode && _lookupCue != null) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(_lookupCue!.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        _lookupCue!.textFragmentId,
+      );
       if (frag != null) return frag.sectionIndex;
     }
     return _currentChapter;
   }
 
-  AudioCue? _findCueForOffset(int normalizedOffset) {
+  void _cacheMatchableSelection(ReaderSelectionData data) {
+    _cachedMatchableSelectionRange =
+        data.matchableOffset != null && data.matchableLength != null
+        ? (
+            offset: data.matchableOffset!,
+            length: data.matchableLength!,
+            text: data.text,
+          )
+        : null;
+    _cachedMatchableSentenceRange =
+        data.sentenceMatchableOffset != null &&
+            data.sentenceMatchableLength != null
+        ? (
+            offset: data.sentenceMatchableOffset!,
+            length: data.sentenceMatchableLength!,
+          )
+        : null;
+  }
+
+  AudioCue? _findCueForOffset(int matchableOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
-    final List<AudioCue> cues =
-        ctrl.sentenceAudioCuesForSection(_currentChapter);
+    final List<AudioCue> cues = ctrl.sentenceAudioCuesForSection(
+      _currentChapter,
+    );
     for (final AudioCue cue in cues) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
       if (frag == null) continue;
-      if (frag.normCharStart <= normalizedOffset &&
-          frag.normCharEnd > normalizedOffset) {
+      if (frag.normCharStart <= matchableOffset &&
+          frag.normCharEnd > matchableOffset) {
         return cue;
       }
     }
@@ -955,8 +1097,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       return allCues;
     }
 
-    final List<AudioCue> sectionCues = _audiobookController
-            ?.sentenceAudioCuesForSection(_lookupSectionIndex) ??
+    final List<AudioCue> sectionCues =
+        _audiobookController?.sentenceAudioCuesForSection(
+          _lookupSectionIndex,
+        ) ??
         const <AudioCue>[];
     if (sectionCues.isNotEmpty) {
       return sectionCues;
@@ -972,8 +1116,23 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     return cue != null ? <AudioCue>[cue] : const <AudioCue>[];
   }
 
+  /// 取与 [_book] 同生命周期的 [LyricsCueTextResolver]（字段在 State 上，见
+  /// [_lyricsCueTextResolver]）：它自带三章 LRU 缓存，每次查词都 new 一个等于
+  /// 每次查词整章重解析 DOM，白白叠在查词延迟上。
+  LyricsCueTextResolver _lyricsCueTextResolverFor(EpubBook book) {
+    final LyricsCueTextResolver? cached = _lyricsCueTextResolver;
+    if (cached != null && identical(cached.book, book)) return cached;
+    return _lyricsCueTextResolver = LyricsCueTextResolver(book);
+  }
+
   void _syncCueSentence() {
-    final String cueText = _lookupCue?.text ?? '';
+    final AudioCue? cue = _lookupCue;
+    final EpubBook? book = _book;
+    final String cueText = cue == null
+        ? ''
+        : _lyricsMode && book != null
+        ? _lyricsCueTextResolverFor(book).textForCue(cue)
+        : cue.text;
     if (cueText.isNotEmpty) {
       appModel.currentMediaSource?.setCurrentCueSentence(
         selection: FushiTextSelection(text: cueText),
@@ -998,25 +1157,17 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     );
   }
 
-  /// 归一化选区 span 的单一真相源（TODO-1278）：优先句级 span（[_cachedSentenceRange]），
-  /// 句级缺失时回退到词/选区级 span（[_cachedSelectionRange]）。
-  ///
-  /// 片段导出 / Anki 句子音频的位置锚点**必须**和收藏、制卡历史
-  /// （[_checkFavoriteStatus] / [_recordMinedSentence] / lookup.part / chrome.part）
-  /// 用同一套回退——否则句级 span 偶发缺失（拖选跨 block / ruby / 图片相邻节点未进归一化
-  /// 索引 → JS `sentenceNormalizedOffset` 为 null，见 reader_selection_scripts）时，导出
-  /// 侧独自丢掉位置锚点：[miningSentenceAudioRange] 拿不到 sectionIndex+offset+length，
-  /// 对 gap word（`_lookupCue==null`、currentSentence 为空）解析出 null 区间，被
-  /// [classifyAudiobookClipSelection] 归成 `unsupportedRange`，弹出误导的「跨章或跨音频
-  /// 文件」toast——而选区其实同章、Anki 收藏路径能正常定位。回退到选区级 span 后，位置
-  /// 匹配重新生效，同章选区正常进入导出管线。
+  /// 音频使用匹配字符坐标：优先整句，缺失时用选区。学习单位范围不能
+  /// 与字幕的 normCharStart/End 比较；旧 payload 没有匹配坐标时保留 null，
+  /// 由音频匹配器使用 cue 身份或文本。
   ({int offset, int length})? _miningSpanRange() {
-    final ({int offset, int length})? sentenceRange = _cachedSentenceRange;
+    final ({int offset, int length})? sentenceRange =
+        _cachedMatchableSentenceRange;
     if (sentenceRange != null) {
       return sentenceRange;
     }
     final ({int offset, int length, String text})? selectionRange =
-        _cachedSelectionRange;
+        _cachedMatchableSelectionRange;
     if (selectionRange != null) {
       return (offset: selectionRange.offset, length: selectionRange.length);
     }
@@ -1044,6 +1195,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       sentenceNormCharOffset: normOffset,
       sentenceNormCharLength: normLength,
       delayMs: audioController?.delayMs.value ?? 0,
+      headPadMs: appModel.miningAudioHeadPadMs,
+      tailPadMs: appModel.miningAudioTailPadMs,
     );
     if (clip == null ||
         clip.audioFileIndex < 0 ||
@@ -1066,7 +1219,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   ///   （单 audioFileIndex）；跨文件时只会落在它命中的那一段或返回 null，永不拼跨文件 →
   ///   null / 越界 → unsupportedRange 兜底。D-RANGE 限单 cue/单文件即由此事实兜底。
   void _exportAudiobookClip() {
-    final String selectedText = _cachedSelectionRange?.text ??
+    final String selectedText =
+        _cachedSelectionRange?.text ??
         appModel.currentMediaSource?.currentSentence.text ??
         '';
     final AudiobookPlayerController? ctrl = _audiobookController;
@@ -1075,10 +1229,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 旧顺序先用 currentSentence 的单句 range 做分类，随后才建多句计划，导致最终传给
     // ffmpeg 的仍是第一句窗口；动态计划又优先拿 cachedSentenceRange，覆盖了跨句选区
     // span，因而退化成「只有第一句声音 + 整段静态高亮」。
-    final ({
-      _AudiobookClipDynamicPlan? plan,
-      AudioPlaybackRange? range
-    }) clipPlan = _buildAudiobookClipPlan(audioFileCount: audioFileCount);
+    final ({_AudiobookClipDynamicPlan? plan, AudioPlaybackRange? range})
+    clipPlan = _buildAudiobookClipPlan(audioFileCount: audioFileCount);
     _AudiobookClipDynamicPlan? dynamicPlan = clipPlan.plan;
     // BUG-1320：多句路径解析出的整段窗口是唯一真相源——**即使它超上限**（此时 plan 为
     // 空、逐句高亮不可用）也必须拿它去分类，分类器会据此判 tooLong 走诚实文案。旧写法
@@ -1108,8 +1260,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           StackTrace.current,
         );
         FushiToast.show(
-            msg: t.audiobook_export_clip_no_text,
-            severity: ToastSeverity.error);
+          msg: t.audiobook_export_clip_no_text,
+          severity: ToastSeverity.error,
+        );
         return;
       case AudiobookClipBoundaryKind.noAudio:
         debugPrint(
@@ -1124,15 +1277,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           StackTrace.current,
         );
         FushiToast.show(
-            msg: t.audiobook_export_clip_no_selection,
-            severity: ToastSeverity.error);
+          msg: t.audiobook_export_clip_no_selection,
+          severity: ToastSeverity.error,
+        );
         return;
       case AudiobookClipBoundaryKind.unsupportedRange:
         debugPrint(
           '[ReaderFushi] export-clip M1: no single-file cue range '
           '(cross-chapter / cross-file / gap). sentenceRange='
           '${sentenceRange == null ? 'null' : 'file=${sentenceRange.audioFileIndex} '
-              '${sentenceRange.startMs}->${sentenceRange.endMs}ms'}, '
+                    '${sentenceRange.startMs}->${sentenceRange.endMs}ms'}, '
           'audioFileCount=$audioFileCount.',
         );
         ErrorLogService.instance.log(
@@ -1141,8 +1295,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           StackTrace.current,
         );
         FushiToast.show(
-            msg: t.audiobook_export_clip_unsupported_range,
-            severity: ToastSeverity.error);
+          msg: t.audiobook_export_clip_unsupported_range,
+          severity: ToastSeverity.error,
+        );
         return;
       case AudiobookClipBoundaryKind.tooLong:
         // BUG-1320：超时长上限此前并进 unsupportedRange，同章长选区被误报「跨章或
@@ -1161,8 +1316,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           StackTrace.current,
         );
         FushiToast.show(
-            msg: t.audiobook_export_clip_too_long,
-            severity: ToastSeverity.error);
+          msg: t.audiobook_export_clip_too_long,
+          severity: ToastSeverity.error,
+        );
         return;
       case AudiobookClipBoundaryKind.exportable:
         final AudioPlaybackRange range = result.range!;
@@ -1185,8 +1341,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
             StackTrace.current,
           );
           FushiToast.show(
-              msg: t.audiobook_export_clip_unsupported_range,
-              severity: ToastSeverity.error);
+            msg: t.audiobook_export_clip_unsupported_range,
+            severity: ToastSeverity.error,
+          );
           return;
         }
         // D4 时长上限已收进 classifyAudiobookClipSelection（BUG-1320，tooLong 分支
@@ -1240,13 +1397,15 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           'file=${inputFile.path} '
           'dynamicCues=${dynamicPlan?.cueSpans.length ?? 0}',
         );
-        unawaited(_runAudiobookClipPipeline(
-          text: selectedText.trim(),
-          inputFile: inputFile,
-          startMs: range.startMs,
-          endMs: range.endMs,
-          dynamicPlan: dynamicPlan,
-        ));
+        unawaited(
+          _runAudiobookClipPipeline(
+            text: selectedText.trim(),
+            inputFile: inputFile,
+            startMs: range.startMs,
+            endMs: range.endMs,
+            dynamicPlan: dynamicPlan,
+          ),
+        );
         return;
     }
   }
@@ -1258,26 +1417,24 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// 末句尾 padding 放宽到 [kClipExportTailPadMs]，中间句连续不被 tailCap 切），供音频
   /// 裁剪与帧计划共用，避免二者窗口漂移。
   ({_AudiobookClipDynamicPlan? plan, AudioPlaybackRange? range})
-      _buildAudiobookClipPlan({
-    required int audioFileCount,
-  }) {
+  _buildAudiobookClipPlan({required int audioFileCount}) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return (plan: null, range: null);
     final ({int offset, int length, String text})? selection =
-        _cachedSelectionRange;
+        _cachedMatchableSelectionRange;
     // BUG-1243：导出入口的主锚是用户真实选区；只有没有原生选区（普通点词导出）时
     // 才回退 currentSentence。不能复用 _miningSpanRange 的「句级优先」规则——那是
     // 单句制卡语义，会把跨多句 selection 收窄回当前句。
     final ({int offset, int length})? fallbackRange = _miningSpanRange();
     final AudiobookClipSelectionSpan resolvedSelection =
         resolveAudiobookClipSelectionSpan(
-      selectedText: selection?.text,
-      selectedOffset: selection?.offset,
-      selectedLength: selection?.length,
-      fallbackText: appModel.currentMediaSource?.currentSentence.text ?? '',
-      fallbackOffset: fallbackRange?.offset,
-      fallbackLength: fallbackRange?.length,
-    );
+          selectedText: _cachedSelectionRange?.text,
+          selectedOffset: selection?.offset,
+          selectedLength: selection?.length,
+          fallbackText: appModel.currentMediaSource?.currentSentence.text ?? '',
+          fallbackOffset: fallbackRange?.offset,
+          fallbackLength: fallbackRange?.length,
+        );
     final String sentence = resolvedSelection.text;
     // TODO-1115 review M2：分类文本与静态路径（[_exportAudiobookClip] 的 selectedText）
     // 同源——`_cachedSelectionRange?.text ?? currentSentence.text`。此前动态侧只用
@@ -1339,13 +1496,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // normCharStart 从 sasayaki 编码的 textFragmentId 解出（解不出的 cue 传 null，不作
     // 归属锚点）；`span` 与 result.cueSpans 同序等长（classify 只包一层不可变拷贝），故
     // 下标对齐。选区无夹图时 _cachedSelectionImages 为空 → 分配结果全空列表，零差异。
-    final List<int?> cueNormStarts = span.map((AudioCue c) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(c.textFragmentId);
-      return (frag != null && frag.normCharStart >= 0)
-          ? frag.normCharStart
-          : null;
-    }).toList(growable: false);
+    final List<int?> cueNormStarts = span
+        .map((AudioCue c) {
+          final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+            c.textFragmentId,
+          );
+          return (frag != null && frag.normCharStart >= 0)
+              ? frag.normCharStart
+              : null;
+        })
+        .toList(growable: false);
     final List<List<Uint8List>> imagesByCueIndex = assignClipImagesToCues(
       cueNormStarts: cueNormStarts,
       images: _cachedSelectionImages,
@@ -1377,7 +1537,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   }) async {
     _audiobookClipExporting = true;
     FushiToast.show(
-        msg: t.audiobook_export_clip_in_progress, severity: ToastSeverity.info);
+      msg: t.audiobook_export_clip_in_progress,
+      severity: ToastSeverity.info,
+    );
 
     // 渲图前先抓阅读主题色 + 写排方向 + 字号（在 await 前读，避免跨 await 用 context）。
     final ReaderThemeColors themeColors = _readerThemeColors;
@@ -1436,8 +1598,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         );
         if (mounted) {
           FushiToast.show(
-              msg: t.audiobook_export_clip_failed,
-              severity: ToastSeverity.error);
+            msg: t.audiobook_export_clip_failed,
+            severity: ToastSeverity.error,
+          );
         }
         return;
       }
@@ -1454,8 +1617,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         );
         if (mounted) {
           FushiToast.show(
-              msg: t.audiobook_export_clip_failed,
-              severity: ToastSeverity.error);
+            msg: t.audiobook_export_clip_failed,
+            severity: ToastSeverity.error,
+          );
         }
         return;
       }
@@ -1528,8 +1692,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           );
           if (mounted) {
             FushiToast.show(
-                msg: t.audiobook_export_clip_failed,
-                severity: ToastSeverity.error);
+              msg: t.audiobook_export_clip_failed,
+              severity: ToastSeverity.error,
+            );
           }
           return;
         }
@@ -1538,8 +1703,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // 渲出的 png 帧在 Dart 层重编码为 jpeg，让两端 ffmpeg 都走 mjpeg 解码，
         // 绕开缺失的 png decoder（此前移动端合成 exit 1 / "unspecified size"）。
         // TODO-1167：静态回退单帧编码同样卸到后台 isolate（UI 线程不被 2MP 解码/编码阻塞）。
-        final Uint8List? jpgBytes =
-            await encodeClipTextFrameAsJpgAsync(pngBytes);
+        final Uint8List? jpgBytes = await encodeClipTextFrameAsJpgAsync(
+          pngBytes,
+        );
         if (jpgBytes == null) {
           ErrorLogService.instance.log(
             'ReaderFushi.exportClip.jpgEncodeFailed',
@@ -1549,8 +1715,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           );
           if (mounted) {
             FushiToast.show(
-                msg: t.audiobook_export_clip_failed,
-                severity: ToastSeverity.error);
+              msg: t.audiobook_export_clip_failed,
+              severity: ToastSeverity.error,
+            );
           }
           return;
         }
@@ -1559,14 +1726,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
         final AudiobookClipSynthResult synth =
             await synthAudiobookClipVideoViaFfmpeg(
-          imagePath: imageFile.path,
-          audioPath: audioClip.path,
-          outputPath: videoFile.path,
-          width: layout.width,
-          height: layout.height,
-          // TODO-2357：全平台 libx264，色度统一 yuv420p（编码器参数内定）。
-          timeout: synthTimeout,
-        );
+              imagePath: imageFile.path,
+              audioPath: audioClip.path,
+              outputPath: videoFile.path,
+              width: layout.width,
+              height: layout.height,
+              // TODO-2357：全平台 libx264，色度统一 yuv420p（编码器参数内定）。
+              timeout: synthTimeout,
+            );
         if (!synth.isSuccess || synth.outputPath == null) {
           debugPrint(
             '[ReaderFushi] export-clip synth failed: '
@@ -1582,8 +1749,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           );
           if (mounted) {
             FushiToast.show(
-                msg: t.audiobook_export_clip_failed,
-                severity: ToastSeverity.error);
+              msg: t.audiobook_export_clip_failed,
+              severity: ToastSeverity.error,
+            );
           }
           return;
         }
@@ -1603,29 +1771,28 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           await File(outPath).copy(savePath);
           if (mounted) {
             FushiToast.show(
-                msg: t.audiobook_export_clip_saved,
-                severity: ToastSeverity.success);
+              msg: t.audiobook_export_clip_saved,
+              severity: ToastSeverity.success,
+            );
           }
         }
       } else {
-        final List<XFile> sharedFiles = audiobookClipMobileShareAttachments(
-          videoPath: outPath,
-        )
-            .map(
-              (AudiobookClipShareAttachment attachment) => XFile(
-                attachment.path,
-                mimeType: attachment.mimeType,
-              ),
-            )
-            .toList(growable: false);
+        final List<XFile> sharedFiles =
+            audiobookClipMobileShareAttachments(videoPath: outPath)
+                .map(
+                  (AudiobookClipShareAttachment attachment) =>
+                      XFile(attachment.path, mimeType: attachment.mimeType),
+                )
+                .toList(growable: false);
         // BUG-1243：ffmpeg 合成参数已显式 `-map 0:v:0 -map 1:a:0`，AAC 在 MOV 内。
         // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
         // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。
         await FushiShare.shareFiles(sharedFiles, subject: text);
         if (mounted) {
           FushiToast.show(
-              msg: t.audiobook_export_clip_saved,
-              severity: ToastSeverity.success);
+            msg: t.audiobook_export_clip_saved,
+            severity: ToastSeverity.success,
+          );
         }
       }
     } catch (e, stack) {
@@ -1633,7 +1800,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] export-clip pipeline error: $e');
       if (mounted) {
         FushiToast.show(
-            msg: t.audiobook_export_clip_failed, severity: ToastSeverity.error);
+          msg: t.audiobook_export_clip_failed,
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       _audiobookClipExporting = false;
@@ -1679,15 +1848,17 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     );
     // 帧计划：每帧此刻高亮哪一句（相邻同句合并计数）。
     final List<AudioCue> planCues = plan.cueSpans
-        .map((AudiobookClipCueSpan s) => AudioCue()
-          ..bookKey = ''
-          ..chapterHref = ''
-          ..sentenceIndex = 0
-          ..textFragmentId = ''
-          ..text = s.text
-          ..startMs = s.startMs
-          ..endMs = s.endMs
-          ..audioFileIndex = plan.audioFileIndex)
+        .map(
+          (AudiobookClipCueSpan s) => AudioCue()
+            ..bookKey = ''
+            ..chapterHref = ''
+            ..sentenceIndex = 0
+            ..textFragmentId = ''
+            ..text = s.text
+            ..startMs = s.startMs
+            ..endMs = s.endMs
+            ..audioFileIndex = plan.audioFileIndex,
+        )
         .toList(growable: false);
     final List<ClipFrameSpec> frames = clipFramePlan(
       cues: planCues,
@@ -1737,8 +1908,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         frameFailed = true;
         return false; // 帧重编码失败 → 回退单句静态。
       }
-      final String masterPath =
-          p.join(framesDir.path, 'master_$highlightIndex.jpg');
+      final String masterPath = p.join(
+        framesDir.path,
+        'master_$highlightIndex.jpg',
+      );
       await File(masterPath).writeAsBytes(jpg);
       masterJpgPathByIndex[highlightIndex] = masterPath;
       return true;
@@ -1782,16 +1955,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // image2 序列帧 + 完整音频 → H.264 .mp4。
     final AudiobookClipSynthResult synth =
         await synthAudiobookClipFrameSeqVideoViaFfmpeg(
-      framesDir: framesDir.path,
-      audioPath: audioClip.path,
-      outputPath: videoFile.path,
-      width: layout.width,
-      height: layout.height,
-      fps: fps,
-      // TODO-2357：全平台 libx264，帧间压缩把逐句高亮的重复帧
-      // 压到近零；色度统一 yuv420p（编码器内定）。
-      timeout: timeout,
-    );
+          framesDir: framesDir.path,
+          audioPath: audioClip.path,
+          outputPath: videoFile.path,
+          width: layout.width,
+          height: layout.height,
+          fps: fps,
+          // TODO-2357：全平台 libx264，帧间压缩把逐句高亮的重复帧
+          // 压到近零；色度统一 yuv420p（编码器内定）。
+          timeout: timeout,
+        );
     if (!synth.isSuccess || synth.outputPath == null) {
       debugPrint(
         '[ReaderFushi] export-clip dynamic synth failed: '
@@ -1828,18 +2001,25 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController != null && _audiobookController!.chapterCueCount > 0;
 
   Future<void> _openAudioImportDialog() async {
+    // 兜底早退：四个入口（底栏耳机键 / 快速设置面板 / 桌面顶栏 / 快捷键 B）在
+    // 「听书」关闭时都已不渲染，这里只挡住将来新接的调用方，不是用户可达路径，
+    // 故无需提示。
+    if (!_moduleVisibility.isEnabled(ModuleId.listening)) return;
     if (_srtBookUid != null) {
       await _openSrtBookReimport();
       return;
     }
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
 
-    await showAppDialog<void>(
-      context: context,
-      builder: (ctx) => AudiobookImportDialog(
-        bookKey: widget.bookKey,
-        repo: repo,
-        extractDir: _extractDir,
+    // BUG-2208：导入对话框压着正文期间停表。
+    await _withStudyClockPaused(
+      () => showAppDialog<void>(
+        context: context,
+        builder: (ctx) => AudiobookImportDialog(
+          bookKey: widget.bookKey,
+          repo: repo,
+          extractDir: _extractDir,
+        ),
       ),
     );
 
@@ -1863,13 +2043,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     final SrtBook? book = await repo.findByUid(_srtBookUid!);
     if (book == null || !mounted) return;
 
-    final SrtBookReimportOutcome? outcome =
-        await showAppDialog<SrtBookReimportOutcome>(
-      context: context,
-      builder: (_) => SrtBookReimportDialog(
-        book: book,
-        db: appModel.database,
-        repo: repo,
+    final SrtBookReimportOutcome? outcome = await _withStudyClockPaused(
+      () => showAppDialog<SrtBookReimportOutcome>(
+        context: context,
+        builder: (_) => SrtBookReimportDialog(
+          book: book,
+          db: appModel.database,
+          repo: repo,
+        ),
       ),
     );
 
@@ -1880,7 +2061,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 已经失效；退回书架让用户重开是唯一不会读到半新半旧内容的做法。
     if (outcome.bodyRebuilt) {
       FushiToast.show(
-          msg: t.srt_book_reimport_body_rebuilt, severity: ToastSeverity.info);
+        msg: t.srt_book_reimport_body_rebuilt,
+        severity: ToastSeverity.info,
+      );
       Navigator.of(context).maybePop();
       return;
     }
@@ -1899,7 +2082,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       debugPrint('[ReaderFushi] srtBookReimport failed: $e');
       if (mounted) {
         FushiToast.show(
-            msg: t.audiobook_load_error, severity: ToastSeverity.error);
+          msg: t.audiobook_load_error,
+          severity: ToastSeverity.error,
+        );
       }
     }
   }

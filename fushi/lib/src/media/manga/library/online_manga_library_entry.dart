@@ -8,7 +8,13 @@ import 'package:flutter/foundation.dart';
 /// 用户库里的 `sourceMetadata` JSON。
 enum OnlineMangaRuntimeKind {
   mihon('mihon'),
-  aidoku('aidoku');
+  aidoku('aidoku'),
+
+  /// 已配对的互联对端（把对端漫画库当成一个源，按页在线读）。
+  ///
+  /// 它没有「扩展包」，`extensionPackage` 恒是 [kInterconnectMangaPackage]、
+  /// `sourceId` 恒是对端库那一维的常量，`seriesKey` = 对端 `bookKey`。
+  interconnect('interconnect');
 
   const OnlineMangaRuntimeKind(this.wireValue);
 
@@ -21,6 +27,23 @@ enum OnlineMangaRuntimeKind {
     return null;
   }
 }
+
+/// 互联漫画源在书架身份里占的「扩展包」位。
+///
+/// 互联源没有扩展包，但 [OnlineMangaLibraryService.bookKeyFor] 的身份三元组
+/// （包 / 源 / 作品）是**存量键推导**，不能为了这一个源改形状——那会让所有已入库的
+/// 在线漫画变成找不到的孤儿。所以这里给一个固定占位值，让三元组保持原样。
+///
+/// ⚠️ 值已进用户库的 `epub_books.bookKey` 与磁盘目录名，**永不可改**。
+const String kInterconnectMangaPackage = 'fushi.interconnect';
+
+/// 互联漫画源在书架身份里占的「源 id」位。
+///
+/// 恒定而不含对端地址：换 IP / 重新配对不该让书架条目全部失配（对端身份变化由
+/// `InterconnectSyncBackend.sessionIdentityRevision` 驱动缓存失效，不由键表达）。
+///
+/// ⚠️ 同样已进 bookKey，**永不可改**。
+const String kInterconnectMangaSourceId = 'library';
 
 /// 归一化后的章节。
 ///
@@ -37,7 +60,24 @@ class OnlineMangaChapter {
     this.scanlator,
     this.number,
     this.uploadedAt,
+    this.locked = false,
   });
+
+  /// Mihon 扩展给锁定（未购买 / 未登录）章节的章名前缀约定。
+  ///
+  /// Mihon 的 `SChapter` 没有「锁」字段，keiyoushi 全家（BookWalker、Comikey、
+  /// ebookjapan……）的做法是把这个 emoji 拼在章名开头、取页时抛
+  /// `Log in via WebView ...`。这是宿主能拿到的**唯一**锁信号，所以判据只写在
+  /// [isLockedChapterName] 这一处。コミコ（`Comico.LOCK = " 🔒"`）是拼在**结尾**
+  /// 的，同样认（BUG-2514）。
+  static const String mihonLockPrefix = '\u{1F512}';
+
+  /// 章名带锁 emoji（开头或结尾）= 源站标记为锁定。
+  static bool isLockedChapterName(String name) {
+    final String trimmed = name.trim();
+    return trimmed.startsWith(mihonLockPrefix) ||
+        trimmed.endsWith(mihonLockPrefix);
+  }
 
   /// 源内章节身份。Mihon = `url`；Aidoku = `chapter['key']`。
   ///
@@ -51,6 +91,12 @@ class OnlineMangaChapter {
   /// 上传时刻（毫秒）。0 或缺失记 null，避免 UI 把「未知」显示成 1970。
   final int? uploadedAt;
 
+  /// 源站标记为锁定（要登录并购买 / 租借才能取页，BUG-2479）。
+  ///
+  /// Mihon 取自章名前缀约定（[isLockedChapterName]），Aidoku 取自章节 `locked`
+  /// 字段。锁着的章入队下载必败，UI 据此在点击时引导登录、「下载全部」跳过它。
+  final bool locked;
+
   /// 运行时原生 payload，原样回灌 `getPages`。
   final Map<String, Object?> raw;
 
@@ -60,6 +106,7 @@ class OnlineMangaChapter {
     if (scanlator != null) 'scanlator': scanlator,
     if (number != null) 'number': number,
     if (uploadedAt != null) 'uploadedAt': uploadedAt,
+    if (locked) 'locked': true,
     'raw': raw,
   };
 
@@ -74,6 +121,7 @@ class OnlineMangaChapter {
       scanlator: json['scanlator']?.toString(),
       number: (json['number'] as num?)?.toDouble(),
       uploadedAt: uploadedAt == null || uploadedAt <= 0 ? null : uploadedAt,
+      locked: json['locked'] == true,
       raw: raw is Map<Object?, Object?>
           ? raw.cast<String, Object?>()
           : const <String, Object?>{},
@@ -88,12 +136,14 @@ class OnlineMangaChapter {
     final String url = json['url']?.toString() ?? '';
     if (url.isEmpty) return null;
     final int uploadedAt = (json['date_upload'] as num?)?.toInt() ?? 0;
+    final String name = json['name']?.toString() ?? '';
     return OnlineMangaChapter(
       key: url,
-      name: json['name']?.toString() ?? '',
+      name: name,
       scanlator: json['scanlator']?.toString(),
       number: (json['chapter_number'] as num?)?.toDouble(),
       uploadedAt: uploadedAt <= 0 ? null : uploadedAt,
+      locked: isLockedChapterName(name),
       raw: json,
     );
   }
@@ -197,8 +247,11 @@ class OnlineMangaSeries {
 /// 类型 map，塞不进那个形状。本类把描述符泛化成「运行时 + 归一化实体 + 原生
 /// payload」，两个运行时共用同一条书架、同一个阅读器、同一份每章状态。
 ///
-/// **向后兼容是硬约束**：[tryParse] 同时吃 v1 和 v2。存量书架条目一行都不用改
-/// 就能继续打开；它们会在下一次刷新章节列表时被顺带写成 v2。
+/// **向后兼容是硬约束**：[tryParse] 同时吃 v1 / v2 / v3。存量书架条目一行都不用改
+/// 就能继续打开；它们会在下一次刷新章节列表时被顺带写成当前版本。
+///
+/// v3（设计稿 2026-09-12 §2.3）只在 v2 上加两个可选位 [subscribed] / [autoDownload]
+/// （缺省 false），**不加 DB 列**。
 @immutable
 class OnlineMangaLibraryEntry {
   const OnlineMangaLibraryEntry({
@@ -208,15 +261,18 @@ class OnlineMangaLibraryEntry {
     required this.series,
     required this.chapters,
     this.currentChapterIndex,
+    this.subscribed = false,
+    this.autoDownload = false,
   });
 
   /// v1：只有 Mihon 的旧描述符。仍然解析，永不再写出。
   static const String legacyMihonMarker = 'hibiki-mihon';
   static const int legacyMihonVersion = 1;
 
-  /// v2：运行时无关描述符。
+  /// v2 / v3：运行时无关描述符（v3 = v2 + 订阅两位；同一解析器）。
   static const String marker = 'hibiki-online-manga';
-  static const int version = 2;
+  static const int version = 3;
+  static const int previousVersion = 2;
 
   final OnlineMangaRuntimeKind runtime;
 
@@ -235,6 +291,13 @@ class OnlineMangaLibraryEntry {
   /// 刷新章节列表后按 [OnlineMangaChapter.key] 重新定位，不靠下标。
   final int? currentChapterIndex;
 
+  /// 追更：作品页书签图标。只是一个用户意图位，探针对每条在线条目都刷新。
+  final bool subscribed;
+
+  /// 新章自动入队下载（`runOnlineMangaUpdateProbe` 读它）。开订阅时默认同时开，
+  /// 可在作品页菜单里单独关。
+  final bool autoDownload;
+
   OnlineMangaChapter? get currentChapter {
     final int? index = currentChapterIndex;
     if (index == null || index < 0 || index >= chapters.length) return null;
@@ -249,6 +312,8 @@ class OnlineMangaLibraryEntry {
     List<OnlineMangaChapter>? chapters,
     int? currentChapterIndex,
     bool clearCurrentChapter = false,
+    bool? subscribed,
+    bool? autoDownload,
   }) => OnlineMangaLibraryEntry(
     runtime: runtime,
     extensionPackage: extensionPackage,
@@ -258,6 +323,8 @@ class OnlineMangaLibraryEntry {
     currentChapterIndex: clearCurrentChapter
         ? null
         : currentChapterIndex ?? this.currentChapterIndex,
+    subscribed: subscribed ?? this.subscribed,
+    autoDownload: autoDownload ?? this.autoDownload,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -271,6 +338,8 @@ class OnlineMangaLibraryEntry {
       for (final OnlineMangaChapter chapter in chapters) chapter.toJson(),
     ],
     'currentChapterIndex': currentChapterIndex,
+    'subscribed': subscribed,
+    'autoDownload': autoDownload,
   };
 
   String encode() => jsonEncode(toJson());
@@ -283,7 +352,8 @@ class OnlineMangaLibraryEntry {
       final Map<String, Object?> json = decoded.cast<String, Object?>();
       final String? type = json['type']?.toString();
       final int type2Version = (json['version'] as num?)?.toInt() ?? 0;
-      if (type == marker && type2Version == version) {
+      if (type == marker &&
+          (type2Version == version || type2Version == previousVersion)) {
         return _parseV2(json);
       }
       if (type == legacyMihonMarker && type2Version == legacyMihonVersion) {
@@ -318,6 +388,9 @@ class OnlineMangaLibraryEntry {
       series: series,
       chapters: _chaptersFrom(rawChapters, OnlineMangaChapter.fromJson),
       currentChapterIndex: (json['currentChapterIndex'] as num?)?.toInt(),
+      // v3 两位；v2 没有 → false。
+      subscribed: json['subscribed'] == true,
+      autoDownload: json['autoDownload'] == true,
     );
   }
 

@@ -109,6 +109,20 @@ private:
   // Mutex for thread safety
   std::mutex mutex_;
 
+  // Tensor id allocator.
+  //
+  // MUST be lock-free-safe on its own: generateTensorId() is called both from
+  // internal helpers that already hold mutex_ (so it cannot take mutex_ itself
+  // -- it is not recursive) AND, since the plugin went multi-threaded, from the
+  // GPU and CPU worker threads concurrently. The previous implementation used a
+  // function-local `static std::mt19937` with no synchronisation at all: two
+  // workers reading the same internal cursor hand out the SAME id, and then
+  // storeTensor() silently overwrites the other tensor's data/shape/type (or
+  // releaseTensor() frees the other one's backing buffer). Same shape as
+  // SessionManager::generateSessionId(), just atomic because this one is hot on
+  // two threads.
+  std::atomic<uint64_t> next_tensor_id_{0};
+
   // Memory info for CPU memory
   Ort::MemoryInfo memory_info_{nullptr};
 };

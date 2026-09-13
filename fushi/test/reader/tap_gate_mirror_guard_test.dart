@@ -74,10 +74,16 @@ void main() {
     // BUG-969：highlightOnTap 镜像同步随实时预览合并进 _liveSettingsRunner 动作体；
     // onSettingsChangedLive 只负责 trigger 该 runner（拖 slider 风暴收敛为背靠背串行趟）。
     // runner 定义在 hook 之前，故同步点必须落在 runner 动作内、且 hook 经 trigger 触发。
-    final int runnerDef = mainShell.indexOf('CoalescedAsyncRunner(() async {');
-    final int syncCall = mainShell.indexOf('_syncTapGateJs();', runnerDef);
-    expect(runnerDef, greaterThan(-1),
+    // 格式无关：tall style 会把 `CoalescedAsyncRunner(() async {` 折成
+    // `CoalescedAsyncRunner(` + 换行 + `() async {`，这里只定位 runner
+    // 动作闭包的起点。
+    final RegExpMatch? runnerMatch =
+        RegExp(r'CoalescedAsyncRunner\(\s*\(\)\s*async\s*\{')
+            .firstMatch(mainShell);
+    expect(runnerMatch, isNotNull,
         reason: '实时设置合并执行器 _liveSettingsRunner 必须存在');
+    final int runnerDef = runnerMatch!.start;
+    final int syncCall = mainShell.indexOf('_syncTapGateJs();', runnerDef);
     expect(syncCall, greaterThan(runnerDef),
         reason: 'highlightOnTap 镜像同步必须在合并执行器动作内（BUG-969）');
     final int liveHook = mainShell.indexOf('onSettingsChangedLive = ()');

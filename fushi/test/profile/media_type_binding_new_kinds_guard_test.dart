@@ -58,8 +58,15 @@ void main() {
       'lib/src/pages/implementations/texthooker_page.dart',
     ]) {
       final String src = read(path);
+      // 判据拆成两段（与上面 manga 那条同形），**不**匹配整串调用字面量：
+      // `autoApplyBinding` 的参数列表会增长（v99 加了 languageTag），一旦多一个
+      // 具名参数或被 dart format 折行，整串字面量就再也匹配不上——那时守卫报的是
+      // 「从没应用过绑定」，而真相是「调用还在，只是多了个参数」，把人引向完全
+      // 错误的方向。两段式判据钉的是「这个文件确实调了它、且确实是 game 类型」，
+      // 参数怎么长都不影响。
       expect(
-        src.contains('autoApplyBinding(mediaType: ProfileMediaKind.game)'),
+        src.contains('autoApplyBinding(') &&
+            src.contains('mediaType: ProfileMediaKind.game'),
         isTrue,
         reason: '$path starts a gal hook session but never applies the '
             '"game" media-type Profile binding (TODO-2936)',
@@ -69,9 +76,7 @@ void main() {
     final String texthooker =
         read('lib/src/pages/implementations/texthooker_page.dart');
     expect(
-      'autoApplyBinding(mediaType: ProfileMediaKind.game)'
-          .allMatches(texthooker)
-          .length,
+      'mediaType: ProfileMediaKind.game'.allMatches(texthooker).length,
       greaterThanOrEqualTo(2),
       reason: 'texthooker must apply the game binding on BOTH the launch and '
           'the attach-to-running-game entry (TODO-2936)',

@@ -519,10 +519,44 @@ bool FlutterWindow::OnCreate() {
               }
             }
           }
+          const bool was_fullscreen = IsFullscreen();
           SetFullscreen(enter);
+          // A fullscreen/maximized transition can preserve the client size,
+          // so WM_SIZE alone does not guarantee a fresh Flutter presentation.
+          // Request it AFTER geometry restoration and snapshot release, while
+          // the controller is alive. Do not redraw failed or no-op transitions.
+          if (flutter_controller_ && was_fullscreen != IsFullscreen()) {
+            flutter_controller_->ForceRedraw();
+          }
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
+        } else if (call.method_name() == "reportRasterizedFrameSize") {
+          // BUG-2462: Dart's rasterised-frame size report, the authoritative
+          // "the engine now presents at this size" signal for the child
+          // resize gate (child_resize_gate.h). Sent only when the rasterised
+          // size changes, so this is not a per-frame cost.
+          const auto* size_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          int32_t width = 0;
+          int32_t height = 0;
+          if (size_args != nullptr) {
+            const auto w_it = size_args->find(flutter::EncodableValue("width"));
+            const auto h_it =
+                size_args->find(flutter::EncodableValue("height"));
+            if (w_it != size_args->end()) {
+              if (const int32_t* v = std::get_if<int32_t>(&w_it->second)) {
+                width = *v;
+              }
+            }
+            if (h_it != size_args->end()) {
+              if (const int32_t* v = std::get_if<int32_t>(&h_it->second)) {
+                height = *v;
+              }
+            }
+          }
+          OnChildFrameRasterized(width, height);
+          result->Success();
         } else if (call.method_name() == "setWindowIcon") {
           // Runtime window/taskbar icon (preset or user-picked image). Decodes
           // the file to big+small HICONs and WM_SETICONs them. Cannot change the
@@ -1218,6 +1252,14 @@ void FlutterWindow::RegisterFloatingLyricChannel() {
   // 旧的自绘 5 槽歌词条形态已删 —— 它是同一件事的第二份实现，且只有它还在用无坐标
   // 的旧 LookupCallback（卡片只能跟着鼠标飘）。
   floating_lyric_window_->SetHookTextMode(true);
+  // BUG-2365 —— 正文窗的置顶守卫必须让位给查词卡：卡片自己也每 800ms 重申置顶
+  // （BUG-1479），两个窗口都抢置顶带最顶就会互相顶掉、卡片周期性闪到浮窗底下。
+  // 有可见卡片时正文窗插在卡片正下方，仍在全屏游戏之上。
+  floating_lyric_window_->SetTopmostCeilingProvider([this]() -> HWND {
+    return global_lookup_window_ != nullptr
+               ? global_lookup_window_->TopmostCeilingHandle()
+               : nullptr;
+  });
   // 但按钮语义不同：这里是上一句 / 播放暂停 / 下一句，不是试听 / 重捕 / 工作台。
   floating_lyric_window_->SetToolbarProfile(
       hook_toolbar::Profile::kAudiobook);
@@ -1458,6 +1500,14 @@ void FlutterWindow::RegisterImeGuardChannel() {
 void FlutterWindow::RegisterGalHookTextChannel() {
   gal_hook_text_window_ = std::make_unique<FloatingLyricWindow>();
   gal_hook_text_window_->SetHookTextMode(true);
+  // BUG-2365 —— 正文窗的置顶守卫必须让位给查词卡：卡片自己也每 800ms 重申置顶
+  // （BUG-1479），两个窗口都抢置顶带最顶就会互相顶掉、卡片周期性闪到浮窗底下。
+  // 有可见卡片时正文窗插在卡片正下方，仍在全屏游戏之上。
+  gal_hook_text_window_->SetTopmostCeilingProvider([this]() -> HWND {
+    return global_lookup_window_ != nullptr
+               ? global_lookup_window_->TopmostCeilingHandle()
+               : nullptr;
+  });
   attached_text_surface_window_ =
       std::make_unique<AttachedTextSurfaceWindow>();
 
@@ -1594,6 +1644,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         fushi::VoiceHookReader::Instance().LookupGeometryStatus();
     AttachedTextSurfaceWindow::GeometryProviderStatus attached;
     attached.available = status.ok();
+    attached.snapshot_conflicted =
+        status.error == fushi::VoiceHookLookupError::kGeometrySnapshotConflicted;
     attached.provider_kind = status.provider_kind;
     attached.provider_id = status.provider_id;
     attached.provider_status = status.provider_status;

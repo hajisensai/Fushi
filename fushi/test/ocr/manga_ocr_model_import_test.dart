@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
-import 'package:fushi/src/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:path/path.dart' as p;
 
 /// 手动导入的判据只有两条：basename 命中清单 + 字节数等于预期。这组测试盯着
@@ -95,7 +95,8 @@ void main() {
   });
 
   test('不认识的文件：拒绝且不影响同批里认得的文件', () async {
-    final File junk = writeSource('random.bin', 8);
+    // 9 字节：既不叫清单里的名字，字节数也不撞清单（撞了会按尺寸唯一命中）。
+    final File junk = writeSource('random.bin', 9);
     final File vocab = writeSource('vocab.txt', 4);
 
     final MangaOcrModelImportResult result = await importer().import(
@@ -205,7 +206,7 @@ void main() {
   });
 
   test('什么都没认出来：matchedNothing 为真，让 UI 能单独提示选错了', () async {
-    writeSource('random.bin', 8);
+    writeSource('random.bin', 9);
 
     final MangaOcrModelImportResult result = await importer().import(
       sourcePaths: <String>[p.join(sourceDir.path, 'random.bin')],
@@ -214,6 +215,44 @@ void main() {
 
     expect(result.matchedNothing, isTrue);
     expect(result.allReady, isFalse);
+  });
+
+  test('basename 不命中但字节数唯一命中：按尺寸认（HF 原名 inference.onnx）', () {
+    const List<MangaOcrModelFile> manifest = <MangaOcrModelFile>[
+      MangaOcrModelFile(
+        fileName: 'ppocrv6_small_det.onnx',
+        url: 'http://unused.invalid/a',
+        expectedBytes: 100,
+        role: MangaOcrModelRole.recognizer,
+      ),
+      MangaOcrModelFile(
+        fileName: 'ppocrv6_small_rec.onnx',
+        url: 'http://unused.invalid/b',
+        expectedBytes: 200,
+        role: MangaOcrModelRole.recognizer,
+      ),
+      MangaOcrModelFile(
+        fileName: 'dup_a.bin',
+        url: 'http://unused.invalid/c',
+        expectedBytes: 300,
+        role: MangaOcrModelRole.recognizer,
+      ),
+      MangaOcrModelFile(
+        fileName: 'dup_b.bin',
+        url: 'http://unused.invalid/d',
+        expectedBytes: 300,
+        role: MangaOcrModelRole.recognizer,
+      ),
+    ];
+    expect(
+      matchMangaOcrModelFile('inference.onnx', manifest, sizeBytes: 200)
+          ?.fileName,
+      'ppocrv6_small_rec.onnx',
+    );
+    // 尺寸不唯一：不猜。
+    expect(matchMangaOcrModelFile('x.bin', manifest, sizeBytes: 300), isNull);
+    // 没给尺寸：只认名字。
+    expect(matchMangaOcrModelFile('inference.onnx', manifest), isNull);
   });
 
   test('basename 匹配大小写不敏感', () {

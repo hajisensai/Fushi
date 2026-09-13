@@ -21,13 +21,15 @@ void main() {
 
   Widget host(
     RecommendedPackDownloadController controller,
-    VoidCallback onImport,
-  ) {
+    VoidCallback onImport, {
+    VoidCallback? onDiscard,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: RecommendedPackDownloadRow(
           controller: controller,
           onImport: onImport,
+          onDiscard: onDiscard ?? () {},
         ),
       ),
     );
@@ -92,6 +94,36 @@ void main() {
       reason: '不报已下多少，用户没法判断是续传还是从头下',
     );
     expect(find.text(t.onboarding_pack_download_resume), findsOneWidget);
+  });
+
+  // 「已暂停」是按磁盘现状推的，半截文件在，它每次启动都回来。没有放弃入口 =
+  // 不想要这个包的用户被钉死在一条关不掉的行上，只能自己去数据根里翻文件。
+  testWidgets('已暂停时给出「放弃下载」并回调宿主（弹确认框的那一层）', (WidgetTester tester) async {
+    final RecommendedPackDownloadController controller = newController();
+    addTearDown(controller.dispose);
+    int discards = 0;
+
+    await tester.pumpWidget(
+      host(controller, () {}, onDiscard: () => discards += 1),
+    );
+    controller.stage.value = RecommendedPackDownloadStage.paused;
+    controller.receivedBytes.value = 3 * 1024 * 1024 * 1024;
+    await tester.pump();
+
+    await tester.tap(find.text(t.onboarding_pack_download_discard));
+    await tester.pump();
+    expect(discards, 1, reason: '放弃必须经宿主的确认框，controller 的原语不能被按钮直连');
+  });
+
+  testWidgets('下载中不给放弃入口（写文件的那只手还在）', (WidgetTester tester) async {
+    final RecommendedPackDownloadController controller = newController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(host(controller, () {}));
+    controller.stage.value = RecommendedPackDownloadStage.downloading;
+    await tester.pump();
+
+    expect(find.text(t.onboarding_pack_download_discard), findsNothing);
   });
 
   testWidgets('失败原因就地显示，且仍有重试入口', (WidgetTester tester) async {

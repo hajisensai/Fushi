@@ -1,23 +1,30 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
-import 'package:fushi/src/media/video/jimaku_client.dart' show JimakuClient;
-import 'package:fushi/src/media/video/video_subtitle_source.dart'
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
+    show VideoSubtitleRegistry;
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
+    show VideoSubtitleCandidate;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
-import 'package:fushi/src/media/video/youtube_source_resolver.dart'
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/remote_jimaku_subtitle_handlers.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart'
+// remote_subtitle_search_handlers 是 #1399 把 Jimaku 专用处理器泛化后的版本，
+// 仍住在 fushi（它接的是 app 侧已配置的字幕源）；其余几个随本 PR 搬进 engine。
+import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
+import 'package:fushi/src/sync/browser_extension_test_page.dart'
+    show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -60,8 +67,9 @@ const Set<String> _kLookupActivityPaths = <String>{
 };
 
 class YomitanApiServer {
-  static final RegExp _lookupTraceIdPattern =
-      RegExp(r'^[A-Za-z0-9._:-]{1,64}$');
+  static final RegExp _lookupTraceIdPattern = RegExp(
+    r'^[A-Za-z0-9._:-]{1,64}$',
+  );
 
   YomitanApiServer({
     required int port,
@@ -79,27 +87,29 @@ class YomitanApiServer {
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
-    String? Function()? jimakuApiKeyProvider,
+    Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
+    String Function()? extensionTestPageProvider,
     String? apiKey,
     bool allowLan = false,
-  })  : _requestedPort = port,
-        _lookup = lookupService,
-        _mining = miningService,
-        _history = historyService,
-        _tokenizer = tokenizer,
-        _readingResolver = readingResolver,
-        _themeColorsProvider = themeColorsProvider,
-        _audioSourcesProvider = audioSourcesProvider,
-        _autoReadOnLookupProvider = autoReadOnLookupProvider,
-        _extensionBuildProvider = extensionBuildProvider,
-        _popupDictionaryCssProvider = popupDictionaryCssProvider,
-        _onExtensionPopupSize = onExtensionPopupSize,
-        _onExtensionSeen = onExtensionSeen,
-        _onLookupActivity = onLookupActivity,
-        _onExtensionReport = onExtensionReport,
-        _jimakuApiKeyProvider = jimakuApiKeyProvider,
-        _apiKey = apiKey,
-        _allowLan = allowLan;
+  }) : _requestedPort = port,
+       _lookup = lookupService,
+       _mining = miningService,
+       _history = historyService,
+       _tokenizer = tokenizer,
+       _readingResolver = readingResolver,
+       _themeColorsProvider = themeColorsProvider,
+       _audioSourcesProvider = audioSourcesProvider,
+       _autoReadOnLookupProvider = autoReadOnLookupProvider,
+       _extensionBuildProvider = extensionBuildProvider,
+       _popupDictionaryCssProvider = popupDictionaryCssProvider,
+       _onExtensionPopupSize = onExtensionPopupSize,
+       _onExtensionSeen = onExtensionSeen,
+       _onLookupActivity = onLookupActivity,
+       _onExtensionReport = onExtensionReport,
+       _subtitleRegistryProvider = subtitleRegistryProvider,
+       _extensionTestPageProvider = extensionTestPageProvider,
+       _apiKey = apiKey,
+       _allowLan = allowLan;
 
   final int _requestedPort;
   final FushiRemoteLookupService _lookup;
@@ -134,45 +144,47 @@ class YomitanApiServer {
   // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
   // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
   final void Function(String build, String? version)? _onExtensionReport;
-  // 「Jimaku 查字幕」扩展桥：从偏好读用户 API key 的供给器。未注入/key 为空时两个
-  // jimaku 端点回 {ok:false, error:'no-api-key'}（扩展提示去 app 设置里填 key）。
-  final String? Function()? _jimakuApiKeyProvider;
+  // 「查字幕」扩展桥：已配置在线字幕来源的 registry 供给器（Jimaku / OpenSubtitles /
+  // AJATT，与 app 内「找字幕」对话框同一份）。未注入/一个来源都没配时端点回
+  // {ok:false, error:'no-provider'}；旧 jimaku 端点在 Jimaku 缺席时仍回 'no-api-key'。
+  //
+  // 此前这里持有的是**自己 new 的 JimakuClient**（只认 API key），于是扩展永远只有
+  // Jimaku 一家：零配置的 AJATT、用户已填 key 的 OpenSubtitles 在扩展里都不存在。
+  final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
+
+  /// 新手引导「试一试」页的 HTML 供给器：请求到达时才生成（例句随用户已装词典的
+  /// 词头语言走，文案随当前 app 语言走）。未注入时该路由 404。
+  final String Function()? _extensionTestPageProvider;
   final String? _apiKey;
   final bool _allowLan;
 
   HttpServer? _server;
 
-  // Jimaku client 按 key 缓存复用（每请求新建会泄漏 http.Client）；key 变更时换新关旧。
-  JimakuClient? _jimakuClient;
-  String? _jimakuClientKey;
-  // 搜索候选按 handle 暂存（download 需要 file url 等上下文）；插入序 LRU，上限截断。
-  static const int _kJimakuCandidateCacheLimit = 200;
-  final Map<String, RemoteJimakuCandidate> _jimakuCandidates =
-      <String, RemoteJimakuCandidate>{};
+  // 搜索候选按 handle 暂存（download 要交回候选对象本身：OpenSubtitles 的 fileId、
+  // Jimaku/AJATT 的下载 URL 都只活在候选里，裸 handle 串重建不出来）；插入序 LRU。
+  static const int _kSubtitleCandidateCacheLimit = 200;
+  final Map<String, VideoSubtitleCandidate> _subtitleCandidates =
+      <String, VideoSubtitleCandidate>{};
 
-  JimakuClient? _jimakuClientFor() {
-    final String? key = _jimakuApiKeyProvider?.call();
-    if (key == null || key.trim().isEmpty) return null;
-    if (_jimakuClient == null || _jimakuClientKey != key) {
-      _jimakuClient?.close();
-      _jimakuClient = JimakuClient(apiKey: key);
-      _jimakuClientKey = key;
-    }
-    return _jimakuClient;
-  }
+  Future<VideoSubtitleRegistry?> _subtitleRegistryFor() async =>
+      await _subtitleRegistryProvider?.call();
 
-  void _rememberJimakuCandidate(String handle, RemoteJimakuCandidate c) {
-    _jimakuCandidates.remove(handle); // 重插到尾部（LRU 触达即续期）
-    _jimakuCandidates[handle] = c;
-    while (_jimakuCandidates.length > _kJimakuCandidateCacheLimit) {
-      _jimakuCandidates.remove(_jimakuCandidates.keys.first);
+  void _rememberSubtitleCandidate(String handle, VideoSubtitleCandidate c) {
+    _subtitleCandidates.remove(handle); // 重插到尾部（LRU 触达即续期）
+    _subtitleCandidates[handle] = c;
+    while (_subtitleCandidates.length > _kSubtitleCandidateCacheLimit) {
+      _subtitleCandidates.remove(_subtitleCandidates.keys.first);
     }
   }
 
-  // 单词音频短命 token（与 FushiSyncServer 同款模型）：/api/lookup/audio 存字节、返
-  // 免鉴权的 /api/lookup/audio/file?id= URL；命中即续期，5 分钟无访问后 prune。
-  final Map<String, _YomitanAudioToken> _remoteAudioTokens =
-      <String, _YomitanAudioToken>{};
+  // 单词音频短命 token 与查词/制卡端点的 handler 正文收在 [RemoteLookupRoutes]，
+  // 与 FushiSyncServer 共用一份（TTL 5 分钟 + BUG-908(a) 上限 128）。
+  final RemoteAudioTokenStore _audioTokens = RemoteAudioTokenStore();
+  late final RemoteLookupRoutes _lookupRoutes = RemoteLookupRoutes(
+    audioTokens: _audioTokens,
+    lookup: _lookup,
+    mining: _mining,
+  );
 
   bool get isRunning => _server != null;
   int get port => _server?.port ?? _requestedPort;
@@ -199,10 +211,7 @@ class YomitanApiServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
-    _jimakuClient?.close();
-    _jimakuClient = null;
-    _jimakuClientKey = null;
-    _jimakuCandidates.clear();
+    _subtitleCandidates.clear();
   }
 
   shelf.Middleware _authMiddleware() {
@@ -211,6 +220,11 @@ class YomitanApiServer {
         // 单词音频文件端点是裸 GET（HTML5 Audio 无 Authorization）→ 免鉴权放行，靠
         // 不可猜的短命 id 兜底（与 FushiSyncServer 的 /api/lookup/audio/file 同策略）。
         if (request.url.path == 'api/lookup/audio/file') return inner(request);
+        // 「试一试」页是浏览器地址栏直接打开的裸 GET（无 Authorization），且只吐一张
+        // 静态说明页（例句 + 操作步骤，无任何用户数据）→ 与音频文件端点同策略放行。
+        if ('/${request.url.path}' == kBrowserExtensionTestPagePath) {
+          return inner(request);
+        }
         final String? key = _apiKey;
         if (key == null || key.isEmpty) return inner(request);
 
@@ -246,7 +260,8 @@ class YomitanApiServer {
           authorization.toLowerCase().startsWith(basicPrefix.toLowerCase())) {
         try {
           final String decoded = utf8.decode(
-              base64Decode(authorization.substring(basicPrefix.length)));
+            base64Decode(authorization.substring(basicPrefix.length)),
+          );
           final int colon = decoded.indexOf(':');
           if (colon >= 0) return decoded.substring(colon + 1);
         } catch (_) {
@@ -286,7 +301,23 @@ class YomitanApiServer {
       if (method != 'GET' && method != 'HEAD') {
         return shelf.Response(405, body: 'Method Not Allowed');
       }
-      return _handleAudioFile(request, headOnly: method == 'HEAD');
+      return _lookupRoutes.handleAudioFile(request, headOnly: method == 'HEAD');
+    }
+    // 「试一试」页同样是裸 GET/HEAD（用户从 app 点开、浏览器直接访问）→ 405 门之前处理。
+    if (path == kBrowserExtensionTestPagePath) {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      final String Function()? build = _extensionTestPageProvider;
+      if (build == null) return shelf.Response.notFound('Not Found');
+      final String html = build();
+      return shelf.Response.ok(
+        method == 'HEAD' ? '' : html,
+        headers: <String, String>{
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+        },
+      );
     }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
@@ -302,9 +333,9 @@ class YomitanApiServer {
     }
     switch (path) {
       case '/serverVersion':
-        return _json(<String, dynamic>{'version': 1});
+        return jsonResponse(<String, dynamic>{'version': 1});
       case '/yomitanVersion':
-        return _json(<String, dynamic>{'version': '0.0.0.0'});
+        return jsonResponse(<String, dynamic>{'version': '0.0.0.0'});
       case '/termEntries':
         return _handleTermEntries(request);
       case '/tokenize':
@@ -312,57 +343,83 @@ class YomitanApiServer {
       case '/api/lookup/dictionary':
         return _handleDictionaryLookup(request);
       case '/api/lookup/audio':
-        return _handleAudioLookup(request);
+        return _lookupRoutes.handleAudioLookup(request);
       case '/api/mine':
-        return _handleMine(request);
+        return _lookupRoutes.handleMine(request);
       case '/api/mine/forward':
-        return _handleMineForward(request);
+        return _lookupRoutes.handleMineForward(request);
       case '/api/anki/note-type/read':
       case '/api/anki/note-type/styling':
       case '/api/anki/note-type/templates':
-        return _handleAnkiNoteType(request, path);
+        return _lookupRoutes.handleAnkiNoteType(request, path);
       case '/api/duplicate':
-        return _handleDuplicate(request);
+        return _lookupRoutes.handleDuplicate(request);
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
+      case '/api/extension/site-cookies':
+        return _handleSiteCookies(request);
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
         return _handleSubtitleParse(request);
+      case '/api/subtitle/search':
+        return _handleSubtitleSearch(request);
+      case '/api/subtitle/fetch':
+        return _handleSubtitleFetch(request);
+      // 旧扩展副本（BUG-1079 的自更新 stale 态）仍打 jimaku 专用路径：限定到
+      // Jimaku 一家，语义与旧实现逐字不变。
       case '/api/subtitle/jimaku/search':
-        return _handleJimakuSearch(request);
+        return _handleSubtitleSearch(
+          request,
+          restrictToProviderIds: kJimakuOnlyProviderIds,
+        );
       case '/api/subtitle/jimaku/fetch':
-        return _handleJimakuFetch(request);
+        return _handleSubtitleFetch(
+          request,
+          restrictToProviderIds: kJimakuOnlyProviderIds,
+        );
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
   }
 
-  /// 「Jimaku 查字幕」扩展桥①搜索：body `{query?, anilistId?, episode?, anime?}`。
-  /// 逻辑在 [buildJimakuSearchResponse]（含真人剧 anime=false 补搜）；候选按 handle
-  /// 暂存供 fetch。
-  Future<shelf.Response> _handleJimakuSearch(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+  /// 「查字幕」扩展桥①搜索：body `{query?, anilistId?, episode?, season?, anime?,
+  /// languages?}`。逻辑在 [buildRemoteSubtitleSearchResponse]（扇出全部已配置来源、
+  /// 排序去重、部分失败照样出结果）；候选按 handle 暂存供 fetch。
+  Future<shelf.Response> _handleSubtitleSearch(
+    shelf.Request request, {
+    Set<String>? restrictToProviderIds,
+  }) async {
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return _json(await buildJimakuSearchResponse(
-      body,
-      clientProvider: _jimakuClientFor,
-      rememberCandidate: _rememberJimakuCandidate,
-    ));
+    return jsonResponse(
+      await buildRemoteSubtitleSearchResponse(
+        body,
+        registryProvider: _subtitleRegistryFor,
+        rememberCandidate: _rememberSubtitleCandidate,
+        restrictToProviderIds: restrictToProviderIds,
+      ),
+    );
   }
 
-  /// 「Jimaku 查字幕」扩展桥②下载+解析：body `{handle}`。响应与 `/api/subtitle/parse`
+  /// 「查字幕」扩展桥②下载+解析：body `{handle}`。响应与 `/api/subtitle/parse`
   /// 同形（`{format, cues:[...]}` + filename/language），扩展直接走既有 InstallTrack 落地。
-  Future<shelf.Response> _handleJimakuFetch(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+  Future<shelf.Response> _handleSubtitleFetch(
+    shelf.Request request, {
+    Set<String>? restrictToProviderIds,
+  }) async {
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    return _json(await buildJimakuFetchResponse(
-      body,
-      clientProvider: _jimakuClientFor,
-      resolveCandidate: (String handle) => _jimakuCandidates[handle],
-    ));
+    return jsonResponse(
+      await buildRemoteSubtitleFetchResponse(
+        body,
+        registryProvider: _subtitleRegistryFor,
+        resolveCandidate: (String handle) => _subtitleCandidates[handle],
+        restrictToProviderIds: restrictToProviderIds,
+      ),
+    );
   }
 
   /// BUG-726/自更新：状态端点回带当前内置扩展指纹（extensionBuild），扩展
@@ -374,7 +431,7 @@ class YomitanApiServer {
   /// 有非空 build 时经 [_onExtensionReport] 记到 app 侧。旧扩展发 '{}' / 空 body /
   /// 非法 JSON 一律容错——不回调、不报错，响应与现状完全一致（向后兼容）。
   Future<shelf.Response> _handleExtensionStatus(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final Object? reportedBuild = body?['build'];
     if (reportedBuild is String && reportedBuild.isNotEmpty) {
       final Object? reportedVersion = body?['version'];
@@ -386,19 +443,48 @@ class YomitanApiServer {
       );
     }
     final String? extensionBuild = _extensionBuildProvider?.call();
-    return _json(<String, dynamic>{
+    // BUG-2480：app 正在等某站会话时随探活回包带出去，扩展据此决定要不要
+    // `chrome.cookies.getAll` 后回传 `/api/extension/site-cookies`。
+    final BrowserCookieImportRequest? cookieImport =
+        BrowserCookieImportGate.pending;
+    return jsonResponse(<String, dynamic>{
       'app': 'fushi',
       'ready': true,
       'port': port,
       if (extensionBuild != null) 'extensionBuild': extensionBuild,
+      if (cookieImport != null) 'cookieImport': cookieImport.toJson(),
     });
+  }
+
+  /// BUG-2480：扩展回传站点 cookie。nonce 必须与当前登记一致（409），否则任何
+  /// 拿到本地端口的进程都能往源站 jar 里塞会话。
+  Future<shelf.Response> _handleSiteCookies(shelf.Request request) async {
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? nonce = body['nonce'];
+    final Object? host = body['host'];
+    final Object? raw = body['cookies'];
+    if (nonce is! String || host is! String || raw is! List) {
+      return shelf.Response(400, body: 'Missing nonce/host/cookies');
+    }
+    final List<BrowserSiteCookie> cookies = raw
+        .map(BrowserSiteCookie.fromJson)
+        .whereType<BrowserSiteCookie>()
+        .toList(growable: false);
+    final bool accepted = BrowserCookieImportGate.deliver(
+      nonce: nonce,
+      host: host,
+      cookies: cookies,
+    );
+    if (!accepted) return shelf.Response(409, body: 'No matching request');
+    return jsonResponse(<String, dynamic>{'ok': true, 'count': cookies.length});
   }
 
   /// BUG-530：浏览器扩展查词端点（与 FushiSyncServer 共享契约）。
   Future<shelf.Response> _handleDictionaryLookup(shelf.Request request) async {
     final Stopwatch serverWatch = Stopwatch()..start();
     final Stopwatch requestJsonWatch = Stopwatch()..start();
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     requestJsonWatch.stop();
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
 
@@ -407,16 +493,16 @@ class YomitanApiServer {
     final Stopwatch handlerWatch = Stopwatch()..start();
     final Map<String, dynamic> response =
         await buildRemoteDictionaryLookupResponse(
-      body,
-      lookup: _lookup,
-      history: _history,
-      popupTiming: popupTiming,
-      themeColorsProvider: _themeColorsProvider,
-      audioSourcesProvider: _audioSourcesProvider,
-      autoReadOnLookupProvider: _autoReadOnLookupProvider,
-      extensionBuildProvider: _extensionBuildProvider,
-      popupDictionaryCssProvider: _popupDictionaryCssProvider,
-    );
+          body,
+          lookup: _lookup,
+          history: _history,
+          popupTiming: popupTiming,
+          themeColorsProvider: _themeColorsProvider,
+          audioSourcesProvider: _audioSourcesProvider,
+          autoReadOnLookupProvider: _autoReadOnLookupProvider,
+          extensionBuildProvider: _extensionBuildProvider,
+          popupDictionaryCssProvider: _popupDictionaryCssProvider,
+        );
     handlerWatch.stop();
 
     // jsonEncode 必须只做一次。把最终编码阶段放进响应 header，避免为了把耗时写回
@@ -430,13 +516,14 @@ class YomitanApiServer {
     final Match? traceIdMatch = rawTraceId is String
         ? _lookupTraceIdPattern.firstMatch(rawTraceId)
         : null;
-    final String? traceId = rawTraceId is String &&
+    final String? traceId =
+        rawTraceId is String &&
             traceIdMatch != null &&
             traceIdMatch.start == 0 &&
             traceIdMatch.end == rawTraceId.length
         ? rawTraceId
         : null;
-    return _jsonRaw(
+    return jsonRawResponse(
       encoded,
       extraHeaders: <String, String>{
         'Server-Timing': _dictionaryLookupServerTiming(
@@ -454,74 +541,9 @@ class YomitanApiServer {
     );
   }
 
-  /// BUG-530：浏览器扩展制卡端点（与 FushiSyncServer 共享契约）。未注入挖词 service
-  /// 时 404（mining off）；fields 缺失/类型错 → 400。
-  Future<shelf.Response> _handleMine(shelf.Request request) async {
-    final FushiRemoteMiningService? mining = _mining;
-    if (mining == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJson(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    try {
-      return _json(await buildRemoteMineResponse(body, mining: mining));
-    } on FormatException {
-      return shelf.Response(400, body: 'Missing fields');
-    }
-  }
-
-  /// 互联「制卡到服务端」端点（与 FushiSyncServer 共享契约 buildForwardedMineResponse）。
-  /// 未注入挖词 service → 404；rawPayloadJson 缺失/类型错 → 400。
-  Future<shelf.Response> _handleMineForward(shelf.Request request) async {
-    final FushiRemoteMiningService? mining = _mining;
-    if (mining == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJson(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    try {
-      return _json(await buildForwardedMineResponse(body, mining: mining));
-    } on FormatException {
-      return shelf.Response(400, body: 'Missing rawPayloadJson');
-    }
-  }
-
-  /// 互联 Lapis 客制化端点（与 FushiSyncServer 共享契约 buildAnkiNoteType*Response）。
-  /// 手机端经互联读写主机 Anki 的 note type。未注入挖词 service → 404；
-  /// modelName/css/templates 缺失或类型错 → 400。
-  Future<shelf.Response> _handleAnkiNoteType(
-    shelf.Request request,
-    String path,
-  ) async {
-    final FushiRemoteMiningService? mining = _mining;
-    if (mining == null) return shelf.Response.notFound('Mining off');
-    final Map<String, dynamic>? body = await _readJson(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    try {
-      switch (path) {
-        case '/api/anki/note-type/read':
-          return _json(
-              await buildAnkiNoteTypeReadResponse(body, mining: mining));
-        case '/api/anki/note-type/styling':
-          return _json(
-              await buildAnkiNoteTypeStylingResponse(body, mining: mining));
-        default:
-          return _json(
-              await buildAnkiNoteTypeTemplatesResponse(body, mining: mining));
-      }
-    } on FormatException catch (e) {
-      return shelf.Response(400, body: e.message);
-    }
-  }
-
-  /// TODO-1176：浏览器扩展查词弹窗制卡按钮真查重端点（`+`→`✓`，与 FushiSyncServer 共享
-  /// 契约）。扩展默认指向本 server（19633），故这里是真正被命中的路径。未注入挖词 service
-  /// 时返回 `{duplicate:false}`（弹窗降级为「+」）。
-  Future<shelf.Response> _handleDuplicate(shelf.Request request) async {
-    final FushiRemoteMiningService? mining = _mining;
-    final Map<String, dynamic>? body = await _readJson(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    if (mining == null) {
-      return _json(<String, dynamic>{'duplicate': false});
-    }
-    return _json(await buildRemoteDuplicateResponse(body, mining: mining));
-  }
+  // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
+  // /api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
+  // FushiSyncServer 共用）；扩展默认指向本 server（19633），故那是真正被命中的路径。
 
   /// A（BUG-783 后续）：浏览器扩展抓 YouTube 网页视频**真整集字幕**端点——复用 app 内已
   /// 修好的 `resolveYoutubeCaptionsForExtension`（androidVr getPlayerResponse + 现在认得
@@ -529,32 +551,35 @@ class YomitanApiServer {
   /// body：`{videoId 或 url, preferLang?}`。best-effort：无字幕/失败返回 `{tracks:[]}`（扩展
   /// 面板回落 live 采样，视频照看）。
   Future<shelf.Response> _handleYoutubeCaptions(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     final Object? id = body['videoId'] ?? body['url'];
     if (id is! String || id.isEmpty) {
       return shelf.Response(400, body: 'Missing videoId');
     }
     final Object? lang = body['preferLang'];
-    return _json(await resolveYoutubeCaptionsForExtension(
-      id,
-      preferLang: lang is String && lang.isNotEmpty ? lang : 'ja',
-    ));
+    return jsonResponse(
+      await resolveYoutubeCaptionsForExtension(
+        id,
+        preferLang: lang is String && lang.isNotEmpty ? lang : 'ja',
+      ),
+    );
   }
 
   /// B（asb 招牌）：浏览器扩展**给任意网页视频加载用户自己的外挂字幕文件**端点——扩展读本地
   /// srt/ass/vtt 文本 POST 上来，server 复用 app 内已测的 SRT/ASS/VTT parser 解析成 cue，扩展把
   /// cue 叠到当前网页视频。body：`{filename, content}`。不支持的扩展名回 `{error:'unsupported'}`。
   Future<shelf.Response> _handleSubtitleParse(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     final Object? filename = body['filename'];
     final Object? content = body['content'];
     if (filename is! String || content is! String || filename.isEmpty) {
       return shelf.Response(400, body: 'Missing filename/content');
     }
-    return _json(
-        buildParsedSubtitleResponse(filename: filename, content: content));
+    return jsonResponse(
+      buildParsedSubtitleResponse(filename: filename, content: content),
+    );
   }
 
   /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
@@ -564,10 +589,11 @@ class YomitanApiServer {
   /// clamp 250-2000/200-1600 + 「拖即解锁」extensionPopupIndependentSize + 只写扩展键，
   /// 绝不碰 overlay/popupMax）。未注入（旧 app / 配对 host）时 404，无副作用（向后兼容）。
   Future<shelf.Response> _handleExtensionPopupSize(
-      shelf.Request request) async {
+    shelf.Request request,
+  ) async {
     final void Function(double, double)? sink = _onExtensionPopupSize;
     if (sink == null) return shelf.Response.notFound('Popup size sink off');
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     final dynamic w = body['maxWidth'];
     final dynamic h = body['maxHeight'];
@@ -575,90 +601,20 @@ class YomitanApiServer {
       return shelf.Response(400, body: 'Missing maxWidth/maxHeight');
     }
     sink(w.toDouble(), h.toDouble());
-    return _json(<String, dynamic>{'ok': true});
-  }
-
-  /// 单词音频①解析：POST /api/lookup/audio {expression,reading}。用与 app 同一
-  /// [FushiRemoteLookupService.lookupAudio]（本地音频库）解析出字节，存进短命 token，
-  /// 返回免鉴权的 /api/lookup/audio/file?id= URL 供扩展 HTML5 Audio 直接播放。未命中
-  /// 返回 {url:null}（弹窗降级为 ✕，与 app 一致）。与 FushiSyncServer 同款实现。
-  Future<shelf.Response> _handleAudioLookup(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final String expression = body['expression']?.toString() ?? '';
-    final String reading = body['reading']?.toString() ?? '';
-    if (expression.trim().isEmpty) return _audioMissResponse();
-    final RemoteAudioLookup? lookup = await _lookup.lookupAudio(
-      expression: expression,
-      reading: reading,
-    );
-    if (lookup == null) return _audioMissResponse();
-    final String id = _generateAudioToken();
-    _remoteAudioTokens[id] = _YomitanAudioToken(
-      bytes: lookup.bytes,
-      contentType: lookup.contentType,
-      createdAt: DateTime.now(),
-    );
-    final Uri url = request.requestedUri.replace(
-      path: '/api/lookup/audio/file',
-      queryParameters: <String, String>{'id': id},
-    );
-    return _json(<String, dynamic>{
-      'type': 'audioResult',
-      'url': url.toString(),
-      'contentType': lookup.contentType,
-    });
-  }
-
-  /// 单词音频②取字节：GET /api/lookup/audio/file?id=（免鉴权，靠不可猜 id）。命中即续期
-  /// 5 分钟窗口，使正在播放的音频不会中途被 prune。
-  shelf.Response _handleAudioFile(shelf.Request request,
-      {required bool headOnly}) {
-    _pruneAudioTokens();
-    final String? id = request.url.queryParameters['id'];
-    final _YomitanAudioToken? token =
-        id == null ? null : _remoteAudioTokens[id];
-    if (token == null) return shelf.Response.notFound('Not found');
-    token.createdAt = DateTime.now();
-    return shelf.Response.ok(
-      headOnly ? null : token.bytes,
-      headers: <String, String>{
-        'Content-Type': token.contentType,
-        'Content-Length': '${token.bytes.length}',
-      },
-    );
-  }
-
-  shelf.Response _audioMissResponse() => _json(<String, dynamic>{
-        'type': 'audioResult',
-        'url': null,
-        'contentType': null,
-      });
-
-  String _generateAudioToken() {
-    final Random random = Random.secure();
-    final List<int> bytes = List<int>.generate(18, (_) => random.nextInt(256));
-    return base64UrlEncode(bytes);
-  }
-
-  void _pruneAudioTokens() {
-    final DateTime cutoff = DateTime.now().subtract(const Duration(minutes: 5));
-    _remoteAudioTokens.removeWhere(
-      (String _, _YomitanAudioToken token) => token.createdAt.isBefore(cutoff),
-    );
+    return jsonResponse(<String, dynamic>{'ok': true});
   }
 
   Future<shelf.Response> _handleTermEntries(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final dynamic term = body?['term'];
     if (term is List) {
       final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
       for (int i = 0; i < term.length; i++) {
         out.add(await _termEntriesFor(term[i]?.toString() ?? '', i));
       }
-      return _jsonRaw(jsonEncode(out));
+      return jsonRawResponse(jsonEncode(out));
     }
-    return _json(await _termEntriesFor(term?.toString() ?? '', 0));
+    return jsonResponse(await _termEntriesFor(term?.toString() ?? '', 0));
   }
 
   Future<Map<String, dynamic>> _termEntriesFor(String term, int index) async {
@@ -674,38 +630,30 @@ class YomitanApiServer {
   }
 
   Future<shelf.Response> _handleTokenize(shelf.Request request) async {
-    final Map<String, dynamic>? body = await _readJson(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
     final dynamic text = body?['text'];
     if (text is List) {
       final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
       for (int i = 0; i < text.length; i++) {
-        out.add(buildYomitanTokenizeResponse(
-          text: text[i]?.toString() ?? '',
-          index: i,
-          tokenize: _tokenizer,
-          readingOf: _readingResolver,
-        ));
+        out.add(
+          buildYomitanTokenizeResponse(
+            text: text[i]?.toString() ?? '',
+            index: i,
+            tokenize: _tokenizer,
+            readingOf: _readingResolver,
+          ),
+        );
       }
-      return _jsonRaw(jsonEncode(out));
+      return jsonRawResponse(jsonEncode(out));
     }
-    return _json(buildYomitanTokenizeResponse(
-      text: text?.toString() ?? '',
-      index: 0,
-      tokenize: _tokenizer,
-      readingOf: _readingResolver,
-    ));
-  }
-
-  Future<Map<String, dynamic>?> _readJson(shelf.Request request) async {
-    try {
-      final String raw = await request.readAsString();
-      if (raw.isEmpty) return null;
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {
-      // 客户端请求体非法 JSON：当作无 body 处理，由调用方回 400。
-    }
-    return null;
+    return jsonResponse(
+      buildYomitanTokenizeResponse(
+        text: text?.toString() ?? '',
+        index: 0,
+        tokenize: _tokenizer,
+        readingOf: _readingResolver,
+      ),
+    );
   }
 
   String _dictionaryLookupServerTiming({
@@ -734,33 +682,4 @@ class YomitanApiServer {
       metric('server-total', serverTotalMicros),
     ].join(', ');
   }
-
-  shelf.Response _json(Object body) => _jsonRaw(jsonEncode(body));
-
-  shelf.Response _jsonRaw(
-    String body, {
-    Map<String, String> extraHeaders = const <String, String>{},
-  }) =>
-      shelf.Response.ok(
-        body,
-        headers: <String, String>{
-          ...extraHeaders,
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-      );
-}
-
-/// 单词音频短命 token（[YomitanApiServer] 私有，镜像 FushiSyncServer 的同款模型）。
-/// createdAt 非 final——每次被 [YomitanApiServer._handleAudioFile] 命中即刷新，重置 5
-/// 分钟过期窗口，使正在被访问的音频不会中途过期。
-class _YomitanAudioToken {
-  _YomitanAudioToken({
-    required this.bytes,
-    required this.contentType,
-    required this.createdAt,
-  });
-
-  final Uint8List bytes;
-  final String contentType;
-  DateTime createdAt;
 }

@@ -15,18 +15,26 @@ window.flutter_inappwebview = {
           };
           var ctx = (typeof window.fushiMineContext === 'function')
             ? window.fushiMineContext() : null;
-          // 例句三级优先：
+          // 例句四级优先：
           //   ① Netflix 字幕 DOM 直读——严格等于「此刻画面上那一行」，优先级最高且**保持原样**；
           //   ② 当前字幕行（`fushiMineContext`：整集拦截轨 / textTracks 收割 / 用户外挂字幕 /
           //      DOM 采样，站点无关）——此前这一级根本不存在，非 Netflix 的轨全被跳过；
-          //   ③ 弹窗内选区文本（原兜底）。
+          //   ③ 弹窗内选区文本（用户在释义里主动选的，显式意图）；
+          //   ④ 页面正文里这个词**所在的句子**（`fushiMineContext().pageSentence`，来自
+          //      `vendor/selection.js` 的 getSentence）——普通网页（无字幕轨、无视频）上
+          //      前三级恒空，用户报的「浏览器扩展查词不取所在句子」就是这一级从来不存在：
+          //      句子一直在页面 DOM 里，扩展装着与 app 阅读器同源的取句函数却没人调用。
           // ② 是这次补上的那一级：用户在 B 站挂了外挂字幕，轨就在 `fushiActiveFullTrack()` 里，
           // 面板和覆盖层都在用它，制卡却直接从 ① 掉到 ③ → 卡上没有句子。
           var cueText = (typeof extractNetflixCueText === 'function')
             ? extractNetflixCueText(netflixSubtitleContainer()) : '';
           var trackText = (ctx && ctx.window) ? (ctx.window.text || '') : '';
-          var sentence = cueText || trackText
-            || (args[0] && args[0].popupSelectionText) || '';
+          // 多句合一（⓪，最高）：用户在「调整上下文」里选了上/下文 → 合成句（整轨
+          // 现算，'\n' 连接）压过所有单句来源；裁切窗同样换成上下文并集。
+          var ctxSentence = (ctx && ctx.contextSentence) ? ctx.contextSentence : '';
+          var pageSentence = (ctx && ctx.pageSentence) ? ctx.pageSentence : '';
+          var sentence = ctxSentence || cueText || trackText
+            || (args[0] && args[0].popupSelectionText) || pageSentence || '';
           // TODO-1271：判据是**能不能拿到可裁的原始媒体**，不是站点名（见 `fushiClipSource`）。
           // `mode:'queue'` = 必须先回放/逐条解析才拿得到媒体（Netflix 录制、YouTube 批量），
           // 只适合「看完一集统一生成」，保持既有行为不动。其余一切页面——普通网页、以及有字幕轨
@@ -50,10 +58,11 @@ window.flutter_inappwebview = {
               // 裁切窗带边距，且与入队批量剪辑那条路同源——见
               // `subtitle-providers.js` 的 fushiClipWindowWithMargin：此前这条路发的是裸
               // cue 窗，叠上字幕轮询粒度会把句子开头切掉一点。
+              var clipBase = ctx.contextWindow || ctx.window;
               var clipWin = (typeof fushiClipWindowWithMargin === 'function')
-                ? fushiClipWindowWithMargin(ctx.window.startV, ctx.window.endV) : null;
-              msg.clipStartMs = clipWin ? clipWin.startMs : ctx.window.startV;
-              msg.clipEndMs = clipWin ? clipWin.endMs : ctx.window.endV;
+                ? fushiClipWindowWithMargin(clipBase.startV, clipBase.endV) : null;
+              msg.clipStartMs = clipWin ? clipWin.startMs : clipBase.startV;
+              msg.clipEndMs = clipWin ? clipWin.endMs : clipBase.endV;
               if (ctx.mineAtV !== null && ctx.mineAtV !== undefined) {
                 msg.mineAtMs = ctx.mineAtV;
               }
@@ -81,6 +90,10 @@ window.flutter_inappwebview = {
                 if (dup) toast('✓ 该词卡片已存在');
                 else if (ok) toast('✓ 已制卡');
                 else toast('✗ 制卡失败');
+                // 一次性草稿：出卡即清（与入队路 / app 内同事件）。
+                if ((ok || dup) && typeof window.fushiClearSentenceDraft === 'function') {
+                  window.fushiClearSentenceDraft();
+                }
                 resolve(ok || dup);
               });
             return;
@@ -91,7 +104,8 @@ window.flutter_inappwebview = {
           else if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
           else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
           else toast('✗ 入队失败');
-          resolve(!!(res && res.ok));
+          // Queue membership is not an Anki note: preserve that distinction for the button.
+          resolve({ queued: !!(res && res.ok), ankiConnect: false });
         });
       case 'duplicateCheck':
         // TODO-1176：真查重（+→✓，与 app 内一致）。经 background.js 转发到 server
@@ -110,8 +124,27 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      // 多句合一制卡（与 app 内 dictionary_popup_webview 四个 handler 同名同契约；实现在
+      // content.js，宿主未装时按「不支持草稿」降级：计数 0 / 空预览 / 模态不弹）。
+      case 'setSentenceContext': {
+        var sc = args[0] || {};
+        return Promise.resolve(typeof window.fushiSetSentenceContext === 'function'
+          ? window.fushiSetSentenceContext(sc.prev, sc.next) : 0);
+      }
+      case 'clearSentenceDraft':
+        return Promise.resolve(typeof window.fushiClearSentenceDraft === 'function'
+          ? window.fushiClearSentenceDraft() : 0);
+      case 'sentenceContextPreview':
+        return Promise.resolve(typeof window.fushiSentenceContextPreview === 'function'
+          ? window.fushiSentenceContextPreview(args[0]) : {});
+      case 'openSentenceContextModal':
+        if (typeof window.fushiOpenSentenceContextModal === 'function') {
+          window.fushiOpenSentenceContextModal(args[0]);
+        }
+        return Promise.resolve(null);
+      case 'textSelected':
       case 'onLinkClick':
-        if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0]);
+        if (window.__fushiOnLinkClick) window.__fushiOnLinkClick(args[0], args[1], name === 'textSelected');
         return Promise.resolve(null);
       case 'tapOutside':
         if (window.__fushiOnTapOutside) window.__fushiOnTapOutside();

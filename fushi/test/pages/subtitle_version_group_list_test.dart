@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
 import 'package:fushi/utils.dart';
@@ -199,5 +199,114 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(JimakuCandidateList), findsOneWidget,
         reason: '文件视图开关切回旧平铺列表');
+  });
+
+  group('多选勾选', () {
+    Future<void> pumpMultiSelect(
+      WidgetTester tester, {
+      required List<SubtitleVersionGroup> groups,
+      required Set<String> selected,
+      required void Function(VideoSubtitleCandidate) onToggle,
+    }) async {
+      tester.view.physicalSize = const Size(1000, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: Scaffold(
+            body: SubtitleVersionGroupList(
+              groups: groups,
+              requestedEpisode: null,
+              busyIdentityKey: null,
+              onPickCandidate: (_) {},
+              selectedIdentityKeys: selected,
+              onToggleCandidate: onToggle,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('没接多选回调时不摆勾选框（存量单选路径不变）', (
+      WidgetTester tester,
+    ) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      await pumpList(tester, groups: groups, onPick: (_) {});
+      final SubtitleVersionGroup group = groups.first;
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(Checkbox), findsNothing);
+    });
+
+    testWidgets('接了多选回调后每个文件行带勾选框，点它只勾选不下载', (
+      WidgetTester tester,
+    ) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final List<String> toggled = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: const <String>{},
+        onToggle: (VideoSubtitleCandidate c) => toggled.add(c.identityKey),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+
+      final VideoSubtitleCandidate member = group.members.first;
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(
+            ValueKey<String>('subtitle-file-${member.identityKey}'),
+          ),
+          matching: find.byType(Checkbox),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(toggled, <String>[member.identityKey]);
+    });
+
+    testWidgets('已勾选的条目勾选框呈选中态', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final VideoSubtitleCandidate member = group.members.first;
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: <String>{member.identityKey},
+        onToggle: (_) {},
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+
+      final Checkbox box = tester.widget<Checkbox>(
+        find.descendant(
+          of: find.byKey(
+            ValueKey<String>('subtitle-file-${member.identityKey}'),
+          ),
+          matching: find.byType(Checkbox),
+        ),
+      );
+      expect(box.value, isTrue);
+    });
   });
 }

@@ -89,6 +89,26 @@ double allVideoThumbnailTargetWidthForWidth(double width) {
 double videoHeroHeightForWidth(double width) =>
     (width * 9 / 21).clamp(220.0, 420.0);
 
+/// 发现页详情 hero 的窄屏断点：低于此宽度按单栏紧凑排版。
+const double kVideoDiscoveryCompactWidth = 700;
+
+/// 发现页详情 hero 高度（BUG-2431）。
+///
+/// 与 [videoHeroHeightForWidth] 那个**故意**压 21:9 的轮播不同，这里铺的是刮削
+/// 来的整张 16:9 backdrop，且由 LandscapeCoverImage 走 `BoxFit.cover` 填满容器：
+/// 高度只要与图片比例脱钩，图就被上下裁掉主体。旧实现写死 430/460，1920 宽下图
+/// 需要 1080 高，等于砍掉六成画面（人物头顶和身体被切）。
+///
+/// 所以高度直接从宽度按 16:9 派生，只在两端设夹子：
+/// - 下限保住 hero 内标题/评分/按钮/状态流程那一列的排版高度，窄屏宁可裁图也不让
+///   文字溢出；
+/// - 上限是视口高度，hero 不吃满一屏以上，下方总留出可继续滚动的提示。
+double videoDiscoveryHeroHeightForViewport(double width, double height) {
+  final double minHeight = width < kVideoDiscoveryCompactWidth ? 460.0 : 430.0;
+  final double maxHeight = height > minHeight ? height : minHeight;
+  return (width * 9 / 16).clamp(minHeight, maxHeight);
+}
+
 /// 刮削 airDate（TMDB `YYYY-MM-DD` 或裸年份 `YYYY`）→ 年份；解析不出返回
 /// null（归「未知」桶，条目在年份筛选下不消失）。
 int? videoAirYear(String? airDate) {

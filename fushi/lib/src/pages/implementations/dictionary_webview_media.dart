@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:fushi/src/dictionary/dictionary_media_types.dart';
-import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
+import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show isValidFontData;

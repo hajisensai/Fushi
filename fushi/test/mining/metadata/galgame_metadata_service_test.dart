@@ -7,7 +7,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_service.dart';
-import 'package:fushi/src/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 
 /// 可编程的假 adapter：想返回什么、想抛什么，都由构造参数决定。
 class _FakeAdapter implements GalgameMetadataAdapter {

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/torrent/video_resource_relevance.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_relevance.dart';
 
 /// BUG-1548：资源搜索搜 `Hibike! Euphonium 2` 返回 S1/S3/剧场版/OVA 混排，且因为
 /// 唯一排序是 seeders 降序，老季必然压在正确季之前。

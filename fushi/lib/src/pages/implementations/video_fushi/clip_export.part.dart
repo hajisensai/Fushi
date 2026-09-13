@@ -115,6 +115,15 @@ extension _VideoClipExport on _VideoFushiPageState {
         startMs: startMs,
         endMs: endMs,
       ),
+      // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
+      // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
+      // 不可播（见 resolveClipSubtitleCodec）。
+      subtitleCues: _clipExportSubtitleCues(
+        controller: controller,
+        startMs: startMs,
+        endMs: endMs,
+      ),
+      subtitleRenderer: _clipExportSubtitleRenderer(),
     );
 
     if (!mounted) {
@@ -200,6 +209,82 @@ extension _VideoClipExport on _VideoFushiPageState {
       if (primary != null) primary,
       if (secondary != null) secondary,
     ];
+  }
+
+  /// 收集片段区间内「用户正在看的字幕」，裁成带时间轴的 cue（硬字幕烧录用）。
+  ///
+  /// 与 [_clipExportSubtitleContents] 同源同轴——两者都建在 `buildClipSubtitleCues`
+  /// 之上，所以烧出来的字幕和 SRT 里的逐条一致，不会因为各挑各的而显示出两套内容。
+  /// 副字幕带 `isSecondary` 标记：主副两层在屏幕上锚在画面对侧（主底 → 副顶），
+  /// 扁平成一个列表后靠这个标记还原层归属，否则两层会叠印在同一个位置。
+  List<ClipSubtitleCue> _clipExportSubtitleCues({
+    required VideoPlayerController controller,
+    required int startMs,
+    required int endMs,
+  }) {
+    return <ClipSubtitleCue>[
+      ...buildClipSubtitleCues(
+        cues: controller.cues,
+        startMs: startMs,
+        endMs: endMs,
+        delayMs: controller.delayMs,
+      ),
+      ...buildClipSubtitleCues(
+        cues: controller.secondaryCues,
+        startMs: startMs,
+        endMs: endMs,
+        // 与 SRT 路径同因（TODO-2837）：副轨按其生效轴换算，未单独设置时 == 主轨。
+        delayMs: controller.effectiveSecondaryDelayMs,
+        isSecondary: true,
+      ),
+    ];
+  }
+
+  /// 造一个「把一条 cue 画成整帧透明 PNG」的回调交给导出层。
+  ///
+  /// 分工：导出层只懂 ffmpeg，**画成什么样是页面的事**——只有页面知道用户的字幕外观
+  /// 设置（[_subtitleStyle]）和屏幕上视频内容有多高。导出层探出画面尺寸后喂回来。
+  ///
+  /// `viewportHeight` 取的是**屏幕上视频内容区的高度**，不是播放器区域高度：字幕在
+  /// 屏幕上是固定逻辑字号，而映射到导出帧上的只有视频内容那一块，所以换算基准必须
+  /// 是内容高（letterbox 时 = `min(区域高, 区域宽 × 帧高 / 帧宽)`）。用区域高会让
+  /// 上下有黑边的视频导出后字幕偏小。
+  ClipSubtitleFrameRenderer _clipExportSubtitleRenderer() {
+    // 闭包里不再碰 State（导出是异步的，回调触发时页面可能已经变了），所以样式和
+    // 尺寸都在这里一次性取好。
+    final VideoSubtitleStyle style = _subtitleStyle;
+    final Size? area = context.size;
+
+    return (ClipSubtitleCue cue, ClipFrameSize frame) {
+      final double viewportHeight = (area == null || frame.width <= 0)
+          ? 0 // 拿不到就交给渲染器的回退基准，绝不让 scale 变成 0 或无穷
+          : math.min(
+              area.height,
+              area.width * frame.height / frame.width,
+            );
+      // 锚定复用屏幕上那套解析（TODO-2838）：主层只有选了顶部才算显式，副层任何
+      // 非 null 都算显式，都没有时副层自动取主层的对侧。ownNonBottom 恒 false——
+      // 导出渲染的是纯文本，没有 ASS 自带定位。
+      final SubtitleLayerVAnchor? anchor = resolveLayerForcedAnchor(
+        isSecondary: cue.isSecondary,
+        userAnchor: cue.isSecondary
+            ? style.secondaryAnchor
+            : (style.mainAnchor == SubtitleLayerVAnchor.top
+                ? SubtitleLayerVAnchor.top
+                : null),
+        mainUserAnchor: style.mainAnchor,
+        ownNonBottom: false,
+      );
+      return renderClipSubtitlePng(
+        text: cue.text,
+        frame: frame,
+        style: style,
+        viewportHeight: viewportHeight,
+        anchorTop: anchor == SubtitleLayerVAnchor.top,
+        // 副层有自己的位置基线；null = 跟随主层（历史行为）。
+        overridePadding: cue.isSecondary ? style.secondaryBottomPadding : null,
+      );
+    };
   }
 
   void _clearClipExportState() {

@@ -1,0 +1,14 @@
+## BUG-2504 · 云盘「仅云端」词典文件让冷启动同步 FFI 装载无限期卡死
+- **报告**：2026-09-13（用户：macOS 冷启动一直转圈，12s 看门狗与 20s 逃生 UI 都没出现）
+- **真实性**：✅ 真 bug。macOS 的 `getApplicationDocumentsDirectory()` 就是 `~/Documents`，开了 iCloud「桌面与文稿」+「优化储存空间」后 `~/Documents/Fushi/data/dictionaryResources/<name>/*` 会被驱逐成 dataless（Finder「仅云端」）文件；Windows 的 OneDrive「按需文件」对 `%USERPROFILE%\Documents` 同理。iOS **不在此列**：`fushi/ios/Runner/Info.plist` 没有任何 iCloud 容器 / `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace` 配置，沙盒 Documents 不会被系统驱逐。同源先例 [BUG-2073](BUG-2073-macos-icloud-data-root-rename-timeout.md)（同一个 iCloud File Provider 让 `Directory.rename` 超时）。
+  根因链（基于 `upstream/develop` 行号）：
+  - `fushi/lib/src/models/app_model.dart:1978-2008` `_rebuildDictPathsCacheAsync()`：只做 `Directory.exists()`，随后 `FushiDicts.scheduleTyped` + `await FushiDicts.loadPendingAsync()`；
+  - `packages/fushi_dictionary/lib/src/engine/fushidicts.dart:323-356` `loadPendingAsync()`：「分批让出」只是每本之间 yield 一次，每本 `shadow.addTermDict(p)` 仍是**主 isolate 上的同步 FFI**；
+  - `native/fushidicts/fushidicts_src/query.cpp:131-219` `add_dict`：`std::ifstream` 整读 `index.json` / `styles.css` / `dict.zstd`，`mmap` `hash.table` / `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx` 并立即触页。读到 dataless 文件会在内核里同步等云端回填、没有任何超时；
+  - `AppModel._guardInitIo`（12s）与 `main.dart` 的 20s 逃生 UI 都是 `Timer`，同步 FFI 阻塞期间事件循环不转，一个都不会触发——症状就是永远转圈，而不是超时错误屏。
+- **[x] ① 已修复** —（本 PR）新增 `fushi/lib/src/dictionary/dict_resource_materializer.dart`：`materializeDictResources(dirs, {budget = 8s})` 在 `Isolate.spawn` 的后台 isolate 里对每本词典目录下的常规文件逐个 `openSync` + `readSync(1)` + `closeSync`（读任意 1 字节就会让 File Provider / OneDrive 把整个文件拉回本地；后台 isolate 阻塞不影响主 isolate 与 Timer 看门狗），每做完一个目录回报一次；预算到期停止等待但**不 kill worker**（它继续把剩余目录拉回本地，下次启动就能装）。`_rebuildDictPathsCacheAsync` 在 `exists()` 之后、`bucketDictPaths` 之前接入：只有 `ready` 的目录才保留 `exists == true` 进引擎，`pending`（超时）/ `failed`（读错）的词典本次跳过并经 `ErrorLogService.instance.log('AppModel.dictResourceMaterialize', …)` + `debugPrint` 记一条汇总诊断；预算后到达的回报经 `onLateReport` 打 debugPrint。不变式：**同步 FFI 装载只碰已物化的字节**。所有平台统一走这条（每本 ~8 次 open/read 1 字节，毫秒级），这是永久鲁棒层而非平台特判。
+- **[x] ② 已加自动化测试** — `fushi/test/dictionary/dict_resource_materializer_test.dart`（7 例）：正常目录（小文件 + 空文件 + 子目录）全 ready 且保序；空目录 ready；不存在目录归 failed 且不拖累同批；空输入不起 isolate；预算耗尽（worker 侧显式 per-directory 延迟，不赌时序）→ 全部 pending、三集合互斥且并集 == 输入、worker 不被 kill 并在预算后逐个回报；预算内已回报的 ready / failed 不被超时抹平；**生产接线守卫**：用 `methodBody` 取 `_rebuildDictPathsCacheAsync` 体，钉住 `await materializeDictResources(` 出现在 `FushiDicts.scheduleTyped(` 之前且探测结果经 `readyDirs.contains(` 喂进 `exists` 判据。
+- **备注**：
+  - `_migrateDictionaryTypes()` 对**尚未探测过**的 term/kanji 词典会同步 `openSync/readSync blobs.bin`，且跑在物化探测之前——这是一次性迁移（探过的词典零 IO），只影响首次启动 / 新导入那一次，本次不动，已在代码注释里点明为同步 IO 残留。
+  - 8s 预算是「本地磁盘毫秒级跑完」与「12s `_initIoTimeout` 之内给真正装载留余量」之间取的值；预算耗尽只是本次少装几本词典，不是错误。
+  - 词典资源目录本身仍在 `~/Documents` 下；要彻底脱离 iCloud 驱逐，用户可用设置里的数据根迁移（BUG-2073 已修好 macOS 的 rename 超时回退）把数据根挪到 `~/.fushi` 之类非同步目录。

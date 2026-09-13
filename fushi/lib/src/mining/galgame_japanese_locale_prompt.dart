@@ -35,7 +35,7 @@ class GalJapaneseLocaleModeDialog extends StatelessWidget {
     required this.gameName,
   });
 
-  /// 这个游戏当前的档位。没设过的游戏传 [kGalDefaultJapaneseLocaleMode]（auto）。
+  /// 这个游戏当前的档位。没设过的游戏传 [kGalDefaultJapaneseLocaleMode]（`off`）。
   final GalJapaneseLocaleMode current;
 
   /// 游戏显示名，写进标题——菜单里同时能开好几个游戏的对话框，不写名字用户认不出

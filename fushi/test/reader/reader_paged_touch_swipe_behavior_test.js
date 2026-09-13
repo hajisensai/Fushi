@@ -132,7 +132,9 @@ function makeHarness(continuousMode) {
   };
 
   const sandbox = {
-    Node: { TEXT_NODE: 3 },
+    // ELEMENT_NODE 不能少：缺了它，生产代码里
+    // `nodeType !== Node.ELEMENT_NODE` 会恒真 → 遍历静默返回空，不抛错。
+    Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
     Date: FakeDate,
     Math,
     URL,

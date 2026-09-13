@@ -15,90 +15,147 @@ import 'reader_fushi_page_source_corpus.dart';
 /// 形态：函数体只含 `_studyClock?.flushNow()`、没有按字数早退；三个阅读器都不再
 /// 出现 `_sessionCharsRead`。
 ///
-/// 断点 B（幻象字数）：水位播种必须与真实恢复锚（`_initialCharOffset`）同源
-/// （经 [computeCharWatermark]），且显式跳句（skipToCue 漏斗）必须经
-/// `onExplicitCueJump` 抬水位——两处退回旧形式都会让首个进度回调把跳过的正文
-/// 误计成新读字数。
+/// 断点 B（幻象字数）：字数只经 `ReadUnitLedger`（翻走即计 + 会话并集）记账——
+/// `_refreshProgress` 只 `arrive` 当前可见区间，恢复完成**不播种**，标量水位 / 速度
+/// 封顶的符号一个都不许回潮；显式跳句（skipToCue 漏斗）必须经 `onExplicitCueJump`
+/// → `_readLedger.leave()`，让跳过的正文从未成为当前单元。退回任一旧形式都会让
+/// 首个进度回调把跳过的正文误计成新读字数。
 void main() {
   final String corpus = readReaderPageSource();
 
   group('断点 A：_flushReadingStats 不按字数拒写（时长与字数同段）', () {
     String flush() => _functionSource(
-          maskComments(File(
-                  'lib/src/pages/implementations/reader_fushi/navigation.part.dart')
-              .readAsStringSync()
-              .replaceAll('\r\n', '\n')),
-          '  Future<void> _flushReadingStats() async {',
-          '\n  }\n',
-        );
+      maskComments(
+        File(
+          'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+        ).readAsStringSync().replaceAll('\r\n', '\n'),
+      ),
+      '  Future<void> _flushReadingStats() async {',
+      '\n  }\n',
+    );
 
     test('旧「必须有字数」守卫不得回归', () {
       final String body = flush();
       expect(
         body,
         isNot(contains('_sessionCharsRead')),
-        reason: '旧守卫拒写纯时长行：dispose 最后一段 / 歌词·听书模式的时长会整段蒸发'
+        reason:
+            '旧守卫拒写纯时长行：dispose 最后一段 / 歌词·听书模式的时长会整段蒸发'
             '（BUG-1107 断点 A）',
       );
       expect(body, isNot(contains('charsRead <= 0')));
-      expect(body, isNot(contains('return')),
-          reason: '没有任何早退：时长与字数同一段，flush 只能是结算时钟');
+      expect(
+        body,
+        isNot(contains('return')),
+        reason: '没有任何早退：时长与字数同一段，flush 只能是结算时钟',
+      );
     });
 
     test('新形态：函数体只委托 StudyClock.flushNow', () {
-      expect(flush(), contains('await _studyClock?.flushNow();'),
-          reason: '时长与字数记在同一段，flush = 结算时钟当前窗口并绝对值落库');
+      expect(
+        flush(),
+        contains('await _studyClock?.flushNow();'),
+        reason: '时长与字数记在同一段，flush = 结算时钟当前窗口并绝对值落库',
+      );
     });
 
     test('三个阅读器都不再持有会话字数累计器', () {
       final String epub = maskComments(corpus);
       final String pdf = maskComments(
-          File('lib/src/pages/implementations/reader_pdf_page.dart')
-              .readAsStringSync());
+        File(
+          'lib/src/pages/implementations/reader_pdf_page.dart',
+        ).readAsStringSync(),
+      );
       final String manga = maskComments(
-          File('lib/src/media/manga/reader/manga_fushi_page.dart')
-              .readAsStringSync());
+        File(
+          'lib/src/media/manga/reader/manga_fushi_page.dart',
+        ).readAsStringSync(),
+      );
       for (final (String name, String src) in <(String, String)>[
         ('epub', epub),
         ('pdf', pdf),
         ('manga', manga),
       ]) {
-        expect(src, isNot(contains('_sessionCharsRead')),
-            reason: '$name：会话字数累计器已废，字数直接进 StudyClock 段');
+        expect(
+          src,
+          isNot(contains('_sessionCharsRead')),
+          reason: '$name：会话字数累计器已废，字数直接进 StudyClock 段',
+        );
       }
     });
   });
 
-  group('断点 B：水位与恢复锚同源 + 显式跳句抬水位', () {
-    test('恢复完成播种水位必须经 computeCharWatermark（带 _initialCharOffset）', () {
-      // 旧形式 `_absoluteCharPosition(_initialProgress)` 在 charAnchor 恢复
-      // （progress 被强制 0.0）时把水位播在章首 → 首个进度回调把章内前缀整段
-      // 误计成新读字数。
-      expect(
-        corpus,
-        contains('charOffset: _initialCharOffset,'),
-        reason: '水位播种必须消费真实恢复锚 _initialCharOffset',
+  group('断点 B：字数只经 ReadUnitLedger，恢复不播种，显式跳句 leave', () {
+    final String masked = maskComments(corpus);
+
+    test('_refreshProgress 只经 _readLedger.arrive( 记字', () {
+      final String body = _functionSource(
+        masked,
+        '  Future<void> _refreshProgress() async {',
+        '\n  }\n',
       );
       expect(
-        corpus,
-        isNot(contains(
-            'sessionWatermarkAfterRestore(\n      _sessionMaxAbsoluteChars,\n'
-            '      _absoluteCharPosition(_initialProgress),')),
-        reason: '不得退回只看 _initialProgress 的旧播种形式（BUG-1107 断点 B）',
+        body,
+        contains('_readLedger.arrive('),
+        reason: '当前可见区间必须交给账本，翻走时才结算',
+      );
+      expect(
+        body,
+        isNot(contains('addChars(')),
+        reason: '_refreshProgress 不得绕过账本直接记字（到达即计 / 水位增量都是旧形态）',
       );
     });
 
-    test('reader 实现 onExplicitCueJump → 抬水位（跳过的段落不算已读）', () {
-      expect(corpus, contains('void _handleExplicitCueJump(AudioCue cue)'));
+    test('_onRestoreComplete 不播种任何水位', () {
+      final String body = _functionSource(
+        masked,
+        '  void _onRestoreComplete() {',
+        '\n  }\n',
+      );
+      for (final String stale in <String>[
+        'sessionWatermarkAfterRestore(',
+        'computeCharWatermark(',
+        '_sessionMaxAbsoluteChars',
+        '_readChargeCreditMilliChars',
+        '_lastWatermarkAdvanceAt',
+      ]) {
+        expect(body, isNot(contains(stale)), reason: '恢复完成播种 = 旧标量水位形态');
+      }
+      expect(
+        body,
+        isNot(contains('_readLedger.')),
+        reason: '恢复完成不碰账本：离开在 _beginNavigation / 同章跳转入口 leave（BUG-2225）',
+      );
+    });
+
+    test('标量水位 / 速度封顶符号不得回潮（掩码后全语料）', () {
+      for (final String stale in <String>[
+        '_sessionMaxAbsoluteChars',
+        'accumulateSessionChars',
+        'computeCharWatermark',
+        'kMaxReadCharsPerSecond',
+        'sessionWatermarkAfterRestore',
+        'restoreSeedResetsReadCharge',
+      ]) {
+        expect(
+          masked,
+          isNot(contains(stale)),
+          reason: '$stale 属于已拆除的标量水位 + 令牌桶（BUG-1107 / BUG-2206 的结构性根因）',
+        );
+      }
+    });
+
+    test('reader 实现 onExplicitCueJump → _readLedger.leave()（跳过的段落不算已读）', () {
+      expect(masked, contains('void _handleExplicitCueJump(AudioCue cue)'));
       final String handler = _functionSource(
-        corpus,
+        masked,
         '  void _handleExplicitCueJump(AudioCue cue) {',
         '\n  }\n',
       );
       expect(
         handler,
-        contains('sessionWatermarkAfterRestore('),
-        reason: '显式跳句必须以只升不降语义抬统计水位',
+        contains('_readLedger.leave();'),
+        reason: '显式跳句必须结算当前页并清空当前单元，落点页只是「到达」',
       );
     });
 
@@ -113,21 +170,19 @@ void main() {
       );
       final int jumpIdx = skipToCue.indexOf('onExplicitCueJump?.call(cue);');
       final int seekIdx = skipToCue.indexOf('_player.seek(');
-      expect(jumpIdx, isNonNegative,
-          reason: 'skipToCue 是所有显式句子跳转的唯一漏斗，必须报 onExplicitCueJump');
-      expect(seekIdx, isNonNegative);
       expect(
         jumpIdx,
-        lessThan(seekIdx),
-        reason: '水位必须在 seek 落地触发的进度回调之前就位',
+        isNonNegative,
+        reason: 'skipToCue 是所有显式句子跳转的唯一漏斗，必须报 onExplicitCueJump',
       );
+      expect(seekIdx, isNonNegative);
+      expect(jumpIdx, lessThan(seekIdx), reason: '水位必须在 seek 落地触发的进度回调之前就位');
     });
 
     test('session attach/detach 双向接线 onExplicitCueJump', () {
-      final String session =
-          File('lib/src/media/audiobook/audiobook_session.dart')
-              .readAsStringSync()
-              .replaceAll('\r\n', '\n');
+      final String session = File(
+        'lib/src/media/audiobook/audiobook_session.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
       expect(
         session,
         contains('controller.onExplicitCueJump = reader.onExplicitCueJump;'),

@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/torrent/torrent_add_coordinator.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_add_coordinator.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 
 void main() {
   test('routes magnets through the base backend contract', () async {

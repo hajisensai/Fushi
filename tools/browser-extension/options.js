@@ -27,6 +27,12 @@ const settingDefaults = Object.freeze({
   subtitleReplaceNative: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
+  // 触屏查词：点按默认开（手机端没有 Shift 悬停，点按是主入口），长按默认关
+  // （与系统长按选词菜单天然打架）。两者都只在真触屏手势上生效，桌面零影响。
+  touchLookupTap: true,
+  touchLookupHold: false,
+  // 安卓没有 chrome.sidePanel：触屏设备视频页边缘的「字幕列表」抽屉（mobile-drawer.js）。
+  mobileSubtitleDrawer: true,
   videoShortcutPrevCue: true,
   videoShortcutNextCue: true,
   videoShortcutReplayCue: true,
@@ -52,6 +58,9 @@ const toggleIds = Object.freeze({
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
   subtitleReplaceNative: 'subtitleReplaceNative',
   subtitleHidden: 'subtitleHidden',
+  touchLookupTap: 'touchLookupTap',
+  touchLookupHold: 'touchLookupHold',
+  mobileSubtitleDrawer: 'mobileSubtitleDrawer',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
   videoShortcutNextCue: 'videoShortcutNextCue',
   videoShortcutReplayCue: 'videoShortcutReplayCue',
@@ -221,6 +230,13 @@ on('reset', 'click', async () => {
   $('token').value = '';
   toast('已恢复 Fushi 自动配置');
   await refreshConnection(true);
+});
+
+// 覆盖层位置：拖过的位置存 subtitleOverlayPosition（视频分数坐标）；删键即回默认（居中、底锚 88%），
+// 已打开的视频页经 storage.onChanged 立刻重摆。
+on('resetSubtitleOverlayPosition', 'click', async () => {
+  await chrome.storage.local.remove('subtitleOverlayPosition');
+  toast('字幕位置已重置');
 });
 
 on('showToken', 'click', () => {

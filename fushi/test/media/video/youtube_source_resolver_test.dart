@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 void main() {
@@ -173,27 +173,33 @@ void main() {
   // BUG-1832：链里补入 android（实测存在只有它能出流的视频，如 D8uACXBAqkE），并排在
   // ios 之前（android 成功 ~3s，ios 取流失败要等满首流 HEAD 403 探测 ~16s）。
   group('A1 多 client 兜底顺序 (TODO-1307)', () {
-    test('kYoutubeManifestClientFallback = androidVr -> android -> ios -> tv',
+    test(
+        'kYoutubeManifestClientFallback = visionos -> androidVr -> android -> ios -> tv',
         () {
-      expect(kYoutubeManifestClientFallback.length, 4);
+      expect(kYoutubeManifestClientFallback.length, 5);
       expect(
-        identical(
-            kYoutubeManifestClientFallback[0], yt.YoutubeApiClient.androidVr),
+        identical(kYoutubeManifestClientFallback[0], kYoutubeVisionOsClient),
         isTrue,
-        reason: 'androidVr 必须首选（其直链无需签名解密、libmpv 普通 UA 可拉取）',
+        reason: 'BUG-2526：visionos 必须首选——android 的 DASH 流无 PO token 只放前 60 秒',
       );
       expect(
         identical(
-            kYoutubeManifestClientFallback[1], yt.YoutubeApiClient.android),
+            kYoutubeManifestClientFallback[1], yt.YoutubeApiClient.androidVr),
+        isTrue,
+        reason: 'androidVr 保留作兜底（其直链无需签名解密、libmpv 普通 UA 可拉取）',
+      );
+      expect(
+        identical(
+            kYoutubeManifestClientFallback[2], yt.YoutubeApiClient.android),
         isTrue,
         reason: 'BUG-1832：android 缺席会让只有它能出流的视频彻底打不开',
       );
       expect(
-        identical(kYoutubeManifestClientFallback[2], yt.YoutubeApiClient.ios),
+        identical(kYoutubeManifestClientFallback[3], yt.YoutubeApiClient.ios),
         isTrue,
       );
       expect(
-        identical(kYoutubeManifestClientFallback[3], yt.YoutubeApiClient.tv),
+        identical(kYoutubeManifestClientFallback[4], yt.YoutubeApiClient.tv),
         isTrue,
       );
     });

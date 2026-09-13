@@ -56,7 +56,10 @@ void main() {
     final String commit = _slice(
       dialogSource,
       'Future<void> _commitAutoFrameCoverWrite(',
-      'String playlistBookUid(',
+      // 原 end marker `String playlistBookUid(` 已随 video_library_import.dart
+      // 搬进引擎包，在本文件里找不到 -> 切片直接失败（"missing end marker"）。
+      // 换成本文件里紧随其后的下一个顶层函数，切片范围与从前一致。
+      'Future<String> setVideoCoverFromPickedFile(',
     );
     expect(commit, contains('markAutoFrameAfterWrite(bookUid)'));
   });

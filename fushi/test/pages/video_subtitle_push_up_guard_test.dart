@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：字幕动态避让进度条（TODO-129，反转 TODO-089 的恒抬升）的接线不被回退，
@@ -17,6 +18,11 @@ import 'video_fushi_page_source_corpus.dart';
 /// 控制条把**真实** `visible` 推进它（[_mediaKitControlsVisible]），字幕避让消费的
 /// [_videoControlsVisible] 改由唯一派生函数 [_applyControlsVisibilityFromMediaKit]
 /// （= !gated && 真实可见）写入，删掉镜像独立 Timer / 移动镜像 toggle / hover-poke 乐观翻镜像。
+///
+/// 键盘 / seek 唤起（[_pokeControlsVisible]）到达 media_kit 的方式在 BUG-2453 换过：旧的
+/// 合成 hover 命中其 MouseRegion 已删（幽灵设备），现在只 `_restartHideTimerSignal.poke()`，
+/// 桌面 fork 经 `wakeSignal` 调自己的 `onHover()` 推 `visibilityNotifier`。对本文件而言
+/// 不变量不变：唤起走 media_kit 自己的可见性真相源，页面侧不翻镜像。
 ///
 /// 显隐时序依赖 media_kit 私有 State + 真实 hover/timer，widget 测试难稳定复现，故用
 /// 源码扫描守卫这些不变式；动态 padding 的几何与方向由 video_subtitle_overlay_test.dart 验。
@@ -214,19 +220,25 @@ void main() {
         reason: 'hover 不应再乐观翻镜像可见（可见性由 media_kit 真实态推送，TODO-364）');
   });
 
-  test('键盘/seek 唤起（_pokeControlsVisible）派合成 hover 给 media_kit、不乱翻镜像', () {
-    final int poke = src.indexOf('void _pokeControlsVisible()');
-    expect(poke, greaterThanOrEqualTo(0));
-    final int pokeEnd = src.indexOf('\n  void _clearRailHover()', poke);
-    expect(pokeEnd, greaterThan(poke),
-        reason: '_clearRailHover 应紧随 poke 方法（TODO-590 batch3 抽出 part 后的相邻成员）');
-    final String pokeBody = src.substring(poke, pokeEnd);
-    // poke 仍派发合成 hover 命中 media_kit MouseRegion（其 onHover 翻 visible 并推送）。
-    expect(pokeBody, contains('PointerHoverEvent('),
-        reason: 'poke 应派发合成 hover 驱动 media_kit 自己的可见性 / Timer（单一真相源）');
-    // TODO-364：poke 不再另翻镜像可见（旧 `_markControlsVisible(true)` 是相位反根因之一）。
-    expect(pokeBody, isNot(contains('_markControlsVisible(true)')),
-        reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收到合成 hover 后推送，TODO-364）');
+  test('键盘/seek 唤起（_pokeControlsVisible）只发信号给 media_kit、不乱翻镜像', () {
+    // 方法体按花括号配对切（旧写法按「下一成员 _clearRailHover 的签名」切，成员一挪就塌）。
+    final String pokeBody = methodBody(src, 'void _pokeControlsVisible()');
+    // 唤起走 media_kit 自己的可见性真相源：poke 发 _restartHideTimerSignal，桌面 fork 的
+    // wakeSignal 处理调它自己的 onHover() 翻 visible 并推送 visibilityNotifier（BUG-2453；
+    // fork 侧由 video_controls_wake_signal_guard_test.dart 钉）。
+    expect(
+        containsCodeLine(pokeBody, '_restartHideTimerSignal.poke();'), isTrue,
+        reason: 'poke 应经信号驱动 media_kit 自己的可见性 / Timer（单一真相源）');
+    // TODO-364：poke 不另翻镜像可见（旧 `_markControlsVisible(true)` 是相位反根因之一），
+    // 也不直接写真相源 / 派生 notifier——那两处各有唯一写入点（fork 推送 / 派生函数）。
+    for (final String write in <String>[
+      '_markControlsVisible(true)',
+      '_mediaKitControlsVisible.value =',
+      '_videoControlsVisible.value =',
+    ]) {
+      expect(containsCodeLine(pokeBody, write), isFalse,
+          reason: 'poke 不应写 $write（可见性由 media_kit 收到信号后推送，TODO-364）');
+    }
   });
 
   test('移动端点画面 toggle 交给 media_kit onTap（不再 Hibiki 镜像旁路，TODO-364）', () {

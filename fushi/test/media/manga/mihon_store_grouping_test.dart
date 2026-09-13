@@ -23,6 +23,7 @@ MihonAvailableExtension _ext(
   String name, {
   required String storeUrl,
   int sourceCount = 1,
+  int? downloadCount,
 }) {
   return MihonAvailableExtension(
     storeUrl: storeUrl,
@@ -35,6 +36,7 @@ MihonAvailableExtension _ext(
     versionName: '1.6.1',
     language: 'all',
     contentWarning: 0,
+    downloadCount: downloadCount,
     sources: <MihonAvailableSource>[
       for (int i = 0; i < sourceCount; i++)
         MihonAvailableSource(
@@ -64,6 +66,83 @@ MangaExtensionStoreRow _store(String indexUrl, String name, int sortOrder) {
 }
 
 void main() {
+  group('按下载量排序', () {
+    test('组内按公开下载量降序，没有数据的排在最后', () {
+      final List<MihonExtensionListRow> rows = buildMihonGroupedRows(
+        stores: <MangaExtensionStoreRow>[_store(kStoreA, 'Repo A', 0)],
+        extensions: <MihonAvailableExtension>[
+          _ext('Cold', storeUrl: kStoreA, downloadCount: 12),
+          _ext('Unknown', storeUrl: kStoreA),
+          _ext('Hot', storeUrl: kStoreA, downloadCount: 1172),
+          _ext('Warm', storeUrl: kStoreA, downloadCount: 599),
+        ],
+        expanded: (String indexUrl, int count) => true,
+      );
+
+      expect(
+        rows
+            .whereType<MihonExtensionEntryRow>()
+            .map((MihonExtensionEntryRow row) => row.extension.name)
+            .toList(),
+        <String>['Hot', 'Warm', 'Cold', 'Unknown'],
+      );
+    });
+
+    test('同档内按名字稳定排序（并列时顺序不随输入顺序漂）', () {
+      List<String> namesFor(List<MihonAvailableExtension> input) =>
+          sortMihonExtensionsByDownloads(
+            input,
+          ).map((MihonAvailableExtension item) => item.name).toList();
+
+      final List<MihonAvailableExtension> forward = <MihonAvailableExtension>[
+        _ext('bbb', storeUrl: kStoreA, downloadCount: 100),
+        _ext('aaa', storeUrl: kStoreA, downloadCount: 100),
+      ];
+      final List<MihonAvailableExtension> reversed = <MihonAvailableExtension>[
+        _ext('aaa', storeUrl: kStoreA, downloadCount: 100),
+        _ext('bbb', storeUrl: kStoreA, downloadCount: 100),
+      ];
+
+      expect(namesFor(forward), <String>['aaa', 'bbb']);
+      expect(namesFor(reversed), <String>['aaa', 'bbb']);
+    });
+
+    test('一个完全没有下载量数据的仓库保持名字序，不被当成全 0', () {
+      // null 当 0 会让「没有公开计数的仓库」看起来像「所有扩展都没人下」。
+      expect(
+        sortMihonExtensionsByDownloads(<MihonAvailableExtension>[
+          _ext('ccc', storeUrl: kStoreA),
+          _ext('aaa', storeUrl: kStoreA),
+          _ext('bbb', storeUrl: kStoreA),
+        ]).map((MihonAvailableExtension item) => item.name).toList(),
+        <String>['aaa', 'bbb', 'ccc'],
+      );
+    });
+
+    test('排序不动仓库分组顺序（sortOrder 仍然说了算）', () {
+      final List<MihonExtensionListRow> rows = buildMihonGroupedRows(
+        stores: <MangaExtensionStoreRow>[
+          _store(kStoreA, 'Repo A', 0),
+          _store(kStoreB, 'Repo B', 1),
+        ],
+        extensions: <MihonAvailableExtension>[
+          // B 仓库的扩展下载量远高于 A，但仓库顺序不受影响。
+          _ext('B hot', storeUrl: kStoreB, downloadCount: 9999),
+          _ext('A cold', storeUrl: kStoreA, downloadCount: 1),
+        ],
+        expanded: (String indexUrl, int count) => true,
+      );
+
+      expect(
+        rows
+            .whereType<MihonStoreHeaderRow>()
+            .map((MihonStoreHeaderRow row) => row.label)
+            .toList(),
+        <String>['Repo A', 'Repo B'],
+      );
+    });
+  });
+
   group('buildMihonGroupedRows', () {
     test('按仓库分组，顺序跟随仓库表（sortOrder 是用户排的）', () {
       final List<MihonExtensionListRow> rows = buildMihonGroupedRows(

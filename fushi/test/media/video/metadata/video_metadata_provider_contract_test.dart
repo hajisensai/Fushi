@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/tmdb_video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -139,7 +139,13 @@ void main() {
             });
           }
           if (request.url.path.endsWith('/tv/100')) {
-            expect(request.url.queryParameters['language'], 'zh-CN');
+            // 断言「配置的语言真的到了 wire 上」，而不是断言某个默认值——用一个
+            // 既不是旧默认（zh-CN）也不是新兜底（en-US）的语言，才能证明这条链路
+            // 是真的透传，不是恰好撞上了默认值。
+            expect(request.url.queryParameters['language'], 'de-DE');
+            // 图片语言与文字语言同源：de 派生出 de,en,null，不再写死 zh。
+            expect(request.url.queryParameters['include_image_language'],
+                'de,en,null');
             expect(request.url.queryParameters['api_key'], 'KEY');
             return _json(<String, Object?>{
               'id': 100,
@@ -208,6 +214,7 @@ void main() {
         final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
           apiKey: 'KEY',
           client: client,
+          language: 'de-DE',
         );
         const VideoMetadataLookup lookup = VideoMetadataLookup(
           provider: VideoMetadataProviderKind.tmdb,

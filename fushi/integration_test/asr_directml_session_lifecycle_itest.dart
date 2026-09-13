@@ -8,20 +8,14 @@
 /// 或 dart-define）。
 library;
 
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/asr/asr_engine.dart';
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_model_store.dart';
-import 'package:fushi/src/asr/asr_pcm_source.dart';
-import 'package:fushi/src/asr/asr_transducer_decoder.dart';
-import 'package:fushi/src/asr/asr_types.dart';
-import 'package:fushi/src/asr/asr_vad.dart';
-
+import 'package:fushi_asr_core/asr_core.dart';
 String _env(String name, {String defaultValue = ''}) {
   final String? v = Platform.environment[name];
   return v == null || v.isEmpty ? defaultValue : v;
@@ -57,7 +51,7 @@ Future<void> _round({
   int? greedyThreads = kAsrGreedyGraphIntraOpThreads,
 }) async {
   final Stopwatch sw = Stopwatch()..start();
-  final AsrEngineSessions sessions = await AsrEngineLoader().load(
+  final AsrEngineSessions sessions = await AsrEngineLoader(factory: buildFushiOnnxFactory()).load(
     store: store,
     variant: variant,
     preference: preference,
@@ -69,10 +63,11 @@ Future<void> _round({
     '${sessions.greedyUnavailableReason == null ? '' : ' (unavailable: ${sessions.greedyUnavailableReason})'}',
   );
   try {
+    // 本 itest 只量 transducer 包（decoder / joiner 必在）。
     final AsrTransducerDecoder decoder = AsrTransducerDecoder(
       encoder: sessions.encoder,
-      decoder: sessions.decoder,
-      joiner: sessions.joiner,
+      decoder: sessions.decoder!,
+      joiner: sessions.joiner!,
       tokens: sessions.tokens,
       lookaheadFrames: lookaheadFrames,
       greedy: useGreedyGraph ? sessions.greedy : null,

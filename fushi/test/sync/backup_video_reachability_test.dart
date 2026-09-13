@@ -52,7 +52,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -91,7 +91,7 @@ void main() {
 
     final curVideos = await _tempDir('vr_curvid_');
     addTearDown(() => cleanupTempDir(curVideos));
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       videosRootDirectory: curVideos.path,
@@ -121,7 +121,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    final preview = await BackupService.previewMergeRestore(
+    final preview = await BackupRestoreService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -156,11 +156,7 @@ void main() {
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
 
-    final meta = await BackupService(
-      db: src,
-      dbDirectory: srcDir.path,
-      appVersion: '2.0.0',
-    ).validateBackup(zip);
+    final meta = await BackupRestoreService.validateBackup(zip);
     await src.close();
 
     expect(meta != null, true);

@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/fushi_sync_server.dart';
-import 'package:fushi/src/sync/pairing/fushi_pairing_protocol.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:http/http.dart' as http;
 
 // TODO-961 M3: PIN brute-force rate limiting end-to-end over /api/pair/v2/confirm.

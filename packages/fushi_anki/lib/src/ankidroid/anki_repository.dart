@@ -320,6 +320,10 @@ class AnkiRepository extends BaseAnkiRepository {
       titleTag: context.bookTitleTag,
       // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
       collectionTag: context.collectionTag,
+      // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
+      // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
+      charPositionTag: context.charPositionTag,
+      sourceLink: context.sourceLink,
     );
 
     try {
@@ -412,7 +416,7 @@ class AnkiRepository extends BaseAnkiRepository {
       context.coverPath != null
           ? _addCoverImage(context.coverPath!)
           : Future<String?>.value(null),
-      context.sentenceAudioPath != null
+      context.sentenceAudioPath != null && !context.synchronizedVideo
           ? _addSentenceAudio(context.sentenceAudioPath!)
           : Future<String?>.value(null),
       payload.audio.isNotEmpty
@@ -466,6 +470,12 @@ class AnkiRepository extends BaseAnkiRepository {
       // 先过这道门 —— 漏掉就等于该入口再也弹不出权限框，只剩 PERMISSION_DENIED。
       await _ensurePermission();
       final settings = await loadSettings();
+      if (context.sourceLink != null ||
+          settings.fieldMappings.values.any(
+            (String mapping) => mapping.contains('{source-link}'),
+          )) {
+        context = await contextForExistingSourceNote(noteId, context);
+      }
 
       final AnkiMiningPayload payload;
       try {
@@ -539,6 +549,49 @@ class AnkiRepository extends BaseAnkiRepository {
       'noteId': noteId,
       'fieldValues': fields,
     });
+  }
+
+  @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    await _ensurePermission();
+    final AnkiSettings settings = await loadSettings();
+    final AnkiMiningPayload payload = AnkiMiningPayload.fromJson(
+      Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map),
+    );
+    final RenderedMinedFields rendered = await _renderMinedFields(
+      settings: settings,
+      payload: payload,
+      context: context,
+      keepEmpty: true,
+    );
+    if (rendered.audioWarning != null) throw StateError(rendered.audioWarning!);
+    return rendered.fields;
+  }
+
+  @override
+  Future<List<int>> findSourceNoteIds(String markerTag) async {
+    await _ensurePermission();
+    final Object? raw = await _channel.invokeMethod<Object?>(
+      'findNotesBySourceMarker',
+      <String, Object>{'markerTag': markerTag},
+    );
+    if (raw is! List ||
+        raw.any((dynamic value) => value is! int || value <= 0)) {
+      throw StateError('Invalid source marker lookup response');
+    }
+    return raw.cast<int>();
+  }
+
+  @override
+  Future<void> writeSourceNoteFields(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    await _ensurePermission();
+    await updateNoteFields(noteId, fields);
   }
 
   /// TODO-270 C2：读取 [noteId] 对应 note 的现有字段（字段名 → 值），用于覆盖前
@@ -659,22 +712,27 @@ class AnkiRepository extends BaseAnkiRepository {
     }
   }
 
+  /// BUG-2380：存在性判断**只在 native 一处**（`AnkiChannelHandler.createNoteType`
+  /// 按「名字 + 字段数」查），返回值 true = 这次真建了、false = 本来就有。
+  ///
+  /// 此前这里还有一份自己的判据（`getModelList` 里按名字精确相等），与 native 那份
+  /// 不一致：两边判断分歧时，Dart 认为「不存在，去建」，native 认为「已存在，跳过」，
+  /// 然后报成功——建没建成没人知道。判据只留一份，分歧就无从产生。
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) async {
     await _ensurePermission();
-    final models = await _channel.invokeMethod('getModelList') as Map?;
-    final exists =
-        models?.values.any((v) => v?.toString() == template.name) ?? false;
-    if (exists) return false;
-    await _channel.invokeMethod('createNoteType', <String, dynamic>{
+    final bool? created =
+        await _channel.invokeMethod('createNoteType', <String, dynamic>{
       'noteTypeName': template.name,
       'noteTypeFields': template.fields,
       'cardName': template.cardName,
       'front': template.front,
       'back': template.back,
       'css': template.css,
-    });
-    return true;
+    }) as bool?;
+    // null 只可能来自契约漂移（native 该回 bool）。当成「建了」，最坏只是 toast
+    // 说成新建而非已存在；真正的成败由 native 抛 CREATE_MODEL_FAILED 表达。
+    return created ?? true;
   }
 
   // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
@@ -755,16 +813,18 @@ class AnkiRepository extends BaseAnkiRepository {
     return ok ?? false;
   }
 
+  /// BUG-2380：与 [createNoteType] 同理——存在性判断只留 native 一处（那边是大小写
+  /// 不敏感比较，这里此前是精确相等，两者分歧时 Dart 请求创建、native 静默跳过并报
+  /// 成功）。返回值 true = 这次真建了、false = 本来就有；建失败由 native 抛
+  /// `CREATE_DECK_FAILED`，不再被吞成成功。
   @override
   Future<bool> createDeck(String name) async {
     await _ensurePermission();
-    final decks = await _channel.invokeMethod('getDecks') as Map?;
-    final exists = decks?.values.any((v) => v?.toString() == name) ?? false;
-    if (exists) return false;
-    await _channel.invokeMethod('createDeck', <String, dynamic>{
+    final bool? created =
+        await _channel.invokeMethod('createDeck', <String, dynamic>{
       'deckName': name,
-    });
-    return true;
+    }) as bool?;
+    return created ?? true;
   }
 
   Future<String?> _addCoverImage(String path) async {

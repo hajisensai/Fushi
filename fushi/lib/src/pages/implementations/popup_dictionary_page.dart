@@ -69,6 +69,16 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   bool _isClosing = false;
   String _sourceLookupText = '';
 
+  /// 源文本条上「这次查的是哪几个字」的扫描高亮，与首页词典 tab 同一口径。
+  ///
+  /// 顶层查词（宿主推来新词 / 搜索栏提交 / 开页自动查词）会把 [_sourceLookupText]
+  /// 换成查询串本身，命中段起点即条首（0）；源文本条点字则整句不动、起点是被点的
+  /// 那个字素簇（见 [_pushSearch] 的 `scan`）。长度两种情形都要等引擎回报。
+  SourceLookupHighlight? _sourceHighlight;
+
+  /// 迟到匹配长度的发号器（见首页词典 tab 的同名字段）。
+  int _sourceHighlightGeneration = 0;
+
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
 
@@ -162,17 +172,34 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     String query,
     Rect selectionRect, {
     bool reuseWarmSlot = false,
+    // 源文本条点字发起的「扫描查词」（Yomitan 式）。非空时本条与搜索框都**不动**：
+    // 变的只有下方那份结果和条上的高亮跨度，锚点就是被点的那个字素簇。
+    SourceLookupScan? scan,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    if (_searchController.text != trimmed) {
+    // 此前每次点字都把条上的整句换成「被点字起的后缀」，被点字左边的上下文就此丢
+    // 失：在「と言いつつ」上点「つ」，条上只剩「つつ」，再想点回「言」已经没得点。
+    // Yomitan 的扫描是整句不动、只挪高亮，所以扫描查词不再接管这两处。
+    final int anchorIndex = scan?.charIndex ?? 0;
+    if (scan == null && _searchController.text != trimmed) {
       _searchController.text = trimmed;
       _searchController.selection = TextSelection.collapsed(
         offset: trimmed.length,
       );
     }
-    if (mounted) setState(() => _sourceLookupText = trimmed);
-    await pushNestedPopup(
+    final int highlightGeneration = ++_sourceHighlightGeneration;
+    if (mounted) {
+      setState(() {
+        if (scan == null) _sourceLookupText = trimmed;
+        // 先框住被点的那个字给即时反馈，引擎回报匹配长度后再扩成整词。
+        _sourceHighlight = SourceLookupHighlight(
+          start: anchorIndex,
+          length: 1,
+        );
+      });
+    }
+    final int matchedUnits = await pushNestedPopup(
       query: trimmed,
       selectionRect: selectionRect,
       controller: _popup,
@@ -183,11 +210,59 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // DictionaryPopupLayer 的加载盖板兜住——不走「搜索期隐藏 + anchored 占位卡」。
       revealWhileSearching: true,
     );
+    if (!mounted || highlightGeneration != _sourceHighlightGeneration) return;
+    setState(() {
+      _sourceHighlight = resolveSourceLookupHighlight(
+        query: trimmed,
+        // 顶层查词时条上渲染的就是 trimmed 本身，条首即被查的那个字（锚点 0）；
+        // 扫描查词时条上是整句，锚点是被点的那个字。
+        tappedGraphemeIndex: anchorIndex,
+        matchedUnits: matchedUnits,
+        leadingStripUnits: appModel.lookupLeadingStripUnits(trimmed),
+      );
+    });
   }
 
   void _popAt(int index) {
     if (index <= 0) return;
     popNestedPopupAt(index, _popup);
+  }
+
+  /// 弹窗内原地跳转（词头 / 链接 / 汉字）。跳成功后搜索栏跟着显示当前词——此前嵌套
+  /// 层走 [_pushSearch] 时搜索栏也是随下钻词走的，保持这一观感。
+  Future<void> _navigateInPlace(
+    int index,
+    DictionaryPopupEntry entry,
+    String query,
+  ) async {
+    await navigatePopupInPlace(
+      controller: _popup,
+      index: index,
+      entry: entry,
+      query: query,
+      autoRead: true,
+    );
+    _syncSearchBarToEntry(entry);
+  }
+
+  Future<void> _navigateHistory(
+    DictionaryPopupEntry entry, {
+    required bool forward,
+  }) async {
+    await navigatePopupHistory(
+      controller: _popup,
+      entry: entry,
+      forward: forward,
+    );
+    _syncSearchBarToEntry(entry);
+  }
+
+  void _syncSearchBarToEntry(DictionaryPopupEntry entry) {
+    if (!mounted || !_popup.entries.contains(entry)) return;
+    final String term = entry.searchTerm;
+    if (term.isEmpty || _searchController.text == term) return;
+    _searchController.text = term;
+    _searchController.selection = TextSelection.collapsed(offset: term.length);
   }
 
   Future<void> _close() async {
@@ -359,9 +434,18 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               text: _sourceLookupText,
               coordinateSpaceKey: _resultStackKey,
               dictionaryHeadwordScale: _dictionaryHeadwordScale,
-              // 源文本面板点选 = 顶层新词，复用常驻热槽（TODO-951 症状C）。
-              onLookup: (String query, Rect rect) =>
-                  _pushSearch(query, rect, reuseWarmSlot: true),
+              highlight: _sourceHighlight,
+              // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
+              // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
+              onLookup: (String query, Rect rect, int charIndex) => _pushSearch(
+                query,
+                rect,
+                reuseWarmSlot: true,
+                scan: SourceLookupScan.fromSuffix(
+                  suffix: query,
+                  charIndex: charIndex,
+                ),
+              ),
             ),
           Expanded(child: _buildStack(context)),
         ],
@@ -467,6 +551,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // documentElement 不透明填充铺满整窗的泛白（in-app 与桌面 global-lookup 不受影响）。
       transparentDocumentBackground: true,
       result: entry.result,
+      restoreScrollTop: entry.restoreScrollTop,
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
       // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。
@@ -484,6 +569,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onDismiss: isBase ? _close : () => _popAt(index),
       onClose: isBase ? null : () => _popAt(index),
       onBack: null,
+      // 弹窗内原地跳转历史（词头 / 链接 / 汉字点击）：跳过才画 ← →。
+      historyNav: entry.hasNavigationHistory
+          ? DictionaryPopupHistoryNav(
+              canGoBack: entry.canGoBack,
+              canGoForward: entry.canGoForward,
+              onBack: () => _navigateHistory(entry, forward: false),
+              onForward: () => _navigateHistory(entry, forward: true),
+            )
+          : null,
       onRendered: () {
         if (_popup.revealRendered(entry) && mounted) setState(() {});
       },
@@ -501,12 +595,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         }
         _pushSearch(text, localRect);
       },
-      onLinkClick: (query, localRect) {
-        if (_popup.entries.length > index + 1) {
-          setState(() => _popup.truncateTo(index + 1));
-        }
-        _pushSearch(query, localRect);
-      },
+      // 词头 / 交叉引用链接 / 汉字（onLinkClick 通道）：**原地跳转**而不是叠一层
+      // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
+      // 来回）。释义正文点词（onTextSelected）仍叠子层。
+      onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
       onMineEntry: onMineEntry,
       onUpdateEntry: onUpdateEntry,
       onDuplicateCheck: checkDuplicate,

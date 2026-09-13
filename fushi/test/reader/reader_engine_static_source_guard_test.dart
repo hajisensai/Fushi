@@ -168,8 +168,11 @@ void main() {
       final String engine = readerFushiEngineSource();
       expect(engine.contains('window.fushiCaret.init({'), isTrue);
       expect(engine.contains('color: C.caretColor,'), isTrue);
-      expect(engine.contains("C.furiganaMode === 'partial'"), isTrue);
-      expect(engine.contains("C.furiganaMode === 'toggle'"), isTrue);
+      // 振假名三态后 JS 不再按 C.furiganaMode 分支（隐藏由 CSS 承担，揭示在
+      // fushiSelection.selectText）；旧的 partial click / toggle dblclick 监听器
+      // 不得复活。
+      expect(engine.contains("C.furiganaMode === 'partial'"), isFalse);
+      expect(engine.contains("classList.toggle('show-rt')"), isFalse);
     });
   });
 

@@ -34,7 +34,7 @@ void main() {
   // 变更，应该由改动者显式把它加进这张表（顺带被 B 组的全仓兜底逼着表态）。
   // 文件不存在直接红（重命名不许静默放行）。
   const Map<String, String> studyCharWritePaths = <String, String>{
-    'EPUB 阅读器（每章 characters）': 'lib/src/epub/epub_book.dart',
+    'EPUB 阅读器（每章 characters）': '../packages/fushi_engine/lib/epub/epub_book.dart',
     '漫画（每页 charsRead）': 'lib/src/media/manga/manga_reading_stats.dart',
     '视频字幕（StudyClock.addChars）': 'lib/src/media/video/video_watch_tracker.dart',
     'galgame（活动累加器）': 'lib/src/mining/galgame_char_count.dart',
@@ -60,7 +60,7 @@ void main() {
         ]) {
           expect(src.contains(naked), isFalse,
               reason: '$path 里出现了 $naked —— 学习字数写入路径不许裸数码点/字素，'
-                  '一律走 countStudyChars（lib/src/stats/study_char_count.dart）。');
+                  '一律走 countStudyChars（../packages/fushi_engine/lib/stats/study_char_count.dart）。');
         }
       });
     });
@@ -145,7 +145,7 @@ void main() {
           reason: '`.runes.length` / `.characters.length` 的白名单对不上：\n'
               '${offenders.join('\n')}\n\n'
               '如果它是**学习字数**，改用 countStudyChars'
-              '（lib/src/stats/study_char_count.dart）；\n'
+              '（../packages/fushi_engine/lib/stats/study_char_count.dart）；\n'
               '如果它是普通字符串长度（日志/排版/校验/索引），把它登记进本测试的白名单'
               '并写清用途。');
     });

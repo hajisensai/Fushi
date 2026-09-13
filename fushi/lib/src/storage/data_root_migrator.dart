@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:drift/drift.dart' show QueryRow, Variable;
 
 import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
-import 'package:fushi/src/media/video/video_subtitle_source.dart'
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show SubtitleSource;
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioManager;

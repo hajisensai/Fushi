@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/video/ffmpeg_backend.dart'
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegRunResult, resolveFfmpegBackend;
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show animatedEncoderArgs;
-import 'package:fushi/src/mining/immersion_mining_request.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat;
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';

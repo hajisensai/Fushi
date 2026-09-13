@@ -149,11 +149,11 @@ void main() {
         controllerSrc.contains('ShortcutAction.globalExternalLookup'),
         isTrue,
       );
-      // 不能写成单行字面量：实参一旦换行（dart format 在参数变长时必然这么做）
-      // 就匹配不上，而「从 registry 读绑定」这条语义一点没变。允许中间有空白。
+      // 注册已表驱动（_osHotKeyActions 逐条 → _registerOneHotKey），故这里钉的是
+      // 「绑定从 registry 里按动作取」这条语义本身，而不是某个动作名的字面量——
+      // 后者在改成循环 / dart format 换行时都会假红，语义却一点没变。
       expect(
-        RegExp(r'bindingsFor\(\s*ShortcutAction\.globalExternalLookup\s*[,)]')
-            .hasMatch(controllerSrc),
+        RegExp(r'bindingsFor\(\s*action\s*[,)]').hasMatch(controllerSrc),
         isTrue,
         reason: 'controller 必须从 registry 取绑定，不得写死按键',
       );
@@ -161,6 +161,32 @@ void main() {
         controllerSrc.contains('addListener(_onRegistryChanged)'),
         isTrue,
       );
+    });
+
+    // globalExternal 的动作**不经 resolveKeyboard / 页面派发**，执行体只在
+    // GlobalLookupController 的 _osHotKeyActions 表里登记。漏登记的表现是设置页
+    // 照样渲染出可改键行、用户照样能录键保存，按下去什么都不发生——这是本仓
+    // 反复出现的那类病，故按 scope 枚举正向核对，不逐个写死动作名。
+    test('每个 globalExternal 动作都在控制器的执行体表里登记', () {
+      final int tableStart = controllerSrc.indexOf('_osHotKeyActions =>');
+      expect(tableStart, greaterThan(0),
+          reason: 'OS 热键执行体表必须收口在 _osHotKeyActions 这一个地方');
+      final int tableEnd = controllerSrc.indexOf('\n      };', tableStart);
+      expect(tableEnd, greaterThan(tableStart));
+      final String table = controllerSrc.substring(tableStart, tableEnd);
+
+      final List<ShortcutAction> scoped = ShortcutAction.values
+          .where((ShortcutAction a) => a.scope == ShortcutScope.globalExternal)
+          .toList(growable: false);
+      expect(scoped, isNotEmpty);
+      for (final ShortcutAction action in scoped) {
+        expect(
+          table.contains('ShortcutAction.${action.name}:'),
+          isTrue,
+          reason: '${action.name} 是 globalExternal 动作，必须在 '
+              '_osHotKeyActions 里登记执行体，否则「设置里能配、按了没反应」',
+        );
+      }
     });
 
     test('controller no longer hard-codes the Ctrl+Alt+D constant', () {

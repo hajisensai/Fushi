@@ -49,7 +49,6 @@ class BarrierSwipeAppModel extends AppModel {
 
   @override
   bool get popupBottomDocked => false;
-
   @override
   double get appUiScale => 1.0;
 

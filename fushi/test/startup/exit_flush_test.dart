@@ -22,6 +22,39 @@ void main() {
     setUp(() => ExitFlushRegistry.instance.clear());
     tearDown(() => ExitFlushRegistry.instance.clear());
 
+    test('defer：一次性写也被 await，且跑完即清（不会在下次退出重跑）', () async {
+      // 页面 dispose 结算出来的最后一笔（阅读位置 / 学习段）没有任何人能 await：
+      // dispose 是同步的，在那里直接开事务就是一笔无人持有 future 的写，与随后的
+      // db.close() 互等。改为 defer 到这里，与其余 flush 一起 await 一次。
+      int ran = 0;
+      ExitFlushRegistry.instance.defer(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        ran++;
+      });
+      expect(ExitFlushRegistry.instance.deferredCount, 1);
+
+      await ExitFlushRegistry.instance.flushAll();
+      expect(ran, 1, reason: '退出路径必须 await 这笔写');
+      expect(ExitFlushRegistry.instance.deferredCount, 0);
+
+      await ExitFlushRegistry.instance.flushAll();
+      expect(ran, 1, reason: '一次性：跑完即清，不会被下一次 flush 重跑');
+    });
+
+    test('defer 的一次性写在 clearCallbacks:false（Android 退后台）下同样清掉', () async {
+      // 常驻回调属于仍活着的页面，退后台后要留着；defer 的属于已销毁的页面，
+      // 跑完就该消失——否则回前台再退后台会把同一笔旧写重放一遍。
+      int deferred = 0;
+      int resident = 0;
+      ExitFlushRegistry.instance.register(() async => resident++);
+      ExitFlushRegistry.instance.defer(() async => deferred++);
+
+      await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
+      await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
+      expect(resident, 2, reason: '常驻回调保留，两次都跑');
+      expect(deferred, 1, reason: '一次性写只跑一次');
+    });
+
     test('flushAll awaits every registered callback', () async {
       bool a = false;
       bool b = false;
@@ -152,35 +185,25 @@ void main() {
           reason: '根因B：Bonsoir 退出超时从 3s 收紧到 1.5s');
     });
 
-    test('Android background lifecycle flushes active page callbacks', () {
-      final int hookAt =
-          main.indexOf('_flushActivePagesForAndroidBackground() async');
-      expect(hookAt, greaterThanOrEqualTo(0),
-          reason: 'Android pause/hidden needs an app-level awaited flush; '
-              'page-local unawaited flush can lose the write if the process is '
-              'reclaimed immediately after backgrounding');
-      final String body = main.substring(hookAt);
-      expect(body.contains('flushAll(clearCallbacks: false)'), isTrue,
-          reason: 'background flush must retain page callbacks for a later '
-              'resume/exit cycle');
-
+    test('Android view events return before destructive detach cleanup', () {
       final int lifecycleAt = main
           .indexOf('void didChangeAppLifecycleState(AppLifecycleState state)');
       expect(lifecycleAt, greaterThanOrEqualTo(0));
-      final String lifecycle = main.substring(lifecycleAt);
-      expect(lifecycle.contains('AppLifecycleState.paused'), isTrue);
-      expect(lifecycle.contains('AppLifecycleState.hidden'), isTrue);
-      expect(
-          lifecycle.contains('_flushActivePagesForAndroidBackground()'), isTrue,
-          reason: 'Android paused/hidden must trigger the retained flush');
+      final int androidAt = main.indexOf('if (Platform.isAndroid)', lifecycleAt);
+      final int androidEnd = main.indexOf('\n    }', androidAt);
+      final String android = main.substring(androidAt, androidEnd);
+      expect(android, contains('_androidViewLifecycle.handleState(state)'));
+      expect(android, contains('return;'));
+      expect(android, isNot(contains('_flushAndCloseForLifecycleDetach')));
+      expect(android, isNot(contains('closeDatabase')));
+      expect(android, isNot(contains('_shutdownStarted')));
     });
 
-    test('detached lifecycle flushes active pages and closes the database', () {
+    test('non-Android detach fallback flushes before closing the database', () {
       final int hookAt =
           main.indexOf('_flushAndCloseForLifecycleDetach() async');
       expect(hookAt, greaterThanOrEqualTo(0),
-          reason: 'mobile detached is the last chance before engine/process '
-              'teardown, so it must run the same data durability gate as exit');
+          reason: 'non-Android fallback must retain its existing exit gate');
 
       final String body = main.substring(hookAt);
       final int flushAt = body.indexOf('ExitFlushRegistry.instance.flushAll()');

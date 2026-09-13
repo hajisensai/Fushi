@@ -42,6 +42,7 @@ const List<String> _overlayNewFiles = <String>[
   'server/src/main/kotlin/mextensionserver/controller/InspectHandler.kt',
   'server/src/main/kotlin/mextensionserver/controller/SourceImageHandler.kt',
   'server/src/main/kotlin/mextensionserver/controller/SourceDataHandler.kt',
+  'server/src/main/kotlin/mextensionserver/controller/SourceCookieInjection.kt',
 ];
 
 String _read(String path) => File(path).readAsStringSync();

@@ -90,11 +90,14 @@ void main() {
     expect(resolve, contains('controller.currentCue ??'));
     expect(resolve, contains('resolveMiningCueForPosition('),
         reason: 'currentCue 为空（gap/末句后）时须按位置解析，制卡才有句子音频。');
-    // 制卡区间 = 合并后的首句起→末句止（单句即该 cue 时间窗）；草稿空时退回单 cue 起止。
-    expect(resolve, contains('mergedRange?.startMs ?? cue?.startMs ?? 0'),
-        reason: '制卡音频/封面区间起点 = 合并区间起点（单句即该 cue 的 startMs）。');
-    expect(resolve, contains('mergedRange?.endMs ?? cue?.endMs ?? 0'),
-        reason: '制卡音频/封面区间终点 = 合并区间终点（单句即该 cue 的 endMs）。');
+    // 制卡区间 = 合并后的首句起→末句止（单句即该 cue 时间窗）再加用户头/尾 padding
+    // （padSentenceRange 夹相邻 cue 边界）；无 cue 且草稿空时 mergedRange 为 null → 0..0。
+    expect(resolve, contains('padSentenceRange('),
+        reason: '制卡区间必须经头/尾 padding（与有声书链同一函数）。');
+    expect(resolve, contains('miningClipTimeMs(paddedRange?.startMs ?? 0'),
+        reason: '制卡音频/封面区间起点 = 加 padding 后的合并区间起点。');
+    expect(resolve, contains('miningClipTimeMs(paddedRange?.endMs ?? 0'),
+        reason: '制卡音频/封面区间终点 = 加 padding 后的合并区间终点。');
 
     // onMineEntry 把解析结果喂给落卡链路 _mineVideoCard（单句/多句同一出口）。
     // TODO-590 batch14: onMineEntry 体搬进 part 的 `_onMineEntryImpl`；end marker
@@ -285,12 +288,14 @@ void main() {
     // miningClipTimeMs 逆变换回播放器轴的目标毫秒），降级帧必须用同一个 cue 时间从视频
     // 文件抽，才与例句对齐。
     // TODO-1000: 降级阶梯搬进沉浸引擎：GIF -> cue 时间抽单帧(_frame) -> stillFallback
-    // (shell 传 controller.screenshot) 最后兜底。cue 抽帧的取帧时间 = req.clipStartMs/1000。
+    // (shell 传 controller.screenshot) 最后兜底。cue 抽帧的取帧时间 = req.stillFrameAnchorMs
+    // /1000：视频链传**未 pad** 的字幕起点（音频窗起点含用户头 padding，封面不跟着往前退，
+    // 见 test/settings/mining_audio_padding_guard_test.dart）；不传时回落 clipStartMs。
     final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
     expect(engine, contains('extractVideoFrameViaFfmpeg'),
         reason: 'GIF 不可用时须按 cue 时间从视频文件抽单帧（而非截当前解码帧）。');
-    expect(engineNorm, contains('atSeconds: req.clipStartMs / 1000.0'),
-        reason: '降级帧的取帧时间必须 = clipStartMs（与 GIF 主路径同一播放器轴坐标）。');
+    expect(engineNorm, contains('atSeconds: req.stillFrameAnchorMs / 1000.0'),
+        reason: '降级帧的取帧时间必须 = 字幕起点锚（与 GIF 主路径同一播放器轴坐标）。');
     // shell 在点击时立即启动当前帧截图，并把冻结的 Future 作为最后兜底喂进引擎；
     // 不能等任务真正出队后再读 controller，否则换集/销毁会截错或访问已释放播放器。
     final String mineCard = region(
@@ -302,7 +307,7 @@ void main() {
 
     // 引擎里：cue 抽帧(_frame) 必须排在 stillFallback（当前解码帧）之前——有区间时优先按
     // cue 取帧，截当前帧只能是 cue 抽帧也失败/无区间后的最后兜底。
-    final int frameIdx = engineNorm.indexOf('atSeconds: req.clipStartMs');
+    final int frameIdx = engineNorm.indexOf('atSeconds: req.stillFrameAnchorMs');
     final int stillIdx = engineNorm.indexOf('req.stillFallback!()');
     expect(frameIdx, greaterThanOrEqualTo(0));
     expect(stillIdx, greaterThan(frameIdx),

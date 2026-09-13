@@ -4,15 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/public_trackers.dart';
-import 'package:fushi/src/media/torrent/public_video_index_client.dart';
-import 'package:fushi/src/media/torrent/public_video_index_provider.dart';
-import 'package:fushi/src/media/torrent/search_query_script.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/public_trackers.dart';
+import 'package:fushi_engine/media/torrent/public_video_index_client.dart';
+import 'package:fushi_engine/media/torrent/public_video_index_provider.dart';
+import 'package:fushi_engine/media/torrent/search_query_script.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 const String _hashA = 'aabbccddeeff00112233445566778899aabbccdd';
 const String _hashB = '00112233445566778899aabbccddeeff00112233';

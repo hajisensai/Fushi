@@ -43,6 +43,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_menu;
       case ShortcutAction.readerOpenNavigation:
         return t.shortcut_action_reader_open_navigation;
+      case ShortcutAction.readerOpenGallery:
+        return t.shortcut_action_reader_open_gallery;
+      case ShortcutAction.readerOpenStatistics:
+        return t.shortcut_action_reader_open_statistics;
+      case ShortcutAction.readerOpenAudiobook:
+        return t.shortcut_action_reader_open_audiobook;
       case ShortcutAction.readerDismissDict:
         return t.shortcut_action_reader_dismiss_dict;
       case ShortcutAction.readerToggleFurigana:
@@ -73,6 +79,14 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_scroll_page_down;
       case ShortcutAction.globalScrollPageUp:
         return t.shortcut_action_global_scroll_page_up;
+      case ShortcutAction.globalScrollLineDown:
+        return t.shortcut_action_global_scroll_line_down;
+      case ShortcutAction.globalScrollLineUp:
+        return t.shortcut_action_global_scroll_line_up;
+      case ShortcutAction.globalScrollToTop:
+        return t.shortcut_action_global_scroll_to_top;
+      case ShortcutAction.globalScrollToBottom:
+        return t.shortcut_action_global_scroll_to_bottom;
       case ShortcutAction.globalToggleFullscreen:
         return t.shortcut_action_global_toggle_fullscreen;
       case ShortcutAction.globalContextMenu:
@@ -173,6 +187,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_dpad_right;
       case ShortcutAction.globalExternalLookup:
         return t.shortcut_action_global_external_lookup;
+      case ShortcutAction.globalExternalOpenLookupPage:
+        return t.shortcut_action_global_external_open_lookup_page;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:
@@ -374,6 +390,10 @@ extension ShortcutActionIcon on ShortcutAction {
       // 全 app 共用「返回上一级」：视频页把它解释成逐级退出阶梯。
       case ShortcutAction.globalBack:
         return Icons.arrow_back;
+
+      // 全 app 共用全屏键（F11）：视频页把它接成与 F / 双击同一个视频全屏（BUG-2462）。
+      case ShortcutAction.globalToggleFullscreen:
+        return Icons.fullscreen;
 
       // 右键菜单（按钮归属声明，执行体在各卡片 / 各媒体表面自己的 showMenu）。
       case ShortcutAction.globalContextMenu:

@@ -215,7 +215,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
       'lib/src/sync/sync_orchestrator.dart':
           'kLegacySyncAudiobookAssetName / _legacyDictionaryAssetSuffix / '
               '_legacyLocalAudioAssetSuffix：写新读旧的兼容读入口。',
-      'lib/src/sync/aggregate_sync_service.dart':
+      'packages/fushi_engine/lib/sync/aggregate_sync_service.dart':
           '_legacyAggregateAssetSuffix：每设备聚合快照的兼容读入口。',
       'lib/src/sync/sync_compare_dialog.dart':
           'legacySuffix：远端词典对比的兼容读分支（与 orchestrator 同源口径）。',
@@ -324,7 +324,7 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
     // Anki 毫无关系。这不是疏漏而是取舍：四个词根都太特征化，收窄成
     // `hibiki_dict_[0-9a-f]{40}` 这种形态匹配只会让守卫变脆且读不懂，多报好过漏报。
     //
-    // 代价已经付过一次：同步侧的 `hibiki_dict_export`（app_model_library_host_service）
+    // 代价已经付过一次：同步侧的 `hibiki_dict_export`（local_library_host_service）
     // 与 `hibiki_dict_in`（fushi_sync_server）本与制卡无关，因撞这个词根被一并改成
     // fushi_，所以这里不需要为它们开白名单。将来再撞上同词根的无关临时名，**优先
     // 跟着改名**（它们都是纯 createTemp 前缀，无消费方，零风险），不要加白名单——
@@ -575,6 +575,8 @@ Iterable<File> _pathFormScanFiles() sync* {
 /// 扫描根（相对 `fushi/`，即 flutter test 的 cwd）。
 const List<String> _scanRoots = <String>[
   'lib',
+  '../packages/fushi_engine/lib',
+  '../packages/fushi_server/lib',
   '../packages/fushi_core/lib',
   '../packages/fushi_dictionary/lib',
   '../packages/fushi_anki/lib',

@@ -161,11 +161,19 @@ void main() {
       // 保留文本标记（应用户要求不走 SVG）；TODO-1338 在 ↩(U+21A9) 后追加 VS15(U+FE0E)
       // 强制「文本呈现」，杜绝制卡后系统把 ↩ 走彩色 emoji 回退变乱码（字体隔离在
       // popup.css .mine-button 单色符号栈里，此处 VS15 为双保险）。
-      expect(
-          js,
-          contains(
-              "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : '+';"),
+      // 已制卡两态（✓ / ✓↩）逐字锁死——含 TODO-1338 的 VS15。未制卡那一臂只锁
+      // 「仍是文本字形、且可制卡时是 '+'」：BUG-2242 起该臂多了「已入队」子态
+      // （队列里显示 ✓），锁死整行会把合法子态当回退误报。
+      const String minedArm =
+          "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : ";
+      expect(js, contains(minedArm),
           reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)');
+      final int armIdx = js.indexOf(minedArm);
+      final String unminedArm =
+          js.substring(armIdx + minedArm.length, js.indexOf(';', armIdx));
+      expect(unminedArm, contains("'+'"), reason: '可制卡态仍是文本 +');
+      expect(unminedArm.contains('<svg'), isFalse,
+          reason: '未制卡那一臂也必须是文本字形，不得塞 SVG');
       // class 列表允许带 inline-action-button 等布局基类前缀（BUG-1895）；这里守的
       // 是「初始 textContent 是文本 '+' 而非 SVG」，不是 class 名的确切拼写。
       expect(

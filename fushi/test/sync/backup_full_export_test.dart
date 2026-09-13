@@ -98,7 +98,7 @@ void main() {
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,
@@ -152,7 +152,7 @@ void main() {
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstBooks, 'Existing', 'keep.epub'), 'KEEP');
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,
@@ -198,7 +198,7 @@ void main() {
     await writeFile(
         '$dstBooks.import-tmp${Platform.pathSeparator}junk.txt', 'x');
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,

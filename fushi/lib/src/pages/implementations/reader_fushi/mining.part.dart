@@ -47,9 +47,34 @@ extension _ReaderMining on _ReaderFushiPageState {
     // _cachedSentenceOffset）会把这些成员改成第二个词的值，导致第一张卡的 cue 句 / 加粗
     // 偏移与第二个词错配（或第二次中途清空时丢失）。await 之后一律只读这些局部值，消除
     // 「await 后读可变成员」整类时序漏洞。
-    final String snapshotCueSentence =
-        appModel.currentMediaSource?.currentCueSentence.text ?? '';
+    // 扩展上下文后两个句子字段必须对应同一段音频；未扩展时保留原 cue 全文。
+    final String snapshotCueSentence = _miningDraft.isEmpty
+        ? appModel.currentMediaSource?.currentCueSentence.text ?? ''
+        : sentence;
     final int? snapshotSentenceOffset = _cachedSentenceOffset;
+    // 同一条快照纪律：制卡位置读的是 _cachedSentenceRange / _lastProgressCharOffset，
+    // 两个都会被 await 悬挂期间的第二次查词（或一次翻页）改写，必须在这里定格。
+    final int? snapshotCharPosition = _miningCharPosition();
+    final ({int offset, int length})? sourceRange = _miningSpanRange();
+    final AudioPlaybackRange? sourceAudioRange = _miningDraft.composeAudioRange(
+      _currentSentenceAudioRange(),
+    );
+    final String? sourceUid = _bookUid;
+    final int sourceOffset = sourceRange?.offset ?? _lastProgressCharOffset;
+    final CardSourceLink? sourceLink = sourceUid == null || sourceOffset < 0
+        ? null
+        : CardSourceLink(
+            kind: CardSourceKind.book,
+            uid: sourceUid,
+            sourceId: _sourceReviewSession?.link.sourceId ??
+                CardSourceLink.newSourceId(),
+            chapterIndex: _favoriteSectionIndex,
+            charOffset: sourceOffset,
+            charLength: sourceRange?.length,
+            audioFileIndex: sourceAudioRange?.audioFileIndex,
+            startMs: sourceAudioRange?.startMs,
+            endMs: sourceAudioRange?.endMs,
+          );
 
     String? sentenceAudioPath;
     Directory? sentenceAudioTempDir;
@@ -176,6 +201,7 @@ extension _ReaderMining on _ReaderFushiPageState {
         ? null
         : displayTitleForBook(bookKey: widget.bookKey, rawTitle: _book!.title);
     final AnkiMiningContext miningContext = AnkiMiningContext(
+      sourceLink: sourceLink,
       sentence: sentence,
       cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null,
       documentTitle: displayDocumentTitle,
@@ -194,9 +220,47 @@ extension _ReaderMining on _ReaderFushiPageState {
           ? BaseAnkiRepository.sanitizeTitleTag(displayDocumentTitle)
           : null,
       collectionTag: collectionTag,
+      // 「制卡所在字符数」标签（`chars_12345`）：这张卡是在全书第几个学习字处制的。
+      // 与书名/合集名标签同构——真值源（章内锚 + 每章累计前缀）在本页 state 里，
+      // hibiki_anki 拿不到，故在这里算好字面量注入。开关关闭或锚点取不到时为 null。
+      charPositionTag: appModel.autoAddCharPositionToTags
+          ? BaseAnkiRepository.formatCharPositionTag(snapshotCharPosition)
+          : null,
     );
 
     return (context: miningContext, cleanup: cleanupSentenceAudioTempDir);
+  }
+
+  /// 制卡所在的**全书绝对学习字数位置**（`countStudyChars` 口径，与状态行「已读字数」
+  /// 和 `study_segments.chars` 同一根数轴，所以卡片上的数字和用户看到的进度对得上）；
+  /// 取不到锚点时返回 `null`。
+  ///
+  /// 两级锚，第一级与 [_recordMinedSentence] 落库的制卡历史**同源**（同一个 section +
+  /// 同一个句内偏移），所以卡片上的数字和「制卡历史」里那条能跳到同一处：
+  /// ① 句锚（[_cachedSentenceRange]，无句级 span 时退到 [_cachedSelectionRange]）——
+  ///    制卡的那句话在本章的偏移，精确到句；
+  /// ② 视口锚（[_lastProgressCharOffset]，当前页首字符）——纯图片页 / caret 探测失败
+  ///    时句锚为空，退到「读到这一页」的粒度。
+  ///
+  /// 两级都不可用（JS 拿不到 caret、章字数还没算完、章号越界）→ [absoluteCharOffsetOf]
+  /// 返回 -1 → 这里返回 `null`，[BaseAnkiRepository.buildNoteTags] 不追加标签。
+  /// **绝不退化成 0**：那会把一整批卡片假标成「书首第 0 字」，比没有标签更坏——用户按
+  /// 标签排序时看不出这些数字是编的。
+  int? _miningCharPosition() {
+    final ({int offset, int length})? sentenceRange = _cachedSentenceRange ??
+        (_cachedSelectionRange != null
+            ? (
+                offset: _cachedSelectionRange!.offset,
+                length: _cachedSelectionRange!.length
+              )
+            : null);
+    final int absolute = absoluteCharOffsetOf(
+      chapterCumulativeChars: _chapterCumulativeChars,
+      chapterCharCounts: _chapterCharCounts,
+      chapter: _favoriteSectionIndex,
+      charOffset: sentenceRange?.offset ?? _lastProgressCharOffset,
+    );
+    return absolute < 0 ? null : absolute;
   }
 
   /// 反查当前书/有声书所属合集名（供制卡「合集名标签」用）。折叠归属跟随
@@ -242,16 +306,27 @@ extension _ReaderMining on _ReaderFushiPageState {
 
     final MineOutcome outcome;
     try {
-      outcome = await repo.mineEntry(
-        rawPayloadJson: jsonEncode(fields),
-        context: miningContext,
-      );
+      final SourceReviewSession? review = _sourceReviewSession;
+      outcome = review == null
+          ? await repo.mineEntry(
+              rawPayloadJson: jsonEncode(fields),
+              context: miningContext,
+            )
+          : await runWithLookupPopupHidden<MineOutcome>(
+              () => review.mine(
+                rawPayloadJson: jsonEncode(fields),
+                context: miningContext,
+              ),
+            );
     } finally {
       prepared.cleanup();
     }
 
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
-    final described = describeMineOutcome(outcome);
+    final described = describeMineOutcome(
+      outcome,
+      overwrite: _sourceReviewSession != null,
+    );
     // 制卡成功计入书籍统计（reader 走 BaseSourcePageState.onMineFromPopup，不
     // mixin DictionaryPageMixin，故自调 recordMiningEvent，来源固定 book）。失败吞掉记日志。
     if (described.record) unawaited(_recordMined());
@@ -280,6 +355,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     int noteId,
     Map<String, String> fields,
   ) async {
+    if (_sourceReviewSession != null) return _onMineFromPopupInner(fields);
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final prepared = await _prepareMiningContext();
     final AnkiMiningContext? miningContext = prepared.context;
@@ -399,7 +475,8 @@ extension _ReaderMining on _ReaderFushiPageState {
     int? noteId,
   ) async {
     try {
-      final int section = _favoriteSectionIndex;
+      final int section =
+          context.sourceLink?.chapterIndex ?? _favoriteSectionIndex;
       final sentenceRange = _cachedSentenceRange ??
           (_cachedSelectionRange != null
               ? (
@@ -422,8 +499,8 @@ extension _ReaderMining on _ReaderFushiPageState {
         chapterLabel: _currentChapterLabelFor(section),
         bookKey: widget.bookKey,
         sectionIndex: section,
-        normCharOffset: sentenceRange?.offset,
-        normCharLength: sentenceRange?.length,
+        normCharOffset: context.sourceLink?.charOffset ?? sentenceRange?.offset,
+        normCharLength: context.sourceLink?.charLength ?? sentenceRange?.length,
         noteId: noteId,
       );
     } catch (e, st) {

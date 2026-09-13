@@ -10,7 +10,7 @@
 // 判定顺序。
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/pages/implementations/downloads_resource_gap.dart';
 
 void main() {

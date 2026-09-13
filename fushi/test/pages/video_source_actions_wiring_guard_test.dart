@@ -97,7 +97,9 @@ void main() {
       expect(page, contains(api));
       expect(view, contains(api));
     }
-    expect(view, contains('tooltip: t.video_source_scrape_action'));
+    expect(view, contains('t.video_source_scrape_action'));
+    expect(
+        view, contains("enabled: !busy && row.videoGroupingMode != 'folder'"));
     expect(view, contains('tooltip: t.video_source_scrape_settings'));
     expect(view, contains("widget.mediaKind == 'video'"));
     expect(view, contains('controller.runSourceScan(row.id, scan)'));

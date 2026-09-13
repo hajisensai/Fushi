@@ -121,22 +121,14 @@ FUSHI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_t
 dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 ```
 
-### CI 覆盖缺口（已知，未解决）
+### CI 覆盖（2026-09-08 起）
 
-所有需要真 DLL 的用例（`packages/fushi_torrent/test/*`、`fushi` 侧的
-`embedded_torrent_backend_test.dart` / `embedded_torrent_host_test.dart`）在 CI
-上**一次都没跑过**，原因有两层，都不是「加个环境变量」能解决的：
-
-1. `FUSHI_TORRENT_LIB` 在任何 workflow 里都不存在 → 这些用例整组 skip。
-2. 真单测门（`release.yml` 的 *Run unit tests*）跑在 `ubuntu-latest`，而随包的
-   预编译产物是 Windows DLL；`Run package tests` 的包列表里也**没有**
-   `packages/fushi_torrent`。
-
-要真正补上，得在 CI 上构建 Linux 版 libtorrent 2.x + 本 bridge（`.so`），是独立
-任务，不该混进功能 PR。在那之前，**任何必须守住的不变量都不能只靠要 DLL 的
-用例**——把它做成不依赖 native 的纯 Dart 用例（例：`pruneResumeFiles` 的
-「计划 id 未加载时拒绝剪枝」守卫在 `fushi/test/media/torrent/
-resume_prune_guard_test.dart`，无 DLL 也跑）。
+需要真 DLL/.so 的用例（`packages/fushi_torrent/test/*`）现在在两条 PR 门上都跑：
+`build-multiplatform.yml` 的 windows job 用 vcpkg 刚编出的 DLL，linux job 用
+`build_linux_so.sh` 刚编出的静态 `.so`（`FUSHI_TORRENT_LIB` 指过去）。真单测门
+（`release.yml` 的 *Run unit tests*）仍不含这个包——它跑在没有原生产物的环境。
+**任何必须守住的不变量仍不能只靠要 DLL 的用例**（例：`pruneResumeFiles` 的守卫
+`fushi/test/media/torrent/resume_prune_guard_test.dart`，无 DLL 也跑）。
 
 ## ffigen 重生成绑定
 
@@ -277,11 +269,32 @@ android triplet 默认**静态链接**，libtorrent/boost/openssl 全部链进�
 `resolveBackend(embeddedSupported:)`（原 `isDesktop`，参数已正名）只在 iOS
 规约回 qb。
 
+## 阶段6 — Linux 静态 .so 随无头服务端包
+
+无头服务端 `packages/fushi_server` 在 Linux 上也要内置引擎，且用户不该被逼着
+`apt install libtorrent-rasterbar2.0` 或退到外接 qBittorrent。所以 Linux 走与
+Android 同一决策——**vcpkg manifest 静态链**：
+
+1. **产出**：`build_linux_so.sh <vcpkg-root>`，overlay triplet
+   `vcpkg-triplets/x64-linux-fpic.cmake`（= vcpkg 自带 x64-linux + 显式 `-fPIC`：
+   静态归档要链进共享库，boost/openssl 不一定自己设 PIC，漏一个就是
+   relocation R_X86_64_32 链接错）。CMakeLists 的 Linux 分支再加
+   `-static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL`（老发行版的
+   libstdc++ 可能比构建机旧；静态进来的 libtorrent/boost/openssl 符号不导出）。
+   产物 `prebuilt/linux-x64/libfushi_torrent_ffi.so`，脚本自检 `ldd` 里不得出现
+   `torrent-rasterbar / libssl / libcrypto / libboost`。只剩 glibc 是动态的：
+   发布用 `ubuntu-22.04` runner（glibc 2.35）。
+2. **随包**：CI（`build-multiplatform.yml` linux job、`release-server.yml`）把它放进
+   服务端 bundle 的 `lib/`，服务端按 `<exe>/../lib/libfushi_torrent_ffi.so` 定位
+   （`packages/fushi_server/lib/src/native_libs.dart`），`torrent.engine: auto` 即
+   内置。Linux **桌面版 Fushi** 仍未随包（另起 job；服务端那份产物可直接复用）。
+3. **缓存**：与 Android job 同款双层 vcpkg 缓存，key 带 runner ImageVersion。
+
 ## 尚未做（多平台 + 真机）
 
-- **macOS/Linux**：同样走 vendored 预编译 + 各 runner CMake 的
-  copy-if-present，但需对应工具链编 libtorrent（Xcode / gcc），未在本机
-  验证，另起 job。
+- **macOS / Linux 桌面版**：同样走 vendored 预编译 + runner CMake 的
+  copy-if-present；Linux 可直接拿阶段6 的 `.so`，macOS 需 Xcode 工具链编
+  libtorrent，未在本机验证，另起 job。
 - http(s) .torrent URL 下载（内置引擎侧 magnet-only；Nyaa 链路产 magnet）。
 - 反吸血的真实吸血 peer 触发（PCB 进度作弊需伪造进度的 peer；本地 rig 的
   做种者诚实，自动化只验 ip_filter 执行力 + peer_info 导出 + sweep 不误封，

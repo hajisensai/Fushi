@@ -99,6 +99,28 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# Copy the native assets provided by the build.dart from all packages.
+#
+# BUG-2419：这两句是官方 Windows 模板自带的（templates/app/windows.tmpl/
+# CMakeLists.txt.tmpl），本仓这份 CMakeLists 是老模板的重度定制副本，功能演进时把它
+# 漏掉了——`fushi/linux/CMakeLists.txt` 有，Windows 没有。Flutter 本该自动补它的
+# `cmake_native_assets_migration.dart` 靠 `replaceFirst('endforeach(bundled_library)')`
+# 定位插入点，而 Windows 模板用的是 `if(PLUGIN_BUNDLED_LIBRARIES) install(FILES ...)`，
+# 根本没有那个 foreach → 匹配不到 → **静默 return，不写文件不打日志**。于是这个洞
+# 能一直存在而 CI 全绿。
+#
+# 后果不是「PDF 功能缺失」而是「PDF 永久挂死」：pdfium.dll 只落在 build/native_assets/
+# 而进不了 bundle，运行期裸名 DynamicLibrary.open('pdfium.dll') 在 pdfrx 的 worker
+# isolate 里抛异常，而那个 worker 的 execute() 没有 try/catch（pdfrx_engine 的
+# worker.dart），回包 SendPort.send 永不执行 → 主 isolate 的 await 永不完成。
+#
+# sqlite3.dll 掩盖过这个缺口：它同时由 sqlite3_flutter_libs 走 PLUGIN_BUNDLED_LIBRARIES
+# 装进 bundle，所以 native-assets 这条通道从来没通过也看不出来。
+set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
+install(DIRECTORY "${NATIVE_ASSETS_DIR}"
+   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+   COMPONENT Runtime)
+
 # Install fushidicts DLL next to the executable
 install(TARGETS fushidicts_ffi RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
@@ -142,6 +164,33 @@ install(CODE "
           \"Run native/fushi_torrent/build_windows_dll.ps1 before building a Profile/Release bundle.\")
       endif()
     endforeach()
+  endif()
+" COMPONENT Runtime)
+
+# 同理，Profile/Release bundle 绝不能在缺 pdfium.dll 的情况下产出（BUG-2419）。
+# 上面的 install(DIRECTORY NATIVE_ASSETS_DIR) 是修复本身，这条守卫是防复发的那一半：
+# 任何人再次重写这份 CMakeLists 并丢掉 native assets 那两句时，构建立刻失败，而不是
+# 又发一个「声称支持 PDF、一导入就永久转圈」的安装包。
+#
+# 这是唯一能挡住回归的东西——flutter analyze 与 Dart 单测在结构上永远看不到 bundle
+# 里有哪些文件，而验证构建跑的是 --debug，也不经过这条 install 路径。
+#
+# 判据路径必须用 ${INSTALL_BUNDLE_LIB_DIR}（不转义），**不能**用
+# \${CMAKE_INSTALL_PREFIX}（转义）。本仓的 bundle 目录是生成器表达式（上面的
+# BUILD_BUNDLE_DIR = $<TARGET_FILE_DIR:...>），生成出来的 cmake_install.cmake 里
+# 第 5 行就是 `set(CMAKE_INSTALL_PREFIX "$<TARGET_FILE_DIR:fushi>")` —— 脚本期这个
+# 变量永远是那串**未求值的 genex 字面量**，EXISTS 恒假，与 dll 在不在无关，于是
+# Windows Release 构建 100% 失败（CI 日志里 `Installing: .../pdfium.dll` 明明成功）。
+# install(DESTINATION) 不受影响是因为 DESTINATION 的 genex 在 generate 期求值；
+# install(CODE) 里只有不转义的 ${...} 才会被 generate 期求值。
+install(CODE "
+  if(CMAKE_INSTALL_CONFIG_NAME MATCHES \"^(Profile|Release)$\")
+    if(NOT EXISTS \"${INSTALL_BUNDLE_LIB_DIR}/pdfium.dll\")
+      message(FATAL_ERROR
+        \"Missing pdfium.dll in the Windows bundle. \"
+        \"PDF import and the PDF reader hang forever without it (BUG-2419). \"
+        \"Expected it to arrive from ${NATIVE_ASSETS_DIR} via the install(DIRECTORY) rule above.\")
+    endif()
   endif()
 " COMPONENT Runtime)
 

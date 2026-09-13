@@ -11,16 +11,19 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart' as pref_keys;
+export 'package:fushi_engine/media/media_pref_keys.dart'
+    show kReaderSourcePersistedKey;
 
 /// BUG-793：EPUB 书 bookKey 集合的响应式来源。`.distinct(listEquals)` 按集合去重
 /// ——插入/删除触发，改作者/封面等纯列更新（集合不变）不触发，避免书架无谓重算。
@@ -81,9 +84,9 @@ final epubBookUidByKeyProvider =
     FutureProvider<Map<String, String>>((ref) async {
   ref.watch(_epubBookKeysProvider);
   final FushiDatabase db = ref.watch(appProvider).database;
-  final List<EpubBookRow> rows = await db.getAllEpubBooks();
+  final List<EpubBookMeta> rows = await db.getEpubBookMetas();
   return <String, String>{
-    for (final EpubBookRow r in rows)
+    for (final EpubBookMeta r in rows)
       if (r.uid.isNotEmpty) r.bookKey: r.uid,
   };
 });
@@ -180,7 +183,6 @@ class DeleteBookResult {
 /// media_items 的 sourceKey 行都用它）。历史值 `reader_ttu` 已由 v70 Drift 迁移
 /// （W2-1）一次性改写为本值；旧字面量只允许活在 fushi_core 的迁移阶梯里。
 /// 全仓对该字面量的引用一律走本常量（改名守卫锚点）。
-const String kReaderSourcePersistedKey = 'reader_fushi';
 
 class ReaderFushiSource extends ReaderMediaSource {
   ReaderFushiSource._()
@@ -290,7 +292,8 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// that contain no `%` (the common case), so nothing that worked before
   /// changes. Mirrors the HBK-AUDIT-127 encode/decode-symmetry fix for
   /// [epubUrl]/[fontUrl].
-  static const String _bookIdentifierPrefix = 'fushi://book/';
+  static const String _bookIdentifierPrefix =
+      pref_keys.kReaderBookIdentifierPrefix;
 
   static String? parseBookKey(String identifier) {
     if (!identifier.startsWith(_bookIdentifierPrefix)) return null;
@@ -524,17 +527,24 @@ class ReaderFushiSource extends ReaderMediaSource {
   }) async {
     final FushiDatabase db = appModel.database;
     final List<EpubBookRow> books = await db.getAllEpubBooks();
-    final ReaderPositionRepository posRepo = ReaderPositionRepository(db);
+    // 阅读位置一次整表取完（书 uid → 位置）。之前每本各查一次
+    // `findByBookUid`：Drift 在单连接上串行执行，`Future.wait` 只能重叠 await、
+    // 重叠不了 SQL，书架延迟仍随库大小线性增长（N 次往返 + N 次语句准备）。
+    final Map<String, ReaderPosition> positions =
+        await ReaderPositionRepository(db).findAllByBookUid();
 
     // HBK-AUDIT-128: previously this was a serial for-loop where every book
-    // awaited posRepo.findByTtuBookId(book.id) and up to four File.exists()
-    // cover probes one after another, so shelf latency scaled linearly with
-    // library size. Map each book to a Future and resolve them with
-    // Future.wait so the per-book DB query and cover probes overlap; Drift
-    // serialises the queries on its own connection, and Future.wait preserves
-    // input order so the shelf ordering is unchanged.
+    // awaited up to four File.exists() cover probes one after another, so
+    // shelf latency scaled linearly with library size. Map each book to a
+    // Future and resolve them with Future.wait so the cover probes overlap;
+    // Future.wait preserves input order so the shelf ordering is unchanged.
     return Future.wait<MediaItem>(
-      books.map((EpubBookRow book) => _bookToMediaItem(book, posRepo)),
+      books.map(
+        (EpubBookRow book) => _bookToMediaItem(
+          book,
+          book.uid.isEmpty ? null : positions[book.uid],
+        ),
+      ),
     );
   }
 
@@ -545,7 +555,11 @@ class ReaderFushiSource extends ReaderMediaSource {
     if (db == null) return null;
     final EpubBookRow? book = await db.getEpubBook(bookKey);
     if (book == null) return null;
-    return _bookToMediaItem(book, ReaderPositionRepository(db));
+    // v82：位置键 = 行 uid（空 uid 视同无阅读记录）。
+    final ReaderPosition? pos = book.uid.isEmpty
+        ? null
+        : await ReaderPositionRepository(db).findByBookUid(book.uid);
+    return _bookToMediaItem(book, pos);
   }
 
   /// 在线漫画的章级进度。
@@ -564,11 +578,12 @@ class ReaderFushiSource extends ReaderMediaSource {
     return (position: (total - selected).clamp(0, total), duration: total);
   }
 
-  /// Resolve a single [EpubBookRow] into a [MediaItem], reading its reader
-  /// position and cover concurrently with sibling books (HBK-AUDIT-128).
+  /// Resolve a single [EpubBookRow] into a [MediaItem], probing its cover
+  /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
+  /// reader position (already keyed by uid by the caller; null = never read).
   Future<MediaItem> _bookToMediaItem(
     EpubBookRow book,
-    ReaderPositionRepository posRepo,
+    ReaderPosition? pos,
   ) async {
     int position = 0;
     int duration = 1;
@@ -602,9 +617,6 @@ class ReaderFushiSource extends ReaderMediaSource {
 
     // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
     // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
-    // v82：位置键 = 行 uid（行在手直接取；空 uid 视同无阅读记录）。
-    final ReaderPosition? pos =
-        book.uid.isEmpty ? null : await posRepo.findByBookUid(book.uid);
     // 在线漫画的进度是**章级**的，不能走下面的页级分支。
     //
     // 那条分支算的是 `sectionIndex+1 ÷ chapterCount`，而在线条目里这两个量纲
@@ -618,26 +630,26 @@ class ReaderFushiSource extends ReaderMediaSource {
     final ({int position, int duration}) prog = onlineEntry != null
         ? _onlineMangaProgress(onlineEntry)
         : pageBased
-        // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
-        // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
-        // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
-        // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
-        // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
-        ? (
-            // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
-            // position 溢出 duration（>100%）。
-            position: ((pos?.sectionIndex ?? 0) + 1)
-                .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
-            duration: book.chapterCount > 0 ? book.chapterCount : 1,
-          )
-        : computeBookProgress(
-            sectionChars: sectionChars,
-            sectionIndex: pos?.sectionIndex,
-            charOffset: pos?.charOffset ?? -1,
-            // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
-            // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
-            normCharOffset: pos?.normCharOffset ?? 0,
-          );
+            // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
+            // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
+            // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
+            // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
+            // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
+            ? (
+                // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
+                // position 溢出 duration（>100%）。
+                position: ((pos?.sectionIndex ?? 0) + 1)
+                    .clamp(1, book.chapterCount > 0 ? book.chapterCount : 1),
+                duration: book.chapterCount > 0 ? book.chapterCount : 1,
+              )
+            : computeBookProgress(
+                sectionChars: sectionChars,
+                sectionIndex: pos?.sectionIndex,
+                charOffset: pos?.charOffset ?? -1,
+                // BUG-728：听书时 charOffset 存 -1，章内进度只在 normCharOffset（0-10000）
+                // 里，传进去让 computeBookProgress 回退还原，否则书架进度停在章边界。
+                normCharOffset: pos?.normCharOffset ?? 0,
+              );
     position = prog.position;
     duration = prog.duration;
 
@@ -1327,6 +1339,21 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
+  /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
+  /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。唯一消费点是
+  /// [popupDismissAnimationDuration]。
+  bool get popupDismissAnimation => getPreference<bool>(
+        key: 'popup_dismiss_animation',
+        defaultValue: true,
+      );
+
+  Future<void> setPopupDismissAnimation(bool value) async {
+    await setPreference<bool>(
+      key: 'popup_dismiss_animation',
+      value: value,
+    );
+  }
+
   /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。
   int get wheelPageTurnInterval =>
       readerSettings?.wheelPageTurnInterval ??
@@ -1380,6 +1407,19 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(
           key: 'show_top_progress_bar',
           value: !showTopProgressBar,
+        ));
+  }
+
+  /// 底部状态行左段「阅读计时器」是否显示（分层同 [showTopProgressBar]）。
+  bool get showReadingTimer =>
+      readerSettings?.showReadingTimer ??
+      getPreference<bool>(key: 'show_reading_timer', defaultValue: true);
+
+  void toggleShowReadingTimer() async {
+    await (readerSettings?.toggleShowReadingTimer() ??
+        setPreference<bool>(
+          key: 'show_reading_timer',
+          value: !showReadingTimer,
         ));
   }
 
@@ -1494,6 +1534,24 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<double>(key: 'font_size', value: v));
     onSettingsChangedLive?.call();
   }
+
+  /// 正文字重。UI 侧（SettingsStepperItem）值域是 double，存储与 CSS 侧是整数轴，
+  /// 故在此边界一次性 `round()`，不让 `400.0` 这类值流进 CSS 生成器。
+  ///
+  /// 读写两侧都夹到 CSS 的合法轴 100~900：stepper 自己保证了值域，但这个 facade 是
+  /// public，值也可能从旧机 / 同步 / 手改 DB 进来。越界值会生成 `font-weight: 0`
+  /// 这类整条被浏览器丢弃的声明——不崩，但静默退回书自带样式，极难查。
+  double get readerFontWeight => _clampFontWeight(readerSettings?.fontWeight ??
+          getPreference<int>(key: 'font_weight', defaultValue: 400))
+      .toDouble();
+  Future<void> setReaderFontWeight(double v) async {
+    final int weight = _clampFontWeight(v.round());
+    await (readerSettings?.setFontWeight(weight) ??
+        setPreference<int>(key: 'font_weight', value: weight));
+    onSettingsChangedLive?.call();
+  }
+
+  static int _clampFontWeight(int v) => v.clamp(100, 900);
 
   double get lyricsFontSize =>
       readerSettings?.lyricsFontSize ??
@@ -1612,6 +1670,69 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  int get readerVisualNovelRevealSpeed =>
+      readerSettings?.visualNovelRevealSpeed ??
+      getPreference<int>(key: 'vn_reveal_speed', defaultValue: 45)
+          .clamp(0, 120);
+  Future<void> setReaderVisualNovelRevealSpeed(int v) async {
+    final int normalized = v.clamp(0, 120);
+    await (readerSettings?.setVisualNovelRevealSpeed(normalized) ??
+        setPreference<int>(key: 'vn_reveal_speed', value: normalized));
+  }
+
+  String get readerVisualNovelScreenMode {
+    final String raw = readerSettings?.visualNovelScreenMode ??
+        getPreference<String>(key: 'vn_screen_mode', defaultValue: 'block');
+    return raw.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+  }
+
+  Future<void> setReaderVisualNovelScreenMode(String v) async {
+    final String normalized =
+        v.toLowerCase() == 'sentences' ? 'sentences' : 'block';
+    await (readerSettings?.setVisualNovelScreenMode(normalized) ??
+        setPreference<String>(key: 'vn_screen_mode', value: normalized));
+  }
+
+  int get readerVisualNovelSentencesPerScreen =>
+      readerSettings?.visualNovelSentencesPerScreen ??
+      getPreference<int>(key: 'vn_sentences_per_screen', defaultValue: 1)
+          .clamp(1, 12);
+  Future<void> setReaderVisualNovelSentencesPerScreen(int v) async {
+    final int normalized = v.clamp(1, 12);
+    await (readerSettings?.setVisualNovelSentencesPerScreen(normalized) ??
+        setPreference<int>(
+          key: 'vn_sentences_per_screen',
+          value: normalized,
+        ));
+  }
+
+  bool get readerVisualNovelPreserveDialogue =>
+      readerSettings?.visualNovelPreserveDialogueBubbles ??
+      getPreference<bool>(key: 'vn_preserve_dialogue', defaultValue: false);
+  Future<void> setReaderVisualNovelPreserveDialogue(bool v) async {
+    await (readerSettings?.setVisualNovelPreserveDialogueBubbles(v) ??
+        setPreference<bool>(key: 'vn_preserve_dialogue', value: v));
+  }
+
+  bool get readerVisualNovelClickAdvance =>
+      readerSettings?.visualNovelClickAdvance ??
+      getPreference<bool>(key: 'vn_click_advance', defaultValue: false);
+  Future<void> setReaderVisualNovelClickAdvance(bool v) async {
+    await (readerSettings?.setVisualNovelClickAdvance(v) ??
+        setPreference<bool>(key: 'vn_click_advance', value: v));
+  }
+
+  bool get readerVisualNovelMergeSpokenSentence =>
+      readerSettings?.visualNovelMergeCrossScreenSentenceAudioCues ??
+      getPreference<bool>(
+        key: 'vn_merge_cross_screen_cues',
+        defaultValue: false,
+      );
+  Future<void> setReaderVisualNovelMergeSpokenSentence(bool v) async {
+    await (readerSettings?.setVisualNovelMergeCrossScreenSentenceAudioCues(v) ??
+        setPreference<bool>(key: 'vn_merge_cross_screen_cues', value: v));
+  }
+
   String get readerTheme =>
       readerSettings?.theme ??
       getPreference<String>(
@@ -1633,7 +1754,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         getPreference<bool?>(key: 'hide_furigana', defaultValue: null);
     if (legacy != null) {
       final String oldStyle = _legacyFuriganaStyle;
-      final String mode = (legacy as bool) ? 'hide' : 'show';
+      final String mode = (legacy as bool) ? 'hidden' : 'off';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
             ? oldStyle
@@ -1648,7 +1769,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       return merged;
     }
     return normalizeFuriganaMode(
-      getPreference<String>(key: 'furigana_mode', defaultValue: 'show'),
+      getPreference<String>(key: 'furigana_mode', defaultValue: 'off'),
     );
   }
 

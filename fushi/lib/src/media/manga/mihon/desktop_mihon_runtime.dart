@@ -11,8 +11,12 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_child_process_containment.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_gate.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_proxy_policy_server.dart';
 
 const Duration kMihonSourceImageHeaderTimeout = Duration(seconds: 90);
 const Duration kMihonSourceImageIdleTimeout = Duration(seconds: 90);
@@ -44,19 +48,31 @@ Future<Uint8List> readMihonSourceImageBytes(
 }
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
-    implements CancellableMihonRuntime {
+    implements
+        CancellableMihonRuntime,
+        HostCookieMihonRuntime,
+        ChallengeMihonRuntime {
   DesktopMihonRuntime({
     required this.dataDirectory,
     Directory? resourceDirectory,
     http.Client? httpClient,
+    MihonCookieJar? cookieJar,
   })  : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
         _processContainment = MihonChildProcessContainment.platform(),
-        _http = httpClient ?? http.Client();
+        _http = httpClient ?? http.Client(),
+        _cookies = cookieJar ?? MihonCookieJar.shared;
 
   final Directory dataDirectory;
   final Directory resourceDirectory;
   final http.Client _http;
   final MihonChildProcessContainment _processContainment;
+
+  /// 登录态真值。sidecar 自己的 cookie jar 是进程内存、`_restart()` 即清空，
+  /// 所以宿主每次调用都要重新注入（BUG-2425）。
+  final MihonCookieJar _cookies;
+
+  @override
+  MihonCookieJar get cookieJar => _cookies;
 
   Process? _process;
   int? _port;
@@ -64,7 +80,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   _SidecarLogSink? _log;
   Future<void>? _starting;
   bool _disposed = false;
-  bool _restartUsed = false;
+  MihonProxyPolicyServer? _proxyPolicy;
   final Map<String, _CachedApk> _apkCache = <String, _CachedApk>{};
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
@@ -92,6 +108,81 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'Content-Type': 'application/json; charset=utf-8',
       };
 
+  /// [_headers] 再加上 [source] 站点的登录 cookie。
+  ///
+  /// sidecar 的 `DalvikHandler` 把收到的 `Cookie:` 头解析后灌进该源的 okhttp
+  /// jar，域取自 `source.getBaseUrl()`——所以这里必须用**同一个 baseUrl** 挑
+  /// cookie，否则注进去的条目域对不上，等于没注。
+  ///
+  /// 交出的是**整站**的 cookie 连同各自真实的域，而不是「对 baseUrl 生效的那些」：
+  /// 宿主并不知道扩展接下来要打哪些子域（日站的登录域 / api 域 / viewer 域常常
+  /// 各不相同），按 baseUrl 筛会把只作用在登录子域上的会话 cookie 整个丢掉。域
+  /// 匹配由 sidecar 那边的 okhttp jar 按每个实际请求 URL 去做。
+  ///
+  /// 刻意**不设源的 UA**：本轮桌面端不做 Cloudflare 解题（sidecar 的
+  /// `CloudflareInterceptor` 是空壳），没有「clearance 绑定 UA」的约束，改写只会
+  /// 平白破坏自设 UA 的源。注意这条**只有在 sidecar 改成读专用头之后才成立**——
+  /// 在那之前，`dart:io` 无条件带上的 `User-Agent: Dart/x.y (dart:io)` 会被当成
+  /// 源的 UA 全局写下去。将来补解题时，UA 必须与 cookie 一起作为「登录身份」整体
+  /// 存取，而不是在这里单独塞一个默认值。
+  Future<Map<String, String>> _headersFor(MihonSource? source) async {
+    final Map<String, String> headers = _headers;
+    final Uri? base = _sourceBaseUri(source);
+    if (base == null) return headers;
+    await _cookies.ensureLoadedBestEffort();
+    final List<MangaCookie> cookies = _cookies.cookiesForSite(base.host);
+    if (cookies.isNotEmpty) {
+      headers[kMihonCookieHeader] = encodeMihonCookieWire(cookies);
+    }
+    return headers;
+  }
+
+  /// 测试缝：直接跑生产的请求头构造，不必先把 JVM sidecar 拉起来。
+  ///
+  /// 暴露的是**同一个函数**而不是一份复制品——注入规则一旦在测试里另写一遍，
+  /// 两边就能各自正确、合起来还是不发 cookie。
+  @visibleForTesting
+  Future<Map<String, String>> debugRequestHeaders(MihonSource? source) =>
+      _headersFor(source);
+
+  /// 测试缝：同上，跑生产的响应 cookie 吸收。
+  @visibleForTesting
+  Future<void> debugAbsorbResponseCookies(
+    MihonSource? source,
+    Map<String, String> responseHeaders,
+  ) => _absorbResponseCookies(source, responseHeaders);
+
+  /// 源站 baseUrl；解析不出 host 的源（空串 / 相对地址）当作没有站点。
+  static Uri? _sourceBaseUri(MihonSource? source) {
+    final String raw = source?.baseUrl.trim() ?? '';
+    if (raw.isEmpty) return null;
+    final Uri? parsed = Uri.tryParse(raw);
+    if (parsed == null || parsed.host.isEmpty) return null;
+    return parsed;
+  }
+
+  /// 把 sidecar 回传的 `Set-Cookie` 增量并回宿主 jar。
+  ///
+  /// 少了这一步，登录态只能撑到服务端轮转会话为止：源在响应里换发的新
+  /// session cookie 只活在 sidecar 的内存 jar 里，下次 `_restart()` 一清，
+  /// 宿主手上还是登录时那份**已经作废**的旧 cookie。
+  Future<void> _absorbResponseCookies(
+    MihonSource? source,
+    Map<String, String> responseHeaders,
+  ) async {
+    if (_sourceBaseUri(source) == null) return;
+    final String? raw = responseHeaders[kMihonSetCookieHeader];
+    if (raw == null || raw.isEmpty) return;
+    final List<MangaCookie> incoming = decodeMihonCookieWire(raw);
+    if (incoming.isEmpty) return;
+    try {
+      await _cookies.mergeFromRuntime(incoming);
+    } on Object {
+      // cookie 落盘失败不该把一次成功的源调用变成失败：内存里的新值这一轮仍然
+      // 有效，下一次响应会再带一遍。
+    }
+  }
+
   @override
   Future<MihonCapabilities> getCapabilities() async {
     await _ensureStarted();
@@ -107,6 +198,30 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return MihonExtensionInspection.fromJson(response);
   }
 
+  /// 在宿主的浏览器里解 Cloudflare 挑战，把拿到的整站 cookie 写进 [_cookies]。
+  ///
+  /// 解题页要用 sidecar **实际发出**的 UA 打开被拦的地址（都由 sidecar 随错误报
+  /// 回来）：`cf_clearance` 绑定 UA，浏览器换个 UA 拿到的 cookie 交给 sidecar 会
+  /// 被 Cloudflare 原地拒掉，表现为「验证完了还是 403」。写进的是同一个 jar 实例，
+  /// 下一次调用 [_headersFor] 就会把新 cookie 注入 sidecar，不需要重启子进程。
+  @override
+  Future<void> solveCloudflare(Uri uri, {String? userAgent}) async {
+    final MihonCloudflareResolver? resolver = MihonCloudflareGate.resolver;
+    if (resolver == null) {
+      throw const MihonRuntimeException(
+        'CHALLENGE_UNAVAILABLE',
+        'No browser is available to solve the verification',
+      );
+    }
+    final bool solved = await resolver(uri, userAgent ?? '', _cookies);
+    if (!solved) {
+      throw const MihonRuntimeException(
+        'CHALLENGE_CANCELLED',
+        'Website verification was cancelled',
+      );
+    }
+  }
+
   @override
   Future<String> installPrivateExtension(String apkPath) async => apkPath;
 
@@ -119,14 +234,15 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Future<Object?> invokeBridge(
     MihonExtensionRef extension,
     String method,
-    Map<String, Object?> arguments,
-  ) async {
+    Map<String, Object?> arguments, {
+    MihonSource? source,
+  }) async {
     final Map<String, Object?> payload = <String, Object?>{
       'data': await _apkBase64(extension.apkPath),
       'method': method,
       ...arguments,
     };
-    return _postJson('/dalvik', payload);
+    return _postJson('/dalvik', payload, source: source);
   }
 
   @override
@@ -209,7 +325,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   }) async {
     await _ensureStarted();
     final http.Request request = http.Request('POST', _uri('/source-image'))
-      ..headers.addAll(_headers)
+      ..headers.addAll(await _headersFor(source))
       ..body = jsonEncode(<String, Object?>{
         'data': await _apkBase64(extension.apkPath),
         'sourceId': source.id,
@@ -218,6 +334,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       });
     final http.StreamedResponse response =
         await _http.send(request).timeout(kMihonSourceImageHeaderTimeout);
+    // 封面/图片请求往往比 `/dalvik` 更频繁，先撞上会话续期的通常正是它们；
+    // 只注入不回收，等于把这条链路上换发的新 cookie 全丢掉。
+    await _absorbResponseCookies(source, response.headers);
     if (response.statusCode != HttpStatus.ok) {
       await response.stream.drain<void>().timeout(kMihonSourceImageIdleTimeout);
       throw MihonRuntimeException(
@@ -240,22 +359,38 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     MihonExtensionRef extension,
     MihonSource source,
   ) async {
-    await _postObject(
-      '/source-data/clear',
-      <String, Object?>{
-        'data': await _apkBase64(extension.apkPath),
-        'sourceId': source.id,
-      },
-    );
+    await _postObject('/source-data/clear', <String, Object?>{
+      'data': await _apkBase64(extension.apkPath),
+      'sourceId': source.id,
+    }, source: source);
+    // sidecar 侧 `SourceDataHandler` 清的是它自己那份内存 jar。宿主手上还留着
+    // 真值，不一起清的话「清除源数据」清完立刻又被下一次请求原样注回去——用户
+    // 看到的就是「登出按了没反应」。
+    final Uri? base = _sourceBaseUri(source);
+    if (base != null) {
+      try {
+        await _cookies.clearForHost(base.host);
+      } on Object {
+        // 清不动文件不该让「清除源数据」整体失败：服务端那份已经清了。
+      }
+    }
     await _restart();
   }
 
   @override
-  Future<void> invalidateExtension(String packageName) async {
+  Future<void> invalidateExtension(String packageName) =>
+      invalidateExtensions(<String>[packageName]);
+
+  @override
+  Future<void> invalidateExtensions(Iterable<String> packageNames) async {
+    final Set<String> names = packageNames.toSet();
+    if (names.isEmpty) return;
     _apkCache.removeWhere(
       (String path, _CachedApk value) =>
-          p.basenameWithoutExtension(path) == packageName,
+          names.contains(p.basenameWithoutExtension(path)),
     );
+    // 一次重启覆盖整批：sidecar 重启后所有扩展都会被重新加载，逐个重启没有额外
+    // 效果，只有额外代价。
     await _restart();
   }
 
@@ -263,6 +398,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    final _SidecarLogSink? log = _log;
     try {
       if (_process != null && _port != null) {
         await _http
@@ -300,6 +436,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     }
     _imageClients.clear();
     _http.close();
+    await log?.close();
+    await _proxyPolicy?.close();
+    _proxyPolicy = null;
   }
 
   Future<void> _ensureStarted() async {
@@ -323,10 +462,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   Future<void> _start() async {
     final File java = File(_javaExecutablePath());
-    final File server = File(p.join(
-      resourceDirectory.path,
-      'm-extension-server.jar',
-    ));
+    final File server = File(
+      p.join(resourceDirectory.path, 'm-extension-server.jar'),
+    );
     if (!java.existsSync() || !server.existsSync()) {
       throw MihonRuntimeException(
         'RUNTIME_MISSING',
@@ -335,13 +473,18 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       );
     }
     await dataDirectory.create(recursive: true);
-    final Directory preferences =
-        Directory(p.join(dataDirectory.path, 'preferences'));
+    final Directory preferences = Directory(
+      p.join(dataDirectory.path, 'preferences'),
+    );
     await preferences.create(recursive: true);
     final Random random = Random.secure();
     final String token = base64UrlEncode(
       List<int>.generate(32, (_) => random.nextInt(256)),
     ).replaceAll('=', '');
+    await _proxyPolicy?.close();
+    final MihonProxyPolicyServer proxyPolicy =
+        await MihonProxyPolicyServer.start(token);
+    _proxyPolicy = proxyPolicy;
     final Process process = await Process.start(
       java.path,
       <String>[
@@ -359,7 +502,10 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         '0',
         dataDirectory.path,
       ],
-      environment: <String, String>{'FUSHI_MIHON_TOKEN': token},
+      environment: <String, String>{
+        'FUSHI_MIHON_TOKEN': token,
+        'FUSHI_MIHON_PROXY_POLICY_PORT': '${proxyPolicy.port}',
+      },
       mode: ProcessStartMode.normal,
     );
     if (_disposed) {
@@ -417,16 +563,20 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         .transform(const Utf8Decoder(allowMalformed: true))
         .transform(const LineSplitter())
         .listen(log.write);
-    unawaited(process.exitCode.then((int _) {
-      if (!announced.isCompleted) announced.complete(null);
-      if (identical(_process, process)) {
-        _process = null;
-        _port = null;
-        _token = null;
-      }
-      if (identical(_log, log)) _log = null;
-      unawaited(log.close());
-    }));
+    unawaited(
+      process.exitCode.then((int _) {
+        unawaited(proxyPolicy.close());
+        if (identical(_proxyPolicy, proxyPolicy)) _proxyPolicy = null;
+        if (!announced.isCompleted) announced.complete(null);
+        if (identical(_process, process)) {
+          _process = null;
+          _port = null;
+          _token = null;
+        }
+        if (identical(_log, log)) _log = null;
+        unawaited(log.close());
+      }),
+    );
 
     final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
     final int? readyPort = await announced.future.timeout(
@@ -512,6 +662,57 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     return '$type\n$stack';
   }
 
+  /// Decode the bridge envelope without confusing source HTTP failures with
+  /// transport failures. Older sidecars expose the source code via HttpException.
+  static MihonRuntimeException decodeErrorResponse(http.Response response) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } on FormatException {
+      // Non-JSON gateway responses still have a meaningful transport status.
+    }
+    final Map<Object?, Object?> error = decoded is Map<Object?, Object?>
+        ? decoded
+        : const <Object?, Object?>{};
+    final Object? kind = error['errorKind'];
+    // sidecar 的 CloudflareInterceptor 认出了拦截页：把被拦 URL 与实际发出的 UA
+    // 原样带上，解题页要用同一个 UA 打开同一个地址，cf_clearance 才对得上。
+    if (kind == 'cloudflare') {
+      final Uri? challengeUrl = Uri.tryParse(
+        error['challengeUrl']?.toString() ?? '',
+      );
+      if (challengeUrl != null &&
+          challengeUrl.host.isNotEmpty &&
+          (challengeUrl.scheme == 'http' || challengeUrl.scheme == 'https')) {
+        final String? userAgent = error['userAgent']?.toString();
+        return MihonCloudflareChallengeException(
+          challengeUrl,
+          userAgent: userAgent == null || userAgent.isEmpty ? null : userAgent,
+          details: _errorDetails(error),
+        );
+      }
+    }
+    final Object? sourceCode = kind == 'sourceHttp'
+        ? error['sourceStatusCode']
+        : kind == null &&
+              error['errorType'] == 'eu.kanade.tachiyomi.network.HttpException'
+        ? error['code']
+        : null;
+    final int? sourceStatus =
+        sourceCode is int && sourceCode >= 400 && sourceCode <= 599
+        ? sourceCode
+        : null;
+    return MihonRuntimeException(
+      sourceStatus == null
+          ? 'BRIDGE_HTTP_${response.statusCode}'
+          : 'SOURCE_HTTP_$sourceStatus',
+      sourceStatus == null
+          ? error['error']?.toString() ?? 'Mihon bridge request failed'
+          : 'Manga source returned HTTP $sourceStatus',
+      details: _errorDetails(error),
+    );
+  }
+
   Future<MihonCapabilities> _readCapabilities() async {
     final http.Response response = await _http
         .get(_uri('/capabilities'), headers: _headers)
@@ -522,17 +723,24 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         'M-Extension-Server capabilities request failed',
       );
     }
-    return MihonCapabilities.fromJson(
-      (jsonDecode(response.body) as Map<Object?, Object?>)
-          .cast<String, Object?>(),
-    );
+    final Map<String, Object?> payload =
+        (jsonDecode(response.body) as Map<Object?, Object?>)
+            .cast<String, Object?>();
+    if (payload['hostProxyPolicy'] != true) {
+      throw const MihonRuntimeException(
+        'INCOMPATIBLE_BRIDGE',
+        'Bundled M-Extension-Server lacks host proxy policy support',
+      );
+    }
+    return MihonCapabilities.fromJson(payload);
   }
 
   Future<Map<String, Object?>> _postObject(
     String path,
-    Map<String, Object?> body,
-  ) async {
-    final Object? response = await _postJson(path, body);
+    Map<String, Object?> body, {
+    MihonSource? source,
+  }) async {
+    final Object? response = await _postJson(path, body, source: source);
     if (response is! Map<Object?, Object?>) {
       throw MihonRuntimeException(
         'INVALID_RESPONSE',
@@ -545,43 +753,40 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   Future<Object?> _postJson(
     String path,
     Map<String, Object?> body, {
-    bool allowRestart = true,
+    MihonSource? source,
   }) async {
     await _ensureStarted();
     try {
       final http.Response response = await _http
-          .post(_uri(path), headers: _headers, body: jsonEncode(body))
+          .post(
+            _uri(path),
+            headers: await _headersFor(source),
+            body: jsonEncode(body),
+          )
           .timeout(const Duration(seconds: 45));
-      final Object? decoded =
-          response.body.isEmpty ? null : jsonDecode(response.body);
+      // 先吸收 cookie 再判状态码：源返回 403 往往正是「会话过期并换发了新
+      // cookie」那一刻，此时丢掉回传的增量会让下一次重试继续用作废的旧值。
+      await _absorbResponseCookies(source, response.headers);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final Map<Object?, Object?>? error =
-            decoded is Map<Object?, Object?> ? decoded : null;
-        throw MihonRuntimeException(
-          'BRIDGE_HTTP_${response.statusCode}',
-          error?['error']?.toString() ?? 'Mihon bridge request failed',
-          // 桌面路径此前从不填 details，于是「查看详情」对话框在桌面端恒为空，
-          // 用户只能看到一行没有出处的错误文本。sidecar 现在回传异常类型与 Java
-          // 栈（DalvikHandler.errorResponse），把它们接上，与 Android 路径对齐。
-          details: _errorDetails(error),
-        );
+        throw decodeErrorResponse(response);
       }
-      return decoded;
+      return response.body.isEmpty ? null : jsonDecode(response.body);
     } on MihonRuntimeException {
       rethrow;
+    } on TimeoutException catch (error) {
+      // A slow source is not evidence that the shared JVM has died. Killing it
+      // here aborts every concurrent source search and silently replays actions.
+      throw MihonRuntimeException(
+        'BRIDGE_TIMEOUT',
+        'Mihon source request timed out',
+        cause: error,
+      );
     } on Object catch (error) {
-      if (allowRestart && !_restartUsed) {
-        _restartUsed = true;
-        await _restart();
-        return _postJson(path, body, allowRestart: false);
-      }
       throw MihonRuntimeException(
         'BRIDGE_IO',
         'M-Extension-Server request failed',
         cause: error,
       );
-    } finally {
-      if (!allowRestart) _restartUsed = false;
     }
   }
 
@@ -650,12 +855,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   static Directory _defaultResourceDirectory() {
     final Directory executable = File(Platform.resolvedExecutable).parent;
     if (Platform.isMacOS) {
-      return Directory(p.normalize(p.join(
-        executable.path,
-        '..',
-        'Resources',
-        'mihon_bridge',
-      )));
+      return Directory(
+        p.normalize(p.join(executable.path, '..', 'Resources', 'mihon_bridge')),
+      );
     }
     return Directory(p.join(executable.path, 'mihon_bridge'));
   }
@@ -694,6 +896,7 @@ class _SidecarLogSink {
   IOSink? _sink;
   int _written;
   bool _closed = false;
+  Future<void>? _closing;
 
   static Future<_SidecarLogSink> open(Directory dataDirectory) async {
     final Directory logs = Directory(p.join(dataDirectory.path, 'logs'));
@@ -742,7 +945,9 @@ class _SidecarLogSink {
     }
   }
 
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     if (_closed) return;
     _closed = true;
     final IOSink? sink = _sink;

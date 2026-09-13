@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 11;
+const int kShortcutSchemaVersion = 12;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -275,6 +275,14 @@ class FushiShortcutRegistry extends ChangeNotifier {
     //
     // 版本号仍然 bump 到 11（已发出去的快照会写 11，不能回退），只是循环体为空。
     // 若将来真要清理无效绑定，判据必须是「弹窗桥也解析不到」，不是「通道没开」。
+    //
+    // v11 -> v12（用户请求「一个键把 Hibiki 置顶并显示查词页」）：新增
+    // globalExternalOpenLookupPage（globalExternal scope，桌面默认 Ctrl+Alt+F /
+    // macOS Meta+Alt+F、移动端空）。**全新 action**，老快照里根本没有它的 key ——
+    // [loadDefaults] 已为它播种平台默认、[_loadFromJson] 只覆盖快照里显式出现的
+    // key 并保留缺席 key 的默认，故老用户升级后天然拿到默认热键，不必逐个 restore，
+    // 也绝不误伤任何既有绑定。与 v3→v4 新增 globalExternalLookup 完全同构，这里只
+    // bump 版本保持「快照版本 < 当前 ⇒ 跑迁移」不变式诚实，循环体为空。
   }
 
   /// v10：仅当 [action] 的手柄绑定**为空**时，把当前默认表的手柄绑定播种进去；
@@ -575,12 +583,33 @@ class FushiShortcutRegistry extends ChangeNotifier {
     return null;
   }
 
+  /// 键盘冲突检测**额外**扫 `globalExternal`，理由与
+  /// [_gamepadPreemptingScopes] 同构、而且更强：这个 scope 的键盘绑定由
+  /// `GlobalLookupController` 注册成 win32 `RegisterHotKey`，是**全系统级**吞键
+  /// ——命中时前台程序（包括 Hibiki 自己的页面）根本收不到那次按键。于是用户把
+  /// app 外热键改成某个 app 内已用组合键（比如 Ctrl+F）后，阅读器 / 首页的
+  /// Ctrl+F 会在全 app 静默失效，而设置页一声不吭。
+  ///
+  /// 同样只改**检测**不改 `coactiveScopes`：后者同时喂运行时解析
+  /// （`resolveKeyboard` / `reverse_binding_index`），动它就是改派发。
+  static const List<ShortcutScope> _keyboardPreemptingScopes = <ShortcutScope>[
+    ShortcutScope.globalExternal
+  ];
+
   ShortcutAction? hasKeyboardConflict(
     ShortcutScope scope,
     InputBinding binding, {
     required ShortcutAction? exclude,
   }) {
-    for (final coactive in scope.coactiveScopes) {
+    // globalExternal 自己改键时只扫自己：它已经是被扫的那一方，再把页面 scope 全
+    // 拉进来会让「OS 热键 vs 页面键」这条**单向**抢占被报成双向冲突。
+    final List<ShortcutScope> scopes = scope == ShortcutScope.globalExternal
+        ? scope.coactiveScopes
+        : <ShortcutScope>[
+            ...scope.coactiveScopes,
+            ..._keyboardPreemptingScopes
+          ];
+    for (final coactive in scopes) {
       for (final action in ShortcutAction.actionsForScope(coactive)) {
         if (action == exclude) continue;
         final bindings = _bindings[action];

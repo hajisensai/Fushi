@@ -14,6 +14,27 @@ const String kZatoFullLine =
     "Some would call it a miracle. And of course, that's a lovely way to put it...";
 
 void main() {
+  test('BUG-2349 late resource replaces loopback duration only when changed',
+      () {
+    final TexthookerService service = TexthookerService.test();
+    final TexthookerLineEntry entry = service.appendLine('synthetic line')!;
+    service.updateLineAudio(entry.id,
+        status: TexthookerLineAudioStatus.encoded,
+        backend: 'system_loopback',
+        durationMs: 5000);
+    service.updateLineAudio(entry.id,
+        status: TexthookerLineAudioStatus.matched,
+        backend: 'game_resource',
+        resourceId: '1000_fushi_textseq2_voice.ogg');
+    expect(service.entryById(entry.id)!.audioDurationMs, isNull);
+    service.updateLineAudio(entry.id,
+        status: TexthookerLineAudioStatus.encoded, durationMs: 7200);
+    service.updateLineAudio(entry.id,
+        status: TexthookerLineAudioStatus.matched,
+        resourceId: '1000_fushi_textseq2_voice.ogg');
+    expect(service.entryById(entry.id)!.audioDurationMs, 7200);
+  });
+
   group('折叠判据', () {
     test('前缀增长（同一句越写越长）算同一句', () {
       expect(

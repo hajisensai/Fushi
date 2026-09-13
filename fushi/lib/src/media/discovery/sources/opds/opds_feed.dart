@@ -10,7 +10,7 @@
 /// 只在「用户恰好用了另一种服务端」时才暴露。
 library;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
 /// OPDS 供给的文件类型：MIME ↔ 落盘扩展名 ↔ 本仓媒体域的**唯一真相源**。
 ///

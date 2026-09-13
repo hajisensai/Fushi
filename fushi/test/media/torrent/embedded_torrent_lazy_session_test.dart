@@ -44,7 +44,7 @@ void main() {
 
     setUpAll(() {
       appModel = _read('lib/src/models/app_model.dart');
-      host = _read('lib/src/media/torrent/embedded_torrent_host.dart');
+      host = _read('../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart');
     });
 
     test('startAnimeDownloadService 不得创建 libtorrent session', () {

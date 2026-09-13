@@ -111,7 +111,7 @@ void main() {
 
       final int tryIdx = code.indexOf('try {');
       final int evalIdx =
-          code.indexOf('await _controller!.evaluateJavascript(');
+          code.indexOf('await controller.evaluateJavascript(');
       final int catchIdx = code.indexOf('} catch (e, stack) {');
 
       expect(tryIdx, greaterThanOrEqualTo(0),

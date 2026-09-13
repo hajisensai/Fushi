@@ -1,10 +1,10 @@
 import 'package:fushi/src/media/video/url_stream_video.dart';
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/youtube_stream_cache.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是可播 http/https 流 URL。
 ///

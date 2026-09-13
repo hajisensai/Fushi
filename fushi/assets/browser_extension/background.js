@@ -1,6 +1,6 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-update.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-update.js', 'site-cookie-export.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
@@ -198,7 +198,7 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
 // 响应拿。但它体量大（实测整库 285 KB，单本 OALDPE 就 210 KB），不能每次 hover 查词都传，
 // 故走 revision 门控：请求里带上已缓存的 revision，server 只在指纹变了（用户导入/删词典、
 // 改自定义 CSS）时才回全量，其余时候只回指纹。SW 被回收后缓存清空，下次查词自动重取一次。
-let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
 
 // 把服务端这次查词响应里的 CSS 尾段并进缓存，并把**完整**尾段回填进 data，
 // 让 content.js / side-panel.js 无论命中缓存与否都能拿到同一份可直接赋给 window.* 的值。
@@ -214,14 +214,20 @@ function fushiMergePopupCss(data) {
       globalDictCSS: typeof data.globalDictCSS === 'string' ? data.globalDictCSS : '',
       customDictCSS: (data.customDictCSS && typeof data.customDictCSS === 'object')
         ? data.customDictCSS : {},
+      // 词典改名（v95）：真名 -> 显示名。与 CSS 同一条 revision 门控，改名会改
+      // 指纹 → 下次查词全量重取一次。
+      dictionaryDisplayNames:
+        (data.dictionaryDisplayNames && typeof data.dictionaryDisplayNames === 'object')
+          ? data.dictionaryDisplayNames : {},
     };
   } else if (fushiPopupCss.revision !== revision) {
     // 指纹变了但这次响应没带正文（不该发生；真发生时宁可清空也不能用陈旧样式）。
-    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {} };
+    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
   }
   data.dictionaryStyles = fushiPopupCss.dictionaryStyles;
   data.globalDictCSS = fushiPopupCss.globalDictCSS;
   data.customDictCSS = fushiPopupCss.customDictCSS;
+  data.dictionaryDisplayNames = fushiPopupCss.dictionaryDisplayNames;
   return data;
 }
 
@@ -371,7 +377,75 @@ maybeReinjectAfterReload(); // BUG-1047：若上一轮是自更新 reload，补�
 try { chrome.alarms.create('fushiHeartbeat', { periodInMinutes: 1 }); } catch (_) { /* 无 alarms 权限：跳过心跳 */ }
 if (chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm && alarm.name === 'fushiHeartbeat') checkVersionOnStartup();
+    if (alarm && alarm.name === 'fushiHeartbeat') {
+      checkVersionOnStartup();
+      maybeExportSiteCookies(null);
+    }
+  });
+}
+
+// BUG-2480：漫画源登录——把浏览器里已登录的站点会话送给 Fushi。
+// app 登录页点「从浏览器导入」后在 status 回包里登记 { host, nonce } 并在系统浏览器打开
+// 该站；这边在该站页面加载完成 / 心跳时看到登记就 getAll 后回传。见 site-cookie-export.js。
+let siteCookieExportInflight = null;
+async function fetchCookieImportRequest() {
+  const api = self.FUSHI_SITE_COOKIES;
+  if (!api) return null;
+  const { base, token } = await cfg();
+  try {
+    const r = await fetch(base + '/api/extension/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+      body: statusRequestBody(),
+    });
+    if (!r.ok) return null;
+    return api.parseImportRequest(await responseJson(r));
+  } catch (_) {
+    return null;
+  }
+}
+async function siteHasOpenTab(host) {
+  const api = self.FUSHI_SITE_COOKIES;
+  try {
+    const tabs = await chrome.tabs.query({});
+    return tabs.some((tab) => api.hostBelongsTo(api.hostOfUrl(tab && tab.url), host));
+  } catch (_) {
+    return false;
+  }
+}
+// 只在「登记的站点确实开着标签页」时才送：登记存在但站点没打开，说明用户还没走到
+// 浏览器那一步，送一份陈旧会话只会让 app 那边误以为已导入。
+async function maybeExportSiteCookies(loadedUrl) {
+  const api = self.FUSHI_SITE_COOKIES;
+  if (!api || !chrome.cookies) return;
+  if (siteCookieExportInflight) return;
+  siteCookieExportInflight = (async () => {
+    const request = await fetchCookieImportRequest();
+    if (!request) return;
+    if (loadedUrl != null) {
+      if (!api.hostBelongsTo(api.hostOfUrl(loadedUrl), request.host)) return;
+    } else if (!(await siteHasOpenTab(request.host))) {
+      return;
+    }
+    let cookies = [];
+    try {
+      cookies = await chrome.cookies.getAll({ domain: request.host });
+    } catch (_) {
+      return;
+    }
+    const { base, token } = await cfg();
+    try {
+      await fetch(base + '/api/extension/site-cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+        body: JSON.stringify(api.toPayload(request, cookies)),
+      });
+    } catch (_) { /* app 没开 / 登记已撤：下次再说 */ }
+  })().finally(() => { siteCookieExportInflight = null; });
+}
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+    if (info && info.status === 'complete' && tab && tab.url) maybeExportSiteCookies(tab.url);
   });
 }
 
@@ -493,6 +567,37 @@ async function fushiIconClick(tab) {
 // 迁到 action-popup.js 的「开始生成/录制」按钮：按钮点击是用户手势，query 到当前 tab 后发
 // fushiIconAction 消息到这里，由下方 onMessage 分支调用同一个 fushiIconClick（逻辑不变，只换触发口）。
 
+// 审计报告 #1295：抽屉 iframe 的面板过去把「宿主 origin」写在 URL 参数里自证——
+// 任意网站嵌一句 `side-panel.html?fushiEmbed=1&fushiHostOrigin=https://evil.com`
+// 就能让自己的 origin 通过校验。改为 **SW 背书的双向兑换**：
+//   ① 抽屉 content script 要 token：SW 从 `sender.tab.url`（网页不可见、不可伪造）
+//      取真 origin，签发一次性凭证（绑定 tabId，TTL 10 分钟）；
+//   ② 面板 iframe 拿 token 来兑：核销 tabId 相符后回真 origin，供 ev.origin 校验。
+// 攻击者直接嵌 iframe 手里没有 token（web 页发不了 runtime 消息），兑换必然落空 →
+// EMBED_HOST_ORIGIN 恒为 ''，宿主消息全数丢弃（面板照常渲染，只是驱动不进来）。
+const fushiEmbedTokens = new Map(); // token -> {tabId, origin, exp}
+function fushiIssueEmbedToken(tabId, tabUrl) {
+  let origin = '';
+  try { origin = new URL(tabUrl).origin; } catch (_) { return null; }
+  if (!origin || origin === 'null' || !Number.isInteger(tabId)) return null;
+  const now = Date.now();
+  for (const [t, r] of fushiEmbedTokens) if (r.exp < now) fushiEmbedTokens.delete(t);
+  let token;
+  try { token = crypto.randomUUID(); } catch (_) {
+    token = now.toString(36) + '-' + Math.random().toString(36).slice(2);
+  }
+  fushiEmbedTokens.set(token, { tabId, origin, exp: now + 600000 });
+  return token;
+}
+function fushiRedeemEmbedToken(token, senderTabId) {
+  if (!token || typeof token !== 'string') return '';
+  const rec = fushiEmbedTokens.get(token);
+  if (!rec || rec.exp < Date.now()) { fushiEmbedTokens.delete(token); return ''; }
+  // token 换 Tab 用不了：核销方必须是签发时那个标签页。
+  if (!Number.isInteger(senderTabId) || rec.tabId !== senderTabId) return '';
+  return rec.origin;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
@@ -516,6 +621,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 另外：open() 必须是拿到激活后的第一句——原实现先 `await setOptions(...)`，其 resolve 落在
   // 新的宏任务里，激活早已过期，等于自己把仅有的机会也丢掉了。setOptions 不需要激活，挪到
   // open() 之后补（manifest 的 side_panel.default_path 已足以让 open() 用对页面）。
+  // 字幕抽屉（mobile-drawer.js）：iframe 里的扩展页拿不到宿主标签身份，content script
+  // 又没有 chrome.tabs 可用。这里 SW 如实认出发信标签，据此签发嵌入 token（见下）；
+  // tabId 一并回报只作诊断，**不供抽屉拼进 URL**——面板要用的 tabId 走 drawerEmbedVerify
+  // 现取，参数自证的路已经拆掉（审计报告 #1295）。
+  if (msg && msg.type === 'drawerSelfTab') {
+    const tid = _sender && _sender.tab && Number.isInteger(_sender.tab.id) ? _sender.tab.id : null;
+    sendResponse({
+      ok: true,
+      tabId: tid,
+      // 审计报告 #1295：随标签 id 一并签发嵌入凭证（真 origin 由 SW 从 sender.tab.url
+      // 取得，只有拿 token 来兑的面板能知道）。签发失败（异常 sender）回 null——
+      // 面板端 fail-closed，宿主消息通道整个关死。
+      token: tid != null ? fushiIssueEmbedToken(tid, _sender.tab.url) : null,
+    });
+    return true;
+  }
+  if (msg && msg.type === 'drawerEmbedVerify') {
+    // 面板 iframe 持 token 核销；核销方 tab 必须与签发时一致。
+    const senderTid = _sender && _sender.tab && Number.isInteger(_sender.tab.id)
+      ? _sender.tab.id
+      : null;
+    // 审计报告 #1295 第二半：**目标 tabId 同样不许自证**。旧版把它写在
+    // side-panel.html?fushiTabId=N 里，嵌入方随手填别人的号，就能拿这张面板去驱动
+    // 受害者的另一个标签页（跨源读不到内容，但点击劫持能借用户的手点选轨/跳转）。
+    // 面板真正该驱动的只有「装着它自己的那一页」——正是 sender.tab.id，SW 如实给出，
+    // 网页伪造不了。它不依赖 token：file:// 这类签不出 origin 的页面照样拿得到 tabId，
+    // 只是宿主消息通道仍关着（origin 兑不出）。
+    sendResponse({
+      ok: true,
+      origin: fushiRedeemEmbedToken(msg.token, senderTid),
+      tabId: senderTid,
+    });
+    return true;
+  }
   if (msg && msg.type === 'openSubtitleSidePanel') {
     const tabId = Number.isInteger(msg.tabId)
       ? msg.tabId
@@ -788,12 +927,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
-      } else if (msg.type === 'jimakuSearch') {
-        // Jimaku 查字幕①：Side Panel 搜索框 → server /api/subtitle/jimaku/search（server 持
-        // 用户在 app 设置里填的 Jimaku API key；真人剧 anime=false 补搜也在 server 侧）。
-        const r = await fetch(base + '/api/subtitle/jimaku/search', {
+      } else if (msg.type === 'subtitleSearch') {
+        // 查字幕①：Side Panel 搜索框 → server /api/subtitle/search。server 扇出
+        // **用户已配好的全部在线字幕来源**（Jimaku / OpenSubtitles / AJATT，与 app 内
+        // 视频页「找字幕」同一批 provider），一家挂了另几家照样出结果。
+        //
+        // 超时比别的端点长：AJATT 第一次搜索要拉约 9 MB 的静态目录（之后落盘缓存
+        // 24 小时），20 秒会在首次使用时稳定超时，而那正是零配置用户的第一印象。
+        const r = await fetch(base + '/api/subtitle/search', {
           method: 'POST',
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(45000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
             query: msg.query || '',
@@ -807,10 +950,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
         });
-      } else if (msg.type === 'jimakuFetch') {
-        // Jimaku 查字幕②：候选 handle → server 下载+自动识别编码+解析，响应与
-        // /api/subtitle/parse 同形（{format,cues}），Side Panel 直接走既有 InstallTrack。
-        const r = await fetch(base + '/api/subtitle/jimaku/fetch', {
+      } else if (msg.type === 'subtitleFetch') {
+        // 查字幕②：候选 handle → server 按 handle 找回候选、交还给**它自己的来源**下载，
+        // 自动识别编码 + 解析，响应与 /api/subtitle/parse 同形（{format,cues}），
+        // Side Panel 直接走既有 InstallTrack。
+        const r = await fetch(base + '/api/subtitle/fetch', {
           method: 'POST',
           signal: AbortSignal.timeout(30000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -882,6 +1026,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({
             fields: msg.fields, sentence: msg.sentence || '',
             clipBase64: msg.clipBase64, clipDurationMs: msg.clipDurationMs,
+            // BUG-2192：可见画面比例矩形（{x,y,w,h} ∈ [0,1]），服务端抽帧前先 crop 掉黑边。
+            ...(msg.clipCrop && typeof msg.clipCrop === 'object' ? { clipCrop: msg.clipCrop } : {}),
             // BUG-1416：片段时间基锚点 + 句首 + 制卡那一刻（都是**视频时间**），服务端在静态帧
             // 模式下据此在片段里定位取帧。null（老队列项/采样失败）就不发 → 服务端退片段起点。
 

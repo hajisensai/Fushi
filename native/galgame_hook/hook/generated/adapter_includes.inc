@@ -12,3 +12,5 @@
 #include "../adapters/cmvs_adapter.inc"
 #include "../adapters/unreal_iostore_adapter.inc"
 #include "../adapters/aos_sfa_adapter.inc"
+#include "../adapters/unity_mono_adapter.inc"
+#include "../adapters/smash_fzmedia_adapter.inc"

@@ -1,0 +1,6 @@
+## BUG-2225 · 同章跳转被误判原位恢复，跳走前那页不结算
+- **报告**：2026-09-06（用户：「检查一下触发其他翻页是否还有这样的问题」——枚举翻页触发源时发现）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/reader_fushi/navigation.part.dart:173-181`（旧 `_onRestoreComplete`）：`restoreIsInPlace(restoredCharOffset: _initialCharOffset, last: _readLedgerLiveAnchor)` 判「原位恢复」→ `rebaseOnNextArrive()`。同章跳转（进度条拖动 `_jumpToGlobalCharOffset` 同章分支 `restoreProgress`、收藏句 `restoreToCharOffset`、脚注内链 `jumpToFragment`、VN 同章拖动）**不经 `_beginNavigation`**，`_initialCharOffset` 是上次实时采样经 `_adoptLiveProgressAsRestoreAnchor` 镜像的同一个值，与 `_readLedgerLiveAnchor` 恒等 → 恒判原位。JS `notifyRestoreComplete`（16ms settle）抢在 scroll 回传之前时，落点页 arrive 只替换单元、跳走前那页不结算；VN `renderScreen` 无 scroll 事件，必现。
+- **[x] ① 已修复** — 离开当前单元只在「离开那一刻」`leave()`：`_beginNavigation`（所有导航必经点，放在 loadUrl 之前）+ 三个同章跳转入口（`_jumpToGlobalCharOffset` 同章分支 / `_jumpToFavoriteSentence` 同章分支 / `_jumpToFragmentInPlace`）；`_onRestoreComplete` 不再碰账本，删 `restoreIsInPlace` 与 `_readLedgerLiveAnchor`（EPUB 不再用 `rebaseOnNextArrive`，漫画仍用）。同章重恢复（宽变 / 分页↔连续）提前结算同页，并集去重后总额不变。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_read_ledger_wiring_guard_static_test.dart`（leave 八处、`_onRestoreComplete` 不含 `_readLedger`、三个同章入口 leave 在 JS 之前、旧符号不得回潮）+ `reader_read_ledger_boundaries_test.dart`（同章进度条跳转 / VN 拖动的结算总额）。
+- **备注**：与 BUG-2226 同一提交。

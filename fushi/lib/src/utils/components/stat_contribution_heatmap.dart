@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
 const int kStatHeatmapMinWeeks = 17;
@@ -115,15 +116,15 @@ class StatHeatmapModel {
 /// - 每天的值取自 [valueByDateKey]（缺省 0）。
 /// - 今天之后的未来日（仅 [weekOffset]==0 的末列里 > 今天的格子）为占位格
 ///   （dateKey=null，level=0）。
-/// - 等级：value==0→0；否则按占 [StatHeatmapModel.maxValue] 的比例分 1..4 四档
-///   （>0 至少 1 档，满值 4 档），空窗口（maxValue==0）全为 0。
+/// - 等级：value==0→0；否则按窗口内**活跃日数值的秩**分 1..4 四档
+///   （[statHeatmapRankLevel]：>0 至少 1 档，最大值 4 档），空窗口全为 0。
 StatHeatmapModel buildStatHeatmap({
   required Map<String, int> valueByDateKey,
   required DateTime now,
   int weeks = kStatHeatmapMinWeeks,
   int weekOffset = 0,
 }) {
-  final DateTime today = DateTime(now.year, now.month, now.day);
+  final DateTime today = statTodayDay(now);
   // 本周周一（DateTime.weekday: 周一=1..周日=7）。
   final DateTime thisMonday =
       today.subtract(Duration(days: today.weekday - DateTime.monday));
@@ -145,7 +146,9 @@ StatHeatmapModel buildStatHeatmap({
         col.add((dateKey: null, value: 0, day: day));
         continue;
       }
-      final String key = statDateKey(day);
+      // 格子是日历日：key 走日历日格式化，不能过 statDateKey——它会按重置时刻前移，
+      // 把 0 点合成的日历日当成前一日（重置 = 4 时整张图错位一天）。
+      final String key = FushiDatabase.statCalendarDayKeyOf(day);
       final int value = valueByDateKey[key] ?? 0;
       if (value > maxValue) maxValue = value;
       col.add((dateKey: key, value: value, day: day));
@@ -153,15 +156,14 @@ StatHeatmapModel buildStatHeatmap({
     raw.add(col);
   }
 
-  int levelOf(int value) {
-    if (value <= 0 || maxValue <= 0) return 0;
-    // 比例分桶：(0,0.25]→1, (0.25,0.5]→2, (0.5,0.75]→3, (0.75,1]→4。
-    final double frac = value / maxValue;
-    if (frac > 0.75) return 4;
-    if (frac > 0.5) return 3;
-    if (frac > 0.25) return 2;
-    return 1;
-  }
+  // BUG-2223：档位按活跃日数值的秩（分位数），不按占最大值的比例——后者一天爆量
+  // 就把其余所有活跃日压成最浅档，整张图只剩一个深格。
+  final List<int> sortedActive = <int>[
+    for (final List<({String? dateKey, int value, DateTime day})> col in raw)
+      for (final ({String? dateKey, int value, DateTime day}) c in col)
+        if (c.dateKey != null && c.value > 0) c.value,
+  ]..sort();
+  int levelOf(int value) => statHeatmapRankLevel(value, sortedActive);
 
   final List<List<StatHeatmapCell>> cols = <List<StatHeatmapCell>>[
     for (final List<({String? dateKey, int value, DateTime day})> col in raw)
@@ -175,6 +177,29 @@ StatHeatmapModel buildStatHeatmap({
       ],
   ];
   return StatHeatmapModel(weeks: cols, maxValue: maxValue);
+}
+
+/// 纯函数：热力图档位按**秩**分级（BUG-2223，对齐 Hoshi Android 的分位数着色）。
+///
+/// [sortedActive] 是窗口内活跃日（value > 0）的数值升序表；[value] ≤ 0 或表空 → 0。
+/// 否则取 [value] 的上秩 r = 表中 ≤ value 的个数，level = ⌈r / n × levels⌉ ∈
+/// [1, levels]（整数运算，无浮点边界）。单日爆量只占最高档一个名额，不再把其余活跃日
+/// 压成最浅档；均匀分布时各档人数接近；同值同档。
+int statHeatmapRankLevel(int value, List<int> sortedActive, {int levels = 4}) {
+  if (value <= 0 || sortedActive.isEmpty || levels <= 0) return 0;
+  int lo = 0;
+  int hi = sortedActive.length;
+  while (lo < hi) {
+    final int mid = (lo + hi) >> 1;
+    if (sortedActive[mid] <= value) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  final int n = sortedActive.length;
+  final int level = (lo * levels + n - 1) ~/ n;
+  return level < 1 ? 1 : (level > levels ? levels : level);
 }
 
 /// 纯函数：以 [weeks] 周为翻页步长，能向前翻到的最深 [buildStatHeatmap] `weekOffset`
@@ -194,7 +219,7 @@ int maxHeatmapPageOffset({
   if (earliest == null) return 0;
   final DateTime earliestDay =
       DateTime(earliest.year, earliest.month, earliest.day);
-  final DateTime today = DateTime(now.year, now.month, now.day);
+  final DateTime today = statTodayDay(now);
   final DateTime thisMonday =
       today.subtract(Duration(days: today.weekday - DateTime.monday));
   final DateTime earliestMonday = earliestDay

@@ -1,7 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/utils/net/app_proxy.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1980 的迁移判据：旧安装没有 `network_proxy_mode` 键时，`networkProxyMode`

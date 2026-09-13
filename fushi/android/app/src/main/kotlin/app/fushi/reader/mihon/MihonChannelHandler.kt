@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.model.Page
@@ -26,6 +27,7 @@ import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.registry.default.DefaultRegistrar
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URI
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -41,6 +43,7 @@ class MihonChannelHandler(private val app: Application) {
     private var disposed = false
 
     init {
+        CloudflareChallengeCoordinator.initialize(app)
         Injekt = InjektScope(DefaultRegistrar())
         Injekt.importModule(
             object : InjektModule {
@@ -88,6 +91,15 @@ class MihonChannelHandler(private val app: Application) {
                     val value = handle(call)
                     mainHandler.post { reply(result, value) }
                 } catch (error: Throwable) {
+                    val challenge = generateSequence(error) { it.cause }
+                        .filterIsInstance<CloudflareChallengeRequiredException>().firstOrNull()
+                    if (challenge != null) {
+                        mainHandler.post {
+                            result.error("CLOUDFLARE_CHALLENGE_REQUIRED", "Source requires browser verification",
+                                mapOf("url" to challenge.url.toString(), "userAgent" to challenge.userAgent))
+                        }
+                        return@submit
+                    }
                     val operation = describeOperation(call)
                     val code = when (error) {
                         is MihonHostException -> error.code
@@ -146,6 +158,19 @@ class MihonChannelHandler(private val app: Application) {
     }
 
     private fun handle(call: MethodCall): Any? = when (call.method) {
+        "configureProxyPolicy" -> {
+            HostProxyPolicy.configure(
+                call.argument<Int>("port") ?: throw IllegalArgumentException("Missing policy port"),
+                stringArgument(call, "token"),
+            )
+            CloudflareChallengeCoordinator.configure(URI(stringArgument(call, "challengeProxyEndpoint")))
+        }
+        "solveCloudflare" -> CloudflareChallengeCoordinator.solve(
+            app,
+            stringArgument(call, "url").toHttpUrl(),
+            call.argument<String>("userAgent")?.takeIf { it.isNotBlank() }
+                ?: Injekt.get<NetworkHelper>().defaultUserAgentProvider(),
+        )
         "capabilities" -> mapOf(
             "fushiMihonBridge" to 1,
             "sourceFactory" to true,

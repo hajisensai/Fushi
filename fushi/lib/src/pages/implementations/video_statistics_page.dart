@@ -1,16 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/video_stat_aggregates.dart';
-import 'package:fushi/src/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -36,9 +37,17 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   VideoStatsAggregate _agg = VideoStatsAggregate();
   bool _hasData = false;
 
+  /// **本轮加载时**的统计窗口：聚合（[computeVideoStats]）与时段卡谓词同一个
+  /// （BUG-2219）；跨午夜由 [_midnightReload] 整页重聚合。
+  StatWindow _window = StatWindow(DateTime.now());
+  Timer? _midnightReload;
+
   /// 观看域日面事实行（loadStatFacts 的 dailyVideos 切片）：时段明细 sheet 的
   /// 数据源（阶段 1——此前这份数据聚合完即丢，时段明细要 per-video × per-day）。
   List<StatFact> _videoFacts = <StatFact>[];
+
+  /// 观看域会话流（`StatFacts.sessions` 的视频切片，按结束时刻倒序）。
+  List<StudySession> _sessions = <StudySession>[];
 
   /// 合集归属映射（书架同源）：按视频 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -66,6 +75,20 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAndLoad());
   }
 
+  @override
+  void dispose() {
+    _midnightReload?.cancel();
+    super.dispose();
+  }
+
+  /// 到下一个本地午夜整页重聚合（每次加载重新排一次；页面已卸载则不动）。
+  void _armMidnightReload(DateTime now) {
+    _midnightReload?.cancel();
+    _midnightReload = Timer(StatWindow.untilNextStatDayBoundary(now), () {
+      if (mounted) unawaited(_loadFromDatabase());
+    });
+  }
+
   /// 统计中心把三页塞进 TabBarView（无 keepAlive，离屏即 unmount），
   /// 「点开 tab → DB 还在查 → 切走」是一秒可复现的常规操作：首帧 postFrameCallback
   /// 与多次 await 之后的两处 setState 都必须过 mounted 门，否则 debug 断言
@@ -88,9 +111,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       // v92：观看事实只走统一事实面（legacy `video_watch_statistics` 日行 +
       // `study_segments` 段，由 loadStatFacts 归一），本页不再直接读表。
       // activityLimit 0：统计页不需要活动流行。
-      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final StatFacts facts = await loadStatFacts(
+        db,
+        activityLimit: 0,
+        includeCounters: true,
+      );
       final List<StatFact> stats = facts.dailyVideos.toList();
       _videoFacts = stats;
+      _sessions = facts.sessions.where((StudySession s) => s.isVideo).toList();
       final List<VideoBookRow> books = await VideoBookRepository(db).listAll();
       final List<DateTime> completed = books
           .map((VideoBookRow b) => b.completedAt)
@@ -111,13 +139,17 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       final DateTime now = DateTime.now();
-      final List<FavoriteWordRow> favs =
-          await db.getFavoriteWordsBySource(kStatSourceVideo);
-      final List<MiningStatisticRow> mined =
-          await db.getMiningStatisticsBySource(kStatSourceVideo);
-      // TODO-1204：查词/制卡 per-video 计数（新表）。
-      final List<LookupMiningCounterRow> counters =
-          await db.getLookupMiningCountersBySource(kStatSourceVideo);
+      _window = StatWindow(now);
+      _armMidnightReload(now);
+      // 计数面（查词 / 制卡 / 收藏）与事实面同一次加载：总览 tab 的跨域数字必须
+      // 恰好等于阅读 tab 与本 tab 之和，各页各查一遍就会在口径漂移时静默对不上。
+      final StatCounterFacts counterFacts = facts.counters;
+      final List<FavoriteWordRow> favs = counterFacts.favoriteWordsFor(
+        StatSourceKind.video,
+      );
+      // 查词/制卡 per-video 计数。
+      final List<LookupMiningCounterRow> counters = counterFacts
+          .lookupCountersFor(StatSourceKind.video);
       // v76：观看 / 计数 / 收藏三个行宇宙进同一次身份分组，tile 自带全部数字
       // （吸收判据全局一致，绝不各分各的再拼——那是计数在同名 tile 间游走的根因）。
       // 库表级同名判定（≥2 个 uid 共享一个 title）喂给吸收否决：与迁移回填的
@@ -138,34 +170,38 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         },
       );
       _favorited = bucketActivityByDateKey(
-        favs.map((FavoriteWordRow f) => (f.dateKey, 1)),
+        counterFacts.favoriteWordEvents(source: StatSourceKind.video),
         now,
       );
       _mined = bucketActivityByDateKey(
-        mined.map((MiningStatisticRow m) => (m.dateKey, m.count)),
+        counterFacts.minedEvents(source: StatSourceKind.video),
         now,
       );
       _lookup = bucketActivityByDateKey(
-        counters.map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount)),
+        counterFacts.lookupEvents(source: StatSourceKind.video),
         now,
       );
-      // 视频来源收藏语句（source==video），旧条目无 dateKey 不参与分桶。
-      final List<FavoriteSentence> favSentences =
-          await FavoriteSentenceRepository(db).getAll();
-      final List<FavoriteSentence> videoFavSentences = favSentences
-          .where((FavoriteSentence s) =>
-              s.source == kFavoriteSentenceSourceVideo && s.dateKey != null)
+      // 视频来源收藏语句（source==video）。BUG-893 的读取端回退此前只修了阅读侧：
+      // 本页旧判据是 `dateKey != null`，写入端补 dateKey 之前存下的视频收藏一条不
+      // 计——现在与阅读侧同一个判据（[StatCounterFacts.favoriteSentenceEvents]），
+      // 顺带让总览的跨域和恒等于两个域 tab 之和。
+      final List<FavoriteSentence> videoFavSentences = counterFacts
+          .favoriteSentences
+          .where(
+            (FavoriteSentence s) => s.source == kFavoriteSentenceSourceVideo,
+          )
           .toList();
       _favoritedSentences = bucketActivityByDateKey(
-        videoFavSentences.map((FavoriteSentence s) => (s.dateKey!, 1)),
+        counterFacts.favoriteSentenceEvents(source: StatSourceKind.video),
         now,
       );
       // counters 也算有数据（review4-6）：只在视频域查过词（无观看/收藏/制卡）
       // 时，查词分桶明明有数却显示空状态。
-      _hasData = stats.isNotEmpty ||
+      _hasData =
+          stats.isNotEmpty ||
           completed.isNotEmpty ||
           favs.isNotEmpty ||
-          mined.isNotEmpty ||
+          counterFacts.minedEvents(source: StatSourceKind.video).isNotEmpty ||
           counters.isNotEmpty ||
           videoFavSentences.isNotEmpty;
       _loadHourlyData(facts);
@@ -180,7 +216,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 会同时有 legacy 小时行与多条段，旧实现按行赋值（`=`）会让后来的行覆盖前面
   /// 的，只能用 `+=`。
   void _loadHourlyData(StatFacts facts) {
-    final String todayKey = statTodayKey();
+    final String todayKey = _window.todayKey;
     _hourlyMs = List.filled(24, 0);
     for (final StatFact f in facts.hourly) {
       if (!f.isVideo || f.dateKey != todayKey) continue;
@@ -192,7 +228,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 四个 tab 的动作行逐颗同形（用户 2026-09-10「所有界面都要统一」）：
+    // 目标 → 刷新 → 清空全部统计。目标是**跨域的每日学习目标**（同一份表单、同一个
+    // 持久化值），本页此前没有入口，切到这个 tab 目标按钮就凭空消失。
     final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        icon: Icons.flag_outlined,
+        tooltip: t.stat_goal_set,
+        enabled: !_loading,
+        onTap: _editGoals,
+      ),
       FushiIconButton(
         icon: Icons.refresh,
         tooltip: t.stat_refresh,
@@ -227,13 +272,30 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Widget _buildContent() {
     final tokens = FushiDesignTokens.of(context);
 
+    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频。
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(child: _buildSummaryCards()),
         SliverToBoxAdapter(
-            child: buildStatHourlyChartSection(context, _hourlyMs)),
-        SliverToBoxAdapter(
           child: buildStatDailyDurationChartSection(context, _agg.daily),
+        ),
+        SliverToBoxAdapter(
+          child: buildStatSessionSection(
+            context,
+            sessions: _sessions,
+            titleOf: (StudySession s) => s.title,
+            collectionOf: _sessionCollectionName,
+            onDelete: _deleteSession,
+            onEdit: _editSession,
+            onClearAll: _clearSessions,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: StatAnalysisFold(
+            children: <Widget>[
+              buildStatHourlyChartSection(context, _hourlyMs),
+            ],
+          ),
         ),
         SliverToBoxAdapter(
           child: Padding(
@@ -243,8 +305,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
               tokens.spacing.card,
               tokens.spacing.gap,
             ),
-            child: Text(t.video_stat_by_video,
-                style: Theme.of(context).textTheme.titleMedium),
+            child: Text(
+              t.video_stat_by_video,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
         ),
         SliverList(
@@ -253,55 +317,66 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             childCount: _agg.byVideo.length,
           ),
         ),
-        SliverPadding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.card * 2)),
+        buildStatTailSliver(context),
       ],
     );
   }
 
   Widget _buildSummaryCards() {
-    // 时段谓词在点击时现算（跨日后点卡按点击时刻的窗口取数）。
-    final StatWindow w = StatWindow(DateTime.now());
-    return buildStatPeriodSummaryGrid(
-      context,
-      <StatPeriodSummary>[
-        _periodSummary(
-            t.stat_today,
-            _agg.todayMs,
-            _agg.todayCompleted,
-            _lookup.today,
-            _mined.today,
-            _favorited.today,
-            _favoritedSentences.today,
-            contains: w.isToday),
-        _periodSummary(
-            t.stat_this_week,
-            _agg.weekMs,
-            _agg.weekCompleted,
-            _lookup.week,
-            _mined.week,
-            _favorited.week,
-            _favoritedSentences.week,
-            contains: w.inWeek),
-        _periodSummary(
-            t.stat_this_month,
-            _agg.monthMs,
-            _agg.monthCompleted,
-            _lookup.month,
-            _mined.month,
-            _favorited.month,
-            _favoritedSentences.month,
-            contains: w.inMonth),
-        _periodSummary(t.stat_all_time, _agg.allMs, _agg.allCompleted,
-            _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all,
-            contains: (String _) => true),
-      ],
-    );
+    // 时段谓词与聚合同一个窗口（BUG-2219），跨午夜靠 [_midnightReload] 重聚合。
+    final StatWindow w = _window;
+    return buildStatPeriodSummaryGrid(context, <StatPeriodSummary>[
+      _periodSummary(
+        t.stat_today,
+        _agg.todayMs,
+        _agg.todayChars,
+        _agg.todayCompleted,
+        _lookup.today,
+        _mined.today,
+        _favorited.today,
+        _favoritedSentences.today,
+        contains: w.isToday,
+      ),
+      _periodSummary(
+        t.stat_this_week,
+        _agg.weekMs,
+        _agg.weekChars,
+        _agg.weekCompleted,
+        _lookup.week,
+        _mined.week,
+        _favorited.week,
+        _favoritedSentences.week,
+        contains: w.inWeek,
+      ),
+      _periodSummary(
+        t.stat_this_month,
+        _agg.monthMs,
+        _agg.monthChars,
+        _agg.monthCompleted,
+        _lookup.month,
+        _mined.month,
+        _favorited.month,
+        _favoritedSentences.month,
+        contains: w.inMonth,
+      ),
+      _periodSummary(
+        t.stat_all_time,
+        _agg.allMs,
+        _agg.allChars,
+        _agg.allCompleted,
+        _lookup.all,
+        _mined.all,
+        _favorited.all,
+        _favoritedSentences.all,
+        contains: (String _) => true,
+      ),
+    ]);
   }
 
   StatPeriodSummary _periodSummary(
     String label,
     int ms,
+    int chars,
     int completed,
     int lookup,
     int mined,
@@ -314,10 +389,10 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       primaryValue: formatStatTime(ms),
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
-        StatSummaryLine(
-          label: t.video_stat_completed,
-          value: '$completed',
-        ),
+        // 字数打头，与另外三个 tab 的卡逐行同形（用户 2026-09-10「所有界面都要统一」）：
+        // 本页此前把字幕字数只画进「按视频」列表，四张同形卡横过去时只有观看少一行。
+        StatSummaryLine(value: formatStatChars(chars)),
+        StatSummaryLine(label: t.video_stat_completed, value: '$completed'),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
         StatSummaryLine(label: t.stat_mined, value: '$mined'),
         StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
@@ -361,11 +436,14 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
             context: context,
             repo: VideoBookRepository(db),
             bookUid: mediaKey,
-            playlistCollectionId: _primaryCollectionByEntry[
-                MediaKind.video.compositeKey(mediaKey)],
+            playlistCollectionId:
+                _primaryCollectionByEntry[MediaKind.video.compositeKey(
+                  mediaKey,
+                )],
           );
         },
-        onEntryDelete: (StatPeriodEntryTarget t) => deleteStatPeriodEntry(db, t),
+        onEntryDelete: (StatPeriodEntryTarget t) =>
+            deleteStatPeriodEntry(db, t),
       ),
     );
     // 删过就从 DB 重新聚合：页面上的时段卡 / 排行都得跟着变。
@@ -376,6 +454,53 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   /// 再从 DB 重新聚合刷新（TODO-1204 后续）。
   ///
   /// v76：身份感知删除——只删本 tile 展示的行：该 uid 的行 + 本 tile 吸收过的
+  /// 删一次会话：段写零（同步安全），再从 DB 重新聚合。
+  Future<void> _deleteSession(StudySession s) async {
+    await deleteStudySession(appModelNoUpdate.database, s);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 目标编辑：与阅读 tab、总览 tab 同一份表单、同一个持久化目标（每日学习目标是
+  /// **跨域**的一个值，不是每个域各一份）。
+  Future<void> _editGoals() async {
+    final bool saved = await showStatGoalEditDialog(context, appModelNoUpdate);
+    if (saved && mounted) setState(() {});
+  }
+
+  /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid
+  /// 再写库），再整页重聚合——改完日期的会话要重新按 gap 归并、重新排序。
+  Future<void> _editSession(StudySession s, StudySessionEdit edit) async {
+    await applyStudySessionEdit(appModelNoUpdate.database, s, edit);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 清除这一批会话记录（防呆确认已在按钮里做掉）：只清会话事实，收藏 / 制卡历史 /
+  /// 查词计数一个都不动（与逐条删同一边界）。
+  Future<void> _clearSessions(List<StudySession> batch) async {
+    await deleteStudySessions(appModelNoUpdate.database, batch);
+    if (mounted) await _loadFromDatabase();
+  }
+
+  /// 点按视频 tile → 这部视频的会话列表 sheet。
+  Future<void> _showVideoSessions(VideoStatBookData video) async {
+    final String? uid = video.bookUid;
+    if (uid == null) return;
+    final bool deleted = await showStatSessionsSheet(
+      context,
+      title: video.title,
+      sessions: _sessions.where((StudySession s) => s.mediaKey == uid).toList(),
+      titleOf: (StudySession s) => s.title,
+      collectionOf: _sessionCollectionName,
+      onDelete: (StudySession s) =>
+          deleteStudySession(appModelNoUpdate.database, s),
+      onEdit: (StudySession s, StudySessionEdit edit) =>
+          applyStudySessionEdit(appModelNoUpdate.database, s, edit),
+      onClearAll: (List<StudySession> batch) =>
+          deleteStudySessions(appModelNoUpdate.database, batch),
+    );
+    if (deleted && mounted) await _loadFromDatabase();
+  }
+
   /// 同 title 无身份遗留行（[VideoStatBookData.absorbedUnattributed]，与展示层
   /// 是同一次身份分组给出的同一个判据）。同名另一视频的 per-uid 行不再连坐。
   Future<void> _confirmAndDeleteVideo(VideoStatBookData video) async {
@@ -418,80 +543,38 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 会话行的所属合集名（BUG-2417：合集里段 title 是分集名，行上得写清是哪部
+  /// 作品）。会话自带 bookUid 身份（段 mediaKey），走与 [_collectionNameForVideo]
+  /// 同一 'video|<bookUid>' 键契约。
+  String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
+      ? null
+      : statCollectionName(
+          MediaKind.video.compositeKey(s.mediaKey),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        );
+
+  /// 「按视频」一行（游戏页同款 [buildStatMediaRow]）：会话数 / 查词 · 制卡 · 收藏，
+  /// 右侧观看时长；点按进该视频的会话 sheet（无身份遗留组没有会话），长按 / 右键删
+  /// 该视频统计。
   Widget _buildVideoTile(VideoStatBookData video) {
     // v76：查词/制卡/收藏数由 computeVideoStats 的同一次身份分组挂在 tile 上，
     // 这里只读——不做任何第二次归并（两套判据 = 计数在同名 tile 间游走）。
-    final int favorites = video.favorites;
-    final String? collectionName = _collectionNameForVideo(video);
-    // 按观看时长排行（byVideo 已按 ms 降序），进度条与排行同维度。
-    final maxMs =
-        _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
-    final fraction = video.ms / maxMs;
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = FushiDesignTokens.of(context);
-
-    return ContextMenuTrigger(
-      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-      onInvoke: (Offset _) => _confirmAndDeleteVideo(video),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
-          onLongPress: () => _confirmAndDeleteVideo(video),
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap / 2,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  video.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                if (collectionName != null) ...[
-                  SizedBox(height: tokens.spacing.gap / 4),
-                  buildStatCollectionLabel(context, collectionName),
-                ],
-                SizedBox(height: tokens.spacing.gap / 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: tokens.radii.chipRadius,
-                        child: LinearProgressIndicator(
-                          value: fraction,
-                          minHeight: 8,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-                    Text(
-                      formatStatTime(video.ms),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: $favorites',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final String? uid = video.bookUid;
+    final int sessionCount = uid == null
+        ? 0
+        : _sessions.where((StudySession s) => s.mediaKey == uid).length;
+    return buildStatMediaRow(
+      context,
+      icon: Icons.movie,
+      title: video.title,
+      collectionName: _collectionNameForVideo(video),
+      meta: t.stat_sessions_count(n: sessionCount),
+      meta2:
+          '${t.stat_lookup}: ${video.lookups} · ${t.stat_mined}: ${video.mines} · ${t.stat_favorited}: ${video.favorites}',
+      trailing: formatStatTime(video.ms),
+      onTap: uid == null ? null : () => unawaited(_showVideoSessions(video)),
+      onDelete: () => unawaited(_confirmAndDeleteVideo(video)),
     );
   }
 }

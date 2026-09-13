@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart' as ffmpeg;
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart' as ffmpeg;
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 void main() {
+  // BUG-2496：ffmpeg 产出的封面现在经 publishStagedCoverFile 发布，发布内含写后
+  // 驱逐（PaintingBinding.imageCache），纯 test() 没有 binding 会抛。
+  TestWidgetsFlutterBinding.ensureInitialized();
   Future<bool> ffmpegAvailable() async {
     try {
       final ProcessResult result = await Process.run(

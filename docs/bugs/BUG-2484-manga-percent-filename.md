@@ -1,0 +1,6 @@
+## BUG-2484 · 漫画页文件名含裸百分号时翻页/选字/制卡全抛 Illegal percent encoding
+- **报告**：2026-09-12（用户：错误日志 `fushi_error_log (3).txt`，2.5.2-debug.14696，`MangaFushi.onTextSelected` 168 次 + `UncaughtZone` 131 次同一栈 `Invalid argument(s): Illegal percent encoding in URI`）
+- **真实性**：✅ 真 bug。根因 `packages/fushi_engine/lib/media/manga/manga_storage.dart:152`（修前）`resolvePageFilePath` 无条件 `Uri.decodeComponent(relative)`，但 5 个调用点里只有 WebView 拦截器 `_interceptRequest` 与 `resolveImageUrlToFile` 传的是 `manga.local/img/<已编码>`；`resolveMangaPageImage`、`_updateCurrentPageImagePath`、互联 host `mangaPageFile`（`local_library_host_service/manga.part.dart:46`）直接传 `manga.json` 的裸文件名。图名含 `%`（如 `100%.jpg`）即抛，翻页 `MangaTurnQueue` / 选字制卡 `_selectPageForMining` / 当前页图路径三条链全断；副作用：形如 `%41.jpg` 的合法名被静默解码成 `A.jpg` 后 404。
+- **[x] ① 已修复** — 解码收回 URL 边界：新增 `MangaFushiPage.decodeMangaImagePath`（非法编码 → null/404，不再抛），`resolvePageFilePath` 只吃裸相对路径，与 `mangaImageUrl` 逐段 `encodeComponent` 对称；拦截器 403/404 分支同步改用已解码路径。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/manga_interceptor_test.dart`（裸 `%` 直解、`%41.jpg` 不误解码、`mangaImageUrl → resolveImageUrlToFile` 往返、非法编码回 null），`manga_path_case_preserved_test.dart` 的 percent 用例改到 URL 入口。
+- **备注**：无法从日志得知触发的具体文件名，但契约错位与文件名无关；同一日志里的 `UpdateChecker.httpGet` 是镜像站网络失败，与本 bug 无关。

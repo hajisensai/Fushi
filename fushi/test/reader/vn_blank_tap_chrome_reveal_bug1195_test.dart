@@ -31,14 +31,16 @@ void main() {
         ),
         ReaderVnBlankTapAction.expandChrome,
       );
-      // 悬浮标志此时不影响结论：_showChrome==false 底栏根本不画。
+      // 悬浮态不读 chromeExpanded（那是挤压态的持久开关，切开关后可能以 false
+      // 残留；2026-09-13 之前这里返回 expandChrome，与 bottomBarVisible 一起把
+      // 悬浮底栏钉死在「永远唤不出」）：与「已隐藏 → 只唤栏」同一结论。
       expect(
         readerVnBlankTapAction(
           chromeExpanded: false,
           bottomBarFloating: true,
           transientVisible: false,
         ),
-        ReaderVnBlankTapAction.expandChrome,
+        ReaderVnBlankTapAction.revealChrome,
       );
     });
 

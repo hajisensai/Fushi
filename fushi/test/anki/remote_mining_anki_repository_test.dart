@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 
@@ -136,6 +136,37 @@ class _FakeLocalWithSettings extends _FakeLocal {
 
 void main() {
   group('RemoteMiningAnkiRepository', () {
+    test('synchronized video reads and transfers its muxed media once', () async {
+      final sender = _FakeSender(<String, dynamic>{'result': 'success'});
+      final paths = <String>[];
+      final repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(), client: sender,
+        dictMediaLoader: (String dictionary, String path) => null,
+        fileByteLoader: (String path) async {
+          paths.add(path);
+          return Uint8List.fromList(<int>[1, 2, 3]);
+        },
+      );
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: '{"expression":"猫"}',
+        context: const AnkiMiningContext(
+          sentence: '猫です。', coverPath: '/tmp/sentence.mp4',
+          sentenceAudioPath: '/tmp/sentence.mp4', synchronizedVideo: true,
+          source: AnkiMiningSource.video,
+        ),
+      );
+      expect(outcome.result, MineResult.success);
+      expect(paths, <String>['/tmp/sentence.mp4']);
+      final wire = sender.captured!.toJson();
+      expect(wire['synchronizedVideo'], isTrue);
+      expect(wire.containsKey('sentenceAudioBase64'), isFalse);
+      final received = ForwardedMinePayload.fromJson(wire);
+      expect(received.synchronizedVideo, isTrue);
+      expect(received.coverExt, 'mp4');
+      expect(received.coverBytes, <int>[1, 2, 3]);
+      expect(received.sentenceAudioBytes, isNull);
+    });
+
     test('mineEntry 采集四类媒体并转发；映射 success', () async {
       final _FakeSender sender =
           _FakeSender(<String, dynamic>{'result': 'success'});
@@ -187,6 +218,40 @@ void main() {
       expect(cap.dictionaryMedia.single.dictionary, 'D');
       expect(cap.dictionaryMedia.single.path, 'g/1.svg');
       expect(cap.dictionaryMedia.single.bytes, <int>[9, 9]);
+    });
+
+    // 「制卡所在字符数」标签（`chars_12345`）：小说阅读器算好字面量放进
+    // AnkiMiningContext，远端制卡时必须原样搬进转发 payload——否则卡落在主机上
+    // 就只有本机才有这条标签，同一本书两台设备制的卡对不上。
+    // 撤掉 remote_mining_anki_repository.dart 里
+    // `charPositionTag: context.charPositionTag` 这一行 → 第一条断言红。
+    test('制卡位置标签从 context 搬进转发 payload', () async {
+      final _FakeSender sender =
+          _FakeSender(<String, dynamic>{'result': 'success'});
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: sender,
+        fileByteLoader: (String p) async => null,
+        dictMediaLoader: (String d, String p) => null,
+      );
+
+      await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '猫'}),
+        context: const AnkiMiningContext(
+          sentence: '猫がいる',
+          source: AnkiMiningSource.book,
+          charPositionTag: 'chars_12345',
+        ),
+      );
+      expect(sender.captured!.charPositionTag, 'chars_12345');
+
+      // 开关关闭 / 非小说来源 / 锚点取不到 → context 侧就是 null，转发也保持 null
+      // （主机端 buildNoteTags 不追加，绝不补一个 chars_0）。
+      await repo.mineEntry(
+        rawPayloadJson: jsonEncode(<String, dynamic>{'expression': '犬'}),
+        context: const AnkiMiningContext(sentence: '犬がいる'),
+      );
+      expect(sender.captured!.charPositionTag, isNull);
     });
 
     test('http 单词音频不搬字节（留给服务端下载）', () async {
@@ -247,7 +312,7 @@ void main() {
         RemoteMiningAnkiRepository.pairedDeviceUnreachableMessage,
       );
       expect(outcome.errorDetail, contains('Fushi is running'));
-      expect(outcome.errorDetail, contains('Mine to paired device'));
+      expect(outcome.errorDetail, contains('Mine to Fushi Interconnect server'));
       expect(outcome.errorDetail, isNot(contains('server-side mining')));
     });
 

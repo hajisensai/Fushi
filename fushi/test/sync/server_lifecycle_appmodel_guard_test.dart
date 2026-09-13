@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'sync_orchestrator_source_corpus.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
@@ -49,11 +50,11 @@ void main() {
           reason: 'controller 必须把库服务注入 server，否则 host 端点恒 404');
     });
 
-    test('AppModel wires AppModelLibraryHostService into the controller', () {
+    test('AppModel wires LocalLibraryHostService into the controller', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src.contains('AppModelLibraryHostService'), isTrue,
-          reason: 'AppModel 必须构造并注入 AppModelLibraryHostService');
+      expect(src.contains('LocalLibraryHostService'), isTrue,
+          reason: 'AppModel 必须构造并注入 LocalLibraryHostService');
       expect(src.contains('libraryServiceFactory'), isTrue,
           reason: 'AppModel 必须把 libraryServiceFactory 传给 controller');
     });
@@ -62,7 +63,7 @@ void main() {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       final int factory = src.indexOf('libraryServiceFactory: () => '
-          'AppModelLibraryHostService(');
+          'LocalLibraryHostService(');
       expect(factory, greaterThanOrEqualTo(0));
       final int removeLocalAudio =
           src.indexOf('removeLocalAudioEntry:', factory);
@@ -91,31 +92,31 @@ void main() {
 
   group('source guards: AppModel wires audio params into host service (T3.4)',
       () {
-    test('AppModel 传 localAudioEntries: 到 AppModelLibraryHostService', () {
+    test('AppModel 传 localAudioEntries: 到 LocalLibraryHostService', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(src.contains('localAudioEntries:'), isTrue,
           reason:
-              'AppModel 必须把 localAudioEntries 传给 AppModelLibraryHostService');
+              'AppModel 必须把 localAudioEntries 传给 LocalLibraryHostService');
     });
 
-    test('AppModel 传 audioDatabaseRoot: 到 AppModelLibraryHostService', () {
+    test('AppModel 传 audioDatabaseRoot: 到 LocalLibraryHostService', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(src.contains('audioDatabaseRoot:'), isTrue,
           reason:
-              'AppModel 必须把 audioDatabaseRoot 传给 AppModelLibraryHostService');
+              'AppModel 必须把 audioDatabaseRoot 传给 LocalLibraryHostService');
     });
 
-    test('AppModel 传 onLocalAudioImported: 到 AppModelLibraryHostService', () {
+    test('AppModel 传 onLocalAudioImported: 到 LocalLibraryHostService', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(src.contains('onLocalAudioImported:'), isTrue,
           reason:
-              'AppModel 必须把 onLocalAudioImported 传给 AppModelLibraryHostService');
+              'AppModel 必须把 onLocalAudioImported 传给 LocalLibraryHostService');
     });
 
-    test('AppModel 传 removeLocalAudioEntry: 到 AppModelLibraryHostService', () {
+    test('AppModel 传 removeLocalAudioEntry: 到 LocalLibraryHostService', () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(src.contains('removeLocalAudioEntry:'), isTrue,
@@ -124,8 +125,8 @@ void main() {
     });
 
     test('orchestrator 互联分支分流：本地音频经 syncLocalAudioSources，有声书仍在 run()', () {
-      final String src =
-          File('lib/src/sync/sync_orchestrator.dart').readAsStringSync();
+      // B2 拆分后 _sync*Live 定义在 sync_orchestrator/*.part.dart，调用点在主库。
+      final String src = readSyncOrchestratorSource();
       expect(src.contains('_syncLocalAudioLive('), isTrue,
           reason: 'orchestrator 必须有 _syncLocalAudioLive live 分流方法');
       expect(src.contains('_syncAudiobooksLive('), isTrue,

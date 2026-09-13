@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// TODO-1165：远端书/视频清单条目按 tag name 跨设备传递标签。
@@ -19,8 +19,8 @@ void main() {
     return db;
   }
 
-  AppModelLibraryHostService buildSvc(FushiDatabase db) =>
-      AppModelLibraryHostService(
+  LocalLibraryHostService buildSvc(FushiDatabase db) =>
+      LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
         packages: SyncAssetPackageService(db: db),

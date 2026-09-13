@@ -10,15 +10,11 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_search.dart';
-import 'package:fushi/src/utils/components/fushi_windows_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/utils.dart';
 
 class SettingsHomePage extends BasePage {
-  const SettingsHomePage({
-    super.key,
-    this.embedded = false,
-    this.onBack,
-  });
+  const SettingsHomePage({super.key, this.embedded = false, this.onBack});
 
   final bool embedded;
 
@@ -31,10 +27,11 @@ class SettingsHomePage extends BasePage {
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     with SettingsContextHost<SettingsHomePage> {
-  // 默认选中 schema 首个可见分类（当前重排后是「阅读」），与宽屏导航列表的
+  // 默认选中 schema 首个可见分类（当前为「外观与交互」），与宽屏导航列表的
   // 视觉首项一致：不再硬编码某个 id——分类顺序的唯一真相源是 buildSettingsSchema
   // （有顺序守卫），这里在 build 里首次解析时取 destinations.first.id，顺序调整
-  // 时默认项自动跟随，不会再脱节。
+  // 时默认项自动跟随，不会再脱节。分块渲染同样不改顺序（groupSettingsDestinations
+  // 只切段），故首项仍是视觉首项。
   SettingsDestinationId? _selectedDestinationId;
 
   // 设置搜索：跨全部分类按标题/副标题/分区/分类名过滤配置项，点结果跳转到
@@ -54,8 +51,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     // 主从：详情内容直接在本页渲染，走不到 [SettingsDetailPage] 那份订阅
     // （BUG-2165）。不听这一条，开着设置页时下载开始/下完/暂停，「推荐包」那一行
     // 的出现与消失就只能靠 AppModel 顺带 notify 撞上，变成偶发刷新。
-    appModelNoUpdate.recommendedPackDownloadController.stage
-        .addListener(_onLogChanged);
+    appModelNoUpdate.recommendedPackDownloadController.stage.addListener(
+      _onLogChanged,
+    );
   }
 
   @override
@@ -64,8 +62,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     ErrorLogService.instance.removeListener(_onLogChanged);
     DebugLogService.instance.removeListener(_onLogChanged);
     GalIngameLookupController.instance.admission.removeListener(_onLogChanged);
-    appModelNoUpdate.recommendedPackDownloadController.stage
-        .removeListener(_onLogChanged);
+    appModelNoUpdate.recommendedPackDownloadController.stage.removeListener(
+      _onLogChanged,
+    );
     super.dispose();
   }
 
@@ -75,14 +74,17 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   @override
   Widget build(BuildContext context) {
-    final SettingsContext settingsContext =
-        createSettingsContext(appModel: appModel, ref: ref);
-    final List<SettingsDestination> destinations = buildSettingsSchema(
-      settingsContext,
-    )
-        .where((SettingsDestination destination) =>
-            destination.isVisible(settingsContext))
-        .toList(growable: false);
+    final SettingsContext settingsContext = createSettingsContext(
+      appModel: appModel,
+      ref: ref,
+    );
+    final List<SettingsDestination> destinations =
+        buildSettingsSchema(settingsContext)
+            .where(
+              (SettingsDestination destination) =>
+                  destination.isVisible(settingsContext),
+            )
+            .toList(growable: false);
     // 首次进入（null）或当前选中分类被平台门控隐藏时，落到第一个可见分类。
     if (!destinations.any(
       (SettingsDestination destination) =>
@@ -137,8 +139,24 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return _buildEmbeddedShell(content);
   }
 
-  Widget _buildSearchField() {
+  /// [onNavPane] 为 true 时搜索框画在宽屏导航窗格的 tonal 底上（`surfaces.card`），
+  /// 那里 `surfaces.search` 与底色只差一档、几乎糊掉，故再提一档到 `surfaces.overlay`；
+  /// 窄屏单列画在页面底（`surfaces.page`）上，保持原来的 `surfaces.search`。
+  Widget _buildSearchField({bool onNavPane = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
+    // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
+    // outlineVariant 深一档，在同一屏里是第三种强度的线。
+    //
+    // eink 例外：填充在 eink scheme 下塌缩成背景色，描边是唯一的边界信号，
+    // 那里把 enabled/focused 交回主题默认（enabledBorder/focusedBorder 传 null
+    // 即回落主题；只覆盖 border 会被主题的 enabledBorder 顶掉）。
+    final bool eink = isEinkTheme(context);
+    final InputBorder flatBorder = OutlineInputBorder(
+      // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+      borderRadius: tokens.radii.controlRadius,
+      borderSide: BorderSide.none,
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -167,10 +185,28 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                     },
                   ),
             isDense: true,
-            border: OutlineInputBorder(
-              // MD3 守卫：圆角一律走 design tokens，不自持字面量。
-              borderRadius: tokens.radii.controlRadius,
-            ),
+            filled: !eink,
+            fillColor: eink
+                ? null
+                : (onNavPane
+                      ? tokens.surfaces.overlay
+                      : tokens.surfaces.search),
+            border: eink
+                ? OutlineInputBorder(
+                    // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+                    borderRadius: tokens.radii.controlRadius,
+                  )
+                : flatBorder,
+            enabledBorder: eink ? null : flatBorder,
+            focusedBorder: eink
+                ? null
+                : OutlineInputBorder(
+                    borderRadius: tokens.radii.controlRadius,
+                    borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
           ),
           onChanged: (String value) => setState(() => _searchQuery = value),
         ),
@@ -226,20 +262,30 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   /// 点搜索结果：登记滚动定位挂点、清空搜索，宽屏切主从选中分类，窄屏 push
   /// 详情页；目标行由 SettingsSchemaItem 消费挂点后滚入视口并闪烁高亮。
-  /// body 合成条目（bodySearchEntries）不登记挂点——body 行不是 schema item，
-  /// 挂点永远不会被消费，跳转到分类正文即为完整语义。
+  /// 正文条目仅在已声明真实挂点时登记定位请求，避免遗留未消费的目标。
   void _openSearchResult(SettingsSearchEntry entry, {required bool wide}) {
-    SettingsSearchReveal.pendingItemId =
-        entry.isBodyEntry ? null : entry.item.id;
+    SettingsSearchReveal.pendingItemId = entry.hasRevealTarget
+        ? entry.item.id
+        : null;
     _searchController.clear();
     setState(() {
       _searchQuery = '';
       if (wide) _selectedDestinationId = entry.destination.id;
     });
+    final NavigatorState navigator = Navigator.of(context);
     if (!wide) {
-      Navigator.of(context).push(
+      navigator.push(
         MaterialPageRoute<void>(
           builder: (_) => SettingsDetailPage(destination: entry.destination),
+        ),
+      );
+    }
+    // 子 schema 页里的命中：父页之上再逐级推子页，挂点由最里层页面的目标行消费。
+    for (final SettingsNavigationItem hop in entry.subPagePath) {
+      final SettingsDestination Function() child = hop.child!;
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => SettingsDetailPage.subPage(child),
         ),
       );
     }
@@ -249,9 +295,10 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     if (!widget.embedded) {
       return content;
     }
-    // Windows 主窗口已经由应用壳层提供当前 tab 标题；设置仍是普通 home tab，
-    // 左侧主导航始终可见，因此无需再画第二条「返回 + 设置」页头。
-    if (FushiWindowsTitleBar.isEnabled) {
+    // 自绘顶栏的桌面主窗口（Windows / macOS）已经由应用壳层提供当前 tab 标题；
+    // 设置仍是普通 home tab，左侧主导航始终可见，因此无需再画第二条
+    // 「返回 + 设置」页头。
+    if (FushiDesktopTitleBar.isEnabled) {
       return content;
     }
     // Cupertino 手机（compact 走底栏导航、onBack 为空、无需返回出口）保持原生
@@ -298,9 +345,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         ? CupertinoColors.separator.resolveFrom(context)
         : tokens.surfaces.outline;
     // MD3 list-detail: the nav pane sits on the tonal container token
-    // (`surfaces.group`) while the detail pane stays on the base page surface.
+    // (`surfaces.card`) while the detail pane stays on the base page surface.
     // Material only — Cupertino keeps its system background untouched.
-    final Color? navPaneColor = cupertino ? null : tokens.surfaces.group;
+    final Color? navPaneColor = cupertino ? null : tokens.surfaces.card;
     return MaterialSupportingPaneLayout(
       minSplitWidth: 720,
       supportingSide: SupportingPaneSide.start,
@@ -310,31 +357,16 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            _buildSearchField(),
+            _buildSearchField(onNavPane: true),
             Expanded(
-              // Cupertino 的 buildDestinationList 是不可滚动的
-              // CupertinoListSection（Material 自带 ListView）；分类数增长 +
-              // 搜索框占高后，在有界 pane 里必须由外层补滚动，否则 RenderFlex
-              // 溢出（BUG-009 同源）。
               child: _searchQuery.trim().isEmpty
-                  ? (cupertino
-                      ? SingleChildScrollView(
-                          child: renderer.buildDestinationList(
-                            settingsContext: settingsContext,
-                            destinations: destinations,
-                            selectedDestinationId: selectedDestinationId,
-                            onDestinationSelected: _selectDestination,
-                            pushRoutes: false,
-                          ),
-                        )
-                      : renderer.buildDestinationList(
-                          settingsContext: settingsContext,
-                          destinations: destinations,
-                          selectedDestinationId: selectedDestinationId,
-                          onDestinationSelected: _selectDestination,
-                          pushRoutes:
-                              false, // master-detail keeps selection in-pane.
-                        ))
+                  ? renderer.buildDestinationList(
+                      settingsContext: settingsContext,
+                      destinations: destinations,
+                      selectedDestinationId: selectedDestinationId,
+                      onDestinationSelected: _selectDestination,
+                      pushRoutes: false,
+                    )
                   : _buildSearchResults(
                       settingsContext: settingsContext,
                       destinations: destinations,

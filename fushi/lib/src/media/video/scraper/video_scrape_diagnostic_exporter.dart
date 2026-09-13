@@ -9,11 +9,11 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
-import 'package:fushi/src/media/metadata/credential_redaction.dart';
+import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
-import 'package:fushi/src/media/video/scraper/filename_parser.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -82,7 +82,9 @@ class VideoScrapeDiagnosticExporter {
       safeFiles.add(_SafeFileEntry(
         relativePath: relative,
         sourcePath: entry.path,
-        sizeBytes: entry.sizeBytes,
+        // 本地传输的列目录不逐文件 stat（扫描热路径省几万次系统调用，见
+        // LocalSourceFileSystem.listFiles）；诊断导出是低频路径，自己补一次 stat。
+        sizeBytes: entry.sizeBytes ?? await _statSizeOrNull(entry.path),
       ));
     }
     safeFiles.sort((_SafeFileEntry a, _SafeFileEntry b) =>
@@ -340,4 +342,13 @@ class _NfoFile {
   final String archivePath;
   final String sourcePath;
   final int sizeBytes;
+}
+
+/// 本地文件大小；不存在 / 不可 stat 返回 null（与远端列目录给不出大小同语义）。
+Future<int?> _statSizeOrNull(String path) async {
+  try {
+    return await File(path).length();
+  } catch (_) {
+    return null;
+  }
 }

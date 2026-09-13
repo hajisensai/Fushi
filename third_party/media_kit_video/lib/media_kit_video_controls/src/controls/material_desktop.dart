@@ -7,6 +7,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -208,6 +209,24 @@ class MaterialDesktopVideoControlsThemeData {
   /// See third_party/media_kit_video/PATCHES.md.
   final ValueNotifier<bool>? visibilityNotifier;
 
+  /// Optional host-driven wake signal (Hibiki patch, BUG-2453): every
+  /// notification behaves exactly like a pointer hover over the controls —
+  /// [onHover] runs, i.e. the bar is shown (`mount`/`visible` = true) and the
+  /// auto-hide timer is restarted with [controlsHoverDuration].
+  ///
+  /// The host used to drive this path by dispatching a *synthetic*
+  /// [PointerHoverEvent] on a fake mouse device into the controls'
+  /// [MouseRegion]. That fake device is a real entry in Flutter's
+  /// `MouseTracker` and outlives the player page: after leaving the player it
+  /// kept "hovering" whatever widget sat at the screen centre (library cards
+  /// lifted with no mouse over them). An explicit signal reaches the same
+  /// State method without inventing input devices. Desktop counterpart of the
+  /// mobile controls' `restartHideTimerSignal`, except that this one un-hides
+  /// (keyboard seek / panel close on desktop is expected to reveal the bar; the
+  /// host gates "only keep alive while visible" itself).
+  /// Null (upstream default) = no signal, behaviour identical to pub.dev.
+  final Listenable? wakeSignal;
+
   // SEEK START (Hibiki patch)
 
   /// Optional callback fired the moment the user starts dragging / tapping the
@@ -297,6 +316,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.volumeBarTransitionDuration = const Duration(milliseconds: 150),
     this.shiftSubtitlesOnControlsVisibilityChange = true,
     this.visibilityNotifier,
+    this.wakeSignal,
     this.onSeekStart,
     this.onSeekEnd,
     this.onHoverPosition,
@@ -343,6 +363,7 @@ class MaterialDesktopVideoControlsThemeData {
     Duration? volumeBarTransitionDuration,
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
+    Listenable? wakeSignal,
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
     void Function(double? fraction)? onHoverPosition,
@@ -403,6 +424,7 @@ class MaterialDesktopVideoControlsThemeData {
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
+      wakeSignal: wakeSignal ?? this.wakeSignal,
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
@@ -461,6 +483,11 @@ class _MaterialDesktopVideoControlsState
   late bool visible;
 
   Timer? _timer;
+
+  /// Hibiki patch (BUG-2453): the host wake signal currently bound (see
+  /// [MaterialDesktopVideoControlsThemeData.wakeSignal]); rebound whenever the
+  /// theme hands over a different Listenable.
+  Listenable? _wakeSignal;
 
   late /* private */ var playlist = controller(context).player.state.playlist;
   late bool buffering = controller(context).player.state.buffering;
@@ -550,6 +577,35 @@ class _MaterialDesktopVideoControlsState
         );
       }
     }
+
+    // Hibiki patch (BUG-2453): (re)bind the host's wake signal. Runs on every
+    // didChangeDependencies (not gated by subscriptions.isEmpty) because the
+    // theme — and thus the signal's identity — can change across rebuilds;
+    // detach the old one and attach the current one when it differs. Mirrors
+    // the mobile controls' restartHideTimerSignal binding.
+    final Listenable? signal = _theme(context).wakeSignal;
+    if (!identical(signal, _wakeSignal)) {
+      _wakeSignal?.removeListener(_onWakeSignal);
+      _wakeSignal = signal;
+      _wakeSignal?.addListener(_onWakeSignal);
+    }
+  }
+
+  /// Hibiki patch (BUG-2453): host asked to wake the controls — same effect as
+  /// a pointer hover ([onHover]: show + restart the auto-hide timer). The host
+  /// may fire the signal from inside a build/layout pass (e.g. a panel-close
+  /// callback), where [setState] is illegal; in that case the wake is deferred
+  /// to the end of the frame instead of being dropped.
+  void _onWakeSignal() {
+    if (!mounted) return;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) onHover();
+      });
+      return;
+    }
+    onHover();
   }
 
   @override
@@ -557,6 +613,9 @@ class _MaterialDesktopVideoControlsState
     for (final subscription in subscriptions) {
       subscription.cancel();
     }
+    // Hibiki patch (BUG-2453): detach the host's wake-signal listener.
+    _wakeSignal?.removeListener(_onWakeSignal);
+    _wakeSignal = null;
     super.dispose();
   }
 

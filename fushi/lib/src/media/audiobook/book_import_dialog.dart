@@ -13,14 +13,12 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
-import 'package:fushi/src/asr/asr_cue_builder.dart'
-    show kAsrSuggestedSimilarityThreshold;
-import 'package:fushi/src/asr/asr_model_manifest.dart';
-import 'package:fushi/src/asr/asr_transcription_service.dart';
+import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
-import 'package:fushi/src/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -28,11 +26,13 @@ import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
@@ -72,9 +72,10 @@ class BookImportDialog extends StatefulWidget {
   final String? initialSubtitlePath;
 
   /// 拖拽导入预填：随新书一起拖入的音频文件路径。EPUB+音频拖到书架空白处时透传，
-  /// 否则丢失（书架 `importNewBook` 此前未携带 `files.audios`）。音频必配字幕，
-  /// 故仅预填展示——`_doImport` 的「音频必须配字幕」校验照旧（拖 EPUB+音频无字幕
-  /// 时仍要求补字幕）。
+  /// 否则丢失（书架 `importNewBook` 此前未携带 `files.audios`）。音频仍必配字幕，
+  /// 故仅预填展示——`_doImport` 的「音频必须配字幕」校验照旧，只是能转录的平台
+  /// 改为弹「字幕来源」（选文件 / 转录）就地补上，不能转录的平台仍要求补字幕
+  /// （BUG-2266）。
   final List<String>? initialAudioPaths;
 
   /// 测试计数缝：生产始终走 [MangaModule.isImageArchive]；回归测试只在外层计数后
@@ -437,7 +438,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           isWideTapArea: true,
           onTap: _pickSubtitle,
         ),
-        if (AsrTranscriptionService.isSupported)
+        if (isAsrSupported)
           FushiIconButton(
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
@@ -453,7 +454,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   Future<void> _onSubtitleRowTap() async {
     if (importing) return;
     if (!shouldOfferSubtitleSourceChooser(
-      asrSupported: AsrTranscriptionService.isSupported,
+      asrSupported: isAsrSupported,
       hasAudio: _audioPaths.isNotEmpty,
     )) {
       await _pickSubtitle();
@@ -848,13 +849,31 @@ class _BookImportDialogState extends State<BookImportDialog>
     final String extractDir = row.extractDir;
     final String ext = p.extension(source);
     final String dest = p.join(extractDir, 'cover$ext');
-    await MediaCoverService.applyCoverFile(
-      source: File(source),
-      destPath: dest,
-    );
+    if (!await _writeCoverOrSkip(source: source, destPath: dest)) return;
     await (widget.db.update(widget.db.epubBooks)
           ..where((tbl) => tbl.bookKey.equals(bookKey)))
         .write(EpubBooksCompanion(coverPath: Value('cover$ext')));
+  }
+
+  /// 封面落盘的唯一出口（EPUB 包内 `cover.*` 与字幕书 `persistDir/cover.*` 共用）。
+  ///
+  /// BUG-2496：收口会拒收非图片 / 截断图片（改过扩展名的 HTML、ffmpeg 抽到一半的
+  /// 内嵌封面）。封面坏了不能让整本书导入失败——记诊断、返回 false，调用方不写
+  /// `coverPath`，书照常入库、书架回落占位图。其它 IO 异常照旧向上抛。
+  Future<bool> _writeCoverOrSkip({
+    required String source,
+    required String destPath,
+  }) async {
+    try {
+      await MediaCoverService.applyCoverFile(
+        source: File(source),
+        destPath: destPath,
+      );
+      return true;
+    } on CoverImageInvalidException catch (e) {
+      ErrorLogService.instance.logDiagnostic('BookImportDialog.cover', e);
+      return false;
+    }
   }
 
   Future<bool> _epubHasCover(String bookKey) async {
@@ -906,6 +925,18 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (epubPath != null && await _handoffIfManga(epubPath)) return;
     if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
+      // 有音频没字幕：本机能转录就直接问字幕来源（选文件 / 转录），拿到字幕后接着
+      // 导入；只有不能转录的平台才提示。转录入口只是字幕行尾一枚无字图标，用户
+      // 「下载了语音模型 → 选 EPUB + 音频 → 点导入」走到这里，若只给一句「音频需要
+      // 配合字幕使用」就是死胡同（BUG-2266）。
+      if (shouldOfferSubtitleSourceChooser(
+        asrSupported: isAsrSupported,
+        hasAudio: true,
+      )) {
+        await _onSubtitleRowTap();
+        if (!mounted || !_hasSubtitles) return;
+        return _doImport();
+      }
       FushiToast.show(
         msg: t.srt_import_audio_needs_subtitle,
         severity: ToastSeverity.error,
@@ -1059,8 +1090,9 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (coverSource != null) {
       final String ext = p.extension(coverSource);
       final String dest = p.join(persistDir.path, 'cover$ext');
-      await File(coverSource).copy(dest);
-      book.coverPath = dest;
+      if (await _writeCoverOrSkip(source: coverSource, destPath: dest)) {
+        book.coverPath = dest;
+      }
     }
 
     debugPrint('[fushi-import] SrtBook save: uid=$uid title="$title" '
@@ -1084,7 +1116,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'）。
     // PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。
     if (carrier == ImportCarrier.pdf) {
-      reportProgress(0.5, t.import_step_importing_epub);
+      // PDF 完全不经 EPUB 管线（pdfrx 直接渲染、落库 format='pdf'），所以这里报的是
+      // 中性的「导入书籍…」。用户看到「导入 EPUB…」卡住时会以为是 EPUB 转换出了问题，
+      // 而真正卡住的是 PDFium——错误的文案会把排查引向错误的方向（BUG-2419）。
+      reportProgress(0.5, t.import_step_importing_book);
       await PdfImporter.importFromPath(
         db: widget.db,
         filePath: _epubPath!,
@@ -1180,8 +1215,6 @@ class _BookImportDialogState extends State<BookImportDialog>
       autoWindow: _autoWindow,
       searchWindow: _searchWindow,
       similarityThreshold: _similarityThreshold,
-      replaceCueTextWithBookText:
-          AsrTranscriptionService.isAsrGeneratedSubtitlePath(_subtitlePath!),
       onProgress: reportProgress,
       messages: AudiobookAlignmentMessages(
         readingIdb: t.import_step_reading_idb,

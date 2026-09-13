@@ -38,6 +38,11 @@ void main() {
     const List<String> floatingIds = <String>[
       'listening.floating_lyric',
       'listening.floating_lyric_font_size',
+      'listening.floating_lyric_text_opacity',
+      'listening.floating_lyric_button_bg_opacity',
+      'listening.floating_lyric_corner_radius',
+      'listening.floating_lyric_width',
+      'listening.floating_lyric_context_lines',
       // TODO-576: 背景透明度滑杆也要跟字号一样在 Windows 桌面可见。
       'listening.floating_lyric_bg_opacity',
       'listening.floating_lyric_click_lookup',
@@ -49,24 +54,59 @@ void main() {
         expect(
           block.contains('Platform.isAndroid || Platform.isWindows'),
           isTrue,
-          reason: '$id must be visible on Android and Windows '
+          reason:
+              '$id must be visible on Android and Windows '
               '(the desktop strip is supported).',
         );
         expect(
-          RegExp(r'visible:\s*\(_\)\s*=>\s*Platform\.isAndroid,')
-              .hasMatch(block),
+          RegExp(
+            r'visible:\s*\(_\)\s*=>\s*Platform\.isAndroid,',
+          ).hasMatch(block),
           isFalse,
           reason: '$id must not be gated to Android only.',
         );
       });
     }
 
+    test(
+      'the enable switch stays reachable while styling follows enabled state',
+      () {
+        final String switchBlock = itemBlock('listening.floating_lyric');
+        final String switchVisibility = switchBlock.substring(
+          switchBlock.indexOf('visible:'),
+          switchBlock.indexOf('value:'),
+        );
+        expect(
+          switchVisibility,
+          isNot(contains('showFloatingLyric')),
+          reason:
+              'The switch must remain reachable after disabling the feature.',
+        );
+        for (final String id in floatingIds.skip(1)) {
+          final String block = itemBlock(id);
+          final String visibility = block.substring(
+            block.indexOf('visible:'),
+            block.contains('min:')
+                ? block.indexOf('min:')
+                : block.indexOf('value:'),
+          );
+          expect(
+            visibility,
+            contains('c.appModel.showFloatingLyric'),
+            reason:
+                '$id is a feature parameter; evaluate enabled state at render time.',
+          );
+        }
+      },
+    );
+
     test('app_icon picker is visible on Android and Windows', () {
       final String block = itemBlock('appearance.app_icon');
       expect(
         block.contains('Platform.isAndroid || Platform.isWindows'),
         isTrue,
-        reason: 'app_icon picker now supports Windows runtime icon switching '
+        reason:
+            'app_icon picker now supports Windows runtime icon switching '
             '(preset + custom image), so its gate widened from Android-only.',
       );
       // Must not be regated to Android-only.

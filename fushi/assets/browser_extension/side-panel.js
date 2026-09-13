@@ -28,10 +28,75 @@
   window.__fushiRoot = lookupShadow;
   installDictMediaPlaceholderResolver(lookupShadow); // BUG-1718：兑现词条内图片/样式表占位
   var currentTabId = null;
+  // 抽屉嵌入模式（mobile-drawer.js 的 iframe 打开，?fushiEmbed=1）：
+  //   · 绑定来源页 tabId——网页内扩展 iframe 里 tabs.query 的 currentWindow 解析不可靠，
+  //     以 background drawerSelfTab 如实回报的 sender.tab.id 为准（缺参数仍走 queryActiveTab）；
+  //   · 不挂 tabs.onActivated：抽屉只服务这一页，「跟着切的标签页走」语义在这里不存在；
+  //   · 抽屉收起时宿主 postMessage pause → 暂停 300ms 轮询（省电），拉开立刻补一次；
+  //   · html 根挂 .fushi-embed 类，side-panel.css 按触屏规格放大控件、补安全区。
+  // typeof 守卫：vm 行为测试沙箱里没有全局 location，扩展页里永远有——两不耽误。
+  var EMBED_SEARCH = typeof location === 'undefined' ? '' : String(location.search || '');
+  // BUG-2426：「这份文档是不是被嵌进了别人的页面」是浏览器的客观事实，不能由
+  // URL 参数声明。旧判据只看 `?fushiEmbed=1`，于是 #1295 那一整套「宿主 origin 与
+  // 目标 tabId 一律不许自证」的加固，被恶意站点**省略这个参数**就能整个绕过：
+  // EMBED=false ⇒ queryActiveTab() 落回 chrome.tabs.query({active,currentWindow})，
+  // 把用户此刻真正在看的标签页交给嵌入方当靶子（跨源读不到内容，但足够点击劫持
+  // 借用户的手去跳转/制卡）。判据改成帧嵌套这一浏览器事实；同源比较不会抛，真抛了
+  // 也按「被嵌入」fail-closed。URL 参数保留只为兼容合法抽屉路径，不再是唯一来源。
+  var EMBED = (function () {
+    try {
+      // 真浏览器里 window.top 恒存在：顶层页 top === self，被嵌入则不等（跨源时它是
+      // 一个不可读的 Window 代理，但引用比较照样成立）。`window.top &&` 只为挡住
+      // 行为测试沙箱里没有 top 的情形，浏览器里永远走不到那条回退。
+      if (typeof window !== 'undefined' && window.top && window.top !== window.self) {
+        return true;
+      }
+    } catch (_) {
+      return true; // 连比较都被拒 = 必然嵌在别人的页面里，fail-closed
+    }
+    return /[?&]fushiEmbed=1/.test(EMBED_SEARCH);
+  })();
+  // 目标标签 id 不从 URL 取：?fushiTabId= 是自证参数，嵌入方填谁的号都行。
+  // 改由 SW 在 drawerEmbedVerify 应答里按 sender.tab.id 背书（见文件末尾 EMBED 块），
+  // 背书到货前保持 null —— 那期间 queryActiveTab 一律给空，fail-closed。
+  var EMBED_TAB_ID = null;
+  var embedPaused = false;
+  if (EMBED) document.documentElement.classList.add('fushi-embed');
+  // 嵌入（手机抽屉）模式头部原本叠了标题+工具排+选轨+时轴偏移三四行，把列表挤得没法看。
+  // 加一个折叠钮：折叠后只留工具排（＋J A− A＋ AS ⚙），列表近乎占满；再点恢复。
+  if (EMBED) {
+    var foldTitleRow = document.querySelector('.title-row');
+    if (foldTitleRow) {
+      var foldBtn = document.createElement('button');
+      foldBtn.type = 'button';
+      foldBtn.className = 'hdr-fold';
+      foldBtn.textContent = '▾';
+      foldBtn.title = '折叠/展开工具区';
+      foldBtn.setAttribute('aria-label', '折叠或展开头部工具区');
+      var applyFold = function (folded) {
+        document.body.classList.toggle('hdr-folded', folded);
+        foldBtn.textContent = folded ? '▸' : '▾';
+      };
+      foldBtn.addEventListener('click', function () {
+        var folded = !document.body.classList.contains('hdr-folded');
+        applyFold(folded);
+        // 折叠状态跨会话记忆：抽屉每次重开都摊着四行工具区是反体验。此键只有 embed
+        // 读写（desktop 无此守卫、CSS 全挂 html.fushi-embed），不污染侧板。
+        try { localStorage.setItem('fushiHdrFolded', folded ? '1' : '0'); } catch (_) {}
+      });
+      // 新会话默认折叠（尽量省空间）：只有用户显式展开过（存 '0'）才记住展开；
+      // 无存档=首次，直接收成一行工具排。
+      var savedFold = null;
+      try { savedFold = localStorage.getItem('fushiHdrFolded'); } catch (_) {}
+      if (savedFold !== '0') applyFold(true);
+      foldTitleRow.insertBefore(foldBtn, foldTitleRow.firstChild);
+    }
+  }
   var currentState = null;
   var cues = [];
   var rows = [];
   var currentIndex = -1;
+  var scrollIndex = -1;
   var stateSignature = '';
   var autoScroll = true;
   var fontStep = 1;
@@ -260,6 +325,9 @@
     }
     var wheelSpeed = parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
+    // BUG-2284：墨水屏「瞬时滚动」随主题下发（app popupInstantScroll），popup.js 的 wheel
+    // 监听读同名全局改走固定步长瞬跳。缺该 key = 旧 app，保持关闭。
+    window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;
@@ -661,6 +729,9 @@
   }
 
   function queryActiveTab() {
+    // 嵌入态只认 SW 背书的那一页；没背书到就不给（宁可空一轮也不去 tabs.query 猜——
+    // 页内扩展 iframe 里 currentWindow 解析本就不可靠，那正是当初要问 SW 的原因）。
+    if (EMBED) return Promise.resolve(EMBED_TAB_ID != null ? { id: EMBED_TAB_ID } : null);
     return new Promise(function (resolve) {
       chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         try { if (chrome.runtime.lastError) return resolve(null); } catch (_) { return resolve(null); }
@@ -709,18 +780,30 @@
     ].join('::');
   }
 
+  var trackSig = '~';
   function renderTracks(state) {
     var tracks = Array.isArray(state.tracks) ? state.tracks : [];
-    trackEl.textContent = '';
-    tracks.forEach(function (track) {
-      var option = document.createElement('option');
-      option.value = track.lang;
-      option.textContent = track.label + '（' + track.length + '）';
-      trackEl.appendChild(option);
-    });
-    trackEl.hidden = tracks.length === 0;
-    trackEl.value = state.activeLang || '';
-    offsetEl.hidden = tracks.length === 0;
+    // 每 300ms 刷新都清空重建 option，会把展开中的系统级下拉一次一次销毁——
+    // 安卓抽屉里「选轨窗口一直闪烁」就是这么来的（桌面同理）。无变化 = DOM 一律不碰；
+    // 指纹含 activeLang，所以切轨后选中值照样落得下去。偏移读数是纯文本，放闸外常刷。
+    // 指纹还必须含 pending：懒加载轨从「（选中加载）」变成「（N）」时，
+    // 只有它在变（lang/label/signature 都原样）——漏了就永远停在旧标签上。
+    var sig = (state.activeLang || '') + '\u0003' + tracks.map(function (t) {
+      return [t.lang, t.label, t.length, t.signature, t.pending ? 1 : 0].join('\u0001');
+    }).join('\u0002');
+    if (sig !== trackSig) {
+      trackSig = sig;
+      trackEl.textContent = '';
+      tracks.forEach(function (track) {
+        var option = document.createElement('option');
+        option.value = track.lang;
+        option.textContent = track.label + (track.pending ? '（选中加载）' : '（' + track.length + '）');
+        trackEl.appendChild(option);
+      });
+      trackEl.hidden = tracks.length === 0;
+      trackEl.value = state.activeLang || '';
+      offsetEl.hidden = tracks.length === 0;
+    }
     offsetValueEl.textContent = ((Number(state.offsetMs) || 0) >= 0 ? '+' : '') +
       ((Number(state.offsetMs) || 0) / 1000).toFixed(1) + 's';
   }
@@ -729,6 +812,7 @@
     listEl.textContent = '';
     rows = [];
     currentIndex = -1;
+    scrollIndex = -1;
     if (!cues.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
@@ -805,21 +889,39 @@
       fragment.appendChild(row);
     });
     listEl.appendChild(fragment);
-    updateCurrent(currentState ? currentState.currentTimeMs : 0);
+    updateCurrent(currentState && currentState.currentTimeMs);
+  }
+
+  // 高亮只属于正在显示的字幕；列表定位还需覆盖字幕间隙、片头和片尾。
+  function nearestCueIndex(items, timeMs) {
+    var active = cueIndexAt(items, timeMs);
+    if (active >= 0 || !items.length) return active;
+    var lo = 0, hi = items.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (items[mid].startMs <= timeMs) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === 0) return 0;
+    if (lo === items.length) return lo - 1;
+    return timeMs - items[lo - 1].endMs <= items[lo].startMs - timeMs ? lo - 1 : lo;
   }
 
   function updateCurrent(timeMs) {
-    if (!cues.length) return;
-    var next = cueIndexAt(cues, Number(timeMs) || 0);
-    if (next === currentIndex) return;
-    if (rows[currentIndex]) rows[currentIndex].classList.remove('is-current');
-    currentIndex = next;
-    var row = rows[currentIndex];
-    if (row) {
-      row.classList.add('is-current');
-      if (autoScroll) {
-        try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { row.scrollIntoView(); }
-      }
+    // 初始取轨可能先于播放状态到达，不能把尚未知的时间当作 0 消耗首次定位。
+    if (!cues.length || typeof timeMs !== 'number' || !Number.isFinite(timeMs)) return;
+    var next = cueIndexAt(cues, timeMs);
+    if (next !== currentIndex) {
+      if (rows[currentIndex]) rows[currentIndex].classList.remove('is-current');
+      currentIndex = next;
+      if (rows[currentIndex]) rows[currentIndex].classList.add('is-current');
+    }
+    var nearest = nearestCueIndex(cues, timeMs);
+    if (autoScroll && nearest !== scrollIndex && rows[nearest]) {
+      var behavior = scrollIndex < 0 ? 'instant' : 'smooth';
+      scrollIndex = nearest;
+      try { rows[nearest].scrollIntoView({ block: 'center', behavior: behavior }); }
+      catch (_) { rows[nearest].scrollIntoView(); }
     }
   }
 
@@ -838,6 +940,7 @@
   }
 
   async function refresh(forceCues) {
+    if (embedPaused) return; // 抽屉收起：不空转消息，resume 时立即补一次全量
     if (refreshBusy) return;
     refreshBusy = true;
     try {
@@ -934,31 +1037,60 @@
     fileEl.value = '';
   });
 
-  // ── Jimaku 查字幕（asb 式云端字幕）：搜索框 → server /api/subtitle/jimaku/search（用户在
-  // app 设置里填的 API key；真人剧 anime=false 补搜在 server 侧）→ 点候选下载解析 →
+  // ── 查字幕（asb 式云端字幕）：搜索框 → server /api/subtitle/search → 点候选下载解析 →
   // 复用外挂字幕的 InstallTrack 落地（与本地文件同一条轨/偏移/覆盖层链路）。
-  var jimakuRowEl = document.getElementById('jimaku-row');
-  var jimakuQueryEl = document.getElementById('jimaku-query');
-  var jimakuEpEl = document.getElementById('jimaku-ep');
-  var jimakuResultsEl = document.getElementById('jimaku-results');
-  function jimakuErrorText(data, response) {
-    var error = data && data.error;
-    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
-    if (error === 'unauthorized') return 'Jimaku API key 无效或无权限';
-    if (error === 'rate-limited') return 'Jimaku 限流，请稍后再试';
-    if (error === 'missing-query') return '请输入搜索词';
-    if (!response || response.ok !== true) return 'Jimaku 搜索失败：请确认 Fushi 已启动';
-    return 'Jimaku 暂不可用，请稍后再试';
+  //
+  // 来源不再写死 Jimaku：server 那边扇出**用户在 app 里配好的全部在线字幕来源**
+  // （Jimaku / OpenSubtitles / AJATT），与视频页的「找字幕」看到同一批。AJATT 零配置，
+  // 所以没填任何 key 的用户在这里也有结果——此前他们点开只会看到「请先填 API key」。
+  var subsRowEl = document.getElementById('subs-row');
+  var subsQueryEl = document.getElementById('subs-query');
+  var subsEpEl = document.getElementById('subs-ep');
+  var subsResultsEl = document.getElementById('subs-results');
+  // 来源展示名：server 下发的是 provider id，列表里要让用户一眼看出这条来自哪家
+  // （同一部作品三家都可能有，质量与语言差别很大）。未知 id 原样显示，不吞。
+  var SUBTITLE_PROVIDER_LABELS = {
+    jimaku: 'Jimaku',
+    opensubtitles: 'OpenSubtitles',
+    ajatt: 'AJATT',
+  };
+  function providerLabel(id) {
+    if (!id) return '';
+    return SUBTITLE_PROVIDER_LABELS[id] || String(id);
   }
-  async function jimakuInstall(candidate) {
+  function subsErrorText(data, response) {
+    var error = data && data.error;
+    if (error === 'no-provider') {
+      return '没有可用的字幕来源：请在 Fushi 设置 → 视频 → 字幕 里启用 AJATT，或填 Jimaku / OpenSubtitles 的 key';
+    }
+    // 旧版 app（还只有 jimaku 端点）会回这个码。
+    if (error === 'no-api-key') return '请先在 Fushi 设置 → 视频 → 字幕 填写 Jimaku API key';
+    if (error === 'unauthorized') return '字幕来源拒绝访问：请检查 API key';
+    if (error === 'rate-limited') return '字幕来源限流或配额用尽，请稍后再试';
+    if (error === 'missing-query') return '请输入搜索词';
+    if (!response || response.ok !== true) return '字幕搜索失败：请确认 Fushi 已启动';
+    return '字幕来源暂不可用，请稍后再试';
+  }
+  // 部分来源挂了但另一些答了：结果照出，同时说清楚少了谁——把它们混成一个「没找到」，
+  // 用户只会一遍遍换搜索词（app 内「找字幕」也是这么处理的）。
+  function failedProviderNames(data) {
+    var failures = data && Array.isArray(data.failures) ? data.failures : [];
+    var names = [];
+    failures.forEach(function (failure) {
+      var name = providerLabel(failure && failure.provider);
+      if (name && names.indexOf(name) < 0) names.push(name);
+    });
+    return names;
+  }
+  async function subsInstall(candidate) {
     toast('正在下载：' + candidate.fileName);
-    var response = await sendRuntime({ type: 'jimakuFetch', handle: candidate.handle });
+    var response = await sendRuntime({ type: 'subtitleFetch', handle: candidate.handle });
     var data = response && response.data;
     if (!response || response.ok !== true || !data || data.ok !== true ||
         !Array.isArray(data.cues) || !data.cues.length) {
       toast(data && data.error === 'unknown-handle'
         ? '候选已过期，请重新搜索'
-        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : jimakuErrorText(data, response)));
+        : (data && data.error === 'unsupported' ? '不支持的字幕格式' : subsErrorText(data, response)));
       return;
     }
     var state = await sendToTab({
@@ -969,89 +1101,99 @@
     if (state && state.ok) {
       stateSignature = metadataSignature(state);
       applyState(state, true);
-      jimakuResultsEl.hidden = true;
-      jimakuResultsEl.textContent = '';
-      toast('已加载 Jimaku 字幕：' + data.cues.length + ' 句');
+      subsResultsEl.hidden = true;
+      subsResultsEl.textContent = '';
+      toast('已加载' + (providerLabel(data.provider || candidate.provider)
+        ? ' ' + providerLabel(data.provider || candidate.provider) : '') +
+        '字幕：' + data.cues.length + ' 句');
     }
   }
-  function renderJimakuResults(candidates, truncated) {
-    jimakuResultsEl.textContent = '';
+  function renderSubsResults(candidates, truncated) {
+    subsResultsEl.textContent = '';
     if (!candidates.length) {
       var empty = document.createElement('div');
-      empty.className = 'jimaku-empty';
+      empty.className = 'subs-empty';
       empty.textContent = '无结果。试试日文原名，或填集数缩小范围。';
-      jimakuResultsEl.appendChild(empty);
-      jimakuResultsEl.hidden = false;
+      subsResultsEl.appendChild(empty);
+      subsResultsEl.hidden = false;
       return;
     }
     candidates.forEach(function (candidate) {
       var row = document.createElement('button');
       row.type = 'button';
-      row.className = 'jimaku-item';
+      row.className = 'subs-item';
       var name = document.createElement('span');
-      name.className = 'jimaku-item-name';
+      name.className = 'subs-item-name';
       name.textContent = candidate.fileName;
       var meta = document.createElement('span');
-      meta.className = 'jimaku-item-meta';
-      meta.textContent = candidate.entryName +
-        (candidate.language ? ' · ' + candidate.language : '') +
-        (candidate.episode != null ? ' · 第' + candidate.episode + '集' : '');
+      meta.className = 'subs-item-meta';
+      var parts = [];
+      var label = providerLabel(candidate.provider);
+      if (label) parts.push(label);
+      if (candidate.entryName) parts.push(candidate.entryName);
+      if (candidate.language) parts.push(candidate.language);
+      if (candidate.episode != null) parts.push('第' + candidate.episode + '集');
+      // 机翻档与人工档并排时质量差一个数量级，来源既然标了就得显示出来。
+      if (candidate.aiTranslated === true) parts.push('机翻');
+      meta.textContent = parts.join(' · ');
       row.appendChild(name);
       row.appendChild(meta);
-      row.addEventListener('click', function () { jimakuInstall(candidate); });
-      jimakuResultsEl.appendChild(row);
+      row.addEventListener('click', function () { subsInstall(candidate); });
+      subsResultsEl.appendChild(row);
     });
     if (truncated) {
       var more = document.createElement('div');
-      more.className = 'jimaku-empty';
+      more.className = 'subs-empty';
       more.textContent = '结果过多已截断，填集数可缩小范围。';
-      jimakuResultsEl.appendChild(more);
+      subsResultsEl.appendChild(more);
     }
-    jimakuResultsEl.hidden = false;
+    subsResultsEl.hidden = false;
   }
-  var jimakuSearching = false;
-  async function jimakuSearch() {
-    if (jimakuSearching) return;
-    var query = String(jimakuQueryEl.value || '').trim();
+  var subsSearching = false;
+  async function subsSearch() {
+    if (subsSearching) return;
+    var query = String(subsQueryEl.value || '').trim();
     if (!query) { toast('请输入搜索词'); return; }
-    var episode = parseInt(jimakuEpEl.value, 10);
-    jimakuSearching = true;
-    toast('正在搜索 Jimaku…');
+    var episode = parseInt(subsEpEl.value, 10);
+    subsSearching = true;
+    toast('正在搜索字幕…');
     try {
       var response = await sendRuntime({
-        type: 'jimakuSearch',
+        type: 'subtitleSearch',
         query: query,
         ...(Number.isInteger(episode) && episode > 0 ? { episode: episode } : {}),
       });
       var data = response && response.data;
       if (!response || response.ok !== true || !data || data.ok !== true) {
-        toast(jimakuErrorText(data, response));
+        toast(subsErrorText(data, response));
         return;
       }
-      renderJimakuResults(Array.isArray(data.candidates) ? data.candidates : [],
+      renderSubsResults(Array.isArray(data.candidates) ? data.candidates : [],
         data.truncated === true);
+      var failed = failedProviderNames(data);
+      if (failed.length) toast('部分来源未响应：' + failed.join('、'));
     } finally {
-      jimakuSearching = false;
+      subsSearching = false;
     }
   }
-  document.getElementById('jimaku').addEventListener('click', function () {
-    var show = jimakuRowEl.hidden;
-    jimakuRowEl.hidden = !show;
-    if (!show) { jimakuResultsEl.hidden = true; return; }
+  document.getElementById('subs').addEventListener('click', function () {
+    var show = subsRowEl.hidden;
+    subsRowEl.hidden = !show;
+    if (!show) { subsResultsEl.hidden = true; return; }
     // 预填当前标签页标题（长显示名命中率低，用户可改成日文原名——placeholder 已提示）。
-    if (!jimakuQueryEl.value && currentTabId != null) {
+    if (!subsQueryEl.value && currentTabId != null) {
       try {
         chrome.tabs.get(currentTabId, function (tab) {
           try { if (chrome.runtime.lastError) return; } catch (_) { return; }
-          if (tab && tab.title && !jimakuQueryEl.value) jimakuQueryEl.value = tab.title;
+          if (tab && tab.title && !subsQueryEl.value) subsQueryEl.value = tab.title;
         });
       } catch (_) {}
     }
-    jimakuQueryEl.focus();
+    subsQueryEl.focus();
   });
-  document.getElementById('jimaku-go').addEventListener('click', function () { jimakuSearch(); });
-  jimakuQueryEl.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter') jimakuSearch();
+  document.getElementById('subs-go').addEventListener('click', function () { subsSearch(); });
+  subsQueryEl.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') subsSearch();
   });
 
   document.getElementById('smaller').addEventListener('click', function () {
@@ -1065,7 +1207,7 @@
   autoButton.addEventListener('click', function () {
     autoScroll = !autoScroll;
     autoButton.classList.toggle('is-on', autoScroll);
-    if (autoScroll) { currentIndex = -1; updateCurrent(currentState ? currentState.currentTimeMs : 0); }
+    if (autoScroll) { scrollIndex = -1; updateCurrent(currentState && currentState.currentTimeMs); }
   });
   document.getElementById('settings').addEventListener('click', function () {
     chrome.runtime.openOptionsPage();
@@ -1111,6 +1253,13 @@
   window.addEventListener('blur', function () { closeLookup(); });
   listEl.addEventListener('wheel', function () { closeLookup(); }, { passive: true });
   listEl.addEventListener('touchmove', function () { closeLookup(); }, { passive: true });
+  // 用户主动翻阅后停止跟随，点击跟随按钮才重新定位；普通状态轮询不会抢回视口。
+  function stopAutoScroll() {
+    autoScroll = false;
+    autoButton.classList.toggle('is-on', false);
+  }
+  listEl.addEventListener('wheel', stopAutoScroll, { passive: true });
+  listEl.addEventListener('touchmove', stopAutoScroll, { passive: true });
   // 查词面板拖拽调整大小（CSS resize 把手在右下角）：pointerdown 落在右下角 20px 内时快照
   // 尺寸，松手时尺寸真变了才算「用户拖过」——置 lookupUserResized + 回写 app 尺寸键
   // （app clamp 后按「拖即解锁」持久化，下次查词/会话经主题带回来）。
@@ -1157,12 +1306,62 @@
 
 
   try {
-    chrome.tabs.onActivated.addListener(function () { refresh(true); });
+    if (!EMBED) chrome.tabs.onActivated.addListener(function () { refresh(true); });
     chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
       if (tabId === currentTabId && changeInfo.status === 'complete') refresh(true);
     });
   } catch (_) {}
 
+  // 抽屉宿主（mobile-drawer.js）的可见性协议：收起=暂停轮询，拉开=立刻全量刷新。
+  // 审计报告 #1295：宿主 origin 的来源从「URL 参数自证」（任意网站可伪造）改为
+  // 「持 SW 签发的 token 回 SW 核销」——SW 绑定签发 tab、TTL 过期，伪造的 token 兑不出
+  // origin。核销前 EMBED_HOST_ORIGIN 保持初始 sentinel（永不等于任何真实 origin），
+  // 天然 fail-closed：兑不到就一直不收宿主消息。
+  var requestEmbedAttestation = null; // EMBED 时装上；见下（轮询要复用它重试）
+  if (EMBED) {
+    var EMBED_HOST_ORIGIN = 'fushi-unverified-pending'; // 未核销前的哨兵，绝不匹配任何 origin
+    var hostMsg = function (ev) {
+      if (ev.origin !== EMBED_HOST_ORIGIN) return;
+      var d = ev && ev.data;
+      if (!d || d.source !== 'fushi-drawer') return;
+      if (d.type === 'pause') embedPaused = true;
+      else if (d.type === 'resume') { embedPaused = false; refresh(true); }
+    };
+    window.addEventListener('message', hostMsg);
+    var embedTok = '';
+    var embedTokMatch = /[?&]fushiEmbedToken=([^&]*)/.exec(EMBED_SEARCH);
+    if (embedTokMatch) {
+      try { embedTok = decodeURIComponent(embedTokMatch[1]); } catch (_) { embedTok = ''; }
+    }
+    var embedVerifyBusy = false;
+    // 有没有 token 都要问：origin 要 token 才兑得出（宿主 pause/resume 通道），而 tabId
+    // 只看 sender.tab.id、SW 无条件如实给。两者信任根不同，别合成一个判断。
+    // 做成**幂等可重试**而不是开局一发：SW 是会被浏览器随时休眠/重启的，那一次 sendMessage
+    // 撞上 lastError 就永远拿不到 tabId 了 —— 而 tabId 现在是驱动本页的唯一来源，
+    // 一次哑火 = 抽屉永久停在「找不到当前标签页」。轮询里补请求，最多 300ms 自愈。
+    requestEmbedAttestation = function () {
+      if (embedVerifyBusy || EMBED_TAB_ID != null) return;
+      embedVerifyBusy = true;
+      try {
+        chrome.runtime.sendMessage({ type: 'drawerEmbedVerify', token: embedTok }, function (resp) {
+          embedVerifyBusy = false;
+          try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+          if (!resp) return;
+          var o = typeof resp.origin === 'string' ? resp.origin : '';
+          if (o) EMBED_HOST_ORIGIN = o; // 只有核销成功才把哨兵换成真 origin
+          if (Number.isInteger(resp.tabId)) {
+            EMBED_TAB_ID = resp.tabId;
+            refresh(true); // 背书到货之前 queryActiveTab 是空的，这一刻才是真正的开局刷新
+          }
+        });
+      } catch (_) { embedVerifyBusy = false; /* 保持哨兵 + 空 tab = fail-closed */ }
+    };
+    requestEmbedAttestation();
+  }
+
   refresh(true);
-  setInterval(function () { refresh(false); }, 300);
+  setInterval(function () {
+    if (requestEmbedAttestation) requestEmbedAttestation(); // 背书没到手就一直补请求
+    refresh(false);
+  }, 300);
 })();

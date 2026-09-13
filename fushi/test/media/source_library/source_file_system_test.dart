@@ -57,8 +57,9 @@ void main() {
       expect(byName['book.srt']!.isDirectory, isFalse);
       expect(byName['season1']!.isDirectory, isTrue);
 
-      // 文件条目带 sizeBytes，目录条目 sizeBytes 为 null。
-      expect(byName['book.epub']!.sizeBytes, equals('epub-bytes'.length));
+      // 本地传输不逐文件 stat：sizeBytes 一律 null（扫描链路无消费方；递归枚举
+      // 几万文件的树时每文件一次 length() 是纯浪费）。目录条目同样 null。
+      expect(byName['book.epub']!.sizeBytes, isNull);
       expect(byName['season1']!.sizeBytes, isNull);
 
       // path 是完整绝对路径。

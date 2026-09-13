@@ -22,7 +22,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
 /// 一个视频分 P 的身份：切片要用的 `cid` 与用来当 Anki 视频名的标题。

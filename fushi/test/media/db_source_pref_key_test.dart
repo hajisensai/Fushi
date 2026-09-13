@@ -85,8 +85,11 @@ void main() {
       }
       // 持久化身份键的字面值收敛在单一常量（Fushi 改名 P6-3 收口）；
       // 现值 'reader_fushi'：历史值 'reader_ttu' 已由 v70 Drift 迁移改写存量。
-      final String src2 = File('lib/src/media/sources/reader_fushi_source.dart')
-          .readAsStringSync();
+      // 常量本身随「承载路径的 pref 键」一起搬进了引擎（app 与无头服务端都要按
+      // 同一个前缀拼 key，真相源不能留在 app 侧的某个 source 实现里）。
+      final String src2 = File(
+        '../packages/fushi_engine/lib/media/media_pref_keys.dart',
+      ).readAsStringSync();
       expect(src2,
           contains("const String kReaderSourcePersistedKey = 'reader_fushi';"),
           reason: '持久化键字面值必须冻结在 kReaderSourcePersistedKey 单一常量');

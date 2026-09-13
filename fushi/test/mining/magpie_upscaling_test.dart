@@ -12,6 +12,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/magpie_upscaling_text.dart';
@@ -1308,14 +1310,16 @@ void main() {
     test('正常退出必须收干净：注入即登记 ExitFlushRegistry', () {
       // close() 在 fushi/lib 里零调用，桌面点 X 走 exit(0)。不登记退出链，
       // detached 起的 Magpie 会活过 Hibiki，配置里的 autoScale 也留着。
-      final int attachIndex =
-          sessionSource.indexOf('void attachMagpieUpscaling(');
-      expect(attachIndex, greaterThan(0));
+      // 钉不变式而不是写法：登记后来加了 `??=` 幂等包装（重复注入不重复登记、
+      // 顺带留住句柄好注销）并被 dart format 折了行，原来那串单行字面量早就不存在
+      // 了，但登记一直在注入点上。切**方法体**而不是「从 attachIndex 往后找」——
+      // 后者会把方法外面别处的登记（_playTrackerExitFlush 就在下面不远）也算成数。
+      final String attachBody =
+          methodBody(sessionSource, 'void attachMagpieUpscaling(');
       expect(
-        sessionSource.indexOf(
-            'ExitFlushRegistry.instance.register(shutdownMagpieUpscaling)',
-            attachIndex),
-        greaterThan(attachIndex),
+        attachBody,
+        matches(RegExp(r'ExitFlushRegistry\.instance\.register\('
+            r'\s*shutdownMagpieUpscaling\s*,?\s*\)')),
         reason: '登记必须就在注入点上，放到调用方就会有人漏掉',
       );
       expect(sessionSource.contains('ExitFlushRegistry.instance.unregister('),

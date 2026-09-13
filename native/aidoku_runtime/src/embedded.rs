@@ -78,6 +78,8 @@ impl NetworkCookie {
 #[serde(rename_all = "camelCase")]
 struct NetworkSession {
     #[serde(default)]
+    proxy_url: Option<String>,
+    #[serde(default)]
     user_agent: Option<String>,
     #[serde(default)]
     cookies: Vec<NetworkCookie>,
@@ -117,7 +119,19 @@ impl NetworkSession {
     /// (challenge cookie → API call → image URL), which a per-request client
     /// silently threw away.
     fn client(&self) -> Result<reqwest::blocking::Client> {
-        reqwest::blocking::Client::builder()
+        let mut builder = reqwest::blocking::Client::builder().no_proxy();
+        if let Some(proxy_url) = &self.proxy_url {
+            // Only the app's authenticated loopback relay is accepted. It
+            // resolves every destination using the current app proxy settings.
+            let url = reqwest::Url::parse(proxy_url).context("invalid native proxy endpoint")?;
+            if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port().is_none()
+            {
+                bail!("native proxy endpoint must be loopback HTTP");
+            }
+            builder =
+                builder.proxy(reqwest::Proxy::all(url).context("invalid native proxy endpoint")?);
+        }
+        builder
             .cookie_provider(Arc::new(self.cookie_jar()))
             .build()
             .context("failed to build Aidoku HTTP client")
@@ -159,6 +173,29 @@ fn loggable_url(url: &str) -> String {
         }
         Err(_) => url.to_owned(),
     }
+}
+
+/// `reqwest::Error` 的 `Display` **只打错误类别**：`Kind::Request` 一个词
+/// （"error sending request"）同时覆盖 DNS 失败、TCP 拒绝、本地中继隧道被拒、
+/// TLS 握手失败和超时，真正的原因全在 `source()` 链里。以前这里只插值最外层，
+/// 用户拿到的就是一句 "error sending request"，从这行字**结构上无法**区分
+/// 「MangaDex 连不上」「中继把隧道拒了」「证书不认」——排查只能靠猜（BUG-2381）。
+///
+/// 逐层拼 `source()`；不带 URL（外层已经 `without_url()`，链里也只有传输层
+/// 文本），所以不会把签名地址或中继凭据带进日志。
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let message = cause.to_string();
+        // reqwest 常见的包装层会把 source 的 Display 原样再说一遍，重复没有信息。
+        if !text.ends_with(&message) {
+            text.push_str(": ");
+            text.push_str(&message);
+        }
+        source = cause.source();
+    }
+    text
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -793,7 +830,7 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
             state.log_net(format!(
                 "{method} {} -> {}",
                 loggable_url(&url),
-                error.without_url()
+                error_chain(&error.without_url())
             ));
             return -10;
         }
@@ -807,7 +844,7 @@ fn send_request(state: &mut HostState, rid: i32) -> i32 {
             state.log_net(format!(
                 "{method} {} -> {status} {}",
                 loggable_url(&url),
-                error.without_url()
+                error_chain(&error.without_url())
             ));
             return -10;
         }
@@ -2512,6 +2549,57 @@ mod tests {
         // `null` is what the Dart codec sends for an omitted optional field.
         let session = NetworkSession::from_request(&json!({"network": null})).unwrap();
         assert!(session.cookies.is_empty());
+    }
+
+    /// BUG-2381：`error sending request` 之所以不可诊断，是因为只打了最外层。
+    /// 这条钉住「source 链必须逐层拼进来」和「重复层不重复打印」两件事。
+    #[test]
+    fn error_chain_keeps_every_cause_and_drops_repeats() {
+        #[derive(Debug)]
+        struct Layer(&'static str, Option<Box<Layer>>);
+        impl std::fmt::Display for Layer {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str(self.0)
+            }
+        }
+        impl std::error::Error for Layer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                self.1.as_deref().map(|layer| layer as &dyn std::error::Error)
+            }
+        }
+
+        let chained = Layer(
+            "error sending request",
+            Some(Box::new(Layer(
+                "unsuccessful",
+                Some(Box::new(Layer("connection refused", None))),
+            ))),
+        );
+        assert_eq!(
+            error_chain(&chained),
+            "error sending request: unsuccessful: connection refused"
+        );
+
+        // 外层 Display 已经把 source 原样带上时（reqwest 的包装层常见）不复读。
+        let echoed = Layer(
+            "io error: connection refused",
+            Some(Box::new(Layer("connection refused", None))),
+        );
+        assert_eq!(error_chain(&echoed), "io error: connection refused");
+    }
+
+    #[test]
+    fn network_session_only_accepts_the_app_loopback_proxy() {
+        let local = NetworkSession::from_request(&json!({"network": {
+            "proxyUrl": "http://fushi:local-token@127.0.0.1:12345"
+        }}))
+        .unwrap();
+        assert!(local.client().is_ok());
+        let remote = NetworkSession::from_request(&json!({"network": {
+            "proxyUrl": "http://example.com:12345"
+        }}))
+        .unwrap();
+        assert!(remote.client().is_err());
     }
 
     #[test]

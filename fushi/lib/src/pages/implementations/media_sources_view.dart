@@ -29,10 +29,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
@@ -40,8 +43,9 @@ import 'package:fushi/src/sync/sftp_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/src/utils/net/url_input_normalizer.dart';
+import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -451,13 +455,24 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _rescan(row),
               ),
+              FushiIconButton(
+                key: ValueKey<String>('media_source_rename_${row.id}'),
+                icon: Icons.drive_file_rename_outline,
+                size: 18,
+                tooltip: t.media_source_rename,
+                enabled: !busy,
+                padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                onTap: () => _rename(row),
+              ),
               if (isVideo && widget.onScrapeSource != null)
                 FushiIconButton(
                   icon: Icons.manage_search_outlined,
                   size: 18,
-                  tooltip: t.video_source_scrape_action,
+                  tooltip: row.videoGroupingMode == 'folder'
+                      ? t.video_source_grouping_folder_hint
+                      : t.video_source_scrape_action,
                   busy: scraping,
-                  enabled: !busy,
+                  enabled: !busy && row.videoGroupingMode != 'folder',
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => _scrapeSource(row),
                 ),
@@ -801,13 +816,23 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
-    final bool dup = existing.any(
-        (SourceLibraryRow r) => r.transport == 'local' && r.rootPath == norm);
-    if (dup) {
-      FushiToast.show(msg: norm, severity: ToastSeverity.warning);
-      return;
+    // 该根已是常驻来源（BUG-2368）：旧行为是播一条**只有路径**的 toast 就 return。
+    // 用户视角就是「选完文件夹被静默弹回」——既不知道为什么，也没有任何进展。
+    // 「这个文件夹我要它进库」在根已登记时的正确落地是**重扫那一行**，和
+    // [importLocalFolderOnce] 撞同根时的处理逐字一致；提示语说清原因再重扫。
+    for (final SourceLibraryRow row in existing) {
+      if (row.transport == 'local' && row.rootPath == norm) {
+        FushiToast.show(
+          msg: t.media_source_root_already_added(path: norm),
+          severity: ToastSeverity.warning,
+        );
+        await _rescan(row);
+        return;
+      }
     }
 
+    final String? groupingMode = await _pickVideoGroupingMode();
+    if (!mounted || groupingMode == null) return;
     final int newId = await _db.insertMediaSource(
       MediaSourcesCompanion(
         label: Value(defaultLabelFromRoot(norm, transport: 'local')),
@@ -815,6 +840,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         transport: const Value('local'),
         rootPath: Value(norm),
         recursive: const Value(true),
+        videoGroupingMode: Value(groupingMode),
         sortOrder: Value(_nextSortOrder()),
         createdAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
@@ -842,15 +868,23 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (!mounted || picked == null || picked.isEmpty) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
-    // 该根已是常驻来源：不再造同根的一次性影子，直接重扫那一行。
+    // 该根已是常驻来源：不再造同根的一次性影子，直接重扫那一行。重扫本身在来源页
+    // 之外（快速导入区）没有可见痕迹，因此和 [addLocalFolder] 一样先说明再扫
+    // （BUG-2368），否则用户看到的同样是「选完文件夹什么都没发生」。
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
     for (final SourceLibraryRow row in existing) {
       if (row.transport == 'local' && row.rootPath == norm) {
+        FushiToast.show(
+          msg: t.media_source_root_already_added(path: norm),
+          severity: ToastSeverity.warning,
+        );
         await _rescan(row);
         return;
       }
     }
 
+    final String? groupingMode = await _pickVideoGroupingMode();
+    if (!mounted || groupingMode == null) return;
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
     final int tempId = await _db.insertMediaSource(
       MediaSourcesCompanion(
@@ -859,6 +893,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         transport: const Value('local'),
         rootPath: Value(norm),
         recursive: const Value(true),
+        videoGroupingMode: Value(groupingMode),
         sortOrder: Value(_nextSortOrder()),
         createdAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
@@ -914,14 +949,17 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final String norm =
         normalizeSourceRootPath(result.remotePath, transport: result.transport);
     final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
-    // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。
-    final bool dup = existing.any((SourceLibraryRow r) {
-      if (r.transport != result.transport || r.rootPath != norm) return false;
-      final Map<String, Object?> cfg = decodeSourceConfig(r.configJson);
-      return (cfg['host'] as String?) == result.host;
-    });
-    if (dup) {
-      FushiToast.show(msg: norm, severity: ToastSeverity.warning);
+    // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。命中时与本地分支同样处理
+    // （BUG-2368）：说明原因 + 重扫已有行，而不是播一条裸路径 toast 就 return。
+    for (final SourceLibraryRow row in existing) {
+      if (row.transport != result.transport || row.rootPath != norm) continue;
+      final Map<String, Object?> cfg = decodeSourceConfig(row.configJson);
+      if ((cfg['host'] as String?) != result.host) continue;
+      FushiToast.show(
+        msg: t.media_source_root_already_added(path: norm),
+        severity: ToastSeverity.warning,
+      );
+      await _rescan(row);
       return;
     }
 
@@ -1004,6 +1042,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   Future<void> _scrapeSource(SourceLibraryRow row) async {
+    if (row.videoGroupingMode == 'folder') {
+      FushiToast.show(msg: t.video_source_grouping_folder_hint);
+      return;
+    }
     final Future<void> Function(SourceLibraryRow source)? scrape =
         widget.onScrapeSource;
     if (scrape == null || isBusy) {
@@ -1031,16 +1073,27 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         await showAppDialog<_VideoSourceScrapeSettingsDraft>(
       context: context,
       builder: (BuildContext context) => _VideoSourceScrapeSettingsDialog(
-        initial: _VideoSourceScrapeSettingsDraft.fromRow(existing),
+        initial: _VideoSourceScrapeSettingsDraft.fromRow(
+          existing,
+          groupingMode: row.videoGroupingMode,
+        ),
       ),
     );
     if (draft == null) return;
+    await (_db.update(
+      _db.mediaSources,
+    )..where((tbl) => tbl.id.equals(row.id)))
+        .write(
+      MediaSourcesCompanion(videoGroupingMode: Value(draft.groupingMode)),
+    );
     await _db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
         enabled: Value<bool>(draft.enabled),
-        // 旧列保留作数据库兼容；新保存一律清空，AniDB 是固定主身份源。
-        providerOverride: const Value<String?>(null),
+        // 来源级主资料源覆盖；NULL = 跟随全局默认。
+        providerOverride: Value<String?>(draft.providerOverride),
+        // 来源级资料语言；NULL = 跟随全局 video_metadata_locale。
+        metadataLocale: Value<String?>(draft.metadataLocale),
         autoAfterScan: Value<bool>(draft.autoAfterScan),
         writeNfo: Value<bool>(draft.writeNfo),
         writeImages: Value<bool>(draft.writeImages),
@@ -1048,6 +1101,38 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         imagePolicy: Value<String>(draft.imagePolicy),
         allowExternalOverwrite: Value<bool>(draft.allowExternalOverwrite),
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    await _load();
+    widget.onLibraryChanged?.call();
+  }
+
+  Future<String?> _pickVideoGroupingMode() async {
+    if (widget.mediaKind != 'video') return 'series';
+    return await showAppDialog<String>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(t.video_source_grouping_mode),
+        children: <Widget>[
+          for (final String mode in <String>['series', 'folder'])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, mode),
+              child: FushiListItem(
+                padding: EdgeInsets.zero,
+                subtitleMaxLines: 6,
+                title: Text(
+                  mode == 'folder'
+                      ? t.video_source_grouping_folder
+                      : t.video_source_grouping_series,
+                ),
+                subtitle: Text(
+                  mode == 'folder'
+                      ? t.video_source_grouping_folder_hint
+                      : t.video_source_grouping_series_hint,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1140,12 +1225,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           );
         }
       } else {
-        await FushiShare.shareFiles(
-          <XFile>[
-            XFile(temporaryPackage.path, mimeType: 'application/zip'),
-          ],
-          subject: t.video_scrape_diagnostic_share_subject,
-        );
+        await FushiShare.shareFiles(<XFile>[
+          XFile(temporaryPackage.path, mimeType: 'application/zip'),
+        ], subject: t.video_scrape_diagnostic_share_subject);
       }
     } catch (error) {
       FushiToast.show(
@@ -1168,6 +1250,26 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 移除来源：确认对话框强调移除来源不会删除已导入的媒体（FK setNull 自动
   /// 把归属媒体的 source_id 归 NULL，条目保留）→ 确认则 deleteMediaSource +
   /// 清除该来源的网络凭据 → 刷新。
+  /// 改扫描根的显示名。只动 `media_sources.label` 这一列——身份是自增 `id`，
+  /// 扫描、凭据、刮削设置、条目归属全都按 id 走，改名不牵动任何一处。
+  ///
+  /// 添加本地文件夹时 label 是从 rootPath 末段推导的（`defaultLabelFromRoot`），
+  /// 同名文件夹挂多个根时全叫一样的名字；网络来源的可选显示名也只能在添加时填
+  /// 一次。这里是事后唯一的修改入口。
+  Future<void> _rename(SourceLibraryRow row) async {
+    final String? name = await showNameInputDialog(
+      context: context,
+      title: t.media_source_rename,
+      labelText: t.media_source_rename_label,
+      initialName: row.label,
+      leadingIcon: Icons.drive_file_rename_outline,
+    );
+    // 弹窗已 trim 且拒绝空名，这里只需短路「没改」。
+    if (!mounted || name == null || name == row.label) return;
+    await _db.updateMediaSourceLabel(row.id, name);
+    await _load();
+  }
+
   Future<void> _remove(SourceLibraryRow row) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -1199,6 +1301,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
 class _VideoSourceScrapeSettingsDraft {
   const _VideoSourceScrapeSettingsDraft({
+    this.groupingMode = 'series',
     required this.enabled,
     required this.autoAfterScan,
     required this.writeNfo,
@@ -1206,12 +1309,23 @@ class _VideoSourceScrapeSettingsDraft {
     required this.nfoPolicy,
     required this.imagePolicy,
     required this.allowExternalOverwrite,
+    this.providerOverride,
+    this.metadataLocale,
   });
 
   factory _VideoSourceScrapeSettingsDraft.fromRow(
-    VideoSourceScrapeSettingRow? row,
-  ) {
+    VideoSourceScrapeSettingRow? row, {
+    String groupingMode = 'series',
+  }) {
     return _VideoSourceScrapeSettingsDraft(
+      groupingMode: groupingMode,
+      // 历史值（bangumi / douban / anilist / anidb）不是可选主源，按「跟随全局」显示。
+      providerOverride:
+          parseSelectableVideoMetadataProvider(row?.providerOverride)?.name,
+      metadataLocale: switch (row?.metadataLocale?.trim()) {
+        final String value when value.isNotEmpty => value,
+        _ => null,
+      },
       enabled: row?.enabled ?? true,
       autoAfterScan: row?.autoAfterScan ?? false,
       writeNfo: row?.writeNfo ?? true,
@@ -1225,12 +1339,19 @@ class _VideoSourceScrapeSettingsDraft {
   /// 此来源的刮削总闸。协调器早就检查它（关 = 手动/扫描后/导入后/补刮全部
   /// 短路），但 UI 从没画过这个开关、保存时还硬编码回写旧值（BUG-1999）。
   final bool enabled;
+  final String groupingMode;
   final bool autoAfterScan;
   final bool writeNfo;
   final bool writeImages;
   final String nfoPolicy;
   final String imagePolicy;
   final bool allowExternalOverwrite;
+
+  /// 此来源的主资料源覆盖：`mal` / `tmdb`；`null` = 跟随全局默认。
+  final String? providerOverride;
+
+  /// 此来源的资料语言覆盖（BCP-47）；`null` = 跟随全局 `video_metadata_locale`。
+  final String? metadataLocale;
 
   static String _validPolicy(String? value) =>
       const <String>{'skip', 'missingOnly', 'overwrite'}.contains(value)
@@ -1251,6 +1372,7 @@ class _VideoSourceScrapeSettingsDialog extends StatefulWidget {
 class _VideoSourceScrapeSettingsDialogState
     extends State<_VideoSourceScrapeSettingsDialog> {
   late bool _enabled = widget.initial.enabled;
+  late String _groupingMode = widget.initial.groupingMode;
   late bool _autoAfterScan = widget.initial.autoAfterScan;
   late bool _writeNfo = widget.initial.writeNfo;
   late bool _writeImages = widget.initial.writeImages;
@@ -1258,10 +1380,28 @@ class _VideoSourceScrapeSettingsDialogState
   late String _imagePolicy = widget.initial.imagePolicy;
   late bool _allowExternalOverwrite = widget.initial.allowExternalOverwrite;
 
+  /// 选择器的值：'' = 跟随全局；否则为 provider 名。
+  late String _providerOverride = widget.initial.providerOverride ?? '';
+
+  /// 资料语言输入框：空串 = 跟随全局。
+  late final TextEditingController _metadataLocale =
+      TextEditingController(text: widget.initial.metadataLocale ?? '');
+
+  @override
+  void dispose() {
+    _metadataLocale.dispose();
+    super.dispose();
+  }
+
   void _save() {
     Navigator.pop(
       context,
       _VideoSourceScrapeSettingsDraft(
+        groupingMode: _groupingMode,
+        providerOverride: _providerOverride.isEmpty ? null : _providerOverride,
+        metadataLocale: _metadataLocale.text.trim().isEmpty
+            ? null
+            : _metadataLocale.text.trim(),
         enabled: _enabled,
         autoAfterScan: _autoAfterScan,
         writeNfo: _writeNfo,
@@ -1283,51 +1423,109 @@ class _VideoSourceScrapeSettingsDialogState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_enabled_toggle,
-                subtitle: t.video_source_scrape_enabled_toggle_hint,
-                value: _enabled,
-                onChanged: (bool value) => setState(() => _enabled = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_auto_after_scan,
-                subtitle: t.video_source_scrape_auto_after_scan_hint,
-                value: _autoAfterScan,
-                onChanged: (bool value) =>
-                    setState(() => _autoAfterScan = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_write_nfo,
-                value: _writeNfo,
-                onChanged: (bool value) => setState(() => _writeNfo = value),
-              ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_write_images,
-                value: _writeImages,
-                onChanged: (bool value) => setState(() => _writeImages = value),
-              ),
               AdaptiveSettingsPickerRow<String>(
-                title: t.video_source_scrape_nfo_policy,
-                selected: _nfoPolicy,
-                options: _policyOptions(),
-                onChanged: (String value) => setState(() => _nfoPolicy = value),
-                controlBelow: true,
-              ),
-              AdaptiveSettingsPickerRow<String>(
-                title: t.video_source_scrape_image_policy,
-                selected: _imagePolicy,
-                options: _policyOptions(),
+                title: t.video_source_grouping_mode,
+                selected: _groupingMode,
+                options: <AdaptiveSettingsPickerOption<String>>[
+                  AdaptiveSettingsPickerOption<String>(
+                    value: 'series',
+                    label: t.video_source_grouping_series,
+                  ),
+                  AdaptiveSettingsPickerOption<String>(
+                    value: 'folder',
+                    label: t.video_source_grouping_folder,
+                  ),
+                ],
                 onChanged: (String value) =>
-                    setState(() => _imagePolicy = value),
+                    setState(() => _groupingMode = value),
                 controlBelow: true,
               ),
-              AdaptiveSettingsSwitchRow(
-                title: t.video_source_scrape_external_overwrite,
-                subtitle: t.video_source_scrape_external_overwrite_hint,
-                value: _allowExternalOverwrite,
-                onChanged: (bool value) =>
-                    setState(() => _allowExternalOverwrite = value),
+              Text(
+                _groupingMode == 'folder'
+                    ? t.video_source_grouping_folder_hint
+                    : t.video_source_grouping_series_hint,
               ),
+              Text(t.video_source_grouping_change_hint),
+              if (_groupingMode != 'folder') ...<Widget>[
+                AdaptiveSettingsPickerRow<String>(
+                  title: t.video_metadata_primary_provider,
+                  selected: _providerOverride,
+                  options: <AdaptiveSettingsPickerOption<String>>[
+                    AdaptiveSettingsPickerOption<String>(
+                      value: '',
+                      label: t.video_source_scrape_provider_follow_global,
+                    ),
+                    for (final VideoMetadataProviderKind kind
+                        in kSelectableVideoMetadataProviders)
+                      AdaptiveSettingsPickerOption<String>(
+                        value: kind.name,
+                        label: videoMetadataProviderLabel(kind),
+                      ),
+                  ],
+                  onChanged: (String value) =>
+                      setState(() => _providerOverride = value),
+                  controlBelow: true,
+                ),
+                Text(t.video_metadata_primary_provider_hint),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: TextField(
+                    controller: _metadataLocale,
+                    decoration: InputDecoration(
+                      labelText: t.video_source_scrape_metadata_locale,
+                      helperText: t.video_source_scrape_metadata_locale_hint,
+                      helperMaxLines: 3,
+                    ),
+                  ),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_enabled_toggle,
+                  subtitle: t.video_source_scrape_enabled_toggle_hint,
+                  value: _enabled,
+                  onChanged: (bool value) => setState(() => _enabled = value),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_auto_after_scan,
+                  subtitle: t.video_source_scrape_auto_after_scan_hint,
+                  value: _autoAfterScan,
+                  onChanged: (bool value) =>
+                      setState(() => _autoAfterScan = value),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_write_nfo,
+                  value: _writeNfo,
+                  onChanged: (bool value) => setState(() => _writeNfo = value),
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_write_images,
+                  value: _writeImages,
+                  onChanged: (bool value) =>
+                      setState(() => _writeImages = value),
+                ),
+                AdaptiveSettingsPickerRow<String>(
+                  title: t.video_source_scrape_nfo_policy,
+                  selected: _nfoPolicy,
+                  options: _policyOptions(),
+                  onChanged: (String value) =>
+                      setState(() => _nfoPolicy = value),
+                  controlBelow: true,
+                ),
+                AdaptiveSettingsPickerRow<String>(
+                  title: t.video_source_scrape_image_policy,
+                  selected: _imagePolicy,
+                  options: _policyOptions(),
+                  onChanged: (String value) =>
+                      setState(() => _imagePolicy = value),
+                  controlBelow: true,
+                ),
+                AdaptiveSettingsSwitchRow(
+                  title: t.video_source_scrape_external_overwrite,
+                  subtitle: t.video_source_scrape_external_overwrite_hint,
+                  value: _allowExternalOverwrite,
+                  onChanged: (bool value) =>
+                      setState(() => _allowExternalOverwrite = value),
+                ),
+              ],
             ],
           ),
         ),

@@ -123,63 +123,69 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
     final double value = progress == null || progress.total == 0
         ? 0
         : progress.current / progress.total;
-    return PopScope(
-      canPop: !_running,
-      child: AlertDialog(
-        title: Text(t.scrape_all_title(kind: widget.mediaLabel)),
-        content: SizedBox(
-          width: 440,
-          child: summary != null
-              ? Text(
-                  t.scrape_all_done(
-                    applied: summary.applied,
-                    review: summary.needsReview,
-                    skipped: summary.skipped,
-                    failed: summary.failed,
-                  ),
-                )
-              : _running
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        LinearProgressIndicator(value: value),
-                        const SizedBox(height: 12),
-                        Text(
-                          t.scrape_all_running(
-                            current: progress?.current ?? 0,
-                            total: widget.itemCount,
-                          ),
+    return AlertDialog(
+      title: Text(t.scrape_all_title(kind: widget.mediaLabel)),
+      content: SizedBox(
+        width: 440,
+        child: summary != null
+            ? Text(
+                t.scrape_all_done(
+                  applied: summary.applied,
+                  review: summary.needsReview,
+                  skipped: summary.skipped,
+                  failed: summary.failed,
+                ),
+              )
+            : _running
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      LinearProgressIndicator(value: value),
+                      const SizedBox(height: 12),
+                      Text(
+                        t.scrape_all_running(
+                          current: progress?.current ?? 0,
+                          total: widget.itemCount,
                         ),
-                        if (progress != null) ...<Widget>[
-                          const SizedBox(height: 6),
-                          Text(
-                            t.scrape_all_item(title: progress.title),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                      ),
+                      if (progress != null) ...<Widget>[
+                        const SizedBox(height: 6),
+                        Text(
+                          t.scrape_all_item(title: progress.title),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
-                    )
-                  : Text(
-                      widget.itemCount == 0
-                          ? t.scrape_all_empty
-                          : t.scrape_all_confirm(n: widget.itemCount),
-                    ),
-        ),
-        actions: <Widget>[
-          if (!_running)
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(summary),
-              child: Text(summary == null ? t.dialog_cancel : t.dialog_close),
-            ),
-          if (!_running && summary == null && widget.itemCount > 0)
-            FilledButton(
-              onPressed: _start,
-              child: Text(t.scrape_all_start),
-            ),
-        ],
+                    ],
+                  )
+                : Text(
+                    widget.itemCount == 0
+                        ? t.scrape_all_empty
+                        : t.scrape_all_confirm(n: widget.itemCount),
+                  ),
       ),
+      actions: <Widget>[
+        // 出口在**任何阶段**都在场。原先 `PopScope(canPop: !_running)` 与按钮的
+        // `if (!_running)` 门控叠在一起：批量刮削一跑起来，框既没有任何按钮、又把
+        // 返回和 barrier 点击一并吞掉；而 runner 是整库逐项的网络刮削、没有逐项
+        // 超时，一条请求挂死就永远回不到 `_running = false`。iOS 上没有系统返回键、
+        // 对话框路由也没有侧滑返回，用户只能杀进程。关闭只解绑 UI，刮削继续在后台
+        // 跑完（`_start` 里每处 setState 都有 mounted 守卫）。
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(summary),
+          child: Text(
+            _running
+                ? t.dialog_background_close
+                : (summary == null ? t.dialog_cancel : t.dialog_close),
+          ),
+        ),
+        if (!_running && summary == null && widget.itemCount > 0)
+          FilledButton(
+            onPressed: _start,
+            child: Text(t.scrape_all_start),
+          ),
+      ],
     );
   }
 }

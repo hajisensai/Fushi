@@ -467,14 +467,37 @@ function fushiHasFullEpisodeTrack(videoKey) {
  * @returns {{text:string,startV:number,endV:number}|null}
  */
 function fushiFullTrackWindowAt() {
+  const hit = fushiFullTrackCueAt();
+  if (!hit) return null;
+  const cue = hit.cues[hit.idx];
+  return { text: cue.text || '', startV: cue.startMs, endV: cue.endMs };
+}
+/**
+ * 当前播放时刻命中的整轨 cue：整轨 + 下标。多句合一制卡要的就是 cues[idx±n]，此前
+ * fushiFullTrackWindowAt 算过 idx 却只回一条窗、把整轨和下标丢了。
+ * @returns {{cues:Array<{startMs:number,endMs:number,text:string}>, idx:number}|null}
+ */
+function fushiFullTrackCueAt() {
   const cues = fushiActiveFullTrackCues();
   if (!cues) return null;
   const nowV = fushiVideoTimeMs();
   if (nowV === null) return null;
   const idx = findCueIndexAt(cues, nowV);
   if (idx < 0) return null;
-  const cue = cues[idx];
-  return { text: cue.text || '', startV: cue.startMs, endV: cue.endMs };
+  return { cues: cues, idx: idx };
+}
+/**
+ * 面板行查词带来的精确窗（{startMs,endMs}）在整轨里的位置——按起止时间精确匹配。
+ * 找不到（该行来自 live 伪轨/别的轨）→ null，上下文功能对这一句不可用。
+ * @returns {{cues:Array, idx:number}|null}
+ */
+function fushiFullTrackCueMatching(startMs, endMs) {
+  const cues = fushiActiveFullTrackCues();
+  if (!cues) return null;
+  for (let i = 0; i < cues.length; i++) {
+    if (cues[i].startMs === startMs && cues[i].endMs === endMs) return { cues: cues, idx: i };
+  }
+  return null;
 }
 function fushiOnFullEpisodeCues(msg) {
   try {
@@ -525,12 +548,51 @@ function fushiOnStreamCues(msg) {
     const lang = String(msg.lang || 'und').replace(/\|/g, '_');
     const key = vidKey + '|' + lang;
     fushiEpisodeCues[key] = cues;
+    delete fushiLazyTracks[key]; // 占位轨拿到真 cue 就不再是「待加载」
     fushiNotifyPanel(key);
   } catch (_) {}
 }
+// BUG-2194：按需加载的**占位轨**。主世界桥（youtube-bridge.js）先发整份轨清单
+// {__fushiStream:'tracks'}，这里按 key 登记成空 cue 的占位（面板据 fushiLazyTracks 把它列
+// 出来标「未加载」），用户选中时 fushiRequestLazyTrack 发 {__fushiStream:'fetchTrack'} 让桥
+// 真取。pickPrimaryCueTrack / fushiHasFullEpisodeTrack 都跳过空轨，占位永远不会当主路径。
+const fushiLazyTracks = Object.create(null); // key → true
+window.fushiLazyTracks = fushiLazyTracks;
+function fushiOnStreamTracks(msg) {
+  try {
+    if (!Array.isArray(msg.tracks)) return;
+    const vidKey = String(msg.videoKey ||
+      (location.hostname + (msg.path || location.pathname))).replace(/\|/g, '_');
+    for (const t of msg.tracks) {
+      const lang = String((t && t.lang) || '').replace(/\|/g, '_');
+      if (!lang) continue;
+      const key = vidKey + '|' + lang;
+      if (fushiEpisodeCues[key] && fushiEpisodeCues[key].length) continue; // 已有真 cue
+      if (fushiLazyTracks[key]) continue; // 已登记
+      fushiEpisodeCues[key] = [];
+      fushiLazyTracks[key] = true;
+      fushiNotifyPanel(key);
+    }
+  } catch (_) {}
+}
+/**
+ * 请求桥真取一条占位轨。非占位（已有 cue / 未登记）→ false。
+ * @param {string} key `${videoKey}|${lang}`
+ * @returns {boolean}
+ */
+window.fushiRequestLazyTrack = function (key) {
+  if (!fushiLazyTracks[key]) return false;
+  const sep = key.indexOf('|');
+  if (sep < 0) return false;
+  try {
+    window.postMessage({ __fushiStream: 'fetchTrack', videoKey: key.slice(0, sep), lang: key.slice(sep + 1) }, '/');
+  } catch (_) { return false; }
+  return true;
+};
 window.addEventListener('message', (e) => {
-  if (e.source !== window || !e.data || e.data.__fushiStream !== 'cues') return;
-  fushiOnStreamCues(e.data);
+  if (e.source !== window || !e.data) return;
+  if (e.data.__fushiStream === 'cues') fushiOnStreamCues(e.data);
+  else if (e.data.__fushiStream === 'tracks') fushiOnStreamTracks(e.data);
 });
 try { window.postMessage({ __fushiStream: 'replayCues' }, '/'); } catch (_) {}
 // ── TODO-1363：通用字幕轨 provider（所有站点） ──

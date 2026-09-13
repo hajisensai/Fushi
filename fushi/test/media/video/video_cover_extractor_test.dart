@@ -6,12 +6,15 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/ffmpeg_backend.dart'
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show resolveFfmpegExecutable;
-import 'package:fushi/src/media/video/metadata/video_scrape_operation_gate.dart';
-import 'package:fushi/src/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 
 void main() {
+  // BUG-2496：ffmpeg 产出的封面现在经 publishStagedCoverFile 发布，发布内含写后
+  // 驱逐（PaintingBinding.imageCache），纯 test() 没有 binding 会抛。
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('封面 mutation 串行且允许同一异步链安全重入', () async {
     final Completer<void> firstEntered = Completer<void>();
     final Completer<void> releaseFirst = Completer<void>();

@@ -21,9 +21,9 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
-import 'package:fushi/src/media/torrent/embedded_torrent_host.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 
 final Pointer<Void> _fakeSession = Pointer<Void>.fromAddress(0xF00D);

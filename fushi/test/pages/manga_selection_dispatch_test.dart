@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 
@@ -102,12 +102,12 @@ void main() {
         images: <MokuroImage>[
           MokuroImage(
             url: 'right.jpg',
-            size: Size(100, 200),
+            size: MokuroSize(100, 200),
             blocks: <MokuroBlock>[],
           ),
           MokuroImage(
             url: 'left.jpg',
-            size: Size(100, 200),
+            size: MokuroSize(100, 200),
             blocks: <MokuroBlock>[],
           ),
         ],

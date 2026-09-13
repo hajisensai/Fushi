@@ -6,15 +6,21 @@ import '../helpers/source_guard.dart';
 
 /// TODO-1190 守卫：查词弹窗「高亮被查词」补齐所有缺失面（源码扫描，不依赖真机）。
 ///
-/// 在词头/链接/纯文本被点开子查词后，父卡片必须像 base_source_page 阅读器车道一样
+/// 在纯文本被点开子查词后，父卡片必须像 base_source_page 阅读器车道一样
 /// 用 `highlightSelection` 标出被查的源词（CSS Custom Highlights）。此前三处缺口：
-///   1. mixin 车道（video / 首页 / texthooker）的 onTextSelected/onLinkClick 只
+///   1. mixin 车道（video / 首页 / texthooker）的 onTextSelected 只
 ///      truncate + onPush，未高亮父卡片；
 ///   2. base_source_page 阅读器车道的 onLinkClick 只 push、未与 onTextSelected 对称
 ///      高亮；
 ///   3. app 外全局查词嵌套（global_lookup_controller._lookupNested）无任何高亮。
 /// 守住这三处不被回退（app 外根查词源词在别的窗口/悬浮字幕、非可控 webview，
 /// 无法高亮，属已知边界，不在守卫范围）。
+///
+/// 2026-09（弹窗内原地跳转，对齐 Hoshi Reader iOS）：词头 / 链接 / 汉字的
+/// `onLinkClick` 通道不再叠子层，而是在**同一个** WebView 里换词——父卡片本身被
+/// 替换，「高亮父卡片里被点的词」在这条通道上不再成立。第 2 条的对称高亮随之退役，
+/// 改守「onLinkClick 走 navigatePopupInPlace、不再回退成 push 子层 + 高亮」。
+/// onTextSelected（释义正文点词）仍叠子层、仍高亮，与 Hoshi 一致。
 void main() {
   // flutter test 的 cwd 是 hibiki 包根。
   final File mixin = File(
@@ -25,23 +31,33 @@ void main() {
   final File render = File('lib/src/lookup/global_lookup_render.dart');
 
   group('TODO-1190 查词高亮补缺失面守卫', () {
-    test('mixin 车道 onTextSelected + onLinkClick 都高亮父卡片', () {
+    test('mixin 车道 onTextSelected 高亮父卡片；onLinkClick 原地跳转不叠层', () {
       final String src = mixin.readAsStringSync();
-      // 两处（选文/点链）都必须 await onPush 拿匹配长度并 highlightSelection。
+      // 选文必须 await onPush 拿匹配长度并 highlightSelection。
       final int occurrences = 'highlightSelection(count)'
           .allMatches(src)
           .length;
       expect(
         occurrences,
-        greaterThanOrEqualTo(2),
-        reason:
-            'mixin onTextSelected/onLinkClick 未各自 highlightSelection(count)',
+        greaterThanOrEqualTo(1),
+        reason: 'mixin onTextSelected 未 highlightSelection(count)',
       );
       expect(
         src.contains('final int count = await onPush('),
         isTrue,
         reason: 'mixin 未 await onPush 取匹配字数用于高亮',
       );
+      final int link = src.indexOf('onLinkClick: (query, localRect) =>');
+      expect(link, greaterThanOrEqualTo(0),
+          reason: 'mixin onLinkClick 必须是原地跳转（=> navigatePopupInPlace）');
+      final String linkBody = src.substring(
+        link,
+        src.indexOf('onMineEntry:', link),
+      );
+      expect(linkBody.contains('navigatePopupInPlace('), isTrue,
+          reason: 'mixin onLinkClick 未走 navigatePopupInPlace');
+      expect(linkBody.contains('onPush('), isFalse,
+          reason: 'mixin onLinkClick 不得再 push 子层（回退成叠层）');
       // onPush 必须返回匹配字数（Future<int>），否则拿不到 count。
       expect(
         src.contains(
@@ -62,30 +78,33 @@ void main() {
       );
     });
 
-    test('阅读器车道 onLinkClick 与 onTextSelected 对称高亮', () {
+    test('阅读器车道 onTextSelected 高亮父卡片；onLinkClick 原地跳转不叠层', () {
       final String src = base.readAsStringSync();
-      final int idx = src.indexOf('onLinkClick: (query, localRect) async {');
+      final int text = src.indexOf('onTextSelected: (text, localRect) async {');
+      expect(text, greaterThanOrEqualTo(0),
+          reason: 'base_source_page 缺 onTextSelected');
+      final int idx = src.indexOf('onLinkClick: (query, localRect) =>', text);
       expect(
         idx,
         greaterThanOrEqualTo(0),
-        reason: 'base_source_page 缺 onLinkClick',
+        reason: 'base_source_page 缺原地跳转形态的 onLinkClick',
       );
-      // onLinkClick 之后必须有 highlightSelection（与 onTextSelected 对称）。
-      //
-      // 定界用**下一个回调的起点**，不用固定字符数：BUG-2054 往这个回调里加了两道
-      // 身份门后，原来的 1000 字符窗口就把 highlightSelection 挤了出去（判据的语义
-      // 没变，只是被推远）。把数字调大是削弱——真正的边界是「还在 onLinkClick 这一
-      // 段里」，语义定界既不会随段落长度漂移，也不会漏进隔壁回调。
+      // 定界用**下一个回调的起点**，不用固定字符数（BUG-2054 的教训）。
+      final String textBody = src.substring(text, idx);
+      expect(
+        textBody.contains('item.webViewKey.currentState?.highlightSelection('),
+        isTrue,
+        reason: 'reader onTextSelected 未高亮点中的源词',
+      );
       final int nextCallback = src.indexOf('onScrolledToBottom', idx);
-      final String after = src.substring(
+      final String linkBody = src.substring(
         idx,
         nextCallback > idx ? nextCallback : src.length,
       );
-      expect(
-        after.contains('item.webViewKey.currentState?.highlightSelection('),
-        isTrue,
-        reason: 'reader onLinkClick 未对称高亮点中的词头/链接',
-      );
+      expect(linkBody.contains('navigatePopupInPlace('), isTrue,
+          reason: 'reader onLinkClick 未走 navigatePopupInPlace');
+      expect(linkBody.contains('searchDictionaryResult('), isFalse,
+          reason: 'reader onLinkClick 不得再 push 子层（回退成叠层）');
     });
 
     test('app 外全局查词嵌套高亮父 iframe', () {

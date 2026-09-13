@@ -6,12 +6,12 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-import 'package:fushi/src/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/media_search_text.dart';
-import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 const int kMaximumCoreAudioCatalogBytes = 24 * 1024 * 1024;
 const Duration kCoreAudioCatalogTimeout = Duration(seconds: 60);

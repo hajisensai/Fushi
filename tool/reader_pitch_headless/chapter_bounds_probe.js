@@ -31,12 +31,12 @@ function buildHtml({ vertical, V, vw, F, nChars }) {
   for (let i = 0; i < nChars; i++) s += '永';
   if (vertical) {
     const O = 22, mt = 2, mb = 2;
-    const colW = `max(${F}px, calc(${V}px - ${mt}vh - ${mb}vh - ${F}px))`;
+    const colW = `max(${F}px, calc(${V}px - ${mt}vh - ${mb}vh))`;
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 html,body{overflow:hidden !important;height:${V + O}px !important;width:${vw}px !important;margin:0 !important;padding:0 !important;writing-mode:vertical-rl !important;}
 body{font-family:serif !important;font-size:${F}px !important;line-height:1.5 !important;box-sizing:border-box !important;
 column-width:${colW} !important;column-gap:22px !important;
-padding-top:calc(${mt}vh) !important;padding-bottom:calc(${mb}vh + ${F}px) !important;padding-left:8px !important;padding-right:8px !important;}
+padding-top:calc(${mt}vh) !important;padding-bottom:calc(${mb}vh) !important;padding-left:8px !important;padding-right:8px !important;}
 div{margin:0 !important;}
 </style></head><body><div>${s}</div></body></html>`;
   }

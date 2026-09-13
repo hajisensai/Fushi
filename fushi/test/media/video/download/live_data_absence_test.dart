@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 根因回归：`enqueue` 阶段（排在别的下载后面等槽位）的任务原本被判成

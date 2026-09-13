@@ -68,7 +68,11 @@ void main() {
         read('../packages/fushi_dictionary/lib/src/engine/fushidicts.dart');
     expect(engine.contains('void addKanjiDict(String path)'), isTrue);
     expect(engine.contains('List<FushiKanjiResult> queryKanji('), isTrue);
-    expect(engine.contains('class FushiKanjiResult'), isTrue);
+    // 结果模型已从引擎门面拆进 fushidicts_models.dart（门面只留 API + 转换器）。
+    // 仍然要钉住它存在——拆文件是重构，"这个类还在不在"是不变式，两者不该混为一谈。
+    final String models =
+        read('../packages/fushi_dictionary/lib/src/engine/fushidicts_models.dart');
+    expect(models.contains('class FushiKanjiResult'), isTrue);
     expect(engine.contains('FushiKanjiResult _convertKanji('), isTrue);
     // initializeTyped must accept the kanji bucket so S4 can route kanji dicts.
     expect(engine.contains('List<String> kanjiPaths'), isTrue);

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
 
 YoutubeResolvedSource _fakeSource({required bool muxed}) =>
@@ -39,6 +39,46 @@ void main() {
     expect(r.clipEndMs, 4000);
     expect(r.documentTitle, 'T');
     expect(calls, 1);
+  });
+
+  test('BUG-2507: relay wraps mediaSource only; audioSource stays the raw url',
+      () async {
+    // The engine decides range materialization by host
+    // (audioSourceNeedsRangeMaterialization → *.googlevideo.com). A relayed
+    // 127.0.0.1 audio url would make that predicate false and silently bypass
+    // the TODO-1314 materialization path.
+    final List<String> relayed = <String>[];
+    final YoutubeClipMiner miner = YoutubeClipMiner(
+      resolve: (String url) async => YoutubeResolvedSource(
+        streamUrl: 'https://rr1---sn-a.googlevideo.com/videoplayback?itag=18',
+        audioStreamUrl:
+            'https://rr1---sn-a.googlevideo.com/videoplayback?itag=140',
+        miningVideoUrl:
+            'https://rr1---sn-a.googlevideo.com/videoplayback?itag=133',
+        miningVideoHasAudio: false,
+        title: 'T',
+        httpHeaders: const <String, String>{},
+        cues: const <AudioCue>[],
+      ),
+      now: () => DateTime(2026, 1, 1),
+      relay: (String url, Map<String, String> headers) async {
+        relayed.add(url);
+        return 'http://127.0.0.1:1/yt/${relayed.length}';
+      },
+    );
+    final YoutubeClipRequest r = await miner.buildRequest(
+      videoId: 'abc',
+      startMs: 0,
+      endMs: 2000,
+      fields: <String, String>{},
+      sentence: 's',
+    );
+    expect(r.mediaSource, 'http://127.0.0.1:1/yt/1');
+    expect(r.audioSource,
+        'https://rr1---sn-a.googlevideo.com/videoplayback?itag=140');
+    expect(relayed, <String>[
+      'https://rr1---sn-a.googlevideo.com/videoplayback?itag=133',
+    ]);
   });
 
   test('muxed fallback -> audioSource null (engine takes audio from muxed)',

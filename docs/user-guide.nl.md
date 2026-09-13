@@ -40,7 +40,7 @@ De APK's waarvan de naam met `bridge-` begint, zijn migratiebruggen voor **oude 
 
 ### 1. Aanbevolen woordenboeken (woord- + toonhoogteaccent- + frequentiewoordenboeken) en lokale audio (Japanse en Engelse audiodatabases) importeren (Sterk aanbevolen voor beginners!!! · optioneel)
 
-[Google Drive](https://drive.google.com/file/d/1W0Civ-b9NAyCu6LpXYMcNI_wZJWB9xjp/view?usp=sharing)
+[fushi.moe/download](https://fushi.moe/download)
 
 In de app: Instellingen -> Synchronisatie en back-up -> tik op **Back-up importeren**.
 

@@ -61,7 +61,7 @@ void main() {
     await srcDb.close();
 
     // ── Import the backup into this device (DB already closed) ──
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: currentDir.path,
       zipPath: zipPath,
     );
@@ -110,7 +110,7 @@ void main() {
       }),
     );
 
-    await BackupService.recoverPendingRestore(dir.path);
+    await BackupRestoreService.recoverPendingRestore(dir.path);
 
     final db2 = FushiDatabase(dir.path);
     addTearDown(db2.close);
@@ -183,7 +183,7 @@ void main() {
     await srcDb.close();
 
     // ── Overwrite-import into this device (DB closed first) ──
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: currentDir.path,
       zipPath: zipPath,
       dictionaryResourceDirectory: dictResDir.path,
@@ -259,7 +259,7 @@ void main() {
     ).createBackup(zipPath); // null categories = everything, includes dict
     await srcDb2.close();
 
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: currentDir.path,
       zipPath: zipPath,
       dictionaryResourceDirectory: dictResDir.path,

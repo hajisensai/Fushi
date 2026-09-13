@@ -1,11 +1,10 @@
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 MokuroImage _img(double w, double h) =>
-    MokuroImage(url: 'p', size: Size(w, h), blocks: const <MokuroBlock>[]);
+    MokuroImage(url: 'p', size: MokuroSize(w, h), blocks: const <MokuroBlock>[]);
 
 void main() {
   group('detectReadingMode', () {

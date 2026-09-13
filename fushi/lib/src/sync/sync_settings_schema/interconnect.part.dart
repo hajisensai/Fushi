@@ -120,7 +120,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       _tokenPresent = _tokenController.text.trim().isNotEmpty;
     });
     _syncSettings(widget.settingsContext)
-        .setHasClientConnection(urls.isNotEmpty);
+      ..peerCount = urls.length
+      ..setHasClientConnection(urls.isNotEmpty);
   }
 
   Future<void> _persistUrls() async {
@@ -133,8 +134,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     await _repo.setFushiClientUrls(_urls);
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
+    // 主页「配对与设备」入口行的已配对数也从这里刷新（C2）。
     _syncSettings(widget.settingsContext)
-        .setHasClientConnection(_urls.isNotEmpty);
+      ..peerCount = _urls.length
+      ..setHasClientConnection(_urls.isNotEmpty);
   }
 
   Future<void> _saveToken() async {
@@ -1211,6 +1214,8 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     setState(() => _port = parsed);
     await SyncRepository(widget.settingsContext.appModel.database)
         .setServerPort(parsed);
+    // 主页「主机服务」入口行的端口摘要跟着走（C2）。
+    _syncSettings(widget.settingsContext).serverPort = parsed;
   }
 
   /// On commit, snap the field back to the persisted port when the typed value

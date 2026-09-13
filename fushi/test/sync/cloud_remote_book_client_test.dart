@@ -2,14 +2,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show kSyncDictionaryNamespace, kSyncLocalAudioNamespace;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 
 /// 可控的 fake：根文件夹下若干书文件夹（[folders]，含名字），每个文件夹的子项由
 /// [childrenByFolder] 决定（默认含一个 `<name>.epub`）。记录 `listChildren`/`getAsset`
@@ -221,6 +222,37 @@ class _FlakyThenOkSyncBackend extends _ControllableSyncBackend {
 
 void main() {
   group('CloudRemoteBookClient.listRemoteBooks', () {
+    test(
+        'BUG-2274：文件夹名反解成 raw title，本地同名书按 bookKey 去重得掉',
+        () async {
+      const String rawTitle = 'Love, Death and Robots: The Official Anthology';
+      final String folderName = sanitizeTtuFilename(rawTitle);
+      expect(folderName, contains('%3A'), reason: '前提：冒号被 sanitize 成 %3A');
+      final backend = _ControllableSyncBackend(
+        folders: <SyncFileRef>[SyncFileRef(id: 'fid_ldr', name: folderName)],
+        childrenByFolder: <String, List<AssetEntry>>{
+          'fid_ldr': <AssetEntry>[_epub('asset_ldr', '$folderName.epub')],
+        },
+      );
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.googleDrive,
+      );
+
+      final List<RemoteBookInfo> books = await client.listRemoteBooks();
+
+      expect(books.single.title, rawTitle, reason: '卡片标题不得出现 %3A');
+      expect(books.single.bookKey, 'fid_ldr');
+      // 书架去重走的正是这条：本地 bookKey = sanitize(title)。
+      final List<RemoteBookInfo> kept = dedupeRemoteBooks(
+        remote: books,
+        localBookKeys: <String>{sanitizeTtuFilename(rawTitle)},
+        keyOf: sanitizeTtuFilename,
+      );
+      expect(kept, isEmpty, reason: '本地已有这本书，远端卡必须被剔除');
+    });
+
     test(
         'maps folders → RemoteBookInfo with bookKey=folderId, hasContent probe',
         () async {

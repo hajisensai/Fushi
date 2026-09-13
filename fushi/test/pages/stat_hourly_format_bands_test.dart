@@ -283,10 +283,19 @@ void main() {
           (await tester.runAsync(() => renderPixels(painter)))!;
       final int x = barCenterX(9);
 
-      // 底部 2/3 是 EPUB 色；顶部 1/3 是未区分的中性色。
-      expect(pixelAt(pixels, x, (chartHeight * 0.85).round()), scheme.tertiary);
-      expect(pixelAt(pixels, x, (chartHeight * 0.5).round()), scheme.tertiary);
-      expect(pixelAt(pixels, x, (chartHeight * 0.15).round()),
+      // 柱高按纵轴顶（最高刻度）归一，不再按当日最大值满高：刻度取整后轴顶通常
+      // 高于数据最大值，最高的柱子因此不再贴顶——这正是「柱高能和刻度线对上」的
+      // 前提，采样点也随之从写死的 0.85/0.5/0.15 改成按轴顶换算。
+      const int epubMs = 600000;
+      const int neutralMs = 300000;
+      final int axisMax = statDurationAxisScale(epubMs + neutralMs).max;
+      int yOfMs(int msFromBottom) =>
+          (chartHeight - chartHeight * msFromBottom / axisMax).round();
+
+      // 底部到 600000 是 EPUB 色；600000 到 900000 是未区分的中性色。
+      expect(pixelAt(pixels, x, yOfMs(epubMs ~/ 4)), scheme.tertiary);
+      expect(pixelAt(pixels, x, yOfMs(epubMs * 3 ~/ 4)), scheme.tertiary);
+      expect(pixelAt(pixels, x, yOfMs(epubMs + neutralMs ~/ 2)),
           scheme.outlineVariant);
     });
   });

@@ -10,7 +10,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use wasmer::{Function, FunctionEnv, FunctionEnvMut, Instance, Module, Store, TypedFunction};
+use wasmer::{Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module, Store, TypedFunction};
 use zip::ZipArchive;
 
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
@@ -116,8 +116,69 @@ fn validate_manifest(manifest: &Value) -> Result<()> {
 struct AidokuRuntime {
     store: Store,
     environment: FunctionEnv<WasmEnv>,
+    partials: FunctionEnv<PartialResults>,
     instance: Instance,
     module: Module,
+}
+
+/// Buffers handed over by the source through `env.send_partial_result`.
+///
+/// aidoku-rs sources stream the expensive half of `get_manga_update` — the
+/// chapter list — out through this import instead of putting it in the value
+/// they finally return; the same goes for extra search entries. The upstream
+/// MIT test runner registers the import as an explicit no-op ("leaving this
+/// function unimplemented for now since the test runner doesn't use partial
+/// results"), so inheriting its import object drops every chapter list on the
+/// floor. That is exactly what macOS did: search worked, the series page came
+/// back with zero chapters, and nothing failed loudly enough to show an error
+/// (BUG-2262). iOS never had the bug because `embedded.rs` implements the
+/// import itself; this type restores parity for the desktop runner.
+#[derive(Default)]
+struct PartialResults {
+    memory: Option<Memory>,
+    buffers: Vec<Vec<u8>>,
+}
+
+/// Payload length of a partial-result buffer, or `None` when the header does
+/// not describe one.
+///
+/// Wire shape is fixed by aidoku-rs and mirrored from `embedded.rs`: a
+/// little-endian `u32` total length at the pointer, four bytes the host does
+/// not need, then `length - 8` bytes of postcard payload at `pointer + 8`.
+fn partial_result_payload_length(header: [u8; 4]) -> Option<usize> {
+    let length = u32::from_le_bytes(header);
+    if length < 8 {
+        return None;
+    }
+    Some((length - 8) as usize)
+}
+
+/// Host side of `env.send_partial_result`.
+///
+/// Every failure path is a silent `return` on purpose: a malformed partial is
+/// an optimisation that did not land, never a reason to fail the whole call —
+/// the source still returns its real result afterwards.
+fn host_send_partial_result(mut environment: FunctionEnvMut<PartialResults>, pointer: i32) {
+    if pointer < 0 {
+        return;
+    }
+    let (data, store) = environment.data_and_store_mut();
+    let Some(memory) = data.memory.clone() else {
+        return;
+    };
+    let view = memory.view(&store);
+    let mut header = [0u8; 4];
+    if view.read(pointer as u64, &mut header).is_err() {
+        return;
+    }
+    let Some(payload_length) = partial_result_payload_length(header) else {
+        return;
+    };
+    let mut payload = vec![0u8; payload_length];
+    if view.read(pointer as u64 + 8, &mut payload).is_err() {
+        return;
+    }
+    data.buffers.push(payload);
 }
 
 fn host_std_abort(mut environment: FunctionEnvMut<WasmEnv>) {
@@ -146,7 +207,16 @@ impl AidokuRuntime {
         let mut store = Store::default();
         let module = Module::new(&store, wasm).context("failed to compile Aidoku WebAssembly")?;
         let environment = FunctionEnv::new(&mut store, WasmEnv::new());
+        let partials = FunctionEnv::new(&mut store, PartialResults::default());
         let mut import_object = imports::generate_imports(&mut store, &environment);
+        // Overrides the upstream no-op so partial results actually reach us;
+        // see `PartialResults` for why dropping them empties every chapter
+        // list (BUG-2262).
+        import_object.define(
+            "env",
+            "send_partial_result",
+            Function::new_typed_with_env(&mut store, &partials, host_send_partial_result),
+        );
         // aidoku-rs' panic handler imports these from `std`, while the current
         // MIT test runner only registers the normal logging functions in
         // `env`. Supplying both namespaces matches the source ABI.
@@ -167,6 +237,7 @@ impl AidokuRuntime {
             .get_memory("memory")
             .context("Aidoku source does not export memory")?
             .clone();
+        partials.as_mut(&mut store).memory = Some(memory.clone());
         environment.as_mut(&mut store).memory = Some(memory);
 
         let start: TypedFunction<(), ()> = instance
@@ -180,9 +251,16 @@ impl AidokuRuntime {
         Ok(Self {
             store,
             environment,
+            partials,
             instance,
             module,
         })
+    }
+
+    /// Drains everything the source pushed through `env.send_partial_result`
+    /// since the last call.
+    fn take_partials(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.partials.as_mut(&mut self.store).buffers)
     }
 
     fn capabilities(&self) -> Value {
@@ -305,7 +383,16 @@ impl AidokuRuntime {
             .store
             .remove(filters_descriptor);
 
-        self.take_result(result_pointer)
+        let mut result: SearchPageResult = self.take_result(result_pointer)?;
+        for bytes in self.take_partials() {
+            let Ok(partial) = postcard::from_bytes::<Manga>(&bytes) else {
+                continue;
+            };
+            if !result.entries.iter().any(|manga| manga.key == partial.key) {
+                result.entries.push(partial);
+            }
+        }
+        Ok(result)
     }
 
     fn list(&mut self, listing: &Listing, page: i32) -> Result<SearchPageResult> {
@@ -352,7 +439,24 @@ impl AidokuRuntime {
             .as_mut(&mut self.store)
             .store
             .remove(manga_descriptor);
-        self.take_result(result_pointer)
+        let mut result: Manga = self.take_result(result_pointer)?;
+        // The chapter list normally arrives as a partial result, not in the
+        // returned value — without this merge `result.chapters` stays `None`
+        // and the series page renders an empty, error-free chapter list
+        // (BUG-2262). Last non-empty partial wins, same as `embedded.rs`.
+        for bytes in self.take_partials() {
+            let Ok(partial) = postcard::from_bytes::<Manga>(&bytes) else {
+                continue;
+            };
+            if partial
+                .chapters
+                .as_ref()
+                .is_some_and(|value| !value.is_empty())
+            {
+                result.chapters = partial.chapters;
+            }
+        }
+        Ok(result)
     }
 
     fn pages(&mut self, manga: &Manga, chapter: &Chapter) -> Result<Vec<HostPage>> {
@@ -548,6 +652,21 @@ mod tests {
         );
         let error = AixPackage::open(file.path()).expect_err("reject empty name");
         assert!(error.to_string().contains("info.name"));
+    }
+
+    #[test]
+    fn decodes_a_partial_result_payload_length() {
+        // 8-byte header + 3 payload bytes.
+        assert_eq!(partial_result_payload_length(11u32.to_le_bytes()), Some(3));
+        // Header only: a partial with no payload is still well formed.
+        assert_eq!(partial_result_payload_length(8u32.to_le_bytes()), Some(0));
+    }
+
+    #[test]
+    fn rejects_a_partial_result_shorter_than_its_header() {
+        for length in [0u32, 1, 7] {
+            assert_eq!(partial_result_payload_length(length.to_le_bytes()), None);
+        }
     }
 
     #[test]

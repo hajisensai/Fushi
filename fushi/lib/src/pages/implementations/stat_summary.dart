@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 「范围与趋势」折线图的指标维度：字数 / 时长 / 速度。
 /// 参考设计顶部图的指标切换（macOS 统计页）。
@@ -45,23 +46,22 @@ String trendMetricAxisLabel(double v, StatTrendMetric metric) {
 /// 中断连击）；否则从今天起算。遇到第一个无记录的日子停止。
 int computeReadingStreak(Set<String> activeDayKeys, DateTime now) {
   if (activeDayKeys.isEmpty) return 0;
-  final DateTime today = DateTime(now.year, now.month, now.day);
-  final String todayKey = statDateKey(today);
-  final String yesterdayKey =
-      statDateKey(today.subtract(const Duration(days: 1)));
+  // 「今日」按统计日边界（可配重置时刻）取 key，之后全走 key 算术，不合成午夜。
+  final String todayKey = statDateKey(now);
+  final String yesterdayKey = FushiDatabase.statDateKeyPlusDays(todayKey, -1);
   // 起点：今天有记录从今天算；否则昨天有记录从昨天算；都没有则 streak=0。
-  DateTime cursor;
+  String cursor;
   if (activeDayKeys.contains(todayKey)) {
-    cursor = today;
+    cursor = todayKey;
   } else if (activeDayKeys.contains(yesterdayKey)) {
-    cursor = today.subtract(const Duration(days: 1));
+    cursor = yesterdayKey;
   } else {
     return 0;
   }
   int streak = 0;
-  while (activeDayKeys.contains(statDateKey(cursor))) {
+  while (activeDayKeys.contains(cursor)) {
     streak++;
-    cursor = cursor.subtract(const Duration(days: 1));
+    cursor = FushiDatabase.statDateKeyPlusDays(cursor, -1);
   }
   return streak;
 }
@@ -74,6 +74,19 @@ int computeReadingStreak(Set<String> activeDayKeys, DateTime now) {
 double? computeWeekOverWeekPercent(int thisWeek, int lastWeek) {
   if (lastWeek == 0) return null;
   return (thisWeek - lastWeek) / lastWeek * 100.0;
+}
+
+/// 环比展示上限（百分比）。上周 1 字、本周 1 万字的「↑999900%」没有信息量
+/// （BUG-2224），≥ 此值一律显示 `↑>999%`。
+const int kWeekOverWeekPercentCap = 999;
+
+/// 纯函数：KPI 条的环比文案。基期为 0 → `—`（无基线，不是「涨 ∞%」）；
+/// ≥ [kWeekOverWeekPercentCap] → `↑>999%`；其余 `↑12%` / `↓8%`（四舍五入到整数）。
+String formatWeekOverWeekDelta(int thisWeek, int lastWeek) {
+  final double? pct = computeWeekOverWeekPercent(thisWeek, lastWeek);
+  if (pct == null) return '—';
+  if (pct >= kWeekOverWeekPercentCap) return '↑>$kWeekOverWeekPercentCap%';
+  return '${pct >= 0 ? '↑' : '↓'}${pct.abs().round()}%';
 }
 
 /// 纯函数：近期「日均字数」= 窗口内**有阅读的天**的平均字数。

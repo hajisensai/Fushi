@@ -26,6 +26,7 @@ class ReaderEngineConfig {
     required this.vnClickAdvance,
     required this.scanNonJapaneseText,
     required this.hoverAutoLookup,
+    this.hostHoverLookup = false,
     required this.highlightOnTap,
     required this.showChrome,
     required this.debugLogging,
@@ -70,6 +71,11 @@ class ReaderEngineConfig {
   final bool vnClickAdvance;
   final bool scanNonJapaneseText;
   final bool hoverAutoLookup;
+
+  /// BUG-2508：true = 宿主（Flutter）侧接管 Shift-悬停 / 纯悬停查词，文档内的
+  /// mousemove 腿整条关掉（只有 macOS，判据 `hostOwnsWebViewHoverLookup`）；
+  /// false = 维持 JS 腿（Windows / Android / iOS / Linux）。
+  final bool hostHoverLookup;
   final bool highlightOnTap;
   final bool showChrome;
   final bool debugLogging;
@@ -77,7 +83,9 @@ class ReaderEngineConfig {
   final int swipeFastDistThreshold;
   final int wheelGestureQuietMs;
 
-  /// `off` / `partial` / `toggle`（`ReaderSettings.furiganaMode` 的值域）。
+  /// `off` / `toggle` / `hidden` / `dimmed`（`ReaderSettings.furiganaMode` 的
+  /// 值域）。JS 侧现已不按它分支（隐藏 / 淡显都由 CSS 承担），仍随 config 下发
+  /// 供探针 / 日志读。
   final String furiganaMode;
 
   // ── caret ─────────────────────────────────────────────────────────
@@ -121,44 +129,82 @@ class ReaderEngineConfig {
 
   /// 除 [sasayakiCuesJson] 外的全部字段（它是已编码的 JSON 片段，见 [toJsLiteral]）。
   Map<String, Object?> toJson() => <String, Object?>{
-        'navigationGeneration': navigationGeneration,
-        'continuousMode': continuousMode,
-        'vnMode': vnMode,
-        'vnClickAdvance': vnClickAdvance,
-        'scanNonJapaneseText': scanNonJapaneseText,
-        'hoverAutoLookup': hoverAutoLookup,
-        'highlightOnTap': highlightOnTap,
-        'showChrome': showChrome,
-        'debugLogging': debugLogging,
-        'swipeDistThreshold': swipeDistThreshold,
-        'swipeFastDistThreshold': swipeFastDistThreshold,
-        'wheelGestureQuietMs': wheelGestureQuietMs,
-        'furiganaMode': furiganaMode,
-        'caretColor': caretColor,
-        'caretInsetTop': caretInsetTop,
-        'caretInsetBottom': caretInsetBottom,
-        'initialProgress': initialProgress,
-        'initialCharOffset': initialCharOffset,
-        'initialCharOffsetEnd': initialCharOffsetEnd,
-        'initialFragment': initialFragment,
-        'chromeTopInset': chromeTopInset,
-        'chromeBottomInset': chromeBottomInset,
-        'dartPageWidth': dartPageWidth?.round(),
-        'dartPageHeight': dartPageHeight?.round(),
-        'marginTop': marginTop,
-        'marginBottom': marginBottom,
-        'marginLeft': marginLeft,
-        'marginRight': marginRight,
-        'blurImages': blurImages,
-        'revealedKeys': revealedKeys,
-        'perfTraceEnabled': perfTraceEnabled,
-        'vnRevealSpeed': vnRevealSpeed,
-        'vnScreenMode': vnScreenMode,
-        'vnSentencesPerScreen': vnSentencesPerScreen,
-        'vnPreserveDialogue': vnPreserveDialogue,
-        'vnMergeCrossScreenSentenceAudioCues':
-            vnMergeCrossScreenSentenceAudioCues,
-      };
+    'navigationGeneration': navigationGeneration,
+    'continuousMode': continuousMode,
+    'vnMode': vnMode,
+    'vnClickAdvance': vnClickAdvance,
+    'scanNonJapaneseText': scanNonJapaneseText,
+    'hoverAutoLookup': hoverAutoLookup,
+    'hostHoverLookup': hostHoverLookup,
+    'highlightOnTap': highlightOnTap,
+    'showChrome': showChrome,
+    'debugLogging': debugLogging,
+    'swipeDistThreshold': swipeDistThreshold,
+    'swipeFastDistThreshold': swipeFastDistThreshold,
+    'wheelGestureQuietMs': wheelGestureQuietMs,
+    'furiganaMode': furiganaMode,
+    'caretColor': caretColor,
+    'caretInsetTop': caretInsetTop,
+    'caretInsetBottom': caretInsetBottom,
+    'initialProgress': initialProgress,
+    'initialCharOffset': initialCharOffset,
+    'initialCharOffsetEnd': initialCharOffsetEnd,
+    'initialFragment': initialFragment,
+    'chromeTopInset': chromeTopInset,
+    'chromeBottomInset': chromeBottomInset,
+    'dartPageWidth': dartPageWidth?.round(),
+    'dartPageHeight': dartPageHeight?.round(),
+    'marginTop': marginTop,
+    'marginBottom': marginBottom,
+    'marginLeft': marginLeft,
+    'marginRight': marginRight,
+    'blurImages': blurImages,
+    'revealedKeys': revealedKeys,
+    'perfTraceEnabled': perfTraceEnabled,
+    'vnRevealSpeed': vnRevealSpeed,
+    'vnScreenMode': vnScreenMode,
+    'vnSentencesPerScreen': vnSentencesPerScreen,
+    'vnPreserveDialogue': vnPreserveDialogue,
+    'vnMergeCrossScreenSentenceAudioCues': vnMergeCrossScreenSentenceAudioCues,
+  };
+
+  /// 运行时可**热更新**的那一小份（BUG-2471）：`window.__fushiEngine.updateLive(patch)`
+  /// 把 patch 合并进已 install 的 `C`（`window.__fushiReaderConfig` 与 install 闭包里的
+  /// `C` 是同一个对象），并按需重算已物化的派生值（四个边距 → `--reader-margin-*`
+  /// 像素变量、`window.scanNonJapaneseText`）。
+  ///
+  /// 背景：BUG-1812 把边距百分比从 CSS 的 `vh/vw` 搬进 `C`，由引擎在 install 时物化成
+  /// `documentElement` 上的内联像素变量；此后「改边距」走的仍是只换 CSS 的
+  /// `onSettingsChangedLive`，新样式表里的 `var(--reader-margin-top, Xvh)` 回退值被
+  /// 停在旧值的内联变量遮住——改完没反应，要翻章 / 重开书才见效。滑动灵敏度阈值、
+  /// 滚轮静默窗、扫描非日文这些同样只在 install 时读一次。这里就是它们的热更新通道：
+  /// 设置一变，Dart 侧（`_applyStylesLive`）先下发这份 patch，再换 CSS + 重锚。
+  ///
+  /// 只放「引擎运行时按值读取、不需要重跑 install」的键；需要整章重载的
+  /// （view / writing mode、模糊图）仍走 `notifyReaderLayoutChanged`。
+  static String liveUpdateInvocation({
+    required double marginTop,
+    required double marginBottom,
+    required double marginLeft,
+    required double marginRight,
+    required int swipeDistThreshold,
+    required int swipeFastDistThreshold,
+    required int wheelGestureQuietMs,
+    required bool scanNonJapaneseText,
+  }) {
+    final String patch = jsonEncode(<String, Object?>{
+      'marginTop': marginTop,
+      'marginBottom': marginBottom,
+      'marginLeft': marginLeft,
+      'marginRight': marginRight,
+      'swipeDistThreshold': swipeDistThreshold,
+      'swipeFastDistThreshold': swipeFastDistThreshold,
+      'wheelGestureQuietMs': wheelGestureQuietMs,
+      'scanNonJapaneseText': scanNonJapaneseText,
+    });
+    return '(window.__fushiEngine && window.__fushiEngine.updateLive) '
+        '? window.__fushiEngine.updateLive($patch) : false;';
+  }
 
   /// 可直接嵌进 JS 的对象字面量。
   ///

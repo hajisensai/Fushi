@@ -7,9 +7,9 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:fushi/src/media/manga/manga_importer.dart';
-import 'package:fushi/src/media/media_extensions.dart';
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 
 void main() {
   group('漫画页图扩展名两道关卡口径一致（BUG-1121）', () {

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/i18n/strings.g.dart' show LocaleSettings;
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 
 /// 统计图表的每日数据点（阅读统计 / 视频统计共用）。
@@ -30,12 +31,47 @@ int statMsValue(StatDayData d) => d.ms;
 String statDayLabel(StatDayData d) =>
     d.label ?? (d.dateKey.length >= 10 ? d.dateKey.substring(5) : d.dateKey);
 
-/// 把字数格式化为坐标轴标签（万 / k / 原值）。
-String formatStatCharsAxis(int chars) {
-  if (chars >= 10000) return '${(chars / 10000).toStringAsFixed(1)}万';
-  if (chars >= 1000) return '${(chars / 1000).toStringAsFixed(1)}k';
-  return chars.toString();
+/// 使用「万」进制（10^4 分组）的语言 → 其倍率单位；非 CJK 语言返回 null（走
+/// 国际千进制 K / M）。
+///
+/// BUG-935 当年把「万」当成跨语言通用倍率补进了 13 种非 CJK 语言的译文，于是
+/// 英文界面显示「6.8万 characters」——这个数对英文读者既不是 68000 也不是任何
+/// 可读写法。倍率分组是**语言属性**，不是可翻译的文案，所以它属于这里而不属于
+/// i18n 词条。
+String? statMyriadUnit(String languageTag) {
+  final String tag = languageTag.toLowerCase();
+  if (tag == 'ja' || tag.startsWith('ja-')) return '万';
+  if (tag == 'ko' || tag.startsWith('ko-')) return '만';
+  if (tag == 'zh' || tag.startsWith('zh-')) {
+    const List<String> traditional = <String>['hant', 'hk', 'tw', 'mo'];
+    return traditional.any(tag.contains) ? '萬' : '万';
+  }
+  return null;
 }
+
+/// 一位小数，整数去掉多余的 `.0`（`6.8` / `68`）。
+String _compactDecimal(num v) {
+  final String s = v.toStringAsFixed(1);
+  return s.endsWith('.0') ? s.substring(0, s.length - 2) : s;
+}
+
+/// 大数紧凑写法，按语言选进制：CJK 走万进制（`6.8万`），其余语言走千进制
+/// （`68K` / `1.2M`）。
+///
+/// 阈值统一取 10000：两种进制在此之下都显示原值，所以「不足一万显示全数字」这条
+/// 口径对所有语言一致，同一张卡上不会一半缩写一半不缩写。
+String formatCompactCount(int value, String languageTag) {
+  if (value < 10000) return value.toString();
+  final String? myriad = statMyriadUnit(languageTag);
+  if (myriad != null) return '${_compactDecimal(value / 10000)}$myriad';
+  if (value >= 1000000) return '${_compactDecimal(value / 1000000)}M';
+  return '${_compactDecimal(value / 1000)}K';
+}
+
+/// 当前界面语言下的紧凑字数（坐标轴标签用；带「characters」单位的卡片文案见
+/// `formatStatChars`）。
+String formatStatCharsAxis(int chars) =>
+    formatCompactCount(chars, LocaleSettings.currentLocale.languageTag);
 
 /// 把阅读速度（字/小时）格式化为折线图纵轴标签。整数 cph 直接显示；>= 1000 收成
 /// `k`（如 1.2k）避免标签过宽。用顶层 tear-off 而非闭包，保 [StatLineChartPainter]
@@ -61,6 +97,94 @@ String formatStatDurationAxis(int ms) {
   if (ms >= 60000) return '${ms ~/ 60000}m';
   if (ms > 0) return '${ms ~/ 1000}s';
   return '0';
+}
+
+/// 一条纵轴的完整刻度表：等距刻度值（0 起、末项 ≥ 数据最大值）+ 一一对应的标签。
+///
+/// 旧实现把 `maxValue` 直接四等分再让每个刻度**各自**挑单位，于是同一条轴上出现
+/// `2.9h / 2.2h / 1.5h / 43m` 这种非整数 + 混单位的刻度。刻度是整条轴的属性而不是
+/// 单个刻度的属性；把它收成一个对象后，「步长取整」和「整轴一个单位」都变成普通
+/// 情况，标签函数里的单位分支随之消失（刻度恒为步长的整数倍 → 标签恒为整数）。
+class StatAxisScale {
+  StatAxisScale({required this.ticks, required this.labels})
+      : assert(ticks.length == labels.length, '刻度值与标签必须一一对应');
+
+  /// 升序刻度值，首项恒为 0，末项 ≥ 数据最大值（柱高也按末项归一，柱子因此永远
+  /// 不会顶破最高刻度线）。
+  final List<int> ticks;
+
+  /// 与 [ticks] 同序的标签，整条轴共用一个单位。
+  final List<String> labels;
+
+  /// 轴顶 = 最高刻度值。恒 > 0。
+  int get max => ticks.last;
+}
+
+/// 纵轴刻度数（0 刻度之外的格数）。
+const int _kAxisTickCount = 4;
+
+/// 时长纵轴的候选步长（毫秒）：秒 / 分 / 小时里的自然刻度，每个都是其单位的整数
+/// 倍——这保证标签整除后不留小数。
+const List<int> _kDurationAxisSteps = <int>[
+  1000, 5000, 10000, 15000, 30000, // 秒
+  60000, 120000, 300000, 600000, 900000, 1800000, // 分
+  3600000, 7200000, 10800000, 21600000, 43200000, 86400000, // 时
+];
+
+/// 从候选步长里取第一个能让 `step * _kAxisTickCount` 盖住 [maxValue] 的；候选都
+/// 不够时按 [fallbackUnit] 的整数倍向上取整（时长轴 = 整天）。
+int _pickAxisStep(int maxValue, List<int> candidates, int fallbackUnit) {
+  final int target = maxValue <= 0 ? 1 : maxValue;
+  for (final int step in candidates) {
+    if (step * _kAxisTickCount >= target) return step;
+  }
+  return fallbackUnit * (target / (fallbackUnit * _kAxisTickCount)).ceil();
+}
+
+/// 单位由**步长**而非轴顶决定：步长是整小时就整轴用 h，是整分就整轴用 m，否则 s。
+/// 刻度值都是步长的整数倍，所以每个标签都能整除到整数（不再有 `2.9h`）。
+String _durationAxisLabel(int ms, int step) {
+  if (ms == 0) return '0';
+  if (step >= 3600000) return '${ms ~/ 3600000}h';
+  if (step >= 60000) return '${ms ~/ 60000}m';
+  return '${ms ~/ 1000}s';
+}
+
+/// 时长纵轴刻度表（最近 N 天时长图 / 今日按小时图共用）。
+StatAxisScale statDurationAxisScale(int maxMs) {
+  final int step = _pickAxisStep(maxMs, _kDurationAxisSteps, 86400000);
+  return StatAxisScale(
+    ticks: <int>[for (int i = 0; i <= _kAxisTickCount; i++) step * i],
+    labels: <String>[
+      for (int i = 0; i <= _kAxisTickCount; i++)
+        _durationAxisLabel(step * i, step),
+    ],
+  );
+}
+
+/// 计数纵轴的 nice 步长：1 / 2 / 5 × 10^n 里第一个能盖住 [maxValue] 的。
+int _niceCountStep(int maxValue) {
+  final double raw = (maxValue <= 0 ? 1 : maxValue) / _kAxisTickCount;
+  int pow10 = 1;
+  while (pow10 * 10 <= raw) {
+    pow10 *= 10;
+  }
+  for (final int m in const <int>[1, 2, 5]) {
+    if (pow10 * m >= raw) return pow10 * m;
+  }
+  return pow10 * 10;
+}
+
+/// 计数纵轴刻度表（字数等）。标签走当前语言的紧凑写法（[formatStatCharsAxis]）。
+StatAxisScale statCountAxisScale(int maxValue) {
+  final int step = _niceCountStep(maxValue);
+  return StatAxisScale(
+    ticks: <int>[for (int i = 0; i <= _kAxisTickCount; i++) step * i],
+    labels: <String>[
+      for (int i = 0; i <= _kAxisTickCount; i++)
+        i == 0 ? '0' : formatStatCharsAxis(step * i),
+    ],
+  );
 }
 
 /// 今日按小时柱状图的一条**堆叠带**：24 小时的毫秒值 + 填充色。
@@ -132,13 +256,15 @@ class StatHourlyChartPainter extends CustomPainter {
       axisPaint,
     );
 
-    const int yTicks = 4;
-    for (int i = 0; i <= yTicks; i++) {
-      final value = (maxMs * i / yTicks).round();
-      final y = chartHeight - (chartHeight * i / yTicks);
+    // 与最近 N 天时长图同一套刻度（[statDurationAxisScale]）：整轴一个单位、刻度
+    // 取整、柱高按轴顶归一。
+    final StatAxisScale scale = statDurationAxisScale(maxMs);
+    final int axisMax = scale.max;
+    for (int i = 0; i < scale.ticks.length; i++) {
+      final y = chartHeight - (chartHeight * scale.ticks[i] / axisMax);
       canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
-        text: TextSpan(text: formatStatDurationAxis(value), style: labelStyle),
+        text: TextSpan(text: scale.labels[i], style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
@@ -149,7 +275,7 @@ class StatHourlyChartPainter extends CustomPainter {
       final total = totals[i];
 
       if (total > 0) {
-        final barHeight = (total / maxMs) * chartHeight;
+        final barHeight = (total / axisMax) * chartHeight;
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, chartHeight - barHeight, barWidth, barHeight),
           barRadius,
@@ -166,7 +292,7 @@ class StatHourlyChartPainter extends CustomPainter {
           accumulated += value;
           // 用累计值算上沿而非逐段累加高度：避免每段各取一次舍入后段间出现缝隙。
           final double segmentTop =
-              chartHeight - (accumulated / maxMs) * chartHeight;
+              chartHeight - (accumulated / axisMax) * chartHeight;
           canvas.drawRect(
             Rect.fromLTWH(x, segmentTop, barWidth, segmentBottom - segmentTop),
             Paint()..color = band.color,
@@ -211,7 +337,7 @@ class StatHourlyChartPainter extends CustomPainter {
 }
 
 /// 最近 N 天柱状图画笔。阅读统计默认画字数（[statCharsValue]），视频统计删字数后
-/// 画观看时长（[statMsValue]）。[valueOf] / [labelFormatter] 用顶层静态 tear-off
+/// 画观看时长（[statMsValue]）。[valueOf] / [axisScaleOf] 用顶层静态 tear-off
 /// 传入，使 [shouldRepaint] 的函数相等比较稳定。
 class StatBarChartPainter extends CustomPainter {
   StatBarChartPainter({
@@ -221,7 +347,7 @@ class StatBarChartPainter extends CustomPainter {
     required this.labelColor,
     required this.labelStyle,
     this.valueOf = statCharsValue,
-    this.labelFormatter = formatStatCharsAxis,
+    this.axisScaleOf = statCountAxisScale,
     this.labelOf = statDayLabel,
   });
 
@@ -231,7 +357,9 @@ class StatBarChartPainter extends CustomPainter {
   final Color labelColor;
   final TextStyle labelStyle;
   final int Function(StatDayData) valueOf;
-  final String Function(int) labelFormatter;
+
+  /// 数据最大值 → 整条纵轴的刻度表（[statCountAxisScale] / [statDurationAxisScale]）。
+  final StatAxisScale Function(int) axisScaleOf;
 
   /// 把数据点映射成横轴标签（默认 [statDayLabel] 取 `MM-DD`；趋势聚合传自定义）。
   final String Function(StatDayData) labelOf;
@@ -273,13 +401,15 @@ class StatBarChartPainter extends CustomPainter {
       axisPaint,
     );
 
-    const int yTicks = 4;
-    for (int i = 0; i <= yTicks; i++) {
-      final value = (maxValue * i / yTicks).round();
-      final y = chartHeight - (chartHeight * i / yTicks);
+    // 网格线与柱高都按轴顶（最高刻度）归一，而不是按数据最大值——否则取整后的
+    // 最高刻度线会落在画布外，最高的那根柱子也会顶破它。
+    final StatAxisScale scale = axisScaleOf(maxValue);
+    final int axisMax = scale.max;
+    for (int i = 0; i < scale.ticks.length; i++) {
+      final y = chartHeight - (chartHeight * scale.ticks[i] / axisMax);
       canvas.drawLine(Offset(leftPadding, y), Offset(size.width, y), gridPaint);
       final tp = TextPainter(
-        text: TextSpan(text: labelFormatter(value), style: labelStyle),
+        text: TextSpan(text: scale.labels[i], style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(leftPadding - tp.width - 4, y - tp.height / 2));
@@ -289,7 +419,7 @@ class StatBarChartPainter extends CustomPainter {
       final d = data[i];
       final x = leftPadding + i * step + gap / 2;
       final value = valueOf(d);
-      final barHeight = (value / maxValue) * chartHeight;
+      final barHeight = (value / axisMax) * chartHeight;
 
       if (value > 0) {
         final rect = RRect.fromRectAndRadius(
@@ -323,7 +453,7 @@ class StatBarChartPainter extends CustomPainter {
       labelColor != oldDelegate.labelColor ||
       labelStyle != oldDelegate.labelStyle ||
       valueOf != oldDelegate.valueOf ||
-      labelFormatter != oldDelegate.labelFormatter ||
+      axisScaleOf != oldDelegate.axisScaleOf ||
       labelOf != oldDelegate.labelOf;
 }
 

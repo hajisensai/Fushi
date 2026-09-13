@@ -2,7 +2,7 @@
 //
 // 背景：全仓曾有 10+ 份手写 `[\\/:*?"<>|]` 及排列变体，其中 home_video_page 的
 // 一份漏写反斜杠（BUG-1125：云视频 id 含 `\` 时字幕与封面落到不同目录）。收敛到
-// `lib/src/utils/misc/safe_file_name.dart` 后，本测试扫描 lib/ 源码，禁止再手写
+// `../packages/fushi_engine/lib/utils/misc/safe_file_name.dart` 后，本测试扫描 lib/ 源码，禁止再手写
 // 该字符类的 RegExp。
 //
 // TODO-2715 修掉判据自身的两个假相源（旧写法是「同一行里既有 `RegExp(` 又有指纹」）：
@@ -32,7 +32,7 @@ const List<String> kBlacklistFingerprints = <String>[
 ];
 
 /// 唯一允许持有该字符类的真相源。
-const String _allowedFile = 'lib/src/utils/misc/safe_file_name.dart';
+const String _allowedFile = '../packages/fushi_engine/lib/utils/misc/safe_file_name.dart';
 
 /// 以独立标识符身份出现的 `RegExp(` 构造（`MyRegExp(` 不算）。
 final RegExp _regExpConstruction = RegExp(r'(?<![A-Za-z0-9_$])RegExp\s*\(');
@@ -68,13 +68,25 @@ void main() {
     expect(libDir.existsSync(), isTrue,
         reason: '需在 fushi/ 包根下运行（flutter test 默认即是）');
 
+    // 唯一允许的实现本身就住在引擎里（safe_file_name.dart），扫描面却不含引擎——
+    // 那等于「例外在场内、规矩只管场外」。
+    const List<String> scanRoots = <String>[
+      'lib',
+      '../packages/fushi_engine/lib',
+      '../packages/fushi_server/lib',
+    ];
+
     final List<String> violations = <String>[];
-    final Iterable<File> files = libDir
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((File f) => f.path.endsWith('.dart'));
+    final Iterable<File> files = <File>[
+      for (final String rel in scanRoots)
+        if (Directory(rel).existsSync())
+          ...Directory(rel)
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((File f) => f.path.endsWith('.dart')),
+    ];
     expectScanScale(files.length,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        what: 'lib/ 下的 .dart', atLeast: 1120, measured: 1401);
     for (final File f in files) {
       final String rel = f.path.replaceAll(r'\', '/');
       if (rel == _allowedFile || rel.endsWith('/$_allowedFile')) continue;

@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
-import 'package:fushi/src/mining/immersion_mining_request.dart';
-import 'package:fushi/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 
 /// BUG-1205 守卫：
@@ -155,6 +155,7 @@ void main() {
       double atSeconds = 0,
       dynamic onFailure,
       String? tlsPinSha256,
+      bool diagnosticOnly = false,
     }) async {
       (onFailure as void Function(String)?)?.call('frame boom');
       return null;

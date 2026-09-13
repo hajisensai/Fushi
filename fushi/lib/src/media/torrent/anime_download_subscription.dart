@@ -7,16 +7,16 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
-import 'package:fushi/src/media/torrent/anime_release_descriptor.dart';
-import 'package:fushi/src/media/torrent/download_timeouts.dart'
+import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
+import 'package:fushi_engine/media/torrent/download_timeouts.dart'
     show kDownloadDiscoveryTimeout;
-import 'package:fushi/src/media/torrent/nyaa_client.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/jimaku_batch.dart';
-import 'package:fushi/src/media/video/jimaku_client.dart';
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 const Object _notSet = Object();
 
@@ -409,6 +409,9 @@ class AnimeDownloadSubscriptionService {
             subscription.nyaaQuery,
             category: subscription.category,
             filter: subscription.trustedOnly ? '2' : '0',
+            // 订阅追的是「最新集」：一页只有 75 条，长篇（One Piece 级）按做种
+            // 排会把刚出的新集挤出首页。按发布时间倒序保住旧 RSS 语义。
+            sort: NyaaSort.date,
           )
           .timeout(kDownloadDiscoveryTimeout);
     } finally {

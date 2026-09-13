@@ -7,7 +7,7 @@ import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
 import 'package:fushi/src/utils/misc/source_speed_ledger.dart';
-import 'package:fushi/src/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 
 /// 打开一次请求。与 [ResumableDownloadOpen] 同形（复用 [ResumableDownloadResponse]），
 /// 让单流与分片两条路共享同一套注入点和测试替身。

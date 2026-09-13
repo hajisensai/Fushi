@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -13,7 +13,7 @@ import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart'
+import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -77,6 +77,17 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   bool _pickerActive = false;
 
+  /// 走 [ImportCarrierResolver] 而不是每次裸调 `classifyImportCarrier`（与书籍框
+  /// 同款，守卫 `manga_import_carrier_memo_guard_test.dart`）：`.zip` / `.epub`
+  /// 的定性要真开包，而同一路径在一次导入里会被问到不止一次——预填 / 拖入循环 /
+  /// 收下路径，每问一次就开一次包。
+  late final ImportCarrierResolver _carrierResolver = ImportCarrierResolver(
+    isDirectory: (String pth) => Directory(pth).existsSync(),
+    isImageArchive: MangaModule.isImageArchive,
+    directoryHasPageImages: MangaModule.directoryHasPageImages,
+    directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -103,13 +114,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     super.dispose();
   }
 
-  ImportCarrier _classify(String path) => classifyImportCarrier(
-        path,
-        isDirectory: (String pth) => Directory(pth).existsSync(),
-        isImageArchive: MangaModule.isImageArchive,
-        directoryHasPageImages: MangaModule.directoryHasPageImages,
-        directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
-      );
+  ImportCarrier _classify(String path) => _carrierResolver.resolve(path);
 
   /// 目录取目录名，文件取去扩展名的文件名。
   String _deriveTitle(String path) {
@@ -419,7 +424,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       action: () async {
         reportProgress(0, '');
         debugPrint('[fushi-import] manga route: carrier=$carrier path=$path');
-        reportProgress(0.5, t.import_step_importing_epub);
+        // 漫画（cbz/zip/mokuro/PDF 转页图）同样不产出 EPUB，用中性文案。
+        reportProgress(0.5, t.import_step_importing_book);
 
         // 批量目录导完要报「成功/跳过/失败各几卷」，单卷路径仍报那句通用成功。
         String? batchSummary;

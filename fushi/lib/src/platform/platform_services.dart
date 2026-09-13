@@ -46,6 +46,27 @@ class PlatformServices {
   /// rename/swap into a compile error instead of a silent no-op (HBK-AUDIT-134).
   final AndroidClipboardService? _androidClipboard;
 
+  /// 本进程跑在 Windows 上吗。
+  ///
+  /// 收在这里而不是让调用方各自读 `Platform.isWindows`：本类的职责（见类注释）就是
+  /// 「让 [AppModel] 不必知道自己跑在哪个平台」，而模块可用性判据
+  /// （[ModuleId.availableOn]，galgame 只做 Windows 端）此前绕过本类直读
+  /// `dart:io`，于是 widget 测试没有任何缝去声明「这条用例讲的是 Windows」——
+  /// 表现为一批仪表盘游戏用例在 Windows 本机全绿、在 Linux CI 上必红。
+  /// 默认值仍取真实平台，生产行为不变。
+  final bool isWindows;
+
+  /// 本进程跑在桌面端吗（Windows / macOS / Linux）。同上，默认取真实平台。
+  final bool isDesktop;
+
+  /// 本进程跑在 iOS 上吗。同上，默认取真实平台。
+  ///
+  /// 单列一个字段而不是让调用方写 `!isDesktop && !isAndroid`：iOS 在
+  /// [ModuleId.availableOn] 里承载的是 App Store 合规边界
+  /// （[StoreRestrictedCapability]），与「移动端」这个技术分类不是一回事——
+  /// Android 同为移动端却不受任何一条商店限制约束。
+  final bool isIOS;
+
   PlatformServices({
     required this.directory,
     required this.lifecycle,
@@ -56,7 +77,14 @@ class PlatformServices {
     BaseAnkiRepository Function()? createMobileAnkiConnectRepository,
     bool isMobile = false,
     AndroidClipboardService? androidClipboard,
-  })  : _createDefaultAnkiRepository = createAnkiRepository,
+    bool? isWindows,
+    bool? isDesktop,
+    bool? isIOS,
+  })  : isWindows = isWindows ?? Platform.isWindows,
+        isDesktop = isDesktop ??
+            (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
+        isIOS = isIOS ?? Platform.isIOS,
+        _createDefaultAnkiRepository = createAnkiRepository,
         _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
         _isMobile = isMobile,
         _androidClipboard = androidClipboard,

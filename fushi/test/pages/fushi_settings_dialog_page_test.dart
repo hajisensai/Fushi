@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/fushi_settings_page.dart';
+import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -78,4 +79,8 @@ class _SettingsDialogTestAppModel extends AppModel {
   // prefsRepo，故显式后备，避免渲染该开关时 prefsRepo 空指针。
   @override
   bool get reverseReaderBottomBar => false;
+
+  // 2026-09-13 阅读器 chrome 重做：快捷面板里多了按钮布局编辑器，同样读 prefsRepo。
+  @override
+  ReaderControlLayout get readerControlLayout => ReaderControlLayout.defaults;
 }

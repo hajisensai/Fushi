@@ -154,6 +154,12 @@ class GlobalLookupWindow {
   void Hide(bool notify = true);
   bool IsShowing() const;
 
+  // 置顶带内的 Z 序天花板句柄：卡片正在显示时返回它的 HWND，否则 nullptr。
+  // 台词浮窗正文窗的置顶守卫据此把自己插到卡片**正下方**，而不是抢到置顶带最顶
+  // ——两个窗口都按固定间隔重申 HWND_TOPMOST 的话会互相顶掉，查词卡会周期性地
+  // 闪到浮窗底下。这里只暴露句柄，不暴露窗口对象。
+  HWND TopmostCeilingHandle() const;
+
   // Temporarily removes the lookup card from the DWM composition tree while a
   // galgame mining capture is taken.  Unlike Hide(), this preserves the live
   // WebView route, dismissal hooks and card geometry so the exact same lookup

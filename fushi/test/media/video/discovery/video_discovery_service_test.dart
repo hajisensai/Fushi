@@ -1,15 +1,21 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/external_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_transport.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+
+import '../../../torrent/nyaa_html_fixture.dart';
 
 void main() {
   group('TMDB discovery adapter', () {
@@ -70,10 +76,136 @@ void main() {
       final VideoDiscoveryItem item = result.items.single.items.single;
       expect(item.reference.tmdbId, 42);
       expect(item.reference.mediaKind, VideoMetadataMediaKind.movie);
-      expect(item.reference.discoveryCategory, VideoDiscoveryCategory.movie);
+      expect(item.reference.discoveryCategory, VideoDiscoveryCategory.anime);
       expect(item.posterUrl, endsWith('/cover.jpg'));
       expect(item.genres, contains('Animation'));
     });
+
+    for (final VideoMetadataMediaKind kind in <VideoMetadataMediaKind>[
+      VideoMetadataMediaKind.movie,
+      VideoMetadataMediaKind.tv,
+    ]) {
+      for (final bool search in <bool>[false, true]) {
+        for (final bool animated in <bool>[false, true]) {
+          test(
+            '${kind.name} ${search ? 'search' : 'discover'} routes '
+            '${animated ? 'animation' : 'live action'} without changing identity',
+            () async {
+              const String title = 'お兄ちゃんはおしまい！';
+              final List<Uri> nyaaRequests = <Uri>[];
+              final TmdbVideoDiscoveryProvider provider =
+                  TmdbVideoDiscoveryProvider(
+                apiKey: 'test-key',
+                client: MockClient((http.Request request) async {
+                  expect(request.url.path, contains('/${kind.name}'));
+                  if (search) {
+                    expect(request.url.queryParameters['query'], title);
+                  }
+                  return http.Response.bytes(
+                    utf8.encode(
+                      jsonEncode(<String, Object?>{
+                        'page': 1,
+                        'total_pages': 1,
+                        'results': <Object?>[
+                          <String, Object?>{
+                            'id': 42,
+                            if (kind == VideoMetadataMediaKind.movie)
+                              'title': title
+                            else
+                              'name': title,
+                            'genre_ids': <int>[35, if (animated) 16],
+                          },
+                        ],
+                      }),
+                    ),
+                    200,
+                  );
+                }),
+              );
+              addTearDown(provider.close);
+              final VideoDiscoveryRequest request = VideoDiscoveryRequest(
+                category: kind == VideoMetadataMediaKind.movie
+                    ? VideoDiscoveryCategory.movie
+                    : VideoDiscoveryCategory.tv,
+                query: search ? title : null,
+              );
+              final ProviderBatchResult<VideoDiscoveryPage> page = search
+                  ? await provider.search(request)
+                  : await provider.discover(request);
+              expect(page.failures, isEmpty);
+              final VideoDiscoveryItem item = page.items.single.items.single;
+              expect(item.reference.mediaKind, kind);
+              expect(item.confirmedLookup?.mediaKind, kind);
+              expect(item.reference.tmdbId, 42);
+              expect(
+                item.reference.discoveryCategory,
+                animated ? VideoDiscoveryCategory.anime : request.category,
+              );
+
+              final _FakeMetadataProvider metadata = _FakeMetadataProvider(
+                kind: VideoMetadataProviderKind.tmdb,
+                work: item.metadataWork!,
+              );
+              final VideoDiscoveryService service = VideoDiscoveryService(
+                providers: const <VideoDiscoveryProvider>[],
+                metadataProviders: <VideoMetadataProvider>[metadata],
+              );
+              addTearDown(service.close);
+              final VideoMetadataWork? details = await service.loadDetails(
+                item,
+              );
+              expect(details?.kind, kind);
+              expect(metadata.lookups.single.mediaKind, kind);
+              expect(metadata.lookups.single.externalId, '42');
+
+              final VideoResourceRegistry registry =
+                  VideoResourceRegistry(<VideoResourceProvider>[
+                NyaaVideoResourceProvider(
+                  closesClient: true,
+                  client: NyaaClient(
+                    minRequestInterval: Duration.zero,
+                    client: MockClient((http.Request request) async {
+                      nyaaRequests.add(request.url);
+                      return http.Response.bytes(
+                        utf8.encode(
+                          nyaaSearchHtml(const <NyaaHtmlRow>[
+                            NyaaHtmlRow(
+                              title: title,
+                              infoHash:
+                                  'abcdef0123456789abcdef0123456789abcdef01',
+                              id: '9',
+                              seeders: 1,
+                            ),
+                          ]),
+                        ),
+                        200,
+                      );
+                    }),
+                  ),
+                ),
+              ]);
+              addTearDown(registry.close);
+              final ProviderBatchResult<VideoResourceCandidate> resources =
+                  await registry.search(
+                VideoResourceSearchRequest(
+                  media: item.reference,
+                  query: title,
+                ),
+              );
+              expect(resources.failures, isEmpty);
+              if (animated) {
+                expect(nyaaRequests.single.queryParameters['q'], title);
+                expect(nyaaRequests.single.queryParameters['c'], '1_0');
+                expect(resources.items.single.title, title);
+              } else {
+                expect(nyaaRequests, isEmpty);
+                expect(resources.items, isEmpty);
+              }
+            },
+          );
+        }
+      }
+    }
 
     test('interleaves movies and series in the all category', () async {
       final TmdbVideoDiscoveryProvider provider = TmdbVideoDiscoveryProvider(
@@ -458,6 +590,40 @@ void main() {
   });
 
   group('VideoDiscoveryService', () {
+    test('catalog selection excludes AniList search but preserves its feed',
+        () async {
+      final _FakeProvider mal = _FakeProvider(
+        id: 'mal',
+        priority: 1,
+        response: ProviderBatchResult<VideoDiscoveryPage>.success(
+          <VideoDiscoveryPage>[
+            VideoDiscoveryPage(
+              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
+          ],
+        ),
+      );
+      final _FakeProvider anilist = _FakeProvider(
+        id: 'anilist',
+        priority: 2,
+        response: ProviderBatchResult<VideoDiscoveryPage>.success(
+          <VideoDiscoveryPage>[
+            VideoDiscoveryPage(
+              items: const <VideoDiscoveryItem>[], page: 1, hasMore: false),
+          ],
+        ),
+      );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: <VideoDiscoveryProvider>[mal, anilist],
+        searchProviderIds: <String>{'mal'},
+      );
+      addTearDown(service.close);
+      await service.load(const VideoDiscoveryRequest(query: 'Anime'));
+      expect(mal.searchCalls, 1);
+      expect(anilist.searchCalls, 0);
+      await service.load(const VideoDiscoveryRequest());
+      expect(anilist.discoverCalls, 1);
+    });
+
     test('preserves successful items when another provider fails', () async {
       final _FakeProvider success = _FakeProvider(
         id: 'success',
@@ -592,6 +758,49 @@ void main() {
       );
       expect(first.requestedPages, <int>[1, 1, 2]);
       expect(second.requestedPages, <int>[1, 1, 2]);
+    });
+
+    test('MAL cross identity is the primary discovery detail source', () async {
+      final VideoMetadataWork malWork = VideoMetadataWork(
+        provider: VideoMetadataProviderKind.mal,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'MAL title',
+        plot: 'MAL synopsis',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'mal', value: '42', isDefault: true),
+        ],
+      );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: const <VideoDiscoveryProvider>[],
+        metadataProviders: <VideoMetadataProvider>[
+          _FakeMetadataProvider(
+              kind: VideoMetadataProviderKind.mal, work: malWork),
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.anilist,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.anilist,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'AniList title',
+              plot: 'AniList synopsis',
+            ),
+          ),
+        ],
+      );
+      final VideoMetadataWork? result = await service.loadDetails(
+        VideoDiscoveryItem(
+            reference: VideoMediaReference(
+          providerId: 'anilist',
+          mediaId: '1',
+          mediaKind: VideoMetadataMediaKind.tv,
+          discoveryCategory: VideoDiscoveryCategory.anime,
+          title: 'AniList title',
+          anilistId: 1,
+          externalIds: const <String, String>{'mal': '42'},
+        )),
+      );
+      expect(result?.provider, VideoMetadataProviderKind.mal);
+      expect(result?.title, 'MAL title');
+      expect(result?.plot, 'MAL synopsis');
     });
 
     test('hydrates AniList details without probing a legacy Bangumi id',
@@ -1017,11 +1226,15 @@ class _FakeProvider implements VideoDiscoveryProvider {
   final String id;
 
   @override
+  String get displayName => id;
+
+  @override
   final int priority;
 
   final ProviderBatchResult<VideoDiscoveryPage> response;
   final bool supportsPaging;
   int searchCalls = 0;
+  int discoverCalls = 0;
 
   @override
   VideoDiscoveryCapabilities get capabilities => VideoDiscoveryCapabilities(
@@ -1032,8 +1245,10 @@ class _FakeProvider implements VideoDiscoveryProvider {
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> discover(
     VideoDiscoveryRequest request,
-  ) async =>
-      response;
+  ) async {
+    discoverCalls++;
+    return response;
+  }
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> search(
@@ -1056,6 +1271,9 @@ class _PagedFakeProvider implements VideoDiscoveryProvider {
 
   @override
   final String id;
+
+  @override
+  String get displayName => id;
 
   @override
   final int priority;
@@ -1113,10 +1331,11 @@ Map<String, Object?> _tmdbMovie({
     };
 
 class _FakeMetadataProvider implements VideoMetadataProvider {
-  const _FakeMetadataProvider({required this.kind, required this.work});
+  _FakeMetadataProvider({required this.kind, required this.work});
 
   final VideoMetadataProviderKind kind;
   final VideoMetadataWork work;
+  final List<VideoMetadataLookup> lookups = <VideoMetadataLookup>[];
 
   @override
   VideoMetadataProviderKind get providerKind => kind;
@@ -1125,8 +1344,10 @@ class _FakeMetadataProvider implements VideoMetadataProvider {
   bool get isAvailable => true;
 
   @override
-  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
-      work;
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
+    lookups.add(lookup);
+    return work;
+  }
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(

@@ -69,6 +69,8 @@ abstract final class PrefRedactionPolicy {
     'qb_connection_config',
     // 手动 HTTP 代理登录名；密码由 `password` 形状兜底命中，两者都不得随备份出境。
     'network_proxy_username',
+    'video_anidb_username',
+    'video_anidb_password',
     // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
     'yomitan_api_key',
     'jimaku_api_key',

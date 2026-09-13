@@ -316,14 +316,28 @@ void main() {
     // key reaches _onKeyEvent instead of bubbling to the global Shortcuts and
     // getting dropped. Covers both "bare single key recorded" and "global layer
     // does not steal it".
-    await pumpDialogWithGlobalNav(tester, buildRegistry());
+    // 样本键必须在 reader co-active 组内**空闲**：一旦与某个默认撞上，对话框
+    // 会走冲突改派分支（弹「是否改派」而不加 chip），本用例就测不到「键到达了
+    // _onKeyEvent」这件事。原来用的裸 B 在 BUG-2166 批被 readerOpenAudiobook
+    // 占走了，故换成全表未用的 Q，并把这个前置条件显式断言出来。
+    final FushiShortcutRegistry registry = buildRegistry();
+    expect(
+      registry.hasKeyboardConflict(
+        ShortcutAction.readerToggleFurigana.scope,
+        const InputBinding(key: LogicalKeyboardKey.keyQ),
+        exclude: ShortcutAction.readerToggleFurigana,
+      ),
+      isNull,
+      reason: 'KeyQ 已被某个默认占走：换一个组内空闲键，别弱化本用例',
+    );
+    await pumpDialogWithGlobalNav(tester, registry);
     await startCapture(tester);
     expect(find.text(t.shortcut_press_key), findsOneWidget);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiTagChip, 'KeyB'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'KeyQ'), findsOneWidget);
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });

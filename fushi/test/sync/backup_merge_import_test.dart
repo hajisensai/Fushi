@@ -66,7 +66,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -115,10 +115,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup again — must stay idempotent.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -169,10 +169,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup again — must stay idempotent.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -239,7 +239,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -272,9 +272,9 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -345,9 +345,9 @@ void main() {
     await src.close();
 
     // Import twice — must stay idempotent (MAX, never SUM).
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -413,9 +413,9 @@ void main() {
     await src.close();
 
     // 导两遍——幂等（MAX，绝不 SUM）。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -432,8 +432,9 @@ void main() {
   });
 
   test(
-      'game tags cross-machine: scrape identity two-hop lands the tag on the '
-      "target's own game row (v79 二跳)", () async {
+      'game tags cross-machine: scrape identity lands the tag on the '
+      "target's own game row; an unmatched game is inserted with its tag",
+      () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
@@ -466,7 +467,8 @@ void main() {
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
     // A 机：不同的本机 id + 同 bgm 条目 + 标签；另一部无刮削的游戏带标签
-    // （跨机无身份可匹配 → 如实丢弃）。
+    // （跨机无身份可匹配 → games 类别默认勾选，游戏行随备份插入，标签落在
+    // 它自己头上）。
     await src.upsertGalgame(GalgamesCompanion.insert(
       id: '111000000',
       name: 'GameA',
@@ -498,23 +500,25 @@ void main() {
     await src.close();
 
     // 导两遍——幂等。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final tagged = (await after.getTagAssignmentsForKind(TagHostKind.game));
-    expect(tagged, hasLength(1), reason: '二跳恰命中一行，重导不双计');
-    expect(tagged.single.entryKey, '222000000',
-        reason: '标签落在 B 机自己的游戏行上（经 bgm 12345 二跳），'
-            '不是 A 机的局域 id');
+    expect(tagged.map((TagAssignmentRow r) => r.entryKey).toSet(),
+        <String>{'222000000', '444000000'},
+        reason: '同 bgm 12345 的游戏落在 B 机自己的行上（不是 A 机的局域 id）；'
+            '无身份的游戏被插入后标签落在它自己头上；重导不双计');
     expect((await after.getTagsForGame('222000000')).single.name, '神作');
     expect(await after.getTagsForGame('333000000'), isEmpty,
         reason: '无刮削身份的旁观游戏不被误标');
-    expect(await after.getAllGalgames(), hasLength(2),
-        reason: 'galgames 行本身仍不搬运（A 机的游戏没被带过来）');
+    expect(
+        (await after.getAllGalgames()).map((GalgameRow g) => g.id).toSet(),
+        <String>{'222000000', '333000000', '444000000'},
+        reason: 'A 机与 B 机同身份的游戏去重，A 机独有的游戏插入（id 原样保留）');
   });
 
   test('favorite words dedupe-union keeps earlier createdAt', () async {
@@ -553,7 +557,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -587,7 +591,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -643,7 +647,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -722,7 +726,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -792,9 +796,9 @@ void main() {
     await src.close();
 
     // 导两遍——幂等（dedupe-UNION，绝不翻倍）。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -812,8 +816,8 @@ void main() {
   });
 
   test(
-      'galgame_sessions do NOT merge — machine-local game identity, by design '
-      '(P4 B3 成文决策)', () async {
+      'galgame_sessions merge under the game identity map: the src game is '
+      'inserted and its session follows; local rows untouched', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
@@ -857,19 +861,23 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
-    expect((await after.getAllGalgames()).single.id, '222000000',
-        reason: '游戏行本机局域身份，不随备份合并搬运');
+    expect(
+        (await after.getAllGalgames()).map((GalgameRow g) => g.id).toSet(),
+        <String>{'222000000', '111000000'},
+        reason: '本机游戏原样保留；src 独有的游戏插入');
     final QueryRow sessions = await after
         .customSelect('SELECT COUNT(*) AS c FROM galgame_sessions')
         .getSingle();
-    expect(sessions.data['c'], 1,
-        reason: '成文决策：src 会话的 game_id 在目标库无宿主，不合并——'
-            '本机那条原样保留');
+    expect(sessions.data['c'], 2,
+        reason: '本机那条原样保留 + src 会话跟着它的宿主落地');
+    expect(
+        (await after.getGalgameSessions('111000000')).single.durationSeconds,
+        120);
   });
 
   test('reader position LWW: newer updatedAt wins, older does not clobber',
@@ -904,7 +912,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -929,7 +937,7 @@ void main() {
     final zip2 = p.join(zipDir.path, 'b2.zip');
     await _exportZip(src2, src2Dir.path, zip2);
     await src2.close();
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip2);
     final pos2 = await after.getReaderPosition(afterUid);
     expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
@@ -967,7 +975,7 @@ void main() {
     ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -1011,7 +1019,7 @@ void main() {
     await src.close();
 
     // Must NOT throw (FK preserved) and must skip the ghost bookmark.
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -1052,7 +1060,8 @@ void main() {
     await _zipDbWithMeta(corruptDb.path, zip);
 
     await expectLater(
-      BackupService.mergeRestoreBackup(dbDirectory: curDir.path, zipPath: zip),
+      BackupRestoreService.mergeRestoreBackup(
+          dbDirectory: curDir.path, zipPath: zip),
       throwsA(anything),
     );
 
@@ -1120,7 +1129,8 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.restoreBackup(dbDirectory: curDir.path, zipPath: zip);
+    await BackupRestoreService.restoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
@@ -1154,7 +1164,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -1211,7 +1221,7 @@ void main() {
     await src.close();
 
     // Preview runs against the STILL-OPEN live DB (attaches, counts, detaches).
-    final preview = await BackupService.previewMergeRestore(
+    final preview = await BackupRestoreService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -1245,7 +1255,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    final preview = await BackupService.previewMergeRestore(
+    final preview = await BackupRestoreService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -1304,7 +1314,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -1357,7 +1367,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -1407,9 +1417,9 @@ void main() {
     await src.close();
 
     // 连续合并两次同一备份：合集不翻倍、成员不重复。
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
@@ -1464,7 +1474,7 @@ void main() {
     ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -1518,7 +1528,7 @@ void main() {
     ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -1556,7 +1566,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       adoptSourcePreferences: true,
@@ -1588,7 +1598,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeRestoreBackup(
+    await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);

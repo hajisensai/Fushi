@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
-import 'package:fushi/src/media/manga/manga_importer.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -135,7 +135,16 @@ abstract final class MangaModule {
     );
     return showAppDialog<String>(
       context: context,
-      builder: (_) => MangaOcrWizardDialog(engines: engines, db: db),
+      builder: (_) => MangaOcrWizardDialog(
+        engines: engines,
+        db: db,
+        resolveEngines: (BuildContext ctx) => MangaOcrWizardEngines.resolve(
+          context: ctx,
+          db: db,
+          remoteRunnerOverride: remoteRunnerOverride,
+          desktopOverride: desktopOverride,
+        ),
+      ),
     );
   }
 
@@ -168,6 +177,12 @@ abstract final class MangaModule {
         startPage: startPage,
         onlyMissing: true,
         launchInBackground: true,
+        resolveEngines: (BuildContext ctx) => MangaOcrWizardEngines.resolve(
+          context: ctx,
+          db: db,
+          remoteRunnerOverride: remoteRunnerOverride,
+          desktopOverride: desktopOverride,
+        ),
       ),
     );
   }

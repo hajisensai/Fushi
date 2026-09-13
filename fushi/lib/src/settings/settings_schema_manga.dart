@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
@@ -21,11 +22,19 @@ import 'package:fushi/utils.dart';
 SettingsDestination buildMangaDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.manga,
+    // 「功能模块」门控：关掉本模块 = 整条分类不渲染 / 不进搜索索引 / 主从详情不可选
+    // （三条渲染路径共用 isVisible）。归属表见 module_registry.dart，别在此另写判据。
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.manga,
+      c.appModel.moduleVisibility,
+    ),
     title: t.manga_library,
     summary: t.settings_destination_manga_summary,
     icon: Icons.auto_stories_outlined,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'manga.section.viewing',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.manga_section_viewing,
         items: <SettingsItem>[
           // 阅读方向：偏好是新书的默认值，已打开的书仍按自身状态走。
@@ -103,9 +112,9 @@ SettingsDestination buildMangaDestination() {
                 label: t.manga_page_animation_fade,
               ),
             ],
-            selected: (SettingsContext c) =>
-                MangaPageAnimationKey.fromKey(c.appModel.mangaPageAnimation)
-                    .key,
+            selected: (SettingsContext c) => MangaPageAnimationKey.fromKey(
+              c.appModel.mangaPageAnimation,
+            ).key,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaPageAnimation(value),
           ),
@@ -117,6 +126,17 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaTapZonePaging,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaTapZonePaging(value),
+          ),
+          // 顶栏悬浮/常驻：与 EPUB 阅读器「点空白隐藏控制栏」同一模型（悬浮 = 不占
+          // 布局、默认收起、点页面中央或顶边悬停唤出后自动收起；关 = 常驻并让位）。
+          SettingsSwitchItem(
+            id: 'manga.chrome_floating',
+            title: t.manga_chrome_floating,
+            subtitle: t.manga_chrome_floating_subtitle,
+            icon: Icons.vertical_align_top_outlined,
+            value: (SettingsContext c) => c.appModel.mangaChromeFloating,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMangaChromeFloating(value),
           ),
           // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
           // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
@@ -133,6 +153,7 @@ SettingsDestination buildMangaDestination() {
         ],
       ),
       buildMangaOcrSection(),
+      buildMangaCatalogSection(),
     ],
   );
 }

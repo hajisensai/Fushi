@@ -7,8 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/src/utils/misc/fushi_time_format.dart';
-import 'package:fushi/src/utils/misc/safe_file_name.dart';
+import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 

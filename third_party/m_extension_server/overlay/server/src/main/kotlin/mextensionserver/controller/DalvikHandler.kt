@@ -1,17 +1,15 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
 import eu.kanade.tachiyomi.source.model.Filter
-import eu.kanade.tachiyomi.source.online.HttpSource
+import eu.kanade.tachiyomi.source.model.FilterList
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
 import mextensionserver.model.FiltersResponse
-import okhttp3.Cookie
-import okhttp3.HttpUrl
 
 /**
  * Hibiki serializes manga filters into an explicit wire shape. Jackson cannot
@@ -24,101 +22,85 @@ class DalvikHandler {
     private val logger = KotlinLogging.logger {}
     private val objectMapper = jacksonObjectMapper()
 
-    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response =
-        try {
+    fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
+        // Declared outside the try so the catch clauses can still report the
+        // jar: the failing call is the one most likely to have rotated the
+        // session.
+        var pendingJarCookies: String? = null
+        return try {
             val body = mutableMapOf<String, String>()
             session.parseBody(body)
             val json = body["postData"] ?: throw IllegalArgumentException("No JSON body")
             val dataBody = objectMapper.readValue(json, DataBody::class.java)
 
-            val result =
+            // A failing call is the *most* likely one to have rotated the
+            // session -- a 401/403 usually is the site handing out a fresh
+            // cookie as it rejects the stale one. Capturing the jar here rather
+            // than only on the success path is what lets the error response
+            // carry it back; otherwise the host retries forever with the dead
+            // value it already had.
+            val invocationResult =
                 MExtensionServerLoader.invokeWithExtension(dataBody.data) { loadedExtension ->
                     val selectedSource = MihonInvoker.selectSource(loadedExtension.sources, dataBody)
                     MihonInvoker.preparePreferences(dataBody, selectedSource)
-                    val domain =
-                        selectedSource.let { source ->
-                            try {
-                                val baseUrl = source.javaClass.getMethod("getBaseUrl").invoke(source) as String
-                                java.net.URI(baseUrl).host
-                            } catch (error: Exception) {
-                                logger.error(error) { "Error getting domain from source" }
-                                null
-                            }
-                        } ?: "localhost"
-
-                    val cookies =
-                        (session.headers["cookie"] ?: session.headers["Cookie"])
-                            ?.let { cookieHeader ->
-                                cookieHeader
-                                    .split(";")
-                                    .map { cookieString ->
-                                        val parts = cookieString.trim().split("=", limit = 2)
-                                        Cookie
-                                            .Builder()
-                                            .name(parts[0].trim())
-                                            .value(parts.getOrElse(1) { "" }.trim())
-                                            .domain(domain.removePrefix("."))
-                                            .path("/")
-                                            .build()
-                                    }.distinctBy { it.name }
-                            }?.toList()
-                    val network =
-                        when (selectedSource) {
-                            is HttpSource -> selectedSource.network
-                            is AnimeHttpSource -> selectedSource.network
-                            else -> null
-                        }
-                    if (cookies != null) {
-                        network?.cookieJar?.addAll(
-                            HttpUrl
-                                .Builder()
-                                .scheme("http")
-                                .host(domain.removePrefix("."))
-                                .build(),
-                            cookies,
-                        )
+                    // Host-owned login session; see [SourceCookieInjection].
+                    val domain = SourceCookieInjection.domainOf(selectedSource)
+                    SourceCookieInjection.injectRequestCookies(session, selectedSource)
+                    SourceCookieInjection.applyRequestUserAgent(session, selectedSource)
+                    try {
+                        MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                    } finally {
+                        pendingJarCookies =
+                            SourceCookieInjection.encodeJarCookies(
+                                objectMapper,
+                                selectedSource,
+                                domain,
+                            )
                     }
-                    (session.headers["user-agent"] ?: session.headers["User-Agent"])
-                        ?.let { userAgent -> network?.setUA(userAgent) }
-
-                    MihonInvoker.invokeMethod(loadedExtension, dataBody)
                 }
 
-            val serializableResult =
-                if (result is FiltersResponse) {
-                    mapOf(
-                        "filterList" to
-                            result.filterList?.map { filter -> filter.toBridgeMap() }.orEmpty(),
-                    )
-                } else {
-                    result
-                }
+            val serializableResult = filterResponseForBridge(invocationResult)
             val responseJson = objectMapper.writeValueAsString(serializableResult)
-            NanoHTTPD.newFixedLengthResponse(
-                NanoHTTPD.Response.Status.OK,
-                "application/json",
-                responseJson,
-            )
+            NanoHTTPD
+                .newFixedLengthResponse(
+                    NanoHTTPD.Response.Status.OK,
+                    "application/json",
+                    responseJson,
+                ).withJarCookies(pendingJarCookies)
         } catch (error: LinkageError) {
-            errorResponse(error)
+            errorResponse(error).withJarCookies(pendingJarCookies)
         } catch (error: Exception) {
-            errorResponse(error)
+            errorResponse(error).withJarCookies(pendingJarCookies)
         }
+    }
 
-    private fun errorResponse(error: Throwable): NanoHTTPD.Response {
+    /** Attaches [SET_COOKIE_HEADER] when the call actually touched cookies. */
+    private fun NanoHTTPD.Response.withJarCookies(payload: String?): NanoHTTPD.Response =
+        apply { if (payload != null) addHeader(SET_COOKIE_HEADER, payload) }
+
+    internal fun errorResponse(error: Throwable): NanoHTTPD.Response {
         logger.error(error) { "Error handling request" }
+        // The interceptor's exception is usually wrapped by the time it reaches here (Rx /
+        // coroutine adapters, extension-side catch-and-rethrow), so walk the cause chain
+        // rather than testing the top-level type -- the Android host does the same.
+        val challenge =
+            generateSequence(error) { it.cause }
+                .filterIsInstance<CloudflareChallengeRequiredException>()
+                .firstOrNull()
+        // Only the typed source HTTP failure establishes an upstream status.
+        // Exception messages (including ones mentioning HTTP) are not a protocol.
+        val sourceStatusCode =
+            (error as? eu.kanade.tachiyomi.network.HttpException)?.code?.takeIf { it in 400..599 }
         val status =
-            when (error) {
-                is eu.kanade.tachiyomi.network.HttpException -> {
-                    when (error.code) {
-                        400 -> NanoHTTPD.Response.Status.BAD_REQUEST
-                        401 -> NanoHTTPD.Response.Status.UNAUTHORIZED
-                        403 -> NanoHTTPD.Response.Status.FORBIDDEN
-                        404 -> NanoHTTPD.Response.Status.NOT_FOUND
-                        else -> NanoHTTPD.Response.Status.INTERNAL_ERROR
+            if (sourceStatusCode != null) {
+                NanoHTTPD.Response.Status.lookup(sourceStatusCode)
+                    ?: object : NanoHTTPD.Response.IStatus {
+                        override fun getRequestStatus(): Int = sourceStatusCode
+
+                        override fun getDescription(): String = "$sourceStatusCode Source HTTP error"
                     }
-                }
-                else -> NanoHTTPD.Response.Status.INTERNAL_ERROR
+            } else {
+                NanoHTTPD.Response.Status.INTERNAL_ERROR
             }
         // 桌面端此前只回 `error`（= e.message），Java 栈仅存在于本进程 stdout，而宿主
         // 把 sidecar 的 stdout/stderr 直接丢弃，于是扩展加载类错误（NoSuchMethodError /
@@ -131,6 +113,17 @@ class DalvikHandler {
                     "error" to (error.message ?: error.javaClass.simpleName),
                     "errorType" to error.javaClass.name,
                     "stackTrace" to error.stackTraceToString().take(MAX_STACK_TRACE_CHARS),
+                    "errorKind" to
+                        when {
+                            challenge != null -> "cloudflare"
+                            sourceStatusCode != null -> "sourceHttp"
+                            else -> "bridge"
+                        },
+                    "sourceStatusCode" to sourceStatusCode,
+                    // The host opens a browser at exactly this URL with exactly this
+                    // User-Agent; cf_clearance is issued against both.
+                    "challengeUrl" to challenge?.url?.toString(),
+                    "userAgent" to challenge?.userAgent,
                     "code" to
                         if (error is eu.kanade.tachiyomi.network.HttpException) {
                             error.code
@@ -146,6 +139,14 @@ class DalvikHandler {
         )
     }
 }
+
+/** Preserve both supported response envelopes without serializing extension objects. */
+internal fun filterResponseForBridge(result: Any?): Any? =
+    when (result) {
+        is FilterList -> result.map { it.toBridgeMap() }
+        is FiltersResponse -> mapOf("filterList" to result.filterList?.map { it.toBridgeMap() }.orEmpty())
+        else -> result
+    }
 
 private fun Filter<*>.toBridgeMap(): Map<String, Any?> {
     val filter = this

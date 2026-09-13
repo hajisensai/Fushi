@@ -19,7 +19,7 @@ import 'dart:convert';
 
 import 'package:fushi/src/media/metadata/transport_retry.dart';
 import 'package:http/http.dart' as http;
-import 'package:fushi/src/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 纯函数：把用户粘贴的 Bangumi 条目 **URL** 解析为 subject id（数字串）。
 ///

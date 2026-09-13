@@ -280,6 +280,15 @@ class VideoDownloadLegacyImporter {
     }
 
     final String jobId = 'legacy-plan:${plan.id.trim().toLowerCase()}';
+    // Legacy JSON stores a content kind, but no discovery source identity.
+    // `auto` is ambiguous (mixed books/videos and some manga sources used it),
+    // so only explicit non-video kinds can be routed to discovery import.
+    final String? discoveryKind = switch (plan.contentKind) {
+      AnimeDownloadPlan.kindBook => 'novel',
+      AnimeDownloadPlan.kindAudiobook => 'audiobook',
+      AnimeDownloadPlan.kindGame => 'game',
+      _ => null,
+    };
     final LegacyTorrentBinding? binding = await _confirmedBinding(plan);
     final bool backendConfirmed = binding != null;
     final List<String> attentionReasons = <String>[];
@@ -337,7 +346,7 @@ class VideoDownloadLegacyImporter {
         await database.upsertVideoDownloadJob(
           VideoDownloadJobsCompanion.insert(
             jobId: jobId,
-            resourceProvider: 'nyaa',
+            resourceProvider: discoveryKind == null ? 'nyaa' : 'legacy',
             selectedResourceId: plan.id,
             magnetUri: Value<String?>(magnet),
             resourceTitle: Value<String?>(plan.torrentTitle.trim()),
@@ -348,8 +357,9 @@ class VideoDownloadLegacyImporter {
             externalId: plan.anilistId == null
                 ? const Value<String?>.absent()
                 : Value<String?>('${plan.anilistId}'),
-            mediaKind: 'tv',
-            discoveryCategory: const Value<String?>('anime'),
+            mediaKind: discoveryKind ?? 'tv',
+            discoveryCategory:
+                Value<String?>(discoveryKind == null ? 'anime' : null),
             title: plan.seriesTitle.trim(),
             coverUrl: Value<String?>(_nonEmpty(plan.coverUrl)),
             backendKind: backendKind.isEmpty ? 'legacy' : backendKind,
@@ -361,9 +371,12 @@ class VideoDownloadLegacyImporter {
                 : fingerprint,
             category: Value<String?>(_nonEmpty(plan.qbCategory)),
             collectionId: Value<int?>(collectionId),
-            organizationPolicy: const Value<String>('legacy'),
+            organizationPolicy: Value<String>(
+              discoveryKind == null ? 'legacy' : 'discovery-$discoveryKind',
+            ),
             subtitlePolicy: Value<String>(
-              plan.subtitleStatus == AnimeDownloadPlan.subtitleNone
+              discoveryKind != null ||
+                      plan.subtitleStatus == AnimeDownloadPlan.subtitleNone
                   ? 'none'
                   : 'bestEffort',
             ),

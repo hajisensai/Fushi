@@ -75,11 +75,11 @@ void main() {
     // 真机复现：外壳的 ColoredBox(surface) 包着整个 Navigator，视频洞下面就是它；
     // 一旦让整层透明，标题行也透了（能看到别的窗口）。两条都要咬住。
     final String bar = _read(
-      '${_fushiDir()}/lib/src/utils/components/fushi_windows_title_bar.dart',
+      '${_fushiDir()}/lib/src/utils/components/fushi_desktop_title_bar.dart',
     );
     expect(bar, contains('valueListenable: hdrHostActiveGlobal'));
     expect(bar, contains('hdrHost ? Colors.transparent : colors.surface'));
-    final int caption = bar.indexOf('height: FushiWindowsTitleBar.height,');
+    final int caption = bar.indexOf('height: FushiDesktopTitleBar.height,');
     expect(caption, greaterThan(0));
     final String captionBlock = bar.substring(caption, caption + 400);
     expect(captionBlock, contains('color: colors.surface,'));

@@ -28,21 +28,20 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   group('independentDocumentInsets（独立 HTML 文档留白契约）', () {
     const double reserve = 72;
-    const double titlebar = 28;
+
+    const double topReserve = 60;
 
     EdgeInsets insets({
       required bool lyricsMode,
-      bool spreadDocumentLoaded = false,
       required bool chromeOccupiesLayout,
       double bottomReserve = reserve,
-      double titlebarInset = 0,
+      double top = topReserve,
     }) {
       return independentDocumentInsets(
         lyricsMode: lyricsMode,
-        spreadDocumentLoaded: spreadDocumentLoaded,
         chromeOccupiesLayout: chromeOccupiesLayout,
+        topReserve: top,
         bottomReserve: bottomReserve,
-        titlebarInset: titlebarInset,
       );
     }
 
@@ -75,45 +74,33 @@ void main() {
       expect(insets(lyricsMode: true, chromeOccupiesLayout: false).bottom, 0);
     });
 
-    test('正文模式不留底部（正文走 setChromeInsets，重复留白会挖掉一条空白）', () {
+    test('正文 / spread 模式不留底部（正文走 setChromeInsets，重复留白会挖掉一条空白）', () {
       expect(insets(lyricsMode: false, chromeOccupiesLayout: true).bottom, 0);
+      // spread 整页图也是独立文档，但它没有文档级滚动条，不需要也不应吃底栏预留
+      // ——判据只认 lyricsMode，所以 spread 与「没有独立文档」在这里同为 0。
+    });
+
+    test('歌词模式：顶部留白 == 调用方给的顶部 chrome 占高（顶栏在歌词模式在场）', () {
+      // 顶栏过去在歌词模式整块不启用，歌词文档因此从 y=0 起画，系统状态栏 / 刘海
+      // 直接压在首行歌词上；顶栏恢复在场后，独立文档必须像正文一样给它让位。
       expect(
-        insets(
-          lyricsMode: false,
-          spreadDocumentLoaded: true,
-          chromeOccupiesLayout: true,
-        ).bottom,
-        0,
-        reason: 'spread 没有文档级滚动条，不需要也不应吃底栏预留',
+          insets(lyricsMode: true, chromeOccupiesLayout: true).top, topReserve);
+      expect(insets(lyricsMode: true, chromeOccupiesLayout: true, top: 12).top,
+          12);
+    });
+
+    test('顶部留白不受底栏占位门控（顶栏是否占位已由调用方算进 topReserve）', () {
+      // 悬浮顶栏不占正文位置时调用方喂进来的就是「只剩系统 inset」的那个值，
+      // 这里不能再叠一道底栏的门 —— 底栏收起并不会让状态栏不压歌词。
+      expect(
+        insets(lyricsMode: true, chromeOccupiesLayout: false).top,
+        topReserve,
       );
     });
 
-    test('BUG-1343：歌词 / spread 顶部缩进标题栏高，正文不缩进', () {
-      expect(
-        insets(
-          lyricsMode: true,
-          chromeOccupiesLayout: true,
-          titlebarInset: titlebar,
-        ).top,
-        titlebar,
-      );
-      expect(
-        insets(
-          lyricsMode: false,
-          spreadDocumentLoaded: true,
-          chromeOccupiesLayout: false,
-          titlebarInset: titlebar,
-        ).top,
-        titlebar,
-      );
-      expect(
-        insets(
-          lyricsMode: false,
-          chromeOccupiesLayout: true,
-          titlebarInset: titlebar,
-        ).top,
-        0,
-      );
+    test('正文 / spread 模式不留顶部（正文走 setChromeInsets，重复留白会挖掉一条空白）', () {
+      expect(insets(lyricsMode: false, chromeOccupiesLayout: true).top, 0);
+      expect(insets(lyricsMode: false, chromeOccupiesLayout: false).top, 0);
     });
 
     test('两笔留白都为 0 时返回 EdgeInsets.zero（调用方据此跳过 Padding）', () {
@@ -122,7 +109,12 @@ void main() {
         EdgeInsets.zero,
       );
       expect(
-        insets(lyricsMode: true, chromeOccupiesLayout: true, bottomReserve: 0),
+        insets(
+          lyricsMode: true,
+          chromeOccupiesLayout: true,
+          bottomReserve: 0,
+          top: 0,
+        ),
         EdgeInsets.zero,
       );
     });

@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/manga_cover_failure.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -40,10 +42,7 @@ class MihonInstalledTarget extends MihonBrowseTarget {
 /// 留下指向不存在扩展的孤儿行。预览的目的是「看看这个源有没有我要的漫画」，
 /// 网格 + 搜索 + 封面已经够判断，真要读就先装。
 class MihonPreviewTarget extends MihonBrowseTarget {
-  const MihonPreviewTarget({
-    required this.session,
-    required this.source,
-  });
+  const MihonPreviewTarget({required this.session, required this.source});
 
   final MihonPreviewSession session;
   final MihonSource source;
@@ -61,6 +60,11 @@ class MihonSourceBrowsePage extends StatefulWidget {
   final MihonBrowseTarget target;
 
   /// 钉在正文底部的操作条。预览用它放「放弃 / 信任并安装」。
+  ///
+  /// BUG-2440：scaffold 的 body 不再扣底部安全区，所以这条动作条贴的是屏幕真正的
+  /// 最底边。**底部安全区由 footer 自己套 SafeArea 补**（`_PreviewFooter` 就是这么
+  /// 做的：`ColoredBox` 包在 `SafeArea` 外，让手势条那一段也上底色）——这里不代劳，
+  /// 在外面补会把那一段留成页面底色的空条。
   final Widget? footer;
 
   @override
@@ -69,8 +73,9 @@ class MihonSourceBrowsePage extends StatefulWidget {
 
 class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   final TextEditingController _searchController = TextEditingController();
-  final MihonSourceImageLoadQueue _imageLoadQueue =
-      MihonSourceImageLoadQueue(maxConcurrent: 4);
+  final MihonSourceImageLoadQueue _imageLoadQueue = MihonSourceImageLoadQueue(
+    maxConcurrent: 4,
+  );
   MihonSourceContext? _sourceContext;
   List<MihonManga> _items = const <MihonManga>[];
   List<MihonFilter> _filters = const <MihonFilter>[];
@@ -142,37 +147,39 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     try {
       final MihonMangaPage response = switch (requestedMode) {
         _MihonBrowseMode.popular => await widget.manager.runtime.getPopular(
-            context.extension,
-            context.source,
-            page: requestedPage,
-            preferences: context.preferences,
-          ),
+          context.extension,
+          context.source,
+          page: requestedPage,
+          preferences: context.preferences,
+        ),
         _MihonBrowseMode.latest => await widget.manager.runtime.getLatest(
-            context.extension,
-            context.source,
-            page: requestedPage,
-            preferences: context.preferences,
-          ),
+          context.extension,
+          context.source,
+          page: requestedPage,
+          preferences: context.preferences,
+        ),
         _MihonBrowseMode.search => await widget.manager.runtime.search(
-            context.extension,
-            context.source,
-            page: requestedPage,
-            query: requestedQuery,
-            filters: requestedFilters,
-            preferences: context.preferences,
-          ),
+          context.extension,
+          context.source,
+          page: requestedPage,
+          query: requestedQuery,
+          filters: requestedFilters,
+          preferences: context.preferences,
+        ),
       };
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         final List<MihonManga> previous = reset ? const <MihonManga>[] : _items;
-        final Set<String> seen =
-            previous.map((MihonManga item) => item.url).toSet();
+        final Set<String> seen = previous
+            .map((MihonManga item) => item.url)
+            .toSet();
         final List<MihonManga> additions = response.items
             .where((MihonManga item) => seen.add(item.url))
             .toList(growable: false);
         _items = <MihonManga>[...previous, ...additions];
         _page = requestedPage;
-        _hasNextPage = response.hasNextPage &&
+        _hasNextPage =
+            response.hasNextPage &&
             response.items.isNotEmpty &&
             (reset || additions.isNotEmpty);
         _loading = false;
@@ -193,9 +200,8 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     if (_filters.isEmpty) return;
     final List<MihonFilter>? updated = await showAppDialog<List<MihonFilter>>(
       context: context,
-      builder: (BuildContext dialogContext) => _MihonFilterDialog(
-        initial: _filters,
-      ),
+      builder: (BuildContext dialogContext) =>
+          _MihonFilterDialog(initial: _filters),
     );
     if (updated == null || !mounted) return;
     _filters = updated;
@@ -278,7 +284,24 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
               },
             ),
           ),
-          Expanded(child: _buildResults()),
+          if (_error != null && _items.isNotEmpty)
+            MihonCloudflareAction(
+              runtime: widget.manager.runtime,
+              error: _error,
+              onVerified: () => _load(reset: false),
+            ),
+          // BUG-2440：scaffold 的 body 不再扣底部安全区。有 footer 时那段归 footer
+          // 自己的 SafeArea 认领，先从网格的 MediaQuery 里摘掉，免得网格底部和
+          // footer 各补一次、在动作条上方多顶出一条空白。
+          Expanded(
+            child: widget.footer == null
+                ? _buildResults()
+                : MediaQuery.removePadding(
+                    context: context,
+                    removeBottom: true,
+                    child: _buildResults(),
+                  ),
+          ),
           if (widget.footer != null) widget.footer!,
         ],
       ),
@@ -293,7 +316,18 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('$_error', textAlign: TextAlign.center),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('$_error', textAlign: TextAlign.center),
+              MihonCloudflareAction(
+                runtime: widget.manager.runtime,
+                error: _error,
+                onVerified: () =>
+                    _sourceContext == null ? _initialise() : _load(reset: true),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -304,7 +338,10 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
         return GridView.builder(
-          padding: const EdgeInsets.all(16),
+          // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
+          // 补出手势条那一段。有 footer 时上面已把这段从 MediaQuery 摘掉，这里
+          // 自动退回纯 16。
+          padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             childAspectRatio: 0.62,
@@ -381,30 +418,30 @@ class MihonMangaDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MangaSeriesPage(
-        target: SourceMangaSeriesTarget(
-          // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
-          // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，
-          // 现解析必然失败。
-          adapter: MihonLibraryAdapter(manager, presetContext: sourceContext),
-          service: mihonOnlineLibraryService(manager),
-          seed: OnlineMangaLibraryEntry(
-            runtime: OnlineMangaRuntimeKind.mihon,
-            extensionPackage: sourceContext.extension.packageName,
-            sourceId: sourceContext.source.id,
-            series: MihonLibraryAdapter.seriesOf(manga),
-            // 网格上只有标题和封面；章节由作品页进页后自己拉。
-            chapters: const <OnlineMangaChapter>[],
-          ),
-          sourceLabel: sourceContext.source.name,
-          // 未入库时封面必须经扩展的 imageProxy 取（带鉴权头），不能裸 https。
-          remoteCoverBuilder: (BuildContext context) => MihonSourceImage(
-            runtime: manager.runtime,
-            cache: manager.coverCache,
-            context: sourceContext,
-            url: manga.coverUrl,
-          ),
-        ),
-      );
+    target: SourceMangaSeriesTarget(
+      // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
+      // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，
+      // 现解析必然失败。
+      adapter: MihonLibraryAdapter(manager, presetContext: sourceContext),
+      service: mihonOnlineLibraryService(manager),
+      seed: OnlineMangaLibraryEntry(
+        runtime: OnlineMangaRuntimeKind.mihon,
+        extensionPackage: sourceContext.extension.packageName,
+        sourceId: sourceContext.source.id,
+        series: MihonLibraryAdapter.seriesOf(manga),
+        // 网格上只有标题和封面；章节由作品页进页后自己拉。
+        chapters: const <OnlineMangaChapter>[],
+      ),
+      sourceLabel: sourceContext.source.name,
+      // 未入库时封面必须经扩展的 imageProxy 取（带鉴权头），不能裸 https。
+      remoteCoverBuilder: (BuildContext context) => MihonSourceImage(
+        runtime: manager.runtime,
+        cache: manager.coverCache,
+        context: sourceContext,
+        url: manga.coverUrl,
+      ),
+    ),
+  );
 }
 
 class MihonSourceImage extends StatefulWidget {
@@ -509,9 +546,13 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
           );
         }
         if (snapshot.hasError) {
-          return const ColoredBox(
-            color: Color(0xff303030),
-            child: Icon(Icons.broken_image_outlined),
+          // 缓存层的自动退避已经用尽（或错误本就不该自动重试）：这里给手动入口。
+          return MangaCoverFailure(
+            runtime: widget.runtime,
+            error: snapshot.error,
+            onRetry: () {
+              if (mounted) setState(_reload);
+            },
           );
         }
         return const ColoredBox(
@@ -523,6 +564,17 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
   }
 }
 
+/// 封面在并发闸门里最多排多久（BUG-2450）。
+///
+/// 桌面封面单张首响应 / 空闲超时各 90s，4 并发 × 90s 串行排队时整页封面会一起
+/// 转圈几分钟；排到 30s 还没轮上就直接落失败态（可点重试），把慢源的代价限制在
+/// 它自己那几格上。
+const Duration kMihonSourceImageQueueWaitTimeout = Duration(seconds: 30);
+
+/// 排队超时的错误码；[isTransientMihonImageError] 明确不对它自动退避——队列
+/// 本身已经等满了一档，再排一次只会把失败态往后推。
+const String kMihonImageQueueTimeoutCode = 'IMAGE_QUEUE_TIMEOUT';
+
 /// 漫画源封面的轻量共享并发闸门。
 ///
 /// `GridView.builder` 虽然懒建，但仍会为当前视口和 cacheExtent 同时创建多张封面；
@@ -530,10 +582,15 @@ class _MihonSourceImageState extends State<MihonSourceImage> {
 /// 缓存未命中网络任务；命中磁盘的封面不占用网络并发名额，图片仍由各自 widget
 /// 独立解码与渲染。
 class MihonSourceImageLoadQueue {
-  MihonSourceImageLoadQueue({required this.maxConcurrent})
-      : assert(maxConcurrent > 0);
+  MihonSourceImageLoadQueue({
+    required this.maxConcurrent,
+    this.waitTimeout = kMihonSourceImageQueueWaitTimeout,
+  }) : assert(maxConcurrent > 0);
 
   final int maxConcurrent;
+
+  /// 等待名额的上限；超时的等待者以 [kMihonImageQueueTimeoutCode] 失败。
+  final Duration waitTimeout;
   final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
   int _active = 0;
 
@@ -556,7 +613,23 @@ class MihonSourceImageLoadQueue {
     }
     final Completer<void> waiter = Completer<void>();
     _waiters.addLast(waiter);
-    await waiter.future;
+    // 超时判据是「还在等待队列里」：_release 一旦把名额交给它就从队列移走，
+    // 定时器再响也只会空转，不会既拿了名额又报失败（那会把名额永久漏掉）。
+    final Timer timer = Timer(waitTimeout, () {
+      if (_waiters.remove(waiter)) {
+        waiter.completeError(
+          const MihonRuntimeException(
+            kMihonImageQueueTimeoutCode,
+            'The source image waited too long for a load slot',
+          ),
+        );
+      }
+    });
+    try {
+      await waiter.future;
+    } finally {
+      timer.cancel();
+    }
   }
 
   void _release() {
@@ -581,17 +654,14 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
   late final List<MihonFilter> _filters = List<MihonFilter>.of(widget.initial);
 
   MihonFilter _withState(MihonFilter filter, Object? state) => MihonFilter(
-        name: filter.name,
-        kind: filter.kind,
-        state: state,
-        values: filter.values,
-        children: filter.children,
-      );
+    name: filter.name,
+    kind: filter.kind,
+    state: state,
+    values: filter.values,
+    children: filter.children,
+  );
 
-  MihonFilter _withChildren(
-    MihonFilter filter,
-    List<MihonFilter> children,
-  ) =>
+  MihonFilter _withChildren(MihonFilter filter, List<MihonFilter> children) =>
       MihonFilter(
         name: filter.name,
         kind: filter.kind,
@@ -606,28 +676,25 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
     });
   }
 
-  Widget _buildFilter(
-    MihonFilter filter,
-    ValueChanged<MihonFilter> onChanged,
-  ) {
+  Widget _buildFilter(MihonFilter filter, ValueChanged<MihonFilter> onChanged) {
     return switch (filter.kind) {
       MihonFilterKind.header => FushiListItem(
-          title: Text(
-            filter.name,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+        title: Text(
+          filter.name,
+          style: Theme.of(context).textTheme.titleMedium,
         ),
+      ),
       MihonFilterKind.separator => const Divider(),
       MihonFilterKind.checkBox => _MihonCheckRow(
-          label: filter.name,
-          selected: filter.state == true,
-          onChanged: (bool value) => onChanged(_withState(filter, value)),
-        ),
+        label: filter.name,
+        selected: filter.state == true,
+        onChanged: (bool value) => onChanged(_withState(filter, value)),
+      ),
       MihonFilterKind.text => TextFormField(
-          initialValue: filter.state?.toString() ?? '',
-          decoration: InputDecoration(labelText: filter.name),
-          onChanged: (String value) => onChanged(_withState(filter, value)),
-        ),
+        initialValue: filter.state?.toString() ?? '',
+        decoration: InputDecoration(labelText: filter.name),
+        onChanged: (String value) => onChanged(_withState(filter, value)),
+      ),
       MihonFilterKind.select when filter.values.isNotEmpty =>
         DropdownButtonFormField<int>(
           value: (filter.state as int? ?? 0).clamp(0, filter.values.length - 1),
@@ -642,51 +709,40 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
           onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
         ),
       MihonFilterKind.triState => DropdownButtonFormField<int>(
-          value: (filter.state as int? ?? 0).clamp(0, 2),
-          decoration: InputDecoration(labelText: filter.name),
-          items: <DropdownMenuItem<int>>[
-            DropdownMenuItem<int>(
-              value: 0,
-              child: Text(t.mihon_filter_ignore),
-            ),
-            DropdownMenuItem<int>(
-              value: 1,
-              child: Text(t.mihon_filter_include),
-            ),
-            DropdownMenuItem<int>(
-              value: 2,
-              child: Text(t.mihon_filter_exclude),
-            ),
-          ],
-          onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
-        ),
+        value: (filter.state as int? ?? 0).clamp(0, 2),
+        decoration: InputDecoration(labelText: filter.name),
+        items: <DropdownMenuItem<int>>[
+          DropdownMenuItem<int>(value: 0, child: Text(t.mihon_filter_ignore)),
+          DropdownMenuItem<int>(value: 1, child: Text(t.mihon_filter_include)),
+          DropdownMenuItem<int>(value: 2, child: Text(t.mihon_filter_exclude)),
+        ],
+        onChanged: (int? value) => onChanged(_withState(filter, value ?? 0)),
+      ),
       MihonFilterKind.group => ExpansionTile(
-          title: Text(filter.name),
-          children: <Widget>[
-            for (int index = 0; index < filter.children.length; index++)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(start: 16),
-                child: _buildFilter(
-                  filter.children[index],
-                  (MihonFilter child) {
-                    final List<MihonFilter> children =
-                        List<MihonFilter>.of(filter.children);
-                    children[index] = child;
-                    onChanged(_withChildren(filter, children));
-                  },
-                ),
-              ),
-          ],
-        ),
+        title: Text(filter.name),
+        children: <Widget>[
+          for (int index = 0; index < filter.children.length; index++)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 16),
+              child: _buildFilter(filter.children[index], (MihonFilter child) {
+                final List<MihonFilter> children = List<MihonFilter>.of(
+                  filter.children,
+                );
+                children[index] = child;
+                onChanged(_withChildren(filter, children));
+              }),
+            ),
+        ],
+      ),
       MihonFilterKind.sort when filter.values.isNotEmpty =>
         _MihonSortFilterField(
           filter: filter,
           onChanged: (Object? state) => onChanged(_withState(filter, state)),
         ),
       _ => FushiListItem(
-          title: Text(filter.name),
-          subtitle: Text(t.mihon_extension_incompatible),
-        ),
+        title: Text(filter.name),
+        subtitle: Text(t.mihon_extension_incompatible),
+      ),
     };
   }
 
@@ -723,10 +779,7 @@ class _MihonFilterDialogState extends State<_MihonFilterDialog> {
 }
 
 class _MihonSortFilterField extends StatelessWidget {
-  const _MihonSortFilterField({
-    required this.filter,
-    required this.onChanged,
-  });
+  const _MihonSortFilterField({required this.filter, required this.onChanged});
 
   final MihonFilter filter;
   final ValueChanged<Object?> onChanged;
@@ -736,8 +789,10 @@ class _MihonSortFilterField extends StatelessWidget {
     final Map<Object?, Object?> state = filter.state is Map<Object?, Object?>
         ? filter.state! as Map<Object?, Object?>
         : const <Object?, Object?>{};
-    final int index = ((state['index'] as num?)?.toInt() ?? 0)
-        .clamp(0, filter.values.length - 1);
+    final int index = ((state['index'] as num?)?.toInt() ?? 0).clamp(
+      0,
+      filter.values.length - 1,
+    );
     final bool ascending = state['ascending'] != false;
     void update({int? nextIndex, bool? nextAscending}) {
       onChanged(<String, Object?>{
@@ -793,11 +848,11 @@ class _MihonCheckRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiListItem(
-        title: Text(label),
-        leading: Checkbox(
-          value: selected,
-          onChanged: (bool? value) => onChanged(value == true),
-        ),
-        onTap: () => onChanged(!selected),
-      );
+    title: Text(label),
+    leading: Checkbox(
+      value: selected,
+      onChanged: (bool? value) => onChanged(value == true),
+    ),
+    onTap: () => onChanged(!selected),
+  );
 }

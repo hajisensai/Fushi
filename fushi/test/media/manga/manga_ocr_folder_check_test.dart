@@ -1,11 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
-import 'package:fushi/src/media/manga/manga_storage.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:path/path.dart' as p;
 
 /// [checkOcrFolder] 的判定口径：**已入库书目录**（含 manga.json）看页表，
@@ -17,7 +16,7 @@ import 'package:path/path.dart' as p;
 /// 的书，被 OCR 向导判成「此文件夹中没有找到图片」并禁用运行。
 void main() {
   const MokuroBlock block = MokuroBlock(
-    rectangle: Rect.fromLTRB(0, 0, 10, 10),
+    rectangle: MokuroRect.fromLTRB(0, 0, 10, 10),
     isVertical: true,
     fontSize: 12,
     zIndex: 0,
@@ -26,7 +25,7 @@ void main() {
 
   MokuroImage page(String url,
           {List<MokuroBlock> blocks = const <MokuroBlock>[]}) =>
-      MokuroImage(url: url, size: const Size(100, 140), blocks: blocks);
+      MokuroImage(url: url, size: const MokuroSize(100, 140), blocks: blocks);
 
   /// 造一个已入库书目录：`manga.json` + 按每页 destRel 落的空页图文件
   /// （判定只看路径/扩展名，不解码像素）。

@@ -30,7 +30,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/media/video/url_stream_video.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/web_video_bridge.dart'
+    show kWebVideoPlayerEnabled;
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
@@ -86,6 +88,10 @@ void main() {
   testWidgets('Netflix 在内置网页播放器里起播、抓到字幕轨、bridge seek 生效', (
     WidgetTester tester,
   ) async {
+    if (!kWebVideoPlayerEnabled) {
+      markTestSkipped('内置网页播放器总开关关着（kWebVideoPlayerEnabled=false）');
+      return;
+    }
     if (!_live) {
       debugPrint('[web-video-itest] FUSHI_WEB_VIDEO_LIVE_ITEST != 1, skipping');
       return;

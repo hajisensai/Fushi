@@ -20,7 +20,7 @@ enum SyncTombstoneKind {
   /// 纯字幕书 / standalone SRT（itemKey=srt_books.uid）。
   ///
   /// **只对 standalone 行使用**：这类书 `book_key` 恒空、无 EpubBooks 行、无 Audiobooks
-  /// 行，它的跨设备身份就是 `uid`（见 `AppModelLibraryHostService` 的身份键规则，接收端
+  /// 行，它的跨设备身份就是 `uid`（见 `LocalLibraryHostService` 的身份键规则，接收端
   /// 导包逐字保留 uid）。srt-backed 的字幕书（有配对 EPUB、`book_key` 非空）身份是
   /// bookKey，墓碑走 [book] 种类——两者互斥，同一资产绝不会产生两条墓碑。
   srtbook('srtbook'),

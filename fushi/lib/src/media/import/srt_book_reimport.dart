@@ -6,10 +6,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart'
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show parseCuesForFormat;
-import 'package:fushi/src/media/import/epub_backed_srt_book.dart';
+import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 字幕书重新导入的进度回调（与 [AudiobookAlignmentProgress] 同形）。

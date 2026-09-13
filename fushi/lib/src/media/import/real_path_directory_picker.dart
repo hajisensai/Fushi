@@ -78,7 +78,9 @@ Future<String?> pickRealDirectoryPath({
 /// 授予 `MANAGE_EXTERNAL_STORAGE`（全文件访问）后，`dart:io` 可全盘读真实路径，
 /// 于是安卓改为：先确保权限 → 调**系统原生 SAF** 文件选择器
 /// （`ACTION_OPEN_DOCUMENT`，原生 handler 见 MainActivity 的 `pickRealFile`）→
-/// 原生把 document URI 解析回真实绝对路径 → 返回真实绝对路径，不产生任何副本。
+/// 原生把 document URI 解析回真实绝对路径；无法解析的 provider 则复制到缓存。
+/// 需要长期持有文件的调用方必须用 [pickRealFilePathDetailed] 检查出处，缓存要复制
+/// 进应用持久存储；本入口只丢弃出处，不承诺返回路径可长期引用。
 ///
 /// **降级逃生口**：安卓未授予全文件访问时，回退到 `FilePicker.pickFiles()`（仍复制到
 /// cache，但功能可用）——不硬性要求授权。**桌面 / iOS 维持 `pickFiles()`**（它们本就
@@ -135,10 +137,10 @@ class PickedFilePath {
   final String path;
 
   /// true = 用户原始位置的真实路径，可被长期引用（桌面 / iOS 的 `pickFiles()`、
-  /// 安卓授予全文件访问后的 SAF 解析）。
+  /// 安卓 SAF 成功解析到原始位置）。全文件访问权限不保证 provider 能解析真实路径。
   ///
-  /// false = file_picker 在安卓复制出来的 **app cache 临时副本**
-  /// （`FileUtils.openFileStream` 把整份文件同步拷进 `getCacheDir()/file_picker/`）。
+  /// false = 安卓 SAF 或 file_picker 复制出来的 **app cache 临时副本**
+  /// （SAF 用 `getCacheDir()/saf_pick/`，file_picker 用 `getCacheDir()/file_picker/`）。
   /// 清缓存即失效，**只能立刻复制消费，不能作为长期引用落库**。
   final bool isRealPath;
 }
@@ -175,21 +177,19 @@ Future<PickedFilePath?> pickRealFilePathDetailed({
     );
   }
 
-  // 原生 SAF 文件选择器 → 原生解析真实绝对路径（不复制到 cache）。
-  final String? realPath = await _pickRealPathViaSaf('pickRealFile');
-  if (realPath == null) return null; // 取消 / 云盘虚拟 provider（同旧浏览器不可达）
+  // 原生同时返回路径与出处；权限只控制能否尝试解析，不能证明没有发生缓存复制。
+  final PickedFilePath? picked = await _pickFileViaSaf();
+  if (picked == null) return null;
   if (allowedExtensions == null || allowedExtensions.isEmpty) {
-    return PickedFilePath(path: realPath, isRealPath: true);
+    return picked;
   }
   // 带扩展名过滤：原生 SAF 不做扩展名限制，在 Dart 端按集合校验并提示。
   final List<String> accepted = _filterPickedFilesByExtension(
     context: context.mounted ? context : null,
-    paths: <String>[realPath],
+    paths: <String>[picked.path],
     allowedExtensions: _normalizeExtensions(allowedExtensions),
   );
-  return accepted.isEmpty
-      ? null
-      : PickedFilePath(path: accepted.first, isRealPath: true);
+  return accepted.isEmpty ? null : picked;
 }
 
 /// [pickRealFilePathDetailed] 的 file_picker 回退分支（桌面 / iOS，以及安卓未授予
@@ -217,8 +217,7 @@ Future<PickedFilePath?> _detailedFallback({
 }
 
 /// 调原生 SAF 选择器并返回真实绝对路径；null = 用户取消，或云盘/虚拟 provider
-/// 无法映射真实路径。[method] 为 `'pickRealDirectory'`（目录）或 `'pickRealFile'`
-/// （文件），对应 MainActivity 的 SAF channel handler。
+/// 无法映射真实路径。仅用于目录；文件走带出处的 [_pickFileViaSaf]。
 Future<String?> _pickRealPathViaSaf(String method) async {
   try {
     return await FushiChannels.saf.invokeMethod<String>(method);
@@ -227,6 +226,30 @@ Future<String?> _pickRealPathViaSaf(String method) async {
   } on MissingPluginException {
     return null;
   }
+}
+
+/// BUG-2265：文件 channel 必须显式交回出处。未知/缺失出处不能默认为可引用，
+/// 也不能按路径里是否出现 cache 猜测；契约损坏按「选了但无可用路径」报告失败。
+Future<PickedFilePath?> _pickFileViaSaf() async {
+  final Object? result;
+  try {
+    result = await FushiChannels.saf.invokeMethod<Object?>('pickRealFile');
+  } on PlatformException {
+    return null;
+  } on MissingPluginException {
+    return null;
+  }
+  if (result == null) return null;
+  if (result is! Map<Object?, Object?> ||
+      result['path'] is! String ||
+      (result['path'] as String).trim().isEmpty ||
+      result['isRealPath'] is! bool) {
+    throw const PickedFileWithoutPathException(count: 1);
+  }
+  return PickedFilePath(
+    path: result['path'] as String,
+    isRealPath: result['isRealPath'] as bool,
+  );
 }
 
 /// 「选一个文件、走系统文件选择器（安卓 SAF / iOS Files / 桌面原生），返回其路径」。
@@ -413,8 +436,9 @@ Future<_RawPickResult> _fallbackPickRaw({
   required bool allowMultiple,
   Set<String>? allowedExtensions,
 }) async {
-  final Set<String> normalizedExtensions =
-      _normalizeExtensions(allowedExtensions);
+  final Set<String> normalizedExtensions = _normalizeExtensions(
+    allowedExtensions,
+  );
   // 移动端一律「先 `FileType.any` 打开选择器、再在 Dart 端按扩展名校验」。两个平台
   // 的原生过滤各有一条**静默丢弃扩展名**的路径，把过滤交给它们的结果不是「少过滤
   // 一点」，而是用户**选不中自己的文件**：

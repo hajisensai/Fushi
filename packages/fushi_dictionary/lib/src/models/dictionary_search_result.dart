@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../engine/fushidicts.dart' show FushiKanjiResult;
+import '../engine/fushidicts_models.dart' show FushiKanjiResult;
 import 'dictionary_entry.dart';
 
 class DictionarySearchResult {

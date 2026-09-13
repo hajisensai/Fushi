@@ -16,6 +16,16 @@ part of '../video_fushi_page.dart';
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
   void _handlePlaybackCompleted() {
+    if (_sourceReviewActive) return;
+    final int? positionMs = _controller?.positionMs;
+    if (positionMs != null) {
+      unawaited(_reportRemotePlaybackStopped(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        positionMs: positionMs,
+        generation: _remotePlaybackGeneration,
+      ));
+    }
     if (!mounted) return;
     // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
     final int cur = _currentEpisode;
@@ -107,13 +117,22 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (_isRemote) {
       final int? curPos = _controller?.positionMs;
       if (curPos != null) {
+        final RemoteVideoInfo? currentInfo = _effectiveRemoteInfo;
+        final RemoteVideoClient? currentClient = _effectiveRemoteClient;
+        final int currentGeneration = _remotePlaybackGeneration;
         // BUG-2119：与本地分支同律，远端换集也不等落库。
         // `_persistRemotePosition` 里两次 `setPref` 加一次 `updatePosition` 走同一条
         // 连接，任一次事务 COMMIT 抛错，异常就从这里逃逸——`_loadRemoteEpisode` 永不
         // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
         // 列表、连播全部失灵，与本地分支此前那条同形。
         persistInBackground(
-          persist: () => _persistRemotePosition(widget.bookUid, curPos),
+          persist: () => _persistRemotePositionAndReportPlaybackStopped(
+            uid: widget.bookUid,
+            positionMs: curPos,
+            info: currentInfo,
+            client: currentClient,
+            generation: currentGeneration,
+          ),
           onPersistError: (Object error, StackTrace stack) => ErrorLogService
               .instance
               .log('VideoFushiPage.switchRemoteEpisodePersist', error, stack),
@@ -185,6 +204,7 @@ extension _VideoEpisode on _VideoFushiPageState {
         // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
         initialSubtitleListVisible: _subtitleListVisible.value,
         initialFullscreen: plan.handOverNativeFullscreen,
+        sourceReviewSession: _sourceReviewSession,
       ),
     );
     if (plan.mode == EpisodeSwitchMode.replace) {
@@ -273,14 +293,29 @@ extension _VideoEpisode on _VideoFushiPageState {
     final RemoteCoverFetcher? fetcher =
         remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
     final ImageProvider? seriesFallback = _playlistSeriesFallbackCover();
+    // 集号**整批**解析（BUG-2369）：逐个文件名解析在「不补零」的目录里会
+    // 1..9 解不出、10.. 解得出，一半卡片掉回顺位号；整批交给解析器，解不出的
+    // 由同目录兄弟文件差分补齐。键与下面查表口径必须一致。
+    final List<String> numberKeys = <String>[
+      for (final _PlaylistEpisodeRef e in _episodes)
+        e.path.isNotEmpty ? e.path : e.title,
+    ];
+    final List<int?> numbers = parsedEpisodeNumbersOf(numberKeys);
+    final Map<String, int?> numberByKey = <String, int?>{
+      for (int i = 0; i < numberKeys.length; i++) numberKeys[i]: numbers[i],
+    };
     return <VideoEpisodeEntry>[
       for (final _PlaylistEpisodeRef e in _episodes)
         VideoEpisodeEntry(
           title: e.displayTitle ?? e.title,
           // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
           // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
-          episodeNumber:
-              parsedEpisodeNumberOf(e.path.isNotEmpty ? e.path : e.title),
+          episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
+          // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
+          // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
+          groupKey: collectionGroupKeyForFilename(
+            e.path.isNotEmpty ? e.path : e.title,
+          ),
           cover: resolveMediaCoverImage(
                 kind: MediaKind.video,
                 localPath: e.coverPath,
@@ -293,6 +328,15 @@ extension _VideoEpisode on _VideoFushiPageState {
           started: e.started,
         ),
     ];
+  }
+
+  /// 季 chip 文案：`s<N>` → 「第 N 季」；extras → 「PV·特典」（与合集详情页
+  /// `_groupLabel` 同一套 i18n）。
+  String _episodeSeasonLabel(String groupKey) {
+    final int? season = seasonNumberOfGroupKey(groupKey);
+    return season == null
+        ? t.collection_group_extras
+        : t.collection_group_season(n: season);
   }
 
   /// 剧集卡封面回退链的合集段（v68）：合集带字横图 → 无字背景；全缺 → null
@@ -357,6 +401,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                   colorScheme: cs,
                   title: t.video_episode_list,
                   emptyHint: t.video_episode_list_empty,
+                  seasonLabelOf: _episodeSeasonLabel,
                   fontSize: 14 * _videoUiScale,
                   height: panelHeight,
                 ),

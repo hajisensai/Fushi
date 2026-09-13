@@ -2,11 +2,13 @@ import 'package:meta/meta.dart';
 
 /// 视频页对**进程级显示态**的所有权登记表（BUG-2105）。
 ///
-/// 视频页在 `initState` 里认领三件全局显示态（都是进程唯一、没有「谁设的谁看得见」
+/// 视频页在 `initState` 里认领这些全局显示态（都是进程唯一、没有「谁设的谁看得见」
 /// 的作用域）：
 ///   * 移动端横屏锁（`SystemChrome.setPreferredOrientations`）；
-///   * 移动端系统栏可见性回调（`SystemChrome.setSystemUIChangeCallback`，全局单槽）；
-///   * macOS 交通灯隐藏（`setMacOSTrafficLightsHidden`）。
+///   * 移动端系统栏可见性回调（`SystemChrome.setSystemUIChangeCallback`，全局单槽）。
+///
+/// （原先还有第三件「macOS 交通灯隐藏」。macOS 改用自绘 MD3 顶栏后交通灯是启动即
+/// 永久隐藏，没有还原动作，也就不再需要登记所有权。）
 ///
 /// 原先这三件在 `dispose` 里**无条件**还原。换集（`_switchEpisode` 的窗口模式分支）
 /// 用 `pushReplacement`，而 Flutter 语义下**旧路由的 `dispose` 晚于新路由的
@@ -15,7 +17,7 @@ import 'package:meta/meta.dart';
 /// 被置空。移动端开着「自动旋转锁定」时，方向集一旦含 `portraitUp` 就退回用户锁定
 /// 的竖屏，观感就是「换集后掉出全屏播放」。
 ///
-/// 根治形状与仓内 `FushiWindowsTitleBar._contentFullscreenOwners` 一致：**按所有者
+/// 根治形状与仓内 `FushiDesktopTitleBar._contentFullscreenOwners` 一致：**按所有者
 /// 记账，只有最后一个持有者离开才还原**。换集期间集合短暂同时含新旧两页，旧页释放
 /// 时集合非空 → 不还原；正常退页时集合空 → 还原。
 ///

@@ -9,13 +9,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -276,6 +276,61 @@ void main() {
       find.byKey(const ValueKey<String>('remote_video_card_remote_only')),
       findsNothing,
       reason: '远端目录拉取失败时占位卡不出现',
+    );
+  });
+
+  testWidgets('BUG-2327：搜索同口径裁掉不命中的远端占位卡，本地与远端命中都保留',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/local-hit'),
+      title: Value('Local Sakamoto'),
+      videoPath: Value('/abs/local-hit.mp4'),
+    ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/local-miss'),
+      title: Value('Local Other'),
+      videoPath: Value('/abs/local-miss.mp4'),
+    ));
+
+    await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(
+      <RemoteVideoInfo>[
+        RemoteVideoInfo(id: 'remote/hit', title: 'Remote Sakamoto'),
+        RemoteVideoInfo(id: 'remote/miss', title: 'Remote Other'),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_miss')),
+      findsOneWidget,
+      reason: '空查询不过滤',
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('video_search_field')),
+      'sakamoto',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('home_video_video/local-hit')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_hit')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home_video_video/local-miss')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_miss')),
+      findsNothing,
+      reason: '不命中的远端占位卡必须被搜索裁掉（BUG-2327）',
     );
   });
 }

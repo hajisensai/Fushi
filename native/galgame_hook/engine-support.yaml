@@ -203,7 +203,7 @@
         "geometry": {
           "status": "implemented_unverified",
           "providers": ["engine_exact_layout", "attached_calibrated"],
-          "evidence": "The portable exact SHA-256 identity is followed by a hydrated-image gate that requires one glyph signature and one build-specific input signature across all executable sections, exact profile RVAs, and internal callgraph boundaries. Zero/multiple candidates and unknown hashes fail closed; lookup/card E2E is not recorded."
+          "evidence": "LunaScenario and NativeEcxTextUnion are independently resolved x86 ABI families. Each requires its own hydrated-image glyph/text/input signatures and corroborating call relationships; exactly one complete family proof must succeed. The Siglus-only loaded-image view opts into VirtualSize section extents, with complete image bounds, executable-section readability and section-overlap rejection, so a protected executable's larger on-disk raw payload is not mistaken for mapped code; other adapters retain the default extent policy. Known executable hashes only check resolved-anchor consistency and cannot admit either family directly. NativeEcxTextUnion resolves the sampled-key slot from an independent key loop and compares its target exactly with the named user32!GetKeyState export. Each family has independent renderer-size and window-normalization chains that must identify one Gameexe configuration slot; its live design dimensions are read and validated. Missing, ambiguous or incompatible anchors, two matching families and invalid design dimensions fail closed; cross-build original-path lookup/card E2E is not recorded."
         },
         "verified_shield": {
           "status": "implemented_unverified",
@@ -260,6 +260,40 @@
         "risky_left_click": {
           "status": "implemented_unverified",
           "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate). 2026-09-03 measurement, taken while that gate still existed: 8 popup-outside quick clicks (60 ms down/up) after Shift or click lookups, 7 were swallowed by the WH_MOUSE_LL + DirectInput shield pair with no line advance; the first click right after the mid-session risk acceptance (needsRiskAcceptance → activeNative) leaked and advanced the line once, and the leak did not reproduce on a fresh session whose acceptance was restored from memory. That one leak sat on the acceptance transition itself, which no longer happens; the shield pair it measured is unchanged. Too few transactions for a rate; the 1,000-transaction gate has not run."
+        }
+      },
+      {
+        "engine_id": "smash_fzmedia",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "The calibrated fallback and a fail-closed exact provider are implemented. Glyph cells come from the KAG TextLayerBase::layoutChar detour in layer units; they are projected with the uniform 1920x1080 stage fit plus a host-solved layer origin (PublishLookupLayerLine / ReadLookupLayerOrigin). Readiness requires a solved origin for the current client size and every inked cell inside the client rect (8 px tolerance); no real-session hit, lookup or card E2E is recorded."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Generic shielding plus a GWLP_WNDPROC subclass of the GLFW30 game window (bare left down/up on a glyph consumed and queued as Submit; every client-area left down/up swallowed while a card is published or a v19 transaction targets the window; Shift-move hover never consumed) are implemented, but the real-build click, Shift and popup transaction gates have not run. XInput / joystick input has no shield."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Per-executable risk gating and fail-closed native-input admission are implemented; no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
+        "engine_id": "cmvs",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "ChronoClock trial v2 x64 exact-hash frame observer, bounded live glyph/sprite reader, selected EmbedCMVS lane identity, and explicit presentation rectangles. Real card and input shielding E2E remain unverified."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "Reuses the generic public input surface transaction protocol; no CMVS popup/input transaction corpus has passed."
+        },
+        "risky_left_click": {
+        "status": "unavailable",
+          "evidence": "This CMVS sensor implements Shift lookup only; it does not intercept bare left clicks."
         }
       }
     ]
@@ -362,17 +396,17 @@
           {
             "kind": "engine_exact_utf16_hook",
             "status": "implemented_unverified",
-            "verification": "The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record."
+            "verification": "The NativeEcxTextUnion x86 family structurally resolves its exact-text entry, dialogue caller, renderer and input anchors independently of LunaScenario. Anemoi's recorded hash is only an anchor-consistency check and no longer admits the lookup profile directly. The two families cannot borrow each other's partial matches; exactly one complete ABI proof must succeed. Cross-build original-path exact-text/lookup/card verification is not recorded, so the capability remains implemented_unverified."
           },
           {
             "kind": "luna_hook",
             "status": "implemented_unverified",
-            "verification": "Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline."
+            "verification": "The LunaScenario x86 lookup family consumes the Luna scenario-text lane associated with structurally resolved text and caller anchors. Its independent renderer/input signatures and call relationships must form a complete proof, with no simultaneous NativeEcxTextUnion family match. A known executable hash is not required; recorded hashes only corroborate resolved anchors. Cross-build original-path text/lookup/card verification is not recorded."
           },
           {
             "kind": "ingame_lookup_geometry",
             "status": "implemented_unverified",
-            "verification": "The recorded anemoi 1.1.141.3 and Summer Pockets Reflection Blue 1.1.134.0 x86 SHA-256 profiles contain no install path or absolute virtual address. At runtime, the hydrated-image gate aggregates masked glyph/input candidates across every executable PE section, requires exactly one of each at the profile RVAs, admits only the measured 0xDC/0xEC glyph stack ABIs, and validates dialogue, exact-text, GetKeyState and input-message call boundaries before hooking. The protected on-disk anemoi image cannot prove hydrated uniqueness offline, and no original-path lookup/card E2E is recorded, so the capability remains implemented_unverified."
+            "verification": "Two independent x86 ABI resolvers cover LunaScenario and NativeEcxTextUnion instruction/layout contracts. A Siglus-only opt-in loaded-image view uses VirtualSize rather than the maximum of raw and virtual section sizes, validates complete image bounds and executable-section readability, and rejects overlapping sections without truncating malformed ranges; the shared default extent policy remains unchanged. Each resolver finds unique glyph, text, dialogue/input-caller and input-message anchors across those hydrated executable sections and validates their call relationships; exactly one complete family proof must succeed. LunaScenario validates the named GetKeyState import, while NativeEcxTextUnion independently resolves the sampled-key slot from its key loop and requires its live target to equal the actual named user32!GetKeyState export. Each family uses its own renderer-size and window-normalization signatures to corroborate one readable/writable Gameexe configuration slot; live design width/height at +0x7c/+0x80 are range-checked and revalidated before lookup installation. Known Anemoi and Summer Pockets Reflection Blue hashes only check anchor consistency, never substitute for structural admission. Missing/ambiguous anchors, broken relationships, unsupported or simultaneously matching ABIs and invalid/changed dimensions fail closed. Cross-build original-path lookup/card E2E is not recorded, so the capability remains implemented_unverified."
           }
         ],
         "codepage": "utf-16le for the exact engine path",
@@ -415,8 +449,8 @@
         "Verification is specific to the recorded x86 sample and OVK layout.",
         "Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.",
         "The exact-text hook is implemented but is not promoted to verified by this baseline.",
-        "In-game lookup geometry and input interception are hash-pinned exact profiles for the recorded anemoi SiglusEngine 1.1.141.3 x86 executable (including its measured virtualized .org self-read hash) and Summer Pockets Reflection Blue SiglusEngine 1.1.134.0 x86 executable SHA-256 190DF9A72929BD6B6327E773952B5C507C69052BC6D3FF16A4868BD1FF1791FD. SHA-256 identifies the same bytes on any machine; it is not tied to a local path. Unknown hashes, non-unique hydrated signatures, wrong RVAs or failed callgraph checks all reject lookup. Native offline coverage does not replace an original-path lookup and same-session card-mining E2E, so this capability remains implemented_unverified.",
-        "The Summer Pockets Reflection Blue profile retains its exact SHA-256/RVA admission and its measured shared glyph plus build-specific input pattern, but no currently available hydrated real process was used to re-prove image-wide uniqueness in this change. It therefore remains implemented_unverified and is not generalized to another Siglus build."
+        "Engine-family lookup admission is limited to the structurally recognized LunaScenario and NativeEcxTextUnion x86 ABIs. Unknown and known hashes traverse independent complete family proofs; neither scan order nor a measured hash can choose between two matching families. Unsupported code generation, ambiguous anchors, invalid GetKeyState identity and unavailable or changed Gameexe design dimensions reject lookup. This is implemented_unverified and does not establish support for every Siglus build or x64.",
+        "Recorded Anemoi and Summer Pockets Reflection Blue identities remain consistency evidence for resolved anchors, not lookup-admission shortcuts. Structural family admission, dynamic design-size parsing and input ownership still require original-path lookup and same-session card-mining E2E before any support promotion. This change records no results from localized or modified Summer Pockets Reflection Blue builds."
       ],
       "adapter_path": "hook/adapters/siglus_adapter.inc",
       "fixture_paths": [],
@@ -425,6 +459,11 @@
         "tests/siglus_launch_test.cpp",
         "tests/siglus_text_test.cpp",
         "tests/siglus_lookup_test.cpp",
+        "tests/siglus_autoprofile_test.cpp",
+        "tests/siglus_viewport_test.cpp",
+        "tests/siglus_native_autoprofile_test.cpp",
+        "tests/siglus_native_viewport_test.cpp",
+        "tests/siglus_loaded_image_test.cpp",
         "tests/exact_lookup_signature_test.cpp",
         "tests/adapter_structure_test.py"
       ]
@@ -734,7 +773,7 @@
           {
             "kind": "luna_hook",
             "status": "implemented_unverified",
-            "verification": "Vendored LunaHook32/64 both carry the EmbedCMVS engine hook; no real-session dialogue thread has been observed yet."
+            "verification": "Observed and selected EmbedCMVS dialogue lane in the 2026-09-13 trial x64 session; its UTF-16 text exactly matched the live glyph reader. Card/audio pairing E2E remains unverified."
           }
         ],
         "codepage": "932",
@@ -761,7 +800,7 @@
       "known_limitations": [
         "Per-line voice resources live inside CPZ6-encrypted voice.cpz / voice2.cpz; no resource layer is implemented and none is claimed until a runtime decrypt-read seam is measured on a real session.",
         "Identity is structural (cmvs.cfg section + CPZ archive magic); executable hashes are catalogued but not pinned.",
-        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+        "In-game Shift lookup is wired only for the measured ChronoClock trial v2 x64 executable hash. Other CMVS builds, transformed/faded/ambiguous sprites and unproved presentation modes fail closed; real popup/input/card E2E is pending."
       ],
       "adapter_path": "hook/adapters/cmvs_adapter.inc",
       "fixture_paths": [
@@ -2428,6 +2467,133 @@
       ]
     },
     {
+      "id": "smash_fzmedia",
+      "display_name": "smash / fzmedia (TYPE-MOON smash framework)",
+      "aliases": [
+        "fsn_remastered",
+        "null-ge",
+        "fzmedia"
+      ],
+      "family": {
+        "id": "smash",
+        "relation": "TYPE-MOON smash framework (smash::fw::IGameEngine exported by null-ge-*.dll) with the fzmedia-*.dll media library; the app layer is a KAG re-implementation whose namespace differs per title (fate::app::krkrz on the measured sample), so admission is the framework structure, not a title profile"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x64"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Fate/stay night REMASTERED v1.1.127 (fsn2-win64vc14-release.exe) was measured as a single x64 process with no child processes on 2026-09-04; the adapter is x64-only and the x86 build compiles an inert stub."
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [
+            "null-ge-*.dll: ?bindGameEngine_*@@YAPEAVIGameEngine@fw@smash@@XZ"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The main executable imports the smash framework engine factory from a DLL whose name starts with null-ge-; the adapter walks the PE64 import directory for a null-ge- module exporting a symbol containing IGameEngine@fw@smash@@ (measured 2026-09-04). No executable or module SHA-256 gate is used."
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "fzmedia-*.dll: ?create@SoundManager@sound@fz@@, ?play@SoundObject@sound@fz@@, ?getId@SoundObject@sound@fz@@, ?convertToRawFile@SoundObject@sound@fz@@, ?isReady@SoundObject@sound@fz@@"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "fzmedia-win64vc14-release-dynamic.dll was loaded by the measured sample and exports the fz::sound MSVC-decorated API; the adapter requires every listed export prefix on a loaded fzmedia- module before claiming the engine (2026-09-04)."
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".fcd"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Character voice resource ids observed through SoundManager::create end in .fcd (FCD container: 'FCD\\0', u16be version, u16be flags with bit 0 = encrypted, u32be header size); fzmedia decrypts in place and convertToRawFile yields the complete Ogg Vorbis file (2026-09-04)."
+          }
+        },
+        "hashes": {
+          "values": [],
+          "evidence": null
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "Steam retail builds carry SteamStub (.bind section) and unpack .text after the entry point; the text-anchor scan of the executable therefore cannot run once at DLL load. The worker rescans every 500 ms for up to 120 s and again whenever install() is re-entered (module load), and only installs the layoutChar detour after the complete anchor chain resolved uniquely.",
+          "Admission is engine-level structure (null-ge- import signature + fzmedia- export set + x64); there is no executable or module hash allowlist. The identity cache is tri-state and never takes an irreversible decision while the media module has not loaded yet.",
+          "fzmedia SoundManager::create / SoundObject::play are hooked as one all-or-nothing group; convertToRawFile is the only engine call made inside the play detour and its output is copied into a bounded 8 x 1 MiB slot ring before the worker touches disk."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "engine_exact_utf16_hook",
+            "status": "implemented_unverified",
+            "verification": "The KAG TextLayerBase::layoutChar detour (anchors derived from RTTI + call shape) copies each run's UTF-16 text and per-glyph cells; paragraphs are merged across [r] runs while the CJK quote balance is open and published through the native text lane (source kind 6). Only offline synthetic-image tests exist; no same-session real-game text_ready evidence is recorded."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Layer-unit glyph cells are projected with the uniform 1920x1080 stage fit plus a host-solved layer origin; readiness fails closed without an origin or with any inked cell outside the client rect. No real-session hit or card E2E is recorded."
+          }
+        ],
+        "codepage": "UTF-16",
+        "thread_selection_hint": "Select the native 'smash exact' thread (ENGINE:SMASH:kag_text_layer); it carries whole paragraphs, not per-glyph draws."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "smash_fzmedia_fcd_ogg_resource",
+            "format": "ogg_vorbis",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "process_loopback",
+            "format": "mixed process loopback PCM",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "XInput / joystick input has no shield; only Win32 messages, raw input and GetKeyState surfaces are covered by the generic shield plus the GLFW30 window subclass.",
+        "The text layer origin inside the 1920x1080 stage is not readable from the layer object; it is solved by the host from a frame (PublishLookupLayerLine / ReadLookupLayerOrigin) and geometry stays unready until that solution exists for the current client size.",
+        "Paragraphs are merged across runs by CJK quote balance (「」『』（）) with a 2500 ms continuation window; unbalanced narration or unusual quoting can split or merge lines differently from the on-screen page, and a continuation arriving after the partial publication republishes the merged text as a new text event.",
+        "Text lane events are written when a balanced run starts (whole run text is available at index 0); glyph cells follow at run end. Voice pairing therefore uses the run-start timestamp, but a paragraph whose merged publication lands more than 1500 ms after SoundObject::play falls back to the unmarked resource filename.",
+        "Steam retail (SteamStub) builds are unmeasured: the anchor rescan strategy exists but has not been exercised against a packed executable; the measured sample was already unpacked.",
+        "The decrypted vector returned by convertToRawFile is released through the CRT operator delete that fzmedia imports, honouring the vc14 STL big-allocation shape; when the shape cannot be validated the buffer is intentionally leaked (kXAudioDiag2SmashVoiceBufferLeaked) rather than risk heap corruption.",
+        "No real-session process_found -> text_ready -> resource_observed -> paired -> card E2E ledger exists yet; every capability above is offline-tested only and the convertToRawFile output has not been hash-compared with the in-place decrypted payload."
+      ],
+      "adapter_path": "hook/adapters/smash_fzmedia_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/smash_fzmedia_replay.json"
+      ],
+      "test_paths": [
+        "tests/smash_fzmedia_adapter_test.cpp",
+        "tests/smash_fzmedia_lookup_test.cpp",
+        "tests/adapter_structure_test.py",
+        "tests/engine_support_manifest_test.py",
+        "tests/galhook_workflow_test.py"
+      ]
+    },
+    {
       "id": "sgre",
       "display_name": "M2 wind3d11 runtime (STEINS;GATE RE:BOOT)",
       "aliases": [
@@ -2572,7 +2738,7 @@
         "directory_files_all": {
           "values": [
             "Content/Paks/global.utoc",
-          "Content/Paks/global.ucas"
+            "Content/Paks/global.ucas"
           ],
           "evidence": {
             "kind": "real_sample",
@@ -2803,6 +2969,131 @@
       "test_paths": [
         "tests/aos_sfa_adapter_test.cpp",
         "../../fushi/test/mining/aos_sfa_pairing_test.dart"
+      ]
+    },
+    {
+      "id": "unity_mono",
+      "display_name": "Unity (Mono runtime)",
+      "aliases": [
+        "Unity Mono",
+        "Unity 5",
+        "ユニティ"
+      ],
+      "family": {
+        "id": "unity",
+        "relation": "Same engine family as unity_il2cpp but the Mono scripting backend; the two adapters are mutually exclusive by construction"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_architectures": {
+          "values": [
+            "x86",
+            "x64"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "カスタムメイド3D2 CHU-B LIP ships CM3D2OHx86.exe (machine 0x14c) and CM3D2OHx64.exe (machine 0x8664) side by side; static probe 2026-09-05"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "<stem>_Data/Managed/Assembly-CSharp.dll",
+            "<stem>_Data/Mono/mono.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Both present in CM3D2OHx64_Data. The adapter additionally requires that GameAssembly.dll is ABSENT next to the executable -- that negative gate is what keeps unity_mono and unity_il2cpp mutually exclusive. Measured 2026-09-05"
+          }
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [
+            "mono.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "<stem>_Data/Mono/mono.dll is the Mono runtime. Note there is NO UnityPlayer.dll: this Unity 5.x generation links the engine statically into the executable, which is exactly why UnityIl2CppAdapter::probe() and the injector's LooksLikeUnityRuntime() -- both of which require UnityPlayer.dll -- leave this family unclaimed"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".assets",
+            ".resS"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Standard Unity data layout under <stem>_Data; no per-line voice extraction is implemented for it"
+          }
+        },
+        "hashes": {
+          "values": [
+            "5bb03fe8a924720f8da4df7a714565a8fcede94d2ef7b6f4b3b4e044f80d3eaa",
+            "7d79c2369e1a38107ccaaa9a089503506e05890edfda32d6eef25433612905c1"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "CM3D2OHx64.exe / CM3D2OHx86.exe, catalogue only; the adapter does not hash-pin because the structural Managed+Mono check is the identity"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "generic_launch_available",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "The sample is a retail disc whose data\\ directory runs directly once extracted; the 2026-09-05 measurement launched data\\CM3D2OHx64.exe with --japanese-locale.",
+          "The injector's auto PC-hook criterion was deliberately NOT extended to this family: an A/B on the same title screen gave text_events 7 both with and without --luna-pchooks, so there is no measured benefit to widen the hook surface for."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "LunaHook connected and produced output on the real sample (luna_active 1, LunaOutputObserved, text_events 7) but only title-screen strings were seen; no dialogue line was traversed and no thread was selected."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Unmeasured. Only title-screen strings have been observed."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "source PCM via the generic Windows audio adapter",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "This entry exists because the IL2CPP adapter and the injector's Unity heuristic both require UnityPlayer.dll, which the Unity 5.x generation does not ship. The v23 adapter readout confirmed on a live process that unity_il2cpp does not claim this family.",
+        "Identity is structural (Managed assembly + Mono runtime, and GameAssembly.dll absent). Executable hashes are catalogued but not pinned.",
+        "Per-line voice resources are Unity AudioClip assets; unity_events stayed 0 on the sample, so the existing Unity resource extractor produces nothing here. No resource layer is implemented and none is claimed.",
+        "Only title-screen strings were observed. text_thread_selected, paired and card_e2e are all not_run.",
+        "In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported."
+      ],
+      "adapter_path": "hook/adapters/unity_mono_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/unity_mono_replay.json"
+      ],
+      "test_paths": [
+        "tests/unity_mono_adapter_test.cpp",
+        "../../fushi/test/mining/unity_mono_pairing_test.dart"
       ]
     }
   ]

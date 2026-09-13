@@ -38,6 +38,8 @@ void main() {
         'video_metadata_bangumi_token',
         'video_metadata_douban_authorized_token',
         'video_metadata_douban_authorized_endpoint',
+        'video_anidb_username',
+        'video_anidb_password',
       ];
       for (final String key in previouslyLeaking) {
         expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue,

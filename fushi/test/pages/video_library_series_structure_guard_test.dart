@@ -162,9 +162,12 @@ void main() {
       ),
       reason: '远端占位卡也不再被整体挡在系列外（同一条准入放宽）',
     );
+    // PR #1456：远端占位的归属在目录加载时已收养进本地合集表，系列构建不再逐条
+    // 解析 DTO 归属，直接把 groupedRemoteVideos 喂给 _groupVideos 与本地成员同折。
     expect(
-      seriesBuilder,
-      contains('for (final RemoteVideoInfo video in groupedRemoteVideos)'),
+      seriesBuilder.replaceAll(RegExp(r'\s+'), ''),
+      contains('_groupVideos(books,groupedRemoteVideos,'),
+      reason: '远端占位须与本地成员经同一条 _groupVideos 折进合集行',
     );
     expect(
       seriesBuilder,

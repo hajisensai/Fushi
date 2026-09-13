@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fushi_sync_server_source_corpus.dart';
 import 'sync_settings_schema_source_corpus.dart';
 
 /// TODO-1330 ④ 源码守卫：互联「访问令牌」两端显示不再摆出两个对不上的数字。
@@ -83,9 +82,9 @@ void main() {
   });
 
   test('server _validateAuth 仍双接受：共享 _token + 任一 per-peer token', () {
-    final String s = File('lib/src/sync/fushi_sync_server.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    // B3 拆分后 _validateAuth / _peerTokens 在 auth.part.dart；读合并语料
+    // （已归一成 LF）。
+    final String s = readFushiSyncServerSource();
     final int start =
         s.indexOf('Future<bool> _validateAuth(String header) async {');
     expect(start, greaterThanOrEqualTo(0), reason: '_validateAuth 丢失');

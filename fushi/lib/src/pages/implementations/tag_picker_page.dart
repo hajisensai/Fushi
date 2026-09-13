@@ -163,7 +163,12 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
               ),
             )
           : ListView.separated(
-              padding: EdgeInsets.all(tokens.spacing.card),
+              // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末条标签得靠
+              // 内容 padding 自己让开 home indicator / 手势条。
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.all(tokens.spacing.card),
+              ),
               itemCount: _allTags.length,
               separatorBuilder: (_, __) => SizedBox(height: tokens.spacing.gap),
               itemBuilder: (context, index) {

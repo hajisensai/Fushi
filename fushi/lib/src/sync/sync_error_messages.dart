@@ -117,6 +117,15 @@ String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
       final String? reason = serverReason;
       if (reason == null || reason.isEmpty) return t.sync_err_forbidden;
       return t.sync_err_forbidden_detail(reason: reason);
+    case SyncAuthFailureKind.pairingRejected:
+      // BUG-2377：互联没有「登录」。对端 401 = 它不再认本机的配对 token（多半是
+      // 对方把本机从已配对列表里删了，或对端重装/重置后换了 token）。唯一可操作
+      // 的是重新配对——叫用户「重新登录」是把他指向应用里根本不存在的入口。
+      return t.sync_err_pairing_rejected;
+    case SyncAuthFailureKind.pairingNotConfigured:
+      // 一台对端都没配对：以前落到字符串层的 `contains('not configured')` → 返回
+      // null → 裸英文 'Fushi server credentials not configured' 直接上屏。
+      return t.sync_err_not_paired;
   }
 }
 

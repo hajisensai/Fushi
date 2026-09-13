@@ -5,12 +5,12 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/sync/google_drive_auth.dart';
 import 'package:fushi/src/sync/google_drive_handler.dart';
 import 'package:fushi/src/sync/google_drive_sync_space.dart';
-import 'package:fushi/src/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
-import 'package:fushi/src/sync/ttu_models.dart';
+import 'package:fushi_engine/sync/ttu_models.dart';
 
 class GoogleDriveSyncBackend extends SyncBackend
     implements RemoteListingCapable {

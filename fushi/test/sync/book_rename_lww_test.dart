@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
-import 'package:fushi/src/sync/app_model_library_host_service.dart';
+import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -34,7 +34,7 @@ import 'temp_dir_cleanup.dart';
 ///    → 「平局保留本机」两例转红（旧对端把本机改名覆盖掉）；
 ///  - 同函数 `updatedAt: Value<int>(updatedAt)` 改成写 `now`
 ///    → 「戳落成对端的戳」转红；
-///  - `app_model_library_host_service.dart` 的 `displayTitleAt:
+///  - `local_library_host_service.dart` 的 `displayTitleAt:
 ///    overrideTitles[r.bookKey]?.updatedAt ?? 0` 改成恒 `0`
 ///    → 「host 清单下发改名时刻」转红；
 ///  - `fushi_library_host_service.dart` wire 键 `'displayTitleAt'` 改名成
@@ -67,17 +67,33 @@ void main() {
     return db;
   }
 
-  AppModelLibraryHostService buildHost(
+  /// [source] 给了就按 app 的装配（`AppModel` 里的 adoptOverrideTitle 回调）把
+  /// 推送方显示名写穿 `ReaderFushiSource` 内存缓存；不给则走引擎默认的只写 DB
+  /// 路径（无头服务端的形状）。
+  LocalLibraryHostService buildHost(
     FushiDatabase db, {
     Future<String?> Function(File)? importBookFromFile,
+    ReaderFushiSource? source,
   }) =>
-      AppModelLibraryHostService(
+      LocalLibraryHostService(
         db: db,
         dictionaryResourceRoot: Directory.systemTemp,
         packages: SyncAssetPackageService(db: db),
         refreshDictionaryCache: () async {},
         runExclusive: (Future<void> Function() body) => body(),
         importBookFromFile: importBookFromFile,
+        adoptOverrideTitle: source == null
+            ? null
+            : ({
+                required String bookKey,
+                required String title,
+                required int updatedAt,
+              }) =>
+                source.adoptOverrideTitleIfNewer(
+                  item: source.overrideTitleMediaItemForBookKey(bookKey),
+                  title: title,
+                  updatedAt: updatedAt,
+                ),
       );
 
   /// 把 [db] 装成 `MediaSource` 的共享库并清掉源的内存偏好缓存，让
@@ -404,8 +420,9 @@ void main() {
     final ReaderFushiSource source = await bindSource(db);
 
     // fake importer：落库并返回**真实** bookKey（重名会带后缀，与 title 不同）。
-    final AppModelLibraryHostService host = buildHost(
+    final LocalLibraryHostService host = buildHost(
       db,
+      source: source,
       importBookFromFile: (File f) async {
         const String bookKey = '原始書名 (2)';
         await db.insertEpubBook(book(bookKey, bookKey));
@@ -437,7 +454,7 @@ void main() {
   test('host 收到旧 client 的 push（无 header）：行为与本轮之前逐字相同', () async {
     final FushiDatabase db = await openDb('bug1503_host_old_');
     final ReaderFushiSource source = await bindSource(db);
-    final AppModelLibraryHostService host = buildHost(
+    final LocalLibraryHostService host = buildHost(
       db,
       importBookFromFile: (File f) async {
         await db.insertEpubBook(book('書', '書'));

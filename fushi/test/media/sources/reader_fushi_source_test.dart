@@ -10,7 +10,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/reader_settings.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

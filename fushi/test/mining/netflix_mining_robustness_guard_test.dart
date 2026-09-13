@@ -193,7 +193,7 @@ void main() {
   group('V16#4 dart 侧时间窗死代码已删', () {
     test('immersion_mine_payload.dart 无 clipGifEndMs', () {
       final String src =
-          File('lib/src/sync/immersion_mine_payload.dart').readAsStringSync();
+          File('../packages/fushi_engine/lib/sync/immersion_mine_payload.dart').readAsStringSync();
       expect(src.contains('clipGifEndMs'), isFalse,
           reason: 'payload 残留 clipGifEndMs 死字段');
     });
@@ -299,12 +299,12 @@ void main() {
               reason: '${content.path} 位置还原未与光标还原同处外层 finally');
         });
 
-        test('内容脚本版本标记 bump 到 v46（用户可确认新版）', () {
+        test('内容脚本版本标记 bump 到 v48（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-fushi-cs', 'v46'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v46');
-          expect(src.contains('content script v46 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v46');
+          expect(src.contains("'data-fushi-cs', 'v48'"), isTrue,
+              reason: '${content.path} 版本标记未 bump 到 v48');
+          expect(src.contains('content script v48 loaded'), isTrue,
+              reason: '${content.path} 加载日志版本未 bump 到 v48');
         });
       });
     }

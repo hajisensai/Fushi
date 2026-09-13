@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫：沉浸/锁屏 + 控制条淡出时 OS 光标在所有 chrome 上统一隐藏（TODO-318 / BUG-258）。
@@ -10,6 +12,12 @@ import 'video_fushi_page_source_corpus.dart';
 /// 修复：单一真相源 [_cursorHidden]（镜像 controls 隐藏 2s 计时 + 沉浸锁态），在 controls
 /// Stack 最顶层 [_buildCursorOverlay] 包一个 MouseRegion(cursor:none) 统一胜出；真实鼠标
 /// 移动经 [_handleVideoControlsHover] 唤回。不 per-overlay 加 opaque MouseRegion（防 BUG-198）。
+///
+/// 「只有真实鼠标才唤回光标」这条不变量的落点随 BUG-2453 变了：以前键盘 seek 走
+/// `_pokeControlsVisible` 派合成 hover，它会穿过页面根 Listener 命中
+/// [_handleVideoControlsHover]，所以那里要按设备号把合成事件滤掉；现在页面不再合成任何
+/// 指针事件（唤醒改走 fork 的 `wakeSignal`），到 [_handleVideoControlsHover] 的一定是真实
+/// 鼠标，它无条件唤回即可，而键盘 / seek 的信号路径**不经过它**、也不碰 [_setCursorHidden]。
 ///
 /// media_kit controls 跑不了 headless，故锁源码结构不变量。
 void main() {
@@ -77,16 +85,22 @@ void main() {
         isTrue,
         reason: '控制条不可见且无 overlay（纯沉浸 / 自动淡出）时隐藏光标');
 
-    // 真实鼠标移动唤回光标（合成 poke 不强制显示）。
-    final int hoverIdx =
-        src.indexOf('void _handleVideoControlsHover(PointerEvent event) {');
-    final int hoverEnd = src.indexOf(
-        'void _handleVideoControlsHoverExit(PointerEvent event) {', hoverIdx);
-    final String hover = src.substring(hoverIdx, hoverEnd);
-    expect(hover.contains('_setCursorHidden(false)'), isTrue,
+    // 真实鼠标移动唤回光标；键盘 / seek 的续命信号不唤回。
+    // BUG-2453 之前这两条靠同一处「按设备号滤掉合成 hover」实现；现在页面不再合成指针事件，
+    // 到 _handleVideoControlsHover 的只可能是真实鼠标 → 它无条件唤回；键盘 / seek 走
+    // _pokeControlsVisible 的信号路径，不经它、也不碰 _setCursorHidden。
+    final String hover =
+        methodBody(src, 'void _handleVideoControlsHover(PointerEvent event) {');
+    expect(containsCodeLine(hover, '_setCursorHidden(false);'), isTrue,
         reason: '真实鼠标移动应唤回光标');
-    expect(hover.contains('if (!_isSyntheticControlsHover(event)) {'), isTrue,
-        reason: '只有非合成（真实）移动才唤回光标');
+    expect(containsIdentifier(hover, '_isSyntheticControlsHover'), isFalse,
+        reason: '按设备号过滤不得回来：它存在的唯一理由是页面自己在造合成指针事件，'
+            '而那正是 BUG-2453 幽灵悬停的来源');
+    final String poke = methodBody(src, 'void _pokeControlsVisible()');
+    expect(containsIdentifierCall(poke, '_setCursorHidden'), isFalse,
+        reason: '键盘 / seek 续命只发信号，不得顺手唤回光标（否则本该隐藏的光标常驻）');
+    expect(containsIdentifierCall(poke, '_handleVideoControlsHover'), isFalse,
+        reason: '信号路径不得借道真实鼠标的 hover 处理器唤回光标');
 
     // 解锁沉浸时立即唤回光标。
     final int lockIdx = src.indexOf('void _toggleImmersiveLock() {');

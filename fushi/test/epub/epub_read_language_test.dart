@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:path/path.dart' as p;
 
 /// `EpubParser.readLanguageSync`：只读 OPF 的 `dc:language`，不解压到磁盘——

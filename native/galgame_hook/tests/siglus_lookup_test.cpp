@@ -3,10 +3,12 @@
 #endif
 
 #include "../hook/adapters/siglus_lookup.h"
+#include "../include/voice_hook_ipc.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace {
 
@@ -18,10 +20,188 @@ void Push(char16_t code_unit, int32_t x, int32_t y,
   assert(AppendSiglusLookupGlyphCapture(code_unit, x, y, extent, captures));
 }
 
+void TestSplitRedrawLifetime() {
+  using namespace fushi_voice_hook;
+  const auto& profile = kAnemoiSiglusLookupProfile;
+  SiglusLookupGlyphCaptureBuffer captures;
+  SiglusLookupLayoutState state;
+  Push(u'A', 100, 200, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(!state.current_valid && !state.line_has_complete_layout);
+  SiglusLookupClickSampleState initial_press;
+  AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
+                                 &initial_press);
+  auto edge = AdvanceSiglusLookupClickSample(
+      true, true, false, kSiglusLookupNoGlyph, &initial_press);
+  assert(!edge.consume && !edge.submit);
+  AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
+                                 &initial_press);
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.current_valid && state.line_has_complete_layout);
+  const uint64_t committed_generation = state.generation;
+  const uint64_t pressed_epoch = state.snapshot_epoch;
+  assert(IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                pressed_epoch));
+
+  SiglusLookupClickSampleState held;
+  AdvanceSiglusLookupClickSample(true, false, false, 0, &held);
+  edge = AdvanceSiglusLookupClickSample(true, true, false, 0, &held);
+  assert(edge.consume && edge.begin);
+  // The production consumer runs between A and BC of an identical redraw.
+  Push(u'A', 100, 200, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(!state.current_valid && state.line_has_complete_layout);
+  assert(state.generation == committed_generation);
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 pressed_epoch));
+  auto released_during_gap = held;
+  edge = AdvanceSiglusLookupClickSample(true, false, false,
+                                        kSiglusLookupNoGlyph,
+                                        &released_during_gap);
+  // The raw tail stays consumed, but the production publication gate rejects
+  // this submit intent because no current click snapshot exists.
+  assert(edge.consume && edge.submit);
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 pressed_epoch));
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.line_has_complete_layout && state.current_valid);
+  assert(state.generation == committed_generation);
+  edge = AdvanceSiglusLookupClickSample(true, false, false,
+                                        kSiglusLookupNoGlyph, &held);
+  assert(edge.consume && edge.submit);
+  // Recovery of identical geometry must not revive a pre-gap down payload.
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 pressed_epoch));
+  assert(IsSiglusLookupLayoutSubmissionCurrent(state, state.generation,
+                                                state.snapshot_epoch));
+
+  const uint64_t before_move = state.generation;
+  Push(u'A', 300, 400, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.line_has_complete_layout && !state.current_valid);
+  Push(u'B', 340, 400, &captures);
+  Push(u'C', 380, 400, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.generation == NextSiglusLookupLogicalGeneration(before_move));
+  assert(state.geometry.glyphs[0].rect.x == 300);
+
+  // A real sentence change revokes the committed lifetime before rebuilding.
+  ResetSiglusLookupLayout(&state);
+  Push(u'X', 100, 200, &captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"XYZ", 3, &state));
+  assert(!state.line_has_complete_layout && !state.current_valid);
+  Push(u'Y', 140, 200, &captures);
+  Push(u'Z', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"XYZ", 3, &state));
+  // The worker uses the same reset on sensor, viewport, HWND or session loss,
+  // and discards pre-loss captures. Merely restoring the sensor is not Ready.
+  const uint64_t before_loss = state.generation;
+  const uint64_t epoch_before_loss = state.snapshot_epoch;
+  ResetSiglusLookupLayout(&state);
+  ClearSiglusLookupGlyphCapture(&captures);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"XYZ", 3, &state));
+  assert(!state.line_has_complete_layout && !state.current_valid);
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, before_loss,
+                                                 epoch_before_loss));
+  auto wrong_viewport = profile;
+  wrong_viewport.viewport_width = 0;
+  assert(!UpdateSiglusLookupLayout(wrong_viewport, captures, u"XYZ", 3, &state));
+  assert(!state.line_has_complete_layout);
+}
+
+void TestCommittedTextIdentityAcrossWriters() {
+  using namespace fushi_voice_hook;
+  const uint64_t region_bytes = TextRegionBytes(kTextLaneCount, kTextLaneSlotCount);
+  std::vector<uint8_t> mapping(
+      static_cast<size_t>(sizeof(SharedHeader) + region_bytes), 0);
+  auto* header = reinterpret_cast<SharedHeader*>(mapping.data());
+  header->magic = kSharedMagic;
+  header->version = kSharedVersion;
+  header->text_region_offset = sizeof(SharedHeader);
+  header->text_lane_count = kTextLaneCount;
+  header->text_lane_slot_count = kTextLaneSlotCount;
+  const auto write = [header](uint64_t thread, uint32_t source,
+                              uint32_t begin, uint32_t end) {
+    TextLaneWrite entry;
+    entry.thread_id = thread;
+    entry.source_kind = source;
+    entry.event_kind = kTextEventLine;
+    entry.text = L"ABC";
+    entry.byte_len = 3 * sizeof(wchar_t);
+    return WriteTextLaneEvent(header, begin, end, entry);
+  };
+  const uint64_t native_seq = write(101, kTextSourceSiglus,
+                                    kNativeThreadPreviewStart, kTextLaneCount);
+  const SiglusLookupTextIdentity native{native_seq, 101};
+  assert(native_seq == 1);
+  // A concurrent writer advances the shared counter before lookup publishes.
+  const uint64_t luna_seq = write(202, kTextSourceLuna,
+                                  0, kNativeThreadPreviewStart);
+  const SiglusLookupTextIdentity luna{luna_seq, 202};
+  assert(luna_seq == 2 && header->text_write_count == luna_seq);
+  assert(IsSiglusLookupTextIdentityCurrent(native, {native_seq, 101}));
+  assert(!IsSiglusLookupTextIdentityCurrent(native,
+                                            {header->text_write_count, 101}));
+  assert(!IsSiglusLookupTextIdentityCurrent(native, luna));
+  assert(!IsSiglusLookupTextIdentityCurrent(native, {native_seq, 202}));
+  assert(!IsSiglusLookupTextIdentityCurrent({0, 101}, {0, 101}));
+  assert(!IsSiglusLookupTextIdentityCurrent({native_seq, 0}, {native_seq, 0}));
+  assert(WriteTextLaneEvent(nullptr, 0, kTextLaneCount, TextLaneWrite{}) == 0);
+
+  // Luna lookup carries the already committed stable slot, not a private
+  // sequence and not an event with the same string from another thread.
+  const TextSlot* slots[kTextSlotCount] = {};
+  const uint32_t found = CollectTextSlotsBySeq(header, slots, kTextSlotCount, 0);
+  bool luna_found = false;
+  for (uint32_t i = 0; i < found; ++i) {
+    if (slots[i]->source_kind == kTextSourceLuna) {
+      luna_found = true;
+      const SiglusLookupTextIdentity captured{slots[i]->seq, slots[i]->thread_id};
+      assert(IsSiglusLookupTextIdentityCurrent(captured, luna));
+      assert(!IsSiglusLookupTextIdentityCurrent(captured, native));
+    }
+  }
+  assert(luna_found);
+
+  // The real LOOPERS PLUS failure: layout 20, only committed text event 1.
+  SiglusLookupGlyphCaptureBuffer captures;
+  Push(u'A', 100, 200, &captures);
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  SiglusLookupLayoutState layout;
+  layout.generation = 19;
+  assert(UpdateSiglusLookupLayout(kAnemoiSiglusLookupProfile, captures,
+                                   u"ABC", 3, &layout));
+  assert(layout.generation == 20 && native.event_id == 1);
+  assert(!IsSiglusLookupTextIdentityCurrent({layout.generation, 101}, native));
+  const uint64_t repeated_seq = write(101, kTextSourceSiglus,
+                                      kNativeThreadPreviewStart, kTextLaneCount);
+  assert(repeated_seq > luna_seq);
+  const SiglusLookupTextIdentity repeated{repeated_seq, 101};
+  assert(!IsSiglusLookupTextIdentityCurrent(native, repeated));
+  assert(IsSiglusLookupTextIdentityCurrent(repeated, repeated));
+  // Identical text/layout never makes a different occurrence interchangeable.
+  assert(UpdateSiglusLookupLayout(kAnemoiSiglusLookupProfile, captures,
+                                   u"ABC", 3, &layout));
+  assert(layout.generation == 20);
+  assert(!IsSiglusLookupTextIdentityCurrent(native, repeated));
+}
+
 } // namespace
 
 int main() {
   using namespace fushi_voice_hook;
+  TestSplitRedrawLifetime();
+  TestCommittedTextIdentityAcrossWriters();
+
+  assert(IsSiglusLookupResolutionPending(0));
+  assert(IsSiglusLookupResolutionPending(2));
+  assert(!IsSiglusLookupResolutionPending(1));
+  assert(!IsSiglusLookupResolutionPending(-1));
 
   const auto &profile = kAnemoiSiglusLookupProfile;
   assert(profile.pe_machine == kSiglusLookupPeMachineI386);
@@ -251,46 +431,46 @@ int main() {
 
   SiglusLookupClickSampleState click;
   // Installation while physically held passes through until a real up.
-  auto decision = AdvanceSiglusLookupClickSample(true, false, 2u, &click);
+  auto decision = AdvanceSiglusLookupClickSample(true, true, false, 2u, &click);
   assert(!decision.consume && !click.synchronized);
-  decision = AdvanceSiglusLookupClickSample(false, false, kSiglusLookupNoGlyph,
+  decision = AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
                                             &click);
   assert(!decision.consume && click.synchronized);
 
   // A miss remains pass-through even if the cursor later becomes a hit while
   // the same physical press is held.
   decision =
-      AdvanceSiglusLookupClickSample(true, false, kSiglusLookupNoGlyph, &click);
+      AdvanceSiglusLookupClickSample(true, true, false, kSiglusLookupNoGlyph, &click);
   assert(!decision.consume &&
          click.owner == SiglusLookupClickOwner::kPassThrough);
-  decision = AdvanceSiglusLookupClickSample(true, false, 4u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, true, false, 4u, &click);
   assert(!decision.consume);
-  decision = AdvanceSiglusLookupClickSample(false, false, 4u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, false, false, 4u, &click);
   assert(!decision.consume && !decision.submit &&
          click.owner == SiglusLookupClickOwner::kIdle);
 
   // A fresh hit consumes down/hold/up and submits the glyph owned at down.
-  decision = AdvanceSiglusLookupClickSample(true, false, 3u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, true, false, 3u, &click);
   assert(decision.consume && decision.begin && !decision.submit &&
          decision.glyph_index == 3u);
   assert(FilterSiglusLookupGetKeyState(static_cast<int16_t>(0x8001u),
                                        decision.consume) == 1);
-  decision = AdvanceSiglusLookupClickSample(true, true, 5u, &click);
+  decision = AdvanceSiglusLookupClickSample(true, true, true, 5u, &click);
   assert(decision.consume && !decision.begin && !decision.submit &&
          !decision.popup_transaction && decision.glyph_index == 3u);
-  decision = AdvanceSiglusLookupClickSample(false, false, kSiglusLookupNoGlyph,
+  decision = AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
                                             &click);
   assert(decision.consume && decision.submit && decision.glyph_index == 3u);
 
   // Popup ownership also latches through physical up after the popup closes,
   // but it never turns into a word submission.
   decision =
-      AdvanceSiglusLookupClickSample(true, true, kSiglusLookupNoGlyph, &click);
+      AdvanceSiglusLookupClickSample(true, true, true, kSiglusLookupNoGlyph, &click);
   assert(decision.consume && decision.begin && decision.popup_transaction);
   decision =
-      AdvanceSiglusLookupClickSample(true, false, kSiglusLookupNoGlyph, &click);
+      AdvanceSiglusLookupClickSample(true, true, false, kSiglusLookupNoGlyph, &click);
   assert(decision.consume && decision.popup_transaction && !decision.submit);
-  decision = AdvanceSiglusLookupClickSample(false, false, kSiglusLookupNoGlyph,
+  decision = AdvanceSiglusLookupClickSample(true, false, false, kSiglusLookupNoGlyph,
                                             &click);
   assert(decision.consume && decision.popup_transaction && !decision.submit);
   assert(click.owner == SiglusLookupClickOwner::kIdle);
@@ -299,53 +479,120 @@ int main() {
 
   // The independent main-window message sink must never receive either edge
   // of an admitted lookup click. Misses remain ordinary game input.
-  auto message_decision = DecideSiglusLookupMouseMessage(
+  auto message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, true, false);
   assert(message_decision.consume && message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, false, false);
   assert(!message_decision.consume && !message_decision.next_latched);
 
   // Popup dismissal and a double-click's second transaction are also held to
   // their matching up even if visibility changes in between.
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, true, false, false);
   assert(message_decision.consume && message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDoubleClick, false, true, false);
   assert(message_decision.consume && message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(message_decision.consume && !message_decision.next_latched);
 
   // A down that reached the engine must have its up reach the engine too, even
   // if the popup opened in between on the worker tick. Otherwise Siglus keeps a
   // left button that never comes back up.
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, false, false);
   assert(!message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, true, false, message_decision.next_latched);
   assert(!message_decision.consume && !message_decision.next_latched);
 
   // A lost up (alt-tab, WM_CANCELMODE, drag out of the window) must not turn the
   // latch into a permanent left-button sink: the next down is judged on its own
   // merits and republishes the latch from scratch.
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDown, false, false, true);
   assert(!message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonUp, false, false, message_decision.next_latched);
   assert(!message_decision.consume && !message_decision.next_latched);
-  message_decision = DecideSiglusLookupMouseMessage(
+  message_decision = DecideSiglusLookupMouseMessage(true,
       kSiglusLookupWmLeftButtonDoubleClick, false, false, true);
   assert(!message_decision.consume && !message_decision.next_latched);
+
+  // A valid glyph does not grant semantic input permission. This models
+  // attachedOnly, an unapplied allow, deny, and a different active provider.
+  SiglusLookupClickSampleState denied_click;
+  decision = AdvanceSiglusLookupClickSample(
+      false, false, false, kSiglusLookupNoGlyph, &denied_click);
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, false, 3u, &denied_click);
+  assert(!decision.consume && !decision.submit &&
+         denied_click.owner == SiglusLookupClickOwner::kPassThrough);
+  // Allow arriving during an already passed-through press cannot steal it.
+  decision = AdvanceSiglusLookupClickSample(
+      true, true, false, 3u, &denied_click);
+  assert(!decision.consume && !decision.submit);
+  decision = AdvanceSiglusLookupClickSample(
+      true, false, false, 3u, &denied_click);
+  assert(!decision.consume && !decision.submit);
+
+  decision = AdvanceSiglusLookupClickSample(
+      true, true, false, 3u, &denied_click);
+  assert(decision.consume && decision.begin);
+  // Revocation after an owned down cancels the submission, never its tail.
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, false, 3u, &denied_click);
+  assert(decision.consume && !decision.submit);
+  decision = AdvanceSiglusLookupClickSample(
+      false, false, false, 3u, &denied_click);
+  assert(decision.consume && !decision.submit &&
+         denied_click.owner == SiglusLookupClickOwner::kIdle);
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, false, 3u, &denied_click);
+  assert(!decision.consume);
+  AdvanceSiglusLookupClickSample(
+      false, false, false, 3u, &denied_click);
+  // A committed popup remains protected even if native glyph input is denied.
+  decision = AdvanceSiglusLookupClickSample(
+      false, true, true, kSiglusLookupNoGlyph, &denied_click);
+  assert(decision.consume && decision.popup_transaction);
+  decision = AdvanceSiglusLookupClickSample(
+      false, false, false, kSiglusLookupNoGlyph, &denied_click);
+  assert(decision.consume && !decision.submit &&
+         denied_click.owner == SiglusLookupClickOwner::kIdle);
+
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonDown, false, true, false);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      true, kSiglusLookupWmLeftButtonUp, false, true,
+      message_decision.next_latched);
+  assert(!message_decision.consume);
+  message_decision = DecideSiglusLookupMouseMessage(
+      true, kSiglusLookupWmLeftButtonDown, false, true, false);
+  assert(message_decision.consume && message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonUp, false, false,
+      message_decision.next_latched);
+  assert(message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonDoubleClick, false, true, true);
+  assert(!message_decision.consume && !message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonDown, true, false, false);
+  assert(message_decision.consume && message_decision.next_latched);
+  message_decision = DecideSiglusLookupMouseMessage(
+      false, kSiglusLookupWmLeftButtonUp, false, false,
+      message_decision.next_latched);
+  assert(message_decision.consume && !message_decision.next_latched);
 
   bool last_shift_down = false;
   assert(!ConsumeSiglusLookupShiftSample(0x0000u, &last_shift_down));
@@ -380,6 +627,56 @@ int main() {
                                                  resized_client));
   assert(!MatchesSiglusLookupGenerationAndClient(7, stable_client, 8,
                                                  stable_client));
+
+  SiglusLookupProfile legacy = kAnemoiSiglusLookupProfile;
+  for (unsigned families = 0; families < 16; ++families) {
+    assert(HasUniqueSiglusLookupFamily((families & 1) != 0, (families & 2) != 0,
+                                      (families & 4) != 0, (families & 8) != 0) ==
+           (families == 1 || families == 2 || families == 4 || families == 8));
+  }
+  legacy.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
+  legacy.viewport_width = 1280;
+  legacy.viewport_height = 720;
+  SiglusLookupEngineView actual_view{0x123400, {10, 20, 2560, 720}};
+  SiglusLookupRect projected;
+  assert(ProjectSiglusLookupRect(legacy, actual_view, {240, 560, 30, 30},
+                                3000, 1000, &projected));
+  assert(projected.x == 490 && projected.y == 580 &&
+         projected.width == 60 && projected.height == 30);
+  actual_view.viewport = {-250, -570, 1280, 720};
+  assert(ProjectSiglusLookupRect(legacy, actual_view, {240, 560, 30, 30},
+                                3000, 1000, &projected));
+  assert(projected.x == 0 && projected.y == 0 &&
+         projected.width == 20 && projected.height == 20);
+  actual_view.viewport = {INT32_MAX, 0, INT32_MAX, INT32_MAX};
+  assert(!ProjectSiglusLookupRect(legacy, actual_view, {240, 560, 30, 30},
+                                 3000, 1000, &projected));
+  assert(projected.width == 0);
+  actual_view.viewport = {0, 0, 1280, 720};
+  assert(!ProjectSiglusLookupRect(legacy, actual_view, {1279, 0, 30, 30},
+                                 3000, 1000, &projected));
+  assert(!ProjectSiglusLookupRect(legacy, {}, {240, 560, 30, 30},
+                                 3000, 1000, &projected));
+  assert(!ProjectSiglusLookupRect(kAnemoiSiglusLookupProfile, actual_view,
+                                 {240, 560, 30, 30}, 3000, 1000, &projected));
+
+  auto eightarg = legacy;
+  eightarg.glyph_abi = SiglusGlyphLayoutAbi::kEcxEightArguments;
+  assert(!ProjectSiglusLookupRect(eightarg, actual_view, {285,572,26,26},
+                                 1280,720,&projected));
+  actual_view.occurrence = 7;
+  assert(ProjectSiglusLookupRect(eightarg, actual_view, {285,572,26,26},
+                                1280,720,&projected));
+  assert(projected.x == 285 && projected.y == 572 && projected.width == 26);
+  // Engine viewport is in client logical pixels; DPI conversion is downstream.
+  actual_view.viewport = {40,20,960,540};
+  assert(ProjectSiglusLookupRect(eightarg, actual_view, {284,572,28,28},
+                                1280,720,&projected));
+  assert(projected.x == 253 && projected.y == 449 &&
+         projected.width == 21 && projected.height == 21);
+  auto next_view = actual_view;
+  ++next_view.occurrence;
+  assert(!SameSiglusLookupEngineView(actual_view, next_view));
 
   return 0;
 }

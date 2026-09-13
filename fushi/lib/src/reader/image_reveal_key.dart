@@ -49,14 +49,24 @@ class ImageRevealKey {
   static String? fromFile(String filePath, String extractDir) =>
       _sanitizeRel(p.relative(filePath, from: extractDir));
 
-  /// 某图当前是否应显示防剧透遮罩：总开关 [blurEnabled] 开 + 有归一 [revealKey] +
-  /// 未在已揭集 [revealed]。阅读器与图片库共用同一判据（缩略图 / 全屏都调它）。
+  /// 某图当前是否应显示防剧透遮罩：有归一 [revealKey] + 未在已揭集 [revealed]，
+  /// 且满足以下**任一**遮罩理由——
+  /// - 总开关 [blurEnabled] 开：一律遮到用户点开为止（阅读器正文的既有语义）；
+  /// - [unreadAhead]：这张图还没读到（位置在当前阅读位置之后，见
+  ///   `IllustrationProgressIndex`）。图片库据此在开关关着时也挡住后文剧透，
+  ///   阅读器正文不用它（正文本来就只显示读到的地方）。
+  ///
+  /// 「点一下揭开」对两种理由是同一条路径：揭开写进 [revealed]（并落 Drift），
+  /// 此后无论哪个理由都不再遮。
   static bool shouldBlur({
     required bool blurEnabled,
     required String? revealKey,
     required Set<String> revealed,
+    bool unreadAhead = false,
   }) =>
-      blurEnabled && revealKey != null && !revealed.contains(revealKey);
+      (blurEnabled || unreadAhead) &&
+      revealKey != null &&
+      !revealed.contains(revealKey);
 
   /// 正斜杠归一 + 折叠 `.`/`..`/重复斜杠 + 去前导斜杠；越界 / 空返回 `null`。
   static String? _sanitizeRel(String rel) {

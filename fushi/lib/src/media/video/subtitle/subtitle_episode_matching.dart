@@ -11,9 +11,9 @@
 /// `jimaku_matching.dart` 是 `JimakuFile` 的薄适配层，决策逻辑只存在于这里。
 library;
 
-import 'package:fushi/src/media/video/jimaku_client.dart'
+import 'package:fushi_engine/media/video/jimaku_client.dart'
     show jimakuLanguageRank;
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// 按集索引：字幕侧的事实，不含任何决策。
 ///

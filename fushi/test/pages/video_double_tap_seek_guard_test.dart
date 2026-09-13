@@ -16,6 +16,11 @@ import 'video_fushi_page_source_corpus.dart';
 ///      （`_handleDoubleTapSeek`），左/右区 seek/跳句、**中带保留 BUG-221 的暂停/全屏**；
 ///      `_handleDoubleTapSeek` 读取 [doubleTapSeekSeconds] 配置 + 用 globalToLocal 拿
 ///      本地 dx + 调既有 seek/跳句原语；设置面板有「双击快进步长」行。
+/// 源码扫描的归一化：压掉全部空白，并把 tall-style 拆行补出来的尾随逗号
+/// （`,)`）收回 `)`。钉调用形态本身，不钉它当天被 dart format 排成什么样。
+String _flat(String v) =>
+    v.replaceAll(RegExp(r'\s+'), '').replaceAll(',)', ')');
+
 void main() {
   late String pageSrc;
   // TODO-590 batch11：两套 controls 主题已搬到 controls_theme.part.dart，针对主题方法体
@@ -105,18 +110,20 @@ void main() {
 
   group('TODO-173/BUG-231: 双击左右快进 + 中带保留暂停/全屏', () {
     test('_handleVideoPointerUp 双击命中后先按 dx 分区（早返回），再走平台分流', () {
-      final String body = methodBody(
-          pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {');
-      final int seekIdx =
-          body.indexOf('_handleDoubleTapSeek(controlsContext, event.position)');
+      // 三个 indexOf 互相比较先后，整段切到同一个归一化空间里偏移才可比。
+      final String body = _flat(methodBody(
+          pageSrc, 'void _handleVideoPointerUp(PointerUpEvent event) {'));
+      final int seekIdx = body.indexOf(
+          _flat('_handleDoubleTapSeek(controlsContext, event.position)'));
       expect(seekIdx, greaterThanOrEqualTo(0),
           reason: '双击命中后必须先尝试 _handleDoubleTapSeek 左右分区（命中则早返回）');
       final int handledReturnIdx =
-          body.indexOf('if (doubleTapHandled) return;', seekIdx);
+          body.indexOf(_flat('if (doubleTapHandled) return;'), seekIdx);
       expect(handledReturnIdx, greaterThan(seekIdx),
           reason: '_handleDoubleTapSeek 命中左/右区后必须早返回');
       // 分区判定必须排在平台分流（BUG-221 暂停/全屏）之前。
-      final int platformBranch = body.indexOf('if (_isDesktopVideoControls) {');
+      final int platformBranch =
+          body.indexOf(_flat('if (_isDesktopVideoControls) {'));
       expect(platformBranch, greaterThan(seekIdx),
           reason: '左右分区早返回必须排在平台暂停/全屏分流之前（中带才落到分流）');
     });

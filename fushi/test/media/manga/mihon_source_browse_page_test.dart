@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/manga_global_search_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -12,8 +14,9 @@ import 'package:fushi_core/fushi_core.dart';
 
 void main() {
   test('source image queue starts only four cover fetches at a time', () async {
-    final MihonSourceImageLoadQueue queue =
-        MihonSourceImageLoadQueue(maxConcurrent: 4);
+    final MihonSourceImageLoadQueue queue = MihonSourceImageLoadQueue(
+      maxConcurrent: 4,
+    );
     final List<Completer<void>> gates = List<Completer<void>>.generate(
       10,
       (_) => Completer<void>(),
@@ -192,8 +195,70 @@ void main() {
     },
   );
 
-  testWidgets('a stale initial response cannot replace a newer search result',
-      (WidgetTester tester) async {
+  testWidgets(
+    'wrapped detail challenge verifies explicitly then retries details',
+    (WidgetTester tester) async {
+      runtime.detailsFailure = MihonCloudflareChallengeException(
+        Uri.parse('https://fixture.invalid/challenge'),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MihonMangaDetailPage(
+            manager: manager,
+            sourceContext: await manager.contextForSource(
+              manager.sources.single,
+            ),
+            manga: _BrowseRuntime.manga,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(runtime.solved, isEmpty);
+      expect(find.text(t.manga_source_cloudflare_verify_title), findsOneWidget);
+      await tester.tap(find.text(t.manga_source_cloudflare_verify_title));
+      await tester.pumpAndSettle();
+      expect(
+        runtime.solved.single,
+        Uri.parse('https://fixture.invalid/challenge'),
+      );
+      expect(runtime.detailsCalls, 2);
+      expect(find.text('Chapter 1'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'global search leaves challenge idle until user verifies and retries source',
+    (WidgetTester tester) async {
+      runtime.searchFailure = MihonCloudflareChallengeException(
+        Uri.parse('https://fixture.invalid/search'),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MangaGlobalSearchPage(
+            mihonManager: manager,
+            mihonSources: manager.sources,
+            aidokuPackages: const [],
+            initialQuery: 'fixture',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(runtime.solved, isEmpty);
+      expect(runtime.searchCalls, 1);
+      await tester.tap(find.text(t.manga_source_cloudflare_verify_title));
+      await tester.pumpAndSettle();
+      expect(
+        runtime.solved.single,
+        Uri.parse('https://fixture.invalid/search'),
+      );
+      expect(runtime.searchCalls, 2);
+      expect(find.text(t.manga_source_cloudflare_verify_title), findsNothing);
+    },
+  );
+
+  testWidgets('a stale initial response cannot replace a newer search result', (
+    WidgetTester tester,
+  ) async {
     runtime.popularGate = Completer<MihonMangaPage>();
     runtime.searchGate = Completer<MihonMangaPage>();
     await tester.pumpWidget(
@@ -233,8 +298,9 @@ void main() {
     expect(find.text('Stale popular result'), findsNothing);
   });
 
-  testWidgets('a duplicate-only next page terminates pagination',
-      (WidgetTester tester) async {
+  testWidgets('a duplicate-only next page terminates pagination', (
+    WidgetTester tester,
+  ) async {
     runtime.popularPages = <int, MihonMangaPage>{
       1: const MihonMangaPage(
         items: <MihonManga>[_BrowseRuntime.manga],
@@ -266,7 +332,19 @@ void main() {
   });
 }
 
-class _BrowseRuntime extends Fake implements MihonRuntime {
+class _BrowseRuntime extends Fake
+    implements MihonRuntime, ChallengeMihonRuntime {
+  final List<Uri> solved = <Uri>[];
+  Exception? searchFailure;
+  int searchCalls = 0;
+
+  @override
+  Future<void> solveCloudflare(Uri uri, {String? userAgent}) async {
+    solved.add(uri);
+    detailsFailure = null;
+    searchFailure = null;
+  }
+
   static const MihonManga manga = MihonManga(
     url: '/manga/fixture',
     title: 'Raw Otaku fixture',
@@ -284,8 +362,7 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     MihonExtensionRef extension,
     MihonSource source, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async =>
-      const <MihonFilter>[];
+  }) async => const <MihonFilter>[];
 
   @override
   Future<MihonMangaPage> getPopular(
@@ -293,14 +370,13 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     MihonSource source, {
     required int page,
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async =>
-      popularGate != null
-          ? popularGate!.future
-          : popularPages?[page] ??
-              const MihonMangaPage(
-                items: <MihonManga>[manga],
-                hasNextPage: false,
-              );
+  }) async => popularGate != null
+      ? popularGate!.future
+      : popularPages?[page] ??
+            const MihonMangaPage(
+              items: <MihonManga>[manga],
+              hasNextPage: false,
+            );
 
   @override
   Future<MihonMangaPage> search(
@@ -310,9 +386,12 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     required String query,
     List<MihonFilter> filters = const <MihonFilter>[],
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async =>
-      searchGate?.future ??
-      const MihonMangaPage(items: <MihonManga>[], hasNextPage: false);
+  }) async {
+    searchCalls++;
+    if (searchFailure != null) throw searchFailure!;
+    return searchGate?.future ??
+        const MihonMangaPage(items: <MihonManga>[], hasNextPage: false);
+  }
 
   @override
   Future<MihonManga> getDetails(
@@ -339,17 +418,16 @@ class _BrowseRuntime extends Fake implements MihonRuntime {
     MihonSource source,
     MihonManga manga, {
     List<MihonPreference> preferences = const <MihonPreference>[],
-  }) async =>
-      List<MihonChapter>.generate(
-        486,
-        (int index) => MihonChapter(
-          url: '/chapter/${index + 1}',
-          name: 'Chapter ${index + 1}',
-          uploadedAt: index,
-          number: index + 1,
-        ),
-        growable: false,
-      );
+  }) async => List<MihonChapter>.generate(
+    486,
+    (int index) => MihonChapter(
+      url: '/chapter/${index + 1}',
+      name: 'Chapter ${index + 1}',
+      uploadedAt: index,
+      number: index + 1,
+    ),
+    growable: false,
+  );
 
   @override
   Future<void> dispose() async {}

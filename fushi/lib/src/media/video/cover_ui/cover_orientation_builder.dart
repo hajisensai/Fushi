@@ -52,6 +52,11 @@ class _CoverOrientationProbeState extends State<_CoverOrientationProbe>
   @override
   ImageProvider probedImageOf(_CoverOrientationProbe widget) => widget.image;
 
+  /// 本组件只回答「这张图是横是竖」，一个像素都不画——垫底和主色底是下游封面组件
+  /// 的事，这里采样纯属白烧。
+  @override
+  bool needsBackdropSeed(double aspect) => false;
+
   @override
   Widget build(BuildContext context) {
     // 解码失败按竖卡渲染（卡内封面组件自会走占位 errorBuilder）。

@@ -1,0 +1,6 @@
+## BUG-2214 · 删该媒体统计时仍在跑的时钟回写段使整块墓碑出局
+- **报告**：2026-09-06（用户：审查「小说统计是否会出现异常」）
+- **真实性**：✅ 真 bug。根因 `packages/fushi_core/lib/src/database/database_statistics.part.dart:277`（`upsertStudySegment` 不查墓碑）+ `fushi/lib/src/sync/aggregate_merge_service.dart:130-145`（仲裁按媒体身份整块判「有 `updatedAt > deletedAt` 的段则碑出局」）。用户在统计中心删该书/该视频统计时，该媒体若还有 `StudyClock` 在跑（视频面切屏不停表；阅读面在另一窗口 / 后台听书），下一 tick 以 `updatedAt = now > deletedAt` 把开放段写回，仲裁随即让整块碑出局，对端持有的该媒体**全部**历史段下轮回灌；`zeroStudySegmentsOnDays` 写零也会被内存值改回。
+- **[x] ① 已修复** — 墓碑语义改为「压制 `startAt < deletedAt` 的段」且墓碑永不退场（一个段是不是删除之前的学习在它开始那一刻就定了，不随 tick 漂移；删除后新开的段 `startAt >= deletedAt` 天然存活）：`upsertStudySegment` / `upsertStudySegmentsIfNewer` 过墓碑门静默丢弃被压制的行；`applyStudySegmentTombstone` 按 `startAt` 删；`arbitrateStudySegments` 段存活 iff `startAt >= deletedAt`、live 碑 = 全部合并后的碑；备份 ATTACH `_mergeStudySegments` 同语义并删掉「段复活墓碑」那步；`aggregate_sync_service.dart` 上行过滤同判据。文档 `docs/agent/statistics.md` 同步一节改口径。 提交：`bef9747e30`。
+- **[x] ② 已加自动化测试** — `fushi/test/database/study_segments_test.dart`「墓碑语义」组（开放段回写被静默丢弃 / 删除后新段存活碑仍在 / applyStudySegmentTombstone 按 startAt 删 / 同步落地跳过被压制行）+ `fushi/test/sync/aggregate_study_segments_sync_test.dart`（仲裁纯函数 + 双设备「删除时仍在跑的时钟：开放段回写被拒，对端也不复活」+ 备份合并同语义）。
+- **备注**：与 BUG-2220 同一改动。墓碑语义是 wire 语义变更，互联两端须同升（旧端仍按 updatedAt 仲裁）。

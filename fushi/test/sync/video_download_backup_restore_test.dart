@@ -159,7 +159,7 @@ void main() {
 
     final Directory restoredDirectory =
         Directory(p.join(root.path, 'fresh-restored'));
-    await BackupService.restoreBackup(
+    await BackupRestoreService.restoreBackup(
       dbDirectory: restoredDirectory.path,
       zipPath: zipPath,
     );
@@ -202,7 +202,7 @@ void main() {
       await seedDownloadGraph(before, withLocalReferences: true);
       await before.close();
 
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: currentDirectory.path,
         zipPath: zipPath,
       );
@@ -294,7 +294,7 @@ void main() {
       final List<int> sqliteHeader =
           (await File(bakPath).readAsBytes()).take(16).toList(growable: false);
       await File(bakPath).writeAsBytes(sqliteHeader, flush: true);
-      await BackupService.recoverPendingRestore(currentDirectory.path);
+      await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
       expect(File(sidecarPath).existsSync(), isTrue);
       expect(File(bakPath).existsSync(), isTrue);
 
@@ -313,12 +313,12 @@ void main() {
 
       await File(bakPath).delete();
       await File(repairBakPath).copy(bakPath);
-      await BackupService.recoverPendingRestore(currentDirectory.path);
+      await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
       expect(File(sidecarPath).existsSync(), isFalse);
       expect(File(bakPath).existsSync(), isFalse);
 
       // A second startup must be a no-op rather than duplicating graph rows.
-      await BackupService.recoverPendingRestore(currentDirectory.path);
+      await BackupRestoreService.recoverPendingRestore(currentDirectory.path);
 
       final FushiDatabase recovered = FushiDatabase(currentDirectory.path);
       addTearDown(recovered.close);

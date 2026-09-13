@@ -19,15 +19,15 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
-import 'package:fushi/src/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi/src/ocr/manga_ocr_model_fingerprint.dart';
-import 'package:fushi/src/ocr/manga_ocr_service.dart';
-import 'package:fushi/src/ocr/ocr_types.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/utils.dart';
 
@@ -63,12 +63,26 @@ class MangaOcrJobSpec {
   final int startPage;
 
   /// 跳过已有结果的页。
+  ///
+  /// false = **重新识别**：本地 / Lens 路径先丢掉本引擎签名下的逐页缓存再跑，
+  /// 「整卷已缓存 → 直接回放」的短路随之失效。作品页「识别本章」对已有结果的章
+  /// 传 false（用户点它就是要重跑，不是要看一遍旧结果）；没结果的章保持 true，
+  /// 中断过的任务还能从缓存续跑。
   final bool onlyMissing;
 
   final String? volumeTitle;
 
   /// 已配对主机目标；`pairedHost` 引擎必填（由 `remoteRunner.probe()` 得到）。
   final MangaOcrRemoteTarget? remoteTarget;
+}
+
+/// 重新识别前丢掉某个引擎签名下的逐页缓存目录（不存在则无事）。
+///
+/// 只删本签名的目录：别的引擎 / 别的模型版本的缓存与本次重跑无关，留着。
+Future<void> discardMangaOcrPageCache(Directory cacheDir) async {
+  if (await cacheDir.exists()) {
+    await cacheDir.delete(recursive: true);
+  }
 }
 
 /// 按引擎分发，产出统一的后台事件流。
@@ -98,13 +112,17 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
   // 否则换模型后会拿旧模型的缓存冒充新结果（BUG-1173）。
   final String engineSignature =
       await resolveInstalledLocalMangaOcrEngineSignature();
+  final Directory cacheDir = Directory(p.join(
+    dir,
+    kMangaOcrOutDirName,
+    kMangaOcrPagesCacheDirName,
+    engineSignature,
+  ));
+  if (!spec.onlyMissing) {
+    await discardMangaOcrPageCache(cacheDir);
+  }
   final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
-    cacheDir: Directory(p.join(
-      dir,
-      kMangaOcrOutDirName,
-      kMangaOcrPagesCacheDirName,
-      engineSignature,
-    )),
+    cacheDir: cacheDir,
     pageNames: <String>[
       for (final MangaOcrPageFile page in pages) page.relativeUrl
     ],
@@ -189,14 +207,16 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
     for (int index = start; index < pages.length; index++) index,
     for (int index = 0; index < start; index++) index,
   ];
-  final GoogleLensPageCache cache = GoogleLensPageCache(
-    Directory(p.join(
-      dir,
-      kMangaOcrOutDirName,
-      kMangaOcrPagesCacheDirName,
-      googleLensEngineSignature(spec.lensLanguage),
-    )),
-  );
+  final Directory lensCacheDir = Directory(p.join(
+    dir,
+    kMangaOcrOutDirName,
+    kMangaOcrPagesCacheDirName,
+    googleLensEngineSignature(spec.lensLanguage),
+  ));
+  if (!spec.onlyMissing) {
+    await discardMangaOcrPageCache(lensCacheDir);
+  }
+  final GoogleLensPageCache cache = GoogleLensPageCache(lensCacheDir);
   final List<MokuroImage> cachedPages = <MokuroImage>[];
   for (int pageIndex = 0; pageIndex < pages.length; pageIndex++) {
     final MokuroImage? cached = await cache.read(pageIndex, pages[pageIndex]);

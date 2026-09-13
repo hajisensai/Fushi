@@ -55,6 +55,10 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'book_profiles',
         'CREATE INDEX IF NOT EXISTS idx_book_profiles_profile ON book_profiles (profile_id)'
       ],
+      [
+        'language_profiles',
+        'CREATE INDEX IF NOT EXISTS idx_language_profiles_profile ON language_profiles (profile_id)'
+      ],
       // bookmarks 索引 v82 起换 book_uid 列，移出本清单（清单会被早期迁移步
       // 调用，彼时新列不存在）：v82 步与 onCreate 成对内联维护。
       [
@@ -183,6 +187,18 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'video_download_subscription_items',
         'CREATE INDEX IF NOT EXISTS idx_video_download_subscription_items_job '
             'ON video_download_subscription_items (job_id)'
+      ],
+      // v103：漫画下载队列——同章幂等 + worker 按 (status, created_at) 取最早。
+      // 与 database.dart 的 v103 升级步逐字一致。
+      [
+        'manga_download_jobs',
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_manga_download_jobs_identity '
+            'ON manga_download_jobs (kind, book_key, chapter_key)'
+      ],
+      [
+        'manga_download_jobs',
+        'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
+            'ON manga_download_jobs (status, created_at)'
       ],
     ];
     for (final List<String> entry in indexes) {

@@ -22,12 +22,12 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-import 'package:fushi/src/epub/book_title_conflict.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
-import 'package:fushi/src/media/audiobook/audiobook_alignment_service.dart';
-import 'package:fushi/src/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';

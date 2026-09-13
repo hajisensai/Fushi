@@ -711,6 +711,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         titleTag: context.bookTitleTag,
         // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
         collectionTag: context.collectionTag,
+        // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
+        // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
+        charPositionTag: context.charPositionTag,
+        sourceLink: context.sourceLink,
       );
 
       // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -821,7 +825,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
               'fushi_cover_',
             )
           : Future<String?>.value(null),
-      context.sentenceAudioPath != null
+      context.sentenceAudioPath != null && !context.synchronizedVideo
           ? _storeLocalMedia(
               service,
               mediaTransaction,
@@ -877,6 +881,43 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    final AnkiSettings settings = await loadSettings();
+    final AnkiMiningPayload payload = AnkiMiningPayload.fromJson(
+      Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map),
+    );
+    final _PreparedMinedFields prepared = await _renderMinedFields(
+      service: _serviceForSettings(settings),
+      settings: settings,
+      payload: payload,
+      context: context,
+      keepEmpty: true,
+    );
+    if (prepared.rendered.audioWarning != null) {
+      throw StateError(prepared.rendered.audioWarning!);
+    }
+    return prepared.rendered.fields;
+  }
+
+  @override
+  Future<List<int>> findSourceNoteIds(String markerTag) async {
+    final AnkiSettings settings = await loadSettings();
+    return _serviceForSettings(settings).findNotesBySourceMarker(markerTag);
+  }
+
+  @override
+  Future<void> writeSourceNoteFields(
+    int noteId,
+    Map<String, String> fields,
+  ) async {
+    final AnkiSettings settings = await loadSettings();
+    await _serviceForSettings(settings).updateNoteFields(noteId, fields);
+  }
+
   /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
   ///
   /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体上传链路）从
@@ -896,6 +937,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }) async {
     try {
       final settings = await loadSettings();
+      if (context.sourceLink != null ||
+          settings.fieldMappings.values.any(
+            (String mapping) => mapping.contains('{source-link}'),
+          )) {
+        context = await contextForExistingSourceNote(noteId, context);
+      }
       final service = _serviceForSettings(settings);
 
       final AnkiMiningPayload payload;
@@ -1355,6 +1402,56 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final service = await _getService();
     await service.updateModelTemplates(modelName, templates);
     return true;
+  }
+
+  // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
+
+  @override
+  bool get supportsDeckReposition => true;
+
+  @override
+  Future<List<AnkiCardInfo>> listNewCards(String deckName) async {
+    final AnkiConnectService service = await _getService();
+    final String query = ankiDeckNewCardsQuery(
+      await service.getDeckNamesAndIds(),
+      deckName,
+    );
+    if (query.isEmpty) return const <AnkiCardInfo>[];
+    final List<int> ids = await service.findCards(query);
+    if (ids.isEmpty) return const <AnkiCardInfo>[];
+    final List<AnkiCardInfo> cards = await service.cardsInfo(ids);
+    // 搜索串已经限定 is:new，这里再按 type 二次校验：查询与写回之间用户可能
+    // 刚学了几张，复习卡的 due 是日期，绝不能当位置写。
+    return <AnkiCardInfo>[
+      for (final AnkiCardInfo c in cards)
+        if (c.isNew) c,
+    ];
+  }
+
+  @override
+  Future<AnkiCardDueWriteResult> setNewCardPositions(
+    List<AnkiCardDueUpdate> updates,
+  ) async {
+    if (updates.isEmpty) {
+      return const AnkiCardDueWriteResult(
+        written: 0,
+        failures: <int, String>{},
+      );
+    }
+    final AnkiConnectService service = await _getService();
+    final List<AnkiConnectBatchResult> results =
+        await service.setCardsDueMany(updates);
+    final Map<int, String> failures = <int, String>{};
+    int written = 0;
+    for (int i = 0; i < results.length; i++) {
+      final String? failure = ankiSetSpecificValueFailure(results[i]);
+      if (failure != null) {
+        failures[updates[i].cardId] = failure;
+      } else {
+        written++;
+      }
+    }
+    return AnkiCardDueWriteResult(written: written, failures: failures);
   }
 
   // ── 媒体存储优化（字节级去重）──────────────────────────────────────

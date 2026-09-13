@@ -1,10 +1,9 @@
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
-import 'package:fushi/src/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 漫画覆盖层里两条「同一件事只许有一个实现」的不变式（BUG-1750 复审）。
 ///
@@ -21,7 +20,7 @@ import 'package:fushi/src/media/manga/mokuro_payload.dart';
 ///    最后一页扫回第一页；resize 重投影带过渡则是拖窗口边框时的无意义滑动。
 MokuroImage _page(String url) => MokuroImage(
       url: url,
-      size: const Size(1000, 1400),
+      size: const MokuroSize(1000, 1400),
       blocks: const <MokuroBlock>[],
     );
 

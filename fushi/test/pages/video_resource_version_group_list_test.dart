@@ -5,16 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart'
+import 'package:fushi_engine/media/torrent/torrent_backend.dart'
     show TorrentAddPayload;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 
@@ -149,6 +149,7 @@ void main() {
               ]),
               sources: const <MediaSourceRow>[
                 MediaSourceRow(
+                  videoGroupingMode: 'series',
                   id: 1,
                   label: 'videos',
                   mediaKind: 'video',
@@ -291,5 +292,151 @@ void main() {
       find.byKey(const ValueKey<String>('video-resource-submit')),
     );
     expect(submit.onPressed, isNotNull, reason: '提示后应允许用户重试');
+  });
+
+  testWidgets('展开后可勾选多集，提交按钮写出条数', (WidgetTester tester) async {
+    await pumpSurface(tester);
+    final List<VideoResourceVersionGroup> groups =
+        buildVideoResourceVersionGroups(_items());
+    final VideoResourceVersionGroup sp = groups.firstWhere(
+      (VideoResourceVersionGroup group) => group.releaseGroup == 'SubsPlease',
+    );
+    await tester.tap(
+      find.byKey(ValueKey<String>('resource-version-${sp.key}')),
+    );
+    await tester.pumpAndSettle();
+
+    for (final VideoResourceCandidate member in sp.members.take(2)) {
+      await tester.tap(
+        find.byKey(ValueKey<String>('resource-release-${member.identityKey}')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    expect(
+      find.text(t.batch_selected_count(n: 2)),
+      findsOneWidget,
+      reason: '选了多条时按钮上要写清这一下会入队几条',
+    );
+    final FilledButton submit = tester.widget<FilledButton>(
+      find.byKey(const ValueKey<String>('video-resource-submit')),
+    );
+    expect(submit.onPressed, isNotNull);
+  });
+
+  testWidgets('再点一次取消勾选；全部取消后不能提交', (WidgetTester tester) async {
+    await pumpSurface(tester);
+    final List<VideoResourceVersionGroup> groups =
+        buildVideoResourceVersionGroups(_items());
+    final VideoResourceVersionGroup movie = groups.firstWhere(
+      (VideoResourceVersionGroup group) => group.releaseGroup == 'Erai-raws',
+    );
+    final Finder card = find.byKey(
+      ValueKey<String>('resource-version-${movie.key}'),
+    );
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey<String>('video-resource-submit')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey<String>('video-resource-submit')),
+          )
+          .onPressed,
+      isNull,
+      reason: '一条都没选还能提交的话，点下去只会入队 0 条',
+    );
+  });
+
+  testWidgets('多选提交把每一条都入队，顺序与勾选顺序一致', (
+    WidgetTester tester,
+  ) async {
+    final List<String> enqueued = <String>[];
+    await pumpSurface(
+      tester,
+      onSubmit: (VideoDiscoveryDownloadSelection selection) async =>
+          enqueued.add(selection.resource.identityKey),
+    );
+    final List<VideoResourceVersionGroup> groups =
+        buildVideoResourceVersionGroups(_items());
+    final VideoResourceVersionGroup sp = groups.firstWhere(
+      (VideoResourceVersionGroup group) => group.releaseGroup == 'SubsPlease',
+    );
+    await tester.tap(
+      find.byKey(ValueKey<String>('resource-version-${sp.key}')),
+    );
+    await tester.pumpAndSettle();
+
+    final List<VideoResourceCandidate> picked = sp.members.take(2).toList();
+    for (final VideoResourceCandidate member in picked) {
+      await tester.tap(
+        find.byKey(ValueKey<String>('resource-release-${member.identityKey}')),
+      );
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-resource-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      enqueued,
+      picked.map((VideoResourceCandidate c) => c.identityKey).toList(),
+    );
+  });
+
+  testWidgets('订阅模式仍是单选：选新的替换旧的，不摆勾选框', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: VideoDiscoverySubscriptionPage(
+              item: _item(),
+              registry: VideoResourceRegistry(<VideoResourceProvider>[
+                _SeededProvider(_items()),
+              ]),
+              sources: const <MediaSourceRow>[
+                MediaSourceRow(
+                  videoGroupingMode: 'series',
+                  id: 1,
+                  label: 'videos',
+                  mediaKind: 'video',
+                  transport: 'local',
+                  rootPath: r'D:\media',
+                  mediaCount: 0,
+                  recursive: true,
+                  sortOrder: 0,
+                  createdAt: 1,
+                ),
+              ],
+              onSubmit: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byType(Checkbox),
+      findsNothing,
+      reason: '订阅是一条规则跟一个 release 模板，摆勾选框会让人以为能订阅一批',
+    );
   });
 }

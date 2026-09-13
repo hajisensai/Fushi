@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "voice_hook_ipc.h"
+#include "siglus_text_owner.h"
 #include "voice_hook_session.h"
 #include "hook_module_identity.h"
 #include "child_process_policy.h"
@@ -28,6 +29,7 @@
 #include "locale_emulator_launch.h"
 #include "kirikiri_launch_profile.h"
 #include "launcher_layout.h"
+#include "launcher_wait.h"
 #include "siglus_launch.h"
 #include "unreal_launch.h"
 #include "steam_launch.h"
@@ -1904,18 +1906,34 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
   // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
   bool luna_initialized = false;
+  fushi_voice_hook::SiglusLunaStartupGate luna_startup_gate;
+  uint32_t last_siglus_text_owner = UINT32_MAX;
+  auto maybe_start_luna = [&]() {
+    if (!hold || !luna.enabled || luna_initialized) return;
+    const auto text_owner = fushi_voice_hook::ReadSiglusTextOwner(header);
+    if (last_siglus_text_owner != static_cast<uint32_t>(text_owner)) {
+      last_siglus_text_owner = static_cast<uint32_t>(text_owner);
+      fprintf(stderr, "[siglus] text_owner=%u\n", last_siglus_text_owner);
+    }
+    if (!luna_startup_gate.ShouldAttempt(text_owner)) return;
+    luna_initialized =
+        InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                     luna.normalize_mages_controls,
+                     luna.hook_codes, luna.blocked_hook_codes,
+                     luna.blocked_hook_names, luna.preferred_hook_codes);
+  };
   auto init_guarded_luna = [&]() -> bool {
+    // Native ownership inserts no Luna hooks, so there is nothing to remove.
+    // An undecided Siglus cannot bypass its ownership gate via a guarded call.
+    if (fushi_voice_hook::ReadSiglusTextOwner(header) ==
+        fushi_voice_hook::SiglusTextOwner::kNativeOwned) return true;
     if (luna.blocked_hook_names.size() != luna.blocked_hook_codes.size()) {
       fprintf(stderr,
               "[luna] blocked-hook profile is missing removal confirmation "
               "names\n");
       return false;
     }
-    luna_initialized =
-        InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
-                     luna.normalize_mages_controls,
-                     luna.hook_codes, luna.blocked_hook_codes,
-                     luna.blocked_hook_names, luna.preferred_hook_codes);
+    maybe_start_luna();
     if (!luna_initialized) return false;
     const LONG expected_removed =
         static_cast<LONG>(luna.blocked_hook_codes.size());
@@ -2055,13 +2073,10 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
 
   // host 模式（--hold）才接入 LunaHook 全引擎文本 hook：写同一文本环，与游戏内 GDI hook
   // 并存（原子占号防撞槽）。probe 模式确认即退，LunaHook 没有捕获窗口，故不接。
-  if (hold && luna.enabled && !luna_initialized) {
-    InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
-                 luna.normalize_mages_controls,
-                 luna.hook_codes, luna.blocked_hook_codes,
-                 luna.blocked_hook_names,
-                 luna.preferred_hook_codes);
-  }
+  // BUG-2339: Ready/audio ACK do not transfer Siglus text ownership. Pending
+  // hydration is advanced by the DLL; normal hold polling starts Luna exactly
+  // once after an explicit decision, without holding a launched game suspended.
+  maybe_start_luna();
 
   if (hold) {
     // host 模式：常驻维持共享内存存活，供 Hibiki 消费（C.2 起真正读 PCM）。
@@ -2070,6 +2085,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     uint64_t next_unity_event = 0;
     if (hold_process != nullptr) {
       while (WaitForSingleObject(hold_process, 50) == WAIT_TIMEOUT) {
+        maybe_start_luna();
         ProcessUnityVoiceEvents(header, unity_extractor,
                                 unity_data_directory, &next_unity_event);
       }
@@ -2077,6 +2093,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                               unity_data_directory, &next_unity_event);
     } else {
       for (;;) {
+        maybe_start_luna();
         ProcessUnityVoiceEvents(header, unity_extractor,
                                 unity_data_directory, &next_unity_event);
         Sleep(50);
@@ -2313,9 +2330,96 @@ void InspectFfmpegModules(DWORD pid,
   CloseHandle(snapshot);
 }
 
-DWORD FindGameChildProcess(DWORD root_pid) {
+uint64_t ProcessTimeValue(const FILETIME& time) {
+  return (static_cast<uint64_t>(time.dwHighDateTime) << 32) |
+         time.dwLowDateTime;
+}
+
+bool ReadProcessLifetime(HANDLE process, DWORD pid,
+                         fushi_voice_hook::ChildProcessLineage::Node* node) {
+  FILETIME observed, created, exited, kernel, user;
+  GetSystemTimeAsFileTime(&observed);
+  if (!GetProcessTimes(process, &created, &exited, &kernel, &user)) return false;
+  node->identity = {pid, ProcessTimeValue(created)};
+  node->exited_at = ProcessTimeValue(exited);
+  node->alive_through = (std::max)(ProcessTimeValue(observed), node->exited_at);
+  return node->identity.created_at != 0;
+}
+
+// Retaining query handles preserves each observed relay's lifetime after exit.
+// No process is admitted using its name or directory as ancestry evidence.
+class LaunchProcessLineage {
+ public:
+  LaunchProcessLineage(HANDLE root, DWORD root_pid)
+      : lineage_(RootIdentity(root, root_pid)) {
+    HANDLE retained = nullptr;
+    if (DuplicateHandle(GetCurrentProcess(), root, GetCurrentProcess(),
+                        &retained, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      handles_[root_pid] = retained;
+    }
+  }
+  ~LaunchProcessLineage() {
+    for (const auto& item : handles_) CloseHandle(item.second);
+  }
+  LaunchProcessLineage(const LaunchProcessLineage&) = delete;
+  LaunchProcessLineage& operator=(const LaunchProcessLineage&) = delete;
+
+  void Refresh() {
+    for (const auto& item : handles_) {
+      fushi_voice_hook::ChildProcessLineage::Node node;
+      if (ReadProcessLifetime(item.second, item.first, &node)) {
+        lineage_.UpdateLifetime(node.identity, node.alive_through,
+                                node.exited_at);
+      }
+    }
+  }
+  bool Observe(DWORD pid, DWORD parent_pid) {
+    if (lineage_.Find(pid) != nullptr || lineage_.Find(parent_pid) == nullptr ||
+        lineage_.size() >= fushi_voice_hook::ChildProcessLineage::kMaxProcesses) {
+      return false;
+    }
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+                                 FALSE, pid);
+    if (process == nullptr) return false;
+    fushi_voice_hook::ChildProcessLineage::Node node;
+    if (!ReadProcessLifetime(process, pid, &node) ||
+        !lineage_.Observe(node.identity, parent_pid)) {
+      CloseHandle(process);
+      return false;
+    }
+    lineage_.UpdateLifetime(node.identity, node.alive_through, node.exited_at);
+    handles_[pid] = process;
+    return true;
+  }
+  const fushi_voice_hook::ChildProcessLineage::Node* LiveNode(DWORD pid) const {
+    const auto handle = handles_.find(pid);
+    if (handle == handles_.end() ||
+        WaitForSingleObject(handle->second, 0) != WAIT_TIMEOUT) return nullptr;
+    return lineage_.Find(pid);
+  }
+  bool HasLiveNode() const {
+    for (const auto& item : handles_) {
+      if (LiveNode(item.first) != nullptr) return true;
+    }
+    return false;
+  }
+
+ private:
+  static fushi_voice_hook::ProcessIdentity RootIdentity(HANDLE root, DWORD pid) {
+    fushi_voice_hook::ChildProcessLineage::Node node;
+    return ReadProcessLifetime(root, pid, &node)
+               ? node.identity : fushi_voice_hook::ProcessIdentity{};
+  }
+  fushi_voice_hook::ChildProcessLineage lineage_;
+  std::map<DWORD, HANDLE> handles_;
+};
+
+fushi_voice_hook::ProcessIdentity FindGameChildProcess(
+    DWORD root_pid, LaunchProcessLineage* lineage, bool* observation_valid) {
+  *observation_valid = false;
+  lineage->Refresh();
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (snapshot == INVALID_HANDLE_VALUE) return 0;
+  if (snapshot == INVALID_HANDLE_VALUE) return {};
   struct OwnedCandidate {
     fushi_voice_hook::ChildProcessCandidate value;
     std::wstring name;
@@ -2324,6 +2428,7 @@ DWORD FindGameChildProcess(DWORD root_pid) {
   PROCESSENTRY32W process = {0};
   process.dwSize = sizeof(process);
   if (Process32FirstW(snapshot, &process)) {
+    *observation_valid = true;
     do {
       if (process.th32ProcessID != root_pid && process.th32ProcessID != 0) {
         OwnedCandidate candidate;
@@ -2335,46 +2440,59 @@ DWORD FindGameChildProcess(DWORD root_pid) {
     } while (Process32NextW(snapshot, &process));
   }
   CloseHandle(snapshot);
-  std::vector<fushi_voice_hook::ChildProcessCandidate> candidates;
-  candidates.reserve(owned.size());
-  for (OwnedCandidate& item : owned) {
-    item.value.executable_name = item.name.c_str();
-    candidates.push_back(item.value);
+  // Toolhelp order is unspecified. Each bounded pass admits another generation.
+  for (int depth = 0; depth < fushi_voice_hook::ChildProcessLineage::kMaxDepth;
+       ++depth) {
+    bool added = false;
+    for (const auto& item : owned) {
+      added = lineage->Observe(item.value.pid, item.value.parent_pid) || added;
+    }
+    if (!added) break;
   }
-  // First select descendants without module inspection, then enrich every descendant. This keeps
-  // Toolhelp module snapshots scoped to the launcher's process tree.
-  for (size_t i = 0; i < candidates.size(); ++i) {
-    if (fushi_voice_hook::DescendantDepth(root_pid, i, candidates) > 0) {
-      InspectFfmpegModules(candidates[i].pid, &candidates[i]);
-      InspectEngineSignature(candidates[i].pid, &candidates[i]);
+  fushi_voice_hook::ProcessIdentity best;
+  int best_score = 0;
+  for (auto& item : owned) {
+    const auto* node = lineage->LiveNode(item.value.pid);
+    if (node == nullptr || node->depth <= 0) continue;
+    item.value.executable_name = item.name.c_str();
+    InspectFfmpegModules(item.value.pid, &item.value);
+    InspectEngineSignature(item.value.pid, &item.value);
+    const int score = fushi_voice_hook::ChildProcessScore(item.value, node->depth);
+    if (score > best_score ||
+        (score == best_score && score > 0 && item.value.pid < best.pid)) {
+      best_score = score;
+      best = node->identity;
     }
   }
-  return fushi_voice_hook::SelectGameChildProcess(root_pid, candidates);
+  return best;
 }
 
-DWORD WaitForGameChildProcess(DWORD root_pid, DWORD wait_ms) {
+struct GameChildWaitResult {
+  fushi_voice_hook::ProcessIdentity identity{};
+  fushi_voice_hook::ChildWaitAction action = fushi_voice_hook::ChildWaitAction::kFailed;
+};
+
+GameChildWaitResult WaitForGameChildProcess(
+    HANDLE root_process, DWORD root_pid, DWORD wait_ms, bool interactive) {
+  LaunchProcessLineage lineage(root_process, root_pid);
   const uint64_t started = GetTickCount64();
-  const uint64_t deadline = GetTickCount64() + wait_ms;
-  DWORD last_candidate = 0;
-  int stable_observations = 0;
-  while (GetTickCount64() < deadline) {
-    const DWORD candidate = FindGameChildProcess(root_pid);
-    if (candidate != 0 && candidate == last_candidate) {
-      ++stable_observations;
-      if (stable_observations >= 2) return candidate;
-    } else {
-      last_candidate = candidate;
-      stable_observations = candidate == 0 ? 0 : 1;
-    }
-    if (candidate == 0 && GetTickCount64() - started >= 1000) {
+  fushi_voice_hook::LauncherWaitState waiting(interactive, started, wait_ms);
+  for (;;) {
+    bool observation_valid = false;
+    const auto candidate = FindGameChildProcess(root_pid, &lineage, &observation_valid);
+    bool root_runtime = false;
+    if (candidate.pid == 0 && GetTickCount64() - started >= 1000 &&
+        lineage.LiveNode(root_pid) != nullptr) {
       fushi_voice_hook::ChildProcessCandidate launcher;
       launcher.pid = root_pid;
       InspectFfmpegModules(root_pid, &launcher);
-      if (launcher.has_avcodec && launcher.has_avformat) return 0;
+      root_runtime = launcher.has_avcodec && launcher.has_avformat;
     }
+    const auto action = waiting.Observe(GetTickCount64(), observation_valid,
+        candidate, lineage.HasLiveNode(), root_runtime);
+    if (action != fushi_voice_hook::ChildWaitAction::kWait) return {candidate, action};
     Sleep(100);
   }
-  return last_candidate;
 }
 
 std::string Sha256File(const std::wstring& path) {
@@ -2890,8 +3008,10 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
 
   // 游戏进程**已经存在**这件事必须先于注入结果回报：注入之后再失败时，host 才知道
   // 「游戏其实在跑」，可以改走附着重试，而不是把一个有窗口的游戏报成「启动失败」。
-  printf("LAUNCH pid=%lu arch=%s\n", pi.dwProcessId,
-         sizeof(void*) == 8 ? "x64" : "x86");
+  printf("LAUNCH pid=%lu arch=%s role=%s locale=%d%s\n", pi.dwProcessId,
+         sizeof(void*) == 8 ? "x64" : "x86",
+         follow_children ? "launcher" : "game", locale_launched ? 1 : 0,
+         launcher_layout ? " wait=launcher" : "");
   fflush(stdout);
 
   // 进程当前是否处于挂起态，是一个**事实**，只有一个来源：普通路径看 creation_flags；
@@ -2939,13 +3059,36 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   if (follow_children) {
     const DWORD child_wait_ms =
         wait_ms > static_cast<DWORD>(15000) ? wait_ms : static_cast<DWORD>(15000);
-    const DWORD child_pid =
-        WaitForGameChildProcess(pi.dwProcessId, child_wait_ms);
+    const auto child_result = WaitForGameChildProcess(
+        pi.hProcess, pi.dwProcessId, child_wait_ms, launcher_layout);
+    if (child_result.action == fushi_voice_hook::ChildWaitAction::kEnded ||
+        child_result.action == fushi_voice_hook::ChildWaitAction::kFailed) {
+      fprintf(stderr, "[launch] launcher wait ended without a game (reason=%s)\n",
+          child_result.action == fushi_voice_hook::ChildWaitAction::kEnded
+              ? "lineageEnded" : "observationFailed");
+      ReportFailureReason(child_result.action == fushi_voice_hook::ChildWaitAction::kEnded
+          ? fushi_voice_hook::LaunchFailureReason::kLauncherEnded
+          : fushi_voice_hook::LaunchFailureReason::kLauncherDiscoveryFailed, 1);
+      CloseHandle(pi.hThread);
+      CloseHandle(pi.hProcess);
+      return 1;
+    }
+    const auto child_identity = child_result.action == fushi_voice_hook::ChildWaitAction::kGame
+        ? child_result.identity : fushi_voice_hook::ProcessIdentity{};
+    const DWORD child_pid = child_identity.pid;
     if (child_pid != 0) {
       child_process = OpenProcess(
           PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
               PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
           FALSE, child_pid);
+      fushi_voice_hook::ChildProcessLineage::Node child_lifetime;
+      if (child_process != nullptr &&
+          (!ReadProcessLifetime(child_process, child_pid, &child_lifetime) ||
+           child_lifetime.identity.created_at != child_identity.created_at ||
+           WaitForSingleObject(child_process, 0) != WAIT_TIMEOUT)) {
+        CloseHandle(child_process);
+        child_process = nullptr;
+      }
       if (child_process != nullptr) {
         target_process = child_process;
         target_pid = child_pid;
@@ -2953,17 +3096,32 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         fprintf(stderr, "[process] following child pid=%lu image=%ls\n",
                 child_pid, target_exe.c_str());
         // 真正承载游戏的是子进程：更新回报，host 的附着重试必须瞄准它而不是启动器。
-        printf("LAUNCH pid=%lu arch=%s\n", child_pid,
-               sizeof(void*) == 8 ? "x64" : "x86");
+        printf("LAUNCH pid=%lu arch=%s role=game locale=%d\n", child_pid,
+               sizeof(void*) == 8 ? "x64" : "x86", locale_launched ? 1 : 0);
         fflush(stdout);
       }
     }
     if (target_process == pi.hProcess) {
+      if (launcher_layout && child_result.action != fushi_voice_hook::ChildWaitAction::kRootRuntime) {
+        // A discovered child that disappeared or could not be opened is not
+        // permission to inject the already identified launcher instead.
+        ReportFailureReason(fushi_voice_hook::LaunchFailureReason::kInjectionFailed, 1);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return 1;
+      }
+      if (child_result.action == fushi_voice_hook::ChildWaitAction::kRootRuntime) {
+        printf("LAUNCH pid=%lu arch=%s role=game locale=%d\n", target_pid,
+               sizeof(void*) == 8 ? "x64" : "x86", locale_launched ? 1 : 0);
+        fflush(stdout);
+      }
       fprintf(stderr,
               "[process] no stable game child found; attaching launcher pid=%lu\n",
               pi.dwProcessId);
     }
   }
+
+#include "followed_siglus_readiness.inc"
 
   // 跟随子进程后目标换人了：自动 PC hooks 的判据必须按**真实游戏镜像**重算。启动器那层
   // 没有引擎布局，只在 exe 上判一次等于对启动器型游戏永不开启——UE 样本的原始启动入口
@@ -3184,11 +3342,8 @@ int main() {
                      native_loopback_requested);
   }
 
-  // attach 模式：注入已运行进程（老路径行为不变）。
-  HANDLE target = OpenProcess(
-      PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
-          PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
-      FALSE, pid);
+  // Attach also serves automatic recovery; preserve engine readiness there.
+  HANDLE target = OpenProcess(kInjectionProcessRights, FALSE, pid);
   if (target == nullptr) {
     fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
             pid, GetLastError());
@@ -3200,6 +3355,7 @@ int main() {
 
   LunaOptions effective_luna = luna;
   const std::wstring target_exe = ProcessImagePath(target);
+#include "attached_siglus_readiness.inc"
   ApplyLunaProfiles(target_exe, pid, effective_luna.profile_path,
                     &effective_luna);
   if (!effective_luna.pc_hooks && !target_exe.empty() &&

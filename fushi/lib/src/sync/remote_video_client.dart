@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 
 /// **任何**远端视频来源都具备的能力：列清单 + 按 id 把整片下载到本地。
@@ -70,6 +70,16 @@ abstract class RemoteVideoClient extends RemoteVideoSource {
     int updatedAtMs, {
     int episodeIndex = 0,
   });
+}
+
+/// 「播放真正结束」的可选能力。
+///
+/// 只有 Jellyfin/Emby 这类有会话生命周期端点的来源需要它；周期断点上报仍由
+/// [RemoteVideoClient.putRemoteVideoPosition] 负责。单独拆成可选接口，避免 URL 流和
+/// 互联 host 被迫实现并不存在的停止协议。
+abstract interface class RemoteVideoPlaybackStop {
+  /// 上报远端视频 [id] 已停止，位置单位为毫秒。
+  Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
 /// 「清单里省掉的重字段按需补齐」的**可选**能力（BUG-1891）。

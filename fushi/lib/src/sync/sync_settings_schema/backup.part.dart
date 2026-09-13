@@ -26,6 +26,8 @@ String backupCategoryLabel(BackupCategory category) {
       return t.backup_category_videos;
     case BackupCategory.localAudio:
       return t.backup_category_local_audio;
+    case BackupCategory.games:
+      return t.backup_category_games;
     case BackupCategory.progress:
       return t.backup_category_progress;
     case BackupCategory.statistics:
@@ -53,6 +55,8 @@ String backupCategoryDescription(BackupCategory category) {
       return t.backup_category_videos_desc;
     case BackupCategory.localAudio:
       return t.backup_category_local_audio_desc;
+    case BackupCategory.games:
+      return t.backup_category_games_desc;
     case BackupCategory.progress:
       return t.backup_category_progress_desc;
     case BackupCategory.statistics:
@@ -66,9 +70,9 @@ String backupCategoryDescription(BackupCategory category) {
 
 /// Every content category the user can individually skip on import (TODO-1358).
 /// Both modes now honour the full set: overwrite strips the unticked category's
-/// rows/files from the swapped-in DB ([BackupService.restoreBackup]); merge
+/// rows/files from the swapped-in DB ([BackupRestoreService.restoreBackup]); merge
 /// skips its per-category engine steps + content-tree copy
-/// ([BackupService.mergeRestoreBackup]). settings / profiles stay governed
+/// ([BackupRestoreService.mergeRestoreBackup]). settings / profiles stay governed
 /// by the separate "import settings and profiles" toggle (overwrite) / kept
 /// local (merge), so they are not listed here.
 const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
@@ -78,6 +82,7 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.fonts,
   BackupCategory.videos,
   BackupCategory.localAudio,
+  BackupCategory.games,
   BackupCategory.progress,
   BackupCategory.statistics,
 };
@@ -160,6 +165,9 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       // config; otherwise the restored config points at files that never
       // crossed over and the fonts silently never apply.
       fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
+      // Game covers travel with the `games` category (rows + cover files).
+      gameCoversRootDirectory:
+          p.join(appModel.appDirectory.path, 'game_covers'),
     );
     // TODO-1358: summarize what is on this device so the category picker shows
     // per-category counts (the database itself is always included).
@@ -200,30 +208,6 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     // Per-video selection (the books analogue). Mutated by the nested video
     // picker; written back to [_selectedVideoKeys] only on confirm.
     Set<String>? chosenVideos = _selectedVideoKeys;
-    String labelFor(BackupCategory c) {
-      switch (c) {
-        case BackupCategory.dictionary:
-          return t.backup_category_dictionary;
-        case BackupCategory.books:
-          return t.backup_category_books;
-        case BackupCategory.audiobooks:
-          return t.backup_category_audiobooks;
-        case BackupCategory.fonts:
-          return t.backup_category_fonts;
-        case BackupCategory.videos:
-          return t.backup_category_videos;
-        case BackupCategory.localAudio:
-          return t.backup_category_local_audio;
-        case BackupCategory.progress:
-          return t.backup_category_progress;
-        case BackupCategory.statistics:
-          return t.backup_category_statistics;
-        case BackupCategory.settings:
-          return t.backup_category_settings;
-        case BackupCategory.profiles:
-          return t.backup_category_profiles;
-      }
-    }
 
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -268,7 +252,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                   for (final BackupCategory c
                       in BackupCategory.values) ...<Widget>[
                     AdaptiveSettingsSwitchRow(
-                      title: labelFor(c),
+                      title: backupCategoryLabel(c),
                       subtitle: summary.counts.containsKey(c)
                           ? '${backupCategoryDescription(c)} '
                               '(${summary.countFor(c)})'
@@ -665,7 +649,6 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       },
     );
   }
-
 }
 
 /// 清掉临时目录里**上一次导出遗留的**备份包（识别口径见
@@ -717,6 +700,9 @@ Future<void> runBackupExportFlow({
   appModel.beginBackupExport();
   String? failure;
   bool cancelled = false;
+  // BUG-2193：打包时被跳过的词典（元数据在、磁盘资源缺失）。以前这种情况让**全部**
+  // 词典都不进包，而导出照样报「成功」——用户下次在新设备恢复才会发现词典全没了。
+  List<String> skippedDictionaries = const <String>[];
   try {
     final Directory tmpDir = await getTemporaryDirectory();
     await _sweepStaleBackupArchives(tmpDir);
@@ -729,6 +715,8 @@ Future<void> runBackupExportFlow({
       bookKeys: bookKeys,
       videoKeys: videoKeys,
       onProgress: appModel.reportBackupExportProgress,
+      onDictionariesSkipped: (List<String> names) =>
+          skippedDictionaries = names,
     );
     if (Platform.isAndroid || Platform.isIOS) {
       await FushiShare.shareFiles(
@@ -766,7 +754,12 @@ Future<void> runBackupExportFlow({
   _showSnackBar(
     rootCtx,
     failure == null
-        ? t.backup_export_success
+        ? (skippedDictionaries.isEmpty
+            ? t.backup_export_success
+            : t.backup_export_dictionaries_skipped(
+                n: skippedDictionaries.length,
+                names: skippedDictionaries.join('、'),
+              ))
         : t.backup_export_failed(message: failure),
   );
 }
@@ -791,7 +784,7 @@ class _BackupImportChoice {
 
   /// Categories to RESTORE on an overwrite import (TODO-1358): every
   /// always-restored category plus the selectable ones the user kept ticked.
-  /// Forwarded to [BackupService.restoreBackup]; ignored for merge.
+  /// Forwarded to [BackupRestoreService.restoreBackup]; ignored for merge.
   final Set<BackupCategory> categories;
 }
 
@@ -865,13 +858,12 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// 确认对话框（覆盖/合并 + 分类勾选）→ running 遮罩 → 导入 → 自动重启。设置页
 /// 「导入备份」与新手引导「导入推荐包」共用（单一真相源）。校验失败/用户取消时
 /// 正常返回（进程不重启）；导入成功或失败都会走 appModel 的遮罩收口并重启进程。
-/// [onImportConfirmed] 在用户于确认对话框点了确定、导入即将真正开始时回调（新手
-/// 引导用它给下载的推荐包落「已导入」flag，重启后收尾删包）；校验失败或用户取消
-/// 不会触发。
+/// [onImportSucceeded] 仅在恢复成功后、重启前回调。推荐包用它记录待办教程和
+/// 成功清理凭据；校验失败、取消或恢复失败均不会触发。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
-  Future<void> Function()? onImportConfirmed,
+  Future<void> Function()? onImportSucceeded,
 }) async {
   // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
   // [AppModel.navigatorKey] 宿主弹出。
@@ -897,14 +889,10 @@ Future<void> runBackupImportFlowForFile({
   BackupMergePreview? mergePreview;
   BackupContentSummary? summary;
   try {
-    final service = BackupService(
-      db: appModel.database,
-      dbDirectory: appModel.databaseDirectory.path,
-      dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-      appVersion: appModel.packageInfo.version,
-    );
-
-    final BackupMeta? validated = await service.validateBackup(filePath);
+    // 校验 / 读包摘要是恢复侧的静态操作（B1 分家）：不再为此构造一个导出用的
+    // BackupService 实例。
+    final BackupMeta? validated =
+        await BackupRestoreService.validateBackup(filePath);
     // 已取消/被新一轮校验取代 → 丢弃陈旧结果（遮罩已由 cancel 退出，无需再动）。
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     if (validated == null) {
@@ -922,7 +910,8 @@ Future<void> runBackupImportFlowForFile({
 
     // TODO-1195 part B: best-effort merge preview for the confirm dialog.
     // Runs against the still-open live DB; null on any failure → generic UI.
-    final BackupMergePreview? preview = await BackupService.previewMergeRestore(
+    final BackupMergePreview? preview =
+        await BackupRestoreService.previewMergeRestore(
       liveDb: appModel.database,
       dbDirectory: appModel.databaseDirectory.path,
       zipPath: filePath,
@@ -932,7 +921,7 @@ Future<void> runBackupImportFlowForFile({
     // dialog (per-category counts + the restore toggles). Cheap central-dir
     // read; an empty summary just hides the manifest.
     final BackupContentSummary contentSummary =
-        await service.summarizeBackupFile(filePath);
+        await BackupRestoreService.summarizeBackupFile(filePath);
     if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
     meta = validated;
     mergePreview = preview;
@@ -976,13 +965,14 @@ Future<void> runBackupImportFlowForFile({
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
     return;
   }
-  await onImportConfirmed?.call();
 
   final String booksRoot = p.join(appModel.appDirectory.path, 'fushi_books');
   final String audiobooksRoot =
       p.join(appModel.appDirectory.path, 'audiobooks');
   final String fontsRoot = p.join(appModel.appDirectory.path, 'custom_fonts');
   final String videosRoot = p.join(appModel.appDirectory.path, 'videos');
+  final String gameCoversRoot =
+      p.join(appModel.appDirectory.path, 'game_covers');
 
   try {
     // TODO-1151: 用户已确认 → 上屏全屏「正在导入备份，请勿关闭」遮罩（running 相位），
@@ -1001,7 +991,7 @@ Future<void> runBackupImportFlowForFile({
       // TODO-888 merge: keep this device's library + settings, only ADD what
       // the backup carries (row-level upsert + copy-if-absent content trees).
       // Never overwrites/deletes existing data, so importSettings is moot.
-      await BackupService.mergeRestoreBackup(
+      await BackupRestoreService.mergeRestoreBackup(
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
         // Per-category merge selection (merge mode now honours the dialog's
@@ -1012,11 +1002,12 @@ Future<void> runBackupImportFlowForFile({
         audiobooksRootDirectory: audiobooksRoot,
         fontsRootDirectory: fontsRoot,
         videosRootDirectory: videosRoot,
+        gameCoversRootDirectory: gameCoversRoot,
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
       );
     } else {
-      await BackupService.restoreBackup(
+      await BackupRestoreService.restoreBackup(
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
         importSettings: choice.importSettings,
@@ -1030,6 +1021,7 @@ Future<void> runBackupImportFlowForFile({
         // config paths onto this device's root.
         fontsRootDirectory: fontsRoot,
         videosRootDirectory: videosRoot,
+        gameCoversRootDirectory: gameCoversRoot,
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
       );
@@ -1040,6 +1032,13 @@ Future<void> runBackupImportFlowForFile({
     // 自动重启，不再手动重开」）。与旧「500ms 后突然 exit」的关键区别：backupImportRestart
     // 走 restartApp 真拉新进程重启（app 会自己回来），不是纯退出「凭空消失」；延时让「导入
     // 成功」先可见一瞬，避免误判失败。「立即重启」按钮保留为手动兜底（可提前点，走同一函数）。
+    // Only successful restores may schedule source cleanup or onboarding.
+    // A receipt failure must not misreport an already restored database.
+    try {
+      await onImportSucceeded?.call();
+    } catch (e, s) {
+      ErrorLogService.instance.log('backupImport.successReceipt', e, s);
+    }
     appModel.completeBackupImport(t.backup_import_success);
     await Future<void>.delayed(const Duration(seconds: 1));
     // restartApp 成功会拉新进程并退出本进程；backupImportRestart 内部已吞掉重启失败并退回

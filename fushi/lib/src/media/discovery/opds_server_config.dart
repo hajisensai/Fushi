@@ -8,7 +8,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/media/torrent/torznab_client.dart'
+import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show isSafeExternalProviderEndpoint;
 
 /// 一台 OPDS 服务器。

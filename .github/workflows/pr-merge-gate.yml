@@ -1,0 +1,74 @@
+name: PR merge gate
+
+# 谁的 PR 可以被直接合并，谁必须先拿到许可。
+#
+# 背景（2026-09-07 用户指示）：本仓只有 `hajisensai` 一个人有写权限，外部贡献者
+# 全部走 fork PR。所以「谁能点合并」在 GitHub 侧本来就只有一个人——真正需要约束的
+# 是**代他点合并的自动化/agent**：过去一轮里 agent 会把当时开着的 PR 逐条合进
+# develop，其中包含不属于白名单作者的分支。
+#
+# 这条 workflow 把「作者是谁」做成一个**可见的 check**：白名单外的作者，check 直接
+# 红，合并前必然看得到。要放行，仓库有写权限的人给这条 PR 打上 `merge-approved`
+# 标签（打标签这个动作本身就是「许可」，且留在 PR 时间线上可追溯）。
+#
+# 注意这条 check 默认是**建议性**的——仓库当前没有任何分支保护/ruleset（刻意如此：
+# 本仓日常大量直推 develop，加 required check 会把直推一起挡掉）。要把它变成硬门，
+# 在 Settings → Branches 给 develop / main 加保护并把本 check 设为 required；那一步
+# 会连带改变直推工作流，属于用户决策，不由自动化代做。
+#
+# 白名单只放两个人：仓库所有者，以及长期协作者 W1ght。改名单请连同下面的
+# 守卫测试 fushi/test/tools/pr_merge_gate_allowlist_guard_test.dart 一起改。
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+    branches: ['main', 'develop']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-merge-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  author-allowlist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check PR author against the merge allowlist
+        env:
+          # login 逐字比对（GitHub login 大小写不敏感，所以两侧都转小写再比）。
+          ALLOWED_AUTHORS: 'hajisensai W1ght'
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          # 打了这个标签 = 有写权限的人已经明确许可合并。
+          APPROVAL_LABEL: 'merge-approved'
+          HAS_APPROVAL: ${{ contains(github.event.pull_request.labels.*.name, 'merge-approved') }}
+        run: |
+          set -euo pipefail
+
+          author_lc="$(printf '%s' "$PR_AUTHOR" | tr '[:upper:]' '[:lower:]')"
+          allowed=0
+          for a in $ALLOWED_AUTHORS; do
+            a_lc="$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]')"
+            if [ "$author_lc" = "$a_lc" ]; then
+              allowed=1
+              break
+            fi
+          done
+
+          if [ "$allowed" = "1" ]; then
+            echo "PR author '$PR_AUTHOR' is on the merge allowlist ($ALLOWED_AUTHORS)."
+            exit 0
+          fi
+
+          if [ "$HAS_APPROVAL" = "true" ]; then
+            echo "PR author '$PR_AUTHOR' is not on the allowlist, but the '$APPROVAL_LABEL' label grants explicit permission to merge."
+            exit 0
+          fi
+
+          echo "::error title=Merge not permitted::PR author '$PR_AUTHOR' is not on the merge allowlist ($ALLOWED_AUTHORS)."
+          echo ""
+          echo "Do not merge this pull request yet."
+          echo "A user with write access must review it and add the '$APPROVAL_LABEL' label to grant permission."
+          exit 1

@@ -13,8 +13,8 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
-import 'package:fushi/src/media/audiobook/text_to_epub.dart';
-import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
 /// 正文素材扩展名：EPUB + 所有可转文本格式（引用既有真相源，不自造副本）。
 Set<String> audiobookMaterialContentExtensions() => <String>{

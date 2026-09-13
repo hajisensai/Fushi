@@ -2,10 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart'
-    show MissingPluginException, PlatformException;
-import 'package:flutter_charset_detector/flutter_charset_detector.dart';
-
 /// 文本字节流的 Unicode 家族编码。由 BOM 或（无 BOM 时）字节分布启发式判定。
 ///
 /// 只覆盖 Unicode 家族——Shift-JIS / CP932 / GBK / Big5 / EUC-JP 等传统多字节
@@ -199,34 +195,42 @@ String? decodeUnicodeText(Uint8List bytes) {
   }
 }
 
-/// 调用平台字符集检测插件解码 [bytes]；插件在本平台**不可用**时返回 null。
+/// 平台字符集检测的解码函数签名：把 [bytes] 识别成传统多字节编码
+/// （Shift-JIS / CP932 / GBK / Big5 / EUC-JP …）并解成字符串；识别不了返回 null。
+typedef PlatformCharsetDecoder = Future<String?> Function(Uint8List bytes);
+
+/// 平台字符集检测装配点（与 `fushiDebugPrint` 同范式）。
+///
+/// 本文件是纯 Dart（被无头服务端 `dart compile exe` 消费），不能直接引
+/// `flutter_charset_detector` method-channel 插件。插件实现在
+/// `platform_charset_detector.dart`（只由全 barrel `fushi_audio.dart` 导出），
+/// Flutter app 在 `main()` 里调 `installPlatformCharsetDetector()` 写入这里。
+///
+/// null = 未装配（服务端 / 纯 Dart 测试）→ [tryPlatformCharsetDecode] 返回 null，
+/// 与从前插件在桌面端抛 `MissingPluginException` 的降级路径**行为一致**。
+PlatformCharsetDecoder? platformCharsetDecoder;
+
+/// 调用已装配的平台字符集检测解码 [bytes]；未装配或本平台不可用时返回 null。
 ///
 /// 兼容层说明（按仓库规则记录原因、影响范围与清理条件）：
 /// - **为什么无法根治**：`flutter_charset_detector` 1.0.2 只提供 android / ios
 ///   联邦实现（其 pubspec 的 `flutter.plugin.platforms` 仅这两项），
 ///   Windows / macOS / Linux 落回 `MethodChannelCharsetDetector`，
-///   `invokeMethod` 必然抛 [MissingPluginException]。这是**上游依赖的平台覆盖
-///   缺口**，不是本仓能修的调用错误。
-/// - **影响范围**：桌面三端读取 Shift-JIS / CP932 / GBK / Big5 / EUC-JP 等
-///   传统多字节编码的字幕、弹幕、m3u8、纯文本书时，无法做字符集自动识别，
-///   只能降级到宽松 UTF-8（少数字符变 U+FFFD）。Unicode 家族（含本函数上游的
-///   UTF-8 / UTF-16 / UTF-32 判定）不受影响。
-/// - **清理条件**：上游补齐桌面实现、或换成纯 Dart 的字符集检测实现后，
-///   删掉这里的 null 降级分支，直接 `await CharsetDetector.autoDecode`。
+///   `invokeMethod` 必然抛 `MissingPluginException`（该容错在
+///   `platform_charset_detector.dart` 里）。这是**上游依赖的平台覆盖缺口**，
+///   不是本仓能修的调用错误。
+/// - **影响范围**：桌面三端与无头服务端读取 Shift-JIS / CP932 / GBK / Big5 /
+///   EUC-JP 等传统多字节编码的字幕、弹幕、m3u8、纯文本书时，无法做字符集自动
+///   识别，只能降级到宽松 UTF-8（少数字符变 U+FFFD）。Unicode 家族（含本函数
+///   上游的 UTF-8 / UTF-16 / UTF-32 判定）不受影响。
+/// - **清理条件**：换成纯 Dart 的字符集检测实现后，把它直接写成
+///   [platformCharsetDecoder] 的默认值，删掉 null 分支。
 Future<String?> tryPlatformCharsetDecode(Uint8List bytes) async {
-  try {
-    final DecodingResult result = await CharsetDetector.autoDecode(bytes);
-    return result.string;
-  } on MissingPluginException {
-    // 桌面三端：插件无本平台实现。
-    return null;
-  } on UnimplementedError {
-    // 平台接口未被任何实现覆盖（测试替身 / 未来新平台）。
-    return null;
-  } on PlatformException {
-    // 原生侧检测失败（字节确实无法归到任何已知字符集）。
+  final PlatformCharsetDecoder? decoder = platformCharsetDecoder;
+  if (decoder == null) {
     return null;
   }
+  return decoder(bytes);
 }
 
 /// 解码文本字节，自动识别编码。**永远返回字符串，不会因编码问题抛异常**。

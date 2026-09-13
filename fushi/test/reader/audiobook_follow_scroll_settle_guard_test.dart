@@ -74,12 +74,24 @@ void main() {
         reason: 'behavior 三元的默认分支必须是 smooth（用户要求恢复平滑动画，'
             'TODO-803 砍成 instant 已被驳回；eink 才允许 auto）',
       );
-      final int hits = RegExp(r'behavior:\s*behavior').allMatches(body).length;
+      // BUG-2466：三条 scrollBy 收敛成两条（竖排 rl / lr 只差位移算式），都必须经
+      // followBehavior(位移, 视口)——一个视口之内回落到共享 behavior 变量（默认
+      // smooth），超过一个视口才瞬时落地（跳，不是跟；smooth 补间会把途中所有页
+      // arrive 进阅读账本）。
+      final int hits =
+          RegExp(r'behavior:\s*followBehavior\(').allMatches(body).length;
       expect(
         hits,
-        greaterThanOrEqualTo(3),
-        reason: 'scrollToTarget 竖排 rl / 竖排 lr / 横排三条 scrollBy 都必须走共享的 '
-            'behavior 变量（默认 smooth）',
+        greaterThanOrEqualTo(2),
+        reason: 'scrollToTarget 竖排 / 横排的 scrollBy 都必须经 followBehavior（'
+            '一个视口内回落到默认 smooth 的 behavior 变量）',
+      );
+      expect(
+        RegExp(r"Math\.abs\(delta\)\s*>\s*viewport\s*\?\s*'auto'\s*:\s*behavior")
+            .hasMatch(body),
+        isTrue,
+        reason: 'followBehavior 的阈值必须是「超过一个视口」且短距离回落到 behavior '
+            '变量（BUG-2466：只有跨页跳才瞬时，跟读动画保留）',
       );
     });
 

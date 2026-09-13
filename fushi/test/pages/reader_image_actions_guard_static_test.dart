@@ -35,7 +35,7 @@ void main() {
     final String helper = _functionSource(
       source,
       'File? _readerImageFileForUrl(String imgUrl)',
-      'void _openImageViewer(String imgUrl)',
+      'void _openImageViewer(String imgUrl',
     );
     expect(helper, contains('ReaderFushiSource.kHost'));
     expect(helper, contains("uri.path.startsWith('/epub/')"));
@@ -46,7 +46,7 @@ void main() {
 
     final String viewer = _functionSource(
       source,
-      'void _openImageViewer(String imgUrl)',
+      'void _openImageViewer(String imgUrl',
       '),',
     );
     expect(viewer, contains('_readerImageFileForUrl(imgUrl)'));
@@ -131,7 +131,7 @@ void main() {
     final String source = readReaderPageSource();
     final String viewer = _functionSource(
       source,
-      'void _openImageViewer(String imgUrl)',
+      'void _openImageViewer(String imgUrl',
       'void _toggleChrome(',
     );
 

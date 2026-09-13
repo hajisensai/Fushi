@@ -47,9 +47,12 @@ class PopupDbReader {
     data class DictPath(val path: String, val type: String)
 
     data class PopupPrefs(
-        val deduplicatePitch: Boolean = false,
-        val harmonicFrequency: Boolean = false,
-        val collapseDictionaries: Boolean = false,
+        // 这四个的默认值必须与 Dart 侧 PreferencesRepository 的 `defaultValue:` 一致
+        // （lib/src/models/preferences_repository.dart 的同名 getter）——DB 读不出来
+        // 或整个 readPrefs 失败时走的就是这里，读错等于 :popup 进程与主 app 表现相反。
+        val deduplicatePitch: Boolean = true,
+        val harmonicFrequency: Boolean = true,
+        val collapseDictionaries: Boolean = true,
         val showExpressionTags: Boolean = false,
         val globalDictCSS: String = "",
         val customDictCSS: String = "{}",
@@ -177,6 +180,15 @@ class PopupDbReader {
         return collapsed
     }
 
+    /// 读一个布尔偏好：只有 `preferences` 表里真有这一行时才由它说了算，缺行时
+    /// 回落到 [default]（= Dart 侧 PreferencesRepository 同名 getter 的 defaultValue）。
+    /// 见 readPrefs 里的 BUG-2397 说明。
+    private fun boolPref(
+        prefs: Map<String, String>,
+        key: String,
+        default: Boolean,
+    ): Boolean = prefs[key]?.let { it == "true" } ?: default
+
     fun readPrefs(context: Context): PopupPrefs {
         val prefs = mutableMapOf<String, String>()
         var db: SQLiteDatabase? = null
@@ -199,10 +211,16 @@ class PopupDbReader {
         // AppModel.saveDictStyleRules 落下的缓存，见 dict_style_rules.dart。
         val compiledStyleCss = parseCompiledStyleCss(prefs["dict_style_rules_css"])
         return PopupPrefs(
-            deduplicatePitch = prefs["deduplicate_pitch_accents"] == "true",
-            harmonicFrequency = prefs["harmonic_frequency"] == "true",
-            collapseDictionaries = prefs["collapse_dictionaries"] == "true",
-            showExpressionTags = prefs["show_expression_tags"] == "true",
+            // BUG-2397：**不能**写成 `prefs[key] == "true"`。Dart 侧 getPref 的
+            // `defaultValue:` 只活在 Dart 内存里，从不落库——用户没主动点过开关时
+            // `preferences` 表里根本没有这一行。`null == "true"` 判成 false，于是
+            // 设置页明明显示「开」，:popup 进程（系统级选词弹窗）里却是关的：
+            // 音调去重就是这么「没用」的（默认 true 的三个键全中招）。
+            // 缺行 = 跟 Dart 走默认值，只有显式落库的值才覆盖它。
+            deduplicatePitch = boolPref(prefs, "deduplicate_pitch_accents", true),
+            harmonicFrequency = boolPref(prefs, "harmonic_frequency", true),
+            collapseDictionaries = boolPref(prefs, "collapse_dictionaries", true),
+            showExpressionTags = boolPref(prefs, "show_expression_tags", false),
             globalDictCSS = mergeCss(
                 compiledStyleCss.first,
                 prefs["global_dict_css"] ?: "",

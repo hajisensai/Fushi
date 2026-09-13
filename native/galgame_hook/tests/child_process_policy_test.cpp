@@ -10,8 +10,65 @@
 
 using fushi_voice_hook::ChildProcessCandidate;
 using fushi_voice_hook::SelectGameChildProcess;
+using fushi_voice_hook::ChildProcessLineage;
+
+void TestRetainedLauncherLineage() {
+  ChildProcessLineage lineage({100, 10});
+  assert(lineage.UpdateLifetime({100, 10}, 30, 25));
+  assert(lineage.Observe({200, 20}, 100));
+  assert(lineage.UpdateLifetime({200, 20}, 60, 50));
+  // Both launcher snapshots are gone before the game is observed.
+  assert(lineage.Observe({300, 40}, 200));
+  assert(lineage.Find(300)->depth == 2);
+  assert(lineage.UpdateLifetime({300, 40}, 80, 0));
+  assert(lineage.Observe({400, 70}, 300));
+  assert(lineage.Find(400)->depth == 3);
+  assert(lineage.Observe({200, 20}, 100));
+  assert(!lineage.Observe({200, 20}, 400));
+  // A live observation proves no later birth until its next lifetime refresh.
+  assert(!lineage.Observe({401, 90}, 300));
+
+  // PID reuse must not extend an old parent's lifetime or adopt its new child.
+  assert(!lineage.UpdateLifetime({200, 55}, 90, 0));
+  assert(!lineage.Observe({200, 55}, 100));
+  assert(!lineage.Observe({500, 60}, 200));
+  assert(!lineage.Observe({100, 60}, 300));
+  assert(!lineage.Observe({600, 5}, 100));
+  assert(!lineage.Observe({600, 10}, 100));
+  assert(!lineage.Observe({600, 20}, 999));
+  assert(!lineage.Observe({600, 20}, 600));
+  assert(!lineage.Observe({0, 20}, 100));
+  assert(!lineage.Observe({600, 0}, 100));
+  assert(!lineage.UpdateLifetime({100, 10}, 90, 0));
+  assert(!lineage.UpdateLifetime({300, 40}, 90, 20));
+  assert(!lineage.UpdateLifetime({300, 40}, 90, 100));
+
+  // Unknown/unobserved relays and cycles fail closed, never infer by game name.
+  assert(!lineage.Observe({701, 75}, 702));
+  assert(!lineage.Observe({702, 76}, 701));
+  assert(lineage.size() == 4);
+
+  ChildProcessLineage bounded({1, 1});
+  assert(bounded.UpdateLifetime({1, 1}, 1000, 0));
+  for (uint32_t pid = 2; pid <= ChildProcessLineage::kMaxProcesses; ++pid) {
+    assert(bounded.Observe({pid, pid}, 1));
+  }
+  assert(!bounded.Observe({1000, 999}, 1));
+  assert(bounded.size() == ChildProcessLineage::kMaxProcesses);
+
+  ChildProcessLineage deep({1, 1});
+  for (uint32_t pid = 2; pid <= ChildProcessLineage::kMaxDepth + 1; ++pid) {
+    assert(deep.UpdateLifetime({pid - 1, pid - 1}, 100, 0));
+    assert(deep.Observe({pid, pid}, pid - 1));
+  }
+  assert(deep.UpdateLifetime({17, 17}, 100, 0));
+  assert(!deep.Observe({18, 18}, 17));
+  ChildProcessLineage invalid({1, 0});
+  assert(!invalid.Observe({2, 20}, 1));
+}
 
 int main() {
+  TestRetainedLauncherLineage();
   const std::vector<ChildProcessCandidate> renpy = {
       {200, 100, L"crashpad.exe", false, false},
       {201, 100, L"pythonw.exe", false, false},

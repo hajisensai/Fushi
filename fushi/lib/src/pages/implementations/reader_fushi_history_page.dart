@@ -13,7 +13,10 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
-import 'package:fushi/src/epub/epub_importer.dart';
+import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/sync/epub_repackage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
@@ -28,39 +31,45 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
+    show OnlineMangaRefreshResult;
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
-import 'package:fushi/src/media/manga/online/mokuro_moe_download_queue.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_feature_flags.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
+import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
 // hibiki_core 未再导出它）。
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/epub/epub_storage.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
-import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
-import 'package:fushi/src/media/metadata/image_download.dart';
+import 'package:fushi_engine/media/metadata/image_download.dart';
 import 'package:fushi/src/media/metadata/scrape_batch.dart';
 import 'package:fushi/src/media/metadata/scrape_title_matcher.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortNewCollectionMembersNaturally;
-import 'package:fushi/src/media/collections/shelf_sort.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
@@ -79,24 +88,25 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/sync/local_file_delete_feedback.dart';
-import 'package:fushi/src/sync/deletion_propagation.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
-import 'package:fushi/src/sync/sync_asset_package_service.dart';
-import 'package:fushi/src/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 
@@ -198,18 +208,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
   void _rebuild(VoidCallback fn) => setState(fn);
 
+  /// 「功能模块」可见性快照（书架与它全部 part 共用的唯一读取口）。
+  ///
+  /// 用 [appModelNoUpdate]：本 getter 也会在 prefsRepo 回调 / 拖放回调等 build 之外
+  /// 的时机被调用，那里 `ref.watch` 非法（与本页 `_shouldLoadRemoteBooks` 同款理由）；
+  /// AppModel 是全局单例，读到的 pref 恒为当前真值。
+  /// [AppModel.moduleVisibility] 每读一次都重新合成一个 Set——同一帧要连问几个模块
+  /// 时先落成局部变量。
+  ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
+
   Future<Map<String, _AudiobookInfo>> _loadAllAudiobookInfo() async {
     final repo = AudiobookRepository(appModel.database);
     final allAudiobooks = await repo.buildBookKeyMap();
     final result = <String, _AudiobookInfo>{};
-    final healthFutures = <String, Future<AudiobookHealth>>{};
-    for (final entry in allAudiobooks.entries) {
-      healthFutures[entry.key] = repo.resolveHealth(entry.value);
-    }
-    final healths = <String, AudiobookHealth>{};
-    await Future.wait(healthFutures.entries.map((e) async {
-      healths[e.key] = await e.value;
-    }));
+    // 一次前缀查询取完全部健康度覆盖，替代每本一条 getPref 的 N+1。
+    final Map<String, AudiobookHealth> healths =
+        await repo.resolveAllHealth(allAudiobooks);
     for (final entry in allAudiobooks.entries) {
       result[entry.key] = _AudiobookInfo(
         hasAudiobook: true,
@@ -273,6 +287,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 挂着上次的搜索词只会让人以为书没了（与游戏库页同一决定）。
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+
+  /// BUG-2327：书架搜索命中判据，**四路**卡源（本地 EPUB / 本地 SRT / 远端 EPUB
+  /// 占位 / 远端 SRT 占位）共用同一口径 [matchesMediaSearch]（空查询恒命中）。
+  /// 此前只裁本地 EPUB 列表，其余三路走未过滤源——挂了有声书的书本身就以 SRT 卡
+  /// 渲染，用户实报「书架搜索不生效」。
+  bool _matchesShelfSearch(Iterable<String> titles) =>
+      matchesMediaSearch(query: _searchQuery, titles: titles);
 
   /// 层次 C：`'mediaType|entryKey' → 该条目在其主折叠合集里的 sortIndex`（组内序
   /// 真相源，与详情页 `getCollectionItems` 同源）。
@@ -381,14 +402,36 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   }
 
   /// 散卡组的多选键（与 [_selectAll] 同一套：EPUB 用 `mediaIdentifier`、SRT 用
-  /// `srt_` 前缀 uid）。远端占位卡不可多选，返回 null。
+  /// `srt_` 前缀 uid；远端占位卡用 [_remoteBookSelectionKey] /
+  /// [_remoteSrtSelectionKey]）。
+  ///
+  /// BUG-2458：远端占位卡此前返回 null = 不可多选，多选态点云书直接开下载。远端
+  /// 键与本地键同住一个选中集（卡片勾选态 / 计数 / Shift 区间选 / 长按扫选全复用），
+  /// 只在批量动作那层按 [_isRemoteSelectionKey] 分流：本地三动作只吃本地键、
+  /// 「下载」只吃远端键。
   String? _looseSelectionKey(_ShelfBookSlot slot) {
     final MediaItem? epub = slot.epub;
     if (epub != null) return epub.mediaIdentifier;
     final SrtBook? srt = slot.srt;
     if (srt != null) return 'srt_${srt.uid}';
+    final RemoteBookInfo? remote = slot.remote;
+    if (remote != null) return _remoteBookSelectionKey(remote);
+    final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
+    if (remoteSrt != null) return _remoteSrtSelectionKey(remoteSrt);
     return null;
   }
+
+  /// 选中集里的本地条目键（EPUB / SRT）：组合 / 打标签 / 删除三个本地动作的输入。
+  Set<String> get _selectedLocalKeys => <String>{
+        for (final String key in _selectedKeys)
+          if (!_isRemoteSelectionKey(key)) key,
+      };
+
+  /// 选中集里的远端占位键：批量「下载」的输入。
+  Set<String> get _selectedRemoteKeys => <String>{
+        for (final String key in _selectedKeys)
+          if (_isRemoteSelectionKey(key)) key,
+      };
 
   @override
   void initState() {
@@ -406,12 +449,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _collectionTablesSub = appModelNoUpdate.database
         .watchCollectionTablesChanged()
         .listen(_onCollectionTablesChanged);
-    // 统一下载中心：mokuro.moe 卷经共享队列后台落库（可能在「在线目录」对话框
-    // 关闭后才完成）。监听队列 importedCount 增量失效书架 provider，取代旧的
+    // 统一下载中心：mokuro.moe 卷经漫画下载服务后台落库（可能在「在线目录」
+    // 页关闭后才完成）。监听 mokuroImportedCount 增量失效书架 provider，取代旧的
     // 「对话框关闭回传导入数」信号（该信号已随对话框改队列化而移除）。
-    _mokuroQueue = ref.read(appProvider).mokuroMoeDownloadQueue;
-    _mokuroImportedSeen = _mokuroQueue!.importedCount;
-    _mokuroQueue!.addListener(_onMokuroQueueChanged);
+    _mokuroImported = ref.read(appProvider).mangaDownloadService.mokuroImportedCount;
+    _mokuroImportedSeen = _mokuroImported!.value;
+    _mokuroImported!.addListener(_onMokuroImportedChanged);
     // BUG-992：顶层 tab IndexedStack 保活（BUG-750）后，切回书架不再隐式重拉远端书 →
     // 远端占位卡 + 书库概览总数要等用户手动下拉刷新才补齐。监听全局 tab 信号，切回
     // 书架 tab 时自动重拉一次远端（缓存 _lastRemoteState 顶住 waiting、不闪屏）。
@@ -480,13 +523,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
-  /// mokuro.moe 共享下载队列（app 级；initState 挂监听、dispose 摘除）。
-  MokuroMoeDownloadQueue? _mokuroQueue;
+  /// mokuro.moe 卷新建书行的计数（`MangaDownloadService.mokuroImportedCount`，
+  /// app 级；initState 挂监听、dispose 摘除）。
+  ValueNotifier<int>? _mokuroImported;
   int _mokuroImportedSeen = 0;
 
-  void _onMokuroQueueChanged() {
+  void _onMokuroImportedChanged() {
     if (!mounted) return;
-    final int imported = _mokuroQueue?.importedCount ?? 0;
+    final int imported = _mokuroImported?.value ?? 0;
     if (imported == _mokuroImportedSeen) return;
     _mokuroImportedSeen = imported;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
@@ -499,7 +543,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _collectionTablesSub?.cancel();
     _collectionsReloadDebounce?.cancel();
-    _mokuroQueue?.removeListener(_onMokuroQueueChanged);
+    _mokuroImported?.removeListener(_onMokuroImportedChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
@@ -569,7 +613,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 _buildSearchBar(),
                 _buildTagBar(allTags.valueOrNull ?? const []),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-                const SyncProgressBanner(),
+                SyncProgressBanner(compact: _compactLibraryToolbar),
                 Expanded(
                   // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
                   // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
@@ -630,14 +674,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         // [matchesMediaSearch]（全角/片假名/标点折叠）。
                         if (_searchQuery.trim().isNotEmpty) {
                           filtered = filtered.where((MediaItem item) {
-                            return matchesMediaSearch(
-                              query: _searchQuery,
-                              titles: <String>[
-                                ReaderFushiSource.instance
-                                    .getDisplayTitleFromMediaItem(item),
-                                item.title,
-                              ],
-                            );
+                            return _matchesShelfSearch(<String>[
+                              ReaderFushiSource.instance
+                                  .getDisplayTitleFromMediaItem(item),
+                              item.title,
+                            ]);
                           }).toList();
                         }
                         return FutureBuilder<Map<String, _AudiobookInfo>>(
@@ -679,9 +720,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  bool get _compactLibraryToolbar =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
   Widget _buildTagBar(List<BookTagRow> allTags) {
     return FushiTagFilterBar(
       tags: allTags,
+      pinActions: _compactLibraryToolbar,
+      showTagManagement: !_compactLibraryToolbar,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
@@ -718,11 +768,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             focusId: kShelfImportFocusId,
             label: t.srt_import,
           ),
-      _headerAction(
-        tooltip: t.scrape_all,
-        icon: Icons.manage_search_outlined,
-        onTap: _scrapeAllBooks,
-      ),
+      // 批量在线刮削同样属「在线服务」模块（整批第三方 API 请求）。
+      if (_moduleVisibility.isEnabled(ModuleId.services))
+        _headerAction(
+          tooltip: t.scrape_all,
+          icon: Icons.manage_search_outlined,
+          onTap: _scrapeAllBooks,
+        ),
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
       // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
@@ -821,15 +873,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final String key = '${m.mediaType}|${m.entryKey}';
       if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
     }
-    final List<EpubBookRow> epubRows =
-        await appModel.database.getAllEpubBooks();
+    final List<EpubBookMeta> epubRows =
+        await appModel.database.getEpubBookMetas();
     _epubImportedAtByKey = <String, int>{
-      for (final EpubBookRow r in epubRows) r.bookKey: r.importedAt,
+      for (final EpubBookMeta r in epubRows) r.bookKey: r.importedAt,
     };
     // v82：reader_positions 键 = uid；书架条目身份仍是 bookKey，查 recency 前
     // 经此表换算（同一批行零额外查询）。空 uid 行不进表（视同无阅读记录）。
     _epubUidByKey = <String, String>{
-      for (final EpubBookRow r in epubRows)
+      for (final EpubBookMeta r in epubRows)
         if (r.uid.isNotEmpty) r.bookKey: r.uid,
     };
     _completedBookKeys = await appModel.database.getCompletedEpubBookKeys();
@@ -859,34 +911,67 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// P5-A 书架搜索框。形态与游戏库页工具条一致（三个库页搜索长一个样），
   /// 搜索词只影响本次会话、不落库。
+  Future<void> _openTagManagement() async {
+    await Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const TagManagementPage(),
+      ),
+    );
+    if (!mounted) return;
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(bookTagMapProvider);
+  }
+
   Widget _buildSearchBar() {
+    final Widget search = SizedBox(
+      height: _compactLibraryToolbar ? 44 : 40,
+      child: TextField(
+        key: const ValueKey<String>('shelf_search_field'),
+        controller: _searchController,
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search, size: 18),
+          hintText: t.library_search,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 4,
+          ),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                ),
+        ),
+        onChanged: (String value) => setState(() => _searchQuery = value),
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: SizedBox(
-        height: 40,
-        child: TextField(
-          key: const ValueKey<String>('shelf_search_field'),
-          controller: _searchController,
-          decoration: InputDecoration(
-            isDense: true,
-            prefixIcon: const Icon(Icons.search, size: 18),
-            hintText: t.library_search,
-            border: const OutlineInputBorder(),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            suffixIcon: _searchQuery.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _searchQuery = '');
-                    },
+      child: _compactLibraryToolbar
+          ? Row(
+              children: <Widget>[
+                Expanded(child: search),
+                const SizedBox(width: 8),
+                IconButton(
+                  key: const ValueKey<String>('library_tag_settings'),
+                  tooltip: t.tag_manage,
+                  constraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 44,
                   ),
-          ),
-          onChanged: (String value) => setState(() => _searchQuery = value),
-        ),
-      ),
+                  icon: const Icon(Icons.settings_outlined, size: 22),
+                  onPressed: _openTagManagement,
+                ),
+              ],
+            )
+          : search,
     );
   }
 
@@ -952,19 +1037,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       importedAt: imported,
       tieKey: 'c${collection.id}',
     );
-  }
-
-  /// 多端库联合视图 §2.3 任务10：按 (name, collectionType) 自然键把远端合集归属解析成
-  /// 本地合集 id（折叠归属同「最小 collectionId」规则，多个同键取最小）；本地无此合集则
-  /// 返 null（远端占位散卡降级，不硬造合集行）。
-  int? _resolveLocalCollectionId(String name, String type) {
-    int? best;
-    for (final MediaCollectionRow c in _collectionsById.values) {
-      if (c.name == name && c.collectionType == type) {
-        if (best == null || c.id < best) best = c.id;
-      }
-    }
-    return best;
   }
 
   void _toggleFilter(int tagId) {
@@ -1300,9 +1372,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 时 srt 成员被剥光、折叠不出合集组。
     final Set<int>? collectionFilter =
         ref.watch(filteredCollectionIdsProvider).valueOrNull;
-    final List<SrtBook> srtBooks;
+    final List<SrtBook> tagFilteredSrtBooks;
     if (srtFilterSet != null) {
-      srtBooks = allSrtBooks
+      tagFilteredSrtBooks = allSrtBooks
           .where((b) => keepMemberUnderTagFilter(
                 memberMatched: srtFilterSet.contains(b.uid),
                 primaryCollectionId: _primaryCollectionByEntry[
@@ -1311,10 +1383,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               ))
           .toList();
     } else if (hasActiveFilter) {
-      srtBooks = const [];
+      tagFilteredSrtBooks = const [];
     } else {
-      srtBooks = allSrtBooks;
+      tagFilteredSrtBooks = allSrtBooks;
     }
+    // BUG-2327：SRT 卡与 EPUB 卡同口径过搜索（显示名 + DB 原名双匹配）。
+    final List<SrtBook> srtBooks = <SrtBook>[
+      for (final SrtBook b in tagFilteredSrtBooks)
+        if (_matchesShelfSearch(<String>[_srtDisplayTitle(b), b.title])) b,
+    ];
     // 视频归「视频」tab（HomeVideoPage）独占，书架不再显示视频分区（用户反馈：
     // 书架是书的地方）。已导入视频只在视频 tab 呈现；书架拖入视频仍可导入（经
     // _handleShelfDrop → VideoImportDialog），落库后同样只在视频 tab 可见。
@@ -1334,16 +1411,27 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final _RemoteBookState? remoteState = snapState ?? _lastRemoteState;
     // 互联完整支持批次：漫画书架同样显示远端占位卡（_loadRemoteBooks 已按
     // _mangaOnly 分架过滤：漫画架只来 format='manga'+hasMangaContent 的条目）。
+    // 「同步与备份 + 互联」模块关掉 → 远端占位卡（含其下载按钮与长按面板）整块不
+    // 渲染。取数侧由 [_shouldLoadRemoteBooks] 同门挡住，两处合起来做到零网络请求。
     final bool showRemote = remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&
-        appModel.prefsRepo.showRemoteEntries;
-    final List<RemoteBookInfo> remoteBooks =
-        showRemote ? remoteState.books : const <RemoteBookInfo>[];
+        appModel.prefsRepo.showRemoteEntries &&
+        _moduleVisibility.isEnabled(ModuleId.sync);
+    // BUG-2327：远端占位卡同样过搜索——它们与本地卡混排在同一网格里，搜索时
+    // 本地卡被裁、远端卡还满屏，用户看到的就是「搜索不生效」。
+    final List<RemoteBookInfo> remoteBooks = <RemoteBookInfo>[
+      if (showRemote)
+        for (final RemoteBookInfo b in remoteState.books)
+          if (_matchesShelfSearch(<String>[b.title])) b,
+    ];
     // 纯 SRT（standalone）远端有声书占位（互联后端 listRemoteAudiobooks 的 standalone
     // 项，本地无同 uid SrtBook）——与远端 EPUB 书同门控混排进主网格。
-    final List<RemoteAudiobookInfo> remoteSrtBooks =
-        showRemote ? remoteState.srtAudiobooks : const <RemoteAudiobookInfo>[];
+    final List<RemoteAudiobookInfo> remoteSrtBooks = <RemoteAudiobookInfo>[
+      if (showRemote)
+        for (final RemoteAudiobookInfo b in remoteState.srtAudiobooks)
+          if (_matchesShelfSearch(<String>[b.title ?? b.identity])) b,
+    ];
     // 统一合集：把 SRT + EPUB 混排序列经 groupByCollections 折叠——散书每条单独成
     // group、同合集折叠成一组（组内序 = 合集 sortIndex，与详情页同源），再按当前
     // 排序方式排 group（散书与合集行同层混排）。「最近阅读」量纲 = 最后阅读时间
@@ -1397,34 +1485,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       );
     }
-    // §2.3 任务10：注入远端书的主合集归属（host 下发的 RemoteBookInfo.collection）到折叠
-    // 映射，使远端占位卡折进对应本地合集行。远端合集本地无 id——按 (name, type) 对本地合集
-    // 表解析（[_resolveLocalCollectionId]），解析不到 = 散卡降级（不硬造合集行）。局部拷贝
-    // 页级映射后注入，避免污染跨帧共享的 _primaryCollectionByEntry / _memberSortIndex。
+    // 归属和顺序以 DAO 裁决后的持久关系为准，DTO 不得绕过墓碑或本地排序。
     final Map<String, int> primaryByEntry =
         Map<String, int>.of(_primaryCollectionByEntry);
     final Map<String, int> memberSortIndex =
         Map<String, int>.of(_memberSortIndex);
     for (final RemoteBookInfo book in remoteBooks) {
       final String key = MediaKind.epub.compositeKey(book.downloadId);
-      final RemoteCollectionMembership? membership = book.collection;
-      if (membership != null) {
-        // 互联/host 路径：host 下发 RemoteBookInfo.collection，按 (name,type) 解析
-        // 本地合集 id 注入折叠归属。
-        final int? cid = _resolveLocalCollectionId(
-          membership.collectionName,
-          membership.collectionType,
-        );
-        if (cid != null) {
-          primaryByEntry[key] = cid;
-          memberSortIndex[key] = membership.sortIndex;
-          continue;
-        }
-        // BUG-1699：(name,type) 在本地解析不到（合集清单还没同步落库 / 用户改过
-        // 本地合集名）不能直接散卡——合集同步若已把透传成员行（键=对端 bookKey）
-        // 落进本地 MediaCollectionItems，下方按本地已同步归属回查的兜底照样能
-        // 救回。此前这里 continue 把兜底整个跳过了。
-      }
+      if (book.collection != null || primaryByEntry.containsKey(key)) continue;
       // 云盘后端（CloudRemoteBookClient）没有 host 实时库 API，不下发 collection
       // 字段。但合集成员已由 collection_sync_engine 落进本地 MediaCollectionItems。
       // 远端占位卡的 title 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠
@@ -1470,8 +1538,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     ];
     // Shift 区间选 / 长按扫选的顺序真值：与上面的合集顺序取自同一份 shelfGroups，
     // 故与用户屏幕上的排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。散卡组
-    // `collection == null` 且 items 长度恒 1；远端占位卡不参与多选（与 [_selectAll]
-    // 同判据），跳过。顺序一变，控制器自动清锚点。
+    // `collection == null` 且 items 长度恒 1；远端占位卡自 BUG-2458 起同样入序
+    // （[_looseSelectionKey] 给远端键）。顺序一变，控制器自动清锚点。
     final List<String> visibleLooseKeys = <String>[];
     for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups) {
       if (g.collection != null) continue;
@@ -1499,11 +1567,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 无条件叠「无匹配」空态文案，且丢 RefreshIndicator / 合集横排行 / 书库概览。
     // 筛选态与常态统一走下方主分支组装（shelfGroups 已能承载纯 SRT 命中结果），
     // 特殊分支消灭。
+    // BUG-2327：搜索零命中与标签筛选零命中同一空态（「没有符合筛选的书」），
+    // 不能落到「书架为空」占位——那会把用户引去导入。
+    final bool searching = _searchQuery.trim().isNotEmpty;
     if (epubBooks.isEmpty &&
         srtBooks.isEmpty &&
         remoteBooks.isEmpty &&
         remoteSrtBooks.isEmpty) {
-      return hasActiveFilter
+      return hasActiveFilter || searching
           ? Center(
               child: FushiPlaceholderMessage(
                 icon: Icons.filter_list_off,
@@ -1692,9 +1763,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 远端占位卡（EPUB / 纯 SRT）现可折进合集（经已同步的合集成员归属），成员卡也要
     // 分派到远端占位渲染，否则命中下面的 epub! 空断言。
     final RemoteBookInfo? remote = slot.remote;
-    if (remote != null) return _buildRemoteBookCard(remote);
+    if (remote != null) {
+      return _buildRemoteBookCard(remote, selectable: selectable);
+    }
     final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
-    if (remoteSrt != null) return _buildRemoteSrtCard(remoteSrt);
+    if (remoteSrt != null) {
+      return _buildRemoteSrtCard(remoteSrt, selectable: selectable);
+    }
     final SrtBook? srt = slot.srt;
     if (srt != null) {
       return _buildSrtCard(srt,
@@ -1834,8 +1909,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
   /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
   /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
+  /// [deleteLocalFiles] 与视频侧共用同一回调形状。书架合集不提供「同时删除本地
+  /// 文件」二级勾选（书的原件删除自有纪律，走 [ReaderFushiSource.deleteBook]），
+  /// 故这里恒收到 false；混入的视频成员照旧只删 DB 行 + app 副本、保留原始文件。
   Future<void> _deleteCollectionMembersMedia(
     List<MediaCollectionItemRow> members,
+    bool deleteLocalFiles,
   ) async {
     bool anyVideo = false;
     for (final MediaCollectionItemRow m in members) {
@@ -2195,6 +2274,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     return _epubExtraActions(item);
   }
 
+  /// 本地 [bookKey] 这本书在对端的「只缺有声书」候选（BUG-2505）：最近一次远端清单
+  /// 里对端有配套有声书、本端只有书没有有声书时非 null。远端清单没拉到 / 非互联 /
+  /// 本端已有有声书都是 null → 菜单不露这一项。
+  ///
+  /// 与远端卡同一道门（[_shouldLoadRemoteBooks]）：`_lastRemoteState` 只在成功快照时
+  /// 被替换、关掉「显示远端条目」/ 同步模块后不会清空，若只看它，远端卡已经消失、
+  /// 本地书卡菜单还露着「从互联对端下载有声书」，点下去只能弹「不可用」。
+  RemoteBookInfo? _remoteAudiobookOnlyFor(String bookKey) =>
+      _shouldLoadRemoteBooks ? _lastRemoteState?.audiobookOnly[bookKey] : null;
+
   /// EPUB 书卡长按菜单动作真身。[inCollectionDetail] = 合集详情页成员卡语境
   /// （菜单已注入「移出合集」）——该语境下隐藏「加入合集」，同一条目在详情页
   /// 语境下再加合集没有意义。
@@ -2202,6 +2291,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       {bool inCollectionDetail = false}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     if (bookKey == null) return const [];
+    // 本菜单是书卡通往**别的模块**的集散地（听书 / 漫画 / 在线服务），一次快照后
+    // 逐条按模块过滤：被关掉的模块不留可点位置。
+    final ModuleVisibility modules = _moduleVisibility;
+    final bool isManga = _isMangaItem(item);
     return <DialogAction>[
       DialogDangerAction(
         label: t.dialog_delete,
@@ -2212,17 +2305,37 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.image_outlined,
         onPressed: () => _openIllustrations(item, bookKey),
       ),
-      DialogQuickAction(
-        label: t.audiobook_import,
-        icon: Icons.headphones_outlined,
-        onPressed: () => _openAudiobookImport(item, bookKey),
+      // 有声书导入仍受听书模块门控（develop 侧）；「重命名」不受它管。
+      if (modules.isEnabled(ModuleId.listening))
+        DialogQuickAction(
+          label: t.audiobook_import,
+          icon: Icons.headphones_outlined,
+          onPressed: () => _openAudiobookImport(item, bookKey),
+        ),
+      // BUG-2505：本地已有这本书、还没有它的有声书、而对端有配套有声书 → 给一个
+      // 显式的补拉入口。远端卡按「本端已有」被整条藏掉后，这里是唯一能到达对端
+      // 有声书的地方（候选表由 _loadRemoteBooks 随远端清单一起算，见
+      // [_RemoteBookState.audiobookOnly]）。同受听书模块门控。
+      if (modules.isEnabled(ModuleId.listening) &&
+          _remoteAudiobookOnlyFor(bookKey) != null)
+        DialogQuickAction(
+          label: t.remote_book_audiobook_download,
+          icon: Icons.cloud_download_outlined,
+          onPressed: () => _downloadRemoteAudiobookOnly(
+              _remoteAudiobookOnlyFor(bookKey)!, bookKey),
+        ),
+      // 三库页对称：视频卡/游戏卡的菜单里「重命名」都排在列表项首位，书卡对齐。
+      DialogListAction(
+        label: t.book_rename,
+        icon: Icons.drive_file_rename_outline,
+        onPressed: () => _renameBook(context, item),
       ),
       // 桌面才有文件管理器契约（[currentRevealHost] 在移动端返回 null）——整条隐藏，
       // 而不是画一个点了没反应的按钮。漫画卷要手改 mokuro 数据时，这一条直接把书目录
       // 里的 manga.json 选中，省掉「书在哪个 bookKey 目录」这层猜。
       if (currentRevealHost() != null)
         DialogListAction(
-          label: t.book_file_location_open,
+          label: t.media_file_location_open,
           icon: Icons.folder_open_outlined,
           onPressed: () => _openBookFileLocation(bookKey),
         ),
@@ -2237,11 +2350,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       ),
       // 统一三库页刮削入口：书卡菜单直达「在线刮削封面」（视频/游戏的刮削都在
       // 卡菜单一层，书此前必须绕「编辑信息→封面字段小图标」两层，用户实报）。
-      DialogListAction(
-        label: t.book_scrape_cover,
-        icon: Icons.image_search_outlined,
-        onPressed: () => _scrapeEpubCover(item),
-      ),
+      // 刮削要打第三方 API，属「在线服务」模块。
+      if (modules.isEnabled(ModuleId.services))
+        DialogListAction(
+          label: t.book_scrape_cover,
+          icon: Icons.image_search_outlined,
+          onPressed: () => _scrapeEpubCover(item),
+        ),
       // 单卡「加入合集」：与批量三档共用同一 DAO 路径；身份从 bookKey 起步，
       // 落库前在 _addEpubToCollection 内换算成 uid（v83 成员表键）。
       if (!inCollectionDetail)
@@ -2283,21 +2398,26 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 「换封面」同一层级。方向由当前卡自己的源标识决定，不额外读库：
       // `mediaSourceIdentifier` 就是 `EpubBooks.format` 派生出来的
       // （`ReaderFushiSource.mediaSourceKeyFor`），与书架的漫画/书分流同一判据。
-      DialogListAction(
-        label: _isMangaItem(item)
-            ? t.book_convert_to_book_action
-            : t.book_convert_to_manga_action,
-        icon: _isMangaItem(item)
-            ? Icons.menu_book_outlined
-            : Icons.auto_stories_outlined,
-        onPressed: () => _convertBookFormat(
-          bookKey,
-          _isMangaItem(item) ? BookFormatTarget.book : BookFormatTarget.manga,
+      //
+      // ⚠️ 模块门控**只关一个方向**：漫画关掉时不再提供「转成漫画」（那是把书送进
+      // 一个够不到的库）；反向的「转回书」**恒可用**——已经是 manga 格式的书被
+      // [filterShelfEntriesByMangaSplit] 从普通书架排除、漫画库又不可达，把回程也
+      // 关掉就等于把这些书永久锁死。
+      if (isManga || modules.isEnabled(ModuleId.manga))
+        DialogListAction(
+          label: isManga
+              ? t.book_convert_to_book_action
+              : t.book_convert_to_manga_action,
+          icon:
+              isManga ? Icons.menu_book_outlined : Icons.auto_stories_outlined,
+          onPressed: () => _convertBookFormat(
+            bookKey,
+            isManga ? BookFormatTarget.book : BookFormatTarget.manga,
+          ),
         ),
-      ),
       // 漫画作品页：卡片点击已经先进这里，但键盘/手柄用户长按 A 弹的是本对话框，
       // 没有这一条就只能从对话框退出去再确认一次卡片。菜单里给出同一个入口。
-      if (_isMangaItem(item))
+      if (isManga && modules.isEnabled(ModuleId.manga))
         DialogListAction(
           label: t.manga_series_open_series,
           icon: Icons.auto_stories_outlined,
@@ -2317,7 +2437,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       // TODO-291 阶段2：书架长按「悬浮字幕」= 启动该书的后台听书会话（无正在播则用该书
       // 启动 + 拉起悬浮窗），不再只翻 bool。该书已是活动会话则改为「停止后台听书」。
-      if (Platform.isAndroid || Platform.isWindows)
+      // 「悬浮字幕」= 用该书起一个后台听书会话，属听书模块。
+      if ((Platform.isAndroid || Platform.isWindows) &&
+          modules.isEnabled(ModuleId.listening))
         DialogListAction(
           label: _isBackgroundListeningBook(bookKey)
               ? '${t.floating_lyric_toggle_action} ✓'
@@ -2331,6 +2453,44 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 单卡「在线刮削封面」（统一三库页刮削入口）：先收起长按菜单，弹既有
   /// [BookCoverScrapeDialog]（Bangumi 书籍条目，选中即下载临时文件），选中后
   /// 立即走与「编辑信息」保存完全相同的 override 通道落封面，卡面即时刷新。
+  /// 书卡菜单直达「重命名」（EPUB / 漫画 / PDF / SRT 有声书共用——身份换算全在
+  /// [MediaSource] 里，这一层只认 [MediaItem]）。
+  ///
+  /// 与上面「在线刮削封面」同一形状的入口下沉：改名的**能力**一直都在，但只长在
+  /// 「编辑信息」弹窗的标题字段里，用户得先想到那是个改名入口再点进两层；视频卡和
+  /// 游戏卡的菜单第一项就是「重命名」。书卡此前缺这一档，纯属三库页不对称。
+  ///
+  /// 落点是**显示名覆盖偏好**（`override_title://`），绝不写 `epub_books.title`：
+  /// 那一列派生出主键 `bookKey`，改列等于换身份、十来张子表连坐重键（理由见
+  /// `override_title_key.dart` 的文件头）。清空改名仍然只在「编辑信息」里做——本
+  /// 弹窗按共享原语的约定拒绝空名，避免「确认键点不动」被误读成改名失败。
+  ///
+  /// [dialogContext] 是**要关掉的那个菜单**的 context：EPUB 卡菜单由页面 context
+  /// 承载，SRT 卡菜单自带一个 dialogContext，两者不能混用（拿页面 context 去 pop
+  /// SRT 菜单会连页面一起弹掉）。
+  Future<void> _renameBook(BuildContext dialogContext, MediaItem item) async {
+    Navigator.pop(dialogContext);
+    final MediaSource mediaSource = item.getMediaSource(appModel: appModel);
+    // 初值取**当前显示名**（override ?? 原名）而不是原始 title：否则改过一次名的
+    // 书再次打开改名框会闪回原名，用户以为改名丢了。统一走显示名门面。
+    final String current = displayTitleForBook(item: item, rawTitle: item.title);
+    final String? name = await showNameInputDialog(
+      context: context,
+      title: t.book_rename,
+      labelText: t.book_rename_label,
+      initialName: current,
+      leadingIcon: Icons.drive_file_rename_outline,
+    );
+    if (!mounted || name == null || name == current) return;
+    await mediaSource.setOverrideTitleFromMediaItem(item: item, title: name);
+    if (!mounted) return;
+    // BUG-1018 同款刷新纪律：书架的响应式源按 key 集合去重，纯覆盖层写入不会
+    // 自动重发，只 refreshTab 会拿旧的缓存 MediaItem 重绘、看着像"没保存"。
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(srtBooksProvider);
+    _rebuild(() {});
+  }
+
   Future<void> _scrapeEpubCover(MediaItem item) async {
     Navigator.pop(context);
     final MediaSource mediaSource = item.getMediaSource(appModel: appModel);
@@ -2531,7 +2691,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final bool revealed = row != null && await revealBookLocation(row);
     if (revealed || !mounted) return;
     FushiToast.show(
-      msg: t.book_file_location_failed,
+      msg: t.media_file_location_failed,
       severity: ToastSeverity.error,
     );
   }
@@ -2605,6 +2765,23 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 }
 
 /// 书架混排网格的单个排序槽（SRT / EPUB / 远端占位三类卡片到一个有序列表）。
+/// BUG-2458：远端占位卡的多选键（库级私有，parts 共用）。
+const String _kRemoteBookSelectionPrefix = 'remote_book_';
+const String _kRemoteSrtSelectionPrefix = 'remote_srt_';
+
+/// 远端 EPUB 占位卡的多选键：身份是 host 的 `downloadId`（与 [_ShelfBookSlot]
+/// 的 entryKey、下载任务 id 同源），不是可被 host 改名的显示名。
+String _remoteBookSelectionKey(RemoteBookInfo book) =>
+    '$_kRemoteBookSelectionPrefix${book.downloadId}';
+
+/// 纯 SRT 远端有声书占位卡的多选键：身份是 `identity`（与 entryKey 同源）。
+String _remoteSrtSelectionKey(RemoteAudiobookInfo book) =>
+    '$_kRemoteSrtSelectionPrefix${book.identity}';
+
+bool _isRemoteSelectionKey(String key) =>
+    key.startsWith(_kRemoteBookSelectionPrefix) ||
+    key.startsWith(_kRemoteSrtSelectionPrefix);
+
 /// [srt]/[epub]/[remote] 恰有一个非空。「最近阅读」量纲不在槽里——由页面级
 /// `_lastReadAtByBookKey`（reader_positions.updatedAt）按 bookKey 查（BUG-777）。
 ///

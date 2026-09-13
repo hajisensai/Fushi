@@ -4,13 +4,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:fushi/pages.dart';
+import 'package:fushi/models.dart' show AppModel;
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_addon_installer.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart'
@@ -18,6 +22,7 @@ import 'package:fushi/src/settings/settings_actions.dart'
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
     show showAudioSourcesManagerDialog;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -96,7 +101,9 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// [OnboardingStepHero]（图标 + 标题 + 一句话）开头；动作走 [OnboardingActionList]
 /// ——必做/推荐的动作直接摊开，可选动作收进「其他方式」折叠组，避免一屏五个入口。
 class OnboardingWizardPage extends BasePage {
-  const OnboardingWizardPage({super.key});
+  const OnboardingWizardPage({this.tutorialOnly = false, super.key});
+
+  final bool tutorialOnly;
 
   @override
   BasePageState<OnboardingWizardPage> createState() =>
@@ -108,13 +115,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 已勾选的功能。模块项在 initState 从当前偏好播种（重开向导时反映现状）；
   /// 能力项默认勾推荐包 + Anki 制卡 + 字体（查词→制卡是本应用的最大公约数，
   /// 字体是几乎所有人都会碰的一步；备份/互联按需自选）。
-  final Set<OnboardingFeature> _selected = <OnboardingFeature>{
-    OnboardingFeature.recommendedPack,
-    OnboardingFeature.anki,
-    OnboardingFeature.fonts,
-  };
+  final Set<OnboardingFeature> _selected =
+      Set<OnboardingFeature>.of(kOnboardingDefaultCapabilities);
 
   int _stepIndex = 0;
+  final OnboardingTutorialProgress _tutorialProgress =
+      OnboardingTutorialProgress();
+  bool _completing = false;
 
   // ── 推荐包下载 ────────────────────────────────────────────────────
   /// 下载任务的所有权在 [AppModel] 上的 controller 里，本页只是它的一个视图：
@@ -139,7 +146,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// （BUG-2107），套那个模板会把「没拿到路径」说成「下载失败」。
   String? _packPickError;
 
-  bool get _browserExtensionAvailable => DesktopLookupService.isDesktop;
+  // 平台判据只有 [ModuleId.availableOn] 一份（见 [_moduleAvailable]），这里不再
+  // 单独写第二遍 `DesktopLookupService.isDesktop`。
+  bool get _browserExtensionAvailable =>
+      _moduleAvailable(ModuleId.browserExtension);
 
   /// 当前真正有应用外查词入口的平台。Windows 用系统级热键；Android 用系统文本
   /// 选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示错误教程。
@@ -161,31 +171,36 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     );
   }
 
-  List<OnboardingStepId> get _steps => onboardingStepSequence(
-        selected: _selected,
-        browserExtensionAvailable: _browserExtensionAvailable,
-        globalLookupAvailable: _globalLookupAvailable,
-        ankiReady: _ankiReadyForFirstCard,
-      );
+  List<OnboardingStepId> get _steps => widget.tutorialOnly
+      ? onboardingTutorialStepSequence(
+          globalLookupAvailable: _globalLookupAvailable)
+      : onboardingStepSequence(
+          selected: _selected,
+          browserExtensionAvailable: _browserExtensionAvailable,
+          globalLookupAvailable: _globalLookupAvailable,
+          ankiReady: _ankiReadyForFirstCard,
+        );
+
+  /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
+  /// [ModuleId.availableOn] 这一处，向导不再自己写 `Platform.isWindows`。
+  bool _moduleAvailable(ModuleId module) => module.availableOn(
+    isWindows: Platform.isWindows,
+    isDesktop: DesktopLookupService.isDesktop,
+    isIOS: Platform.isIOS,
+  );
 
   @override
   void initState() {
     super.initState();
-    if (appModelNoUpdate.moduleBooksEnabled) {
-      _selected.add(OnboardingFeature.books);
-    }
-    if (appModelNoUpdate.moduleMangaEnabled) {
-      _selected.add(OnboardingFeature.manga);
-    }
-    if (appModelNoUpdate.moduleVideoEnabled) {
-      _selected.add(OnboardingFeature.video);
-    }
-    if (Platform.isWindows && appModelNoUpdate.moduleGamesEnabled) {
-      _selected.add(OnboardingFeature.games);
-    }
-    if (_browserExtensionAvailable &&
-        appModelNoUpdate.moduleBrowserExtensionEnabled) {
-      _selected.add(OnboardingFeature.browserExtension);
+    if (widget.tutorialOnly) return;
+    // 模块方格的初值 = 用户此刻的意愿（pref 真值，缺省全开）。遍历
+    // [ModuleId.values] 而不是逐个 if：此前这里只覆盖 5 个模块，下载/查词等根本
+    // 没被读也没被写，用户在引导里「只留阅读」压根做不到。
+    for (final ModuleId module in ModuleId.values) {
+      if (!_moduleAvailable(module)) continue;
+      if (appModelNoUpdate.moduleEnabled(module)) {
+        _selected.add(onboardingFeatureOfModule(module));
+      }
     }
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
@@ -196,49 +211,75 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   // `_packCancelToken?.cancel()`，于是走完向导 = 9.5 GB 的下载被静默掐断。
   // 进度/取消/导入现在都由 [RecommendedPackDownloadController] 持有。
 
-  Future<void> _complete() async {
-    await appModel.setOnboardingCompleted(value: true);
+  /// 上一次 [_applyModuleSelection] 的在途写入。向导是 fullscreenDialog、完全盖住
+  /// HomePage，所以模块开关在向导期间怎么改都不会被看见；**唯独关掉向导的那一刻**
+  /// 必须等写入落地——否则 pop 先发生、写入后到，用户会先看到旧的整排底栏 tab
+  /// 闪一下再被收掉（「关光只留阅读」这条路径最短：功能页取消勾选 → 下一步就是
+  /// 完成）。
+  Future<void>? _moduleSelectionWrite;
+
+  Future<void> _complete({bool finished = false}) async {
+    if (_completing) return;
+    _completing = true;
+    try {
+      // 先等模块勾选落盘再 pop，理由见 [_moduleSelectionWrite]。
+      await _moduleSelectionWrite;
+      if (_tutorialProgress.shouldMarkCompleted(
+          steps: _steps, finished: finished)) {
+        await RecommendedPackTutorialState(appModelNoUpdate.appDirectory)
+            .markCompleted();
+      }
+      if (!widget.tutorialOnly) {
+        await appModelNoUpdate.setOnboardingCompleted(value: true);
+      }
+    } finally {
+      _completing = false;
+    }
     if (!mounted) return;
     await Navigator.of(context).maybePop();
   }
 
-  /// 离开功能选择步骤时，把模块勾选写进 tab 显隐偏好（只写有变化的；平台上
-  /// 没提供勾选的模块不写，保留用户意愿）。
+  /// 离开功能选择步骤时，把模块勾选写进 `module_*_enabled` 偏好（只写有变化的）。
+  ///
+  /// 平台上不提供勾选的模块**不写**，保留用户意愿：它的方格根本没渲染，
+  /// `_selected` 里恒为未勾选，照写会被误当成「用户把它关了」。
   Future<void> _applyModuleSelection() async {
-    final bool books = _selected.contains(OnboardingFeature.books);
-    final bool manga = _selected.contains(OnboardingFeature.manga);
-    final bool video = _selected.contains(OnboardingFeature.video);
-    final bool games = _selected.contains(OnboardingFeature.games);
-    final bool extension = _selected.contains(
-      OnboardingFeature.browserExtension,
-    );
-    if (appModel.moduleBooksEnabled != books) {
-      await appModel.setModuleBooksEnabled(books);
-    }
-    if (appModel.moduleMangaEnabled != manga) {
-      await appModel.setModuleMangaEnabled(manga);
-    }
-    if (appModel.moduleVideoEnabled != video) {
-      await appModel.setModuleVideoEnabled(video);
-    }
-    if (Platform.isWindows && appModel.moduleGamesEnabled != games) {
-      await appModel.setModuleGamesEnabled(games);
-    }
-    if (_browserExtensionAvailable &&
-        appModel.moduleBrowserExtensionEnabled != extension) {
-      await appModel.setModuleBrowserExtensionEnabled(extension);
+    for (final ModuleId module in ModuleId.values) {
+      if (!_moduleAvailable(module)) continue;
+      final bool wanted = _selected.contains(onboardingFeatureOfModule(module));
+      if (appModel.moduleEnabled(module) == wanted) continue;
+      await appModel.setModuleEnabled(module, wanted);
     }
   }
 
-  void _goNext() {
+  void _goNext() => unawaited(_goNextAsync());
+
+  /// BUG-2380：离开 Anki 那一步之前先判一次「这套配置真能制出卡吗」，判不过就地
+  /// 劝建并选用 Lapis。放在推进**之前**而不是之后——用户按下一步的那一刻还看得见
+  /// Anki 这一页的上下文，翻页之后再弹就成了没头没尾的打断。
+  ///
+  /// 弹窗不拦路：用户选「保持当前设置」照样进下一步（引导本来就可跳过，这里不该
+  /// 变成硬门）。但建成了的话 `_steps` 会因为 Anki 变 ready 而多出一步，所以 await
+  /// 之后必须重新取一次序列，不能沿用进函数时那份。
+  Future<void> _goNextAsync() async {
+    if (_steps[_stepIndex] == OnboardingStepId.anki) {
+      await promptCreateLapisIfCannotMine(
+        context: context,
+        viewModel: ref.read(ankiViewModelProvider.notifier),
+      );
+      if (!mounted) return;
+    }
     final List<OnboardingStepId> steps = _steps;
     if (steps[_stepIndex] == OnboardingStepId.features) {
-      unawaited(_applyModuleSelection());
+      // 不阻塞翻页（写 11 个 pref 要走 DB），但把 future 留给 [_complete] 等。
+      _moduleSelectionWrite = _applyModuleSelection();
+      unawaited(_moduleSelectionWrite);
     }
     if (_stepIndex >= steps.length - 1) {
-      unawaited(_complete());
+      unawaited(_complete(finished: true));
       return;
     }
+    _tutorialProgress.completeStep(steps[_stepIndex]);
     setState(() => _stepIndex += 1);
   }
 
@@ -255,6 +296,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     });
   }
 
+  /// 向导内的页面跳转。**这里刻意不做模块可见性判断**：向导里通向被关模块的深链
+  /// （制卡 / 同步备份 / 互联 / 浏览器扩展 / 应用外查词）门控挂在
+  /// [onboardingStepSequence] —— 模块没勾选，承载这些按钮的整个步骤根本不进序列，
+  /// 属于「入口不渲染」而不是「点了静默失败」。别再往这里补一层判断：那会变成一个
+  /// 永不为真的死分支，反而掩盖真正的门在哪儿。
   Future<void> _pushPage(WidgetBuilder builder) async {
     await Navigator.of(
       context,
@@ -311,15 +357,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   // ── 推荐包 ────────────────────────────────────────────────────────
 
-  /// 下载 → 下完就地导入。下载本身在 controller 里跑完（取消/失败提示也在那边），
-  /// 本页只负责「我还在的话，顺手把导入接上」：向导已经关了就停在「已下载待导入」，
-  /// 由设置 → 系统里那一行接手（BUG-2097）。
+  /// Download completion uses the controller's common notification. Importing an
+  /// existing archive is an explicit action and must not replay a download toast.
   Future<void> _downloadPackAndImport() async {
-    // 上一次「选文件」的失败文案不该压住这次下载的状态。
     if (_packPickError != null) setState(() => _packPickError = null);
-    final File? file = await _packController.start();
-    if (file == null || !mounted) return;
-    await _importPackFile(file.path, deleteAfterImport: true);
+    if (_packController.hasPendingImport) {
+      await _importPackFile(_packController.packFile.path,
+          deleteAfterImport: true);
+      return;
+    }
+    await _packController.start();
   }
 
   /// 选一个已经下载好的包文件（备份 zip）并导入。
@@ -368,18 +415,24 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
   }
 
-  /// 走备份导入共享编排。导入真正开始（用户已确认）后进程会重启；
-  /// [deleteAfterImport] 时在确认点落 flag，重启回来由 initState 删包。
+  /// Only successful imports enable the follow-up, including user-picked packs.
+  /// Downloaded archives additionally enter the controller's cleanup lifecycle.
   Future<void> _importPackFile(
     String path, {
     required bool deleteAfterImport,
   }) async {
+    // Restore replaces the root and disposes this State before success fires.
+    final AppModel model = appModelNoUpdate;
+    final RecommendedPackDownloadController controller = _packController;
+    final RecommendedPackTutorialState tutorialState =
+        RecommendedPackTutorialState(model.appDirectory);
     await runBackupImportFlowForFile(
-      appModel: appModel,
+      appModel: model,
       filePath: path,
-      // 打标是包目录级操作（写 `<包目录>/imported.flag`），与走哪条线路无关。
-      onImportConfirmed:
-          deleteAfterImport ? _packController.markImportStarted : null,
+      onImportSucceeded: () async {
+        await tutorialState.markImportSucceeded();
+        if (deleteAfterImport) await controller.markImportSucceeded();
+      },
     );
   }
 
@@ -443,6 +496,13 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           anki.availableDecks.isNotEmpty &&
           anki.availableNoteTypes.isNotEmpty;
     });
+    if (!_ankiConnectionVerified || !context.mounted) return;
+    // BUG-2380：连上了就当场判一次「这套配置真能制出卡吗」。判不过就地给出唯一
+    // 出路（创建并选用 Lapis），而不是让用户一路走到第一次制卡才发现字段全空。
+    await promptCreateLapisIfCannotMine(
+      context: context,
+      viewModel: ref.read(ankiViewModelProvider.notifier),
+    );
   }
 
   /// 当前 Anki 后端的展示名（与 platform_services 的编译期选择一致：桌面
@@ -756,13 +816,22 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       ),
       body: Column(
         children: <Widget>[
+          // BUG-2440：脚手架的 body 不再扣底部安全区，那一段归下面这条按钮行的
+          // SafeArea 认领。步骤正文在按钮行**上方**、够不着屏幕底边，所以先把
+          // 底部 inset 从它的 MediaQuery 里摘掉——不摘的话，自己补安全区的步骤
+          // （如 [OnlineServicesOnboardingView]）会和按钮行各补一次，在按钮上方
+          // 顶出一条 34pt 空白。
           Expanded(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: _kOnboardingContentMaxWidth,
+            child: MediaQuery.removePadding(
+              context: context,
+              removeBottom: true,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _kOnboardingContentMaxWidth,
+                  ),
+                  child: _buildStep(step),
                 ),
-                child: _buildStep(step),
               ),
             ),
           ),
@@ -817,6 +886,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return _buildManualResourcesStep();
       case OnboardingStepId.anki:
         return _buildAnkiStep();
+      case OnboardingStepId.onlineServices:
+        return OnlineServicesOnboardingView(
+          items: onlineServiceOnboardingItems(),
+          onOpenLink: (Uri url) => launchUrl(
+            url,
+            mode: LaunchMode.externalApplication,
+          ),
+          onConfigure: () => _pushPage(
+            (_) => SettingsDetailPage(destination: buildServicesDestination()),
+          ),
+        );
       case OnboardingStepId.backup:
         return OnboardingStepView(
           icon: Icons.cloud_sync_outlined,
@@ -867,6 +947,22 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               description: t.onboarding_step_extension_action_desc,
               necessity: OnboardingActionNecessity.recommended,
               onPressed: () => _pushPage((_) => const BrowserExtensionPage()),
+            ),
+            // 装完之后总得有个地方真试一下。页面由本机 server 提供（http，扩展才注入得了；
+            // Chrome 默认不给扩展 file:// 权限），server 没开就不给点。
+            OnboardingAction(
+              icon: Icons.public_outlined,
+              label: t.browser_extension_test_page_action,
+              description: appModel.yomitanApiServerEnabled
+                  ? t.browser_extension_test_page_action_desc
+                  : t.browser_extension_test_page_server_off,
+              necessity: OnboardingActionNecessity.recommended,
+              onPressed: appModel.yomitanApiServerEnabled
+                  ? () => launchUrl(
+                        Uri.parse(appModel.browserExtensionTestPageUrl),
+                        mode: LaunchMode.externalApplication,
+                      )
+                  : null,
             ),
           ],
         );
@@ -1114,15 +1210,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     );
   }
 
-  /// 功能选择页里当前平台真的提供勾选的模块。
+  /// 功能选择页里当前平台真的提供勾选的模块。顺序 = [ModuleId] 的展示顺序
+  /// （与设置 → 外观 → 功能模块 同向），平台判据只走 [_moduleAvailable]。
   List<OnboardingFeature> get _visibleModuleFeatures => <OnboardingFeature>[
-        for (final OnboardingFeature feature in OnboardingFeature.values)
-          if (kOnboardingModuleFeatures.contains(feature) &&
-              (feature != OnboardingFeature.games || Platform.isWindows) &&
-              (feature != OnboardingFeature.browserExtension ||
-                  _browserExtensionAvailable))
-            feature,
-      ];
+    for (final ModuleId module in ModuleId.values)
+      if (_moduleAvailable(module)) onboardingFeatureOfModule(module),
+  ];
 
   List<OnboardingFeature> get _capabilityFeatures => <OnboardingFeature>[
         for (final OnboardingFeature feature in OnboardingFeature.values)
@@ -1336,23 +1429,24 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           title: t.onboarding_finish_title,
           body: t.onboarding_finish_body,
         ),
-        SizedBox(height: tokens.spacing.card),
-        FushiCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              OnboardingSummaryRow(
-                label: t.onboarding_finish_summary_modules,
-                items: modules,
-              ),
-              SizedBox(height: tokens.spacing.card),
-              OnboardingSummaryRow(
-                label: t.onboarding_finish_summary_setup,
-                items: setup,
-              ),
-            ],
+        if (!widget.tutorialOnly) SizedBox(height: tokens.spacing.card),
+        if (!widget.tutorialOnly)
+          FushiCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                OnboardingSummaryRow(
+                  label: t.onboarding_finish_summary_modules,
+                  items: modules,
+                ),
+                SizedBox(height: tokens.spacing.card),
+                OnboardingSummaryRow(
+                  label: t.onboarding_finish_summary_setup,
+                  items: setup,
+                ),
+              ],
+            ),
           ),
-        ),
       ],
     );
   }
@@ -1369,12 +1463,27 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return Icons.smart_display_outlined;
       case OnboardingFeature.games:
         return Icons.videogame_asset_outlined;
+      // 有 tab 的两个模块图标取底栏真值，与底栏/侧栏同一份。
+      case OnboardingFeature.downloads:
+        return homeNavItemFor(HomeTab.downloads).icon;
+      case OnboardingFeature.lookup:
+        return homeNavItemFor(HomeTab.dictionaries).icon;
+      case OnboardingFeature.listening:
+        return Icons.headphones_outlined;
+      case OnboardingFeature.cardCreation:
+        return Icons.note_add_outlined;
+      case OnboardingFeature.services:
+        return Icons.cloud_outlined;
+      case OnboardingFeature.sync:
+        return Icons.sync;
       case OnboardingFeature.recommendedPack:
         return Icons.auto_stories_outlined;
       case OnboardingFeature.manualResources:
         return Icons.build_circle_outlined;
       case OnboardingFeature.anki:
         return Icons.style_outlined;
+      case OnboardingFeature.onlineServices:
+        return Icons.cloud_outlined;
       case OnboardingFeature.fonts:
         return Icons.font_download_outlined;
       case OnboardingFeature.backup:
@@ -1396,12 +1505,28 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_video;
       case OnboardingFeature.games:
         return t.onboarding_feature_games;
+      // 新增的六个模块**零新增 i18n**：有 tab 的取底栏标签（同一真值），没 tab 的
+      // 取它在设置页一级分类的标题 / 摘要。
+      case OnboardingFeature.downloads:
+        return homeNavItemFor(HomeTab.downloads).label;
+      case OnboardingFeature.lookup:
+        return homeNavItemFor(HomeTab.dictionaries).label;
+      case OnboardingFeature.listening:
+        return t.settings_destination_listening;
+      case OnboardingFeature.cardCreation:
+        return t.settings_destination_card_creation;
+      case OnboardingFeature.services:
+        return t.settings_destination_services;
+      case OnboardingFeature.sync:
+        return t.settings_destination_sync_backup;
       case OnboardingFeature.recommendedPack:
         return t.onboarding_feature_pack;
       case OnboardingFeature.manualResources:
         return t.onboarding_feature_manual_resources;
       case OnboardingFeature.anki:
         return t.onboarding_feature_anki;
+      case OnboardingFeature.onlineServices:
+        return t.onboarding_online_services_title;
       case OnboardingFeature.fonts:
         return t.onboarding_feature_fonts;
       case OnboardingFeature.backup:
@@ -1423,12 +1548,27 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_video_hint;
       case OnboardingFeature.games:
         return t.onboarding_feature_games_hint;
+      // 同上：一句话说明直接复用各自设置分类的 summary，不新增 key。
+      case OnboardingFeature.downloads:
+        return t.download_settings;
+      case OnboardingFeature.lookup:
+        return t.dictionary_settings;
+      case OnboardingFeature.listening:
+        return t.floating_lyric_hint;
+      case OnboardingFeature.cardCreation:
+        return t.anki_settings_label;
+      case OnboardingFeature.services:
+        return t.settings_destination_services_summary;
+      case OnboardingFeature.sync:
+        return t.sync_summary;
       case OnboardingFeature.recommendedPack:
         return t.onboarding_feature_pack_hint;
       case OnboardingFeature.manualResources:
         return t.onboarding_feature_manual_resources_hint;
       case OnboardingFeature.anki:
         return t.onboarding_feature_anki_hint;
+      case OnboardingFeature.onlineServices:
+        return t.onboarding_online_services_hint;
       case OnboardingFeature.fonts:
         return t.onboarding_feature_fonts_hint;
       case OnboardingFeature.backup:

@@ -1,0 +1,8 @@
+## BUG-2275 · Cloudflare验证网页未继承手动代理
+- **报告**：2026-09-08（用户：要求覆盖 Cloudflare 验证网页的手动代理）
+- **真实性**：✅ 真 bug。原 Android `network/interceptor/CloudflareInterceptor.kt:83` 直接在主进程创建 WebView，使用系统网络；原 `aidoku_cloudflare_challenge_page.dart` 的 InAppWebView 没有消费应用代理。HTTP 源请求与解题页面因此可能使用不同出口，或页面完全打不开。
+- **[x] ① 根因修复** — Android 显式验证 Activity 隔离到 `:network_challenge`、单独数据目录，等待代理 override 后导航；未导出、主阅读器进程不变。Apple 验证浏览器使用独立 nonPersistent WKWebsiteDataStore，在创建视图前装配代理且禁止 failover。两端使用只允许公网 URL 的鉴权专用 relay。实际源 UA、主端旧 clearance、取消与返回路径均显式传递；源浏览/详情/阅读错误由用户点击验证后再重试原操作。
+- **[x] ② 自动化测试** — `aidoku_proxy_challenge_test.dart`、`app_native_proxy_test.dart`、`mihon_cloudflare_action_test.dart`、`android_mihon_proxy_policy_test.dart`、Android/Apple proxy boundary guards；`integration_test/mihon_android_challenge_proxy_test.dart` 检查真实 WebView 代理、跨站资源和主阅读器网络隔离。macOS 与 iOS18.6 的独立真实 WK fixture 均通过 407→认证→新 cookie 返回→默认 store 不污染，证据 `.codex-test/apple-proxy/evidence.md`。
+- **验证边界**：Android 完整 Debug x64 APK 已构建，后续取消清理状态机补丁单独编译验证；设备 fixture 最终仍被模拟器 SurfaceFlinger/Activity/PackageManager 系统故障挡在零测试执行阶段，不能标 E2E 通过，已停止并关闭本任务模拟器。Apple 两目标 Swift typecheck 与 pbxproj 语法检查通过，未做完整 Hibiki Apple 打包；Android Release 实际尝试仍缺 `android/key.properties`。fixture 模拟新 clearance，不代表替用户完成真实网站 Cloudflare 互动挑战。
+- **兼容边界**：隔离代理浏览器要求 Android9+ 与支持 PROXY_OVERRIDE 的 WebView，Apple要求iOS17+/macOS14+；不支持时明确报错，不悄悄以系统出口替代手动/直连选择。Android只回写新cf_clearance，避免覆盖登录cookie的HttpOnly/SameSite等元数据。
+- **清理与登录状态**：取消可以立即关闭窗口，但异步 setProxyOverride→clearProxyOverride 完成前不释放验证会话，防止旧清理误改新验证的路由。超时不绕过清理；两个平台均不把缺失安全属性的登录 cookie 复制为浏览器 JS 可读 cookie，只合并新 clearance 并保留原登录状态。

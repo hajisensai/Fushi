@@ -7,6 +7,8 @@
 /// EPUB、.mokuro 的 JSON 会被当纯文本吞掉、带点的目录名会取出假扩展名。
 library;
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 
@@ -291,6 +293,42 @@ void main() {
       r.resolver.invalidate();
       r.resolver.resolve('/b/novel.epub');
       expect(r.probes.length, 2);
+    });
+
+    test('内容变了必须重新定性：同一路径、文件被换掉（BUG-2168 复审）', () async {
+      // 只用路径当记忆键是不够的：判定本身要**真开包读内容**，结论随内容变。
+      // 可达路径全程在既有 UI 上——用户选了一个还在下载中、中央目录尚未落盘的
+      // .cbz，判成非漫画后只弹一条 toast 并 return（对话框不关、resolver 不销毁）；
+      // 下载完成后在同一个对话框里重选同一路径，单槽命中就返回过期判定，
+      // isImageArchive 根本不再被调用，用户永远导不进去，只能关掉重开。
+      final Directory dir =
+          await Directory.systemTemp.createTemp('carrier_memo_');
+      addTearDown(() => dir.delete(recursive: true));
+      final File f = File('${dir.path}/vol.zip');
+      await f.writeAsBytes(<int>[0]);
+
+      final List<String> probes = <String>[];
+      // 「开包」的答案跟着磁盘内容走：内容长度 >= 2 才算图片包（模拟「下载完成」）。
+      final ImportCarrierResolver resolver = ImportCarrierResolver(
+        isDirectory: (String _) => false,
+        isImageArchive: (String path) {
+          probes.add(path);
+          return File(path).lengthSync() >= 2;
+        },
+        directoryHasPageImages: (String _) => false,
+        directoryCarrierFileCount: (String _) => 0,
+      );
+
+      expect(resolver.resolve(f.path), ImportCarrier.epub,
+          reason: '半截包：判据说它不是图片包');
+      expect(resolver.resolve(f.path), ImportCarrier.epub);
+      expect(probes.length, 1, reason: '内容没变时仍然只开一次包');
+
+      // 文件被换成完整的包（mtime + 大小都变了）。
+      await f.writeAsBytes(<int>[0, 1, 2, 3]);
+      expect(resolver.resolve(f.path), ImportCarrier.mangaArchive,
+          reason: '内容变了就必须重新开包定性，不得返回过期判定');
+      expect(probes.length, 2);
     });
 
     test('记忆不改变判定结果本身（词典包一票否决照常）', () {

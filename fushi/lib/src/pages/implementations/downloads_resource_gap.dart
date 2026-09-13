@@ -1,4 +1,4 @@
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 
 /// 下载页「资源」标签的前置条件缺口：缺的到底是哪一环。
 ///

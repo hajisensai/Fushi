@@ -108,7 +108,9 @@ void main() {
     ]) {
       expect(
         read(file),
-        contains('const SyncProgressBanner()'),
+        contains(file.endsWith('reader_fushi_history_page.dart')
+            ? 'SyncProgressBanner(compact: _compactLibraryToolbar)'
+            : 'const SyncProgressBanner()'),
         reason: '$file 缺同步进度条：光一个 RefreshIndicator 转圈看不出跑到哪一步',
       );
     }

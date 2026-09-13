@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_anki/fushi_anki.dart' show AnkiMiningSource;
 
-import 'package:fushi/src/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart';
 
 /// TODO-1162 外部窗口挖矿 M0：把外部窗口抓到的一帧静态截图字节 + 当前 texthooker 句子
 /// 组成喂 [ImmersionMiningEngine] 的 [ImmersionMiningRequest]（纯函数，可单测）。

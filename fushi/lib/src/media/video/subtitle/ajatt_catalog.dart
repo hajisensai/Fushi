@@ -24,7 +24,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/video/jimaku_client.dart'
+import 'package:fushi_engine/media/video/jimaku_client.dart'
     show detectSubtitleLanguage, parseSubtitleEpisode;
 import 'package:http/http.dart' as http;
 

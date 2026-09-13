@@ -6,37 +6,44 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/discovery/discovery_download_queue.dart'
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
-import 'package:fushi/src/media/discovery/discovery_models.dart'
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/torrent_backend.dart';
-import 'package:fushi/src/media/torrent/torrent_metainfo.dart';
-import 'package:fushi/src/media/torrent/video_resource_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_download_backend_identity.dart';
-import 'package:fushi/src/media/video/download/video_download_path_mapping.dart';
-import 'package:fushi/src/media/video/download/video_download_pipeline_service.dart';
-import 'package:fushi/src/media/video/download/video_media_reference_codec.dart';
-import 'package:fushi/src/media/video/download/video_resource_registry.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_provider.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_resolver.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi/src/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
+import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
+import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/video_cover_extractor.dart';
+import 'package:fushi_engine/updates/update_feed_kind.dart';
+import 'package:fushi_engine/updates/update_feed_port.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
 
-/// 带 AniDB 规范身份的入队快照（P1 契约下 scrape 阶段的唯一入场券）。
-VideoMediaReference _anidbReference() => VideoMediaReference(
+/// 发现身份快照里的 MAL ID 优先于兼容保留的 AniDB ID。
+VideoMediaReference _confirmedReference({
+  VideoMetadataProviderKind provider = VideoMetadataProviderKind.mal,
+  VideoMetadataMediaKind kind = VideoMetadataMediaKind.tv,
+}) =>
+    VideoMediaReference(
       providerId: 'anilist',
       mediaId: '100',
-      mediaKind: VideoMetadataMediaKind.tv,
+      mediaKind: kind,
       discoveryCategory: VideoDiscoveryCategory.anime,
       title: 'Show',
       originalTitle: 'ショー',
@@ -45,6 +52,7 @@ VideoMediaReference _anidbReference() => VideoMediaReference(
       season: 1,
       anidbId: 42,
       anilistId: 100,
+      externalIds: <String, String>{provider.name: '42'},
     );
 const VideoDownloadBackendIdentity _expectedIdentity =
     VideoDownloadBackendIdentity(
@@ -745,7 +753,7 @@ void main() {
     );
 
     environment.service.wake();
-    // P1 契约：anilist 身份不是 AniDB 规范身份 → import 后直接完成（进视频页
+    // P1 契约：anilist 身份不是 MAL/TMDB 规范身份 → import 后直接完成（进视频页
     // 待确认队列），不再被强制刮到 needsAttention。
     await _waitForJob(
       environment.database,
@@ -887,7 +895,7 @@ void main() {
     );
 
     environment.service.wake();
-    // P1 契约：无 AniDB 身份 → import 后直接完成，见上一个用例的注释。
+    // P1 契约：无 MAL/TMDB 身份 → import 后直接完成，见上一个用例的注释。
     await _waitForJob(
       environment.database,
       jobId,
@@ -1075,7 +1083,7 @@ void main() {
     );
 
     environment.service.wake();
-    // P1 契约：无 AniDB 身份 → import 后直接完成，字幕落位断言不受影响。
+    // P1 契约：无 MAL/TMDB 身份 → import 后直接完成，字幕落位断言不受影响。
     await _waitForJob(
       environment.database,
       jobId,
@@ -1106,12 +1114,12 @@ void main() {
     );
     addTearDown(environment.close);
     const String jobId = 'exact-scrape-path-job';
-    // P1 起 scrape 阶段只对带 AniDB 规范身份的任务运行；本用例守的是
-    // 「身份确认后也绝不按标题回退映射」，故显式带上 anidb 身份。
+    // P1 起 scrape 阶段只对带 MAL/TMDB 规范身份的任务运行；本用例守的是
+    // 「身份确认后也绝不按标题回退映射」，故显式带上 MAL 身份。
     await environment.insertJob(
       jobId: jobId,
       stage: VideoDownloadJobStage.scrape,
-      identityJson: encodeVideoMediaReference(_anidbReference()),
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
     );
     await environment.database.upsertVideoBook(
       VideoBooksCompanion(
@@ -1149,18 +1157,195 @@ void main() {
     expect(job.lastError, contains('mapped exactly'));
   });
 
+  for (final bool legacyAniDb in <bool>[false, true]) {
+    test(
+        'a scrape-stage job without a MAL/TMDB identity completes instead of '
+        'getting pinned on needsAttention (legacy AniDB: $legacyAniDb)',
+        () async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+        backend: _FakeTorrentBackend(),
+      );
+      addTearDown(environment.close);
+      const String jobId = 'anilist-only-scrape-job';
+      // insertJob 默认身份是 anilist:100 —— 修前它会被强制模糊刮到歧义卡死。
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.scrape,
+        identityJson: legacyAniDb
+            ? encodeVideoMediaReference(VideoMediaReference(
+                providerId: 'anidb',
+                mediaId: '42',
+                anidbId: 42,
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.anime,
+                title: 'Show',
+              ))
+            : null,
+      );
+
+      environment.service.wake();
+      await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.completed,
+      );
+    });
+  }
+
+  for (final VideoMetadataProviderKind provider in <VideoMetadataProviderKind>[
+    VideoMetadataProviderKind.mal,
+    VideoMetadataProviderKind.tmdb,
+  ]) {
+    for (final VideoMetadataMediaKind kind in VideoMetadataMediaKind.values) {
+      test(
+          'enqueue snapshot passes confirmed ${provider.name} ${kind.name} lookup',
+          () async {
+        final _RecordingMetadataProvider recorder =
+            _RecordingMetadataProvider(provider);
+        final _PipelineEnvironment environment =
+            await _PipelineEnvironment.create(
+          backend: _FakeTorrentBackend(),
+          metadataProvider: recorder,
+        );
+        addTearDown(environment.close);
+        const String jobId = 'confirmed-scrape-job';
+        await environment.insertJob(
+          jobId: jobId,
+          stage: VideoDownloadJobStage.scrape,
+          mediaKind: kind.name,
+          identityJson: encodeVideoMediaReference(
+              _confirmedReference(provider: provider, kind: kind)),
+        );
+        final String videoPath = p.join(environment.root.path, 'Show.mkv');
+        await environment.database.upsertVideoBook(
+          VideoBooksCompanion(
+            bookUid: const Value<String>('video/anidb-show'),
+            title: const Value<String>('Show'),
+            videoPath: Value<String>(videoPath),
+            sourceId: Value<int?>(environment.sourceId),
+          ),
+        );
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        await environment.database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion.insert(
+            jobId: jobId,
+            backendFileIndex: const Value<int?>(0),
+            originalRelativePath: 'Show.mkv',
+            currentRelativePath: 'Show.mkv',
+            finalAbsolutePath: Value<String?>(videoPath),
+            kind: const Value<String>('video'),
+            status: const Value<String>(VideoDownloadJobFileStatus.imported),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+        environment.service.wake();
+        final VideoDownloadJobRow job = await _waitForJob(
+          environment.database,
+          jobId,
+          (VideoDownloadJobRow row) =>
+              row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+        );
+
+        expect(job.lastError, contains('recorded confirmed lookup'));
+        expect(recorder.lookups, hasLength(1));
+        expect(recorder.lookups.single.provider, provider);
+        expect(recorder.lookups.single.externalId, '42');
+        expect(recorder.lookups.single.mediaKind, kind);
+        expect(recorder.searchCalls, 0);
+      });
+    }
+  }
   test(
-      'a scrape-stage job without an AniDB identity completes instead of '
-      'getting pinned on needsAttention (BUG-2004)', () async {
+      'subscription import publishes a per-work episode update with frame, '
+      'release info and published time', () async {
+    final _RecordingUpdateFeed feed = _RecordingUpdateFeed();
+    final List<String> extracted = <String>[];
+    final Directory frames =
+        await Directory.systemTemp.createTemp('fushi-episode-frames-');
+    addTearDown(() => frames.delete(recursive: true));
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
       backend: _FakeTorrentBackend(),
+      updateFeed: feed,
+      coverExtractor: ({
+        required String videoPath,
+        required String bookUid,
+        double atSeconds = 10.0,
+      }) async {
+        extracted.add(videoPath);
+        final File frame = File(
+          p.join(frames.path, '${bookUid.replaceAll('/', '_')}.jpg'),
+        );
+        await frame.create(recursive: true);
+        return frame.path;
+      },
     );
     addTearDown(environment.close);
-    const String jobId = 'anilist-only-scrape-job';
-    // insertJob 默认身份是 anilist:100 —— 修前它会被强制模糊刮到歧义卡死。
+    const String jobId = 'subscription-episode-job';
     await environment.insertJob(
       jobId: jobId,
-      stage: VideoDownloadJobStage.scrape,
+      stage: VideoDownloadJobStage.import,
+    );
+    await environment.database.updateVideoDownloadJob(
+      jobId,
+      const VideoDownloadJobsCompanion(
+        resourceTitle: Value<String?>(
+          '[SubsPlease] Show - 02 (1080p) [A1B2C3D4].mkv',
+        ),
+      ),
+    );
+    const int publishedAt = 1_760_000_000_000;
+    await environment.database.upsertVideoDownloadSubscription(
+      VideoDownloadSubscriptionsCompanion.insert(
+        subscriptionId: 'sub-1',
+        resourceProvider: 'nyaa:test-instance',
+        mediaKind: 'tv',
+        title: 'Show',
+        searchQuery: 'Show',
+        backendKind: 'embedded',
+        fingerprint: _expectedIdentity.fingerprint,
+        createdAt: 1,
+        updatedAt: 1,
+      ),
+    );
+    await environment.database.upsertVideoDownloadSubscriptionItem(
+      VideoDownloadSubscriptionItemsCompanion.insert(
+        subscriptionId: 'sub-1',
+        logicalItemKey: 's1e2',
+        resourceProvider: 'nyaa:test-instance',
+        selectedResourceId: 'release-1',
+        title: 'Show - 02',
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        publishedAt: const Value<int?>(publishedAt),
+        jobId: const Value<String?>(jobId),
+        discoveredAt: 1,
+        updatedAt: 1,
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      'Show S01E02.mkv',
+    );
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E02.mkv',
+        currentRelativePath: 'Show S01E02.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
     );
 
     environment.service.wake();
@@ -1170,57 +1355,106 @@ void main() {
       (VideoDownloadJobRow row) =>
           row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
+
+    expect(feed.batches, hasLength(1));
+    expect(feed.batches.single.kind, UpdateFeedKind.videoEpisode);
+    final UpdateFeedDraft draft = feed.batches.single.drafts.single;
+    expect(draft.title, 'Show');
+    expect(draft.subtitle, 'S01E02 · 1080p · SubsPlease');
+    expect(draft.publishedAt, publishedAt);
+    expect(extracted, <String>[videoPath]);
+    expect(draft.imagePath, isNotNull);
+    expect(File(draft.imagePath!).existsSync(), isTrue);
+    final Map<String, Object?> detail =
+        jsonDecode(draft.detailJson!) as Map<String, Object?>;
+    expect(draft.notificationGroup, 'collection:${detail['collectionId']}');
+    expect(detail['imagePath'], draft.imagePath);
+    expect(detail['publishedAt'], publishedAt);
+    // 抽的那帧顺手就是这集的书架封面。
+    final VideoBookRow? book = await environment.database.getVideoBookByBookUid(
+      detail['bookUid'] as String,
+    );
+    expect(book?.coverPath, draft.imagePath);
   });
 
-  test(
-      'an AniDB identity from the enqueue snapshot enters scrape as a '
-      'confirmed lookup', () async {
+  test('manual (non-subscription) import publishes no episode update',
+      () async {
+    final _RecordingUpdateFeed feed = _RecordingUpdateFeed();
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
       backend: _FakeTorrentBackend(),
+      updateFeed: feed,
+      coverExtractor: ({
+        required String videoPath,
+        required String bookUid,
+        double atSeconds = 10.0,
+      }) async =>
+          fail('manual import must not extract a notification frame'),
     );
     addTearDown(environment.close);
-    const String jobId = 'anidb-confirmed-scrape-job';
+    const String jobId = 'manual-episode-job';
     await environment.insertJob(
       jobId: jobId,
-      stage: VideoDownloadJobStage.scrape,
-      identityJson: encodeVideoMediaReference(_anidbReference()),
-    );
-    final String videoPath = p.join(environment.root.path, 'Show.mkv');
-    await environment.database.upsertVideoBook(
-      VideoBooksCompanion(
-        bookUid: const Value<String>('video/anidb-show'),
-        title: const Value<String>('Show'),
-        videoPath: Value<String>(videoPath),
-        sourceId: Value<int?>(environment.sourceId),
-      ),
+      stage: VideoDownloadJobStage.import,
     );
     final int now = DateTime.now().millisecondsSinceEpoch;
     await environment.database.upsertVideoDownloadJobFile(
       VideoDownloadJobFilesCompanion.insert(
         jobId: jobId,
         backendFileIndex: const Value<int?>(0),
-        originalRelativePath: 'Show.mkv',
-        currentRelativePath: 'Show.mkv',
-        finalAbsolutePath: Value<String?>(videoPath),
+        originalRelativePath: 'Show S01E02.mkv',
+        currentRelativePath: 'Show S01E02.mkv',
+        finalAbsolutePath: Value<String?>(
+          p.join(environment.root.path, 'Show S01E02.mkv'),
+        ),
         kind: const Value<String>('video'),
-        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
         createdAt: now,
         updatedAt: now,
       ),
     );
 
     environment.service.wake();
-    final VideoDownloadJobRow job = await _waitForJob(
+    await _waitForJob(
       environment.database,
       jobId,
       (VideoDownloadJobRow row) =>
-          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
     );
+    expect(feed.batches, isEmpty);
+  });
 
-    // 测试环境的 registry 没有可用 AniDB provider，coordinator 对已确认身份
-    // fail closed —— 报「主资料源不可用」而不是完成/模糊匹配，证明 anidb
-    // lookup 真正进入了刮削管线。
-    expect(job.lastError, contains('AniDB'));
+  group('subscriptionReleaseLabel', () {
+    test('picks resolution and leading group, ignores hash brackets', () {
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(
+          '[SubsPlease] Show - 02 (1080p) [A1B2C3D4].mkv',
+        ),
+        '1080p · SubsPlease',
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(
+          '[A1B2C3D4] Show 02 720P',
+        ),
+        '720P',
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(
+          '[1080p][Group] Show - 01',
+        ),
+        '1080p',
+        reason: '首方括号就是分辨率时不当字幕组，否则副标题「1080p · 1080p」',
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel('Show 02'),
+        isNull,
+      );
+      expect(
+        VideoDownloadPipelineService.subscriptionReleaseLabel(null),
+        isNull,
+      );
+    });
   });
 
   test(
@@ -1266,7 +1500,7 @@ void main() {
     }
 
     environment.service.wake();
-    // 默认身份是 anilist:100（无 AniDB）→ import 后直接完成（P1 契约）。
+    // 默认身份是 anilist:100（无 MAL/TMDB）→ import 后直接完成（P1 契约）。
     await _waitForJob(
       environment.database,
       jobId,
@@ -1383,7 +1617,7 @@ void main() {
       jobId: jobId,
       stage: VideoDownloadJobStage.scrape,
       mediaKind: VideoMetadataMediaKind.movie.name,
-      identityJson: encodeVideoMediaReference(_anidbReference()),
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
     );
     final String mainPath = p.join(environment.root.path, 'Show Main.mkv');
     final String siblingPath = p.join(environment.root.path, 'Zoku Show.mkv');
@@ -1434,9 +1668,9 @@ void main() {
     );
 
     environment.service.wake();
-    // 首版实现把多作品批次直接 complete——用户在下载确认时选定的 AniDB 身份
+    // 首版实现把多作品批次直接 complete——用户在下载确认时选定的 MAL/TMDB 身份
     // 被静默丢弃。现在必须绑给主片所在作品并真正进入刮削：测试环境没有可用
-    // AniDB provider，coordinator 对已确认身份 fail closed，报「主资料源不可
+    // MAL/TMDB provider，coordinator 对已确认身份 fail closed，报「主资料源不可
     // 用」即证明 lookup 进了管线而不是被丢掉。
     final VideoDownloadJobRow job = await _waitForJob(
       environment.database,
@@ -1444,7 +1678,7 @@ void main() {
       (VideoDownloadJobRow row) =>
           row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
     );
-    expect(job.lastError, contains('AniDB'));
+    expect(job.lastError?.toLowerCase(), contains('mal'));
   });
 
   test('retry resets an actionable job and wakes the persisted stage',
@@ -2112,10 +2346,13 @@ class _PipelineEnvironment {
     required _FakeTorrentBackend backend,
     VideoDownloadBackendResolver? backendResolver,
     VideoSubtitleProvider? subtitleProvider,
+    VideoMetadataProvider? metadataProvider,
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
     Duration pollInterval = const Duration(hours: 1),
     String? candidateMagnetUri,
+    UpdateFeedPublisher? updateFeed,
+    VideoCoverExtractor? coverExtractor,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -2138,7 +2375,7 @@ class _PipelineEnvironment {
         : VideoSubtitleRegistry(<VideoSubtitleProvider>[subtitleProvider]);
     final VideoMetadataProviderRegistry metadataRegistry =
         VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-      _UnavailableAniListMetadataProvider(),
+      metadataProvider ?? _UnavailableAniListMetadataProvider(),
     ]);
     final VideoSourceScrapeCoordinator scrapeCoordinator =
         VideoSourceScrapeCoordinator(
@@ -2160,6 +2397,9 @@ class _PipelineEnvironment {
       workerId: 'pipeline-test-worker',
       pollInterval: pollInterval,
       leaseDuration: leaseDuration,
+      updateFeed: updateFeed,
+      coverExtractor: coverExtractor,
+      videoCoversDirectory: Directory(p.join(root.path, 'covers')),
     );
     return _PipelineEnvironment._(
       database: database,
@@ -2565,5 +2805,45 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   ) async {
     renameFileCalls += 1;
     return TorrentStorageResult(ok: true, path: newPath);
+  }
+}
+
+/// Records the real coordinator fetch contract without doing network or sidecar IO.
+class _RecordingMetadataProvider extends _UnavailableAniListMetadataProvider {
+  _RecordingMetadataProvider(this.providerKind);
+
+  @override
+  final VideoMetadataProviderKind providerKind;
+  final List<VideoMetadataLookup> lookups = <VideoMetadataLookup>[];
+  int searchCalls = 0;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+      VideoMetadataSearchRequest request) async {
+    searchCalls++;
+    throw StateError('confirmed identity must not use title search');
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async {
+    lookups.add(lookup);
+    throw StateError('recorded confirmed lookup');
+  }
+}
+
+/// 记录投递到更新提醒端口的批次（不落库、不发通知）。
+class _RecordingUpdateFeed implements UpdateFeedPublisher {
+  final List<({UpdateFeedKind kind, List<UpdateFeedDraft> drafts})> batches =
+      <({UpdateFeedKind kind, List<UpdateFeedDraft> drafts})>[];
+
+  @override
+  Future<void> publishBatch(
+    UpdateFeedKind kind,
+    List<UpdateFeedDraft> drafts,
+  ) async {
+    batches.add((kind: kind, drafts: List<UpdateFeedDraft>.of(drafts)));
   }
 }

@@ -12,7 +12,7 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 
-import 'package:fushi/src/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
 /// 测试注入口：替换真实子进程执行。
 typedef DiscoveryProcessRunner = Future<ProcessResult> Function(

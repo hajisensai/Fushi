@@ -124,3 +124,17 @@ registry 恒空 ⇒ `lookup.coord.v1 ... N=0` ⇒ 永远没有命中。**两道�
   被守的行为已经没了」。
 - **备注**：本条**不是** hook 坏了。hook 侧 `lookup_diag` 四位全亮，是 host 侧的准入
   语义把它挡在门外，而挡的理由（"等待一个不存在的 evidence gate"）已经不成立。
+
+### 2026-09-07：补齐 Windows runner 与 native provider 的握手契约
+
+- **用户反馈**：原版 Summer Pockets Reflection Blue 仍需确认风险才能推进；用户明确要求无需手动确认。沿最新上游与 Siglus 移植基线 `0efe972b2d` 复核，发现前述 Dart 恒接受策略没有贯通 runner，因此复用本条记录遗漏修复，不新增编号。
+- **根因**：基线 `gal_attached_text_controller.dart:642` 在 native provider Ready 时直接结束启用流程，没有调用 attached Configure；runner `InspectTarget` 只进入 `kTargetReady`，`risk_accepted_` 却仍是构造/epoch 重置后的 false。`attached_text_surface_window.cpp:1667` 随后可发出 `riskAcceptanceRequired`。与此同时 Dart 的 inspect、Configure 回执、state event 三处都先按 provider Ready 判 activeNative，再处理 `shieldHandshakePending`，使几何发现可以越过当前握手准入。
+- **[x] ① 已修复（工作区实现，提交由集成任务记录）**：
+  - `fushi/windows/runner/attached_shield_status_policy.h:98` 统一默认接受策略，删除 runner 的每会话风险状态；旧请求参数和快照字段保留兼容。`ShieldPermitsLookup` 必须同时满足当前握手归属与无 fault，Verified 时实际交互仍发送 `allow_risk=false`。
+  - `EnsureShieldHandshake` 的 probe 始终保持 `allowRisk=false`，没有把默认接受伪装为已确认握手或 Verified；原有 HWND、epoch、transaction、applied sequence 和故障拒绝继续生效。runner 不再产生用户无法解除的 `riskAcceptanceRequired`，未完成握手回 `shieldHandshakePending`。
+  - `fushi/lib/src/lookup/gal_attached_text_controller.dart` 在几何 Ready 之前处理握手、退役和 detached 状态。仅原生模式在退役 attached HWND 后重新 InspectTarget，不依赖校准资料或 Configure。快速切换 nativeOnly/off → auto 时，最新模式接管同一目标正在进行的 detach，等待完成再检查，防止旧异步操作退出后永久暂停。
+- **[x] ② 已加自动化测试**：
+  - `fushi/windows/runner/tests/attached_shield_status_policy_test.cpp`：无配置的 Partial/Unknown 准入、Verified 不降级、未确认/异目标/异 epoch/风险 probe 拒绝、fault 即使带 Verified 也拒绝，并检查生产接线。独立 Windows C++ 测试使用 `clang++ -std=c++17 -Wall -Wextra -Werror -DNDEBUG` 编译并执行成功，Release 断言保持启用。
+  - `fushi/test/lookup/gal_attached_text_controller_test.dart`：44/44 通过；新增首次无 profile、三种 pending 优先、Configure pending、nativeOnly 重新 Inspect，以及两种快切的 Completer 回归测试。
+  - `fushi/test/lookup/gal_hook_text_overlay_controller_test.dart`：14/14 通过；新增真实控制器到平台通道的行为测试，观察 `galLookupSetGeometryAdmission.nativeInputAllowed` 在握手 pending 时全 false、Ready 后 true、重新握手后再次 false，且不调用 attached Configure。以上两文件最终合跑 58/58，重复执行不累计为额外用例。
+- **验证边界**：代码和定向自动化证明策略/握手/模式切换契约；完整 Windows 最终构建与原版游戏操作由集成任务验收，本文不把这些单测视为游戏内推进、查词、关闭词典或制卡 E2E 通过，也不提升任何引擎支持状态。

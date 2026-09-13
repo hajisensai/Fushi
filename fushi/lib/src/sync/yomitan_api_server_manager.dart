@@ -1,5 +1,7 @@
-import 'package:fushi/src/sync/fushi_remote_api_handlers.dart';
-import 'package:fushi/src/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
+    show VideoSubtitleRegistry;
+import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -22,7 +24,8 @@ class YomitanApiServerManager {
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
-    String? Function()? jimakuApiKeyProvider,
+    Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
+    String Function()? extensionTestPageProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -37,7 +40,8 @@ class YomitanApiServerManager {
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
-        _jimakuApiKeyProvider = jimakuApiKeyProvider;
+        _subtitleRegistryProvider = subtitleRegistryProvider,
+        _extensionTestPageProvider = extensionTestPageProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -65,7 +69,9 @@ class YomitanApiServerManager {
   // 加载的 build，与内置指纹比对给出更新提示）。
   final void Function(String build, String? version)? _onExtensionReport;
   // 「Jimaku 查字幕」扩展桥：Jimaku API key 供给器，透传给 [YomitanApiServer]。
-  final String? Function()? _jimakuApiKeyProvider;
+  final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
+  // 新手引导「试一试」页的 HTML 供给器，透传给 [YomitanApiServer]（GET 路由）。
+  final String Function()? _extensionTestPageProvider;
 
   YomitanApiServer? _server;
 
@@ -90,7 +96,8 @@ class YomitanApiServerManager {
       onExtensionSeen: _onExtensionSeen,
       onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
-      jimakuApiKeyProvider: _jimakuApiKeyProvider,
+      subtitleRegistryProvider: _subtitleRegistryProvider,
+      extensionTestPageProvider: _extensionTestPageProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

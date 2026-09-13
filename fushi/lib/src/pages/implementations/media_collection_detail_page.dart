@@ -1,23 +1,21 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
-
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
-
 import 'package:path/path.dart' as p;
-
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
-import 'package:fushi/src/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:fushi/src/media/collections/collection_relation.dart';
 import 'package:fushi/src/media/collections/collection_scrape_metadata_compat.dart';
-import 'package:fushi/src/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
-import 'package:fushi/src/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/anilist_client.dart' show AniListMedia;
 import 'package:fushi/src/media/video/cover_ui/episode_rename_confirm_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
@@ -26,13 +24,15 @@ import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
-import 'package:fushi/src/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
-import 'package:fushi/src/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
@@ -41,17 +41,19 @@ import 'package:fushi/src/pages/implementations/collection_relations_section.dar
 import 'package:fushi/src/pages/implementations/collection_split_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
     show SubtitleCollectionPanel;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/sync/fushi_library_host_service.dart'
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -67,6 +69,8 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.remote,
     required this.onChanged,
     this.onDeleteMembersMedia,
+    this.deleteMembersLocalFilesSubtitle,
+    this.onRescrapeCollection,
     super.key,
   });
 
@@ -99,7 +103,20 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 调用方（持 [VideoBookRepository]）注入：按 [VideoBookRow] 删视频 DB 行 +
   /// app 拥有副本（封面/字幕），**保留用户原始视频文件**（导入时只存路径从不复制）。
   /// null = 详情页不提供该选项（确认框不显示复选框），退回纯解链删除。
-  final Future<void> Function(List<VideoBookRow> members)? onDeleteMembersMedia;
+  final Future<void> Function(
+    List<VideoBookRow> members,
+    bool deleteLocalFiles,
+  )? onDeleteMembersMedia;
+
+  /// 非 null 时，「同时删除其中的视频」勾选下再给一行「同时删除本地文件」二级
+  /// 勾选，其状态经 [onDeleteMembersMedia] 的 `deleteLocalFiles` 参数落地。
+  /// null = 该合集没有可删的本机原件（如全是远端流），不摆这一行。
+  final String? deleteMembersLocalFilesSubtitle;
+
+  /// 「重新刮削资料与封面」：由库页注入（刮削 controller 的生命周期归 HomePage，
+  /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onRescrapeCollection;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -503,7 +520,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// （BUG-1544）。缺集 / 只导入了一部分时顺位号必然与真实集号错位——用户看到
   /// 「03」点开却是 E05。集号是文件名里写着的事实，不是列表下标的函数。
   int _episodeDisplayNumber(CollectionEpisodeSlot slot, int index) =>
-      parsedEpisodeNumberOf(slot.filename) ?? index + 1;
+      _episodeNumbers[slot.entryKey] ?? index + 1;
+
+  /// [_slots] 整批解析出的集号（entryKey → 集号），按 [_slots] 的**对象身份**
+  /// 缓存：`_slots` 每次变更都是整体替换成新列表，所以 identical 即可当缓存键，
+  /// 四个赋值点都不必记得手动失效。
+  ///
+  /// 整批（而非逐个文件名）解析是 BUG-2369 的要求：不补零的目录里逐个解析会
+  /// 1..9 全解不出、10.. 解得出，一半集卡掉回顺位号，序号与真实集号错位。
+  List<CollectionEpisodeSlot>? _episodeNumbersSlots;
+  Map<String, int> _episodeNumbersCache = const <String, int>{};
+
+  Map<String, int> get _episodeNumbers {
+    if (identical(_episodeNumbersSlots, _slots)) return _episodeNumbersCache;
+    final List<int?> numbers = parsedEpisodeNumbersOf(<String>[
+      for (final CollectionEpisodeSlot slot in _slots) slot.filename,
+    ]);
+    _episodeNumbersCache = <String, int>{
+      for (int i = 0; i < _slots.length; i++)
+        if (numbers[i] != null) _slots[i].entryKey: numbers[i]!,
+    };
+    _episodeNumbersSlots = _slots;
+    return _episodeNumbersCache;
+  }
 
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(CollectionEpisodeSlot slot) {
@@ -545,7 +584,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return ResizeImage.resizeIfNeeded(
         decodeWidth,
         null,
-        CachedNetworkImageProvider(source),
+        AppCachedHttpImage(source),
       );
     }
     return resolveMediaCoverImage(
@@ -674,6 +713,49 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 「按季排序」：按文件名重排全表（季→集→标题，PV/特典殿后）并落盘。季 tab
   /// **展示**本身是派生的、进页面即生效，本动作只负责把落盘全序也整理成分季连续
   /// （单季合集执行后无可见变化，幂等）。
+  /// 当前合集行：`_collectionRow` 是 [_reload] 重取的最新快照，
+  /// `widget.collection` 只是进页那一刻的副本（刮削会改写 name / coverPath）。
+  MediaCollectionRow get _collection => _collectionRow ?? widget.collection;
+
+  /// AppBar「设置封面」：选图 → 落 `video_covers/collections/<id>.jpg` → 写
+  /// `media_collections.cover_path`。与库页合集右键同一条
+  /// [MediaCoverService.applyCollectionCover]，不另开落盘路径。
+  Future<void> _setCover() async {
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null) return;
+    try {
+      await MediaCoverService.applyCollectionCover(
+        database: widget.database,
+        collectionId: widget.collection.id,
+        pickedPath: picked.path,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('collectionDetail.setCover', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_cover_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    await _reload();
+    widget.onChanged();
+    FushiToast.show(
+      msg: t.collection_cover_updated,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// AppBar「恢复默认封面」：清 `coverPath` + 回收那张图（与删合集共用同一套误删
+  /// 护栏，见 [clearCollectionOwnCover]），封面回落成员借用链 / canonical 海报。
+  Future<void> _resetCover() async {
+    await clearCollectionOwnCover(widget.database, widget.collection.id);
+    if (!mounted) return;
+    await _reload();
+    widget.onChanged();
+  }
+
   Future<void> _sortBySeason() async {
     if (_slots.isEmpty) return;
     final CollectionSeasonRegroup<CollectionEpisodeSlot> regroup =
@@ -853,6 +935,43 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         initialSearchQuery: relation.title,
       ),
     );
+  }
+
+  /// 下载入口此刻是否该渲染：「功能模块 › 下载」开着，且本平台有下载中心
+  /// （iOS 按 App Store 合规恒无，见 `store_compliance.dart`）。
+  ///
+  /// 判据问 [ModuleVisibility] 而不是直接判平台：本页的三个下载入口（集菜单
+  /// 「下载」、相关作品「去下载」、管理菜单「补齐缺集」）打开的都是番剧下载对话框，
+  /// 而它属于下载中心——模块关掉时那个页面本身已不可达，入口留着就是一个点了会把
+  /// 用户推进一条不存在流程的按钮。同域的 `home_page.dart` 早就按「页面不可达时
+  /// 入口就不该渲染」处理（`_downloadsReachable`），这里补齐。
+  ///
+  /// 🔴 **容器缺席要容忍，不能让整页 build 抛**：本页有 8 个 widget 测试把它直接
+  /// 挂在 `MaterialApp` 下、**不带 `ProviderScope`**（它此前的功能没有一处在 build
+  /// 路径上需要 Riverpod——第一次用到容器是「打开字幕工作台」那个方法体里）。裸调
+  /// `ProviderScope.containerOf` 会把「一个入口该不该显示」变成整页崩溃的理由，
+  /// 三个 suite 共 14 条用例当场全红。缺席只可能发生在测试里：三个生产装配点
+  /// （本页推相关合集、`video_work_detail_page`、路由表）全都在 `runApp` 的
+  /// [UncontrolledProviderScope] 之内，所以缺席时回落 `true`（= 改动前的行为）
+  /// 既不影响合规，也让那些不关心下载入口的用例继续测它们本来要测的东西。
+  bool get _downloadsAvailable {
+    final ProviderContainer? container = _maybeProviderContainer();
+    if (container == null) return true;
+    return container
+        .read(appProvider)
+        .moduleVisibility
+        .isEnabled(ModuleId.downloads);
+  }
+
+  /// 本页所在树上的 Riverpod 容器；没有 [ProviderScope] 时返回 null。
+  ///
+  /// 用 `getElementForInheritedWidgetOfExactType` 而不是 `dependOnInherited...`：
+  /// 与 `containerOf(listen: false)` 同语义——只取一次值，不为它注册重建依赖。
+  ProviderContainer? _maybeProviderContainer() {
+    final InheritedElement? element = context
+        .getElementForInheritedWidgetOfExactType<UncontrolledProviderScope>();
+    final Widget? widget = element?.widget;
+    return widget is UncontrolledProviderScope ? widget.container : null;
   }
 
   /// 文件名解出的集号；解不出回落集级刮削行的 episodeNumber（两者都无 → null）。
@@ -1051,6 +1170,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
+      // 成员全是远端流时不摆「同时删除本地文件」——盘上没有文件可删，摆了就是
+      // 一个兑现不了的开关（与单删 / 批删同一纪律）。
+      localFilesSubtitle:
+          canDeleteMembers && _members.any(videoBookHasLocalFiles)
+              ? widget.deleteMembersLocalFilesSubtitle
+              : null,
     );
     if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
@@ -1058,7 +1183,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
     // 自有封面会永久留在磁盘上（BUG-1319）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
-      await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
+      await widget.onDeleteMembersMedia!(
+        List<VideoBookRow>.of(_members),
+        result.deleteLocalFiles,
+      );
     }
     await deleteMediaCollectionWithAssets(
         widget.database, widget.collection.id);
@@ -1797,10 +1925,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 final VideoMetadataCreditSummary credit = credits[index];
                 final String? path = credit.person.profilePath;
                 final String? url = credit.person.profileUrl;
-                final ImageProvider? image = path != null &&
-                        File(path).existsSync()
-                    ? FileImage(File(path))
-                    : (url == null ? null : CachedNetworkImageProvider(url));
+                final ImageProvider? image =
+                    path != null && File(path).existsSync()
+                        ? FileImage(File(path))
+                        : (url == null ? null : AppCachedHttpImage(url));
                 return SizedBox(
                   key: ValueKey<String>(
                       'video-work-credit-${credit.person.personKey}-$index'),
@@ -1816,7 +1944,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                   color: Color(0x1FFFFFFF),
                                   child: Icon(Icons.person_outline, size: 42),
                                 )
-                              : Image(image: image, fit: BoxFit.cover),
+                              : Image(
+                                  image: image,
+                                  fit: BoxFit.cover,
+                                  // BUG-2496：坏头像文件解码失败退回占位，不当致命错误。
+                                  errorBuilder: (_, Object error, __) {
+                                    ErrorLogService.instance.logDiagnostic(
+                                      'MediaCollectionDetailPage.credit.coverDecode',
+                                      '${path ?? url}: $error',
+                                    );
+                                    return const ColoredBox(
+                                      color: Color(0x1FFFFFFF),
+                                      child: Icon(Icons.person_outline,
+                                          size: 42),
+                                    );
+                                  },
+                                ),
                         ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
@@ -1914,10 +2057,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                             fit: StackFit.expand,
                             children: <Widget>[
                               if (thumb != null && File(thumb).existsSync())
-                                Image.file(File(thumb), fit: BoxFit.cover)
+                                Image.file(
+                                  File(thumb),
+                                  fit: BoxFit.cover,
+                                  // BUG-2496：坏缩略图解码失败退回底色块，不当致命错误。
+                                  errorBuilder: (_, Object error, __) {
+                                    ErrorLogService.instance.logDiagnostic(
+                                      'MediaCollectionDetailPage.extra.coverDecode',
+                                      '$thumb: $error',
+                                    );
+                                    return const ColoredBox(
+                                        color: Color(0x1FFFFFFF));
+                                  },
+                                )
                               else if (thumb != null)
                                 Image(
-                                  image: CachedNetworkImageProvider(thumb),
+                                  image: AppCachedHttpImage(thumb),
                                   fit: BoxFit.cover,
                                 )
                               else
@@ -2287,16 +2442,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_EpisodeMenuAction>>[
-        PopupMenuItem<_EpisodeMenuAction>(
-          value: _EpisodeMenuAction.download,
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.download_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(t.collection_episode_download),
-            ],
+        if (_downloadsAvailable)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.download,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.download_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_episode_download),
+              ],
+            ),
           ),
-        ),
         // v95：完整技术规格（音轨/字幕轨在集卡上放不下，只能进弹窗）。
         // 仅本地文件有——远端占位集探不了。
         if (episode.local != null && widget.videoSpecs != null)
@@ -2365,6 +2521,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Future<void> _handleManageAction(_CollectionManageAction action) async {
     switch (action) {
+      case _CollectionManageAction.setCover:
+        await _setCover();
+        return;
+      case _CollectionManageAction.resetCover:
+        await _resetCover();
+        return;
+      case _CollectionManageAction.rescrape:
+        await widget.onRescrapeCollection?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.sortBySeason:
         await _sortBySeason();
         return;
@@ -2377,8 +2543,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.fillMissing:
         _fillMissingEpisodes();
         return;
+      case _CollectionManageAction.downloadRemote:
+        // 批下载在 app 级管理器里跑到底；这里只等它排完，回来重载让新落地的
+        // 本地行替换远端占位。
+        await widget.remote?.downloadMembers?.call(_collection, _remoteMembers);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.scrapeOnHost:
+        await widget.remote?.scrapeOnHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.scrapeForHost:
+        await widget.remote?.scrapeForHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.splitBySeason:
         await _splitBySeason();
+        return;
+      case _CollectionManageAction.lockFields:
+        await _editLockedFields();
         return;
       case _CollectionManageAction.rename:
         await renameDetailCollection();
@@ -2390,6 +2573,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _delete();
         return;
     }
+  }
+
+  /// 字段锁：勾中的字段下次刮削保留当前值。作品行还没刮出来时菜单项本身就是灰的
+  /// （见 [_buildAppBar]），所以这里只需处理「点开后行没了」的竞态。
+  Future<void> _editLockedFields() async {
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (work == null) return;
+    final bool saved = await editVideoMetadataLockedFields(
+      context: context,
+      database: widget.database,
+      workId: work.id,
+    );
+    if (!saved || !mounted) return;
+    FushiToast.show(msg: t.video_work_locked_fields_saved);
+    await _reload();
   }
 
   PopupMenuItem<_CollectionManageAction> _manageMenuItem(
@@ -2429,6 +2627,25 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           itemBuilder: (BuildContext context) =>
               <PopupMenuEntry<_CollectionManageAction>>[
             _manageMenuItem(
+              _CollectionManageAction.setCover,
+              Icons.image_outlined,
+              t.collection_cover_set,
+            ),
+            if (_collection.coverPath?.isNotEmpty ?? false)
+              _manageMenuItem(
+                _CollectionManageAction.resetCover,
+                Icons.undo_outlined,
+                t.collection_cover_reset,
+              ),
+            // 重刮入口只在库页注入了 controller 时存在（详情页不自造 controller）。
+            if (widget.onRescrapeCollection != null)
+              _manageMenuItem(
+                _CollectionManageAction.rescrape,
+                Icons.image_search,
+                t.collection_rescrape,
+              ),
+            const PopupMenuDivider(),
+            _manageMenuItem(
               _CollectionManageAction.sortBySeason,
               Icons.segment,
               t.collection_sort_by_season,
@@ -2446,12 +2663,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               t.collection_episode_rename,
               enabled: _members.isNotEmpty,
             ),
-            _manageMenuItem(
-              _CollectionManageAction.fillMissing,
-              Icons.playlist_add,
-              t.collection_episode_fill_missing,
-              enabled: _slots.isNotEmpty,
-            ),
+            // 「补齐缺集」做的事就是打开番剧下载对话框，所以它和另外两个下载
+            // 入口同门：没有下载中心时整项不出，而不是出一项点了打不开对话框的菜单。
+            if (_downloadsAvailable)
+              _manageMenuItem(
+                _CollectionManageAction.fillMissing,
+                Icons.playlist_add,
+                t.collection_episode_fill_missing,
+                enabled: _slots.isNotEmpty,
+              ),
+            // 合集整体下载（#6）：把只在对端的成员整批拉到本机。与「补齐缺集」
+            // （torrent 下载中心）是两条不同的路，入口分开、文案分开。
+            if (widget.remote?.downloadMembers != null)
+              _manageMenuItem(
+                _CollectionManageAction.downloadRemote,
+                Icons.cloud_download_outlined,
+                t.remote_collection_download_members,
+                enabled: _remoteMembers.isNotEmpty,
+              ),
+            // 互联刮削（7a / 7b）。
+            if (widget.remote?.scrapeOnHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrapeOnHost,
+                Icons.cloud_sync_outlined,
+                t.remote_collection_scrape_on_host,
+              ),
+            if (widget.remote?.scrapeForHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.scrapeForHost,
+                Icons.cloud_upload_outlined,
+                t.remote_collection_scrape_push_to_host,
+              ),
             _manageMenuItem(
               _CollectionManageAction.splitBySeason,
               Icons.call_split,
@@ -2459,6 +2701,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               enabled: _hasSeasonTabs,
             ),
             const PopupMenuDivider(),
+            _manageMenuItem(
+              _CollectionManageAction.lockFields,
+              Icons.lock_outline,
+              t.video_work_locked_fields,
+              enabled: _canonicalWork != null,
+            ),
             _manageMenuItem(
               _CollectionManageAction.rename,
               Icons.drive_file_rename_outline,
@@ -2529,7 +2777,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                           collectionId: widget.collection.id,
                           onOpenCollection: (int id) =>
                               _openRelatedCollection(id),
-                          onDownload: _downloadRelation,
+                          onDownload:
+                              _downloadsAvailable ? _downloadRelation : null,
                         ),
                       ),
                     ),
@@ -2558,11 +2807,18 @@ enum _EpisodeMenuAction {
 }
 
 enum _CollectionManageAction {
+  setCover,
+  resetCover,
+  rescrape,
   sortBySeason,
   subtitles,
   renameEpisodes,
   fillMissing,
+  downloadRemote,
+  scrapeOnHost,
+  scrapeForHost,
   splitBySeason,
+  lockFields,
   rename,
   tags,
   delete,

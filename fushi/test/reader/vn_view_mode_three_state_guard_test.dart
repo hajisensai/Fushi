@@ -181,8 +181,7 @@ void main() {
     );
 
     test(
-      'webview passes vnMode + VN config into the shell and binds the M0 '
-      'blank-tap advance',
+      'webview passes all live VN preferences into the shell',
       () {
         expect(
           webview.contains('final bool vnMode = s.isVnMode;'),
@@ -194,28 +193,25 @@ void main() {
           isTrue,
           reason: 'VN mode must reach the engine through ReaderEngineConfig',
         );
-        // TODO-909 M0: reveal 渐显是 M1 功能。M0 强制 vnRevealSpeed=0，避免新屏停在
-        // revealComplete=false 时 forward 翻屏命中 paginate 的 "revealed" 分支，与
-        // Dart 端只认 "scrolled" 的 _didScroll 撞车而误跨章。
-        expect(
-          webview.contains('const int vnRevealSpeedM0ForceZero = 0;'),
-          isTrue,
-          reason: 'M0 must define the reveal-speed force-zero constant',
-        );
-
-        expect(
-          webview.contains(
-            'vnRevealSpeed: vnMode ? vnRevealSpeedM0ForceZero : 0,',
-          ),
-          isTrue,
-          reason: 'webview must forward the M0-forced reveal speed into config',
-        );
-        // M0 must NOT wire the live setting through (that is the M1 default 45).
         expect(
           _stripLineComments(webview)
-              .contains('vnRevealSpeed: s.visualNovelRevealSpeed'),
+              .contains('const int vnRevealSpeedM0ForceZero = 0;'),
           isFalse,
-          reason: 'M0 must not pass the live reveal-speed setting to the shell',
+          reason: 'M1 must not force-disable the configured reveal speed',
+        );
+        expect(
+          webview.contains(
+            'vnRevealSpeed: vnMode ? s.visualNovelRevealSpeed : 0,',
+          ),
+          isTrue,
+          reason: 'the configured reveal speed must reach the VN shell',
+        );
+        expect(
+          webview.contains(
+            'vnClickAdvance: vnMode && s.visualNovelClickAdvance,',
+          ),
+          isTrue,
+          reason: 'blank-tap advance must honor its persisted preference',
         );
         // BUG-1195: blank-tap 不再由 JS 自己 paginate（那会吃掉唯一能唤出控制栏的
         // 手势）。JS 只回传事实，翻页/唤栏由 Dart 判——详见

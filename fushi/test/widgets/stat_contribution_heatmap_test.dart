@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 贡献热力图纯模型 [buildStatHeatmap] 的单测：窗口/周对齐、等级分桶、未来日占位，
 /// 以及翻页偏移 [maxHeatmapPageOffset]、格子命中 [hitStatHeatmapCell]。
@@ -50,6 +51,24 @@ void main() {
       expect(lastCol[6].dateKey, isNull); // 周日=未来
     });
 
+    test('「今日」重置时刻 = 4：凌晨 2 点的今日格是日历昨日，格子 key 仍是日历日', () {
+      FushiDatabase.statDayResetHour = 4;
+      addTearDown(() => FushiDatabase.statDayResetHour = 0);
+      // 2026-07-16（周四）02:00 → 统计今日 = 07-15（周三）。
+      final StatHeatmapModel m = buildStatHeatmap(
+        valueByDateKey: <String, int>{'2026-07-15': 7, '2026-07-13': 3},
+        now: DateTime(2026, 7, 16, 2),
+        weeks: 3,
+      );
+      final List<StatHeatmapCell> lastCol = m.weeks.last;
+      expect(lastCol[2].dateKey, '2026-07-15', reason: '周三 = 统计今日');
+      expect(lastCol[2].value, 7);
+      expect(lastCol[3].dateKey, isNull, reason: '日历周四还没到统计今日，是未来占位');
+      // 周一格的 key 必须是日历日 07-13：若误过 statDateKey，00:00 会被前移成 07-12。
+      expect(lastCol[0].dateKey, '2026-07-13');
+      expect(lastCol[0].value, 3);
+    });
+
     test('今天的值落进末列对应行并计入 maxValue', () {
       final String todayKey = statDateKey(DateTime(2026, 7, 15));
       final StatHeatmapModel m = buildStatHeatmap(
@@ -64,8 +83,36 @@ void main() {
       expect(todayCell.level, 4); // 唯一非零值 = 满值 → 最高档
     });
 
-    test('等级按占 maxValue 比例分 1..4 四档', () {
-      // 四天不同强度：max=100 → 10%→1, 40%→2, 60%→3, 100%→4。
+    test('单日爆量不再把其余活跃日压成最浅档（BUG-2223：按秩分档）', () {
+      // 5 个活跃日：一天 100000，其余 9/10/11/12——旧口径按占最大值比例，四个普通日
+      // 全落 1 档；按秩它们分布到 1..4。
+      final Map<String, int> values = <String, int>{
+        statDateKey(DateTime(2026, 7, 6)): 100000,
+        statDateKey(DateTime(2026, 7, 7)): 9,
+        statDateKey(DateTime(2026, 7, 8)): 10,
+        statDateKey(DateTime(2026, 7, 9)): 11,
+        statDateKey(DateTime(2026, 7, 10)): 12,
+      };
+      final StatHeatmapModel m = buildStatHeatmap(
+        valueByDateKey: values,
+        now: now,
+        weeks: 3,
+      );
+      final Map<String, int> levels = <String, int>{
+        for (final List<StatHeatmapCell> col in m.weeks)
+          for (final StatHeatmapCell c in col)
+            if (c.dateKey != null && c.value > 0) c.dateKey!: c.level,
+      };
+      expect(levels[statDateKey(DateTime(2026, 7, 6))], 4);
+      expect(levels[statDateKey(DateTime(2026, 7, 7))], 1);
+      expect(levels[statDateKey(DateTime(2026, 7, 8))], 2);
+      expect(levels[statDateKey(DateTime(2026, 7, 9))], 3);
+      expect(levels[statDateKey(DateTime(2026, 7, 10))], 4);
+      expect(m.maxValue, 100000);
+    });
+
+    test('等级按活跃日数值的秩分 1..4 四档（比例分布的老样例结论不变）', () {
+      // 四天不同强度：10/40/60/100 → 秩 1..4 → 档 1..4。
       final DateTime d1 = DateTime(2026, 7, 13); // 周一
       final DateTime d2 = DateTime(2026, 7, 14); // 周二
       final DateTime d3 = DateTime(2026, 7, 15); // 周三=今天
@@ -138,6 +185,39 @@ void main() {
       final String prevFirstMonday = prev.weeks.first[0].dateKey!;
       final String offFirstMonday = m.weeks.first[0].dateKey!;
       expect(offFirstMonday.compareTo(prevFirstMonday) < 0, isTrue);
+    });
+  });
+
+  group('statHeatmapRankLevel（纯函数）', () {
+    test('零值 / 空表 → 0；唯一活跃日 → 最高档', () {
+      expect(statHeatmapRankLevel(0, <int>[1, 2]), 0);
+      expect(statHeatmapRankLevel(5, <int>[]), 0);
+      expect(statHeatmapRankLevel(7, <int>[7]), 4);
+    });
+
+    test('均匀分布时各档人数接近', () {
+      final List<int> sorted = List<int>.generate(8, (int i) => (i + 1) * 100);
+      final Map<int, int> count = <int, int>{};
+      for (final int v in sorted) {
+        final int level = statHeatmapRankLevel(v, sorted);
+        count[level] = (count[level] ?? 0) + 1;
+      }
+      expect(count, <int, int>{1: 2, 2: 2, 3: 2, 4: 2});
+    });
+
+    test('同值同档；不在表里的值按上秩落档', () {
+      const List<int> sorted = <int>[5, 5, 5, 50];
+      expect(statHeatmapRankLevel(5, sorted), 3, reason: '上秩 3/4 → ⌈3⌉');
+      expect(statHeatmapRankLevel(50, sorted), 4);
+      expect(statHeatmapRankLevel(1, sorted), 1, reason: '低于最小值仍至少 1 档');
+      expect(statHeatmapRankLevel(6, sorted), 3);
+    });
+
+    test('档数可配：levels=5 时最大值落 5 档', () {
+      const List<int> sorted = <int>[1, 2, 3, 4, 5];
+      expect(statHeatmapRankLevel(5, sorted, levels: 5), 5);
+      expect(statHeatmapRankLevel(1, sorted, levels: 5), 1);
+      expect(statHeatmapRankLevel(3, sorted, levels: 5), 3);
     });
   });
 

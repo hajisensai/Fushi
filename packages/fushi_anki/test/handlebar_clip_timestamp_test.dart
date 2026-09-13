@@ -147,14 +147,14 @@ void main() {
   group('Lapis 出厂默认 MiscInfo', () {
     test('同时带媒体名与片段时间窗', () {
       final String mapping = LapisNoteType.defaultFieldMappings['MiscInfo']!;
-      expect(mapping, contains('{document-title}'));
+      expect(mapping, '{source-link} {clip-timestamp}');
       expect(mapping, contains('{clip-timestamp}'));
     });
 
     test('整体渲染出「媒体名 时间窗」，一个字段里两个占位符照常展开', () {
       final String mapping = LapisNoteType.defaultFieldMappings['MiscInfo']!;
       expect(
-        render(mapping, contextWithClip(754000, 758000)),
+        render(mapping, contextWithClip(754000, 758000)).trim(),
         'Initial.D.Third.Stage 00:12:34 - 00:12:38',
       );
     });
@@ -176,6 +176,45 @@ void main() {
             'MiscInfo': LapisNoteType.defaultFieldMappings['MiscInfo']!,
           },
         );
+
+    test('作品标题是唯一来源链接且保留时间窗和HTML转义', () {
+      final CardSourceLink link = CardSourceLink(
+        kind: CardSourceKind.book,
+        uid: 'book-uid',
+        sourceId: '12345678-1234-4234-8234-123456789abc',
+        chapterIndex: 2,
+        charOffset: 30,
+      );
+      final RenderedMinedFields out = repo.renderFor(
+        settings: settingsWithLapisMiscInfo(),
+        payload: payload,
+        context: AnkiMiningContext(
+          sentence: 'sentence',
+          documentTitle: '作品 <上> & 下',
+          sourceLink: link,
+          clipStartMs: 754000,
+          clipEndMs: 758000,
+        ),
+      );
+      final String info = out.fields['MiscInfo']!;
+      expect(info, '${link.toHtml(label: '作品 <上> & 下')} 00:12:34 - 00:12:38');
+      expect('<a '.allMatches(info), hasLength(1));
+      expect(info, contains('>作品 &lt;上&gt; &amp; 下</a>'));
+      expect(info, isNot(contains('↗')));
+      expect(CardSourceLink.fromHtml(info).single.toUri(), link.toUri());
+    });
+
+    test('无来源定位时作品标题保持纯文本并转义HTML', () {
+      final RenderedMinedFields out = repo.renderFor(
+        settings: settingsWithLapisMiscInfo(),
+        payload: payload,
+        context: const AnkiMiningContext(
+          sentence: '',
+          documentTitle: '作品 <上> & 下',
+        ),
+      );
+      expect(out.fields['MiscInfo'], '作品 &lt;上&gt; &amp; 下');
+    });
 
     test('时间窗真的写进 MiscInfo 字段（不是只有渲染器认得）', () {
       final RenderedMinedFields out = repo.renderFor(

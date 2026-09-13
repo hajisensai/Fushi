@@ -3,18 +3,20 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math' show Random;
 
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import '../utils/fushi_debug_print.dart';
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
+import 'collection_book_identity.dart';
+import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'pref_codec.dart';
@@ -30,6 +32,8 @@ part 'database_library.part.dart';
 part 'database_statistics.part.dart';
 part 'database_content_misc.part.dart';
 part 'database_tags_sync.part.dart';
+part 'database_update_feed.part.dart';
+part 'database_manga_download.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -225,7 +229,7 @@ Future<QueryExecutor> _openWithRecovery(
             : FushiDatabaseFailureKind.cannotOpen,
       );
     }
-    debugPrint('[fushi-db] sidecar open error on "$path" '
+    fushiDebugPrint('[fushi-db] sidecar open error on "$path" '
         '(main db healthy → recovering): $e\n$stack');
   }
 
@@ -244,12 +248,12 @@ Future<QueryExecutor> _openWithRecovery(
     } finally {
       recover.close();
     }
-    debugPrint(
+    fushiDebugPrint(
         '[fushi-db] Layer 1 recovery OK (checkpoint+DELETE) for "$path"');
     return NativeDatabase.createInBackground(dbFile, setup: applyPragmas);
   } catch (e, stack) {
     if (!_isSidecarOpenError(e)) rethrow;
-    debugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
+    fushiDebugPrint('[fushi-db] Layer 1 still failing on "$path": $e\n$stack');
   }
 
   // ── Layer 2 — physical sidecar rebuild. Layer 1 could not even open a raw
@@ -270,7 +274,7 @@ Future<QueryExecutor> _openWithRecovery(
     // ── Layer 3 — sidecar gone yet still failing ⇒ the main fushi.db is
     //    corrupt after all. Terminal: hand the app a recognisable type so it can
     //    stop the Retry loop and offer restore/clear instead of looping.
-    debugPrint(
+    fushiDebugPrint(
         '[fushi-db] Layer 2 rebuild failed, DB unrecoverable: $e\n$stack');
     throw FushiDatabaseUnrecoverableException(dbPath: path, cause: e);
   }
@@ -302,7 +306,7 @@ Future<void> _rebuildSidecar(File dbFile) async {
       try {
         await src.copy('$path.corrupt-bak-$stamp$suffix');
       } catch (e) {
-        debugPrint(
+        fushiDebugPrint(
             '[fushi-db] snapshot of "${src.path}" failed (non-fatal): $e');
       }
     }
@@ -327,7 +331,7 @@ Future<void> _rebuildSidecar(File dbFile) async {
 
   await deleteSidecar('$path-wal');
   await deleteSidecar('$path-shm');
-  debugPrint('[fushi-db] Layer 2: deleted stale -wal/-shm for "$path" '
+  fushiDebugPrint('[fushi-db] Layer 2: deleted stale -wal/-shm for "$path" '
       '(main .db untouched, .corrupt-bak-$stamp snapshot kept)');
 }
 
@@ -526,7 +530,7 @@ Future<void> _migrateLegacyDatabaseFileName(String dbDirectory) async {
     if (!await newDb.exists()) rethrow;
     return;
   }
-  debugPrint('[fushi-db] renamed legacy hibiki.db(+sidecars) -> fushi.db '
+  fushiDebugPrint('[fushi-db] renamed legacy hibiki.db(+sidecars) -> fushi.db '
       'in "$dbDirectory"');
 }
 
@@ -632,6 +636,7 @@ void _requireOneVideoMetadataOwner({
   ProfileSettings,
   MediaTypeProfiles,
   BookProfiles,
+  LanguageProfiles,
   SyncBaselines,
   VideoBooks,
   VideoWatchStatistics,
@@ -645,6 +650,7 @@ void _requireOneVideoMetadataOwner({
   MediaCollections,
   MediaCollectionItems,
   CollectionMemberTombstones,
+  CollectionBookAliases,
   FushiPairedPeers,
   BookTombstones,
   LookupMiningCounters,
@@ -694,6 +700,8 @@ void _requireOneVideoMetadataOwner({
   StudySegments,
   WebMineQueue,
   VideoFileSpecs,
+  UpdateFeedEntries,
+  MangaDownloadJobs,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -703,7 +711,9 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbPrefsMedia,
         _FushiDbContentMisc,
         _FushiDbStatistics,
-        _FushiDbVideoDomain {
+        _FushiDbVideoDomain,
+        _FushiDbUpdateFeed,
+        _FushiDbMangaDownload {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -724,7 +734,18 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 97;
+  int get schemaVersion => 104;
+
+  /// BUG-2335: version 97 also exists in a parallel migration history without
+  /// the v96 expansion column. Reuse the additive migration on open so a
+  /// matching user_version cannot skip the column required by the mapper.
+  Future<void> _ensureDictionaryExpandedLanguagesColumn(Migrator m) async {
+    if (await _tableExists('dictionary_metadata') &&
+        !await _columnExists('dictionary_metadata', 'expanded_languages_json')) {
+      await m.addColumn(
+          dictionaryMetadata, dictionaryMetadata.expandedLanguagesJson);
+    }
+  }
 
   /// v97：把 v52 / v57 / v87 / v88 四级台阶里「加列 / 改列名」的幂等语句重放一次，
   /// 补齐漂移库（版本号先于这些台阶被写高的库）。每条都先查 `_columnExists`，
@@ -2098,8 +2119,10 @@ class FushiDatabase extends _$FushiDatabase
             // launch_args 同型：都是「用户为该游戏设的启动期配置」。
             //
             // 无损迁移：列带 DEFAULT ''，SQLite ADD COLUMN 把既有全部行回填空串。
-            // 注意空串在解析层回落的是 **auto** 而不是 off——转区是用户明确要过的
-            // 功能（BUG-1038），加了开关就把老用户默默关掉才是破坏用户空间。
+            // 空串在解析层回落 **off**（2026-09-07 起；v75 落地当时是 auto）——
+            // 用户要求撤掉「没选过就自动转区」，见 galgame_japanese_locale.dart 的
+            // kGalDefaultJapaneseLocaleMode。本迁移代码不变（仍回填空串），变的是
+            // 空串的解析语义，所以不需要新迁移阶梯。
             // 守卫幂等（fresh DB 已由 onCreate 的 createAll 建好，重复升级
             // _columnExists 短路 no-op）。
             if (await _tableExists('galgames') &&
@@ -2987,12 +3010,7 @@ class FushiDatabase extends _$FushiDatabase
             // = 逐字节保持 v96 前的折叠行为（Never break userspace）。
             // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被
             // _columnExists 短路。
-            if (await _tableExists('dictionary_metadata') &&
-                !await _columnExists(
-                    'dictionary_metadata', 'expanded_languages_json')) {
-              await m.addColumn(dictionaryMetadata,
-                  dictionaryMetadata.expandedLanguagesJson);
-            }
+            await _ensureDictionaryExpandedLanguagesColumn(m);
           }
           if (from < 97) {
             // v97（schema 漂移修补，BUG-2162）：真实用户库 user_version 已是 95，却缺
@@ -3007,6 +3025,119 @@ class FushiDatabase extends _$FushiDatabase
             // no-op；漂移库补齐后与 fresh 库同形。多余列（漂移库里另一条史留下的
             // video_download_jobs.episode 等）不动——SQLite 多一列无害，删列有丢数据风险。
             await _replayColumnStepsForDriftedSchema(m);
+          }
+          if (from < 98) {
+            if (await _tableExists('video_books') &&
+                !await _columnExists('video_books', 'video_grouping_mode')) {
+              await m.addColumn(videoBooks, videoBooks.videoGroupingMode);
+            }
+            // 来源分组偏好独立于网络配置；已有来源继续按作品识别。
+            if (await _tableExists('media_sources') &&
+                !await _columnExists('media_sources', 'video_grouping_mode')) {
+              await m.addColumn(mediaSources, mediaSources.videoGroupingMode);
+            }
+            if (await _tableExists('media_collections') &&
+                !await _columnExists('media_collections', 'source_folder_path')) {
+              await m.addColumn(
+                  mediaCollections, mediaCollections.sourceFolderPath);
+            }
+          }
+          if (from < 99) {
+            // 刮削 C 二期：来源级资料语言覆盖 + 作品级字段锁。两列都是可空
+            // 文本，NULL = 沿用既有行为（跟随全局 locale / 无锁），存量库无需回填。
+            if (await _tableExists('video_source_scrape_settings') &&
+                !await _columnExists(
+                    'video_source_scrape_settings', 'metadata_locale')) {
+              await m.addColumn(videoSourceScrapeSettings,
+                  videoSourceScrapeSettings.metadataLocale);
+            }
+            if (await _tableExists('video_metadata_works') &&
+                !await _columnExists('video_metadata_works', 'locked_fields')) {
+              await m.addColumn(
+                  videoMetadataWorks, videoMetadataWorks.lockedFields);
+            }
+          }
+          if (from < 100) {
+            // v100（语言级 Profile 绑定）：新表 language_profiles，把「这种内容语言用
+            // 哪个 Profile」补进 Profile 的自动解析链（book > language > mediaType >
+            // active）。与 v95 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 没有任何语言绑定 = 解析链在语言这一级恒空转、
+            // 直接落到 mediaType，与升级前逐字节一致（Never break userspace）。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('language_profiles')) {
+              await m.createTable(languageProfiles);
+            }
+            // 索引与建表同步内联：`_ensureIndexes` 只在 onCreate 与个别迁移步里跑，
+            // 升级路径不会自动补上（与 v9 同款处理）。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_language_profiles_profile '
+              'ON language_profiles (profile_id)',
+            );
+          }
+          if (from < 101) {
+            // v101（词典改名）：dictionary_metadata 加 display_name——用户给词典
+            // 起的显示名。真名 `name` 是主键 + 磁盘目录名 + 引擎装载路径 + 一串
+            // 外键（CSS map key / 样式规则 / data-dictionary 选择器 / 媒体 URL /
+            // Anki token / 同步资产名），冻结不动，只加显示层覆盖（见 tables.dart
+            // 该列的注释）。
+            //
+            // 无损：nullable 无 default → 旧库既有行全 NULL = 没改过名 = 显示真名
+            // = 逐字节保留 v101 前的渲染。守卫幂等（fresh DB 由 onCreate 建好，
+            // 重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('dictionary_metadata') &&
+                !await _columnExists('dictionary_metadata', 'display_name')) {
+              await m.addColumn(
+                  dictionaryMetadata, dictionaryMetadata.displayName);
+            }
+          }
+          if (from < 102) {
+            // v102（统一更新提醒）：新表 update_feed_entries，四个域（番剧新集 /
+            // 漫画新章 / 漫画扩展新版 / app 新版）投递到同一条事件流。与 v95、v100
+            // 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 一条提醒都没有 = 红点恒 0、更新页空列表，
+            // 与升级前逐字节一致；已有的首页「已更新未看」行是独立现算逻辑，不读本表。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('update_feed_entries')) {
+              await m.createTable(updateFeedEntries);
+            }
+            // 索引与建表同步内联（`_ensureIndexes` 不覆盖升级路径，见 v100 步）。
+            // 未读计数与按域分组是仅有的两种读法，一条复合索引兜住。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_update_feed_kind_seen '
+              'ON update_feed_entries (kind, seen_at)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_update_feed_discovered '
+              'ON update_feed_entries (discovered_at)',
+            );
+          }
+          if (from < 103) {
+            // v103（漫画先下载再读）：新表 manga_download_jobs——在线章节 /
+            // mokuro.moe 卷的持久化下载队列。与 v100、v102 同款的纯新增表范式。
+            //
+            // 无损：旧库升级后表为空 = 一个任务都没有 = 下载 worker 空转，与升级前
+            // 逐字节一致；在线阅读改走本地目录是 B2 阶段的事，本步只加表。
+            // 幂等：fresh DB 由 onCreate 的 createAll 建好；重复升级被 _tableExists 短路。
+            if (!await _tableExists('manga_download_jobs')) {
+              await m.createTable(mangaDownloadJobs);
+            }
+            // 索引与建表同步内联（升级路径不会自动补上）；fresh 库由
+            // `_ensureIndexes` 建同名索引，两处 SQL 必须逐字一致。
+            await customStatement(
+              'CREATE UNIQUE INDEX IF NOT EXISTS idx_manga_download_jobs_identity '
+              'ON manga_download_jobs (kind, book_key, chapter_key)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_manga_download_jobs_status_created '
+              'ON manga_download_jobs (status, created_at)',
+            );
+          }
+          if (from < 104) {
+            if (!await _tableExists('collection_book_aliases')) {
+              await m.createTable(collectionBookAliases);
+            }
           }
         },
         onCreate: (m) async {
@@ -3038,6 +3169,11 @@ class FushiDatabase extends _$FushiDatabase
               appSchemaVersion: schemaVersion,
             );
           }
+
+          // This one known same-version collision cannot reach onUpgrade.
+          // Keep it after downgrade refusal and before any generated query;
+          // do not rewrite user_version or replay unrelated migration steps.
+          await _ensureDictionaryExpandedLanguagesColumn(createMigrator());
 
           // A hard process exit cannot run HomePage.dispose, so a scrape run
           // left in `running` would otherwise remain active forever. Reconcile
@@ -3285,7 +3421,7 @@ class FushiDatabase extends _$FushiDatabase
         rewritten += 1;
       }
 
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-migration v26] audiobook book_key backfill: '
         'rewritten=$rewritten, '
         'skippedAmbiguousOldKey=$skippedAmbiguousOldKey, '
@@ -3297,7 +3433,7 @@ class FushiDatabase extends _$FushiDatabase
 
   /// TODO-894：为缺失配对 srt_books 行的 EPUB-backed 有声书补写一条 srt_books
   /// 行（v29 自愈迁移），仿 [backfillMismatchedAudiobookKeysV26] 范式：表/列守卫 →
-  /// transaction → 裸 SQL → debugPrint 计数。
+  /// transaction → 裸 SQL → fushiDebugPrint 计数。
   ///
   /// 候选只取「audiobooks.book_key 能 JOIN 上 epub_books（即 EPUB-backed），且其
   /// book_key 不在任何 srt_books.book_key 里」。standalone 纯字幕书（有 srt_books
@@ -3357,7 +3493,7 @@ class FushiDatabase extends _$FushiDatabase
         inserted += 1;
       }
 
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-migration v29] EPUB-backed audiobook srt_books backfill: '
         'inserted=$inserted '
         '(standalone 字幕书无 audiobooks 行天然豁免，重复迁移幂等)',
@@ -3419,7 +3555,7 @@ class FushiDatabase extends _$FushiDatabase
       // 引用再 DELETE（等效 FK onDelete:setNull，但显式）。
       await customStatement('UPDATE shelf_entries SET series_id = NULL');
       await customStatement('DELETE FROM series');
-      debugPrint(
+      fushiDebugPrint(
         '[fushi-migration v38] series→collection converted='
         '$convertedCollections',
       );
@@ -3660,7 +3796,8 @@ class FushiDatabase extends _$FushiDatabase
         }
         splitCount += 1;
       }
-      debugPrint('[fushi-migration v38] playlist videos split=$splitCount');
+      fushiDebugPrint(
+          '[fushi-migration v38] playlist videos split=$splitCount');
 
       // favorite_sentences（收藏句）改写并入**同一事务**：整个 v38 拆集要么全成要么全
       // 回滚。否则若拆集事务先提交、收藏改写在两步之间崩溃，重跑时 parent 已删 → splitMap
@@ -3760,6 +3897,29 @@ class FushiDatabase extends _$FushiDatabase
   /// 同一实现）。
   static String statDateKeyOf(DateTime d) =>
       _FushiDbStatistics.statDateKeyOf(d);
+
+  /// 「统计日」重置整点（0..23，默认 0）——「今日」从几点开始；见
+  /// [_FushiDbStatistics.statDayResetHour]。偏好键 [kStatDayResetHourPrefKey]。
+  static int get statDayResetHour => _FushiDbStatistics.statDayResetHour;
+  static set statDayResetHour(int hour) =>
+      _FushiDbStatistics.statDayResetHour = hour;
+
+  /// 日历日 → `yyyy-MM-dd`（不看重置整点）。
+  static String statCalendarDayKeyOf(DateTime day) =>
+      _FushiDbStatistics.statCalendarDayKeyOf(day);
+
+  /// dateKey → 对应日历日（本地午夜 DateTime，只用于日历算术）。
+  static DateTime statDateKeyToDay(String dateKey) =>
+      _FushiDbStatistics.statDateKeyToDay(dateKey);
+
+  /// 键算术：[dateKey] 往后 [days] 天（负数往前）。窗口 / streak / 热力图一律走
+  /// 这里，不要把合成的午夜 DateTime 喂给 [statDateKeyOf]。
+  static String statDateKeyPlusDays(String dateKey, int days) =>
+      _FushiDbStatistics.statDateKeyPlusDays(dateKey, days);
+
+  /// 到下一个统计日边界（下一次 `statDayResetHour:00`）的时长，恒 > 0。
+  static Duration untilNextStatDayBoundary(DateTime now) =>
+      _FushiDbStatistics.untilNextStatDayBoundary(now);
 
   /// v92 学习事实段的幂等键生成（转发 [_FushiDbStatistics.newStudySegmentUid]；
   /// mixin 的 static 不经类继承，这里给调用方一个稳定入口）。

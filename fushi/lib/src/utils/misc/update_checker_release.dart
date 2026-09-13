@@ -51,8 +51,28 @@ class UpdateReleaseSelection {
 class UpdateChecker {
   UpdateChecker._();
 
+  /// 按目标版本互斥的更新流：「发现新版本」对话框（开着）→ 下载 → 安装，整段算
+  /// 一条流。启动期自动检查弹出对话框的同时，更新中心 toast 也发出去了，用户点
+  /// toast 会触发第二轮检查——不做版本级互斥就是两个对话框叠在一起（BUG-2487）。
   static final Map<String, Future<void>> _activeUpdateFlows =
       <String, Future<void>>{};
+
+  /// 正开着「发现新版本」对话框的版本：同版本再来一轮检查时，对话框本身就是答案，
+  /// 什么都不用再弹；不在这里的活跃流 = 正在下载/安装，给一句「正在下载」。
+  static final Set<String> _openUpdateDialogVersions = <String>{};
+
+  static String _updateFlowKey(String version) => 'update|$version';
+
+  /// [version] 已有对话框在屏 / 下载安装在途时给出反馈并返回 true；否则 false。
+  static bool _notifyIfUpdateFlowActive(BuildContext context, String version) {
+    if (!_activeUpdateFlows.containsKey(_updateFlowKey(version))) return false;
+    if (!_openUpdateDialogVersions.contains(version) && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.update_downloading)),
+      );
+    }
+    return true;
+  }
 
   /// 当前在途的检查阶段中断令牌（TODO-821）。`_check` 进入时登记，退出时清空。
   /// 同一时刻只跑一轮检查（`scheduleCheck` 走 post-frame 单次触发），单个足矣。
@@ -94,6 +114,9 @@ class UpdateChecker {
     String customProxy = '',
     void Function()? onUpToDate,
     void Function(Object error)? onError,
+    // v101：确认有可更新版本时触发，供更新中心投递提醒（此前这条事实只活在紧接着
+    // 弹出的对话框里，点掉就没了）。同步回调：投递不该挡更新流程，异步的自己 unawaited。
+    void Function(String version, String? releaseUrl)? onUpdateAvailable,
     // TODO-1024 / BUG-479：缓存优先 + 后台静默刷新。`cacheWriter` 在一次成功网络检查
     // 拿到最新 tag 后把结果写回缓存（供下次「检查更新」乐观即时反馈）。乐观读由调用方
     // 直接读 `appModel.updateCheckCache`（不经此参数）。默认 null = 不接缓存（旧调用零变化）。
@@ -137,6 +160,7 @@ class UpdateChecker {
               customProxy: customProxy,
               onUpToDate: onUpToDate,
               onError: onError,
+              onUpdateAvailable: onUpdateAvailable,
               cacheWriter: cacheWriter,
               fetchReleases: fetchReleasesForTesting)
           .whenComplete(() {
@@ -271,6 +295,7 @@ class UpdateChecker {
     String customProxy = '',
     void Function()? onUpToDate,
     void Function(Object error)? onError,
+    void Function(String version, String? releaseUrl)? onUpdateAvailable,
     // TODO-1024 / BUG-479：成功拿到最新 tag 后把结果写回缓存（供下次乐观显示）。默认
     // null = 不写缓存（旧调用字节级零变化）。
     UpdateCheckCacheWriter? cacheWriter,
@@ -359,6 +384,11 @@ class UpdateChecker {
         return;
       }
 
+      // 唯一已确认「有更新、版本号是多少」的位置（通道过滤/跨轨比较/选 asset 都跑完）。
+      try {
+        onUpdateAvailable?.call(version, json['html_url'] as String?);
+      } on Object catch (_) {}
+
       final releaseBody = json['body'] as String? ?? '';
 
       // 用 selection 里已按平台/ABI 选定的同一个 asset，不再重选（免重读设备 ABI）。
@@ -370,6 +400,8 @@ class UpdateChecker {
       if (downloadUrl == null) {
         final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null) {
+          if (!context.mounted) return;
+          if (_notifyIfUpdateFlowActive(context, version)) return;
           final UpdateLanding landing =
               await updater.resolveDownloadLanding(htmlUrl);
           if (!context.mounted) return;
@@ -394,6 +426,7 @@ class UpdateChecker {
               (Platform.isMacOS &&
                   await _shouldBackOffMacAutoInstall(version)));
       if (!context.mounted) return;
+      if (_notifyIfUpdateFlowActive(context, version)) return;
       if (canInstall && autoInstall && !autoInstallBackoff) {
         _downloadAndInstall(context, asset!, version, updater,
             customProxy: customProxy);
@@ -712,7 +745,7 @@ class UpdateChecker {
     return attempt().timeout(_kPerAttemptTimeout);
   }
 
-  static void _showUpdateDialog(
+  static Future<void> _showUpdateDialog(
     BuildContext context,
     String version,
     String releaseNotes,
@@ -720,19 +753,42 @@ class UpdateChecker {
     PlatformUpdater updater, {
     String customProxy = '',
   }) {
-    showAppDialog<void>(
-      context: context,
-      builder: (ctx) => UpdateAvailableDialog(
-        version: version,
-        releaseNotes: releaseNotes,
-        primaryLabel: t.update_download,
-        onPrimary: () {
-          Navigator.of(ctx).pop();
-          _downloadAndInstall(context, asset, version, updater,
-              customProxy: customProxy);
-        },
-      ),
-    );
+    // 对话框与随后的下载安装在同一条版本流里：对话框开着时同版本的第二轮检查
+    // 不会再弹一个；点「下载」后流仍持有，直到安装收尾。
+    return _runExclusiveUpdateFlow(_updateFlowKey(version), () async {
+      bool download = false;
+      await _showUpdateDialogExclusive(
+        context,
+        version,
+        (ctx) => UpdateAvailableDialog(
+          version: version,
+          releaseNotes: releaseNotes,
+          primaryLabel: t.update_download,
+          onPrimary: () {
+            download = true;
+            Navigator.of(ctx).pop();
+          },
+        ),
+      );
+      if (!download || !context.mounted) return;
+      await _runDownloadAndInstall(context, asset, version, updater,
+          customProxy: customProxy);
+    });
+  }
+
+  /// 弹一个「发现新版本」对话框并在它开着期间把 [version] 登记进
+  /// [_openUpdateDialogVersions]。
+  static Future<void> _showUpdateDialogExclusive(
+    BuildContext context,
+    String version,
+    WidgetBuilder builder,
+  ) async {
+    _openUpdateDialogVersions.add(version);
+    try {
+      await showAppDialog<void>(context: context, builder: builder);
+    } finally {
+      _openUpdateDialogVersions.remove(version);
+    }
   }
 
   /// 本平台没有可应用内安装的包时的对话框：主按钮打开 [landing]（iOS 上可能是
@@ -740,7 +796,7 @@ class UpdateChecker {
   ///
   /// 主按钮不落在发布页时额外给一个「发布页」次要入口：GitHub Release 里的未签名
   /// ipa 是侧载用户唯一的取包处，主按钮改指商店后不能把这条路一起掐掉。
-  static void _showFallbackDialog(
+  static Future<void> _showFallbackDialog(
     BuildContext context,
     String version,
     String releaseNotes,
@@ -749,30 +805,34 @@ class UpdateChecker {
   ) {
     final bool showReleasePageAction =
         landing.kind != UpdateLandingKind.releasePage;
-    showAppDialog<void>(
-      context: context,
-      builder: (ctx) => UpdateAvailableDialog(
-        version: version,
-        releaseNotes: releaseNotes,
-        primaryLabel: updateLandingActionLabel(landing.kind),
-        onPrimary: () {
-          Navigator.of(ctx).pop();
-          launchUrl(
-            Uri.parse(landing.url),
-            mode: LaunchMode.externalApplication,
-          );
-        },
-        secondaryLabel:
-            showReleasePageAction ? t.update_release_page_open : null,
-        onSecondary: showReleasePageAction
-            ? () {
-                Navigator.of(ctx).pop();
-                launchUrl(
-                  Uri.parse(releaseHtmlUrl),
-                  mode: LaunchMode.externalApplication,
-                );
-              }
-            : null,
+    return _runExclusiveUpdateFlow(
+      _updateFlowKey(version),
+      () => _showUpdateDialogExclusive(
+        context,
+        version,
+        (ctx) => UpdateAvailableDialog(
+          version: version,
+          releaseNotes: releaseNotes,
+          primaryLabel: updateLandingActionLabel(landing.kind),
+          onPrimary: () {
+            Navigator.of(ctx).pop();
+            launchUrl(
+              Uri.parse(landing.url),
+              mode: LaunchMode.externalApplication,
+            );
+          },
+          secondaryLabel:
+              showReleasePageAction ? t.update_release_page_open : null,
+          onSecondary: showReleasePageAction
+              ? () {
+                  Navigator.of(ctx).pop();
+                  launchUrl(
+                    Uri.parse(releaseHtmlUrl),
+                    mode: LaunchMode.externalApplication,
+                  );
+                }
+              : null,
+        ),
       ),
     );
   }
@@ -784,9 +844,8 @@ class UpdateChecker {
     PlatformUpdater updater, {
     String customProxy = '',
   }) async {
-    final String flowKey = _updateFlowKey(asset, version, updater);
     return _runExclusiveUpdateFlow(
-      flowKey,
+      _updateFlowKey(version),
       () => _runDownloadAndInstall(context, asset, version, updater,
           customProxy: customProxy),
       onAlreadyActive: () {
@@ -798,13 +857,6 @@ class UpdateChecker {
       },
     );
   }
-
-  static String _updateFlowKey(
-    UpdateAsset asset,
-    String version,
-    PlatformUpdater updater,
-  ) =>
-      '${updater.runtimeType}|$version|${asset.name}|${asset.url}';
 
   @visibleForTesting
   static Future<void> runExclusiveUpdateFlowForTest(

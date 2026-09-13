@@ -100,6 +100,8 @@ PlatformServices fakePlatformServices({
   BaseAnkiRepository Function()? createAnkiRepository,
   BaseAnkiRepository Function()? createMobileAnkiConnectRepository,
   bool isMobile = false,
+  bool? isWindows,
+  bool? isDesktop,
 }) {
   return PlatformServices(
     directory: directory ?? FakeDirectoryService(),
@@ -110,5 +112,7 @@ PlatformServices fakePlatformServices({
     createAnkiRepository: createAnkiRepository ?? AnkiConnectRepository.new,
     createMobileAnkiConnectRepository: createMobileAnkiConnectRepository,
     isMobile: isMobile,
+    isWindows: isWindows,
+    isDesktop: isDesktop,
   );
 }

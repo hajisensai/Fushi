@@ -34,13 +34,15 @@ import '../helpers/test_platform_services.dart';
 /// 悄悄发陈旧数据，这是本改动唯一的真风险。
 void main() {
   Future<SettingsContext> makeContext(WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_schema_cache_');
+    final Directory tempDir = Directory.systemTemp.createTempSync(
+      'hibiki_schema_cache_',
+    );
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
@@ -52,27 +54,67 @@ void main() {
       ..wireDatabaseForTesting(db);
 
     late SettingsContext sctx;
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-      child: MaterialApp(
-        home: Consumer(
-          builder: (BuildContext ctx, WidgetRef ref, Widget? _) {
-            sctx = SettingsContext(
-              context: ctx,
-              appModel: ref.read(appProvider),
-              ref: ref,
-              readerSource: ReaderFushiSource.instance,
-              refresh: () {},
-            );
-            return const SizedBox.shrink();
-          },
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (BuildContext ctx, WidgetRef ref, Widget? _) {
+              sctx = SettingsContext(
+                context: ctx,
+                appModel: ref.read(appProvider),
+                ref: ref,
+                readerSource: ReaderFushiSource.instance,
+                refresh: () {},
+              );
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
-    ));
+    );
     return sctx;
   }
 
   group('schema 缓存行为', () {
+    testWidgets(
+      'optional feature visibility updates globally and in cached video projection',
+      (WidgetTester tester) async {
+        final SettingsContext sctx = await makeContext(tester);
+        resetSettingsSchemaCache();
+        final List<SettingsDestination> schema = buildSettingsSchema(sctx);
+        final SettingsDestination video = schema.singleWhere(
+          (SettingsDestination d) => d.id == SettingsDestinationId.video,
+        );
+        final Map<VideoGroup, List<SettingsItem>> projection =
+            collectVideoItems(sctx);
+        Set<String> visibleIds(SettingsDestination destination) => destination
+            .visibleSections(sctx)
+            .expand((SettingsSection s) => s.items)
+            .map((SettingsItem item) => item.id)
+            .toSet();
+        for (final bool enabled in <bool>[false, true, false]) {
+          await sctx.appModel.setVideoDanmakuEnabled(enabled);
+          expect(identical(buildSettingsSchema(sctx), schema), isTrue);
+          expect(identical(collectVideoItems(sctx), projection), isTrue);
+          final SettingsDestination panel = buildVideoGroupDestination(
+            sctx,
+            VideoGroup.danmaku,
+            'Danmaku',
+          );
+          for (final SettingsDestination destination in <SettingsDestination>[
+            video,
+            panel,
+          ]) {
+            final Set<String> ids = visibleIds(destination);
+            expect(ids, contains('video.danmaku.enabled'));
+            expect(ids.contains('video.danmaku.online'), enabled);
+            expect(ids.contains('video.danmaku.max_active'), enabled);
+          }
+        }
+      },
+    );
+
     testWidgets('同一 locale 下重复构造命中同一棵树（不再逐次全量重建）', (WidgetTester tester) async {
       final SettingsContext sctx = await makeContext(tester);
       resetSettingsSchemaCache();
@@ -80,8 +122,11 @@ void main() {
       final List<SettingsDestination> first = buildSettingsSchema(sctx);
       final List<SettingsDestination> second = buildSettingsSchema(sctx);
 
-      expect(identical(first, second), isTrue,
-          reason: '第二次调用必须命中缓存，而不是重新构造 230 个 item');
+      expect(
+        identical(first, second),
+        isTrue,
+        reason: '第二次调用必须命中缓存，而不是重新构造 230 个 item',
+      );
       // destination 实例本身也必须是同一批（否则渲染器的 KeyedSubtree / Element
       // 复用会因每帧换新对象而失去意义）。
       for (int i = 0; i < first.length; i++) {
@@ -93,10 +138,14 @@ void main() {
       final SettingsContext sctx = await makeContext(tester);
       resetSettingsSchemaCache();
 
-      expect(identical(collectReaderItems(sctx), collectReaderItems(sctx)),
-          isTrue);
       expect(
-          identical(collectVideoItems(sctx), collectVideoItems(sctx)), isTrue);
+        identical(collectReaderItems(sctx), collectReaderItems(sctx)),
+        isTrue,
+      );
+      expect(
+        identical(collectVideoItems(sctx), collectVideoItems(sctx)),
+        isTrue,
+      );
     });
 
     testWidgets('显式复位后重建，且内容等价', (WidgetTester tester) async {
@@ -128,10 +177,16 @@ void main() {
       LocaleSettings.setLocale(AppLocale.ja);
       final List<SettingsDestination> ja = buildSettingsSchema(sctx);
 
-      expect(identical(en, ja), isFalse,
-          reason: 'locale 是缓存键：换语言必须重建，否则设置页会卡在旧语言');
-      expect(ja.first.title, isNot(enTitle),
-          reason: 'i18n 在构造期求值，重建后 title 必须是新语言的');
+      expect(
+        identical(en, ja),
+        isFalse,
+        reason: 'locale 是缓存键：换语言必须重建，否则设置页会卡在旧语言',
+      );
+      expect(
+        ja.first.title,
+        isNot(enTitle),
+        reason: 'i18n 在构造期求值，重建后 title 必须是新语言的',
+      );
 
       // 切回去同样要跟随（不是「只认第一次切换」）。
       LocaleSettings.setLocale(AppLocale.en);
@@ -143,9 +198,12 @@ void main() {
       resetSettingsSchemaCache();
 
       expect(
-          () => buildSettingsSchema(sctx).removeLast(), throwsUnsupportedError);
-      final Map<ReaderGroup, List<SettingsItem>> reader =
-          collectReaderItems(sctx);
+        () => buildSettingsSchema(sctx).removeLast(),
+        throwsUnsupportedError,
+      );
+      final Map<ReaderGroup, List<SettingsItem>> reader = collectReaderItems(
+        sctx,
+      );
       expect(() => reader.remove(ReaderGroup.layout), throwsUnsupportedError);
       final List<SettingsItem>? layout = reader[ReaderGroup.layout];
       expect(layout, isNotNull);
@@ -183,13 +241,18 @@ void main() {
 
       ErrorLogService.instance.log('SettingsSchemaCache.test', 'boom');
 
-      expect(staticText(), before,
-          reason: '有 item 把运行期状态插进了静态 title——那会让缓存发陈旧文案。'
-              '实时文案请改用 SettingsItem.titleBuilder（渲染时求值）。');
+      expect(
+        staticText(),
+        before,
+        reason:
+            '有 item 把运行期状态插进了静态 title——那会让缓存发陈旧文案。'
+            '实时文案请改用 SettingsItem.titleBuilder（渲染时求值）。',
+      );
     });
 
-    testWidgets('诊断计数走 titleBuilder：静态 title 不动，resolveTitle 跟着动',
-        (WidgetTester tester) async {
+    testWidgets('诊断计数走 titleBuilder：静态 title 不动，resolveTitle 跟着动', (
+      WidgetTester tester,
+    ) async {
       final SettingsContext sctx = await makeContext(tester);
       await ErrorLogService.instance.clear();
       addTearDown(() => ErrorLogService.instance.clear());
@@ -209,8 +272,11 @@ void main() {
       // 同一个缓存实例（没重建），但解析出来的标题必须已经跟上。
       expect(identical(errorLogRow(), row), isTrue);
       expect(row.title, staticTitle, reason: '静态 title 是常量，不该动');
-      expect(row.resolveTitle(sctx), isNot(empty),
-          reason: '计数变了，渲染用的标题必须跟着变——否则用户看不到新日志条数');
+      expect(
+        row.resolveTitle(sctx),
+        isNot(empty),
+        reason: '计数变了，渲染用的标题必须跟着变——否则用户看不到新日志条数',
+      );
     });
   });
 
@@ -228,13 +294,20 @@ void main() {
       );
       final RegExp call = RegExp(r'build(\w+)Destination\(([^)]*)\)');
       final Iterable<RegExpMatch> matches = call.allMatches(maskComments(body));
-      expect(matches.length, greaterThanOrEqualTo(12),
-          reason: '扫描没抓到分类调用，守卫本身塌了');
+      expect(
+        matches.length,
+        greaterThanOrEqualTo(12),
+        reason: '扫描没抓到分类调用，守卫本身塌了',
+      );
       for (final RegExpMatch match in matches) {
-        expect(match.group(2)!.trim(), isEmpty,
-            reason: 'build${match.group(1)}Destination 收了参数：schema 缓存假设'
-                '构造期只依赖 locale，一旦分类构建读 SettingsContext，缓存就会'
-                '发陈旧数据。要读动态状态请写进 item 闭包。');
+        expect(
+          match.group(2)!.trim(),
+          isEmpty,
+          reason:
+              'build${match.group(1)}Destination 收了参数：schema 缓存假设'
+              '构造期只依赖 locale，一旦分类构建读 SettingsContext，缓存就会'
+              '发陈旧数据。要读动态状态请写进 item 闭包。',
+        );
       }
     });
 
@@ -251,8 +324,11 @@ void main() {
           .allMatches(maskComments(body))
           .map((RegExpMatch m) => 'build${m.group(1)}Destination')
           .toSet();
-      expect(called.length, greaterThanOrEqualTo(12),
-          reason: '扫描没抓到分类调用，守卫本身塌了');
+      expect(
+        called.length,
+        greaterThanOrEqualTo(12),
+        reason: '扫描没抓到分类调用，守卫本身塌了',
+      );
 
       final List<String> sources = <String>['lib/src/settings', 'lib/src/sync']
           .map((String dir) => Directory(dir))
@@ -264,16 +340,23 @@ void main() {
 
       for (final String name in called) {
         final RegExp definition = RegExp(
-            '^SettingsDestination $name' r'\(([^)]*)\)',
-            multiLine: true);
-        final Iterable<RegExpMatch> hits =
-            sources.expand((String src) => definition.allMatches(src));
+          '^SettingsDestination $name'
+          r'\(([^)]*)\)',
+          multiLine: true,
+        );
+        final Iterable<RegExpMatch> hits = sources.expand(
+          (String src) => definition.allMatches(src),
+        );
         expect(hits, isNotEmpty, reason: '找不到 $name 的定义，守卫本身塌了');
         for (final RegExpMatch match in hits) {
-          expect(match.group(1)!.trim(), isEmpty,
-              reason: '$name 收了参数：schema 缓存假设构造期只依赖 locale，'
-                  '一旦分类构建读 SettingsContext，缓存就会发陈旧数据。'
-                  '要读动态状态请写进 item 闭包。');
+          expect(
+            match.group(1)!.trim(),
+            isEmpty,
+            reason:
+                '$name 收了参数：schema 缓存假设构造期只依赖 locale，'
+                '一旦分类构建读 SettingsContext，缓存就会发陈旧数据。'
+                '要读动态状态请写进 item 闭包。',
+          );
         }
       }
     });
@@ -281,11 +364,15 @@ void main() {
     test('热重载复位钩子仍挂在 app 根上', () {
       // 缓存按 locale 命中，改 schema 源码不会改 locale——debug 热重载下必须由
       // reassemble 主动丢弃，否则改了设置项却看不到效果。
-      final String main =
-          maskComments(File('lib/main.dart').readAsStringSync());
+      final String main = maskComments(
+        File('lib/main.dart').readAsStringSync(),
+      );
       final String body = methodBody(main, 'void reassemble()');
-      expect(body.contains('resetSettingsSchemaCache()'), isTrue,
-          reason: '热重载不清 schema 缓存会让设置改动看不出效果');
+      expect(
+        body.contains('resetSettingsSchemaCache()'),
+        isTrue,
+        reason: '热重载不清 schema 缓存会让设置改动看不出效果',
+      );
     });
   });
 }

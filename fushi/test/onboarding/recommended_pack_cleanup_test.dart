@@ -9,7 +9,8 @@ import '../helpers/source_guard.dart';
 
 /// BUG-2109：推荐包（9.5 GB zip）导入后的收尾删除。
 ///
-/// 判据（包目录里的 `imported.flag`）从来没错，错的是**挂在哪儿**：收尾一度只挂
+/// BUG-2109 处理的是清理挂载位置；成功判据后续改为 flag 内的 completed 值。
+/// 收尾一度只挂
 /// 在新手引导页的 initState 上，而推荐包本身是一份含 settings 类目的备份，导入时
 /// `preferences` 表被整层替换、`onboarding_completed` 变成 true（该键缺省值也是
 /// true），于是导入后的那次重启首页不再自动弹引导页——清理入口结构上永远等不到
@@ -40,7 +41,7 @@ void main() {
   group('cleanupIfImported', () {
     test('导入过（flag 在）：整个包目录连同 zip 一起删掉', () async {
       writePack(4096);
-      await RecommendedPackDownloader.markImportStarted(packDir);
+      await RecommendedPackDownloader.markImportSucceeded(packDir);
       expect(packDir.existsSync(), isTrue);
 
       await RecommendedPackDownloader.cleanupIfImported(packDir);
@@ -62,6 +63,46 @@ void main() {
       await RecommendedPackDownloader.cleanupIfImported(packDir);
       expect(packDir.existsSync(), isFalse);
     });
+
+    test('legacy started receipt cannot prove success and preserves the pack',
+        () async {
+      writePack(4096);
+      await File(p.join(packDir.path, 'imported.flag')).writeAsString('1');
+      await RecommendedPackDownloader.cleanupIfImported(packDir);
+      expect(File(p.join(packDir.path, 'fushi_recommended_pack.zip')).existsSync(),
+          isTrue);
+    });
+
+    test('failed import without success receipt preserves a retryable pack',
+        () async {
+      writePack(4096);
+      try {
+        await Future<void>.error(StateError('restore failed'));
+        await RecommendedPackDownloader.markImportSucceeded(packDir);
+      } on StateError {
+        // A failed restore must never reach the success receipt.
+      }
+      await RecommendedPackDownloader.cleanupIfImported(packDir);
+      expect(File(p.join(packDir.path, 'fushi_recommended_pack.zip')).existsSync(),
+          isTrue);
+    });
+  });
+
+  test('success receipt is after both restore branches, before restart', () {
+    final String source = File(
+      'lib/src/sync/sync_settings_schema/backup.part.dart',
+    ).readAsStringSync();
+    final String body =
+        methodBody(source, 'Future<void> runBackupImportFlowForFile(');
+    final int callback = body.indexOf('await onImportSucceeded?.call()');
+    expect(callback,
+        greaterThan(body.indexOf('await BackupRestoreService.restoreBackup(')));
+    expect(
+        callback,
+        greaterThan(
+            body.indexOf('await BackupRestoreService.mergeRestoreBackup(')));
+    expect(callback, lessThan(body.indexOf('appModel.completeBackupImport(')));
+    expect(body.contains('onImportConfirmed'), isFalse);
   });
 
   group('BUG-2109 守卫：收尾必须挂在启动必经路径上', () {

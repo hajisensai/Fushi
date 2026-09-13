@@ -63,12 +63,13 @@ void main() {
       expect(sources, contains("keyPrefix: 'aidoku_extension'"));
     });
 
-    test('Aidoku 章节进入共享漫画阅读器，复用 OCR 与阅读样式', () {
+    test('Aidoku 源浏览页不再直读章节（在线漫画先下载再读，设计稿 2026-09-12）', () {
       final String browse =
           _read(<String>['aidoku', 'aidoku_source_browse_page.dart']);
-      expect(browse, contains('AidokuReaderChapter('));
-      expect(browse, contains('MangaFushiPage('));
-      expect(browse, contains('onlineChapter: resolved'));
+      // 章节一律经作品页入队下载；源浏览页里不许再长出一条「点章即在线读」的路。
+      expect(browse, isNot(contains('AidokuReaderChapter(')));
+      expect(browse, isNot(contains('MangaFushiPage(')));
+      expect(browse, contains('MangaSeriesPage('));
     });
 
     test('Aidoku 仓库 URL 输入框使用 Material 对话框', () {

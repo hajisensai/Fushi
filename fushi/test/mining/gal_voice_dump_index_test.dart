@@ -20,6 +20,42 @@ void main() {
   int watcherCalls = 0;
   int entryLoadCalls = 0;
 
+  test(
+    'explicit event beats time WAV and typed WAV never enters time fallback',
+    () async {
+      nextEntries = <GalVoiceDumpEntry>[
+        entry('10000_fushi_textseq7_voice.wav'),
+        entry('10000_unmarked.wav'),
+        entry('10000_unmarked.ogg'),
+        entry('10000_fushi_textseq9_voice.ogg'),
+      ];
+      await index.startSession();
+      expect(
+        index.findPairedResourceNames(textTsMs: 10000, textEventId: 9),
+        <String>['10000_fushi_textseq9_voice.ogg'],
+      );
+      expect(
+        index.findEventOwnedResourceNames(textTsMs: 10000, textEventId: 10),
+        isEmpty,
+      );
+      expect(
+        index.findPairedResourceNames(textTsMs: 10000, textEventId: 10),
+        <String>['10000_unmarked.wav'],
+        reason: 'Legacy unmarked policy stays available',
+      );
+      nextEntries = <GalVoiceDumpEntry>[
+        entry('10000_fushi_textseq7_voice.wav'),
+      ];
+      index.invalidate();
+      await index.synchronize();
+      expect(
+        index.findPairedResourceNames(textTsMs: 10000, textEventId: 10),
+        isEmpty,
+      );
+      expect(index.findPairedResourceNames(textTsMs: 10000), isEmpty);
+    },
+  );
+
   setUp(() async {
     scanCalls = 0;
     watcherCalls = 0;

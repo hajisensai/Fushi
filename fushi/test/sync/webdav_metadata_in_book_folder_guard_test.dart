@@ -63,7 +63,7 @@ void main() {
 
     test('ttu_filename documents folder = book title (TTU-compatible layout)',
         () {
-      final File src = File('lib/src/sync/ttu_filename.dart');
+      final File src = File('../packages/fushi_engine/lib/sync/ttu_filename.dart');
       final String body = src.readAsStringSync();
       // 文档化契约：文件夹名 = sanitized 书名；进度/统计是独立 JSON（非嵌入 epub）。
       expect(body.contains('文件夹名: sanitized book title'), isTrue,

@@ -1,0 +1,368 @@
+# 无头服务端 fushi_server 的专用发布：Linux x64 + Windows x64 两个包，手动触发，
+# 发到本仓 GitHub Release，tag 前缀 `fushi-server-v`。
+#
+# ── 与 app 发布的关系（刻意分开）─────────────────────────────────────────────
+# * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
+#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，别再造第二条）。
+# * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
+#   debug 包没有消费者。
+# * **永远不做 Latest**（make_latest 恒 false，formal 也不例外）：app 的稳定通道更新
+#   检查走 `releases/latest`（update_checker_release.dart），服务端包一旦成为 Latest，
+#   五端 app 会把它当成「最新正式版」去比对——资产名对不上是不会错装，但会把
+#   「已是最新」判成「远端不比本机新」而永远停更。formal 通道的可见性靠 tag 前缀与
+#   Release 名，不靠 Latest 徽章。
+# * concurrency 组带 workflow 名：与 release.yml / release-desktop.yml 曾共用一个组
+#   时同 sha 触发的第一条会被取消（PR#1302 教训）。
+#
+# ── 产物 ──────────────────────────────────────────────────────────────────
+#   fushi_server-<version>-<seq>-linux-x64.tar.gz   解压得 fushi_server/{bin,lib}
+#   fushi_server-<version>-<seq>-windows-x64.zip    同上
+# lib/ 里随包：sqlite3（dart build native asset）、内置 torrent 引擎（Linux 静态链
+# libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
+# CPU 版。目标机不需要任何 libtorrent / ssl 运行库（README「安装」）。
+name: release-server
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel (beta = prerelease; formal = non-prerelease, still never Latest)
+        type: choice
+        required: true
+        default: beta
+        options:
+          - beta
+          - formal
+      tag_name:
+        description: Optional tag override (default fushi-server-v<version>-beta.<seq> / fushi-server-v<version>)
+        required: false
+        default: ''
+      release_name:
+        description: Optional release name override
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fushi-server-release-${{ github.workflow }}-${{ github.event.inputs.tag_name || github.sha }}
+  cancel-in-progress: false
+
+env:
+  ORT_VERSION: '1.22.0'
+
+jobs:
+  channel:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      release_sequence: ${{ steps.resolve.outputs.release_sequence }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      name: ${{ steps.resolve.outputs.name }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+      make_latest: ${{ steps.resolve.outputs.make_latest }}
+      body: ${{ steps.resolve.outputs.body }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Validate unified release policy
+        shell: pwsh
+        run: ./tool/check_release_policy.ps1
+      - name: Resolve server release channel
+        id: resolve
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' packages/fushi_server/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
+          [ -n "$VERSION" ] || { echo "::error::packages/fushi_server/pubspec.yaml has no version:"; exit 1; }
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          CHANNEL="${INPUT_CHANNEL:-beta}"
+          TAG="${INPUT_TAG_NAME:-}"
+          NAME="${INPUT_RELEASE_NAME:-}"
+          NOTES_FILE="docs/release-notes/server-${VERSION}.md"
+          PRERELEASE=true
+          # 服务端包永远不做 Latest（见文件头）。这是通道无关的硬规则，不进 case。
+          MAKE_LATEST=false
+          case "$CHANNEL" in
+            beta)
+              TAG="${TAG:-fushi-server-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+              NAME="${NAME:-fushi_server ${VERSION} beta ${RELEASE_SEQUENCE}}"
+              BODY="Manual fushi_server beta build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Server releases are never Latest."
+              ;;
+            formal)
+              TAG="${TAG:-fushi-server-v${VERSION}}"
+              NAME="${NAME:-fushi_server ${VERSION}}"
+              BODY="Manual fushi_server formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Server releases are never Latest."
+              PRERELEASE=false
+              ;;
+            *)
+              echo "::error title=Invalid release channel::Use beta or formal."
+              exit 1
+              ;;
+          esac
+          if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+          case "$TAG" in
+            fushi-server-*) : ;;
+            *) echo "::error title=Bad tag::server release tags must start with fushi-server- (got $TAG)"; exit 1 ;;
+          esac
+          {
+            echo "version=$VERSION"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "tag=$TAG"
+            echo "name=$NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$MAKE_LATEST"
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  # ubuntu-22.04（glibc 2.35）而不是 latest：bundle 里除 glibc 全是静态的，构建机的
+  # glibc 就是产物的最低要求，老一点覆盖面大一点（Debian 12 / Ubuntu 22.04+ / 主流 NAS）。
+  linux:
+    needs: channel
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build cmake pkg-config
+      - name: Pub get (workspace)
+        working-directory: fushi
+        run: flutter pub get
+      - name: Resolve vcpkg cache identity
+        id: vcpkg_cache_id
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Cache vcpkg source distfiles (libtorrent linux)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
+      - name: Cache vcpkg binary archives (libtorrent linux)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+      - name: Build embedded torrent bridge (static)
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+        run: |
+          set -euo pipefail
+          chmod +x native/fushi_torrent/build_linux_so.sh
+          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
+          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so nm
+      - name: Build fushi_server bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart build cli --target packages/fushi_server/bin/fushi_server.dart --output build/fushi_server_linux
+          mkdir -p build/fushi_server_linux/bundle/lib
+          cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
+          ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+      - name: Smoke (serve + embedded engine + models)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cfg="$RUNNER_TEMP/smoke"
+          mkdir -p "$cfg"
+          cat > "$cfg/fushi_server.yaml" <<'YAML'
+          data_dir: "data"
+          port: 48765
+          bind: "127.0.0.1"
+          tls: false
+          admin_port: 48780
+          admin_bind: "127.0.0.1"
+          admin_token: "ci-smoke-token"
+          torrent:
+            engine: embedded
+          libraries: []
+          YAML
+          build/fushi_server_linux/bundle/bin/fushi_server serve --config "$cfg/fushi_server.yaml" > "$cfg/serve.log" 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:48780/ && break; sleep 0.5; done
+          status="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/status)"
+          echo "$status" | grep -q '"backend":"embedded"' || { echo "::error::embedded torrent engine not loaded"; cat "$cfg/serve.log"; exit 1; }
+          models="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/models)"
+          echo "$models" | grep -q '"error"' && { echo "::error::ASR plan error (onnxruntime not loadable?)"; echo "$models"; exit 1; }
+          curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/subscriptions | grep -q '"supported":true' \
+            || { echo "::error::subscriptions capability not reported"; exit 1; }
+          kill $pid; wait $pid || true
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ needs.channel.outputs.version }}
+          SEQ: ${{ needs.channel.outputs.release_sequence }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/release-artifacts stage
+          cp -a build/fushi_server_linux/bundle stage/fushi_server
+          cp packages/fushi_server/README.md stage/fushi_server/README.md
+          tar -C stage -czf "build/release-artifacts/fushi_server-${VERSION}-${SEQ}-linux-x64.tar.gz" fushi_server
+          ls -la build/release-artifacts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fushi_server-linux-x64
+          path: build/release-artifacts/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    needs: channel
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+      - name: Pub get (workspace)
+        working-directory: fushi
+        run: flutter pub get
+      - name: Resolve vcpkg cache identity
+        id: vcpkg_cache_id
+        shell: pwsh
+        run: |
+          $image = $env:ImageVersion
+          if ([string]::IsNullOrWhiteSpace($image)) { $image = 'unknown-image' }
+          $image = ($image -replace '[^0-9A-Za-z._-]', '-')
+          "image=$image" >> $env:GITHUB_OUTPUT
+      - name: Cache vcpkg source distfiles (libtorrent)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\vcpkg-downloads
+            !${{ runner.temp }}\vcpkg-downloads\tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
+      - name: Cache vcpkg binary archives (libtorrent)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
+      - name: Build embedded libtorrent DLL (vcpkg)
+        shell: pwsh
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
+      - name: Build fushi_server bundle
+        shell: pwsh
+        run: |
+          dart build cli --target packages/fushi_server/bin/fushi_server.dart --output build/fushi_server_win
+          if ($LASTEXITCODE -ne 0) { throw "dart build cli failed" }
+          $lib = "build/fushi_server_win/bundle/lib"
+          New-Item -ItemType Directory -Force $lib | Out-Null
+          Copy-Item native/fushi_torrent/prebuilt/windows-x64/*.dll $lib -Force
+          $zip = "$env:RUNNER_TEMP/ort.zip"
+          Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
+          Copy-Item "$env:RUNNER_TEMP/ort/onnxruntime-win-x64-$env:ORT_VERSION/lib/onnxruntime.dll" $lib -Force
+          Get-ChildItem build/fushi_server_win/bundle -Recurse | Select-Object FullName, Length
+      - name: Smoke (serve + embedded engine)
+        shell: pwsh
+        run: |
+          $cfg = "$env:RUNNER_TEMP/smoke"
+          New-Item -ItemType Directory -Force $cfg | Out-Null
+          @"
+          data_dir: "data"
+          port: 48765
+          bind: "127.0.0.1"
+          tls: false
+          admin_port: 48780
+          admin_bind: "127.0.0.1"
+          admin_token: "ci-smoke-token"
+          torrent:
+            engine: embedded
+          libraries: []
+          "@ | Set-Content -Encoding utf8 "$cfg/fushi_server.yaml"
+          $proc = Start-Process -FilePath "build/fushi_server_win/bundle/bin/fushi_server.exe" -ArgumentList @('serve', '--config', "$cfg/fushi_server.yaml") -PassThru -RedirectStandardOutput "$cfg/serve.log" -RedirectStandardError "$cfg/serve.err"
+          try {
+            $ok = $false
+            foreach ($i in 1..60) {
+              try { Invoke-WebRequest -UseBasicParsing -Uri http://127.0.0.1:48780/ | Out-Null; $ok = $true; break } catch { Start-Sleep -Milliseconds 500 }
+            }
+            if (-not $ok) { Get-Content "$cfg/serve.log", "$cfg/serve.err"; throw "admin port never came up" }
+            $status = Invoke-RestMethod -Uri http://127.0.0.1:48780/api/admin/status -Headers @{ Authorization = 'Bearer ci-smoke-token' }
+            if ($status.downloads.backend -ne 'embedded') { Get-Content "$cfg/serve.log"; throw "embedded torrent engine not loaded: $($status.downloads | ConvertTo-Json)" }
+            $models = Invoke-RestMethod -Uri http://127.0.0.1:48780/api/admin/models -Headers @{ Authorization = 'Bearer ci-smoke-token' }
+            if ($models.asr | Where-Object { $_.error }) { throw "ASR plan error: $($models.asr | ConvertTo-Json)" }
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.channel.outputs.version }}
+          SEQ: ${{ needs.channel.outputs.release_sequence }}
+        run: |
+          New-Item -ItemType Directory -Force build/release-artifacts, stage | Out-Null
+          Copy-Item build/fushi_server_win/bundle stage/fushi_server -Recurse -Force
+          Copy-Item packages/fushi_server/README.md stage/fushi_server/README.md -Force
+          Compress-Archive -Path stage/fushi_server -DestinationPath "build/release-artifacts/fushi_server-$env:VERSION-$env:SEQ-windows-x64.zip" -Force
+          Get-ChildItem build/release-artifacts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fushi_server-windows-x64
+          path: build/release-artifacts/*.zip
+          if-no-files-found: error
+
+  publish:
+    needs:
+      - channel
+      - linux
+      - windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: fushi_server-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: List assets
+        run: ls -la release-artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.channel.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.channel.outputs.name }}
+          body: ${{ needs.channel.outputs.body }}
+          prerelease: ${{ needs.channel.outputs.prerelease }}
+          # 恒 false（见文件头）；用 output 而不是字面量，与 check_release_policy 的
+          # 「不得硬编码 make_latest: true」同一条纪律。
+          make_latest: ${{ needs.channel.outputs.make_latest }}
+          files: |
+            release-artifacts/fushi_server-*-linux-x64.tar.gz
+            release-artifacts/fushi_server-*-windows-x64.zip

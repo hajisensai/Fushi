@@ -5,6 +5,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -114,24 +115,29 @@ class _MediaItemEditDialogPageState
           ],
           MediaItemCoverOverrideField(
             imageProvider: _coverImageProvider ?? _defaultImageProvider!,
-            onScrape: () async {
-              // 在线刮削封面（P1b）：搜 Bangumi 书籍条目，选中即下载封面成临时文件，
-              // 走与手动选图完全相同的 override 通道（保存时 setOverrideThumbnail）。
-              final String query =
-                  _nameOverrideController.text.trim().isNotEmpty
-                      ? _nameOverrideController.text.trim()
-                      : widget.item.title;
-              final File? scraped = await showBookCoverScrapeDialog(
-                context: context,
-                initialQuery: query,
-              );
-              if (scraped != null) {
-                _newFile = scraped;
-                _coverImageProvider = FileImage(scraped);
-                _clearOverrideImage = false;
-                setState(() {});
-              }
-            },
+            // 「在线服务」模块关掉时传 null —— [MediaItemCoverOverrideField] 已有
+            // 「onScrape 为空就不渲染刮削按钮」的契约（书/视频/游戏三库共用本弹窗，
+            // 一处接线三处生效）。手动选图 / 撤销不受影响：那是本地操作。
+            onScrape: !appModel.moduleVisibility.isEnabled(ModuleId.services)
+                ? null
+                : () async {
+                    // 在线刮削封面（P1b）：搜 Bangumi 书籍条目，选中即下载封面成临时文件，
+                    // 走与手动选图完全相同的 override 通道（保存时 setOverrideThumbnail）。
+                    final String query =
+                        _nameOverrideController.text.trim().isNotEmpty
+                        ? _nameOverrideController.text.trim()
+                        : widget.item.title;
+                    final File? scraped = await showBookCoverScrapeDialog(
+                      context: context,
+                      initialQuery: query,
+                    );
+                    if (scraped != null) {
+                      _newFile = scraped;
+                      _coverImageProvider = FileImage(scraped);
+                      _clearOverrideImage = false;
+                      setState(() {});
+                    }
+                  },
             onPickImage: () async {
               // BUG-1074：桌面端 image_picker 无平台实现，直接调 pickImage 抛
               // MissingPluginException 且无人捕获 → 按钮「点了没反应」。统一走
@@ -324,6 +330,19 @@ class MediaItemCoverOverrideField extends StatelessWidget {
                     width: tokens.spacing.gap * 6,
                     image: imageProvider,
                     fit: BoxFit.contain,
+                    // BUG-2496：坏封面文件解码失败退回占位图标，不当致命错误。
+                    // FileImage.toString() 自带路径，直接记 provider 就有 path。
+                    errorBuilder: (_, Object error, __) {
+                      ErrorLogService.instance.logDiagnostic(
+                        'MediaItemCoverOverrideField.coverDecode',
+                        '$imageProvider: $error',
+                      );
+                      return SizedBox(
+                        height: tokens.spacing.gap * 6,
+                        width: tokens.spacing.gap * 6,
+                        child: const Icon(Icons.broken_image_outlined),
+                      );
+                    },
                   ),
                 ),
               ),

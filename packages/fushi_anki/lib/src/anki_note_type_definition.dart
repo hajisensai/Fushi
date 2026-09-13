@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart';
 
 /// 一个 note type 里单张卡模板（card template）的正/反面 HTML。
 ///

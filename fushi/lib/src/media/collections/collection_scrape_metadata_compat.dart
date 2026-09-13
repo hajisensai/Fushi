@@ -3,7 +3,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:fushi/src/media/video/scraper/scraper_types.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 将历史合集资料行还原为只读领域对象；未知来源只按本地资料兼容。

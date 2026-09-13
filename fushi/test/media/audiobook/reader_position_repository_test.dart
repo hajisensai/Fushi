@@ -178,4 +178,29 @@ void main() {
     expect(pos!.charOffset, isNull,
         reason: 'first save without charOffset → DB default -1 → model null');
   });
+
+  // 书架列书一次取完（替代每本一查的 N+1）：批量读与单本读逐字段一致。
+  test('findAllByBookUid matches per-book reads field by field', () async {
+    await repo.save(
+        bookUid: 'a', sectionIndex: 3, normCharOffset: 1000, charOffset: 42);
+    await repo.save(bookUid: 'b', sectionIndex: 7, normCharOffset: 5000);
+
+    final Map<String, ReaderPosition> all = await repo.findAllByBookUid();
+
+    expect(all.keys.toSet(), <String>{'a', 'b'});
+    for (final String uid in all.keys) {
+      final ReaderPosition? single = await repo.findByBookUid(uid);
+      final ReaderPosition batch = all[uid]!;
+      expect(batch.sectionIndex, single!.sectionIndex);
+      expect(batch.normCharOffset, single.normCharOffset);
+      expect(batch.charOffset, single.charOffset);
+      expect(batch.updatedAt, single.updatedAt);
+    }
+    expect(all['a']!.charOffset, 42);
+    expect(all['b']!.charOffset, isNull, reason: 'DB -1 哨兵 → 模型 null');
+  });
+
+  test('findAllByBookUid on empty table is empty', () async {
+    expect(await repo.findAllByBookUid(), isEmpty);
+  });
 }

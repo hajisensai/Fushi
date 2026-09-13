@@ -535,6 +535,27 @@ void main() {
       );
     });
 
+    test('hiddenSelectedCountWhere 只数满足谓词的散卡键，合集照数（BUG-2458）', () {
+      controller.enterWith(const SelectionSlot.loose('a'));
+      controller.toggle(const SelectionSlot.loose('remote_x'));
+      controller.toggle(const SelectionSlot.loose('d'));
+      controller.toggle(const SelectionSlot.collection(10));
+      controller.setVisibleOrder(
+        loose: const <String>['a'],
+        collections: const <int>[],
+      );
+
+      expect(controller.hiddenSelectedCount, 3,
+          reason: '全量口径：d、remote_x、合集 10');
+      expect(
+        controller.hiddenSelectedCountWhere(
+          (String key) => !key.startsWith('remote_'),
+        ),
+        2,
+        reason: '删除确认框只该报本地键：远端键 remote_x 不是删除对象，不计',
+      );
+    });
+
     test('全选之后收缩可见集：计数跟着屏幕走，不是跟着历史走', () {
       controller.toggleMode();
       controller.selectAll(

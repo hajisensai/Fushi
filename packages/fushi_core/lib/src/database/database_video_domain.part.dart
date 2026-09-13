@@ -281,6 +281,27 @@ mixin _FushiDbVideoDomain
             ..where(($VideoMetadataWorksTable t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  /// 把作品行的 `updatedAt` 钉成远端给的戳（互联 7c 客户端落库后用 host 的
+  /// updatedAt 覆盖 apply 写的本机 now，新旧判定才能跨设备成立）。
+  Future<void> setVideoMetadataWorkUpdatedAt(int workId, int updatedAt) async {
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(updatedAt: Value<int>(updatedAt)));
+  }
+
+  /// 写作品级字段锁（schema v99）。`null` = 清空全部锁。锁是纯用户意图，独立于
+  /// 刮削产物，所以是自己的原语而不是 `upsertVideoMetadataWork` 的一个字段。
+  Future<void> setVideoMetadataWorkLockedFields(
+    int workId,
+    String? lockedFields,
+  ) async {
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(
+      lockedFields: Value<String?>(lockedFields),
+    ));
+  }
+
   Future<VideoMetadataWorkRow?> getVideoMetadataWorkById(int workId) =>
       (select(videoMetadataWorks)
             ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
@@ -1921,6 +1942,35 @@ mixin _FushiDbVideoDomain
             ]))
           .watch();
 
+  /// 订阅表「变了」的纯信号（不带行），给长驻页面「重算一次」用。
+  ///
+  /// 不要直接 listen [watchVideoDownloadSubscriptions]：那是 drift 的
+  /// QueryStream，取消订阅时 `StreamQueryStore.markAsClosed` 会排一个
+  /// `Timer.run`；widget 测试里页面 dispose 之后它仍 pending，直接撞
+  /// `!timersPending` 断言（BUG-834）。凡「initState 订阅 / dispose 取消」的
+  /// 场景一律走 tableUpdates + 手写 controller，与
+  /// [watchVideoScrapePresentationChanged] 同范式。
+  Stream<void> watchVideoDownloadSubscriptionsChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub = tableUpdates(
+          TableUpdateQuery
+              .onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
+            videoDownloadSubscriptions,
+          ]),
+        ).listen((_) {
+          if (!controller.isClosed) controller.add(null);
+        });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   Future<int> updateVideoDownloadSubscription(
     String subscriptionId,
     VideoDownloadSubscriptionsCompanion patch,
@@ -2160,6 +2210,22 @@ mixin _FushiDbVideoDomain
                       OrderingTerm(expression: t.discoveredAt),
                 ]))
               .get();
+
+  /// 拉起这条下载任务的订阅条目；null = 手动下载。
+  ///
+  /// v101 更新提醒的番剧侧判据：手动下载是用户自己刚点的，下载完成再提醒一次
+  /// 只是复述他刚做过的动作；订阅下载则是他没盯着的时候悄悄完成的，那一条才值
+  /// 得提醒。`video_download_jobs` 本身没有来源标记，唯一的关联是订阅条目回填的
+  /// `jobId`，所以判据只能反查这张边表。返回整行而不是 bool：提醒还要它的
+  /// `publishedAt`（资源发布时刻）。
+  Future<VideoDownloadSubscriptionItemRow?> videoDownloadSubscriptionItemForJob(
+    String jobId,
+  ) =>
+      (select(videoDownloadSubscriptionItems)
+            ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                t.jobId.equals(jobId))
+            ..limit(1))
+          .getSingleOrNull();
 
   Stream<List<VideoDownloadSubscriptionItemRow>>
       watchVideoDownloadSubscriptionItems(String subscriptionId) =>

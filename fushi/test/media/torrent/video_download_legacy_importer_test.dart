@@ -45,6 +45,7 @@ void main() {
 
   AnimeDownloadPlan plan({
     String status = AnimeDownloadPlan.statusDownloading,
+    String contentKind = AnimeDownloadPlan.kindVideo,
     int? collectionId,
     List<PlanSubtitle> subtitles = const <PlanSubtitle>[],
   }) =>
@@ -59,6 +60,7 @@ void main() {
         qbCategory: 'hibiki',
         subtitles: subtitles,
         status: status,
+        contentKind: contentKind,
         collectionId: collectionId,
         jimakuEntryId: 77,
         jimakuEntryName: 'Example Show',
@@ -138,6 +140,42 @@ void main() {
       expect(subtitle.finalPath, isNull);
     },
   );
+
+  for (final (String, String) kinds in <(String, String)>[
+    (AnimeDownloadPlan.kindBook, 'novel'),
+    (AnimeDownloadPlan.kindAudiobook, 'audiobook'),
+    (AnimeDownloadPlan.kindGame, 'game'),
+    (AnimeDownloadPlan.kindAuto, 'tv'),
+  ]) {
+    test('preserves the domain and backend of legacy ${kinds.$1}', () async {
+      final AnimeDownloadPlan legacy = plan(contentKind: kinds.$1);
+      await writePlan(legacy);
+      final LegacyVideoDownloadImportReport report =
+          await VideoDownloadLegacyImporter(
+        database: database,
+        baseDirectory: root,
+        torrentMatcher: (LegacyTorrentProbe _) async => matchingBinding(legacy),
+      ).importAll();
+
+      expect(report.importedPlans, 1);
+      final VideoDownloadJobRow job =
+          (await database.getVideoDownloadJobs()).single;
+      final bool isAuto = kinds.$1 == AnimeDownloadPlan.kindAuto;
+      expect(job.mediaKind, kinds.$2);
+      expect(job.discoveryCategory, isAuto ? 'anime' : null);
+      expect(job.resourceProvider, isAuto ? 'nyaa' : 'legacy');
+      expect(job.organizationPolicy,
+          isAuto ? 'legacy' : 'discovery-${kinds.$2}');
+      expect(job.subtitlePolicy, 'none');
+      expect(job.jobId, 'legacy-plan:${legacy.id}');
+      expect(job.torrentHash, legacy.id);
+      expect(job.backendTaskId, legacy.id);
+      expect(job.category, legacy.qbCategory);
+      expect(job.fingerprint, 'qb:local-instance');
+      expect(job.stage, VideoDownloadJobStage.download);
+      expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+    });
+  }
 
   test('requires hash, title, and category before binding a legacy backend',
       () async {

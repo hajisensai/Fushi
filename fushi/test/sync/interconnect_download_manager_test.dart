@@ -156,5 +156,85 @@ void main() {
       gate.complete();
       await running;
     });
+
+    // #6 合集整体下载：串行批。
+    group('startBatch (collection download)', () {
+      test('runs starters strictly one after another and counts results',
+          () async {
+        final List<String> order = <String>[];
+        final Completer<void> firstGate = Completer<void>();
+        Future<void> Function() starter(String id, {bool fail = false}) =>
+            () => manager.startVideoDownload(
+                  id: id,
+                  title: id,
+                  dest: dest('$id.mp4'),
+                  run: (File target,
+                      {void Function(double progress)? onProgress}) async {
+                    order.add('start:$id');
+                    if (id == 'a') await firstGate.future;
+                    if (fail) throw StateError('boom $id');
+                    order.add('end:$id');
+                  },
+                );
+
+        final Future<InterconnectDownloadBatch> done = manager.startBatch(
+          id: InterconnectDownloadManager.collectionBatchId(7),
+          title: 'Series',
+          starters: <Future<void> Function()>[
+            starter('a'),
+            starter('b', fail: true),
+            starter('c'),
+          ],
+        );
+        await Future<void>.delayed(Duration.zero);
+        // a 还卡着时 b 绝不能起跑（串行）。
+        expect(order, <String>['start:a']);
+        expect(manager.isBatchRunning('collection:7'), isTrue);
+        expect(manager.batchFor('collection:7')!.total, 3);
+        firstGate.complete();
+
+        final InterconnectDownloadBatch batch = await done;
+        expect(order, <String>[
+          'start:a',
+          'end:a',
+          'start:b',
+          'start:c',
+          'end:c',
+        ]);
+        expect(batch.completed, 2);
+        expect(batch.failed, 1);
+        expect(batch.isRunning, isFalse);
+        // 成员失败原因仍在其自己的任务快照里，批不吞。
+        expect(manager.taskFor('b')!.status, InterconnectDownloadStatus.failed);
+        expect(manager.taskFor('b')!.error, isNotNull);
+        expect(
+            manager.taskFor('c')!.status, InterconnectDownloadStatus.completed);
+      });
+
+      test('duplicate startBatch while running returns the live batch',
+          () async {
+        final Completer<void> gate = Completer<void>();
+        var starts = 0;
+        Future<void> Function() blocked() => () async {
+              starts += 1;
+              await gate.future;
+            };
+        final Future<InterconnectDownloadBatch> first = manager.startBatch(
+          id: 'collection:1',
+          title: 'S',
+          starters: <Future<void> Function()>[blocked()],
+        );
+        await Future<void>.delayed(Duration.zero);
+        final InterconnectDownloadBatch again = await manager.startBatch(
+          id: 'collection:1',
+          title: 'S',
+          starters: <Future<void> Function()>[blocked(), blocked()],
+        );
+        expect(again.total, 1, reason: '重复调用拿到的是正在跑的那批，不是新批');
+        expect(starts, 1);
+        gate.complete();
+        await first;
+      });
+    });
   });
 }

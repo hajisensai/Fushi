@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/controls/control_layout.dart';
+import 'package:fushi/src/controls/control_layout_editor.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -13,8 +15,12 @@ import 'package:fushi/utils.dart';
 /// 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。从旧
 /// `VideoQuickSettingsSheet._buildControlDragEditor` 系列方法原样抽出为独立控件
 /// （阶段 B：面板改 schema 投影，本编辑器以 `SettingsCustomItem` 入 schema、仅播放
-/// 中可见），拖拽/驳回/持久化逻辑逐字保留；「重置布局」行改由并列的 schema action
-/// 项承载，经 [layout] + didUpdateWidget 同步回本编辑器。
+/// 中可见）；「重置布局」行改由并列的 schema action 项承载，经 [layout] +
+/// didUpdateWidget 同步回本编辑器。
+///
+/// 拖放状态机 / 调色板 / 隐藏托盘 / 驳回提示已抽成泛型 [ControlLayoutEditor]
+/// （`src/controls/`），本控件只保留视频域知识：9 槽舞台几何、图标 / 标签 / 槽位名、
+/// volume / 必需项的驳回文案，以及「快捷键 N」chip 的点击改绑入口。
 class VideoControlLayoutEditor extends StatefulWidget {
   const VideoControlLayoutEditor({
     required this.layout,
@@ -48,11 +54,8 @@ class VideoControlLayoutEditor extends StatefulWidget {
 }
 
 class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
-  late VideoControlLayout _controlLayout = widget.layout;
-  String? _controlMoveRejectionMessage;
-
-  /// 自定义「快捷键」按钮绑定的本地镜像：与 [_controlLayout] 同款——本地先改、UI 立刻
-  /// 反映，同时把新值交给外部落盘（外部回传经 didUpdateWidget 同步回来）。
+  /// 自定义「快捷键」按钮绑定的本地镜像：本地先改、UI 立刻反映，同时把新值交给外部
+  /// 落盘（外部回传经 didUpdateWidget 同步回来）。布局本身的镜像在泛型编辑器里。
   late VideoCustomActionBindings _customActionBindings =
       widget.customActionBindings;
 
@@ -62,44 +65,42 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     if (oldWidget.customActionBindings != widget.customActionBindings) {
       _customActionBindings = widget.customActionBindings;
     }
-    if (oldWidget.layout != widget.layout) {
-      _controlLayout = widget.layout;
-      // 外部重置/换布局后清掉上一轮的拖拽驳回提示（旧 sheet 行为）：提示描述的
-      // 是旧布局上被拒的那次拖拽，布局已换仍挂着会误导。
-      _controlMoveRejectionMessage = null;
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.all(tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _buildControlStagePreview(),
-          if (_controlMoveRejectionMessage != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              _controlMoveRejectionMessage!,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: cs.error,
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ],
-          SizedBox(height: tokens.spacing.gap),
-          _buildControlPalette(),
-          SizedBox(height: tokens.spacing.gap),
-          _buildHiddenSlotTray(),
-        ],
+    final Future<void> Function(VideoControlLayout layout)? onLayoutChanged =
+        widget.onLayoutChanged;
+    return ControlLayoutEditor<VideoControlSlot, VideoControlItem>(
+      layout: widget.layout.core,
+      onLayoutChanged: onLayoutChanged == null
+          ? null
+          : (ControlLayout<VideoControlSlot, VideoControlItem> next) =>
+              unawaited(onLayoutChanged(VideoControlLayout.fromCore(next))),
+      isTouchControls: widget.isTouchControls,
+      paletteItems: VideoControlItem.customizableItems,
+      paletteTitle: t.video_control_palette_title,
+      stageBuilder: _buildControlStagePreview,
+      iconOf: (VideoControlItem item) =>
+          videoControlItemIcon(item, bindings: _customActionBindings),
+      labelOf: (VideoControlItem item) => videoControlItemLabel(
+        item,
+        context,
+        bindings: _customActionBindings,
       ),
+      slotLabelOf: _controlSlotLabel,
+      rejectionMessageOf: _controlRejectionMessage,
+      dragCanceledMessageOf: _controlDragCanceledMessage,
+      canRenderChip: (VideoControlItem item) => item.isChipRenderable,
+      wrapChip: _wrapCustomActionChip,
+      keyPrefix: 'video-control',
     );
   }
 
-  Widget _buildControlStagePreview() {
+  Widget _buildControlStagePreview(
+    BuildContext context,
+    ControlSlotRegionBuilder<VideoControlSlot> buildSlotRegion,
+  ) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -119,18 +120,18 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  _buildCompactSlotGrid(<VideoControlSlot>[
+                  _buildCompactSlotGrid(buildSlotRegion, <VideoControlSlot>[
                     VideoControlSlot.topLeft,
                     VideoControlSlot.topCenter,
                     VideoControlSlot.topRight,
                   ]),
                   SizedBox(height: tokens.spacing.gap),
-                  _buildCompactSlotGrid(<VideoControlSlot>[
+                  _buildCompactSlotGrid(buildSlotRegion, <VideoControlSlot>[
                     VideoControlSlot.screenLeft,
                     VideoControlSlot.screenRight,
                   ]),
                   SizedBox(height: tokens.spacing.gap),
-                  _buildCompactSlotGrid(<VideoControlSlot>[
+                  _buildCompactSlotGrid(buildSlotRegion, <VideoControlSlot>[
                     VideoControlSlot.bottomLeft,
                     VideoControlSlot.bottomCenter,
                     VideoControlSlot.bottomRight,
@@ -141,115 +142,84 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
           );
         }
 
+        // BUG-2448：宽窗舞台不再是「固定高 Stack + 绝对定位」。那套布局里同一侧的
+        // 顶栏 / 屏幕侧 / 底栏三个槽位各按内容长高，却没有任何约束阻止它们互相盖住，
+        // 平板宽度（480~900）上右列直接挤成一团，chip 还被槽位内的嵌套滚动截断。
+        // 现在按三行堆叠（顶栏行 / 屏幕侧行 / 底栏行），每行高度由内容决定、槽位
+        // 完整展开；舞台只保留 16:9 的**最小**高度维持播放器方位感，内容更高时
+        // 整体跟着长——外层设置页本来就是纵向滚动，长高不会截断任何东西。
         final double stageWidth = constraints.maxWidth;
-        final double stageHeight = math.min(
+        final double stageMinHeight = math.min(
           420,
           math.max(260, stageWidth * 9 / 16),
         );
-        return SizedBox(
-          width: stageWidth,
-          height: stageHeight,
-          child: DecoratedBox(
-            key: const ValueKey<String>('video-control-editor-preview'),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest,
-              borderRadius: tokens.radii.controlRadius,
-              border: Border.all(color: cs.outlineVariant),
-            ),
-            child: ClipRRect(
-              borderRadius: tokens.radii.controlRadius,
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints preview) {
-                  final double sideWidth =
-                      math.min(224, math.max(128, preview.maxWidth * 0.24));
-                  final double centerWidth =
-                      math.min(236, math.max(128, preview.maxWidth * 0.22));
-                  const double inset = 10;
-                  return Stack(
+        const double inset = 10;
+        final double innerWidth = stageWidth - inset * 2;
+        final double sideWidth =
+            math.min(224, math.max(128, innerWidth * 0.24));
+        final double centerWidth =
+            math.min(236, math.max(128, innerWidth * 0.22));
+        final double gap = tokens.spacing.gap;
+        return DecoratedBox(
+          key: const ValueKey<String>('video-control-editor-preview'),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: tokens.radii.controlRadius,
+            border: Border.all(color: cs.outlineVariant),
+          ),
+          child: ClipRRect(
+            borderRadius: tokens.radii.controlRadius,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    cs.surfaceContainerHigh,
+                    cs.surfaceContainerHighest,
+                  ],
+                ),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: stageMinHeight),
+                child: Padding(
+                  padding: const EdgeInsets.all(inset),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: <Color>[
-                                cs.surfaceContainerHigh,
-                                cs.surfaceContainerHighest,
-                              ],
-                            ),
-                          ),
-                        ),
+                      _buildStageRow(
+                        buildSlotRegion,
+                        left: VideoControlSlot.topLeft,
+                        center: VideoControlSlot.topCenter,
+                        right: VideoControlSlot.topRight,
+                        sideWidth: sideWidth,
+                        centerWidth: centerWidth,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                       ),
-                      Positioned(
-                        top: inset,
-                        left: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.topLeft),
+                      SizedBox(height: gap),
+                      _buildStageRow(
+                        buildSlotRegion,
+                        left: VideoControlSlot.screenLeft,
+                        center: null,
+                        right: VideoControlSlot.screenRight,
+                        sideWidth: sideWidth,
+                        centerWidth: centerWidth,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                       ),
-                      Positioned(
-                        top: inset,
-                        right: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.topRight),
-                      ),
-                      Align(
-                        alignment: Alignment.topCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: inset),
-                          child: SizedBox(
-                            width: centerWidth,
-                            child: _buildSlotRegion(
-                              VideoControlSlot.topCenter,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: inset,
-                        top: 0,
-                        bottom: 0,
-                        width: sideWidth,
-                        child: Center(
-                          child: _buildSlotRegion(VideoControlSlot.screenLeft),
-                        ),
-                      ),
-                      Positioned(
-                        right: inset,
-                        top: 0,
-                        bottom: 0,
-                        width: sideWidth,
-                        child: Center(
-                          child: _buildSlotRegion(VideoControlSlot.screenRight),
-                        ),
-                      ),
-                      Positioned(
-                        left: inset,
-                        bottom: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.bottomLeft),
-                      ),
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: inset),
-                          child: SizedBox(
-                            width: centerWidth,
-                            child: _buildSlotRegion(
-                              VideoControlSlot.bottomCenter,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: inset,
-                        bottom: inset,
-                        width: sideWidth,
-                        child: _buildSlotRegion(VideoControlSlot.bottomRight),
+                      SizedBox(height: gap),
+                      _buildStageRow(
+                        buildSlotRegion,
+                        left: VideoControlSlot.bottomLeft,
+                        center: VideoControlSlot.bottomCenter,
+                        right: VideoControlSlot.bottomRight,
+                        sideWidth: sideWidth,
+                        centerWidth: centerWidth,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                       ),
                     ],
-                  );
-                },
+                  ),
+                ),
               ),
             ),
           ),
@@ -258,7 +228,42 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     );
   }
 
-  Widget _buildCompactSlotGrid(List<VideoControlSlot> slots) {
+  /// 舞台一行：左右两个侧槽位定宽贴边、中央槽位居中；[center] 为 null 时中央留空
+  /// （屏幕侧行没有中央槽位）。槽位按内容长高，行高取三者最高，互不重叠。
+  Widget _buildStageRow(
+    ControlSlotRegionBuilder<VideoControlSlot> buildSlotRegion, {
+    required VideoControlSlot left,
+    required VideoControlSlot? center,
+    required VideoControlSlot right,
+    required double sideWidth,
+    required double centerWidth,
+    required CrossAxisAlignment crossAxisAlignment,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: crossAxisAlignment,
+      children: <Widget>[
+        SizedBox(
+          width: sideWidth,
+          child: buildSlotRegion(left, growToContent: true),
+        ),
+        if (center != null)
+          SizedBox(
+            width: centerWidth,
+            child: buildSlotRegion(center, growToContent: true),
+          ),
+        SizedBox(
+          width: sideWidth,
+          child: buildSlotRegion(right, growToContent: true),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactSlotGrid(
+    ControlSlotRegionBuilder<VideoControlSlot> buildSlotRegion,
+    List<VideoControlSlot> slots,
+  ) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -273,7 +278,7 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
             for (final VideoControlSlot slot in slots)
               SizedBox(
                 width: itemWidth,
-                child: _buildSlotRegion(slot, growToContent: true),
+                child: buildSlotRegion(slot, growToContent: true),
               ),
           ],
         );
@@ -281,275 +286,19 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     );
   }
 
-  Widget _buildControlPalette() {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Icon(
-              Icons.dashboard_customize_outlined,
-              size: 18,
-              color: cs.primary,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                t.video_control_palette_title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: <Widget>[
-            for (final VideoControlItem item
-                in VideoControlItem.customizableItems)
-              _buildDraggableControlChip(
-                item,
-                sourceSlot: null,
-                sourceIndex: null,
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHiddenSlotTray() {
-    return _buildSlotRegion(VideoControlSlot.hidden, tray: true);
-  }
-
-  Widget _buildSlotRegion(
-    VideoControlSlot slot, {
-    bool tray = false,
-    bool growToContent = false,
-  }) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<({VideoControlItem item, int sourceIndex})> entries =
-        _slotChipEntries(slot);
-    final bool removalSlot = slot == VideoControlSlot.hidden;
-    return DragTarget<VideoControlDragData>(
-      key: ValueKey<String>('video-control-edit-slot-${slot.storageValue}'),
-      onWillAcceptWithDetails:
-          (DragTargetDetails<VideoControlDragData> details) =>
-              _handleControlDragWillAccept(details.data, slot),
-      onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
-        _moveControlItem(
-          details.data,
-          slot,
-          targetIndex: _controlLayout.itemsIn(slot).length,
-        );
-      },
-      builder: (
-        BuildContext context,
-        List<VideoControlDragData?> candidate,
-        List<dynamic> rejected,
-      ) {
-        final bool highlighted = candidate.isNotEmpty;
-        final bool rejecting = rejected.isNotEmpty;
-        final String? rejectionMessage =
-            rejecting ? _controlMoveRejectionMessage : null;
-        final Color borderColor = rejecting
-            ? cs.error
-            : highlighted
-                ? cs.primary
-                : cs.outlineVariant;
-        final Widget chipArea = entries.isEmpty
-            ? SizedBox(
-                height: 32,
-                child: Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Icon(
-                    removalSlot
-                        ? Icons.remove_circle_outline
-                        : Icons.add_circle_outline,
-                    size: 18,
-                    color: highlighted
-                        ? cs.onPrimaryContainer
-                        : cs.onSurfaceVariant,
-                  ),
-                ),
-              )
-            : Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: <Widget>[
-                  for (final ({VideoControlItem item, int sourceIndex}) entry
-                      in entries)
-                    _buildPlacedControlChip(
-                      entry.item,
-                      sourceSlot: slot,
-                      sourceIndex: entry.sourceIndex,
-                    ),
-                ],
-              );
-        final BoxConstraints containerConstraints = growToContent
-            ? BoxConstraints(minHeight: tray ? 64 : 58)
-            : BoxConstraints(
-                minHeight: tray ? 64 : 58,
-                maxHeight: tray ? 160 : 148,
-              );
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          constraints: containerConstraints,
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: highlighted
-                ? cs.primaryContainer.withValues(alpha: 0.88)
-                : cs.surface.withValues(alpha: tray ? 1 : 0.88),
-            borderRadius: tokens.radii.controlRadius,
-            border: Border.all(
-              color: borderColor,
-              width: highlighted || rejecting ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                _controlSlotLabel(slot),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color:
-                      highlighted ? cs.onPrimaryContainer : cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (rejectionMessage != null) ...<Widget>[
-                const SizedBox(height: 4),
-                Text(
-                  rejectionMessage,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: cs.error,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 6),
-              if (growToContent)
-                chipArea
-              else
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: chipArea,
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  List<({VideoControlItem item, int sourceIndex})> _slotChipEntries(
-    VideoControlSlot slot,
-  ) {
-    final List<VideoControlItem> items = _controlLayout.itemsIn(slot);
-    return <({VideoControlItem item, int sourceIndex})>[
-      for (int index = 0; index < items.length; index++)
-        if (items[index].isChipRenderable)
-          (item: items[index], sourceIndex: index),
-    ];
-  }
-
-  Widget _buildPlacedControlChip(
-    VideoControlItem item, {
-    required VideoControlSlot sourceSlot,
-    required int sourceIndex,
-  }) {
-    return DragTarget<VideoControlDragData>(
-      onWillAcceptWithDetails:
-          (DragTargetDetails<VideoControlDragData> details) =>
-              _handleControlDragWillAccept(details.data, sourceSlot),
-      onAcceptWithDetails: (DragTargetDetails<VideoControlDragData> details) {
-        _moveControlItem(
-          details.data,
-          sourceSlot,
-          targetIndex: sourceIndex,
-        );
-      },
-      builder: (
-        BuildContext context,
-        List<VideoControlDragData?> candidate,
-        List<dynamic> rejected,
-      ) {
-        return _buildDraggableControlChip(
-          item,
-          sourceSlot: sourceSlot,
-          sourceIndex: sourceIndex,
-          highlighted: candidate.isNotEmpty,
-        );
-      },
-    );
-  }
-
-  Widget _buildDraggableControlChip(
-    VideoControlItem item, {
-    required VideoControlSlot? sourceSlot,
-    required int? sourceIndex,
-    bool highlighted = false,
-  }) {
-    final Widget chip = _controlChipBody(
-      item,
-      sourceSlot: sourceSlot,
-      sourceIndex: sourceIndex,
-      dragging: false,
-      highlighted: highlighted,
-    );
-    // 「快捷键 N」槽位：点一下选它执行哪个动作（拖动仍然照常改位置——Draggable 用的是
-    // 即时拖拽识别器，与 onTap 在手势竞技场里按「有没有位移」自然分流，不互相吃事件）。
-    // 这是本功能唯一的配置入口：按钮就在编辑器里，点它配、拖它摆，不用去别的页面找。
-    if (item.isCustomAction && widget.onCustomActionBindingsChanged != null) {
-      return GestureDetector(
-        onTap: () => unawaited(_pickCustomAction(item)),
-        child: _wrapDraggableChip(chip, item, sourceSlot, sourceIndex),
-      );
-    }
-    return _wrapDraggableChip(chip, item, sourceSlot, sourceIndex);
-  }
-
-  Widget _wrapDraggableChip(
-    Widget chip,
+  /// 「快捷键 N」槽位：点一下选它执行哪个动作（拖动仍然照常改位置——Draggable 用的是
+  /// 即时拖拽识别器，与 onTap 在手势竞技场里按「有没有位移」自然分流，不互相吃事件）。
+  /// 这是本功能唯一的配置入口：按钮就在编辑器里，点它配、拖它摆，不用去别的页面找。
+  Widget _wrapCustomActionChip(
+    BuildContext context,
     VideoControlItem item,
-    VideoControlSlot? sourceSlot,
-    int? sourceIndex,
+    Widget chip,
   ) {
-    return Draggable<VideoControlDragData>(
-      data: VideoControlDragData(
-        item: item,
-        sourceSlot: sourceSlot,
-        sourceIndex: sourceIndex,
-      ),
-      hitTestBehavior: HitTestBehavior.opaque,
-      feedback: Material(
-        color: Colors.transparent,
-        child: _controlChipBody(
-          item,
-          sourceSlot: sourceSlot,
-          sourceIndex: sourceIndex,
-          dragging: true,
-          highlighted: false,
-        ),
-      ),
-      childWhenDragging: Opacity(opacity: 0.3, child: chip),
-      onDraggableCanceled: (_, __) => _handleControlDragCanceled(item),
+    if (!item.isCustomAction || widget.onCustomActionBindingsChanged == null) {
+      return chip;
+    }
+    return GestureDetector(
+      onTap: () => unawaited(_pickCustomAction(item)),
       child: chip,
     );
   }
@@ -579,114 +328,12 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     await onChanged(next);
   }
 
-  void _handleControlDragCanceled(VideoControlItem item) {
-    final String? message = switch (item) {
-      VideoControlItem.volume => t.video_control_reject_volume_bottom,
-      _ => _controlMoveRejectionMessage,
-    };
-    if (message == null || _controlMoveRejectionMessage == message) return;
-    setState(() => _controlMoveRejectionMessage = message);
-  }
-
-  Widget _controlChipBody(
-    VideoControlItem item, {
-    required VideoControlSlot? sourceSlot,
-    required int? sourceIndex,
-    required bool dragging,
-    required bool highlighted,
-  }) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String label = videoControlItemLabel(
-      item,
-      context,
-      bindings: _customActionBindings,
-    );
-    final Color background =
-        highlighted ? cs.primaryContainer : cs.secondaryContainer;
-    final Color foreground =
-        highlighted ? cs.onPrimaryContainer : cs.onSecondaryContainer;
-    final String sourceSlotKey = sourceSlot?.storageValue ?? 'palette';
-    final String sourceIndexKey = sourceIndex?.toString() ?? 'palette';
-    final Widget body = SizedBox.square(
-      dimension: 36,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: tokens.radii.controlRadius,
-          border: Border.all(
-            color: highlighted ? cs.primary : cs.outlineVariant,
-            width: highlighted ? 1.5 : 1,
-          ),
-          boxShadow: dragging
-              ? <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.24),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : null,
-        ),
-        child: Icon(
-          videoControlItemIcon(item, bindings: _customActionBindings),
-          size: 18,
-          color: foreground,
-        ),
-      ),
-    );
-    return Tooltip(
-      message: label,
-      child: Semantics(
-        key: dragging
-            ? null
-            : ValueKey<String>(
-                'video-control-chip-${item.storageValue}-$sourceSlotKey-$sourceIndexKey',
-              ),
-        label: label,
-        button: true,
-        container: true,
-        child: Listener(
-          key: dragging
-              ? null
-              : ValueKey<String>(
-                  'video-control-drag-chip-${item.storageValue}-$sourceSlotKey-$sourceIndexKey',
-                ),
-          behavior: HitTestBehavior.opaque,
-          child: ExcludeSemantics(child: body),
-        ),
-      ),
-    );
-  }
-
-  bool _canAcceptControlPayload(
-    VideoControlDragData payload,
-    VideoControlSlot target,
-  ) {
-    final VideoControlItem item = payload.item;
-    if (!item.isChipRenderable) return false;
-    if (!item.canMoveToSlot(
-      target,
-      isTouchControls: widget.isTouchControls,
-    )) {
-      return false;
-    }
-    if (payload.sourceSlot == target) return true;
-    return !_controlLayout.itemsIn(target).contains(item);
-  }
-
-  bool _handleControlDragWillAccept(
-    VideoControlDragData payload,
-    VideoControlSlot target,
-  ) {
-    final bool accepted = _canAcceptControlPayload(payload, target);
-    final String? message =
-        accepted ? null : _controlRejectionMessage(payload.item, target);
-    if (_controlMoveRejectionMessage != message) {
-      setState(() => _controlMoveRejectionMessage = message);
-    }
-    return accepted;
-  }
+  /// 拖到任何目标外松手：只有 volume 需要解释（它被限制在底栏，拖去别处会被所有
+  /// 槽位拒收，松手时给一句为什么）。
+  String? _controlDragCanceledMessage(VideoControlItem item) =>
+      item == VideoControlItem.volume
+          ? t.video_control_reject_volume_bottom
+          : null;
 
   String? _controlRejectionMessage(
     VideoControlItem item,
@@ -707,28 +354,6 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
       return t.video_control_reject_unavailable;
     }
     return null;
-  }
-
-  void _moveControlItem(
-    VideoControlDragData payload,
-    VideoControlSlot target, {
-    int? targetIndex,
-  }) {
-    final VideoControlLayout next = _controlLayout.moveDraggedItem(
-      payload,
-      target,
-      targetIndex: targetIndex,
-    );
-    if (next == _controlLayout) return;
-    setState(() {
-      _controlLayout = next;
-      _controlMoveRejectionMessage = null;
-    });
-    final Future<void> Function(VideoControlLayout layout)? callback =
-        widget.onLayoutChanged;
-    if (callback != null) {
-      unawaited(callback(next));
-    }
   }
 
   String _controlSlotLabel(VideoControlSlot slot) {

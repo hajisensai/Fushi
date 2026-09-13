@@ -60,6 +60,23 @@ abstract class HomeDictionarySearchDebug {
   void debugClosePopup();
 }
 
+/// 「把用户送进搜索框」的一次请求。承载面（[HomeDictionaryPage]）不保活——切走即
+/// 销毁、切回冷建，所以请求必须是**可挂起、由页面消费掉**的值，而不是一次性的
+/// 通知脉冲：底栏点「查词」时页面还没挂载，脉冲发出去无人接。与桌面取词的
+/// [DesktopLookupService.pendingRequest] 同范式。
+///
+/// [clearQuery] 是这条请求的**意图**，不是调用方的旗标堆叠：
+/// - 用户从导航（底栏 / 侧栏 rail）点进查词 = 「我要查个新词」→ 清空上次残留的
+///   查询与结果再聚焦，键盘随焦点弹起。
+/// - 热键「聚焦搜索框」= 「我要编辑当前查询」→ 只聚焦，不动已有文本。
+@immutable
+class DictionaryFocusRequest {
+  const DictionaryFocusRequest({required this.clearQuery});
+
+  /// 聚焦前是否先清空搜索框与查询结果。
+  final bool clearQuery;
+}
+
 /// The body content for the Dictionary tab in the main menu.
 class HomeDictionaryPage extends BaseTabPage {
   const HomeDictionaryPage({
@@ -69,7 +86,9 @@ class HomeDictionaryPage extends BaseTabPage {
     this.initialQuery,
   });
 
-  final ValueNotifier<int>? focusSignal;
+  /// 待消费的聚焦请求（见 [DictionaryFocusRequest]）。本页消费后置回 null，故同一
+  /// 请求不会被重复执行，下一次点击也总是 null→request 的真实变化。
+  final ValueNotifier<DictionaryFocusRequest?>? focusSignal;
 
   /// 挂载后立即当作用户输入查一次的文本（不写查词历史）。新手引导用它把练习句子
   /// 直接喂进本页：源文本条显示整句，用户在真实查词面板里点词。与在搜索框里粘贴
@@ -131,6 +150,16 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   String _sourceLookupText = '';
   int _searchGeneration = 0;
 
+  /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
+  ///
+  /// 查词是「从被点的字到串尾」的整段后缀交给引擎最长匹配（BUG-1478），所以查询串
+  /// 本身看不出命中了多长；不标出来，用户在「と言いつつ」上点第一个字，根本无从
+  /// 判断结果是「と言い」还是「と」。跨度长度只能等引擎回报，故本页持有它。
+  ///
+  /// 迟到回报由 [_searchGeneration] 一并挡住：高亮现在与下方结果同源于一次主查词，
+  /// 结果被判过期，长度也就到不了这里，不再需要第二个发号器（那正是它被摘掉的原因）。
+  SourceLookupHighlight? _sourceHighlight;
+
   bool _historyWritten = false;
 
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
@@ -146,7 +175,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);
-    widget.focusSignal?.addListener(_onFocusSignal);
+    widget.focusSignal?.addListener(_consumeFocusRequest);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
     // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
     // 本 tab *之前* 就把待查词排进 pendingText 并 notify，那次 notify 发生在本页
@@ -154,6 +183,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 消费，无 pending 则 no-op，不会乱消费）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _onDesktopLookupPending();
+    });
+    // 同理，导航点进本 tab 的聚焦请求也排在本页挂载**之前**（本页不保活，点击那
+    // 一刻它还不存在），挂载即消费一次已排入的 pending。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _consumeFocusRequest();
     });
     // 新手引导的练习句子：挂载后当作用户输入查一次（不写历史），源文本条随即显示
     // 整句供点词。
@@ -189,9 +223,20 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     setState(() => _popup.seedWarmSlot());
   }
 
-  void _onFocusSignal() {
+  /// 消费一条待处理的聚焦请求（挂载后 / 在场时收到通知都走这里）。
+  void _consumeFocusRequest() {
+    final ValueNotifier<DictionaryFocusRequest?>? signal = widget.focusSignal;
+    final DictionaryFocusRequest? request = signal?.value;
+    if (signal == null || request == null) return;
+    signal.value = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocusNode.requestFocus();
+      if (!mounted) return;
+      if (request.clearQuery) {
+        // _clearSearch 自带 requestFocus——清空与聚焦是同一个动作，别拆成两步。
+        _clearSearch();
+        return;
+      }
+      _searchFocusNode.requestFocus();
     });
   }
 
@@ -248,7 +293,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
-    widget.focusSignal?.removeListener(_onFocusSignal);
+    widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
@@ -299,6 +344,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _lastQuery = '';
     _allLoaded = false;
     _sourceLookupText = '';
+    _sourceHighlight = null;
     _historyWritten = false;
     setState(() {});
     if (_searchFocusNode.canRequestFocus) {
@@ -359,7 +405,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         // 相对书架/视频/游戏等库页整体右移（用户实报「每个页面的页头宽度不一样」）。
         child: Column(
           children: [
-            if (!isCupertinoPlatform(context)) _buildPageHeader(),
+            // Cupertino 档由外层导航栏顶替页头，但独立路由（查词模块被关掉时
+            // 走的 `_StandaloneDictionaryRoute`）是个裸 Scaffold，页头里的返回键
+            // 是它唯一的可见出口——iOS 没有系统返回键，`canPop` 又在有查询词时
+            // 关掉侧滑，藏掉页头就等于把用户锁在查词页里。
+            if (!isCupertinoPlatform(context) || widget.showBackButton)
+              _buildPageHeader(),
             Expanded(
               child: DesktopContentLayout(
                 kind: DesktopContentKind.dictionary,
@@ -624,6 +675,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       // _loadMore will set _allLoaded if nothing new comes back.
       _allLoaded = cached.entries.isEmpty;
       _lastQuery = cached.searchTerm.trim();
+      // 源文本条同步换成这条历史的查询串。此前这里只换 _result 和搜索框，不动
+      // _sourceLookupText——历史列表只在查询框为空时可见，而清空输入框并不经
+      // _clearSearch，于是点开一条历史后源文本条上留的可能是上一次桌面取词的整句
+      // 旧文本。那在没有高亮时只是「有点怪」，加了扫描高亮就会变成「框在一段跟结果
+      // 毫无关系的文字上」：命中长度以本条 cached 为准，坐标系却是别人的串。
+      _sourceLookupText = _lastQuery;
+      // 缓存结果同样带 bestLength，扫描高亮按同一条换算落到句首命中段——否则从
+      // 历史点回一条旧查询，原文条上会是一片没有任何标记的裸文本。
+      _applyScanHighlight(
+        SourceLookupScan(query: _lastQuery, charIndex: 0),
+        cached,
+      );
       // TODO-931：保留常驻热槽。
       _popup.pruneToWarmSlot();
     });
@@ -638,14 +701,39 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // DesktopLookupService 排队时已做过时间窗去重判定（同词超窗口 = 用户显式重查），
     // 页面这层若再叠加一次永久内容去重，用户第二次复制同一个词依旧查不了。
     bool force = false,
+    // 源文本条点字发起的「扫描查词」（Yomitan 式）：查询串是被点字起的后缀，但
+    // 条上的整句、搜索框里的整句都**不动**——变的只是下方的结果和条上的高亮跨度。
+    // 非空即表示本次查词由该锚点发起，同时充当高亮的坐标锚。
+    SourceLookupScan? scanAnchor,
   }) {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    final bool replaceSourceLookupText = overrideMaximumTerms == null;
+    // 「接管搜索框与源文本条」的顶层查词：只有既不是「加载更多」、也不是扫描查词
+    // 的那一类。加载更多只是把同一个查询串的词头上限调大；扫描查词则要把整句留在
+    // 条上和搜索框里，被点的字只是句中的一段。
+    final bool replaceSourceLookupText =
+        overrideMaximumTerms == null && scanAnchor == null;
+    // 朗读与写历史解耦：旧实现把朗读写在 writeHistory 分支里，等于拿「要不要记
+    // 历史」代答「要不要读」。输入框防抖查词（writeHistory=false）确实不该读，但
+    // 扫描查词要读、又不该把用户点过的每个字都灌进历史，两者不能再共用一个开关。
+    final bool autoReadResult = writeHistory || scanAnchor != null;
 
     if (!force && _lastQuery == trimmed && overrideMaximumTerms == null) {
       if (_sourceLookupText != trimmed && mounted) {
-        setState(() => _sourceLookupText = trimmed);
+        setState(() {
+          _sourceLookupText = trimmed;
+          // 源文本换了就得重定位扫描高亮：这条早退路径不重查（结果沿用 _result），
+          // 但高亮的坐标系是源文本条，换了串不重算就会框在错的位置上。
+          final DictionarySearchResult? current = _result;
+          if (current == null) {
+            _sourceHighlight = null;
+          } else {
+            _applyScanHighlight(
+              SourceLookupScan(query: trimmed, charIndex: 0),
+              current,
+            );
+          }
+        });
       }
       if (writeHistory &&
           !_historyWritten &&
@@ -663,7 +751,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _lastQuery = trimmed;
     overrideMaximumTerms ??= appModel.maximumTerms;
 
-    if (_controller.text != trimmed) {
+    // 只有接管搜索框的顶层查词才把输入框同步成查询串。扫描查词的查询串是句中后缀，
+    // 同步过去会把用户眼前的整句换成半截；「加载更多」的查询串与框内本就一致，这条
+    // 守卫对它是恒真的空操作。
+    if (replaceSourceLookupText && _controller.text != trimmed) {
       _controller.text = trimmed;
       _controller.selection = TextSelection.collapsed(offset: trimmed.length);
     }
@@ -681,7 +772,23 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         overrideMaximumTerms: overrideMaximumTerms,
         writeHistory: writeHistory,
         autoRead: autoRead,
+        autoReadResult: autoReadResult,
         searchGeneration: searchGeneration,
+        // 派发那一刻搜索框里是什么，结果落地时就得还是什么，否则这次结果已被用户
+        // 改写的输入作废。此前这里直接拿 `trimmed` 与输入框比——对「查询串恒等于
+        // 输入框」的老路径成立，对扫描查词（框里是整句、查询串是后缀）恒不成立，
+        // 结果会被自己的守卫全部丢掉。
+        inputTextAtDispatch: _controller.text,
+        // 「加载更多」（overrideMaximumTerms 非空）不换源文本，也就不该动扫描高亮：
+        // 它只是把同一个查询串的词头上限调大，命中段没变，而用户此刻的高亮可能已经
+        // 是他点出来的某个词，重设会把它弹回句首。扫描查词则按被点字的下标重定位。
+        // 这里不能再判 `overrideMaximumTerms == null`：它上面已被 `??=` 补过默认值，
+        // 那个判空恒假，主查词会一路拿到 null 锚点、高亮再也不落。用入口处算好的
+        // 标志，它记的正是「本次是不是接管搜索框与源文本条的顶层查词」。
+        highlightAnchor: scanAnchor ??
+            (replaceSourceLookupText
+                ? SourceLookupScan(query: trimmed, charIndex: 0)
+                : null),
       );
       _lastDispatchedSearch = dispatched;
       unawaited(dispatched);
@@ -696,6 +803,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     required bool writeHistory,
     required bool? autoRead,
     required int searchGeneration,
+    required bool autoReadResult,
+    required String inputTextAtDispatch,
+    required SourceLookupScan? highlightAnchor,
   }) async {
     // 用 try/finally 守卫整条失败路径：searchDictionary 走远程网络查询 +
     // fushidicts C++ FFI，任一环节抛异常都不能让 _isSearching 永久为 true
@@ -709,12 +819,13 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       );
       if (!mounted ||
           searchGeneration != _searchGeneration ||
-          trimmed != _controller.text) {
+          _controller.text != inputTextAtDispatch) {
         return;
       }
 
       _result = result;
       _allLoaded = !result.truncated;
+      if (highlightAnchor != null) _applyScanHighlight(highlightAnchor, result);
 
       if (writeHistory) {
         _historyWritten = true;
@@ -724,16 +835,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         );
         if (result.entries.isNotEmpty) {
           appModel.addToDictionaryHistory(result: result);
-          // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
-          // 桌面剪贴板/热键路径显式传 false 抑制朗读。
-          final bool shouldAutoRead =
-              autoRead ?? ReaderFushiSource.instance.autoReadOnLookup;
-          if (shouldAutoRead) {
-            final entry = result.entries.first;
-            if (entry.word.isNotEmpty) {
-              autoReadWord(entry.word, entry.reading,
-                  popupState: _resultWebViewKey.currentState);
-            }
+        }
+      }
+      if (autoReadResult && result.entries.isNotEmpty) {
+        // autoRead 覆盖：null 沿用全局 autoReadOnLookup（正常输入查词不变），
+        // 桌面剪贴板/热键路径显式传 false 抑制朗读。
+        final bool shouldAutoRead =
+            autoRead ?? ReaderFushiSource.instance.autoReadOnLookup;
+        if (shouldAutoRead) {
+          final entry = result.entries.first;
+          if (entry.word.isNotEmpty) {
+            autoReadWord(entry.word, entry.reading,
+                popupState: _resultWebViewKey.currentState);
           }
         }
       }
@@ -752,9 +865,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (_isSearching || _allLoaded || _result == null) return;
     // BUG-1478：按词头递增（见 base_source_page 同处注释）。
     final int current = _result!.headwordCount;
+    // 「更多」要更多的是**眼下这份结果**的查询串。扫描查词之后它是句中的一段后缀，
+    // 而搜索框里仍是整句——照旧拿 `_controller.text` 去加载更多，会把结果整个换成
+    // 另一个词的，用户只是滚到底就看见结果被掉包。
+    final String activeQuery =
+        _lastQuery.isNotEmpty ? _lastQuery : _controller.text;
     _lastQuery = '';
     _search(
-      _controller.text,
+      activeQuery,
       overrideMaximumTerms: current + appModel.maximumTerms,
       writeHistory: false,
     );
@@ -833,14 +951,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         if (_sourceLookupText.trim().isNotEmpty)
           SourceLookupTextPanel(
             text: _sourceLookupText,
-            // TODO-617：弹窗已提到根 Overlay（全窗、净缩放=1），源文本条点字必须回报屏幕
-            // （global）坐标与之同系；不再用结果子区域 [_resultStackKey] 局部坐标。
-            globalCoordinates: true,
             dictionaryHeadwordScale: appModel.dictionaryFontSize /
                 appModel.defaultDictionaryFontSize,
-            onLookup: (String query, Rect screenRect) {
-              _pushNestedPopup(query, screenRect, reuseWarmSlot: true);
-            },
+            highlight: _sourceHighlight,
+            // 点字换的是下方那份结果（Yomitan 式扫描），不再压一张浮在字上的查词卡，
+            // 所以本条不再需要回报任何弹窗坐标系的 rect——rect 与 globalCoordinates
+            // 都随之退场。结果卡内部选词 / 点链才继续走弹窗栈（见下方 WebView）。
+            onLookup: (String query, Rect _, int charIndex) =>
+                _lookupFromSourceStrip(query, charIndex),
           ),
         // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
         // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
@@ -993,6 +1111,64 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           },
         ),
       ),
+    );
+  }
+
+  /// 源文本条点字（或 Shift 悬停）：把**下方那份查词结果**换成从该字起的最长匹配，
+  /// 并把 Yomitan 式扫描高亮落到真正被匹配的那几个字上。
+  ///
+  /// 此前这里压的是一张浮在被点字上的查词卡（`_pushNestedPopup`）。那让同一次查词
+  /// 裂成两个可见面：条上的高亮挪了、卡片盖在条下面另起一套结果，而页面本体那份
+  /// 结果还停在上一个词上；再点一个字又是一张卡。Yomitan 的扫描没有这一层——挪的
+  /// 始终是同一份结果。所以这里改走主查词管线（[_search]），条上的整句与搜索框里的
+  /// 整句都留着不动，变的只有下方结果和高亮跨度。
+  ///
+  /// 分两拍：先立刻框住被点的那个字（点下去就有反馈，不用干等查词往返），引擎回报
+  /// 匹配长度后再由 [_applyScanHighlight] 扩成整词；中途用户又点了别的字，迟到的那
+  /// 次回报会被 `_searchGeneration` 挡在门外。
+  void _lookupFromSourceStrip(String query, int charIndex) {
+    final SourceLookupScan scan = SourceLookupScan.fromSuffix(
+      suffix: query,
+      charIndex: charIndex,
+    );
+    if (scan.query.isEmpty) return;
+    setState(() {
+      _sourceHighlight = SourceLookupHighlight(
+        start: scan.charIndex,
+        length: 1,
+      );
+    });
+    _search(
+      scan.query,
+      // 点同一个字两次仍要重查：与桌面取词同理（BUG-1025），显式手势不该被「与上次
+      // 查询相同即不重查」的内容去重吞掉。
+      force: true,
+      // 用户点过的每个字都灌进查词历史会把历史刷成噪声；朗读由 scanAnchor 单独开
+      // （见 [_search] 里的 autoReadResult）。
+      writeHistory: false,
+      scanAnchor: scan,
+    );
+  }
+
+  /// 把一次查词的引擎命中长度落成源文本条上的扫描高亮。
+  ///
+  /// 引擎的候选串**全部是查询串的前缀**（`scan_candidates` 只从串首锚定、由长到短
+  /// 地截），所以命中段的起点恒为查询串的串首；[SourceLookupScan.charIndex] 给出那个
+  /// 串首落在条上的位置——主查词（搜索框提交 / 桌面取词 / 深链 / 点回历史）是条首
+  /// 0，源文本条点字是被点的那个字。两者是同一个换算的两种锚。
+  void _applyScanHighlight(
+    SourceLookupScan anchor,
+    DictionarySearchResult result,
+  ) {
+    _sourceHighlight = resolveSourceLookupHighlight(
+      query: anchor.query,
+      tappedGraphemeIndex: anchor.charIndex,
+      matchedUnits: lookupHighlightCharCount(
+        result: result,
+        searchTerm: anchor.query,
+        language: JapaneseLanguage.instance,
+      ),
+      leadingStripUnits: appModel.lookupLeadingStripUnits(anchor.query),
     );
   }
 

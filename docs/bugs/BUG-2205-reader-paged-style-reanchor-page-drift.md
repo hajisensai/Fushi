@@ -1,0 +1,7 @@
+## BUG-2205 · 分页模式缩字号/减边距后 ±1 页 hint 保原页，位置前漂一页并被计入字数
+- **报告**：2026-09-06（用户：审查「外观变化是否导致统计异常」）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/reader/reader_pagination_scripts.dart:2623-2626`（分页 `scrollToCharOffset` 的 page-stable hint 分支）：`|charPage − origPage| <= 1` 时无条件保原页。样式重锚 `beginStyleReanchor`（`:2674`）采的锚是原页**首可见字**；缩字号 / 减边距 / 减行高 / 挤压态藏底栏（`setChromeInsets` 同一 hint 逻辑）让每页装更多字，锚字被推到前一页（`charPage = origPage − 1`），仍保原页 = 原页页首字 > 锚字 → 用户丢掉「锚字 → 新页首」这段正文；随后 `onReanchorSettled → _refreshProgress`（`reader_fushi/navigation.part.dart:1071`）读到更靠后的进度，`accumulateSessionCharsCapped` 按令牌桶把这段计成「新读到」，水位只升不降 → 反复缩放是单向棘轮（headless 实测 22→19px 一步 drift 315 字，七步里三步各多计 315 字）。放大字号方向保原页只会让页首字 ≤ 锚字，不丢正文、不推进度。
+- **[x] ① 已修复** — `scrollToCharOffset` hint 分支：`charPage < origPage` 时先落原页、实测 `getFirstVisibleCharOffset()`，> 锚字即锚已丢 → 改落锚字所在页（判据用实测页首字而非像素容差：横排末行 collapsed range 的 x 可落在整列任意处）。提交：`cf60bafee3`。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/paged_hint_anchor_not_passed_guard_test.dart`（源码守卫：hint 分支必须带页首字复核、旧三目形态不得回潮）+ headless Chrome 探针 `tool/reader_pitch_headless/font_shrink_reanchor_probe.mjs`（真渲染：章中段 seed 后 22→14→26px 十四步重锚，断言每步页首字 ≤ 锚字且锚字在当页；`reader_headless_shell_dump_test.dart` 新增 dump 完整引擎产物 `fushi_engine_paginated.html`，探针按真实装配 `__fushiInstallShell(C)` 安装）。修前探针退出码 1（三步 `PAGE START PASSED ANCHOR (drift 315 chars)`），修后退出码 0。
+- **备注**：这同时是「缩字号丢一页正文」的位置 bug。真机（Windows WebView2）未复测，探针是 headless Chrome 同内核证据。
+- **2026-09-06 追记**：根因链里「按令牌桶计成新读到 / 水位棘轮」一段已随水位模型删除；JS 侧修复（保原页前复核页首字不越锚）不变，仍是位置正确性所需。

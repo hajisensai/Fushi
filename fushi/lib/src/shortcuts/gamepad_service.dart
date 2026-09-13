@@ -11,10 +11,10 @@ import 'package:gamepads/gamepads.dart' as gp;
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
-import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
@@ -587,31 +587,25 @@ class GamepadService {
     unawaited(hooks.scrollBy(dyNorm * _kRightStickScrollPxPerTick));
   }
 
-  /// LB/RB page-scroll fallback: if [button] is bound to a global scroll-page
-  /// action, page the nearest [PrimaryScrollController] by ~0.9 viewport.
-  /// Returns whether it scrolled (so the dispatcher can stop).
+  /// 手柄的页面滚动兜底：[button] 绑到 global scope 的任一页面滚动动作（默认
+  /// LB/RB = 整屏；单步 / 到顶到底可由用户自绑）时，经三通道共用的
+  /// [executePageScroll] 滚当前页。返回是否真的滚了（滚了就不再往下派发）。
+  ///
+  /// 目标解析在 [FushiFocusScroll.resolveActivePageScrollable]：纯展示页
+  /// （统计 / 日志）的焦点停在顶层兜底节点、位于页面 scaffold 的
+  /// PrimaryScrollController **之上**，只按 context 找必然找不到——所以除了已登记
+  /// 的 PageScrollRegistry，还从 Navigator 当前路由子树里兜底找第一个纵向
+  /// Scrollable；键盘 PageUp/PageDown 与鼠标绑定走的是同一份。
   bool _tryScrollPage(BuildContext context, GamepadButton button) {
-    final ShortcutAction? action =
-        registry?.resolveGamepad(button, scope: ShortcutScope.global);
-    final double fraction;
-    if (action == ShortcutAction.globalScrollPageDown) {
-      fraction = 0.9;
-    } else if (action == ShortcutAction.globalScrollPageUp) {
-      fraction = -0.9;
-    } else {
-      return false;
-    }
-    // Prefer the registered active-page controller. On a pure-display page
-    // (statistics/logs) focus is the top-level fallback node, which sits ABOVE
-    // the page scaffold's PrimaryScrollController, so a context lookup from
-    // focus can never reach it. Fall back to a context lookup for pages not
-    // built on FushiPageScaffold (e.g. home tab content, focus inside list).
-    final ScrollController? pageController = PageScrollRegistry.current;
-    if (pageController != null &&
-        FushiFocusScroll.scrollController(pageController, fraction)) {
-      return true;
-    }
-    return FushiFocusScroll.scrollPrimary(context, fraction);
+    final PageScrollRequest? request = pageScrollRequestFor(
+      registry?.resolveGamepad(button, scope: ShortcutScope.global),
+    );
+    if (request == null) return false;
+    return executePageScroll(
+      request,
+      focusContext: context,
+      navigator: navigatorKey.currentState,
+    );
   }
 
   /// Routes a long-press (A held past the threshold) to the focused widget as a
@@ -898,20 +892,59 @@ bool gamepadMoveFocusInDirection(
   );
 }
 
+/// 键盘 ↑/↓ 的「先移焦、无目标才让给滚动」仲裁——与 D-pad 边缘接管同一套判据，
+/// 返回 true = 焦点引擎接管了这次按键（焦点已移动 / 已 bootstrap 到首个目标），
+/// 调用方不得再滚动；false = 该方向没有焦点目标，按键归页面滚动。
+///
+///   · 焦点导航开启（有 [FushiFocusRoot] 控制器）且本页登记了受管目标：走与 D-pad
+///     完全相同的 [gamepadMoveFocusInDirection]（几何目标 → 阅读顺序 → 「列表内
+///     只有自己可聚焦」时的边缘接管）。零受管目标时**不能**调 `move()`：它会经
+///     ensureFocus 把持焦的页面 sink 踢到 app 级兜底节点（见
+///     [FushiFocusController.hasFocusableTargets]），而焦点仍可能停在一个未登记的
+///     原生控件上（可滚对话框里的 RadioListTile），那要落到下面的原生判据去移焦。
+///   · 焦点导航关闭（默认安装）或本页零受管目标：没有引擎做 bootstrap，也**不该**有——用户裁定
+///     关闭时 Tab 不遍历焦点，方向键同理不该从空焦点凭空跳到首个控件（那会把
+///     「按 ↓ 想滚页」变成「焦点跳走 + 页面被 ensureVisible 甩到别处」）。只有焦点
+///     已经停在一个真实控件上（非 scope / 非 skipTraversal / 可聚焦）且该方向真有
+///     几何目标时，才由框架同款的 [FocusNode.focusInDirection] 移焦。
+///
+/// 文本框聚焦的情形由调用方先用 [focusedEditableText] 排除，这里不重复判。
+bool arrowKeyClaimedByFocus(
+    BuildContext context, TraversalDirection direction) {
+  final FushiFocusController? controller =
+      FushiFocusRoot.maybeControllerOf(context, listen: false);
+  if (controller != null && controller.hasFocusableTargets) {
+    return gamepadMoveFocusInDirection(context, direction);
+  }
+  final FocusNode? origin = directionalFocusOrigin();
+  return origin != null && origin.focusInDirection(direction);
+}
+
+/// 当前主焦点若是一个能作为方向移焦起点的真实控件就返回它；null、scope、不可
+/// 聚焦、skip-traversal 的整页键事件 sink（从它的全屏矩形出发「往某个方向」没有
+/// 意义）都返回 null。[_movePrimaryFocusInDirection] 的 bootstrap 判据与此同一份。
+FocusNode? directionalFocusOrigin() {
+  final FocusNode? primary = FocusManager.instance.primaryFocus;
+  if (primary == null ||
+      primary is FocusScopeNode ||
+      !primary.canRequestFocus ||
+      primary.skipTraversal) {
+    return null;
+  }
+  return primary;
+}
+
 bool _movePrimaryFocusInDirection(
   BuildContext context,
   TraversalDirection direction, {
   required bool allowReadingOrderFallback,
 }) {
-  final FocusNode? primary = FocusManager.instance.primaryFocus;
   // Bootstrap when nothing is usefully focused: null, a scope, a non-focusable
   // node, or a skip-traversal wrapper (e.g. a full-page key-event sink — moving
   // "in a direction" from its whole-screen rect is meaningless, so jump to the
   // first real control instead).
-  if (primary == null ||
-      primary is FocusScopeNode ||
-      !primary.canRequestFocus ||
-      primary.skipTraversal) {
+  final FocusNode? primary = directionalFocusOrigin();
+  if (primary == null) {
     return allowReadingOrderFallback && FocusScope.of(context).nextFocus();
   }
   if (primary.focusInDirection(direction)) return true;

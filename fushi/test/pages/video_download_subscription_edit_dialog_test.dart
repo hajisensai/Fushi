@@ -49,6 +49,7 @@ VideoDownloadSubscriptionRow _subscription({int? targetSourceId}) =>
 
 MediaSourceRow _source({required int id, required String label}) =>
     MediaSourceRow(
+      videoGroupingMode: 'series',
       id: id,
       label: label,
       mediaKind: 'video',

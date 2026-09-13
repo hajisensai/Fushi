@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 
 /// 无头复现辅助（TODO-1229 / BUG-594）：把**真实**分页 / 连续横排 shell（`ReaderPaginationScripts
@@ -20,10 +21,26 @@ void main() {
     final String paginated = ReaderPaginationScripts.paginatedShellSource();
     final String continuous = ReaderPaginationScripts.continuousShellSource();
     final String tmp = Directory.systemTemp.path;
+    for (final bool continuousMode in <bool>[false, true]) {
+      File(
+        '$tmp/fushi_full_engine_${continuousMode ? 'continuous' : 'paginated'}.js',
+      ).writeAsStringSync(
+        readerFushiEngineSource(continuousMode: continuousMode),
+      );
+    }
     File('$tmp/fushi_shell_paginated.html').writeAsStringSync(paginated);
     File('$tmp/fushi_shell_continuous.html').writeAsStringSync(continuous);
     File('$tmp/fushi_shell_fwd.html').writeAsStringSync(paginated);
     File('$tmp/fushi_shell_bwd.html').writeAsStringSync(paginated);
+    // BUG-2205：shell 已改成运行时工厂（`window.__fushiShells.<mode>(C)`），裸 shell 无法
+    // 自举；另写完整引擎产物（含学习单位 JS + `__fushiInstallShell`），探针按真实装配
+    // 顺序 `__fushiInstallShell(C)` 安装后自动 boot initialize。
+    File('$tmp/fushi_engine_paginated.html').writeAsStringSync(
+      ReaderPaginationScripts.engineShell(vnMode: false, continuousMode: false),
+    );
+    File('$tmp/fushi_engine_continuous.html').writeAsStringSync(
+      ReaderPaginationScripts.engineShell(vnMode: false, continuousMode: true),
+    );
     expect(paginated.contains('window.fushiReader'), isTrue);
     expect(continuous.contains('window.fushiReader'), isTrue);
   });

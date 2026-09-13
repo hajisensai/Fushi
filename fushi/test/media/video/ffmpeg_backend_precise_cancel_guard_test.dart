@@ -35,7 +35,12 @@ void main() {
   String codeOnly(String source) => maskComments(source);
 
   group('ffmpeg backend precise cancel guard (BUG-905)', () {
-    const String path = 'lib/src/media/video/ffmpeg_backend.dart';
+    // BUG-905 守的是 **KitFfmpegBackend**（ffmpeg-kit 的进程内后端）。引擎抽取时
+    // 这个类整体留在了 app 侧——引擎不许依赖 ffmpeg_kit_flutter 插件，
+    // `packages/fushi_engine/lib/media/video/ffmpeg_backend.dart` 现在只剩纯 Dart 的
+    // CLI 后端，里面一个 FFmpegKit 符号都没有。指着引擎那份扫，三条断言会
+    // 一起变成「找不到必需调用」的红（实测 CI 如此），而真正该被守住的代码没人看。
+    const String path = 'lib/src/media/video/ffmpeg_kit_backend.dart';
 
     test('no argument-less FFmpegKit.cancel() (cancel-all) survives', () {
       final String source = codeOnly(libFile(path));

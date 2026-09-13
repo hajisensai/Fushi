@@ -246,6 +246,7 @@ enum class VoiceHookLookupError {
   kCaptureSuppressTimeout,  // 游戏线程未在有界时间内确认卡片已隐藏
   kFrameRejected,    // 帧不过 IsLookupFrameSane（宽/高/pitch/字节数自相矛盾）
   kControlRejected,  // host→hook control seqlock 无法发布或 payload 非法
+  kGeometrySnapshotConflicted,  // 本拍没有采到一致的 registry 状态，不是 provider=None
 };
 
 // [VoiceHookLookupError] → 机器可读 token（Dart 侧据此归类，跨语言契约的唯一名字）。
@@ -298,9 +299,8 @@ struct VoiceHookLookupShieldStatus {
   }
 };
 
-// Coherent v19 geometry-registry snapshot used by the host-side auto
-// arbitration. generation fences kind/id/status/text_generation and
-// lookup_diag so attached never races a retiring native provider.
+// Coherent geometry-registry snapshot used by host-side auto arbitration.
+// lookup_diag is advisory and is not part of provider identity/lifecycle.
 struct VoiceHookLookupGeometryStatus {
   VoiceHookLookupError error = VoiceHookLookupError::kNone;
   uint32_t provider_kind = 0;

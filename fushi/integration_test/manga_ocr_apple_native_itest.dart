@@ -23,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 
 // ---------------------------------------------------------------------------

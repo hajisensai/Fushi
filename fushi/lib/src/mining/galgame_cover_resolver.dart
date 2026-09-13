@@ -3,7 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi/src/media/media_cover_service.dart';
-import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi/src/mining/galgame_exe_icon.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:image/image.dart' as img;

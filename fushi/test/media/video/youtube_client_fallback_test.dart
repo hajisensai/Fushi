@@ -12,20 +12,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
-import 'package:fushi/src/media/video/youtube_source_resolver.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 
 /// 取 client 的 innertube clientName（兜底链的可读身份，用于断言链的构成与顺序）。
 String _clientName(yt.YoutubeApiClient client) =>
-    (client.payload['context']['client']
-        as Map<String, dynamic>)['clientName'] as String;
+    (client.payload['context']['client'] as Map<String, dynamic>)['clientName']
+        as String;
 
 void main() {
   group('BUG-1832 兜底链构成', () {
-    test('链里必须含 ANDROID，且顺序为 androidVr → android → ios → tv', () {
+    test('链里必须含 ANDROID，且顺序为 visionos → androidVr → android → ios → tv', () {
       // ANDROID 缺席正是原始 bug：只有它能给 D8uACXBAqkE 出流。
+      // BUG-2526：VISIONOS 必须在链首——ANDROID 的 DASH 流无 PO token 只放前 60 秒。
       expect(
         kYoutubeManifestClientFallback.map(_clientName).toList(),
-        <String>['ANDROID_VR', 'ANDROID', 'IOS', 'TVHTML5'],
+        <String>['VISIONOS', 'ANDROID_VR', 'ANDROID', 'IOS', 'TVHTML5'],
       );
     });
 
@@ -33,6 +34,73 @@ void main() {
       final List<String> names =
           kYoutubeManifestClientFallback.map(_clientName).toList();
       expect(names.toSet().length, names.length);
+    });
+  });
+
+  group('BUG-2526 visionos client', () {
+    // yt-dlp 2026.08.19 `INNERTUBE_CLIENTS['visionos']`（`_DEFAULT_JSLESS_CLIENTS` 里唯一
+    // 一个）：字段与上游一致是 YouTube 不判「Sign in to confirm you're not a bot」的前提。
+    // 这里锁字段而不锁网络：CI 无外网，且一旦有人「顺手」改版本号/设备型号就会静默回到
+    // 60 秒窗口（本地与 CI 全绿、只有真机播到 60s 才断）。
+    Map<String, dynamic> clientContext() =>
+        (kYoutubeVisionOsClient.payload['context']
+            as Map<String, dynamic>)['client'] as Map<String, dynamic>;
+
+    test('innertube context 与 yt-dlp 2026.08.19 逐字一致', () {
+      expect(clientContext(), <String, dynamic>{
+        'clientName': 'VISIONOS',
+        'clientVersion': '1.02',
+        'deviceMake': 'Apple',
+        'deviceModel': 'RealityDevice17,1',
+        'userAgent': kYoutubeVisionOsUserAgent,
+        'osName': 'visionOS',
+        'osVersion': '26.5.23O471',
+        'hl': 'en',
+      });
+      expect(
+        kYoutubeVisionOsClient.apiUrl,
+        'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+      );
+    });
+
+    test('链首就是它（identical，不是同名副本）', () {
+      expect(
+        identical(kYoutubeManifestClientFallback.first, kYoutubeVisionOsClient),
+        isTrue,
+      );
+    });
+
+    test('回放 UA 不随 visionos 走：仍用 youtube_explode 铸流 UA（五端 libmpv 零改动）', () {
+      // googlevideo 对该 client 的流不校验 UA（Chrome UA / visionOS UA 实测均 206），
+      // 回放头保持 BUG-678 的口径，不引入第二个 UA 常量到 libmpv/ffmpeg 侧。
+      expect(
+        youtubeStreamReplayHeaders()['User-Agent'],
+        kYoutubeStreamReplayUserAgent,
+      );
+      expect(kYoutubeStreamReplayUserAgent, isNot(kYoutubeVisionOsUserAgent));
+    });
+  });
+
+  group('BUG-2526 字幕链', () {
+    test('字幕链 = 取流链去掉 visionos（裸 innertube 请求被判 bot，轨表恒空，纯空转）', () {
+      expect(
+        kYoutubeCaptionClientFallback.map(_clientName).toList(),
+        <String>['ANDROID_VR', 'ANDROID', 'IOS', 'TVHTML5'],
+      );
+      expect(
+        kYoutubeCaptionClientFallback.any(
+            (yt.YoutubeApiClient c) => identical(c, kYoutubeVisionOsClient)),
+        isFalse,
+      );
+    });
+
+    test('字幕链由取流链派生（取流链其余成员一个不少、顺序一致）', () {
+      final List<String> expected = kYoutubeManifestClientFallback
+          .where(
+              (yt.YoutubeApiClient c) => !identical(c, kYoutubeVisionOsClient))
+          .map(_clientName)
+          .toList();
+      expect(kYoutubeCaptionClientFallback.map(_clientName).toList(), expected);
     });
   });
 
@@ -67,7 +135,7 @@ void main() {
         },
       );
       expect(got, <int>[1, 2, 3]);
-      expect(called, <String>['ANDROID_VR', 'ANDROID']);
+      expect(called, <String>['VISIONOS', 'ANDROID_VR', 'ANDROID']);
     });
 
     test('拿到非空即短路，不再调用后续 client', () async {
@@ -80,8 +148,8 @@ void main() {
         },
       );
       expect(got, <int>[7]);
-      expect(called, <String>['ANDROID_VR'],
-          reason: '首个非空后仍调用后续 client = 每次解析都多打 3 次无谓请求');
+      expect(called, <String>['VISIONOS'],
+          reason: '首个非空后仍调用后续 client = 每次解析都多打 4 次无谓请求');
     });
 
     test('全部 client 都空时返回空表（不抛，字幕是 best-effort）', () async {

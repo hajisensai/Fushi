@@ -31,6 +31,8 @@ int main() {
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(1u, 1u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 5u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 14u));
+  assert(fushi::lookup_hit_validation::IsProductionProviderPair(2u, 15u));
+  assert(!fushi::lookup_hit_validation::IsProductionProviderPair(1u, 15u));
   assert(fushi::lookup_hit_validation::IsProductionProviderPair(3u, 10u));
   assert(!fushi::lookup_hit_validation::IsProductionProviderPair(1u, 100u));
   assert(!fushi::lookup_hit_validation::IsProductionProviderPair(4u, 11u));

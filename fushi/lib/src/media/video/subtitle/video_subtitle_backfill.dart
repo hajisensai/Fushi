@@ -20,14 +20,14 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi/src/media/external_provider.dart';
-import 'package:fushi/src/media/video/discovery/video_discovery_provider.dart';
-import 'package:fushi/src/media/video/download/video_subtitle_registry.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_language_preference.dart';
-import 'package:fushi/src/media/video/subtitle/subtitle_timing_check.dart';
-import 'package:fushi/src/media/video/subtitle/video_subtitle_provider.dart';
-import 'package:fushi/src/media/video/video_duration_probe.dart';
-import 'package:fushi/src/media/video/video_sidecar.dart'
+import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 
 /// 一个待补字幕的视频。身份来自刮削，不是从文件名现猜的。

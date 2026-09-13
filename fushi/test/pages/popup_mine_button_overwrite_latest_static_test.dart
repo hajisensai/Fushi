@@ -23,7 +23,15 @@ void main() {
 
   setUpAll(() {
     source = File('assets/popup/popup.js').readAsStringSync();
-    final int onclickIdx = source.indexOf('onclick: async () => {');
+    // Anchor on the mine button itself: `onclick: async () => {` appears on
+    // several earlier buttons, so a bare first-occurrence search swallows
+    // unrelated handlers into `onclickBody` and makes the ordering assertions
+    // below read the wrong text.
+    final int mineButtonIdx = source.indexOf("const mineButton = el('button'");
+    expect(mineButtonIdx, greaterThanOrEqualTo(0),
+        reason: 'mine button construction not found');
+    final int onclickIdx =
+        source.indexOf('onclick: async () => {', mineButtonIdx);
     expect(onclickIdx, greaterThanOrEqualTo(0),
         reason: 'mine button onclick handler not found');
     final int end = source.indexOf('buttonsContainer.appendChild(mineButton)');
@@ -52,7 +60,14 @@ void main() {
         reason: 'the latest-editable branch must overwrite via updateEntry');
     // The latest branch must come BEFORE the data-mined re-verify branch so a
     // green ✓↩ overwrites in place rather than falling into the re-mine path.
-    final int minedIdx = onclickBody.indexOf("dataset.mined === '1'");
+    // Match the re-verify BRANCH, not any read of `dataset.mined`: BUG-2242's
+    // queued early-return reads the same dataset flag earlier in the handler
+    // (`setMineState(mineButton.dataset.mined === '1')`), which is not a branch
+    // on it at all.
+    final int minedIdx =
+        onclickBody.indexOf("if (mineButton.dataset.mined === '1') {");
+    expect(minedIdx, greaterThanOrEqualTo(0),
+        reason: 'onclick must keep the ordinary mined re-verify branch');
     expect(minedIdx, greaterThan(latestIdx),
         reason: 'the latest-editable branch must be checked before the '
             'ordinary mined re-verify branch');

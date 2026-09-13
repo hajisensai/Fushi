@@ -59,12 +59,20 @@ inline LeEnvironmentBlock BuildJapaneseLocaleEnvironment() {
   environment.default_charset = 128;  // SHIFTJIS_CHARSET
   environment.hook_ui_language_api = 0;
   environment.timezone.bias = -540;  // UTC = local time + bias.
-  const wchar_t timezone_name[] = L"Tokyo Standard Time";
+  // TIME_ZONE_INFORMATION contains localized names, not a TimeZoneKeyName.
+  // Japanese Windows tzres.dll strings 632/631; no dependency on host UI language.
+  // BUG-2353: old Siglus versions inspect the Japanese standard-time name.
+  const wchar_t standard_name[] = L"\u6771\u4eac (\u6a19\u6e96\u6642)";
+  const wchar_t daylight_name[] = L"\u6771\u4eac (\u590f\u6642\u9593)";
   for (std::size_t i = 0; i + 1 < std::size(environment.timezone.standard_name) &&
-                          timezone_name[i] != L'\0';
+                          standard_name[i] != L'\0';
        ++i) {
-    environment.timezone.standard_name[i] = timezone_name[i];
-    environment.timezone.daylight_name[i] = timezone_name[i];
+    environment.timezone.standard_name[i] = standard_name[i];
+  }
+  for (std::size_t i = 0; i + 1 < std::size(environment.timezone.daylight_name) &&
+                          daylight_name[i] != L'\0';
+       ++i) {
+    environment.timezone.daylight_name[i] = daylight_name[i];
   }
   return environment;
 }

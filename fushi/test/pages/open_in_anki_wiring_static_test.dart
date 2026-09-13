@@ -106,7 +106,15 @@ void main() {
     final base = read('lib/src/pages/base_source_page.dart');
     expect(base.contains('Future<AnkiOpenWordOutcome> onOpenInAnkiFromPopup('),
         isTrue);
-    expect(base.contains('onOpenInAnki: onOpenInAnkiFromPopup'), isTrue);
+    // 钉的是「这个回调确实被接进去了」，不是某一种写法：制卡模块关掉时接线变成
+    // `onOpenInAnki: cardCreationEnabled ? onOpenInAnkiFromPopup : null`，
+    // 不变式（↗ 由 host lane 提供并传进弹窗层）没变。把整串实参写死会让这类
+    // 合法改动无辜变红 —— 同 browser_extension_lookup_highlight 那次的形态。
+    expect(
+      RegExp(r'onOpenInAnki:[^,\n]*onOpenInAnkiFromPopup').hasMatch(base),
+      isTrue,
+      reason: '↗ 必须由 host lane 接进弹窗层（允许模块闸包一层三元）',
+    );
     expect(base.contains('repo.openWordInAnki(expression, reading)'), isTrue);
   });
 
@@ -196,6 +204,12 @@ void main() {
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
       'lib/src/pages/base_source_page.dart',
       'lib/src/lookup/overlay_bridge_handlers.dart',
+      // 不是第四条车道，是**纯委派层**：`AutoRepositionAnkiRepository` 包在
+      // `ankiRepositoryProvider` 最外层给制卡加自动重排副作用，语义要求它把
+      // 基类每个被后端覆盖的成员逐个转发（漏一个就静默掉回基类降级默认，
+      // 见 auto_reposition_repository_delegation_test）。这里的
+      // `_inner.openWordInAnki(...)` 是转发上面三条车道的调用，不是新起一处。
+      'lib/src/anki/auto_reposition_anki_repository.dart',
     };
     expect(
       filesWhere('lib', (String code) => code.contains('.openWordInAnki(')),
@@ -211,6 +225,9 @@ void main() {
     const Set<String> idLanes = <String>{
       'lib/src/anki/anki_mined_card_action_sheet.dart',
       'lib/src/lookup/overlay_bridge_handlers.dart',
+      // 同上：纯委派层两个方法都要转发，凑巧落进「既反查又打开」的形状，
+      // 但它自己不拼装任何链路——两处都只是 `=> _inner.xxx(...)` 一行。
+      'lib/src/anki/auto_reposition_anki_repository.dart',
     };
     expect(
       filesWhere(

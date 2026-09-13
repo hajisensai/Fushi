@@ -1,0 +1,6 @@
+## BUG-2347 · Siglus超容量新正文未撤销旧查词事件与点击目标
+- **报告**：2026-09-07（Siglus NativeEcx 文本事件生命周期审查发现，非声称真实游戏已经触发。）
+- **真实性**：✅ 真 bug。基线 `bce7792cfe` 的 `native/galgame_hook/hook/adapters/text_render_adapter.inc:191` 允许最长 1500 UTF-16 单位的有效正文，`:228` 先写入真实 TextSlot 新 seq，`:234` 把该身份传给查词；但 `siglus_lookup.inc:679` 对超过 512 单位的正文直接返回，既不发新身份也不撤销旧正文。worker 因此可继续沿旧身份与完整布局维护旧点击目标。用实际生产快照函数先复现：有效旧事件后发布 513 单位新事件，第二次读取应有失效快照却返回 false，断言退出 `-1073740791`。
+- **[x] ① 已修复** — 本条同提交：将既有快照发布/读取函数移到独立 `siglus_lookup_text_snapshot.inc` 供生产与行为测试共用，容量与快照结构共用 `siglus_lookup.h` 定义。确认的新正文超过容量时，发布新事件身份且 `text_units=0` 的失效快照，不截断正文或沿用旧 seq。既有 consumer 读取后重置布局、撤销点击目标、退役 provider；随后支持范围内的新正文可重新取得布局。空指针/零长度回调本身没有新 occurrence 证据，保持原拒绝语义，不扩张 NativeEcx ABI 或音频 profile。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/siglus_lookup_snapshot_test.cpp` 直接包含生产 publisher/reader，覆盖旧有效事件→513 单位新事件、连续 1500 单位事件、空/null 不造事件、同文新 seq 恢复及容量边界 512。先红后绿；本机正式 MSVC `/W4 /WX /O2 /DNDEBUG` 编译，x86/x64 两个测试二进制各执行一次均 exit 0。现有 `siglus_lookup_test.cpp` x86 回归 exit 0。`adapter_structure_test.py` 新增 worker 失效接线守卫，验证零正文必走布局/点击目标/provider 撤销，且先于旧点击队列消费；全文件 **46/46，exit 0**。
+- **备注**：共 2 个不同 C++ 测试目标、3 次架构执行，不与 46 个 Python 检查混计。完整 DLL 双架构构建/分发与真实游戏回归由集成 owner 统一执行，本提交不宣称它们已完成，不提高引擎支持状态。只涉及 Windows 查词生命周期；未启动游戏、未操作 UI/CDB、未修改游戏或音频 profile。

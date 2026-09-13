@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -22,9 +24,9 @@ import '../helpers/test_platform_services.dart';
 void main() {
   group('默认选中分类 = schema 首项（源码守卫）', () {
     test('settings_home_page 不再硬编码 appearance 默认值', () {
-      final String home = File('lib/src/settings/settings_home_page.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
+      final String home = File(
+        'lib/src/settings/settings_home_page.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
       // 默认项延迟到 build 里从可见分类列表解析，顺序真相源是 buildSettingsSchema
       // （settings_destination_order_guard_test 锁顺序）；这里锁「不再硬编码」。
       expect(home, contains('SettingsDestinationId? _selectedDestinationId'));
@@ -34,20 +36,29 @@ void main() {
         isNot(contains('SettingsDestinationId.appearance')),
         reason: '宽屏默认选中分类不得再硬编码外观（重排后首项是阅读，未来跟随 schema）',
       );
-      // body 合成搜索条目不登记 reveal 挂点（挂点永远不会被消费）。
-      expect(home, contains('entry.isBodyEntry ? null : entry.item.id'));
+      // 只有声明真实挂点的正文行才登记 reveal。
+      expect(home, contains('entry.hasRevealTarget'));
     });
   });
 
   group('制卡分类搜索可见性', () {
     late SettingsContext sctx;
 
-    Future<void> pumpContext(WidgetTester tester) async {
+    Future<void> pumpContext(
+      WidgetTester tester, {
+      bool configured = true,
+    }) async {
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [
+            ankiViewModelProvider.overrideWith(
+              (ref) => AnkiViewModel(_SearchAnkiRepository(configured)),
+            ),
+          ],
           child: MaterialApp(
             home: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) {
+                ref.watch(ankiViewModelProvider);
                 sctx = SettingsContext(
                   context: context,
                   appModel: _TestAppModel(),
@@ -63,37 +74,70 @@ void main() {
       );
     }
 
-    testWidgets('bodySearchEntries 被展平进搜索索引且指向 cardCreation',
-        (WidgetTester tester) async {
+    testWidgets('bodySearchEntries 被展平进搜索索引且指向 cardCreation', (
+      WidgetTester tester,
+    ) async {
       await pumpContext(tester);
       final SettingsDestination dest = buildCardCreationDestination();
-      final List<SettingsSearchEntry> entries =
-          flattenVisibleSettings(<SettingsDestination>[dest], sctx);
+      final List<SettingsSearchEntry> entries = flattenVisibleSettings(
+        <SettingsDestination>[dest],
+        sctx,
+      );
 
-      // sections 为空（body 逃生口），条目全部来自 bodySearchEntries。
-      expect(entries, isNotEmpty,
-          reason: '制卡分类必须有可搜条目（此前 sections 空 = 搜索完全不可见）');
+      // 常用正文和子页正文均可搜，导航条目保留各自路径。
+      expect(
+        entries,
+        isNotEmpty,
+        reason: '制卡分类必须有可搜条目（此前 sections 空 = 搜索完全不可见）',
+      );
       for (final SettingsSearchEntry entry in entries) {
         expect(entry.destination.id, SettingsDestinationId.cardCreation);
-        expect(entry.isBodyEntry, isTrue);
+
         expect(entry.title, isNotEmpty);
       }
-      final List<String> ids =
-          entries.map((SettingsSearchEntry e) => e.item.id).toList();
+      final List<String> ids = entries
+          .map((SettingsSearchEntry e) => e.item.id)
+          .toList();
       expect(ids, contains('card_creation.anki.deck'));
       expect(ids, contains('card_creation.anki.note_type'));
       expect(ids, contains('card_creation.anki.field_mappings'));
+      expect(ids, contains('card_creation.anki.mining_audio_quality'));
+      final SettingsSearchEntry media = entries.firstWhere(
+        (entry) => entry.item.id == 'card_creation.anki.mining_audio_quality',
+      );
+      expect(media.isBodyEntry, isTrue);
+      expect(media.hasRevealTarget, isTrue);
+      expect(media.subPagePath, hasLength(1));
+      expect(media.subPagePath.single.id, 'card_creation.media.open');
+      final SettingsSearchEntry host = entries.firstWhere(
+        (entry) => entry.item.id == 'card_creation.anki.connect_host',
+      );
+      expect(host.subPagePath.single.id, 'card_creation.connection.open');
+    });
+
+    testWidgets('未配置时仅隐藏需要牌组和卡型的正文设置', (WidgetTester tester) async {
+      await pumpContext(tester, configured: false);
+      final List<String> ids = flattenVisibleSettings(<SettingsDestination>[
+        buildCardCreationDestination(),
+      ], sctx).map((entry) => entry.item.id).toList();
+      expect(ids, isNot(contains('card_creation.anki.deck')));
+      expect(ids, isNot(contains('card_creation.anki.field_mappings')));
+      expect(ids, contains('card_creation.anki.connect_host'));
       expect(ids, contains('card_creation.anki.mining_audio_quality'));
     });
 
     testWidgets('按「牌组」行标题检索能命中并跳转制卡分类', (WidgetTester tester) async {
       await pumpContext(tester);
       final SettingsDestination dest = buildCardCreationDestination();
-      final List<SettingsSearchEntry> entries =
-          flattenVisibleSettings(<SettingsDestination>[dest], sctx);
+      final List<SettingsSearchEntry> entries = flattenVisibleSettings(
+        <SettingsDestination>[dest],
+        sctx,
+      );
       // 用与正文行同源的 i18n 文案检索（locale 无关）。
-      final List<SettingsSearchEntry> hits =
-          filterSettingsEntries(entries, t.anki_deck);
+      final List<SettingsSearchEntry> hits = filterSettingsEntries(
+        entries,
+        t.anki_deck,
+      );
       expect(hits, isNotEmpty);
       expect(hits.first.destination.id, SettingsDestinationId.cardCreation);
       expect(hits.first.item.id, 'card_creation.anki.deck');
@@ -193,20 +237,36 @@ void main() {
       await tester.pumpWidget(schemaHarness(showIcons: true));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.toggle_on_outlined), findsOneWidget,
-          reason: 'Switch 行声明的 icon 必须渲染（此前 showIcon 未转发从不渲染）');
-      expect(find.byIcon(Icons.linear_scale_outlined), findsOneWidget,
-          reason: 'Slider 行图标');
-      expect(find.byIcon(Icons.exposure_outlined), findsOneWidget,
-          reason: 'Stepper 行图标');
-      expect(find.byIcon(Icons.tune_outlined), findsOneWidget,
-          reason: 'Segmented 行图标');
-      expect(find.byIcon(Icons.list_outlined), findsOneWidget,
-          reason: '内联 Picker（dropdown 分支）行图标');
+      expect(
+        find.byIcon(Icons.toggle_on_outlined),
+        findsOneWidget,
+        reason: 'Switch 行声明的 icon 必须渲染（此前 showIcon 未转发从不渲染）',
+      );
+      expect(
+        find.byIcon(Icons.linear_scale_outlined),
+        findsOneWidget,
+        reason: 'Slider 行图标',
+      );
+      expect(
+        find.byIcon(Icons.exposure_outlined),
+        findsOneWidget,
+        reason: 'Stepper 行图标',
+      );
+      expect(
+        find.byIcon(Icons.tune_outlined),
+        findsOneWidget,
+        reason: 'Segmented 行图标',
+      );
+      expect(
+        find.byIcon(Icons.list_outlined),
+        findsOneWidget,
+        reason: '内联 Picker（dropdown 分支）行图标',
+      );
     });
 
-    testWidgets('showIcons=false 时不渲染（Cupertino 渲染器契约不变）',
-        (WidgetTester tester) async {
+    testWidgets('showIcons=false 时不渲染（Cupertino 渲染器契约不变）', (
+      WidgetTester tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(800, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(schemaHarness(showIcons: false));
@@ -225,4 +285,28 @@ void main() {
 /// item 闭包，不触碰真实子系统。
 class _TestAppModel extends AppModel {
   _TestAppModel() : super(testPlatformServices());
+}
+
+class _SearchAnkiRepository implements BaseAnkiRepository {
+  _SearchAnkiRepository(this.configured);
+  final bool configured;
+
+  @override
+  Future<AnkiSettings> loadSettings() async => configured
+      ? const AnkiSettings(
+          selectedDeckId: 1,
+          selectedNoteTypeId: 2,
+          availableDecks: [AnkiDeck(id: 1, name: 'Test')],
+          availableNoteTypes: [
+            AnkiNoteType(id: 2, name: 'Basic', fields: ['Front']),
+          ],
+        )
+      : const AnkiSettings();
+
+  @override
+  bool get supportsNoteTypeEditing => false;
+  @override
+  bool get supportsMediaMaintenance => false;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

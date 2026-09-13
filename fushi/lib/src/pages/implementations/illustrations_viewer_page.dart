@@ -2,25 +2,78 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi_audio/fushi_audio.dart'
+    show ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi/src/epub/epub_book.dart' show fallbackMimeType;
-import 'package:fushi/src/media/collections/shelf_sort.dart'
+import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
-import 'package:fushi/src/media/media_extensions.dart';
+import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
+import 'package:fushi/src/reader/illustration_progress_index.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
+
+/// 未揭开插图的遮罩视觉：普通屏「模糊图 + 蒙层 + 图标」，墨水屏「实心遮板 + 图标」。
+///
+/// 墨水屏不走模糊有两个理由，都不是审美偏好：慢刷新面板渲染不出干净的高斯过渡，
+/// 留下的是一片残影；而灰阶下「一张糊图」在观感上就等于「这张图本身不高清」，
+/// 遮罩的意图一点都传达不到，用户只会以为画廊坏了。实心遮板一眼可辨是盖住的。
+Widget maskedIllustrationCover(
+  BuildContext context,
+  Widget img, {
+  double sigma = 16,
+  Color scrim = const Color(0x33000000),
+  required double iconSize,
+}) {
+  final ColorScheme scheme = Theme.of(context).colorScheme;
+  if (isEinkTheme(context)) {
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        ColoredBox(color: scheme.surface),
+        Center(
+          child: Icon(
+            Icons.visibility_off_outlined,
+            color: scheme.onSurface,
+            size: iconSize,
+          ),
+        ),
+      ],
+    );
+  }
+  return Stack(
+    fit: StackFit.expand,
+    children: <Widget>[
+      ClipRect(
+        child: ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: img,
+        ),
+      ),
+      ColoredBox(color: scrim),
+      Center(
+        child: Icon(
+          Icons.visibility_off_outlined,
+          color: Colors.white70,
+          size: iconSize,
+        ),
+      ),
+    ],
+  );
+}
 
 /// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）+ reveal key。
 class _Illustration {
@@ -74,9 +127,21 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   /// live watch（避开 drift keyed watch 的 widget teardown 隐患）。
   final Set<String> _revealed = <String>{};
 
-  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。关闭时图片库始终原图。
+  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。开着时未揭开的图
+  /// 一律遮罩；**关着时仍按阅读进度遮「还没读到」的那些**——但只在这本书真有
+  /// 阅读位置行时才成立（见 [_progressIndex] / [_loadReadProgress]）。
   bool get _blurEnabled =>
       ReaderFushiSource.readerSettings?.blurImages ?? false;
+
+  /// 插图 → 书中位置的索引（后台 isolate 解析已解压目录建成）。`null` = 还没建好
+  /// 或目录不是合法 EPUB（解析失败）→ 不按进度遮罩，退回旧行为。
+  IllustrationProgressIndex? _progressIndex;
+
+  /// 本书当前阅读位置（与 `ReaderPosition` 同坐标）。只有查到位置行才会被填上，
+  /// 同时 [_progressIndex] 才会挂上去——没读过的书不按进度遮罩，见
+  /// [_loadReadProgress]。
+  int _readChapterIndex = 0;
+  int _readNormCharOffset = 0;
 
   @override
   void initState() {
@@ -85,6 +150,9 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
   }
 
   Future<void> _loadRevealedThenImages() async {
+    // 进度索引与图片抽取并行起跑：前者是后台 isolate 的整本解析，后者是逐张读盘，
+    // 互不依赖，串起来只会白等。
+    final Future<void> progressFuture = _loadReadProgress();
     if (widget.bookUid.isNotEmpty) {
       try {
         final Set<String> keys =
@@ -97,6 +165,36 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       }
     }
     await _extractImages();
+    await progressFuture;
+  }
+
+  /// 载入「读到哪了」+「每张插图在哪」，两者构成按进度遮罩的判据。
+  ///
+  /// 无 uid（旧行无 uid 的书）没有阅读位置可查 → 不按进度遮罩。索引建好前网格按
+  /// 旧判据渲染，建好后 setState 补遮——不阻塞首屏。
+  Future<void> _loadReadProgress() async {
+    if (widget.bookUid.isEmpty) return;
+    try {
+      final ReaderPosition? position =
+          await ReaderPositionRepository(widget.database)
+              .findByBookUid(widget.bookUid);
+      final IllustrationProgressIndex index =
+          await compute(buildIllustrationProgressIndex, widget.extractDir);
+      if (!mounted) return;
+      // 没有位置行 = 这本一次都没打开过。退化成 (0, 0) 会把开篇之后的每一张插图
+      // 都判成「还没读到」，整个画廊糊成一片，而用户没有任何开关能关掉它——
+      // 那已经不是防剧透，是画廊坏了。没读过就不按进度遮罩，只留总开关。
+      if (position == null) return;
+      setState(() {
+        _progressIndex = index;
+        _readChapterIndex = position.sectionIndex;
+        _readNormCharOffset = position.normCharOffset;
+      });
+    } catch (e, stack) {
+      // 目录不是合法 EPUB（FormatException）等：退回「不按进度遮罩」，不影响看图。
+      ErrorLogService.instance
+          .log('IllustrationsViewer.loadProgress', e, stack);
+    }
   }
 
   /// 某图当前是否应遮罩（共用判据，缩略图 / 全屏一致）。
@@ -104,7 +202,17 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         blurEnabled: _blurEnabled,
         revealKey: im.revealKey,
         revealed: _revealed,
+        unreadAhead: _isUnread(im),
       );
+
+  /// 这张图是否还没读到（位置在当前阅读位置之后）。索引没建好 / 定位不到 → false。
+  bool _isUnread(_Illustration im) =>
+      _progressIndex?.isUnread(
+        revealKey: im.revealKey,
+        chapterIndex: _readChapterIndex,
+        normCharOffset: _readNormCharOffset,
+      ) ??
+      false;
 
   /// 揭开一张图（幂等）：登记内存集 + 持久化到 Drift（阅读器下次开书据此不遮罩）。
   Future<void> _revealImage(_Illustration im) async {
@@ -234,7 +342,12 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
         if (_loading) const LinearProgressIndicator(),
         Expanded(
           child: GridView.builder(
-            padding: EdgeInsets.all(tokens.spacing.gap),
+            // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末行缩略图得靠
+            // 内容 padding 自己让开 home indicator / 手势条。
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.all(tokens.spacing.gap),
+            ),
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
               maxCrossAxisExtent: 200,
               mainAxisSpacing: tokens.spacing.gap,
@@ -259,7 +372,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     );
   }
 
-  /// 缩略图：未遮罩直接原图；遮罩则模糊 + 蒙层 + 图标。
+  /// 缩略图：未遮罩直接原图；遮罩走 [maskedIllustrationCover]。
   Widget _thumb(_Illustration im, bool blurred) {
     final Widget img = Image.memory(
       im.bytes,
@@ -267,27 +380,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       errorBuilder: (_, __, ___) =>
           const Center(child: Icon(Icons.broken_image_outlined)),
     );
-    return blurred ? _blurCover(img) : img;
-  }
-
-  /// 防剧透遮罩视觉：模糊图 + 半透明蒙层 + 「点击查看」图标。点击揭开由外层 onTap 处理。
-  Widget _blurCover(Widget img) {
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        ClipRect(
-          child: ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: img,
-          ),
-        ),
-        const ColoredBox(color: Color(0x33000000)),
-        const Center(
-          child: Icon(Icons.visibility_off_outlined,
-              color: Colors.white70, size: 36),
-        ),
-      ],
-    );
+    return blurred ? maskedIllustrationCover(context, img, iconSize: 36) : img;
   }
 
   void _openFullScreen(int initialIndex) {
@@ -300,6 +393,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
           initialIndex: initialIndex,
           revealed: _revealed,
           blurEnabled: _blurEnabled,
+          isUnread: _isUnread,
           onReveal: _revealImage,
         ),
       ),
@@ -316,6 +410,7 @@ class _FullScreenGallery extends StatefulWidget {
     required this.initialIndex,
     required this.revealed,
     required this.blurEnabled,
+    required this.isUnread,
     required this.onReveal,
   });
 
@@ -325,6 +420,10 @@ class _FullScreenGallery extends StatefulWidget {
   /// 与网格页共享的已揭开集（同一 Set 引用，揭开双向可见，BUG-898）。
   final Set<String> revealed;
   final bool blurEnabled;
+
+  /// 「还没读到」判据（网格页持有索引与阅读位置，全屏页读同一份，见
+  /// `IllustrationProgressIndex`）。
+  final bool Function(_Illustration) isUnread;
 
   /// 揭开一张图（写共享集 + 持久化）；全屏点击遮罩时调。
   final Future<void> Function(_Illustration) onReveal;
@@ -404,6 +503,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
         blurEnabled: widget.blurEnabled,
         revealKey: im.revealKey,
         revealed: widget.revealed,
+        unreadAhead: widget.isUnread(im),
       );
 
   /// 全屏点击遮罩 → 揭开（写共享集 + DB）后本地刷新为原图。
@@ -558,26 +658,16 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
                   ),
                 );
                 if (_isBlurred(im)) {
-                  // 遮罩态：模糊全屏 + 图标，点击揭开（揭开前不许缩放/复制/分享，防剧透）。
+                  // 遮罩态：点击揭开（揭开前不许缩放/复制/分享，防剧透）。
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => _revealCurrent(im),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        ClipRect(
-                          child: ImageFiltered(
-                            imageFilter:
-                                ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                            child: Center(child: image),
-                          ),
-                        ),
-                        const ColoredBox(color: Color(0x66000000)),
-                        const Center(
-                          child: Icon(Icons.visibility_off_outlined,
-                              color: Colors.white70, size: 48),
-                        ),
-                      ],
+                    child: maskedIllustrationCover(
+                      context,
+                      Center(child: image),
+                      sigma: 24,
+                      scrim: const Color(0x66000000),
+                      iconSize: 48,
                     ),
                   );
                 }

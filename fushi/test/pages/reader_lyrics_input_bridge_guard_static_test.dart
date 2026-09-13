@@ -114,7 +114,9 @@ void main() {
     expect(
       src,
       contains(
-          '_pendingLyricsRestore = ReaderFushiSource.instance.lyricsMode;'),
+          '_pendingLyricsRestore =\n'
+            '        _sourceReviewSession == null && '
+            'ReaderFushiSource.instance.lyricsMode;'),
     );
     // EPUB 内容就绪 + 有声书已挂载后再切歌词（等价手动切、规避 iOS 白屏），一次性触发。
     final int t = src.indexOf('if (_pendingLyricsRestore) {');

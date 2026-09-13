@@ -42,6 +42,7 @@ function makeEl(tag) {
     value: '',
     dataset: {},
     children: [],
+    contentWindow: { postMessage() {} },
     parentNode: null,
     handlers: Object.create(null),
     style: { cssText: '', setProperty() {}, removeProperty() {}, getPropertyValue: () => '' },
@@ -202,6 +203,8 @@ function loadContent(lookupExtras, respondOverride) {
   vm.createContext(sandbox);
   vm.runInContext(DICT_MEDIA, sandbox, { filename: 'vendor/dict-media.js' });
   vm.runInContext(AUTO_READ, sandbox, { filename: 'auto-read.js' });
+  vm.runInContext(POPUP_SIZE, sandbox, { filename: 'popup-size.js' });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'nested-popup-host.js'), 'utf8'), sandbox);
   vm.runInContext(CONTENT, sandbox, { filename: 'content.js' });
   return {
     sandbox, docListeners, sent, body, selection, rafs, bridgeCalls, played,
@@ -226,6 +229,40 @@ test('侧栏查词交给宿主页：发出查词请求并建出页面弹窗（�
   assert.strictEqual(lookups.length, 1, '必须真的发出 lookup 请求');
   assert.strictEqual(lookups[0].term, '世界', '发出的词必须是侧栏点的那个');
   assert.ok(findById(h.body, 'hibiki-popup-host'), '必须在宿主页上建出页面弹窗');
+});
+
+test('页面弹窗建立时绑定 ShadowRoot 交互，点击不泄漏给站点播放器', () => {
+  const h = loadContent();
+  const bound = [];
+  h.sandbox.window.__fushiBindPopupInteractions = (root) => bound.push(root);
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null);
+  const host = findById(h.body, 'hibiki-popup-host');
+  assert.deepStrictEqual(bound, [host.shadowRoot]);
+  for (const type of ['mousedown', 'mouseup', 'click', 'dblclick', 'mousemove',
+    'pointerdown', 'pointerup', 'touchstart', 'touchend']) {
+    const event = { stopped: false, stopPropagation() { this.stopped = true; } };
+    for (const handler of host.handlers[type] || []) handler(event);
+    assert.strictEqual(event.stopped, true, type + ' 不应触发站点播放/关闭');
+  }
+  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
+});
+
+test('正文 textSelected 经真实桥打开子层，保留父层字幕来源与弹窗几何', async () => {
+  const h = loadContent();
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', { startMs: 1000, endMs: 2000, text: '世界です' });
+  const host = h.runPlacement(400, 300);
+  const left = host.style.left, top = host.style.top;
+  const root = h.sandbox.window.__fushiRoot;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'bridge-shim.js'), 'utf8'), h.sandbox);
+  await h.sandbox.window.flutter_inappwebview.callHandler('textSelected', '計画', { x: 20, y: 20 });
+  assert.strictEqual(h.sent.filter((m) => m.type === 'lookup').at(-1).term, '計画');
+  assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
+  assert.strictEqual(h.sandbox.window.__fushiRoot, root);
+  assert.strictEqual(h.body.children.filter(node => node.tagName === 'IFRAME').length, 1);
+  assert.strictEqual(host.style.left, left);
+  assert.strictEqual(host.style.top, top);
+  assert.strictEqual(vm.runInContext('fushiPendingCueWindow.text', h.sandbox), '世界です');
+  assert.strictEqual(h.sent.some((m) => m.type === 'fushiSidePanelLookupGone'), false);
 });
 
 test('没带位置信息时弹窗贴视口右上（紧邻侧栏那侧，不压底部字幕）', () => {

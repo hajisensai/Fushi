@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-import 'package:fushi/src/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 
@@ -34,6 +34,8 @@ typedef RemoteMiningAuthReporter = void Function(String message);
 /// [noteFields]/[openNoteInAnki]）保留基类降级默认（不委派本地——那会在远端制卡时错误地
 /// 操作**本机** Anki 的卡片；远端 note id 本就为 null，本会话覆写第三态不激活，与 AnkiDroid
 /// 现状一致）。
+/// 来源回跳使用 [readSourceNote]/[prepareSourceNoteFields]/[patchSourceNote] 的
+/// 独立链路：按来源 marker 唯一读取后绑定主机，失败不得回退到本机或另一台主机。
 ///
 /// 媒体的四个来源在客户端就地读成字节再随请求发出（服务端未必装同款词典/无法访问本机文件）：
 /// 封面 ← `context.coverPath`；句子音频 ← `context.sasayakiAudioPath`；单词音频 ←
@@ -55,14 +57,14 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   /// 主机拒绝互联 token 时给用户看的话。制卡失败与查重失败共用同一句，
   /// 因为它们是同一个 token 被同一台主机拒绝。
   static const String tokenRejectedMessage =
-      'The paired device rejected the interconnect token. Re-pair the device.';
+      'The Fushi Interconnect server rejected the interconnect token. Re-pair the device.';
 
   /// 没有互联主机可接收制卡请求时，同时说明失败结果和两条恢复路径。
   /// 避免把内部术语 "server-side mining" 暴露给只想完成制卡的用户。
   static const String pairedDeviceUnreachableMessage =
-      "Couldn't create the card because no paired device could be reached. "
-      'Make sure Fushi is running on the paired device, or turn off '
-      'Mine to paired device in Anki settings to create cards locally.';
+      "Couldn't create the card because the Fushi Interconnect server could not be reached. "
+      'Make sure Fushi is running there, or turn off '
+      'Mine to Fushi Interconnect server in Anki settings to create cards locally.';
 
   final BaseAnkiRepository _local;
   final RemoteMineSender _client;
@@ -106,7 +108,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       );
     } catch (e, st) {
       return MineOutcome.failure(
-        'Failed to forward the card to the paired device: $e',
+        'Failed to forward the card to the Fushi Interconnect server: $e',
         errorCode: AnkiErrorCode.connectionUnknown,
         error: e,
         stackTrace: st,
@@ -147,7 +149,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     // 封面 + 句子音频：context 里是本地文件路径，读成字节。
     final Uint8List? coverBytes = await _readPath(context.coverPath);
     final Uint8List? sentenceAudioBytes =
-        await _readPath(context.sentenceAudioPath);
+        context.synchronizedVideo ? null : await _readPath(context.sentenceAudioPath);
 
     // 单词音频 + 词典外字：从 rawPayloadJson 解析。解析失败不致命——仍转发文本卡。
     Uint8List? wordAudioBytes;
@@ -182,13 +184,17 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       documentTitle: context.documentTitle,
       sentenceOffset: context.sentenceOffset,
       source: context.source?.name,
+      sourceLink: context.sourceLink,
       bookTitleTag: context.bookTitleTag,
+      collectionTag: context.collectionTag,
+      charPositionTag: context.charPositionTag,
       clipStartMs: context.clipStartMs,
       clipEndMs: context.clipEndMs,
       coverBytes: coverBytes,
       coverExt: _extOf(context.coverPath),
       sentenceAudioBytes: sentenceAudioBytes,
       sentenceAudioExt: _extOf(context.sentenceAudioPath),
+      synchronizedVideo: context.synchronizedVideo,
       wordAudioBytes: wordAudioBytes,
       wordAudioExt: wordAudioExt,
       dictionaryMedia: dictMedia,
@@ -246,7 +252,9 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       return const MineOutcome.notConfigured();
     }
     return MineOutcome.failure(
-      message ?? detail ?? 'The paired device failed to create the card.',
+      message ??
+          detail ??
+          'The Fushi Interconnect server failed to create the card.',
     );
   }
 
@@ -274,7 +282,67 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     }
   }
 
+  RemoteSourceNoteSender get _sourceClient {
+    final RemoteMineSender client = _client;
+    if (client is! RemoteSourceNoteSender) {
+      throw UnsupportedError(
+        'The Fushi Interconnect server does not support source editing.',
+      );
+    }
+    return client as RemoteSourceNoteSender;
+  }
+
+  /// Safe display identity for the peer bound when the original note was read.
+  String? sourcePeerUrl(String sourceId) {
+    final RemoteMineSender client = _client;
+    return client is RemoteSourceNoteSender
+        ? (client as RemoteSourceNoteSender).sourcePeerUrl(sourceId)
+        : null;
+  }
+
+  String? sourcePeerIdentity(String sourceId) =>
+      _sourceClient.sourcePeerIdentity(sourceId);
+
+  @override
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) =>
+      _sourceClient.readSourceNote(sourceId);
+
+  Future<void> bindSourcePeer(
+    String sourceId,
+    String peerUrl, {
+    required String pairingIdentity,
+  }) =>
+      _sourceClient.bindSourcePeer(
+        sourceId,
+        peerUrl,
+        pairingIdentity: pairingIdentity,
+      );
+
+  @override
+  Future<Map<String, String>> prepareSourceNoteFields({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async =>
+      _sourceClient.prepareForwardedSourceNote(
+        await _buildForwardedPayload(
+          rawPayloadJson: rawPayloadJson,
+          context: context,
+        ),
+      );
+
+  @override
+  Future<void> patchSourceNote({
+    required AnkiSourceNote original,
+    required Map<String, String> fields,
+  }) =>
+      _sourceClient.patchSourceNote(original: original, fields: fields);
+
   // ---- 配置类：委派本地仓库，保持设置页可配置本地 Anki ----
+
+  /// 被包装的本地仓库。iOS 的 AnkiMobile 回传（`fushi://ankiFetch` / 回到前台）
+  /// 要找的是它，而不是这层壳——BUG-2493 之前 `main.dart` 用 `is! AnkiMobileRepository`
+  /// 判型，开了「制卡到已配对设备」后整条回传链被静默丢弃。
+  BaseAnkiRepository get local => _local;
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() => _local.fetchConfiguration();

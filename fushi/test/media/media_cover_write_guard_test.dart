@@ -50,6 +50,16 @@ final RegExp kCoverDestMarker = RegExp(
 final RegExp kRawWrite =
     RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');
 
+/// 「经收口落盘」的判据：app 的 `MediaCoverService.applyCover*`，或引擎的
+/// writer 本体 `writeCoverBytesAtomically` / `copyCoverFileAtomically` /
+/// `publishStagedCoverFile`（前者是后者的薄委派；写盘→驱逐的结构在 writer 里，见
+/// cover_file_writer.dart；第三个是外部进程 staged 文件的发布口，BUG-2496）。
+bool _viaCoverSink(String maskedSrc) =>
+    maskedSrc.contains('MediaCoverService.applyCover') ||
+    maskedSrc.contains('writeCoverBytesAtomically(') ||
+    maskedSrc.contains('copyCoverFileAtomically(') ||
+    maskedSrc.contains('publishStagedCoverFile(');
+
 /// 一个「封面目的地派生点」文件在收口体系里的角色（TODO-2715 ③）。
 enum CoverDeriverRole {
   /// 收口本体：`MediaCoverService` 自己，写盘与驱逐在同一函数里。
@@ -78,10 +88,23 @@ enum CoverDeriverRole {
 /// 语义与 BUG-1394 的 `allowedRawWriters` 一致：新增一个裸写函数、或把这些函数改
 /// 去写封面，都会让登记与实际不符而转红。
 const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
-  'lib/src/sync/app_model_library_host_service.dart': <String>{
+  // B4 拆分后视频域在 videos.part.dart：派生点（importVideo）与裸写点
+  // （_moveFileInto，已提为该 part 的顶层 helper）都在这一个文件里。
+  '../packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart': <String>{
     // 上传落地：搬的是视频本体（1 处）与外挂字幕（1 处），都不是封面。
     // 本文件的封面路只派生 coversDir 交给 CoverMetaStore/extractVideoCover。
     '_moveFileInto',
+  },
+  // 下载管线（#1427 起派生 coversDir 做新集提醒配图的来源准入）：三处裸写分别是
+  // torrent metainfo 与两条字幕 sidecar 的落地，都不是封面。
+  '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart':
+      <String>{
+    // 手动入队时把 .torrent 的 metainfo 字节落到任务目录。
+    'enqueueManual',
+    // 旧版暂存字幕搬到片子旁边（copy + rename）。
+    '_installLegacyStagedSubtitles',
+    // 新字幕 sidecar 的原子安装（临时文件 writeAsBytes + rename）。
+    '_installSidecarAtTargetAtomically',
   },
 };
 
@@ -98,8 +121,13 @@ const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
 const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     <String, (CoverDeriverRole, String)>{
   'lib/src/media/media_cover_service.dart': (
-    CoverDeriverRole.sink,
-    '收口本体：写盘 + 驱逐解码缓存在同一函数里。',
+    CoverDeriverRole.writesViaService,
+    'app 收口 API：applyCover* 薄委派到引擎 cover_file_writer（写盘 + 经 '
+        'evictImageCacheForFile 钩子驱逐在同一函数里）；本文件自己不再裸写。',
+  ),
+  '../packages/fushi_engine/lib/foundation/engine_paths.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '引擎侧三根目录抽象的定义处（videoCoversDirectory 等），只定义不落盘。',
   ),
   'lib/src/media/torrent/anime_download_importer.dart': (
     CoverDeriverRole.derivesPathOnly,
@@ -121,11 +149,11 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
         'CoverScraperService；实际 sidecar 图片由服务经 '
         'MediaCoverService.applyCoverFile 落盘。',
   ),
-  'lib/src/media/video/video_book_repository.dart': (
+  '../packages/fushi_engine/lib/media/video/video_book_repository.dart': (
     CoverDeriverRole.derivesPathOnly,
     '仓储层只解析封面路径供读取/展示，不落盘。',
   ),
-  'lib/src/media/video/video_cover_extractor.dart': (
+  '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': (
     CoverDeriverRole.writesViaService,
     'ffmpeg 子进程直写目标路径（Dart 侧无字节）；下载路已走 applyCoverBytes。'
         '本文件的裸写边界由下面第 ③ 条逐函数名单钉死。',
@@ -134,7 +162,7 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.writesViaService,
     '导入弹窗重取封面，字节走 applyCover*。',
   ),
-  'lib/src/media/video/video_storage.dart': (
+  '../packages/fushi_engine/lib/media/video/video_storage.dart': (
     CoverDeriverRole.derivesPathOnly,
     '路径派生的定义处之一，自身不落盘。',
   ),
@@ -162,15 +190,25 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
         '「这条路径上的图变了」，不驱逐就会在清理后继续画一张已不存在的封面。',
   ),
   'lib/src/pages/implementations/home_video_page.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '库页手选/重取封面时派生 coversDir 做来源准入与指针更新，字节落盘由被调用的'
-        '抽帧/服务侧完成，页面自身不写盘。',
+    CoverDeriverRole.writesViaService,
+    '库页手选/重取封面时派生 coversDir 做来源准入与指针更新，抽帧那条仍由服务侧'
+        '落盘；BUG-2463 起多一条「把 host 下发的封面镜像到 remote_videos/」，'
+        'bookUid 稳定 ⇒ 重下即同路径覆盖，故字节经 '
+        'MediaCoverService.applyCoverBytes 收口（写盘 + 驱逐同一函数）。',
   ),
-  'lib/src/sync/app_model_library_host_service.dart': (
+  '../packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart': (
     CoverDeriverRole.rawWritesNonCoverAssets,
     '互联 host 收上传：派生 coversDir 只为 CoverMetaStore 的自动抽帧准入，封面字节'
         '由 extractVideoCover 写。文件里的裸写是 _moveFileInto 搬上传的视频本体与'
         '字幕，与封面无关（逐函数名单见 kNonCoverRawWriters）。',
+  ),
+  '../packages/fushi_engine/lib/media/video/download/video_download_pipeline_service.dart':
+      (
+    CoverDeriverRole.rawWritesNonCoverAssets,
+    '订阅新集提醒的配图：派生 coversDir 只为 CoverMetaStore 判「这本书的封面是不是'
+        '自动抽帧来的、能不能覆盖」，真正的封面字节由 extractVideoCover 写（它自己'
+        '按 writesViaService 登记）。文件里的裸写是 torrent metainfo 与字幕 sidecar，'
+        '与封面无关（逐函数名单见 kNonCoverRawWriters）。',
   ),
 };
 
@@ -192,20 +230,34 @@ Set<String> _rawWriteFunctionsIn(String path) {
 }
 
 void main() {
-  final Directory libDir = Directory('lib');
+  // 封面写盘的两半现在跨两棵树：app `lib/`（收口 API、UI 派生点）与
+  // `../packages/fushi_engine/lib`（writer 本体、ffmpeg 抽帧、库服务）。只扫一棵
+  // 就会让另一棵上的登记全部「dead」、新裸写点全部漏网。
+  final List<Directory> scanRoots = <Directory>[
+    Directory('lib'),
+    Directory('../packages/fushi_engine/lib'),
+  ];
 
-  List<File> dartFiles() => libDir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((File f) => f.path.endsWith('.dart'))
-      .toList()
-    ..sort((File a, File b) => a.path.compareTo(b.path));
+  List<File> dartFiles() => <File>[
+        for (final Directory root in scanRoots)
+          ...root
+              .listSync(recursive: true)
+              .whereType<File>()
+              .where((File f) => f.path.endsWith('.dart')),
+      ]..sort((File a, File b) => a.path.compareTo(b.path));
 
   String norm(String path) => p.split(path).join('/');
 
-  test('扫描规模哨兵：lib/ 确实被枚举到了', () {
+  test('扫描规模哨兵：lib/ 与 fushi_engine/lib 确实被枚举到了', () {
     expectScanScale(dartFiles().length,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+        what: 'lib/ + ../packages/fushi_engine/lib 下的 .dart',
+        atLeast: 850, measured: 1058);
+    expect(
+      dartFiles().any((File f) =>
+          norm(f.path).endsWith('fushi_engine/lib/media/cover_file_writer.dart')),
+      isTrue,
+      reason: '引擎树没被枚举到：写盘本体在那边，漏扫等于守卫真空',
+    );
   });
 
   test('evictLocalCoverCache 只许出现在收口链路（新落盘点必须改走 MediaCoverService）', () {
@@ -215,6 +267,9 @@ void main() {
       'lib/src/utils/cover_image.dart',
       'lib/src/media/media_cover_service.dart',
       'lib/src/media/media_source.dart',
+      // 引擎 writer 的写后驱逐钩子在这里绑到 evictLocalCoverCache：它就是收口链路
+      // 的 Flutter 半边，不是散点手补。
+      'lib/src/engine_bindings.dart',
     };
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
@@ -236,7 +291,9 @@ void main() {
       final String path = norm(f.path);
       final String src = maskComments(f.readAsStringSync());
       if (!kCoverDestMarker.hasMatch(src)) continue;
-      actual[path] = src.contains('MediaCoverService.applyCover')
+      // 「经收口」= app 的 MediaCoverService.applyCover* 或引擎的 writer 本体
+      // （前者只是后者的薄委派；引擎里的调用方没有 MediaCoverService 可用）。
+      actual[path] = _viaCoverSink(src)
           ? 'viaService'
           : (kRawWrite.hasMatch(src) ? 'rawWrite' : 'pathOnly');
     }
@@ -316,18 +373,30 @@ void main() {
       'lib/src/media/media_cover_service.dart',
       // 导入期首写产线（ffmpeg 子进程直写目标路径），见其库注释。缩略图下载路
       // 已收口，本条豁免的实际边界由下面第 ③ 条逐函数钉死（BUG-1394）。
-      'lib/src/media/video/video_cover_extractor.dart',
+      '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart',
     };
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
       final String path = norm(f.path);
       if (allowed.contains(path)) continue;
+      // rawWritesNonCoverAssets 档：这些文件确实派生了封面目的地，但裸写搬的是
+      // 别的资产（上传的视频本体、字幕 sidecar、torrent metainfo）。它们的边界不是
+      // 在这里整文件放行，而是由 kNonCoverRawWriters 的**逐函数**名单 + 上面的角色
+      // 断言（实际裸写函数集合必须与登记完全一致）钉死——新增一个裸写函数就红。
+      // 在这里再报一次，只会逼人把文件塞进上面那张没有函数粒度的 allowed，反而更松。
+      if (kCoverPathDerivers[path]?.$1 ==
+          CoverDeriverRole.rawWritesNonCoverAssets) {
+        continue;
+      }
       // 互联层远端封面本轮不收编（协议 coverUrl 冻结，W 系列另册处理）。
-      if (path.startsWith('lib/src/sync/')) continue;
+      if (path.startsWith('lib/src/sync/') ||
+          path.startsWith('../packages/fushi_engine/lib/sync/')) {
+        continue;
+      }
       final String src = maskComments(f.readAsStringSync());
       if (!destMarker.hasMatch(src)) continue;
       if (!rawWrite.hasMatch(src)) continue;
-      if (src.contains('MediaCoverService.applyCover')) continue;
+      if (_viaCoverSink(src)) continue;
       offenders.add(path);
     }
     expect(offenders, isEmpty,
@@ -340,14 +409,19 @@ void main() {
     // 白名单文件里**允许**裸写封面的函数全名单。空 = 该文件已无裸写。
     // 新增裸写函数、或把已收口的函数改回裸 writeAsBytes，都会让本用例红。
     const Map<String, Set<String>> allowedRawWriters = <String, Set<String>>{
-      // 收口自身：两个入口的 .tmp 写 + rename 就是收口实现本体。
-      'lib/src/media/media_cover_service.dart': <String>{
-        'applyCoverFile',
-        'applyCoverBytes',
+      // app 收口 API 已是薄委派，本文件不该再有任何裸写。
+      'lib/src/media/media_cover_service.dart': <String>{},
+      // 收口实现本体（.tmp 写 / copy + rename + 驱逐）在引擎 writer 里。
+      '../packages/fushi_engine/lib/media/cover_file_writer.dart': <String>{
+        'writeCoverBytesAtomically',
+        'copyCoverFileAtomically',
+        // BUG-2496：ffmpeg 写 staged 文件后由这里校验 + rename 发布 + 驱逐。
+        'publishStagedCoverFile',
       },
-      // ffmpeg 两条路由子进程写盘，Dart 侧无字节；下载路已改走
-      // MediaCoverService.applyCoverBytes，故本文件不该再有任何裸写。
-      'lib/src/media/video/video_cover_extractor.dart': <String>{},
+      // ffmpeg 两条路由子进程写 staged 文件、经 publishStagedCoverFile 发布，
+      // Dart 侧无字节；下载路已改走 MediaCoverService.applyCoverBytes，故本文件
+      // 不该再有任何裸写。
+      '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': <String>{},
     };
     final RegExp rawWrite =
         RegExp(r'writeAsBytes\(|\.copy\(|\.rename\(|openWrite\(');
@@ -382,11 +456,44 @@ void main() {
   });
 
   test('收口方法本体存在且包含「写盘→驱逐」结构', () {
-    final String service =
-        File('lib/src/media/media_cover_service.dart').readAsStringSync();
+    final String service = maskComments(
+        File('lib/src/media/media_cover_service.dart').readAsStringSync());
     expect(service.contains('applyCoverFile'), isTrue);
     expect(service.contains('applyCoverBytes'), isTrue);
-    expect(service.contains('evictLocalCoverCache(destPath)'), isTrue,
-        reason: '收口方法必须在写盘成功后驱逐 destPath 的双键解码缓存');
+    expect(service.contains('copyCoverFileAtomically('), isTrue);
+    expect(service.contains('writeCoverBytesAtomically('), isTrue);
+    // 写盘→驱逐的结构在引擎 writer：三个入口各自 rename 成功后必须驱逐 dest。
+    final String writer = maskComments(
+        File('../packages/fushi_engine/lib/media/cover_file_writer.dart')
+            .readAsStringSync());
+    expect(
+        RegExp(r'await evictImageCacheForFile\(dest\);').allMatches(writer).length,
+        3,
+        reason: '引擎 writer 的三个入口都必须在 rename 之后驱逐 destPath 的解码缓存'
+            '（BUG-1118 的不变量搬进引擎后就住在这里）');
+    // BUG-2496：「落盘的必须是完整可解码图片」的判据也只住在这三个入口——字节路查
+    // isDecodableImageBytes，文件路（copy / staged 发布）查 isDecodableImageFile；
+    // 判据放调用点各写一遍正是当年漏掉 ffmpeg 抽帧 / PDF / SRT 封面三处的形状。
+    expect(
+        RegExp(r'if \(!isDecodableImageBytes\(bytes\)\)').hasMatch(writer), isTrue,
+        reason: 'writeCoverBytesAtomically 必须先拒收非图片/截断字节');
+    expect(
+        RegExp(r'if \(!await isDecodableImageFile\(source\)\)').hasMatch(writer),
+        isTrue,
+        reason: 'copyCoverFileAtomically 必须先校验源文件是完整图片');
+    expect(
+        RegExp(r'if \(!await isDecodableImageFile\(staged\)\)').hasMatch(writer),
+        isTrue,
+        reason: 'publishStagedCoverFile 必须先校验 staged 文件是完整图片');
+    // 钩子在 app 侧必须绑到双键 evict（不是整表 clear——那是删除路的锁释放提示）。
+    final String bindings =
+        maskComments(File('lib/src/engine_bindings.dart').readAsStringSync());
+    expect(bindings.contains('evictImageCacheForFile = _evictImageCacheForFile;'),
+        isTrue);
+    expect(
+        RegExp(r'_evictImageCacheForFile\(File file\) =>\s*evictLocalCoverCache\(file\.path\);')
+            .hasMatch(bindings),
+        isTrue,
+        reason: 'app 的写后驱逐钩子必须是 evictLocalCoverCache 的双键 evict');
   });
 }

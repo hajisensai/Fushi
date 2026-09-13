@@ -6,6 +6,7 @@
 // CMVS 身份判据用真临时目录验：判据读的是磁盘布局（cfg 节名 + CPZ 魔数），只有文件系统自己
 // 能作证。四种布局：完整（匹配）、只有 cfg、只有 .cpz 但魔数不对、cfg 节名不对。
 #include "../hook/adapters/cmvs_profile.h"
+#include "cmvs_dialogue_layout_reader_cases.h"
 
 #include <cassert>
 #include <cstdio>
@@ -54,6 +55,7 @@ const char kNotCpz[] = "OggS\x00\x02\x00\x00";
 }  // namespace
 
 int main() {
+  cmvs_reader_test::Run();
   // 1. 完整布局（BOM + 空行前缀的 cfg、CPZ6 归档）→ 匹配。
   {
     const std::wstring root = MakeTempRoot(L"full");

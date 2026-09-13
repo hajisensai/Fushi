@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -118,6 +119,8 @@ void main() {
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
     await ReaderFushiSource.instance.setDismissSwipeSensitivity(0.6);
+    // 单例偏好：跟手动画默认开着，别让 BUG-2439 那组的关闭态泄漏进本文件其余用例。
+    await ReaderFushiSource.instance.setPopupDismissAnimation(true);
   });
 
   testWidgets(
@@ -446,5 +449,89 @@ void main() {
           'the popup (TODO-896 symptom①). The detector half-(a) asserts above '
           'stay valid because they run with NO real WebView mounted.',
     );
+  });
+
+  _bug2439BodyFollowGuards();
+}
+
+/// BUG-2439：弹窗**正文**横拖在「弹窗关闭动画」关掉后同样不许跟手。
+///
+/// 与顶栏 wrapper 是两套独立实现（这里是不进竞技场的 raw `Listener`，BUG-1242），
+/// BUG-2405 也是两处分别打的补丁，所以两边各要一组守卫——只测一边，另一边回归时
+/// 全绿。判别点同样落在**手指还没抬起**的那一帧。
+void _bug2439BodyFollowGuards() {
+  group('弹窗正文横拖：关掉动画后跟手期零位移（BUG-2439）', () {
+    tearDown(() async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(true);
+    });
+
+    /// 过阈值横拖但**不抬手**，回报弹窗表面左上角相对拖动前挪了多少 px。
+    Future<double> dragWithoutReleasing(
+      WidgetTester tester, {
+      required bool animation,
+    }) async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(animation);
+      int dismissed = 0;
+      await tester.pumpWidget(_host(_layer(
+        onDismiss: () => dismissed++,
+        enableSwipeToClose: true,
+        onClose: () {},
+      )));
+      await tester.pump();
+
+      final Finder surface = find.byType(FushiPopupSurface);
+      final Offset before = tester.getTopLeft(surface);
+      final TestGesture gesture = await tester.startGesture(
+        _popupBodyPoint,
+        kind: PointerDeviceKind.touch,
+      );
+      const int steps = 12;
+      for (int i = 0; i < steps; i++) {
+        await gesture.moveBy(const Offset(200 / steps, 0));
+        await tester.pump();
+      }
+      final double moved = tester.getTopLeft(surface).dx - before.dx;
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(dismissed, 1, reason: '过阈值抬手后总该关一层，两版一致');
+      return moved;
+    }
+
+    testWidgets('开关开着：跟手期弹窗跟着手指走（既有手感不变）', (WidgetTester tester) async {
+      // 12 步累加有浮点尾数（199.9999…），跟手判据只关心「挪没挪、挪多少」。
+      expect(await dragWithoutReleasing(tester, animation: true),
+          moreOrLessEquals(200, epsilon: 0.01));
+    });
+
+    testWidgets('开关关掉：跟手期弹窗一动不动', (WidgetTester tester) async {
+      expect(await dragWithoutReleasing(tester, animation: false), 0);
+    });
+
+    testWidgets('同一条拖动：开着跟手位移 200、关掉恒 0（开关真的改变跟手期行为）',
+        (WidgetTester tester) async {
+      final double on = await dragWithoutReleasing(tester, animation: true);
+      final double off = await dragWithoutReleasing(tester, animation: false);
+      expect(on, moreOrLessEquals(200, epsilon: 0.01));
+      expect(off, 0);
+      expect(on, isNot(equals(off)));
+    });
+
+    testWidgets('开关关掉、未过阈值：不误关，弹窗也没挪过', (WidgetTester tester) async {
+      await ReaderFushiSource.instance.setPopupDismissAnimation(false);
+      int dismissed = 0;
+      await tester.pumpWidget(_host(_layer(
+        onDismiss: () => dismissed++,
+        enableSwipeToClose: true,
+        onClose: () {},
+      )));
+      await tester.pump();
+
+      final Finder surface = find.byType(FushiPopupSurface);
+      final Offset before = tester.getTopLeft(surface);
+      await _dragOn(tester, _popupBodyPoint, dx: 40);
+
+      expect(dismissed, 0);
+      expect(tester.getTopLeft(surface), before);
+    });
   });
 }

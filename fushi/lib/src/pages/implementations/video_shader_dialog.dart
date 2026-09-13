@@ -252,6 +252,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
             (index: 0, total: preset.shaders.length, progress: null));
     final CancelToken cancelToken = CancelToken();
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    // 在弹框之前拿住 navigator：收尾时的那次 pop 不能依赖本 State 还 mounted
+    // （见下方注释）。
+    final NavigatorState navigator = Navigator.of(context);
 
     // 进度对话框：取消只置 cancelToken（不自己 pop），关闭统一由本方法在下载收尾时
     // 做一次 pop——保证「关进度框」只有一条路径，不会与取消路径重复 pop 误伤视频页路由。
@@ -260,6 +263,12 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       barrierDismissible: false,
       builder: (BuildContext ctx) => PopScope(
         canPop: false,
+        // 返回等价于「取消下载」，而不是被静默吞掉：pop 仍只由收尾那一处执行，
+        // 这里只置 cancelToken，下载随即以 cancel 结束并走到那次 pop。
+        onPopInvokedWithResult: (bool didPop, Object? result) {
+          if (didPop) return;
+          cancelToken.cancel();
+        },
         child: _Anime4kProgressDialog(
           presetName: preset.name,
           progressNotifier: progressNotifier,
@@ -291,9 +300,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       progressNotifier.dispose();
     }
 
+    // 关闭进度对话框（唯一一次 pop）。**不能挂在 `mounted` 后面**：这个框是
+    // `barrierDismissible: false` + `canPop: false`，视频页在下载期间被换掉
+    // （pushReplacement 到网页播放器、自动换集、页面销毁）本 State 就 unmounted，
+    // 旧写法那句 pop 于是永远不执行，一个 barrier 点不掉、返回被吞、按钮又只置
+    // cancelToken 不自闭的全屏模态就永久留在屏幕上——iOS 既没有系统返回键、
+    // 对话框路由也没有侧滑返回，用户只能杀进程。
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
     if (!mounted) return false;
-    // 关闭进度对话框（唯一一次 pop）。
-    Navigator.of(context).pop();
     await _refresh();
     if (!mounted || cancelled) return false;
 
@@ -765,7 +781,27 @@ String shaderTierLabel(VideoShaderTier tier) {
 }
 
 /// 画质档位一句话说明（选谁用谁，告诉用户该档画质/GPU 取舍）。纯映射。
-String shaderTierLabelDescription(VideoShaderTier tier) {
+///
+/// **按平台分文案**：中/高/极高 在两端映射到不同的着色器链（见 [shaderTiersFor]），
+/// 桌面文案写的是「Anime4K HQ / 需要 RTX 4060」这类**桌面显卡门槛**，照搬到手机上等于
+/// 让用户按一个不存在的标准选档——这正是「手机上选了中档就卡」的表层诱因。移动端换成
+/// 描述「只修复不放大」的那套文案。
+String shaderTierLabelDescription(VideoShaderTier tier, {bool? isMobile}) {
+  final bool mobile = isMobile ?? isMobilePlatform;
+  if (mobile) {
+    switch (tier) {
+      case VideoShaderTier.off:
+        return t.video_shader_tier_off_hint;
+      case VideoShaderTier.low:
+        return t.video_shader_tier_low_hint_mobile;
+      case VideoShaderTier.medium:
+        return t.video_shader_tier_medium_hint_mobile;
+      case VideoShaderTier.high:
+        return t.video_shader_tier_high_hint_mobile;
+      case VideoShaderTier.ultra:
+        return t.video_shader_tier_ultra_hint_mobile;
+    }
+  }
   switch (tier) {
     case VideoShaderTier.off:
       return t.video_shader_tier_off_hint;
@@ -806,7 +842,7 @@ class VideoShaderTierSelector extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: SegmentedButton<VideoShaderTier>(
           segments: <ButtonSegment<VideoShaderTier>>[
-            for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+            for (final VideoShaderTierSpec spec in shaderTiersFor())
               ButtonSegment<VideoShaderTier>(
                 value: spec.tier,
                 label: Text(shaderTierLabel(spec.tier)),
@@ -849,7 +885,7 @@ class VideoShaderTierComparison extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+          for (final VideoShaderTierSpec spec in shaderTiersFor())
             () {
               final bool active = current == spec.tier;
               return Padding(

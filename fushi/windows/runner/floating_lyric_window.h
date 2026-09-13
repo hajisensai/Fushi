@@ -238,6 +238,10 @@ class FloatingLyricWindow {
   // Restores a physical-pixel window rectangle before the next Show. Invalid
   // rectangles are ignored and Show uses its DPI-aware default.
   void SetInitialBounds(int left, int top, int width, int height);
+  // BUG-2365 —— 置顶守卫的「Z 序天花板」。返回一个必须留在正文窗**之上**的窗口
+  // 句柄（当前是可见的查词卡，见 GlobalLookupWindow::TopmostCeilingHandle），
+  // nullptr = 没有天花板、正文窗抢置顶带最顶。不设 provider 时行为等同于恒 nullptr。
+  void SetTopmostCeilingProvider(std::function<HWND()> provider);
 
  private:
   static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wparam,
@@ -251,6 +255,11 @@ class FloatingLyricWindow {
 
   void EnsureWindowClass();
   bool OwnsLiveWindow() const;
+  // BUG-2365 —— 显示期间周期性把正文窗重申回置顶带（全屏游戏会把自己抬上来）。
+  // 见 .cpp 里 kTopmostGuardTimerId 的注释。
+  void ReassertTopmost();
+  void StartTopmostGuard();
+  void StopTopmostGuard();
   void ResetWindowInteractionState();
   void ForgetDeadWindow();
   bool EnsureDeviceResources();
@@ -462,6 +471,10 @@ class FloatingLyricWindow {
   bool toolbar_revealed_ = false;
   // 揭示轮询定时器是否已挂。
   bool toolbar_reveal_poll_active_ = false;
+  // 置顶守卫定时器是否已挂（BUG-2365）。
+  bool topmost_guard_active_ = false;
+  // 置顶守卫的 Z 序天花板取值口（见 SetTopmostCeilingProvider）。
+  std::function<HWND()> topmost_ceiling_;
   // 穿透态下文字行盒是否仍接鼠标（见 SetPassThroughBlocksMouse）。
   bool passthrough_blocks_mouse_ = true;
   // 「悬停即查词」偏好镜像（见 SetHoverAutoLookup）。false 时悬停查词需按住 Shift。
