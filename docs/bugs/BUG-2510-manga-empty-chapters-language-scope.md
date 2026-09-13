@@ -1,0 +1,6 @@
+## BUG-2510 · 在线漫画作品页空章节不解释源按语言过滤
+- **报告**：2026-09-13（用户：截图 MangaDex《週に一度クラスメイトを買う話》作品页「章节 0 / 还没有章节」，问「这是真没有内容还是？」）
+- **真实性**：✅ 真 bug（UX 缺陷，数据是对的）。实测 MangaDex API：该作品 79 话、8 种语言（en 18 / ko 17 / id 16 / ru 9 / es-la 7 / pt-br 6 / fr 4 / pl 2），`availableTranslatedLanguages` 不含 `ja`——日文原版 0 话。Mihon 的 MangaDex 扩展一语言一个源、章节请求固定带该源语言（`MihonSource.language`，`fushi/lib/src/media/manga/mihon/mihon_models.dart:111`），Aidoku 宿主同样按单语言默认取章（`native/aidoku_runtime/src/embedded.rs:326-341`，app 不传用户设置）。作品页空态只有一句 `manga_series_no_chapters`（`fushi/lib/src/media/manga/library/manga_chapter_list.dart:113`），用户分不清「源站真没有」「源只取这一种语言」「加载失败」三种情况，也没有出路。
+- **[x] ① 已修复** — 新增能力接口 `OnlineMangaLanguageScoped`（`online_manga_runtime_adapter.dart`，与 `OnlineMangaLoginCapable` 同款「有就用」模式）：Mihon 适配器给出当前源语言 + 同扩展下其它语言的已启用源；作品页在「刷新已结束、无错、0 话」时把空态换成「该源只收录 X 语言的章节」并列出「试试 EN / KO …」chip，点了开同作品在那个源上的作品页（`SourceMangaSeriesTarget`，不动书架状态）。Aidoku / 互联对端不实现该接口，空态文案不变（它们的语言过滤 app 侧不掌握，不装懂）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/library/manga_chapter_list_language_scope_test.dart`（空态提示与 chip 渲染、无 scope 时文案不变、chip 回调）+ `fushi/test/media/manga/library/mihon_language_scope_test.dart`（`MihonLibraryAdapter.languageScope` 只列同扩展、不同语言、已启用的源；语言为空/`all` 时返回 null）。
+- **备注**：不做「去站上探 availableTranslatedLanguages 报总话数」——那是 MangaDex 专有 API，和源无关的作品页不该认识它。

@@ -2353,7 +2353,6 @@
   "mihon_filter_exclude": "제외",
   "mihon_filter_ignore": "무시",
   "mihon_filter_include": "포함",
-  "mihon_in_bookshelf": "만화 서재에 있음",
   "mihon_runtime_unavailable": "이 플랫폼에서는 Mihon 확장 프로그램을 사용할 수 없습니다.",
   "mihon_signer_fingerprint": "서명자 SHA-256",
   "mihon_signer_trust_title": "확장 프로그램 서명자를 신뢰하시겠습니까?",
@@ -4807,5 +4806,9 @@
   "card_source_review_video_return": "Return to original watch position",
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
-  "remote_book_audiobook_download": "Download audiobook from peer"
+  "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_series_no_chapters_in_language": "This source only lists ${language} chapters",
+  "manga_series_try_sibling_language": "Try ${language}",
+  "manga_series_remove_from_bookshelf": "Remove from manga shelf",
+  "manga_series_remove_confirm": "Remove this series from the shelf? Downloaded chapters and reading progress will be deleted."
 }

@@ -197,10 +197,54 @@ abstract interface class OnlineMangaLoginCapable {
   OnlineMangaLoginTarget? loginTarget(OnlineMangaLibraryEntry entry);
 }
 
+/// 同一扩展下另一种语言的已启用源（BUG-2510）。
+class OnlineMangaSiblingSource {
+  const OnlineMangaSiblingSource({
+    required this.sourceId,
+    required this.name,
+    required this.language,
+  });
+
+  final String sourceId;
+  final String name;
+  final String language;
+}
+
+/// 「这个源按语言取章」的说明：当前源的语言 + 同扩展下其它语言的源。
+class OnlineMangaSourceLanguageScope {
+  const OnlineMangaSourceLanguageScope({
+    required this.language,
+    required this.siblings,
+  });
+
+  final String language;
+  final List<OnlineMangaSiblingSource> siblings;
+}
+
+/// 章节列表按源语言过滤的适配器（BUG-2510）。
+///
+/// Mihon 的多语言扩展（MangaDex 之类）一语言一个源，日文源在一部只有译版的作品
+/// 上合法地返回 0 话。作品页空态要能说清「不是加载失败、是这个源只取这一种
+/// 语言」并给出同扩展其它语言源的出路。Aidoku 的语言是源内设置、app 侧不掌握，
+/// 互联对端没有语言概念，两者不实现——作品页用 `is` 判，没有就沿用旧空态文案。
+abstract interface class OnlineMangaLanguageScoped {
+  /// 该条目所属源的语言范围；源没登记 / 语言为空或 `all`（不按语言取章）时
+  /// 返回 null。
+  OnlineMangaSourceLanguageScope? languageScope(OnlineMangaLibraryEntry entry);
+
+  /// 同一部作品换到 [sibling] 源：返回能拉它的 adapter 与对应的 seed。
+  /// 章节留空，由作品页进页后自己拉。
+  Future<({OnlineMangaRuntimeAdapter adapter, OnlineMangaLibraryEntry seed})>
+  siblingOf(OnlineMangaLibraryEntry entry, OnlineMangaSiblingSource sibling);
+}
+
 // ── Mihon ─────────────────────────────────────────────────────────────
 
 class MihonLibraryAdapter
-    implements OnlineMangaRuntimeAdapter, OnlineMangaLoginCapable {
+    implements
+        OnlineMangaRuntimeAdapter,
+        OnlineMangaLoginCapable,
+        OnlineMangaLanguageScoped {
   const MihonLibraryAdapter(this.manager, {this.presetContext});
 
   final MihonManager manager;
@@ -256,6 +300,105 @@ class MihonLibraryAdapter
       return null;
     }
     return (runtime: runtime, sourceName: name, baseUrl: baseUrl);
+  }
+
+  /// Mihon 里「不按语言取章」的源语言值：多语言单源扩展用这些占位。
+  static const Set<String> _languageAgnostic = <String>{'', 'all', 'multi'};
+
+  @override
+  OnlineMangaSourceLanguageScope? languageScope(OnlineMangaLibraryEntry entry) {
+    final MihonSourceContext? preset = presetContext;
+    final String language;
+    if (preset != null) {
+      language = preset.source.language;
+    } else {
+      try {
+        language = _sourceRow(entry).language;
+      } on OnlineMangaUnavailable {
+        return null;
+      }
+    }
+    if (_languageAgnostic.contains(language.toLowerCase())) return null;
+    return OnlineMangaSourceLanguageScope(
+      language: language,
+      siblings: siblingSourcesOf(
+        manager.sources,
+        extensionPackage: entry.extensionPackage,
+        language: language,
+      ),
+    );
+  }
+
+  /// 同扩展、其它语言、已启用的源，每种语言留一个（镜像站不重复出 chip），
+  /// 按语言码排序。
+  ///
+  /// 本源语言由调用方给而不是从 [sources] 反查：预览态（试用未安装的扩展）
+  /// 本源根本不在库里，反查会漏掉「同语言镜像」这条过滤。
+  static List<OnlineMangaSiblingSource> siblingSourcesOf(
+    Iterable<MangaOnlineSourceRow> sources, {
+    required String extensionPackage,
+    required String language,
+  }) {
+    final Map<String, OnlineMangaSiblingSource> byLanguage =
+        <String, OnlineMangaSiblingSource>{};
+    final String own = language.toLowerCase();
+    for (final MangaOnlineSourceRow row in sources) {
+      final String candidate = row.language.toLowerCase();
+      if (!row.enabled ||
+          row.extensionPackage != extensionPackage ||
+          candidate == own ||
+          _languageAgnostic.contains(candidate)) {
+        continue;
+      }
+      byLanguage.putIfAbsent(
+        candidate,
+        () => OnlineMangaSiblingSource(
+          sourceId: row.sourceId,
+          name: row.name,
+          language: row.language,
+        ),
+      );
+    }
+    return byLanguage.values.toList(growable: false)..sort(
+      (OnlineMangaSiblingSource a, OnlineMangaSiblingSource b) =>
+          a.language.compareTo(b.language),
+    );
+  }
+
+  @override
+  Future<({OnlineMangaRuntimeAdapter adapter, OnlineMangaLibraryEntry seed})>
+  siblingOf(
+    OnlineMangaLibraryEntry entry,
+    OnlineMangaSiblingSource sibling,
+  ) async {
+    MangaOnlineSourceRow? row;
+    for (final MangaOnlineSourceRow candidate in manager.sources) {
+      if (candidate.extensionPackage == entry.extensionPackage &&
+          candidate.sourceId == sibling.sourceId &&
+          candidate.enabled) {
+        row = candidate;
+        break;
+      }
+    }
+    if (row == null) {
+      throw const OnlineMangaUnavailable(
+        OnlineMangaUnavailableReason.sourceDisabled,
+        'The sibling manga source is missing or disabled',
+      );
+    }
+    // 预置上下文：作品页拿到的是「能直接拉」的 adapter，不再经 manager 现解析
+    // （与源浏览页进作品页同一条路，见 presetContext 的说明）。
+    final MihonSourceContext context = await manager.contextForSource(row);
+    return (
+      adapter: MihonLibraryAdapter(manager, presetContext: context),
+      seed: OnlineMangaLibraryEntry(
+        runtime: OnlineMangaRuntimeKind.mihon,
+        extensionPackage: entry.extensionPackage,
+        sourceId: sibling.sourceId,
+        series: entry.series,
+        chapters: const <OnlineMangaChapter>[],
+      ),
+    );
   }
 
   @override

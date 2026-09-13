@@ -141,6 +141,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   bool _loading = true;
   bool _refreshing = false;
+
+  /// 至少成功从源刷过一次。空章节列表的语言解释只在这之后出现：进页那一刻的
+  /// seed 本来就是空的，那时提示「该源只收录 X 语言」是把「还没拉」说成「拉完了
+  /// 没有」。
+  bool _refreshSucceeded = false;
   bool _busy = false;
   Object? _fatalError;
   OnlineMangaUnavailable? _refreshError;
@@ -549,6 +554,63 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     };
   }
 
+  /// 空章节列表的语言解释（BUG-2510）：只在「刷新成功结束、0 话」时给。刷新
+  /// 途中是加载态、失败有提示条，那两种情况下都不该出现「该源只收录 X 语言」。
+  OnlineMangaSourceLanguageScope? get _languageScope {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (entry == null ||
+        entry.chapters.isNotEmpty ||
+        _refreshing ||
+        !_refreshSucceeded ||
+        _refreshError != null) {
+      return null;
+    }
+    return switch (_adapter) {
+      OnlineMangaLanguageScoped(:final languageScope) => languageScope(entry),
+      _ => null,
+    };
+  }
+
+  /// 同一部作品换到同扩展的另一语言源看：开一页新的作品页，不动本页与书架状态
+  /// （用户在那页决定要不要把那个源的版本加进书架）。
+  Future<void> _openSiblingSource(OnlineMangaSiblingSource sibling) async {
+    // 声明成 Object?：OnlineMangaLanguageScoped 不是 OnlineMangaRuntimeAdapter
+    // 的子类型，`is!` 对 `OnlineMangaRuntimeAdapter?` 局部变量不提升。
+    final Object? adapter = _adapter;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (adapter is! OnlineMangaLanguageScoped || entry == null) return;
+    final ({OnlineMangaRuntimeAdapter adapter, OnlineMangaLibraryEntry seed})
+    handle;
+    try {
+      handle = await adapter.siblingOf(entry, sibling);
+    } on OnlineMangaUnavailable catch (error, stack) {
+      ErrorLogService.instance.log('MangaSeriesPage.sibling', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+      }
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => MangaSeriesPage(
+          target: SourceMangaSeriesTarget(
+            adapter: handle.adapter,
+            seed: handle.seed,
+            service: _service,
+            sourceLabel: sibling.name,
+            // 封面照本页的画法（本地落盘那张 / 源代理取图）：同一部作品、同一个
+            // 扩展，取图路径一样，本页还压在导航栈里没销毁。
+            remoteCoverBuilder: _buildCover,
+          ),
+          ocrEnginesOverride: widget.ocrEnginesOverride,
+          lensDisclosureOverride: widget.lensDisclosureOverride,
+        ),
+      ),
+    );
+  }
+
   Future<void> _loginToSource(OnlineMangaLoginTarget target) async {
     final bool saved = await openMihonWebLogin(
       context,
@@ -887,6 +949,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             series: result.series,
             chapters: result.chapters,
           );
+          _refreshSucceeded = true;
         });
         return;
       }
@@ -899,6 +962,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       setState(() {
         _entry = updated;
         if (row != null) _row = row;
+        _refreshSucceeded = true;
       });
     } on OnlineMangaUnavailable catch (error, stack) {
       // 这条**才是**在线漫画的主流失败路径：adapter 已经把 Mihon/Aidoku 的运行时
@@ -946,6 +1010,83 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       unawaited(_refreshDownloadState());
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.add', error, stack);
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 移出书架 = 删这本书（DB 行 + 解压目录里已下载的章节 + 章节状态 + 下载
+  /// 任务行，`deleteEpubBook` 一个事务级联）。与书架长按删除同一条路径，不另起
+  /// 一套「只摘条目留文件」的半删除——那会留下没人引用的下载目录。
+  ///
+  /// 删完页面**不关**、退回「未入库」态：条目本身（作品 + 章节列表）还在手上，
+  /// 用户可以立刻重新加入或换源；关页面反而把他丢回不知道哪一层的列表。
+  Future<void> _removeFromLibrary() async {
+    final EpubBookRow? row = _row;
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final AppModel? appModel = _appModelOrNull;
+    if (row == null || entry == null || appModel == null || _busy) return;
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.manga_series_remove_from_bookshelf),
+        content: Text(t.manga_series_remove_confirm),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.dialog_cancel),
+          ),
+          FilledButton(
+            key: const ValueKey<String>('manga_series_remove_confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      // 先停引用再销毁实体：正在下载 / 识别这本书的任务还握着目录句柄，先取消。
+      await _cancelOcr();
+      final MangaDownloadService downloads = appModel.mangaDownloadService;
+      for (final MangaDownloadJobRow job in _jobs.values) {
+        if (job.status == MangaDownloadJobStatus.queued ||
+            job.status == MangaDownloadJobStatus.running) {
+          await downloads.cancel(job.jobId);
+        }
+      }
+      final DeleteBookResult result = await ReaderFushiSource.instance
+          .deleteBook(db: appModel.database, bookKey: row.bookKey);
+      if (!mounted) return;
+      if (!result.deleted) {
+        final String reason = result.failureReason ?? '';
+        FushiToast.show(
+          msg: reason.isEmpty
+              ? t.epub_delete_error
+              : '${t.epub_delete_error}: $reason',
+          severity: ToastSeverity.error,
+        );
+        return;
+      }
+      setState(() {
+        _row = null;
+        _states = const <String, MangaChapterStateRow>{};
+        _downloaded = const <String>{};
+        _jobs = const <String, MangaDownloadJobRow>{};
+        _entry = OnlineMangaLibraryEntry(
+          runtime: entry.runtime,
+          extensionPackage: entry.extensionPackage,
+          sourceId: entry.sourceId,
+          series: entry.series,
+          chapters: entry.chapters,
+        );
+      });
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaSeriesPage.remove', error, stack);
       if (mounted) {
         FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
@@ -1307,6 +1448,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                     total: _ocrEvent?.pagesTotal ?? 0,
                   ),
             ocrQueuedChapterKeys: _ocrQueuedChapterKeys,
+            languageScope: _languageScope,
+            onSiblingSourceTap: (OnlineMangaSiblingSource sibling) =>
+                unawaited(_openSiblingSource(sibling)),
             onDownload: _bookKey == null
                 ? null
                 : (OnlineMangaChapter chapter) =>
@@ -1612,16 +1756,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 : '${t.book_continue_reading} · ${resumeChapter.name}',
           ),
         ),
-        OutlinedButton.icon(
-          key: const ValueKey<String>('manga_series_add_to_bookshelf'),
-          onPressed: inLibrary || _busy
-              ? null
-              : () => unawaited(_addToLibrary()),
-          icon: Icon(inLibrary ? Icons.check : Icons.library_add_outlined),
-          label: Text(
-            inLibrary ? t.mihon_in_bookshelf : t.mihon_add_to_bookshelf,
+        // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（用户诉求：加了
+        // 要能取消）。移出走书架同一条 deleteBook 路径，连已下载章节一起删。
+        if (inLibrary)
+          OutlinedButton.icon(
+            key: const ValueKey<String>('manga_series_remove_from_bookshelf'),
+            onPressed: _busy ? null : () => unawaited(_removeFromLibrary()),
+            icon: const Icon(Icons.library_add_check),
+            label: Text(t.manga_series_remove_from_bookshelf),
+          )
+        else
+          OutlinedButton.icon(
+            key: const ValueKey<String>('manga_series_add_to_bookshelf'),
+            onPressed: _busy ? null : () => unawaited(_addToLibrary()),
+            icon: const Icon(Icons.library_add_outlined),
+            label: Text(t.mihon_add_to_bookshelf),
           ),
-        ),
         // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
         if (inLibrary) ...<Widget>[
           OutlinedButton.icon(
