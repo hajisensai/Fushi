@@ -89,6 +89,11 @@ Future<bool> openMihonWebLogin(
 /// 点「完成」时只要收到过就直接关页。只在 [jar] 非空（桌面 sidecar）时提供——
 /// Android 那边扩展根本连不上手机。
 ///
+/// 每批送达同时**回灌进本页的 WebView2 环境**并刷新当前页：jar 是真正的消费方，
+/// 但用户看不见 jar；内嵌页右上角从「ログイン」变成账号名，才是「导进来了」
+/// 的直观确认，也能一眼分清「没导进来」和「登录了但没买」。回灌失败不影响 jar
+/// （sidecar 照样能用），只是少了这层确认。
+///
 /// ## 域原样保留
 ///
 /// 导出的条目**保留浏览器给的真实域**（`member.bookwalker.jp` 就存成它自己），
@@ -110,6 +115,7 @@ class MihonWebLoginPage extends StatefulWidget {
     this.webViewBuilder,
     this.environmentFactory,
     this.openExternal,
+    this.cookieWriter,
     super.key,
   });
 
@@ -132,6 +138,9 @@ class MihonWebLoginPage extends StatefulWidget {
 
   /// 测试注入：默认用系统浏览器打开（[launchUrl]）。
   final Future<void> Function(Uri url)? openExternal;
+
+  /// 测试注入：默认写绑定环境的 [CookieManager]（从浏览器导入的回灌）。
+  final Future<bool> Function(BrowserSiteCookie cookie)? cookieWriter;
 
   @override
   State<MihonWebLoginPage> createState() => _MihonWebLoginPageState();
@@ -208,15 +217,57 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
     MihonCookieJar jar,
     BrowserCookieDelivery delivery,
   ) async {
-    final List<MangaCookie> cookies = browserCookiesForSite(
+    final List<BrowserSiteCookie> cookies = browserSiteCookiesForSite(
       delivery.cookies,
       widget.baseUrl.host,
     );
     if (cookies.isEmpty) return;
-    await jar.replaceForSite(widget.baseUrl.host, cookies);
+    await jar.replaceForSite(
+      widget.baseUrl.host,
+      browserCookiesForSite(cookies, widget.baseUrl.host),
+    );
     if (!mounted) return;
     setState(() => _importedCount = cookies.length);
+    await _backfillWebView(cookies);
   }
+
+  /// 把这批 cookie 写进本页 WebView 的环境并刷新当前页（见类文档）。
+  ///
+  /// 逐条写、单条失败不中断：WebView2 对个别属性组合（比如 secure 挂在非 https
+  /// 域）会拒绝，那一条丢了不影响其它；只要写进去过至少一条就值得刷新。
+  Future<void> _backfillWebView(List<BrowserSiteCookie> cookies) async {
+    final Future<bool> Function(BrowserSiteCookie cookie) write =
+        widget.cookieWriter ?? _writeCookie;
+    bool any = false;
+    for (final BrowserSiteCookie cookie in cookies) {
+      try {
+        any = await write(cookie) || any;
+      } on Object {
+        // 单条写不进去：见方法注释。
+      }
+    }
+    if (!any || !mounted) return;
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.reload();
+    } on Object {
+      // WebView 已销毁：没有页面可刷新，回灌本身已完成。
+    }
+  }
+
+  Future<bool> _writeCookie(BrowserSiteCookie cookie) =>
+      CookieManager.instance(webViewEnvironment: _environment).setCookie(
+        url: WebUri.uri(cookie.originUrl),
+        name: cookie.name,
+        value: cookie.value,
+        path: cookie.path,
+        // host-only cookie 不能带 domain：带了就变成覆盖全部子域的域 cookie。
+        domain: cookie.hostOnly ? null : cookie.canonicalDomain,
+        expiresDate: cookie.expiresAt,
+        isSecure: cookie.secure,
+        isHttpOnly: cookie.httpOnly,
+      );
 
   Future<void> _prepareEnvironment() async {
     WebViewEnvironment? environment;

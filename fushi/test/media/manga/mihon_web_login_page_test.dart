@@ -40,6 +40,7 @@ void main() {
     required Future<List<Cookie>> Function(WebUri url) cookieReader,
     Uri? baseUrl,
     Future<void> Function(Uri url)? openExternal,
+    Future<bool> Function(BrowserSiteCookie cookie)? cookieWriter,
   }) async {
     bool? popped;
     await tester.pumpWidget(
@@ -56,6 +57,7 @@ void main() {
                     cookieReader: cookieReader,
                     environmentFactory: () async => null,
                     openExternal: openExternal,
+                    cookieWriter: cookieWriter,
                     webViewBuilder: (_) =>
                         const SizedBox(key: ValueKey<String>('stub-webview')),
                   ),
@@ -390,6 +392,7 @@ void main() {
     ) async {
       final MihonCookieJar store = jar();
       final List<Uri> opened = <Uri>[];
+      final List<BrowserSiteCookie> backfilled = <BrowserSiteCookie>[];
       bool readWebView = false;
       await pumpLogin(
         tester,
@@ -399,6 +402,10 @@ void main() {
           return const <Cookie>[];
         },
         openExternal: (Uri url) async => opened.add(url),
+        cookieWriter: (BrowserSiteCookie cookie) async {
+          backfilled.add(cookie);
+          return true;
+        },
       );
       expect(BrowserCookieImportGate.pending, isNull);
 
@@ -462,6 +469,20 @@ void main() {
         store.cookieHeaderFor(Uri.parse('https://member.bookwalker.jp/')),
         contains('member=v-member'),
       );
+      // 同一批同时回灌进本页 WebView（第三方域同样被挡），属性原样：域 cookie
+      // 带域、host-only 不带、httpOnly 从线格式带过来。
+      expect(backfilled.map((BrowserSiteCookie c) => c.name).toList(), <String>[
+        'session',
+        'member',
+      ]);
+      final BrowserSiteCookie session = backfilled[0];
+      expect(session.hostOnly, isFalse);
+      expect(session.canonicalDomain, 'bookwalker.jp');
+      expect(session.httpOnly, isTrue);
+      expect(session.originUrl, Uri.parse('https://bookwalker.jp/'));
+      final BrowserSiteCookie member = backfilled[1];
+      expect(member.hostOnly, isTrue);
+      expect(member.originUrl, Uri.parse('https://member.bookwalker.jp/'));
 
       await tester.tap(find.byKey(const ValueKey<String>('mihon_login_done')));
       await tester.pumpAndSettle();
