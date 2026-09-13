@@ -277,6 +277,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
 
   // ---- 配置类：委派本地仓库，保持设置页可配置本地 Anki ----
 
+  /// 被包装的本地仓库。iOS 的 AnkiMobile 回传（`fushi://ankiFetch` / 回到前台）
+  /// 要找的是它，而不是这层壳——BUG-2493 之前 `main.dart` 用 `is! AnkiMobileRepository`
+  /// 判型，开了「制卡到已配对设备」后整条回传链被静默丢弃。
+  BaseAnkiRepository get local => _local;
+
   @override
   Future<AnkiFetchResult> fetchConfiguration() => _local.fetchConfiguration();
 

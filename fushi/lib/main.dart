@@ -879,6 +879,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      if (Platform.isIOS) {
+        unawaited(_consumeAnkiMobileInfoReturn(
+          AnkiMobileInfoReturnTrigger.appResumed,
+        ));
+      }
       return;
     }
     if (Platform.isAndroid) {
@@ -1146,10 +1151,23 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return false;
   }
 
-  Future<void> _handleAnkiMobileInfoCallback() async {
-    final repo = ref.read(ankiRepositoryProvider);
-    if (repo is! AnkiMobileRepository) return;
-    final result = await repo.consumeInfoForAddingPasteboard();
+  Future<void> _handleAnkiMobileInfoCallback() =>
+      _consumeAnkiMobileInfoReturn(AnkiMobileInfoReturnTrigger.urlCallback);
+
+  /// AnkiMobile `infoForAdding` 往返的终点（BUG-2493）。两条路都进这里：
+  /// `fushi://ankiFetch` 回调，以及 iOS 上 app 回到前台的兜底——回调没送达、
+  /// 用户手动切回、或 AnkiMobile 那侧没同意时，用户此前只会看到设置页永远挂着
+  /// 「已打开 AnkiMobile，请去同意」。同一次往返只读一次剪贴板，由
+  /// [AnkiMobileInfoReturnCoordinator] 去重。
+  Future<void> _consumeAnkiMobileInfoReturn(
+    AnkiMobileInfoReturnTrigger trigger,
+  ) async {
+    final AnkiMobileRepository? repo =
+        resolveAnkiMobileRepository(ref.read(ankiRepositoryProvider));
+    if (repo == null) return;
+    final AnkiFetchResult? result =
+        await repo.consumeInfoForAddingReturn(trigger);
+    if (result == null || !mounted) return;
     switch (result) {
       case AnkiFetchSuccess():
         await ref

@@ -6,6 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 typedef AnkiMobileUrlOpener = Future<bool> Function(Uri uri);
@@ -66,6 +67,93 @@ class AnkiMobilePasteboardRead {
 const MethodChannel _ankiMobileChannel =
     MethodChannel('app.fushi.reader/ankimobile');
 
+/// 谁触发了「去读 AnkiMobile 回传结果」（BUG-2493）。
+enum AnkiMobileInfoReturnTrigger {
+  /// AnkiMobile 的 `x-success=fushi://ankiFetch` 真的送达了。
+  urlCallback,
+
+  /// app 回到前台（`AppLifecycleState.resumed`）——x-success 没送达时的兜底。
+  appResumed,
+}
+
+/// 一次 `infoForAdding` 往返的状态机（BUG-2493）。
+///
+/// 往返有两个可能的终点：AnkiMobile 的 `x-success` 回调，以及 app 单纯回到前台
+/// （回调没送达、用户手动切回、或 AnkiMobile 那侧根本没同意）。两条路都要能触发
+/// 读剪贴板，但**同一次往返只许读一次**——剪贴板取走即清空，第二次读必然是
+/// `empty`，会把刚刚成功落地的结果又用一条「AnkiMobile 没有回传配置」盖掉。
+///
+/// 进程级单例：`ankiRepositoryProvider` 会随「制卡到已配对设备」开关重建仓库实例，
+/// 状态挂在实例上会在往返途中丢失。
+class AnkiMobileInfoReturnCoordinator {
+  AnkiMobileInfoReturnCoordinator();
+
+  static final AnkiMobileInfoReturnCoordinator instance =
+      AnkiMobileInfoReturnCoordinator();
+
+  /// 已打开 AnkiMobile、结果还没取回。
+  bool _awaitingReturn = false;
+
+  /// 本进程内是否发起过请求或消费过一次回传。没发起过却收到 URL 回调 = 冷启动
+  /// （进程被杀后由 x-success 拉起），这时内存里的 [_awaitingReturn] 已丢，仍应读
+  /// 一次——但只读一次，冷启动后重复送达的同一条 URL 不再算数。
+  bool _requestedThisProcess = false;
+
+  Future<AnkiFetchResult>? _inFlight;
+
+  bool get awaitingReturn => _awaitingReturn;
+
+  void markRequested() {
+    _awaitingReturn = true;
+    _requestedThisProcess = true;
+  }
+
+  /// 该不该为这次 [trigger] 去读。
+  bool shouldConsume(AnkiMobileInfoReturnTrigger trigger) {
+    if (_inFlight != null) return false;
+    switch (trigger) {
+      case AnkiMobileInfoReturnTrigger.urlCallback:
+        return _awaitingReturn || !_requestedThisProcess;
+      case AnkiMobileInfoReturnTrigger.appResumed:
+        return _awaitingReturn;
+    }
+  }
+
+  /// 按状态机决定是否执行 [read]；不该读时返回 null（调用方什么都不做）。
+  /// `notActive`（原生侧等前台超时、根本没读过剪贴板）不算终点：保留等待态，
+  /// 让下一次回到前台再试。
+  Future<AnkiFetchResult?> consume(
+    AnkiMobileInfoReturnTrigger trigger,
+    Future<AnkiFetchResult> Function() read,
+  ) async {
+    if (!shouldConsume(trigger)) return null;
+    _awaitingReturn = false;
+    _requestedThisProcess = true;
+    final Future<AnkiFetchResult> future = read();
+    _inFlight = future;
+    try {
+      final AnkiFetchResult result = await future;
+      if (result is AnkiFetchError &&
+          result.code == AnkiErrorCode.ankiMobileNotActive) {
+        _awaitingReturn = true;
+      }
+      return result;
+    } finally {
+      _inFlight = null;
+    }
+  }
+}
+
+/// 从 `ankiRepositoryProvider` 给出的仓库里找出真正的 [AnkiMobileRepository]
+/// （BUG-2493）：开了「制卡到已配对设备」时它被 [RemoteMiningAnkiRepository]
+/// 包着，直接 `is` 判型会把整条回传链静默丢掉。不是 AnkiMobile 后端时返回 null
+/// （iOS 改用 AnkiConnect 时就是这样，回传无事可做）。
+AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
+  final BaseAnkiRepository unwrapped =
+      repo is RemoteMiningAnkiRepository ? repo.local : repo;
+  return unwrapped is AnkiMobileRepository ? unwrapped : null;
+}
+
 String _encodeAnkiMobileQueryComponent(String value) =>
     Uri.encodeComponent(value);
 
@@ -105,7 +193,10 @@ class AnkiMobileRepository extends BaseAnkiRepository {
     Duration mediaServerLifetime = const Duration(seconds: 60),
     AnkiMobileBackgroundTaskHandler? beginMediaImportBackgroundTask,
     AnkiMobileBackgroundTaskHandler? endMediaImportBackgroundTask,
+    AnkiMobileInfoReturnCoordinator? infoReturnCoordinator,
   })  : _openUrl = openUrl ?? _openExternalUrl,
+        _infoReturnCoordinator =
+            infoReturnCoordinator ?? AnkiMobileInfoReturnCoordinator.instance,
         _readInfoForAddingJson =
             readInfoForAddingJson ?? _readInfoForAddingJsonFromPlatform,
         _mediaServerLifetime = mediaServerLifetime,
@@ -115,6 +206,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
             _endMediaImportBackgroundTaskFromPlatform;
 
   final AnkiMobileUrlOpener _openUrl;
+  final AnkiMobileInfoReturnCoordinator _infoReturnCoordinator;
   final AnkiMobileInfoReader _readInfoForAddingJson;
   final Duration _mediaServerLifetime;
   final AnkiMobileBackgroundTaskHandler _beginMediaImportBackgroundTask;
@@ -186,13 +278,24 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       );
     }
     // 不是失败，是「等用户去 AnkiMobile 里点同意」的中间态：真正的结果随后经
-    // `fushi://ankiFetch` 回调进 [consumeInfoForAddingPasteboard]。
+    // `fushi://ankiFetch` 回调、或 app 回到前台（BUG-2493 兜底）进
+    // [consumeInfoForAddingReturn]。
+    _infoReturnCoordinator.markRequested();
     return const AnkiFetchResult.error(
       'AnkiMobile opened. Approve the request, then return to Fushi.',
       code: AnkiErrorCode.ankiMobileOpened,
     );
   }
 
+  /// 往返终点的统一入口（BUG-2493）：由 [AnkiMobileInfoReturnCoordinator] 决定
+  /// 这次 [trigger] 该不该真的去读剪贴板；不该读时返回 null，调用方不动 UI。
+  Future<AnkiFetchResult?> consumeInfoForAddingReturn(
+    AnkiMobileInfoReturnTrigger trigger,
+  ) =>
+      _infoReturnCoordinator.consume(trigger, consumeInfoForAddingPasteboard);
+
+  /// 无条件读一次剪贴板并落库。生产路径走 [consumeInfoForAddingReturn]，
+  /// 这里保留为裸读取以便测试三态契约。
   Future<AnkiFetchResult> consumeInfoForAddingPasteboard() async {
     final read = await _readInfoForAddingJson();
     final String? raw = read.json;
