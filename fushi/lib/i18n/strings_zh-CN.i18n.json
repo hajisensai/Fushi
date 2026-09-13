@@ -4806,5 +4806,6 @@
   "card_source_review_video_watching": "正在正常观看 · 会记录观看进度",
   "card_source_review_video_return": "返回原观看位置",
   "card_source_review_video_continue": "从这里继续观看",
-  "handlebar_source_link": "来源链接"
+  "handlebar_source_link": "来源链接",
+  "remote_book_audiobook_download": "从互联对端下载有声书"
 }

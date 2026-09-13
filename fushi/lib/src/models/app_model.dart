@@ -58,6 +58,7 @@ import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
@@ -1916,7 +1917,7 @@ class AppModel with ChangeNotifier {
       entries.add((
         type: d.type,
         path: p,
-        exists: Directory(p).existsSync(),
+        exists: Directory(p).existsSync() && _dictDirMaterialized(p),
         hidden: d.isHidden(JapaneseLanguage.instance),
         hasKanji: d.metadata['hasKanji'] == 'true',
       ));
@@ -1931,6 +1932,48 @@ class AppModel with ChangeNotifier {
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
+  }
+
+  /// BUG-2504 不变式「同步 FFI 装载只碰已物化的字节」对**两条**装载路径都成立。
+  /// [_rebuildDictPathsCacheAsync] 自己探；同步的 [_rebuildDictPathsCache] 挂在
+  /// 每一次词典元数据写入上（隐藏 / 折叠 / 语言开关 / 导入每本），它没有预算再探
+  /// 一遍，就复用上一次探测的结论：探测明确判成 dataless / 读失败的目录不进引擎，
+  /// 否则「启动期跳过 → 用户改任一词典开关 → 同步路径全量排期 → 首次查词在主
+  /// isolate 同步读 dataless 文件」会把原症状从冷启动挪到改设置后。
+  ///
+  /// **没探过的目录放行**：刚导入 / 互联传输落盘的词典是本进程自己写的字节，本就
+  /// 在本地；把它们挡在引擎外等于导入完不装载。晚到的物化成功回报把目录补回
+  /// [_materializedDictDirs]（[_onDictDirMaterializedLate]）。
+  Set<String> _probedDictDirs = const <String>{};
+  Set<String> _materializedDictDirs = const <String>{};
+  bool _lateDictReloadScheduled = false;
+
+  bool _dictDirMaterialized(String dir) =>
+      !_probedDictDirs.contains(dir) || _materializedDictDirs.contains(dir);
+
+  /// 预算后 worker 把 pending 目录拉回本地的回报：成功即登记可读，并排一次异步
+  /// 重装——这是「字节已到本地」的确定信号，不该等下次冷启动才装上（被跳过的
+  /// 词典对用户完全不可见：列表还在、开关还开、查词没结果）。多本陆续回报只排
+  /// 一次；重装本身会重新探一遍。
+  void _onDictDirMaterializedLate(String dir, String? error) {
+    debugPrint(
+      '[Fushi] dict resource materialized after budget: '
+      '${path.basename(dir)}${error == null ? '' : ' (error: $error)'}',
+    );
+    if (error != null) return;
+    _materializedDictDirs = <String>{..._materializedDictDirs, dir};
+    if (_lateDictReloadScheduled) return;
+    _lateDictReloadScheduled = true;
+    Future<void>.delayed(const Duration(seconds: 2), () async {
+      _lateDictReloadScheduled = false;
+      try {
+        await _rebuildDictPathsCacheAsync();
+        dictRepo.clearDictionaryResultsCache();
+        dictionarySearchAgainNotifier.notifyListeners();
+      } catch (e, st) {
+        ErrorLogService.instance.log('AppModel.lateDictReload', e, st);
+      }
+    });
   }
 
   /// 查词管线预热：跑几次真实查询，把 native 侧的去屈折表、mmap 页、Dart 侧的
@@ -1975,7 +2018,17 @@ class AppModel with ChangeNotifier {
   /// 是分批让出的（[FushiDicts.loadPendingAsync]），每装一本把控制权还给事件循环
   /// 一次。词典多的设备上这一步可能要好几秒，一口气同步跑完会连带冻掉两层启动
   /// 看门狗（它们都是 Timer），把「慢」变成「无逃生口地卡死」。
+  ///
+  /// 分批让出解决的是「慢」，解决不了「单本装载本身卡死」：每本 `addTermDict` 仍是
+  /// 主 isolate 上的同步 FFI，C++ 侧整读 + mmap 触页。BUG-2504：macOS iCloud
+  /// 「优化储存空间」/ Windows OneDrive「按需文件」会把 `~/Documents` 下的词典文件
+  /// 驱逐成 dataless（「仅云端」），同步读它会在内核里无限期等云端回填，两层 Timer
+  /// 看门狗在同步阻塞期间根本不会触发。所以装载前先在后台 isolate 做触读物化探测
+  /// （[materializeDictResources]），本次只装预算内证明了「字节在本地」的词典。
   Future<void> _rebuildDictPathsCacheAsync() async {
+    // 注意：类型自愈对**尚未探测过**的 term/kanji 词典会同步 openSync/readSync
+    // blobs.bin（一次性迁移，探过的词典零 IO），它跑在下面的物化探测之前，仍是
+    // 同步 IO 的残留——只影响首次启动 / 新导入那一次，本任务不动它。
     _migrateDictionaryTypes();
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
@@ -1985,12 +2038,47 @@ class AppModel with ChangeNotifier {
     final existsResults = await Future.wait(
       [for (final p in paths) Directory(p).exists()],
     );
+    // BUG-2504：不变式「同步 FFI 装载只碰已物化的字节」。对存在的目录逐文件在后台
+    // isolate 触读 1 字节（File Provider / OneDrive 读任意字节就把整个文件拉回本地），
+    // 预算内确认全部可读的才进本次装载；超时 / 读失败的本次跳过（它们的探测 isolate
+    // 继续跑完把文件拉回来，下次启动就能装）。所有平台统一走这条，毫秒级代价。
+    final List<String> existingDirs = <String>[
+      for (var i = 0; i < paths.length; i++)
+        if (existsResults[i]) paths[i],
+    ];
+    final DictResourceMaterializeResult materialized =
+        await materializeDictResources(
+      existingDirs,
+      onLateReport: _onDictDirMaterializedLate,
+    );
+    final Set<String> readyDirs = materialized.ready.toSet();
+    // 同步路径（[_rebuildDictPathsCache]）复用这轮结论，见 [_dictDirMaterialized]。
+    _probedDictDirs = existingDirs.toSet();
+    _materializedDictDirs = readyDirs;
+    if (materialized.pending.isNotEmpty || materialized.failed.isNotEmpty) {
+      final String summary = <String>[
+        if (materialized.pending.isNotEmpty)
+          '超时未物化（本次跳过，后台继续拉回）: '
+              '${materialized.pending.map(path.basename).join(', ')}',
+        for (final MapEntry<String, String> e in materialized.failed.entries)
+          '读失败（本次跳过）: ${path.basename(e.key)} → ${e.value}',
+      ].join('\n');
+      ErrorLogService.instance.log(
+        'AppModel.dictResourceMaterialize',
+        'BUG-2504 词典资源未全部物化，本次装载跳过 '
+            '${materialized.pending.length + materialized.failed.length} 本 / '
+            '${existingDirs.length} 本：\n$summary',
+      );
+      debugPrint('[Fushi] dict resources not materialized, skipping this load:\n'
+          '$summary');
+    }
     final List<DictPathEntry> entries = <DictPathEntry>[
       for (var i = 0; i < dictList.length; i++)
         (
           type: dictList[i].type,
           path: paths[i],
-          exists: existsResults[i],
+          // 目录存在但没在预算内证明可读 → 本次当不存在处理，不进引擎。
+          exists: existsResults[i] && readyDirs.contains(paths[i]),
           hidden: dictList[i].isHidden(JapaneseLanguage.instance),
           hasKanji: dictList[i].metadata['hasKanji'] == 'true',
         ),
@@ -2840,7 +2928,7 @@ class AppModel with ChangeNotifier {
 
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
       ErrorLogService.instance
-          .markInitStep('rebuild-dict-paths（词典资源目录 exists 探测）');
+          .markInitStep('rebuild-dict-paths（词典资源目录 exists + 物化探测）');
       await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
 
       _localAudioManager = LocalAudioManager(

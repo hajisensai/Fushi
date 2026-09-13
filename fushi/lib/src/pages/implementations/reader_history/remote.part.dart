@@ -83,6 +83,16 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           await appModel.database.getEpubBookMetas();
       final Set<String> localKeys =
           localBooks.map((EpubBookMeta r) => r.bookKey).toSet();
+      // BUG-2505：本端已有 EPUB 但还没有配套有声书的 bookKey，要与远端 hasAudiobook
+      // 对上——这些书被下面的去重整条藏掉，它们的有声书只能从本地书卡菜单补拉。
+      // 漫画架与有声书无交集，不查。
+      final Set<String> localAudiobookKeys = _mangaOnly
+          ? const <String>{}
+          : <String>{
+              for (final AudiobookRow ab
+                  in await appModel.database.getAllAudiobooks())
+                ab.bookKey,
+            };
       // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
       // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
       // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
@@ -118,6 +128,12 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         books: dedupeRemoteBooks(
           remote: notAdopted,
           localBookKeys: localKeys,
+          keyOf: sanitizeTtuFilename,
+        ),
+        audiobookOnly: remoteAudiobookOnlyCandidates(
+          remote: withContent,
+          localBookKeys: localKeys,
+          localAudiobookKeys: localAudiobookKeys,
           keyOf: sanitizeTtuFilename,
         ),
         srtAudiobooks: remoteSrt.audiobooks,
@@ -725,7 +741,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 失败包成 [_RemoteAudiobookException] 上抛：任务在管理器里落 failed 账，
       // [_downloadRemoteBook] 的 catch 再按「EPUB 已入库」给专用提示。
       await _downloadRemoteAudiobook(book, client, localBookKey,
-          onProgress: onProgress);
+          // 有声书占整书任务进度后半段（0.5..1.0），直报管理器、与页面无关。
+          onProgress: (double progress) =>
+              onProgress?.call(0.5 + progress * 0.5));
     } finally {
       // 单点清理（覆盖成功 + 有声书失败 + EPUB 失败全部出口）：Dart 的 finally
       // 在 throw 之后仍执行，故 audiobook 键只在此清一次即可。
@@ -891,10 +909,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         await (client as InterconnectSyncBackend).getRemoteAudiobook(
           remoteBookKey,
           audioTmp,
-          onProgress: (double progress) {
-            // 有声书占任务进度后半段（0.5..1.0），直报管理器、与页面无关。
-            onProgress?.call(0.5 + progress * 0.5);
-          },
+          // 原始 0..1；整书任务里由调用方映射到后半段（0.5..1.0），只补有声书的
+          // 任务（BUG-2505）则整条进度就是它。
+          onProgress: onProgress,
         );
       }
 
@@ -923,6 +940,85 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         }
       }
     }
+  }
+
+  /// 本地已有这本书、只从对端补拉它的有声书（BUG-2505）。
+  ///
+  /// 「只下到书、没下到有声书」（有声书包拉取失败 / host 后来才配音）之后，远端卡按
+  /// 「本端已有」被整条藏掉、配套有声书又不是 standalone 占位卡，书架上此前没有任何
+  /// 补拉入口；唯一的自动补拉藏在「上传有声书文件」开关驱动的 sweep 里。这里给本地
+  /// 书卡菜单一个显式动作：任务挂 app 级 [InterconnectDownloadManager]（键与整书下载
+  /// 同为 [InterconnectDownloadManager.bookTaskId]——同一本书的整书任务与补音频任务
+  /// 互斥，不会并跑两条），拉包 + 解包复用 [_downloadRemoteAudiobook]，随后与整书
+  /// 下载同样回填 host 端听书断点（[_downloadRemoteBookProgress] 的有声书段）。
+  Future<void> _downloadRemoteAudiobookOnly(
+    RemoteBookInfo book,
+    String localBookKey,
+  ) async {
+    final RemoteBookClient? client = _remoteBookClient;
+    if (client == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_unavailable)),
+      );
+      return;
+    }
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    if (manager
+        .isRunning(InterconnectDownloadManager.bookTaskId(book.downloadId))) {
+      return;
+    }
+    // 管理器要一个 dest 作任务登记；本任务的临时包路径由 [_downloadRemoteAudiobook]
+    // 自己解析并用完即删，这里传同一路径只为登记。
+    final File dest = await _remoteAudiobookDestination(book);
+    try {
+      _markAudiobookDownloading(localBookKey, downloading: true);
+      await manager.startBookDownload(
+        downloadId: book.downloadId,
+        title: book.displayName,
+        dest: dest,
+        run: (File target, {void Function(double progress)? onProgress}) =>
+            _downloadRemoteAudiobook(book, client, localBookKey,
+                onProgress: onProgress),
+      );
+    } catch (e, stack) {
+      final Object cause = e is _RemoteAudiobookException ? e.cause : e;
+      ErrorLogService.instance.log(
+          'ReaderFushiHistoryPage.downloadRemoteAudiobookOnly', cause, stack);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.remote_book_audiobook_download_failed)),
+      );
+      return;
+    } finally {
+      _markAudiobookDownloading(localBookKey, downloading: false);
+    }
+    // 与整书下载同样把 host 端听书断点拉回来（best-effort，独立吞错）。
+    if (client is InterconnectSyncBackend) {
+      try {
+        final ({int positionMs, int updatedAtMs}) pos =
+            await client.remoteAudiobookPosition(book.downloadId);
+        if (pos.updatedAtMs > 0) {
+          await appModel.database.setPrefTyped<int>(
+              audiobookPositionPrefKey(localBookKey), pos.positionMs);
+          await appModel.database.setPrefTyped<int>(
+              audiobookPositionAtPrefKey(localBookKey), pos.updatedAtMs);
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+            'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition', e, stack);
+      }
+    }
+    if (!mounted) return;
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    _refreshSrtBooks();
+    // 远端候选表（audiobookOnly）只在 _loadRemoteBooks 里算：不重载一次，菜单会
+    // 一直留着「从对端下载有声书」到切 tab 为止。TTL 内不打网络。
+    _refreshRemoteBooks();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.remote_book_downloaded)),
+    );
   }
 
   /// 拉取对端「纯 SRT（standalone）有声书」清单：仅互联后端有 live 有声书 API，
@@ -1300,12 +1396,18 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
 class _RemoteBookState {
   const _RemoteBookState({
     required this.books,
+    this.audiobookOnly = const <String, RemoteBookInfo>{},
     this.srtAudiobooks = const <RemoteAudiobookInfo>[],
     this.failed = false,
     this.srtFailed = false,
   });
 
   final List<RemoteBookInfo> books;
+
+  /// 本端已有书、缺有声书、对端有配套有声书的远端条目，按本端 bookKey 索引
+  /// （[remoteAudiobookOnlyCandidates]，BUG-2505）。这些书不在 [books] 里（已按
+  /// 本端已有去重藏掉），它们的有声书只能从本地书卡菜单的「从对端下载有声书」补拉。
+  final Map<String, RemoteBookInfo> audiobookOnly;
 
   /// 纯 SRT（standalone）远端有声书（互联后端 listRemoteAudiobooks 的 standalone 项，
   /// 本地无同 uid 的 SrtBook）。云盘后端无 live 有声书 API → 恒空。

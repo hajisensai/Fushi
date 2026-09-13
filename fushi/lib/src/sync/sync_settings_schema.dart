@@ -580,6 +580,23 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectSyncDictionaryEnabled(value);
             },
           ),
+          // BUG-2494：互联页没有任何「把对端的词典拉下来」的入口——上面那个开关虽然
+          // 实际驱动的是双向 union，但文案是「上传」，用户不会把它当成下载；云备份页
+          // 那行「词典 · 传输 ▾」在同步方式=互联时被藏掉、且 runManualAssetTransfer
+          // 显式跳过互联通道。这里给互联通道自己一行显式的上传/下载动作，跑在
+          // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
+          SettingsCustomItem(
+            id: 'interconnect.dictionary_transfer',
+            searchTitle: t.sync_asset_dictionary,
+            icon: Icons.menu_book_outlined,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              title: t.sync_asset_dictionary,
+              icon: Icons.menu_book_outlined,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
           SettingsSwitchItem(
             id: 'interconnect.upload_audiobook_files',
             title: t.interconnect_upload_audiobook_files,

@@ -4806,5 +4806,6 @@
   "card_source_review_video_watching": "Watching normally · Watch progress is being saved",
   "card_source_review_video_return": "Return to original watch position",
   "card_source_review_video_continue": "Continue watching here",
-  "handlebar_source_link": "Source link"
+  "handlebar_source_link": "Source link",
+  "remote_book_audiobook_download": "Download audiobook from peer"
 }

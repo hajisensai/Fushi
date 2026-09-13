@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2310 条。点号进各自文件。
+> 共 2314 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |
+| [BUG-2505](bugs/BUG-2505-remote-audiobook-entry-lost-after-book-only.md) | ✅ | ✅ | 互联只下到书没下到有声书后再无补拉有声书入口 |
+| [BUG-2504](bugs/BUG-2504-dictionary-load-blocks-on-cloud-evicted-files.md) | ✅ | ✅ | 云盘「仅云端」词典文件让冷启动同步 FFI 装载无限期卡死 |
 | [BUG-2503](bugs/BUG-2503-anki-note-dialog-stacking.md) | ✅ | ✅ | 已制卡候选与卡片查看器重复堆叠弹窗 |
 | [BUG-2502](bugs/BUG-2502-video-source-review-playback.md) | ✅ | ✅ | 视频来源回看无法继续播放且导航使用阅读文案 |
 | [BUG-2501](bugs/BUG-2501-card-source-root-url.md) | ✅ | ✅ | Windows 来源链接规范化后被错误判无效 |
@@ -41,6 +44,7 @@
 | [BUG-2497](bugs/BUG-2497-manga-series-login-entry.md) | ✅ | ✅ | manga-series-login-entry |
 | [BUG-2496](bugs/BUG-2496-cover-decode-invalid-image-data-nonatomic-writes.md) | ✅ | ✅ | 封面/图片文件非空但不可解码：写侧无校验、非原子直写，渲染侧无兜底当致命错误落盘 |
 | [BUG-2495](bugs/BUG-2495-desktop-audio-warmup-timeout-tears-down-cold-player.md) | ✅ | ✅ | 桌面查词发音预热 2s 预算到期，反把正在冷启动的播放器拆掉（BUG-1015 复发） |
+| [BUG-2494](bugs/BUG-2494-interconnect-dictionary-transfer-entry.md) | ✅ | ✅ | 互联页没有词典下载入口：显式词典传输动作跳过互联通道 |
 | [BUG-2493](bugs/BUG-2493-ios-ankimobile-info-return-not-applied.md) | ✅ | ✅ | iOS AnkiMobile 回跳后牌组/笔记类型不刷新：x-success 未送达时无兜底、互联制卡包裹层静默丢弃回调 |
 | [BUG-2491](bugs/BUG-2491-android-web-search-ignores-default-browser.md) | ✅ | ✅ | 安卓选区「网页搜索」无视默认浏览器跳自带浏览器 |
 | [BUG-2490](bugs/BUG-2490-lyrics-original-text.md) | ✅ | ✅ | 歌词模式显示转录文本而非已匹配的原文 |
