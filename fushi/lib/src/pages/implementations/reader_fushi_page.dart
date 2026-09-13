@@ -3778,6 +3778,19 @@ $liveConfigJs
     return _miningDraft.length;
   }
 
+  /// 「选择句子上下文」对话框里手改某一句文本：只把草稿里 [slot] 第 [index] 句的
+  /// **文本**换成 [text]，音频区间（该句从哪儿到哪儿、属哪个音频文件）原样保留——
+  /// 用户改的是会写进卡片的那行字（错别字、补主语、去掉说话人名），不是这句是哪句。
+  /// 故这里直接转调草稿模型，不重新跑 DOM 取句、也不重算区间。
+  @override
+  Future<void> onEditSentenceContextText(
+    SentenceContextSlot slot,
+    int index,
+    String text,
+  ) async {
+    _miningDraft.editSentence(slot: slot, index: index, text: text);
+  }
+
   /// TODO-382 / TODO-393：弹窗点「清空已加句子」清掉本次查词的上下文选择（回到只制
   /// 当前句），回传清空后的句数（恒 0）。给用户一个明确、可见的撤销入口。
   @override

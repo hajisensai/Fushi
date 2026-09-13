@@ -278,4 +278,221 @@ void main() {
       expect(p['total'], isA<int>());
     });
   });
+
+  group('MiningSentenceDraft.editSentence (user-edited sentence text)', () {
+    MiningDraftSentence s(String text, {int? file, int? start, int? end}) =>
+        MiningDraftSentence(
+          sentence: text,
+          audioRange: file == null
+              ? null
+              : AudioPlaybackRange(
+                  audioFileIndex: file,
+                  startMs: start ?? 0,
+                  endMs: end ?? 0,
+                ),
+        );
+
+    MiningSentenceDraft draftWith({
+      List<String> prev = const <String>[],
+      List<String> next = const <String>[],
+    }) =>
+        MiningSentenceDraft()
+          ..setContext(
+            prev: <MiningDraftSentence>[for (final String p in prev) s(p)],
+            next: <MiningDraftSentence>[for (final String n in next) s(n)],
+          );
+
+    test('editing a context sentence feeds composeText, original text kept',
+        () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      expect(
+        draft.editSentence(
+          slot: SentenceContextSlot.prev,
+          index: 0,
+          text: '前一（改）。',
+        ),
+        isTrue,
+      );
+      expect(draft.composeText('現在。'), '前一（改）。\n現在。');
+      // 原句仍在，供「还原」与重解析后贴回编辑用。
+      expect(draft.prevSentences.single.sentence, '前一。');
+      expect(draft.prevSentences.single.editedSentence, '前一（改）。');
+      expect(draft.prevSentences.single.effectiveSentence, '前一（改）。');
+    });
+
+    test('editing the current sentence overrides it in composeText', () {
+      final MiningSentenceDraft draft = draftWith(next: <String>['後一。']);
+      draft.editSentence(
+        slot: SentenceContextSlot.current,
+        index: 0,
+        text: '現在（改）。',
+      );
+      expect(draft.currentSentenceEdit, '現在（改）。');
+      expect(draft.composeText('現在。'), '現在（改）。\n後一。');
+    });
+
+    test('edits survive setContext re-resolution (keyed by original text)', () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '前一（改）。',
+      );
+      // 用户接着点「前加一句」：宿主整体重解析，前文变成两句，已改的那句后移一位。
+      draft.setContext(
+        prev: <MiningDraftSentence>[s('前二。'), s('前一。')],
+      );
+      expect(draft.prevSentences[1].effectiveSentence, '前一（改）。');
+      expect(draft.prevSentences[0].effectiveSentence, '前二。');
+      expect(draft.composeText('現在。'), '前二。\n前一（改）。\n現在。');
+    });
+
+    test('blank text restores the original instead of writing an empty line',
+        () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '前一（改）。',
+      );
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '   ',
+      );
+      expect(draft.prevSentences.single.editedSentence, isNull);
+      expect(draft.composeText('現在。'), '前一。\n現在。');
+      expect(draft.hasEdits, isFalse);
+    });
+
+    test('editing back to the original text clears the edit', () {
+      final MiningSentenceDraft draft = draftWith(next: <String>['後一。']);
+      draft.editSentence(
+        slot: SentenceContextSlot.next,
+        index: 0,
+        text: '後一（改）。',
+      );
+      expect(draft.hasEdits, isTrue);
+      draft.editSentence(
+        slot: SentenceContextSlot.next,
+        index: 0,
+        text: '後一。',
+      );
+      expect(draft.hasEdits, isFalse);
+      expect(draft.nextSentences.single.editedSentence, isNull);
+    });
+
+    test('blank current edit clears the override', () {
+      final MiningSentenceDraft draft = MiningSentenceDraft();
+      draft.editSentence(
+        slot: SentenceContextSlot.current,
+        index: 0,
+        text: '現在（改）。',
+      );
+      draft.editSentence(
+        slot: SentenceContextSlot.current,
+        index: 0,
+        text: '',
+      );
+      expect(draft.currentSentenceEdit, isNull);
+      expect(draft.composeText('現在。'), '現在。');
+    });
+
+    test('out-of-range index is a no-op and reports false', () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      expect(
+        draft.editSentence(
+          slot: SentenceContextSlot.prev,
+          index: 3,
+          text: 'x',
+        ),
+        isFalse,
+      );
+      expect(draft.hasEdits, isFalse);
+      expect(draft.composeText('現在。'), '前一。\n現在。');
+    });
+
+    test('editing text never moves the audio range (mirrors sentenceOverride)',
+        () {
+      final MiningSentenceDraft draft = MiningSentenceDraft()
+        ..setContext(
+          prev: <MiningDraftSentence>[
+            s('前一。', file: 0, start: 100, end: 200),
+          ],
+          next: <MiningDraftSentence>[
+            s('後一。', file: 0, start: 500, end: 900),
+          ],
+        );
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '前一（大改，长度完全不同）。',
+      );
+      draft.editSentence(
+        slot: SentenceContextSlot.current,
+        index: 0,
+        text: '現在（改）。',
+      );
+      final AudioPlaybackRange? merged = draft.composeAudioRange(
+        range(0, 250, 400),
+      );
+      expect(merged, isNotNull);
+      expect(merged!.startMs, 100);
+      expect(merged.endMs, 900);
+      expect(draft.prevSentences.single.audioRange?.startMs, 100);
+    });
+
+    test('clear() drops edits along with the context', () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '前一（改）。',
+      );
+      draft.editSentence(
+        slot: SentenceContextSlot.current,
+        index: 0,
+        text: '現在（改）。',
+      );
+      draft.clear();
+      expect(draft.hasEdits, isFalse);
+      expect(draft.currentSentenceEdit, isNull);
+      expect(draft.composeText('現在。'), '現在。');
+      // 换词后重新出现同一句原文，不该带回上一个词条的改写。
+      draft.setContext(prev: <MiningDraftSentence>[s('前一。')]);
+      expect(draft.prevSentences.single.effectiveSentence, '前一。');
+    });
+
+    test('preview exposes edited text and drops the stale current offset', () {
+      final MiningSentenceDraft draft = draftWith(prev: <String>['前一。']);
+      draft.editSentence(
+        slot: SentenceContextSlot.prev,
+        index: 0,
+        text: '前一（改）。',
+      );
+      Map<String, Object?> p = buildSentenceContextPreview(
+        draft: draft,
+        current: '現在。',
+        currentOffset: 2,
+      );
+      expect(p['prev'], <String>['前一（改）。']);
+      // 当前句没改：offset 照旧有效。
+      expect(p['current'], '現在。');
+      expect(p['currentOffset'], 2);
+
+      draft.editSentence(
+        slot: SentenceContextSlot.current,
+        index: 0,
+        text: '現在（改）。',
+      );
+      p = buildSentenceContextPreview(
+        draft: draft,
+        current: '現在。',
+        currentOffset: 2,
+      );
+      expect(p['current'], '現在（改）。');
+      // 偏移是按原句算的，套到改后的文本上会把高亮划错位置 → 必须置空。
+      expect(p['currentOffset'], isNull);
+    });
+  });
 }

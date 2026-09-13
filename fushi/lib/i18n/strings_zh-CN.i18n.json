@@ -4777,5 +4777,8 @@
   "audiobook_transcribe_elapsed_total": "总耗时 $elapsed",
   "manga_ocr_settings_open": "OCR 设置",
   "manga_chrome_floating": "悬浮工具栏",
-  "manga_chrome_floating_subtitle": "工具栏收起不遮挡页面，点页面中央或鼠标移到顶边唤出；关闭则常驻在页面上方"
+  "manga_chrome_floating_subtitle": "工具栏收起不遮挡页面，点页面中央或鼠标移到顶边唤出；关闭则常驻在页面上方",
+  "popup_ctx_edit_start": "编辑句子",
+  "popup_ctx_edit_confirm": "确认修改",
+  "popup_ctx_edit_cancel": "放弃修改"
 }

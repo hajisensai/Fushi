@@ -11,6 +11,8 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
+    show SentenceContextSlot;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -1078,6 +1080,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           matched: matched,
           fetchPreview: onSentenceContextPreviewFromDraft,
           setContext: onSetSentenceContextToDraft,
+          // 「手改某一句文本」：只改这次会写进卡片的**文本**，不动该句的音频区间/
+          // 身份（改完照样是同一句、同一段音频）。门控与其余草稿回调同判据
+          // （本入口只在 sentenceDraftEnabled 时才挂上，这里再按
+          // [supportsSentenceDraft] 兜一层）；不支持的表面传 null，对话框不渲染编辑入口。
+          editSentence: supportsSentenceDraft ? onEditSentenceContextText : null,
           // BUG-2196 ②：只有真的能出声的表面才给试听按钮。
           previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
           stopAudioPreview:
@@ -1168,6 +1175,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   Future<Map<String, Object?>> onSentenceContextPreviewFromDraft() async =>
       const <String, Object?>{};
+
+  /// 「制卡前调整·选择句子上下文」里**手改某一句文本**：把 [slot]（上文/当前/下文）
+  /// 第 [index] 句的文本改成 [text]，写回本表面会话级制卡草稿。
+  ///
+  /// 只改**会写进卡片的那段文本**，不动该句的音频区间与身份——改错别字 / 补主语 /
+  /// 去掉说话人名之后，仍是同一句、同一段音频，试听与压制结果不变。
+  /// 默认 no-op（[supportsSentenceDraft] 为 false 时不会被调用）。reader/视频覆写。
+  @protected
+  Future<void> onEditSentenceContextText(
+    SentenceContextSlot slot,
+    int index,
+    String text,
+  ) async {}
 
   /// BUG-2196 ②：试听**这次制卡真正会写进卡片的那段音频**。
   ///

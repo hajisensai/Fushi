@@ -4777,5 +4777,8 @@
   "audiobook_transcribe_elapsed_total": "Total time $elapsed",
   "manga_ocr_settings_open": "OCR settings",
   "manga_chrome_floating": "Floating toolbar",
-  "manga_chrome_floating_subtitle": "Hide the toolbar over the page; tap the middle of the page or hover at the top edge to reveal it. Off keeps the toolbar pinned above the page."
+  "manga_chrome_floating_subtitle": "Hide the toolbar over the page; tap the middle of the page or hover at the top edge to reveal it. Off keeps the toolbar pinned above the page.",
+  "popup_ctx_edit_start": "Edit sentence",
+  "popup_ctx_edit_confirm": "Confirm edit",
+  "popup_ctx_edit_cancel": "Discard edit"
 }
