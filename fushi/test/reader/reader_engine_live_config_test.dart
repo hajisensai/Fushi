@@ -123,7 +123,11 @@ void main() {
       expect(at, isNonNegative);
       final String body = webview.substring(at, webview.indexOf('\n  }\n', at));
       expect(body, contains('ReaderSettings.swipePageTurnDistThresholds('));
-      expect(body, contains('wheelPageTurnInterval.clamp(150, 800)'));
+      // tall style 把 `.clamp` 折到下一行，钉去空白后的文本。
+      expect(
+        body.replaceAll(RegExp(r'\s+'), ''),
+        contains('wheelPageTurnInterval.clamp(150,800)'),
+      );
       expect(
         body,
         contains('scanNonJapaneseText: appModel.scanNonJapaneseText'),
@@ -138,7 +142,10 @@ void main() {
         webview.indexOf('\n  }\n', cfg),
       );
       expect(cfgBody, contains('ReaderSettings.swipePageTurnDistThresholds('));
-      expect(cfgBody, contains('wheelPageTurnInterval.clamp(150, 800)'));
+      expect(
+        cfgBody.replaceAll(RegExp(r'\s+'), ''),
+        contains('wheelPageTurnInterval.clamp(150,800)'),
+      );
     });
 
     test('settings that feed the live patch notify the open reader', () {

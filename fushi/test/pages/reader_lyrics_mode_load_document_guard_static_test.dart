@@ -55,8 +55,11 @@ void main() {
     expect(source, contains('int? _lyricsDocumentLoadGeneration;'));
     expect(source, contains(r"'generation': '$loadGeneration'"));
     expect(source, contains('_isCurrentLyricsDocumentUrl(url)'));
-    expect(source,
-        contains('_lyricsDocumentGenerationFromUrl(request.url.toString())'));
+    // 实参在 tall style 下独占一行，钉去空白后的文本。
+    expect(
+      source.replaceAll(RegExp(r'\s+'), ''),
+      contains('_lyricsDocumentGenerationFromUrl(request.url.toString()'),
+    );
     expect(source, isNot(contains('bool _lyricsDocumentLoadInFlight')));
   });
 }

@@ -46,10 +46,167 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       foregroundSelectionChannel.setMethodCallHandler { call, result in
         AppDelegate.handleForegroundSelection(call, result: result)
       }
+
+      // BUG-2508 真机取证钩子（只在 FUSHI_TEST_INPUT 环境变量存在时注册，生产
+      // 启动零暴露）：把真实 NSEvent（mouseMoved / flagsChanged / 点击）送进本窗口，
+      // 供 integration_test/macos_reader_shift_hover_itest.dart 驱动。ssh 起的进程
+      // 没有辅助功能授权、CGEvent 投不进 WindowServer；进程内合成的 mouseMoved 经
+      // NSApp.postEvent / sendEvent 也到不了 tracking area owner（AppKit 只给
+      // WindowServer 产生的事件派 tracking area），故 hover 用 "flutter" 模式直接交
+      // FlutterViewController——从那往下（修饰键同步、Flutter hover、MouseRegion、JS
+      // selectText、真弹窗）全是真路径。点击与 flagsChanged 走 postEvent 即可到达。
+      if ProcessInfo.processInfo.environment["FUSHI_TEST_INPUT"] != nil {
+        let testInputChannel = FlutterMethodChannel(
+          name: "app.fushi.test/input",
+          binaryMessenger: controller.engine.binaryMessenger)
+        testInputChannel.setMethodCallHandler { [weak self] call, result in
+          self?.handleTestInput(call, result: result)
+        }
+      }
     } else {
       NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
     super.applicationDidFinishLaunching(notification)
+  }
+
+  // BUG-2508 真机取证钩子（FUSHI_TEST_INPUT 门控）。坐标口径：Flutter 逻辑坐标
+  // （窗口内容视图左上角为原点，y 向下），这里翻成 AppKit 的 locationInWindow
+  // （左下角原点）。事件带真实 windowNumber。
+  private func handleTestInput(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let window = mainFlutterWindow else {
+      result(FlutterError(code: "no_window", message: "main window unavailable", details: nil))
+      return
+    }
+    let args = call.arguments as? [String: Any] ?? [:]
+    let shift = (args["shift"] as? Bool) ?? false
+    // 真实 HID 事件的 Shift 同时带通用位 0x20000 与左 Shift 设备位 0x2；Flutter 嵌入层
+    // 在每个鼠标事件上按设备位同步修饰键，鼠标事件少了 0x2 会被判成「左 Shift 抬起」。
+    let flags = NSEvent.ModifierFlags(rawValue: shift ? 0x20002 : 0)
+    let now = ProcessInfo.processInfo.systemUptime
+    switch call.method {
+    case "activate":
+      NSApp.setActivationPolicy(.regular)
+      NSApp.activate(ignoringOtherApps: true)
+      window.makeKeyAndOrderFront(nil)
+      window.acceptsMouseMovedEvents = true
+      let content = window.contentView?.bounds ?? .zero
+      result([
+        "isKey": window.isKeyWindow,
+        "isMain": window.isMainWindow,
+        "isActive": NSApp.isActive,
+        "windowNumber": window.windowNumber,
+        "contentWidth": content.width,
+        "contentHeight": content.height,
+        "firstResponder": AppDelegate.responderName(window.firstResponder),
+      ])
+    case "mouseMove":
+      let x = (args["x"] as? Double) ?? 0
+      let y = (args["y"] as? Double) ?? 0
+      let contentHeight = window.contentView?.bounds.height ?? 0
+      let location = NSPoint(x: x, y: contentHeight - y)
+      guard let event = NSEvent.mouseEvent(
+        with: .mouseMoved, location: location, modifierFlags: flags, timestamp: now,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0,
+        pressure: 0)
+      else {
+        result(FlutterError(code: "event", message: "mouseMoved construction failed", details: nil))
+        return
+      }
+      deliverTestEvent(event, mode: (args["mode"] as? String) ?? "post")
+      // AppKit 的 hitTest 与 WebKit WKMouseTrackingObserver 用的是同一条命中链：
+      // 回报该点命中的 NSView 及其祖先链，作「这一点 WKWebView 是不是最顶视图」的直接证据。
+      var chain: [String] = []
+      if let content = window.contentView,
+         let hit = content.hitTest(content.superview?.convert(location, from: nil) ?? location) {
+        var v: NSView? = hit
+        while let cur = v { chain.append(String(describing: type(of: cur))); v = cur.superview }
+      }
+      result(["hit": chain.first ?? "nil", "chain": chain.joined(separator: " < ")])
+    case "click":
+      // 真 NSEvent 左键按下/抬起（同 mouseMove 的坐标口径），判「点击这条路
+      // 到不到 WKWebView」——DropTarget 盖顶时 mouseDown 的去向就是 AppKit 的真实去向。
+      let x = (args["x"] as? Double) ?? 0
+      let y = (args["y"] as? Double) ?? 0
+      let contentHeight = window.contentView?.bounds.height ?? 0
+      let location = NSPoint(x: x, y: contentHeight - y)
+      guard let down = NSEvent.mouseEvent(
+        with: .leftMouseDown, location: location, modifierFlags: flags, timestamp: now,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1,
+        pressure: 1),
+        let up = NSEvent.mouseEvent(
+        with: .leftMouseUp, location: location, modifierFlags: flags, timestamp: now + 0.05,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1,
+        pressure: 0)
+      else {
+        result(FlutterError(code: "event", message: "click construction failed", details: nil))
+        return
+      }
+      let mode = (args["mode"] as? String) ?? "post"
+      deliverTestEvent(down, mode: mode)
+      deliverTestEvent(up, mode: mode)
+      result(["firstResponder": AppDelegate.responderName(window.firstResponder)])
+    case "dumpViews":
+      // FlutterView 的子视图（z 序自底向上）及 frame，判平台视图 / DropTarget 层序。
+      var lines: [String] = []
+      func walk(_ v: NSView, _ depth: Int) {
+        let f = v.frame
+        lines.append(String(repeating: "  ", count: depth)
+          + "\(type(of: v)) frame=(\(Int(f.origin.x)),\(Int(f.origin.y)) \(Int(f.width))x\(Int(f.height)))"
+          + (v.isHidden ? " hidden" : ""))
+        if depth < 4 { for c in v.subviews { walk(c, depth + 1) } }
+      }
+      if let content = window.contentView { walk(content, 0) }
+      result(["views": lines.joined(separator: "\n")])
+    case "flagsChanged":
+      // Flutter macOS 嵌入层按**设备相关位**分左右 Shift（左 Shift = 0x2，与通用
+      // NSEventModifierFlagShift 0x20000 并存，真实 HID 事件两位都带）；只给 0x20000
+      // 引擎会判成「左 Shift 抬起」。CGEvent 构造不可用：NSEvent.characters 对
+      // CGEvent 来源的 flagsChanged 会抛，卡死 FlutterKeyboardManager 的事件队列。
+      guard let event = NSEvent.keyEvent(
+        with: .flagsChanged, location: .zero, modifierFlags: flags, timestamp: now,
+        windowNumber: window.windowNumber, context: nil, characters: "",
+        charactersIgnoringModifiers: "", isARepeat: false, keyCode: 56)
+      else {
+        result(FlutterError(code: "event", message: "flagsChanged construction failed", details: nil))
+        return
+      }
+      deliverTestEvent(event, mode: (args["mode"] as? String) ?? "post")
+      result([
+        "firstResponder": AppDelegate.responderName(window.firstResponder),
+        "flags": event.modifierFlags.rawValue,
+        "keyCode": event.keyCode,
+      ])
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private static func responderName(_ r: NSResponder?) -> String {
+    guard let r = r else { return "nil" }
+    return String(describing: type(of: r))
+  }
+
+  /// "post" = 进 NSApp 事件队列（经 run loop 的 nextEvent → sendEvent）；
+  /// "send" = 直接 NSApp.sendEvent；"window" = window.sendEvent。
+  /// "flutter" = 直接交给 FlutterViewController（AppKit 只把 WindowServer 产生的
+  /// mouseMoved 派给 tracking area owner，进程内合成的到不了那一跳；从 VC 往下——
+  /// 修饰键同步、Flutter hover、MouseRegion、JS selectText、真弹窗——全是真路径）。
+  private func deliverTestEvent(_ event: NSEvent, mode: String) {
+    switch mode {
+    case "send": NSApp.sendEvent(event)
+    case "window": event.window?.sendEvent(event)
+    case "flutter":
+      guard let vc = (mainFlutterWindow?.contentViewController
+        as? MacOSWindowUtilsViewController)?.flutterViewController else { return }
+      switch event.type {
+      case .mouseMoved: vc.mouseMoved(with: event)
+      case .flagsChanged: vc.flagsChanged(with: event)
+      case .leftMouseDown: vc.mouseDown(with: event)
+      case .leftMouseUp: vc.mouseUp(with: event)
+      default: NSApp.sendEvent(event)
+      }
+    default: NSApp.postEvent(event, atStart: false)
+    }
   }
 
   override func application(_ application: NSApplication, open urls: [URL]) {

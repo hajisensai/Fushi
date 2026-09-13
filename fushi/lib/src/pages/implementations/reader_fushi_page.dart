@@ -84,6 +84,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
+import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_open_trace.dart';
 import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_dialog.dart';
@@ -3502,9 +3503,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   Future<void> _applyHoverAutoLookupLive() async {
     if (_controller == null) return;
     final bool enabled = ReaderFushiSource.instance.hoverAutoLookup;
+    // BUG-2508：歌词页是独立文档、不经 setup 脚本，宿主腿开关也在这里一并下发
+    // （正文文档重复赋同值，无害）。判据只认 [hostOwnsWebViewHoverLookup]（macOS）。
+    final bool hostHover = hostOwnsWebViewHoverLookup;
     try {
       await _controller!.evaluateJavascript(
-        source: 'window.__hoverAutoLookup = $enabled;',
+        source:
+            'window.__hoverAutoLookup = $enabled;'
+            'window.__fushiHostHoverLookup = $hostHover;',
       );
     } catch (e, stack) {
       ErrorLogService.instance.log(
@@ -4154,25 +4160,28 @@ $liveConfigJs
     );
   }
 
-  // ── Shift+Hover over dismiss barrier ──────────────────────────────
+  // ── Shift+Hover：宿主侧悬停查词（dismiss barrier + 正文 WebView）──────────
 
-  double _barrierHoverLastDx = -1;
-  double _barrierHoverLastDy = -1;
+  /// 宿主腿的门控 + 8px 节流（BUG-2508），barrier 与正文 WebView 两个入口共用一把
+  /// 锚，同一位置不会被两处各查一次。
+  final ReaderHostHoverLookupGate _hostHoverGate = ReaderHostHoverLookupGate();
+
+  /// 最后一次落在正文 WebView 盒内的指针位置（WebView 局部 == CSS 视口坐标）。
+  /// 由正文 [MouseRegion] 与 dismiss barrier 两个 hover 入口共同维护；指针离开
+  /// 正文（且没有弹窗盖着——弹窗一出 barrier 接管 hover，正文 MouseRegion 会先
+  /// 收到一次 exit，那不是真离开）时清空。Shift 按下沿用它在**静止光标**处直接
+  /// 查词（BUG-880 视频页同款：hover 只在移动时派发，停着按 Shift 没有事件）。
+  Offset? _lastWebViewHoverLocal;
 
   @override
   void onDismissBarrierHover(PointerHoverEvent event) {
-    if (!HardwareKeyboard.instance.isShiftPressed) {
-      _barrierHoverLastDx = -1;
-      _barrierHoverLastDy = -1;
-      return;
-    }
     // 连续查词（和鼠标一样）：弹窗出现后，全屏 dismiss barrier 盖在 WebView 之上，
     // WebView DOM 的 onShiftHover 收不到事件——此时唯一还能接 hover 的入口就是这里。
     // 故此处**不再**门控 isDictionaryShown（旧 TODO-851「限一级弹窗」放开）：按住
     // Shift 一路滑，命中新词就 _selectTextAt 换词。换词经 _runLookupAndHighlight →
     // prunePopupStack(0) 复用热槽无缝替换（不叠层、不白屏，BUG-092/482 已验证），
     // 命中同一个词由 JS selectText 的 fromHover 同词短路挡住（不重复 fire、不闪、不刷
-    // FFI）。下面的 8px 平方阈值仍在，避免每像素抖动都查。
+    // FFI）。8px 平方阈值在 [_hostHoverGate] 里，避免每像素抖动都查。
     // TODO-806 真坐标系修复：[event.localPosition] 是相对**dismiss barrier**
     // （Positioned.fill 铺满页面 Stack）的逻辑像素，而 WebView 被 chrome inset
     // （顶栏 [_readerTopOffset] / 底栏预留）挤在 Stack 内部、原点 ≠ barrier 原点。
@@ -4188,12 +4197,76 @@ $liveConfigJs
     final Offset local = (obj is RenderBox && obj.attached && obj.hasSize)
         ? obj.globalToLocal(event.position)
         : event.localPosition;
-    final double dx = local.dx - _barrierHoverLastDx;
-    final double dy = local.dy - _barrierHoverLastDy;
-    if (dx * dx + dy * dy < 64) return;
-    _barrierHoverLastDx = local.dx;
-    _barrierHoverLastDy = local.dy;
-    // TODO-851：遮罩悬停也是 hover 路径，传 fromHover:true，命中空白不触发 onTapEmpty。
+    _lastWebViewHoverLocal = local;
+    // barrier 上**只认 Shift**（五平台共用、与改宿主腿之前一字不差）：弹窗开着时
+    // 鼠标要从正文挪进弹窗滚动/点按钮，路上每越过一个词都换词的话永远够不到弹窗。
+    // 「悬停即查词」偏好只作用于正文 MouseRegion 入口（JS 腿在 barrier 盖住时同样
+    // 收不到 mousemove，语义一致）。
+    _hostHoverLookupAt(local, hoverAutoLookup: false);
+  }
+
+  /// 宿主腿的落点入口（barrier / 正文 MouseRegion 共用）：门开且越过节流阈值才
+  /// 查词。[hoverAutoLookup] 由调用方按入口决定，barrier 恒 false。
+  /// TODO-851：悬停是 hover 路径，传 fromHover:true，命中空白不触发 onTapEmpty。
+  void _hostHoverLookupAt(Offset local, {required bool hoverAutoLookup}) {
+    if (!_hostHoverGate.shouldLookup(
+      local,
+      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
+      hoverAutoLookup: hoverAutoLookup,
+    )) {
+      return;
+    }
+    _selectTextAt(local.dx, local.dy, fromHover: true);
+  }
+
+  /// BUG-2508：正文 WebView 上的宿主侧 hover——只在 [hostOwnsWebViewHoverLookup]
+  /// （macOS）平台装配，那里 DOM `mousemove` 受 AppKit 命中测试门控（见
+  /// [ReaderHostHoverLookupGate] 文档），宿主腿是唯一可靠的一条；JS 腿由
+  /// `window.__fushiHostHoverLookup` 关掉，保持「一平台一条腿」。其余平台根本不包
+  /// [MouseRegion]，本方法不会被调用。`localPosition` 即 WebView 局部坐标，与
+  /// `onShiftHover` 的 `e.clientX/clientY` 同尺度。
+  void _handleWebViewHostHover(PointerHoverEvent event) {
+    final Offset local = event.localPosition;
+    final RenderObject? obj = _webViewKey.currentContext?.findRenderObject();
+    if (obj is RenderBox &&
+        obj.hasSize &&
+        !readerHostHoverPointInside(local, obj.size)) {
+      return;
+    }
+    _lastWebViewHoverLocal = local;
+    _hostHoverLookupAt(
+      local,
+      hoverAutoLookup: ReaderFushiSource.instance.hoverAutoLookup,
+    );
+  }
+
+  /// 指针离开正文 WebView：清掉 Shift 反查用的最后位置并复位节流锚——除非是弹窗
+  /// 刚出、barrier 接管 hover 引起的 exit（此时指针仍在正文上，位置由
+  /// [onDismissBarrierHover] 接力更新）。
+  void _handleWebViewHostHoverExit(PointerExitEvent event) {
+    if (isDictionaryShown) return;
+    _lastWebViewHoverLocal = null;
+    _hostHoverGate.reset();
+  }
+
+  /// BUG-2508（对齐视频页 BUG-880）：Shift 按下瞬间在最后指针位置直接查词，不必
+  /// 抖鼠标。hover 只在指针**移动**时派发，光标停在词上再按 Shift 没有任何 hover
+  /// 事件，两条腿都不会触发。锚点同步推进，紧随的微小抖动不会再查一次同一处；
+  /// 命中同词由 JS `selectText` 的 fromHover 短路兜底。
+  ///
+  /// 两道门，缺一条都会把用户现有选区抹掉（JS `selectText` 命中空白 `clearSelection`、
+  /// 命中别的词换词）：
+  /// * 只在宿主腿平台（[hostOwnsWebViewHoverLookup]）——Windows 的 JS 腿自有语义，
+  ///   宿主不该在按 Shift+方向 / Shift+滚轮 / 任何含 Shift 的快捷键时替它查词；
+  /// * 光标模式激活时不查（[_caretActive]）——那里 Shift+方向键是**键盘扩选**
+  ///   （[ReaderCaretRouter.decideKeyboard] 的 `shift:`），按下 Shift 的那一瞬正是
+  ///   扩选的起点，视频页 BUG-880 没有光标选区，「对齐」到这里不能无条件。
+  void _triggerShiftLookupAtLastPointer() {
+    if (!hostOwnsWebViewHoverLookup) return;
+    if (_focusNavEnabled && _caretActive) return;
+    final Offset? local = _lastWebViewHoverLocal;
+    if (local == null) return;
+    _hostHoverGate.markLookedUp(local);
     _selectTextAt(local.dx, local.dy, fromHover: true);
   }
 

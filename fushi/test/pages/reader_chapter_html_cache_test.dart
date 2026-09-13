@@ -113,7 +113,10 @@ void main() {
       // 现钉事件队列任务 + 异步 IO + style epoch 过期丢弃三件套。
       expect(containsCodeLine(prefBody, 'scheduleMicrotask'), isFalse,
           reason: 'microtask 同帧同步执行会阻塞 UI，预取必须走事件队列任务');
-      expect(containsCodeLine(prefBody, 'unawaited(Future<void>(()'), isTrue,
+      // tall style 下 `unawaited(` 与 `Future<void>(()` 分两行，钉去空白后的文本。
+      expect(
+          prefBody.replaceAll(RegExp(r'\s+'), ''),
+          contains('unawaited(Future<void>(()'),
           reason: '预取走事件队列任务（当前帧先收尾）+ 异步读盘');
       expect(containsCodeLine(prefBody, 'await file.readAsBytes()'), isTrue,
           reason: 'IO 必须异步，让出主 isolate');

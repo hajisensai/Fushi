@@ -30,6 +30,8 @@ bool get supportsFloatingOverlay => Platform.isAndroid;
 
 bool get isWindowsPlatform => Platform.isWindows;
 
+bool get isMacOSPlatform => Platform.isMacOS;
+
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///
@@ -98,15 +100,14 @@ class FushiScrollController extends ScrollController {
     ScrollPhysics physics,
     ScrollContext context,
     ScrollPosition? oldPosition,
-  ) =>
-      _FushiScrollPosition(
-        physics: physics,
-        context: context,
-        initialPixels: initialScrollOffset,
-        keepScrollOffset: keepScrollOffset,
-        oldPosition: oldPosition,
-        debugLabel: debugLabel,
-      );
+  ) => _FushiScrollPosition(
+    physics: physics,
+    context: context,
+    initialPixels: initialScrollOffset,
+    keepScrollOffset: keepScrollOffset,
+    oldPosition: oldPosition,
+    debugLabel: debugLabel,
+  );
 }
 
 class _FushiScrollPosition extends ScrollPositionWithSingleContext {
@@ -168,8 +169,9 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
       _gestureIsCoarse = null;
     }
     _lastWheelStamp = now;
-    final bool coarse =
-        _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(delta);
+    final bool coarse = _gestureIsCoarse ??= isCoarseDesktopPointerScrollDelta(
+      delta,
+    );
 
     // 分类按**手势**锁定，动画与否也照分类走：粗滚轮手势里的小尾帧同样走动画。
     // 尾帧若改走同步路径，会在动画飞行途中 forcePixels 把 DrivenScrollActivity
@@ -184,7 +186,8 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
     // 连续同向滚轮事件必须向尚未到达的目标继续累积；若每次都从当前 pixels
     // 重启动画，快速滚轮会不断取消前一段、实际滚动距离反而被吃掉。反向输入则从
     // 当前视觉位置重新起步，保证用户一反拨就立即响应，而不是先偿还旧方向目标。
-    final bool continuesDrivenScroll = activity is DrivenScrollActivity &&
+    final bool continuesDrivenScroll =
+        activity is DrivenScrollActivity &&
         _wheelTarget != null &&
         _lastCoarseDelta != null &&
         _lastCoarseDelta!.isNegative == delta.isNegative;
@@ -196,11 +199,13 @@ class _FushiScrollPosition extends ScrollPositionWithSingleContext {
     _lastCoarseDelta = delta;
     if (target == pixels) return;
 
-    unawaited(super.animateTo(
-      target,
-      duration: kDesktopWheelScrollDuration,
-      curve: Curves.easeOutCubic,
-    ));
+    unawaited(
+      super.animateTo(
+        target,
+        duration: kDesktopWheelScrollDuration,
+        curve: Curves.easeOutCubic,
+      ),
+    );
   }
 
   void _resetWheelTarget() {
@@ -246,16 +251,16 @@ class HorizontalDragScrollable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(
-          dragDevices: const <PointerDeviceKind>{
-            PointerDeviceKind.touch,
-            PointerDeviceKind.mouse,
-            PointerDeviceKind.stylus,
-            PointerDeviceKind.trackpad,
-          },
-        ),
-        child: child,
-      );
+    behavior: ScrollConfiguration.of(context).copyWith(
+      dragDevices: const <PointerDeviceKind>{
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.trackpad,
+      },
+    ),
+    child: child,
+  );
 }
 
 /// 让**横向**滚动区接受鼠标滚轮（把滚轮的纵向 delta 投到横轴）。BUG-1214。
@@ -305,10 +310,13 @@ class WheelToHorizontalScroll extends StatelessWidget {
     final double raw = event.scrollDelta.dy;
     if (raw == 0) return;
     // 与 Flutter 同口径：轴方向反向（RTL 下的横向滚动区）时取负。
-    final double delta =
-        axisDirectionIsReversed(position.axisDirection) ? -raw : raw;
-    final double target = (position.pixels + delta)
-        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    final double delta = axisDirectionIsReversed(position.axisDirection)
+        ? -raw
+        : raw;
+    final double target = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
     // 滚不动（已到头 / 内容没超出视口）就不登记，把事件让给外层滚动区。
     if (target == position.pixels) return;
 
@@ -319,10 +327,8 @@ class WheelToHorizontalScroll extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => Listener(
-        onPointerSignal: _onPointerSignal,
-        child: child,
-      );
+  Widget build(BuildContext context) =>
+      Listener(onPointerSignal: _onPointerSignal, child: child);
 }
 
 enum WindowSizeClass { compact, medium, expanded }
@@ -357,8 +363,9 @@ WindowSizeClass windowSizeClassForWidth(double width) {
 WindowSizeClass windowSizeClassReal(double logicalWidth, double appUiScale) {
   final bool usableScale =
       appUiScale.isFinite && !appUiScale.isNaN && appUiScale > 0;
-  final double realWidth =
-      usableScale ? logicalWidth * appUiScale : logicalWidth;
+  final double realWidth = usableScale
+      ? logicalWidth * appUiScale
+      : logicalWidth;
   return windowSizeClassForWidth(realWidth);
 }
 
@@ -536,7 +543,8 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         if (constraints.maxWidth < minSplitWidth) return primary;
 
-        final double resolvedSupportingWidth = supportingWidth ??
+        final double resolvedSupportingWidth =
+            supportingWidth ??
             supportingPaneWidthForLayout(constraints.maxWidth);
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
