@@ -414,6 +414,15 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 关系（相邻 / 前跳多少字 / 回翻），读速异常时能直接看到是哪一跳。同一单元重复
   /// 采样在账本里是 no-op，不值一行。
   void _traceArrive(int start, int end) {
+    if (end < 0) {
+      // BUG-2492：起点未通过页上校验 / 页尾探不到的采样，不进账本；只记不改
+      // `_lastTracedUnit`（下一次真 arrive 的关系仍相对上一个真单元算）。
+      if (_lastTracedSkipStart == start) return;
+      _lastTracedSkipStart = start;
+      studyDiag('ledger', 'skip [$start,?) end unverified');
+      return;
+    }
+    _lastTracedSkipStart = -1;
     final (int, int)? last = _lastTracedUnit;
     if (last != null && last.$1 == start && last.$2 == end) return;
     _lastTracedUnit = (start, end);
@@ -1233,6 +1242,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (unitStart >= 0 && unitEnd > unitStart) {
       _traceArrive(unitStart, unitEnd);
       _readLedger.arrive(unitStart, unitEnd);
+    } else if (unitStart >= 0 && snapshot.charOffsetEnd < 0) {
+      // BUG-2492：JS 判起点不在本页 / 页尾探不到 → 第四段 -1 → 不 arrive（宁可不计）。
+      // 记一行让诊断日志能看出「这页没计」而不是静默消失。
+      _traceArrive(unitStart, -1);
     }
     // TODO-736（复核 b）：进度刷新无条件落库。曾经的 B-4 突降伪归零守卫已删——它想防的
     // reflow 自发归零已被两墙完整覆盖（begin 换 CSS 触发的归零落在 _reanchorPending 期，由
