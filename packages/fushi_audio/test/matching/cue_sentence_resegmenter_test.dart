@@ -263,4 +263,151 @@ void main() {
       expect(out.cues[1].endMs, 5000);
     });
   });
+
+  group('CueSentenceResegmenter 合缝', () {
+    List<EpubSection> book(String text) => <EpubSection>[
+          EpubSection(index: 0, href: 'ch0.xhtml', text: text),
+        ];
+    List<int> range(CueMatch m) => <int>[m.normCharStart, m.normCharEnd];
+
+    test('书写假名、听写汉字的单字 cue 未命中：认领缝后两侧词中边界一起抹掉', () {
+      // 归一化：ということをこころは自分が知った（16 字）。ASR 把「こころ」听成「心」，
+      // 匹配器对不上；缝 [5,9) = をこころ，1.5 s 读 4 字，密度合理。
+      final CueResegmentResult out = _r.resegment(
+        sections: book('ということを、こころは、自分が知った。'),
+        cues: <AudioCue>[
+          _cue(0, 'ということ', start: 0, end: 2000),
+          _cue(1, '心', start: 2000, end: 3500),
+          _cue(2, 'は自分が知った', start: 3500, end: 7000),
+        ],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 5),
+          CueMatch.unmatched,
+          _hit(2, 9, 16),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 1);
+      expect(out.stats.boundariesRemoved, 2);
+      expect(out.cues, hasLength(1));
+      expect(range(out.result.matches[0]), <int>[0, 16]);
+      expect(out.cues[0].startMs, 0);
+      expect(out.cues[0].endMs, 7000);
+      expect(out.result.matchedCues, 1);
+    });
+
+    test('ASR 整句掉字：缝按发声时长分给中间的未命中 cue，密度按整块判', () {
+      // 归一化：すりっぱを履いたつま先が冷えて足の指を丸めた（22 字）。7 s 的「そ」
+      // 与 0.25 s 的「う」中间是 8 字缝；按听写长度平分会让「う」密度爆表。
+      final CueResegmentResult out = _r.resegment(
+        sections: book('スリッパを履いたつま先が冷えて、足の指を丸めた。'),
+        cues: <AudioCue>[
+          _cue(0, 'すりっぱを履い', start: 0, end: 3000),
+          _cue(1, 'そ', start: 3000, end: 9000),
+          _cue(2, 'う', start: 9000, end: 9250),
+          _cue(3, '足の指を丸めた', start: 9250, end: 12000),
+        ],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 7),
+          CueMatch.unmatched,
+          CueMatch.unmatched,
+          _hit(3, 15, 22),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 2);
+      expect(out.cues, hasLength(2));
+      // 缝 [7,15) 按 6000:250 分：そ [7,14)、う [14,15)。「履い｜た」「え｜て」两处
+      // 词中边界抹掉；「て、｜足」是原边界（う｜足）且落在逗号上，连原时间一起保留。
+      expect(out.stats.boundariesRemoved, 2);
+      expect(range(out.result.matches[0]), <int>[0, 15]);
+      expect(range(out.result.matches[1]), <int>[15, 22]);
+      expect(out.cues[0].startMs, 0);
+      expect(out.cues[0].endMs, 9250);
+      expect(out.cues[1].startMs, 9250);
+      expect(out.cues[1].endMs, 12000);
+    });
+
+    test('模糊命中的词尾没人认领：缝在第一个标点边界处切开分给两侧', () {
+      // 归一化：時計を気にし出すああもうこんな時間（17 字）。前一条止于「出」，
+      // 后一条起于「も」，缝 [7,10) = すああ；「す。「」后是句界 → 切在 8。
+      final CueResegmentResult out = _r.resegment(
+        sections: book('時計を気にし出す。「ああ、もうこんな時間」'),
+        cues: <AudioCue>[
+          _cue(0, '時計を気にし出', start: 0, end: 3000),
+          _cue(1, 'もうこんな時間', start: 3000, end: 6000),
+        ],
+        result: _result(<CueMatch>[_hit(0, 0, 7), _hit(1, 10, 17)]),
+      );
+      expect(out.stats.gapsClosed, 2);
+      expect(out.stats.boundariesRemoved, 0);
+      expect(out.cues, hasLength(2));
+      expect(range(out.result.matches[0]), <int>[0, 8]);
+      expect(range(out.result.matches[1]), <int>[8, 17]);
+    });
+
+    test('ASR 幻觉（0 字缝）：认领空区间后折进前一片，幻觉 cue 消失', () {
+      final CueResegmentResult out = _r.resegment(
+        sections: book('夢見る時がある。転入生がやってくる。'),
+        cues: <AudioCue>[
+          _cue(0, '夢見る時がある', start: 0, end: 3000),
+          _cue(1, 'はい', start: 3000, end: 3400),
+          _cue(2, '転入生がやってくる', start: 3400, end: 7000),
+        ],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 7),
+          CueMatch.unmatched,
+          _hit(2, 7, 16),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 1);
+      expect(out.stats.boundariesRemoved, 1);
+      expect(out.cues, hasLength(2));
+      expect(range(out.result.matches[0]), <int>[0, 7]);
+      expect(range(out.result.matches[1]), <int>[7, 16]);
+      // 幻觉 token（3000–3400 ms）折进前一片，前一片终点推到其末 token 之后。
+      expect(out.cues[0].endMs, greaterThan(3000));
+      expect(out.cues[1].startMs, out.cues[0].endMs);
+      expect(out.cues[1].endMs, 7000);
+      expect(out.cues[0].text, '夢見る時があるはい');
+      expect(out.cues[1].text, '転入生がやってくる');
+    });
+
+    test('旁白真跳过一段：隐含朗读速度超上限，缝留着、两侧原样透传', () {
+      // 缝 40 字，两侧各 2–3 s：谁认领密度都是中位数的好几倍。
+      const String skipped = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよわ';
+      final AudioCue a = _cue(0, '夢見る時がある', start: 0, end: 3000);
+      final AudioCue b = _cue(1, '転入生がやってくる', start: 3000, end: 6500);
+      final CueResegmentResult out = _r.resegment(
+        sections: book('夢見る時がある$skipped転入生がやってくる。'),
+        cues: <AudioCue>[a, b],
+        result: _result(<CueMatch>[_hit(0, 0, 7), _hit(1, 47, 56)]),
+      );
+      expect(out.stats.gapsClosed, 0);
+      expect(out.stats.changed, isFalse);
+      expect(identical(out.cues[0], a), isTrue);
+      expect(identical(out.cues[1], b), isTrue);
+      expect(range(out.result.matches[0]), <int>[0, 7]);
+      expect(range(out.result.matches[1]), <int>[47, 56]);
+    });
+
+    test('中间的未命中 cue 属另一音频文件或时间乱序：不认领，两侧原样', () {
+      final AudioCue a = _cue(0, 'ということ', start: 0, end: 2000);
+      final AudioCue other = _cue(1, '心', start: 2000, end: 3500)
+        ..audioFileIndex = 1;
+      final AudioCue b = _cue(2, 'は自分が知った', start: 3500, end: 7000);
+      final CueResegmentResult out = _r.resegment(
+        sections: book('ということを、こころは、自分が知った。'),
+        cues: <AudioCue>[a, other, b],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 5),
+          CueMatch.unmatched,
+          _hit(2, 9, 16),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 0);
+      expect(out.cues, hasLength(3));
+      expect(identical(out.cues[1], other), isTrue);
+      expect(out.result.matches[1].matched, isFalse);
+      expect(out.result.matchedCues, 2);
+    });
+  });
 }

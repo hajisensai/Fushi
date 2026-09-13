@@ -29,9 +29,12 @@ class LyricsModeHtml {
         ? null
         : LyricsCueTextResolver(book);
     for (int i = 0; i < cues.length; i++) {
-      final String escaped = _escapeHtml(
-        textResolver?.textForCue(cues[i]) ?? cues[i].text,
-      );
+      final LyricsCueText cueText =
+          textResolver?.resolveForCue(cues[i]) ??
+          LyricsCueText.plain(cues[i].text);
+      final String escaped = _cueInnerHtml(cueText);
+      // 无读音的纯文本：收藏标记按它比对（textContent 会把 <rt> 读音混进来）。
+      final String plainText = _escapeAttr(cueText.text);
       final String fragId = _escapeAttr(cues[i].textFragmentId);
       final int dist = (i - currentIndex).abs();
       final String cls = dist == 0
@@ -41,7 +44,7 @@ class LyricsModeHtml {
           : 'cue';
       cueHtml.write(
         '<div class="$cls" data-cue-index="$i" '
-        'data-text-fragment-id="$fragId">'
+        'data-text-fragment-id="$fragId" data-text="$plainText">'
         '$escaped</div>\n',
       );
     }
@@ -130,6 +133,17 @@ body { font-family: $bodyFontFamily; }
   $containerAxisCss
   $containerPaddingCss
   gap: 0;
+}
+/* 振假名：只有正文自带 ruby 的 cue 才有。选区脚本自己跳过 rt/rp（查词拿基底），
+   这里不动 user-select——页面级守卫要求原生选区始终可用。 */
+.cue ruby {
+  /* 读音比基底宽时（艦長/かんちょう）默认 space-around 会把基底两个字撑散成
+     「艦 長」；居中让基底保持紧凑、读音悬在上方。 */
+  ruby-align: center;
+}
+.cue rt {
+  font-size: 0.5em;
+  line-height: 1;
 }
 .cue {
   position: relative;
@@ -537,7 +551,8 @@ window.__lyricsMarkFavorites = function(texts) {
   var set = new Set(texts || []);
   var cues = document.querySelectorAll('.cue');
   for (var i = 0; i < cues.length; i++) {
-    var t = cues[i].textContent.trim();
+    // data-text 是无读音的纯文本；textContent 会把 <rt> 振假名拼进来，永不相等。
+    var t = (cues[i].dataset.text || cues[i].textContent).trim();
     if (set.has(t)) cues[i].classList.add('favorited');
     else cues[i].classList.remove('favorited');
   }
@@ -620,6 +635,26 @@ if ($currentIndex >= 0 && $currentIndex < _cues.length) {
 </body>
 </html>
 ''';
+  }
+
+  /// cue 正文 → HTML：正文里的 ruby 画回 `<ruby>基底<rt>读音</rt></ruby>`
+  /// （振假名）。区间已相对 [LyricsCueText.text]、互不重叠、按序。
+  static String _cueInnerHtml(LyricsCueText cue) {
+    if (cue.rubies.isEmpty) return _escapeHtml(cue.text);
+    final StringBuffer sb = StringBuffer();
+    int cursor = 0;
+    for (final EpubRubyAnnotation r in cue.rubies) {
+      sb
+        ..write(_escapeHtml(cue.text.substring(cursor, r.start)))
+        ..write('<ruby>')
+        ..write(_escapeHtml(cue.text.substring(r.start, r.end)))
+        ..write('<rt>')
+        ..write(_escapeHtml(r.reading))
+        ..write('</rt></ruby>');
+      cursor = r.end;
+    }
+    sb.write(_escapeHtml(cue.text.substring(cursor)));
+    return sb.toString();
   }
 
   static String _escapeHtml(String text) {
