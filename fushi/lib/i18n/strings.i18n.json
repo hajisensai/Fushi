@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "Local ONNX",
   "manga_ocr_engine_local_onnx_desc": "Fully offline, best quality. Needs a one-time model download and is slow on old hardware.",
   "manga_ocr_engine_none": "No OCR engine available. Download built-in models or set the mokuro CLI path in settings.",
-  "manga_ocr_engine_paired_host_desc": "Hands the work to a paired device on your network. Nothing is downloaded here.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "Device OCR",
   "manga_ocr_engine_system_desc": "Uses the text recognition built into your device. No download, fully offline, nothing uploaded — but noticeably weaker on vertical speech bubbles and handwriting than the local model.",
   "manga_ocr_engine_system_unavailable": "This device has no built-in text recognition available",

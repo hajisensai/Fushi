@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "本地 ONNX",
   "manga_ocr_engine_local_onnx_desc": "完全离线，质量最好。需要一次性下载模型，老设备上较慢。",
   "manga_ocr_engine_none": "没有可用的 OCR 引擎。请在设置中下载内置模型或配置 mokuro 命令行路径。",
-  "manga_ocr_engine_paired_host_desc": "交给局域网里已配对的设备来跑，本机不下任何模型。",
+  "manga_ocr_engine_paired_host_desc": "交给已配对的 Fushi 互联服务端来跑，本机不下任何模型。",
   "manga_ocr_engine_system": "设备自带",
   "manga_ocr_engine_system_desc": "用设备自带的文字识别。不用下载、完全离线、不上传任何内容；但对竖排气泡和手写体明显不如本地模型。",
   "manga_ocr_engine_system_unavailable": "此设备没有可用的系统文字识别",

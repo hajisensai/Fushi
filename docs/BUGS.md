@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2320 条。点号进各自文件。
+> 共 2321 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2514](bugs/BUG-2514-mihon-comico-magazine-comic-not-found.md) | ✅ | ✅ | コミコ源章节阶段报 Not Found |
 | [BUG-2513](bugs/BUG-2513-manga-series-remove-from-bookshelf.md) | ✅ | ✅ | 漫画作品页加入书架后无法取消 |
+| [BUG-2511](bugs/BUG-2511-cloudflare-partitioned-clearance-invisible-to-getcookies.md) | ✅ | ✅ | Windows 上 Cloudflare 的 Partitioned cf_clearance 对 CookieManager.getCookies 不可见，站点验证页永远不关 |
 | [BUG-2510](bugs/BUG-2510-manga-empty-chapters-language-scope.md) | ✅ | ✅ | 在线漫画作品页空章节不解释源按语言过滤 |
 | [BUG-2507](bugs/BUG-2507-youtube-stream-bounded-range.md) | ✅ | ✅ | YouTube 直连流只接受有界 Range，libmpv/ffmpeg 无 Range 首请求 403 → 打不开 |
 | [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |

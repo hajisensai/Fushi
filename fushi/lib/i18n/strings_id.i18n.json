@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX lokal",
   "manga_ocr_engine_local_onnx_desc": "Sepenuhnya offline, kualitas terbaik. Perlu unduhan model satu kali dan lambat di perangkat keras lama.",
   "manga_ocr_engine_none": "Tidak ada mesin OCR yang tersedia. Unduh model bawaan atau atur jalur CLI mokuro di pengaturan.",
-  "manga_ocr_engine_paired_host_desc": "Menyerahkan pekerjaan ke perangkat pasangan di jaringan Anda. Tidak ada yang diunduh di sini.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR perangkat",
   "manga_ocr_engine_system_desc": "Memakai pengenalan teks bawaan perangkat Anda. Tanpa unduhan, sepenuhnya luring, tidak ada yang diunggah — tetapi jelas lebih lemah pada balon percakapan vertikal dan tulisan tangan dibanding model lokal.",
   "manga_ocr_engine_system_unavailable": "Perangkat ini tidak punya pengenalan teks bawaan yang tersedia",

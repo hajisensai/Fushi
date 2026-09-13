@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX ในเครื่อง",
   "manga_ocr_engine_local_onnx_desc": "ออฟไลน์ทั้งหมด คุณภาพดีที่สุด ต้องดาวน์โหลดโมเดลครั้งแรกและอาจช้าบนฮาร์ดแวร์รุ่นเก่า",
   "manga_ocr_engine_none": "ไม่มีเอนจิน OCR ที่พร้อมใช้งาน ดาวน์โหลดโมเดลในตัวหรือตั้งค่าเส้นทาง Mokuro CLI ในการตั้งค่า",
-  "manga_ocr_engine_paired_host_desc": "ส่งงานไปยังอุปกรณ์ที่จับคู่ในเครือข่ายของคุณ ไม่มีการดาวน์โหลดที่นี่",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR ของอุปกรณ์",
   "manga_ocr_engine_system_desc": "ใช้การรู้จำข้อความที่มีมาในอุปกรณ์ ไม่ต้องดาวน์โหลด ทำงานออฟไลน์เต็มรูปแบบ ไม่อัปโหลดข้อมูลใด ๆ — แต่จัดการช่องคำพูดแนวตั้งและลายมือได้ด้อยกว่าโมเดลในเครื่องอย่างเห็นได้ชัด",
   "manga_ocr_engine_system_unavailable": "อุปกรณ์นี้ไม่มีการรู้จำข้อความในตัวที่ใช้งานได้",

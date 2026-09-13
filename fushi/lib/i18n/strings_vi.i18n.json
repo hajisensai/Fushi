@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX cục bộ",
   "manga_ocr_engine_local_onnx_desc": "Hoàn toàn ngoại tuyến, chất lượng tốt nhất. Cần tải mô hình một lần và chạy chậm trên phần cứng cũ.",
   "manga_ocr_engine_none": "Không có công cụ OCR. Tải xuống mô hình tích hợp hoặc đặt đường dẫn CLI mokuro trong cài đặt.",
-  "manga_ocr_engine_paired_host_desc": "Chuyển công việc cho thiết bị ghép đôi trên mạng. Không cần tải xuống gì ở đây.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR của thiết bị",
   "manga_ocr_engine_system_desc": "Dùng khả năng nhận dạng văn bản có sẵn trên thiết bị. Không cần tải về, hoàn toàn ngoại tuyến, không gửi gì đi — nhưng kém hơn hẳn mô hình cục bộ với bong bóng thoại dọc và chữ viết tay.",
   "manga_ocr_engine_system_unavailable": "Thiết bị này không có sẵn khả năng nhận dạng văn bản",
