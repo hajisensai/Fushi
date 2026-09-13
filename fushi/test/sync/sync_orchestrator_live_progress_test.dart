@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -54,6 +55,20 @@ Future<void> _seedPosition(
     updatedAt: Value(updatedAt),
   ));
 }
+
+/// BUG-2497：种「上次两端达成一致的位置基线」（互联 live 进度三方判定的第三方）。
+Future<void> _seedBaseline(
+  FushiDatabase db,
+  String bookKey, {
+  required int section,
+  required int norm,
+}) =>
+    db.setSyncBaseline(
+      bookKey,
+      kInterconnectBookProgressDimension,
+      BookProgressBaseline(sectionIndex: section, normCharOffset: norm)
+          .encode(),
+    );
 
 /// bookKey → uid 换算后的本地读取口（断言侧同样只认本地 uid 键）。
 Future<ReaderPositionRow?> _positionOf(FushiDatabase db, String bookKey) async {
@@ -193,7 +208,8 @@ void main() {
       expect(hostRow.updatedAt, 2000);
     });
 
-    test('host newer progress, local old -> apply to local (newer-wins)',
+    test(
+        'host moved off the agreed baseline, local unchanged -> apply to local',
         () async {
       // v82：host 位置行必须 JOIN 到 host epub_books（uid 键），无书行的进度
       // 不再可见——host 有进度必有书，先种书。
@@ -206,6 +222,8 @@ void main() {
       await _seedBook(localDb, 'BookB');
       await _seedPosition(localDb, 'BookB',
           section: 1, norm: 100, charOffset: 1, updatedAt: 1000);
+      // BUG-2497：三方判定——本端仍停在上次一致的位置，只有 host 动了。
+      await _seedBaseline(localDb, 'BookB', section: 1, norm: 100);
 
       final Directory tmp = Directory(p.join(work.path, 't2'))..createSync();
       final InterconnectSyncBackend backend =
@@ -220,7 +238,8 @@ void main() {
       expect(localRow.updatedAt, 5000);
     });
 
-    test('local newer not rolled back by host old', () async {
+    test('local moved off the agreed baseline, host unchanged -> push to host',
+        () async {
       await _seedBook(hostDb, 'BookC');
       await _seedPosition(hostDb, 'BookC',
           section: 1, norm: 10, charOffset: 1, updatedAt: 1000);
@@ -230,6 +249,8 @@ void main() {
       await _seedBook(localDb, 'BookC');
       await _seedPosition(localDb, 'BookC',
           section: 7, norm: 7000, charOffset: 70, updatedAt: 9000);
+      // BUG-2497：host 仍停在上次一致的位置，只有本端动了。
+      await _seedBaseline(localDb, 'BookC', section: 1, norm: 10);
 
       final Directory tmp = Directory(p.join(work.path, 't3'))..createSync();
       final InterconnectSyncBackend backend =
@@ -244,6 +265,159 @@ void main() {
       final ReaderPositionRow? hostRow = await _positionOf(hostDb, 'BookC');
       expect(hostRow!.sectionIndex, 7);
       expect(hostRow.updatedAt, 9000);
+    });
+
+    test(
+        'BUG-2497: both sides moved off the baseline -> conflict reported, '
+        'neither side overwritten', () async {
+      await _seedBook(hostDb, 'BookFork');
+      await _seedPosition(hostDb, 'BookFork',
+          section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
+
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookFork');
+      await _seedPosition(localDb, 'BookFork',
+          section: 3, norm: 300, charOffset: 3, updatedAt: 1000);
+      // 上次一致在 (1,100)；之后 host 读到 (9,9000)，本端读到 (3,300)——真分叉。
+      await _seedBaseline(localDb, 'BookFork', section: 1, norm: 100);
+
+      final Directory tmp = Directory(p.join(work.path, 'tfork'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+
+      // 旧实现（纯 LWW）在这里把本端 (3,300) 盖成 host 的 (9,9000)——用户报的
+      // 「无论服务端快还是慢，客户端都被覆盖」。现在：谁都不动，报冲突交用户。
+      expect(report.conflicts, hasLength(1));
+      expect(report.conflicts.single.assetKey, 'BookFork');
+      expect(report.conflicts.single.dimension,
+          kInterconnectBookProgressDimension);
+      expect(report.conflicts.single.localVersion, 1000);
+      expect(report.conflicts.single.remoteVersion, 5000);
+      final ReaderPositionRow? localRow =
+          await _positionOf(localDb, 'BookFork');
+      expect(localRow!.sectionIndex, 3);
+      expect(localRow.normCharOffset, 300);
+      final ReaderPositionRow? hostRow = await _positionOf(hostDb, 'BookFork');
+      expect(hostRow!.sectionIndex, 9);
+      expect(report.localBookProgressPulled, 0);
+    });
+
+    test(
+        'BUG-2497: no baseline yet and both sides differ -> conflict, '
+        'not silent newer-wins', () async {
+      await _seedBook(hostDb, 'BookNoBase');
+      await _seedPosition(hostDb, 'BookNoBase',
+          section: 9, norm: 9000, charOffset: 90, updatedAt: 5000);
+
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookNoBase');
+      await _seedPosition(localDb, 'BookNoBase',
+          section: 1, norm: 100, charOffset: 1, updatedAt: 1000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tnb'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+
+      expect(report.conflicts.map((SyncConflict c) => c.assetKey),
+          <String>['BookNoBase']);
+      final ReaderPositionRow? localRow =
+          await _positionOf(localDb, 'BookNoBase');
+      expect(localRow!.sectionIndex, 1, reason: '无基线不能猜谁动了，本端不被盖');
+    });
+
+    test(
+        'BUG-2497: host merely reopened the book (timestamp bumped, position '
+        'unchanged) while local read on -> local wins, no conflict', () async {
+      await _seedBook(hostDb, 'BookReopen');
+      // host 位置仍在基线 (1,100)，但时间戳比本端新（重开书刷新了 updatedAt）。
+      await _seedPosition(hostDb, 'BookReopen',
+          section: 1, norm: 100, charOffset: 1, updatedAt: 9_999_999);
+
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookReopen');
+      await _seedPosition(localDb, 'BookReopen',
+          section: 5, norm: 500, charOffset: 50, updatedAt: 2000);
+      await _seedBaseline(localDb, 'BookReopen', section: 1, norm: 100);
+
+      final Directory tmp = Directory(p.join(work.path, 'tro'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.conflicts, isEmpty, reason: 'host 只是重开过书、位置没动，不是分叉');
+
+      // 旧 LWW 在这里让 host 的「重开」胜出，把本端读到的 (5,500) 盖回 (1,100)。
+      final ReaderPositionRow? hostRow =
+          await _positionOf(hostDb, 'BookReopen');
+      expect(hostRow!.sectionIndex, 5);
+      expect(hostRow.normCharOffset, 500);
+      // host 端仍是防御性「取较新」：推上去的时间戳必须严格新于 host 的旧戳，
+      // 否则 PUT 被 host 静默丢弃、每轮都推每轮都丢。
+      expect(hostRow.updatedAt, greaterThan(9_999_999));
+      final ReaderPositionRow? localRow =
+          await _positionOf(localDb, 'BookReopen');
+      expect(localRow!.sectionIndex, 5);
+      expect(localRow.updatedAt, hostRow.updatedAt,
+          reason: '两端在这一刻真正对齐（同位置同时刻）');
+      // 基线推进到新的一致位置。
+      expect(
+        BookProgressBaseline.decode(await localDb.getSyncBaseline(
+            'BookReopen', kInterconnectBookProgressDimension)),
+        isA<BookProgressBaseline>()
+            .having((b) => b.sectionIndex, 'section', 5)
+            .having((b) => b.normCharOffset, 'norm', 500),
+      );
+    });
+
+    test(
+        'BUG-2497: same position, different timestamps -> aligned, baseline '
+        'recorded, no conflict', () async {
+      await _seedBook(hostDb, 'BookSame');
+      await _seedPosition(hostDb, 'BookSame',
+          section: 2, norm: 200, charOffset: 20, updatedAt: 7000);
+
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookSame');
+      await _seedPosition(localDb, 'BookSame',
+          section: 2, norm: 200, charOffset: -1, updatedAt: 1000);
+
+      final Directory tmp = Directory(p.join(work.path, 'tsame'))..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: base, token: token);
+      final SyncOrchestrator orch =
+          _orchestrator(db: localDb, backend: backend, tmp: tmp);
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+      expect(report.conflicts, isEmpty);
+      final ReaderPositionRow? localRow =
+          await _positionOf(localDb, 'BookSame');
+      expect(localRow!.updatedAt, 7000);
+      expect(localRow.charOffset, 20, reason: '较新者带来精确锚');
+      expect(
+        await localDb.getSyncBaseline(
+            'BookSame', kInterconnectBookProgressDimension),
+        BookProgressBaseline(sectionIndex: 2, normCharOffset: 200).encode(),
+      );
     });
   });
 
@@ -266,6 +440,8 @@ void main() {
       await _seedBook(localDb, 'BookRefresh');
       await _seedPosition(localDb, 'BookRefresh',
           section: 1, norm: 100, charOffset: 1, updatedAt: 1000);
+      // BUG-2497：三方判定——本端停在基线，只有 host 动了 → 拉取。
+      await _seedBaseline(localDb, 'BookRefresh', section: 1, norm: 100);
 
       final Directory tmp = Directory(p.join(work.path, 'tbr'))..createSync();
       final InterconnectSyncBackend backend =
@@ -297,6 +473,8 @@ void main() {
       await _seedBook(localDb, 'BookPushOnly');
       await _seedPosition(localDb, 'BookPushOnly',
           section: 7, norm: 7000, charOffset: 70, updatedAt: 9000);
+      // BUG-2497：host 停在基线，只有本端动了 → 纯推送。
+      await _seedBaseline(localDb, 'BookPushOnly', section: 1, norm: 10);
 
       final Directory tmp = Directory(p.join(work.path, 'tbp'))..createSync();
       final InterconnectSyncBackend backend =

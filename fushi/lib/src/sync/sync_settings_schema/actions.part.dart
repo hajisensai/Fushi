@@ -87,6 +87,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
     required this.kind,
     required this.title,
     required this.icon,
+    this.scope = SyncAssetChannelScope.cloud,
   });
 
   final SettingsContext settingsContext;
@@ -94,12 +95,17 @@ class _AssetTransferMenuRow extends StatelessWidget {
   final String title;
   final IconData icon;
 
+  /// 这一行跑在哪类通道上：云备份页的行只跑云通道，互联页的行只跑互联通道
+  /// （BUG-2494）。
+  final SyncAssetChannelScope scope;
+
   Future<void> _run(BuildContext context, SyncAssetDirection direction) {
     return runAssetTransferWithFeedback(
       context: context,
       appModel: settingsContext.appModel,
       kind: kind,
       direction: direction,
+      scope: scope,
     );
   }
 

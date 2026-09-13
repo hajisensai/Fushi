@@ -88,16 +88,28 @@ void main() {
   // 页点一下「上传词典」就把词典推给了一台他从没同意共享的对端 —— 本地音频数据库更糟，
   // 它连互联侧的开关都没有，多 GB 的 .db 会直接塞给 host。这正是 BUG-988 立的规矩
   // 「互联的事互联自己决定」，手动路径不能自己开后门。
-  test('手动资产传输只跑云备份通道，不碰互联对端', () {
+  test('手动资产传输默认只跑云备份通道，不碰互联对端；互联页显式选范围才跑互联（BUG-2494）',
+      () {
     final String src =
         File('lib/src/sync/sync_auto_trigger.dart').readAsStringSync();
     final int i =
         src.indexOf('Future<ManualSyncResult> runManualAssetTransfer(');
     expect(i, greaterThan(0), reason: '入口函数改名了就要同步改这条守卫');
     // 只在这个函数体内找，别被别处同形的 token 抢走窗口。
-    final String body = src.substring(i, i + 3000);
-    expect(body.contains('if (channel.isInterconnect) continue;'), isTrue,
-        reason: '手动传输必须显式跳过互联通道，否则绕过互联页的 opt-in');
+    final String body = src.substring(i, i + 3500);
+    // 云备份页的既有调用不传 scope：默认必须是 cloud，否则在云备份页点一下
+    // 「上传词典」就绕过互联页的 opt-in 把词典推给对端。
+    expect(
+        body.contains(
+            'SyncAssetChannelScope scope = SyncAssetChannelScope.cloud'),
+        isTrue,
+        reason: '默认范围必须是云通道');
+    // 通道按 scope 二选一过滤，而不是无条件跳过互联——后者让互联页永远没有
+    // 「下载对端词典」的入口（BUG-2494）。
+    expect(body.contains('channel.isInterconnect != wantInterconnect'), isTrue,
+        reason: '按 scope 过滤：cloud 跳过互联，interconnect 跳过云');
+    expect(body.contains('if (channel.isInterconnect) continue;'), isFalse,
+        reason: '无条件跳过互联通道的旧门不得回来');
   });
 
   // 本地音频源数据库曾经也在 ChannelSyncFlags 里（不分通道的一个开关）。它现在**根本

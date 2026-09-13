@@ -4774,5 +4774,6 @@
   "mining_audio_pad_readout": "${ms} ms",
   "audiobook_transcribe_model_scope_dedicated": "Dedicated — most accurate for this language",
   "audiobook_transcribe_model_scope_multilingual": "Multilingual — wide coverage, less accurate per language",
-  "audiobook_transcribe_elapsed_total": "Total time $elapsed"
+  "audiobook_transcribe_elapsed_total": "Total time $elapsed",
+  "remote_book_audiobook_download": "Download audiobook from peer"
 }

@@ -68,29 +68,32 @@ void main() {
       ]);
     });
 
-    test('server settings sub-page carries the three credential forms verbatim',
-        () {
-      final SettingsNavigationItem entry = dest.sections[0].items
-          .whereType<SettingsNavigationItem>()
-          .singleWhere((SettingsItem i) => i.id == 'sync.server_settings');
-      expect(entry.child, isNotNull, reason: '入口必须是子 schema 页，不是 builder 页');
-      expect(entry.visible, isNotNull, reason: '只有凭据式后端才显示入口');
-      final SettingsDestination sub = entry.child!();
-      expect(sub.id, dest.id, reason: '子页共用父分类 id');
-      expect(
-        sub.sections.expand(
-            (SettingsSection s) => s.items.map((SettingsItem i) => i.id)),
-        <String>['sync.webdav_config', 'sync.ftp_config', 'sync.sftp_config'],
-      );
-      for (final SettingsItem item in sub.sections.single.items) {
-        expect(item.visible, isNotNull, reason: '${item.id} 只在对应后端下显示');
-      }
-      expect(hasServerSettings(SyncBackendType.webDav), isTrue);
-      expect(hasServerSettings(SyncBackendType.ftp), isTrue);
-      expect(hasServerSettings(SyncBackendType.sftp), isTrue);
-      expect(hasServerSettings(SyncBackendType.googleDrive), isFalse);
-      expect(hasServerSettings(SyncBackendType.fushiServer), isFalse);
-    });
+    test(
+      'server settings sub-page carries the three credential forms verbatim',
+      () {
+        final SettingsNavigationItem entry = dest.sections[0].items
+            .whereType<SettingsNavigationItem>()
+            .singleWhere((SettingsItem i) => i.id == 'sync.server_settings');
+        expect(entry.child, isNotNull, reason: '入口必须是子 schema 页，不是 builder 页');
+        expect(entry.visible, isNotNull, reason: '只有凭据式后端才显示入口');
+        final SettingsDestination sub = entry.child!();
+        expect(sub.id, dest.id, reason: '子页共用父分类 id');
+        expect(
+          sub.sections.expand(
+            (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
+          ),
+          <String>['sync.webdav_config', 'sync.ftp_config', 'sync.sftp_config'],
+        );
+        for (final SettingsItem item in sub.sections.single.items) {
+          expect(item.visible, isNotNull, reason: '${item.id} 只在对应后端下显示');
+        }
+        expect(hasServerSettings(SyncBackendType.webDav), isTrue);
+        expect(hasServerSettings(SyncBackendType.ftp), isTrue);
+        expect(hasServerSettings(SyncBackendType.sftp), isTrue);
+        expect(hasServerSettings(SyncBackendType.googleDrive), isFalse);
+        expect(hasServerSettings(SyncBackendType.fushiServer), isFalse);
+      },
+    );
 
     test('selector is unconditional; account config is gated', () {
       final SettingsSection method = dest.sections[0];
@@ -123,49 +126,60 @@ void main() {
         'sync.dictionary_transfer',
         'sync.local_audio_transfer',
       ]);
-      expect(idsOf(dest.sections[4]),
-          <String>['sync.backup_export', 'sync.backup_import']);
+      expect(idsOf(dest.sections[4]), <String>[
+        'sync.backup_export',
+        'sync.backup_import',
+      ]);
     });
 
     test(
-        'auto-sync and upload switches are gated; content-scope switches are not',
-        () {
-      // Auto-sync、三个「上传X文件」开关、以及词典/本地音频两个传输动作行都带可见性
-      // 谓词（见下方 source guard 对谓词内容的锁定）；只有统计是 content-scope，恒显。
-      //
-      // 两个动作行归到「gated」这一侧，是因为它们**只在云备份通道上跑**（互联对端
-      // 的内容上传由互联页自己那组 opt-in 管，见 runManualAssetTransfer 里对互联通道
-      // 的显式跳过）。同步方式被选成互联时那条通道没有出站语义，留着就是死按钮。
-      SettingsItem byId(String id) => dest.sections
-          .expand((SettingsSection s) => s.items)
-          .firstWhere((SettingsItem i) => i.id == id);
-      expect(byId('sync.auto_sync').visible, isNotNull,
+      'auto-sync and upload switches are gated; content-scope switches are not',
+      () {
+        // Auto-sync、三个「上传X文件」开关、以及词典/本地音频两个传输动作行都带可见性
+        // 谓词（见下方 source guard 对谓词内容的锁定）；只有统计是 content-scope，恒显。
+        //
+        // 两个动作行归到「gated」这一侧，是因为它们**只在云备份通道上跑**（互联对端
+        // 的内容上传由互联页自己那组 opt-in 管，见 runManualAssetTransfer 里对互联通道
+        // 的显式跳过）。同步方式被选成互联时那条通道没有出站语义，留着就是死按钮。
+        SettingsItem byId(String id) => dest.sections
+            .expand((SettingsSection s) => s.items)
+            .firstWhere((SettingsItem i) => i.id == id);
+        expect(
+          byId('sync.auto_sync').visible,
+          isNotNull,
+          reason: 'auto-sync hides when the sync method itself has no outbound',
+        );
+        expect(
+          byId('sync.statistics').visible,
+          isNull,
           reason:
-              'auto-sync hides when the sync method itself has no outbound');
-      expect(byId('sync.statistics').visible, isNull,
-          reason:
-              'sync.statistics is a content-scope setting, global to every backend');
-      for (final String id in <String>[
-        'sync.content',
-        'sync.audiobook_files',
-        'sync.video_files',
-        'sync.dictionary_transfer',
-        'sync.local_audio_transfer',
-      ]) {
-        expect(byId(id).visible, isNotNull,
-            reason: '$id only acts on the cloud channel, gated on backend');
-      }
-    });
+              'sync.statistics is a content-scope setting, global to every backend',
+        );
+        for (final String id in <String>[
+          'sync.content',
+          'sync.audiobook_files',
+          'sync.video_files',
+          'sync.dictionary_transfer',
+          'sync.local_audio_transfer',
+        ]) {
+          expect(
+            byId(id).visible,
+            isNotNull,
+            reason: '$id only acts on the cloud channel, gated on backend',
+          );
+        }
+      },
+    );
 
-    test(
-        'upload switches hide only when the sync method is the interconnect '
+    test('upload switches hide only when the sync method is the interconnect '
         '(BUG-1088)', () {
       // Source guard: BUG-988 起互联通道读互联专属上传开关（互联分类里那四个），
       // 共享 sync.* 上传开关只管云通道——它们唯一的死区是「同步方式=互联」（该通道
       // 按互联专属开关走）。绝不能再按 _isHostingInterconnect 隐藏：host 身份不影响
       // 云后端出站，旧门控把 host 设备上 Google Drive 的上传开关整排藏掉（BUG-1088）。
-      final String src =
-          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/sync_settings_schema.dart',
+      ).readAsStringSync();
       for (final String id in <String>[
         'sync.content',
         'sync.audiobook_files',
@@ -178,10 +192,16 @@ void main() {
         final int at = src.indexOf("id: '$id'");
         expect(at, greaterThanOrEqualTo(0));
         final String block = src.substring(at, at + 500);
-        expect(block, contains('!= SyncBackendType.fushiServer'),
-            reason: '$id governs the cloud channel; dead when method=互联');
-        expect(block, isNot(contains('_isHostingInterconnect')),
-            reason: '$id must not hide on host identity (BUG-1088)');
+        expect(
+          block,
+          contains('!= SyncBackendType.fushiServer'),
+          reason: '$id governs the cloud channel; dead when method=互联',
+        );
+        expect(
+          block,
+          isNot(contains('_isHostingInterconnect')),
+          reason: '$id must not hide on host identity (BUG-1088)',
+        );
       }
     });
 
@@ -190,14 +210,17 @@ void main() {
       // combined "method is interconnect AND hosting" predicate shared with
       // sync_now / compare. Host identity alone (cloud backend selected) must
       // NOT hide it: the cloud channel keeps its outbound while hosting.
-      final String src =
-          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/sync_settings_schema.dart',
+      ).readAsStringSync();
       final int autoSyncAt = src.indexOf("id: 'sync.auto_sync'");
       expect(autoSyncAt, greaterThanOrEqualTo(0));
       final String autoSyncBlock = src.substring(autoSyncAt, autoSyncAt + 900);
-      expect(autoSyncBlock, contains('!_cloudOutboundUnavailable('),
-          reason:
-              'auto-sync hides only when the cloud channel has no outbound');
+      expect(
+        autoSyncBlock,
+        contains('!_cloudOutboundUnavailable('),
+        reason: 'auto-sync hides only when the cloud channel has no outbound',
+      );
     });
 
     test('manual-sync actions are gated on server mode (BUG-084)', () {
@@ -207,31 +230,42 @@ void main() {
       final SettingsSection actions = dest.sections[2];
       SettingsItem byId(String id) =>
           actions.items.firstWhere((SettingsItem i) => i.id == id);
-      expect(byId('sync.sync_now').visible, isNotNull,
-          reason: 'sync_now must be hidden when hosting as a server');
-      expect(byId('sync.compare').visible, isNotNull,
-          reason: 'compare must be hidden when hosting as a server');
-      expect(byId('sync.server_mode_note').visible, isNotNull,
-          reason: 'the server-mode note shows only while hosting');
+      expect(
+        byId('sync.sync_now').visible,
+        isNotNull,
+        reason: 'sync_now must be hidden when hosting as a server',
+      );
+      expect(
+        byId('sync.compare').visible,
+        isNotNull,
+        reason: 'compare must be hidden when hosting as a server',
+      );
+      expect(
+        byId('sync.server_mode_note').visible,
+        isNotNull,
+        reason: 'the server-mode note shows only while hosting',
+      );
     });
 
-    test(
-        'the action gates key off cloud-outbound availability '
+    test('the action gates key off cloud-outbound availability '
         '(BUG-084 / BUG-1088)', () {
       // Source guard: the gates must branch on _cloudOutboundUnavailable, which
       // requires the sync method to BE the interconnect AND the hosting role —
       // so neither a stale serverEnabled flag nor genuine hosting can hide
       // sync-now on a cloud backend (a host still uploads to Google Drive).
-      final String src =
-          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/sync_settings_schema.dart',
+      ).readAsStringSync();
       final int noteAt = src.indexOf("id: 'sync.server_mode_note'");
       final int nowAt = src.indexOf("id: 'sync.sync_now'");
       final int compareAt = src.indexOf("id: 'sync.compare'");
       expect(noteAt, greaterThanOrEqualTo(0));
       for (final int at in <int>[noteAt, nowAt, compareAt]) {
         expect(
-            src.substring(at, at + 200), contains('_cloudOutboundUnavailable'),
-            reason: 'manual-sync gate must use cloud-outbound availability');
+          src.substring(at, at + 200),
+          contains('_cloudOutboundUnavailable'),
+          reason: 'manual-sync gate must use cloud-outbound availability',
+        );
       }
       // 谓词链自身必须同时咬住三个条件：backendType==fushiServer（同步方式是互联）
       // + serverEnabled + interconnectEnabled（_isHostingInterconnect 的两条件，
@@ -239,36 +273,50 @@ void main() {
       final int helperAt = src.indexOf('bool _cloudOutboundUnavailable(');
       expect(helperAt, greaterThanOrEqualTo(0));
       final String helper = src.substring(helperAt, helperAt + 300);
-      expect(helper, contains('== SyncBackendType.fushiServer'),
-          reason: 'outbound only vanishes when the method itself is 互联');
-      expect(helper, contains('_isHostingInterconnect'),
-          reason: 'and only while actually hosting');
+      expect(
+        helper,
+        contains('== SyncBackendType.fushiServer'),
+        reason: 'outbound only vanishes when the method itself is 互联',
+      );
+      expect(
+        helper,
+        contains('_isHostingInterconnect'),
+        reason: 'and only while actually hosting',
+      );
       final int hostingAt = src.indexOf('bool _isHostingInterconnect(');
       expect(hostingAt, greaterThanOrEqualTo(0));
       final String hosting = src.substring(hostingAt, hostingAt + 200);
       expect(hosting, contains('serverEnabled'));
-      expect(hosting, contains('interconnectEnabled'),
-          reason: 'hosting role must also require interconnect to be enabled');
+      expect(
+        hosting,
+        contains('interconnectEnabled'),
+        reason: 'hosting role must also require interconnect to be enabled',
+      );
     });
 
     test('server-mode / interconnect notes are first-class status rows', () {
       // C1：两条指路/状态行走框架的 SettingsStatusItem，不再各自手拼
       // AdaptiveSettingsRow（那是 C0 消掉的特殊情况）。
-      final SettingsItem note = dest.sections[2].items
-          .firstWhere((SettingsItem i) => i.id == 'sync.server_mode_note');
+      final SettingsItem note = dest.sections[2].items.firstWhere(
+        (SettingsItem i) => i.id == 'sync.server_mode_note',
+      );
       expect(note, isA<SettingsStatusItem>());
       final SettingsItem moved = dest.sections[0].items.firstWhere(
-          (SettingsItem i) => i.id == 'sync.interconnect_config_note');
+        (SettingsItem i) => i.id == 'sync.interconnect_config_note',
+      );
       expect(moved, isA<SettingsStatusItem>());
-      final String src =
-          File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/sync_settings_schema.dart',
+      ).readAsStringSync();
       final int noteAt = src.indexOf("id: 'sync.server_mode_note'");
       final int syncNowAt = src.indexOf("id: 'sync.sync_now'");
       expect(noteAt, greaterThanOrEqualTo(0));
       expect(syncNowAt, greaterThan(noteAt));
-      expect(src.substring(noteAt, syncNowAt),
-          isNot(contains('AdaptiveSettingsRow(')),
-          reason: '状态行不再手拼');
+      expect(
+        src.substring(noteAt, syncNowAt),
+        isNot(contains('AdaptiveSettingsRow(')),
+        reason: '状态行不再手拼',
+      );
     });
 
     test('the fake SMB config option is gone', () {
@@ -283,33 +331,38 @@ void main() {
       // Source guard: _isBackendSelectable 对 fushiServer 必须 return true。
       // 解耦时它被从选择器摘掉，唯一补偿入口（互联页「设为备份后端」按钮）又被
       // host 门控藏住，host 设备上「备份写到已配对设备」入口彻底消失。
-      final String src =
-          File('lib/src/sync/sync_settings_schema/backend_config.part.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/sync/sync_settings_schema/backend_config.part.dart',
+      ).readAsStringSync();
       final int fnAt = src.indexOf('bool _isBackendSelectable(');
       expect(fnAt, greaterThanOrEqualTo(0));
       final String fn = src.substring(fnAt, src.indexOf('\n}', fnAt));
       final int caseAt = fn.indexOf('case SyncBackendType.fushiServer:');
       expect(caseAt, greaterThanOrEqualTo(0));
       final String afterCase = fn.substring(caseAt, caseAt + 80);
-      expect(afterCase, contains('return true'),
-          reason: 'fushiServer must be selectable as a sync method');
+      expect(
+        afterCase,
+        contains('return true'),
+        reason: 'fushiServer must be selectable as a sync method',
+      );
     });
 
-    test(
-        'selecting the interconnect as sync method enables interconnect '
+    test('selecting the interconnect as sync method enables interconnect '
         '(BUG-1088)', () {
       // Source guard: _selectBackend 选中 fushiServer 时必须顺手
       // setInterconnectEnabled(true)——不开互联总开关，连接配置区不显示、通道认证
       // 也过不去，选完就是个死后端。
-      final String src =
-          File('lib/src/sync/sync_settings_schema/backend_config.part.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/sync/sync_settings_schema/backend_config.part.dart',
+      ).readAsStringSync();
       final int fnAt = src.indexOf('Future<void> _selectBackend(');
       expect(fnAt, greaterThanOrEqualTo(0));
       final String fn = src.substring(fnAt, fnAt + 1200);
-      expect(fn, contains('setInterconnectEnabled(true)'),
-          reason: 'picking 互联 must flip the interconnect master toggle on');
+      expect(
+        fn,
+        contains('setInterconnectEnabled(true)'),
+        reason: 'picking 互联 must flip the interconnect master toggle on',
+      );
     });
   });
 
@@ -320,12 +373,14 @@ void main() {
       // 与「占了多少」同页；item id 'sync.data_storage_location' 保持不变
       // （历史命名前缀，搜索/导航锚点）。
       final SettingsSection section = buildDataStorageLocationSection();
-      expect(section.visible, isNotNull,
-          reason: 'data-storage section must be desktop-only gated');
       expect(
-        section.items.map((SettingsItem i) => i.id),
-        <String>['sync.data_storage_location'],
+        section.visible,
+        isNotNull,
+        reason: 'data-storage section must be desktop-only gated',
       );
+      expect(section.items.map((SettingsItem i) => i.id), <String>[
+        'sync.data_storage_location',
+      ]);
       final SettingsDestination storage = buildStorageDestination();
       expect(
         storage.sections
@@ -361,87 +416,109 @@ void main() {
       expect(dest.sections, hasLength(7));
     });
 
-    test('enable toggle is unconditional; config sections gated on the toggle',
-        () {
-      // 互联总开关（独立于 backendType 云备份后端）常显、无门控；连接设备 / 上传到
-      // 互联对端 / 本机服务器 三个配置区仅在互联启用（interconnectEnabled）时可见——
-      // 取代解耦前的 backendType == fushiServer 门控。
-      expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
-      expect(dest.sections[0].visible, isNull,
-          reason: 'the enable toggle must always be visible');
-      // 角色模型用法说明（哪台开服务器、哪台连接配对、角色互斥）挂在总开关区
-      // footer，是整页唯一一处讲清 client/host 分工的文案。只断 isNotNull 挡不住
-      // 「换成任何别的字符串」，所以两层守：① 绑定到 interconnect_enable_footer
-      // 这条 key（换成别的 key 或裸串即红）；② 断言语义锚点 server + pair（文案被
-      // 换成不相干内容即红）。刻意不做整串字面量全匹配——润色措辞不该误红。
-      final String? enableFooter = dest.sections[0].footer;
-      expect(enableFooter, t.interconnect_enable_footer,
-          reason: 'the enable section must keep the role-model usage note');
-      final String enableFooterText = (enableFooter ?? '').toLowerCase();
-      expect(enableFooterText, contains('server'),
-          reason: 'the note must say which device runs the sync server');
-      expect(enableFooterText, contains('pair'),
-          reason: 'the note must say the other device pairs with that server');
-      // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
-      // 主页只留一行带已配对数摘要的入口。
-      expect(idsOf(dest.sections[1]), <String>['interconnect.devices']);
-      expect(dest.sections[1].visible, isNotNull);
-      final SettingsNavigationItem devices =
-          dest.sections[1].items.single as SettingsNavigationItem;
-      expect(devices.child, isNotNull, reason: '入口必须是子 schema 页');
-      expect(devices.subtitleBuilder, isNotNull, reason: '入口行带实时摘要');
-      final SettingsDestination devicesPage = devices.child!();
-      expect(devicesPage.id, dest.id, reason: '子页共用父分类 id');
-      expect(
-        devicesPage.sections.expand(
-            (SettingsSection s) => s.items.map((SettingsItem i) => i.id)),
-        <String>['sync.hibiki_server_config', 'sync.lan_devices'],
-      );
-      // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
-      // 可见（host 无 outbound 时进一步隐藏）。
-      expect(idsOf(dest.sections[2]), <String>[
-        'interconnect.upload_content',
-        'interconnect.upload_dictionary',
-        'interconnect.upload_audiobook_files',
-        'interconnect.upload_video_files',
-      ]);
-      expect(dest.sections[2].visible, isNotNull);
-      // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
-      // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
-      expect(idsOf(dest.sections[3]), <String>[
-        'interconnect.share_statistics',
-        'interconnect.share_favorites',
-      ]);
-      expect(dest.sections[3].visible, isNotNull);
-      expect(dest.sections[3].footer, isNotNull,
-          reason: '双向 + 默认开启这件事必须在 UI 上说清楚');
-      // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
-      // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）+ 配置文件
-      // （Profile）双向搬运的两个一次性动作。
-      expect(idsOf(dest.sections[4]), <String>[
-        'interconnect.mine_to_server',
-        'interconnect.backup_backend',
-        'interconnect.service_config_sync',
-        'interconnect.profile_upload',
-        'interconnect.profile_download',
-      ]);
-      expect(dest.sections[4].visible, isNotNull);
-      // 本机作为服务器：host 模式开关 + host 侧「允许对端读写本机配置」许可——C2
-      // 整块挪进子页「主机服务」，主页只留一行带运行状态（端口）摘要的入口。
-      expect(idsOf(dest.sections[5]), <String>['interconnect.host']);
-      expect(dest.sections[5].visible, isNotNull);
-      final SettingsNavigationItem host =
-          dest.sections[5].items.single as SettingsNavigationItem;
-      expect(host.child, isNotNull, reason: '入口必须是子 schema 页');
-      expect(host.subtitleBuilder, isNotNull, reason: '入口行带运行状态摘要');
-      final SettingsDestination hostPage = host.child!();
-      expect(hostPage.id, dest.id, reason: '子页共用父分类 id');
-      expect(
-        hostPage.sections.expand(
-            (SettingsSection s) => s.items.map((SettingsItem i) => i.id)),
-        <String>['sync.server_mode', 'interconnect.profile_transfer_host'],
-      );
-    });
+    test(
+      'enable toggle is unconditional; config sections gated on the toggle',
+      () {
+        // 互联总开关（独立于 backendType 云备份后端）常显、无门控；连接设备 / 上传到
+        // 互联对端 / 本机服务器 三个配置区仅在互联启用（interconnectEnabled）时可见——
+        // 取代解耦前的 backendType == fushiServer 门控。
+        expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
+        expect(
+          dest.sections[0].visible,
+          isNull,
+          reason: 'the enable toggle must always be visible',
+        );
+        // 角色模型用法说明（哪台开服务器、哪台连接配对、角色互斥）挂在总开关区
+        // footer，是整页唯一一处讲清 client/host 分工的文案。只断 isNotNull 挡不住
+        // 「换成任何别的字符串」，所以两层守：① 绑定到 interconnect_enable_footer
+        // 这条 key（换成别的 key 或裸串即红）；② 断言语义锚点 server + pair（文案被
+        // 换成不相干内容即红）。刻意不做整串字面量全匹配——润色措辞不该误红。
+        final String? enableFooter = dest.sections[0].footer;
+        expect(
+          enableFooter,
+          t.interconnect_enable_footer,
+          reason: 'the enable section must keep the role-model usage note',
+        );
+        final String enableFooterText = (enableFooter ?? '').toLowerCase();
+        expect(
+          enableFooterText,
+          contains('server'),
+          reason: 'the note must say which device runs the sync server',
+        );
+        expect(
+          enableFooterText,
+          contains('pair'),
+          reason: 'the note must say the other device pairs with that server',
+        );
+        // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
+        // 主页只留一行带已配对数摘要的入口。
+        expect(idsOf(dest.sections[1]), <String>['interconnect.devices']);
+        expect(dest.sections[1].visible, isNotNull);
+        final SettingsNavigationItem devices =
+            dest.sections[1].items.single as SettingsNavigationItem;
+        expect(devices.child, isNotNull, reason: '入口必须是子 schema 页');
+        expect(devices.subtitleBuilder, isNotNull, reason: '入口行带实时摘要');
+        final SettingsDestination devicesPage = devices.child!();
+        expect(devicesPage.id, dest.id, reason: '子页共用父分类 id');
+        expect(
+          devicesPage.sections.expand(
+            (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
+          ),
+          <String>['sync.hibiki_server_config', 'sync.lan_devices'],
+        );
+        // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
+        // 可见（host 无 outbound 时进一步隐藏）。
+        // BUG-2494：「上传词典」开关之后紧跟一行互联通道专属的词典显式传输动作
+        // （上传 / 下载），补上互联页此前缺失的「下载对端词典」入口。
+        expect(idsOf(dest.sections[2]), <String>[
+          'interconnect.upload_content',
+          'interconnect.upload_dictionary',
+          'interconnect.dictionary_transfer',
+          'interconnect.upload_audiobook_files',
+          'interconnect.upload_video_files',
+        ]);
+        expect(dest.sections[2].visible, isNotNull);
+        // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
+        // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
+        expect(idsOf(dest.sections[3]), <String>[
+          'interconnect.share_statistics',
+          'interconnect.share_favorites',
+        ]);
+        expect(dest.sections[3].visible, isNotNull);
+        expect(
+          dest.sections[3].footer,
+          isNotNull,
+          reason: '双向 + 默认开启这件事必须在 UI 上说清楚',
+        );
+        // 交给已配对设备：制卡到已配对设备（原在「制卡」分类）+ 用互联做备份后端
+        // + 从 host 同步外部服务配置（BUG-1693 的 apikey 同步开关）+ 配置文件
+        // （Profile）双向搬运的两个一次性动作。
+        expect(idsOf(dest.sections[4]), <String>[
+          'interconnect.mine_to_server',
+          'interconnect.backup_backend',
+          'interconnect.service_config_sync',
+          'interconnect.profile_upload',
+          'interconnect.profile_download',
+        ]);
+        expect(dest.sections[4].visible, isNotNull);
+        // 本机作为服务器：host 模式开关 + host 侧「允许对端读写本机配置」许可——C2
+        // 整块挪进子页「主机服务」，主页只留一行带运行状态（端口）摘要的入口。
+        expect(idsOf(dest.sections[5]), <String>['interconnect.host']);
+        expect(dest.sections[5].visible, isNotNull);
+        final SettingsNavigationItem host =
+            dest.sections[5].items.single as SettingsNavigationItem;
+        expect(host.child, isNotNull, reason: '入口必须是子 schema 页');
+        expect(host.subtitleBuilder, isNotNull, reason: '入口行带运行状态摘要');
+        final SettingsDestination hostPage = host.child!();
+        expect(hostPage.id, dest.id, reason: '子页共用父分类 id');
+        expect(
+          hostPage.sections.expand(
+            (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
+          ),
+          <String>['sync.server_mode', 'interconnect.profile_transfer_host'],
+        );
+      },
+    );
 
     test('peer address list keeps its title and empty-state guidance', () {
       // 对端地址列表的标题与空态引导是 _FushiServerConfigWidget 内的纯 widget
@@ -450,15 +527,27 @@ void main() {
       final String source = File(
         'lib/src/sync/sync_settings_schema/interconnect.part.dart',
       ).readAsStringSync();
-      expect(source, contains('t.interconnect_peer_list_title'),
-          reason: 'the peer address list must keep its title');
-      expect(source, contains('t.interconnect_peer_list_empty'),
-          reason: 'an empty peer address list must keep its guidance text');
+      expect(
+        source,
+        contains('t.interconnect_peer_list_title'),
+        reason: 'the peer address list must keep its title',
+      );
+      expect(
+        source,
+        contains('t.interconnect_peer_list_empty'),
+        reason: 'an empty peer address list must keep its guidance text',
+      );
       final String emptyHint = t.interconnect_peer_list_empty.toLowerCase();
-      expect(emptyHint, contains('peer'),
-          reason: 'the empty-state text must name what the list holds');
-      expect(emptyHint, contains('pair'),
-          reason: 'the empty-state text must point at how to get a peer in');
+      expect(
+        emptyHint,
+        contains('peer'),
+        reason: 'the empty-state text must name what the list holds',
+      );
+      expect(
+        emptyHint,
+        contains('pair'),
+        reason: 'the empty-state text must point at how to get a peer in',
+      );
     });
 
     test('delegate section lives with interconnect, not in card creation', () {
@@ -470,45 +559,108 @@ void main() {
           .map((SettingsItem i) => i.id)
           .toList();
       expect(allIds, contains('interconnect.mine_to_server'));
-      final List<String> cardIds = buildCardCreationDestination()
-          .sections
+      final List<String> cardIds = buildCardCreationDestination().sections
           .expand((SettingsSection s) => s.items)
           .map((SettingsItem i) => i.id)
           .toList();
       expect(cardIds, isNot(contains('interconnect.mine_to_server')));
     });
 
-    test('points at interconnect-related settings instead of mirroring them',
-        () {
-      // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位。此前在互联
-      // 分类镜像三行同一 builder；用户拍板（2026-09-06）改成一行指路——不再重复
-      // 渲染开关，点进去落到查词分类并定位远端查词那一行。仅互联启用时可见。
-      expect(
-          idsOf(dest.sections[6]), <String>['interconnect.related_settings']);
-      expect(dest.sections[6].visible, isNotNull);
-      final SettingsNavigationItem related =
-          dest.sections[6].items.single as SettingsNavigationItem;
-      expect(related.onTap, isNotNull, reason: '指路行必须能点进查词分类');
-      // 三个被指的行仍各在其位（查词两行 / 同步一行），没有随镜像一起消失。
-      final List<String> lookupIds = buildLookupDestination()
-          .sections
-          .expand((SettingsSection s) => s.items)
-          .map((SettingsItem i) => i.id)
-          .toList();
-      expect(
+    test(
+      'points at interconnect-related settings instead of mirroring them',
+      () {
+        // 远端词典查询/管理音频来源/远端占位卡在查词、同步分类各有其位。此前在互联
+        // 分类镜像三行同一 builder；用户拍板（2026-09-06）改成一行指路——不再重复
+        // 渲染开关，点进去落到查词分类并定位远端查词那一行。仅互联启用时可见。
+        expect(idsOf(dest.sections[6]), <String>[
+          'interconnect.related_settings',
+        ]);
+        expect(dest.sections[6].visible, isNotNull);
+        final SettingsNavigationItem related =
+            dest.sections[6].items.single as SettingsNavigationItem;
+        expect(related.onTap, isNotNull, reason: '指路行必须能点进查词分类');
+        // 三个被指的行仍各在其位（查词两行 / 同步一行），没有随镜像一起消失。
+        final List<String> lookupIds = buildLookupDestination().sections
+            .expand((SettingsSection s) => s.items)
+            .map((SettingsItem i) => i.id)
+            .toList();
+        expect(
           lookupIds,
-          containsAll(
-              <String>['lookup.remote_lookup', 'lookup.audio_sources']));
-      final List<String> syncIds = buildSyncBackupDestination()
-          .sections
-          .expand((SettingsSection s) => s.items)
-          .map((SettingsItem i) => i.id)
-          .toList();
-      expect(syncIds, contains('sync.show_remote_entries'));
-    });
+          containsAll(<String>['lookup.remote_lookup', 'lookup.audio_sources']),
+        );
+        final List<String> syncIds = buildSyncBackupDestination().sections
+            .expand((SettingsSection s) => s.items)
+            .map((SettingsItem i) => i.id)
+            .toList();
+        expect(syncIds, contains('sync.show_remote_entries'));
+      },
+    );
 
     test('host-server group keeps its explanatory footer', () {
       expect(dest.sections[5].footer, isNotNull);
+    });
+
+    test('upload section carries an explicit dictionary transfer row scoped to '
+        'the interconnect channel (BUG-2494)', () {
+      // 互联页此前没有任何「把对端的词典拉下来」的入口：云备份页那行「词典 · 传输 ▾」
+      // 在同步方式=互联时被藏掉，且 runManualAssetTransfer 显式跳过互联通道；互联页
+      // 只有一个文案叫「上传词典」的开关。这一行必须与上传开关同区、同门控（互联开
+      // 启且非 host），并且跑在互联通道范围上——不能复用云通道的默认范围，否则点一下
+      // 就把词典推上云盘而不是对端。
+      final SettingsSection upload = dest.sections.firstWhere(
+        (SettingsSection s) => s.id == 'interconnect.upload.section',
+      );
+      final List<String> ids = idsOf(upload);
+      expect(ids, contains('interconnect.dictionary_transfer'));
+      expect(
+        ids.indexOf('interconnect.dictionary_transfer'),
+        ids.indexOf('interconnect.upload_dictionary') + 1,
+        reason: '传输动作紧跟在「上传词典」开关之后，用户在同一处看到开关与显式动作',
+      );
+      expect(upload.visible, isNotNull, reason: '整区按互联开启 + 非 host 门控，动作行随区隐藏');
+
+      final String src = File(
+        'lib/src/sync/sync_settings_schema.dart',
+      ).readAsStringSync();
+      final int at = src.indexOf("id: 'interconnect.dictionary_transfer'");
+      expect(at, greaterThanOrEqualTo(0));
+      final String block = src.substring(at, at + 600);
+      expect(
+        block,
+        contains('scope: SyncAssetChannelScope.interconnect'),
+        reason: '互联页的传输行必须只跑互联通道',
+      );
+      expect(block, contains('kind: SyncAssetKind.dictionary'));
+    });
+
+    test('runManualAssetTransfer filters channels by scope instead of '
+        'unconditionally skipping the interconnect (BUG-2494)', () {
+      // 源码守卫：旧实现 `if (channel.isInterconnect) continue;` 让互联通道结构上
+      // 永远跑不到资产传输——互联页不管加什么按钮都是死的。现在必须按 scope 二选一。
+      final String src = File(
+        'lib/src/sync/sync_auto_trigger.dart',
+      ).readAsStringSync();
+      final int head = src.indexOf(
+        'Future<ManualSyncResult> runManualAssetTransfer(',
+      );
+      expect(head, greaterThanOrEqualTo(0));
+      final int end = src.indexOf('\n}\n', head);
+      final String body = src.substring(head, end);
+      expect(
+        body,
+        contains('SyncAssetChannelScope scope = SyncAssetChannelScope.cloud'),
+        reason: '云备份页的既有调用不传 scope 时仍只跑云通道',
+      );
+      expect(
+        body,
+        contains('channel.isInterconnect != wantInterconnect'),
+        reason: '按 scope 过滤通道：云范围跳过互联，互联范围跳过云',
+      );
+      expect(
+        body,
+        isNot(contains('if (channel.isInterconnect) continue;')),
+        reason: '无条件跳过互联通道的旧门必须移除',
+      );
     });
   });
 }

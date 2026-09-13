@@ -4774,5 +4774,6 @@
   "mining_audio_pad_readout": "${ms} 毫秒",
   "audiobook_transcribe_model_scope_dedicated": "专用模型 · 这门语言识别最准",
   "audiobook_transcribe_model_scope_multilingual": "通用模型 · 语言覆盖广，单语言精度不如专用模型",
-  "audiobook_transcribe_elapsed_total": "总耗时 $elapsed"
+  "audiobook_transcribe_elapsed_total": "总耗时 $elapsed",
+  "remote_book_audiobook_download": "从互联对端下载有声书"
 }

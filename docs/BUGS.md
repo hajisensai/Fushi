@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2294 条。点号进各自文件。
+> 共 2298 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2497](bugs/BUG-2497-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |
+| [BUG-2496](bugs/BUG-2496-remote-audiobook-entry-lost-after-book-only.md) | ✅ | ✅ | 互联只下到书没下到有声书后再无补拉有声书入口 |
+| [BUG-2495](bugs/BUG-2495-dictionary-load-blocks-on-cloud-evicted-files.md) | ✅ | ✅ | 云盘「仅云端」词典文件让冷启动同步 FFI 装载无限期卡死 |
+| [BUG-2494](bugs/BUG-2494-interconnect-dictionary-transfer-entry.md) | ✅ | ✅ | 互联页没有词典下载入口：显式词典传输动作跳过互联通道 |
 | [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
 | [BUG-2484](bugs/BUG-2484-manga-percent-filename.md) | ✅ | ✅ | 漫画页文件名含裸百分号时翻页/选字/制卡全抛 Illegal percent encoding |
 | [BUG-2482](bugs/BUG-2482-webkit-line-box-contain-zero-height-lines.md) | ✅ | ✅ | WebKit 上 BUG-2472 的 line-box-contain 把嵌套 inline / 空行行盒压成零高：目录列叠印、空行消失 |
