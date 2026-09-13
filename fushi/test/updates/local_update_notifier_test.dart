@@ -2,7 +2,13 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/services.dart' show MethodCall, MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+// BUG-2499 守卫要驱动插件内部的 image XML 序列化（未导出）；补丁没打上时这里
+// 直接暴露，胜过线上静默丢图。
+// ignore: implementation_imports
+import 'package:flutter_local_notifications_windows/src/details/xml/image.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:xml/xml.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
@@ -15,6 +21,8 @@ import 'package:fushi_engine/updates/update_feed_kind.dart';
 ///   上把 payload 与 actionId 都填成被点元素的 arguments，本体载荷会丢）；
 /// ② 本地化文案：单条带发布时刻与两个按钮，多条汇总不带时刻。
 /// 外加一条 method channel 级守卫（BUG-2498）：初始化绝不向系统申请权限。
+/// 再加两条 Windows 图片路径守卫（BUG-2499）：头部图标路径分隔符归一；toast
+/// 配图 `src` 不得百分号编码（渲染器不解码非 ASCII，图会静默丢）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -66,8 +74,7 @@ void main() {
         windowsIconPath: 'unused',
       );
       expect(await notifier.ensureReady(), isTrue);
-      expect(calls, <String>['initialize'],
-          reason: '初始化不回放冷启动点击——回放是启动期单独一步');
+      expect(calls, <String>['initialize'], reason: '初始化不回放冷启动点击——回放是启动期单独一步');
       await notifier.replayLaunchResponse();
       expect(calls, <String>['initialize', 'getNotificationAppLaunchDetails']);
       expect(calls, isNot(contains('requestNotificationsPermission')),
@@ -193,6 +200,52 @@ void main() {
       expect(text.body, contains('S01E01'));
       expect(text.body, isNot(contains(':')));
       expect(text.body, contains('2'));
+    });
+  });
+
+  group('BUG-2499：Windows toast 图片路径', () {
+    test('bundledAssetPath 输出宿主原生分隔符（IconUri 混合分隔符不出图标）', () {
+      final String path = LocalUpdateNotifier.bundledAssetPath(
+        kWindowsNotificationIconAsset,
+      );
+      expect(path, p.normalize(path));
+      expect(
+        p.split(path).sublist(p.split(path).length - 3),
+        <String>['assets', 'meta', 'icon.png'],
+      );
+      expect(p.isAbsolute(path), isTrue);
+    });
+
+    test('file 配图的 src 是裸 Windows 路径，非 ASCII 不百分号编码', () {
+      const String cover =
+          r'D:\HIBIKI\video_covers\video_グロウアップショウ ～ひまわり～ (2026) - S01E08.jpg';
+      final XmlBuilder builder = XmlBuilder();
+      WindowsImage(
+        Uri.file(cover, windows: true),
+        altText: 'cover',
+        placement: WindowsImagePlacement.hero,
+      ).buildXml(builder);
+      final XmlElement image = builder.buildDocument().rootElement;
+      expect(
+        image.getAttribute('src'),
+        cover,
+        reason: 'ci/patches/hosted/flutter_local_notifications_windows-2.0.1 '
+            '没打上（跑 ci/apply-patches.sh）：src 被 Uri.file 百分号编码后 '
+            'Windows 不渲染非 ASCII 路径的配图',
+      );
+      expect(image.getAttribute('placement'), 'hero');
+    });
+
+    test('非 file scheme 的配图保持 URI 原样', () {
+      final XmlBuilder builder = XmlBuilder();
+      WindowsImage(
+        Uri.parse('ms-appx:///assets/meta/icon.png'),
+        altText: 'icon',
+      ).buildXml(builder);
+      expect(
+        builder.buildDocument().rootElement.getAttribute('src'),
+        'ms-appx:///assets/meta/icon.png',
+      );
     });
   });
 }

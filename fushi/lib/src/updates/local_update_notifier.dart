@@ -98,11 +98,17 @@ class LocalUpdateNotifier implements UpdateNotifier {
 
   /// 随包资产在磁盘上的绝对路径：`<exe 目录>/data/flutter_assets/<asset>`。
   /// 按 exe 定位而不是 cwd——从文件关联 / 开始菜单启动时 cwd 不是安装目录。
-  static String bundledAssetPath(String asset) => p.join(
-        p.dirname(Platform.resolvedExecutable),
-        'data',
-        'flutter_assets',
-        asset,
+  ///
+  /// 必须 [p.normalize]：asset 键是 `/` 分隔的，`p.join` 不会改写它，直接拼出
+  /// `…\flutter_assets\assets/meta/icon.png`。Windows 的通知渲染器把这种混合
+  /// 分隔符的 `IconUri` 当坏路径——头部只剩文字（BUG-2499）；纯反斜杠才出图标。
+  static String bundledAssetPath(String asset) => p.normalize(
+        p.join(
+          p.dirname(Platform.resolvedExecutable),
+          'data',
+          'flutter_assets',
+          asset,
+        ),
       );
 
   @override
@@ -400,6 +406,10 @@ class LocalUpdateNotifier implements UpdateNotifier {
               arguments: notification.payload ?? '',
             ),
       images: <WindowsImage>[
+        // 插件只收 Uri；`Uri.file` 会把非 ASCII 路径百分号编码，而 Windows 通知
+        // 渲染器不解码它——日文/中文标题的封面就静默丢图。真正落进 XML 的 `src`
+        // 由 ci/patches 里的插件补丁还原成裸路径（BUG-2499），这里别改成别的
+        // Uri 构造，也别在这层自己拼字符串。
         if (image != null)
           WindowsImage(
             Uri.file(image, windows: true),

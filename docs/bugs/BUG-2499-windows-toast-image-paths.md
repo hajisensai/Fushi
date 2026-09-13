@@ -1,0 +1,9 @@
+## BUG-2499 · Windows 通知配图与头部图标不显示
+- **报告**：2026-09-13（用户：截图「订阅更新」toast，头部只有「Fushi」字样无图标，正文无该集抽帧 / 作品封面）
+- **真实性**：✅ 真 bug，两层各有独立根因（均已用同 AUMID 的 PowerShell WinRT toast 对照探针 + 用户目视定案）：
+  - **配图**：`fushi/lib/src/updates/local_update_notifier.dart:411`（`_windowsDetails`）把配图交给插件 `WindowsImage(Uri.file(image, windows: true))`，插件 `flutter_local_notifications_windows-2.0.1/lib/src/details/xml/image.dart:14` 直接 `src = uri.toString()`，日文/中文标题的封面路径被百分号编码成 `file:///D:/.../video_%E3%82%B0....jpg`。**Windows 通知渲染器不解码 `file:///` 里的非 ASCII 百分号编码**，图静默丢；纯 ASCII 路径（`%20` 也算）正常、裸 Windows 路径（`D:\...\日本.jpg`）正常。通知历史里那条 toast 的原始 XML 确实带了 hero 图、文件也在（57KB），所以不是「没抽到帧」。
+  - **头部图标**：`local_update_notifier.dart:105`（`bundledAssetPath`）用 `p.join(exeDir, 'data', 'flutter_assets', 'assets/meta/icon.png')`，asset 键里的 `/` 不被改写，注册表 `IconUri` 落成 `D:\APP\Hibiki\data\flutter_assets\assets/meta/icon.png`（混合分隔符）→ Windows 解析不到图标。同一张图纯反斜杠路径注册的新 AUMID 正常出图标。
+  - **叠加一层平台事实**：通知平台用户服务 `WpnUserService` **按 AUMID 在内存缓存首次解析的图标结果**，之后改注册表 `IconUri`、删键重建、重启 `ShellExperienceHost` / `explorer.exe` 都不刷新，只有该服务重启（注销 / 重启系统）才重读。所以已经在坏路径下发过通知的机器，更新后要**注销或重启一次**图标才出现——app 无法自行处理（重启用户服务要管理员）。
+- **[x] ① 已修复** — 补丁 `ci/patches/hosted/flutter_local_notifications_windows-2.0.1/lib/src/details/xml/image.dart`：`file` scheme 的 `<image src>` 输出 `uri.toFilePath(windows: true)`（裸路径），其它 scheme（`ms-appx` / `http`）保持 URI；`bundledAssetPath` 加 `p.normalize` 归一成宿主原生分隔符。上游放出等价修复后删补丁。
+- **[x] ② 已加自动化测试** — `fushi/test/updates/local_update_notifier_test.dart`「BUG-2499」组三条：`bundledAssetPath` 输出即 `p.normalize` 结果；`WindowsImage(Uri.file(非 ASCII 路径)).buildXml` 的 `src` 等于裸路径（补丁没打上直接红，变异实测已验）；非 file scheme 原样。`flutter_local_notifications_windows` 为此进 `dev_dependencies`（本来就是传递依赖）。
+- **备注**：探针脚本与结论在 job tmp（`toast_probe*.ps1`）；`wpndatabase.db` 的 `HandlerAssets` 对这些 AUMID 全空，图标缓存不落盘。

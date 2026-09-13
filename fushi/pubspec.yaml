@@ -185,6 +185,11 @@ dev_dependencies:
   # PermissionHandlerPlatform.instance，在 flutter test 里复刻
   # permission_handler_android 的 SDK 分级语义（原生通道不可用）。
   permission_handler_platform_interface: ^3.9.0
+  # BUG-2499: local_update_notifier_test 直接驱动 Windows toast 的 image XML
+  # 序列化，守卫 ci/patches/hosted/flutter_local_notifications_windows-2.0.1
+  # 的补丁真的打上了（file 路径不得百分号编码）。flutter_local_notifications
+  # 的传递依赖，声明只为测试 import。
+  flutter_local_notifications_windows: ^2.0.1
   drift_dev: ^2.23.0
   dependency_validator: ^3.0.0
   flutter_lints: ^2.0.1
