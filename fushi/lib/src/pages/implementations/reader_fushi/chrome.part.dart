@@ -969,7 +969,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   minScale: 0.5,
                   maxScale: 10,
                   child: Center(
-                    child: Image.file(file, fit: BoxFit.contain),
+                    child: Image.file(
+                      file,
+                      fit: BoxFit.contain,
+                      // BUG-2496：坏图解码失败退回占位图标，不当致命 FlutterError。
+                      errorBuilder: (_, Object error, __) {
+                        ErrorLogService.instance.logDiagnostic(
+                          'ReaderFushiPage.imageViewer.coverDecode',
+                          '${file.path}: $error',
+                        );
+                        return const Icon(Icons.broken_image_outlined,
+                            size: 64);
+                      },
+                    ),
                   ),
                 ),
               ),

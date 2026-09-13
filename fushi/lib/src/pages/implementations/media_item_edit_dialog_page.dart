@@ -330,6 +330,19 @@ class MediaItemCoverOverrideField extends StatelessWidget {
                     width: tokens.spacing.gap * 6,
                     image: imageProvider,
                     fit: BoxFit.contain,
+                    // BUG-2496：坏封面文件解码失败退回占位图标，不当致命错误。
+                    // FileImage.toString() 自带路径，直接记 provider 就有 path。
+                    errorBuilder: (_, Object error, __) {
+                      ErrorLogService.instance.logDiagnostic(
+                        'MediaItemCoverOverrideField.coverDecode',
+                        '$imageProvider: $error',
+                      );
+                      return SizedBox(
+                        height: tokens.spacing.gap * 6,
+                        width: tokens.spacing.gap * 6,
+                        child: const Icon(Icons.broken_image_outlined),
+                      );
+                    },
                   ),
                 ),
               ),

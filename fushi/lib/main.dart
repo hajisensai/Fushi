@@ -631,6 +631,16 @@ void main([List<String> args = const <String>[]]) {
         return;
       }
       FlutterError.presentError(details);
+      // BUG-2496：框架自己标 `silent: true` 的错误（图片解码失败等
+      // `MultiFrameImageStreamCompleter` 上报的非致命错误）不是崩溃前兆，
+      // 只留诊断痕迹（不计入错误计数、不同步 flush），别把一张坏封面记成致命错误。
+      if (details.silent) {
+        ErrorLogService.instance.logDiagnostic(
+          flutterErrorLogSource(details),
+          '$msg\n${details.stack}',
+        );
+        return;
+      }
       // TODO-607 P0-1：FlutterError 是致命级，用同步 flush 落盘——若这条错误紧接着把
       // 进程带崩（如 build/layout 期的 native 回调异常），异步 append 来不及写盘。
       ErrorLogService.instance.logFatal(

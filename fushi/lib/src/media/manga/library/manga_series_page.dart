@@ -1520,7 +1520,21 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         coverPath: row.coverPath,
       );
       if (resolved != null) {
-        return Image.file(File(resolved), fit: BoxFit.cover);
+        return Image.file(
+          File(resolved),
+          fit: BoxFit.cover,
+          // BUG-2496：坏封面文件解码失败退回占位块，不当致命 FlutterError。
+          errorBuilder: (_, Object error, __) {
+            ErrorLogService.instance.logDiagnostic(
+              'MangaSeriesPage.coverDecode',
+              '$resolved: $error',
+            );
+            return const ColoredBox(
+              color: Color(0xff303030),
+              child: Icon(Icons.menu_book_outlined),
+            );
+          },
+        );
       }
     }
     final MangaSeriesTarget target = widget.target;

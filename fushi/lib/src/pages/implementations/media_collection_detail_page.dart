@@ -1944,7 +1944,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                   color: Color(0x1FFFFFFF),
                                   child: Icon(Icons.person_outline, size: 42),
                                 )
-                              : Image(image: image, fit: BoxFit.cover),
+                              : Image(
+                                  image: image,
+                                  fit: BoxFit.cover,
+                                  // BUG-2496：坏头像文件解码失败退回占位，不当致命错误。
+                                  errorBuilder: (_, Object error, __) {
+                                    ErrorLogService.instance.logDiagnostic(
+                                      'MediaCollectionDetailPage.credit.coverDecode',
+                                      '${path ?? url}: $error',
+                                    );
+                                    return const ColoredBox(
+                                      color: Color(0x1FFFFFFF),
+                                      child: Icon(Icons.person_outline,
+                                          size: 42),
+                                    );
+                                  },
+                                ),
                         ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
@@ -2042,7 +2057,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                             fit: StackFit.expand,
                             children: <Widget>[
                               if (thumb != null && File(thumb).existsSync())
-                                Image.file(File(thumb), fit: BoxFit.cover)
+                                Image.file(
+                                  File(thumb),
+                                  fit: BoxFit.cover,
+                                  // BUG-2496：坏缩略图解码失败退回底色块，不当致命错误。
+                                  errorBuilder: (_, Object error, __) {
+                                    ErrorLogService.instance.logDiagnostic(
+                                      'MediaCollectionDetailPage.extra.coverDecode',
+                                      '$thumb: $error',
+                                    );
+                                    return const ColoredBox(
+                                        color: Color(0x1FFFFFFF));
+                                  },
+                                )
                               else if (thumb != null)
                                 Image(
                                   image: AppCachedHttpImage(thumb),

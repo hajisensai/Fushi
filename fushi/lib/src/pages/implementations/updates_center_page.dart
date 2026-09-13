@@ -207,6 +207,22 @@ class _UpdateEntryTile extends StatelessWidget {
                 width: 64,
                 height: 36,
                 fit: BoxFit.cover,
+                // BUG-2496：坏图（截断/非图片字节）解码失败不再是致命
+                // FlutterError，退回域图标并留一条诊断痕迹。
+                errorBuilder: (_, Object error, __) {
+                  ErrorLogService.instance.logDiagnostic(
+                    'UpdatesCenterPage.coverDecode',
+                    '$imagePath: $error',
+                  );
+                  return Icon(
+                    kind == null
+                        ? Icons.notifications_outlined
+                        : updateFeedKindIcon(kind),
+                    color: unseen
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.outline,
+                  );
+                },
               ),
             )
           : Icon(
