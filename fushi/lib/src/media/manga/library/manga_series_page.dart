@@ -577,6 +577,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   /// 「识别本章」：已下载的章目录排一个整卷 OCR 任务（阅读器外触发，设计稿 §1.3）。
   ///
+  /// 已有识别结果的章 = **重新识别**（丢掉逐页缓存重跑）；还没结果的章沿用缓存
+  /// 续跑。此前不分这两种，模型没换时整卷缓存命中直接回放旧结果，用户点了
+  /// 「识别本章」什么都不会变。
+  ///
   /// 引擎解析与向导 / 下载钩子共用同一份探测（`manga_ocr_engine_probe.dart`）；
   /// 与后台钩子的差别只有「用户在场」：Lens 可以选，但要先过一次上传同意闸门。
   /// 任务经 `MangaOcrJobRegistry.enqueue` 按 bookKey 排队（BUG-2449 所有权 +
@@ -591,6 +595,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       entry,
       row,
       <OnlineMangaChapter>[chapter],
+      onlyMissing: await _chapterNeedsOcr(bookDir, chapter.key),
     );
     if (queued > 0 && mounted) {
       FushiToast.show(msg: t.manga_series_ocr_queued);
@@ -641,8 +646,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<int> _enqueueChapterOcr(
     OnlineMangaLibraryEntry entry,
     EpubBookRow row,
-    List<OnlineMangaChapter> chapters,
-  ) async {
+    List<OnlineMangaChapter> chapters, {
+    bool onlyMissing = true,
+  }) async {
     final AppModel? appModel = _appModelOrNull;
     if (appModel == null) return 0;
     final MangaOcrWizardEngines engines =
@@ -682,6 +688,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         engines: engines,
         imageDirPath: chapterDir.path,
         lensLanguage: appModel.mangaOcrLensLanguage,
+        onlyMissing: onlyMissing,
         volumeTitle:
             '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
         remoteTarget: availability.remoteTarget,
