@@ -4,9 +4,11 @@ import FlutterMacOS
 import macos_window_utils
 
 @main
-class AppDelegate: FlutterAppDelegate {
+class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
   private var activeSecurityScopedURLs: [String: URL] = [:]
   private var challengeBrowser: FushiChallengeBrowser?
+  private var pendingSourceUrls: [String] = []
+  private var sourceUrlEventSink: FlutterEventSink?
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
     if let windowController =
@@ -17,6 +19,10 @@ class AppDelegate: FlutterAppDelegate {
       // 系统语音转录（macOS 26 的 SpeechAnalyzer）；与 iOS 同一份实现。
       FushiSpeechTranscriber.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      let sourceUrlChannel = FlutterEventChannel(
+        name: "app.fushi.reader/source_urls/stream",
+        binaryMessenger: controller.engine.binaryMessenger)
+      sourceUrlChannel.setStreamHandler(self)
       challengeBrowser = FushiChallengeBrowser(
         binaryMessenger: controller.engine.binaryMessenger
       ) { [weak self] in self?.mainFlutterWindow }
@@ -44,6 +50,45 @@ class AppDelegate: FlutterAppDelegate {
       NSLog("[Fushi] macOS Flutter controller unavailable; custom channels were not registered")
     }
     super.applicationDidFinishLaunching(notification)
+  }
+
+  override func application(_ application: NSApplication, open urls: [URL]) {
+    // Launch Services may deliver before the engine/channel exists. Keep source
+    // links until Dart subscribes; other schemes/hosts still reach plugins.
+    var remainingUrls: [URL] = []
+    for url in urls {
+      guard url.scheme?.lowercased() == "fushi",
+        url.host?.lowercased() == "source" else {
+        remainingUrls.append(url)
+        continue
+      }
+      if let sink = sourceUrlEventSink {
+        sink(url.absoluteString)
+      } else {
+        pendingSourceUrls.append(url.absoluteString)
+      }
+    }
+    if !remainingUrls.isEmpty {
+      super.application(application, open: remainingUrls)
+    }
+  }
+
+  func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    sourceUrlEventSink = events
+    let pending = pendingSourceUrls
+    pendingSourceUrls.removeAll()
+    for url in pending {
+      events(url)
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    sourceUrlEventSink = nil
+    return nil
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

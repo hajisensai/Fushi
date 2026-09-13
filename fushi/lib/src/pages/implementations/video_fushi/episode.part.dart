@@ -16,6 +16,7 @@ part of '../video_fushi_page.dart';
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
   void _handlePlaybackCompleted() {
+    if (_sourceReviewActive) return;
     final int? positionMs = _controller?.positionMs;
     if (positionMs != null) {
       unawaited(_reportRemotePlaybackStopped(
@@ -203,6 +204,7 @@ extension _VideoEpisode on _VideoFushiPageState {
         // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
         initialSubtitleListVisible: _subtitleListVisible.value,
         initialFullscreen: plan.handOverNativeFullscreen,
+        sourceReviewSession: _sourceReviewSession,
       ),
     );
     if (plan.mode == EpisodeSwitchMode.replace) {

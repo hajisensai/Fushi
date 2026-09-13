@@ -6,6 +6,7 @@ import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/remote_source_note.dart';
 
 /// TODO-1000（BUG-530）：浏览器扩展 / 外部工具的两个远端 API（查词 `/api/lookup/dictionary`
 /// + 制卡 `/api/mine`）的**共享 handler 逻辑**。FushiSyncServer（互联/同步 host）与
@@ -292,6 +293,45 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
 /// 全部本地媒体字节转发来，本机用自己的 Anki 配置落卡。[body] 需含 `rawPayloadJson`（非空
 /// 字符串），缺失/类型错时 [ForwardedMinePayload.fromJson] 抛 [FormatException]，由调用方转
 /// 400。响应形状与 `/api/mine` 一致（`{result, message?, detail?}`）。
+Future<Map<String, dynamic>> buildSourceNoteResponse(
+  String path,
+  Map<String, dynamic> body, {
+  required FushiRemoteSourceNoteService mining,
+}) async {
+  switch (path) {
+    case '/api/anki/source/read':
+      final Object? sourceId = body['sourceId'];
+      if (sourceId is! String) throw const FormatException('Missing source ID');
+      CardSourceLink.markerForSourceId(sourceId);
+      final AnkiSourceNote? note = await mining.readSourceNote(sourceId);
+      return <String, dynamic>{
+        'ok': true,
+        'note': note == null ? null : encodeRemoteSourceNote(note),
+      };
+    case '/api/anki/source/prepare':
+      final ForwardedMinePayload payload = ForwardedMinePayload.fromJson(body);
+      if (payload.sourceLink == null) {
+        throw const FormatException('Missing source link');
+      }
+      if (await mining.readSourceNote(payload.sourceLink!.sourceId) == null) {
+        throw StateError('The original source note no longer exists.');
+      }
+      return <String, dynamic>{
+        'ok': true,
+        'fields': await mining.prepareForwardedSourceNote(payload),
+      };
+    case '/api/anki/source/patch':
+      final AnkiSourceNote original = decodeRemoteSourceNote(body['original']);
+      final Map<String, String> fields = decodeRemoteSourceFields(
+        body['fields'],
+      );
+      await mining.patchSourceNote(original: original, fields: fields);
+      return <String, dynamic>{'ok': true};
+    default:
+      throw const FormatException('Unknown source endpoint');
+  }
+}
+
 Future<Map<String, dynamic>> buildForwardedMineResponse(
   Map<String, dynamic> body, {
   required FushiRemoteMiningService mining,

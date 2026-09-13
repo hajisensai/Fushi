@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2303 条。点号进各自文件。
+> 共 2310 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2503](bugs/BUG-2503-anki-note-dialog-stacking.md) | ✅ | ✅ | 已制卡候选与卡片查看器重复堆叠弹窗 |
+| [BUG-2502](bugs/BUG-2502-video-source-review-playback.md) | ✅ | ✅ | 视频来源回看无法继续播放且导航使用阅读文案 |
+| [BUG-2501](bugs/BUG-2501-card-source-root-url.md) | ✅ | ✅ | Windows 来源链接规范化后被错误判无效 |
+| [BUG-2500](bugs/BUG-2500-integration-drive-uninstalls-app.md) | ✅ | ✅ | 集成测试成功后 flutter drive 清理卸载应用并删除私有数据 |
 | [BUG-2498](bugs/BUG-2498-miui-notification-permission-prompt-at-startup.md) | ✅ | ✅ | 退出新手引导即向系统申请通知权限，MIUI 权限界面崩溃连坐杀掉 Fushi |
 | [BUG-2497](bugs/BUG-2497-manga-series-login-entry.md) | ✅ | ✅ | manga-series-login-entry |
 | [BUG-2496](bugs/BUG-2496-cover-decode-invalid-image-data-nonatomic-writes.md) | ✅ | ✅ | 封面/图片文件非空但不可解码：写侧无校验、非原子直写，渲染侧无兜底当致命错误落盘 |
@@ -40,7 +44,10 @@
 | [BUG-2493](bugs/BUG-2493-ios-ankimobile-info-return-not-applied.md) | ✅ | ✅ | iOS AnkiMobile 回跳后牌组/笔记类型不刷新：x-success 未送达时无兜底、互联制卡包裹层静默丢弃回调 |
 | [BUG-2491](bugs/BUG-2491-android-web-search-ignores-default-browser.md) | ✅ | ✅ | 安卓选区「网页搜索」无视默认浏览器跳自带浏览器 |
 | [BUG-2490](bugs/BUG-2490-lyrics-original-text.md) | ✅ | ✅ | 歌词模式显示转录文本而非已匹配的原文 |
+| [BUG-2489](bugs/BUG-2489-source-url-stale-windows-association.md) | ✅ | ✅ | 来源链接仍启动旧安装版Fushi |
+| [BUG-2488](bugs/BUG-2488-lapis-source-leading-break.md) | ✅ | ✅ | Lapis来源模板更新残留前导空行 |
 | [BUG-2487](bugs/BUG-2487-update-toast-icon-inapp.md) | ✅ | ✅ | Windows 更新 toast 无应用图标，app 新版本条目跳浏览器而非应用内更新 |
+| [BUG-2486](bugs/BUG-2486-windows-itest-kills-preexisting-app.md) | ✅ | ✅ | Windows集成测试按build目录误杀用户已运行的应用 |
 | [BUG-2485](bugs/BUG-2485-jellyfin-link-opens-services-root.md) | ✅ | ✅ | jellyfin-link-opens-services-root |
 | [BUG-2484](bugs/BUG-2484-manga-percent-filename.md) | ✅ | ✅ | 漫画页文件名含裸百分号时翻页/选字/制卡全抛 Illegal percent encoding |
 | [BUG-2483](bugs/BUG-2483-manga-library-settings-tab-wrong-destination.md) | ✅ | ✅ | manga-library-settings-tab-wrong-destination |

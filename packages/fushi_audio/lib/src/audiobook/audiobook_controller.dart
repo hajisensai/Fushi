@@ -1091,6 +1091,51 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Restore a source locator on the original per-file media timeline.
+  /// Unlike cue navigation this never applies the subtitle delay or clamps
+  /// against the currently playing file's duration. Cue-derived durations are
+  /// estimates, so only the target audio source's decoded duration is trusted.
+  Future<void> restoreToFileOffset({
+    required int fileIndex,
+    required int positionMs,
+  }) async {
+    await _loadReady.future;
+    if (fileIndex < 0 || fileIndex >= _audioFiles.length) {
+      throw RangeError.range(fileIndex, 0, _audioFiles.length - 1, 'fileIndex');
+    }
+    if (positionMs < 0) {
+      throw RangeError.value(positionMs, 'positionMs', 'Must be non-negative');
+    }
+    final List<IndexedAudioSource>? sequence = _player.sequence;
+    final Duration? targetDuration =
+        sequence != null && fileIndex < sequence.length
+            ? sequence[fileIndex].duration
+            : null;
+    if (targetDuration != null &&
+        targetDuration.inMilliseconds > 0 &&
+        positionMs > targetDuration.inMilliseconds) {
+      throw RangeError.range(
+          positionMs, 0, targetDuration.inMilliseconds, 'positionMs');
+    }
+    _manualReaderOverrideCue = null;
+    _stopAtPositionMs = null;
+    _returnToPosition = null;
+    _chapterTransition = false;
+    _currentCue = null;
+    _currentCueIndex = -1;
+    _beginExplicitSeek(fileIndex, positionMs);
+    try {
+      await _player.seek(Duration(milliseconds: positionMs), index: fileIndex);
+    } catch (_) {
+      if (_explicitSeekTargetFileIndex == fileIndex &&
+          _explicitSeekTargetMs == positionMs) {
+        _clearExplicitSeekSuppression();
+      }
+      rethrow;
+    }
+    notifyListeners();
+  }
+
   /// 快进 / 快退（秒）。
   Future<void> seekRelative(int deltaSeconds) async {
     final int newMs = (position.inMilliseconds + deltaSeconds * 1000).clamp(

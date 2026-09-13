@@ -2,103 +2,135 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+// Load only function definitions through the AST: never execute the runner's
+// main body or enumerate/modify real processes in this fixture.
+const String _ownershipFixture = r'''
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  (Join-Path (Get-Location) 'tool/run_windows_itest.ps1'),
+  [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+foreach ($functionName in @('Test-RunnerProcessAncestry',
+    'Get-FushiProcessSnapshot', 'Add-RunnerSnapshot', 'Get-RunnerWindowHandle')) {
+  $definition = $ast.Find({ param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq $functionName
+  }, $true)
+  if ($null -eq $definition) { throw "Missing function $functionName" }
+  Invoke-Expression $definition.Extent.Text
+}
+$debugPath = 'D:\fixture\build\windows\x64\runner\Debug\fushi.exe'
+$fixtures = @(
+  @{ id=10; path='D:\fixture\build\windows\x64\runner\Release\fushi.exe'; parent=200 },
+  @{ id=11; path=$debugPath; parent=200 },
+  @{ id=12; path=$debugPath.ToUpperInvariant(); parent=210 },
+  @{ id=13; path=$debugPath; parent=999 },
+  @{ id=14; path=($debugPath + '.other'); parent=200 },
+  @{ id=15; path='D:\installed\fushi.exe'; parent=200 },
+  @{ id=16; path=$debugPath; parent=200 },
+  @{ id=17; path=''; parent=200 },
+  @{ id=18; path=$debugPath; parent=404 }
+)
+function Get-Process {
+  param($Name, $ErrorAction)
+  foreach ($entry in $fixtures) {
+    [pscustomobject]@{ Id=$entry.id; MainWindowTitle='fixture'; MainWindowHandle=($entry.id+100) }
+  }
+}
+function Get-CimInstance {
+  param($ClassName, $Filter, $ErrorAction)
+  if ($Filter -eq "Name = 'fushi.exe'") {
+    foreach ($entry in $fixtures) {
+      [pscustomobject]@{ ProcessId=$entry.id; ExecutablePath=$entry.path;
+        ParentProcessId=$entry.parent; CommandLine='fixture'; CreationDate='fixture' }
+    }
+  } elseif ($Filter -eq 'ProcessId = 210') {
+    [pscustomobject]@{ ParentProcessId=200 }
+  } elseif ($Filter -eq 'ProcessId = 999') {
+    [pscustomobject]@{ ParentProcessId=998 }
+  } elseif ($Filter -eq 'ProcessId = 998') {
+    [pscustomobject]@{ ParentProcessId=999 }
+  } elseif ($Filter -ne 'ProcessId = 404') {
+    throw "Unexpected process lookup: $Filter"
+  }
+}
+$before = @(Get-FushiProcessSnapshot -CurrentRunId 'fixture' -ExpectedRunnerPath $debugPath)
+if (@($before | Where-Object { $_.isTestRunner }).Count -ne 0) {
+  throw 'A pre-existing process was classified as this test runner'
+}
+if (@($before | Where-Object { $_.isExpectedRunnerPath }).Count -ne 5) {
+  throw 'Exact Debug conflict detection included Release or missed Debug'
+}
+$snapshot = @(Get-FushiProcessSnapshot -CurrentRunId 'fixture' `
+  -ExpectedRunnerPath $debugPath -BeforeProcessIds @(11) -LauncherProcessId 200)
+$ownedIds = @($snapshot | Where-Object { $_.isTestRunner } | ForEach-Object { $_.pid })
+if (($ownedIds -join ',') -ne '12,16') { throw "Unexpected owned processes: $ownedIds" }
+$handle = Get-RunnerWindowHandle -Snapshot $snapshot
+if ($handle.ToInt64() -ne 112) { throw 'Window capture selected an unowned process' }
+$records = [System.Collections.ArrayList]::new()
+Add-RunnerSnapshot -RunnerRecords $records -Snapshot $snapshot
+if (($records.pid -join ',') -ne '12,16') { throw 'Recorded an unowned process' }
+Write-Output 'PASS ownership fixture: only new exact Debug launcher descendants'
+''';
+
 void main() {
   group('Windows integration test isolation contract', () {
     final String script = File('tool/run_windows_itest.ps1').readAsStringSync();
 
-    test('does not kill or reject existing user Hibiki processes', () {
-      // TODO-980: the runner MAY reap stale TEST-RUNNER processes left by a
-      // previous crashed run of THIS runner (a stuck prior runner locks the
-      // build/debug port -> "Unable to start the app"). That reap is scoped
-      // strictly to this worktree's build\windows\x64\runner path via the
-      // isTestRunner flag, so it never touches the user's installed Hibiki or
-      // IDE processes. The contract is therefore "never hand-kill by name and
-      // never kill an unscoped process", NOT "never call Stop-Process at all".
-      expect(script, isNot(contains('taskkill')),
-          reason: 'Windows itest must never terminate processes by name.');
-      expect(script, isNot(contains('Stop-Process -Name')),
-          reason:
-              'Windows itest must never kill by process name (could match the '
-              'user app).');
-      expect(script, isNot(contains('close it first')),
-          reason: 'A running user Hibiki instance is evidence, not a blocker.');
-      expect(script, isNot(contains('hibiki.exe is running')),
-          reason:
-              'The script must not fail just because a user instance exists.');
-      // Any Stop-Process must be gated by the isTestRunner scope check, so it
-      // only ever reaps stale test-runner processes under this worktree's
-      // runner path.
-      if (script.contains('Stop-Process')) {
-        expect(script, contains('isTestRunner'),
-            reason:
-                'Stop-Process is only allowed when scoped to stale test-runner '
-                'processes (isTestRunner path-prefix match).');
+    test('never terminates pre-existing processes', () {
+      // BUG-2486: a worktree build output can be a user's manual app session.
+      for (final String command in <String>[
+        'Stop-Process',
+        'taskkill',
+        'TerminateProcess',
+        '.Kill(',
+      ]) {
+        expect(
+          script,
+          isNot(contains(command)),
+          reason: 'The runner may report conflicts, never terminate them.',
+        );
       }
+      expect(script, contains(r'$BlockingRunnerProcesses.Count -gt 0'));
+      expect(script, contains('blocked: existing process pid='));
+      expect(script, contains(r'$exitCode = 1'));
     });
 
-    test('only reaps isolated stale test-runner processes', () {
-      final List<RegExpMatch> stopProcessMatches =
-          RegExp(r'\bStop-Process\b').allMatches(script).toList();
-      expect(stopProcessMatches, hasLength(1),
-          reason:
-              'Only the scoped stale test-runner cleanup may terminate a process.');
-      final int killIndex = stopProcessMatches.single.start;
-      final int cleanupStart =
-          script.lastIndexOf(r'foreach ($proc in $before)', killIndex);
-      final int cleanupEnd = script.indexOf(r'$runnerRecords', killIndex);
-      expect(cleanupStart, isNot(-1),
-          reason: 'Stop-Process must live inside the stale runner loop.');
-      expect(cleanupEnd, isNot(-1),
-          reason: 'Stop-Process must not leak past runner startup setup.');
-
-      final String cleanupBlock = script.substring(cleanupStart, cleanupEnd);
+    test('captures only new exact Debug binaries owned by this launcher', () {
+      expect(script, contains(r'build\windows\x64\runner\Debug\fushi.exe'));
+      expect(script, isNot(contains('RunnerPathPrefix')));
+      expect(script, contains(r'[string]::Equals($path, $ExpectedRunnerPath,'));
+      expect(script, contains('[System.StringComparison]::OrdinalIgnoreCase'));
+      expect(script, contains(r'$BeforeProcessIds -notcontains $id'));
+      expect(script, contains('Test-RunnerProcessAncestry -ParentProcessId'));
+      expect(script, contains(r'$LauncherProcessId = [int]$process.Id'));
       expect(
-          RegExp(
-            r'if\s*\(\$proc\.isTestRunner\)\s*\{\s*try\s*\{[^}]*\bStop-Process\b',
-            dotAll: true,
-          ).hasMatch(cleanupBlock),
-          isTrue,
-          reason: 'Windows itest must never terminate the user app.');
-
-      final int snapshotStart =
-          script.indexOf('function Get-FushiProcessSnapshot');
-      final int snapshotEnd = script.indexOf('function Add-RunnerSnapshot');
-      expect(snapshotStart, isNot(-1),
-          reason: 'Process classification helper must exist.');
-      expect(snapshotEnd, isNot(-1),
-          reason: 'Process classification helper must have a bounded body.');
-      final String snapshotBlock = script.substring(snapshotStart, snapshotEnd);
-      expect(snapshotBlock, contains(r'$path = [string]$cim.ExecutablePath'),
-          reason: 'The test-runner scope must be based on executable path.');
-      expect(snapshotBlock, contains(r'$path.StartsWith($RunnerPathPrefix,'),
-          reason: 'The stale runner check must be scoped to this worktree.');
-      expect(snapshotBlock,
-          contains('[System.StringComparison]::OrdinalIgnoreCase'),
-          reason:
-              'The test-runner scope must stay path based, not name based.');
-      expect(snapshotBlock, contains(r'isTestRunner = $isRunner'),
-          reason: 'The guarded cleanup must use the path-derived marker.');
-      expect(script, isNot(contains('taskkill')),
-          reason: 'Windows itest must never terminate processes by name.');
-      expect(script, isNot(contains('Stop-Process -Name')),
-          reason:
-              'Windows itest must never kill by process name (could match the '
-              'user app).');
-      expect(script, isNot(contains('close it first')),
-          reason: 'A running user Hibiki instance is evidence, not a blocker.');
-      expect(script, isNot(contains('hibiki.exe is running')),
-          reason:
-              'The script must not fail just because a user instance exists.');
-      // Any Stop-Process must be gated by the isTestRunner scope check, so it
-      // only ever reaps stale test-runner processes under this worktree's
-      // runner path.
-      if (script.contains('Stop-Process')) {
-        expect(script, contains('isTestRunner'),
-            reason:
-                'Stop-Process is only allowed when scoped to stale test-runner '
-                'processes (isTestRunner path-prefix match).');
-      }
+        script,
+        contains(r'$before | Where-Object { $_.isExpectedRunnerPath }'),
+      );
+      expect(script, contains(r'if (-not $process.isTestRunner) { continue }'));
     });
+
+    test(
+      'PowerShell fixture excludes user Release and unrelated Debug processes',
+      () {
+        final ProcessResult result = Process.runSync('powershell.exe', <String>[
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          _ownershipFixture,
+        ]);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(result.stdout, contains('PASS ownership fixture'));
+      },
+      skip: !Platform.isWindows,
+    );
 
     test('records required process and runner evidence files', () {
       for (final String marker in <String>[

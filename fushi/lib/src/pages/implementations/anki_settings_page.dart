@@ -1760,6 +1760,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_document_title;
     case '{clip-timestamp}':
       return t.handlebar_clip_timestamp;
+    case '{source-link}':
+      return t.handlebar_source_link;
     case '{card-image}':
       return t.handlebar_card_image;
     case '{book-cover}':

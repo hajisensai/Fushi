@@ -336,6 +336,17 @@ class ImmersionMiningEngine {
   }) async {
     String? coverPath;
     bool degradedToStill = false;
+    CardSourceLink? sourceLink = req.sourceLink;
+    try {
+      if (req.sourceLinkResolver != null) {
+        sourceLink = await req.sourceLinkResolver!();
+      }
+    } on Object catch (error) {
+      return ImmersionMiningResult(
+        aborted: true,
+        abortReason: 'Video source identity could not be verified: $error',
+      );
+    }
 
     // 按来源分流的两个上报口：各自先喂专属回调，再合流进 [onFailure]（保持既有语义）。
     // BUG-1664：两个上报口流经的**精确**失败摘要（含 `ffmpeg launch failed:
@@ -543,6 +554,7 @@ class ImmersionMiningEngine {
     }
 
     final AnkiMiningContext context = AnkiMiningContext(
+      sourceLink: sourceLink,
       sentence: req.sentence,
       cueSentence: req.cueSentence,
       documentTitle: req.documentTitle,
@@ -561,13 +573,16 @@ class ImmersionMiningEngine {
       clipEndMs: req.clipEndMs,
     );
 
-    final MineOutcome outcome = req.updateNoteId == null
-        ? await repo.mineEntry(
+    final MineOutcome outcome = req.sourceReviewMine != null
+        ? await req.sourceReviewMine!(
             rawPayloadJson: jsonEncode(req.fields), context: context)
-        : await repo.updateMinedNote(
-            noteId: req.updateNoteId!,
-            rawPayloadJson: jsonEncode(req.fields),
-            context: context);
+        : req.updateNoteId == null
+            ? await repo.mineEntry(
+                rawPayloadJson: jsonEncode(req.fields), context: context)
+            : await repo.updateMinedNote(
+                noteId: req.updateNoteId!,
+                rawPayloadJson: jsonEncode(req.fields),
+                context: context);
 
     return ImmersionMiningResult(
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);

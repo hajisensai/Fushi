@@ -43,6 +43,8 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"
                 />
+            <!-- ReceiveIntent owns URL dispatch; do not also create a Flutter route. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <!-- OAuth redirect callback for cloud sync backends
                  (fushi://auth/onedrive, fushi://auth/dropbox). -->
             <intent-filter>
@@ -50,6 +52,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fushi" android:host="auth" />
+            </intent-filter>
+            <!-- Source links share ReceiveIntent's existing cold/warm delivery. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fushi" android:host="source" />
             </intent-filter>
         </activity>
 

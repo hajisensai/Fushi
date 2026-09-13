@@ -569,6 +569,9 @@ class AppPaths {
     // （留在旧根 = 换根后任务恢复不出种子）。派生点：AppModel 的
     // manualTorrentDirectory。
     'manual_torrents',
+    // 卡片来源回看的待回写草稿（临时音频/图片/字段，`card_source_drafts/<sourceId>`），
+    // 失败后可恢复提交，必须随数据根走。派生点：card_source_router.dart。
+    'card_source_drafts',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
