@@ -7,6 +7,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:transparent_image/transparent_image.dart';
 
 import 'package:fushi/src/media/display_title.dart';
 
@@ -171,8 +172,9 @@ void main() {
         appModel: appModel,
         item: item,
       );
+      // BUG-2496 起写侧收口拒收非图片字节，「真图」必须真是完整 PNG。
       final File picked = File('${storeDir.path}/picked.png')
-        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+        ..writeAsBytesSync(kTransparentImage);
 
       await source.setOverrideThumbnailFromMediaItem(
         appModel: appModel,
@@ -181,7 +183,7 @@ void main() {
         clearOverrideImage: false,
       );
       expect(File(filename).existsSync(), isTrue);
-      expect(File(filename).lengthSync(), 4);
+      expect(File(filename).lengthSync(), kTransparentImage.length);
 
       await source.setOverrideThumbnailFromMediaItem(
         appModel: appModel,

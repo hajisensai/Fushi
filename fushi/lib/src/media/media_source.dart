@@ -9,7 +9,10 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart'
+    show CoverImageInvalidException;
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -777,7 +780,17 @@ abstract class MediaSource {
       }
     } else if (file != null) {
       thumbnailFile.parent.createSync(recursive: true);
-      file.copySync(filename);
+      // BUG-2496：写盘走收口——它先校验「完整可解码图片」再原子写 + 驱逐。用户
+      // 选到的不是图片（改了扩展名的 HTML、半截下载）时不落盘、不动旧 override，
+      // 也不让「保存」整体失败：记诊断后当作没换图返回。
+      try {
+        await MediaCoverService.applyCoverFile(
+            source: file, destPath: filename);
+      } on CoverImageInvalidException catch (e) {
+        ErrorLogService.instance
+            .logDiagnostic('MediaSource.setOverrideThumbnail', e);
+        return;
+      }
     } else {
       // 既没清除也没新图：磁盘未动，无需驱逐。
       return;
@@ -793,7 +806,8 @@ abstract class MediaSource {
     // 解码。写/删后必须双键驱逐（裸 FileImage + resizedFileImage 的 ResizeImage 键，
     // 见 [evictLocalCoverCache]），否则书架/编辑弹窗重建仍命中旧解码，表现为
     // 「换了封面没生效」。放在这里而非上层，是让 clearOverrideValues 等所有写入方
-    // 共享同一条驱逐路径。
+    // 共享同一条驱逐路径。换图那条已由 applyCoverFile 结构性驱逐过；这里覆盖的是
+    // 删除路径（收口只管「写盘 → 驱逐」，删除后的驱逐仍在本函数）。
     await evictLocalCoverCache(filename);
   }
 

@@ -434,6 +434,66 @@ void main() {
       expect(File(filename).existsSync(), isFalse);
       await expectBothCoverKeysEvicted(filename);
     });
+
+    test('BUG-2496：选到非图片（HTML 改名 .jpg）→ 不落盘、不动旧 override、不抛', () async {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      final MediaItem item = srtItem('srtbook_svc_cover_invalid');
+      final String filename = source.getOverrideThumbnailFilename(
+        appModel: appModel,
+        item: item,
+      );
+
+      // 先有一张合法 override，再喂坏文件：旧图必须原样保留。
+      await MediaCoverService.applyBookCoverOverride(
+        appModel: appModel,
+        mediaSource: source,
+        item: item,
+        file: writePng(tempDir, 'good.png'),
+        clearOverrideImage: false,
+      );
+      final List<int> before = File(filename).readAsBytesSync();
+
+      final File html = File(p.join(tempDir.path, 'error_page.jpg'))
+        ..writeAsStringSync('<html><body>403 Forbidden</body></html>');
+      await MediaCoverService.applyBookCoverOverride(
+        appModel: appModel,
+        mediaSource: source,
+        item: item,
+        file: html,
+        clearOverrideImage: false,
+      );
+
+      expect(File(filename).readAsBytesSync(), before,
+          reason: '坏文件不得覆盖旧 override（渲染层只判 existsSync）');
+      expect(
+        Directory(p.dirname(filename))
+            .listSync()
+            .where((FileSystemEntity e) => e.path.contains('.tmp.')),
+        isEmpty,
+        reason: '拒收时不得留 .tmp 残片',
+      );
+    });
+
+    test('BUG-2496：无旧 override 时喂坏文件 → 路径上不出现任何文件', () async {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      final MediaItem item = srtItem('srtbook_svc_cover_invalid_fresh');
+      final String filename = source.getOverrideThumbnailFilename(
+        appModel: appModel,
+        item: item,
+      );
+      final File truncated = File(p.join(tempDir.path, 'truncated.png'))
+        ..writeAsBytesSync(kTransparentImage.sublist(0, 8));
+
+      await MediaCoverService.applyBookCoverOverride(
+        appModel: appModel,
+        mediaSource: source,
+        item: item,
+        file: truncated,
+        clearOverrideImage: false,
+      );
+
+      expect(File(filename).existsSync(), isFalse);
+    });
   });
 
   group('applyCollectionCover（video_covers/collections/<id>.jpg）', () {
