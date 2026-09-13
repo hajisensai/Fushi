@@ -79,6 +79,17 @@ extension _VideoLookupMining on _VideoFushiPageState {
     return _miningDraft.length;
   }
 
+  /// 手改草稿里某一句的文本（[DictionaryPageMixin.onEditSentenceContextText] 的私有
+  /// 目标）。**只改文本，不动区间**：这句仍是原来那条 cue、仍是同一段时间窗，GIF 与
+  /// 句子音频的裁法一字不改，改的只是最终写进卡片 sentence 字段的那行字。
+  Future<void> _editSentenceContextText(
+    SentenceContextSlot slot,
+    int index,
+    String text,
+  ) async {
+    _miningDraft.editSentence(slot: slot, index: index, text: text);
+  }
+
   Future<int> _clearSentenceDraft() async {
     _miningDraft.clear();
     return _miningDraft.length;

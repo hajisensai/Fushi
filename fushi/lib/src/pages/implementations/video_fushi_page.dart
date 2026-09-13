@@ -1620,6 +1620,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<int> Function(int prevCount, int nextCount)?
   get onSetSentenceContextToDraft => _setSentenceContextToDraft;
 
+  /// 「选择句子上下文」对话框里手改某一句文本（视频车道）：只把草稿里那一句的**文本**
+  /// 换掉，cue 的时间窗（音频/画面身份）原样保留——用户改的是会写进卡片的那行字
+  /// （字幕错字、去掉说话人名），不是这句对应视频里的哪一段。
+  @override
+  Future<void> Function(SentenceContextSlot slot, int index, String text)?
+      get onEditSentenceContextText => _editSentenceContextText;
+
   /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本会话累积的全部草稿
   /// 句，回传清空后的句数（恒 0）。不动字幕列表「选入词卡」的 cue 选择集（两套独立机制）。
   @override

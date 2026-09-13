@@ -4774,5 +4774,8 @@
   "mining_audio_pad_readout": "${ms} ms",
   "audiobook_transcribe_model_scope_dedicated": "Dedicated — most accurate for this language",
   "audiobook_transcribe_model_scope_multilingual": "Multilingual — wide coverage, less accurate per language",
-  "audiobook_transcribe_elapsed_total": "Total time $elapsed"
+  "audiobook_transcribe_elapsed_total": "Total time $elapsed",
+  "popup_ctx_edit_start": "Edit sentence",
+  "popup_ctx_edit_confirm": "Confirm edit",
+  "popup_ctx_edit_cancel": "Discard edit"
 }
