@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
+import 'package:fushi/src/media/video/youtube_range_relay.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
@@ -245,7 +246,9 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     this.youtubeCaptionsUrl,
     this.httpHeaderFields = const <String, String>{},
     http.Client? httpClient,
-  }) : _httpClient = httpClient ?? createAppHttpIoClient();
+    YoutubeStreamRelay? youtubeStreamRelay,
+  })  : _httpClient = httpClient ?? createAppHttpIoClient(),
+        _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl;
 
   /// 远端清单缓存里的来源身份（BUG-1202）。本 client 从不进库页的清单缓存
   /// （[listRemoteVideos] 恒空，它只是把一条粘贴来的 URL 包成播放页能吃的契约），
@@ -324,22 +327,37 @@ class UrlStreamVideoClient implements RemoteVideoClient {
 
   final http.Client _httpClient;
 
+  /// BUG-2507：googlevideo 直链交给播放内核前换成本地有界分块中继地址（默认
+  /// [relayYoutubeStreamUrl]；非 googlevideo 原样）。测试注入假件以离线覆盖。
+  final YoutubeStreamRelay _youtubeStreamRelay;
+
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async =>
       const <RemoteVideoInfo>[];
 
   /// 忽略 [episodeIndex]（单 URL 流不分集），恒返回同一条粘贴的流 URL + 字幕。
+  ///
+  /// YouTube 分离流（video-only / audio-only / 制卡低分辨率流）在这里换成
+  /// [YoutubeRangeRelay] 的本地地址：googlevideo 只接受有界 `Range`，libmpv / ffmpeg
+  /// 直接拉会 403（BUG-2507）。[streamUrl] 等字段仍持原始 URL——它们是缓存 / liveness
+  /// 探测 / 身份的真值，本地端口随进程变，不能反向污染。
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
     int episodeIndex = 0,
   }) async {
+    final String? audio = audioStreamUrl;
+    final String? mining = miningVideoUrl;
     return RemoteVideoStreamUrls(
-      streamUrl: streamUrl,
+      streamUrl: await _youtubeStreamRelay(streamUrl, httpHeaderFields),
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
-      audioStreamUrl: audioStreamUrl,
-      miningVideoUrl: miningVideoUrl,
+      audioStreamUrl: audio == null
+          ? null
+          : await _youtubeStreamRelay(audio, httpHeaderFields),
+      miningVideoUrl: mining == null
+          ? null
+          : await _youtubeStreamRelay(mining, httpHeaderFields),
       miningVideoHasAudio: miningVideoHasAudio,
     );
   }

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2315 条。点号进各自文件。
+> 共 2316 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2507](bugs/BUG-2507-youtube-stream-bounded-range.md) | ✅ | ✅ | YouTube 直连流只接受有界 Range，libmpv/ffmpeg 无 Range 首请求 403 → 打不开 |
 | [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |
 | [BUG-2505](bugs/BUG-2505-remote-audiobook-entry-lost-after-book-only.md) | ✅ | ✅ | 互联只下到书没下到有声书后再无补拉有声书入口 |
 | [BUG-2504](bugs/BUG-2504-dictionary-load-blocks-on-cloud-evicted-files.md) | ✅ | ✅ | 云盘「仅云端」词典文件让冷启动同步 FFI 装载无限期卡死 |
