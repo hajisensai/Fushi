@@ -15,10 +15,11 @@ import 'dart:ui' show Offset, Size;
 /// 修饰键状态（`FlutterViewController.dispatchMouseEvent` → `syncModifiersIfNeeded`），
 /// `HardwareKeyboard.isShiftPressed` 在 hover 时可靠。故给宿主补一条腿。
 ///
-/// 两条腿按 [hostOwnsWebViewPointerInput] 互斥（BUG-2031 纪律：任一平台恒只有
-/// 一条腿活着）：Windows 的 WebView2 是 Flutter 纹理、指针由 fork 逐个转发，JS 腿
-/// 已验证可用，宿主腿不装；其余平台（WebView 是真正的原生视图）走宿主腿，JS 腿
-/// 的 mousemove 监听由 `window.__fushiHostHoverLookup` 关掉。
+/// 两条腿按 `hostOwnsWebViewHoverLookup`（`webview_key_bridge.dart`，只有 macOS）
+/// 互斥（BUG-2031 纪律：任一平台恒只有一条腿活着）：macOS 走宿主腿、JS 腿的
+/// mousemove 监听由 `window.__fushiHostHoverLookup` 关掉；Windows / Android / iOS /
+/// Linux 维持 JS 腿，宿主腿不装。根因只在 macOS 定性，别的平台的宿主 hover 未验证，
+/// 不借 `!hostOwnsWebViewPointerInput` 反推。
 ///
 /// 语义与 JS 腿逐字对齐：按住 Shift **或**开了「悬停即查词」才触发；未触发分支
 /// 复位节流锚，使下次进入即触发；移动距离平方 < [thresholdPx]² 不重复查词

@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2508](bugs/BUG-2508-mac-reader-shift-hover-lookup-dead.md) | ✅ | ✅ | macOS 阅读器 Shift 悬停查词无反应（WebKit 只在 WKWebView 为最顶命中视图时才派发 mousemove） |
+| [BUG-2508](bugs/BUG-2508-mac-reader-shift-hover-lookup-dead.md) | 🚧 | ✅ | macOS 阅读器 Shift 悬停查词无反应（WebKit 只在 WKWebView 为最顶命中视图时才派发 mousemove） |
 | [BUG-2507](bugs/BUG-2507-youtube-stream-bounded-range.md) | ✅ | ✅ | YouTube 直连流只接受有界 Range，libmpv/ffmpeg 无 Range 首请求 403 → 打不开 |
 | [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |
 | [BUG-2505](bugs/BUG-2505-remote-audiobook-entry-lost-after-book-only.md) | ✅ | ✅ | 互联只下到书没下到有声书后再无补拉有声书入口 |

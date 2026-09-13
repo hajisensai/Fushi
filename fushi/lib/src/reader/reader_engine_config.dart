@@ -73,8 +73,8 @@ class ReaderEngineConfig {
   final bool hoverAutoLookup;
 
   /// BUG-2508：true = 宿主（Flutter）侧接管 Shift-悬停 / 纯悬停查词，文档内的
-  /// mousemove 腿整条关掉（macOS 等 WebView 为原生视图的平台）；false = 维持 JS 腿
-  /// （Windows：WebView2 是 Flutter 纹理，hover 由 fork 转发进文档）。
+  /// mousemove 腿整条关掉（只有 macOS，判据 `hostOwnsWebViewHoverLookup`）；
+  /// false = 维持 JS 腿（Windows / Android / iOS / Linux）。
   final bool hostHoverLookup;
   final bool highlightOnTap;
   final bool showChrome;
@@ -129,45 +129,44 @@ class ReaderEngineConfig {
 
   /// 除 [sasayakiCuesJson] 外的全部字段（它是已编码的 JSON 片段，见 [toJsLiteral]）。
   Map<String, Object?> toJson() => <String, Object?>{
-        'navigationGeneration': navigationGeneration,
-        'continuousMode': continuousMode,
-        'vnMode': vnMode,
-        'vnClickAdvance': vnClickAdvance,
-        'scanNonJapaneseText': scanNonJapaneseText,
-        'hoverAutoLookup': hoverAutoLookup,
-        'hostHoverLookup': hostHoverLookup,
-        'highlightOnTap': highlightOnTap,
-        'showChrome': showChrome,
-        'debugLogging': debugLogging,
-        'swipeDistThreshold': swipeDistThreshold,
-        'swipeFastDistThreshold': swipeFastDistThreshold,
-        'wheelGestureQuietMs': wheelGestureQuietMs,
-        'furiganaMode': furiganaMode,
-        'caretColor': caretColor,
-        'caretInsetTop': caretInsetTop,
-        'caretInsetBottom': caretInsetBottom,
-        'initialProgress': initialProgress,
-        'initialCharOffset': initialCharOffset,
-        'initialCharOffsetEnd': initialCharOffsetEnd,
-        'initialFragment': initialFragment,
-        'chromeTopInset': chromeTopInset,
-        'chromeBottomInset': chromeBottomInset,
-        'dartPageWidth': dartPageWidth?.round(),
-        'dartPageHeight': dartPageHeight?.round(),
-        'marginTop': marginTop,
-        'marginBottom': marginBottom,
-        'marginLeft': marginLeft,
-        'marginRight': marginRight,
-        'blurImages': blurImages,
-        'revealedKeys': revealedKeys,
-        'perfTraceEnabled': perfTraceEnabled,
-        'vnRevealSpeed': vnRevealSpeed,
-        'vnScreenMode': vnScreenMode,
-        'vnSentencesPerScreen': vnSentencesPerScreen,
-        'vnPreserveDialogue': vnPreserveDialogue,
-        'vnMergeCrossScreenSentenceAudioCues':
-            vnMergeCrossScreenSentenceAudioCues,
-      };
+    'navigationGeneration': navigationGeneration,
+    'continuousMode': continuousMode,
+    'vnMode': vnMode,
+    'vnClickAdvance': vnClickAdvance,
+    'scanNonJapaneseText': scanNonJapaneseText,
+    'hoverAutoLookup': hoverAutoLookup,
+    'hostHoverLookup': hostHoverLookup,
+    'highlightOnTap': highlightOnTap,
+    'showChrome': showChrome,
+    'debugLogging': debugLogging,
+    'swipeDistThreshold': swipeDistThreshold,
+    'swipeFastDistThreshold': swipeFastDistThreshold,
+    'wheelGestureQuietMs': wheelGestureQuietMs,
+    'furiganaMode': furiganaMode,
+    'caretColor': caretColor,
+    'caretInsetTop': caretInsetTop,
+    'caretInsetBottom': caretInsetBottom,
+    'initialProgress': initialProgress,
+    'initialCharOffset': initialCharOffset,
+    'initialCharOffsetEnd': initialCharOffsetEnd,
+    'initialFragment': initialFragment,
+    'chromeTopInset': chromeTopInset,
+    'chromeBottomInset': chromeBottomInset,
+    'dartPageWidth': dartPageWidth?.round(),
+    'dartPageHeight': dartPageHeight?.round(),
+    'marginTop': marginTop,
+    'marginBottom': marginBottom,
+    'marginLeft': marginLeft,
+    'marginRight': marginRight,
+    'blurImages': blurImages,
+    'revealedKeys': revealedKeys,
+    'perfTraceEnabled': perfTraceEnabled,
+    'vnRevealSpeed': vnRevealSpeed,
+    'vnScreenMode': vnScreenMode,
+    'vnSentencesPerScreen': vnSentencesPerScreen,
+    'vnPreserveDialogue': vnPreserveDialogue,
+    'vnMergeCrossScreenSentenceAudioCues': vnMergeCrossScreenSentenceAudioCues,
+  };
 
   /// 运行时可**热更新**的那一小份（BUG-2471）：`window.__fushiEngine.updateLive(patch)`
   /// 把 patch 合并进已 install 的 `C`（`window.__fushiReaderConfig` 与 install 闭包里的

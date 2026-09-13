@@ -3504,11 +3504,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (_controller == null) return;
     final bool enabled = ReaderFushiSource.instance.hoverAutoLookup;
     // BUG-2508：歌词页是独立文档、不经 setup 脚本，宿主腿开关也在这里一并下发
-    // （正文文档重复赋同值，无害）。
-    final bool hostHover = !hostOwnsWebViewPointerInput;
+    // （正文文档重复赋同值，无害）。判据只认 [hostOwnsWebViewHoverLookup]（macOS）。
+    final bool hostHover = hostOwnsWebViewHoverLookup;
     try {
       await _controller!.evaluateJavascript(
-        source: 'window.__hoverAutoLookup = $enabled;'
+        source:
+            'window.__hoverAutoLookup = $enabled;'
             'window.__fushiHostHoverLookup = $hostHover;',
       );
     } catch (e, stack) {
@@ -4213,13 +4214,11 @@ $liveConfigJs
     _selectTextAt(local.dx, local.dy, fromHover: true);
   }
 
-  /// BUG-2508：正文 WebView 上的宿主侧 hover。Windows（[hostOwnsWebViewPointerInput]）
-  /// 只记位置不查词——那里 WebView2 是 Flutter 纹理、fork 把 hover 逐个转发进去，
-  /// JS 腿（`onShiftHover`）已验证可用，宿主腿再查就是同一处双查。其余平台 WebView
-  /// 是原生视图，DOM `mousemove` 受 AppKit 命中测试门控（见
+  /// BUG-2508：正文 WebView 上的宿主侧 hover——只在 [hostOwnsWebViewHoverLookup]
+  /// （macOS）平台装配，那里 DOM `mousemove` 受 AppKit 命中测试门控（见
   /// [ReaderHostHoverLookupGate] 文档），宿主腿是唯一可靠的一条；JS 腿由
-  /// `window.__fushiHostHoverLookup` 关掉，保持「一平台一条腿」。
-  /// [MouseRegion] 紧包 [InAppWebView]，`localPosition` 即 WebView 局部坐标，与
+  /// `window.__fushiHostHoverLookup` 关掉，保持「一平台一条腿」。其余平台根本不包
+  /// [MouseRegion]，本方法不会被调用。`localPosition` 即 WebView 局部坐标，与
   /// `onShiftHover` 的 `e.clientX/clientY` 同尺度。
   void _handleWebViewHostHover(PointerHoverEvent event) {
     final Offset local = event.localPosition;
@@ -4230,7 +4229,6 @@ $liveConfigJs
       return;
     }
     _lastWebViewHoverLocal = local;
-    if (hostOwnsWebViewPointerInput) return;
     _hostHoverLookupAt(local);
   }
 
@@ -4247,7 +4245,17 @@ $liveConfigJs
   /// 抖鼠标。hover 只在指针**移动**时派发，光标停在词上再按 Shift 没有任何 hover
   /// 事件，两条腿都不会触发。锚点同步推进，紧随的微小抖动不会再查一次同一处；
   /// 命中同词由 JS `selectText` 的 fromHover 短路兜底。
+  ///
+  /// 两道门，缺一条都会把用户现有选区抹掉（JS `selectText` 命中空白 `clearSelection`、
+  /// 命中别的词换词）：
+  /// * 只在宿主腿平台（[hostOwnsWebViewHoverLookup]）——Windows 的 JS 腿自有语义，
+  ///   宿主不该在按 Shift+方向 / Shift+滚轮 / 任何含 Shift 的快捷键时替它查词；
+  /// * 光标模式激活时不查（[_caretActive]）——那里 Shift+方向键是**键盘扩选**
+  ///   （[ReaderCaretRouter.decideKeyboard] 的 `shift:`），按下 Shift 的那一瞬正是
+  ///   扩选的起点，视频页 BUG-880 没有光标选区，「对齐」到这里不能无条件。
   void _triggerShiftLookupAtLastPointer() {
+    if (!hostOwnsWebViewHoverLookup) return;
+    if (_focusNavEnabled && _caretActive) return;
     final Offset? local = _lastWebViewHoverLocal;
     if (local == null) return;
     _hostHoverGate.markLookedUp(local);
