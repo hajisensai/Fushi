@@ -646,12 +646,11 @@ class MihonLibraryAdapter
   Future<MihonSourceContext> _context(OnlineMangaLibraryEntry entry) async {
     final MihonSourceContext? preset = presetContext;
     if (preset != null) return preset;
-    if (!MihonRuntimeFactory.isSupported) {
-      throw const OnlineMangaUnavailable(
-        OnlineMangaUnavailableReason.platformUnsupported,
-        'Mihon extensions are not available on this platform',
-      );
-    }
+    // 不再按 `MihonRuntimeFactory.isSupported` 静态判平台：[manager] 手里已经是
+    // 一个具体的 [MihonRuntime]（生产只在 `AppModel.mihonManager` 过了平台门、
+    // `MihonRuntimeFactory.create` 成功后才会有 manager），它的存在就是能力证明；
+    // 在这里再问一遍 `Platform` 只会把注入了 runtime 的用例在 Linux CI 上误判成
+    // platformUnsupported（develop@4846ea1 的 mihon_language_scope_test 红）。
     await manager.initialise();
     final MangaOnlineSourceRow row = _sourceRow(entry);
     try {
