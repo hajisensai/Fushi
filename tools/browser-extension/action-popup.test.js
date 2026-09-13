@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const {
   fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
   fushiQueueItemUrl, fushiTabSite, fushiGenButtonState,
+  fushiOverlayToggleState, fushiOverlayToggleWrite,
 } = require('./vendor/action-popup.js');
 
 test('fushiFilterQueue removes only the matching id', () => {
@@ -131,4 +132,25 @@ test('TODO-1881: gen button disabled on wrong site, hint lists pending sites', (
   const s2 = fushiGenButtonState([{ site: 'youtube', youtubeId: 'c' }], false, 'netflix');
   assert.strictEqual(s2.mode, 'wrongSite');
   assert.strictEqual(s2.enabled, false);
+});
+
+// ── popup「Fushi 字幕」开关：subtitleOverlayEnabled 的读判据与写集合 ──
+test('overlay toggle: default on, only explicit false counts as off (same rule as subtitle-panel.js)', () => {
+  assert.strictEqual(fushiOverlayToggleState({}).on, true);
+  assert.strictEqual(fushiOverlayToggleState(null).on, true);
+  assert.strictEqual(fushiOverlayToggleState(undefined).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: true }).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: false }).on, false);
+  // 历史脏值（字符串 'false' / 0）不算关——subtitle-panel.js 的 `!== false` 也不会把它们当关。
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: 'false' }).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: 0 }).on, true);
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: true }).state, '开');
+  assert.strictEqual(fushiOverlayToggleState({ subtitleOverlayEnabled: false }).state, '关');
+});
+test('overlay toggle: turning on also opens the subtitle capability gate; turning off leaves it alone', () => {
+  // 关→开：覆盖层受 netflixSubtitlePanel 门控，单开覆盖层等于没开，必须一起写。
+  assert.deepStrictEqual(fushiOverlayToggleWrite(false),
+      { subtitleOverlayEnabled: true, netflixSubtitlePanel: true });
+  // 开→关：只翻自己，不动总门（用户可能还在用侧边栏列表）。
+  assert.deepStrictEqual(fushiOverlayToggleWrite(true), { subtitleOverlayEnabled: false });
 });

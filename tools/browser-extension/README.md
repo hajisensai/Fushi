@@ -207,6 +207,16 @@ YouTube 的自动生成（ASR）字幕在 DOM 里是**逐词滚动**渲染的—
 `'manual'`（Shift+H / 设置开关）藏原生 + 自绘，`'replace'` 只藏原生。
 行为测试 `subtitle-replace-native.test.js`（9 条不变式已变异实测）。
 
+### 工具栏弹窗里的「Fushi 字幕」开关（`subtitleOverlayEnabled`）
+
+自绘覆盖层的总开关（外挂轨 / 替代原生 / 全轨覆盖层都经它出画）原本只在 options 页有一个
+「在视频上显示外挂字幕」开关，看片中途想在 Fushi 字幕 ↔ 站点自带字幕之间切要跑一趟设置页。
+现在点工具栏 Fushi 图标 → 页脚第一项「Fushi 字幕 开/关」直接翻同一个键（同一个
+`chrome.storage.local` 键，options 页开关、视频页都经 `storage.onChanged` 同步）。关→开时
+顺带把总门 `netflixSubtitlePanel` 打开——覆盖层受它门控，从没开过侧边栏的用户单开覆盖层
+等于什么都不发生；开→关只翻自己。它**不是** Shift+H：关掉后回到站点自带字幕，一句都不看的
+纯听力模式仍用 Shift+H / options「隐藏字幕」。行为测试 `popup-overlay-toggle.test.js`。
+
 ## 站点适配状态
 
 | 站点 | 机制 | 验证状态 |
