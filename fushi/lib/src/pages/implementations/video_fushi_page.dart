@@ -58,6 +58,7 @@ import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
