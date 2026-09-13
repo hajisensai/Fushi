@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/anki/anki_auto_reposition.dart';
+import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
@@ -208,45 +211,6 @@ void main() {
       expect(read.calls, 1);
     });
 
-    test('先手动切回读到空剪贴板不关闭往返：随后送达的 URL 回调仍读一次', () async {
-      // 用户打开 AnkiMobile 后先切回 Fushi 看一眼（AnkiMobile 还没写剪贴板），
-      // 再回去点同意。兜底读到 empty 不能算终点，否则权威的 x-success 被丢。
-      final coordinator = AnkiMobileInfoReturnCoordinator()..markRequested();
-      final empty = _CountingRead(_empty);
-      final read = _CountingRead(_ok);
-
-      final early = await coordinator.consume(
-        AnkiMobileInfoReturnTrigger.appResumed,
-        empty.call,
-      );
-      expect(early, same(_empty));
-      expect(coordinator.awaitingReturn, isTrue);
-
-      final callback = await coordinator.consume(
-        AnkiMobileInfoReturnTrigger.urlCallback,
-        read.call,
-      );
-      expect(callback, same(_ok));
-      expect(read.calls, 1);
-      expect(coordinator.awaitingReturn, isFalse);
-    });
-
-    test('URL 回调读到空剪贴板是终点：之后回到前台不再重读', () async {
-      final coordinator = AnkiMobileInfoReturnCoordinator()..markRequested();
-      final empty = _CountingRead(_empty);
-
-      await coordinator.consume(
-        AnkiMobileInfoReturnTrigger.urlCallback,
-        empty.call,
-      );
-      final resumed = await coordinator.consume(
-        AnkiMobileInfoReturnTrigger.appResumed,
-        empty.call,
-      );
-      expect(resumed, isNull);
-      expect(empty.calls, 1);
-    });
-
     test('新一轮 fetch 重新打开等待态', () async {
       final coordinator = AnkiMobileInfoReturnCoordinator()..markRequested();
       final read = _CountingRead(_ok);
@@ -350,6 +314,123 @@ void main() {
       );
 
       expect(resolveAnkiMobileRepository(wrapped), same(local));
+    });
+
+    test('先手动切回读到空剪贴板不关闭往返：随后送达的 URL 回调仍读一次', () async {
+      // 用户打开 AnkiMobile 后先切回 Fushi 看一眼（AnkiMobile 还没写剪贴板），
+      // 再回去点同意。兜底读到 empty 不能算终点，否则权威的 x-success 被丢。
+      final coordinator = AnkiMobileInfoReturnCoordinator()..markRequested();
+      final empty = _CountingRead(_empty);
+      final read = _CountingRead(_ok);
+
+      final early = await coordinator.consume(
+        AnkiMobileInfoReturnTrigger.appResumed,
+        empty.call,
+      );
+      expect(early, same(_empty));
+      expect(coordinator.awaitingReturn, isTrue);
+
+      final callback = await coordinator.consume(
+        AnkiMobileInfoReturnTrigger.urlCallback,
+        read.call,
+      );
+      expect(callback, same(_ok));
+      expect(read.calls, 1);
+      expect(coordinator.awaitingReturn, isFalse);
+    });
+
+    test('URL 回调读到空剪贴板是终点：之后回到前台不再重读', () async {
+      final coordinator = AnkiMobileInfoReturnCoordinator()..markRequested();
+      final empty = _CountingRead(_empty);
+
+      await coordinator.consume(
+        AnkiMobileInfoReturnTrigger.urlCallback,
+        empty.call,
+      );
+      final resumed = await coordinator.consume(
+        AnkiMobileInfoReturnTrigger.appResumed,
+        empty.call,
+      );
+      expect(resumed, isNull);
+      expect(empty.calls, 1);
+    });
+
+    // 模拟器实测第一步就撞上的真根因：provider 现在恒包一层「制卡后自动重排」
+    // （d55752a5e1 起），`is! AnkiMobileRepository` 对 iOS 上每个人都成立。
+    test('被「自动重排」包裹（provider 的默认形状）时也能解包', () {
+      final local = AnkiMobileRepository(
+        openUrl: (_) async => true,
+        readInfoForAddingJson: () async =>
+            const AnkiMobilePasteboardRead.empty(),
+        infoReturnCoordinator: AnkiMobileInfoReturnCoordinator(),
+      );
+      AutoRepositionAnkiRepository wrap(BaseAnkiRepository inner) =>
+          AutoRepositionAnkiRepository(
+            inner: inner,
+            scheduler: AnkiAutoRepositionScheduler(
+              runner: AnkiDeckRepositionRunner(inner),
+              loadSettings: inner.loadSettings,
+            ),
+          );
+
+      expect(resolveAnkiMobileRepository(wrap(local)), same(local));
+      // 开了「制卡到已配对设备」是两层：自动重排(互联(本地))。
+      expect(
+        resolveAnkiMobileRepository(
+          wrap(RemoteMiningAnkiRepository(
+            local: local,
+            client: _NoopMineSender(),
+          )),
+        ),
+        same(local),
+      );
+    });
+
+    // 源码守卫：lib/src/anki 下每个「包着另一个 BaseAnkiRepository」的包装类都必须
+    // 在解包器里登记，否则新加一层包装就会把 iOS 回传链再次静默切断。
+    test('每个仓库包装类都在 resolveAnkiMobileRepository 里登记', () {
+      final RegExp classRe =
+          RegExp(r'class\s+(\w+)\s+extends\s+BaseAnkiRepository\b');
+      final RegExp innerFieldRe =
+          RegExp(r'final\s+BaseAnkiRepository\s+_\w+;');
+      final List<String> wrappers = <String>[];
+      for (final FileSystemEntity entity
+          in Directory('lib/src/anki').listSync()) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String src = entity.readAsStringSync();
+        for (final RegExpMatch m in classRe.allMatches(src)) {
+          final String name = m.group(1)!;
+          if (name == 'AnkiMobileRepository') continue;
+          final int bodyStart = m.end;
+          final int bodyEnd = src.indexOf(RegExp(r'\nclass\s'), bodyStart);
+          final String body =
+              src.substring(bodyStart, bodyEnd < 0 ? src.length : bodyEnd);
+          if (innerFieldRe.hasMatch(body)) wrappers.add(name);
+        }
+      }
+      expect(
+        wrappers,
+        containsAll(<String>[
+          'AutoRepositionAnkiRepository',
+          'RemoteMiningAnkiRepository',
+        ]),
+        reason: '扫描面自检：两层已知包装必须被扫出来，否则守卫空转',
+      );
+
+      final String resolver = File('lib/src/anki/ankimobile_repository.dart')
+          .readAsStringSync();
+      final int fnStart =
+          resolver.indexOf('AnkiMobileRepository? resolveAnkiMobileRepository(');
+      expect(fnStart, greaterThan(-1));
+      final String fnBody =
+          resolver.substring(fnStart, resolver.indexOf('\n}\n', fnStart));
+      for (final String wrapper in wrappers) {
+        expect(
+          fnBody,
+          contains('is $wrapper'),
+          reason: '$wrapper 包着一个 BaseAnkiRepository，解包器却没登记它',
+        );
+      }
     });
 
     test('本地后端不是 AnkiMobile 时返回 null', () {
