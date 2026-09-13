@@ -5,6 +5,7 @@ import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
 
 EpubBook _book(List<String> bodies) => EpubBook(
@@ -231,4 +232,66 @@ void main() {
       expect(sync, contains('FushiTextSelection(text: cueText)'));
     },
   );
+
+  test('ruby in the book comes back as <ruby><rt> furigana in lyrics HTML', () {
+    // 正文：艦長は<ruby>共通信号<rt>きょうつうしんごう</rt></ruby>の発信を命じた。
+    const String body = '<p>艦長は<ruby>共通信号<rt>きょうつうしんごう</rt></ruby>の発信を命じた。</p>';
+    final EpubBook book = _book(<String>[body]);
+    // 尾部句号在归一化区间之外，resolver 一向不带（既有行为）。
+    const String plain = '艦長は共通信号の発信を命じた';
+    final AudioCue cue = _cue(
+      0,
+      AudioTextNormalizer.normalize(plain).length,
+      text: '艦長は共通信号の発信を命じた',
+    );
+    final LyricsCueText resolved = LyricsCueTextResolver(
+      book,
+    ).resolveForCue(cue);
+    expect(resolved.text, plain);
+    expect(resolved.rubies, hasLength(1));
+    expect(resolved.rubies.single.start, 3);
+    expect(resolved.rubies.single.end, 7);
+    expect(resolved.rubies.single.reading, 'きょうつうしんごう');
+    // 纯文本入口不变：查词句子拿基底、不带读音。
+    expect(LyricsCueTextResolver(book).textForCue(cue), plain);
+
+    final html_dom.Document doc = html_parser.parse(
+      _html(<AudioCue>[cue], book: book),
+    );
+    final html_dom.Element cueEl = doc.querySelector('.cue')!;
+    expect(cueEl.querySelector('ruby')!.text, '共通信号きょうつうしんごう');
+    expect(cueEl.querySelector('rt')!.text, 'きょうつうしんごう');
+    expect(
+      cueEl.innerHtml,
+      contains('艦長は<ruby>共通信号<rt>きょうつうしんごう</rt></ruby>の発信を命じた'),
+    );
+  });
+
+  test('ruby cut by the cue boundary is dropped, not half-rendered', () {
+    const String body =
+        '<p>停<ruby>船<rt>せん</rt></ruby>せよ。<ruby>艦長<rt>かんちょう</rt></ruby>は命じた。</p>';
+    final EpubBook book = _book(<String>[body]);
+    // 归一化 停0船1せ2よ3艦4長5：cue 只盖「せよ艦」——「艦長」ruby 被切开 → 丢；
+    // 「船」不在区间内。
+    final AudioCue cue = _cue(2, 5, text: 'せよかん');
+    final LyricsCueText resolved = LyricsCueTextResolver(
+      book,
+    ).resolveForCue(cue);
+    expect(resolved.text, 'せよ。艦');
+    expect(resolved.rubies, isEmpty);
+    expect(
+      html_parser
+          .parse(_html(<AudioCue>[cue], book: book))
+          .querySelector('.cue ruby'),
+      isNull,
+    );
+  });
+
+  test('cue without EPUB context has no rubies and no ruby markup', () {
+    final AudioCue cue = _cue(0, 3, text: 'ざつおん');
+    expect(
+      html_parser.parse(_html(<AudioCue>[cue])).querySelector('.cue ruby'),
+      isNull,
+    );
+  });
 }
