@@ -375,11 +375,15 @@ class InterconnectSourceBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
       decoration: BoxDecoration(
         color: cs.secondaryContainer,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: tokens.radii.chipRadius,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -389,7 +393,7 @@ class InterconnectSourceBadge extends StatelessWidget {
             size: 14,
             color: cs.onSecondaryContainer,
           ),
-          const SizedBox(width: 4),
+          SizedBox(width: tokens.spacing.gap / 2),
           Text(
             '${t.manga_discovery_source_interconnect_badge} · '
             '${t.manga_source_interconnect_via_device(device: device)}',
