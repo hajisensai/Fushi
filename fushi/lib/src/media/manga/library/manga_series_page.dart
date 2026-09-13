@@ -490,12 +490,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 返回 true = 继续入队下载。选「登录」时登录完自动刷新章节列表（锁位跟着
   /// 变），本次不入队。
   Future<bool> _promptLockedChapter(OnlineMangaChapter chapter) async {
-    final OnlineMangaLibraryEntry? entry = _entry;
-    final OnlineMangaLoginTarget? login = switch (_adapter) {
-      OnlineMangaLoginCapable(:final loginTarget) when entry != null =>
-        loginTarget(entry),
-      _ => null,
-    };
+    final OnlineMangaLoginTarget? login = _loginTarget;
     if (!mounted) return false;
     final _LockedChapterChoice? choice =
         await showAppDialog<_LockedChapterChoice>(
@@ -541,6 +536,17 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       case null:
         return false;
     }
+  }
+
+  /// 当前条目所属源的登录目标；适配器没这条流程（Aidoku / 互联对端）或源不接受
+  /// 浏览器登录时为 null——AppBar 的登录按钮与锁章弹窗的「登录」项共用这一判据。
+  OnlineMangaLoginTarget? get _loginTarget {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    return switch (_adapter) {
+      OnlineMangaLoginCapable(:final loginTarget) when entry != null =>
+        loginTarget(entry),
+      _ => null,
+    };
   }
 
   Future<void> _loginToSource(OnlineMangaLoginTarget target) async {
@@ -1160,10 +1166,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
     final bool canSubscribe = entry != null && _row != null && _service != null;
+    final OnlineMangaLoginTarget? login = _loginTarget;
     return FushiPageScaffold(
       title: title,
       subtitle: _subtitle(),
       actions: <Widget>[
+        // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
+        // 不必先点一条锁章再从弹窗里找。
+        if (login != null)
+          IconButton(
+            key: const ValueKey<String>('manga_series_login'),
+            tooltip: t.mihon_source_login,
+            onPressed: _busy || _refreshing
+                ? null
+                : () => unawaited(_loginToSource(login)),
+            icon: const Icon(Icons.login),
+          ),
         if (canSubscribe)
           IconButton(
             key: const ValueKey<String>('manga_series_subscribe'),
