@@ -1,0 +1,117 @@
+# 定时把 develop 的 debug 包送上 TestFlight（一天最多三次，有新提交才传）。
+#
+# 为什么不是跟着每次 push：release-desktop.yml 的 push 事件一天 5~13 次，每次都签名
+# 上传会让 App Store Connect 的处理排队把真正想发的 beta 压后、TestFlight 列表被
+# debug 构建淹掉（每个挂 90 天）、每条 push 流水线再多一趟 15 分钟的签名构建。
+# 所以拆成两半：
+#   1. 本 workflow 每 8 小时醒一次，只做「有没有新东西」的判断；
+#   2. 有就 dispatch release-desktop.yml（channel=debug + testflight_only=true），
+#      真正的签名 / 上传逻辑只有那一份，这里不复制。
+#
+# 「新」的判据来自 Apple 而不是本地记号：tool/asc_latest_build_number.sh 查 App Store
+# Connect 上已传的最大构建号，与 develop 头的 tool/release_sequence.sh 比。构建号是
+# commit 计数 + 地板、沿 develop 单调，debug / beta / formal 共用同一条序列，所以
+# 「beta 刚从这个 commit 传过」也会被正确判成不用再传。
+#
+# 定时 workflow 只从默认分支 main 触发（GitHub 规则），但检查与 dispatch 都显式指向
+# develop：main 只在正式发布时才从 develop 同步过来。
+#
+# 守卫：fushi/test/tools/apple_signing_workflow_guard_test.dart
+name: TestFlight Debug (scheduled)
+
+on:
+  schedule:
+    # 每天 UTC 00:23 / 08:23 / 16:23（北京 08:23 / 16:23 / 00:23）。分钟数错开整点，
+    # GitHub 在整点前后丢 schedule 触发是出了名的。
+    - cron: '23 0,8,16 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Dispatch even when App Store Connect already has a build at or above the develop head sequence (the upload itself will still be rejected by altool if the build number is not higher).'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  # gh workflow run 需要 actions: write。GITHUB_TOKEN 发的 workflow_dispatch 是
+  # 「GITHUB_TOKEN 事件不级联触发」规则的明文例外，所以这样 dispatch 是真的会跑的。
+  actions: write
+
+concurrency:
+  group: testflight-debug
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+          # release_sequence.sh 用 git rev-list --count，浅克隆会算出 1。
+          fetch-depth: 0
+      - name: Compare develop head with App Store Connect
+        id: compare
+        shell: bash
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          INPUT_FORCE: ${{ github.event.inputs.force }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          skip() {
+            echo "::notice title=TestFlight debug skipped::$1"
+            echo "dispatch=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          # 与 release-desktop.yml ios job 的 CREDS 门是同一组六个密钥：这里只查
+          # API 三个的话，签名两个缺了 dispatch 出去照样绿着跳过、号不涨、8 小时后再派。
+          for var in APPSTORE_API_KEY_ID APPSTORE_API_ISSUER_ID APPSTORE_API_PRIVATE_KEY \
+                     IOS_DIST_CERT_P12_BASE64 IOS_PROVISIONING_PROFILE_BASE64 APPLE_TEAM_ID; do
+            if [ -z "${!var}" ]; then
+              skip "Apple signing secret $var is not configured (fork / no account)."
+            fi
+          done
+          # 一个 sha 只试一次：同 sha 已有 dispatch 的 run 在排队 / 进行中 / 失败了，都不
+          # 再派。否则 altool 持续拒收（profile 过期、train 关闭）会变成一天三次的固定
+          # 重试，两次 cron 之间手动跑一次也会把同一个号派两份、第二份必在 validate 红。
+          # 新提交 = 新 sha = 新构建号，自然重试。
+          PRIOR="$(gh run list --workflow release-desktop.yml --event workflow_dispatch \
+            --commit "$HEAD_SHA" --limit 20 --json status,conclusion,databaseId \
+            --jq '[.[] | select(.status != "completed" or .conclusion != "success")] | length')"
+          if [ "$PRIOR" != 0 ]; then
+            skip "develop @ $HEAD_SHA already has $PRIOR queued/running/failed dispatch run(s) of release-desktop.yml; a new commit will be tried next time."
+          fi
+          HEAD_SEQ="$(bash tool/release_sequence.sh)"
+          ASC_MAX="$(bash tool/asc_latest_build_number.sh)"
+          echo "develop head sequence: $HEAD_SEQ; App Store Connect max build: $ASC_MAX"
+          if [ "$HEAD_SEQ" -gt "$ASC_MAX" ]; then
+            echo "dispatch=true" >> "$GITHUB_OUTPUT"
+          elif [ "${INPUT_FORCE:-}" = true ]; then
+            echo "::warning title=Forced dispatch::develop head $HEAD_SEQ is not above App Store Connect $ASC_MAX; altool will reject the upload unless the number is higher."
+            echo "dispatch=true" >> "$GITHUB_OUTPUT"
+          else
+            skip "App Store Connect already has build $ASC_MAX (develop head is $HEAD_SEQ)."
+          fi
+      - name: Dispatch release-desktop (debug, TestFlight only)
+        if: steps.compare.outputs.dispatch == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # --ref develop：dispatch 的 run 以那一刻的 develop 头为准；比上面算的更新
+          # 也无妨，只会更大。
+          gh workflow run release-desktop.yml --ref develop \
+            -f channel=debug \
+            -f upload_testflight=true \
+            -f testflight_only=true
+          echo "dispatched release-desktop.yml (channel=debug, testflight_only=true) for develop @ ${{ steps.compare.outputs.head_sha }}"

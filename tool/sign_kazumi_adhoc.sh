@@ -45,27 +45,8 @@ cleanup() {
 trap cleanup EXIT
 
 generate_jwt() {
-  ruby <<'RUBY'
-require "base64"
-require "json"
-require "openssl"
-
-encode = ->(value) { Base64.urlsafe_encode64(value, padding: false) }
-header = encode.call({ alg: "ES256", kid: ENV.fetch("APPSTORE_API_KEY_ID"), typ: "JWT" }.to_json)
-now = Time.now.to_i
-payload = encode.call({
-  iss: ENV.fetch("APPSTORE_API_ISSUER_ID"),
-  iat: now,
-  exp: now + 1_100,
-  aud: "appstoreconnect-v1"
-}.to_json)
-input = "#{header}.#{payload}"
-key = OpenSSL::PKey.read(ENV.fetch("APPSTORE_API_PRIVATE_KEY"))
-der = key.sign(OpenSSL::Digest.new("SHA256"), input)
-sequence = OpenSSL::ASN1.decode(der)
-raw = sequence.value.map { |integer| integer.value.to_s(2).rjust(32, "\0") }.join
-puts "#{input}.#{encode.call(raw)}"
-RUBY
+  # ES256 JWT 的唯一实现在 tool/asc_api_jwt.rb（与定时 TestFlight 检查共用）。
+  ruby "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/asc_api_jwt.rb"
 }
 
 asc_token="$(generate_jwt)"

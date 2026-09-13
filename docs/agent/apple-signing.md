@@ -134,9 +134,37 @@ Actions → **Build Desktop and Apple Release Artifacts** → Run workflow：
 - `channel` = `beta`（或 `formal`）
 - `upload_testflight` = true（默认）
 
-**TestFlight 只在手动 `workflow_dispatch` 的 beta / formal 通道上传**。push 触发的
-debug 通道每次提交都会跑，传上去只会白烧 App Store Connect 的处理配额，并且把构建号
-推高 —— 构建号在同一个 `CFBundleShortVersionString` 下必须单调递增，浪费掉不可回收。
+**TestFlight 只在手动 `workflow_dispatch` 上传，push 永远不传**。push 触发的 debug 通道
+一天 5~13 次，每次都传会让 App Store Connect 的处理排队压后真正想发的 beta、TestFlight
+列表被 debug 构建淹掉（每个挂 90 天）。
+
+### debug 包定时上 TestFlight
+
+`.github/workflows/testflight-debug.yml` 每天三次（UTC 00:23 / 08:23 / 16:23）：
+
+1. checkout `develop`（`fetch-depth: 0`），算 `tool/release_sequence.sh`；
+2. `tool/asc_latest_build_number.sh` 用 App Store Connect API（`tool/asc_api_jwt.rb` 签
+   JWT）取 `app.fushi.reader` 已上传的最大构建号；
+3. develop 头比它大才 `gh workflow run release-desktop.yml --ref develop -f channel=debug
+   -f upload_testflight=true -f testflight_only=true`；否则打一行 notice 结束。
+
+`testflight_only` 让 release-desktop 只跑 ios job 的签名构建 + 上传：Windows / macOS /
+publish 三个 job 跳过，未签名 IPA 不打，rolling debug 与更新清单不碰。debug 包在
+TestFlight 里的短版本与 beta 相同（Apple 只收三段），靠构建号和 app 内
+`FUSHI_BUILD_VERSION`（`2.x.y-debug.<seq>`）区分。
+
+构建号是 commit 计数 + 地板、沿 develop 单调，debug / beta / formal 共用一条序列。所以
+从**比 develop 头更旧的 commit** 手动发 beta 时，构建号会比已传的 debug 小、altool 拒收
+——beta 一律从 develop 头发。
+
+一个 sha 只试一次：dispatch 前查同 sha 的 `workflow_dispatch` run，有排队 / 进行中 /
+失败的就跳过，新提交自然重试；`testflight_only` 的 run 缺任一 Apple 密钥直接红（普通
+push / beta 的「缺密钥不红」规则不适用，否则定时通道会每 8 小时白派一次）。手动 dispatch
+输入 `force` 可跳过判新，altool 仍会拒绝不更高的构建号。
+
+**定时 workflow 只从默认分支 `main` 触发**，而默认分支上不存在的 workflow 连
+`gh workflow run` 都是 404：`testflight-debug.yml` 合进 develop 后既不会自动跑也无法手动
+验，要等下次正式发布同步到 main，或单独把这一个文件先落到 main。
 
 上传后 App Store Connect 处理通常 5–30 分钟，之后才出现在测试员列表里。
 

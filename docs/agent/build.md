@@ -141,10 +141,22 @@ gh release view v<version> --repo hajisensai/Fushi --json assets \
 
 - **Apple 凭据全部可选**。缺任何一项，对应链路整段跳过，未签名 IPA / ad-hoc macOS zip
   照常发布 —— fork 和无开发者账号的状态下发布链路完全不受影响。
-- **TestFlight 只在手动 `workflow_dispatch` 的 beta / formal 通道上传**（dispatch 输入
-  `upload_testflight`，默认开）。push 触发的 debug 通道每次提交都会跑，传上去只会白烧
-  App Store Connect 的处理配额并把构建号推高，而构建号在同一语义版本下必须单调，
-  浪费不可回收。
+- **TestFlight 只在手动 `workflow_dispatch` 上传，push 永远不传**：beta / formal 直接放行
+  （dispatch 输入 `upload_testflight`，默认开）；debug 只在 `testflight_only=true` 时放行。
+  push 触发的 debug 通道一天 5~13 次，每次都传会让 App Store Connect 的处理排队压后
+  真正想发的 beta、TestFlight 列表被 debug 构建淹掉（每个挂 90 天）。
+- **debug 包上 TestFlight 走定时通道 `testflight-debug.yml`**（2026-09-14 起，一天三次：
+  UTC 00:23 / 08:23 / 16:23）：查 App Store Connect 已传的最大构建号
+  （`tool/asc_latest_build_number.sh`），develop 头的 `tool/release_sequence.sh` 比它大才
+  `gh workflow run release-desktop.yml --ref develop -f channel=debug -f testflight_only=true`。
+  `testflight_only` 只跑 ios job 的签名 + 上传，Windows / macOS / publish 全跳、未签名 IPA
+  不打、rolling debug 与更新清单一概不碰。判新的状态拥有者是 Apple（不是 tag / cache），
+  所以 beta 刚从同一 commit 传过也会正确判成不用再传。一个 sha 只试一次：同 sha 已有排队 /
+  进行中 / 失败的 dispatch run 就不再派（altool 持续拒收不会变成一天三次的固定重试），
+  新提交自然重试；`testflight_only` 的 run 缺任一 Apple 密钥直接红，不允许「绿着跳过」。
+  **定时 workflow 只从默认分支 `main` 触发**，且默认分支上不存在的 workflow 连
+  `gh workflow run` 都是 404——所以 `testflight-debug.yml` 合进 develop 后既不会自动跑
+  也无法手动验，要等下次正式发布同步到 main，或单独把这一个文件先落到 main。
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
   App Store 签名包。TestFlight 用的是另一次、只在手动 beta/formal 时才发生的签名构建，
