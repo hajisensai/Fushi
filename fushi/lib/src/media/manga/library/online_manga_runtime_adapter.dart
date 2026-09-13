@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 /// 一条在线漫画书架条目**不可用**的原因。
@@ -213,6 +214,14 @@ abstract interface class OnlineMangaLoginCapable {
   /// 该条目所属源的登录目标；源没登记 / 运行时不接受浏览器登录 / baseUrl 解析
   /// 不出 host 时返回 null。
   OnlineMangaLoginTarget? loginTarget(OnlineMangaLibraryEntry entry);
+
+  /// 「登录能不能解开这一章」：能就返回登录目标，否则 null。锁章弹窗按它决定
+  /// 给不给「登录」按钮——源整体能登录不等于每一章登录后都能读（BUG-2514：
+  /// quirk 章匿名请求，登录了也拿不到付费正文，给按钮就是假承诺）。
+  OnlineMangaLoginTarget? loginTargetForChapter(
+    OnlineMangaLibraryEntry entry,
+    OnlineMangaChapter chapter,
+  );
 }
 
 /// 同一扩展下另一种语言的已启用源（BUG-2510）。
@@ -332,6 +341,14 @@ class MihonLibraryAdapter
     }
     return (runtime: runtime, sourceName: name, baseUrl: baseUrl);
   }
+
+  @override
+  OnlineMangaLoginTarget? loginTargetForChapter(
+    OnlineMangaLibraryEntry entry,
+    OnlineMangaChapter chapter,
+  ) => ComicoMagazineComicQuirk.ownsChapter(chapter.raw)
+      ? null
+      : loginTarget(entry);
 
   /// Mihon 里「不按语言取章」的源语言值：多语言单源扩展用这些占位。
   static const Set<String> _languageAgnostic = <String>{'', 'all', 'multi'};
@@ -484,11 +501,25 @@ class MihonLibraryAdapter
           !ComicoMagazineComicQuirk.isNotFound(error)) {
         rethrow;
       }
-      final List<MihonChapter> chapters = await _comico.chapters(
-        contentId: contentId,
-        baseUrl: context.source.baseUrl,
-        language: context.source.language,
-      );
+      final List<MihonChapter> chapters;
+      try {
+        chapters = await _comico.chapters(
+          contentId: contentId,
+          baseUrl: context.source.baseUrl,
+          language: context.source.language,
+        );
+      } on Object catch (quirkError, stack) {
+        // quirk 也失败（普通 comic 被下架之类）：对用户抛**扩展的原始错误**
+        // （带原生堆栈的诊断），quirk 自己的失败只记日志——否则诊断框里只剩
+        // 一条 /magazine_comic 的 404，真正的线索没了。
+        ErrorLogService.instance.log(
+          'MihonLibraryAdapter.comicoQuirk',
+          quirkError,
+          stack,
+        );
+        // ignore: only_throw_errors — 原样抛回扩展那份，类型由扩展决定。
+        throw error;
+      }
       return <OnlineMangaChapter>[
         for (final MihonChapter chapter in chapters)
           _chapterFrom(
@@ -552,12 +583,15 @@ class MihonLibraryAdapter
     }
   }
 
-  /// 走 [CancellableMihonRuntime.fetchImageRequest]（请求可被 runtime 侧登记）；
-  /// 不支持的 runtime 退回 [MihonRuntime.fetchImage]。两者都经扩展自己的 OkHttp
-  /// 客户端，绝不能换成裸 HTTP——会丢掉扩展拦截器、cookie 与按请求头。
+  /// [HttpMangaPageRef] 是 quirk 产出、扩展不认识的页（URL 自带签名），例外
+  /// 走裸 https。其余走 [CancellableMihonRuntime.fetchImageRequest]（请求可被
+  /// runtime 侧登记）；不支持的 runtime 退回 [MihonRuntime.fetchImage]——两者都
+  /// 经扩展自己的 OkHttp 客户端，不能换成裸 HTTP，会丢掉扩展拦截器、cookie 与
+  /// 按请求头。
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) async {
     if (page is HttpMangaPageRef) {
+      // 目前只有コミコ一个 quirk 产出这种页；再来一个时给 ref 加 quirk 标识分派。
       return _comico.fetchImage(page.url, baseUrl: page.referer);
     }
     if (page is! MihonMangaPageRef) {

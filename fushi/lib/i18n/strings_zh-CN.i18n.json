@@ -4810,5 +4810,6 @@
   "manga_series_no_chapters_in_language": "该源只收录 ${language} 语言的章节",
   "manga_series_try_sibling_language": "试试 ${language}",
   "manga_series_remove_from_bookshelf": "移出漫画书架",
-  "manga_series_remove_confirm": "把这部作品移出书架？已下载的章节和阅读进度会一并删除。"
+  "manga_series_remove_confirm": "把这部作品移出书架？已下载的章节和阅读进度会一并删除。",
+  "manga_chapter_locked_login_unsupported_hint": "本章需在源站购买或租借；这类作品暂不支持在应用内登录解锁。"
 }

@@ -322,14 +322,16 @@ class ComicoMagazineComicQuirk {
     for (final XmlElement ref in doc.findAllElements('itemref')) {
       if (ref.getAttribute('linear') == 'no') continue;
       final XmlElement? item = manifest[ref.getAttribute('idref')];
-      if (item == null) continue;
+      final String? href = item?.getAttribute('href');
+      if (item == null || href == null || href.isEmpty) continue;
       final XmlElement? fallback = manifest[item.getAttribute('fallback')];
+      final String? fallbackHref = fallback?.getAttribute('href');
       if (isImage(item)) {
-        out.add((href: item.getAttribute('href')!, isImage: true));
-      } else if (isImage(fallback)) {
-        out.add((href: fallback!.getAttribute('href')!, isImage: true));
+        out.add((href: href, isImage: true));
+      } else if (isImage(fallback) && fallbackHref != null) {
+        out.add((href: fallbackHref, isImage: true));
       } else {
-        out.add((href: item.getAttribute('href')!, isImage: false));
+        out.add((href: href, isImage: false));
       }
     }
     return out;
@@ -352,6 +354,8 @@ class ComicoMagazineComicQuirk {
 
   /// 把 xhtml 里的相对路径按 xhtml 自己所在目录解析回 OPF 根相对路径
   /// （`xhtml/p-001.xhtml` + `../image/i-001.jpg` → `image/i-001.jpg`）。
+  /// 不处理以 `/` 开头的绝对路径与 URL 编码：EPUB 规范不允许前者，实测 OPF 也
+  /// 没有。
   static String _resolve(String fromHref, String relative) {
     final List<String> base = fromHref.split('/')..removeLast();
     for (final String segment in relative.split('/')) {

@@ -210,6 +210,51 @@ void main() {
     expect(result.chapters.single.locked, isTrue);
   });
 
+  test('コミコ Not Found 且 quirk 也 404（作品下架）→ 抛的是扩展的原始错误', () async {
+    runtime.chaptersError = Exception(
+      'MihonRuntimeException(BRIDGE_HTTP_500): Not Found',
+    );
+    quirk = ComicoMagazineComicQuirk(
+      clientFactory: () => MockClient(
+        (_) async => json(<String, Object?>{
+          'result': <String, Object?>{'code': 404},
+        }),
+      ),
+    );
+    await expectLater(
+      adapterFor(comico).refresh(entry(comico)),
+      throwsA(
+        isA<OnlineMangaUnavailable>()
+            .having((OnlineMangaUnavailable e) => e.stage, 'stage', 'chapters')
+            .having(
+              (OnlineMangaUnavailable e) => e.cause,
+              'cause',
+              same(runtime.chaptersError),
+            ),
+      ),
+    );
+  });
+
+  test('quirk 章不给登录目标；普通章照常', () {
+    final MihonLibraryAdapter adapter = adapterFor(comico);
+    const OnlineMangaChapter quirkChapter = OnlineMangaChapter(
+      key: '/magazine_comic/209156/chapter/64/product',
+      name: '64',
+      raw: <String, Object?>{'fushiQuirk': 'comico_magazine_comic'},
+    );
+    const OnlineMangaChapter plain = OnlineMangaChapter(
+      key: '/comic/1/chapter/2/product',
+      name: '2',
+      raw: <String, Object?>{},
+    );
+    expect(adapter.loginTarget(entry(comico)), isNotNull);
+    expect(adapter.loginTargetForChapter(entry(comico), quirkChapter), isNull);
+    expect(
+      adapter.loginTargetForChapter(entry(comico), plain)?.baseUrl,
+      'https://comico.jp',
+    );
+  });
+
   test('コミコ但错误不是 Not Found → 原样抛，不碰 quirk', () async {
     runtime.chaptersError = Exception('Forbidden');
     await expectLater(
@@ -254,7 +299,10 @@ void main() {
   });
 }
 
-class _FakeRuntime extends Fake implements MihonRuntime {
+/// 同时实现 [BrowserCookieMihonRuntime]：让 `loginTarget` 非空，才测得出
+/// 「普通章给登录目标、quirk 章不给」的差别。
+class _FakeRuntime extends Fake
+    implements MihonRuntime, BrowserCookieMihonRuntime {
   Exception? chaptersError;
   List<MihonChapter> chapters = const <MihonChapter>[];
   int getPagesCalls = 0;

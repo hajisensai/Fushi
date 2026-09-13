@@ -502,43 +502,53 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 返回 true = 继续入队下载。选「登录」时登录完自动刷新章节列表（锁位跟着
   /// 变），本次不入队。
   Future<bool> _promptLockedChapter(OnlineMangaChapter chapter) async {
-    final OnlineMangaLoginTarget? login = _loginTarget;
+    // 按章问「登录能不能解开」，不是按源：能登录的源也有登录后照样读不了的章
+    // （BUG-2514 quirk 章），那时不给「登录」按钮、提示改成说清楚。
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final OnlineMangaLoginTarget? login = switch (_adapter) {
+      OnlineMangaLoginCapable(:final loginTargetForChapter)
+          when entry != null =>
+        loginTargetForChapter(entry, chapter),
+      _ => null,
+    };
+    final bool loginUnavailable = login == null && _loginTarget != null;
     if (!mounted) return false;
-    final _LockedChapterChoice? choice =
-        await showAppDialog<_LockedChapterChoice>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-            key: const ValueKey<String>('manga_chapter_locked_dialog'),
-            title: Text(t.manga_chapter_locked_title),
-            content: Text('${chapter.name}\n\n${t.manga_chapter_locked_hint}'),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () =>
-                    Navigator.pop(dialogContext, _LockedChapterChoice.download),
-                child: Text(t.manga_chapter_locked_download_anyway),
-              ),
-              if (login != null)
-                KeyedSubtree(
-                  key: const ValueKey<String>('manga_chapter_locked_login'),
-                  child: adaptiveDialogAction(
-                    context: dialogContext,
-                    isDefaultAction: true,
-                    onPressed: () => Navigator.pop(
-                      dialogContext,
-                      _LockedChapterChoice.login,
-                    ),
-                    child: Text(t.mihon_source_login),
-                  ),
-                ),
-            ],
+    final _LockedChapterChoice?
+    choice = await showAppDialog<_LockedChapterChoice>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        key: const ValueKey<String>('manga_chapter_locked_dialog'),
+        title: Text(t.manga_chapter_locked_title),
+        content: Text(
+          '${chapter.name}\n\n'
+          '${loginUnavailable ? t.manga_chapter_locked_login_unsupported_hint : t.manga_chapter_locked_hint}',
+        ),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(t.dialog_cancel),
           ),
-        );
+          adaptiveDialogAction(
+            context: dialogContext,
+            onPressed: () =>
+                Navigator.pop(dialogContext, _LockedChapterChoice.download),
+            child: Text(t.manga_chapter_locked_download_anyway),
+          ),
+          if (login != null)
+            KeyedSubtree(
+              key: const ValueKey<String>('manga_chapter_locked_login'),
+              child: adaptiveDialogAction(
+                context: dialogContext,
+                isDefaultAction: true,
+                onPressed: () =>
+                    Navigator.pop(dialogContext, _LockedChapterChoice.login),
+                child: Text(t.mihon_source_login),
+              ),
+            ),
+        ],
+      ),
+    );
     switch (choice) {
       case _LockedChapterChoice.download:
         return true;
