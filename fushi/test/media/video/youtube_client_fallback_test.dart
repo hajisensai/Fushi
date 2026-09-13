@@ -81,6 +81,29 @@ void main() {
     });
   });
 
+  group('BUG-2526 字幕链', () {
+    test('字幕链 = 取流链去掉 visionos（裸 innertube 请求被判 bot，轨表恒空，纯空转）', () {
+      expect(
+        kYoutubeCaptionClientFallback.map(_clientName).toList(),
+        <String>['ANDROID_VR', 'ANDROID', 'IOS', 'TVHTML5'],
+      );
+      expect(
+        kYoutubeCaptionClientFallback.any(
+            (yt.YoutubeApiClient c) => identical(c, kYoutubeVisionOsClient)),
+        isFalse,
+      );
+    });
+
+    test('字幕链由取流链派生（取流链其余成员一个不少、顺序一致）', () {
+      final List<String> expected = kYoutubeManifestClientFallback
+          .where(
+              (yt.YoutubeApiClient c) => !identical(c, kYoutubeVisionOsClient))
+          .map(_clientName)
+          .toList();
+      expect(kYoutubeCaptionClientFallback.map(_clientName).toList(), expected);
+    });
+  });
+
   group('BUG-1832 超时预算不变式', () {
     test('外层总超时 ≥ 每 client 上限 × 链长（增删 client 时自动跟随）', () {
       // 旧代码把这个关系写在注释里靠人肉维护，加第 4 个 client 时必然失配。

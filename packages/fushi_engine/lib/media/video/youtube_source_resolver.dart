@@ -1164,11 +1164,25 @@ Future<List<AudioCue>> resolveYoutubeCaptionCues(
 /// 判据是「非空即返回」：真没字幕的视频会走完全链（4 次往返、实测各 ~0.5s），但字幕是
 /// TODO-1302 的**后置异步**解析，不在起播关键路径上，这点代价换回「有字幕的视频不再被误判
 /// 成没有」。
+///
+/// BUG-2526：字幕链用 [kYoutubeCaptionClientFallback]（= 取流链去掉 visionos），不是同一份
+/// 列表。visionos 的 player 请求**必须带 watch page 的 visitor cookie**，而本函数按 A2 刻意
+/// 不取 WatchPage——裸请求必被判「Sign in to confirm you're not a bot」，轨表恒空，放在链首
+/// 只是每次字幕解析白付一次往返再退到 androidVr/android。取流侧的正确性不该把字幕侧的延迟
+/// 绑进来。
 Future<List<YoutubeCaptionTrack>> _fetchCaptionTracks(yt.VideoId id) =>
     fetchFirstNonEmptyByClient<YoutubeCaptionTrack>(
-      kYoutubeManifestClientFallback,
+      kYoutubeCaptionClientFallback,
       (yt.YoutubeApiClient api) => _fetchCaptionTracksWithClient(id, api),
     );
+
+/// 字幕轨表的 client 兜底链（BUG-2526）：[kYoutubeManifestClientFallback] 去掉
+/// [kYoutubeVisionOsClient]——见 [_fetchCaptionTracks]。派生而非另抄一份，取流链增删
+/// client 时自动跟随。
+final List<yt.YoutubeApiClient> kYoutubeCaptionClientFallback =
+    kYoutubeManifestClientFallback
+        .where((yt.YoutubeApiClient c) => !identical(c, kYoutubeVisionOsClient))
+        .toList(growable: false);
 
 /// 纯编排（IO 全部由 [fetch] 注入）：按 [clients] 顺序逐个调 [fetch]，**首个返回非空列表**
 /// 的结果即用并**立刻停止**（不再调用后续 client）；全部为空返回空表。

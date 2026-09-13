@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
@@ -134,7 +135,20 @@ class YoutubeStreamCache {
       <String, YoutubeStreamCacheEntry>{};
   bool _loaded = false;
 
-  static const int _schemaVersion = 1;
+  /// 文件级 schema 版本。**不等于本值的整份文件一律当空缓存**（[_ensureLoaded]）——条目
+  /// 级 json 向后兼容（缺字段读 null）另算，这一格只用于「上一代条目整体不可信」的场合。
+  ///
+  /// v1 → v2（BUG-2526）：v1 时代的条目全部由 ANDROID client 签流，其 DASH 直链被 YouTube
+  /// 限在前 60 秒（窗口外一律 403），而 [buildStreamVideoLaunch] 命中缓存后的 liveness 只探
+  /// `bytes=0-1`——恰在窗口内，必判「存活」，于是升级到 visionos 链首后，最长 ~6h（按
+  /// googlevideo `expire`）内重开流媒体书仍会把限窗的旧直链喂给播放器：无声 / 60s 断流原样
+  /// 复现，直到条目自然过期。条目里没记签流 client、无从逐条区分，整代作废是唯一可靠做法；
+  /// 代价只是升级后首开每本流媒体书多一次解析。
+  static const int _schemaVersion = 2;
+
+  /// 测试用：当前 schema 版本（守卫「旧版本文件被整体丢弃」）。
+  @visibleForTesting
+  static int get schemaVersion => _schemaVersion;
 
   Future<void> _ensureLoaded() async {
     if (_loaded) return;
@@ -145,6 +159,9 @@ class YoutubeStreamCache {
       if (raw.trim().isEmpty) return;
       final Object? decoded = jsonDecode(raw);
       if (decoded is! Map) return;
+      // 版本不符（含缺失 = v1 之前）整份丢弃，见 [_schemaVersion]。内存态置空即可：下一次
+      // put 会用新版本号整份覆写磁盘；一直没有 put 则磁盘留着旧文件也无害（每次加载都丢）。
+      if (decoded['version'] != _schemaVersion) return;
       final Object? entries = decoded['entries'];
       if (entries is! Map) return;
       // 加载全部条目（含已过期）；过期由 [get] 命中时自愈（剔除 + 落盘）、[put] 顺带 prune。
