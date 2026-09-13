@@ -154,20 +154,4 @@ void main() {
     expect(rec.lines, hasLength(1));
     expect(mangaOcr.calls, <OcrRect>[box]);
   });
-
-  test('close 只关横排路径自己的两个会话', () async {
-    final _DeadSession detSession = _DeadSession();
-    final _DeadSession recSession = _DeadSession();
-    final RoutingOcrRecognizer r = RoutingOcrRecognizer(
-      mangaOcr: _FakeMangaOcr(),
-      lineDetector: PpOcrLineDetector(detSession),
-      lineRecognizer: PpOcrLineRecognizer(
-        recSession,
-        vocab: const <String>[''],
-      ),
-    );
-    await r.close();
-    expect(detSession.closed, isTrue);
-    expect(recSession.closed, isTrue);
-  });
 }

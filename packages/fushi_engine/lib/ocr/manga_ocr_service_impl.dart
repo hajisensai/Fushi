@@ -283,6 +283,8 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
 
   TextDetector? detector;
   MangaOcrRecognizer? mangaOcr;
+  PpOcrLineDetector? lineDetector;
+  PpOcrLineRecognizer? lineRecognizer;
   RoutingOcrRecognizer? recognizer;
   try {
     // 宿主引导（app：BackgroundIsolateBinaryMessenger.ensureInitialized(token)；
@@ -372,14 +374,13 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     );
     // 横排行路径：PP-OCRv6 small det/rec 与 manga-ocr 同一组 provider（都是识别侧、
     // 都是纯 CPU 档）；建会话时的降级同样经 record 留痕。
-    final PpOcrLineDetector lineDetector =
-        PpOcrLineDetector(await factory.createSession(
+    lineDetector = PpOcrLineDetector(await factory.createSession(
       args.modelPaths.ppDetPath,
       providers: recognitionProviders,
       onProviderResolved: (OcrProviderResolution resolution) =>
           record('line detector', resolution),
     ));
-    final PpOcrLineRecognizer lineRecognizer = PpOcrLineRecognizer(
+    lineRecognizer = PpOcrLineRecognizer(
       await factory.createSession(
         args.modelPaths.ppRecPath,
         providers: recognitionProviders,
@@ -426,8 +427,13 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     try {
       await mangaOcr?.close();
     } catch (_) {}
+    // 三个 PP 侧对象各自持有会话：建到一半抛异常时 recognizer 还是 null，
+    // 只关它会漏掉已建好的 det / rec 会话，所以逐个关。
     try {
-      await recognizer?.close();
+      await lineDetector?.close();
+    } catch (_) {}
+    try {
+      await lineRecognizer?.close();
     } catch (_) {}
   }
 }

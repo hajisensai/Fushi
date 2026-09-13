@@ -47,12 +47,6 @@ class RoutingOcrRecognizer implements OcrRecognizer {
   final PpOcrLineDetector _lineDetector;
   final PpOcrLineRecognizer _lineRecognizer;
 
-  /// 只关横排路径自己建的两个会话；manga-ocr 识别器是注入的，由其拥有者关。
-  Future<void> close() async {
-    await _lineDetector.close();
-    await _lineRecognizer.close();
-  }
-
   @override
   Future<String> recognize(img.Image page, OcrRect box) async {
     if (!routesToHorizontalPath(box)) {
