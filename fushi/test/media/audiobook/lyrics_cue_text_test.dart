@@ -261,6 +261,13 @@ void main() {
     final html_dom.Element cueEl = doc.querySelector('.cue')!;
     expect(cueEl.querySelector('ruby')!.text, '共通信号きょうつうしんごう');
     expect(cueEl.querySelector('rt')!.text, 'きょうつうしんごう');
+    // 收藏标记按无读音的 data-text 比对（textContent 会把 rt 拼进来）。
+    expect(cueEl.attributes['data-text'], plain);
+    expect(cueEl.text, isNot(plain));
+    expect(
+      _html(<AudioCue>[cue], book: book),
+      contains('(cues[i].dataset.text || cues[i].textContent)'),
+    );
     expect(
       cueEl.innerHtml,
       contains('艦長は<ruby>共通信号<rt>きょうつうしんごう</rt></ruby>の発信を命じた'),

@@ -218,9 +218,16 @@ class CueSentenceResegmenter {
       final int gapEnd = mj.normCharStart;
       final int gapLen = gapEnd - gapStart;
       final List<int> interior = <int>[for (int k = i + 1; k < j; k++) k];
+      // 中间 cue 与两侧锚点同一音频文件、时间单调，否则它认领的区间会在
+      // 建串时被 _contiguous 断开、以独立「命中」输出（换上从没读过的正文）。
       final bool interiorClaimable = interior.every((int k) {
         final CueTokenTiming? t = cues[k].tokenTiming;
-        return !out[k].matched && t != null && !t.isEmpty;
+        return !out[k].matched &&
+            t != null &&
+            !t.isEmpty &&
+            cues[k].audioFileIndex == cues[i].audioFileIndex &&
+            cues[k].startMs >= cues[i].startMs &&
+            cues[k].startMs <= cues[j].startMs;
       });
       if (!interiorClaimable) continue;
 
@@ -620,8 +627,9 @@ class CueResegmentStats {
   /// 落在词中而被抹掉的原 cue 边界数。
   final int boundariesRemoved;
 
-  /// 合缝时区间被补齐的 cue 数（未命中 cue 认领缝 + 锚点向缝内延伸）。单列，
-  /// 不混进命中率：这些字确实被读了，但不是匹配器听出来的。
+  /// 合缝时区间被补齐的 cue 数（未命中 cue 认领缝 + 锚点向缝内延伸）。认领后
+  /// 的 cue 换上的是正确的正文，**计入** [MatchResult.matchedCues] / 命中率——
+  /// 这一项单列出来是为了对账：命中率里有多少是靠时间证据而非听写命中的。
   final int gapsClosed;
 
   bool get changed =>

@@ -388,5 +388,26 @@ void main() {
       expect(range(out.result.matches[0]), <int>[0, 7]);
       expect(range(out.result.matches[1]), <int>[47, 56]);
     });
+
+    test('中间的未命中 cue 属另一音频文件或时间乱序：不认领，两侧原样', () {
+      final AudioCue a = _cue(0, 'ということ', start: 0, end: 2000);
+      final AudioCue other = _cue(1, '心', start: 2000, end: 3500)
+        ..audioFileIndex = 1;
+      final AudioCue b = _cue(2, 'は自分が知った', start: 3500, end: 7000);
+      final CueResegmentResult out = _r.resegment(
+        sections: book('ということを、こころは、自分が知った。'),
+        cues: <AudioCue>[a, other, b],
+        result: _result(<CueMatch>[
+          _hit(0, 0, 5),
+          CueMatch.unmatched,
+          _hit(2, 9, 16),
+        ]),
+      );
+      expect(out.stats.gapsClosed, 0);
+      expect(out.cues, hasLength(3));
+      expect(identical(out.cues[1], other), isTrue);
+      expect(out.result.matches[1].matched, isFalse);
+      expect(out.result.matchedCues, 2);
+    });
   });
 }

@@ -29,10 +29,12 @@ class LyricsModeHtml {
         ? null
         : LyricsCueTextResolver(book);
     for (int i = 0; i < cues.length; i++) {
-      final String escaped = _cueInnerHtml(
-        textResolver?.resolveForCue(cues[i]) ??
-            LyricsCueText.plain(cues[i].text),
-      );
+      final LyricsCueText cueText =
+          textResolver?.resolveForCue(cues[i]) ??
+          LyricsCueText.plain(cues[i].text);
+      final String escaped = _cueInnerHtml(cueText);
+      // 无读音的纯文本：收藏标记按它比对（textContent 会把 <rt> 读音混进来）。
+      final String plainText = _escapeAttr(cueText.text);
       final String fragId = _escapeAttr(cues[i].textFragmentId);
       final int dist = (i - currentIndex).abs();
       final String cls = dist == 0
@@ -42,7 +44,7 @@ class LyricsModeHtml {
           : 'cue';
       cueHtml.write(
         '<div class="$cls" data-cue-index="$i" '
-        'data-text-fragment-id="$fragId">'
+        'data-text-fragment-id="$fragId" data-text="$plainText">'
         '$escaped</div>\n',
       );
     }
@@ -549,7 +551,8 @@ window.__lyricsMarkFavorites = function(texts) {
   var set = new Set(texts || []);
   var cues = document.querySelectorAll('.cue');
   for (var i = 0; i < cues.length; i++) {
-    var t = cues[i].textContent.trim();
+    // data-text 是无读音的纯文本；textContent 会把 <rt> 振假名拼进来，永不相等。
+    var t = (cues[i].dataset.text || cues[i].textContent).trim();
     if (set.has(t)) cues[i].classList.add('favorited');
     else cues[i].classList.remove('favorited');
   }
