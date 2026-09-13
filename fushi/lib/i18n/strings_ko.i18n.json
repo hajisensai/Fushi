@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "로컬 ONNX",
   "manga_ocr_engine_local_onnx_desc": "완전 오프라인, 최고 품질. 일회성 모델 다운로드가 필요하며 오래된 하드웨어에서는 느립니다.",
   "manga_ocr_engine_none": "사용 가능한 OCR 엔진이 없습니다. 내장 모델을 다운로드하거나 설정에서 Mokuro CLI 경로를 지정하세요.",
-  "manga_ocr_engine_paired_host_desc": "네트워크에 페어링된 기기에 작업을 넘깁니다. 이 기기에는 아무것도 다운로드되지 않습니다.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "기기 OCR",
   "manga_ocr_engine_system_desc": "기기에 내장된 문자 인식을 사용해요. 다운로드가 필요 없고 완전히 오프라인이며 아무것도 업로드하지 않아요. 다만 세로쓰기 말풍선과 손글씨에서는 로컬 모델보다 눈에 띄게 약해요.",
   "manga_ocr_engine_system_unavailable": "이 기기에는 사용할 수 있는 내장 문자 인식이 없어요",
