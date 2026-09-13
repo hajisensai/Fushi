@@ -4807,5 +4807,14 @@
   "card_source_review_video_return": "返回原观看位置",
   "card_source_review_video_continue": "从这里继续观看",
   "handlebar_source_link": "来源链接",
-  "remote_book_audiobook_download": "从互联对端下载有声书"
+  "remote_book_audiobook_download": "从互联对端下载有声书",
+  "manga_source_interconnect_collection_subtitle": "已配对设备上的扩展源，经该设备代理浏览",
+  "manga_source_interconnect_library_title": "对端漫画库",
+  "manga_source_interconnect_via_device": "经 $device",
+  "manga_source_interconnect_no_sources": "当前没有已配对设备透出扩展源",
+  "manga_source_interconnect_refresh": "重新探测对端",
+  "manga_source_interconnect_pair_action": "去配对",
+  "manga_source_interconnect_cloudflare": "该源在 $device 上被 Cloudflare 拦下，请在那台设备上打开该源完成验证。",
+  "manga_source_interconnect_unavailable": "当前没有已配对设备提供该源",
+  "manga_discovery_source_interconnect_badge": "互联"
 }

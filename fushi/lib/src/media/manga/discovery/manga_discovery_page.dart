@@ -13,6 +13,11 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/discovery/mal_manga_discovery_provider.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_browse_page.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_client.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_registry.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_browse_page.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_detail_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
@@ -94,8 +99,13 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   bool _loading = false;
 
   MihonManager? _mihonManager;
-  final MihonSourceImageLoadQueue _imageQueue =
-      MihonSourceImageLoadQueue(maxConcurrent: 4);
+  final MihonSourceImageLoadQueue _imageQueue = MihonSourceImageLoadQueue(
+    maxConcurrent: 4,
+  );
+
+  /// 「Fushi 互联」合集的对端源注册表：对端上下线 / 本机开关变化后热门行、
+  /// 来源清单、下拉跟着变。与 [_mihonManager] 同一监听纪律。
+  InterconnectMangaSourceRegistry? _interconnectRegistry;
 
   StreamSubscription<void>? _aidokuChanges;
   List<AidokuInstalledPackage> _aidokuPackages =
@@ -126,6 +136,12 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     if (!_injected && AidokuRuntimeFactory.isSupported) {
       _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
       unawaited(_loadAidoku());
+    }
+    if (!_injected) {
+      final InterconnectMangaSourceRegistry registry =
+          ref.read(appProvider).interconnectMangaSourceRegistry;
+      _interconnectRegistry = registry..addListener(_managerChanged);
+      unawaited(registry.ensureFresh());
     }
   }
 
@@ -162,6 +178,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   @override
   void dispose() {
     _mihonManager?.removeListener(_managerChanged);
+    _interconnectRegistry?.removeListener(_managerChanged);
     unawaited(_aidokuChanges?.cancel());
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -175,9 +192,22 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       return widget.sourceFeedsOverride ?? const <MangaDiscoverySourceFeed>[];
     }
     final MihonManager? manager = _mihonManager;
-    if (manager == null) return const <MangaDiscoverySourceFeed>[];
-    return mihonDiscoverySourceFeeds(manager: manager, imageQueue: _imageQueue);
+    final InterconnectMangaSourceRegistry? registry = _interconnectRegistry;
+    return <MangaDiscoverySourceFeed>[
+      if (manager != null)
+        ...mihonDiscoverySourceFeeds(manager: manager, imageQueue: _imageQueue),
+      if (registry != null && _interconnectSourcesAllowed)
+        ...interconnectDiscoverySourceFeeds(
+          registry: registry,
+          transport: ref.read(appProvider).interconnectMangaSourceClient,
+        ),
+    ];
   }
+
+  /// 对端借出的扩展源受商店合规边界约束（判据只在 [StoreRestrictedCapability]）；
+  /// 「对端漫画库」不受，iOS 上照常出卡片。
+  bool get _interconnectSourcesAllowed =>
+      StoreRestrictedCapability.onlineMangaSource.isAvailable;
 
   /// 当前可浏览来源快照。**只能在 build 里调**（内含 `ref.watch`）。
   MangaSourceCatalog _catalog() {
@@ -202,6 +232,12 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           .discoveryOpdsServers
           .where((OpdsServerConfig server) => server.enabled)
           .toList(growable: false),
+      // 「Fushi 互联」合集：注册表已订阅偏好与互联总开关，这里读快照即可。
+      interconnectLibrary: _interconnectRegistry?.libraryEnabled ?? false,
+      interconnectSources: _interconnectSourcesAllowed
+          ? _interconnectRegistry?.enabledSources ??
+              const <InterconnectRemoteSource>[]
+          : const <InterconnectRemoteSource>[],
       aidokuError: _aidokuError,
     );
   }
@@ -235,10 +271,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) => MangaDiscoveryDetailPage(
-          entry: entry,
-          onOpenSources: openSources,
-        ),
+        builder: (BuildContext context) =>
+            MangaDiscoveryDetailPage(entry: entry, onOpenSources: openSources),
       ),
     );
   }
@@ -248,8 +282,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   ///
   /// 判据是「壳**有** sources 视图」而不是「壳在」：[MediaLibraryShellScope.select]
   /// 对不存在的视图静默忽略，拿后者当判据就会渲染一个点了什么都不发生的按钮。
-  VoidCallback? _openSourcesAction() => MediaLibraryShellScope.maybeOf(context)
-      ?.actionFor(MediaLibraryViewKind.sources);
+  VoidCallback? _openSourcesAction() => MediaLibraryShellScope.maybeOf(
+        context,
+      )?.actionFor(MediaLibraryViewKind.sources);
 
   void _openMokuro() {
     final AppModel appModel = ref.read(appProvider);
@@ -258,10 +293,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         context: context,
         builder: (BuildContext context) => FushiPageScaffold(
           title: t.mihon_source_browse_mokuro,
-          body: MokuroMoeCatalogView(
-            db: appModel.database,
-            embedded: true,
-          ),
+          body: MokuroMoeCatalogView(db: appModel.database, embedded: true),
         ),
       ),
     );
@@ -277,6 +309,25 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           manager: manager,
           target: MihonInstalledTarget(source),
         ),
+      ),
+    );
+  }
+
+  void _openInterconnectLibrary() {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => const InterconnectMangaBrowsePage(),
+      ),
+    );
+  }
+
+  void _openInterconnectSource(InterconnectRemoteSource source) {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) =>
+            InterconnectSourceBrowsePage(source: source),
       ),
     );
   }
@@ -344,6 +395,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           mihonManager: _mihonManager,
           mihonSources: scope.mihonSources,
           aidokuPackages: scope.aidokuPackages,
+          interconnectSources: scope.interconnectSources,
           initialQuery: query,
           onOpenSources: openSources,
         ),
@@ -415,8 +467,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     final bool allSources = selected == kDiscoveryAllSourcesId;
     final MangaDiscoverySnapshot? snapshot = _snapshot;
     final List<MangaDiscoverySourceFeed> feeds = _sourceFeeds()
-        .where((MangaDiscoverySourceFeed feed) =>
-            allSources || feed.id == selected)
+        .where(
+          (MangaDiscoverySourceFeed feed) => allSources || feed.id == selected,
+        )
         .toList(growable: false);
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -463,6 +516,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           onOpenAidoku: _openAidokuSource,
           onOpenMihon: _openMihonSource,
           onOpenOpds: _openOpdsServer,
+          onOpenInterconnectLibrary: _openInterconnectLibrary,
+          onOpenInterconnectSource: _openInterconnectSource,
         ),
       ],
     );
@@ -474,10 +529,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Text(
-            t.manga_discovery_load_failed,
-            textAlign: TextAlign.center,
-          ),
+          Text(t.manga_discovery_load_failed, textAlign: TextAlign.center),
           if (_error != null) ...<Widget>[
             const SizedBox(height: 8),
             Text(
@@ -513,10 +565,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
           ),
           const SizedBox(height: 8),
           // 桌面端默认 dragDevices 不含 mouse，横滑行必须包
@@ -657,6 +706,11 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // 对端借出的源：行头带「互联 · 经 <设备>」徽标。
+                if (widget.feed.viaDevice case final String device) ...<Widget>[
+                  InterconnectSourceBadge(device: device),
+                  const SizedBox(width: 8),
+                ],
                 if (items == null)
                   const SizedBox(
                     width: 16,

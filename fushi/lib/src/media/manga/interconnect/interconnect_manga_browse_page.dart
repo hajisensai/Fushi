@@ -9,7 +9,12 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/settings/settings_destination.dart'
+    show SettingsDestinationId;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -100,14 +105,29 @@ class _InterconnectMangaBrowsePageState
             ),
             seed: InterconnectMangaCatalog.entryFor(book),
             sourceLabel: t.audio_source_fushi_interconnect,
-            remoteCoverBuilder: (BuildContext context) => _RemoteMangaCover(
-              backend: _backend,
-              book: book,
-            ),
+            remoteCoverBuilder: (BuildContext context) =>
+                _RemoteMangaCover(backend: _backend, book: book),
           ),
         ),
       ),
     );
+  }
+
+  /// 去「配对与设备」设置页；回来后重拉清单（配好了就该有内容）。
+  Future<void> _openPairing() async {
+    await Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => FushiPageScaffold(
+          title: t.interconnect_devices_page,
+          body: const ModuleSettingsView(
+            destinationId: SettingsDestinationId.interconnect,
+            navigation: SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+    if (mounted) unawaited(_load());
   }
 
   @override
@@ -139,20 +159,35 @@ class _InterconnectMangaBrowsePageState
     if (_loading && _items.isEmpty) {
       return Center(child: adaptiveIndicator(context: context));
     }
-    if (_error != null && _items.isEmpty) {
+    final Object? error = _error;
+    if (error != null && _items.isEmpty) {
+      // BUG-2515：错误一律经 [friendlySyncError]——此前 `'$error'` 把
+      // `SyncAuthError: Fushi server credentials not configured` 裸英文上屏，
+      // 而 sync_error_messages 早就有 pairingNotConfigured 的本地化句子。
+      final bool notPaired = error is SyncAuthError &&
+          error.kind == SyncAuthFailureKind.pairingNotConfigured;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text('$_error', textAlign: TextAlign.center),
+              Text(friendlySyncError(error), textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              TextButton(
-                key: const ValueKey<String>('interconnect_manga_retry'),
-                onPressed: () => unawaited(_load()),
-                child: Text(t.retry),
-              ),
+              // 一台都没配对：重试永远不会成功，唯一可操作的是去配对。
+              if (notPaired)
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>('interconnect_manga_pair'),
+                  onPressed: _openPairing,
+                  icon: const Icon(Icons.devices_outlined),
+                  label: Text(t.manga_source_interconnect_pair_action),
+                )
+              else
+                TextButton(
+                  key: const ValueKey<String>('interconnect_manga_retry'),
+                  onPressed: () => unawaited(_load()),
+                  child: Text(t.retry),
+                ),
             ],
           ),
         ),

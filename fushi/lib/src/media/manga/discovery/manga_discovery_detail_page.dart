@@ -16,7 +16,13 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_client.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_registry.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_browse_page.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi_engine/sync/manga_sources/host_manga_source_host.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/utils.dart';
 
 /// 发现条目详情页：MAL 元数据 + **全自动来源匹配**（用户决策 B）。
@@ -67,6 +73,14 @@ class _AidokuMatchPayload {
   final Map<String, Object?> manga;
 }
 
+/// 互联对端源命中的回带载荷。
+class _InterconnectMatchPayload {
+  const _InterconnectMatchPayload(this.source, this.series);
+
+  final InterconnectRemoteSource source;
+  final OnlineMangaSeries series;
+}
+
 class _MangaDiscoveryDetailPageState
     extends ConsumerState<MangaDiscoveryDetailPage> {
   List<MangaSourceMatch>? _matches;
@@ -75,6 +89,11 @@ class _MangaDiscoveryDetailPageState
 
   MihonManager? _mihonManager;
   List<MangaOnlineSourceRow> _mihonSources = const <MangaOnlineSourceRow>[];
+
+  /// 「Fushi 互联」合集里已启用的对端源（与 Mihon / Aidoku 同在 [_collectSources]
+  /// 里收集：测试注入 override 时一并跳过，本页不再另读 AppModel）。
+  List<InterconnectRemoteSource> _interconnectSources =
+      const <InterconnectRemoteSource>[];
   List<AidokuInstalledPackage> _aidokuPackages =
       const <AidokuInstalledPackage>[];
   AidokuRuntime? _aidokuRuntime;
@@ -132,7 +151,46 @@ class _MangaDiscoveryDetailPageState
         );
       }
     }
+    // 对端借出的扩展源受合规门（iOS 不参与）；对端离线的源探不到就不列。
+    if (StoreRestrictedCapability.onlineMangaSource.isAvailable) {
+      final InterconnectMangaSourceRegistry registry =
+          ref.read(appProvider).interconnectMangaSourceRegistry;
+      await registry.ensureFresh();
+      _interconnectSources = registry.enabledSources;
+      for (final InterconnectRemoteSource source in _interconnectSources) {
+        sources.add(
+          MangaMatchSource(
+            id: 'interconnect:${source.id}',
+            name: source.name,
+            language: source.language,
+            search: (String query) => _searchInterconnect(source, query),
+          ),
+        );
+      }
+    }
     return sources;
+  }
+
+  Future<List<MangaMatchHit>> _searchInterconnect(
+    InterconnectRemoteSource source,
+    String query,
+  ) async {
+    final RemoteMangaBrowsePage page =
+        await ref.read(appProvider).interconnectMangaSourceClient.browse(
+              source.peer,
+              source.id,
+              mode: RemoteMangaBrowseMode.search,
+              page: 1,
+              query: query,
+            );
+    return <MangaMatchHit>[
+      for (final Map<String, Object?> json in page.items)
+        if (OnlineMangaSeries.fromJson(json) case final OnlineMangaSeries s)
+          MangaMatchHit(
+            title: s.title,
+            payload: _InterconnectMatchPayload(source, s),
+          ),
+    ];
   }
 
   Future<List<MangaMatchHit>> _searchMihon(
@@ -140,8 +198,9 @@ class _MangaDiscoveryDetailPageState
     MangaOnlineSourceRow row,
     String query,
   ) async {
-    final MihonSourceContext sourceContext =
-        await manager.contextForSource(row);
+    final MihonSourceContext sourceContext = await manager.contextForSource(
+      row,
+    );
     final MihonMangaPage page = await manager.runtime.search(
       sourceContext.extension,
       sourceContext.source,
@@ -229,6 +288,17 @@ class _MangaDiscoveryDetailPageState
             ),
           ),
         );
+      case final _InterconnectMatchPayload payload:
+        Navigator.of(context).push(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (BuildContext context) =>
+                InterconnectSourceMangaDetailPage(
+              source: payload.source,
+              series: payload.series,
+            ),
+          ),
+        );
     }
   }
 
@@ -240,6 +310,7 @@ class _MangaDiscoveryDetailPageState
           mihonManager: _mihonManager,
           mihonSources: _mihonSources,
           aidokuPackages: _aidokuPackages,
+          interconnectSources: _interconnectSources,
           initialQuery: widget.entry.preferredTitle,
           onOpenSources: widget.onOpenSources,
         ),

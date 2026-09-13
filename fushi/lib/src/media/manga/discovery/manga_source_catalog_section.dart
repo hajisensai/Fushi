@@ -19,6 +19,9 @@ import 'package:flutter/material.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_client.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_browse_page.dart'
+    show InterconnectSourceBadge;
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/utils.dart';
@@ -34,8 +37,18 @@ class MangaSourceCatalog {
     this.aidokuPackages = const <AidokuInstalledPackage>[],
     this.mihonSources = const <MangaOnlineSourceRow>[],
     this.opdsServers = const <OpdsServerConfig>[],
+    this.interconnectLibrary = false,
+    this.interconnectSources = const <InterconnectRemoteSource>[],
     this.aidokuError,
   });
+
+  /// 「对端漫画库」（互联对端已下载的漫画）的来源 id。
+  static const String interconnectLibrarySourceId = 'interconnect:library';
+
+  /// 对端借出的扩展源的来源 id（`interconnect:mihon:<pkg>:<id>` 之类），与
+  /// `interconnectDiscoverySourceFeeds` 生成的 feed id 同式。
+  static String interconnectSourceId(InterconnectRemoteSource source) =>
+      'interconnect:${source.id}';
 
   /// 内置 mokuro.moe 目录的来源 id。
   static const String mokuroSourceId = 'mokuro';
@@ -65,6 +78,15 @@ class MangaSourceCatalog {
   /// （mokuro 已有先例：它同样不在聚合搜索的源模型里，选中即直接开目录页）。
   final List<OpdsServerConfig> opdsServers;
 
+  /// 「Fushi 互联」合集里的「对端漫画库」子项是否参与浏览。与 mokuro 一样没有
+  /// 「热门 feed」，只出现在卡片里、不进 [sourceOptions]。
+  final bool interconnectLibrary;
+
+  /// 「Fushi 互联」合集里已启用的对端扩展源（跑在对端，本机经它代理浏览）。
+  /// 与 Mihon 源同款：有热门行、进下拉、参与聚合搜索——只是每张卡 / 每一行都带
+  /// 「互联 · 经 <设备>」徽标，用户分得出这不是本机的源。
+  final List<InterconnectRemoteSource> interconnectSources;
+
   /// Aidoku 包清单读取失败时的错误（渲染成一行提示，不吞）。
   final Object? aidokuError;
 
@@ -72,7 +94,9 @@ class MangaSourceCatalog {
       !mokuroEnabled &&
       aidokuPackages.isEmpty &&
       mihonSources.isEmpty &&
-      opdsServers.isEmpty;
+      opdsServers.isEmpty &&
+      !interconnectLibrary &&
+      interconnectSources.isEmpty;
 
   /// 下拉选项（按 mokuro -> Aidoku -> Mihon 的展示顺序，与卡片顺序一致）。
   List<DiscoverySourceOption> get sourceOptions => <DiscoverySourceOption>[
@@ -83,13 +107,14 @@ class MangaSourceCatalog {
           ),
         for (final AidokuInstalledPackage package in aidokuPackages)
           DiscoverySourceOption(
-            id: aidokuSourceId(package),
-            label: package.name,
-          ),
+              id: aidokuSourceId(package), label: package.name),
         for (final MangaOnlineSourceRow source in mihonSources)
+          DiscoverySourceOption(id: mihonSourceId(source), label: source.name),
+        for (final InterconnectRemoteSource source in interconnectSources)
           DiscoverySourceOption(
-            id: mihonSourceId(source),
-            label: source.name,
+            id: interconnectSourceId(source),
+            label:
+                '${source.name} · ${t.manga_discovery_source_interconnect_badge}',
           ),
       ];
 
@@ -102,17 +127,28 @@ class MangaSourceCatalog {
     return MangaSourceCatalog(
       mokuroEnabled: mokuroEnabled && sourceId == mokuroSourceId,
       aidokuPackages: aidokuPackages
-          .where((AidokuInstalledPackage package) =>
-              aidokuSourceId(package) == sourceId)
+          .where(
+            (AidokuInstalledPackage package) =>
+                aidokuSourceId(package) == sourceId,
+          )
           .toList(growable: false),
       mihonSources: mihonSources
-          .where((MangaOnlineSourceRow source) =>
-              mihonSourceId(source) == sourceId)
+          .where(
+            (MangaOnlineSourceRow source) => mihonSourceId(source) == sourceId,
+          )
           .toList(growable: false),
       // OPDS 不在 [sourceOptions] 里，所以 [sourceId] 永远不会是某台 OPDS 服务器；
       // 用户选中了具体来源就意味着「只看这一个」，OPDS 卡片必须一并让位，
       // 否则收窄后的列表里会留着一堆与选择无关的卡片。
       opdsServers: const <OpdsServerConfig>[],
+      // 「对端漫画库」与 OPDS 同理：不在下拉里，选中具体来源后让位。
+      interconnectLibrary: false,
+      interconnectSources: interconnectSources
+          .where(
+            (InterconnectRemoteSource source) =>
+                interconnectSourceId(source) == sourceId,
+          )
+          .toList(growable: false),
       aidokuError: aidokuError,
     );
   }
@@ -126,6 +162,8 @@ class MangaSourceCatalogSection extends StatelessWidget {
     required this.onOpenAidoku,
     required this.onOpenMihon,
     required this.onOpenOpds,
+    required this.onOpenInterconnectLibrary,
+    required this.onOpenInterconnectSource,
     super.key,
   });
 
@@ -134,6 +172,8 @@ class MangaSourceCatalogSection extends StatelessWidget {
   final ValueChanged<AidokuInstalledPackage> onOpenAidoku;
   final ValueChanged<MangaOnlineSourceRow> onOpenMihon;
   final ValueChanged<OpdsServerConfig> onOpenOpds;
+  final VoidCallback onOpenInterconnectLibrary;
+  final ValueChanged<InterconnectRemoteSource> onOpenInterconnectSource;
 
   @override
   Widget build(BuildContext context) {
@@ -218,6 +258,46 @@ class MangaSourceCatalogSection extends StatelessWidget {
                       subtitle: Text(server.catalogUrl.host),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => onOpenOpds(server),
+                    ),
+                  ),
+                // 「Fushi 互联」合集：对端漫画库 + 对端借出的扩展源，一律带徽标。
+                if (catalog.interconnectLibrary)
+                  FushiCard(
+                    key: const ValueKey<String>('manga-interconnect-library'),
+                    padding: EdgeInsets.zero,
+                    child: FushiListItem(
+                      leading: const Icon(Icons.devices_outlined),
+                      title: Text(t.manga_source_interconnect_library_title),
+                      subtitle: Text(t.manga_source_interconnect_subtitle),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: onOpenInterconnectLibrary,
+                    ),
+                  ),
+                for (final InterconnectRemoteSource source
+                    in catalog.interconnectSources)
+                  FushiCard(
+                    key: ValueKey<String>('manga-interconnect-${source.id}'),
+                    padding: EdgeInsets.zero,
+                    child: FushiListItem(
+                      leading: CircleAvatar(
+                        child: Text(
+                          source.language.isEmpty
+                              ? '?'
+                              : source.language.toUpperCase(),
+                        ),
+                      ),
+                      title: Text(source.name),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: InterconnectSourceBadge(
+                            device: source.peer.displayName,
+                          ),
+                        ),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => onOpenInterconnectSource(source),
                     ),
                   ),
                 if (error != null)

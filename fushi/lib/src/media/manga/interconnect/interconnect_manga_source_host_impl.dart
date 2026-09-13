@@ -133,7 +133,7 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
       ),
     );
     return <Map<String, Object?>>[
-      for (final MihonFilter f in filters) _filterToWire(f),
+      for (final MihonFilter f in filters) mihonFilterToWire(f),
     ];
   }
 
@@ -169,7 +169,8 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
             page: page,
             query: query,
             filters: <MihonFilter>[
-              for (final Map<String, Object?> f in filters) _filterFromWire(f),
+              for (final Map<String, Object?> f in filters)
+                mihonFilterFromWire(f),
             ],
             preferences: context.preferences,
           ),
@@ -422,26 +423,23 @@ class InterconnectMangaSourceHostImpl implements HostMangaSourceHost {
           : null,
     );
   }
-
-  /// Mihon 过滤器 ↔ wire：wire 就是 bridge JSON（`toBridgeJson` 的形状），对端
-  /// 的过滤器弹窗用与本机 bridge 相同的解析器还原。
-  static Map<String, Object?> _filterToWire(MihonFilter filter) =>
-      <String, Object?>{
-        ...filter.toBridgeJson(),
-        'values': filter.values,
-        if (filter.state is bool) 'stateBoolean': filter.state,
-        if (filter.children.isNotEmpty)
-          'children': <Map<String, Object?>>[
-            for (final MihonFilter c in filter.children) _filterToWire(c),
-          ],
-      };
-
-  static MihonFilter _filterFromWire(Map<String, Object?> json) =>
-      mihonFilterFromWire(json);
 }
 
-/// wire → [MihonFilter]（[InterconnectMangaSourceHostImpl._filterToWire] 的逆）。
-/// 对端浏览页的过滤器弹窗与 host 还原搜索请求两边共用。
+/// [MihonFilter] → wire：bridge JSON（`toBridgeJson` 的形状）再补 `values` /
+/// `stateBoolean` / `children`——bridge JSON 只够运行时吃，对端的过滤器弹窗还要
+/// 把选项与子项画出来。host 下发过滤器定义与 client 回传选中状态两边共用。
+Map<String, Object?> mihonFilterToWire(MihonFilter filter) => <String, Object?>{
+  ...filter.toBridgeJson(),
+  'values': filter.values,
+  if (filter.state is bool) 'stateBoolean': filter.state,
+  if (filter.children.isNotEmpty)
+    'children': <Map<String, Object?>>[
+      for (final MihonFilter c in filter.children) mihonFilterToWire(c),
+    ],
+};
+
+/// wire → [MihonFilter]（[mihonFilterToWire] 的逆）。对端浏览页的过滤器弹窗与
+/// host 还原搜索请求两边共用。
 MihonFilter mihonFilterFromWire(Map<String, Object?> json) {
   final String type = json['type']?.toString() ?? '';
   MihonFilterKind kind = MihonFilterKind.unsupported;

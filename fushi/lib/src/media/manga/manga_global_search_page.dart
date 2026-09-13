@@ -2,12 +2,19 @@ import 'dart:async';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_client.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_registry.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_browse_page.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_library_adapter.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -23,12 +30,15 @@ import 'package:fushi/utils.dart';
 /// 平台差异只体现在**有哪些源**上：Mihon 仅桌面/安卓有宿主，Aidoku 只在 macOS/iOS
 /// 有宿主。调用方（`MangaDiscoveryPage`）负责把当前平台上「已启用」的两类源传进来，
 /// 本页不自己发现，方便测试注入。
-class MangaGlobalSearchPage extends StatefulWidget {
+class MangaGlobalSearchPage extends ConsumerStatefulWidget {
   const MangaGlobalSearchPage({
     required this.mihonManager,
     required this.mihonSources,
     required this.aidokuPackages,
     super.key,
+    this.interconnectSources = const <InterconnectRemoteSource>[],
+    this.interconnectTransport,
+    this.interconnectRegistry,
     this.aidokuRuntime,
     this.initialQuery,
     this.onOpenSources,
@@ -49,16 +59,24 @@ class MangaGlobalSearchPage extends StatefulWidget {
   /// 已启用的 Aidoku 已装包。
   final List<AidokuInstalledPackage> aidokuPackages;
 
+  /// 「Fushi 互联」合集里已启用的对端扩展源（经对端代理搜索）。
+  final List<InterconnectRemoteSource> interconnectSources;
+
+  /// 对端源传输层 / 注册表。为空时取 [AppModel] 上的单例；测试注入假实现。
+  final InterconnectMangaSourceTransport? interconnectTransport;
+  final InterconnectMangaSourceRegistry? interconnectRegistry;
+
   /// Aidoku 运行时。为空时按平台创建；测试注入假运行时。
   final AidokuRuntime? aidokuRuntime;
 
   final String? initialQuery;
 
   @override
-  State<MangaGlobalSearchPage> createState() => _MangaGlobalSearchPageState();
+  ConsumerState<MangaGlobalSearchPage> createState() =>
+      _MangaGlobalSearchPageState();
 }
 
-class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
+class _MangaGlobalSearchPageState extends ConsumerState<MangaGlobalSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final MihonSourceImageLoadQueue _imageQueue = MihonSourceImageLoadQueue(
     maxConcurrent: 4,
@@ -90,7 +108,22 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       AidokuGlobalSource(package),
     for (final MangaOnlineSourceRow row in widget.mihonSources)
       MihonGlobalSource(row),
+    for (final InterconnectRemoteSource source in widget.interconnectSources)
+      InterconnectGlobalSource(source),
   ];
+
+  /// 互联传输层只在有互联源参与时才去取（测试注入优先；生产取 AppModel 单例）。
+  InterconnectMangaSourceTransport? _interconnectTransport() {
+    if (widget.interconnectTransport != null) {
+      return widget.interconnectTransport;
+    }
+    if (widget.interconnectSources.isEmpty) return null;
+    return ref.read(appProvider).interconnectMangaSourceClient;
+  }
+
+  InterconnectMangaSourceRegistry _interconnectRegistry() =>
+      widget.interconnectRegistry ??
+      ref.read(appProvider).interconnectMangaSourceRegistry;
 
   /// 懒创建 Aidoku 运行时：无 Aidoku 源、或平台不支持时永不创建。
   AidokuRuntime? _resolveAidokuRuntime() {
@@ -115,6 +148,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     await MangaGlobalSearchRunner(
       mihonManager: widget.mihonManager,
       resolveAidokuRuntime: _resolveAidokuRuntime,
+      interconnectTransport: _interconnectTransport(),
     ).search(
       runs: runs,
       query: query,
@@ -135,6 +169,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     await MangaGlobalSearchRunner(
       mihonManager: widget.mihonManager,
       resolveAidokuRuntime: _resolveAidokuRuntime,
+      interconnectTransport: _interconnectTransport(),
     ).search(
       runs: <MangaSourceSearchRun>[run],
       query: _searchController.text.trim(),
@@ -169,6 +204,23 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           manager: manager,
           sourceContext: sourceContext,
           manga: manga,
+        ),
+      ),
+    );
+  }
+
+  void _openInterconnect(
+    InterconnectRemoteSource source,
+    OnlineMangaSeries series,
+  ) {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => InterconnectSourceMangaDetailPage(
+          source: source,
+          series: series,
+          transport: widget.interconnectTransport,
+          registry: widget.interconnectRegistry,
         ),
       ),
     );
@@ -288,6 +340,13 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // 对端借出的源：段行头带「互联 · 经 <设备>」徽标。
+                if (run.source case InterconnectGlobalSource(
+                  :final source,
+                )) ...<Widget>[
+                  InterconnectSourceBadge(device: source.peer.displayName),
+                  const SizedBox(width: 8),
+                ],
                 _statusTrailing(run),
               ],
             ),
@@ -313,8 +372,21 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       case MangaSearchRunStatus.loading:
         return const SizedBox(height: 200);
       case MangaSearchRunStatus.cloudflare:
+        // 对端源的挑战页只能在对端解：文案直说去哪台设备，不挂本机解题按钮。
+        if (run.source case InterconnectGlobalSource(:final source)) {
+          return _sourceError(
+            run,
+            describeInterconnectSourceError(run.error ?? '', source),
+          );
+        }
         return _sourceError(run, t.manga_source_cloudflare_blocked);
       case MangaSearchRunStatus.error:
+        if (run.source case InterconnectGlobalSource(:final source)) {
+          return _sourceError(
+            run,
+            describeInterconnectSourceError(run.error ?? '', source),
+          );
+        }
         return _sourceError(run, '${run.error}');
       case MangaSearchRunStatus.empty:
         return _SectionMessage(t.mihon_source_no_results);
@@ -327,6 +399,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     final int count = switch (run.source) {
       MihonGlobalSource() => run.mihonItems.length,
       AidokuGlobalSource() => run.aidokuItems.length,
+      InterconnectGlobalSource() => run.interconnectItems.length,
     };
     // 桌面端默认 dragDevices 不含 mouse，横向滚动区必须包 HorizontalDragScrollable
     // 才能用鼠标左键拖动平移（横向滚动守卫）。
@@ -366,6 +439,19 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
         // 与单源浏览页同一封面组件（磁盘缓存 + 退避重试 + 可点重试）。
         cover = AidokuCoverImage(url: manga['cover']?.toString());
         onTap = () => _openAidoku(package, manga);
+      case InterconnectGlobalSource(:final InterconnectRemoteSource source):
+        final OnlineMangaSeries series = run.interconnectItems[index];
+        title = series.title;
+        cover = InterconnectSourceCover(
+          source: source,
+          series: series,
+          adapter: InterconnectSourceLibraryAdapter(
+            registry: _interconnectRegistry(),
+            transport: _interconnectTransport()!,
+            presetSource: source,
+          ),
+        );
+        onTap = () => _openInterconnect(source, series);
     }
     return SizedBox(
       width: 130,

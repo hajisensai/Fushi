@@ -24,8 +24,9 @@ void main() {
       // 算空会让「有扩展宿主却一个来源都没启用」的提示压在有内容的列表上面。
       expect(const MangaSourceCatalog().isEmpty, isTrue);
       expect(
-        MangaSourceCatalog(opdsServers: <OpdsServerConfig>[_server('a')])
-            .isEmpty,
+        MangaSourceCatalog(
+          opdsServers: <OpdsServerConfig>[_server('a')],
+        ).isEmpty,
         isFalse,
       );
     });
@@ -46,11 +47,15 @@ void main() {
         mokuroEnabled: true,
         opdsServers: <OpdsServerConfig>[_server('a')],
       );
-      final MangaSourceCatalog narrowed =
-          catalog.filterById(MangaSourceCatalog.mokuroSourceId);
+      final MangaSourceCatalog narrowed = catalog.filterById(
+        MangaSourceCatalog.mokuroSourceId,
+      );
       expect(narrowed.mokuroEnabled, isTrue);
-      expect(narrowed.opdsServers, isEmpty,
-          reason: '选中了别的来源，OPDS 卡片留在列表里与选择无关');
+      expect(
+        narrowed.opdsServers,
+        isEmpty,
+        reason: '选中了别的来源，OPDS 卡片留在列表里与选择无关',
+      );
     });
 
     test('「全部来源」不过滤，OPDS 原样保留', () {
@@ -79,6 +84,8 @@ void main() {
                 onOpenAidoku: (_) {},
                 onOpenMihon: (_) {},
                 onOpenOpds: onOpenOpds,
+                onOpenInterconnectLibrary: () {},
+                onOpenInterconnectSource: (_) {},
               ),
             ),
           ),

@@ -8,11 +8,17 @@ library;
 import 'package:flutter/widgets.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_client.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_registry.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_browse_page.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_source_library_adapter.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/sync/manga_sources/host_manga_source_host.dart';
 
 /// 一条可渲染的来源条目：标题 + 封面构建器 + 打开动作。
 class MangaDiscoverySourceItem {
@@ -34,12 +40,16 @@ class MangaDiscoverySourceFeed {
     required this.name,
     required this.language,
     required this.loadPopular,
+    this.viaDevice,
   });
 
   final String id;
   final String name;
   final String language;
   final Future<List<MangaDiscoverySourceItem>> Function() loadPopular;
+
+  /// 非 null = 这是对端借出的源（经 [viaDevice] 代理），行头带「互联」徽标。
+  final String? viaDevice;
 }
 
 /// 把全部已启用 Mihon 在线来源适配成热门行。每行首次可见才真正 getPopular
@@ -96,5 +106,67 @@ Future<List<MangaDiscoverySourceItem>> _loadMihonPopular(
           );
         },
       ),
+  ];
+}
+
+/// 把「Fushi 互联」合集里已启用的对端扩展源适配成热门行：首页热门经对端拉第 1 页，
+/// 封面经对端取（按源分槽的磁盘缓存）。
+List<MangaDiscoverySourceFeed> interconnectDiscoverySourceFeeds({
+  required InterconnectMangaSourceRegistry registry,
+  required InterconnectMangaSourceTransport transport,
+}) {
+  return <MangaDiscoverySourceFeed>[
+    for (final InterconnectRemoteSource source in registry.enabledSources)
+      MangaDiscoverySourceFeed(
+        id: 'interconnect:${source.id}',
+        name: source.name,
+        language: source.language,
+        viaDevice: source.peer.displayName,
+        loadPopular: () =>
+            _loadInterconnectPopular(registry, transport, source),
+      ),
+  ];
+}
+
+Future<List<MangaDiscoverySourceItem>> _loadInterconnectPopular(
+  InterconnectMangaSourceRegistry registry,
+  InterconnectMangaSourceTransport transport,
+  InterconnectRemoteSource source,
+) async {
+  final RemoteMangaBrowsePage page = await transport.browse(
+    source.peer,
+    source.id,
+    mode: RemoteMangaBrowseMode.popular,
+    page: 1,
+  );
+  final InterconnectSourceLibraryAdapter adapter =
+      InterconnectSourceLibraryAdapter(
+        registry: registry,
+        transport: transport,
+        presetSource: source,
+      );
+  return <MangaDiscoverySourceItem>[
+    for (final Map<String, Object?> json in page.items)
+      if (OnlineMangaSeries.fromJson(json) case final OnlineMangaSeries series)
+        MangaDiscoverySourceItem(
+          title: series.title,
+          buildCover: (BuildContext context) => InterconnectSourceCover(
+            source: source,
+            series: series,
+            adapter: adapter,
+          ),
+          open: (BuildContext context) {
+            Navigator.of(context).push(
+              adaptivePageRoute<void>(
+                context: context,
+                builder: (BuildContext context) =>
+                    InterconnectSourceMangaDetailPage(
+                      source: source,
+                      series: series,
+                    ),
+              ),
+            );
+          },
+        ),
   ];
 }

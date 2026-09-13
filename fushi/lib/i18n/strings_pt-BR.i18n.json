@@ -4807,5 +4807,14 @@
   "card_source_review_video_return": "Return to original watch position",
   "card_source_review_video_continue": "Continue watching here",
   "handlebar_source_link": "Source link",
-  "remote_book_audiobook_download": "Download audiobook from peer"
+  "remote_book_audiobook_download": "Download audiobook from peer",
+  "manga_source_interconnect_collection_subtitle": "Sources on your paired devices, browsed through them",
+  "manga_source_interconnect_library_title": "Peer manga library",
+  "manga_source_interconnect_via_device": "via $device",
+  "manga_source_interconnect_no_sources": "No paired device is sharing sources right now",
+  "manga_source_interconnect_refresh": "Refresh peer sources",
+  "manga_source_interconnect_pair_action": "Pair a device",
+  "manga_source_interconnect_cloudflare": "$device is blocked by a Cloudflare check for this source. Open the source on that device to pass it.",
+  "manga_source_interconnect_unavailable": "No paired device currently provides this source",
+  "manga_discovery_source_interconnect_badge": "Interconnect"
 }

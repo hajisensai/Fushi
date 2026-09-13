@@ -201,7 +201,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     final List<MihonFilter>? updated = await showAppDialog<List<MihonFilter>>(
       context: context,
       builder: (BuildContext dialogContext) =>
-          _MihonFilterDialog(initial: _filters),
+          MihonFilterDialog(initial: _filters),
     );
     if (updated == null || !mounted) return;
     _filters = updated;
@@ -641,16 +641,20 @@ class MihonSourceImageLoadQueue {
   }
 }
 
-class _MihonFilterDialog extends StatefulWidget {
-  const _MihonFilterDialog({required this.initial});
+/// Mihon 过滤器编辑弹窗。返回改过状态的过滤器列表，取消返回 null。
+///
+/// 公开是为了让互联代理源浏览页复用——对端源的过滤器 wire 就是 bridge JSON，
+/// 本机还原成 [MihonFilter] 后用同一个弹窗编辑。
+class MihonFilterDialog extends StatefulWidget {
+  const MihonFilterDialog({required this.initial, super.key});
 
   final List<MihonFilter> initial;
 
   @override
-  State<_MihonFilterDialog> createState() => _MihonFilterDialogState();
+  State<MihonFilterDialog> createState() => _MihonFilterDialogState();
 }
 
-class _MihonFilterDialogState extends State<_MihonFilterDialog> {
+class _MihonFilterDialogState extends State<MihonFilterDialog> {
   late final List<MihonFilter> _filters = List<MihonFilter>.of(widget.initial);
 
   MihonFilter _withState(MihonFilter filter, Object? state) => MihonFilter(

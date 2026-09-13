@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 81753 (4809 per locale)
+/// Strings: 81906 (4818 per locale)
 ///
-/// Built on 2026-09-13 at 06:42 UTC
+/// Built on 2026-09-13 at 11:22 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6704,6 +6704,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get card_source_review_video_continue => 'Continue watching here';
   String get handlebar_source_link => 'Source link';
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -18045,6 +18059,29 @@ class _StringsAr extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -29612,6 +29649,29 @@ class _StringsDe extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -41233,6 +41293,29 @@ class _StringsEs extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -52887,6 +52970,29 @@ class _StringsFr extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -64345,6 +64451,29 @@ class _StringsId extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -75894,6 +76023,29 @@ class _StringsIt extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -86825,6 +86977,29 @@ class _StringsJa extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -97766,6 +97941,29 @@ class _StringsKo extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -109273,6 +109471,29 @@ class _StringsNl extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -120833,6 +121054,29 @@ class _StringsPtBr extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -132370,6 +132614,29 @@ class _StringsRu extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -143708,6 +143975,29 @@ class _StringsTh extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -155161,6 +155451,29 @@ class _StringsTr extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -166584,6 +166897,29 @@ class _StringsVi extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 // Path: <root>
@@ -177061,6 +177397,27 @@ class _StringsZhCn extends _StringsEn {
   String get handlebar_source_link => '来源链接';
   @override
   String get remote_book_audiobook_download => '从互联对端下载有声书';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      '已配对设备上的扩展源，经该设备代理浏览';
+  @override
+  String get manga_source_interconnect_library_title => '对端漫画库';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      '经 ${device}';
+  @override
+  String get manga_source_interconnect_no_sources => '当前没有已配对设备透出扩展源';
+  @override
+  String get manga_source_interconnect_refresh => '重新探测对端';
+  @override
+  String get manga_source_interconnect_pair_action => '去配对';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '该源在 ${device} 上被 Cloudflare 拦下，请在那台设备上打开该源完成验证。';
+  @override
+  String get manga_source_interconnect_unavailable => '当前没有已配对设备提供该源';
+  @override
+  String get manga_discovery_source_interconnect_badge => '互联';
 }
 
 // Path: <root>
@@ -187676,6 +188033,29 @@ class _StringsZhHk extends _StringsEn {
   String get handlebar_source_link => 'Source link';
   @override
   String get remote_book_audiobook_download => 'Download audiobook from peer';
+  @override
+  String get manga_source_interconnect_collection_subtitle =>
+      'Sources on your paired devices, browsed through them';
+  @override
+  String get manga_source_interconnect_library_title => 'Peer manga library';
+  @override
+  String manga_source_interconnect_via_device({required Object device}) =>
+      'via ${device}';
+  @override
+  String get manga_source_interconnect_no_sources =>
+      'No paired device is sharing sources right now';
+  @override
+  String get manga_source_interconnect_refresh => 'Refresh peer sources';
+  @override
+  String get manga_source_interconnect_pair_action => 'Pair a device';
+  @override
+  String manga_source_interconnect_cloudflare({required Object device}) =>
+      '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+  @override
+  String get manga_source_interconnect_unavailable =>
+      'No paired device currently provides this source';
+  @override
+  String get manga_discovery_source_interconnect_badge => 'Interconnect';
 }
 
 /// Flat map(s) containing all translations.
@@ -197593,6 +197973,25 @@ extension on _StringsEn {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -207505,6 +207904,25 @@ extension on _StringsAr {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -217462,6 +217880,25 @@ extension on _StringsDe {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -227410,6 +227847,25 @@ extension on _StringsEs {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -237367,6 +237823,25 @@ extension on _StringsFr {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -247295,6 +247770,25 @@ extension on _StringsId {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -257245,6 +257739,25 @@ extension on _StringsIt {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -267122,6 +267635,25 @@ extension on _StringsJa {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -277003,6 +277535,25 @@ extension on _StringsKo {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -286946,6 +287497,25 @@ extension on _StringsNl {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -296884,6 +297454,25 @@ extension on _StringsPtBr {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -306829,6 +307418,25 @@ extension on _StringsRu {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -316746,6 +317354,25 @@ extension on _StringsTh {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -326678,6 +327305,25 @@ extension on _StringsTr {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -336604,6 +337250,25 @@ extension on _StringsVi {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
@@ -346441,6 +347106,25 @@ extension on _StringsZhCn {
         return '来源链接';
       case 'remote_book_audiobook_download':
         return '从互联对端下载有声书';
+      case 'manga_source_interconnect_collection_subtitle':
+        return '已配对设备上的扩展源，经该设备代理浏览';
+      case 'manga_source_interconnect_library_title':
+        return '对端漫画库';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => '经 ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return '当前没有已配对设备透出扩展源';
+      case 'manga_source_interconnect_refresh':
+        return '重新探测对端';
+      case 'manga_source_interconnect_pair_action':
+        return '去配对';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '该源在 ${device} 上被 Cloudflare 拦下，请在那台设备上打开该源完成验证。';
+      case 'manga_source_interconnect_unavailable':
+        return '当前没有已配对设备提供该源';
+      case 'manga_discovery_source_interconnect_badge':
+        return '互联';
       default:
         return null;
     }
@@ -356296,6 +356980,25 @@ extension on _StringsZhHk {
         return 'Source link';
       case 'remote_book_audiobook_download':
         return 'Download audiobook from peer';
+      case 'manga_source_interconnect_collection_subtitle':
+        return 'Sources on your paired devices, browsed through them';
+      case 'manga_source_interconnect_library_title':
+        return 'Peer manga library';
+      case 'manga_source_interconnect_via_device':
+        return ({required Object device}) => 'via ${device}';
+      case 'manga_source_interconnect_no_sources':
+        return 'No paired device is sharing sources right now';
+      case 'manga_source_interconnect_refresh':
+        return 'Refresh peer sources';
+      case 'manga_source_interconnect_pair_action':
+        return 'Pair a device';
+      case 'manga_source_interconnect_cloudflare':
+        return ({required Object device}) =>
+            '${device} is blocked by a Cloudflare check for this source. Open the source on that device to pass it.';
+      case 'manga_source_interconnect_unavailable':
+        return 'No paired device currently provides this source';
+      case 'manga_discovery_source_interconnect_badge':
+        return 'Interconnect';
       default:
         return null;
     }
