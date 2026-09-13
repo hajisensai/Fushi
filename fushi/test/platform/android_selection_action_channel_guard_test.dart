@@ -15,10 +15,38 @@ void main() {
     expect(native, contains('result.success(launchWebSearch(context, query))'));
   });
 
-  test('web search launches directly despite package visibility filtering', () {
-    expect(native, isNot(contains('resolveActivity(')));
+  test('web search targets the default browser, then falls back (BUG-2491)', () {
+    // ACTION_WEB_SEARCH is resolved independently of the default-browser role;
+    // a bare intent lands on the OEM stock browser no matter what the user
+    // picked. Resolve the VIEW-https holder and aim the search at it first.
+    expect(
+      native,
+      contains('new Intent(Intent.ACTION_VIEW, Uri.parse(BROWSER_PROBE_URL))'),
+    );
+    expect(native, contains('.addCategory(Intent.CATEGORY_BROWSABLE)'));
+    expect(
+      native,
+      contains('.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)'),
+    );
+    // No default chosen → resolver activity reports the "android" package;
+    // treat that as "no browser" instead of targeting the resolver.
+    expect(
+      native,
+      contains('return "android".equals(packageName) ? null : packageName;'),
+    );
+    expect(
+      native,
+      contains('context.startActivity(new Intent(intent).setPackage(browser))'),
+    );
+    // The probe URL is only ever resolved, never launched.
+    expect(native, isNot(contains('startActivity(probe')));
+  });
+
+  test('web search keeps the bare-intent fallback when targeting fails', () {
+    // Browser without ACTION_WEB_SEARCH → ActivityNotFoundException on the
+    // targeted attempt → bare intent (previous behaviour) → false only when
+    // nothing handles it at all.
     expect(native, contains('context.startActivity(intent)'));
-    expect(native, contains('catch (ActivityNotFoundException error)'));
     expect(
       native,
       contains(
@@ -27,13 +55,38 @@ void main() {
         '        }',
       ),
     );
+    expect(
+      'catch (ActivityNotFoundException error)'.allMatches(native).length,
+      2,
+    );
+  });
+
+  test('manifest declares the VIEW-https query the browser probe needs', () {
+    // Android 11+ package visibility: without this, resolveActivity() sees no
+    // browser and every search silently degrades to the bare intent.
+    final String manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
+    final int queries = manifest.indexOf('<queries>');
+    final int queriesEnd = manifest.indexOf('</queries>');
+    expect(queries, greaterThan(-1));
+    final String block = manifest.substring(queries, queriesEnd);
+    expect(
+      block,
+      contains('<action android:name="android.intent.action.VIEW" />'),
+    );
+    expect(
+      block,
+      contains('<category android:name="android.intent.category.BROWSABLE" />'),
+    );
+    expect(block, contains('<data android:scheme="https" />'));
   });
 
   test('web search has no URL or vendor fallback', () {
-    expect(native, isNot(contains('Intent.ACTION_VIEW')));
-    expect(native, isNot(contains('Uri.parse')));
+    // The only URL in the file is the never-launched browser probe.
+    expect(native, contains('BROWSER_PROBE_URL = "https://example.com/"'));
+    expect('https://'.allMatches(lower).length, 1);
     expect(lower, isNot(contains('http://')));
-    expect(lower, isNot(contains('https://')));
     expect(lower, isNot(contains('google.')));
     expect(lower, isNot(contains('bing.')));
   });
@@ -49,15 +102,19 @@ void main() {
       'android/app/src/main/java/app/fushi/reader/'
       'FloatingDictPluginRegistrant.java',
     ).readAsStringSync();
-    expect(main,
-        contains('SelectionActionChannel.registerWith(flutterEngine, this)'));
+    expect(
+      main,
+      contains('SelectionActionChannel.registerWith(flutterEngine, this)'),
+    );
     expect(
       popup,
       contains(
         'SelectionActionChannel.registerWith(engine, context.applicationContext)',
       ),
     );
-    expect(registrant,
-        contains('new dev.fluttercommunity.plus.share.SharePlusPlugin()'));
+    expect(
+      registrant,
+      contains('new dev.fluttercommunity.plus.share.SharePlusPlugin()'),
+    );
   });
 }
