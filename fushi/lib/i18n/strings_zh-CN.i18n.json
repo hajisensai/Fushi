@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "没有可访问的本地视频来源。请先在来源页添加。",
   "video_download_target_source_hint": "新下载会整理到此本地视频来源中。",
   "video_download_target_source_none": "选择本地视频来源",
-  "video_download_target_source_title": "默认受管视频来源",
+  "video_download_target_source_title": "默认文件夹",
   "video_drop_audio_unsupported": "请把字幕文件拖到当前视频上。音频文件不能在这里关联。",
   "video_drop_subtitle_only": "请把字幕文件拖到当前视频上。",
   "video_episode_list": "选集",

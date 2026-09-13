@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "No hay fuente de vídeo local accesible disponible. Añada una en la pestaña Fuentes primero.",
   "video_download_target_source_hint": "Las nuevas descargas se organizan en esta fuente de vídeo local.",
   "video_download_target_source_none": "Elegir una fuente de vídeo local",
-  "video_download_target_source_title": "Fuente de vídeo gestionada predeterminada",
+  "video_download_target_source_title": "Carpeta predeterminada",
   "video_drop_audio_unsupported": "Suelta archivos de subtítulos sobre el vídeo actual. Aquí no se pueden adjuntar archivos de audio.",
   "video_drop_subtitle_only": "Suelta archivos de subtítulos sobre el vídeo actual.",
   "video_episode_list": "Episodios",

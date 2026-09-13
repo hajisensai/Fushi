@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2323 条。点号进各自文件。
+> 共 2324 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2523](bugs/BUG-2523-nyaa-comments-link-title.md) | ✅ | ✅ | 搜索资源丢集：nyaa 带评论的条目标题被抓成「1 comment」 |
 | [BUG-2520](bugs/BUG-2520-video-episode-panel-season-switcher.md) | ✅ | ✅ | 播放器「选集」面板对多季合集没有季切换 |
 | [BUG-2514](bugs/BUG-2514-mihon-comico-magazine-comic-not-found.md) | ✅ | ✅ | コミコ源章节阶段报 Not Found |
 | [BUG-2513](bugs/BUG-2513-manga-series-remove-from-bookshelf.md) | ✅ | ✅ | 漫画作品页加入书架后无法取消 |

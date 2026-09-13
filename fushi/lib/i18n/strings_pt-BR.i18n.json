@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "Nenhuma fonte de vídeo acessível localmente disponível. Adicione uma na aba Fontes primeiro.",
   "video_download_target_source_hint": "Novos downloads são organizados nesta fonte de vídeo local.",
   "video_download_target_source_none": "Escolher uma fonte de vídeo local",
-  "video_download_target_source_title": "Fonte de vídeo gerenciada padrão",
+  "video_download_target_source_title": "Pasta padrão",
   "video_drop_audio_unsupported": "Solte arquivos de legenda sobre o vídeo atual. Arquivos de áudio não podem ser anexados aqui.",
   "video_drop_subtitle_only": "Solte arquivos de legenda sobre o vídeo atual.",
   "video_episode_list": "Episódios",

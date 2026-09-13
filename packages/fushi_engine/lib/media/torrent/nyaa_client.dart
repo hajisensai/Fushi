@@ -716,13 +716,20 @@ List<NyaaTorrent> _parseNyaaHtmlSearch(String body, Uri requestUri) {
       );
     }
 
+    // 标题单元格里可能有两个 `/view/<id>` 链接：有评论的行，nyaa 模板会先
+    // 写一个 `<a class="comments" href="/view/<id>#comments" title="N comments">`
+    // 再写标题链接（CSS 右浮，DOM 顺序在前）。只认路径的话带评论的行标题
+    // 会被抓成 `1 comment`，随后被系列名匹配整行丢掉（BUG-2523）。详情链接
+    // 永远不带 fragment，按这个结构差异区分。
     final html_dom.Element? detailLink = cells[1]
         .querySelectorAll('a[href]')
         .cast<html_dom.Element?>()
         .firstWhere(
       (html_dom.Element? link) {
-        final String href = link?.attributes['href'] ?? '';
-        return Uri.tryParse(href)?.path.startsWith('/view/') == true;
+        final Uri? href = Uri.tryParse(link?.attributes['href'] ?? '');
+        return href != null &&
+            href.path.startsWith('/view/') &&
+            href.fragment.isEmpty;
       },
       orElse: () => null,
     );

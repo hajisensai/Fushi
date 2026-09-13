@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "Yerel olarak erişilebilir video kaynağı yok. Önce Kaynaklar sekmesinden bir tane ekleyin.",
   "video_download_target_source_hint": "Yeni indirmeler bu yerel video kaynağına düzenlenir.",
   "video_download_target_source_none": "Yerel video kaynağı seçin",
-  "video_download_target_source_title": "Varsayılan yönetilen video kaynağı",
+  "video_download_target_source_title": "Varsayılan klasör",
   "video_drop_audio_unsupported": "Altyazı dosyalarını geçerli videonun üzerine bırakın. Ses dosyaları buraya eklenemez.",
   "video_drop_subtitle_only": "Altyazı dosyalarını geçerli videonun üzerine bırakın.",
   "video_episode_list": "Bölümler",

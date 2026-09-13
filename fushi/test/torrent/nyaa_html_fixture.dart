@@ -23,6 +23,7 @@ class NyaaHtmlRow {
     this.trusted = false,
     this.remake = false,
     this.timestampSeconds = 1700000000,
+    this.commentCount = 0,
   });
 
   final String title;
@@ -40,6 +41,11 @@ class NyaaHtmlRow {
   final bool trusted;
   final bool remake;
   final int timestampSeconds;
+
+  /// 评论数。> 0 时按真实模板在标题链接**前面**多写一个
+  /// `<a class="comments" href="/view/<id>#comments" title="N comments">`
+  /// （CSS 右浮，DOM 顺序在前）——这正是 BUG-2523 把标题抓成 `1 comment` 的行。
+  final int commentCount;
 }
 
 /// 「No results found」页：nyaa 对无结果的搜索返回 200 + 这个标题、没有表格。
@@ -70,8 +76,15 @@ String nyaaSearchHtml(Iterable<NyaaHtmlRow> rows) {
       ..writeln('  <tr class="$rowClass">')
       ..writeln('    <td><a href="/?c=${row.categoryId}" title="cat">'
           '<img src="/static/img/icons/x.png" alt="cat"></a></td>')
-      ..writeln('    <td colspan="2"><a href="/view/$id" title="$title">'
-          '$title</a></td>')
+      ..write('    <td colspan="2">');
+    if (row.commentCount > 0) {
+      final String plural = row.commentCount > 1 ? 's' : '';
+      sb.write('<a href="/view/$id#comments" class="comments" '
+          'title="${row.commentCount} comment$plural">'
+          '<i class="fa fa-comments-o"></i>${row.commentCount}</a>\n');
+    }
+    sb
+      ..writeln('<a href="/view/$id" title="$title">$title</a></td>')
       ..writeln('    <td class="text-center">'
           '<a href="/download/$id.torrent"><i class="fa fa-download"></i></a>'
           '<a href="magnet:?xt=urn:btih:${row.infoHash}&amp;dn=x">'

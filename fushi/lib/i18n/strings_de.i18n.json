@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "Keine lokal zugängliche Videoquelle verfügbar. Fügen Sie zuerst eine auf dem Quellen-Tab hinzu.",
   "video_download_target_source_hint": "Neue Downloads werden in dieser lokalen Videoquelle organisiert.",
   "video_download_target_source_none": "Lokale Videoquelle auswählen",
-  "video_download_target_source_title": "Standard-Videoquelle für verwaltete Downloads",
+  "video_download_target_source_title": "Standardordner",
   "video_drop_audio_unsupported": "Untertiteldateien auf das aktuelle Video ziehen. Audiodateien können hier nicht angehängt werden.",
   "video_drop_subtitle_only": "Untertiteldateien auf das aktuelle Video ziehen.",
   "video_episode_list": "Folgen",

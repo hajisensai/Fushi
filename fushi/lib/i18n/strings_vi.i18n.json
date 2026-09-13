@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "Không có nguồn video cục bộ nào khả dụng. Thêm một nguồn trong tab Nguồn trước.",
   "video_download_target_source_hint": "Các bản tải xuống mới được sắp xếp vào nguồn video cục bộ này.",
   "video_download_target_source_none": "Chọn nguồn video cục bộ",
-  "video_download_target_source_title": "Nguồn video được quản lý mặc định",
+  "video_download_target_source_title": "Thư mục mặc định",
   "video_drop_audio_unsupported": "Hãy thả tệp phụ đề lên video hiện tại. Tệp âm thanh không thể gắn ở đây.",
   "video_drop_subtitle_only": "Hãy thả tệp phụ đề lên video hiện tại.",
   "video_episode_list": "Danh sách tập",

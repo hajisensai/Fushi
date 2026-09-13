@@ -3775,7 +3775,7 @@
   "video_download_target_source_empty": "ローカルでアクセス可能な動画ソースがありません。先にソースタブで追加してください。",
   "video_download_target_source_hint": "新しいダウンロードはこのローカル動画ソースに整理されます。",
   "video_download_target_source_none": "ローカル動画ソースを選択",
-  "video_download_target_source_title": "デフォルトの管理対象動画ソース",
+  "video_download_target_source_title": "デフォルトのフォルダー",
   "video_drop_audio_unsupported": "字幕ファイルを現在の動画の上にドロップしてください。音声ファイルはここで関連付けできません。",
   "video_drop_subtitle_only": "字幕ファイルを現在の動画の上にドロップしてください。",
   "video_episode_list": "エピソード",
