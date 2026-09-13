@@ -1,4 +1,4 @@
-## BUG-2490 · macOS 阅读器 Shift 悬停查词无反应（WebKit 只在 WKWebView 为最顶命中视图时才派发 mousemove）
+## BUG-2508 · macOS 阅读器 Shift 悬停查词无反应（WebKit 只在 WKWebView 为最顶命中视图时才派发 mousemove）
 - **报告**：2026-09-11（用户：「mac端shift不能查词」）
 - **真实性**：✅ 真 bug（沿真实代码路径定位；本机无 Mac 可复测，见备注）。阅读器的 Shift-悬停查词此前**只有一条腿**：正文 WebView 文档内的 JS `mousemove` 监听（`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:1499` → `callHandler('onShiftHover')`），门控靠 `e.shiftKey`。这条腿在 macOS 上收不到事件：
   - WebKit 把 WKWebView 的 `mouseMoved:` 交给 `WKMouseTrackingObserver`，它先对窗口 contentView 做一次 AppKit 命中测试，**只有命中视图是 WKWebView 的后代**才把事件交给页面（WebKit `Source/WebKit/UIProcess/mac/WebViewImpl.mm` `-[WKMouseTrackingObserver updateViewIsTopmostAtMouseLocation:]` / `mouseMoved:`）。

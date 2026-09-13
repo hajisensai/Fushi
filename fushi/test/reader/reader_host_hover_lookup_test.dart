@@ -7,7 +7,7 @@ import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 
 import '../pages/reader_fushi_page_source_corpus.dart';
 
-/// BUG-2490：macOS 阅读器 Shift 悬停查词无反应。
+/// BUG-2508：macOS 阅读器 Shift 悬停查词无反应。
 ///
 /// 阅读器悬停查词此前只有 WebView 文档内的 JS `mousemove` 一条腿；WebKit 只在
 /// AppKit 命中测试判定 WKWebView 为最顶视图时才把 mouseMoved 交给页面，而 Flutter
@@ -145,7 +145,7 @@ void main() {
     });
   });
 
-  group('BUG-2490 接线守卫', () {
+  group('BUG-2508 接线守卫', () {
     final String src = readReaderPageSource();
     final String js = File(
       'lib/src/pages/implementations/reader_fushi/webview.part.dart',

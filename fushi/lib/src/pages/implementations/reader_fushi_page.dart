@@ -3503,7 +3503,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   Future<void> _applyHoverAutoLookupLive() async {
     if (_controller == null) return;
     final bool enabled = ReaderFushiSource.instance.hoverAutoLookup;
-    // BUG-2490：歌词页是独立文档、不经 setup 脚本，宿主腿开关也在这里一并下发
+    // BUG-2508：歌词页是独立文档、不经 setup 脚本，宿主腿开关也在这里一并下发
     // （正文文档重复赋同值，无害）。
     final bool hostHover = !hostOwnsWebViewPointerInput;
     try {
@@ -4161,7 +4161,7 @@ $liveConfigJs
 
   // ── Shift+Hover：宿主侧悬停查词（dismiss barrier + 正文 WebView）──────────
 
-  /// 宿主腿的门控 + 8px 节流（BUG-2490），barrier 与正文 WebView 两个入口共用一把
+  /// 宿主腿的门控 + 8px 节流（BUG-2508），barrier 与正文 WebView 两个入口共用一把
   /// 锚，同一位置不会被两处各查一次。
   final ReaderHostHoverLookupGate _hostHoverGate = ReaderHostHoverLookupGate();
 
@@ -4213,7 +4213,7 @@ $liveConfigJs
     _selectTextAt(local.dx, local.dy, fromHover: true);
   }
 
-  /// BUG-2490：正文 WebView 上的宿主侧 hover。Windows（[hostOwnsWebViewPointerInput]）
+  /// BUG-2508：正文 WebView 上的宿主侧 hover。Windows（[hostOwnsWebViewPointerInput]）
   /// 只记位置不查词——那里 WebView2 是 Flutter 纹理、fork 把 hover 逐个转发进去，
   /// JS 腿（`onShiftHover`）已验证可用，宿主腿再查就是同一处双查。其余平台 WebView
   /// 是原生视图，DOM `mousemove` 受 AppKit 命中测试门控（见
@@ -4243,7 +4243,7 @@ $liveConfigJs
     _hostHoverGate.reset();
   }
 
-  /// BUG-2490（对齐视频页 BUG-880）：Shift 按下瞬间在最后指针位置直接查词，不必
+  /// BUG-2508（对齐视频页 BUG-880）：Shift 按下瞬间在最后指针位置直接查词，不必
   /// 抖鼠标。hover 只在指针**移动**时派发，光标停在词上再按 Shift 没有任何 hover
   /// 事件，两条腿都不会触发。锚点同步推进，紧随的微小抖动不会再查一次同一处；
   /// 命中同词由 JS `selectText` 的 fromHover 短路兜底。

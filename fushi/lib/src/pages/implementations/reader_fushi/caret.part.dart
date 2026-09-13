@@ -56,7 +56,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
   Set<ModifierKey> _activeModifiers() => activeModifierKeys();
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    // BUG-2490（对齐视频页 BUG-880）：Shift 按下瞬间在最后指针位置直接查词，根治
+    // BUG-2508（对齐视频页 BUG-880）：Shift 按下瞬间在最后指针位置直接查词，根治
     // 「光标停在词上不动、按 Shift 却不出词」——两条悬停腿都只在指针移动时派发。
     // 不消费按键：Shift 组合快捷键、光标 Shift+方向等行为不变。macOS 上 WKWebView
     // 持有 first responder 时 Flutter 收不到 flagsChanged，下一次鼠标事件由嵌入层

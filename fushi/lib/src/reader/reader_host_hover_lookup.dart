@@ -1,6 +1,6 @@
 import 'dart:ui' show Offset, Size;
 
-/// 阅读器**宿主（Flutter）侧**悬停查词的门控 + 节流（BUG-2490）。
+/// 阅读器**宿主（Flutter）侧**悬停查词的门控 + 节流（BUG-2508）。
 ///
 /// 阅读器的 Shift-悬停查词此前只有一条腿：正文 WebView 里的 JS `mousemove`
 /// 监听（`webview.part.dart` 的 `onShiftHover`）。这条腿在 macOS 上是死的：

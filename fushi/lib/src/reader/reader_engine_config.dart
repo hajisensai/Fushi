@@ -72,7 +72,7 @@ class ReaderEngineConfig {
   final bool scanNonJapaneseText;
   final bool hoverAutoLookup;
 
-  /// BUG-2490：true = 宿主（Flutter）侧接管 Shift-悬停 / 纯悬停查词，文档内的
+  /// BUG-2508：true = 宿主（Flutter）侧接管 Shift-悬停 / 纯悬停查词，文档内的
   /// mousemove 腿整条关掉（macOS 等 WebView 为原生视图的平台）；false = 维持 JS 腿
   /// （Windows：WebView2 是 Flutter 纹理，hover 由 fork 转发进文档）。
   final bool hostHoverLookup;
