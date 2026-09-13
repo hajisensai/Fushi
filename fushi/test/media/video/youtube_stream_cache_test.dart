@@ -127,6 +127,38 @@ void main() {
       expect(await c.get('vid1'), isNull);
     });
 
+    test('BUG-2526 旧 schema 版本（v1 / 缺 version）的整份文件被丢弃，不喂限窗的旧直链', () async {
+      // v1 条目全部由 ANDROID client 签流（60s 限窗），liveness `bytes=0-1` 探不出来。
+      final DateTime now = DateTime.fromMillisecondsSinceEpoch(1000);
+      final File file = File('${tmp.path}/cache.json');
+      final Map<String, dynamic> entry =
+          entryExpiringAt(now.millisecondsSinceEpoch + 60000).toJson();
+      for (final Object? version in <Object?>[1, null, 'x']) {
+        file.writeAsStringSync(jsonEncode(<String, dynamic>{
+          if (version != null) 'version': version,
+          'entries': <String, dynamic>{'vid1': entry},
+        }));
+        final YoutubeStreamCache c =
+            YoutubeStreamCache(file: file, now: () => now);
+        expect(await c.get('vid1'), isNull,
+            reason: 'version=$version 的旧文件必须整份作废');
+      }
+      // 当前版本照常读回；put 后磁盘上的版本号就是当前值。
+      file.writeAsStringSync(jsonEncode(<String, dynamic>{
+        'version': YoutubeStreamCache.schemaVersion,
+        'entries': <String, dynamic>{'vid1': entry},
+      }));
+      final YoutubeStreamCache c =
+          YoutubeStreamCache(file: file, now: () => now);
+      expect(await c.get('vid1'), isNotNull);
+      await c.put('vid2', entryExpiringAt(now.millisecondsSinceEpoch + 60000));
+      final Map<String, dynamic> saved =
+          jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      expect(saved['version'], YoutubeStreamCache.schemaVersion);
+      expect(YoutubeStreamCache.schemaVersion, greaterThanOrEqualTo(2),
+          reason: 'v1 = ANDROID 限窗时代，不得回退');
+    });
+
     test('corrupt cache file is treated as empty (never throws)', () async {
       final File file = File('${tmp.path}/cache.json');
       file.writeAsStringSync('{ this is not json');

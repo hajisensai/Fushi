@@ -397,13 +397,61 @@ Future<Map<String, dynamic>> resolveYoutubeCaptionsForExtension(
 ///
 /// 排在 [ios] 之前：实测 [android] 成功 ~3s，而 [ios] 在取流失败时要等满首流 HEAD 403 探测
 /// （实测 16s）——把更可靠且更快的 client 提前，缩短兜底链的实际等待。
+///
+/// BUG-2526：**[kYoutubeVisionOsClient] 必须在链首**。2026-09 实测 youtube_explode 2.5.3
+/// 自带的 client 里只剩 [android] 还能签流（androidVr / tv / webCreator /
+/// tvSimplyEmbedded 一律 unplayable，ios 首流探测挂满超时，mweb 解析崩，safari 无流），
+/// 而 YouTube 对**无 PO token** 的 ANDROID client 签发的 DASH 分离流（`c=ANDROID&rqh=1`）
+/// 只放**前 ~60 秒**：固定窗口、与 Range 顺序 / 回放 UA / `&range=` query 写法无关，窗口外
+/// 一律 403（yt-dlp 原话：「android client https formats require a GVS PO Token … may yield
+/// HTTP Error 403」，其 2025.12 版 `-f 251` 下载同样 403）。只有 muxed itag 18（360p）不受限。
+/// 表现：1:30 的 OP/ED 花絮，opus 音频总长 1.4MB < [YoutubeRangeRelay] 一块 2MiB，首块就越
+/// 窗 403 → libmpv `Can not open external file` → **无声**；长视频则播到 ~60s 断流。
+/// yt-dlp 2026.08.19 的解法是 `visionos` client（`_DEFAULT_JSLESS_CLIENTS`，
+/// `REQUIRE_JS_PLAYER: False`、无 PO token 策略）：同一出口实测其 itag137/251 尾部 Range
+/// 206、`bytes=0-` 开放区间整文件 206、越 EOF 的首块被裁成 206，两种回放 UA 皆可，manifest
+/// 3~7s、URL 无 `n`/签名需解密。故把它放到链首，其余 client 原样保留作兜底。
 final List<yt.YoutubeApiClient> kYoutubeManifestClientFallback =
     <yt.YoutubeApiClient>[
+  kYoutubeVisionOsClient,
   yt.YoutubeApiClient.androidVr,
   yt.YoutubeApiClient.android,
   yt.YoutubeApiClient.ios,
   yt.YoutubeApiClient.tv,
 ];
+
+/// visionOS client 的 innertube context `client.userAgent`（BUG-2526）。youtube_explode 用它
+/// 发 player 请求（[yt.YoutubeApiClient] 的 `userAgent` 字段由其 `VideoController` 读作
+/// 请求 UA）；回放侧**不用它**——googlevideo 对该 client 的流不校验 UA（Chrome UA 与本 UA
+/// 实测均 206），回放沿用 [kYoutubeStreamReplayUserAgent] 让五端 libmpv/ffmpeg 零改动。
+const String kYoutubeVisionOsUserAgent =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 '
+    '(KHTML, like Gecko) Version/26.0 Safari/605.1.15';
+
+/// BUG-2526：yt-dlp 2026.08.19 `INNERTUBE_CLIENTS['visionos']` 的逐字搬运
+/// （`yt_dlp/extractor/youtube/_base.py`，`INNERTUBE_CONTEXT_CLIENT_NAME` 101）。
+/// youtube_explode 2.5.3 没有内置它，故本仓自持一份；字段与上游一致是它不被 YouTube 判
+/// 「Sign in to confirm you're not a bot」的前提，守卫见
+/// `fushi/test/media/video/youtube_client_fallback_test.dart`。`hl` 是 youtube_explode 其它
+/// 内置 client 都带的字段（yt-dlp 亦在 `build_innertube_clients` 里 setdefault 'en'）。
+///
+/// 必须走 **watch page**（[yt.StreamClient.getManifest] 默认 `requireWatchPage: true`）：
+/// 该 client 的 player 请求要带观看页派生的 visitor cookie，裸 innertube 请求实测被判 bot。
+const yt.YoutubeApiClient kYoutubeVisionOsClient =
+    yt.YoutubeApiClient(<String, dynamic>{
+  'context': <String, dynamic>{
+    'client': <String, dynamic>{
+      'clientName': 'VISIONOS',
+      'clientVersion': '1.02',
+      'deviceMake': 'Apple',
+      'deviceModel': 'RealityDevice17,1',
+      'userAgent': kYoutubeVisionOsUserAgent,
+      'osName': 'visionOS',
+      'osVersion': '26.5.23O471',
+      'hl': 'en',
+    },
+  },
+}, 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
 
 /// 单个 manifest client 的取流超时上限（[_getManifestWithClientFallback] 默认值）。
 ///
@@ -1116,11 +1164,25 @@ Future<List<AudioCue>> resolveYoutubeCaptionCues(
 /// 判据是「非空即返回」：真没字幕的视频会走完全链（4 次往返、实测各 ~0.5s），但字幕是
 /// TODO-1302 的**后置异步**解析，不在起播关键路径上，这点代价换回「有字幕的视频不再被误判
 /// 成没有」。
+///
+/// BUG-2526：字幕链用 [kYoutubeCaptionClientFallback]（= 取流链去掉 visionos），不是同一份
+/// 列表。visionos 的 player 请求**必须带 watch page 的 visitor cookie**，而本函数按 A2 刻意
+/// 不取 WatchPage——裸请求必被判「Sign in to confirm you're not a bot」，轨表恒空，放在链首
+/// 只是每次字幕解析白付一次往返再退到 androidVr/android。取流侧的正确性不该把字幕侧的延迟
+/// 绑进来。
 Future<List<YoutubeCaptionTrack>> _fetchCaptionTracks(yt.VideoId id) =>
     fetchFirstNonEmptyByClient<YoutubeCaptionTrack>(
-      kYoutubeManifestClientFallback,
+      kYoutubeCaptionClientFallback,
       (yt.YoutubeApiClient api) => _fetchCaptionTracksWithClient(id, api),
     );
+
+/// 字幕轨表的 client 兜底链（BUG-2526）：[kYoutubeManifestClientFallback] 去掉
+/// [kYoutubeVisionOsClient]——见 [_fetchCaptionTracks]。派生而非另抄一份，取流链增删
+/// client 时自动跟随。
+final List<yt.YoutubeApiClient> kYoutubeCaptionClientFallback =
+    kYoutubeManifestClientFallback
+        .where((yt.YoutubeApiClient c) => !identical(c, kYoutubeVisionOsClient))
+        .toList(growable: false);
 
 /// 纯编排（IO 全部由 [fetch] 注入）：按 [clients] 顺序逐个调 [fetch]，**首个返回非空列表**
 /// 的结果即用并**立刻停止**（不再调用后续 client）；全部为空返回空表。

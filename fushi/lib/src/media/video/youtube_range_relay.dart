@@ -24,6 +24,12 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 /// 解析器的 HEAD 探测能过（HEAD 不受此限），所以解析阶段看不出任何异常；
 /// [YoutubeStreamCache] 的 liveness 用 `bytes=0-1` 有界探测，同样看不出。
 ///
+/// BUG-2526 补记：`android` 的 DASH 流除了「只接受有界区间」，还被无 PO token 的 60 秒
+/// 固定窗口限死（窗口外一律 403，中继分块救不了）；解析器已把 `visionos` client 放到
+/// 链首（`youtube_source_resolver.dart` `kYoutubeVisionOsClient`），其流对 `bytes=0-`
+/// 开放区间也直接 206 全文件——但中继照样套着：兜底 client 仍可能签出 `rqh=1` 直链，
+/// 且分块拉取对 visionos 流无害。
+///
 /// ## 它做什么
 ///
 /// [register] 把上游 URL + 回放 header 登记成 `http://127.0.0.1:<port>/yt/<token>`；
@@ -219,6 +225,17 @@ class YoutubeRangeRelay {
             'upstream ${upstreamResponse.statusCode} mid-stream at $cursor',
           );
         }
+        // BUG-2526：首块被拒也要落日志。此前只记中途失败，首块 403 被静默透传成内核的
+        // 「Failed to open」/「Can not open external file」，error_log 里看不出上游到底回了
+        // 什么——花絮无声（1.4MB 音频首块 `bytes=0-2097151` 越过 ANDROID client 的 60s 窗口）
+        // 排查时只能靠外部探针复现。带上请求区间与上游 host，让「URL 过期(410)」「越窗/
+        // 需 PO token(403)」一眼可分。
+        ErrorLogService.instance.log(
+          'youtube_relay',
+          'upstream ${upstreamResponse.statusCode} on first chunk '
+              'bytes=$cursor-$chunkEnd (${entry.upstream.host}): 播放内核会直接'
+              '报打开失败；403 通常是流 URL 过期或该 client 无 PO token 被限窗',
+        );
         response.statusCode = upstreamResponse.statusCode;
         await response.close();
         return;

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoStreamUrls;
 
@@ -316,6 +317,42 @@ void main() {
       } finally {
         await dead.close();
       }
+    });
+
+    test('BUG-2526 上游首块被拒要落 error_log（状态码 + 请求区间 + 上游 host）', () async {
+      // 修复前只记「中途」失败：首块 403 静默透传成内核的 Failed to open /
+      // Can not open external file，日志里看不出上游回了什么（花絮无声排查只能靠外部探针）。
+      await ErrorLogService.instance.clear();
+      final _FakeGoogleVideo dead = _FakeGoogleVideo(body, forceStatus: 403);
+      await dead.start();
+      try {
+        final Uri local =
+            relay.register(dead.url.toString(), const <String, String>{});
+        await _get(local, range: 'bytes=0-');
+        final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
+            .where((ErrorLogEntry e) => e.source == 'youtube_relay')
+            .toList();
+        expect(logged, hasLength(1));
+        expect(logged.single.error, contains('403'));
+        expect(logged.single.error, contains('first chunk'));
+        expect(logged.single.error,
+            contains('bytes=0-${YoutubeRangeRelay.chunkBytes - 1}'));
+        expect(logged.single.error, contains(dead.url.host));
+      } finally {
+        await dead.close();
+      }
+    });
+
+    test('上游首块 206 正常时不落 error_log（日志只记异常，不刷正常流）', () async {
+      await ErrorLogService.instance.clear();
+      final Uri local =
+          relay.register(upstream.url.toString(), const <String, String>{});
+      await _get(local, range: 'bytes=0-');
+      expect(
+        ErrorLogService.instance.entries
+            .where((ErrorLogEntry e) => e.source == 'youtube_relay'),
+        isEmpty,
+      );
     });
   });
 
