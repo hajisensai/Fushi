@@ -21,6 +21,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/fake_image_bytes.dart';
 
 /// TODO-820：互联下载对端视频后必须建 VideoBooks 行，否则下载好的文件躺磁盘但视频
 /// 列表（唯一数据源是 VideoBooks 行）根本看不到。这里在真实下载路径上断言「下载完
@@ -226,7 +227,8 @@ void main() {
           completedAt: 1700000500000,
         ),
       ],
-      coverBytes: <int>[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3],
+      // 写侧唯一入口只收可解码字节（BUG-2496）：JPEG 须以 FF D9 收尾。
+      coverBytes: fakeJpegBytes(fill: 0xE0),
     );
     await tester.pumpWidget(buildApp(client: client));
     await tester.pumpAndSettle();
@@ -242,8 +244,7 @@ void main() {
     expect(client.coverFetches, <String>['http://x/videos/remote-clip/cover'],
         reason: 'host 有 coverUrl 时先拉 host 封面');
     expect(row.coverPath, isNotNull);
-    expect(File(row.coverPath!).readAsBytesSync(),
-        <int>[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]);
+    expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
   });
 }
 

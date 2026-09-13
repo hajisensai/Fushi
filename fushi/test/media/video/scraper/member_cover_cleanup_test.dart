@@ -24,7 +24,10 @@ import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-const List<int> _jpegBytes = <int>[0xFF, 0xD8, 0xFF, 0x01, 0x02, 0x03];
+import '../../../helpers/fake_image_bytes.dart';
+
+// 写侧唯一入口只收可解码字节（BUG-2496）：JPEG 须以 FF D9 收尾。
+final List<int> _jpegBytes = fakeJpegBytes();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -272,13 +275,13 @@ void main() {
       await db.addToCollection(cid, MediaKind.video, 'video/e1');
       await db.addToCollection(cid, MediaKind.video, 'video/e2');
       final File own = File(p.join(collectionCovers.path, 'own.jpg'));
-      await own.writeAsBytes(<int>[0x89, 0x50, 0x4E, 0x47]);
+      await own.writeAsBytes(fakePngBytes());
       await db.updateMediaCollectionCoverPath(cid, own.path);
 
       expect(await run(), 1);
       expect((await db.getMediaCollectionById(cid))!.coverPath, own.path,
           reason: '合集已有的自有封面（用户刮的）不许被存量清理顶掉');
-      expect(own.readAsBytesSync(), <int>[0x89, 0x50, 0x4E, 0x47]);
+      expect(own.readAsBytesSync(), fakePngBytes());
       expect((await db.getVideoBookByBookUid('video/e1'))!.coverPath, isNull);
     });
 
