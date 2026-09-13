@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -131,6 +132,121 @@ void main() {
       expect(
         scope?.siblings.map((OnlineMangaSiblingSource s) => s.language),
         <String>['en', 'ja', 'ko'],
+      );
+    });
+  });
+
+  group('siblingOf', () {
+    late FushiDatabase database;
+    late Directory root;
+    late MihonManager manager;
+
+    /// 真写库：`_context` 走 `manager.initialise()` 会从 DB 重读 sources，
+    /// 内存里赋的 `sources` 会被冲掉。
+    Future<void> seed({required bool extensionEnabled}) async {
+      await database.upsertMangaExtension(
+        MangaExtensionsCompanion.insert(
+          packageName: 'org.example.mangadex',
+          name: 'MangaDex',
+          versionCode: 1,
+          versionName: '1',
+          libVersion: '1.5',
+          language: 'all',
+          apkPath: 'mangadex.apk',
+          apkSha256: 'x',
+          signerSha256: 'y',
+          enabled: Value<bool>(extensionEnabled),
+          installedAt: 0,
+        ),
+      );
+      await database.replaceMangaOnlineSources(
+        'org.example.mangadex',
+        <MangaOnlineSourcesCompanion>[
+          for (final MangaOnlineSourceRow row in registry)
+            if (row.extensionPackage == 'org.example.mangadex')
+              MangaOnlineSourcesCompanion.insert(
+                extensionPackage: row.extensionPackage,
+                sourceId: row.sourceId,
+                name: row.name,
+                language: row.language,
+                enabled: Value<bool>(row.enabled),
+              ),
+        ],
+      );
+    }
+
+    setUp(() async {
+      database = FushiDatabase.forTesting(NativeDatabase.memory());
+      root = await Directory.systemTemp.createTemp('fushi-sibling-of-');
+      manager = MihonManager(
+        database: database,
+        rootDirectory: root,
+        runtime: _NoopRuntime(),
+      );
+    });
+
+    tearDown(() async {
+      manager.dispose();
+      await database.close();
+      await root.delete(recursive: true);
+    });
+
+    test('成功：换成 sibling 的 sourceId、章节留空、adapter 带 sibling 的预置上下文', () async {
+      await seed(extensionEnabled: true);
+      final ({OnlineMangaRuntimeAdapter adapter, OnlineMangaLibraryEntry seed})
+      handle = await MihonLibraryAdapter(manager).siblingOf(
+        entryFor('1'),
+        const OnlineMangaSiblingSource(
+          sourceId: '3',
+          name: 'Source 3',
+          language: 'en',
+        ),
+      );
+      expect(handle.seed.sourceId, '3');
+      expect(handle.seed.extensionPackage, 'org.example.mangadex');
+      expect(handle.seed.series.key, '/manga/x');
+      expect(handle.seed.chapters, isEmpty);
+      final MihonLibraryAdapter adapter = handle.adapter as MihonLibraryAdapter;
+      expect(adapter.presetContext?.source.id, '3');
+      expect(adapter.presetContext?.source.language, 'en');
+      // 换源页上三件事都按 sibling 说话。
+      expect(adapter.languageScope(handle.seed)?.language, 'en');
+      expect(await adapter.sourceLabel(handle.seed), 'Source 3');
+    });
+
+    test('扩展被禁用：包成 OnlineMangaUnavailable，不裸抛', () async {
+      await seed(extensionEnabled: false);
+      await expectLater(
+        MihonLibraryAdapter(manager).siblingOf(
+          entryFor('1'),
+          const OnlineMangaSiblingSource(
+            sourceId: '3',
+            name: 'Source 3',
+            language: 'en',
+          ),
+        ),
+        throwsA(isA<OnlineMangaUnavailable>()),
+      );
+    });
+
+    test('sibling 源没登记：OnlineMangaUnavailable(sourceDisabled)', () async {
+      await seed(extensionEnabled: true);
+      await expectLater(
+        MihonLibraryAdapter(manager).siblingOf(
+          entryFor('1'),
+          const OnlineMangaSiblingSource(
+            sourceId: '404',
+            name: 'nope',
+            language: 'de',
+          ),
+        ),
+        throwsA(
+          isA<OnlineMangaUnavailable>().having(
+            (OnlineMangaUnavailable e) => e.reason,
+            'reason',
+            OnlineMangaUnavailableReason.sourceDisabled,
+          ),
+        ),
       );
     });
   });

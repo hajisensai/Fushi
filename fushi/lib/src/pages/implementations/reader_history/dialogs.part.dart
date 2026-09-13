@@ -12,7 +12,7 @@ part of '../reader_fushi_history_page.dart';
 /// [showSyncScope]=false 时把同步勾选框换成 [DeleteScopeUnavailableNote] 说明行、恒
 /// keepLocalOnly——由调用方按 `hasDeletionPropagationChannel` 传入：本机一个同步通道
 /// 都没有时，那个勾选框兑现不了（TODO-2470 死角②）。取消返回 null。
-@visibleForTesting
+/// 漫画作品页「移出漫画书架」也用它（BUG-2513），删除确认的披露与传播语义两处一致。
 class ReaderHistoryDeleteDialog extends StatefulWidget {
   const ReaderHistoryDeleteDialog({
     required this.title,
@@ -37,8 +37,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
   final DeletePromptRememberedChoices? rememberedChoices;
-  final Future<void> Function(DeletePromptRememberedChoices?)?
-      onPersistChoices;
+  final Future<void> Function(DeletePromptRememberedChoices?)? onPersistChoices;
 
   @override
   State<ReaderHistoryDeleteDialog> createState() =>
@@ -202,8 +201,9 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
   }
 
   Future<void> _loadCurrent() async {
-    final int? current =
-        await widget.profileRepo.getBookProfileId(widget.bookUid);
+    final int? current = await widget.profileRepo.getBookProfileId(
+      widget.bookUid,
+    );
 
     if (_profiles.isEmpty || _activeProfileName.isEmpty) {
       _profiles = await widget.profileRepo.getAllProfiles();
@@ -310,10 +310,7 @@ class BookProfileDialogFrame extends StatelessWidget {
               ),
         footer: Align(
           alignment: Alignment.centerRight,
-          child: TextButton(
-            onPressed: onClose,
-            child: Text(t.dialog_close),
-          ),
+          child: TextButton(onPressed: onClose, child: Text(t.dialog_close)),
         ),
       ),
     );
@@ -400,8 +397,8 @@ class _BookProfileOptionRow extends StatelessWidget {
       trailing: Icon(
         selected
             ? (cupertino
-                ? CupertinoIcons.check_mark
-                : Icons.radio_button_checked)
+                  ? CupertinoIcons.check_mark
+                  : Icons.radio_button_checked)
             : (cupertino ? CupertinoIcons.circle : Icons.radio_button_off),
         size: cupertino ? 20 : 22,
         color: selected ? selectedColor : idleColor,
@@ -468,10 +465,7 @@ class _BatchTagPickerDialogState extends State<_BatchTagPickerDialog> {
     for (final tagId in _addTagIds) {
       final tag = widget.allTags.firstWhere((row) => row.id == tagId);
       FushiToast.show(
-        msg: tr.batch_tag_added(
-          name: tag.name,
-          n: widget.selectedKeys.length,
-        ),
+        msg: tr.batch_tag_added(name: tag.name, n: widget.selectedKeys.length),
         severity: ToastSeverity.success,
       );
     }
@@ -620,10 +614,7 @@ class _BatchTagIntentRow extends StatelessWidget {
       trailing: Row(
         children: [
           DecoratedBox(
-            decoration: BoxDecoration(
-              color: tagColor,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: tagColor, shape: BoxShape.circle),
             child: const SizedBox(width: 12, height: 12),
           ),
           SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
@@ -635,7 +626,10 @@ class _BatchTagIntentRow extends StatelessWidget {
                   value: _BatchTagIntent.keep,
                   tooltip: t.batch_tag_keep,
                   label: segmentLabel(
-                      t.batch_tag_keep, _BatchTagIntent.keep, keepColor),
+                    t.batch_tag_keep,
+                    _BatchTagIntent.keep,
+                    keepColor,
+                  ),
                   icon: Icon(
                     cupertino
                         ? CupertinoIcons.minus_circle
@@ -648,7 +642,10 @@ class _BatchTagIntentRow extends StatelessWidget {
                   value: _BatchTagIntent.add,
                   tooltip: t.batch_tag_add,
                   label: segmentLabel(
-                      t.batch_tag_add, _BatchTagIntent.add, addColor),
+                    t.batch_tag_add,
+                    _BatchTagIntent.add,
+                    addColor,
+                  ),
                   icon: Icon(
                     cupertino ? CupertinoIcons.add_circled : Icons.add_circle,
                     size: 16,
@@ -659,14 +656,18 @@ class _BatchTagIntentRow extends StatelessWidget {
                   value: _BatchTagIntent.remove,
                   tooltip: t.batch_tag_remove,
                   label: segmentLabel(
-                      t.batch_tag_remove, _BatchTagIntent.remove, removeColor),
+                    t.batch_tag_remove,
+                    _BatchTagIntent.remove,
+                    removeColor,
+                  ),
                   icon: Icon(
                     cupertino
                         ? CupertinoIcons.minus_circle_fill
                         : Icons.do_not_disturb_on,
                     size: 16,
-                    color:
-                        selected == _BatchTagIntent.remove ? removeColor : null,
+                    color: selected == _BatchTagIntent.remove
+                        ? removeColor
+                        : null,
                   ),
                 ),
               ],

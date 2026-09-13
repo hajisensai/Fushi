@@ -29,10 +29,17 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
+    show ReaderHistoryDeleteDialog;
+import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
+import 'package:fushi/src/sync/deletion_propagation_availability.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
 
 /// 作品页要显示**哪一部**作品。
@@ -578,7 +585,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     // 的子类型，`is!` 对 `OnlineMangaRuntimeAdapter?` 局部变量不提升。
     final Object? adapter = _adapter;
     final OnlineMangaLibraryEntry? entry = _entry;
-    if (adapter is! OnlineMangaLanguageScoped || entry == null) return;
+    if (adapter is! OnlineMangaLanguageScoped || entry == null || _busy) {
+      return;
+    }
+    setState(() => _busy = true);
     final ({OnlineMangaRuntimeAdapter adapter, OnlineMangaLibraryEntry seed})
     handle;
     try {
@@ -589,6 +599,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         FushiToast.show(msg: error.message, severity: ToastSeverity.error);
       }
       return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -1029,38 +1041,31 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry? entry = _entry;
     final AppModel? appModel = _appModelOrNull;
     if (row == null || entry == null || appModel == null || _busy) return;
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(t.manga_series_remove_from_bookshelf),
-        content: Text(t.manga_series_remove_confirm),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            key: const ValueKey<String>('manga_series_remove_confirm'),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    final DeleteDecision? decision = await _confirmRemoveFromLibrary(appModel);
+    if (decision == null || !mounted) return;
     setState(() => _busy = true);
     try {
-      // 先停引用再销毁实体：正在下载 / 识别这本书的任务还握着目录句柄，先取消。
+      // 先停引用再销毁实体：正在识别 / 下载这本书的任务还握着目录句柄。OCR 连排队
+      // 的一起放弃；下载用 remove（等正在飞的那个真停）而不是 cancel（只置标志
+      // 就返回，worker 还在往目录里写页，随后的目录删除会撞 errno 32 留孤儿）。
+      // 任务行随后由 deleteEpubBook 级联删，这里删掉也无妨。
       await _cancelOcr();
       final MangaDownloadService downloads = appModel.mangaDownloadService;
-      for (final MangaDownloadJobRow job in _jobs.values) {
+      final Map<String, MangaDownloadJobRow> jobs = await downloads.jobsForBook(
+        row.bookKey,
+      );
+      for (final MangaDownloadJobRow job in jobs.values) {
         if (job.status == MangaDownloadJobStatus.queued ||
             job.status == MangaDownloadJobStatus.running) {
-          await downloads.cancel(job.jobId);
+          await downloads.remove(job.jobId);
         }
       }
       final DeleteBookResult result = await ReaderFushiSource.instance
-          .deleteBook(db: appModel.database, bookKey: row.bookKey);
+          .deleteBook(
+            db: appModel.database,
+            bookKey: row.bookKey,
+            scope: decision.scope,
+          );
       if (!mounted) return;
       if (!result.deleted) {
         final String reason = result.failureReason ?? '';
@@ -1077,12 +1082,11 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         _states = const <String, MangaChapterStateRow>{};
         _downloaded = const <String>{};
         _jobs = const <String, MangaDownloadJobRow>{};
-        _entry = OnlineMangaLibraryEntry(
-          runtime: entry.runtime,
-          extensionPackage: entry.extensionPackage,
-          sourceId: entry.sourceId,
-          series: entry.series,
-          chapters: entry.chapters,
+        // 丢掉三样只属于「在库」的状态：当前章、订阅、自动下载。
+        _entry = entry.copyWith(
+          clearCurrentChapter: true,
+          subscribed: false,
+          autoDownload: false,
         );
       });
     } on Object catch (error, stack) {
@@ -1093,6 +1097,33 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 与书架长按删除同一个确认框（披露 + 「同步删除」范围 + 记住选择），删除
+  /// 传播语义因此一致：用户选了同步删除，对端也跟着删。
+  Future<DeleteDecision?> _confirmRemoveFromLibrary(AppModel appModel) async {
+    final bool canSyncEverywhere = await hasDeletionPropagationChannel(
+      SyncRepository(appModel.database),
+    );
+    final DeletePromptPreferenceStore preferenceStore =
+        DeletePromptPreferenceStore(appModel.database);
+    final DeletePromptRememberedChoices? rememberedChoices =
+        await preferenceStore.load();
+    if (!mounted) return null;
+    return showAppDialog<DeleteDecision>(
+      context: context,
+      builder: (BuildContext ctx) => ReaderHistoryDeleteDialog(
+        title: t.manga_series_remove_from_bookshelf,
+        message: t.manga_series_remove_confirm,
+        disclosure: buildDeletionDisclosure(
+          target: DeletionDisclosureTarget.shelfBook,
+        ),
+        showSyncScope: canSyncEverywhere,
+        rememberedChoices: rememberedChoices,
+        onPersistChoices: preferenceStore.write,
+        onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
+      ),
+    );
   }
 
   /// 「继续阅读」落到哪一章。

@@ -119,7 +119,7 @@ class _RecordingRegistry extends MangaOcrJobRegistry {
   final Stream<MangaOcrBackgroundEvent>? events;
 
   @override
-  Future<MangaOcrRunningJob> enqueue({
+  Future<MangaOcrRunningJob?> enqueue({
     required MangaOcrBackgroundJob job,
     required String mangaJsonPath,
   }) {

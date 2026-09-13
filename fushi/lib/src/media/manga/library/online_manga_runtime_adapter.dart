@@ -233,7 +233,10 @@ abstract interface class OnlineMangaLanguageScoped {
   OnlineMangaSourceLanguageScope? languageScope(OnlineMangaLibraryEntry entry);
 
   /// 同一部作品换到 [sibling] 源：返回能拉它的 adapter 与对应的 seed。
-  /// 章节留空，由作品页进页后自己拉。
+  /// 章节留空，由作品页进页后自己拉。前提是同扩展的各语言源共用同一套作品
+  /// URL（MangaDex / MangaPlus / Webtoons 都如此）；一个扩展打包多个不同站点
+  /// 的情况不成立，那类扩展的源语言通常也是 `all`，不会走到这里。
+  /// 源缺失 / 扩展被禁用抛 [OnlineMangaUnavailable]。
   Future<({OnlineMangaRuntimeAdapter adapter, OnlineMangaLibraryEntry seed})>
   siblingOf(OnlineMangaLibraryEntry entry, OnlineMangaSiblingSource sibling);
 }
@@ -371,33 +374,22 @@ class MihonLibraryAdapter
     OnlineMangaLibraryEntry entry,
     OnlineMangaSiblingSource sibling,
   ) async {
-    MangaOnlineSourceRow? row;
-    for (final MangaOnlineSourceRow candidate in manager.sources) {
-      if (candidate.extensionPackage == entry.extensionPackage &&
-          candidate.sourceId == sibling.sourceId &&
-          candidate.enabled) {
-        row = candidate;
-        break;
-      }
-    }
-    if (row == null) {
-      throw const OnlineMangaUnavailable(
-        OnlineMangaUnavailableReason.sourceDisabled,
-        'The sibling manga source is missing or disabled',
-      );
-    }
-    // 预置上下文：作品页拿到的是「能直接拉」的 adapter，不再经 manager 现解析
-    // （与源浏览页进作品页同一条路，见 presetContext 的说明）。
-    final MihonSourceContext context = await manager.contextForSource(row);
+    final OnlineMangaLibraryEntry seed = OnlineMangaLibraryEntry(
+      runtime: OnlineMangaRuntimeKind.mihon,
+      extensionPackage: entry.extensionPackage,
+      sourceId: sibling.sourceId,
+      series: entry.series,
+      chapters: const <OnlineMangaChapter>[],
+    );
+    // 用一个**没有** preset 的 adapter 去解析 sibling 的上下文：查库行、
+    // initialise、把 EXTENSION_DISABLED 之类包成 OnlineMangaUnavailable 全在
+    // `_context` 一处；本 adapter 若带 preset，`_context` 会早退回本源的上下文。
+    final MihonSourceContext context = await MihonLibraryAdapter(
+      manager,
+    )._context(seed);
     return (
       adapter: MihonLibraryAdapter(manager, presetContext: context),
-      seed: OnlineMangaLibraryEntry(
-        runtime: OnlineMangaRuntimeKind.mihon,
-        extensionPackage: entry.extensionPackage,
-        sourceId: sibling.sourceId,
-        series: entry.series,
-        chapters: const <OnlineMangaChapter>[],
-      ),
+      seed: seed,
     );
   }
 

@@ -213,10 +213,12 @@ void main() {
     final _TestAppModel appModel = _TestAppModel(db, library, root);
 
     late String bookKey;
+    late String bookUid;
     late String extractDir;
     await tester.runAsync(() async {
       final EpubBookRow row = await library.add(_entry());
       bookKey = row.bookKey;
+      bookUid = row.uid;
       extractDir = row.extractDir;
       await _writeDownloadedChapter(row.extractDir, '/chapter/1');
       await db.saveMangaChapterState(
@@ -232,7 +234,17 @@ void main() {
           const ValueKey<String>('manga_series_remove_from_bookshelf'),
         ),
       );
+      // 删前先确认「已下载」状态位真的渲染出来了，删后的 findsNothing 才有意义。
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_download_downloaded')),
+      );
     });
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_download_downloaded')),
+      findsOneWidget,
+    );
+    expect(await db.getMangaChapterStates(bookUid), isNotEmpty);
     expect(
       find.byKey(const ValueKey<String>('manga_series_remove_from_bookshelf')),
       findsOneWidget,
@@ -249,13 +261,9 @@ void main() {
           const ValueKey<String>('manga_series_remove_from_bookshelf'),
         ),
       );
-      await _pumpUntil(
-        tester,
-        find.byKey(const ValueKey<String>('manga_series_remove_confirm')),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('manga_series_remove_confirm')),
-      );
+      // 与书架长按删除同一个确认框：披露 + 「删除」。
+      await _pumpUntil(tester, find.text(t.dialog_delete));
+      await tester.tap(find.text(t.dialog_delete));
       await _pumpUntil(
         tester,
         find.byKey(const ValueKey<String>('manga_series_add_to_bookshelf')),
@@ -263,6 +271,11 @@ void main() {
     });
 
     expect(await db.getEpubBook(bookKey), isNull, reason: 'DB 行已删');
+    expect(
+      await db.getMangaChapterStates(bookUid),
+      isEmpty,
+      reason: '章节状态随书级联删',
+    );
     expect(
       Directory(extractDir).existsSync(),
       isFalse,
