@@ -57,7 +57,15 @@ void main() {
     );
     expect(
       'catch (ActivityNotFoundException error)'.allMatches(native).length,
-      2,
+      1,
+    );
+    // The targeted attempt also has to swallow SecurityException: a default
+    // browser that registers ACTION_WEB_SEARCH on a non-exported activity
+    // (targetSdk 31+) must fall through to the bare intent, not crash the
+    // method channel.
+    expect(
+      native,
+      contains('catch (ActivityNotFoundException | SecurityException error)'),
     );
   });
 
