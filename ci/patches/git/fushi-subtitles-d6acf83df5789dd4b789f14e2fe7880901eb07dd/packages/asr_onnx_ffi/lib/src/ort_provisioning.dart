@@ -12,12 +12,12 @@
 /// Windows 上的推荐路径就是 DirectML（见 `asr_engine.dart` 的 EP 决策表），
 /// 所以按需下载必须下带 DML EP 的那一份，否则「装好了」和「装对了」是两回事。
 ///
-/// `DirectML.dll` 本身不下：它是 Windows 10 1903+ 的系统组件，
-/// `C:\Windows\System32` 里就有（本机实测 1.15.5，比 NuGet redist 的 1.15.4
-/// 还新）。而官方 `Microsoft.AI.DirectML` 包为了塞 Xbox 与 debug 二进制有
-/// **202 MB**，为取其中一个 18 MB 的 DLL 拖这么大不划算。系统版本过老的机器
-/// 上 DML EP 会在探测阶段失败并回落 CPU——那条降级路径已经存在，且会把原因
-/// 报给用户（`transcribe_runner.dart` 的 probeError），不是静默的。
+/// `DirectML.dll` 本身不在这里下：官方 `Microsoft.AI.DirectML` 包为了塞 Xbox 与
+/// debug 二进制有 **202 MB**，为取其中一个 18 MB 的 DLL 拖这么大不划算。它由
+/// 发布流水线抽出来随包放在 exe 旁，运行时按「显式 > exe 同级 > 托管目录 >
+/// System32」解析并预加载（`directml_runtime.dart`）。**不能指望 System32 那份**：
+/// Windows 11 自带 1.15.5 够用，Windows 10 自带的是 2020 年的 1.0，ORT 1.22 建
+/// 不出 DML 设备（`887A0004`），静默回落 CPU——下游实测 GPU 个位数、慢十倍。
 library;
 
 import 'dart:ffi' show Abi;
