@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "Yerel ONNX",
   "manga_ocr_engine_local_onnx_desc": "Tamamen çevrimdışı, en iyi kalite. Tek seferlik bir model indirmesi gerektirir ve eski donanımda yavaştır.",
   "manga_ocr_engine_none": "OCR motoru mevcut değil. Yerleşik modelleri indirin veya ayarlardan mokuro CLI yolunu belirleyin.",
-  "manga_ocr_engine_paired_host_desc": "İşi ağınızdaki eşleştirilmiş bir cihaza devreder. Buraya hiçbir şey indirilmez.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "Cihaz OCR'ı",
   "manga_ocr_engine_system_desc": "Cihazınızdaki yerleşik metin tanımayı kullanır. İndirme yok, tamamen çevrimdışı, hiçbir şey yüklenmez — ancak dikey konuşma balonlarında ve el yazısında yerel modele göre belirgin biçimde zayıftır.",
   "manga_ocr_engine_system_unavailable": "Bu cihazda kullanılabilir yerleşik metin tanıma yok",

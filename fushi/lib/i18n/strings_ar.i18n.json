@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "ONNX محلي",
   "manga_ocr_engine_local_onnx_desc": "غير متصل بالكامل، أفضل جودة. يحتاج تحميل نموذج لمرة واحدة وبطيء على الأجهزة القديمة.",
   "manga_ocr_engine_none": "لا يوجد محرك OCR متاح. حمّل النماذج المدمجة أو عيّن مسار Mokuro CLI في الإعدادات.",
-  "manga_ocr_engine_paired_host_desc": "يُسند العمل إلى جهاز مقترن على شبكتك. لا يتم تحميل شيء هنا.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR الجهاز",
   "manga_ocr_engine_system_desc": "يستخدم التعرف على النص المدمج في جهازك. بلا تنزيل، ويعمل دون اتصال تمامًا، ولا يُرفع أي شيء — لكنه أضعف بوضوح من النموذج المحلي مع الفقاعات الرأسية والخط اليدوي.",
   "manga_ocr_engine_system_unavailable": "لا يتوفر في هذا الجهاز تعرف مدمج على النص",

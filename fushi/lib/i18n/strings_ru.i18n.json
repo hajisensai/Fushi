@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "Локальный ONNX",
   "manga_ocr_engine_local_onnx_desc": "Полностью офлайн, лучшее качество. Требуется однократная загрузка модели, на старом оборудовании работает медленно.",
   "manga_ocr_engine_none": "Нет доступного движка OCR. Скачайте встроенные модели или укажите путь к mokuro CLI в настройках.",
-  "manga_ocr_engine_paired_host_desc": "Передаёт работу сопряжённому устройству в вашей сети. Ничего не загружается на это устройство.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR устройства",
   "manga_ocr_engine_system_desc": "Использует распознавание текста, встроенное в ваше устройство. Ничего не нужно скачивать, работает полностью офлайн, ничего не отправляется — но с вертикальными облачками и рукописным текстом справляется заметно хуже локальной модели.",
   "manga_ocr_engine_system_unavailable": "На этом устройстве нет доступного встроенного распознавания текста",

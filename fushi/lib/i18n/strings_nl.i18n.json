@@ -2095,7 +2095,7 @@
   "manga_ocr_engine_local_onnx": "Lokale ONNX",
   "manga_ocr_engine_local_onnx_desc": "Volledig offline, beste kwaliteit. Vereist een eenmalige modeldownload en is traag op oude hardware.",
   "manga_ocr_engine_none": "Geen OCR-engine beschikbaar. Download ingebouwde modellen of stel het mokuro CLI-pad in bij instellingen.",
-  "manga_ocr_engine_paired_host_desc": "Geeft het werk door aan een gekoppeld apparaat op je netwerk. Niets wordt hier gedownload.",
+  "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR van apparaat",
   "manga_ocr_engine_system_desc": "Gebruikt de tekstherkenning die in je apparaat is ingebouwd. Geen download, volledig offline, er wordt niets geüpload — maar bij verticale tekstballonnen en handschrift merkbaar zwakker dan het lokale model.",
   "manga_ocr_engine_system_unavailable": "Dit apparaat heeft geen ingebouwde tekstherkenning beschikbaar",
