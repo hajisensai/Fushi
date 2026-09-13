@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2318 条。点号进各自文件。
+> 共 2319 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2521](bugs/BUG-2521-reader-collection-volume-switch.md) | ✅ | ✅ | 阅读器章节列表 / 插图画廊缺少同合集卷切换 |
 | [BUG-2520](bugs/BUG-2520-video-episode-panel-season-switcher.md) | ✅ | ✅ | 播放器「选集」面板对多季合集没有季切换 |
 | [BUG-2507](bugs/BUG-2507-youtube-stream-bounded-range.md) | ✅ | ✅ | YouTube 直连流只接受有界 Range，libmpv/ffmpeg 无 Range 首请求 403 → 打不开 |
 | [BUG-2506](bugs/BUG-2506-interconnect-book-progress-lww-no-conflict.md) | ✅ | ✅ | 互联书籍进度纯 LWW 无冲突判定：host 与 client 分叉时客户端被静默覆盖 |

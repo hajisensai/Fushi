@@ -14,6 +14,36 @@ import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/utils.dart';
 
+/// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
+class ReaderGalleryVolumeImages {
+  const ReaderGalleryVolumeImages({
+    required this.images,
+    required this.fileForRef,
+  });
+
+  final List<EpubImageRef> images;
+  final File? Function(EpubImageRef ref) fileForRef;
+}
+
+/// 画廊的同合集卷切换接线（BUG-2521）。看兄弟卷的插图不离开画廊（[imagesOf] 在
+/// isolate 解析、按卷缓存）；[onJumpTo] / [onOpenImage] 带卷号：跳转 = 切书 + 跳章，
+/// 看大图 = 用该卷文件开查看器。当前卷仍走 [ReaderGalleryPage] 自己的回调。
+class ReaderGalleryVolumeSwitch {
+  const ReaderGalleryVolumeSwitch({
+    required this.labels,
+    required this.currentIndex,
+    required this.imagesOf,
+    required this.onJumpTo,
+    required this.onOpenImage,
+  });
+
+  final List<String> labels;
+  final int currentIndex;
+  final Future<ReaderGalleryVolumeImages> Function(int volume) imagesOf;
+  final void Function(int volume, EpubImageRef ref) onJumpTo;
+  final void Function(int volume, EpubImageRef ref, File file) onOpenImage;
+}
+
 class ReaderGalleryPage extends StatefulWidget {
   const ReaderGalleryPage({
     super.key,
@@ -25,6 +55,7 @@ class ReaderGalleryPage extends StatefulWidget {
     this.blurImages = false,
     this.revealedImageKeys = const <String>{},
     this.onRevealImage,
+    this.volumeSwitch,
   });
 
   final List<EpubImageRef> images;
@@ -35,6 +66,9 @@ class ReaderGalleryPage extends StatefulWidget {
   final bool blurImages;
   final Set<String> revealedImageKeys;
   final void Function(String key)? onRevealImage;
+
+  /// 同合集卷切换；null = 单卷，头部不出卷 chip。
+  final ReaderGalleryVolumeSwitch? volumeSwitch;
 
   @override
   State<ReaderGalleryPage> createState() => _ReaderGalleryPageState();
@@ -55,20 +89,103 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   late int _index = _initialIndex();
   final Set<String> _revealedHere = <String>{};
 
+  /// 当前查看的卷（初值 = 当前卷）。看兄弟卷时 [_sibling] 持有该卷的插图表；
+  /// 装载中 / 失败为 null（舞台显示占位）。
+  late int _viewedVolume = widget.volumeSwitch?.currentIndex ?? 0;
+  ReaderGalleryVolumeImages? _sibling;
+  Object? _siblingError;
+  int _volumeLoadSeq = 0;
+
+  bool get _peekingSibling =>
+      widget.volumeSwitch != null &&
+      _viewedVolume != widget.volumeSwitch!.currentIndex;
+
+  /// 舞台 / 缩略图带当前展示的插图表：当前卷走 widget，兄弟卷走已装载的表。
+  List<EpubImageRef> get _images => _peekingSibling
+      ? (_sibling?.images ?? const <EpubImageRef>[])
+      : widget.images;
+
+  File? _fileFor(EpubImageRef ref) =>
+      _peekingSibling ? _sibling?.fileForRef(ref) : widget.fileForRef(ref);
+
+  /// 兄弟卷的揭示只记在本页（键加卷前缀防同名 src 串卷），不写当前书的 DB。
+  String _revealKey(EpubImageRef ref) {
+    final String key = ImageRevealKey.normalize(ref.src)!;
+    return _peekingSibling ? 'v$_viewedVolume|$key' : key;
+  }
+
   bool _isBlurred(EpubImageRef ref) => ImageRevealKey.shouldBlur(
         blurEnabled: widget.blurImages,
-        revealKey: ImageRevealKey.normalize(ref.src),
-        revealed: <String>{...widget.revealedImageKeys, ..._revealedHere},
+        revealKey: _revealKey(ref),
+        revealed: <String>{
+          if (!_peekingSibling) ...widget.revealedImageKeys,
+          ..._revealedHere,
+        },
       );
 
   void _activateImage(EpubImageRef ref) {
     if (_isBlurred(ref)) {
-      final String key = ImageRevealKey.normalize(ref.src)!;
+      final String key = _revealKey(ref);
       setState(() => _revealedHere.add(key));
-      widget.onRevealImage?.call(key);
+      if (!_peekingSibling) widget.onRevealImage?.call(key);
+      return;
+    }
+    if (_peekingSibling) {
+      final File? file = _fileFor(ref);
+      if (file != null) {
+        widget.volumeSwitch!.onOpenImage(_viewedVolume, ref, file);
+      }
       return;
     }
     widget.onOpenImage(ref);
+  }
+
+  void _jumpTo(EpubImageRef ref) {
+    if (_peekingSibling) {
+      widget.volumeSwitch!.onJumpTo(_viewedVolume, ref);
+      return;
+    }
+    widget.onJumpTo(ref);
+  }
+
+  /// 切换查看的卷：当前卷直接回到 widget 数据；兄弟卷起一次装载（按 seq 丢弃
+  /// 过期结果），装载完把舞台定位到第一张。
+  void _selectVolume(int volume) {
+    final ReaderGalleryVolumeSwitch? volumes = widget.volumeSwitch;
+    if (volumes == null || volume == _viewedVolume) return;
+    final int seq = ++_volumeLoadSeq;
+    setState(() {
+      _viewedVolume = volume;
+      _sibling = null;
+      _siblingError = null;
+      _index = volume == volumes.currentIndex ? _initialIndex() : 0;
+    });
+    if (volume == volumes.currentIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollThumbsTo(_index, animate: false);
+      });
+      return;
+    }
+    unawaited(
+      volumes.imagesOf(volume).then<void>(
+        (ReaderGalleryVolumeImages data) {
+          if (!mounted || seq != _volumeLoadSeq) return;
+          setState(() {
+            _sibling = data;
+            _index = 0;
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _scrollThumbsTo(0, animate: false);
+            if (_hasImages) _precacheNeighbours(0);
+          });
+        },
+        onError: (Object error) {
+          if (!mounted || seq != _volumeLoadSeq) return;
+          setState(() => _siblingError = error);
+        },
+      ),
+    );
   }
 
   Widget _blurImage(Widget image, {required bool stage}) => ClipRect(
@@ -106,12 +223,12 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     super.dispose();
   }
 
-  bool get _hasImages => widget.images.isNotEmpty;
-  EpubImageRef? get _current => _hasImages ? widget.images[_index] : null;
+  bool get _hasImages => _images.isNotEmpty;
+  EpubImageRef? get _current => _hasImages ? _images[_index] : null;
 
   void _select(int index) {
     if (!_hasImages) return;
-    final int next = index.clamp(0, widget.images.length - 1);
+    final int next = index.clamp(0, _images.length - 1);
     if (next == _index) return;
     setState(() => _index = next);
     _scrollThumbsTo(next, animate: true);
@@ -121,8 +238,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   /// 预解码相邻两张（前 / 后），箭头 / 滚轮连续切图时舞台不闪白。
   void _precacheNeighbours(int index) {
     for (final int i in <int>[index - 1, index + 1]) {
-      if (i < 0 || i >= widget.images.length) continue;
-      final File? file = widget.fileForRef(widget.images[i]);
+      if (i < 0 || i >= _images.length) continue;
+      final File? file = _fileFor(_images[i]);
       if (file == null) continue;
       // BUG-2496：precacheImage 不传 onError 时解码失败会自己
       // FlutterError.reportError（silent）——前后两张相邻图同帧预热正是错误日志里
@@ -178,7 +295,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.end) {
-      _select(widget.images.length - 1);
+      _select(_images.length - 1);
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -215,18 +332,61 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         child: Column(
           children: <Widget>[
             _buildHeader(theme),
+            if (widget.volumeSwitch != null) _buildVolumeChips(theme),
             Expanded(
-              child: _hasImages
-                  ? _buildStage(theme)
-                  : Center(
-                      child: Text(
-                        t.reader_gallery_empty,
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                    ),
+              child: _hasImages ? _buildStage(theme) : _buildEmpty(theme),
             ),
             if (_hasImages) _buildThumbStrip(theme),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 空舞台：兄弟卷装载中转圈、失败提示、真无图沿用原文案。
+  Widget _buildEmpty(ThemeData theme) {
+    if (_peekingSibling && _siblingError != null) {
+      return Center(
+        child: Text(
+          t.reader_volume_peek_failed,
+          style: theme.textTheme.bodyLarge
+              ?.copyWith(color: theme.colorScheme.error),
+        ),
+      );
+    }
+    if (_peekingSibling && _sibling == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return Center(
+      child: Text(t.reader_gallery_empty, style: theme.textTheme.bodyLarge),
+    );
+  }
+
+  /// 卷 chip 行（BUG-2521）：当前卷带书图标；点别的卷只换舞台内容，不切书。
+  Widget _buildVolumeChips(ThemeData theme) {
+    final ReaderGalleryVolumeSwitch volumes = widget.volumeSwitch!;
+    return SizedBox(
+      height: 44,
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          key: const ValueKey<String>('reader-gallery-volume-chips'),
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
+          itemCount: volumes.labels.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (BuildContext context, int i) => ChoiceChip(
+            key: ValueKey<String>('reader-gallery-volume-chip-$i'),
+            label: Text(
+              volumes.labels[i],
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            avatar: i == volumes.currentIndex
+                ? const Icon(Icons.menu_book_outlined, size: 16)
+                : null,
+            selected: i == _viewedVolume,
+            onSelected: (bool _) => _selectVolume(i),
+          ),
         ),
       ),
     );
@@ -245,11 +405,12 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           if (current != null) ...<Widget>[
             const SizedBox(width: 12),
             Text(
-              '${_index + 1} / ${widget.images.length}',
+              '${_index + 1} / ${_images.length}',
               style: theme.textTheme.labelMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
-            if (current.chapterIndex == widget.currentChapter) ...<Widget>[
+            if (!_peekingSibling &&
+                current.chapterIndex == widget.currentChapter) ...<Widget>[
               const SizedBox(width: 12),
               Text(
                 t.reader_gallery_current,
@@ -264,7 +425,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               key: const ValueKey<String>('fushi_gallery_jump'),
               tooltip: t.reader_gallery_jump,
               icon: const Icon(Icons.my_location_outlined),
-              onPressed: () => widget.onJumpTo(current),
+              onPressed: () => _jumpTo(current),
             ),
           Semantics(
             identifier: 'hibiki.reader.gallery.close',
@@ -282,7 +443,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   Widget _buildStage(ThemeData theme) {
     final EpubImageRef current = _current!;
-    final File? file = widget.fileForRef(current);
+    final File? file = _fileFor(current);
     final Widget image = file == null
         ? Icon(
             Icons.broken_image_outlined,
@@ -346,7 +507,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             child: _arrowButton(
               theme,
               icon: Icons.chevron_right,
-              enabled: _index < widget.images.length - 1,
+              enabled: _index < _images.length - 1,
               onPressed: () => _select(_index + 1),
             ),
           ),
@@ -387,7 +548,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             controller: _thumbController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.all(_kStripPadding),
-            itemCount: widget.images.length,
+            itemCount: _images.length,
             separatorBuilder: (_, __) => const SizedBox(width: _kThumbGap),
             itemBuilder: (BuildContext context, int index) =>
                 _buildThumb(theme, index),
@@ -398,9 +559,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   }
 
   Widget _buildThumb(ThemeData theme, int index) {
-    final EpubImageRef ref = widget.images[index];
+    final EpubImageRef ref = _images[index];
     final bool selected = index == _index;
-    final File? file = widget.fileForRef(ref);
+    final File? file = _fileFor(ref);
     final Widget missing = ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Center(

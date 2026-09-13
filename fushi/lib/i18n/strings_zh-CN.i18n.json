@@ -4807,5 +4807,7 @@
   "card_source_review_video_return": "返回原观看位置",
   "card_source_review_video_continue": "从这里继续观看",
   "handlebar_source_link": "来源链接",
-  "remote_book_audiobook_download": "从互联对端下载有声书"
+  "remote_book_audiobook_download": "从互联对端下载有声书",
+  "reader_volume_open": "打开本卷",
+  "reader_volume_peek_failed": "读取本卷失败"
 }

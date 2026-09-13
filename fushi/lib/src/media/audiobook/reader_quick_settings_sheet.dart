@@ -46,6 +46,24 @@ enum ReaderQuickSettingsPresentation {
   audiobookPanel,
 }
 
+/// 章节列表的同合集卷切换接线（BUG-2521）。[labels] 是各卷标题（与
+/// [currentIndex] 同序）；[tocOf] 取某卷目录（兄弟卷在 isolate 解析、按卷缓存，
+/// 不可查看的卷返回空表）；[onJump] 切到某卷（[chapterIndex] null = 按该卷保存
+/// 位置打开）——切书本身由阅读器页面走完整退出链后 pushReplacement。
+class ReaderTocVolumeSwitch {
+  const ReaderTocVolumeSwitch({
+    required this.labels,
+    required this.currentIndex,
+    required this.tocOf,
+    required this.onJump,
+  });
+
+  final List<String> labels;
+  final int currentIndex;
+  final Future<List<TtuTocEntry>> Function(int volume) tocOf;
+  final Future<void> Function(int volume, int? chapterIndex) onJump;
+}
+
 class ReaderQuickSettingsSheet extends StatefulWidget {
   const ReaderQuickSettingsSheet({
     required this.controller,
@@ -92,6 +110,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.initialSideSheetTab = 'layout',
     this.onSideSheetTabChanged,
     this.expandedTocParents,
+    this.volumeSwitch,
     this.initialSubPage,
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
@@ -181,6 +200,10 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 目录折叠状态的会话记忆（页面持有的可变集合；null 则本面板自持）。
   final Set<String>? expandedTocParents;
 
+  /// 同合集卷切换（BUG-2521）：目录区顶部出卷 chip，看别的卷的目录不离开面板、
+  /// 点别的卷的章才真正切书。null = 不在多卷合集里，目录区与从前一样。
+  final ReaderTocVolumeSwitch? volumeSwitch;
+
   /// TODO-1309①：打开面板时直达的子页 id（如 'location' 导航子页）。null =
   /// 默认落主菜单（窄窗）/ 默认分类（宽窗）。仅用于初始化 [_subPage]，
   /// 之后由用户导航自行覆盖。
@@ -230,6 +253,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 父节自动展开。
   late final Set<String> _expandedTocParents =
       widget.expandedTocParents ?? <String>{};
+
+  /// 目录区当前查看的卷（初值 = 当前卷）。只影响列表内容，不影响阅读器。
+  late int _viewedVolume = widget.volumeSwitch?.currentIndex ?? 0;
 
   /// 最近一次 LayoutBuilder 是否判定为宽窗。供 PopScope.canPop 读取：宽窗
   /// master-detail 下选中态非 null 也允许直接关闭（不会卡在「返回上一级」）。
@@ -1141,6 +1167,130 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildTocSection(BuildContext context, ThemeData theme) {
+    final ReaderTocVolumeSwitch? volumes = widget.volumeSwitch;
+    if (volumes == null) return _buildCurrentTocSection(context, theme);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool peekingSibling = _viewedVolume != volumes.currentIndex;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildVolumeChips(theme, volumes),
+        SizedBox(height: tokens.spacing.gap),
+        if (!peekingSibling)
+          _buildCurrentTocSection(context, theme)
+        else
+          _buildSiblingTocSection(context, theme, volumes, _viewedVolume),
+      ],
+    );
+  }
+
+  /// 卷 chip 行：当前卷带勾；点别的卷只换下方列表（无感查看），不切书。
+  Widget _buildVolumeChips(ThemeData theme, ReaderTocVolumeSwitch volumes) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return SizedBox(
+      height: 40,
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          key: const ValueKey<String>('reader-toc-volume-chips'),
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap / 2),
+          itemCount: volumes.labels.length,
+          separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap),
+          itemBuilder: (BuildContext context, int i) => ChoiceChip(
+            key: ValueKey<String>('reader-toc-volume-chip-$i'),
+            label: Text(
+              volumes.labels[i],
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            avatar: i == volumes.currentIndex
+                ? const Icon(Icons.menu_book_outlined, size: 16)
+                : null,
+            selected: i == _viewedVolume,
+            onSelected: (bool _) {
+              if (i == _viewedVolume) return;
+              setState(() => _viewedVolume = i);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 兄弟卷的目录：isolate 解析（按卷缓存）→ 列表；首行「打开本卷」按保存位置整卷
+  /// 切过去；点某章 = 切书并落到该章。不可查看的卷（PDF / 漫画）只有首行。
+  Widget _buildSiblingTocSection(
+    BuildContext context,
+    ThemeData theme,
+    ReaderTocVolumeSwitch volumes,
+    int volume,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    Future<void> jump(int? chapterIndex) async {
+      Navigator.of(context).pop();
+      await volumes.onJump(volume, chapterIndex);
+    }
+
+    final Widget openRow = _InBookTocRow(
+      key: ValueKey<String>('reader-toc-volume-open-$volume'),
+      // index 只用来区分 header（<0 = 标题行不可点）；本行是可点动作行，回调
+      // 自带卷号，不读 index。
+      entry: TtuTocEntry(index: 0, label: t.reader_volume_open),
+      selected: false,
+      onTap: () => unawaited(jump(null)),
+    );
+    return FutureBuilder<List<TtuTocEntry>>(
+      key: ValueKey<String>('reader-toc-volume-toc-$volume'),
+      future: volumes.tocOf(volume),
+      builder: (BuildContext context, AsyncSnapshot<List<TtuTocEntry>> snap) {
+        final List<Widget> rows = <Widget>[openRow];
+        if (snap.hasError) {
+          rows.add(
+            Padding(
+              padding: EdgeInsets.all(tokens.spacing.rowHorizontal),
+              child: Text(
+                t.reader_volume_peek_failed,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
+          );
+        } else if (!snap.hasData) {
+          rows.add(
+            Padding(
+              padding: EdgeInsets.all(tokens.spacing.rowHorizontal),
+              child: const Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          );
+        } else {
+          final List<TtuTocEntry> toc = snap.data!;
+          for (int i = 0; i < toc.length; i++) {
+            if (toc[i].depth >= 2) continue; // 兄弟卷只列顶层章，够定位即可。
+            rows.add(
+              _InBookTocRow(
+                entry: toc[i],
+                selected: false,
+                onTap:
+                    toc[i].isHeader ? null : () => unawaited(jump(toc[i].index)),
+              ),
+            );
+          }
+        }
+        return AdaptiveSettingsSection(
+          title: volumes.labels[volume],
+          children: rows,
+        );
+      },
+    );
+  }
+
+  Widget _buildCurrentTocSection(BuildContext context, ThemeData theme) {
     final int? currentIdx = widget.readerProgress?.$1;
     final List<TtuTocEntry> toc = widget.toc;
     // 折叠规则：深度 >= 2 的条目挂在其 parent 下，parent 未展开则不画；当前章所在链
