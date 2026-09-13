@@ -16,6 +16,7 @@ class BrowserSiteCookie {
     required this.path,
     required this.secure,
     required this.hostOnly,
+    this.httpOnly = false,
     this.expiresAt,
   });
 
@@ -27,6 +28,9 @@ class BrowserSiteCookie {
   final String path;
   final bool secure;
   final bool hostOnly;
+
+  /// 只在回灌进 app 内嵌 WebView 时用得上（jar 那边是 okhttp，不区分）。
+  final bool httpOnly;
 
   /// 毫秒；会话 cookie 为 null。
   final int? expiresAt;
@@ -53,9 +57,17 @@ class BrowserSiteCookie {
       path: path.isEmpty ? '/' : path,
       secure: json['secure'] == true,
       hostOnly: hostOnly,
+      httpOnly: json['httpOnly'] == true,
       expiresAt: expiresAt,
     );
   }
+
+  /// 已规范化的注册域（去点、小写）；空 = 域不合法。
+  String get canonicalDomain => MangaCookie.canonicalizeDomain(domain);
+
+  /// 写进 WebView 时用的 URL：secure cookie 只能挂在 https origin 上，
+  /// 非 secure 的挂 https 也无妨，所以一律 https。
+  Uri get originUrl => Uri(scheme: 'https', host: canonicalDomain, path: '/');
 }
 
 /// 一次「等浏览器扩展把某站会话送过来」的登记。
@@ -182,33 +194,43 @@ class BrowserCookieImportRequestHandle {
   }
 }
 
-/// 扩展送来的 cookie → jar cookie，**只收与源站同一站点的条目**：cookie 的域覆盖
-/// [siteHost]（父域）或是它的子域。`getAll({domain})` 本身已按域筛过，这里再筛一遍
-/// 是让「进 jar 的东西」在 app 这一侧有唯一判据，与登录页从 WebView 导出那条路
-/// 用同一个规则。
-List<MangaCookie> browserCookiesForSite(
+/// 扩展送来的 cookie 里**只收与源站同一站点的条目**：cookie 的域覆盖 [siteHost]
+/// （父域）或是它的子域；按 (name, domain) 去重，后到覆盖先到。
+///
+/// `getAll({domain})` 本身已按域筛过，这里再筛一遍是让「进 app 的东西」在 app
+/// 这一侧有唯一判据，与登录页从 WebView 导出那条路用同一个规则。
+List<BrowserSiteCookie> browserSiteCookiesForSite(
   Iterable<BrowserSiteCookie> cookies,
   String siteHost,
 ) {
   final String site = BrowserCookieImportGate.normalizeHost(siteHost);
-  final Map<String, MangaCookie> deduped = <String, MangaCookie>{};
+  final Map<String, BrowserSiteCookie> deduped = <String, BrowserSiteCookie>{};
   for (final BrowserSiteCookie cookie in cookies) {
-    final String domain = MangaCookie.canonicalizeDomain(cookie.domain);
+    final String domain = cookie.canonicalDomain;
     if (domain.isEmpty) continue;
     final bool sameSite =
         MangaCookie.hostMatchesDomain(site, domain) ||
         MangaCookie.hostMatchesDomain(domain, site);
     if (!sameSite) continue;
-    final MangaCookie mapped = MangaCookie(
-      name: cookie.name,
-      value: cookie.value,
-      domain: domain,
-      path: cookie.path,
-      secure: cookie.secure,
-      hostOnly: cookie.hostOnly,
-      expiresAt: cookie.expiresAt,
-    );
-    deduped['${mapped.name}${mapped.canonicalDomain}'] = mapped;
+    deduped['${cookie.name}$domain'] = cookie;
   }
   return deduped.values.toList(growable: false);
 }
+
+/// 同站过滤后的扩展 cookie → jar cookie（[browserSiteCookiesForSite] 的 jar 视图）。
+List<MangaCookie> browserCookiesForSite(
+  Iterable<BrowserSiteCookie> cookies,
+  String siteHost,
+) => browserSiteCookiesForSite(cookies, siteHost)
+    .map(
+      (BrowserSiteCookie cookie) => MangaCookie(
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.canonicalDomain,
+        path: cookie.path,
+        secure: cookie.secure,
+        hostOnly: cookie.hostOnly,
+        expiresAt: cookie.expiresAt,
+      ),
+    )
+    .toList(growable: false);
