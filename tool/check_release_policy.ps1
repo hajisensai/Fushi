@@ -247,6 +247,10 @@ Require-Text $serverWorkflow $serverContent 'concurrency:' 'server publisher mus
 Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a server publish must run to completion'
 Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'
 Require-Text $serverWorkflow $serverContent 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'server release sequence must come from the shared script'
+# The asr_onnx_ffi dependency only compiles with the one-line archive compat patch from
+# ci/patches (see CLAUDE.md); the first real run of this workflow failed on both
+# platforms because the patch step was missing after `flutter pub get`.
+Require-Text $serverWorkflow $serverContent 'bash ci/apply-patches.sh' 'server bundle build needs the pub-cache patches (asr_onnx_ffi archive compat) or dart build cli fails'
 Require-Text $serverWorkflow $serverContent 'workflow_call:' 'the server publisher is a reusable workflow invoked from hajisensai/fushi-server'
 Require-Text $serverWorkflow $serverContent 'if [ "${CALLER_REPO,,}" = "${SOURCE_REPO,,}" ]; then' 'the channel job must refuse to publish a server release into the app repo (its releases/latest drives the app updater)'
 Require-Text $serverWorkflow $serverContent 'SOURCE_REPO: hajisensai/Fushi' 'the source repo identity must be one named constant'

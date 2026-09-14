@@ -182,6 +182,14 @@ jobs:
       - name: Pub get (workspace)
         working-directory: fushi
         run: flutter pub get
+      # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
+      # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: bash
@@ -287,6 +295,14 @@ jobs:
       - name: Pub get (workspace)
         working-directory: fushi
         run: flutter pub get
+      # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
+      # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh
