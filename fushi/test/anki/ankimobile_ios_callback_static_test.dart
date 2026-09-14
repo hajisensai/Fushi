@@ -106,4 +106,15 @@ void main() {
     // BUG-2150：失败文案必须过本地化入口（此前是硬编码英文，中文 UI 里原样显示）。
     expect(main, contains('AnkiViewModel.localizeAnkiFetchError'));
   });
+
+  test('Dart startup 把 AnkiMobile 的加卡回跳落进账本，而不是丢掉', () {
+    final main = File('lib/main.dart').readAsStringSync();
+
+    // `fushi://ankiSuccess` 是 iOS 上唯一「这张卡真进库了」的信号（手册：x-success
+    // 在 note is added 之后才回跳）。此前这条分支只有 `return true;`，于是
+    // AnkiMobileMinedLedger 无从建立、isDuplicate 只能恒 false，✓ 永远画不出。
+    expect(main, contains('fushiAnkiSuccessCallback'));
+    expect(main, contains('_recordAnkiMobileMinedNote('));
+    expect(main, contains('AnkiMobileMinedLedger.instance.record('));
+  });
 }

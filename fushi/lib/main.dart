@@ -63,6 +63,7 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
 import 'package:fushi/src/platform/platform_services.dart';
@@ -1176,6 +1177,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     if (normalized.startsWith(fushiAnkiSuccessCallback.toLowerCase())) {
+      await _recordAnkiMobileMinedNote(data);
       return true;
     }
     return false;
@@ -1229,6 +1231,26 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       }
     } finally {
       _sourceNavigationRunning = false;
+    }
+  }
+
+  /// AnkiMobile 加完卡回跳（`fushi://ankiSuccess?expression=…`）。
+  ///
+  /// 这是 iOS 上**唯一**能确知「这张卡真的进了 Anki」的时刻：手册对 `x-success` 的
+  /// 定义是「after the note is added」，而 `mineEntry` 那边只能确认「AnkiMobile 被
+  /// 拉起来了」。此前这条回调收到就丢，于是 [AnkiMobileMinedLedger] 无从建立、
+  /// `isDuplicate` 只能恒 `false`——iOS 用户永远看不到「已制卡」的 ✓。
+  ///
+  /// 不判后端类型：这个 scheme 只可能由我们发给 AnkiMobile 的 `x-success` 触发。
+  /// 落账失败只吞掉记日志，绝不打断回跳（用户此刻正在看着 app 从 AnkiMobile 切回来）。
+  Future<void> _recordAnkiMobileMinedNote(String data) async {
+    final Uri? uri = Uri.tryParse(data);
+    final String? expression = uri?.queryParameters['expression'];
+    if (expression == null || expression.isEmpty) return;
+    try {
+      await AnkiMobileMinedLedger.instance.record(expression);
+    } catch (e, stack) {
+      debugPrint('AnkiMobile mined ledger record failed: $e\n$stack');
     }
   }
 

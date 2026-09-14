@@ -7,7 +7,8 @@
 #   1. 把 FakeAnkiMobile 替身编好、卸载重装进模拟器（请求计数归零），并清空系统剪贴板
 #      （上一轮没被消费的 net.ankimobile.json 会一直留着，把「没写」形态污染成「写了」）；
 #   2. 卸载 Fushi 拿干净容器（别的分支留下的库 schema 可能更新，裸跑撞 downgrade）；
-#   3. 后台 `flutter test integration_test/ios_ankimobile_info_return_itest.dart -d <udid>`；
+#   3. 后台 `flutter test $TEST -d <udid>`（默认 info-return 往返；BUG-2532 的已制卡
+#      往返用 `TEST=integration_test/ios_ankimobile_mined_detection_itest.dart`）；
 #   4. 等它的 Xcode 构建结束后，再起 ios_alert_tapper（XCUITest）自动放行系统弹窗
 #      ——「"Fushi" 想要打开 "FakeAnki"」与「允许粘贴」。必须等构建结束：flutter 的
 #      xcodebuild 会把同一模拟器上正在跑的 XCUITest 会话打断（runner unexpected exit）。
@@ -20,6 +21,8 @@ UDID=${1:-969CB3A4-036B-4494-824E-087A427F3C10}
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FUSHI="$(cd "$HERE/../../.." && pwd)"
 TAPPER_DIR="$FUSHI/integration_test/support/ios_alert_tapper"
+# BUG-2532：同一套编排也用来跑「已制卡」往返，换测试文件即可。
+TEST=${TEST:-integration_test/ios_ankimobile_info_return_itest.dart}
 SHOTS=${SHOTS:-$HOME/dev/ios-shots/anki}
 LOG_DIR=${LOG_DIR:-$HOME/dev}
 ITEST_LOG="$LOG_DIR/anki-itest.log"
@@ -55,7 +58,7 @@ mkdir -p "$SHOTS" "$LOG_DIR" && rm -f "$SHOTS"/*.png "$ITEST_LOG" "$TAPPER_LOG"
   done ) &
 SHOT=$!
 
-( cd "$FUSHI" && flutter test integration_test/ios_ankimobile_info_return_itest.dart -d "$UDID" --no-pub > "$ITEST_LOG" 2>&1 ) &
+( cd "$FUSHI" && flutter test "$TEST" -d "$UDID" --no-pub > "$ITEST_LOG" 2>&1 ) &
 FT=$!
 
 ALLOW=""
