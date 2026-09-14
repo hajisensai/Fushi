@@ -231,7 +231,7 @@ Android / iOS / macOS 装服务端；`/api/ocr/job` 迁通用协议。
 - **Linux 桌面版 Fushi 仍未随包内置引擎**：服务端那份静态 `.so` 可直接复用，但 runner CMake copy-if-present 未接（另起 job）。
 - **WebUI 没有浏览器级自动化测试**：内联 JS 过 `node --check`，API 面走真进程 HTTP 冒烟；页面交互靠人工。
 - **audiobooks 库服务仍返回空集**（第 0 期既定），有声书不经 host 托管。
-- **`release-server.yml` 没有真跑过一次**：workflow 语法、`check_release_policy.ps1`、Dart 侧 workflow 守卫都过了，但发布链路的证据要等第一次手动 dispatch。
+- **发布链路（2026-09-14 改为独立仓 `hajisensai/fushi-server` 回调本仓 `workflow_call`）**：首个 beta 由那边 `release.yml` dispatch 触发；结果见该仓 Releases。
 
 ### 验证证据（本机 Windows）
 

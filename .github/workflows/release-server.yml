@@ -1,16 +1,25 @@
-# 无头服务端 fushi_server 的专用发布：Linux x64 + Windows x64 两个包，手动触发，
-# 发到本仓 GitHub Release，tag 前缀 `fushi-server-v`。
+# 无头服务端 fushi_server 的发布流水线：Linux x64 + Windows x64 两个包。
 #
-# ── 与 app 发布的关系（刻意分开）─────────────────────────────────────────────
+# ── 这是一条 workflow_call 可复用 workflow，只被独立发布仓调用 ─────────────────
+# Release 落在 https://github.com/hajisensai/fushi-server，**不落本仓**。那边只有
+# README / LICENSE / 一条薄 workflow（`.github/workflows/release.yml`），它
+# `uses: hajisensai/Fushi/.github/workflows/release-server.yml@develop` 调到这里。
+# 可复用 workflow 在**调用方**的仓库上下文里跑：GITHUB_TOKEN 是 fushi-server 的，
+# softprops/action-gh-release 于是发到 fushi-server；源码 checkout 显式钉
+# `repository: hajisensai/Fushi`（公开仓，不要 token）。零 PAT、零 secret、
+# 源码单份留在 monorepo。
+#
+# * 本仓自己**不能**发服务端包：channel job 第一步断言 github.repository 不是
+#   hajisensai/Fushi。理由是 app 稳定通道更新检查走本仓 `releases/latest`
+#   （update_checker_release.dart）；服务端包一旦在本仓成为 Latest，五端 app 会把
+#   「已是最新」判成「远端不比本机新」而永远停更。把 Release 整体搬去独立仓后这个
+#   冲突不存在了——formal 在 fushi-server 里就是正常的 Latest。断言让这条硬规则
+#   不再依赖「记得 make_latest 恒 false」。
 # * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
-#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，别再造第二条）。
+#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 hibiki 的
+#   checkout 上算，别再造第二条）。
 # * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
 #   debug 包没有消费者。
-# * **永远不做 Latest**（make_latest 恒 false，formal 也不例外）：app 的稳定通道更新
-#   检查走 `releases/latest`（update_checker_release.dart），服务端包一旦成为 Latest，
-#   五端 app 会把它当成「最新正式版」去比对——资产名对不上是不会错装，但会把
-#   「已是最新」判成「远端不比本机新」而永远停更。formal 通道的可见性靠 tag 前缀与
-#   Release 名，不靠 Latest 徽章。
 # * concurrency 组带 workflow 名：与 release.yml / release-desktop.yml 曾共用一个组
 #   时同 sha 触发的第一条会被取消（PR#1302 教训）。
 #
@@ -23,34 +32,38 @@
 name: release-server
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       channel:
-        description: Release channel (beta = prerelease; formal = non-prerelease, still never Latest)
-        type: choice
-        required: true
+        description: Release channel (beta = prerelease; formal = non-prerelease + Latest)
+        type: string
+        required: false
         default: beta
-        options:
-          - beta
-          - formal
+      source_ref:
+        description: hajisensai/Fushi ref to build from (branch / tag / sha)
+        type: string
+        required: false
+        default: develop
       tag_name:
-        description: Optional tag override (default fushi-server-v<version>-beta.<seq> / fushi-server-v<version>)
+        description: Optional tag override (default v<version>-beta.<seq> / v<version>)
+        type: string
         required: false
         default: ''
       release_name:
         description: Optional release name override
+        type: string
         required: false
         default: ''
 
-permissions:
-  contents: write
-
 concurrency:
-  group: fushi-server-release-${{ github.workflow }}-${{ github.event.inputs.tag_name || github.sha }}
+  # 可复用 workflow 里 github.sha 是调用方仓的 HEAD（几乎不变），拿它当 key 会让所有
+  # 服务端发布共用一个组、连发时中间那条被取消；按 run 独立，只有显式同 tag 才串行。
+  group: fushi-server-release-${{ github.workflow }}-${{ inputs.tag_name || github.run_id }}
   cancel-in-progress: false
 
 env:
   ORT_VERSION: '1.22.0'
+  SOURCE_REPO: hajisensai/Fushi
 
 jobs:
   channel:
@@ -64,8 +77,22 @@ jobs:
       make_latest: ${{ steps.resolve.outputs.make_latest }}
       body: ${{ steps.resolve.outputs.body }}
     steps:
+      - name: Refuse to publish server releases into the app repo
+        shell: bash
+        env:
+          CALLER_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # 大小写不敏感：github.repository 跟仓库显示名走（hajisensai/Fushi），只改大小写的
+          # 改名不能让这条断言静默失效。
+          if [ "${CALLER_REPO,,}" = "${SOURCE_REPO,,}" ]; then
+            echo "::error title=Wrong repository::fushi_server releases live in hajisensai/fushi-server; a server release in $SOURCE_REPO would become the app updater's releases/latest. Dispatch from the fushi-server repo."
+            exit 1
+          fi
       - uses: actions/checkout@v6
         with:
+          repository: hajisensai/Fushi
+          ref: ${{ inputs.source_ref }}
           fetch-depth: 0
       - name: Validate unified release policy
         shell: pwsh
@@ -74,9 +101,10 @@ jobs:
         id: resolve
         shell: bash
         env:
-          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
-          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
-          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           set -euo pipefail
           VERSION=$(grep '^version:' packages/fushi_server/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
@@ -86,35 +114,40 @@ jobs:
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
           fi
-          SHORT_SHA="${GITHUB_SHA::7}"
+          # 源码 sha 是 hibiki checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
+          SOURCE_SHA="$(git rev-parse --short HEAD)"
+          SOURCE="${SOURCE_REPO}@${INPUT_SOURCE_REF} (${SOURCE_SHA})"
           CHANNEL="${INPUT_CHANNEL:-beta}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
           NOTES_FILE="docs/release-notes/server-${VERSION}.md"
           PRERELEASE=true
-          # 服务端包永远不做 Latest（见文件头）。这是通道无关的硬规则，不进 case。
           MAKE_LATEST=false
           case "$CHANNEL" in
             beta)
-              TAG="${TAG:-fushi-server-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+              TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
               NAME="${NAME:-fushi_server ${VERSION} beta ${RELEASE_SEQUENCE}}"
-              BODY="Manual fushi_server beta build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Server releases are never Latest."
+              BODY="fushi_server beta build from ${SOURCE}."
               ;;
             formal)
-              TAG="${TAG:-fushi-server-v${VERSION}}"
+              TAG="${TAG:-v${VERSION}}"
               NAME="${NAME:-fushi_server ${VERSION}}"
-              BODY="Manual fushi_server formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Server releases are never Latest."
+              BODY="fushi_server ${VERSION} from ${SOURCE}."
               PRERELEASE=false
+              MAKE_LATEST=true
               ;;
             *)
               echo "::error title=Invalid release channel::Use beta or formal."
               exit 1
               ;;
           esac
-          if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+          if [ -f "$NOTES_FILE" ]; then
+            BODY="$(cat "$NOTES_FILE")"
+            BODY="${BODY}"$'\n\n'"Built from ${SOURCE}."
+          fi
           case "$TAG" in
-            fushi-server-*) : ;;
-            *) echo "::error title=Bad tag::server release tags must start with fushi-server- (got $TAG)"; exit 1 ;;
+            v[0-9]*) : ;;
+            *) echo "::error title=Bad tag::server release tags must look like v<version>[-beta.<seq>] (got $TAG)"; exit 1 ;;
           esac
           {
             echo "version=$VERSION"
@@ -135,6 +168,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -146,6 +182,14 @@ jobs:
       - name: Pub get (workspace)
         working-directory: fushi
         run: flutter pub get
+      # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
+      # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: bash
@@ -241,6 +285,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ inputs.source_ref }}
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -248,6 +295,14 @@ jobs:
       - name: Pub get (workspace)
         working-directory: fushi
         run: flutter pub get
+      # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
+      # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh
@@ -344,6 +399,10 @@ jobs:
       - linux
       - windows
     runs-on: ubuntu-latest
+    # 可复用 workflow 的权限上限由调用方决定；调用方（fushi-server 的 release.yml）
+    # 给 contents: write，这里的 GITHUB_TOKEN 就是 fushi-server 的。
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v7
         with:
@@ -360,8 +419,8 @@ jobs:
           name: ${{ needs.channel.outputs.name }}
           body: ${{ needs.channel.outputs.body }}
           prerelease: ${{ needs.channel.outputs.prerelease }}
-          # 恒 false（见文件头）；用 output 而不是字面量，与 check_release_policy 的
-          # 「不得硬编码 make_latest: true」同一条纪律。
+          # 只有 formal 为 true（channel 输出）；用 output 而不是字面量，与
+          # check_release_policy 的「make_latest 不得硬编码为字面量」同一条纪律。
           make_latest: ${{ needs.channel.outputs.make_latest }}
           files: |
             release-artifacts/fushi_server-*-linux-x64.tar.gz
