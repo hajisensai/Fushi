@@ -692,6 +692,58 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return row.read(cnt)!;
   }
 
+  // ── Profile 分区（v105：统计按 Profile 隔离）────────────────────
+  // 住这一层而不是 _FushiDbStatistics：删除原语在 _FushiDbContentMisc、写入 /
+  // 读取在 _FushiDbStatistics，mixin 只能向下看，公共解析点必须在两者之下。
+
+  Future<String?> _prefValueOf(String key) async {
+    final PreferenceRow? row =
+        await (select(preferences)..where((t) => t.key.equals(key)))
+            .getSingleOrNull();
+    return row?.value;
+  }
+
+  /// 当前激活的 Profile id（统计分区键的**唯一**解析点）。
+  ///
+  /// 读 `active_profile_id` 偏好并验证该 Profile 还在；不在 / 缺失时退到最早建的
+  /// Profile（与 fushi 层 `ensureDefaultProfile` 的兜底同序）；库里一个 Profile
+  /// 都没有时返回 0——只在纯 DB 测试里出现（app 启动即 `ensureDefaultProfile`），
+  /// 此时写入盖 0、读取滤 0，测试里写读自洽。**不在这里建 Profile**：建
+  /// Profile 必须连带快照设置（`snapshotCurrentSettings`，在 fushi 层），DB 层
+  /// 造一个空快照的 Profile 会让下次 `applyProfile` 把全部偏好剪光。
+  Future<int> resolveActiveProfileId() async {
+    final String? raw = await _prefValueOf(kActiveProfileIdPrefKey);
+    final int fromPref = int.tryParse(raw ?? '') ?? -1;
+    if (fromPref > 0 && await getProfileById(fromPref) != null) {
+      return fromPref;
+    }
+    final List<ProfileRow> all = await getAllProfiles();
+    return all.isEmpty ? 0 : all.first.id;
+  }
+
+  /// legacy 统计家族归属的 Profile id（[kStatLegacyProfileIdPrefKey]）；null =
+  /// 无归属 = 对所有 Profile 可见。
+  Future<int?> getStatLegacyProfileId() async {
+    final String? raw = await _prefValueOf(kStatLegacyProfileIdPrefKey);
+    final int? id = int.tryParse(raw ?? '');
+    return id != null && id > 0 ? id : null;
+  }
+
+  /// legacy 统计行对 [profileId] 是否可见（读取面与「清空全部」的 legacy 删行
+  /// 共用同一判据：看不见的历史不能被另一个 Profile 的清空连带删掉）。
+  Future<bool> legacyStatsVisibleTo(int profileId) async {
+    final int? owner = await getStatLegacyProfileId();
+    return owner == null || owner == profileId;
+  }
+
+  /// 缺席 `profileId` 的段补上当前激活 Profile（写入方不用知道 Profile）。
+  Future<StudySegmentsCompanion> _stampStudySegmentProfile(
+    StudySegmentsCompanion row,
+  ) async =>
+      row.profileId.present
+          ? row
+          : row.copyWith(profileId: Value(await resolveActiveProfileId()));
+
   // ── profile settings ─────────────────────────────────────────────
   Future<List<ProfileSettingRow>> getProfileSettings(int profileId) =>
       (select(profileSettings)..where((t) => t.profileId.equals(profileId)))

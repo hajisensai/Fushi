@@ -34,6 +34,7 @@ StudySegmentRow _seg(
   chars: chars,
   pages: pages,
   updatedAt: end,
+  profileId: 0,
 );
 
 const int _min = 60 * 1000;
@@ -120,6 +121,7 @@ void main() {
       endMs: 160 * _min,
       durationSeconds: 3600,
       dateKey: '2026-09-08',
+      profileId: 0,
     );
     final List<StudySession> out = deriveStudySessions(
       segments: <StudySegmentRow>[
@@ -149,6 +151,7 @@ void main() {
       endMs: 60 * _min,
       durationSeconds: 3600,
       dateKey: '2026-09-08',
+      profileId: 0,
     );
     final List<StudySession> out = deriveStudySessions(
       segments: <StudySegmentRow>[
@@ -195,6 +198,7 @@ void main() {
           endMs: _min,
           durationSeconds: 60,
           dateKey: '2026-09-08',
+          profileId: 0,
         ),
       ],
     );

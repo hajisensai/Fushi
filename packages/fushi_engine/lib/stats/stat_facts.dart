@@ -294,39 +294,62 @@ class StatFacts {
 /// 统计页不要活动行时最近游玩会话仍按这个上限取（会话流骨架）。
 const int kRecentGameSessionsLimit = 200;
 
+/// legacy 活动行里属于「学习统计」的事件类型（v92 前的 read / watch / game 行）：
+/// v105 起只对 legacy 归属 Profile 露出；其余类型（`added` 导入事件）是库事件，
+/// 库不按 Profile 分，对谁都露出。
+const Set<String> kLegacyStudyActivityTypes = <String>{
+  kActivityRead,
+  kActivityWatch,
+  kActivityGame,
+};
+
+/// v105（统计按 Profile 隔离）：只装载 [profileId]（null = 当前激活 Profile）的
+/// 事实。v92 段与游玩会话按 `profile_id` 列过滤；legacy 四表 + legacy 活动行没有
+/// Profile 维度，只在 [profileId] 是 legacy 归属 Profile
+/// （[FushiDatabase.getStatLegacyProfileId]，无归属 = 所有人）时装载，否则整批为空。
 Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
   bool includeCounters = false,
+  int? profileId,
 }) async {
+  final int scope = profileId ?? await db.resolveActiveProfileId();
+  final bool legacyVisible = await db.legacyStatsVisibleTo(scope);
   // 十个全表读互不依赖（[includeCounters] 时再挂计数面的四个）：一次全部发出去让
   // Drift 后台执行器流水线化，而不是每个都等上一个往返回来（首页与三个统计页每次
   // 打开都走这里）。先 Future.wait 挂上监听，某个失败时其余错误不会成为无人接的
   // 未处理异常。
   final Future<List<EpubBookMeta>> epubRowsF = db.getEpubBookMetas();
-  final Future<List<ReadingStatisticRow>> readingF =
-      db.getAllReadingStatistics();
-  final Future<List<VideoWatchStatisticRow>> watchF =
-      db.getAllVideoWatchStatistics();
-  final Future<List<ReadingHourlyLogRow>> readingHourlyF =
-      db.getAllReadingHourlyLogs();
-  final Future<List<VideoHourlyLogRow>> videoHourlyF =
-      db.getAllVideoHourlyLogs();
+  final Future<List<ReadingStatisticRow>> readingF = legacyVisible
+      ? db.getAllReadingStatistics()
+      : Future<List<ReadingStatisticRow>>.value(<ReadingStatisticRow>[]);
+  final Future<List<VideoWatchStatisticRow>> watchF = legacyVisible
+      ? db.getAllVideoWatchStatistics()
+      : Future<List<VideoWatchStatisticRow>>.value(<VideoWatchStatisticRow>[]);
+  final Future<List<ReadingHourlyLogRow>> readingHourlyF = legacyVisible
+      ? db.getAllReadingHourlyLogs()
+      : Future<List<ReadingHourlyLogRow>>.value(<ReadingHourlyLogRow>[]);
+  final Future<List<VideoHourlyLogRow>> videoHourlyF = legacyVisible
+      ? db.getAllVideoHourlyLogs()
+      : Future<List<VideoHourlyLogRow>>.value(<VideoHourlyLogRow>[]);
   final Future<List<(String, String, int)>> gameDailyF =
-      db.getGalgameDailySecondsByGame();
+      db.getGalgameDailySecondsByGame(profileId: scope);
   final Future<List<ActivityEventRow>> activityF =
       db.getRecentActivityEvents(limit: activityLimit);
-  final Future<List<ActivityEventRow>> gameActivityF =
-      db.getRecentActivityEvents(
-    limit: 1 << 31,
-    eventTypes: const <String>[kActivityGame],
-  );
-  final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments();
+  final Future<List<ActivityEventRow>> gameActivityF = legacyVisible
+      ? db.getRecentActivityEvents(
+          limit: 1 << 31,
+          eventTypes: const <String>[kActivityGame],
+        )
+      : Future<List<ActivityEventRow>>.value(<ActivityEventRow>[]);
+  final Future<List<StudySegmentRow>> segmentsF =
+      db.getStudySegments(profileId: scope);
   // 最近游玩会话不随 [activityLimit] 门控：会话流（[StatFacts.sessions]）在统计页
   // 也要它——统计页传 0 只是不要 legacy 活动行。
   final Future<List<GalgameSessionRow>> recentGameSessionsF =
       db.getRecentGalgameSessions(
     limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
+    profileId: scope,
   );
   // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。
   final Future<StatCounterFacts> countersF = includeCounters
@@ -445,7 +468,13 @@ Future<StatFacts> loadStatFacts(
   // legacy 活动行：v92 前的游戏 hook 字数只存在这里（chars-only game 行）；
   // read / watch 行的时长 / 字数已在日投影里，**只**取 game 的字数进日面，
   // 时长一律不取（时长真相源是 galgame_sessions，取了就双计）。
-  final List<ActivityEventRow> activity = await activityF;
+  // v105：legacy 学习行只给归属 Profile；`added` 等库事件不分 Profile。
+  final List<ActivityEventRow> activity = legacyVisible
+      ? await activityF
+      : <ActivityEventRow>[
+          for (final ActivityEventRow e in await activityF)
+            if (!kLegacyStudyActivityTypes.contains(e.eventType)) e,
+        ];
   for (final ActivityEventRow e in await gameActivityF) {
     final int chars = e.charsDelta ?? 0;
     if (chars <= 0) continue;

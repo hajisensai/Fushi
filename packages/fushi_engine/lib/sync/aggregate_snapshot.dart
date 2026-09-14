@@ -583,6 +583,7 @@ class StudySegmentRecord {
     required this.chars,
     required this.pages,
     required this.updatedAt,
+    this.profileName = '',
   });
 
   final String uid;
@@ -600,8 +601,15 @@ class StudySegmentRecord {
   final int pages;
   final int updatedAt;
 
-  /// 墓碑键（与 [StudyTombstoneRecord.key] 同公式）。
-  String get mediaIdentity => '$mediaKind|$mediaKey';
+  /// v105（统计按 Profile 隔离）：产生本段的 Profile **名字**（additive 字段；
+  /// 旧端不发 = ''）。本机自增 `profile_id` 不跨端，名字是两端唯一能对上的
+  /// 身份（备份合并 `_mergeProfilesAndChildren` 同一套按名映射）。落地时按名字
+  /// 找本机同名 Profile；找不到 / 为空落进当前激活 Profile。
+  final String profileName;
+
+  /// 墓碑键（与 [StudyTombstoneRecord.key] 同公式）：v105 起带 Profile 名，A
+  /// Profile 的碑只压 A 的段。
+  String get mediaIdentity => '$profileName|$mediaKind|$mediaKey';
 
   Map<String, Object?> toJson() => <String, Object?>{
         'uid': uid,
@@ -618,6 +626,7 @@ class StudySegmentRecord {
         'chars': chars,
         'pages': pages,
         'updatedAt': updatedAt,
+        if (profileName.isNotEmpty) 'profileName': profileName,
       };
 
   static StudySegmentRecord? fromJson(Map<String, Object?> json) {
@@ -647,28 +656,37 @@ class StudySegmentRecord {
       chars: _asInt(json['chars']),
       pages: _asInt(json['pages']),
       updatedAt: _asInt(json['updatedAt']),
+      profileName:
+          json['profileName'] is String ? json['profileName']! as String : '',
     );
   }
 }
 
 /// v92 按媒体身份的统计删除墓碑（`study_segment_tombstones` 一行一条）。
+///
+/// v105：带 [profileName]（同 [StudySegmentRecord.profileName]）。落地时名字对不上
+/// 本机任何 Profile 的碑**丢弃**而不是落进激活 Profile——碑会压制该媒体删除之前
+/// 的全部段，落错 Profile 就是把别人的历史删了。
 class StudyTombstoneRecord {
   const StudyTombstoneRecord({
     required this.mediaKind,
     required this.mediaKey,
     required this.deletedAt,
+    this.profileName = '',
   });
 
   final String mediaKind;
   final String mediaKey;
   final int deletedAt;
+  final String profileName;
 
-  String get key => '$mediaKind|$mediaKey';
+  String get key => '$profileName|$mediaKind|$mediaKey';
 
   Map<String, Object?> toJson() => <String, Object?>{
         'mediaKind': mediaKind,
         'mediaKey': mediaKey,
         'deletedAt': deletedAt,
+        if (profileName.isNotEmpty) 'profileName': profileName,
       };
 
   static StudyTombstoneRecord? fromJson(Map<String, Object?> json) {
@@ -681,6 +699,8 @@ class StudyTombstoneRecord {
       mediaKind: mediaKind,
       mediaKey: mediaKey,
       deletedAt: _asInt(json['deletedAt']),
+      profileName:
+          json['profileName'] is String ? json['profileName']! as String : '',
     );
   }
 }

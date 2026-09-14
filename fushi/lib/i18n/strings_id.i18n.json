@@ -4848,5 +4848,6 @@
   "reader_control_reject_title": "The book title only fits the top center; nothing else goes there.",
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
-  "reader_control_reset_layout": "Restore default reader button layout"
+  "reader_control_reset_layout": "Restore default reader button layout",
+  "stat_center_profile_scope": "Showing statistics for profile \"$name\" only"
 }

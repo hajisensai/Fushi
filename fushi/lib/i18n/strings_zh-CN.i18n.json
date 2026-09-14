@@ -4848,5 +4848,6 @@
   "reader_control_reject_title": "书名只能放在顶栏中间，其它按钮不能放那里。",
   "reader_control_editor_title": "阅读器按钮布局",
   "reader_control_editor_hint": "把按钮拖到顶栏或底栏的任意位置，或移出。",
-  "reader_control_reset_layout": "恢复默认阅读器按钮布局"
+  "reader_control_reset_layout": "恢复默认阅读器按钮布局",
+  "stat_center_profile_scope": "仅显示配置「$name」的统计"
 }

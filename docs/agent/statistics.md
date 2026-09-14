@@ -40,7 +40,20 @@
 - legacy 家族仍走 MAX-union / `setVideoWatchStatistic` 塌缩 / deficit-lift——那是旧数据的旧口径，**不要**把段接进去，也不要从段折叠回 legacy 字段（会双计）。
 - 已知取舍：新端 v92 之后的统计旧端看不到，互联两端须同升；墓碑语义变更同样要求两端同升（旧端仍按 `updatedAt` 仲裁，会让新端已删的段在旧端存活并回传，新端落地时按新语义再压制）。
 
+## Profile 隔离（v105，2026-09-15 起）
+
+用户拍板「不同配置（Profile）的统计做成隔离的」：切 Profile 后统计中心 / 首页 / 最近观看 / 游戏库汇总只看当前 Profile 的数字，各 Profile 互不可见。
+
+- **分区键**：`study_segments.profile_id` / `study_segment_tombstones.profile_id`（并入主键）/ `galgame_sessions.profile_id`，值是本库 `profiles.id`。**写入方（`StudyClock` / galgame hook / 游玩会话）不知道 Profile**：companion 缺席 `profileId` 时 DAO 从 `active_profile_id` 偏好盖戳（`FushiDatabase.resolveActiveProfileId`，唯一解析点：偏好 → 校验存在 → 退最早建的 → 无 Profile 为 0）。**只在插入时盖戳，同 uid 冲突更新 / 同步 LWW 都不改归属**——段的 Profile 在开段那一刻定死，中途切 Profile 不挪已开的段。不加 FK：删 Profile 不 cascade 删历史，行留着、对谁都不可见。
+- **读取面**：`loadStatFacts(db, profileId:)`（null = 当前激活）只取该 Profile 的段与游玩会话；`getLatestStudyEndAtByMedia` / `getGalgamePlayTotals` / `getGalgameSessions` / 每日游戏秒数全部带当前 Profile 谓词。`getStudySegments(allProfiles: true)` **只给同步导出用**。
+- **legacy 家族**（v92 前四张投影表 + `activity_events` 的 read/watch/game 行）冻结不加列：v105 迁移把升级那一刻激活的 Profile 记进偏好 `stats_legacy_profile_id`（`kStatLegacyProfileIdPrefKey`，设备本地键——进了 `ProfileKeys` 排除表与 `SyncRepository.deviceLocalPrefKeys`，绝不随快照 / 备份出境），读取面只对它露出 legacy 行（`legacyStatsVisibleTo`）；偏好缺失 = 无归属 = 对所有 Profile 可见（fresh 库里 legacy 行只可能经旧端同步 / 备份进来）。`added` 导入事件是库事件，不分 Profile。「清空全部阅读 / 视频统计」只在当前 Profile 看得见 legacy 行时才连带删 legacy 与计数面。
+- **删除 / 墓碑**：`deleteStudySegmentsForMedia` / `clearStudySegments` / `zeroStudySegmentsOnDays` / `deleteStatFactsOnDays` 只动当前 Profile；碑按 Profile 分区、只压同 Profile 的段（A 删某书统计不压 B 的同一本书）。
+- **同步 wire**：本机自增 id 不出机，`StudySegmentRecord.profileName` / `StudyTombstoneRecord.profileName` 传 Profile **名字**（additive，旧端不发 = ''），仲裁键 `mediaIdentity` / `key` 带名字。落地按名字找本机同名 Profile：段找不到（或空名）落**当前激活 Profile**（数据不丢，归属退化）；碑空名落激活 Profile、名字对不上**丢弃**（压错 Profile = 删别人的历史）。备份 ATTACH 合并同一套按名映射（`_profileMapJoin`），且 `_mergeProfilesAndChildren` 先于统计并入，src 独有的 Profile 先按名建出来再落统计。**两端 Profile 同名才能对上**：改名后新段会落到对端激活 Profile，这是已知取舍。
+- **迁移 v105**：存量段 / 碑 / 游玩会话全部回填到激活 Profile（无激活取最早建的；一个都没有就在迁移里建 `Default` 并设为激活——旧历史必须有归属，否则新建一个 Profile 旧统计就对谁都不可见）。碑表 PK 变 = `study_segment_tombstones_v105` 重建。
+- 统计中心页头副标题写明当前 Profile（i18n `stat_center_profile_scope`）。
+- 守卫 / 契约：`test/database/migration_v105_study_profile_test.dart`、`test/database/study_segments_profile_isolation_test.dart`、`test/sync/aggregate_study_segments_profile_sync_test.dart`。
+
 ## 改统计相关代码前
 
-1. 跑 `flutter test test/tools/statistics_write_convergence_guard_test.dart test/media/audiobook/study_clock_test.dart test/database/study_segments_test.dart test/sync/aggregate_study_segments_sync_test.dart test/stats/read_unit_ledger_test.dart test/stats/interval_coverage_test.dart --no-pub`。
+1. 跑 `flutter test test/tools/statistics_write_convergence_guard_test.dart test/media/audiobook/study_clock_test.dart test/database/study_segments_test.dart test/database/study_segments_profile_isolation_test.dart test/sync/aggregate_study_segments_sync_test.dart test/sync/aggregate_study_segments_profile_sync_test.dart test/stats/read_unit_ledger_test.dart test/stats/interval_coverage_test.dart --no-pub`。
 2. 新写入面 = 新的 `StudyClock` 实例，不是新表；新展示 = 从 `StatFacts` 派生，不是新查询。

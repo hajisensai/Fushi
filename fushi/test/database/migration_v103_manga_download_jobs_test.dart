@@ -115,7 +115,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 104);
+    expect(upgraded.schemaVersion, 105);
 
     // 邻居表原样在（Never break userspace）。
     expect(await upgraded.updateFeedEntriesPage(), hasLength(1));

@@ -317,6 +317,19 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'CREATE INDEX IF NOT EXISTS idx_study_segments_device_updated '
             'ON study_segments (device_id, updated_at)',
       ],
+      // v105 统计按 Profile 隔离：读取面全部带 profile_id 谓词，再按日窗口。
+      [
+        'study_segments',
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_date '
+            'ON study_segments (profile_id, date_key)',
+        'profile_id'
+      ],
+      [
+        'galgame_sessions',
+        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
+            'ON galgame_sessions (profile_id, date_key)',
+        'profile_id'
+      ],
     ];
     for (final List<String> entry in indexes) {
       if (!await _tableExists(entry[0])) continue;

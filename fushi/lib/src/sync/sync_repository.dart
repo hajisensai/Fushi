@@ -1204,6 +1204,9 @@ class SyncRepository {
   ];
 
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
+    // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
+    kStatLegacyProfileIdPrefKey,
     _keyBackendType,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）

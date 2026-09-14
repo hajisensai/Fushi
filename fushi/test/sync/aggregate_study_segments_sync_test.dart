@@ -215,8 +215,8 @@ void main() {
               ),
             ],
           );
-      expect(tombs['video|v1']!.deletedAt, 150, reason: '同键取 max');
-      tombs['game|g1'] = const StudyTombstoneRecord(
+      expect(tombs['|video|v1']!.deletedAt, 150, reason: '同键取 max');
+      tombs['|game|g1'] = const StudyTombstoneRecord(
         mediaKind: 'game',
         mediaKey: 'g1',
         deletedAt: 1,
@@ -238,8 +238,8 @@ void main() {
       );
       expect(out.segments.map((r) => r.uid).toSet(), <String>{'new', 'other'});
       expect(out.tombstones.map((t) => t.key).toSet(), <String>{
-        'video|v1',
-        'video|v2',
+        '|video|v1',
+        '|video|v2',
       }, reason: '碑永不因后来的段退场；游戏碑不进');
     });
   });
