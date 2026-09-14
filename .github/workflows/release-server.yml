@@ -56,7 +56,9 @@ on:
         default: ''
 
 concurrency:
-  group: fushi-server-release-${{ github.workflow }}-${{ inputs.tag_name || github.sha }}
+  # 可复用 workflow 里 github.sha 是调用方仓的 HEAD（几乎不变），拿它当 key 会让所有
+  # 服务端发布共用一个组、连发时中间那条被取消；按 run 独立，只有显式同 tag 才串行。
+  group: fushi-server-release-${{ github.workflow }}-${{ inputs.tag_name || github.run_id }}
   cancel-in-progress: false
 
 env:
@@ -81,7 +83,9 @@ jobs:
           CALLER_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if [ "$CALLER_REPO" = "$SOURCE_REPO" ]; then
+          # 大小写不敏感：github.repository 跟仓库显示名走（hajisensai/Fushi），只改大小写的
+          # 改名不能让这条断言静默失效。
+          if [ "${CALLER_REPO,,}" = "${SOURCE_REPO,,}" ]; then
             echo "::error title=Wrong repository::fushi_server releases live in hajisensai/fushi-server; a server release in $SOURCE_REPO would become the app updater's releases/latest. Dispatch from the fushi-server repo."
             exit 1
           fi

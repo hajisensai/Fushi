@@ -215,7 +215,7 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
 隔离子进程/DLL；但两架构产物在**构建期**就解压进 Windows 主包的 `voice_hook/<arch>/`（BUG-1449），
 从而离线首装可用、运行期零网络。
 
-> 历史：这套组件曾整体迁到独立仓库 `hajisensai/Fushi-hook`。迁出的真正根因是 CI——主仓库那份
+> 历史：这套组件曾整体迁到独立仓库 `hajisensai/hibiki-hook`。迁出的真正根因是 CI——主仓库那份
 > workflow 不在默认分支，GitHub 不暴露 `workflow_dispatch` 入口，release 从没被产出过；合仓后
 > workflow 就在默认分支 `develop` 上，该问题不复存在。另一条写在红线里的理由「必被杀软报毒」
 > 自 C.1 起从未被验证过，**实测已证伪**：Windows Defender（签名 1.455.357.0、实时保护开启、
@@ -232,10 +232,10 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   app 侧**再无任何联网取 helper 的代码路径**——`galgame_helper_installer.dart` 里一个 http 都没有。
   - ⚠️ **代价是已知且被接受的**：2026-07-20（`3eb73c880c` 引入按需下载）到 2026-07-26 之间
     发布的 Windows debug 包既没有随包 helper（离线随包 `a3d741778c` 是 07-27 才落地），又把
-    `kGalgameHelperRepo = 'hajisensai/Fushi'` 编进了常量（该仓已改名，URL 重定向到
+    `kGalgameHelperRepo = 'hajisensai/hibiki'` 编进了常量（该仓已改名，URL 重定向到
     `hajisensai/Fushi`）。这批包里**没更新过的**用户开 galgame 会撞 404「引擎组件下载失败」，
     症状同 BUG-961，唯一恢复手段是更新到新版。用户 2026-08-11 明确拍板接受此破坏。
-  - 更早的一批客户端把 `hajisensai/Fushi-hook` 编进常量，**那个仓库早已不存在**，与本次删除无关。
+  - 更早的一批客户端把 `hajisensai/hibiki-hook` 编进常量，**那个仓库早已不存在**，与本次删除无关。
 - **构建入口**：`native/galgame_hook/tools/build_distribution.ps1 -RunTests` 是唯一组包入口，
   cmake 编 x64（`-A x64`）+ x86（`-A Win32`），每架构打 `voice_hook_<arch>.zip`（injector/hook/
   LunaHook/LunaHost，x86 另带 Locale Emulator）+ `.sha256` 侧车，并写入当前 helper 构建输入的

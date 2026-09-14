@@ -248,7 +248,7 @@ Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a serve
 Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'
 Require-Text $serverWorkflow $serverContent 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'server release sequence must come from the shared script'
 Require-Text $serverWorkflow $serverContent 'workflow_call:' 'the server publisher is a reusable workflow invoked from hajisensai/fushi-server'
-Require-Text $serverWorkflow $serverContent 'if [ "$CALLER_REPO" = "$SOURCE_REPO" ]; then' 'the channel job must refuse to publish a server release into the app repo (its releases/latest drives the app updater)'
+Require-Text $serverWorkflow $serverContent 'if [ "${CALLER_REPO,,}" = "${SOURCE_REPO,,}" ]; then' 'the channel job must refuse to publish a server release into the app repo (its releases/latest drives the app updater)'
 Require-Text $serverWorkflow $serverContent 'SOURCE_REPO: hajisensai/Fushi' 'the source repo identity must be one named constant'
 Require-Text $serverWorkflow $serverContent 'make_latest: ${{ needs.channel.outputs.make_latest }}' 'make_latest must flow from the channel output (never a literal)'
 Require-Text $serverWorkflow $serverContent 'v[0-9]*) : ;;' 'server release tags must be validated as v<version>[-beta.<seq>]'
