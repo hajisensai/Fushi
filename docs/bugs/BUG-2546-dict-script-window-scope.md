@@ -17,6 +17,8 @@
 
   旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，**第 N 次查词与第一次完全等价**。三份镜像（app 弹窗 / `fushi/assets/browser_extension/vendor/` / `tools/browser-extension/vendor/`）同步改。
 
-- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dict_script_scope_test.js` + `.dart` 包装。行为级：用 Node 真跑 `runDictScripts`，连开三个词典块，断言每块都完整初始化（不被上一块留在 window 上的标记短路）、window 级监听恰好落在本块 root 一次、真 window 与真 document 上不留任何痕迹；在修复前的 `dict-media.js` 上跑会红。源码级：三份镜像都必须定义 `createScopedWindow`、把 scoped window 传给 `factory.call`、并用 `with (window)` 包裹脚本体（防只改一份）。既有的 `tools/browser-extension/dict-script-exec.test.js` 10 条契约保持全绿。
+- **[x] ② 已加自动化测试** — 行为级并入既有 `tools/browser-extension/dict-script-exec.test.js`（Node 把真 `dict-media.js` 载进 vm 跑 `runDictScripts`）：连开三个词典块，断言每块都完整初始化（不被上一块留在 window 上的标记短路）、window 级监听恰好落在本块 root 一次、真 window 与真 document上不留痕迹、`document.defaultView` 指回本块代理。在修复前的 `dict-media.js` 上这三条全红，既有 10 条契约不受影响（10 pass / 3 fail → 13 pass）。
+
+  Dart 侧 `fushi/test/pages/popup_dict_script_scope_test.dart` 把它接进 `flutter test`（无 node 时 skip，并按 pass 数挡住「一条没跑也算过」），另加源码守卫：三份镜像都必须把 scoped window 传给 `factory.call`、用 `with (window)` 包脚本体，且三份 `createScopedWindow` 实现**逐字一致**——行为测试只跑得到 vendor 那份，靠这条把 app 弹窗那份钉在同一实现上。
 
 - **备注**：`runDictScripts` 取不到脚本源码时（词典包没带 js / 媒体库里没有）本就一行都不执行，点击会一路冒泡到 `popup.js` 的 `__fushiPopupClick`，落在 `.glossary-content` 分支去取词——那是另一回事，不在本条范围内。

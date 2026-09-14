@@ -345,11 +345,12 @@ function createScopedWindow(root, scopedDocument, dictName) {
         // 生命周期事件与 document 代理同语义：弹窗早就 ready 了，照原样注册永不触发，
         // 这里立刻（微任务）补发一次。
         if (type === 'DOMContentLoaded' || type === 'load' || type === 'readystatechange') {
-            const fn = typeof handler === 'function'
-                ? handler
-                : (handler && typeof handler.handleEvent === 'function'
-                    ? handler.handleEvent.bind(handler)
-                    : null);
+            let fn = null;
+            if (typeof handler === 'function') {
+                fn = handler;
+            } else if (handler && typeof handler.handleEvent === 'function') {
+                fn = handler.handleEvent.bind(handler);
+            }
             if (fn) {
                 Promise.resolve().then(() => {
                     try {
@@ -435,15 +436,14 @@ async function runDictScripts(root, dictName) {
     }
     if (!chunks.length) return;
 
-    const combined = chunks.join('\n;\n');
+    // `with (window)` 把**裸标识符**也接到 window 代理上（见 createScopedWindow）。少了它，
+    // 代理只管得住 `window.x` 这种带前缀的写法：jQuery 把自己写进 window（→ 本块私有表）
+    // 之后，同一本词典的下一份脚本里裸写的 `$(…)` 会解析到真全局、拿到 undefined。
+    const combined = `with (window) {\n${chunks.join('\n;\n')}\n}`;
     let factory = __dictScriptFnCache.get(combined);
     if (factory === undefined) {
         try {
-            // `with (window)` 把**裸标识符**也接到 window 代理上。少了它，代理只管得住
-            // `window.x` 这种带前缀的写法：jQuery 把自己写进 window（→ 本块私有表）之后，
-            // 同一本词典的下一份脚本里裸写的 `$(…)` 会解析到真全局、拿到 undefined。
-            factory = new Function('document', 'window', 'self', '__reportDictScriptError',
-                `with (window) {\n${combined}\n}`);
+            factory = new Function('document', 'window', 'self', '__reportDictScriptError', combined);
         } catch (error) {
             factory = null;  // 整段都编译不了（语法错误）；记一次，别每个词条再试一遍
             reportDictScriptError(dictName, 'compile', error);

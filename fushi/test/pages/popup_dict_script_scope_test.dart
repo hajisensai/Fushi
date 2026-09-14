@@ -15,47 +15,58 @@ import 'package:flutter_test/flutter_test.dart';
 ///    绑不上，从此永久点不开。
 ///
 /// 两层守护：
-/// ① 行为级 —— 用 Node 真跑 `dict-media.js` 的 `runDictScripts`，连开三个词典块，断言每块
-///    都完整初始化、window 级监听落在本块、真 window 上不留任何痕迹。无 node 时 skip。
+/// ① 行为级 —— 用 Node 真跑 `tools/browser-extension/dict-script-exec.test.js`（它把真
+///    `dict-media.js` 载进 vm），连开三个词典块，断言每块都完整初始化、window 级监听落在
+///    本块、真 window 上不留任何痕迹。无 node 时 skip。
 /// ② 源码级 —— 三份镜像（app 弹窗 / 两份浏览器扩展 vendor）都必须真的把 scoped window 交
-///    给脚本，避免只改了一份。
+///    给脚本，且三份的代理实现逐字一致：行为测试只跑得到 vendor 那份，这条把 app 弹窗那份
+///    钉在同一实现上。
 void main() {
   test(
-    'dictionary scripts get a per-block window (executes runDictScripts via node)',
-    () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
-        return;
-      }
+      'dictionary scripts get a per-block window (runs the JS harness via node)',
+      () async {
+    final String? nodeExe = _resolveNode();
+    if (nodeExe == null) {
+      markTestSkipped('node not found on PATH; skipping JS behavior execution');
+      return;
+    }
 
-      final File jsTest = File('test/pages/popup_dict_script_scope_test.js');
-      expect(
-        jsTest.existsSync(),
-        isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist',
-      );
+    final File jsTest = File(
+      '../tools/browser-extension/dict-script-exec.test.js',
+    );
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
+    );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+    final ProcessResult result = await Process.run(
+      nodeExe,
+      <String>[jsTest.path],
+      workingDirectory: Directory.current.path,
+    );
 
-      expect(
-        result.exitCode,
-        0,
-        reason: 'dictionary script scope JS behavior test failed.\n'
-            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-      );
-      expect(
-        result.stdout.toString(),
-        contains('all assertions passed'),
-        reason: 'behavior harness must reach its success marker',
-      );
-    },
-  );
+    expect(
+      result.exitCode,
+      0,
+      reason: 'dictionary script execution behavior tests failed.\n'
+          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+    );
+
+    // 顺带挡住「一条都没跑也算过」：node:test 摘要里的 pass 数必须覆盖到本 BUG 的用例。
+    final RegExpMatch? passes =
+        RegExp(r'pass\D+(\d+)').firstMatch(result.stdout.toString());
+    expect(
+      passes,
+      isNotNull,
+      reason: 'behavior harness must report how many tests passed',
+    );
+    expect(
+      int.parse(passes!.group(1)!),
+      greaterThanOrEqualTo(13),
+      reason: 'the per-block-window cases must be part of the run',
+    );
+  });
 
   test('all three dict-media.js mirrors hand the scripts a scoped window', () {
     const List<String> mirrors = <String>[
@@ -64,6 +75,7 @@ void main() {
       '../tools/browser-extension/vendor/dict-media.js',
     ];
 
+    final List<String> scopedWindowBodies = <String>[];
     for (final String path in mirrors) {
       final File file = File(path);
       expect(file.existsSync(), isTrue, reason: '$path must exist');
@@ -87,6 +99,24 @@ void main() {
         source.contains(r'`with (window) {'),
         isTrue,
         reason: '$path must wrap dictionary scripts in `with (window)`',
+      );
+
+      final int start = source.indexOf('function createScopedWindow(');
+      final int end = source.indexOf('\n}\n', start);
+      expect(
+        end,
+        greaterThan(start),
+        reason: '$path: unterminated createScopedWindow',
+      );
+      scopedWindowBodies.add(source.substring(start, end));
+    }
+
+    for (int i = 1; i < scopedWindowBodies.length; i++) {
+      expect(
+        scopedWindowBodies[i],
+        scopedWindowBodies[0],
+        reason: 'createScopedWindow drifted between mirrors '
+            '(${mirrors[0]} vs ${mirrors[i]})',
       );
     }
   });

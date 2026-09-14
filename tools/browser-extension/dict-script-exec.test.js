@@ -289,3 +289,76 @@ test('document.body inside a dictionary script is the dictionary block', async (
 
   assert.strictEqual(root.getAttribute('scoped'), '1', 'document.body was not scoped to the block');
 });
+
+// BUG-2546: the popup is a long-lived page — changing the looked-up word only
+// rebuilds the result DOM, so the SAME dictionary script runs again on every
+// lookup. Handing it the real `window` let its global side effects pile up
+// across lookups: a jQuery-style `var document = window.document` bound the
+// delegate onto the real document (second lookup = two handlers = the MDX
+// collapsible opened and instantly closed again), and a `window.__inited`
+// idempotence guard short-circuited every block after the first. Each block now
+// gets its own window proxy, so the Nth lookup behaves exactly like the first.
+const PER_BLOCK_WINDOW_SCRIPT = [
+  "var doc = window.document;",
+  "var host = doc.body;",
+  "host.setAttribute('scopedBody', String(!host.__isRealBody));",
+  "host.setAttribute('defaultViewScoped', String(doc.defaultView === window));",
+  "host.setAttribute('shortCircuited', String(!!window.__dictInited));",
+  "if (!window.__dictInited) {",
+  "  window.__dictInited = true;",
+  "  window.addEventListener('click', function () {});",
+  "}",
+  "host.setAttribute('ran', 'yes');",
+].join('\n');
+
+test('each lookup re-runs the dictionary script against its own window', async () => {
+  const ctx = makeContext();
+  const leakedToRealWindow = [];
+  ctx.window.addEventListener = (type, fn) => leakedToRealWindow.push([type, fn]);
+
+  const roots = [];
+  for (let round = 0; round < 3; round++) {
+    const root = dictRoot('OALD', [{ code: PER_BLOCK_WINDOW_SCRIPT }]);
+    await ctx.runDictScripts(root, 'OALD');
+    roots.push(root);
+  }
+
+  roots.forEach((root, i) => {
+    const round = i + 1;
+    assert.strictEqual(root.getAttribute('ran'), 'yes',
+      `round ${round}: the dictionary script did not run for this block`);
+    assert.strictEqual(root.getAttribute('scopedBody'), 'true',
+      `round ${round}: window.document handed the script the REAL document`);
+    assert.strictEqual(root.getAttribute('shortCircuited'), 'false',
+      `round ${round}: a previous block's window flag survived into this one`);
+  });
+
+  assert.strictEqual(leakedToRealWindow.length, 0,
+    'window-level listeners from dictionary scripts leaked onto the real window');
+  assert.strictEqual(ctx.window.__dictInited, undefined,
+    'a dictionary script wrote its flag onto the real window');
+});
+
+test('window-level listeners land on the dictionary block itself', async () => {
+  const ctx = makeContext();
+  ctx.window.addEventListener = () => {
+    throw new Error('dictionary script reached the REAL window');
+  };
+
+  const root = dictRoot('OALD', [{ code: PER_BLOCK_WINDOW_SCRIPT }]);
+  await ctx.runDictScripts(root, 'OALD');
+
+  const clicks = root._listeners.filter(([type]) => type === 'click');
+  assert.strictEqual(clicks.length, 1,
+    `window.addEventListener did not land on the block (${clicks.length} listeners)`);
+});
+
+test('document.defaultView points back at the block window, not the real one', async () => {
+  const ctx = makeContext();
+  const root = dictRoot('OALD', [{ code: PER_BLOCK_WINDOW_SCRIPT }]);
+
+  await ctx.runDictScripts(root, 'OALD');
+
+  assert.strictEqual(root.getAttribute('defaultViewScoped'), 'true',
+    'document.defaultView leaked the real window');
+});
