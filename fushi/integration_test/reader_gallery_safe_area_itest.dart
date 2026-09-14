@@ -131,7 +131,7 @@ void main() {
         expect(_cards, findsWidgets, reason: '这本书没解析出插图，本用例取不到有效证据');
         // 像素证据：用户当初就是拿截图报的「卡片长这样」「顶栏顶到系统条」，
         // 回给同一形式最省事。插图册是纯 Flutter 面，图层树直抓即可。
-        await captureFlutterFrame('gallery-grid');
+        await captureFlutterFrame(tester, 'gallery-grid');
 
         // ① 安全区：设备给的 viewPadding 必须真的把顶栏整条推下去。
         //
@@ -180,31 +180,27 @@ void main() {
           );
         }
 
-        // ② 焦点落到第一张卡 → 菜单键 → 「跳转到此插图」→ 回到正文。
+        // ② 同一次画廊会话里验遮罩两个方向：揭开 → 恢复遮罩。
+        //
+        // 顺序很重要：跳转会离开画廊，放在前面就得再开一次插图册，而那一步依赖
+        // 「从画廊 pop 回阅读器后快捷键立刻可用」——与本 PR 无关的另一件事。
         await _focusFirstCard(tester);
         await _openCardMenu(tester);
         expect(_menuJump, findsOneWidget, reason: '菜单键没唤出卡片菜单');
-        await captureFlutterFrame('gallery-card-menu');
-        expect(
-          await driver.focusWidget(_menuJump),
-          isTrue,
-          reason: '「跳转到此插图」拿不到焦点',
-        );
-        await driver.activate();
-        await tester.pumpAndSettle(const Duration(seconds: 2));
-        expect(_galleryShown(), isFalse, reason: '跳转后应回到正文');
-        expect(_readerShown(), isTrue);
-
-        // ③ 恢复遮罩：再开插图册，必要时先揭开一张，再撤销。
-        await _sendKey(tester, LogicalKeyboardKey.keyG);
-        await _pumpUntil(tester, _galleryShown, reason: '第二次按 G 没打开插图册');
-        await tester.pump(const Duration(milliseconds: 500));
-        await _focusFirstCard(tester);
-        await _openCardMenu(tester);
+        await captureFlutterFrame(tester, 'gallery-card-menu');
         if (_menuReveal.evaluate().isNotEmpty) {
           expect(await driver.focusWidget(_menuReveal), isTrue);
           await driver.activate();
           await tester.pumpAndSettle(const Duration(milliseconds: 500));
+          // 揭开后模糊层必须撤掉。
+          expect(
+            find.descendant(
+              of: _cards.first,
+              matching: find.byType(ImageFiltered),
+            ),
+            findsNothing,
+            reason: '揭开后卡片不该还盖着模糊层',
+          );
           await _openCardMenu(tester);
         }
         expect(_menuRelock, findsOneWidget, reason: '已揭开且有遮罩理由的卡必须给「恢复遮罩」');
@@ -220,17 +216,24 @@ void main() {
           findsOneWidget,
           reason: '恢复遮罩后卡片必须重新盖上模糊层',
         );
-        await captureFlutterFrame('gallery-relocked');
+        await captureFlutterFrame(tester, 'gallery-relocked');
 
-        // 关闭按钮同样走焦点驱动（它此前正是被状态栏压住那三个之一）。
+        // 菜单关掉后焦点必须回到网格：不回，方向键就再也移不动焦点了。
+        await _sendKey(tester, LogicalKeyboardKey.arrowRight);
         expect(
           await driver.focusWidget(_closeButton),
           isTrue,
-          reason: '关闭按钮拿不到焦点',
+          reason: '关闭按钮拿不到焦点（它此前正是被状态栏压住那三个之一）',
         );
+
+        // ③ 收尾：菜单里的「跳转到此插图」真的回到正文对应章。
+        await _focusFirstCard(tester);
+        await _openCardMenu(tester);
+        expect(await driver.focusWidget(_menuJump), isTrue);
         await driver.activate();
-        await tester.pumpAndSettle(const Duration(seconds: 1));
-        expect(_galleryShown(), isFalse, reason: '关闭按钮点不动');
+        await tester.pumpAndSettle(const Duration(seconds: 2));
+        expect(_galleryShown(), isFalse, reason: '跳转后应回到正文');
+        expect(_readerShown(), isTrue);
       },
     );
   });
