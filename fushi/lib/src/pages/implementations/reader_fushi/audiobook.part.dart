@@ -806,6 +806,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       cue: cue,
       reveal: reveal,
       pauseEnabled: pauseEnabled,
+      fromChapterStart: _consumeAudioChapterArrival(cue),
     );
     // reveal 落定后的进度补刷（B-3 窗吃掉了跟随滚动的 scroll 回传，见方法注释）。
     if (reveal) _scheduleReanchorSettleProgressRefresh();
@@ -850,14 +851,22 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     final int? studyOffset = cue != null && frag?.sectionIndex == newSection
         ? _studyRangeForAudioFragment(frag!)?.offset
         : null;
-    if (studyOffset == null) {
+    // 章尾未匹配 cue（frag == null）：本章最后一句已播完、正在播的这条没匹配上正文，
+    // 控制器按播放邻居判定把目标定为下一章（见
+    // AudiobookPlayerController.unmatchedCueCrossChapterTargetForTesting）。它没有
+    // 字符锚可落，落到目标章章首即可（音频此刻就在那一章的开头）；只有匹配 cue 才
+    // 要求解得出学习单元锚。
+    final bool unmatchedChapterEnd = cue != null && frag == null;
+    if (studyOffset == null && !unmatchedChapterEnd) {
       _audiobookController?.cancelChapterTransition();
       return;
     }
     // TODO-1037：cue 驱动的跨章会一步跳过「独立成章的纯图片页」（无 cue 故从不
     // 被推进看见），图片等待对它彻底失效。跨章落定前先把中间纯图片章逐个导航过去
     // 并停留 imagePauseSec 秒，让用户看见每张整章插图，再继续到目标文本章。
-    await _pauseThroughImageOnlyChapters(newSection);
+    final bool pausedOnTarget = await _pauseThroughImageOnlyChapters(
+      newSection,
+    );
     // BUG-1277：图片章停留会跨越多个 await；期间 route 可能已 dispose。
     // dispose 会 detach reader，但已经在飞的回调仍会从上面的 Future 返回。此时既不能
     // 再进入 _navigateToChapter/setState，也不能把图片序列 finally 持住的跨章守卫
@@ -866,7 +875,27 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController?.cancelChapterTransition();
       return;
     }
+    // 章首插图：音频是从上一章**连续读过来**的，目标章第一句之前的插图（章扉画 /
+    // 被吸收进宿主顶部的单图片章）已被音频跨过。但新文档里 cue 推进锚点是空的
+    // （载入后 resetImagePauseAnchor 归零），__fushiImageBetween(null, el) 直接判无图
+    // → 章首图既不触发图片等待、也不揭防剧透遮罩。这里记下「本次到达由音频跨章驱动」，
+    // 让落地后第一次真实高亮把文档开头当作上一句锚点（见 _onCueChanged →
+    // AudiobookBridge.highlight(fromChapterStart)）。图片章停留序列若已在目标宿主上
+    // 停留 + 揭遮罩过（被吸收图片章场景），不再二次触发。
+    _audioChapterArrivalSection = pausedOnTarget ? -1 : newSection;
     await _navigateToChapter(newSection, charOffset: studyOffset);
+  }
+
+  /// 消费 [_audioChapterArrivalSection]：仅当目标章已经落地（不在恢复中、当前章就是
+  /// 到达章）且本次高亮是一条真实 cue 时返回 true，并清掉标记；其余情况原样保留
+  /// （载入期的瞬态 notify、未匹配 cue 的清高亮都不消费，等第一条匹配 cue 落地）。
+  bool _consumeAudioChapterArrival(AudioCue? cue) {
+    final int section = _audioChapterArrivalSection;
+    if (section < 0) return false;
+    if (cue == null || cue.textFragmentId.isEmpty) return false;
+    if (_restoreInFlight || _currentChapter != section) return false;
+    _audioChapterArrivalSection = -1;
+    return true;
   }
 
   /// TODO-1037：跨章推进若跨过「独立成章的纯图片章」，且图片等待开启
@@ -888,10 +917,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   /// [AudiobookPlayerController.holdChapterTransition] 守卫——否则每个中间章载入完成
   /// 的 `notifySectionRestoreCompleted` 会把 `_chapterTransition` 清回 false，下一
   /// tick 可能重入 `onCrossChapter` 乱跳。
-  Future<void> _pauseThroughImageOnlyChapters(int targetSection) async {
+  ///
+  /// 返回值：序列最后一次停留是否落在 [targetSection] 自己的宿主页上（被吸收单图片章
+  /// 场景，TODO-1128：停留 + 揭遮罩已经在目标章顶部做过）。调用方据此决定落地后是否
+  /// 还要把章首插图当作「音频刚跨过的图」再处理一次。
+  Future<bool> _pauseThroughImageOnlyChapters(int targetSection) async {
     final AudiobookPlayerController? controller = _audiobookController;
     if (controller == null || _book == null || _imageChapterPauseInFlight) {
-      return;
+      return false;
     }
     final List<int> imageChapters = imageOnlyChaptersToPauseBetween(
       fromChapter: _currentChapter,
@@ -901,8 +934,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       isImageOnly: _book!.isImageOnlyChapter,
       isNav: _book!.isChapterNav,
     );
-    if (imageChapters.isEmpty) return;
+    if (imageChapters.isEmpty) return false;
     _imageChapterPauseInFlight = true;
+    bool pausedOnTarget = false;
     // TODO-1037（重入竞态根因修复）：整段序列期间让控制器持住跨章守卫。每个中间章
     // 载入完成会**同步**调 notifySectionRestoreCompleted——它原本无条件清
     // _chapterTransition 并同步 _updateCurrentCue，此刻音频仍在播放（pause 要等本次
@@ -932,6 +966,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           await AudiobookBridge.revealAllBlurred(webCtrl);
         }
         await controller.awaitImageChapterPause();
+        pausedOnTarget = resolved == _resolveNavChapter(targetSection);
       }
     } finally {
       _imageChapterPauseInFlight = false;
@@ -941,6 +976,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       controller.setImageChapterPauseActive(false);
       controller.holdChapterTransition();
     }
+    return pausedOnTarget;
   }
 
   Future<void> _handleBoundarySkip(int delta) async {
