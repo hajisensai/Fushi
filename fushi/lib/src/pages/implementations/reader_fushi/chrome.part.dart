@@ -1043,6 +1043,26 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   })();
                 '''));
               },
+              onUnrevealImage: (String key) {
+                if (!_revealedImageKeys.remove(key)) return;
+                final String? bookUid = _bookUid;
+                if (bookUid != null) {
+                  unawaited(
+                      appModel.database.unmarkImageRevealed(bookUid, key));
+                }
+                unawaited(_controller?.evaluateJavascript(source: '''
+                  (function() {
+                    var key = ${jsonEncode(key)};
+                    if (window.__fushiUnmarkImageRevealed) {
+                      window.__fushiUnmarkImageRevealed(key);
+                    }
+                    if (!window.__fushiImageRevealKey) return;
+                    document.querySelectorAll('img.block-img, svg.block-img').forEach(function(el) {
+                      if (window.__fushiImageRevealKey(el) === key) el.classList.add('blurred');
+                    });
+                  })();
+                '''));
+              },
               fileForRef: (EpubImageRef ref) =>
                   _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
               onOpenImage: (EpubImageRef ref) =>

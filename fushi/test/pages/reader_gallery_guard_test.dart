@@ -70,4 +70,48 @@ void main() {
     expect(src.contains('class _ReaderGalleryPage'), isFalse,
         reason: 'chrome.part.dart 只保留路由，不得再夹带第二份画廊实现');
   });
+
+  // 未解锁卡片的视觉与「卡片能做什么」两条，是用户报回来的两个缺口（糊图被换成
+  // 文案纸卡；网格里没有任何跳转入口 / 没法把揭开的图重新遮回去）。两者都属于
+  // 「删一行就悄悄退回去、widget 测试改一句断言也就跟着绿」的形状，钉在源码层。
+  test('未解锁卡片用共享遮罩视觉，且两个插图表面共用同一份', () {
+    final String gallery =
+        File('lib/src/reader/reader_gallery_page.dart').readAsStringSync();
+    expect(gallery.contains('maskedIllustrationCover('), isTrue,
+        reason: '锁着的卡是这张图自己的高斯模糊，不是写着「尚未读到」的占位卡');
+    expect(gallery.contains('class _LockedCardBody'), isFalse,
+        reason: '文案占位卡已退役，别再长回来');
+    // 书架端插图库与阅读器插图册必须是同一份遮罩（含墨水屏的实心遮板分支）。
+    final String shelf =
+        File('lib/src/pages/implementations/illustrations_viewer_page.dart')
+            .readAsStringSync();
+    expect(
+      shelf.contains(
+          "import 'package:fushi/src/reader/masked_illustration_cover.dart';"),
+      isTrue,
+      reason: '遮罩视觉只许有一份，两端都从 masked_illustration_cover.dart 取',
+    );
+  });
+
+  test('卡片长按 / 右键菜单提供跳转与恢复遮罩', () {
+    final String gallery =
+        File('lib/src/reader/reader_gallery_page.dart').readAsStringSync();
+    expect(gallery.contains('onLongPress: () => unawaited(_showCardMenu(ref))'),
+        isTrue,
+        reason: '长按卡片必须唤出菜单（锁着的图此前没有任何跳转入口）');
+    expect(gallery.contains('ContextMenuTrigger('), isTrue,
+        reason: '桌面右键走统一的上下文菜单触发口，不得硬绑 onSecondaryTap');
+    expect(gallery.contains("ValueKey<String>('fushi_gallery_menu_jump')"),
+        isTrue);
+    expect(gallery.contains("ValueKey<String>('fushi_gallery_menu_relock')"),
+        isTrue);
+    // 恢复遮罩必须真落到宿主（会话集 + Drift + 正文），不是只改本页外观。
+    expect(gallery.contains('widget.onUnrevealImage?.call(key)'), isTrue);
+    expect(src.contains('onUnrevealImage: (String key)'), isTrue,
+        reason: 'chrome.part.dart 必须接住撤销揭开');
+    expect(src.contains('unmarkImageRevealed(bookUid, key)'), isTrue,
+        reason: '撤销要落 Drift，否则下次开书又是揭开态');
+    expect(src.contains('__fushiUnmarkImageRevealed'), isTrue,
+        reason: '正文 WebView 的会话活集也要跟着撤销');
+  });
 }

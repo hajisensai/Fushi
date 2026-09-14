@@ -12,6 +12,8 @@ import 'package:flutter/services.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi/src/reader/image_reveal_key.dart';
+import 'package:fushi/src/reader/masked_illustration_cover.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/utils.dart';
 
 /// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
@@ -55,6 +57,7 @@ class ReaderGalleryPage extends StatefulWidget {
     this.blurImages = false,
     this.revealedImageKeys = const <String>{},
     this.onRevealImage,
+    this.onUnrevealImage,
     this.chapterLabelFor,
     this.volumeSwitch,
   });
@@ -67,6 +70,10 @@ class ReaderGalleryPage extends StatefulWidget {
   final bool blurImages;
   final Set<String> revealedImageKeys;
   final void Function(String key)? onRevealImage;
+
+  /// 撤销揭开（长按卡片「恢复遮罩」）。宿主据此从会话集 / Drift 删掉这张图的揭开
+  /// 记录，并让阅读器正文重新遮上——与 [onRevealImage] 是同一条状态的两个方向。
+  final void Function(String key)? onUnrevealImage;
 
   /// 章节节头文案（spine 章号 → 章名，通常来自 TOC）。缺省用「第 N 章」。
   final String Function(int chapterIndex)? chapterLabelFor;
@@ -187,11 +194,13 @@ const double _kSectionGap = 16;
 const double _kMarkerHeight = 32;
 
 /// 插图册：顶栏「插图册 · 已解锁 n / N · [已解锁 | 全部] · 定位 · ×」；主体按章分组
-/// 的网格。卡片两态——已解锁显示缩略图，未解锁是纸质占位卡（尚未读到 / 读到第 X 章
-/// 后自动解锁），点占位卡弹出「回到最近已看 / 仍要查看」。解锁判据与阅读器正文、
-/// 书架端插图库同源：[ImageRevealKey.shouldBlur]（已揭开 ∪ 已读到 = 解锁）。
+/// 的网格。卡片两态——已解锁显示缩略图，未解锁盖这张图自己的高斯模糊层
+/// （[maskedIllustrationCover]，墨水屏换实心遮板），点它弹出「回到最近已看 / 仍要
+/// 查看」并带上解锁条件。解锁判据与阅读器正文、书架端插图库同源：
+/// [ImageRevealKey.shouldBlur]（已揭开 ∪ 已读到 = 解锁）。
 /// 点已解锁卡进页内全屏单图查看器（←/→ 切图、滚轮、Esc 关；点图交给 [onOpenImage]
 /// 的既有缩放查看器，不造第二条缩放路径）。打开时自动滚到当前阅读章那一节。
+/// 长按（桌面右键）任意卡片出菜单：跳到正文对应位置、揭开 / 恢复遮罩。
 ///
 /// 同合集卷切换（BUG-2521）：头部卷 chip 行只换网格数据源，不切书；兄弟卷没有
 /// 「当前阅读位置」，也不参与解锁判据（全视为已解锁），跳转 / 看大图带卷号走
@@ -200,6 +209,11 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode(debugLabel: 'reader-gallery');
   final Set<String> _revealedHere = <String>{};
+
+  /// 本页内被「恢复遮罩」的 key。宿主传进来的 [ReaderGalleryPage.revealedImageKeys]
+  /// 是阅读器的会话集，本页只能读；撤销要生效就得在判据里把它们减掉，否则卡片得等
+  /// 整页重建才变回遮罩态。
+  final Set<String> _relockedHere = <String>{};
 
   bool _unlockedOnly = false;
 
@@ -235,6 +249,11 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   bool _unreadAhead(EpubImageRef ref) =>
       ref.chapterIndex > widget.currentChapter;
 
+  /// 当前有效的已揭开集：宿主会话集 ∪ 本页揭开的 − 本页恢复遮罩的。
+  Set<String> get _revealedNow =>
+      <String>{...widget.revealedImageKeys, ..._revealedHere}
+        ..removeAll(_relockedHere);
+
   /// 兄弟卷没有阅读进度也不写本书的揭开表，一律视为已解锁；当前卷与阅读器正文 /
   /// 书架端插图库同一判据。
   bool _isLocked(EpubImageRef ref) =>
@@ -242,7 +261,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       ImageRevealKey.shouldBlur(
         blurEnabled: widget.blurImages,
         revealKey: ImageRevealKey.normalize(ref.src),
-        revealed: <String>{...widget.revealedImageKeys, ..._revealedHere},
+        revealed: _revealedNow,
         unreadAhead: _unreadAhead(ref),
       );
 
@@ -403,9 +422,35 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   void _reveal(EpubImageRef ref) {
     final String? key = ImageRevealKey.normalize(ref.src);
     if (key == null) return;
-    setState(() => _revealedHere.add(key));
+    setState(() {
+      _relockedHere.remove(key);
+      _revealedHere.add(key);
+    });
     widget.onRevealImage?.call(key);
   }
+
+  /// 「恢复遮罩」：撤销这张图的揭开状态，卡片重新盖回模糊层。
+  void _relock(EpubImageRef ref) {
+    final String? key = ImageRevealKey.normalize(ref.src);
+    if (key == null) return;
+    setState(() {
+      _revealedHere.remove(key);
+      _relockedHere.add(key);
+    });
+    widget.onUnrevealImage?.call(key);
+    // 正在看的就是这张、或过滤在「已解锁」时，撤销后它不再属于已解锁列表，
+    // 查看器的下标会指向另一张图。直接关掉，不让它悄悄跳到隔壁那张。
+    if (_viewerIndex != null) _closeViewer();
+  }
+
+  /// 这张图能否「恢复遮罩」：撤销揭开后确实会重新遮住才给这个动作。总开关关着
+  /// 又已经读到的图，撤销只是删一条不起作用的记录，菜单里放一个点了没有任何可见
+  /// 效果的项比不放更糟。
+  bool _canRelock(EpubImageRef ref) =>
+      !_peekingSibling &&
+      (widget.blurImages || _unreadAhead(ref)) &&
+      ImageRevealKey.normalize(ref.src) != null &&
+      !_isLocked(ref);
 
   void _activate(EpubImageRef ref) {
     setState(() => _focusedSrc = ref.src);
@@ -429,6 +474,60 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       case _LockedAction.revealAnyway:
         _reveal(ref);
     }
+  }
+
+  /// 长按（桌面右键）卡片的动作菜单：跳到正文对应位置，外加这张图当前那一个方向的
+  /// 遮罩动作——锁着给「仍要查看」，已揭开且撤销后会重新遮住的给「恢复遮罩」。
+  ///
+  /// 网格里点一下的语义是「看这张图」，跳转与遮罩开关都不该抢那一下；反过来，跳转
+  /// 此前只在全屏查看器的顶栏有，锁着的图根本进不去查看器，于是那些图没有任何跳转
+  /// 入口——菜单挂在卡片上正是为了补上这一半。
+  Future<void> _showCardMenu(EpubImageRef ref) async {
+    setState(() => _focusedSrc = ref.src);
+    final bool locked = _isLocked(ref);
+    final bool canRelock = _canRelock(ref);
+    await adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) => FushiModalSheetFrame(
+        title: _chapterLabel(ref.chapterIndex),
+        subtitle: locked ? _lockedHint(ref) : null,
+        leadingIcon: Icons.image_outlined,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              key: const ValueKey<String>('fushi_gallery_menu_jump'),
+              leading: const Icon(Icons.my_location_outlined),
+              title: Text(t.reader_gallery_jump),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _jumpTo(ref);
+              },
+            ),
+            if (locked)
+              ListTile(
+                key: const ValueKey<String>('fushi_gallery_menu_reveal'),
+                leading: const Icon(Icons.visibility_outlined),
+                title: Text(t.reader_gallery_locked_reveal),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _reveal(ref);
+                },
+              ),
+            if (canRelock)
+              ListTile(
+                key: const ValueKey<String>('fushi_gallery_menu_relock'),
+                leading: const Icon(Icons.visibility_off_outlined),
+                title: Text(t.reader_gallery_relock),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _relock(ref);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _lockedHint(EpubImageRef ref) => _unreadAhead(ref)
@@ -643,12 +742,20 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         onKeyEvent: _onKey,
         child: Stack(
           children: <Widget>[
-            Column(
-              children: <Widget>[
-                _buildHeader(tokens, unlocked.length),
-                if (widget.volumeSwitch != null) _buildVolumeChips(),
-                Expanded(child: _buildBody(tokens)),
-              ],
+            // 画廊是从阅读器 push 出去的全页路由，没有 AppBar 也没有
+            // FushiPageScaffold —— 裸 Scaffold 的 body 不会自己让开系统 inset，
+            // 于是 iOS 上顶栏（过滤 / 定位 / 关闭）整条压在状态栏与灵动岛底下，
+            // 点不到。顶 / 左 / 右交给 SafeArea，底部沿用页面通行的
+            // [withBottomSafeInset]（网格自己补），不在这里吃掉一整条。
+            SafeArea(
+              bottom: false,
+              child: Column(
+                children: <Widget>[
+                  _buildHeader(tokens, unlocked.length),
+                  if (widget.volumeSwitch != null) _buildVolumeChips(),
+                  Expanded(child: _buildBody(tokens)),
+                ],
+              ),
             ),
             if (viewerRef != null)
               Positioned.fill(
@@ -819,6 +926,11 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               ],
               if (layout.markerSectionIndex == layout.sections.length)
                 _buildPositionMarker(tokens),
+              // 末行卡片自己让开 home indicator / 手势条（与书架端插图库
+              // BUG-2440 同一口径：viewport 不扣安全区，内容 padding 补）。
+              SliverToBoxAdapter(
+                child: SizedBox(height: bottomSafeInsetOf(context)),
+              ),
             ],
           ),
         );
@@ -919,17 +1031,23 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   Widget _buildCard(FushiDesignTokens tokens, EpubImageRef ref) {
     final bool locked = _isLocked(ref);
-    final bool focused = ref.src == _focusedSrc;
-    final Widget content = locked
-        ? _LockedCardBody(hint: _lockedHint(ref), tokens: tokens)
-        : _thumbnail(tokens, ref);
-    return _GalleryCard(
+    final Widget thumbnail = _thumbnail(tokens, ref);
+    final Widget card = _GalleryCard(
       key: ValueKey<String>('fushi_gallery_card_${ref.src}'),
       tokens: tokens,
-      focused: focused,
-      paper: locked,
+      focused: ref.src == _focusedSrc,
       onTap: () => _activate(ref),
-      child: content,
+      onLongPress: () => unawaited(_showCardMenu(ref)),
+      // 锁着的卡是这张图本身的高斯模糊，不是一张写着「尚未读到」的纸：糊图既遮住了
+      // 内容，又让人一眼看出这一格确实有张画、大致是什么色调，属于「还没读到」的
+      // 正确观感。解锁条件那句话挪进点击后的弹窗与本菜单里，信息一点没少。
+      child: locked
+          ? maskedIllustrationCover(context, thumbnail, iconSize: 32)
+          : thumbnail,
+    );
+    return ContextMenuTrigger(
+      onInvoke: contextMenuInvoker(() => unawaited(_showCardMenu(ref))),
+      child: card,
     );
   }
 
@@ -990,89 +1108,95 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     return ColoredBox(
       key: const ValueKey<String>('fushi_gallery_viewer'),
       color: tokens.surfaces.page,
-      child: Column(
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
-            child: Row(
-              children: <Widget>[
-                Text(
-                  '${index + 1} / $unlockedCount',
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    _chapterLabel(current.chapterIndex),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.metadata,
+      // 查看器是 Positioned.fill 盖在网格之上的第二层整页 UI，外层那个 SafeArea
+      // 管不到它；不自己让开的话「跳转 / 关闭」两个按钮在 iOS 上同样点不到。
+      child: SafeArea(
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+              child: Row(
+                children: <Widget>[
+                  Text(
+                    '${index + 1} / $unlockedCount',
+                    style: theme.textTheme.titleMedium,
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  key: const ValueKey<String>('fushi_gallery_jump'),
-                  tooltip: t.reader_gallery_jump,
-                  icon: const Icon(Icons.my_location_outlined),
-                  onPressed: () => _jumpTo(current),
-                ),
-                IconButton(
-                  key: const ValueKey<String>('fushi_gallery_viewer_close'),
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  icon: const Icon(Icons.close),
-                  onPressed: _closeViewer,
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      _chapterLabel(current.chapterIndex),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tokens.type.metadata,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    key: const ValueKey<String>('fushi_gallery_jump'),
+                    tooltip: t.reader_gallery_jump,
+                    icon: const Icon(Icons.my_location_outlined),
+                    onPressed: () => _jumpTo(current),
+                  ),
+                  IconButton(
+                    key: const ValueKey<String>('fushi_gallery_viewer_close'),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                    icon: const Icon(Icons.close),
+                    onPressed: _closeViewer,
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: Stack(
-              children: <Widget>[
-                Positioned.fill(
-                  child: Listener(
-                    onPointerSignal: _onViewerPointerSignal,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 72,
-                        vertical: 8,
+            Expanded(
+              child: Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: Listener(
+                      onPointerSignal: _onViewerPointerSignal,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 72,
+                          vertical: 8,
+                        ),
+                        child: GestureDetector(
+                          onTap: () => _openImage(current),
+                          child: Center(child: image),
+                        ),
                       ),
-                      child: GestureDetector(
-                        onTap: () => _openImage(current),
-                        child: Center(child: image),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _arrowButton(
+                        tokens,
+                        icon: Icons.chevron_left,
+                        enabled: index > 0,
+                        onPressed: () => _viewerStep(-1),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  left: 16,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _arrowButton(
-                      tokens,
-                      icon: Icons.chevron_left,
-                      enabled: index > 0,
-                      onPressed: () => _viewerStep(-1),
+                  Positioned(
+                    right: 16,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _arrowButton(
+                        tokens,
+                        icon: Icons.chevron_right,
+                        enabled: index < unlockedCount - 1,
+                        onPressed: () => _viewerStep(1),
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  right: 16,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _arrowButton(
-                      tokens,
-                      icon: Icons.chevron_right,
-                      enabled: index < unlockedCount - 1,
-                      onPressed: () => _viewerStep(1),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1130,22 +1254,21 @@ class _PositionBadge extends StatelessWidget {
   }
 }
 
-/// 网格卡片外壳：圆角 + 细边框，键盘焦点用 2px 主色描边。[paper] 是占位卡的
-/// 纸质底（低一档的分组色），缩略图卡用卡片色。
+/// 网格卡片外壳：圆角 + 细边框，键盘焦点用 2px 主色描边。
 class _GalleryCard extends StatelessWidget {
   const _GalleryCard({
     super.key,
     required this.tokens,
     required this.focused,
-    required this.paper,
     required this.onTap,
+    required this.onLongPress,
     required this.child,
   });
 
   final FushiDesignTokens tokens;
   final bool focused;
-  final bool paper;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final Widget child;
 
   @override
@@ -1154,7 +1277,7 @@ class _GalleryCard extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       decoration: ShapeDecoration(
-        color: paper ? tokens.surfaces.group : tokens.surfaces.card,
+        color: tokens.surfaces.card,
         shape: RoundedRectangleBorder(
           borderRadius: radius,
           side: BorderSide(
@@ -1167,60 +1290,13 @@ class _GalleryCard extends StatelessWidget {
         type: MaterialType.transparency,
         shape: RoundedRectangleBorder(borderRadius: radius),
         clipBehavior: Clip.antiAlias,
-        child: InkWell(onTap: onTap, child: child),
+        child: InkWell(onTap: onTap, onLongPress: onLongPress, child: child),
       ),
     );
   }
 }
 
-/// 占位卡正文：书本图标 + 「尚未读到」+ 解锁提示。
-class _LockedCardBody extends StatelessWidget {
-  const _LockedCardBody({required this.hint, required this.tokens});
-
-  final String hint;
-  final FushiDesignTokens tokens;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(
-            Icons.auto_stories_outlined,
-            size: 28,
-            color: tokens.surfaces.onVariant,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            t.reader_gallery_locked_title,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: tokens.surfaces.onSurface,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            hint,
-            textAlign: TextAlign.center,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: tokens.surfaces.onVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 点占位卡弹出的两个动作：「回到最近已看」/「仍要查看」。
+/// 点锁着的卡弹出的两个动作：「回到最近已看」/「仍要查看」。
 class _LockedIllustrationDialog extends StatelessWidget {
   const _LockedIllustrationDialog({required this.hint});
 
