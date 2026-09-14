@@ -1,18 +1,23 @@
-// 插图册（ReaderGalleryPage）在 iOS 上的真机复测：走原始失败路径——真开书、按 G
-// （与底栏按钮同一个 _openGallery）唤出插图册——验证三件事：
+// 插图册（ReaderGalleryPage）的真机复测：走原始失败路径——真开书、按 G（与底栏
+// 按钮同一个 _openGallery）唤出插图册——验证三件事：
 //
 // ① 顶栏整条落在状态栏 / 灵动岛之下。用户报的原症状就是「顶部会顶到系统任务栏
 //    导致不能操作」：插图册是从阅读器 push 出去的全页路由，裸 Scaffold 的 body
 //    不会自己让开系统 inset，过滤 / 定位 / 关闭三个控件整条压在状态栏底下。
 //    这条只有在真设备上才有意义：viewPadding.top 是设备给的，widget 测试里得靠
-//    FakeViewPadding 造。设备本身没有刘海时本用例直接 fail（证据无效，不是通过）。
+//    FakeViewPadding 造。iOS 上取不到非零状态栏高度即判失败——那是设备选错了，
+//    不是「通过」。
 // ② 长按卡片能唤出菜单，「跳转到此插图」真的回到正文。
 // ③ 已揭开的图能「恢复遮罩」，撤销后卡片重新盖上模糊层。
 //
-// 跑法（Windows 侧编排，Mac 上的 iOS 模拟器执行）：
-//   .\tool\run_mac_itest.ps1 integration_test/ios_reader_gallery_itest.dart -Ios
+// 同一份测试三端可跑（安全区那条在 viewPadding 恒 0 的桌面端退化成恒真）：
+//   iOS 模拟器   tool\run_mac_itest.ps1 integration_test/reader_gallery_safe_area_itest.dart -Ios
+//   Windows 离屏 fushi\tool\run_windows_itest.ps1 integration_test/reader_gallery_safe_area_itest.dart
+//   macOS 隐藏   tool\run_mac_itest.ps1 integration_test/reader_gallery_safe_area_itest.dart
 library;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show HitTestResult;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -70,7 +75,7 @@ double _viewPaddingTop(WidgetTester tester) => MediaQuery.viewPaddingOf(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('iOS 插图册：顶栏让开状态栏、长按可跳转 / 恢复遮罩', (tester) async {
+  testWidgets('插图册：顶栏让开系统安全区、长按可跳转 / 恢复遮罩', (tester) async {
     await runFushiItest(
       label: 'ios-reader-gallery',
       body: () async {
@@ -91,9 +96,19 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
 
         // ① 安全区：设备给的 viewPadding 必须真的把顶栏整条推下去。
+        //
+        // iOS 上这条是本用例的主证据，必须真拿到一个非零状态栏高度，拿不到就是
+        // 证据无效（设备选错了）而不是通过。桌面端 viewPadding 本来就是 0，那里
+        // 这条退化成恒真，同一份测试照样能跑完后面两段。
         final double statusBar = _viewPaddingTop(tester);
         debugPrint('[gallery] viewPadding.top=$statusBar');
-        expect(statusBar, greaterThan(20), reason: '这台设备没有刘海 / 灵动岛，本用例取不到有效证据');
+        if (defaultTargetPlatform == TargetPlatform.iOS) {
+          expect(
+            statusBar,
+            greaterThan(20),
+            reason: '这台 iOS 设备没有刘海 / 灵动岛，本用例取不到有效证据',
+          );
+        }
         for (final MapEntry<String, Finder> control in <String, Finder>{
           'close': _closeButton,
           'position': _positionButton,
