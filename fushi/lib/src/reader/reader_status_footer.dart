@@ -24,6 +24,12 @@ import 'package:fushi/src/reader/reader_chrome_floating.dart'
 /// 有声书播放条一唤出（[ReaderStatusInline]），同一串数字又整体飞到右端，两条底部形态
 /// 互换时读数横跨整屏跳位。两段并排贴右后，底部读数只有一处落点。
 ///
+/// 2026-09-14 分层修正（用户）：横屏读数并进底栏那一行（[readerPlaybackStatusInline]
+/// → [ReaderStatusInline]），底部只有一层；竖屏读数独立成行时并进**底栏那块遮罩的
+/// 最底部**并居中（[centered]，装配在 `_wrapBottomChromeBar`），底栏的背景因此一路
+/// 盖到屏底，而不是底栏一块、读数一块两块半透明遮罩拼在一起。只有底栏整条不画时
+/// （默认布局无播放条、底栏槽位空）读数才自己贴屏底右端。
+///
 /// 它取代顶部进度 pill：进度数字统一放在右下角；窄屏文案省略，完整统计仍可点击查看。
 ///
 /// 高度只有一个真相源 [kReaderStatusFooterHeight]：页面用它算底部预留
@@ -111,6 +117,29 @@ bool readerProgressEdgeLineVisible({
 
 /// 屏底细进度线高度（逻辑 px）。
 const double kReaderProgressEdgeLineHeight = 2;
+
+/// 状态读数并进底栏那一行所需的最小可用宽（逻辑 px）：五颗传输键（-10s / 上一句 /
+/// 播放 / 下一句 / +10s）加槽位按钮之后，还要塞得下「计时 + 进度条 + 百分比」
+/// 这一串（约 160）。
+const double kReaderStatusInlineMinWidth = 480;
+
+/// 状态读数是否并进底栏那一行（横屏「同层」），而不是在底栏之下另占一行。
+///
+/// 判据是**屏幕方向 + 一条宽度下限**。此前借用顶栏那个为按钮数定的固定窗宽阈值
+/// （[readerHeaderCompact]，760）：横屏手机 ~700 逻辑 px 放得下五颗传输键加一串
+/// 读数，却被判成窄屏，读数被踢到底栏之下单独占一行，底部凭空多出一层
+/// （用户 2026-09-14「横屏应该同层进度显示」）。
+///
+/// 竖屏一律分层：竖屏那点宽度要留给传输键的触控面，把读数挤进同一行只会两边都
+/// 难受——那时读数独立成行，坐在底栏这块遮罩的最底部并**居中**
+/// （[ReaderStatusFooter.centered]）。
+bool readerPlaybackStatusInline({
+  required bool enabled,
+  required bool landscape,
+  required double width,
+  double minWidth = kReaderStatusInlineMinWidth,
+}) =>
+    enabled && landscape && width >= minWidth;
 
 /// 状态行里进度条的宽 / 高（逻辑 px）。
 const double kReaderStatusProgressTrackWidth = 72;
@@ -253,6 +282,7 @@ class ReaderStatusFooter extends StatefulWidget {
     required this.backgroundColor,
     this.height = kReaderStatusFooterHeight,
     this.bottomInset = 0,
+    this.centered = false,
     this.tick = const Duration(seconds: 1),
     this.onTap,
     this.onTapTracker,
@@ -284,6 +314,14 @@ class ReaderStatusFooter extends StatefulWidget {
   /// `max(height, bottomInset)` 的带（[readerStatusFooterBandHeight]），读数行贴带顶、
   /// 多出的部分在读数行**之下**——读数落在 home indicator 细线之上，不与它重叠。
   final double bottomInset;
+
+  /// 读数居中而不是贴右端。
+  ///
+  /// 竖屏（读数没并进底栏那一行）时这一行坐在底栏那块遮罩的最底部，与上面一排
+  /// 居中的传输键同属一块面——那时读数贴在右角会和居中的播放键错开成两个重心。
+  /// 状态行独自在屏底（没有底栏）时仍贴右：右下角是它与顶部进度 pill 共用的
+  /// 视觉基线。
+  final bool centered;
 
   /// 秒表刷新周期（测试可缩短）。
   final Duration tick;
@@ -385,7 +423,9 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
               return Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: widget.centered
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.end,
                 children: <Widget>[
                   if (widget.showTimer)
                     ConstrainedBox(

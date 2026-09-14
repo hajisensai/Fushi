@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2335 条。点号进各自文件。
+> 共 2337 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2531](bugs/BUG-2531-reader-status-row-separate-scrim.md) | ✅ | ✅ | 竖屏读数行自己另画一块遮罩：底栏遮罩看着缺了进度显示那一层高度 |
+| [BUG-2530](bugs/BUG-2530-reader-header-fixed-width-compact-threshold.md) | ✅ | ✅ | 阅读器顶栏/读数按固定窗宽阈值折叠：横屏手机顶部还空着大半条，按钮却已折进 ⋮、读数被踢出播放条 |
 | [BUG-2526](bugs/BUG-2526-youtube-android-dash-60s-window-visionos.md) | ✅ | ✅ | YouTube 花絮/流媒体打不开或无声：android client DASH 流无 PO token 只放前 60 秒 |
 | [BUG-2525](bugs/BUG-2525-reader-floating-chrome-gap-and-no-hover-reveal.md) | ✅ | ✅ | 悬浮控制栏：顶部常驻空带 + 控制栏不自动恢复 |
 | [BUG-2524](bugs/BUG-2524-remote-collection-adoption.md) | ✅ | ✅ | 远端媒体下载后合集归属丢失 |

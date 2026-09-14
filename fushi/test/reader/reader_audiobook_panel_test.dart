@@ -215,7 +215,10 @@ void main() {
       home: Scaffold(
         body: Center(
           child: SizedBox(
-            width: 600, // < kReaderDesktopHeaderCompactWidth
+            // 三颗按钮（48 each）+ 两端 16 内边距之后，留给书名的不足
+            // kReaderDesktopHeaderTitleMinWidth(120) —— 这一栏是真的放不下才折叠，
+            // 不再是撞上一条与内容无关的固定窗宽阈值。
+            width: 260,
             child: ReaderDesktopHeader(
               title: 'T',
               leading: leading,

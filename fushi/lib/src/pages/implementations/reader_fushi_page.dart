@@ -2135,11 +2135,37 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 在歌词模式翻真）：状态行画的是字数进度 / 阅读追踪，歌词模式不刷新进度，
   /// 并进播放条右端的那一份同样不能画，否则只是把同一批冻住的旧数字换个位置。
   /// 正文模式两个判据恒等（非歌词 ⇒ 状态行启用 ⇒ chrome 启用），行为逐字不变。
-  bool get _playbackStatusInline =>
-      _statusFooterEnabled && !readerHeaderCompact(_readerControlsWidth);
+  bool get _playbackStatusInline => readerPlaybackStatusInline(
+    enabled: _statusFooterEnabled,
+    landscape: _readerIsLandscape,
+    width: _readerControlsWidth,
+  );
+
+  /// 横屏：窗口宽 ≥ 高。桌面的横着的窗口与横屏手机是同一个排版问题，不分平台。
+  bool get _readerIsLandscape {
+    final Size size = MediaQuery.sizeOf(context);
+    return size.width >= size.height;
+  }
 
   bool get _separatePlaybackStatus =>
       _statusFooterEnabled && !_playbackStatusInline;
+
+  /// 读数独立成行时，它是否**并进底栏这块遮罩**（底栏 Column 的最后一行），而不是
+  /// 自己在屏底另画一块背景。
+  ///
+  /// 两块相邻的半透明遮罩在悬浮态下是看得出接缝的：底栏那块罩着正文、读数那块
+  /// 底下已经没有正文，同一个颜色画出来深浅不一，底部看着像缺了一层
+  /// （用户 2026-09-14「底栏遮罩少了进度显示的那层高度」）。并进同一个 Column
+  /// 后底栏的遮罩一路盖到屏底，读数是它最底下的一行（[ReaderStatusFooter.centered]
+  /// 居中），底部只有一块面。
+  ///
+  /// 底栏此刻**真的画着东西**才谈得上并进去：没有有声书播放条、底栏槽位又是空的
+  /// （默认布局）时 [_buildBottomChrome] 整条不画，读数照旧自己贴屏底右端。
+  bool get _statusFooterInBottomBar =>
+      _separatePlaybackStatus &&
+      _statusFooterShouldPaint &&
+      _bottomBarShouldPaint &&
+      (_audiobookController != null || _bottomSlotsHaveButtons);
 
   /// 底部带高：状态行坐进系统底部安全区，带高 = max(状态行预留, 系统底 inset)
   /// （单一真相源 [readerStatusFooterBandHeight]，BUG-2470）。状态行不在场时就是
