@@ -611,6 +611,15 @@ class VideoPlayerController extends ChangeNotifier
       _externalIsPlaying ??
       (_player?.state.playing ?? false);
 
+  /// 是否持有真 media_kit [Player]（BUG-2544）。
+  ///
+  /// 网页播放器路径（WebView2 里由站点自己播，见下方「外部播放态」一节）恒 `false`：
+  /// 那条从不 [load]，[play]/[pause] 是 no-op，而 [isPlaying] 读的是 JS 轮询注入的
+  /// 外部态。生命周期「切后台暂停 → 回前台续播」只对真播放器成立——对网页播放器
+  /// 发 [pause] 既停不住站点的播放，回来那次 [play] 也点不动它，只会凭空记下一个
+  /// 永远兑现不了的「我暂停过」标记。故那条路径直接不接管（维持既有行为）。
+  bool get hasNativePlayer => _player != null;
+
   /// 后台抽取/解析内封文本字幕 cue 是否仍在进行。
   bool get isSubtitleCuesLoading => _subtitleCuesLoading;
 
