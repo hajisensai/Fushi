@@ -9,7 +9,7 @@
   2. **`fushi/assets/transforms/en.json` 0 条 `wholeWord`**：Yomitan 英语规则表本来就没有替补形/不规则形，
      went / took / taken / was / been / children / mice / geese / better / best 在两部词典上全部还原不到原形
      （better 只会被 comparative 拆成 bett / bet；children→child 仅靠撞上阿尔巴尼亚语 Genitive 规则的巧合）。
-- **[x] ① 已修复** —
+- **[x] ① 已修复** — 提交 `9ccb3bb76e`
   - 引擎：新增 sidecar `term_rules.flag`（`native/fushidicts/fushidicts_src/util/term_rules_flag.hpp`，内容
     `<0|1> <blobs.bin 大小>`，大小不符视为失效）。`importer.cpp` 的 Yomitan 导入在 term bank 写入时累计
     `ImportResult::term_rules_present` 并于 marker 之前落盘；`write_simple_dict` 恒写 `1`。`query.cpp::add_dict`
