@@ -41,8 +41,9 @@ import 'test_helpers.dart';
 ///  3. Bottom tap-reveal no-layout-shift: tap_empty_hide_chrome false->true
 ///     drops --chrome-bottom-inset from (bar height ~56px) to system inset only;
 ///     onTapEmpty reveal keeps --chrome-bottom-inset unchanged.
-///  4. auto-hide timing (best-effort): after reveal, pump the configured
-///     duration; the floating bottom bar (fushi_play_bar) auto-hides.
+///  4. click-only switch (2026-09-14): after reveal, pumping well past the old
+///     auto-hide duration must leave the floating chrome on screen — nothing
+///     but a click may close it — and a second onTapEmpty does close it.
 ///
 /// Triggering: prefs via ReaderFushiSource.instance.toggleXxx() (fire-and-forget
 /// async, pump to land); reader re-anchor via the same settings-UI notify entry
