@@ -704,8 +704,19 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
   Duration timeout = const Duration(minutes: 3),
 }) async {
   final File output = File(outputPath);
-  if (!File(imagePath).existsSync() || !File(audioPath).existsSync()) {
+  final bool imageMissing = !File(imagePath).existsSync();
+  final bool audioMissing = !File(audioPath).existsSync();
+  if (imageMissing || audioMissing) {
     _deleteClipSynthOutput(output);
+    // BUG-2542：这条出口从前零日志，且不区分缺图还是缺音频。用户报「导出没用」
+    // 时错误日志页一片空白，连是哪一步产物没落地都看不出来。
+    ErrorLogService.instance.log(
+      'AudiobookClipSynth',
+      'input missing before ffmpeg: '
+              '${imageMissing ? 'image=$imagePath ' : ''}'
+              '${audioMissing ? 'audio=$audioPath' : ''}'
+          .trim(),
+    );
     return const AudiobookClipSynthResult.failure(
       AudiobookClipSynthFailure.inputMissing,
     );
@@ -730,6 +741,13 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
     }
     _deleteClipSynthOutput(output);
     if (result.isSuccess) {
+      // BUG-2542：ffmpeg 报退出码 0 却没留下产物——最需要证据的场景，从前偏偏
+      // 一行不记（下面那条 log 只在 !isSuccess 时跑）。带上合并日志摘要。
+      ErrorLogService.instance.log(
+        'AudiobookClipSynth',
+        'ffmpeg reported success but produced no output file at $outputPath; '
+            '${result.failureSummary}',
+      );
       return const AudiobookClipSynthResult.failure(
         AudiobookClipSynthFailure.outputMissing,
       );
@@ -777,8 +795,18 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
   Duration timeout = const Duration(minutes: 3),
 }) async {
   final File output = File(outputPath);
-  if (!Directory(framesDir).existsSync() || !File(audioPath).existsSync()) {
+  final bool framesMissing = !Directory(framesDir).existsSync();
+  final bool audioMissing = !File(audioPath).existsSync();
+  if (framesMissing || audioMissing) {
     _deleteClipSynthOutput(output);
+    // 与 [synthAudiobookClipVideoViaFfmpeg] 同构去静默（BUG-2542）。
+    ErrorLogService.instance.log(
+      'AudiobookClipSeqSynth',
+      'input missing before ffmpeg: '
+              '${framesMissing ? 'framesDir=$framesDir ' : ''}'
+              '${audioMissing ? 'audio=$audioPath' : ''}'
+          .trim(),
+    );
     return const AudiobookClipSynthResult.failure(
       AudiobookClipSynthFailure.inputMissing,
     );
@@ -804,6 +832,12 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
     }
     _deleteClipSynthOutput(output);
     if (result.isSuccess) {
+      // 与 [synthAudiobookClipVideoViaFfmpeg] 同构去静默（BUG-2542）。
+      ErrorLogService.instance.log(
+        'AudiobookClipSeqSynth',
+        'ffmpeg reported success but produced no output file at $outputPath; '
+            '${result.failureSummary}',
+      );
       return const AudiobookClipSynthResult.failure(
         AudiobookClipSynthFailure.outputMissing,
       );

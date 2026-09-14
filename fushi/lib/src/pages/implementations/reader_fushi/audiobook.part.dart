@@ -1350,7 +1350,19 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // 在上面给诚实文案），此处不再有散装特判。
         // M2-M5：裁音频 → 渲文本图 → H.264 .mp4 合成 → 分享/存盘。异步推进，
         // 先给一个反馈 toast；失败在管线内各自 toast。防重入：导出进行中再点直接忽略。
-        if (_audiobookClipExporting) return;
+        if (_audiobookClipExporting) {
+          // 从前是裸 return：这是整条链路上唯一**完全静默**的用户可达早退——无
+          // toast、无日志、无 debugPrint。一旦上一次导出卡住把标志钉在 true
+          // （见 _runAudiobookClipPipeline 的 try/finally 说明），此后每次点导出
+          // 都撞在这里，用户看到的就是「点了没反应」（BUG-2542）。视频页同性质的
+          // 防重入门一直是会提示的（video_fushi/clip_export.part.dart），这边只是
+          // 漏了。
+          FushiToast.show(
+            msg: t.audiobook_export_clip_in_progress,
+            severity: ToastSeverity.info,
+          );
+          return;
+        }
         // BUG-1321：字幕措辞与 EPUB 选区不一致时禁用逐句高亮（静态精确选区卡，
         // BUG-968 契约不变），但整段音频窗已经通过 sentenceRange 进入 range——静态
         // 回退裁的仍是整段选区音频，不再塌缩成单句。
@@ -1536,18 +1548,6 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     _AudiobookClipDynamicPlan? dynamicPlan,
   }) async {
     _audiobookClipExporting = true;
-    FushiToast.show(
-      msg: t.audiobook_export_clip_in_progress,
-      severity: ToastSeverity.info,
-    );
-
-    // 渲图前先抓阅读主题色 + 写排方向 + 字号（在 await 前读，避免跨 await 用 context）。
-    final ReaderThemeColors themeColors = _readerThemeColors;
-    final bool vertical =
-        _settings?.writingMode.startsWith('vertical') ?? false;
-    final double baseFontSize = _settings?.fontSize ?? 22;
-    final double lineHeight = _settings?.lineHeight ?? 1.65;
-    final OverlayState? overlay = Overlay.maybeOf(context);
 
     File? audioClip;
     File? imageFile;
@@ -1561,7 +1561,26 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 的文件，与更早的 mjpeg/.mov（BUG-809）同型失败。两端统一 .mp4 容器（faststart）。
     // isDesktop 仍用于产物落盘位置与清理策略（桌面存盘 / 移动走系统分享），与编码无关。
     const String videoExt = 'mp4';
+    // 防重入标志与 try/finally **同域**（BUG-2542）：置位曾在 try 之外，而本方法的
+    // 调用点是 `unawaited(...)`。于是「置位」与「try」之间的 `_readerThemeColors` /
+    // `_settings` / `Overlay.maybeOf(context)` 任一抛出，都会变成无人接管的异步
+    // 错误——没有 catch、没有 toast、标志永久为真，此后每次点导出都撞在防重入门上
+    // 「没反应」。这些读取本身仍必须在首个 await 之前（避免跨 await 用 context），
+    // 所以是把它们挪进 try 顶部，而不是把置位推后。
     try {
+      FushiToast.show(
+        msg: t.audiobook_export_clip_in_progress,
+        severity: ToastSeverity.info,
+      );
+
+      // 渲图前先抓阅读主题色 + 写排方向 + 字号（在 await 前读，避免跨 await 用 context）。
+      final ReaderThemeColors themeColors = _readerThemeColors;
+      final bool vertical =
+          _settings?.writingMode.startsWith('vertical') ?? false;
+      final double baseFontSize = _settings?.fontSize ?? 22;
+      final double lineHeight = _settings?.lineHeight ?? 1.65;
+      final OverlayState? overlay = Overlay.maybeOf(context);
+
       final Directory tmpDir = await getTemporaryDirectory();
       final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
       final String base = p.join(tmpDir.path, 'audiobook_clip_$stamp');
@@ -1787,11 +1806,20 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // BUG-1243：ffmpeg 合成参数已显式 `-map 0:v:0 -map 1:a:0`，AAC 在 MOV 内。
         // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
         // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。
-        await FushiShare.shareFiles(sharedFiles, subject: text);
+        //
+        // BUG-2542：移动端产物落 app 私有目录（不进相册），这次分享面板是用户取回
+        // 它的唯一通道。面板没呈现（防重入门丢弃 / 平台不回包）时不能再报「已保存」
+        // ——那是个用户拿不到文件的假成功。
+        final bool shared = await FushiShare.shareFiles(
+          sharedFiles,
+          subject: text,
+        );
         if (mounted) {
           FushiToast.show(
-            msg: t.audiobook_export_clip_saved,
-            severity: ToastSeverity.success,
+            msg: shared
+                ? t.audiobook_export_clip_saved
+                : t.audiobook_export_clip_share_unavailable,
+            severity: shared ? ToastSeverity.success : ToastSeverity.warning,
           );
         }
       }
