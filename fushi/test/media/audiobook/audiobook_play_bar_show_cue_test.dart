@@ -48,7 +48,7 @@ Future<void> _pumpBar(
 
 void main() {
   testWidgets(
-      '320 wide shared header leaves six playback targets within bounds',
+      '320 wide shared header keeps every playback target within bounds',
       (WidgetTester tester) async {
     final _CueController controller = _CueController('現在の文');
     addTearDown(controller.dispose);
@@ -59,7 +59,6 @@ void main() {
             body: AudiobookPlayBar(
       controller: controller,
       onOpenSettings: () {},
-      showSeekButtons: true,
       showSettingsButton: false,
     ))));
     expect(tester.takeException(), isNull);
@@ -70,7 +69,10 @@ void main() {
       expect(bar.contains(rect.topLeft), isTrue);
       expect(bar.contains(rect.bottomRight), isTrue);
     }
-    expect(find.byType(IconButton), findsNWidgets(6));
+    // 用户 2026-09-14 删掉 -10s / +10s 后底栏传输面只剩三联键 + 跟随磁铁。
+    expect(find.byIcon(Icons.replay_10_outlined), findsNothing);
+    expect(find.byIcon(Icons.forward_10_outlined), findsNothing);
+    expect(find.byType(IconButton), findsNWidgets(4));
   });
 
   testWidgets('current sentence stays absent as the cue changes', (

@@ -71,8 +71,6 @@ import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
-import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show kReaderHoverRevealStripHeight;
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -1186,24 +1184,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     statusBarInset: MediaQuery.paddingOf(context).top,
   );
 
-  /// 悬浮态：正文中央空白点击在「唤出」与「收起」间切换（EPUB 阅读器「点空白
-  /// 隐藏控制栏」同款）。固定态 / 界面已隐藏（M 键）时空白点击仍是 no-op。
+  /// 悬浮态：正文中央空白点击在「唤出」与「收起」间切换（EPUB 阅读器同款，用户
+  /// 2026-09-14 拍板的统一口径：**点击是唯一的开关**，鼠标移动不唤出、唤出后也不
+  /// 自动收起，移动端单击同为开 / 关）。固定态 / 界面已隐藏（M 键）时仍是 no-op。
   void _toggleFloatingChrome() {
     if (!_chromeFloating || !_chromeVisible) return;
     if (_chrome.transientVisible) {
       _chrome.hideTransient();
     } else {
-      _chrome.reveal(kMangaChromeAutoHide);
-    }
-  }
-
-  /// 鼠标停在顶栏上不自动收起；离开后重新计时。
-  void _onChromeHover(bool hovering) {
-    if (!_chromeFloating) return;
-    if (hovering) {
-      _chrome.cancelAutoHide();
-    } else if (_chrome.transientVisible) {
-      _chrome.armAutoHide(kMangaChromeAutoHide);
+      _chrome.showTransient();
     }
   }
 
@@ -3663,24 +3652,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       right: 0,
                       child: _buildTopChrome(),
                     ),
-                  // 悬浮态桌面顶边热区：栏收起时鼠标移到窗口顶部几像素即唤出
-                  // （EPUB 阅读器 `_buildHoverRevealLayer` 同款）。
-                  if (_chromeFloating &&
-                      _chromeActionsEnabled &&
-                      isDesktopPlatform &&
-                      !_chrome.transientVisible)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: kReaderHoverRevealStripHeight,
-                      child: MouseRegion(
-                        key: const ValueKey<String>('manga_hover_reveal_strip'),
-                        opaque: true,
-                        onEnter: (_) => _chrome.reveal(kMangaChromeAutoHide),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
                   // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
                   // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
                   // 唤回按钮一并抹掉，连带返回键再也叫不回来。
@@ -3763,7 +3734,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       floating: _chromeFloating,
       backTooltip: MaterialLocalizations.of(context).backButtonTooltip,
       onBack: () => Navigator.of(context).maybePop(),
-      onHoverChanged: _onChromeHover,
       pageLabel: ready ? _pageLabel : null,
       pageListenable: _pageNotifier,
       onPageTap: () => unawaited(_showPageJumpDialog()),
