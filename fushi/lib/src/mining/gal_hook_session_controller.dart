@@ -19,6 +19,7 @@ import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
+import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -176,6 +177,7 @@ class GalCaptureMemory {
     this.voiceTrackFingerprint,
     this.textThreadFingerprint,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
+    this.textProcess = const GalTextProcessPipeline(),
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -189,6 +191,7 @@ class GalCaptureMemory {
       audioFallbackPolicy: GalAudioFallbackPolicy.fromStorageKey(
         json['audioFallback'] as String?,
       ),
+      textProcess: GalTextProcessPipeline.fromJson(json['textProcess']),
     );
   }
 
@@ -205,17 +208,26 @@ class GalCaptureMemory {
   /// 「这个游戏的音频该怎么抓」的判断，只记一半会让用户每次开游戏重设一遍。
   final GalAudioFallbackPolicy audioFallbackPolicy;
 
+  /// 用户为这个游戏编排的文本处理管线（逐字重绘去重 / 注音花括号 / 正则替换等）。
+  ///
+  /// 判空用 [GalTextProcessPipeline.steps] 而不是 [GalTextProcessPipeline.isEmpty]：
+  /// 后者只回答「有没有生效步骤」，把整条链**临时全禁用**的用户仍然有东西要记——
+  /// 按 isEmpty 记就等于「全部禁用一次 = 规则被磁盘悄悄删光」。
+  final GalTextProcessPipeline textProcess;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
-      audioFallbackPolicy == GalAudioFallbackPolicy.full;
+      audioFallbackPolicy == GalAudioFallbackPolicy.full &&
+      textProcess.steps.isEmpty;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
     String? voiceTrackFingerprint,
     String? textThreadFingerprint,
     GalAudioFallbackPolicy? audioFallbackPolicy,
+    GalTextProcessPipeline? textProcess,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) => GalCaptureMemory(
@@ -228,6 +240,7 @@ class GalCaptureMemory {
         ? null
         : textThreadFingerprint ?? this.textThreadFingerprint,
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
+    textProcess: textProcess ?? this.textProcess,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -236,6 +249,7 @@ class GalCaptureMemory {
     if (textThreadFingerprint != null) 'textThread': textThreadFingerprint,
     if (audioFallbackPolicy != GalAudioFallbackPolicy.full)
       'audioFallback': audioFallbackPolicy.storageKey,
+    if (textProcess.steps.isNotEmpty) 'textProcess': textProcess.toJson(),
   };
 }
 
@@ -978,6 +992,10 @@ class GalHookSessionController extends ChangeNotifier {
   bool _captureMemoryLoaded = false;
   String? _captureMemoryGameKey;
   GalCaptureMemory _captureMemory = const GalCaptureMemory();
+
+  /// 本会话生效的文本处理管线。真值随捕获记忆按游戏落盘，这里是热路径读的那一份
+  /// 内存态——[_pollHookedText] 每条行都要问它，不能每次回偏好表取。
+  GalTextProcessPipeline _textProcessPipeline = const GalTextProcessPipeline();
 
   /// 音轨记忆（排除集 + 语音轨）已对本会话首个非空快照应用过。
   bool _trackMemoryApplied = false;
@@ -2531,8 +2549,13 @@ class GalHookSessionController extends ChangeNotifier {
           ..sort((GalHookedLine a, GalHookedLine b) => a.seq.compareTo(b.seq));
     if (history.isEmpty) return;
     for (final GalHookedLine line in history) {
+      // 回捞的是**同一条线程的正文**，与 poll 路径必须同样过管线：只处理一半会让
+      // 回捞行（原文）与后续 poll 行（已处理）在 appendLine 的前后缀折叠判据上对不上，
+      // 同一句台词在工作台里留两条。
+      final String? processedText = _processSelectedThreadText(line.text);
+      if (processedText == null) continue;
       final TexthookerLineEntry? entry = _textService.appendLine(
-        line.text,
+        processedText,
         source: TexthookerLineSource.engineHook,
         sourceLabel: 'engine_hook',
         sourceSequence: line.seq,
@@ -2867,6 +2890,9 @@ class GalHookSessionController extends ChangeNotifier {
     if (load == null || gameKey == null) return false;
     _captureMemoryGameKey = gameKey;
     _captureMemory = load(gameKey);
+    // 文本处理管线随记忆一起回到内存态。放在这里而不是某个 restore* 里：热路径
+    // 只读 [_textProcessPipeline]，而这是记忆真值进入本会话的唯一入口。
+    _textProcessPipeline = _captureMemory.textProcess;
     return true;
   }
 
@@ -3081,6 +3107,47 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 本会话当前生效的文本处理管线（来自每游戏记忆恢复或用户设置）。
+  ///
+  /// 默认是空管线 = 恒等变换：不装配时 [_pollHookedText] 走 [GalTextProcessPipeline.
+  /// isEmpty] 短路，文本一个字符不动。
+  GalTextProcessPipeline get textProcessPipeline => _textProcessPipeline;
+
+  /// 设置文本处理管线，并按游戏记住（与选轨 / 选线程同规格）。
+  ///
+  /// 没有游戏身份（窗口附着路径，没有 launchExe）时只活在会话内——与
+  /// [_persistTextThread] 同口径的「宁可少记，不猜身份」。
+  ///
+  /// 顺序刻意是「先加载记忆再写内存态」：[_ensureCaptureMemoryLoaded] 自己会把磁盘上
+  /// 的管线灌进 [_textProcessPipeline]，反过来写就会被这次惰性加载覆盖掉用户刚设的值。
+  Future<void> setTextProcessPipeline(GalTextProcessPipeline pipeline) async {
+    // 值没变就不落盘也不通知：可视化界面的拖动重排会连续产生大量中间态，
+    // 少了这道短路，每一帧都要往偏好里写一次整份管线。
+    if (pipeline == _textProcessPipeline) {
+      return;
+    }
+    final bool persistable = _ensureCaptureMemoryLoaded();
+    _textProcessPipeline = pipeline;
+    if (persistable) {
+      _saveCaptureMemory(_captureMemory.copyWith(textProcess: pipeline));
+    }
+    notifyListeners();
+  }
+
+  /// 对**所选线程的一行**套用用户编排的文本处理管线。
+  ///
+  /// 返回 null = 管线把整行处理空了（例如「只保留「」内文本」遇到旁白），调用方按
+  /// 系统 UI 行同样处置：推进 cursor、整行丢弃。
+  ///
+  /// 空管线（默认）在第一行就短路返回原串：这是每条 hook 行都要过的热路径，
+  /// 不装配时不允许产生任何额外拷贝或扫描。
+  String? _processSelectedThreadText(String text) {
+    final GalTextProcessPipeline pipeline = _textProcessPipeline;
+    if (pipeline.isEmpty) return text;
+    final String processed = pipeline.apply(text);
+    return processed.trim().isEmpty ? null : processed;
+  }
+
   /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
   void _resetCaptureMemorySession() {
     _trackMemoryApplied = false;
@@ -3088,6 +3155,7 @@ class GalHookSessionController extends ChangeNotifier {
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
+    _textProcessPipeline = const GalTextProcessPipeline();
   }
 
   /// 该台词行到达时刻（hook 侧 `GetTickCount64()` 毫秒域，与语音 clip、窗口录制帧
@@ -4876,8 +4944,21 @@ class GalHookSessionController extends ChangeNotifier {
           cursor = line.seq;
           continue;
         }
+        // 用户编排的文本处理管线（LunaTranslator 同款：逐字重绘去重 / 去整块重复 /
+        // 花括号注音 / 正则替换……）。位置有两条硬约束，不能挪：
+        //   ① 必须在 [_acceptsLineFromSelectedThread] **之后** —— 管线是给「所选线程的
+        //      正文」配的，线程目录/预览仍然要看引擎原样吐出来的串，否则用户在选择器里
+        //      看到的和他为之写规则的东西对不上；
+        //   ② 必须在 appendLine **之前** —— 注音剥离（parseRubyMarkup）与渐进折叠都在
+        //      appendLine 内部按入参文本建坐标系，管线放到后面跑就等于让 rubySpans 的
+        //      下标指向一份已经不存在的文本，振假名会整片错位。
+        final String? processedText = _processSelectedThreadText(line.text);
+        if (processedText == null) {
+          cursor = line.seq;
+          continue;
+        }
         final TexthookerLineEntry? entry = _textService.appendLine(
-          line.text,
+          processedText,
           source: TexthookerLineSource.engineHook,
           sourceLabel: 'engine_hook',
           sourceSequence: line.seq,

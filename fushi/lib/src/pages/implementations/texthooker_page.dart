@@ -9,6 +9,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi/models.dart';
+import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
@@ -25,7 +27,10 @@ import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale_text.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/gal_text_process_editor_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_capture_setup_dialog.dart';
@@ -72,6 +77,24 @@ String _selectedThreadPreview(
   if (selectedKey == null) return '';
   for (final TexthookerTextThread thread in threads) {
     if (thread.key == selectedKey) return thread.displayPreviewText ?? '';
+  }
+  return '';
+}
+
+/// 文本处理编辑器的样例行：所选线程的 native 预览行。
+///
+/// 刻意**不以已发布台词（`latestText`）为首选**——那已经是管线处理**之后**的结果，拿它当
+/// 样例等于把管线套两遍，预览会和真实入库文本对不上。native 预览行不受线程选择门控、也不
+/// 经管线，是这里唯一的原文来源；它拿不到时才回落已发布台词。
+String _selectedThreadSample(
+  List<TexthookerTextThread> threads,
+  String? selectedKey,
+) {
+  if (selectedKey == null) return '';
+  for (final TexthookerTextThread thread in threads) {
+    if (thread.key == selectedKey) {
+      return thread.previewText ?? thread.latestText ?? '';
+    }
   }
   return '';
 }
@@ -2034,83 +2057,104 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 // selected 每帧由真实会话状态推导——选中线程可能被行 buffer 上限
                 // 淘汰/清空后不再在 items 里，不在则回退「全部」空串哨兵（BUG-952
                 // 语义保持）。
-                GamepadMenuDropdown<String>(
-                  key: const ValueKey<String>('game-text-thread-selector'),
-                  focusId: const FushiFocusId('game-text-thread-selector'),
-                  label: t.game_text_thread,
-                  enabled: textThreads.isNotEmpty,
-                  selected:
-                      textThreads.any(
-                        (TexthookerTextThread thread) =>
-                            thread.key == selectedTextThreadKey,
-                      )
-                      ? selectedTextThreadKey
-                      : '',
-                  entries: <GamepadDropdownEntry<String>>[
-                    // v12：空值不再是「全部线程」——不选就一行都不发布。标签必须如实
-                    // 说明，否则用户会以为不选也在抓，然后奇怪为什么没有台词。
-                    (value: '', label: t.game_text_thread_unset),
-                    for (final TexthookerTextThread thread in textThreads)
-                      (
-                        value: thread.key,
-                        // 同一 hook 面在不同调用上下文会报成多条同 label 线程；
-                        // assignThreadDisplayLabels 给重名线程补 `#N` 序号，避免下拉
-                        // 里出现一整列一模一样的 `TextRender · 0x… · 0`。
-                        // 行数用 observedLineCount（native 观测总行数）而不是已发布
-                        // 行数：v12 起未被选中的线程一行都不发布，用已发布行数会让
-                        // 每条候选都显示 `· 0`，用户还是没法判断该选哪条。
-                        label:
-                            '${threadDisplayLabels[thread.key] ?? thread.label}'
-                            ' · ${thread.observedLineCount}',
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: GamepadMenuDropdown<String>(
+                        key: const ValueKey<String>(
+                          'game-text-thread-selector',
+                        ),
+                        focusId: const FushiFocusId(
+                          'game-text-thread-selector',
+                        ),
+                        label: t.game_text_thread,
+                        enabled: textThreads.isNotEmpty,
+                        selected:
+                            textThreads.any(
+                              (TexthookerTextThread thread) =>
+                                  thread.key == selectedTextThreadKey,
+                            )
+                            ? selectedTextThreadKey
+                            : '',
+                        entries: <GamepadDropdownEntry<String>>[
+                          // v12：空值不再是「全部线程」——不选就一行都不发布。标签必须如实
+                          // 说明，否则用户会以为不选也在抓，然后奇怪为什么没有台词。
+                          (value: '', label: t.game_text_thread_unset),
+                          for (final TexthookerTextThread thread in textThreads)
+                            (
+                              value: thread.key,
+                              // 同一 hook 面在不同调用上下文会报成多条同 label 线程；
+                              // assignThreadDisplayLabels 给重名线程补 `#N` 序号，避免下拉
+                              // 里出现一整列一模一样的 `TextRender · 0x… · 0`。
+                              // 行数用 observedLineCount（native 观测总行数）而不是已发布
+                              // 行数：v12 起未被选中的线程一行都不发布，用已发布行数会让
+                              // 每条候选都显示 `· 0`，用户还是没法判断该选哪条。
+                              label:
+                                  '${threadDisplayLabels[thread.key] ?? thread.label}'
+                                  ' · ${thread.observedLineCount}',
+                            ),
+                        ],
+                        // 每条线程第二行：有音频行数 + 最近台词预览——没有预览用户
+                        // 只能对着「引擎 · 地址 · 行数」盲选（用户实拍反馈）。
+                        entrySubtitle: (String key) {
+                          if (key.isEmpty) return null; // 「全部」行不带预览
+                          for (final TexthookerTextThread thread
+                              in textThreads) {
+                            if (thread.key == key) {
+                              return texthookerThreadSubtitle(
+                                audioLineCount: thread.audioLineCount,
+                                // 预览优先取已发布台词，回落 native 预览行——未被选中的
+                                // 线程只有后者，而那正是用户挑线程时唯一能看的东西。
+                                latestText: thread.displayPreviewText,
+                                audioLabel: t.game_text_thread_audio_count(
+                                  count: thread.audioLineCount,
+                                ),
+                                // BUG-2112：预览折叠后伪影线程看着像干净整句，必须明示。
+                                artifactLabel: thread.isArtifactDominated
+                                    ? t.game_text_thread_artifact_hint
+                                    : null,
+                              );
+                            }
+                          }
+                          return null;
+                        },
+                        onChanged: (String value) {
+                          TexthookerTextThread? selectedThread;
+                          if (value.isNotEmpty) {
+                            for (final TexthookerTextThread thread
+                                in textThreads) {
+                              if (thread.key == value) {
+                                selectedThread = thread;
+                                break;
+                              }
+                            }
+                          }
+                          setState(() {
+                            _activeLineId = null;
+                            _activeSentence = null;
+                            _unreadLines = 0;
+                          });
+                          unawaited(
+                            _session.selectTextThread(
+                              selectedThread?.nativeThreadId,
+                              threadKey: selectedThread?.key,
+                              // 用户亲自选的线程记进本游戏记忆，下次开同一个游戏自动选回。
+                              remember: true,
+                            ),
+                          );
+                        },
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    // 「文本处理」入口挂在选择器右侧：管线是按**所选线程**编排的，
+                    // 没选线程时必须禁用——否则等于对着一条空样例调规则，
+                    // 存下来也不知道存给了谁。
+                    _buildTextProcessEntry(
+                      context,
+                      textThreads,
+                      selectedTextThreadKey,
+                    ),
                   ],
-                  // 每条线程第二行：有音频行数 + 最近台词预览——没有预览用户
-                  // 只能对着「引擎 · 地址 · 行数」盲选（用户实拍反馈）。
-                  entrySubtitle: (String key) {
-                    if (key.isEmpty) return null; // 「全部」行不带预览
-                    for (final TexthookerTextThread thread in textThreads) {
-                      if (thread.key == key) {
-                        return texthookerThreadSubtitle(
-                          audioLineCount: thread.audioLineCount,
-                          // 预览优先取已发布台词，回落 native 预览行——未被选中的
-                          // 线程只有后者，而那正是用户挑线程时唯一能看的东西。
-                          latestText: thread.displayPreviewText,
-                          audioLabel: t.game_text_thread_audio_count(
-                            count: thread.audioLineCount,
-                          ),
-                          // BUG-2112：预览折叠后伪影线程看着像干净整句，必须明示。
-                          artifactLabel: thread.isArtifactDominated
-                              ? t.game_text_thread_artifact_hint
-                              : null,
-                        );
-                      }
-                    }
-                    return null;
-                  },
-                  onChanged: (String value) {
-                    TexthookerTextThread? selectedThread;
-                    if (value.isNotEmpty) {
-                      for (final TexthookerTextThread thread in textThreads) {
-                        if (thread.key == value) {
-                          selectedThread = thread;
-                          break;
-                        }
-                      }
-                    }
-                    setState(() {
-                      _activeLineId = null;
-                      _activeSentence = null;
-                      _unreadLines = 0;
-                    });
-                    unawaited(
-                      _session.selectTextThread(
-                        selectedThread?.nativeThreadId,
-                        threadKey: selectedThread?.key,
-                        // 用户亲自选的线程记进本游戏记忆，下次开同一个游戏自动选回。
-                        remember: true,
-                      ),
-                    );
-                  },
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -2207,6 +2251,76 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ],
       ),
+    );
+  }
+
+  /// 线程选择器右侧的「文本处理」入口。
+  ///
+  /// 禁用条件与语义绑死：管线作用的是**所选线程**发布出来的文本，没选线程时既没有样例
+  /// 可预览、存下来也不知道存给谁，所以按钮置灰而不是打开一个空编辑器。
+  /// 管线非空时套一层角标显示生效步数——用户得能在不打开页面的情况下知道「这条线程
+  /// 的文本正在被改写」。
+  Widget _buildTextProcessEntry(
+    BuildContext context,
+    List<TexthookerTextThread> textThreads,
+    String? selectedTextThreadKey,
+  ) {
+    final bool hasThread =
+        selectedTextThreadKey != null &&
+        textThreads.any(
+          (TexthookerTextThread thread) => thread.key == selectedTextThreadKey,
+        );
+    final int activeSteps = _session.textProcessPipeline.steps
+        .where((GalTextProcessStep step) => step.enabled)
+        .length;
+    final String stepCountLabel = t.game_text_process_step_count(
+      count: activeSteps,
+    );
+    final Widget button = IconButton(
+      key: const ValueKey<String>('game-text-process-entry'),
+      tooltip: activeSteps > 0
+          ? '${t.game_text_process_title} · $stepCountLabel'
+          : t.game_text_process_title,
+      icon: const Icon(Icons.filter_alt_outlined, size: 20),
+      onPressed: hasThread
+          ? () => unawaited(_openTextProcessEditor(selectedTextThreadKey))
+          : null,
+    );
+    if (activeSteps == 0) return button;
+    return Badge(label: Text('$activeSteps'), child: button);
+  }
+
+  Future<void> _openTextProcessEditor(String selectedTextThreadKey) async {
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => GalTextProcessEditorPage(
+          initialPipeline: _session.textProcessPipeline,
+          // 每次点「使用最近抓到的一行」都现取，而不是开页时快照一次：编辑期间游戏还在跑。
+          latestSample: () => _selectedThreadSample(
+            _session.textThreads,
+            selectedTextThreadKey,
+          ),
+          resolveAiProvider: _resolveTextProcessAiProvider,
+          onSave: (GalTextProcessPipeline pipeline) =>
+              unawaited(_session.setTextProcessPipeline(pipeline)),
+        ),
+      ),
+    );
+    // 回来刷一次：入口角标读的是会话里的新管线。
+    if (mounted) setState(() {});
+  }
+
+  /// 解析「galgame 文本处理」当前可用的 AI 提供商。
+  ///
+  /// 偏好未就绪（早一帧打开 / 无 ProviderScope 的纯布局测试）返回 null，编辑页据此提示
+  /// 去设置里配一家，而不是发一个注定失败的请求。
+  AiProviderConfig? _resolveTextProcessAiProvider() {
+    if (!_appModel.isPreferencesReady) return null;
+    final PreferencesRepository prefs = _appModel.prefsRepo;
+    return prefs.aiFeatureAssignments.resolve(
+      AiFeature.galgameTextProcess,
+      prefs.aiProviders,
     );
   }
 
