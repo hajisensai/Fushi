@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ 017429c. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.7.0-debug.14875-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.7.0-debug.14875-ios.ipa",
-      "releaseSequence": 14875,
-      "tag": "v2.7.0-debug.14875+0639f79",
-      "version": "2.7.0-debug.14875",
-      "size": 59768979,
-      "sha256": "9e4ed714ffa137916bcc7dbb215976dd5e5a25368936f41136f2d674f5bf2507"
-    },
-    {
-      "name": "fushi-2.7.0-debug.14875-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.7.0-debug.14875-macos.zip",
-      "releaseSequence": 14875,
-      "tag": "v2.7.0-debug.14875+0639f79",
-      "version": "2.7.0-debug.14875",
-      "size": 337249257,
-      "sha256": "6313823299bf9e29f645290cd005b6985762a0d5249e922032648054d5e79ef3"
-    },
-    {
       "name": "fushi-2.7.0-debug.14880-017429c-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.7.0-debug.14880-017429c-debug.apk",
       "releaseSequence": 14880,
@@ -33,6 +15,24 @@
       "version": "2.7.0-debug.14880",
       "size": 271691509,
       "sha256": "405debc6ce2c63fbb5fa7875bb647436ddc262b7c83330740a9d1ca3051aa6e6"
+    },
+    {
+      "name": "fushi-2.7.0-debug.14880-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.7.0-debug.14880-ios.ipa",
+      "releaseSequence": 14880,
+      "tag": "v2.7.0-debug.14880+017429c",
+      "version": "2.7.0-debug.14880",
+      "size": 59768679,
+      "sha256": "89543773c114dc3b14e2472e74ecca24c9ec0aa2cf27ea400e41df837202eb75"
+    },
+    {
+      "name": "fushi-2.7.0-debug.14880-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.7.0-debug.14880-macos.zip",
+      "releaseSequence": 14880,
+      "tag": "v2.7.0-debug.14880+017429c",
+      "version": "2.7.0-debug.14880",
+      "size": 337249191,
+      "sha256": "2a092443add1caeec379d816be9b77f2a852dc6bc4cc7136380be600a7177c74"
     },
     {
       "name": "fushi-2.7.0-debug.14880-windows-setup.exe",
