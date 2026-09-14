@@ -126,8 +126,8 @@ class AutoRepositionAnkiRepository extends BaseAnkiRepository {
       );
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) =>
-      _inner.findSourceNoteIds(markerTag);
+  Future<List<int>> findSourceNoteCandidates(String sourceId) =>
+      _inner.findSourceNoteCandidates(sourceId);
 
   @override
   Future<void> writeSourceNoteFields(int noteId, Map<String, String> fields) =>

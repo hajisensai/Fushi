@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../anki_models.dart';
+import '../card_source_link.dart';
 import '../anki_note_type_definition.dart';
 import '../anki_remote_media_http.dart';
 import '../base_anki_repository.dart';
@@ -323,7 +324,6 @@ class AnkiRepository extends BaseAnkiRepository {
       // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
       // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
       charPositionTag: context.charPositionTag,
-      sourceLink: context.sourceLink,
     );
 
     try {
@@ -572,15 +572,17 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) async {
+  Future<List<int>> findSourceNoteCandidates(String sourceId) async {
     await _ensurePermission();
+    // The native side validates the UUID and builds the field substring query
+    // itself; no free-form search string crosses the channel.
     final Object? raw = await _channel.invokeMethod<Object?>(
-      'findNotesBySourceMarker',
-      <String, Object>{'markerTag': markerTag},
+      'findNotesBySourceId',
+      <String, Object>{'sourceId': CardSourceLink.validateSourceId(sourceId)},
     );
     if (raw is! List ||
         raw.any((dynamic value) => value is! int || value <= 0)) {
-      throw StateError('Invalid source marker lookup response');
+      throw StateError('Invalid source note lookup response');
     }
     return raw.cast<int>();
   }

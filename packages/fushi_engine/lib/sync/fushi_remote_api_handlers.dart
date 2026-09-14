@@ -302,7 +302,7 @@ Future<Map<String, dynamic>> buildSourceNoteResponse(
     case '/api/anki/source/read':
       final Object? sourceId = body['sourceId'];
       if (sourceId is! String) throw const FormatException('Missing source ID');
-      CardSourceLink.markerForSourceId(sourceId);
+      CardSourceLink.validateSourceId(sourceId);
       final AnkiSourceNote? note = await mining.readSourceNote(sourceId);
       return <String, dynamic>{
         'ok': true,

@@ -35,7 +35,7 @@ typedef RemoteMiningAuthReporter = void Function(String message);
 /// 操作**本机** Anki 的卡片；远端 note id 本就为 null，本会话覆写第三态不激活，与 AnkiDroid
 /// 现状一致）。
 /// 来源回跳使用 [readSourceNote]/[prepareSourceNoteFields]/[patchSourceNote] 的
-/// 独立链路：按来源 marker 唯一读取后绑定主机，失败不得回退到本机或另一台主机。
+/// 独立链路：按来源 ID 唯一读取后绑定主机，失败不得回退到本机或另一台主机。
 ///
 /// 媒体的四个来源在客户端就地读成字节再随请求发出（服务端未必装同款词典/无法访问本机文件）：
 /// 封面 ← `context.coverPath`；句子音频 ← `context.sasayakiAudioPath`；单词音频 ←

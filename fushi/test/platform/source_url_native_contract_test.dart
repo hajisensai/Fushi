@@ -117,14 +117,24 @@ void main() {
     },
   );
 
-  test('Android marker lookup requires an exact tag and fails closed', () {
+  test('Android source lookup validates the UUID and fails closed (BUG-2527)',
+      () {
     final String handler = File(
       'android/app/src/main/java/app/fushi/reader/AnkiChannelHandler.java',
     ).readAsStringSync();
-    expect(handler, contains('case "findNotesBySourceMarker":'));
-    expect(handler, contains(r'^fushi_source_[0-9a-f]{32}$'));
+    expect(handler, contains('case "findNotesBySourceId":'));
+    expect(handler, contains('sourceId.matches(SOURCE_ID_PATTERN)'));
+    expect(
+      handler,
+      contains(
+        r'"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"',
+      ),
+    );
+    // The redundant marker tag is gone: no tag query, no tag emission.
+    expect(handler, isNot(contains('fushi_source_')));
+    expect(handler, isNot(contains('findNotesBySourceMarker')));
     final int start = handler.indexOf(
-      'private List<Long> findNotesBySourceMarker(',
+      'private List<Long> findNotesBySourceId(',
     );
     expect(start, greaterThan(-1));
     final String body = handler.substring(
@@ -135,8 +145,8 @@ void main() {
       body,
       contains('target.rebase(FlashCardsContract.Note.CONTENT_URI)'),
     );
-    expect(body, contains('"tag:" + markerTag'));
-    expect(body, contains('.contains(markerTag)'));
+    // Same query literal as CardSourceLink.searchQueryForSourceId.
+    expect(body, contains('"sourceId=" + sourceId'));
     expect(body, contains('getColumnIndexOrThrow'));
     expect(body, contains('if (cursor == null)'));
     expect(body, contains('throw new IllegalStateException'));
