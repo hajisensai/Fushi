@@ -1811,7 +1811,6 @@
   "game_window_missing": "未绑定",
   "games": "游戏",
   "global_context_capture": "抓取选中文本上下文",
-  "global_context_capture_hint": "从前台应用读取选区周围文本，在查词弹窗显示当前句（仅 Windows）",
   "go_to_chapter": "第 $n 章",
   "handlebar_audio": "音频",
   "handlebar_book_cover": "书籍封面",
@@ -2007,7 +2006,6 @@
   "login": "登录",
   "lookup_audio_volume": "查词音量",
   "lookup_block_capture": "防截屏 / 防录屏",
-  "lookup_block_capture_hint": "把查词悬浮窗从截图、录屏、直播串流中排除（Windows）。关闭后，截图、录屏和串流即可拍到查词悬浮窗。",
   "low_memory_mode": "小内存模式",
   "low_memory_mode_hint": "减少缓存和内存使用，适合低端设备。部分更改需重启后生效。",
   "low_memory_mode_suggestion": "可尝试在 设置 → 其他设置 中开启小内存模式。",
@@ -4848,5 +4846,11 @@
   "reader_control_reject_title": "书名只能放在顶栏中间，其它按钮不能放那里。",
   "reader_control_editor_title": "阅读器按钮布局",
   "reader_control_editor_hint": "把按钮拖到顶栏或底栏的任意位置，或移出。",
-  "reader_control_reset_layout": "恢复默认阅读器按钮布局"
+  "reader_control_reset_layout": "恢复默认阅读器按钮布局",
+  "global_context_capture_hint": "从前台应用读取选区周围文本，在查词弹窗显示当前句（Windows / macOS）",
+  "lookup_block_capture_hint": "把查词悬浮窗从截图、录屏、直播串流中排除（Windows / macOS）。关闭后，截图、录屏和串流即可拍到查词悬浮窗。",
+  "lookup_accessibility_permission_request": "为应用外查词授权辅助功能",
+  "lookup_accessibility_permission_hint": "macOS 需要辅助功能权限才能读取其他应用中选中的文字；未授权时快捷键只查当前剪贴板文本。",
+  "lookup_accessibility_permission_granted": "已授权辅助功能",
+  "lookup_accessibility_permission_missing": "尚未授权辅助功能。请在「隐私与安全性 > 辅助功能」中启用 Fushi 后重试。"
 }
