@@ -231,23 +231,44 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
 }
 
 # release-server.yml (headless server) is a separate product line: no push/debug
-# channel, no update manifest, no rolling tag. It only shares the release sequence
-# source and the hard rule that a non-app release must never become Latest (the app
-# stable-channel updater resolves releases/latest; a server Latest would stall it).
+# channel, no update manifest, no rolling tag. It shares the release sequence
+# source, and since 2026-09-14 it is a workflow_call reusable workflow that ONLY the
+# standalone release repo hajisensai/fushi-server invokes; releases land there.
+# The app stable-channel updater resolves THIS repo's releases/latest, so a server
+# release published here would stall every app's update check. That used to be
+# enforced by "make_latest is always false"; now it is enforced structurally:
+#   1. no workflow_dispatch / push entry point in this repo (workflow_call only);
+#   2. the channel job refuses to run when github.repository is the app repo;
+#   3. every checkout pins repository: hajisensai/Fushi so the caller repo's
+#      own tree is never mistaken for the source.
 $serverWorkflow = '.github/workflows/release-server.yml'
 $serverContent = Read-RepoFile $serverWorkflow
 Require-Text $serverWorkflow $serverContent 'concurrency:' 'server publisher must serialize same-tag runs'
 Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a server publish must run to completion'
 Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'
 Require-Text $serverWorkflow $serverContent 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'server release sequence must come from the shared script'
-Require-Text $serverWorkflow $serverContent 'MAKE_LATEST=false' 'server releases are never Latest, formal included'
+Require-Text $serverWorkflow $serverContent 'workflow_call:' 'the server publisher is a reusable workflow invoked from hajisensai/fushi-server'
+Require-Text $serverWorkflow $serverContent 'if [ "$CALLER_REPO" = "$SOURCE_REPO" ]; then' 'the channel job must refuse to publish a server release into the app repo (its releases/latest drives the app updater)'
+Require-Text $serverWorkflow $serverContent 'SOURCE_REPO: hajisensai/Fushi' 'the source repo identity must be one named constant'
 Require-Text $serverWorkflow $serverContent 'make_latest: ${{ needs.channel.outputs.make_latest }}' 'make_latest must flow from the channel output (never a literal)'
-Require-Text $serverWorkflow $serverContent 'fushi-server-*) : ;;' 'server release tags must be validated to start with fushi-server- so they never collide with app tags'
+Require-Text $serverWorkflow $serverContent 'v[0-9]*) : ;;' 'server release tags must be validated as v<version>[-beta.<seq>]'
 Forbid-Pattern $serverWorkflow $serverContent 'RELEASE_SEQUENCE=\$\(git rev-list' 'release sequence must go through tool/release_sequence.sh'
-Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
+Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
 Forbid-Pattern $serverWorkflow $serverContent 'github\.run_number' 'workflow-local run_number is not a release sequence'
-Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'a server release must never be Latest'
-Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only (workflow_dispatch); no push trigger'
+Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'make_latest must be the channel output, never a literal'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only; no push trigger'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+workflow_dispatch:' 'no dispatch entry in the app repo: a server release here would become the app updater''s releases/latest; dispatch from hajisensai/fushi-server'
+# Every checkout must pin the source repo; a bare `actions/checkout` in a reusable
+# workflow checks out the CALLER (fushi-server), which has no source at all.
+$serverCheckouts = [regex]::Matches($serverContent, '(?m)^\s+- uses: actions/checkout@v\d+\s*\n(?:\s+with:\s*\n(?:\s+[a-z_-]+:.*\n)*)?')
+if ($serverCheckouts.Count -eq 0) {
+  $failures.Add("${serverWorkflow}: no actions/checkout step found")
+}
+foreach ($m in $serverCheckouts) {
+  if ($m.Value -notmatch 'repository: hajisensai/Fushi') {
+    $failures.Add("${serverWorkflow}: a checkout step does not pin repository: hajisensai/Fushi (reusable workflow would check out the caller repo)")
+  }
+}
 
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'

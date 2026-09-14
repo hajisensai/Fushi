@@ -17,8 +17,9 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 
 ## 安装
 
-从本仓 GitHub Releases 下 tag 以 `fushi-server-v` 开头的包（`release-server.yml` 手动
-发布；beta 是 prerelease）：`fushi_server-<version>-<seq>-linux-x64.tar.gz` /
+从独立发布仓 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases)
+下包（源码在本仓；那边的 `release.yml` 回调本仓 `release-server.yml` 构建；beta 是
+prerelease，formal 是 Latest）：`fushi_server-<version>-<seq>-linux-x64.tar.gz` /
 `fushi_server-<version>-<seq>-windows-x64.zip`。每条 PR 也在 `build-multiplatform.yml`
 的 linux job 出一份 `fushi_server-linux-x64` 工件（Actions 页面下载）。布局：
 
