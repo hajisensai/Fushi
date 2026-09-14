@@ -1056,11 +1056,19 @@ class VideoBookRepository {
       (await findByVideoPath(videoPath, excludeBookUid: excludeBookUid)) !=
       null;
 
+  /// 落库只收可读对白：`\p` 绘图事件（[AudioCue.isRenderOnly]）是播放期渲染专用，
+  /// 写进 cue 表会在字幕列表 / 制卡里冒出空行。
+  static List<AudioCuesCompanion> _persistableCues(List<AudioCue> cues) =>
+      <AudioCuesCompanion>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly) AudioCue.toCompanion(c),
+      ];
+
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,
   }) =>
-      _db.replaceCuesForBook(bookUid, cues.map(AudioCue.toCompanion).toList());
+      _db.replaceCuesForBook(bookUid, _persistableCues(cues));
 
   Future<List<AudioCue>> loadCues(String bookUid) async {
     final List<AudioCueRow> rows = await _db.getCuesForBook(bookUid);
@@ -1076,10 +1084,7 @@ class VideoBookRepository {
     required List<AudioCue> cues,
   }) =>
       _db.transaction(() async {
-        await _db.replaceCuesForBook(
-          bookUid,
-          cues.map(AudioCue.toCompanion).toList(),
-        );
+        await _db.replaceCuesForBook(bookUid, _persistableCues(cues));
         await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
       });
 }

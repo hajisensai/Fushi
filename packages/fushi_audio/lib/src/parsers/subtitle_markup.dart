@@ -395,52 +395,43 @@ class SubtitleClip {
   const SubtitleClip({required this.inverse, required this.segments});
 }
 
-/// 解析 `\clip`/`\iclip` 括号内参数 [inner] → [SubtitleClip]（坐标除以 PlayRes 归一化）。
+/// ASS `\p<n>` 矢量绘图（招牌白底遮罩 / 形状特效）。坐标已按 `2^(n-1)` 缩回脚本像素
+/// 再除以 PlayRes 归一化成分数（与 [SubtitleClip] / [SubtitlePos] 同构，纯 Dart）。
 ///
-/// 两种形式（ASS 规范）：
-/// - 矩形 `x1,y1,x2,y2` → 四段折线；
-/// - 绘图 `[scale,] m/l/b/s/n 命令串`：`m x y` 移动、`l x y ...` 连续直线、
-///   `b x1 y1 x2 y2 x3 y3 ...` 连续三次贝塞尔、`s ...` B 样条按折线近似、`n` 按移动
-///   处理、`c`/`p` 忽略。scale 变体坐标除以 `2^(scale-1)`。
-/// 解析失败 / 空路径 / PlayRes 缺失返回 null（调用方按无裁剪）。
-SubtitleClip? parseAssClip({
-  required bool inverse,
-  required String inner,
-  required double? playResX,
-  required double? playResY,
+/// libass/VSFilter 语义：绘图是一个「字形」，按其**包围盒**参与 `\an` 对齐 / `\pos`
+/// 定位——`{\an7\pos(x,y)\p1}m 100 100 l 200 200` 的包围盒左上角落在 (x,y)，而不是
+/// 绘图坐标原点。故本类同时给出包围盒 [minX]..[maxY]，渲染层据此把路径平移到盒内。
+/// 每个 `m` 起一个子路径，子路径隐式闭合（ASS 绘图恒为填充形状）。
+class SubtitleDrawing {
+  final List<SubtitleClipSegment> segments;
+  final double minX, minY, maxX, maxY;
+
+  /// `\pbo<y>` 基线偏移（脚本像素 / PlayResY 归一化，正值向下）；无则 0。
+  final double baselineOffsetFraction;
+
+  const SubtitleDrawing({
+    required this.segments,
+    required this.minX,
+    required this.minY,
+    required this.maxX,
+    required this.maxY,
+    this.baselineOffsetFraction = 0,
+  });
+
+  double get widthFraction => maxX - minX;
+  double get heightFraction => maxY - minY;
+}
+
+/// 解析 ASS 绘图命令串 [drawing]（`m/n/l/b/s/p/c`）→ 段列表；坐标先除以 [divisor]
+/// （`2^(scale-1)`）再按 PlayRes 归一化。`\clip(...)` 绘图形式与 `\p` 正文绘图共用。
+/// 无有效段 / 首段不是 `m` 返回空列表（调用方按无绘图）。
+List<SubtitleClipSegment> parseAssDrawingSegments(
+  String drawing, {
+  required double divisor,
+  required double playResX,
+  required double playResY,
 }) {
-  if (playResX == null || playResY == null || playResX <= 0 || playResY <= 0) {
-    return null;
-  }
   final List<SubtitleClipSegment> segments = <SubtitleClipSegment>[];
-
-  // 矩形形式：恰好 4 个纯数字参数。
-  final List<String> csv =
-      inner.split(',').map((String p) => p.trim()).toList();
-  if (csv.length == 4 && csv.every((String p) => double.tryParse(p) != null)) {
-    final double x1 = double.parse(csv[0]) / playResX;
-    final double y1 = double.parse(csv[1]) / playResY;
-    final double x2 = double.parse(csv[2]) / playResX;
-    final double y2 = double.parse(csv[3]) / playResY;
-    return SubtitleClip(inverse: inverse, segments: <SubtitleClipSegment>[
-      SubtitleClipSegment.move(x1, y1),
-      SubtitleClipSegment.line(x2, y1),
-      SubtitleClipSegment.line(x2, y2),
-      SubtitleClipSegment.line(x1, y2),
-    ]);
-  }
-
-  // 绘图形式：可选前导 `scale,`（单个正整数）+ 命令串。
-  String drawing = inner;
-  double divisor = 1.0;
-  final int comma = inner.indexOf(',');
-  if (comma > 0) {
-    final int? scale = int.tryParse(inner.substring(0, comma).trim());
-    if (scale != null && scale >= 1) {
-      drawing = inner.substring(comma + 1);
-      divisor = 1 << (scale - 1) == 0 ? 1.0 : (1 << (scale - 1)).toDouble();
-    }
-  }
   final List<String> tokens = drawing
       .split(_reWhitespaceRun)
       .where((String t) => t.isNotEmpty)
@@ -489,9 +480,114 @@ SubtitleClip? parseAssClip({
   }
   flushNums();
   if (segments.isEmpty || segments.first.op != SubtitleClipOp.move) {
+    return const <SubtitleClipSegment>[];
+  }
+  return segments;
+}
+
+/// `\p<n>` 正文绘图 → [SubtitleDrawing]（含包围盒）。[scale] 是 `\p` 的 n（>=1）；
+/// [baselineOffsetPx] 是 `\pbo`（脚本像素）。空 / 非法命令串或缺 PlayRes 返回 null。
+SubtitleDrawing? parseAssDrawing(
+  String drawing, {
+  required int scale,
+  required double? playResX,
+  required double? playResY,
+  double baselineOffsetPx = 0,
+}) {
+  if (playResX == null || playResY == null || playResX <= 0 || playResY <= 0) {
     return null;
   }
-  return SubtitleClip(inverse: inverse, segments: segments);
+  final int shift = scale >= 1 ? scale - 1 : 0;
+  final double divisor = (1 << shift).toDouble();
+  final List<SubtitleClipSegment> segments = parseAssDrawingSegments(
+    drawing,
+    divisor: divisor,
+    playResX: playResX,
+    playResY: playResY,
+  );
+  if (segments.isEmpty) return null;
+  double minX = double.infinity, minY = double.infinity;
+  double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+  void grow(double x, double y) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  for (final SubtitleClipSegment s in segments) {
+    grow(s.x1, s.y1);
+    if (s.op == SubtitleClipOp.cubic) {
+      grow(s.x2, s.y2);
+      grow(s.x3, s.y3);
+    }
+  }
+  if (!minX.isFinite || !minY.isFinite || !maxX.isFinite || !maxY.isFinite) {
+    return null;
+  }
+  return SubtitleDrawing(
+    segments: segments,
+    minX: minX,
+    minY: minY,
+    maxX: maxX,
+    maxY: maxY,
+    baselineOffsetFraction: baselineOffsetPx / divisor / playResY,
+  );
+}
+
+/// 解析 `\clip`/`\iclip` 括号内参数 [inner] → [SubtitleClip]（坐标除以 PlayRes 归一化）。
+///
+/// 两种形式（ASS 规范）：
+/// - 矩形 `x1,y1,x2,y2` → 四段折线；
+/// - 绘图 `[scale,] m/l/b/s/n 命令串`：`m x y` 移动、`l x y ...` 连续直线、
+///   `b x1 y1 x2 y2 x3 y3 ...` 连续三次贝塞尔、`s ...` B 样条按折线近似、`n` 按移动
+///   处理、`c`/`p` 忽略。scale 变体坐标除以 `2^(scale-1)`。
+/// 解析失败 / 空路径 / PlayRes 缺失返回 null（调用方按无裁剪）。
+SubtitleClip? parseAssClip({
+  required bool inverse,
+  required String inner,
+  required double? playResX,
+  required double? playResY,
+}) {
+  if (playResX == null || playResY == null || playResX <= 0 || playResY <= 0) {
+    return null;
+  }
+
+  // 矩形形式：恰好 4 个纯数字参数。
+  final List<String> csv =
+      inner.split(',').map((String p) => p.trim()).toList();
+  if (csv.length == 4 && csv.every((String p) => double.tryParse(p) != null)) {
+    final double x1 = double.parse(csv[0]) / playResX;
+    final double y1 = double.parse(csv[1]) / playResY;
+    final double x2 = double.parse(csv[2]) / playResX;
+    final double y2 = double.parse(csv[3]) / playResY;
+    return SubtitleClip(inverse: inverse, segments: <SubtitleClipSegment>[
+      SubtitleClipSegment.move(x1, y1),
+      SubtitleClipSegment.line(x2, y1),
+      SubtitleClipSegment.line(x2, y2),
+      SubtitleClipSegment.line(x1, y2),
+    ]);
+  }
+
+  // 绘图形式：可选前导 `scale,`（单个正整数）+ 命令串。
+  String drawing = inner;
+  double divisor = 1.0;
+  final int comma = inner.indexOf(',');
+  if (comma > 0) {
+    final int? scale = int.tryParse(inner.substring(0, comma).trim());
+    if (scale != null && scale >= 1) {
+      drawing = inner.substring(comma + 1);
+      divisor = 1 << (scale - 1) == 0 ? 1.0 : (1 << (scale - 1)).toDouble();
+    }
+  }
+  final List<SubtitleClipSegment> path = parseAssDrawingSegments(
+    drawing,
+    divisor: divisor,
+    playResX: playResX,
+    playResY: playResY,
+  );
+  if (path.isEmpty) return null;
+  return SubtitleClip(inverse: inverse, segments: path);
 }
 
 /// 单条 cue 的**默认样式**：来自 ASS `[V4+ Styles]` 段里该 Dialogue 引用的 Style 行
@@ -679,6 +775,17 @@ class SubtitleMarkup {
   /// `\t(\clip)` 动画裁剪不支持（取扫描到的最后一个静态值）。
   final SubtitleClip? clip;
 
+  /// `\p<n>` 正文矢量绘图（招牌白底遮罩等）；null=本 cue 无绘图。绘图事件通常没有
+  /// 可读正文（[plainText] 为空），是否作为 cue 产出由解析器调用方决定
+  /// （`AssParser.parseString(includeDrawings:)`）——播放渲染要它，字幕列表 / 制卡 /
+  /// 导入持久化不要。
+  final SubtitleDrawing? drawing;
+
+  /// 绘图生效时刻的行内样式快照（`\1c` 填充色 / `\1a` / `\3c` `\bord` 描边 / `\shad`
+  /// / `\blur`），grapheme 区间恒为空 `[0,0)`；null=绘图前无任何行内覆盖（回退
+  /// [cueStyle]）。渲染层用它给路径取填充 / 描边画笔，与文字字形同一套解析。
+  final SubtitleSpan? drawingStyle;
+
   const SubtitleMarkup({
     required this.plainText,
     required this.spans,
@@ -699,6 +806,8 @@ class SubtitleMarkup {
     this.rotationYDeg,
     this.shearX,
     this.shearY,
+    this.drawing,
+    this.drawingStyle,
   });
 }
 
@@ -849,8 +958,9 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
   SubtitleFade? fade;
   final _Transform xf = _Transform();
   // ASS 绘图模式：\pN(N>0) 开启、\p0 关闭，作用域持续到本条 cue 结束。开启
-  // 期间标签块之外的正文是矢量绘图命令（m/l/b 坐标），是图形不是文字，必须
-  // 丢弃而非当 plainText 渲染（TODO-799 OP 卡拉OK 满屏坐标乱码）。
+  // 期间标签块之外的正文是矢量绘图命令（m/l/b 坐标），是图形不是文字，绝不能进
+  // plainText（TODO-799 OP 卡拉OK 满屏坐标乱码）——收进 [_DrawingState.buffer]，
+  // 扫描结束后解析成 [SubtitleDrawing]（招牌白底遮罩靠它才画得出来）。
   final _DrawingState drawing = _DrawingState();
 
   void flush() {
@@ -876,17 +986,21 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
         style,
         (SubtitleAnchor a) => anchor = a,
         (SubtitlePos p) => pos = p,
-        (bool on) => drawing.active = on,
+        (int scale) => drawing.setScale(scale),
         (SubtitleFade f) => fade = f,
         xf,
         playResX,
         playResY,
+        drawing,
       );
       i = close + 1;
       continue;
     }
     if (drawing.active) {
-      // 绘图模式下标签块之外的正文是矢量命令，整体丢弃。
+      // 绘图模式下标签块之外的正文是矢量命令：不进 plainText，收进绘图缓冲；样式
+      // 快照取首个命令字符时刻的行内覆盖（`{\1c&HFFFFFF&\p1}m 0 0 ...` 的白填充）。
+      drawing.style ??= style.clone();
+      drawing.buffer.write(c);
       i++;
       continue;
     }
@@ -974,6 +1088,43 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
           t1Ms: xf.mt1, t2Ms: xf.mt2)
       : null;
 
+  // `\p` 正文绘图：命令串 → 归一化路径 + 包围盒；样式快照转成空区间 span。
+  final String drawingSrc = drawing.buffer.toString();
+  final SubtitleDrawing? drawingShape = drawingSrc.trim().isEmpty
+      ? null
+      : parseAssDrawing(
+          drawingSrc,
+          scale: drawing.scale,
+          playResX: playResX,
+          playResY: playResY,
+          baselineOffsetPx: drawing.baselineOffsetPx,
+        );
+  final _Style? ds = drawing.style;
+  final SubtitleSpan? drawingStyle = (drawingShape != null &&
+          ds != null &&
+          ds.hasStyle)
+      ? SubtitleSpan(
+          startGrapheme: 0,
+          endGrapheme: 0,
+          italic: ds.italic,
+          bold: ds.bold,
+          underline: ds.underline,
+          strike: ds.strike,
+          colorArgb: ds.colorArgb,
+          fontSizePx: ds.fontSizePx,
+          fontName: ds.fontName,
+          outlineColorArgb: ds.outlineColorArgb,
+          shadowColorArgb: ds.shadowColorArgb,
+          outlineWidthPx: ds.outlineWidthPx,
+          shadowDepthPx: ds.shadowDepthPx,
+          blur: ds.blur,
+          fillOpacity: ds.fillOpacity,
+          letterSpacingPx: ds.letterSpacingPx,
+          scaleX: ds.scaleX,
+          scaleY: ds.scaleY,
+        )
+      : null;
+
   // \N 硬换行占位（'\n'）→ 下标记录 + 替换回空格（plainText 与历史逐字节一致，查词 /
   // 制卡 / DB 零变化；渲染层按下标切行）。逐 grapheme 扫描一次即可（'\n' 恒单 grapheme）。
   final String rawPlain = plain.toString();
@@ -1012,6 +1163,8 @@ SubtitleMarkup parseSubtitleMarkup(String raw,
     rotationYDeg: xf.fryDeg,
     shearX: xf.faxShear,
     shearY: xf.fayShear,
+    drawing: drawingShape,
+    drawingStyle: drawingStyle,
   );
 }
 
@@ -1032,6 +1185,7 @@ final RegExp _reTagColor4 = RegExp(r'^4c&H([0-9a-fA-F]{1,8})&?$');
 final RegExp _reTagBord = RegExp(r'^bord(\d+(?:\.\d+)?)$');
 final RegExp _reTagShad = RegExp(r'^shad(\d+(?:\.\d+)?)$');
 final RegExp _reTagDrawing = RegExp(r'^p(\d+)$');
+final RegExp _reTagDrawingBaseline = RegExp(r'^pbo(-?\d+(?:\.\d+)?)$');
 final RegExp _reTagBlur = RegExp(r'^(?:blur|be)(\d+(?:\.\d+)?)$');
 final RegExp _reTagFad = RegExp(r'^fad\(\s*(\d+)\s*,\s*(\d+)\s*\)$');
 final RegExp _reTagFade = RegExp(
@@ -1069,11 +1223,12 @@ void _applyOverrideBlock(
   _Style style,
   void Function(SubtitleAnchor) setAnchor,
   void Function(SubtitlePos) setPos,
-  void Function(bool) setDrawing,
+  void Function(int) setDrawing,
   void Function(SubtitleFade) setFade,
   _Transform xf,
   double? playResX,
   double? playResY,
+  _DrawingState drawing,
 ) {
   // \t(...) 动画：内含 \fscy 等带反斜杠的子标签，会被下面 split('\\') 打碎，故先整体抽出
   // 记录目标，再从 block 里剔除（TODO-1374）。目标缩放的「起点」用后续静态 \fscx\fscy 累积值
@@ -1177,10 +1332,18 @@ void _applyOverrideBlock(
       continue;
     }
 
-    // \p<n>：绘图模式开关。n>0 进入，n=0 退出；作用域持续到本条 cue 结束。
+    // \p<n>：绘图模式开关。n>0 进入（n 是坐标缩放级，坐标 ÷ 2^(n-1)），n=0 退出；
+    // 作用域持续到本条 cue 结束。
     final RegExpMatch? p1 = _reTagDrawing.firstMatch(tag);
     if (p1 != null) {
-      setDrawing(int.parse(p1.group(1)!) > 0);
+      setDrawing(int.parse(p1.group(1)!));
+      continue;
+    }
+
+    // \pbo<y>：绘图基线偏移（绘图坐标单位，正值向下）。
+    final RegExpMatch? pbo = _reTagDrawingBaseline.firstMatch(tag);
+    if (pbo != null) {
+      drawing.baselineOffsetPx = double.parse(pbo.group(1)!);
       continue;
     }
 
@@ -1439,7 +1602,17 @@ int assColorToArgb(String hex) {
   return 0xFF000000 | (r << 16) | (g << 8) | b;
 }
 
-/// 扫描过程内部可变绘图模式状态（\pN 开 / \p0 关）。
+/// 扫描过程内部可变绘图模式状态（\pN 开 / \p0 关）：收集标签块之外的命令正文、
+/// 记录缩放级 / `\pbo` / 首个命令字符时刻的行内样式快照。
 class _DrawingState {
   bool active = false;
+  int scale = 1;
+  double baselineOffsetPx = 0;
+  final StringBuffer buffer = StringBuffer();
+  _Style? style;
+
+  void setScale(int n) {
+    active = n > 0;
+    if (n > 0) scale = n;
+  }
 }

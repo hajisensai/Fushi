@@ -234,6 +234,16 @@ class VideoPlayerController extends ChangeNotifier
   /// [clearSecondaryCues] 换列表时复位。
   List<int> _activeSecondaryCueIndices = const <int>[];
 
+  /// 渲染专用流：ASS `\p` 矢量绘图事件（[AudioCue.isRenderOnly]，招牌白底遮罩等）。
+  /// [setCues] / [setSecondaryCues] 把它们从对白流里分出来——对白流（[cues] /
+  /// [currentCue] / 活动集）继续只含可读字幕，字幕列表 / 跳句 / 制卡 / 句尾暂停一概
+  /// 不见绘图；overlay 另经 [activeDrawingCues] / [secondaryActiveDrawingCues] 取
+  /// 同一 effective 位置在屏的绘图，与对白同一套分组 / 定位 / z 序叠画。
+  List<AudioCue> _drawingCues = <AudioCue>[];
+  List<int> _activeDrawingIndices = const <int>[];
+  List<AudioCue> _secondaryDrawingCues = <AudioCue>[];
+  List<int> _activeSecondaryDrawingIndices = const <int>[];
+
   /// 最近一次「主动跳转」([skipToCue]) 的目标 cue 下标；无主动跳转待落地时为 null。
   ///
   /// **修 TODO-565 字幕列表点击高亮 off-by-one。** 高亮真相源是「实时 position 经
@@ -540,6 +550,33 @@ class VideoPlayerController extends ChangeNotifier
 
   /// TODO-1312：副字幕全量 cue（诊断 / 测试用）；空 = 无副字幕。
   List<AudioCue> get secondaryCues => _secondaryCues;
+
+  /// 主字幕流此刻在屏的 `\p` 绘图事件（渲染专用，见 [_drawingCues]）。
+  List<AudioCue> get activeDrawingCues => <AudioCue>[
+        for (final int i in _activeDrawingIndices)
+          if (i >= 0 && i < _drawingCues.length) _drawingCues[i],
+      ];
+
+  /// 副字幕流此刻在屏的 `\p` 绘图事件（渲染专用）。
+  List<AudioCue> get secondaryActiveDrawingCues => <AudioCue>[
+        for (final int i in _activeSecondaryDrawingIndices)
+          if (i >= 0 && i < _secondaryDrawingCues.length)
+            _secondaryDrawingCues[i],
+      ];
+
+  /// 主字幕流全量 `\p` 绘图事件（诊断 / 测试用）。
+  List<AudioCue> get drawingCues => _drawingCues;
+
+  /// 按起始时间**稳定**排序（Dart `List.sort` 不稳定）：同一起始时间的事件保持来源
+  /// 顺序——解析器已按文件序排好，文件序就是 libass 同层事件的绘制 z 序。
+  static List<AudioCue> _sortedByStart(List<AudioCue> cues) {
+    final List<int> order = List<int>.generate(cues.length, (int i) => i)
+      ..sort((int a, int b) {
+        final int byStart = cues[a].startMs.compareTo(cues[b].startMs);
+        return byStart != 0 ? byStart : a.compareTo(b);
+      });
+    return <AudioCue>[for (final int i in order) cues[i]];
+  }
 
   /// BUG-1592：制卡/上下文解析要用的「有效 cue 流」——主字幕流非空即主流，主流为空
   /// （用户把主字幕关掉、只开副字幕）时落到副字幕流。
@@ -1115,8 +1152,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {
-    _cues = List<AudioCue>.of(cues)
-      ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+    // `\p` 绘图事件分流到渲染专用流（[_drawingCues]），对白流只留可读字幕。
+    _cues = _sortedByStart(<AudioCue>[
+      for (final AudioCue c in cues)
+        if (!c.isRenderOnly) c,
+    ]);
+    _drawingCues = _sortedByStart(<AudioCue>[
+      for (final AudioCue c in cues)
+        if (c.isRenderOnly) c,
+    ]);
+    _activeDrawingIndices = const <int>[];
     // 非空文本 cue → 切到可点 overlay 文本字幕，离开图形轨渲染（BUG-301）。空 cue
     // 不在此推断模式：可能是图形轨（[selectEmbeddedGraphicTrack] 先清空 cue 再选轨置
     // true）或无字幕段，故只在确有文本 cue 时复位图形标志。
@@ -1139,17 +1184,30 @@ class VideoPlayerController extends ChangeNotifier
   /// 副字幕与主字幕独立、同一 effective 位置各自求活动集，一起交给 Flutter overlay 多层
   /// 渲染（不再走 libmpv `secondary-sid`）——副字幕因此也可逐字符查词。空列表 = 无副字幕。
   void setSecondaryCues(List<AudioCue> cues) {
-    _secondaryCues = List<AudioCue>.of(cues)
-      ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+    _secondaryCues = _sortedByStart(<AudioCue>[
+      for (final AudioCue c in cues)
+        if (!c.isRenderOnly) c,
+    ]);
+    _secondaryDrawingCues = _sortedByStart(<AudioCue>[
+      for (final AudioCue c in cues)
+        if (c.isRenderOnly) c,
+    ]);
     _activeSecondaryCueIndices = const <int>[];
+    _activeSecondaryDrawingIndices = const <int>[];
     notifyListeners();
   }
 
   /// TODO-1312：关闭副字幕（清空副字幕 cue 流 + 活动集）。幂等：本就无副字幕时不通知。
   void clearSecondaryCues() {
-    if (_secondaryCues.isEmpty && _activeSecondaryCueIndices.isEmpty) return;
+    if (_secondaryCues.isEmpty &&
+        _activeSecondaryCueIndices.isEmpty &&
+        _secondaryDrawingCues.isEmpty) {
+      return;
+    }
     _secondaryCues = <AudioCue>[];
     _activeSecondaryCueIndices = const <int>[];
+    _secondaryDrawingCues = <AudioCue>[];
+    _activeSecondaryDrawingIndices = const <int>[];
     notifyListeners();
   }
 
@@ -1446,6 +1504,8 @@ class VideoPlayerController extends ChangeNotifier
     // notify 已反映清空后的副字幕状态。
     _secondaryCues = <AudioCue>[];
     _activeSecondaryCueIndices = const <int>[];
+    _secondaryDrawingCues = <AudioCue>[];
+    _activeSecondaryDrawingIndices = const <int>[];
     setCues(cues);
     _clearChaptersForNewLoad();
     // 换片（复用 player）复位图形字幕标志：新片默认非图形轨，仅当下面
@@ -2095,6 +2155,27 @@ class VideoPlayerController extends ChangeNotifier
             endInclusive: false);
     bool changed = !_intListEquals(nextSecondary, _activeSecondaryCueIndices);
     if (changed) _activeSecondaryCueIndices = nextSecondary;
+
+    // `\p` 绘图流活动集（主 / 副各按自己的轴）：只喂 overlay，不参与代表 cue 选择。
+    final List<int> nextDrawing = _drawingCues.isEmpty
+        ? const <int>[]
+        : JsonAlignmentParser.findActiveCueIndices(
+            cues: _drawingCues, positionMs: effectiveMs, endInclusive: false);
+    if (!_intListEquals(nextDrawing, _activeDrawingIndices)) {
+      _activeDrawingIndices = nextDrawing;
+      changed = true;
+    }
+    final List<int> nextSecondaryDrawing = _secondaryDrawingCues.isEmpty
+        ? const <int>[]
+        : JsonAlignmentParser.findActiveCueIndices(
+            cues: _secondaryDrawingCues,
+            positionMs:
+                effectiveSubtitlePositionMs(posMs, effectiveSecondaryDelayMs),
+            endInclusive: false);
+    if (!_intListEquals(nextSecondaryDrawing, _activeSecondaryDrawingIndices)) {
+      _activeSecondaryDrawingIndices = nextSecondaryDrawing;
+      changed = true;
+    }
 
     if (_cues.isEmpty) {
       // 无主 cue：清主字幕代表 cue + 活动集残留，据 changed（含副字幕变化）决定是否通知。

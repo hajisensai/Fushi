@@ -64,17 +64,20 @@ void main() {
         .width;
 
     final double normal = textW('ま');
-    // span 缩放经 SizedBox 压布局盒：overlay 里应恰有一个有限宽 SizedBox（句号），
-    // 宽度=正常 advance×0.5。
+    // span 缩放经 SizedBox 压布局盒：overlay 里只有句号段带有限宽 SizedBox，宽度=正常
+    // advance×0.5。带描边的 cue 整行两遍绘制（描边遍 + 填充遍，BUG-2541），两遍几何同构
+    // → 恰两个、宽度相同。
     final Iterable<SizedBox> boxes =
         tester.widgetList<SizedBox>(find.descendant(
       of: find.byType(VideoSubtitleOverlay),
       matching: find.byWidgetPredicate(
           (Widget w) => w is SizedBox && w.width != null && w.width!.isFinite),
     ));
-    expect(boxes, hasLength(1), reason: '只有句号段被缩放');
-    expect(boxes.single.width, closeTo(normal * 0.5, 1.5),
-        reason: '句号布局盒必须压成 50%（span 级 fscx）');
+    expect(boxes, hasLength(2), reason: '只有句号段被缩放（描边遍 + 填充遍各一）');
+    for (final SizedBox box in boxes) {
+      expect(box.width, closeTo(normal * 0.5, 1.5),
+          reason: '句号布局盒必须压成 50%（span 级 fscx）');
+    }
     expect(textW('日'), closeTo(normal, 0.5), reason: '未标注段不得被整行压扁');
   });
 }

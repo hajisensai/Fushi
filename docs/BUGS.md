@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2335 条。点号进各自文件。
+> 共 2340 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2541](bugs/BUG-2541-ass-outline-per-char-overlap.md) | ✅ | ✅ | ASS 描边逐字叠画啃进相邻字填充、细描边被夹下限（字重随窗口变） |
+| [BUG-2540](bugs/BUG-2540-ass-fax-shear-overwrites-rotation.md) | ✅ | ✅ | ASS \fax 切变覆盖 \frz 旋转矩阵项（招牌歪斜） |
+| [BUG-2539](bugs/BUG-2539-ass-layer-zorder.md) | ✅ | ✅ | ASS Layer 不参与绘制 z 序（招牌盖住对白） |
+| [BUG-2538](bugs/BUG-2538-ass-drawing-dropped.md) | ✅ | ✅ | ASS \p 矢量绘图被整条丢弃（招牌白底遮罩不画） |
+| [BUG-2537](bugs/BUG-2537-ass-sign-hover-controls.md) | ✅ | ✅ | ASS 定位字幕落到静止鼠标下即唤出控制条、且随控制条上抬 |
 | [BUG-2526](bugs/BUG-2526-youtube-android-dash-60s-window-visionos.md) | ✅ | ✅ | YouTube 花絮/流媒体打不开或无声：android client DASH 流无 PO token 只放前 60 秒 |
 | [BUG-2525](bugs/BUG-2525-reader-floating-chrome-gap-and-no-hover-reveal.md) | ✅ | ✅ | 悬浮控制栏：顶部常驻空带 + 控制栏不自动恢复 |
 | [BUG-2524](bugs/BUG-2524-remote-collection-adoption.md) | ✅ | ✅ | 远端媒体下载后合集归属丢失 |
