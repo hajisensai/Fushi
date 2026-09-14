@@ -1001,10 +1001,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         s.remoteSrt?.title ??
         '';
     int recentOf(CollectionOrderingItem<_ShelfBookSlot> it) {
-      // 远端占位卡（EPUB 或纯 SRT）无本地阅读进度：退化到注入时编码的目录序（负
-      // importedAt），稳定排在本地条目之后（详见 [_ShelfBookSlot.remote]）。
-      if (it.payload.remote != null || it.payload.remoteSrt != null) {
-        return it.importedAt;
+      // 远端占位卡（EPUB 或纯 SRT）没有本地阅读记录，但 host 清单**自带**它那边的
+      // 「最近阅读 / 最近听」时刻——用它才能和本地条目排在同一把尺子上（视频页
+      // [_VideoHomeState._groupSortKey] 早就这么做了）。host 没带（旧 host / 那边
+      // 也没读过）才退化到注入时编码的目录序（负 importedAt）排在本地条目之后。
+      // 此前无条件返回负值，于是「最近阅读」排序下远端书恒沉底，等于没排序。
+      final RemoteBookInfo? remote = it.payload.remote;
+      if (remote != null) {
+        return remote.progressUpdatedAtMs > 0
+            ? remote.progressUpdatedAtMs
+            : it.importedAt;
+      }
+      final RemoteAudiobookInfo? remoteSrt = it.payload.remoteSrt;
+      if (remoteSrt != null) {
+        return remoteSrt.positionUpdatedAtMs > 0
+            ? remoteSrt.positionUpdatedAtMs
+            : it.importedAt;
       }
       final String? bookKey = it.payload.srt?.bookKey ??
           _parseBookKey(it.payload.epub!.mediaIdentifier);
@@ -1024,8 +1036,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         tieKey: '${it.mediaType}|${it.entryKey}',
       );
     }
-    int recent = 0;
-    int imported = 0;
+    // 聚合基准取**首成员**而不是 0：成员键可以是负的（远端占位的目录序退化值），
+    // 从 0 起 max 会把「全员远端」的合集组抬到 0——排在所有远端散卡之前、本地条目
+    // 之后的一个不存在的位置。取真实 max 才与成员同尺。（group.items 恒非空，
+    // 见 [CollectionGroup.coverItem]。）
+    int recent = recentOf(group.items.first);
+    int imported = group.items.first.importedAt;
     for (final CollectionOrderingItem<_ShelfBookSlot> it in group.items) {
       final int r = recentOf(it);
       if (r > recent) recent = r;
@@ -1460,7 +1476,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // **真实 mediaType='epub' + entryKey=bookKey**（downloadId）。v83 后本地成员键
     // 是 uid，但远端-only 书的成员行是照抄 wire bookKey 的透传行——占位卡与透传行
     // 天然同键；host 路径的归属注入（下方 membership 分支）也按同键写映射。
-    // importedAt 用 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
+    // importedAt：host 下发了真入库戳（[RemoteBookInfo.importedAt] /
+    // [RemoteAudiobookInfo.importedAt]）就按它排，与本地条目同一把尺子——「导入
+    // 时间」排序才跨端一致（视频页 [_VideoHomeState._groupVideos] 同范式）。旧
+    // host 不带 → 回落 `-1-index`：全为负，稳定排在所有本地条目（正毫秒戳）之后，
     // 组内保持远端目录序（spec §2.1「无本地 importedAt/lastReadAt 时目录序退化」）。
     // 纯 SRT 远端有声书占位混入：mediaType='srt' + entryKey=uid，与本地 SRT 成员及
     // 已同步的合集成员（entryKey=uid）**同键**，故经现有 _primaryCollectionByEntry 就能
@@ -1470,7 +1489,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: MediaKind.srt,
           entryKey: remoteSrtBooks[i].identity,
-          importedAt: -1 - remoteBooks.length - i,
+          importedAt: remoteSrtBooks[i].importedAt ??
+              (-1 - remoteBooks.length - i),
           payload: _ShelfBookSlot(remoteSrt: remoteSrtBooks[i]),
         ),
       );
@@ -1480,7 +1500,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         CollectionOrderingItem<_ShelfBookSlot>(
           mediaType: MediaKind.epub,
           entryKey: remoteBooks[i].downloadId,
-          importedAt: -1 - i,
+          importedAt: remoteBooks[i].importedAt ?? (-1 - i),
           payload: _ShelfBookSlot(remote: remoteBooks[i]),
         ),
       );
@@ -1967,10 +1987,54 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
+  /// 远端占位卡在**合集详情页**的可见门控：与书架主网格（[buildBody] 的
+  /// `showRemote`）逐条同源——目录拉取成功 + 「显示远端条目」开关开 + 同步模块启用
+  /// + 无标签筛选。详情页的本地成员卡同样取自被筛选过的 [_visibleEpubBooks] /
+  /// [_visibleSrtBooks]，两侧同门才不会出现「合集行头数字与详情页对不上」。
+  _RemoteBookState? get _detailRemoteState {
+    final _RemoteBookState? state = _lastRemoteState;
+    if (state == null || state.failed) return null;
+    if (ref.read(selectedTagIdsProvider).isNotEmpty) return null;
+    if (!appModel.prefsRepo.showRemoteEntries) return null;
+    if (!_moduleVisibility.isEnabled(ModuleId.sync)) return null;
+    return state;
+  }
+
+  /// 合集成员行 entryKey → 远端 EPUB 占位。成员行有两种键形态：透传行照抄对端
+  /// bookKey（= [RemoteBookInfo.downloadId]，host 归属经
+  /// `RemoteCollectionAdoptionService` 收养落行时写的就是它），本地曾有同名书的
+  /// 成员行则是本机 uid——后者按远端书标题的本地等价键再比一次
+  /// （`sanitizeTtuFilename` → uid 换算，与主网格的折叠归属注入同口径，见
+  /// [buildBody]）。
+  RemoteBookInfo? _remoteBookForEntry(String entryKey) {
+    final _RemoteBookState? state = _detailRemoteState;
+    if (state == null) return null;
+    for (final RemoteBookInfo book in state.books) {
+      if (book.downloadId == entryKey) return book;
+      final String sanitized = sanitizeTtuFilename(book.title);
+      if (sanitized == entryKey || _epubUidByKey[sanitized] == entryKey) {
+        return book;
+      }
+    }
+    return null;
+  }
+
+  /// 合集成员行 entryKey → 纯 SRT 远端有声书占位。键 =
+  /// [RemoteAudiobookInfo.identity]，与本地 SRT 成员行的 uid 天然同域（见
+  /// [buildBody] 混入注释），无需 epub 那样的标题回查。
+  RemoteAudiobookInfo? _remoteSrtForEntry(String entryKey) {
+    final _RemoteBookState? state = _detailRemoteState;
+    if (state == null) return null;
+    for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
+      if (book.identity == entryKey) return book;
+    }
+    return null;
+  }
+
   /// 系列详情页按成员行渲染卡片：epub → 经书架 provider 找 MediaItem；srt → 经 uid
-  /// 找 SrtBook。找不到（条目已删 / 远端离线）返回 null，详情页跳过该成员。
-  /// 合集详情页成员卡渲染：按 (mediaType, entryKey) 找当前可见的 SRT / EPUB 书渲染，
-  /// 找不到（孤儿 / 被过滤）返回 null（详情页跳过）。
+  /// 找 SrtBook。本地找不到时回退到远端占位卡（[_remoteBookForEntry] /
+  /// [_remoteSrtForEntry]），两处都没有（条目已删 / 远端离线 / 被筛选）才返回 null
+  /// 让详情页跳过该成员。
   ///
   /// [onRemoveFromCollection]（详情页注入 `() => _removeMember(row)`）非空时把「移出合集」
   /// 接进该成员卡长按 / 右键对话框（键盘/手柄用户聚焦长按 A 走此对话框而非网格指针菜单，
@@ -1993,6 +2057,19 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           );
         }
       }
+      // 远端占位成员：成员行**在库里**（host 归属由
+      // `RemoteCollectionAdoptionService` 收养落行、云盘归属由合集同步落行），只是
+      // 本地还没有这本书。书架主网格早就按 [_ShelfBookSlot.remoteSrt] 渲染带云角标
+      // 的占位卡了，详情页此前却直接 return null 把它们静默丢掉——于是行头写着
+      // 「14 项」、点进去只剩本地那两本（用户实报）。
+      final RemoteAudiobookInfo? remoteSrt = _remoteSrtForEntry(entryKey);
+      if (remoteSrt != null) {
+        return _buildRemoteSrtCard(
+          remoteSrt,
+          selectable: false,
+          focusIdPrefix: prefix,
+        );
+      }
       return null;
     }
     if (kind == MediaKind.epub) {
@@ -2010,6 +2087,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             focusIdPrefix: prefix,
           );
         }
+      }
+      // 远端占位成员（同上 srt 分支的理由）：本地无此书 → 渲染远端占位卡而不是丢卡。
+      final RemoteBookInfo? remote = _remoteBookForEntry(entryKey);
+      if (remote != null) {
+        return _buildRemoteBookCard(
+          remote,
+          selectable: false,
+          focusIdPrefix: prefix,
+        );
       }
       return null;
     }
@@ -2030,6 +2116,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           return;
         }
       }
+      // 远端占位成员：与书架占位卡 onTap 同路径——点它就是下载入库（详情页的卡片
+      // 手势被 IgnorePointer 屏蔽，打开动作统一经本回调，见
+      // [MediaCollectionGridDetailPage]）。
+      final RemoteAudiobookInfo? remoteSrt = _remoteSrtForEntry(entryKey);
+      if (remoteSrt != null) {
+        unawaited(_downloadRemoteSrtAudiobook(remoteSrt));
+      }
       return;
     }
     if (kind == MediaKind.epub) {
@@ -2043,6 +2136,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
               appModel.openMedia(ref: ref, mediaSource: source, item: item));
           return;
         }
+      }
+      // 远端占位成员：同上，点击 = 下载入库。
+      final RemoteBookInfo? remote = _remoteBookForEntry(entryKey);
+      if (remote != null) {
+        unawaited(_downloadRemoteBook(remote));
       }
     }
   }
