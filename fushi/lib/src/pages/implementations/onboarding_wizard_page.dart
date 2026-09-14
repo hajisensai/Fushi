@@ -151,9 +151,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   bool get _browserExtensionAvailable =>
       _moduleAvailable(ModuleId.browserExtension);
 
-  /// 当前真正有应用外查词入口的平台。Windows 用系统级热键；Android 用系统文本
-  /// 选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示错误教程。
-  bool get _globalLookupAvailable => Platform.isWindows || Platform.isAndroid;
+  /// 当前真正有应用外查词入口的平台。Windows / macOS 用系统级热键；Android 用
+  /// 系统文本选择菜单 / 分享入口。其它平台不能因为都叫 desktop/mobile 就展示
+  /// 错误教程。
+  bool get _globalLookupAvailable =>
+      Platform.isWindows || Platform.isMacOS || Platform.isAndroid;
 
   /// 「连接成功」与「能创建第一张卡」不是一回事：还必须从本次拉回的真实列表中
   /// 选中了仍存在的牌组和笔记类型。旧持久化 id 即使非 null，也可能已在 Anki 中

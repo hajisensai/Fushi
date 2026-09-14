@@ -5,6 +5,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -269,6 +270,27 @@ SettingsDestination buildLookupDestination() {
                 value,
               );
               settingsContext.refresh();
+            },
+          ),
+          // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
+          // 授权；未授权时热键退化为只查当前剪贴板文本。这里是**唯一**会弹系统
+          // 授权提示的入口——热键路径永远不弹（AppDelegate.swift 的 fail-open 契约）。
+          SettingsActionItem(
+            id: 'lookup.accessibility_permission',
+            title: t.lookup_accessibility_permission_request,
+            subtitle: t.lookup_accessibility_permission_hint,
+            icon: Icons.accessibility_new_outlined,
+            visible: (SettingsContext settingsContext) =>
+                SelectionCapture.needsAccessibilityTrust,
+            onTap: (SettingsContext settingsContext) async {
+              final bool trusted =
+                  await SelectionCapture.requestAccessibilityTrust();
+              _showSettingsSnackBar(
+                settingsContext,
+                trusted
+                    ? t.lookup_accessibility_permission_granted
+                    : t.lookup_accessibility_permission_missing,
+              );
             },
           ),
         ],

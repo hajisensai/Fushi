@@ -1811,7 +1811,6 @@
   "game_window_missing": "Não vinculado",
   "games": "Jogos",
   "global_context_capture": "Capturar contexto da seleção",
-  "global_context_capture_hint": "Lê o texto ao redor do app em primeiro plano para mostrar a frase atual (apenas Windows)",
   "go_to_chapter": "Capítulo $n",
   "handlebar_audio": "Áudio",
   "handlebar_book_cover": "Capa do livro",
@@ -2007,7 +2006,6 @@
   "login": "Entrar",
   "lookup_audio_volume": "Volume do áudio de consulta",
   "lookup_block_capture": "Bloquear captura de tela",
-  "lookup_block_capture_hint": "Exclui as janelas de consulta e área de transferência de capturas de tela, gravações e transmissões ao vivo (Windows). Desative para permitir que capturas e gravações capturem o popup de consulta.",
   "low_memory_mode": "Modo de pouca memória",
   "low_memory_mode_hint": "Reduz o uso de cache e memória para dispositivos de baixo desempenho. Algumas alterações requerem reinício.",
   "low_memory_mode_suggestion": "Tente ativar o modo de pouca memória em Configurações → Diversos.",
@@ -4848,5 +4846,11 @@
   "reader_control_reject_title": "The book title only fits the top center; nothing else goes there.",
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
-  "reader_control_reset_layout": "Restore default reader button layout"
+  "reader_control_reset_layout": "Restore default reader button layout",
+  "global_context_capture_hint": "Read surrounding text from the foreground app to show the current sentence (Windows / macOS)",
+  "lookup_block_capture_hint": "Excludes the lookup popup window from screenshots, screen recording, and live streaming (Windows / macOS). Turn this off to let screenshots, recording, and streaming capture the lookup popup.",
+  "lookup_accessibility_permission_request": "Grant Accessibility permission for app-external lookup",
+  "lookup_accessibility_permission_hint": "macOS needs Accessibility access to read the text selected in other apps. Without it the shortcut looks up the current clipboard text.",
+  "lookup_accessibility_permission_granted": "Accessibility permission granted",
+  "lookup_accessibility_permission_missing": "Accessibility permission not granted yet. Enable Fushi under Privacy & Security > Accessibility, then try again."
 }

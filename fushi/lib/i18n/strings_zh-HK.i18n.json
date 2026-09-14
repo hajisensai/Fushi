@@ -1811,7 +1811,6 @@
   "game_window_missing": "未綁定",
   "games": "遊戲",
   "global_context_capture": "抓取選中文本上下文",
-  "global_context_capture_hint": "從前台應用讀取選區周圍文本，在查詞彈窗顯示當前句（僅 Windows）",
   "go_to_chapter": "第 $n 章",
   "handlebar_audio": "音訊",
   "handlebar_book_cover": "書籍封面",
@@ -2007,7 +2006,6 @@
   "login": "登入",
   "lookup_audio_volume": "查詞音量",
   "lookup_block_capture": "防截屏 / 防錄屏",
-  "lookup_block_capture_hint": "把查詞懸浮窗從截圖、錄屏、直播串流中排除（Windows）。關閉後，截圖、錄屏和串流即可拍到查詞懸浮窗。",
   "low_memory_mode": "低記憶體模式",
   "low_memory_mode_hint": "減少快取和記憶體使用，適合低階裝置。部分變更需重啟後生效。",
   "low_memory_mode_suggestion": "可嘗試在 設定 → 其他設定 中開啟低記憶體模式。",
@@ -4848,5 +4846,11 @@
   "reader_control_reject_title": "The book title only fits the top center; nothing else goes there.",
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
-  "reader_control_reset_layout": "Restore default reader button layout"
+  "reader_control_reset_layout": "Restore default reader button layout",
+  "global_context_capture_hint": "Read surrounding text from the foreground app to show the current sentence (Windows / macOS)",
+  "lookup_block_capture_hint": "Excludes the lookup popup window from screenshots, screen recording, and live streaming (Windows / macOS). Turn this off to let screenshots, recording, and streaming capture the lookup popup.",
+  "lookup_accessibility_permission_request": "Grant Accessibility permission for app-external lookup",
+  "lookup_accessibility_permission_hint": "macOS needs Accessibility access to read the text selected in other apps. Without it the shortcut looks up the current clipboard text.",
+  "lookup_accessibility_permission_granted": "Accessibility permission granted",
+  "lookup_accessibility_permission_missing": "Accessibility permission not granted yet. Enable Fushi under Privacy & Security > Accessibility, then try again."
 }
