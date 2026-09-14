@@ -314,6 +314,7 @@ function applyFushiPopupCss(data) {
 const __dictAssetCache = new Map();      // JSON.stringify([dict, path]) -> 源码字符串 / null
 const __dictScriptFnCache = new Map();   // 拼接后的代码串 -> 编译好的 Function
 const __dictScriptsRan = new WeakSet();  // 已经跑过脚本的词典块
+const __scopedWindows = new WeakMap();   // 词典块 root -> 它那份 window 代理
 
 function reportDictScriptError(dictName, label, error) {
     try {
@@ -393,6 +394,12 @@ function createScopedDocument(root, dictName) {
             return root.addEventListener(type, handler, options);
         },
         removeEventListener: (type, handler, options) => root.removeEventListener(type, handler, options),
+        // `document.defaultView` 是另一条摸回真 window 的路（jQuery 取 computed style
+        // 与判 isWindow 都走它），指回本块的 window 代理；代理还没建好时（只用 scoped
+        // document、不跑脚本的调用方）照旧透传。
+        get defaultView() {
+            return __scopedWindows.get(root) || Reflect.get(document, 'defaultView');
+        },
     };
 
     const proxy = new Proxy(document, {
@@ -494,6 +501,7 @@ function createScopedWindow(root, scopedDocument, dictName) {
         },
     });
 
+    __scopedWindows.set(root, proxy);
     return proxy;
 }
 

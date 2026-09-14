@@ -13,6 +13,8 @@
 
 - **[x] ① 已修复** — 提交 `ec74080512`。新增 `createScopedWindow()`（`fushi/assets/popup/dict-media.js:415`）：给每个词典块一份私有 window 代理——`document` 换成 scoped 版、自指属性（`window`/`self`/`top`/`parent`/`globalThis`）指回代理、window 级 `addEventListener` 收到本块 root 上（生命周期事件仍按 scoped document 的老规矩立即补发）、属性写入关进本块私有表，读取时先私有表后回落真 window（`setTimeout`/`location`/`navigator` 等宿主 API 照常可用）。脚本体外再包一层 `with (window) { … }`，让**裸标识符**（jQuery 把自己写进 window 之后，同词典下一份脚本里的 `$(…)`）也经代理解析，否则会解析到真全局拿到 undefined。代理的 target 用空对象而不是真 window：`window`/`top` 这类不可配置数据属性会让「get 返回代理自身」撞上 Proxy 不变量检查（TypeError）。
 
+  同时把 `document.defaultView` 也指回本块的 window 代理（jQuery 取 computed style 与判 `isWindow` 都走它，否则又是一条摸回真 window 的路）。
+
   旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，**第 N 次查词与第一次完全等价**。三份镜像（app 弹窗 / `fushi/assets/browser_extension/vendor/` / `tools/browser-extension/vendor/`）同步改。
 
 - **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dict_script_scope_test.js` + `.dart` 包装。行为级：用 Node 真跑 `runDictScripts`，连开三个词典块，断言每块都完整初始化（不被上一块留在 window 上的标记短路）、window 级监听恰好落在本块 root 一次、真 window 与真 document 上不留任何痕迹；在修复前的 `dict-media.js` 上跑会红。源码级：三份镜像都必须定义 `createScopedWindow`、把 scoped window 传给 `factory.call`、并用 `with (window)` 包裹脚本体（防只改一份）。既有的 `tools/browser-extension/dict-script-exec.test.js` 10 条契约保持全绿。

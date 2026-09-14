@@ -136,6 +136,7 @@ const DICT_SCRIPT = `
   var doc = window.document;
   var host = doc.body;
   host.setAttribute('scopedBody', String(!host.__isRealBody));
+  host.setAttribute('defaultViewScoped', String(doc.defaultView === window));
   host.setAttribute('shortCircuited', String(!!window.__dictInited));
   if (!window.__dictInited) {
     window.__dictInited = true;
@@ -162,6 +163,9 @@ async function main() {
     assert.strictEqual(
       root.getAttribute('scopedBody'), 'true',
       `round ${round}: window.document handed the script the REAL document`);
+    assert.strictEqual(
+      root.getAttribute('defaultViewScoped'), 'true',
+      `round ${round}: document.defaultView leaked the REAL window`);
     // 关键回归点：第二、三轮不得被上一轮留在 window 上的标记短路。
     assert.strictEqual(
       root.getAttribute('shortCircuited'), 'false',
