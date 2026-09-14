@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi/src/focus/fushi_focus_controller.dart'
+    show FushiFocusId;
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -495,8 +497,10 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         body: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            ListTile(
+            FushiListItem(
               key: const ValueKey<String>('fushi_gallery_menu_jump'),
+              focusId: const FushiFocusId('fushi_gallery_menu_jump'),
+              autofocus: true,
               leading: const Icon(Icons.my_location_outlined),
               title: Text(t.reader_gallery_jump),
               onTap: () {
@@ -505,8 +509,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               },
             ),
             if (locked)
-              ListTile(
+              FushiListItem(
                 key: const ValueKey<String>('fushi_gallery_menu_reveal'),
+                focusId: const FushiFocusId('fushi_gallery_menu_reveal'),
                 leading: const Icon(Icons.visibility_outlined),
                 title: Text(t.reader_gallery_locked_reveal),
                 onTap: () {
@@ -515,8 +520,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                 },
               ),
             if (canRelock)
-              ListTile(
+              FushiListItem(
                 key: const ValueKey<String>('fushi_gallery_menu_relock'),
+                focusId: const FushiFocusId('fushi_gallery_menu_relock'),
                 leading: const Icon(Icons.visibility_off_outlined),
                 title: Text(t.reader_gallery_relock),
                 onTap: () {
@@ -673,12 +679,26 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         key == LogicalKeyboardKey.numpadEnter) {
       final EpubImageRef? focused = _focusedRef();
       if (focused != null) _activate(focused);
+    } else if (_isContextMenuKey(event)) {
+      // 卡片菜单的键盘入口。指针那侧是长按 / 右键，键盘与手柄用户此前够不着菜单里
+      // 的跳转与恢复遮罩——而插图册整页本来就是方向键 + Enter 驱动的，只有这一处
+      // 动作没有键位，等于对不用指针的人不存在。菜单键 / Shift+F10 是两个平台通行
+      // 的「唤出上下文菜单」键位，不与页内既有键冲突。
+      final EpubImageRef? focused = _focusedRef();
+      if (focused != null) unawaited(_showCardMenu(focused));
     } else if (key == LogicalKeyboardKey.escape) {
       Navigator.of(context).maybePop();
     } else {
       return KeyEventResult.ignored;
     }
     return KeyEventResult.handled;
+  }
+
+  /// 「唤出上下文菜单」的键位：菜单键，或 Windows 通行的 Shift+F10。
+  static bool _isContextMenuKey(KeyEvent event) {
+    if (event.logicalKey == LogicalKeyboardKey.contextMenu) return true;
+    return event.logicalKey == LogicalKeyboardKey.f10 &&
+        HardwareKeyboard.instance.isShiftPressed;
   }
 
   KeyEventResult _onViewerKey(LogicalKeyboardKey key) {

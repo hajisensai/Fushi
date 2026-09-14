@@ -7,8 +7,12 @@
 //    这条只有在真设备上才有意义：viewPadding.top 是设备给的，widget 测试里得靠
 //    FakeViewPadding 造。iOS 上取不到非零状态栏高度即判失败——那是设备选错了，
 //    不是「通过」。
-// ② 长按卡片能唤出菜单，「跳转到此插图」真的回到正文。
+// ② 卡片菜单能唤出，「跳转到此插图」真的回到正文。
 // ③ 已揭开的图能「恢复遮罩」，撤销后卡片重新盖上模糊层。
+//
+// 全程焦点 + 合成按键驱动（`CLAUDE.md`「集成测试一律焦点驱动」）：方向键在网格里
+// 移焦、菜单键唤出卡片菜单、FocusDriver 在菜单里选项 + Enter 确认。② ③ 两段因此
+// 同时也是键盘 / 手柄可达性的证明——指针那侧是长按 / 右键。
 //
 // 同一份测试三端可跑（安全区那条在 viewPadding 恒 0 的桌面端退化成恒真）：
 //   iOS 模拟器   tool\run_mac_itest.ps1 integration_test/reader_gallery_safe_area_itest.dart -Ios
@@ -29,6 +33,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
 import 'package:fushi/src/reader/reader_gallery_page.dart'
     show ReaderGalleryPage;
 
+import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart'
     show openBookViaProductionPath, seedReaderBook;
 import 'support/itest_startup_guard.dart';
@@ -52,37 +57,65 @@ Future<void> _pumpUntil(
   fail(reason);
 }
 
+Future<void> _sendKey(WidgetTester tester, LogicalKeyboardKey key) async {
+  await tester.sendKeyEvent(key);
+  await tester.pump(const Duration(milliseconds: 250));
+}
+
 Finder get _closeButton =>
     find.byKey(const ValueKey<String>('fushi_gallery_close'));
 Finder get _positionButton =>
     find.byKey(const ValueKey<String>('fushi_gallery_position'));
 Finder get _filterButton =>
     find.byKey(const ValueKey<String>('fushi_gallery_filter'));
+Finder get _menuJump =>
+    find.byKey(const ValueKey<String>('fushi_gallery_menu_jump'));
+Finder get _menuReveal =>
+    find.byKey(const ValueKey<String>('fushi_gallery_menu_reveal'));
+Finder get _menuRelock =>
+    find.byKey(const ValueKey<String>('fushi_gallery_menu_relock'));
 
-/// 插图册里的第一张卡（卡片 key 带 src，测试不预设文件名）。
-Finder _firstCard() => find
-    .byWidgetPredicate(
-      (Widget w) =>
-          w.key is ValueKey<String> &&
-          (w.key! as ValueKey<String>).value.startsWith('fushi_gallery_card_'),
-    )
-    .first;
+/// 插图册里的卡片（卡片 key 带 src，测试不预设文件名）。
+Finder get _cards => find.byWidgetPredicate(
+  (Widget w) =>
+      w.key is ValueKey<String> &&
+      (w.key! as ValueKey<String>).value.startsWith('fushi_gallery_card_'),
+);
 
 double _viewPaddingTop(WidgetTester tester) => MediaQuery.viewPaddingOf(
   tester.element(find.byType(ReaderGalleryPage)),
 ).top;
 
+/// 打开焦点卡的菜单（键盘入口 = 菜单键；指针那侧是长按 / 右键）。
+Future<void> _openCardMenu(WidgetTester tester) async {
+  await _sendKey(tester, LogicalKeyboardKey.contextMenu);
+  await tester.pumpAndSettle(const Duration(milliseconds: 500));
+}
+
+/// 网格里把焦点落到第一张卡：方向键右一下即可（没有焦点时落在第 0 张）。
+Future<void> _focusFirstCard(WidgetTester tester) async {
+  await _sendKey(tester, LogicalKeyboardKey.arrowRight);
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('插图册：顶栏让开系统安全区、长按可跳转 / 恢复遮罩', (tester) async {
+  testWidgets('插图册：顶栏让开系统安全区、键盘可跳转 / 恢复遮罩', (tester) async {
     await runFushiItest(
-      label: 'ios-reader-gallery',
+      label: 'reader-gallery-safe-area',
       body: () async {
         await launchFushiTestApp();
         expect(await waitForHome(tester), isTrue, reason: '首页未就绪');
+        await enableFocusNavigation(tester);
+        final FocusDriver driver = FocusDriver(tester);
 
-        final String bookKey = await seedReaderBook(tester);
+        // 带真实插图的书：默认生成的书只有内联 SVG，EpubBook.images 会是空的，
+        // 插图册整页退成空态，本用例就什么都验不到。
+        final String bookKey = await seedReaderBook(
+          tester,
+          fileName: 'gallery_itest.epub',
+          withRealImages: true,
+        );
         await openBookViaProductionPath(tester, bookKey);
         await _pumpUntil(tester, _readerShown, reason: '阅读器未打开');
         // WebView 首屏排版给足时间（iOS 模拟器上比桌面慢）。
@@ -91,9 +124,10 @@ void main() {
         }
 
         // 原始入口：G = readerOpenGallery，与底栏按钮同一个 _openGallery。
-        await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+        await _sendKey(tester, LogicalKeyboardKey.keyG);
         await _pumpUntil(tester, _galleryShown, reason: '按 G 没打开插图册');
         await tester.pump(const Duration(milliseconds: 500));
+        expect(_cards, findsWidgets, reason: '这本书没解析出插图，本用例取不到有效证据');
 
         // ① 安全区：设备给的 viewPadding 必须真的把顶栏整条推下去。
         //
@@ -142,51 +176,53 @@ void main() {
           );
         }
 
-        // ② 长按第一张卡 → 菜单 → 跳转，回到正文。
-        await tester.longPress(_firstCard());
-        await tester.pumpAndSettle(const Duration(milliseconds: 500));
-        final Finder jump = find.byKey(
-          const ValueKey<String>('fushi_gallery_menu_jump'),
+        // ② 焦点落到第一张卡 → 菜单键 → 「跳转到此插图」→ 回到正文。
+        await _focusFirstCard(tester);
+        await _openCardMenu(tester);
+        expect(_menuJump, findsOneWidget, reason: '菜单键没唤出卡片菜单');
+        expect(
+          await driver.focusWidget(_menuJump),
+          isTrue,
+          reason: '「跳转到此插图」拿不到焦点',
         );
-        expect(jump, findsOneWidget, reason: '长按卡片没弹出菜单');
-        await tester.tap(jump);
+        await driver.activate();
         await tester.pumpAndSettle(const Duration(seconds: 2));
         expect(_galleryShown(), isFalse, reason: '跳转后应回到正文');
         expect(_readerShown(), isTrue);
 
         // ③ 恢复遮罩：再开插图册，必要时先揭开一张，再撤销。
-        await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+        await _sendKey(tester, LogicalKeyboardKey.keyG);
         await _pumpUntil(tester, _galleryShown, reason: '第二次按 G 没打开插图册');
         await tester.pump(const Duration(milliseconds: 500));
-        final Finder relockTarget = _firstCard();
-        await tester.longPress(relockTarget);
-        await tester.pumpAndSettle(const Duration(milliseconds: 500));
-        final Finder reveal = find.byKey(
-          const ValueKey<String>('fushi_gallery_menu_reveal'),
-        );
-        if (reveal.evaluate().isNotEmpty) {
-          await tester.tap(reveal);
+        await _focusFirstCard(tester);
+        await _openCardMenu(tester);
+        if (_menuReveal.evaluate().isNotEmpty) {
+          expect(await driver.focusWidget(_menuReveal), isTrue);
+          await driver.activate();
           await tester.pumpAndSettle(const Duration(milliseconds: 500));
-          await tester.longPress(relockTarget);
-          await tester.pumpAndSettle(const Duration(milliseconds: 500));
+          await _openCardMenu(tester);
         }
-        final Finder relock = find.byKey(
-          const ValueKey<String>('fushi_gallery_menu_relock'),
-        );
-        expect(relock, findsOneWidget, reason: '已揭开且有遮罩理由的卡必须给「恢复遮罩」');
-        await tester.tap(relock);
+        expect(_menuRelock, findsOneWidget, reason: '已揭开且有遮罩理由的卡必须给「恢复遮罩」');
+        expect(await driver.focusWidget(_menuRelock), isTrue);
+        await driver.activate();
         await tester.pumpAndSettle(const Duration(milliseconds: 500));
         // 撤销后这张卡重新盖上模糊层（墨水屏才换实心遮板，本用例非墨水屏）。
         expect(
           find.descendant(
-            of: relockTarget,
+            of: _cards.first,
             matching: find.byType(ImageFiltered),
           ),
           findsOneWidget,
           reason: '恢复遮罩后卡片必须重新盖上模糊层',
         );
 
-        await tester.tap(_closeButton);
+        // 关闭按钮同样走焦点驱动（它此前正是被状态栏压住那三个之一）。
+        expect(
+          await driver.focusWidget(_closeButton),
+          isTrue,
+          reason: '关闭按钮拿不到焦点',
+        );
+        await driver.activate();
         await tester.pumpAndSettle(const Duration(seconds: 1));
         expect(_galleryShown(), isFalse, reason: '关闭按钮点不动');
       },
