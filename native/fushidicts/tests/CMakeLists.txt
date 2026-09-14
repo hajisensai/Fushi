@@ -129,6 +129,20 @@ add_test(NAME en_apostrophe_lookup_test
          COMMAND en_apostrophe_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json")
 
+# 英语词形变化闭环：不规则形（真 en_irregular.json）+ 整本无词性的 Yomitan 词典
+# 靠 term_rules.flag 把空 rules 当通配，带词性的词典 Yomitan 语义不变。
+add_executable(en_inflection_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/en_inflection_lookup_test.cpp")
+target_link_libraries(en_inflection_lookup_test PRIVATE fushidicts)
+target_include_directories(en_inflection_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(en_inflection_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME en_inflection_lookup_test
+         COMMAND en_inflection_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
+
 # --- TODO-892: malformed-DEFLATE / null-decompressor / breadcrumb guards ---
 # zip_malformed_deflate_test includes <libdeflate.h> (to forge a real deflate
 # stream) + "zip/zip.hpp" + the public importer header. fushidicts links
