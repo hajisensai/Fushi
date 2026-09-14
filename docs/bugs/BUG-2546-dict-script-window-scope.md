@@ -11,7 +11,7 @@
 
   两种写法都用 jsdom + 真 `dict-media.js` 复现到位（三轮同词查询）：写法 1 得到 `开 / 点不开 / 开`，写法 2 得到 `开 / 点不开 / 点不开`，与用户录屏一致。
 
-- **[x] ① 已修复** — 新增 `createScopedWindow()`（`fushi/assets/popup/dict-media.js:415`）：给每个词典块一份私有 window 代理——`document` 换成 scoped 版、自指属性（`window`/`self`/`top`/`parent`/`globalThis`）指回代理、window 级 `addEventListener` 收到本块 root 上（生命周期事件仍按 scoped document 的老规矩立即补发）、属性写入关进本块私有表，读取时先私有表后回落真 window（`setTimeout`/`location`/`navigator` 等宿主 API 照常可用）。脚本体外再包一层 `with (window) { … }`，让**裸标识符**（jQuery 把自己写进 window 之后，同词典下一份脚本里的 `$(…)`）也经代理解析，否则会解析到真全局拿到 undefined。代理的 target 用空对象而不是真 window：`window`/`top` 这类不可配置数据属性会让「get 返回代理自身」撞上 Proxy 不变量检查（TypeError）。
+- **[x] ① 已修复** — 提交 `ec74080512`。新增 `createScopedWindow()`（`fushi/assets/popup/dict-media.js:415`）：给每个词典块一份私有 window 代理——`document` 换成 scoped 版、自指属性（`window`/`self`/`top`/`parent`/`globalThis`）指回代理、window 级 `addEventListener` 收到本块 root 上（生命周期事件仍按 scoped document 的老规矩立即补发）、属性写入关进本块私有表，读取时先私有表后回落真 window（`setTimeout`/`location`/`navigator` 等宿主 API 照常可用）。脚本体外再包一层 `with (window) { … }`，让**裸标识符**（jQuery 把自己写进 window 之后，同词典下一份脚本里的 `$(…)`）也经代理解析，否则会解析到真全局拿到 undefined。代理的 target 用空对象而不是真 window：`window`/`top` 这类不可配置数据属性会让「get 返回代理自身」撞上 Proxy 不变量检查（TypeError）。
 
   旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，**第 N 次查词与第一次完全等价**。三份镜像（app 弹窗 / `fushi/assets/browser_extension/vendor/` / `tools/browser-extension/vendor/`）同步改。
 
