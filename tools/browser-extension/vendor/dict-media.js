@@ -414,6 +414,89 @@ function createScopedDocument(root, dictName) {
     return proxy;
 }
 
+/* 与 [createScopedDocument] 配套的 window 代理：词典脚本拿到的 `window` 也必须是本
+   词典块私有的。
+
+   弹窗是**常驻页面**：每换一次词就重建整棵结果 DOM，并把同一本词典的同一份脚本再跑
+   一遍。只代理 document 挡不住脚本的全局副作用——它们照样能经 `window` 逃出本块：
+
+   · jQuery 这类 UMD 库内部第一句就是 `var document = window.document`，拿到的是**真**
+     document，`$(document).on('click', …)` 于是绑在真 document 上。第二次查词再绑一份，
+     同一次点击被两份监听各处理一次：MDX 词典的折叠块（OALD 的 Verb Forms / Extra
+     Examples 那种 `.unbox`）展开又立刻收起，用户看到的就是「第二次查词后折叠字段点
+     不开」；第三次查词监听数回到奇数，又能开了。
+   · 脚本拿 `window.__inited` 之类做幂等守卫时更彻底：第二次起直接短路返回，新 DOM 一
+     次都绑不上，从此永久点不开。
+
+   代理把 document 换成 scoped 版、把 window 级监听收到本块 root 上、把属性写入关进本块
+   私有表；读取时先查私有表再回落真 window，宿主 API（setTimeout / location / navigator
+   ……）照常可用。旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，第 N 次查词和第一次
+   完全等价。
+
+   target 用空对象而不是真 window：`window` / `top` 这类**不可配置的数据属性**会让「get
+   返回代理自身」撞上 Proxy 不变量检查（TypeError），空对象没有这层约束，回落由 get /
+   has 自己做。 */
+function createScopedWindow(root, scopedDocument, dictName) {
+    const own = Object.create(null);
+
+    function addScopedListener(type, handler, options) {
+        // 生命周期事件与 document 代理同语义：弹窗早就 ready 了，照原样注册永不触发，
+        // 这里立刻（微任务）补发一次。
+        if (type === 'DOMContentLoaded' || type === 'load' || type === 'readystatechange') {
+            const fn = typeof handler === 'function'
+                ? handler
+                : (handler && typeof handler.handleEvent === 'function'
+                    ? handler.handleEvent.bind(handler)
+                    : null);
+            if (fn) {
+                Promise.resolve().then(() => {
+                    try {
+                        fn.call(proxy, new Event(type));
+                    } catch (error) {
+                        reportDictScriptError(dictName, `on${type}`, error);
+                    }
+                });
+            }
+            return undefined;
+        }
+        return root.addEventListener(type, handler, options);
+    }
+
+    const proxy = new Proxy(Object.create(null), {
+        get(_target, prop) {
+            if (prop === 'document') return scopedDocument;
+            // 自指属性全部指回代理，别让脚本经 window.window / self / top 摸回真 window。
+            if (prop === 'window' || prop === 'self' || prop === 'globalThis'
+                || prop === 'parent' || prop === 'top') {
+                return proxy;
+            }
+            if (prop === 'addEventListener') return addScopedListener;
+            if (prop === 'removeEventListener') {
+                return (type, handler, options) => root.removeEventListener(type, handler, options);
+            }
+            if (prop in own) return own[prop];
+            const value = Reflect.get(window, prop);
+            return typeof value === 'function' ? value.bind(window) : value;
+        },
+        set(_target, prop, value) {
+            own[prop] = value;
+            return true;
+        },
+        has(_target, prop) {
+            // `with (window) { … }` 靠这一项决定裸标识符走不走代理：本块写过的（jQuery /
+            // $）命中私有表，宿主已有的回落真 window，两边都没有的（第一份脚本执行到一半
+            // 时的 jQuery）照旧落到外层作用域，与不加代理时一致。
+            return prop in own || prop in window;
+        },
+        deleteProperty(_target, prop) {
+            delete own[prop];
+            return true;
+        },
+    });
+
+    return proxy;
+}
+
 /* 跑完一个词典块里的全部 <script>。root 是该词典的 wrapper（div[data-dictionary]），
    同时充当脚本的作用域根。执行完把 script 节点摘掉：它们已经跑过，留着只会让制卡
    导出等下游再处理一遍。 */
@@ -453,7 +536,11 @@ async function runDictScripts(root, dictName) {
     let factory = __dictScriptFnCache.get(combined);
     if (factory === undefined) {
         try {
-            factory = new Function('document', 'window', 'self', '__reportDictScriptError', combined);
+            // `with (window)` 把**裸标识符**也接到 window 代理上。少了它，代理只管得住
+            // `window.x` 这种带前缀的写法：jQuery 把自己写进 window（→ 本块私有表）之后，
+            // 同一本词典的下一份脚本里裸写的 `$(…)` 会解析到真全局、拿到 undefined。
+            factory = new Function('document', 'window', 'self', '__reportDictScriptError',
+                `with (window) {\n${combined}\n}`);
         } catch (error) {
             factory = null;  // 整段都编译不了（语法错误）；记一次，别每个词条再试一遍
             reportDictScriptError(dictName, 'compile', error);
@@ -463,8 +550,9 @@ async function runDictScripts(root, dictName) {
     if (!factory) return;
 
     const scopedDocument = createScopedDocument(root, dictName);
+    const scopedWindow = createScopedWindow(root, scopedDocument, dictName);
     try {
-        factory.call(window, scopedDocument, window, window,
+        factory.call(scopedWindow, scopedDocument, scopedWindow, scopedWindow,
             (index, error) => reportDictScriptError(dictName, labels[index] ?? `#${index}`, error));
     } catch (error) {
         reportDictScriptError(dictName, 'run', error);
