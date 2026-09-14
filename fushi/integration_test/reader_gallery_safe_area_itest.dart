@@ -135,16 +135,21 @@ void main() {
 
         // ① 安全区：设备给的 viewPadding 必须真的把顶栏整条推下去。
         //
-        // iOS 上这条是本用例的主证据，必须真拿到一个非零状态栏高度，拿不到就是
-        // 证据无效（设备选错了）而不是通过。桌面端 viewPadding 本来就是 0，那里
-        // 这条退化成恒真，同一份测试照样能跑完后面两段。
+        // 移动端（iOS 刘海 / 灵动岛、Android 状态栏）上这条是本用例的主证据，必须
+        // 真拿到一个非零状态栏高度，拿不到就是证据无效（设备选错了）而不是通过。
+        // 被压住的是同一段代码——裸 Scaffold 不让开系统 inset——与是哪家的系统条
+        // 无关，所以两个移动端都算数。桌面端 viewPadding 本来就是 0，那里这条退化
+        // 成恒真，同一份测试照样能跑完后面两段。
         final double statusBar = _viewPaddingTop(tester);
         debugPrint('[gallery] viewPadding.top=$statusBar');
-        if (defaultTargetPlatform == TargetPlatform.iOS) {
+        final bool mobile =
+            defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.android;
+        if (mobile) {
           expect(
             statusBar,
             greaterThan(20),
-            reason: '这台 iOS 设备没有刘海 / 灵动岛，本用例取不到有效证据',
+            reason: '这台移动设备报不出状态栏高度，本用例取不到有效证据',
           );
         }
         for (final MapEntry<String, Finder> control in <String, Finder>{
