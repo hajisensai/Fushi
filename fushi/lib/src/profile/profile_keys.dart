@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
 
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
@@ -46,6 +47,10 @@ class ProfileKeys {
     // 键名从 [ModuleId.allPrefKeys] 生成，不手抄——加模块时这里自动跟上。
     ...ModuleId.allPrefKeys,
     'active_profile_id',
+    // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
+    // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
+    // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
+    kStatLegacyProfileIdPrefKey,
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
