@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
@@ -81,6 +82,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   late final TextEditingController _searchController;
   final FocusNode _searchFocusNode = FocusNode();
+  late final LookupImeBinding _imeBinding = LookupImeBinding(
+    languageOf: () => appModel.effectiveLookupImeLanguage,
+  );
 
   AppModel get appModel => ref.read(appProvider);
 
@@ -102,6 +106,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void initState() {
     super.initState();
     _searchController = TextEditingController(text: widget.searchTerm);
+    _imeBinding.attach(focusNode: _searchFocusNode);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
     _sourceLookupText = widget.searchTerm.trim();
@@ -158,6 +163,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   @override
   void dispose() {
+    _imeBinding.detach();
     _searchController.dispose();
     _searchFocusNode.dispose();
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
@@ -480,6 +486,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       focusNode: _searchFocusNode,
       onClose: null,
       onSubmit: _onSearchSubmit,
+      hintLocales: appModel.lookupImeHintLocales,
     );
   }
 
@@ -649,6 +656,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
     required this.focusNode,
     required this.onSubmit,
     this.onClose,
+    this.hintLocales,
     super.key,
   });
 
@@ -656,6 +664,9 @@ class PopupDictionarySearchBar extends StatelessWidget {
   final FocusNode focusNode;
   final ValueChanged<String> onSubmit;
   final VoidCallback? onClose;
+
+  /// 输入法语言提示，由页面从偏好算出来传进来（组件自己不读 provider）。
+  final List<Locale>? hintLocales;
 
   @override
   Widget build(BuildContext context) {
@@ -665,6 +676,7 @@ class PopupDictionarySearchBar extends StatelessWidget {
       hintText: t.search,
       onSubmit: onSubmit,
       onClose: onClose,
+      hintLocales: hintLocales,
       closeButtonKey: const ValueKey<String>('popup_dictionary_close_button'),
       fieldKey: const ValueKey<String>('popup_dictionary_search_field'),
       searchButtonKey: const ValueKey<String>('popup_dictionary_search_button'),

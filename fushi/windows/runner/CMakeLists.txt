@@ -36,6 +36,7 @@ add_executable(${BINARY_NAME} WIN32
   "hdr_video_host_window.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
+  "ime_language_switch.cpp"
   "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
@@ -136,6 +137,22 @@ add_custom_target(fushi_windows_ime_association_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_ime_association_gate)
+
+# 查词输入法语言切换：切错语言 / 忘了还原，都会把用户的系统输入法状态留在错的地方
+# （Win8 起输入法是 per-user，会漏到别的应用），所以状态机随每次 Windows runner
+# 构建跑一遍。
+add_executable(fushi_windows_ime_language_test
+  "ime_language_switch.cpp"
+  "tests/ime_language_switch_test.cpp"
+)
+apply_standard_settings(fushi_windows_ime_language_test)
+target_compile_definitions(fushi_windows_ime_language_test PRIVATE "NOMINMAX")
+add_custom_target(fushi_windows_ime_language_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_ime_language_test>"
+  DEPENDS fushi_windows_ime_language_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_ime_language_gate)
 
 # BUG-1455: compile and execute the WM_ACTIVATE focus policy on every Windows
 # runner build. This guards both sides of the contract: popup drag deactivation
