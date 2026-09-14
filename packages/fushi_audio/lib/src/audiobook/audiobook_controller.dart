@@ -1599,6 +1599,28 @@ class AudiobookPlayerController extends ChangeNotifier {
     _chapterTransition = false;
   }
 
+  /// BUG-2529：reader 的**跨章导航中止**（章节装载抛错 / `_navigateToChapterAndWait`
+  /// 等待超时 / content-ready 兜底超时）时解除守卫。
+  ///
+  /// [_chapterTransition] 是「为这一次在飞的跨章导航」竖起来的，唯一的正常解除路径
+  /// 是 reader 在章节内容就绪后回调 [notifySectionRestoreCompleted]。导航中止意味着
+  /// 那条回执**永远不会来**：守卫就此永久卡 true，[_updateCurrentCue] 与
+  /// [setChapterCues] 此后全部早退，`_currentCue` / `_currentCueIndex` 冻结在旧章旧句，
+  /// 于是上一句/下一句（底栏、媒体通知、耳机键、音量键、快捷键全部汇聚到
+  /// [skipToCue] 同一漏斗）每次都算出同一个目标、seek 到同一处，高亮跟随也不再推进
+  /// ——用户感知是「切出去再回来，上下句按了纹丝不动」，且没有任何自愈，直到重开书。
+  ///
+  /// 与 [cancelChapterTransition] 的差别只在图片章停留序列：序列自己用
+  /// [holdChapterTransition] 持着守卫、并以 [_imageChapterPauseActive] 让中间章的
+  /// 回执保持守卫不放（TODO-1037 的重入竞态修复）。序列在途时中止单章导航不得把
+  /// 序列的守卫一起放掉，否则剩余图片章会被一步跳过；序列收尾自带 hold + 最终导航
+  /// 的正常清守卫契约，那次若也中止，此时 `_imageChapterPauseActive` 已为 false，
+  /// 本方法照常解除。
+  void abortChapterTransition() {
+    if (_imageChapterPauseActive) return;
+    _chapterTransition = false;
+  }
+
   /// Called by the reader for TOC/link/search/bookmark/page-turn jumps. It lets
   /// the manually selected reader section stay visible until the audio advances
   /// to a different cue or the user explicitly asks to follow audio again.
