@@ -337,6 +337,14 @@ abstract class BaseAnkiRepository {
   Future<List<int>> findSourceNoteCandidates(String sourceId) async =>
       throw UnsupportedError('Source note lookup is unavailable');
 
+  /// Fields of one candidate note for source identity checks. Returns `null`
+  /// only when the note no longer exists; a backend/transport failure must
+  /// throw. This is deliberately not [noteFields], whose fail-soft `null`
+  /// (viewer convenience) would let a timeout masquerade as "note deleted".
+  @protected
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async =>
+      throw UnsupportedError('Source note lookup is unavailable');
+
   @protected
   Future<void> writeSourceNoteFields(
     int noteId,
@@ -347,6 +355,7 @@ abstract class BaseAnkiRepository {
   /// Resolve the single note carrying [sourceId] in a `fushi://source` href.
   /// A substring candidate that parses to a different (or no) source link is
   /// not a match; a candidate deleted between search and read is skipped.
+  /// Backend failures propagate: "could not ask" is never reported as "gone".
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
     CardSourceLink.validateSourceId(sourceId);
     final Set<int> candidates =
@@ -354,7 +363,7 @@ abstract class BaseAnkiRepository {
     final Map<int, Map<String, String>> matches = <int, Map<String, String>>{};
     for (final int noteId in candidates) {
       if (noteId <= 0) throw StateError('Invalid source note candidate');
-      final Map<String, String>? fields = await noteFields(noteId);
+      final Map<String, String>? fields = await sourceNoteFields(noteId);
       if (fields == null) continue;
       final bool carriesSource = fields.values.any(
         (String field) => CardSourceLink.fromHtml(field)

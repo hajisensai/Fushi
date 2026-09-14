@@ -909,6 +909,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }
 
   @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    final AnkiConnectService service = await _getService();
+    return service.notesInfo(noteId);
+  }
+
+  @override
   Future<void> writeSourceNoteFields(
     int noteId,
     Map<String, String> fields,

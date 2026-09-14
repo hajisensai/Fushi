@@ -588,6 +588,12 @@ class AnkiRepository extends BaseAnkiRepository {
   }
 
   @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    await _ensurePermission();
+    return notesInfo(noteId);
+  }
+
+  @override
   Future<void> writeSourceNoteFields(
     int noteId,
     Map<String, String> fields,

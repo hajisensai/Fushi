@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -42,9 +43,17 @@ class _SourceRepository extends BaseAnkiRepository {
     return matches;
   }
 
+  Object? readFailure;
+
   @override
   Future<Map<String, String>?> noteFields(int noteId) async =>
       candidateFields[noteId] ?? saved;
+
+  @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    if (readFailure != null) throw readFailure!;
+    return candidateFields[noteId] ?? saved;
+  }
 
   @override
   Future<void> writeSourceNoteFields(
@@ -322,6 +331,16 @@ void main() {
     repo.candidateFields[41] = <String, String>{'MiscInfo': book().toHtml()};
     repo.matches = <int>[41, 42];
     await expectLater(repo.readSourceNote(_sourceId), throwsStateError);
+  });
+
+  test('source lookup propagates backend failure instead of "not found"',
+      () async {
+    final _SourceRepository repo = _SourceRepository();
+    repo.readFailure = const SocketException('AnkiConnect timed out');
+    await expectLater(
+      repo.readSourceNote(_sourceId),
+      throwsA(isA<SocketException>()),
+    );
   });
 
   test('AnkiDroid resolves the source ID and sends only the selected fields',
