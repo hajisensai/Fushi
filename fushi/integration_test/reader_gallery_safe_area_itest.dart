@@ -135,21 +135,22 @@ void main() {
 
         // ① 安全区：设备给的 viewPadding 必须真的把顶栏整条推下去。
         //
-        // 移动端（iOS 刘海 / 灵动岛、Android 状态栏）上这条是本用例的主证据，必须
-        // 真拿到一个非零状态栏高度，拿不到就是证据无效（设备选错了）而不是通过。
-        // 被压住的是同一段代码——裸 Scaffold 不让开系统 inset——与是哪家的系统条
-        // 无关，所以两个移动端都算数。桌面端 viewPadding 本来就是 0，那里这条退化
-        // 成恒真，同一份测试照样能跑完后面两段。
+        // iOS 上这条是本用例的主证据，必须真拿到一个非零状态栏高度，拿不到就是
+        // 证据无效（设备选错了）而不是通过。
+        //
+        // **只有 iOS 算数，Android 模拟器实测验不了这条**（2026-09-15）：开书后
+        // 阅读器进沉浸模式把系统栏藏了，Android 的 viewPadding.top 随之归 0 —— 那里
+        // 本来就没有要让的安全区。iOS 的刘海 / 灵动岛是**物理遮挡**，safe area 不随
+        // 状态栏隐藏消失，所以同一段代码只在 iOS 上显形。这也正是用户只在 iOS 报出
+        // 「顶部顶到系统条点不到」的原因，别把 Android 跑绿当成这条已验证。
+        // 桌面端 viewPadding 恒 0，同理退化成恒真，但后面两段照样跑得完。
         final double statusBar = _viewPaddingTop(tester);
         debugPrint('[gallery] viewPadding.top=$statusBar');
-        final bool mobile =
-            defaultTargetPlatform == TargetPlatform.iOS ||
-            defaultTargetPlatform == TargetPlatform.android;
-        if (mobile) {
+        if (defaultTargetPlatform == TargetPlatform.iOS) {
           expect(
             statusBar,
             greaterThan(20),
-            reason: '这台移动设备报不出状态栏高度，本用例取不到有效证据',
+            reason: '这台 iOS 设备没有刘海 / 灵动岛，本用例取不到有效证据',
           );
         }
         for (final MapEntry<String, Finder> control in <String, Finder>{
