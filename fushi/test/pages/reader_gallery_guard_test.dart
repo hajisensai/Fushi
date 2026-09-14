@@ -101,6 +101,12 @@ void main() {
         reason: '长按卡片必须唤出菜单（锁着的图此前没有任何跳转入口）');
     expect(gallery.contains('ContextMenuTrigger('), isTrue,
         reason: '桌面右键走统一的上下文菜单触发口，不得硬绑 onSecondaryTap');
+    // 长按 / 右键都是指针动作。插图册整页本来就是方向键 + Enter 驱动的，菜单
+    // 没有键位就等于对键盘 / 手柄用户不存在。
+    expect(gallery.contains('_isContextMenuKey(event)'), isTrue,
+        reason: '卡片菜单必须有键盘入口（菜单键 / Shift+F10）');
+    expect(gallery.contains('_restoreGridFocus()'), isTrue,
+        reason: '菜单关闭后要把焦点还给网格，否则键盘导航一次性废掉');
     expect(gallery.contains("ValueKey<String>('fushi_gallery_menu_jump')"),
         isTrue);
     expect(gallery.contains("ValueKey<String>('fushi_gallery_menu_relock')"),

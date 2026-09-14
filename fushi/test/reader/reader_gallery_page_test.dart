@@ -553,6 +553,48 @@ void main() {
     }
   });
 
+  testWidgets('菜单键唤出卡片菜单；关闭后焦点回网格，方向键仍能移焦', (tester) async {
+    final List<String> jumped = <String>[];
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (EpubImageRef ref) => jumped.add(ref.src),
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+
+    // 方向键落焦到第一张卡 → 菜单键（长按的键盘等价）唤出菜单。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(_cardBorderWidth(tester, 'img0.png'), 2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.contextMenu);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+    );
+    await tester.pumpAndSettle();
+    expect(jumped, <String>['img0.png']);
+
+    // 菜单吃掉的焦点必须还回来：不还，方向键就再也移不动焦点了。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(
+      _cardBorderWidth(tester, 'img1.png'),
+      2,
+      reason: '菜单关闭后方向键应继续在网格里移焦',
+    );
+  });
+
   testWidgets('空书：空态文案，无过滤 / 定位控件', (tester) async {
     await tester.pumpWidget(
       _host(

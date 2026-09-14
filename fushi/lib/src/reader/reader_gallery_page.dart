@@ -11,8 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
-import 'package:fushi/src/focus/fushi_focus_controller.dart'
-    show FushiFocusId;
+import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -469,6 +468,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       builder: (BuildContext dialogContext) =>
           _LockedIllustrationDialog(hint: _lockedHint(ref)),
     );
+    _restoreGridFocus();
     if (!mounted || action == null) return;
     switch (action) {
       case _LockedAction.backToLastSeen:
@@ -534,6 +534,16 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         ),
       ),
     );
+    // 菜单 / 弹窗吃掉焦点后必须还回来：不还，用键盘或手柄选完一项，网格的方向键
+    // 就再也不响应了（焦点停在已经销毁的 sheet 子树上），表现是「菜单用一次，
+    // 键盘导航就废了」。指针用户看不见这个坑，正因为如此它更容易漏。
+    _restoreGridFocus();
+  }
+
+  /// 把焦点还给网格（菜单 / 弹窗关闭后调）。
+  void _restoreGridFocus() {
+    if (!mounted) return;
+    _focusNode.requestFocus();
   }
 
   String _lockedHint(EpubImageRef ref) => _unreadAhead(ref)

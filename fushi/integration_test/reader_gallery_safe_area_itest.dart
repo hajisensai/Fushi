@@ -34,6 +34,7 @@ import 'package:fushi/src/reader/reader_gallery_page.dart'
     show ReaderGalleryPage;
 
 import 'helpers/focus_driver.dart';
+import 'helpers/observe_capture.dart';
 import 'helpers/library_fixture.dart'
     show openBookViaProductionPath, seedReaderBook;
 import 'support/itest_startup_guard.dart';
@@ -128,6 +129,9 @@ void main() {
         await _pumpUntil(tester, _galleryShown, reason: '按 G 没打开插图册');
         await tester.pump(const Duration(milliseconds: 500));
         expect(_cards, findsWidgets, reason: '这本书没解析出插图，本用例取不到有效证据');
+        // 像素证据：用户当初就是拿截图报的「卡片长这样」「顶栏顶到系统条」，
+        // 回给同一形式最省事。插图册是纯 Flutter 面，图层树直抓即可。
+        await captureFlutterFrame('gallery-grid');
 
         // ① 安全区：设备给的 viewPadding 必须真的把顶栏整条推下去。
         //
@@ -180,6 +184,7 @@ void main() {
         await _focusFirstCard(tester);
         await _openCardMenu(tester);
         expect(_menuJump, findsOneWidget, reason: '菜单键没唤出卡片菜单');
+        await captureFlutterFrame('gallery-card-menu');
         expect(
           await driver.focusWidget(_menuJump),
           isTrue,
@@ -215,6 +220,7 @@ void main() {
           findsOneWidget,
           reason: '恢复遮罩后卡片必须重新盖上模糊层',
         );
+        await captureFlutterFrame('gallery-relocked');
 
         // 关闭按钮同样走焦点驱动（它此前正是被状态栏压住那三个之一）。
         expect(
