@@ -25,7 +25,7 @@
   正是截图里「列表停在表紙」。同文件外两处**已经**是 floor 口径，只有这张列表是例外：
   `ReaderFushiPage._currentChapterLabelFor`（页脚章名 / 收藏落库的 `chapterLabel`）与
   `reader_audiobook_panel.dart:486` 有声书「章节」tab 的当前章标注。
-- **[x] ① 已修复** — `bd39a25f92`：新增纯函数
+- **[x] ① 已修复** — `f140a7b1de`：新增纯函数
   `resolveCurrentTocChapter`（`fushi/lib/src/reader/ttu_toc_flatten.dart`）——取**最大的
   不晚于当前位置的目录项 index**（floor），目录为空 / 当前位置早于首条目录项 / 无位置时返
   null（不标任何行）；`_buildCurrentTocSection` 只把那一行 `final int? currentIdx = …`
