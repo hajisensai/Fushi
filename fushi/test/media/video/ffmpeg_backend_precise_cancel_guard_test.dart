@@ -60,13 +60,28 @@ void main() {
       // stays green when the real call is commented out with `/* ... */`.
       final String source = codeOnly(libFile(path));
 
-      expect(source, contains('FFmpegKit.cancel(sessionId)'),
+      // BUG-2542 收敛了 run/runProbe 的两份同构代码，取消调用变成注入点
+      // `cancelSession(sessionId)`（默认值即 `FFmpegKit.cancel`），好让「永不
+      // 回包」的挂死阶段能被行为测试直接钉住
+      // （test/media/video/ffmpeg_kit_session_timeout_test.dart 断言「只取消
+      // 本次 sessionId」，比源码字面判据更强）。这里不再钉死调用的**字面形态**，
+      // 而是钉住三件事：取消带实参、实参来自 session.getSessionId()、且注入的
+      // **默认值**仍是真的 FFmpegKit.cancel——第三条是新加的：光看调用形态的话，
+      // 把默认值换成 no-op 就能在守卫全绿的情况下彻底不取消。
+      expect(
+          RegExp(r'cancelSession\(\s*sessionId\s*\)').hasMatch(source), isTrue,
           reason: 'Timeout handling must cancel the specific session id '
               'obtained from session.getSessionId() — BUG-905.');
       expect(source, contains('session.getSessionId()'),
           reason: 'The timed-out session id must come from '
               'session.getSessionId() so only that session is cancelled — '
               'BUG-905.');
+      expect(RegExp(r'cancelSession\s*=\s*FFmpegKit\.cancel').hasMatch(source),
+          isTrue,
+          reason: 'The injected canceller must default to the real '
+              'FFmpegKit.cancel; a no-op default would silently stop '
+              'cancelling anything while this guard stayed green — '
+              'BUG-905 / BUG-2542.');
     });
 
     test('sessions are started async so the id is known before timeout', () {
