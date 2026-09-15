@@ -3018,6 +3018,51 @@ function redirectMarkerKind(content) {
     return 0;
 }
 
+// glossary.content 经桥接过来时可能是 JSON 字符串；两个 redirect 谓词共用同一种归一。
+function parseGlossaryContent(content) {
+    if (typeof content === 'string') {
+        const trimmed = content.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+                return JSON.parse(trimmed);
+            } catch (_) {
+                // Not JSON: dictionary HTML or plain text.
+            }
+        }
+    }
+    return content;
+}
+
+function glossaryVisibleText(content) {
+    if (typeof content === 'string') {
+        return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    if (Array.isArray(content)) {
+        return content.map(glossaryVisibleText).join(' ').trim();
+    }
+    if (content && typeof content === 'object') {
+        if (Object.prototype.hasOwnProperty.call(content, 'content')) {
+            return glossaryVisibleText(content.content);
+        }
+        if (typeof content.text === 'string') return glossaryVisibleText(content.text);
+    }
+    return '';
+}
+
+// BUG-2550: a record is redirect-only when the redirect label is all it has.
+// OALDPE10 prefixes every phrasal-verb record with a self-redirect label
+// `["give up", ["Redirected from give up"]]` and carries the real
+// structured-content definition right next to it (its alias records such as
+// `give-up` consist of that label alone). The label must not hide the
+// definition: a top-level item that has visible text and no redirect marker of
+// its own is a definition, and its presence keeps the record.
+function hasStandaloneDefinition(content) {
+    const parsed = parseGlossaryContent(content);
+    if (!Array.isArray(parsed)) return false;
+    return parsed.some(
+        (item) => redirectMarkerKind(item) === 0 && glossaryVisibleText(item) !== '');
+}
+
 function isRedirectGlossary(glossary) {
     if (!glossary) return false;
     const tags = `${glossary.definitionTags || ''} ${glossary.termTags || ''}`
@@ -3026,8 +3071,9 @@ function isRedirectGlossary(glossary) {
     if (/(?:^|\s)redirect(?:ed)?(?:\s|$)/.test(tags)) return true;
 
     const marker = redirectMarkerKind(glossary.content);
-    if (marker === 2) return true;
-    return marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags);
+    const redirectMarked =
+        marker === 2 || (marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags));
+    return redirectMarked && !hasStandaloneDefinition(glossary.content);
 }
 
 function createGlossarySectionWrapper(entry) {
