@@ -106,6 +106,11 @@ class ShortcutDefaults {
     ShortcutAction.readerOpenAudiobook: _kb([
       _key(LogicalKeyboardKey.keyB),
     ]),
+    // 停 / 续阅读统计计时：键盘默认 P（reader+audiobook co-active 组内未被占用；
+    // video 组的 P 是播放/暂停，属不同组、绝不同时激活）。手柄留空，用户可自绑。
+    ShortcutAction.readerToggleStudyClock: _kb([
+      _key(LogicalKeyboardKey.keyP),
+    ]),
     // 「只关词典、绝不退出」的可选专用动作：**默认空绑定**。
     //
     // Esc 已交给 universal 的 globalBack（一键阶梯：有词典先关词典、没词典才退书），

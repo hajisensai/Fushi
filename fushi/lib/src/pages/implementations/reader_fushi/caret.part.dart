@@ -695,6 +695,12 @@ extension _ReaderCaret on _ReaderFushiPageState {
           unawaited(_openAudioImportDialog());
         }
         return KeyEventResult.handled;
+      case ShortcutAction.readerToggleStudyClock:
+        // 一键停 / 续阅读统计计时（默认 P），与状态行 / 播放条内联读数里那颗
+        // [ReaderStudyClockButton] 同一入口。纯状态切换、不动任何界面，故不像开面板
+        // 的动作那样先关词典弹窗——查着词也能停表。
+        _toggleStudyClockManualPause();
+        return KeyEventResult.handled;
       case ShortcutAction.readerToggleFurigana:
         // 振假名 toggle 态的整页揭示 / 收回（CSS `body.show-all-rt`）：键盘 / 手柄
         // (R3) 没有「点一个揭示一个」的指针，这颗键一次揭示全页；dimmed 态同一颗键

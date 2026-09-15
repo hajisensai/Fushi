@@ -49,6 +49,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_statistics;
       case ShortcutAction.readerOpenAudiobook:
         return t.shortcut_action_reader_open_audiobook;
+      case ShortcutAction.readerToggleStudyClock:
+        return t.shortcut_action_reader_toggle_study_clock;
       case ShortcutAction.readerDismissDict:
         return t.shortcut_action_reader_dismiss_dict;
       case ShortcutAction.readerToggleFurigana:

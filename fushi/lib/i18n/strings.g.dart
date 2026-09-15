@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 84371 (4963 per locale)
+/// Strings: 84388 (4964 per locale)
 ///
-/// Built on 2026-09-15 at 13:27 UTC
+/// Built on 2026-09-15 at 17:44 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6929,6 +6929,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_provider_base_url_invalid =>
       'Enter a valid HTTP or HTTPS endpoint';
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -18646,6 +18648,9 @@ class _StringsAr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -30589,6 +30594,9 @@ class _StringsDe extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -42586,6 +42594,9 @@ class _StringsEs extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -54616,6 +54627,9 @@ class _StringsFr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -66450,6 +66464,9 @@ class _StringsId extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -78375,6 +78392,9 @@ class _StringsIt extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -89683,6 +89703,9 @@ class _StringsJa extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -101001,6 +101024,9 @@ class _StringsKo extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -112884,6 +112910,9 @@ class _StringsNl extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -124820,6 +124849,9 @@ class _StringsPtBr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -136733,6 +136765,9 @@ class _StringsRu extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -148448,6 +148483,9 @@ class _StringsTh extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -160277,6 +160315,9 @@ class _StringsTr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -172076,6 +172117,9 @@ class _StringsVi extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 // Path: <root>
@@ -182891,6 +182935,8 @@ class _StringsZhCn extends _StringsEn {
   String get ai_provider_base_url_invalid => '请填写有效的 HTTP 或 HTTPS 接口地址';
   @override
   String get ai_provider_protocol_locked => '由内置预设固定，不可更改';
+  @override
+  String get shortcut_action_reader_toggle_study_clock => '暂停 / 继续阅读计时';
 }
 
 // Path: <root>
@@ -193884,6 +193930,9 @@ class _StringsZhHk extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get shortcut_action_reader_toggle_study_clock =>
+      'Pause / resume reading timer';
 }
 
 /// Flat map(s) containing all translations.
@@ -204115,6 +204164,8 @@ extension on _StringsEn {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -214341,6 +214392,8 @@ extension on _StringsAr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -224612,6 +224665,8 @@ extension on _StringsDe {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -234874,6 +234929,8 @@ extension on _StringsEs {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -245145,6 +245202,8 @@ extension on _StringsFr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -255387,6 +255446,8 @@ extension on _StringsId {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -265651,6 +265712,8 @@ extension on _StringsIt {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -275842,6 +275905,8 @@ extension on _StringsJa {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -286037,6 +286102,8 @@ extension on _StringsKo {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -296294,6 +296361,8 @@ extension on _StringsNl {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -306546,6 +306615,8 @@ extension on _StringsPtBr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -316805,6 +316876,8 @@ extension on _StringsRu {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -327036,6 +327109,8 @@ extension on _StringsTh {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -337282,6 +337357,8 @@ extension on _StringsTr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -347522,6 +347599,8 @@ extension on _StringsVi {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
@@ -357669,6 +357748,8 @@ extension on _StringsZhCn {
         return '请填写有效的 HTTP 或 HTTPS 接口地址';
       case 'ai_provider_protocol_locked':
         return '由内置预设固定，不可更改';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return '暂停 / 继续阅读计时';
       default:
         return null;
     }
@@ -367838,6 +367919,8 @@ extension on _StringsZhHk {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'shortcut_action_reader_toggle_study_clock':
+        return 'Pause / resume reading timer';
       default:
         return null;
     }
