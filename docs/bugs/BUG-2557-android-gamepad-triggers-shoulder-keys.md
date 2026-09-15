@@ -36,7 +36,7 @@ BUG-1266 只吞了没人认领的 B（`gamepadBackMustBeSwallowed`，
 `BUTTON_MODE → HOME`；只有 L1/R1/L2/R2 与 D-pad 没有。没绑定的 X/Y 在聚焦的文本框里会
 退格 / 打空格，Start / L3 / R3 会「确认」当前焦点控件。
 
-- **[x] ① 已修复** — 提交 `<pr-hash>`
+- **[x] ① 已修复** — 提交 `66e6aa8e64`
   - A：新增 `fushi/android/app/src/main/java/app/fushi/reader/GamepadTriggerKeySynthesizer.java`：
     `MainActivity.dispatchGenericMotionEvent` 旁听摇杆 MotionEvent（返回值仍交给
     super，D-pad 合成不受影响），按设备解析扳机轴（LTRIGGER/RTRIGGER → BRAKE/GAS →

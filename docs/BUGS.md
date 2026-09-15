@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2557](bugs/BUG-2557-android-gamepad-triggers-shoulder-keys.md) | 🚧 | 🚧 | Android 手柄 LT/RT 扳机永不到达 app、LB/RB 整屏滚动无执行体、未绑定 X/Y 被系统兜底成退格/空格 |
+| [BUG-2557](bugs/BUG-2557-android-gamepad-triggers-shoulder-keys.md) | ✅ | ✅ | Android 手柄 LT/RT 扳机永不到达 app、LB/RB 整屏滚动无执行体、未绑定 X/Y 被系统兜底成退格/空格 |
 | [BUG-2550](bugs/BUG-2550-reader-stepper-label-truncated.md) | ✅ | ✅ | 阅读设置面板窄窗下 stepper 行标签被压成一个字 |
 | [BUG-2549](bugs/BUG-2549-english-phrasal-verb-deinflection.md) | ✅ | ✅ | 英语短语动词的变形查不到原形（gave up / picked it up 还原不到 give up / pick up） |
 | [BUG-2548](bugs/BUG-2548-collection-detail-drops-remote-members.md) | ✅ | ✅ | 合集详情页丢掉全部远端成员：行头 N 项、点进去只剩本地几本 |
