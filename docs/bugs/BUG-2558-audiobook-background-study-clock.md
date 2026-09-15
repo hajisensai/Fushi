@@ -17,7 +17,7 @@
   - **前置缺口（iOS）**：`ios/Runner/Info.plist` 缺 `UIBackgroundModes: audio`，
     iOS 在 app 进后台那一刻挂起进程，有声书直接断声——路径 A/B 在 iOS 上都不成立，
     audio_service 装的 Now Playing / 远程控制也形同虚设。
-- **[x] ① 已修复** — `49b3d81487`
+- **[x] ① 已修复** — `4700e22ab2`
   - 判据加第四个输入 `audiobookPlaying`（`reader_fushi_page.dart:470`）：**后台分支
     改为「有声书真在出声才计时」**。`manualPause` 仍一票否决；后台分支有意**不看**
     `modalDepth`（屏幕已关 / 窗口已切走时面板一样不可见，「用户在操作面板不是在读」
@@ -40,7 +40,7 @@
     `dispose` 走零 IO 的 `detach()`（在同步 dispose 里发 `stop()` 就是无人 await 的
     事务，会与随后的 `db.close()` 互等）。
   - iOS 补 `UIBackgroundModes: audio`（只声明 audio 一项）。
-- **[x] ② 已加自动化测试** — `49b3d81487`
+- **[x] ② 已加自动化测试** — `4700e22ab2`
   - `fushi/test/reader/reader_study_clock_policy_test.dart`：判据纯函数 5 条新用例
     （后台+在播可跑 / 后台停播即停 / 后台不看 modalDepth / 手动暂停仍一票否决 /
     前台不看播放态）。
