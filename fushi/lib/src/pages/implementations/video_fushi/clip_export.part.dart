@@ -411,39 +411,199 @@ extension _VideoClipExport on _VideoFushiPageState {
     } catch (_) {}
   }
 
-  /// 截当前帧存为图片：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
-  /// 的平台分流）。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
-  Future<void> _saveScreenshot() async {
+  /// 截当前帧存为图片。
+  ///
+  /// 两个独立快捷键共用这一个执行体，只差 [withSubtitles]：字幕由 Flutter overlay
+  /// 渲染、**不在解码帧里**（libmpv 侧 `sub-visibility=no`），所以「带字幕」那条要
+  /// 在 Dart 侧把屏幕上正在显示的那条字幕合成回画面（见
+  /// `video_screenshot_compose.dart`），用的是片段导出同一套渲染器，外观与屏幕一致。
+  ///
+  /// 去向由 [VideoScreenshotDestination] 决定：弹对话框（历史行为）/ 进剪贴板 /
+  /// 静默写进指定目录。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
+  Future<void> _saveScreenshot({bool withSubtitles = false}) async {
     final VideoPlayerController? controller = _controller;
-    final Uint8List? bytes = await controller?.screenshot();
-    if (bytes == null) {
+    final Uint8List? raw = await controller?.screenshot();
+    if (raw == null) {
       _showScreenshotFailure('no frame available');
       return;
     }
+
+    Uint8List bytes = raw;
+    String extension = 'jpg';
+    if (withSubtitles && controller != null) {
+      final Uint8List? composed =
+          await _composeScreenshotWithSubtitles(controller, raw);
+      // 合成不出来（此刻屏幕上本就没字幕 / 渲染失败）就落回裸帧：少一层字幕远好过
+      // 整张截图失败。
+      if (composed != null) {
+        bytes = composed;
+        extension = 'png';
+      }
+    }
+    if (!mounted) return;
+
+    final String screenshotName = videoScreenshotBaseName(
+      sourcePathOrTitle: _screenshotSourcePathOrTitle(),
+      positionMs: controller?.positionMs ?? 0,
+      extension: extension,
+    );
+    switch (appModel.videoScreenshotDestination) {
+      case VideoScreenshotDestination.clipboard:
+        await _copyScreenshotToClipboard(bytes: bytes, extension: extension);
+      case VideoScreenshotDestination.directory:
+        final String directory = appModel.videoScreenshotDirectory.trim();
+        if (directory.isEmpty) {
+          // 没设过目录就退回对话框而不是静默丢文件：宁可多一次对话框，也不要把图
+          // 写到用户不知道的地方。
+          _showOsd(
+            t.video_screenshot_directory_unset,
+            severity: ToastSeverity.error,
+          );
+          await _saveScreenshotViaDialog(
+            bytes: bytes,
+            screenshotName: screenshotName,
+            extension: extension,
+          );
+        } else {
+          await _writeScreenshotToDirectory(
+            bytes: bytes,
+            directory: directory,
+            screenshotName: screenshotName,
+          );
+        }
+      case VideoScreenshotDestination.ask:
+        await _saveScreenshotViaDialog(
+          bytes: bytes,
+          screenshotName: screenshotName,
+          extension: extension,
+        );
+    }
+  }
+
+  /// 把此刻屏幕上显示的字幕合成回 [frameBytes] 这一帧，返回 PNG；没字幕或渲染失败
+  /// 返回 null（调用方据此落回裸帧）。
+  ///
+  /// cue 的选取与片段导出**同源同轴**（[_clipExportSubtitleCues] → `buildClipSubtitleCues`，
+  /// 含主副轨各自的 delay 与文本清洗），窗口取当前播放位置起 1ms——该函数要求
+  /// `endMs > startMs`，而「与区间有交集」的判据配 1ms 窗口恰好选中屏幕上那条。
+  /// 排版换算（字号/底距/描边按 画面高 ÷ 视频显示区高 缩放）走
+  /// [_clipExportSubtitleRenderer]，于是截图里的字幕与屏幕上、与导出的片段逐像素同源。
+  Future<Uint8List?> _composeScreenshotWithSubtitles(
+    VideoPlayerController controller,
+    Uint8List frameBytes,
+  ) async {
+    final ({int width, int height})? size =
+        await screenshotFrameSize(frameBytes);
+    if (size == null || size.width <= 0 || size.height <= 0) return null;
+    // 位置未知时按 0 处理：取不到当前时刻就选不出 cue，下面 cues 为空、落回裸帧。
+    final int positionMs = controller.positionMs ?? 0;
+    final List<ClipSubtitleCue> cues = _clipExportSubtitleCues(
+      controller: controller,
+      startMs: positionMs,
+      endMs: positionMs + 1,
+    );
+    if (cues.isEmpty) return null;
+
+    final ClipFrameSize frame = ClipFrameSize(size.width, size.height);
+    final ClipSubtitleFrameRenderer renderer = _clipExportSubtitleRenderer();
+    final List<Uint8List> layers = <Uint8List>[];
+    for (final ClipSubtitleCue cue in cues) {
+      final Uint8List? png = await renderer(cue, frame);
+      if (png != null) layers.add(png);
+    }
+    if (layers.isEmpty) return null;
+    return composeScreenshotWithOverlays(
+      frameBytes: frameBytes,
+      overlayPngs: layers,
+    );
+  }
+
+  /// 去向 = 剪贴板。各端剪贴板收的都是 PNG，裸帧是 JPEG，所以先转一道。
+  Future<void> _copyScreenshotToClipboard({
+    required Uint8List bytes,
+    required String extension,
+  }) async {
+    try {
+      final Uint8List? png = extension == 'png'
+          ? bytes
+          : await composeScreenshotWithOverlays(
+              frameBytes: bytes,
+              overlayPngs: const <Uint8List>[],
+            );
+      if (png == null) {
+        _showScreenshotFailure('png encode failed');
+        return;
+      }
+      final bool copied = await copyImageToClipboard(png);
+      if (!mounted) return;
+      if (copied) {
+        _showOsd(t.video_screenshot_copied, severity: ToastSeverity.success);
+      } else {
+        _showScreenshotFailure(t.video_screenshot_clipboard_unsupported);
+      }
+    } catch (e, stack) {
+      debugPrint('[VideoFushiPage] screenshot clipboard failed: $e\n$stack');
+      if (mounted) _showScreenshotFailure(e);
+    }
+  }
+
+  /// 去向 = 指定目录：不弹任何对话框，直接落盘。重名走与保存对话框同一套 ` (n)`
+  /// 计数后缀（[uniqueVideoScreenshotPath]），连按截图不会互相覆盖。
+  Future<void> _writeScreenshotToDirectory({
+    required Uint8List bytes,
+    required String directory,
+    required String screenshotName,
+  }) async {
+    try {
+      final Directory dir = Directory(directory);
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final String finalPath = uniqueVideoScreenshotPath(
+        p.join(directory, screenshotName),
+        exists: (String path) => File(path).existsSync(),
+      );
+      await File(finalPath).writeAsBytes(bytes);
+      if (!mounted) return;
+      _showOsd(
+        t.video_screenshot_saved_to(path: finalPath),
+        severity: ToastSeverity.success,
+      );
+    } catch (e, stack) {
+      debugPrint(
+        '[VideoFushiPage] screenshot directory write failed: $e\n$stack',
+      );
+      if (mounted) _showScreenshotFailure(e);
+    }
+  }
+
+  /// 去向 = 询问（历史行为）：桌面弹保存对话框，移动端走系统分享（参照 log_exporter
+  /// 的平台分流）。两条都要先落一个临时文件——对话框拿到路径后 copy，分享面板要一个
+  /// 真实文件路径。
+  Future<void> _saveScreenshotViaDialog({
+    required Uint8List bytes,
+    required String screenshotName,
+    required String extension,
+  }) async {
     File? tmp;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
     try {
-      final String defaultScreenshotName = videoScreenshotBaseName(
-        sourcePathOrTitle: _screenshotSourcePathOrTitle(),
-        positionMs: controller?.positionMs ?? 0,
-      );
       final Directory tmpDir = await getTemporaryDirectory();
-      final String screenshotName = uniqueVideoScreenshotBaseName(
-        defaultScreenshotName,
+      final String uniqueName = uniqueVideoScreenshotBaseName(
+        screenshotName,
         exists: (String name) => File(p.join(tmpDir.path, name)).existsSync(),
       );
-      tmp = File(p.join(tmpDir.path, screenshotName));
+      tmp = File(p.join(tmpDir.path, uniqueName));
       await tmp.writeAsBytes(bytes);
       if (isDesktop) {
         final String? savePath = await FilePicker.platform.saveFile(
           dialogTitle: t.video_screenshot,
-          fileName: screenshotName,
+          fileName: uniqueName,
           type: FileType.custom,
-          allowedExtensions: <String>['jpg'],
+          allowedExtensions: <String>[extension],
         );
         if (savePath != null) {
-          final String finalPath = _uniqueScreenshotSavePath(savePath);
+          final String finalPath =
+              _uniqueScreenshotSavePath(savePath, extension: extension);
           await tmp.copy(finalPath);
           _showOsd(
             t.video_screenshot_saved_to(path: finalPath),
@@ -452,10 +612,13 @@ extension _VideoClipExport on _VideoFushiPageState {
         }
       } else {
         await FushiShare.shareFiles(<XFile>[
-          XFile(tmp.path, mimeType: 'image/jpeg'),
-        ], subject: screenshotName);
+          XFile(
+            tmp.path,
+            mimeType: extension == 'png' ? 'image/png' : 'image/jpeg',
+          ),
+        ], subject: uniqueName);
         _showOsd(
-          t.video_screenshot_ready(file: screenshotName),
+          t.video_screenshot_ready(file: uniqueName),
           severity: ToastSeverity.success,
         );
       }
@@ -469,6 +632,8 @@ extension _VideoClipExport on _VideoFushiPageState {
           await tmp.delete();
         } catch (_) {}
       }
+      // 只有这条路径真弹过系统对话框 / 分享面板，焦点才需要收回；剪贴板与直写目录
+      // 全程无 overlay，无条件 reclaim 会平白夺一次焦点。
       _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     }
   }
@@ -483,9 +648,12 @@ extension _VideoClipExport on _VideoFushiPageState {
     return 'video';
   }
 
-  String _uniqueScreenshotSavePath(String savePath) {
+  String _uniqueScreenshotSavePath(
+    String savePath, {
+    String extension = 'jpg',
+  }) {
     final String desiredPath =
-        p.extension(savePath).isEmpty ? '$savePath.jpg' : savePath;
+        p.extension(savePath).isEmpty ? '$savePath.$extension' : savePath;
     return uniqueVideoScreenshotPath(
       desiredPath,
       exists: (String path) => File(path).existsSync(),

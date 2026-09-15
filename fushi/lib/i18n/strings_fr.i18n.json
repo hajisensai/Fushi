@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "Capture d'écran (avec sous-titres)",
+  "video_screenshot_subtitled": "Capture d'écran avec sous-titres",
+  "video_screenshot_copied": "Capture d'écran copiée dans le presse-papiers",
+  "video_screenshot_clipboard_unsupported": "La copie d'images dans le presse-papiers n'est pas prise en charge sur cette plateforme",
+  "video_screenshot_directory_unset": "Aucun dossier de captures d'écran défini pour l'instant",
+  "video_setting_screenshot_destination": "Destination des captures d'écran",
+  "video_setting_screenshot_destination_hint": "Où vont les captures d'écran : une boîte de dialogue d'enregistrement, le presse-papiers ou directement un dossier",
+  "video_screenshot_destination_ask": "Demander à chaque fois",
+  "video_screenshot_destination_clipboard": "Copier dans le presse-papiers",
+  "video_screenshot_destination_directory": "Enregistrer dans un dossier",
+  "video_setting_screenshot_directory": "Dossier des captures d'écran",
+  "video_setting_screenshot_directory_hint": "Où sont enregistrées les captures d'écran quand la destination est « Enregistrer dans un dossier »",
+  "video_screenshot_directory_not_set": "Non défini"
 }

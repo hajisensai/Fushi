@@ -30,6 +30,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -4042,6 +4043,19 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) =>
       prefsRepo.setVideoImmersiveMode(mode);
+
+  /// 截图去向（对话框 / 剪贴板 / 指定目录）与目录路径。
+  VideoScreenshotDestination get videoScreenshotDestination =>
+      prefsRepo.videoScreenshotDestination;
+
+  Future<void> setVideoScreenshotDestination(
+          VideoScreenshotDestination destination) =>
+      prefsRepo.setVideoScreenshotDestination(destination);
+
+  String get videoScreenshotDirectory => prefsRepo.videoScreenshotDirectory;
+
+  Future<void> setVideoScreenshotDirectory(String path) =>
+      prefsRepo.setVideoScreenshotDirectory(path);
 
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;

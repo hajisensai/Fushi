@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "截圖（含字幕）",
+  "video_screenshot_subtitled": "帶字幕截圖",
+  "video_screenshot_copied": "截圖已複製到剪貼簿",
+  "video_screenshot_clipboard_unsupported": "目前平台不支援將圖片複製到剪貼簿",
+  "video_screenshot_directory_unset": "尚未設定截圖儲存資料夾",
+  "video_setting_screenshot_destination": "截圖去向",
+  "video_setting_screenshot_destination_hint": "截圖後是彈出儲存對話框、複製到剪貼簿，還是直接存進指定資料夾",
+  "video_screenshot_destination_ask": "每次詢問",
+  "video_screenshot_destination_clipboard": "複製到剪貼簿",
+  "video_screenshot_destination_directory": "儲存到資料夾",
+  "video_setting_screenshot_directory": "截圖儲存資料夾",
+  "video_setting_screenshot_directory_hint": "選擇「儲存到資料夾」時截圖會存在這裡",
+  "video_screenshot_directory_not_set": "未設定"
 }

@@ -19,6 +19,10 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       // 系统语音转录（macOS 26 的 SpeechAnalyzer）；与 iOS 同一份实现。
       FushiSpeechTranscriber.register(
         binaryMessenger: controller.engine.binaryMessenger)
+      // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 iOS 同一份实现，
+      // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
+      FushiClipboardImage.register(
+        binaryMessenger: controller.engine.binaryMessenger)
       let sourceUrlChannel = FlutterEventChannel(
         name: "app.fushi.reader/source_urls/stream",
         binaryMessenger: controller.engine.binaryMessenger)

@@ -29,6 +29,7 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     previousFrame: () => log.add('previousFrame'),
     nextFrame: () => log.add('nextFrame'),
     screenshot: () => log.add('screenshot'),
+    screenshotSubtitled: () => log.add('screenshotSubtitled'),
     toggleFullscreen: () => log.add('toggleFullscreen'),
     toggleSubtitleList: () => log.add('toggleSubtitleList'),
     searchSubtitleList: () => log.add('searchSubtitleList'),

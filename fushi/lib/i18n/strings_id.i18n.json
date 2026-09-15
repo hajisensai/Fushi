@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "Tangkapan Layar (dengan subtitle)",
+  "video_screenshot_subtitled": "Tangkapan layar dengan subtitle",
+  "video_screenshot_copied": "Tangkapan layar disalin ke papan klip",
+  "video_screenshot_clipboard_unsupported": "Menyalin gambar ke papan klip tidak didukung di platform ini",
+  "video_screenshot_directory_unset": "Folder tangkapan layar belum diatur",
+  "video_setting_screenshot_destination": "Tujuan tangkapan layar",
+  "video_setting_screenshot_destination_hint": "Ke mana tangkapan layar dikirim: dialog simpan, papan klip, atau langsung ke sebuah folder",
+  "video_screenshot_destination_ask": "Tanya setiap kali",
+  "video_screenshot_destination_clipboard": "Salin ke papan klip",
+  "video_screenshot_destination_directory": "Simpan ke folder",
+  "video_setting_screenshot_directory": "Folder tangkapan layar",
+  "video_setting_screenshot_directory_hint": "Tempat tangkapan layar disimpan saat tujuannya Simpan ke folder",
+  "video_screenshot_directory_not_set": "Belum diatur"
 }

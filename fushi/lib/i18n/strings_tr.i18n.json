@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "Ekran Görüntüsü (altyazılı)",
+  "video_screenshot_subtitled": "Altyazılı ekran görüntüsü",
+  "video_screenshot_copied": "Ekran görüntüsü panoya kopyalandı",
+  "video_screenshot_clipboard_unsupported": "Bu platformda görüntüleri panoya kopyalama desteklenmiyor",
+  "video_screenshot_directory_unset": "Henüz bir ekran görüntüsü klasörü ayarlanmadı",
+  "video_setting_screenshot_destination": "Ekran görüntüsü hedefi",
+  "video_setting_screenshot_destination_hint": "Ekran görüntülerinin nereye gideceği: kaydetme penceresi, pano ya da doğrudan bir klasör",
+  "video_screenshot_destination_ask": "Her seferinde sor",
+  "video_screenshot_destination_clipboard": "Panoya kopyala",
+  "video_screenshot_destination_directory": "Klasöre kaydet",
+  "video_setting_screenshot_directory": "Ekran görüntüsü klasörü",
+  "video_setting_screenshot_directory_hint": "Hedef Klasöre kaydet olduğunda ekran görüntülerinin kaydedileceği yer",
+  "video_screenshot_directory_not_set": "Ayarlanmadı"
 }

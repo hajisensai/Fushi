@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "Captura de pantalla (con subtítulos)",
+  "video_screenshot_subtitled": "Captura de pantalla con subtítulos",
+  "video_screenshot_copied": "Captura de pantalla copiada al portapapeles",
+  "video_screenshot_clipboard_unsupported": "Copiar imágenes al portapapeles no es compatible en esta plataforma",
+  "video_screenshot_directory_unset": "Aún no se ha establecido una carpeta de capturas",
+  "video_setting_screenshot_destination": "Destino de las capturas",
+  "video_setting_screenshot_destination_hint": "Adónde van las capturas: un diálogo de guardado, el portapapeles o directamente a una carpeta",
+  "video_screenshot_destination_ask": "Preguntar cada vez",
+  "video_screenshot_destination_clipboard": "Copiar al portapapeles",
+  "video_screenshot_destination_directory": "Guardar en una carpeta",
+  "video_setting_screenshot_directory": "Carpeta de capturas",
+  "video_setting_screenshot_directory_hint": "Dónde se guardan las capturas cuando el destino es «Guardar en una carpeta»",
+  "video_screenshot_directory_not_set": "No establecido"
 }

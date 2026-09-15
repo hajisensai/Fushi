@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "已添加 ${count} 个步骤",
   "game_text_process_ai_failed": "生成失败：${reason}",
   "ai_provider_base_url_invalid": "请填写有效的 HTTP 或 HTTPS 接口地址",
-  "ai_provider_protocol_locked": "由内置预设固定，不可更改"
+  "ai_provider_protocol_locked": "由内置预设固定，不可更改",
+  "shortcut_action_video_screenshot_subtitled": "截图（含字幕）",
+  "video_screenshot_subtitled": "带字幕截图",
+  "video_screenshot_copied": "截图已复制到剪贴板",
+  "video_screenshot_clipboard_unsupported": "当前平台不支持复制图片到剪贴板",
+  "video_screenshot_directory_unset": "尚未设置截图保存目录",
+  "video_setting_screenshot_destination": "截图去向",
+  "video_setting_screenshot_destination_hint": "截图后是弹保存对话框、复制到剪贴板，还是直接存进指定目录",
+  "video_screenshot_destination_ask": "每次询问",
+  "video_screenshot_destination_clipboard": "复制到剪贴板",
+  "video_screenshot_destination_directory": "保存到目录",
+  "video_setting_screenshot_directory": "截图保存目录",
+  "video_setting_screenshot_directory_hint": "选择「保存到目录」时截图落在这里",
+  "video_screenshot_directory_not_set": "未设置"
 }

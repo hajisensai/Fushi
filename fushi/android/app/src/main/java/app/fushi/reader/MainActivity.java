@@ -550,6 +550,7 @@ public class MainActivity extends AudioServiceActivity {
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine);
+        ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(

@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "لقطة شاشة (مع الترجمة)",
+  "video_screenshot_subtitled": "لقطة شاشة مع الترجمة",
+  "video_screenshot_copied": "تم نسخ لقطة الشاشة إلى الحافظة",
+  "video_screenshot_clipboard_unsupported": "نسخ الصور إلى الحافظة غير مدعوم على هذه المنصة",
+  "video_screenshot_directory_unset": "لم يتم تعيين مجلد للقطات الشاشة بعد",
+  "video_setting_screenshot_destination": "وجهة لقطات الشاشة",
+  "video_setting_screenshot_destination_hint": "إلى أين تذهب لقطات الشاشة: نافذة حفظ أو الحافظة أو مباشرةً إلى مجلد",
+  "video_screenshot_destination_ask": "السؤال في كل مرة",
+  "video_screenshot_destination_clipboard": "نسخ إلى الحافظة",
+  "video_screenshot_destination_directory": "الحفظ في مجلد",
+  "video_setting_screenshot_directory": "مجلد لقطات الشاشة",
+  "video_setting_screenshot_directory_hint": "أين تُحفظ لقطات الشاشة عندما تكون الوجهة هي الحفظ في مجلد",
+  "video_screenshot_directory_not_set": "غير مُعيّن"
 }
