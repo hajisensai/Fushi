@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2351 条。点号进各自文件。
+> 共 2352 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2550](bugs/BUG-2550-reader-stepper-label-truncated.md) | ✅ | ✅ | 阅读设置面板窄窗下 stepper 行标签被压成一个字 |
 | [BUG-2549](bugs/BUG-2549-english-phrasal-verb-deinflection.md) | ✅ | ✅ | 英语短语动词的变形查不到原形（gave up / picked it up 还原不到 give up / pick up） |
 | [BUG-2548](bugs/BUG-2548-collection-detail-drops-remote-members.md) | ✅ | ✅ | 合集详情页丢掉全部远端成员：行头 N 项、点进去只剩本地几本 |
 | [BUG-2547](bugs/BUG-2547-shelf-remote-sort-ignored.md) | ✅ | ✅ | 书架排序忽略远端占位卡：host 下发的时刻不用、恒沉底 |
