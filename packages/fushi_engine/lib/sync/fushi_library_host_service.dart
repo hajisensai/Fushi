@@ -125,6 +125,7 @@ class RemoteAudiobookInfo {
     this.positionUpdatedAtMs = 0,
     this.delayMs = 0,
     this.delayUpdatedAtMs = 0,
+    this.importedAt,
   });
 
   final String bookKey;
@@ -146,6 +147,11 @@ class RemoteAudiobookInfo {
   final int delayMs;
   final int delayUpdatedAtMs;
 
+  /// host 端 `SrtBooks.importedAt`（epoch 毫秒；null = 旧 host 不带该字段）。
+  /// 与 [RemoteBookInfo.importedAt] 同范式：纯 SRT 远端占位卡据此排进「导入时间」
+  /// 序，缺失时回落既有负数目录序。
+  final int? importedAt;
+
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
 
@@ -160,6 +166,7 @@ class RemoteAudiobookInfo {
         if (positionUpdatedAtMs > 0) 'positionUpdatedAtMs': positionUpdatedAtMs,
         if (delayMs != 0) 'delayMs': delayMs,
         if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
+        if (importedAt != null) 'importedAt': importedAt,
       };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -174,6 +181,7 @@ class RemoteAudiobookInfo {
             (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0,
         delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
         delayUpdatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
+        importedAt: (json['importedAt'] as num?)?.toInt(),
       );
 }
 
@@ -310,6 +318,7 @@ class RemoteBookInfo {
     this.collection,
     this.progressPercent = 0,
     this.progressUpdatedAtMs = 0,
+    this.importedAt,
     this.kind = MediaKind.epub,
     this.format = 'epub',
     this.hasMangaContent = false,
@@ -355,6 +364,15 @@ class RemoteBookInfo {
   /// host 端该书最近阅读时刻（epoch 毫秒，来自 host `reader_positions.updatedAt`）；
   /// 0 = 无记录/旧 host。仪表盘「继续」混排排序用。
   final int progressUpdatedAtMs;
+
+  /// host 端 `EpubBooks.importedAt`（epoch 毫秒；null = 旧 host 不带该字段）。
+  ///
+  /// 与 [RemoteVideoInfo.importedAt] 同范式、同理由：缺了它，client 书架的远端
+  /// 占位卡没有入库时刻，「导入时间」排序只能给它们造一个负数假戳去占位——于是
+  /// 无论选哪种排序，远端书恒堆在本地书之后（用户实报「合集外排序不对」）。
+  ///
+  /// 旧 host 不带 → null → 与改动前逐字节同行为（排序回落假值）。
+  final int? importedAt;
 
   final String title;
 
@@ -436,6 +454,7 @@ class RemoteBookInfo {
         if (collection != null) 'collection': collection!.toJson(),
         if (progressPercent > 0) 'progressPercent': progressPercent,
         if (progressUpdatedAtMs > 0) 'progressUpdatedAtMs': progressUpdatedAtMs,
+        if (importedAt != null) 'importedAt': importedAt,
         if (kind != MediaKind.epub) 'kind': kind.dbValue,
         if (format != 'epub') 'format': format,
         if (hasMangaContent) 'hasMangaContent': true,
@@ -457,6 +476,7 @@ class RemoteBookInfo {
     RemoteCollectionMembership? collection,
     int? progressPercent,
     int? progressUpdatedAtMs,
+    int? importedAt,
     MediaKind? kind,
     String? format,
     bool? hasMangaContent,
@@ -479,6 +499,7 @@ class RemoteBookInfo {
         collection: collection ?? this.collection,
         progressPercent: progressPercent ?? this.progressPercent,
         progressUpdatedAtMs: progressUpdatedAtMs ?? this.progressUpdatedAtMs,
+        importedAt: importedAt ?? this.importedAt,
         kind: kind ?? this.kind,
         format: format ?? this.format,
         hasMangaContent: hasMangaContent ?? this.hasMangaContent,
@@ -512,6 +533,8 @@ class RemoteBookInfo {
       progressPercent:
           _jsonNonNegativeInt(json['progressPercent']).clamp(0, 100),
       progressUpdatedAtMs: _jsonNonNegativeInt(json['progressUpdatedAtMs']),
+      // 旧 host 无该键 → null → 书架排序回落既有负数目录序（向后兼容）。
+      importedAt: _jsonInt(json['importedAt']),
       // 缺失（旧 host）/未知（对端未来新增）一律回落 epub，绝不抛异常。
       kind: MediaKind.tryParse(_jsonString(json['kind'])) ?? MediaKind.epub,
       // 互联完整支持批次（漫画）：缺失（旧 host）回落 'epub' / false / null。
