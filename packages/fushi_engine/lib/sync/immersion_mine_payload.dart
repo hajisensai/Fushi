@@ -164,6 +164,22 @@ final RegExp _immersionAudioPath = RegExp(
 );
 
 String _normalizeIncomingText(String value) {
+  // BUG-2528：`data:` URI 是**机器生成的自包含载荷**，不是被 x-www-form-urlencoded
+  // 弄坏的用户文本，必须整体原样透传。
+  //
+  // 标准 base64 字母表含 `+`（与 `/`），而下面的「`+` → 空格」还原只看加号个数：
+  // 一个 4KB 单词音频的 base64 里通常有几十个孤立 `+` → `separatorPlusCount >= 2`
+  // → 每个 `+` 被换成空格 → 落卡侧 `UriData.parse` 抛 `Invalid base64 data`
+  // → `AnkiAudioRef.decodeDataUri` 返回 null → `_storeRemoteAudio` 返回
+  // `AudioFetchOutcome.none()` → `processedAudio` 空串 → 卡片 ExpressionAudio 没音频。
+  //
+  // 2.2.4 时 `fields.audio` 是 http token URL（id 由 `base64UrlEncode` 生成，字母表
+  // 是 `-` / `_`，**不含 `+`**）所以从未触发；3007ff272 起制卡时把短命 token 换成
+  // `data:` 自包含 URI，才让同一个归一化函数把音频字节打坏（几乎每张卡都中）。
+  //
+  // 判据只看 `data:` 前缀而不是白名单字段名：Anki 字段名是用户在模板里配的，
+  // 硬编码 `audio` 认不全，而 `data:` 是载荷形态的可靠标识（外字图片同理受益）。
+  if (value.startsWith('data:')) return value;
   final hasPercentEscape = _percentEscape.hasMatch(value);
   final separatorPlusCount = _separatorPlusCount(value);
   final shouldTreatPlusAsSpace = hasPercentEscape ||
