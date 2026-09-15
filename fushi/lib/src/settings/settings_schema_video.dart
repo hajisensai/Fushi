@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -103,6 +104,65 @@ SettingsDestination buildVideoDestination() {
                 ) async {
                   await setVideoImmersiveModeDual(settingsContext, mode);
                 },
+          ),
+          // 截图去向（两个截图快捷键共用这一个偏好）：默认「每次询问」＝历史行为，
+          // 老用户升级后按键手感不变。
+          SettingsSegmentedItem<VideoScreenshotDestination>(
+            id: 'video.playback.screenshot_destination',
+            title: t.video_setting_screenshot_destination,
+            subtitle: t.video_setting_screenshot_destination_hint,
+            icon: Icons.photo_camera_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 110),
+            options: <SettingsSegmentOption<VideoScreenshotDestination>>[
+              for (final VideoScreenshotDestination destination
+                  in VideoScreenshotDestination.values)
+                SettingsSegmentOption<VideoScreenshotDestination>(
+                  value: destination,
+                  label: _videoScreenshotDestinationLabel(destination),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoScreenshotDestination,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoScreenshotDestination destination,
+                ) async {
+                  await settingsContext.appModel
+                      .setVideoScreenshotDestination(destination);
+                  settingsContext.refresh();
+                },
+          ),
+          // 目录行常驻可见（不按去向 gate）：用户通常先把目录选好、再把去向切到
+          // 「保存到目录」，gate 掉会逼出「先切去向才能设目录」的鸡生蛋。
+          SettingsActionItem(
+            id: 'video.playback.screenshot_directory',
+            title: t.video_setting_screenshot_directory,
+            subtitleBuilder: (SettingsContext settingsContext) {
+              final String dir =
+                  settingsContext.appModel.videoScreenshotDirectory.trim();
+              return dir.isEmpty ? t.video_screenshot_directory_not_set : dir;
+            },
+            icon: Icons.folder_open_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              // 截图目录长期承载写入，必须是真实文件系统路径（安卓上
+              // getDirectoryPath() 只给 SAF tree URI，dart:io 读不了）——走统一入口。
+              final String? picked = await pickRealDirectoryPath(
+                context: settingsContext.context,
+                appModel: settingsContext.appModel,
+                dialogTitle: t.video_setting_screenshot_directory,
+                initialDirectory:
+                    settingsContext.appModel.videoScreenshotDirectory.trim()
+                        .isEmpty
+                    ? null
+                    : settingsContext.appModel.videoScreenshotDirectory.trim(),
+              );
+              if (picked == null || picked.isEmpty) return;
+              await settingsContext.appModel
+                  .setVideoScreenshotDirectory(picked);
+              settingsContext.refresh();
+            },
           ),
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
@@ -1911,6 +1971,19 @@ Widget _buildWindowsBlackFlashNotice(SettingsContext settingsContext) {
     icon: Icons.info_outline,
     showIcon: true,
   );
+}
+
+String _videoScreenshotDestinationLabel(
+  VideoScreenshotDestination destination,
+) {
+  switch (destination) {
+    case VideoScreenshotDestination.ask:
+      return t.video_screenshot_destination_ask;
+    case VideoScreenshotDestination.clipboard:
+      return t.video_screenshot_destination_clipboard;
+    case VideoScreenshotDestination.directory:
+      return t.video_screenshot_destination_directory;
+  }
 }
 
 String _videoImmersiveModeLabel(VideoImmersiveMode mode) {

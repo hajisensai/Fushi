@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "Screenshot (with subtitles)",
+  "video_screenshot_subtitled": "Screenshot with subtitles",
+  "video_screenshot_copied": "Screenshot copied to clipboard",
+  "video_screenshot_clipboard_unsupported": "Copying images to the clipboard is not supported on this platform",
+  "video_screenshot_directory_unset": "No screenshot folder set yet",
+  "video_setting_screenshot_destination": "Screenshot destination",
+  "video_setting_screenshot_destination_hint": "Where screenshots go: a save dialog, the clipboard, or straight into a folder",
+  "video_screenshot_destination_ask": "Ask every time",
+  "video_screenshot_destination_clipboard": "Copy to clipboard",
+  "video_screenshot_destination_directory": "Save to folder",
+  "video_setting_screenshot_directory": "Screenshot folder",
+  "video_setting_screenshot_directory_hint": "Where screenshots land when the destination is Save to folder",
+  "video_screenshot_directory_not_set": "Not set"
 }

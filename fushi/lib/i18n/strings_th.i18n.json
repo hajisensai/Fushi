@@ -4961,5 +4961,18 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_video_screenshot_subtitled": "ภาพหน้าจอ (พร้อมคำบรรยาย)",
+  "video_screenshot_subtitled": "ภาพหน้าจอพร้อมคำบรรยาย",
+  "video_screenshot_copied": "คัดลอกภาพหน้าจอไปยังคลิปบอร์ดแล้ว",
+  "video_screenshot_clipboard_unsupported": "แพลตฟอร์มนี้ไม่รองรับการคัดลอกรูปภาพไปยังคลิปบอร์ด",
+  "video_screenshot_directory_unset": "ยังไม่ได้ตั้งโฟลเดอร์สำหรับภาพหน้าจอ",
+  "video_setting_screenshot_destination": "ปลายทางของภาพหน้าจอ",
+  "video_setting_screenshot_destination_hint": "ภาพหน้าจอจะไปที่ใด: กล่องบันทึกไฟล์ คลิปบอร์ด หรือเก็บลงโฟลเดอร์โดยตรง",
+  "video_screenshot_destination_ask": "ถามทุกครั้ง",
+  "video_screenshot_destination_clipboard": "คัดลอกไปยังคลิปบอร์ด",
+  "video_screenshot_destination_directory": "บันทึกลงโฟลเดอร์",
+  "video_setting_screenshot_directory": "โฟลเดอร์ภาพหน้าจอ",
+  "video_setting_screenshot_directory_hint": "ที่เก็บภาพหน้าจอเมื่อปลายทางคือบันทึกลงโฟลเดอร์",
+  "video_screenshot_directory_not_set": "ยังไม่ได้ตั้ง"
 }

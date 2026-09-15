@@ -4,7 +4,11 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 const int _maxScreenshotSourceRunes = 80;
 
-/// Builds the default JPEG basename for a video screenshot.
+/// Builds the default basename for a video screenshot.
+///
+/// [extension] 默认 `jpg`（[VideoPlayerController.screenshot] 的原始格式）；带字幕的
+/// 截图要在 Dart 侧合成，产物恒为 PNG（`ui.Image.toByteData` 只出 png/rawRgba，且
+/// PNG 不会在字幕描边周围留 JPEG 振铃），调用方传 `png`。
 ///
 /// TODO-564: 旧名 `hibiki_<视频名>_at_<HHhMMmSSsmmm>_<YYYYMMDD_HHMMSS_mmm>.jpg`
 /// 三段时间戳叠加（播放位置毫秒 + 截图墙钟日期/时分秒/毫秒）冗长难读。改成
@@ -21,9 +25,10 @@ const int _maxScreenshotSourceRunes = 80;
 String videoScreenshotBaseName({
   required String? sourcePathOrTitle,
   required int positionMs,
+  String extension = 'jpg',
 }) {
   final String source = _safeScreenshotSourceStem(sourcePathOrTitle);
-  return '${source}_${_playbackTimeToken(positionMs)}.jpg';
+  return '${source}_${_playbackTimeToken(positionMs)}.$extension';
 }
 
 /// Returns [desiredName] or appends ` (n)` before the extension until it is new.

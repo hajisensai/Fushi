@@ -7,9 +7,14 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
+#include "clipboard_image_channel.h"
+
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // 复制图片到剪贴板（`app.fushi.reader/clipboard_image`）。必须存住这个引用：
+  // channel 一被回收，Dart 侧的调用就落成 MissingPluginException。
+  FlMethodChannel* clipboard_image_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -75,6 +80,9 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  self->clipboard_image_channel = fushi_clipboard_image_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)));
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -121,6 +129,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->clipboard_image_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

@@ -184,6 +184,7 @@ void main() {
         previousFrame: noop,
         nextFrame: noop,
         screenshot: noop,
+        screenshotSubtitled: noop,
         toggleFullscreen: noop,
         toggleSubtitleList: noop,
         searchSubtitleList: noop,

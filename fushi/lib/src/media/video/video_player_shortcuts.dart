@@ -66,6 +66,7 @@ class VideoPlayerShortcutActions {
     required this.previousFrame,
     required this.nextFrame,
     required this.screenshot,
+    required this.screenshotSubtitled,
     required this.toggleFullscreen,
     required this.toggleSubtitleList,
     required this.searchSubtitleList,
@@ -113,6 +114,10 @@ class VideoPlayerShortcutActions {
   final VoidCallback previousFrame;
   final VoidCallback nextFrame;
   final VoidCallback screenshot;
+
+  /// 带字幕截图：与 [screenshot] 同一条取帧路径，区别只在把屏幕上那条字幕
+  /// 合成回画面（字幕是 Flutter overlay 画的，不在解码帧里）。
+  final VoidCallback screenshotSubtitled;
   final VoidCallback toggleFullscreen;
 
   /// 打开/关闭字幕跳转列表面板（TODO-069，默认裸 L 键；asbplayer 式 transcript 列表）。
@@ -233,6 +238,7 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   // 画面 / 杂项
   ShortcutAction.videoToggleFullscreen,
   ShortcutAction.videoScreenshot,
+  ShortcutAction.videoScreenshotSubtitled,
   ShortcutAction.videoToggleShaderCompare,
   ShortcutAction.videoToggleImmersiveLock,
   // 学习
@@ -268,6 +274,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoPreviousFrame: actions.previousFrame,
     ShortcutAction.videoNextFrame: actions.nextFrame,
     ShortcutAction.videoScreenshot: actions.screenshot,
+    ShortcutAction.videoScreenshotSubtitled: actions.screenshotSubtitled,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
     ShortcutAction.videoSearchSubtitleList: actions.searchSubtitleList,

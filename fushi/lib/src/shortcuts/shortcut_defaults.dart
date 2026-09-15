@@ -346,6 +346,11 @@ class ShortcutDefaults {
     ShortcutAction.videoScreenshot: _kb([
       _key(LogicalKeyboardKey.keyS),
     ]),
+    // Shift+S：与裸 S 同指法、只多一个修饰键，"带字幕的那一版截图" 正好对应
+    // "同一个动作的加强版" 这个修饰键直觉。video co-active 组内 Shift+S 未被占用。
+    ShortcutAction.videoScreenshotSubtitled: _kb([
+      _key(LogicalKeyboardKey.keyS, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleFullscreen: _kb([
       _key(LogicalKeyboardKey.keyF),
       _key(LogicalKeyboardKey.f12),
