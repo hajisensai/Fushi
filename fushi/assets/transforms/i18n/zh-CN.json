@@ -216,5 +216,14 @@
   "sound f. plural": "阴性规则复数",
   "sound f. plural + possessive pronoun": "阴性规则复数 + 物主代词",
   "the": "定冠词",
-  "て-form.\nIt has a myriad of meanings. Primarily, it is a conjunctive particle that connects two clauses together.\nUsage: Attach て to the continuative form (連用形) of verbs after euphonic change form, くて to the stem of i-adjectives.": "て形。\n含义极多，主要作为连接两个分句的接续助词。\n用法：接在动词经音便的连用形后；イ形容词词干后接 くて。"
+  "て-form.\nIt has a myriad of meanings. Primarily, it is a conjunctive particle that connects two clauses together.\nUsage: Attach て to the continuative form (連用形) of verbs after euphonic change form, くて to the stem of i-adjectives.": "て形。\n含义极多，主要作为连接两个分句的接续助词。\n用法：接在动词经音便的连用形后；イ形容词词干后接 くて。",
+  "Irregular simple past tense of a verb": "动词的不规则一般过去时",
+  "Irregular past participle of a verb": "动词的不规则过去分词",
+  "Irregular past tense and past participle of a verb": "动词的不规则过去式兼过去分词（同形）",
+  "Irregular present tense form of a verb": "动词的不规则现在时形式",
+  "Negative contraction of an auxiliary or modal verb": "助动词或情态动词的否定缩约形式",
+  "Irregular plural form of a noun": "名词的不规则复数形式",
+  "Irregular comparative form of an adjective or adverb": "形容词或副词的不规则比较级",
+  "Irregular superlative form of an adjective or adverb": "形容词或副词的不规则最高级",
+  "Phrasal verb with interposed object": "短语动词，宾语插在动词与小品词之间"
 }

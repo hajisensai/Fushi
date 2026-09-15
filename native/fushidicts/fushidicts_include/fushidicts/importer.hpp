@@ -13,6 +13,10 @@ struct ImportResult {
   size_t pitch_count = 0;
   size_t media_count = 0;
   std::string detected_type = "term";
+  // Any term record carries a non-empty `rules` (part-of-speech) string.
+  // Persisted next to blobs.bin as term_rules.flag (util/term_rules_flag.hpp);
+  // false means the reader treats empty rules as the "*" wildcard.
+  bool term_rules_present = false;
   std::vector<std::string> errors;
 };
 
