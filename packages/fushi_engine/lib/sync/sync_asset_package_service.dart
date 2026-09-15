@@ -199,15 +199,20 @@ class SyncAssetPackageService {
       srtAudioPaths: srtAudio.paths,
     );
 
-    // 「包里缺资源」不得伪装成成功：每一个没能进包的源文件都记进
-    // `manifest.missingResources` 随包 travel，导入端据此报错/给出诊断，而不是
-    // 编一个 basename 路径写进 DB（BUG-1577）。
-    final List<String> missingResources = <String>[
-      // folder 模式目录不存在 / 一个音频文件都没有：没有任何 audioPaths 可登记为
-      // 缺失，只能把 audioRoot 自己记下来，否则这个空包「空得毫无痕迹」。
+    // folder 模式目录不存在 / 一个音频文件都没有：没有任何 audioPaths 可登记为
+    // 缺失，只能把 audioRoot 自己记下来，否则这个空包「空得毫无痕迹」。
+    //
+    // 它与「某个具体音频文件缺失」**不是同一类失败**，故除了汇进
+    // `missingResources`（诊断文案），还单独下发 `unresolvedAudioRoots`：导入端
+    // 要能分开判——纯字幕书零音频是合法的，音频根解析失败不是（BUG-2551）。
+    final List<String> unresolvedAudioRoots = <String>[
       if (audiobookAudio.missingRoot != null) audiobookAudio.missingRoot!,
       if (srtAudio.missingRoot != null) srtAudio.missingRoot!,
     ];
+    // 「包里缺资源」不得伪装成成功：每一个没能进包的源文件都记进
+    // `manifest.missingResources` 随包 travel，导入端据此报错/给出诊断，而不是
+    // 编一个 basename 路径写进 DB（BUG-1577）。
+    final List<String> missingResources = <String>[...unresolvedAudioRoots];
 
     // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
     // 与 isolate 的 zip 内路径映射（resources/名→源路径）。
@@ -243,6 +248,9 @@ class SyncAssetPackageService {
       // 导出**不因部分缺失整包失败**——一本书缺 1 个文件不该让整个备份/同步中断，
       // 拒绝落库的判断留给导入端（它才知道哪些资源是必需的）。
       if (missingResources.isNotEmpty) 'missingResources': missingResources,
+      // 旧导入端忽略未知键 → 旧包/新包互通（BUG-2551）。
+      if (unresolvedAudioRoots.isNotEmpty)
+        'unresolvedAudioRoots': unresolvedAudioRoots,
     });
 
     outputFile.parent.createSync(recursive: true);
@@ -281,6 +289,8 @@ class SyncAssetPackageService {
     // 导出端记的缺失清单，只用于把错误信息说清楚；旧包没有这个键 → 空列表
     // （缺键绝不能让整包导入失败，用户手上有旧包）。
     final List<String> missingAtExport = _missingAtExport(manifest);
+    // 导出端声明了 audioRoot 却一个音频都枚举不出来的根（BUG-2551）；旧包无此键。
+    final List<String> unresolvedAudioRoots = _unresolvedAudioRoots(manifest);
 
     if (audiobook == null) {
       // 纯 SRT（standalone）有声书：bookKey 恒空、身份=uid、cue 走 uid 命名空间。
@@ -291,6 +301,7 @@ class SyncAssetPackageService {
         srtBook: srtBook,
         resources: resources,
         missingAtExport: missingAtExport,
+        unresolvedAudioRoots: unresolvedAudioRoots,
         cues: _listValue(manifest, 'cues'),
       );
       return;
@@ -318,6 +329,22 @@ class SyncAssetPackageService {
         .map((String path) =>
             _requiredResourcePath(targetDir, resources, path, missingAtExport))
         .toList();
+    // BUG-2551：srt-backed 有声书的不变式是「EPUB + 音频 + 对齐」——零个音频不是
+    // 一本安静的书，是一本坏书。上面的必需资源校验是 `.map()` 里的**逐元素**检查，
+    // 空列表一次都不执行，于是「导出端一个音频都没解析出来」的包一路静默落库：
+    // 对端收到字幕 / 对齐 / 封面、`audioPathsJson` 写成 `[]`、HTTP 200、同步报告
+    // 记一次成功。而空列表在书架的断链判据里又恰好算「没问题」（`hasMissingPaths`
+    // 对空列表返回 false），连红徽章都不亮——用户只看到「字幕同步了、音频没有」。
+    // 更糟的是它是个吸收态：host 一旦有了这行，下一轮 sweep 的 `remoteKeys` 就命中，
+    // client 永远不再重推。必须在写 DB 前抛出，让调用方把失败报出来。
+    if (audioPaths.isEmpty) {
+      throw SyncAssetPackageIncompleteException(
+        sourcePath: unresolvedAudioRoots.isNotEmpty
+            ? unresolvedAudioRoots.first
+            : 'audiobook:$bookKey/audio',
+        missingAtExport: missingAtExport,
+      );
+    }
     final String srtPath = _requiredResourcePath(
       targetDir,
       resources,
@@ -404,6 +431,7 @@ class SyncAssetPackageService {
     required Map<String, Object?> srtBook,
     required Map<String, Object?> resources,
     required List<String> missingAtExport,
+    required List<String> unresolvedAudioRoots,
     required List<Object?> cues,
   }) async {
     final String uid = _stringValue(srtBook, 'uid');
@@ -416,6 +444,16 @@ class SyncAssetPackageService {
         .map((String path) =>
             _requiredResourcePath(targetDir, resources, path, missingAtExport))
         .toList();
+    // BUG-2551：standalone 与 srt-backed 在这里**有意不同**——纯字幕书本来就可以
+    // 一个音频都没有（`SrtBooks.audioRoot` / `audioPathsJson` 都是 nullable），
+    // 所以不能照搬「空即坏」。坏的是另一件事：导出端**声明了** audioRoot、却一个
+    // 音频都枚举不出来（目录被移走 / 已清空），那份声明过的音频真的丢了。
+    if (audioPaths.isEmpty && unresolvedAudioRoots.isNotEmpty) {
+      throw SyncAssetPackageIncompleteException(
+        sourcePath: unresolvedAudioRoots.first,
+        missingAtExport: missingAtExport,
+      );
+    }
     final String srtPath = _requiredResourcePath(
       targetDir,
       resources,
@@ -736,13 +774,51 @@ String? _optionalResourcePath(
 
 /// 导出端记录的缺失资源清单（`manifest.missingResources`）。
 /// 旧版本产出的包没有这个键 → 空列表：**缺键不是错误**，否则用户手上的旧包全废。
-List<String> _missingAtExport(Map<String, Object?> manifest) {
-  final Object? raw = manifest['missingResources'];
+List<String> _missingAtExport(Map<String, Object?> manifest) =>
+    _stringListFrom(manifest['missingResources']);
+
+/// 导出端声明了 audioRoot 却一个音频都枚举不出来的根（`unresolvedAudioRoots`）。
+/// 与 [_missingAtExport] 同样的旧包契约：缺键 → 空列表，不是错误（BUG-2551）。
+List<String> _unresolvedAudioRoots(Map<String, Object?> manifest) =>
+    _stringListFrom(manifest['unresolvedAudioRoots']);
+
+List<String> _stringListFrom(Object? raw) {
   if (raw is! List) return const <String>[];
   return <String>[
     for (final Object? value in raw)
       if (value != null) value.toString(),
   ];
+}
+
+/// 一本有声书**当前在磁盘上真的可播**的音频清单：files 模式取 `audioPathsJson`，
+/// folder 模式（清单为空、音频在 [audioRoot] 目录下）枚举目录，顺序与播放端一致。
+///
+/// 导出打包、host 清单的音频能力位、client sweep 的「本端到底有没有这本的音频」
+/// 都必须用同一份解析，否则三处各自推导必然漂开（BUG-2551）。
+Future<List<String>> resolveAudiobookAudioFiles({
+  required String? audioPathsJson,
+  required String? audioRoot,
+}) async =>
+    (await _resolveEffectiveAudio(audioPathsJson, audioRoot)).paths;
+
+/// 这本有声书的音频是否**完好**：至少解析出一个音频文件，且每一个都还在磁盘上。
+///
+/// 「有 Audiobooks 行」不等于「有音频」：零音频行（BUG-2551 的坏包落地）与引用
+/// 导入后原文件被移走的断链行，在 DB 里都长得像一本正常的有声书。同步的存在性
+/// 判据必须问磁盘，不能只问表。
+Future<bool> audiobookAudioIsIntact({
+  required String? audioPathsJson,
+  required String? audioRoot,
+}) async {
+  final List<String> paths = await resolveAudiobookAudioFiles(
+    audioPathsJson: audioPathsJson,
+    audioRoot: audioRoot,
+  );
+  if (paths.isEmpty) return false;
+  for (final String path in paths) {
+    if (!await File(path).exists()) return false;
+  }
+  return true;
 }
 
 List<String> _decodeStringList(String? json) {
