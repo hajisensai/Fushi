@@ -155,7 +155,12 @@ void main() {
       expect(
         volumeImageFile(
           volume,
-          const EpubImageRef(chapterIndex: 0, orderInBook: 0, src: 'img/a.png'),
+          const EpubImageRef(
+            chapterIndex: 0,
+            orderInBook: 0,
+            src: 'img/a.png',
+            revealKey: 'img/a.png',
+          ),
         )?.path,
         isNotNull,
       );
@@ -166,6 +171,7 @@ void main() {
             chapterIndex: 0,
             orderInBook: 0,
             src: '../../etc/passwd',
+            revealKey: '../../etc/passwd',
           ),
         ),
         isNull,
@@ -178,6 +184,7 @@ void main() {
             chapterIndex: 0,
             orderInBook: 0,
             src: 'img/missing.png',
+            revealKey: 'img/missing.png',
           ),
         ),
         isNull,

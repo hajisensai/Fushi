@@ -237,7 +237,12 @@ void main() {
   group('ReaderGalleryPage volume chips', () {
     List<EpubImageRef> images(String prefix, int n) => <EpubImageRef>[
       for (int i = 0; i < n; i++)
-        EpubImageRef(chapterIndex: i, orderInBook: i, src: '$prefix$i.png'),
+        EpubImageRef(
+          chapterIndex: i,
+          orderInBook: i,
+          src: '$prefix$i.png',
+          revealKey: '$prefix$i.png',
+        ),
     ];
 
     testWidgets(

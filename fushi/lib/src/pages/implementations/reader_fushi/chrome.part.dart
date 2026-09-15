@@ -1007,6 +1007,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
+    // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」
+    // （BUG-2559）。缓存的分数属于别的章时（刚跳章、还没回报进度）退到章首 0，
+    // 与落库时的同款判据一致。
+    final int currentNormCharOffset = _lastProgressSection == currentChapter
+        ? (_lastProgressValue.clamp(0.0, 1.0) * 10000).round()
+        : 0;
     // BUG-2208：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
     unawaited(
       _withStudyClockPaused(
@@ -1018,6 +1024,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               chapterLabelFor: _currentChapterLabelFor,
               images: images,
               currentChapter: currentChapter,
+              currentNormCharOffset: currentNormCharOffset,
               blurImages: _settings?.blurImages ?? false,
               revealedImageKeys: _revealedImageKeys,
               onRevealImage: (String key) {
@@ -1069,7 +1076,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
               onJumpTo: (EpubImageRef ref) {
                 Navigator.pop(routeContext);
-                unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
+                unawaited(
+                  _navigateToChapter(ref.jumpChapterIndex, manual: true),
+                );
               },
               volumeSwitch: _galleryVolumeSwitch(routeContext),
             ),
@@ -2447,7 +2456,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       },
       onJumpTo: (int volume, EpubImageRef ref) {
         Navigator.pop(routeContext);
-        unawaited(_switchToVolume(volume, chapterIndex: ref.chapterIndex));
+        unawaited(_switchToVolume(volume, chapterIndex: ref.jumpChapterIndex));
       },
       onOpenImage: (int volume, EpubImageRef ref, File file) =>
           _openImageViewer(
