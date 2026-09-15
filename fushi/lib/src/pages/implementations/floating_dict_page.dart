@@ -7,6 +7,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
 import 'package:fushi/utils.dart';
 
@@ -29,6 +30,9 @@ class FloatingDictPage extends ConsumerStatefulWidget {
 class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  late final LookupImeBinding _imeBinding = LookupImeBinding(
+    languageOf: () => appModel.effectiveLookupImeLanguage,
+  );
   DictionarySearchResult? _result;
   bool _isSearching = false;
   String _lastSearch = '';
@@ -49,6 +53,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     _searchFocusNode.addListener(() {
       _invoke('setFocusable', _searchFocusNode.hasFocus);
     });
+    _imeBinding.attach(focusNode: _searchFocusNode);
   }
 
   @override
@@ -183,6 +188,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         focusNode: _searchFocusNode,
         hintText: t.search_ellipsis,
         onSubmit: _doSearch,
+        hintLocales: appModel.lookupImeHintLocales,
       ),
     );
   }
@@ -248,6 +254,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
 
   @override
   void dispose() {
+    _imeBinding.detach();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();

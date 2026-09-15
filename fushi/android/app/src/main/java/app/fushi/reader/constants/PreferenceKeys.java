@@ -89,6 +89,23 @@ public final class PreferenceKeys {
     public static final String LYRIC_CURRENT_LINE_START = "lyricCurrentLineStart";
     public static final String LYRIC_CURRENT_LINE_LENGTH = "lyricCurrentLineLength";
 
+    // ── Lookup IME language (原生查词输入框) ──────────────────────────────────
+
+    /**
+     * Prefs file holding the user's lookup input-method language. Written by the
+     * Flutter side through {@code ChannelNames.LOOKUP_IME}; read by the two
+     * lookup surfaces whose search box is a native EditText
+     * ({@code FloatingDictService}, {@code PopupDictActivity}) — those cannot
+     * take Flutter's {@code hintLocales} parameter.
+     *
+     * Its own file rather than the floating-dict one: both of those surfaces
+     * need it, and one of them is an Activity that owns no floating-window prefs.
+     */
+    public static final String FILE_LOOKUP_IME = "lookup_ime_prefs";
+
+    /** BCP-47 tag, or empty when the user has not chosen a language. */
+    public static final String LOOKUP_IME_LANGUAGE = "lookupImeLanguage";
+
     // ── Splash / theme keys (MainActivity) ───────────────────────────────────
 
     /** Stored background colour as a packed ARGB int. */

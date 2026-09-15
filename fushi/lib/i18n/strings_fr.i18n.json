@@ -4961,5 +4961,9 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "settings_lookup_ime_language_title": "Lookup input language",
+  "settings_lookup_ime_language_description": "Which language the keyboard switches to when you type in a lookup box. The input method must already be installed on the system. Does not affect search results.",
+  "settings_lookup_ime_language_unset": "Not set",
+  "settings_lookup_ime_language_unavailable": "That input method is not installed on this system yet."
 }

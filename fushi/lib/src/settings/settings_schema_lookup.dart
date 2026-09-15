@@ -5,6 +5,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -269,6 +270,61 @@ SettingsDestination buildLookupDestination() {
                 value,
               );
               settingsContext.refresh();
+            },
+          ),
+          // 查词输入框希望输入法切到哪种语言。默认未设置 = 不碰用户的系统输入法
+          // 状态（桌面端切输入法是改系统全局状态，会漏到别的 app，不该默认开）。
+          //
+          // 这**不是**「查词的目标语言」：查词流水线语言无关，`targetLanguage` 那个
+          // 假抽象已删且有守卫钉着（见 preferences_repository 的 lookupImeLanguage）。
+          //
+          // 语言选项复用内容语言那份（`kContentLanguageOptions`）——用户要认的是
+          // 「哪国语言」，和给书/词典指定语言是同一件事，没必要两套清单。
+          SettingsNavigationItem(
+            id: 'lookup.ime_language',
+            title: t.settings_lookup_ime_language_title,
+            // 当前值只能进 titleBuilder（渲染期求值）——塞进 title 会被设置页缓存
+            // 成陈旧文案，`settings_schema_cache_test.dart` 钉着这条。
+            titleBuilder: (SettingsContext settingsContext) {
+              final String current =
+                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
+              final String label = current.isEmpty
+                  ? t.settings_lookup_ime_language_unset
+                  : contentLanguageLabelOf(current);
+              return '${t.settings_lookup_ime_language_title} · $label';
+            },
+            subtitle: t.settings_lookup_ime_language_description,
+            icon: Icons.keyboard_alt_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              final String current =
+                  settingsContext.appModel.prefsRepo.lookupImeLanguage;
+              await showContentLanguagePicker(
+                context: settingsContext.context,
+                title: t.settings_lookup_ime_language_title,
+                description: t.settings_lookup_ime_language_description,
+                current: current.isEmpty ? null : current,
+                autoDetected: '',
+                autoLabel: t.settings_lookup_ime_language_unset,
+                onSelected: (String? tag) async {
+                  await settingsContext.appModel.prefsRepo.setLookupImeLanguage(
+                    tag ?? '',
+                  );
+                  // 原生查词界面（Android 悬浮 / 弹窗词典的 EditText）读的是这份
+                  // 持久化值，它们可能在任何 Flutter 查词页面打开之前就被拉起。
+                  await LookupImeChannel.persistForNativeSurfaces(tag);
+                  settingsContext.refresh();
+                  // 选了系统里没装的输入法时说一声。否则用户设完发现「没反应」，
+                  // 而真正的原因（系统里根本没这个输入法）他无从知道——我们又不该
+                  // 替他往系统里装一个。
+                  if (tag == null) return;
+                  if (await LookupImeChannel.isLanguageAvailable(tag)) return;
+                  if (!settingsContext.context.mounted) return;
+                  _showSettingsSnackBar(
+                    settingsContext,
+                    t.settings_lookup_ime_language_unavailable,
+                  );
+                },
+              );
             },
           ),
         ],

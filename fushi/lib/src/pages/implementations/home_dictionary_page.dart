@@ -6,6 +6,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -119,6 +120,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  /// 语言取 [appModelNoUpdate] 而**不是** `appModel`：后者在 mounted 时是
+  /// `ref.watch`（`base_page.dart`），而 [LookupImeBinding.attach] 在 `initState`
+  /// 里**同步**调一次 `languageOf()`——在 build 之外建立 InheritedWidget 依赖会被
+  /// Flutter 当场抛（debug 下点进查词 tab 直接红屏）。这里也本来就不该 watch：
+  /// 输入法语言变了只需下次同步时读到新值，不需要整页重建。
+  late final LookupImeBinding _imeBinding = LookupImeBinding(
+    languageOf: () => appModelNoUpdate.effectiveLookupImeLanguage,
+  );
 
   DictionarySearchResult? _result;
   final DictionaryPopupController _popup = DictionaryPopupController(
@@ -175,6 +184,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);
+    _imeBinding.attach(focusNode: _searchFocusNode);
     widget.focusSignal?.addListener(_consumeFocusRequest);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
     // TODO-376：挂载即消费一次挂载前已排入的 pending。桌面悬浮字幕点词 / 深链在切到
@@ -296,6 +306,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     widget.focusSignal?.removeListener(_consumeFocusRequest);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     _searchFocusNode.removeListener(_onFocusChanged);
+    _imeBinding.detach();
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
     appModelNoUpdate.dictionaryEntriesNotifier
         .removeListener(_onDictionaryEntriesChanged);

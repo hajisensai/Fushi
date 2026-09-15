@@ -3411,6 +3411,7 @@ class FushiCompactSearchRow extends StatelessWidget {
     this.fieldKey,
     this.closeButtonKey,
     this.searchButtonKey,
+    this.hintLocales,
   });
 
   final TextEditingController controller;
@@ -3421,6 +3422,13 @@ class FushiCompactSearchRow extends StatelessWidget {
   final Key? fieldKey;
   final Key? closeButtonKey;
   final Key? searchButtonKey;
+
+  /// 希望输入法切到哪种语言（Android `EditorInfo.hintLocales`，API 24+）。
+  ///
+  /// 由调用方从「查词输入法语言」偏好算出来传进来（`AppModel.lookupImeHintLocales`），组件
+  /// **不自己读设置**：这几个组件被大量无 ProviderScope 的 widget 测试直接 pump，
+  /// 往 build 路径里加 Riverpod 读取会让整页 build 抛。
+  final List<Locale>? hintLocales;
 
   void _submit() {
     final String query = controller.text.trim();
@@ -3468,6 +3476,7 @@ class FushiCompactSearchRow extends StatelessWidget {
                   focusedBorder: InputBorder.none,
                 ),
                 textInputAction: TextInputAction.search,
+                hintLocales: hintLocales,
                 onSubmitted: (_) => _submit(),
               ),
             ),

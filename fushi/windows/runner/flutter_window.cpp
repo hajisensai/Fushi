@@ -30,6 +30,7 @@
 #include "foreground_selection.h"
 #include "global_mouse_trigger.h"
 #include "ime_space_dispatch.h"
+#include "utils.h"
 #include "window_capture.h"
 #include "window_recorder.h"
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
@@ -671,6 +672,7 @@ bool FlutterWindow::OnCreate() {
           &flutter::StandardMethodCodec::GetInstance());
 
   RegisterImeGuardChannel();
+  RegisterLookupImeChannel();
   RegisterFloatingLyricChannel();
   RegisterGalHookTextChannel();
   RegisterGlobalLookupChannel();
@@ -1494,6 +1496,105 @@ void FlutterWindow::RegisterImeGuardChannel() {
           return;
         }
         result->Success();
+      });
+}
+
+void FlutterWindow::RegisterLookupImeChannel() {
+  // 查词输入框的输入法语言。Dart 在查词页面 mount 时说「期望日语」，页面走掉时
+  // 说 null；我们在**已安装**的键盘布局里找对应语言切过去，并记住用户原来那个。
+  // 还原是硬要求：Win8 起输入法是 per-user，不还原就会漏到用户的其它应用里。
+  ime_language_switcher_ = ImeLanguageSwitcher(
+      [](HWND hwnd, HKL hkl, void*) { return RequestInputLanguage(hwnd, hkl); },
+      nullptr);
+
+  lookup_ime_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.fushi.reader/lookup_ime",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  lookup_ime_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        // 键盘焦点在 Flutter view 子窗口上（Win32Window::SetChildContent 做的
+        // SetFocus），输入语言请求要发给它；拆窗期间回退到顶层框架窗口。
+        HWND target = flutter_controller_ && flutter_controller_->view()
+                          ? flutter_controller_->view()->GetNativeWindow()
+                          : nullptr;
+        if (target == nullptr) {
+          target = GetHandle();
+        }
+        const DWORD thread_id = GetWindowThreadProcessId(target, nullptr);
+
+        if (call.method_name() == "setLanguage") {
+          std::wstring tag;
+          if (const auto* value = std::get_if<std::string>(call.arguments())) {
+            tag = Utf8ToWideString(*value);
+          }
+          desired_lookup_ime_tag_ = tag;
+          const ImeLanguageUpdate update = ime_language_switcher_.Activate(
+              target, tag, GetKeyboardLayout(thread_id),
+              InstalledKeyboardLayouts());
+          switch (update) {
+            case ImeLanguageUpdate::kFailed:
+              // 让 Dart 清掉乐观缓存，下次还能重试（否则它会以为已经设过了）。
+              result->Error("lookup_ime_failed",
+                            "WM_INPUTLANGCHANGEREQUEST was rejected");
+              return;
+            case ImeLanguageUpdate::kUnavailable:
+              // 用户选的语言系统里没装输入法。这不是错误，是「做不了」——绝不替他
+              // 装一个布局上去。
+              result->Success(flutter::EncodableValue("unavailable"));
+              return;
+            case ImeLanguageUpdate::kUnchanged:
+              result->Success(flutter::EncodableValue("unchanged"));
+              return;
+            case ImeLanguageUpdate::kApplied:
+              result->Success(flutter::EncodableValue("applied"));
+              return;
+          }
+          result->Success();
+          return;
+        }
+
+        if (call.method_name() == "probe") {
+          // 形状与 macOS 侧一致（语言标签而不是 LANGID），集成测试才能共用一份。
+          const auto locale_name = [](HKL layout) -> std::string {
+            const LANGID langid =
+                static_cast<LANGID>(reinterpret_cast<UINT_PTR>(layout) & 0xffff);
+            wchar_t buffer[LOCALE_NAME_MAX_LENGTH] = {};
+            const int written =
+                LCIDToLocaleName(MAKELCID(langid, SORT_DEFAULT), buffer,
+                                 LOCALE_NAME_MAX_LENGTH, 0);
+            return written > 0 ? Utf8FromUtf16(buffer) : std::string();
+          };
+          flutter::EncodableList enabled;
+          for (const HKL layout : InstalledKeyboardLayouts()) {
+            const std::string name = locale_name(layout);
+            if (!name.empty()) {
+              enabled.push_back(flutter::EncodableValue(name));
+            }
+          }
+          flutter::EncodableList current;
+          const std::string current_name =
+              locale_name(GetKeyboardLayout(thread_id));
+          if (!current_name.empty()) {
+            current.push_back(flutter::EncodableValue(current_name));
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("installed"), flutter::EncodableValue(true)},
+              {flutter::EncodableValue("active"),
+               flutter::EncodableValue(ime_language_switcher_.active())},
+              {flutter::EncodableValue("currentLanguages"),
+               flutter::EncodableValue(current)},
+              {flutter::EncodableValue("enabledLanguages"),
+               flutter::EncodableValue(enabled)},
+          }));
+          return;
+        }
+
+        result->NotImplemented();
       });
 }
 
@@ -3461,6 +3562,25 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // 默认处理，保持既有消息语义不变。
   if (magpie_scaling_message_ != 0 && message == magpie_scaling_message_) {
     NotifyMagpieScalingChanged(wparam, lparam);
+  }
+
+  // 查词输入法语言：窗口失去激活就立刻还原用户原来的输入法——Win8 起输入法状态是
+  // per-user，留着不还原，用户 Alt-Tab 去别的应用打字也会变成日语。重新激活时按
+  // Dart 最后表达的期望再切回来（查词页面可能还开着）。不消费消息。
+  if (message == WM_ACTIVATE) {
+    HWND ime_target = flutter_controller_ && flutter_controller_->view()
+                          ? flutter_controller_->view()->GetNativeWindow()
+                          : GetHandle();
+    if (ime_target != nullptr) {
+      if (LOWORD(wparam) == WA_INACTIVE) {
+        ime_language_switcher_.Restore(ime_target);
+      } else if (!desired_lookup_ime_tag_.empty()) {
+        ime_language_switcher_.Activate(
+            ime_target, desired_lookup_ime_tag_,
+            GetKeyboardLayout(GetWindowThreadProcessId(ime_target, nullptr)),
+            InstalledKeyboardLayouts());
+      }
+    }
   }
 
   switch (message) {

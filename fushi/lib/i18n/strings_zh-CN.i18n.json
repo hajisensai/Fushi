@@ -4961,5 +4961,9 @@
   "game_text_process_ai_added": "已添加 ${count} 个步骤",
   "game_text_process_ai_failed": "生成失败：${reason}",
   "ai_provider_base_url_invalid": "请填写有效的 HTTP 或 HTTPS 接口地址",
-  "ai_provider_protocol_locked": "由内置预设固定，不可更改"
+  "ai_provider_protocol_locked": "由内置预设固定，不可更改",
+  "settings_lookup_ime_language_title": "查词输入法语言",
+  "settings_lookup_ime_language_description": "在查词输入框打字时键盘切到哪种语言。需要系统已安装对应输入法。不影响查词结果。",
+  "settings_lookup_ime_language_unset": "未设置",
+  "settings_lookup_ime_language_unavailable": "系统里还没有安装这个输入法。"
 }
