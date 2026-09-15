@@ -4972,5 +4972,11 @@
   "manga_tap_zone_layout_left_right": "左右",
   "manga_tap_zone_layout_l_shaped": "L 型",
   "manga_tap_zone_layout_kindle": "Kindle",
-  "manga_tap_zone_layout_top_bottom": "上下"
+  "manga_tap_zone_layout_top_bottom": "上下",
+  "manga_spread_offset": "跨页偏移",
+  "manga_spread_offset_subtitle": "双页配对从第几页开始",
+  "manga_spread_offset_cover": "封面独占",
+  "manga_spread_offset_none": "从第一页起配对",
+  "manga_wide_page_solo": "宽页独占一屏",
+  "manga_wide_page_solo_subtitle": "见开き页单独占一屏显示"
 }

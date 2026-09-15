@@ -4972,5 +4972,11 @@
   "manga_tap_zone_layout_left_right": "Left and right",
   "manga_tap_zone_layout_l_shaped": "L-shaped",
   "manga_tap_zone_layout_kindle": "Kindle",
-  "manga_tap_zone_layout_top_bottom": "Top and bottom"
+  "manga_tap_zone_layout_top_bottom": "Top and bottom",
+  "manga_spread_offset": "Spread offset",
+  "manga_spread_offset_subtitle": "Which page the two-page pairing starts from",
+  "manga_spread_offset_cover": "Cover alone",
+  "manga_spread_offset_none": "Pair from page 1",
+  "manga_wide_page_solo": "Wide pages alone",
+  "manga_wide_page_solo_subtitle": "Show a double-width spread page on its own"
 }

@@ -838,6 +838,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   MangaTapZoneLayout _tapZoneLayout = MangaTapZoneLayout.leftRight;
   MangaBackground _background = MangaBackground.black;
 
+  /// 双页配对偏移（0/1）与宽页独占；两者都只影响 [_buildSpreadsFor] 的配对。
+  int _spreadOffset = 1;
+  bool _widePageSolo = true;
+
   /// 「显示识别范围」（BUG-2481）：把 OCR 块框画出来。会话内状态，不落偏好——
   /// 它是检查识别质量用的，不是阅读姿势。
   bool _showOcrBoxes = false;
@@ -1447,6 +1451,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _tapZonePaging = appModel.mangaTapZonePaging;
     _tapZoneLayout = MangaTapZoneLayoutKey.fromKey(appModel.mangaTapZoneLayout);
     _background = MangaBackgroundKey.fromKey(appModel.mangaBackground);
+    _spreadOffset = appModel.mangaSpreadOffset >= 1 ? 1 : 0;
+    _widePageSolo = appModel.mangaWidePageSolo;
     _chromeFloating = appModel.mangaChromeFloating;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
 
@@ -1816,10 +1822,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
+  /// 每页是否宽页（见开き），按 mokuro 已给的原始像素尺寸判定，不解码图片。
+  /// 关闭「宽页独占」偏好时返回空表 = 全部按普通页配对。
+  List<bool> _soloPagesFor(MokuroPayload payload) {
+    if (!_widePageSolo) return const <bool>[];
+    return <bool>[
+      for (final MokuroImage image in payload.images)
+        isMangaWidePage(
+          width: image.size.width,
+          height: image.size.height,
+        ),
+    ];
+  }
+
   /// 构建 spread 序列。webtoon 每页独立；spread 模式按解析出的布局配对（双页
   /// 两两配对，奇数尾页独占；RTL 左右排序由覆盖层 direction:rtl 落实——DOM 序
-  /// 前一页序在右，符合日漫右开本）。spreadOffset 恒 1：日漫惯例封面独占单页，
-  /// 正文从第 2 页起两两配对（自定义偏移列未入 schema，需要时再加）。
+  /// 前一页序在右，符合日漫右开本）。
+  ///
+  /// [MangaSpreadEntry] 的两条偏移来源：`spreadOffset` 是「封面算不算第 0 页」
+  /// （各家扫描不统一，选错整卷左右页全反，默认 1 = 日漫惯例封面独占）；宽页表
+  /// 让见开き页独占一屏并顺带把其后页序重新对齐。
   List<MangaSpreadEntry> _buildSpreadsFor(
     MokuroPayload payload,
     MangaReadingMode mode,
@@ -1828,8 +1850,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageLayout = layout;
     return buildMangaSpreads(
       payload.images.length,
+      soloPages: _soloPagesFor(payload),
       layout: layout,
-      spreadOffset: 1,
+      spreadOffset: _spreadOffset,
     );
   }
 

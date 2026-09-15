@@ -118,6 +118,36 @@ SettingsDestination buildMangaDestination() {
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaPageAnimation(value),
           ),
+          // 跨页偏移：封面算不算「第 0 页」各家扫描不统一，选错整卷左右页全反。
+          SettingsSegmentedItem<int>(
+            id: 'manga.spread_offset',
+            title: t.manga_spread_offset,
+            subtitle: t.manga_spread_offset_subtitle,
+            icon: Icons.import_contacts_outlined,
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 1,
+                label: t.manga_spread_offset_cover,
+              ),
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.manga_spread_offset_none,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.mangaSpreadOffset >= 1 ? 1 : 0,
+            onChanged: (SettingsContext c, int value) =>
+                c.appModel.setMangaSpreadOffset(value),
+          ),
+          SettingsSwitchItem(
+            id: 'manga.wide_page_solo',
+            title: t.manga_wide_page_solo,
+            subtitle: t.manga_wide_page_solo_subtitle,
+            icon: Icons.panorama_horizontal_outlined,
+            value: (SettingsContext c) => c.appModel.mangaWidePageSolo,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMangaWidePageSolo(value),
+          ),
           // 底色：此前恒黑，两处硬编码（WebView 文档的 html,body 与页面 Scaffold）。
           SettingsSegmentedItem<String>(
             id: 'manga.background',

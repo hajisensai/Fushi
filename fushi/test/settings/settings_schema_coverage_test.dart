@@ -115,6 +115,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // 跨页偏移 / 宽页独占：写 prefsRepo（changed=true），生效点是阅读器打开书时
+  // 用它们构建 spread 序列（_buildSpreadsFor），harness 里没有阅读器。配对算法
+  // 是纯函数 buildMangaSpreads，由专项测试逐场景咬死（含「每页恰好出现一次且
+  // 升序」这条丢页守卫）。
+  'manga/Spread offset':
+      'test/media/manga/manga_wide_page_spread_test.dart（跨页偏移 0/1）',
+  'manga/Wide pages alone':
+      'test/media/manga/manga_wide_page_spread_test.dart（宽页独占 + 页序重对齐）',
   // 底色：写 prefsRepo（changed=true），生效点在阅读器——WebView 文档的
   // html,body 背景 + 页面 Scaffold 底色两处同源，harness 里没有阅读器。由专项
   // 测试咬住「偏好值域往返」与「注入的文档真的换了背景且不残留旧的 #000」。
