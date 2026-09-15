@@ -173,6 +173,112 @@ void main() {
     expect(AnkiConnectRepository.isDuplicateCheckInCooldown, isFalse);
   });
 
+  /// 与 [seedSettings] 同一份配置，另外把第一字段映射好——否则 `mineEntry` 会在触网
+  /// 之前就以「All fields are empty」早退，测不到 addNote 那一步。
+  Future<void> seedMineSettings() async {
+    final settings = AnkiSettings(
+      selectedDeckId: 0,
+      selectedDeckName: 'Mining',
+      selectedNoteTypeId: 0,
+      selectedNoteTypeName: 'Vocab',
+      availableDecks: const [AnkiDeck(id: 0, name: 'Mining')],
+      availableNoteTypes: const [
+        AnkiNoteType(id: 0, name: 'Vocab', fields: ['Expression', 'Meaning']),
+      ],
+      fieldMappings: const {'Expression': '{expression}'},
+      allowDupes: true,
+    );
+    SharedPreferences.setMockInitialValues(
+      {'fushi_anki_settings': jsonEncode(settings.toJson())},
+    );
+  }
+
+  http.Response ankiJson(Object? result, {String? error}) => http.Response(
+        jsonEncode({'result': result, 'error': error}),
+        200,
+      );
+
+  // 用户的原始路径：Anki 没开着时查了词（冷却武装）→ 打开 Anki → 点「+」制卡成功 →
+  // popup.js 紧跟着回问 duplicateCheck。冷却此前只在 isDuplicate 自己成功时清零，
+  // 于是这次回问还在窗内被短路成 false，刚制好的卡停在「+」——与 iOS 上「加完卡没出
+  // 打勾」同一个症状，只是成因在冷却而不在时序。
+  test('mineEntry 成功解除查重冷却：刚制好的卡必须画得出 ✓', () async {
+    await seedMineSettings();
+    var transportDead = true;
+    var cardInAnki = false;
+    final repo = AnkiConnectRepository(
+      service: AnkiConnectService(
+        client: MockClient((http.Request request) async {
+          if (transportDead) throw const SocketException('Connection refused');
+          final body = jsonDecode(request.body) as Map<String, Object?>;
+          switch (body['action'] as String?) {
+            case 'addNote':
+              cardInAnki = true;
+              return ankiJson(1701);
+            case 'canAddNotesWithErrorDetail':
+              return ankiJson([
+                cardInAnki
+                    ? {
+                        'canAdd': false,
+                        'error': 'cannot create note because it is a duplicate',
+                      }
+                    : {'canAdd': true},
+              ]);
+            default:
+              return ankiJson(null);
+          }
+        }),
+      ),
+    );
+
+    expect(await repo.isDuplicate('日本語', 'にほんご'), isFalse);
+    expect(AnkiConnectRepository.isDuplicateCheckInCooldown, isTrue,
+        reason: '主机不可达时武装冷却是 BUG-1302 的正常行为');
+
+    // 用户打开了 Anki，然后点「+」。制卡链路不看冷却，照常成功。
+    transportDead = false;
+    final MineOutcome outcome = await repo.mineEntry(
+      rawPayloadJson: '{"expression":"日本語","reading":"にほんご"}',
+      context: const AnkiMiningContext(sentence: ''),
+    );
+    expect(outcome.result, MineResult.success);
+    expect(AnkiConnectRepository.isDuplicateCheckInCooldown, isFalse,
+        reason: '制卡拿到应答就是「主机可达」的铁证，冷却必须撤掉');
+    expect(await repo.isDuplicate('日本語', 'にほんご'), isTrue,
+        reason: '制卡后的回问必须问到真 Anki，否则 ✓ 画不出来');
+  });
+
+  test('mineEntry 撞重复也解除冷却（Anki 明确应答了，就是可达）', () async {
+    await seedMineSettings();
+    var transportDead = true;
+    final repo = AnkiConnectRepository(
+      service: AnkiConnectService(
+        client: MockClient((http.Request request) async {
+          if (transportDead) throw const SocketException('Connection refused');
+          final body = jsonDecode(request.body) as Map<String, Object?>;
+          if (body['action'] == 'addNote') {
+            return ankiJson(null,
+                error: 'cannot create note because it is a duplicate');
+          }
+          return ankiJson(null);
+        }),
+      ),
+    );
+
+    expect(await repo.isDuplicate('日本語', 'にほんご'), isFalse);
+    expect(AnkiConnectRepository.isDuplicateCheckInCooldown, isTrue);
+
+    transportDead = false;
+    final MineOutcome outcome = await repo.mineEntry(
+      rawPayloadJson: '{"expression":"日本語","reading":"にほんご"}',
+      context: const AnkiMiningContext(sentence: ''),
+    );
+    // 「这张卡已经有了」是 Anki 给的应答：popup 会据此画 ✓，冷却更没有理由还拦着
+    // 后续查重。
+    expect(outcome.result, MineResult.duplicate);
+    expect(AnkiConnectRepository.isDuplicateCheckInCooldown, isFalse);
+  });
+
   test('cooldown window is bounded, not permanent', () {
     expect(AnkiConnectRepository.kDuplicateCheckUnreachableCooldown,
         lessThanOrEqualTo(const Duration(minutes: 1)),

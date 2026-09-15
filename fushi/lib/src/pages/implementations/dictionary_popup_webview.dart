@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -360,9 +361,64 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
       DictionaryPopupWebViewState();
 }
 
-class DictionaryPopupWebViewState
-    extends ConsumerState<DictionaryPopupWebView> {
+class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
+    with WidgetsBindingObserver {
   InAppWebViewController? _controller;
+
+  /// 制卡态失效通知的订阅（见 [MinedStateSignal]）。
+  StreamSubscription<MinedStateChange>? _minedStateSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    // 「切回前台就复核」与 texthooker 的已制卡徽章同口径（BUG-1799）：用户的原始路径
+    // 正是「制卡 → 切到 Anki 里删掉那张卡 → 切回 Fushi」，`resumed` 就是回到 app 的
+    // 那一刻，而弹窗上的 ✓ 是查词那一刻探测出来的、自己不会再变。
+    WidgetsBinding.instance.addObserver(this);
+    _minedStateSubscription = MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) =>
+            unawaited(_refreshMineStates(expression: change.expression)));
+  }
+
+  @override
+  void dispose() {
+    unawaited(_minedStateSubscription?.cancel());
+    _minedStateSubscription = null;
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed) return;
+    // 范围未知：popup.js 只重问**已经探测过**的按钮，不把懒探测退化成整屏发桥。
+    unawaited(_refreshMineStates());
+  }
+
+  /// 重问已渲染词条的制卡态并重画 ✓ / +。
+  ///
+  /// [expression] 非空 = 只刷这个词（iOS `x-success` 落账只带回词头）；null = 范围未知。
+  ///
+  /// 弹窗还没渲染出来（controller 未建 / 文档没就绪）时什么都不做——那种情况下下一次
+  /// 查词本来就会重新探测，屏幕上也没有过期的 ✓ 挂着。
+  Future<void> _refreshMineStates({String? expression}) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || !_ready || !mounted) return;
+    final String target = expression == null
+        ? 'null'
+        : jsonEncode(<String, String>{'expression': expression});
+    try {
+      await controller.evaluateJavascript(source: '''(function(){
+  if (typeof window.fushiRefreshMineStates === 'function') {
+    window.fushiRefreshMineStates($target);
+  }
+})();''');
+    } catch (e, stack) {
+      // 纯装饰态纠正，任何失败都不得冒泡打断查词（WebView 可能正在被摘除）。
+      debugPrint('DictPopupWebview._refreshMineStates: $e\n$stack');
+    }
+  }
 
   /// Debug eval on THIS popup's WebView. The reader routes through its
   /// `topPopupState` (gated behind its own @visibleForTesting hook + assert) so
