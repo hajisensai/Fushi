@@ -86,6 +86,15 @@ on:
         required: false
         default: false
         type: boolean
+      # 只分发：把 App Store Connect 上**已上传**的某个构建号挂到邮件邀请测试组，别的
+      # 什么都不做——windows / macos / ios / publish 全跳，只跑 testflight-distribute job。
+      # 用途：上传时分发失败 / 事后新建了组要补、网页手传的构建也想走同一套组规则。
+      # 正常 beta / formal / 定时 debug 不用填：ios job 传完会自动跟一趟分发。
+      testflight_distribute_build:
+        description: 'Distribute-only: attach this already-uploaded TestFlight build number to the email-invited beta groups; build and publish nothing.'
+        required: false
+        default: ''
+        type: string
       kazumi_adhoc:
         description: 'One-off: sign the upstream Kazumi 2.3.0 IPA for two registered devices.'
         required: false
@@ -122,7 +131,7 @@ concurrency:
 
 jobs:
   windows:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && github.event.inputs.testflight_distribute_build == '' }}
     runs-on: windows-2022
     permissions:
       contents: write
@@ -1035,7 +1044,7 @@ jobs:
           retention-days: 14
 
   macos:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && github.event.inputs.testflight_distribute_build == '' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -1601,10 +1610,16 @@ jobs:
           retention-days: 14
 
   ios:
-    if: ${{ github.event.inputs.kazumi_adhoc != 'true' }}
+    # testflight_distribute_build（只分发已上传的构建）下不构建、不上传，整个 job 跳过；
+    # testflight_only 下则必须跑（否则什么都传不了），只跳未签名 IPA 三步。
+    if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_distribute_build == '' }}
     runs-on: macos-latest
     permissions:
       contents: write
+    outputs:
+      # 本次真正传上 TestFlight 的构建号；门关着或上传失败时为空，
+      # testflight-distribute job 据此决定跟不跟。
+      testflight_build: ${{ steps.upload.outputs.build_number }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -2075,12 +2090,14 @@ jobs:
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       - name: Upload to TestFlight
         if: steps.signing.outputs.testflight == 'true'
+        id: upload
         working-directory: fushi
         shell: bash
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          BUILD_NUMBER: ${{ steps.channel.outputs.release_sequence }}
         run: |
           set -euo pipefail
           IPA=""
@@ -2109,6 +2126,44 @@ jobs:
           xcrun altool --upload-app -f "$IPA" -t ios \
             --apiKey "$APPSTORE_API_KEY_ID" --apiIssuer "$APPSTORE_API_ISSUER_ID"
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
+          # 只有 upload 真的成功才写出去：上面任何一步失败都到不了这行，
+          # testflight-distribute job 读到空就不跟。
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+  # ---- 把构建挂到邮件邀请的 TestFlight 组 -----------------------------------
+  # altool 传完，构建只是躺在 App Store Connect 里：除非内部组开了自动分发，没人会收到；
+  # 外部组更是每个构建都要手动加。这个 job 用 tool/testflight_distribute.sh 把构建挂到
+  # 所有**没开公开链接**的组（或 repo variable TESTFLIGHT_BETA_GROUPS 点名的组），公开
+  # 链接组一律不碰——那些人不是用户挑的，debug 包不该流向他们。
+  # 两个入口：ios job 刚传成功（needs.ios.outputs.testflight_build 非空），或 dispatch
+  # 输入 testflight_distribute_build 指定一个已上传的号（补分发 / 网页手传的构建）。
+  # always() 是给后者的：那种 run 里 ios 被 job 级 if 摁掉（skipped），默认 needs 语义
+  # 会把本 job 一并跳掉。ios 失败时 outputs 为空、输入也为空 → 条件不成立，照常跳过。
+  # 单独一个 ubuntu job 而不是塞进 ios job 末尾：要等 App Store Connect 处理完（5~30
+  # 分钟），挂在 macOS runner 上等太贵，也不该拖住 publish（它 needs ios）。
+  testflight-distribute:
+    needs: [ios]
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && (needs.ios.outputs.testflight_build != '' || github.event.inputs.testflight_distribute_build != '') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Attach build to email-invited TestFlight groups
+        shell: bash
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          TESTFLIGHT_BETA_GROUPS: ${{ vars.TESTFLIGHT_BETA_GROUPS }}
+          BUILD_FROM_IOS: ${{ needs.ios.outputs.testflight_build }}
+          BUILD_FROM_INPUT: ${{ github.event.inputs.testflight_distribute_build }}
+        run: |
+          set -euo pipefail
+          # 显式指定的号优先：那是用户点名要补分发的。
+          BUILD="${BUILD_FROM_INPUT:-$BUILD_FROM_IOS}"
+          echo "distributing TestFlight build $BUILD"
+          bash tool/testflight_distribute.sh "$BUILD"
 
   kazumi-adhoc:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.kazumi_adhoc == 'true' }}
@@ -2144,7 +2199,7 @@ jobs:
     needs: [windows, macos, ios]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
-    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
+    if: ${{ always() && github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && github.event.inputs.testflight_distribute_build == '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

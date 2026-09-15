@@ -122,6 +122,11 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   **定时 workflow 只从默认分支 `main` 触发**，且默认分支上不存在的 workflow 连
   `gh workflow run` 都是 404——所以 `testflight-debug.yml` 合进 develop 后既不会自动跑
   也无法手动验，要等下次正式发布同步到 main，或单独把这一个文件先落到 main。
+- **传上 TestFlight 后自动挂到邮件邀请组**（`testflight-distribute` job →
+  `tool/testflight_distribute.sh`，beta / formal / 定时 debug 都跟）：默认所有没开公开链接的
+  组，或 repo variable `TESTFLIGHT_BETA_GROUPS` 点名的组；公开链接组一律不碰。补分发用
+  dispatch 输入 `testflight_distribute_build=<构建号>`（只跑分发、其余 job 全跳）。细节见
+  [apple-signing.md](apple-signing.md)「上传后自动分发到邮件邀请组」。
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
   App Store 签名包。TestFlight 用的是另一次、只在手动 beta/formal 时才发生的签名构建，

@@ -138,6 +138,30 @@ Actions → **Build Desktop and Apple Release Artifacts** → Run workflow：
 一天 5~13 次，每次都传会让 App Store Connect 的处理排队压后真正想发的 beta、TestFlight
 列表被 debug 构建淹掉（每个挂 90 天）。
 
+### 上传后自动分发到邮件邀请组
+
+`altool` 传完只是把构建放进 App Store Connect；除非内部组开了「自动分发」，没有测试员会
+收到，外部组更是每个构建都要手动加。所以 ios job 传成功后（beta / formal / 定时 debug 都
+一样）会跟一个 `testflight-distribute` job（ubuntu，`needs: [ios]`）跑
+`tool/testflight_distribute.sh`：
+
+1. 等 App Store Connect 把构建处理到 `VALID`（上限 `TESTFLIGHT_WAIT_MINUTES`，默认 45 分钟）；
+2. 选组：默认所有**没开公开链接**的组（内部 + 外部邮件邀请组）；设了 repo variable
+   `TESTFLIGHT_BETA_GROUPS`（逗号分隔组名）就只挂这些，其中任何一个开了公开链接直接红；
+   `hasAccessToAllBuilds` 的内部组本来就看得到所有构建，跳过；
+3. `POST /v1/betaGroups/{id}/relationships/builds` 逐组挂上（409「已在组里」视为成功）；
+4. 选中了外部组就提交一次 Beta App Review（同一短版本下的后续构建通常秒过）。
+
+公开链接组**永远不碰**——公开链接的人不是用户挑的，debug 包不该流向他们。分发 job 跑在
+ios job 之外，publish 不用等 Apple 处理的那 5~30 分钟。
+
+补分发（上传时分发失败、事后新建了组、或网页手传的构建也想走同一套规则）：Run workflow →
+`testflight_distribute_build` = 构建号（如 `14929`）；这种 run 只跑分发，windows / macos /
+ios / publish 全跳。
+
+离线自检选组逻辑（不需要凭据）：`TESTFLIGHT_GROUPS_FIXTURE=<一份 GET /v1/betaGroups 响应
+JSON> tool/testflight_distribute.sh <构建号>` 只打印会选中的组名。
+
 ### debug 包定时上 TestFlight
 
 `.github/workflows/testflight-debug.yml` 每天三次（UTC 00:23 / 08:23 / 16:23）：

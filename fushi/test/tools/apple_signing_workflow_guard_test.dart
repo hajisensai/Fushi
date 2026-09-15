@@ -269,6 +269,93 @@ void main() {
     );
   });
 
+  test('TestFlight 上传后只分发到邮件邀请组，公开链接组一律不碰', () {
+    // altool 传完构建只是躺在 App Store Connect 里，没人会收到；分发这步必须自动跟，
+    // 且只挂到邮件邀请的组——公开链接的人不是用户挑的，debug 包不该流向他们。
+    final File script = File('${root.path}/tool/testflight_distribute.sh');
+    expect(
+      script.existsSync(),
+      isTrue,
+      reason: '缺 tool/testflight_distribute.sh',
+    );
+    final String sh = script.readAsStringSync();
+    expect(sh, contains('asc_api_jwt.rb'), reason: '分发脚本必须复用共享 JWT 实现');
+    expect(
+      sh,
+      contains('publicLinkEnabled == true'),
+      reason: '点名的组开了公开链接必须拒绝',
+    );
+    expect(
+      sh,
+      contains('publicLinkEnabled != true'),
+      reason: '默认选组必须排除公开链接组',
+    );
+    expect(
+      sh,
+      contains('/relationships/builds'),
+      reason: '挂构建走 betaGroups relationships',
+    );
+
+    // ios job 只在上传真成功后才把构建号交出去；分发 job 挂在这个输出上。
+    expect(
+      content,
+      contains(r'testflight_build: ${{ steps.upload.outputs.build_number }}'),
+      reason: 'ios job 必须把传成功的构建号作为 job output 交出去',
+    );
+    // id 放在 if 之后：既有守卫要求 `- name:` 与 `if:` 相邻。
+    expect(
+      RegExp(
+        r"- name: Upload to TestFlight\n\s+if: steps\.signing\.outputs\.testflight == 'true'\n\s+id: upload\n",
+      ).hasMatch(content),
+      isTrue,
+      reason: '上传步骤必须有 id: upload（紧跟 if 之后）',
+    );
+    expect(
+      content,
+      contains(r'echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"'),
+      reason: '构建号必须在 altool 上传成功之后才写出',
+    );
+    final RegExpMatch? job = RegExp(
+      r'\n  testflight-distribute:\n    needs: \[ios\]\n    if: (.*)\n',
+    ).firstMatch(content);
+    expect(job, isNotNull, reason: '缺 testflight-distribute job 或它不 needs ios');
+    final String jobIf = job!.group(1)!;
+    expect(jobIf, contains("needs.ios.outputs.testflight_build != ''"));
+    expect(
+      jobIf,
+      contains("github.event.inputs.testflight_distribute_build != ''"),
+    );
+    expect(
+      jobIf,
+      contains('always()'),
+      reason: 'distribute-only 下 ios 是 skipped，不带 always() 本 job 会被一并跳掉',
+    );
+    expect(content, contains('bash tool/testflight_distribute.sh'));
+    expect(
+      content,
+      contains(r'TESTFLIGHT_BETA_GROUPS: ${{ vars.TESTFLIGHT_BETA_GROUPS }}'),
+      reason: '组名白名单必须从 repo variable 喂进去，否则脚本只能用默认选组',
+    );
+  });
+
+  test('testflight_distribute_build 只分发：构建与发布四个 job 全跳', () {
+    final int inputAt = content.indexOf('      testflight_distribute_build:');
+    expect(inputAt, greaterThan(-1), reason: '缺 testflight_distribute_build 输入');
+    final String input = content.substring(inputAt, inputAt + 400);
+    expect(input, contains("default: ''"));
+    expect(input, contains('type: string'));
+    for (final String job in const ['windows', 'macos', 'ios', 'publish']) {
+      final RegExp jobIf = RegExp(
+        '\\n  $job:\\n(?:    .*\\n)*?    if: .*testflight_distribute_build == \'\'',
+      );
+      expect(
+        jobIf.hasMatch(content),
+        isTrue,
+        reason: 'job「$job」的 if 必须含 testflight_distribute_build == \'\'',
+      );
+    }
+  });
+
   test('GitHub Release 的 iOS 资产仍是 no-codesign 包', () {
     expect(
       content.contains('flutter build ios --release --no-codesign'),
