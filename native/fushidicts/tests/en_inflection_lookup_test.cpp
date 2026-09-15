@@ -20,6 +20,13 @@
 // Red/green：删掉 en_irregular.json 的规则 → A 组红；删掉 query.cpp 的
 // rules_wildcard 分支 → B 组红；把空 rules 无条件当 "*" → C 组红。
 //
+//   3) 短语动词（BUG-2549）：Yomitan english-transforms.js 的 phrasal 规则是正则型
+//      `other` 规则，移植成 JSON 时整体丢失，v_phr 条件存在但零条规则用到它——
+//      "gave up" / "walked away" / "picked it up" 都还原不到 "give up" / "walk away" /
+//      "pick up"。修法是 en.json 顶层 phrasalVerbs 词表 + 动词组 phrasalVerb 标记 +
+//      Deinflector::deinflect_phrasal（动词头变形、宾语插入）。D 组覆盖；删掉
+//      deinflect_phrasal 的调用 → D 组红；C5/C6 钉住 v_phr 经 filter_by_pos 的语义。
+//
 // Usage: en_inflection_lookup_test <en.json> <en_irregular.json>
 #include <cstdio>
 #include <filesystem>
@@ -76,6 +83,16 @@ void expect_lemma(Lookup& lk, const std::string& query, const std::string& want,
   if (!has_whole_deinflected_hit(results, query, want)) {
     fail(std::string(what) + ": lookup(\"" + query + "\") did not deinflect to \"" + want + "\"; got " +
          dump(results));
+  }
+}
+
+// 同上，但命中的匹配段是查询串的某个候选前缀（scan_candidates 的产物）而非整串。
+void expect_lemma_matched(Lookup& lk, const std::string& query, const std::string& matched, const std::string& want,
+                          const char* what) {
+  std::vector<LookupResult> results = lk.lookup(query, 32);
+  if (!has_whole_deinflected_hit(results, matched, want)) {
+    fail(std::string(what) + ": lookup(\"" + query + "\") did not deinflect \"" + matched + "\" to \"" + want +
+         "\"; got " + dump(results));
   }
 }
 
@@ -225,7 +242,8 @@ int main(int argc, char** argv) {
     // 说空 rules 不是变形词，filter_by_pos 必须继续把它挡掉。
     const std::string dict_dir = import_yomitan("en_pos", "EnPos",
                                                 {term_row("walk", "v"), term_row("walke", ""), term_row("go", "v"),
-                                                 term_row("child", "n")},
+                                                 term_row("child", "n"), term_row("give up", "v"),
+                                                 term_row("pick up", "n")},
                                                 out_dir);
     if (dict_dir.empty()) return 1;
     expect_flag(dict_dir, '1', "C0 importer records POS present");
@@ -236,6 +254,47 @@ int main(int argc, char** argv) {
     expect_no_lemma(lk, "walked", "walke", "C2 empty-rules noun is NOT a verb lemma (Yomitan semantics kept)");
     expect_lemma(lk, "went", "go", "C3 irregular past on POS-tagged dict");
     expect_lemma(lk, "children", "child", "C4 irregular plural on POS-tagged noun");
+    // v_phr 是 v 的子条件：rules "v" 的词条必须接住短语动词还原（v 位集包含 v_phr 位），
+    // 而 rules "n" 的 "pick up" 必须继续被 filter_by_pos 挡掉。
+    expect_lemma(lk, "gave up", "give up", "C5 phrasal head deinflection accepted by POS 'v'");
+    expect_no_lemma(lk, "picked up", "pick up", "C6 phrasal head deinflection rejected by POS 'n'");
+  }
+
+  // ---- D) 短语动词：动词头变形 + 宾语插入 --------------------------------------
+  {
+    std::vector<SimpleEntry> entries;
+    for (const char* w : {"give up", "give", "pick up", "pick", "take out", "take", "look up", "look", "walk away",
+                          "walk", "give upstairs", "cat"}) {
+      entries.push_back({w, std::string("definition of ") + w});
+    }
+    ImportResult r = dictionary_importer::write_simple_dict("EnPhrasalSimple", entries, out_dir);
+    if (!r.success) {
+      fail(r.errors.empty() ? "write_simple_dict failed" : r.errors.front());
+      return 1;
+    }
+    DictionaryQuery q;
+    q.add_term_dict(out_dir + "/" + r.title);
+    Lookup lk(q, d);
+
+    expect_lemma(lk, "gave up", "give up", "D1 suppletive past head");
+    expect_lemma(lk, "given up", "give up", "D2 irregular participle head");
+    expect_lemma(lk, "gives up", "give up", "D3 3sg head");
+    expect_lemma(lk, "giving up", "give up", "D4 -ing head");
+    expect_lemma(lk, "walked away", "walk away", "D5 regular past head");
+    expect_lemma(lk, "Gave Up", "give up", "D6 capitalised phrasal (text_processor lowercases)");
+    expect_lemma(lk, "picked it up", "pick up", "D7 interposed object chained into regular past");
+    // 查询串要压在默认 scan_length=16 码点以内，否则整串根本不进候选。
+    expect_lemma(lk, "took it all out", "take out", "D8 multi-word interposed object chained into suppletive past");
+    expect_lemma(lk, "look it up", "look up", "D9 interposed object on an uninflected head");
+    // 尾随的词不是整串的一部分时，命中来自短候选 "gave up"（matched 也应是它）。
+    expect_lemma_matched(lk, "gave up on me", "gave up", "give up", "D10 phrasal hit inside a longer scan window");
+    // 小品词按整个 token 匹配：Yomitan 的正则不封尾会把 "gave upstairs" 当 "gave up…"，
+    // 这里 "upstairs" 不是小品词，动词头不变形。
+    expect_no_lemma(lk, "gave upstairs", "give upstairs", "D11 particle must match a whole token");
+    // 动词头变形不能丢掉小品词：整串 "gave up" 不得还原成裸 "give"。
+    expect_no_lemma(lk, "gave up", "give", "D12 phrasal deinflection keeps the particle");
+    // 宾语里夹着短语动词用词就不是宾语插入（"walked up the hill" 的 "up" 是小品词本身）。
+    expect_no_lemma(lk, "walked up the cat", "walk cat", "D13 object containing a phrasal word is not interposed");
   }
 
   if (g_fail) {
