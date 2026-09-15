@@ -4848,5 +4848,11 @@
   "reader_control_reject_title": "The book title only fits the top center; nothing else goes there.",
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
-  "reader_control_reset_layout": "Restore default reader button layout"
+  "reader_control_reset_layout": "Restore default reader button layout",
+  "audiobook_follow_audio": "Follow audio",
+  "reader_floating_ball": "Floating ball",
+  "reader_floating_ball_hint": "A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.",
+  "reader_control_item_play_pause": "Play / Pause",
+  "reader_control_item_seek_back": "Rewind 10 seconds",
+  "reader_control_item_seek_forward": "Forward 10 seconds"
 }

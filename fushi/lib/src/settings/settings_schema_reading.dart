@@ -825,6 +825,24 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(c);
             },
           ),
+          // 悬浮球：半透明停靠在正文边缘的小球，点开把布局编辑器「悬浮球」槽里的
+          // 按钮以弧形环绕展开。纯 Flutter chrome，setter 内部经 onChromeReloadLive
+          // 让开着的书重建一次；不改预留高，无需重锚。
+          SettingsSwitchItem(
+            id: 'reading_controls.floating_ball',
+            title: t.reader_floating_ball,
+            subtitle: t.reader_floating_ball_hint,
+            icon: Icons.blur_circular_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 16,
+            ),
+            value: (SettingsContext c) => c.readerSource.readerFloatingBall,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderFloatingBall(value);
+              c.refresh();
+            },
+          ),
         ],
       ),
       // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；

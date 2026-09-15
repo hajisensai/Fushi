@@ -456,6 +456,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/widgets/swipe_dismiss_wrapper_test.dart',
   'reading/Reverse keyboard left/right page-turn direction':
       'test/reader/reader_space_pause_test.dart + test/shortcuts/global_navigation_test.dart',
+  // 悬浮球开关：生效点是阅读器页 Stack 里挂不挂 ReaderFloatingBall（纯 Flutter
+  // chrome，非 reader CSS / 主题树）；球本身的收起 / 弧形展开 / 拖动换边由专项
+  // widget 测试覆盖。
+  'reading/Floating ball': 'test/reader/reader_floating_ball_test.dart',
   // TODO-436/407②：查词弹窗"滑动关闭"开关。归「查词」分组（destId=lookup）。生效点
   // 在 DictionaryPopupLayer 的 swipe 边界（仅顶栏可滑）+ 平台默认纯函数
   // ReaderSettings.defaultSwipeToClose，由专项 widget 行为 + 纯函数真值表测试覆盖
