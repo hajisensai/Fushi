@@ -2584,9 +2584,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 手动计时开关：暂停 → `stop()` 结算并封段；继续 → `start()` 重锚 tick 起点开
   /// 新段。旗标同时门住 [_ensureStudyClock] 与生命周期 resumed 的自动起表。
   ///
-  /// 入口只有底部状态行左侧的计时器（[ReaderStatusFooter.onTapTracker]）——在正文
-  /// 里点，停 / 续当场生效。统计浮层里曾另有一个同功能按钮，但开浮层本身就经
-  /// [_withStudyClockPaused] 停表（BUG-2208），层内那个按钮改不动当下的运行态。
+  /// 入口是**正文里那颗计时开关键**（[ReaderStudyClockButton]）：状态行形态在
+  /// [ReaderStatusFooter.onTapTracker]（连同整块读数的命中区），播放条唤出、状态行
+  /// 让位（BUG-2467）后在 [ReaderStatusInline.onToggleTimer]——两种底部形态下那颗键
+  /// 都在场且都真的可点，停 / 续当场生效。统计侧栏里还有一颗同源的暂停键
+  /// （`_SessionClock`，侧栏不遮正文故不停表）。
   void _toggleStudyClockManualPause() {
     _ensureStudyClock();
     final bool pause = !_studyClockManualPause;
@@ -2769,6 +2771,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         showTimer: ReaderFushiSource.instance.showReadingTimer,
         showProgress: ReaderFushiSource.instance.showTopProgressBar,
         textColor: _themeTextColor(),
+        onToggleTimer: _toggleStudyClockManualPause,
       );
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建

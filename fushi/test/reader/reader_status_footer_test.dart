@@ -323,7 +323,8 @@ void main() {
       expect(find.text('52.4%'), findsOneWidget);
       expect(find.byType(ReaderStatusProgressTrack), findsOneWidget,
           reason: '百分比前带一段短进度条');
-      expect(find.byIcon(Icons.timer_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.pause_rounded), findsOneWidget,
+          reason: '计时中画 ⏸（点了会停），与统计侧栏那颗暂停键同一套符号');
 
       ms = 61000;
       await tester.pump(const Duration(milliseconds: 150));
@@ -331,17 +332,61 @@ void main() {
           reason: '秒表由组件自己的 tick 驱动，不依赖父级重建');
     });
 
-    testWidgets('paused state swaps to the timer-off icon',
+    testWidgets('paused state swaps the toggle to play',
         (WidgetTester tester) async {
       bool active = true;
       await tester.pumpWidget(host(
         totals: () => (durationMs: 0, chars: 0, active: active),
+        onTapTracker: () {},
       ));
-      expect(find.byIcon(Icons.timer_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
       active = false;
       await tester.pump(const Duration(milliseconds: 150));
-      expect(find.byIcon(Icons.timer_off_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.timer_outlined), findsNothing);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget,
+          reason: '已停画 ▶：点它是「继续计时」');
+      expect(find.byIcon(Icons.pause_rounded), findsNothing);
+    });
+
+    // 此前这里是一枚纯装饰的秒表字形：图标报状态、点它没有任何反馈，能停表的只有
+    // 包在外面那层看不见的 GestureDetector。现在它是一颗真的 MD3 IconButton。
+    testWidgets('the clock icon itself is a button that toggles the timer',
+        (WidgetTester tester) async {
+      int taps = 0;
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        onTapTracker: () => taps++,
+      ));
+      final Finder button = find.byType(ReaderStudyClockButton);
+      expect(button, findsOneWidget);
+      expect(find.descendant(of: button, matching: find.byType(IconButton)),
+          findsOneWidget,
+          reason: '是 MD3 IconButton（state layer + ripple + tooltip），不是裸 Icon');
+      await tester.tap(button);
+      await tester.pump();
+      expect(taps, 1);
+
+      // 视觉高度 == 预留高度是 chrome 铁律：IconButton 默认会把自己裹进 48dp 触摸
+      // 靶，那会把 28px 的状态行撑成 48px，正文跟着被挤。
+      expect(tester.getRect(button).height, kReaderStatusFooterHeight);
+      expect(tester.getRect(find.byType(ReaderStatusFooter)).height,
+          kReaderStatusFooterHeight);
+    });
+
+    testWidgets('the toggle stays out of the focus ring',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        onTapTracker: () {},
+      ));
+      // TODO-700：状态行是纯指针面。裸 IconButton 默认可聚焦，不排除就会往 Tab 环
+      // 里塞一个不受 FushiFocusController 管的节点。
+      final Focus focus = tester.widget<Focus>(find
+          .descendant(
+            of: find.byType(ReaderStudyClockButton),
+            matching: find.byType(Focus),
+          )
+          .first);
+      expect(focus.canRequestFocus, isFalse);
     });
 
     testWidgets('progress hidden by the switch or when total unknown',
@@ -371,8 +416,8 @@ void main() {
       ));
       expect(find.byKey(const ValueKey<String>('fushi_status_tracker')),
           findsNothing);
-      expect(find.byIcon(Icons.timer_outlined), findsNothing,
-          reason: '计时器图标与读数一起隐藏');
+      expect(find.byType(ReaderStudyClockButton), findsNothing,
+          reason: '计时开关键与读数一起隐藏');
       final Finder progress =
           find.byKey(const ValueKey<String>('fushi_status_progress'));
       expect(progress, findsOneWidget);
@@ -479,10 +524,11 @@ void main() {
           .getRect(find.byKey(const ValueKey<String>('fushi_status_progress')));
 
       // 两段读数合起来的中点落在整条的中点上（内边距左右对称）。左边界要量到
-      // 计时器**图标**：计时文字左边还有图标 + 间距，拿文字左缘算会偏出去 10px。
-      final Rect icon = tester.getRect(find.byIcon(Icons.timer_outlined));
-      expect((icon.left + progress.right) / 2, closeTo(strip.center.dx, 1));
-      expect(icon.left, lessThan(tracker.left));
+      // 计时器**按钮**（BUG-2533 起它是 [ReaderStudyClockButton]，不再是那枚纯装饰
+      // 的秒表字形）：计时文字左边还有按钮 + 间距，拿文字左缘算会偏出去。
+      final Rect clock = tester.getRect(find.byType(ReaderStudyClockButton));
+      expect((clock.left + progress.right) / 2, closeTo(strip.center.dx, 1));
+      expect(clock.left, lessThan(tracker.left));
       expect(strip.right - progress.right, greaterThan(16),
           reason: '不再贴右缘 16 的基线——那是它独自在屏底时的形态');
       // 顺序不变：计时块仍在进度左边（与 inline 形态同序）。
@@ -508,6 +554,77 @@ void main() {
       await tester.tapAt(Offset(tracker.center.dx, strip.top + 2));
       await tester.tapAt(Offset(tracker.center.dx, strip.bottom - 2));
       expect(trackerTaps, 2, reason: '计时块命中区要撑满整条行高，不是只有那一行文字');
+    });
+  });
+
+  // 播放条唤出后状态行整条让位（BUG-2467），底部那份读数就只剩内联形态——此前它
+  // **整块不接指针**：屏幕上写着「计时中」的那颗图标点一百下也不会停表。
+  group('inline', () {
+    Widget host({
+      required StudySessionTotals Function() totals,
+      bool showTimer = true,
+      bool showProgress = true,
+      VoidCallback? onToggleTimer,
+    }) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: 56,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  ReaderStatusInline(
+                    sessionTotals: totals,
+                    currentChars: 64988,
+                    totalChars: 123962,
+                    showTimer: showTimer,
+                    showProgress: showProgress,
+                    textColor: Colors.white,
+                    onToggleTimer: onToggleTimer,
+                    tick: const Duration(milliseconds: 100),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('the clock icon toggles the timer from the playback bar',
+        (WidgetTester tester) async {
+      int taps = 0;
+      bool active = true;
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: active),
+        onToggleTimer: () => taps++,
+      ));
+      expect(find.text('0:00'), findsOneWidget);
+      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+
+      await tester.tap(find.byType(ReaderStudyClockButton));
+      await tester.pump();
+      expect(taps, 1, reason: '播放条里的那颗计时图标必须真的可点');
+
+      active = false;
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    });
+
+    testWidgets('the toggle hides with the timer switch',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        showTimer: false,
+        onToggleTimer: () {},
+      ));
+      expect(find.byType(ReaderStudyClockButton), findsNothing);
+      expect(find.byKey(const ValueKey<String>('fushi_bar_status_tracker')),
+          findsNothing);
+      expect(find.byType(ReaderStatusProgressTrack), findsOneWidget,
+          reason: '进度段与计时段互不连带');
     });
   });
 

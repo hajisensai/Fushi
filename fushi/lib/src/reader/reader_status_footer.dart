@@ -6,6 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 
 import 'package:fushi/src/reader/reader_chrome_floating.dart'
     show kTopProgressFontSize;
+import 'package:fushi/utils.dart';
 
 /// 各平台共用的阅读器底部状态行。
 ///
@@ -197,6 +198,76 @@ String? readerProgressLabel({required int? current, required int? total}) {
   final double? ratio = readerProgressRatio(current: current, total: total);
   if (ratio == null) return null;
   return '${(ratio * 100).toStringAsFixed(1)}%';
+}
+
+/// 播放条内联形态里那颗计时开关键的边长（逻辑 px）。播放条本身 56 高，容得下比
+/// 状态行（行高就是上限）更大的一颗，与条上其余传输键同一密度。
+const double kReaderStatusInlineClockButtonSize = 32;
+
+/// 学习计时开关键：状态行 / 播放条右端那颗「计时中 ⏸ / 已停 ▶」。
+///
+/// 它取代此前那枚**纯装饰**的秒表字形（`Icons.timer_outlined` /
+/// `Icons.timer_off_outlined`）：那个 [Icon] 只报状态，点下去没有任何 MD3 反馈；
+/// 状态行形态好歹整块裹在一层 [GestureDetector] 里（点文字能停表，但屏幕上没有
+/// 任何东西说它可点），播放条内联形态（[ReaderStatusInline]）更是整块不接指针——
+/// 那里写着「计时中」的图标点一百下也不会停表。现在它是一颗真的 MD3 [IconButton]：
+/// state layer + ripple + tooltip，点一下当场停 / 续表。
+///
+/// 图标与 tooltip 跟统计侧栏那颗暂停键同源（`reader_statistics_sheet.dart` 的
+/// `_SessionClock`，同一个 `_toggleStudyClockManualPause` 入口）：同一个动作只用一套
+/// 符号——计时中画 ⏸（点了会停），已停画 ▶（点了会续），文案复用同一对 i18n key。
+///
+/// 尺寸是方的 [size]，状态行里就等于整条行高（[kReaderStatusFooterHeight]）：视觉
+/// 高度 == 预留高度是 chrome 铁律，按钮不能比行高多一个像素，否则就是挤正文。为此
+/// 必须显式 `tapTargetSize: shrinkWrap`——[IconButton] 默认按
+/// `ThemeData.materialTapTargetSize` 把自己裹进 48dp 触摸靶，那会把 28px 的状态行
+/// 直接撑成 48px。
+///
+/// [ExcludeFocus]：状态行与播放条内联读数是纯指针面，不进焦点遍历池（TODO-700
+/// 不变式）。裸 [IconButton] 默认可聚焦，不排除就会往 Tab 环里塞一个不受
+/// `FushiFocusController` 管的节点。
+class ReaderStudyClockButton extends StatelessWidget {
+  const ReaderStudyClockButton({
+    super.key,
+    required this.active,
+    required this.color,
+    required this.onPressed,
+    this.size = kReaderStatusFooterHeight,
+  });
+
+  /// 计时是否在走（[StudySessionTotals.active]）。与同屏其它计时指示同一读口。
+  final bool active;
+
+  /// 阅读器纸张主题的前景色（已调过透明度的 muted）。不读全局 Material 色。
+  final Color color;
+
+  /// 停 / 续表。为 null 时按钮呈禁用态（生产路径恒有值）。
+  final VoidCallback? onPressed;
+
+  /// 按钮边长；图标取其一半。
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeFocus(
+      child: IconButton(
+        icon: Icon(
+          active ? Icons.pause_rounded : Icons.play_arrow_rounded,
+          key: ValueKey<bool>(active),
+        ),
+        color: color,
+        iconSize: size / 2,
+        padding: EdgeInsets.zero,
+        constraints: BoxConstraints.tightFor(width: size, height: size),
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        tooltip:
+            active ? t.reader_stats_clock_pause : t.reader_stats_clock_resume,
+        onPressed: onPressed,
+      ),
+    );
+  }
 }
 
 /// 状态行 / 播放条里的短进度条：一段圆角轨道 + 已读比例填充。
@@ -438,15 +509,17 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            Icon(
-                              totals.active
-                                  ? Icons.timer_outlined
-                                  : Icons.timer_off_outlined,
-                              key: ValueKey<bool>(totals.active),
-                              size: kReaderStatusFooterFontSize + 2,
+                            // 图标本身就是停 / 续表的按钮（[ReaderStudyClockButton]）；
+                            // 外面那层 [_hitTarget] 仍在，点读数文字也照停——28px 行里
+                            // 一颗 28px 的按钮命中区仍嫌小，多一条路不多。
+                            ReaderStudyClockButton(
+                              key: const ValueKey<String>(
+                                  'fushi_status_clock_toggle'),
+                              active: totals.active,
                               color: muted,
+                              onPressed: widget.onTapTracker,
                             ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 2),
                             Flexible(
                               child: Text(
                                 readerTrackerLabel(totals),
@@ -514,6 +587,7 @@ class ReaderStatusInline extends StatefulWidget {
     required this.showTimer,
     required this.showProgress,
     required this.textColor,
+    this.onToggleTimer,
     this.tick = const Duration(seconds: 1),
   });
 
@@ -523,6 +597,12 @@ class ReaderStatusInline extends StatefulWidget {
   final bool showTimer;
   final bool showProgress;
   final Color textColor;
+
+  /// 停 / 续表（与状态行的 [ReaderStatusFooter.onTapTracker] 同一入口
+  /// `_toggleStudyClockManualPause`）。此前内联形态整块不接指针：播放条一唤出，
+  /// 状态行让位（BUG-2467），屏幕上就只剩这一份写着「计时中」的读数，而它点不动。
+  final VoidCallback? onToggleTimer;
+
   final Duration tick;
 
   @override
@@ -577,12 +657,16 @@ class _ReaderStatusInlineState extends State<ReaderStatusInline> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (widget.showTimer) ...<Widget>[
-          Icon(
-            totals.active ? Icons.timer_outlined : Icons.timer_off_outlined,
-            size: kReaderStatusFooterFontSize + 2,
+          // 播放条上一排都是按钮，这里也给一颗真按钮（状态行形态里那层「点读数也
+          // 停表」的兜底是 28px 行高逼出来的，56px 的播放条不需要）。
+          ReaderStudyClockButton(
+            key: const ValueKey<String>('fushi_bar_status_clock_toggle'),
+            active: totals.active,
             color: muted,
+            size: kReaderStatusInlineClockButtonSize,
+            onPressed: widget.onToggleTimer,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 2),
           Text(
             readerTrackerLabel(totals),
             key: const ValueKey<String>('fushi_bar_status_tracker'),
