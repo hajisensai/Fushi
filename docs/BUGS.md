@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2345 条。点号进各自文件。
+> 共 2350 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,11 @@
 | [BUG-2545](bugs/BUG-2545-toc-current-chapter-unmarked.md) | ✅ | ✅ | 阅读器导航「章节列表」不标当前章节 |
 | [BUG-2544](bugs/BUG-2544-video-background-pause-no-resume.md) | ✅ | ✅ | 视频切到后台被暂停后回前台不自动续播 |
 | [BUG-2543](bugs/BUG-2543-english-posless-yomitan-deinflection.md) | ✅ | ✅ | 英语无词性 Yomitan 词典的变形还原全部失效，且不规则形无还原规则 |
+| [BUG-2541](bugs/BUG-2541-ass-outline-per-char-overlap.md) | ✅ | ✅ | ASS 描边逐字叠画啃进相邻字填充、细描边被夹下限（字重随窗口变） |
+| [BUG-2540](bugs/BUG-2540-ass-fax-shear-overwrites-rotation.md) | ✅ | ✅ | ASS \fax 切变覆盖 \frz 旋转矩阵项（招牌歪斜） |
+| [BUG-2539](bugs/BUG-2539-ass-layer-zorder.md) | ✅ | ✅ | ASS Layer 不参与绘制 z 序（招牌盖住对白） |
+| [BUG-2538](bugs/BUG-2538-ass-drawing-dropped.md) | ✅ | ✅ | ASS \p 矢量绘图被整条丢弃（招牌白底遮罩不画） |
+| [BUG-2537](bugs/BUG-2537-ass-sign-hover-controls.md) | ✅ | ✅ | ASS 定位字幕落到静止鼠标下即唤出控制条、且随控制条上抬 |
 | [BUG-2532](bugs/BUG-2532-ios-ankimobile-mined-detection.md) | ✅ | ✅ | iOS AnkiMobile 不显示已制卡：加卡回跳的 x-success 被丢弃，isDuplicate 恒 false |
 | [BUG-2529](bugs/BUG-2529-audiobook-chapter-transition-stuck-on-nav-abort.md) | ✅ | ✅ | 跨章导航中止不解除跨章守卫，安卓切后台后上下句/高亮跟随永久失效 |
 | [BUG-2528](bugs/BUG-2528-audiobook-panel-short-viewport.md) | ✅ | ✅ | 有声书面板在矮窗（手机横屏）下分段条以下的内容滚不出来 |
