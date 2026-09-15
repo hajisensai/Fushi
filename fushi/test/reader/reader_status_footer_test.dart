@@ -159,6 +159,31 @@ void main() {
       expect(vis(floating: true, transient: true, absorbed: true), isFalse);
     });
 
+    test('inline: 横屏且够宽才并进底栏那一行；竖屏一律分层', () {
+      bool inline({
+        bool enabled = true,
+        bool landscape = true,
+        double width = 698,
+      }) =>
+          readerPlaybackStatusInline(
+            enabled: enabled,
+            landscape: landscape,
+            width: width,
+          );
+      // 用户 2026-09-14「横屏应该同层进度显示」：横屏手机 ~700 逻辑 px 放得下
+      // 五颗传输键加一串读数，此前借用顶栏的 760 阈值把它判成窄屏、读数被踢到
+      // 底栏之下单独占一行。
+      expect(inline(), isTrue);
+      expect(inline(landscape: false), isFalse, reason: '竖屏一律分层');
+      expect(
+        inline(width: kReaderStatusInlineMinWidth - 1),
+        isFalse,
+        reason: '横屏但窄到传输键都挤，读数不进同一行',
+      );
+      expect(inline(width: kReaderStatusInlineMinWidth), isTrue);
+      expect(inline(enabled: false), isFalse, reason: '两个读数开关都关 → 无读数可并');
+    });
+
     test('edge line: only while the floating footer is hidden', () {
       expect(
         readerProgressEdgeLineVisible(
@@ -260,6 +285,7 @@ void main() {
       int? total = 123962,
       bool showTimer = true,
       bool showProgress = true,
+      bool centered = false,
       VoidCallback? onTap,
       VoidCallback? onTapTracker,
       VoidCallback? onTapProgress,
@@ -274,6 +300,7 @@ void main() {
               totalChars: total,
               showTimer: showTimer,
               showProgress: showProgress,
+              centered: centered,
               textColor: Colors.white,
               backgroundColor: Colors.black,
               tick: const Duration(milliseconds: 100),
@@ -434,6 +461,34 @@ void main() {
           reason: '右端内边距仍是 16，进度贴着右缘');
       expect(tracker.left - strip.left, greaterThan(32),
           reason: '左端留白（点它唤出 / 收起 chrome），计时块不再钉在左下角');
+    });
+
+    testWidgets('centered: 读数并进底栏那块遮罩时居中，不再贴右角',
+        (WidgetTester tester) async {
+      // 竖屏读数独立成行时它是底栏 Column 的最后一行，上面一排传输键是居中的；
+      // 读数贴在右角会和它们错开成两个重心（用户 2026-09-14「竖屏做到最底部
+      // 并且居中」）。
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        centered: true,
+      ));
+      final Rect strip = tester.getRect(find.byType(ReaderStatusFooter));
+      final Rect tracker = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_tracker')));
+      final Rect progress = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_progress')));
+
+      // 两段读数合起来的中点落在整条的中点上（内边距左右对称）。左边界要量到
+      // 计时器**图标**：计时文字左边还有图标 + 间距，拿文字左缘算会偏出去 10px。
+      final Rect icon = tester.getRect(find.byIcon(Icons.timer_outlined));
+      expect((icon.left + progress.right) / 2, closeTo(strip.center.dx, 1));
+      expect(icon.left, lessThan(tracker.left));
+      expect(strip.right - progress.right, greaterThan(16),
+          reason: '不再贴右缘 16 的基线——那是它独自在屏底时的形态');
+      // 顺序不变：计时块仍在进度左边（与 inline 形态同序）。
+      final Rect track = tester.getRect(
+          find.byKey(const ValueKey<String>('fushi_status_progress_track')));
+      expect(tracker.right, lessThanOrEqualTo(track.left));
     });
 
     testWidgets('tracker hit box spans the full strip height',

@@ -1496,8 +1496,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       right: MediaQuery.viewPaddingOf(context).right,
       // 桌面端底栏（有声书播放条）唤出时盖住状态行，但把状态行的文字并进播放条右端
       // （[_buildBarStatusText]）——底部只有一条，而不是播放条 + 状态行叠两条。
-      // 窄屏读数独立成行时底栏坐在状态行的底部带之上（带已含系统底 inset）。
-      bottom: _separatePlaybackStatus ? _statusFooterPaintedBand : 0,
+      // 竖屏读数独立成行时它并进这块遮罩的最底部（[_statusFooterInBottomBar]），
+      // 底栏整体仍贴屏底；只有读数行画在别处时底栏才坐在它的底部带之上。
+      bottom: _separatePlaybackStatus && !_statusFooterInBottomBar
+          ? _statusFooterPaintedBand
+          : 0,
       // BUG-1692：底栏排在 WebView **之后**绘制。不自带 RepaintBoundary 就会并进
       // 页面级 RepaintBoundary 那张 cull rect = 整窗的 PictureLayer，macOS engine
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
@@ -1514,13 +1517,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   baseHeight: _ReaderFushiPageState._readerChromeBaseHeight,
                   child: bar,
                 ),
-                ColoredBox(
-                  color: _chromeSurfaceColor(),
-                  child: SizedBox(
-                    height: _separatePlaybackStatus ? 0 : _stableBottomInset,
-                    width: double.infinity,
+                // 竖屏读数行并进这块遮罩的最底部（居中），底栏的背景因此一路盖到
+                // 屏底——它自带背景与系统底 inset 带，故与下面那条 inset 垫片
+                // 二选一，不会叠两层。
+                if (_statusFooterInBottomBar)
+                  _buildStatusFooterRow(centered: true)
+                else
+                  ColoredBox(
+                    color: _chromeSurfaceColor(),
+                    child: SizedBox(
+                      height: _separatePlaybackStatus ? 0 : _stableBottomInset,
+                      width: double.infinity,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -2678,34 +2687,42 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 点状态行 = 点顶部进度 pill 的同义动作（悬浮态唤出 / 收起，挤压态切底栏）。
   /// 纯指针面，不进焦点遍历池（TODO-700 不变式）。
   Widget _buildStatusFooter() {
-    if (!_statusFooterShouldPaint) return const SizedBox.shrink();
+    // 读数并进底栏那块遮罩时由 [_wrapBottomChromeBar] 画（底部只有一块面、一行
+    // 居中读数），这里不再单独铺一层，否则同一串读数上下两份。
+    if (!_statusFooterShouldPaint || _statusFooterInBottomBar) {
+      return const SizedBox.shrink();
+    }
     return Positioned(
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,
       bottom: 0,
       // BUG-1692：状态行排在 WebView **之后**绘制，必须自带 RepaintBoundary，否则并进
       // 页面级 PictureLayer 的整窗 cull rect，macOS 上整块 WebView 收不到鼠标事件。
-      child: RepaintBoundary(
-        child: ReaderStatusFooter(
-          key: const ValueKey<String>('fushi_status_footer'),
-          bottomInset: _stableBottomInset,
-          sessionTotals: _readingSessionTotals,
-          currentChars: _progressCurrentChars,
-          totalChars: _progressTotalChars,
-          showTimer: ReaderFushiSource.instance.showReadingTimer,
-          showProgress: ReaderFushiSource.instance.showTopProgressBar,
-          textColor: _themeTextColor(),
-          backgroundColor: _chromeSurfaceColor(),
-          onTap: _anyChromeFloating
-              ? () => _handleFloatingChromeReveal()
-              : _toggleChrome,
-          // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
-          onTapTracker: _toggleStudyClockManualPause,
-          onTapProgress: _openReadingStatistics,
-        ),
-      ),
+      child: RepaintBoundary(child: _buildStatusFooterRow(centered: false)),
     );
   }
+
+  /// 读数行本体。屏底独立成行（[_buildStatusFooter]）与并进底栏遮罩最底部
+  /// （[_wrapBottomChromeBar]，[_statusFooterInBottomBar]）两处共用同一份，
+  /// 差别只有贴右 / 居中。
+  Widget _buildStatusFooterRow({required bool centered}) => ReaderStatusFooter(
+        key: const ValueKey<String>('fushi_status_footer'),
+        bottomInset: _stableBottomInset,
+        centered: centered,
+        sessionTotals: _readingSessionTotals,
+        currentChars: _progressCurrentChars,
+        totalChars: _progressTotalChars,
+        showTimer: ReaderFushiSource.instance.showReadingTimer,
+        showProgress: ReaderFushiSource.instance.showTopProgressBar,
+        textColor: _themeTextColor(),
+        backgroundColor: _chromeSurfaceColor(),
+        onTap: _anyChromeFloating
+            ? () => _handleFloatingChromeReveal()
+            : _toggleChrome,
+        // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
+        onTapTracker: _toggleStudyClockManualPause,
+        onTapProgress: _openReadingStatistics,
+      );
 
   /// 悬浮态状态行收起后留在屏底的细进度线（[ReaderProgressEdgeLine]）：
   /// 贴 `bottom: 0`，不占预留、不吃指针；状态行唤出时它让位（同一真相源
