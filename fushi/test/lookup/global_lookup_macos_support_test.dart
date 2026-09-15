@@ -9,13 +9,17 @@ import 'package:path/path.dart' as p;
 
 void main() {
   group('GlobalLookupController.popupAssetsDirFor', () {
+    // Path styles are passed explicitly: the global `p` context follows the
+    // host OS, so a Windows-style path split on a Linux CI runner would yield
+    // ['.', ...] (the original CI red of PR #1490).
     test('macOS resolves into Contents/Frameworks/App.framework', () {
       final String dir = GlobalLookupController.popupAssetsDirFor(
         '/Applications/Fushi.app/Contents/MacOS/Fushi',
         isMacOS: true,
+        context: p.posix,
       );
       expect(
-        p.split(dir).skipWhile((String s) => s != 'Fushi.app').toList(),
+        p.posix.split(dir).skipWhile((String s) => s != 'Fushi.app').toList(),
         <String>[
           'Fushi.app',
           'Contents',
@@ -34,8 +38,10 @@ void main() {
       final String dir = GlobalLookupController.popupAssetsDirFor(
         r'C:\Program Files\Fushi\fushi.exe',
         isMacOS: false,
+        context: p.windows,
       );
-      expect(p.split(dir).skip(p.split(dir).length - 5).toList(), <String>[
+      final List<String> parts = p.windows.split(dir);
+      expect(parts.skip(parts.length - 5).toList(), <String>[
         'Fushi',
         'data',
         'flutter_assets',

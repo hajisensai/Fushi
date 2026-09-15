@@ -613,14 +613,20 @@ class GlobalLookupController {
   ///   · macOS: `<App>.app/Contents/Frameworks/App.framework/Resources/
   ///     flutter_assets/assets/popup` (the executable lives in Contents/MacOS;
   ///     same bundle layout webview_asset_url.dart probes for in-app assets).
+  ///
+  /// [context] is the path style to resolve with (defaults to the running
+  /// platform's); tests pass `p.windows` / `p.posix` explicitly so the
+  /// Windows layout can be asserted on a Linux CI runner and vice versa.
   @visibleForTesting
   static String popupAssetsDirFor(
     String resolvedExecutable, {
     required bool isMacOS,
+    p.Context? context,
   }) {
-    final String exeDir = p.dirname(resolvedExecutable);
+    final p.Context ctx = context ?? p.context;
+    final String exeDir = ctx.dirname(resolvedExecutable);
     if (isMacOS) {
-      return p.normalize(p.join(
+      return ctx.normalize(ctx.join(
         exeDir,
         '..',
         'Frameworks',
@@ -631,7 +637,7 @@ class GlobalLookupController {
         'popup',
       ));
     }
-    return p.join(exeDir, 'data', 'flutter_assets', 'assets', 'popup');
+    return ctx.join(exeDir, 'data', 'flutter_assets', 'assets', 'popup');
   }
 
   /// TODO-1066 — app 外查词的**触发源无关**入口：抓前台程序当前选中的文本，
