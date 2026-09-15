@@ -92,13 +92,22 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // BUG-2505：本端已有 EPUB 但还没有配套有声书的 bookKey，要与远端 hasAudiobook
       // 对上——这些书被下面的去重整条藏掉，它们的有声书只能从本地书卡菜单补拉。
       // 漫画架与有声书无交集，不查。
-      final Set<String> localAudiobookKeys = _mangaOnly
-          ? const <String>{}
-          : <String>{
-              for (final AudiobookRow ab
-                  in await appModel.database.getAllAudiobooks())
-                ab.bookKey,
-            };
+      //
+      // BUG-2551：判据是「音频**文件**此刻还在不在」，不是「有没有 Audiobooks 行」。
+      // 一本零音频 / 断链的本地有声书（坏包落地、或引用导入后原文件被移走）在表里
+      // 和正常有声书长得一模一样，按行算就会被当成「本端已有有声书」——于是
+      // BUG-2505 好不容易补上的那个补拉入口又被挡掉：用户第一次没下成功之后，
+      // 书架上再也找不到第二次下载的地方。
+      final Set<String> localAudiobookKeys = <String>{};
+      if (!_mangaOnly) {
+        for (final AudiobookRow ab
+            in await appModel.database.getAllAudiobooks()) {
+          if (await audiobookAudioIsIntact(
+              audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot)) {
+            localAudiobookKeys.add(ab.bookKey);
+          }
+        }
+      }
       // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
       // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
       // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
@@ -1083,12 +1092,34 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
     final List<SrtBookRow> localSrt = await appModel.database.getAllSrtBooks();
     final Set<String> localUids = localSrt.map((SrtBookRow r) => r.uid).toSet();
+    // BUG-2551：本地已有同 uid 行**不等于**已经拿到这本的音频。一次落成零音频 /
+    // 断链的本地行会让占位卡永久消失——用户第一次没下成功之后就再也下不了。
+    //
+    // 但 standalone 纯字幕书**合法地**没有音频，不能一律「音频不完好就重新挂卡」，
+    // 否则纯字幕书会永远挂着一张下不完的下载卡。所以要两个条件同时成立才留卡：
+    // 对端那本**确实有音频**（`hasAudio == true`；旧 host 不下发 → null → 不留卡，
+    // 保持旧行为），而本地这本的音频不完好。
+    final Map<String, SrtBookRow> localByUid = <String, SrtBookRow>{
+      for (final SrtBookRow r in localSrt) r.uid: r,
+    };
+    final Set<String> needsAudio = <String>{};
+    for (final RemoteAudiobookInfo ab in all) {
+      if (!ab.isStandaloneSrt || ab.identity.isEmpty) continue;
+      if (ab.hasAudio != true) continue;
+      final SrtBookRow? local = localByUid[ab.identity];
+      if (local == null) continue;
+      if (!await audiobookAudioIsIntact(
+          audioPathsJson: local.audioPathsJson, audioRoot: local.audioRoot)) {
+        needsAudio.add(ab.identity);
+      }
+    }
     return (
       audiobooks: <RemoteAudiobookInfo>[
         for (final RemoteAudiobookInfo ab in all)
           if (ab.isStandaloneSrt &&
               ab.identity.isNotEmpty &&
-              !localUids.contains(ab.identity))
+              (!localUids.contains(ab.identity) ||
+                  needsAudio.contains(ab.identity)))
             ab,
       ],
       failed: false,

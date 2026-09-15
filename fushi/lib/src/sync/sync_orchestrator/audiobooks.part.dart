@@ -136,16 +136,31 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     final List<AudiobookRow> localAudiobooks = await _db.getAllAudiobooks();
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
 
-    final Set<String> localKeys = <String>{
-      for (final AudiobookRow ab in localAudiobooks) ab.bookKey,
-    };
+    // union 两侧的判据都是「音频**文件**在不在」，不是「有没有行」（BUG-2551）。
+    //
+    // 本端：一本零音频 / 断链的 Audiobooks 行（坏包落地、或引用导入后原文件被移走）
+    // 在表里和正常有声书长得一模一样。把它算进 localKeys 会同时坏两件事——它挡住
+    // 从 host 拉回音频（key 在 localKeys 里 → 永不进 toPull），又会被当成本端独有
+    // 推给 host（推上去的还是个零音频包）。当成「本端缺」才对。
+    final Set<String> localKeys = <String>{};
+    for (final AudiobookRow ab in localAudiobooks) {
+      if (await audiobookAudioIsIntact(
+          audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot)) {
+        localKeys.add(ab.bookKey);
+      }
+    }
     // 纯 SRT（standalone）远端有声书（bookKey 空、身份=uid）**不进自动 union**：与
     // 远端独有 EPUB 一样是「手动下载才落地」（TODO-1291 / 书架远端占位卡），自动
     // sweep 只处理 srt-backed（bookKey 非空）有声书文件补拉，避免把独有 standalone
     // 书自动灌进对端，也避免空 bookKey 污染 diff。
+    //
+    // 远端：`hasAudio == false` 的项同样不算「远端有」，否则 host 上的一本坏书会把
+    // 该 key 永久挡在 toPush 之外，client 再点多少次「立即同步」都补不上音频。
+    // `hasAudio == null` 是旧 host 不下发该字段 = 未知，按旧行为放行（不能当 false，
+    // 否则每轮 sweep 都会朝旧 host 重推所有有声书）。
     final Set<String> remoteKeys = <String>{
       for (final RemoteAudiobookInfo r in remoteAudiobooks)
-        if (r.bookKey.isNotEmpty) r.bookKey,
+        if (r.bookKey.isNotEmpty && r.hasAudio != false) r.bookKey,
     };
     // 本端已有 EPUB 的 bookKey 集合：Pull 只对「本端有书但缺音频」的远端项动作，
     // 避免落下无 EpubBooks 行可绑的孤儿有声书（importAudioDatabasePackage 不建书行）。

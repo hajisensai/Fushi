@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -983,8 +984,15 @@ void main() {
       chaptersJson: '["a"]',
       importedAt: 0,
     ));
+    // BUG-2551：这一行原本既没有 audioRoot 也没有 audioPathsJson——是一本**零音频**
+    // 的有声书行，却被用来代表「本端已有有声书」。判据改成问磁盘之后它就是「缺音频」，
+    // 该露补拉入口（见下一条用例）。本条要验的是「真有有声书就不露」，所以音频得真在。
+    final File localTrack = File('${pathProviderDir.path}/local_track01.mp3')
+      ..writeAsStringSync('audio bytes');
     await db.upsertAudiobook(AudiobooksCompanion.insert(
       bookKey: localKey,
+      audioRoot: Value(pathProviderDir.path),
+      audioPathsJson: Value(jsonEncode(<String>[localTrack.path])),
       alignmentFormat: 'srt',
       alignmentPath: '${pathProviderDir.path}/a.srt',
     ));
@@ -1033,6 +1041,72 @@ void main() {
         reason: '已经有有声书的书不该再露补拉入口');
     // 既有的本地导入入口仍在（菜单其余部分不受影响）。
     expect(find.text(t.audiobook_import), findsOneWidget);
+  });
+
+  testWidgets('BUG-2551: 本端有声书行零音频时书卡菜单仍露「从对端下载有声书」',
+      (WidgetTester tester) async {
+    const String title = 'Remote Book';
+    final String localKey = sanitizeTtuFilename(title);
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: localKey,
+      title: title,
+      epubPath: '${pathProviderDir.path}/remote_book3.epub',
+      extractDir: pathProviderDir.path,
+      chapterCount: 1,
+      chaptersJson: '["a"]',
+      importedAt: 0,
+    ));
+    // 一次没下成功留下的形状：Audiobooks 行在、字幕在、音频是空的。旧判据只看
+    // 「有没有这行」，于是补拉入口连同远端卡一起消失，用户再也下不了第二次。
+    await db.upsertAudiobook(AudiobooksCompanion.insert(
+      bookKey: localKey,
+      audioPathsJson: const Value('[]'),
+      alignmentFormat: 'srt',
+      alignmentPath: '${pathProviderDir.path}/a.srt',
+    ));
+    remoteClient = _FakeRemoteBookClient(
+      coverPath: remoteBookCover.path,
+      title: title,
+      hasAudiobook: true,
+    );
+    final MediaItem localItem = MediaItem(
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(localKey),
+      title: title,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      position: 0,
+      duration: 100,
+      canDelete: true,
+      canEdit: true,
+    );
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((ref) => appModel),
+        fushiBooksProvider.overrideWith(
+          (ref, language) => Future<List<MediaItem>>.value(
+            <MediaItem>[localItem],
+          ),
+        ),
+        srtBooksProvider.overrideWith(
+          (ref) => Future<List<SrtBook>>.value(shelfSrtBooks),
+        ),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          builder: (BuildContext context, Widget? child) =>
+              child ?? const SizedBox.shrink(),
+          home: Scaffold(body: buildPage()),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byKey(
+      ValueKey<String>('book_entry_${localItem.mediaIdentifier}'),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text(t.remote_book_audiobook_download), findsOneWidget,
+        reason: '有行但没音频 = 还没真拿到有声书，补拉入口必须还在');
   });
 }
 

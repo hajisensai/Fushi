@@ -199,15 +199,20 @@ class SyncAssetPackageService {
       srtAudioPaths: srtAudio.paths,
     );
 
-    // 「包里缺资源」不得伪装成成功：每一个没能进包的源文件都记进
-    // `manifest.missingResources` 随包 travel，导入端据此报错/给出诊断，而不是
-    // 编一个 basename 路径写进 DB（BUG-1577）。
-    final List<String> missingResources = <String>[
-      // folder 模式目录不存在 / 一个音频文件都没有：没有任何 audioPaths 可登记为
-      // 缺失，只能把 audioRoot 自己记下来，否则这个空包「空得毫无痕迹」。
+    // folder 模式目录不存在 / 一个音频文件都没有：没有任何 audioPaths 可登记为
+    // 缺失，只能把 audioRoot 自己记下来，否则这个空包「空得毫无痕迹」。
+    //
+    // 它与「某个具体音频文件缺失」**不是同一类失败**，故除了汇进
+    // `missingResources`（诊断文案），还单独下发 `unresolvedAudioRoots`：导入端
+    // 要能分开判——纯字幕书零音频是合法的，音频根解析失败不是（BUG-2551）。
+    final List<String> unresolvedAudioRoots = <String>[
       if (audiobookAudio.missingRoot != null) audiobookAudio.missingRoot!,
       if (srtAudio.missingRoot != null) srtAudio.missingRoot!,
     ];
+    // 「包里缺资源」不得伪装成成功：每一个没能进包的源文件都记进
+    // `manifest.missingResources` 随包 travel，导入端据此报错/给出诊断，而不是
+    // 编一个 basename 路径写进 DB（BUG-1577）。
+    final List<String> missingResources = <String>[...unresolvedAudioRoots];
 
     // 主 isolate：分配唯一文件名，建立 manifest 的 resources 映射（源路径→名）
     // 与 isolate 的 zip 内路径映射（resources/名→源路径）。
@@ -243,6 +248,9 @@ class SyncAssetPackageService {
       // 导出**不因部分缺失整包失败**——一本书缺 1 个文件不该让整个备份/同步中断，
       // 拒绝落库的判断留给导入端（它才知道哪些资源是必需的）。
       if (missingResources.isNotEmpty) 'missingResources': missingResources,
+      // 旧导入端忽略未知键 → 旧包/新包互通（BUG-2551）。
+      if (unresolvedAudioRoots.isNotEmpty)
+        'unresolvedAudioRoots': unresolvedAudioRoots,
     });
 
     outputFile.parent.createSync(recursive: true);
@@ -281,6 +289,8 @@ class SyncAssetPackageService {
     // 导出端记的缺失清单，只用于把错误信息说清楚；旧包没有这个键 → 空列表
     // （缺键绝不能让整包导入失败，用户手上有旧包）。
     final List<String> missingAtExport = _missingAtExport(manifest);
+    // 导出端声明了 audioRoot 却一个音频都枚举不出来的根（BUG-2551）；旧包无此键。
+    final List<String> unresolvedAudioRoots = _unresolvedAudioRoots(manifest);
 
     if (audiobook == null) {
       // 纯 SRT（standalone）有声书：bookKey 恒空、身份=uid、cue 走 uid 命名空间。
@@ -291,6 +301,7 @@ class SyncAssetPackageService {
         srtBook: srtBook,
         resources: resources,
         missingAtExport: missingAtExport,
+        unresolvedAudioRoots: unresolvedAudioRoots,
         cues: _listValue(manifest, 'cues'),
       );
       return;
@@ -318,6 +329,22 @@ class SyncAssetPackageService {
         .map((String path) =>
             _requiredResourcePath(targetDir, resources, path, missingAtExport))
         .toList();
+    // BUG-2551：srt-backed 有声书的不变式是「EPUB + 音频 + 对齐」——零个音频不是
+    // 一本安静的书，是一本坏书。上面的必需资源校验是 `.map()` 里的**逐元素**检查，
+    // 空列表一次都不执行，于是「导出端一个音频都没解析出来」的包一路静默落库：
+    // 对端收到字幕 / 对齐 / 封面、`audioPathsJson` 写成 `[]`、HTTP 200、同步报告
+    // 记一次成功。而空列表在书架的断链判据里又恰好算「没问题」（`hasMissingPaths`
+    // 对空列表返回 false），连红徽章都不亮——用户只看到「字幕同步了、音频没有」。
+    // 更糟的是它是个吸收态：host 一旦有了这行，下一轮 sweep 的 `remoteKeys` 就命中，
+    // client 永远不再重推。必须在写 DB 前抛出，让调用方把失败报出来。
+    if (audioPaths.isEmpty) {
+      throw SyncAssetPackageIncompleteException(
+        sourcePath: unresolvedAudioRoots.isNotEmpty
+            ? unresolvedAudioRoots.first
+            : 'audiobook:$bookKey/audio',
+        missingAtExport: missingAtExport,
+      );
+    }
     final String srtPath = _requiredResourcePath(
       targetDir,
       resources,
@@ -334,65 +361,75 @@ class SyncAssetPackageService {
       prefix: 'resources',
     );
 
-    await _db.upsertAudiobook(AudiobooksCompanion.insert(
-      bookKey: bookKey,
-      audioRoot: Value(targetDir.path),
-      audioPathsJson: Value(jsonEncode(audioPaths)),
-      alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
-      alignmentPath: alignmentPath,
-      healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
-      matchRatePct: Value(_nullableInt(audiobook, 'matchRatePct')),
-      healthMeasuredAt: Value(_nullableDate(audiobook, 'healthMeasuredAt')),
-      healthReason: Value(_nullableString(audiobook, 'healthReason')),
-      followAudio: Value(_nullableBool(audiobook, 'followAudio')),
-    ));
+    // 写库段必须原子（BUG-2551）：这三张表是**一本书**，分三次 await 写下去时，
+    // 任何一步抛出（磁盘满、标签表冲突、cue 批量写失败）都会把前面写下的行留在库里。
+    // 而书架的所有「补拉有声书」入口判据都是「有没有这行」——半成品行一落，占位卡、
+    // 书卡菜单、对比弹窗同时消失，用户再也没有第二次下载的入口。判据问磁盘只解决了
+    // 一半，写入不原子的话，判据再对也会被半成品骗过去。
+    //
+    // 解压刻意留在事务外：它是文件操作、耗时长，包进去等于整段持锁；且解压残留不会
+    // 让任何入口消失（资源目录里多几个文件无碍），真正致命的只有 DB 行。
+    await _db.transaction(() async {
+      await _db.upsertAudiobook(AudiobooksCompanion.insert(
+        bookKey: bookKey,
+        audioRoot: Value(targetDir.path),
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
+        alignmentPath: alignmentPath,
+        healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
+        matchRatePct: Value(_nullableInt(audiobook, 'matchRatePct')),
+        healthMeasuredAt: Value(_nullableDate(audiobook, 'healthMeasuredAt')),
+        healthReason: Value(_nullableString(audiobook, 'healthReason')),
+        followAudio: Value(_nullableBool(audiobook, 'followAudio')),
+      ));
 
-    await _db.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: _stringValue(srtBook, 'uid'),
-      title: _stringValue(srtBook, 'title'),
-      author: Value(_nullableString(srtBook, 'author')),
-      audioRoot: Value(targetDir.path),
-      audioPathsJson: Value(jsonEncode(audioPaths)),
-      srtPath: srtPath,
-      coverPath: Value(coverPath),
-      importedAt: _intValue(srtBook, 'importedAt'),
-      bookKey: Value(bookKey),
-    ));
+      await _db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: _stringValue(srtBook, 'uid'),
+        title: _stringValue(srtBook, 'title'),
+        author: Value(_nullableString(srtBook, 'author')),
+        audioRoot: Value(targetDir.path),
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        srtPath: srtPath,
+        coverPath: Value(coverPath),
+        importedAt: _intValue(srtBook, 'importedAt'),
+        bookKey: Value(bookKey),
+      ));
 
-    // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
-    // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
-    final Object? rawSrtTags = srtBook['tags'];
-    final List<String> srtTagNames = rawSrtTags is List
-        ? <String>[
-            for (final Object? t in rawSrtTags)
-              if (t != null && t.toString().isNotEmpty) t.toString(),
-          ]
-        : const <String>[];
-    if (srtTagNames.isNotEmpty) {
-      final String importedSrtUid = _stringValue(srtBook, 'uid');
-      for (final String name in srtTagNames) {
-        if (name.isEmpty) continue;
-        final int tagId = await _db.getOrCreateTagByName(name);
-        await _db.addTagToSrtBook(importedSrtUid, tagId);
+      // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
+      // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
+      final Object? rawSrtTags = srtBook['tags'];
+      final List<String> srtTagNames = rawSrtTags is List
+          ? <String>[
+              for (final Object? t in rawSrtTags)
+                if (t != null && t.toString().isNotEmpty) t.toString(),
+            ]
+          : const <String>[];
+      if (srtTagNames.isNotEmpty) {
+        final String importedSrtUid = _stringValue(srtBook, 'uid');
+        for (final String name in srtTagNames) {
+          if (name.isEmpty) continue;
+          final int tagId = await _db.getOrCreateTagByName(name);
+          await _db.addTagToSrtBook(importedSrtUid, tagId);
+        }
       }
-    }
 
-    await _db.replaceCuesForBook(
-      bookKey,
-      _listValue(manifest, 'cues').map((Object? raw) {
-        final Map<String, Object?> cue = _typedMap(raw);
-        return AudioCuesCompanion.insert(
-          bookKey: bookKey,
-          chapterHref: _stringValue(cue, 'chapterHref'),
-          sentenceIndex: _intValue(cue, 'sentenceIndex'),
-          textFragmentId: _stringValue(cue, 'textFragmentId'),
-          cueText: _stringValue(cue, 'cueText'),
-          startMs: _intValue(cue, 'startMs'),
-          endMs: _intValue(cue, 'endMs'),
-          audioFileIndex: _intValue(cue, 'audioFileIndex'),
-        );
-      }).toList(),
-    );
+      await _db.replaceCuesForBook(
+        bookKey,
+        _listValue(manifest, 'cues').map((Object? raw) {
+          final Map<String, Object?> cue = _typedMap(raw);
+          return AudioCuesCompanion.insert(
+            bookKey: bookKey,
+            chapterHref: _stringValue(cue, 'chapterHref'),
+            sentenceIndex: _intValue(cue, 'sentenceIndex'),
+            textFragmentId: _stringValue(cue, 'textFragmentId'),
+            cueText: _stringValue(cue, 'cueText'),
+            startMs: _intValue(cue, 'startMs'),
+            endMs: _intValue(cue, 'endMs'),
+            audioFileIndex: _intValue(cue, 'audioFileIndex'),
+          );
+        }).toList(),
+      );
+    });
   }
 
   /// 导入纯 SRT（standalone）有声书包：无 Audiobooks 行，身份=uid，bookKey 恒空。
@@ -404,6 +441,7 @@ class SyncAssetPackageService {
     required Map<String, Object?> srtBook,
     required Map<String, Object?> resources,
     required List<String> missingAtExport,
+    required List<String> unresolvedAudioRoots,
     required List<Object?> cues,
   }) async {
     final String uid = _stringValue(srtBook, 'uid');
@@ -416,6 +454,16 @@ class SyncAssetPackageService {
         .map((String path) =>
             _requiredResourcePath(targetDir, resources, path, missingAtExport))
         .toList();
+    // BUG-2551：standalone 与 srt-backed 在这里**有意不同**——纯字幕书本来就可以
+    // 一个音频都没有（`SrtBooks.audioRoot` / `audioPathsJson` 都是 nullable），
+    // 所以不能照搬「空即坏」。坏的是另一件事：导出端**声明了** audioRoot、却一个
+    // 音频都枚举不出来（目录被移走 / 已清空），那份声明过的音频真的丢了。
+    if (audioPaths.isEmpty && unresolvedAudioRoots.isNotEmpty) {
+      throw SyncAssetPackageIncompleteException(
+        sourcePath: unresolvedAudioRoots.first,
+        missingAtExport: missingAtExport,
+      );
+    }
     final String srtPath = _requiredResourcePath(
       targetDir,
       resources,
@@ -431,51 +479,55 @@ class SyncAssetPackageService {
       prefix: 'resources',
     );
 
-    await _db.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: uid,
-      title: _stringValue(srtBook, 'title'),
-      author: Value(_nullableString(srtBook, 'author')),
-      audioRoot: Value(targetDir.path),
-      audioPathsJson: Value(jsonEncode(audioPaths)),
-      srtPath: srtPath,
-      coverPath: Value(coverPath),
-      importedAt: _intValue(srtBook, 'importedAt'),
-      bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
-    ));
+    // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
+    // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
+    await _db.transaction(() async {
+      await _db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: uid,
+        title: _stringValue(srtBook, 'title'),
+        author: Value(_nullableString(srtBook, 'author')),
+        audioRoot: Value(targetDir.path),
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        srtPath: srtPath,
+        coverPath: Value(coverPath),
+        importedAt: _intValue(srtBook, 'importedAt'),
+        bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
+      ));
 
-    // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
-    final Object? rawSrtTags = srtBook['tags'];
-    final List<String> srtTagNames = rawSrtTags is List
-        ? <String>[
-            for (final Object? t in rawSrtTags)
-              if (t != null && t.toString().isNotEmpty) t.toString(),
-          ]
-        : const <String>[];
-    if (srtTagNames.isNotEmpty) {
-      for (final String name in srtTagNames) {
-        if (name.isEmpty) continue;
-        final int tagId = await _db.getOrCreateTagByName(name);
-        await _db.addTagToSrtBook(uid, tagId);
+      // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
+      final Object? rawSrtTags = srtBook['tags'];
+      final List<String> srtTagNames = rawSrtTags is List
+          ? <String>[
+              for (final Object? t in rawSrtTags)
+                if (t != null && t.toString().isNotEmpty) t.toString(),
+            ]
+          : const <String>[];
+      if (srtTagNames.isNotEmpty) {
+        for (final String name in srtTagNames) {
+          if (name.isEmpty) continue;
+          final int tagId = await _db.getOrCreateTagByName(name);
+          await _db.addTagToSrtBook(uid, tagId);
+        }
       }
-    }
 
-    // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
-    await _db.replaceCuesForBook(
-      uid,
-      cues.map((Object? raw) {
-        final Map<String, Object?> cue = _typedMap(raw);
-        return AudioCuesCompanion.insert(
-          bookKey: uid,
-          chapterHref: _stringValue(cue, 'chapterHref'),
-          sentenceIndex: _intValue(cue, 'sentenceIndex'),
-          textFragmentId: _stringValue(cue, 'textFragmentId'),
-          cueText: _stringValue(cue, 'cueText'),
-          startMs: _intValue(cue, 'startMs'),
-          endMs: _intValue(cue, 'endMs'),
-          audioFileIndex: _intValue(cue, 'audioFileIndex'),
-        );
-      }).toList(),
-    );
+      // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
+      await _db.replaceCuesForBook(
+        uid,
+        cues.map((Object? raw) {
+          final Map<String, Object?> cue = _typedMap(raw);
+          return AudioCuesCompanion.insert(
+            bookKey: uid,
+            chapterHref: _stringValue(cue, 'chapterHref'),
+            sentenceIndex: _intValue(cue, 'sentenceIndex'),
+            textFragmentId: _stringValue(cue, 'textFragmentId'),
+            cueText: _stringValue(cue, 'cueText'),
+            startMs: _intValue(cue, 'startMs'),
+            endMs: _intValue(cue, 'endMs'),
+            audioFileIndex: _intValue(cue, 'audioFileIndex'),
+          );
+        }).toList(),
+      );
+    });
   }
 
   /// 打包一个本地音频库：单个 .db（STORE 流式）+ manifest（displayName/enabled/子来源）。
@@ -736,13 +788,51 @@ String? _optionalResourcePath(
 
 /// 导出端记录的缺失资源清单（`manifest.missingResources`）。
 /// 旧版本产出的包没有这个键 → 空列表：**缺键不是错误**，否则用户手上的旧包全废。
-List<String> _missingAtExport(Map<String, Object?> manifest) {
-  final Object? raw = manifest['missingResources'];
+List<String> _missingAtExport(Map<String, Object?> manifest) =>
+    _stringListFrom(manifest['missingResources']);
+
+/// 导出端声明了 audioRoot 却一个音频都枚举不出来的根（`unresolvedAudioRoots`）。
+/// 与 [_missingAtExport] 同样的旧包契约：缺键 → 空列表，不是错误（BUG-2551）。
+List<String> _unresolvedAudioRoots(Map<String, Object?> manifest) =>
+    _stringListFrom(manifest['unresolvedAudioRoots']);
+
+List<String> _stringListFrom(Object? raw) {
   if (raw is! List) return const <String>[];
   return <String>[
     for (final Object? value in raw)
       if (value != null) value.toString(),
   ];
+}
+
+/// 一本有声书**当前在磁盘上真的可播**的音频清单：files 模式取 `audioPathsJson`，
+/// folder 模式（清单为空、音频在 [audioRoot] 目录下）枚举目录，顺序与播放端一致。
+///
+/// 导出打包、host 清单的音频能力位、client sweep 的「本端到底有没有这本的音频」
+/// 都必须用同一份解析，否则三处各自推导必然漂开（BUG-2551）。
+Future<List<String>> resolveAudiobookAudioFiles({
+  required String? audioPathsJson,
+  required String? audioRoot,
+}) async =>
+    (await _resolveEffectiveAudio(audioPathsJson, audioRoot)).paths;
+
+/// 这本有声书的音频是否**完好**：至少解析出一个音频文件，且每一个都还在磁盘上。
+///
+/// 「有 Audiobooks 行」不等于「有音频」：零音频行（BUG-2551 的坏包落地）与引用
+/// 导入后原文件被移走的断链行，在 DB 里都长得像一本正常的有声书。同步的存在性
+/// 判据必须问磁盘，不能只问表。
+Future<bool> audiobookAudioIsIntact({
+  required String? audioPathsJson,
+  required String? audioRoot,
+}) async {
+  final List<String> paths = await resolveAudiobookAudioFiles(
+    audioPathsJson: audioPathsJson,
+    audioRoot: audioRoot,
+  );
+  if (paths.isEmpty) return false;
+  for (final String path in paths) {
+    if (!await File(path).exists()) return false;
+  }
+  return true;
 }
 
 List<String> _decodeStringList(String? json) {

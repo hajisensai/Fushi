@@ -11,6 +11,7 @@
 ///   → 仍走原 syncLocalAudioPackages / syncAudiobookPackages（__local_audio__ 路径）。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -485,10 +486,16 @@ void main() {
     setUp(() async {
       hostDb = _memDb();
 
-      // host 上植入一本有声书（Audiobooks + SrtBooks 行 + 空音频目录）。
+      // host 上植入一本有声书（Audiobooks + SrtBooks 行 + 音频目录）。
+      //
+      // BUG-2551：音频目录里必须真有一个音频文件。这里原本是个**空目录**——于是
+      // 这组用例一直在验「零音频包能被打包、上传、落库」，也就是把 bug 行为当成
+      // 正确行为钉死了（断言只数 imported/exported，从不问音频有没有落地）。
       final Directory hostAudioRoot =
           Directory(p.join(work.path, 'host_audiobook_root'))
             ..createSync(recursive: true);
+      File(p.join(hostAudioRoot.path, 'host_track01.mp3'))
+          .writeAsStringSync('host audio bytes');
 
       // 先插入书籍行（audiobook 需要对应的 epub_books 行）
       await hostDb.insertEpubBook(
@@ -619,18 +626,32 @@ void main() {
           reason: 'host 独有有声书且本地有同 bookKey EPUB → 应被拉取导入');
       expect(report.booksImported, 0,
           reason: '场景B：本地已有 EPUB → 只补音频，绝不重导 EPUB（TODO-873 守护绿路径）');
-      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNotNull,
-          reason: '拉取后本地应出现 HostAudioBook 的 Audiobook 行');
+      final AudiobookRow? pulled =
+          await localDb.getAudiobookByBookKey('HostAudioBook');
+      expect(pulled, isNotNull, reason: '拉取后本地应出现 HostAudioBook 的 Audiobook 行');
+      // BUG-2551：只断言「有行」正是这个 bug 藏了这么久的原因——一本零音频的书
+      // 同样会让这行断言通过。真正要问的是音频落没落地。
+      expect(
+        await audiobookAudioIsIntact(
+            audioPathsJson: pulled!.audioPathsJson,
+            audioRoot: pulled.audioRoot),
+        isTrue,
+        reason: '拉回来的必须是一本能播的书，不是一本只有字幕的壳',
+      );
     });
 
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
-      // 插入本地有声书（本地独有，host 不含此 bookKey）
+      // 插入本地有声书（本地独有，host 不含此 bookKey）。
+      // BUG-2551：音频目录里要真有音频，否则这本书按新判据就是「本端缺音频」，
+      // 不该被推给 host（推上去的会是个零音频包）。
       final Directory localAudioRoot =
           Directory(p.join(work.path, 'local_audiobook_root'))
             ..createSync(recursive: true);
+      File(p.join(localAudioRoot.path, 'local_track01.mp3'))
+          .writeAsStringSync('local audio bytes');
 
       await localDb.insertEpubBook(
         EpubBooksCompanion.insert(
@@ -684,6 +705,176 @@ void main() {
           reason: 'live push audiobook 无错误: ${report.errors}');
       expect(report.audiobooksExported, 1,
           reason: 'LocalAudioBook 有声书应被推送到 host');
+    });
+
+    // ── BUG-2551 自愈：union 的两侧都按「音频文件在不在」判，坏书不再是吸收态 ──
+
+    test('自愈 pull：本地是一本零音频的坏有声书，host 有好的 → 拉回音频覆盖', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+
+      await localDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'HostAudioBook',
+          title: 'Host Audio Book',
+          epubPath: p.join(work.path, 'local_broken_audio.epub'),
+          extractDir: '',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      // 本地这行就是坏包落地后的形状：有 Audiobooks / SrtBooks 行、有字幕，
+      // `audioPathsJson` 是空数组。旧判据只看「有行」→ 这个 key 进 localKeys →
+      // 永远不进 toPull，用户再点多少次「立即同步」都补不上音频。
+      final File localSrt = File(p.join(work.path, 'broken_local.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      await localDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'uid-local-broken',
+          title: 'Host Audio Book',
+          srtPath: localSrt.path,
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          bookKey: const Value('HostAudioBook'),
+        ),
+      );
+      await localDb.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'HostAudioBook',
+          audioPathsJson: const Value('[]'),
+          alignmentFormat: 'srt',
+          alignmentPath: localSrt.path,
+        ),
+      );
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_ab_heal_pull'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: '自愈 pull 无错误: ${report.errors}');
+      expect(report.audiobooksImported, 1,
+          reason: '本端有行但没音频 = 本端缺 → 必须能从 host 拉回');
+      final AudiobookRow? healed =
+          await localDb.getAudiobookByBookKey('HostAudioBook');
+      expect(
+        await audiobookAudioIsIntact(
+            audioPathsJson: healed!.audioPathsJson,
+            audioRoot: healed.audioRoot),
+        isTrue,
+        reason: '拉回后这本书应该真的能播',
+      );
+    });
+
+    test('自愈 push：host 那本是零音频的坏书 → 本端好书仍被重推上去', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+
+      // host 上植入一本与本端同 bookKey、但零音频的坏书（用户手机上的现状）。
+      final File hostBrokenSrt = File(p.join(work.path, 'host_broken.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      await hostDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'HealPushBook',
+          title: 'Heal Push Book',
+          epubPath: p.join(work.path, 'host_heal.epub'),
+          extractDir: '',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      await hostDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'uid-host-broken',
+          title: 'Heal Push Book',
+          srtPath: hostBrokenSrt.path,
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          bookKey: const Value('HealPushBook'),
+        ),
+      );
+      await hostDb.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'HealPushBook',
+          audioPathsJson: const Value('[]'),
+          alignmentFormat: 'srt',
+          alignmentPath: hostBrokenSrt.path,
+        ),
+      );
+
+      // 本端是好的：音频真在磁盘上。
+      final Directory localRoot =
+          Directory(p.join(work.path, 'heal_push_local_root'))
+            ..createSync(recursive: true);
+      final File localTrack = File(p.join(localRoot.path, 'heal_track.mp3'))
+        ..writeAsStringSync('heal audio bytes');
+      final File localSrt = File(p.join(work.path, 'heal_local.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      await localDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'HealPushBook',
+          title: 'Heal Push Book',
+          epubPath: p.join(work.path, 'local_heal.epub'),
+          extractDir: '',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      await localDb.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'uid-local-heal',
+          title: 'Heal Push Book',
+          srtPath: localSrt.path,
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          bookKey: const Value('HealPushBook'),
+          audioRoot: Value(localRoot.path),
+          audioPathsJson: Value(jsonEncode(<String>[localTrack.path])),
+        ),
+      );
+      await localDb.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'HealPushBook',
+          audioRoot: Value(localRoot.path),
+          audioPathsJson: Value(jsonEncode(<String>[localTrack.path])),
+          alignmentFormat: 'srt',
+          alignmentPath: localSrt.path,
+        ),
+      );
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_ab_heal_push'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: '自愈 push 无错误: ${report.errors}');
+      expect(report.audiobooksExported, 1,
+          reason: 'host 清单里那本 hasAudio=false → 不算「远端有」，本端好书必须重推');
+      final AudiobookRow? onHost =
+          await hostDb.getAudiobookByBookKey('HealPushBook');
+      expect(
+        await audiobookAudioIsIntact(
+            audioPathsJson: onHost!.audioPathsJson,
+            audioRoot: onHost.audioRoot),
+        isTrue,
+        reason: 'host 上那本坏书应被一本能播的书覆盖',
+      );
     });
   });
 
@@ -1018,6 +1209,10 @@ void main() {
       const String bookKey = 'Todo894Book';
       final File srt = File(p.join(work.path, '$bookKey.srt'))
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\ntest\n');
+      // BUG-2551：本组验的是「配对 SrtBook 门控」，音频本身必须是好的——否则新的
+      // 「音频真在磁盘上」判据会先一步把这本书判成本端缺音频，门控根本测不到。
+      final File track = File(p.join(work.path, '${bookKey}_track01.mp3'))
+        ..writeAsStringSync('todo894 audio bytes');
       await db.insertEpubBook(
         EpubBooksCompanion.insert(
           bookKey: bookKey,
@@ -1032,6 +1227,7 @@ void main() {
       await db.upsertAudiobook(
         AudiobooksCompanion.insert(
           bookKey: bookKey,
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
           alignmentFormat: 'srt',
           alignmentPath: srt.path,
         ),
