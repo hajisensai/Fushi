@@ -59,3 +59,29 @@ String? tocHrefFragment(String? href) {
     return raw;
   }
 }
+
+/// 阅读位置（spine 章号 [currentChapter]）落在目录的哪一章上：返回该目录项的
+/// [TtuTocEntry.index]，目录里没有任何一项在当前位置之前时返回 null。
+///
+/// **目录是 spine 的稀疏映射**，不是一对一：真实 EPUB 里同一章常常横跨多个
+/// xhtml（`part0008` + `part0009` + …只有第一个进目录），章间的插图页 / 扉页
+/// 更是根本不在目录里。实测一本 35 项 spine 的文库本，NCX 只指向 12 个 spine
+/// 位置——读在剩下 23 个位置上的任何时刻，「当前章 == 目录项 index」都不成立。
+///
+/// 所以判据是**最后一个不晚于当前位置的目录项**（floor），与
+/// `ReaderFushiPage._currentChapterLabelFor`（页脚 / 收藏写入用的章名）和
+/// `ReaderAudiobookPanel` 「章节」tab 的当前章标注同一口径；此前目录列表用的是
+/// 精确相等，于是绝大多数阅读位置一行都不标（BUG-2545）。
+///
+/// 同一 spine 章有多条目录项（一个 xhtml 装整卷、目录靠 `#anchor` 分节）时，本
+/// 函数返回的 index 会同时命中那几条 —— 与精确相等时代的行为一致（调用方据此
+/// 把它们全部标成当前章，滚动锚点取其中第一条）。
+int? resolveCurrentTocChapter(List<TtuTocEntry> toc, int? currentChapter) {
+  if (currentChapter == null) return null;
+  int? resolved;
+  for (final TtuTocEntry entry in toc) {
+    if (entry.isHeader || entry.index > currentChapter) continue;
+    if (resolved == null || entry.index > resolved) resolved = entry.index;
+  }
+  return resolved;
+}
