@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2357 条。点号进各自文件。
+> 共 2358 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -48,6 +48,7 @@
 | [BUG-2537](bugs/BUG-2537-ass-sign-hover-controls.md) | ✅ | ✅ | ASS 定位字幕落到静止鼠标下即唤出控制条、且随控制条上抬 |
 | [BUG-2536](bugs/BUG-2536-audiobook-chapter-start-image-pause.md) | ✅ | ✅ | 有声书章首插图既不图片等待也不揭防剧透遮罩 |
 | [BUG-2535](bugs/BUG-2535-audiobook-unmatched-cue-chapter-end.md) | ✅ | ✅ | 有声书章尾：最后一句匹配播完、下一句未匹配时不进入下一章 |
+| [BUG-2534](bugs/BUG-2534-ios-gallery-topbar-under-status-bar.md) | ✅ | ✅ | iOS 插图册顶栏被状态栏 / 灵动岛压住，过滤 / 定位 / 关闭点不到 |
 | [BUG-2533](bugs/BUG-2533-reader-status-clock-not-clickable.md) | ✅ | ✅ | 阅读器状态行/播放条的计时图标点不动，改成真正的 MD3 停续键 |
 | [BUG-2532](bugs/BUG-2532-ios-ankimobile-mined-detection.md) | ✅ | ✅ | iOS AnkiMobile 不显示已制卡：加卡回跳的 x-success 被丢弃，isDuplicate 恒 false |
 | [BUG-2531](bugs/BUG-2531-reader-status-row-separate-scrim.md) | ✅ | ✅ | 竖屏读数行自己另画一块遮罩：底栏遮罩看着缺了进度显示那一层高度 |

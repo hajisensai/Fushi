@@ -4850,5 +4850,6 @@
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
   "reader_control_reset_layout": "Restore default reader button layout",
   "video_clip_export_share_unavailable": "Clip saved, but the share sheet didn't open: ${path}",
-  "audiobook_export_clip_share_unavailable": "Clip saved, but the share sheet didn't open"
+  "audiobook_export_clip_share_unavailable": "Clip saved, but the share sheet didn't open",
+  "reader_gallery_relock": "Re-hide this illustration"
 }

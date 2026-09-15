@@ -4850,5 +4850,6 @@
   "reader_control_editor_hint": "把按钮拖到顶栏或底栏的任意位置，或移出。",
   "reader_control_reset_layout": "恢复默认阅读器按钮布局",
   "video_clip_export_share_unavailable": "片段已保存，但系统分享面板没有打开：${path}",
-  "audiobook_export_clip_share_unavailable": "片段已保存，但系统分享面板没有打开"
+  "audiobook_export_clip_share_unavailable": "片段已保存，但系统分享面板没有打开",
+  "reader_gallery_relock": "恢复遮罩"
 }
