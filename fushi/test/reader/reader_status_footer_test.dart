@@ -65,7 +65,8 @@ void main() {
         reason: 'BUG-2467：读数已并进挤压态底栏，状态行不再另占一条预留',
       );
       expect(
-        readerStatusFooterReserve(enabled: true, footerHeight: 28, floating: true),
+        readerStatusFooterReserve(
+            enabled: true, footerHeight: 28, floating: true),
         0,
         reason: '悬浮态状态行随控制栏显隐、不占预留（隐藏满屏、唤出覆盖）',
       );
@@ -508,8 +509,7 @@ void main() {
           reason: '左端留白（点它唤出 / 收起 chrome），计时块不再钉在左下角');
     });
 
-    testWidgets('centered: 读数并进底栏那块遮罩时居中，不再贴右角',
-        (WidgetTester tester) async {
+    testWidgets('centered: 读数并进底栏那块遮罩时居中，不再贴右角', (WidgetTester tester) async {
       // 竖屏读数独立成行时它是底栏 Column 的最后一行，上面一排传输键是居中的；
       // 读数贴在右角会和它们错开成两个重心（用户 2026-09-14「竖屏做到最底部
       // 并且居中」）。
@@ -716,7 +716,8 @@ void main() {
         '  /// 小说页的窗口全屏切换',
       );
       expect(
-        trailing.contains('_playbackStatusInline ? _buildBarStatusText() : null'),
+        trailing
+            .contains('_playbackStatusInline ? _buildBarStatusText() : null'),
         isTrue,
         reason: '底栏右端仍是读数的唯一落点',
       );
@@ -778,12 +779,15 @@ void main() {
       expect(build.contains('Focus(') || build.contains('canRequestFocus'),
           isFalse,
           reason: '纯指针面，不进焦点遍历池（TODO-700 不变式）');
-      // 钉「两行相邻且顺序对」，不钉缩进宽度：Stack 外面多包一层 formatter 就会
-      // 把绝对缩进从 20 改成 22，而绘制顺序这个不变式一点没变。
+      // 钉「先后」而不是「两行相邻」：相邻只是当时的偶然事实，不是不变式。
+      // 任何排在两者之间的新层（如有声书悬浮球）都不该让这条无理由地红，
+      // 真正要守的是「状态行在词典弹层之前绘制」这个顺序。
+      final int footerAt = src.indexOf('_buildStatusFooter(),');
+      final int dictAt = src.indexOf('buildDictionary(),');
+      expect(footerAt, isNonNegative, reason: '状态行不再挂在页面 Stack 上了，守卫需同步更新');
       expect(
-        RegExp(r'_buildStatusFooter\(\),\n *buildDictionary\(\),')
-            .hasMatch(src),
-        isTrue,
+        dictAt,
+        greaterThan(footerAt),
         reason: '状态行必须排在词典弹层 / 底栏之前，让它们盖在其上',
       );
     });

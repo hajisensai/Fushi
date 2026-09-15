@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
@@ -1310,6 +1311,47 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<void> setSkipActionSeconds(int value) async {
     await setPreference<int>(key: 'skip_action_seconds', value: value);
     onSettingsChangedLive?.call();
+  }
+
+  /// 阅读器悬浮球开关（全局，与 [skipActionSeconds] 同层）。默认关。球上放哪些
+  /// 按钮由阅读器按钮布局的 `floatingBall` 槽决定（`ReaderControlLayout`）。改动
+  /// 只影响纯 Flutter chrome，经 [onChromeReloadLive] 让阅读器重建一次即可。
+  bool get readerFloatingBall =>
+      getPreference<bool>(key: 'reader_floating_ball', defaultValue: false);
+
+  Future<void> setReaderFloatingBall(bool value) async {
+    await setPreference<bool>(key: 'reader_floating_ball', value: value);
+    onChromeReloadLive?.call();
+  }
+
+  /// 悬浮球停靠边 + 球心在视口高度上的比例（拖动松手时落库，跨书记忆）。
+  ReaderFloatingBallDock get readerFloatingBallDock =>
+      ReaderFloatingBallDock.decode(
+        getPreference<String>(
+          key: 'reader_floating_ball_dock',
+          defaultValue: ReaderFloatingBallDock.left.id,
+        ),
+      );
+
+  double get readerFloatingBallVerticalFraction => getPreference<double>(
+        key: 'reader_floating_ball_y',
+        defaultValue: 0.6,
+      );
+
+  Future<void> setReaderFloatingBallPosition(
+    ReaderFloatingBallDock dock,
+    double verticalFraction,
+  ) async {
+    await setPreference<String>(
+      key: 'reader_floating_ball_dock',
+      value: dock.id,
+    );
+    await setPreference<double>(
+      key: 'reader_floating_ball_y',
+      value: verticalFraction.isFinite
+          ? verticalFraction.clamp(0.0, 1.0).toDouble()
+          : 0.6,
+    );
   }
 
   double get dismissSwipeSensitivity => getPreference<double>(

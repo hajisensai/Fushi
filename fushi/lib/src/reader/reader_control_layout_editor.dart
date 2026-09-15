@@ -32,6 +32,18 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return Icons.fullscreen_rounded;
     case ReaderControlItem.settings:
       return Icons.tune_outlined;
+    case ReaderControlItem.audiobookPrev:
+      return Icons.skip_previous_outlined;
+    case ReaderControlItem.audiobookPlayPause:
+      return Icons.play_arrow_outlined;
+    case ReaderControlItem.audiobookNext:
+      return Icons.skip_next_outlined;
+    case ReaderControlItem.audiobookSeekBack:
+      return Icons.replay_10_outlined;
+    case ReaderControlItem.audiobookSeekForward:
+      return Icons.forward_10_outlined;
+    case ReaderControlItem.audiobookFollow:
+      return Icons.link;
   }
 }
 
@@ -55,6 +67,18 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.shortcut_action_global_toggle_fullscreen;
     case ReaderControlItem.settings:
       return t.reader_settings_section;
+    case ReaderControlItem.audiobookPrev:
+      return t.prev_sentence;
+    case ReaderControlItem.audiobookPlayPause:
+      return t.reader_control_item_play_pause;
+    case ReaderControlItem.audiobookNext:
+      return t.next_sentence;
+    case ReaderControlItem.audiobookSeekBack:
+      return t.reader_control_item_seek_back;
+    case ReaderControlItem.audiobookSeekForward:
+      return t.reader_control_item_seek_forward;
+    case ReaderControlItem.audiobookFollow:
+      return t.audiobook_follow_audio;
   }
 }
 
@@ -72,6 +96,8 @@ String readerControlSlotLabel(ReaderControlSlot slot) {
       return t.video_control_slot_bottom_center;
     case ReaderControlSlot.bottomRight:
       return t.video_control_slot_bottom_right;
+    case ReaderControlSlot.floatingBall:
+      return t.reader_floating_ball;
     case ReaderControlSlot.hidden:
       return t.reader_control_slot_hidden;
   }
@@ -118,12 +144,15 @@ class ReaderControlLayoutEditor extends StatelessWidget {
         target == ReaderControlSlot.topCenter) {
       if (!item.canMoveToSlot(target)) return t.reader_control_reject_title;
     }
+    if (item.pinnedRequired && target == ReaderControlSlot.floatingBall) {
+      return t.reader_control_reject_required;
+    }
     if (!item.canMoveToSlot(target)) return t.video_control_reject_unavailable;
     return null;
   }
 
-  /// 舞台：一张「阅读器」示意——顶栏一行、正文留白、底栏一行。窄窗每行折成
-  /// 两列 Wrap。
+  /// 舞台：一张「阅读器」示意——顶栏一行、正文带（左侧悬浮球槽 + 书本占位）、
+  /// 底栏一行。窄窗每行折成两列 Wrap，正文带折成上下两段。
   Widget _buildStage(
     BuildContext context,
     ControlSlotRegionBuilder<ReaderControlSlot> buildSlotRegion,
@@ -169,15 +198,50 @@ class ReaderControlLayoutEditor extends StatelessWidget {
               ReaderControlSlot.topCenter,
               ReaderControlSlot.topRight,
             ]),
-            // 正文占位：让两行读出「上 / 下」的方位感。
+            // 正文带：左侧是悬浮球槽（球停靠在正文视口边缘，位置感与真身一致），
+            // 其余是书本占位，让三行读出「上 / 正文 / 下」的方位感。
             Padding(
               padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
-              child: Center(
-                child: Icon(
-                  Icons.menu_book_outlined,
-                  size: 28,
-                  color: theme.colorScheme.outline,
-                ),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final double gap = tokens.spacing.gap;
+                  final bool compact = constraints.maxWidth < 480;
+                  final Widget ball = SizedBox(
+                    width: compact
+                        ? constraints.maxWidth
+                        : (constraints.maxWidth - gap * 2) / 3,
+                    child: buildSlotRegion(
+                      ReaderControlSlot.floatingBall,
+                      growToContent: true,
+                    ),
+                  );
+                  final Widget book = Center(
+                    child: Icon(
+                      Icons.menu_book_outlined,
+                      size: 28,
+                      color: theme.colorScheme.outline,
+                    ),
+                  );
+                  if (compact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        ball,
+                        Padding(
+                          padding: EdgeInsets.only(top: gap),
+                          child: book,
+                        ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      ball,
+                      Expanded(child: book),
+                    ],
+                  );
+                },
               ),
             ),
             row(const <ReaderControlSlot>[

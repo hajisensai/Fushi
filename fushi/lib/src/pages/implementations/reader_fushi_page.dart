@@ -87,6 +87,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
@@ -1793,6 +1794,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   final Set<String> _revealedImageKeys = <String>{};
 
   AudiobookPlayerController? _audiobookController;
+
+  /// 播放态 → chrome 重建的监听状态（见 chrome.part 的 `_syncChromePlaybackListener`）。
+  AudiobookPlayerController? _chromePlaybackListened;
+  bool _chromeLastPlaying = false;
+  bool _chromeLastFollow = false;
   String? _audiobookBookKey;
   String? _srtBookUid;
   Map<int, int>? _srtCueChapterMap;
@@ -2857,6 +2863,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   void dispose() {
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
+    // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
+    _audiobookController = null;
+    _syncChromePlaybackListener();
     // 关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只停表。
     //
     // 全程零 DB IO：dispose 是同步的，在这里发起的事务没有任何人持有它的 future，
@@ -3420,6 +3429,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       // 底栏之前，让它们盖在其上。
                       _buildProgressEdgeLine(),
                       _buildStatusFooter(),
+                      // 悬浮球：排在词典弹层 / 底栏之前，让它们盖在其上。
+                      _buildReaderFloatingBall(),
                       buildDictionary(),
                       // The bottom chrome returns a Positioned; it MUST stay a direct
                       // child of this Stack. The chrome FocusScope is mounted INSIDE

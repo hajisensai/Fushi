@@ -1606,6 +1606,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 桌面才有窗口可全屏，移动端不渲染这颗按钮。
       case ReaderControlItem.fullscreen:
         return desktopWindowFullscreenSupported;
+      // 有声书传输键：没挂控制器就没有可控的音频，整颗不出现（不论拖在哪个槽）。
+      case ReaderControlItem.audiobookPrev:
+      case ReaderControlItem.audiobookPlayPause:
+      case ReaderControlItem.audiobookNext:
+      case ReaderControlItem.audiobookSeekBack:
+      case ReaderControlItem.audiobookSeekForward:
+      case ReaderControlItem.audiobookFollow:
+        return _audiobookController != null;
     }
   }
 
@@ -1719,7 +1727,104 @@ extension _ReaderChrome on _ReaderFushiPageState {
           semanticsId: 'hibiki.reader.bottom.settings',
           onPressed: () => unawaited(_showAppearanceSheet()),
         );
+      // ── 有声书传输键：语义与底栏播放条 [AudiobookPlayBar] 逐颗对齐——上一句 /
+      // 下一句跟随「跳转方式」偏好（0 = 按句，N = 按 N 秒），播放键按运行态换图标
+      // （页面经 [_syncChromePlaybackListener] 在播放态翻转时重建）。渲染门保证
+      // 这里的控制器非空。
+      case ReaderControlItem.audiobookPrev:
+        final int skip = ReaderFushiSource.instance.skipActionSeconds;
+        return ReaderHeaderAction(
+          icon: skip == 0
+              ? Icons.skip_previous_outlined
+              : Icons.fast_rewind_outlined,
+          label: skip == 0 ? t.prev_sentence : '-${skip}s',
+          semanticsId: 'hibiki.reader.control.audiobook_prev',
+          onPressed: () => unawaited(
+            skip == 0
+                ? _audiobookController!.skipToPrevCue()
+                : _audiobookController!.seekRelative(-skip),
+          ),
+        );
+      case ReaderControlItem.audiobookNext:
+        final int skip = ReaderFushiSource.instance.skipActionSeconds;
+        return ReaderHeaderAction(
+          icon: skip == 0
+              ? Icons.skip_next_outlined
+              : Icons.fast_forward_outlined,
+          label: skip == 0 ? t.next_sentence : '+${skip}s',
+          semanticsId: 'hibiki.reader.control.audiobook_next',
+          onPressed: () => unawaited(
+            skip == 0
+                ? _audiobookController!.skipToNextCue()
+                : _audiobookController!.seekRelative(skip),
+          ),
+        );
+      case ReaderControlItem.audiobookPlayPause:
+        final bool playing = _audiobookController!.isPlaying;
+        return ReaderHeaderAction(
+          icon: playing ? Icons.pause_outlined : Icons.play_arrow_outlined,
+          label: playing ? t.pause : t.play,
+          semanticsId: 'hibiki.reader.control.audiobook_play_pause',
+          onPressed: () => unawaited(_audiobookController!.togglePlayPause()),
+        );
+      case ReaderControlItem.audiobookSeekBack:
+        return ReaderHeaderAction(
+          icon: Icons.replay_10_outlined,
+          label: '-10s',
+          semanticsId: 'hibiki.reader.control.audiobook_seek_back',
+          onPressed: () => unawaited(_audiobookController!.seekRelative(-10)),
+        );
+      case ReaderControlItem.audiobookSeekForward:
+        return ReaderHeaderAction(
+          icon: Icons.forward_10_outlined,
+          label: '+10s',
+          semanticsId: 'hibiki.reader.control.audiobook_seek_forward',
+          onPressed: () => unawaited(_audiobookController!.seekRelative(10)),
+        );
+      case ReaderControlItem.audiobookFollow:
+        final bool on = _audiobookController!.followAudio.value;
+        return ReaderHeaderAction(
+          icon: on ? Icons.link : Icons.link_off,
+          label: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
+          semanticsId: 'hibiki.reader.control.audiobook_follow',
+          onPressed: () => _audiobookController!.setFollowAudio(!on),
+        );
     }
+  }
+
+  // ── 播放态 → chrome 重建 ───────────────────────────────────────────────
+  //
+  // 播放 / 暂停、跟随两颗键的图标取自控制器运行态，而顶栏 / 悬浮球拿到的是构建
+  // 时算好的 [ReaderHeaderAction]；控制器只 notify 自己的监听者，页面不重建图标
+  // 就会撒谎。这里挂一个只在「播放态 / 跟随态翻转」时才 setState 的监听（位置
+  // tick 不触发），控制器换绑 / 解绑时跟着换。
+  // 三个状态字段在 [_ReaderFushiPageState] 本体（part 是 extension，放不了字段）。
+  void _syncChromePlaybackListener() {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (identical(ctrl, _chromePlaybackListened)) return;
+    final AudiobookPlayerController? old = _chromePlaybackListened;
+    if (old != null) {
+      old.removeListener(_onChromePlaybackChanged);
+      old.followAudio.removeListener(_onChromePlaybackChanged);
+    }
+    _chromePlaybackListened = ctrl;
+    if (ctrl != null) {
+      ctrl.addListener(_onChromePlaybackChanged);
+      ctrl.followAudio.addListener(_onChromePlaybackChanged);
+      _chromeLastPlaying = ctrl.isPlaying;
+      _chromeLastFollow = ctrl.followAudio.value;
+    }
+  }
+
+  void _onChromePlaybackChanged() {
+    final AudiobookPlayerController? ctrl = _chromePlaybackListened;
+    if (ctrl == null || !mounted) return;
+    final bool playing = ctrl.isPlaying;
+    final bool follow = ctrl.followAudio.value;
+    if (playing == _chromeLastPlaying && follow == _chromeLastFollow) return;
+    _chromeLastPlaying = playing;
+    _chromeLastFollow = follow;
+    _rebuild(() {});
   }
 
   List<ReaderHeaderAction> _readerControlActionsIn(ReaderControlSlot slot) =>
@@ -1800,6 +1905,44 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ...buttons,
         if (status != null) ...<Widget>[const SizedBox(width: 8), status],
       ],
+    );
+  }
+
+  /// 阅读器悬浮球（用户开关，默认关）：半透明停靠在正文视口边缘，点开把布局
+  /// 编辑器里拖进 [ReaderControlSlot.floatingBall] 槽的按钮以弧形环绕展开（出厂
+  /// 是有声书的上一句 / 播放暂停 / 下一句）。
+  ///
+  /// 首章加载后才出现；槽里此刻一颗可渲染的按钮都没有（例如只放了传输键而书没挂
+  /// 有声书）就不画球。活动范围是扣掉顶栏 / 底栏 / 状态行预留后的正文视口，与焦点
+  /// 环用同一组 inset（[_readerTopOffset] / [_readerBottomReserve]），所以永远压
+  /// 不到 chrome。排在底栏之前挂载：悬浮底栏短暂唤出时盖在球上，词典弹层同理。
+  Widget _buildReaderFloatingBall() {
+    final ReaderFushiSource src = ReaderFushiSource.instance;
+    if (!_hasEverLoaded || !src.readerFloatingBall) {
+      return const SizedBox.shrink();
+    }
+    final List<ReaderHeaderAction> actions =
+        _readerControlActionsIn(ReaderControlSlot.floatingBall);
+    if (actions.isEmpty) return const SizedBox.shrink();
+    final Size window = MediaQuery.sizeOf(context);
+    final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
+    final Rect viewport = Rect.fromLTRB(
+      viewPadding.left,
+      _lyricsMode ? _lyricsTopReserve : _readerTopOffset,
+      window.width - viewPadding.right,
+      window.height - _readerBottomReserve,
+    );
+    return ReaderFloatingBall(
+      key: const ValueKey<String>('fushi_reader_floating_ball'),
+      viewport: viewport,
+      actions: actions,
+      dock: src.readerFloatingBallDock,
+      verticalFraction: src.readerFloatingBallVerticalFraction,
+      backgroundColor: _themeBackgroundColor(),
+      foregroundColor: _themeTextColor(),
+      animate: !appModel.einkMode,
+      onDockChanged: (ReaderFloatingBallDock dock, double fraction) =>
+          unawaited(src.setReaderFloatingBallPosition(dock, fraction)),
     );
   }
 
