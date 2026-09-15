@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 84371 (4963 per locale)
+/// Strings: 84796 (4988 per locale)
 ///
-/// Built on 2026-09-15 at 13:27 UTC
+/// Built on 2026-09-15 at 14:07 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6929,6 +6929,44 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_provider_base_url_invalid =>
       'Enter a valid HTTP or HTTPS endpoint';
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  String get ai_feature_lapis_style => 'Lapis card style';
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  String get ai_feature_video_identify => 'Video identification';
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  String get ai_feature_video_search => 'Video search assist';
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  String get ai_assist_section => 'Ask AI';
+  String get ai_assist_generate => 'Generate';
+  String get ai_assist_working => 'Asking AI…';
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  String get video_scrape_ai_matched => 'Matched by AI';
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  String get video_search_ai_expand => 'More terms with AI';
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  String get video_search_ai_rank => 'Rank with AI';
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -18646,6 +18684,69 @@ class _StringsAr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -30589,6 +30690,69 @@ class _StringsDe extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -42586,6 +42750,69 @@ class _StringsEs extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -54616,6 +54843,69 @@ class _StringsFr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -66450,6 +66740,69 @@ class _StringsId extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -78375,6 +78728,69 @@ class _StringsIt extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -89683,6 +90099,69 @@ class _StringsJa extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -101001,6 +101480,69 @@ class _StringsKo extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -112884,6 +113426,69 @@ class _StringsNl extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -124820,6 +125425,69 @@ class _StringsPtBr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -136733,6 +137401,69 @@ class _StringsRu extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -148448,6 +149179,69 @@ class _StringsTh extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -160277,6 +161071,69 @@ class _StringsTr extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -172076,6 +172933,69 @@ class _StringsVi extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 // Path: <root>
@@ -182891,6 +183811,58 @@ class _StringsZhCn extends _StringsEn {
   String get ai_provider_base_url_invalid => '请填写有效的 HTTP 或 HTTPS 接口地址';
   @override
   String get ai_provider_protocol_locked => '由内置预设固定，不可更改';
+  @override
+  String get ai_feature_dict_style => '词典弹窗样式';
+  @override
+  String get ai_feature_dict_style_summary => '让 AI 按描述生成弹窗样式规则与 CSS';
+  @override
+  String get ai_feature_lapis_style => 'Lapis 卡片样式';
+  @override
+  String get ai_feature_lapis_style_summary => '让 AI 按描述生成 Lapis 卡片样式规则与 CSS';
+  @override
+  String get ai_feature_video_identify => '视频作品识别';
+  @override
+  String get ai_feature_video_identify_summary => '刮削出现多个候选时让 AI 在候选里选出对应作品';
+  @override
+  String get ai_feature_video_search => '视频搜索辅助';
+  @override
+  String get ai_feature_video_search_summary => '让 AI 补充搜索词并对字幕、资源结果做语义排序';
+  @override
+  String get ai_assist_section => '让 AI 帮忙';
+  @override
+  String get ai_assist_generate => '生成';
+  @override
+  String get ai_assist_working => '正在询问 AI…';
+  @override
+  String get ai_assist_no_provider => '请先在「设置 › AI」里为这个功能指定提供商';
+  @override
+  String get ai_assist_empty => 'AI 没有给出可用结果，换个说法再试试。';
+  @override
+  String ai_assist_failed({required Object reason}) => 'AI 请求失败：${reason}';
+  @override
+  String get dict_style_ai_hint => '描述想要的样子，例如：词头加粗改蓝色，释义字号调小';
+  @override
+  String get dict_style_ai_applied => 'AI 建议已填入草稿，看过预览再保存。';
+  @override
+  String get lapis_style_ai_hint => '描述卡片想要的样子，例如：例句放大、隐藏频率';
+  @override
+  String get lapis_style_ai_applied => 'AI 建议已填入编辑器，看过预览再应用。';
+  @override
+  String get video_scrape_ai_matched => 'AI 判定';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI 置信度 ${percent}%';
+  @override
+  String get video_search_ai_expand => 'AI 补充搜索词';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI 补充了 ${count} 个搜索词';
+  @override
+  String get video_search_ai_rank => 'AI 排序';
+  @override
+  String get video_search_ai_ranked => '结果已由 AI 重新排序';
+  @override
+  String get video_search_ai_recommended => 'AI 推荐';
 }
 
 // Path: <root>
@@ -193884,6 +194856,69 @@ class _StringsZhHk extends _StringsEn {
       'Enter a valid HTTP or HTTPS endpoint';
   @override
   String get ai_provider_protocol_locked => 'Fixed by the built-in preset';
+  @override
+  String get ai_feature_dict_style => 'Dictionary popup style';
+  @override
+  String get ai_feature_dict_style_summary =>
+      'Let AI generate popup style rules and CSS from a description';
+  @override
+  String get ai_feature_lapis_style => 'Lapis card style';
+  @override
+  String get ai_feature_lapis_style_summary =>
+      'Let AI generate Lapis card style rules and CSS from a description';
+  @override
+  String get ai_feature_video_identify => 'Video identification';
+  @override
+  String get ai_feature_video_identify_summary =>
+      'Let AI pick the matching work when scraping finds several candidates';
+  @override
+  String get ai_feature_video_search => 'Video search assist';
+  @override
+  String get ai_feature_video_search_summary =>
+      'Let AI suggest extra search terms and rank subtitle and torrent results';
+  @override
+  String get ai_assist_section => 'Ask AI';
+  @override
+  String get ai_assist_generate => 'Generate';
+  @override
+  String get ai_assist_working => 'Asking AI…';
+  @override
+  String get ai_assist_no_provider =>
+      'Choose an AI provider for this feature under Settings and AI first';
+  @override
+  String get ai_assist_empty =>
+      'AI did not return a usable result. Try describing it differently.';
+  @override
+  String ai_assist_failed({required Object reason}) =>
+      'AI request failed: ${reason}';
+  @override
+  String get dict_style_ai_hint =>
+      'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+  @override
+  String get dict_style_ai_applied =>
+      'AI suggestion loaded into the draft. Check the preview, then save.';
+  @override
+  String get lapis_style_ai_hint =>
+      'Describe how the card should look, e.g. larger sentence, hide frequency';
+  @override
+  String get lapis_style_ai_applied =>
+      'AI suggestion loaded into the editor. Check the preview, then apply.';
+  @override
+  String get video_scrape_ai_matched => 'Matched by AI';
+  @override
+  String video_scrape_ai_confidence({required Object percent}) =>
+      'AI confidence ${percent}%';
+  @override
+  String get video_search_ai_expand => 'More terms with AI';
+  @override
+  String video_search_ai_expanded({required Object count}) =>
+      'AI suggested ${count} extra search terms';
+  @override
+  String get video_search_ai_rank => 'Rank with AI';
+  @override
+  String get video_search_ai_ranked => 'Results reordered by AI';
+  @override
+  String get video_search_ai_recommended => 'AI pick';
 }
 
 /// Flat map(s) containing all translations.
@@ -204115,6 +205150,57 @@ extension on _StringsEn {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -214341,6 +215427,57 @@ extension on _StringsAr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -224612,6 +225749,57 @@ extension on _StringsDe {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -234874,6 +236062,57 @@ extension on _StringsEs {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -245145,6 +246384,57 @@ extension on _StringsFr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -255387,6 +256677,57 @@ extension on _StringsId {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -265651,6 +266992,57 @@ extension on _StringsIt {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -275842,6 +277234,57 @@ extension on _StringsJa {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -286037,6 +287480,57 @@ extension on _StringsKo {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -296294,6 +297788,57 @@ extension on _StringsNl {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -306546,6 +308091,57 @@ extension on _StringsPtBr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -316805,6 +318401,57 @@ extension on _StringsRu {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -327036,6 +328683,57 @@ extension on _StringsTh {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -337282,6 +338980,57 @@ extension on _StringsTr {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -347522,6 +349271,57 @@ extension on _StringsVi {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }
@@ -357669,6 +359469,56 @@ extension on _StringsZhCn {
         return '请填写有效的 HTTP 或 HTTPS 接口地址';
       case 'ai_provider_protocol_locked':
         return '由内置预设固定，不可更改';
+      case 'ai_feature_dict_style':
+        return '词典弹窗样式';
+      case 'ai_feature_dict_style_summary':
+        return '让 AI 按描述生成弹窗样式规则与 CSS';
+      case 'ai_feature_lapis_style':
+        return 'Lapis 卡片样式';
+      case 'ai_feature_lapis_style_summary':
+        return '让 AI 按描述生成 Lapis 卡片样式规则与 CSS';
+      case 'ai_feature_video_identify':
+        return '视频作品识别';
+      case 'ai_feature_video_identify_summary':
+        return '刮削出现多个候选时让 AI 在候选里选出对应作品';
+      case 'ai_feature_video_search':
+        return '视频搜索辅助';
+      case 'ai_feature_video_search_summary':
+        return '让 AI 补充搜索词并对字幕、资源结果做语义排序';
+      case 'ai_assist_section':
+        return '让 AI 帮忙';
+      case 'ai_assist_generate':
+        return '生成';
+      case 'ai_assist_working':
+        return '正在询问 AI…';
+      case 'ai_assist_no_provider':
+        return '请先在「设置 › AI」里为这个功能指定提供商';
+      case 'ai_assist_empty':
+        return 'AI 没有给出可用结果，换个说法再试试。';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI 请求失败：${reason}';
+      case 'dict_style_ai_hint':
+        return '描述想要的样子，例如：词头加粗改蓝色，释义字号调小';
+      case 'dict_style_ai_applied':
+        return 'AI 建议已填入草稿，看过预览再保存。';
+      case 'lapis_style_ai_hint':
+        return '描述卡片想要的样子，例如：例句放大、隐藏频率';
+      case 'lapis_style_ai_applied':
+        return 'AI 建议已填入编辑器，看过预览再应用。';
+      case 'video_scrape_ai_matched':
+        return 'AI 判定';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI 置信度 ${percent}%';
+      case 'video_search_ai_expand':
+        return 'AI 补充搜索词';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) => 'AI 补充了 ${count} 个搜索词';
+      case 'video_search_ai_rank':
+        return 'AI 排序';
+      case 'video_search_ai_ranked':
+        return '结果已由 AI 重新排序';
+      case 'video_search_ai_recommended':
+        return 'AI 推荐';
       default:
         return null;
     }
@@ -367838,6 +369688,57 @@ extension on _StringsZhHk {
         return 'Enter a valid HTTP or HTTPS endpoint';
       case 'ai_provider_protocol_locked':
         return 'Fixed by the built-in preset';
+      case 'ai_feature_dict_style':
+        return 'Dictionary popup style';
+      case 'ai_feature_dict_style_summary':
+        return 'Let AI generate popup style rules and CSS from a description';
+      case 'ai_feature_lapis_style':
+        return 'Lapis card style';
+      case 'ai_feature_lapis_style_summary':
+        return 'Let AI generate Lapis card style rules and CSS from a description';
+      case 'ai_feature_video_identify':
+        return 'Video identification';
+      case 'ai_feature_video_identify_summary':
+        return 'Let AI pick the matching work when scraping finds several candidates';
+      case 'ai_feature_video_search':
+        return 'Video search assist';
+      case 'ai_feature_video_search_summary':
+        return 'Let AI suggest extra search terms and rank subtitle and torrent results';
+      case 'ai_assist_section':
+        return 'Ask AI';
+      case 'ai_assist_generate':
+        return 'Generate';
+      case 'ai_assist_working':
+        return 'Asking AI…';
+      case 'ai_assist_no_provider':
+        return 'Choose an AI provider for this feature under Settings and AI first';
+      case 'ai_assist_empty':
+        return 'AI did not return a usable result. Try describing it differently.';
+      case 'ai_assist_failed':
+        return ({required Object reason}) => 'AI request failed: ${reason}';
+      case 'dict_style_ai_hint':
+        return 'Describe the look you want, e.g. bold blue headwords, smaller glossary text';
+      case 'dict_style_ai_applied':
+        return 'AI suggestion loaded into the draft. Check the preview, then save.';
+      case 'lapis_style_ai_hint':
+        return 'Describe how the card should look, e.g. larger sentence, hide frequency';
+      case 'lapis_style_ai_applied':
+        return 'AI suggestion loaded into the editor. Check the preview, then apply.';
+      case 'video_scrape_ai_matched':
+        return 'Matched by AI';
+      case 'video_scrape_ai_confidence':
+        return ({required Object percent}) => 'AI confidence ${percent}%';
+      case 'video_search_ai_expand':
+        return 'More terms with AI';
+      case 'video_search_ai_expanded':
+        return ({required Object count}) =>
+            'AI suggested ${count} extra search terms';
+      case 'video_search_ai_rank':
+        return 'Rank with AI';
+      case 'video_search_ai_ranked':
+        return 'Results reordered by AI';
+      case 'video_search_ai_recommended':
+        return 'AI pick';
       default:
         return null;
     }

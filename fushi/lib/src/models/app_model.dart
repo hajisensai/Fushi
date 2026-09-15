@@ -33,6 +33,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -127,6 +128,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -4870,6 +4872,13 @@ class AppModel with ChangeNotifier {
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
       defaultContentLanguage: prefsRepo.defaultContentLanguage,
+      // 真下载前由 AI 在候选里挑先下哪几条；提供商每次调用时现解析，未指派 / 失败
+      // 都退回本地顺序（见 aiSubtitleBackfillReorder）。
+      aiReorder: aiSubtitleBackfillReorder(
+        resolveProvider: () => isPreferencesReady
+            ? resolveVideoSearchAiProvider(prefsRepo)
+            : null,
+      ),
     );
     final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
       database: database,
@@ -4880,6 +4889,8 @@ class AppModel with ChangeNotifier {
       ),
       // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
       enableOfflineTitleIndex: true,
+      // 歧义候选交 AI 消解；未指派提供商时 decider 每次回 null，行为与无 AI 一致。
+      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(prefsRepo),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
       // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。

@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
@@ -39,6 +40,8 @@ class _Host implements SubtitleWorkbenchHost {
   String? get defaultContentLanguage => null;
   @override
   Future<void> persistRemoteSubtitle(String bookUid, String path) async {}
+  @override
+  AiProviderConfig? get videoSearchAiProvider => null;
 }
 
 void main() {

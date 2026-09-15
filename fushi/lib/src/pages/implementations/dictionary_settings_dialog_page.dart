@@ -4,8 +4,15 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi/src/ai/ai_dict_style_assistant.dart';
+import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
+    show aiFailureText;
 import 'package:fushi/src/pages/implementations/dict_style_preview.dart';
 import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -636,17 +643,37 @@ typedef DictStylePreviewBuilder = Widget Function(
   ValueChanged<DictStylePart> onPickPart,
 );
 
+/// 解析「词典弹窗样式」功能当前可用的 AI 提供商。返回 null = 没配 / 配的那家已被
+/// 删或没配全，对话框据此提示去设置里配，而**不发请求**。
+///
+/// 生产路径默认从 `AppModel.prefsRepo` 读；做成回调是给 widget 测试留缝——测试里
+/// 的假 AppModel 没有初始化偏好仓库。
+typedef DictStyleAiProviderResolver = AiProviderConfig? Function();
+
+/// 造 AI 调用客户端。测试注入假 `http.Client` 走这条缝；生产路径恒是
+/// [AiChatClient] 的默认构造。
+typedef DictStyleAiClientFactory = AiChatClient Function();
+
 class DictCssEditorDialog extends StatefulWidget {
   const DictCssEditorDialog({
     super.key,
     this.initialDictionaryName,
     this.previewBuilder,
+    this.resolveAiProvider,
+    this.aiClientFactory,
   });
 
   final String? initialDictionaryName;
 
   /// 非 null 时用它替代 [DictStylePreview]（仅测试传）。
   final DictStylePreviewBuilder? previewBuilder;
+
+  /// 非 null 时替代默认的「从 AppModel 偏好里解析」（仅测试传）。
+  @visibleForTesting
+  final DictStyleAiProviderResolver? resolveAiProvider;
+
+  @visibleForTesting
+  final DictStyleAiClientFactory? aiClientFactory;
 
   @override
   State<DictCssEditorDialog> createState() => _DictCssEditorDialogState();
@@ -665,6 +692,15 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   late _DictCssDraftSession _draft;
   bool _draftFinalized = false;
   bool _isSaving = false;
+
+  final TextEditingController _aiRequestController = TextEditingController();
+
+  /// AI 区的一句话状态（已填入 / 没配提供商 / 失败原因）。null = 还没跑过。
+  String? _aiMessage;
+
+  /// AI 对自己这组改动的说明，原样显示。
+  String _aiExplanation = '';
+  bool _aiBusy = false;
 
   bool get _isGlobal => _selectedIndex == 0;
   String get _currentDictName => _dictNames[_selectedIndex - 1];
@@ -709,7 +745,153 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
       _stashCurrentScope();
     }
     _cssController.dispose();
+    _aiRequestController.dispose();
     super.dispose();
+  }
+
+  // ── AI 生成 ──────────────────────────────────────────────────────────────
+
+  AiProviderConfig? _resolveAiProvider() {
+    final DictStyleAiProviderResolver? injected = widget.resolveAiProvider;
+    if (injected != null) return injected();
+    final PreferencesRepository prefs = _appModel.prefsRepo;
+    return prefs.aiFeatureAssignments.resolve(
+      AiFeature.dictStyle,
+      prefs.aiProviders,
+    );
+  }
+
+  Future<void> _runAi() async {
+    if (_aiBusy) return;
+    final String request = _aiRequestController.text.trim();
+    if (request.isEmpty) return;
+    final AiProviderConfig? provider = _resolveAiProvider();
+    if (provider == null) {
+      // 没有可用提供商就**一个请求都不发**：发出去只会拿回一条脱敏错误码，用户
+      // 还得自己猜「是 key 错了还是根本没配」。
+      setState(() {
+        _aiMessage = t.ai_assist_no_provider;
+        _aiExplanation = '';
+      });
+      return;
+    }
+    setState(() {
+      _aiBusy = true;
+      _aiMessage = null;
+      _aiExplanation = '';
+    });
+    final AiChatClient client =
+        widget.aiClientFactory?.call() ?? AiChatClient();
+    try {
+      final AiDictStyleSuggestion suggestion = await requestAiDictStyle(
+        client: client,
+        provider: provider,
+        request: request,
+        currentRules: _currentDraftRules,
+        currentCss: _cssController.text,
+        dictionaryName: _selectedDictionaryName,
+        availableDictionaries: _dictNames,
+      );
+      if (!mounted) return;
+      if (suggestion.isEmpty) {
+        setState(() => _aiMessage = t.ai_assist_empty);
+        return;
+      }
+      // 只进**草稿**：规则并进可视化规则表，CSS 追加到当前作用域的手写框，
+      // 保存仍然只有底部那一个按钮——AI 不是第二条落盘路径。
+      setState(() {
+        if (suggestion.rules.isNotEmpty) {
+          _draft.styleRules = mergeAiDictStyleRules(
+            _currentDraftRules,
+            suggestion.rules,
+          );
+        }
+        if (suggestion.css.isNotEmpty) {
+          _cssController.text = appendAiCss(
+            _cssController.text,
+            suggestion.css,
+          );
+          _stashCurrentScope();
+        }
+        _aiMessage = t.dict_style_ai_applied;
+        _aiExplanation = suggestion.explanation;
+      });
+      _showSnack(
+        suggestion.explanation.isEmpty
+            ? t.dict_style_ai_applied
+            : '${t.dict_style_ai_applied}\n${suggestion.explanation}',
+      );
+    } on AiChatFailure catch (failure) {
+      if (!mounted) return;
+      setState(
+        () => _aiMessage = t.ai_assist_failed(
+          reason: aiFailureText(failure.message),
+        ),
+      );
+    } finally {
+      client.close();
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 「让 AI 帮忙」区：一行输入 + 生成按钮，结果状态在下面一行。放在两个 tab 共用
+  /// 的对话框底部——AI 同时产出规则（可视化页）与 CSS（手写页），不属于任一页。
+  Widget _buildAiSection(FushiDesignTokens tokens) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              child: FushiTextField(
+                key: const ValueKey<String>('dict-style-ai-request'),
+                controller: _aiRequestController,
+                labelText: t.ai_assist_section,
+                hintText: t.dict_style_ai_hint,
+                minLines: 1,
+                maxLines: 2,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            FilledButton.icon(
+              key: const ValueKey<String>('dict-style-ai-generate'),
+              onPressed: _aiBusy || _isSaving ? null : () => unawaited(_runAi()),
+              icon: _aiBusy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_outlined),
+              label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
+            ),
+          ],
+        ),
+        if (_aiMessage != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            _aiMessage!,
+            key: const ValueKey<String>('dict-style-ai-message'),
+            style: tokens.type.listSubtitle,
+          ),
+        ],
+        if (_aiExplanation.isNotEmpty) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(
+            _aiExplanation,
+            key: const ValueKey<String>('dict-style-ai-explanation'),
+            style: tokens.type.listSubtitle,
+          ),
+        ],
+      ],
+    );
   }
 
   void _onScopeChanged(int? index) {
@@ -873,6 +1055,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                     ? _buildVisualTab(tokens)
                     : FushiEditorPanel(controller: _cssController),
               ),
+              SizedBox(height: tokens.spacing.gap),
+              _buildAiSection(tokens),
             ],
           ),
         ),

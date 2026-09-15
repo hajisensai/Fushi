@@ -5,6 +5,11 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi/src/ai/ai_lapis_style_assistant.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
+    show aiFailureText;
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -14,6 +19,18 @@ typedef LapisPreviewBuilder = Widget Function(
   LapisVisualField selectedField,
   bool showBack,
 );
+
+/// 解析「Lapis 卡片样式」功能当前可用的 AI 提供商。返回 null = 没配 / 配的那家
+/// 已被删或没配全，页面据此提示去设置里配，而**不发请求**。
+///
+/// 做成回调而不是在页面内读偏好，是为了让本页保持零 Riverpod 依赖（widget 测试
+/// 不必挂 `ProviderScope`）；生产路径由 `anki_settings_page.dart` 从 AppModel
+/// 偏好里解析后传入。不传 = 视为没配。
+typedef LapisStyleAiProviderResolver = AiProviderConfig? Function();
+
+/// 造 AI 调用客户端。测试注入假 `http.Client` 走这条缝；生产路径恒是
+/// [AiChatClient] 的默认构造。
+typedef LapisStyleAiClientFactory = AiChatClient Function();
 
 /// 选中某个 Anki 字段的占位符时弹选择器；返回 null = 用户取消。
 typedef LapisHandlebarPicker = Future<String?> Function(
@@ -56,6 +73,8 @@ class LapisStyleEditorPage extends StatefulWidget {
     this.baseCss,
     this.pickHandlebar,
     this.previewBuilder,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     super.key,
   });
 
@@ -86,6 +105,12 @@ class LapisStyleEditorPage extends StatefulWidget {
   @visibleForTesting
   final LapisPreviewBuilder? previewBuilder;
 
+  /// 「让 AI 帮忙」用的提供商解析；null = 没配。
+  final LapisStyleAiProviderResolver? resolveAiProvider;
+
+  @visibleForTesting
+  final LapisStyleAiClientFactory? aiClientFactory;
+
   @override
   State<LapisStyleEditorPage> createState() => _LapisStyleEditorPageState();
 }
@@ -113,6 +138,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   bool _showBack = true;
   bool _allowPop = false;
   InAppWebViewController? _previewController;
+
+  final TextEditingController _aiRequestController = TextEditingController();
+
+  /// AI 区的一句话状态（已填入 / 没配提供商 / 失败原因）。null = 还没跑过。
+  String? _aiMessage;
+
+  /// AI 对自己这组改动的说明，原样显示。
+  String _aiExplanation = '';
+  bool _aiBusy = false;
 
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
   /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
@@ -165,7 +199,136 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     _advancedCssController
       ..removeListener(_handleAdvancedCssChanged)
       ..dispose();
+    _aiRequestController.dispose();
     super.dispose();
+  }
+
+  // ── AI 生成 ──────────────────────────────────────────────────────────────
+
+  Future<void> _runAi() async {
+    if (_aiBusy) return;
+    final String request = _aiRequestController.text.trim();
+    if (request.isEmpty) return;
+    final AiProviderConfig? provider = widget.resolveAiProvider?.call();
+    if (provider == null) {
+      // 没有可用提供商就**一个请求都不发**：发出去只会拿回一条脱敏错误码，用户
+      // 还得自己猜「是 key 错了还是根本没配」。
+      setState(() {
+        _aiMessage = t.ai_assist_no_provider;
+        _aiExplanation = '';
+      });
+      return;
+    }
+    setState(() {
+      _aiBusy = true;
+      _aiMessage = null;
+      _aiExplanation = '';
+    });
+    final AiChatClient client =
+        widget.aiClientFactory?.call() ?? AiChatClient();
+    try {
+      final AiLapisStyleSuggestion suggestion = await requestAiLapisStyle(
+        client: client,
+        provider: provider,
+        request: request,
+        currentRules: _rules,
+        currentCss: _advancedCssController.text,
+      );
+      if (!mounted) return;
+      if (suggestion.isEmpty) {
+        setState(() => _aiMessage = t.ai_assist_empty);
+        return;
+      }
+      // 只进**草稿**：规则并进可视化规则表（同字段整条替换），CSS 追加到自由
+      // CSS 之后；推送到 Anki 仍然只有「保存 → 应用」那一条路径。
+      setState(() {
+        _rules.addAll(suggestion.rules);
+        _aiMessage = t.lapis_style_ai_applied;
+        _aiExplanation = suggestion.explanation;
+      });
+      if (suggestion.css.isNotEmpty) {
+        // controller 的 listener 会 setState + 刷预览。
+        _advancedCssController.text = appendAiLapisCss(
+          _advancedCssController.text,
+          suggestion.css,
+        );
+      } else {
+        _refreshPreview();
+      }
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            suggestion.explanation.isEmpty
+                ? t.lapis_style_ai_applied
+                : '${t.lapis_style_ai_applied}\n${suggestion.explanation}',
+          ),
+        ),
+      );
+    } on AiChatFailure catch (failure) {
+      if (!mounted) return;
+      setState(
+        () => _aiMessage = t.ai_assist_failed(
+          reason: aiFailureText(failure.message),
+        ),
+      );
+    } finally {
+      client.close();
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  /// 「让 AI 帮忙」区：输入框 + 生成按钮 + 状态行，与 gal 文本处理编辑器同款。
+  Widget _buildAiSection(FushiDesignTokens tokens) {
+    return FushiCard(
+      key: const ValueKey<String>('lapis-ai-section'),
+      color: tokens.surfaces.group,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(t.ai_assist_section, style: tokens.type.sectionLabel),
+          SizedBox(height: tokens.spacing.gap),
+          FushiTextField(
+            key: const ValueKey<String>('lapis-ai-request'),
+            controller: _aiRequestController,
+            hintText: t.lapis_style_ai_hint,
+            minLines: 1,
+            maxLines: 3,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton.icon(
+              key: const ValueKey<String>('lapis-ai-generate'),
+              onPressed: _aiBusy ? null : () => unawaited(_runAi()),
+              icon: _aiBusy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_outlined),
+              label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
+            ),
+          ),
+          if (_aiMessage != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            Text(
+              _aiMessage!,
+              key: const ValueKey<String>('lapis-ai-message'),
+              style: tokens.type.listSubtitle,
+            ),
+          ],
+          if (_aiExplanation.isNotEmpty) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text(
+              _aiExplanation,
+              key: const ValueKey<String>('lapis-ai-explanation'),
+              style: tokens.type.listSubtitle,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   String _composeCustomCss() => composeLapisVisualStyleSheet(
@@ -821,6 +984,8 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ),
           ],
           _buildFieldMappingSection(tokens),
+          SizedBox(height: tokens.spacing.card),
+          _buildAiSection(tokens),
           SizedBox(height: tokens.spacing.card),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
