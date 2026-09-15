@@ -1480,6 +1480,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
   bool _imageChapterPauseInFlight = false;
+  // 音频跨章驱动的到达章（-1 = 无）：落地后第一次真实 cue 高亮把文档开头当作上一句
+  // 锚点，让章首插图也走图片等待 + 揭遮罩（见 _handleCueCrossChapter /
+  // _consumeAudioChapterArrival）。
+  int _audioChapterArrivalSection = -1;
   // BUG-782 加固：PopScope 退出链（onWillPop 异步 flush + closeMedia）在途为真，
   // 并发退出触发（ESC 连按/退出按钮后再 ESC）合并为一次，防连退两级。
   bool _popInProgress = false;
