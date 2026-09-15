@@ -30,6 +30,8 @@ void main() {
         'buildCardCreationDestination()',
         'buildDownloadsDestination()',
         'buildServicesDestination()',
+        // AI 提供商配置紧随在线服务：同属「连接」大组、同一个 services 模块开关。
+        'buildAiDestination()',
         'buildProfilesDestination()',
         'buildSyncBackupDestination()',
         'buildInterconnectDestination()',

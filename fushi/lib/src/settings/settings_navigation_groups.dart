@@ -41,7 +41,8 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.lookup ||
   SettingsDestinationId.cardCreation => SettingsNavigationGroupId.learning,
   SettingsDestinationId.downloads ||
-  SettingsDestinationId.services => SettingsNavigationGroupId.connections,
+  SettingsDestinationId.services ||
+  SettingsDestinationId.ai => SettingsNavigationGroupId.connections,
   SettingsDestinationId.profiles ||
   SettingsDestinationId.syncBackup ||
   SettingsDestinationId.interconnect ||
