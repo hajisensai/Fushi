@@ -9,7 +9,6 @@ import 'dart:ui' show ImageFilter;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -1560,11 +1559,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
-
-  /// 鼠标此刻是否停在顶栏 / 底栏上（两处 MouseRegion 进出翻它）。悬停在栏上时
-  /// 自动收起计时暂停（[_ReaderChrome._handleReaderPointerHover] 也不再 re-arm），
-  /// 离开后重新武装——否则鼠标静止在栏上 3 秒它就自己收掉。
-  bool _chromeHovered = false;
 
   /// 底栏内容行的自然（未缩放）高度。
   static const double _readerChromeBaseHeight = 56;
@@ -3254,9 +3248,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: _handleReaderPointerDown,
-              // 鼠标在正文上移动即唤出悬浮 chrome（Flutter 腿，见
-              // [_handleReaderPointerHover]）。
-              onPointerHover: _handleReaderPointerHover,
               child: PopScope(
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {

@@ -1192,10 +1192,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
     await _reanchorForStyleChange(_currentStyleJson());
   }
 
-  // ── Floating chrome reveal / auto-hide (TODO-975) ─────────────────────
-  // 悬浮模式（顶部进度 / 底栏）：点击唤出 → 临时可见 + 武装定时器 → 计时到自动收起；
-  // 唤出期间再点一下立即收起（决策#4：不续命）。改 _chromeTransientVisible 不改预留高
-  // （悬浮恒 0），故纯显隐不重锚。挤压模式不调用这套（无 timer）。
+  // ── Floating chrome reveal (TODO-975) ────────────────────────────────
+  // 悬浮模式（顶部进度 / 底栏）：**点击是唯一的开关**——点一下唤出、再点一下收起，
+  // 中间不计时、不自动消失（用户 2026-09-14 拍板：悬浮控制栏只认点击，鼠标移动不
+  // 得唤出，移动端单击同为开 / 关）。改 _chromeTransientVisible 不改预留高（悬浮恒
+  // 0），故纯显隐不重锚。挤压模式不调用这套。
+  //
+  // 自动收起计时器只剩 VN 推进一条路还在用（[_revealFloatingChromeForVnAdvance]）：
+  // 那里「点空白」已被翻页占死，收起没有第二条手势通道，理由见该方法。
 
   void _cancelChromeAutoHide() => _chrome.cancelAutoHide();
 
@@ -1206,11 +1210,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   /// VN 空白点推进时用的「保证悬浮 chrome 可见并重新计时」——与
-  /// [_handleFloatingChromeReveal] 的**区别是不 toggle**：那个在已可见时会立即收起
-  /// （决策#4，给的是「点一下开、再点一下关」的开关语义），而 VN 空白点是「翻页」，
-  /// 顺手把底栏顶上来只是副作用，绝不能因为连点两下就把菜单关掉。
+  /// [_handleFloatingChromeReveal] 的**区别是不 toggle**：那个是纯开关（点一下开、
+  /// 再点一下关），而 VN 空白点是「翻页」，顺手把底栏顶上来只是副作用，绝不能因为
+  /// 连点两下就把菜单关掉。
   ///
-  /// 每次推进都重新 [_armChromeAutoHide]：停手 3 秒后收起，连续翻页期间常驻。
+  /// **全页唯一还武装自动收起的地方**（其余路径按用户 2026-09-14 的裁决改成纯点击
+  /// 开关）。VN 例外不是遗留：它把「点空白」整个绑成了翻页，栏被顶出来之后就没有
+  /// 第二条手势通道能把它收回去（触屏连快捷键都没有），计时是唯一的出口。
+  /// 每次推进都重新 [_armChromeAutoHide]：停手后按设置的时长收起，连续翻页期间常驻。
   void _revealFloatingChromeForVnAdvance() {
     if (!_anyChromeFloating) return;
     if (!_chromeTransientVisible) {
@@ -1221,72 +1228,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _armChromeAutoHide();
   }
 
-  /// 点击空白 / 顶部进度时调用（仅当存在任一悬浮 chrome）。可见时立即收起（决策#4），
-  /// 隐藏时唤出 + 武装自动收起。返回 true 表示本次点击被悬浮唤出/收起逻辑消费。
+  /// 点击空白 / 顶部进度 / 快捷键时调用（仅当存在任一悬浮 chrome）：**纯开关**——
+  /// 可见即收起，收起即唤出，且唤出后不武装任何计时器（用户 2026-09-14：栏一旦
+  /// 被点出来就留着，只有下一次点击能关掉它）。返回 true 表示本次点击被消费。
+  ///
+  /// 仍调 [_cancelChromeAutoHide]：VN 推进路径可能刚武装过一次计时，收起时必须把
+  /// 它一起停掉，否则计时到点会对着已收起的栏再通知一次。
   bool _handleFloatingChromeReveal() {
     if (!_anyChromeFloating) return false;
-    if (_chromeTransientVisible) {
-      _cancelChromeAutoHide();
-      _rebuild(() {
-        _chromeTransientVisible = false;
-      });
-      return true;
-    }
+    _cancelChromeAutoHide();
     _rebuild(() {
-      _chromeTransientVisible = true;
+      _chromeTransientVisible = !_chromeTransientVisible;
     });
-    _armChromeAutoHide();
     return true;
-  }
-
-  /// 鼠标在正文上移动 → 唤出 / 续命悬浮 chrome（与视频页同一手感）。
-  ///
-  /// 两条腿、同一门 [hostOwnsWebViewPointerInput] ∪ [hostOwnsWebViewHoverLookup]
-  /// （前者与 [_handleReaderPointerDown] 逐字相同的互斥判据）：Windows 上 WebView 是
-  /// 纹理、Flutter 拿指针，页面根 [Listener.onPointerHover] 直接进这里；macOS 上
-  /// 原生 WebView 的 DOM 收不到 mousemove / pointermove（BUG-2508 已把 Shift 悬停
-  /// 查词整条搬到宿主腿），唤出 chrome 也只能走宿主腿；其余平台原生 WebView 吃掉
-  /// 指针，由页内 JS `pointermove` 节流回传 `onPointerHoverReveal`
-  /// （[_handleJsHoverReveal]）。
-  ///
-  /// 决策在纯函数 [readerHoverRevealAction]：非悬浮 / 非鼠标 → 不动；已收起 →
-  /// 唤出 + 武装；已可见 → 只重新武装（移动中常驻，停手后按计时收起）。
-  /// 替代了此前只占顶部 6px 的悬停热区——那条带子从正文中间横向移动碰不到，
-  /// 用户的感受就是「控制栏没有自动恢复」。
-  void _handleReaderPointerHover(PointerHoverEvent event) {
-    if (!hostOwnsWebViewPointerInput && !hostOwnsWebViewHoverLookup) return;
-    _applyHoverReveal(isMouse: event.kind == PointerDeviceKind.mouse);
-  }
-
-  /// JS 腿（非 Windows / 非 macOS）：页内 pointermove 已按 pointerType 过滤成真实
-  /// 鼠标，这里视作鼠标。
-  void _handleJsHoverReveal() {
-    if (hostOwnsWebViewPointerInput || hostOwnsWebViewHoverLookup) return;
-    _applyHoverReveal(isMouse: true);
-  }
-
-  void _applyHoverReveal({required bool isMouse}) {
-    if (!_hasEverLoaded || _sideSheetOpen || _appearanceSheetOpen) return;
-    // 停在栏上：栏自己的 MouseRegion 已取消计时，这里不再 re-arm。栏被卸载
-    // （快捷键收起 / 重锚置 false）时 MouseRegion 不发 onExit，旗会卡在 true——
-    // 栏不在场就当没停在上面。
-    if (_chromeHovered && _bottomBarShouldPaint) return;
-    if (!_bottomBarShouldPaint) _chromeHovered = false;
-    switch (readerHoverRevealAction(
-      floating: _anyChromeFloating,
-      transientVisible: _chromeTransientVisible,
-      isMouse: isMouse,
-    )) {
-      case ReaderHoverRevealAction.none:
-        return;
-      case ReaderHoverRevealAction.reveal:
-        _rebuild(() {
-          _chromeTransientVisible = true;
-        });
-        _armChromeAutoHide();
-      case ReaderHoverRevealAction.rearm:
-        _armChromeAutoHide();
-    }
   }
 
   /// BUG-1195：VN（视觉小说）模式下一次「空白点击」的唯一落点。
@@ -1549,11 +1503,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 把整窗写进 FlutterMutatorView 的 _hitTestIgnoreRegion，整块 WebView 收不到
       // 任何鼠标事件。包一层让底栏自成一张只覆盖自身高度的图层。
       child: RepaintBoundary(
-        // 与顶栏同款：停在底栏上不自动收起，离开后重新武装。
-        child: MouseRegion(
-          onEnter: (_) => _onChromeHoverChanged(true),
-          onExit: (_) => _onChromeHoverChanged(false),
-          child: ExcludeFocus(
+        child: ExcludeFocus(
           child: FocusScope(
             node: _chromeFocusScope,
             child: Column(
@@ -1575,19 +1525,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ),
           ),
         ),
-        ),
       ),
     );
-  }
-
-  /// 顶栏 / 底栏 MouseRegion 进出：进 → 停表，出 → 悬浮可见态下重新武装。
-  void _onChromeHoverChanged(bool hovered) {
-    _chromeHovered = hovered;
-    if (hovered) {
-      _chrome.cancelAutoHide();
-    } else if (_anyChromeFloating && _chromeTransientVisible) {
-      _armChromeAutoHide();
-    }
   }
 
   Widget _buildBottomChrome() {
@@ -1806,13 +1745,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
             // TODO-830: per-reader 功能反转（getter 内部走 readerSettings?
             // 分层，否则退化全局）；与 reversed 的位置镜像维度正交。
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
-            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端；传输键与
-            // 有声书面板同一套（-10s / 上一句 / 播放 / 下一句 / +10s）。
+            // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
             // 底栏槽位里的按钮并进播放条右端（播放条在场时底栏只有这一条），
             // 状态读数仍在最右。
             trailing: _buildAudiobookBarTrailing(),
-            showSeekButtons:
-                _desktopChromeEnabled && _readerControlsWidth >= 308,
             showSettingsButton: !_desktopChromeEnabled,
           ),
         );
@@ -2028,9 +1964,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  /// 侧栏路由的唯一入口（导航 / 设置 / 有声书 / 统计共用）：开着期间控制栏不
-  /// 自动收起（否则用户改设置时工具栏在背后消失，关抽屉后又要再唤一次）；关掉后
-  /// 若仍是悬浮可见态，重新武装计时。
+  /// 侧栏路由的唯一入口（导航 / 设置 / 有声书 / 统计共用）。
+  ///
+  /// 进来先停表：VN 翻页刚武装过的计时不该在抽屉开着时把背后的工具栏收走。关掉
+  /// 抽屉**不再**重新武装——控制栏现在只由点击开关，关个抽屉就让它几秒后自己消失
+  /// 正是用户要去掉的那种「非点击的关」。
   Future<void> _presentSideSheet({
     required ReaderSideSheetSide side,
     required WidgetBuilder builder,
@@ -2047,9 +1985,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
     } finally {
       _sideSheetOpen = false;
-    }
-    if (mounted && _anyChromeFloating && _chromeTransientVisible) {
-      _armChromeAutoHide();
     }
   }
 
@@ -2576,20 +2511,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 焦点排除在 ReaderDesktopHeader 内部（纯指针面，TODO-700 不变式）；底栏的
       // ExcludeFocus 外壳仍唯一在 _wrapBottomChromeBar（守卫 reader_focus_chrome_excluded）。
       child: RepaintBoundary(
-        // 悬停在工具栏上不自动收起（取消计时），离开后重新武装。
-        child: MouseRegion(
-          onEnter: (_) => _onChromeHoverChanged(true),
-          onExit: (_) => _onChromeHoverChanged(false),
-          child: ReaderDesktopHeader(
-            key: const ValueKey<String>('fushi_desktop_header'),
-            title: layout.showsTitle ? (_book?.title ?? '') : '',
-            textColor: fg,
-            backgroundColor: _chromeSurfaceColor(),
-            // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；
-            // pinned = 窄窗紧凑形态仍保留的按钮，其余收进 ⋮ 溢出菜单。
-            leading: _readerControlActionsIn(ReaderControlSlot.topLeft),
-            trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
-          ),
+        child: ReaderDesktopHeader(
+          key: const ValueKey<String>('fushi_desktop_header'),
+          title: layout.showsTitle ? (_book?.title ?? '') : '',
+          textColor: fg,
+          backgroundColor: _chromeSurfaceColor(),
+          // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；
+          // pinned = 窄窗紧凑形态仍保留的按钮，其余收进 ⋮ 溢出菜单。
+          leading: _readerControlActionsIn(ReaderControlSlot.topLeft),
+          trailing: _readerControlActionsIn(ReaderControlSlot.topRight),
         ),
       ),
     );

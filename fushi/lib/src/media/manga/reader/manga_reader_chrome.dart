@@ -9,7 +9,8 @@
 /// 两种形态由页面决定、本组件只管画：
 ///  * 固定（`floating == false`）：实底、占布局，页面把正文 WebView 往下让
 ///    [mangaChromeTopInset]；
-///  * 悬浮（`floating == true`）：半透明、盖在正文上，默认收起、唤出后自动收起。
+///  * 悬浮（`floating == true`）：半透明、盖在正文上，默认收起，正文中央点击唤出、
+///    再点一下收起（**只认点击**：鼠标移动不唤出，唤出后也不自动收起）。
 library;
 
 import 'package:flutter/material.dart';
@@ -19,10 +20,6 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 
 /// 顶栏内容行高（不含系统状态栏）。与 EPUB 顶栏同值，两个阅读器视觉对齐。
 const double kMangaChromeBarHeight = kReaderDesktopHeaderHeight;
-
-/// 悬浮态唤出后自动收起的时长。漫画不另设滑杆：EPUB 那边是 1–10s 可调、默认 3s，
-/// 漫画先跟默认，等真有人要调再开旗。
-const Duration kMangaChromeAutoHide = Duration(seconds: 3);
 
 /// 固定态下正文 WebView 顶部让出的高度（纯函数，单测钉住）。
 ///
@@ -44,9 +41,10 @@ double mangaChromeTopInset({
 ///  * 固定态 → 画；
 ///  * 悬浮态 → 唤出中（[transientVisible]）才画——**但没有正文时无条件画**
 ///    （[contentReady] == false：加载失败 / 本章未下载）。悬浮态的唤出手势是正文
-///    WebView 的中央点击，没有正文就没有那条通道；桌面还有顶边热区，触屏没有，
-///    返回键一收就再也叫不回来（iOS 没有系统返回键 + `PopScope(canPop: false)`
-///    关掉了侧滑，只能杀进程）。出口不随内容存亡，也不随形态收起。
+///    WebView 的中央点击，没有正文就没有那条通道（顶边悬停热区已按「只认点击」
+///    的口径删掉），返回键一收就再也叫不回来（iOS 没有系统返回键 +
+///    `PopScope(canPop: false)` 关掉了侧滑，只能杀进程）。出口不随内容存亡，也不
+///    随形态收起。
 bool mangaChromeBarPainted({
   required bool floating,
   required bool chromeVisible,
@@ -97,7 +95,6 @@ class MangaReaderTopBar extends StatelessWidget {
     this.pageListenable,
     this.onPageTap,
     this.status,
-    this.onHoverChanged,
   });
 
   /// 书名 / 章节名；空串时只画页码。
@@ -121,9 +118,6 @@ class MangaReaderTopBar extends StatelessWidget {
   /// 页码胶囊右侧的状态件（OCR 进度胶囊 / debug 命中信息）。
   final Widget? status;
 
-  /// 鼠标进出顶栏（悬浮态：悬停期间不自动收起）。
-  final ValueChanged<bool>? onHoverChanged;
-
   static const Color _fg = Colors.white;
   static const Color _fgDim = Colors.white70;
   static const Color _accent = Colors.amberAccent;
@@ -139,58 +133,50 @@ class MangaReaderTopBar extends StatelessWidget {
           for (final List<MangaChromeAction> g in groups)
             if (g.isNotEmpty) g,
         ];
-    return MouseRegion(
-      onEnter: (_) => onHoverChanged?.call(true),
-      onExit: (_) => onHoverChanged?.call(false),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: _background,
-          border: floating
-              ? null
-              : const Border(bottom: BorderSide(color: Colors.white12)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(top: statusBar),
-          child: SizedBox(
-            height: kMangaChromeBarHeight,
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final bool compact = readerHeaderCompact(constraints.maxWidth);
-                // 折叠规则与 EPUB 顶栏 `readerHeaderOverflow` 同一句：紧凑态只留
-                // pinned，其余按组序收进 ⋮。
-                final List<MangaChromeAction> overflow = <MangaChromeAction>[
-                  for (final List<MangaChromeAction> g in visibleGroups)
-                    for (final MangaChromeAction a in g)
-                      if (compact && !a.pinned) a,
-                ];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Row(
-                    children: <Widget>[
-                      IconButton(
-                        key: const ValueKey<String>('manga_reader_back_button'),
-                        tooltip: backTooltip,
-                        color: _fg,
-                        iconSize: 22,
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: onBack,
-                      ),
-                      Expanded(child: _buildTitleArea(context, compact)),
-                      for (
-                        int i = 0;
-                        i < visibleGroups.length;
-                        i++
-                      ) ...<Widget>[
-                        if (i > 0 && !compact) _divider(),
-                        for (final MangaChromeAction a in visibleGroups[i])
-                          if (!compact || a.pinned) _button(a),
-                      ],
-                      if (overflow.isNotEmpty) _overflowMenu(context, overflow),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _background,
+        border: floating
+            ? null
+            : const Border(bottom: BorderSide(color: Colors.white12)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(top: statusBar),
+        child: SizedBox(
+          height: kMangaChromeBarHeight,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool compact = readerHeaderCompact(constraints.maxWidth);
+              // 折叠规则与 EPUB 顶栏 `readerHeaderOverflow` 同一句：紧凑态只留
+              // pinned，其余按组序收进 ⋮。
+              final List<MangaChromeAction> overflow = <MangaChromeAction>[
+                for (final List<MangaChromeAction> g in visibleGroups)
+                  for (final MangaChromeAction a in g)
+                    if (compact && !a.pinned) a,
+              ];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      key: const ValueKey<String>('manga_reader_back_button'),
+                      tooltip: backTooltip,
+                      color: _fg,
+                      iconSize: 22,
+                      icon: const Icon(Icons.arrow_back),
+                      onPressed: onBack,
+                    ),
+                    Expanded(child: _buildTitleArea(context, compact)),
+                    for (int i = 0; i < visibleGroups.length; i++) ...<Widget>[
+                      if (i > 0 && !compact) _divider(),
+                      for (final MangaChromeAction a in visibleGroups[i])
+                        if (!compact || a.pinned) _button(a),
                     ],
-                  ),
-                );
-              },
-            ),
+                    if (overflow.isNotEmpty) _overflowMenu(context, overflow),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),
