@@ -81,6 +81,43 @@ void main() {
     }
   });
 
+  test(
+      'BUG-2558: iOS Info.plist declares background audio when audio_service '
+      'is wired', () {
+    // 与本文件其余几条同形（「lib/ 用了某能力 → plist 必须声明」），但后果不是
+    // SIGABRT 而是**静默失效**：缺 UIBackgroundModes/audio 时 iOS 在 app 进后台那
+    // 一刻挂起进程，有声书立刻断声——锁屏听书、控制中心播放控件、Now Playing 全部
+    // 形同虚设，而「后台播放有声书时照常计学习统计」这条行为更是以它为前提（进程被
+    // 挂起就没有播放态可言）。静默失效比崩溃更难发现，所以钉在这里。
+    expect(libDir.existsSync(), isTrue,
+        reason: 'lib/ must exist to scan for audio_service wiring');
+    expect(plistFile.existsSync(), isTrue,
+        reason: 'BUG-2558 fix lives in this Info.plist');
+
+    final String plist = plistFile.readAsStringSync();
+    final bool wiresAudioService = libUses('AudioService.init');
+
+    if (wiresAudioService) {
+      final int modesIdx = plist.indexOf('<key>UIBackgroundModes</key>');
+      expect(
+        modesIdx,
+        isNonNegative,
+        reason: 'BUG-2558: lib/ wires audio_service (AudioService.init) but '
+            'ios/Runner/Info.plist is missing UIBackgroundModes; iOS suspends '
+            'the process on backgrounding, so audiobook playback dies the '
+            'moment the app leaves the foreground',
+      );
+      // 只断言「声明了 audio」，不锁整个数组——将来加别的后台模式不该让这条红。
+      final int arrayEnd = plist.indexOf('</array>', modesIdx);
+      expect(arrayEnd, isNonNegative, reason: 'UIBackgroundModes 必须是 <array>');
+      expect(
+        plist.substring(modesIdx, arrayEnd).contains('<string>audio</string>'),
+        isTrue,
+        reason: 'BUG-2558: UIBackgroundModes 必须含 audio 一项',
+      );
+    }
+  });
+
   test('iOS Info.plist declares Apple Music usage when audio files are picked',
       () {
     expect(libDir.existsSync(), isTrue,

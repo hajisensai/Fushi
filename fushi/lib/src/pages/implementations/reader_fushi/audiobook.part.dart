@@ -685,6 +685,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 非歌词模式的跟随也顺带经过（无害，与滚动回传的 touch 幂等）。暂停态的被动
     // 高亮（重开 / 手动跳句）不算播放，不喂。
     if (controller.isPlaying) _studyClock?.touch();
+    // BUG-2558：播放态翻转（媒体中心暂停键 / 耳机键 / 播完 / 拔耳机）要立刻把时钟运行
+    // 态对齐回判据——后台听书时它是唯一能豁免生命周期停表的输入，而暂停之后没有新的
+    // cue 会再来叫醒这里。
+    _noteAudiobookPlayingForStudyClock(controller.isPlaying);
 
     if (_lyricsMode) {
       // BUG-757: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON

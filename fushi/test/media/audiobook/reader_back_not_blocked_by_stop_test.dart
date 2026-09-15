@@ -73,6 +73,10 @@ void main() {
         skipPreviousStream: const Stream<void>.empty(),
         toggleFloatingLyricStream: const Stream<void>.empty(),
       ),
+      // BUG-2558：本装置不验后台听书统计（见
+      // `audiobook_background_study_clock_test.dart`），库给 null = 不建时钟。
+      database: () => null,
+      studyIdleTimeout: () => const Duration(minutes: 10),
     );
   }
 
