@@ -2861,6 +2861,25 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 点击翻页的热区布局（[MangaTapZoneLayout] 的字符串键）。默认 `left_right`
+  /// = 旧行为（左右各一条 25% 竖条）。只在 [mangaTapZonePaging] 开启时有意义。
+  String get mangaTapZoneLayout =>
+      getPref('manga_tap_zone_layout', defaultValue: 'left_right') as String;
+
+  Future<void> setMangaTapZoneLayout(String value) async {
+    await setPref('manga_tap_zone_layout', value);
+    notifyListeners();
+  }
+
+  /// 漫画阅读器底色（[MangaBackground] 的字符串键）。默认 `black` = 旧行为。
+  String get mangaBackground =>
+      getPref('manga_background', defaultValue: 'black') as String;
+
+  Future<void> setMangaBackground(String value) async {
+    await setPref('manga_background', value);
+    notifyListeners();
+  }
+
   /// 漫画「在线目录」站点根 URL（O1：mokuro.moe 目录源；`MokuroMoeClient` 消费，
   /// 空串/尾斜杠由 client 侧 `normalizeMokuroMoeBaseUrl` 归一回默认站点）。
   String get mangaOnlineCatalogBaseUrl =>

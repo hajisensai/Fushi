@@ -8245,6 +8245,14 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaTapZonePaging(bool value) =>
       prefsRepo.setMangaTapZonePaging(value);
 
+  String get mangaTapZoneLayout => prefsRepo.mangaTapZoneLayout;
+  Future<void> setMangaTapZoneLayout(String value) =>
+      prefsRepo.setMangaTapZoneLayout(value);
+
+  String get mangaBackground => prefsRepo.mangaBackground;
+  Future<void> setMangaBackground(String value) =>
+      prefsRepo.setMangaBackground(value);
+
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
   Future<void> setMangaOnlineCatalogBaseUrl(String value) =>

@@ -4961,5 +4961,16 @@
   "game_text_process_ai_added": "已添加 ${count} 个步骤",
   "game_text_process_ai_failed": "生成失败：${reason}",
   "ai_provider_base_url_invalid": "请填写有效的 HTTP 或 HTTPS 接口地址",
-  "ai_provider_protocol_locked": "由内置预设固定，不可更改"
+  "ai_provider_protocol_locked": "由内置预设固定，不可更改",
+  "manga_background": "背景色",
+  "manga_background_black": "黑",
+  "manga_background_white": "白",
+  "manga_background_gray": "灰",
+  "manga_background_theme": "跟随主题",
+  "manga_tap_zone_layout": "点击区域布局",
+  "manga_tap_zone_layout_subtitle": "点击页面哪些位置会翻页",
+  "manga_tap_zone_layout_left_right": "左右",
+  "manga_tap_zone_layout_l_shaped": "L 型",
+  "manga_tap_zone_layout_kindle": "Kindle",
+  "manga_tap_zone_layout_top_bottom": "上下"
 }

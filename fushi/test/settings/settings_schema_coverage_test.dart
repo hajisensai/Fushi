@@ -115,6 +115,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // 底色：写 prefsRepo（changed=true），生效点在阅读器——WebView 文档的
+  // html,body 背景 + 页面 Scaffold 底色两处同源，harness 里没有阅读器。由专项
+  // 测试咬住「偏好值域往返」与「注入的文档真的换了背景且不残留旧的 #000」。
+  'manga/Background':
+      'test/media/manga/manga_overlay_background_tap_zone_test.dart（底色注入）'
+          ' + test/media/manga/manga_tap_zones_test.dart（值域往返）',
+  // 点击热区布局：同上。几何与 RTL 镜像是纯函数（mangaTapZones），由
+  // manga_tap_zones_test 逐布局咬死；注入串由 overlay 专项测试咬住。
+  'manga/Tap zone layout':
+      'test/media/manga/manga_tap_zones_test.dart（四种布局几何 + RTL 镜像）'
+          ' + test/media/manga/manga_overlay_background_tap_zone_test.dart（注入表）',
   // 顶栏悬浮/固定：写 prefsRepo（changed=true），生效点是阅读器打开书时读一次
   // appModel.mangaChromeFloating 决定栏形态与正文让位——harness 里没有阅读器。
   // 由 manga_reader_chrome_test 咬住让位/绘制两条纯函数，manga_fushi_page_test

@@ -4961,5 +4961,16 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "manga_background": "Background",
+  "manga_background_black": "Black",
+  "manga_background_white": "White",
+  "manga_background_gray": "Gray",
+  "manga_background_theme": "Follow theme",
+  "manga_tap_zone_layout": "Tap zone layout",
+  "manga_tap_zone_layout_subtitle": "Where a tap turns the page",
+  "manga_tap_zone_layout_left_right": "Left and right",
+  "manga_tap_zone_layout_l_shaped": "L-shaped",
+  "manga_tap_zone_layout_kindle": "Kindle",
+  "manga_tap_zone_layout_top_bottom": "Top and bottom"
 }

@@ -118,6 +118,34 @@ SettingsDestination buildMangaDestination() {
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaPageAnimation(value),
           ),
+          // 底色：此前恒黑，两处硬编码（WebView 文档的 html,body 与页面 Scaffold）。
+          SettingsSegmentedItem<String>(
+            id: 'manga.background',
+            title: t.manga_background,
+            icon: Icons.format_color_fill_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: MangaBackground.black.key,
+                label: t.manga_background_black,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaBackground.white.key,
+                label: t.manga_background_white,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaBackground.gray.key,
+                label: t.manga_background_gray,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaBackground.theme.key,
+                label: t.manga_background_theme,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                MangaBackgroundKey.fromKey(c.appModel.mangaBackground).key,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.setMangaBackground(value),
+          ),
           SettingsSwitchItem(
             id: 'manga.tap_zone_paging',
             title: t.manga_tap_zone_paging,
@@ -126,6 +154,38 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaTapZonePaging,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaTapZonePaging(value),
+          ),
+          // 热区布局只在点击翻页开启时才有意义，故随开关显隐——关着还留一排预设
+          // 会让人以为选了就能用。
+          SettingsSegmentedItem<String>(
+            id: 'manga.tap_zone_layout',
+            title: t.manga_tap_zone_layout,
+            subtitle: t.manga_tap_zone_layout_subtitle,
+            icon: Icons.grid_view_outlined,
+            visible: (SettingsContext c) => c.appModel.mangaTapZonePaging,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: MangaTapZoneLayout.leftRight.key,
+                label: t.manga_tap_zone_layout_left_right,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaTapZoneLayout.lShaped.key,
+                label: t.manga_tap_zone_layout_l_shaped,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaTapZoneLayout.kindle.key,
+                label: t.manga_tap_zone_layout_kindle,
+              ),
+              SettingsSegmentOption<String>(
+                value: MangaTapZoneLayout.topBottom.key,
+                label: t.manga_tap_zone_layout_top_bottom,
+              ),
+            ],
+            selected: (SettingsContext c) => MangaTapZoneLayoutKey.fromKey(
+              c.appModel.mangaTapZoneLayout,
+            ).key,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.setMangaTapZoneLayout(value),
           ),
           // 顶栏悬浮/常驻：与 EPUB 阅读器「点空白隐藏控制栏」同一模型（悬浮 = 不占
           // 布局、默认收起、点页面中央或顶边悬停唤出后自动收起；关 = 常驻并让位）。
