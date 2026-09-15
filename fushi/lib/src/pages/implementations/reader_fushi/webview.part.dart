@@ -1541,6 +1541,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     var p = r.calculateProgress();
     var m = r.paginationMetrics;
     var total = (m && m.totalChars) ? m.totalChars : 0;
+    // VN shell：整章正文被 detach 进游离的 sourceRoot，document 里只剩当前一屏的克隆，
+    // 下面的 createWalker() 兜底只会数到**本屏**字数（几十字），于是 round(p × 本屏字数)
+    // 恒为 0、progress 恒 0.0，Dart 侧去抖把每一次翻屏都当「没动」丢掉，charOffset
+    // 一次也落不了库——退出重开永远回到第 0 屏；打字渐显未完成时 walker 还会剔掉未揭示
+    // 节点让 total 归零、整段返空串。VN 在 initialize 里已算好章级 totalChapterChars
+    // （contentStream.totalMatchableChars），与分页 shell 的 paginationMetrics.totalChars
+    // 同口径，这里直接用它，walker 只留给真没有章级计数的 shell。
+    if (total <= 0 && typeof r.totalChapterChars === 'number' && r.totalChapterChars > 0) {
+      total = r.totalChapterChars;
+    }
     if (total <= 0 && r.createWalker) {
       var walker = r.createWalker();
       var node;
