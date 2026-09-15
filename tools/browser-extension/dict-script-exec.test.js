@@ -394,3 +394,32 @@ test('host constructors keep their statics and prototypes through the block wind
   assert.strictEqual(root.getAttribute('globals'), 'true,true,true,true,true',
     'a host global lost its statics/prototype (or its bound identity) through the proxy');
 });
+
+// The proxy's private table IS the proxy target, so the traps it does not
+// implement (defineProperty / getOwnPropertyDescriptor / ownKeys) land on the
+// same object that get/set read — otherwise a script could `defineProperty` a
+// value onto `window` and read back undefined. Listener accessors are named
+// functions so a script can hold on to a reference and compare it.
+const WINDOW_SHAPE_SCRIPT = [
+  "var out = [];",
+  "Object.defineProperty(window, 'dictDefined', { value: 42, configurable: true });",
+  "out.push(window.dictDefined === 42);",
+  "window.dictAssigned = 7;",
+  "out.push(Object.keys(window).indexOf('dictAssigned') >= 0);",
+  "out.push(window.removeEventListener === window.removeEventListener);",
+  "out.push(window.addEventListener === window.addEventListener);",
+  "document.body.setAttribute('shape', out.join(','));",
+].join('\n');
+
+test('the block window behaves like one object across every trap', async () => {
+  const ctx = makeContext();
+  ctx.window.Object = Object;
+
+  const root = dictRoot('OALD', [{ code: WINDOW_SHAPE_SCRIPT }]);
+  await ctx.runDictScripts(root, 'OALD');
+
+  assert.strictEqual(root.getAttribute('shape'), 'true,true,true,true',
+    'defineProperty/ownKeys and the listener accessors disagree with get/set');
+  assert.strictEqual(ctx.window.dictDefined, undefined,
+    'defineProperty leaked onto the real window');
+});

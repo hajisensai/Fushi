@@ -336,9 +336,11 @@ function createScopedDocument(root, dictName) {
    ……）照常可用。旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，第 N 次查词和第一次
    完全等价。
 
-   target 用空对象而不是真 window：`window` / `top` 这类**不可配置的数据属性**会让「get
-   返回代理自身」撞上 Proxy 不变量检查（TypeError），空对象没有这层约束，回落由 get /
-   has 自己做。 */
+   target 是那张私有表而不是真 window：真 window 上 `window` / `top` 这类**不可配置的数据
+   属性**会让「get 返回代理自身」撞上 Proxy 不变量检查（TypeError）；而拿私有表当 target，
+   没实现的陷阱（`defineProperty` / `getOwnPropertyDescriptor` / `ownKeys`）默认就落在同一
+   张表上，与 get/set 看到的是同一份数据——`Object.defineProperty(window, …)` 写进去之后
+   读得回来。回落真 window 由 get / has 自己做。 */
 function createScopedWindow(root, scopedDocument, dictName) {
     const own = Object.create(null);
 
@@ -366,7 +368,13 @@ function createScopedWindow(root, scopedDocument, dictName) {
         return root.addEventListener(type, handler, options);
     }
 
-    const proxy = new Proxy(Object.create(null), {
+    // 具名而不是每次 get 现造一个箭头函数：脚本存下引用再比对（`window.removeEventListener
+    // === saved`）时身份要稳定。
+    function removeScopedListener(type, handler, options) {
+        return root.removeEventListener(type, handler, options);
+    }
+
+    const proxy = new Proxy(own, {
         get(_target, prop) {
             if (prop === 'document') return scopedDocument;
             // 自指属性全部指回代理，别让脚本经 window.window / self / top 摸回真 window。
@@ -375,9 +383,7 @@ function createScopedWindow(root, scopedDocument, dictName) {
                 return proxy;
             }
             if (prop === 'addEventListener') return addScopedListener;
-            if (prop === 'removeEventListener') {
-                return (type, handler, options) => root.removeEventListener(type, handler, options);
-            }
+            if (prop === 'removeEventListener') return removeScopedListener;
             if (prop in own) return own[prop];
             const value = Reflect.get(window, prop);
             if (typeof value !== 'function') return value;
