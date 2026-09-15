@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
@@ -69,6 +70,43 @@ void main() {
       expect(sentenceSet, isFalse);
       expect(searched, isFalse);
       expect(pageSelected, isFalse);
+    });
+
+    test('BUG-2555：查词不等制卡页物化，两者并行、返回前都落地', () async {
+      final Completer<void> mining = Completer<void>();
+      bool miningStarted = false;
+      bool searchedWhileMiningPending = false;
+      bool miningAwaited = false;
+      final ReaderSelectionData data = ReaderSelectionData.fromJson(
+        <String, dynamic>{
+          'text': '世界',
+          'sentence': 'この世界は美しい。',
+          'mangaPageIndex': 7,
+        },
+      );
+
+      final Future<void> dispatch = dispatchMangaSelection(
+        data,
+        fallbackScreen: const Size(800, 600),
+        selectPageForMining: (int? page) {
+          miningStarted = true;
+          return mining.future;
+        },
+        setSentence: (_) {},
+        search: (_, __, ___) async {
+          // 在线章节这里对应 session.localFile + exists()，此前查词被它串在后面。
+          searchedWhileMiningPending = miningStarted && !mining.isCompleted;
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(searchedWhileMiningPending, isTrue, reason: '查词必须在制卡页物化完成前就发起');
+
+      unawaited(dispatch.then((_) => miningAwaited = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(miningAwaited, isFalse, reason: '返回前仍要等物化收尾（语义不变）');
+      mining.complete();
+      await dispatch;
+      expect(miningAwaited, isTrue);
     });
 
     test('无 rect payload 锚到屏幕中心 1x1（块级兜底）', () async {
