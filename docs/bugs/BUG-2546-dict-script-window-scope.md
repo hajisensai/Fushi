@@ -15,6 +15,8 @@
 
   同时把 `document.defaultView` 也指回本块的 window 代理（jQuery 取 computed style 与判 `isWindow` 都走它，否则又是一条摸回真 window 的路）。
 
+  代理的 get **不能对函数一律 `bind`**（第一版就是这么写的，评审当场逮住）：`bind` 出来的函数既没有 `prototype` 也不带静态成员，而 `with (window)` 让脚本里**每个裸标识符**都走这条 get，于是 `Object.keys(…)` / `Promise.resolve(…)` 全成 undefined、`new Foo()` 失去原型——jQuery 第一行就炸。判据改成「有 `prototype` 的（构造器 / 类）原样交出去，只有不可 new 的宿主方法（`setTimeout` / `getComputedStyle` / `fetch`……）才绑回真 window」，并按原函数缓存 bind 结果，`window.setTimeout === window.setTimeout` 仍成立。
+
   旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，**第 N 次查词与第一次完全等价**。三份镜像（app 弹窗 / `fushi/assets/browser_extension/vendor/` / `tools/browser-extension/vendor/`）同步改。
 
 - **[x] ② 已加自动化测试** — 行为级并入既有 `tools/browser-extension/dict-script-exec.test.js`（Node 把真 `dict-media.js` 载进 vm 跑 `runDictScripts`）：连开三个词典块，断言每块都完整初始化（不被上一块留在 window 上的标记短路）、window 级监听恰好落在本块 root 一次、真 window 与真 document上不留痕迹、`document.defaultView` 指回本块代理。在修复前的 `dict-media.js` 上这三条全红，既有 10 条契约不受影响（10 pass / 3 fail → 13 pass）。

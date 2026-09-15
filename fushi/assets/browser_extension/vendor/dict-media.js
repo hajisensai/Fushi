@@ -315,6 +315,7 @@ const __dictAssetCache = new Map();      // JSON.stringify([dict, path]) -> 源�
 const __dictScriptFnCache = new Map();   // 拼接后的代码串 -> 编译好的 Function
 const __dictScriptsRan = new WeakSet();  // 已经跑过脚本的词典块
 const __scopedWindows = new WeakMap();   // 词典块 root -> 它那份 window 代理
+const __boundHostFns = new WeakMap();    // 宿主方法 -> 绑回真 window 的那一份
 
 function reportDictScriptError(dictName, label, error) {
     try {
@@ -484,7 +485,24 @@ function createScopedWindow(root, scopedDocument, dictName) {
             }
             if (prop in own) return own[prop];
             const value = Reflect.get(window, prop);
-            return typeof value === 'function' ? value.bind(window) : value;
+            if (typeof value !== 'function') return value;
+            // 构造器 / 类（Object、Promise、Date、Node、词典自己的构造函数……）**必须原样
+            // 交出去**：`bind` 出来的函数既没有 `prototype`，也不带 target 的静态成员，
+            // `Object.keys(…)` / `Promise.resolve(…)` / `new Date()` 会当场 TypeError。
+            // 而 `with (window)` 让脚本里**每个裸标识符**都走这条 get——一 bind 就等于把
+            // 整个全局环境换成残废版，jQuery 第一行就炸。
+            //
+            // 真正需要绑回真 window 的只有那些不可 new 的宿主方法（setTimeout /
+            // getComputedStyle / fetch / atob……）：它们以代理为 this 调用会 Illegal
+            // invocation。这类内置方法一律没有 `prototype`，正好拿它当判据。
+            // bind 结果按原函数缓存，`window.setTimeout === window.setTimeout` 仍成立。
+            if (value.prototype !== undefined) return value;
+            let bound = __boundHostFns.get(value);
+            if (bound === undefined) {
+                bound = value.bind(window);
+                __boundHostFns.set(value, bound);
+            }
+            return bound;
         },
         set(_target, prop, value) {
             own[prop] = value;

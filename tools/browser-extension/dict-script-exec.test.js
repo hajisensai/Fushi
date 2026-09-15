@@ -362,3 +362,35 @@ test('document.defaultView points back at the block window, not the real one', a
   assert.strictEqual(root.getAttribute('defaultViewScoped'), 'true',
     'document.defaultView leaked the real window');
 });
+
+// BUG-2546 (follow-up): `with (window)` routes EVERY bare identifier in a
+// dictionary script through the proxy's get trap. Blanket-binding every
+// function there strips `prototype` and the static members off constructors,
+// so `Object.keys(…)` / `Promise.resolve(…)` become undefined and jQuery dies
+// on its first line. Only non-constructible host methods (setTimeout,
+// getComputedStyle, …) may be bound back to the real window.
+const HOST_GLOBALS_SCRIPT = [
+  "var out = [];",
+  "out.push(typeof window.Object.keys === 'function');",
+  "out.push(typeof window.Promise.resolve === 'function');",
+  "out.push(typeof Object.keys === 'function');",       // bare identifier, via with(window)
+  "out.push(new window.Date(0).getTime() === 0);",
+  "out.push(window.setTimeout === window.setTimeout);", // bound identity must be stable
+  "window.setTimeout(function () {}, 0);",              // must not throw Illegal invocation
+  "document.body.setAttribute('globals', out.join(','));",
+].join('\n');
+
+test('host constructors keep their statics and prototypes through the block window', async () => {
+  const ctx = makeContext();
+  // The hand-rolled stub window has none of these; a real popup window does.
+  ctx.window.Object = Object;
+  ctx.window.Promise = Promise;
+  ctx.window.Date = Date;
+  ctx.window.setTimeout = setTimeout;
+
+  const root = dictRoot('OALD', [{ code: HOST_GLOBALS_SCRIPT }]);
+  await ctx.runDictScripts(root, 'OALD');
+
+  assert.strictEqual(root.getAttribute('globals'), 'true,true,true,true,true',
+    'a host global lost its statics/prototype (or its bound identity) through the proxy');
+});
