@@ -149,19 +149,21 @@ void main() {
     });
   });
 
-  group('吞键边界：只吞 B，其余通道原样放行', () {
+  group('吞键边界：只吞带系统兜底的手柄键，其余通道原样放行', () {
     test('B 的三个边沿都吞（返回动作发生在抬起边沿，只吞按下等于没修）', () {
       expect(
-        gamepadBackMustBeSwallowed(keyDown(LogicalKeyboardKey.gameButtonB)),
+        gamepadSystemFallbackMustBeSwallowed(
+            keyDown(LogicalKeyboardKey.gameButtonB)),
         isTrue,
       );
       expect(
-        gamepadBackMustBeSwallowed(keyUp(LogicalKeyboardKey.gameButtonB)),
+        gamepadSystemFallbackMustBeSwallowed(
+            keyUp(LogicalKeyboardKey.gameButtonB)),
         isTrue,
         reason: 'Android 的返回发生在 ACTION_UP，抬起边沿放行会照样合成出 BACK',
       );
       expect(
-        gamepadBackMustBeSwallowed(
+        gamepadSystemFallbackMustBeSwallowed(
           KeyRepeatEvent(
             physicalKey: const PhysicalKeyboardKey(0),
             logicalKey: LogicalKeyboardKey.gameButtonB,
@@ -174,7 +176,8 @@ void main() {
 
     test('A 不吞：它的系统兜底是 DPAD_CENTER（确认焦点控件），是有益能力', () {
       expect(
-        gamepadBackMustBeSwallowed(keyDown(LogicalKeyboardKey.gameButtonA)),
+        gamepadSystemFallbackMustBeSwallowed(
+            keyDown(LogicalKeyboardKey.gameButtonA)),
         isFalse,
       );
     });
@@ -192,7 +195,7 @@ void main() {
           LogicalKeyboardKey.arrowRight,
         ]) {
           expect(
-            gamepadBackMustBeSwallowed(keyDown(arrow, source)),
+            gamepadSystemFallbackMustBeSwallowed(keyDown(arrow, source)),
             isFalse,
             reason: '$source 的 $arrow 被吞会废掉手柄方向键移焦',
           );
@@ -208,20 +211,39 @@ void main() {
         LogicalKeyboardKey.space,
         LogicalKeyboardKey.keyB,
       ]) {
-        expect(gamepadBackMustBeSwallowed(keyDown(key)), isFalse);
+        expect(gamepadSystemFallbackMustBeSwallowed(keyDown(key)), isFalse);
       }
     });
 
-    test('其它手柄键不吞（Generic.kcm 里它们没有 BACK 兜底）', () {
+    test('X / Y / Start / Select / L3 / R3 也吞：Generic.kcm 给它们的兜底会打字或确认', () {
+      // AOSP Generic.kcm：X → DEL、Y → SPACE、Start/THUMBL/THUMBR → DPAD_CENTER、
+      // Select → MENU。没人认领时放行 = 聚焦的文本框被退格 / 插空格，或焦点控件
+      // 被一个没绑定的键「确认」。三个边沿同 B（兜底动作发生在 ACTION_UP）。
       for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
         LogicalKeyboardKey.gameButtonX,
         LogicalKeyboardKey.gameButtonY,
-        LogicalKeyboardKey.gameButtonLeft1,
-        LogicalKeyboardKey.gameButtonRight1,
         LogicalKeyboardKey.gameButtonStart,
         LogicalKeyboardKey.gameButtonSelect,
+        LogicalKeyboardKey.gameButtonThumbLeft,
+        LogicalKeyboardKey.gameButtonThumbRight,
       ]) {
-        expect(gamepadBackMustBeSwallowed(keyDown(key)), isFalse);
+        expect(gamepadSystemFallbackMustBeSwallowed(keyDown(key)), isTrue,
+            reason: '$key');
+        expect(gamepadSystemFallbackMustBeSwallowed(keyUp(key)), isTrue,
+            reason: '$key 抬起沿');
+      }
+    });
+
+    test('肩键 / 扳机 / Mode 不吞：前者没有兜底，Mode 的 HOME 兜底是系统惯例', () {
+      for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+        LogicalKeyboardKey.gameButtonLeft1,
+        LogicalKeyboardKey.gameButtonRight1,
+        LogicalKeyboardKey.gameButtonLeft2,
+        LogicalKeyboardKey.gameButtonRight2,
+        LogicalKeyboardKey.gameButtonMode,
+      ]) {
+        expect(gamepadSystemFallbackMustBeSwallowed(keyDown(key)), isFalse,
+            reason: '$key');
       }
     });
   });

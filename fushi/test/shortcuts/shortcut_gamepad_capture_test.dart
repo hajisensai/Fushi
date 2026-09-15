@@ -95,6 +95,49 @@ void main() {
     expect(find.text(t.shortcut_press_gamepad), findsNothing);
   });
 
+  testWidgets(
+      'Android native path: shoulder / trigger keys (LB RB LT RT) are captured',
+      (WidgetTester tester) async {
+    // 用户报告「安卓的 xbox 的肩键和 LT 键没识别到」。LB/RB 是真按键
+    // （KEYCODE_BUTTON_L1/R1）；LT/RT 在 Android 上是模拟轴，由原生侧
+    // GamepadTriggerKeySynthesizer 合成为 KEYCODE_BUTTON_L2/R2 后走同一条键链。
+    // 四个键到 Dart 后都应被捕获区原样录下。默认表里这四个键在 reader / audiobook
+    // 共活作用域各有归属（有声书上下句等），先把冲突方全部解绑，让这条只验
+    // 「录得到」而不进冲突重分配分支（那条另有用例）。
+    final FushiShortcutRegistry registry = buildRegistry();
+    const ShortcutAction action = ShortcutAction.readerToggleFurigana;
+    const List<(LogicalKeyboardKey, GamepadButton)> keys =
+        <(LogicalKeyboardKey, GamepadButton)>[
+      (LogicalKeyboardKey.gameButtonLeft1, GamepadButton.lb),
+      (LogicalKeyboardKey.gameButtonRight1, GamepadButton.rb),
+      (LogicalKeyboardKey.gameButtonLeft2, GamepadButton.lt),
+      (LogicalKeyboardKey.gameButtonRight2, GamepadButton.rt),
+    ];
+    for (final (_, GamepadButton button) in keys) {
+      for (;;) {
+        final ShortcutAction? owner = registry.hasGamepadConflict(
+          action.scope,
+          GamepadBinding(button),
+          exclude: action,
+        );
+        if (owner == null) break;
+        registry.updateBinding(owner, const ShortcutBindingSet());
+      }
+    }
+    await pumpDialog(tester, registry, action: action);
+    for (final (LogicalKeyboardKey key, GamepadButton button) in keys) {
+      await startGamepadCapture(tester);
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(FushiTagChip, button.label),
+        findsOneWidget,
+        reason: '$key 应录为 ${button.label}',
+      );
+      expect(find.text(t.shortcut_press_gamepad), findsNothing);
+    }
+  });
+
   testWidgets('keyboard keys during gamepad capture are swallowed, not bound',
       (WidgetTester tester) async {
     final FushiShortcutRegistry registry = buildRegistry();
