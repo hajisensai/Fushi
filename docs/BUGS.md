@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2337 条。点号进各自文件。
+> 共 2338 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2529](bugs/BUG-2529-audiobook-chapter-transition-stuck-on-nav-abort.md) | ✅ | ✅ | 跨章导航中止不解除跨章守卫，安卓切后台后上下句/高亮跟随永久失效 |
 | [BUG-2528](bugs/BUG-2528-audiobook-panel-short-viewport.md) | ✅ | ✅ | 有声书面板在矮窗（手机横屏）下分段条以下的内容滚不出来 |
 | [BUG-2527](bugs/BUG-2527-anki-source-marker-tag-pollutes-tags.md) | ✅ | ✅ | 制卡给每张卡挂冗余 fushi_source_ 哈希 tag 污染 Anki 标签栏 |
 | [BUG-2526](bugs/BUG-2526-youtube-android-dash-60s-window-visionos.md) | ✅ | ✅ | YouTube 花絮/流媒体打不开或无声：android client DASH 流无 PO token 只放前 60 秒 |
