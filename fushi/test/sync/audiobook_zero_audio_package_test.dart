@@ -28,6 +28,64 @@ Map<String, Object?> _manifestOf(File package) {
       as Map<String, Object?>;
 }
 
+/// 用 [manifest] 换掉 [package] 里的 manifest.json，其余条目原样重打包。
+File _repackWithManifest(
+  File package,
+  Map<String, Object?> manifest,
+  File output,
+) {
+  final Archive source = ZipDecoder().decodeBytes(package.readAsBytesSync());
+  final Archive out = Archive();
+  final List<int> manifestBytes = utf8.encode(jsonEncode(manifest));
+  out.addFile(
+      ArchiveFile('manifest.json', manifestBytes.length, manifestBytes));
+  for (final ArchiveFile file in source.files) {
+    if (!file.isFile || file.name == 'manifest.json') continue;
+    final List<int> bytes = file.content as List<int>;
+    out.addFile(ArchiveFile(file.name, bytes.length, bytes));
+  }
+  output.writeAsBytesSync(ZipEncoder().encode(out)!);
+  return output;
+}
+
+/// 一本**健康**的 srt-backed 有声书（files 模式，音频真在磁盘上）。
+Future<void> _seedHealthyBook(FushiDatabase db, Directory root) async {
+  await root.create(recursive: true);
+  final File track = File(p.join(root.path, 'track01.m4b'))
+    ..writeAsStringSync('audio bytes');
+  final File alignment = File(p.join(root.path, 'align.srt'))
+    ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhello\n');
+
+  await db.upsertAudiobook(AudiobooksCompanion.insert(
+    bookKey: 'ttu-99',
+    audioRoot: Value(root.path),
+    audioPathsJson: Value(jsonEncode(<String>[track.path])),
+    alignmentFormat: 'srt',
+    alignmentPath: alignment.path,
+  ));
+  await db.upsertSrtBook(SrtBooksCompanion.insert(
+    uid: 'srt-99',
+    title: 'Healthy',
+    audioRoot: Value(root.path),
+    audioPathsJson: Value(jsonEncode(<String>[track.path])),
+    srtPath: alignment.path,
+    importedAt: 9,
+    bookKey: const Value('ttu-99'),
+  ));
+  await db.replaceCuesForBook('ttu-99', <AudioCuesCompanion>[
+    AudioCuesCompanion.insert(
+      bookKey: 'ttu-99',
+      chapterHref: 'chapter.xhtml',
+      sentenceIndex: 0,
+      textFragmentId: 'frag-0',
+      cueText: 'hello',
+      startMs: 0,
+      endMs: 1000,
+      audioFileIndex: 0,
+    ),
+  ]);
+}
+
 /// folder 模式（`audioPathsJson` 空、音频靠枚举 `audioRoot` 目录）的 srt-backed
 /// 有声书，且目录里一个音频文件都没有——数据根迁移后目录没跟上、引用导入的原
 /// 目录被移走，都会落到这个形状。
@@ -256,6 +314,51 @@ void main() {
         expect(json['hasAudio'], value);
         expect(RemoteAudiobookInfo.fromJson(json).hasAudio, value);
       }
+    });
+  });
+
+  group('导入写库原子性 (BUG-2551)', () {
+    test('cue 段中途抛 → 已写下的 Audiobooks / SrtBooks 行一并回滚', () async {
+      final Directory temp =
+          await Directory.systemTemp.createTemp('hibiki-import-atomic-');
+      addTearDown(() => temp.delete(recursive: true));
+      final FushiDatabase sourceDb = _testDb();
+      final FushiDatabase targetDb = _testDb();
+      addTearDown(sourceDb.close);
+      addTearDown(targetDb.close);
+
+      await _seedHealthyBook(sourceDb, Directory(p.join(temp.path, 'source')));
+      final File healthy = await SyncAssetPackageService(db: sourceDb)
+          .exportAudioDatabasePackage(
+        bookKey: 'ttu-99',
+        srtBookUid: 'srt-99',
+        outputFile: File(p.join(temp.path, 'healthy.fushiaudio')),
+      );
+
+      // 把 cue 的必需键删掉：写库段会先写完 Audiobooks + SrtBooks，再在 cue 这步抛。
+      final Map<String, Object?> manifest = _manifestOf(healthy);
+      final List<Object?> cues = manifest['cues']! as List<Object?>;
+      (cues.first! as Map<String, Object?>).remove('chapterHref');
+      final File broken = _repackWithManifest(
+        healthy,
+        manifest,
+        File(p.join(temp.path, 'broken-cue.fushiaudio')),
+      );
+
+      await expectLater(
+        SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+          packageFile: broken,
+          audioDatabaseRoot: Directory(p.join(temp.path, 'target')),
+        ),
+        throwsA(anything),
+      );
+
+      // 关键：不能留下半成品行。书架所有「补拉有声书」入口的判据都是「有没有这行」，
+      // 半写下的行会让占位卡 / 书卡菜单 / 对比弹窗同时消失，用户再没有第二次下载入口。
+      expect(await targetDb.getAllAudiobooks(), isEmpty,
+          reason: 'cue 写失败时 Audiobooks 行必须跟着回滚');
+      expect(await targetDb.getSrtBookByUid('srt-99'), isNull,
+          reason: 'cue 写失败时 SrtBooks 行必须跟着回滚');
     });
   });
 }

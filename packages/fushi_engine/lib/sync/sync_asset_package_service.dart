@@ -361,65 +361,75 @@ class SyncAssetPackageService {
       prefix: 'resources',
     );
 
-    await _db.upsertAudiobook(AudiobooksCompanion.insert(
-      bookKey: bookKey,
-      audioRoot: Value(targetDir.path),
-      audioPathsJson: Value(jsonEncode(audioPaths)),
-      alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
-      alignmentPath: alignmentPath,
-      healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
-      matchRatePct: Value(_nullableInt(audiobook, 'matchRatePct')),
-      healthMeasuredAt: Value(_nullableDate(audiobook, 'healthMeasuredAt')),
-      healthReason: Value(_nullableString(audiobook, 'healthReason')),
-      followAudio: Value(_nullableBool(audiobook, 'followAudio')),
-    ));
+    // 写库段必须原子（BUG-2551）：这三张表是**一本书**，分三次 await 写下去时，
+    // 任何一步抛出（磁盘满、标签表冲突、cue 批量写失败）都会把前面写下的行留在库里。
+    // 而书架的所有「补拉有声书」入口判据都是「有没有这行」——半成品行一落，占位卡、
+    // 书卡菜单、对比弹窗同时消失，用户再也没有第二次下载的入口。判据问磁盘只解决了
+    // 一半，写入不原子的话，判据再对也会被半成品骗过去。
+    //
+    // 解压刻意留在事务外：它是文件操作、耗时长，包进去等于整段持锁；且解压残留不会
+    // 让任何入口消失（资源目录里多几个文件无碍），真正致命的只有 DB 行。
+    await _db.transaction(() async {
+      await _db.upsertAudiobook(AudiobooksCompanion.insert(
+        bookKey: bookKey,
+        audioRoot: Value(targetDir.path),
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        alignmentFormat: _stringValue(audiobook, 'alignmentFormat'),
+        alignmentPath: alignmentPath,
+        healthKindRaw: Value(_nullableString(audiobook, 'healthKindRaw')),
+        matchRatePct: Value(_nullableInt(audiobook, 'matchRatePct')),
+        healthMeasuredAt: Value(_nullableDate(audiobook, 'healthMeasuredAt')),
+        healthReason: Value(_nullableString(audiobook, 'healthReason')),
+        followAudio: Value(_nullableBool(audiobook, 'followAudio')),
+      ));
 
-    await _db.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: _stringValue(srtBook, 'uid'),
-      title: _stringValue(srtBook, 'title'),
-      author: Value(_nullableString(srtBook, 'author')),
-      audioRoot: Value(targetDir.path),
-      audioPathsJson: Value(jsonEncode(audioPaths)),
-      srtPath: srtPath,
-      coverPath: Value(coverPath),
-      importedAt: _intValue(srtBook, 'importedAt'),
-      bookKey: Value(bookKey),
-    ));
+      await _db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: _stringValue(srtBook, 'uid'),
+        title: _stringValue(srtBook, 'title'),
+        author: Value(_nullableString(srtBook, 'author')),
+        audioRoot: Value(targetDir.path),
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        srtPath: srtPath,
+        coverPath: Value(coverPath),
+        importedAt: _intValue(srtBook, 'importedAt'),
+        bookKey: Value(bookKey),
+      ));
 
-    // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
-    // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
-    final Object? rawSrtTags = srtBook['tags'];
-    final List<String> srtTagNames = rawSrtTags is List
-        ? <String>[
-            for (final Object? t in rawSrtTags)
-              if (t != null && t.toString().isNotEmpty) t.toString(),
-          ]
-        : const <String>[];
-    if (srtTagNames.isNotEmpty) {
-      final String importedSrtUid = _stringValue(srtBook, 'uid');
-      for (final String name in srtTagNames) {
-        if (name.isEmpty) continue;
-        final int tagId = await _db.getOrCreateTagByName(name);
-        await _db.addTagToSrtBook(importedSrtUid, tagId);
+      // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
+      // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
+      final Object? rawSrtTags = srtBook['tags'];
+      final List<String> srtTagNames = rawSrtTags is List
+          ? <String>[
+              for (final Object? t in rawSrtTags)
+                if (t != null && t.toString().isNotEmpty) t.toString(),
+            ]
+          : const <String>[];
+      if (srtTagNames.isNotEmpty) {
+        final String importedSrtUid = _stringValue(srtBook, 'uid');
+        for (final String name in srtTagNames) {
+          if (name.isEmpty) continue;
+          final int tagId = await _db.getOrCreateTagByName(name);
+          await _db.addTagToSrtBook(importedSrtUid, tagId);
+        }
       }
-    }
 
-    await _db.replaceCuesForBook(
-      bookKey,
-      _listValue(manifest, 'cues').map((Object? raw) {
-        final Map<String, Object?> cue = _typedMap(raw);
-        return AudioCuesCompanion.insert(
-          bookKey: bookKey,
-          chapterHref: _stringValue(cue, 'chapterHref'),
-          sentenceIndex: _intValue(cue, 'sentenceIndex'),
-          textFragmentId: _stringValue(cue, 'textFragmentId'),
-          cueText: _stringValue(cue, 'cueText'),
-          startMs: _intValue(cue, 'startMs'),
-          endMs: _intValue(cue, 'endMs'),
-          audioFileIndex: _intValue(cue, 'audioFileIndex'),
-        );
-      }).toList(),
-    );
+      await _db.replaceCuesForBook(
+        bookKey,
+        _listValue(manifest, 'cues').map((Object? raw) {
+          final Map<String, Object?> cue = _typedMap(raw);
+          return AudioCuesCompanion.insert(
+            bookKey: bookKey,
+            chapterHref: _stringValue(cue, 'chapterHref'),
+            sentenceIndex: _intValue(cue, 'sentenceIndex'),
+            textFragmentId: _stringValue(cue, 'textFragmentId'),
+            cueText: _stringValue(cue, 'cueText'),
+            startMs: _intValue(cue, 'startMs'),
+            endMs: _intValue(cue, 'endMs'),
+            audioFileIndex: _intValue(cue, 'audioFileIndex'),
+          );
+        }).toList(),
+      );
+    });
   }
 
   /// 导入纯 SRT（standalone）有声书包：无 Audiobooks 行，身份=uid，bookKey 恒空。
@@ -469,51 +479,55 @@ class SyncAssetPackageService {
       prefix: 'resources',
     );
 
-    await _db.upsertSrtBook(SrtBooksCompanion.insert(
-      uid: uid,
-      title: _stringValue(srtBook, 'title'),
-      author: Value(_nullableString(srtBook, 'author')),
-      audioRoot: Value(targetDir.path),
-      audioPathsJson: Value(jsonEncode(audioPaths)),
-      srtPath: srtPath,
-      coverPath: Value(coverPath),
-      importedAt: _intValue(srtBook, 'importedAt'),
-      bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
-    ));
+    // 与 srt-backed 分支同纪律：写库段原子（BUG-2551）。半写下的 SrtBooks 行会让
+    // 书架上的 standalone 占位卡永久消失，用户再没有第二次下载的入口。
+    await _db.transaction(() async {
+      await _db.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: uid,
+        title: _stringValue(srtBook, 'title'),
+        author: Value(_nullableString(srtBook, 'author')),
+        audioRoot: Value(targetDir.path),
+        audioPathsJson: Value(jsonEncode(audioPaths)),
+        srtPath: srtPath,
+        coverPath: Value(coverPath),
+        importedAt: _intValue(srtBook, 'importedAt'),
+        bookKey: const Value(''), // standalone：bookKey 恒空（纯 SRT 身份判据）。
+      ));
 
-    // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
-    final Object? rawSrtTags = srtBook['tags'];
-    final List<String> srtTagNames = rawSrtTags is List
-        ? <String>[
-            for (final Object? t in rawSrtTags)
-              if (t != null && t.toString().isNotEmpty) t.toString(),
-          ]
-        : const <String>[];
-    if (srtTagNames.isNotEmpty) {
-      for (final String name in srtTagNames) {
-        if (name.isEmpty) continue;
-        final int tagId = await _db.getOrCreateTagByName(name);
-        await _db.addTagToSrtBook(uid, tagId);
+      // 标签（manifest 按名带来，只增不删；缺 'tags' 键的旧包安全降级空列表）。
+      final Object? rawSrtTags = srtBook['tags'];
+      final List<String> srtTagNames = rawSrtTags is List
+          ? <String>[
+              for (final Object? t in rawSrtTags)
+                if (t != null && t.toString().isNotEmpty) t.toString(),
+            ]
+          : const <String>[];
+      if (srtTagNames.isNotEmpty) {
+        for (final String name in srtTagNames) {
+          if (name.isEmpty) continue;
+          final int tagId = await _db.getOrCreateTagByName(name);
+          await _db.addTagToSrtBook(uid, tagId);
+        }
       }
-    }
 
-    // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
-    await _db.replaceCuesForBook(
-      uid,
-      cues.map((Object? raw) {
-        final Map<String, Object?> cue = _typedMap(raw);
-        return AudioCuesCompanion.insert(
-          bookKey: uid,
-          chapterHref: _stringValue(cue, 'chapterHref'),
-          sentenceIndex: _intValue(cue, 'sentenceIndex'),
-          textFragmentId: _stringValue(cue, 'textFragmentId'),
-          cueText: _stringValue(cue, 'cueText'),
-          startMs: _intValue(cue, 'startMs'),
-          endMs: _intValue(cue, 'endMs'),
-          audioFileIndex: _intValue(cue, 'audioFileIndex'),
-        );
-      }).toList(),
-    );
+      // 纯 SRT cue 键 = uid（SrtBook cue 命名空间，见 SrtBookRepository.cuesFor）。
+      await _db.replaceCuesForBook(
+        uid,
+        cues.map((Object? raw) {
+          final Map<String, Object?> cue = _typedMap(raw);
+          return AudioCuesCompanion.insert(
+            bookKey: uid,
+            chapterHref: _stringValue(cue, 'chapterHref'),
+            sentenceIndex: _intValue(cue, 'sentenceIndex'),
+            textFragmentId: _stringValue(cue, 'textFragmentId'),
+            cueText: _stringValue(cue, 'cueText'),
+            startMs: _intValue(cue, 'startMs'),
+            endMs: _intValue(cue, 'endMs'),
+            audioFileIndex: _intValue(cue, 'audioFileIndex'),
+          );
+        }).toList(),
+      );
+    });
   }
 
   /// 打包一个本地音频库：单个 .db（STORE 流式）+ manifest（displayName/enabled/子来源）。
