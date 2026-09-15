@@ -1182,6 +1182,10 @@ class AppModel with ChangeNotifier {
       skipPreviousStream: audioCtrl.skipPreviousStream,
       toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
     ),
+    // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
+    // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
+    database: () => database,
+    studyIdleTimeout: () => readingIdleTimeout,
   )
     ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))

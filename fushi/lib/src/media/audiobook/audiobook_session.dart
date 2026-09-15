@@ -5,8 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 /// 进程级常驻有声书会话（TODO-291 阶段2）。
 ///
@@ -34,6 +37,8 @@ class AudiobookSession extends ChangeNotifier {
     required bool Function() floatingLyricClickLookup,
     required FloatingLyricLookupHandler onFloatingLyricLookup,
     required AudioControlStreams controlStreams,
+    required FushiDatabase? Function() database,
+    required Duration Function() studyIdleTimeout,
   })  : _audioHandlerGetter = audioHandler,
         _showFloatingLyric = showFloatingLyric,
         _showMediaNotification = showMediaNotification,
@@ -43,7 +48,9 @@ class AudiobookSession extends ChangeNotifier {
         _onFloatingLyricLookup = onFloatingLyricLookup,
         _defaultFloatingLyricStyle = floatingLyricStyle,
         _defaultFloatingLyricLookup = onFloatingLyricLookup,
-        _controlStreams = controlStreams;
+        _controlStreams = controlStreams,
+        _databaseGetter = database,
+        _studyIdleTimeout = studyIdleTimeout;
 
   final FushiAudioHandler? Function() _audioHandlerGetter;
   final bool Function() _showFloatingLyric;
@@ -54,6 +61,15 @@ class AudiobookSession extends ChangeNotifier {
   /// 闭包注入（照 floatingLyricStyle 范式），每次 _syncFloatingLyric 读实时值。
   final int Function() _floatingLyricContextLines;
   final AudioControlStreams _controlStreams;
+
+  /// 后台听书学习时钟的库句柄来源（BUG-2558）。闭包注入，照本类其余依赖的范式——
+  /// 会话在 `AppModel` 字段初始化期构造，那时 `database` 还没 ready。返回 null =
+  /// 本会话不记后台听书统计（库尚未打开 / 不关心统计的测试装置），播放本身不受影响。
+  final FushiDatabase? Function() _databaseGetter;
+
+  /// 后台听书时钟的空闲门（设置项 `reading.stats_idle_timeout_minutes`）。闭包注入、
+  /// 每次起表现读，与阅读器「不在建时钟时快照」同律（BUG-2213）。
+  final Duration Function() _studyIdleTimeout;
 
   /// 悬浮窗样式来源。默认是 AppModel 注入的 app 级主题样式；reader attach 时换成
   /// reader 主题样式（深色书/竖排等），detach 时还原成默认，使后台听书也有合理样式。
@@ -261,6 +277,8 @@ class AudiobookSession extends ChangeNotifier {
       // cue（音频跳过的段落不算已读）。
       controller.onExplicitCueJump = reader.onExplicitCueJump;
     }
+    // BUG-2558：reader 接手统计，后台听书那只必须停——否则同一段时间两只时钟各记一遍。
+    _syncStudyClockRunState();
   }
 
   /// 退出 reader：把 WebView 侧回调清成「无 reader」安全默认，但不 dispose 控制器。
@@ -285,6 +303,8 @@ class AudiobookSession extends ChangeNotifier {
     }
     // 退 reader 后悬浮窗换回 app 级默认主题样式 + 默认查词（桌面后台听书点词无弹窗宿主）。
     restoreDefaultSurfaces();
+    // BUG-2558：reader 走了，若还在播就由本会话接手计时（「退出书籍页继续听」那一段）。
+    _syncStudyClockRunState();
   }
 
   /// 显式停止会话：dispose 控制器、隐藏悬浮窗、清媒体通知、取消订阅。
@@ -326,6 +346,9 @@ class AudiobookSession extends ChangeNotifier {
 
   Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
+    // BUG-2558：在 _book / _controller 被清空**之前**结算后台听书时钟——清空之后判据
+    // 恒 false，但那时已经没人持有这只时钟了。
+    _retireStudyClock();
     _reader = null;
     _controller = null;
     _book = null;
@@ -388,6 +411,89 @@ class AudiobookSession extends ChangeNotifier {
     }
   }
 
+  // ── 后台听书的学习统计（BUG-2558） ──────────────────────────────────────
+
+  /// **reader 不在场**期间的后台听书学习时钟（BUG-2558）。
+  ///
+  /// 阅读器那只时钟随 reader 页 `dispose` 一起 `detach()`，于是「退出书籍页 → 锁屏 →
+  /// 经媒体中心继续听」这整段过去**没有任何统计写入方**（`docs/plans/2026-09-06-
+  /// read-unit-ledger.md` 已记为已知缺口）。本时钟补的就是这一段。
+  ///
+  /// **与阅读器那只时钟互斥，不是并存**：判据里的 [hasReaderAttached] 保证同一时刻
+  /// 至多一只在跑。reader 在场时（哪怕 app 已切后台）由阅读器那只负责，它自己的判据
+  /// [studyClockMayRun] 里有同一条「有声书在播则豁免生命周期停表」的豁免；reader 一
+  /// 走，交接到这只。两只同时跑就是同一段时间记两遍。
+  ///
+  /// 只记时长、不记字数：后台没有正文视口，`ReadUnitLedger` 的「翻走即计」无从谈起
+  /// （与视频域只计时不计字同律）。身份用 [SessionBookInfo.studyMediaKey]，与阅读器
+  /// 同源，所以同一本书前后台听的时长落在同一条统计身份上。
+  StudyClock? _studyClock;
+
+  /// 本时钟此刻可跑：reader 不在场 + 有书 + **真在出声**。
+  ///
+  /// 「在出声」而不是「会话还活着」：媒体中心 / 耳机键按下暂停后会话仍在（通知还挂着、
+  /// 随时可续播），但那不是学习时间。用户要的正是这条——后台把有声书停了，统计跟着停。
+  bool get _studyClockMayRun =>
+      !hasReaderAttached && _book != null && (_controller?.isPlaying ?? false);
+
+  /// 取（必要时建）后台听书时钟。换书时 [_stopInternal] 已把上一只结算掉并置空，
+  /// 所以这里建出来的一定绑当前这本书。
+  StudyClock? _ensureStudyClock() {
+    final SessionBookInfo? book = _book;
+    if (book == null) return null;
+    final FushiDatabase? db = _databaseGetter();
+    if (db == null) return null;
+    return _studyClock ??= StudyClock(
+      database: db,
+      mediaKind: kActivityMediaBook,
+      mediaKey: book.studyMediaKey,
+      title: book.title,
+      format: BookFormat.epub.dbValue,
+      onWriteError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('StudyClock.write(audiobook-bg)', e, st),
+      deferWrite: ExitFlushRegistry.instance.defer,
+    );
+  }
+
+  /// 把后台听书时钟对齐到判据（可跑 start、不可跑 stop，两边都对已是该状态的幂等）。
+  ///
+  /// 调用点必须覆盖判据三个输入的**每一次**翻转：播放态（[_onControllerChanged]，
+  /// just_audio 的 `playingStream` 经控制器 notify 传到这里）、reader 在场
+  /// （[attachReader] / [detachReader]）、书（[_stopInternal] 单独结算）。
+  void _syncStudyClockRunState() {
+    if (_studyClockMayRun) {
+      final StudyClock? clock = _ensureStudyClock();
+      if (clock == null) return;
+      // 空闲门每次从设置刷，不在建时钟时快照（与阅读器 `_ensureStudyClock` 同律，
+      // BUG-2213）。后台听书唯一的喂门输入是 cue 推进，见 [_touchStudyClockIfPlaying]。
+      clock.idleTimeout = _studyIdleTimeout();
+      clock.start();
+    } else {
+      unawaited(_studyClock?.stop());
+    }
+  }
+
+  /// 后台听书时钟此刻是否在走（行为测试用；生产代码不读）。
+  @visibleForTesting
+  bool get debugBackgroundStudyClockRunning => _studyClock?.isRunning ?? false;
+
+  /// 播放中每次 cue 推进喂一次空闲门（BUG-2212 同律：后台听书没有滚动回传，不喂门
+  /// 的话听一小时只记到空闲门那 10 分钟）。
+  void _touchStudyClockIfPlaying(AudiobookPlayerController controller) {
+    if (!controller.isPlaying) return;
+    _studyClock?.touch();
+  }
+
+  /// 结算并放掉后台听书时钟（换书 / 显式停会话 / 释放会话）。
+  ///
+  /// 同步段（结算 + 封段）在 `stop()` 的首个 await 之前完成，所以这里 `unawaited`
+  /// 只是不等落库那一步——与阅读器 [_syncStudyClockRunState] 的用法同律。
+  void _retireStudyClock() {
+    final StudyClock? clock = _studyClock;
+    _studyClock = null;
+    if (clock != null) unawaited(clock.stop());
+  }
+
   // ── 控制器 cue 变化的常驻同步 ────────────────────────────────────────────
 
   void _onControllerChanged() {
@@ -399,6 +505,10 @@ class AudiobookSession extends ChangeNotifier {
     // 常驻同步：悬浮窗 + 媒体通知。即便没有 reader（退书后台听书）也照刷。
     _syncFloatingLyric(controller);
     _syncMediaNotification(controller);
+    // BUG-2558：控制器的 notify 覆盖播放态翻转（`playingStream`）与 cue 推进两件事，
+    // 正好是后台听书统计需要的两个信号——起停表对齐判据、播放中喂空闲门。
+    _syncStudyClockRunState();
+    _touchStudyClockIfPlaying(controller);
     // 给迷你条 / 任何 session 监听者一次刷新（播放态 / cue 文本变了）。
     notifyListeners();
   }
@@ -676,6 +786,11 @@ class AudiobookSession extends ChangeNotifier {
   void dispose() {
     // 进程退出：随 AppModel.dispose 一起清。stop 不能 await（dispose 同步），直接拆。
     final AudiobookPlayerController? controller = _controller;
+    // BUG-2558：dispose 是同步的，停表必须走 detach()（零 DB IO，攒下的写交
+    // ExitFlushRegistry.defer 在退出前统一 await）；在这里发起 stop() 就是无人 await
+    // 的事务，会与随后的 db.close() 互等（与阅读器 / PDF 的 dispose 同律）。
+    _studyClock?.detach();
+    _studyClock = null;
     _playStreamSub?.cancel();
     _seekStreamSub?.cancel();
     _skipNextSub?.cancel();
@@ -723,6 +838,7 @@ class SessionBookInfo {
     this.isSrtBookSource = false,
     this.author,
     this.coverPath,
+    this.statsMediaKey,
   });
 
   final String bookKey;
@@ -741,6 +857,18 @@ class SessionBookInfo {
 
   final String? author;
   final String? coverPath;
+
+  /// 统计事实表 `study_segments` 的 `media_key`（BUG-2558）。
+  ///
+  /// **不能直接用 [bookKey]**：SRT 书源分支的 [bookKey] 是 `srt_books.uid`，而阅读器
+  /// 那只时钟用的是 `widget.bookKey`（= 传给 `AudiobookSessionLauncher.resolve` 的
+  /// 入参），两者对同一本书可能不是同一个串——记岔了就是同一本书在统计中心裂成两条。
+  /// [AudiobookSessionLauncher] 两条分支一律填**调用方传进来的那个 key**，与阅读器
+  /// 同源。null（旧构造点 / 测试）回退 [bookKey]：EPUB 分支两者本就相等。
+  final String? statsMediaKey;
+
+  /// 统计身份，见 [statsMediaKey]。
+  String get studyMediaKey => statsMediaKey ?? bookKey;
 }
 
 /// 控制器加载初值（从持久层读出）。
