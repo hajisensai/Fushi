@@ -596,6 +596,8 @@ String mangaWindowDocument(
   int zoomSensitivity = kMangaZoomSensitivityDefault,
   MangaPageAnimation pageAnimation = MangaPageAnimation.slide,
   bool tapZonePaging = true,
+  MangaTapZoneLayout tapZoneLayout = MangaTapZoneLayout.leftRight,
+  String backgroundCss = '#000',
   bool showOcrBoxes = false,
 }) {
   final bool isWebtoon = mode == MangaReadingMode.webtoon;
@@ -725,7 +727,8 @@ String mangaWindowDocument(
       // 双指捏合会与原生二指 pan 同时进行（缩放和上下滚动一起发生），滚动一旦接管还会
       // 让浏览器取消指针序列、把捏合状态清掉——这就是「放大缩小跟上下滑动混了」。改由
       // JS 独占后，webtoon 的竖向滚动由下面的单指拖动 + 惯性自己实现。
-      'html,body{margin:0;padding:0;background:#000;height:100%;touch-action:none;'
+      'html,body{margin:0;padding:0;background:$backgroundCss;height:100%;'
+      'touch-action:none;'
       '-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}'
       '$rootSizing'
       // BUG-1759：#manga-canvas / #manga-root **不得**在样式表里常驻
@@ -757,7 +760,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout)}'
       '</script>'
       '</body></html>';
 }
@@ -801,7 +804,17 @@ String _mangaGestureJs({
   required int zoomSensitivity,
   required MangaPageAnimation pageAnimation,
   required bool tapZonePaging,
+  required MangaTapZoneLayout tapZoneLayout,
 }) {
+  // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
+  // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
+  // 只负责遍历命中。webtoon 的 rtl 恒 false（长条漫没有开本方向），热区的
+  // prev/next 在 JS 里换成滚动方向。
+  final String tapZonesJs = <String>[
+    for (final MangaTapZone z in mangaTapZones(tapZoneLayout, rtl: rtl))
+      '[${_num(z.left)},${_num(z.top)},${_num(z.width)},${_num(z.height)},'
+          '${z.forward}]',
+  ].join(',');
   // RTL：strip 视觉镜像，但 DOM offsetLeft 仍是几何坐标；translateX 统一把目标跨页
   // 首页 offsetLeft 平移到视口左边缘（width=100vw 的视口里目标跨页正好填满）。
   return '''
@@ -1226,26 +1239,65 @@ String _mangaGestureJs({
     shiftHoverX = e.clientX; shiftHoverY = e.clientY;
     _selectOcrChar(e.clientX, e.clientY, true);
   }, {passive:true});
-  // 点击边缘翻页（仅 spread）。此前漫画**没有任何点击翻页手段**：_onTap 命中不到
-  // OCR 就只报 onTapEmpty（Dart 侧只回收焦点），触屏用户只能靠 swipe。
-  // 左右各占 TAP_ZONE 宽度；中间留白仍走 onTapEmpty，避免抢走查词/呼出 chrome。
-  // 方向按阅读方向镜像：LTR 右边缘前进，RTL 左边缘前进。
+  // 点击热区翻页。此前漫画**没有任何点击翻页手段**：_onTap 命中不到 OCR 就只报
+  // onTapEmpty（Dart 侧只回收焦点），触屏用户只能靠 swipe。
+  //
+  // 热区表由 Dart 的 mangaTapZones() 算好后注入（每项 [left,top,width,height,
+  // forward]，视口归一化 0..1），**阅读方向镜像已经在 Dart 侧做完**，这里不得再
+  // 镜像一次。JS 只做遍历命中这一件事：几何和镜像有单测钉着，注入后的脚本不必再
+  // 靠人眼复核。命中不到的区域（如 left_right 布局的中央）仍走 onTapEmpty，把
+  // 查词 / 呼出 chrome / 双击缩放留给它。
   var TAP_ZONE_PAGING = $tapZonePaging;
   var IS_RTL = $rtl;
-  var TAP_ZONE = 0.25;
-  function _tapZoneTurn(x){
-    if (!TAP_ZONE_PAGING || IS_WEBTOON) return null;
-    var w = window.innerWidth || 1;
-    if (x <= w * TAP_ZONE) return IS_RTL ? 'next' : 'prev';
-    if (x >= w * (1 - TAP_ZONE)) return IS_RTL ? 'prev' : 'next';
+  var TAP_ZONES = [$tapZonesJs];
+  function _tapZoneTurn(x, y){
+    if (!TAP_ZONE_PAGING) return null;
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    var nx = x / w, ny = y / h;
+    for (var i = 0; i < TAP_ZONES.length; i++){
+      var z = TAP_ZONES[i];
+      if (nx >= z[0] && nx < z[0] + z[2] && ny >= z[1] && ny < z[1] + z[3]) {
+        return z[4] ? 'next' : 'prev';
+      }
+    }
     return null;
+  }
+  // webtoon 没有「页」可翻，热区改为滚动一屏（留 10% 重叠，避免跨越处的一行字
+  // 恰好被跳过）。走 window.scrollBy 与拖动/惯性同一个纵向拥有者（scrollY），
+  // 进度回报 onMangaScroll 照常触发。
+  function _tapScroll(dir){
+    window.scrollBy(0, dir * (window.innerHeight || 0) * 0.9);
+  }
+  // 双击缩放：只在**点击本来就是 no-op 的区域**上生效（没命中 OCR 字、也没命中
+  // 翻页热区）。故意不给单击加延迟去等第二击——查词响应速度是用户明确抱怨过的
+  // 一项，为双击而把每次查词都推迟 250ms 是拿高频换低频。代价是 kindle 布局下
+  // 中央也是翻页热区，双击缩放在该布局下只剩边角，属于该布局自身的取舍。
+  var DBL_MS = 300, DBL_SLOP = 30;
+  var lastTapT = 0, lastTapX = 0, lastTapY = 0;
+  function _consumeDoubleTap(x, y){
+    var now = Date.now();
+    var dx = x - lastTapX, dy = y - lastTapY;
+    var isDouble = (now - lastTapT) <= DBL_MS &&
+        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP;
+    if (isDouble) { lastTapT = 0; return true; }
+    lastTapT = now; lastTapX = x; lastTapY = y;
+    return false;
   }
   function _onTap(x, y){
     var b = _bridge();
     if (!b) return;
     if (_selectOcrChar(x, y, false)) return;
-    var zone = _tapZoneTurn(x);
-    if (zone) { b.callHandler('onMangaTurn', zone); return; }
+    var zone = _tapZoneTurn(x, y);
+    if (zone) {
+      if (IS_WEBTOON) { _tapScroll(zone === 'next' ? 1 : -1); return; }
+      b.callHandler('onMangaTurn', zone);
+      return;
+    }
+    // 第二击落在同一块空白上 → 在该点缩放；等比在「贴合」与 2× 之间切换。
+    if (_consumeDoubleTap(x, y)) {
+      _zoomAbout(ZOOM > 1.01 ? 1 : 2, x, y);
+      return;
+    }
     // 裸图 / 尚未完成 OCR 的区域不打开大图，继续留在阅读器。空白点是 no-op，
     // 只回传给 Dart 收回焦点；OCR 只能在阅读器外触发，这里不再带落页 payload。
     b.callHandler('onTapEmpty');

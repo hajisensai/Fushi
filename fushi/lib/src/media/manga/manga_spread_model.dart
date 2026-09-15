@@ -70,6 +70,22 @@ class MangaSpreadEntry {
   String toString() => 'MangaSpreadEntry($pageIndices)';
 }
 
+/// 一页是否「宽页」：本身就是一张横跨两页的合并图（扉页 / 见开き）。
+///
+/// 判据是页图自身的长宽比 >= [ratioThreshold]（默认 1.0 = 横向即宽页）。纯函数，
+/// 不解码图片——mokuro 产物已给出每页原始像素尺寸，不必为此读一遍图。
+///
+/// 宽度或高度非正（缺尺寸的在线页占位）一律判 false：宁可按普通页配对，也不要
+/// 因为一条坏数据把整卷拆成单页。
+bool isMangaWidePage({
+  required double width,
+  required double height,
+  double ratioThreshold = 1.0,
+}) {
+  if (width <= 0 || height <= 0) return false;
+  return width / height >= ratioThreshold;
+}
+
 /// Build the spread sequence for [pageCount] pages under [layout].
 ///
 /// [MangaPageLayout.single] yields one entry per page. [MangaPageLayout.double]
@@ -78,10 +94,16 @@ class MangaSpreadEntry {
 /// solo entry. A non-positive [pageCount] yields an empty list; a negative
 /// [spreadOffset] is treated as 0. RTL ordering is applied at render time, not
 /// here.
+///
+/// [soloPages] 按页索引对齐（越界视为 false）：为 true 的页**独占一个 entry**。
+/// 用于宽页（见开き）——一张本来就横跨两页的图若还被塞进半个槽，会缩到只有一半
+/// 宽，而且它之后的所有页都会错开一位配对（左右页全反）。宽页独占既让它满宽显示，
+/// 也自动把后续页序重新对齐。
 List<MangaSpreadEntry> buildMangaSpreads(
   int pageCount, {
   required MangaPageLayout layout,
   required int spreadOffset,
+  List<bool> soloPages = const <bool>[],
 }) {
   if (pageCount <= 0) {
     return <MangaSpreadEntry>[];
@@ -93,6 +115,9 @@ List<MangaSpreadEntry> buildMangaSpreads(
     ];
   }
 
+  bool solo(int index) =>
+      index >= 0 && index < soloPages.length && soloPages[index];
+
   final List<MangaSpreadEntry> entries = <MangaSpreadEntry>[];
   int cursor = 0;
 
@@ -103,12 +128,14 @@ List<MangaSpreadEntry> buildMangaSpreads(
   }
 
   while (cursor < pageCount) {
-    if (cursor + 1 < pageCount) {
-      entries.add(MangaSpreadEntry(<int>[cursor, cursor + 1]));
-      cursor += 2;
-    } else {
+    // 本页是宽页 → 独占；下一页是宽页 → 本页也只能独占（否则宽页会被拉进配对，
+    // 失去满宽显示，并把后续页序整体错开一位）。
+    if (solo(cursor) || cursor + 1 >= pageCount || solo(cursor + 1)) {
       entries.add(MangaSpreadEntry(<int>[cursor]));
       cursor += 1;
+    } else {
+      entries.add(MangaSpreadEntry(<int>[cursor, cursor + 1]));
+      cursor += 2;
     }
   }
 

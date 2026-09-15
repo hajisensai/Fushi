@@ -1,7 +1,9 @@
-/// 漫画阅读器顶栏（chrome）。
+/// 漫画阅读器的界面件（chrome）：顶栏 [MangaReaderTopBar]、底栏跳页 slider
+/// [MangaReaderBottomBar]、隐藏界面时的页码角标 [MangaHiddenPageBadge]。
 ///
 /// 与 EPUB 阅读器的 [ReaderDesktopHeader] 同一套视觉语言（48px、左返回 / 中标题 /
-/// 右动作、窄窗折叠进 ⋮ 溢出菜单），但布局自己画：漫画页永远是黑底，动作要按
+/// 右动作、窄窗折叠进 ⋮ 溢出菜单），但布局自己画：栏是**深色实底/半透明**（底色
+/// 偏好只管页图周围，栏本身不跟着变白，否则白底档下白字栏不可读），动作要按
 /// 「导航 / 视图 / 界面」分组并夹分隔线，还要塞 OCR 进度胶囊，[ReaderDesktopHeader]
 /// 的 `title + leading + trailing` 三槽装不下。折叠阈值复用 [readerHeaderCompact]，
 /// 折叠规则（只留 pinned、其余进 ⋮）与 EPUB 同一句。
@@ -33,6 +35,22 @@ double mangaChromeTopInset({
 }) {
   if (floating || !chromeVisible) return 0;
   return statusBarInset + kMangaChromeBarHeight;
+}
+
+/// 固定态下正文 WebView 底部让出的高度（纯函数，单测钉住）。
+///
+/// 与 [mangaChromeTopInset] 同构、同理由：让位高度**必须**等于底栏画出的高度
+/// （同一个常量 + 同一个系统手势区 inset），否则页图最后一行会压在栏下。
+///
+/// [contentReady] == false 时底栏不画（没有正文就没有可跳的页），故也不让位。
+double mangaChromeBottomInset({
+  required bool floating,
+  required bool chromeVisible,
+  required bool contentReady,
+  required double gestureInset,
+}) {
+  if (floating || !chromeVisible || !contentReady) return 0;
+  return gestureInset + kMangaChromeBottomBarHeight;
 }
 
 /// 当前是否该画顶栏（纯函数）。
@@ -332,6 +350,215 @@ class MangaChromeStatusChip extends StatelessWidget {
           color: fg,
           fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
         ),
+      ),
+    );
+  }
+}
+
+/// 底栏行高（不含系统手势区）。比顶栏矮：只有一条 slider 和两个页码读数。
+const double kMangaChromeBottomBarHeight = 44;
+
+/// slider 的物理左端对应第几页（纯函数，单测钉住）。
+///
+/// RTL（日漫右开本）下页序在视觉上从右往左推进，slider 必须跟着镜像，否则「把滑块
+/// 往前推」会倒着翻页。镜像只发生在**显示**层：[MangaReaderBottomBar] 收到的和回调
+/// 出去的永远是 0-based 真实页号。
+///
+/// 返回值是给 [Slider] 用的 0..max 位置值。
+double mangaSliderPosition({
+  required int pageIndex,
+  required int pageCount,
+  required bool rtl,
+}) {
+  if (pageCount <= 1) return 0;
+  final int clamped = pageIndex.clamp(0, pageCount - 1);
+  return (rtl ? pageCount - 1 - clamped : clamped).toDouble();
+}
+
+/// [mangaSliderPosition] 的逆：slider 位置 → 0-based 真实页号。
+int mangaSliderPageIndex({
+  required double position,
+  required int pageCount,
+  required bool rtl,
+}) {
+  if (pageCount <= 1) return 0;
+  final int slot = position.round().clamp(0, pageCount - 1);
+  return rtl ? pageCount - 1 - slot : slot;
+}
+
+/// 底栏：`[3] ──────●──── [40]`，拖动跳页。
+///
+/// 此前跳页的唯一入口是顶栏页码胶囊弹出的输入框——要跳到「大概三分之二处」必须先
+/// 知道总页数再心算页号。slider 是漫画阅读器的标配（Mihon / Tachiyomi / Kindle 都
+/// 有），缺它是用户「本体比 Mihon 薄」的具体一条。
+///
+/// 拖动中只更新本地预览（[onPagePreview] 留给调用方画页码读数），**松手才真跳页**
+/// （[onPageCommitted]）：漫画翻页要 loadData 重建窗口文档，按住滑块扫过 40 页会
+/// 连发 40 次重建。
+class MangaReaderBottomBar extends StatefulWidget {
+  const MangaReaderBottomBar({
+    super.key,
+    required this.pageCount,
+    required this.pageListenable,
+    required this.currentPage,
+    required this.rtl,
+    required this.onPageCommitted,
+    this.floating = true,
+  });
+
+  /// 整卷总页数；<= 1 时整条栏不画（一页的书没有跳页需求）。
+  final int pageCount;
+
+  /// 翻页通知源：只重画本栏，不重建整页（正文是原生 WebView）。
+  final Listenable pageListenable;
+
+  /// 当前 0-based 页号，每次 [pageListenable] 触发时重新取。
+  final int Function() currentPage;
+
+  /// 右开本：slider 镜像（见 [mangaSliderPosition]）。
+  final bool rtl;
+
+  /// 松手时回调，参数是 0-based 真实页号。
+  final ValueChanged<int> onPageCommitted;
+
+  /// 与顶栏同义：悬浮态半透明、固定态实底。
+  final bool floating;
+
+  @override
+  State<MangaReaderBottomBar> createState() => _MangaReaderBottomBarState();
+}
+
+class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
+  /// 拖动中的 slider 位置；null = 没在拖，读 [MangaReaderBottomBar.currentPage]。
+  double? _dragPosition;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.pageCount <= 1) return const SizedBox.shrink();
+    final TextTheme text = Theme.of(context).textTheme;
+    final double bottomInset = MediaQuery.paddingOf(context).bottom;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: widget.floating
+            ? const Color(0xB3000000)
+            : const Color(0xF2141414),
+        border: widget.floating
+            ? null
+            : const Border(top: BorderSide(color: Colors.white12)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SizedBox(
+          height: kMangaChromeBottomBarHeight,
+          child: ListenableBuilder(
+            listenable: widget.pageListenable,
+            builder: (BuildContext context, Widget? _) {
+              final int pageCount = widget.pageCount;
+              final double maxPosition = (pageCount - 1).toDouble();
+              final double position =
+                  _dragPosition ??
+                  mangaSliderPosition(
+                    pageIndex: widget.currentPage(),
+                    pageCount: pageCount,
+                    rtl: widget.rtl,
+                  );
+              final int shownPage =
+                  mangaSliderPageIndex(
+                    position: position,
+                    pageCount: pageCount,
+                    rtl: widget.rtl,
+                  ) +
+                  1;
+              final TextStyle? readout = text.labelMedium?.copyWith(
+                color: MangaReaderTopBar._fg,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              );
+              return Row(
+                children: <Widget>[
+                  const SizedBox(width: 12),
+                  Text(
+                    '$shownPage',
+                    key: const ValueKey<String>('manga_slider_current_page'),
+                    style: readout,
+                  ),
+                  Expanded(
+                    child: Slider(
+                      key: const ValueKey<String>('manga_page_slider'),
+                      value: position.clamp(0, maxPosition),
+                      max: maxPosition,
+                      // 每一格恰好一页：divisions 缺省时滑块落在页与页之间，
+                      // 松手才 round，拖动读数会跳。
+                      divisions: pageCount > 1 ? pageCount - 1 : null,
+                      onChanged: (double v) =>
+                          setState(() => _dragPosition = v),
+                      onChangeEnd: (double v) {
+                        setState(() => _dragPosition = null);
+                        widget.onPageCommitted(
+                          mangaSliderPageIndex(
+                            position: v,
+                            pageCount: pageCount,
+                            rtl: widget.rtl,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Text(
+                    '$pageCount',
+                    key: const ValueKey<String>('manga_slider_page_count'),
+                    style: readout?.copyWith(color: MangaReaderTopBar._fgDim),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 隐藏界面（M 键）时角落里常驻的页码角标。
+///
+/// 隐藏界面是为了让页图全出血，但代价是**连自己读到第几页都看不见**了——用户只能
+/// 把界面调出来看一眼再关掉。角标半透明、不吃指针（[IgnorePointer]），不破坏全出血。
+class MangaHiddenPageBadge extends StatelessWidget {
+  const MangaHiddenPageBadge({
+    super.key,
+    required this.pageListenable,
+    required this.label,
+  });
+
+  final Listenable pageListenable;
+
+  /// 页码文案（如 `3 / 40`）；返回 null 不画。
+  final String? Function() label;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ListenableBuilder(
+        listenable: pageListenable,
+        builder: (BuildContext context, Widget? _) {
+          final String? shown = label();
+          if (shown == null) return const SizedBox.shrink();
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0x66000000),
+              borderRadius: FushiBorderRadius.chip,
+            ),
+            child: Text(
+              shown,
+              key: const ValueKey<String>('manga_hidden_page_badge'),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white70,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
