@@ -3049,7 +3049,7 @@ function glossaryVisibleText(content) {
     return '';
 }
 
-// BUG-2550: a record is redirect-only when the redirect label is all it has.
+// BUG-2566: a record is redirect-only when the redirect label is all it has.
 // OALDPE10 prefixes every phrasal-verb record with a self-redirect label
 // `["give up", ["Redirected from give up"]]` and carries the real
 // structured-content definition right next to it (its alias records such as

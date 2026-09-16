@@ -163,7 +163,7 @@ function glossary(dictionary, content, termTags = '', definitionTags = '') {
     'a standalone word without redirect metadata must not be guessed away',
   );
 
-  // BUG-2550: OALDPE10 real shapes (dumped from the user's dictionary). Every
+  // BUG-2566: OALDPE10 real shapes (dumped from the user's dictionary). Every
   // phrasal-verb record starts with a self-redirect label and then carries the
   // definition as structured content; alias records carry the label alone.
   const oaldpeAliasOnly = glossary(
