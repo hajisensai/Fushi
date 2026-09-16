@@ -863,7 +863,7 @@
   "delete_local_files": "Lokale Dateien ebenfalls löschen",
   "delete_local_files_audio_desc": "Die ursprünglichen Audiodateien werden von diesem Gerät entfernt; die Original-Buch- und Untertiteldateien bleiben erhalten. Das lässt sich nicht rückgängig machen.",
   "delete_local_files_failed": "$n lokale Datei(en) konnten nicht gelöscht werden; sie sind möglicherweise noch in Benutzung",
-  "delete_local_files_video_desc": "Die Videodatei wird zusammen mit den daneben liegenden Untertiteldateien von diesem Gerät entfernt und der zugehörige Download-Auftrag ebenfalls gelöscht. Das lässt sich nicht rückgängig machen.",
+  "delete_local_files_video_desc": "Die Videodatei, die daneben liegenden Untertitel und der Download-Auftrag werden von diesem Gerät entfernt. Das lässt sich nicht rückgängig machen.",
   "delete_prompt_delete_selected": "Ausgewählte löschen",
   "delete_prompt_message": "Diese Elemente wurden auf einem anderen Gerät gelöscht. Auch hier löschen?",
   "delete_prompt_select_all": "Alle auswählen",

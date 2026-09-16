@@ -863,7 +863,7 @@
   "delete_local_files": "Xoá cả tệp trên máy",
   "delete_local_files_audio_desc": "Các tệp âm thanh gốc sẽ bị xoá khỏi thiết bị này; tệp sách và phụ đề gốc vẫn được giữ. Không thể hoàn tác.",
   "delete_local_files_failed": "Không thể xoá $n tệp trên máy; có thể chúng vẫn đang được sử dụng",
-  "delete_local_files_video_desc": "Tệp video sẽ bị xoá khỏi thiết bị này cùng với các tệp phụ đề nằm cạnh nó, đồng thời xoá cả tác vụ tải xuống tương ứng. Không thể hoàn tác.",
+  "delete_local_files_video_desc": "Tệp video, các tệp phụ đề nằm cạnh nó và tác vụ tải xuống sẽ bị xoá khỏi thiết bị này. Không thể hoàn tác.",
   "delete_prompt_delete_selected": "Xóa mục đã chọn",
   "delete_prompt_message": "Các mục này đã bị xóa trên thiết bị khác. Xóa ở đây luôn?",
   "delete_prompt_select_all": "Chọn tất cả",

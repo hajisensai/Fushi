@@ -863,7 +863,7 @@
   "delete_local_files": "Excluir também os arquivos locais",
   "delete_local_files_audio_desc": "Os arquivos de áudio originais são removidos deste dispositivo; os arquivos originais do livro e das legendas são mantidos. Isso não pode ser desfeito.",
   "delete_local_files_failed": "Não foi possível excluir $n arquivo(s) local(is); eles podem estar em uso",
-  "delete_local_files_video_desc": "O arquivo de vídeo é removido deste dispositivo junto com os arquivos de legenda que estão ao lado dele, e a tarefa de download correspondente também. Isso não pode ser desfeito.",
+  "delete_local_files_video_desc": "O vídeo, as legendas ao lado dele e a tarefa de download são removidos deste dispositivo. Isso não pode ser desfeito.",
   "delete_prompt_delete_selected": "Excluir selecionados",
   "delete_prompt_message": "Estes itens foram excluídos em outro dispositivo. Excluí-los aqui também?",
   "delete_prompt_select_all": "Selecionar tudo",
