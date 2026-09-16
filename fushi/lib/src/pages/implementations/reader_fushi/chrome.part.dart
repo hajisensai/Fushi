@@ -2536,7 +2536,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return t.auto_chapter(n: chapterIndex + 1);
   }
 
+  /// 压平后的目录。顶栏章名每帧都要查它（[_currentChapterLabelFor]），而压平要走
+  /// 整棵 TOC 树并逐条解析 href → 章号，故按书缓存：它只依赖 [_book]（`toc` 与
+  /// `chapterIndexForHref` 都是书自身的只读数据），换书才失效，重排版/换样式不影响。
   List<TtuTocEntry> _buildTtuToc() {
+    final List<TtuTocEntry>? cached = _ttuTocCache;
+    if (cached != null && identical(_ttuTocCacheBook, _book)) return cached;
+    final List<TtuTocEntry> built = _flattenTtuToc();
+    _ttuTocCache = built;
+    _ttuTocCacheBook = _book;
+    return built;
+  }
+
+  List<TtuTocEntry> _flattenTtuToc() {
     final List<EpubTocItem> toc = _book!.toc;
     if (toc.isEmpty) {
       return List<TtuTocEntry>.generate(
@@ -2686,6 +2698,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
         child: ReaderDesktopHeader(
           key: const ValueKey<String>('fushi_desktop_header'),
           title: layout.showsTitle ? (_book?.title ?? '') : '',
+          // 章名跟着书名这颗槽位开关一起开合（同一个标题槽），歌词模式下没有「当前
+          // 章」可言（文档换成了歌词）——那时只留书名。
+          chapter: layout.showsTitle && !_lyricsMode
+              ? _currentChapterLabel()
+              : '',
           textColor: fg,
           backgroundColor: _chromeSurfaceColor(),
           // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；

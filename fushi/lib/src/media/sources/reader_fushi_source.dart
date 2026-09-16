@@ -1409,21 +1409,39 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<int>(key: 'wheel_page_turn_interval', value: value));
   }
 
-  /// 翻页滑动灵敏度系数（TODO-113），缩放 JS `_gestureEnd` 的距离阈值；越大越迟钝。
-  double get swipePageTurnSensitivity =>
-      readerSettings?.swipePageTurnSensitivity ??
-      ReaderSettings.normalizeSwipePageTurnSensitivity(
-        getPreference<double>(
-          key: 'swipe_page_turn_sensitivity',
-          defaultValue: 1.0,
-        ),
+  /// 翻页滑动**灵敏度**（TODO-113 / BUG-2563），缩放 JS `_gestureEnd` 的距离阈值；
+  /// **值越大越灵敏**。语义与落盘 key 必须与 [ReaderSettings.swipePageTurnSensitivity]
+  /// 逐字一致：`readerSettings` 为 null 的 entry point（`:popup` / 悬浮查词，见
+  /// [resolveEffectiveReaderSettings]）若在这里读写旧的「阈值倍数」key，写进去的新语义值
+  /// 会被 [ReaderSettings] 当 legacy 倍数再取一次倒数，设置整个翻反。
+  double get swipePageTurnSensitivity {
+    final double? fromSettings = readerSettings?.swipePageTurnSensitivity;
+    if (fromSettings != null) return fromSettings;
+    final double? stored = getPreference<double?>(
+      key: ReaderSettings.swipeSensitivityKey,
+      defaultValue: null,
+    );
+    if (stored != null) {
+      return ReaderSettings.normalizeSwipePageTurnSensitivity(stored);
+    }
+    final double? legacyMultiplier = getPreference<double?>(
+      key: ReaderSettings.legacySwipeSensitivityMultiplierKey,
+      defaultValue: null,
+    );
+    if (legacyMultiplier != null && legacyMultiplier > 0) {
+      return ReaderSettings.normalizeSwipePageTurnSensitivity(
+        1.0 / legacyMultiplier,
       );
+    }
+    return ReaderSettings.defaultSwipePageTurnSensitivity;
+  }
 
   // 分支刻意不对称：settings 路径传原值（其内部自会归一），偏好路径先归一再落库。
+  // 旧倍数 key 只读不写（与 [ReaderSettings] 同一条纪律）。
   Future<void> setSwipePageTurnSensitivity(double value) async {
     await (readerSettings?.setSwipePageTurnSensitivity(value) ??
         setPreference<double>(
-          key: 'swipe_page_turn_sensitivity',
+          key: ReaderSettings.swipeSensitivityKey,
           value: ReaderSettings.normalizeSwipePageTurnSensitivity(value),
         ));
   }
