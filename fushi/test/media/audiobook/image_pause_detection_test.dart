@@ -70,7 +70,8 @@ void main() {
     expect(fnIdx, greaterThan(-1));
     // TODO-1178：函数体前增了揭遮罩注释/调用，门控右移，窗口从 400 放宽到 800。
     final String fn = src.substring(fnIdx, fnIdx + 800);
-    expect(fn, contains('function(el, reveal, pauseEnabled)'),
+    // BUG-2536 起多一个 fromChapterStart（章首锚点）参数，pauseEnabled 门控不变。
+    expect(fn, contains('function(el, reveal, pauseEnabled, fromChapterStart)'),
         reason: 'cue 推进核心须新增 pauseEnabled 参数门控滚图');
     expect(fn, contains('if (reveal && pauseEnabled)'),
         reason:
@@ -145,7 +146,8 @@ void main() {
     // 调用揭遮罩：与图片暂停解耦，无论是否跨图/是否开暂停都揭已读区间的图。
     final int adv = src.indexOf('__fushiImagePauseAdvance = function');
     expect(adv, greaterThan(-1));
-    final String advFn = src.substring(adv, adv + 500);
+    // 窗口要盖住 BUG-2536 加的章首锚点行（fromChapterStart → document.body）。
+    final String advFn = src.substring(adv, adv + 700);
     final int revealCall =
         advFn.indexOf('__fushiRevealBlurredBetween(prev, el)');
     final int crossedGate = advFn.indexOf('if (!crossed) return false');

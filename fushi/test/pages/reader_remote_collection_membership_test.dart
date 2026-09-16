@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
@@ -327,6 +328,169 @@ void main() {
       find.ancestor(of: remoteCard, matching: collectionRow),
       findsOneWidget,
       reason: '占位卡自动折进新落库的合集（BUG-1699 主诉：此前恒散卡直到重启）',
+    );
+  });
+
+  testWidgets('合集详情页必须渲染远端占位成员（此前「行头 N 项、点进去只剩本地几本」）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int cid =
+        await db.createMediaCollection('MyShow', collectionType: 'collection');
+    // 本地成员一本（详情页此前唯一能画出来的那种），远端占位一本。
+    await db.upsertCollectionItemAt(cid, 'epub', 'Local Vol1', 0);
+
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Remote Vol2',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'MyShow',
+            collectionType: 'collection',
+            sortIndex: 1,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    // 前置：收养服务已把远端成员行落库，详情页的 getCollectionItems 查得到它——
+    // 丢卡不是「查不到行」，而是成员卡构造器本地找不到书就 return null。
+    expect(
+      <String>[
+        for (final MediaCollectionItemRow r in await db.getCollectionItems(cid))
+          r.entryKey,
+      ],
+      containsAll(<String>['Local Vol1', 'Remote Vol2']),
+    );
+
+    await tester.tap(find.text(t.collection_view_all));
+    await tester.pumpAndSettle();
+
+    final Finder detail = find.byType(MediaCollectionGridDetailPage);
+    expect(detail, findsOneWidget, reason: '前置：「查看全部」进详情页');
+    expect(
+      find.descendant(
+        of: detail,
+        matching: find.byKey(
+          ValueKey<String>('remote_book_card_${safeKey('Remote Vol2')}'),
+        ),
+      ),
+      findsOneWidget,
+      reason: '成员行在库里、书架行体也画了云角标占位卡，详情页却按「本地找不到就 '
+          'return null」把它静默丢掉 → 合集内看不到任何远端数据',
+    );
+  });
+
+  testWidgets('全员远端的合集：详情页不能显示「合集为空」', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await db.createMediaCollection('GhostShow', collectionType: 'collection');
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Ghost Vol1',
+          hasContent: true,
+          collection: RemoteCollectionMembership(
+            collectionName: 'GhostShow',
+            collectionType: 'collection',
+            sortIndex: 0,
+          ),
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.collection_view_all));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.collection_empty), findsNothing,
+        reason: '成员全是远端占位时旧实现把整组卡丢光 → 在客户端把非空合集判成空');
+    expect(
+      find.byKey(
+        ValueKey<String>('remote_book_card_${safeKey('Ghost Vol1')}'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('「最近阅读」排序：远端占位卡按 host 下发的阅读时刻排，不再恒沉底',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 目录序 = [Stale, Fresh]，但 host 说 Fresh 才是最近读的那本。
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(title: 'Stale', hasContent: true),
+        RemoteBookInfo(
+          title: 'Fresh',
+          hasContent: true,
+          progressUpdatedAtMs: 1712345678000,
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder stale =
+        find.byKey(ValueKey<String>('remote_book_card_${safeKey('Stale')}'));
+    final Finder fresh =
+        find.byKey(ValueKey<String>('remote_book_card_${safeKey('Fresh')}'));
+    expect(stale, findsOneWidget);
+    expect(fresh, findsOneWidget);
+    expect(
+      tester.getTopLeft(fresh).dx,
+      lessThan(tester.getTopLeft(stale).dx),
+      reason: '远端占位卡此前恒用注入时编码的负数目录序当 recency，'
+          '「最近阅读」档下等于完全没排序',
+    );
+  });
+
+  testWidgets('「导入时间」排序：远端占位卡按 host 下发的入库时刻排',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await prefs.setShelfSortModeName('imported');
+
+    // 目录序 = [Old, New]，入库时刻正好相反。
+    await tester.pumpWidget(buildApp(_ListFakeRemoteBookClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(
+          title: 'Old',
+          hasContent: true,
+          importedAt: 1000000000000,
+        ),
+        RemoteBookInfo(
+          title: 'New',
+          hasContent: true,
+          importedAt: 1712345678000,
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder oldCard =
+        find.byKey(ValueKey<String>('remote_book_card_${safeKey('Old')}'));
+    final Finder newCard =
+        find.byKey(ValueKey<String>('remote_book_card_${safeKey('New')}'));
+    expect(oldCard, findsOneWidget);
+    expect(newCard, findsOneWidget);
+    expect(
+      tester.getTopLeft(newCard).dx,
+      lessThan(tester.getTopLeft(oldCard).dx),
+      reason: 'host 带了真入库戳就该按它排（与本地条目同一把尺子），'
+          '不是恒按目录序钉在末尾',
     );
   });
 }

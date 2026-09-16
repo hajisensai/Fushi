@@ -41,8 +41,9 @@ import 'test_helpers.dart';
 ///  3. Bottom tap-reveal no-layout-shift: tap_empty_hide_chrome false->true
 ///     drops --chrome-bottom-inset from (bar height ~56px) to system inset only;
 ///     onTapEmpty reveal keeps --chrome-bottom-inset unchanged.
-///  4. auto-hide timing (best-effort): after reveal, pump the configured
-///     duration; the floating bottom bar (fushi_play_bar) auto-hides.
+///  4. click-only switch (2026-09-14): after reveal, pumping well past the old
+///     auto-hide duration must leave the floating chrome on screen — nothing
+///     but a click may close it — and a second onTapEmpty does close it.
 ///
 /// Triggering: prefs via ReaderFushiSource.instance.toggleXxx() (fire-and-forget
 /// async, pump to land); reader re-anchor via the same settings-UI notify entry
@@ -391,23 +392,37 @@ void main() {
         await takeScreenshot(binding, 'todo975_bottom_floating_revealed');
 
         // ───────────────────────────────────────────────────────────────
-        // Goal 4: auto-hide timing (best-effort). After reveal, advance the
-        // configured duration; the floating bottom bar should auto-hide.
-        // _armChromeAutoHide uses a real Timer (not tester fake clock), so
-        // advance wall-clock time then pump for the setState to rebuild.
+        // Goal 4: the revealed chrome STAYS. 2026-09-14 the user made the
+        // floating chrome a pure click switch: a tap opens it, another tap
+        // closes it, and nothing else does — no hover, no timer. Waiting out
+        // the old auto-hide duration must leave both surfaces on screen; only
+        // the second onTapEmpty takes them away.
         // ───────────────────────────────────────────────────────────────
         final int autoHideMs = ReaderFushiSource.instance.autoHideChromeMillis;
-        debugPrint('[CHROME975] auto-hide millis=$autoHideMs');
-        // Witness the same surface that just revealed. The top progress strip
-        // (floating) is the _showChrome-independent witness; fall back to the
-        // bottom bar if that was the one that appeared.
-        // Both revealed floating surfaces must auto-hide once the timer fires:
-        // the top progress strip (fushi_progress) and the bottom settings bar
-        // (its audio-import icon). _armChromeAutoHide uses a real Timer (not
-        // the tester fake clock), so advance wall-clock time then pump for the
-        // auto-hide setState to land.
+        debugPrint('[CHROME975] former auto-hide millis=$autoHideMs');
         await tester.pump(Duration(milliseconds: autoHideMs + 400));
-        bool autoHidden = false;
+        for (int i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 200));
+        }
+        final bool progressStayed = find
+            .byKey(const ValueKey<String>('fushi_progress'))
+            .evaluate()
+            .isNotEmpty;
+        final bool bottomStayed = bottomBarWitness.evaluate().isNotEmpty;
+        debugPrint('[CHROME975] NO-AUTO-HIDE progressStayed=$progressStayed '
+            'bottomStayed=$bottomStayed');
+        expect(progressStayed && bottomStayed, isTrue,
+            reason: 'goal4: the floating chrome must NOT vanish on its own '
+                '(waited ${autoHideMs}ms, the old auto-hide duration). '
+                'Only a second click may close it.');
+
+        // A second tap-empty closes both surfaces — the other half of the
+        // switch, and the only way back to a hidden chrome.
+        await eval(
+          'setTimeout(function(){window.flutter_inappwebview.callHandler('
+          "'onTapEmpty');},0)",
+        );
+        bool clickHidden = false;
         for (int i = 0; i < 25; i++) {
           await tester.pump(const Duration(milliseconds: 200));
           final bool progressGone = find
@@ -416,15 +431,14 @@ void main() {
               .isEmpty;
           final bool bottomGone = bottomBarWitness.evaluate().isEmpty;
           if (progressGone && bottomGone) {
-            autoHidden = true;
+            clickHidden = true;
             break;
           }
         }
-        debugPrint('[CHROME975] AUTO-HIDE autoHidden=$autoHidden');
-        expect(autoHidden, isTrue,
-            reason: 'goal4: after waiting auto-hide (${autoHideMs}ms), both '
-                'revealed floating surfaces (top progress + bottom bar) must '
-                'auto-hide.');
+        debugPrint('[CHROME975] CLICK-HIDE clickHidden=$clickHidden');
+        expect(clickHidden, isTrue,
+            reason: 'goal4: a second click must close both revealed floating '
+                'surfaces (top progress + bottom bar).');
 
         // ── Restore prefs + exit ────────────────────────────────────────
         ReaderFushiSource.instance.toggleTopProgressFloating();

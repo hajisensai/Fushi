@@ -74,14 +74,24 @@ class CardSourceLink {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
-  static String markerForSourceId(String sourceId) {
+  /// The source ID lives only inside the `fushi://source` href written to a
+  /// note field (BUG-2527: it used to be duplicated as a `fushi_source_<hex>`
+  /// tag, which put one meaningless hash tag on every mined card). Returns the
+  /// validated ID so callers can chain it.
+  static String validateSourceId(String sourceId) {
     if (!_uuid.hasMatch(sourceId)) {
       throw const FormatException('Invalid card source ID');
     }
-    return 'fushi_source_${sourceId.replaceAll('-', '')}';
+    return sourceId;
   }
 
-  String get markerTag => markerForSourceId(sourceId);
+  /// Anki browser-syntax candidate query for [sourceId]: an unqualified
+  /// substring match over note fields (AnkiConnect `findNotes` and the
+  /// AnkiDroid notes ContentProvider accept the same syntax). Substring hits
+  /// are candidates only; identity is confirmed by parsing the field hrefs
+  /// with [fromHtml] and comparing [sourceId] exactly.
+  static String searchQueryForSourceId(String sourceId) =>
+      'sourceId=${validateSourceId(sourceId)}';
 
   CardSourceLink withSourceId(String value) => CardSourceLink(
         kind: kind,
@@ -115,7 +125,7 @@ class CardSourceLink {
   }
 
   void _validate() {
-    markerForSourceId(sourceId);
+    validateSourceId(sourceId);
     if (fingerprint != null &&
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(fingerprint!)) {
       throw const FormatException('Invalid source file fingerprint');

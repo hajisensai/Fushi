@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -27,6 +29,7 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningHeadPadMs, kMiningPadMaxMs, kMiningTailPadMs;
@@ -597,6 +600,20 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setGlobalContextCaptureEnabled(bool value) async {
     await setPref('lookup.global_context_capture', value);
+    notifyListeners();
+  }
+
+  /// 查词输入框希望输入法切到哪种语言（BCP-47，`ja` / `zh-Hans` / `ko`…）。
+  /// 空串 = 未设置，不碰输入法——默认不动用户的系统输入法状态。
+  ///
+  /// 这**不是**「查词的目标语言」：查词流水线语言无关（18 种变换表全量加载是有意
+  /// 设计），`AppModel.targetLanguage` 那个恒定单值的假抽象已于 2026-07-26 删除且
+  /// 有守卫钉着。本偏好只决定输入法/软键盘切到哪种语言，不进查询链路。
+  String get lookupImeLanguage =>
+      getPref('lookup.ime_language', defaultValue: '') as String;
+
+  Future<void> setLookupImeLanguage(String value) async {
+    await setPref('lookup.ime_language', value);
     notifyListeners();
   }
 
@@ -1236,6 +1253,44 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 用户自配的 AI 提供商清单（设备本地；含 base64 API key）。
+  ///
+  /// 与 [discoveryOpdsServers] 同范式：逐条容错在 [decodeAiProviderConfigs] 里，
+  /// 一条记录坏掉只丢那一条，不让整份清单消失。
+  List<AiProviderConfig> get aiProviders {
+    final String raw = getPref('ai_providers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <AiProviderConfig>[];
+    try {
+      return decodeAiProviderConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiProviders.decode',
+        error,
+        stack,
+      );
+      return const <AiProviderConfig>[];
+    }
+  }
+
+  Future<void> setAiProviders(Iterable<AiProviderConfig> providers) async {
+    await setPref('ai_providers', encodeAiProviderConfigs(providers));
+    notifyListeners();
+  }
+
+  /// 「哪个功能用哪家 AI」的映射（设备本地）。
+  AiFeatureAssignments get aiFeatureAssignments {
+    final String raw = getPref(
+      'ai_feature_providers',
+      defaultValue: '',
+    ) as String;
+    return AiFeatureAssignments.fromJson(raw);
+  }
+
+  Future<void> setAiFeatureAssignments(AiFeatureAssignments value) async {
+    await setPref('ai_feature_providers', value.toJson());
+    notifyListeners();
+  }
+
   /// OpenSubtitles 的设备本地配置。登录 token 只存在 client 内存中，绝不写入本键。
   ///
   /// **永不返回 null**：没配置过 = [OpenSubtitlesConfig.unconfigured]（启用 + 内置
@@ -1504,6 +1559,31 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) async {
     await setPref('video_immersive_mode', mode.storageValue);
+    notifyListeners();
+  }
+
+  /// 截图去向：保存对话框 / 剪贴板 / 指定目录。旧库没有该 key 时落到
+  /// [VideoScreenshotDestination.ask]，即这个偏好出现之前的行为，不需要迁移。
+  VideoScreenshotDestination get videoScreenshotDestination =>
+      VideoScreenshotDestination.fromStorage(
+        getPref(
+          kVideoScreenshotDestinationPref,
+          defaultValue: VideoScreenshotDestination.ask.storageValue,
+        ) as String,
+      );
+
+  Future<void> setVideoScreenshotDestination(
+      VideoScreenshotDestination destination) async {
+    await setPref(kVideoScreenshotDestinationPref, destination.storageValue);
+    notifyListeners();
+  }
+
+  /// [VideoScreenshotDestination.directory] 的目标目录；空串 = 未设置。
+  String get videoScreenshotDirectory =>
+      getPref(kVideoScreenshotDirectoryPref, defaultValue: '') as String;
+
+  Future<void> setVideoScreenshotDirectory(String path) async {
+    await setPref(kVideoScreenshotDirectoryPref, path);
     notifyListeners();
   }
 

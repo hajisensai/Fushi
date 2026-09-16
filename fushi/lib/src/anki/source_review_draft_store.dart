@@ -152,7 +152,7 @@ class SourceReviewDraftStore {
     String sourceId,
     Future<T> Function(Directory directory) action,
   ) async {
-    CardSourceLink.markerForSourceId(sourceId);
+    CardSourceLink.validateSourceId(sourceId);
     final String key = p.normalize(p.absolute(root.path, sourceId));
     final String lockKey = Platform.isWindows ? key.toLowerCase() : key;
     final Future<void> previous = _locks[lockKey] ?? Future<void>.value();

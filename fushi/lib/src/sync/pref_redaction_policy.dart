@@ -90,6 +90,9 @@ abstract final class PrefRedactionPolicy {
     // 必须显式点名。两者也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // AI 提供商清单：每条里带 base64 的 API key，键名本身没有 api_key/token 形状，
+    // 必须显式点名，否则备份/Profile 分享时会把用户的付费 key 旁路带出设备。
+    'ai_providers',
     // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
     // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'discovery_opds_servers',

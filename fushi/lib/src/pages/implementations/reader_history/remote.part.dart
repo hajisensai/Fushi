@@ -226,12 +226,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// [selectable]（默认 true）= 多选态可勾选（BUG-2458：勾选后经批量栏「下载」一起
   /// 下）；合集行成员卡传 false，与本地成员卡同规则。壳（[_bookCardShell]）在多选
   /// 态把点击接成勾选，只有非多选态点击才走下载。
-  Widget _buildRemoteBookCard(RemoteBookInfo book, {bool selectable = true}) {
+  /// [focusIdPrefix]：合集详情页渲染路径传 'collection-detail-' 隔离焦点 id 命名
+  /// 空间（BUG-1009——详情页 push 在书架之上，两条路由同时存活，同名 focusId 会被
+  /// 焦点注册表按 id 覆盖）；书架路径恒空串（id 不变）。
+  Widget _buildRemoteBookCard(RemoteBookInfo book,
+      {bool selectable = true, String focusIdPrefix = ''}) {
     final String safeKey = _safeRemoteBookKey(book.title);
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
-      focusId: FushiFocusId('reader-shelf-remote-book-$safeKey'),
+      focusId:
+          FushiFocusId('${focusIdPrefix}reader-shelf-remote-book-$safeKey'),
       selectionKey: selectable ? _remoteBookSelectionKey(book) : null,
       onTap: () => _downloadRemoteBook(book),
       // 短按仍直接下载（无本地副本不能直接读，下载合理）；长按 / 桌面右键
@@ -1093,15 +1098,16 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 纯 SRT 远端有声书占位卡：耳机类型徽章 + 云角标 + 下载按钮/进度。短按/下载按钮
   /// 走 [_downloadRemoteSrtAudiobook]（拉包 → importAudioDatabasePackage 纯 SRT 分支
   /// → 落 SrtBooks 行），完成后原地变本地 SRT 卡（重拉远端列表按 uid dedup 隐藏占位）。
+  /// [focusIdPrefix]：同 [_buildRemoteBookCard]，合集详情页传前缀隔离焦点 id。
   Widget _buildRemoteSrtCard(RemoteAudiobookInfo book,
-      {bool selectable = true}) {
+      {bool selectable = true, String focusIdPrefix = ''}) {
     final String title = book.title ?? book.identity;
     final String safeKey = _safeRemoteBookKey(title);
     final ColorScheme cs = theme.colorScheme;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
-      focusId: FushiFocusId('reader-shelf-remote-srt-$safeKey'),
+      focusId: FushiFocusId('${focusIdPrefix}reader-shelf-remote-srt-$safeKey'),
       // BUG-2458：与远端 EPUB 卡同规则，多选态可勾选、批量下载。
       selectionKey: selectable ? _remoteSrtSelectionKey(book) : null,
       onTap: () => _downloadRemoteSrtAudiobook(book),

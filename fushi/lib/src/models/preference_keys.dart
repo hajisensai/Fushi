@@ -20,6 +20,13 @@ library;
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
+  // 「哪个功能用哪家 AI」的映射。不含凭据，但跟着 ai_providers 一起设备本地：
+  // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
+  'ai_feature_providers',
+  // 用户自配的 AI 提供商清单，每条里带 base64 的 apiKeyB64 →
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
+  // 与 deviceLocalPrefKeys。
+  'ai_providers',
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',
@@ -131,6 +138,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_db_path',
   'local_audio_dbs',
   'lookup.global_context_capture',
+  'lookup.ime_language',
   'low_memory_mode',
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
@@ -339,6 +347,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 /// 🔴 凭据键：值为 base64 敏感凭据，不进日志 / 不进明文导出。
 /// （`media_source_secret_<id>` 前缀族见 [kKnownPreferenceKeyPrefixes]。）
 const Set<String> kCredentialPreferenceKeys = <String>{
+  // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
+  'ai_providers',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',

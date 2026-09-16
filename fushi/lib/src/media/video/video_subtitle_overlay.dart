@@ -944,6 +944,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 时不重复查词（避免每帧 hover 都查），命中新字符或越过阈值才再次触发。`松开 Shift` /
   /// 离开字幕在 [_handleShiftHover] 里复位为 [Offset.zero] / -1，使下次按 Shift 重新进入即触发。
   Offset _lastShiftHoverPos = Offset.zero;
+
+  /// 已向页面回报过 hover=true（BUG-284 回报只认真实指针移动，见 [_wrapInteractive]）；
+  /// onExit 时据此回报 false 并复位。
+  bool _hoverReported = false;
   int _lastShiftHoverEntry = -1;
 
   /// TODO-1312：按全局坐标在**全部**已渲染字幕字符（主字幕活动集含重叠 cue + 副字幕
@@ -1177,12 +1181,24 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 悬停）：隐藏与模糊同为「遮蔽」的两种视觉，都走「照常布局 + 遮蔽视觉 + 共享显形
         // 状态机」一条路径——隐藏的视觉是 Opacity(0)（不绘制），几何仍在，于是悬停 / 点击
         // 显形对隐藏态同样成立（两种遮蔽的视觉都在 [_wrapInteractive] 同一层）。
-        final List<AudioCue> mainCues = widget.controller.activeCues;
+        // `\p` 绘图事件（渲染专用流，[VideoPlayerController.activeDrawingCues]）并入
+        // 同层活动集：与对白同一套分组 / \pos 定位 / Layer z 序叠画（招牌白底遮罩必须
+        // 压在被遮的原文之上、又垫在同层后出的手写字之下）。纯字幕模式不画图形。
+        final List<AudioCue> mainCues = widget.respectAssStyle
+            ? <AudioCue>[
+                ...widget.controller.activeCues,
+                ...widget.controller.activeDrawingCues,
+              ]
+            : widget.controller.activeCues;
         // 副字幕活动集（TODO-1312：并入 Flutter overlay 多层渲染、可查词）。遮蔽模式
         // 「隐藏」与主字幕同构（TODO-1382）：不在这里清空，隐藏态经 Opacity(0) 呈现、
         // 悬停 / 点击可显形。
-        final List<AudioCue> secondaryCues =
-            widget.controller.secondaryActiveCues;
+        final List<AudioCue> secondaryCues = widget.respectAssStyle
+            ? <AudioCue>[
+                ...widget.controller.secondaryActiveCues,
+                ...widget.controller.secondaryActiveDrawingCues,
+              ]
+            : widget.controller.secondaryActiveCues;
 
         // BUG-1068：显形态（_revealed / _secondaryRevealed）的生命周期必须绑定「该层
         // 当前有字幕盒在屏」。悬停某层显形（onEnter → _setRevealed(true)）后，该层进入
@@ -1333,9 +1349,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 位置/层/边距也统一——全部 cue 折进**一个**底部组（副字幕仍置顶），并按文本去重
         // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
         // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
-        final List<(String, List<AudioCue>)> groups = widget.respectAssStyle
-            ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
-            : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))];
+        // z 序（libass）：先按 ASS `Layer` 升序、同层按事件序——后画的盖先画的。招牌
+        // （Layer 0 白底遮罩 + 手写字）必须垫在 Layer 1 对白之下，而不是按活跃集发现
+        // 顺序谁靠后谁在上。
+        final List<(String, List<AudioCue>)> groups = sortCueGroupsForPaint(
+          widget.respectAssStyle
+              ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
+              : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))],
+        );
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
@@ -1769,8 +1790,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       return _absolutePositioned(posScreen, anchor, content);
     }
     // 无 \pos/\move 但带静态 \clip（BUG-1775）：排版必须与裁剪同一几何——按 libass 语义
-    // 用 Alignment + Margin 在帧空间合成锚点，走与 \pos 相同的绝对定位。不做控制条避让
-    // （dodge 会把文本推出固定在帧上的裁剪窗，重现「字被拦腰裁半」）。视频未解码时锚点
+    // 用 Alignment + Margin 在帧空间合成锚点，走与 \pos 相同的绝对定位。视频未解码时锚点
     // 解不出（null），回退历史锚点路径（与 \pos 同款降级，首帧仍有字幕）。
     if (posMarkup?.clip != null) {
       final Offset? clipAnchorScreen =
@@ -1778,8 +1798,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       if (clipAnchorScreen != null) {
         final SubtitleAnchor anchor = posMarkup!.anchor ??
             const SubtitleAnchor(SubtitleVAlign.bottom, SubtitleHAlign.center);
-        return _absolutePositioned(clipAnchorScreen, anchor, content,
-            dodge: false);
+        return _absolutePositioned(clipAnchorScreen, anchor, content);
       }
     }
     // 无 \pos：纯 SRT 副字幕强制顶部锚点；否则按 markup 锚点（null → 历史底居中）。
@@ -1939,20 +1958,33 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         widget.onHoverChanged != null ||
         widget.onCharHover != null;
     if (!needHover) return content;
+    // ② 的回报只认**真实指针移动**（onHover），不在 onEnter 里发：MouseTracker 在
+    // 「字幕盒挪到静止指针之下」（\pos 招牌落在鼠标停放点、\move 逐帧插值）或子树重挂
+    // 时也会派发 onEnter——鼠标一动没动，页面却当成用户在摸播放器、把控制条唤出来
+    // （用户报「.ass 字幕出现在奇怪位置时控制条像鼠标划过一样弹出」）。显形（①）仍
+    // 走 onEnter：它是「指针在盒上」的状态语义，本就该跟着几何走。
     return MouseRegion(
       opaque: false,
       onEnter: (_) {
         if (hoverRevealEnabled) {
           _setRevealed(true, isSecondary: isSecondary, byTap: false);
         }
-        widget.onHoverChanged?.call(true);
       },
-      onHover: _handleShiftHover,
+      onHover: (PointerHoverEvent event) {
+        if (!_hoverReported) {
+          _hoverReported = true;
+          widget.onHoverChanged?.call(true);
+        }
+        _handleShiftHover(event);
+      },
       onExit: (_) {
         if (hoverRevealEnabled) {
           _setRevealed(false, isSecondary: isSecondary, byTap: false);
         }
-        widget.onHoverChanged?.call(false);
+        if (_hoverReported) {
+          _hoverReported = false;
+          widget.onHoverChanged?.call(false);
+        }
         _lastShiftHoverPos = Offset.zero;
         _lastShiftHoverEntry = -1;
       },
@@ -2054,8 +2086,17 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     bool registerHits = true,
   }) {
     final String text = cue.text;
-    if (text.isEmpty) return const SizedBox.shrink();
     final SubtitleMarkup? markup = cue.markup;
+    // `\p` 矢量绘图事件（无正文）：走图形盒，与文字盒共用其后的变换 / 淡变 / 定位。
+    final SubtitleDrawing? shape = markup?.drawing;
+    if (text.isEmpty && shape != null && widget.respectAssStyle) {
+      Widget box = RepaintBoundary(child: _buildDrawingBox(cue, markup!, shape));
+      box = _applyAssTransform(box, cue, markup);
+      final SubtitleFade? fade = markup.fade;
+      if (fade == null) return box;
+      return Opacity(opacity: _fadeOpacityFor(fade, cue), child: box);
+    }
+    if (text.isEmpty) return const SizedBox.shrink();
     final List<String> chars = text.characters.toList(growable: false);
 
     final Color backgroundColor = widget.backgroundOpacity <= 0
@@ -2068,11 +2109,12 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 光标，BUG-198）；tap 命中由上层 translucent RawGestureDetector + 本登记表反查承载
     // （BUG-553 竞技场门控）。隐形占位（TODO-1372，registerHits 为 false）不登记：离场
     // cue 不可点、不可查词。
-    Widget charWidget(int i) {
+    Widget charWidget(int i, {_GlyphPass pass = _GlyphPass.composite}) {
       return Builder(
         builder: (BuildContext charContext) {
           int entryIndex = -1;
-          if (registerHits) {
+          // 描边遍只是同几何的底层拷贝：命中登记 / 查词高亮 / 光标环全归填充遍。
+          if (registerHits && pass != _GlyphPass.strokeOnly) {
             entryIndex = _charEntries.length;
             _charEntries.add(_SubtitleCharEntry(
               sentence: text,
@@ -2084,7 +2126,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             ));
           }
           Widget ch = _applyVerticalGlyphRotation(
-              _buildSubtitleChar(chars[i], i, markup, cue), i, markup);
+              _buildSubtitleChar(chars[i], i, markup, cue, pass: pass),
+              i,
+              markup);
           // 被查词高亮（BUG-2091）：本字位落在页面传入的查词区间内则垫底色。只对
           // 可交互字符（已登记、非模糊）画——与查词命中同一门控，模糊层/离场占位
           // 不会带着高亮。底色在字形之下、光标环之上再叠，两者互不遮挡。
@@ -2147,32 +2191,53 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 构建（Column→Wrap→Row 均按序 build，登记序不变）。crossAxisAlignment 取 start，
     // 与 Wrap run 内默认 WrapCrossAlignment.start 的顶对齐一致（组内混排缩放字形不位移）。
     // 已知极限：单词本身宽过容器时 Row 不再拆词（溢出裁切）——病态输入，接受。
-    final List<List<Widget>> rows = <List<Widget>>[
-      for (final List<int> row in rowIndices)
-        <Widget>[
-          for (final List<int> group
-              in groupSubtitleGraphemesForWrap(chars, row))
-            group.length == 1
-                ? charWidget(group.single)
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      for (final int i in group) charWidget(i),
-                    ],
-                  ),
-        ],
-    ];
-    final Widget textContent = rows.length == 1
-        ? Wrap(alignment: WrapAlignment.center, children: rows.single)
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
+    Widget layoutRows(_GlyphPass pass) {
+      final List<List<Widget>> rows = <List<Widget>>[
+        for (final List<int> row in rowIndices)
+          <Widget>[
+            for (final List<int> group
+                in groupSubtitleGraphemesForWrap(chars, row))
+              group.length == 1
+                  ? charWidget(group.single, pass: pass)
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        for (final int i in group) charWidget(i, pass: pass),
+                      ],
+                    ),
+          ],
+      ];
+      return rows.length == 1
+          ? Wrap(alignment: WrapAlignment.center, children: rows.single)
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                for (final List<Widget> row in rows)
+                  Wrap(alignment: WrapAlignment.center, children: row),
+              ],
+            );
+    }
+
+    // 尊重 .ass 时描边与填充分成**整行两遍**：描边遍（含 \shad 阴影 / \blur 辉光）整行
+    // 垫底，填充遍整行压顶——libass 先合成整行描边位图再叠整行填充位图。此前逐字
+    // 各自 Stack(描边, 填充)，后一个字的描边画在前一个字的填充**之上**：斜体 / 紧排 /
+    // 负字距时相邻字形重叠，黑描边啃进前字的白填充，笔画看着变粗；重叠量随字号 /
+    // 亚像素位置变，于是「字重随窗口大小变」。两遍几何完全同构（同样式、同约束，
+    // 只有画笔不同），Stack 取同尺寸，布局 / 命中零位移；填充遍在 Stack 后位 = 在上。
+    // 只有确有描边可画的 cue 才两遍（`\bord0` 全行 / 无描边基线仍单遍，与历史零差异）。
+    final bool twoPass = widget.respectAssStyle &&
+        markup != null &&
+        _cueHasVisibleOutline(chars.length, markup);
+    final Widget textContent = twoPass
+        ? Stack(
             children: <Widget>[
-              for (final List<Widget> row in rows)
-                Wrap(alignment: WrapAlignment.center, children: row),
+              layoutRows(_GlyphPass.strokeOnly),
+              layoutRows(_GlyphPass.fillOnly),
             ],
-          );
+          )
+        : layoutRows(_GlyphPass.composite);
 
     Widget box = DecoratedBox(
       decoration: BoxDecoration(
@@ -2302,9 +2367,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     }
     // ASS \frz 逆时针为正；Flutter rotateZ 顺时针为正，故取负。
     if (rot != null) m.rotateZ(-rot * math.pi / 180.0);
-    // \fax/\fay 切变（VSFilter：x' = x + fax·y / y' = y + fay·x）。
-    if (fax != null) m.setEntry(0, 1, fax);
-    if (fay != null) m.setEntry(1, 0, fay);
+    // \fax/\fay 切变（VSFilter：x' = x + fax·y / y' = y + fay·x）：作为**独立矩阵右乘**
+    // （libass `calc_transform_matrix`：先切变再旋转，即 R·Shear）。此前用 setEntry 直接
+    // 改 (0,1)/(1,0)，会把 rotateZ 已写进去的 ±sin θ 整个覆盖——带 `\frz` 的招牌一加
+    // `\fax` 就既不是旋转也不是切变，用户看到的是「歪斜」的手写字。
+    if (fax != null || fay != null) {
+      m.multiply(assShearMatrix(fax ?? 0, fay ?? 0));
+    }
     if (sx != 1.0 || sy != 1.0) m.scale(sx, sy, 1.0);
     // 变换原点 = 本行的 `\an` 对齐点，**不是盒中心**（BUG-1440）。VSFilter/libass 的
     // `\frz`/`\fscx` 都绕对齐点作用，而 [_absolutePositioned] 也正是把这个点落到 `\pos`
@@ -2315,6 +2384,73 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // （见 [_positionCueGroup] 的同名回落）一致。
     return Transform(
         alignment: _alignFor(markup.anchor), transform: m, child: box);
+  }
+
+  /// 本 cue 是否有任一 grapheme 会画出描边（静态判定，不看 `\t`/`\ko` 时序）：决定
+  /// [_buildCueBox] 是否走整行两遍绘制。
+  bool _cueHasVisibleOutline(int graphemeCount, SubtitleMarkup markup) {
+    for (int i = 0; i < graphemeCount; i++) {
+      if (_resolveStroke(i, markup).$2 > 0) return true;
+    }
+    return false;
+  }
+
+  /// `\p` 矢量绘图盒：路径按 fit:contain 视频内容矩形从 PlayRes 空间缩放到显示像素，
+  /// 盒尺寸 = 绘图包围盒（libass/VSFilter 按包围盒参与 `\an` 对齐 / `\pos` 定位，见
+  /// [SubtitleDrawing]）。填充 / 描边 / 阴影 / 辉光与文字字形走同一套解析
+  /// （[_spanAt] 对绘图返回 [SubtitleMarkup.drawingStyle]），`\t` 颜色 / 透明度动画经
+  /// [_applyDynamicFill] 同源折叠；静态 `\fscx`/`\fscy` 直接缩放盒与路径（绕盒原点缩放
+  /// 后再按锚点对齐 == 绕对齐点缩放）。视频未布局时画不出（尺寸未知）返回空盒。
+  Widget _buildDrawingBox(
+      AudioCue cue, SubtitleMarkup markup, SubtitleDrawing shape) {
+    final double? contentW = _lastVideoContentWidth ?? _lastLayoutWidth;
+    final double? contentH = _lastVideoContentHeight ?? _lastLayoutHeight;
+    if (contentW == null || contentH == null || contentW <= 0 || contentH <= 0) {
+      return const SizedBox.shrink();
+    }
+    final SubtitleSpan? ds = markup.drawingStyle;
+    final SubtitleCueStyle? cs = markup.cueStyle;
+    final double scaleX = ds?.scaleX ?? (cs?.scaleXPct ?? 100) / 100.0;
+    final double scaleY = ds?.scaleY ?? (cs?.scaleYPct ?? 100) / 100.0;
+    final double sx = contentW * scaleX;
+    final double sy = contentH * scaleY;
+    final double boxW = shape.widthFraction * sx;
+    final double boxH = shape.heightFraction * sy;
+
+    final int? posMs = widget.controller.effectivePositionMsForCue(cue);
+    final int elapsedMs = (posMs ?? cue.startMs) - cue.startMs;
+    final int durMs = cue.endMs - cue.startMs;
+    final int? fillArgb = ds?.colorArgb ?? cs?.primaryColorArgb;
+    Color fill = fillArgb != null
+        ? Color(fillArgb)
+        : (widget.textColor ?? Theme.of(context).colorScheme.onSurface);
+    final double? fillOp = ds?.fillOpacity;
+    if (fillOp != null) fill = fill.withValues(alpha: fillOp);
+    fill = _applyDynamicFill(TextStyle(color: fill), fill, markup, true,
+            span: ds, cueStyle: cs, elapsedMs: elapsedMs, durMs: durMs)
+        .color!;
+    final (Color strokeColor, double strokeWidth) =
+        _resolveStroke(0, markup, elapsedMs: elapsedMs, durMs: durMs);
+    final List<Shadow>? shadows =
+        _resolveAssShadows(ds, cs, _assFontScale(markup));
+    final double sigma =
+        _blurSigmaFor(0, markup, elapsedMs: elapsedMs, durMs: durMs);
+    return SizedBox(
+      width: boxW,
+      height: boxH,
+      child: CustomPaint(
+        painter: AssDrawingPainter(
+          shape: shape,
+          scaleX: sx,
+          scaleY: sy,
+          fill: fill,
+          strokeColor: strokeColor,
+          strokeWidth: strokeWidth,
+          shadow: shadows == null || shadows.isEmpty ? null : shadows.first,
+          blurSigma: sigma,
+        ),
+      ),
+    );
   }
 
   /// 本条 cue 的 `\fad`/`\fade` 不透明度（0..1）。无位置信息（未 load）时恒 1（不淡）。
@@ -2346,7 +2482,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// （描边+填充+阴影）整体 [ImageFiltered]，带描边的 `{\blur5}` 对白被糊成一团不可读。
   /// 命中矩形不因层数变化（ImageFiltered / Stack 不改布局），逐字查词照常。
   Widget _buildSubtitleChar(
-      String char, int i, SubtitleMarkup? markup, AudioCue cue) {
+      String char, int i, SubtitleMarkup? markup, AudioCue cue,
+      {_GlyphPass pass = _GlyphPass.composite}) {
     // \t 动画 / 卡拉 OK 需要 cue 内已播放时长（逐帧重算由 _syncFadeTicker 驱动）。
     // TODO-2837：等效位置按 cue 所属流取轴（副字幕独立调轴后主副轴可不同）。
     final int? posMs = widget.controller.effectivePositionMsForCue(cue);
@@ -2376,7 +2513,28 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       final Paint? strokePaint =
           buildSubtitleStrokePaint(strokeColor, strokeWidth);
       if (strokePaint == null) {
-        // .ass 无描边（\bord 0）：单层 fill（自带 ASS 阴影，若有）。
+        // .ass 无描边（\bord 0）：单层 fill（自带 ASS 阴影，若有）。整行两遍时描边遍
+        // 仍要占同一格（几何同构）：画一个宽 0 的透明描边占位，不产出可见像素。
+        if (pass == _GlyphPass.strokeOnly) {
+          return _applySpanScale(
+            Text(
+              char,
+              style: fillStyle.copyWith(
+                color: null,
+                foreground: Paint()
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = 0
+                  ..color = const Color(0x00000000),
+                shadows: const <Shadow>[],
+                decoration: TextDecoration.none,
+              ),
+            ),
+            char,
+            i,
+            markup,
+            fillStyle,
+          );
+        }
         glyph = Text(char, style: fillStyle);
       } else {
         // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
@@ -2401,6 +2559,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
             child: strokeLayer,
           );
+        }
+        // 整行两遍（[_buildCueBox]）：本字只出自己那一遍的层。
+        if (pass == _GlyphPass.strokeOnly) {
+          return _applySpanScale(strokeLayer, char, i, markup, fillStyle);
+        }
+        if (pass == _GlyphPass.fillOnly) {
+          return _applySpanScale(
+              Text(char, style: fillTopStyle), char, i, markup, fillStyle);
         }
         // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
         return _applySpanScale(
@@ -2571,8 +2737,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     } else if (outlineWidthAss <= 0) {
       outlineWidth = 0;
     } else {
+      // 只夹上限（防 PlayResY 缺失 / 异常撑爆）：缩放后的细描边照实画——旧下限 0.5
+      // 会在小窗口里把 Outline 随字号一起缩小的作者意图截断，描边相对字身越缩越粗。
       outlineWidth = assOutlineStrokeWidth(
-        (outlineWidthAss * _assFontScale(markup)).clamp(0.5, 24.0).toDouble(),
+        math.min(outlineWidthAss * _assFontScale(markup), 24.0),
       );
     }
     return (
@@ -2586,6 +2754,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     if (markup == null) return null;
     for (final SubtitleSpan s in markup.spans) {
       if (i >= s.startGrapheme && i < s.endGrapheme) return s;
+    }
+    // `\p` 绘图事件没有 grapheme：行内样式快照挂在 [SubtitleMarkup.drawingStyle]，
+    // 让描边 / 阴影 / 辉光解析对图形与文字走同一条路。
+    if (markup.drawing != null && markup.spans.isEmpty) {
+      return markup.drawingStyle;
     }
     return null;
   }
@@ -3238,57 +3411,27 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
   }
 
-  /// `\pos` / `\move` 绝对定位盒：把字幕盒的 `\an` 锚点落到 [posScreen]，并与锚点分支
-  /// （[_anchoredPadded] → [_paddingFor]）**共用同一条 chrome 避让契约**。
+  /// `\pos` / `\move` / 帧锚 `\clip` 绝对定位盒：把字幕盒的 `\an` 锚点精确落到
+  /// [posScreen]，**不参与控制条避让**。
   ///
-  /// BUG-1332 根因：避让原先挂在「锚点定位分支」上而不是「字幕层」上——带 `\pos` 的 cue
-  /// 直接走裸 [Positioned] 返回，[controlsVisible] / reserve 一概不参与，于是 OP 卡拉OK 那种
-  /// `{\an7\pos(461,672)}`（672/720 = 画面 93.3%，正是进度条那一条）的逐字歌词恒被控制条
-  /// 压住、且画在 chrome 之上盖掉暂停键。定位方式是**实现细节**，「UI 赢重叠」是产品契约，
-  /// 契约不该随分支消失。
+  /// 定位字幕（招牌 / 特效 / OP 逐字歌词）是作者按画面内容摆的，位置本身就是语义——
+  /// mpv/libass 也从不因 OSC 显隐挪动它们。BUG-1332 曾让 `\pos` 盒与锚点分支共用
+  /// 「盒底探进控制条带就上抬」的避让契约，代价是招牌随控制条显隐上下跳、还会把
+  /// 落在鼠标停放点的招牌盒再挪一次而自激唤起控制条；2026-09-14 所有者拍板：
+  /// 非标（定位）字幕不随控制条移动，避让只留给锚点对白（[_anchoredPadded] →
+  /// [_paddingFor]，那是没有作者坐标、只有「贴底 / 贴顶」语义的行）。
   ///
-  /// 语义与 [_paddingFor] 严格同构——**取下限、不是加法、只单向移动**：
-  /// - 盒底探进底部 chrome 带才上抬到恰骑其上缘（`min`，绝不把高位盒往下拽）；
-  /// - 盒顶探进顶部 chrome 带才下压到其下缘（`max`，绝不把低位盒往上顶）；
-  /// - 两者都不成立时坐标逐像素等于作者 `\pos`（招牌 / 画面中部特效外观不变）。
-  ///
-  /// 水平方向**不做任何钳制**：`\pos` 的 x 是作者语义，横向出屏另有根因（`\fn@…` 竖排
-  /// 字体前缀未支持），钳到屏内只会把那个 bug 盖住。
-  ///
-  /// 无 [VideoSubtitleOverlay.controlsVisible]（测试 / 有声书 / 无控制条）时避让进度恒 0，
-  /// 与历史像素级一致。控制条显隐用 [TweenAnimationBuilder] 在「作者位」与「避让位」之间
-  /// 插值，时长/曲线与锚点分支的 [AnimatedPadding] 同源，两条分支跟手感一致。
+  /// 水平方向同样**不做任何钳制**：`\pos` 的 x 是作者语义，横向出屏另有根因（`\fn@…`
+  /// 竖排字体前缀未支持），钳到屏内只会把那个 bug 盖住。
   Widget _absolutePositioned(
-      Offset posScreen, SubtitleAnchor anchor, Widget content,
-      {bool dodge = true}) {
-    final double anchorFx = _hFrac(anchor.horizontal);
-    final double anchorFy = _vFrac(anchor.vertical);
-    Widget layout(double dodgeProgress) => CustomSingleChildLayout(
-          delegate: _AbsoluteCueLayoutDelegate(
-            pos: posScreen,
-            anchorFx: anchorFx,
-            anchorFy: anchorFy,
-            topReserve: widget.controlsTopReserve,
-            bottomReserve: widget.controlsBottomReserve,
-            dodgeProgress: dodgeProgress,
-          ),
-          child: content,
-        );
-
-    final ValueListenable<bool>? visible = widget.controlsVisible;
-    // dodge=false（带 \clip 的帧锚 cue，BUG-1775）：裁剪窗固定在帧上，避让位移只会把
-    // 文本推出窗外——恒用作者位。
-    if (!dodge || visible == null) return layout(0);
-    return ValueListenableBuilder<bool>(
-      valueListenable: visible,
-      builder: (BuildContext _, bool controlsVisible, Widget? child) {
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: controlsVisible ? 1.0 : 0.0),
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          builder: (BuildContext _, double t, Widget? __) => layout(t),
-        );
-      },
+      Offset posScreen, SubtitleAnchor anchor, Widget content) {
+    return CustomSingleChildLayout(
+      delegate: _AbsoluteCueLayoutDelegate(
+        pos: posScreen,
+        anchorFx: _hFrac(anchor.horizontal),
+        anchorFy: _vFrac(anchor.vertical),
+      ),
+      child: content,
     );
   }
 
@@ -3391,61 +3534,35 @@ bool isAssVerticalFontName(String? name) =>
 /// `\pos` / `\move` 绝对定位盒的最终左上角（容器局部坐标）。纯函数，几何真相源。
 ///
 /// [pos] 是 `\pos` 映射到容器的锚点；[anchorFx]/[anchorFy] 是 `\an` 锚点在盒内的比例
-/// （左/上=0、中=0.5、右/下=1），故作者位 = `pos - (anchorFx*w, anchorFy*h)`。
-///
-/// [dodgeProgress] ∈ [0,1] 是控制条可见度（0=隐藏，1=完全可见）：在作者位与避让位之间
-/// 线性插值，供淡入淡出期跟随。避让语义与 [VideoSubtitleOverlayState._paddingFor] 同构
-/// ——对 chrome 带**取下限、单向移动**，不是加法：
-/// - 盒底越过 `height - bottomReserve` 才上抬（`math.min`，高位盒不被拽下）；
-/// - 盒顶越过 `topReserve` 才下压（`math.max`，低位盒不被顶上）；
-/// - 带高不足以容纳字幕盒时顶部优先（结果确定，不来回抖）。
-///
-/// 水平坐标恒为作者位（`\pos` 的 x 是作者语义，不钳制）。
+/// （左/上=0、中=0.5、右/下=1），故左上角 = `pos - (anchorFx*w, anchorFy*h)`——逐像素
+/// 等于作者位，控制条显隐不参与（见 [_VideoSubtitleOverlayState._absolutePositioned]）。
 @visibleForTesting
 Offset resolveAbsoluteCueOffset({
   required Offset pos,
-  required Size container,
   required Size child,
   required double anchorFx,
   required double anchorFy,
-  required double topReserve,
-  required double bottomReserve,
-  required double dodgeProgress,
 }) {
-  final double rawX = pos.dx - anchorFx * child.width;
-  final double rawY = pos.dy - anchorFy * child.height;
-  if (dodgeProgress <= 0) return Offset(rawX, rawY);
-  double dodgedY = rawY;
-  // 底部 chrome（进度条 + 按钮行）：只上抬，抬到盒底恰骑其上缘。
-  final double bandBottom = container.height - bottomReserve;
-  dodgedY = math.min(dodgedY, bandBottom - child.height);
-  // 顶部 chrome（标题栏 + 右上角菜单，BUG-1069 同契约）：只下压，压到其下缘。
-  dodgedY = math.max(dodgedY, topReserve);
-  final double t = dodgeProgress.clamp(0.0, 1.0).toDouble();
-  return Offset(rawX, rawY + (dodgedY - rawY) * t);
+  return Offset(
+    pos.dx - anchorFx * child.width,
+    pos.dy - anchorFy * child.height,
+  );
 }
 
-/// [resolveAbsoluteCueOffset] 的布局壳：`\pos` 盒需要**子盒真实尺寸**才能判断「盒底是否
-/// 探进控制条」，故不能用 [Positioned] + [FractionalTranslation]（两者都在布局前定位）。
+/// [resolveAbsoluteCueOffset] 的布局壳：`\an` 对齐要用**子盒真实尺寸**换算左上角，故
+/// 不能用 [Positioned] + [FractionalTranslation]（两者都在布局前定位）。
 class _AbsoluteCueLayoutDelegate extends SingleChildLayoutDelegate {
   const _AbsoluteCueLayoutDelegate({
     required this.pos,
     required this.anchorFx,
     required this.anchorFy,
-    required this.topReserve,
-    required this.bottomReserve,
-    required this.dodgeProgress,
   });
 
   final Offset pos;
   final double anchorFx;
   final double anchorFy;
-  final double topReserve;
-  final double bottomReserve;
-  final double dodgeProgress;
 
-  // 字幕盒按内容自然尺寸排版（与旧 Positioned(child:) 的无界宽同义）：不被层尺寸拉伸，
-  // 也不因避让而换行重排——避让只挪位置，不改变盒的排版结果。
+  // 字幕盒按内容自然尺寸排版（与旧 Positioned(child:) 的无界宽同义）：不被层尺寸拉伸。
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
       const BoxConstraints();
@@ -3454,23 +3571,14 @@ class _AbsoluteCueLayoutDelegate extends SingleChildLayoutDelegate {
   Offset getPositionForChild(Size size, Size childSize) =>
       resolveAbsoluteCueOffset(
         pos: pos,
-        container: size,
         child: childSize,
         anchorFx: anchorFx,
         anchorFy: anchorFy,
-        topReserve: topReserve,
-        bottomReserve: bottomReserve,
-        dodgeProgress: dodgeProgress,
       );
 
   @override
   bool shouldRelayout(_AbsoluteCueLayoutDelegate old) =>
-      pos != old.pos ||
-      anchorFx != old.anchorFx ||
-      anchorFy != old.anchorFy ||
-      topReserve != old.topReserve ||
-      bottomReserve != old.bottomReserve ||
-      dodgeProgress != old.dodgeProgress;
+      pos != old.pos || anchorFx != old.anchorFx || anchorFy != old.anchorFy;
 }
 
 /// GDI 全名尾部**字重后缀** → [FontWeight]；不是字重后缀返回 null。纯函数可单测。
@@ -3502,6 +3610,150 @@ FontWeight? assFontWeightFromSuffix(String suffix) {
 /// ASS `\clip`/`\iclip` 的 [CustomClipper]：把 [SubtitleClip] 的归一化分数路径映射到
 /// fit:contain 视频内容矩形（居中 + 黑边偏移，与 `\pos` 定位同一几何），构建 [Path]。
 /// `\iclip` 用全区减路径（挖孔）。视频分辨率未知回退整容器为映射基准（历史近似）。
+/// 字形绘制遍（[_VideoSubtitleOverlayState._buildCueBox]）：尊重 .ass 时整行先画描边遍
+/// 再画填充遍；默认外观单遍合成。
+enum _GlyphPass { composite, strokeOnly, fillOnly }
+
+/// ASS `\fax`/`\fay` 切变矩阵（VSFilter：x' = x + fax·y，y' = y + fay·x）。纯函数可单测。
+@visibleForTesting
+Matrix4 assShearMatrix(double fax, double fay) {
+  final Matrix4 m = Matrix4.identity();
+  m.setEntry(0, 1, fax);
+  m.setEntry(1, 0, fay);
+  return m;
+}
+
+/// 分组绘制 z 序（libass）：ASS `Layer` 升序、同层按事件序（[AudioCue.sentenceIndex]，
+/// 解析器按起始时间稳定排序后的文件序）——Stack 后者盖前者。稳定排序（同键保持输入
+/// 顺序），分组键不变故 element 复用不受影响。纯函数可单测。
+@visibleForTesting
+List<(String, List<AudioCue>)> sortCueGroupsForPaint(
+    List<(String, List<AudioCue>)> groups) {
+  if (groups.length < 2) return groups;
+  int layerOf((String, List<AudioCue>) g) => g.$2.first.markup?.layer ?? 0;
+  int orderOf((String, List<AudioCue>) g) {
+    int best = -1;
+    for (final AudioCue c in g.$2) {
+      if (best < 0 || c.sentenceIndex < best) best = c.sentenceIndex;
+    }
+    return best;
+  }
+
+  final List<int> idx = List<int>.generate(groups.length, (int i) => i)
+    ..sort((int a, int b) {
+      final int byLayer = layerOf(groups[a]).compareTo(layerOf(groups[b]));
+      if (byLayer != 0) return byLayer;
+      final int byOrder = orderOf(groups[a]).compareTo(orderOf(groups[b]));
+      return byOrder != 0 ? byOrder : a.compareTo(b);
+    });
+  return <(String, List<AudioCue>)>[for (final int i in idx) groups[i]];
+}
+
+/// ASS `\p` 矢量绘图画笔：路径坐标（归一化分数）减去包围盒左上角后乘 [scaleX]/[scaleY]
+/// 落到本盒局部像素。绘制顺序与文字字形一致：阴影（路径平移拷贝）< 描边（居中
+/// stroke，宽已含 ×2）< 填充；`\bord>0` 时辉光只糊描边 / 阴影层、填充锐利，`\bord==0`
+/// 才糊填充（libass `ass_bitmap.c` 语义，见 [_VideoSubtitleOverlayState._buildSubtitleChar]）。
+/// 每个 `m` 起一个子路径并隐式闭合；非零环绕（libass 光栅化规则）。
+@visibleForTesting
+class AssDrawingPainter extends CustomPainter {
+  const AssDrawingPainter({
+    required this.shape,
+    required this.scaleX,
+    required this.scaleY,
+    required this.fill,
+    required this.strokeColor,
+    required this.strokeWidth,
+    this.shadow,
+    this.blurSigma = 0,
+  });
+
+  final SubtitleDrawing shape;
+  final double scaleX;
+  final double scaleY;
+  final Color fill;
+  final Color strokeColor;
+  final double strokeWidth;
+  final Shadow? shadow;
+  final double blurSigma;
+
+  Path buildPath() {
+    double px(double fx) => (fx - shape.minX) * scaleX;
+    double py(double fy) =>
+        (fy - shape.minY + shape.baselineOffsetFraction) * scaleY;
+    final Path p = Path()..fillType = PathFillType.nonZero;
+    bool open = false;
+    for (final SubtitleClipSegment seg in shape.segments) {
+      switch (seg.op) {
+        case SubtitleClipOp.move:
+          if (open) p.close();
+          p.moveTo(px(seg.x1), py(seg.y1));
+          open = true;
+        case SubtitleClipOp.line:
+          p.lineTo(px(seg.x1), py(seg.y1));
+        case SubtitleClipOp.cubic:
+          p.cubicTo(px(seg.x1), py(seg.y1), px(seg.x2), py(seg.y2),
+              px(seg.x3), py(seg.y3));
+      }
+    }
+    if (open) p.close();
+    return p;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Path path = buildPath();
+    final bool hasStroke = strokeWidth > 0;
+    final ui.MaskFilter? glow =
+        blurSigma > 0 ? ui.MaskFilter.blur(ui.BlurStyle.normal, blurSigma) : null;
+    final Shadow? sh = shadow;
+    if (sh != null) {
+      canvas.save();
+      canvas.translate(sh.offset.dx, sh.offset.dy);
+      final Paint shadowFill = Paint()
+        ..color = sh.color
+        ..maskFilter = glow;
+      canvas.drawPath(path, shadowFill);
+      if (hasStroke) {
+        canvas.drawPath(
+            path,
+            Paint()
+              ..color = sh.color
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = strokeWidth
+              ..strokeJoin = StrokeJoin.round
+              ..maskFilter = glow);
+      }
+      canvas.restore();
+    }
+    if (hasStroke) {
+      canvas.drawPath(
+          path,
+          Paint()
+            ..color = strokeColor
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = strokeWidth
+            ..strokeJoin = StrokeJoin.round
+            ..maskFilter = glow);
+    }
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = fill
+          ..maskFilter = hasStroke ? null : glow);
+  }
+
+  @override
+  bool shouldRepaint(covariant AssDrawingPainter old) =>
+      !identical(old.shape, shape) ||
+      old.scaleX != scaleX ||
+      old.scaleY != scaleY ||
+      old.fill != fill ||
+      old.strokeColor != strokeColor ||
+      old.strokeWidth != strokeWidth ||
+      old.shadow != shadow ||
+      old.blurSigma != blurSigma;
+}
+
 class _AssClipClipper extends CustomClipper<Path> {
   _AssClipClipper({required this.clip, this.videoW, this.videoH});
 

@@ -99,6 +99,7 @@ Future<void> openBookViaProductionPath(
 Future<String> seedReaderBook(
   WidgetTester tester, {
   String fileName = 'test_library.epub',
+  bool withRealImages = false,
 }) async {
   final AppModel appModel = await readyAppModel(tester);
   await showBooksTab(tester);
@@ -106,7 +107,8 @@ Future<String> seedReaderBook(
     tester.element(find.byType(MaterialApp).first),
   );
 
-  final Uint8List bytes = EpubGenerator().generate();
+  final Uint8List bytes =
+      EpubGenerator(withRealImages: withRealImages).generate();
   final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,

@@ -2056,6 +2056,13 @@ window.__fushiInstallShell = function(C) {
     window.__fushiMarkImageRevealed = function(key) {
       if (key) _fushiRevealedKeys[key] = true;
     };
+    // 插图册的「恢复遮罩」反向：把 key 移出活集，正文里这张图下次 load（或宿主
+    // 立刻补的 classList.add）就重新遮上。没有它，撤销只改了 Drift 与网格，当前
+    // 这次阅读会话的正文仍然记得「已揭开」，重载章节照样不遮 —— 两端对同一张图
+    // 给出相反答案。
+    window.__fushiUnmarkImageRevealed = function(key) {
+      if (key) delete _fushiRevealedKeys[key];
+    };
   }
   // BUG-898：稳定 reveal key 归一到「extractDir 相对、decode、正斜杠」路径（如
   // OEBPS/images/foo.jpg），与图片库磁盘 File 的相对路径、Dart ImageRevealKey.normalize

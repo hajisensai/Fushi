@@ -231,6 +231,16 @@ extension _VideoFullscreen on _VideoFushiPageState {
                             filterQuality: params.filterQuality,
                             controls: params.controls,
                             wakelock: false,
+                            // BUG-2544：与窗口侧同一策略——生命周期暂停/续播由本页
+                            // 接管，media_kit 自带的那套整个关掉（理由与「为什么不是
+                            // 只把 resume 打开」见 [_buildVideoBody] 里同名参数处的
+                            // 长注释）。这里**必须显式写**：本路由是自建的、逐字段从
+                            // `params` 转发，而 [VideoViewParameters] 压根不带这两个
+                            // 字段（media_kit 自己的全屏走
+                            // `controls/methods/fullscreen.dart` 从 widget 上直取），
+                            // 不写就会退回「后台暂停、回来不续」的构造器默认值，
+                            // 全屏态下重新长出同一个 bug。
+                            pauseUponEnteringBackgroundMode: false,
                             // 全屏路由也显式禁用内置 SubtitleView（TODO-080/092，
                             // BUG-190）。虽然与窗口侧共享同一
                             // videoViewParametersNotifier（窗口侧已设 visible:false 会

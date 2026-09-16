@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,12 +11,25 @@ const String _sourceId = '12345678-1234-4234-8234-123456789abc';
 const String _fingerprint =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
+/// The default MiscInfo value of a mined note: the source href for [_sourceId].
+final String _bookHtml = CardSourceLink(
+  kind: CardSourceKind.book,
+  uid: 'portable-book-uid',
+  sourceId: _sourceId,
+  chapterIndex: 2,
+  charOffset: 1234,
+).toHtml(label: 'Book');
+
 class _SourceRepository extends BaseAnkiRepository {
   List<int> matches = <int>[42];
   Map<String, String> saved = <String, String>{
     'Sentence': 'old sentence',
     'Meaning': 'my handwritten meaning',
+    'MiscInfo': _bookHtml,
   };
+
+  /// Fields per candidate note; falls back to [saved] for unknown ids.
+  Map<int, Map<String, String>> candidateFields = <int, Map<String, String>>{};
   Map<String, String>? written;
   String? concurrentSentenceAfterWrite;
   int writeCount = 0;
@@ -24,13 +38,22 @@ class _SourceRepository extends BaseAnkiRepository {
       contextForExistingSourceNote(42, context);
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) async {
-    expect(markerTag, 'fushi_source_12345678123442348234123456789abc');
+  Future<List<int>> findSourceNoteCandidates(String sourceId) async {
+    expect(sourceId, _sourceId);
     return matches;
   }
 
+  Object? readFailure;
+
   @override
-  Future<Map<String, String>?> noteFields(int noteId) async => saved;
+  Future<Map<String, String>?> noteFields(int noteId) async =>
+      candidateFields[noteId] ?? saved;
+
+  @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    if (readFailure != null) throw readFailure!;
+    return candidateFields[noteId] ?? saved;
+  }
 
   @override
   Future<void> writeSourceNoteFields(
@@ -45,9 +68,8 @@ class _SourceRepository extends BaseAnkiRepository {
     }
   }
 
-  List<String> tags(CardSourceLink source) => buildNoteTags(
-        '',
-        sourceLink: source,
+  List<String> tags(String userTags) => buildNoteTags(
+        userTags,
         includeHibiki: false,
         includeCategory: false,
       );
@@ -189,42 +211,27 @@ void main() {
   });
 
   test(
-    'AnkiConnect source lookup verifies exact tags and rejects malformed data',
+    'AnkiConnect source lookup searches fields by source ID substring',
     () async {
-      final String marker = book().markerTag;
-      bool malformed = false;
       final AnkiConnectService service = AnkiConnectService(
         client: MockClient((http.Request request) async {
           final Map<String, dynamic> body =
               jsonDecode(request.body) as Map<String, dynamic>;
-          final Object result;
-          if (body['action'] == 'findNotes') {
-            expect(body['params']['query'], 'tag:$marker');
-            result = <int>[42, 43];
-          } else {
-            expect(body['action'], 'notesInfo');
-            result = <Object>[
-              <String, Object>{
-                'noteId': 42,
-                'tags': <String>[marker],
-              },
-              <String, Object>{
-                'noteId': 43,
-                if (!malformed) 'tags': <String>['$marker::descendant'],
-              },
-            ];
-          }
+          expect(body['action'], 'findNotes');
+          expect(body['params']['query'], 'sourceId=$_sourceId');
           return http.Response(
-            jsonEncode(<String, Object?>{'result': result, 'error': null}),
+            jsonEncode(<String, Object?>{
+              'result': <int>[42, 43],
+              'error': null,
+            }),
             200,
           );
         }),
       );
-      expect(await service.findNotesBySourceMarker(marker), <int>[42]);
-      malformed = true;
-      await expectLater(
-        service.findNotesBySourceMarker(marker),
-        throwsA(isA<AnkiConnectException>()),
+      expect(await service.findNotesBySourceId(_sourceId), <int>[42, 43]);
+      expect(
+        () => service.findNotesBySourceId('fushi_source_$_sourceId'),
+        throwsFormatException,
       );
     },
   );
@@ -273,21 +280,77 @@ void main() {
     expect(link.toHtml(label: '<script>'), contains('&lt;script&gt;'));
   });
 
-  test('source marker is always present independently of optional tags', () {
-    expect(_SourceRepository().tags(book()), <String>[book().markerTag]);
+  test('mined notes carry no source marker tag (BUG-2527)', () {
+    // The source ID lives only in the field href; tags stay the user's own.
+    expect(_SourceRepository().tags('custom'), <String>['custom']);
+    expect(_SourceRepository().tags(''), isEmpty);
     expect(
-      CardSourceLink.markerForSourceId(CardSourceLink.newSourceId()),
-      matches(RegExp(r'^fushi_source_[0-9a-f]{32}$')),
+      CardSourceLink.searchQueryForSourceId(_sourceId),
+      'sourceId=$_sourceId',
+    );
+    expect(book().toHtml(), contains('sourceId=$_sourceId'));
+    expect(
+      CardSourceLink.validateSourceId(CardSourceLink.newSourceId()),
+      matches(RegExp(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+      )),
+    );
+    expect(
+      () => CardSourceLink.validateSourceId('12345678123442348234123456789abc'),
+      throwsFormatException,
     );
   });
 
-  test('AnkiDroid resolves the marker and sends only the selected fields',
+  test('source lookup confirms candidates by parsed href, not substring',
+      () async {
+    final _SourceRepository repo = _SourceRepository();
+    final CardSourceLink other = book().withSourceId(
+      '12345678-1234-4234-8234-123456789abd',
+    );
+    repo.matches = <int>[40, 41, 42, 43];
+    repo.candidateFields = <int, Map<String, String>>{
+      // Substring only: the ID is quoted in prose, not in a source href.
+      40: <String, String>{'Sentence': 'see sourceId=$_sourceId'},
+      // A real source link carrying a different ID.
+      41: <String, String>{'MiscInfo': other.toHtml()},
+      // Attribute-escaped href on a legacy note that still has the old tag.
+      42: <String, String>{
+        'MiscInfo': 'Title ${book().toHtml()}',
+        'Tags': 'fushi_source_12345678123442348234123456789abc',
+      },
+      // Deleted between search and read.
+      43: <String, String>{},
+    };
+    final AnkiSourceNote note = (await repo.readSourceNote(_sourceId))!;
+    expect(note.noteId, 42);
+    expect(note.fields['MiscInfo'], startsWith('Title '));
+
+    repo.matches = <int>[40, 41];
+    expect(await repo.readSourceNote(_sourceId), isNull);
+
+    repo.candidateFields[41] = <String, String>{'MiscInfo': book().toHtml()};
+    repo.matches = <int>[41, 42];
+    await expectLater(repo.readSourceNote(_sourceId), throwsStateError);
+  });
+
+  test('source lookup propagates backend failure instead of "not found"',
+      () async {
+    final _SourceRepository repo = _SourceRepository();
+    repo.readFailure = const SocketException('AnkiConnect timed out');
+    await expectLater(
+      repo.readSourceNote(_sourceId),
+      throwsA(isA<SocketException>()),
+    );
+  });
+
+  test('AnkiDroid resolves the source ID and sends only the selected fields',
       () async {
     const MethodChannel channel = MethodChannel('app.fushi.reader/anki');
     final List<MethodCall> calls = <MethodCall>[];
     final Map<String, String> fields = <String, String>{
       'Sentence': 'original',
       'Meaning': 'manual note',
+      'MiscInfo': _bookHtml,
     };
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -296,8 +359,8 @@ void main() {
       switch (call.method) {
         case 'requestAnkidroidPermissions':
           return true;
-        case 'findNotesBySourceMarker':
-          expect((call.arguments as Map)['markerTag'], book().markerTag);
+        case 'findNotesBySourceId':
+          expect((call.arguments as Map)['sourceId'], _sourceId);
           return <int>[42];
         case 'notesInfo':
           return fields;
@@ -347,8 +410,9 @@ void main() {
   test(
     'ordinary overwrite does not add an unbound source URL to legacy notes',
     () async {
-      final AnkiMiningContext adjusted =
-          await _SourceRepository().existingContext(
+      final _SourceRepository repo = _SourceRepository();
+      repo.saved.remove('MiscInfo');
+      final AnkiMiningContext adjusted = await repo.existingContext(
         AnkiMiningContext(sentence: 'new', sourceLink: book()),
       );
       expect(adjusted.sourceLink, isNull);
@@ -444,7 +508,7 @@ void main() {
   });
 
   test(
-    'marker deletion, duplication or identity change rejects before writing',
+    'source deletion, duplication or identity change rejects before writing',
     () async {
       for (final List<int> matches in <List<int>>[
         <int>[],

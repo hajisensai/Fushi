@@ -154,8 +154,9 @@ function makeHarness(continuousMode) {
     vnMode: false,
     vnClickAdvance: false,
     hoverAutoLookup: false,
-    swipeDistThreshold: 44,
-    swipeFastDistThreshold: 22,
+    swipeDistThreshold: SWIPE_DIST,
+    swipeFastDistThreshold: SWIPE_FAST_DIST,
+    swipeFastVelocity: SWIPE_FAST_VELOCITY,
     scanNonJapaneseText: false,
     // TODO-806: [806-TAP] probe defaults off, matching production.
     debugLogging: false,
@@ -204,6 +205,30 @@ function touchEvt(x, y) {
   return { touches: [t], changedTouches: [t], target: null, preventDefault() {} };
 }
 
+// 阈值由 Dart 侧经 argv 传入，取自 ReaderSettings.swipePageTurnDistThresholds(1.0)
+// ——**不在这里另抄一份**。这个 harness 以前硬编码 44/22，于是调整生产阈值时它既不会
+// 转红也不再验真正的判据（缺 swipeFastVelocity 时 `velocity >= undefined` 恒 false，
+// 快速门那条用例是靠距离门碰巧过的）。
+const SWIPE_DIST = Number(process.argv[2]);
+const SWIPE_FAST_DIST = Number(process.argv[3]);
+const SWIPE_FAST_VELOCITY = Number(process.argv[4]);
+const TAP_SLOP = 10;
+assert.ok(
+  Number.isFinite(SWIPE_DIST) && Number.isFinite(SWIPE_FAST_DIST)
+    && Number.isFinite(SWIPE_FAST_VELOCITY),
+  'thresholds must be passed in as argv: dist fastDist fastVelocity',
+);
+
+// 「短滑」位移：刻意落在 tap slop 与纯距离门**之间**，且不小于快速短滑距离门。
+// 两条用例共用它，唯一差别是时长 —— 于是「同样的距离，快的翻页、慢的是死区」直接
+// 成为被执行出来的事实，而不是两个各自硬编码的数字。
+const SHORT_DX = Math.round((TAP_SLOP + SWIPE_DIST) / 2);
+assert.ok(
+  SHORT_DX > TAP_SLOP && SHORT_DX < SWIPE_DIST && SHORT_DX >= SWIPE_FAST_DIST,
+  'SHORT_DX=' + SHORT_DX + ' must sit between the tap slop and the distance '
+    + 'gate, and still clear the fast-swipe distance gate',
+);
+
 // Test 1: PAGED mode, leftward horizontal touch swipe over body text -> the
 // page turn must come from touchend (the fixed path); pointerup must stay
 // silent. Reverting the TODO-553 fix turns this red.
@@ -213,7 +238,7 @@ function touchEvt(x, y) {
   h.dispatch('touchstart', touchEvt(200, 300));
   h.dispatch('pointermove', pointerEvt('touch', 150, 300, -1, 1));
   h.dispatch('pointermove', pointerEvt('touch', 80, 300, -1, 1));
-  h.dispatch('touchend', touchEvt(80, 300)); // dx = -120 (> 44)
+  h.dispatch('touchend', touchEvt(80, 300)); // dx = -120 (well past the distance gate)
   h.dispatch('pointerup', pointerEvt('touch', 80, 300, 0, 0));
   // The page turn must come from the touchend path; pointerup must stay silent.
   // Reverting the fix makes touchend emit nothing (swipe lost to the pointer
@@ -266,23 +291,28 @@ function touchEvt(x, y) {
   );
 })();
 
-// BUG-手机翻短了会查词: PAGED mode, a SLOW ~30px horizontal drift is a short,
+// BUG-手机翻短了会查词: PAGED mode, a SLOW short horizontal drift is an
 // under-powered swipe -- it must be a DEAD ZONE (no page turn, and crucially NO
-// word lookup). dx=30 is beyond the 10px tap-slop (so not a tap) yet below the
-// 44px pure-distance swipe threshold, and the slow duration keeps velocity under
-// the 900px/s fast gate. Pre-fix the tap box == the 72px swipe threshold, so this
-// fell into the tap branch and fired a spurious lookup ("翻短了会查词").
+// word lookup). SHORT_DX is beyond the tap slop (so not a tap) yet below the
+// pure-distance swipe threshold, and the slow duration keeps velocity under the
+// fast gate. Pre-fix the tap box == the swipe threshold, so this fell into the
+// tap branch and fired a spurious lookup ("翻短了会查词").
 (function () {
+  const slowMs = 300;
+  assert.ok(
+    (SHORT_DX / slowMs) * 1000 < SWIPE_FAST_VELOCITY,
+    'the slow case must stay under the fast-swipe velocity gate',
+  );
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
   h.dispatch('touchstart', touchEvt(200, 300));
-  h.advance(300); // slow drift: velocity = 30/300*1000 = 100px/s (< 900)
-  h.dispatch('pointermove', pointerEvt('touch', 215, 305, -1, 1));
-  h.dispatch('touchend', touchEvt(230, 308)); // dx = +30 (>28 slop, <44 dist), dy = +8
-  h.dispatch('pointerup', pointerEvt('touch', 230, 308, 0, 0));
+  h.advance(slowMs);
+  h.dispatch('pointermove', pointerEvt('touch', 200 + Math.round(SHORT_DX / 2), 305, -1, 1));
+  h.dispatch('touchend', touchEvt(200 + SHORT_DX, 308)); // dy = +8
+  h.dispatch('pointerup', pointerEvt('touch', 200 + SHORT_DX, 308, 0, 0));
   assert.deepStrictEqual(
     h.swipes, [],
-    'a slow 30px horizontal drift must NOT page-turn (below swipe distance); got '
+    'a slow short horizontal drift must NOT page-turn (below swipe distance); got '
       + JSON.stringify(h.swipes),
   );
   assert.deepStrictEqual(
@@ -313,21 +343,27 @@ function touchEvt(x, y) {
   );
 })();
 
-// BUG-手机翻页迟钝: a FAST short flick (dx=30 over 20ms -> 1500px/s) must turn the
-// page via the fast-swipe gate (absDx>=22 fastDist AND velocity>=900), so users
-// no longer have to drag a long way. dx=30 is below the 44px pure-distance
-// threshold; only the fast path makes it a page turn.
+// BUG-手机翻页迟钝: the SAME short distance, flicked FAST, must turn the page via
+// the fast-swipe gate (absDx >= fastDist AND velocity >= fastVelocity), so users
+// no longer have to drag a long way. SHORT_DX is below the pure-distance
+// threshold; only the fast path can make it a page turn -- which is exactly what
+// separates this case from the dead-zone one above.
 (function () {
+  const fastMs = 20;
+  assert.ok(
+    (SHORT_DX / fastMs) * 1000 >= SWIPE_FAST_VELOCITY,
+    'the fast case must clear the fast-swipe velocity gate',
+  );
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
   h.dispatch('touchstart', touchEvt(200, 300));
-  h.advance(20); // fast flick: velocity = 30/20*1000 = 1500px/s (>= 900)
-  h.dispatch('pointermove', pointerEvt('touch', 185, 300, -1, 1));
-  h.dispatch('touchend', touchEvt(170, 300)); // dx = -30 (leftward), dy = 0
-  h.dispatch('pointerup', pointerEvt('touch', 170, 300, 0, 0));
+  h.advance(fastMs);
+  h.dispatch('pointermove', pointerEvt('touch', 200 - Math.round(SHORT_DX / 2), 300, -1, 1));
+  h.dispatch('touchend', touchEvt(200 - SHORT_DX, 300)); // leftward, dy = 0
+  h.dispatch('pointerup', pointerEvt('touch', 200 - SHORT_DX, 300, 0, 0));
   assert.deepStrictEqual(
     h.swipes, ['left@touchend'],
-    'a fast 30px flick must page-turn via the fast gate; got '
+    'a fast short flick must page-turn via the fast gate; got '
       + JSON.stringify(h.swipes),
   );
 })();

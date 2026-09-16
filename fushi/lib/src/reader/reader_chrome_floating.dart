@@ -170,32 +170,6 @@ bool bottomBarVisible({
   return chromeExpanded;
 }
 
-/// 鼠标在正文上移动时对悬浮 chrome 的处置（与视频播放器同一手感：移动即唤出、
-/// 持续移动期间常驻、停手后按计时收起）。
-enum ReaderHoverRevealAction {
-  /// 非悬浮态（挤压常驻）：什么都不做。
-  none,
-
-  /// 悬浮态已收起：唤出并武装自动收起。
-  reveal,
-
-  /// 悬浮态已可见：重新武装计时（移动中不收起）。
-  rearm,
-}
-
-/// 鼠标移动 → [ReaderHoverRevealAction]。只认真实鼠标（[isMouse]）：触屏没有
-/// hover，手写笔悬停也不该把控制栏顶出来。
-ReaderHoverRevealAction readerHoverRevealAction({
-  required bool floating,
-  required bool transientVisible,
-  required bool isMouse,
-}) {
-  if (!floating || !isMouse) return ReaderHoverRevealAction.none;
-  return transientVisible
-      ? ReaderHoverRevealAction.rearm
-      : ReaderHoverRevealAction.reveal;
-}
-
 /// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
 enum ReaderVnBlankTapAction {
   /// 挤压态底栏被收起（`_showChrome == false`）：只把底栏展开，**不翻页**。

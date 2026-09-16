@@ -13,6 +13,7 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/gal_voice_dump_index.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
+import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -1136,6 +1137,101 @@ void main() {
         GalAudioFallbackPolicy.full,
         reason: '换游戏必须按新 exe 重新加载记忆，不能串上一个游戏的选择',
       );
+
+      await second.close();
+      endpoints.dispose();
+    },
+  );
+
+  test(
+    'text process pipeline is remembered per game and restored on launch',
+    () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{};
+      GalHookSessionController build() {
+        final GalHookSessionController controller = GalHookSessionController(
+          textService: service,
+          isWindows: true,
+          exe32BitProbe: (_) async => true,
+          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+          engineSourceFactory:
+              ({
+                required int targetPid,
+                required String? launchExe,
+                required String injectorPath,
+                required bool lunaPcHooks,
+                int? lunaCodepage,
+                List<String> launchArguments = const <String>[],
+                String launchWorkdir = '',
+                GalJapaneseLocaleMode japaneseLocaleMode =
+                    kGalDefaultJapaneseLocaleMode,
+                String? contentLanguage,
+              }) =>
+                  _FakeEngineSource(pairedBytes: Uint8List(0), rawReady: true),
+          loopbackSourceFactory: _FakeLoopbackSource.new,
+          windowListLoader: () async => const <ExternalWindowInfo>[],
+          windowPollAttempts: 1,
+          resourceAudioWait: Duration.zero,
+          endpointListenable: endpoints,
+          endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+        );
+        controller.attachCaptureMemory(
+          load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+          save: (String gameKey, GalCaptureMemory memory) =>
+              store[gameKey] = memory,
+        );
+        return controller;
+      }
+
+      const GalTextProcessPipeline pipeline = GalTextProcessPipeline(
+        steps: <GalTextProcessStep>[
+          GalTextProcessStep(
+            id: 'dedupeAscending',
+            kind: GalTextProcessKind.dedupeAscending,
+          ),
+          GalTextProcessStep(
+            id: 'replace',
+            kind: GalTextProcessKind.replace,
+            pattern: r'\s+',
+            replacement: '',
+          ),
+        ],
+      );
+
+      final GalHookSessionController first = build();
+      expect(
+        (await first.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
+        isTrue,
+      );
+      expect(first.textProcessPipeline.steps, isEmpty, reason: '默认是空管线');
+      await first.setTextProcessPipeline(pipeline);
+      expect(
+        store[r'd:nemoi\siglusengine.exe']?.textProcess.steps,
+        pipeline.steps,
+        reason: '设置管线必须当场落进这个游戏的捕获记忆',
+      );
+      await first.close();
+
+      final GalHookSessionController second = build();
+      expect(
+        (await second.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
+        isTrue,
+      );
+      expect(
+        second.textProcessPipeline.steps,
+        pipeline.steps,
+        reason: '重开同一个游戏必须把上次编排的管线恢复到会话内存态',
+      );
+      expect(
+        second.textProcessPipeline.apply('AABABCABCD'),
+        'ABCD',
+        reason: '恢复的是可执行管线本体，不只是一份存档结构',
+      );
+
+      // 换游戏不得继承上一个游戏的管线（`_beginActivitySession` 复位记忆会话）。
+      expect((await second.launchGame(r'D:\other\Game.exe')).launched, isTrue);
+      expect(second.textProcessPipeline.steps, isEmpty);
 
       await second.close();
       endpoints.dispose();

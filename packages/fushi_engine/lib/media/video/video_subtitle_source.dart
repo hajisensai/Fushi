@@ -303,6 +303,7 @@ List<AudioCue> parseSubtitleContent(
   SubtitleFormat format, {
   required String content,
   required String bookUid,
+  bool includeDrawings = false,
 }) {
   // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
   // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
@@ -310,7 +311,11 @@ List<AudioCue> parseSubtitleContent(
     case SubtitleFormat.srt:
       return SrtParser.parseString(content: content, bookKey: bookUid);
     case SubtitleFormat.ass:
-      return AssParser.parseString(content: content, bookKey: bookUid);
+      return AssParser.parseString(
+        content: content,
+        bookKey: bookUid,
+        includeDrawings: includeDrawings,
+      );
     case SubtitleFormat.vtt:
       return VttParser.parseString(content: content, bookKey: bookUid);
   }
@@ -347,6 +352,7 @@ Future<List<AudioCue>> parseSubtitleContentAsync(
   SubtitleFormat format, {
   required String content,
   required String bookUid,
+  bool includeDrawings = false,
 }) {
   // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
   // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
@@ -354,7 +360,11 @@ Future<List<AudioCue>> parseSubtitleContentAsync(
     case SubtitleFormat.srt:
       return SrtParser.parseStringAsync(content: content, bookKey: bookUid);
     case SubtitleFormat.ass:
-      return AssParser.parseStringAsync(content: content, bookKey: bookUid);
+      return AssParser.parseStringAsync(
+        content: content,
+        bookKey: bookUid,
+        includeDrawings: includeDrawings,
+      );
     case SubtitleFormat.vtt:
       return VttParser.parseStringAsync(content: content, bookKey: bookUid);
   }
@@ -1217,10 +1227,14 @@ Future<SubtitleCueLoadResult> _readAndParse(
   }
   final List<AudioCue> cues;
   try {
+    // 播放路径要 `\p` 绘图事件（招牌白底遮罩靠它）：它们随 cue 列表进
+    // [VideoPlayerController.setCues] 被分流成渲染专用流；落库侧
+    // （`VideoBookRepository`）按 [AudioCue.isRenderOnly] 过滤，不会写进对白表。
     cues = await parseSubtitleContentAsync(
       format,
       content: text,
       bookUid: bookUid,
+      includeDrawings: true,
     );
   } catch (e, stack) {
     fushiDebugPrint('[subtitle] parse failed: ${file.path}: $e\n$stack');
