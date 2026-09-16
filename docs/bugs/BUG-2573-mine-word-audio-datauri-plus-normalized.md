@@ -1,4 +1,4 @@
-## BUG-2528 · 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格
+## BUG-2573 · 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格
 - **报告**：2026-09-15（用户：2.2.4 → 2.3.0 升级后，浏览器扩展制卡的 `ExpressionAudio` 字段没有单词音频）
 - **真实性**：✅ 真 bug。
   - 触发提交：`3007ff272`（BUG-2189，制卡时把短命 token 换成自包含 `data:` URI）。
@@ -18,7 +18,7 @@
   Anki 字段名是用户在模板里配的，硬编码 `audio` 认不全，而 `data:` 是载荷形态的可靠标识
   （外字图片 `dictionaryMedia` 同理受益）。普通文本字段的 `%XX` / `+`→空格 还原行为不变。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/immersion_mine_payload_test.dart`
-  「BUG-2528：data: URI 载荷不被「加号→空格」归一化打坏」组，3 例：
+  「BUG-2573：data: URI 载荷不被「加号→空格」归一化打坏」组，3 例：
   ① 含孤立 `+` 的 `data:` URI 原样透传（并自证构造里确有孤立 `+`，防止用例空心化）；
   ② 端到端：经 `fromJson` 后的 audio 用落卡侧真实 `AnkiAudioRef.decodeDataUri` 解码，
   字节与原始音频逐字节相等（直接钉死「不丢音频」这一用户可见结果）；

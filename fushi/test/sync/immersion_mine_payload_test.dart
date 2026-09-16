@@ -194,13 +194,13 @@ void main() {
     });
   });
 
-  // BUG-2528：制卡时 `fields.audio` 是服务端把短命 token 换成的 `data:` 自包含 URI
+  // BUG-2573：制卡时 `fields.audio` 是服务端把短命 token 换成的 `data:` 自包含 URI
   // （3007ff272 起）。标准 base64 字母表含 `+`，而 `_normalizeIncomingText` 原本按
   // 「加号 = 表单编码里的空格」还原，把 base64 里的孤立 `+` 全换成空格 → 落卡侧
   // `UriData.parse` 抛 Invalid base64 data → `AnkiAudioRef.decodeDataUri` 返回 null
   // → `_storeRemoteAudio` 返回 none → 卡片 ExpressionAudio 没有单词音频。
   // 2.2.4 的 token URL 用 base64UrlEncode（字母表是 `-` / `_`，不含 `+`）所以从没触发。
-  group('BUG-2528：data: URI 载荷不被「加号→空格」归一化打坏', () {
+  group('BUG-2573：data: URI 载荷不被「加号→空格」归一化打坏', () {
     // 确定性伪随机字节（模拟真实单词音频），保证 base64 里出现多个孤立 `+`。
     List<int> sampleBytes() =>
         List<int>.generate(1024, (int i) => (i * 7919 + 13) % 256);

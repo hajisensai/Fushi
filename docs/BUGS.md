@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2374 条。点号进各自文件。
+> 共 2375 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2573](bugs/BUG-2573-mine-word-audio-datauri-plus-normalized.md) | ✅ | ✅ | 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格 |
 | [BUG-2566](bugs/BUG-2566-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
 | [BUG-2565](bugs/BUG-2565-video-collection-delete-subtitles.md) | ✅ | ✅ | 删视频/合集勾选「同时删除本地文件」时，同目录的外挂字幕文件不会被删除 |
 | [BUG-2564](bugs/BUG-2564-game-hook-chars-not-live.md) | ✅ | ✅ | galgame hook 字数 500 字/60 秒才落库、不经 StudyClock，学习统计翻几行后仍为 0 |

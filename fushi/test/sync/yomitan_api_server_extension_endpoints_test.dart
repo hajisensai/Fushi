@@ -486,7 +486,7 @@ void main() {
         }
       });
 
-      // BUG-2528：上面几条用例的音频只有 1~3 字节（base64 是 `AQID` / `CAgH` 之流），
+      // BUG-2573：上面几条用例的音频只有 1~3 字节（base64 是 `AQID` / `CAgH` 之流），
       // **不含 base64 字母表里的 `+`**，恰好绕开了 `_normalizeIncomingText` 的
       // 「孤立 `+` → 空格」还原。真实单词音频是几 KB，base64 里几十个 `+` 全被换成
       // 空格 → 落卡侧 `UriData.parse` 抛 Invalid base64 data → 单词音频静默丢失。

@@ -164,7 +164,7 @@ final RegExp _immersionAudioPath = RegExp(
 );
 
 String _normalizeIncomingText(String value) {
-  // BUG-2528：`data:` URI 是**机器生成的自包含载荷**，不是被 x-www-form-urlencoded
+  // BUG-2573：`data:` URI 是**机器生成的自包含载荷**，不是被 x-www-form-urlencoded
   // 弄坏的用户文本，必须整体原样透传。
   //
   // 标准 base64 字母表含 `+`（与 `/`），而下面的「`+` → 空格」还原只看加号个数：
