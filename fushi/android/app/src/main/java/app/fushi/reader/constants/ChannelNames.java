@@ -11,6 +11,7 @@ public final class ChannelNames {
     public static final String UPDATE = PREFIX + "/update";
     public static final String VOLUME_KEYS = PREFIX + "/volume_keys";
     public static final String FLOATING_LYRIC = PREFIX + "/floating_lyric";
+    public static final String LOOKUP_IME = PREFIX + "/lookup_ime";
     public static final String FLOATING_DICT = PREFIX + "/floating_dict";
     public static final String LIFECYCLE = PREFIX + "/lifecycle";
     public static final String FONTS = PREFIX + "/fonts";

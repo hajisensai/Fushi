@@ -602,6 +602,20 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 查词输入框希望输入法切到哪种语言（BCP-47，`ja` / `zh-Hans` / `ko`…）。
+  /// 空串 = 未设置，不碰输入法——默认不动用户的系统输入法状态。
+  ///
+  /// 这**不是**「查词的目标语言」：查词流水线语言无关（18 种变换表全量加载是有意
+  /// 设计），`AppModel.targetLanguage` 那个恒定单值的假抽象已于 2026-07-26 删除且
+  /// 有守卫钉着。本偏好只决定输入法/软键盘切到哪种语言，不进查询链路。
+  String get lookupImeLanguage =>
+      getPref('lookup.ime_language', defaultValue: '') as String;
+
+  Future<void> setLookupImeLanguage(String value) async {
+    await setPref('lookup.ime_language', value);
+    notifyListeners();
+  }
+
   /// 防截屏（桌面查词浮窗，Windows）—— 覆盖窗设 SetWindowDisplayAffinity
   /// (WDA_EXCLUDEFROMCAPTURE)，对用户可见但从截图 / 录屏 / 屏幕共享排除。
   /// 默认 false（用户要求默认关闭，2026-07）。

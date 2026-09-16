@@ -290,6 +290,27 @@ abstract class BaseAnkiRepository {
   ) async =>
       const <MinedNoteRef>[];
 
+  /// 这个后端能不能回读 Anki、核对「某张卡现在到底还在不在」。
+  ///
+  /// `true`（AnkiConnect / AnkiDroid）：[isDuplicate] 每次都真问 Anki，用户在 Anki 里
+  /// 删掉的卡下一次查词就自动变回「可制卡 +」；[findMatchingNotes] 查不到就等于真的没有。
+  ///
+  /// `false`（AnkiMobile）：`anki://x-callback-url` 一个回读 collection 的入口都没有，
+  /// 「已制卡 ✓」只能建立在本机账本上（`AnkiMobileMinedLedger`），于是
+  /// [findMatchingNotes] 恒空**不代表这张卡不在 Anki 里**。在这种后端上把「查不到」
+  /// 推断成「已被删、直接重制」是错的（可能默默制出第二张重复卡），也不能把账本里的
+  /// ✓ 继续当成真值——编排层必须改成让用户裁决（`runAnkiMinedCardAction`），并用
+  /// [forgetMinedCard] 接住用户的答案。
+  bool get canVerifyExistingCards => true;
+
+  /// 用户声明「这张卡我已经在 Anki 里删了」→ 划掉本地的「已制卡」记录，让 ✓ 变回 +。
+  ///
+  /// 只有 [canVerifyExistingCards] 为 `false` 的后端需要它（也只有它们覆写）：能回读
+  /// Anki 的后端不存在「本地记录与 Anki 不一致」这件事，下一次查词就自我纠正了。
+  ///
+  /// 返回是否真的划掉了（本来就没有记录 / 后端不需要 → `false`）。
+  Future<bool> forgetMinedCard(String expression) async => false;
+
   /// TODO-1007/1008：读取一张已存在 note（[noteId]）的现有字段（字段名 → 值），供
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
   /// ContentProvider getNote）。note 不存在 / 后端不支持时返回 `null`。

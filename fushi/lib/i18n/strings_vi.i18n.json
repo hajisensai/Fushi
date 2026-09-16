@@ -4961,5 +4961,14 @@
   "game_text_process_ai_added": "Added ${count} steps",
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
-  "ai_provider_protocol_locked": "Fixed by the built-in preset"
+  "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "settings_lookup_ime_language_title": "Lookup input language",
+  "settings_lookup_ime_language_description": "Which language the keyboard switches to when you type in a lookup box. The input method must already be installed on the system. Does not affect search results.",
+  "settings_lookup_ime_language_unset": "Not set",
+  "settings_lookup_ime_language_unavailable": "That input method is not installed on this system yet.",
+  "anki_mined_unverified_title": "Card marked as mined",
+  "anki_mined_unverified_subtitle": "Fushi cannot read your AnkiMobile collection, so the mined mark comes from this device's own record — it cannot tell whether the card is still in Anki.",
+  "anki_mined_action_forget": "I deleted it in Anki",
+  "anki_mined_forget_done": "Mining record cleared",
+  "reader_gallery_cover": "Cover"
 }

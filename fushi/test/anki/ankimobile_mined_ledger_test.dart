@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -116,6 +117,71 @@ void main() {
       expect(ledger.length, 2);
     });
 
+    test('forget 划掉记录：✓ 变回可制卡，并穿到持久层', () async {
+      final ledger = AnkiMobileMinedLedger();
+      await ledger.record('見物');
+      expect(await ledger.forget('見物'), isTrue);
+      expect(await ledger.contains('見物'), isFalse);
+      expect(await persisted(), isEmpty);
+      // 换个实例（≈重启 app）也不该再认得——否则用户下次打开又看到假 ✓。
+      expect(await AnkiMobileMinedLedger().contains('見物'), isFalse);
+    });
+
+    test('forget 与落账同口径：只 trim', () async {
+      final ledger = AnkiMobileMinedLedger();
+      await ledger.record('見物');
+      expect(await ledger.forget('  見物 '), isTrue);
+      expect(await ledger.contains('見物'), isFalse);
+    });
+
+    test('forget 账本里没有的词：回 false 且不抛', () async {
+      final ledger = AnkiMobileMinedLedger();
+      await ledger.record('見物');
+      expect(await ledger.forget('見学'), isFalse);
+      expect(await ledger.forget(''), isFalse);
+      // 别的词不受影响。
+      expect(await ledger.contains('見物'), isTrue);
+    });
+
+    test('落账会广播刷新信号——iOS 上「刚制完的卡」靠它亮 ✓', () async {
+      // x-success 回跳发生在弹窗探测完之后（用户刚从 AnkiMobile 切回来），不回头
+      // 通知就只能等下次重新查词。这条守的正是那条通知。
+      final List<String?> seen = <String?>[];
+      final sub = MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) => seen.add(change.expression),
+      );
+      addTearDown(sub.cancel);
+      await AnkiMobileMinedLedger().record(' 見物 ');
+      await Future<void>.delayed(Duration.zero);
+      // 广播的是归一化后的词头（与 isDuplicate 提问口径同一个串）。
+      expect(seen, <String?>['見物']);
+    });
+
+    test('forget 也广播——✓ 立刻变回 +，不用等下次查词', () async {
+      final ledger = AnkiMobileMinedLedger();
+      await ledger.record('見物');
+      final List<String?> seen = <String?>[];
+      final sub = MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) => seen.add(change.expression),
+      );
+      addTearDown(sub.cancel);
+      await ledger.forget('見物');
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, <String?>['見物']);
+    });
+
+    test('forget 没划掉任何东西时不广播（没有状态变化就别惊动界面）', () async {
+      final ledger = AnkiMobileMinedLedger();
+      final List<String?> seen = <String?>[];
+      final sub = MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) => seen.add(change.expression),
+      );
+      addTearDown(sub.cancel);
+      expect(await ledger.forget('見物'), isFalse);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, isEmpty);
+    });
+
     test('并发提问只读一次持久层', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         AnkiMobileMinedLedger.prefsKey: jsonEncode(<String>['見物']),
@@ -158,6 +224,22 @@ void main() {
       expect(await repo.isDuplicate('表', 'おもて'), isTrue);
       expect(await repo.isDuplicate('表', 'ひょう'), isTrue);
       expect(await repo.isDuplicate('表', ''), isTrue);
+    });
+
+    test('本后端回读不了 Anki：canVerifyExistingCards 为 false', () async {
+      // 编排层（runAnkiMinedCardAction）据此不再把「反查不到」当成「卡已被删」——
+      // AnkiMobile 上反查恒空只是因为问不了，直接重制会默默多出第二张卡。
+      expect(repoWith(AnkiMobileMinedLedger()).canVerifyExistingCards, isFalse);
+    });
+
+    test('forgetMinedCard 委派账本：用户说删了，✓ 就变回 +', () async {
+      final ledger = AnkiMobileMinedLedger();
+      await ledger.record('見物');
+      final repo = repoWith(ledger);
+      expect(await repo.forgetMinedCard('見物'), isTrue);
+      expect(await repo.isDuplicate('見物', 'けんぶつ'), isFalse);
+      // 划过一次之后再说一次：没有可划的了，但也不该抛。
+      expect(await repo.forgetMinedCard('見物'), isFalse);
     });
 
     test('openWordInAnki：账本认得就开 search 端点', () async {
