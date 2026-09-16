@@ -29,11 +29,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2336 条。点号进各自文件。
+> 共 2358 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2550](bugs/BUG-2550-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
+| [BUG-2550](bugs/BUG-2550-reader-stepper-label-truncated.md) | ✅ | ✅ | 阅读设置面板窄窗下 stepper 行标签被压成一个字 |
+| [BUG-2549](bugs/BUG-2549-english-phrasal-verb-deinflection.md) | ✅ | ✅ | 英语短语动词的变形查不到原形（gave up / picked it up 还原不到 give up / pick up） |
+| [BUG-2548](bugs/BUG-2548-collection-detail-drops-remote-members.md) | ✅ | ✅ | 合集详情页丢掉全部远端成员：行头 N 项、点进去只剩本地几本 |
+| [BUG-2547](bugs/BUG-2547-shelf-remote-sort-ignored.md) | ✅ | ✅ | 书架排序忽略远端占位卡：host 下发的时刻不用、恒沉底 |
+| [BUG-2545](bugs/BUG-2545-toc-current-chapter-unmarked.md) | ✅ | ✅ | 阅读器导航「章节列表」不标当前章节 |
+| [BUG-2544](bugs/BUG-2544-video-background-pause-no-resume.md) | ✅ | ✅ | 视频切到后台被暂停后回前台不自动续播 |
+| [BUG-2543](bugs/BUG-2543-english-posless-yomitan-deinflection.md) | ✅ | ✅ | 英语无词性 Yomitan 词典的变形还原全部失效，且不规则形无还原规则 |
+| [BUG-2542](bugs/BUG-2542-mobile-clip-export-silent-hang.md) | ✅ | ✅ | 手机端片段导出点了没反应：ffmpeg-kit 无界 await 挂死 + 分享被静默丢弃后仍报成功 |
+| [BUG-2541](bugs/BUG-2541-ass-outline-per-char-overlap.md) | ✅ | ✅ | ASS 描边逐字叠画啃进相邻字填充、细描边被夹下限（字重随窗口变） |
+| [BUG-2540](bugs/BUG-2540-ass-fax-shear-overwrites-rotation.md) | ✅ | ✅ | ASS \fax 切变覆盖 \frz 旋转矩阵项（招牌歪斜） |
+| [BUG-2539](bugs/BUG-2539-ass-layer-zorder.md) | ✅ | ✅ | ASS Layer 不参与绘制 z 序（招牌盖住对白） |
+| [BUG-2538](bugs/BUG-2538-ass-drawing-dropped.md) | ✅ | ✅ | ASS \p 矢量绘图被整条丢弃（招牌白底遮罩不画） |
+| [BUG-2537](bugs/BUG-2537-ass-sign-hover-controls.md) | ✅ | ✅ | ASS 定位字幕落到静止鼠标下即唤出控制条、且随控制条上抬 |
+| [BUG-2536](bugs/BUG-2536-audiobook-chapter-start-image-pause.md) | ✅ | ✅ | 有声书章首插图既不图片等待也不揭防剧透遮罩 |
+| [BUG-2535](bugs/BUG-2535-audiobook-unmatched-cue-chapter-end.md) | ✅ | ✅ | 有声书章尾：最后一句匹配播完、下一句未匹配时不进入下一章 |
+| [BUG-2534](bugs/BUG-2534-ios-gallery-topbar-under-status-bar.md) | ✅ | ✅ | iOS 插图册顶栏被状态栏 / 灵动岛压住，过滤 / 定位 / 关闭点不到 |
+| [BUG-2533](bugs/BUG-2533-reader-status-clock-not-clickable.md) | ✅ | ✅ | 阅读器状态行/播放条的计时图标点不动，改成真正的 MD3 停续键 |
+| [BUG-2532](bugs/BUG-2532-ios-ankimobile-mined-detection.md) | ✅ | ✅ | iOS AnkiMobile 不显示已制卡：加卡回跳的 x-success 被丢弃，isDuplicate 恒 false |
+| [BUG-2531](bugs/BUG-2531-reader-status-row-separate-scrim.md) | ✅ | ✅ | 竖屏读数行自己另画一块遮罩：底栏遮罩看着缺了进度显示那一层高度 |
+| [BUG-2530](bugs/BUG-2530-reader-header-fixed-width-compact-threshold.md) | ✅ | ✅ | 阅读器顶栏/读数按固定窗宽阈值折叠：横屏手机顶部还空着大半条，按钮却已折进 ⋮、读数被踢出播放条 |
+| [BUG-2529](bugs/BUG-2529-audiobook-chapter-transition-stuck-on-nav-abort.md) | ✅ | ✅ | 跨章导航中止不解除跨章守卫，安卓切后台后上下句/高亮跟随永久失效 |
+| [BUG-2528](bugs/BUG-2528-audiobook-panel-short-viewport.md) | ✅ | ✅ | 有声书面板在矮窗（手机横屏）下分段条以下的内容滚不出来 |
+| [BUG-2527](bugs/BUG-2527-anki-source-marker-tag-pollutes-tags.md) | ✅ | ✅ | 制卡给每张卡挂冗余 fushi_source_ 哈希 tag 污染 Anki 标签栏 |
 | [BUG-2526](bugs/BUG-2526-youtube-android-dash-60s-window-visionos.md) | ✅ | ✅ | YouTube 花絮/流媒体打不开或无声：android client DASH 流无 PO token 只放前 60 秒 |
 | [BUG-2525](bugs/BUG-2525-reader-floating-chrome-gap-and-no-hover-reveal.md) | ✅ | ✅ | 悬浮控制栏：顶部常驻空带 + 控制栏不自动恢复 |
 | [BUG-2524](bugs/BUG-2524-remote-collection-adoption.md) | ✅ | ✅ | 远端媒体下载后合集归属丢失 |

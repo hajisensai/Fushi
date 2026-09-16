@@ -15,6 +15,24 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/utils.dart';
 
+/// 「信息卡固定 + tab 内容独立滚动」形态所需的最小可用高度（dp）。
+///
+/// 固定部分（标题行 + 96×136 封面的信息卡 + 进度条 + 五颗播放键 + 分段条 + 间距）
+/// 实测约 312dp；再留 ≥128dp 给 tab 视口，才够看见几行章节。低于此高度就得整块
+/// 面板一起滚——见 [readerAudiobookPanelPinsHero]。
+const double kReaderAudiobookPanelPinnedMinHeight = 440.0;
+
+/// 给定可用高度下，面板是否还能把信息卡钉住、只让 tab 内容滚。
+///
+/// 为什么需要这道判据：面板原先恒为「Column(min) + Flexible(tab 滚动区)」。
+/// `Flexible` 在高度不够时**不会溢出报错，而是被压到 ~0**——手机横屏（如
+/// 768×348dp，bottom sheet 只有 0.9×348≈313dp）下实测 tab 视口只剩 1.2px，
+/// `maxScrollExtent` 也近乎 0：分段条以下的资源 / 章节 / 设置既看不见、也**滚不
+/// 出来**，且因为没有 overflow 报错而在测试里毫无痕迹。
+bool readerAudiobookPanelPinsHero(double availableHeight) =>
+    availableHeight.isFinite &&
+    availableHeight >= kReaderAudiobookPanelPinnedMinHeight;
+
 class ReaderAudiobookPanel extends StatefulWidget {
   const ReaderAudiobookPanel({
     super.key,
@@ -122,6 +140,42 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       'settings' => widget.settingsBuilder(context),
       _ => _buildChaptersTab(theme, ctrl),
     };
+    // 分段条之上的固定部分（钉住形态下不随 tab 内容滚动）。
+    final List<Widget> head = <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              t.section_audiobook,
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          IconButton(
+            key: const ValueKey<String>('fushi_audiobook_panel_close'),
+            icon: const Icon(Icons.close),
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+      SizedBox(height: tokens.spacing.gap),
+      _buildHero(theme, ctrl),
+      SizedBox(height: tokens.spacing.gap * 1.5),
+      FushiSegmentedStrip<String>(
+        segments: segments,
+        selected: _tab,
+        alignment: Alignment.center,
+        onChanged: (String id) => setState(() => _tab = id),
+      ),
+      SizedBox(height: tokens.spacing.gap),
+    ];
+    // 侧栏 / bottom sheet 形态：标题行的 × 与点外面即关已够，底部不再摆一颗
+    // 整宽「关闭」（那是居中对话框时代的产物，在 400px 侧栏里只是占掉一行
+    // 章节）。
+    final Widget body = KeyedSubtree(
+      key: ValueKey<String>('fushi_audiobook_tab_$_tab'),
+      child: tabContent,
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -129,50 +183,38 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         tokens.spacing.page,
         tokens.spacing.page,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          // 高度够 → 信息卡钉住、只有 tab 内容滚（400px 侧栏 / 竖屏 sheet 的既有
+          // 形态）；不够 → 整块面板一起滚，否则 Flexible 会被压到 ~0，分段条以下
+          // 的内容滚不出来（手机横屏）。滚动区的 key 带 tab，切 tab 即回到顶部。
+          final bool pinned =
+              readerAudiobookPanelPinsHero(constraints.maxHeight);
+          final Widget column = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  t.section_audiobook,
-                  style: theme.textTheme.titleMedium,
-                ),
-              ),
-              IconButton(
-                key: const ValueKey<String>('fushi_audiobook_panel_close'),
-                icon: const Icon(Icons.close),
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
+              ...head,
+              if (pinned)
+                Flexible(
+                  child: SingleChildScrollView(
+                    key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
+                    primary: false,
+                    child: body,
+                  ),
+                )
+              else
+                body,
             ],
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          _buildHero(theme, ctrl),
-          SizedBox(height: tokens.spacing.gap * 1.5),
-          FushiSegmentedStrip<String>(
-            segments: segments,
-            selected: _tab,
-            alignment: Alignment.center,
-            onChanged: (String id) => setState(() => _tab = id),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          // 侧栏 / bottom sheet 形态：标题行的 × 与点外面即关已够，底部不再摆一颗
-          // 整宽「关闭」（那是居中对话框时代的产物，在 400px 侧栏里只是占掉一行
-          // 章节）。
-          Flexible(
-            child: SingleChildScrollView(
-              key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
-              primary: false,
-              child: KeyedSubtree(
-                key: ValueKey<String>('fushi_audiobook_tab_$_tab'),
-                child: tabContent,
-              ),
-            ),
-          ),
-        ],
+          );
+          // 无界高度（父级自己就是滚动容器）时不再套一层 viewport。
+          if (pinned || !constraints.maxHeight.isFinite) return column;
+          return SingleChildScrollView(
+            key: ValueKey<String>('fushi_audiobook_scroll_$_tab'),
+            primary: false,
+            child: column,
+          );
+        },
       ),
     );
   }

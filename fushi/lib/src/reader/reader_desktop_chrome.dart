@@ -26,10 +26,6 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
 /// reader_chrome_floating.dart 文件头）。
 const double kReaderDesktopHeaderHeight = 48;
 
-/// 漫画阅读器悬浮顶栏的顶边悬停热区高度（逻辑 px）；EPUB 阅读器已改为全域鼠标
-/// 移动唤出（不再有热区），只剩 manga_fushi_page 还用这条。
-const double kReaderHoverRevealStripHeight = 6;
-
 /// 工具栏书名字号（逻辑 px）。阅读器 chrome 的排版活在**阅读面自己的尺度**上，
 /// 不跟随 app 全局 MD3 排版令牌——它要和顶部进度胶囊
 /// （[kTopProgressFontSize] = 12）、底部状态行（[kReaderStatusFooterFontSize]）
@@ -107,10 +103,53 @@ double readerSideSheetWidth(double windowWidth) {
 
 /// 顶部工具栏窄于此宽度（逻辑 px）时进入紧凑形态：只留 [ReaderHeaderAction.pinned]
 /// 的按钮，其余收进右端 ⋮ 溢出菜单（「常用固定 + 溢出菜单」，避免图标越加越挤）。
+///
+/// 这个**与内容无关**的固定阈值只剩漫画顶栏（`manga_reader_chrome.dart`）在用：
+/// 那一栏要按「导航 / 视图 / 界面」分组夹分隔线、还要塞 OCR 进度胶囊，所需宽度
+/// 算不准。EPUB 顶栏已改按实际按钮数判断（[readerHeaderCompactForActions]）。
 const double kReaderDesktopHeaderCompactWidth = 760;
 
 bool readerHeaderCompact(double width) =>
     width < kReaderDesktopHeaderCompactWidth;
+
+/// 顶栏一颗图标按钮占的宽度（逻辑 px）：[ReaderDesktopHeaderButton] 里的
+/// `IconButton(iconSize: 22)` 在 MD3 默认视觉密度下是 40×40 的按压面，外加
+/// tap-target 补到 48。取整数上界，宁可算宽一点也不让这一栏真的溢出。
+const double kReaderDesktopHeaderButtonWidth = 48;
+
+/// 书名至少要留住的宽度（逻辑 px）。低于它书名只剩一两个字加省略号，那时把次要
+/// 按钮收进 ⋮ 把宽度让给书名才划算。
+const double kReaderDesktopHeaderTitleMinWidth = 120;
+
+/// 顶栏两端内边距合计（逻辑 px），与 [ReaderDesktopHeader] 的
+/// `EdgeInsets.symmetric(horizontal: 8)` 同源。
+const double kReaderDesktopHeaderHorizontalPadding = 16;
+
+/// EPUB 顶栏是否进入紧凑形态（只留 pinned 按钮，其余收进 ⋮ 溢出菜单）。
+///
+/// 判据是**这一栏此刻真的放不下**：[actionCount] 颗按钮加两端内边距占掉的宽之后，
+/// 留给书名的若不足 [titleMinWidth] 才折叠。此前用的是与内容无关的固定窗宽阈值
+/// [kReaderDesktopHeaderCompactWidth]（760）：横屏手机 ~700 逻辑 px 上明明只有
+/// 六颗按钮、书名两侧还空着大半条，插图 / 统计 / 有声书照样被折进 ⋮（用户
+/// 2026-09-14「顶部有空间的时候应该把顶栏收起的按钮放出来」）。顶部有空间，按钮
+/// 就该在外面。
+///
+/// 书名不显示（[showsTitle] 为假，布局里关掉了书名）时按钮可以一路占到两端内边距，
+/// 只有真排不下才折叠。
+///
+/// 折叠后栏内只剩 pinned 按钮加一颗 ⋮，宽度必然比展开态小，故这个判据不会在
+/// 「折叠 → 变宽 → 又判不折叠」之间抖动。
+bool readerHeaderCompactForActions({
+  required double width,
+  required int actionCount,
+  bool showsTitle = true,
+  double buttonWidth = kReaderDesktopHeaderButtonWidth,
+  double titleMinWidth = kReaderDesktopHeaderTitleMinWidth,
+  double horizontalPadding = kReaderDesktopHeaderHorizontalPadding,
+}) {
+  final double free = width - horizontalPadding - actionCount * buttonWidth;
+  return free < (showsTitle ? titleMinWidth : 0);
+}
 
 /// 顶部工具栏的一个动作：图标 + 文案（溢出菜单里显示）+ 回调。
 class ReaderHeaderAction {
@@ -150,7 +189,8 @@ List<ReaderHeaderAction> readerHeaderOverflow({
 
 /// 桌面端阅读器顶部工具栏：`[leading…]  书名  [trailing…]`，纯指针面（自带
 /// ExcludeFocus，不进焦点遍历池——与底栏同一规则，见 focus-ownership.md）。
-/// 宽度不足时按 [readerHeaderCompact] 折叠成「固定按钮 + ⋮ 溢出菜单」。
+/// 宽度**真的**不足时（[readerHeaderCompactForActions]：按钮占完还留不下书名）
+/// 折叠成「固定按钮 + ⋮ 溢出菜单」。
 class ReaderDesktopHeader extends StatelessWidget {
   const ReaderDesktopHeader({
     super.key,
@@ -193,7 +233,11 @@ class ReaderDesktopHeader extends StatelessWidget {
           height: height,
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) {
-              final bool compact = readerHeaderCompact(constraints.maxWidth);
+              final bool compact = readerHeaderCompactForActions(
+                width: constraints.maxWidth,
+                actionCount: leading.length + trailing.length,
+                showsTitle: title.isNotEmpty,
+              );
               final List<ReaderHeaderAction> overflow = readerHeaderOverflow(
                 compact: compact,
                 leading: leading,

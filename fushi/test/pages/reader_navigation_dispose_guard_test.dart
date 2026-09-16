@@ -96,10 +96,13 @@ void main() {
     final String body = bodyBetween(
       audiobookPart,
       'Future<void> _handleCueCrossChapter(',
-      'Future<void> _pauseThroughImageOnlyChapters(',
+      // 锚点只钉方法名与形参，不钉返回类型（BUG-2536 起它回报「是否已停在目标
+      // 宿主」）——守的是顺序契约，返回类型改了不该让这条红。
+      '_pauseThroughImageOnlyChapters(int targetSection)',
     );
     final int pauseAwait =
-        body.indexOf('await _pauseThroughImageOnlyChapters(newSection);');
+        // 同理不钉实参排版：调用点带返回值后 dart format 必然折行。
+        body.indexOf('await _pauseThroughImageOnlyChapters(');
     final int mountedGuard =
         body.indexOf('if (!mounted || _controller == null)', pauseAwait);
     final int cancelTransition = body.indexOf(

@@ -64,6 +64,7 @@ class AssParser {
     required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
+    bool includeDrawings = false,
   }) {
     return CueParseDispatch.run(
       content: content,
@@ -72,16 +73,23 @@ class AssParser {
         bookKey: bookKey,
         chapterHref: chapterHref,
         audioFileIndex: audioFileIndex,
+        includeDrawings: includeDrawings,
       ),
     );
   }
 
   /// 解析 ASS/SSA 文本字符串并返回 [AudioCue] 列表。纯函数，测试入口。
+  ///
+  /// [includeDrawings]：是否把**无正文的 `\p` 矢量绘图事件**（招牌白底遮罩等）也作为
+  /// cue 产出（`text` 为空、`markup.drawing` 非空）。默认关——字幕列表 / 制卡 / 导入
+  /// 持久化只认可读对白；播放渲染路径开（[VideoPlayerController] 再把它们分流到
+  /// 渲染专用流，不进对白流）。
   static List<AudioCue> parseString({
     required String content,
     required String bookKey,
     String chapterHref = defaultChapter,
     int audioFileIndex = 0,
+    bool includeDrawings = false,
   }) {
     final String stripped =
         content.startsWith('\uFEFF') ? content.substring(1) : content;
@@ -114,7 +122,7 @@ class AssParser {
     // 收集 (startMs, endMs?, text, markup)，最后按 startMs 排序。
     // endMs 为 null 表示 End 列缺失/无法解析，留待排序后用下一条 cue 的
     // startMs 推断（HBK-AUDIT-067），而不是当场伪造固定的 5s 时长。
-    final List<(int, int?, String, SubtitleMarkup)> rawCues = [];
+    List<(int, int?, String, SubtitleMarkup)> rawCues = [];
 
     for (final String line in lines) {
       final String trimmed = line.trim();
@@ -258,7 +266,7 @@ class AssParser {
           layer: layer,
         );
         final String text = markup.plainText;
-        if (text.isEmpty) {
+        if (text.isEmpty && !(includeDrawings && markup.drawing != null)) {
           continue;
         }
 
@@ -266,7 +274,16 @@ class AssParser {
       }
     }
 
-    rawCues.sort((a, b) => a.$1.compareTo(b.$1));
+    // 按起始时间**稳定**排序：Dart `List.sort` 不稳定，同一起始时间的招牌 / 对白会被
+    // 打乱文件先后——而文件序正是 libass 同层事件的绘制 z 序（后者盖前者）。
+    final List<int> order = List<int>.generate(rawCues.length, (int i) => i)
+      ..sort((int a, int b) {
+        final int byStart = rawCues[a].$1.compareTo(rawCues[b].$1);
+        return byStart != 0 ? byStart : a.compareTo(b);
+      });
+    rawCues = <(int, int?, String, SubtitleMarkup)>[
+      for (final int i in order) rawCues[i],
+    ];
 
     // 解析 endMs：缺失的用下一条 cue 的 startMs 收口（最后一条退回 5s）；
     // 同时丢弃 end <= start 的反向/零长 cue，避免静默产出永不命中的高亮区间

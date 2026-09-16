@@ -714,7 +714,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
         // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
         charPositionTag: context.charPositionTag,
-        sourceLink: context.sourceLink,
       );
 
       // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -904,9 +903,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) async {
+  Future<List<int>> findSourceNoteCandidates(String sourceId) async {
     final AnkiSettings settings = await loadSettings();
-    return _serviceForSettings(settings).findNotesBySourceMarker(markerTag);
+    return _serviceForSettings(settings).findNotesBySourceId(sourceId);
+  }
+
+  @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    final AnkiConnectService service = await _getService();
+    return service.notesInfo(noteId);
   }
 
   @override

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -1233,6 +1235,44 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     Iterable<OpdsServerConfig> servers,
   ) async {
     await setPref('discovery_opds_servers', encodeOpdsServerConfigs(servers));
+    notifyListeners();
+  }
+
+  /// 用户自配的 AI 提供商清单（设备本地；含 base64 API key）。
+  ///
+  /// 与 [discoveryOpdsServers] 同范式：逐条容错在 [decodeAiProviderConfigs] 里，
+  /// 一条记录坏掉只丢那一条，不让整份清单消失。
+  List<AiProviderConfig> get aiProviders {
+    final String raw = getPref('ai_providers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <AiProviderConfig>[];
+    try {
+      return decodeAiProviderConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiProviders.decode',
+        error,
+        stack,
+      );
+      return const <AiProviderConfig>[];
+    }
+  }
+
+  Future<void> setAiProviders(Iterable<AiProviderConfig> providers) async {
+    await setPref('ai_providers', encodeAiProviderConfigs(providers));
+    notifyListeners();
+  }
+
+  /// 「哪个功能用哪家 AI」的映射（设备本地）。
+  AiFeatureAssignments get aiFeatureAssignments {
+    final String raw = getPref(
+      'ai_feature_providers',
+      defaultValue: '',
+    ) as String;
+    return AiFeatureAssignments.fromJson(raw);
+  }
+
+  Future<void> setAiFeatureAssignments(AiFeatureAssignments value) async {
+    await setPref('ai_feature_providers', value.toJson());
     notifyListeners();
   }
 

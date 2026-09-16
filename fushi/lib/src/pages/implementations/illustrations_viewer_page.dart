@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
@@ -20,60 +19,12 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
 import 'package:fushi/src/reader/illustration_progress_index.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
+import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
-
-/// 未揭开插图的遮罩视觉：普通屏「模糊图 + 蒙层 + 图标」，墨水屏「实心遮板 + 图标」。
-///
-/// 墨水屏不走模糊有两个理由，都不是审美偏好：慢刷新面板渲染不出干净的高斯过渡，
-/// 留下的是一片残影；而灰阶下「一张糊图」在观感上就等于「这张图本身不高清」，
-/// 遮罩的意图一点都传达不到，用户只会以为画廊坏了。实心遮板一眼可辨是盖住的。
-Widget maskedIllustrationCover(
-  BuildContext context,
-  Widget img, {
-  double sigma = 16,
-  Color scrim = const Color(0x33000000),
-  required double iconSize,
-}) {
-  final ColorScheme scheme = Theme.of(context).colorScheme;
-  if (isEinkTheme(context)) {
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        ColoredBox(color: scheme.surface),
-        Center(
-          child: Icon(
-            Icons.visibility_off_outlined,
-            color: scheme.onSurface,
-            size: iconSize,
-          ),
-        ),
-      ],
-    );
-  }
-  return Stack(
-    fit: StackFit.expand,
-    children: <Widget>[
-      ClipRect(
-        child: ImageFiltered(
-          imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          child: img,
-        ),
-      ),
-      ColoredBox(color: scrim),
-      Center(
-        child: Icon(
-          Icons.visibility_off_outlined,
-          color: Colors.white70,
-          size: iconSize,
-        ),
-      ),
-    ],
-  );
-}
 
 /// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）+ reveal key。
 class _Illustration {

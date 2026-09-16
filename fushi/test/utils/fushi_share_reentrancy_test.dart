@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
@@ -221,5 +222,78 @@ void main() {
         expect(origin, const Rect.fromLTWH(0, 0, 1, 1), reason: '$viewSize');
       }
     });
+  });
+
+  // ---- BUG-2542：分享入口必须回报「面板到底有没有呈现」 ----
+  //
+  // 手机端的片段导出/备份导出/日志导出把产物落在 app 私有目录（不进相册、不注册
+  // MediaStore），这次系统分享面板是用户取回文件的**唯一**通道。旧签名是
+  // `Future<void>`，被防重入门丢弃时静默返回，调用方无从得知，于是照样弹「已保存」
+  // ——面板没出现、相册里没有、私有目录进不去，文件等于凭空消失。
+  group('分享结果回报（BUG-2542）', () {
+    test('面板呈现成功返回 true', () async {
+      expect(
+        await FushiShare.shareFiles(
+          <XFile>[XFile('/tmp/clip.mp4', mimeType: 'video/mp4')],
+        ),
+        isTrue,
+      );
+      expect(await FushiShare.shareText('hello'), isTrue);
+    });
+
+    test('被防重入门丢弃返回 false（不能让调用方误报成功）', () async {
+      gate = Completer<void>();
+      final Future<bool> first = FushiShare.shareFiles(
+        <XFile>[XFile('/tmp/a.mp4', mimeType: 'video/mp4')],
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(FushiShare.debugIsSharing, isTrue);
+
+      expect(
+        await FushiShare.shareFiles(
+          <XFile>[XFile('/tmp/b.mp4', mimeType: 'video/mp4')],
+        ),
+        isFalse,
+        reason: '重入被丢弃 → 必须回 false，否则调用方弹出假成功',
+      );
+      expect(await FushiShare.shareText('dropped'), isFalse);
+
+      gate!.complete();
+      expect(await first, isTrue);
+      expect(FushiShare.debugIsSharing, isFalse);
+    });
+
+    test('空输入返回 false', () async {
+      expect(await FushiShare.shareFiles(<XFile>[]), isFalse);
+      expect(await FushiShare.shareText(''), isFalse);
+      expect(calls, isEmpty);
+    });
+  });
+
+  // 超时上限本身不做行为测试（真等 30 s 不可接受，且把常量暴露给测试会把「上限
+  // 是多少」当成契约）。这里只钉「上限存在」这个不变式：两处平台调用都必须被
+  // `.timeout(...)` 包住，否则平台不回包就会把 static 的 `_sharing` 永久钉在
+  // true，全 App 此后每次分享都被静默丢弃（BUG-2542）。
+  test('两处平台调用都套了超时上限（源码守卫）', () {
+    final String source = File('lib/src/utils/misc/fushi_share.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
+    expect(
+      RegExp(r'await Share\.share\([\s\S]*?\)\.timeout\(').hasMatch(source),
+      isTrue,
+      reason: 'shareText 的平台调用必须有超时上限',
+    );
+    expect(
+      RegExp(r'await Share\.shareFiles\([\s\S]*?\)\.timeout\(')
+          .hasMatch(source),
+      isTrue,
+      reason: 'shareFiles 的平台调用必须有超时上限',
+    );
+    expect(
+      source.contains('static Future<bool> shareFiles') &&
+          source.contains('static Future<bool> shareText'),
+      isTrue,
+      reason: '两个入口都必须回报面板是否呈现，不得退回 Future<void>',
+    );
   });
 }

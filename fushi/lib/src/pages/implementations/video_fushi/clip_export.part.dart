@@ -14,7 +14,15 @@ extension _VideoClipExport on _VideoFushiPageState {
     }
 
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
+    if (controller == null) {
+      // 从前是裸 return：无 OSD、无日志、无 debugPrint，点了就是完全没反应
+      // （BUG-2542）。控制器缺失就是「源视频不可用」，与导出层同一条文案。
+      _showOsd(
+        t.video_clip_export_input_missing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (_isRemote || _currentVideoPath == null) {
       _showOsd(
         t.video_clip_export_remote_download_required,
@@ -127,7 +135,21 @@ extension _VideoClipExport on _VideoFushiPageState {
     );
 
     if (!mounted) {
-      await _deleteClipOutput(result.outputPath ?? outputPath);
+      // 页面在导出期间被卸载（退视频页 / 换集 / 进退全屏重建）。旧实现在这里把
+      // 产物一律删掉：导出**已经成功**时，用户等了十几分钟，既没看到成功也没看到
+      // 失败，文件也不存在，错误日志页还是空的——三重静默（BUG-2542）。成功的产物
+      // 是有效的，保留并记下落点，至少可追可取；失败的残片仍旧删。
+      // 下面的换源分支才是真该删成品的情形：那个产物对应的是**旧源**。
+      if (result.isSuccess) {
+        ErrorLogService.instance.log(
+          'VideoClipExport',
+          'page was unmounted before the result could be shown; keeping the '
+              'exported clip at ${result.outputPath ?? outputPath}',
+          StackTrace.current,
+        );
+      } else {
+        await _deleteClipOutput(result.outputPath ?? outputPath);
+      }
       return;
     }
     if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
@@ -145,19 +167,30 @@ extension _VideoClipExport on _VideoFushiPageState {
     _rebuild(_clearClipExportState);
     final String? exported = result.outputPath;
     if (result.isSuccess && exported != null) {
-      // 区分带没带字幕：字幕封装可能被静默降级（容器封不下、旧的桌面精简 ffmpeg 没有
-      // movtext 编码器），不告诉用户的话，他只会看到一个「导出成功却没字幕」的片段，
-      // 无从判断是自己没选字幕还是导出丢了。
-      _showOsd(
-        result.subtitleTrackCount > 0
-            ? t.video_clip_exported_with_subtitles(path: exported)
-            : t.video_clip_exported(path: exported),
-        severity: ToastSeverity.success,
-      );
-      if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-        await FushiShare.shareFiles(<XFile>[
-          XFile(exported),
-        ], subject: p.basename(exported));
+      // 移动端：产物落 app 私有目录（不进相册、不注册 MediaStore），这次系统分享
+      // 面板是用户取回它的**唯一**通道，所以先分享、再按面板到底有没有呈现报结果
+      // （BUG-2542）。旧实现先无条件报「已导出」再 fire-and-forget 分享，面板被
+      // FushiShare 的防重入门丢弃时，用户看到的是绿色成功提示 + 一个进不去的路径，
+      // 相册里没有、分享面板也没弹——体感就是「导出没反应」。
+      final bool shared = isDesktop ||
+          await FushiShare.shareFiles(<XFile>[
+            XFile(exported),
+          ], subject: p.basename(exported));
+      if (!shared) {
+        _showOsd(
+          t.video_clip_export_share_unavailable(path: exported),
+          severity: ToastSeverity.warning,
+        );
+      } else {
+        // 区分带没带字幕：字幕封装可能被静默降级（容器封不下、旧的桌面精简 ffmpeg 没有
+        // movtext 编码器），不告诉用户的话，他只会看到一个「导出成功却没字幕」的片段，
+        // 无从判断是自己没选字幕还是导出丢了。
+        _showOsd(
+          result.subtitleTrackCount > 0
+              ? t.video_clip_exported_with_subtitles(path: exported)
+              : t.video_clip_exported(path: exported),
+          severity: ToastSeverity.success,
+        );
       }
     } else {
       // TODO-910：合成**单条** OSD（旧实现两条 _showOsd 互相覆盖，第二条把第一条

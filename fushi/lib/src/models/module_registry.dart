@@ -92,6 +92,9 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。
   SettingsDestinationId.services => ModuleId.services,
   SettingsDestinationId.mediaTracking => ModuleId.services,
+  // AI 提供商配置就是第三方在线服务的端点 + 凭据，与 Jimaku / OpenSubtitles /
+  // Torznab 同类，共用 services 这一个开关，不另开 ModuleId。
+  SettingsDestinationId.ai => ModuleId.services,
   // 互联是从同步备份拆出去的一级分类，共享同一套后端与私有状态，同一个开关。
   SettingsDestinationId.syncBackup => ModuleId.sync,
   SettingsDestinationId.interconnect => ModuleId.sync,

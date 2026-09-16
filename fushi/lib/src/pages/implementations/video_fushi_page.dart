@@ -638,6 +638,37 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     bool caretHoldsPause = false,
   }) => stackEmpty && pausedForLookup && !caretHoldsPause;
 
+  /// BUG-2544：真进后台（`paused`）时是否由本页把播放暂停下来。
+  ///
+  /// [isPlaying] 是**暂停前那一刻**的播放态——它同时也是「回来要不要续播」的全部依据：
+  /// 用户自己按了暂停再切走的，回来必须仍是暂停（返回 false → 不置标记 → 不恢复）。
+  /// [hasNativePlayer] 挡掉网页播放器路径（见 [VideoPlayerController.hasNativePlayer]：
+  /// 那条 pause/play 都是 no-op，接管只会留下一个兑现不了的标记）。
+  ///
+  /// 只在 `paused` 用，不在 `hidden` 用：`hidden` 在移动端只是 `paused` 前的过渡态，
+  /// 而在桌面它就是「窗口最小化」的终态——桌面最小化历来不暂停视频（media_kit 那套
+  /// 也只认 `paused`/`detached`，桌面根本到不了），接管不该顺手改掉这个行为。
+  /// 纯函数，供单测直接验证。
+  @visibleForTesting
+  static bool shouldPauseForBackground({
+    required bool isPlaying,
+    required bool hasNativePlayer,
+  }) => isPlaying && hasNativePlayer;
+
+  /// BUG-2544：回前台（`resumed`）时是否把播放续上。
+  ///
+  /// [pausedForBackground]：本次确实是**我们**因进后台而暂停了正在播的视频
+  /// （[shouldPauseForBackground] 成立时置位）。
+  /// [pausedForLookup]：查词/选词光标那条暂停仍持有——此时不恢复。两条暂停源各自
+  /// 记账、各自恢复（[shouldResumeAfterLookupDismiss] 是那条的恢复判据），谁也不替
+  /// 谁放行：查词浮层还开着就把视频播起来，cue 会换掉、查词锚点当场失锚。
+  /// 纯函数，供单测直接验证。
+  @visibleForTesting
+  static bool shouldResumeAfterBackground({
+    required bool pausedForBackground,
+    required bool pausedForLookup,
+  }) => pausedForBackground && !pausedForLookup;
+
   /// 点查词浮层外的 dismiss barrier 命中了字幕字符时，是否应「换词」（对该字符重新查词、
   /// 替换可见浮层）而非「逐层关顶层」（TODO-758 / BUG-410，纯函数供单测）。
   ///
@@ -1274,6 +1305,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// `inactive`）。回前台时据它决定要不要重建视频解码链，见
   /// [_refreshDecodeAfterResumeIfNeeded]。
   bool _enteredRealBackground = false;
+
+  /// BUG-2544：进后台时**我们**把正在播的视频暂停了（[_pauseForBackground]），回前台
+  /// 据它续播（[_resumeAfterBackgroundIfNeeded]）。与 [_enteredRealBackground] 是两件
+  /// 事：那个只问「进没进过后台」（进后台时本就暂停的视频也置位，用于重建解码链），
+  /// 这个只问「是不是我们停的、该不该由我们续上」。
+  bool _pausedForBackground = false;
 
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
@@ -2166,12 +2203,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // error concealment 填成中性灰。`inactive` 不置这个标记（那期间 app 仍持有
         // 解码器，白白刷新只是给用户一次无谓卡顿）。
         _enteredRealBackground = true;
+        // BUG-2544：只有真后台的终态 `paused` 才暂停播放，`hidden` 不暂停——移动端
+        // 它只是 `paused` 前的过渡态（framework 补全的中间状态），桌面它则是「窗口
+        // 最小化」的终态，那里历来不暂停视频。判据与取舍见
+        // [VideoFushiPage.shouldPauseForBackground]。
+        if (state == AppLifecycleState.paused) _pauseForBackground();
       case AppLifecycleState.resumed:
         // 回前台：重启观看计时器（start() 重置 _tickStart=now，下一窗从此刻起算）。
         _watchTracker?.start();
         // BUG-1863：从真后台回来先把视频解码链重建一次（详见
         // [VideoPlayerController.shouldRefreshDecodeOnResume] 的判据与机制说明）。
         _refreshDecodeAfterResumeIfNeeded();
+        // BUG-2544：把进后台时我们停下的播放续上。**排在解码刷新之后**：那条刷新是
+        // 把播放头 seek 回原地重建解码链，先续播会让用户看见一小段用残缺参考帧解出的
+        // 灰画面，再被 seek 打断。两条都是 fire-and-forget 的命令，libmpv 按下发顺序
+        // 执行，故这里的先后就是实际先后。
+        _resumeAfterBackgroundIfNeeded();
         // TODO-158/BUG-219: 回前台重申沉浸隐藏系统栏（移动端）。后台 / 通知栏下拉 /
         // 多任务切回后 Android 会把系统栏恢复显示，immersiveSticky 只在进入时设一次
         // 不会自动复申 → 这里主动重设，保证「一直隐藏」。桌面 no-op。
@@ -2208,6 +2255,42 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     unawaited(controller.refreshDecodeAfterResume());
+  }
+
+  /// BUG-2544：进真后台（`paused`）时暂停播放，并记下「回来要续」。
+  ///
+  /// 判据 [VideoFushiPage.shouldPauseForBackground] 读的是**暂停前那一刻**的
+  /// [VideoPlayerController.isPlaying]：用户自己按了暂停再切走的，这里不置标记，
+  /// 回前台也就不会被凭空播起来。fire-and-forget：pause 失败（player 已释放）没有
+  /// 需要回滚的状态，最坏是回前台多发一次无害的 play。
+  void _pauseForBackground() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (!VideoFushiPage.shouldPauseForBackground(
+      isPlaying: controller.isPlaying,
+      hasNativePlayer: controller.hasNativePlayer,
+    )) {
+      return;
+    }
+    _pausedForBackground = true;
+    unawaited(controller.pause());
+  }
+
+  /// BUG-2544：回前台（`resumed`）时把上面停下的播放续上。
+  ///
+  /// 标记**无条件**先清（与 [_refreshDecodeAfterResumeIfNeeded] 同一纪律）：判据不成立
+  /// 只是这一轮不续播，不能让它攒到下一次 resume——那会变成「某次切窗后视频莫名自己
+  /// 播起来」。查词浮层仍持有暂停时交给那条路径恢复（[shouldResumeAfterBackground]）。
+  void _resumeAfterBackgroundIfNeeded() {
+    final bool pausedForBackground = _pausedForBackground;
+    _pausedForBackground = false;
+    if (!VideoFushiPage.shouldResumeAfterBackground(
+      pausedForBackground: pausedForBackground,
+      pausedForLookup: _pausedForLookup,
+    )) {
+      return;
+    }
+    unawaited(_controller?.play());
   }
 
   /// 进程退出统一 flush（TODO-086/BUG-191）。把当前播放位置写穿（[flushPosition]

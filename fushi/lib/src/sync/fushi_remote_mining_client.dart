@@ -159,7 +159,7 @@ class FushiRemoteMiningClient
     String peerUrl, {
     required String pairingIdentity,
   }) async {
-    CardSourceLink.markerForSourceId(sourceId);
+    CardSourceLink.validateSourceId(sourceId);
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(pairingIdentity)) {
       throw const FormatException('Missing or invalid saved pairing identity');
     }
@@ -205,7 +205,7 @@ class FushiRemoteMiningClient
 
   @override
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
-    CardSourceLink.markerForSourceId(sourceId);
+    CardSourceLink.validateSourceId(sourceId);
     final InterconnectPostOutcome outcome = await _transport.post(
       path: '/api/anki/source/read',
       body: <String, dynamic>{'sourceId': sourceId},

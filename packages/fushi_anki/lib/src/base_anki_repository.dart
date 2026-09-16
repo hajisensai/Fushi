@@ -329,10 +329,20 @@ abstract class BaseAnkiRepository {
   }) async =>
       throw UnsupportedError('Source note editing is unavailable');
 
-  /// Exact marker lookup must propagate backend failure instead of reporting
-  /// "not found". A word match or an unscoped numeric note ID is insufficient.
+  /// Candidate notes whose fields contain the source ID substring (see
+  /// [CardSourceLink.searchQueryForSourceId]). Must propagate backend failure
+  /// instead of reporting "not found". Candidates are not identities:
+  /// [readSourceNote] confirms each one by parsing its field hrefs.
   @protected
-  Future<List<int>> findSourceNoteIds(String markerTag) async =>
+  Future<List<int>> findSourceNoteCandidates(String sourceId) async =>
+      throw UnsupportedError('Source note lookup is unavailable');
+
+  /// Fields of one candidate note for source identity checks. Returns `null`
+  /// only when the note no longer exists; a backend/transport failure must
+  /// throw. This is deliberately not [noteFields], whose fail-soft `null`
+  /// (viewer convenience) would let a timeout masquerade as "note deleted".
+  @protected
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async =>
       throw UnsupportedError('Source note lookup is unavailable');
 
   @protected
@@ -342,21 +352,34 @@ abstract class BaseAnkiRepository {
   ) async =>
       throw UnsupportedError('Source note editing is unavailable');
 
+  /// Resolve the single note carrying [sourceId] in a `fushi://source` href.
+  /// A substring candidate that parses to a different (or no) source link is
+  /// not a match; a candidate deleted between search and read is skipped.
+  /// Backend failures propagate: "could not ask" is never reported as "gone".
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
-    final List<int> matches = await findSourceNoteIds(
-      CardSourceLink.markerForSourceId(sourceId),
-    );
-    final Set<int> ids = matches.toSet();
-    if (ids.isEmpty) return null;
-    if (ids.length != 1 || ids.single <= 0) {
-      throw StateError('Card source marker is not unique');
+    CardSourceLink.validateSourceId(sourceId);
+    final Set<int> candidates =
+        (await findSourceNoteCandidates(sourceId)).toSet();
+    final Map<int, Map<String, String>> matches = <int, Map<String, String>>{};
+    for (final int noteId in candidates) {
+      if (noteId <= 0) throw StateError('Invalid source note candidate');
+      final Map<String, String>? fields = await sourceNoteFields(noteId);
+      if (fields == null) continue;
+      final bool carriesSource = fields.values.any(
+        (String field) => CardSourceLink.fromHtml(field)
+            .any((CardSourceLink link) => link.sourceId == sourceId),
+      );
+      if (carriesSource) matches[noteId] = fields;
     }
-    final Map<String, String>? fields = await noteFields(ids.single);
-    if (fields == null) throw StateError('Source note could not be read');
+    if (matches.isEmpty) return null;
+    if (matches.length != 1) {
+      throw StateError('Card source identity is not unique');
+    }
+    final MapEntry<int, Map<String, String>> match = matches.entries.single;
     return AnkiSourceNote(
       sourceId: sourceId,
-      noteId: ids.single,
-      fields: fields,
+      noteId: match.key,
+      fields: match.value,
     );
   }
 
@@ -704,7 +727,6 @@ abstract class BaseAnkiRepository {
     String? titleTag,
     String? collectionTag,
     String? charPositionTag,
-    CardSourceLink? sourceLink,
   }) {
     final seen = <String>{};
     final result = <String>[];
@@ -712,8 +734,6 @@ abstract class BaseAnkiRepository {
       if (tag.isEmpty || !seen.add(tag)) continue;
       result.add(tag);
     }
-    final String? marker = sourceLink?.markerTag;
-    if (marker != null && seen.add(marker)) result.add(marker);
     if (includeHibiki && seen.add(fushiTag)) result.add(fushiTag);
     if (includeCategory) {
       final categoryTag = _categoryTagForSource(source);

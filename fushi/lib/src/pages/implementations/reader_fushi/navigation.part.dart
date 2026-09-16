@@ -520,6 +520,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 这里 discard 掉的正是用户真读过的上一页），dispose 也在调本方法之前 `leave()`；
     // 所以这里通常是 no-op，只兜「导航发起后新页曾短暂 arrive」的情形。
     _readLedger.discard();
+    // BUG-2529：跨章守卫也必须在这里释放。有声书跟随跨章的链路是
+    // `_maybeEmitCrossChapter` 竖旗 → `onCrossChapter` → [_handleCueCrossChapter] →
+    // [_navigateToChapter]，旗的唯一正常解除路径是章节内容就绪后的
+    // `notifySectionRestoreCompleted`（见 [_onRestoreComplete]）。本方法代表的三种
+    // 中止（装载抛错 / [_navigateToChapterAndWait] 等待超时 / content-ready 兜底超时）
+    // 恰恰意味着那条回执永远不来：旧实现只解开导航态，跨章守卫就此永久卡 true，
+    // 控制器侧 `_updateCurrentCue` / `setChapterCues` 全部早退，当前 cue 冻结 →
+    // 上一句/下一句静默无效、cue 高亮不再跟随，且无任何自愈，直到重开书。
+    //
+    // Android 上「切出去再回来上下句就不动了」走的就是这条：app 切后台后前台服务里
+    // 的有声书照常播到下一章、照常竖旗发起跨章导航，而后台的 WebView 被 Chromium
+    // 按不可见文档节流（rAF 冻结、timer 降频，同 BUG-2465 一族），restore 回执拖过
+    // 8s 兜底窗 → [_startContentReadyTimeout] 摘遮罩并调本方法 → 守卫永久卡死。
+    // 解除后状态机自愈：下一个 position tick 重新比对 cue 所属章与 reader 当前章，
+    // 回前台时 WebView 已活，跨章导航正常落地。
+    _audiobookController?.abortChapterTransition();
     _isNavigatingToChapter = false;
     _restoreInFlight = false;
     _preciseLocateQueue.clear();
