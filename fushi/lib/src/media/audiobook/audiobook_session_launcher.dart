@@ -23,7 +23,12 @@ class AudiobookSessionLauncher {
     if (source == null) return null;
     final SrtBook? srtBook = source.srtBook;
     if (srtBook != null) {
-      return _resolveSrtBook(srtBook, source.audiobook, source.audioFiles);
+      return _resolveSrtBook(
+        srtBook,
+        source.audiobook,
+        source.audioFiles,
+        bookKey,
+      );
     }
     return _resolveAudiobook(source.audiobook, source.audioFiles, bookKey);
   }
@@ -96,6 +101,8 @@ class AudiobookSessionLauncher {
         isSrtBookSource: false,
         author: author,
         coverPath: coverPath,
+        // BUG-2558：统计身份 = 调用方传进来的 key，与阅读器 `widget.bookKey` 同源。
+        statsMediaKey: bookKey,
       ),
       audioFiles: audioFiles,
       prefs: prefs,
@@ -108,6 +115,7 @@ class AudiobookSessionLauncher {
     SrtBook srtBook,
     Audiobook synthetic,
     List<File> audioFiles,
+    String statsMediaKey,
   ) async {
     final AudiobookRepository repo = AudiobookRepository(_db);
     final String key = srtBook.uid;
@@ -134,6 +142,9 @@ class AudiobookSessionLauncher {
         isSrtBookSource: true,
         author: srtBook.author,
         coverPath: srtBook.coverPath,
+        // BUG-2558：此处 [SessionBookInfo.bookKey] 是 srt_books.uid，不是阅读器用的
+        // 身份——统计一律用调用方传进来的 key。
+        statsMediaKey: statsMediaKey,
       ),
       audioFiles: audioFiles,
       prefs: prefs,
