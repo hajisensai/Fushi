@@ -29,14 +29,25 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2358 条。点号进各自文件。
+> 共 2369 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2566](bugs/BUG-2566-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
+| [BUG-2563](bugs/BUG-2563-swipe-longpress-sensitivity.md) | ✅ | ✅ | 滑动翻页灵敏度不足且设置项方向反了；长按选择不灵敏、没有高亮 |
+| [BUG-2562](bugs/BUG-2562-ankiconnect-mine-keeps-dup-cooldown.md) | ✅ | ✅ | AnkiConnect 制卡成功不解除查重冷却，桌面上刚制好的卡也画不出 ✓ |
+| [BUG-2561](bugs/BUG-2561-ios-mine-ledger-stale.md) | ✅ | ✅ | iOS 在 Anki 里删掉卡后 Fushi 仍画 ✓，没有任何纠正出口 |
+| [BUG-2560](bugs/BUG-2560-ios-mine-check-late.md) | ✅ | ✅ | iOS 制卡后「已制卡 ✓」不刷新，要重新点词才出现 |
+| [BUG-2559](bugs/BUG-2559-reader-gallery-illustrations-incomplete.md) | ✅ | ✅ | 阅读器插图画廊漏图且遮罩与书架不一致 |
+| [BUG-2556](bugs/BUG-2556-vn-progress-total-screen-only.md) | ✅ | ✅ | 视觉小说模式翻屏后阅读位置不落库，重开书回到章首 |
+| [BUG-2555](bugs/BUG-2555-manga-online-lookup-waits-mining-page.md) | ✅ | ✅ | 在线漫画查词前串行等待制卡页物化 |
+| [BUG-2554](bugs/BUG-2554-manga-lookup-no-highlight.md) | ✅ | ✅ | 漫画查词命中字不高亮 |
+| [BUG-2553](bugs/BUG-2553-manga-popup-barrier-blocks-relookup.md) | ✅ | ✅ | 漫画查词弹窗开着时点另一个词只关栈不换词 |
 | [BUG-2550](bugs/BUG-2550-reader-stepper-label-truncated.md) | ✅ | ✅ | 阅读设置面板窄窗下 stepper 行标签被压成一个字 |
 | [BUG-2549](bugs/BUG-2549-english-phrasal-verb-deinflection.md) | ✅ | ✅ | 英语短语动词的变形查不到原形（gave up / picked it up 还原不到 give up / pick up） |
 | [BUG-2548](bugs/BUG-2548-collection-detail-drops-remote-members.md) | ✅ | ✅ | 合集详情页丢掉全部远端成员：行头 N 项、点进去只剩本地几本 |
 | [BUG-2547](bugs/BUG-2547-shelf-remote-sort-ignored.md) | ✅ | ✅ | 书架排序忽略远端占位卡：host 下发的时刻不用、恒沉底 |
+| [BUG-2546](bugs/BUG-2546-dict-script-window-scope.md) | ✅ | ✅ | 词典自带脚本第二次查词后失效：折叠字段点不开 |
 | [BUG-2545](bugs/BUG-2545-toc-current-chapter-unmarked.md) | ✅ | ✅ | 阅读器导航「章节列表」不标当前章节 |
 | [BUG-2544](bugs/BUG-2544-video-background-pause-no-resume.md) | ✅ | ✅ | 视频切到后台被暂停后回前台不自动续播 |
 | [BUG-2543](bugs/BUG-2543-english-posless-yomitan-deinflection.md) | ✅ | ✅ | 英语无词性 Yomitan 词典的变形还原全部失效，且不规则形无还原规则 |

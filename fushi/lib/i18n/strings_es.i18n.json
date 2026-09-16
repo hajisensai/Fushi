@@ -4974,5 +4974,14 @@
   "video_screenshot_destination_directory": "Guardar en una carpeta",
   "video_setting_screenshot_directory": "Carpeta de capturas",
   "video_setting_screenshot_directory_hint": "Dónde se guardan las capturas cuando el destino es «Guardar en una carpeta»",
-  "video_screenshot_directory_not_set": "No establecido"
+  "video_screenshot_directory_not_set": "No establecido",
+  "settings_lookup_ime_language_title": "Lookup input language",
+  "settings_lookup_ime_language_description": "Which language the keyboard switches to when you type in a lookup box. The input method must already be installed on the system. Does not affect search results.",
+  "settings_lookup_ime_language_unset": "Not set",
+  "settings_lookup_ime_language_unavailable": "That input method is not installed on this system yet.",
+  "anki_mined_unverified_title": "Card marked as mined",
+  "anki_mined_unverified_subtitle": "Fushi cannot read your AnkiMobile collection, so the mined mark comes from this device's own record — it cannot tell whether the card is still in Anki.",
+  "anki_mined_action_forget": "I deleted it in Anki",
+  "anki_mined_forget_done": "Mining record cleared",
+  "reader_gallery_cover": "Cover"
 }

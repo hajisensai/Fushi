@@ -125,6 +125,9 @@ const double kReaderDesktopHeaderTitleMinWidth = 120;
 /// `EdgeInsets.symmetric(horizontal: 8)` 同源。
 const double kReaderDesktopHeaderHorizontalPadding = 16;
 
+/// 章名最多吃掉标题槽的比例：书名是主信息，章名再长也不许把书名挤成省略号。
+const double _chapterWidthFraction = 0.4;
+
 /// EPUB 顶栏是否进入紧凑形态（只留 pinned 按钮，其余收进 ⋮ 溢出菜单）。
 ///
 /// 判据是**这一栏此刻真的放不下**：[actionCount] 颗按钮加两端内边距占掉的宽之后，
@@ -187,7 +190,7 @@ List<ReaderHeaderAction> readerHeaderOverflow({
   ];
 }
 
-/// 桌面端阅读器顶部工具栏：`[leading…]  书名  [trailing…]`，纯指针面（自带
+/// 桌面端阅读器顶部工具栏：`[leading…]  书名 · 章名  [trailing…]`，纯指针面（自带
 /// ExcludeFocus，不进焦点遍历池——与底栏同一规则，见 focus-ownership.md）。
 /// 宽度**真的**不足时（[readerHeaderCompactForActions]：按钮占完还留不下书名）
 /// 折叠成「固定按钮 + ⋮ 溢出菜单」。
@@ -199,10 +202,15 @@ class ReaderDesktopHeader extends StatelessWidget {
     required this.trailing,
     required this.textColor,
     required this.backgroundColor,
+    this.chapter = '',
     this.height = kReaderDesktopHeaderHeight,
   });
 
   final String title;
+
+  /// 当前章名（TOC 命中标签；命不中时调用方给「第 N 章」兜底）。空串=不显示。
+  /// 与书名同在标题槽，故由调用方跟着「显示书名」开关一起开合。
+  final String chapter;
   final List<ReaderHeaderAction> leading;
   final List<ReaderHeaderAction> trailing;
   final Color textColor;
@@ -218,6 +226,57 @@ class ReaderDesktopHeader extends StatelessWidget {
         onPressed: a.onPressed,
       );
 
+  /// 标题槽：`书名 · 章名`。章名与书名重复（单章书的 TOC 常把章名写成书名）时只画书名。
+  ///
+  /// 两段各自省略号，但**不是**对半分：章名按可用宽的上限 [_chapterWidthFraction]
+  /// 先量（非 flex 子节点先布局），剩下的整条归书名。章名短时书名照旧能铺满，
+  /// 章名长时也只吃掉不到一半——一个 Text.rich 做不到这点（省略号只截尾，先没的
+  /// 反而是后半段的章名）。
+  Widget _buildTitleSlot(TextStyle titleStyle, TextStyle chapterStyle) {
+    final Widget titleText = Text(
+      title,
+      key: const ValueKey<String>('fushi_desktop_header_title'),
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: titleStyle,
+    );
+    if (chapter.isEmpty || chapter == title) return titleText;
+    if (title.isEmpty) {
+      return Text(
+        chapter,
+        key: const ValueKey<String>('fushi_desktop_header_chapter'),
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: chapterStyle,
+      );
+    }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Flexible(child: titleText),
+            Text(' · ', style: chapterStyle),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: constraints.maxWidth * _chapterWidthFraction,
+              ),
+              child: Text(
+                chapter,
+                key: const ValueKey<String>('fushi_desktop_header_chapter'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: chapterStyle,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final TextStyle titleStyle = TextStyle(
@@ -225,6 +284,11 @@ class ReaderDesktopHeader extends StatelessWidget {
       fontWeight: FontWeight.w600,
       color: textColor.withValues(alpha: 0.85),
       height: 1.0,
+    );
+    // 章名是书名的附属信息：同字号、更淡、不加粗，让「哪本书」仍是第一眼读到的。
+    final TextStyle chapterStyle = titleStyle.copyWith(
+      fontWeight: FontWeight.w400,
+      color: textColor.withValues(alpha: 0.55),
     );
     return ExcludeFocus(
       child: ColoredBox(
@@ -255,15 +319,7 @@ class ReaderDesktopHeader extends StatelessWidget {
                       ],
                     ),
                     Expanded(
-                      child: Text(
-                        title,
-                        key: const ValueKey<String>(
-                            'fushi_desktop_header_title'),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: titleStyle,
-                      ),
+                      child: _buildTitleSlot(titleStyle, chapterStyle),
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
