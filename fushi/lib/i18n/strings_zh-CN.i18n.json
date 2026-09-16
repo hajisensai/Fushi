@@ -4965,5 +4965,10 @@
   "settings_lookup_ime_language_title": "查词输入法语言",
   "settings_lookup_ime_language_description": "在查词输入框打字时键盘切到哪种语言。需要系统已安装对应输入法。不影响查词结果。",
   "settings_lookup_ime_language_unset": "未设置",
-  "settings_lookup_ime_language_unavailable": "系统里还没有安装这个输入法。"
+  "settings_lookup_ime_language_unavailable": "系统里还没有安装这个输入法。",
+  "anki_mined_unverified_title": "已标记为已制卡",
+  "anki_mined_unverified_subtitle": "Fushi 无法回读 AnkiMobile 的卡片库，已制卡标记来自本机记录，无法判断卡片是否还在 Anki 里。",
+  "anki_mined_action_forget": "我已在 Anki 里删了这张卡",
+  "anki_mined_forget_done": "已清除制卡记录",
+  "reader_gallery_cover": "封面"
 }
