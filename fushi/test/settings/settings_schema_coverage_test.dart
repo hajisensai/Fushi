@@ -534,6 +534,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/video_double_tap_seek_guard_test.dart + test/pages/video_immersive_mode_levels_guard_test.dart',
   'video/Lock window to video aspect':
       'test/pages/video_window_aspect_lock_static_test.dart',
+  // 截图去向（对话框 / 剪贴板 / 目录）：写 prefsRepo（changed=true），生效点在
+  // `_saveScreenshot` 的三分支里，而那条路要么弹系统保存对话框、要么写系统剪贴板、
+  // 要么真落盘，harness 里一条都探不到。由枚举往返 + Profile 归属（目录不随 Profile
+  // 走）+ 执行体源码守卫（三个分支各自存在、剪贴板真调写入口、直写目录复用重名计数）
+  // 咬住。
+  'video/Screenshot destination':
+      'test/media/video/video_screenshot_destination_test.dart + '
+          'test/pages/video_screenshot_filename_test.dart',
   // 点击画面播放/暂停：生效点在 media_kit 控制条主题（桌面单击）与
   // _handleVideoPointerUp 的移动端双击 fallback，两者都是真实手势 arena，harness 里
   // 探不到。由 config round-trip（含默认 true / 旧档回落）+ 三条源码守卫（桌面主题

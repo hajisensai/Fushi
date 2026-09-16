@@ -16,6 +16,7 @@ import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import android.net.Uri;
@@ -100,6 +101,15 @@ public class MainActivity extends AudioServiceActivity {
     // dispatchKeyEvent swallows VOLUME_UP/DOWN and forwards them to Dart.
     private volatile boolean volumeKeyIntercept = false;
     private MethodChannel volumeKeyChannel;
+
+    // Controller triggers (LT / RT) reach Android only as joystick motion axes,
+    // which the Flutter engine drops on the floor; this bridge turns their
+    // press / release edges into the KEYCODE_BUTTON_L2 / R2 key events the Dart
+    // shortcut layer already binds and captures. Fed from
+    // dispatchGenericMotionEvent, emits through dispatchKeyEvent so the
+    // synthesized keys take the exact route a physical L2 / R2 button would.
+    private final GamepadTriggerKeySynthesizer gamepadTriggers =
+            new GamepadTriggerKeySynthesizer(this::dispatchKeyEvent);
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -280,6 +290,25 @@ public class MainActivity extends AudioServiceActivity {
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    // Controller trigger axes → L2 / R2 key events (see GamepadTriggerKeySynthesizer).
+    // Observe only, then let the event continue: the return value must stay the
+    // framework's own — a joystick MotionEvent nobody consumes is what makes
+    // ViewRootImpl synthesize the D-pad keys from the hat axes, so consuming it
+    // here would silently kill the controller's D-pad.
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        gamepadTriggers.onGenericMotionEvent(event);
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    protected void onPause() {
+        // A trigger still pulled when the app goes to the background (or the
+        // controller disconnects) would otherwise leave L2 / R2 stuck down.
+        gamepadTriggers.releaseAll(SystemClock.uptimeMillis());
+        super.onPause();
     }
 
     // Mirror the OS hardware-volume-key behaviour without routing the key through
@@ -550,6 +579,7 @@ public class MainActivity extends AudioServiceActivity {
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine);
+        ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(
@@ -885,6 +915,26 @@ public class MainActivity extends AudioServiceActivity {
                         result.notImplemented();
                 }
             });
+
+        // 查词输入法语言：Android 切不了系统输入法，这里只把用户选的语言存下来，
+        // 供两个**原生** EditText 查词框（悬浮词典 / 弹窗词典）当 hintLocales 用。
+        // Flutter 的查词框走 TextField.hintLocales 参数，不经这条。
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                ChannelNames.LOOKUP_IME)
+                .setMethodCallHandler((call, result) -> {
+                    if ("persistLanguage".equals(call.method)) {
+                        Object tag = call.arguments();
+                        LookupImeHint.store(
+                                getApplicationContext(),
+                                tag instanceof String ? (String) tag : "");
+                        result.success(null);
+                        return;
+                    }
+                    // setLanguage / probe 是桌面与 iOS 的真·切换接口，Android 没有
+                    // 对应能力，让 Dart 侧走 MissingPluginException 的静默分支。
+                    result.notImplemented();
+                });
 
         floatingDictChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_DICT_CHANNEL);

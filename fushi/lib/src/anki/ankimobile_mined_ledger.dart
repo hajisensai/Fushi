@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/anki/mined_state_signal.dart';
+
 /// AnkiMobile 后端「这个词是不是已经制过卡」的**唯一真值来源**。
 ///
 /// 为什么非得自己记一份：AnkiMobile 的 `anki://x-callback-url` 一共只有 `addnote`
@@ -26,7 +28,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// **能力边界（别在文案里吹成「判重」）**：账本只知道**本机经 Fushi 制成**的卡。
 /// 直接在 Anki 里加的、别的设备上加的、装 Fushi 之前加的，以及用户事后在 Anki 里
-/// 删掉的，账本一概不知道——iOS 上没有任何通道能去核对。这不是本类的缺陷，是
+/// 删掉的，账本一概不知道——iOS 上没有任何通道能去核对（用户事后删掉的那一类另有
+/// [forget] 作**显式**纠正出口：点 ✓ 的操作单里由用户说「我已经删了」，仍然不是自动
+/// 核对，只是把不可检测的事实交还给唯一知道答案的人）。这不是本类的缺陷，是
 /// AnkiMobile URL scheme 的边界；有回读通道的那天（或用户改用 AnkiConnect）应当
 /// 直接问 Anki，而不是加厚这份账本。
 ///
@@ -75,6 +79,30 @@ class AnkiMobileMinedLedger {
       entries.remove(entries.first);
     }
     await _persist(entries);
+    // 落账是**界面之外**发生的（`x-success` 回跳时用户刚从 AnkiMobile 切回来），
+    // 正在显示 ✓ 的弹窗早就探测完了。不回头通知，iOS 上「刚制完的卡」就永远等到
+    // 下一次重新查这个词才亮 ✓。发在这里而不是调用点：任何新的落账路径都不会漏。
+    MinedStateSignal.instance.notifyWord(key);
+  }
+
+  /// 用户声明「这张卡我已经在 Anki 里删了」，把它从账本划掉（✓ → +）。
+  ///
+  /// 为什么这条得由用户来说：账本是 iOS 上的**唯一**真值来源，而 AnkiMobile 的 URL
+  /// scheme 没有回读通道——「这张卡还在不在」在 iOS 上没有任何自动核对的办法（类注释
+  /// 的能力边界那段）。其余后端每次查词都真问 Anki，删掉的卡下一次查词就自动变回 +；
+  /// iOS 若不给出口，账本会把一个**已经不存在**的卡永久画成 ✓，↗ 也会去开一个搜不到
+  /// 东西的界面（用户报「卡片删掉也不会检测是否还存在」）。
+  ///
+  /// 返回是否真的划掉了（账本里本来就没有 → `false`，供调用方决定要不要提示）。
+  Future<bool> forget(String expression) async {
+    final String key = _normalize(expression);
+    if (key.isEmpty) return false;
+    await _ensureLoaded();
+    final Set<String> entries = _entries!;
+    if (!entries.remove(key)) return false;
+    await _persist(entries);
+    MinedStateSignal.instance.notifyWord(key);
+    return true;
   }
 
   /// 这个词在本机经 Fushi 制过卡吗。

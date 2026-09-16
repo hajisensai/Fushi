@@ -734,7 +734,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 104;
+  int get schemaVersion => 105;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3137,6 +3137,80 @@ class FushiDatabase extends _$FushiDatabase
           if (from < 104) {
             if (!await _tableExists('collection_book_aliases')) {
               await m.createTable(collectionBookAliases);
+            }
+          }
+          if (from < 105) {
+            // v105（统计按 Profile 隔离）：`study_segments` / `galgame_sessions`
+            // 加分区列 profile_id；`study_segment_tombstones` 主键并入 profile_id
+            // （PK 变 = 重建表）。存量行全部归到升级那一刻激活的 Profile（没有
+            // 激活的取最早建的；一个都没有就建 'Default'——升级前的历史必须有
+            // 归属，否则新 Profile 一建，旧统计对谁都不可见）。
+            //
+            // legacy 四张投影表 + activity_events 不加列（冻结只读）：同一 Profile
+            // 记进偏好 `stats_legacy_profile_id`，读取面只对它露出 legacy 行。
+            final int owner = await _statOwnerProfileForV105();
+            if (await _tableExists('study_segments') &&
+                !await _columnExists('study_segments', 'profile_id')) {
+              await m.addColumn(studySegments, studySegments.profileId);
+              await customStatement(
+                'UPDATE study_segments SET profile_id = ?',
+                <Object>[owner],
+              );
+            }
+            if (await _tableExists('galgame_sessions') &&
+                !await _columnExists('galgame_sessions', 'profile_id')) {
+              await m.addColumn(galgameSessions, galgameSessions.profileId);
+              await customStatement(
+                'UPDATE galgame_sessions SET profile_id = ?',
+                <Object>[owner],
+              );
+            }
+            if (await _tableExists('study_segment_tombstones') &&
+                !await _columnExists('study_segment_tombstones', 'profile_id')) {
+              await customStatement('''
+              CREATE TABLE study_segment_tombstones_v105 (
+                profile_id INTEGER NOT NULL DEFAULT 0,
+                media_kind TEXT NOT NULL,
+                media_key TEXT NOT NULL,
+                deleted_at INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, media_kind, media_key))''');
+              await customStatement(
+                'INSERT OR IGNORE INTO study_segment_tombstones_v105 '
+                '(profile_id, media_kind, media_key, deleted_at) '
+                'SELECT ?, media_kind, media_key, deleted_at '
+                'FROM study_segment_tombstones',
+                <Object>[owner],
+              );
+              await customStatement('DROP TABLE study_segment_tombstones');
+              await customStatement(
+                'ALTER TABLE study_segment_tombstones_v105 '
+                'RENAME TO study_segment_tombstones',
+              );
+            }
+            // 分区索引与加列同步内联（升级路径不跑 _ensureIndexes）。表存在性
+            // 守卫与 _ensureIndexes 同理：部分迁移的老库可能缺这两张表。
+            if (await _tableExists('study_segments')) {
+              await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_date '
+                'ON study_segments (profile_id, date_key)',
+              );
+            }
+            if (await _tableExists('galgame_sessions')) {
+              await customStatement(
+                'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
+                'ON galgame_sessions (profile_id, date_key)',
+              );
+            }
+            if (owner > 0 && await _tableExists('preferences')) {
+              await customStatement(
+                'INSERT OR REPLACE INTO preferences ("key", "value", updated_at) '
+                'VALUES (?, ?, ?)',
+                <Object>[
+                  kStatLegacyProfileIdPrefKey,
+                  owner.toString(),
+                  DateTime.now().millisecondsSinceEpoch,
+                ],
+              );
             }
           }
         },
