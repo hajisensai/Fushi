@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -172,6 +174,42 @@ void main() {
       expect(t.dist, lessThan(44));
       expect(t.fastDist, lessThan(22));
       expect(t.fastVelocity, lessThan(900));
+    });
+  });
+
+  group('ReaderFushiSource 的无 settings 回退路径不得写旧倍数 key', () {
+    // `ReaderFushiSource` 与 [ReaderSettings] 落在同一个 `src:reader_fushi:` 偏好
+    // 命名空间上，但前者在 `readerSettings == null` 的 entry point（`:popup` /
+    // 悬浮查词）另有一条自己的读写分支。语义翻正后这条分支若仍读写旧的「阈值倍数」
+    // key，写进去的**新语义**值会被 [ReaderSettings] 当 legacy 倍数再取一次倒数，
+    // 设置整个翻反（最灵敏 3.0 → 1/3 → 钳回 0.5 最迟钝），正是换新 key 要防的事。
+    // Tests run with CWD = `fushi/`.
+    final File source = File('lib/src/media/sources/reader_fushi_source.dart');
+
+    test('reader_fushi_source.dart exists', () {
+      expect(source.existsSync(), isTrue);
+    });
+
+    test('两侧共用同一组 key 常量，源码里不留裸字面量', () {
+      final String src = source.readAsStringSync();
+      expect(
+        src.contains("'swipe_page_turn_sensitivity'"),
+        isFalse,
+        reason: 'BUG-2563：旧倍数 key 只读不写，且必须经 '
+            'ReaderSettings.legacySwipeSensitivityMultiplierKey 引用，'
+            '不得在 source 里写裸字面量——两处各写一份必然漂移。',
+      );
+      expect(
+        src.contains('ReaderSettings.swipeSensitivityKey'),
+        isTrue,
+        reason: 'BUG-2563：回退分支必须读写语义翻正后的新 key。',
+      );
+      expect(
+        src.contains('ReaderSettings.legacySwipeSensitivityMultiplierKey'),
+        isTrue,
+        reason: 'BUG-2563：回退分支读不到新 key 时必须按倒数换算旧值，'
+            '否则 `:popup` 侧读出的手感与阅读器进程相反。',
+      );
     });
   });
 }
