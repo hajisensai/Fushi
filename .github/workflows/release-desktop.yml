@@ -1949,7 +1949,15 @@ jobs:
           # push 的 debug 通道：约每三次一次。缺密钥就关门（fork 照常绿），不警告不红。
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$RELEASE_CHANNEL" = debug ]; then
             if [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
-              echo "debug push, build $RELEASE_SEQUENCE is divisible by 3: TestFlight upload $([ "$CREDS" = true ] && echo enabled || echo 'skipped, Apple secrets incomplete')"
+              # 这句不用 `[ … ] && echo … || echo …`：守卫
+              # release_workflow_bash_portability_guard_test 禁掉了该惯用法，因为它在
+              # pipefail 管道 / brace-group 末尾且 test 为假时会把整步静默杀掉。
+              if [ "$CREDS" = true ]; then
+                TESTFLIGHT_NOTE=enabled
+              else
+                TESTFLIGHT_NOTE='skipped, Apple secrets incomplete'
+              fi
+              echo "debug push, build $RELEASE_SEQUENCE is divisible by 3: TestFlight upload $TESTFLIGHT_NOTE"
             else
               echo "debug push, build $RELEASE_SEQUENCE: TestFlight only when the build number is divisible by 3 (next at $(( (RELEASE_SEQUENCE / 3 + 1) * 3 )))"
             fi
