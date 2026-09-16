@@ -17,6 +17,9 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/anilist_failure_notice.dart';
@@ -29,7 +32,11 @@ import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
+    show aiFailureText;
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
 import 'package:fushi/utils.dart';
@@ -291,6 +298,8 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
     this.httpClientFactory,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
     this.debugInitialCandidates,
@@ -352,6 +361,13 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// Production injects the download proxy policy; tests/legacy callers use a
   /// plain client.
   final Future<http.Client> Function()? httpClientFactory;
+
+  /// 「视频搜索辅助」的 AI 提供商解析：返回 null（未指派 / 宿主没接线）时面板不渲染
+  /// 任何 AI 按钮，行为与没有 AI 完全一致。按回调注入，本面板不读偏好、不带 Riverpod。
+  final AiProviderResolver? resolveAiProvider;
+
+  /// AI 调用客户端工厂；测试注入假 http 客户端。null = [AiChatClient] 默认构造。
+  final AiClientFactory? aiClientFactory;
 
   /// 仅测试用：预置候选结果，免去联网搜索即可验证「已有结果」时的列表布局/滚动。
   @visibleForTesting
@@ -468,6 +484,26 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 只有换了番名才该丢弃已解析出的系列列表（BUG-1843）。
   String? _seriesQuery;
 
+  /// AI 调用进行中（补词 / 排序共用一把锁）。
+  bool _aiBusy = false;
+
+  /// AI 补的备选查询词；只作 chip 展示，点 chip 才填进输入框并搜索。
+  List<String> _aiQueries = const <String>[];
+
+  /// 当前候选是否已被 AI 重排。为 true 时结果区按 [_aiOrder] 排、走文件视图
+  /// （版本卡视图会重新聚类，顺序看不见）；新一轮搜索即清零。
+  bool _aiRanked = false;
+
+  /// AI 排列：文件名 → 位次（文件名是本面板列表项的身份键，与 busyName 同口径）。
+  Map<String, int> _aiOrder = const <String, int>{};
+
+  /// AI 推荐条目的文件名 / 各条的一句话备注（文件名 → 文案）。
+  String? _aiRecommendedName;
+  Map<String, String> _aiNotes = const <String, String>{};
+
+  /// 上一次检索用的作品身份（给 AI 重排当上下文）；未检索过为 null。
+  VideoMediaReference? _lastSearchMedia;
+
   /// 对话框内的**硬失败**信息（搜索 / 下载失败、没有可用来源）；null = 无错。
   ///
   /// 必须显示在对话框内部：本对话框是全屏 modal，而 `ScaffoldMessenger` 的 SnackBar
@@ -553,6 +589,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       _searched = false;
       _error = null;
       _candidates = const <JimakuCandidate>[];
+      _resetAiRank();
       if (!sameSeriesQuery) {
         _seriesMatches = const <AniListMedia>[];
         _selectedSeriesId = null;
@@ -710,25 +747,27 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     final LocalVideoFingerprint? fingerprint = await _fingerprint();
     if (!mounted) return;
     {
+      final VideoMediaReference media = VideoMediaReference(
+        providerId: 'anilist',
+        mediaId: effectiveAnilistId?.toString() ?? queryFallback,
+        mediaKind: seed.isMovie
+            ? VideoMetadataMediaKind.movie
+            : VideoMetadataMediaKind.tv,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: queryFallback,
+        // 日文原名交给 provider 当备选检索词（Jimaku 会把它并进 queryFallbacks）。
+        originalTitle: untouchedQuery && seed.queries.isNotEmpty
+            ? seed.queries.first
+            : null,
+        anilistId: effectiveAnilistId,
+        tmdbId: untouchedQuery ? seed.tmdbId : null,
+        episode: episode,
+      );
+      _lastSearchMedia = media;
       final ProviderBatchResult<VideoSubtitleCandidate> result = await registry
           .search(
             VideoSubtitleSearchRequest(
-              media: VideoMediaReference(
-                providerId: 'anilist',
-                mediaId: effectiveAnilistId?.toString() ?? queryFallback,
-                mediaKind: seed.isMovie
-                    ? VideoMetadataMediaKind.movie
-                    : VideoMetadataMediaKind.tv,
-                discoveryCategory: VideoDiscoveryCategory.anime,
-                title: queryFallback,
-                // 日文原名交给 provider 当备选检索词（Jimaku 会把它并进 queryFallbacks）。
-                originalTitle: untouchedQuery && seed.queries.isNotEmpty
-                    ? seed.queries.first
-                    : null,
-                anilistId: effectiveAnilistId,
-                tmdbId: untouchedQuery ? seed.tmdbId : null,
-                episode: episode,
-              ),
+              media: media,
               query: queryFallback,
               // 刮削名 / 显示名 / 合集名：主词搜空后由 provider 依次再试。
               alternateTitles: untouchedQuery
@@ -759,6 +798,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         _searchedWithEpisode = episode != null;
         _selectedSeriesId = effectiveAnilistId;
         _probedGroupLanguages = <String, SubtitleContentLanguage>{};
+        _resetAiRank();
         if (failure != null) {
           _error = describeSubtitleFailure(
             t.video_jimaku_search_failed,
@@ -985,6 +1025,234 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     setState(() => _error = message);
   }
 
+  // ── AI 搜索辅助 ──────────────────────────────────────────────────────────
+
+  bool get _aiAvailable => widget.resolveAiProvider?.call() != null;
+
+  /// 清掉 AI 重排痕迹（须在 setState 内调）。补词 chip 不清：它们是对查询词的建议。
+  void _resetAiRank() {
+    _aiRanked = false;
+    _aiOrder = const <String, int>{};
+    _aiRecommendedName = null;
+    _aiNotes = const <String, String>{};
+  }
+
+  /// 「AI 补充搜索词」：模型给的 2~4 条以 chip 列出，点 chip 才填进输入框并搜索。
+  /// 不静默改写输入框：用户改过的番名就是他要搜的词。
+  Future<void> _runAiExpand() async {
+    if (_aiBusy) return;
+    final String query = _queryCtrl.text.trim();
+    if (query.isEmpty) return;
+    final AiProviderConfig? provider = widget.resolveAiProvider?.call();
+    if (provider == null) {
+      _showError(t.ai_assist_no_provider);
+      return;
+    }
+    setState(() {
+      _aiBusy = true;
+      _error = null;
+    });
+    final AiChatClient client =
+        widget.aiClientFactory?.call() ?? AiChatClient();
+    try {
+      final List<String> queries = await requestAiSearchQueries(
+        client: client,
+        provider: provider,
+        query: query,
+        media: _lastSearchMedia,
+        purpose: AiSearchPurpose.subtitle,
+      );
+      if (!mounted) return;
+      if (queries.isEmpty) {
+        _showError(t.ai_assist_empty);
+        return;
+      }
+      setState(() => _aiQueries = queries);
+    } on AiChatFailure catch (failure) {
+      _showError(t.ai_assist_failed(reason: aiFailureText(failure.message)));
+    } finally {
+      client.close();
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  /// 「AI 排序」：对**当前显示列表**（语言 / 类型 / 关键词筛选后）做一次语义重排。
+  /// 只改顺序不丢候选；`chooseSubtitleForEpisode` 等确定性判据不经这里。
+  Future<void> _runAiRank() async {
+    if (_aiBusy) return;
+    final List<JimakuCandidate> shown = _visibleCandidates();
+    final List<VideoSubtitleCandidate> sources = <VideoSubtitleCandidate>[
+      for (final JimakuCandidate candidate in shown)
+        if (candidate.source != null) candidate.source!,
+    ];
+    // 缺真实来源（测试预置样本）就没有可喂给模型的字段；与版本卡视图同一门槛。
+    if (sources.isEmpty || sources.length != shown.length) return;
+    final AiProviderConfig? provider = widget.resolveAiProvider?.call();
+    if (provider == null) {
+      _showError(t.ai_assist_no_provider);
+      return;
+    }
+    final int generation = ++_probeGeneration;
+    setState(() {
+      _aiBusy = true;
+      _error = null;
+    });
+    final AiChatClient client =
+        widget.aiClientFactory?.call() ?? AiChatClient();
+    try {
+      final String? videoPath = widget.videoPath;
+      final String? localFileName =
+          videoPath == null || videoPath.trim().isEmpty
+          ? null
+          : p.basename(videoPath);
+      final String? preferred =
+          _selectedLanguage ?? widget.initialPreferredLanguage;
+      final ParsedMediaName? local = localFileName == null
+          ? null
+          : FilenameParser.parse(localFileName);
+      final AiRankResult rank = await requestAiSubtitleRank(
+        client: client,
+        provider: provider,
+        candidates: sources,
+        context: AiSubtitleRankContext(
+          media: _lastSearchMedia,
+          localFileName: localFileName,
+          localReleaseGroup: local?.releaseGroup,
+          localResolution: local?.resolution,
+          preferredLanguages: <String>[if (preferred != null) preferred],
+          episode: int.tryParse(_episodeCtrl.text.trim()),
+        ),
+      );
+      // 等待期间又搜了一轮（generation 变了）：这份排列对应的已不是当前列表，丢弃。
+      if (!mounted || generation != _probeGeneration) return;
+      if (rank.isIdentity) {
+        _showError(t.ai_assist_empty);
+        return;
+      }
+      final int? recommended = rank.recommendedIndex;
+      setState(() {
+        _aiRanked = true;
+        _aiOrder = <String, int>{
+          for (int position = 0; position < rank.orderedIds.length; position++)
+            shown[rank.orderedIds[position]].name: position,
+        };
+        _aiRecommendedName = recommended == null
+            ? null
+            : shown[recommended].name;
+        _aiNotes = <String, String>{
+          for (final MapEntry<int, String> note in rank.notes.entries)
+            shown[note.key].name: note.value,
+        };
+        _showFileView = true;
+      });
+    } on AiChatFailure catch (failure) {
+      _showError(t.ai_assist_failed(reason: aiFailureText(failure.message)));
+    } finally {
+      client.close();
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  /// 当前显示的候选：语言 → 类型 → 关键词三层筛选后（与结果区同一口径）。
+  List<JimakuCandidate> _visibleCandidates() => filterByMediaSearch(
+    filterCandidatesByFormat(
+      filterCandidatesByLanguage(_candidates, _selectedLanguage),
+      _selectedFormat,
+    ),
+    _filter,
+    (JimakuCandidate c) => <String>[c.name, c.entryName],
+  );
+
+  /// 按 AI 排列重排（未重排原样返回）。模型没见过的（重排后新出现的筛选结果）排末尾。
+  List<JimakuCandidate> _applyAiOrder(List<JimakuCandidate> shown) {
+    if (!_aiRanked) return shown;
+    final List<JimakuCandidate> out = List<JimakuCandidate>.of(shown);
+    out.sort(
+      (JimakuCandidate a, JimakuCandidate b) =>
+          (_aiOrder[a.name] ?? 1 << 30).compareTo(_aiOrder[b.name] ?? 1 << 30),
+    );
+    return out;
+  }
+
+  Widget _aiProgressIcon(IconData idle) => _aiBusy
+      ? const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        )
+      : Icon(idle, size: 18);
+
+  /// 「AI 补充搜索词」按钮 + 备选词 chip；AI 不可用时不渲染。
+  Widget _buildAiExpandSection() {
+    if (!_aiAvailable) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const ValueKey<String>('jimaku-ai-expand'),
+            onPressed: _aiBusy || _searching
+                ? null
+                : () => unawaited(_runAiExpand()),
+            icon: _aiProgressIcon(Icons.auto_awesome_outlined),
+            label: Text(
+              _aiBusy ? t.ai_assist_working : t.video_search_ai_expand,
+            ),
+          ),
+        ),
+        if (_aiQueries.isNotEmpty)
+          _chipSection(
+            t.video_search_ai_expanded(count: _aiQueries.length),
+            <Widget>[
+              for (final String query in _aiQueries)
+                ActionChip(
+                  avatar: const Icon(Icons.auto_awesome_outlined, size: 16),
+                  label: Text(query),
+                  onPressed: _searching
+                      ? null
+                      : () {
+                          _queryCtrl.text = query;
+                          unawaited(_search());
+                        },
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// 「AI 排序」按钮 + 已排序提示；AI 不可用或候选缺真实来源时不渲染。
+  Widget _buildAiRankSection() {
+    if (!_aiAvailable ||
+        _candidates.any((JimakuCandidate c) => c.source == null)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          TextButton.icon(
+            key: const ValueKey<String>('jimaku-ai-rank'),
+            onPressed: _aiBusy || _searching
+                ? null
+                : () => unawaited(_runAiRank()),
+            icon: _aiProgressIcon(Icons.auto_awesome_outlined),
+            label: Text(_aiBusy ? t.ai_assist_working : t.video_search_ai_rank),
+          ),
+          if (_aiRanked)
+            Text(
+              t.video_search_ai_ranked,
+              key: const ValueKey<String>('jimaku-ai-ranked'),
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+        ],
+      ),
+    );
+  }
+
   /// API key 输入区：未折叠时为完整密码框（含获取链接提示）；折叠时为一行紧凑
   /// 摘要 + 「修改」按钮，腾出垂直空间给候选列表（用户：配好 key 后缩小显示）。
   Widget _buildApiKeySection() {
@@ -1156,6 +1424,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             decoration: InputDecoration(labelText: t.video_jimaku_query),
             onSubmitted: (_) => _search(),
           ),
+          _buildAiExpandSection(),
           const SizedBox(height: 8),
           // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
           // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。
@@ -1201,6 +1470,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
                 ),
               ),
             ],
+            _buildAiRankSection(),
           ],
         ],
       ),
@@ -1338,14 +1608,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     }
     // 先按语言筛选（_selectedLanguage）、再按类型筛选（_selectedFormat）、再做
     // 关键词二次筛选。三层各自独立、顺序不影响结果集。
-    final List<JimakuCandidate> filtered = filterByMediaSearch(
-      filterCandidatesByFormat(
-        filterCandidatesByLanguage(_candidates, _selectedLanguage),
-        _selectedFormat,
-      ),
-      _filter,
-      (JimakuCandidate c) => <String>[c.name, c.entryName],
-    );
+    final List<JimakuCandidate> filtered = _applyAiOrder(_visibleCandidates());
     // 版本卡视图（默认）：候选全部带真实来源时按「合集 › 格式+语言+组」聚类，
     // 文件名流水账折进卡内（RSS-Subtitle-Manager 式版本选择器）。测试预置样本
     // （source == null）或用户显式切文件视图时走旧平铺列表。
@@ -1355,7 +1618,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     ];
     final bool canGroup =
         sources.isNotEmpty && sources.length == filtered.length;
-    if (canGroup && !_showFileView) {
+    if (canGroup && !_showFileView && !_aiRanked) {
       return SubtitleVersionGroupList(
         groups: buildSubtitleVersionGroups(
           sources,
@@ -1374,6 +1637,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       filter: '',
       busyName: _busyName,
       onDownload: _busyName == null ? _download : null,
+      recommendedName: _aiRecommendedName,
+      notesByName: _aiNotes,
     );
   }
 
@@ -1526,6 +1791,8 @@ class JimakuCandidateList extends StatelessWidget {
     required this.filter,
     required this.busyName,
     required this.onDownload,
+    this.recommendedName,
+    this.notesByName = const <String, String>{},
     super.key,
   });
 
@@ -1540,6 +1807,12 @@ class JimakuCandidateList extends StatelessWidget {
 
   /// 点击某行下载的回调；为 null 时禁用所有行点击（下载进行中）。
   final void Function(JimakuCandidate candidate)? onDownload;
+
+  /// AI 推荐条目的文件名；该行加「AI 推荐」徽章。null = 无。
+  final String? recommendedName;
+
+  /// AI 对各条的一句话备注（文件名 → 文案），显示为该行副标题首行。
+  final Map<String, String> notesByName;
 
   @override
   Widget build(BuildContext context) {
@@ -1558,6 +1831,8 @@ class JimakuCandidateList extends StatelessWidget {
       itemBuilder: (BuildContext context, int i) {
         final JimakuCandidate c = shown[i];
         final bool busy = busyName == c.name;
+        final String? note = notesByName[c.name];
+        final bool aiPick = recommendedName == c.name;
         // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
         // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
         // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
@@ -1572,7 +1847,7 @@ class JimakuCandidateList extends StatelessWidget {
             overflow: TextOverflow.fade,
           ),
           subtitle: Text(
-            c.entryName,
+            note == null ? c.entryName : '$note\n${c.entryName}',
             maxLines: 2,
             softWrap: true,
             overflow: TextOverflow.fade,
@@ -1582,6 +1857,13 @@ class JimakuCandidateList extends StatelessWidget {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : aiPick
+              ? Chip(
+                  key: ValueKey<String>('jimaku-ai-pick-${c.name}'),
+                  avatar: const Icon(Icons.auto_awesome_outlined, size: 16),
+                  label: Text(t.video_search_ai_recommended),
+                  visualDensity: VisualDensity.compact,
                 )
               : const Icon(Icons.download),
           onTap: onDownload == null ? null : () => onDownload!(c),

@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
@@ -69,6 +71,9 @@ abstract interface class SubtitleWorkbenchHost {
   String? get defaultContentLanguage;
   FushiDatabase get database;
   Future<void> persistRemoteSubtitle(String bookUid, String path);
+
+  /// 「视频搜索辅助」当前可用的 AI 提供商；null = 未指派，面板不显示 AI 按钮。
+  AiProviderConfig? get videoSearchAiProvider;
 }
 
 /// 生产宿主：全部转发到 [AppModel]。
@@ -88,6 +93,11 @@ class AppSubtitleWorkbenchHost implements SubtitleWorkbenchHost {
 
   @override
   Future<http.Client> createHttpClient() => appModel.createDownloadHttpClient();
+
+  @override
+  AiProviderConfig? get videoSearchAiProvider => appModel.isPreferencesReady
+      ? resolveVideoSearchAiProvider(appModel.prefsRepo)
+      : null;
 
   /// 该系列没有记忆时兜底设置页的默认字幕语言（`''` = 跟随视频语言 → null）。
   @override
@@ -202,6 +212,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       onDownloaded: (List<String> paths) =>
           Navigator.of(context).pop(paths),
+      resolveAiProvider: () => host.videoSearchAiProvider,
     );
   }
 
