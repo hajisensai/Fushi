@@ -275,36 +275,137 @@ class EpubBook {
     return null;
   }
 
-  /// TODO-723: every `<img>` in the book in reading order. Walks [chapters] in
-  /// spine order; for each chapter parses its XHTML with `package:html` and
-  /// collects every `<img>` with a non-empty `src` in DOM order. `orderInBook`
-  /// is a 0-based running index across the whole book; `chapterIndex` is the
-  /// owning spine index. Chapters with no images contribute nothing. SVG
-  /// `<image xlink:href>` is intentionally NOT included yet (deferred).
+  /// TODO-723 / BUG-2559: every illustration in the book, once each, in reading
+  /// order. Walks [chapters] in spine order; for each chapter parses its XHTML
+  /// with `package:html` and collects, in DOM order, every reference an
+  /// illustration can arrive as — HTML `<img src>`, SVG `<image xlink:href>` /
+  /// `<image href>` (Japanese fixed-layout books wrap covers and colour plates
+  /// in an SVG viewport with no `<img>` at all), and inline
+  /// `style="background-image:url(...)"`. The OPF `cover-image` is registered
+  /// first, at [kEpubCoverChapterIndex], so a cover that no chapter references
+  /// is still in the list and still sorts before the body.
   ///
-  /// Built lazily and cached in [_images] (the illustration set does not change
-  /// once a book is open).
+  /// Entries are deduplicated on [EpubImageRef.revealKey]: one entry per image
+  /// *file*, at its earliest occurrence. That makes this list the same set the
+  /// shelf-side illustration library derives from the extracted directory, and
+  /// stops a decorative separator that appears in 60 chapters from filling the
+  /// gallery with 60 copies of itself.
+  ///
+  /// Each entry also carries the in-chapter position ([EpubImageRef
+  /// .normCharOffset], same 0..10000 scale as a stored reader position), which
+  /// is what lets every surface answer "has the reader got here yet?" from one
+  /// scan instead of one per surface.
+  ///
+  /// Per-chapter parse failures skip that chapter rather than failing the whole
+  /// list. Built lazily and cached in [_images] (the illustration set does not
+  /// change once a book is open).
   List<EpubImageRef> get images {
     final List<EpubImageRef>? cached = _images;
     if (cached != null) return cached;
     final List<EpubImageRef> built = <EpubImageRef>[];
-    int order = 0;
+    final Set<String> seen = <String>{};
+
+    void add(int chapterIndex, String resolvedSrc, int normCharOffset) {
+      final String? key = normalizeEpubImageKey(resolvedSrc);
+      if (key == null || !seen.add(key)) return;
+      built.add(EpubImageRef(
+        chapterIndex: chapterIndex,
+        orderInBook: built.length,
+        src: resolvedSrc,
+        revealKey: key,
+        normCharOffset: normCharOffset,
+      ));
+    }
+
+    // The cover precedes every chapter, so it can never be "not read yet".
+    final String? cover = coverHref;
+    if (cover != null && cover.trim().isNotEmpty) {
+      add(kEpubCoverChapterIndex, p.posix.normalize(normalizeHref(cover)), 0);
+    }
+
     for (int i = 0; i < chapters.length; i++) {
       final String chapterHref = chapters[i].href;
-      final html_dom.Document doc = parseChapterHtml(chapters[i].html);
-      for (final html_dom.Element img in doc.querySelectorAll('img')) {
-        final String? src = img.attributes['src'];
-        if (src == null || src.trim().isEmpty) continue;
-        built.add(EpubImageRef(
-          chapterIndex: i,
-          orderInBook: order++,
-          src: resolveImageHref(chapterHref, src),
-        ));
+      final html_dom.Document doc;
+      try {
+        doc = parseChapterHtml(chapters[i].html);
+      } catch (_) {
+        continue;
+      }
+      final _ChapterImageScan scan = _scanChapterImages(doc.body);
+      for (final _ChapterImageHit hit in scan.hits) {
+        add(
+          i,
+          resolveImageHref(chapterHref, hit.src),
+          _normCharOffsetOf(hit.charsBefore, scan.totalChars),
+        );
       }
     }
+
     final List<EpubImageRef> result = List<EpubImageRef>.unmodifiable(built);
     _images = result;
     return result;
+  }
+
+  /// Walks one chapter body in document order, counting study characters as it
+  /// goes, and records how many preceded each image reference. Ruby readings
+  /// (`<rt>/<rp>/<rtc>`) are skipped so a heavily annotated chapter does not
+  /// push its illustrations' offsets past the text they sit in — the same
+  /// caliber [chapterCharacterCount] uses, so the offsets land on the same
+  /// ruler as a stored reader position.
+  static _ChapterImageScan _scanChapterImages(html_dom.Element? body) {
+    final List<_ChapterImageHit> hits = <_ChapterImageHit>[];
+    int chars = 0;
+
+    void visit(html_dom.Node node) {
+      if (node is html_dom.Text) {
+        chars += countStudyChars(node.text);
+        return;
+      }
+      if (node is! html_dom.Element) return;
+      final String tag = (node.localName ?? '').toLowerCase();
+      if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return;
+      for (final String src in elementImageRefs(node, tag)) {
+        hits.add(_ChapterImageHit(src: src, charsBefore: chars));
+      }
+      for (final html_dom.Node child in node.nodes) {
+        visit(child);
+      }
+    }
+
+    if (body != null) visit(body);
+    return _ChapterImageScan(hits: hits, totalChars: chars);
+  }
+
+  /// The image references [element] itself carries (chapter-relative, in
+  /// priority order): `<img src>`, SVG `<image href|xlink:href>`, and inline
+  /// `style="background-image:url(...)"`.
+  ///
+  /// Only *inline* styles: a `<style>` block or an external stylesheet has no
+  /// DOM position, so a background declared there cannot be placed in the
+  /// reading order this scan produces. [_chapterImageRefs] still reads those
+  /// for the image-only-chapter classifier, which does not need positions.
+  static List<String> elementImageRefs(html_dom.Element element, String tag) {
+    final List<String> refs = <String>[];
+    if (tag == 'img') {
+      final String src = (element.attributes['src'] ?? '').trim();
+      if (src.isNotEmpty) refs.add(src);
+    } else if (tag == 'image') {
+      final String? href = svgImageHref(element);
+      if (href != null && href.isNotEmpty) refs.add(href);
+    }
+    final String style = (element.attributes['style'] ?? '').trim();
+    if (style.isNotEmpty) {
+      for (final Match match in backgroundImageUrlPattern.allMatches(style)) {
+        final String ref = (match.group(1) ?? '').trim();
+        if (ref.isNotEmpty) refs.add(ref);
+      }
+    }
+    return refs;
+  }
+
+  static int _normCharOffsetOf(int charsBefore, int totalChars) {
+    if (totalChars <= 0) return 0;
+    return ((charsBefore * 10000) / totalChars).round().clamp(0, 10000);
   }
 
   ({int chapterIndex, String? fragment})? resolveInternalLink(String url) {
@@ -417,22 +518,90 @@ String resolveImageHref(String chapterHref, String src) {
   return p.posix.normalize(p.posix.join(chapterDir, src));
 }
 
-/// TODO-723: one illustration occurrence in a book, in reading order.
+/// The [EpubImageRef.chapterIndex] of the OPF `cover-image`: it precedes the
+/// whole spine, so comparing it against any real reading position puts it
+/// behind — a cover is never "not read yet".
+const int kEpubCoverChapterIndex = -1;
+
+/// TODO-723: one illustration in a book, at its first occurrence in reading
+/// order.
 ///
-/// [chapterIndex] is the owning spine chapter; [orderInBook] is a 0-based index
-/// across the whole book (stable reading order); [src] is the **epub-root-
-/// relative href** (already resolved against the owning chapter's directory via
+/// [chapterIndex] is the owning spine chapter ([kEpubCoverChapterIndex] for an
+/// OPF cover no chapter references); [orderInBook] is a 0-based index across
+/// the whole book (stable reading order); [src] is the **epub-root-relative
+/// href** (already resolved against the owning chapter's directory via
 /// [resolveImageHref]) suitable for [ReaderFushiSource.epubUrl].
 class EpubImageRef {
   const EpubImageRef({
     required this.chapterIndex,
     required this.orderInBook,
     required this.src,
+    required this.revealKey,
+    this.normCharOffset = 0,
   });
 
   final int chapterIndex;
   final int orderInBook;
   final String src;
+
+  /// BUG-898 spoiler-mask identity: extractDir-relative, percent-decoded,
+  /// forward slashes — the same key the reader WebView's
+  /// `__fushiImageRevealKey` and the shelf-side illustration library's disk
+  /// paths normalize to, so all three surfaces share one persisted
+  /// `revealed_images` row per image.
+  final String revealKey;
+
+  /// Where in [chapterIndex] this image sits, on the same 0..10000 scale a
+  /// stored reader position uses. 0 for the cover and for image-only chapters
+  /// (no text to measure against).
+  final int normCharOffset;
+
+  /// The spine chapter to navigate to for this image. Same as [chapterIndex]
+  /// except for a cover that no chapter references ([kEpubCoverChapterIndex]),
+  /// which has no spine slot of its own and lands on the first chapter.
+  int get jumpChapterIndex => chapterIndex < 0 ? 0 : chapterIndex;
+}
+
+/// BUG-898: normalizes an epub-root-relative image href to the shared
+/// spoiler-mask key — percent-decoded, forward slashes, `.`/`..` folded, no
+/// leading slash. Returns null for empty input or a reference that escapes the
+/// book root (never write a key that cannot name a file inside the book).
+///
+/// The reader WebView does the same thing in JS (`decodeURIComponent` on the
+/// resolved `/epub/` path) and the illustration library does it from a disk
+/// path; this is the Dart entry point for an href taken straight out of the
+/// markup.
+String? normalizeEpubImageKey(String href) {
+  if (href.isEmpty) return null;
+  String decoded = href;
+  try {
+    decoded = Uri.decodeComponent(href);
+  } on ArgumentError {
+    // Malformed escape: keep it verbatim rather than dropping the image.
+  }
+  String s = p.posix.normalize(decoded.replaceAll('\\', '/'));
+  while (s.startsWith('/')) {
+    s = s.substring(1);
+  }
+  if (s.isEmpty || s == '.' || s == '..' || s.startsWith('../')) return null;
+  return s;
+}
+
+class _ChapterImageHit {
+  const _ChapterImageHit({required this.src, required this.charsBefore});
+
+  /// The raw, chapter-relative reference (not yet resolved).
+  final String src;
+
+  /// Study characters that precede this image within its chapter.
+  final int charsBefore;
+}
+
+class _ChapterImageScan {
+  const _ChapterImageScan({required this.hits, required this.totalChars});
+
+  final List<_ChapterImageHit> hits;
+  final int totalChars;
 }
 
 /// [EpubBook.chapterPlainTextWithRuby] 的产物。

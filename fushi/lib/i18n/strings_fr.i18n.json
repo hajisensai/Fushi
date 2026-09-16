@@ -4965,5 +4965,6 @@
   "anki_mined_unverified_title": "Card marked as mined",
   "anki_mined_unverified_subtitle": "Fushi cannot read your AnkiMobile collection, so the mined mark comes from this device's own record — it cannot tell whether the card is still in Anki.",
   "anki_mined_action_forget": "I deleted it in Anki",
-  "anki_mined_forget_done": "Mining record cleared"
+  "anki_mined_forget_done": "Mining record cleared",
+  "reader_gallery_cover": "Cover"
 }
