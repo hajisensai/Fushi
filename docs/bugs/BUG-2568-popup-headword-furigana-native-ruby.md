@@ -35,7 +35,7 @@
   `line-height: 1.7` / `2.0` 都顶不住，只有 em padding 行）。振假名字号不变（0.6em =
   26px 词头下的 15.6px）。
 
-  提交：`<待填>`
+  提交：`83f079b0b6d`
 
 - **[x] ② 已加自动化测试** —
   - `fushi/test/pages/popup_headword_native_ruby_bug2568_test.dart`（新增）：词头声明
