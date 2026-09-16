@@ -48,7 +48,9 @@ void main() {
         'updateRangeSelection: function',
         'endRangeSelection: function',
       );
-      expect(body, contains('this.getCharacterAtPoint(x, y)'));
+      // BUG-长按选择不灵敏：扩选走**选择**命中（不剔除标点/空白），不是查词命中——
+      // 拖过句号时查词命中返回 null 会让选区停住。
+      expect(body, contains('this.getSelectableCharacterAtPoint(x, y)'));
       expect(body, contains('this.collectRangeBetween('));
       expect(body, contains('this.renderSelectionHighlight();'));
     });
@@ -170,7 +172,9 @@ void main() {
       );
       // 还原发生在拿到 hit 之后（顺序正确）。
       final int noneAt = body.indexOf("pointerEvents = 'none'");
-      final int hitAt = body.indexOf('this.getCharacterAtPoint(x, y)');
+      final int hitAt = body.indexOf(
+        'this.getSelectableCharacterAtPoint(x, y)',
+      );
       final int restoreAt = body.indexOf("|| 'auto'");
       expect(noneAt, greaterThanOrEqualTo(0));
       expect(hitAt, greaterThan(noneAt), reason: '熄灭必须在 hit-test 之前');

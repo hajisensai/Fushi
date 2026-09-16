@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -6,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
@@ -15,6 +18,8 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
@@ -187,7 +192,11 @@ Widget _buildApp({
 }
 
 class _CssDialogLauncher extends StatelessWidget {
-  const _CssDialogLauncher();
+  const _CssDialogLauncher({this.resolveAiProvider, this.aiClientFactory});
+
+  /// 「让 AI 帮忙」的注入缝；不传 = 与生产路径同形（对话框自己从 AppModel 解析）。
+  final DictStyleAiProviderResolver? resolveAiProvider;
+  final DictStyleAiClientFactory? aiClientFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -197,8 +206,10 @@ class _CssDialogLauncher extends StatelessWidget {
           onPressed: () {
             showAppDialog<void>(
               context: context,
-              builder: (_) => const DictCssEditorDialog(
+              builder: (_) => DictCssEditorDialog(
                 previewBuilder: _stubPreview,
+                resolveAiProvider: resolveAiProvider,
+                aiClientFactory: aiClientFactory,
               ),
             );
           },
@@ -1001,5 +1012,164 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(appModel.savedStyleRules.single.dictionaryName, isNull);
+  });
+
+  // ── 「让 AI 帮忙」区 ────────────────────────────────────────────────────
+  // AI 路径只打假 http.Client，不打真网；没配提供商时必须**一个请求都不发**；
+  // 拿到结果只进草稿——规则并进可视化表、CSS 追加进手写框——不落盘。
+
+  AiProviderConfig usableProvider() => AiProviderConfig(
+        id: 'p1',
+        presetId: 'openai',
+        name: 'Fake',
+        baseUrl: Uri.parse('https://example.invalid/v1'),
+        apiKey: 'k',
+        model: 'm',
+      );
+
+  http.Response openAiReply(String content) => http.Response(
+        jsonEncode(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{'content': content},
+            },
+          ],
+        }),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+
+  testWidgets('没配 AI 提供商时点生成提示去设置，且一个请求都不发', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 1000);
+    addTearDown(tester.view.reset);
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    int requests = 0;
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: DictCssEditorDialog(
+          previewBuilder: _stubPreview,
+          resolveAiProvider: () => null,
+          aiClientFactory: () => AiChatClient(
+            client: MockClient((http.Request request) async {
+              requests += 1;
+              return openAiReply('{}');
+            }),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('dict-style-ai-request')),
+      '词头加粗',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('dict-style-ai-generate')));
+    await tester.pumpAndSettle();
+
+    expect(requests, 0);
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('dict-style-ai-message')),
+          )
+          .data,
+      t.ai_assist_no_provider,
+    );
+    expect(appModel.savedStyleRules, isEmpty);
+  });
+
+  testWidgets('假 client 返回 JSON → 规则并进草稿、CSS 追加进手写框，且未保存', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 1000);
+    addTearDown(tester.view.reset);
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    final String savedGlobalCss = appModel.savedGlobalCss;
+    appModel.savedStyleRules = <DictStyleRule>[
+      const DictStyleRule(
+        part: DictStylePart.pitch,
+        props: DictStyleProps(italic: true),
+      ),
+    ];
+
+    // 走生产同形的路径：对话框从一个 Scaffold 页面弹出（SnackBar 要有 Scaffold
+    // 可挂）。
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: _CssDialogLauncher(
+          resolveAiProvider: usableProvider,
+          aiClientFactory: () => AiChatClient(
+            client: MockClient(
+              (http.Request request) async => openAiReply(
+                '{"explanation":"词头加粗改蓝",'
+                '"rules":[{"part":"expression","dictionaryName":null,'
+                '"props":{"bold":true,"textColor":"#0000ff"}}],'
+                '"css":".glossary-content { line-height: 1.6; }\\n'
+                'body { background: black; }"}',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('dict-style-ai-request')),
+      '词头加粗改蓝',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('dict-style-ai-generate')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('dict-style-ai-message')),
+          )
+          .data,
+      t.dict_style_ai_applied,
+    );
+    expect(find.text('词头加粗改蓝'), findsWidgets);
+    // 可视化预览立刻吃到并进草稿的规则（预览桩把 CSS 原样贴出来）。
+    expect(find.textContaining('.expression'), findsOneWidget);
+    expect(find.textContaining('font-weight: bold !important'), findsOneWidget);
+    expect(
+      find.textContaining('.pitch-section'),
+      findsOneWidget,
+      reason: '已有的其它部位规则必须保留',
+    );
+
+    // 手写框：原有 CSS 之后空一行追加，body{} 被白名单丢掉。
+    await _switchToCodeTab(tester);
+    final TextField field = tester.widget<TextField>(_cssEditorField());
+    expect(field.controller!.text, startsWith(savedGlobalCss));
+    expect(field.controller!.text, contains('\n\n.glossary-content {'));
+    expect(field.controller!.text, contains('line-height: 1.6;'));
+    expect(field.controller!.text, isNot(contains('body')));
+
+    // 关键纪律：AI 生成不是第二条落盘路径。
+    expect(appModel.savedGlobalCss, savedGlobalCss);
+    expect(appModel.savedStyleRules, hasLength(1));
+    expect(appModel.savedStyleRules.single.part, DictStylePart.pitch);
+
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedStyleRules, hasLength(2));
+    final DictStyleRule expression = appModel.savedStyleRules.firstWhere(
+      (DictStyleRule r) => r.part == DictStylePart.expression,
+    );
+    expect(expression.props.bold, isTrue);
+    expect(expression.props.textColor, 0xFF0000FF);
+    expect(appModel.savedGlobalCss, contains('.glossary-content {'));
   });
 }

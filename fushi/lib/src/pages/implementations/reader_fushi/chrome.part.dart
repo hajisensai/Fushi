@@ -1007,6 +1007,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
+    // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」
+    // （BUG-2559）。缓存的分数属于别的章时（刚跳章、还没回报进度）退到章首 0，
+    // 与落库时的同款判据一致。
+    final int currentNormCharOffset = _lastProgressSection == currentChapter
+        ? (_lastProgressValue.clamp(0.0, 1.0) * 10000).round()
+        : 0;
     // BUG-2208：插图画廊是从阅读器 push 出去的全页路由，压住期间停表。
     unawaited(
       _withStudyClockPaused(
@@ -1018,6 +1024,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               chapterLabelFor: _currentChapterLabelFor,
               images: images,
               currentChapter: currentChapter,
+              currentNormCharOffset: currentNormCharOffset,
               blurImages: _settings?.blurImages ?? false,
               revealedImageKeys: _revealedImageKeys,
               onRevealImage: (String key) {
@@ -1069,7 +1076,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
               onJumpTo: (EpubImageRef ref) {
                 Navigator.pop(routeContext);
-                unawaited(_navigateToChapter(ref.chapterIndex, manual: true));
+                unawaited(
+                  _navigateToChapter(ref.jumpChapterIndex, manual: true),
+                );
               },
               volumeSwitch: _galleryVolumeSwitch(routeContext),
             ),
@@ -2447,7 +2456,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       },
       onJumpTo: (int volume, EpubImageRef ref) {
         Navigator.pop(routeContext);
-        unawaited(_switchToVolume(volume, chapterIndex: ref.chapterIndex));
+        unawaited(_switchToVolume(volume, chapterIndex: ref.jumpChapterIndex));
       },
       onOpenImage: (int volume, EpubImageRef ref, File file) =>
           _openImageViewer(
@@ -2536,7 +2545,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return t.auto_chapter(n: chapterIndex + 1);
   }
 
+  /// 压平后的目录。顶栏章名每帧都要查它（[_currentChapterLabelFor]），而压平要走
+  /// 整棵 TOC 树并逐条解析 href → 章号，故按书缓存：它只依赖 [_book]（`toc` 与
+  /// `chapterIndexForHref` 都是书自身的只读数据），换书才失效，重排版/换样式不影响。
   List<TtuTocEntry> _buildTtuToc() {
+    final List<TtuTocEntry>? cached = _ttuTocCache;
+    if (cached != null && identical(_ttuTocCacheBook, _book)) return cached;
+    final List<TtuTocEntry> built = _flattenTtuToc();
+    _ttuTocCache = built;
+    _ttuTocCacheBook = _book;
+    return built;
+  }
+
+  List<TtuTocEntry> _flattenTtuToc() {
     final List<EpubTocItem> toc = _book!.toc;
     if (toc.isEmpty) {
       return List<TtuTocEntry>.generate(
@@ -2686,6 +2707,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
         child: ReaderDesktopHeader(
           key: const ValueKey<String>('fushi_desktop_header'),
           title: layout.showsTitle ? (_book?.title ?? '') : '',
+          // 章名跟着书名这颗槽位开关一起开合（同一个标题槽），歌词模式下没有「当前
+          // 章」可言（文档换成了歌词）——那时只留书名。
+          chapter: layout.showsTitle && !_lyricsMode
+              ? _currentChapterLabel()
+              : '',
           textColor: fg,
           backgroundColor: _chromeSurfaceColor(),
           // 左 / 右两组按钮来自布局的 topLeft / topRight 槽（用户可在设置里拖动）；

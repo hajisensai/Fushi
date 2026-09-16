@@ -195,6 +195,55 @@ function mineEntryKey(expression, reading) {
     return `${expression || ''}\u0000${reading || ''}`;
 }
 
+// 宿主回头刷新**已经画好**的「已制卡 ✓ / 可制卡 +」。
+//
+// 为什么非得由宿主来推：lookup-time 探测（createEntryHeader 末尾那条
+// scheduleEntryStateCheck）问的是「此刻 Anki 里有没有这张卡」，画完就不再动，除非
+// 用户点按钮或重新查一次这个词。AnkiMobile 后端上「卡真的进库了」比 mineEntry 返回
+// 晚好几秒——它只能确认「AnkiMobile 被拉起来了」，落账要等 x-callback 的 x-success
+// 回跳（Dart: AnkiMobileMinedLedger），那时用户才刚从 AnkiMobile 切回来。所以制卡
+// 成功后紧跟着那次 refreshFromAnki **必然**问在落账之前、拿到 false，✓ 不亮（用户报
+// 「iOS 添加完卡片并没有出现打勾，要重新点一次词才出现」）。这是时序错配，不能靠
+// 延迟重试蒙对；由落账那一侧（Dart: MinedStateSignal）拿到真值后调本函数。
+//
+// target = {expression, reading?}：只刷这个词（省略 reading 就只比 expression——
+// x-success 只带回 expression）。target 省略/null = 「范围未知」（例如从后台切回
+// 前台，期间用户可能在 Anki 里删了卡）：此时**只刷已经探测过的按钮**，否则一次刷新
+// 会把 BUG-1833 好不容易改成懒探测的整屏词条重新变成几十次桥调用。
+//
+// 返回真的重问了几个按钮（诊断与测试用）。
+async function refreshRenderedMineStates(target) {
+    const wantedExpression = target && typeof target.expression === 'string'
+        ? target.expression.trim()
+        : '';
+    const wantedReading = target && typeof target.reading === 'string'
+        ? target.reading.trim()
+        : '';
+    const pending = [];
+    // 走 __fushiRootNode()（BUG-688）：扩展车道里弹窗活在 shadow root 里，裸 document
+    // 一个按钮都找不到。与同族的 fushiPopupMineFirstEntry / 上下文选择器刷新同一口径。
+    for (const button of __fushiRootNode().querySelectorAll('.mine-button')) {
+        const refresh = button.__fushiRefreshMineState;
+        if (typeof refresh !== 'function') continue;
+        if (wantedExpression) {
+            if ((button.__fushiMineExpression || '').trim() !== wantedExpression) {
+                continue;
+            }
+            if (wantedReading &&
+                (button.__fushiMineReading || '').trim() !== wantedReading) {
+                continue;
+            }
+        } else if (button.__fushiMineStateKnown !== true) {
+            continue;
+        }
+        pending.push(refresh());
+    }
+    if (pending.length === 0) return 0;
+    await Promise.all(pending);
+    return pending.length;
+}
+window.fushiRefreshMineStates = refreshRenderedMineStates;
+
 // BUG-1833 follow-up: favorite/Anki state is decoration for each result header,
 // not a prerequisite for revealing the dictionary card. A large lookup can
 // contain dozens of entry headers; firing both bridges while synchronously
@@ -3018,6 +3067,51 @@ function redirectMarkerKind(content) {
     return 0;
 }
 
+// glossary.content 经桥接过来时可能是 JSON 字符串；两个 redirect 谓词共用同一种归一。
+function parseGlossaryContent(content) {
+    if (typeof content === 'string') {
+        const trimmed = content.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+                return JSON.parse(trimmed);
+            } catch (_) {
+                // Not JSON: dictionary HTML or plain text.
+            }
+        }
+    }
+    return content;
+}
+
+function glossaryVisibleText(content) {
+    if (typeof content === 'string') {
+        return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    if (Array.isArray(content)) {
+        return content.map(glossaryVisibleText).join(' ').trim();
+    }
+    if (content && typeof content === 'object') {
+        if (Object.prototype.hasOwnProperty.call(content, 'content')) {
+            return glossaryVisibleText(content.content);
+        }
+        if (typeof content.text === 'string') return glossaryVisibleText(content.text);
+    }
+    return '';
+}
+
+// BUG-2566: a record is redirect-only when the redirect label is all it has.
+// OALDPE10 prefixes every phrasal-verb record with a self-redirect label
+// `["give up", ["Redirected from give up"]]` and carries the real
+// structured-content definition right next to it (its alias records such as
+// `give-up` consist of that label alone). The label must not hide the
+// definition: a top-level item that has visible text and no redirect marker of
+// its own is a definition, and its presence keeps the record.
+function hasStandaloneDefinition(content) {
+    const parsed = parseGlossaryContent(content);
+    if (!Array.isArray(parsed)) return false;
+    return parsed.some(
+        (item) => redirectMarkerKind(item) === 0 && glossaryVisibleText(item) !== '');
+}
+
 function isRedirectGlossary(glossary) {
     if (!glossary) return false;
     const tags = `${glossary.definitionTags || ''} ${glossary.termTags || ''}`
@@ -3026,8 +3120,9 @@ function isRedirectGlossary(glossary) {
     if (/(?:^|\s)redirect(?:ed)?(?:\s|$)/.test(tags)) return true;
 
     const marker = redirectMarkerKind(glossary.content);
-    if (marker === 2) return true;
-    return marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags);
+    const redirectMarked =
+        marker === 2 || (marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags));
+    return redirectMarked && !hasStandaloneDefinition(glossary.content);
 }
 
 function createGlossarySectionWrapper(entry) {
@@ -3470,6 +3565,9 @@ function createEntryHeader(entry, idx) {
         ? window.fushiIsEntryQueued({ expression, reading }) === true
         : queuedLocally;
     const setMineState = (isMined) => {
+        // 本按钮的制卡态至少有过一次真值（lookup-time 探测，或点按钮后的回问）。
+        // 「范围未知」的宿主刷新只重问这类按钮，见 refreshRenderedMineStates。
+        mineButton.__fushiMineStateKnown = true;
         const queued = isEntryQueued();
         mineButton.dataset.queued = queued ? '1' : '';
         mineButton.title = queued ? (window.i18nMineQueued || '已加入制卡队列') : '';
@@ -3755,6 +3853,24 @@ function createEntryHeader(entry, idx) {
     // 制卡模块关掉时上面一颗制卡按钮都没渲染，这里的查重探测也一并停掉——模块
     // 关掉 = 它的后台流量（每次查词一次 Anki 查重 + 可能的覆写目标反查）也一起停。
     if (miningEnabled) {
+        // 宿主推来的刷新入口（window.fushiRefreshMineStates → 本闭包）。setMineState
+        // 是 createEntryHeader 的闭包局部，外面拿不到，所以把重问+重画整条挂到按钮上。
+        mineButton.__fushiMineExpression = expression || '';
+        mineButton.__fushiMineReading = reading || '';
+        mineButton.__fushiRefreshMineState = async () => {
+            try {
+                // 先作废在途的 lazy 探测：它问得比这次早，答案更旧，settle 后不得再
+                // 覆盖我们刚拿到的真值（applyIfCurrent 靠的就是这个 version）。
+                invalidateEntryStateCheck(mineButton);
+                const isMined = await window.flutter_inappwebview.callHandler(
+                    'duplicateCheck', { expression, reading });
+                setMineState(isMined === true);
+            } catch (e) {
+                // 刷新只是纠正装饰态：失败一律保持现状，绝不把 ✓ 抹回 +（那会诱导
+                // 用户再制一张重复卡，比不刷新更糟）。
+                console.error('refreshMineState failed', e);
+            }
+        };
         scheduleEntryStateCheck(
             mineButton,
             `duplicate\u0000${mineEntryKey(expression, reading)}`,

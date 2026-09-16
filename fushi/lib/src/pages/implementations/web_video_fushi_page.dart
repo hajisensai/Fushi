@@ -1505,6 +1505,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       previousFrame: () => unawaited(_seekRelative(-40)),
       nextFrame: () => unawaited(_seekRelative(40)),
       screenshot: noop,
+      // 网页视频页没有 media_kit 帧可取（画面在 WebView 里），两条截图动作同样落空。
+      screenshotSubtitled: noop,
       toggleFullscreen: () => unawaited(_toggleFullscreen()),
       toggleSubtitleList: _toggleList,
       searchSubtitleList: () {

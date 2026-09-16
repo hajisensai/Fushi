@@ -10,7 +10,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi_engine/epub/epub_book.dart'
+    show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
@@ -52,6 +53,7 @@ class ReaderGalleryPage extends StatefulWidget {
     super.key,
     required this.images,
     required this.currentChapter,
+    this.currentNormCharOffset = 0,
     required this.fileForRef,
     required this.onOpenImage,
     required this.onJumpTo,
@@ -65,6 +67,11 @@ class ReaderGalleryPage extends StatefulWidget {
 
   final List<EpubImageRef> images;
   final int currentChapter;
+
+  /// 当前阅读位置在 [currentChapter] 内的归一偏移（0~10000，与落库的
+  /// `ReaderPosition.normCharOffset` 同基准）。与 [currentChapter] 一起构成
+  /// 「读到哪了」，见 `_unreadAhead`。
+  final int currentNormCharOffset;
   final File? Function(EpubImageRef ref) fileForRef;
   final void Function(EpubImageRef ref) onOpenImage;
   final void Function(EpubImageRef ref) onJumpTo;
@@ -247,8 +254,16 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   // ── 判据 ─────────────────────────────────────────────────────────────
 
-  bool _unreadAhead(EpubImageRef ref) =>
-      ref.chapterIndex > widget.currentChapter;
+  /// 这张图是否还没读到。判据与书架端插图库同一把尺：spine 章号 **加章内归一
+  /// 偏移**（`EpubImageRef.normCharOffset`，与落库的阅读位置同 0~10000 基准）。
+  /// 只比章号曾是 BUG-2559 的一半——当前章里读到一半，章内靠后的插图在这里算
+  /// 「已读到」不遮，书架那边按偏移算「还没读到」照遮，同一本书两处糊的图不一样。
+  bool _unreadAhead(EpubImageRef ref) {
+    if (ref.chapterIndex != widget.currentChapter) {
+      return ref.chapterIndex > widget.currentChapter;
+    }
+    return ref.normCharOffset > widget.currentNormCharOffset;
+  }
 
   /// 当前有效的已揭开集：宿主会话集 ∪ 本页揭开的 − 本页恢复遮罩的。
   Set<String> get _revealedNow =>
@@ -261,7 +276,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
       !_peekingSibling &&
       ImageRevealKey.shouldBlur(
         blurEnabled: widget.blurImages,
-        revealKey: ImageRevealKey.normalize(ref.src),
+        revealKey: ref.revealKey,
         revealed: _revealedNow,
         unreadAhead: _unreadAhead(ref),
       );
@@ -283,9 +298,13 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     return groups;
   }
 
-  String _chapterLabel(int chapterIndex) =>
-      widget.chapterLabelFor?.call(chapterIndex) ??
-      t.auto_chapter(n: chapterIndex + 1);
+  String _chapterLabel(int chapterIndex) {
+    // 正文没引用的 OPF 封面挂在 kEpubCoverChapterIndex（-1）上：它不是 spine 里的
+    // 第 0 章，按「第 N 章」算会写成「第 0 章」。
+    if (chapterIndex == kEpubCoverChapterIndex) return t.reader_gallery_cover;
+    return widget.chapterLabelFor?.call(chapterIndex) ??
+        t.auto_chapter(n: chapterIndex + 1);
+  }
 
   // ── 生命周期 ─────────────────────────────────────────────────────────
 
@@ -421,8 +440,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   // ── 动作 ─────────────────────────────────────────────────────────────
 
   void _reveal(EpubImageRef ref) {
-    final String? key = ImageRevealKey.normalize(ref.src);
-    if (key == null) return;
+    final String key = ref.revealKey;
     setState(() {
       _relockedHere.remove(key);
       _revealedHere.add(key);
@@ -432,8 +450,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   /// 「恢复遮罩」：撤销这张图的揭开状态，卡片重新盖回模糊层。
   void _relock(EpubImageRef ref) {
-    final String? key = ImageRevealKey.normalize(ref.src);
-    if (key == null) return;
+    final String key = ref.revealKey;
     setState(() {
       _revealedHere.remove(key);
       _relockedHere.add(key);
@@ -450,7 +467,6 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   bool _canRelock(EpubImageRef ref) =>
       !_peekingSibling &&
       (widget.blurImages || _unreadAhead(ref)) &&
-      ImageRevealKey.normalize(ref.src) != null &&
       !_isLocked(ref);
 
   void _activate(EpubImageRef ref) {
