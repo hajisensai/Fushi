@@ -486,6 +486,49 @@ void main() {
         }
       });
 
+      // BUG-2573：上面几条用例的音频只有 1~3 字节（base64 是 `AQID` / `CAgH` 之流），
+      // **不含 base64 字母表里的 `+`**，恰好绕开了 `_normalizeIncomingText` 的
+      // 「孤立 `+` → 空格」还原。真实单词音频是几 KB，base64 里几十个 `+` 全被换成
+      // 空格 → 落卡侧 `UriData.parse` 抛 Invalid base64 data → 单词音频静默丢失。
+      // 这条用真实长度载荷，端到端断言「制卡时音频字节原样落地」。
+      test('真实长度音频（base64 含 +）经 /api/mine 后仍可解码出原字节', () async {
+        await startServer(apiKey: 'k123');
+        final Uint8List audio = Uint8List.fromList(
+          List<int>.generate(1024, (int i) => (i * 7919 + 13) % 256),
+        );
+        final String b64 = base64Encode(audio);
+        expect(b64, contains('+'),
+            reason: '构造必须含 + 才覆盖得到本 bug（短音频碰不到）');
+        lookup.audioResult = RemoteAudioLookup(
+          bytes: audio,
+          contentType: 'audio/mpeg',
+        );
+
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/mine',
+          <String, dynamic>{
+            'fields': <String, String>{
+              'expression': '鼠',
+              'reading': 'ねずみ',
+              'audio': 'http://127.0.0.1:${server.port}'
+                  '/api/lookup/audio/file?id=expired-token',
+            },
+            'sentence': '鼠が走る。',
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        final String? landed = mining.plainFields!['audio'];
+        expect(landed, startsWith('data:audio/mpeg;base64,'));
+        // 落卡侧真实解码路径：解不出字节 = 卡片没有单词音频。
+        final AnkiAudioData? decoded = AnkiAudioRef.decodeDataUri(landed!);
+        expect(decoded, isNotNull,
+            reason: '解码失败 = 落卡侧 AudioFetchOutcome.none() '
+                '= ExpressionAudio 空');
+        expect(decoded!.bytes, audio);
+      });
+
       test('沉浸制卡（clip 路径）同样改写 fields.audio', () async {
         await startServer(apiKey: 'k123');
         lookup.audioResult = RemoteAudioLookup(
