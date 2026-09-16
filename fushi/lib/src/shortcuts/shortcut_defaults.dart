@@ -576,6 +576,12 @@ class ShortcutDefaults {
     for (final entry in _desktop.entries)
       entry.key: ShortcutBindingSet(
         keyboardBindings: entry.value.keyboardBindings.map((b) {
+          // app 外全局查词热键**不做** Ctrl→Meta：⌘⌥D 是 macOS 系统级「打开/关闭
+          // Dock 隐藏」快捷键，系统热键先于应用的 RegisterEventHotKey 处理，
+          // 应用永远收不到。Ctrl⌥D 在 macOS 上空闲，保持与 Windows 同键。
+          if (entry.key == ShortcutAction.globalExternalLookup) {
+            return b;
+          }
           if (b.modifiers.contains(ModifierKey.ctrl)) {
             final newMods = Set<ModifierKey>.of(b.modifiers)
               ..remove(ModifierKey.ctrl)

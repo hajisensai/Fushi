@@ -6,6 +6,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
+import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -98,7 +99,7 @@ Future<void> _terminatePortOwnerAndRetry(
   // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
   // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
   await appModel.setYomitanApiServerEnabled(true);
-  for (int attempt = 0; ; attempt++) {
+  for (int attempt = 0;; attempt++) {
     try {
       await appModel.startYomitanApiServer();
       break;
@@ -270,6 +271,27 @@ SettingsDestination buildLookupDestination() {
                 value,
               );
               settingsContext.refresh();
+            },
+          ),
+          // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
+          // 授权；未授权时热键退化为只查当前剪贴板文本。这里是**唯一**会弹系统
+          // 授权提示的入口——热键路径永远不弹（AppDelegate.swift 的 fail-open 契约）。
+          SettingsActionItem(
+            id: 'lookup.accessibility_permission',
+            title: t.lookup_accessibility_permission_request,
+            subtitle: t.lookup_accessibility_permission_hint,
+            icon: Icons.accessibility_new_outlined,
+            visible: (SettingsContext settingsContext) =>
+                SelectionCapture.needsAccessibilityTrust,
+            onTap: (SettingsContext settingsContext) async {
+              final bool trusted =
+                  await SelectionCapture.requestAccessibilityTrust();
+              _showSettingsSnackBar(
+                settingsContext,
+                trusted
+                    ? t.lookup_accessibility_permission_granted
+                    : t.lookup_accessibility_permission_missing,
+              );
             },
           ),
           // 查词输入框希望输入法切到哪种语言。默认未设置 = 不碰用户的系统输入法
