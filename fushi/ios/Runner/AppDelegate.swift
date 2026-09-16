@@ -50,6 +50,9 @@ import Flutter
     // 系统语音转录（iOS 26 的 SpeechAnalyzer）。老系统上原生侧应答「不支持」，
     // Dart 侧据此不把这个引擎放进下拉。
     FushiSpeechTranscriber.register(binaryMessenger: binaryMessenger)
+    // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 macOS 同一份实现，
+    // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
+    FushiClipboardImage.register(binaryMessenger: binaryMessenger)
     // 查词输入框的输入法语言。install 必须在任何输入框成为第一响应者之前完成——
     // `textInputMode` 是在 becomeFirstResponder **之前**被读的。
     let imeInstalled = LookupImeLanguage.install()

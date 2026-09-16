@@ -29,6 +29,7 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningHeadPadMs, kMiningPadMaxMs, kMiningTailPadMs;
@@ -1558,6 +1559,31 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) async {
     await setPref('video_immersive_mode', mode.storageValue);
+    notifyListeners();
+  }
+
+  /// 截图去向：保存对话框 / 剪贴板 / 指定目录。旧库没有该 key 时落到
+  /// [VideoScreenshotDestination.ask]，即这个偏好出现之前的行为，不需要迁移。
+  VideoScreenshotDestination get videoScreenshotDestination =>
+      VideoScreenshotDestination.fromStorage(
+        getPref(
+          kVideoScreenshotDestinationPref,
+          defaultValue: VideoScreenshotDestination.ask.storageValue,
+        ) as String,
+      );
+
+  Future<void> setVideoScreenshotDestination(
+      VideoScreenshotDestination destination) async {
+    await setPref(kVideoScreenshotDestinationPref, destination.storageValue);
+    notifyListeners();
+  }
+
+  /// [VideoScreenshotDestination.directory] 的目标目录；空串 = 未设置。
+  String get videoScreenshotDirectory =>
+      getPref(kVideoScreenshotDirectoryPref, defaultValue: '') as String;
+
+  Future<void> setVideoScreenshotDirectory(String path) async {
+    await setPref(kVideoScreenshotDirectoryPref, path);
     notifyListeners();
   }
 
