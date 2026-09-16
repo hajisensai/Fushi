@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -22,6 +23,7 @@
 #include "json/yomitan_parser.hpp"
 #include "memory/memory.hpp"
 #include "util/fs_utf8.hpp"
+#include "util/term_rules_flag.hpp"
 
 namespace {
 
@@ -75,6 +77,9 @@ struct DictionaryQuery::DictionaryData {
   memory::mapped_file media_index;
   int version = 1;                   // 磁盘格式版本（marker 文件名解析，见 dict_format_version）
   ZSTD_DDict* zstd_dict = nullptr;   // v2 + dict.zstd 存在时非空
+  // 本词典没有任何 term 带词性（term_rules.flag = 0）：读侧把空 rules 当通配 "*"，
+  // 否则 filter_by_pos 会把这种词典的每一个变形还原命中全部丢掉。
+  bool rules_wildcard = false;
 
   ~DictionaryData() {
     memory::unmap(blobs);
@@ -124,6 +129,65 @@ int dict_format_version(const std::string& path) {
     return 1;
   }
   return 0;
+}
+
+// 存量词典（term_rules.flag 缺失/失效）一次性扫描：任何 term 记录的 rules 非空即
+// 返回 true。走 hash.table → offset-index → 记录 的同一条路径（与
+// probe_dict_content 一样，记录区没有边界元数据、glossary blob 交错，不能顺序扫）。
+// 带词性的词典（日语词典动词/形容词占三成）几个槽位就命中退出；只有真正无词性
+// 的词典才付一次全扫，结果随后被 add_dict 写回 sidecar，下次启动不再扫。
+bool scan_term_rules_present(const memory::mapped_file& hash_table, const memory::mapped_file& blobs) {
+  if (!hash_table || hash_table.size < sizeof(uint32_t) || !blobs) {
+    return true;  // 读不到就按 Yomitan 既有语义走，不放宽过滤。
+  }
+  uint32_t capacity = 0;
+  std::memcpy(&capacity, hash_table.data, sizeof(uint32_t));
+  const size_t slot_size = sizeof(uint64_t) * 2;  // {hash, offset}
+  const size_t max_slots = (hash_table.size - sizeof(uint32_t)) / slot_size;
+  if (capacity > max_slots) {
+    capacity = static_cast<uint32_t>(max_slots);
+  }
+  const uint8_t* slots = hash_table.data + sizeof(uint32_t);
+
+  for (uint32_t i = 0; i < capacity; i++) {
+    const uint8_t* slot = slots + static_cast<size_t>(i) * slot_size;
+    uint64_t slot_hash = 0;
+    uint64_t bucket = 0;
+    std::memcpy(&slot_hash, slot, sizeof(uint64_t));
+    if (slot_hash == 0) {
+      continue;
+    }
+    std::memcpy(&bucket, slot + sizeof(uint64_t), sizeof(uint64_t));
+    if (bucket + sizeof(uint32_t) > blobs.size) {
+      continue;
+    }
+    BlobReader idx(blobs.data + bucket, blobs.size - bucket);
+    const uint32_t count = idx.read<uint32_t>();
+    for (uint32_t k = 0; k < count; k++) {
+      if (!idx.has(sizeof(uint64_t))) {
+        break;
+      }
+      const uint64_t rec = idx.read<uint64_t>();
+      if (rec + 1 > blobs.size) {
+        continue;
+      }
+      // 与 query_raw 逐字段同布局：type, expr, reading, glossary offset/size,
+      // definition tags, rules。
+      BlobReader blob(blobs.data + rec, blobs.size - rec);
+      if (blob.read<uint8_t>() != 0) {
+        continue;
+      }
+      (void)blob.read_str(blob.read<uint16_t>());  // expression
+      (void)blob.read_str(blob.read<uint16_t>());  // reading
+      (void)blob.read<uint64_t>();                 // glossary offset
+      (void)blob.read<uint32_t>();                 // glossary size
+      (void)blob.read_str(blob.read<uint8_t>());   // definition tags
+      if (blob.read<uint8_t>() > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace
@@ -183,6 +247,18 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
   dict.data->blobs = memory::map_rd(path + "/blobs.bin");
   if (!dict.data->blobs) {
     return;
+  }
+
+  // 词性有无（util/term_rules_flag.hpp）：导入端写好的 sidecar 直接读；存量词典
+  // 缺 sidecar 就扫一次记录并回填（回填失败只是下次再扫，不影响本次装载）。
+  if (type == TERM) {
+    const uint64_t blobs_size = dict.data->blobs.size;
+    std::optional<bool> rules_present = fushi::term_rules_flag::read(path, blobs_size);
+    if (!rules_present.has_value()) {
+      rules_present = scan_term_rules_present(dict.data->hash_table, dict.data->blobs);
+      fushi::term_rules_flag::write(path, *rules_present, blobs_size);
+    }
+    dict.data->rules_wildcard = !*rules_present;
   }
 
   dict.data->media = memory::map_rd(path + "/media.bin");
@@ -288,6 +364,11 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
 
       auto rules_size = blob.read<uint8_t>();
       std::string_view rules = blob.read_str(rules_size);
+      if (rules.empty() && data->rules_wildcard) {
+        // 整本词典没有词性：空 rules 不是「非变形词」，而是「转换器没写」。与
+        // write_simple_dict 的存储规则对齐成通配，filter_by_pos 不再丢它。
+        rules = "*";
+      }
 
       auto term_tag_size = blob.read<uint8_t>();
       std::string_view term_tags = blob.read_str(term_tag_size);

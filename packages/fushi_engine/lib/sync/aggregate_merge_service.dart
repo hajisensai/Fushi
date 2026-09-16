@@ -98,7 +98,8 @@ class AggregateMergeService {
     return out;
   }
 
-  /// v92 段墓碑并集：同 (mediaKind, mediaKey) 取 max deletedAt。
+  /// v92 段墓碑并集：同 (profileName, mediaKind, mediaKey) 取 max deletedAt
+  /// （v105 起键带 Profile 名，见 [StudyTombstoneRecord.key]）。
   static Map<String, StudyTombstoneRecord> mergeStudyTombstones(
     Iterable<StudyTombstoneRecord> local,
     Iterable<StudyTombstoneRecord> remote,

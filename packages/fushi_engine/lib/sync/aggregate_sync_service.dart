@@ -285,10 +285,11 @@ class AggregateSyncService {
     // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2214）不上行（merged 是
     // local ∪ peer，peer 那份仍带本机已删媒体的旧段——与 BUG-1572 的 legacy 同病）；
     // 墓碑本身透传，删除才能传到对端。
+    final Map<int, String> profileNameById = await _profileNameById();
     final Map<String, int> segmentTombstoned = <String, int>{
       for (final StudySegmentTombstoneRow t
           in await _db.getStudySegmentTombstones())
-        '${t.mediaKind}|${t.mediaKey}': t.deletedAt,
+        _tombstoneRecordOf(t, profileNameById).key: t.deletedAt,
     };
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
@@ -803,24 +804,23 @@ class AggregateSyncService {
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
     // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
     // BUG-2221：游戏段 / 碑不出本机（[AggregateMergeService.isStudyKindSyncable]）。
-    final List<StudySegmentRow> segments = await _db.getStudySegments();
+    // v105：全部 Profile 的段都上行，每条带自己 Profile 的**名字**。
+    final List<StudySegmentRow> segments =
+        await _db.getStudySegments(allProfiles: true);
     final List<StudySegmentTombstoneRow> segmentTombstones =
         await _db.getStudySegmentTombstones();
+    final Map<int, String> profileNameById = await _profileNameById();
 
     return AggregateSnapshot(
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRow s in segments)
           if (AggregateMergeService.isStudyKindSyncable(s.mediaKind))
-            _segmentRecordOf(s),
+            _segmentRecordOf(s, profileNameById),
       ],
       studySegmentTombstones: <StudyTombstoneRecord>[
         for (final StudySegmentTombstoneRow t in segmentTombstones)
           if (AggregateMergeService.isStudyKindSyncable(t.mediaKind))
-            StudyTombstoneRecord(
-              mediaKind: t.mediaKind,
-              mediaKey: t.mediaKey,
-              deletedAt: t.deletedAt,
-            ),
+            _tombstoneRecordOf(t, profileNameById),
       ],
       readingStats: <ReadingStatRecord>[
         for (final ReadingStatisticRow r in reading)
@@ -896,7 +896,20 @@ class AggregateSyncService {
     );
   }
 
-  static StudySegmentRecord _segmentRecordOf(StudySegmentRow s) =>
+  /// v105：本机 `profiles.id` → 名字（wire 只传名字）。
+  Future<Map<int, String>> _profileNameById() async => <int, String>{
+        for (final ProfileRow p in await _db.getAllProfiles()) p.id: p.name,
+      };
+
+  /// v105：名字 → 本机 `profiles.id`（落地时反解）。
+  Future<Map<String, int>> _profileIdByName() async => <String, int>{
+        for (final ProfileRow p in await _db.getAllProfiles()) p.name: p.id,
+      };
+
+  static StudySegmentRecord _segmentRecordOf(
+    StudySegmentRow s,
+    Map<int, String> profileNameById,
+  ) =>
       StudySegmentRecord(
         uid: s.uid,
         deviceId: s.deviceId,
@@ -912,9 +925,24 @@ class AggregateSyncService {
         chars: s.chars,
         pages: s.pages,
         updatedAt: s.updatedAt,
+        profileName: profileNameById[s.profileId] ?? '',
       );
 
-  static StudySegmentsCompanion _segmentCompanionOf(StudySegmentRecord r) =>
+  static StudyTombstoneRecord _tombstoneRecordOf(
+    StudySegmentTombstoneRow t,
+    Map<int, String> profileNameById,
+  ) =>
+      StudyTombstoneRecord(
+        mediaKind: t.mediaKind,
+        mediaKey: t.mediaKey,
+        deletedAt: t.deletedAt,
+        profileName: profileNameById[t.profileId] ?? '',
+      );
+
+  static StudySegmentsCompanion _segmentCompanionOf(
+    StudySegmentRecord r, {
+    required int profileId,
+  }) =>
       StudySegmentsCompanion.insert(
         uid: r.uid,
         deviceId: r.deviceId,
@@ -930,6 +958,7 @@ class AggregateSyncService {
         chars: Value(r.chars),
         pages: Value(r.pages),
         updatedAt: r.updatedAt,
+        profileId: Value(profileId),
       );
 
   /// v92 wire v2 落地：**先落墓碑**（碑戳只增不减，并删本地 `startAt < deletedAt`
@@ -937,19 +966,39 @@ class AggregateSyncService {
   /// 墓碑门（`upsertStudySegmentsIfNewer` 跳过 `startAt < deletedAt`）看不到新碑。
   /// merge 侧已仲裁掉被压制的段与游戏段（BUG-2221：旧端快照直落时这里再丢一次）。
   /// 幂等：同一快照重放，墓碑不变、段同值不覆盖。
+  ///
+  /// v105：对端 Profile **名字** → 本机同名 Profile id。段：名字为空（旧端）或本机
+  /// 没有同名 Profile → 落进当前激活 Profile（数据不丢，只是归属退化）。碑：名字
+  /// 为空 → 当前激活 Profile（旧端整机就是一个 Profile，语义一致）；名字对不上 →
+  /// **丢弃**（压错 Profile = 删别人的历史）。已有段的归属不随 LWW 改（DAO 保证）。
   Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
+    final Map<String, int> profileIdByName = await _profileIdByName();
+    final int activeProfileId = await _db.resolveActiveProfileId();
+    int? resolve(String profileName, {required bool fallbackToActive}) {
+      if (profileName.isEmpty) return activeProfileId;
+      final int? id = profileIdByName[profileName];
+      if (id != null) return id;
+      return fallbackToActive ? activeProfileId : null;
+    }
+
     for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
       if (!AggregateMergeService.isStudyKindSyncable(t.mediaKind)) continue;
+      final int? profileId = resolve(t.profileName, fallbackToActive: false);
+      if (profileId == null) continue;
       await _db.applyStudySegmentTombstone(
         mediaKind: t.mediaKind,
         mediaKey: t.mediaKey,
         deletedAt: t.deletedAt,
+        profileId: profileId,
       );
     }
     final List<StudySegmentsCompanion> rows = <StudySegmentsCompanion>[
       for (final StudySegmentRecord r in snapshot.studySegments)
         if (AggregateMergeService.isStudyKindSyncable(r.mediaKind))
-          _segmentCompanionOf(r),
+          _segmentCompanionOf(
+            r,
+            profileId: resolve(r.profileName, fallbackToActive: true)!,
+          ),
     ];
     if (rows.isEmpty) return;
     await _db.upsertStudySegmentsIfNewer(rows);

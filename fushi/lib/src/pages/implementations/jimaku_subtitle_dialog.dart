@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/pages/implementations/subtitle_search_panel.dart';
@@ -28,6 +29,8 @@ class JimakuSubtitleDialog extends StatelessWidget {
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
     this.httpClientFactory,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
     this.debugInitialCandidates,
@@ -46,6 +49,10 @@ class JimakuSubtitleDialog extends StatelessWidget {
   final String? initialPreferredLanguage;
   final Future<void> Function(String langCode)? onPreferredLanguageChanged;
   final Future<http.Client> Function()? httpClientFactory;
+
+  /// AI 搜索辅助的提供商解析 / 客户端工厂（透传给面板，见 [SubtitleSearchPanel]）。
+  final AiProviderResolver? resolveAiProvider;
+  final AiClientFactory? aiClientFactory;
   @visibleForTesting
   final List<JimakuCandidate>? debugInitialCandidates;
   @visibleForTesting
@@ -74,6 +81,8 @@ class JimakuSubtitleDialog extends StatelessWidget {
         initialPreferredLanguage: initialPreferredLanguage,
         onPreferredLanguageChanged: onPreferredLanguageChanged,
         httpClientFactory: httpClientFactory,
+        resolveAiProvider: resolveAiProvider,
+        aiClientFactory: aiClientFactory,
         seed: seed,
         videoPath: videoPath,
         debugInitialCandidates: debugInitialCandidates,

@@ -58,7 +58,11 @@ class GlobalLookupController {
   @visibleForTesting
   static bool? platformOverride;
 
-  static bool get isSupported => platformOverride ?? Platform.isWindows;
+  /// Windows: runner GlobalLookupWindow (WebView2). macOS: Runner
+  /// GlobalLookupOverlay.swift (NSPanel + WKWebView) on the SAME channel
+  /// contract. Linux has no native overlay yet.
+  static bool get isSupported =>
+      platformOverride ?? (Platform.isWindows || Platform.isMacOS);
 
   /// 覆盖窗此刻能否接查词（平台支持且 [start] 已跑）。悬浮字幕点词以此决定走
   /// 覆盖窗还是退回主窗 tab，请求不丢。
@@ -598,15 +602,43 @@ class GlobalLookupController {
     );
   }
 
-  /// Absolute folder that holds popup.html on Windows:
-  /// <exeDir>/data/flutter_assets/assets/popup.
-  String _popupAssetsDir() => p.join(
-        p.dirname(Platform.resolvedExecutable),
-        'data',
+  /// Absolute folder that holds popup.html — see [popupAssetsDirFor].
+  String _popupAssetsDir() => popupAssetsDirFor(
+        Platform.resolvedExecutable,
+        isMacOS: Platform.isMacOS,
+      );
+
+  /// Absolute popup assets folder for the native overlay to serve:
+  ///   · Windows / Linux: `<exeDir>/data/flutter_assets/assets/popup`;
+  ///   · macOS: `<App>.app/Contents/Frameworks/App.framework/Resources/
+  ///     flutter_assets/assets/popup` (the executable lives in Contents/MacOS;
+  ///     same bundle layout webview_asset_url.dart probes for in-app assets).
+  ///
+  /// [context] is the path style to resolve with (defaults to the running
+  /// platform's); tests pass `p.windows` / `p.posix` explicitly so the
+  /// Windows layout can be asserted on a Linux CI runner and vice versa.
+  @visibleForTesting
+  static String popupAssetsDirFor(
+    String resolvedExecutable, {
+    required bool isMacOS,
+    p.Context? context,
+  }) {
+    final p.Context ctx = context ?? p.context;
+    final String exeDir = ctx.dirname(resolvedExecutable);
+    if (isMacOS) {
+      return ctx.normalize(ctx.join(
+        exeDir,
+        '..',
+        'Frameworks',
+        'App.framework',
+        'Resources',
         'flutter_assets',
         'assets',
         'popup',
-      );
+      ));
+    }
+    return ctx.join(exeDir, 'data', 'flutter_assets', 'assets', 'popup');
+  }
 
   /// TODO-1066 — app 外查词的**触发源无关**入口：抓前台程序当前选中的文本，
   /// 查词，弹出覆盖窗卡片。

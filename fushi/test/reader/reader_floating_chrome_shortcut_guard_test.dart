@@ -54,15 +54,22 @@ void main() {
     expect(helper, contains('_toggleChrome();'));
   });
 
-  test('floating show/hide cancels or re-arms the one auto-hide timer', () {
+  test('floating show/hide is one click switch, no timer of its own', () {
     final String reveal = _slice(
       source,
       'bool _handleFloatingChromeReveal()',
       'void _handleVnBlankTap()',
     );
+    // 用户 2026-09-14：这条路是纯开关——同一下点击既能开也能关，方向由当前态
+    // 决定，而不是「开一次再等计时关」。
+    expect(reveal, contains('_chromeTransientVisible = !_chromeTransientVisible'));
+    expect(
+      reveal,
+      isNot(contains('_armChromeAutoHide();')),
+      reason: '点出来的栏不自动收起；计时只剩 VN 推进那一处',
+    );
+    // 仍要停表：VN 推进可能刚武装过一次，收起时不停掉，计时到点会对着已收起的
+    // 栏再通知一次。
     expect(reveal, contains('_cancelChromeAutoHide();'));
-    expect(reveal, contains('_chromeTransientVisible = false'));
-    expect(reveal, contains('_chromeTransientVisible = true'));
-    expect(reveal, contains('_armChromeAutoHide();'));
   });
 }

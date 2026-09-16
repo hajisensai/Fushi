@@ -171,6 +171,38 @@ void main() {
       expect(plain.toJson()['hasAudiobook'], isNot(true));
       expect(RemoteBookInfo.fromJson(plain.toJson()).hasAudiobook, isFalse);
     });
+
+    test('importedAt 经 JSON round-trip 透传；旧 host 不带 → null 且不写键', () {
+      const RemoteBookInfo info = RemoteBookInfo(
+        title: '夏目漱石',
+        hasContent: true,
+        importedAt: 1712345678000,
+      );
+      expect(info.toJson()['importedAt'], 1712345678000);
+      expect(RemoteBookInfo.fromJson(info.toJson()).importedAt, 1712345678000);
+
+      // additive 纪律：不带该字段的书清单 wire 字节不变，解出来是 null（而不是 0
+      // ——0 会被书架当成「1970 年入库」排到最后，比没有更糟）。
+      const RemoteBookInfo legacy =
+          RemoteBookInfo(title: 'Legacy', hasContent: true);
+      expect(legacy.toJson().containsKey('importedAt'), isFalse);
+      expect(RemoteBookInfo.fromJson(legacy.toJson()).importedAt, isNull);
+    });
+
+    test('RemoteAudiobookInfo.importedAt 同范式 additive', () {
+      const RemoteAudiobookInfo info = RemoteAudiobookInfo(
+        bookKey: '',
+        uid: 'srt-uid',
+        importedAt: 1700000000000,
+      );
+      expect(
+        RemoteAudiobookInfo.fromJson(info.toJson()).importedAt,
+        1700000000000,
+      );
+      const RemoteAudiobookInfo legacy = RemoteAudiobookInfo(bookKey: 'k');
+      expect(legacy.toJson().containsKey('importedAt'), isFalse);
+      expect(RemoteAudiobookInfo.fromJson(legacy.toJson()).importedAt, isNull);
+    });
   });
 
   // ── LocalLibraryHostService 书籍 round-trip ─────────────────────────
@@ -332,6 +364,30 @@ void main() {
     });
 
     // ── listBooks ──────────────────────────────────────────────────────────
+    test('listBooks 下发 EpubBooks.importedAt（client 书架排序要同一把尺子）', () async {
+      final String extractDir = p.join(tmp.path, 'StampedBook');
+      Directory(extractDir).createSync(recursive: true);
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'StampedBook',
+          title: 'StampedBook',
+          epubPath: p.join(extractDir, 'original.epub'),
+          extractDir: extractDir,
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: 1712345678000,
+        ),
+      );
+
+      final LocalLibraryHostService svc = _buildSvc(db: db);
+      final List<RemoteBookInfo> list = await svc.listBooks();
+
+      expect(list, hasLength(1));
+      // 不下发它，对端只能给远端占位卡造负数假戳，「导入时间」/「最近阅读」两档下
+      // 远端书恒沉底——用户实报的「合集外排序不对」。
+      expect(list.single.importedAt, 1712345678000);
+    });
+
     test('listBooks 反映 DB 书库，extractDir 存在时 hasContent==true', () async {
       final String extractDir = p.join(tmp.path, 'MyBook');
       await _insertBookWithExtractDir(

@@ -20,7 +20,6 @@ class AudiobookPlayBar extends StatelessWidget {
     this.reversed = false,
     this.invertSkip = false,
     this.trailing,
-    this.showSeekButtons = false,
     this.showSettingsButton = true,
     super.key,
   });
@@ -59,10 +58,6 @@ class AudiobookPlayBar extends StatelessWidget {
 
   /// 跟随键之前的可选尾部内容（桌面端把状态行文字并进播放条右端）。
   final Widget? trailing;
-
-  /// 在「上一句 / 播放 / 下一句」两侧再给 -10s / +10s（与有声书面板同一套传输键）。
-  /// 只在 [skipActionSeconds] == 0（按句跳）时有意义；按秒跳时左右键已是快退快进。
-  final bool showSeekButtons;
 
   /// Shared reader header already exposes settings, so its playback bar can omit
   /// the duplicate button and leave room for full-size transport touch targets.
@@ -136,19 +131,12 @@ class AudiobookPlayBar extends StatelessWidget {
     // 右键（屏幕右侧，id=audiobook_next）：invertSkip 开时变后退键。
     final ({IconData icon, String tooltip, VoidCallback onPressed}) rightKey =
         invertSkip ? backwardKey : forwardKey;
-    final bool seekButtons = showSeekButtons && skipActionSeconds == 0;
+    // 用户 2026-09-14：底栏不再挂 -10s / +10s 两颗跳秒键。三联键（上一句 / 播放 /
+    // 下一句）是底栏的全部传输面；要按秒跳就把「跳转动作」设成 5/10/15/30 秒，
+    // 左右两键本身就变成快退 / 快进（[skipActionSeconds] 分支），不必再多两颗。
     final Widget playbackControls = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (seekButtons)
-          _FocusableBarButton(
-            id: const FushiFocusId('audiobook_back10'),
-            icon: const Icon(Icons.replay_10_outlined),
-            iconSize: 20,
-            style: flatStyle,
-            tooltip: '-10s',
-            onPressed: () => controller.seekRelative(-10),
-          ),
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_prev'),
           icon: Icon(leftKey.icon),
@@ -178,15 +166,6 @@ class AudiobookPlayBar extends StatelessWidget {
           tooltip: rightKey.tooltip,
           onPressed: rightKey.onPressed,
         ),
-        if (seekButtons)
-          _FocusableBarButton(
-            id: const FushiFocusId('audiobook_fwd10'),
-            icon: const Icon(Icons.forward_10_outlined),
-            iconSize: 20,
-            style: flatStyle,
-            tooltip: '+10s',
-            onPressed: () => controller.seekRelative(10),
-          ),
       ],
     );
     final List<Widget> barItems = <Widget>[

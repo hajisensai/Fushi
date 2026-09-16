@@ -47,7 +47,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - 源码 `packages/fushi_server/`（纯 Dart，依赖 `packages/fushi_engine`）；本机构建 `cd packages/fushi_server && dart build cli`，产物 `build/cli/<os>_<arch>/bundle/`（`bin/` 可执行 + `lib/` native asset）。**不要 `dart compile exe`**：sqlite3 是 native asset，单文件 exe 运行时打不开 DB。
 - CI：`build-multiplatform.yml` 的 linux job 在 Flutter Linux 构建后加跑 `dart build cli`，再把两块随包原生库放进 `bundle/lib/`：① `libfushi_torrent_ffi.so`（`native/fushi_torrent/build_linux_so.sh`：vcpkg manifest **静态链** libtorrent 2.0.11 + boost + openssl，overlay triplet `x64-linux-fpic`，ABI 校验同 `native-torrent-gate.yml`；目标机零运行库依赖）② `libonnxruntime.so` 1.22.0 CPU 版（与 `third_party/flutter_onnxruntime/linux` 同版本；CUDA 用户自换 GPU 包并配 `onnxruntime_library`）。随后用这份 `.so` 跑 `packages/fushi_torrent` 的 FFI 测试，再真进程冒烟：起 `serve`，断言 admin API 报 `backend=embedded` 且 17 语 ASR plan 无 error（= 两块库都真被 dlopen 了）。工件名 `fushi_server-linux-x64`。
 - 服务端找随包库的规则在 `packages/fushi_server/lib/src/native_libs.dart`：`<exe 同级>` → `<exe>/../lib/` → cwd；都没有就交给引擎按裸名走系统搜索路径。
-- 发布：`.github/workflows/release-server.yml`（**只有 `workflow_dispatch`**，通道 beta / formal），Linux（`ubuntu-22.04`，静态 `.so`）+ Windows（vcpkg DLL）两个包，各自真进程冒烟后由 publish job 发到 GitHub Release，tag `fushi-server-v<version>-beta.<seq>` / `fushi-server-v<version>`。版本取 `packages/fushi_server/pubspec.yaml` 的 `version:`（与 app 独立），序号仍是 `tool/release_sequence.sh`。**服务端 release 永远 `make_latest: false`，formal 也不例外**：app 稳定通道更新检查走 `releases/latest`，服务端包成为 Latest 会把五端 app 的更新判成「远端不比本机新」而停更。`tool/check_release_policy.ps1` 已把它纳入检查。没有安装包与自更新。安装、systemd、配置、admin API、上传协议见 [packages/fushi_server/README.md](../../packages/fushi_server/README.md)。
+- 发布：Release **落在独立仓 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server)，不落本仓**（2026-09-14 起）。那边只有 README / LICENSE / 一条薄 workflow `release.yml`（`workflow_dispatch`，输入 channel = beta / formal、source_ref = 本仓 ref 默认 `develop`），它 `uses: hajisensai/Fushi/.github/workflows/release-server.yml@develop` 调本仓的**可复用 workflow**（`workflow_call`）：Linux（`ubuntu-22.04`，静态 `.so`）+ Windows（vcpkg DLL）两个包，各自真进程冒烟后由 publish job 用调用方的 `GITHUB_TOKEN` 发到 fushi-server 的 GitHub Release，tag `v<version>-beta.<seq>` / `v<version>`；源码 checkout 显式钉 `repository: hajisensai/Fushi`（公开仓，**零 PAT / 零 secret**）。版本取 `packages/fushi_server/pubspec.yaml` 的 `version:`（与 app 独立），序号仍是 `tool/release_sequence.sh`（在 hibiki checkout 上算）。**本仓自己不能发服务端包**：channel job 断言 `github.repository != hajisensai/Fushi` 直接红——app 稳定通道更新检查走本仓 `releases/latest`，服务端包在本仓成为 Latest 会把五端 app 的更新判成「远端不比本机新」而停更；搬到独立仓后 formal 就是正常的 Latest。`tool/check_release_policy.ps1` 锁三件事：只有 `workflow_call`、有这条断言、每个 checkout 都钉源仓。发包操作：`gh workflow run release.yml -R hajisensai/fushi-server -f channel=beta -f source_ref=develop`。没有安装包与自更新。安装、systemd、配置、admin API、上传协议见 [packages/fushi_server/README.md](../../packages/fushi_server/README.md)。
 
 ## 发布通道
 
@@ -58,52 +58,17 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - formal（手动）：通过手动 GitHub Release 或 `workflow_dispatch` 选择 `formal`。默认 tag 为 `v<version>`；Android 产物包含 debug APK 与 split ABI release APK，Windows 产物为 installer，macOS 为 app zip，iOS 为 no-codesign IPA。formal 是唯一允许成为 Latest 的通道。
 - 禁止事项：不要把 push、debug tag、debug APK 或 beta/test workflow 接到 formal/Latest；不要让 push 上传正式 release APK 或发布 formal/Latest；不要把 beta/test 发布成 non-prerelease 或 Latest。
 
-### formal 发版顺序：迁移桥包必须先于本体（CI 硬门）
+### Windows 安装器：原地升级与「数据存储位置」页
 
-改名后**老 Hibiki 用户的迁移入口挂在 Fushi 的正式版 release 上**，所以 formal 通道多了一条
-顺序约束，由 `release.yml` 的 `Require migration bridge assets on the formal tag` 步骤强制。
+（历史备注：2.0 改名那一轮，formal 通道曾有「先发 Android 迁移桥包 `bridge-<version>-<abi>.apk`
+再发本体」的 CI 硬门，让已出货的 Hibiki v1.2.0 先命中桥包。该硬门与 `bridge/*` 分支已随
+2.7.0 正式版（资产表只有 `fushi-*`）一起退役；只剩
+`fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart` 继续钉住本体资产名
+「产品族前缀 + ABI 全名」的命名契约，别再按桥包顺序发版。）
 
-为什么：已出货的 Hibiki `v1.2.0` 二进制永远改不了，它挑包只看「`.apk` 结尾 + 名字含设备
-`SUPPORTED_ABIS` 任一项」，**完全不认产品族**（本体侧的 `assetBelongsToThisProduct` 是
-BUG-1481 之后才有的，救不了已装机的包）。GitHub API 按**文件名升序**返回资产，于是：
-
-- 桥包资产用 `bridge-<version>-<abi>.apk`（`bridge-` < `fushi-`）→ 老客户端先命中桥包，
-  升到的是能原地覆盖安装的迁移桥包（旧包名 `app.hibiki.reader` + 旧签名 + 迁移导出器）；
-- 桥包**缺席**时老客户端退化成「随便拿列表里第一个 apk」，装上跨包名的 Fushi = 并存的第二个
-  空 app。用户以为换代完成卸掉 Hibiki，`/data/user/0/app.hibiki.reader/` 下的数据永久丢失。
-
-不变式与反向用例（含「前缀换成 `hibiki-` 会失守」「桥包缺席会失守」）钉在
-`fushi/test/utils/misc/formal_asset_naming_legacy_contract_test.dart`。
-
-发版顺序（**桥包先**，顺序错了硬门会直接失败，不会留下只有 `fushi-*` 的正式 release）：
-
-```bash
-# ① 先发迁移桥包（只出 Android；桥分支 release.yml 不含桌面，也不要跑 release-desktop.yml）
-gh workflow run release.yml --repo hajisensai/Fushi \
-  --ref bridge/auto-migrate-download \
-  -f channel=formal -f tag_name=v<version> -f release_name="Fushi <version>" -f skip_tests=false
-
-# ② 桥包资产到位后再发本体（手动 GitHub Release 或 workflow_dispatch，同一个 tag）
-
-# ③ 收尾核对：两族资产都在
-gh release view v<version> --repo hajisensai/Fushi --json assets \
-  --jq '.assets[].name' | sort
-```
-
-判断桥包那一步是否成功的注意点：
-
-- 桥分支的 `tests` job 与 `build` job **无 `needs` 依赖、并行跑**，`tests` 红**不会**挡住
-  资产发布（线上桥包 `10192` 就是这么发出去的）。别看整体 run 颜色，看 `build` job 结论
-  和 release 上真实的资产列表。
-- 桥分支 formal 的 release 标题默认是 `Hibiki <version>`，本体那次发布会把它改写成
-  `Fushi <version>`；不想出现中间态就在 ① 显式传 `-f release_name=`（**键名是 `release_name`，不是 `name`**；
-  传 `name` 会被 GitHub 直接 422 拒掉：`Unexpected inputs provided: ["name"]`）。
-- 桥包用 `LEGACY_KEYSTORE_*` 四件套签名（旧 Hibiki 证书，与 `v1.1.0`/`v1.2.0` 同公钥
-  `d40c4a16…`），这是它能原地覆盖安装的前提；主仓 `KEYSTORE_*` 已轮换为 Fushi 新签名，
-  两套 secrets 都必须在。
-- Windows 老用户**不需要**桥包：他们按 `-windows-setup.exe` 后缀直接拿
+- 改名前的 Windows 老用户按 `-windows-setup.exe` 后缀直接拿
   `fushi-<version>-windows-setup.exe`，Inno `AppId` 未变 → 原地升级，数据由
-  `legacy_support_dir_migration.dart` 自动搬迁。所以别给桥分支发桌面产物。
+  `legacy_support_dir_migration.dart` 自动搬迁。
 - Windows 安装器的「数据存储位置」页（`fushi/windows/installer/fushi.iss`）**只在全新
   安装出现**。`IsFreshInstall` 是**三个**条件的 and：无卸载键、`%APPDATA%\Fushi\Fushi`
   不存在、`%APPDATA%\Hibiki\Hibiki` 也不存在（第三条兜改名前的老用户「卸载留数据后
@@ -141,14 +106,18 @@ gh release view v<version> --repo hajisensai/Fushi --json assets \
 
 - **Apple 凭据全部可选**。缺任何一项，对应链路整段跳过，未签名 IPA / ad-hoc macOS zip
   照常发布 —— fork 和无开发者账号的状态下发布链路完全不受影响。
-- **TestFlight 只在手动 `workflow_dispatch` 的 beta / formal 通道上传**（dispatch 输入
-  `upload_testflight`，默认开）。push 触发的 debug 通道每次提交都会跑，传上去只会白烧
-  App Store Connect 的处理配额并把构建号推高，而构建号在同一语义版本下必须单调，
-  浪费不可回收。
+- **TestFlight 上传两条路**：手动 `workflow_dispatch` 的 beta / formal 直接放行（输入
+  `upload_testflight`，默认开），debug 只在 `testflight_only=true` 时放行；**push 的 debug 通道
+  约每三次传一次**（发布序列 = 构建号能被 3 整除的那次，2026-09-16 用户拍板「发三次调试版
+  触发一次 TestFlight」；用共享序列而不是 run 号，run 号在发布 workflow 里是禁用词）。不每次
+  都传：push 一天 5~13 次，全传会让 App Store Connect 的处理排队压后真正想发的 beta、TestFlight
+  列表被 debug 构建淹掉（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。
+  09-14 ~ 09-16 的定时通道 `testflight-debug.yml` 已撤（两条节律并存会重复上传），守卫钉着
+  不得回潮。
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
-  App Store 签名包。TestFlight 用的是另一次、只在手动 beta/formal 时才发生的签名构建，
-  产物不进 Release 资产 —— 代价是这种发布下 iOS 构建两次。
+  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每第三次 debug
+  push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 

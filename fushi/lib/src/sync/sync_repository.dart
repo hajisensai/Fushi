@@ -1204,6 +1204,9 @@ class SyncRepository {
   ];
 
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
+    // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
+    kStatLegacyProfileIdPrefKey,
     _keyBackendType,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
@@ -1256,6 +1259,12 @@ class SyncRepository {
     // 都描述本机能力。跨设备恢复会携带明文凭据、无效绝对路径或错误 source id。
     'video_resource_torznab_config',
     'video_subtitle_opensubtitles_config',
+    // 用户自配的 AI 提供商：条目里带 base64 的 API key，且本地推理服务（Ollama /
+    // LM Studio）的地址是 `http://localhost:11434` 这种只对本机成立的端点。跨设备
+    // 恢复既泄付费凭据又指向一台并不在跑的服务。功能映射按 provider id 指向它们，
+    // 单独漂过去只会变成一堆悬空 id，故一并设备本地。
+    'ai_providers',
+    'ai_feature_providers',
     // 用户自配的 OPDS 书目服务器：条目里带 base64 密码，且服务器地址多是
     // 局域网 IP（`http://192.168.x.x:8080`），跨设备恢复既泄凭据又指向一台
     // 新机根本连不到的主机。

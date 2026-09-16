@@ -38,6 +38,7 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
   DeletionDisclosure? disclosure,
   FushiDatabase? db,
   String? localFilesSubtitle,
+  String? statisticsSubtitle,
 }) async {
   final DeletePromptPreferenceStore? preferenceStore =
       db == null ? null : DeletePromptPreferenceStore(db);
@@ -54,6 +55,7 @@ Future<DeleteDecision?> showDeleteScopeConfirm(
       disclosure: disclosure,
       canSyncEverywhere: canSyncEverywhere,
       localFilesSubtitle: localFilesSubtitle,
+      statisticsSubtitle: statisticsSubtitle,
       rememberedChoices: rememberedChoices,
       onPersistChoices: preferenceStore?.write,
     ),
@@ -67,6 +69,7 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
     this.disclosure,
     this.canSyncEverywhere = true,
     this.localFilesSubtitle,
+    this.statisticsSubtitle,
     this.rememberedChoices,
     this.onPersistChoices,
   });
@@ -80,6 +83,13 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
   /// null = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
   /// 非 null = 渲染，且这句副标题必须如实说清这个入口到底删什么。
   final String? localFilesSubtitle;
+
+  /// null = 这个入口不提供「同时删除统计数据」→ 恒 deleteStatistics=false。
+  /// 非 null = 渲染勾选行，副标题如实说清删掉的是哪些统计口径。
+  ///
+  /// 与另外两个勾选不同，它**不进**「记住这些选择」，每次都从未勾开始（见
+  /// [DeleteStatisticsRow]）。
+  final String? statisticsSubtitle;
   final DeletePromptRememberedChoices? rememberedChoices;
   final Future<void> Function(DeletePromptRememberedChoices?)?
       onPersistChoices;
@@ -92,6 +102,7 @@ class _DeleteScopeConfirmDialog extends StatefulWidget {
 class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
   late bool _syncDelete;
   late bool _deleteLocalFiles;
+  bool _deleteStatistics = false;
   late bool _rememberChoices;
   bool _saving = false;
 
@@ -126,6 +137,8 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
             : DeleteScope.keepLocalOnly,
         deleteLocalFiles:
             widget.localFilesSubtitle != null && _deleteLocalFiles,
+        deleteStatistics:
+            widget.statisticsSubtitle != null && _deleteStatistics,
       ),
     );
   }
@@ -173,6 +186,12 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
                 value: _deleteLocalFiles,
                 subtitle: widget.localFilesSubtitle!,
                 onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
+              ),
+            if (widget.statisticsSubtitle != null)
+              DeleteStatisticsRow(
+                value: _deleteStatistics,
+                subtitle: widget.statisticsSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteStatistics = v),
               ),
             if (widget.canSyncEverywhere || widget.localFilesSubtitle != null)
               DeleteRememberChoicesRow(

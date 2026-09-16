@@ -30,9 +30,11 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode;
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -66,6 +68,8 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/lookup_ime_channel.dart';
+import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
@@ -127,6 +131,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_backfill.dart';
+import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -1182,6 +1187,10 @@ class AppModel with ChangeNotifier {
       skipPreviousStream: audioCtrl.skipPreviousStream,
       toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
     ),
+    // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
+    // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
+    database: () => database,
+    studyIdleTimeout: () => readingIdleTimeout,
   )
     ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
@@ -3061,6 +3070,12 @@ class AppModel with ChangeNotifier {
       // 是 app 外取词**能力**而不是查词页入口。用户拍板「关 lookup 只关页面入口，
       // 查词能力全留」，注销回调会让已开着的悬浮窗查不出词、按钮静默失败。
       _setupFloatingDictHandlers();
+      // 把查词输入法语言同步给原生查词界面：Android 的悬浮词典 / 弹窗词典搜索框是
+      // 原生 EditText，读的是这份持久化值。放这里而不是只在设置页写——用户可能从
+      // 备份恢复、或在别的设备改了同步过来，那些路径都不经设置页。
+      unawaited(
+        LookupImeChannel.persistForNativeSurfaces(effectiveLookupImeLanguage),
+      );
       // 已迁移只读态（Fushi 迁移 P1-4）：不再自启互联服务——两版并存时端口
       // 固定必冲突（SyncServerPortInUseException 会打到用户脸上）；老版只保
       // 留「重新导出」通道。
@@ -4043,6 +4058,19 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoImmersiveMode(VideoImmersiveMode mode) =>
       prefsRepo.setVideoImmersiveMode(mode);
 
+  /// 截图去向（对话框 / 剪贴板 / 指定目录）与目录路径。
+  VideoScreenshotDestination get videoScreenshotDestination =>
+      prefsRepo.videoScreenshotDestination;
+
+  Future<void> setVideoScreenshotDestination(
+          VideoScreenshotDestination destination) =>
+      prefsRepo.setVideoScreenshotDestination(destination);
+
+  String get videoScreenshotDirectory => prefsRepo.videoScreenshotDirectory;
+
+  Future<void> setVideoScreenshotDirectory(String path) =>
+      prefsRepo.setVideoScreenshotDirectory(path);
+
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
@@ -4870,6 +4898,13 @@ class AppModel with ChangeNotifier {
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
       defaultContentLanguage: prefsRepo.defaultContentLanguage,
+      // 真下载前由 AI 在候选里挑先下哪几条；提供商每次调用时现解析，未指派 / 失败
+      // 都退回本地顺序（见 aiSubtitleBackfillReorder）。
+      aiReorder: aiSubtitleBackfillReorder(
+        resolveProvider: () => isPreferencesReady
+            ? resolveVideoSearchAiProvider(prefsRepo)
+            : null,
+      ),
     );
     final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
       database: database,
@@ -4880,6 +4915,8 @@ class AppModel with ChangeNotifier {
       ),
       // 下载导入后的刮削同样走离线标题索引 + Fribb id 接力（默认关是为了单测不联网）。
       enableOfflineTitleIndex: true,
+      // 歧义候选交 AI 消解；未指派提供商时 decider 每次回 null，行为与无 AI 一致。
+      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(prefsRepo),
       // 刮削完成 → 给仍缺字幕的视频补字幕。刮削是全仓唯一解析出规范身份
       // （AniDB 主身份 + TMDB/AniList crossref + 原名）的地方，而字幕准确率几乎完全取决于身份准不准
       // ——不接这一刀，播放页只能拿文件名里的中文译名去 AniList 现猜。
@@ -8203,6 +8240,25 @@ class AppModel with ChangeNotifier {
   String get asrTranscribeLanguage => prefsRepo.asrTranscribeLanguage;
   Future<void> setAsrTranscribeLanguage(String value) =>
       prefsRepo.setAsrTranscribeLanguage(value);
+
+  String get lookupImeLanguage => prefsRepo.lookupImeLanguage;
+  Future<void> setLookupImeLanguage(String value) =>
+      prefsRepo.setLookupImeLanguage(value);
+
+  /// 当前真正生效的查词输入法语言；未设置或偏好还没就绪时为 null。
+  ///
+  /// 偏好未就绪时返回 null 而不是抛：弹窗词典与悬浮词典是另外两个 entry point，
+  /// 它们的页面会在偏好加载完成前先 build 一帧（裸读 prefsRepo 会 null check 抛，
+  /// 把整页 build 带崩）。没提示只是少一次输入法切换，不该让页面渲染不出来。
+  String? get effectiveLookupImeLanguage {
+    if (!isPreferencesReady) return null;
+    final String tag = prefsRepo.lookupImeLanguage;
+    return tag.isEmpty ? null : tag;
+  }
+
+  /// 查词输入框希望输入法切到哪种语言（Android `EditorInfo.hintLocales`）。
+  List<Locale>? get lookupImeHintLocales =>
+      lookupImeHintLocalesOf(effectiveLookupImeLanguage);
 
   String get mangaSpreadPreference => prefsRepo.mangaSpreadPreference;
   Future<void> setMangaSpreadPreference(String value) =>

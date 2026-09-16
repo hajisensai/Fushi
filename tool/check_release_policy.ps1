@@ -191,10 +191,13 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-m
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
-# 守（每个 PR 都跑）。这里只锁发布策略层面的那一条 —— TestFlight 上传绝不能挂到 push
-# 事件上：push 的 debug 通道每次提交都会跑，每次上传都消耗一个不可回收的构建号
-# （同一语义版本下 CFBundleVersion 必须单调递增）。
-Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]' 'TestFlight upload must be gated on manual workflow_dispatch; a push-triggered upload burns an unrecoverable build number every commit'
+# 守（每个 PR 都跑）。这里只锁发布策略层面的两条：手动 dispatch 那条门必须显式判事件；
+# push 的 debug 通道只在发布序列能被 3 整除时上传（约每三次一次，用共享序列而不是
+# run 号——run 号在上面已整个禁用），绝不能退化成每次 push 都传——每次上传都消耗一个
+# 不可回收的构建号（同一语义版本下 CFBundleVersion 必须单调递增），一天 5~13 次会把
+# TestFlight 淹掉。
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]' 'manual TestFlight upload must be gated on workflow_dispatch'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ $((RELEASE_SEQUENCE % 3)) -eq 0 ]' 'push-triggered TestFlight upload must be rate-limited to every third build (shared release sequence % 3); uploading on every push burns an unrecoverable build number per commit'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
 # BUG-1449: the helper is no longer shipped as zip + sidecar for the runtime to
 # unpack -- that layout left a second copy on disk that had to stay in sync with
@@ -231,23 +234,48 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
 }
 
 # release-server.yml (headless server) is a separate product line: no push/debug
-# channel, no update manifest, no rolling tag. It only shares the release sequence
-# source and the hard rule that a non-app release must never become Latest (the app
-# stable-channel updater resolves releases/latest; a server Latest would stall it).
+# channel, no update manifest, no rolling tag. It shares the release sequence
+# source, and since 2026-09-14 it is a workflow_call reusable workflow that ONLY the
+# standalone release repo hajisensai/fushi-server invokes; releases land there.
+# The app stable-channel updater resolves THIS repo's releases/latest, so a server
+# release published here would stall every app's update check. That used to be
+# enforced by "make_latest is always false"; now it is enforced structurally:
+#   1. no workflow_dispatch / push entry point in this repo (workflow_call only);
+#   2. the channel job refuses to run when github.repository is the app repo;
+#   3. every checkout pins repository: hajisensai/Fushi so the caller repo's
+#      own tree is never mistaken for the source.
 $serverWorkflow = '.github/workflows/release-server.yml'
 $serverContent = Read-RepoFile $serverWorkflow
 Require-Text $serverWorkflow $serverContent 'concurrency:' 'server publisher must serialize same-tag runs'
 Require-Text $serverWorkflow $serverContent 'cancel-in-progress: false' 'a server publish must run to completion'
 Require-Text $serverWorkflow $serverContent 'fetch-depth: 0' 'release sequence uses full git history'
 Require-Text $serverWorkflow $serverContent 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'server release sequence must come from the shared script'
-Require-Text $serverWorkflow $serverContent 'MAKE_LATEST=false' 'server releases are never Latest, formal included'
+# The asr_onnx_ffi dependency only compiles with the one-line archive compat patch from
+# ci/patches (see CLAUDE.md); the first real run of this workflow failed on both
+# platforms because the patch step was missing after `flutter pub get`.
+Require-Text $serverWorkflow $serverContent 'bash ci/apply-patches.sh' 'server bundle build needs the pub-cache patches (asr_onnx_ffi archive compat) or dart build cli fails'
+Require-Text $serverWorkflow $serverContent 'workflow_call:' 'the server publisher is a reusable workflow invoked from hajisensai/fushi-server'
+Require-Text $serverWorkflow $serverContent 'if [ "${CALLER_REPO,,}" = "${SOURCE_REPO,,}" ]; then' 'the channel job must refuse to publish a server release into the app repo (its releases/latest drives the app updater)'
+Require-Text $serverWorkflow $serverContent 'SOURCE_REPO: hajisensai/Fushi' 'the source repo identity must be one named constant'
 Require-Text $serverWorkflow $serverContent 'make_latest: ${{ needs.channel.outputs.make_latest }}' 'make_latest must flow from the channel output (never a literal)'
-Require-Text $serverWorkflow $serverContent 'fushi-server-*) : ;;' 'server release tags must be validated to start with fushi-server- so they never collide with app tags'
+Require-Text $serverWorkflow $serverContent 'v[0-9]*) : ;;' 'server release tags must be validated as v<version>[-beta.<seq>]'
 Forbid-Pattern $serverWorkflow $serverContent 'RELEASE_SEQUENCE=\$\(git rev-list' 'release sequence must go through tool/release_sequence.sh'
-Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
+Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
 Forbid-Pattern $serverWorkflow $serverContent 'github\.run_number' 'workflow-local run_number is not a release sequence'
-Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'a server release must never be Latest'
-Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only (workflow_dispatch); no push trigger'
+Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'make_latest must be the channel output, never a literal'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only; no push trigger'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+workflow_dispatch:' 'no dispatch entry in the app repo: a server release here would become the app updater''s releases/latest; dispatch from hajisensai/fushi-server'
+# Every checkout must pin the source repo; a bare `actions/checkout` in a reusable
+# workflow checks out the CALLER (fushi-server), which has no source at all.
+$serverCheckouts = [regex]::Matches($serverContent, '(?m)^\s+- uses: actions/checkout@v\d+\s*\n(?:\s+with:\s*\n(?:\s+[a-z_-]+:.*\n)*)?')
+if ($serverCheckouts.Count -eq 0) {
+  $failures.Add("${serverWorkflow}: no actions/checkout step found")
+}
+foreach ($m in $serverCheckouts) {
+  if ($m.Value -notmatch 'repository: hajisensai/Fushi') {
+    $failures.Add("${serverWorkflow}: a checkout step does not pin repository: hajisensai/Fushi (reusable workflow would check out the caller repo)")
+  }
+}
 
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'

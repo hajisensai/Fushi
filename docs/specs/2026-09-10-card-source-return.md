@@ -1,6 +1,6 @@
 # 卡片来源回跳与临时回看
 
-Lapis 卡面折叠区显示“来源”，去掉重复的 Details 行，内部字段名继续使用 `MiscInfo`。默认映射为 `{source-link} {clip-timestamp}`：作品标题本身是唯一的回跳超链接；没有可用定位时显示普通标题，不额外显示“↗ Fushi”。新制卡记录独立的随机来源 ID，并给原笔记添加对应 `fushi_source_…` 标签。回跳后的制卡覆写按这个标签唯一定位原笔记，不用词头或设备内 note ID 猜测目标。已有自定义字段映射和旧卡不批量改写。
+Lapis 卡面折叠区显示“来源”，去掉重复的 Details 行，内部字段名继续使用 `MiscInfo`。默认映射为 `{source-link} {clip-timestamp}`：作品标题本身是唯一的回跳超链接；没有可用定位时显示普通标题，不额外显示“↗ Fushi”。新制卡记录独立的随机来源 ID，它只存在于来源链接的 `sourceId=` 参数里，不再写成笔记标签（2026-09-14 BUG-2527：原先每卡多一个 `fushi_source_<hex>` 标签污染 Anki 标签栏，且与字段里的链接是同一身份的冗余拷贝）。回跳后的制卡覆写按字段子串 `sourceId=<uuid>` 搜候选、再解析 `fushi://source` 链接精确比对来源 ID 唯一定位原笔记，不用词头或设备内 note ID 猜测目标；旧卡上残留的标签不批量清理，也不参与定位。已有自定义字段映射和旧卡不批量改写。
 
 链接形式为 `fushi://source?v=1&kind=…&uid=…&sourceId=…`，由系统唤起 Fushi：Windows 使用已有协议/单实例参数通道，Android 使用 ReceiveIntent，iOS 使用已有 URL 事件通道，macOS 使用 Launch Services 事件队列。链接只携带库身份、定位坐标和视频指纹，不携带本地路径、配对令牌或媒体服务器凭据。
 
@@ -23,7 +23,7 @@ Lapis 卡面折叠区显示“来源”，去掉重复的 Details 行，内部�
 
 ## 本次验证范围（2026-09-10）
 
-- Flutter 3.44.0 全量静态分析通过（退出码 0）；AnkiMobile URI 的 7 条测试通过，包括关闭普通标签时仍携带来源标记。
+- Flutter 3.44.0 全量静态分析通过（退出码 0）；AnkiMobile URI 的 7 条测试通过，包括关闭普通标签时仍携带来源标记（该标记已于 BUG-2527 移除，改为字段定位）。
 - 来源会话、持久草稿、导航与配对对端回写的定向测试 27 条通过；来源链接、Anki 更新与覆写等包级定向测试 48 条通过。字段冲突、写后不确定结果、重新配对与离线草稿均有自动化覆盖。
 - Windows 离屏真应用用例实际执行 1 条并退出 0，证据目录为 `fushi/.codex-test/windows-itest/win-itest-20260910-090647-7240832e/`；已检查 `card-source-single-note-dialog.png` 的真实像素，确认只有一层详情弹窗，并在关闭动画结束后断言没有残留。原有生产 Fushi 实例未被终止。
 - Android debug 构建通过；`ci/integration-test.sh --only=card_source_return` 实际执行 1 个业务用例并退出 0，覆盖真实阅读器位置、回看期间数据库不变、返回原位置、继续阅读开始记录及单层卡片查看器。模拟器未安装 AnkiDroid，因此卡片 UI 使用仓库夹具，不能据此宣称真实 AnkiDroid 写回已经端到端验收。

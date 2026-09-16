@@ -2578,6 +2578,11 @@ class GalgameSessions extends Table {
   /// 冗余的按天分组键（'YYYY-MM-DD'，本地时区，取 [endMs] 的日期），
   /// 与其它统计表 dateKey 同源，避免读取端为分组反算。
   TextColumn get dateKey => text()();
+
+  /// v105：产生本次游玩时激活的 Profile（`profiles.id`；0 = 库里还没有 Profile
+  /// 时写下的行，只在纯 DB 测试里出现）。统计按 Profile 隔离的分区键，与
+  /// [StudySegments.profileId] 同律；写入时由 DAO 从 `active_profile_id` 偏好盖戳。
+  IntColumn get profileId => integer().withDefault(const Constant(0))();
 }
 
 // ── study_segments ──────────────────────────────────────────────────
@@ -2642,6 +2647,21 @@ class StudySegments extends Table {
   /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
   IntColumn get updatedAt => integer()();
 
+  /// v105（统计按 Profile 隔离）：开段时激活的 Profile（`profiles.id`）。
+  ///
+  /// 分区键：读取面（`loadStatFacts` / 最近观看 / 删除 / 清空）一律只看当前激活
+  /// Profile 的行，各 Profile 之间互不可见。**只在插入时盖戳、冲突更新不改**——
+  /// 段的归属在它开始那一刻就定了，中途切 Profile 不把已开的段挪走（下一段自然
+  /// 归新 Profile）。写入方（StudyClock / galgame hook）不用知道 Profile：缺席时
+  /// DAO 从 `active_profile_id` 偏好解析（[FushiDatabase.resolveActiveProfileId]）。
+  /// 0 = 库里还没有 Profile（只在纯 DB 测试里出现；app 启动即 ensureDefaultProfile）。
+  ///
+  /// 不做 FK：删 Profile 不 cascade 删历史（同步对端可能还持有这些段，本机静默
+  /// 消失又回灌是最坏形态），行留着、对任何 Profile 都不可见即可。同步 wire 不
+  /// 传本机自增 id，传 Profile **名字**（`profileName`），对端按名字落到自己的
+  /// 同名 Profile。
+  IntColumn get profileId => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {uid};
 }
@@ -2656,14 +2676,20 @@ class StudySegments extends Table {
 /// `updatedAt > deletedAt` 则段胜」已废：同步回写会刷新 `updatedAt`，让删掉的旧段
 /// 借道复活。真实实现见 `database_statistics.part.dart` 的 `_isStudySegmentTombstoned`
 /// 与 `aggregate_merge_service.dart`。
+///
+/// 自 v105 起碑也按 Profile 分区（主键加 [profileId]，重建表）——A Profile 删某书
+/// 统计，不能把 B Profile 同一本书的历史一起压死；同步落地时只压制**同 Profile**
+/// 的段。
 @DataClassName('StudySegmentTombstoneRow')
 class StudySegmentTombstones extends Table {
+  /// 立碑时的 Profile（`profiles.id`），语义同 [StudySegments.profileId]。
+  IntColumn get profileId => integer().withDefault(const Constant(0))();
   TextColumn get mediaKind => text()();
   TextColumn get mediaKey => text()();
   IntColumn get deletedAt => integer()();
 
   @override
-  Set<Column> get primaryKey => {mediaKind, mediaKey};
+  Set<Column> get primaryKey => {profileId, mediaKind, mediaKey};
 }
 
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**

@@ -92,13 +92,22 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // BUG-2505：本端已有 EPUB 但还没有配套有声书的 bookKey，要与远端 hasAudiobook
       // 对上——这些书被下面的去重整条藏掉，它们的有声书只能从本地书卡菜单补拉。
       // 漫画架与有声书无交集，不查。
-      final Set<String> localAudiobookKeys = _mangaOnly
-          ? const <String>{}
-          : <String>{
-              for (final AudiobookRow ab
-                  in await appModel.database.getAllAudiobooks())
-                ab.bookKey,
-            };
+      //
+      // BUG-2551：判据是「音频**文件**此刻还在不在」，不是「有没有 Audiobooks 行」。
+      // 一本零音频 / 断链的本地有声书（坏包落地、或引用导入后原文件被移走）在表里
+      // 和正常有声书长得一模一样，按行算就会被当成「本端已有有声书」——于是
+      // BUG-2505 好不容易补上的那个补拉入口又被挡掉：用户第一次没下成功之后，
+      // 书架上再也找不到第二次下载的地方。
+      final Set<String> localAudiobookKeys = <String>{};
+      if (!_mangaOnly) {
+        for (final AudiobookRow ab
+            in await appModel.database.getAllAudiobooks()) {
+          if (await audiobookAudioIsIntact(
+              audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot)) {
+            localAudiobookKeys.add(ab.bookKey);
+          }
+        }
+      }
       // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
       // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
       // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
@@ -226,12 +235,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// [selectable]（默认 true）= 多选态可勾选（BUG-2458：勾选后经批量栏「下载」一起
   /// 下）；合集行成员卡传 false，与本地成员卡同规则。壳（[_bookCardShell]）在多选
   /// 态把点击接成勾选，只有非多选态点击才走下载。
-  Widget _buildRemoteBookCard(RemoteBookInfo book, {bool selectable = true}) {
+  /// [focusIdPrefix]：合集详情页渲染路径传 'collection-detail-' 隔离焦点 id 命名
+  /// 空间（BUG-1009——详情页 push 在书架之上，两条路由同时存活，同名 focusId 会被
+  /// 焦点注册表按 id 覆盖）；书架路径恒空串（id 不变）。
+  Widget _buildRemoteBookCard(RemoteBookInfo book,
+      {bool selectable = true, String focusIdPrefix = ''}) {
     final String safeKey = _safeRemoteBookKey(book.title);
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
-      focusId: FushiFocusId('reader-shelf-remote-book-$safeKey'),
+      focusId:
+          FushiFocusId('${focusIdPrefix}reader-shelf-remote-book-$safeKey'),
       selectionKey: selectable ? _remoteBookSelectionKey(book) : null,
       onTap: () => _downloadRemoteBook(book),
       // 短按仍直接下载（无本地副本不能直接读，下载合理）；长按 / 桌面右键
@@ -1078,12 +1092,34 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
     final List<SrtBookRow> localSrt = await appModel.database.getAllSrtBooks();
     final Set<String> localUids = localSrt.map((SrtBookRow r) => r.uid).toSet();
+    // BUG-2551：本地已有同 uid 行**不等于**已经拿到这本的音频。一次落成零音频 /
+    // 断链的本地行会让占位卡永久消失——用户第一次没下成功之后就再也下不了。
+    //
+    // 但 standalone 纯字幕书**合法地**没有音频，不能一律「音频不完好就重新挂卡」，
+    // 否则纯字幕书会永远挂着一张下不完的下载卡。所以要两个条件同时成立才留卡：
+    // 对端那本**确实有音频**（`hasAudio == true`；旧 host 不下发 → null → 不留卡，
+    // 保持旧行为），而本地这本的音频不完好。
+    final Map<String, SrtBookRow> localByUid = <String, SrtBookRow>{
+      for (final SrtBookRow r in localSrt) r.uid: r,
+    };
+    final Set<String> needsAudio = <String>{};
+    for (final RemoteAudiobookInfo ab in all) {
+      if (!ab.isStandaloneSrt || ab.identity.isEmpty) continue;
+      if (ab.hasAudio != true) continue;
+      final SrtBookRow? local = localByUid[ab.identity];
+      if (local == null) continue;
+      if (!await audiobookAudioIsIntact(
+          audioPathsJson: local.audioPathsJson, audioRoot: local.audioRoot)) {
+        needsAudio.add(ab.identity);
+      }
+    }
     return (
       audiobooks: <RemoteAudiobookInfo>[
         for (final RemoteAudiobookInfo ab in all)
           if (ab.isStandaloneSrt &&
               ab.identity.isNotEmpty &&
-              !localUids.contains(ab.identity))
+              (!localUids.contains(ab.identity) ||
+                  needsAudio.contains(ab.identity)))
             ab,
       ],
       failed: false,
@@ -1093,15 +1129,16 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 纯 SRT 远端有声书占位卡：耳机类型徽章 + 云角标 + 下载按钮/进度。短按/下载按钮
   /// 走 [_downloadRemoteSrtAudiobook]（拉包 → importAudioDatabasePackage 纯 SRT 分支
   /// → 落 SrtBooks 行），完成后原地变本地 SRT 卡（重拉远端列表按 uid dedup 隐藏占位）。
+  /// [focusIdPrefix]：同 [_buildRemoteBookCard]，合集详情页传前缀隔离焦点 id。
   Widget _buildRemoteSrtCard(RemoteAudiobookInfo book,
-      {bool selectable = true}) {
+      {bool selectable = true, String focusIdPrefix = ''}) {
     final String title = book.title ?? book.identity;
     final String safeKey = _safeRemoteBookKey(title);
     final ColorScheme cs = theme.colorScheme;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
-      focusId: FushiFocusId('reader-shelf-remote-srt-$safeKey'),
+      focusId: FushiFocusId('${focusIdPrefix}reader-shelf-remote-srt-$safeKey'),
       // BUG-2458：与远端 EPUB 卡同规则，多选态可勾选、批量下载。
       selectionKey: selectable ? _remoteSrtSelectionKey(book) : null,
       onTap: () => _downloadRemoteSrtAudiobook(book),

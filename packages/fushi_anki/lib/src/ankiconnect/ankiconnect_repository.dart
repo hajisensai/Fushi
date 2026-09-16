@@ -714,7 +714,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         // 制卡所在字符数标签（`chars_12345`）：小说阅读器按「自动添加制卡位置到标签」
         // 开关注入；其它来源与开关关闭时为 null，buildNoteTags 不追加。
         charPositionTag: context.charPositionTag,
-        sourceLink: context.sourceLink,
       );
 
       // `fields` only holds entries that rendered to a non-empty value; if it is
@@ -749,6 +748,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           duplicateScope: settings.duplicateScope,
         );
         mediaTransaction.commit();
+        // 制卡成功即「主机可达」的铁证：撤掉查重冷却，否则紧跟着那次 duplicateCheck
+        // 会在冷却窗内被短路成 false，刚制好的卡画不出 ✓。
+        _noteAnkiConnectReachable();
         // BUG-1549：把实际落卡的牌组名带回成功结果——toast 只认它，不再事后从
         // settings.selectedDeckName 猜（旧存档只有 id 时那是 null → 空引号）。
         return MineOutcome.success(
@@ -758,6 +760,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       } on AnkiConnectDuplicateException {
         await mediaTransaction.rollback();
+        // 「这张卡已经有了」也是主机给的应答 —— 同样证明可达（见
+        // [_noteAnkiConnectReachable]）。此时 popup 会据 duplicate 位画 ✓，
+        // 紧随其后的任何查重也该问到真值而不是被冷却短路。
+        _noteAnkiConnectReachable();
         return const MineOutcome.duplicate();
       } on AnkiConnectCommitUnknownException catch (e, stack) {
         // Without a separate preflight query, a matching note after a lost
@@ -904,9 +910,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) async {
+  Future<List<int>> findSourceNoteCandidates(String sourceId) async {
     final AnkiSettings settings = await loadSettings();
-    return _serviceForSettings(settings).findNotesBySourceMarker(markerTag);
+    return _serviceForSettings(settings).findNotesBySourceId(sourceId);
+  }
+
+  @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) async {
+    final AnkiConnectService service = await _getService();
+    return service.notesInfo(noteId);
   }
 
   @override
@@ -1015,6 +1027,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       e.message.toLowerCase().contains('unsupported action');
 
   static DateTime? _duplicateCheckUnreachableUntil;
+
+  /// AnkiConnect 刚刚给过应答 —— 这台主机此刻**可达**，撤掉查重的不可达冷却。
+  ///
+  /// 为什么必须在制卡链路上也撤：冷却是进程级的静态窗（30s），此前只有 [isDuplicate]
+  /// 自己拿到应答才清零。于是用户的这条原始路径会让 ✓ 不亮：Anki 没开着时查了个词
+  /// （冷却武装）→ 打开 Anki → 点「+」制卡 → `addNote` 成功（制卡链路不看冷却）→
+  /// popup.js 紧跟着回问 `duplicateCheck` → 还在冷却窗里 → 直接返回 false → 按钮停在
+  /// 「+」，用户以为没制上，很可能再制一张重复卡。
+  ///
+  /// 「制卡拿到了应答」和 [isDuplicate] 的成功分支是同一个事实（主机应答了），所以
+  /// 撤冷却的理由完全同源；`addNote` 明确回「这张卡已经有了」同样是应答，一并算。
+  static void _noteAnkiConnectReachable() {
+    _duplicateCheckUnreachableUntil = null;
+  }
 
   /// 测试用：清掉进程级查重冷却，避免用例间互相污染。
   @visibleForTesting

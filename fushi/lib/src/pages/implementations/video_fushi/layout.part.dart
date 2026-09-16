@@ -102,6 +102,24 @@ extension _VideoLayout on _VideoFushiPageState {
             onRect: controller.reportHdrHostRect,
             child: Video(
           controller: videoController,
+          // BUG-2544：**由本页接管**「切后台暂停 / 回前台续播」，故显式关掉 media_kit
+          // 自带的那套。media_kit 的默认值是 `pauseUponEnteringBackgroundMode: true` +
+          // `resumeUponEnteringForegroundMode: false`（video_texture.dart 的构造器默认
+          // 参数），即**暂停了却永远不恢复**——用户报「视频切屏会暂停，切回来没续上」
+          // 就是这条不对称链：它在 `paused`/`detached` 里 pause 并把「暂停前在播」的标记
+          // 记在自己的私有字段上，回前台那一支被 `resumeUponEnteringForegroundMode`
+          // 默认 false 直接跳过，而标记本身只在恢复分支里清，外面谁也读不到。
+          // 不选「只把 resume 打开」而选整套接管，有三个理由：
+          //  ① 全屏路由另起一个 [Video]（[fullscreen.part.dart]）而窗口侧这棵仍挂载，
+          //     两个 VideoState 各自是 observer、各自持一份标记，暂停/恢复要靠两边
+          //     恰好只有一个抢到 `state.playing == true` 才不打架；
+          //  ② 恢复必须排在 [_refreshDecodeAfterResumeIfNeeded] 的重建 seek **之后**
+          //     （BUG-1863），而第三方 observer 的通知顺序不是本页能定的；
+          //  ③ 查词浮层那条暂停（[_pausedForLookup]）是本页的「单一恢复真相源」，
+          //     后台恢复必须和它互斥，判据得在本页可读、可测。
+          // 接管后的实现见 [_VideoFushiPageState.didChangeAppLifecycleState] 的
+          // `paused` 分支与 [_resumeAfterBackgroundIfNeeded]。
+          pauseUponEnteringBackgroundMode: false,
           // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
           // 快捷键（见 [_focusOwnership]）。

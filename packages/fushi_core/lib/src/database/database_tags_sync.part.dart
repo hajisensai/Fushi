@@ -564,6 +564,15 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     });
   }
 
+  /// 撤销书 [bookUid] 图片 [imageKey] 的揭开状态（插图册长按「恢复遮罩」）。删行而不是
+  /// 写一条「未揭开」标记：本表的语义就是「在册即已揭开」，补一个否定态会让同一事实有
+  /// 两种表示，同步与迁移都得再判一次。行不存在是正常入参（幂等）。
+  Future<void> unmarkImageRevealed(String bookUid, String imageKey) =>
+      (delete(revealedImages)
+            ..where((t) =>
+                t.bookUid.equals(bookUid) & t.imageKey.equals(imageKey)))
+          .go();
+
   /// 书 [bookUid] 全部已揭开图片 key 集合。阅读器打开时读它灌入会话集、图片库渲染时读它
   /// 判断哪些图不遮罩。
   Future<Set<String>> getRevealedImageKeys(String bookUid) async {
@@ -691,6 +700,58 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     final row = await q.getSingle();
     return row.read(cnt)!;
   }
+
+  // ── Profile 分区（v105：统计按 Profile 隔离）────────────────────
+  // 住这一层而不是 _FushiDbStatistics：删除原语在 _FushiDbContentMisc、写入 /
+  // 读取在 _FushiDbStatistics，mixin 只能向下看，公共解析点必须在两者之下。
+
+  Future<String?> _prefValueOf(String key) async {
+    final PreferenceRow? row =
+        await (select(preferences)..where((t) => t.key.equals(key)))
+            .getSingleOrNull();
+    return row?.value;
+  }
+
+  /// 当前激活的 Profile id（统计分区键的**唯一**解析点）。
+  ///
+  /// 读 `active_profile_id` 偏好并验证该 Profile 还在；不在 / 缺失时退到最早建的
+  /// Profile（与 fushi 层 `ensureDefaultProfile` 的兜底同序）；库里一个 Profile
+  /// 都没有时返回 0——只在纯 DB 测试里出现（app 启动即 `ensureDefaultProfile`），
+  /// 此时写入盖 0、读取滤 0，测试里写读自洽。**不在这里建 Profile**：建
+  /// Profile 必须连带快照设置（`snapshotCurrentSettings`，在 fushi 层），DB 层
+  /// 造一个空快照的 Profile 会让下次 `applyProfile` 把全部偏好剪光。
+  Future<int> resolveActiveProfileId() async {
+    final String? raw = await _prefValueOf(kActiveProfileIdPrefKey);
+    final int fromPref = int.tryParse(raw ?? '') ?? -1;
+    if (fromPref > 0 && await getProfileById(fromPref) != null) {
+      return fromPref;
+    }
+    final List<ProfileRow> all = await getAllProfiles();
+    return all.isEmpty ? 0 : all.first.id;
+  }
+
+  /// legacy 统计家族归属的 Profile id（[kStatLegacyProfileIdPrefKey]）；null =
+  /// 无归属 = 对所有 Profile 可见。
+  Future<int?> getStatLegacyProfileId() async {
+    final String? raw = await _prefValueOf(kStatLegacyProfileIdPrefKey);
+    final int? id = int.tryParse(raw ?? '');
+    return id != null && id > 0 ? id : null;
+  }
+
+  /// legacy 统计行对 [profileId] 是否可见（读取面与「清空全部」的 legacy 删行
+  /// 共用同一判据：看不见的历史不能被另一个 Profile 的清空连带删掉）。
+  Future<bool> legacyStatsVisibleTo(int profileId) async {
+    final int? owner = await getStatLegacyProfileId();
+    return owner == null || owner == profileId;
+  }
+
+  /// 缺席 `profileId` 的段补上当前激活 Profile（写入方不用知道 Profile）。
+  Future<StudySegmentsCompanion> _stampStudySegmentProfile(
+    StudySegmentsCompanion row,
+  ) async =>
+      row.profileId.present
+          ? row
+          : row.copyWith(profileId: Value(await resolveActiveProfileId()));
 
   // ── profile settings ─────────────────────────────────────────────
   Future<List<ProfileSettingRow>> getProfileSettings(int profileId) =>

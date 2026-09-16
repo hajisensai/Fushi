@@ -1,0 +1,17 @@
+## BUG-2544 · 视频切到后台被暂停后回前台不自动续播
+- **报告**：2026-09-15（用户：「视频切屏会暂停，切回来没续上」）
+- **真实性**：✅ 真 bug。根因是一条**不对称**的链，两处代码各自自洽、合起来没人管：
+  - `third_party/media_kit_video/lib/src/video/video_texture.dart:286-305`（web 侧同构 `video_web.dart:282-300`）：`didChangeAppLifecycleState` 在 `paused`/`detached` 时，若 `player.state.playing` 就 `pause()` 并把「暂停前在播」记进**自己的私有字段** `_pauseDueToPauseUponEnteringBackgroundMode`；回前台那一支被 `if (widget.resumeUponEnteringForegroundMode && ...)` 挡住。两个参数的构造器默认值是 `video_texture.dart:132-133` 的 `pauseUponEnteringBackgroundMode = true` + `resumeUponEnteringForegroundMode = false`——**停了就永远不恢复**，标记也只在恢复分支里清，外面谁都读不到。
+  - `fushi/lib/src/pages/implementations/video_fushi/layout.part.dart`（窗口模式）与 `video_fushi/fullscreen.part.dart`（全屏路由）两处 `Video(...)` 构造**从未传过这两个参数**（修复前全 `fushi/lib` 对这两个参数名零命中），于是吃的就是上面的默认值。
+  - `fushi/lib/src/pages/implementations/video_fushi_page.dart` 的 `didChangeAppLifecycleState`：`resumed` 分支只重启观看计时器、刷解码链（BUG-1863）、重申沉浸模式、收回焦点，**不 play**——它是按「视频页真后台并不暂停播放」这个假设写的（该假设白纸黑字写在 `video_player_controller.dart` 的 `flushPosition` 附近注释里），而实际上 media_kit 早就把它停了。
+- **平台范围**：只影响 **Android / iOS**。判据只匹配 `paused`/`detached`：桌面窗口最小化只到 `hidden`、失焦只到 `inactive`，两者都落进 else 分支且标记为 false，故桌面本来就不暂停（修复也不改桌面行为）。**应用内**切走再切回不是缺口：视频页被别的路由覆盖时 State 保持 mounted、播放照旧；进出全屏复用同一个 `Player`（`fullscreen.part.dart` 整份零 `pause`/`play`）；真退出重开走 `autoPlay: true` 恒起播。
+- **[x] ① 已修复** — 把生命周期播放策略从第三方**收归页面**（不是「只把 media_kit 的 resume 开关打开」）：
+  - 两处 `Video(...)` 显式 `pauseUponEnteringBackgroundMode: false`（`layout.part.dart` / `fullscreen.part.dart`）。全屏那处是自建路由、逐字段从 `VideoViewParameters` 转发，而该参数类压根不带这两个字段，不显式写就会重新长出同一个 bug。
+  - `video_fushi_page.dart`：`paused` 分支调 `_pauseForBackground()`（按纯判据 `VideoFushiPage.shouldPauseForBackground` 读**暂停前那一刻**的 `isPlaying`，成立才 `pause()` 并置 `_pausedForBackground`）；`resumed` 分支在解码链刷新之后调 `_resumeAfterBackgroundIfNeeded()`（按 `VideoFushiPage.shouldResumeAfterBackground` 判，标记无条件先清）。
+  - 三条边界都写进判据而非散在调用点：① **用户自己按了暂停再切走的，回来必须仍是暂停**（不置标记）；② 查词/选词光标那条暂停（`_pausedForLookup`）仍持有时不续播，两条暂停源各自记账各自恢复；③ 网页播放器路径（`VideoPlayerController.hasNativePlayer == false`，WebView2 里由站点自己播、pause/play 都是 no-op）不接管。
+  - 只在 `paused` 暂停、不含 `hidden`：`hidden` 在移动端只是过渡态，在桌面却是「窗口最小化」的终态，接管不该顺手把桌面行为也改了。
+  - 顺带修掉一个隐性问题：全屏期间窗口侧与全屏侧各有一个 `VideoState` observer，原先两边各自暂停/各自持标记，靠「恰好只有一个抢到 `state.playing == true`」才不打架；收归页面后只剩一个暂停源。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/pages/video_background_resume_guard_test.dart`：两个纯判据的真值表（各 4 条，含上面三条边界）+ 接线守卫（`paused` 才暂停且 `hidden` 不暂停、`resumed` 续播且排在解码刷新之后、标记在第一个 `return` 之前无条件清、判据不在页面里被重写）+ **正向枚举** `lib/` 下所有 media_kit `Video(` 构造点并断言每处都显式声明了该参数（新增构造点漏设会红，而不是悄悄退回默认值）+ 钉住 vendored 默认值仍是「暂停了不恢复」这个前提。
+  - `fushi/integration_test/video_background_resume_test.dart`：真 app + 真 libmpv 的行为级证据。造 60s 视频起播 → 按真机序列投 `inactive→hidden→paused`（`channelBuffers.push('flutter/lifecycle', ...)`，与 embedder 真机发的是同一条通道消息）→ 断言停住且位置不再前进 → 投 `hidden→inactive→resumed` → 断言自动续播且位置继续前进。
+- **备注**：media_kit/libmpv 在测试宿主起不来，视频页无法 headless widget 测（与 BUG-1863 同一理由），故单测层只能是「纯判据 + 源码守卫」，行为级证据由集成测试出。集成测试在 `paused` 期间不 pump——`SchedulerBinding` 在 `paused` 会关掉帧调度，live binding 的 `pump` 会一直等不到 vsync，那段改用 `runAsync` 等真实时间（读页面 state 不需要新帧）。

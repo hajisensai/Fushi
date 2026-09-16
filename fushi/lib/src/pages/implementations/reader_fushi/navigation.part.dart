@@ -520,6 +520,22 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 这里 discard 掉的正是用户真读过的上一页），dispose 也在调本方法之前 `leave()`；
     // 所以这里通常是 no-op，只兜「导航发起后新页曾短暂 arrive」的情形。
     _readLedger.discard();
+    // BUG-2529：跨章守卫也必须在这里释放。有声书跟随跨章的链路是
+    // `_maybeEmitCrossChapter` 竖旗 → `onCrossChapter` → [_handleCueCrossChapter] →
+    // [_navigateToChapter]，旗的唯一正常解除路径是章节内容就绪后的
+    // `notifySectionRestoreCompleted`（见 [_onRestoreComplete]）。本方法代表的三种
+    // 中止（装载抛错 / [_navigateToChapterAndWait] 等待超时 / content-ready 兜底超时）
+    // 恰恰意味着那条回执永远不来：旧实现只解开导航态，跨章守卫就此永久卡 true，
+    // 控制器侧 `_updateCurrentCue` / `setChapterCues` 全部早退，当前 cue 冻结 →
+    // 上一句/下一句静默无效、cue 高亮不再跟随，且无任何自愈，直到重开书。
+    //
+    // Android 上「切出去再回来上下句就不动了」走的就是这条：app 切后台后前台服务里
+    // 的有声书照常播到下一章、照常竖旗发起跨章导航，而后台的 WebView 被 Chromium
+    // 按不可见文档节流（rAF 冻结、timer 降频，同 BUG-2465 一族），restore 回执拖过
+    // 8s 兜底窗 → [_startContentReadyTimeout] 摘遮罩并调本方法 → 守卫永久卡死。
+    // 解除后状态机自愈：下一个 position tick 重新比对 cue 所属章与 reader 当前章，
+    // 回前台时 WebView 已活，跨章导航正常落地。
+    _audiobookController?.abortChapterTransition();
     _isNavigatingToChapter = false;
     _restoreInFlight = false;
     _preciseLocateQueue.clear();
@@ -920,7 +936,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // BUG-1426：spread 独立文档自带翻页输入。阈值取与正文引擎**同一个**真值来源
     // （`ReaderSettings.swipePageTurnDistThresholds`，随灵敏度设置缩放），不在
     // spread 侧另立一套默认值——否则调灵敏度只对正文生效，双页页面手感恒定。
-    final ({int dist, int fastDist}) swipeThresholds =
+    final ({int dist, int fastDist, int fastVelocity}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(
           _settings?.swipePageTurnSensitivity ??
               ReaderSettings.defaultSwipePageTurnSensitivity,
@@ -936,6 +952,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       rightUrl: rightUrl,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      swipeFastVelocity: swipeThresholds.fastVelocity,
       keyBridgeScript: keyBridgeScript,
     );
 
@@ -1695,12 +1712,18 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   }
 
   /// 时钟此刻可跑（[studyClockMayRun]）。
+  ///
+  /// BUG-2558：`audiobookPlaying` 直接读控制器的**当前**播放态，不用任何镜像字段——
+  /// 判据要的是「此刻真在出声」，缓存一份就会在媒体中心暂停后多计到下一次事件。
+  /// [_noteAudiobookPlayingForStudyClock] 那枚镜像只负责边沿检测（何时该 sync），
+  /// 不参与判定。
   bool get _studyClockMayRun =>
       !_sourceReviewActive &&
       studyClockMayRun(
         manualPause: _studyClockManualPause,
         lifecycleStopped: _studyClockLifecycleStopped,
         modalDepth: _studyClockModalDepth,
+        audiobookPlaying: _audiobookController?.isPlaying ?? false,
       );
 
   /// 把时钟运行态对齐到判据：可跑 → `start()`（对已在跑的是 no-op），不可跑 →
@@ -1713,6 +1736,21 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     } else {
       unawaited(clock.stop());
     }
+  }
+
+  /// 有声书播放态翻转时把时钟运行态对齐回判据（BUG-2558）。
+  ///
+  /// 后台 / 失焦期间「有声书在播」是 [studyClockMayRun] 里唯一能豁免生命周期停表的
+  /// 输入，而**暂停之后不会再有 cue 推进**——媒体中心按下暂停 / 播完 / 耳机拔出那一刻
+  /// 若不立刻 sync，时钟会一直空转到下一次前台事件（回前台才结算，整段静音被计成阅读）。
+  /// 反向同理：后台按播放要立刻续表。
+  ///
+  /// 只在翻转时 sync（每次 cue 推进都 sync 语义等价，但会每 125ms 发起一次注定 no-op
+  /// 的 `stop()`）。镜像字段只做边沿检测，判据本身仍现读控制器。
+  void _noteAudiobookPlayingForStudyClock(bool playing) {
+    if (playing == _audiobookPlayingForStudyClock) return;
+    _audiobookPlayingForStudyClock = playing;
+    _syncStudyClockRunState();
   }
 
   /// 在面板 / 弹层 / 全页路由压住正文期间停表（BUG-2208，对齐 Hoshi Android 的

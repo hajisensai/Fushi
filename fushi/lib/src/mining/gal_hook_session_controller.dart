@@ -2,11 +2,10 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/mining/adts_duration.dart';
-import 'package:fushi/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -19,6 +18,7 @@ import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/galgame_system_ui_filter.dart';
+import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -28,22 +28,17 @@ import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 
-/// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [FushiDatabase.
-/// upsertStudySegment]（chars-only 游戏段）；单测可注入假写入方
-/// 断言 flush 时机与聚合值，无需真实 DB。
+/// hook 台词到达后多久把字数写穿（去抖：连续几行只写一次）。
 ///
-/// **只写字符数，不写 `durationMs`**（契约 §3.1）：游玩时长的真相源已经是
-/// `GalgamePlayTracker`（前台窗口 + 候选进程组计时），hook 文本这条路径再写一份
-/// 时长就是同一次游玩被计两遍。hook 文本字符数仍然有价值（喂首页「今日字符数」），
-/// 所以这条写入保留，只是不再携带时长。
-typedef GalHookActivityWriter =
-    Future<void> Function({
-      required String title,
-      String? mediaKey,
-      required String dateKey,
-      required int timestampMs,
-      required int charsDelta,
-    });
+/// BUG-2564：此前自家累计器攒满 500 字或 60 秒活跃才 insert 一条新 uid 的段，用户
+/// 翻几行后打开统计页仍是 0 字。现在字数经 [StudyClock]（按 uid 绝对值 upsert）
+/// 记到当前段，去抖后 [StudyClock.flushNow] 写穿，统计页随开随见。
+const Duration kGalActivityFlushDebounce = Duration(seconds: 2);
+
+/// 字数时钟的 tick。显式记账模式下 tick 只裁决段的生命周期：一整窗没有新台词
+/// （读者离席 / 停在一句上）就封段，下一行开新 uid。活动流与会话流按 30 分钟 gap
+/// 归并，封段不会把一局拆成多条；tick 越长段越少。
+const Duration kGalActivityClockTick = Duration(minutes: 5);
 
 /// 建游玩计时器的工厂（契约 §3.1 的时长侧）。生产默认建真 [GalgamePlayTracker]
 /// （Windows 前台窗口 + 候选进程组计时）；单测注入带假 probe / 假时钟的实例。
@@ -176,6 +171,7 @@ class GalCaptureMemory {
     this.voiceTrackFingerprint,
     this.textThreadFingerprint,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
+    this.textProcess = const GalTextProcessPipeline(),
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -189,6 +185,7 @@ class GalCaptureMemory {
       audioFallbackPolicy: GalAudioFallbackPolicy.fromStorageKey(
         json['audioFallback'] as String?,
       ),
+      textProcess: GalTextProcessPipeline.fromJson(json['textProcess']),
     );
   }
 
@@ -205,17 +202,26 @@ class GalCaptureMemory {
   /// 「这个游戏的音频该怎么抓」的判断，只记一半会让用户每次开游戏重设一遍。
   final GalAudioFallbackPolicy audioFallbackPolicy;
 
+  /// 用户为这个游戏编排的文本处理管线（逐字重绘去重 / 注音花括号 / 正则替换等）。
+  ///
+  /// 判空用 [GalTextProcessPipeline.steps] 而不是 [GalTextProcessPipeline.isEmpty]：
+  /// 后者只回答「有没有生效步骤」，把整条链**临时全禁用**的用户仍然有东西要记——
+  /// 按 isEmpty 记就等于「全部禁用一次 = 规则被磁盘悄悄删光」。
+  final GalTextProcessPipeline textProcess;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
-      audioFallbackPolicy == GalAudioFallbackPolicy.full;
+      audioFallbackPolicy == GalAudioFallbackPolicy.full &&
+      textProcess.steps.isEmpty;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
     String? voiceTrackFingerprint,
     String? textThreadFingerprint,
     GalAudioFallbackPolicy? audioFallbackPolicy,
+    GalTextProcessPipeline? textProcess,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) => GalCaptureMemory(
@@ -228,6 +234,7 @@ class GalCaptureMemory {
         ? null
         : textThreadFingerprint ?? this.textThreadFingerprint,
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
+    textProcess: textProcess ?? this.textProcess,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -236,6 +243,7 @@ class GalCaptureMemory {
     if (textThreadFingerprint != null) 'textThread': textThreadFingerprint,
     if (audioFallbackPolicy != GalAudioFallbackPolicy.full)
       'audioFallback': audioFallbackPolicy.storageKey,
+    if (textProcess.steps.isNotEmpty) 'textProcess': textProcess.toJson(),
   };
 }
 
@@ -708,10 +716,10 @@ class GalHookSessionController extends ChangeNotifier {
     List<Duration> engineRetryBackoff = kGalEngineRetryBackoff,
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
-    GalHookActivityWriter? activityWriter,
+    Duration activityFlushDebounce = kGalActivityFlushDebounce,
     GalgamePlayTrackerFactory? playTrackerFactory,
   }) : _textService = textService ?? TexthookerService.instance,
-       _activityWriter = activityWriter,
+       _activityFlushDebounce = activityFlushDebounce,
        _playTrackerFactory = playTrackerFactory ?? _defaultPlayTrackerFactory,
        _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
        _loopbackSourceFactory =
@@ -979,6 +987,10 @@ class GalHookSessionController extends ChangeNotifier {
   String? _captureMemoryGameKey;
   GalCaptureMemory _captureMemory = const GalCaptureMemory();
 
+  /// 本会话生效的文本处理管线。真值随捕获记忆按游戏落盘，这里是热路径读的那一份
+  /// 内存态——[_pollHookedText] 每条行都要问它，不能每次回偏好表取。
+  GalTextProcessPipeline _textProcessPipeline = const GalTextProcessPipeline();
+
   /// 音轨记忆（排除集 + 语音轨）已对本会话首个非空快照应用过。
   bool _trackMemoryApplied = false;
 
@@ -1063,10 +1075,6 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   // ── 游戏活动记账（首页「游戏」活动的字符侧写入方；时长侧见 _playTracker）──
-  /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
-  final GalHookActivityAccumulator _activityAccumulator =
-      GalHookActivityAccumulator();
-
   /// 统计字数的唯一计数口径（相邻去重 + 递增增量 + 标点剔除 + CJK 每字/西文
   /// 每词 + 超长垃圾行门），见 [GalgameLineCharCounter]。
   final GalgameLineCharCounter _activityCharCounter = GalgameLineCharCounter();
@@ -1077,12 +1085,30 @@ class GalHookSessionController extends ChangeNotifier {
   /// hibiki 只管音频的场景）外部行仍照常计数。
   bool _engineTextCounted = false;
 
-  /// 可注入的落库写入方（单测用假实现）；为 null 时经 [_activityDatabaseResolver]
-  /// 惰性取 DB 走默认写入。
-  final GalHookActivityWriter? _activityWriter;
+  /// 本会话的字数时钟：v92 统计域的唯一写入面 [StudyClock]，显式记账模式、只喂
+  /// 字数、从不 [StudyClock.addActiveMs]——游玩时长的真相源是 `galgame_sessions`
+  /// （契约 §3.1），所以落下的段时长恒 0，两者量纲分列、SUM 不会双计。
+  ///
+  /// 只有解析出库内身份（`galgames.id`）才建：统计永不按 title 认身份，attach 到不在
+  /// 游戏库里的进程时字数不计。BUG-2564 之前这里是自家累计器 + 每次新 uid 的
+  /// insert，攒满 500 字或 60 秒活跃才落一条，用户翻几行后统计页仍是 0；且 dateKey
+  /// 走日历日而不是统计日边界 `statDateKeyOf`。
+  StudyClock? _activityClock;
 
-  /// 由桌面启动流程注入的 DB 惰性解析器（见 [attachActivityDatabase]）。flush 时才
-  /// 解析——App 未初始化完/未注入时解析到 null 静默不落库（累计保留，下次再试），
+  /// 台词到达后的去抖落库（[StudyClock.flushNow] 不停表、不封段，只把当前段的
+  /// 绝对值写穿）。
+  Timer? _activityFlushTimer;
+  final Duration _activityFlushDebounce;
+
+  /// 有归属、但 DB 还没接上（App 初始化中）时先攒着的字数，时钟建起来时一次补记。
+  int _activityPendingChars = 0;
+
+  /// 登记进 [ExitFlushRegistry] 的字数时钟结算回调；首个时钟建起时登记（与
+  /// [_playTrackerExitFlush] 同款：桌面点 X 走 `exit(0)` 快杀，[close] 不会被调用）。
+  ExitFlushCallback? _activityClockExitFlush;
+
+  /// 由桌面启动流程注入的 DB 惰性解析器（见 [attachActivityDatabase]）。首行有归属
+  /// 台词到达时才解析——App 未初始化完/未注入时解析到 null 先攒着，下一行再试，
   /// 避免 start 时急切解引用未初始化的 late 字段。
   FushiDatabase? Function()? _activityDatabaseResolver;
 
@@ -1871,9 +1897,9 @@ class GalHookSessionController extends ChangeNotifier {
     // 用户点「停止捕获」就是这一局游玩的终点（BUG-1892）：结算必须在这里发生，
     // 不能拖到游戏进程死或 App 退出——否则停了捕获、人早就不玩了，计时器还在跑。
     await _stopPlayTracker();
-    // 会话结束先把剩余累计落库，再复位记账并解除游戏归属（防停后串扰）。
-    _flushGameActivity();
-    _activityAccumulator.reset();
+    // 会话结束先把字数时钟停表落库（await 到写完），再解除游戏归属（防停后串扰）。
+    await _stopActivityClock();
+    _activityPendingChars = 0;
     _activityGameTitle = null;
     _activityGameKey = null;
     if (_state.phase == GalHookSessionPhase.idle && _audioSource == null) {
@@ -2531,8 +2557,13 @@ class GalHookSessionController extends ChangeNotifier {
           ..sort((GalHookedLine a, GalHookedLine b) => a.seq.compareTo(b.seq));
     if (history.isEmpty) return;
     for (final GalHookedLine line in history) {
+      // 回捞的是**同一条线程的正文**，与 poll 路径必须同样过管线：只处理一半会让
+      // 回捞行（原文）与后续 poll 行（已处理）在 appendLine 的前后缀折叠判据上对不上，
+      // 同一句台词在工作台里留两条。
+      final String? processedText = _processSelectedThreadText(line.text);
+      if (processedText == null) continue;
       final TexthookerLineEntry? entry = _textService.appendLine(
-        line.text,
+        processedText,
         source: TexthookerLineSource.engineHook,
         sourceLabel: 'engine_hook',
         sourceSequence: line.seq,
@@ -2867,6 +2898,9 @@ class GalHookSessionController extends ChangeNotifier {
     if (load == null || gameKey == null) return false;
     _captureMemoryGameKey = gameKey;
     _captureMemory = load(gameKey);
+    // 文本处理管线随记忆一起回到内存态。放在这里而不是某个 restore* 里：热路径
+    // 只读 [_textProcessPipeline]，而这是记忆真值进入本会话的唯一入口。
+    _textProcessPipeline = _captureMemory.textProcess;
     return true;
   }
 
@@ -3081,6 +3115,47 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 本会话当前生效的文本处理管线（来自每游戏记忆恢复或用户设置）。
+  ///
+  /// 默认是空管线 = 恒等变换：不装配时 [_pollHookedText] 走 [GalTextProcessPipeline.
+  /// isEmpty] 短路，文本一个字符不动。
+  GalTextProcessPipeline get textProcessPipeline => _textProcessPipeline;
+
+  /// 设置文本处理管线，并按游戏记住（与选轨 / 选线程同规格）。
+  ///
+  /// 没有游戏身份（窗口附着路径，没有 launchExe）时只活在会话内——与
+  /// [_persistTextThread] 同口径的「宁可少记，不猜身份」。
+  ///
+  /// 顺序刻意是「先加载记忆再写内存态」：[_ensureCaptureMemoryLoaded] 自己会把磁盘上
+  /// 的管线灌进 [_textProcessPipeline]，反过来写就会被这次惰性加载覆盖掉用户刚设的值。
+  Future<void> setTextProcessPipeline(GalTextProcessPipeline pipeline) async {
+    // 值没变就不落盘也不通知：可视化界面的拖动重排会连续产生大量中间态，
+    // 少了这道短路，每一帧都要往偏好里写一次整份管线。
+    if (pipeline == _textProcessPipeline) {
+      return;
+    }
+    final bool persistable = _ensureCaptureMemoryLoaded();
+    _textProcessPipeline = pipeline;
+    if (persistable) {
+      _saveCaptureMemory(_captureMemory.copyWith(textProcess: pipeline));
+    }
+    notifyListeners();
+  }
+
+  /// 对**所选线程的一行**套用用户编排的文本处理管线。
+  ///
+  /// 返回 null = 管线把整行处理空了（例如「只保留「」内文本」遇到旁白），调用方按
+  /// 系统 UI 行同样处置：推进 cursor、整行丢弃。
+  ///
+  /// 空管线（默认）在第一行就短路返回原串：这是每条 hook 行都要过的热路径，
+  /// 不装配时不允许产生任何额外拷贝或扫描。
+  String? _processSelectedThreadText(String text) {
+    final GalTextProcessPipeline pipeline = _textProcessPipeline;
+    if (pipeline.isEmpty) return text;
+    final String processed = pipeline.apply(text);
+    return processed.trim().isEmpty ? null : processed;
+  }
+
   /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
   void _resetCaptureMemorySession() {
     _trackMemoryApplied = false;
@@ -3088,6 +3163,7 @@ class GalHookSessionController extends ChangeNotifier {
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
+    _textProcessPipeline = const GalTextProcessPipeline();
   }
 
   /// 该台词行到达时刻（hook 侧 `GetTickCount64()` 毫秒域，与语音 clip、窗口录制帧
@@ -3745,8 +3821,8 @@ class GalHookSessionController extends ChangeNotifier {
 
   Future<void> close() async {
     ++_operationGeneration;
-    _flushGameActivity();
-    _activityAccumulator.reset();
+    await _stopActivityClock();
+    _activityPendingChars = 0;
     _activityCharCounter.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
@@ -3760,6 +3836,11 @@ class GalHookSessionController extends ChangeNotifier {
       ExitFlushRegistry.instance.unregister(playFlush);
       _playTrackerExitFlush = null;
     }
+    final ExitFlushCallback? activityFlush = _activityClockExitFlush;
+    if (activityFlush != null) {
+      ExitFlushRegistry.instance.unregister(activityFlush);
+      _activityClockExitFlush = null;
+    }
     await _stopPlayTracker();
     await shutdownMagpieUpscaling();
     await shutdownWindowRecording();
@@ -3767,9 +3848,9 @@ class GalHookSessionController extends ChangeNotifier {
     dispose();
   }
 
-  /// 注入 activity_events 落库用的 DB 惰性解析器（桌面启动流程
-  /// [GalHookTextOverlayController.start] 调用一次；解析在每次 flush 时发生，
-  /// App 尚未初始化完则返回 null 跳过本次落库）。是首页「游戏」活动的唯一数据来源。
+  /// 注入统计落库用的 DB 惰性解析器（桌面启动流程
+  /// [GalHookTextOverlayController.start] 调用一次；首行有归属台词到达时才解析，
+  /// App 尚未初始化完则返回 null、字数先攒着）。是首页「游戏」活动的唯一数据来源。
   void attachActivityDatabase(FushiDatabase? Function() resolve) {
     _activityDatabaseResolver = resolve;
   }
@@ -3946,34 +4027,95 @@ class GalHookSessionController extends ChangeNotifier {
   /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
   /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。
   void _beginActivitySession({required String title, String? mediaKey}) {
-    _flushGameActivity();
+    // 上一局的字数时钟先停表落库（stop 在首个 await 之前就清引用，新旧不串）。
+    unawaited(_stopActivityClock());
     // 捕获记忆按**游戏身份**锚定，所以新会话必须重新加载：只在 [stopCapture] 里重置
     // 是漏的——用户不点「停止监听」直接从库里启动下一个游戏时，`_captureMemoryLoaded`
     // 还是 true，上一个游戏的排除集/语音轨/降级策略会原样套到新游戏上，而用户在新
     // 游戏里做的选择又会被写回**上一个游戏**的 key（`_captureMemoryGameKey` 没换）。
     _resetCaptureMemorySession();
-    _activityAccumulator.reset();
     _activityCharCounter.reset();
+    _activityPendingChars = 0;
     _engineTextCounted = false;
     final String trimmed = title.trim();
     _activityGameTitle = trimmed.isEmpty ? null : trimmed;
     _activityGameKey = mediaKey == null || mediaKey.isEmpty ? null : mediaKey;
+    _ensureActivityClock();
   }
 
-  /// 记一行 hook 文本到活动累计；命中中途 flush 阈值即落一条（防崩溃丢账）。
-  /// 仅在已开始游戏活动会话（[_activityGameTitle] 非空）时记账——纯 WebSocket/剪贴板
-  /// 文本流没有绑定游戏进程、无可归属标题，不计入「游戏」活动。
+  /// 本会话的字数时钟；有归属身份且 DB 已接上时才建（并起表），否则 null。
+  ///
+  /// 建起来时把 [_activityPendingChars]（DB 接上之前攒的字数）一次补记。
+  StudyClock? _ensureActivityClock() {
+    final StudyClock? existing = _activityClock;
+    if (existing != null) return existing;
+    final String? title = _activityGameTitle;
+    final String? mediaKey = _activityGameKey;
+    if (title == null || mediaKey == null) return null;
+    final FushiDatabase? database = _activityDatabaseResolver?.call();
+    if (database == null) return null;
+    final StudyClock clock = StudyClock(
+      database: database,
+      mediaKind: kActivityMediaGame,
+      mediaKey: mediaKey,
+      title: title,
+      accrual: StudyAccrual.explicit,
+      tick: kGalActivityClockTick,
+      now: _now,
+      onWriteError: (Object error, StackTrace stack) => _record(
+        GalHookEventSeverity.warning,
+        'activity',
+        'activity.write_failed',
+        'Failed to persist hook text chars',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+        notify: false,
+      ),
+    )..start();
+    _activityClock = clock;
+    final int pending = _activityPendingChars;
+    _activityPendingChars = 0;
+    if (pending > 0) {
+      clock.addChars(pending);
+      _scheduleActivityFlush(clock);
+    }
+    _activityClockExitFlush ??= ExitFlushRegistry.instance.register(
+      _stopActivityClock,
+    );
+    return clock;
+  }
+
+  /// 停表并等最后一笔写完成。幂等；同步段（清引用 / 取消去抖）在首个 await 之前，
+  /// 并发的第二次调用看到的是已清空的状态。
+  Future<void> _stopActivityClock() async {
+    _activityFlushTimer?.cancel();
+    _activityFlushTimer = null;
+    final StudyClock? clock = _activityClock;
+    _activityClock = null;
+    if (clock == null) return;
+    await clock.stop();
+  }
+
+  /// 去抖后把当前段写穿；期间换了时钟（换游戏 / 停止监听）就作废。
+  void _scheduleActivityFlush(StudyClock clock) {
+    _activityFlushTimer?.cancel();
+    _activityFlushTimer = Timer(_activityFlushDebounce, () {
+      _activityFlushTimer = null;
+      if (!identical(_activityClock, clock)) return;
+      unawaited(clock.flushNow());
+    });
+  }
+
+  /// 记一行 hook 文本的字数到本会话的字数时钟。仅在已开始游戏活动会话
+  /// （[_activityGameTitle] 非空）时记账——纯 WebSocket/剪贴板文本流没有绑定游戏
+  /// 进程、无可归属标题，不计入「游戏」活动。
   ///
   /// 字数走 [_activityCharCounter] 统一口径（BUG-1085：裸 `text.length` 把标点、
-  /// 相邻重发、打字机递增、外部工具双通道全算成字数，统计虚高）。计 0 的行仍
-  /// [GalHookActivityAccumulator.recordLine] 记时间戳——行到达本身是"人在读"
-  /// 的活跃信号，flush 节奏不受去重影响。
+  /// 相邻重发、打字机递增、外部工具双通道全算成字数，统计虚高）。
   /// 引擎 hook 路径：上游折叠已经给出增量，字数走 [GalgameLineCharCounter.countDelta]
   /// （不再二次去重）。
   ///
-  /// **空增量也要调用** —— 行到达本身就是「人在读」的活跃信号，心跳不该被去重影响。
-  /// 原来调用点写着 `if (countedText.isNotEmpty)`，于是一段全靠重绘推进的长台词会
-  /// 让活跃心跳整段停掉，`shouldFlush` 的节奏跟着断。
+  /// 计 0 的行（重发 / 纯标点）仍要调用：单计数源门（[_engineTextCounted]）要靠它
+  /// 置位，外部通道的同句才不会补计。
   void _recordEngineDelta(String delta) => _recordActivity(
     _activityCharCounter.countDelta(delta),
     fromEngineHook: true,
@@ -3993,8 +4135,16 @@ class GalHookSessionController extends ChangeNotifier {
     } else if (_engineTextCounted) {
       return; // 引擎 hook 是本会话计数源，外部通道的同句不再计（防双计）。
     }
-    _activityAccumulator.recordLine(chars, _now().millisecondsSinceEpoch);
-    if (_activityAccumulator.shouldFlush) _flushGameActivity();
+    if (chars <= 0) return;
+    final StudyClock? clock = _ensureActivityClock();
+    if (clock == null) {
+      // 有归属但 DB 还没接上：先攒着，时钟建起来时一次补记。无稳定身份（不在游戏
+      // 库）的文本流没有可归属的 media_key，不计——统计永不按 title 认身份。
+      if (_activityGameKey != null) _activityPendingChars += chars;
+      return;
+    }
+    clock.addChars(chars);
+    _scheduleActivityFlush(clock);
   }
 
   /// 可执行文件路径 → 展示用游戏名：取文件名去扩展名（跨平台按 `/` 或 `\` 切分）。
@@ -4002,94 +4152,6 @@ class GalHookSessionController extends ChangeNotifier {
     final String name = path.split(RegExp(r'[\\/]')).last;
     final int dot = name.lastIndexOf('.');
     return dot > 0 ? name.substring(0, dot) : name;
-  }
-
-  /// 把当前累计的**字符数**落一条 activity_events。无可归属标题、无 DB/写入方或无
-  /// 字符累计时不落（保留累计，等下一行或会话结束再试）；落库失败静默（try/catch）。
-  ///
-  /// 契约 §3.1：时长不再从这里写（真相源是 `GalgamePlayTracker`）。累计器内部仍算
-  /// 活跃时长，但那只是 [GalHookActivityAccumulator.shouldFlush] 的节奏信号；没有
-  /// 字符就没有可记的事实，直接不落行，免得产生一堆全 null 的空活动。
-  void _flushGameActivity() {
-    final String? title = _activityGameTitle;
-    final GalHookActivityWriter? writer = _resolveActivityWriter();
-    if (title == null || writer == null) return;
-    if (_activityAccumulator.pendingChars <= 0) return;
-    final (int charsDelta, _) = _activityAccumulator.drain();
-    final String? mediaKey = _activityGameKey;
-    final DateTime now = _now();
-    unawaited(
-      _safeWriteActivity(
-        writer: writer,
-        title: title,
-        mediaKey: mediaKey,
-        charsDelta: charsDelta,
-        now: now,
-      ),
-    );
-  }
-
-  GalHookActivityWriter? _resolveActivityWriter() {
-    final GalHookActivityWriter? injected = _activityWriter;
-    if (injected != null) return injected;
-    final FushiDatabase? database = _activityDatabaseResolver?.call();
-    if (database == null) return null;
-    return ({
-      required String title,
-      String? mediaKey,
-      required String dateKey,
-      required int timestampMs,
-      required int charsDelta,
-    }) async {
-      // v92：hook 字数落 study_segments 一条 chars-only 段（时长恒 0：时长真相源
-      // 是 galgame_sessions，两者量纲分列、SUM 不会双计）。无稳定身份（不在游戏库）
-      // 的文本流没有可归属的 media_key，不落——统计永不按 title 认身份。
-      if (mediaKey == null || mediaKey.isEmpty) return;
-      final String deviceId = await database.getOrCreateStudyDeviceId();
-      final DateTime at = DateTime.fromMillisecondsSinceEpoch(timestampMs);
-      await database.upsertStudySegment(
-        StudySegmentsCompanion.insert(
-          uid: FushiDatabase.newStudySegmentUid(),
-          deviceId: deviceId,
-          mediaKind: kActivityMediaGame,
-          mediaKey: mediaKey,
-          title: title,
-          startAt: timestampMs,
-          endAt: timestampMs,
-          dateKey: dateKey,
-          hour: at.hour,
-          chars: Value(charsDelta),
-          updatedAt: timestampMs,
-        ),
-      );
-    };
-  }
-
-  Future<void> _safeWriteActivity({
-    required GalHookActivityWriter writer,
-    required String title,
-    required String? mediaKey,
-    required int charsDelta,
-    required DateTime now,
-  }) async {
-    try {
-      await writer(
-        title: title,
-        mediaKey: mediaKey,
-        dateKey: FushiTimeFormat.dayKey(now),
-        timestampMs: now.millisecondsSinceEpoch,
-        charsDelta: charsDelta,
-      );
-    } catch (error, stack) {
-      _record(
-        GalHookEventSeverity.warning,
-        'activity',
-        'activity.write_failed',
-        'Failed to persist game activity event',
-        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
-        notify: false,
-      );
-    }
   }
 
   void _activateEngine(
@@ -4876,8 +4938,21 @@ class GalHookSessionController extends ChangeNotifier {
           cursor = line.seq;
           continue;
         }
+        // 用户编排的文本处理管线（LunaTranslator 同款：逐字重绘去重 / 去整块重复 /
+        // 花括号注音 / 正则替换……）。位置有两条硬约束，不能挪：
+        //   ① 必须在 [_acceptsLineFromSelectedThread] **之后** —— 管线是给「所选线程的
+        //      正文」配的，线程目录/预览仍然要看引擎原样吐出来的串，否则用户在选择器里
+        //      看到的和他为之写规则的东西对不上；
+        //   ② 必须在 appendLine **之前** —— 注音剥离（parseRubyMarkup）与渐进折叠都在
+        //      appendLine 内部按入参文本建坐标系，管线放到后面跑就等于让 rubySpans 的
+        //      下标指向一份已经不存在的文本，振假名会整片错位。
+        final String? processedText = _processSelectedThreadText(line.text);
+        if (processedText == null) {
+          cursor = line.seq;
+          continue;
+        }
         final TexthookerLineEntry? entry = _textService.appendLine(
-          line.text,
+          processedText,
           source: TexthookerLineSource.engineHook,
           sourceLabel: 'engine_hook',
           sourceSequence: line.seq,

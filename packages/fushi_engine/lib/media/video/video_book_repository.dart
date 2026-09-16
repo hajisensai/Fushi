@@ -770,8 +770,9 @@ class VideoBookRepository {
   ///
   /// [deleteLocalFiles]（删除确认框「同时删除本地文件」）：行删掉、UI 释放句柄之后，
   /// 再把被删行自己的原始视频文件（`videoPath` + 播放列表各集，见
-  /// [localVideoFileCandidates]）从磁盘删掉。护栏：仍被任何幸存行引用的文件保留；
-  /// 远端流没有文件；相对路径不删；只删文件不删目录。
+  /// [localVideoFileCandidates]）**以及跟着这些视频走的 sidecar 外挂字幕**（见
+  /// [localVideoSidecarSubtitleCandidates]，BUG-2565）从磁盘删掉。护栏：仍被任何
+  /// 幸存行引用的视频/字幕文件保留；远端流没有文件；相对路径不删；只删文件不删目录。
   ///
   /// [localFileHooks] 是这条尾活的前后挂钩：删之前先让引用方放手（下载后端把该
   /// 文件标 skip），删之后才做记录对账。本仓库层不认识下载管线（管线依赖仓库，
@@ -813,6 +814,7 @@ class VideoBookRepository {
       String bookUid,
       String? coverPath,
       String? subtitlePath,
+      String? secondarySubtitlePath,
       String videoPath,
       String? playlistJson,
       List<String> imagePaths,
@@ -833,6 +835,7 @@ class VideoBookRepository {
         bookUid: bookUid,
         coverPath: book.coverPath,
         subtitlePath: book.subtitleSource,
+        secondarySubtitlePath: book.secondarySubtitleSource,
         videoPath: book.videoPath,
         playlistJson: book.playlistJson,
         imagePaths: imagePaths,
@@ -847,6 +850,7 @@ class VideoBookRepository {
           deletedBookUid: snapshot.bookUid,
           deletedCoverPath: snapshot.coverPath,
           deletedSubtitlePath: snapshot.subtitlePath,
+          deletedSecondarySubtitlePath: snapshot.secondarySubtitlePath,
           deletedVideoPath: snapshot.videoPath,
           deletedImagePaths: snapshot.imagePaths,
         );
@@ -854,16 +858,31 @@ class VideoBookRepository {
       if (deleteLocalFiles && deleted.isNotEmpty) {
         // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
         // 单文件失败逐条回传（[LocalFileDeleteReport]），不翻转删除结果。
-        final Set<String> stillReferenced = referencedLocalVideoPaths(
-          await listAll(),
-        );
-        final List<String> candidates = <String>[
+        final List<VideoBookRow> survivors = await listAll();
+        final Set<String> stillReferenced = <String>{
+          ...referencedLocalVideoPaths(survivors),
+          // 幸存行手动挂着的外挂字幕也进护栏：它可能正躺在被删视频旁边、名字还
+          // 对得上（用户给 B.mkv 挂了 A.ja.srt），那也不能删。
+          ...referencedLocalSubtitlePaths(survivors),
+        };
+        final List<String> videoCandidates = <String>[
           for (final snapshot in deleted)
             for (final String path in localVideoFileCandidates(
               videoPath: snapshot.videoPath,
               playlistJson: snapshot.playlistJson,
             ))
               if (!stillReferenced.contains(platformPathKey(path))) path,
+        ];
+        // 视频旁的外挂字幕跟着视频走（BUG-2565）：勾了「同时删除本地文件」却把
+        // `<同名>.ja.srt` 留在用户目录里，下次扫描/导入同一目录还会被当成孤儿
+        // 字幕认领。候选只从**已过护栏、确定要删**的视频文件派生——视频本身被
+        // 护栏挡下（还有别的行引用同一文件）时，它的字幕当然也一条都不碰。
+        final List<String> candidates = <String>[
+          ...videoCandidates,
+          for (final String path in await localVideoSidecarSubtitleCandidates(
+            videoCandidates,
+          ))
+            if (!stillReferenced.contains(platformPathKey(path))) path,
         ];
         if (candidates.isNotEmpty) {
           // 先让引用方放手，再销毁实体：还在做种的文件必须先在下载后端标 skip，
@@ -921,6 +940,7 @@ class VideoBookRepository {
     required String? deletedCoverPath,
     required String? deletedSubtitlePath,
     required String deletedVideoPath,
+    String? deletedSecondarySubtitlePath,
     List<String> deletedImagePaths = const <String>[],
   }) {
     final VideoScrapeOperationLease? lease =
@@ -931,6 +951,7 @@ class VideoBookRepository {
         deletedBookUid: deletedBookUid,
         deletedCoverPath: deletedCoverPath,
         deletedSubtitlePath: deletedSubtitlePath,
+        deletedSecondarySubtitlePath: deletedSecondarySubtitlePath,
         deletedVideoPath: deletedVideoPath,
         deletedImagePaths: deletedImagePaths,
       ),
@@ -943,6 +964,7 @@ class VideoBookRepository {
     required String? deletedSubtitlePath,
     required String deletedVideoPath,
     required List<String> deletedImagePaths,
+    String? deletedSecondarySubtitlePath,
   }) async {
     try {
       final ({Set<String> covers, Set<String> subtitles}) refs =
@@ -950,6 +972,7 @@ class VideoBookRepository {
       await VideoStorage.deleteBookAssets(
         deletedCoverPath: deletedCoverPath,
         deletedSubtitlePath: deletedSubtitlePath,
+        deletedSecondarySubtitlePath: deletedSecondarySubtitlePath,
         stillReferencedCoverPaths: refs.covers,
         stillReferencedSubtitlePaths: refs.subtitles,
       );
@@ -1017,8 +1040,14 @@ class VideoBookRepository {
       if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
       final String? cover = row.coverPath;
       if (cover != null && cover.isNotEmpty) covers.add(cover);
-      final String? sub = row.subtitleSource;
-      if (sub != null && sub.isNotEmpty) subtitles.add(sub);
+      // 主 + 副两条指针都进护栏：同一份 app 字幕副本可以是 A 的主字幕、同时是
+      // 幸存行 B 的副字幕，只收主指针会在删 A 时把 B 的副字幕一起删掉。
+      for (final String? sub in <String?>[
+        row.subtitleSource,
+        row.secondarySubtitleSource,
+      ]) {
+        if (sub != null && sub.isNotEmpty) subtitles.add(sub);
+      }
     }
     return (covers: covers, subtitles: subtitles);
   }
@@ -1056,11 +1085,19 @@ class VideoBookRepository {
       (await findByVideoPath(videoPath, excludeBookUid: excludeBookUid)) !=
       null;
 
+  /// 落库只收可读对白：`\p` 绘图事件（[AudioCue.isRenderOnly]）是播放期渲染专用，
+  /// 写进 cue 表会在字幕列表 / 制卡里冒出空行。
+  static List<AudioCuesCompanion> _persistableCues(List<AudioCue> cues) =>
+      <AudioCuesCompanion>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly) AudioCue.toCompanion(c),
+      ];
+
   Future<void> saveCues({
     required String bookUid,
     required List<AudioCue> cues,
   }) =>
-      _db.replaceCuesForBook(bookUid, cues.map(AudioCue.toCompanion).toList());
+      _db.replaceCuesForBook(bookUid, _persistableCues(cues));
 
   Future<List<AudioCue>> loadCues(String bookUid) async {
     final List<AudioCueRow> rows = await _db.getCuesForBook(bookUid);
@@ -1076,10 +1113,7 @@ class VideoBookRepository {
     required List<AudioCue> cues,
   }) =>
       _db.transaction(() async {
-        await _db.replaceCuesForBook(
-          bookUid,
-          cues.map(AudioCue.toCompanion).toList(),
-        );
+        await _db.replaceCuesForBook(bookUid, _persistableCues(cues));
         await _db.updateVideoBookSubtitleSource(bookUid, subtitleSource);
       });
 }

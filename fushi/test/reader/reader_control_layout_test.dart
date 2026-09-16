@@ -8,7 +8,7 @@ import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 
 void main() {
   group('ReaderControlLayout 模型', () {
-    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 3；底栏为空', () {
+    test('出厂布局 = 原硬编码顶栏：左 5 / 中书名 / 右 3；底栏为空；悬浮球三键', () {
       final ReaderControlLayout d = ReaderControlLayout.defaults;
       expect(d.itemsIn(ReaderControlSlot.topLeft), <ReaderControlItem>[
         ReaderControlItem.back,
@@ -26,7 +26,60 @@ void main() {
       ]);
       expect(d.hasBottomItems, isFalse);
       expect(d.showsTitle, isTrue);
-      expect(d.core.removedItems, isEmpty);
+      expect(d.itemsIn(ReaderControlSlot.floatingBall), <ReaderControlItem>[
+        ReaderControlItem.audiobookPrev,
+        ReaderControlItem.audiobookPlayPause,
+        ReaderControlItem.audiobookNext,
+      ]);
+      // ±10s / 跟随出厂在托盘（可拖进任一槽）。
+      expect(d.core.removedItems, <ReaderControlItem>{
+        ReaderControlItem.audiobookSeekBack,
+        ReaderControlItem.audiobookSeekForward,
+        ReaderControlItem.audiobookFollow,
+      });
+    });
+
+    test('悬浮球槽：必需项（返回 / 设置）进不去，传输键与普通键都能进；旧布局 JSON 自动补上出厂三键', () {
+      expect(ReaderControlItem.back.canMoveToSlot(ReaderControlSlot.floatingBall),
+          isFalse);
+      expect(
+          ReaderControlItem.settings.canMoveToSlot(ReaderControlSlot.floatingBall),
+          isFalse);
+      expect(ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.floatingBall),
+          isFalse);
+      expect(
+          ReaderControlItem.gallery.canMoveToSlot(ReaderControlSlot.floatingBall),
+          isTrue);
+      expect(
+          ReaderControlItem.audiobookPrev
+              .canMoveToSlot(ReaderControlSlot.topLeft),
+          isTrue);
+      expect(
+          ReaderControlItem.audiobookPrev
+              .canMoveToSlot(ReaderControlSlot.topCenter),
+          isFalse);
+      for (final ReaderControlItem i in ReaderControlItem.values) {
+        expect(i.isAudiobookTransport,
+            i.recoverySlot == ReaderControlSlot.floatingBall,
+            reason: '$i：传输键 ⟺ 回落槽是悬浮球');
+      }
+      // 上游没有悬浮球槽时存的布局：没提到的传输键按出厂回填到悬浮球槽。
+      final ReaderControlLayout legacy = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"]}}',
+      );
+      expect(legacy.itemsIn(ReaderControlSlot.floatingBall), <ReaderControlItem>[
+        ReaderControlItem.audiobookPrev,
+        ReaderControlItem.audiobookPlayPause,
+        ReaderControlItem.audiobookNext,
+      ]);
+      // 显式移除过的不回填。
+      final ReaderControlLayout cleared = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topLeft":["back"],"floatingBall":["gallery"]},'
+        '"removed":["audiobookPrev","audiobookPlayPause","audiobookNext"]}',
+      );
+      expect(cleared.itemsIn(ReaderControlSlot.floatingBall),
+          <ReaderControlItem>[ReaderControlItem.gallery]);
+      expect(cleared.core.removedItems, contains(ReaderControlItem.audiobookPrev));
     });
 
     test('encode / decode 往返；空 / 坏 JSON 回出厂', () {
@@ -39,7 +92,8 @@ void main() {
       final Map<String, dynamic> raw = jsonDecode(json) as Map<String, dynamic>;
       expect(raw['version'], 1);
       expect((raw['slots'] as Map)['bottomRight'], <String>['gallery']);
-      expect(raw['removed'], <String>['fullscreen']);
+      // 出厂就在托盘的三颗传输键也在 removed 里，这里只钉本次移除的那颗。
+      expect(raw['removed'], contains('fullscreen'));
       final ReaderControlLayout back = ReaderControlLayout.decode(json);
       expect(back, moved);
       expect(back.hasBottomItems, isTrue);
@@ -111,7 +165,7 @@ void main() {
   });
 
   group('ReaderControlLayoutEditor', () {
-    testWidgets('渲染舞台六槽 + 调色板 + 托盘，宽窄两档不溢出', (WidgetTester tester) async {
+    testWidgets('渲染舞台七槽（含悬浮球）+ 调色板 + 托盘，宽窄两档不溢出', (WidgetTester tester) async {
       for (final double width in <double>[900, 360]) {
         tester.view.physicalSize = Size(width, 1400);
         tester.view.devicePixelRatio = 1.0;
@@ -152,7 +206,12 @@ void main() {
       for (final ReaderControlItem i in ReaderControlItem.values) {
         expect(readerControlItemIcon(i), isA<IconData>());
       }
-      expect(ReaderControlSlot.editableSlots, hasLength(6));
+      expect(ReaderControlSlot.editableSlots, hasLength(7));
+      expect(ReaderControlSlot.editableSlots,
+          contains(ReaderControlSlot.floatingBall));
+      for (final ReaderControlSlot s in ReaderControlSlot.values) {
+        expect(readerControlSlotLabel(s), isNotEmpty);
+      }
     });
   });
 }

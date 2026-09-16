@@ -134,9 +134,33 @@ Actions → **Build Desktop and Apple Release Artifacts** → Run workflow：
 - `channel` = `beta`（或 `formal`）
 - `upload_testflight` = true（默认）
 
-**TestFlight 只在手动 `workflow_dispatch` 的 beta / formal 通道上传**。push 触发的
-debug 通道每次提交都会跑，传上去只会白烧 App Store Connect 的处理配额，并且把构建号
-推高 —— 构建号在同一个 `CFBundleShortVersionString` 下必须单调递增，浪费掉不可回收。
+手动 dispatch：beta / formal 直接上传；debug 只在 `testflight_only=true` 时上传（手动重发
+一个普通 debug 不会顺手传）。
+
+### debug 包约每三次上一次 TestFlight
+
+push 触发的 debug 通道（`develop` / `main` push）**约每三次传一次**：发布序列（= 构建号 =
+commit 计数，`tool/release_sequence.sh`）能被 3 整除的那次 push，ios job 在未签名 IPA 之外
+再做一趟签名构建 + `altool` 上传（2026-09-16 用户拍板「发三次调试版触发一次 TestFlight」）。
+不每次都传，是因为 push 一天 5~13 次，全传会让 App Store Connect 的处理排队压后真正想发的
+beta、TestFlight 列表被 debug 构建淹掉（每个挂 90 天）、每条 push 再多一趟 15 分钟签名构建。
+用发布序列而不是 run 号：本仓不变式是 run 号永远不当序列（`tool/check_release_policy.ps1`
+整个禁用 `GITHUB_RUN_NUMBER` / `github.run_number`），而且这样从 TestFlight 的构建号就能看出
+哪次是自动传的。每次 push 涨的 commit 数不固定，所以是「约」每三次；哪次会传，看 ios job
+「Resolve Apple signing mode」那一行 `debug push, build N ...` 的日志。
+
+debug 包在 TestFlight 里的短版本与 beta 相同（Apple 只收三段），靠构建号和 app 内
+`FUSHI_BUILD_VERSION`（`2.x.y-debug.<seq>`）区分。构建号是 commit 计数 + 地板、沿 develop
+单调，debug / beta / formal 共用一条序列。所以从**比 develop 头更旧的 commit** 手动发 beta
+时，构建号会比已传的 debug 小、altool 拒收——beta 一律从 develop 头发。
+
+缺任一 Apple 密钥时 push 门直接关闭（fork 照常绿）；`testflight_only=true` 的 dispatch 缺密钥
+则红，不允许「绿着跳过」。想在两次自动上传之间手动补传一份 debug：Run workflow →
+`channel=debug` + `testflight_only=true`（只跑 ios job 的签名 + 上传，其余全跳）。
+
+（09-14 ~ 09-16 曾有过定时通道 `testflight-debug.yml`：每 8 小时用 `tool/asc_latest_build_number.sh`
+查一次 App Store Connect、有新提交才 dispatch。改为按次数后已连同脚本一起撤掉；别把它加
+回来，两条节律并存会重复上传。守卫 `apple_signing_workflow_guard_test.dart` 钉着「不得回潮」。）
 
 上传后 App Store Connect 处理通常 5–30 分钟，之后才出现在测试员列表里。
 
@@ -145,9 +169,10 @@ debug 通道每次提交都会跑，传上去只会白烧 App Store Connect 的�
 Release 里挂的 `fushi-<版本>-ios.ipa` **仍然是未签名包**，走的还是原来的
 `flutter build ios --release --no-codesign` + 手工打 Payload。老用户用 AltStore /
 Sideloadly 自签侧载的就是它，换成 App Store 签名包会直接打断他们。TestFlight 用的是
-另外一次、只在手动 beta/formal 时才发生的签名构建，产物不进 Release 资产。
+另外一次签名构建（手动 beta/formal，或每第三次 debug push），产物不进 Release 资产。
 
-代价是这种发布下 iOS 会构建两次。可以接受：手动 beta/formal 本来就不频繁。
+代价是这种 run 下 iOS 会构建两次。可以接受：手动 beta/formal 本来就不频繁，debug 也只有
+三分之一的 push 多这一趟。
 
 ## 实现要点（改之前先读）
 

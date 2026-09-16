@@ -1,9 +1,12 @@
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
 
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart'
+    show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -46,6 +49,10 @@ class ProfileKeys {
     // 键名从 [ModuleId.allPrefKeys] 生成，不手抄——加模块时这里自动跟上。
     ...ModuleId.allPrefKeys,
     'active_profile_id',
+    // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
+    // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
+    // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
+    kStatLegacyProfileIdPrefKey,
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
@@ -87,6 +94,10 @@ class ProfileKeys {
     // path that may not even exist on this machine.
     'download_save_root',
     'download_save_root_history',
+    // 截图目录与 download_save_root 同族同理：它描述的是这台设备的磁盘，不是阅读
+    // Profile。随 Profile 走会让切 Profile 后截图落到本机不存在的路径上。
+    // 去向枚举（对话框/剪贴板/目录）是真偏好，照常随 Profile。
+    kVideoScreenshotDirectoryPref,
     obsoleteGalgameUpscalingModePrefKey,
     // TODO-855: the monotonic prefs-version counter is the cross-process signal
     // the :popup process reads to decide whether to refresh its warm-reuse

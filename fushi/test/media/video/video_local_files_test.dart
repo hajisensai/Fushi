@@ -185,4 +185,140 @@ void main() {
     });
 
   });
+
+  group('sidecarSubtitlesForDeletedVideo（BUG-2565）', () {
+    test('同名 sidecar 字幕跟着视频走：带语言标记与不带的都算', () {
+      expect(
+        sidecarSubtitlesForDeletedVideo(
+          videoFileName: 'ep01.mkv',
+          dirFileNames: <String>[
+            'ep01.mkv',
+            'ep01.srt',
+            'ep01.ja.ass',
+            'ep01.zh-Hans.vtt',
+          ],
+        ),
+        <String>['ep01.srt', 'ep01.ja.ass', 'ep01.zh-Hans.vtt'],
+      );
+    });
+
+    test('别的集的字幕、非字幕文件一律不收', () {
+      expect(
+        sidecarSubtitlesForDeletedVideo(
+          videoFileName: 'ep01.mkv',
+          dirFileNames: <String>[
+            'ep01.srt',
+            'ep02.srt',
+            'ep01.jpg',
+            'ep01.nfo',
+            'ep01.mkv',
+          ],
+        ),
+        <String>['ep01.srt'],
+      );
+    });
+
+    test('大小写不同的同名字幕照样收（Windows 上是同一个文件）', () {
+      expect(
+        sidecarSubtitlesForDeletedVideo(
+          videoFileName: 'EP01.MKV',
+          dirFileNames: <String>['ep01.JA.srt'],
+        ),
+        <String>['ep01.JA.srt'],
+      );
+    });
+
+    test('更长 stem 的邻居视频还在盘上 → 它认领的字幕不跟着走', () {
+      // `ep01.5.srt` 对 `ep01` 而言后缀是 `.5.srt`，那个 `5` 长得像语言标记，按
+      // 前缀匹配会被 `ep01` 命中——但它显然属于还在的 `ep01.5.mkv`。
+      expect(
+        sidecarSubtitlesForDeletedVideo(
+          videoFileName: 'ep01.mkv',
+          dirFileNames: <String>[
+            'ep01.mkv',
+            'ep01.srt',
+            'ep01.5.mkv',
+            'ep01.5.srt',
+          ],
+        ),
+        <String>['ep01.srt'],
+        reason: '邻居那一集还在，它的字幕一条都不能带走',
+      );
+      // 反过来，邻居自己被删时它的字幕照收——护栏只挡「实体还在的邻居」。
+      expect(
+        sidecarSubtitlesForDeletedVideo(
+          videoFileName: 'ep01.5.mkv',
+          dirFileNames: <String>[
+            'ep01.mkv',
+            'ep01.srt',
+            'ep01.5.mkv',
+            'ep01.5.srt',
+          ],
+        ),
+        <String>['ep01.5.srt'],
+      );
+    });
+
+    test('没有字幕 → 空表', () {
+      expect(
+        sidecarSubtitlesForDeletedVideo(
+          videoFileName: 'ep01.mkv',
+          dirFileNames: <String>['ep01.mkv'],
+        ),
+        isEmpty,
+      );
+    });
+  });
+
+  group('localVideoSidecarSubtitleCandidates（BUG-2565）', () {
+    test('真实目录：同名字幕进候选，别的集与非字幕不进', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('fushi_sub_');
+      addTearDown(() => dir.delete(recursive: true));
+      for (final String name in <String>[
+        'ep01.mkv',
+        'ep01.srt',
+        'ep01.ja.ass',
+        'ep01.jpg',
+        'ep02.mkv',
+        'ep02.srt',
+      ]) {
+        await File(p.join(dir.path, name)).writeAsString('x');
+      }
+
+      final List<String> got = await localVideoSidecarSubtitleCandidates(
+        <String>[p.join(dir.path, 'ep01.mkv')],
+      );
+
+      expect(got.map(p.basename).toSet(), <String>{'ep01.srt', 'ep01.ja.ass'});
+    });
+
+    test('同一目录多集一起删 → 各自的字幕都进候选且不重复', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('fushi_sub_');
+      addTearDown(() => dir.delete(recursive: true));
+      for (final String name in <String>[
+        'ep01.mkv',
+        'ep01.srt',
+        'ep02.mkv',
+        'ep02.srt',
+      ]) {
+        await File(p.join(dir.path, name)).writeAsString('x');
+      }
+
+      final List<String> got = await localVideoSidecarSubtitleCandidates(
+        <String>[p.join(dir.path, 'ep01.mkv'), p.join(dir.path, 'ep02.mkv')],
+      );
+
+      expect(got.map(p.basename).toList(), <String>['ep01.srt', 'ep02.srt']);
+      expect(got.map(platformPathKey).toSet(), hasLength(2), reason: '不重复');
+    });
+
+    test('目录不存在 → 空表，不抛（收集候选失败只该少删文件）', () async {
+      expect(
+        await localVideoSidecarSubtitleCandidates(<String>[
+          p.join(Directory.systemTemp.path, 'fushi_no_such_dir_2565', 'a.mkv'),
+        ]),
+        isEmpty,
+      );
+    });
+  });
 }

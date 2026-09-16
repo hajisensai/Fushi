@@ -249,6 +249,7 @@ void main() {
     Future<void> Function(
       List<MediaCollectionItemRow> members,
       bool deleteLocalFiles,
+      bool deleteStatistics,
     )? onDeleteMembersMedia,
   }) =>
       TranslationProvider(
@@ -289,6 +290,7 @@ void main() {
       onDeleteMembersMedia: (
         List<MediaCollectionItemRow> members,
         bool deleteLocalFiles,
+        bool deleteStatistics,
       ) async =>
           passed.addAll(members),
     ));
@@ -314,6 +316,7 @@ void main() {
       onDeleteMembersMedia: (
         List<MediaCollectionItemRow> members,
         bool deleteLocalFiles,
+        bool deleteStatistics,
       ) async =>
           passed.addAll(members.map(
               (MediaCollectionItemRow r) => '${r.mediaType}|${r.entryKey}')),

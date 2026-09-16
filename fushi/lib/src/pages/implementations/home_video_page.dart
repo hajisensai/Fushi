@@ -1603,7 +1603,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           message: message,
           db: ref.read(appProvider).database,
           localFilesSubtitle:
-              anyLocalFile ? t.delete_local_files_video_desc : null);
+              anyLocalFile ? t.delete_local_files_video_desc : null,
+          statisticsSubtitle: t.delete_statistics_video_desc);
     } else {
       decision = await showAppDialog<DeleteDecision>(
         context: context,
@@ -3121,6 +3122,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 远端流（互联直传 / WebDAV / Jellyfin）磁盘上没有文件，不摆勾选框。
       localFilesSubtitle:
           videoBookHasLocalFiles(book) ? t.delete_local_files_video_desc : null,
+      // 统计与「条目还在不在库里」正交：默认不勾，勾了才连观看时长/字数一起删。
+      statisticsSubtitle: t.delete_statistics_video_desc,
     );
     if (decision == null || !mounted) return;
     final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
@@ -6576,6 +6579,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onDeleteMembersMedia: (
         List<MediaCollectionItemRow> members,
         bool deleteLocalFiles,
+        bool deleteStatistics,
       ) async {
         final List<String> uids = <String>[
           for (final MediaCollectionItemRow m in members)
@@ -6596,6 +6600,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           decision: DeleteDecision(
             scope: DeleteScope.keepLocalOnly,
             deleteLocalFiles: deleteLocalFiles,
+            deleteStatistics: deleteStatistics,
           ),
         );
         reportLocalFileDeleteFailures(
@@ -6606,6 +6611,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       deleteMembersCheckboxLabel: t.delete_collection_also_videos,
       deleteMembersLocalFilesSubtitle:
           anyLocalFile ? t.delete_local_files_video_desc : null,
+      deleteMembersStatisticsSubtitle: t.delete_statistics_video_desc,
       // 视频合集特有项：封面 / 重刮 / 批量字幕。
       //
       // 封面两项只给视频合集：书架与游戏库的合集入口是横排行头，根本没有封面槽，
@@ -7106,6 +7112,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           onDeleteMembersMedia: (
             List<VideoBookRow> members,
             bool deleteLocalFiles,
+            bool deleteStatistics,
           ) async {
             if (members.isEmpty) return;
             // 与库页右键同一条删除纪律（先放句柄 / 标 skip，再删盘，删完对账）。
@@ -7118,6 +7125,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               decision: DeleteDecision(
                 scope: DeleteScope.keepLocalOnly,
                 deleteLocalFiles: deleteLocalFiles,
+                deleteStatistics: deleteStatistics,
               ),
             );
             reportLocalFileDeleteFailures(
@@ -7126,6 +7134,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             );
           },
           deleteMembersLocalFilesSubtitle: t.delete_local_files_video_desc,
+          deleteMembersStatisticsSubtitle: t.delete_statistics_video_desc,
           // 详情页的「重新刮削资料与封面」：controller 归 HomePage，注入库页同一
           // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
           onRescrapeCollection:

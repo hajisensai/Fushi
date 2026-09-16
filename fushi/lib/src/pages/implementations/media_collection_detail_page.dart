@@ -70,6 +70,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.onChanged,
     this.onDeleteMembersMedia,
     this.deleteMembersLocalFilesSubtitle,
+    this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
     super.key,
   });
@@ -106,12 +107,17 @@ class MediaCollectionDetailPage extends StatefulWidget {
   final Future<void> Function(
     List<VideoBookRow> members,
     bool deleteLocalFiles,
+    bool deleteStatistics,
   )? onDeleteMembersMedia;
 
   /// 非 null 时，「同时删除其中的视频」勾选下再给一行「同时删除本地文件」二级
   /// 勾选，其状态经 [onDeleteMembersMedia] 的 `deleteLocalFiles` 参数落地。
   /// null = 该合集没有可删的本机原件（如全是远端流），不摆这一行。
   final String? deleteMembersLocalFilesSubtitle;
+
+  /// 非 null 时再给一行「同时删除统计数据」二级勾选（默认不勾、不被记忆），其状态
+  /// 经 [onDeleteMembersMedia] 的 `deleteStatistics` 参数落地。null = 该入口不提供。
+  final String? deleteMembersStatisticsSubtitle;
 
   /// 「重新刮削资料与封面」：由库页注入（刮削 controller 的生命周期归 HomePage，
   /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
@@ -1176,6 +1182,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           canDeleteMembers && _members.any(videoBookHasLocalFiles)
               ? widget.deleteMembersLocalFilesSubtitle
               : null,
+      statisticsSubtitle:
+          canDeleteMembers ? widget.deleteMembersStatisticsSubtitle : null,
     );
     if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
@@ -1186,6 +1194,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       await widget.onDeleteMembersMedia!(
         List<VideoBookRow>.of(_members),
         result.deleteLocalFiles,
+        result.deleteStatistics,
       );
     }
     await deleteMediaCollectionWithAssets(
