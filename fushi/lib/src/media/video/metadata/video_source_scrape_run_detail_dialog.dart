@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -192,7 +193,9 @@ class _VideoSourceScrapeRunDetailDialogState
       title: Text(issue.workTitle),
       subtitleMaxLines: 4,
       subtitle: SelectableText(
-        issue.path == null ? issue.message : '${issue.message}\n${issue.path}',
+        issue.path == null
+            ? describeVideoScrapeIssueMessage(issue.message)
+            : '${describeVideoScrapeIssueMessage(issue.message)}\n${issue.path}',
       ),
       trailing: !_canBindManually
           ? null

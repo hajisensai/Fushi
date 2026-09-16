@@ -375,4 +375,103 @@ void main() {
     expect(gate, greaterThan(-1));
     expect(gate, lessThan(bar));
   });
+
+  testWidgets('顶栏标题槽：书名后跟当前章名', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '水属性の魔法使い 第一部 中央諸国編2',
+      chapter: '第三章 王都へ',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.arrow_back,
+            label: 'Back',
+            pinned: true,
+            onPressed: () {}),
+      ],
+      trailing: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.tune,
+            label: 'Settings',
+            pinned: true,
+            onPressed: () {}),
+      ],
+    ))));
+    expect(find.text('水属性の魔法使い 第一部 中央諸国編2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')),
+      findsOneWidget,
+    );
+    expect(find.text('第三章 王都へ'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('章名与书名相同时不画两遍', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '安達としまむら3',
+      chapter: '安達としまむら3',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: const <ReaderHeaderAction>[],
+      trailing: const <ReaderHeaderAction>[],
+    ))));
+    expect(find.text('安達としまむら3'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('不给章名时标题槽与旧行为一致', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '安達としまむら3',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: const <ReaderHeaderAction>[],
+      trailing: const <ReaderHeaderAction>[],
+    ))));
+    expect(find.text('安達としまむら3'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('超长章名最多吃掉标题槽的四成，书名仍占多数', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '水属性の魔法使い 第一部 中央諸国編2【電子書籍限定書き下ろしSS付き】',
+      chapter: '第三章 王都へ向かう長い旅路と、その途中で出会った人々についての覚書',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: const <ReaderHeaderAction>[],
+      trailing: const <ReaderHeaderAction>[],
+    ))));
+    final double titleWidth = tester
+        .getSize(
+            find.byKey(const ValueKey<String>('fushi_desktop_header_title')))
+        .width;
+    final double chapterWidth = tester
+        .getSize(
+            find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')))
+        .width;
+    // 对半分（两个 Flexible）时这条会挂：章名再长也只许拿四成，书名不能被挤成省略号。
+    expect(chapterWidth, lessThan(titleWidth));
+    expect(tester.takeException(), isNull);
+  });
 }

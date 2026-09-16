@@ -247,6 +247,36 @@ class DeleteLocalFilesRow extends StatelessWidget {
       );
 }
 
+/// 「同时删除统计数据」勾选行。
+///
+/// [subtitle] 与 [DeleteLocalFilesRow] 同样**必填**：删掉的统计在各域口径不同
+/// （视频是观看时长/字幕字数/查词计数），没有一句通用说明能同时成立。
+///
+/// 它**不进**「记住这些选择」：那一行记的是「这台设备上删东西时的惯常选择」，而
+/// 统计删除按媒体身份立碑、其他设备同步后也跟着删，没有撤销——这种事不该因为上次
+/// 勾过就默认勾上。
+class DeleteStatisticsRow extends StatelessWidget {
+  const DeleteStatisticsRow({
+    required this.value,
+    required this.onChanged,
+    required this.subtitle,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) => DeleteConfirmCheckboxRow(
+        title: t.delete_statistics,
+        subtitle: subtitle,
+        value: value,
+        onChanged: onChanged,
+        destructive: true,
+      );
+}
+
 /// 删除确认框的「记住这些选择」行。它只控制两个删除选项下次的默认值，不会跳过确认框。
 class DeleteRememberChoicesRow extends StatelessWidget {
   const DeleteRememberChoicesRow({

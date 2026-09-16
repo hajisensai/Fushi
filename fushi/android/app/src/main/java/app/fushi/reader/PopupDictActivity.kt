@@ -282,6 +282,8 @@ class PopupDictActivity : Activity() {
             hint = "Search"
             isSingleLine = true
             imeOptions = EditorInfo.IME_ACTION_SEARCH
+            // 用户在设置里选了查词输入法语言时，告诉键盘该切哪种语言（API 24+）。
+            LookupImeHint.applyTo(this@PopupDictActivity, this)
             setSingleLine(true)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTextColor(colors.onSurface)

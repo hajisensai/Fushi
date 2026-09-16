@@ -582,10 +582,18 @@ class _AiProviderSettingsSectionState
 
   String _featureTitle(AiFeature feature) => switch (feature) {
     AiFeature.galgameTextProcess => t.ai_feature_galgame_text_process,
+    AiFeature.dictStyle => t.ai_feature_dict_style,
+    AiFeature.lapisStyle => t.ai_feature_lapis_style,
+    AiFeature.videoIdentify => t.ai_feature_video_identify,
+    AiFeature.videoSearch => t.ai_feature_video_search,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
     AiFeature.galgameTextProcess => t.ai_feature_galgame_text_process_summary,
+    AiFeature.dictStyle => t.ai_feature_dict_style_summary,
+    AiFeature.lapisStyle => t.ai_feature_lapis_style_summary,
+    AiFeature.videoIdentify => t.ai_feature_video_identify_summary,
+    AiFeature.videoSearch => t.ai_feature_video_search_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

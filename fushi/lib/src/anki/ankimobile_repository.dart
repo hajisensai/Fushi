@@ -733,6 +733,18 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   Future<bool> isDuplicate(String expression, String reading) =>
       _minedLedger.contains(expression);
 
+  /// AnkiMobile 没有任何回读 collection 的通道（能力边界见 [AnkiMobileMinedLedger]），
+  /// 所以「反查不到这张卡」在本后端**不成立**——`findMatchingNotes` 恒空只是因为问不了。
+  /// 编排层据此改走「让用户裁决」而不是「当成已删、直接重制」。
+  @override
+  bool get canVerifyExistingCards => false;
+
+  /// 用户说「这张卡我已经在 Anki 里删了」——账本是 iOS 上唯一的真值来源，只能由他
+  /// 来纠正（[AnkiMobileMinedLedger.forget] 会顺带广播刷新，✓ 立刻变回 +）。
+  @override
+  Future<bool> forgetMinedCard(String expression) =>
+      _minedLedger.forget(expression);
+
   /// ↗「在 Anki 里打开」。popup 只在 ✓ 亮着时才显示这个按钮，所以它必须和 ✓ 用
   /// **同一份真值**：账本里没有就如实回 [AnkiOpenWordOutcome.noMatch]，不去打开一个
   /// 注定搜不到东西的界面。

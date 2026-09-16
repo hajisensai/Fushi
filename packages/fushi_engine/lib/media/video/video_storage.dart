@@ -126,8 +126,9 @@ class VideoStorage {
   static Future<Directory> subtitlesDir() => enginePaths.videoSubtitlesDirectory();
 
   /// 删除一本视频后回收**它自己**的 app 拥有副本：把 [deletedCoverPath] /
-  /// [deletedSubtitlePath]（被删 book 删前的 `coverPath` / `subtitleSource`）里、
-  /// **不再被任何其他 book 引用**且**确实落在对应 app 拥有目录内**的文件删掉。
+  /// [deletedSubtitlePath] / [deletedSecondarySubtitlePath]（被删 book 删前的
+  /// `coverPath` / `subtitleSource` / `secondarySubtitleSource`）里、**不再被任何
+  /// 其他 book 引用**且**确实落在对应 app 拥有目录内**的文件删掉。
   ///
   /// - [stillReferencedCoverPaths] / [stillReferencedSubtitlePaths]：删除后**全库
   ///   其余 book** 仍引用的封面/字幕路径集（护栏：命中则保留，避免删掉同名复用/共享
@@ -144,6 +145,7 @@ class VideoStorage {
     required String? deletedSubtitlePath,
     required Iterable<String> stillReferencedCoverPaths,
     required Iterable<String> stillReferencedSubtitlePaths,
+    String? deletedSecondarySubtitlePath,
     Directory? coversDirectory,
     Directory? subtitlesDirectory,
   }) async {
@@ -157,12 +159,20 @@ class VideoStorage {
     )) {
       removed++;
     }
-    if (await _deleteOwnedAsset(
-      candidate: deletedSubtitlePath,
-      ownedDir: subtitles,
-      stillReferenced: stillReferencedSubtitlePaths,
-    )) {
-      removed++;
+    // 主 + 副两条字幕指针都要回收：双字幕（TODO-857）各自可以是一份独立的导入
+    // 副本，只回收主的会把副字幕副本永久留在 `video_subtitles/` 里变成孤儿。
+    // 两者指向同一个文件时第二次 `exists()` 即 false，不会重复计数。
+    for (final String? subtitle in <String?>[
+      deletedSubtitlePath,
+      deletedSecondarySubtitlePath,
+    ]) {
+      if (await _deleteOwnedAsset(
+        candidate: subtitle,
+        ownedDir: subtitles,
+        stillReferenced: stillReferencedSubtitlePaths,
+      )) {
+        removed++;
+      }
     }
     return removed;
   }

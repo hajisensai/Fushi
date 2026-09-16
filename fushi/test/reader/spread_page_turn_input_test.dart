@@ -40,6 +40,7 @@ void main() {
         rightUrl: rightUrl,
         swipeDistThreshold: 44,
         swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
         keyBridgeScript: keyBridgeScript,
       );
 
@@ -65,6 +66,7 @@ void main() {
         rightUrl: rightUrl,
         swipeDistThreshold: 77,
         swipeFastDistThreshold: 33,
+        swipeFastVelocity: 300,
       );
       expect(html, contains("callHandler('onSwipe'"));
       expect(html, contains('77'), reason: '阈值必须从调用方（随灵敏度设置缩放的真值）插进来');
@@ -402,16 +404,48 @@ void main() {
   });
 
   group('滑动灵敏度默认值单一真值 (BUG-1426)', () {
+    const String kSettingsFile = 'lib/src/reader/reader_settings.dart';
+
+    String sensitivityGetterBody() {
+      final String src = File(kSettingsFile).readAsStringSync();
+      final int at = src.indexOf('double get swipePageTurnSensitivity {');
+      expect(at, greaterThanOrEqualTo(0), reason: '找不到灵敏度 getter');
+      final int end =
+          src.indexOf('Future<void> setSwipePageTurnSensitivity', at);
+      expect(end, greaterThan(at));
+      return src.substring(at, end);
+    }
+
     test('getter 的兜底默认就是 defaultSwipePageTurnSensitivity', () {
-      const String kSettingsFile = 'lib/src/reader/reader_settings.dart';
-      final String settingsSrc = File(kSettingsFile).readAsStringSync();
+      final String body = sensitivityGetterBody();
       expect(
-        settingsSrc,
-        contains("'swipe_page_turn_sensitivity',\n"
-            '          defaultSwipePageTurnSensitivity,'),
+        body,
+        contains('return defaultSwipePageTurnSensitivity;'),
         reason: 'getter 里写回字面量 1.0 = 又有两处默认，改手感只会改到一半',
       );
+      expect(
+        body,
+        isNot(contains('1.0;')),
+        reason: '兜底必须引用常量，不得出现裸字面量默认值',
+      );
       expect(ReaderSettings.defaultSwipePageTurnSensitivity, 1.0);
+    });
+
+    // BUG-2563：语义翻正后**两个** key 同时在场（新 key 存灵敏度，旧 key 存的是与之
+    // 互为倒数的阈值倍数）。这条钉住读序：谁以后把 fallback 顺序写反，老用户的设置
+    // 会被旧倍数值劫持，且方向正好相反。
+    test('读侧先看新 key，旧倍数 key 只作换算兜底', () {
+      final String body = sensitivityGetterBody();
+      final int newKeyAt = body.indexOf('swipeSensitivityKey');
+      final int legacyAt = body.indexOf('legacySwipeSensitivityMultiplierKey');
+      expect(newKeyAt, greaterThanOrEqualTo(0));
+      expect(legacyAt, greaterThan(newKeyAt),
+          reason: '新 key 必须先于旧 key 被读');
+      expect(
+        body,
+        contains('1.0 / legacyMultiplier'),
+        reason: '旧值是阈值倍数，必须取倒数才是灵敏度',
+      );
     });
   });
 }

@@ -228,8 +228,9 @@ class StudyClock {
   /// 时长来源（见 [StudyAccrual]）。
   final StudyAccrual accrual;
 
-  /// 显式记账模式：本 tick 窗口内是否收到过 [addActiveMs]。没有 = 这一分钟没看新
-  /// 内容（暂停 / 回放 / 拖动），与墙钟模式「守卫拒绝整窗」同律：封段，下次记账开新段。
+  /// 显式记账模式：本 tick 窗口内是否记过账（[addActiveMs]，或 [addChars] /
+  /// [addPages] 的内容账）。没有 = 这一窗没看新内容（暂停 / 回放 / 拖动 / 停在一句
+  /// 台词上），与墙钟模式「守卫拒绝整窗」同律：封段，下次记账开新段。
   bool _creditedSinceTick = false;
 
   /// 活跃态判据（每个 tick 问一次，仅墙钟模式）。null = 恒活跃。
@@ -499,9 +500,16 @@ class StudyClock {
   /// BUG-2217：跨小时瞬间 [addChars] 若直接 [_ensureOpen]，会按新小时先开一段只装
   /// 字数，随后 tick 的 [_accrue] 按旧小时拆桶时发现打开段小时不符 → 把它封成
   /// 「0 时长纯字数段」再另开旧小时段。先结算，旧小时的时长就先落旧段、新段同时
-  /// 承接新小时的时长与字数。显式记账模式（视频）的窗口裁决只在 tick 做，不在这里。
+  /// 承接新小时的时长与字数。显式记账模式的窗口裁决只在 tick 做，不在这里——但
+  /// 内容账本身就是「本窗在看新内容」的记账：galgame hook 的字数时钟只喂字数、从不
+  /// [addActiveMs]（时长真相源是 `galgame_sessions`，BUG-2564），不标记的话下一次
+  /// tick / [flushNow] 会把段判成「整窗没记账」封掉，每行台词一个 uid。
   void _settleBeforeContentAccount() {
-    if (accrual == StudyAccrual.wallClock) _accrue(_now());
+    if (accrual == StudyAccrual.wallClock) {
+      _accrue(_now());
+    } else {
+      _creditedSinceTick = true;
+    }
   }
 
   /// 显式记账（仅 [StudyAccrual.explicit]）：把 [ms] 墙钟毫秒计到当前打开段（没有 /

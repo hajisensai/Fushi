@@ -14,6 +14,9 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi/src/ai/ai_chat_client.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -27,6 +30,8 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobStage;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
+    show aiFailureText;
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 
@@ -526,6 +531,8 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
     required this.onSubmit,
     this.defaultSourceId,
     this.onConfigureBackend,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     super.key,
   });
 
@@ -535,6 +542,8 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit onSubmit;
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+  final AiProviderResolver? resolveAiProvider;
+  final AiClientFactory? aiClientFactory;
 
   @override
   Widget build(BuildContext context) => FushiDialogFrame(
@@ -549,6 +558,8 @@ class VideoDiscoveryResourceSearchDialog extends StatelessWidget {
           defaultSourceId: defaultSourceId,
           onSubmit: onSubmit,
           onConfigureBackend: onConfigureBackend,
+          resolveAiProvider: resolveAiProvider,
+          aiClientFactory: aiClientFactory,
           onClose: () => Navigator.pop(context),
         ),
       );
@@ -563,6 +574,8 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
     required this.onSubmit,
     this.defaultSourceId,
     this.onConfigureBackend,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     super.key,
   });
 
@@ -572,6 +585,8 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
   final int? defaultSourceId;
   final VideoDiscoveryDownloadSubmit onSubmit;
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+  final AiProviderResolver? resolveAiProvider;
+  final AiClientFactory? aiClientFactory;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -584,6 +599,8 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
             defaultSourceId: defaultSourceId,
             onSubmit: onSubmit,
             onConfigureBackend: onConfigureBackend,
+            resolveAiProvider: resolveAiProvider,
+            aiClientFactory: aiClientFactory,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
           ),
@@ -602,6 +619,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
     this.onConfigureBackend,
     this.remoteTargets = const <HostSubscriptionTarget>[],
     this.onRemoteSubmit,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     super.key,
   });
 
@@ -613,6 +632,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
   final List<HostSubscriptionTarget> remoteTargets;
   final VideoDiscoveryRemoteSubscriptionSubmit? onRemoteSubmit;
+  final AiProviderResolver? resolveAiProvider;
+  final AiClientFactory? aiClientFactory;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -627,6 +648,8 @@ class VideoDiscoverySubscriptionPage extends StatelessWidget {
             remoteTargets: remoteTargets,
             onRemoteSubscriptionSubmit: onRemoteSubmit,
             onConfigureBackend: onConfigureBackend,
+            resolveAiProvider: resolveAiProvider,
+            aiClientFactory: aiClientFactory,
             onClose: () => Navigator.of(context).pop(),
             pageMode: true,
           ),
@@ -646,6 +669,8 @@ class VideoResourceSearchSurface extends StatefulWidget {
     this.remoteTargets = const <HostSubscriptionTarget>[],
     this.onRemoteSubscriptionSubmit,
     this.onConfigureBackend,
+    this.resolveAiProvider,
+    this.aiClientFactory,
     this.onClose,
     this.pageMode = false,
     super.key,
@@ -666,6 +691,13 @@ class VideoResourceSearchSurface extends StatefulWidget {
   /// 见 [VideoDownloadBackendSetupPrompt]：提交失败在「后端没配好 / 后端运行时缺失」
   /// 时的可执行出口。null = 宿主没接线，失败态只报事实不给按钮。
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+
+  /// 「视频搜索辅助」的 AI 提供商解析：返回 null（未指派 / 宿主没接线）时不渲染任何
+  /// AI 按钮，行为与没有 AI 完全一致。按回调注入，本 surface 不读偏好、不带 Riverpod。
+  final AiProviderResolver? resolveAiProvider;
+
+  /// AI 调用客户端工厂；测试注入假 http 客户端。null = [AiChatClient] 默认构造。
+  final AiClientFactory? aiClientFactory;
   final VoidCallback? onClose;
   final bool pageMode;
 
@@ -729,6 +761,18 @@ class _VideoResourceSearchSurfaceState
   /// 订阅运行位置：null = 本机。
   HostSubscriptionTarget? _remoteTarget;
   bool get _remote => _remoteTarget != null;
+  /// AI 调用进行中（补词 / 排序共用一把锁：两者都会改同一份输入或结果）。
+  bool _aiBusy = false;
+
+  /// AI 补的备选查询词；只作 chip 展示，**不**写进输入框，点 chip 才填。
+  List<String> _aiQueries = const <String>[];
+
+  /// 当前 [_result] 是否已被 AI 重排；新一轮搜索即清零。
+  bool _aiRanked = false;
+
+  /// AI 推荐条目的 identityKey / 各条的一句话备注（identityKey → 文案）。
+  String? _aiRecommendedKey;
+  Map<String, String> _aiNotes = const <String, String>{};
 
   @override
   void initState() {
@@ -794,7 +838,194 @@ class _VideoResourceSearchSurfaceState
       _loading = false;
       _result = null;
       _selectedCandidates.clear();
+      _resetAiRank();
     });
+  }
+
+  /// 清掉上一轮结果的 AI 重排痕迹（须在 setState 内调）。补词 chip 不清：它们是
+  /// 对查询词的建议，与结果无关。
+  void _resetAiRank() {
+    _aiRanked = false;
+    _aiRecommendedKey = null;
+    _aiNotes = const <String, String>{};
+  }
+
+  bool get _aiAvailable => widget.resolveAiProvider?.call() != null;
+
+  void _showAiMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 「AI 补充搜索词」：把模型给的 2~4 条以 chip 列出，用户点了才填进输入框搜索。
+  /// 绝不静默改写输入框——Nyaa 搜索以用户明确输入为准是硬规则。
+  Future<void> _runAiExpand() async {
+    if (_aiBusy) return;
+    final String query = _queryController.text.trim();
+    if (query.isEmpty) return;
+    final AiProviderConfig? provider = widget.resolveAiProvider?.call();
+    if (provider == null) {
+      _showAiMessage(t.ai_assist_no_provider);
+      return;
+    }
+    setState(() => _aiBusy = true);
+    final AiChatClient client = widget.aiClientFactory?.call() ?? AiChatClient();
+    try {
+      final List<String> queries = await requestAiSearchQueries(
+        client: client,
+        provider: provider,
+        query: query,
+        media: _media,
+        purpose: AiSearchPurpose.torrent,
+      );
+      if (!mounted) return;
+      if (queries.isEmpty) {
+        _showAiMessage(t.ai_assist_empty);
+        return;
+      }
+      setState(() => _aiQueries = queries);
+    } on AiChatFailure catch (failure) {
+      _showAiMessage(
+        t.ai_assist_failed(reason: aiFailureText(failure.message)),
+      );
+    } finally {
+      client.close();
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  /// 「AI 排序」：对**当前结果**做一次语义重排。只改顺序不丢候选（解析层保证全量
+  /// 排列）；重排后切到平铺视图——版本卡视图会按发布组重新聚类，顺序看不见。
+  Future<void> _runAiRank() async {
+    final ProviderBatchResult<VideoResourceCandidate>? result = _result;
+    if (_aiBusy || result == null || result.items.isEmpty) return;
+    final AiProviderConfig? provider = widget.resolveAiProvider?.call();
+    if (provider == null) {
+      _showAiMessage(t.ai_assist_no_provider);
+      return;
+    }
+    final int generation = _generation;
+    setState(() => _aiBusy = true);
+    final AiChatClient client = widget.aiClientFactory?.call() ?? AiChatClient();
+    try {
+      final VideoMediaReference? media = _media;
+      final AiRankResult rank = await requestAiResourceRank(
+        client: client,
+        provider: provider,
+        candidates: result.items,
+        context: AiResourceRankContext(
+          media: media,
+          query: _queryController.text.trim(),
+          season: media?.season,
+          episode: media?.episode,
+        ),
+      );
+      // 等待期间用户换了类型 / 重搜：这份排列对应的已不是当前结果，丢弃。
+      if (!mounted || generation != _generation) return;
+      if (rank.isIdentity) {
+        _showAiMessage(t.ai_assist_empty);
+        return;
+      }
+      final List<VideoResourceCandidate> ordered = rank.reorder(result.items);
+      final int? recommended = rank.recommendedIndex;
+      setState(() {
+        _result = ProviderBatchResult<VideoResourceCandidate>(
+          items: ordered,
+          failures: result.failures,
+          successfulProviderCount: result.successfulProviderCount,
+        );
+        _aiRanked = true;
+        _aiRecommendedKey =
+            recommended == null ? null : result.items[recommended].identityKey;
+        _aiNotes = <String, String>{
+          for (final MapEntry<int, String> note in rank.notes.entries)
+            result.items[note.key].identityKey: note.value,
+        };
+        _flatResourceView = true;
+      });
+    } on AiChatFailure catch (failure) {
+      _showAiMessage(
+        t.ai_assist_failed(reason: aiFailureText(failure.message)),
+      );
+    } finally {
+      client.close();
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  /// 「AI 补充搜索词」按钮；AI 不可用时为 null（调用方据此不占位）。
+  Widget? _buildAiExpandButton() {
+    if (!_aiAvailable) return null;
+    return IconButton.outlined(
+      key: const ValueKey<String>('video-resource-ai-expand'),
+      tooltip: _aiBusy ? t.ai_assist_working : t.video_search_ai_expand,
+      onPressed: _aiBusy || _loading ? null : () => unawaited(_runAiExpand()),
+      icon: _aiBusy
+          ? const SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.auto_awesome_outlined),
+    );
+  }
+
+  /// AI 备选词 chip 区；没有备选词时不渲染。
+  Widget _buildAiQueryChips(FushiDesignTokens tokens) {
+    if (_aiQueries.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      child: Wrap(
+        key: const ValueKey<String>('video-resource-ai-queries'),
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Text(
+            t.video_search_ai_expanded(count: _aiQueries.length),
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+          for (final String query in _aiQueries)
+            ActionChip(
+              avatar: const Icon(Icons.auto_awesome_outlined, size: 16),
+              label: Text(query),
+              onPressed: _loading
+                  ? null
+                  : () {
+                      _queryController.text = query;
+                      if (widget.initialItem == null) _invalidateManualSearch();
+                      unawaited(_search());
+                    },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 结果工具栏里的「AI 排序」按钮 + 已排序提示；AI 不可用时为空列表。
+  List<Widget> _buildAiRankControls() {
+    if (!_aiAvailable) return const <Widget>[];
+    return <Widget>[
+      TextButton.icon(
+        key: const ValueKey<String>('video-resource-ai-rank'),
+        onPressed: _aiBusy ? null : () => unawaited(_runAiRank()),
+        icon: _aiBusy
+            ? const SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.auto_awesome_outlined, size: 18),
+        label: Text(_aiBusy ? t.ai_assist_working : t.video_search_ai_rank),
+      ),
+      if (_aiRanked)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text(
+            t.video_search_ai_ranked,
+            key: const ValueKey<String>('video-resource-ai-ranked'),
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+        ),
+    ];
   }
 
   void _changeCategory(VideoDiscoveryCategory? value) {
@@ -853,6 +1084,7 @@ class _VideoResourceSearchSurfaceState
     setState(() {
       _result = result;
       _loading = false;
+      _resetAiRank();
     });
   }
 
@@ -1111,8 +1343,13 @@ class _VideoResourceSearchSurfaceState
                   onPressed: _loading ? null : () => unawaited(_search()),
                   icon: const Icon(Icons.search_rounded),
                 ),
+                if (_buildAiExpandButton() case final Widget aiExpand) ...<Widget>[
+                  SizedBox(width: tokens.spacing.gap),
+                  aiExpand,
+                ],
               ],
             ),
+            _buildAiQueryChips(tokens),
             SizedBox(height: tokens.spacing.gap),
             _buildCategorySelector(),
             if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
@@ -1170,6 +1407,11 @@ class _VideoResourceSearchSurfaceState
                                 : () => unawaited(_search()),
                             icon: const Icon(Icons.search_rounded),
                           ),
+                          if (_buildAiExpandButton()
+                              case final Widget aiExpand) ...<Widget>[
+                            SizedBox(width: tokens.spacing.gap),
+                            aiExpand,
+                          ],
                         ],
                       ),
                     ],
@@ -1188,10 +1430,16 @@ class _VideoResourceSearchSurfaceState
                           : () => unawaited(_search()),
                       icon: const Icon(Icons.search_rounded),
                     ),
+                    if (_buildAiExpandButton()
+                        case final Widget aiExpand) ...<Widget>[
+                      SizedBox(width: tokens.spacing.gap),
+                      aiExpand,
+                    ],
                   ],
                 );
               },
             ),
+            _buildAiQueryChips(tokens),
             if (_manualCategory == VideoDiscoveryCategory.anime) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               DropdownButtonFormField<VideoMetadataMediaKind>(
@@ -1400,14 +1648,18 @@ class _VideoResourceSearchSurfaceState
         ? groupVideoSubscriptionCandidates(result.items)
         : null;
     if (groups == null) {
-      final Widget toggle = Align(
-        alignment: AlignmentDirectional.centerEnd,
-        child: FilterChip(
-          key: const ValueKey<String>('video-resource-flat-toggle'),
-          label: Text(t.resource_version_view_flat),
-          selected: _flatResourceView,
-          onSelected: (bool value) => setState(() => _flatResourceView = value),
-        ),
+      final Widget toggle = Row(
+        children: <Widget>[
+          ..._buildAiRankControls(),
+          const Spacer(),
+          FilterChip(
+            key: const ValueKey<String>('video-resource-flat-toggle'),
+            label: Text(t.resource_version_view_flat),
+            selected: _flatResourceView,
+            onSelected: (bool value) =>
+                setState(() => _flatResourceView = value),
+          ),
+        ],
       );
       if (!_flatResourceView) {
         return Column(
@@ -1477,10 +1729,25 @@ class _VideoResourceSearchSurfaceState
                 : 'EP${episodes.first}-${episodes.last}');
           }
         }
+        final String? aiNote = _aiNotes[candidate.identityKey];
+        final bool aiPick = _aiRecommendedKey == candidate.identityKey;
         return FushiListItem(
           key: ValueKey<String>('video-resource-${candidate.identityKey}'),
           title: Text(candidate.title),
-          subtitle: Text(metadata.join(' · ')),
+          subtitle: Text(
+            aiNote == null
+                ? metadata.join(' · ')
+                : '$aiNote\n${metadata.join(' · ')}',
+          ),
+          trailing: aiPick
+              ? Chip(
+                  key: ValueKey<String>(
+                    'video-resource-ai-pick-${candidate.identityKey}',
+                  ),
+                  avatar: const Icon(Icons.auto_awesome_outlined, size: 16),
+                  label: Text(t.video_search_ai_recommended),
+                )
+              : null,
           titleMaxLines: 2,
           subtitleMaxLines: 2,
           density: widget.pageMode

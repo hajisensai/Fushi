@@ -57,6 +57,9 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi/src/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
@@ -1725,6 +1728,13 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// 「视频搜索辅助」当前可用的 AI 提供商；未指派 / 偏好未就绪 → null，资源搜索页
+  /// 据此不渲染 AI 按钮。按回调注入而不是让页面自己读偏好：页面刻意不带 Riverpod。
+  AiProviderConfig? _resolveVideoSearchAiProvider() =>
+      appModelNoUpdate.isPreferencesReady
+          ? resolveVideoSearchAiProvider(appModelNoUpdate.prefsRepo)
+          : null;
+
   /// 后端没配好时的统一出口：**直接弹配置引导**，而不是甩一句「请先配置下载
   /// 后端」让用户自己去翻设置。配完再点一次原入口即可继续。
   ///
@@ -1796,6 +1806,7 @@ class _HomePageState extends BasePageState<HomePage>
           // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
           // 失败态那句话才有一颗能真正解决它的按钮。
           onConfigureBackend: _promptDownloadBackendSetup,
+          resolveAiProvider: _resolveVideoSearchAiProvider,
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
@@ -1901,6 +1912,7 @@ class _HomePageState extends BasePageState<HomePage>
               ),
             );
           },
+          resolveAiProvider: _resolveVideoSearchAiProvider,
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
@@ -2391,6 +2403,11 @@ class _HomePageState extends BasePageState<HomePage>
       // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
       // 为了单测不联网。
       enableOfflineTitleIndex: true,
+      // 歧义候选交 AI 消解。decider 每次调用现取偏好里的指派，所以 AI 指派不进
+      // 上面的配置指纹：用户改了指派立即生效，不需要重建协调器。
+      aiIdentityDecider: createPreferencesAiVideoIdentityDecider(
+        appModelNoUpdate.prefsRepo,
+      ),
     );
     _videoSourceScrapeCoordinator = coordinator;
     _videoSourceScrapeConfigFingerprint = fingerprint;

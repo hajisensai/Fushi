@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -16,6 +18,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 
 class _PausingDeleteVideoBookRepository extends VideoBookRepository {
   _PausingDeleteVideoBookRepository(super.db);
@@ -692,5 +695,190 @@ void main() {
         VideoScrapeOperationGate.tryEnterMaintenance();
     expect(maintenance, isNotNull);
     maintenance?.release();
+  });
+
+  group('deleteLocalFiles 连带 sidecar 外挂字幕（BUG-2565）', () {
+    /// 在临时目录里摆一组「视频 + 它的外挂字幕」，返回目录。
+    Future<Directory> seedEpisodes(List<String> fileNames) async {
+      final Directory dir = await Directory.systemTemp.createTemp('fushi_del_');
+      addTearDown(() => dir.delete(recursive: true));
+      for (final String name in fileNames) {
+        await File(p.join(dir.path, name)).writeAsString('x');
+      }
+      return dir;
+    }
+
+    test('删视频并勾「同时删除本地文件」→ 同名字幕跟着删，别的集一个不动', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final Directory dir = await seedEpisodes(<String>[
+        'ep01.mkv',
+        'ep01.srt',
+        'ep01.ja.ass',
+        'ep02.mkv',
+        'ep02.srt',
+      ]);
+
+      for (final String ep in <String>['ep01', 'ep02']) {
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value('video/$ep'),
+            title: Value(ep),
+            videoPath: Value(p.join(dir.path, '$ep.mkv')),
+          ),
+        );
+      }
+
+      final int deleted = await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/ep01'],
+        deleteLocalFiles: true,
+        compactDatabase: false,
+      );
+
+      expect(deleted, 1);
+      expect(File(p.join(dir.path, 'ep01.mkv')).existsSync(), isFalse);
+      expect(
+        File(p.join(dir.path, 'ep01.srt')).existsSync(),
+        isFalse,
+        reason: 'BUG-2565：视频删了，旁边的外挂字幕不能留成孤儿',
+      );
+      expect(File(p.join(dir.path, 'ep01.ja.ass')).existsSync(), isFalse);
+      expect(File(p.join(dir.path, 'ep02.mkv')).existsSync(), isTrue);
+      expect(File(p.join(dir.path, 'ep02.srt')).existsSync(), isTrue);
+    });
+
+    test('没勾「同时删除本地文件」→ 视频与字幕一个都不删（老行为零变化）', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final Directory dir = await seedEpisodes(<String>['ep01.mkv', 'ep01.srt']);
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/ep01'),
+          title: const Value('ep01'),
+          videoPath: Value(p.join(dir.path, 'ep01.mkv')),
+        ),
+      );
+
+      await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/ep01'],
+        compactDatabase: false,
+      );
+
+      expect(File(p.join(dir.path, 'ep01.mkv')).existsSync(), isTrue);
+      expect(File(p.join(dir.path, 'ep01.srt')).existsSync(), isTrue);
+    });
+
+    test('视频文件仍被另一行引用 → 视频与它的字幕都被护栏挡住', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final Directory dir = await seedEpisodes(<String>['ep01.mkv', 'ep01.srt']);
+      // 同一个物理文件被两行引用（重复导入派生出第二身份）。
+      for (final String uid in <String>['video/a', 'video/b']) {
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(uid),
+            title: Value(uid),
+            videoPath: Value(p.join(dir.path, 'ep01.mkv')),
+          ),
+        );
+      }
+
+      await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/a'],
+        deleteLocalFiles: true,
+        compactDatabase: false,
+      );
+
+      expect(File(p.join(dir.path, 'ep01.mkv')).existsSync(), isTrue);
+      expect(
+        File(p.join(dir.path, 'ep01.srt')).existsSync(),
+        isTrue,
+        reason: '视频本身都没删，它的字幕更不该动',
+      );
+    });
+
+    test('幸存行手动挂着被删视频旁的字幕 → 该字幕保留', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final Directory dir = await seedEpisodes(<String>[
+        'ep01.mkv',
+        'ep01.srt',
+        'ep02.mkv',
+      ]);
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/ep01'),
+          title: const Value('ep01'),
+          videoPath: Value(p.join(dir.path, 'ep01.mkv')),
+        ),
+      );
+      // ep02 用的是 ep01 的字幕（用户手动挂的）。
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/ep02'),
+          title: const Value('ep02'),
+          videoPath: Value(p.join(dir.path, 'ep02.mkv')),
+          subtitleSource: Value(p.join(dir.path, 'ep01.srt')),
+        ),
+      );
+
+      await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/ep01'],
+        deleteLocalFiles: true,
+        compactDatabase: false,
+      );
+
+      expect(File(p.join(dir.path, 'ep01.mkv')).existsSync(), isFalse);
+      expect(
+        File(p.join(dir.path, 'ep01.srt')).existsSync(),
+        isTrue,
+        reason: '幸存行还在用这条字幕，护栏必须挡住',
+      );
+    });
+
+    test('播放列表各集的字幕也跟着走', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      final Directory dir = await seedEpisodes(<String>[
+        'list.m3u8',
+        'ep01.mkv',
+        'ep01.ja.srt',
+        'ep02.mkv',
+        'ep02.ja.srt',
+      ]);
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/list'),
+          title: const Value('list'),
+          videoPath: Value(p.join(dir.path, 'list.m3u8')),
+          playlistJson: Value(
+            jsonEncode(<Map<String, String>>[
+              <String, String>{
+                'title': 'ep01',
+                'path': p.join(dir.path, 'ep01.mkv'),
+              },
+              <String, String>{
+                'title': 'ep02',
+                'path': p.join(dir.path, 'ep02.mkv'),
+              },
+            ]),
+          ),
+        ),
+      );
+
+      await repo.deleteVideoBooksAndReclaimAssets(
+        <String>['video/list'],
+        deleteLocalFiles: true,
+        compactDatabase: false,
+      );
+
+      expect(File(p.join(dir.path, 'ep01.ja.srt')).existsSync(), isFalse);
+      expect(File(p.join(dir.path, 'ep02.ja.srt')).existsSync(), isFalse);
+    });
   });
 }
