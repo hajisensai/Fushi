@@ -4966,6 +4966,7 @@
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
   "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "shortcut_action_reader_toggle_study_clock": "Pause / resume reading timer",
   "delete_statistics": "同時刪除統計數據",
   "delete_statistics_video_desc": "該影片的觀看時長、字幕字數與查詞/製卡計數將從統計中移除，並同步到其他裝置",
   "ai_feature_dict_style": "Dictionary popup style",
