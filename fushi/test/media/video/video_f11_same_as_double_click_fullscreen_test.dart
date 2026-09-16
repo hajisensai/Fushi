@@ -155,6 +155,7 @@ VideoPlayerShortcutActions _actions(List<String> log) {
     previousFrame: () => record('previousFrame'),
     nextFrame: () => record('nextFrame'),
     screenshot: () => record('screenshot'),
+    screenshotSubtitled: () => record('screenshotSubtitled'),
     toggleFullscreen: () => record('toggleFullscreen'),
     toggleSubtitleList: () => record('toggleSubtitleList'),
     searchSubtitleList: () => record('searchSubtitleList'),

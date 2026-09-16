@@ -314,6 +314,8 @@ function applyFushiPopupCss(data) {
 const __dictAssetCache = new Map();      // JSON.stringify([dict, path]) -> 源码字符串 / null
 const __dictScriptFnCache = new Map();   // 拼接后的代码串 -> 编译好的 Function
 const __dictScriptsRan = new WeakSet();  // 已经跑过脚本的词典块
+const __scopedWindows = new WeakMap();   // 词典块 root -> 它那份 window 代理
+const __boundHostFns = new WeakMap();    // 宿主方法 -> 绑回真 window 的那一份
 
 function reportDictScriptError(dictName, label, error) {
     try {
@@ -393,6 +395,12 @@ function createScopedDocument(root, dictName) {
             return root.addEventListener(type, handler, options);
         },
         removeEventListener: (type, handler, options) => root.removeEventListener(type, handler, options),
+        // `document.defaultView` 是另一条摸回真 window 的路（jQuery 取 computed style
+        // 与判 isWindow 都走它），指回本块的 window 代理；代理还没建好时（只用 scoped
+        // document、不跑脚本的调用方）照旧透传。
+        get defaultView() {
+            return __scopedWindows.get(root) || Reflect.get(document, 'defaultView');
+        },
     };
 
     const proxy = new Proxy(document, {
@@ -411,6 +419,114 @@ function createScopedDocument(root, dictName) {
             return true;
         },
     });
+    return proxy;
+}
+
+/* 与 [createScopedDocument] 配套的 window 代理：词典脚本拿到的 `window` 也必须是本
+   词典块私有的。
+
+   弹窗是**常驻页面**：每换一次词就重建整棵结果 DOM，并把同一本词典的同一份脚本再跑
+   一遍。只代理 document 挡不住脚本的全局副作用——它们照样能经 `window` 逃出本块：
+
+   · jQuery 这类 UMD 库内部第一句就是 `var document = window.document`，拿到的是**真**
+     document，`$(document).on('click', …)` 于是绑在真 document 上。第二次查词再绑一份，
+     同一次点击被两份监听各处理一次：MDX 词典的折叠块（OALD 的 Verb Forms / Extra
+     Examples 那种 `.unbox`）展开又立刻收起，用户看到的就是「第二次查词后折叠字段点
+     不开」；第三次查词监听数回到奇数，又能开了。
+   · 脚本拿 `window.__inited` 之类做幂等守卫时更彻底：第二次起直接短路返回，新 DOM 一
+     次都绑不上，从此永久点不开。
+
+   代理把 document 换成 scoped 版、把 window 级监听收到本块 root 上、把属性写入关进本块
+   私有表；读取时先查私有表再回落真 window，宿主 API（setTimeout / location / navigator
+   ……）照常可用。旧块随 DOM 一起被丢弃，它挂的监听与标记自然作废，第 N 次查词和第一次
+   完全等价。
+
+   target 是那张私有表而不是真 window：真 window 上 `window` / `top` 这类**不可配置的数据
+   属性**会让「get 返回代理自身」撞上 Proxy 不变量检查（TypeError）；而拿私有表当 target，
+   没实现的陷阱（`defineProperty` / `getOwnPropertyDescriptor` / `ownKeys`）默认就落在同一
+   张表上，与 get/set 看到的是同一份数据——`Object.defineProperty(window, …)` 写进去之后
+   读得回来。回落真 window 由 get / has 自己做。 */
+function createScopedWindow(root, scopedDocument, dictName) {
+    const own = Object.create(null);
+
+    function addScopedListener(type, handler, options) {
+        // 生命周期事件与 document 代理同语义：弹窗早就 ready 了，照原样注册永不触发，
+        // 这里立刻（微任务）补发一次。
+        if (type === 'DOMContentLoaded' || type === 'load' || type === 'readystatechange') {
+            let fn = null;
+            if (typeof handler === 'function') {
+                fn = handler;
+            } else if (handler && typeof handler.handleEvent === 'function') {
+                fn = handler.handleEvent.bind(handler);
+            }
+            if (fn) {
+                Promise.resolve().then(() => {
+                    try {
+                        fn.call(proxy, new Event(type));
+                    } catch (error) {
+                        reportDictScriptError(dictName, `on${type}`, error);
+                    }
+                });
+            }
+            return undefined;
+        }
+        return root.addEventListener(type, handler, options);
+    }
+
+    // 具名而不是每次 get 现造一个箭头函数：脚本存下引用再比对（`window.removeEventListener
+    // === saved`）时身份要稳定。
+    function removeScopedListener(type, handler, options) {
+        return root.removeEventListener(type, handler, options);
+    }
+
+    const proxy = new Proxy(own, {
+        get(_target, prop) {
+            if (prop === 'document') return scopedDocument;
+            // 自指属性全部指回代理，别让脚本经 window.window / self / top 摸回真 window。
+            if (prop === 'window' || prop === 'self' || prop === 'globalThis'
+                || prop === 'parent' || prop === 'top') {
+                return proxy;
+            }
+            if (prop === 'addEventListener') return addScopedListener;
+            if (prop === 'removeEventListener') return removeScopedListener;
+            if (prop in own) return own[prop];
+            const value = Reflect.get(window, prop);
+            if (typeof value !== 'function') return value;
+            // 构造器 / 类（Object、Promise、Date、Node、词典自己的构造函数……）**必须原样
+            // 交出去**：`bind` 出来的函数既没有 `prototype`，也不带 target 的静态成员，
+            // `Object.keys(…)` / `Promise.resolve(…)` / `new Date()` 会当场 TypeError。
+            // 而 `with (window)` 让脚本里**每个裸标识符**都走这条 get——一 bind 就等于把
+            // 整个全局环境换成残废版，jQuery 第一行就炸。
+            //
+            // 真正需要绑回真 window 的只有那些不可 new 的宿主方法（setTimeout /
+            // getComputedStyle / fetch / atob……）：它们以代理为 this 调用会 Illegal
+            // invocation。这类内置方法一律没有 `prototype`，正好拿它当判据。
+            // bind 结果按原函数缓存，`window.setTimeout === window.setTimeout` 仍成立。
+            if (value.prototype !== undefined) return value;
+            let bound = __boundHostFns.get(value);
+            if (bound === undefined) {
+                bound = value.bind(window);
+                __boundHostFns.set(value, bound);
+            }
+            return bound;
+        },
+        set(_target, prop, value) {
+            own[prop] = value;
+            return true;
+        },
+        has(_target, prop) {
+            // `with (window) { … }` 靠这一项决定裸标识符走不走代理：本块写过的（jQuery /
+            // $）命中私有表，宿主已有的回落真 window，两边都没有的（第一份脚本执行到一半
+            // 时的 jQuery）照旧落到外层作用域，与不加代理时一致。
+            return prop in own || prop in window;
+        },
+        deleteProperty(_target, prop) {
+            delete own[prop];
+            return true;
+        },
+    });
+
+    __scopedWindows.set(root, proxy);
     return proxy;
 }
 
@@ -449,7 +565,10 @@ async function runDictScripts(root, dictName) {
     }
     if (!chunks.length) return;
 
-    const combined = chunks.join('\n;\n');
+    // `with (window)` 把**裸标识符**也接到 window 代理上（见 createScopedWindow）。少了它，
+    // 代理只管得住 `window.x` 这种带前缀的写法：jQuery 把自己写进 window（→ 本块私有表）
+    // 之后，同一本词典的下一份脚本里裸写的 `$(…)` 会解析到真全局、拿到 undefined。
+    const combined = `with (window) {\n${chunks.join('\n;\n')}\n}`;
     let factory = __dictScriptFnCache.get(combined);
     if (factory === undefined) {
         try {
@@ -463,8 +582,9 @@ async function runDictScripts(root, dictName) {
     if (!factory) return;
 
     const scopedDocument = createScopedDocument(root, dictName);
+    const scopedWindow = createScopedWindow(root, scopedDocument, dictName);
     try {
-        factory.call(window, scopedDocument, window, window,
+        factory.call(scopedWindow, scopedDocument, scopedWindow, scopedWindow,
             (index, error) => reportDictScriptError(dictName, labels[index] ?? `#${index}`, error));
     } catch (error) {
         reportDictScriptError(dictName, 'run', error);

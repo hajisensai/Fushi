@@ -56,7 +56,12 @@ void main() {
       }
     });
 
-    test('macOS default swaps Ctrl for Meta', () {
+    test('macOS default keeps Ctrl (⌘⌥D is the system Dock-hiding hotkey)',
+        () {
+      // The generic macOS table swaps Ctrl→Meta, but ⌘⌥D is macOS's own
+      // "Turn Dock Hiding On/Off" symbolic hotkey: the system consumes it
+      // before RegisterEventHotKey ever sees it, so the app-external lookup
+      // would never fire. Ctrl⌥D is free on macOS and matches Windows.
       final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
           TargetPlatform.macOS)[ShortcutAction.globalExternalLookup]!;
       expect(set.keyboardBindings, hasLength(1));
@@ -64,7 +69,7 @@ void main() {
       expect(binding.key, LogicalKeyboardKey.keyD);
       expect(
         binding.modifiers,
-        <ModifierKey>{ModifierKey.meta, ModifierKey.alt},
+        <ModifierKey>{ModifierKey.ctrl, ModifierKey.alt},
       );
     });
 
