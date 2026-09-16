@@ -550,6 +550,7 @@ public class MainActivity extends AudioServiceActivity {
         FloatingDictService.initEngineGroup(getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine);
+        ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(
@@ -885,6 +886,26 @@ public class MainActivity extends AudioServiceActivity {
                         result.notImplemented();
                 }
             });
+
+        // 查词输入法语言：Android 切不了系统输入法，这里只把用户选的语言存下来，
+        // 供两个**原生** EditText 查词框（悬浮词典 / 弹窗词典）当 hintLocales 用。
+        // Flutter 的查词框走 TextField.hintLocales 参数，不经这条。
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                ChannelNames.LOOKUP_IME)
+                .setMethodCallHandler((call, result) -> {
+                    if ("persistLanguage".equals(call.method)) {
+                        Object tag = call.arguments();
+                        LookupImeHint.store(
+                                getApplicationContext(),
+                                tag instanceof String ? (String) tag : "");
+                        result.success(null);
+                        return;
+                    }
+                    // setLanguage / probe 是桌面与 iOS 的真·切换接口，Android 没有
+                    // 对应能力，让 Dart 侧走 MissingPluginException 的静默分支。
+                    result.notImplemented();
+                });
 
         floatingDictChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), FLOATING_DICT_CHANNEL);

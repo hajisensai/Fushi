@@ -53,7 +53,23 @@
     return;
   }
 
-  var POPUP_SRC = 'https://hibiki.popup/popup.html';
+  // popup.html sits next to THIS host document: Windows serves both from the
+  // WebView2 virtual host https://hibiki.popup, macOS from the fushi-popup://
+  // custom scheme (macos/Runner/GlobalLookupOverlay.swift). Resolve it RELATIVE
+  // to the host location so the same-origin contract (per-frame injection via
+  // contentWindow) holds on both; the literal stays as the fallback for the
+  // node harness, which has no window.location.
+  var POPUP_SRC = (function () {
+    try {
+      if (window.location && typeof window.location.href === 'string' &&
+          /^[a-z][a-z0-9+.-]*:/i.test(window.location.href)) {
+        return new URL('popup.html', window.location.href).href;
+      }
+    } catch (e) {
+      // No URL API / opaque location: fall through to the literal.
+    }
+    return 'https://hibiki.popup/popup.html';
+  })();
   var LAYER_ID = 'global-lookup-host-layer';
   var STYLE_ID = 'global-lookup-host-style';
   var FRAME_CHROME_STYLE_ID = 'global-lookup-frame-chrome-owner-style';

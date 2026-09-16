@@ -11,6 +11,7 @@ public final class ChannelNames {
     public static final String UPDATE = PREFIX + "/update";
     public static final String VOLUME_KEYS = PREFIX + "/volume_keys";
     public static final String FLOATING_LYRIC = PREFIX + "/floating_lyric";
+    public static final String LOOKUP_IME = PREFIX + "/lookup_ime";
     public static final String FLOATING_DICT = PREFIX + "/floating_dict";
     public static final String LIFECYCLE = PREFIX + "/lifecycle";
     public static final String FONTS = PREFIX + "/fonts";
@@ -21,6 +22,10 @@ public final class ChannelNames {
     public static final String CLOUDFLARE_PROXY_BROWSER = PREFIX + "/cloudflare_proxy_browser";
     // 设备自带文字识别（ML Kit bundled 模型）：漫画 OCR 的零下载兜底引擎。
     public static final String SYSTEM_OCR = PREFIX + "/system_ocr";
+    // 复制图片到系统剪贴板（视频截图 / 阅读器内联图）。这条通道最早只有 Windows
+    // 一端（CF_DIB），补齐 Android 时顺手对齐 Dart 侧 channel_constants.dart 的
+    // 「两边必须同步」约定——在此之前 clipboard_image 一直不在本表里。
+    public static final String CLIPBOARD_IMAGE = PREFIX + "/clipboard_image";
     // TODO-1232 A3: render-backend toggle (persist the "disable Impeller / use
     // Skia" experiment flag; applied at next launch via MainActivity's
     // getFlutterShellArgs override).

@@ -143,6 +143,7 @@ void main() {
         debugLogging: false,
         swipeDistThreshold: 44,
         swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
         wheelGestureQuietMs: 450,
         furiganaMode: 'toggle',
         caretColor: 'rgba(0,0,0,0.5)',
