@@ -863,7 +863,7 @@
   "delete_local_files": "Yerel dosyaları da sil",
   "delete_local_files_audio_desc": "Özgün ses dosyaları bu cihazdan silinir; kitap ve altyazı asılları korunur. Bu geri alınamaz.",
   "delete_local_files_failed": "$n yerel dosya silinemedi; hâlâ kullanımda olabilir",
-  "delete_local_files_video_desc": "Video dosyası bu cihazdan silinir ve ilgili indirme görevi de temizlenir. Bu geri alınamaz.",
+  "delete_local_files_video_desc": "Video dosyası, yanında duran altyazı dosyalarıyla birlikte bu cihazdan silinir ve ilgili indirme görevi de temizlenir. Bu geri alınamaz.",
   "delete_prompt_delete_selected": "Seçilenleri sil",
   "delete_prompt_message": "Bu öğeler başka bir cihazda silindi. Burada da silinsin mi?",
   "delete_prompt_select_all": "Tümünü seç",

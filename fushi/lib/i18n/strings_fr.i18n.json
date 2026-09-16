@@ -863,7 +863,7 @@
   "delete_local_files": "Supprimer aussi les fichiers locaux",
   "delete_local_files_audio_desc": "Les fichiers audio d'origine sont supprimés de cet appareil ; les fichiers du livre et des sous-titres d'origine sont conservés. Cette action est irréversible.",
   "delete_local_files_failed": "Impossible de supprimer $n fichier(s) local(aux) ; ils sont peut-être encore utilisés",
-  "delete_local_files_video_desc": "Le fichier vidéo est supprimé de cet appareil, ainsi que sa tâche de téléchargement. Cette action est irréversible.",
+  "delete_local_files_video_desc": "Le fichier vidéo est supprimé de cet appareil, ainsi que les fichiers de sous-titres situés à côté de lui et sa tâche de téléchargement. Cette action est irréversible.",
   "delete_prompt_delete_selected": "Supprimer la sélection",
   "delete_prompt_message": "Ces éléments ont été supprimés sur un autre appareil. Les supprimer ici aussi ?",
   "delete_prompt_select_all": "Tout sélectionner",

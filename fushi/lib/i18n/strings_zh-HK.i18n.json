@@ -863,7 +863,7 @@
   "delete_local_files": "同時刪除本機檔案",
   "delete_local_files_audio_desc": "原始音訊檔案將從本機刪除；書籍與字幕原檔保留，無法復原",
   "delete_local_files_failed": "有 $n 個本機檔案刪除失敗，可能正在被使用",
-  "delete_local_files_video_desc": "影片檔案將從本機刪除，對應的下載工作一併清除，無法復原",
+  "delete_local_files_video_desc": "影片檔案將從本機刪除，緊鄰它的外掛字幕檔案一併刪除，對應的下載工作也會清除，無法復原",
   "delete_prompt_delete_selected": "刪除選中",
   "delete_prompt_message": "以下內容已在其他設備刪除，也從本機刪除嗎？",
   "delete_prompt_select_all": "全選",

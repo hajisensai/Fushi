@@ -863,7 +863,7 @@
   "delete_local_files": "Hapus juga berkas lokal",
   "delete_local_files_audio_desc": "Berkas audio asli dihapus dari perangkat ini; berkas buku dan takarir asli tetap disimpan. Tindakan ini tidak dapat dibatalkan.",
   "delete_local_files_failed": "Gagal menghapus $n berkas lokal; mungkin masih digunakan",
-  "delete_local_files_video_desc": "Berkas video dihapus dari perangkat ini beserta tugas unduhannya. Tindakan ini tidak dapat dibatalkan.",
+  "delete_local_files_video_desc": "Berkas video dihapus dari perangkat ini beserta berkas subtitle di sebelahnya dan tugas unduhannya. Tindakan ini tidak dapat dibatalkan.",
   "delete_prompt_delete_selected": "Hapus yang dipilih",
   "delete_prompt_message": "Item-item ini dihapus di perangkat lain. Hapus juga di sini?",
   "delete_prompt_select_all": "Pilih semua",

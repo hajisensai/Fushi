@@ -863,7 +863,7 @@
   "delete_local_files": "ローカルファイルも削除する",
   "delete_local_files_audio_desc": "元の音声ファイルをこの端末から削除します。書籍と字幕の元ファイルは残ります。元に戻せません。",
   "delete_local_files_failed": "$n 件のローカルファイルを削除できませんでした。使用中の可能性があります",
-  "delete_local_files_video_desc": "動画ファイルをこの端末から削除し、対応するダウンロードタスクも消去します。元に戻せません。",
+  "delete_local_files_video_desc": "動画ファイルをこの端末から削除し、その隣にある外部字幕ファイルも一緒に削除します。対応するダウンロードタスクも消去します。元に戻せません。",
   "delete_prompt_delete_selected": "選択した項目を削除",
   "delete_prompt_message": "これらのアイテムは別のデバイスで削除されました。ここでも削除しますか？",
   "delete_prompt_select_all": "すべて選択",
