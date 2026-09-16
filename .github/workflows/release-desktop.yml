@@ -59,10 +59,9 @@ on:
       release_name:
         description: 'Optional GitHub Release title.'
         required: false
-      # TestFlight 上传只在手动 workflow_dispatch 时发生（见 ios job 的
-      # "Resolve Apple signing mode"）：beta/formal 直接放行；debug 只在
-      # testflight_only=true 时放行（定时 testflight-debug.yml 走的就是这条）。
-      # push 的 debug 通道每次提交都会跑，永远不传。
+      # TestFlight 上传两条路（见 ios job 的 "Resolve Apple signing mode"）：
+      # 手动 workflow_dispatch 的 beta/formal 直接放行、debug 只在 testflight_only=true
+      # 时放行；push 的 debug 通道约每三次传一次（发布序列 % 3 == 0 的那次）。
       upload_testflight:
         description: 'Upload a signed iOS build to TestFlight (beta/formal only; needs the Apple secrets).'
         required: false
@@ -76,13 +75,13 @@ on:
         required: false
         default: false
         type: boolean
-      # 定时 TestFlight（testflight-debug.yml）用的开关：只做「签名 iOS + 传 TestFlight」，
+      # 手动补传一份 debug 包到 TestFlight 的开关：只做「签名 iOS + 传 TestFlight」，
       # 其余全跳——Windows / macOS / publish 三个 job 不跑，ios job 里的未签名 IPA 也不
       # 打（那份 push 时已经发到 rolling debug 上了）。它与 build_only 正交：build_only
       # 是「什么都不外发」，testflight_only 是「只外发 TestFlight」；两者同时为 true 时
       # build_only 赢（TestFlight 门里 build_only 判在前）。
       testflight_only:
-        description: 'Only sign the iOS build and upload it to TestFlight; publish nothing else (used by the scheduled testflight-debug.yml).'
+        description: 'Only sign the iOS build and upload it to TestFlight; publish nothing else (manual extra debug upload between the every-third-push ones).'
         required: false
         default: false
         type: boolean
@@ -1909,6 +1908,7 @@ jobs:
           INPUT_UPLOAD_TESTFLIGHT: ${{ github.event.inputs.upload_testflight }}
           INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
           INPUT_TESTFLIGHT_ONLY: ${{ github.event.inputs.testflight_only }}
+          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
         run: |
           set -euo pipefail
           CREDS=false
@@ -1917,13 +1917,19 @@ jobs:
              && [ -n "$APPSTORE_API_ISSUER_ID" ] && [ -n "$APPSTORE_API_PRIVATE_KEY" ]; then
             CREDS=true
           fi
-          # 只在手动 workflow_dispatch 时上传，push 事件永远不传：push 的 debug 通道
-          # 一天跑 5~13 次，每次都传会让 App Store Connect 的处理排队压后真正想发的
-          # beta、TestFlight 列表被 debug 构建淹掉（每个挂 90 天）、每条 push 再多一趟
-          # 15 分钟签名构建。debug 包上 TestFlight 走的是定时通道
-          # testflight-debug.yml：每 8 小时查一次 App Store Connect，有新提交才以
-          # channel=debug + testflight_only=true dispatch 到这里——所以 debug 通道只在
-          # testflight_only 下放行，手动 dispatch 一个普通 debug 重发不会顺手传 TestFlight。
+          # 两条路上传：
+          #   1. 手动 workflow_dispatch：beta / formal 直接放行；debug 要 testflight_only=true
+          #      （手动 dispatch 一个普通 debug 重发不会顺手传 TestFlight）。
+          #   2. push 的 debug 通道：约每三次传一次——发布序列（= 构建号 = commit 计数，
+          #      tool/release_sequence.sh）能被 3 整除的那次（2026-09-16 用户拍板「发三次
+          #      调试版触发一次 TestFlight」）。不每次都传：push 一天跑 5~13 次，全传会让
+          #      App Store Connect 的处理排队压后真正想发的 beta、TestFlight 列表被 debug
+          #      构建淹掉（每个挂 90 天）、每条 push 再多一趟 15 分钟签名构建。用发布序列
+          #      而不是 run 号：本仓不变式是 run 号永远不当序列（check_release_policy.ps1
+          #      整个禁用），且这样从 TestFlight 的构建号就能看出哪次是自动传的。每次 push
+          #      涨的 commit 数不固定，所以是「约」每三次。
+          #      （09-14 ~ 09-16 曾用定时通道 testflight-debug.yml 每 8 小时查 App Store
+          #      Connect 补传，已撤：两条节律并存会重复上传。）
           # build_only 也必须挡住这条：TestFlight 上传是**不可回收**的外发——
           # 同一个 CFBundleShortVersionString 下构建号必须单调，传上去就再也拿不
           # 回来，而 build_only 的语义是「先出包给人测、还没决定要不要发」。
@@ -1940,14 +1946,35 @@ jobs:
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
             TESTFLIGHT=true
           fi
+          # push 的 debug 通道：约每三次一次。缺密钥就关门（fork 照常绿），不警告不红。
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$RELEASE_CHANNEL" = debug ]; then
+            if [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
+              # 这句不用 `[ … ] && echo … || echo …`：守卫
+              # release_workflow_bash_portability_guard_test 禁掉了该惯用法，因为它在
+              # pipefail 管道 / brace-group 末尾且 test 为假时会把整步静默杀掉。
+              if [ "$CREDS" = true ]; then
+                TESTFLIGHT_NOTE=enabled
+              else
+                TESTFLIGHT_NOTE='skipped, Apple secrets incomplete'
+              fi
+              echo "debug push, build $RELEASE_SEQUENCE is divisible by 3: TestFlight upload $TESTFLIGHT_NOTE"
+            else
+              echo "debug push, build $RELEASE_SEQUENCE: TestFlight only when the build number is divisible by 3 (next at $(( (RELEASE_SEQUENCE / 3 + 1) * 3 )))"
+            fi
+          fi
+          if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = push ] \
+             && [ "$RELEASE_CHANNEL" = debug ] \
+             && [ $((RELEASE_SEQUENCE % 3)) -eq 0 ]; then
+            TESTFLIGHT=true
+          fi
           if [ "$CREDS" = false ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] \
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ] \
              && [ "$CHANNEL_OK" = true ]; then
             echo "::warning title=TestFlight upload skipped::Apple signing secrets are incomplete. See docs/agent/apple-signing.md for the required secret names."
           fi
-          # testflight_only 的 run 唯一目的就是上传；密钥不全时「绿着跳过」会让定时通道
-          # 看到 App Store Connect 的号没涨、8 小时后再派一次，无限白烧 macOS runner。
-          # 「缺密钥不红」只给 push / beta / formal 保 fork，这条必须红。
+          # testflight_only 的 run 唯一目的就是上传；密钥不全时「绿着跳过」等于白烧一趟
+          # macOS runner 还什么都没发。「缺密钥不红」只给 push / beta / formal 保 fork，
+          # 这条必须红。
           if [ "${INPUT_TESTFLIGHT_ONLY:-}" = true ] && [ "$TESTFLIGHT" != true ]; then
             echo "::error title=TestFlight-only run cannot upload::testflight_only=true but the upload gate is closed (creds=$CREDS channel=$RELEASE_CHANNEL build_only=${INPUT_BUILD_ONLY:-} upload_testflight=${INPUT_UPLOAD_TESTFLIGHT:-true})."
             exit 1
