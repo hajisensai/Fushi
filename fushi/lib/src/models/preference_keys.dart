@@ -138,6 +138,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_db_path',
   'local_audio_dbs',
   'lookup.global_context_capture',
+  'lookup.ime_language',
   'low_memory_mode',
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。

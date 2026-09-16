@@ -101,6 +101,137 @@ void main() {
         reason: '两个勾选框正交：删文件不代表同步删除',
       );
     });
+
+    testWidgets('没给 statisticsSubtitle → 不渲染统计勾选框，决定恒不删统计', (
+      WidgetTester tester,
+    ) async {
+      DeleteDecision? got;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (BuildContext ctx) => TextButton(
+              onPressed: () async {
+                got = await showDeleteScopeConfirm(
+                  ctx,
+                  title: t.video_delete_title,
+                  message: 'msg',
+                  localFilesSubtitle: t.delete_local_files_video_desc,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.delete_statistics), findsNothing);
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.deleteStatistics, isFalse);
+    });
+
+    testWidgets('给了 statisticsSubtitle → 默认不勾；勾了才 deleteStatistics=true', (
+      WidgetTester tester,
+    ) async {
+      DeleteDecision? got;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (BuildContext ctx) => TextButton(
+              onPressed: () async {
+                got = await showDeleteScopeConfirm(
+                  ctx,
+                  title: t.video_delete_title,
+                  message: 'msg',
+                  statisticsSubtitle: t.delete_statistics_video_desc,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.delete_statistics), findsOneWidget);
+      expect(find.text(t.delete_statistics_video_desc), findsOneWidget);
+
+      // 不勾直接删 → false（默认站在「保留统计」那一侧）。
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.deleteStatistics, isFalse);
+
+      // 勾了再删 → true，且与另外两维正交。
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.delete_statistics));
+      await tester.pump();
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.deleteStatistics, isTrue);
+      expect(got!.deleteLocalFiles, isFalse);
+      expect(got!.scope, DeleteScope.keepLocalOnly);
+    });
+
+    testWidgets('统计勾选不被「记住这些选择」带默认值：勾过一次后重开仍是未勾', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      // 三个勾选行 + 正文在 800x600 默认测试窗口里会把确认按钮挤出可视区。
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      DeleteDecision? got;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (BuildContext ctx) => TextButton(
+              onPressed: () async {
+                got = await showDeleteScopeConfirm(
+                  ctx,
+                  title: t.video_delete_title,
+                  message: 'msg',
+                  db: db,
+                  localFilesSubtitle: t.delete_local_files_video_desc,
+                  statisticsSubtitle: t.delete_statistics_video_desc,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+
+      // 第一次：两个都勾上，并勾「记住这些选择」。
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.delete_local_files));
+      await tester.pump();
+      await tester.tap(find.text(t.delete_statistics));
+      await tester.pump();
+      await tester.tap(find.text(t.delete_choices_remember));
+      await tester.pump();
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.deleteLocalFiles, isTrue);
+      expect(got!.deleteStatistics, isTrue);
+
+      // 第二次重开：本地文件按记忆恢复成勾选，统计仍从未勾开始。
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.dialog_delete));
+      await tester.pumpAndSettle();
+      expect(got!.deleteLocalFiles, isTrue, reason: '本地文件那一项是被记住的');
+      expect(
+        got!.deleteStatistics,
+        isFalse,
+        reason: '统计删除按身份立碑、其他设备也跟着删，不该因为上次勾过就默认勾上',
+      );
+    });
   });
 
   group('ReaderHistoryDeleteDialog', () {

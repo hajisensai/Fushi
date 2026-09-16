@@ -80,6 +80,153 @@ void main() {
     });
   });
 
+  group('BUG-2558：后台听书期间照常计时', () {
+    final String session = maskComments(
+      File(
+        'lib/src/media/audiobook/audiobook_session.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n'),
+    );
+
+    test('_studyClockMayRun 现读控制器播放态，不读镜像字段', () {
+      final String body = _functionSource(
+        corpus,
+        '  bool get _studyClockMayRun =>',
+        ';\n',
+      );
+      expect(
+        body,
+        contains('audiobookPlaying: _audiobookController?.isPlaying ?? false'),
+        reason: '判据读镜像字段就会在媒体中心暂停后多计到下一次事件',
+      );
+      expect(
+        body,
+        isNot(contains('audiobookPlaying: _audiobookPlayingForStudyClock')),
+      );
+    });
+
+    test('_onCueChanged 在播放态翻转时 sync 运行态（暂停后不会再有 cue）', () {
+      final String body = _functionSource(
+        corpus,
+        '  void _onCueChanged() {',
+        '\n  }\n',
+      );
+      expect(
+        body,
+        contains('_noteAudiobookPlayingForStudyClock(controller.isPlaying);'),
+        reason: '不 sync 的话后台暂停后时钟一直空转到下一次前台事件',
+      );
+    });
+
+    test('_noteAudiobookPlayingForStudyClock 只在翻转时 sync', () {
+      final String body = _functionSource(
+        corpus,
+        '  void _noteAudiobookPlayingForStudyClock(bool playing) {',
+        '\n  }\n',
+      );
+      expect(
+        body,
+        contains('if (playing == _audiobookPlayingForStudyClock) return;'),
+      );
+      expect(body, contains('_syncStudyClockRunState();'));
+      expect(body, isNot(contains('.start()')));
+      expect(body, isNot(contains('.stop()')));
+    });
+
+    test('会话侧后台时钟与 reader 那只互斥（判据含 hasReaderAttached）', () {
+      final String body = _functionSource(
+        session,
+        '  bool get _studyClockMayRun =>',
+        ';\n',
+      );
+      expect(
+        body,
+        contains('!hasReaderAttached'),
+        reason: '两只时钟同时跑 = 同一段时间记两遍',
+      );
+      expect(
+        body,
+        contains('_controller?.isPlaying ?? false'),
+        reason: '「会话还活着」不是「在学习」——判据要的是真在出声',
+      );
+    });
+
+    test('判据三个输入的每一次翻转都接到了 sync', () {
+      for (final String marker in <String>[
+        // 播放态：控制器 notify（含 just_audio playingStream）
+        '  void _onControllerChanged() {',
+        // reader 在场：两个方向都要
+        '  void attachReader(ReaderAudiobookView reader) {',
+        '  void detachReader(ReaderAudiobookView reader) {',
+      ]) {
+        final String body = _functionSource(session, marker, '\n  }\n');
+        expect(
+          body,
+          contains('_syncStudyClockRunState();'),
+          reason: '漏一个翻转点就是漏计 / 多计一整段：$marker',
+        );
+      }
+    });
+
+    test('停会话在清空 _book 之前结算时钟，dispose 走零 IO 的 detach', () {
+      final String stop = _functionSource(
+        session,
+        '  Future<void> _stopInternal() async {',
+        '\n  }\n',
+      );
+      final int retireIdx = stop.indexOf('_retireStudyClock();');
+      expect(retireIdx, isNonNegative);
+      expect(
+        retireIdx,
+        lessThan(stop.indexOf('_book = null;')),
+        reason: '_book 清空后判据恒 false，但那时已经没人持有这只时钟了',
+      );
+
+      final String dispose = _functionSource(
+        session,
+        '  void dispose() {',
+        '\n  }\n',
+      );
+      expect(
+        dispose,
+        contains('_studyClock?.detach();'),
+        reason: 'dispose 是同步的：在这里 stop() 就是无人 await 的事务，'
+            '会与随后的 db.close() 互等（与阅读器 / PDF 的 dispose 同律）',
+      );
+      expect(dispose, isNot(contains('_studyClock?.stop()')));
+    });
+
+    test('后台听书时钟的统计身份与阅读器同源（不用 SRT 的 uid）', () {
+      final String body = _functionSource(
+        session,
+        '  StudyClock? _ensureStudyClock() {',
+        '\n  }\n',
+      );
+      expect(body, contains('mediaKey: book.studyMediaKey,'));
+      expect(
+        body,
+        isNot(contains('mediaKey: book.bookKey')),
+        reason: 'SRT 书源的 bookKey 是 srt_books.uid，'
+            '记岔了同一本书在统计中心会裂成两条',
+      );
+      expect(body, contains('mediaKind: kActivityMediaBook,'));
+    });
+
+    test('launcher 两条分支都显式填统计身份 = 调用方传进来的 key', () {
+      final String launcher = maskComments(
+        File(
+          'lib/src/media/audiobook/audiobook_session_launcher.dart',
+        ).readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      expect(
+        'statsMediaKey:'.allMatches(launcher),
+        hasLength(2),
+        reason: 'EPUB 与 SRT 两条分支各一处；漏一条就是那条路的统计记到别的身份上',
+      );
+      expect(launcher, contains('statsMediaKey: bookKey,'));
+      expect(launcher, contains('statsMediaKey: statsMediaKey,'));
+    });
+  });
+
   group('BUG-2208：面板 / 弹层 / 全页路由压住正文期间停表', () {
     test('_withStudyClockPaused 计数进出并 sync（finally 保证减计数）', () {
       final String body = _functionSource(

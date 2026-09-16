@@ -1,0 +1,6 @@
+## BUG-2562 · AnkiConnect 制卡成功不解除查重冷却，桌面上刚制好的卡也画不出 ✓
+- **报告**：2026-09-16（查 BUG-2560 时按用户「再看其他平台是否也存在一样的问题」顺出来的同症状路径）
+- **真实性**：✅ 真 bug。BUG-1302 给查重加的「传输层不可达」冷却是**进程级静态窗**（30s，`packages/fushi_anki/lib/src/ankiconnect/ankiconnect_repository.dart` 的 `_duplicateCheckUnreachableUntil`），此前只有 `isDuplicate` 自己拿到应答才清零，`mineEntry` 从不碰它。于是这条路径会让 ✓ 画不出来：Anki 没开着时查了词（冷却武装）→ 用户打开 Anki → 点「+」制卡，`addNote` 成功（制卡链路不看冷却）→ popup.js 紧跟着回问 `duplicateCheck` → 还在冷却窗内被直接短路成 `false` → 按钮停在「+」，用户以为没制上，很可能再制一张重复卡。症状与 iOS 的 BUG-2560 一模一样，成因不同（那边是落账时序，这边是冷却窗）。
+- **[x] ① 已修复** — 新增 `_noteAnkiConnectReachable()`，在 `mineEntry` 的 `addNote` 成功分支与 `AnkiConnectDuplicateException` 分支各调一次撤掉冷却。「制卡拿到了应答」与 `isDuplicate` 成功分支是同一个事实（主机应答了），撤冷却的理由完全同源；Anki 明确回「这张卡已经有了」同样是应答，一并算。提交 `e54a6ab593`
+- **[x] ② 已加自动化测试** — `fushi/test/anki/anki_duplicate_check_cooldown_test.dart` 新增两条：制卡成功后冷却必须已解除、且紧跟的回问问到真 Anki 拿到 `true`（✓ 画得出来）；撞重复（`MineResult.duplicate`）同样解除。既有四条（只对传输层失败武装、进程级共享、成功探测清零、窗口有界）保持绿。
+- **备注**：AnkiDroid 侧另有两处口径可疑但**本次未动**，避免扩大范围：① `checkForDuplicates` 把 reading 也纳入匹配，而 AnkiConnect / AnkiMobile 只比第一字段，同一个词在 Android 上更容易判「没制过」；② `AnkiChannelHandler.java` 对 `DirectAnkiProvider.findDuplicateNotes` 的返回值直接 `.isEmpty()`，而它算不出 csum 时返回 `null`，NPE 被 Dart 侧 catch 吞成 `false`——「查不了」退化成「没重复」。两条都会表现为「制了卡 ✓ 不亮」，值得单独立项。

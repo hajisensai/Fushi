@@ -497,7 +497,12 @@ enum ShortcutAction {
   // 画面/杂项
   videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
   videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
+  // 截图分两个独立动作而不是一个动作 + 一个「含字幕」开关：两种图的用途不同
+  // （纯画面用来做壁纸/封面，带字幕的用来发截图/记台词），要的是两只手都能直接按到，
+  // 而不是先去设置里翻开关再回来按。字幕是 Flutter overlay 画的、不在画面里，所以
+  // 「含字幕」那条要在 Dart 侧把字幕合成回帧上（`video_screenshot_compose.dart`）。
   videoScreenshot(ShortcutScope.video, 'video_screenshot'),
+  videoScreenshotSubtitled(ShortcutScope.video, 'video_screenshot_subtitled'),
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
       ShortcutScope.video, 'video_toggle_favorite_sentence'),

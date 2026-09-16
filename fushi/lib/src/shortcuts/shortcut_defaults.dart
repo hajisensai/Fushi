@@ -351,6 +351,11 @@ class ShortcutDefaults {
     ShortcutAction.videoScreenshot: _kb([
       _key(LogicalKeyboardKey.keyS),
     ]),
+    // Shift+S：与裸 S 同指法、只多一个修饰键，"带字幕的那一版截图" 正好对应
+    // "同一个动作的加强版" 这个修饰键直觉。video co-active 组内 Shift+S 未被占用。
+    ShortcutAction.videoScreenshotSubtitled: _kb([
+      _key(LogicalKeyboardKey.keyS, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleFullscreen: _kb([
       _key(LogicalKeyboardKey.keyF),
       _key(LogicalKeyboardKey.f12),
@@ -576,6 +581,12 @@ class ShortcutDefaults {
     for (final entry in _desktop.entries)
       entry.key: ShortcutBindingSet(
         keyboardBindings: entry.value.keyboardBindings.map((b) {
+          // app 外全局查词热键**不做** Ctrl→Meta：⌘⌥D 是 macOS 系统级「打开/关闭
+          // Dock 隐藏」快捷键，系统热键先于应用的 RegisterEventHotKey 处理，
+          // 应用永远收不到。Ctrl⌥D 在 macOS 上空闲，保持与 Windows 同键。
+          if (entry.key == ShortcutAction.globalExternalLookup) {
+            return b;
+          }
           if (b.modifiers.contains(ModifierKey.ctrl)) {
             final newMods = Set<ModifierKey>.of(b.modifiers)
               ..remove(ModifierKey.ctrl)

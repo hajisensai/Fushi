@@ -13,6 +13,7 @@ import 'dart:convert';
 
 import 'package:fushi/src/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_reply_json.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 
 /// AI 给出的一组建议步骤。
@@ -114,7 +115,7 @@ AiTextProcessSuggestion parseAiTextProcessSuggestion(
   String reply, {
   required GalTextProcessPipeline into,
 }) {
-  final String? jsonText = _extractJsonObject(reply);
+  final String? jsonText = extractAiJsonObject(reply);
   if (jsonText == null) {
     return const AiTextProcessSuggestion(steps: <GalTextProcessStep>[]);
   }
@@ -168,41 +169,6 @@ AiTextProcessSuggestion parseAiTextProcessSuggestion(
     steps: List<GalTextProcessStep>.unmodifiable(steps),
     explanation: explanation is String ? explanation.trim() : '',
   );
-}
-
-/// 从回复里抠出第一个平衡的 JSON 对象。
-String? _extractJsonObject(String reply) {
-  final int start = reply.indexOf('{');
-  if (start < 0) {
-    return null;
-  }
-  int depth = 0;
-  bool inString = false;
-  bool escaped = false;
-  for (int i = start; i < reply.length; i += 1) {
-    final String ch = reply[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch == r'\') {
-        escaped = true;
-      } else if (ch == '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (ch == '"') {
-      inString = true;
-    } else if (ch == '{') {
-      depth += 1;
-    } else if (ch == '}') {
-      depth -= 1;
-      if (depth == 0) {
-        return reply.substring(start, i + 1);
-      }
-    }
-  }
-  return null;
 }
 
 /// 跑一次「让 AI 写规则」。

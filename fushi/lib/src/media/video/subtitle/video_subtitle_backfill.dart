@@ -103,6 +103,16 @@ class SubtitleBackfillResult {
   bool get installed => outcome == SubtitleBackfillOutcome.installed;
 }
 
+/// 真下载前对候选做一次**可选**的重排（当前只有 AI 重排接这条缝，见
+/// `ai_video_search_assistant.dart` 的 `aiSubtitleBackfillReorder`）。
+///
+/// 返回值必须是入参的**全量排列**——它只改顺序、不改集合，[VideoSubtitleBackfillService.maxCandidates]
+/// 的语义（最多真下几条）不受影响。抛异常按「原序」处理。
+typedef SubtitleBackfillReorder = Future<List<VideoSubtitleCandidate>> Function(
+  List<VideoSubtitleCandidate> candidates,
+  SubtitleBackfillTarget target,
+);
+
 /// 给刮削后仍缺字幕的视频自动补一条字幕。
 class VideoSubtitleBackfillService {
   VideoSubtitleBackfillService({
@@ -110,6 +120,7 @@ class VideoSubtitleBackfillService {
     Iterable<String> preferredLanguages = const <String>[],
     this.defaultContentLanguage,
     this.maxCandidates = 4,
+    this.aiReorder,
   }) : preferredLanguages = List<String>.unmodifiable(preferredLanguages);
 
   final VideoSubtitleRegistry registry;
@@ -123,6 +134,9 @@ class VideoSubtitleBackfillService {
   /// 最多真下几条候选做校验。理由同下载流水线的
   /// `kSubtitleVerifyMaxCandidates`：候选可能几十条，全下一遍是对来源站的滥用。
   final int maxCandidates;
+
+  /// 真下载前的可选重排（AI）。null = 按语言偏好排完就取前 [maxCandidates] 条。
+  final SubtitleBackfillReorder? aiReorder;
 
   Future<SubtitleBackfillResult> backfill(
     SubtitleBackfillTarget target,
@@ -188,11 +202,27 @@ class VideoSubtitleBackfillService {
           target.originalLanguage ?? facts.primaryAudioLanguage,
       globalDefaultContentLanguage: defaultContentLanguage,
     );
-    final List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
+    List<VideoSubtitleCandidate> ordered = rankByPreferredLanguage(
       result.items,
       preferred,
       (VideoSubtitleCandidate c) => c.language,
     );
+    // AI 重排只在语言排序之后、截 maxCandidates 之前插一刀：它决定的是「先下哪几条」，
+    // 不改集合也不改上限。失败 / 未配置 / 返回的不是全量排列都退回本地顺序。
+    final SubtitleBackfillReorder? reorder = aiReorder;
+    if (reorder != null && ordered.length > 1) {
+      try {
+        final List<VideoSubtitleCandidate> reordered =
+            await reorder(ordered, target);
+        if (reordered.length == ordered.length &&
+            reordered.toSet().containsAll(ordered)) {
+          ordered = reordered;
+        }
+      } on Object catch (error) {
+        debugPrint('[subtitle-backfill] ai reorder failed for '
+            '${target.bookUid}: $error');
+      }
+    }
     String? lastRejection;
     final int limit =
         ordered.length < maxCandidates ? ordered.length : maxCandidates;
