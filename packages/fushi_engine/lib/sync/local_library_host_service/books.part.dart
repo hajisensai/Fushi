@@ -107,6 +107,9 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
                 : null),
         progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
         progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
+        // client 书架排序要与本地条目同一把尺子：不下发入库时刻，对端只能给远端
+        // 占位卡造负数假戳，「导入时间」/「最近阅读」两档下远端书恒沉底。
+        importedAt: r.importedAt,
         // BUG-1119：EpubBooks 行都是可下载 EPUB，显式标 epub（srt-backed 有声书
         // 的 EPUB 卡语义仍是 epub——与本地 _bookMediaKind 按 hoshi://book/ 身份判
         // epub 一致，勿标成 srt 造成两端同书异 kind）。standalone SRT 书（身份

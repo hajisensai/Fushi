@@ -15,15 +15,123 @@ void main() {
     final String page =
         File('lib/src/pages/implementations/reader_fushi_page.dart')
             .readAsStringSync();
-    // 底栏坐在状态行**画出来**的带上（悬浮态收起时 0，唤出时 28）。
-    expect(chrome, contains('? _statusFooterPaintedBand : 0'));
+    // 读数行画在别处时底栏坐在它**画出来**的带上（悬浮态收起时 0，唤出时 28）。
+    expect(
+        chrome,
+        contains(
+            'bottom: _separatePlaybackStatus && !_statusFooterInBottomBar'));
+    expect(chrome, contains('? _statusFooterPaintedBand'));
     expect(chrome,
         contains('height: _separatePlaybackStatus ? 0 : _stableBottomInset'));
+    // 读数并进底栏那块遮罩时：它是底栏 Column 的最后一行（居中），底栏整体贴屏底，
+    // 屏底那一层不再另画（否则同一串读数上下两份 / 两块半透明遮罩接缝）。
+    expect(chrome, contains('if (_statusFooterInBottomBar)'));
+    expect(chrome, contains('_buildStatusFooterRow(centered: true)'));
+    expect(chrome,
+        contains('!_statusFooterShouldPaint || _statusFooterInBottomBar'));
+    expect(
+        page,
+        contains('bool get _statusFooterInBottomBar =>\n'
+            '      _separatePlaybackStatus &&\n'
+            '      _statusFooterShouldPaint &&\n'
+            '      _bottomBarShouldPaint &&'));
     // 底栏只在「有声书播放条在场」或「用户把按钮拖进底栏槽位」时占位。
     expect(
         page,
         contains(
             'chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons'));
+  });
+
+  group('readerHeaderCompactForActions', () {
+    test('顶部有空间就不折叠：横屏手机 ~700 逻辑 px 放得下六颗按钮加书名', () {
+      // 用户 2026-09-14：固定阈值（760）会在这条宽度上把插图 / 统计 / 有声书折进 ⋮，
+      // 而书名两侧还空着大半条。按实际按钮数算：16 + 6×48 = 304，剩 394 给书名。
+      expect(
+          readerHeaderCompactForActions(width: 698, actionCount: 6), isFalse);
+      // 旧的固定阈值判据在同一条宽度上判折叠（漫画顶栏仍在用它，那一栏算不准）。
+      expect(readerHeaderCompact(698), isTrue);
+    });
+
+    test('真放不下才折叠：按钮占完留给书名的不足 120', () {
+      // 16 + 6×48 = 304；书名要 120 → 424 是分界。
+      expect(
+          readerHeaderCompactForActions(width: 424, actionCount: 6), isFalse);
+      expect(readerHeaderCompactForActions(width: 423, actionCount: 6), isTrue);
+    });
+
+    test('不显示书名时按钮可以一路占到两端内边距', () {
+      expect(
+        readerHeaderCompactForActions(
+            width: 304, actionCount: 6, showsTitle: false),
+        isFalse,
+      );
+      expect(
+        readerHeaderCompactForActions(
+            width: 303, actionCount: 6, showsTitle: false),
+        isTrue,
+      );
+    });
+  });
+
+  testWidgets('横屏手机宽度：六颗按钮全部直接画，没有 ⋮ 溢出菜单', (WidgetTester tester) async {
+    // 用户 2026-09-14 报的原始现象（截图 698×~350 逻辑 px 的横屏）：顶部明明还有
+    // 大半条空白，插图 / 统计 / 有声书却已经折进 ⋮。
+    await tester.binding.setSurfaceSize(const Size(698, 350));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '安達としまむら3',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.arrow_back,
+            label: 'Back',
+            pinned: true,
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.format_list_bulleted,
+            label: 'Contents',
+            pinned: true,
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.collections_outlined,
+            label: 'Gallery',
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.insights_outlined,
+            label: 'Statistics',
+            onPressed: () {}),
+      ],
+      trailing: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.headphones_outlined,
+            label: 'Audiobook',
+            onPressed: () {}),
+        ReaderHeaderAction(
+            icon: Icons.tune_outlined,
+            label: 'Settings',
+            pinned: true,
+            onPressed: () {}),
+      ],
+    ))));
+    for (final IconData icon in <IconData>[
+      Icons.arrow_back,
+      Icons.format_list_bulleted,
+      Icons.collections_outlined,
+      Icons.insights_outlined,
+      Icons.headphones_outlined,
+      Icons.tune_outlined,
+    ]) {
+      expect(find.byIcon(icon), findsOneWidget, reason: '$icon 该直接画在栏里');
+    }
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_overflow')),
+      findsNothing,
+    );
+    expect(find.text('安達としまむら3'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('320 wide header keeps navigation and folds secondary actions',
@@ -266,5 +374,104 @@ void main() {
     final int bar = chrome.indexOf('return _buildSettingsBar();');
     expect(gate, greaterThan(-1));
     expect(gate, lessThan(bar));
+  });
+
+  testWidgets('顶栏标题槽：书名后跟当前章名', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '水属性の魔法使い 第一部 中央諸国編2',
+      chapter: '第三章 王都へ',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.arrow_back,
+            label: 'Back',
+            pinned: true,
+            onPressed: () {}),
+      ],
+      trailing: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+            icon: Icons.tune,
+            label: 'Settings',
+            pinned: true,
+            onPressed: () {}),
+      ],
+    ))));
+    expect(find.text('水属性の魔法使い 第一部 中央諸国編2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')),
+      findsOneWidget,
+    );
+    expect(find.text('第三章 王都へ'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('章名与书名相同时不画两遍', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '安達としまむら3',
+      chapter: '安達としまむら3',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: const <ReaderHeaderAction>[],
+      trailing: const <ReaderHeaderAction>[],
+    ))));
+    expect(find.text('安達としまむら3'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('不给章名时标题槽与旧行为一致', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '安達としまむら3',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: const <ReaderHeaderAction>[],
+      trailing: const <ReaderHeaderAction>[],
+    ))));
+    expect(find.text('安達としまむら3'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('超长章名最多吃掉标题槽的四成，书名仍占多数', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: ReaderDesktopHeader(
+      title: '水属性の魔法使い 第一部 中央諸国編2【電子書籍限定書き下ろしSS付き】',
+      chapter: '第三章 王都へ向かう長い旅路と、その途中で出会った人々についての覚書',
+      textColor: Colors.black,
+      backgroundColor: Colors.white,
+      leading: const <ReaderHeaderAction>[],
+      trailing: const <ReaderHeaderAction>[],
+    ))));
+    final double titleWidth = tester
+        .getSize(
+            find.byKey(const ValueKey<String>('fushi_desktop_header_title')))
+        .width;
+    final double chapterWidth = tester
+        .getSize(
+            find.byKey(const ValueKey<String>('fushi_desktop_header_chapter')))
+        .width;
+    // 对半分（两个 Flexible）时这条会挂：章名再长也只许拿四成，书名不能被挤成省略号。
+    expect(chapterWidth, lessThan(titleWidth));
+    expect(tester.takeException(), isNull);
   });
 }

@@ -28,6 +28,10 @@ enum SettingsDestinationId {
   // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
   // 同门控（仅 Windows，galgame hook 平台边界）。
   game,
+  // 「AI」一级分类：用户自配的大模型提供商（端点/凭据/模型/协议）与「哪个功能用
+  // 哪家」的映射。归在 services 模块下（同 Jimaku / OpenSubtitles / Torznab 一类
+  // 第三方在线服务），见 module_registry.dart。
+  ai,
   syncBackup,
   // 「存储」一级分类：磁盘占用总览（书/词典单条删除）+ 可选模块（OCR 模型 /
   // Anime4K 着色器删除恢复）+ 随包组件展示（构建函数在 settings_schema_storage.dart）。

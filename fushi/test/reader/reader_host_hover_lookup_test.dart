@@ -143,6 +143,7 @@ void main() {
         debugLogging: false,
         swipeDistThreshold: 44,
         swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
         wheelGestureQuietMs: 450,
         furiganaMode: 'toggle',
         caretColor: 'rgba(0,0,0,0.5)',
@@ -346,35 +347,33 @@ void main() {
       );
     });
 
-    test('macOS 宿主腿接管 hover 时，悬浮 chrome 的鼠标移动唤出也走宿主腿', () {
-      // 2026-09-13 chrome 重做把「鼠标移动唤出悬浮 chrome」也做成两条腿，但两条
-      // 腿最初都只按 hostOwnsWebViewPointerInput 分工：macOS 既不是 Windows
-      // （Flutter 腿关）、DOM 又收不到 pointermove（JS 腿死）——两腿全死。宿主腿
-      // 平台（hostOwnsWebViewHoverLookup）必须并进 Flutter 腿的门，JS 腿对称让路。
+    test('鼠标移动不得唤出悬浮 chrome：两条腿连同 JS 回传一起不在场', () {
+      // 用户 2026-09-14 的裁决：悬浮控制栏只认点击。此前（2026-09-13 chrome 重做）
+      // 鼠标在正文上一动就把栏顶出来，两条腿（Windows/macOS 的宿主 Listener、其余
+      // 平台的页内 pointermove 回传）一起删掉。悬停**查词**的两条腿不受影响——它们
+      // 是 mousemove + Shift 门控，与本守卫扫的符号无交集，删错了上面几条会先红。
+      for (final String symbol in <String>[
+        '_handleReaderPointerHover',
+        '_handleJsHoverReveal',
+        '_applyHoverReveal',
+        'onPointerHoverReveal',
+        'readerHoverRevealAction',
+      ]) {
+        expect(
+          src.contains(symbol),
+          isFalse,
+          reason: '\$symbol 是鼠标移动唤出控制栏的残留，控制栏只能由点击开关',
+        );
+        expect(
+          js.contains(symbol),
+          isFalse,
+          reason: '\$symbol 不得在页内脚本里复活成 JS 腿',
+        );
+      }
       expect(
-        RegExp(
-          r'void _handleReaderPointerHover\(PointerHoverEvent event\) \{\s*'
-          r'if \(!hostOwnsWebViewPointerInput && !hostOwnsWebViewHoverLookup\) return;',
-        ).hasMatch(src),
-        isTrue,
-        reason: 'Flutter 腿：Windows（纹理）或 macOS（DOM 收不到 hover）都由宿主唤出',
-      );
-      expect(
-        RegExp(
-          r'void _handleJsHoverReveal\(\) \{\s*'
-          r'if \(hostOwnsWebViewPointerInput \|\| hostOwnsWebViewHoverLookup\) return;',
-        ).hasMatch(src),
-        isTrue,
-        reason: 'JS 腿：宿主腿活着的平台上回传一律丢弃，一平台一条腿',
-      );
-      expect(
-        RegExp(
-          r"document\.addEventListener\('pointermove', function\(e\) \{\s*"
-          r'(?://[^\n]*\n\s*)*if \(window\.__fushiHostHoverLookup\) return;',
-        ).hasMatch(js),
-        isTrue,
-        reason: '正文 pointermove 唤出腿必须在入口按 __fushiHostHoverLookup 让路'
-            '（与 mousemove 查词腿同款）',
+        src.contains('onPointerHover:'),
+        isFalse,
+        reason: '页面根 Listener 不再挂 hover 通道',
       );
     });
 

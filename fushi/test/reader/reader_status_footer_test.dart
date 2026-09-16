@@ -65,7 +65,8 @@ void main() {
         reason: 'BUG-2467：读数已并进挤压态底栏，状态行不再另占一条预留',
       );
       expect(
-        readerStatusFooterReserve(enabled: true, footerHeight: 28, floating: true),
+        readerStatusFooterReserve(
+            enabled: true, footerHeight: 28, floating: true),
         0,
         reason: '悬浮态状态行随控制栏显隐、不占预留（隐藏满屏、唤出覆盖）',
       );
@@ -157,6 +158,31 @@ void main() {
       expect(vis(floating: true), isFalse, reason: '悬浮收起 → 不画');
       expect(vis(floating: true, transient: true), isTrue);
       expect(vis(floating: true, transient: true, absorbed: true), isFalse);
+    });
+
+    test('inline: 横屏且够宽才并进底栏那一行；竖屏一律分层', () {
+      bool inline({
+        bool enabled = true,
+        bool landscape = true,
+        double width = 698,
+      }) =>
+          readerPlaybackStatusInline(
+            enabled: enabled,
+            landscape: landscape,
+            width: width,
+          );
+      // 用户 2026-09-14「横屏应该同层进度显示」：横屏手机 ~700 逻辑 px 放得下
+      // 五颗传输键加一串读数，此前借用顶栏的 760 阈值把它判成窄屏、读数被踢到
+      // 底栏之下单独占一行。
+      expect(inline(), isTrue);
+      expect(inline(landscape: false), isFalse, reason: '竖屏一律分层');
+      expect(
+        inline(width: kReaderStatusInlineMinWidth - 1),
+        isFalse,
+        reason: '横屏但窄到传输键都挤，读数不进同一行',
+      );
+      expect(inline(width: kReaderStatusInlineMinWidth), isTrue);
+      expect(inline(enabled: false), isFalse, reason: '两个读数开关都关 → 无读数可并');
     });
 
     test('edge line: only while the floating footer is hidden', () {
@@ -260,6 +286,7 @@ void main() {
       int? total = 123962,
       bool showTimer = true,
       bool showProgress = true,
+      bool centered = false,
       VoidCallback? onTap,
       VoidCallback? onTapTracker,
       VoidCallback? onTapProgress,
@@ -274,6 +301,7 @@ void main() {
               totalChars: total,
               showTimer: showTimer,
               showProgress: showProgress,
+              centered: centered,
               textColor: Colors.white,
               backgroundColor: Colors.black,
               tick: const Duration(milliseconds: 100),
@@ -296,7 +324,8 @@ void main() {
       expect(find.text('52.4%'), findsOneWidget);
       expect(find.byType(ReaderStatusProgressTrack), findsOneWidget,
           reason: '百分比前带一段短进度条');
-      expect(find.byIcon(Icons.timer_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.pause_rounded), findsOneWidget,
+          reason: '计时中画 ⏸（点了会停），与统计侧栏那颗暂停键同一套符号');
 
       ms = 61000;
       await tester.pump(const Duration(milliseconds: 150));
@@ -304,17 +333,61 @@ void main() {
           reason: '秒表由组件自己的 tick 驱动，不依赖父级重建');
     });
 
-    testWidgets('paused state swaps to the timer-off icon',
+    testWidgets('paused state swaps the toggle to play',
         (WidgetTester tester) async {
       bool active = true;
       await tester.pumpWidget(host(
         totals: () => (durationMs: 0, chars: 0, active: active),
+        onTapTracker: () {},
       ));
-      expect(find.byIcon(Icons.timer_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
       active = false;
       await tester.pump(const Duration(milliseconds: 150));
-      expect(find.byIcon(Icons.timer_off_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.timer_outlined), findsNothing);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget,
+          reason: '已停画 ▶：点它是「继续计时」');
+      expect(find.byIcon(Icons.pause_rounded), findsNothing);
+    });
+
+    // 此前这里是一枚纯装饰的秒表字形：图标报状态、点它没有任何反馈，能停表的只有
+    // 包在外面那层看不见的 GestureDetector。现在它是一颗真的 MD3 IconButton。
+    testWidgets('the clock icon itself is a button that toggles the timer',
+        (WidgetTester tester) async {
+      int taps = 0;
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        onTapTracker: () => taps++,
+      ));
+      final Finder button = find.byType(ReaderStudyClockButton);
+      expect(button, findsOneWidget);
+      expect(find.descendant(of: button, matching: find.byType(IconButton)),
+          findsOneWidget,
+          reason: '是 MD3 IconButton（state layer + ripple + tooltip），不是裸 Icon');
+      await tester.tap(button);
+      await tester.pump();
+      expect(taps, 1);
+
+      // 视觉高度 == 预留高度是 chrome 铁律：IconButton 默认会把自己裹进 48dp 触摸
+      // 靶，那会把 28px 的状态行撑成 48px，正文跟着被挤。
+      expect(tester.getRect(button).height, kReaderStatusFooterHeight);
+      expect(tester.getRect(find.byType(ReaderStatusFooter)).height,
+          kReaderStatusFooterHeight);
+    });
+
+    testWidgets('the toggle stays out of the focus ring',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        onTapTracker: () {},
+      ));
+      // TODO-700：状态行是纯指针面。裸 IconButton 默认可聚焦，不排除就会往 Tab 环
+      // 里塞一个不受 FushiFocusController 管的节点。
+      final Focus focus = tester.widget<Focus>(find
+          .descendant(
+            of: find.byType(ReaderStudyClockButton),
+            matching: find.byType(Focus),
+          )
+          .first);
+      expect(focus.canRequestFocus, isFalse);
     });
 
     testWidgets('progress hidden by the switch or when total unknown',
@@ -344,8 +417,8 @@ void main() {
       ));
       expect(find.byKey(const ValueKey<String>('fushi_status_tracker')),
           findsNothing);
-      expect(find.byIcon(Icons.timer_outlined), findsNothing,
-          reason: '计时器图标与读数一起隐藏');
+      expect(find.byType(ReaderStudyClockButton), findsNothing,
+          reason: '计时开关键与读数一起隐藏');
       final Finder progress =
           find.byKey(const ValueKey<String>('fushi_status_progress'));
       expect(progress, findsOneWidget);
@@ -436,6 +509,34 @@ void main() {
           reason: '左端留白（点它唤出 / 收起 chrome），计时块不再钉在左下角');
     });
 
+    testWidgets('centered: 读数并进底栏那块遮罩时居中，不再贴右角', (WidgetTester tester) async {
+      // 竖屏读数独立成行时它是底栏 Column 的最后一行，上面一排传输键是居中的；
+      // 读数贴在右角会和它们错开成两个重心（用户 2026-09-14「竖屏做到最底部
+      // 并且居中」）。
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        centered: true,
+      ));
+      final Rect strip = tester.getRect(find.byType(ReaderStatusFooter));
+      final Rect tracker = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_tracker')));
+      final Rect progress = tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_status_progress')));
+
+      // 两段读数合起来的中点落在整条的中点上（内边距左右对称）。左边界要量到
+      // 计时器**按钮**（BUG-2533 起它是 [ReaderStudyClockButton]，不再是那枚纯装饰
+      // 的秒表字形）：计时文字左边还有按钮 + 间距，拿文字左缘算会偏出去。
+      final Rect clock = tester.getRect(find.byType(ReaderStudyClockButton));
+      expect((clock.left + progress.right) / 2, closeTo(strip.center.dx, 1));
+      expect(clock.left, lessThan(tracker.left));
+      expect(strip.right - progress.right, greaterThan(16),
+          reason: '不再贴右缘 16 的基线——那是它独自在屏底时的形态');
+      // 顺序不变：计时块仍在进度左边（与 inline 形态同序）。
+      final Rect track = tester.getRect(
+          find.byKey(const ValueKey<String>('fushi_status_progress_track')));
+      expect(tracker.right, lessThanOrEqualTo(track.left));
+    });
+
     testWidgets('tracker hit box spans the full strip height',
         (WidgetTester tester) async {
       int trackerTaps = 0;
@@ -453,6 +554,77 @@ void main() {
       await tester.tapAt(Offset(tracker.center.dx, strip.top + 2));
       await tester.tapAt(Offset(tracker.center.dx, strip.bottom - 2));
       expect(trackerTaps, 2, reason: '计时块命中区要撑满整条行高，不是只有那一行文字');
+    });
+  });
+
+  // 播放条唤出后状态行整条让位（BUG-2467），底部那份读数就只剩内联形态——此前它
+  // **整块不接指针**：屏幕上写着「计时中」的那颗图标点一百下也不会停表。
+  group('inline', () {
+    Widget host({
+      required StudySessionTotals Function() totals,
+      bool showTimer = true,
+      bool showProgress = true,
+      VoidCallback? onToggleTimer,
+    }) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: 56,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  ReaderStatusInline(
+                    sessionTotals: totals,
+                    currentChars: 64988,
+                    totalChars: 123962,
+                    showTimer: showTimer,
+                    showProgress: showProgress,
+                    textColor: Colors.white,
+                    onToggleTimer: onToggleTimer,
+                    tick: const Duration(milliseconds: 100),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('the clock icon toggles the timer from the playback bar',
+        (WidgetTester tester) async {
+      int taps = 0;
+      bool active = true;
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: active),
+        onToggleTimer: () => taps++,
+      ));
+      expect(find.text('0:00'), findsOneWidget);
+      expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+
+      await tester.tap(find.byType(ReaderStudyClockButton));
+      await tester.pump();
+      expect(taps, 1, reason: '播放条里的那颗计时图标必须真的可点');
+
+      active = false;
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    });
+
+    testWidgets('the toggle hides with the timer switch',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(host(
+        totals: () => (durationMs: 0, chars: 0, active: true),
+        showTimer: false,
+        onToggleTimer: () {},
+      ));
+      expect(find.byType(ReaderStudyClockButton), findsNothing);
+      expect(find.byKey(const ValueKey<String>('fushi_bar_status_tracker')),
+          findsNothing);
+      expect(find.byType(ReaderStatusProgressTrack), findsOneWidget,
+          reason: '进度段与计时段互不连带');
     });
   });
 
@@ -544,7 +716,8 @@ void main() {
         '  /// 小说页的窗口全屏切换',
       );
       expect(
-        trailing.contains('_playbackStatusInline ? _buildBarStatusText() : null'),
+        trailing
+            .contains('_playbackStatusInline ? _buildBarStatusText() : null'),
         isTrue,
         reason: '底栏右端仍是读数的唯一落点',
       );
@@ -606,12 +779,15 @@ void main() {
       expect(build.contains('Focus(') || build.contains('canRequestFocus'),
           isFalse,
           reason: '纯指针面，不进焦点遍历池（TODO-700 不变式）');
-      // 钉「两行相邻且顺序对」，不钉缩进宽度：Stack 外面多包一层 formatter 就会
-      // 把绝对缩进从 20 改成 22，而绘制顺序这个不变式一点没变。
+      // 钉「先后」而不是「两行相邻」：相邻只是当时的偶然事实，不是不变式。
+      // 任何排在两者之间的新层（如有声书悬浮球）都不该让这条无理由地红，
+      // 真正要守的是「状态行在词典弹层之前绘制」这个顺序。
+      final int footerAt = src.indexOf('_buildStatusFooter(),');
+      final int dictAt = src.indexOf('buildDictionary(),');
+      expect(footerAt, isNonNegative, reason: '状态行不再挂在页面 Stack 上了，守卫需同步更新');
       expect(
-        RegExp(r'_buildStatusFooter\(\),\n *buildDictionary\(\),')
-            .hasMatch(src),
-        isTrue,
+        dictAt,
+        greaterThan(footerAt),
         reason: '状态行必须排在词典弹层 / 底栏之前，让它们盖在其上',
       );
     });

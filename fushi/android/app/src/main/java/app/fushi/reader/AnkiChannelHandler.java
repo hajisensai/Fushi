@@ -33,6 +33,9 @@ import io.flutter.plugin.common.MethodChannel;
 
 public class AnkiChannelHandler {
     private static final String CHANNEL = ChannelNames.ANKI;
+    /** Card source IDs are UUID v4 strings (see CardSourceLink). */
+    private static final String SOURCE_ID_PATTERN =
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
     private static final int AD_PERM_REQUEST = 0;
 
     // BUG-2098：`requestAnkidroidPermissions` 的返回值。此前恒 success(true)——发起
@@ -93,7 +96,7 @@ public class AnkiChannelHandler {
                 final String model = call.argument("model");
                 final String deck = call.argument("deck");
                 final String key = call.argument("key");
-                final String markerTag = call.argument("markerTag");
+                final String sourceId = call.argument("sourceId");
                 final String reading = call.argument("reading");
                 final ArrayList<Integer> readingFieldIndices = call.argument("readingFieldIndices");
                 final ArrayList<String> fields = call.argument("fields");
@@ -189,13 +192,12 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
-                    case "findNotesBySourceMarker":
-                        if (markerTag == null
-                                || !markerTag.matches("^fushi_source_[0-9a-f]{32}$")) {
-                            result.error("INVALID_ARG", "Invalid source marker tag", null);
+                    case "findNotesBySourceId":
+                        if (sourceId == null || !sourceId.matches(SOURCE_ID_PATTERN)) {
+                            result.error("INVALID_ARG", "Invalid card source ID", null);
                         } else if (requirePermission(result)) {
                             try {
-                                result.success(findNotesBySourceMarker(markerTag));
+                                result.success(findNotesBySourceId(sourceId));
                             } catch (Exception e) {
                                 result.error(providerErrorCode(e), e.getMessage(), null);
                             }
@@ -847,11 +849,16 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * Resolve a synced source identity without guessing by word or local note id.
-     * The notes URI accepts Anki browser syntax (notes_v2 accepts SQL instead).
+     * Candidate notes whose fields contain the card source ID substring, without
+     * guessing by word or local note id. The notes URI accepts Anki browser
+     * syntax (notes_v2 accepts SQL instead); an unqualified term is a substring
+     * match over the note fields, mirroring
+     * {@code CardSourceLink.searchQueryForSourceId}. Substring hits are only
+     * candidates: the Dart repository confirms identity by parsing each note's
+     * {@code fushi://source} href (BUG-2527 removed the redundant marker tag).
      * Rebase to the selected installation so parallel AnkiDroid builds work too.
      */
-    private List<Long> findNotesBySourceMarker(String markerTag) {
+    private List<Long> findNotesBySourceId(String sourceId) {
         final AnkiDroidTarget target = AnkiDroidTarget.resolve(context);
         if (target == null) {
             throw new IllegalStateException("AnkiDroid is unavailable");
@@ -859,22 +866,14 @@ public class AnkiChannelHandler {
         final List<Long> ids = new ArrayList<>();
         try (Cursor cursor = context.getContentResolver().query(
                 target.rebase(FlashCardsContract.Note.CONTENT_URI),
-                new String[] {FlashCardsContract.Note._ID, FlashCardsContract.Note.TAGS},
-                "tag:" + markerTag, null, null)) {
+                new String[] {FlashCardsContract.Note._ID},
+                "sourceId=" + sourceId, null, null)) {
             // A null cursor means lookup failed, never a trustworthy empty match.
             if (cursor == null) {
                 throw new IllegalStateException("AnkiDroid source lookup returned no cursor");
             }
             final int idIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note._ID);
-            final int tagsIndex = cursor.getColumnIndexOrThrow(FlashCardsContract.Note.TAGS);
             while (cursor.moveToNext()) {
-                final String rawTags = cursor.getString(tagsIndex);
-                // Browser tag searches may include child tags. Only the exact
-                // marker authorizes editing; a prefix/hierarchy match does not.
-                if (rawTags == null
-                        || !Arrays.asList(rawTags.trim().split("\\s+")).contains(markerTag)) {
-                    continue;
-                }
                 final long id = cursor.getLong(idIndex);
                 if (id > 0 && !ids.contains(id)) ids.add(id);
             }

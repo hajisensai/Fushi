@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 
 /// TODO-553 / BUG-1115: touch gestures must distinguish page/scroll pans from
 /// word-lookup taps using the full movement path.
@@ -43,9 +44,21 @@ void main() {
     expect(jsTest.existsSync(), isTrue,
         reason: 'behavior harness ${jsTest.path} must exist');
 
+    // 阈值从生产的单一真值取，作为 argv 交给 harness——harness 里**不再**有第二份
+    // 硬编码副本。以前它自带 44/22 且没有速度门，于是生产阈值一改，它既不会转红、
+    // 也不再验真正的判据（`velocity >= undefined` 恒 false）。
+    final ({int dist, int fastDist, int fastVelocity}) thresholds =
+        ReaderSettings.swipePageTurnDistThresholds(
+      ReaderSettings.defaultSwipePageTurnSensitivity,
+    );
     final ProcessResult result = await Process.run(
       nodeExe,
-      <String>[jsTest.path],
+      <String>[
+        jsTest.path,
+        '${thresholds.dist}',
+        '${thresholds.fastDist}',
+        '${thresholds.fastVelocity}',
+      ],
       workingDirectory: Directory.current.path,
     );
 

@@ -19,6 +19,8 @@ import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSectionLabel;
+import 'package:fushi/src/reader/ttu_toc_flatten.dart'
+    show resolveCurrentTocChapter;
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -1291,8 +1293,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Widget _buildCurrentTocSection(BuildContext context, ThemeData theme) {
-    final int? currentIdx = widget.readerProgress?.$1;
     final List<TtuTocEntry> toc = widget.toc;
+    // BUG-2545：目录是 spine 的**稀疏**映射（同一章横跨多个 xhtml 只有头一个进
+    // 目录，章间插图页根本不在目录里），所以「当前章」不能拿当前 spine 章号去和
+    // 目录项 index 精确相等——那样一来读在任何没被目录直接指向的 spine 位置上
+    // （实测一本 35 项 spine 的书里占 23 个位置）整个列表一行都不标、
+    // `_currentTocRowKey` 也挂不上，「打开即滚到当前章」跟着静默失效。判据统一成
+    // floor（最后一个不晚于当前位置的目录项），与页脚章名
+    // `_currentChapterLabelFor` 和有声书面板「章节」tab 同一口径。
+    final int? currentIdx =
+        resolveCurrentTocChapter(toc, widget.readerProgress?.$1);
     // 折叠规则：深度 >= 2 的条目挂在其 parent 下，parent 未展开则不画；当前章所在链
     // 上的父节自动视为展开。父节是否有可折叠子节：看下一条的深度是否更深且 >= 2。
     final Set<String> autoExpanded = <String>{};

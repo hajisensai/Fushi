@@ -277,8 +277,8 @@ void main() {
     final String info = uri.queryParameters['fldMiscInfo']!;
     expect(info, startsWith('原作 '));
     expect(CardSourceLink.fromHtml(info).single.toUri(), link.toUri());
-    expect(uri.queryParameters['tags']!.split(' '),
-        <String>['custom', link.markerTag]);
+    // BUG-2527: the source ID lives only in the field href; no marker tag.
+    expect(uri.queryParameters['tags'], 'custom');
   });
 
   test('mineEntry exposes local media as downloadable URLs for AnkiMobile',

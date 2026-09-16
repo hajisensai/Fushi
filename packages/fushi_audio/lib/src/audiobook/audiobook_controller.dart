@@ -83,6 +83,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 当前章节所有 cue（已按 startMs 排序）。
   List<AudioCue> _chapterCues = [];
 
+  /// [_chapterCues] 按**播放顺序**（audioFileIndex，再 startMs）排好的视图，只在
+  /// [setChapterCues] 时重建。[_chapterCues] 自身只按 startMs 排（多文件时各文件
+  /// 的时间轴互相穿插），不能拿来判「上一条 / 下一条播放的 cue 是谁」；章尾未匹配
+  /// cue 的跨章判据（[unmatchedCueCrossChapterTargetForTesting]）要的正是播放邻居。
+  List<AudioCue> _playbackOrderedCues = const <AudioCue>[];
+
   /// 外部只读快照，供按 textFragmentId 查找 cue。
   List<AudioCue> get chapterCuesSnapshot => _chapterCues;
 
@@ -960,6 +966,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   void setChapterCues(List<AudioCue> cues) {
     _chapterCues = List<AudioCue>.from(cues)
       ..sort((a, b) => a.startMs.compareTo(b.startMs));
+    _playbackOrderedCues = List<AudioCue>.from(cues)
+      ..sort((AudioCue a, AudioCue b) {
+        final int byFile = a.audioFileIndex.compareTo(b.audioFileIndex);
+        if (byFile != 0) return byFile;
+        return a.startMs.compareTo(b.startMs);
+      });
     // 跨章守卫期间只替换 cue 列表，不清 _currentCue 也不重算——
     // 否则 _updateCurrentCue 被 guard 挡住，_currentCue 卡 null，
     // 守卫放下后第一次 tick 会匹配到 cue[0] 导致进度清零。
@@ -1539,9 +1551,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
       cue.textFragmentId,
     );
-    if (frag == null) return;
-    final int cueSec = frag.sectionIndex;
     final int currentSec = getCurrentReaderSection?.call() ?? -1;
+    final int cueSec;
+    if (frag != null) {
+      cueSec = frag.sectionIndex;
+    } else {
+      // 章尾未匹配 cue：本章最后一句已播完、正在播的这条没匹配上正文（常是下一章
+      // 的章名 / 无正文的过场）。旧码在此直接 return，文字要等到下一章第一条**匹配**
+      // 的 cue 才跟过去——用户听着下一章的开头、屏幕还停在上一章章尾。按播放邻居
+      // 判定：上一条匹配 cue 属于当前章且本章之后再无匹配 cue → 进入下一章。
+      cueSec = unmatchedCueCrossChapterTargetForTesting(
+        playbackOrderedCues: _playbackOrderedCues,
+        cue: cue,
+        currentSec: currentSec,
+      );
+      if (cueSec < 0) return;
+    }
     if (!shouldCrossChapterForTesting(
       cueSec: cueSec,
       currentSec: currentSec,
@@ -1575,6 +1600,48 @@ class AudiobookPlayerController extends ChangeNotifier {
     return true;
   }
 
+  /// 纯决策：正在播的 [cue] 没匹配上正文（textFragmentId 解不出 section）时，
+  /// 文字该不该离开当前章 [currentSec]、去哪一章。返回目标章 index，`-1` = 保位。
+  ///
+  /// 判据只看**播放顺序**上的邻居（[playbackOrderedCues] 须按 audioFileIndex →
+  /// startMs 排好）：
+  ///   * 往前找最近一条匹配 cue `p`：不存在、或 `p` 不属于当前章 → 保位（本章还
+  ///     没开始读 / 文字已被用户翻到别处 / 已经跨过去了，都不该再动）。
+  ///   * 往后找最近一条匹配 cue `n`：`n` 仍属于当前章 → 保位（只是章中间一句没
+  ///     匹配上）；`n` 属于更早的章（乱序数据）→ 保位不猜。
+  ///   * 否则本章最后一句已播完 → 返回 `currentSec + 1`（下一章）。目标是不是目录
+  ///     页 / 越界由 reader 的跨章处理照旧兜底（保位不跳）。
+  ///
+  /// 选「下一章」而不是「`n` 所在章」：中间若有整章没匹配上（图片章 / 后记），
+  /// 音频此刻读的是它，文字跟到它才同步；之后的匹配 cue 到来时照旧再跨。
+  /// SRT / SMIL 等全书都解不出 section 的 cue 集合：`p` 恒不存在 → 恒保位，与旧
+  /// 行为一致（它们的跨章各走各的路径）。
+  @visibleForTesting
+  static int unmatchedCueCrossChapterTargetForTesting({
+    required List<AudioCue> playbackOrderedCues,
+    required AudioCue cue,
+    required int currentSec,
+  }) {
+    if (currentSec < 0) return -1;
+    final int idx = playbackOrderedCues.indexOf(cue);
+    if (idx < 0) return -1;
+    int? sectionOf(AudioCue c) =>
+        SubtitleRematchCodec.tryDecode(c.textFragmentId)?.sectionIndex;
+    int? prevSec;
+    for (int i = idx - 1; i >= 0; i--) {
+      prevSec = sectionOf(playbackOrderedCues[i]);
+      if (prevSec != null) break;
+    }
+    if (prevSec == null || prevSec != currentSec) return -1;
+    for (int i = idx + 1; i < playbackOrderedCues.length; i++) {
+      final int? nextSec = sectionOf(playbackOrderedCues[i]);
+      if (nextSec == null) continue;
+      if (nextSec <= currentSec) return -1;
+      break;
+    }
+    return currentSec + 1;
+  }
+
   /// 由 reader 在章节跳转完成（或失败）后调用：清守卫，
   /// 用当前播放位置重算 cue 并立刻 notify，暂停态也能即时高亮。
   ///
@@ -1596,6 +1663,28 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   /// 用户手动翻章时清 `_chapterTransition` 守卫，防止旧跨章逻辑卡死。
   void cancelChapterTransition() {
+    _chapterTransition = false;
+  }
+
+  /// BUG-2529：reader 的**跨章导航中止**（章节装载抛错 / `_navigateToChapterAndWait`
+  /// 等待超时 / content-ready 兜底超时）时解除守卫。
+  ///
+  /// [_chapterTransition] 是「为这一次在飞的跨章导航」竖起来的，唯一的正常解除路径
+  /// 是 reader 在章节内容就绪后回调 [notifySectionRestoreCompleted]。导航中止意味着
+  /// 那条回执**永远不会来**：守卫就此永久卡 true，[_updateCurrentCue] 与
+  /// [setChapterCues] 此后全部早退，`_currentCue` / `_currentCueIndex` 冻结在旧章旧句，
+  /// 于是上一句/下一句（底栏、媒体通知、耳机键、音量键、快捷键全部汇聚到
+  /// [skipToCue] 同一漏斗）每次都算出同一个目标、seek 到同一处，高亮跟随也不再推进
+  /// ——用户感知是「切出去再回来，上下句按了纹丝不动」，且没有任何自愈，直到重开书。
+  ///
+  /// 与 [cancelChapterTransition] 的差别只在图片章停留序列：序列自己用
+  /// [holdChapterTransition] 持着守卫、并以 [_imageChapterPauseActive] 让中间章的
+  /// 回执保持守卫不放（TODO-1037 的重入竞态修复）。序列在途时中止单章导航不得把
+  /// 序列的守卫一起放掉，否则剩余图片章会被一步跳过；序列收尾自带 hold + 最终导航
+  /// 的正常清守卫契约，那次若也中止，此时 `_imageChapterPauseActive` 已为 false，
+  /// 本方法照常解除。
+  void abortChapterTransition() {
+    if (_imageChapterPauseActive) return;
     _chapterTransition = false;
   }
 

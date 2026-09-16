@@ -71,8 +71,6 @@ import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
-import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show kReaderHoverRevealStripHeight;
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
@@ -270,7 +268,11 @@ Future<void> dispatchMangaSelection(
   if (data.text.isEmpty) {
     return;
   }
-  await selectPageForMining(data.mangaPageIndex);
+  // BUG-2555：制卡页物化（在线章节要 `session.localFile` + `exists()`）只有点「+」
+  // 制卡才用得上，却串在查词前面——在线章节每次点字都先等一次磁盘/缓存往返才开始
+  // 查词典。改成与查词并行：先发起、查完再等它结束；页面侧有代次守卫，慢的旧物化
+  // 不会覆盖新点击。返回前仍等它完成，调用方语义（返回即两者都落地）不变。
+  final Future<void> miningPage = selectPageForMining(data.mangaPageIndex);
   setSentence(data.sentence);
   final Rect rect = mangaSelectionRectFromPayload(
     data,
@@ -278,6 +280,7 @@ Future<void> dispatchMangaSelection(
     viewportOrigin: viewportOrigin,
   );
   await search(data.text, rect, data.verticalWriting);
+  await miningPage;
 }
 
 /// 保证交给 [AnkiMiningContext.coverPath] 的路径以合法图片扩展名结尾（两个 Anki
@@ -461,6 +464,17 @@ class MangaFushiPage extends BaseSourcePage {
     return dominant > 0
         ? MangaReaderInputAction.next
         : MangaReaderInputAction.previous;
+  }
+
+  /// BUG-2553：barrier 点击转发到覆盖层 `__mangaBarrierTapAt` 后的三态结果 →
+  /// 要不要关弹窗栈。只有命中**新字**（'hit'，onTextSelected 会接着换词）才保留
+  /// 弹窗；'same'（再点同一个字）、'miss'（点空白）、eval 失败 / 返回不认识的值
+  /// 一律关栈——宁可多关一次，也不能让弹窗卡住关不掉。各平台 evaluateJavascript
+  /// 对字符串返回值有的裸给、有的带 JSON 引号，两种都认。
+  static bool barrierTapClosesPopup(Object? raw) {
+    if (raw is! String) return true;
+    final String verdict = raw.trim().replaceAll('"', '');
+    return verdict != 'hit';
   }
 
   /// Native WebView2 owns keyboard focus while the user is reading. Forward
@@ -752,6 +766,15 @@ class MangaFushiPage extends BaseSourcePage {
 class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     with WidgetsBindingObserver, WindowListener {
   InAppWebViewController? _controller;
+
+  /// BUG-2553：查词弹窗开着时全屏 dismiss barrier 盖在 WebView 之上，barrier 收到的
+  /// 是**全局**指针坐标；要转发给覆盖层选字，必须用 WebView 自己的 RenderBox 逆映成
+  /// WebView 局部（CSS）坐标——WebView 在页面 Stack 里可能被 chrome/安全区挤过，
+  /// 原点 ≠ barrier 原点。挂在死亡守卫 [WebViewDeathGuard] 的重建子树**外面**：
+  /// GlobalKey 若挂在重建子树里，重建时元素会被 reparent 复用，WebView 就不是新的了。
+  final GlobalKey _webViewHostKey = GlobalKey(debugLabel: 'manga_webview_host');
+  double _barrierHoverLastDx = -1;
+  double _barrierHoverLastDy = -1;
   EpubBookRow? _bookRow;
 
   // ── 书架在线条目的「章」上下文 ──────────────────────────────────────
@@ -1186,24 +1209,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     statusBarInset: MediaQuery.paddingOf(context).top,
   );
 
-  /// 悬浮态：正文中央空白点击在「唤出」与「收起」间切换（EPUB 阅读器「点空白
-  /// 隐藏控制栏」同款）。固定态 / 界面已隐藏（M 键）时空白点击仍是 no-op。
+  /// 悬浮态：正文中央空白点击在「唤出」与「收起」间切换（EPUB 阅读器同款，用户
+  /// 2026-09-14 拍板的统一口径：**点击是唯一的开关**，鼠标移动不唤出、唤出后也不
+  /// 自动收起，移动端单击同为开 / 关）。固定态 / 界面已隐藏（M 键）时仍是 no-op。
   void _toggleFloatingChrome() {
     if (!_chromeFloating || !_chromeVisible) return;
     if (_chrome.transientVisible) {
       _chrome.hideTransient();
     } else {
-      _chrome.reveal(kMangaChromeAutoHide);
-    }
-  }
-
-  /// 鼠标停在顶栏上不自动收起；离开后重新计时。
-  void _onChromeHover(bool hovering) {
-    if (!_chromeFloating) return;
-    if (hovering) {
-      _chrome.cancelAutoHide();
-    } else if (_chrome.transientVisible) {
-      _chrome.armAutoHide(kMangaChromeAutoHide);
+      _chrome.showTransient();
     }
   }
 
@@ -2491,10 +2505,38 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   /// 整条查词弹窗栈关闭：键盘所有权无条件回到正文，否则用户被困死（收不到任何键）。
+  /// BUG-2554：同时清掉覆盖层里的被查词高亮（fire-and-forget，半销毁 WebView 上
+  /// eval 抛也不能阻断焦点归还）。
   @override
   void onAllPopupsDismissed() {
     super.onAllPopupsDismissed();
     _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
+    unawaited(_clearMangaSelectionHighlight());
+  }
+
+  Future<void> _clearMangaSelectionHighlight() async {
+    try {
+      await _controller?.evaluateJavascript(
+        source: ReaderSelectionScripts.clearInvocation(),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.clearHighlight', e, stack);
+    }
+  }
+
+  /// BUG-2554：查词后把命中的字符 Range 放进 CSS Highlight（覆盖层文档里有对应的
+  /// `::highlight(fushi-selection)` 规则）。与阅读器 `_highlightAndShowPopup` 同一
+  /// 解耦范式：弹窗先显示，高亮异步一跳后落地；count<=0（无词典结果）不画。
+  Future<void> _highlightMangaSelection(int highlightCount) async {
+    final InAppWebViewController? controller = _controller;
+    if (highlightCount <= 0 || controller == null) return;
+    try {
+      await controller.evaluateJavascript(
+        source: ReaderSelectionScripts.highlightInvocation(highlightCount),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.highlight', e, stack);
+    }
   }
 
   /// 注册表解析 → 跨页方向校正 → 上下文门控。键盘路径与 WebView 桥回传路径共用，
@@ -2984,10 +3026,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       search: (String term, Rect selectionRect, bool verticalWriting) async {
         _popupVerticalWriting = verticalWriting;
         prunePopupStack(0);
-        await searchDictionaryResult(
+        final int highlightCount = await searchDictionaryResult(
           searchTerm: term,
           selectionRect: selectionRect,
         );
+        if (!mounted) return;
+        unawaited(_highlightMangaSelection(highlightCount));
       },
     );
   }
@@ -3663,24 +3707,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       right: 0,
                       child: _buildTopChrome(),
                     ),
-                  // 悬浮态桌面顶边热区：栏收起时鼠标移到窗口顶部几像素即唤出
-                  // （EPUB 阅读器 `_buildHoverRevealLayer` 同款）。
-                  if (_chromeFloating &&
-                      _chromeActionsEnabled &&
-                      isDesktopPlatform &&
-                      !_chrome.transientVisible)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: kReaderHoverRevealStripHeight,
-                      child: MouseRegion(
-                        key: const ValueKey<String>('manga_hover_reveal_strip'),
-                        opaque: true,
-                        onEnter: (_) => _chrome.reveal(kMangaChromeAutoHide),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
                   // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
                   // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
                   // 唤回按钮一并抹掉，连带返回键再也叫不回来。
@@ -3763,7 +3789,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       floating: _chromeFloating,
       backTooltip: MaterialLocalizations.of(context).backButtonTooltip,
       onBack: () => Navigator.of(context).maybePop(),
-      onHoverChanged: _onChromeHover,
       pageLabel: ready ? _pageLabel : null,
       pageListenable: _pageNotifier,
       onPageTap: () => unawaited(_showPageJumpDialog()),
@@ -3961,7 +3986,88 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // WebView key。
     return KeyedSubtree(
       key: const ValueKey<String>('manga_content_ready'),
-      child: _buildWebView(),
+      child: KeyedSubtree(key: _webViewHostKey, child: _buildWebView()),
+    );
+  }
+
+  /// barrier 全局坐标 → WebView 局部（CSS）坐标；WebView 不在树上 / 未布局时返回
+  /// null（调用方退回默认「点空白关栈」）。逻辑像素与 CSS 像素同尺度，不乘 DPR，
+  /// 与阅读器 `onDismissBarrierTap` 同口径。
+  Offset? _webViewLocalFromGlobal(Offset globalPos) {
+    final RenderObject? obj = _webViewHostKey.currentContext
+        ?.findRenderObject();
+    if (obj is! RenderBox || !obj.attached || !obj.hasSize) return null;
+    return obj.globalToLocal(globalPos);
+  }
+
+  /// BUG-2553：弹窗开着时点 barrier 不再一律清栈，而是把点击转发到覆盖层选字：
+  ///   • 命中新字（'hit'）→ JS fire onTextSelected → [processMangaSelection] 里
+  ///     `prunePopupStack(0)` 复用热槽无缝换词，与阅读器/fushi.moe 同交互；
+  ///   • 再点同一个字（'same'，JS 已按开关语义清掉选区）或点空白（'miss'）→ 关栈。
+  /// WebView 不可用时退回默认清栈（不应发生：barrier 在屏说明 WebView 也在树上）。
+  @override
+  void onDismissBarrierTap(Offset globalPos) {
+    final Offset? local = _webViewLocalFromGlobal(globalPos);
+    final InAppWebViewController? controller = _controller;
+    if (local == null || controller == null) {
+      clearDictionaryResult();
+      return;
+    }
+    unawaited(_forwardBarrierTap(controller, local));
+  }
+
+  Future<void> _forwardBarrierTap(
+    InAppWebViewController controller,
+    Offset local,
+  ) async {
+    Object? raw;
+    try {
+      raw = await controller.evaluateJavascript(
+        source:
+            'window.__mangaBarrierTapAt ? '
+            'window.__mangaBarrierTapAt(${local.dx}, ${local.dy}) : "miss"',
+      );
+    } catch (e, stack) {
+      // 半销毁 WebView 上 evaluateJavascript 会抛（BUG-005 同根因）：按旧语义关栈。
+      ErrorLogService.instance.log('MangaFushiPage.barrierTap', e, stack);
+    }
+    if (!mounted) return;
+    if (MangaFushiPage.barrierTapClosesPopup(raw)) clearDictionaryResult();
+  }
+
+  /// 桌面 Shift 悬停连查：弹窗一开 barrier 就挡住了 WebView DOM 自己的 mousemove
+  /// 监听，这里是唯一还能接 hover 的入口。8px 平方阈值与阅读器一致，避免每像素抖动
+  /// 都 eval 一次。悬停路径命中同一个字由 JS 短路（不重复 fire）。
+  @override
+  void onDismissBarrierHover(PointerHoverEvent event) {
+    if (!HardwareKeyboard.instance.isShiftPressed) {
+      _barrierHoverLastDx = -1;
+      _barrierHoverLastDy = -1;
+      return;
+    }
+    final double dx = event.position.dx - _barrierHoverLastDx;
+    final double dy = event.position.dy - _barrierHoverLastDy;
+    if (_barrierHoverLastDx >= 0 && dx * dx + dy * dy < 16) return;
+    _barrierHoverLastDx = event.position.dx;
+    _barrierHoverLastDy = event.position.dy;
+    final Offset? local = _webViewLocalFromGlobal(event.position);
+    final InAppWebViewController? controller = _controller;
+    if (local == null || controller == null) return;
+    unawaited(
+      controller
+          .evaluateJavascript(
+            source:
+                'window.__mangaBarrierHoverAt && '
+                'window.__mangaBarrierHoverAt(${local.dx}, ${local.dy});',
+          )
+          .catchError((Object e, StackTrace stack) {
+            ErrorLogService.instance.log(
+              'MangaFushiPage.barrierHover',
+              e,
+              stack,
+            );
+            return null;
+          }),
     );
   }
 

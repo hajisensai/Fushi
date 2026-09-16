@@ -564,6 +564,15 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     });
   }
 
+  /// 撤销书 [bookUid] 图片 [imageKey] 的揭开状态（插图册长按「恢复遮罩」）。删行而不是
+  /// 写一条「未揭开」标记：本表的语义就是「在册即已揭开」，补一个否定态会让同一事实有
+  /// 两种表示，同步与迁移都得再判一次。行不存在是正常入参（幂等）。
+  Future<void> unmarkImageRevealed(String bookUid, String imageKey) =>
+      (delete(revealedImages)
+            ..where((t) =>
+                t.bookUid.equals(bookUid) & t.imageKey.equals(imageKey)))
+          .go();
+
   /// 书 [bookUid] 全部已揭开图片 key 集合。阅读器打开时读它灌入会话集、图片库渲染时读它
   /// 判断哪些图不遮罩。
   Future<Set<String>> getRevealedImageKeys(String bookUid) async {

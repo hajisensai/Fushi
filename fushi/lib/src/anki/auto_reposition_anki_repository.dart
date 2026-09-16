@@ -126,8 +126,12 @@ class AutoRepositionAnkiRepository extends BaseAnkiRepository {
       );
 
   @override
-  Future<List<int>> findSourceNoteIds(String markerTag) =>
-      _inner.findSourceNoteIds(markerTag);
+  Future<List<int>> findSourceNoteCandidates(String sourceId) =>
+      _inner.findSourceNoteCandidates(sourceId);
+
+  @override
+  Future<Map<String, String>?> sourceNoteFields(int noteId) =>
+      _inner.sourceNoteFields(noteId);
 
   @override
   Future<void> writeSourceNoteFields(int noteId, Map<String, String> fields) =>
@@ -158,6 +162,16 @@ class AutoRepositionAnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> isDuplicate(String expression, String reading) =>
       _inner.isDuplicate(expression, reading);
+
+  /// 不委派的后果不是「少个功能」而是**正确性回归**：装饰器会拿到基类默认 `true`，
+  /// 于是开了自动重排的 iOS 用户点 ✓ 时，编排层以为「这个后端能回读 Anki」，把
+  /// AnkiMobile 恒空的反查当成「卡已被删」，默默再制一张重复卡。
+  @override
+  bool get canVerifyExistingCards => _inner.canVerifyExistingCards;
+
+  @override
+  Future<bool> forgetMinedCard(String expression) =>
+      _inner.forgetMinedCard(expression);
 
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) =>

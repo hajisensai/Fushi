@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
+import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -592,13 +593,18 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // BUG-2563：这条 slider 的值以前是**阈值倍数**（越大越迟钝），与标题
+          // 「滑动翻页灵敏度」正好相反，且没有 titleReadout（上面的滚轮间隔有），
+          // 用户既看不到数值、也无从发现「想更灵敏要往左拖」。语义已在 ReaderSettings
+          // 侧翻正（值即灵敏度，越大越灵敏），这里只需跟上新的取值域并把读数打开。
           SettingsSliderItem(
             id: 'reading_controls.swipe_page_turn_sensitivity',
+            titleReadout: true,
             title: t.swipe_page_turn_sensitivity,
             icon: Icons.swipe_outlined,
-            min: 0.3,
-            max: 2.0,
-            divisions: 17,
+            min: ReaderSettings.minSwipePageTurnSensitivity,
+            max: ReaderSettings.maxSwipePageTurnSensitivity,
+            divisions: 25,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 9,
@@ -823,6 +829,24 @@ SettingsDestination buildReadingDestination() {
                 ReaderControlLayout.defaults,
               );
               notifyReaderChromeReanchored(c);
+            },
+          ),
+          // 悬浮球：半透明停靠在正文边缘的小球，点开把布局编辑器「悬浮球」槽里的
+          // 按钮以弧形环绕展开。纯 Flutter chrome，setter 内部经 onChromeReloadLive
+          // 让开着的书重建一次；不改预留高，无需重锚。
+          SettingsSwitchItem(
+            id: 'reading_controls.floating_ball',
+            title: t.reader_floating_ball,
+            subtitle: t.reader_floating_ball_hint,
+            icon: Icons.blur_circular_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 16,
+            ),
+            value: (SettingsContext c) => c.readerSource.readerFloatingBall,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderFloatingBall(value);
+              c.refresh();
             },
           ),
         ],

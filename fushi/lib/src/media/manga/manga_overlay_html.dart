@@ -751,6 +751,11 @@ String mangaWindowDocument(
       '.ocr-char{position:absolute;display:block;overflow:hidden;'
       'color:transparent;pointer-events:auto;line-height:1;'
       'writing-mode:horizontal-tb;}'
+      // BUG-2554：被查词高亮。命中层文字本身透明（画的是底下的页图），查词后
+      // Dart 经 fushiSelection.highlightSelection 把命中的字符 Range 放进 CSS
+      // Highlight `fushi-selection`；没有这条规则浏览器什么都不画，用户看不出
+      // 自己查的是哪个字。半透明是为了不盖住页图上的原字。
+      '::highlight(fushi-selection){background-color:rgba(255,196,0,0.45);}'
       '</style></head>'
       '<body${showOcrBoxes ? ' class="ocr-boxes-visible"' : ''}>'
       '$body'
@@ -1191,12 +1196,16 @@ String _mangaGestureJs({
     }
     return best;
   }
-  function _selectOcrChar(x, y, fromHover){
+  // 三态结果：'miss' 没点到字；'same' 点的就是当前已选的字（点击路径按开关语义
+  // 清掉选区，悬停路径原样保留）；'hit' 选中了新字、onTextSelected 随后由
+  // fushiSelection 触发。Dart 侧的 barrier 转发（BUG-2553）要靠这个区分
+  // 「换词」和「点空白 / 再点同一个词 → 关弹窗」。
+  function _selectOcrCharDetail(x, y, fromHover){
     var charEl = _hitOcrChar(x, y);
     var selection = window.fushiSelection;
-    if (!charEl || !selection) return false;
+    if (!charEl || !selection) return 'miss';
     var node = charEl.firstChild;
-    if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return 'miss';
     window.__mangaLastOcrHit = {
       text: node.textContent || '',
       orientation: charEl.getAttribute('data-ocr-orientation') || '',
@@ -1205,17 +1214,30 @@ String _mangaGestureJs({
     if (selection.selection &&
         selection.selection.startNode === node &&
         selection.selection.startOffset === 0) {
-      if (fromHover) return true;
+      if (fromHover) return 'same';
       selection.clearSelection();
-      return true;
+      return 'same';
     }
     selection.clearSelection();
     selection.selectFromPosition(node, 0, 40, x, y);
     var bridge = _bridge();
     if (bridge) bridge.callHandler('onMangaOcrHitDebug',
       JSON.stringify(window.__mangaLastOcrHit));
-    return true;
+    return 'hit';
   }
+  function _selectOcrChar(x, y, fromHover){
+    return _selectOcrCharDetail(x, y, fromHover) !== 'miss';
+  }
+  // BUG-2553：查词弹窗一开，Flutter 侧全屏 dismiss barrier 盖在 WebView 之上，
+  // 底下的指针抬起事件一个都收不到——此前「点另一个词」= 点 barrier = 清整栈，
+  // 第二次点击才到得了这里。Dart 把 barrier 上的点击/Shift 悬停逆映成 CSS 坐标
+  // 转发到这两个入口：点击回三态字符串让 Dart 决定换词还是关栈；悬停只报是否命中。
+  window.__mangaBarrierTapAt = function(x, y){
+    try { return _selectOcrCharDetail(x, y, false); } catch (e) { return 'miss'; }
+  };
+  window.__mangaBarrierHoverAt = function(x, y){
+    try { return _selectOcrChar(x, y, true); } catch (e) { return false; }
+  };
   // Desktop Shift-hover lookup: mirror the EPUB reader's hover path. Throttle by
   // pointer distance so a stationary cursor does not repeat the same lookup.
   var shiftHoverX = -1, shiftHoverY = -1;

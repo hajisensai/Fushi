@@ -3,14 +3,20 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
+import 'package:fushi_engine/epub/epub_book.dart'
+    show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// n 张图，每章两张：img0/img1 → 第 1 章，img2/img3 → 第 2 章……
 List<EpubImageRef> _images(int n) => <EpubImageRef>[
       for (int i = 0; i < n; i++)
-        EpubImageRef(chapterIndex: i ~/ 2, orderInBook: i, src: 'img$i.png'),
+        EpubImageRef(
+          chapterIndex: i ~/ 2,
+          orderInBook: i,
+          src: 'img$i.png',
+          revealKey: 'img$i.png',
+        ),
     ];
 
 Widget _host(Widget child) => MaterialApp(home: child);
@@ -38,7 +44,11 @@ Finder _card(String src) =>
     find.byKey(ValueKey<String>('fushi_gallery_card_$src'));
 Finder _section(int chapter) =>
     find.byKey(ValueKey<String>('fushi_gallery_section_$chapter'));
-Finder get _placeholders => find.text('Not reached yet');
+/// 锁着的卡 = 盖在真缩略图上的高斯模糊层（maskedIllustrationCover，墨水屏才换
+/// 实心遮板；测试主题非墨水屏）。整页只有遮罩会用到 ImageFiltered。
+Finder get _maskedCards => find.byType(ImageFiltered);
+Finder _maskedCard(String src) =>
+    find.descendant(of: _card(src), matching: find.byType(ImageFiltered));
 
 /// 卡片描边宽度：键盘焦点 = 2，普通 = 1。
 double _cardBorderWidth(WidgetTester tester, String src) {
@@ -72,11 +82,24 @@ void main() {
     expect(find.text('CHAPTER 3'), findsOneWidget);
     // 第 1、2 章已读到 = 4 张解锁；第 3 章两张锁着。
     expect(find.text('Unlocked 4 / 6'), findsOneWidget);
-    expect(_placeholders, findsNWidgets(2));
+    expect(_maskedCards, findsNWidgets(2));
+    expect(_maskedCard('img4.png'), findsOneWidget);
+    expect(_maskedCard('img5.png'), findsOneWidget);
+    // 解锁条件不再印在卡片上（卡片是糊掉的原图），点开才说。
     expect(
       find.text('Unlocks automatically once you reach Chapter 3'),
-      findsNWidgets(2),
+      findsNothing,
     );
+    await tester.tap(_card('img4.png'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Unlocks automatically once you reach Chapter 3'),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi_gallery_locked_back')),
+    );
+    await tester.pumpAndSettle();
     // 当前章有插图 → 标记画在它的节头上，且只有一处。
     expect(find.text('Current reading position'), findsOneWidget);
     expect(
@@ -111,8 +134,18 @@ void main() {
       _host(
         ReaderGalleryPage(
           images: const <EpubImageRef>[
-            EpubImageRef(chapterIndex: 0, orderInBook: 0, src: 'a.png'),
-            EpubImageRef(chapterIndex: 4, orderInBook: 1, src: 'b.png'),
+            EpubImageRef(
+              chapterIndex: 0,
+              orderInBook: 0,
+              src: 'a.png',
+              revealKey: 'a.png',
+            ),
+            EpubImageRef(
+              chapterIndex: 4,
+              orderInBook: 1,
+              src: 'b.png',
+              revealKey: 'b.png',
+            ),
           ],
           currentChapter: 2,
           fileForRef: (_) => null,
@@ -130,7 +163,7 @@ void main() {
     expect(marker, lessThan(tester.getTopLeft(find.text('CHAPTER 5')).dy));
   });
 
-  testWidgets('点占位卡 → 「仍要查看」揭开：写回 onRevealImage、计数 +1、占位卡变缩略图', (tester) async {
+  testWidgets('点锁着的卡 → 「仍要查看」揭开：写回 onRevealImage、计数 +1、模糊层撤掉', (tester) async {
     final List<String> revealed = <String>[];
     await tester.pumpWidget(
       _host(
@@ -159,7 +192,8 @@ void main() {
 
     expect(revealed, <String>['img4.png']);
     expect(find.text('Unlocked 5 / 6'), findsOneWidget);
-    expect(_placeholders, findsOneWidget);
+    expect(_maskedCards, findsOneWidget);
+    expect(_maskedCard('img4.png'), findsNothing);
     // 揭开的卡现在是缩略图（无文件 → broken 图标），再点进查看器而不是弹窗。
     await tester.tap(_card('img4.png'));
     await tester.pumpAndSettle();
@@ -170,7 +204,7 @@ void main() {
     expect(find.text('5 / 5'), findsOneWidget);
   });
 
-  testWidgets('点占位卡 → 「回到最近已看」把焦点落到最后一张已解锁卡', (tester) async {
+  testWidgets('点锁着的卡 → 「回到最近已看」把焦点落到最后一张已解锁卡', (tester) async {
     await tester.pumpWidget(
       _host(
         ReaderGalleryPage(
@@ -214,17 +248,123 @@ void main() {
 
     await tester.tap(find.text('Unlocked'));
     await tester.pumpAndSettle();
-    expect(_placeholders, findsNothing);
+    expect(_maskedCards, findsNothing);
     expect(_card('img4.png'), findsNothing);
     expect(_card('img5.png'), findsOneWidget);
     expect(_section(2), findsOneWidget);
 
     await tester.tap(find.text('All'));
     await tester.pumpAndSettle();
-    expect(_placeholders, findsOneWidget);
+    expect(_maskedCards, findsOneWidget);
   });
 
-  testWidgets('blurImages 开：全部未揭开的图都锁着，占位提示换成模糊说明', (tester) async {
+  // BUG-2559：画廊的「还没读到」以前只比章号，书架端插图库比章号 + 章内偏移。
+  // 于是当前章读到一半时，同一张插图在两处一个遮一个不遮——用户看到的就是
+  // 「阅读器里糊的图和书架上糊的图不一样」。
+  testWidgets('当前章内：阅读位置之后的插图锁着，之前的不锁', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: const <EpubImageRef>[
+            EpubImageRef(
+              chapterIndex: 1,
+              orderInBook: 0,
+              src: 'early.png',
+              revealKey: 'early.png',
+              normCharOffset: 2000,
+            ),
+            EpubImageRef(
+              chapterIndex: 1,
+              orderInBook: 1,
+              src: 'late.png',
+              revealKey: 'late.png',
+              normCharOffset: 8000,
+            ),
+          ],
+          currentChapter: 1,
+          currentNormCharOffset: 5000,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_maskedCard('early.png'), findsNothing);
+    expect(_maskedCard('late.png'), findsOneWidget);
+    expect(find.text('Unlocked 1 / 2'), findsOneWidget);
+  });
+
+  testWidgets('章内偏移缺省（0）时退回章首语义，本章插图都算已读到', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: const <EpubImageRef>[
+            EpubImageRef(
+              chapterIndex: 1,
+              orderInBook: 0,
+              src: 'head.png',
+              revealKey: 'head.png',
+            ),
+            EpubImageRef(
+              chapterIndex: 1,
+              orderInBook: 1,
+              src: 'late.png',
+              revealKey: 'late.png',
+              normCharOffset: 8000,
+            ),
+          ],
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 章首那张（偏移 0）不遮；靠后那张在「刚进本章」时仍算没读到。
+    expect(_maskedCard('head.png'), findsNothing);
+    expect(_maskedCard('late.png'), findsOneWidget);
+  });
+
+  testWidgets('正文没引用的封面挂在封面节，节头不写成「第 0 章」', (tester) async {
+    _useTallWindow(tester);
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: const <EpubImageRef>[
+            EpubImageRef(
+              chapterIndex: kEpubCoverChapterIndex,
+              orderInBook: 0,
+              src: 'cover.jpg',
+              revealKey: 'cover.jpg',
+            ),
+            EpubImageRef(
+              chapterIndex: 0,
+              orderInBook: 1,
+              src: 'p1.png',
+              revealKey: 'p1.png',
+            ),
+          ],
+          currentChapter: 0,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+
+    // 节头文案大写化渲染。
+    expect(find.text('COVER'), findsOneWidget);
+    expect(find.text('CHAPTER 0'), findsNothing);
+    // 封面排在正文之前，且永远算已读到。
+    expect(_maskedCard('cover.jpg'), findsNothing);
+  });
+
+  testWidgets('blurImages 开：全部未揭开的图都锁着，弹窗提示换成模糊说明', (tester) async {
     await tester.pumpWidget(
       _host(
         ReaderGalleryPage(
@@ -240,17 +380,35 @@ void main() {
     );
     await tester.pump();
     expect(find.text('Unlocked 1 / 4'), findsOneWidget);
-    expect(_placeholders, findsNWidgets(3));
-    expect(find.text('Image blur is on; reveal to view'), findsNWidgets(3));
+    expect(_maskedCards, findsNWidgets(3));
+    expect(_maskedCard('img1.png'), findsNothing);
+    await tester.tap(_card('img0.png'));
+    await tester.pumpAndSettle();
+    expect(find.text('Image blur is on; reveal to view'), findsOneWidget);
   });
 
   testWidgets('打开时自动滚到当前阅读章那一节', (tester) async {
     // 第 1 章 20 张（5 列 × 4 行）把第 2 章推出首屏。
     final List<EpubImageRef> images = <EpubImageRef>[
       for (int i = 0; i < 20; i++)
-        EpubImageRef(chapterIndex: 0, orderInBook: i, src: 'a$i.png'),
-      const EpubImageRef(chapterIndex: 1, orderInBook: 20, src: 'b0.png'),
-      const EpubImageRef(chapterIndex: 1, orderInBook: 21, src: 'b1.png'),
+        EpubImageRef(
+          chapterIndex: 0,
+          orderInBook: i,
+          src: 'a$i.png',
+          revealKey: 'a$i.png',
+        ),
+      const EpubImageRef(
+        chapterIndex: 1,
+        orderInBook: 20,
+        src: 'b0.png',
+        revealKey: 'b0.png',
+      ),
+      const EpubImageRef(
+        chapterIndex: 1,
+        orderInBook: 21,
+        src: 'b1.png',
+        revealKey: 'b1.png',
+      ),
     ];
     await tester.pumpWidget(
       _host(
@@ -392,6 +550,186 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ReaderGalleryPage), findsNothing);
     expect(find.text('open'), findsOneWidget);
+  });
+
+  testWidgets('长按卡片 → 菜单「跳转到此插图」走 onJumpTo（锁着的卡也有跳转入口）', (
+    tester,
+  ) async {
+    final List<String> jumped = <String>[];
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (EpubImageRef ref) => jumped.add(ref.src),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 锁着的卡进不去查看器，此前也就没有任何跳转入口——菜单正是补这一半。
+    await tester.longPress(_card('img4.png'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+      findsOneWidget,
+    );
+    // 锁着 → 给「仍要查看」，不给「恢复遮罩」。
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_reveal')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_relock')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+    );
+    await tester.pumpAndSettle();
+    expect(jumped, <String>['img4.png']);
+  });
+
+  testWidgets('长按已揭开的卡 →「恢复遮罩」：回写 onUnrevealImage、计数 -1、模糊层回来', (
+    tester,
+  ) async {
+    final List<String> unrevealed = <String>[];
+    final Set<String> hostRevealed = <String>{'img4.png'};
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+          revealedImageKeys: hostRevealed,
+          onUnrevealImage: unrevealed.add,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Unlocked 5 / 6'), findsOneWidget);
+    expect(_maskedCard('img4.png'), findsNothing);
+
+    await tester.longPress(_card('img4.png'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_relock')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(unrevealed, <String>['img4.png']);
+    expect(find.text('Unlocked 4 / 6'), findsOneWidget);
+    // 宿主会话集由宿主自己删（本测试不删），页面仍须立刻遮回去。
+    expect(_maskedCard('img4.png'), findsOneWidget);
+  });
+
+  testWidgets('已读到 + 总开关关：没有遮罩理由的图不给「恢复遮罩」', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // img2 属于当前章：已经读到、总开关又关着 —— 撤销揭开不会让它重新遮上。
+    await tester.longPress(_card('img2.png'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_relock')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('iOS 刘海 / 灵动岛：顶栏整条让开状态栏，按钮可点', (tester) async {
+    _useTallWindow(tester);
+    const double statusBar = 59;
+    tester.view.viewPadding = const FakeViewPadding(top: statusBar * 1);
+    tester.view.padding = const FakeViewPadding(top: statusBar * 1);
+    addTearDown(tester.view.resetViewPadding);
+    addTearDown(tester.view.resetPadding);
+
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+
+    // 关闭 / 定位 / 过滤三个控件此前整条压在状态栏底下，点不到。
+    for (final Finder control in <Finder>[
+      find.byKey(const ValueKey<String>('fushi_gallery_close')),
+      find.byKey(const ValueKey<String>('fushi_gallery_position')),
+      find.byKey(const ValueKey<String>('fushi_gallery_filter')),
+    ]) {
+      expect(
+        tester.getTopLeft(control).dy,
+        greaterThanOrEqualTo(statusBar),
+        reason: '顶栏控件必须整条落在状态栏之下',
+      );
+    }
+  });
+
+  testWidgets('菜单键唤出卡片菜单；关闭后焦点回网格，方向键仍能移焦', (tester) async {
+    final List<String> jumped = <String>[];
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: 1,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (EpubImageRef ref) => jumped.add(ref.src),
+        ),
+      ),
+    );
+    await _pumpAtTop(tester);
+
+    // 方向键落焦到第一张卡 → 菜单键（长按的键盘等价）唤出菜单。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(_cardBorderWidth(tester, 'img0.png'), 2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.contextMenu);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi_gallery_menu_jump')),
+    );
+    await tester.pumpAndSettle();
+    expect(jumped, <String>['img0.png']);
+
+    // 菜单吃掉的焦点必须还回来：不还，方向键就再也移不动焦点了。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(
+      _cardBorderWidth(tester, 'img1.png'),
+      2,
+      reason: '菜单关闭后方向键应继续在网格里移焦',
+    );
   });
 
   testWidgets('空书：空态文案，无过滤 / 定位控件', (tester) async {

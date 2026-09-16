@@ -112,6 +112,12 @@ class AudioCue {
   /// （`cue_sentence_resegmenter.dart`）；DB 往返不携带。
   CueTokenTiming? tokenTiming;
 
+  /// 渲染专用 cue：无可读正文、只有 ASS `\p` 矢量绘图（招牌白底遮罩等）。它只该被
+  /// 视频 overlay 画出来——不进字幕列表 / 跳句 / 制卡 / 句尾暂停，也不落库
+  /// （`VideoBookRepository.saveCues` 过滤）。由 `AssParser.parseString(includeDrawings:
+  /// true)` 产出，其余解析路径默认不产出。
+  bool get isRenderOnly => text.isEmpty && markup?.drawing != null;
+
   File? resolveAudioFile(List<File> audioFiles) {
     if (audioFileIndex < 0 || audioFileIndex >= audioFiles.length) {
       return null;

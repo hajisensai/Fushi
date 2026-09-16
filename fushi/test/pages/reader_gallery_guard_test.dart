@@ -40,9 +40,46 @@ void main() {
 
   test('gallery jump reuses _navigateToChapter (no second nav path)', () {
     expect(src.contains('onJumpTo: (EpubImageRef ref)'), isTrue);
-    expect(src.contains('_navigateToChapter(ref.chapterIndex, manual: true)'),
+    // jumpChapterIndex, not chapterIndex: an OPF cover no chapter references
+    // sits at kEpubCoverChapterIndex (-1), which is not a navigable spine slot.
+    expect(
+        src.contains('_navigateToChapter(ref.jumpChapterIndex, manual: true)'),
         isTrue,
         reason: 'gallery jump must reuse _navigateToChapter');
+  });
+
+  // BUG-2559：插图册与书架端插图库必须列同一组图、用同一把尺判「读到没读到」。
+  // 两条都是「删一行就悄悄退回各扫一遍」的形状，钉在源码层。
+  test('两个插图表面共用 EpubBook.images 这一份枚举', () {
+    // 画廊的清单只许来自 book.images；进度索引也只许从它转形态，不得自己再扫
+    // 一遍 DOM（各扫一遍 = 同一张图在两处被判出不同的「读到没读到」）。
+    expect(
+        src.contains('final List<EpubImageRef> images = book.images;'), isTrue);
+    final String index = File('lib/src/reader/illustration_progress_index.dart')
+        .readAsStringSync();
+    expect(
+        index.contains('for (final EpubImageRef ref in book.images)'), isTrue,
+        reason: '进度索引必须消费 EpubBook.images，不得另起一套章节扫描');
+    expect(index.contains('querySelectorAll'), isFalse,
+        reason: '第二套 DOM 扫描已退役，别再长回来');
+    expect(index.contains('countStudyChars'), isFalse,
+        reason: '章内偏移由 EpubBook.images 算好，这里不再重算');
+  });
+
+  test('画廊的「还没读到」带章内偏移，且宿主真把偏移传进来', () {
+    final String gallery =
+        File('lib/src/reader/reader_gallery_page.dart').readAsStringSync();
+    expect(
+        gallery.contains('ref.normCharOffset > widget.currentNormCharOffset'),
+        isTrue,
+        reason: '只比章号 = 当前章里靠后的插图在画廊不遮、在书架遮，两处不一致');
+    expect(src.contains('currentNormCharOffset: currentNormCharOffset'), isTrue,
+        reason: '宿主必须把当前章内位置传给画廊，否则判据恒退化成章首');
+    // reveal key 走 ref 自带的（已 decode），与 WebView / 书架 / Drift 同源；
+    // 画廊自己再 normalize 一次会对 %xx 文件名得出另一个 key。
+    expect(gallery.contains('revealKey: ref.revealKey'), isTrue);
+    expect(gallery.contains('ImageRevealKey.normalize('), isFalse,
+        reason: 'reveal key 的第四套归一已退役');
   });
 
   // BUG-2166 批把画廊本体从 chrome.part.dart 抽成
@@ -69,5 +106,55 @@ void main() {
     expect(gallery.contains('t.reader_gallery_position_current'), isTrue);
     expect(src.contains('class _ReaderGalleryPage'), isFalse,
         reason: 'chrome.part.dart 只保留路由，不得再夹带第二份画廊实现');
+  });
+
+  // 未解锁卡片的视觉与「卡片能做什么」两条，是用户报回来的两个缺口（糊图被换成
+  // 文案纸卡；网格里没有任何跳转入口 / 没法把揭开的图重新遮回去）。两者都属于
+  // 「删一行就悄悄退回去、widget 测试改一句断言也就跟着绿」的形状，钉在源码层。
+  test('未解锁卡片用共享遮罩视觉，且两个插图表面共用同一份', () {
+    final String gallery =
+        File('lib/src/reader/reader_gallery_page.dart').readAsStringSync();
+    expect(gallery.contains('maskedIllustrationCover('), isTrue,
+        reason: '锁着的卡是这张图自己的高斯模糊，不是写着「尚未读到」的占位卡');
+    expect(gallery.contains('class _LockedCardBody'), isFalse,
+        reason: '文案占位卡已退役，别再长回来');
+    // 书架端插图库与阅读器插图册必须是同一份遮罩（含墨水屏的实心遮板分支）。
+    final String shelf =
+        File('lib/src/pages/implementations/illustrations_viewer_page.dart')
+            .readAsStringSync();
+    expect(
+      shelf.contains(
+          "import 'package:fushi/src/reader/masked_illustration_cover.dart';"),
+      isTrue,
+      reason: '遮罩视觉只许有一份，两端都从 masked_illustration_cover.dart 取',
+    );
+  });
+
+  test('卡片长按 / 右键菜单提供跳转与恢复遮罩', () {
+    final String gallery =
+        File('lib/src/reader/reader_gallery_page.dart').readAsStringSync();
+    expect(gallery.contains('onLongPress: () => unawaited(_showCardMenu(ref))'),
+        isTrue,
+        reason: '长按卡片必须唤出菜单（锁着的图此前没有任何跳转入口）');
+    expect(gallery.contains('ContextMenuTrigger('), isTrue,
+        reason: '桌面右键走统一的上下文菜单触发口，不得硬绑 onSecondaryTap');
+    // 长按 / 右键都是指针动作。插图册整页本来就是方向键 + Enter 驱动的，菜单
+    // 没有键位就等于对键盘 / 手柄用户不存在。
+    expect(gallery.contains('_isContextMenuKey(event)'), isTrue,
+        reason: '卡片菜单必须有键盘入口（菜单键 / Shift+F10）');
+    expect(gallery.contains('_restoreGridFocus()'), isTrue,
+        reason: '菜单关闭后要把焦点还给网格，否则键盘导航一次性废掉');
+    expect(gallery.contains("ValueKey<String>('fushi_gallery_menu_jump')"),
+        isTrue);
+    expect(gallery.contains("ValueKey<String>('fushi_gallery_menu_relock')"),
+        isTrue);
+    // 恢复遮罩必须真落到宿主（会话集 + Drift + 正文），不是只改本页外观。
+    expect(gallery.contains('widget.onUnrevealImage?.call(key)'), isTrue);
+    expect(src.contains('onUnrevealImage: (String key)'), isTrue,
+        reason: 'chrome.part.dart 必须接住撤销揭开');
+    expect(src.contains('unmarkImageRevealed(bookUid, key)'), isTrue,
+        reason: '撤销要落 Drift，否则下次开书又是揭开态');
+    expect(src.contains('__fushiUnmarkImageRevealed'), isTrue,
+        reason: '正文 WebView 的会话活集也要跟着撤销');
   });
 }
