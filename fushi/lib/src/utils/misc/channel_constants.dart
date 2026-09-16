@@ -16,6 +16,11 @@ abstract final class FushiChannels {
       MethodChannel('$_prefix/floating_lyric');
   static const MethodChannel floatingDict =
       MethodChannel('$_prefix/floating_dict');
+
+  /// 查词输入框的输入法语言。桌面/iOS 上原生侧据此真的切换系统输入法；Android 做
+  /// 不到切换，只把用户选的语言存下来给**原生**查词输入框（悬浮词典 / 弹窗词典
+  /// 那两个 EditText，它们不是 Flutter TextField，吃不到 hintLocales 参数）。
+  static const MethodChannel lookupIme = MethodChannel('$_prefix/lookup_ime');
   static const MethodChannel lifecycle = MethodChannel('$_prefix/lifecycle');
   static const MethodChannel fonts = MethodChannel('$_prefix/fonts');
   static const MethodChannel saf = MethodChannel('$_prefix/saf');

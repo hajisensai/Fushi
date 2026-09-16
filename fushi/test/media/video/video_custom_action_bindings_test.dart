@@ -35,6 +35,7 @@ VideoPlayerShortcutActions _dummyActions() {
     previousFrame: noop,
     nextFrame: noop,
     screenshot: noop,
+    screenshotSubtitled: noop,
     toggleFullscreen: noop,
     toggleSubtitleList: noop,
     searchSubtitleList: noop,
