@@ -4847,6 +4847,7 @@
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
   "reader_control_reset_layout": "Restore default reader button layout",
+  "stat_center_profile_scope": "Showing statistics for profile \"$name\" only",
   "global_context_capture_hint": "Đọc văn bản xung quanh từ ứng dụng tiền cảnh để hiển thị câu hiện tại (Windows / macOS)",
   "lookup_block_capture_hint": "Loại trừ cửa sổ tra cứu và bộ nhớ tạm khỏi chụp màn hình, quay màn hình và phát trực tiếp (Windows / macOS). Tắt để cho phép chụp, quay và phát trực tiếp ghi lại cửa sổ tra cứu.",
   "lookup_accessibility_permission_request": "Grant Accessibility permission for app-external lookup",

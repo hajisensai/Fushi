@@ -4847,6 +4847,7 @@
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
   "reader_control_reset_layout": "Restore default reader button layout",
+  "stat_center_profile_scope": "Showing statistics for profile \"$name\" only",
   "global_context_capture_hint": "Lees omringende tekst uit de voorgrondapp om de huidige zin te tonen (Windows / macOS)",
   "lookup_block_capture_hint": "Sluit het opzoek- en klembordpopupvenster uit van schermafbeeldingen, schermopnames en livestreaming (Windows / macOS). Schakel dit uit om schermafbeeldingen, opnames en streaming het opzoekpopup te laten vastleggen.",
   "lookup_accessibility_permission_request": "Grant Accessibility permission for app-external lookup",

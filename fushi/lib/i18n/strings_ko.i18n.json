@@ -4847,6 +4847,7 @@
   "reader_control_editor_title": "Reader button layout",
   "reader_control_editor_hint": "Drag buttons between the top and bottom bars, or remove them.",
   "reader_control_reset_layout": "Restore default reader button layout",
+  "stat_center_profile_scope": "Showing statistics for profile \"$name\" only",
   "global_context_capture_hint": "포그라운드 앱에서 주변 텍스트를 읽어 현재 문장을 표시합니다 (Windows / macOS)",
   "lookup_block_capture_hint": "검색 및 클립보드 팝업 창을 스크린샷, 화면 녹화, 라이브 스트리밍에서 제외합니다 (Windows / macOS). 스크린샷, 녹화, 스트리밍에서 검색 팝업을 캡처하려면 이 옵션을 끄세요.",
   "lookup_accessibility_permission_request": "Grant Accessibility permission for app-external lookup",
