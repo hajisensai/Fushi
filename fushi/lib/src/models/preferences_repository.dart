@@ -2864,7 +2864,11 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// 点击翻页的热区布局（[MangaTapZoneLayout] 的字符串键）。默认 `left_right`
   /// = 旧行为（左右各一条 25% 竖条）。只在 [mangaTapZonePaging] 开启时有意义。
   String get mangaTapZoneLayout =>
-      getPref('manga_tap_zone_layout', defaultValue: 'left_right') as String;
+      getPref(
+            'manga_tap_zone_layout',
+            defaultValue: kMangaTapZoneLayoutDefault,
+          )
+          as String;
 
   Future<void> setMangaTapZoneLayout(String value) async {
     await setPref('manga_tap_zone_layout', value);
@@ -2873,7 +2877,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   /// 漫画阅读器底色（[MangaBackground] 的字符串键）。默认 `black` = 旧行为。
   String get mangaBackground =>
-      getPref('manga_background', defaultValue: 'black') as String;
+      getPref('manga_background', defaultValue: kMangaBackgroundDefault)
+          as String;
 
   Future<void> setMangaBackground(String value) async {
     await setPref('manga_background', value);
@@ -2884,7 +2889,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// 0 = 从第一页起就配对。扫描来源不同，封面算不算「第 0 页」并不统一，选错会让
   /// 整卷左右页全反。
   int get mangaSpreadOffset =>
-      getPref('manga_spread_offset', defaultValue: 1) as int;
+      getPref('manga_spread_offset', defaultValue: kMangaSpreadOffsetDefault)
+          as int;
 
   Future<void> setMangaSpreadOffset(int value) async {
     await setPref('manga_spread_offset', value);
@@ -2894,7 +2900,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   /// 宽页（见开き）自动独占一屏。默认开：宽页被塞进半个槽既缩成一半宽，又会把
   /// 它之后所有页的配对错开一位。
   bool get mangaWidePageSolo =>
-      getPref('manga_wide_page_solo', defaultValue: true) as bool;
+      getPref('manga_wide_page_solo', defaultValue: kMangaWidePageSoloDefault)
+          as bool;
 
   Future<void> setMangaWidePageSolo(bool value) async {
     await setPref('manga_wide_page_solo', value);

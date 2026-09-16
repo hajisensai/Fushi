@@ -118,6 +118,16 @@ extension MangaBackgroundKey on MangaBackground {
   }
 }
 
+/// 四个新偏好的默认值（单一真相源）。
+///
+/// 偏好仓库与 [AppModel] 两侧都要它：后者在 `_prefsRepo` 未就绪（弹窗词典 / 悬浮
+/// 查词这两个不经 `initialise()` 的 entry point）时要回落到**逐字相同**的默认值，
+/// 各写一份字面量就会出现「改了默认只改到一半」。
+const String kMangaBackgroundDefault = 'black';
+const String kMangaTapZoneLayoutDefault = 'left_right';
+const int kMangaSpreadOffsetDefault = 1;
+const bool kMangaWidePageSoloDefault = true;
+
 /// 点击翻页的区域布局。
 ///
 /// 旧实现只有一种：左右各占 25% 宽的竖条（[MangaTapZoneLayout.leftRight]），中间
