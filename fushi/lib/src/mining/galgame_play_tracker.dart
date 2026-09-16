@@ -1,7 +1,7 @@
 /// galgame 游玩计时器（Windows）。见
 /// `docs/design/galgame-library-reina-parity.md` §3。
 ///
-/// 旧实现把游玩时长挂在 hook 抓到的**文本行**上（`GalHookActivityAccumulator`），
+/// 旧实现把游玩时长挂在 hook 抓到的**文本行**上（已删除的 `GalHookActivityAccumulator`），
 /// 根本缺陷是「没抓到文本 = 完全不计时」：未适配引擎、纯语音场景、hook 注入失败
 /// 全部丢账。这里改成按**前台窗口 + 候选进程组**计时，与文本 hook 彻底解耦。
 ///

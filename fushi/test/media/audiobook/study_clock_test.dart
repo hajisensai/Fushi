@@ -175,6 +175,35 @@ void main() {
       expect(h.sink.uids.toSet(), hasLength(2));
     });
 
+    test('BUG-2564：只喂字数的时钟（galgame hook）不因无 addActiveMs 而每窗封段', () async {
+      final _Harness h = _Harness(accrual: StudyAccrual.explicit);
+      h.clock.start();
+      h.clock.addChars(5);
+      final String? first = h.clock.debugOpenUid;
+      expect(first, isNotNull);
+      // 台词到达后的去抖写穿：flushNow 走一遍 tick 裁决，本窗有内容账 → 段保持打开。
+      h.advance(const Duration(seconds: 2));
+      await h.clock.flushNow();
+      expect(h.clock.debugOpenUid, first, reason: '字数入账也是本窗记账，不封段');
+      expect(h.sink.writes, hasLength(1));
+      expect(h.sink.last.chars.value, 5);
+      expect(h.sink.last.durationMs.value, 0, reason: '从不 addActiveMs，时长恒 0');
+      // 下一行记到同一 uid，绝对值写回，不是新行。
+      h.clock.addChars(6);
+      h.advance(const Duration(seconds: 2));
+      await h.clock.flushNow();
+      expect(h.sink.uids.toSet(), hasLength(1));
+      expect(h.sink.last.chars.value, 11);
+      // 一整窗没有任何台词（读者离席）→ 封段；再来一行开新 uid。
+      h.advance(const Duration(minutes: 5));
+      await h.clock.flushNow();
+      expect(h.clock.debugOpenUid, isNull, reason: '无记账窗口封段');
+      h.clock.addChars(1);
+      expect(h.clock.debugOpenUid, isNot(first));
+      await h.clock.stop();
+      expect(h.sink.uids.toSet(), hasLength(2));
+    });
+
     test('跨小时的记账落到新段（段不跨小时边界）', () async {
       final _Harness h = _Harness(
         accrual: StudyAccrual.explicit,
