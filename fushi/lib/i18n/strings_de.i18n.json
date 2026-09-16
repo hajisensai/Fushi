@@ -4962,5 +4962,9 @@
   "game_text_process_ai_failed": "Generation failed: ${reason}",
   "ai_provider_base_url_invalid": "Enter a valid HTTP or HTTPS endpoint",
   "ai_provider_protocol_locked": "Fixed by the built-in preset",
+  "anki_mined_unverified_title": "Card marked as mined",
+  "anki_mined_unverified_subtitle": "Fushi cannot read your AnkiMobile collection, so the mined mark comes from this device's own record — it cannot tell whether the card is still in Anki.",
+  "anki_mined_action_forget": "I deleted it in Anki",
+  "anki_mined_forget_done": "Mining record cleared",
   "reader_gallery_cover": "Cover"
 }
