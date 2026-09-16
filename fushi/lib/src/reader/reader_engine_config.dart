@@ -32,6 +32,7 @@ class ReaderEngineConfig {
     required this.debugLogging,
     required this.swipeDistThreshold,
     required this.swipeFastDistThreshold,
+    required this.swipeFastVelocity,
     required this.wheelGestureQuietMs,
     required this.furiganaMode,
     required this.caretColor,
@@ -81,6 +82,10 @@ class ReaderEngineConfig {
   final bool debugLogging;
   final int swipeDistThreshold;
   final int swipeFastDistThreshold;
+
+  /// 「快速短滑」的速度门（px/s）。与两个距离阈值同源于
+  /// [ReaderSettings.swipePageTurnDistThresholds]，随灵敏度一起缩放。
+  final int swipeFastVelocity;
   final int wheelGestureQuietMs;
 
   /// `off` / `toggle` / `hidden` / `dimmed`（`ReaderSettings.furiganaMode` 的
@@ -141,6 +146,7 @@ class ReaderEngineConfig {
     'debugLogging': debugLogging,
     'swipeDistThreshold': swipeDistThreshold,
     'swipeFastDistThreshold': swipeFastDistThreshold,
+    'swipeFastVelocity': swipeFastVelocity,
     'wheelGestureQuietMs': wheelGestureQuietMs,
     'furiganaMode': furiganaMode,
     'caretColor': caretColor,
@@ -189,6 +195,7 @@ class ReaderEngineConfig {
     required double marginRight,
     required int swipeDistThreshold,
     required int swipeFastDistThreshold,
+    required int swipeFastVelocity,
     required int wheelGestureQuietMs,
     required bool scanNonJapaneseText,
   }) {
@@ -199,6 +206,7 @@ class ReaderEngineConfig {
       'marginRight': marginRight,
       'swipeDistThreshold': swipeDistThreshold,
       'swipeFastDistThreshold': swipeFastDistThreshold,
+      'swipeFastVelocity': swipeFastVelocity,
       'wheelGestureQuietMs': wheelGestureQuietMs,
       'scanNonJapaneseText': scanNonJapaneseText,
     });

@@ -558,7 +558,7 @@ bool studyClockMayRun({
 ///   注入的是**同一份**常量：主轴取绝对值更大的那个 + 抖动余量，`delta > 0` =
 ///   forward，并回传 trackpad / mouse 供 Dart 侧的手势闸门分流）；
 /// * 单指横扫 → `onSwipe`（与正文 `touchend` 分支同款判据：横向分量占优，且位移过
-///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ 900px/s」，`dx < 0`
+///   [swipeDistThreshold] 或「过 [swipeFastDistThreshold] + 速度 ≥ [swipeFastVelocity]」，`dx < 0`
 ///   = `'left'`）。阈值由调用方从 [ReaderSettings] 取同一真值传入，不在此另立默认；
 /// * 键盘 → [keyBridgeScript]（调用方用 `webViewKeyBridgeScript` 按注册表**当前**绑定
 ///   生成）。Windows 的 WebView2 一旦持有 OS 焦点，按键只存在于 DOM 里，Flutter 的
@@ -568,6 +568,7 @@ String buildSpreadPageHtml({
   required String rightUrl,
   required int swipeDistThreshold,
   required int swipeFastDistThreshold,
+  required int swipeFastVelocity,
   String keyBridgeScript = '',
 }) {
   return '''
@@ -646,7 +647,7 @@ $kPagedWheelGestureHelperJs
     if (absDx <= absDy) return;
     var velocity = absDx / Math.max(1, Date.now() - _swipeStartAt) * 1000;
     if (absDx < $swipeDistThreshold &&
-        !(absDx >= $swipeFastDistThreshold && velocity >= 900)) return;
+        !(absDx >= $swipeFastDistThreshold && velocity >= $swipeFastVelocity)) return;
     if (e.preventDefault) e.preventDefault();
     _swipeDoneAt = Date.now();
     window.flutter_inappwebview.callHandler('onSwipe', dx < 0 ? 'left' : 'right');
@@ -2036,7 +2037,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _statusFooterAbsorbedByBar => readerStatusFooterAbsorbedByBar(
     inlineStatus: _playbackStatusInline,
     bottomChromeReserve: _bottomChromeReserve,
-    floatingBarPainted: _bottomBarFloating &&
+    floatingBarPainted:
+        _bottomBarFloating &&
         _bottomBarShouldPaint &&
         _audiobookController != null,
   );
@@ -2061,9 +2063,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _progressEdgeLineShouldPaint => readerProgressEdgeLineVisible(
     floating: _bottomBarFloating,
     footerVisible: _statusFooterShouldPaint,
-    showProgress: _statusFooterEnabled &&
-        ReaderFushiSource.instance.showTopProgressBar,
-    hasTotal: readerProgressRatio(
+    showProgress:
+        _statusFooterEnabled && ReaderFushiSource.instance.showTopProgressBar,
+    hasTotal:
+        readerProgressRatio(
           current: _progressCurrentChars,
           total: _progressTotalChars,
         ) !=
