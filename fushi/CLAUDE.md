@@ -142,7 +142,14 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - C++ hook 在仓库根 `native/galgame_hook/`。产物先构建成两架构 helper zip 与源码指纹，随后在 Windows 构建期校验并解压为主包内 `voice_hook/<arch>/` 普通文件；运行前再按内容分版暂存到 app data，整个链路无独立 release、无网络回退，helper 也不链接进 `Fushi.exe`。
 - 修改本子系统、helper IPC、引擎能力或支持状态前，必须先读 [Galgame Hook 引擎适配 SOP](../docs/agent/galgame-hooking.md) 并遵守其中的身份/阶段证据门。消费端与 native 采集实现现在同仓，改 IPC 契约必须两侧同一 PR 落地。
 
-### 13. 浏览器扩展 (仓库根 `tools/browser-extension/`)
+### 13. AI 功能 (`lib/src/ai/`)
+
+- `ai_provider_config.dart` / `ai_chat_client.dart` -- 多提供商 LLM 调用层（OpenAI 兼容 / Anthropic / Gemini 三种 wire 协议，17 家预设含 Ollama、LM Studio 本地）；不做流式；错误一律脱敏成短码。
+- `ai_feature.dart` -- 「功能 → 提供商」指派表 `AiFeature`（galgame 文本清洗 / 词典弹窗样式 / Lapis 卡片样式 / 视频识别 / 视频搜索辅助）。新增 AI 功能 = 加枚举值 + 一个 `ai_*_assistant.dart`（提示词 + 解析 + 本地校验）+ 入口按钮；设置页功能行自动列出。
+- `ai_reply_json.dart` -- 共享的「从回复里抠 JSON」工具，所有助手共用。
+- 硬边界：**AI 只产出配置或在已取回的候选里做排序/选择，热路径永远是本地确定性代码**；未指派提供商时行为与没有 AI 完全一致；AI 产物必须经本地校验（正则可编译、CSS 选择器白名单、候选 key 在集合内）才落地，且先进草稿/待确认而不是直接保存。AI 配置是设备本地的，不进备份/同步/Profile。设计见 `docs/specs/2026-09-15-ai-feature-expansion.md`。
+
+### 14. 浏览器扩展 (仓库根 `tools/browser-extension/`)
 
 - `content.js` / `background.js` 等 -- 浏览器内查词扩展，与 app 经本地 HTTP 通信。
 - 弹窗样式须与 app 内弹窗三镜像同步（popup / 扩展 content.css）。

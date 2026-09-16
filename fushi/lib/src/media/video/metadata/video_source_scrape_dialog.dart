@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -607,8 +608,8 @@ class _VideoSourceScrapeTaskPanelState
                   title: Text(issue.workTitle),
                   subtitle: SelectableText(
                     issue.path == null
-                        ? issue.message
-                        : '${issue.message}\n${issue.path}',
+                        ? describeVideoScrapeIssueMessage(issue.message)
+                        : '${describeVideoScrapeIssueMessage(issue.message)}\n${issue.path}',
                   ),
                 );
               },

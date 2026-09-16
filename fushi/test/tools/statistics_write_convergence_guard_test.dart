@@ -10,8 +10,8 @@
 //  ① 本地写入面零直写 legacy 表：`setReadingStatistic` / `setVideoWatchStatistic` /
 //     `setReadingHourlyLog` / `setVideoHourlyLog` / `addUnattributedHourlyReadingTime`
 //     只允许 `sync/**`（legacy wire 家族的 MAX-union 落地面，app 与引擎两处）调用；
-//  ② `upsertStudySegment` 只允许两个写入方：`StudyClock`（fushi_audio）与
-//     galgame hook 的 chars-only 段；页面不得自己拼段；
+//  ② `upsertStudySegment` 只允许一个写入方：`StudyClock`（fushi_audio）；页面 /
+//     galgame hook 不得自己拼段（BUG-2564 起 hook 字数也经 StudyClock）；
 //  ③ 页面不得直读 legacy 统计表 / 活动表做统计（只许经 `loadStatFacts`）；
 //  ④ 页面不得自己算窗口阈值（`subtract(const Duration(days:` 只许在 StatWindow）；
 //  ⑤ 页面不得持有会话累计器（`_sessionReadingMs` / `_sessionCharsRead` /
@@ -158,11 +158,10 @@ void main() {
     );
   });
 
-  test('② upsertStudySegment 只有两个写入方：StudyClock 与 galgame hook 字数', () {
+  test('② upsertStudySegment 只有一个写入方：StudyClock', () {
     final List<String> offenders = <String>[];
     for (final File f in dartFiles()) {
       final String path = norm(f.path);
-      if (path == 'lib/src/mining/gal_hook_session_controller.dart') continue;
       if (containsIdentifierCall(
         f.readAsStringSync(),
         'upsertStudySegment',
@@ -174,8 +173,9 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '页面 / 仓库不得自己拼段：时长与字数必须经 StudyClock 进同一段同一 uid，'
-          '否则又是第二本账：\n${offenders.join('\n')}',
+      reason: '页面 / 仓库 / galgame hook 不得自己拼段：时长与字数必须经 StudyClock '
+          '进同一段同一 uid（BUG-2564：hook 自家攒 500 字才 insert 新 uid，统计页翻几行'
+          '后仍是 0），否则又是第二本账：\n${offenders.join('\n')}',
     );
     // fushi_audio 侧：StudyClock 是唯一持有 sink 默认值的地方。
     final String clock = read(

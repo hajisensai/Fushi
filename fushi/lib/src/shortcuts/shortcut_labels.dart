@@ -137,6 +137,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_next_frame;
       case ShortcutAction.videoScreenshot:
         return t.shortcut_action_video_screenshot;
+      case ShortcutAction.videoScreenshotSubtitled:
+        return t.shortcut_action_video_screenshot_subtitled;
       case ShortcutAction.videoToggleFullscreen:
         return t.shortcut_action_video_toggle_fullscreen;
       case ShortcutAction.videoToggleSubtitleList:
@@ -376,6 +378,8 @@ extension ShortcutActionIcon on ShortcutAction {
         return Icons.fullscreen;
       case ShortcutAction.videoScreenshot:
         return Icons.photo_camera_outlined;
+      case ShortcutAction.videoScreenshotSubtitled:
+        return Icons.subtitles_outlined;
       case ShortcutAction.videoToggleShaderCompare:
         return Icons.compare;
       case ShortcutAction.videoToggleImmersiveLock:

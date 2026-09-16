@@ -42,6 +42,7 @@ void main() {
       rightUrl: rightUrl,
       swipeDistThreshold: 44,
       swipeFastDistThreshold: 22,
+      swipeFastVelocity: 300,
     );
 
     test('图片以外的点击有专桥回传 Dart', () {

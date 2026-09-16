@@ -624,9 +624,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
     String? sentenceAudioCuesJson,
   }) {
     final ReaderSettings s = _settings!;
-    // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
-    // （配合速度的快速短滑触发），系数 1.0 = 默认「轻快」手感，越大越迟钝（需滑得更远）。
-    final ({int dist, int fastDist}) swipeThresholds =
+    // TODO-113 / BUG-滑动翻页不够灵敏：三个滑动阈值随灵敏度缩放（灵敏度越大阈值越
+    // 小）。基础值 24px（纯距离触发）/ 12px + 300px/s（快速短滑），对齐
+    // Hoshi-Reader-Android 在 3x 屏上的有效阈值，见 swipePageTurnDistThresholds。
+    final ({int dist, int fastDist, int fastVelocity}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     // BUG-239: 连续模式靠原生滚动（滚动轴 = 书写轴），章间切换走边界手势 IIFE。
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
@@ -658,6 +659,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       debugLogging: DebugLogService.instance.enabled,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      swipeFastVelocity: swipeThresholds.fastVelocity,
       wheelGestureQuietMs: ReaderFushiSource.instance.wheelPageTurnInterval
           .clamp(150, 800),
       furiganaMode: s.furiganaMode,
@@ -702,7 +704,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
   /// 导航 / 视口 / 进度那些必须随 install 走的键。
   String _liveEngineConfigJs() {
     final ReaderSettings s = _settings!;
-    final ({int dist, int fastDist}) swipeThresholds =
+    final ({int dist, int fastDist, int fastVelocity}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     return ReaderEngineConfig.liveUpdateInvocation(
       marginTop: s.marginTop,
@@ -711,6 +713,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       marginRight: s.marginRight,
       swipeDistThreshold: swipeThresholds.dist,
       swipeFastDistThreshold: swipeThresholds.fastDist,
+      swipeFastVelocity: swipeThresholds.fastVelocity,
       wheelGestureQuietMs: ReaderFushiSource.instance.wheelPageTurnInterval
           .clamp(150, 800),
       scanNonJapaneseText: appModel.scanNonJapaneseText,
@@ -985,7 +988,7 @@ install: function(C) {
     var horizontalEnough = absDx > absDy;
     var distanceEnough =
         absDx >= C.swipeDistThreshold ||
-        (absDx >= C.swipeFastDistThreshold && velocity >= 900);
+        (absDx >= C.swipeFastDistThreshold && velocity >= C.swipeFastVelocity);
     if (horizontalEnough && distanceEnough) {
       return dx < 0 ? 'left' : 'right';
     }
@@ -1123,7 +1126,7 @@ install: function(C) {
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     // BUG-239: 连续模式（fushiContinuousMode）不在此回传 onSwipe——原生滚动沿书写轴
     // 翻屏，到边界由 onBoundarySwipe 跨章；此处的水平 onSwipe 只属分页模式。
-    if (!fushiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= 900))) {
+    if (!fushiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= C.swipeFastVelocity))) {
       if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
@@ -1541,6 +1544,16 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     var p = r.calculateProgress();
     var m = r.paginationMetrics;
     var total = (m && m.totalChars) ? m.totalChars : 0;
+    // VN shell：整章正文被 detach 进游离的 sourceRoot，document 里只剩当前一屏的克隆，
+    // 下面的 createWalker() 兜底只会数到**本屏**字数（几十字），于是 round(p × 本屏字数)
+    // 恒为 0、progress 恒 0.0，Dart 侧去抖把每一次翻屏都当「没动」丢掉，charOffset
+    // 一次也落不了库——退出重开永远回到第 0 屏；打字渐显未完成时 walker 还会剔掉未揭示
+    // 节点让 total 归零、整段返空串。VN 在 initialize 里已算好章级 totalChapterChars
+    // （contentStream.totalMatchableChars），与分页 shell 的 paginationMetrics.totalChars
+    // 同口径，这里直接用它，walker 只留给真没有章级计数的 shell。
+    if (total <= 0 && typeof r.totalChapterChars === 'number' && r.totalChapterChars > 0) {
+      total = r.totalChapterChars;
+    }
     if (total <= 0 && r.createWalker) {
       var walker = r.createWalker();
       var node;

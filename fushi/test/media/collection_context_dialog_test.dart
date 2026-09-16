@@ -46,6 +46,7 @@ void main() {
     required MediaCollectionRow collection,
     required bool injectDeleteMembers,
     String? localFilesSubtitle,
+    String? statisticsSubtitle,
     List<DialogListAction> extraListActions = const <DialogListAction>[],
   }) async {
     final _Probe probe = _Probe();
@@ -68,17 +69,20 @@ void main() {
                       ? (
                           List<MediaCollectionItemRow> members,
                           bool deleteLocalFiles,
+                          bool deleteStatistics,
                         ) async {
                           probe.deletedMembers = members
                               .map((MediaCollectionItemRow m) => m.entryKey)
                               .toList();
                           probe.deleteLocalFiles = deleteLocalFiles;
+                          probe.deleteStatistics = deleteStatistics;
                         }
                       : null,
                   deleteMembersCheckboxLabel: injectDeleteMembers
                       ? t.delete_collection_also_books
                       : null,
                   deleteMembersLocalFilesSubtitle: localFilesSubtitle,
+                  deleteMembersStatisticsSubtitle: statisticsSubtitle,
                   extraListActions: extraListActions,
                 ),
                 child: const Text('open'),
@@ -181,6 +185,66 @@ void main() {
 
     await tapConfirm(tester);
     expect(probe.deleteLocalFiles, isFalse);
+  });
+
+  testWidgets('「同时删除统计数据」同款纪律：主勾选之下才出现，默认不勾，勾了才回调 true',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      statisticsSubtitle: t.delete_statistics_video_desc,
+    );
+
+    await tapDeleteAction(tester);
+    expect(
+      find.text(t.delete_statistics),
+      findsNothing,
+      reason: '主勾选没勾 = 成员本体都不删，统计更无从谈起。',
+    );
+
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    expect(find.text(t.delete_statistics), findsOneWidget);
+    // 默认不勾：此时确认 → false。统计是与「条目还在不在库里」正交的另一类事实，
+    // 默认值必须站在保留那一侧。
+    await tapConfirm(tester);
+    expect(probe.deleteStatistics, isFalse);
+  });
+
+  testWidgets('勾上「同时删除统计数据」→ 回调收到 deleteStatistics=true，且与删本地文件正交',
+      (WidgetTester tester) async {
+    // 主勾选 + 两个二级勾选在 800x600 默认测试窗口里会溢出，点击落到被遮挡的行上。
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: true,
+      localFilesSubtitle: t.delete_local_files_video_desc,
+      statisticsSubtitle: t.delete_statistics_video_desc,
+    );
+
+    await tapDeleteAction(tester);
+    await tester.tap(find.text(t.delete_collection_also_books));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.delete_statistics));
+    await tester.pumpAndSettle();
+    await tapConfirm(tester);
+
+    expect(probe.deleteStatistics, isTrue);
+    expect(
+      probe.deleteLocalFiles,
+      isFalse,
+      reason: '两个二级勾选正交：删统计不代表删磁盘原件',
+    );
   });
 
   testWidgets('二级勾选只在主勾选之下出现，勾上后回调收到 deleteLocalFiles=true',
@@ -459,4 +523,7 @@ class _Probe {
 
   /// 删成员回调收到的「连磁盘原件一起删」判据。null = 回调没被调过。
   bool? deleteLocalFiles;
+
+  /// 删成员回调收到的「连统计一起删」判据。null = 回调没被调过。
+  bool? deleteStatistics;
 }
