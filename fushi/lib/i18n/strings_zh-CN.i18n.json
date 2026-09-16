@@ -4961,5 +4961,7 @@
   "game_text_process_ai_added": "已添加 ${count} 个步骤",
   "game_text_process_ai_failed": "生成失败：${reason}",
   "ai_provider_base_url_invalid": "请填写有效的 HTTP 或 HTTPS 接口地址",
-  "ai_provider_protocol_locked": "由内置预设固定，不可更改"
+  "ai_provider_protocol_locked": "由内置预设固定，不可更改",
+  "delete_statistics": "同时删除统计数据",
+  "delete_statistics_video_desc": "该视频的观看时长、字幕字数与查词/制卡计数将从统计中移除，并同步到其他设备"
 }
