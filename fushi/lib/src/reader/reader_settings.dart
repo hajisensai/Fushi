@@ -474,36 +474,77 @@ class ReaderSettings {
   static bool defaultSwipeToClose(TargetPlatform platform) =>
       !(platform == TargetPlatform.windows || platform == TargetPlatform.linux);
 
-  /// 翻页滑动灵敏度系数（TODO-113）。1.0 = 默认手感；<1 更灵敏（更短的滑动即可
-  /// 翻页），>1 更迟钝（需滑得更远）。系数缩放 JS 端 `_gestureEnd` 的基础距离阈值
-  /// （44px / 快速短滑 22px），见 webview.part.dart `_buildReaderEngineConfig`。
-  static double normalizeSwipePageTurnSensitivity(num value) =>
-      value.toDouble().clamp(0.3, 2.0).toDouble();
+  /// 翻页滑动**灵敏度**（TODO-113 / BUG-2563）。1.0 = 默认手感；**值越大越灵敏**
+  /// （更短的滑动即可翻页），越小越迟钝（需滑得更远）。阈值取 `base / 灵敏度`，
+  /// 见 [swipePageTurnDistThresholds] 与 webview.part.dart `_buildReaderEngineConfig`。
+  ///
+  /// BUG-2563：旧语义是**阈值倍数**（值越大阈值越大 = 越迟钝），但 UI 上这条 slider
+  /// 的标题是「滑动翻页灵敏度」且没有读数（见 settings_schema_reading.dart），于是
+  /// 「想更灵敏 → 往右拖」得到的恰恰是**更迟钝**，且用户无从发现自己拖反了。语义在此
+  /// 翻正：持久化的值就是灵敏度本身，与标题一致，slider 往右恒为更灵敏。
+  static const double minSwipePageTurnSensitivity = 0.5;
+  static const double maxSwipePageTurnSensitivity = 3.0;
+
+  static double normalizeSwipePageTurnSensitivity(num value) => value
+      .toDouble()
+      .clamp(minSwipePageTurnSensitivity, maxSwipePageTurnSensitivity)
+      .toDouble();
 
   /// 灵敏度系数的默认值（1.0 = 默认「轻快」手感）。提成常量是因为 BUG-1426 之后
   /// 它有了**第二个**读取方：spread 独立文档在 settings 尚未就绪时也要算滑动阈值，
   /// 那里若各写一个字面量 1.0，改默认手感只会改到其中一半。
   static const double defaultSwipePageTurnSensitivity = 1.0;
 
-  double get swipePageTurnSensitivity => normalizeSwipePageTurnSensitivity(
-        _get<double>(
-          'swipe_page_turn_sensitivity',
-          defaultSwipePageTurnSensitivity,
-        ),
+  /// 语义翻正后的持久化 key。**刻意换了新 key**：旧 key 存的是「阈值倍数」，与新
+  /// 语义互为倒数，同一个 key 无法区分「旧值 2.0（最迟钝）」与「新值 2.0（很灵敏）」，
+  /// 沿用会把老用户的设置整个翻反。
+  static const String swipeSensitivityKey = 'swipe_page_turn_sensitivity_v2';
+
+  /// 旧「阈值倍数」key。只读、不再写入；[swipePageTurnSensitivity] 读不到新 key 时
+  /// 取它的**倒数**换算出等效灵敏度（倍数 2.0 = 迟钝一倍 = 灵敏度 0.5）。
+  static const String legacySwipeSensitivityMultiplierKey =
+      'swipe_page_turn_sensitivity';
+
+  /// 读时换算而非写盘迁移：[applyPrefsSnapshot] 是**不跑迁移、不写盘**的只读旁路
+  /// （`ReaderFushiSource.resolveEffectiveReaderSettings` 走它），写盘迁移只挂在
+  /// `loadFromPrefsSnapshot` 上会让两条路径读出不同的手感。
+  double get swipePageTurnSensitivity {
+    final dynamic stored = _cache[swipeSensitivityKey];
+    if (stored is num) return normalizeSwipePageTurnSensitivity(stored);
+    final dynamic legacyMultiplier =
+        _cache[legacySwipeSensitivityMultiplierKey];
+    if (legacyMultiplier is num && legacyMultiplier > 0) {
+      return normalizeSwipePageTurnSensitivity(
+        1.0 / legacyMultiplier.toDouble(),
       );
+    }
+    return defaultSwipePageTurnSensitivity;
+  }
+
   Future<void> setSwipePageTurnSensitivity(double v) => _set<double>(
-        'swipe_page_turn_sensitivity',
+        swipeSensitivityKey,
         normalizeSwipePageTurnSensitivity(v),
       );
 
-  /// 基础滑动翻页距离阈值（px）：纯距离触发 [baseSwipeDistPx]，配合速度的快速短滑
-  /// 触发 [baseSwipeFastDistPx]。系数 1.0 = 默认手感（44 / 22）。
+  /// 基础滑动翻页阈值：纯距离触发 [baseSwipeDistPx]，配合速度的快速短滑触发
+  /// [baseSwipeFastDistPx] + [baseSwipeFastVelocityPxPerSec]。灵敏度 1.0 = 24 / 12 / 300。
   ///
-  /// BUG-手机翻页迟钝：旧默认 72 / 36 是照桌面鼠标手感定的，手机上「要滑很长才翻」。
-  /// 降到 44 / 22（「轻快」档），正常一滑即翻；灵敏度系数仍可上调回旧手感（系数≈1.6
-  /// → 70 / 35）。
-  static const int baseSwipeDistPx = 44;
-  static const int baseSwipeFastDistPx = 22;
+  /// BUG-手机翻页迟钝：最早的 72 / 36 是照桌面鼠标手感定的，手机上「要滑很长才翻」，
+  /// 一度降到 44 / 22。
+  ///
+  /// BUG-2563：44 仍明显钝于参考实现。Hoshi-Reader-Android 的
+  /// `SwipePageTouchListener.kt` 只有一个判据——`|dx| >= 72` **原始设备像素**且
+  /// `|dx| >= |dy|`，且那个 72 **不做 density 换算**，因此在 3x 屏手机上的有效阈值
+  /// 只有 **24 CSS px**（2.75x 屏约 26），本仓的 44 差不多是它的 1.8 倍。对齐到 24。
+  ///
+  /// 速度门同理：Hoshi 没有任何自定义速度阈值，只靠 Android `GestureDetector` 内部
+  /// 的 fling 下限（`scaledMinimumFlingVelocity`，平台默认 50 dp/s）。本仓原先要
+  /// 900 px/s——比 Android `ViewPager` 的 400 dp/s 还高一倍多，「快速短滑」这条路
+  /// 实际上几乎从不触发。降到 300 px/s（仍高于平台 fling 下限，不至于把惯性滚动
+  /// 的尾巴误判成翻页）。
+  static const int baseSwipeDistPx = 24;
+  static const int baseSwipeFastDistPx = 12;
+  static const int baseSwipeFastVelocityPxPerSec = 300;
 
   /// 查词「原地轻点」的触摸轨迹半径（CSS px）。**固定值、不随灵敏度系数缩放**——
   /// 它是「点」与「滑」的意图判据，不是翻页距离。
@@ -517,16 +558,21 @@ class ReaderSettings {
   /// 不查词。TODO-971 的慢点词由去掉 500ms 时限保证，不需要宽松的 28px 框。
   static const int tapSlopPx = 10;
 
-  /// 把灵敏度系数 [sensitivity] 解析成 JS `_gestureEnd` 用的两个距离阈值（px）。
-  /// 系数越大阈值越大（越迟钝，需滑得更远）；越小越灵敏。这是 reader 注入脚本与
-  /// 守卫测试共用的单一真相，保证「改系数→阈值变」在 UI 与 JS 两侧一致（TODO-113）。
-  static ({int dist, int fastDist}) swipePageTurnDistThresholds(
-    double sensitivity,
-  ) {
+  /// 把 [sensitivity] 解析成 JS `_gestureEnd` 用的三个阈值。**灵敏度越大阈值越小**
+  /// （越灵敏，更短/更慢的滑动即可翻页）。这是 reader 注入脚本与守卫测试共用的单一
+  /// 真相，保证「改灵敏度→阈值变」在 UI 与 JS 两侧一致（TODO-113）。
+  ///
+  /// [dist] 的下界是 `tapSlopPx + 1`，不是一个随手定的小数：低于它，一次净位移不到
+  /// 查词轨迹半径的横向抖动就会翻页，「点词」会被翻页整片吃掉。tap 判的是**轨迹**
+  /// 半径、swipe 判的是**净位移**，而轨迹半径恒 ≥ 净位移，所以只要 `dist > tapSlopPx`
+  /// 两者就不可能同时命中。
+  static ({int dist, int fastDist, int fastVelocity})
+      swipePageTurnDistThresholds(double sensitivity) {
     final double s = normalizeSwipePageTurnSensitivity(sensitivity);
     return (
-      dist: (baseSwipeDistPx * s).round().clamp(8, 600),
-      fastDist: (baseSwipeFastDistPx * s).round().clamp(4, 600),
+      dist: (baseSwipeDistPx / s).round().clamp(tapSlopPx + 1, 600),
+      fastDist: (baseSwipeFastDistPx / s).round().clamp(8, 600),
+      fastVelocity: (baseSwipeFastVelocityPxPerSec / s).round().clamp(80, 4000),
     );
   }
 
