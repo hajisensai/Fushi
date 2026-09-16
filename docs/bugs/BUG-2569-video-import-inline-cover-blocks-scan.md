@@ -8,7 +8,7 @@
   - 连带把「元数据不出」一并造出来：ffmpeg-kit 被抽帧占满 → `VideoSpecsService` 的 ffprobe（并发上限 2、20s 超时）成片超时 → 见 [BUG-2571](BUG-2571-video-specs-probe-timeout-cached-as-terminal.md)。
   - `_importPlaylists` 同病更重（`source_library_scanner.dart:1300-1330`）：`extractPlaylistCover` 会**逐集重试**直到抽出一帧，一个坏清单单独就能把扫描拖到分钟级。
 - **关键事实**：这段工作**完全是多余的**。书架侧早有专门的增量补齐产线 `HomeVideoPage._maybeBackfillCovers`（`home_video_page.dart:1073`，BUG-1564 建立）：扫「缺封面的本地可抽帧行」逐个补，带节流刷新（每秒至多一次全库重列）、会话级失败账本 `CoverBackfillLedger`、`diagnosticOnly: true` 降级（抽不出不算错误），并且由 `watchVideoBookUids` 流在**新行落库时**自动触发（`_onVideoUidsChanged` → `_refresh` → `_maybeBackfillCovers`）。也就是说导入留空封面，一条都不会漏。
-- **[x] ① 已修复** — `<PENDING>`
+- **[x] ① 已修复** — `57c3e7a2cca`
   - `_importVideos`：删掉整段内联抽封面 + 封面锁，改为 `coverPath: null` 直接落库。导入的契约回到「把条目放进库」，封面归书架补齐产线。
   - `_importPlaylists`：同样删掉 `extractPlaylistCover` 那段。拆出来的各集都是带真实路径的本地行，补齐产线本来就是为「拆集导入只有首集有封面」写的。
   - 附带摘掉两个随之失效的 import（`cover_meta_store.dart` / `video_storage.dart`）。

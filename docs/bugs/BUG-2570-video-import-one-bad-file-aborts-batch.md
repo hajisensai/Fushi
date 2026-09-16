@@ -6,7 +6,7 @@
   - 任一抛出 → 冒到 `_scanUnlocked` 的总 catch（`:655`）→ `scanError = e.toString()`。而 video 分支的 `mediaCount = createdVideoPaths.length` 在 `_importVideos` **返回之后**才赋值，于是 `mediaCount` 停在 **0**。
   - 用户侧观感：扫 200 个视频，其中一个的 sidecar 字幕读不了（外接盘掉线 / SAF 权限被回收 / 文件正被移动 / 编码异常），**一条都不入库**，只弹一句没有文件名、没有阶段的 `PathNotFoundException: ...`。重扫仍然撞同一个文件 → 「反复报错、始终没有结果」。
   - 对照组：`_importBooks`（`:670`）是逐文件 `try`，`_importManga` 亦然；video 分支是这三者里唯一漏掉的。
-- **[x] ① 已修复** — `<PENDING>`
+- **[x] ① 已修复** — `57c3e7a2cca`
   - `_importVideos`：循环体裹逐文件 `try/catch`，失败只作废该文件，记进 `failedPaths` + 留第一条 `firstError`；返回类型从 `List<String>` 改为 `({createdPaths, failedPaths, firstError})`。
   - `_scanUnlocked`：`failedPaths` 非空时汇总成一条**能照着查**的错误——`Imported N video(s); M failed. First failure: <basename> — <error>`，经新的 `partialError` 局部变量在写库前 `scanError ??= partialError` 顶上去。
   - **不是吞异常**：失败照样上报、照样落 `lastScanError`、照样弹 toast；变的是「失败的粒度」与「错误说不说得清是谁」。整次扫描中断的异常优先级仍高于逐文件汇总（那是更严重的事）。

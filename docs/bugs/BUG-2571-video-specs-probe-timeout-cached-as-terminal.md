@@ -5,7 +5,7 @@
   - `VideoSpecsService._probeAndStore`（`fushi/lib/src/media/video/video_specs_service.dart:325-345`）见到 `facts.isEmpty` 就 `_cache[path] = null`。而 `isResolved` 的判据是 `_cache.containsKey(path)`——写进去就是**终局**，本次会话再也不会重探（不落库，所以下次冷启动才会重试）。
   - 触发路径：导入期 ffmpeg-kit 被封面抽帧占满（[BUG-2569](BUG-2569-video-import-inline-cover-blocks-scan.md)），规格探测并发只有 2（`kVideoSpecsProbeConcurrency`）、超时 20s（`kVideoDurationProbeTimeout`），于是**整库文件在那几分钟里被成片判死**。用户导入完成后滚动书架，清晰度/HDR/编码角标一个都不出——而且怎么刷都不出，直到重启 app。
   - 这正是用户说的「metadata doesn't load **at all**」：不是慢，是被结构性地判成了「没有」。
-- **[x] ① 已修复** — `<PENDING>`
+- **[x] ① 已修复** — `57c3e7a2cca`
   - 引擎层给探测结果加身份：`VideoProbeFacts.isUnavailable` + 哨兵常量 `VideoProbeFacts.unavailable`。`probeVideoFacts` 的「非零退出（含超时的 `returnCode: null`）」与「抛异常」两条分支改返回 `unavailable`；只有真正跑通、解析出空的才仍是 `empty`。
   - 服务层据此分流：`isUnavailable` **不写 `_cache`**（不产生终局结论，`isResolved` 保持 false），改记冷却 `_retryAfter[path]`，`kVideoSpecsProbeRetryCooldown = 90s`。冷却只拦 `prime`（滚动触发的批量预取），防止「立刻重排 → 立刻再超时」的空转风暴。
   - `resolve`（用户点开详情页的**显式**动作）不看冷却，一律立刻重探——与「下拉刷新清封面失败账本」同一条纪律：用户明示要结果就再试一次。
