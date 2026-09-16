@@ -23,6 +23,7 @@ void main() {
         marginRight: 12,
         swipeDistThreshold: 44,
         swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
         wheelGestureQuietMs: 300,
         scanNonJapaneseText: false,
       );
@@ -46,6 +47,7 @@ void main() {
         'marginRight': 12,
         'swipeDistThreshold': 44,
         'swipeFastDistThreshold': 22,
+        'swipeFastVelocity': 300,
         'wheelGestureQuietMs': 300,
         'scanNonJapaneseText': false,
       });

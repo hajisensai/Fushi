@@ -29,6 +29,7 @@ void main() {
       rightUrl: rightUrl,
       swipeDistThreshold: 44,
       swipeFastDistThreshold: 22,
+      swipeFastVelocity: 300,
     );
 
     test('两张整页图 URL 与 spreadReady 信号都在', () {
