@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2368 条。点号进各自文件。
+> 共 2369 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2566](bugs/BUG-2566-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
 | [BUG-2563](bugs/BUG-2563-swipe-longpress-sensitivity.md) | ✅ | ✅ | 滑动翻页灵敏度不足且设置项方向反了；长按选择不灵敏、没有高亮 |
 | [BUG-2562](bugs/BUG-2562-ankiconnect-mine-keeps-dup-cooldown.md) | ✅ | ✅ | AnkiConnect 制卡成功不解除查重冷却，桌面上刚制好的卡也画不出 ✓ |
 | [BUG-2561](bugs/BUG-2561-ios-mine-ledger-stale.md) | ✅ | ✅ | iOS 在 Anki 里删掉卡后 Fushi 仍画 ✓，没有任何纠正出口 |
