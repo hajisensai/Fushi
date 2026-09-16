@@ -210,6 +210,7 @@ class _Rig {
       previousFrame: _noop,
       nextFrame: _noop,
       screenshot: _noop,
+      screenshotSubtitled: _noop,
       toggleFullscreen: _noop,
       toggleSubtitleList: _noop,
       searchSubtitleList: _noop,

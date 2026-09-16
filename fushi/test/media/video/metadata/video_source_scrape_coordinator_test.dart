@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.
 import 'package:fushi_engine/media/video/metadata/video_metadata_asset_downloader.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
@@ -1236,6 +1237,236 @@ void main() {
     final List<VideoSourceScrapeRunRow> runs =
         await db.getVideoSourceScrapeRuns(sourceId: source.id);
     expect(runs.single.scope, 'work');
+  });
+
+  group('AI 歧义消解', () {
+    // 15 条目录候选（anidb:1..15）全部只剩待确认：与「AniDB 模糊目录候选只在
+    // 人工确认后抓取选中项详情」同一套假 provider，AI 只是在人工确认前多一道。
+    Future<VideoSourceScrapeCoordinator> buildCoordinator(
+      _CatalogConfirmationAniDbProvider provider, {
+      required AiVideoIdentityDecider? decider,
+    }) async =>
+        VideoSourceScrapeCoordinator(
+          primaryProvider: VideoMetadataProviderKind.anidb,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            provider,
+          ]),
+          aiIdentityDecider: decider,
+        );
+
+    test('高置信判定：不弹人工确认，绑定该候选并在运行记录留 ai:matched 标记',
+        () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final List<AiVideoIdentityQuery> queries = <AiVideoIdentityQuery>[];
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async {
+          queries.add(query);
+          return const AiVideoIdentityDecision(
+            key: 'anidb:7',
+            confidence: 0.93,
+            reason: '标题与年份一致',
+          );
+        },
+      );
+      bool confirmationAsked = false;
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+          confirmationAsked = true;
+          return confirmation.candidates.first;
+        },
+      );
+
+      expect(confirmationAsked, isFalse, reason: '高置信判定不该再问用户');
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(report.pendingConfirmations, 0);
+      // 与人工确认走同一条后续路径：目录候选选中后抓取选中项详情并落库。
+      expect(provider.fetchedIds, <String>['7']);
+      expect(
+        (await db.getVideoMetadataWorkByBook('movie-book'))?.title,
+        'Confirmed Anime',
+      );
+      // 提问只带已取回的候选，不新增网络请求（搜索次数不因 AI 增加）。
+      final AiVideoIdentityQuery query = queries.single;
+      expect(query.candidateKeys, hasLength(15));
+      expect(query.candidateKeys, contains('anidb:7'));
+      expect(query.localTitles, isNotEmpty);
+      expect(query.sampleFileNames, <String>['Movie (2024).mkv']);
+      // 运行记录：warnings 里有一条 ai:matched 标记，且随 summaryJson 落库。
+      final SourceScrapeIssue note = report.warnings.singleWhere(
+        (SourceScrapeIssue issue) =>
+            parseVideoScrapeAiIdentityNote(issue.message) != null,
+      );
+      expect(note.workTitle, 'Movie');
+      expect(
+        parseVideoScrapeAiIdentityNote(note.message)!.confidencePercent,
+        93,
+      );
+      expect(parseVideoScrapeAiIdentityNote(note.message)!.reason, '标题与年份一致');
+      final List<VideoSourceScrapeRunRow> runs =
+          await db.getVideoSourceScrapeRuns(sourceId: source.id);
+      expect(runs.single.summaryJson, contains('ai:matched'));
+    });
+
+    test('低置信判定：仍弹人工确认，运行记录不留 AI 标记', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:7', confidence: 0.6),
+      );
+      bool confirmationAsked = false;
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+          confirmationAsked = true;
+          expect(confirmation.candidates, hasLength(15));
+          return confirmation.candidates.last;
+        },
+      );
+
+      expect(confirmationAsked, isTrue);
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(provider.fetchedIds, <String>['15']);
+      expect(
+        report.warnings.where((SourceScrapeIssue issue) =>
+            parseVideoScrapeAiIdentityNote(issue.message) != null),
+        isEmpty,
+      );
+    });
+
+    test('decider 抛异常：仍弹人工确认，刮削不失败', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async =>
+            throw StateError('ai down'),
+      );
+      bool confirmationAsked = false;
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+        onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+          confirmationAsked = true;
+          return confirmation.candidates.last;
+        },
+      );
+
+      expect(confirmationAsked, isTrue);
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(report.failedWorks, 0);
+      expect(report.errors, isEmpty);
+      final List<VideoSourceScrapeRunRow> runs =
+          await db.getVideoSourceScrapeRuns(sourceId: source.id);
+      expect(runs.single.status, 'completed');
+    });
+
+    test('后台批次（无确认回调）：高置信判定直接收敛，不再落待确认', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async =>
+            const AiVideoIdentityDecision(key: 'anidb:3', confidence: 0.9),
+      );
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      expect(report.pendingConfirmations, 0);
+      expect(provider.fetchedIds, <String>['3']);
+    });
+
+    test('未注入 decider：歧义照旧落待确认（行为不变）', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      final VideoSourceScrapeCoordinator coordinator =
+          await buildCoordinator(provider, decider: null);
+
+      final SourceScrapeReport report = await coordinator.scrapeSource(
+        source,
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+
+      expect(report.pendingConfirmations, 1);
+      expect(report.succeededWorks, 0);
+      expect(provider.fetchCount, 0);
+    });
+
+    test('同一目录同一批候选只问一次 AI（用户取消后重扫不重问）', () async {
+      final SourceLibraryRow source = await _createMovieSource(
+        db,
+        root,
+        provider: VideoMetadataProviderKind.anidb,
+      );
+      final _CatalogConfirmationAniDbProvider provider =
+          _CatalogConfirmationAniDbProvider();
+      int deciderCalls = 0;
+      final VideoSourceScrapeCoordinator coordinator = await buildCoordinator(
+        provider,
+        decider: (AiVideoIdentityQuery query) async {
+          deciderCalls++;
+          return const AiVideoIdentityDecision(key: null, confidence: 0.2);
+        },
+      );
+
+      for (int round = 0; round < 2; round++) {
+        final SourceScrapeReport report = await coordinator.scrapeSource(
+          source,
+          cancellationToken: VideoSourceScrapeCancellationToken(),
+          onProgress: (_) {},
+          onConfirmation: (VideoSourceScrapeConfirmation confirmation) async =>
+              null,
+        );
+        expect(report.pendingConfirmations, 1, reason: 'round $round');
+      }
+
+      expect(deciderCalls, 1);
+    });
   });
 }
 

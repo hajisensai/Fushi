@@ -163,5 +163,54 @@ function glossary(dictionary, content, termTags = '', definitionTags = '') {
     'a standalone word without redirect metadata must not be guessed away',
   );
 
+  // BUG-2566: OALDPE10 real shapes (dumped from the user's dictionary). Every
+  // phrasal-verb record starts with a self-redirect label and then carries the
+  // definition as structured content; alias records carry the label alone.
+  const oaldpeAliasOnly = glossary(
+    'OALDPE10',
+    [['give-up', ['Redirected from give up']]],
+  );
+  const oaldpePhrasalContent = [
+    ['give up', ['Redirected from give up']],
+    {
+      type: 'structured-content',
+      content: {
+        tag: 'div',
+        content: [
+          { tag: 'div', content: 'give up' },
+          {
+            tag: 'ol',
+            content: [
+              { tag: 'li', content: [{ tag: 'span', content: 'to stop trying to do something' }] },
+            ],
+          },
+        ],
+      },
+    },
+  ];
+  const oaldpePhrasal = glossary('OALDPE10', oaldpePhrasalContent, '', 'phrasal');
+  // The popup bridge hands content over as a JSON string; same verdict.
+  const oaldpePhrasalJson = glossary(
+    'OALDPE10',
+    JSON.stringify(oaldpePhrasalContent),
+    '',
+    'phrasal',
+  );
+  assert.strictEqual(sb.window.__test.isRedirect(oaldpeAliasOnly), true,
+    'an OALDPE10 alias record (label only) is redirect-only');
+  assert.strictEqual(sb.window.__test.isRedirect(oaldpePhrasal), false,
+    'an OALDPE10 phrasal-verb record with a definition next to the label must stay');
+  assert.strictEqual(sb.window.__test.isRedirect(oaldpePhrasalJson), false,
+    'the JSON-string form of that record must stay too');
+  const phrasalOut = sb.window.__test.wrap({
+    expression: 'give up',
+    reading: '',
+    glossaries: [oaldpeAliasOnly, oaldpePhrasal, oxfordDefinition],
+    frequencies: [],
+    pitches: [],
+  });
+  assert.deepStrictEqual(phrasalOut.dictNames, ['OALDPE10', 'Oxford Dictionary of English'],
+    'OALDPE10 keeps its card through the definition-bearing record');
+
   console.log('popup_redirect_entry_filter_test.js: all assertions passed');
 })();

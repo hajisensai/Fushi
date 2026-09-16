@@ -105,8 +105,11 @@ import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/media/video/video_screenshot_compose.dart';
+import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_screenshot_filename.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/focus/panel_focus_scope.dart';
@@ -5508,8 +5511,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       nextFrame: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.frameStep(forward: true)),
       ),
-      screenshot: () =>
-          _runWhenImmersiveAllowsShortcuts(() => unawaited(_saveScreenshot())),
+      screenshot: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_saveScreenshot(withSubtitles: false)),
+      ),
+      screenshotSubtitled: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_saveScreenshot(withSubtitles: true)),
+      ),
       toggleFullscreen: () => _runWhenImmersiveAllowsShortcuts(() {
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted) {
@@ -8735,7 +8742,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (_hasQualityMenu)
         item(Icons.high_quality, t.video_quality, _showQualityMenu),
       const PopupMenuDivider(),
-      item(Icons.photo_camera_outlined, t.video_screenshot, _saveScreenshot),
+      item(
+        Icons.photo_camera_outlined,
+        t.video_screenshot,
+        () => unawaited(_saveScreenshot()),
+      ),
+      item(
+        Icons.subtitles_outlined,
+        t.video_screenshot_subtitled,
+        () => unawaited(_saveScreenshot(withSubtitles: true)),
+      ),
       item(
         Icons.movie_creation_outlined,
         t.video_clip_export,

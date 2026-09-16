@@ -45,6 +45,7 @@ void main() {
         rightUrl: 'fushi.local/r.png',
         swipeDistThreshold: 44,
         swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
       );
       expect(spread, contains(kPagedWheelGestureHelperJs),
           reason: 'spread 文档必须拼同一份常量；手抄第二遍正是 BUG-1745 漏改的根因');
@@ -79,6 +80,7 @@ void main() {
         rightUrl: 'fushi.local/r.png',
         swipeDistThreshold: 44,
         swipeFastDistThreshold: 22,
+        swipeFastVelocity: 300,
       );
       final Directory temp =
           Directory.systemTemp.createTempSync('hibiki-pr912-wheel-js-');

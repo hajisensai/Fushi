@@ -126,6 +126,7 @@ class RemoteAudiobookInfo {
     this.delayMs = 0,
     this.delayUpdatedAtMs = 0,
     this.importedAt,
+    this.hasAudio,
   });
 
   final String bookKey;
@@ -152,6 +153,16 @@ class RemoteAudiobookInfo {
   /// 序，缺失时回落既有负数目录序。
   final int? importedAt;
 
+  /// host 上这本有声书的音频**此刻真的在磁盘上**吗（BUG-2551）。
+  ///
+  /// 清单的其余字段全是 DB 行的投影，而「有 Audiobooks / SrtBooks 行」不等于
+  /// 「有音频」：零音频行与断链行在表里长得和正常有声书一模一样。没有这个能力位，
+  /// client 的 sweep 只能凭「清单里有这一项」认定对端已有音频，于是 host 上一本
+  /// 坏书会把该 key 永久挡在 `toPush` 之外——再点多少次「立即同步」都不自愈。
+  ///
+  /// null = 旧 host 不下发此字段，**未知**（消费方必须按旧行为放行，不能当 false）。
+  final bool? hasAudio;
+
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
 
@@ -167,6 +178,7 @@ class RemoteAudiobookInfo {
         if (delayMs != 0) 'delayMs': delayMs,
         if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
         if (importedAt != null) 'importedAt': importedAt,
+        if (hasAudio != null) 'hasAudio': hasAudio,
       };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -182,6 +194,8 @@ class RemoteAudiobookInfo {
         delayMs: (json['delayMs'] as num?)?.toInt() ?? 0,
         delayUpdatedAtMs: (json['delayUpdatedAtMs'] as num?)?.toInt() ?? 0,
         importedAt: (json['importedAt'] as num?)?.toInt(),
+        // 缺键 / 非 bool → null（未知），**不是** false：旧 host 的清单一律放行。
+        hasAudio: json['hasAudio'] is bool ? json['hasAudio']! as bool : null,
       );
 }
 

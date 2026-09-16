@@ -126,6 +126,20 @@
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 		<!--
+			BUG-2558：后台音频。缺这个键时 iOS 在 app 进后台那一刻就挂起进程，有声书
+			立刻断声——锁屏听书、切到别的 app 继续听、控制中心的播放控件全都不成立，
+			而 audio_service 的 Now Playing / 远程控制也就跟着形同虚设（插件装了、
+			`AVAudioSessionCategory.playback` 也配了，缺的只是这条声明）。
+			「后台播放有声书时照常计学习统计」这条行为在 iOS 上同样以它为前提：进程
+			被挂起就没有播放态可言，统计判据自然也永远走不到那条豁免。
+			只声明 audio 一项：本 app 的后台需求就是播音频，多声明的模式会在审核时
+			被要求逐条举证用途。
+		-->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>audio</string>
+		</array>
+		<!--
 			出口合规声明。不写这个键的话，每个上传到 TestFlight 的构建都会卡在
 			「缺少出口合规信息」，必须去 App Store Connect 网页上手动答一遍问卷才
 			能分发给测试员 —— CI 自动发布就没有意义了。
