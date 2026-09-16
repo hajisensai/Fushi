@@ -1465,6 +1465,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       (_settings?.writingMode ?? 'vertical-rl') == 'vertical-rl';
 
   int _currentChapter = 0;
+  // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
+  // 树。只随 _book 失效，故这两个字段总是成对写。
+  List<TtuTocEntry>? _ttuTocCache;
+  EpubBook? _ttuTocCacheBook;
   bool _readerContentReady = false;
   // BUG-2015：连续模式跨章前捕获旧视口，加载期间继续展示，目标章就绪后淡出。
   // 这张图只跨一次章节导航存活；不用于分页/手动跳转，也不落盘。
