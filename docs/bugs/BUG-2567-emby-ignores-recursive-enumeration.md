@@ -55,10 +55,11 @@
     不标 busy 就是「按了没反应、于是连按五次发五轮枚举」）。刻意不另写刷新逻辑，
     否则手动同步 / TTL 穿透 / 封面回填记账清空迟早在其中一边漏掉。
 - **[x] ② 已加自动化测试** —
-  - `fushi/test/sync/jellyfin_hierarchy_fallback_test.dart`（新增 5 条）：用 MockClient 复刻
+  - `fushi/test/sync/jellyfin_hierarchy_fallback_test.dart`（新增 6 条）：用 MockClient 复刻
     「忽略 Recursive」的服务器形状，钉住 ① 剧集库不再为空且按剧名折叠成合集、
     ② **守规矩的服务器一发都不多打**、③ 预算闸生效且报 `truncated`、
-    ④ `/Shows/…/Episodes` 404 时回落列子级不致空库、⑤ 容器成环必须终止。
+    ④ `/Shows/…/Episodes` 404 时回落列子级不致空库、⑤ 单容器彻底失败不拖垮整库、
+    ⑥ 容器成环必须终止。
   - `fushi/test/pages/home_video_refresh_remote_guard_test.dart`（追加 2 条）：页头刷新按钮
     存在且带 busy 门控；`_refreshFromHeader` 必须委托 `_pullToRefresh`、不得自绕取数。
 - **备注**：

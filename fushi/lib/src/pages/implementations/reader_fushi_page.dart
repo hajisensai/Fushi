@@ -467,18 +467,35 @@ int absoluteCharOffsetOf({
   return chapterCumulativeChars[chapter] + clamped;
 }
 
-/// 阅读时钟「此刻可跑」的统一判据（BUG-2209 / BUG-2208）。
+/// 阅读时钟「此刻可跑」的统一判据（BUG-2209 / BUG-2208 / BUG-2558）。
 ///
 /// 三个正交旗：用户点状态行计时器手动暂停（[manualPause]）、app 切后台 / 桌面失焦
 /// （[lifecycleStopped]）、阅读器面板 / 弹层 / 全页路由压在正文上（[modalDepth] > 0，
 /// 对齐 Hoshi Android 的 `modalPaused`）。任一为真都不算在读。页面里所有 start /
 /// stop 决策只经这一个判据——旧实现 `_ensureStudyClock` 只看手动暂停旗，后台听书
 /// 跟随每次翻章 / 进度刷新都经它把已被生命周期停掉的时钟重新起表。
+///
+/// BUG-2558：[audiobookPlaying]（有声书**此刻真在出声**）是唯一能豁免生命周期停表
+/// 的输入。切后台 / 锁屏 / 桌面 Alt+Tab 之后音频经媒体中心继续播，用户就是在听书
+/// 学习，这段时间必须照常计时；一旦媒体中心按下暂停 / 播完 / 会话结束，
+/// [audiobookPlaying] 立刻回到 false，判据随之停表。BUG-2209 防的「后台挂起 / 熄屏 /
+/// 睡眠的墙钟被一次性计入」依然成立——**没在播就不计**，豁免要的是正在出声这条具体
+/// 证据，不是「后台」这个状态本身。
+///
+/// 后台分支**不看 [modalDepth]**：[modalDepth] 的语义是「用户在操作压住正文的面板，
+/// 不是在读」，而屏幕已经关掉 / 窗口已经切走时面板一样不可见，这条语义不成立；从有声
+/// 书面板点下播放再锁屏是最常见的听书路径，看 [modalDepth] 会把它整段吞掉。前台仍按
+/// BUG-2208 原样停表（面板开着听书 = 在调面板）。[manualPause] 任何时候都一票否决。
 bool studyClockMayRun({
   required bool manualPause,
   required bool lifecycleStopped,
   required int modalDepth,
-}) => !manualPause && !lifecycleStopped && modalDepth == 0;
+  required bool audiobookPlaying,
+}) {
+  if (manualPause) return false;
+  if (lifecycleStopped) return audiobookPlaying;
+  return modalDepth == 0;
+}
 
 // BUG-2424：跨章去抖判据 `chapterTurnCoolingDown` 连同 TODO-1229 / BUG-568 / BUG-1829
 // 那整套时间窗（`_kChapterTurnCooldown` / `_lastChapterTurnAt` /
@@ -1894,6 +1911,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
   int _studyClockModalDepth = 0;
 
+  /// 上一次喂给 [_noteAudiobookPlayingForStudyClock] 的有声书播放态镜像（BUG-2558）。
+  ///
+  /// **只用于边沿检测**（播放态翻转时才 sync 时钟运行态）；[_studyClockMayRun] 判定时
+  /// 现读控制器，不读这里——镜像滞后一帧无所谓，判据滞后就会多计。
+  bool _audiobookPlayingForStudyClock = false;
+
   // TODO-291 阶段2：audioHandler 控制流（play/seek/skip/悬浮字幕翻转）订阅已上移到
   // [AudiobookSession]（进程级），reader 不再持有这些订阅。
 
@@ -3111,6 +3134,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // kMaxReadingGap 守卫）再封段落库，时长与字数在同一段里一起写穿。
       // BUG-2209：置生命周期旗再经统一判据停表——后台听书跟随经 _ensureStudyClock
       // 到达时看到旗子，不会把时钟重新起起来。
+      // BUG-2558：判据里「有声书此刻在播」能豁免这枚旗（媒体中心后台播放 = 在听书
+      // 学习，照常计时），所以这里只管置旗，停不停交给 _syncStudyClockRunState。
+      // 熄屏 / 挂起但**没在播**的情形与从前完全一致：判据照样停表。
       _studyClockLifecycleStopped = true;
       _syncStudyClockRunState();
     } else if (state == AppLifecycleState.resumed) {

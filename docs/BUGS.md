@@ -29,21 +29,27 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2370 条。点号进各自文件。
+> 共 2376 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2573](bugs/BUG-2573-mine-word-audio-datauri-plus-normalized.md) | ✅ | ✅ | 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格 |
 | [BUG-2567](bugs/BUG-2567-emby-ignores-recursive-enumeration.md) | ✅ | ✅ | Emby 兼容服务器忽略 Recursive/IncludeItemTypes 导致剧集库在影片页整库为空 |
 | [BUG-2566](bugs/BUG-2566-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
+| [BUG-2565](bugs/BUG-2565-video-collection-delete-subtitles.md) | ✅ | ✅ | 删视频/合集勾选「同时删除本地文件」时，同目录的外挂字幕文件不会被删除 |
+| [BUG-2564](bugs/BUG-2564-game-hook-chars-not-live.md) | ✅ | ✅ | galgame hook 字数 500 字/60 秒才落库、不经 StudyClock，学习统计翻几行后仍为 0 |
 | [BUG-2563](bugs/BUG-2563-swipe-longpress-sensitivity.md) | ✅ | ✅ | 滑动翻页灵敏度不足且设置项方向反了；长按选择不灵敏、没有高亮 |
 | [BUG-2562](bugs/BUG-2562-ankiconnect-mine-keeps-dup-cooldown.md) | ✅ | ✅ | AnkiConnect 制卡成功不解除查重冷却，桌面上刚制好的卡也画不出 ✓ |
 | [BUG-2561](bugs/BUG-2561-ios-mine-ledger-stale.md) | ✅ | ✅ | iOS 在 Anki 里删掉卡后 Fushi 仍画 ✓，没有任何纠正出口 |
 | [BUG-2560](bugs/BUG-2560-ios-mine-check-late.md) | ✅ | ✅ | iOS 制卡后「已制卡 ✓」不刷新，要重新点词才出现 |
 | [BUG-2559](bugs/BUG-2559-reader-gallery-illustrations-incomplete.md) | ✅ | ✅ | 阅读器插图画廊漏图且遮罩与书架不一致 |
+| [BUG-2558](bugs/BUG-2558-audiobook-background-study-clock.md) | ✅ | ✅ | 后台播放有声书时统计不计时（媒体中心后台听书全程无统计写入方） |
+| [BUG-2557](bugs/BUG-2557-android-gamepad-triggers-shoulder-keys.md) | ✅ | ✅ | Android 手柄 LT/RT 扳机永不到达 app、LB/RB 整屏滚动无执行体、未绑定 X/Y 被系统兜底成退格/空格 |
 | [BUG-2556](bugs/BUG-2556-vn-progress-total-screen-only.md) | ✅ | ✅ | 视觉小说模式翻屏后阅读位置不落库，重开书回到章首 |
 | [BUG-2555](bugs/BUG-2555-manga-online-lookup-waits-mining-page.md) | ✅ | ✅ | 在线漫画查词前串行等待制卡页物化 |
 | [BUG-2554](bugs/BUG-2554-manga-lookup-no-highlight.md) | ✅ | ✅ | 漫画查词命中字不高亮 |
 | [BUG-2553](bugs/BUG-2553-manga-popup-barrier-blocks-relookup.md) | ✅ | ✅ | 漫画查词弹窗开着时点另一个词只关栈不换词 |
+| [BUG-2551](bugs/BUG-2551-interconnect-audiobook-zero-audio-package.md) | ✅ | ✅ | 互联同步有声书只过去字幕、音频丢失且永不重推 |
 | [BUG-2550](bugs/BUG-2550-reader-stepper-label-truncated.md) | ✅ | ✅ | 阅读设置面板窄窗下 stepper 行标签被压成一个字 |
 | [BUG-2549](bugs/BUG-2549-english-phrasal-verb-deinflection.md) | ✅ | ✅ | 英语短语动词的变形查不到原形（gave up / picked it up 还原不到 give up / pick up） |
 | [BUG-2548](bugs/BUG-2548-collection-detail-drops-remote-members.md) | ✅ | ✅ | 合集详情页丢掉全部远端成员：行头 N 项、点进去只剩本地几本 |

@@ -20,8 +20,11 @@ import 'package:fushi_core/fushi_core.dart';
 ///  ⑥ 回填幂等——再开一次不会产生重复行；
 ///  ⑦ user_version 升到当前 schemaVersion（55）。
 void main() {
-  /// v53 shape 的最小库：只建 preferences（回填源）+ 写入 user_version=53。
+  /// v53 shape 的最小库：只建 preferences（回填源）+ profiles + 写入 user_version=53。
   /// 其余 v53 表不建——迁移里的建表都有 `_tableExists` 守卫，缺表不影响本用例。
+  /// profiles 必须在场：v105 起游玩会话按 Profile 分区，用例里的
+  /// `getGalgameSessions` / `insertGalgameSession` 要经 `resolveActiveProfileId`
+  /// 读它（空表 = 无 Profile = 分区键 0，写读自洽）。
   Future<FushiDatabase> openV53Db(String? galgameLibraryJson) async {
     final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
@@ -31,6 +34,14 @@ void main() {
 CREATE TABLE preferences (
   key TEXT NOT NULL PRIMARY KEY,
   value TEXT NOT NULL
+)
+''');
+          rawDb.execute('''
+CREATE TABLE profiles (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 )
 ''');
           if (galgameLibraryJson != null) {
