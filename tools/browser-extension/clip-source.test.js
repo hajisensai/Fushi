@@ -78,11 +78,26 @@ test('畸形 / 缺失 / 非法 p 一律按第 1 P，不产生 NaN', () => {
   }
 });
 
-test('B 站番剧页不谎报可裁（pgc 走另一套 epid→cid，服务端还没有解析器）', () => {
+test('B 站番剧页（/bangumi/play/ep<id>）走 bilibili-pgc 档', () => {
   const ctx = load('https://www.bilibili.com/bangumi/play/ep1234567');
   assert.strictEqual(ctx.fushiSite(), 'bilibili');
+  assertClip(ctx.fushiClipSource(), {
+    kind: 'bilibili-pgc', id: '1234567', mode: 'immediate',
+  }, 'bilibili 番剧页');
+  // 番剧没有「分 P」：ep_id 本身就是分集，多带一个 part 会让服务端按第 N 个分 P 去找 cid。
+  assert.strictEqual(ctx.fushiClipSource().part, undefined);
+});
+
+test('季页 /bangumi/play/ss<id> 拿不到 ep_id → 不谎报可裁（维持现状）', () => {
+  const ctx = load('https://www.bilibili.com/bangumi/play/ss12345');
+  assert.strictEqual(ctx.fushiSite(), 'bilibili');
   assert.strictEqual(ctx.fushiClipSource(), null,
-    '拿不到 bvid 就该返回 null —— 卡照样出（解码帧+例句），只是没有句子音频');
+    'URL 里没有 ep_id，隔离世界也读不到页面内部变量 —— 卡照样出（解码帧+例句），无句子音频');
+});
+
+test('稿件页仍带数字 part（番剧不该把这条回归掉）', () => {
+  const ctx = load('https://www.bilibili.com/video/BV1Este6wExx?p=7');
+  assert.strictEqual(ctx.fushiClipSource().part, 7);
 });
 
 test('bilibili.tv（国际站）不是 bilibili.com，不得混为一谈', () => {
