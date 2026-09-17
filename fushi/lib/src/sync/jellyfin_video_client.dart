@@ -249,6 +249,19 @@ class JellyfinItem {
   /// 可直接播放的叶子条目（电影/单集）。
   bool get isPlayableVideo => type == 'Movie' || type == 'Episode';
 
+  /// 可下钻的容器条目（剧 / 季 / 合集 / 文件夹）。
+  ///
+  /// 只在[JellyfinApi.recursiveVideoItems] 的层级回退里用（BUG-2567）：服务器忽略
+  /// `Recursive` 时返回的就是这些，它们本身不可播，但下面挂着真正的叶子。
+  /// 刻意不用服务器的 `IsFolder`——Emby 兼容实现对它的填法各不相同（本次实测
+  /// UHD Media Server 的 Series 条目压根不带该字段），按类型名判定才稳。
+  bool get isVideoContainer =>
+      type == 'Series' ||
+      type == 'Season' ||
+      type == 'BoxSet' ||
+      type == 'Folder' ||
+      type == 'CollectionFolder';
+
   /// 展示标题：单集拼上剧名与季集号（`剧名 S01E02 集名`），其余用条目名。
   String get displayTitle {
     if (type != 'Episode' || seriesName == null || seriesName!.isEmpty) {
@@ -341,6 +354,17 @@ class JellyfinApi {
   /// 滥用检测（以及公共服的风控）眼里的爬虫特征。150ms 对小库无感（3 页 = 300ms），
   /// 对大库则把突发压成稳定低速流。只插在页**之间**，第一页不等。
   static const Duration kPageInterval = Duration(milliseconds: 150);
+
+  /// 层级回退（BUG-2567）一次枚举允许发出的请求数上限。
+  ///
+  /// 服务器忽略 `Recursive` 时拿不到「一次分页扫全库」这条便宜路径，成本回到
+  /// **每部剧一发** `/Shows/{id}/Episodes`。剧多的库（实测公共服单库 4131 部剧）
+  /// 照直走就是几千发连续请求 = 几十分钟 + 妥妥的爬虫特征，所以必须有硬预算。
+  ///
+  /// 400 的取法：够覆盖一个正常自建库（几百部剧），按 [kPageInterval] 铺开约 60s
+  /// 节流成本；超出即带 [JellyfinRecursiveResult.truncated] 收工，由用户去设置里
+  /// 点名要枚举的媒体库把范围收窄（那才是超大服务器的正解，见 BUG-1891）。
+  static const int kMaxHierarchyRequests = 400;
 
   final http.Client _client;
 
@@ -463,6 +487,13 @@ class JellyfinApi {
   /// 原版 Jellyfin / Emby 对单值与多值语义一致，拆开发不留行为差异。两轮
   /// 各自独立分页，Movie 轮在前（集合名排序下 Episode 轮的分页窗口互不干扰）。
   ///
+  /// **服务器完全不认 `Recursive` 时自动改走层级回退**（BUG-2567）：`UHD Media
+  /// Server` 一类 Emby 兼容实现对 `/Users/{uid}/Items` 只返回 `ParentId` 的**直接
+  /// 子级**，`Recursive` 与 `IncludeItemTypes` 一并忽略——剧集库于是只吐 `Series`
+  /// 文件夹，全部通不过消费端的 `isPlayableVideo`，整库在影片页表现为空。首页即由
+  /// [ignoresRecursiveEnumeration] 判定并转入 [_hierarchicalVideoItems] 自己走下去。
+  /// 原版 Jellyfin / Emby 走不到这条分支，行为零变化。
+  ///
   /// **真分页**：单发一次 + 硬上限的旧写法在 100 部番 x 12 集就到顶，第 2001 条
   /// 起永久不可见且无任何提示；TotalRecordCount 解出来却被丢弃、StartIndex 根本
   /// 没传。这里按 [pageSize] 逐页取到 StartIndex >= totalCount（或某页返空）为止，
@@ -513,6 +544,18 @@ class JellyfinApi {
           'SortOrder': 'Ascending',
         });
         final JellyfinItemsPage page = parseItemsPage(json);
+        // BUG-2567：服务器把 Recursive/IncludeItemTypes 当没看见 → 这一页是库的
+        // **直接子级**（一堆 Series/文件夹），叶子一个没有。继续分页只会把同一批
+        // 容器拉完，而它们全部通不过 listRemoteVideos 的 isPlayableVideo 过滤，
+        // 用户看到的就是「库里明明有片、影片页一片空白」。改走层级回退。
+        if (start == 0 && ignoresRecursiveEnumeration(page)) {
+          return _hierarchicalVideoItems(
+            userId: userId,
+            parentId: parentId,
+            pageSize: pageSize,
+            pageInterval: pageInterval,
+          );
+        }
         all.addAll(page.items);
         total += page.totalCount;
         if (page.items.isEmpty) break;
@@ -526,6 +569,186 @@ class JellyfinApi {
       items: all,
       truncated: truncated,
       totalCount: total < all.length ? all.length : total,
+    );
+  }
+
+  /// 这一页是否证明「服务器忽略了 `Recursive` / `IncludeItemTypes`」（BUG-2567）。
+  ///
+  /// 判据：非空、**一个可播叶子都没有**、且至少有一个可下钻容器。
+  /// 三个条件缺一不可——
+  ///  * 非空：空页是「这个库真没东西」，不是能力缺失，回退只会白发请求；
+  ///  * 无叶子：只要混进一条 Movie/Episode，就说明类型过滤至少部分生效，按原路
+  ///    分页仍能拿到全部叶子，不必付层级回退那份贵得多的成本；
+  ///  * 有容器：排除「服务器返回了一批我们不认识的类型」这种真·空结果。
+  ///
+  /// 实测触发者：`UHD Media Server 4.9.3.0`（Emby 兼容实现）——`/Users/{uid}/Items`
+  /// 对 `ParentId` **只返回直接子级**，`Recursive=true` 与 `IncludeItemTypes` 一并
+  /// 被忽略（向电影库要 Episode 返回 Movie，向剧集库要 Episode 返回 Series）。
+  /// 同族的飞牛影视见 BUG-2254。原版 Jellyfin / Emby 不会命中本判据。
+  static bool ignoresRecursiveEnumeration(JellyfinItemsPage page) =>
+      page.items.isNotEmpty &&
+      !page.items.any((JellyfinItem i) => i.isPlayableVideo) &&
+      page.items.any((JellyfinItem i) => i.isVideoContainer);
+
+  /// 一部剧的全部分集（GET /Shows/{seriesId}/Episodes）。
+  ///
+  /// 层级回退（BUG-2567）的主力：它**跨季一次返回**，所以一部剧只要一发请求，
+  /// 不必先列季再逐季列集。Jellyfin / Emby / Emby 兼容实现都提供该端点，且实测
+  /// 在「忽略 Recursive」的服务器上仍然正确分页（StartIndex/Limit 均生效）。
+  Future<JellyfinItemsPage> seriesEpisodes({
+    required String userId,
+    required String seriesId,
+    int startIndex = 0,
+    int limit = 500,
+  }) async {
+    final Map<String, Object?> json =
+        await _getJson('/Shows/$seriesId/Episodes', <String, String>{
+      'UserId': userId,
+      'StartIndex': '$startIndex',
+      'Limit': '$limit',
+      'Fields': 'ProductionYear',
+    });
+    return parseItemsPage(json);
+  }
+
+  /// 层级回退枚举（BUG-2567）：服务器不肯递归，就由客户端自己走下去。
+  ///
+  /// 广度优先，队列里只放容器：`Series` 一发 [seriesEpisodes] 取全部分集；其余
+  /// 容器（季 / 合集 / 文件夹）用 [children] 列直接子级再入队。遇到的叶子随手收下。
+  ///
+  /// 三道闸，缺一不可：
+  ///  * [kMaxHierarchyRequests]：请求数硬预算，防止几千部剧的库把一次「进影片页」
+  ///    变成几十分钟的连发；
+  ///  * [kMaxRecursiveItems]：条目数上限，与原路径同口径；
+  ///  * `visited`：容器 id 去重。文件夹型媒体库出现环（或同一部剧挂在两个合集下）
+  ///    时，没有它就是无限循环 + 无限内存。
+  ///
+  /// 任一闸触发都置 [JellyfinRecursiveResult.truncated]，由调用方把「拿到的不是
+  /// 全部」这件事说出来，而不是静默给一半。
+  Future<JellyfinRecursiveResult> _hierarchicalVideoItems({
+    required String userId,
+    String? parentId,
+    required int pageSize,
+    required Duration pageInterval,
+  }) async {
+    final List<JellyfinItem> leaves = <JellyfinItem>[];
+    final List<JellyfinItem> queue = <JellyfinItem>[];
+    final Set<String> visited = <String>{};
+    int requests = 0;
+    // 两个标志**不是**一回事，合并过一次就出过 bug：`truncated` 是「结果不完整，
+    // 得报出去」，可以由单个容器失败触发，但那时其余容器仍必须照跑；
+    // `budgetExhausted` 才是「别再发请求了」的停机条件。用一个变量兼任两职的话，
+    // 第一部剧一失败就把整轮遍历掐断，剩下的剧全部消失。
+    bool truncated = false;
+    bool budgetExhausted = false;
+
+    // 预算记账与节流的唯一出口：每一发请求都必须经过它，漏一处预算就形同虚设。
+    Future<bool> spend() async {
+      if (requests >= kMaxHierarchyRequests ||
+          leaves.length >= kMaxRecursiveItems) {
+        budgetExhausted = true;
+        truncated = true;
+        return false;
+      }
+      if (requests > 0 && pageInterval > Duration.zero) {
+        await Future<void>.delayed(pageInterval);
+      }
+      requests++;
+      return true;
+    }
+
+    // 收下一批条目：叶子进结果，容器进队列（已访问过的不重复入队）。
+    void absorb(Iterable<JellyfinItem> items) {
+      for (final JellyfinItem item in items) {
+        if (item.isPlayableVideo) {
+          leaves.add(item);
+        } else if (item.isVideoContainer && item.id.isNotEmpty) {
+          if (visited.add(item.id)) queue.add(item);
+        }
+      }
+    }
+
+    // 某个容器的直接子级（分页取全）。
+    Future<void> drainChildren(String? id) async {
+      int start = 0;
+      while (true) {
+        if (!await spend()) return;
+        final JellyfinItemsPage page = await children(
+          userId: userId,
+          parentId: id,
+          startIndex: start,
+          limit: pageSize,
+        );
+        absorb(page.items);
+        if (page.items.isEmpty) return;
+        start += page.items.length;
+        if (start >= page.totalCount) return;
+      }
+    }
+
+    // 一部剧的全部分集（同样分页取全；跨季一次拿完，不必先列季）。
+    Future<void> drainSeries(String seriesId) async {
+      int start = 0;
+      while (true) {
+        if (!await spend()) return;
+        final JellyfinItemsPage page = await seriesEpisodes(
+          userId: userId,
+          seriesId: seriesId,
+          startIndex: start,
+          limit: pageSize,
+        );
+        absorb(page.items);
+        if (page.items.isEmpty) return;
+        start += page.items.length;
+        if (start >= page.totalCount) return;
+      }
+    }
+
+    // 库根失败 = 这一轮真的什么都没有，照旧抛给调用方（与原路径同语义）。
+    await drainChildren(parentId);
+
+    // 单个容器失败**不是**整库失败。这条回退动辄几百发请求（原路径只有几发），
+    // 撞上一次瞬断的概率高得多，而 listRemoteVideos 的异常一路冒到
+    // `_loadRemoteVideos` 就是 `failed: true` = **整个远端库不渲染**——正是本 bug
+    // 要修的那个形状。所以这里逐容器兜住：记一笔、标 truncated、接着走下一个。
+    while (queue.isNotEmpty && !budgetExhausted) {
+      final JellyfinItem container = queue.removeAt(0);
+      try {
+        if (container.type != 'Series') {
+          // 季 / 合集 / 文件夹：列直接子级，子级里的剧再按剧走。
+          await drainChildren(container.id);
+          continue;
+        }
+        // 剧：一发拿全部分集。服务器不认这个端点（老实现 / 兼容层缺项）时回落列
+        // 直接子级——不能让一次 404 把这部剧整个吞掉。
+        try {
+          await drainSeries(container.id);
+        } catch (e) {
+          debugPrint('[jellyfin] /Shows/${container.id}/Episodes failed, '
+              'falling back to children(): $e');
+          await drainChildren(container.id);
+        }
+      } catch (e) {
+        truncated = true;
+        debugPrint('[jellyfin] container ${container.id} '
+            '(${container.type}) failed, skipping: $e');
+      }
+    }
+
+    if (budgetExhausted) {
+      debugPrint('[jellyfin] hierarchical enumeration hit its request budget '
+          '($requests requests / ${leaves.length} items); pick specific '
+          'libraries in settings to narrow it.');
+    } else if (truncated) {
+      // 预算没用完却不完整 = 有容器被跳过。两种原因写成两句，别让排查的人
+      // 对着「stopped early」去查根本没触发的预算闸。
+      debugPrint('[jellyfin] hierarchical enumeration finished with some '
+          'containers skipped ($requests requests / ${leaves.length} items).');
+    }
+    return JellyfinRecursiveResult(
+      items: leaves,
+      truncated: truncated,
+      totalCount: leaves.length,
     );
   }
 

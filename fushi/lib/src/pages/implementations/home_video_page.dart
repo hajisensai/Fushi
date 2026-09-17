@@ -706,6 +706,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
   }
 
+  /// 页头刷新按钮是否正在跑（BUG-2567）。
+  ///
+  /// 下拉刷新的进度由 [RefreshIndicator] 自己画；页头按钮没有那层指示器，媒体
+  /// 服务器全库枚举又动辄几十秒，不标 busy 就是「按下去毫无反应、于是连按五次
+  /// 发五轮枚举」。
+  bool _headerRefreshBusy = false;
+
+  /// 页头刷新按钮的动作：与下拉刷新**同一条** [_pullToRefresh]，只多一层 busy 记账。
+  ///
+  /// 刻意不另写一套刷新逻辑——两个入口一旦各走各的，手动同步、TTL 穿透、封面回填
+  /// 记账清空这三件事迟早在其中一边漏掉。
+  Future<void> _refreshFromHeader() async {
+    if (_headerRefreshBusy) return;
+    setState(() => _headerRefreshBusy = true);
+    try {
+      await _pullToRefresh();
+    } finally {
+      if (mounted) setState(() => _headerRefreshBusy = false);
+    }
+  }
+
   /// 一次性预取库页排序/分组所需映射：合集字典、折叠归属、组内 sortIndex、
   /// watch-stats 最近观看，外加偏好里的排序方式。
   /// [_loadWatchRecency] 的记代，与 [_libraryMapsRequestGeneration] 相互独立。
@@ -5962,8 +5983,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
       // 旧后台流水线仍会在进页面 / 新视频入库时补本地 sidecar；在线元数据刮削
       // 统一从来源页进入 canonical coordinator。
-      // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
-      // 为它单占一格。
+      //
+      // 「刷新」按钮曾被删掉，理由是「下拉刷新仍是手动同步入口」——但那条理由在
+      // 桌面端不成立（BUG-2567）：[RefreshIndicator] 只认 [dragDevices] 里的设备，
+      // 而 Flutter 的默认集合**不含鼠标**，所以桌面用户手里一个手动刷新入口都没有。
+      // 媒体服务器登录后要等自动列举、清单被 [RemoteLibraryCache] 的 TTL 挡住、或
+      // 用户在设置里关掉了「进影片页时自动列出」时，桌面端就彻底卡死在空库上。
+      // 按钮补回来（三端都有，触屏用户下拉照旧），busy 态复用 [FushiIconButton]
+      // 自带的转圈，避免「按了没反应」。
+      FushiIconButton(
+        key: const ValueKey<String>('video-library-refresh'),
+        tooltip: t.refresh,
+        label: t.refresh,
+        icon: Icons.refresh_outlined,
+        busy: _headerRefreshBusy,
+        onTap: _headerRefreshBusy ? null : _refreshFromHeader,
+      ),
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
