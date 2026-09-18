@@ -345,4 +345,79 @@ void main() {
       }
     },
   );
+
+  group('verifyLogin (settings test button, BUG-2581)', () {
+    test('sends exactly AUTH then LOGOUT on close, never FILE', () async {
+      final _Fake fake = _Fake(_normal);
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      await client.verifyLogin();
+      expect(client.clientUpdateAvailable, isFalse);
+      await client.close();
+      expect(fake.packets.map((p) => p.split(' ').first), ['AUTH', 'LOGOUT']);
+      expect(fake.packets.first, contains('user=test_user'));
+      expect(fake.packets.first, contains('client=testclient'));
+      expect(fake.packets.last, contains('s=Ab12'));
+      expect(fake.closed, isTrue);
+    });
+
+    test('201 reports a newer client version but still logs in', () async {
+      final _Fake fake = _Fake(
+        (String packet, String tag) =>
+            '$tag 201 Cd34 LOGIN ACCEPTED - NEW VERSION AVAILABLE',
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      await client.verifyLogin();
+      expect(client.clientUpdateAvailable, isTrue);
+      await client.close();
+    });
+
+    test('500 surfaces as authentication and no LOGOUT is sent', () async {
+      final _Fake fake = _Fake(
+        (String packet, String tag) => '$tag 500 LOGIN FAILED',
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      await expectLater(
+        client.verifyLogin(),
+        throwsA(
+          isA<AnidbUdpException>()
+              .having((e) => e.reason, 'reason', AnidbUdpFailure.authentication)
+              .having((e) => e.code, 'code', 500),
+        ),
+      );
+      await client.close();
+      expect(fake.packets.map((p) => p.split(' ').first), ['AUTH']);
+    });
+
+    test('incomplete configuration is rejected before any socket', () async {
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: const AnidbUdpConfig(
+          username: 'test_user',
+          password: '',
+          clientName: 'testclient',
+          clientVersion: 1,
+        ),
+        transportFactory: (_) async => throw StateError('must not connect'),
+      );
+      await expectLater(
+        client.verifyLogin(),
+        throwsA(
+          isA<AnidbUdpException>().having(
+            (e) => e.reason,
+            'reason',
+            AnidbUdpFailure.unavailable,
+          ),
+        ),
+      );
+      await client.close();
+    });
+  });
 }

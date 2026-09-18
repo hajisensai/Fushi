@@ -137,26 +137,7 @@ class AnidbUdpFileClient {
         final String key = '$size:${ed2k.toLowerCase()}';
         if (_cache.containsKey(key)) return _cache[key];
         if (_cache.length >= 2048) _cache.remove(_cache.keys.first);
-        if (_session == null) {
-          final _Reply auth = await _request('AUTH', {
-            'user': config.username,
-            'pass': config.password,
-            'protover': '3',
-            'client': config.clientName,
-            'clientver': '${config.clientVersion}',
-            'enc': 'UTF-8',
-            'comp': '0',
-          });
-          if (auth.code != 200 && auth.code != 201) _fail(auth.code);
-          final RegExpMatch? sessionMatch = RegExp(
-            r'^([a-zA-Z0-9]{4,8}) LOGIN ACCEPTED(?: - NEW VERSION AVAILABLE)?$',
-          ).firstMatch(auth.message);
-          if (sessionMatch == null) {
-            throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
-          }
-          _session = sessionMatch[1]!;
-          clientUpdateAvailable = auth.code == 201;
-        }
+        await _ensureSession();
         // fmask byte1 bits6/5 = aid/eid. fid is always first.
         // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
         final _Reply file = await _request('FILE', {
@@ -195,6 +176,40 @@ class AnidbUdpFileClient {
         _cache[key] = identity;
         return identity;
       });
+
+  /// Settings "test login": AUTH only, no FILE query. The caller must still
+  /// await [close] so the session is released with a LOGOUT. Same flood/ban
+  /// bookkeeping as a scan batch; a bad password is terminal for this client.
+  Future<void> verifyLogin() => _serialize(() async {
+        if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
+        if (!config.isAvailable) {
+          throw const AnidbUdpException(AnidbUdpFailure.unavailable);
+        }
+        if (_terminalFailure != null) throw _terminalFailure!;
+        await _ensureSession();
+      });
+
+  Future<void> _ensureSession() async {
+    if (_session != null) return;
+    final _Reply auth = await _request('AUTH', {
+      'user': config.username,
+      'pass': config.password,
+      'protover': '3',
+      'client': config.clientName,
+      'clientver': '${config.clientVersion}',
+      'enc': 'UTF-8',
+      'comp': '0',
+    });
+    if (auth.code != 200 && auth.code != 201) _fail(auth.code);
+    final RegExpMatch? sessionMatch = RegExp(
+      r'^([a-zA-Z0-9]{4,8}) LOGIN ACCEPTED(?: - NEW VERSION AVAILABLE)?$',
+    ).firstMatch(auth.message);
+    if (sessionMatch == null) {
+      throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+    }
+    _session = sessionMatch[1]!;
+    clientUpdateAvailable = auth.code == 201;
+  }
 
   Future<_Reply> _request(String command, Map<String, String> values,
       {bool responseRequired = true}) async {

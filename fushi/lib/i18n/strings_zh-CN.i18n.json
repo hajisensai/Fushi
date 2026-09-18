@@ -5061,5 +5061,16 @@
   "media_server_search_hint": "搜索此服务器",
   "media_server_items_empty": "没有条目",
   "media_server_items_load_failed": "无法从服务器加载条目",
-  "media_server_item_folder": "文件夹"
+  "media_server_item_folder": "文件夹",
+  "video_anidb_login_test": "测试 AniDB 登录",
+  "video_anidb_login_test_hint": "用已保存的账号与客户端发一次 UDP 登录后立即登出，不计算任何文件哈希。",
+  "video_anidb_login_test_running": "正在测试 AniDB 登录…",
+  "video_anidb_login_test_success": "AniDB 登录成功（客户端 $client v$version）",
+  "video_anidb_login_test_client_update": "AniDB 登录成功，但 AniDB 提示客户端 $client 有新版本",
+  "video_anidb_login_test_incomplete": "未测试：请先填写用户名、密码及已注册的客户端名称/版本",
+  "video_anidb_login_test_failed_auth": "AniDB 拒绝了用户名或密码",
+  "video_anidb_login_test_failed_client": "AniDB 拒绝了客户端名称/版本（未注册、已过期或被封禁）",
+  "video_anidb_login_test_failed_network": "AniDB UDP 连接失败：请检查 UDP 9000 端口与防火墙；HTTP 代理不能承载 UDP",
+  "video_anidb_login_test_failed_blocked": "AniDB 当前限流或维护，请求已暂停，请稍后再试",
+  "video_anidb_login_test_failed_other": "AniDB 登录失败（$reason）"
 }

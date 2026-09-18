@@ -1533,17 +1533,7 @@ class _HomePageState extends BasePageState<HomePage>
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
     );
-    final String fingerprint = <Object>[
-      config.tmdbApiKey,
-      config.anidbClientName,
-      config.anidbClientVersion ?? 0,
-      config.hashEnabled,
-      config.anidbUsername,
-      config.anidbPassword,
-      config.locale,
-      config.primaryProvider.name,
-      config.identifierWords.source,
-    ].join('\u0000');
+    final String fingerprint = config.runtimeFingerprint;
     final VideoDiscoveryController? existing = _videoDiscoveryController;
     if (existing != null && _videoDiscoveryConfigFingerprint == fingerprint) {
       return existing;
@@ -2384,14 +2374,9 @@ class _HomePageState extends BasePageState<HomePage>
       resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
     );
-    final String fingerprint = <Object>[
-      config.tmdbApiKey,
-      config.anidbClientName,
-      config.anidbClientVersion ?? 0,
-      config.locale,
-      config.primaryProvider.name,
-      config.identifierWords.source,
-    ].join('\u0000');
+    // BUG-2581：指纹统一取 [VideoSourceScrapeGlobalConfig.runtimeFingerprint]，
+    // 别再手抄字段——这里曾漏掉哈希开关与 AniDB 账号，填好账号后仍复用旧协调器。
+    final String fingerprint = config.runtimeFingerprint;
     if (existing != null &&
         (existing.isBusy ||
             _videoSourceScrapeConfigFingerprint == fingerprint)) {
