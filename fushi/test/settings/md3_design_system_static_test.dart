@@ -703,15 +703,20 @@ void main() {
           'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
           'art / reader-shelf content, not ordinary page chrome — same '
           'reviewed exception class as the reader-shelf book-cover overlays.',
-      // 统一合集 playlist 详情页的剧集列表渲染每集封面缩略图（Image.file + ClipRRect
-      // 圆角 + 无封面 letterbox 占位 surfaceContainerHighest）——每集独立视频的封面
-      // 美术内容，非普通页面 chrome，同 series_shelf_card 马赛克封面 / 书架封面豁免类。
-      'lib/src/pages/implementations/media_collection_detail_page.dart':
-          'Unified-collection playlist detail lists per-episode cover '
-          'thumbnails (Image.file + ClipRRect radius + no-cover letterbox '
-          'placeholder using surfaceContainerHighest); episode cover art / '
-          'media-shelf content, not ordinary page chrome — same reviewed '
-          'exception class as series_shelf_card mosaic covers.',
+      // 作品详情页共享布局（本地系列 + Jellyfin/Emby 详情页同一套）：hero 上的
+      // 徽标/标签/人物胶囊（BorderRadius.circular + 压在封面上的 12px 小字）、
+      // 集卡（surfaceContainerLow 卡底 + 集简介小字）与每集封面缩略图（ClipRRect
+      // 圆角 + 无封面 letterbox 占位 surfaceContainerHighest）——封面美术 / 媒体书架
+      // 内容，非普通页面 chrome。原先挂在 media_collection_detail_page 上的同一条
+      // 豁免随视觉代码整体搬到这里（页面本体已零命中）。
+      'lib/src/media/collections/collection_detail_layout.dart':
+          'Shared work-detail layout (local series + media-server detail): hero '
+          'badge/tag/credit pills over cover art, hayase-style episode cards '
+          '(surfaceContainerLow card surface + 12px synopsis) and per-episode '
+          'cover thumbnails (ClipRRect radius + no-cover letterbox placeholder '
+          'using surfaceContainerHighest); cover art / media-shelf content, not '
+          'ordinary page chrome — the media_collection_detail_page exemption '
+          'moved here with the visuals.',
       // 更新中心（#1427）每条新集消息带一张该集截图缩略图（Image.file + ClipRRect
       // 圆角，无图时退作品封面/纯文字）。列表行外壳本身走 FushiListItem，文件里
       // 唯一的裸 BorderRadius 就是这张缩略图的圆角——截图/封面美术，非普通页面
@@ -1280,13 +1285,12 @@ void main() {
         'VisualDensity.compact',
         'ListTile(',
       },
-      'lib/src/pages/implementations/media_collection_detail_page.dart':
-          <String>{
-            'BorderRadius.circular(',
-            'surfaceContainerLow',
-            'surfaceContainerHighest',
-            'fontSize:',
-          },
+      'lib/src/media/collections/collection_detail_layout.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'surfaceContainerHighest',
+        'fontSize:',
+      },
       // 更新中心（#1427）：行骨架走 FushiListItem，唯一命中的是新集截图缩略图的
       // ClipRRect 圆角。范围就写这一个 token——多写一个就是预留通行证。
       'lib/src/pages/implementations/updates_center_page.dart': <String>{

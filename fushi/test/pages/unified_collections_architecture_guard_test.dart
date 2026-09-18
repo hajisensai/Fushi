@@ -206,8 +206,13 @@ void main() {
     );
     expect(detail.existsSync(), isTrue);
     final String detailSrc = detail.readAsStringSync();
-    expect(detailSrc.contains('_episodeThumb'), isTrue,
-        reason: 'playlist 详情页剧集行必须带每集封面缩略图');
+    // 集缩略图的视觉住在共享布局 `collectionEpisodeThumb`（本地系列 + 媒体服务器
+    // 详情页同一套）；页面只负责把**该集自己**的封面喂进去。
+    expect(
+      containsCodeLine(detailSrc, 'collectionEpisodeThumb('),
+      isTrue,
+      reason: 'playlist 详情页剧集行必须带每集封面缩略图',
+    );
     // 锚点锁的是**契约**（缩略图取该集自己的 coverPath、无封面退占位），不是某种
     // 具体渲染写法。旧判据 `contains('Image.file')` 把实现写法当契约：BUG-1299 把
     // `_episodeThumb` 从裸 `Image.file(...) + BoxFit.cover` 改成
@@ -218,16 +223,38 @@ void main() {
     // BUG-1704 把成员抽象成 CollectionEpisodeSlot（本地行 + 只在对端的集同槽），
     // 封面解析随之从 _episodeThumb 内联挪进 _episodeCover。契约一点没变——缩略图
     // 仍必须取**该集自己**的封面；锚点跟着契约多走一层间接，判据本身不放宽。
-    final String thumbBody = methodBody(detailSrc, 'Widget _episodeThumb(');
-    expect(containsCodeLine(thumbBody, '_episodeCover(slot)'), isTrue,
-        reason: '缩略图必须按该集自身解析封面（_episodeCover），不得直接吃合集封面');
-    expect(containsCodeLine(thumbBody, '_thumbPlaceholder('), isTrue,
-        reason: '无封面 / 读取失败必须退占位图，不得留空或抛');
-    final String coverBody =
-        methodBody(detailSrc, 'ImageProvider? _episodeCover(');
-    expect(containsCodeLine(coverBody, 'slot.coverPath'), isTrue,
-        reason: '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
-            '不得回退成整个合集共用一张封面');
+    // 视觉搬进共享布局后，「按该集自身解析封面」的契约锁在页面的调用点：喂给
+    // collectionEpisodeThumb 的 provider 必须来自 _episodeCover(该集)。
+    expect(
+      containsCodeLine(
+        detailSrc,
+        'collectionEpisodeThumb(context, _episodeCover(',
+      ),
+      isTrue,
+      reason: '缩略图必须按该集自身解析封面（_episodeCover），不得直接吃合集封面',
+    );
+    final String layoutSrc = File(
+      'lib/src/media/collections/collection_detail_layout.dart',
+    ).readAsStringSync();
+    final String thumbBody = methodBody(
+      layoutSrc,
+      'Widget collectionEpisodeThumb(',
+    );
+    expect(
+      containsCodeLine(thumbBody, 'collectionEpisodeThumbPlaceholder('),
+      isTrue,
+      reason: '无封面 / 读取失败必须退占位图，不得留空或抛',
+    );
+    final String coverBody = methodBody(
+      detailSrc,
+      'ImageProvider? _episodeCover(',
+    );
+    expect(
+      containsCodeLine(coverBody, 'slot.coverPath'),
+      isTrue,
+      reason: '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
+          '不得回退成整个合集共用一张封面',
+    );
   });
 
   test('排序交互重设计：死权重零读取 + 排序菜单 + 成员序单一真相源 + 详情页就地排序', () {

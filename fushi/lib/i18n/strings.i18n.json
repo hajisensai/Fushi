@@ -5045,5 +5045,22 @@
   "ai_feature_custom_theme_summary": "Let AI pick theme colors from a description",
   "theme_ai_hint": "Describe the theme you want, e.g. warm paper reading theme with a dark green accent",
   "theme_ai_applied": "AI suggestion loaded into the editor. Check the preview, then apply.",
-  "theme_ai_undo": "Undo AI changes"
+  "theme_ai_undo": "Undo AI changes",
+  "jellyfin_servers_signed_in_title": "Signed-in servers",
+  "jellyfin_servers_empty_hint": "No server signed in yet",
+  "jellyfin_servers_add_title": "Add a server",
+  "video_library_media_servers": "Media servers",
+  "jellyfin_show_in_library_title": "Show in video library",
+  "jellyfin_show_in_library_hint": "Mix media server items into Home, Series and All videos. Off: browse them only in the Media servers section.",
+  "media_server_servers_title": "Choose a server",
+  "media_server_servers_empty_hint": "No media server signed in yet",
+  "media_server_servers_go_settings": "Add a server in settings",
+  "media_server_libraries_title": "Libraries",
+  "media_server_row_view_all": "View all",
+  "media_server_sort_name": "Name",
+  "media_server_sort_date_added": "Date added",
+  "media_server_search_hint": "Search this server",
+  "media_server_items_empty": "No items",
+  "media_server_items_load_failed": "Could not load items from the server",
+  "media_server_item_folder": "Folder"
 }

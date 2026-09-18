@@ -5,7 +5,12 @@
 //   JSON→DTO 解析全部是纯静态方法，测试用 MockClient 离线覆盖。
 // - [JellyfinVideoClient] `implements RemoteVideoClient`：把 Jellyfin 条目适配成
 //   互联/云端同款的远端视频契约（列清单 / 整片下载 / 流播 URL / 外挂字幕 /
-//   跨端断点），库页与播放页零新概念消费。
+//   跨端断点），库页与播放页零新概念消费。同一个类还 `implements
+//   MediaServerBrowser`（media_server_browser.dart）：把服务器的
+//   媒体库 → 剧 → 季 → 集 树按父级分页原样暴露给浏览页，不再全库递归拍平。
+//   两套契约共用一份 JSON 解析（[JellyfinApi.parseItem] → [JellyfinItem]），
+//   浏览用的 [MediaServerItem] 只是它的纯函数投影
+//   （[JellyfinVideoClient.mediaServerItemFrom]）。
 //
 // 协议事实：
 // - Jellyfin 与 Emby 的这批端点同源兼容（AuthenticateByName / Views / Items /
@@ -32,6 +37,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteCollectionMembership,
@@ -128,6 +134,7 @@ class JellyfinServerConfig {
         ),
         userId: userId,
         libraryIds: libraryIds,
+        serverName: serverName,
       );
 }
 
@@ -150,6 +157,7 @@ class JellyfinLibraryView {
     required this.id,
     required this.name,
     this.collectionType,
+    this.hasPrimaryImage = false,
   });
 
   final String id;
@@ -157,6 +165,9 @@ class JellyfinLibraryView {
 
   /// 'movies' | 'tvshows' | 'music' | 'books' | ... | null（混合）。
   final String? collectionType;
+
+  /// 库视图自己有没有主图（`ImageTags.Primary`；Jellyfin 允许给媒体库配封面）。
+  final bool hasPrimaryImage;
 
   /// 是否值得出现在视频域（音乐/图书/照片库不展示）。
   bool get isVideoish =>
@@ -204,7 +215,18 @@ class JellyfinItem {
     this.sizeBytes,
     this.lastPlayedAtMs = 0,
     this.childCount,
+    this.recursiveItemCount,
     this.productionYear,
+    this.seriesId,
+    this.seasonId,
+    this.played = false,
+    this.unplayedChildCount,
+    this.hasBackdrop = false,
+    this.hasThumbImage = false,
+    this.hasLogoImage = false,
+    this.overview,
+    this.communityRating,
+    this.genres = const <String>[],
   });
 
   final String id;
@@ -218,6 +240,29 @@ class JellyfinItem {
   final int? episodeNumber;
   final int? durationMs;
   final bool hasPrimaryImage;
+
+  /// 集 / 季所属的剧与集所属的季（`SeriesId` / `SeasonId`）。浏览页靠它们从
+  /// 「继续观看 / 接下来看」的一集跳回剧与季，不用再按剧名字符串折叠。
+  final String? seriesId;
+  final String? seasonId;
+
+  /// 服务器标记为已看完（`UserData.Played`）。
+  final bool played;
+
+  /// 容器的未看子项数（`UserData.UnplayedItemCount`）。
+  final int? unplayedChildCount;
+
+  /// 横版背景 / 横版缩略图 / logo 有无（`BackdropImageTags` 非空 /
+  /// `ImageTags.Thumb` / `ImageTags.Logo`）。
+  final bool hasBackdrop;
+  final bool hasThumbImage;
+  final bool hasLogoImage;
+
+  /// 详情字段（`Overview` / `CommunityRating` / `Genres`）：清单请求不带对应
+  /// Fields 时为空，单条目 `/Items/{id}` 全量返回。
+  final String? overview;
+  final double? communityRating;
+  final List<String> genres;
 
   /// 服务器端 resume 位置（UserData.PlaybackPositionTicks → ms）。
   final int positionMs;
@@ -244,6 +289,11 @@ class JellyfinItem {
   /// 本地恒胜——服务器断点永远读不回来。
   final int lastPlayedAtMs;
   final int? childCount;
+
+  /// 递归子项数（`RecursiveItemCount`）。对剧 = 集数——[childCount] 对剧是**季数**
+  /// （Emby 4.9 真机：ChildCount=1 / RecursiveItemCount=26），拿它当集数显示会得到
+  /// 「全 1 话」。Emby 缺省就返回，Jellyfin 要在 Fields 里点名。
+  final int? recursiveItemCount;
   final int? productionYear;
 
   /// 可直接播放的叶子条目（电影/单集）。
@@ -406,7 +456,10 @@ class JellyfinApi {
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$serverUrl$path').replace(queryParameters: query);
 
-  Future<Map<String, Object?>> _getJson(
+  /// GET + JSON 解码，不管顶层形状（`/Items/Latest` 回裸数组，其余回对象）。
+  /// 非 JSON 响应体抛 [FormatException]——飞牛对不认识的路由回 SPA index.html
+  /// 且状态 200（BUG-2254 备注④），这是那种情况唯一能被察觉的信号。
+  Future<Object?> _getDecoded(
     String path, [
     Map<String, String>? query,
   ]) async {
@@ -417,16 +470,23 @@ class JellyfinApi {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw JellyfinApiException(res.statusCode, path);
       }
-      final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
-      return decoded is Map<String, dynamic>
-          ? decoded.cast<String, Object?>()
-          : <String, Object?>{};
+      return jsonDecode(utf8.decode(res.bodyBytes));
     } on http.ClientException catch (e) {
       // 凭据脱敏必须在异常构造侧（见 credential_redaction.dart 文件头）：
       // ClientException.toString() 把带 api_key 的整条 URL 塞进文本，而
       // ErrorLogService 存的就是 error.toString()，无脱敏落盘并可一键上传。
       throw Exception(redactCredentialsInText(e.toString()));
     }
+  }
+
+  Future<Map<String, Object?>> _getJson(
+    String path, [
+    Map<String, String>? query,
+  ]) async {
+    final Object? decoded = await _getDecoded(path, query);
+    return decoded is Map<String, dynamic>
+        ? decoded.cast<String, Object?>()
+        : <String, Object?>{};
   }
 
   /// 用户名/密码认证（POST /Users/AuthenticateByName），成功回填 [accessToken]。
@@ -460,23 +520,146 @@ class JellyfinApi {
     return parseViews(json);
   }
 
+  /// `/Users/{uid}/Items` 的唯一请求构造点：浏览子级 / 递归枚举 / 搜索 / 剧集树
+  /// 回退全走这里，查询参数的纪律只在一处维护：
+  /// - [includeItemType] **单值**（BUG-2254：飞牛对逗号多值静默返 0 条）；
+  /// - [fields] 缺省 `ProductionYear`，**不带 MediaSources**（BUG-1891）；
+  /// - [sortBy] 单值（同 BUG-2254 的谨慎：`IsFolder,SortName` 这种多值在飞牛上
+  ///   没验过，浏览排序不值得赌）。
+  Future<JellyfinItemsPage> items({
+    required String userId,
+    String? parentId,
+    bool recursive = false,
+    String? includeItemType,
+    String? searchTerm,
+    int startIndex = 0,
+    int limit = 200,
+    String fields = 'ProductionYear',
+    String sortBy = 'SortName',
+    String sortOrder = 'Ascending',
+  }) async {
+    assert(!(includeItemType?.contains(',') ?? false),
+        'IncludeItemTypes 必须单值（BUG-2254）');
+    final Map<String, Object?> json =
+        await _getJson('/Users/$userId/Items', <String, String>{
+      if (parentId != null) 'ParentId': parentId,
+      if (recursive) 'Recursive': 'true',
+      if (includeItemType != null) 'IncludeItemTypes': includeItemType,
+      if (searchTerm != null) 'SearchTerm': searchTerm,
+      'StartIndex': '$startIndex',
+      'Limit': '$limit',
+      'Fields': fields,
+      'SortBy': sortBy,
+      'SortOrder': sortOrder,
+    });
+    return parseItemsPage(json);
+  }
+
   /// 列 [parentId] 的直接子级（GET /Users/{uid}/Items，非递归，浏览用）。
+  ///
+  /// 不传 IncludeItemTypes：浏览要的是「这一层有什么」，剧 / 季 / 集 / 电影 /
+  /// 文件夹都要；非视频域类型由消费端
+  /// （[JellyfinVideoClient.mediaServerTypeOf]）滤掉，而不是在这里拼逗号多值
+  /// （BUG-2254）。`ChildCount` 要显式要（Fields 门控），剧的集数 / 文件夹条目数
+  /// 靠它。
   Future<JellyfinItemsPage> children({
     required String userId,
     String? parentId,
     int startIndex = 0,
     int limit = 200,
+    String sortBy = 'SortName',
+    String sortOrder = 'Ascending',
+  }) =>
+      items(
+        userId: userId,
+        parentId: parentId,
+        startIndex: startIndex,
+        limit: limit,
+        fields: 'ChildCount,RecursiveItemCount,ProductionYear',
+        sortBy: sortBy,
+        sortOrder: sortOrder,
+      );
+
+  /// 一部剧的季清单（GET /Shows/{seriesId}/Seasons）。季是个位数，不分页；
+  /// `ChildCount` 给每季集数。
+  Future<JellyfinItemsPage> seasons({
+    required String userId,
+    required String seriesId,
   }) async {
     final Map<String, Object?> json =
-        await _getJson('/Users/$userId/Items', <String, String>{
-      if (parentId != null) 'ParentId': parentId,
-      'StartIndex': '$startIndex',
-      'Limit': '$limit',
-      'Fields': 'ChildCount,ProductionYear',
-      'SortBy': 'IsFolder,SortName',
-      'SortOrder': 'Ascending',
+        await _getJson('/Shows/$seriesId/Seasons', <String, String>{
+      'UserId': userId,
+      'Fields': 'ChildCount',
     });
     return parseItemsPage(json);
+  }
+
+  /// 一部剧（或其中一季）的集清单（GET /Shows/{seriesId}/Episodes），服务器
+  /// 缺省按季集号升序；[seasonId] null = 整部剧。
+  Future<JellyfinItemsPage> episodes({
+    required String userId,
+    required String seriesId,
+    String? seasonId,
+    int startIndex = 0,
+    int limit = 100,
+  }) async {
+    final Map<String, Object?> json =
+        await _getJson('/Shows/$seriesId/Episodes', <String, String>{
+      'UserId': userId,
+      if (seasonId != null) 'SeasonId': seasonId,
+      'StartIndex': '$startIndex',
+      'Limit': '$limit',
+      'Fields': 'ProductionYear',
+    });
+    return parseItemsPage(json);
+  }
+
+  /// 「继续观看」（GET /Users/{uid}/Items/Resume）：服务器端有断点的视频叶子。
+  Future<JellyfinItemsPage> resume({
+    required String userId,
+    int limit = 20,
+  }) async {
+    final Map<String, Object?> json =
+        await _getJson('/Users/$userId/Items/Resume', <String, String>{
+      'Limit': '$limit',
+      'MediaTypes': 'Video',
+    });
+    return parseItemsPage(json);
+  }
+
+  /// 「接下来看」（GET /Shows/NextUp）：每部在看的剧的下一集。
+  Future<JellyfinItemsPage> nextUp({
+    required String userId,
+    int limit = 20,
+  }) async {
+    final Map<String, Object?> json =
+        await _getJson('/Shows/NextUp', <String, String>{
+      'UserId': userId,
+      'Limit': '$limit',
+    });
+    return parseItemsPage(json);
+  }
+
+  /// 「最近添加」（GET /Users/{uid}/Items/Latest）。
+  ///
+  /// 这条端点回的是**裸数组**而不是 `{Items, TotalRecordCount}`，解析单独走
+  /// [parseItemList]；同时容忍对象形状（兼容层不一定照抄）。剧集库的新集会被
+  /// 服务器折成 Series 容器返回（`GroupItems` 缺省 true）。
+  Future<List<JellyfinItem>> latest({
+    required String userId,
+    String? parentId,
+    int limit = 20,
+  }) async {
+    final Object? decoded =
+        await _getDecoded('/Users/$userId/Items/Latest', <String, String>{
+      if (parentId != null) 'ParentId': parentId,
+      'Limit': '$limit',
+    });
+    if (decoded is List) return parseItemList(decoded);
+    if (decoded is Map) {
+      return parseItemList((decoded['Items'] as List?) ?? const <Object?>[]);
+    }
+    return const <JellyfinItem>[];
   }
 
   /// 递归列出 [parentId]（缺省全库）下所有可播视频叶子（电影 + 单集）。
@@ -497,7 +680,10 @@ class JellyfinApi {
   /// **真分页**：单发一次 + 硬上限的旧写法在 100 部番 x 12 集就到顶，第 2001 条
   /// 起永久不可见且无任何提示；TotalRecordCount 解出来却被丢弃、StartIndex 根本
   /// 没传。这里按 [pageSize] 逐页取到 StartIndex >= totalCount（或某页返空）为止，
-  /// 熔断见 [kMaxRecursiveItems]。
+  /// 熔断见 [kMaxRecursiveItems]——上限是**跨轮总额**（`all.length`），不是每轮
+  /// 各 2 万：拆轮前上限就是「这次枚举最多拿 2 万条」，拆轮不该把它悄悄翻倍成
+  /// 4 万条内存 + 80 次重查询。代价是 >2 万部电影的服务器上 Episode 轮一条都
+  /// 拿不到——但那种库本来就该在设置里点名媒体库，而且 truncated 会报出来。
   ///
   /// **Fields 刻意不带 MediaSources**（BUG-1891）。它曾是为了让清单卡直接拿到
   /// 「有无外挂字幕 / 文件大小」，但那是这条请求真正昂贵的部分：服务器要为**每一
@@ -525,25 +711,23 @@ class JellyfinApi {
     for (final String type in const <String>['Movie', 'Episode']) {
       int start = 0;
       while (true) {
-        if (start >= kMaxRecursiveItems) {
+        // 跨轮总额：Movie 轮已经把额度吃满时，Episode 轮一发都不打就判 truncated。
+        // 至多超出最后一页的余量（不回切），调用方看 truncated 而不是数条数。
+        if (all.length >= kMaxRecursiveItems) {
           truncated = true;
           break;
         }
         if (start > 0 && pageInterval > Duration.zero) {
           await Future<void>.delayed(pageInterval);
         }
-        final Map<String, Object?> json =
-            await _getJson('/Users/$userId/Items', <String, String>{
-          if (parentId != null) 'ParentId': parentId,
-          'Recursive': 'true',
-          'IncludeItemTypes': type,
-          'StartIndex': '$start',
-          'Limit': '$pageSize',
-          'Fields': 'ProductionYear',
-          'SortBy': 'SortName',
-          'SortOrder': 'Ascending',
-        });
-        final JellyfinItemsPage page = parseItemsPage(json);
+        final JellyfinItemsPage page = await items(
+          userId: userId,
+          parentId: parentId,
+          recursive: true,
+          includeItemType: type,
+          startIndex: start,
+          limit: pageSize,
+        );
         // BUG-2567：服务器把 Recursive/IncludeItemTypes 当没看见 → 这一页是库的
         // **直接子级**（一堆 Series/文件夹），叶子一个没有。继续分页只会把同一批
         // 容器拉完，而它们全部通不过 listRemoteVideos 的 isPlayableVideo 过滤，
@@ -562,8 +746,7 @@ class JellyfinApi {
         start += page.items.length;
         if (start >= page.totalCount) break;
       }
-      // 刻意不在轮间因 truncated 收工：Movie 轮熔断后 Episode 轮仍要跑完
-      // （否则 >2 万电影的服务器上剧集整体消失）；上限按轮独立生效。
+      if (truncated) break;
     }
     return JellyfinRecursiveResult(
       items: all,
@@ -826,13 +1009,24 @@ class JellyfinApi {
       '${mediaSourceId == null ? '' : '&MediaSourceId=$mediaSourceId'}'
       '&api_key=${accessToken ?? ''}';
 
-  /// 封面 URL（Primary 图；无图的条目由调用方按 hasPrimaryImage 过滤）。
+  /// 封面 URL（缺省 Primary 图；无图的条目由调用方按 hasPrimaryImage 过滤）。
+  ///
+  /// [maxWidth] 给了就让服务器侧缩放（`maxWidth` + `quality=90`，Jellyfin 与
+  /// Emby 都认）：清单卡拿原图是移动端（尤其 iOS）解码内存爆掉的候选之一——
+  /// 一张 4K 海报解出来 30+ MB，一屏几十张就没了。不给则原样出原图（旧行为，
+  /// 只剩测试与显式要原图的地方用）。
   ///
   /// 飞牛影视**不支持**该端点（任何认证都 404，兼容层未提供图片服务；官方对
   /// VidHub 接入的文档亦明示「不支持显示媒体库封面」）——飞牛上无封面属服务端
   /// 能力缺失，非缺陷（BUG-2254 备注③）；原版 Jellyfin / Emby 正常。
-  String imageUrl(String itemId) =>
-      '$serverUrl/Items/$itemId/Images/Primary?api_key=${accessToken ?? ''}';
+  String imageUrl(
+    String itemId, {
+    int? maxWidth,
+    String imageType = 'Primary',
+  }) =>
+      '$serverUrl/Items/$itemId/Images/$imageType?'
+      '${maxWidth == null ? '' : 'maxWidth=$maxWidth&quality=90&'}'
+      'api_key=${accessToken ?? ''}';
 
   /// 字幕流下载 URL（外挂或可提取文本内嵌轨都走这个端点）。
   ///
@@ -940,7 +1134,10 @@ class JellyfinApi {
     return JellyfinAuthResult(
       accessToken: (json['AccessToken'] as String?) ?? '',
       userId: (user['Id'] as String?) ?? '',
-      serverName: json['ServerName'] as String?,
+      // Emby 4.9 把服务器名放在 User.ServerName 下，顶层没有 ServerName（真机实测
+      // v1.uhdnow.com：顶层只有 ServerId），Jellyfin 两处都给。
+      serverName:
+          (json['ServerName'] as String?) ?? (user['ServerName'] as String?),
     );
   }
 
@@ -953,6 +1150,8 @@ class JellyfinApi {
             id: (raw['Id'] as String?) ?? '',
             name: (raw['Name'] as String?) ?? '',
             collectionType: raw['CollectionType'] as String?,
+            hasPrimaryImage:
+                (raw['ImageTags'] as Map?)?.containsKey('Primary') ?? false,
           ),
     ];
   }
@@ -960,13 +1159,17 @@ class JellyfinApi {
   static JellyfinItemsPage parseItemsPage(Map<String, Object?> json) {
     final List<Object?> items = (json['Items'] as List?) ?? const <Object?>[];
     return JellyfinItemsPage(
-      items: <JellyfinItem>[
-        for (final Object? raw in items)
-          if (raw is Map) parseItem(raw.cast<String, Object?>()),
-      ],
+      items: parseItemList(items),
       totalCount: (json['TotalRecordCount'] as num?)?.toInt() ?? items.length,
     );
   }
+
+  /// 条目数组 → DTO（`{Items:[…]}` 的 Items 与 `/Items/Latest` 的裸数组共用）。
+  static List<JellyfinItem> parseItemList(List<Object?> items) =>
+      <JellyfinItem>[
+        for (final Object? raw in items)
+          if (raw is Map) parseItem(raw.cast<String, Object?>()),
+      ];
 
   static JellyfinItem parseItem(Map<String, Object?> json) {
     final Map<String, Object?> userData =
@@ -1007,6 +1210,9 @@ class JellyfinApi {
     final Map<String, Object?> imageTags =
         (json['ImageTags'] as Map?)?.cast<String, Object?>() ??
             <String, Object?>{};
+    final List<Object?> backdropTags =
+        (json['BackdropImageTags'] as List?) ?? const <Object?>[];
+    final List<Object?> genres = (json['Genres'] as List?) ?? const <Object?>[];
 
     return JellyfinItem(
       id: (json['Id'] as String?) ?? '',
@@ -1033,7 +1239,21 @@ class JellyfinApi {
                   ?.millisecondsSinceEpoch ??
               0,
       childCount: (json['ChildCount'] as num?)?.toInt(),
+      recursiveItemCount: (json['RecursiveItemCount'] as num?)?.toInt(),
       productionYear: (json['ProductionYear'] as num?)?.toInt(),
+      seriesId: json['SeriesId'] as String?,
+      seasonId: json['SeasonId'] as String?,
+      played: (userData['Played'] as bool?) ?? false,
+      unplayedChildCount: (userData['UnplayedItemCount'] as num?)?.toInt(),
+      hasBackdrop: backdropTags.isNotEmpty,
+      hasThumbImage: imageTags.containsKey('Thumb'),
+      hasLogoImage: imageTags.containsKey('Logo'),
+      overview: json['Overview'] as String?,
+      communityRating: (json['CommunityRating'] as num?)?.toDouble(),
+      genres: <String>[
+        for (final Object? g in genres)
+          if (g is String && g.isNotEmpty) g,
+      ],
     );
   }
 }
@@ -1047,16 +1267,25 @@ class JellyfinApi {
 /// 「显示视频库」的结构表达：单集经 [RemoteCollectionMembership] 按剧名折叠成
 /// playlist 合集卡（组内序 = 季×10000+集），复用库页既有的合集混排/上下集/
 /// 剧集面板——不另造 Jellyfin 专属浏览层。
+///
+/// 同时 `implements MediaServerBrowser`：浏览页按父级分页地走服务器自己的树，
+/// 剧的身份（SeriesId）原样保留。**不拆成独立适配类**的理由：本仓的能力判据是
+/// `client is <能力接口>`（[RemoteVideoDetailFetch] / [RemoteVideoPlaybackStop]
+/// 都是这么挂在本类上的），`JellyfinServerConfig.buildClient()` 交出的这一个
+/// 实例就该同时是播放 client 与浏览器，页面不必知道要另造一个包装再把
+/// `playbackClient` 指回来。
 class JellyfinVideoClient
     implements
         RemoteVideoClient,
         RemoteCoverFetcher,
         RemoteVideoDetailFetch,
-        RemoteVideoPlaybackStop {
+        RemoteVideoPlaybackStop,
+        MediaServerBrowser {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
     this.libraryIds = const <String>[],
+    this.serverName,
   });
 
   final JellyfinApi api;
@@ -1065,6 +1294,10 @@ class JellyfinVideoClient
   /// 要枚举的媒体库视图 id；空 = 全部视频域媒体库（见
   /// [JellyfinServerConfig.libraryIds] 与 [resolveEnumerationParents]）。
   final List<String> libraryIds;
+
+  /// 服务器自报名（登录响应的 `ServerName`，经 [JellyfinServerConfig.serverName]
+  /// 传入）；null / 空时 [displayName] 回落主机名。
+  final String? serverName;
 
   /// 缓存槽身份的**唯一**构造点。登出失效等「手里没有 client 实例」的调用方也
   /// 走这里，别再各自拼字面量——拼歪一个字符就是「以为清了、其实没清」。
@@ -1093,22 +1326,461 @@ class JellyfinVideoClient
   /// [RemoteVideoInfo.hasSubtitle] 必须真实填：库页的下载入库路径用它做早返门
   /// （`if (!video.hasSubtitle) return ...`），吃默认 false 就等于「从 Jellyfin
   /// 下载的视频永远不下外挂字幕」，[getRemoteVideoSubtitle] 实现了也进不去。
+  ///
+  /// 与 [toRemoteVideoInfo] 共用 [_remoteVideoInfoFor]：两条路径只差「详情里
+  /// 才有的 MediaSources 派生字段」（文件大小 / 字幕文件名），其余字段一份映射。
   RemoteVideoInfo infoFromItem(JellyfinItem item) {
     final JellyfinSubtitleStream? subtitle = _defaultTextSubtitle(item);
-    return RemoteVideoInfo(
-      id: item.id,
-      title: item.displayTitle,
+    return _remoteVideoInfoFor(
+      // 走到这里的都是视频叶子（listRemoteVideos 先按 isPlayableVideo 过滤；
+      // 详情 / 播放路径的 id 都来自视频叶子）。真遇到投影不了的类型也按叶子处理
+      // ——与改动前「从不看类型」的行为一致，不丢条目。
+      mediaServerItemFrom(
+        item,
+        mediaServerTypeOf(item) ?? MediaServerItemType.movie,
+      ),
       sizeBytes: item.sizeBytes,
-      hasSubtitle: item.hasTextSubtitle,
       subtitleFileName:
           subtitle == null ? null : _subtitleFileName(item, subtitle),
-      durationMs: item.durationMs,
-      hasCover: item.hasPrimaryImage,
-      coverUrl: item.hasPrimaryImage ? api.imageUrl(item.id) : null,
-      positionMs: item.positionMs,
-      positionUpdatedAtMs: item.lastPlayedAtMs,
-      collection: _collectionOf(item),
     );
+  }
+
+  RemoteVideoInfo _remoteVideoInfoFor(
+    MediaServerItem item, {
+    int? sizeBytes,
+    String? subtitleFileName,
+  }) =>
+      RemoteVideoInfo(
+        id: item.id,
+        title: displayTitleOf(item),
+        sizeBytes: sizeBytes,
+        hasSubtitle: item.hasSubtitle,
+        subtitleFileName: subtitleFileName,
+        durationMs: item.durationMs,
+        hasCover: item.hasCover,
+        coverUrl: coverUrl(item),
+        positionMs: item.positionMs,
+        positionUpdatedAtMs: item.lastPlayedAtMs,
+        collection: _collectionOf(item),
+      );
+
+  // ── MediaServerBrowser：JellyfinItem → MediaServerItem 纯函数投影 ─────────
+
+  /// 服务器条目类型 → 浏览契约类型；非视频域（Audio / MusicAlbum / Book /
+  /// Photo…）返回 null，调用方据此丢弃。
+  ///
+  /// 白名单显式列出三家共同的视频域类型；`Video` / `MusicVideo` / `Trailer`
+  /// 是家庭视频库 / 音乐视频库里的可播叶子，与 Movie 同走 `/Videos/{id}/stream`，
+  /// 按 movie 投影。未知类型只要 `IsFolder` 就当可下钻的文件夹（服务器自定义的
+  /// 容器类型不少），但已知的音乐 / 图书 / 照片容器先于这条兜底被拦下——
+  /// 否则 MusicAlbum 会作为「文件夹」混进视频库浏览。
+  static MediaServerItemType? mediaServerTypeOf(JellyfinItem item) {
+    switch (item.type) {
+      case 'Movie':
+      case 'Video':
+      case 'MusicVideo':
+      case 'Trailer':
+        return MediaServerItemType.movie;
+      case 'Series':
+        return MediaServerItemType.series;
+      case 'Season':
+        return MediaServerItemType.season;
+      case 'Episode':
+        return MediaServerItemType.episode;
+      case 'Folder':
+      case 'BoxSet':
+      case 'CollectionFolder':
+      case 'UserView':
+      case 'Playlist':
+        return MediaServerItemType.folder;
+      case 'Audio':
+      case 'AudioBook':
+      case 'MusicAlbum':
+      case 'MusicArtist':
+      case 'MusicGenre':
+      case 'Book':
+      case 'Photo':
+      case 'PhotoAlbum':
+      case 'Person':
+      case 'Genre':
+      case 'Studio':
+      case 'Year':
+      case 'Channel':
+      case 'TvChannel':
+      case 'LiveTvChannel':
+      case 'LiveTvProgram':
+      case 'Program':
+      case 'Recording':
+        return null;
+    }
+    return item.isFolder ? MediaServerItemType.folder : null;
+  }
+
+  /// [JellyfinItem] → [MediaServerItem]（纯函数；[type] 由
+  /// [mediaServerTypeOf] 决定，调用方先判 null）。字段一一对应，不再解析 JSON。
+  static MediaServerItem mediaServerItemFrom(
+    JellyfinItem item,
+    MediaServerItemType type,
+  ) =>
+      MediaServerItem(
+        id: item.id,
+        name: item.name,
+        type: type,
+        seriesId: item.seriesId,
+        seriesName: item.seriesName,
+        seasonId: item.seasonId,
+        // 季自己的序号在 IndexNumber 上；集的季号在 ParentIndexNumber 上。
+        seasonNumber: type == MediaServerItemType.season
+            ? item.episodeNumber
+            : item.seasonNumber,
+        episodeNumber:
+            type == MediaServerItemType.season ? null : item.episodeNumber,
+        productionYear: item.productionYear,
+        durationMs: item.durationMs,
+        positionMs: item.positionMs,
+        lastPlayedAtMs: item.lastPlayedAtMs,
+        played: item.played,
+        playedPercentage: item.playedPercentage,
+        childCount: item.childCount,
+        episodeCount: item.recursiveItemCount,
+        unplayedChildCount: item.unplayedChildCount,
+        hasCover: item.hasPrimaryImage,
+        hasBackdrop: item.hasBackdrop,
+        hasThumb: item.hasThumbImage,
+        hasLogo: item.hasLogoImage,
+        overview: item.overview,
+        communityRating: item.communityRating,
+        genres: item.genres,
+        hasSubtitle: item.hasTextSubtitle,
+      );
+
+  /// 只保留视频域条目的投影（[mediaServerTypeOf] 为 null 的丢掉）。
+  static List<MediaServerItem> mediaServerItemsFrom(
+    Iterable<JellyfinItem> items,
+  ) =>
+      <MediaServerItem>[
+        for (final JellyfinItem item in items)
+          if (mediaServerTypeOf(item) case final MediaServerItemType type)
+            mediaServerItemFrom(item, type),
+      ];
+
+  /// 展示标题（与 [JellyfinItem.displayTitle] 同一口径：单集拼
+  /// `剧名 S01E02 集名`，其余用条目名）。播放页的合集面板 / 通知栏都吃它。
+  static String displayTitleOf(MediaServerItem item) {
+    final String? series = item.seriesName;
+    if (item.type != MediaServerItemType.episode ||
+        series == null ||
+        series.isEmpty) {
+      return item.name;
+    }
+    final String code = item.episodeCode;
+    return '$series${code.isEmpty ? '' : ' $code'} ${item.name}';
+  }
+
+  @override
+  String get serverId => remoteLibrarySourceId;
+
+  @override
+  String get displayName {
+    final String? name = serverName;
+    if (name != null && name.trim().isNotEmpty) return name.trim();
+    final String host = Uri.tryParse(api.serverUrl)?.host ?? '';
+    return host.isEmpty ? api.serverUrl : host;
+  }
+
+  @override
+  String get serverUrl => api.serverUrl;
+
+  @override
+  RemoteVideoClient get playbackClient => this;
+
+  @override
+  Future<List<MediaServerLibrary>> listLibraries() async {
+    final List<JellyfinLibraryView> views = await api.views(userId);
+    return <MediaServerLibrary>[
+      for (final JellyfinLibraryView v in views)
+        if (v.isVideoish && v.id.isNotEmpty)
+          MediaServerLibrary(
+            id: v.id,
+            name: v.name,
+            kind: switch (v.collectionType) {
+              'movies' => MediaServerLibraryKind.movies,
+              'tvshows' => MediaServerLibraryKind.tvShows,
+              _ => MediaServerLibraryKind.mixed,
+            },
+            hasCover: v.hasPrimaryImage,
+          ),
+    ];
+  }
+
+  /// [MediaServerSort] → 服务器 `SortBy` / `SortOrder`（单值，BUG-2254 谨慎）。
+  static ({String sortBy, String sortOrder}) sortParamsFor(
+    MediaServerSort sort,
+  ) =>
+      switch (sort) {
+        MediaServerSort.name => (sortBy: 'SortName', sortOrder: 'Ascending'),
+        MediaServerSort.dateAdded => (
+            sortBy: 'DateCreated',
+            sortOrder: 'Descending'
+          ),
+        MediaServerSort.premiereDate => (
+            sortBy: 'PremiereDate',
+            sortOrder: 'Descending'
+          ),
+        MediaServerSort.communityRating => (
+            sortBy: 'CommunityRating',
+            sortOrder: 'Descending'
+          ),
+      };
+
+  /// 服务器一页 → 契约一页：客户端滤掉非视频域类型后，下一页起点仍按服务器
+  /// **实际返回的行数**推（被滤掉的条目在服务器那边照样占序号）。
+  static MediaServerPage _pageFrom(JellyfinItemsPage page, int startIndex) =>
+      MediaServerPage(
+        items: mediaServerItemsFrom(page.items),
+        totalCount: page.totalCount,
+        startIndex: startIndex,
+        nextStartIndex: startIndex + page.items.length,
+      );
+
+  @override
+  Future<MediaServerPage> listChildren({
+    required String? parentId,
+    int startIndex = 0,
+    int limit = kMediaServerPageSize,
+    MediaServerSort sort = MediaServerSort.name,
+  }) async {
+    final ({String sortBy, String sortOrder}) s = sortParamsFor(sort);
+    final JellyfinItemsPage page = await api.children(
+      userId: userId,
+      parentId: parentId,
+      startIndex: startIndex,
+      limit: limit,
+      sortBy: s.sortBy,
+      sortOrder: s.sortOrder,
+    );
+    return _pageFrom(page, startIndex);
+  }
+
+  /// `/Shows/*` 这族端点在飞牛等兼容层上不保证存在：HTTP 非 2xx，或 200 却回
+  /// SPA index.html（jsonDecode 抛 [FormatException]，BUG-2254 备注④），都算
+  /// 「端点不可用」，退回通用 `/Items` 树。**网络层异常不在此列**——那是真断网，
+  /// 回退也一样断，照常抛给页面。
+  static bool _isEndpointUnavailable(Object e) =>
+      e is JellyfinApiException || e is FormatException;
+
+  @override
+  Future<List<MediaServerItem>> listSeasons(String seriesId) async {
+    JellyfinItemsPage page;
+    try {
+      page = await api.seasons(userId: userId, seriesId: seriesId);
+    } catch (e) {
+      if (!_isEndpointUnavailable(e)) rethrow;
+      debugPrint('[jellyfin] /Shows/$seriesId/Seasons unavailable ($e); '
+          'falling back to /Items?ParentId=');
+      page = await api.items(
+        userId: userId,
+        parentId: seriesId,
+        includeItemType: 'Season',
+        limit: 200,
+        fields: 'ChildCount,RecursiveItemCount,ProductionYear',
+      );
+    }
+    final List<MediaServerItem> seasons = <MediaServerItem>[
+      for (final MediaServerItem s in mediaServerItemsFrom(page.items))
+        if (s.type == MediaServerItemType.season) s,
+    ];
+    // 服务器已按季号给出；回退路径按 SortName 来的也统一按季号排（特典 / 未编号
+    // 的季放最后），页面不用再管来源。
+    seasons.sort(_bySeasonThenEpisode);
+    return seasons;
+  }
+
+  @override
+  Future<MediaServerPage> listEpisodes({
+    required String seriesId,
+    String? seasonId,
+    int startIndex = 0,
+    int limit = kMediaServerEpisodePageSize,
+  }) async {
+    JellyfinItemsPage page;
+    try {
+      page = await api.episodes(
+        userId: userId,
+        seriesId: seriesId,
+        seasonId: seasonId,
+        startIndex: startIndex,
+        limit: limit,
+      );
+    } catch (e) {
+      if (!_isEndpointUnavailable(e)) rethrow;
+      debugPrint('[jellyfin] /Shows/$seriesId/Episodes unavailable ($e); '
+          'falling back to recursive /Items?ParentId=');
+      // 与全库枚举同一条已在三家验过的请求形态（递归 + 单值 Episode）；集不
+      // 一定直接挂在季下（无季文件夹的剧由服务器造虚拟季），递归才全。
+      page = await api.items(
+        userId: userId,
+        parentId: seasonId ?? seriesId,
+        recursive: true,
+        includeItemType: 'Episode',
+        startIndex: startIndex,
+        limit: limit,
+      );
+    }
+    final MediaServerPage out = _pageFrom(page, startIndex);
+    // 服务器（正路径）本就按季集号给；回退路径按 SortName 分页，页内再按季集号
+    // 排一遍——跨页顺序回退路径不保证，那是兼容层的代价，不在这里伪装。
+    final List<MediaServerItem> episodes = <MediaServerItem>[
+      for (final MediaServerItem e in out.items)
+        if (e.type == MediaServerItemType.episode) e,
+    ]..sort(_bySeasonThenEpisode);
+    return MediaServerPage(
+      items: episodes,
+      totalCount: out.totalCount,
+      startIndex: out.startIndex,
+      nextStartIndex: out.nextStartIndex,
+    );
+  }
+
+  /// 季集号升序；缺号的排最后（保持稳定，别让特典插到正片中间）。
+  static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
+    final int sa = a.seasonNumber ?? 1 << 30;
+    final int sb = b.seasonNumber ?? 1 << 30;
+    if (sa != sb) return sa.compareTo(sb);
+    final int ea = a.episodeNumber ?? 1 << 30;
+    final int eb = b.episodeNumber ?? 1 << 30;
+    return ea.compareTo(eb);
+  }
+
+  /// 首页装饰行的统一失败口径：失败即空 + debugPrint（见契约文件头）。
+  Future<List<MediaServerItem>> _rowOrEmpty(
+    String what,
+    Future<List<JellyfinItem>> Function() fetch,
+  ) async {
+    try {
+      return mediaServerItemsFrom(await fetch());
+    } catch (e) {
+      debugPrint('[jellyfin] $what failed, showing an empty row: $e');
+      return const <MediaServerItem>[];
+    }
+  }
+
+  @override
+  Future<List<MediaServerItem>> listResume({
+    int limit = kMediaServerRowLimit,
+  }) =>
+      _rowOrEmpty(
+        '/Items/Resume',
+        () async => (await api.resume(userId: userId, limit: limit)).items,
+      );
+
+  @override
+  Future<List<MediaServerItem>> listNextUp({
+    int limit = kMediaServerRowLimit,
+  }) =>
+      _rowOrEmpty(
+        '/Shows/NextUp',
+        () async => (await api.nextUp(userId: userId, limit: limit)).items,
+      );
+
+  @override
+  Future<List<MediaServerItem>> listLatest({
+    String? libraryId,
+    int limit = kMediaServerRowLimit,
+  }) =>
+      _rowOrEmpty(
+        '/Items/Latest',
+        () => api.latest(userId: userId, parentId: libraryId, limit: limit),
+      );
+
+  /// 搜索按类型分轮的顺序：电影在前、剧在后（单值 IncludeItemTypes，BUG-2254）。
+  static const List<String> kSearchRounds = <String>['Movie', 'Series'];
+
+  @override
+  Future<MediaServerPage> search(
+    String query, {
+    int startIndex = 0,
+    int limit = kMediaServerPageSize,
+  }) async {
+    final String term = query.trim();
+    if (term.isEmpty) return const MediaServerPage.empty();
+    // 把两轮结果当成一条拼接序列分页：offset 是「还要跳过多少条」，跨过一整轮
+    // 就减掉那轮总数；remaining 是本页还缺多少条。每轮都要问一次（哪怕本页已
+    // 满也 Limit=1 只取总数），否则 totalCount 算不出、hasMore 无从判断。
+    final List<MediaServerItem> items = <MediaServerItem>[];
+    int offset = startIndex;
+    int remaining = limit;
+    int total = 0;
+    for (final String type in kSearchRounds) {
+      final JellyfinItemsPage page = await api.items(
+        userId: userId,
+        recursive: true,
+        includeItemType: type,
+        searchTerm: term,
+        startIndex: offset,
+        limit: remaining > 0 ? remaining : 1,
+      );
+      total += page.totalCount;
+      if (offset >= page.totalCount) {
+        offset -= page.totalCount;
+        continue;
+      }
+      final int take =
+          remaining < page.items.length ? remaining : page.items.length;
+      items.addAll(mediaServerItemsFrom(page.items.take(take)));
+      remaining -= take;
+      offset = 0;
+    }
+    return MediaServerPage(
+      items: items,
+      totalCount: total,
+      startIndex: startIndex,
+    );
+  }
+
+  @override
+  Future<MediaServerItem> itemDetail(String itemId) async {
+    // `/Users/{uid}/Items/{id}` 不看 Fields、全量返回（Overview / Genres /
+    // MediaSources 都在），与播放路径用的是同一发请求，不另加参数。
+    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: itemId);
+    final MediaServerItemType? type = mediaServerTypeOf(item);
+    if (type == null) {
+      throw ArgumentError.value(itemId, 'itemId',
+          'Jellyfin item type "${item.type}" is outside the video domain');
+    }
+    return mediaServerItemFrom(item, type);
+  }
+
+  @override
+  String? coverUrl(
+    MediaServerItem item, {
+    int maxWidth = kMediaServerCoverMaxWidth,
+    MediaServerImageKind kind = MediaServerImageKind.primary,
+  }) {
+    final (bool has, String imageType) = switch (kind) {
+      MediaServerImageKind.primary => (item.hasCover, 'Primary'),
+      MediaServerImageKind.backdrop => (item.hasBackdrop, 'Backdrop'),
+      MediaServerImageKind.thumb => (item.hasThumb, 'Thumb'),
+      MediaServerImageKind.logo => (item.hasLogo, 'Logo'),
+    };
+    if (!has) return null;
+    return api.imageUrl(item.id, maxWidth: maxWidth, imageType: imageType);
+  }
+
+  @override
+  String? libraryCoverUrl(
+    MediaServerLibrary library, {
+    int maxWidth = kMediaServerCoverMaxWidth,
+  }) =>
+      library.hasCover ? api.imageUrl(library.id, maxWidth: maxWidth) : null;
+
+  @override
+  RemoteVideoInfo toRemoteVideoInfo(MediaServerItem item) {
+    if (!item.isPlayable) {
+      throw ArgumentError.value(
+          item.type, 'item', 'only Movie / Episode leaves are playable');
+    }
+    return _remoteVideoInfoFor(item);
   }
 
   /// 「没指定轨时该下哪条字幕」的唯一判据：外挂文本轨优先，其次第一条文本轨；
@@ -1125,9 +1797,11 @@ class JellyfinVideoClient
   }
 
   /// 单集 → 按剧名归入 playlist 合集（库页折叠成一张剧卡）；电影独立。
-  static RemoteCollectionMembership? _collectionOf(JellyfinItem item) {
+  static RemoteCollectionMembership? _collectionOf(MediaServerItem item) {
     final String? series = item.seriesName;
-    if (item.type != 'Episode' || series == null || series.isEmpty) {
+    if (item.type != MediaServerItemType.episode ||
+        series == null ||
+        series.isEmpty) {
       return null;
     }
     return RemoteCollectionMembership(

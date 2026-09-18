@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/utils/cover_image.dart'
+    show kLocalCoverDecodePixelWidth;
 
 class _FakeRemoteCoverFetcher implements RemoteCoverFetcher {
   @override
@@ -28,11 +30,34 @@ void main() {
       remoteCacheKey: 'video-episode-42',
     );
 
-    expect(result, isA<RemoteCoverImage>());
-    final RemoteCoverImage image = result! as RemoteCoverImage;
+    // 远端分支与本机文件对称：恒套 ResizeImage 解码上限（此前默认宽度时返回裸
+    // RemoteCoverImage，host 原图整帧解进 ImageCache，iOS 远端库页低内存被杀）。
+    expect(result, isA<ResizeImage>());
+    final ResizeImage resized = result! as ResizeImage;
+    expect(resized.width, kLocalCoverDecodePixelWidth);
+    expect(resized.allowUpscaling, isFalse);
+    expect(resized.imageProvider, isA<RemoteCoverImage>());
+    final RemoteCoverImage image = resized.imageProvider as RemoteCoverImage;
     expect(image.coverUrl, 'https://peer.example/cover/episode');
     expect(image.fetcher, same(fetcher));
     expect(image.cacheKey, 'video-episode-42');
+  });
+
+  test('remote cover honours a caller-supplied decode width', () {
+    final _FakeRemoteCoverFetcher fetcher = _FakeRemoteCoverFetcher();
+
+    final ImageProvider? result = resolveMediaCoverImage(
+      kind: MediaKind.video,
+      remoteUrl: 'https://peer.example/cover/episode',
+      remoteFetcher: fetcher,
+      remoteCacheKey: 'video-episode-42',
+      decodeWidth: 192,
+    );
+
+    expect(result, isA<ResizeImage>());
+    final ResizeImage resized = result! as ResizeImage;
+    expect(resized.width, 192);
+    expect(resized.imageProvider, isA<RemoteCoverImage>());
   });
 
   test('local cover is used when the remote client cannot fetch covers', () {

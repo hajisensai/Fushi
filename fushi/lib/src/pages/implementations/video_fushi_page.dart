@@ -1874,6 +1874,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
   List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
 
+  /// [_episodePanelEntries] 的 memo 及其三个输入的身份快照。
+  ///
+  /// 剧集面板常驻挂在 [_videoWithSubtitlePanel] 的 Stack 里（隐藏态留树做
+  /// slide + fade），页面每次 setState 都会重建它；此前 entries 每次重建都对全部
+  /// N 集重新 new [VideoEpisodeEntry] + 远端封面 provider + 跑
+  /// [parsedEpisodeNumberOf] 正则，远端合集几十集时每帧白做几十次正则与 provider
+  /// 构造，新 provider 实例还让每张卡的 `Image` 逐帧走 key 比较。三个输入
+  /// （[_episodes] / 封面拉取器 / [_playlistCollectionImages]）都是**整体替换、
+  /// 从不原地改**的列表 / 对象，按身份缓存即与重算逐字等价；当前集 / 高亮由面板
+  /// 按 [_currentEpisode] 单独跟随，不在 entries 里。
+  List<VideoEpisodeEntry>? _episodePanelEntriesMemo;
+  List<_PlaylistEpisodeRef>? _episodePanelEntriesEpisodes;
+  RemoteCoverFetcher? _episodePanelEntriesFetcher;
+  List<MediaImageRow>? _episodePanelEntriesImages;
+
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
 
@@ -2935,29 +2950,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       } else if (urls.subtitleUrl != null) {
         // TODO-1213：进入「正在下载字幕…」阶段（host 若回调 onProgress 则显确定性进度）。
         _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
-        final Directory temp = await getTemporaryDirectory();
-        final File subtitle = File(
-          p.join(
-            temp.path,
-            _remoteSubtitleTempFileName(
-              '${info.id}_ep$index',
-              urls.subtitleFileName,
+        // host 默认字幕**下载失败不等于播放失败**：此前这一段没有局部 try/catch，
+        // 任何非 2xx（飞牛返回 HTML 登录页、Emby 图形轨抽取 500、旧 host 无该端点）
+        // 都冒到外层 catch → `_failed = true`，整集被判成「播放失败」，而视频流
+        // 本身明明能放（用户报「远端字幕用不了 = 整个视频打不开」）。与上面
+        // `embedded:<n>` 重放分支同款：失败只 debugPrint、不设 externalSub / cues
+        // 保持空、字幕菜单如实显示无字幕，视频照常起播；加载阶段由 _applyLoad
+        // 接着推进（buffering → 首帧）。
+        try {
+          final Directory temp = await getTemporaryDirectory();
+          final File subtitle = File(
+            p.join(
+              temp.path,
+              _remoteSubtitleTempFileName(
+                '${info.id}_ep$index',
+                urls.subtitleFileName,
+              ),
             ),
-          ),
-        );
-        await client.getRemoteVideoSubtitle(
-          info.id,
-          subtitle,
-          episodeIndex: index,
-          onProgress: (double progress) {
-            // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
-            if (!mounted) return;
-            setState(() => _subtitleProgress = progress);
-          },
-        );
-        externalSub = subtitle.path;
-        _remoteSubtitlePath = subtitle.path;
-        cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
+          );
+          await client.getRemoteVideoSubtitle(
+            info.id,
+            subtitle,
+            episodeIndex: index,
+            onProgress: (double progress) {
+              // TODO-1213：字幕下载确定性进度 → 加载态显进度条 + 百分比。
+              if (!mounted) return;
+              setState(() => _subtitleProgress = progress);
+            },
+          );
+          cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
+          externalSub = subtitle.path;
+          _remoteSubtitlePath = subtitle.path;
+        } catch (e) {
+          debugPrint(
+            '[VideoFushiPage] remote default subtitle download failed '
+            '(video continues without subtitles): $e',
+          );
+        }
       }
       if (seq != _episodeLoadSeq || !mounted) return;
       _currentEpisode = index;

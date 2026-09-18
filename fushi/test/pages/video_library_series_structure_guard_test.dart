@@ -49,10 +49,22 @@ void main() {
     expect(page, contains('video-all-videos-layout-toggle'));
     expect(page, contains('_canonicalCollectionPosterProvider'));
     expect(page, contains('_canonicalBookPosterProvider'));
+    // 系列墙自 series-first 拆分后全员竖卡：墙 sliver 直接以 portrait 建格，
+    // `_VideoWallEntry` 不再持有封面 provider 做朝向探测（几千条目的库首帧
+    // 会先付几千次磁盘 stat）。锁墙 sliver 的建格朝向，而不是某个字段名。
+    final String wallSliver = page.substring(
+      page.indexOf('Widget _buildVideoWallSliver('),
+      page.indexOf('Widget _buildAllVideoGridSliver('),
+    );
+    expect(
+      wallSliver,
+      contains('.build(VideoCardOrientation.portrait)'),
+      reason: '系列墙必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+    );
     expect(
       page,
-      contains('forcedOrientation: VideoCardOrientation.portrait'),
-      reason: '系列墙必须使用竖版刮削封面，不能再被分集截图探测成横卡',
+      isNot(contains('forcedOrientation:')),
+      reason: '墙格不得回潮到「预先求封面 provider + 朝向探测」的旧模型',
     );
     expect(page, contains('video_home_continue_episode_number'));
     expect(page, contains('video_home_remaining_minutes'));
@@ -184,9 +196,11 @@ void main() {
       allVideosBuilderStart,
       allVideosBuilderEnd,
     );
+    // 列表档本地行与远端行合成一个索引空间、在 itemBuilder 里按 index 现建
+    //（真懒构建），锚的是两条路径都还在，不是某个变量名。
     for (final String token in <String>[
-      '_buildAllVideoListRow(book)',
-      '_buildAllVideoRemoteListRow(video)',
+      '_buildAllVideoListRow(ordered[index])',
+      '_buildAllVideoRemoteListRow(',
       'orientation: VideoCardOrientation.landscape',
       '_buildAllVideoGridSliver(',
     ]) {

@@ -667,23 +667,33 @@ bool isNetworkStreamUri(String uri) {
 /// - `network-timeout=30`：默认 5s 太激进——WiFi 短暂抖动超过 5s 就会撕掉 HTTP 连接
 ///   触发整段重连。放宽到 30s，让瞬时停顿靠缓存撑过去而非断流。
 /// - `cache=yes`：显式确认开启流缓存（media_kit 默认已开，远端流再确认一次）。
-/// - `demuxer-max-bytes=128MiB`：缓存的**真实约束**。mpv 文档明确「cache 开启时实际
-///   预读量受 demuxer-max-bytes 限制」；默认 32MiB 在 ~40Mbps REMUX 下只够约 6s，
-///   抖动一下就空。提到 128MiB（~40Mbps 约 25s / 典型 15Mbps 约 68s）给足缓冲。
-///   只一段视频会话用一份缓冲，dispose 即释放，128MiB 桌面/现代移动端可接受。
-/// - `demuxer-max-back-bytes=64MiB`：向后缓冲（往回 seek 不重新拉流），取前向一半。
-/// - `cache-secs=30`：目标预读 30s（受上面字节上限封顶）。mpv 文档：cache 开启时
+/// - `demuxer-max-bytes=128MiB`（桌面）：缓存的**真实约束**。mpv 文档明确「cache 开启
+///   时实际预读量受 demuxer-max-bytes 限制」；默认 32MiB 在 ~40Mbps REMUX 下只够约
+///   6s，抖动一下就空。提到 128MiB（~40Mbps 约 25s / 典型 15Mbps 约 68s）给足缓冲。
+///   只一段视频会话用一份缓冲，dispose 即释放，128MiB 桌面可接受。
+/// - `demuxer-max-back-bytes=64MiB`（桌面）：向后缓冲（往回 seek 不重新拉流），取前向一半。
+/// - `cache-secs=30`（桌面）：目标预读 30s（受上面字节上限封顶）。mpv 文档：cache 开启时
 ///   cache-secs 覆盖 demuxer-readahead-secs，故网络流用 cache-secs 控预读时长（而非
 ///   demuxer-readahead-secs——后者在 cache 开启时「基本被忽略」）。
 ///
+/// **移动端分档**（[isMobile]，默认取 `Platform.isAndroid || Platform.isIOS`，注入仅为
+/// 单测）：前向 32MiB / 后向 16MiB / cache-secs 20。iOS 对前台 app 的内存 jetsam 线
+/// 远低于桌面（多数机型 1~2GB 就杀），128+64MiB 的 demuxer 缓冲叠上解码器 surface、
+/// 远端封面 ImageCache 与 WebView 后，Jellyfin / Emby 远端播放整机就近在被杀线上——
+/// 用户报「iOS 远端播放闪退 / 卡死」。48MiB 总量在典型 15Mbps 下仍够 ~17s 前向预读，
+/// 足以撑过 WiFi 抖动；桌面维持原值不动。
+///
 /// 所有属性均为 libmpv 运行时可设属性（经 `mpv_set_property_string`），由
 /// [applyNetworkCachePropertiesToPlayer] 在 `player.open` 后逐条 best-effort 注入。
-Map<String, String> buildNetworkCacheProperties() {
+Map<String, String> buildNetworkCacheProperties({bool? isMobile}) {
+  final bool mobile = isMobile ?? (Platform.isAndroid || Platform.isIOS);
+  final int forwardBytes = (mobile ? 32 : 128) * 1024 * 1024;
+  final int backBytes = (mobile ? 16 : 64) * 1024 * 1024;
   return <String, String>{
     'cache': 'yes',
-    'cache-secs': '30',
-    'demuxer-max-bytes': '${128 * 1024 * 1024}', // 128 MiB
-    'demuxer-max-back-bytes': '${64 * 1024 * 1024}', // 64 MiB
+    'cache-secs': mobile ? '20' : '30',
+    'demuxer-max-bytes': '$forwardBytes',
+    'demuxer-max-back-bytes': '$backBytes',
     'network-timeout': '30',
   };
 }

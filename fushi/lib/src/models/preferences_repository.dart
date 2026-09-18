@@ -497,6 +497,17 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 是否把 Jellyfin/Emby 条目混排进首页 / 系列 / 全部视频（B4）。默认 false：
+  /// 媒体服务器条目只在视频页「媒体服务器」分区按服务器自己的树浏览，不再一进
+  /// 视频页就整库拍平枚举；[jellyfinAutoListVideos] 只在本开关开着时才有意义。
+  bool get jellyfinShowInLibrary =>
+      getPref('jellyfin_show_in_library', defaultValue: false) as bool;
+
+  Future<void> setJellyfinShowInLibrary(bool value) async {
+    await setPref('jellyfin_show_in_library', value);
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>

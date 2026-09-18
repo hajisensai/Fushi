@@ -5045,5 +5045,22 @@
   "ai_feature_custom_theme_summary": "让 AI 按描述生成自定义主题配色",
   "theme_ai_hint": "描述想要的主题，例如：暖色纸张阅读风格，主题色深绿",
   "theme_ai_applied": "AI 建议已填进编辑器，看过预览后再应用。",
-  "theme_ai_undo": "撤销 AI 改动"
+  "theme_ai_undo": "撤销 AI 改动",
+  "jellyfin_servers_signed_in_title": "已登录的服务器",
+  "jellyfin_servers_empty_hint": "尚未登录任何服务器",
+  "jellyfin_servers_add_title": "添加服务器",
+  "video_library_media_servers": "媒体服务器",
+  "jellyfin_show_in_library_title": "在视频库中混排显示",
+  "jellyfin_show_in_library_hint": "把媒体服务器条目混排进首页、系列与全部视频。关闭后只在「媒体服务器」分区浏览。",
+  "media_server_servers_title": "选择服务器",
+  "media_server_servers_empty_hint": "还没有登录任何媒体服务器",
+  "media_server_servers_go_settings": "去设置添加服务器",
+  "media_server_libraries_title": "媒体库",
+  "media_server_row_view_all": "查看全部",
+  "media_server_sort_name": "名称",
+  "media_server_sort_date_added": "添加时间",
+  "media_server_search_hint": "搜索此服务器",
+  "media_server_items_empty": "没有条目",
+  "media_server_items_load_failed": "无法从服务器加载条目",
+  "media_server_item_folder": "文件夹"
 }

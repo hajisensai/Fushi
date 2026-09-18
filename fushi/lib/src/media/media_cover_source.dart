@@ -48,8 +48,9 @@ import 'package:fushi/src/utils/cover_image.dart'
 /// **不做 `existsSync`**：那是每帧一次同步 IO，而文件缺失由渲染层的
 /// `errorBuilder` 兜底即可（见 [resizedFileImage] 注释）。
 ///
-/// 本机文件恒过 [resizedFileImage] 套解码上限——整帧原生分辨率解进内存只为画一个
-/// 卡槽是纯浪费；[decodeWidth] 只在调用方确知需要更大图时才调。
+/// 本机文件恒过 [resizedFileImage]、远端封面恒过 [ResizeImage] 套解码上限——整帧
+/// 原生分辨率解进内存只为画一个卡槽是纯浪费；[decodeWidth] 只在调用方确知需要更大
+/// 图时才调。
 ImageProvider? resolveMediaCoverImage({
   required MediaKind kind,
   MediaItem? book,
@@ -74,14 +75,17 @@ ImageProvider? resolveMediaCoverImage({
         : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
   }
   if (remoteUrl != null && remoteUrl.isNotEmpty && remoteFetcher != null) {
-    final ImageProvider<Object> provider = RemoteCoverImage(
-      remoteUrl,
-      remoteFetcher,
-      cacheKey: remoteCacheKey,
+    // 远端封面与本机文件**对称**套解码上限（BUG-959 的远端半边）：host 下发的
+    // 封面常是 Jellyfin / Emby 原图（1000×1500 起步），此前默认 [decodeWidth] 时
+    // 直接返回裸 [RemoteCoverImage]，整帧解进 ImageCache——远端库页 / 剧集面板
+    // 几十张封面就把 100MB 上限撑爆，滚动时反复淘汰重解码，iOS 上是低内存被杀
+    // 的主因之一。[ResizeImage] 把 targetWidth 经 decode 回调交给
+    // `RemoteCoverImage._loadAsync`，磁盘 / 网络字节不变、只降解码尺寸。
+    return ResizeImage(
+      RemoteCoverImage(remoteUrl, remoteFetcher, cacheKey: remoteCacheKey),
+      width: decodeWidth,
+      allowUpscaling: false,
     );
-    return decodeWidth == kLocalCoverDecodePixelWidth
-        ? provider
-        : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
   }
   if (localPath != null && localPath.isNotEmpty) {
     return resizedFileImage(File(localPath), width: decodeWidth);
