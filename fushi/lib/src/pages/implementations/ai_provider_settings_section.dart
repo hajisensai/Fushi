@@ -586,6 +586,7 @@ class _AiProviderSettingsSectionState
     AiFeature.lapisStyle => t.ai_feature_lapis_style,
     AiFeature.videoIdentify => t.ai_feature_video_identify,
     AiFeature.videoSearch => t.ai_feature_video_search,
+    AiFeature.customTheme => t.ai_feature_custom_theme,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -594,6 +595,7 @@ class _AiProviderSettingsSectionState
     AiFeature.lapisStyle => t.ai_feature_lapis_style_summary,
     AiFeature.videoIdentify => t.ai_feature_video_identify_summary,
     AiFeature.videoSearch => t.ai_feature_video_search_summary,
+    AiFeature.customTheme => t.ai_feature_custom_theme_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

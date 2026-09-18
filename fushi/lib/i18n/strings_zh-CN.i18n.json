@@ -5033,5 +5033,10 @@
   "anki_mined_unverified_subtitle": "Fushi 无法回读 AnkiMobile 的卡片库，已制卡标记来自本机记录，无法判断卡片是否还在 Anki 里。",
   "anki_mined_action_forget": "我已在 Anki 里删了这张卡",
   "anki_mined_forget_done": "已清除制卡记录",
-  "reader_gallery_cover": "封面"
+  "reader_gallery_cover": "封面",
+  "ai_feature_custom_theme": "自定义主题",
+  "ai_feature_custom_theme_summary": "让 AI 按描述生成自定义主题配色",
+  "theme_ai_hint": "描述想要的主题，例如：暖色纸张阅读风格，主题色深绿",
+  "theme_ai_applied": "AI 建议已填进编辑器，看过预览后再应用。",
+  "theme_ai_undo": "撤销 AI 改动"
 }
