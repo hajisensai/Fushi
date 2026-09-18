@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2385 条。点号进各自文件。
+> 共 2386 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2580](bugs/BUG-2580-reader-toc-anchor-subchapter-current.md) | ✅ | ✅ | 阅读器目录靠锚点分节时当前章名与勾选落错 |
 | [BUG-2579](bugs/BUG-2579-mdx-dict-order.md) | ✅ | ✅ | 查词弹窗里 MDX 词典恒排在所有 Yomitan 词典之后 |
 | [BUG-2577](bugs/BUG-2577-android-video-import-scrape-freeze.md) | ✅ | ✅ | 安卓按作品归类导入视频整机卡顿冻结崩溃——AniDB 标题包与 Fribb 映射在 UI isolate 整包解析建 DOM |
 | [BUG-2576](bugs/BUG-2576-vn-restore-progress-chapter-end.md) | ✅ | ✅ | VN 往前翻章 restoreProgress(0.99) 落到 99% 字数所在屏而非末屏，fragment 失效不回退进度 |
