@@ -2290,6 +2290,32 @@ void main() {
         );
       });
 
+      test('网络流：宽限用尽（mpv network-timeout 已过）才判死', () {
+        // Emby 流 URL 失效 / 会话被服务器收掉 / 中继 502：此前网络流永远不判死，
+        // 用户对着黑屏 00:00 无提示无重试——「有时候无法重新播放」的观感。
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: false,
+            isLocalFile: false,
+            alreadyFailed: false,
+            missingResource: false,
+            networkGraceElapsed: true,
+          ),
+          isTrue,
+        );
+        expect(
+          VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+            mediaOpened: true,
+            isLocalFile: false,
+            alreadyFailed: false,
+            missingResource: false,
+            networkGraceElapsed: true,
+          ),
+          isFalse,
+          reason: '打开了就是慢，不是死',
+        );
+      });
+
       test('页面已在失败态 / 资源缺失态 → 不再盖一层', () {
         expect(
           VideoPlayerController.shouldDiagnoseMediaNeverOpened(
@@ -2308,6 +2334,46 @@ void main() {
             missingResource: true,
           ),
           isFalse,
+        );
+      });
+    });
+
+    // BUG-2441 触发侧：上一个 Player 的原生拆除与下一个 Player 的建立并发。新控制器
+    // 建 Player 前必须先等上一份释放落定（有界）。
+    group('上一个 Player 的原生释放先于下一个建立', () {
+      tearDown(() {
+        VideoPlayerController.pendingNativeDisposalForTesting = null;
+      });
+
+      test('在途释放未落定：awaitPendingNativeDisposal 等它', () async {
+        final Completer<void> disposal = Completer<void>();
+        VideoPlayerController.pendingNativeDisposalForTesting = disposal.future;
+        bool settled = false;
+        final Future<void> waiting =
+            VideoPlayerController.awaitPendingNativeDisposal().then((_) {
+          settled = true;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(settled, isFalse, reason: '释放没落定就不能放行建新 Player');
+        disposal.complete();
+        await waiting;
+        expect(settled, isTrue);
+        expect(VideoPlayerController.pendingNativeDisposalForTesting, isNull,
+            reason: '落定后清掉，下一次不再等');
+      });
+
+      test('无在途释放：立即返回', () async {
+        VideoPlayerController.pendingNativeDisposalForTesting = null;
+        await VideoPlayerController.awaitPendingNativeDisposal()
+            .timeout(const Duration(milliseconds: 100));
+      });
+
+      test('释放永不落定：有界等待后照常放行（不把新页一起卡死）', () async {
+        VideoPlayerController.pendingNativeDisposalForTesting =
+            Completer<void>().future;
+        await VideoPlayerController.awaitPendingNativeDisposal().timeout(
+          VideoPlayerController.kNativeDisposalWait +
+              const Duration(seconds: 2),
         );
       });
     });

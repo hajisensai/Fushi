@@ -278,6 +278,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_immersive_mode',
   'video_library_auto_backfill_scrape',
   'video_lock_window_aspect_ratio',
+  // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
+  // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
+  // 超限由服务器转码。
+  'video_media_server_quality_preset',
   'video_mining_animated_format',
   'video_mining_image_mode',
   'video_mining_still_format',

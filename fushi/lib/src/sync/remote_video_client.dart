@@ -82,6 +82,58 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
+/// 「播放会话生命周期」的可选能力——[RemoteVideoPlaybackStop] 的超集。
+///
+/// Jellyfin / Emby 的会话协议是三段式：`/Sessions/Playing`（开始）→
+/// `/Sessions/Playing/Progress`（心跳，含暂停 / 继续事件）→ `/Sessions/Playing/Stopped`。
+/// 此前本仓只发后两段：服务器从没见过 Start，仪表盘「正在播放」看不到本客户端、
+/// 暂停对服务器不可见（心跳恒 `IsPaused=false`）、服务端也无法把 Progress / Stopped
+/// 关联到某一次播放。周期心跳仍走 [RemoteVideoClient.putRemoteVideoPosition]；
+/// 暂停 / 继续走 [setRemoteVideoPlaybackPaused]（即时，不受心跳节流）。
+abstract interface class RemoteVideoPlaybackSession
+    implements RemoteVideoPlaybackStop {
+  /// 本次播放真正起播时调（流已打开）。位置单位毫秒。
+  Future<void> startRemoteVideoPlayback(String id, int positionMs);
+
+  /// 暂停 / 继续即时上报。
+  Future<void> setRemoteVideoPlaybackPaused(
+    String id,
+    int positionMs, {
+    required bool paused,
+  });
+}
+
+/// 媒体服务器串流画质档（成熟客户端的「画质」菜单：自动 / 1080p 20 Mbps / …）。
+///
+/// 选档 = 向服务器声明码率上限 + 宽度上限：原文件码率不超上限就仍直播放，超了由
+/// 服务器转码到该档。null 上限 = 自动（服务器允许时直播放原文件）。
+class MediaServerQualityPreset {
+  const MediaServerQualityPreset({
+    required this.label,
+    required this.maxBitrate,
+    required this.maxWidth,
+  });
+
+  /// 菜单文案（`1080p · 20 Mbps` 形式，纯数字与单位，不进 i18n）。
+  final String label;
+
+  /// 码率上限（bps）。
+  final int maxBitrate;
+
+  /// 宽度上限（像素），转码时按它缩。
+  final int maxWidth;
+}
+
+/// 「串流画质档」的可选能力：只有 Jellyfin / Emby 这类能按 DeviceProfile 协商
+/// 直播放 / 转码的来源有它。改档后调用方需重新取流（[RemoteVideoClient.remoteVideoStreamUrls]）。
+abstract interface class RemoteVideoQualityLimit {
+  List<MediaServerQualityPreset> get qualityPresets;
+
+  /// 当前档在 [qualityPresets] 里的下标；-1 = 自动。
+  int get qualityPresetIndex;
+  set qualityPresetIndex(int index);
+}
+
 /// 「清单里省掉的重字段按需补齐」的**可选**能力（BUG-1891）。
 ///
 /// 起因是 Jellyfin/Emby：清单请求带 `Fields=MediaSources` 会让服务器为**每一条**
