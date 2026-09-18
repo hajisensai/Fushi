@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show compute;
@@ -17,6 +18,7 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart'
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
+import 'package:fushi/src/reader/illustration_grid_columns.dart';
 import 'package:fushi/src/reader/illustration_progress_index.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
@@ -292,29 +294,40 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       children: [
         if (_loading) const LinearProgressIndicator(),
         Expanded(
-          child: GridView.builder(
-            // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末行缩略图得靠
-            // 内容 padding 自己让开 home indicator / 手势条。
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.all(tokens.spacing.gap),
-            ),
-            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 200,
-              mainAxisSpacing: tokens.spacing.gap,
-              crossAxisSpacing: tokens.spacing.gap,
-            ),
-            itemCount: _images.length,
-            itemBuilder: (context, index) {
-              final _Illustration im = _images[index];
-              final bool blurred = _isBlurred(im);
-              return FushiCard(
-                padding: EdgeInsets.zero,
-                // 未揭开：点击先揭开（防剧透）；已揭开：点击进全屏。
-                onTap: blurred
-                    ? () => _revealImage(im)
-                    : () => _openFullScreen(index),
-                child: _thumb(im, blurred),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double gap = tokens.spacing.gap;
+              // 列数随窗口宽度走（与阅读器插图册同一规则）：桌面大窗缩略图放大，
+              // 不再钉死 200px 上限让右边整片空着。
+              final int columns = illustrationGridColumnsForWidth(
+                math.max(1, constraints.maxWidth - gap * 2),
+                spacing: gap,
+              );
+              return GridView.builder(
+                // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末行缩略图得靠
+                // 内容 padding 自己让开 home indicator / 手势条。
+                padding: withBottomSafeInset(
+                  context,
+                  EdgeInsets.all(gap),
+                ),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisSpacing: gap,
+                  crossAxisSpacing: gap,
+                ),
+                itemCount: _images.length,
+                itemBuilder: (context, index) {
+                  final _Illustration im = _images[index];
+                  final bool blurred = _isBlurred(im);
+                  return FushiCard(
+                    padding: EdgeInsets.zero,
+                    // 未揭开：点击先揭开（防剧透）；已揭开：点击进全屏。
+                    onTap: blurred
+                        ? () => _revealImage(im)
+                        : () => _openFullScreen(index),
+                    child: _thumb(im, blurred),
+                  );
+                },
               );
             },
           ),

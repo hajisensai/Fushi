@@ -1,0 +1,16 @@
+## BUG-2570 · 一个文件失败让整批视频导入 0 条入库，只剩一句裸异常
+- **报告**：2026-09-16（用户：手机导入视频「keep getting errors with no result」）
+- **真实性**：✅ 真 bug，根因是 `_importVideos` 的循环**没有逐文件错误边界**（修复前行号）：
+  - `fushi/lib/src/media/source_library/source_library_scanner.dart:1060-1180`：`for (item in plan.videos) { ... }` 整段只有一个为清理临时目录服务的 `try/finally`，**没有 catch**。
+  - 循环里每个文件都有会抛的步骤：`Directory.systemTemp.createTempSync`、`fs.copyToLocal`、`readTextWithEncoding(File(localSub))`（sidecar 字幕读不了就抛 `PathNotFoundException`）、`parseSubtitleCues`、两次落库。
+  - 任一抛出 → 冒到 `_scanUnlocked` 的总 catch（`:655`）→ `scanError = e.toString()`。而 video 分支的 `mediaCount = createdVideoPaths.length` 在 `_importVideos` **返回之后**才赋值，于是 `mediaCount` 停在 **0**。
+  - 用户侧观感：扫 200 个视频，其中一个的 sidecar 字幕读不了（外接盘掉线 / SAF 权限被回收 / 文件正被移动 / 编码异常），**一条都不入库**，只弹一句没有文件名、没有阶段的 `PathNotFoundException: ...`。重扫仍然撞同一个文件 → 「反复报错、始终没有结果」。
+  - 对照组：`_importBooks`（`:670`）是逐文件 `try`，`_importManga` 亦然；video 分支是这三者里唯一漏掉的。
+- **[x] ① 已修复** — `57c3e7a2cca`
+  - `_importVideos`：循环体裹逐文件 `try/catch`，失败只作废该文件，记进 `failedPaths` + 留第一条 `firstError`；返回类型从 `List<String>` 改为 `({createdPaths, failedPaths, firstError})`。
+  - `_scanUnlocked`：`failedPaths` 非空时汇总成一条**能照着查**的错误——`Imported N video(s); M failed. First failure: <basename> — <error>`，经新的 `partialError` 局部变量在写库前 `scanError ??= partialError` 顶上去。
+  - **不是吞异常**：失败照样上报、照样落 `lastScanError`、照样弹 toast；变的是「失败的粒度」与「错误说不说得清是谁」。整次扫描中断的异常优先级仍高于逐文件汇总（那是更严重的事）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_library_scanner_video_import_test.dart`
+  - **行为层**：注入一个 `isLocal == true` 的替身 fs，条目清单里放一个**磁盘上并不存在**的 `broken.srt`（真实 sidecar 消失时生产代码看到的就是这个形状）。断言 `importedMediaCount == 2`、库里恰好是 `good1/good2`、`summary.error` 同时包含 `broken.mkv` 与 `1 failed`、且同一条错误落回来源行。修复前实测 `importedMediaCount` 为 **0**。
+  - 另有一条「全部正常时不产生任何错误」的对照，防止把 `partialError` 写成恒真。
+- **备注**：与 [BUG-2569](BUG-2569-video-import-inline-cover-blocks-scan.md) 同一轮修复、同一条用户报告。BUG-1117 修过的是 `VideoImportDialog` 的四个导入方法（那是**弹窗**路径），本条是**来源扫描**路径，两者不是同一段代码。
