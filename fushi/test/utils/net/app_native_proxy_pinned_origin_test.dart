@@ -129,11 +129,20 @@ void main() {
       );
     });
 
-    test('未登记 / 非 https / 本地文件 原样返回', () {
+    test('未钉扎的 https 也降级并登记为「中继终结 TLS」原点；非 https / 本地文件原样', () {
+      // Apple 随包 libmpv 的 Mbed TLS 握手会段错误、Android 的 ffmpeg tls 不校验证书：
+      // 任何 https 都不再交给 native 自己握手（见 app_native_proxy_tls_origin_test）。
       expect(
         nativePlaybackUri('https://unknown.example:1/x'),
-        'https://unknown.example:1/x',
+        'http://unknown.example:1/x',
       );
+      expect(isTlsNativeOrigin('unknown.example', 1), isTrue);
+      // 同 (host, port) 改回明文 http：撤销 TLS 登记，否则中继会把真明文硬升 https。
+      expect(
+        nativePlaybackUri('http://unknown.example:1/x'),
+        'http://unknown.example:1/x',
+      );
+      expect(isTlsNativeOrigin('unknown.example', 1), isFalse);
       expect(
         nativePlaybackUri('http://192.168.1.5:38765/x'),
         'http://192.168.1.5:38765/x',
