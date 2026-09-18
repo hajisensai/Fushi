@@ -53,8 +53,7 @@ void main() {
 
     test('account only, client left blank → bundled client counts as ready',
         () async {
-      final PreferencesRepository prefs =
-          await prefsWith(<String, Object>{
+      final PreferencesRepository prefs = await prefsWith(<String, Object>{
         kVideoAniDbHashEnabledPref: true,
         kVideoAniDbUsernamePref: 'tester',
         kVideoAniDbPasswordPref: 'password',
@@ -91,16 +90,14 @@ void main() {
           kVideoMetadataAniDbClientVersionPref: '2',
         },
       };
-      for (final MapEntry<String, Map<String, Object>> entry
-          in cases.entries) {
+      for (final MapEntry<String, Map<String, Object>> entry in cases.entries) {
         final PreferencesRepository prefs = await prefsWith(entry.value);
         expect(load(prefs).anidbHashReady, isFalse, reason: entry.key);
       }
     });
 
     test('custom client with version → ready', () async {
-      final PreferencesRepository prefs =
-          await prefsWith(<String, Object>{
+      final PreferencesRepository prefs = await prefsWith(<String, Object>{
         kVideoAniDbHashEnabledPref: true,
         kVideoAniDbUsernamePref: 'tester',
         kVideoAniDbPasswordPref: 'password',

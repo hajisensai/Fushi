@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 
@@ -22,7 +23,8 @@ class AnidbHashIdentityResult {
       this.matchedEd2k,
       this.mapping,
       this.error,
-      this.mappingError});
+      this.mappingError,
+      this.fromStore = false});
   final AnidbHashIdentityStatus status;
   final AnidbEd2kHash? hash;
   final AnidbFileIdentity? identity;
@@ -33,6 +35,9 @@ class AnidbHashIdentityResult {
   final Object? error;
   final Object? mappingError;
   int? get confirmedMalId => mapping?.confirmedMalId;
+
+  /// 这次结果是从持久层直接复用的（没算哈希、没发 FILE）。
+  final bool fromStore;
 }
 
 typedef AnidbFileHasher = Future<AnidbEd2kHash> Function(String path,
@@ -42,6 +47,10 @@ typedef AnidbIdentityLookup = Future<AnidbFileIdentity?> Function(
 
 /// Hashing is strictly opt-in and requires a registered, configured UDP client.
 /// A positive FILE response remains a match even if MAL mapping is unavailable.
+///
+/// 对齐 Shoko 的文件级流程：先查持久层 [AnidbFileIdentityStore]（路径 + 大小 +
+/// mtime 命中免哈希；哈希后按内容键命中免 FILE），只有真正没见过的内容才算
+/// ED2K、发 FILE，结果（含 320 未收录）写回持久层。
 class AnidbHashIdentityService {
   AnidbHashIdentityService(
       {required this.enabled,
@@ -50,13 +59,17 @@ class AnidbHashIdentityService {
       AnidbUdpFileClient? client,
       AnidbFileHasher? hasher,
       AnidbIdentityLookup? lookup,
+      AnidbFileIdentityStore? store,
+      DateTime Function()? now,
       this.maxCachedHashes = 512})
       : assert(maxCachedHashes > 0),
         _mapping = mapping ?? AnimeIdentityMapping(),
         _ownsMapping = mapping == null,
         _client = client ?? AnidbUdpFileClient(config: config),
         _hasher = hasher ?? hashAnidbFile,
-        _lookup = lookup;
+        _lookup = lookup,
+        _store = store,
+        _now = now ?? DateTime.now;
 
   final bool enabled;
   final AnidbUdpConfig config;
@@ -66,6 +79,8 @@ class AnidbHashIdentityService {
   final AnidbUdpFileClient _client;
   final AnidbFileHasher _hasher;
   final AnidbIdentityLookup? _lookup;
+  final AnidbFileIdentityStore? _store;
+  final DateTime Function() _now;
   final LinkedHashMap<String, AnidbEd2kHash> _hashes =
       LinkedHashMap<String, AnidbEd2kHash>();
   bool get isConfigured => config.isAvailable;
@@ -86,6 +101,17 @@ class AnidbHashIdentityService {
       _checkCancelled(isCancelled);
       final String absolutePath = File(path).absolute.path;
       final FileStat stat = await File(absolutePath).stat();
+      final AnidbFileIdentityStore? store = _store;
+      final DateTime now = _now();
+      // 持久层快路径：同路径、同大小、同 mtime 就是上次那份内容，直接复用。
+      if (store != null && stat.type == FileSystemEntityType.file) {
+        final AnidbFileIdentityRecord? known = await store.findForFile(
+            filePath: absolutePath, size: stat.size, modifiedAt: stat.modified);
+        if (known != null && (known.isMatch || known.isFreshMiss(now))) {
+          onProgress?.call(stat.size, stat.size);
+          return _fromRecord(known, stat, isCancelled);
+        }
+      }
       hash = _hashes.remove(absolutePath);
       if (hash == null ||
           stat.type != FileSystemEntityType.file ||
@@ -102,6 +128,16 @@ class AnidbHashIdentityService {
       while (_hashes.length > maxCachedHashes) {
         _hashes.remove(_hashes.keys.first);
       }
+      // 文件搬家 / 改名：内容键照样命中，只把路径提示更新到新位置。
+      if (store != null) {
+        final AnidbFileIdentityRecord? known =
+            await store.findByHash(ed2k: hash.ed2k, size: hash.size);
+        if (known != null && (known.isMatch || known.isFreshMiss(now))) {
+          await store.save(_recordFor(hash, known.identity, absolutePath,
+              resolvedAt: known.resolvedAt));
+          return _fromRecord(known, stat, isCancelled);
+        }
+      }
       final AnidbIdentityLookup lookup = _lookup ?? _client.lookup;
       AnidbFileIdentity? identity =
           await lookup(size: hash.size, ed2k: hash.ed2k);
@@ -114,9 +150,13 @@ class AnidbHashIdentityService {
         _checkCancelled(isCancelled);
       }
       if (identity == null) {
+        await store
+            ?.save(_recordFor(hash, null, absolutePath, resolvedAt: now));
         return AnidbHashIdentityResult(
             status: AnidbHashIdentityStatus.notFound, hash: hash);
       }
+      await store
+          ?.save(_recordFor(hash, identity, absolutePath, resolvedAt: now));
       AnimeIdentityMappingResult? mapping;
       Object? mappingError;
       try {
@@ -149,6 +189,51 @@ class AnidbHashIdentityService {
           status: AnidbHashIdentityStatus.failed, hash: hash, error: error);
     }
   }
+
+  /// 持久层记录 → 与在线路径同形的结果；Fribb 映射照查（本地表，便宜），
+  /// 这样调用方不用区分「刚问的」与「早就知道的」。
+  Future<AnidbHashIdentityResult> _fromRecord(AnidbFileIdentityRecord record,
+      FileStat stat, bool Function()? isCancelled) async {
+    final AnidbEd2kHash hash = AnidbEd2kHash(
+        ed2k: record.ed2k,
+        size: record.size,
+        modifiedAt: stat.modified,
+        changedAt: stat.changed);
+    final AnidbFileIdentity? identity = record.identity;
+    if (identity == null) {
+      return AnidbHashIdentityResult(
+          status: AnidbHashIdentityStatus.notFound,
+          hash: hash,
+          fromStore: true);
+    }
+    AnimeIdentityMappingResult? mapping;
+    Object? mappingError;
+    try {
+      mapping = await _mapping.lookupAnidb(identity.animeId);
+    } catch (error) {
+      mappingError = error;
+    }
+    _checkCancelled(isCancelled);
+    return AnidbHashIdentityResult(
+        status: AnidbHashIdentityStatus.matched,
+        hash: hash,
+        identity: identity,
+        matchedEd2k: record.ed2k,
+        mapping: mapping,
+        mappingError: mappingError,
+        fromStore: true);
+  }
+
+  static AnidbFileIdentityRecord _recordFor(
+          AnidbEd2kHash hash, AnidbFileIdentity? identity, String absolutePath,
+          {required DateTime resolvedAt}) =>
+      AnidbFileIdentityRecord(
+          ed2k: hash.ed2k,
+          size: hash.size,
+          identity: identity,
+          filePath: absolutePath,
+          fileModifiedAt: hash.modifiedAt,
+          resolvedAt: resolvedAt);
 
   static void _checkCancelled(bool Function()? isCancelled) {
     if (isCancelled?.call() ?? false) throw const AnidbHashCancelled();

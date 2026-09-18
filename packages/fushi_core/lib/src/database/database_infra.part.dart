@@ -137,6 +137,17 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'CREATE INDEX IF NOT EXISTS idx_video_scrape_runs_source_started '
             'ON video_source_scrape_runs (source_id, started_at DESC)'
       ],
+      // v106：文件级 AniDB 身份按「路径 + 大小」免哈希命中、按作品反查。
+      [
+        'anidb_file_identities',
+        'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_path '
+            'ON anidb_file_identities (file_path, file_size)'
+      ],
+      [
+        'anidb_file_identities',
+        'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_anime '
+            'ON anidb_file_identities (anidb_anime_id)'
+      ],
       [
         'video_sidecar_artifacts',
         'CREATE INDEX IF NOT EXISTS idx_video_sidecar_artifacts_source_run '

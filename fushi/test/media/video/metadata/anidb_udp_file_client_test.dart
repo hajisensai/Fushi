@@ -167,7 +167,9 @@ void main() {
         }
         if (packet.startsWith('FILE ')) {
           files++;
-          return files == 1 ? '$tag $expired LOGIN FIRST' : _normal(packet, tag);
+          return files == 1
+              ? '$tag $expired LOGIN FIRST'
+              : _normal(packet, tag);
         }
         return _normal(packet, tag);
       });
@@ -214,6 +216,55 @@ void main() {
     );
     expect(auths, 2);
     expect(fake.packets.where((p) => p.startsWith('FILE ')).length, 2);
+    await client.close();
+  });
+
+  // BUG-2586（对齐 Shoko）：一个丢包不再让整个进程的 AniDB 请求停 30 分钟——
+  // 同一 tag 的报文原样重发一次，第二次仍无应答才算超时。
+  test('a lost reply is resent once with the same tag before timing out',
+      () async {
+    int files = 0;
+    final _Fake fake = _Fake((packet, tag) {
+      if (packet.startsWith('FILE ')) {
+        files++;
+        if (files == 1) throw TimeoutException('lost');
+      }
+      return _normal(packet, tag);
+    });
+    final AnidbUdpFileClient client = AnidbUdpFileClient(
+      config: _config,
+      transportFactory: (_) async => fake,
+    );
+    expect((await client.lookup(size: 123, ed2k: _hash))?.fileId, 100);
+    expect(files, 2);
+    expect(fake.packets[1], fake.packets[2], reason: '重发必须是同一报文同一 tag');
+    await client.close();
+  });
+
+  test('two lost replies surface as timeout without a third send', () async {
+    int files = 0;
+    final _Fake fake = _Fake((packet, tag) {
+      if (packet.startsWith('FILE ')) {
+        files++;
+        throw TimeoutException('lost');
+      }
+      return _normal(packet, tag);
+    });
+    final AnidbUdpFileClient client = AnidbUdpFileClient(
+      config: _config,
+      transportFactory: (_) async => fake,
+    );
+    await expectLater(
+      client.lookup(size: 123, ed2k: _hash),
+      throwsA(
+        isA<AnidbUdpException>().having(
+          (e) => e.reason,
+          'reason',
+          AnidbUdpFailure.timeout,
+        ),
+      ),
+    );
+    expect(files, 2);
     await client.close();
   });
 

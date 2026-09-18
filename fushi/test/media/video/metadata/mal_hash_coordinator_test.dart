@@ -90,7 +90,9 @@ void main() {
     expect(await _primaryProvider(db), 'mal');
     expect(tmdb.searchCalls, 0);
     expect(hash.calls, 0);
-    expect(report.warnings, isEmpty);
+    // 哈希关着不再静默：一批只提一条「已关闭」，让排障分得清没开与没配好。
+    expect(report.warnings.map((SourceScrapeIssue w) => w.message),
+        <String>['AniDB 哈希识别已关闭（设置 → 在线服务 → AniDB），本批只按标题识别。']);
   });
 
   for (final String legacy in <String>['database', 'nfo', 'both']) {
@@ -365,8 +367,10 @@ void main() {
         isNot(contains('hash=0123456789abcdef')));
   });
 
+  // 对齐 Shoko（BUG-2586）：文件哈希已经百分百确定作品是 AniDB 100，这个身份
+  // 由哈希直接成立、照样落库；缺的只是 MAL 映射，走原生标题搜索去补 MAL 资料。
   test(
-      'positive hash without MAL mapping uses native titles without inventing cross-reference',
+      'positive hash without MAL mapping uses native titles and still records the AniDB identity',
       () async {
     final SourceLibraryRow source =
         await _source(db, directory, title: 'Wrong filename');
@@ -385,10 +389,10 @@ void main() {
         (await db.getVideoMetadataWorkByBook('book-0'))!;
     final List<VideoMetadataProviderIdentityRow> ids =
         await db.getVideoMetadataProviderIdentities(workId: work.id);
-    expect(
-        ids.any(
-            (VideoMetadataProviderIdentityRow id) => id.provider == 'anidb'),
-        isFalse);
+    final VideoMetadataProviderIdentityRow anidb = ids.singleWhere(
+        (VideoMetadataProviderIdentityRow id) => id.provider == 'anidb');
+    expect(anidb.externalId, '100');
+    expect(anidb.isPrimary, isFalse, reason: '作品资料源仍是 MAL，AniDB 只是交叉引用');
     expect(report.warnings.single.message, contains('文件身份已确定，MAL 元数据映射未确定'));
   });
 
@@ -422,27 +426,78 @@ void main() {
     expect(report.warnings.single.message, contains('哈希识别未执行'));
   });
 
-  for (final bool mappingConflict in <bool>[false, true]) {
-    test(
-        'hash ${mappingConflict ? 'mapping ambiguity' : 'different anime'} requires confirmation',
-        () async {
-      final SourceLibraryRow source = await _source(db, directory, count: 2);
-      final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
-        _matched(malIds: mappingConflict ? <int>{42, 43} : <int>{42}),
-        _matched(aid: mappingConflict ? 100 : 101),
-      ]);
-      final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
-      final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-      final SourceScrapeReport report =
-          await scrape(coordinator(mal, tmdb, hash), source);
-      expect(report.pendingConfirmations, 1);
-      expect(report.succeededWorks, 0);
-      expect(hash.calls, 2);
-      expect(mal.searchCalls, 0);
-      expect(mal.fetchedIds, isEmpty);
-      expect(tmdb.searchCalls, 0);
+  test('hash different anime requires confirmation', () async {
+    final SourceLibraryRow source = await _source(db, directory, count: 2);
+    final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
+      _matched(malIds: <int>{42}),
+      _matched(aid: 101),
+    ]);
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final SourceScrapeReport report =
+        await scrape(coordinator(mal, tmdb, hash), source);
+    expect(report.pendingConfirmations, 1);
+    expect(report.succeededWorks, 0);
+    expect(hash.calls, 2);
+    expect(mal.searchCalls, 0);
+    expect(mal.fetchedIds, isEmpty);
+    expect(tmdb.searchCalls, 0);
+  });
+
+  // 对齐 Shoko（BUG-2586）：anime-lists 一对多不是「作品悬空」——AniDB 身份已
+  // 成立，只是 MAL 要选。候选按 id 拉出来交人工，没有确认回调就留待确认。
+  test('hash mapping ambiguity offers the mapped MAL entries as candidates',
+      () async {
+    final SourceLibraryRow source = await _source(db, directory, count: 2);
+    final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
+      _matched(malIds: <int>{42, 43}),
+      _matched(malIds: <int>{42, 43}),
+    ]);
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final SourceScrapeReport report =
+        await scrape(coordinator(mal, tmdb, hash), source);
+    expect(report.pendingConfirmations, 1);
+    expect(report.succeededWorks, 0);
+    expect(hash.calls, 2);
+    expect(mal.searchCalls, 0, reason: '候选来自映射 id，不发标题搜索');
+    expect(mal.fetchedIds, <String>['42', '43']);
+    expect(tmdb.searchCalls, 0);
+    expect(report.warnings.map((SourceScrapeIssue w) => w.message),
+        anyElement(contains('映射到多个 MAL 条目')));
+  });
+
+  test('hash mapping ambiguity resolved by confirmation keeps the AniDB id',
+      () async {
+    final SourceLibraryRow source = await _source(db, directory, count: 2);
+    final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
+      _matched(malIds: <int>{42, 43}),
+      _matched(malIds: <int>{42, 43}),
+    ]);
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final List<String> offered = <String>[];
+    final SourceScrapeReport report = await coordinator(mal, null, hash)
+        .scrapeSource(source,
+            cancellationToken: VideoSourceScrapeCancellationToken(),
+            onProgress: (_) {},
+            onConfirmation: (VideoSourceScrapeConfirmation confirmation) async {
+      offered.addAll(confirmation.candidates.map(
+          (VideoSourceScrapeConfirmationCandidate c) => c.lookup.externalId));
+      return confirmation.candidates.last;
     });
-  }
+    expect(offered, <String>['42', '43']);
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final VideoMetadataWorkRow work =
+        (await db.getVideoMetadataWorkByCollection(
+            (await db.getAllMediaCollections()).single.id))!;
+    final Map<String, String> ids = <String, String>{
+      for (final VideoMetadataProviderIdentityRow id
+          in await db.getVideoMetadataProviderIdentities(workId: work.id))
+        id.provider: id.externalId,
+    };
+    expect(ids['mal'], '43');
+    expect(ids['anidb'], '100');
+  });
 
   test('hash cancellation terminates run before metadata lookup', () async {
     final SourceLibraryRow source = await _source(db, directory);
@@ -459,7 +514,10 @@ void main() {
         'cancelled');
   });
 
-  test('confirmed user MAL ID bypasses hash and never falls back on outage',
+  // 对齐 Shoko（BUG-2586）：哈希是文件级第一步，用户确认了 MAL id 也照样认
+  // 文件（落文件身份）；但作品身份由确认值决定，MAL 挂了也不退 TMDB。
+  test(
+      'confirmed user MAL ID still hashes the file but never changes identity or falls back on outage',
       () async {
     final SourceLibraryRow source = await _source(db, directory);
     final _HashService hash = _HashService();
@@ -479,8 +537,77 @@ void main() {
       onProgress: (_) {},
     );
     expect(report.failedWorks, 1);
-    expect(hash.calls, 0);
+    expect(hash.calls, 1);
     expect(tmdb.searchCalls, 0);
+  });
+
+  test(
+      'hash that contradicts a confirmed MAL identity is reported, not applied',
+      () async {
+    final SourceLibraryRow source = await _source(db, directory);
+    // 文件哈希指向 AniDB 100 → MAL 99；用户确认的是 MAL 42。
+    final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
+      _matched(malIds: <int>{99}),
+    ]);
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final SourceScrapeReport report =
+        await coordinator(mal, null, hash).rescrapeWorkWithLookup(
+      source: source,
+      workTitle: 'Show',
+      workStableKey: 'book:book-0',
+      lookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.movie),
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(hash.calls, 1);
+    expect(mal.fetchedIds, <String>['42'], reason: '不得静默换成哈希映射的 99');
+    final VideoMetadataWorkRow work =
+        (await db.getVideoMetadataWorkByBook('book-0'))!;
+    final Map<String, String> ids = <String, String>{
+      for (final VideoMetadataProviderIdentityRow id
+          in await db.getVideoMetadataProviderIdentities(workId: work.id))
+        id.provider: id.externalId,
+    };
+    expect(ids['mal'], '42');
+    expect(ids.containsKey('anidb'), isFalse, reason: '冲突时不写 AniDB 交叉引用');
+    expect(report.warnings.map((SourceScrapeIssue w) => w.message),
+        anyElement(contains('与当前已确认身份 MAL 42 不一致')));
+  });
+
+  test(
+      'hash consistent with a confirmed MAL identity adds the AniDB cross-reference',
+      () async {
+    final SourceLibraryRow source = await _source(db, directory);
+    final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
+      _matched(malIds: <int>{42}),
+    ]);
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final SourceScrapeReport report =
+        await coordinator(mal, null, hash).rescrapeWorkWithLookup(
+      source: source,
+      workTitle: 'Show',
+      workStableKey: 'book:book-0',
+      lookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.movie),
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final VideoMetadataWorkRow work =
+        (await db.getVideoMetadataWorkByBook('book-0'))!;
+    final Map<String, String> ids = <String, String>{
+      for (final VideoMetadataProviderIdentityRow id
+          in await db.getVideoMetadataProviderIdentities(workId: work.id))
+        id.provider: id.externalId,
+    };
+    expect(ids['mal'], '42');
+    expect(ids['anidb'], '100');
   });
 
   test(
