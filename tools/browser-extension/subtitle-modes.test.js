@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -42,6 +43,12 @@ function makeEl(tag) {
   return el;
 }
 
+
+// 覆盖层根下有「文字层 + 拖柄」两个子节点，正文在 .fushi-subtitle-overlay-text 里。
+function overlayText(el) {
+  const text = el && el.children && el.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  return (text || el).textContent;
+}
 function findByIdDeep(el, id) {
   if (el._id === id) return el;
   for (const c of el.children || []) { const hit = findByIdDeep(c, id); if (hit) return hit; }
@@ -83,6 +90,7 @@ function loadPanel(opts) {
   const lookups = [];
   let autoLookupResets = 0;
   const windowObj = {
+    fushiT: FUSHI_T,
     fushiEpisodeCues: opts.store || {},
     postMessage() {},
     addEventListener() {},
@@ -183,7 +191,7 @@ test('全轨覆盖层 + 防剧透模糊 + 悬浮字幕自动查词', () => {
   h.tick();
   const overlay = h.overlay();
   assert.ok(overlay, '开启全轨覆盖层后检测轨应叠字');
-  assert.strictEqual(overlay.textContent, '走り出した');
+  assert.strictEqual(overlayText(overlay), '走り出した');
   assert.strictEqual(overlay.style.filter, 'blur(6px)', '防剧透默认模糊');
   overlay.fire('mouseenter');
   assert.strictEqual(overlay.style.filter, '', '悬停即清晰');

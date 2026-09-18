@@ -36,6 +36,54 @@ bool _isRemoteFfmpegInput(String inputPath) {
 bool debugIsRemoteFfmpegInput(String inputPath) =>
     _isRemoteFfmpegInput(inputPath);
 
+/// BUG-2574：B 站媒体 CDN 的防盗链 Referer（ffmpeg `-referer` 的值）。
+///
+/// 实测（番剧 ep815751 的音轨 `https://cn-hbyc-ct-01-02.bilivideo.com/...30280.m4s`）：
+/// 不带时 CDN 直接回 `Server returned 403 Forbidden (access denied)`，ffmpeg 连输入都
+/// 打不开 —— 句子音频整条链就断在这一步，且报错只说「制卡失败」；带上本值即 206，
+/// 3 秒片段正常裁出（25369 字节 / 3.0176s，ffprobe 验过）。yt-dlp、you-get 对 B 站
+/// 直链同样无条件带它。
+///
+/// 别被宽松节点骗了：`*.mcdn.bilivideo.cn` 实测**不**校验 Referer（裸 GET 也 206），
+/// 但那是「部分节点宽松」，不是「B 站不需要」——同一个 playurl 重新解析一次就可能
+/// 落到严格节点上（实测正是这样：同一接口两次解析，一次 mcdn 一次 cn-hbyc）。
+const String kBilibiliCdnReferer = 'https://www.bilibili.com/';
+
+/// [host] 是否是 B 站的媒体 CDN 节点（决定要不要给 ffmpeg 加防盗链 Referer）。纯函数。
+bool isBilibiliCdnHost(String host) {
+  final String h = host.toLowerCase();
+  if (h.isEmpty) return false;
+  for (final String domain in const <String>[
+    'bilivideo.com', // upos-sz-estgoss / cn-hbyc-ct-01-02 …（实测 403 的那批）
+    'bilivideo.cn', // *.mcdn.bilivideo.cn
+    'acgvideo.com', // 老 upos-hz-mirrorcos.acgvideo.com
+    'hdslb.com',
+  ]) {
+    if (h == domain || h.endsWith('.$domain')) return true;
+  }
+  // Akamai 是共享域名：只认 B 站那条 `upos-*.akamaized.net`，免得给别人的 Akamai
+  // 地址也挂上 B 站 Referer。
+  return h.startsWith('upos-') && h.endsWith('.akamaized.net');
+}
+
+/// ffmpeg 打开 [inputPath] 时要带的防盗链 Referer；不需要则为 null（本地路径、非 B 站
+/// host、URL 畸形都落在 null）。
+///
+/// 判据落在 **URL 的宿主**上而不是调用方上：防盗链是「谁家 CDN」的属性，按 host 判定
+/// 后任何入口（制卡句子音频、抽帧、导出）拿到 B 站直链都自动带上，不必每个调用点
+/// 各自记得传一次、也不必给 [ImmersionMiningRequest] 加一个只有一处会填的字段。
+String? ffmpegRefererForRemoteInput(String inputPath) {
+  if (!_isRemoteFfmpegInput(inputPath)) return null;
+  try {
+    return isBilibiliCdnHost(Uri.parse(inputPath).host)
+        ? kBilibiliCdnReferer
+        : null;
+  } catch (_) {
+    // 畸形 URL：宁可不带，也不让参数组装把整条命令带崩。
+    return null;
+  }
+}
+
 /// TODO-1000（BUG-528/522）：http(s) 流输入（YouTube googlevideo 分离流/直链）的 ffmpeg
 /// 网络韧性开关，**必须放在 `-i` 之前**（这些是 http 协议的输入选项）。googlevideo 在打开
 /// 输入时会间歇性丢连（实测 `Error number -138` opening input——多帧 GIF/音频段读取更易撞上），
@@ -57,6 +105,7 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     {String? tlsPinSha256}) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
   final String? pin = tlsPinSha256?.trim();
+  final String? referer = ffmpegRefererForRemoteInput(inputPath);
   return <String>[
     // BUG-891：远端自签 Hibiki 主机（自编 ffmpeg-kit `--enable-gnutls` + tls pin 补丁，
     // 见 third_party/ffmpeg_kit_flutter/patches/）——把 host 的 TOFU 钉扎指纹下发给
@@ -67,6 +116,9 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     // ＝youtube_explode 铸流 UA），规避 googlevideo svpuc 对残缺 UA 的 tarpit 超时。含常量故非 const。
     '-user_agent',
     kYoutubeStreamReplayUserAgent,
+    // BUG-2574：防盗链 —— B 站直链不带 Referer 会被 CDN 直接 403（ffmpeg 连输入都打不开），
+    // 见 [kBilibiliCdnReferer] 的实测。仅 B 站 host 命中，YouTube 等完全不受影响。
+    if (referer != null) ...<String>['-referer', referer],
     '-reconnect',
     '1',
     '-reconnect_streamed',

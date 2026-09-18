@@ -221,25 +221,90 @@ class ClipCodecPlan {
   bool get isFullCopy => copyVideo && copyAudio;
 }
 
+/// 纯函数：把用户设置的「片段视频比特率」归一成导出层认的值。
+///
+/// null / 0 / 负数一律视为**未设置**（返回 null）：偏好层用 0 表示「跟随源」，导出层
+/// 不该为此再分一个哨兵值。正数原样返回，单位 kbps。
+int? normalizeClipVideoBitrateKbps(int? kbps) {
+  if (kbps == null || kbps <= 0) return null;
+  return kbps;
+}
+
+/// 纯函数：视频重编码（libx264 → 8-bit 4:2:0）的编码参数段，三条重编码路径共用
+/// （codec 计划里的视频重编码、copy 失败后的整段重编码兜底、硬字幕烧录）。
+///
+/// [videoBitrateKbps] 为 null（未设置）时走恒定质量 `-crf 20`——这是加比特率选项之前
+/// 三条路径逐参数一致的既有行为，一个字节都没变。设置了就换成目标码率
+/// `-b:v` + 同值 `-maxrate` + 两倍 `-bufsize`：单给 `-b:v` 只是**平均**码率，片段里
+/// 一个高动态镜头就能把瞬时码率顶到几倍，用户按上限选的数值在 IM 体积限制面前
+/// 照样超；maxrate/bufsize 把它箍成 VBV 受限的近似 CBR，体积才可预期。
+@visibleForTesting
+List<String> buildClipVideoEncoderArgs({int? videoBitrateKbps}) {
+  final int? kbps = normalizeClipVideoBitrateKbps(videoBitrateKbps);
+  return <String>[
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    if (kbps == null)
+      ...<String>['-crf', '20']
+    else
+      ...<String>[
+        '-b:v',
+        '${kbps}k',
+        '-maxrate',
+        '${kbps}k',
+        '-bufsize',
+        '${kbps * 2}k',
+      ],
+    '-pix_fmt',
+    'yuv420p',
+  ];
+}
+
 /// 纯函数：由源编码画像决出导出编码计划。
 ///
 /// 这是「导出成功」判据的**前移**：原先的模型是「跑 `-c copy`，退出码非 0 才降级重编
 /// 码」，可 hev1 / 10-bit / FLAC 全都能成功封进 mp4、退出码 0——于是兜底永不触发，产物
 /// 播不了却被判成功。真正的判据是「产物能不能被通用播放器播」，只能在跑之前按流编码
 /// 判定。
+///
+/// [videoBitrateKbps] 设了正值时视频**必然**重编码（用户要的就是改码率，copy 做不到），
+/// 与源编码是否可播无关，hvc1 tag 也随之不挂（输出已是 H.264）。探测失败
+/// （[ClipSourceCodecs.isEmpty]）时同理强制。
+///
+/// 视频一旦重编码，音频**跟着重编码、绝不 copy**。`-ss` 是输入 seek，demuxer 停在请求点
+/// 之前的那个关键帧：重编码的视频靠 accurate seek 把请求点之前的帧全丢掉，copy 的音频
+/// 却是逐包原样带出，从关键帧起的那一截全在；随后 `-avoid_negative_ts make_zero`（重编码
+/// 路径必带，见 [buildFfmpegVideoClipExportArgs]）把这截负时间戳平移成正片内容。实测
+/// 随包 ffmpeg-min 裁一个关键帧间隔 1 s 的源、请求 3 s：产物 4.04 s，视频 start_time
+/// 1.02 s、音频 0 s——开头一秒只有声音没画面。音频重编码（aac 192k，与整段重编码兜底
+/// 同参数）就精确切在请求点。视频 copy 时不受影响：那条路径不带 make_zero，前导由 mp4
+/// edit list 表达成「播放时跳过」（BUG-2011）。
 @visibleForTesting
-ClipCodecPlan resolveClipCodecPlan(ClipSourceCodecs codecs) {
-  if (codecs.isEmpty) return ClipCodecPlan.fullCopy;
+ClipCodecPlan resolveClipCodecPlan(
+  ClipSourceCodecs codecs, {
+  int? videoBitrateKbps,
+}) {
+  final bool forceVideoReencode =
+      normalizeClipVideoBitrateKbps(videoBitrateKbps) != null;
+  if (codecs.isEmpty) {
+    return forceVideoReencode
+        ? const ClipCodecPlan(copyVideo: false, copyAudio: false)
+        : ClipCodecPlan.fullCopy;
+  }
 
   final String? video = codecs.videoCodec;
-  final bool copyVideo = video == null ||
-      (_kClipCopyableVideoCodecs.contains(video) &&
-          _isCopyableVideoPixFmt(codecs.videoPixFmt));
+  final bool copyVideo = !forceVideoReencode &&
+      (video == null ||
+          (_kClipCopyableVideoCodecs.contains(video) &&
+              _isCopyableVideoPixFmt(codecs.videoPixFmt)));
 
   // 空列表 = 没探到音频流信息，保持原 copy 行为；探到了就要求**每一条**都可播，
-  // 因为 `-map 0:a?` 会把它们全部带进输出。
-  final bool copyAudio = codecs.audioCodecs.isEmpty ||
-      codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains);
+  // 因为 `-map 0:a?` 会把它们全部带进输出。视频重编码时一律不 copy（见上）。
+  final bool copyAudio = copyVideo &&
+      (codecs.audioCodecs.isEmpty ||
+          codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains));
 
   return ClipCodecPlan(
     copyVideo: copyVideo,
@@ -252,24 +317,23 @@ ClipCodecPlan resolveClipCodecPlan(ClipSourceCodecs codecs) {
 ///
 /// 全 copy 时**逐参数**回到加门控之前的 `-c copy`（外加可能的 `-tag:v hvc1`，它只改
 /// sample entry 四字符码、不碰码流），保证「源本来就通用可播」这条最常见路径的行为
-/// 和性能一个字节都没变。
+/// 和性能一个字节都没变。[videoBitrateKbps] 只在计划要重编码视频时生效（见
+/// [buildClipVideoEncoderArgs]）；计划由 [resolveClipCodecPlan] 用同一个值决出，
+/// 所以设了码率时这里绝不会落到 copy 分支。
 @visibleForTesting
-List<String> buildClipCodecArgs({required ClipCodecPlan plan}) {
+List<String> buildClipCodecArgs({
+  required ClipCodecPlan plan,
+  int? videoBitrateKbps,
+}) {
   final List<String> tag = plan.videoTag == null
       ? const <String>[]
       : <String>['-tag:v', plan.videoTag!];
   if (plan.isFullCopy) return <String>['-c', 'copy', ...tag];
   return <String>[
-    '-c:v',
-    if (plan.copyVideo) 'copy' else 'libx264',
-    if (!plan.copyVideo) ...<String>[
-      '-preset',
-      'veryfast',
-      '-crf',
-      '20',
-      '-pix_fmt',
-      'yuv420p',
-    ],
+    if (plan.copyVideo)
+      ...<String>['-c:v', 'copy']
+    else
+      ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     ...tag,
     '-c:a',
     if (plan.copyAudio) 'copy' else 'aac',
@@ -287,8 +351,9 @@ List<String> buildClipCodecArgs({required ClipCodecPlan plan}) {
 Future<_ClipProbe> _probeClipCodecPlan(
   FfmpegBackend backend,
   String inputPath,
-  Duration timeout,
-) async {
+  Duration timeout, {
+  int? videoBitrateKbps,
+}) async {
   try {
     final FfmpegRunResult probe = await backend.run(
       <String>['-hide_banner', '-i', inputPath],
@@ -297,12 +362,22 @@ Future<_ClipProbe> _probeClipCodecPlan(
     // 同一份日志解两样东西，**不额外起进程**：编码（决定哪些流能 copy）和画面尺寸
     // （决定字幕 PNG 渲染成多大，BUG-2202）。
     return _ClipProbe(
-      resolveClipCodecPlan(parseClipSourceCodecs(probe.output)),
+      resolveClipCodecPlan(
+        parseClipSourceCodecs(probe.output),
+        videoBitrateKbps: videoBitrateKbps,
+      ),
       parseClipFrameSize(probe.output),
     );
   } catch (e, stack) {
     engineLog.log('VideoClipExport', e, stack);
-    return const _ClipProbe(ClipCodecPlan.fullCopy, null);
+    // 探测炸了也不能丢掉用户设的码率：视频照样强制重编码，其余退回全 copy。
+    return _ClipProbe(
+      resolveClipCodecPlan(
+        const ClipSourceCodecs(),
+        videoBitrateKbps: videoBitrateKbps,
+      ),
+      null,
+    );
   }
 }
 
@@ -416,6 +491,7 @@ List<String> buildFfmpegVideoClipExportArgs({
   List<String> subtitlePaths = const <String>[],
   String? subtitleCodec,
   ClipCodecPlan codecPlan = ClipCodecPlan.fullCopy,
+  int? videoBitrateKbps,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -454,7 +530,10 @@ List<String> buildFfmpegVideoClipExportArgs({
     // （BUG-2011）。片段继承整集章节本就没有意义，两条路径一律丢弃。
     '-map_chapters',
     '-1',
-    ...buildClipCodecArgs(plan: codecPlan),
+    ...buildClipCodecArgs(
+      plan: codecPlan,
+      videoBitrateKbps: videoBitrateKbps,
+    ),
     // 字幕流单独指定编码：Matroska 能直接 copy SRT，mp4/mov 系必须转 mov_text。
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
     // `-avoid_negative_ts make_zero` 只在**视频重编码**时给（BUG-2011）：
@@ -499,6 +578,7 @@ List<String> buildFfmpegVideoClipReencodeArgs({
   int? audioStreamCount,
   List<String> subtitlePaths = const <String>[],
   String? subtitleCodec,
+  int? videoBitrateKbps,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -530,14 +610,7 @@ List<String> buildFfmpegVideoClipReencodeArgs({
     '-map_chapters',
     '-1',
     if (withSubtitles) ...<String>['-c:s', subtitleCodec],
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    '20',
-    '-pix_fmt',
-    'yuv420p',
+    ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     '-c:a',
     'aac',
     '-b:a',
@@ -572,6 +645,7 @@ List<String> buildFfmpegVideoClipBurnArgs({
   required List<ClipBurnCue> burnCues,
   int? audioStreamIndex,
   int? audioStreamCount,
+  int? videoBitrateKbps,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -602,14 +676,7 @@ List<String> buildFfmpegVideoClipBurnArgs({
     // 与另外两条路径同因：片段不继承源整集的章节表（BUG-2011）。
     '-map_chapters',
     '-1',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    '20',
-    '-pix_fmt',
-    'yuv420p',
+    ...buildClipVideoEncoderArgs(videoBitrateKbps: videoBitrateKbps),
     '-c:a',
     'aac',
     '-b:a',
@@ -661,6 +728,10 @@ class _ClipAttempt {
 /// 导出片段。[subtitleContents] 是已裁剪、时间轴已平移到片段起点为 0 的 SRT 文本
 /// （主字幕、副字幕各一条，由 [buildClipSrtContent] 生成）；为空、或输出容器封不下
 /// 文本字幕（[resolveClipSubtitleCodec] 返回 null）时自动退回纯视频音频导出。
+///
+/// [videoBitrateKbps]：用户指定的视频目标码率（kbps）。null / 非正数 = 未设置，保持
+/// 「能 copy 就 copy、否则 `-crf 20`」的既有行为；正数则视频**必然**重编码到该码率
+/// （三条路径一致，见 [buildClipVideoEncoderArgs]），音频不受影响。
 Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
   required String inputPath,
   required int startMs,
@@ -671,6 +742,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
   List<String> subtitleContents = const <String>[],
   List<ClipSubtitleCue> subtitleCues = const <ClipSubtitleCue>[],
   ClipSubtitleFrameRenderer? subtitleRenderer,
+  int? videoBitrateKbps,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 10),
 }) async {
@@ -704,6 +776,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
       resolved,
       inputPath,
       _kClipProbeTimeout,
+      videoBitrateKbps: videoBitrateKbps,
     );
     final ClipCodecPlan codecPlan = probe.plan;
     bool produced(FfmpegRunResult r) =>
@@ -738,6 +811,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
               burnCues: burnCues,
               audioStreamIndex: audioStreamIndex,
               audioStreamCount: audioStreamCount,
+              videoBitrateKbps: videoBitrateKbps,
             ),
             timeout,
           );
@@ -786,6 +860,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
           subtitlePaths: subs,
           subtitleCodec: subtitleCodec,
           codecPlan: codecPlan,
+          videoBitrateKbps: videoBitrateKbps,
         ),
         timeout,
       );
@@ -802,6 +877,7 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
           audioStreamCount: audioStreamCount,
           subtitlePaths: subs,
           subtitleCodec: subtitleCodec,
+          videoBitrateKbps: videoBitrateKbps,
         ),
         timeout,
       );

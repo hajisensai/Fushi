@@ -16,6 +16,9 @@
 // 开关 mobileSubtitleDrawer 默认开；桌面（pointer: fine）永远不出现这套节点，行为零变化。
 (function () {
   'use strict';
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
   var STRIP = 12;      // 收起时露出的贴边细条厚度（px）；样式见 content.css .fushi-drawer-strip
@@ -262,7 +265,7 @@
     if (iframeEl || !rootEl) return;
     iframeEl = document.createElement('iframe');
     iframeEl.id = 'fushi-drawer-frame';
-    iframeEl.setAttribute('aria-label', '字幕列表');
+    iframeEl.setAttribute('aria-label', tr('drawer_aria_label'));
     var start = function (resp) {
       var url = chrome.runtime.getURL('side-panel.html') + '?fushiEmbed=1';
       // 审计报告 #1295：宿主 origin 与目标 tabId **都不再自证**（旧版把 location.origin
@@ -444,17 +447,34 @@
     }
   }
 
+  function applyDrawerTheme(el) {
+    var th = window.fushiTheme;
+    if (!th || typeof th.explicit !== 'function') return;
+    function apply() {
+      var e = th.explicit();
+      try {
+        if (e) el.setAttribute('data-theme', e);
+        else el.removeAttribute('data-theme');
+      } catch (_) {}
+    }
+    apply();
+    if (typeof th.onChange === 'function') th.onChange(apply);
+  }
+
   function mount() {
     if (rootEl) return;
     rootEl = document.createElement('div');
     rootEl.id = 'fushi-drawer';
+    // 明暗跟扩展主题（theme.js）：显式值写成 data-theme 走 content.css 里重根的 theme.css 显式块，
+    // auto 摘掉属性走 prefers-color-scheme 块（与扩展页面上的 theme.css 语义一致）。
+    applyDrawerTheme(rootEl);
     stripEl = document.createElement('div');
     stripEl.className = 'fushi-drawer-strip'; // 隐形边缘手势区：任何贴边按下即进入拖拽/开合判定
-    stripEl.setAttribute('aria-label', '字幕列表边缘手势区');
+    stripEl.setAttribute('aria-label', tr('drawer_strip_aria_label'));
     var btn = document.createElement('div');
     btn.className = 'fushi-drawer-btn';
     btn.setAttribute('role', 'button');
-    btn.setAttribute('aria-label', '展开或收起字幕列表');
+    btn.setAttribute('aria-label', tr('drawer_button_aria_label'));
     btn.textContent = '☰'; // 可见开合钮；pointerdown 冒泡进 stripEl，点=开关、按住同样能拖
     stripEl.appendChild(btn);
     rootEl.appendChild(stripEl);

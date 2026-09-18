@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+// 文案走 i18n（模块里 tr() 读全局 fushiT）：测试按 zh-CN 字典断言。
+globalThis.fushiT = require('./scripts/i18n-fixture.js').makeFushiT();
 
 const diagnostics = require('./connection-diagnostics.js');
 

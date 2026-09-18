@@ -9,6 +9,7 @@
 //  ③ 点击顺手 window.close() → 用户看不到状态翻过去，以为没点上再点一次，又翻回去了。
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -85,6 +86,7 @@ function loadPopup(stored) {
     },
   });
   const sandbox = {
+    fushiT: FUSHI_T,
     document: {
       getElementById(id) {
         if (!els.has(id)) { const el = makeEl(); el.id = id; els.set(id, el); }

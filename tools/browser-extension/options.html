@@ -3,45 +3,96 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fushi 浏览器扩展</title>
+  <title data-i18n="opt_root_title">Fushi 浏览器扩展</title>
+  <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <div class="shell">
     <div class="layout">
       <main class="main-column">
+        <section class="section" aria-labelledby="appearance-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker" data-i18n="opt_appearance_heading_section_kicker">外观与语言</p>
+              <h2 id="appearance-heading" data-i18n="opt_appearance_heading_heading">主题与语言</h2>
+            </div>
+            <span class="section-note" data-i18n="opt_appearance_heading_section_note">修改后立即生效</span>
+          </div>
+          <div class="setting-list">
+            <label class="setting-row" for="extensionTheme">
+              <span class="setting-copy">
+                <strong data-i18n="opt_extensionTheme_title">主题</strong>
+                <small data-i18n="opt_extensionTheme_desc">设置页、字幕侧边栏、工具栏菜单、视频上的字幕和查词框统一明暗。「跟随系统」时查词框跟随 Fushi 当前主题；固定浅色或深色时查词框也按同一明暗取 Fushi 的配色。</small>
+              </span>
+              <select class="select-input" id="extensionTheme">
+                <option value="auto" data-i18n="opt_extensionTheme_option_auto">跟随系统</option>
+                <option value="light" data-i18n="opt_extensionTheme_option_light">浅色</option>
+                <option value="dark" data-i18n="opt_extensionTheme_option_dark">深色</option>
+              </select>
+            </label>
+            <label class="setting-row" for="extensionLanguage">
+              <span class="setting-copy">
+                <strong data-i18n="opt_extensionLanguage_title">语言</strong>
+                <small data-i18n="opt_extensionLanguage_desc">默认跟随 Fushi 的界面语言（Fushi 运行时自动同步，切换语言后下次打开生效）；也可固定为某一种或跟随浏览器。</small>
+              </span>
+              <select class="select-input" id="extensionLanguage">
+                <option value="app" data-i18n="opt_extensionLanguage_option_app">跟随 Fushi</option>
+                <option value="browser" data-i18n="opt_extensionLanguage_option_browser">跟随浏览器</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+                <option value="zh-CN">简体中文</option>
+                <option value="zh-HK">繁體中文（香港）</option>
+                <option value="ko">한국어</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="it">Italiano</option>
+                <option value="nl">Nederlands</option>
+                <option value="pt-BR">Português (Brasil)</option>
+                <option value="ru">Русский</option>
+                <option value="tr">Türkçe</option>
+                <option value="vi">Tiếng Việt</option>
+                <option value="id">Bahasa Indonesia</option>
+                <option value="th">ภาษาไทย</option>
+                <option value="ar">العربية</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
         <section class="section" aria-labelledby="popup-size-heading">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">查词弹窗</p>
-              <h2 id="popup-size-heading">查词框大小</h2>
+              <p class="section-kicker" data-i18n="opt_popup_size_heading_section_kicker">查词弹窗</p>
+              <h2 id="popup-size-heading" data-i18n="opt_popup_size_heading_heading">查词框大小</h2>
             </div>
-            <span class="section-note">下次查词生效</span>
+            <span class="section-note" data-i18n="opt_popup_size_heading_section_note">下次查词生效</span>
           </div>
 
           <div class="setting-list">
             <label class="setting-row" for="popupSizeWidth">
               <span class="setting-copy">
-                <strong>最大宽度</strong>
-                <small>250–2000 像素。改这里等于在 Fushi 设置页调「浏览器扩展独立尺寸」的宽度滑杆
+                <strong data-i18n="opt_popupSizeWidth_title">最大宽度</strong>
+                <small data-i18n="opt_popupSizeWidth_desc">250–2000 像素。改这里等于在 Fushi 设置页调「浏览器扩展独立尺寸」的宽度滑杆
                   —— 同一个值，改哪边都一样，不会互相盖。</small>
               </span>
               <input class="size-input" id="popupSizeWidth" type="number" min="250" max="2000" step="10"
-                     inputmode="numeric" placeholder="查词后读取">
+                     inputmode="numeric" placeholder="查词后读取" data-i18n-placeholder="opt_popupSizeWidth_placeholder">
             </label>
             <label class="setting-row" for="popupSizeHeight">
               <span class="setting-copy">
-                <strong>最大高度</strong>
-                <small>200–1600 像素。超出即在框内滚动。首次填写会自动打开 Fushi 的
+                <strong data-i18n="opt_popupSizeHeight_title">最大高度</strong>
+                <small data-i18n="opt_popupSizeHeight_desc">200–1600 像素。超出即在框内滚动。首次填写会自动打开 Fushi 的
                   「浏览器扩展独立尺寸」，此后浏览器里的查词框不再跟随 app 内弹窗尺寸。</small>
               </span>
               <input class="size-input" id="popupSizeHeight" type="number" min="200" max="1600" step="10"
-                     inputmode="numeric" placeholder="查词后读取">
+                     inputmode="numeric" placeholder="查词后读取" data-i18n-placeholder="opt_popupSizeHeight_placeholder">
             </label>
             <div class="setting-row">
               <span class="setting-copy">
-                <strong>侧边栏空间不足时</strong>
-                <small>侧边栏比查词框窄时自动按可用宽度收敛，必要时整窗等比缩小，不再把右半边裁掉。
+                <strong data-i18n="opt_narrowSidePanel_title">侧边栏空间不足时</strong>
+                <small data-i18n="opt_narrowSidePanel_desc">侧边栏比查词框窄时自动按可用宽度收敛，必要时整窗等比缩小，不再把右半边裁掉。
                   此行为恒开，不占设置。想让浏览器查词框重新跟随 app 内弹窗，去 Fushi 设置页关掉
                   「浏览器扩展独立尺寸」。</small>
               </span>
@@ -52,17 +103,17 @@
         <section class="section" aria-labelledby="touch-lookup-heading">
           <div class="section-heading compact">
             <div>
-              <p class="section-kicker">触屏查词与字幕抽屉</p>
-              <h2 id="touch-lookup-heading">手机与平板</h2>
+              <p class="section-kicker" data-i18n="opt_touch_lookup_heading_section_kicker">触屏查词与字幕抽屉</p>
+              <h2 id="touch-lookup-heading" data-i18n="opt_touch_lookup_heading_heading">手机与平板</h2>
             </div>
-            <span class="section-note">修改后立即生效</span>
+            <span class="section-note" data-i18n="opt_touch_lookup_heading_section_note">修改后立即生效</span>
           </div>
 
           <div class="setting-list">
             <label class="setting-row" for="touchLookupTap">
               <span class="setting-copy">
-                <strong>点按查词</strong>
-                <small>手机/平板浏览器里，单指点在正文文字上即查词——取词、高亮、弹窗与桌面
+                <strong data-i18n="opt_touchLookupTap_title">点按查词</strong>
+                <small data-i18n="opt_touchLookupTap_desc">手机/平板浏览器里，单指点在正文文字上即查词——取词、高亮、弹窗与桌面
                   Shift 划词同一套。链接、按钮、输入框、视频画面等仍归站点自己，不会被拦；
                   手指拖动算滚动，不触发查词。桌面（鼠标）环境不受这两个开关影响，行为零变化。</small>
               </span>
@@ -70,16 +121,16 @@
             </label>
             <label class="setting-row" for="touchLookupHold">
               <span class="setting-copy">
-                <strong>长按查词</strong>
-                <small>按住正文约 0.5 秒（不移动）即查词，抬手不再重复。与「点按查词」可同时开，
+                <strong data-i18n="opt_touchLookupHold_title">长按查词</strong>
+                <small data-i18n="opt_touchLookupHold_desc">按住正文约 0.5 秒（不移动）即查词，抬手不再重复。与「点按查词」可同时开，
                   长按先触发。部分页面系统的长按选词菜单可能跟着弹，嫌碍事就关掉本项只留点按。</small>
               </span>
               <span class="switch"><input id="touchLookupHold" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="mobileSubtitleDrawer">
               <span class="setting-copy">
-                <strong>字幕列表抽屉</strong>
-                <small>安卓浏览器没有原生侧边栏（该 API 仅桌面存在），字幕列表在手机上原本无处
+                <strong data-i18n="opt_mobileSubtitleDrawer_title">字幕列表抽屉</strong>
+                <small data-i18n-html="opt_mobileSubtitleDrawer_desc">安卓浏览器没有原生侧边栏（该 API 仅桌面存在），字幕列表在手机上原本无处
                   显示。开启后触屏设备的视频页贴屏幕边缘放一颗 ☰ 悬浮钮、边缘一条隐形手势带：点
                   钮开关、按住边缘可拖出并随手停到任意宽度（横屏右挂、竖屏底挂，内嵌完整列表——
                   选轨、点句跳转、时轴偏移、外挂字幕、查在线字幕、制卡、点词全在），尺寸记住。<b>横屏
@@ -93,53 +144,60 @@
         <section class="section" aria-labelledby="subtitle-heading">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">字幕工作台</p>
-              <h2 id="subtitle-heading">观看与字幕</h2>
+              <p class="section-kicker" data-i18n="opt_subtitle_heading_section_kicker">字幕工作台</p>
+              <h2 id="subtitle-heading" data-i18n="opt_subtitle_heading_heading">观看与字幕</h2>
             </div>
-            <span class="section-note">修改后立即生效</span>
+            <span class="section-note" data-i18n="opt_subtitle_heading_section_note">修改后立即生效</span>
           </div>
 
           <div class="setting-list">
             <label class="setting-row" for="nfSubList">
               <span class="setting-copy">
-                <strong>字幕列表</strong>
-                <small>允许从扩展弹窗或 Shift+S 打开浏览器原生字幕侧边栏；不会注入网页列表或修改播放器布局。</small>
+                <strong data-i18n="opt_nfSubList_title">字幕列表</strong>
+                <small data-i18n="opt_nfSubList_desc">允许从扩展弹窗或 Shift+S 打开浏览器原生字幕侧边栏；不会注入网页列表或修改播放器布局。</small>
               </span>
               <span class="switch"><input id="nfSubList" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleOverlayEnabled">
               <span class="setting-copy">
-                <strong>在视频上显示外挂字幕</strong>
-                <small>把当前用户字幕轨叠到视频上；站点自己的字幕不会重复显示。</small>
+                <strong data-i18n="opt_subtitleOverlayEnabled_title">在视频上显示外挂字幕</strong>
+                <small data-i18n="opt_subtitleOverlayEnabled_desc">把当前用户字幕轨叠到视频上；站点自己的字幕不会重复显示。</small>
               </span>
               <span class="switch"><input id="subtitleOverlayEnabled" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <div class="setting-row setting-row-static">
               <span class="setting-copy">
-                <strong>字幕位置</strong>
-                <small>在视频上按住字幕拖动即可挪到任意位置，位置按视频画面比例记住（全屏、缩放窗口、换视频都跟随）；
-                  点一下仍是查词。</small>
+                <strong data-i18n="opt_subtitleOverlayPosition_title">字幕位置</strong>
+                <small data-i18n="opt_subtitleOverlayPosition_desc">鼠标按住字幕左侧的拖柄（触屏按住字幕本身）拖动即可挪到任意位置，位置按视频画面比例记住（全屏、缩放窗口、换视频都跟随）；
+                  点一下文字是查词，在文字上拖动是选中文字，可直接复制。</small>
               </span>
-              <button class="text-button" id="resetSubtitleOverlayPosition" type="button">重置位置</button>
+              <button class="text-button" id="resetSubtitleOverlayPosition" type="button" data-i18n="opt_resetSubtitleOverlayPosition_button">重置位置</button>
             </div>
+            <label class="setting-row" for="subtitleOverlayBackground">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleOverlayBackground_title">字幕底色</strong>
+                <small data-i18n="opt_subtitleOverlayBackground_desc">视频上的字幕带半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面。</small>
+              </span>
+              <span class="switch"><input id="subtitleOverlayBackground" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
             <label class="setting-row" for="subtitleDragDropEnabled">
               <span class="setting-copy">
-                <strong>允许拖放字幕文件</strong>
-                <small>将 SRT、ASS、SSA 或 VTT 拖到视频即可加载，支持多轨。</small>
+                <strong data-i18n="opt_subtitleDragDropEnabled_title">允许拖放字幕文件</strong>
+                <small data-i18n="opt_subtitleDragDropEnabled_desc">将 SRT、ASS、SSA 或 VTT 拖到视频即可加载，支持多轨。</small>
               </span>
               <span class="switch"><input id="subtitleDragDropEnabled" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleAutoScroll">
               <span class="setting-copy">
-                <strong>列表跟随当前句</strong>
-                <small>播放时自动把当前字幕滚到列表中部。</small>
+                <strong data-i18n="opt_subtitleAutoScroll_title">列表跟随当前句</strong>
+                <small data-i18n="opt_subtitleAutoScroll_desc">播放时自动把当前字幕滚到列表中部。</small>
               </span>
               <span class="switch"><input id="subtitleAutoScroll" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleReplaceNative">
               <span class="setting-copy">
-                <strong>用 Fushi 字幕替代站点原生字幕</strong>
-                <small>预先取回整条字幕轨，按整句自绘在视频上，并藏掉站点原生字幕。专治 YouTube
+                <strong data-i18n="opt_subtitleReplaceNative_title">用 Fushi 字幕替代站点原生字幕</strong>
+                <small data-i18n="opt_subtitleReplaceNative_desc">预先取回整条字幕轨，按整句自绘在视频上，并藏掉站点原生字幕。专治 YouTube
                   自动生成字幕——它是一个词一个词往外蹦的，划词和制卡永远只能拿到半句。整轨没取到时
                   自动保持原生字幕可见。</small>
               </span>
@@ -147,45 +205,64 @@
             </label>
             <label class="setting-row" for="subtitleOverlayAllTracks">
               <span class="setting-copy">
-                <strong>所有字幕轨都用扩展覆盖层显示</strong>
-                <small>站点检测到的字幕轨也叠到视频上，配合防剧透模糊与悬浮字幕查词使用。</small>
+                <strong data-i18n="opt_subtitleOverlayAllTracks_title">所有字幕轨都用扩展覆盖层显示</strong>
+                <small data-i18n="opt_subtitleOverlayAllTracks_desc">站点检测到的字幕轨也叠到视频上，配合防剧透模糊与悬浮字幕查词使用。</small>
               </span>
               <span class="switch"><input id="subtitleOverlayAllTracks" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleOverlayBlur">
               <span class="setting-copy">
-                <strong>防剧透模糊</strong>
-                <small>覆盖层字幕默认模糊，鼠标悬停即清晰——先听再看。</small>
+                <strong data-i18n="opt_subtitleOverlayBlur_title">防剧透模糊</strong>
+                <small data-i18n="opt_subtitleOverlayBlur_desc">覆盖层字幕默认模糊，鼠标悬停即清晰——先听再看。</small>
               </span>
               <span class="switch"><input id="subtitleOverlayBlur" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleHidden">
               <span class="setting-copy">
-                <strong>隐藏字幕</strong>
-                <small>彻底藏起站点自带字幕和扩展覆盖层（不是模糊，悬停也不显示）——纯听力练习用。随时按 <kbd>Shift</kbd>+<kbd>H</kbd> 开关。</small>
+                <strong data-i18n="opt_subtitleHidden_title">隐藏字幕</strong>
+                <small data-i18n-html="opt_subtitleHidden_desc">彻底藏起站点自带字幕和扩展覆盖层（不是模糊，悬停也不显示）——纯听力练习用。随时按 <kbd>Shift</kbd>+<kbd>H</kbd> 开关。</small>
               </span>
               <span class="switch"><input id="subtitleHidden" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitlePauseOnLookup">
               <span class="setting-copy">
-                <strong>查词时暂停</strong>
-                <small>从网页、字幕列表或悬浮字幕发起查词时暂停正在播放的视频；关闭查词弹窗后自动恢复播放（你自己暂停的视频不会被播放）。</small>
+                <strong data-i18n="opt_subtitlePauseOnLookup_title">查词时暂停</strong>
+                <small data-i18n="opt_subtitlePauseOnLookup_desc">从网页、字幕列表或悬浮字幕发起查词时暂停正在播放的视频；关闭查词弹窗后自动恢复播放（你自己暂停的视频不会被播放）。</small>
               </span>
               <span class="switch"><input id="subtitlePauseOnLookup" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleLookupOnPage">
               <span class="setting-copy">
-                <strong>查词结果显示在网页上</strong>
-                <small>侧边栏里点词时，弹窗开在网页上而不是挤在侧边栏内——浏览器不允许侧边栏里的内容画到面板外面。关掉则回到侧边栏内的窄弹窗。</small>
+                <strong data-i18n="opt_subtitleLookupOnPage_title">查词结果显示在网页上</strong>
+                <small data-i18n="opt_subtitleLookupOnPage_desc">侧边栏里点词时，弹窗开在网页上而不是挤在侧边栏内——浏览器不允许侧边栏里的内容画到面板外面。关掉则回到侧边栏内的窄弹窗。</small>
               </span>
               <span class="switch"><input id="subtitleLookupOnPage" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleOverlayAutoLookup">
               <span class="setting-copy">
-                <strong>悬浮字幕自动查词</strong>
-                <small>鼠标移到悬浮字幕里的词上就自动查词，无需按住 Shift 或点击。</small>
+                <strong data-i18n="opt_subtitleOverlayAutoLookup_title">悬浮字幕自动查词</strong>
+                <small data-i18n="opt_subtitleOverlayAutoLookup_desc">鼠标移到悬浮字幕里的词上就自动查词，无需按住 Shift 或点击。</small>
               </span>
               <span class="switch"><input id="subtitleOverlayAutoLookup" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="study-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker" data-i18n="opt_study_heading_section_kicker">学习统计</p>
+              <h2 id="study-heading" data-i18n="opt_study_heading_heading">沉浸时间</h2>
+            </div>
+            <span class="section-note" data-i18n="opt_study_heading_section_note">需要 Fushi 正在运行</span>
+          </div>
+          <div class="setting-list">
+            <label class="setting-row" for="studyTrackVideo">
+              <span class="setting-copy">
+                <strong data-i18n="opt_studyTrackVideo_title">网页视频计入观看时长</strong>
+                <small data-i18n="opt_studyTrackVideo_desc">网页视频播放时把观看时长记入 Fushi 学习统计的视频域，与 app 内视频页同一口径：只计首次看过的部分，回放、拖回、重看不计；切到别的标签页仍在播照常计。首页的悬停预览等短视频不计。</small>
+              </span>
+              <span class="switch"><input id="studyTrackVideo" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
           </div>
         </section>
@@ -193,84 +270,84 @@
         <section class="section" aria-labelledby="shortcut-heading">
           <div class="section-heading compact">
             <div>
-              <p class="section-kicker">按键控制</p>
-              <h2 id="shortcut-heading">视频快捷键</h2>
+              <p class="section-kicker" data-i18n="opt_shortcut_heading_section_kicker">按键控制</p>
+              <h2 id="shortcut-heading" data-i18n="opt_shortcut_heading_heading">视频快捷键</h2>
             </div>
           </div>
           <div class="setting-list">
             <label class="setting-row" for="videoShortcutPrevCue">
               <span class="setting-copy">
-                <strong>上一句字幕</strong>
+                <strong data-i18n="opt_videoShortcutPrevCue_title">上一句字幕</strong>
                 <small>←</small>
               </span>
               <span class="switch"><input id="videoShortcutPrevCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutNextCue">
               <span class="setting-copy">
-                <strong>下一句字幕</strong>
+                <strong data-i18n="opt_videoShortcutNextCue_title">下一句字幕</strong>
                 <small>→</small>
               </span>
               <span class="switch"><input id="videoShortcutNextCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutReplayCue">
               <span class="setting-copy">
-                <strong>重播本句</strong>
+                <strong data-i18n="opt_videoShortcutReplayCue_title">重播本句</strong>
                 <small>↑</small>
               </span>
               <span class="switch"><input id="videoShortcutReplayCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutTogglePanel">
               <span class="setting-copy">
-                <strong>打开字幕侧边栏</strong>
+                <strong data-i18n="opt_videoShortcutTogglePanel_title">打开字幕侧边栏</strong>
                 <small>Shift+S</small>
               </span>
               <span class="switch"><input id="videoShortcutTogglePanel" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutToggleSubtitleHide">
               <span class="setting-copy">
-                <strong>隐藏或显示字幕</strong>
+                <strong data-i18n="opt_videoShortcutToggleSubtitleHide_title">隐藏或显示字幕</strong>
                 <small>Shift+H</small>
               </span>
               <span class="switch"><input id="videoShortcutToggleSubtitleHide" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutOffsetMinus">
               <span class="setting-copy">
-                <strong>字幕提前 100 毫秒</strong>
+                <strong data-i18n="opt_videoShortcutOffsetMinus_title">字幕提前 100 毫秒</strong>
                 <small>Ctrl+Shift+←</small>
               </span>
               <span class="switch"><input id="videoShortcutOffsetMinus" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutOffsetPlus">
               <span class="setting-copy">
-                <strong>字幕延后 100 毫秒</strong>
+                <strong data-i18n="opt_videoShortcutOffsetPlus_title">字幕延后 100 毫秒</strong>
                 <small>Ctrl+Shift+→</small>
               </span>
               <span class="switch"><input id="videoShortcutOffsetPlus" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutOffsetReset">
               <span class="setting-copy">
-                <strong>重置字幕偏移</strong>
+                <strong data-i18n="opt_videoShortcutOffsetReset_title">重置字幕偏移</strong>
                 <small>Ctrl+Shift+↓</small>
               </span>
               <span class="switch"><input id="videoShortcutOffsetReset" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutCopyCue">
               <span class="setting-copy">
-                <strong>复制当前字幕</strong>
+                <strong data-i18n="opt_videoShortcutCopyCue_title">复制当前字幕</strong>
                 <small>Ctrl+Shift+Z</small>
               </span>
               <span class="switch"><input id="videoShortcutCopyCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutRateDown">
               <span class="setting-copy">
-                <strong>降低播放速度</strong>
+                <strong data-i18n="opt_videoShortcutRateDown_title">降低播放速度</strong>
                 <small>Ctrl+Shift+[</small>
               </span>
               <span class="switch"><input id="videoShortcutRateDown" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="videoShortcutRateUp">
               <span class="setting-copy">
-                <strong>提高播放速度</strong>
+                <strong data-i18n="opt_videoShortcutRateUp_title">提高播放速度</strong>
                 <small>Ctrl+Shift+]</small>
               </span>
               <span class="switch"><input id="videoShortcutRateUp" type="checkbox"><span aria-hidden="true"></span></span>
@@ -281,22 +358,22 @@
         <section class="section" aria-labelledby="site-heading">
           <div class="section-heading compact">
             <div>
-              <p class="section-kicker">站点适配</p>
-              <h2 id="site-heading">流媒体站点</h2>
+              <p class="section-kicker" data-i18n="opt_site_heading_section_kicker">站点适配</p>
+              <h2 id="site-heading" data-i18n="opt_site_heading_heading">流媒体站点</h2>
             </div>
           </div>
           <div class="setting-list">
             <label class="setting-row" for="nfHideNext">
               <span class="setting-copy">
-                <strong>Netflix：隐藏“下一集”和分级遮挡</strong>
-                <small>避免剧末按钮、后播层和开场分级标识进入制卡截图。</small>
+                <strong data-i18n="opt_nfHideNext_title">Netflix：隐藏“下一集”和分级遮挡</strong>
+                <small data-i18n="opt_nfHideNext_desc">避免剧末按钮、后播层和开场分级标识进入制卡截图。</small>
               </span>
               <span class="switch"><input id="nfHideNext" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <div class="setting-row">
               <span class="setting-copy">
-                <strong>整集字幕自动检测</strong>
-                <small>Netflix、YouTube、TVer、Bilibili.tv、Hulu（日本）、Prime Video 播放时自动抓取整集字幕进字幕列表；其它站点走通用采集（原生字幕轨收割 + 实时采样）。</small>
+                <strong data-i18n="opt_autoDetectTracks_title">整集字幕自动检测</strong>
+                <small data-i18n="opt_autoDetectTracks_desc">Netflix、YouTube、TVer、Bilibili.tv、Hulu（日本）、Prime Video 播放时自动抓取整集字幕进字幕列表；其它站点走通用采集（原生字幕轨收割 + 实时采样）。</small>
               </span>
             </div>
           </div>
@@ -307,18 +384,18 @@
         <section class="connection" id="connectionCard" data-tone="loading" aria-live="polite">
           <div class="connection-top">
             <span class="status-dot" id="connDot" aria-hidden="true"></span>
-            <span class="connection-label">本机服务</span>
-            <button class="icon-button" id="check" type="button" title="重新检测" aria-label="重新检测连接">↻</button>
+            <span class="connection-label" data-i18n="opt_connection_label">本机服务</span>
+            <button class="icon-button" id="check" type="button" title="重新检测" data-i18n-title="opt_check_title" aria-label="重新检测连接" data-i18n-aria-label="opt_check_aria_label">↻</button>
           </div>
-          <h2 id="connTitle">正在检测…</h2>
-          <p id="connDetail">确认 Fushi 的查词与字幕服务状态。</p>
+          <h2 id="connTitle" data-i18n="opt_connTitle_heading">正在检测…</h2>
+          <p id="connDetail" data-i18n="opt_connDetail_text">确认 Fushi 的查词与字幕服务状态。</p>
           <code id="connEndpoint">127.0.0.1:19633</code>
         </section>
 
         <details class="advanced" id="advancedConnection">
           <summary>
-            <span>高级连接设置</span>
-            <small>自动配置失效时使用</small>
+            <span data-i18n="opt_advancedConnection_label">高级连接设置</span>
+            <small data-i18n="opt_advancedConnection_desc">自动配置失效时使用</small>
           </summary>
           <form id="connectionForm">
             <label class="field">
@@ -333,48 +410,51 @@
               <span>Token</span>
               <span class="token-field">
                 <input id="token" type="password" autocomplete="off">
-                <button id="showToken" type="button" aria-label="显示或隐藏 Token">显示</button>
+                <button id="showToken" type="button" aria-label="显示或隐藏 Token" data-i18n-aria-label="opt_showToken_aria_label" data-i18n="opt_showToken_button">显示</button>
               </span>
             </label>
-            <p class="field-help">留空即使用 Fushi 安装助手写入的自动配置。</p>
+            <p class="field-help" data-i18n="opt_connection_field_help">留空即使用 Fushi 安装助手写入的自动配置。</p>
             <div class="button-row">
-              <button class="primary-button" id="save" type="submit">保存并检测</button>
-              <button class="text-button" id="reset" type="button">恢复自动配置</button>
+              <button class="primary-button" id="save" type="submit" data-i18n="opt_save_button">保存并检测</button>
+              <button class="text-button" id="reset" type="button" data-i18n="opt_reset_button">恢复自动配置</button>
             </div>
           </form>
         </details>
 
         <details class="advanced lookup-perf" id="lookupPerfPanel">
           <summary>
-            <span>查词性能日志</span>
-            <small id="lookupPerfSummary">复现慢查询后在这里查看</small>
+            <span data-i18n="opt_lookupPerfPanel_label">查词性能日志</span>
+            <small id="lookupPerfSummary" data-i18n="opt_lookupPerfSummary_desc">复现慢查询后在这里查看</small>
           </summary>
           <div class="lookup-perf-body">
-            <p>仅保存在本机扩展存储，不记录原词。每次查词会分别记录后端等待、响应读取、JSON 解析和弹框首显耗时。</p>
+            <p data-i18n="opt_lookupPerf_intro">仅保存在本机扩展存储，不记录原词。每次查词会分别记录后端等待、响应读取、JSON 解析和弹框首显耗时。</p>
             <div class="lookup-perf-actions">
-              <button class="text-button" id="refreshLookupPerf" type="button">刷新</button>
-              <button class="text-button" id="copyLookupPerf" type="button">复制完整日志</button>
-              <button class="text-button danger-button" id="clearLookupPerf" type="button">清空</button>
+              <button class="text-button" id="refreshLookupPerf" type="button" data-i18n="opt_refreshLookupPerf_button">刷新</button>
+              <button class="text-button" id="copyLookupPerf" type="button" data-i18n="opt_copyLookupPerf_button">复制完整日志</button>
+              <button class="text-button danger-button" id="clearLookupPerf" type="button" data-i18n="opt_clearLookupPerf_button">清空</button>
             </div>
-            <pre class="lookup-perf-output" id="lookupPerfOutput" tabindex="0">暂无查词日志</pre>
+            <pre class="lookup-perf-output" id="lookupPerfOutput" tabindex="0" data-i18n="opt_lookupPerfOutput_text">暂无查词日志</pre>
           </div>
         </details>
 
         <div class="tip" id="updateCard">
-          <strong id="updTitle">版本与更新</strong>
-          <p id="updDetail">正在读取扩展版本信息…</p>
+          <strong id="updTitle" data-i18n="opt_updTitle_title">版本与更新</strong>
+          <p id="updDetail" data-i18n="opt_updDetail_text">正在读取扩展版本信息…</p>
           <code id="updBuild"></code>
         </div>
 
         <div class="tip">
-          <strong>加载自己的字幕</strong>
-          <p>打开浏览器原生字幕侧边栏后点“＋”，或直接把字幕文件拖到视频上。</p>
+          <strong data-i18n="opt_loadOwnSubtitles_title">加载自己的字幕</strong>
+          <p data-i18n="opt_loadOwnSubtitles_text">打开浏览器原生字幕侧边栏后点“＋”，或直接把字幕文件拖到视频上。</p>
         </div>
       </aside>
     </div>
   </div>
 
   <div class="save-toast" id="status" role="status" aria-live="polite"></div>
+  <script src="locales/en.js"></script>
+  <script src="i18n.js"></script>
+  <script src="theme.js"></script>
   <script src="fushi-defaults.js"></script>
   <script src="popup-size.js"></script>
   <script src="connection-diagnostics.js"></script>

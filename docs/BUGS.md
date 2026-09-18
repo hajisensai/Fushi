@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2380 条。点号进各自文件。
+> 共 2386 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2579](bugs/BUG-2579-mdx-dict-order.md) | ✅ | ✅ | 查词弹窗里 MDX 词典恒排在所有 Yomitan 词典之后 |
+| [BUG-2578](bugs/BUG-2578-reader-vertical-continuous-android-overscroll-bounce.md) | ✅ | ✅ | 安卓竖排连续模式上下滑动画面回弹 |
+| [BUG-2577](bugs/BUG-2577-android-video-import-scrape-freeze.md) | ✅ | ✅ | 安卓按作品归类导入视频整机卡顿冻结崩溃——AniDB 标题包与 Fribb 映射在 UI isolate 整包解析建 DOM |
+| [BUG-2576](bugs/BUG-2576-vn-restore-progress-chapter-end.md) | ✅ | ✅ | VN 往前翻章 restoreProgress(0.99) 落到 99% 字数所在屏而非末屏，fragment 失效不回退进度 |
+| [BUG-2575](bugs/BUG-2575-vn-measure-box-important-overflow.md) | ✅ | ✅ | VN 量尺盒被 .fushi-vn-screen 的 !important 尺寸覆盖，每屏按整视口切、真实屏溢出裁切 |
+| [BUG-2574](bugs/BUG-2574-bilibili-pgc-sentence-audio.md) | ✅ | ✅ | B 站浏览器制卡丢失句子音频（番剧主世界取流 + CDN 防盗链 Referer） |
 | [BUG-2573](bugs/BUG-2573-mine-word-audio-datauri-plus-normalized.md) | ✅ | ✅ | 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格 |
 | [BUG-2571](bugs/BUG-2571-video-specs-probe-timeout-cached-as-terminal.md) | ✅ | ✅ | 规格探测超时被当成「这文件没有规格」永久记账，角标本会话再也不出 |
 | [BUG-2570](bugs/BUG-2570-video-import-one-bad-file-aborts-batch.md) | ✅ | ✅ | 一个文件失败让整批视频导入 0 条入库，只剩一句裸异常 |
