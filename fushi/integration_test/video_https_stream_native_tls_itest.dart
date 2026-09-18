@@ -32,9 +32,9 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 
 import 'test_helpers.dart';
 
-/// 小体积公网 https mp4（Google 示例桶，约 2.5 MB）。
+/// 小体积公网 https mp4（约 1 MB；Google 示例桶在部分出口已回 403，不再用）。
 const String _kUrl =
-    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+    'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
