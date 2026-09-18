@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2376 条。点号进各自文件。
+> 共 2378 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2576](bugs/BUG-2576-vn-restore-progress-chapter-end.md) | ✅ | ✅ | VN 往前翻章 restoreProgress(0.99) 落到 99% 字数所在屏而非末屏，fragment 失效不回退进度 |
+| [BUG-2575](bugs/BUG-2575-vn-measure-box-important-overflow.md) | ✅ | ✅ | VN 量尺盒被 .fushi-vn-screen 的 !important 尺寸覆盖，每屏按整视口切、真实屏溢出裁切 |
 | [BUG-2573](bugs/BUG-2573-mine-word-audio-datauri-plus-normalized.md) | ✅ | ✅ | 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格 |
 | [BUG-2567](bugs/BUG-2567-emby-ignores-recursive-enumeration.md) | ✅ | ✅ | Emby 兼容服务器忽略 Recursive/IncludeItemTypes 导致剧集库在影片页整库为空 |
 | [BUG-2566](bugs/BUG-2566-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
