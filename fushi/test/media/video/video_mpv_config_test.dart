@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 
@@ -500,8 +502,9 @@ keep-open=yes
   });
 
   group('buildNetworkCacheProperties (TODO-033 #1)', () {
-    test('emits conservative network cache/readahead tuning', () {
-      final Map<String, String> m = buildNetworkCacheProperties();
+    test('desktop emits conservative network cache/readahead tuning', () {
+      final Map<String, String> m =
+          buildNetworkCacheProperties(isMobile: false);
       // 流缓存显式开启。
       expect(m['cache'], 'yes');
       // 预读时长目标（受字节上限封顶）。
@@ -514,19 +517,59 @@ keep-open=yes
       expect(m['network-timeout'], '30');
     });
 
-    test('byte caps stay bounded (no runaway memory)', () {
-      final Map<String, String> m = buildNetworkCacheProperties();
-      final int fwd = int.parse(m['demuxer-max-bytes']!);
-      final int back = int.parse(m['demuxer-max-back-bytes']!);
-      // 上界守卫：单段会话总缓冲 <= 256MiB，避免大码率流爆内存。
-      expect(fwd, lessThanOrEqualTo(256 * 1024 * 1024));
-      expect(back, lessThanOrEqualTo(fwd));
-      // 下界守卫：必须比 media_kit 默认 32MiB 大，否则调优无意义。
-      expect(fwd, greaterThan(32 * 1024 * 1024));
+    test('mobile halves the demuxer buffers (iOS jetsam headroom)', () {
+      // iOS/Android 远端播放：128+64MiB demuxer 缓冲叠上解码 surface / 封面
+      // ImageCache 后贴着 jetsam 线走（Jellyfin/Emby iOS 闪退），移动端降档。
+      final Map<String, String> m =
+          buildNetworkCacheProperties(isMobile: true);
+      expect(m['cache'], 'yes');
+      expect(m['cache-secs'], '20');
+      expect(m['demuxer-max-bytes'], '${32 * 1024 * 1024}');
+      expect(m['demuxer-max-back-bytes'], '${16 * 1024 * 1024}');
+      // 超时容忍与桌面同：抖动判据不随内存分档变。
+      expect(m['network-timeout'], '30');
+      // 键集合两档完全一致，只有值分档。
+      expect(
+        m.keys.toSet(),
+        buildNetworkCacheProperties(isMobile: false).keys.toSet(),
+      );
+    });
+
+    test('default platform judgement follows Platform.isAndroid/isIOS', () {
+      final bool hostIsMobile = Platform.isAndroid || Platform.isIOS;
+      expect(
+        buildNetworkCacheProperties(),
+        buildNetworkCacheProperties(isMobile: hostIsMobile),
+      );
+    });
+
+    test('byte caps stay bounded on both tiers (no runaway memory)', () {
+      for (final bool mobile in <bool>[false, true]) {
+        final Map<String, String> m =
+            buildNetworkCacheProperties(isMobile: mobile);
+        final int fwd = int.parse(m['demuxer-max-bytes']!);
+        final int back = int.parse(m['demuxer-max-back-bytes']!);
+        // 上界守卫：单段会话总缓冲 <= 256MiB，避免大码率流爆内存。
+        expect(fwd, lessThanOrEqualTo(256 * 1024 * 1024),
+            reason: 'mobile=$mobile');
+        expect(back, lessThanOrEqualTo(fwd), reason: 'mobile=$mobile');
+        // 下界守卫：不得低于 media_kit 默认 32MiB，否则调优反而缩水。
+        expect(fwd, greaterThanOrEqualTo(32 * 1024 * 1024),
+            reason: 'mobile=$mobile');
+      }
+      // 移动端严格小于桌面：分档不是摆设。
+      expect(
+        int.parse(buildNetworkCacheProperties(isMobile: true)['demuxer-max-bytes']!),
+        lessThan(
+          int.parse(
+              buildNetworkCacheProperties(isMobile: false)['demuxer-max-bytes']!),
+        ),
+      );
     });
 
     test('only network-relevant keys are emitted (no codec/scale knobs)', () {
-      final Map<String, String> m = buildNetworkCacheProperties();
+      final Map<String, String> m =
+          buildNetworkCacheProperties(isMobile: false);
       // 不碰画质/解码/几何属性——那些归 buildMpvProperties 管。
       expect(m.containsKey('scale'), isFalse);
       expect(m.containsKey('hwdec'), isFalse);

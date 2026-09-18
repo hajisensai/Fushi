@@ -71,6 +71,10 @@ import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
     show VideoDiscoveryController;
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
+    show MediaServerEntry;
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinServerConfig;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -2695,6 +2699,22 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
+  /// 视频页「媒体服务器」分区的服务器清单：每台已登录的 Jellyfin/Emby 配置出一个
+  /// 浏览器（`client is MediaServerBrowser`）。每次进分区重取——设置页登入 / 登出
+  /// 立即反映，不缓存 client 实例。
+  Future<List<MediaServerEntry>> _loadMediaServerEntries() async {
+    final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
+    final List<JellyfinServerConfig> configs =
+        await syncRepo.getJellyfinServers();
+    return <MediaServerEntry>[
+      for (final JellyfinServerConfig config in configs)
+        MediaServerEntry(
+          browser: config.buildClient(),
+          accountName: config.username,
+        ),
+    ];
+  }
+
   Widget _buildTabContent(HomeTab tab) {
     final Widget content = switch (tab) {
       HomeTab.home => HomeDashboardPage(videoRepo: _videoRepository),
@@ -2715,6 +2735,7 @@ class _HomePageState extends BasePageState<HomePage>
               _videoLibraryScrapeSweep.sweepAndListPending(),
           discoveryController: _productionVideoDiscoveryController,
           discoveryActions: _productionVideoDiscoveryActions,
+          mediaServerServersLoader: _loadMediaServerEntries,
         ),
       HomeTab.downloads => DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),

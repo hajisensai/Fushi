@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
-    show JellyfinServerConfig;
+    show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -950,29 +950,153 @@ class SyncRepository {
 
   // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────
 
+  /// v1 单服务器键（一条 [JellyfinServerConfig] JSON）。只在 [getJellyfinServers]
+  /// 的一次性迁移里读，此后不再写；常量保留是为了黑名单与迁移代码引用同一字面量。
   static const _keyJellyfinServer = 'sync_jellyfin_server';
 
-  /// 已登录的 Jellyfin/Emby 服务器配置；未配置 / 已登出 / 脏 JSON → null。
-  /// v1 单服务器（与视频页单远端源架构对齐）。
+  /// v2 多服务器键：JSON 数组，每项 [JellyfinServerConfig.toJson]。列表顺序 =
+  /// 用户添加顺序（视频页「媒体服务器」栏目一台一张卡片按此排）。
+  static const _keyJellyfinServers = 'sync_jellyfin_servers';
+
+  /// 已登录的全部 Jellyfin/Emby 服务器（按添加顺序）；未配置 → 空列表。
+  ///
+  /// **旧单值键迁移在读路径完成**：列表键不存在而 [_keyJellyfinServer] 存在时，把
+  /// 旧值包成单元素列表写进列表键并删旧键。不走 schema migration——这只是 prefs
+  /// 表里一行 JSON 的形状变化，读一次就收敛，且旧键脏 JSON 时同样删旧键（它本来
+  /// 也读成「未配置」，留着只会让每次读都重跑一遍迁移）。
+  ///
+  /// 脏项（非 Map / 缺 serverUrl、userId、accessToken）逐项丢弃，不整列表作废：
+  /// 一台服务器的配置坏了不该把其它几台一起登出。
+  Future<List<JellyfinServerConfig>> getJellyfinServers() async {
+    final String? raw = await _getStringOrNull(_keyJellyfinServers);
+    if (raw != null) return _decodeJellyfinServers(raw);
+    final String? legacy = await _getStringOrNull(_keyJellyfinServer);
+    if (legacy == null) return const <JellyfinServerConfig>[];
+    final JellyfinServerConfig? migrated = _decodeJellyfinServer(legacy);
+    final List<JellyfinServerConfig> servers = <JellyfinServerConfig>[
+      if (migrated != null) migrated,
+    ];
+    await setJellyfinServers(servers);
+    await _deleteKey(_keyJellyfinServer);
+    return servers;
+  }
+
+  /// 整表覆盖；空列表 = 删键（全部登出）。
+  Future<void> setJellyfinServers(List<JellyfinServerConfig> servers) async {
+    if (servers.isEmpty) {
+      await _deleteKey(_keyJellyfinServers);
+      return;
+    }
+    await _setString(
+      _keyJellyfinServers,
+      jsonEncode(<Map<String, Object?>>[
+        for (final JellyfinServerConfig s in servers) s.toJson(),
+      ]),
+    );
+  }
+
+  /// 按 `(serverUrl, userId)` 身份替换或追加一台服务器。
+  ///
+  /// 身份键走 [JellyfinVideoClient.sourceIdFor]（= 远端清单缓存槽的身份），同一
+  /// 账号重复登录只是换令牌 / 改库选择，列表里不会出现第二张同服务器卡片；替换
+  /// 保持原位，不把用户排好的顺序打乱。
+  Future<void> upsertJellyfinServer(JellyfinServerConfig config) async {
+    final String id = JellyfinVideoClient.sourceIdFor(
+      serverUrl: config.serverUrl,
+      userId: config.userId,
+    );
+    final List<JellyfinServerConfig> servers = await getJellyfinServers();
+    final int index = servers.indexWhere(
+      (JellyfinServerConfig s) =>
+          JellyfinVideoClient.sourceIdFor(
+            serverUrl: s.serverUrl,
+            userId: s.userId,
+          ) ==
+          id,
+    );
+    final List<JellyfinServerConfig> next = List<JellyfinServerConfig>.of(
+      servers,
+    );
+    if (index < 0) {
+      next.add(config);
+    } else {
+      next[index] = config;
+    }
+    await setJellyfinServers(next);
+  }
+
+  /// 只登出一台（按 `(serverUrl, userId)` 身份）；不在列表里 = no-op。
+  Future<void> removeJellyfinServer({
+    required String serverUrl,
+    required String userId,
+  }) async {
+    final String id = JellyfinVideoClient.sourceIdFor(
+      serverUrl: serverUrl,
+      userId: userId,
+    );
+    final List<JellyfinServerConfig> servers = await getJellyfinServers();
+    final List<JellyfinServerConfig> next = <JellyfinServerConfig>[
+      for (final JellyfinServerConfig s in servers)
+        if (JellyfinVideoClient.sourceIdFor(
+              serverUrl: s.serverUrl,
+              userId: s.userId,
+            ) !=
+            id)
+          s,
+    ];
+    if (next.length == servers.length) return;
+    await setJellyfinServers(next);
+  }
+
+  /// 过渡口径：**列表第一项**（多服务器化之前只有一台，「第一台」就是那一台）。
+  /// 单远端源架构的消费端（home_video_page `_resolveJellyfinVideoClient`）在改成
+  /// 逐台解析前先靠它维持旧行为；新代码一律用 [getJellyfinServers]。
+  @Deprecated('Use getJellyfinServers')
   Future<JellyfinServerConfig?> getJellyfinServer() async {
-    final String? raw = await _getStringOrNull(_keyJellyfinServer);
-    if (raw == null || raw.isEmpty) return null;
+    final List<JellyfinServerConfig> servers = await getJellyfinServers();
+    return servers.isEmpty ? null : servers.first;
+  }
+
+  /// 过渡口径：`null` = 清空全部（旧的「登出 = 删键」语义，多台时等于全部登出）；
+  /// 非 null = [upsertJellyfinServer]。新代码用 [upsertJellyfinServer] /
+  /// [removeJellyfinServer] 点名操作。
+  @Deprecated('Use upsertJellyfinServer / removeJellyfinServer')
+  Future<void> setJellyfinServer(JellyfinServerConfig? config) => config == null
+      ? setJellyfinServers(const <JellyfinServerConfig>[])
+      : upsertJellyfinServer(config);
+
+  static List<JellyfinServerConfig> _decodeJellyfinServers(String raw) {
+    if (raw.isEmpty) return const <JellyfinServerConfig>[];
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return <JellyfinServerConfig>[
+          for (final Object? item in decoded)
+            if (item is Map<String, dynamic>)
+              if (JellyfinServerConfig.fromJson(item)
+                  case final JellyfinServerConfig config)
+                config,
+        ];
+      }
+    } catch (_) {
+      // Best-effort: 脏 JSON 一律当「未配置」（下面返回空表），不弹错也不抛——
+      // 这条只是读缓存里的服务器配置，设置页会让用户重新登录。
+    }
+    return const <JellyfinServerConfig>[];
+  }
+
+  static JellyfinServerConfig? _decodeJellyfinServer(String raw) {
+    if (raw.isEmpty) return null;
     try {
       final Object? decoded = jsonDecode(raw);
       if (decoded is Map<String, dynamic>) {
         return JellyfinServerConfig.fromJson(decoded);
       }
     } catch (_) {
-      // Best-effort: 脏 JSON / 旧格式一律当「未配置」（下面 return null），不弹错也不
-      // 抛——这条只是读缓存里的服务器配置，登录页会让用户重新配。
+      // 同上：旧单值键的脏 JSON 当「未配置」。
     }
     return null;
   }
-
-  /// 保存 / 清除（null = 登出删键）Jellyfin 服务器配置。
-  Future<void> setJellyfinServer(JellyfinServerConfig? config) => config == null
-      ? _deleteKey(_keyJellyfinServer)
-      : _setString(_keyJellyfinServer, jsonEncode(config.toJson()));
 
   // ── Hibiki Client (connect to another Hibiki instance) ─────────
 
@@ -1235,8 +1359,10 @@ class SyncRepository {
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,
-    // Jellyfin 服务器绑定含访问令牌，属设备本地凭据，绝不随备份跨设备。
+    // Jellyfin 服务器绑定含访问令牌，属设备本地凭据，绝不随备份跨设备。旧单值键
+    // 与新列表键都列：旧键在迁移前的备份里仍可能存在。
     _keyJellyfinServer,
+    _keyJellyfinServers,
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
     _keyInterconnectServiceConfigSync,

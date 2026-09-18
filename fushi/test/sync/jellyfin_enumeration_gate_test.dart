@@ -68,7 +68,7 @@ void main() {
   group('[B] 每服务器的媒体库点名', () {
     test('libraryIds 随服务器配置整条落 prefs 并原样读回', () async {
       final SyncRepository sync = SyncRepository(db);
-      await sync.setJellyfinServer(const JellyfinServerConfig(
+      await sync.upsertJellyfinServer(const JellyfinServerConfig(
         serverUrl: 'http://nas:8096',
         username: 'u',
         userId: 'u1',
@@ -76,22 +76,24 @@ void main() {
         libraryIds: <String>['lib-anime', 'lib-movies'],
       ));
 
-      final JellyfinServerConfig? back = await sync.getJellyfinServer();
-      expect(back!.libraryIds, <String>['lib-anime', 'lib-movies']);
+      final JellyfinServerConfig back =
+          (await sync.getJellyfinServers()).single;
+      expect(back.libraryIds, <String>['lib-anime', 'lib-movies']);
       expect(back.buildClient().libraryIds, <String>['lib-anime', 'lib-movies'],
           reason: '配置里点了名，client 却照旧整库递归 = 设置形同虚设');
     });
 
     test('旧配置（无 libraryIds 字段）读成空 = 全部视频库，老用户行为不变', () async {
       final SyncRepository sync = SyncRepository(db);
-      await sync.setJellyfinServer(const JellyfinServerConfig(
+      await sync.upsertJellyfinServer(const JellyfinServerConfig(
         serverUrl: 'http://nas:8096',
         username: 'u',
         userId: 'u1',
         accessToken: 'tok',
       ));
-      final JellyfinServerConfig? back = await sync.getJellyfinServer();
-      expect(back!.libraryIds, isEmpty);
+      final JellyfinServerConfig back =
+          (await sync.getJellyfinServers()).single;
+      expect(back.libraryIds, isEmpty);
       // 空集不该被写进 JSON——旧端读到未知键不会炸，但没必要留噪音。
       expect(back.toJson().containsKey('libraryIds'), isFalse);
     });

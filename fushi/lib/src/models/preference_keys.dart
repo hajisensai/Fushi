@@ -123,6 +123,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',
+  // bool（默认 false）：是否把媒体服务器条目混排进首页 / 系列 / 全部视频。默认只在
+  // 「媒体服务器」分区按服务器自己的树浏览；混排是显式 opt-in，因为它意味着整库
+  // 拍平枚举（BUG-1891 的根源），`jellyfin_auto_list_videos` 只在它开着时才有意义。
+  'jellyfin_show_in_library',
   'jimaku_api_key',
   'jimaku_default_language',
   // bool（默认 true）：Jimaku 是否参与字幕搜索。与 jimaku_api_key 组成

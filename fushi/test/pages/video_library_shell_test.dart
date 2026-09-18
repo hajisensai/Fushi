@@ -77,6 +77,7 @@ void main() {
   late ChangeNotifier refreshSignal;
   late int localInitCount;
   late int discoveryInitCount;
+  late int mediaServerInitCount;
   VideoLibrarySection? lastLocalSection;
 
   setUp(() {
@@ -86,6 +87,7 @@ void main() {
     refreshSignal = ChangeNotifier();
     localInitCount = 0;
     discoveryInitCount = 0;
+    mediaServerInitCount = 0;
     lastLocalSection = null;
   });
 
@@ -132,6 +134,15 @@ void main() {
                 ),
               ],
             ),
+            mediaServerPageBuilder: (_, Widget navigation) => Column(
+              children: <Widget>[
+                navigation,
+                _StatefulProbeLeaf(
+                  label: 'media server leaf',
+                  onInit: () => mediaServerInitCount += 1,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -152,7 +163,10 @@ void main() {
   // 本地库的各视图（首页 / 系列 / 全部视频）排完才是在线发现，最后才是管理类分区
   // ——与书 / 漫画 / 游戏同位。发现曾夹在首页与系列之间，一排里「自己的库 → 推荐 →
   // 自己的库」来回跳（2026-08-24 用户反馈），是四个模块里唯一的例外。
-  testWidgets('页签顺序固定为首页、系列、全部视频、发现、来源、设置', (WidgetTester tester) async {
+  // 媒体服务器（用户自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图
+  // 之后、在线发现之前。
+  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、发现、来源、设置',
+      (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
 
@@ -167,6 +181,7 @@ void main() {
         VideoLibrarySection.home,
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
+        VideoLibrarySection.mediaServers,
         VideoLibrarySection.discover,
         VideoLibrarySection.sources,
         VideoLibrarySection.settings,
@@ -249,17 +264,41 @@ void main() {
         reason: '首页已是首位，向右甩无事发生');
   });
 
-  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进发现', (WidgetTester tester) async {
+  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进媒体服务器', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
     await select(tester, VideoLibrarySection.allVideos);
-    expect(discoveryInitCount, 0);
+    expect(mediaServerInitCount, 0);
 
     await tester.fling(find.text('local leaf'), const Offset(-260, 0), 1000);
     await tester.pumpAndSettle();
 
-    expect(discoveryInitCount, 1, reason: '横滑与页签同一条 _select 路径，'
-        '首次进入发现才惰性构建');
-    expect(find.text('discover leaf'), findsOneWidget);
+    expect(mediaServerInitCount, 1, reason: '横滑与页签同一条 _select 路径，'
+        '首次进入媒体服务器才惰性构建');
+    expect(find.text('media server leaf'), findsOneWidget);
+    expect(discoveryInitCount, 0, reason: '发现在媒体服务器之后，尚未到达');
+  });
+
+  testWidgets('媒体服务器未访问不构建，访问后切走保活、退出焦点遍历', (WidgetTester tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pump();
+    expect(mediaServerInitCount, 0, reason: '媒体服务器分区不得随视频首页挂载而向服务器发请求');
+
+    await select(tester, VideoLibrarySection.mediaServers);
+    expect(mediaServerInitCount, 1);
+    expect(find.text('media server leaf'), findsOneWidget);
+
+    await select(tester, VideoLibrarySection.home);
+    await select(tester, VideoLibrarySection.mediaServers);
+    expect(mediaServerInitCount, 1, reason: 'Offstage 保活后切回不得重建 State');
+
+    await select(tester, VideoLibrarySection.home);
+    final ExcludeFocus focusGate = tester.widget<ExcludeFocus>(
+      find.ancestor(
+        of: find.text('media server leaf', skipOffstage: false),
+        matching: find.byType(ExcludeFocus, skipOffstage: false),
+      ).first,
+    );
+    expect(focusGate.excluding, isTrue);
   });
 }
