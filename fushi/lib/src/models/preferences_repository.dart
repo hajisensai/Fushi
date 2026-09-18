@@ -853,6 +853,19 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 用户请求（Flow Launcher 式用法）：app 外热键把主窗置顶到查词页、查完按「返回
+  /// 上一级」（默认 Esc）直接把窗口收回去，不用碰鼠标就回到之前的程序。默认 OFF——
+  /// 首页根路由上 globalBack 原本是 no-op，开了才把这一步接成「最小化主窗」；只对
+  /// 桌面有意义（移动端没有「最小化」这回事，消费端按平台早退）。
+  bool get lookupPageEscapeMinimizesWindow =>
+      getPref('lookup_page_escape_minimizes_window', defaultValue: false)
+          as bool;
+
+  Future<void> setLookupPageEscapeMinimizesWindow(bool value) async {
+    await setPref('lookup_page_escape_minimizes_window', value);
+    notifyListeners();
+  }
+
   bool get isFirstTimeSetup =>
       getPref('first_time_setup', defaultValue: true) as bool;
 
