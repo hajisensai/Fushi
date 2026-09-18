@@ -28,7 +28,6 @@
   "aidoku_repository_sources": "Sources du dépôt",
   "aidoku_repository_update": "Mettre à jour",
   "aidoku_repository_url": "URL du dépôt",
-  "aidoku_runtime_unavailable": "Les extensions Aidoku sont actuellement disponibles uniquement sur macOS.",
   "aidoku_webview_unsupported": "Cette source nécessite des API WebView Aidoku pas encore prises en charge.",
   "anime_download_back": "Retour",
   "anime_download_batch": "Lot",

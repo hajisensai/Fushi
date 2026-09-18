@@ -20,8 +20,8 @@ esac
 # 本体能以哪些架构运行，就必须有哪个架构的 JVM 镜像、且那个镜像真的是该架构。
 # 交叉 jlink（arm64 宿主 + x64 jmods）出错时产物看着齐全、名字也对，只有到
 # Intel Mac 上才被内核以 EBADARCH 拒掉——表现是整条 Mihon 链（源列表、搜索、
-# 详情、章节、看图）全废，而 CI 全绿。Aidoku 侧的同形门见
-# tool/aidoku/verify_macos_runtime.sh（BUG-1668 / BUG-1922）。
+# 详情、章节、看图）全废，而 CI 全绿。Aidoku 侧曾有同形门
+# tool/aidoku/verify_macos_runtime.sh（BUG-1668 / BUG-1922），已随 macOS 宿主移除。
 if [[ -n "$app_executable" ]]; then
   if [[ ! -x "$app_executable" ]]; then
     echo "app executable not found for the Mihon runtime architecture gate: $app_executable" >&2

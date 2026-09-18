@@ -215,15 +215,22 @@ void main() {
   });
 
   group('Aidoku 的 iOS 宿主已整条移除', () {
-    test('Dart 工厂只认 macOS', () {
+    test('Dart 工厂不认任何平台（macOS 宿主随后也已移除）', () {
       final String runtime = compactCode(
         read('lib/src/media/manga/aidoku/aidoku_runtime.dart'),
       );
-      expect(runtime, contains('staticboolgetisSupported=>Platform.isMacOS;'));
+      expect(runtime, contains('staticboolgetisSupported=>false;'));
       expect(
         runtime,
         isNot(contains('Platform.isIOS')),
         reason: 'iOS 分支必须消失，而不是留着抛异常——留着就还需要 native 侧配合。',
+      );
+      expect(
+        runtime,
+        isNot(contains('Platform.isMacOS')),
+        reason:
+            'macOS 子进程宿主随 Rust CLI、打包脚本与 CI 步骤一并移除；'
+            '分支留着就是一条指向不存在 helper 的死路径。',
       );
       expect(
         runtime,
@@ -274,17 +281,31 @@ void main() {
       }
     });
 
-    test('macOS 侧的 Aidoku 打包不受影响', () {
-      // 反向断言：这次移除的是 iOS 宿主，macOS 仍然是受支持平台。两条 macOS
-      // workflow 的打包步骤见 macos_aidoku_runtime_packaging_guard_test.dart，
-      // 这里只钉「不要顺手把 macOS 也删了」。
+    test('macOS 侧的 Aidoku 宿主也已整条移除', () {
+      // 曾是反向断言「不要顺手把 macOS 也删了」；macOS 宿主随后按同一口径移除，
+      // 这里改钉新事实：Dart 侧没有子进程实现，两条 macOS workflow 也不再打
+      // runtime 进 bundle，发布包里不带 WASM 解释器。
       expect(
         read('lib/src/media/manga/aidoku/aidoku_runtime.dart'),
-        contains('DesktopAidokuRuntime'),
+        isNot(contains('DesktopAidokuRuntime')),
       );
+      for (final String path in <String>[
+        '../.github/workflows/build-multiplatform.yml',
+        '../.github/workflows/release-desktop.yml',
+      ]) {
+        final String workflow = read(path);
+        expect(workflow, isNot(contains('tool/aidoku/')));
+        expect(workflow, isNot(contains('aidoku_runtime')));
+        expect(
+          workflow,
+          isNot(contains('apple-darwin')),
+          reason: '$path 里的 macOS Rust target 只为 Aidoku runtime 而装。',
+        );
+      }
+      expect(Directory('../tool/aidoku').existsSync(), isFalse);
       expect(
-        read('../.github/workflows/release-desktop.yml'),
-        contains('tool/aidoku/build_macos_runtime.sh'),
+        File('../native/aidoku_runtime/src/main.rs').existsSync(),
+        isFalse,
       );
     });
   });

@@ -665,12 +665,6 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
 
   Widget _buildAidokuSection() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (!AidokuRuntimeFactory.isSupported) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(t.aidoku_runtime_unavailable, textAlign: TextAlign.center),
-      );
-    }
     final Map<String, AidokuRepositorySource> availableById =
         <String, AidokuRepositorySource>{};
     for (final AidokuRepositoryIndex index in _aidokuIndexes) {
@@ -973,10 +967,14 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                               mediaKind: 'manga',
                             ),
                             if (onlineSourcesAvailable) ...<Widget>[
-                              const SizedBox(height: 28),
-                              _sectionTitle(t.aidoku_extensions_title),
-                              const SizedBox(height: 8),
-                              _buildAidokuSection(),
+                              // 没有 Aidoku 宿主的构建不挂这一节：与其展示一句
+                              // 「本平台不可用」，不如整节不出现。
+                              if (AidokuRuntimeFactory.isSupported) ...<Widget>[
+                                const SizedBox(height: 28),
+                                _sectionTitle(t.aidoku_extensions_title),
+                                const SizedBox(height: 8),
+                                _buildAidokuSection(),
+                              ],
                               const SizedBox(height: 28),
                               _sectionTitle(t.mihon_extensions_title),
                               const SizedBox(height: 8),
