@@ -24,7 +24,9 @@ void main() {
       expect(body, isNotNull, reason: '找不到 dispose 方法体');
       final String b = body!.group(1)!;
       final int saveAt = b.indexOf('_forceSavePositionSync()');
-      final int playerDisposeAt = b.indexOf('_player?.dispose()');
+      // PR #1542 起 dispose 先把 Player 拷进局部 `disposing` 再 `.dispose()`（释放
+      // Future 留给下一个控制器等待），锚点跟着走。
+      final int playerDisposeAt = b.indexOf('disposing.dispose()');
       expect(saveAt, greaterThanOrEqualTo(0),
           reason: 'dispose 必须强制保存当前位置（退出 flush）');
       expect(playerDisposeAt, greaterThan(saveAt),
