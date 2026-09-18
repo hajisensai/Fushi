@@ -10,6 +10,16 @@ const String kVideoWatchCoveragePrefPrefix = 'video_watch_coverage_';
 String videoWatchCoveragePrefKey(String bookUid) =>
     '$kVideoWatchCoveragePrefPrefix$bookUid';
 
+/// 远端 host-playlist（同一 id 多集，TODO-885）按集的覆盖并集键（BUG-2587）：
+/// [episodeIndex] == 0 回退到整书 [videoWatchCoveragePrefKey]（与单视频 / 合集成员
+/// 完全同键），index>0 才带 `#ep<index>` 后缀——与断点键
+/// `videoRemotePositionEpisodePrefKey` 同一约定。各集片内区间从 0 起算，共用一份
+/// 并集会把第 2 集起整段判成「已看过」而一秒不计。
+String videoWatchCoverageEpisodePrefKey(String bookUid, int episodeIndex) =>
+    episodeIndex <= 0
+        ? videoWatchCoveragePrefKey(bookUid)
+        : '${videoWatchCoveragePrefKey(bookUid)}#ep$episodeIndex';
+
 /// 「统计日」重置整点的偏好键（int 0..23，默认 0）。见
 /// [FushiDatabase.statDayResetHour]。
 const String kStatDayResetHourPrefKey = 'stats_day_reset_hour';
