@@ -35,9 +35,11 @@ void main() {
   /// `browserExtensionThemeColors()` 返回 map 里的所有 `'--x':` key。
   Set<String> serverThemeVars() {
     final String src = read('lib/src/models/app_model.dart');
-    final int start = src.indexOf('browserExtensionThemeColors()');
+    final int start =
+        src.indexOf('browserExtensionThemeColors(String? colorScheme)');
     expect(start, greaterThanOrEqualTo(0),
-        reason: 'browserExtensionThemeColors() not found in app_model.dart');
+        reason: 'browserExtensionThemeColors(colorScheme) not found in '
+            'app_model.dart');
     // 方法体到第一个 `};`（map 字面量的结束）。
     final int mapEnd = src.indexOf('};', start);
     expect(mapEnd, greaterThan(start));

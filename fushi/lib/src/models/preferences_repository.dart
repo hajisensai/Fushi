@@ -29,6 +29,7 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
+import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -1584,6 +1585,24 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoScreenshotDirectory(String path) async {
     await setPref(kVideoScreenshotDirectoryPref, path);
+    notifyListeners();
+  }
+
+  /// 片段导出的视频目标码率（kbps）；0 = 跟随源（默认，旧库没有该 key 时的行为，
+  /// 不需要迁移）。写入前夹到 `[0, kVideoClipExportVideoBitrateMaxKbps]`。
+  int get videoClipExportVideoBitrateKbps => getPref(
+        kVideoClipExportVideoBitrateKbpsPref,
+        defaultValue: kVideoClipExportVideoBitrateFollowSource,
+      ) as int;
+
+  Future<void> setVideoClipExportVideoBitrateKbps(int kbps) async {
+    await setPref(
+      kVideoClipExportVideoBitrateKbpsPref,
+      kbps.clamp(
+        kVideoClipExportVideoBitrateFollowSource,
+        kVideoClipExportVideoBitrateMaxKbps,
+      ),
+    );
     notifyListeners();
   }
 

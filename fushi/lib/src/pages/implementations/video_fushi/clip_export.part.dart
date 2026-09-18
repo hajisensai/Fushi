@@ -132,6 +132,9 @@ extension _VideoClipExport on _VideoFushiPageState {
         endMs: endMs,
       ),
       subtitleRenderer: _clipExportSubtitleRenderer(),
+      // 用户设的视频码率（0 = 跟随源，导出层归一成 null）。在这里取值而不是在
+      // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
+      videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
     );
 
     if (!mounted) {

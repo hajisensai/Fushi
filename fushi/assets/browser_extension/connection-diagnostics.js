@@ -33,30 +33,36 @@
     return states.wrongService;
   }
 
+  // 文案走 i18n.js（fushiT）；node 测试壳没装时退回键名。
+  function tr(key, params) {
+    var g = typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : globalThis);
+    return (g && typeof g.fushiT === 'function') ? g.fushiT(key, params) : key;
+  }
+
   function copy(state, port) {
     var p = Number(port) || 19633;
     if (state === states.connected) {
-      return { title: '已连接 Fushi', detail: '查词、字幕解析和制卡服务均可用。', tone: 'good' };
+      return { title: tr('conn_state_connected_title'), detail: tr('conn_state_connected_detail'), tone: 'good' };
     }
     if (state === states.legacy) {
-      return { title: '已连接旧版 Fushi', detail: '基础功能可用；更新 Fushi 可获得完整连接诊断。', tone: 'good' };
+      return { title: tr('conn_state_legacy_title'), detail: tr('conn_state_legacy_detail'), tone: 'good' };
     }
     if (state === states.unauthorized) {
-      return { title: 'API 密钥不匹配', detail: '连接到了 Fushi，但扩展中的 Token 已过期。请点“恢复自动配置”或重新运行安装助手。', tone: 'warn' };
+      return { title: tr('conn_state_unauthorized_title'), detail: tr('conn_state_unauthorized_detail'), tone: 'warn' };
     }
     if (state === states.yomitanConflict) {
       return {
-        title: '端口被 Yomitan API 占用',
-        detail: '端口 ' + p + ' 正由 Yomitan 使用。请在 Yomitan 高级设置中关闭“Enable Yomitan API”，再回 Fushi 开启“Yomitan API 服务器”。',
+        title: tr('conn_state_yomitan_title'),
+        detail: tr('conn_state_yomitan_detail', { port: p }),
         tone: 'danger',
       };
     }
     if (state === states.wrongService) {
-      return { title: '端口连接到了其他服务', detail: '端口 ' + p + ' 有响应，但不是 Fushi。请检查端口设置或关闭占用该端口的程序。', tone: 'danger' };
+      return { title: tr('conn_state_wrong_service_title'), detail: tr('conn_state_wrong_service_detail', { port: p }), tone: 'danger' };
     }
     return {
-      title: 'Fushi API 未开启',
-      detail: '请打开 Fushi → 设置 → 查词 → 开启“Yomitan API 服务器”，然后重新检测。',
+      title: tr('conn_state_offline_title'),
+      detail: tr('conn_state_offline_detail'),
       tone: 'warn',
     };
   }

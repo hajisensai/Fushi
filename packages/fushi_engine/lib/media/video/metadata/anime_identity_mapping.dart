@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
@@ -124,21 +125,50 @@ class AnimeIdentityMapping {
     );
     // Bound decoding and retained catalog size. The shared HTTP transport owns
     // response buffering; do not cache another copy of its raw body here.
-    if (response.body.length > maxResponseBytes ||
-        utf8.encode(response.body).length > maxResponseBytes) {
+    if (response.body.length > maxResponseBytes) {
       throw const FormatException('Anime identity mapping exceeds size limit');
     }
-    final Object? decoded =
-        response.decodeJson(operation: 'Anime identity mapping');
-    if (decoded is! List) {
-      throw const FormatException('Anime identity mapping must be a list');
-    }
-    return _AnimeIdentityCatalog.fromRows(decoded);
+    // Fribb 全表是十几 MB JSON、近四万行：字节数复核、jsonDecode 与建三张
+    // 索引整段进后台 isolate（结果经 Isolate.exit 零拷贝交回）。之前这段在 UI
+    // isolate 同步跑，是「按作品归类」导入时整机卡住的一节。闭包只捕获局部
+    // 变量，不能碰 `this`（HTTP client 跨不了 isolate）。
+    final String body = response.body;
+    final int statusCode = response.statusCode;
+    final int limit = maxResponseBytes;
+    return Isolate.run(
+      () => _decodeIdentityCatalog(body, statusCode: statusCode, limit: limit),
+      debugName: 'anime-identity-mapping',
+    );
   }
 
   void close() {
     if (_ownsHttp) _http.close();
   }
+}
+
+/// 后台 isolate 入口：与 `VideoMetadataHttpResponse.decodeJson` 同一套错误语义
+/// （坏 JSON → [VideoMetadataNetworkException]），只是不在 UI isolate 上跑。
+_AnimeIdentityCatalog _decodeIdentityCatalog(
+  String body, {
+  required int statusCode,
+  required int limit,
+}) {
+  if (utf8.encode(body).length > limit) {
+    throw const FormatException('Anime identity mapping exceeds size limit');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (error) {
+    throw VideoMetadataNetworkException(
+      'Anime identity mapping returned invalid JSON: $error',
+      statusCode: statusCode,
+    );
+  }
+  if (decoded is! List) {
+    throw const FormatException('Anime identity mapping must be a list');
+  }
+  return _AnimeIdentityCatalog.fromRows(decoded);
 }
 
 class _AnimeIdentityCatalog {

@@ -121,6 +121,7 @@ import 'package:fushi/src/media/torrent/anime_download_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_memory.dart';
+import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
@@ -3534,9 +3535,16 @@ class AppModel with ChangeNotifier {
   /// 用 `var(...)` 消费：`--md-*` 上色、`--fushi-popup-max-width/height` 定弹窗盒、
   /// `--fushi-popup-zoom` 缩放内容字号、`--dict-columns` 决定词典多列布局。与 in-app 弹窗
   /// 注入的 md 变量 / --dict-columns / zoom 同源（dictionary_popup_webview / popup_settings_injection 一致）。
-  Map<String, String> browserExtensionThemeColors() {
-    final ColorScheme s = themeNotifier.buildColorScheme(
-        themeNotifier.isDarkMode ? Brightness.dark : Brightness.light);
+  ///
+  /// [colorScheme] 是扩展「主题：跟随 / 浅色 / 深色」设置随查词请求体带来的显式明暗
+  /// （`'dark'` / `'light'`，已由 `remoteLookupColorSchemeOf` 校验）；null = 跟随 app
+  /// 当前明暗。用户覆盖色（[_overrideDictionaryColor]）不随它变，与 in-app 弹窗同律。
+  Map<String, String> browserExtensionThemeColors(String? colorScheme) {
+    // 显式 'dark' / 'light' 优先；其它（null）跟随 app 当前明暗。
+    final bool dark = colorScheme == 'dark' ||
+        (colorScheme != 'light' && themeNotifier.isDarkMode);
+    final ColorScheme s = themeNotifier
+        .buildColorScheme(dark ? Brightness.dark : Brightness.light);
     // 卡面底色跟随主题 scheme.surface（popupCardSurface 单一真源），
     // override 优先级不变。
     final Color bgColor =
@@ -3571,9 +3579,10 @@ class AppModel with ChangeNotifier {
       // BUG-736：卡片底色 alpha 合成用的 RGB 三元组（配 popup.css 的 --fushi-card-bg-alpha）。
       // 漏发时回落到纯白 255,255,255。
       '--fushi-card-bg-rgb': vars['--fushi-card-bg-rgb']!,
-      // BUG-688：app 当前明暗，content.js 据此把 #entries-container 的 data-theme 对齐 app
-      // （而非宿主网页 prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
-      '--fushi-color-scheme': themeNotifier.isDarkMode ? 'dark' : 'light',
+      // BUG-688：实际采用的明暗（扩展显式要求的，否则 app 当前的），content.js 据此把
+      // #entries-container 的 data-theme 对齐本 map 的 --md-*（而非宿主网页
+      // prefers-color-scheme），根除「data-theme 跟宿主页 / --md-* 跟 app」的分裂。
+      '--fushi-color-scheme': dark ? 'dark' : 'light',
       '--md-surface-container-high': vars['--md-surface-container-high']!,
       '--md-surface-container': vars['--md-surface-container']!,
       '--md-on-surface': vars['--md-on-surface']!,
@@ -4071,6 +4080,13 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoScreenshotDirectory(String path) =>
       prefsRepo.setVideoScreenshotDirectory(path);
+
+  /// 片段导出的视频目标码率（kbps）；0 = 跟随源（不为改码率而重编码）。
+  int get videoClipExportVideoBitrateKbps =>
+      prefsRepo.videoClipExportVideoBitrateKbps;
+
+  Future<void> setVideoClipExportVideoBitrateKbps(int kbps) =>
+      prefsRepo.setVideoClipExportVideoBitrateKbps(kbps);
 
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
@@ -7026,6 +7042,10 @@ class AppModel with ChangeNotifier {
     await _disposeVideoDownloadPipelineRuntime(
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
+    // 扩展视频沉浸时间桥持 StudyClock 写链：关库前封段并等写完，否则最后一段丢、
+    // 或 stop 落在已关闭连接上抛「connection was closed」。幂等，可与
+    // stopYomitanApiServer 重复调。
+    await _browserVideoStudyBridge?.stopAll();
   }
 
   Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
@@ -7700,6 +7720,15 @@ class AppModel with ChangeNotifier {
   // ── yomitan-api server (lifecycle) ──────────────────────────────────
   YomitanApiServerManager? _yomitanServerManager;
 
+  /// 浏览器扩展网页视频沉浸时间 → 学习统计的桥（POST `/api/extension/study` 的
+  /// sink）。与 server manager 同寿命：懒建于 [_ensureYomitanManager]，
+  /// [stopYomitanApiServer] / [quiesceBackgroundDatabaseWriters] 时封段等落库。
+  BrowserVideoStudyBridge? _browserVideoStudyBridge;
+
+  BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
+      _browserVideoStudyBridge ??=
+          BrowserVideoStudyBridge(database: () => database);
+
   YomitanApiServerManager _ensureYomitanManager() {
     return _yomitanServerManager ??= YomitanApiServerManager(
       lookupService: createRemoteLookupService(),
@@ -7720,6 +7749,10 @@ class AppModel with ChangeNotifier {
       // 与自身 FUSHI_DEFAULTS.build 比对，不一致即 chrome.runtime.reload() 从磁盘拉新。
       // 指纹由 refreshBrowserExtensionCopy 在启动时算好缓存；算好前返回 null（字段省略）。
       extensionBuildProvider: () => _browserExtensionBuild,
+      // app 当前 UI 语言（Slang languageTag：'en' / 'zh-CN' / 'ja' / 'pt-BR' …）随
+      // status 探活的 `locale` 与查词响应的 `appLocale` 下发，扩展弹窗 / 面板文案跟随
+      // app 语言；扩展收不到时回落浏览器语言。
+      appLocaleProvider: () => LocaleSettings.currentLocale.languageTag,
       // BUG-1718：词典自带 CSS + 用户自定义 CSS 随查词响应按 revision 门控下发，
       // 扩展弹窗才能和 app 内弹窗渲染出同一套词典样式（mdx 词典尤其依赖它）。
       popupDictionaryCssProvider: browserExtensionPopupDictionaryCss,
@@ -7727,6 +7760,9 @@ class AppModel with ChangeNotifier {
       // 解锁 + 只写扩展键（下次查词 browserExtensionThemeColors 读新 extensionPopupEffectiveSize
       // 即以新尺寸下发，闭环）。
       onExtensionPopupSize: _applyExtensionPopupSize,
+      // 扩展网页视频沉浸时间：每条播放样本喂给桥 → 每个 mediaKey 一个
+      // VideoWatchTracker + StudyClock（只计首次覆盖，与视频页同口径）。
+      onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
       // 浏览器扩展连接探活：扩展任一端点命中即刷新 last-seen 时间戳，供扩展管理页
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。
@@ -7830,6 +7866,8 @@ class AppModel with ChangeNotifier {
 
   Future<void> stopYomitanApiServer() async {
     await _yomitanServerManager?.stop();
+    // server 停了就不会再来样本：把扩展视频正在统计的段封掉、等最后一笔落库。
+    await _browserVideoStudyBridge?.stopAll();
   }
 
   /// TODO-1266：浏览器扩展「安装助手」调用——「装完即用」。确保 yomitan-api server 就绪，

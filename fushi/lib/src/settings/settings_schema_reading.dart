@@ -874,24 +874,8 @@ SettingsDestination buildReadingDestination() {
               c.refresh();
             },
           ),
-          // 「今日」重置时刻（整点）：写入时前移 dateKey，历史段不重分桶。
-          SettingsStepperItem(
-            id: 'reading.stats_day_reset_hour',
-            title: t.reading_stats_day_reset_hour,
-            subtitle: t.reading_stats_day_reset_hour_hint,
-            icon: Icons.update_outlined,
-            min: PreferencesRepository.statDayResetHourMin.toDouble(),
-            max: PreferencesRepository.statDayResetHourMax.toDouble(),
-            step: 1,
-            value: (SettingsContext c) =>
-                c.appModel.statDayResetHour.toDouble(),
-            format: (double value) =>
-                '${value.round().toString().padLeft(2, '0')}:00',
-            onChanged: (SettingsContext c, double value) async {
-              await c.appModel.setStatDayResetHour(value.round());
-              c.refresh();
-            },
-          ),
+          // 「今日」重置时刻（整点）是三域共用的统计日界，入口在统计中心页头
+          // （stat_day_reset_hour_dialog.dart），不再放在阅读设置里。
         ],
       ),
       // 「高级选项」现移到最后（低频排版微调）：文字两端对齐、竖排字距/VPAL、

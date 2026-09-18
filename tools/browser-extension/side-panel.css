@@ -1,27 +1,15 @@
+/* 颜色只来自 theme.css（与 options 页 / 工具栏菜单 / 页内抽屉同一套调色板；此前这里是一套
+   独立的暖米色，扩展四个表面四种颜色）。明暗由 theme.js 按扩展设置写根 data-theme。 */
 :root {
-  color-scheme: light dark;
-  --bg: #fff9f4;
-  --surface: #f5e9dc;
-  --surface-strong: #eed9c3;
-  --text: #332b25;
-  --muted: #776b61;
-  --line: rgba(92, 70, 48, 0.2);
-  --accent: #94620a;
-  --accent-soft: #ffddb0;
+  --bg: var(--fushi-bg);
+  --surface: var(--fushi-surface);
+  --surface-strong: var(--fushi-surface-strong);
+  --text: var(--fushi-text);
+  --muted: var(--fushi-muted);
+  --line: var(--fushi-outline);
+  --accent: var(--fushi-primary);
+  --accent-soft: var(--fushi-primary-soft);
   --subtitle-scale: 1;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1e1b18;
-    --surface: #2b2621;
-    --surface-strong: #3a3129;
-    --text: #f5ece4;
-    --muted: #baaca0;
-    --line: rgba(255, 235, 215, 0.14);
-    --accent: #ffbd62;
-    --accent-soft: #573b17;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -225,8 +213,8 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   left: 12px;
   padding: 9px 12px;
   border-radius: 9px;
-  background: #332b25;
-  color: #fff;
+  background: var(--fushi-scrim-strong);
+  color: var(--fushi-on-scrim);
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);

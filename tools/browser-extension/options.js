@@ -9,6 +9,8 @@ const on = (id, type, handler) => {
   return el;
 };
 const D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
+// 界面文案统一走 i18n.js（fushiT）。
+const tr = (key, params) => (typeof self.fushiT === 'function' ? self.fushiT(key, params) : key);
 const settingDefaults = Object.freeze({
   netflixSubtitlePanel: false,
   subtitleOverlayEnabled: true,
@@ -23,6 +25,10 @@ const settingDefaults = Object.freeze({
   subtitleLookupOnPage: true,
   subtitleOverlayBlur: false,
   subtitleOverlayAllTracks: false,
+  // 视频上字幕的半透明底板（默认开；关掉只剩描边字）。
+  subtitleOverlayBackground: true,
+  // 网页视频观看时长计入 Fushi 学习统计（视频域，首次覆盖口径）。
+  studyTrackVideo: true,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
   subtitleReplaceNative: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
@@ -56,6 +62,8 @@ const toggleIds = Object.freeze({
   subtitleLookupOnPage: 'subtitleLookupOnPage',
   subtitleOverlayBlur: 'subtitleOverlayBlur',
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
+  subtitleOverlayBackground: 'subtitleOverlayBackground',
+  studyTrackVideo: 'studyTrackVideo',
   subtitleReplaceNative: 'subtitleReplaceNative',
   subtitleHidden: 'subtitleHidden',
   touchLookupTap: 'touchLookupTap',
@@ -74,6 +82,11 @@ const toggleIds = Object.freeze({
   videoShortcutRateUp: 'videoShortcutRateUp',
 });
 const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.startsWith('videoShortcut')));
+// 下拉型设置：控件 id → 存储键 → 默认值。主题（theme.js 读）与语言（i18n.js 读）。
+const selectSettings = Object.freeze({
+  extensionTheme: { key: 'extensionTheme', fallback: 'auto' },
+  extensionLanguage: { key: 'extensionLanguage', fallback: 'app' },
+});
 
 let toastTimer = null;
 function toast(message) {
@@ -113,8 +126,8 @@ async function refreshConnection(force) {
   const endpoint = $('connEndpoint');
   const button = $('check');
   if (card) card.dataset.tone = 'loading';
-  if (title) title.textContent = '正在检测…';
-  if (detail) detail.textContent = '确认 Fushi 的查词与字幕服务状态。';
+  if (title) title.textContent = tr('opt_connTitle_heading');
+  if (detail) detail.textContent = tr('opt_connDetail_text');
   if (button) button.disabled = true;
 
   const response = await runtimeMessage({ type: 'connectionStatus', force: force === true });
@@ -137,12 +150,13 @@ async function refreshConnection(force) {
 async function loadSettings() {
   $('host').placeholder = D.host || '127.0.0.1';
   $('port').placeholder = String(D.port || 19633);
-  $('token').placeholder = D.token ? '已由 Fushi 自动配置' : '';
+  $('token').placeholder = D.token ? tr('opt_token_auto_placeholder') : '';
 
   // 旧 subtitleHoverPause / videoShortcutsEnabled 只作一次向后兼容读取：
   // 新键已有显式值时永远优先；旧键不再由 UI 写入。
   const keys = ['host', 'port', 'token', 'subtitleHoverPause', 'videoShortcutsEnabled',
-    'popupSizeFromApp'].concat(Object.values(toggleIds));
+    'popupSizeFromApp'].concat(Object.values(toggleIds))
+    .concat(Object.values(selectSettings).map((s) => s.key));
   const saved = await chrome.storage.local.get(keys);
   if (saved.host != null && saved.host !== '') $('host').value = saved.host;
   if (saved.port != null && saved.port !== 0) $('port').value = saved.port;
@@ -161,7 +175,18 @@ async function loadSettings() {
     input.checked = typeof value === 'boolean' ? value : settingDefaults[key];
     input.addEventListener('change', async () => {
       await chrome.storage.local.set({ [key]: input.checked });
-      toast('已更新：' + input.closest('.setting-row').querySelector('strong').textContent);
+      toast(tr('opt_toast_updated', { name: input.closest('.setting-row').querySelector('strong').textContent }));
+    });
+  }
+  for (const [id, spec] of Object.entries(selectSettings)) {
+    const select = $(id);
+    if (!select) continue;
+    const value = saved[spec.key];
+    const known = Array.from(select.options).some((o) => o.value === value);
+    select.value = known ? value : spec.fallback;
+    select.addEventListener('change', async () => {
+      await chrome.storage.local.set({ [spec.key]: select.value });
+      toast(tr('opt_toast_updated', { name: select.closest('.setting-row').querySelector('strong').textContent }));
     });
   }
   await loadPopupSize(saved);
@@ -195,9 +220,9 @@ async function submitPopupSize() {
   const resp = await runtimeMessage(
     { type: 'popupSize', maxWidth: size.width, maxHeight: size.height });
   if (resp && resp.ok) {
-    toast('查词框大小已更新（下次查词生效）');
+    toast(tr('opt_toast_popup_size_saved'));
   } else {
-    toast('没连上 Fushi，尺寸没保存');
+    toast(tr('opt_toast_popup_size_not_saved'));
   }
 }
 
@@ -219,7 +244,7 @@ on('connectionForm', 'submit', async (event) => {
     port: parseInt($('port').value, 10) || 0,
     token: $('token').value.trim(),
   });
-  toast('连接设置已保存');
+  toast(tr('opt_toast_connection_saved'));
   await refreshConnection(true);
 });
 
@@ -228,7 +253,7 @@ on('reset', 'click', async () => {
   $('host').value = '';
   $('port').value = '';
   $('token').value = '';
-  toast('已恢复 Fushi 自动配置');
+  toast(tr('opt_toast_auto_config_restored'));
   await refreshConnection(true);
 });
 
@@ -236,14 +261,14 @@ on('reset', 'click', async () => {
 // 已打开的视频页经 storage.onChanged 立刻重摆。
 on('resetSubtitleOverlayPosition', 'click', async () => {
   await chrome.storage.local.remove('subtitleOverlayPosition');
-  toast('字幕位置已重置');
+  toast(tr('opt_toast_overlay_position_reset'));
 });
 
 on('showToken', 'click', () => {
   const token = $('token');
   const visible = token.type === 'text';
   token.type = visible ? 'password' : 'text';
-  $('showToken').textContent = visible ? '显示' : '隐藏';
+  $('showToken').textContent = tr(visible ? 'opt_showToken_button' : 'opt_hideToken_button');
 });
 
 on('check', 'click', () => refreshConnection(true));
@@ -279,16 +304,16 @@ function formatLookupPerfLog(item) {
 async function refreshLookupPerfLogs() {
   const output = $('lookupPerfOutput');
   const summary = $('lookupPerfSummary');
-  if (output) output.textContent = '正在读取…';
+  if (output) output.textContent = tr('opt_perf_reading');
   const response = await runtimeMessage({ type: 'lookupPerfGet' });
   lookupPerfRawLogs = response && Array.isArray(response.logs) ? response.logs : [];
   if (summary) summary.textContent = lookupPerfRawLogs.length
-    ? '已记录最近 ' + lookupPerfRawLogs.length + ' 个阶段'
-    : '复现慢查询后在这里查看';
+    ? tr('opt_perf_recorded', { n: lookupPerfRawLogs.length })
+    : tr('opt_lookupPerfSummary_desc');
   if (!output) return;
   output.textContent = lookupPerfRawLogs.length
     ? lookupPerfRawLogs.map(formatLookupPerfLog).join('\n\n')
-    : '暂无查词日志';
+    : tr('opt_lookupPerfOutput_text');
   output.scrollTop = output.scrollHeight;
 }
 
@@ -301,24 +326,24 @@ on('refreshLookupPerf', 'click', refreshLookupPerfLogs);
 on('copyLookupPerf', 'click', async () => {
   try {
     await navigator.clipboard.writeText(JSON.stringify(lookupPerfRawLogs, null, 2));
-    toast('已复制完整查词性能日志');
+    toast(tr('opt_toast_perf_copied'));
   } catch (_) {
-    toast('复制失败，请在日志框中手动复制');
+    toast(tr('opt_toast_perf_copy_failed'));
   }
 });
 
 on('clearLookupPerf', 'click', async () => {
   const response = await runtimeMessage({ type: 'lookupPerfClear' });
   if (!response || response.ok !== true) {
-    toast('清空失败，请重试');
+    toast(tr('opt_toast_perf_clear_failed'));
     return;
   }
   lookupPerfRawLogs = [];
   const clearedOutput = $('lookupPerfOutput');
-  if (clearedOutput) clearedOutput.textContent = '暂无查词日志';
+  if (clearedOutput) clearedOutput.textContent = tr('opt_lookupPerfOutput_text');
   const clearedSummary = $('lookupPerfSummary');
-  if (clearedSummary) clearedSummary.textContent = '复现慢查询后在这里查看';
-  toast('已清空查词性能日志');
+  if (clearedSummary) clearedSummary.textContent = tr('opt_lookupPerfSummary_desc');
+  toast(tr('opt_toast_perf_cleared'));
 });
 
 // 「版本与更新」卡片：把自更新链路状态翻成人话（self-update.js describeUpdateState），
@@ -333,7 +358,7 @@ async function refreshUpdateCard() {
     stale = (await chrome.storage.local.get('fushiUpdateStale')).fushiUpdateStale || null;
   } catch (_) { /* storage 不可用：按无 stale 渲染 */ }
   const s = self.FUSHI_SELF_UPDATE.describeUpdateState(self.FUSHI_DEFAULTS, stale);
-  titleEl.textContent = '版本与更新 · ' + s.title;
+  titleEl.textContent = tr('opt_updTitle_title') + ' · ' + s.title;
   if (detailEl) detailEl.textContent = s.detail;
   if (buildEl) buildEl.textContent = s.build ? 'build ' + s.build : '';
 }
@@ -344,6 +369,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (!changes[key]) continue;
     const input = $(id);
     if (input) input.checked = changes[key].newValue === true;
+  }
+  for (const [id, spec] of Object.entries(selectSettings)) {
+    if (!changes[spec.key]) continue;
+    const select = $(id);
+    if (select) select.value = changes[spec.key].newValue || spec.fallback;
   }
   if (changes.popupSizeFromApp) fillPopupSizeInputs(changes.popupSizeFromApp.newValue);
   if (changes.fushiUpdateStale) refreshUpdateCard();

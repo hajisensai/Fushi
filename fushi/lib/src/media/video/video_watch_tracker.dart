@@ -192,6 +192,11 @@ class VideoWatchTracker {
   @visibleForTesting
   Future<void> get debugCoverageLoaded => _coverageLoad ?? Future<void>.value();
 
+  /// 模拟一次定时器采样（测试用：真定时器不在受控墙钟里，要验证「定时 tick 与
+  /// 播放源通知交错」的记账只能手动触发）。
+  @visibleForTesting
+  void debugSampleNow() => _sample();
+
   Future<void> _initCoverage() async {
     String? json;
     try {

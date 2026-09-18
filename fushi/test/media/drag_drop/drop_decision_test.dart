@@ -10,6 +10,7 @@ DroppedFiles _files({
   List<String> playlists = const [],
   List<String> dictionaries = const [],
   List<String> urls = const [],
+  List<String> torrents = const [],
 }) =>
     DroppedFiles(
         books: books,
@@ -19,6 +20,7 @@ DroppedFiles _files({
         playlists: playlists,
         dictionaries: dictionaries,
         urls: urls,
+        torrents: torrents,
         unknown: const []);
 
 void main() {
@@ -225,6 +227,62 @@ void main() {
             files: _files(videos: ['/a.mkv'], playlists: ['/a.m3u8']),
             cardHit: false),
         DropIntent.importNewPlaylist,
+      );
+    });
+  });
+
+  // BT 种子：三个表面都路由到下载中心「添加任务」对话框——种子不属于任何库页，
+  // 落点只决定预填的内容类型。此前落 unknown → ignore，用户拖进去毫无反应。
+  group('decideDropIntent — torrent', () {
+    for (final DropSurface surface in DropSurface.values) {
+      test('.torrent on $surface -> importTorrent', () {
+        expect(
+          decideDropIntent(
+              surface: surface,
+              files: _files(torrents: ['/a.torrent']),
+              cardHit: false),
+          DropIntent.importTorrent,
+        );
+      });
+    }
+    // 种子是用户拖的实体文件，同批夹带的 URL 字符串让位。
+    test('torrent wins over url on video surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: _files(torrents: ['/a.torrent'], urls: ['https://x.test/a']),
+            cardHit: false),
+        DropIntent.importTorrent,
+      );
+    });
+    // 文件夹仍优先：拖一整个目录进视频页要的是登记扫描根，不是里面的种子。
+    test('folder wins over torrent on video surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.video,
+            files: const DroppedFiles(
+                books: [],
+                videos: [],
+                subtitles: [],
+                audios: [],
+                playlists: [],
+                dictionaries: [],
+                urls: [],
+                directories: ['/season'],
+                torrents: ['/a.torrent'],
+                unknown: []),
+            cardHit: false),
+        DropIntent.addFolderAsSource,
+      );
+    });
+    // 书架：书文件优先（那是本页主业），种子只在没有书时接管。
+    test('book wins over torrent on books surface', () {
+      expect(
+        decideDropIntent(
+            surface: DropSurface.books,
+            files: _files(books: ['/a.epub'], torrents: ['/a.torrent']),
+            cardHit: false),
+        DropIntent.importNewBook,
       );
     });
   });
