@@ -104,6 +104,74 @@ void main() {
     });
   });
 
+  // BUG-2574：B 站 DASH 直链是防盗链的 —— 不带 Referer 时 CDN 直接回
+  // `Server returned 403 Forbidden (access denied)`，ffmpeg 连输入都打不开，制卡只剩
+  // 一句「失败」看不到根因。实测（番剧 ep815751 音轨 `cn-hbyc-ct-01-02.bilivideo.com`）：
+  // 不带 403、带 `https://www.bilibili.com/` 即 206 并裁出 3 秒片段。
+  group('buildFfmpegRemoteInputArgs 防盗链 Referer (BUG-2574)', () {
+    test('B 站 CDN 直链一律带 -referer', () {
+      for (final String url in <String>[
+        'https://cn-hbyc-ct-01-02.bilivideo.com/upgcxcode/1/2/3.m4s?e=1',
+        'https://upos-sz-estgoss.bilivideo.com/upgcxcode/1/2/3.m4s',
+        'https://xy1x2x3xy.mcdn.bilivideo.cn:8082/v1/resource/a.m4s',
+        'https://upos-hz-mirrorcos.acgvideo.com/a.m4s',
+        'https://upos-hz-mirrorakam.akamaized.net/a.m4s',
+      ]) {
+        final List<String> args = buildFfmpegRemoteInputArgs(url);
+        final int i = args.indexOf('-referer');
+        expect(i, greaterThanOrEqualTo(0),
+            reason: 'B 站直链必须带防盗链 Referer，否则 CDN 403：$url');
+        expect(args[i + 1], kBilibiliCdnReferer);
+      }
+    });
+
+    test('非 B 站流不带 -referer（YouTube 等不受影响）', () {
+      expect(
+        buildFfmpegRemoteInputArgs(
+            'https://rr4---sn-x.googlevideo.com/videoplayback'),
+        isNot(contains('-referer')),
+      );
+      expect(
+        buildFfmpegRemoteInputArgs('https://cdn.example.com/a.m4s'),
+        isNot(contains('-referer')),
+      );
+    });
+
+    test('本地路径仍然什么网络开关都不加', () {
+      expect(buildFfmpegRemoteInputArgs(r'D:\v\a.mkv'), isEmpty);
+      expect(buildFfmpegRemoteInputArgs('/tmp/a.mp4'), isEmpty);
+    });
+
+    test('isBilibiliCdnHost 只认 B 站自家域与 upos-*.akamaized.net', () {
+      expect(isBilibiliCdnHost('cn-hbyc-ct-01-02.bilivideo.com'), isTrue);
+      expect(isBilibiliCdnHost('XY.MCDN.BILIVIDEO.CN'), isTrue); // 大小写不敏感
+      expect(isBilibiliCdnHost('bilivideo.com'), isTrue);
+      expect(isBilibiliCdnHost('upos-hz-mirrorakam.akamaized.net'), isTrue);
+      // 后缀必须过点：不能把 `notbilivideo.com` 当 B 站。
+      expect(isBilibiliCdnHost('notbilivideo.com'), isFalse);
+      // Akamai 是共享域名，非 upos- 前缀不认。
+      expect(isBilibiliCdnHost('someone.akamaized.net'), isFalse);
+      expect(isBilibiliCdnHost(''), isFalse);
+    });
+
+    test('畸形 URL 不抛异常也不带 referer', () {
+      expect(ffmpegRefererForRemoteInput('https://%%%bad'), isNull);
+      expect(ffmpegRefererForRemoteInput(r'D:\v\a.mkv'), isNull);
+    });
+
+    test('句子音频命令把 -referer 放在 -i 之前（http 输入选项）', () {
+      final List<String> args = buildFfmpegClipArgs(
+        inputPath: 'https://cn-hbyc-ct-01-02.bilivideo.com/upgcxcode/a.m4s',
+        startMs: 1000,
+        endMs: 4000,
+        outputPath: '/tmp/o.aac',
+      );
+      expect(args, contains('-referer'));
+      expect(args.indexOf('-referer'), lessThan(args.indexOf('-i')),
+          reason: 'Referer 是 http 协议的输入选项，放 -i 之后就不生效');
+    });
+  });
+
   test(
       'extractAudioSegmentViaFfmpeg no longer short-circuits URL as missing file',
       () async {

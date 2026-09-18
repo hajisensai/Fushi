@@ -75,6 +75,7 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -8332,6 +8333,30 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaTapZonePaging(bool value) =>
       prefsRepo.setMangaTapZonePaging(value);
 
+  // 下面四个在漫画页 build 路径上被读（`_loadLocalPayload`），而弹窗词典与悬浮查词
+  // 是不经 `initialise()` 的 entry point，那里 `_prefsRepo` 恒 null——裸 `prefsRepo`
+  // （即 `_prefsRepo!`）会让整页 build 抛。与 `moduleEnabled` / `mineToServerEnabled`
+  // 同律：偏好未就绪时回落到与 repo 侧逐字一致的默认值。
+  String get mangaTapZoneLayout =>
+      _prefsRepo?.mangaTapZoneLayout ?? kMangaTapZoneLayoutDefault;
+  Future<void> setMangaTapZoneLayout(String value) =>
+      prefsRepo.setMangaTapZoneLayout(value);
+
+  String get mangaBackground =>
+      _prefsRepo?.mangaBackground ?? kMangaBackgroundDefault;
+  Future<void> setMangaBackground(String value) =>
+      prefsRepo.setMangaBackground(value);
+
+  int get mangaSpreadOffset =>
+      _prefsRepo?.mangaSpreadOffset ?? kMangaSpreadOffsetDefault;
+  Future<void> setMangaSpreadOffset(int value) =>
+      prefsRepo.setMangaSpreadOffset(value);
+
+  bool get mangaWidePageSolo =>
+      _prefsRepo?.mangaWidePageSolo ?? kMangaWidePageSoloDefault;
+  Future<void> setMangaWidePageSolo(bool value) =>
+      prefsRepo.setMangaWidePageSolo(value);
+
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
   Future<void> setMangaOnlineCatalogBaseUrl(String value) =>
@@ -8796,7 +8821,14 @@ class _AppModelRemoteLookupService
     //     480P 视频轨」），所以这里 mediaSource 留空，只解析音轨。
     //   · 不需要 range 物化（那是 googlevideo 限速的专属绕行），见
     //     `audioSourceNeedsRangeMaterialization`。
-    if (payload.clipSourceKind == 'bilibili' &&
+    //
+    // 番剧（PGC，`/bangumi/play/ep<id>`）与稿件同一范式，只是**音轨直链由扩展在页面主世界里
+    // 解析**后随请求回传：番剧的 `pgc/player/web/playurl` 大会员内容必须带 SESSDATA，服务端是
+    // 匿名请求拿不到（扩展侧 `fushiResolveBilibiliPgcPlayurl` 有 CORS 实测）。解析不到时扩展连
+    // kind 都不发 → 根本进不到这个分支，行为与改动前逐字一致（照常出卡，无句子音频）。
+    final bool isBilibiliPgc = payload.clipSourceKind == 'bilibili-pgc' &&
+        payload.clipSourcePlayurlBody != null;
+    if ((payload.clipSourceKind == 'bilibili' || isBilibiliPgc) &&
         payload.clipSourceId != null &&
         payload.clipStartMs != null &&
         payload.clipEndMs != null) {
@@ -8821,16 +8853,28 @@ class _AppModelRemoteLookupService
       }
       final BilibiliClipRequest bi;
       try {
-        bi = await _bilibiliClipMiner.buildRequest(
-          bvid: payload.clipSourceId!,
-          page: payload.clipSourcePart ?? 1,
-          startMs: payload.clipStartMs!,
-          endMs: payload.clipEndMs!,
-          fields: payload.fields,
-          sentence: payload.sentence,
-          cueSentence: payload.cueSentence,
-          documentTitle: payload.documentTitle,
-        );
+        // 番剧：音轨是扩展在页面里解析好回传的，这里不发任何网络请求（见 buildPgcRequest）。
+        // 稿件：服务端自己用 bvid 查 cid 再取 playurl（未登录也拿得到最高档音轨）。
+        bi = isBilibiliPgc
+            ? _bilibiliClipMiner.buildPgcRequest(
+                playurlBody: payload.clipSourcePlayurlBody!,
+                startMs: payload.clipStartMs!,
+                endMs: payload.clipEndMs!,
+                fields: payload.fields,
+                sentence: payload.sentence,
+                cueSentence: payload.cueSentence,
+                documentTitle: payload.documentTitle,
+              )
+            : await _bilibiliClipMiner.buildRequest(
+                bvid: payload.clipSourceId!,
+                page: payload.clipSourcePart ?? 1,
+                startMs: payload.clipStartMs!,
+                endMs: payload.clipEndMs!,
+                fields: payload.fields,
+                sentence: payload.sentence,
+                cueSentence: payload.cueSentence,
+                documentTitle: payload.documentTitle,
+              );
       } catch (e, st) {
         // 视频不可用 / 无 DASH 音轨 / 网络失败都抛 StateError 或 IO 异常；两个 server 的
         // /api/mine 只 catch FormatException，这里不兜住会 500 整张卡。
