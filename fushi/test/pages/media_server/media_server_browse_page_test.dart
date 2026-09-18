@@ -7,6 +7,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -28,16 +31,40 @@ void main() {
     await database.close();
   });
 
-  Widget harness(List<MediaServerEntry> servers) {
+  Widget harness(
+    List<MediaServerEntry> servers, {
+    bool systemBackActive = true,
+    List<GamepadButton>? outerGamepad,
+  }) {
+    Widget page = MediaServerBrowsePage(
+      navigation: const Text('nav-probe'),
+      repo: VideoBookRepository(database),
+      loadServers: () async => servers,
+      onPlay: (BuildContext _, MediaServerPlayRequest __) {},
+      onOpenSettings: () => settingsOpened++,
+      systemBackActive: systemBackActive,
+    );
+    if (outerGamepad != null) {
+      // 模拟 HomePage 那层 Actions（LT/RT 换 tab、Y 搜索都注册在那里）。
+      page = Actions(
+        actions: <Type, Action<Intent>>{
+          GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+            onInvoke: (GamepadButtonIntent intent) {
+              outerGamepad.add(intent.button);
+              return true;
+            },
+          ),
+        },
+        child: page,
+      );
+    }
     return TranslationProvider(
       child: MaterialApp(
         home: Scaffold(
-          body: MediaServerBrowsePage(
-            navigation: const Text('nav-probe'),
-            repo: VideoBookRepository(database),
-            loadServers: () async => servers,
-            onPlay: (BuildContext _, MediaServerPlayRequest __) {},
-            onOpenSettings: () => settingsOpened++,
+          // 同一测试里换参数重新 pump 时强制重建 State（否则嵌套栈沿用上一次的）。
+          body: KeyedSubtree(
+            key: ValueKey<bool>(systemBackActive),
+            child: page,
           ),
         ),
       ),
@@ -136,5 +163,73 @@ void main() {
       reason: 'Escape 退一层嵌套栈',
     );
     expect(find.byType(MediaServerListView), findsOneWidget);
+  });
+
+  testWidgets('系统返回：可见时退一层嵌套栈；被 Offstage 保活（systemBackActive=false）时不动',
+      (WidgetTester tester) async {
+    final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
+    await tester.pumpWidget(
+      harness(<MediaServerEntry>[MediaServerEntry(browser: only)]),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsNothing,
+        reason: '可见时 Android 返回沿嵌套栈退一层');
+    expect(find.byType(MediaServerListView), findsOneWidget);
+
+    // 换成「看不见」：壳把分区切走 / HomePage 切到别的 tab 时传 false。
+    final FakeMediaServerBrowser hidden = fakeServer('nas2', 'NAS2');
+    await tester.pumpWidget(
+      harness(
+        <MediaServerEntry>[MediaServerEntry(browser: hidden)],
+        systemBackActive: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsOneWidget,
+        reason: '看不见的分区不得偷偷 pop 自己的嵌套栈');
+  });
+
+  testWidgets('手柄：B 退一层由本页消费，其余按钮转发给祖先 Actions（不吞 LT/RT/Y）',
+      (WidgetTester tester) async {
+    final List<GamepadButton> outer = <GamepadButton>[];
+    final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
+    await tester.pumpWidget(
+      harness(
+        <MediaServerEntry>[MediaServerEntry(browser: only)],
+        outerGamepad: outer,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsOneWidget);
+
+    final BuildContext inside = tester.element(find.byType(MediaServerHomeView));
+    Actions.maybeInvoke<GamepadButtonIntent>(
+      inside,
+      const GamepadButtonIntent(GamepadButton.y),
+    );
+    Actions.maybeInvoke<GamepadButtonIntent>(
+      inside,
+      const GamepadButtonIntent(GamepadButton.lt),
+    );
+    await tester.pumpAndSettle();
+    expect(outer, <GamepadButton>[GamepadButton.y, GamepadButton.lt],
+        reason: '非返回键必须到达 HomePage 那层，否则换 tab / 搜索在分区内失灵');
+    expect(find.byType(MediaServerHomeView), findsOneWidget);
+
+    Actions.maybeInvoke<GamepadButtonIntent>(
+      inside,
+      const GamepadButtonIntent(GamepadButton.b),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaServerHomeView), findsNothing, reason: 'B 退一层');
+    expect(outer.length, 2, reason: 'B 被本页消费，不再上溯');
   });
 }

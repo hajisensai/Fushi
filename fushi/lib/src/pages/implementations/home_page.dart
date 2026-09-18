@@ -2736,6 +2736,7 @@ class _HomePageState extends BasePageState<HomePage>
           discoveryController: _productionVideoDiscoveryController,
           discoveryActions: _productionVideoDiscoveryActions,
           mediaServerServersLoader: _loadMediaServerEntries,
+          systemBackActive: _visibleTab == HomeTab.video,
         ),
       HomeTab.downloads => DownloadsPage(
           key: ValueKey<String>('downloads-$_downloadsGeneration'),

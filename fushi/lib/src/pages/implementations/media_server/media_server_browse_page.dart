@@ -8,6 +8,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
     show ShortcutBindingScope;
+import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, focusedEditableText;
 import 'package:fushi/src/shortcuts/input_binding.dart'
@@ -45,6 +46,7 @@ class MediaServerBrowsePage extends StatefulWidget {
     required this.loadServers,
     this.onPlay,
     this.onOpenSettings,
+    this.systemBackActive = true,
     super.key,
   });
 
@@ -60,6 +62,14 @@ class MediaServerBrowsePage extends StatefulWidget {
 
   /// 空态「去设置添加服务器」。null = 生产缺省：push 服务设置页。
   final VoidCallback? onOpenSettings;
+
+  /// 本页此刻是否是用户看得见的那个分区。壳用 [Offstage] 保活本页、HomePage 又用
+  /// IndexedStack 保活视频 tab，而 [NavigatorPopHandler] 的 PopScope 登记在 HomePage
+  /// 根路由上、不随 Offstage 失效：嵌套栈深度 > 1（单台服务器一进分区就自动进首页，
+  /// 深度立刻是 2）时，用户切去别的分区 / 别的 tab 再按 Android 返回，会静默 pop 这条
+  /// 看不见的栈、还与设置 tab 的 PopScope 一起被遍历。键盘 / 手柄两条通道已被壳的
+  /// ExcludeFocus 隔离，只有系统返回不是焦点驱动的，所以要按可见性显式关掉。
+  final bool systemBackActive;
 
   @override
   State<MediaServerBrowsePage> createState() => _MediaServerBrowsePageState();
@@ -168,8 +178,13 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
   Widget build(BuildContext context) {
     return Actions(
       actions: <Type, Action<Intent>>{
-        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-          onInvoke: (GamepadButtonIntent intent) => _handleGamepad(intent),
+        // 只认「返回」；其余按钮显式转发给祖先——裸 CallbackAction 会让上溯停在
+        // 本层，焦点落在分区内任一卡片时 home 的 LT/RT 换 tab 与 Y 搜索全失灵
+        // （[GamepadButtonForwardingAction] 类文档与 games_library_gamepad_guard）。
+        GamepadButtonIntent: GamepadButtonForwardingAction(
+          ancestorContext: context,
+          handle: (GamepadButton button) =>
+              _handleGamepad(GamepadButtonIntent(button)),
         ),
       },
       child: Focus(
@@ -178,6 +193,7 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
         skipTraversal: true,
         onKeyEvent: _handleKey,
         child: NavigatorPopHandler(
+          enabled: widget.systemBackActive,
           onPopWithResult: (void _) => _popNested(),
           // 根 MaterialApp 的 HeroController 不能同时挂两个 Navigator；分区内不做
           // Hero 动画，显式断开。

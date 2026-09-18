@@ -40,6 +40,7 @@ class VideoLibraryShell extends StatefulWidget {
     this.discoveryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
+    this.systemBackActive = true,
     super.key,
   });
 
@@ -84,6 +85,12 @@ class VideoLibraryShell extends StatefulWidget {
   /// 仅供宿主定制或 widget 测试注入媒体服务器页，不改变惰性构建/保活语义。
   final Widget Function(BuildContext context, Widget navigation)?
       mediaServerPageBuilder;
+
+  /// 视频 tab 此刻是否是 HomePage 看得见的那个 tab。媒体服务器分区的嵌套栈靠
+  /// [NavigatorPopHandler] 接系统返回，而它登记在 HomePage 根路由上、不随
+  /// IndexedStack/Offstage 失效；宿主必须把可见性传进来，否则用户切去词典/设置 tab
+  /// 按 Android 返回会静默 pop 一层看不见的分区栈（见 [MediaServerBrowsePage.systemBackActive]）。
+  final bool systemBackActive;
 
   @override
   State<VideoLibraryShell> createState() => _VideoLibraryShellState();
@@ -286,6 +293,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                           _section == VideoLibrarySection.mediaServers,
                           navigation,
                         ),
+                        systemBackActive: widget.systemBackActive &&
+                            _section == VideoLibrarySection.mediaServers,
                         repo: widget.repository,
                         loadServers: widget.mediaServerServersLoader ??
                             () async => const <MediaServerEntry>[],
