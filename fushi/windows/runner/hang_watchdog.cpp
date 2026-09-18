@@ -91,6 +91,9 @@ namespace fushi
     if (g_thread != nullptr || main_window == nullptr) return;
     g_main_window = main_window;
     g_main_thread_id = GetCurrentThreadId();
+    // 现在（主线程还活着）就把 dbghelp 载好：抓 dump 那一刻主线程若正持有
+    // loader lock，看门狗线程再去 LoadLibraryW 会一起卡死。
+    PreloadMinidumpWriter();
     g_stop_event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (g_stop_event == nullptr) return;
     g_thread = CreateThread(nullptr, 0, WatchdogMain, nullptr, 0, nullptr);

@@ -31,6 +31,11 @@ namespace fushi
   bool WriteProcessMinidump(const wchar_t* prefix, DWORD thread_id,
     EXCEPTION_POINTERS* exception_pointers, wchar_t* out_path);
 
+  // 启动期预载 dbghelp 并缓存 MiniDumpWriteDump 指针。抓 hang dump 时主线程可能
+  // 正卡在 loader lock（WebView2 teardown 等），届时再 LoadLibraryW 会跟着死锁；
+  // 崩溃 filter 同样受益。失败静默（写 dump 时退回按需加载）。
+  void PreloadMinidumpWriter();
+
   // 解析并确保 crashdumps 目录存在（`%LOCALAPPDATA%\Fushi\crashdumps`；集成测试
   // 设了 FUSHI_TEST_ROOT 时为 `<root>\logs\native\crashdumps`）。[dir] 至少 MAX_PATH。
   bool ResolveCrashDumpDirectory(wchar_t* dir);

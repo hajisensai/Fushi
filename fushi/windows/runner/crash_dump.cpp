@@ -9,6 +9,14 @@ namespace fushi
 {
   namespace
   {
+    using MiniDumpWriteDumpFn = BOOL(WINAPI*)(
+      HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
+      PMINIDUMP_EXCEPTION_INFORMATION,
+      PMINIDUMP_USER_STREAM_INFORMATION, PMINIDUMP_CALLBACK_INFORMATION);
+    // 启动时预载的 MiniDumpWriteDump（见 [PreloadMinidumpWriter]）；dbghelp 句柄
+    // 故意不释放，进程生命周期内常驻。
+    MiniDumpWriteDumpFn g_minidump_write_dump = nullptr;
+
     // 保存安装前的 unhandled exception filter（多半是 Flutter engine 的 crash
     // handler），写完自家 dump 后链回它，不抢占引擎既有上报。
     LPTOP_LEVEL_EXCEPTION_FILTER g_previous_filter = nullptr;
@@ -106,6 +114,15 @@ namespace fushi
     }
   }  // namespace
 
+  void PreloadMinidumpWriter()
+  {
+    if (g_minidump_write_dump != nullptr) return;
+    HMODULE dbghelp = LoadLibraryW(L"dbghelp.dll");
+    if (dbghelp == nullptr) return;
+    g_minidump_write_dump = reinterpret_cast<MiniDumpWriteDumpFn>(
+      GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+  }
+
   bool WriteProcessMinidump(const wchar_t* prefix, DWORD thread_id,
     EXCEPTION_POINTERS* exception_pointers, wchar_t* out_path)
   {
@@ -132,15 +149,20 @@ namespace fushi
     path[fp] = L'\0';
 
     bool written = false;
-    // 动态加载 dbghelp（避免对 runner 强加链接依赖；找不到则放弃）。
-    HMODULE dbghelp = LoadLibraryW(L"dbghelp.dll");
-    if (dbghelp) {
-      using MiniDumpWriteDumpFn = BOOL(WINAPI*)(
-        HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
-        PMINIDUMP_EXCEPTION_INFORMATION,
-        PMINIDUMP_USER_STREAM_INFORMATION, PMINIDUMP_CALLBACK_INFORMATION);
-      auto write_dump = reinterpret_cast<MiniDumpWriteDumpFn>(
-        GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+    // 动态加载 dbghelp（避免对 runner 强加链接依赖；找不到则放弃）。优先用启动时
+    // [PreloadMinidumpWriter] 缓存的指针：看门狗要抓的正是「主线程卡死」，若主线程
+    // 卡在 loader lock 里（DllMain / FreeLibrary / WebView2 teardown 都属此类），
+    // 这里再 LoadLibraryW 会跟着死锁、永远拿不到 dump。
+    MiniDumpWriteDumpFn write_dump = g_minidump_write_dump;
+    HMODULE dbghelp = nullptr;  // 仅按需加载路径持有，用完释放
+    if (write_dump == nullptr) {
+      dbghelp = LoadLibraryW(L"dbghelp.dll");
+      if (dbghelp) {
+        write_dump = reinterpret_cast<MiniDumpWriteDumpFn>(
+          GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+      }
+    }
+    {
       if (write_dump) {
         HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ,
           nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -163,7 +185,7 @@ namespace fushi
           CloseHandle(file);
         }
       }
-      FreeLibrary(dbghelp);
+      if (dbghelp) FreeLibrary(dbghelp);
     }
     if (written && out_path) {
       for (size_t i = 0; i <= fp; ++i) out_path[i] = path[i];
