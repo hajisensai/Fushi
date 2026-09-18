@@ -575,6 +575,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _recentRowController.dispose();
     _subscriptionRowController.dispose();
     _videoUidsSub?.cancel();
+    _videoUidsRefreshTimer?.cancel();
     _collectionTablesSub?.cancel();
     _downloadSubscriptionsSub?.cancel();
     _legacySubscriptionStore?.revision
@@ -603,7 +604,31 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     if (setEquals(next, _knownVideoUids)) return;
     _knownVideoUids = next;
-    if (mounted) _refresh();
+    // 文件夹扫描是逐条落库（每条之间还隔着一次抽帧），几百个文件就是几百次
+    // uid 事件；每次都整页重列 + 重载全部映射 + 重算待确认队列，手机上导入期间
+    // 整页持续卡顿。这里按最小间隔节流：首个事件立即刷，其后的合并到间隔末尾
+    // 再刷一次（尾沿兜底，最后落库的那几条不会漏）。
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastVideoUidsRefreshAt;
+    if (last == null || now.difference(last) >= _videoUidsRefreshInterval) {
+      _lastVideoUidsRefreshAt = now;
+      _refreshAfterVideoUidsChanged();
+      return;
+    }
+    if (_videoUidsRefreshTimer != null) return; // 尾沿已排队。
+    _videoUidsRefreshTimer = Timer(
+      _videoUidsRefreshInterval - now.difference(last),
+      () {
+        _videoUidsRefreshTimer = null;
+        _lastVideoUidsRefreshAt = DateTime.now();
+        _refreshAfterVideoUidsChanged();
+      },
+    );
+  }
+
+  void _refreshAfterVideoUidsChanged() {
+    if (!mounted) return;
+    _refresh();
     // 集合真变了 = 有新视频入库（任意导入路径）：给新书补刮条目资料。挂在这里而
     // 不是 _refresh 里，因为 _refresh 还被改标签/删除/播放返回等触发，那些不带来
     // 需要刮削的新书。
@@ -612,6 +637,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 用户停在视频页不动也能等到资料补上，不必切走再切回或重启（BUG-2199）。
     unawaited(_refreshPendingScrape());
   }
+
+  /// [_onVideoUidsChanged] 触发整页刷新的最小间隔。
+  static const Duration _videoUidsRefreshInterval = Duration(seconds: 1);
+  DateTime? _lastVideoUidsRefreshAt;
+  Timer? _videoUidsRefreshTimer;
 
   void _onLibraryRefreshRequested() {
     if (mounted) _refresh();
