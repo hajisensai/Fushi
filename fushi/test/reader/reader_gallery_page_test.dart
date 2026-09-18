@@ -388,6 +388,56 @@ void main() {
     expect(find.text('Image blur is on; reveal to view'), findsOneWidget);
   });
 
+  testWidgets('整章滚过视口后该章一张卡都不再挂在树上（含末行）', (tester) async {
+    // 6 章 × 20 张：拉到底后前几章整节都在 cacheExtent 之外。自定义槽位布局若把
+    // firstIndex clamp 到末行，RenderSliverGrid 就永远给每个滚过的章挂着末行
+    // 缩略图——几十章的书拉到底 = 几十行常驻内存。
+    final List<EpubImageRef> images = <EpubImageRef>[
+      for (int c = 0; c < 6; c++)
+        for (int i = 0; i < 20; i++)
+          EpubImageRef(
+            chapterIndex: c,
+            orderInBook: c * 20 + i,
+            src: 'c${c}_$i.png',
+            revealKey: 'c${c}_$i.png',
+          ),
+    ];
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: images,
+          currentChapter: 5,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final ScrollController controller = tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .controller!;
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    // skipOffstage:false 才抓得到「挂着但看不见」的卡。
+    expect(
+      find.byKey(
+        const ValueKey<String>('fushi_gallery_card_c0_19.png'),
+        skipOffstage: false,
+      ),
+      findsNothing,
+      reason: '第 1 章末行不得因 firstIndex clamp 而常驻',
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('fushi_gallery_card_c0_0.png'),
+        skipOffstage: false,
+      ),
+      findsNothing,
+    );
+    expect(_card('c5_19.png'), findsOneWidget, reason: '末章末行照常挂着');
+  });
+
   testWidgets('打开时自动滚到当前阅读章那一节', (tester) async {
     // 第 1 章 20 张（5 列 × 4 行）把第 2 章推出首屏。
     final List<EpubImageRef> images = <EpubImageRef>[

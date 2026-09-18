@@ -301,6 +301,17 @@ class _SlotGridLayout extends SliverGridLayout {
 
   @override
   SliverGridGeometry getGeometryForChildIndex(int index) {
+    if (index >= section.slots.length) {
+      // RenderSliverGrid 在 addInitialChild 之前就会拿 firstIndex 的几何；
+      // 整节滚过时 firstIndex 越界（见 getMinChildIndexForScrollOffset），
+      // 给一个落在本节末尾之后的空槽几何即可，与标准算术布局同形。
+      return SliverGridGeometry(
+        scrollOffset: section.rows * layout.rowStride,
+        crossAxisOffset: 0,
+        mainAxisExtent: layout.cellHeight,
+        crossAxisExtent: layout.cellWidth,
+      );
+    }
     final _CardSlot slot = section.slots[index];
     return SliverGridGeometry(
       scrollOffset: slot.row * layout.rowStride,
@@ -314,10 +325,12 @@ class _SlotGridLayout extends SliverGridLayout {
   @override
   int getMinChildIndexForScrollOffset(double scrollOffset) {
     if (section.rows == 0) return 0;
-    final int row = (scrollOffset / layout.rowStride).floor().clamp(
-      0,
-      section.rows - 1,
-    );
+    final int row = (scrollOffset / layout.rowStride).floor();
+    if (row < 0) return 0;
+    // 整节已滚过视口（含 cacheExtent）：返回越界下标让 RenderSliverGrid 走
+    // 「past the end」不挂任何子节点。clamp 到末行会让每个滚过的章永远挂着
+    // 末行缩略图，几十章的书拉到底 = 几十行常驻内存。
+    if (row >= section.rows) return section.slots.length;
     return section.rowStarts[row];
   }
 
