@@ -1,0 +1,18 @@
+## BUG-2571 · 规格探测超时被当成「这文件没有规格」永久记账，角标本会话再也不出
+- **报告**：2026-09-16（用户：手机导入视频后「the metadata doesn't load at all」）
+- **真实性**：✅ 真 bug，根因是**「没探成」与「探完了没有」共用同一个返回值**（修复前行号）：
+  - `probeVideoFacts`（`packages/fushi_engine/lib/media/video/video_duration_probe.dart:386-411`）把四种结果压成同一个 `VideoProbeFacts.empty`：① 超时（`runProbe` 的后端超时返回 `returnCode: null`）② 非零退出 ③ 抛异常（ffprobe 不存在）④ **跑成功但容器里确实没东西**。
+  - `VideoSpecsService._probeAndStore`（`fushi/lib/src/media/video/video_specs_service.dart:325-345`）见到 `facts.isEmpty` 就 `_cache[path] = null`。而 `isResolved` 的判据是 `_cache.containsKey(path)`——写进去就是**终局**，本次会话再也不会重探（不落库，所以下次冷启动才会重试）。
+  - 触发路径：导入期 ffmpeg-kit 被封面抽帧占满（[BUG-2569](BUG-2569-video-import-inline-cover-blocks-scan.md)），规格探测并发只有 2（`kVideoSpecsProbeConcurrency`）、超时 20s（`kVideoDurationProbeTimeout`），于是**整库文件在那几分钟里被成片判死**。用户导入完成后滚动书架，清晰度/HDR/编码角标一个都不出——而且怎么刷都不出，直到重启 app。
+  - 这正是用户说的「metadata doesn't load **at all**」：不是慢，是被结构性地判成了「没有」。
+- **[x] ① 已修复** — `57c3e7a2cca`
+  - 引擎层给探测结果加身份：`VideoProbeFacts.isUnavailable` + 哨兵常量 `VideoProbeFacts.unavailable`。`probeVideoFacts` 的「非零退出（含超时的 `returnCode: null`）」与「抛异常」两条分支改返回 `unavailable`；只有真正跑通、解析出空的才仍是 `empty`。
+  - 服务层据此分流：`isUnavailable` **不写 `_cache`**（不产生终局结论，`isResolved` 保持 false），改记冷却 `_retryAfter[path]`，`kVideoSpecsProbeRetryCooldown = 90s`。冷却只拦 `prime`（滚动触发的批量预取），防止「立刻重排 → 立刻再超时」的空转风暴。
+  - `resolve`（用户点开详情页的**显式**动作）不看冷却，一律立刻重探——与「下拉刷新清封面失败账本」同一条纪律：用户明示要结果就再试一次。
+  - `invalidate`（文件被删/被替换）连冷却一起作废。
+- **[x] ② 已加自动化测试**
+  - **引擎层** `fushi/test/media/video/video_probe_facts_test.dart`：注入固定退出码的 ffprobe 替身，断言 `returnCode: null`（移动端超时的真实形状）与非零退出都映射成 `isUnavailable`，而 `returnCode: 0` + `{"streams":[]}` 仍是 `empty` 且 `isUnavailable == false`；另钉两个哨兵常量的身份不可混。
+  - **服务层** `fushi/test/media/video/video_specs_service_test.dart`（新增 group）：① 探测不可用后 `isResolved` 仍为 false、显式 `resolve` 会重探并拿到结果；② 冷却期内连调 5 次 `prime` 只探 1 次（不变成探测风暴）；③ **对照组**：`empty` 仍是终局结论、`resolve` 不重探——这条防止修过头把永久负缓存整个拆掉；④ `invalidate` 作废冷却。
+- **备注**：
+  - 与 [BUG-2569](BUG-2569-video-import-inline-cover-blocks-scan.md) 是因果关系：2569 制造饱和，2571 把饱和期的超时固化成永久结论。两条都修才真正解决用户看到的「元数据完全不出」。
+  - 本条只覆盖**技术规格角标**（分辨率/HDR/编码/音轨）。作品资料（海报/简介）走另一条刮削链路，其请求放大与 `sourceId == null` 的书进不了刮削管线是另外的问题，未在本轮处理。

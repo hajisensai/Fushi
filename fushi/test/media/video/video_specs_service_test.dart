@@ -459,4 +459,109 @@ void main() {
       );
     });
   });
+
+  group('BUG-2571 「这次没探成」不是「这文件没规格」', () {
+    test('探测不可用不写负缓存：isResolved 保持 false，显式 resolve 会重探到结果',
+        () async {
+      final String path = writeFile('unavail.mkv');
+      int probeCalls = 0;
+      final VideoSpecsService service = VideoSpecsService(
+        db,
+        // 第一次「没探成」（超时 / 没有 ffprobe），之后恢复正常。
+        probe: (String p) async {
+          probeCalls++;
+          return probeCalls == 1 ? VideoProbeFacts.unavailable : facts();
+        },
+      );
+      addTearDown(service.dispose);
+
+      await service.prime(<String>[path]);
+      await service.drain();
+
+      expect(probeCalls, 1);
+      expect(
+        service.isResolved(path),
+        isFalse,
+        reason: '没得出结论就不是结论——修复前这里会被记成 null 并永久 true，'
+            '本次会话再也不重探，角标永远空着',
+      );
+      expect(service.specsFor(path), isNull);
+
+      // 用户点开详情页 = 显式要结果，绕过冷却立刻重探。
+      final VideoProbeFacts? again = await service.resolve(path);
+      expect(probeCalls, 2, reason: '可重试的失败必须能重试');
+      expect(again, isNotNull);
+      expect(service.specsFor(path)!.video!.resolutionLabel, '4K');
+      expect(service.isResolved(path), isTrue);
+    });
+
+    test('冷却期内 prime 不重排：不可用不会变成探测风暴', () async {
+      final String path = writeFile('cooldown.mkv');
+      int probeCalls = 0;
+      final VideoSpecsService service = VideoSpecsService(
+        db,
+        probe: (String p) async {
+          probeCalls++;
+          return VideoProbeFacts.unavailable;
+        },
+      );
+      addTearDown(service.dispose);
+
+      for (int i = 0; i < 5; i++) {
+        await service.prime(<String>[path]);
+        await service.drain();
+      }
+
+      expect(
+        probeCalls,
+        1,
+        reason: '滚动反复 prime 同一屏时，不能每次都再烧一次必然失败的探测',
+      );
+    });
+
+    test('对照组：探完了确实没东西（empty）仍是终局结论，不再重探', () async {
+      final String path = writeFile('nothing.mkv');
+      int probeCalls = 0;
+      final VideoSpecsService service = VideoSpecsService(
+        db,
+        probe: (String p) async {
+          probeCalls++;
+          return VideoProbeFacts.empty;
+        },
+      );
+      addTearDown(service.dispose);
+
+      await service.prime(<String>[path]);
+      await service.drain();
+      expect(service.isResolved(path), isTrue, reason: 'empty 是结论');
+      expect(service.specsFor(path), isNull);
+
+      await service.resolve(path);
+      expect(probeCalls, 1, reason: '终局结论不该被重探');
+    });
+
+    test('文件被替换时连冷却一起作废', () async {
+      final String path = writeFile('replaced.mkv');
+      int probeCalls = 0;
+      final VideoSpecsService service = VideoSpecsService(
+        db,
+        probe: (String p) async {
+          probeCalls++;
+          return probeCalls == 1 ? VideoProbeFacts.unavailable : facts();
+        },
+      );
+      addTearDown(service.dispose);
+
+      await service.prime(<String>[path]);
+      await service.drain();
+      expect(probeCalls, 1);
+
+      await service.invalidate(path);
+      await service.prime(<String>[path]);
+      await service.drain();
+
+      expect(probeCalls, 2, reason: '换了文件就该立刻能重探，不等冷却');
+      expect(service.specsFor(path), isNotNull);
+    });
+  });
 }

@@ -132,6 +132,14 @@ const Set<String> kDragAudioExtensions = <String>{
   'mp4',
 };
 
+/// BT 种子扩展名（不带点，小写）。拖入后走下载中心「添加任务」对话框
+/// （`ManualDownloadTaskDialog`）预填种子——与该对话框「选 .torrent 文件」按钮
+/// 同一条入库路径，不在拖放层另解 metainfo。磁力链接不经此处：它是字符串不是
+/// 文件，桌面拖放通道也不会把它当路径送进来。
+const Set<String> kDragTorrentExtensions = <String>{
+  'torrent',
+};
+
 /// 拖入文件按扩展名分类的结果。一个路径可同时落入多个类（如 .mp4 既是视频又是音频），
 /// 由落点上下文（DropSurface）决定最终语义。
 class DroppedFiles {
@@ -147,6 +155,7 @@ class DroppedFiles {
     this.mangas = const <String>[],
     this.unsupportedMangas = const <String>[],
     this.directories = const <String>[],
+    this.torrents = const <String>[],
   });
 
   final List<String> books;
@@ -179,6 +188,11 @@ class DroppedFiles {
   /// 路径中甄别出来落到本类（TODO-1306），由落点决策路由到流媒体导入 [_importStreamUrl]。
   final List<String> urls;
 
+  /// BT 种子文件（`.torrent`），见 [kDragTorrentExtensions]。任何表面拖入都路由到
+  /// 下载中心的添加任务对话框，落点表面只决定预填的内容类型（书架→小说、漫画库→
+  /// 漫画、视频页→视频）。
+  final List<String> torrents;
+
   final List<String> unknown;
 
   /// 是否有任何可被本功能识别（非 unknown）的文件。
@@ -191,7 +205,8 @@ class DroppedFiles {
       dictionaries.isNotEmpty ||
       urls.isNotEmpty ||
       mangas.isNotEmpty ||
-      unsupportedMangas.isNotEmpty;
+      unsupportedMangas.isNotEmpty ||
+      torrents.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -236,6 +251,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> mangas = <String>[];
   final List<String> unsupportedMangas = <String>[];
   final List<String> directories = <String>[];
+  final List<String> torrents = <String>[];
   final List<String> unknown = <String>[];
 
   for (final String path in paths) {
@@ -296,6 +312,10 @@ DroppedFiles classifyDroppedFiles(
       dictionaries.add(path);
       matched = true;
     }
+    if (kDragTorrentExtensions.contains(ext)) {
+      torrents.add(path);
+      matched = true;
+    }
     if (!matched) unknown.add(path);
   }
 
@@ -310,6 +330,7 @@ DroppedFiles classifyDroppedFiles(
     mangas: mangas,
     unsupportedMangas: unsupportedMangas,
     directories: directories,
+    torrents: torrents,
     unknown: unknown,
   );
 }

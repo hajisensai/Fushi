@@ -109,6 +109,27 @@ void main() {
       expect(classifyDroppedFiles(['/x/a.zip']).hasAny, isTrue);
     });
 
+    // BT 种子：此前不在任何白名单里，落 unknown 后各页一律静默，而下载页
+    // 「添加任务」的文件选择器明明认它——又一处「按钮能导、拖进去没反应」。
+    test('.torrent goes to torrents (not unknown)', () {
+      final r = classifyDroppedFiles(['/x/a.torrent']);
+      expect(r.torrents, ['/x/a.torrent']);
+      expect(r.unknown, isEmpty);
+      expect(r.hasAny, isTrue);
+    });
+
+    test('torrent extension match is case-insensitive', () {
+      expect(classifyDroppedFiles(['/x/A.TORRENT']).torrents, ['/x/A.TORRENT']);
+    });
+
+    test('torrent is not mistaken for any other category', () {
+      final r = classifyDroppedFiles(['/x/a.torrent']);
+      expect(r.books, isEmpty);
+      expect(r.videos, isEmpty);
+      expect(r.dictionaries, isEmpty);
+      expect(r.mangas, isEmpty);
+    });
+
     // TODO-1306: 浏览器地址栏/链接拖进来的 http(s) URL 不是文件路径，按 scheme 甄别
     // 落到 urls，绝不当 unknown 丢弃。
     test('http/https url goes to urls (not unknown, not video)', () {

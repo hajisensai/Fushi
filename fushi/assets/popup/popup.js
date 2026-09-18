@@ -4581,14 +4581,18 @@ function appendNextDeferredGlossaryBlock(entryDiv) {
 }
 
 function postProcessRuby(container) {
-    // BUG-1098: `.expression ruby` (the entry HEADWORD's furigana, built as a
-    // bare <ruby>/<rt> by buildFuriganaEl) joins the glossary bodies here. It
-    // used to be skipped entirely, so it never got the per-base unit and never
-    // got popup.css's em padding-top reserve; the reading then overflowed the
-    // header line box and .expression-scroll (a scroll container whose TOP
-    // overflow is unreachable) clipped it. Same wrap, same reserve, no new
-    // mechanism.
-    container.querySelectorAll('.glossary-content ruby, .expression ruby').forEach(ruby => {
+    // BUG-2568: the entry HEADWORD (`.expression ruby`) is deliberately NOT in
+    // this selector. BUG-1098 had added it so the headword would inherit the
+    // vertical reserve, but the per-base unit below also imposes the glossary's
+    // COMPACT base — the base box never widens to its reading and the annotation
+    // hangs off it, start-aligned (measured in Blink: 入寮 base [10.0,62.0],
+    // reading [10.0,73.8]). Hoshi renders the headword with the engine's own
+    // ruby algorithm, which widens the base run to the annotation and centres
+    // them. So the headword keeps the bare <ruby>/<rt> buildFuriganaEl emits and
+    // popup.css's `.expression ruby` block gives it native ruby plus its own em
+    // padding-top reserve (the real content of BUG-1098's fix). Glossary bodies
+    // keep the compaction — BUG-345/1778 want it — and therefore keep this pass.
+    container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
         // Wrap each base — a bare text node OR an element base like <rb>/<span>
         // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
         // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.

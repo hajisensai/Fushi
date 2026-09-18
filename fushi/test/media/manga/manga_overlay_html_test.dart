@@ -941,8 +941,16 @@ void main() {
       final String on = docFor(tapZonePaging: true, direction: 'rtl');
       expect(on.contains('var TAP_ZONE_PAGING = true;'), isTrue);
       expect(on.contains('var IS_RTL = true;'), isTrue);
-      // RTL 下左边缘前进（LTR 相反）——同一份 JS 靠 IS_RTL 分流。
-      expect(on.contains("IS_RTL ? 'next' : 'prev'"), isTrue);
+      // RTL 下左边缘前进（LTR 相反）。镜像已从 JS 的 `IS_RTL ? ...` 三元挪到
+      // Dart 的 mangaTapZones()，注入的热区表里 forward 就是最终值——JS 不得再
+      // 镜像一次（会抵消）。表本身的几何见 manga_tap_zones_test.dart。
+      expect(on.contains('[0,0,0.25,1,true]'), isTrue,
+          reason: 'RTL 左竖条必须已经是前进');
+      final String ltrOn = docFor(tapZonePaging: true, direction: 'ltr');
+      expect(ltrOn.contains('[0,0,0.25,1,false]'), isTrue,
+          reason: 'LTR 左竖条必须是后退');
+      expect(on.contains("IS_RTL ? 'next' : 'prev'"), isFalse,
+          reason: 'JS 侧不得二次镜像');
       final String off = docFor(tapZonePaging: false, direction: 'ltr');
       expect(off.contains('var TAP_ZONE_PAGING = false;'), isTrue);
       expect(off.contains('var IS_RTL = false;'), isTrue);

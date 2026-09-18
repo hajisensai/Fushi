@@ -16,6 +16,8 @@ import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -575,6 +577,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _recentRowController.dispose();
     _subscriptionRowController.dispose();
     _videoUidsSub?.cancel();
+    _videoUidsRefreshTimer?.cancel();
     _collectionTablesSub?.cancel();
     _downloadSubscriptionsSub?.cancel();
     _legacySubscriptionStore?.revision
@@ -603,7 +606,31 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     if (setEquals(next, _knownVideoUids)) return;
     _knownVideoUids = next;
-    if (mounted) _refresh();
+    // 文件夹扫描是逐条落库（每条之间还隔着一次抽帧），几百个文件就是几百次
+    // uid 事件；每次都整页重列 + 重载全部映射 + 重算待确认队列，手机上导入期间
+    // 整页持续卡顿。这里按最小间隔节流：首个事件立即刷，其后的合并到间隔末尾
+    // 再刷一次（尾沿兜底，最后落库的那几条不会漏）。
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastVideoUidsRefreshAt;
+    if (last == null || now.difference(last) >= _videoUidsRefreshInterval) {
+      _lastVideoUidsRefreshAt = now;
+      _refreshAfterVideoUidsChanged();
+      return;
+    }
+    if (_videoUidsRefreshTimer != null) return; // 尾沿已排队。
+    _videoUidsRefreshTimer = Timer(
+      _videoUidsRefreshInterval - now.difference(last),
+      () {
+        _videoUidsRefreshTimer = null;
+        _lastVideoUidsRefreshAt = DateTime.now();
+        _refreshAfterVideoUidsChanged();
+      },
+    );
+  }
+
+  void _refreshAfterVideoUidsChanged() {
+    if (!mounted) return;
+    _refresh();
     // 集合真变了 = 有新视频入库（任意导入路径）：给新书补刮条目资料。挂在这里而
     // 不是 _refresh 里，因为 _refresh 还被改标签/删除/播放返回等触发，那些不带来
     // 需要刮削的新书。
@@ -612,6 +639,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 用户停在视频页不动也能等到资料补上，不必切走再切回或重启（BUG-2199）。
     unawaited(_refreshPendingScrape());
   }
+
+  /// [_onVideoUidsChanged] 触发整页刷新的最小间隔。
+  static const Duration _videoUidsRefreshInterval = Duration(seconds: 1);
+  DateTime? _lastVideoUidsRefreshAt;
+  Timer? _videoUidsRefreshTimer;
 
   void _onLibraryRefreshRequested() {
     if (mounted) _refresh();
@@ -1808,6 +1840,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       case DropIntent.importVideoUrl:
         // 拖入网络流 URL → 打开视频导入对话框预填 URL 并自动导入（TODO-1306）。
         _openStreamImportPrefilled(streamUrl: files.urls.first);
+      case DropIntent.importTorrent:
+        // 拖入 .torrent → 下载中心「添加任务」对话框预填种子，内容类型预填视频。
+        // 与页头按钮同一入口：后端未配时同样弹引导，不在这里另写一套。下载中心
+        // 关掉时给可见提示（与书架同一形态），不静默。
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.downloads)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.module_disabled_hint)),
+          );
+          return;
+        }
+        unawaited(
+          showManualDownloadTaskDialog(
+            context: context,
+            appModel: appModel,
+            torrentPaths: files.torrents,
+          ),
+        );
       case DropIntent.attachToVideoCard:
         // 字幕拖到具体视频卡：直接挂到那张卡所代表的**现有**视频书（不重新导入）。
         // 旧实现走 _openVideoImportPrefilled→VideoImportDialog._doImport，对已存在

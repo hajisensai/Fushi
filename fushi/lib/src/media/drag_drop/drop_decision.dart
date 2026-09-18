@@ -35,6 +35,13 @@ enum DropIntent {
   /// （没传 isDirectory 谓词 → 落 unknown → ignore），用户拖一整季文件夹进去毫无反应。
   addFolderAsSource,
 
+  /// 拖入 `.torrent` 种子 → 打开下载中心「添加任务」对话框并预填种子。
+  ///
+  /// 三个表面都产出它：种子文件本身不属于任何库页，落点表面只决定对话框预填的
+  /// 内容类型。此前 `.torrent` 不在任何白名单里，落 unknown 后各页一律静默——
+  /// 而「添加任务」按钮明明能选它，又一处「按钮能导、拖进去没反应」。
+  importTorrent,
+
   attachToBookCard,
   attachToVideoCard,
   needCardTarget,
@@ -73,6 +80,9 @@ DropIntent decideDropIntent({
       }
       // 拖视频/播放列表/URL 到书架空白处 → 自动切到视频导入流程（带上文件/URL），消除
       // 「视频在 books 表面 unsupportedSurface 只提示」的特例（TODO-558 / BUG-326 / TODO-1306）。
+      // 种子先于 URL：`.torrent` 是文件，URL 是字符串，两者同批出现时种子是用户拖
+      // 的实体。
+      if (files.torrents.isNotEmpty) return DropIntent.importTorrent;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
       if (files.videos.isNotEmpty) return DropIntent.importNewVideo;
@@ -107,6 +117,7 @@ DropIntent decideDropIntent({
       // 文件夹优先于其中的单个文件：用户拖一整个剧集目录进来，要的是「把这个目录
       // 加成来源」，不是「导入我恰好也选中的那一个 mp4」。
       if (files.directories.isNotEmpty) return DropIntent.addFolderAsSource;
+      if (files.torrents.isNotEmpty) return DropIntent.importTorrent;
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
       if (files.videos.isNotEmpty) return DropIntent.importNewVideo;

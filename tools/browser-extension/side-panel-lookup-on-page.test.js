@@ -14,6 +14,7 @@
 //                 =查词、点行内空白（取不到词）=让这一击冒泡成「跳转到这句」。
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -185,6 +186,7 @@ function loadContent(lookupExtras, respondOverride) {
     storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } },
   };
   sandbox.window = {
+    fushiT: FUSHI_T,
     addEventListener() {},
     innerWidth: 1200,
     innerHeight: 800,
@@ -458,6 +460,7 @@ function loadSidePanel(storedSettings, tabReply, lookupReply) {
   let nextTerm = '世界'; // 置空 = 点在行内空白，取不到词
   const cueTextNode = { textContent: '世界です', nodeType: 3 };
   const windowObj = {
+    fushiT: FUSHI_T,
     addEventListener() {},
     innerWidth: 400,
     innerHeight: 800,

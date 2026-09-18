@@ -141,19 +141,27 @@ void main() {
     });
 
     test('the screen measurement mirrors the real .fushi-vn-screen box', () {
+      // BUG-2575：量尺与真实屏共用 `.fushi-vn-screen`，样式表里的
+      // `width/height: 100% !important` 会压过普通内联值，所以必须以 important
+      // 写入（行为级覆盖见 vn_measure_box_restore_progress_behavior_test）。
       expect(
-        shell.contains("root.style.width = screenBox.width + 'px';"),
+        shell.contains(
+            "root.style.setProperty('width', screenBox.width + 'px', 'important');"),
         isTrue,
-        reason: 'the measurement probe must be sized from the live screen rect',
+        reason: 'the measurement probe must be sized from the live screen rect '
+            'with !important priority',
       );
       expect(
-        shell.contains("root.style.height = screenBox.height + 'px';"),
+        shell.contains(
+            "root.style.setProperty('height', screenBox.height + 'px', 'important');"),
         isTrue,
-        reason: 'the measurement probe must be sized from the live screen rect',
+        reason: 'the measurement probe must be sized from the live screen rect '
+            'with !important priority',
       );
       // 兜底分支保留（首屏极早期还没有屏盒），但不能是唯一路径。
       expect(
-        shell.contains("root.style.width = 'var(--page-width, 100vw)';"),
+        shell.contains(
+            "root.style.setProperty('width', 'var(--page-width, 100vw)', 'important');"),
         isTrue,
         reason: 'the pre-layout fallback sizing must stay as a fallback',
       );

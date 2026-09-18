@@ -1,0 +1,23 @@
+## BUG-2577 · 安卓按作品归类导入视频整机卡顿冻结崩溃——AniDB 标题包与 Fribb 映射在 UI isolate 整包解析建 DOM
+- **报告**：2026-09-18（用户：安卓用户英文反馈——从手机导入本地视频文件夹「加载极慢且一直卡顿、资料完全刮不出来、只报错没结果、app 冻结后崩溃」；自述汉字文件名 + 「按作品归类 + 刮削资料」时必现，改成纯本地文件夹、不归类、罗马字文件名后卡顿消失、文件夹秒开；想退回 2.6.0 但 GitHub 上已下架）
+- **真实性**：✅ 真 bug。沿真实代码路径验：用户描述的两种开法差异恰好落在 `source_library_scanner.dart:649-651`——`videoGroupingMode != 'folder'`（「按作品归类」）才进 `VideoSourceMetadataIndexer` / 刮削链；纯文件夹模式短路。刮削链上没有任何一步在后台 isolate 跑（全仓 `media/video/metadata` 与 `source_library` 下零 `Isolate.run` / `compute`），下面几段十万级数据的同步处理全压在 UI isolate 上，手机上就是整机冻结 + 堆峰值被系统杀：
+  1. **AniDB 标题包整包 DOM 解析 + 建索引**（`packages/fushi_engine/lib/media/video/metadata/anidb_title_catalog.dart`，修前 `:309` `gzip.decode` 整体、`:377` `XmlDocument.parse(xml)` 对几十 MB 明文建整棵 DOM、`:393-430` 逐 `<anime>/<title>` 遍历、`:165` / `:591-618` 对十万级标题排序 + 切 3-gram 建索引）。生产装配 `home_page.dart` 的 coordinator 是 `enableOfflineTitleIndex: true`，所以「按作品归类」第一次刮削就会走到这里。DOM 对几十 MB XML 的堆放大是数倍到十倍，这是「冻结后崩溃」最直接的候选；每个 `AniDbTitleCatalog` 实例（配置指纹变了会重建）首次查询都要重来一遍。
+  2. **Fribb 身份映射十几 MB JSON**（`anime_identity_mapping.dart` 修前 `:127-136`）：`utf8.encode(body)` 再复制一整份只为量长度、`jsonDecode` 整份、`fromRows` 建三张索引，全在 UI isolate。
+  3. **汉字标题把匹配推到最慢的分支并放大常数**：汉字文件名解析出的标题通常带季数 / 发布组装饰，不是标题包条目的字节前缀，`_AniDbTitleSearchIndex.search`（`anidb_title_catalog.dart`）从 exact / prefix 掉到 `candidates.take(20000)` 的模糊分支；`_rank` 对每个候选调 `TitleNormalizer.similarity`，而 `similarity` 会把**两个已经归一化过的串再各归一化一遍**（`title_normalizer.dart` 修前 `:97-99`，逐字符查繁简表 + 逐字符建串），`tokens` 里 `_isWordChar` 对每个非 ASCII 非 CJK 字符**现编一个 unicode 正则**（修前 `:142-146`）、`normalize` 每次现编空白正则（`:48`）。每个作品 4~6 个标题候选各查一次，一次导入几十个作品就是上百次两万候选的全量打分。
+  4. **视频库页每落一条就整页刷新**（`home_video_page.dart` 修前 `:598-614` `_onVideoUidsChanged`）：文件夹扫描是逐条 `saveVideoBook`（`source_library_scanner.dart:1106-1166`，每条之间还隔着一次 ffmpeg 抽帧），每条都触发 `videoBooks` uid 流 → `_refresh()`（全表 `listForShelf` + `_loadLibraryMaps` 数张全表）+ `_maybeAutoScrape()`（全表 `listAll`）+ `_refreshPendingScrape()`（全部来源重新 plan、每作品两次查库）。几百个文件 = 几百轮，和导入本身在同一个 isolate 上交错，导入期间整页持续卡顿。合集表那条流早就有 300 ms 合并窗口（`_onCollectionTablesChanged`），uid 流没有。
+
+  「2.6 快、2.7 慢」核对过 `v2.6.0-beta.14741..upstream/develop`：`source_library/` 零改动，刮削链的这几段在 2.6 已存在；两版只隔一天，差异是这位用户在 2.7 上第一次打开「按作品归类 + 刮削」。所以这不是回归，是这条路径在手机上一直不可用，只是之前没人这样用。
+
+- **[x] ① 已修复** — 提交见本条末尾
+  - `anidb_title_catalog.dart`：解压 → UTF-8 → XML → 记录 → 索引整段进 `Isolate.run`（结果经 `Isolate.exit` 零拷贝交回）；解析改 `XmlEventDecoder(validateNesting: true)` 流式事件（`_TitleCatalogBuilder` 状态机，保持原 DOM 版的记录数 / 每部标题数 / 标题长度上限、同值去重、`xml:lang` 只认 XML 命名空间、DOCTYPE 拒收、错位闭合报 invalid XML），不再有整份明文 String 与 DOM 同时在堆上；磁盘缓存改为**原样落下载到的 gzip 体**（几 MB），读回按魔数判断，旧版明文缓存照样能读；异常跨 isolate 只带字符串 cause。
+  - `anime_identity_mapping.dart`：字节数复核 + `jsonDecode` + `fromRows` 进 `Isolate.run`（顶层函数、闭包不捕获 `this`），坏 JSON 仍抛 `VideoMetadataNetworkException`。
+  - `title_normalizer.dart`：空白正则与 unicode 字母正则改 `static final` 只编译一次；新增 `similarityNormalized(na, nb)`（已归一化输入），`similarity` 委托给它；索引 `_rank` 改用 `similarityNormalized`——候选打分不再逐字符重归一化两遍。
+  - `home_video_page.dart`：`_onVideoUidsChanged` 改成 1 s 最小间隔的前沿 + 尾沿节流（首个事件立即刷，其后合并到间隔末尾再刷一次），刷新体收进 `_refreshAfterVideoUidsChanged`，timer 在 dispose 取消。
+- **[x] ② 已加自动化测试**
+  - `fushi/test/media/video/metadata/anidb_title_catalog_stream_parse_test.dart`（**行为测试**，7 条）：实体 / CDATA / 自闭合空标题、DOCTYPE 拒收、非法根元素、错位闭合报 invalid XML 且 cause 是字符串、压缩体原样落盘 + 第二实例断网只靠缓存、旧版明文（带 BOM）缓存兼容、汉字查询走模糊分支仍按相似度命中。
+  - `fushi/test/media/video/metadata/video_scrape_ui_isolate_offload_guard_test.dart`（源码守卫，10 条）：标题包必须 `Isolate.run` + `XmlEventDecoder` 且不得 `XmlDocument.parse`、索引打分必须走 `similarityNormalized`、Fribb 映射必须 `Isolate.run` 且不得 `response.decodeJson`、`_isWordChar` / `normalize` 体内不得 `RegExp(`、`_onVideoUidsChanged` 不得直接 `_refresh()` 且 timer 在 dispose 取消。
+  - 既有回归：`anidb_video_metadata_provider_test.dart`（含标题包 gzip 下载 / 过期缓存 / 重开）、`anime_offline_identity_resolver_test.dart`、`offline_identity_coordinator_test.dart`、`anime_identity_mapping_test.dart`、`title_normalizer_test.dart`、`anidb_hash_identity_service_test.dart`、视频页 10 个 widget 测试文件（46 条）全绿。
+- **备注**：
+  - 本轮是**单测 + analyze 全绿**，未在安卓真机复现原始失败路径（用户没给设备型号、库规模和日志）。修复的正确性由「这几段十万级处理不在 UI isolate 上、不建 DOM」这个不变式保证，守卫直接钉不变式。
+  - **同链路上仍在 UI isolate、本条未改**（各自独立，值得后续单开）：① 扫描每个文件抽两次进程内 ffmpeg-kit（内嵌封面 + 抽帧，各 30 s 上限，进程级串行锁），是「加载很慢」的时间大头但不是冻结来源；② `VideoFolderGroupCoordinator.groupPaths` 对每组扫全部合集成员、`parseVideoFilename` 每次现编正则；③ `VideoNfoReader.readForPaths` 逐文件向上遍历目录探 `tvshow.nfo` / `movie.nfo`；④ AniDB `_maxAnimeXmlLength = 24 MB` 的单部 anime XML 仍在 UI isolate 上 DOM 解析；⑤ 标题包下载 30 s 超时对手机网络偏紧，超时后 24 h 刷新闸会让离线识别整天 unavailable——用户「资料完全刮不出来 + 报错」也可能是这条，需要日志确认。
+  - 用户提到「想退回 2.6.0」：上游 release 页 `v2.6.0-beta.14741` 仍在（Pre-release，2026-09-12），并没有下架；但 2.6 与 2.7 在这条路径上代码相同，退回解决不了问题。

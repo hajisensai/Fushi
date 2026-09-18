@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -60,6 +61,18 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
       subtitle: profileName == null
           ? null
           : t.stat_center_profile_scope(name: profileName),
+      actions: <Widget>[
+        // 「今日」重置整点是三域学习段共用的 dateKey 输入，所以入口放在统计中心
+        // 页头而不是某一域的设置页；宽窗展开成「图标 + 文字」药丸（label），窄窗
+        // 回落为纯图标、tooltip 仍是完整标题。
+        FushiIconButton(
+          icon: Icons.update_outlined,
+          tooltip: t.stat_center_day_reset_hour,
+          label: t.stat_center_day_reset_action,
+          onTap: () =>
+              showStatDayResetHourDialog(context, ref.read(appProvider)),
+        ),
+      ],
       body: DefaultTabController(
         length: StatsCenterTab.values.length,
         initialIndex: widget.initialTab.index,

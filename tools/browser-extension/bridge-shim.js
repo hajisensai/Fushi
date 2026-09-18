@@ -1,5 +1,9 @@
 // 垫掉 popup.js 里的 flutter_inappwebview.callHandler，转成扩展逻辑。
 // 必须在 popup.js 之前加载（manifest content_scripts 顺序保证）。
+// 界面文案统一走 i18n.js（fushiT）；测试壳没装 i18n 时退回键名。
+function fushiShimT(key, params) {
+  return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -84,12 +88,12 @@ window.flutter_inappwebview = {
             chrome.runtime.sendMessage(
               msg,
               (resp) => {
-                try { if (chrome.runtime.lastError) { toast('✗ 制卡失败'); resolve(false); return; } } catch (_) { /* no-op */ }
+                try { if (chrome.runtime.lastError) { toast('✗ ' + fushiShimT('mine_failed')); resolve(false); return; } } catch (_) { /* no-op */ }
                 var dup = !!(resp && resp.ok && resp.data && resp.data.result === 'duplicate');
                 var ok = !!(resp && resp.ok && resp.data && resp.data.result === 'success');
-                if (dup) toast('✓ 该词卡片已存在');
-                else if (ok) toast('✓ 已制卡');
-                else toast('✗ 制卡失败');
+                if (dup) toast('✓ ' + fushiShimT('mine_duplicate_exists'));
+                else if (ok) toast('✓ ' + fushiShimT('mine_done'));
+                else toast('✗ ' + fushiShimT('mine_failed'));
                 // 一次性草稿：出卡即清（与入队路 / app 内同事件）。
                 if ((ok || dup) && typeof window.fushiClearSentenceDraft === 'function') {
                   window.fushiClearSentenceDraft();
@@ -100,10 +104,10 @@ window.flutter_inappwebview = {
           }
           var res = (typeof window.fushiEnqueue === 'function')
             ? window.fushiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
-          if (res && res.ok && res.duplicate) toast('✓ 已在制卡队列中（' + res.count + '）');
-          else if (res && res.ok) toast('✓ 已加入制卡队列（' + res.count + '）\n看完后一次生成全部');
-          else if (res && res.reason === 'no-cue') toast('✗ 没找到当前字幕，稍候再试');
-          else toast('✗ 入队失败');
+          if (res && res.ok && res.duplicate) toast('✓ ' + fushiShimT('mine_already_queued_n', { n: res.count }));
+          else if (res && res.ok) toast('✓ ' + fushiShimT('mine_queued_n', { n: res.count }) + '\n' + fushiShimT('mine_queued_generate_later'));
+          else if (res && res.reason === 'no-cue') toast('✗ ' + fushiShimT('mine_no_cue'));
+          else toast('✗ ' + fushiShimT('mine_enqueue_failed'));
           // Queue membership is not an Anki note: preserve that distinction for the button.
           resolve({ queued: !!(res && res.ok), ankiConnect: false });
         });

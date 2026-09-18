@@ -148,9 +148,10 @@ test('三家来源都有展示名，候选行把 provider 显示出来', () => {
 
 test('no-provider 有独立文案：不能再一律说「去填 Jimaku API key」', () => {
   assert.match(SIDE_PANEL, /error === 'no-provider'/);
-  const branch = SIDE_PANEL.slice(SIDE_PANEL.indexOf("error === 'no-provider'"));
-  const text = branch.slice(0, branch.indexOf('\n', branch.indexOf('return')) + 1);
-  assert.match(text, /AJATT/, '零配置的 AJATT 是没填 key 的用户唯一能直接开的来源，得提到它');
+  // 文案在 locales/en.js（源）与各语言字典里；这里查源字典的那一条。
+  const en = require('./scripts/i18n-fixture.js').loadEn();
+  assert.match(SIDE_PANEL, /error === 'no-provider'\) return tr\('subs_err_no_provider'\)/);
+  assert.match(en.subs_err_no_provider, /AJATT/, '零配置的 AJATT 是没填 key 的用户唯一能直接开的来源，得提到它');
 });
 
 test('部分来源失败时结果照出，另外提示少了谁', () => {

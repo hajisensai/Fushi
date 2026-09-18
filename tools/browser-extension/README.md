@@ -13,7 +13,10 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
 | `nested-popup-host.js` | 隔离 | 嵌套父子栈、子 iframe 定位、按层桥接、异步结果归属；只关闭根层时恢复视频 |
 | `nested-popup.html/js` | 扩展 iframe | 每层独立的共享词典 renderer、选区、制卡和滚动状态；经专用 MessageChannel 与宿主通信 |
-| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（可按住拖动挪位，位置按视频分数坐标存 `subtitleOverlayPosition`，点击仍查词）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
+| `theme.js` + `theme.css` | 隔离 + 扩展页 | 明暗唯一决议点 + 扩展自有界面的唯一调色板（见「主题与颜色」） |
+| `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `touch-lookup.js` | 隔离 | 触屏点按/长按查词：单指点正文=查词（默认开）、长按≈0.5s=查词（默认关）；复用 content.js 的 `fushiLookupAtPoint`，零新增查词链路，只认 touch 主指针，绝不影响鼠标行为 |
@@ -26,10 +29,10 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `bridge-shim.js` | 隔离 | 垫掉 app 内 WebView 桥（`flutter_inappwebview.callHandler`）→ chrome 消息，复用 vendor/popup.js |
 | `scan.js` | 隔离 | 取词纯函数（词窗扩展/句子抽取） |
 | `self-update.js` | SW/options | 自更新决策纯状态机 + 状态文案（node 可测） |
-| `connection-diagnostics.js` | SW/options | 连接六态分类 + 中文文案（纯函数） |
+| `connection-diagnostics.js` | SW/options | 连接六态分类 + 文案（纯函数，文案经 i18n 键） |
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
-| `options.html/css/js` | options | 设置页：连接、字幕偏好、查词框大小、逐动作视频快捷键、版本与更新卡片 |
+| `options.html/css/js` | options | 设置页：主题与语言、连接、字幕偏好（含底色）、沉浸时间、查词框大小、逐动作视频快捷键、版本与更新卡片 |
 | `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
@@ -112,11 +115,87 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   却连带把视频停了。关窗后在 capture 阶段截住紧随其后的那一个 click（不 `preventDefault`，
   聚焦/选区这些默认行为要留着）；没产生 click 时由定时器撤掉监听，不误吞后面的点击。
 - **Esc 关弹窗**：页面弹窗此前根本不认 Esc。现在 capture 阶段先关窗并截住这次按键，站点自己
-  的 Esc 处理不再同时发生。**但视频处于 Fullscreen API 全屏时，Esc 退出全屏是浏览器保留行为，
-  网页脚本拦不住**——这里能保证的只是「弹窗一定被关掉」。
+  的 Esc 处理不再同时发生。**全屏下的 Esc**（用户报「关查词框会连全屏一起退掉」）：Fullscreen
+  API 全屏时浏览器进程先于渲染器用 Esc 退全屏，`stopPropagation`/`preventDefault` 都拦不住；
+  正规出口是 **Keyboard Lock API**——有 `<video>` 的页面进全屏即
+  `navigator.keyboard.lock(['Escape'])`，浏览器随即把单按 Esc 交给页面（长按 Esc 才退全屏）。
+  分工由我们定：有弹窗 → 只关弹窗；没弹窗 → 我们代为 `exitFullscreen()`，单按退全屏体感不变；
+  退全屏即 `unlock()`；popup.js 的模态（制卡操作单）开着时 Esc 归它。无该 API 的浏览器退回
+  「弹窗一定被关掉、全屏照退」。守卫 `escape-lock-and-dedupe.test.js`。
+- **同词不重查**（用户报「会重复查词」）：弹窗已在场且显示的就是这个词，再点它一次（Shift 悬停
+  后顺手点、悬浮字幕自动查词后点、面板行连点）不重发请求也不重渲染；同词在途也不发第二笔。
+  判据是 `fushiShownTerm`（渲染成功才置、关窗即清），**不是** `fushiLastTerm`（发起时就写、
+  失败不回退）。关窗或换词照常查。
 
 行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点跟随、锚点、回落、Esc、
 关窗吞击、去重复位、点空白跳转）。
+
+## 覆盖层：挪位、选区、底色
+
+视频上的自绘字幕（`#fushi-subtitle-overlay`）是「文字层 `.fushi-subtitle-overlay-text` + 拖柄
+`.fushi-subtitle-overlay-grip`」两个子节点。用户报「字幕无法选取复制」的根因有两处：拖动挪位曾
+独占整块（鼠标在文字上一拖就 `removeAllRanges` 进入挪位），以及 tick 每 200ms 无条件
+`fushiRenderCueText` 重建文本节点，刚拉出的选区立刻塌掉。现在：
+
+- **鼠标**：文字上按下/拖动 = 浏览器原生选区（Ctrl+C 可复制），只有按在左侧拖柄（悬停时出现）
+  才挪位；**触屏**没有拖选，整块仍可拖。
+- **同一条 cue 不重建文本节点**（`st.overlayRenderedCue`），tick 只重摆位置。
+- 拖选完松手的合成 `click` 不查词（`overlayHasNativeSelection()`），点拖柄也不查词。
+- `mousedown` 在覆盖层上 `stopPropagation`：站点把播放器上的 mousedown 当「点画面」，有的还
+  `preventDefault` 把选区扼杀在起点。
+- **底色**：`subtitleOverlayBackground`（options「字幕底色」，默认开）关掉 → `data-bare`，CSS 去
+  底板/投影只剩描边字，像站点原生字幕那样不挡画面。
+
+守卫：`subtitle-overlay-drag.test.js` 后半段。
+
+## 主题与颜色
+
+- **调色板只有一处**：`theme.css` 的 `--fushi-*` token（浅色 `:root`、深色在
+  `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])` 与 `:root[data-theme="dark"]`
+  两处）。`options.css` / `side-panel.css` 只把自己的局部变量别名到它，工具栏菜单与嵌套查词壳直接
+  用它；页内浮层（抽屉 / 字幕覆盖层 / 拖放提示 / 排队 chip / toast）由 `generate-content-css.mjs`
+  把 `theme.css` 的 `:root` 重根到那几个 `#fushi-*` 宿主再拼进 `content.css`——绝不落到宿主页
+  `:root`。此前四个表面四套颜色（options 绿、侧边栏暖米色、工具栏墨绿、抽屉硬编码 cream）。
+- **明暗决议只在 `theme.js`**：设置 `extensionTheme` = `auto`（默认，跟随系统）/ `light` / `dark`。
+  扩展自己的页面装入即把显式值写成根 `data-theme`（auto 摘掉属性交给媒体查询）；页内浮层按
+  `fushiTheme.resolve(fallback)`；抽屉根写 `data-theme`。
+- **查词弹窗**（`#entries-container`）不吃 `theme.css`：它的 `--md-*` 由 app 按当前主题下发
+  （`browserExtensionThemeColors`）。auto 下弹窗跟 app 的 `--fushi-color-scheme`（现状，BUG-688）；
+  显式 light/dark 时 `background.js` 把同一个值作为 `colorScheme` 提示带进
+  `POST /api/lookup/dictionary`，app 按该明暗 `buildColorScheme` 生成配色返回，`data-theme` 与
+  `--md-*` 永远同一明暗（否则就是 BUG-688 那种分裂）。旧 app 忽略该字段。
+
+守卫：`theme-and-study.test.js`（决议、根属性、CSS 单一真相源、请求提示）。
+
+## 多语言（跟随 Fushi）
+
+- 引擎 `i18n.js`：`fushiT(key, {params})`；HTML 用 `data-i18n` / `data-i18n-html`（只给我们自己写
+  的、含 `<kbd>`/`<b>` 的文案）/ `data-i18n-title` / `-placeholder` / `-aria-label`，扩展页面装入即
+  `applyToDocument`（同时写 `<html lang dir>`，阿拉伯语 rtl）。各模块内的 `tr()` 在没装 i18n 的
+  测试壳里退回键名不崩。
+- **字典**：`locales/en.js` 是源（同步装入 content script / 扩展页 / SW，`importScripts`），其余
+  16 种 `locales/<tag>.json` 按需 `fetch(chrome.runtime.getURL(...))`（列在 web_accessible_resources）；
+  键集、占位符、`<kbd>/<b>` 标签集合逐键与英文一致，`i18n.test.js` 钉死，同时钉「HTML / JS 不再残留
+  裸中文界面文案」。支持的 tag 与 app 的 Slang 清单（`fushi/lib/i18n/strings_<tag>.i18n.json`）一致。
+  **新增文案**：先加 `en.js`，再逐个 json 补同键（守卫会红到补齐为止）。
+- **语言决议**：`extensionLanguage` = `app`（默认）/ `browser` / 固定 tag。`app` 读 `appLocale`——
+  `background.js` 从 `/api/extension/status` 响应的 `locale` 与查词响应的 `appLocale` 记下 app 当前
+  UI 语言（心跳每 60s 一次，app 切语言 ≤60s 跟上）；拿不到（app 没开 / 旧 app）回落浏览器语言。
+  `zh-TW/zh-Hant → zh-HK`、`pt → pt-BR`。
+- 不翻译的东西：字幕轨 store key 里的 `外挂:` / ` (自动)` / ` →译` 前后缀（身份的一部分，改了会
+  拆轨）；语言选项里的本地语名；console 诊断。
+
+## 沉浸时间（视频，进 Fushi 学习统计）
+
+`study-tracker.js` 只当一个「远端播放源」：正片 `<video>`（画面 ≥200×120、时长 ≥30s 或直播）播放
+期间每秒、以及 play/pause/seeked/ratechange/ended 时刻，把
+`{mediaKind:'video', mediaKey:'web:'+fushiVideoKey(), title, positionMs, durationMs, playing, speed, ended}`
+经 background 的 `studySample` 消息 `POST /api/extension/study`（与 popup-size 同一鉴权；app 没开
+时退避 15s）。**这里不算时长**：app 侧 `BrowserVideoStudyBridge` 为每个 mediaKey 建一个
+`VideoWatchTracker + StudyClock`（显式记账、只计首次覆盖、覆盖并集按 `videoWatchCoveragePrefKey`
+持久化），口径与 app 内视频页完全一致——回放 / 拖回 / 次日重看不计，切走标签仍在播照常计；`ended`
+或 20s 无样本停表。YouTube 首页悬停预览、卡片预告片也是 `<video>`，尺寸/时长门把它们挡在外面。
+设置 `studyTrackVideo`（默认开）。守卫：`theme-and-study.test.js` 后半段。
 
 ## 字幕里的振假名
 
@@ -279,3 +358,7 @@ node --test            # 本目录全部 *.test.js（node 内置 runner，零依
 
 Dart 侧守卫（跑法见仓库根 CLAUDE.md）：`fushi/test/{build,lookup,mining,sync,...}/browser_extension_*`
 做镜像字节一致 + 功能链存在性扫描。扩展 JS 单测目前不在 CI，提 PR 前请本地跑过。
+
+行为测试历来按中文文案断言：模块里的文案现在走 i18n 键，测试壳要注入
+`scripts/i18n-fixture.js` 的 `makeFushiT()`（默认装 zh-CN 字典）到 `window.fushiT`（纯函数模块
+设 `globalThis.fushiT`）；没注入的壳里 `tr()` 退回键名。
