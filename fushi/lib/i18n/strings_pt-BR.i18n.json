@@ -28,7 +28,6 @@
   "aidoku_repository_sources": "Fontes do repositório",
   "aidoku_repository_update": "Atualizar",
   "aidoku_repository_url": "URL do repositório",
-  "aidoku_runtime_unavailable": "Extensões Aidoku estão disponíveis apenas no macOS atualmente.",
   "aidoku_webview_unsupported": "Esta fonte requer APIs de WebView do Aidoku que ainda não são suportadas.",
   "anime_download_back": "Voltar",
   "anime_download_batch": "Lote",
@@ -5064,5 +5063,16 @@
   "media_server_items_load_failed": "Could not load items from the server",
   "media_server_item_folder": "Folder",
   "jellyfin_server_unreachable": "Could not reach the server at $url: $reason",
-  "jellyfin_host_lookup_hint": "This device could not resolve the host name. Android and iOS cannot resolve .local or Windows computer names; use the server's IP address instead (for example http://192.168.1.10:8096)."
+  "jellyfin_host_lookup_hint": "This device could not resolve the host name. Android and iOS cannot resolve .local or Windows computer names; use the server's IP address instead (for example http://192.168.1.10:8096).",
+  "video_anidb_login_test": "Test AniDB login",
+  "video_anidb_login_test_hint": "Sends one UDP login with the saved account and client, then logs out. No file is hashed.",
+  "video_anidb_login_test_running": "Testing AniDB login…",
+  "video_anidb_login_test_success": "AniDB login succeeded as $client v$version",
+  "video_anidb_login_test_client_update": "AniDB login succeeded, but AniDB reports a newer version of client $client",
+  "video_anidb_login_test_incomplete": "Not tested: fill in the username, password and a registered client name/version first",
+  "video_anidb_login_test_failed_auth": "AniDB rejected the username or password",
+  "video_anidb_login_test_failed_client": "AniDB rejected the client name/version (unregistered, outdated or banned)",
+  "video_anidb_login_test_failed_network": "AniDB UDP connection failed: check UDP port 9000 and the firewall; an HTTP proxy cannot carry UDP",
+  "video_anidb_login_test_failed_blocked": "AniDB is rate limiting or under maintenance; requests are paused for now",
+  "video_anidb_login_test_failed_other": "AniDB login failed ($reason)"
 }

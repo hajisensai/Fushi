@@ -24,6 +24,9 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 
 /// 视频 schema 项的双路写穿层（阶段 B）：同一条 item 声明服务两个宿主——
 /// 全局设置页（`SettingsContext.video == null`，直接读写 appModel 纯 pref、下次
@@ -53,6 +56,75 @@ Future<void> commitVideoMetadataRuntimePreference(
     trimValue ? value.trim() : value,
   );
   await settingsContext.appModel.reloadVideoDownloadPipelineRuntime();
+}
+
+/// 「测试 AniDB 登录」：用当前偏好装出的 UDP 配置发一次 AUTH 后立即 LOGOUT，
+/// 不算任何文件哈希。刮削报告里的每文件提示是唯一能看出登录是否成功的地方，
+/// 用户填完账号没法确认（BUG-2581）；这里把结果直接弹在设置页。
+/// 与扫描批次共用同一固定本地端口与限流簿记：若同一时刻正有刮削在线，
+/// 绑端口失败会按「UDP 连接失败」报出，等刮削结束再测即可。
+Future<void> testAniDbLogin(SettingsContext settingsContext) async {
+  final VideoSourceScrapeGlobalConfig config =
+      VideoSourceScrapeGlobalConfig.fromPreferences(
+    settingsContext.appModel.prefsRepo,
+    resolvedTmdbApiKey: '',
+    // 只查凭据是否配齐，不拉资料；界面语言与登录无关。
+    uiLocaleTag: kFallbackVideoMetadataLocale,
+  );
+  final AnidbUdpConfig udp = config.anidbUdpConfig;
+  if (!udp.isAvailable) {
+    _showVideoSettingsSnackBar(
+      settingsContext,
+      t.video_anidb_login_test_incomplete,
+    );
+    return;
+  }
+  _showVideoSettingsSnackBar(settingsContext, t.video_anidb_login_test_running);
+  final AnidbUdpFileClient client = AnidbUdpFileClient(config: udp);
+  String message;
+  try {
+    await client.verifyLogin();
+    message = client.clientUpdateAvailable
+        ? t.video_anidb_login_test_client_update(client: udp.clientName)
+        : t.video_anidb_login_test_success(
+            client: udp.clientName,
+            version: udp.clientVersion,
+          );
+  } on AnidbUdpException catch (error) {
+    message = aniDbLoginFailureMessage(error);
+  } finally {
+    await client.close();
+  }
+  _showVideoSettingsSnackBar(settingsContext, message);
+}
+
+/// UDP 失败原因 → 设置页文案；与刮削报告里 `_hashFailureReason` 的分组一致。
+String aniDbLoginFailureMessage(AnidbUdpException error) =>
+    switch (error.reason) {
+      AnidbUdpFailure.authentication => t.video_anidb_login_test_failed_auth,
+      AnidbUdpFailure.unavailable ||
+      AnidbUdpFailure.clientOutdated ||
+      AnidbUdpFailure.clientBanned =>
+        t.video_anidb_login_test_failed_client,
+      AnidbUdpFailure.network ||
+      AnidbUdpFailure.timeout =>
+        t.video_anidb_login_test_failed_network,
+      AnidbUdpFailure.banned ||
+      AnidbUdpFailure.maintenance =>
+        t.video_anidb_login_test_failed_blocked,
+      _ => t.video_anidb_login_test_failed_other(
+          reason: error.code == null
+              ? error.reason.name
+              : '${error.reason.name} ${error.code}',
+        ),
+    };
+
+void _showVideoSettingsSnackBar(SettingsContext settingsContext, String text) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  ScaffoldMessenger.of(ctx)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
 }
 
 // ── videoAsbplayerConfig（手势/播放行为 JSON pref）────────────────────────────

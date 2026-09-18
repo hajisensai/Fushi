@@ -315,6 +315,14 @@ SettingsDestination buildServicesDestination() {
                             );
                           },
                     ),
+                    // 填完账号能当场验证登录（BUG-2581）：以前只有跑一次刮削、翻报告才知道。
+                    SettingsActionItem(
+                      id: 'services.metadata.anidb_login_test',
+                      title: t.video_anidb_login_test,
+                      subtitle: t.video_anidb_login_test_hint,
+                      icon: Icons.login_outlined,
+                      onTap: testAniDbLogin,
+                    ),
                   ],
                 ),
               ],
