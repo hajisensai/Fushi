@@ -5075,7 +5075,5 @@
   "video_anidb_login_test_failed_other": "AniDB login failed ($reason)",
   "shortcut_lookup_page_escape_minimize": "Back key on the lookup page minimizes the window",
   "shortcut_lookup_page_escape_minimize_hint": "After the bring-to-front hotkey, press the back key (Esc by default) on the lookup page to send the window away and return to what you were doing. The query and results are kept.",
-  "video_subtitle_remote_player_rendered": "Server cannot extract this subtitle track; the player renders it directly (no word lookup): $label",
-  "video_subtitle_remote_player_rendered_extracting": "Server cannot extract this subtitle track; the player renders it directly for now, extracting in the background for word lookup: $label",
-  "video_subtitle_remote_extracted": "Subtitle extracted, word lookup enabled: $label"
+  "video_subtitle_remote_player_rendered": "Server cannot extract this subtitle track; the player renders it directly (no word lookup): $label"
 }

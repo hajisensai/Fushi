@@ -1989,10 +1989,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
 
-  /// BUG-2590：当前远端集的播放流 URL 与「是否原样送出源容器」（来自
-  /// [RemoteVideoStreamUrls]）。服务器抽不出内嵌文本轨时，前者给桌面后台 ffmpeg
-  /// 再 demux 一遍，后者决定能否把轨交给 libmpv 自绘（转码 HLS 不带轨）。
-  String? _remoteStreamUrl;
+  /// BUG-2590：当前远端集的流是否原样送出源容器（来自 [RemoteVideoStreamUrls]）。
+  /// 服务器抽不出内嵌文本轨时，决定能否把轨交给 libmpv 自绘（转码 HLS 不带轨）。
   bool _remoteStreamIsOriginalContainer = false;
 
   /// TODO-1307 字幕后置：用户在「字幕后置异步解析」间隙是否已显式关闭字幕
@@ -2962,7 +2960,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         episodeIndex: streamEpisodeIndex,
       );
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
-      _remoteStreamUrl = urls.streamUrl;
       _remoteStreamIsOriginalContainer = urls.streamIsOriginalContainer;
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
@@ -3010,19 +3007,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           final RemoteVideoEmbeddedSubtitleTrack? track = streamIndex == null
               ? null
               : _remoteEmbeddedTrackByStreamIndex(streamIndex);
-          // BUG-2590：本机后台抽取缓存命中 → 直接重放，不问服务器。
-          final File? cached =
-              track == null ? null : _cachedRemoteEmbeddedSubtitle(info, track);
-          if (cached != null) {
-            _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
-            cues = await _loadExternalSubtitleCues(cached.path, info.id);
-            if (cues.isNotEmpty) {
-              externalSub = cached.path;
-              _remoteSubtitlePath = cached.path;
-              restoredPrimarySource = persistedSub;
-              subtitleResolved = true;
-            }
-          } else if (streamIndex != null) {
+          if (streamIndex != null) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
             try {
               final Directory temp = await getTemporaryDirectory();
@@ -3148,8 +3133,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           seq == _episodeLoadSeq &&
           mounted &&
           !_failed) {
-        // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 自绘
-        //（桌面同时起后台抽取升级）；选不中（轨已变）静默无字幕，不阻断播放。
+        // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 自绘；
+        // 选不中（轨已变）静默无字幕，不阻断播放。
         unawaited(
           _showRemoteEmbeddedTrackViaPlayer(
             loadedController,

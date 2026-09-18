@@ -1,12 +1,11 @@
 // BUG-2590 取证：媒体服务器兼容层（「UHD Media Server」等）没有字幕抽取端点时，
-// 内嵌文本轨要能 ① 立即由 libmpv 自绘显示、② 桌面后台 ffmpeg 抽完后升级成可查词
-// cue、③ 重进影片按缓存恢复。对真服务器跑，直接把该条目推成播放页（不走库浏览）。
+// 内嵌文本轨要能 ① 立即由 libmpv 自绘显示、② 重进影片恢复到同一轨。对真服务器跑，
+// 直接把该条目推成播放页（不走库浏览）。
 //
 // 需要真实凭据 + 条目 id，经 --dart-define 注入（runner 用 -DartDefine 转发）：
 //   FUSHI_EMBY_URL / FUSHI_EMBY_USER / FUSHI_EMBY_PASS / FUSHI_EMBY_ITEM
 //   （或用已签发的令牌代替密码：FUSHI_EMBY_TOKEN + FUSHI_EMBY_USERID）
 //   FUSHI_EMBY_TRACK（服务器流号，默认 2）
-//   FUSHI_EMBY_EXTRACT_WAIT_S（等后台抽取的上限秒数，默认 420；0 = 不等 ②）
 //   FUSHI_EMBY_SHOT_SEEK_MS（① 截图前 seek 到的位置，真片首句常在台标之后）
 //   FUSHI_EMBY_EXPECT_FALLBACK（默认 true = 服务器抽不出、走回落；false = 原版
 //   Emby / Jellyfin，服务器抽取成功，直接 cue overlay、libmpv 不选轨——回归口径）
@@ -39,8 +38,6 @@ const String _userId = String.fromEnvironment('FUSHI_EMBY_USERID');
 const String _itemId = String.fromEnvironment('FUSHI_EMBY_ITEM');
 const int _trackIndex =
     int.fromEnvironment('FUSHI_EMBY_TRACK', defaultValue: 2);
-const int _extractWaitS =
-    int.fromEnvironment('FUSHI_EMBY_EXTRACT_WAIT_S', defaultValue: 420);
 
 /// 截图前 seek 到这里（毫秒；0 = 不 seek）：真片首条 cue 可能在片头台标之后。
 const int _shotSeekMs = int.fromEnvironment('FUSHI_EMBY_SHOT_SEEK_MS');
@@ -145,9 +142,6 @@ void main() {
         expect(hooks.debugRemoteEmbeddedStreamIndices, contains(_trackIndex),
             reason: '字幕轨列表应含目标内嵌轨');
         await hooks.debugSelectRemoteEmbeddedSubtitle(_trackIndex);
-        // ① 的状态要在选轨 future 返回后**立即**读：后台抽取是 unawaited 的，局域网
-        // 小文件几百毫秒就能抽完并升级成 cue（假 Emby 上实测 2s 内），pump 之后
-        // 看到的已是 ② 之后的状态。
         final String? sourceAfterSelect = hooks.debugCurrentSubtitleSource;
         final String? mpvTrackAfterSelect = hooks.debugActiveSubtitleTrackId;
         final bool graphicAfterSelect = hooks.debugGraphicSubtitleActive;
@@ -188,41 +182,7 @@ void main() {
           expect(shot1.saved, isTrue);
         }
 
-        // ── ② 桌面后台抽取 → 升级 cue overlay ──
-        if (_expectFallback && _extractWaitS > 0) {
-          final Stopwatch sw = Stopwatch()..start();
-          int cues = 0;
-          while (sw.elapsed.inSeconds < _extractWaitS) {
-            await tester.pump(const Duration(seconds: 1));
-            cues = hooks.debugCueCount;
-            if (cues > 0) break;
-            if (sw.elapsed.inSeconds % 30 == 0) {
-              debugPrint(
-                '[emb-itest] waiting extraction ${sw.elapsed.inSeconds}s '
-                'pos=${hooks.debugPositionMs}',
-              );
-            }
-          }
-          debugPrint(
-            '[emb-itest] extraction: cues=$cues after ${sw.elapsed} '
-            'mpvTrack=${hooks.debugActiveSubtitleTrackId} '
-            'graphic=${hooks.debugGraphicSubtitleActive}',
-          );
-          expect(cues, greaterThan(0),
-              reason: '后台抽取应在 ${_extractWaitS}s 内完成并升级成 cue');
-          expect(hooks.debugCurrentSubtitleSource, 'embedded:$_trackIndex');
-          expect(hooks.debugActiveSubtitleTrackId, 'no',
-              reason: '升级后 libmpv 自绘应关闭，改由 overlay 渲染');
-          expect(hooks.debugGraphicSubtitleActive, isFalse);
-          await tester.pump(const Duration(seconds: 3));
-          final ObserveShot shot2 = await captureFlutterFrame(
-            tester,
-            'emb-02-cue-overlay',
-          );
-          expect(shot2.saved, isTrue);
-        }
-
-        // ── ③ 重进：按持久化的 embedded:<n> 恢复（缓存命中 → cue；否则自绘）──
+        // ── ② 重进：按持久化的 embedded:<n> 恢复（原版 → cue；兼容层 → 自绘）──
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
         navigator.pop();
@@ -247,16 +207,17 @@ void main() {
         );
         expect(hooks2.debugCurrentSubtitleSource, 'embedded:$_trackIndex',
             reason: '重进应恢复上次选的内嵌轨');
-        if (!_expectFallback || _extractWaitS > 0) {
+        if (!_expectFallback) {
           expect(hooks2.debugCueCount, greaterThan(0),
-              reason: '已抽取过 / 服务器可抽 → 重进直接得到 cue');
+              reason: '服务器可抽 → 重进直接得到 cue');
         } else {
-          expect(hooks2.debugCueCount > 0 || hooks2.debugGraphicSubtitleActive,
-              isTrue);
+          expect(hooks2.debugGraphicSubtitleActive, isTrue,
+              reason: '兼容层 → 重进后仍由 libmpv 自绘');
+          expect(hooks2.debugCueCount, 0);
         }
         final ObserveShot shot3 = await captureFlutterFrame(
           tester,
-          'emb-03-reopen',
+          'emb-02-reopen',
         );
         expect(shot3.saved, isTrue);
       },

@@ -1277,17 +1277,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String path, {
     String? selectedSource,
     String? label,
-    bool showLoadingOverlay = true,
-    String? switchedMessage,
   }) async {
     final String displayLabel = label ?? p.basename(path);
-    // 后台升级（[_upgradeRemoteEmbeddedTrackToCues]）在播放中途静默切换，不闪遮罩。
-    if (showLoadingOverlay) _showSubtitleLoadingOverlay();
+    _showSubtitleLoadingOverlay();
     final List<AudioCue> cues;
     try {
       cues = await _loadExternalSubtitleCues(path, widget.bookUid);
     } finally {
-      if (showLoadingOverlay) _hideSubtitleLoadingOverlay();
+      _hideSubtitleLoadingOverlay();
     }
     if (!mounted) return;
     if (cues.isEmpty) {
@@ -1311,7 +1308,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _currentEpisode,
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
-    _showOsd(switchedMessage ?? t.video_subtitle_switched(label: displayLabel));
+    _showOsd(t.video_subtitle_switched(label: displayLabel));
   }
 
   String _remoteEmbeddedSubtitleSource(
@@ -1348,18 +1345,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
     final String label = _remoteEmbeddedSubtitleLabel(track);
     final String source = _remoteEmbeddedSubtitleSource(track);
-    // BUG-2590：本机已从直出容器流抽过该轨（桌面后台 ffmpeg 缓存）→ 直接用，
-    // 不再向服务器要（它上次就是抽不出才走到后台抽取的）。
-    final File? cached = _cachedRemoteEmbeddedSubtitle(info, track);
-    if (cached != null) {
-      await _applyRemoteSubtitle(
-        controller,
-        cached.path,
-        selectedSource: source,
-        label: label,
-      );
-      return;
-    }
     final Directory temp = await getTemporaryDirectory();
     final File subtitle = File(
       p.join(
@@ -1383,9 +1368,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
       if (!mounted) return;
       // BUG-2590：服务器抽不出该轨（兼容层没有字幕端点 → 404）但直出的是原始
-      // 容器，这条轨就在 libmpv 正在 demux 的流里：交给 libmpv 自绘先把字幕显示
-      // 出来（桌面再后台抽一遍升级成可查词 cue）；流不是原始容器 / 轨未就绪才
-      // 按下载失败提示。
+      // 容器，这条轨就在 libmpv 正在 demux 的流里：交给 libmpv 自绘把字幕显示
+      // 出来；流不是原始容器 / 轨未就绪才按下载失败提示。
       final bool shown = await _showRemoteEmbeddedTrackViaPlayer(
         controller,
         track,
@@ -1408,30 +1392,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
   }
 
-  // ── BUG-2590 远端直出容器的内嵌轨：libmpv 自绘回落 + 桌面后台抽取升级 ─────────
+  // ── BUG-2590 远端直出容器的内嵌轨：libmpv 自绘回落 ──────────────────────────
   //
   // 媒体服务器兼容层（飞牛、「UHD Media Server」等自研 Emby 兼容层）没有
   // `/Videos/…/Subtitles/…/Stream` 抽取端点（nginx 404），PlaybackInfo 也如实标
   // `SupportsExternalStream=false`；但 DirectPlay 送来的就是原始 mkv，文本轨在流里。
-  // 两段式：① 立即把轨交给 libmpv 自绘（瞬时、零额外流量、不可查词，与图形轨
-  // BUG-122 同一降级语义）；② 桌面后台用 ffmpeg 对同一条流再 demux 一遍（实测
-  // 1.77 GB / 24 分钟集 ≈ 2.5 分钟），完成且用户仍选着该轨时静默升级成 cue overlay。
-  // 移动端只做 ①：蜂窝流量把容器再读一遍不可接受。
-
-  /// 远端直出容器流的内嵌字幕缓存目录（[remoteEmbeddedSubtitleCacheDir]）：键用
-  /// 条目 id + 字节数，不用 URL（每次播放带新 PlaySessionId）。
-  Directory _remoteEmbeddedSubtitleCacheDir(RemoteVideoInfo info) =>
-      remoteEmbeddedSubtitleCacheDir('${info.id}_${info.sizeBytes ?? 0}');
-
-  /// 该轨在本机缓存里的已抽取文件；没有返回 null。
-  File? _cachedRemoteEmbeddedSubtitle(
-    RemoteVideoInfo info,
-    RemoteVideoEmbeddedSubtitleTrack track,
-  ) => cachedEmbeddedSubtitleFile(
-    _remoteEmbeddedSubtitleCacheDir(info),
-    track.containerTrackOrdinal ?? track.streamIndex,
-    track.codec,
-  );
+  // 把轨交给 libmpv 自绘：瞬时、零额外流量、不可查词（与图形轨 BUG-122 同一降级）。
+  // 有意**不**在后台用 ffmpeg 把流再读一遍抽成 cue：那等于把整集流量翻倍（用户
+  // 2026-09-19 拍板不要）。
 
   /// 按流号找当前集的远端内嵌轨（恢复路径只持久化了 `embedded:<n>` 的 n）。
   RemoteVideoEmbeddedSubtitleTrack? _remoteEmbeddedTrackByStreamIndex(
@@ -1446,8 +1414,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 把远端直出容器里的文本轨交给 libmpv 自绘（复用图形轨通路
   /// [VideoPlayerController.selectEmbeddedGraphicTrack]：同样是「libmpv 渲染、无 cue、
-  /// 不可查词」的降级），选中即持久化选择、OSD 说明降级；桌面再起后台抽取升级
-  /// （[_upgradeRemoteEmbeddedTrackToCues]）。
+  /// 不可查词」的降级），选中即持久化选择、OSD 说明降级。
   ///
   /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨未就绪 / 序号越界，调用方
   /// 按下载失败提示。
@@ -1458,8 +1425,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
     required String label,
   }) async {
     if (!_remoteStreamIsOriginalContainer) return false;
-    final RemoteVideoInfo? info = _effectiveRemoteInfo;
-    if (info == null) return false;
     final int seq = _episodeLoadSeq;
     final bool shown = await controller.selectEmbeddedGraphicTrack(
       track.containerTrackOrdinal ?? track.streamIndex,
@@ -1471,64 +1436,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
     _showOsd(
-      isDesktopPlatform
-          ? t.video_subtitle_remote_player_rendered_extracting(label: label)
-          : t.video_subtitle_remote_player_rendered(label: label),
+      t.video_subtitle_remote_player_rendered(label: label),
       severity: ToastSeverity.warning,
     );
-    if (isDesktopPlatform) {
-      unawaited(
-        _upgradeRemoteEmbeddedTrackToCues(
-          info,
-          track,
-          source: source,
-          label: label,
-          seq: seq,
-        ),
-      );
-    }
     return true;
-  }
-
-  /// 后台对直出容器流跑 ffmpeg 全轨 demux（[extractRemoteEmbeddedSubtitle]，单飞 +
-  /// 缓存），抽完后若仍是同一集、用户仍选着该轨，就从 libmpv 自绘静默切到 cue
-  /// overlay（可查词）。换集 / 换字幕 / 关字幕 / 抽取失败一律不抢占，缓存留给下次。
-  Future<void> _upgradeRemoteEmbeddedTrackToCues(
-    RemoteVideoInfo info,
-    RemoteVideoEmbeddedSubtitleTrack track, {
-    required String source,
-    required String label,
-    required int seq,
-  }) async {
-    final String? streamUrl = _remoteStreamUrl;
-    if (streamUrl == null) return;
-    final File? extracted = await extractRemoteEmbeddedSubtitle(
-      streamUrl: streamUrl,
-      cacheDir: _remoteEmbeddedSubtitleCacheDir(info),
-      ordinal: track.containerTrackOrdinal ?? track.streamIndex,
-      codec: track.codec,
-      sizeBytes: info.sizeBytes ?? 0,
-      durationMs: info.durationMs ?? 0,
-    );
-    if (!mounted || seq != _episodeLoadSeq) return;
-    if (extracted == null) {
-      debugPrint(
-        '[VideoFushiPage] remote embedded subtitle extraction failed '
-        '(${info.id} / $source); staying on player-rendered track',
-      );
-      return;
-    }
-    if (_currentSubtitleSource != source) return;
-    final VideoPlayerController? controller = _controller;
-    if (controller == null) return;
-    await _applyRemoteSubtitle(
-      controller,
-      extracted.path,
-      selectedSource: source,
-      label: label,
-      showLoadingOverlay: false,
-      switchedMessage: t.video_subtitle_remote_extracted(label: label),
-    );
   }
 
   /// 远端模式：关闭字幕（清空 cue overlay + 关 libmpv 字幕轨；仅内存，不写本地 DB）。
@@ -1624,19 +1535,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final RemoteVideoInfo? info = _effectiveRemoteInfo;
     if (client == null || info == null) return;
     final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
-    final String label = _remoteEmbeddedSubtitleLabel(track);
-    // BUG-2590：主字幕的后台抽取是全轨一次抽完的，副字幕同样先吃缓存。副层是纯
-    // cue 流、没有 libmpv 自绘可回落，缓存没有时仍只能问服务器。
-    final File? cached = _cachedRemoteEmbeddedSubtitle(info, track);
-    if (cached != null) {
-      await _applyRemoteSecondarySubtitle(
-        controller,
-        cached.path,
-        selectedSource: _remoteEmbeddedSubtitleSource(track),
-        label: label,
-      );
-      return;
-    }
     final Directory temp = await getTemporaryDirectory();
     final File subtitle = File(
       p.join(
@@ -1647,6 +1545,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ),
       ),
     );
+    final String label = _remoteEmbeddedSubtitleLabel(track);
     try {
       await client.getRemoteVideoSubtitle(
         info.id,

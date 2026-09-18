@@ -5075,7 +5075,5 @@
   "video_anidb_login_test_failed_other": "AniDB 登录失败（$reason）",
   "shortcut_lookup_page_escape_minimize": "查词页按返回键最小化窗口",
   "shortcut_lookup_page_escape_minimize_hint": "置顶热键唤出查词页后，在查词页按返回键（默认 Esc）把窗口收回去，直接回到之前的程序；查询和结果原样保留。",
-  "video_subtitle_remote_player_rendered": "服务器无法抽取该字幕轨，已改由播放器直接渲染（不可逐字查词）：$label",
-  "video_subtitle_remote_player_rendered_extracting": "服务器无法抽取该字幕轨，先由播放器直接渲染，正在后台抽取（完成后可逐字查词）：$label",
-  "video_subtitle_remote_extracted": "字幕已抽取完成，已可逐字查词：$label"
+  "video_subtitle_remote_player_rendered": "服务器无法抽取该字幕轨，已改由播放器直接渲染（不可逐字查词）：$label"
 }
