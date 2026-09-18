@@ -807,6 +807,15 @@ abstract class VideoFushiTestHooks {
   /// 暂停 / 绝对 seek（BUG-2108 首次覆盖计时 E2E：拖回重听不计时）。
   Future<void> debugPause();
   Future<void> debugSeekMs(int positionMs);
+
+  /// BUG-2590 远端内嵌轨回落取证：按服务器流号选内嵌轨（走产品同一条
+  /// `_applyRemoteEmbeddedSubtitle`），再读当前字幕源 / cue 数 / libmpv 选中轨。
+  Future<void> debugSelectRemoteEmbeddedSubtitle(int streamIndex);
+  String? get debugCurrentSubtitleSource;
+  int get debugCueCount;
+  String? get debugActiveSubtitleTrackId;
+  bool get debugGraphicSubtitleActive;
+  List<int> get debugRemoteEmbeddedStreamIndices;
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1056,6 +1065,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
+
+  @override
+  Future<void> debugSelectRemoteEmbeddedSubtitle(int streamIndex) async {
+    final VideoPlayerController? controller = _controller;
+    final RemoteVideoEmbeddedSubtitleTrack? track =
+        _remoteEmbeddedTrackByStreamIndex(streamIndex);
+    if (controller == null || track == null) {
+      throw StateError('no controller / no remote embedded track $streamIndex');
+    }
+    await _applyRemoteEmbeddedSubtitle(controller, track);
+  }
+
+  @override
+  String? get debugCurrentSubtitleSource => _currentSubtitleSource;
+
+  @override
+  int get debugCueCount => _controller?.cues.length ?? 0;
+
+  @override
+  String? get debugActiveSubtitleTrackId => _controller?.activeSubtitleTrackId;
+
+  @override
+  bool get debugGraphicSubtitleActive =>
+      _controller?.isPlayerRenderedSubtitleActive ?? false;
+
+  @override
+  List<int> get debugRemoteEmbeddedStreamIndices => <int>[
+        for (final RemoteVideoEmbeddedSubtitleTrack t
+            in _remoteEmbeddedSubtitleTracks)
+          t.streamIndex,
+      ];
 
   @override
   bool get debugIsPlaying => _controller?.isPlaying ?? false;
@@ -1948,6 +1988,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _remoteSubtitlePath;
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
+
+  /// BUG-2590：当前远端集的播放流 URL 与「是否原样送出源容器」（来自
+  /// [RemoteVideoStreamUrls]）。服务器抽不出内嵌文本轨时，前者给桌面后台 ffmpeg
+  /// 再 demux 一遍，后者决定能否把轨交给 libmpv 自绘（转码 HLS 不带轨）。
+  String? _remoteStreamUrl;
+  bool _remoteStreamIsOriginalContainer = false;
 
   /// TODO-1307 字幕后置：用户在「字幕后置异步解析」间隙是否已显式关闭字幕
   /// （[_clearRemoteSubtitle]）。为真时 [_resolveDeferredYoutubeCaptions] 只回填 cue 供菜单
@@ -2916,6 +2962,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         episodeIndex: streamEpisodeIndex,
       );
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
+      _remoteStreamUrl = urls.streamUrl;
+      _remoteStreamIsOriginalContainer = urls.streamIsOriginalContainer;
       String? externalSub;
       List<AudioCue> cues = const <AudioCue>[];
       // 优先恢复用户上次为该远端集手选的字幕：远端视频无本地 DB 行，字幕只进内存、退出即丢
@@ -2933,6 +2981,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // _currentSubtitleSource 设成外挂文件路径（下载的临时抽取产物），须在其后
       // 改回本编码，否则字幕菜单的内嵌轨行高亮不上、再选一次还会重复下载。
       String? restoredPrimarySource;
+      // BUG-2590：上次是服务器抽不出、走了 libmpv 自绘的内嵌轨——起播后仍按同一
+      // 序号交给 libmpv（mpv 轨表要等 load 后才有，故记下来在 _applyLoad 之后做）。
+      RemoteVideoEmbeddedSubtitleTrack? playerRenderedTrack;
       if (persistedSub != null) {
         if (SubtitleSource.isOff(persistedSub)) {
           // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
@@ -2956,7 +3007,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           final int? streamIndex = int.tryParse(
             persistedSub.substring(SubtitleSource.embeddedPrefix.length),
           );
-          if (streamIndex != null) {
+          final RemoteVideoEmbeddedSubtitleTrack? track = streamIndex == null
+              ? null
+              : _remoteEmbeddedTrackByStreamIndex(streamIndex);
+          // BUG-2590：本机后台抽取缓存命中 → 直接重放，不问服务器。
+          final File? cached =
+              track == null ? null : _cachedRemoteEmbeddedSubtitle(info, track);
+          if (cached != null) {
+            _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
+            cues = await _loadExternalSubtitleCues(cached.path, info.id);
+            if (cues.isNotEmpty) {
+              externalSub = cached.path;
+              _remoteSubtitlePath = cached.path;
+              restoredPrimarySource = persistedSub;
+              subtitleResolved = true;
+            }
+          } else if (streamIndex != null) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
             try {
               final Directory temp = await getTemporaryDirectory();
@@ -2986,6 +3052,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               debugPrint(
                 '[VideoFushiPage] embedded subtitle replay failed: $e',
               );
+              // BUG-2590：服务器抽不出 → 与手选时同款回落，起播后交给 libmpv 自绘。
+              if (track != null &&
+                  track.isText &&
+                  urls.streamIsOriginalContainer) {
+                playerRenderedTrack = track;
+                subtitleResolved = true;
+              }
             }
           }
         }
@@ -3068,6 +3141,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (restoredPrimarySource != null && mounted) {
         // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
         setState(() => _currentSubtitleSource = restoredPrimarySource);
+      }
+      final VideoPlayerController? loadedController = _controller;
+      if (playerRenderedTrack != null &&
+          loadedController != null &&
+          seq == _episodeLoadSeq &&
+          mounted &&
+          !_failed) {
+        // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 自绘
+        //（桌面同时起后台抽取升级）；选不中（轨已变）静默无字幕，不阻断播放。
+        unawaited(
+          _showRemoteEmbeddedTrackViaPlayer(
+            loadedController,
+            playerRenderedTrack,
+            source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
+            label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+          ),
+        );
       }
       // TODO-1301（BUG-600）：制卡音频源与批量制卡守卫（youtube_clip_miner.dart:67）完全
       // 一致——muxed 挖矿流自带音轨时置 null，让引擎回落 miningSource(muxed 360p) 抽音频

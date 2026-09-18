@@ -1,0 +1,16 @@
+## BUG-2590 · 媒体服务器兼容层无字幕抽取端点：内嵌文本轨回落 libmpv 自绘并后台抽取
+- **报告**：2026-09-18（用户截图：Emby 剧集《要我和你交往也不是不行》S01E01，字幕面板选「Embedded 2: jpn / subrip」→ OSD「无法加载该字幕（可能是图形或不支持的字幕轨）」；BUG-2585 修后的「还是无法使用」）
+- **真实性**：✅ 真 bug（沿真实代码路径 + 真服务器取证）
+  - 安装版 `error_log.txt` 直接给出根因：`VideoFushi.remoteSubtitle JellyfinApiException(404, /Videos/<item>/<source>/Subtitles/2/Stream.srt)`，轨 2/3/4/5 全部 404。响应体是 **nginx/1.30.4 默认 404 页**，不是 Emby 的错误。
+  - 对该服务器探针：`/System/Info` 报 `ProductName: "UHD Media Server"`、`Version: 4.9.3.0`——是自研 Emby 兼容层，不实现 `/Videos/{id}/{source}/Subtitles/{index}/Stream.{ext}` 抽取端点（`Stream.js` / `.vtt` / `/0/Stream.srt` / `subtitles.m3u8` 全 404）；PlaybackInfo 也如实标了 4 条 subrip 轨 `IsExternal=false, SupportsExternalStream=false, DeliveryMethod=null`。但 `SupportsDirectPlay=true`，直出的就是原始 mkv（1.77 GB，字幕轨 2..5 在流里）。
+  - 本仓文本字幕一律走自家 cue overlay（`_applyRemoteEmbeddedSubtitle` → `client.getRemoteVideoSubtitle` 下载 → cue），`fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart` 的 catch 分支只会报「无法加载」，从没想过「轨就在 libmpv 正在 demux 的流里」；恢复路径 `video_fushi_page.dart` `_loadRemoteEpisode` 的 `embedded:<n>` 重放同样下载失败即静默无字幕。
+  - 附带事实：Emby / Jellyfin 的 `MediaStreams[].Index` 是**全局**流号（视频 0 / 音频 1 / 字幕 2..），libmpv `tracks.subtitle` 要的是字幕内的相对序号，直接拿 streamIndex 去选 mpv 轨会越界。
+- **[x] ① 已修复** — 两段式回落（桌面 ①+②，移动端只 ①）：
+  - ① `_showRemoteEmbeddedTrackViaPlayer`：下载失败且 `RemoteVideoStreamUrls.streamIsOriginalContainer`（Jellyfin 客户端按 PlayMethod ≠ Transcode 置）时，把轨按 `RemoteVideoEmbeddedSubtitleTrack.containerTrackOrdinal`（`JellyfinVideoClient.containerSubtitleOrdinals` 由全局流号换算，图形轨占号、外挂不占）交给 `VideoPlayerController.selectEmbeddedGraphicTrack` 自绘——瞬时出字幕、零额外流量、不可查词（与 BUG-122 图形轨同一降级），选中即持久化，OSD 说明降级；恢复路径同样回落。
+  - ② `_upgradeRemoteEmbeddedTrackToCues`：桌面后台用随包 ffmpeg 对同一条直出流跑全轨 demux 进缓存（`extractRemoteEmbeddedSubtitle` / `remoteEmbeddedSubtitleCacheDir`，键 = 条目 id + 字节数，不用带 PlaySessionId 的 URL），完成且仍是同一集、用户仍选着该轨时静默切成 cue overlay（可查词）；主/副字幕与恢复路径都先吃缓存。远端输入必须 `-seekable 0` 顺序整读（`buildFfmpegMultiSubtitleArgs`）：随包 ffmpeg n7.1.5 可 seek 模式对 1.77 GB 流 400 s 抽不完，顺序读 8.3x 实时。超时 `remoteSubtitleExtractTimeout` 取「体积 / 时长」较大者（实测该服务器流代理「突发 1.3 GB 后 ≈1x 实时限速」，整读最坏 = 一集时长）。
+- **[x] ② 已加自动化测试** —
+  - 源码守卫 `fushi/test/pages/video_remote_embedded_subtitle_player_fallback_guard_test.dart`（下载失败先回落再报错、只对原始容器、按容器内序号、换集/换字幕不抢占、恢复路径回落）。
+  - `fushi/test/sync/jellyfin_playback_negotiation_test.dart`「内嵌字幕轨的容器内序号与直出标记」（全局流号→序号、转码流不标原始容器、无 PlaybackInfo 仍标）。
+  - `fushi/test/media/video/video_subtitle_source_test.dart`「远端直出容器流的内嵌字幕抽取」（超时、缓存目录、缓存命中不碰 ffmpeg）；`fushi/test/utils/desktop_audio_clipper_test.dart`（远端输入 `-seekable 0`）；`fushi/test/sync/remote_dto_wire_format_golden_test.dart`（`containerTrackOrdinal` 缺省 null / 往返）。
+  - 真 app 取证 `fushi/integration_test/media_server_emby_embedded_subtitle_itest.dart`（`-DartDefine FUSHI_EMBY_URL/…/ITEM`，可用 TOKEN/USERID 代替密码）：选轨 → libmpv 选中真实轨 + 无 cue → 后台抽取升级成 cue → 重进按缓存恢复。
+- **备注**：飞牛影视同样没有该端点（BUG-2254 ④），同一条回落路生效。移动端不做后台抽取（蜂窝流量把容器再读一遍不可接受），只有 libmpv 自绘；副字幕层没有 libmpv 可回落，只吃缓存。

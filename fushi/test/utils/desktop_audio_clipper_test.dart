@@ -996,6 +996,50 @@ void main() {
       );
       expect(args, <String>['-y', '-i', '/v/x.mkv']);
     });
+
+    test('http(s) 直出容器流：-i 之前带 -seekable 0 顺序整读（BUG-2590）', () {
+      // 随包 ffmpeg 默认可 seek 时对 1.77 GB 的 Emby 直出 mkv 400 s 抽不完，
+      // 顺序读 8.3x 实时约 3 分钟；本地文件不加。
+      final List<String> remote = buildFfmpegMultiSubtitleArgs(
+        inputPath: 'https://nas/Videos/ep1/stream?static=true&api_key=t',
+        outputs: <int, String>{0: '/c/sub_0.srt'},
+      );
+      expect(remote, <String>[
+        '-y',
+        '-seekable',
+        '0',
+        '-i',
+        'https://nas/Videos/ep1/stream?static=true&api_key=t',
+        '-map',
+        '0:s:0',
+        '/c/sub_0.srt',
+      ]);
+      expect(
+        buildFfmpegSubtitleArgs(
+          inputPath: 'http://nas/Videos/ep1/stream',
+          streamIndex: 2,
+          outputPath: '/c/sub_2.srt',
+        ),
+        <String>[
+          '-y',
+          '-seekable',
+          '0',
+          '-i',
+          'http://nas/Videos/ep1/stream',
+          '-map',
+          '0:s:2',
+          '/c/sub_2.srt',
+        ],
+      );
+      expect(
+        buildFfmpegSubtitleArgs(
+          inputPath: '/v/movie.mkv',
+          streamIndex: 0,
+          outputPath: '/c/sub_0.srt',
+        ),
+        isNot(contains('-seekable')),
+      );
+    });
   });
 
   group('extractEmbeddedSubtitlesViaFfmpeg (BUG-104 单趟全轨缓存)', () {

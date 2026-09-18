@@ -27,9 +27,14 @@ typedef FfmpegFailureReporter = void Function(String summary);
 /// 流 URL（YouTube 分离流、其它远端直链）。本地路径要用 `File.existsSync()` 早退避免喂
 /// ffmpeg 一个不存在的文件；但对 http(s) URL 该守卫会误杀——文件系统里当然没有它。此谓词
 /// 让各抽取器只对本地路径做存在性检查，URL 直接放行给 ffmpeg（ffmpeg 自己吃 http 输入）。
-bool _isRemoteFfmpegInput(String inputPath) {
+///
+/// 公开给内嵌字幕抽取（`video_subtitle_source.dart`）：媒体服务器兼容层没有字幕
+/// 端点时，对直出的原始容器流 URL 跑同一套 ffmpeg demux（BUG-2590）。
+bool isRemoteFfmpegInput(String inputPath) {
   return inputPath.startsWith('http://') || inputPath.startsWith('https://');
 }
+
+bool _isRemoteFfmpegInput(String inputPath) => isRemoteFfmpegInput(inputPath);
 
 /// 仅供测试：暴露 [_isRemoteFfmpegInput] 的判定（本地路径 vs http(s) 流 URL）。
 @visibleForTesting
@@ -1219,6 +1224,7 @@ List<String> buildFfmpegSubtitleArgs({
 }) {
   return <String>[
     '-y',
+    ..._remoteSequentialReadArgs(inputPath),
     '-i',
     inputPath,
     '-map',
@@ -1226,6 +1232,17 @@ List<String> buildFfmpegSubtitleArgs({
     outputPath,
   ];
 }
+
+/// http(s) 容器流的字幕 demux 必须**顺序整读**（`-seekable 0`，BUG-2590）。
+///
+/// 默认可 seek 时随包 ffmpeg（n7.1.5）对 1.77 GB 的 Emby 直出 mkv 400 s 都抽不完，
+/// 加 `-seekable 0` 后 8.3x 实时、约 3 分钟抽完四条轨——与本机完整版 ffmpeg 持平。
+/// 字幕包与视频交错，不管怎样都要把容器从头读到尾，seek 只是多付连接与 Range 的
+/// 代价、没有任何跳读收益；本地文件不受影响（空列表）。放在 `-i` 之前才作用于输入。
+List<String> _remoteSequentialReadArgs(String inputPath) =>
+    _isRemoteFfmpegInput(inputPath)
+        ? const <String>['-seekable', '0']
+        : const <String>[];
 
 /// Demuxes the [streamIndex]-th embedded subtitle track of [inputPath] into
 /// [outputPath] via ffmpeg. Returns [outputPath] on success, or null if the
@@ -1291,7 +1308,12 @@ List<String> buildFfmpegMultiSubtitleArgs({
   required String inputPath,
   required Map<int, String> outputs,
 }) {
-  final List<String> args = <String>['-y', '-i', inputPath];
+  final List<String> args = <String>[
+    '-y',
+    ..._remoteSequentialReadArgs(inputPath),
+    '-i',
+    inputPath,
+  ];
   final List<int> indices = outputs.keys.toList()..sort();
   for (final int idx in indices) {
     args.addAll(<String>['-map', '0:s:$idx', outputs[idx]!]);
@@ -1348,7 +1370,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
   Duration timeout = const Duration(seconds: 180),
 }) async {
   if (outputs.isEmpty) return const <int, String>{};
-  if (!File(inputPath).existsSync()) return const <int, String>{};
+  // http(s) 直出容器流（BUG-2590）没有本地文件可查存在性，交给 ffmpeg 自己打开。
+  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
+    return const <int, String>{};
+  }
   try {
     for (final String out in outputs.values) {
       File(out).parent.createSync(recursive: true);

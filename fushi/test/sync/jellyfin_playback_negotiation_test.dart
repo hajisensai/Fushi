@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
-    show RemoteVideoStreamUrls;
+    show RemoteVideoEmbeddedSubtitleTrack, RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 
@@ -186,6 +186,124 @@ void main() {
           isEmpty,
         );
       }
+    });
+  });
+
+  group('内嵌字幕轨的容器内序号与直出标记（BUG-2590）', () {
+    // 真机形状（「UHD Media Server」Emby 兼容层）：视频 0 / 音频 1 / 字幕 2..5，
+    // 全部 IsExternal=false、SupportsExternalStream=false；另模拟一条图形轨与一条
+    // 外挂 srt 文件夹在中间，考验序号只数容器内的轨、图形轨也占号。
+    Map<String, Object?> episodeWithSubs() => <String, Object?>{
+          'Id': 'ep1',
+          'Name': 'E01',
+          'Type': 'Episode',
+          'MediaSources': <Object?>[
+            <String, Object?>{
+              'Id': 'src1',
+              'MediaStreams': <Object?>[
+                <String, Object?>{'Type': 'Video', 'Index': 0},
+                <String, Object?>{'Type': 'Audio', 'Index': 1},
+                <String, Object?>{
+                  'Type': 'Subtitle',
+                  'Index': 2,
+                  'Codec': 'subrip',
+                  'Language': 'jpn',
+                  'IsTextSubtitleStream': true,
+                },
+                <String, Object?>{
+                  'Type': 'Subtitle',
+                  'Index': 3,
+                  'Codec': 'PGSSUB',
+                  'IsTextSubtitleStream': false,
+                },
+                <String, Object?>{
+                  'Type': 'Subtitle',
+                  'Index': 4,
+                  'Codec': 'subrip',
+                  'Language': 'chi',
+                  'IsTextSubtitleStream': true,
+                },
+                <String, Object?>{
+                  'Type': 'Subtitle',
+                  'Index': 5,
+                  'Codec': 'srt',
+                  'IsExternal': true,
+                  'IsTextSubtitleStream': true,
+                },
+              ],
+            },
+          ],
+        };
+
+    test('containerSubtitleOrdinals：全局流号 → 容器内字幕序号，图形轨占号、外挂不占', () {
+      final Map<int, int> ordinals =
+          JellyfinVideoClient.containerSubtitleOrdinals(
+        const <JellyfinSubtitleStream>[
+          // 故意乱序：序号按 Index 升序算，与 MediaStreams 给出的顺序无关。
+          JellyfinSubtitleStream(index: 4, codec: 'subrip'),
+          JellyfinSubtitleStream(index: 9, codec: 'srt', isExternal: true),
+          JellyfinSubtitleStream(
+            index: 3,
+            codec: 'PGSSUB',
+            isTextSubtitleStream: false,
+          ),
+          JellyfinSubtitleStream(index: 2, codec: 'subrip'),
+        ],
+      );
+      expect(ordinals, <int, int>{2: 0, 3: 1, 4: 2});
+      expect(ordinals.containsKey(9), isFalse, reason: '外挂文件不在容器里');
+    });
+
+    test('直播放：轨带 containerTrackOrdinal，流标记为原始容器', () async {
+      final JellyfinVideoClient c = clientWith((http.Request req) async {
+        if (req.url.path == '/Users/u1/Items/ep1') {
+          return json(episodeWithSubs());
+        }
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return json(_playbackInfoJson());
+        }
+        return http.Response('', 204);
+      });
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      expect(urls.streamIsOriginalContainer, isTrue);
+      final Map<int, int?> byIndex = <int, int?>{
+        for (final RemoteVideoEmbeddedSubtitleTrack t
+            in urls.embeddedSubtitleTracks)
+          t.streamIndex: t.containerTrackOrdinal,
+      };
+      // 文本轨 2 / 4 / 5 进选择器；图形轨 3 不进但占了容器内第 1 号；外挂 5 无序号。
+      expect(byIndex, <int, int?>{2: 0, 4: 2, 5: null});
+    });
+
+    test('转码 HLS：流不是原始容器（libmpv 自绘回落不可用）', () async {
+      final JellyfinVideoClient c = clientWith((http.Request req) async {
+        if (req.url.path == '/Users/u1/Items/ep1') {
+          return json(episodeWithSubs());
+        }
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return json(_playbackInfoJson(
+            directPlay: false,
+            transcodingUrl: '/videos/ep1/master.m3u8?PlaySessionId=ps-1',
+          ));
+        }
+        return http.Response('', 204);
+      });
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      expect(urls.streamIsOriginalContainer, isFalse);
+    });
+
+    test('兼容层没有 PlaybackInfo：手拼直出仍是原始容器', () async {
+      final JellyfinVideoClient c = clientWith((http.Request req) async {
+        if (req.url.path == '/Users/u1/Items/ep1') {
+          return json(episodeWithSubs());
+        }
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return http.Response('', 404);
+        }
+        return http.Response('', 204);
+      });
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      expect(urls.streamIsOriginalContainer, isTrue);
     });
   });
 

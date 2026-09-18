@@ -1550,8 +1550,12 @@ class RemoteVideoEmbeddedSubtitleTrack {
     this.isText = true,
     this.url,
     this.fileName,
+    this.containerTrackOrdinal,
   });
 
+  /// 服务端定位该轨用的流号：Fushi host 是 ffmpeg `-map 0:s:N` 的字幕相对序号，
+  /// Jellyfin / Emby 是 `MediaStreams[].Index`（**全局**流号，视频/音频也占号）。
+  /// 两者语义不同，只能原样回传给同一 host 下载；容器内选轨用 [containerTrackOrdinal]。
   final int streamIndex;
   final String codec;
   final String? language;
@@ -1559,6 +1563,12 @@ class RemoteVideoEmbeddedSubtitleTrack {
   final bool isText;
   final String? url;
   final String? fileName;
+
+  /// 该轨在**容器内字幕轨**里的 0 基序号（按 demux 顺序、含图形轨、不含外挂文件），
+  /// 与 libmpv `tracks.subtitle` 去掉 auto/no 后的下标同构——服务器抽不出该轨时
+  /// （兼容层无字幕端点，BUG-2590）播放页据此把它交给 libmpv 自绘。
+  /// null = 旧 host / 未换算，调用方按 [streamIndex] 兜底（Fushi host 两者同值）。
+  final int? containerTrackOrdinal;
 
   Map<String, Object?> toJson() => <String, Object?>{
         'streamIndex': streamIndex,
@@ -1568,6 +1578,8 @@ class RemoteVideoEmbeddedSubtitleTrack {
         'isText': isText,
         if (_isNonEmpty(url)) 'url': url,
         if (_isNonEmpty(fileName)) 'fileName': fileName,
+        if (containerTrackOrdinal != null)
+          'containerTrackOrdinal': containerTrackOrdinal,
       };
 
   RemoteVideoEmbeddedSubtitleTrack copyWith({
@@ -1582,6 +1594,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         isText: isText,
         url: url ?? this.url,
         fileName: fileName ?? this.fileName,
+        containerTrackOrdinal: containerTrackOrdinal,
       );
 
   static RemoteVideoEmbeddedSubtitleTrack fromJson(
@@ -1595,6 +1608,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         isText: json['isText'] != false,
         url: _jsonString(json['url']),
         fileName: _jsonString(json['fileName']),
+        containerTrackOrdinal: _jsonInt(json['containerTrackOrdinal']),
       );
 }
 
@@ -1997,11 +2011,18 @@ class RemoteVideoStreamUrls {
     this.miningVideoUrl,
     this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
+    this.streamIsOriginalContainer = true,
   });
 
   final String streamUrl;
   final String? subtitleUrl;
   final String? subtitleFileName;
+
+  /// [streamUrl] 是否原样送出源文件容器（Fushi host 直传 / Jellyfin·Emby
+  /// DirectPlay·DirectStream）。true 时 [embeddedSubtitleTracks] 里的轨也在 libmpv
+  /// 正在 demux 的流里，服务器抽不出文本时可交给 libmpv 自绘（BUG-2590）；转码
+  /// HLS 流不带内嵌字幕轨，这条回落路不可用。
+  final bool streamIsOriginalContainer;
 
   /// TODO-1000：分离音视频流（YouTube video-only）时的 audio-only 流 URL；播放页经
   /// `AudioTrack.uri` 外挂、制卡音频从它裁。同轨/muxed 时为 null。

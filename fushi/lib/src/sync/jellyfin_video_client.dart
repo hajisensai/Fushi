@@ -2396,6 +2396,9 @@ class JellyfinVideoClient
     JellyfinSubtitleStream? external;
     final List<RemoteVideoEmbeddedSubtitleTrack> tracks =
         <RemoteVideoEmbeddedSubtitleTrack>[];
+    final Map<int, int> ordinals = containerSubtitleOrdinals(
+      item.subtitleStreams,
+    );
     for (final JellyfinSubtitleStream s in item.subtitleStreams) {
       if (!s.isTextSubtitleStream || mediaSourceId == null) continue;
       final String url = api.subtitleUrl(
@@ -2412,6 +2415,7 @@ class JellyfinVideoClient
         title: s.title,
         url: url,
         fileName: _subtitleFileName(item, s),
+        containerTrackOrdinal: ordinals[s.index],
       ));
     }
 
@@ -2432,7 +2436,29 @@ class JellyfinVideoClient
       // direct play 是单条 muxed 流（自带音轨）。
       miningVideoHasAudio: true,
       embeddedSubtitleTracks: tracks,
+      // 转码 HLS 不带容器内字幕轨（profile 声明文本轨 External，服务器不烧），
+      // 播放页的「交给 libmpv 自绘」回落只对直出原始容器有效（BUG-2590）。
+      streamIsOriginalContainer: playback.session?.playMethod != 'Transcode',
     );
+  }
+
+  /// **纯函数**：`MediaStreams[].Index`（全局流号）→ 容器内字幕轨 0 基序号。
+  ///
+  /// 按 [JellyfinSubtitleStream.index] 升序（= ffprobe 流序 = libmpv demux 序）给
+  /// 每条**容器内**字幕轨编号，图形轨也占号（libmpv `tracks.subtitle` 同样含它），
+  /// 外挂文件（`IsExternal`）不在容器里、不占号。服务器抽不出文本时播放页据此
+  /// 让 libmpv 直接渲染流里的那条轨（[RemoteVideoEmbeddedSubtitleTrack.containerTrackOrdinal]）。
+  static Map<int, int> containerSubtitleOrdinals(
+    List<JellyfinSubtitleStream> streams,
+  ) {
+    final List<JellyfinSubtitleStream> inContainer = streams
+        .where((JellyfinSubtitleStream s) => !s.isExternal)
+        .toList(growable: false)
+      ..sort((JellyfinSubtitleStream a, JellyfinSubtitleStream b) =>
+          a.index.compareTo(b.index));
+    return <int, int>{
+      for (int i = 0; i < inContainer.length; i++) inContainer[i].index: i,
+    };
   }
 
   static String _subtitleFileName(JellyfinItem item, JellyfinSubtitleStream s) {

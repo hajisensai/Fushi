@@ -598,7 +598,9 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
 ) async {
   final int sizeBytes = _fileSizeOrZero(videoPath);
   final Duration timeout = subtitleExtractTimeoutForBytes(sizeBytes);
-  if (!File(videoPath).existsSync()) {
+  // http(s) 直出容器流（BUG-2590）：没有本地文件可查存在性，`-i` 只读头部就够
+  // 列轨，交给 ffmpeg 自己打开。
+  if (!isRemoteFfmpegInput(videoPath) && !File(videoPath).existsSync()) {
     return EmbeddedSubtitleTrackProbeResult(
       tracks: const <EmbeddedSubtitleTrack>[],
       status: EmbeddedSubtitleTrackProbeStatus.missingFile,
@@ -1301,23 +1303,28 @@ final Map<String, Future<void>> _embeddedExtractInFlight =
 /// peer call is already doing it).
 Future<void> _ensureAllEmbeddedSubtitlesExtracted(
   String videoPath,
-  Directory cacheDir,
-) {
+  Directory cacheDir, {
+  Duration? timeout,
+}) {
   final String key = cacheDir.path;
   final Future<void>? existing = _embeddedExtractInFlight[key];
   if (existing != null) return existing;
   final Future<void> fut =
-      _extractAllEmbeddedSubtitles(videoPath, cacheDir).whenComplete(() {
+      _extractAllEmbeddedSubtitles(videoPath, cacheDir, timeout: timeout)
+          .whenComplete(() {
     _embeddedExtractInFlight.remove(key);
   });
   _embeddedExtractInFlight[key] = fut;
   return fut;
 }
 
+/// [timeout] 覆盖默认的「按本地文件大小放大」预算：远端流没有本地文件可 stat，
+/// 调用方按服务器报的字节数用 [remoteSubtitleExtractTimeoutForBytes] 算好传入。
 Future<void> _extractAllEmbeddedSubtitles(
   String videoPath,
-  Directory cacheDir,
-) async {
+  Directory cacheDir, {
+  Duration? timeout,
+}) async {
   final List<EmbeddedSubtitleTrack> tracks =
       await listEmbeddedSubtitleTracks(videoPath);
   // Only text tracks (graphic pgs/dvd → null format) get extracted; cache file
@@ -1351,8 +1358,82 @@ Future<void> _extractAllEmbeddedSubtitles(
   await extractEmbeddedSubtitlesViaFfmpeg(
     inputPath: videoPath,
     outputs: outputs,
-    timeout: subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath)),
+    timeout:
+        timeout ?? subtitleExtractTimeoutForBytes(_fileSizeOrZero(videoPath)),
   );
+}
+
+// ── 远端直出容器流的内嵌字幕（BUG-2590）──────────────────────────────────────
+//
+// 媒体服务器兼容层（飞牛、「UHD Media Server」等）没有 `/Videos/…/Subtitles/…/Stream`
+// 抽取端点，而 DirectPlay 送来的就是原始 mkv——文本轨在流里。对流 URL 跑同一套
+// ffmpeg 全轨 demux 进缓存，播放页抽完后把轨从 libmpv 自绘升级成可查词的 cue。
+// 代价是把容器再读一遍（实测 1.77 GB / 24 分钟集 ≈ 2.5 分钟），故只在桌面后台做。
+
+/// 远端直出容器流的内嵌字幕缓存目录：按调用方给的稳定 [cacheKey]（条目 id +
+/// 字节数）键，**不能**按 URL——直出 URL 每次播放都带新的 PlaySessionId / 令牌。
+Directory remoteEmbeddedSubtitleCacheDir(String cacheKey) {
+  final String safe = cacheKey.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+  return Directory(
+    p.join(Directory.systemTemp.path, 'hibiki_vsub_cache', 'remote_$safe'),
+  );
+}
+
+/// [cacheDir] 里第 [ordinal] 条容器内字幕轨的缓存文件（与本地抽取同一命名
+/// `sub_<N>.<ext>`）；不存在 / 空文件 / 图形轨返回 null。
+File? cachedEmbeddedSubtitleFile(
+  Directory cacheDir,
+  int ordinal,
+  String codec,
+) {
+  final SubtitleFormat? format = subtitleFormatForCodec(codec);
+  if (format == null) return null;
+  final File cached = File(p.join(cacheDir.path, 'sub_$ordinal${_ext(format)}'));
+  return cached.existsSync() && cached.lengthSync() > 0 ? cached : null;
+}
+
+/// 对远端直出容器流 [streamUrl] 跑一遍全轨 demux 进 [cacheDir]（单飞 + 命中即返，
+/// 与本地 [_ensureAllEmbeddedSubtitlesExtracted] 同语义），返回第 [ordinal] 条轨的
+/// 缓存文件；ffmpeg 缺失 / 超时 / 抽不出返回 null，不抛。
+Future<File?> extractRemoteEmbeddedSubtitle({
+  required String streamUrl,
+  required Directory cacheDir,
+  required int ordinal,
+  required String codec,
+  required int sizeBytes,
+  int durationMs = 0,
+}) async {
+  final File? hit = cachedEmbeddedSubtitleFile(cacheDir, ordinal, codec);
+  if (hit != null) return hit;
+  await _ensureAllEmbeddedSubtitlesExtracted(
+    streamUrl,
+    cacheDir,
+    timeout: remoteSubtitleExtractTimeout(
+      sizeBytes: sizeBytes,
+      durationMs: durationMs,
+    ),
+  );
+  return cachedEmbeddedSubtitleFile(cacheDir, ordinal, codec);
+}
+
+/// **Pure**：远端流整读一遍的超时预算，取两条下限的较大者：
+///
+///  - 按体积：基础 120 s + 300 s/GiB（本地 [subtitleExtractTimeoutForBytes] 是磁盘
+///    速率的 8 s/GiB；网络实测约 11 MB/s ≈ 90 s/GiB，再留跨境余量）；
+///  - 按时长：120 s + 1.5 × 媒体时长——流媒体代理常见「突发后按码率限速」（实测
+///    UHD Media Server：前 1.3 GB 几秒，之后 ≈ 1x 实时），整读一遍最坏就是看完一集。
+///
+/// 夹在 [120 s, 2 h]。抽取全程后台、超时只是放弃升级（libmpv 自绘照常），故宁可宽。
+Duration remoteSubtitleExtractTimeout({
+  required int sizeBytes,
+  int durationMs = 0,
+}) {
+  final double gb = sizeBytes / (1024 * 1024 * 1024);
+  final double bySize = 120 + gb * 300;
+  final double byDuration = 120 + (durationMs / 1000) * 1.5;
+  final int seconds =
+      (bySize > byDuration ? bySize : byDuration).clamp(120, 7200).round();
+  return Duration(seconds: seconds);
 }
 
 int _fileSizeOrZero(String path) {
