@@ -547,7 +547,7 @@ DictionarySearchResult buildResultFromLookup({
   // 装了几本词典就够吃满整个上限——排在它后面的 とわ / とこしえ 连循环体都进不去。
   // 用户症状：查「永遠」永远只出 えいえん。同一个数字被两层当成两种语义用，是根因。
   final Map<String, int> headwords = <String, int>{};
-  // BUG-2574：词典顺序要按**词头组**排，不能按引擎结果行排。引擎只合并 (expr,
+  // BUG-2579：词典顺序要按**词头组**排，不能按引擎结果行排。引擎只合并 (expr,
   // reading) 完全相同的行，MDX/DSL 这类 simple dict 读音恒空，与 Yomitan 的显式读音
   // 行是两条结果；这里按 [lookupHeadwordKey] 把它们归成同一个词头后，若只在各自
   // 行内排序，后一行的词典（恒是 MDX）无论管理页排第几都挂在词头尾巴上。
@@ -640,7 +640,7 @@ String buildPopupJsonFromLookup({
     if (!groupExpression.containsKey(key) && groupKeys.length >= maximumTerms) {
       break outer;
     }
-    // 词典顺序在下方出 JSON 时按整张卡排（BUG-2574），这里不排：同一个词头会由
+    // 词典顺序在下方出 JSON 时按整张卡排（BUG-2579），这里不排：同一个词头会由
     // 多条引擎结果行拼成（显式读音的 Yomitan 行 + 空读音的 MDX 行），逐行排序只
     // 能排到行内。
     for (final g in r.term.glossaries) {
@@ -791,7 +791,7 @@ String buildPopupJsonFromLookup({
 /// one. Sorting here makes both [DictionarySearchResult] and popup JSON consume
 /// the explicit current order. Unknown dictionaries stay last and stable.
 ///
-/// BUG-2574：排序单位是 [groupOf] 给出的**词头组**而不是引擎结果行。[items] 里
+/// BUG-2579：排序单位是 [groupOf] 给出的**词头组**而不是引擎结果行。[items] 里
 /// 组序（首次出现顺序）保持不变，只在组内按 [dictionaryOrder] 重排；同一词典
 /// 多条释义、以及不在 [dictionaryOrder] 里的词典，都保持原相对顺序（稳定）。
 List<T> _sortedByDictionaryOrder<T>(

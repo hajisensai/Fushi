@@ -72,10 +72,10 @@ void main() {
     );
   });
 
-  // BUG-2574：引擎只合并 (expression, reading) 完全相同的行，MDX 这类 simple dict
+  // BUG-2579：引擎只合并 (expression, reading) 完全相同的行，MDX 这类 simple dict
   // 读音恒空，与 Yomitan 的显式读音行是两条结果；Dart 侧按词头把它们拼成同一张卡
   // 时，词典顺序必须跨行生效，否则后一行（恒是 MDX）无论管理页排第几都挂在卡尾。
-  group('BUG-2574 dictionary order spans engine rows of one headword', () {
+  group('BUG-2579 dictionary order spans engine rows of one headword', () {
     const List<String> mixedOrder = <String>['明鏡', 'MDX辞典', '大辞林'];
     FushiLookupResult row({
       required String expression,
