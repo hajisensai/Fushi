@@ -5062,5 +5062,7 @@
   "media_server_search_hint": "搜索此服务器",
   "media_server_items_empty": "没有条目",
   "media_server_items_load_failed": "无法从服务器加载条目",
-  "media_server_item_folder": "文件夹"
+  "media_server_item_folder": "文件夹",
+  "jellyfin_server_unreachable": "无法连接服务器 $url：$reason",
+  "jellyfin_host_lookup_hint": "本机无法解析这个主机名。Android / iOS 不能解析 .local 或 Windows 计算机名，请改用服务器的 IP 地址（例如 http://192.168.1.10:8096）。"
 }

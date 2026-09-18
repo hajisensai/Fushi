@@ -85,12 +85,45 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         userId: config.userId,
       );
 
-  JellyfinApi _api({required String serverUrl, String? accessToken}) =>
+  JellyfinApi _api({
+    required String serverUrl,
+    String? accessToken,
+    String deviceId = JellyfinApi.kLegacyDeviceId,
+  }) =>
       JellyfinApi(
         serverUrl: serverUrl,
         accessToken: accessToken,
+        deviceId: deviceId,
         client: widget.httpClientFactory?.call(),
       );
+
+  /// 登录 / 连接失败的呈现：对话框 + 可选中文本。此前走 [FushiToast]，手机上是
+  /// 2 秒、两行截断的原生 toast——`SocketException: Connection refused (OS Error …),
+  /// address = …, port = …` 这种真正有用的原因根本看不全，用户只能报「直接连不上」。
+  Future<void> _showSignInError(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.jellyfin_sign_in_failed),
+        content: SingleChildScrollView(child: SelectableText(message)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 把连接阶段的异常翻成用户能行动的话：主机名解析失败追加「改用 IP」提示。
+  String _describeConnectFailure(String serverUrl, Object error) {
+    final String reason = JellyfinApi.isHostLookupFailure(error)
+        ? '$error\n\n${t.jellyfin_host_lookup_hint}'
+        : '$error';
+    return t.jellyfin_server_unreachable(url: serverUrl, reason: reason);
+  }
 
   void _reload() {
     setState(() {
@@ -111,8 +144,18 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       return;
     }
     setState(() => _busy = true);
-    final JellyfinApi api = _api(serverUrl: serverUrl);
+    // 设备身份：本机 per-install id（见 JellyfinApi.deviceId），令牌与它绑定、随
+    // 配置一起持久化。
+    final String deviceId = await _syncRepo.getOrCreateDeviceId();
+    final JellyfinApi api = _api(serverUrl: serverUrl, deviceId: deviceId);
     try {
+      // 先探连通性再登录：连不上与账号错是两种完全不同的处置。
+      try {
+        await api.publicSystemInfo();
+      } catch (e) {
+        await _showSignInError(_describeConnectFailure(serverUrl, e));
+        return;
+      }
       final JellyfinAuthResult auth =
           await api.authenticateByName(username, password);
       if (auth.accessToken.isEmpty || auth.userId.isEmpty) {
@@ -124,6 +167,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         userId: auth.userId,
         accessToken: auth.accessToken,
         serverName: auth.serverName,
+        deviceId: deviceId,
       );
       // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
       // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
@@ -152,12 +196,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         severity: ToastSeverity.success,
       );
     } catch (e) {
-      if (mounted) {
-        FushiToast.show(
-          msg: '${t.jellyfin_sign_in_failed}: $e',
-          severity: ToastSeverity.error,
-        );
-      }
+      await _showSignInError('$e');
     } finally {
       api.close();
       if (mounted) setState(() => _busy = false);
