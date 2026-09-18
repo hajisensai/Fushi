@@ -5034,6 +5034,8 @@
   "anki_mined_action_forget": "我已在 Anki 里删了这张卡",
   "anki_mined_forget_done": "已清除制卡记录",
   "reader_gallery_cover": "封面",
+  "mining_audio_follow_playback_speed": "句子音频跟随播放倍速",
+  "mining_audio_follow_playback_speed_hint": "有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；仅对有声书制卡生效。",
   "video_setting_clip_export_video_bitrate": "片段导出视频码率",
   "video_setting_clip_export_video_bitrate_hint": "0 = 跟随源（能直接复制码流就不重编码）；其它值会把视频重编码到该码率",
   "unit_kbps": "kbps",

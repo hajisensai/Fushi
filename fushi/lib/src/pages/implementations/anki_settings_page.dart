@@ -613,6 +613,21 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             onChanged: appModel.setMiningAudioTailPadMs,
           ),
         ),
+        // 有声书倍速制卡：句子音频跟随播放倍速（变速不变调）。只有小说有声书链读它，
+        // 但与其余句子音频设置同区——用户找「卡片音频长什么样」只会来这里找。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_audio_follow_playback_speed',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_audio_follow_playback_speed,
+            subtitle: t.mining_audio_follow_playback_speed_hint,
+            icon: Icons.speed_outlined,
+            value: appModel.miningAudioFollowPlaybackSpeed,
+            onChanged: (bool value) {
+              appModel.toggleMiningAudioFollowPlaybackSpeed();
+              setState(() {});
+            },
+          ),
+        ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),

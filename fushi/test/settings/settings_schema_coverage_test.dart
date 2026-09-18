@@ -422,6 +422,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
+  // 有声书倍速制卡：效果在 ffmpeg `-af atempo`（纯函数 buildFfmpegAtempoFilter /
+  // buildFfmpegClipArgs tempo 参数）+ 偏好写穿 + 阅读器制卡调用点源码守卫，都在专项测试里。
+  'cardCreation/Match sentence audio to playback speed':
+      'test/settings/mining_audio_follow_playback_speed_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡

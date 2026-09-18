@@ -243,7 +243,11 @@ MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
 #   选 overlay 而不是 libass 的 subtitles filter：overlay 是**内建** filter，五平台
 #   零新增原生依赖；libass 要拖进 libass+freetype+fribidi+fontconfig 四个库，而 macOS
 #   自 BUG-1443 起不能用 brew 的动态库，得把整条链从源码静态编一遍。
-FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata,overlay"
+# atempo：有声书倍速制卡（buildFfmpegClipArgs 的 tempo 参数）——阅读器有声书以
+#   倍速播放时，句子音频按同一倍率 `-af atempo=R` 变速不变调裁出，卡片听感与阅读
+#   时一致。移动端自编 ffmpeg-kit（完整内建滤镜集）本就带；桌面精简构建漏掉它会让
+#   倍速制卡整条 ffmpeg 失败（"No such filter: 'atempo'"）→ 卡片没句子音频。
+FILTERS="scale,fps,split,palettegen,paletteuse,format,aformat,aresample,anull,null,copy,setpts,asetpts,pad,asetnsamples,astats,ametadata,overlay,atempo"
 PARSERS="h264,hevc,av1,vp9,vp8,mpeg4video,mpegvideo,vc1,aac,aac_latm,ac3,dca,mlp,mpegaudio,vorbis,opus,flac,mjpeg,png,webp"
 BSFS="aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb"
 # http/https/tcp/tls/crypto：YouTube/远端制卡（TODO-1214）的 http(s) googlevideo

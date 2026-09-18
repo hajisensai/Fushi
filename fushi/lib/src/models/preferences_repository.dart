@@ -1951,6 +1951,21 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 有声书倍速制卡：句子音频是否跟随当前播放倍速（变速不变调）。默认开——用户开着
+  /// 1.5× 听书，卡片里的句子音频就是 1.5× 的，与阅读时听到的一致；关掉则一律裁原速。
+  /// 只对小说有声书制卡链生效（视频链没有「播放倍速」这个制卡语境，不读它）。
+  bool get miningAudioFollowPlaybackSpeed =>
+      getPref('mining_audio_follow_playback_speed', defaultValue: true)
+          as bool;
+
+  void toggleMiningAudioFollowPlaybackSpeed() async {
+    await setPref(
+      'mining_audio_follow_playback_speed',
+      !miningAudioFollowPlaybackSpeed,
+    );
+    notifyListeners();
+  }
+
   bool get deduplicatePitchAccents =>
       getPref('deduplicate_pitch_accents', defaultValue: true) as bool;
 
