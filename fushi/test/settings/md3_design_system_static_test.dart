@@ -148,10 +148,11 @@ void main() {
       'FushiCard',
       'FushiListItem',
     ],
+    // BUG-2589：书架端「查看插图」只剩装载壳，画廊本体是阅读器内的
+    // ReaderGalleryPage（自带顶栏，不走 FushiToolScaffold / FushiCard）。
     'lib/src/pages/implementations/illustrations_viewer_page.dart': <String>[
       'FushiPageScaffold',
-      'FushiToolScaffold',
-      'FushiCard',
+      'ReaderGalleryPage',
     ],
     'lib/src/pages/base_history_page.dart': <String>['FushiCard'],
     'lib/src/pages/implementations/history_reader_page.dart': <String>[
@@ -762,10 +763,16 @@ void main() {
       // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart':
-          'Top reading-progress text size (_infoFontSize) and the Windows '
-          'image context-menu font size are reader content / chrome, '
-          'same rationale as the parent reader_fushi_page.dart allowlist '
-          '(extracted verbatim).',
+          'Top reading-progress text size (_infoFontSize) is reader content / '
+          'chrome, same rationale as the parent reader_fushi_page.dart '
+          'allowlist (extracted verbatim).',
+      // BUG-2589：Windows 图片右键菜单从 chrome.part.dart 抽成共享模块（阅读器
+      // 正文 / 插图册 / 书架端插图册三处共用）。菜单尺寸写常量是 BUG-1438 的
+      // 结论（菜单在缩放画布内，再乘 scale 得 scale²），豁免随搬运延伸。
+      'lib/src/reader/illustration_zoom_viewer.dart':
+          'Windows image context-menu font size is a fixed constant by '
+          'design (BUG-1438: the menu already lives inside the ui-scale '
+          'canvas), extracted verbatim from reader_fushi/chrome.part.dart.',
       // BUG-2434：书内查词弹窗的覆盖主题决策从 chrome.part.dart 抽成纯函数
       // （抽出来才能对「墨水屏下不叠纸色」「必须挂 FushiEinkTheme」直接写断言，
       // 而不是只能扫源码）。那段 ColorScheme.copyWith 是逐字搬运的，豁免随之
@@ -1316,6 +1323,7 @@ void main() {
         // 按同一条「不留死豁免」纪律删除，范围随代码走。
         'fontSize:',
       },
+      'lib/src/reader/illustration_zoom_viewer.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_status_footer.dart': <String>{
         'fontSize:',
@@ -3318,10 +3326,10 @@ void main() {
     final String illustrationsSource = File(
       'lib/src/pages/implementations/illustrations_viewer_page.dart',
     ).readAsStringSync();
-    final String illustrationsBody = _functionSource(
+    final String illustrationsBody = _sectionSource(
       illustrationsSource,
-      'Widget _buildBody(ThemeData theme, FushiDesignTokens tokens)',
-      'class _FullScreenGallery',
+      'Widget _buildPending(BuildContext context)',
+      illustrationsSource.length,
     );
     expect(illustrationsBody, contains('tokens.spacing'));
     expect(

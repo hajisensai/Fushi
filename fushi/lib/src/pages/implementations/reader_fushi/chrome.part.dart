@@ -184,66 +184,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
     await _showReaderImageContextMenuAtGlobalPosition(imgUrl, global);
   }
 
+  /// 菜单本体（锚点经 Overlay 映射、尺寸写常量，BUG-381 / BUG-1438）在
+  /// illustration_zoom_viewer.dart 的 [showImageCopyContextMenu]，与书架端插图册
+  /// 共用；这里只解析文件、决定 Windows 才弹。
   Future<void> _showReaderImageContextMenuAtGlobalPosition(
     String imgUrl,
     Offset globalPosition, {
     BuildContext? menuContext,
   }) async {
     if (!mounted || !isWindowsPlatform) return;
-    final BuildContext effectiveContext = menuContext ?? context;
-    final RenderBox overlay =
-        Overlay.of(effectiveContext).context.findRenderObject()! as RenderBox;
-    // BUG-381: [globalPosition] 是真实屏幕坐标（右键路径来自阅读器 State 的 RenderBox
-    // localToGlobal，放大图路径来自 details.globalPosition；两者都在「净缩放=1 的真实
-    // 视口空间」——阅读器被 FushiAppUiScaleNeutralizer 中和回 1.0）。但 showMenu 的
-    // RelativeRect 落在它路由 Overlay 的坐标系，而该 Overlay 在全局 FushiAppUiScale 的
-    // FittedBox 之内（缩放后的画布空间）。直接把真实屏幕坐标当画布坐标喂给 showMenu，
-    // 界面大小≠100% 时菜单会偏离图片 factor≈scale（BUG-261 同型，视频右键已修）。
-    //
-    // 修法与 BUG-129/261 同范式：不读 scale 数值逆算（自动模式下生效 scale ≠
-    // appModel.appUiScale），而用 Overlay 的 RenderBox 把锚点从真实屏幕坐标沿真实渲染
-    // 变换链映射到 Overlay 本地坐标系——其间的 FittedBox 缩放被 render transform 自动
-    // 吸收，对任意 scale（含自动模式）自洽无残差；scale=1 时变换为单位阵，逐像素等价
-    // （向后兼容）。
-    //
-    // BUG-1438：菜单内容**不能**再乘界面缩放。菜单渲染在根 Overlay，也就是全局
-    // FushiAppUiScale 的缩放画布内，画布→屏幕这一跳已经把它按 scale 放大了一次；
-    // 阅读器 chrome 之所以要手动 ×_readerChromeScale，是因为 chrome 在
-    // FushiAppUiScaleNeutralizer **之内**（净缩放=1，不跟随），而菜单在**之外**。
-    // 旧代码把 chrome 的规则错套到菜单上 → 视觉尺寸是 scale²：实测同样写
-    // `fontSize: 14 * menuScale`，chrome 渲染成 40 而菜单 80（scale=2）。所以这里
-    // 写常量，让菜单与 app 其它右键菜单（视频 / 合集 / 标签管理）口径一致。
-    final Offset anchor = overlay.globalToLocal(globalPosition);
-    final String? action = await showMenu<String>(
-      context: effectiveContext,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      constraints: const BoxConstraints(minWidth: 112.0, maxWidth: 280.0),
-      menuPadding: const EdgeInsets.symmetric(vertical: 8.0),
-      items: <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(
-          value: 'copy',
-          height: kMinInteractiveDimension,
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.copy_outlined, size: 18.0),
-              const SizedBox(width: 12.0),
-              Text(
-                t.reader_copy_image,
-                style: const TextStyle(fontSize: 14.0),
-              ),
-            ],
-          ),
-        ),
-      ],
+    await showImageCopyContextMenu(
+      menuContext ?? context,
+      globalPosition,
+      onCopy: () => _copyReaderImageToClipboard(imgUrl),
     );
-    if (action == 'copy') {
-      await _copyReaderImageToClipboard(imgUrl);
-    }
   }
 
   // TODO-954：阅读器文字选区右键菜单（Windows）。完全复用图片右键的「锚点经 Overlay
@@ -896,6 +850,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _exportAudiobookClip();
   }
 
+  /// 分享 / 复制的动作本体在 illustration_zoom_viewer.dart（[shareImageFile] /
+  /// [copyImageFileToClipboard]），与书架端插图册共用；这里只把 fushi.local URL
+  /// 解析成本书解压目录里的文件。
   Future<void> _shareReaderImage(String imgUrl) async {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
@@ -903,16 +860,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
-    try {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
-        subject: p.basename(file.path),
-      );
-    } catch (e) {
-      FushiToast.show(
-          msg: t.reader_image_share_failed(error: e),
-          severity: ToastSeverity.error);
-    }
+    await shareImageFile(file);
   }
 
   Future<void> _copyReaderImageToClipboard(String imgUrl) async {
@@ -922,18 +870,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
       return;
     }
-    try {
-      await FushiChannels.clipboardImage.invokeMethod<void>(
-        'copyImageFile',
-        <String, String>{'path': file.path},
-      );
-      FushiToast.show(
-          msg: t.copied_to_clipboard, severity: ToastSeverity.success);
-    } catch (e) {
-      FushiToast.show(
-          msg: t.reader_image_copy_failed(error: e),
-          severity: ToastSeverity.error);
-    }
+    await copyImageFileToClipboard(file);
   }
 
   /// [resolvedFile] 非空 = 兄弟卷插图（BUG-2521）：文件由卷上下文解析、不经本书
@@ -947,14 +884,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       _withStudyClockPaused(
         () => Navigator.push(
           context,
-          PageRouteBuilder<void>(
-            opaque: false,
-            barrierColor: Theme.of(
-              context,
-            ).colorScheme.scrim.withValues(alpha: 0.87),
-            barrierDismissible: true,
-            pageBuilder: (BuildContext routeContext, __, ___) =>
-                ContextMenuTrigger(
+          illustrationZoomRoute(
+            context,
+            (BuildContext routeContext) => ContextMenuTrigger(
               // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
               onInvoke: isWindowsPlatform && contextMenu
                   ? (Offset position) => unawaited(
@@ -966,27 +898,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
                       )
                   : null,
               ladder: kReaderMouseLadder,
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 10,
-                  child: Center(
-                    child: Image.file(
-                      file,
-                      fit: BoxFit.contain,
-                      // BUG-2496：坏图解码失败退回占位图标，不当致命 FlutterError。
-                      errorBuilder: (_, Object error, __) {
-                        ErrorLogService.instance.logDiagnostic(
-                          'ReaderFushiPage.imageViewer.coverDecode',
-                          '${file.path}: $error',
-                        );
-                        return const Icon(Icons.broken_image_outlined,
-                            size: 64);
-                      },
-                    ),
-                  ),
-                ),
+              // 缩放查看本体与书架端插图册同一份（illustration_zoom_viewer.dart）。
+              child: IllustrationZoomViewer(
+                file: file,
+                diagnosticTag: 'ReaderFushiPage.imageViewer',
               ),
             ),
           ),

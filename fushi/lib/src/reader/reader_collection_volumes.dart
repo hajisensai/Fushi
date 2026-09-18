@@ -151,11 +151,17 @@ class ReaderVolumeBookCache {
 
 /// 兄弟卷的插图文件解析：与阅读器 `_readerImageFileForUrl` 同一越界判据
 /// （canonicalize 后必须落在该卷解压目录内），只是根目录换成该卷的。
-File? volumeImageFile(ReaderVolume volume, EpubImageRef ref) {
-  final String root = volume.extractDir;
-  if (root.isEmpty) return null;
-  final String joined = p.join(root, ref.src);
-  if (!p.isWithin(p.canonicalize(root), p.canonicalize(joined))) return null;
+File? volumeImageFile(ReaderVolume volume, EpubImageRef ref) =>
+    epubImageFileFor(volume.extractDir, ref);
+
+/// 按解压目录 [extractDir] 解析 [ref] 指向的插图文件：canonicalize 后必须落在
+/// 目录内、且文件真实存在，否则 null。兄弟卷与书架端插图册共用。
+File? epubImageFileFor(String extractDir, EpubImageRef ref) {
+  if (extractDir.isEmpty) return null;
+  final String joined = p.join(extractDir, ref.src);
+  if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
+    return null;
+  }
   final File file = File(p.normalize(joined));
   return file.existsSync() ? file : null;
 }
