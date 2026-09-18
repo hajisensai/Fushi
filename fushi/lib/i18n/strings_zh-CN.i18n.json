@@ -5035,5 +5035,5 @@
   "anki_mined_forget_done": "已清除制卡记录",
   "reader_gallery_cover": "封面",
   "mining_audio_follow_playback_speed": "句子音频跟随播放倍速",
-  "mining_audio_follow_playback_speed_hint": "有声书以非 1× 倍速播放时，卡片的句子音频按同一倍率变速不变调；仅对有声书制卡生效。"
+  "mining_audio_follow_playback_speed_hint": "有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；仅对有声书制卡生效。"
 }
