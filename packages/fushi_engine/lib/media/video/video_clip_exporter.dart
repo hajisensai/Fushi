@@ -270,8 +270,17 @@ List<String> buildClipVideoEncoderArgs({int? videoBitrateKbps}) {
 /// 判定。
 ///
 /// [videoBitrateKbps] 设了正值时视频**必然**重编码（用户要的就是改码率，copy 做不到），
-/// 与源编码是否可播无关，hvc1 tag 也随之不挂（输出已是 H.264）。音频不受影响，仍按
-/// 可播性决定 copy 与否。探测失败（[ClipSourceCodecs.isEmpty]）时同理只强制视频。
+/// 与源编码是否可播无关，hvc1 tag 也随之不挂（输出已是 H.264）。探测失败
+/// （[ClipSourceCodecs.isEmpty]）时同理强制。
+///
+/// 视频一旦重编码，音频**跟着重编码、绝不 copy**。`-ss` 是输入 seek，demuxer 停在请求点
+/// 之前的那个关键帧：重编码的视频靠 accurate seek 把请求点之前的帧全丢掉，copy 的音频
+/// 却是逐包原样带出，从关键帧起的那一截全在；随后 `-avoid_negative_ts make_zero`（重编码
+/// 路径必带，见 [buildFfmpegVideoClipExportArgs]）把这截负时间戳平移成正片内容。实测
+/// 随包 ffmpeg-min 裁一个关键帧间隔 1 s 的源、请求 3 s：产物 4.04 s，视频 start_time
+/// 1.02 s、音频 0 s——开头一秒只有声音没画面。音频重编码（aac 192k，与整段重编码兜底
+/// 同参数）就精确切在请求点。视频 copy 时不受影响：那条路径不带 make_zero，前导由 mp4
+/// edit list 表达成「播放时跳过」（BUG-2011）。
 @visibleForTesting
 ClipCodecPlan resolveClipCodecPlan(
   ClipSourceCodecs codecs, {
@@ -281,7 +290,7 @@ ClipCodecPlan resolveClipCodecPlan(
       normalizeClipVideoBitrateKbps(videoBitrateKbps) != null;
   if (codecs.isEmpty) {
     return forceVideoReencode
-        ? const ClipCodecPlan(copyVideo: false, copyAudio: true)
+        ? const ClipCodecPlan(copyVideo: false, copyAudio: false)
         : ClipCodecPlan.fullCopy;
   }
 
@@ -292,9 +301,10 @@ ClipCodecPlan resolveClipCodecPlan(
               _isCopyableVideoPixFmt(codecs.videoPixFmt)));
 
   // 空列表 = 没探到音频流信息，保持原 copy 行为；探到了就要求**每一条**都可播，
-  // 因为 `-map 0:a?` 会把它们全部带进输出。
-  final bool copyAudio = codecs.audioCodecs.isEmpty ||
-      codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains);
+  // 因为 `-map 0:a?` 会把它们全部带进输出。视频重编码时一律不 copy（见上）。
+  final bool copyAudio = copyVideo &&
+      (codecs.audioCodecs.isEmpty ||
+          codecs.audioCodecs.every(_kClipCopyableAudioCodecs.contains));
 
   return ClipCodecPlan(
     copyVideo: copyVideo,

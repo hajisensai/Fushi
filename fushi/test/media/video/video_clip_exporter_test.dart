@@ -1207,6 +1207,22 @@ At least one output file must be specified''';
           <String>['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k']);
     });
 
+    test('never copies the audio when the video is re-encoded', () {
+      // 10-bit HEVC + AAC：视频必须重编码，而 copy 的音频会从 `-ss` 前一个关键帧
+      // 整段带出、再被重编码路径的 make_zero 平移成正片开头——实测 3 s 的请求得到
+      // 4.04 s 的产物，前 1 s 只有声音没画面。音频跟着转 AAC 才精确切在请求点。
+      final ClipCodecPlan plan = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'hevc',
+          videoPixFmt: 'yuv420p10le',
+          audioCodecs: <String>['aac'],
+        ),
+      );
+      expect(plan.copyVideo, isFalse);
+      expect(plan.copyAudio, isFalse);
+      expect(buildClipCodecArgs(plan: plan).contains('copy'), isFalse);
+    });
+
     test('nv12 is 8-bit and must not be mistaken for 12-bit', () {
       // 守卫「按名字尾巴猜位深」这个诱人但错误的实现：nv12 结尾是 12，却是 8-bit。
       final ClipCodecPlan plan = resolveClipCodecPlan(
@@ -1377,8 +1393,9 @@ At least one output file must be specified
     });
 
     test('forces the video to re-encode even when the source is portable', () {
-      // 用户要的就是改码率，copy 做不到；与源可播性无关。音频不受影响仍 copy，
-      // hvc1 tag 也随之不挂（输出已是 H.264）。
+      // 用户要的就是改码率，copy 做不到；与源可播性无关。hvc1 tag 随之不挂
+      // （输出已是 H.264）。音频跟着重编码：copy 的音频会从前一个关键帧整段带出、
+      // 再被 make_zero 平移成正片开头的一截「只有声音没画面」（见 resolveClipCodecPlan）。
       final ClipCodecPlan h264 = resolveClipCodecPlan(
         const ClipSourceCodecs(
           videoCodec: 'h264',
@@ -1388,7 +1405,7 @@ At least one output file must be specified
         videoBitrateKbps: 1500,
       );
       expect(h264.copyVideo, isFalse);
-      expect(h264.copyAudio, isTrue);
+      expect(h264.copyAudio, isFalse);
       expect(h264.videoTag, isNull);
       expect(
           buildClipCodecArgs(plan: h264, videoBitrateKbps: 1500),
@@ -1398,7 +1415,9 @@ At least one output file must be specified
             '-b:v',
             '1500k',
             '-c:a',
-            'copy',
+            'aac',
+            '-b:a',
+            '192k',
           ]));
 
       final ClipCodecPlan hevc = resolveClipCodecPlan(
@@ -1412,13 +1431,13 @@ At least one output file must be specified
       expect(hevc.copyVideo, isFalse);
       expect(hevc.videoTag, isNull);
 
-      // 探测失败也不能丢掉用户设的码率：只强制视频，音频保持原 copy 行为。
+      // 探测失败也不能丢掉用户设的码率：视频、音频一起重编码。
       final ClipCodecPlan blind = resolveClipCodecPlan(
         const ClipSourceCodecs(),
         videoBitrateKbps: 1500,
       );
       expect(blind.copyVideo, isFalse);
-      expect(blind.copyAudio, isTrue);
+      expect(blind.copyAudio, isFalse);
 
       // 未设置时计划与加选项之前逐字段一致。
       expect(
@@ -1535,8 +1554,9 @@ At least one output file must be specified
             '-bufsize',
             '6000k',
             '-c:a',
-            'copy',
+            'aac',
           ]));
+      expect(clip.contains('copy'), isFalse);
       expect(clip.contains('-crf'), isFalse);
       expect(clip,
           containsAllInOrder(<String>['-avoid_negative_ts', 'make_zero']));
