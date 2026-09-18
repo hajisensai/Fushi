@@ -1322,6 +1322,226 @@ At least one output file must be specified''';
       expect(clip, containsAllInOrder(<String>['-map_chapters', '-1']));
     });
   });
+
+  group('user-selected video bitrate', () {
+    const String portableLog = '''
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'in.mp4':
+  Duration: 00:23:40.02, start: 0.000000, bitrate: 2500 kb/s
+  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709), 1920x1080 [SAR 1:1 DAR 16:9], 2300 kb/s, 23.98 fps, 23.98 tbr, 24k tbn (default)
+  Stream #0:1[0x2](jpn): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 192 kb/s (default)
+At least one output file must be specified
+''';
+
+    test('unset keeps the constant-quality encoder args byte for byte', () {
+      // null / 0 / 负数都是「未设置」：偏好层用 0 表示跟随源，导出层不该为此再分
+      // 一个哨兵值。三者都必须落到加选项之前的 `-crf 20`。
+      const List<String> legacy = <String>[
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '20',
+        '-pix_fmt',
+        'yuv420p',
+      ];
+      expect(buildClipVideoEncoderArgs(), legacy);
+      expect(buildClipVideoEncoderArgs(videoBitrateKbps: 0), legacy);
+      expect(buildClipVideoEncoderArgs(videoBitrateKbps: -5), legacy);
+      expect(normalizeClipVideoBitrateKbps(null), isNull);
+      expect(normalizeClipVideoBitrateKbps(0), isNull);
+      expect(normalizeClipVideoBitrateKbps(-1), isNull);
+      expect(normalizeClipVideoBitrateKbps(2500), 2500);
+    });
+
+    test('a bitrate swaps crf for a VBV-capped target rate', () {
+      final List<String> args =
+          buildClipVideoEncoderArgs(videoBitrateKbps: 2500);
+      // 单给 -b:v 只是平均码率，高动态镜头会把瞬时码率顶到几倍；maxrate/bufsize
+      // 把它箍成近似 CBR，用户按上限选的数值才真能兑现成可预期的体积。
+      expect(
+          args,
+          containsAllInOrder(<String>[
+            '-c:v',
+            'libx264',
+            '-b:v',
+            '2500k',
+            '-maxrate',
+            '2500k',
+            '-bufsize',
+            '5000k',
+            '-pix_fmt',
+            'yuv420p',
+          ]));
+      expect(args.contains('-crf'), isFalse);
+    });
+
+    test('forces the video to re-encode even when the source is portable', () {
+      // 用户要的就是改码率，copy 做不到；与源可播性无关。音频不受影响仍 copy，
+      // hvc1 tag 也随之不挂（输出已是 H.264）。
+      final ClipCodecPlan h264 = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'h264',
+          videoPixFmt: 'yuv420p',
+          audioCodecs: <String>['aac'],
+        ),
+        videoBitrateKbps: 1500,
+      );
+      expect(h264.copyVideo, isFalse);
+      expect(h264.copyAudio, isTrue);
+      expect(h264.videoTag, isNull);
+      expect(
+          buildClipCodecArgs(plan: h264, videoBitrateKbps: 1500),
+          containsAllInOrder(<String>[
+            '-c:v',
+            'libx264',
+            '-b:v',
+            '1500k',
+            '-c:a',
+            'copy',
+          ]));
+
+      final ClipCodecPlan hevc = resolveClipCodecPlan(
+        const ClipSourceCodecs(
+          videoCodec: 'hevc',
+          videoPixFmt: 'yuv420p',
+          audioCodecs: <String>['aac'],
+        ),
+        videoBitrateKbps: 1500,
+      );
+      expect(hevc.copyVideo, isFalse);
+      expect(hevc.videoTag, isNull);
+
+      // 探测失败也不能丢掉用户设的码率：只强制视频，音频保持原 copy 行为。
+      final ClipCodecPlan blind = resolveClipCodecPlan(
+        const ClipSourceCodecs(),
+        videoBitrateKbps: 1500,
+      );
+      expect(blind.copyVideo, isFalse);
+      expect(blind.copyAudio, isTrue);
+
+      // 未设置时计划与加选项之前逐字段一致。
+      expect(
+          resolveClipCodecPlan(
+            const ClipSourceCodecs(
+              videoCodec: 'h264',
+              videoPixFmt: 'yuv420p',
+              audioCodecs: <String>['aac'],
+            ),
+            videoBitrateKbps: 0,
+          ).isFullCopy,
+          isTrue);
+    });
+
+    test('all three ffmpeg paths carry the same bitrate', () {
+      final List<String> expected = <String>[
+        '-b:v',
+        '4000k',
+        '-maxrate',
+        '4000k',
+        '-bufsize',
+        '8000k',
+      ];
+      expect(
+          buildFfmpegVideoClipExportArgs(
+            inputPath: '/v/in.mp4',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: '/v/out.mp4',
+            codecPlan: const ClipCodecPlan(copyVideo: false, copyAudio: true),
+            videoBitrateKbps: 4000,
+          ),
+          containsAllInOrder(expected));
+      expect(
+          buildFfmpegVideoClipReencodeArgs(
+            inputPath: '/v/in.mp4',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: '/v/out.mp4',
+            videoBitrateKbps: 4000,
+          ),
+          containsAllInOrder(expected));
+      expect(
+          buildFfmpegVideoClipBurnArgs(
+            inputPath: '/v/in.mp4',
+            startMs: 0,
+            endMs: 1000,
+            outputPath: '/v/out.mp4',
+            burnCues: const <ClipBurnCue>[
+              ClipBurnCue(startMs: 0, endMs: 500, pngPath: '/v/cue.png'),
+            ],
+            videoBitrateKbps: 4000,
+          ),
+          containsAllInOrder(expected));
+    });
+
+    test('end to end: a portable source is re-encoded at the chosen bitrate',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('hibiki_clip_bitrate');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File input = File('${dir.path}/source.mp4')
+        ..writeAsBytesSync(<int>[1]);
+      final File output = File('${dir.path}/clip.mp4');
+      _FakeFfmpegBackend backendFor() => _FakeFfmpegBackend(
+            onRun: (List<String> args) {
+              if (!args.contains('-ss')) {
+                return const FfmpegRunResult(
+                    returnCode: 1, output: portableLog);
+              }
+              output.writeAsBytesSync(<int>[9]);
+              return const FfmpegRunResult(returnCode: 0, output: 'ok');
+            },
+          );
+
+      // 未设置：h264/aac 源走瞬时 `-c copy`（既有行为，一个字节都没变）。
+      final _FakeFfmpegBackend plain = backendFor();
+      expect(
+          (await exportVideoClipViaFfmpeg(
+            inputPath: input.path,
+            startMs: 0,
+            endMs: 2000,
+            outputPath: output.path,
+            backend: plain,
+          ))
+              .isSuccess,
+          isTrue);
+      expect(
+          plain.clipCalls.single, containsAllInOrder(<String>['-c', 'copy']));
+      expect(plain.clipCalls.single.contains('libx264'), isFalse);
+
+      // 设了 3000 kbps：同一个源必须重编码到该码率，且只跑这一轮（不是 copy 失败
+      // 后才兜底）。
+      final _FakeFfmpegBackend capped = backendFor();
+      final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+        inputPath: input.path,
+        startMs: 0,
+        endMs: 2000,
+        outputPath: output.path,
+        backend: capped,
+        videoBitrateKbps: 3000,
+      );
+      expect(result.isSuccess, isTrue);
+      final List<String> clip = capped.clipCalls.single;
+      expect(
+          clip,
+          containsAllInOrder(<String>[
+            '-c:v',
+            'libx264',
+            '-b:v',
+            '3000k',
+            '-maxrate',
+            '3000k',
+            '-bufsize',
+            '6000k',
+            '-c:a',
+            'copy',
+          ]));
+      expect(clip.contains('-crf'), isFalse);
+      expect(clip,
+          containsAllInOrder(<String>['-avoid_negative_ts', 'make_zero']));
+    });
+  });
 }
 
 typedef _RunHandler = FutureOr<FfmpegRunResult> Function(List<String> args);
