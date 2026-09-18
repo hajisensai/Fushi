@@ -60,33 +60,40 @@ const List<TtuTocEntry> _sparseToc = <TtuTocEntry>[
 ];
 
 void main() {
-  group('resolveCurrentTocChapter', () {
+  // BUG-2580 起判据升级为 (章号, 章内偏移) 二元组的 resolveCurrentTocEntry，返回
+  // 目录项下标；这里只给章号（偏移 null），floor 语义与 BUG-2545 时逐字同解。
+  int? chapterOf(List<TtuTocEntry> toc, int? chapter) {
+    final int? row = resolveCurrentTocEntry(toc, chapter, null);
+    return row == null ? null : toc[row].index;
+  }
+
+  group('resolveCurrentTocEntry（BUG-2545 floor 语义）', () {
     test('稀疏目录：落在章内任意 spine 位置都解析到该章', () {
       // spine 3/4/5 都属于「一章」（index 2）——旧的精确相等在这三个位置全落空。
       for (final int chapter in <int>[2, 3, 4, 5]) {
-        expect(resolveCurrentTocChapter(_sparseToc, chapter), 2,
+        expect(chapterOf(_sparseToc, chapter), 2,
             reason: 'spine $chapter 属于一章');
       }
-      expect(resolveCurrentTocChapter(_sparseToc, 9), 6);
-      expect(resolveCurrentTocChapter(_sparseToc, 13), 10);
-      expect(resolveCurrentTocChapter(_sparseToc, 99), 14);
+      expect(chapterOf(_sparseToc, 9), 6);
+      expect(chapterOf(_sparseToc, 13), 10);
+      expect(chapterOf(_sparseToc, 99), 14);
     });
 
     test('精确命中时与旧判据逐字同解', () {
-      expect(resolveCurrentTocChapter(_sparseToc, 0), 0);
-      expect(resolveCurrentTocChapter(_sparseToc, 2), 2);
-      expect(resolveCurrentTocChapter(_sparseToc, 14), 14);
+      expect(chapterOf(_sparseToc, 0), 0);
+      expect(chapterOf(_sparseToc, 2), 2);
+      expect(chapterOf(_sparseToc, 14), 14);
     });
 
     test('当前位置在首条目录项之前 / 无位置：不标任何行', () {
       expect(
-          resolveCurrentTocChapter(
+          chapterOf(
             const <TtuTocEntry>[TtuTocEntry(index: 3, label: '第一章')],
             1,
           ),
           isNull);
-      expect(resolveCurrentTocChapter(_sparseToc, null), isNull);
-      expect(resolveCurrentTocChapter(const <TtuTocEntry>[], 3), isNull);
+      expect(chapterOf(_sparseToc, null), isNull);
+      expect(chapterOf(const <TtuTocEntry>[], 3), isNull);
     });
 
     test('标题行（index < 0）不参与判定', () {
@@ -94,8 +101,8 @@ void main() {
         TtuTocEntry(index: -1, label: '本巻'),
         TtuTocEntry(index: 4, label: '第一章'),
       ];
-      expect(resolveCurrentTocChapter(toc, 2), isNull);
-      expect(resolveCurrentTocChapter(toc, 5), 4);
+      expect(chapterOf(toc, 2), isNull);
+      expect(chapterOf(toc, 5), 4);
     });
 
     test('目录项顺序错乱时取的是最大不晚于当前的 index，不是列表最后一条', () {
@@ -103,17 +110,17 @@ void main() {
         TtuTocEntry(index: 8, label: '後日談'),
         TtuTocEntry(index: 2, label: '第一章'),
       ];
-      expect(resolveCurrentTocChapter(toc, 5), 2);
+      expect(chapterOf(toc, 5), 2);
     });
 
-    test('同一 spine 章的多条锚点目录项共用同一解，调用方据此全部标当前', () {
+    test('同一 spine 章的多条锚点目录项、位置未知时命中章首那条', () {
       const List<TtuTocEntry> toc = <TtuTocEntry>[
         TtuTocEntry(index: 0, label: '巻頭'),
         TtuTocEntry(index: 0, label: '第一節', fragment: 'sec1'),
         TtuTocEntry(index: 0, label: '第二節', fragment: 'sec2'),
         TtuTocEntry(index: 1, label: '第二巻'),
       ];
-      expect(resolveCurrentTocChapter(toc, 0), 0);
+      expect(resolveCurrentTocEntry(toc, 0, null), 0);
     });
   });
 

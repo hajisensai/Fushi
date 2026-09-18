@@ -827,6 +827,7 @@ class TtuTocEntry {
     this.parent,
     this.depth = 0,
     this.fragment,
+    this.anchorCharOffset,
   });
 
   final int index;
@@ -838,6 +839,14 @@ class TtuTocEntry {
   /// 装整卷、目录靠锚点分节」是常见结构：那些条目的 [index] 全指向同一个 spine
   /// 章，**只有 fragment 能区分它们**。丢掉它就等于每一条都跳章首。
   final String? fragment;
+
+  /// [fragment] 锚点在章 [index] 内的字符偏移（`countStudyChars` 口径，与阅读器
+  /// 回报的章内 `charOffset` 同尺）；无锚点 / 还没算出来 / 锚点在章里找不到时为
+  /// null，判「当前读到哪一条」时按章首 0 处理（[resolveCurrentTocEntry]）。
+  final int? anchorCharOffset;
+
+  /// [anchorCharOffset] 的判位值：无锚点即章首。
+  int get charOffsetInChapter => anchorCharOffset ?? 0;
 
   bool get isHeader => index < 0;
 }

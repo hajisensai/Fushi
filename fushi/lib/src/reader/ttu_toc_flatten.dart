@@ -16,20 +16,29 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 /// （例如一长串插图/图片页被一个尾部文本章——奥付/后记——整段吸收）时，压平结果会
 /// 变成空表，**整个章节列表消失**（TODO-1333）。所以这里保留所有解析得到的章，交给
 /// 导航层重定向，永不因合并而清空目录。
+///
+/// [anchorCharOffset]（可选）把「章号 + 锚点 id」解析成锚点在章内的字符偏移
+/// （[EpubBook.chapterAnchorCharOffsets] 口径），填进
+/// [TtuTocEntry.anchorCharOffset]；没给 / 解析不到时为 null（按章首处理）。
 List<TtuTocEntry> flattenTtuTocEntries(
   List<EpubTocItem> items,
-  int Function(String? href) hrefToChapterIndex,
-) {
+  int Function(String? href) hrefToChapterIndex, {
+  int? Function(int chapterIndex, String fragment)? anchorCharOffset,
+}) {
   final List<TtuTocEntry> result = <TtuTocEntry>[];
   void walk(List<EpubTocItem> nodes, String? parentLabel) {
     for (final EpubTocItem item in nodes) {
       final int index = hrefToChapterIndex(item.href);
       if (index >= 0) {
+        final String? fragment = tocHrefFragment(item.href);
         result.add(TtuTocEntry(
           index: index,
           label: item.label,
           parent: parentLabel,
-          fragment: tocHrefFragment(item.href),
+          fragment: fragment,
+          anchorCharOffset: fragment == null || anchorCharOffset == null
+              ? null
+              : anchorCharOffset(index, fragment),
         ));
       }
       walk(item.children, item.label);
@@ -60,28 +69,59 @@ String? tocHrefFragment(String? href) {
   }
 }
 
-/// 阅读位置（spine 章号 [currentChapter]）落在目录的哪一章上：返回该目录项的
-/// [TtuTocEntry.index]，目录里没有任何一项在当前位置之前时返回 null。
+/// 阅读位置（spine 章号 [currentChapter] + 章内字符偏移 [currentCharOffset]）
+/// 落在目录的哪一**条**上：返回该条在 [toc] 里的下标，目录里没有任何一条在当前
+/// 位置之前时返回 null。顶栏章名（`ReaderFushiPage._currentChapterLabelFor`）、
+/// 导航面板的勾选行与有声书面板「章节」tab 三处同一口径。
 ///
 /// **目录是 spine 的稀疏映射**，不是一对一：真实 EPUB 里同一章常常横跨多个
 /// xhtml（`part0008` + `part0009` + …只有第一个进目录），章间的插图页 / 扉页
 /// 更是根本不在目录里。实测一本 35 项 spine 的文库本，NCX 只指向 12 个 spine
 /// 位置——读在剩下 23 个位置上的任何时刻，「当前章 == 目录项 index」都不成立。
+/// 所以判据是**最后一个不晚于当前位置的目录项**（floor，BUG-2545）。
 ///
-/// 所以判据是**最后一个不晚于当前位置的目录项**（floor），与
-/// `ReaderFushiPage._currentChapterLabelFor`（页脚 / 收藏写入用的章名）和
-/// `ReaderAudiobookPanel` 「章节」tab 的当前章标注同一口径；此前目录列表用的是
-/// 精确相等，于是绝大多数阅读位置一行都不标（BUG-2545）。
+/// floor 比较的是 (章号, 章内偏移) 二元组：先按章号，同章再按
+/// [TtuTocEntry.charOffsetInChapter]（无锚点 / 偏移未知视作章首 0）。这样
+/// 「一个 xhtml 装整卷、目录靠 `#anchor` 分节」的书（第一～六话都在
+/// `p-002.xhtml`、第七～十话都在 `p-003.xhtml`）才分得清读到哪一话——只按章号
+/// 的旧判据会把同章的四条一起标成当前、顶栏章名更是永远显示该章**最后一话**
+/// （BUG-2580）。
 ///
-/// 同一 spine 章有多条目录项（一个 xhtml 装整卷、目录靠 `#anchor` 分节）时，本
-/// 函数返回的 index 会同时命中那几条 —— 与精确相等时代的行为一致（调用方据此
-/// 把它们全部标成当前章，滚动锚点取其中第一条）。
-int? resolveCurrentTocChapter(List<TtuTocEntry> toc, int? currentChapter) {
+/// [currentCharOffset] 为 null / 负数（位置尚未回报：刚开书 / 刚跳章）时只知道
+/// 章号：命中当前章里**偏移最小**的那条（章首那条），当前章一条都没有再 floor 到
+/// 前面的章——而不是像旧实现那样命中最后一条。多条并列同一位置时取先出现的。
+int? resolveCurrentTocEntry(
+  List<TtuTocEntry> toc,
+  int? currentChapter,
+  int? currentCharOffset,
+) {
   if (currentChapter == null) return null;
+  final bool offsetUnknown = currentCharOffset == null || currentCharOffset < 0;
   int? resolved;
-  for (final TtuTocEntry entry in toc) {
+  for (int i = 0; i < toc.length; i++) {
+    final TtuTocEntry entry = toc[i];
     if (entry.isHeader || entry.index > currentChapter) continue;
-    if (resolved == null || entry.index > resolved) resolved = entry.index;
+    final bool inCurrent = entry.index == currentChapter;
+    if (inCurrent &&
+        !offsetUnknown &&
+        entry.charOffsetInChapter > currentCharOffset) {
+      continue;
+    }
+    if (resolved == null) {
+      resolved = i;
+      continue;
+    }
+    final TtuTocEntry best = toc[resolved];
+    if (entry.index > best.index) {
+      resolved = i;
+      continue;
+    }
+    if (entry.index != best.index) continue;
+    // 同一章内：位置已知取不晚于当前的最大偏移；未知取最小偏移（章首那条）。
+    final bool better = inCurrent && offsetUnknown
+        ? entry.charOffsetInChapter < best.charOffsetInChapter
+        : entry.charOffsetInChapter > best.charOffsetInChapter;
+    if (better) resolved = i;
   }
   return resolved;
 }

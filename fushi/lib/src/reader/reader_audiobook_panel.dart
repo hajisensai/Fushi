@@ -13,6 +13,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
+import 'package:fushi/src/reader/ttu_toc_flatten.dart'
+    show resolveCurrentTocEntry;
 import 'package:fushi/utils.dart';
 
 /// 「信息卡固定 + tab 内容独立滚动」形态所需的最小可用高度（dp）。
@@ -39,6 +41,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
     required this.controller,
     required this.toc,
     required this.currentSection,
+    this.currentCharOffset,
     required this.onJumpSection,
     required this.title,
     required this.chapterLabel,
@@ -56,6 +59,10 @@ class ReaderAudiobookPanel extends StatefulWidget {
 
   /// 阅读器当前章（用于「当前章节」标注）。
   final int? currentSection;
+
+  /// 当前章内字符偏移（与 [TtuTocEntry.anchorCharOffset] 同尺），未知 null；
+  /// 同一 spine 章下靠锚点分节的目录项靠它分清当前是哪一条。
+  final int? currentCharOffset;
   final Future<void> Function(int sectionIndex, String? fragment) onJumpSection;
   final String title;
   final String? chapterLabel;
@@ -522,11 +529,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   /// 「章节」tab：目录 + 该章首句在全书音频时间轴上的起点（控制器按章缓存）；当前
   /// 章加标注。点击先跳阅读器到该章，再把音频定位到该章首句（无 cue 的章只跳文字）。
   Widget _buildChaptersTab(ThemeData theme, AudiobookPlayerController? ctrl) {
-    final int currentSection = widget.currentSection ?? -1;
-    int currentEntry = -1;
-    for (int i = 0; i < widget.toc.length; i++) {
-      if (widget.toc[i].index <= currentSection) currentEntry = i;
-    }
+    final int currentEntry = resolveCurrentTocEntry(
+          widget.toc,
+          widget.currentSection,
+          widget.currentCharOffset,
+        ) ??
+        -1;
     final TextStyle? timeStyle = theme.textTheme.bodyMedium?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
       fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],

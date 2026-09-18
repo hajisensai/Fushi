@@ -1081,6 +1081,40 @@ List<int> countChapterChars(EpubBook book) {
   );
 }
 
+/// [computeTocAnchorCharOffsets] 结果的键：章号 + 锚点 id。
+String tocAnchorKey(int chapterIndex, String fragment) =>
+    '$chapterIndex#$fragment';
+
+/// 整本目录里每个带 `#fragment` 的条目，其锚点在所属章内的字符偏移
+/// （[EpubBook.chapterAnchorCharOffsets] 口径），键见 [tocAnchorKey]。同一章的锚点
+/// 合成一次 DOM 遍历。供 compute() 在后台 isolate 调用——「一个 xhtml 装整卷、目录
+/// 靠锚点分节」的书，一章就是几万字，不能在 UI 线程解析。
+Map<String, int> computeTocAnchorCharOffsets(EpubBook book) {
+  final Map<int, Set<String>> byChapter = <int, Set<String>>{};
+  void walk(List<EpubTocItem> nodes) {
+    for (final EpubTocItem item in nodes) {
+      final String? fragment = tocHrefFragment(item.href);
+      final int index = book.chapterIndexForHref(item.href);
+      if (fragment != null && index >= 0) {
+        byChapter.putIfAbsent(index, () => <String>{}).add(fragment);
+      }
+      walk(item.children);
+    }
+  }
+
+  walk(book.toc);
+  final Map<String, int> offsets = <String, int>{};
+  for (final MapEntry<int, Set<String>> entry in byChapter.entries) {
+    book.chapterAnchorCharOffsets(entry.key, entry.value).forEach((
+      String fragment,
+      int offset,
+    ) {
+      offsets[tocAnchorKey(entry.key, fragment)] = offset;
+    });
+  }
+  return offsets;
+}
+
 /// 在单个 isolate 内解析 EPUB 并计算每章纯文本长度。供 compute() 调用，
 /// 也可直接调用做等价性校验。
 ///
@@ -1487,6 +1521,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 树。只随 _book 失效，故这两个字段总是成对写。
   List<TtuTocEntry>? _ttuTocCache;
   EpubBook? _ttuTocCacheBook;
+  // 目录锚点的章内字符偏移（[computeTocAnchorCharOffsets]），开书后后台算，落定
+  // 即作废 _ttuTocCache 让目录项带上偏移；只对 _tocAnchorOffsetsBook 那本有效。
+  Map<String, int>? _tocAnchorCharOffsets;
+  EpubBook? _tocAnchorOffsetsBook;
   bool _readerContentReady = false;
   // BUG-2015：连续模式跨章前捕获旧视口，加载期间继续展示，目标章就绪后淡出。
   // 这张图只跨一次章节导航存活；不用于分页/手动跳转，也不落盘。
@@ -2523,6 +2561,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _recomputeCharCountsInBackground();
     }
 
+    _computeTocAnchorOffsetsInBackground();
+
     // TODO-131: spread map 与 audio slot 互不依赖（前者写 _spreadMap/_edgeMatchResults，
     // 后者写 _audiobookController，都只读已就绪的 _book），并行等待两组 DB 往返。
     _openTrace.mark('charCounts');
@@ -2727,6 +2767,35 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           .catchError((Object e, StackTrace s) {
             ErrorLogService.instance.log(
               'ReaderFushi._recomputeCharCountsInBackground',
+              e,
+              s,
+            );
+          }),
+    );
+  }
+
+  /// 目录锚点的章内偏移放后台 isolate 算（[computeTocAnchorCharOffsets]），不阻塞
+  /// 首屏；落定后作废压平缓存并重建，顶栏章名 / 导航面板的「当前章」从此能分清
+  /// 同一 xhtml 里的各节。目录里一个锚点都没有的书直接跳过（多数书如此）。
+  void _computeTocAnchorOffsetsInBackground() {
+    final EpubBook? book = _book;
+    if (book == null || book.toc.isEmpty) return;
+    bool hasFragment(List<EpubTocItem> nodes) => nodes.any(
+      (EpubTocItem item) =>
+          tocHrefFragment(item.href) != null || hasFragment(item.children),
+    );
+    if (!hasFragment(book.toc)) return;
+    unawaited(
+      compute(computeTocAnchorCharOffsets, book)
+          .then((Map<String, int> offsets) {
+            if (!mounted || !identical(_book, book)) return;
+            _tocAnchorCharOffsets = offsets;
+            _tocAnchorOffsetsBook = book;
+            _rebuild(() => _ttuTocCache = null);
+          })
+          .catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log(
+              'ReaderFushi._computeTocAnchorOffsetsInBackground',
               e,
               s,
             );

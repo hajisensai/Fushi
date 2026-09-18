@@ -775,6 +775,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       charOffset: -1,
       fragment: fragment,
     );
+    // BUG-2580：目标章落定前 _tocCharOffsetFor 会先看这个缓存；不清掉会拿上一章
+    // 残留偏移给新章判目录项，顶栏章名短暂错标。清成 -1 让它退到 fragment 锚点。
+    _lastProgressCharOffset = -1;
 
     try {
       await _loadChapterDirectly(index);
@@ -900,7 +903,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       progress: 0.0,
       charOffset: -1,
     );
-
+    _lastProgressCharOffset = -1; // BUG-2580：同上，不让上一章偏移串到新章
     try {
       await _loadSpreadPage(entry);
     } catch (e, stack) {
