@@ -101,6 +101,25 @@ class VideoSourceScrapeGlobalConfig {
         clientName: anidbClientName,
         clientVersion: anidbClientVersion ?? 0,
       );
+
+  /// 装配点判「配置变没变、要不要重建协调器 / 发现服务」的唯一指纹。
+  ///
+  /// 所有会被烘进 [VideoSourceScrapeCoordinator] / `VideoDiscoveryService`
+  /// 构造快照的字段都必须在这里：BUG-2581 手动刮削装配点自己手写指纹时漏掉了
+  /// `hashEnabled` / 用户名 / 密码，用户填好 AniDB 账号后仍复用旧协调器，
+  /// 旧协调器里的 `AnidbHashIdentityService` 还是构建时那份「未配置」快照。
+  String get runtimeFingerprint => <Object>[
+        tmdbApiKey,
+        anidbClientName,
+        anidbClientVersion ?? 0,
+        hashEnabled,
+        anidbUsername,
+        anidbPassword,
+        locale,
+        primaryProvider.name,
+        identifierWords.source,
+      ].join('\u0000');
+
   /// 本批次的**全局**资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，所以
   /// 消费端一律从**有效** locale 派生语言参数（`VideoSourceScrapeCoordinator._locale`
   /// / provider 的 `language`），不要在这里加一个从全局 locale 派生的 getter——

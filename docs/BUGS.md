@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2386 条。点号进各自文件。
+> 共 2388 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2581](bugs/BUG-2581-anidb-scrape-config-stale.md) | ✅ | ✅ | 手动刮削协调器指纹漏掉AniDB哈希开关与账号 |
 | [BUG-2580](bugs/BUG-2580-reader-toc-anchor-subchapter-current.md) | ✅ | ✅ | 阅读器目录靠锚点分节时当前章名与勾选落错 |
 | [BUG-2579](bugs/BUG-2579-mdx-dict-order.md) | ✅ | ✅ | 查词弹窗里 MDX 词典恒排在所有 Yomitan 词典之后 |
 | [BUG-2578](bugs/BUG-2578-reader-vertical-continuous-android-overscroll-bounce.md) | ✅ | ✅ | 安卓竖排连续模式上下滑动画面回弹 |
