@@ -84,7 +84,7 @@ class BilibiliClipRequest {
   final Map<String, String> fields;
   final String sentence;
   final String? cueSentence;
-  final String documentTitle;
+  final String? documentTitle;
 }
 
 /// `x/web-interface/view` 响应体 → 指定分 P 的身份。纯函数，便于离线单测。
@@ -134,7 +134,30 @@ BilibiliPlayStreams? parseBilibiliPlayurlResponse(String body) {
   if (decoded['code'] != 0) return null;
   final Object? data = decoded['data'];
   if (data is! Map) return null;
-  final Object? dash = data['dash'];
+  return _playStreamsFrom(data);
+}
+
+/// `pgc/player/web/playurl`（番剧 / PGC，DASH）响应体 → 最高码率音轨。纯函数，便于离线单测。
+///
+/// 与 [parseBilibiliPlayurlResponse] 唯一的形状差异是**顶层键**：番剧回 `result`，稿件回 `data`
+/// （实测 `ep_id=815751`）。两个键都认，B 站哪天改回来也不会整条链断掉；挑音轨的判据与稿件那条
+/// 完全一致（同一个 [_playStreamsFrom]）。
+///
+/// 这份响应体是**扩展在页面主世界里**取回的（番剧大会员内容要带 SESSDATA，服务端匿名请求拿不
+/// 到），服务端只负责挑流——凭据从头到尾不出浏览器。
+BilibiliPlayStreams? parseBilibiliPgcPlayurlResponse(String body) {
+  final Object? decoded = _tryDecodeJson(body);
+  if (decoded is! Map) return null;
+  if (decoded['code'] != 0) return null;
+  final Object? payload =
+      decoded['result'] is Map ? decoded['result'] : decoded['data'];
+  if (payload is! Map) return null;
+  return _playStreamsFrom(payload);
+}
+
+/// 两类 playurl 响应体共用的挑流逻辑：只要 audio-only DASH，取 bandwidth 最高的那条。
+BilibiliPlayStreams? _playStreamsFrom(Map<Object?, Object?> payload) {
+  final Object? dash = payload['dash'];
   if (dash is! Map) return null;
   final Object? audio = dash['audio'];
   if (audio is! List || audio.isEmpty) return null;
@@ -180,6 +203,8 @@ typedef BilibiliJsonFetcher = Future<String?> Function(Uri uri);
 ///
 /// TTL 取 3 分钟而不是更长：playurl 给的直链带 `deadline` 查询参数（实测有效期数小时），
 /// 但 3 分钟已足够覆盖一次批量生成，且过期链只会让下一次重新解析，不会留下坏卡。
+/// 番剧（PGC）不进这个缓存：它的音轨由扩展随每次制卡一起回传（[buildPgcRequest]），
+/// 本类为它一行网络请求都不发。
 class BilibiliClipMiner {
   BilibiliClipMiner({
     BilibiliJsonFetcher? fetchJson,
@@ -218,6 +243,39 @@ class BilibiliClipMiner {
       documentTitle: (documentTitle != null && documentTitle.trim().isNotEmpty)
           ? documentTitle
           : resolved.identity.displayTitle,
+    );
+  }
+
+  /// 番剧（PGC）制卡：音轨已由**扩展在页面主世界里**解析好，这里只挑流 + 组装，不发网络请求。
+  ///
+  /// 与 [buildRequest] 的差别只有「身份从哪来」：番剧没有 bvid、没有分 P（`ep_id` 本身就是
+  /// 分集），标题也只有扩展带上来的页面标题——它就是用户此刻看到的那个。
+  /// 响应体里没有可裁音轨（未登录 / 大会员过期 / 接口改版）时抛 [StateError]，由调用方收敛成
+  /// 制卡失败：这条路的 `requireAudio` 是 true，静默出一张没有音频的卡更糟。
+  BilibiliClipRequest buildPgcRequest({
+    required String playurlBody,
+    required int startMs,
+    required int endMs,
+    required Map<String, String> fields,
+    required String sentence,
+    String? cueSentence,
+    String? documentTitle,
+  }) {
+    final BilibiliPlayStreams? streams =
+        parseBilibiliPgcPlayurlResponse(playurlBody);
+    if (streams == null) {
+      throw StateError('bilibili pgc playurl has no DASH audio');
+    }
+    return BilibiliClipRequest(
+      audioSource: streams.audioUrl,
+      clipStartMs: startMs,
+      clipEndMs: endMs,
+      fields: fields,
+      sentence: sentence,
+      cueSentence: cueSentence,
+      documentTitle: (documentTitle != null && documentTitle.trim().isNotEmpty)
+          ? documentTitle
+          : null,
     );
   }
 

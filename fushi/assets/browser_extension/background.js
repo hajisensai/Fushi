@@ -598,6 +598,53 @@ function fushiRedeemEmbedToken(token, senderTabId) {
   return rec.origin;
 }
 
+// BUG-2574：B 站番剧（PGC）的 playurl 必须在**页面主世界**里取，返回原始响应体（音轨仍由
+// 服务端解析）。
+//
+// 为什么不是服务端：`pgc/player/web/playurl` 的大会员内容要带 SESSDATA，而服务端是匿名请求
+// （`bilibili_clip_miner.dart`）→ 拿不到音频流，整张卡失败。
+// 为什么不是本 SW 直接 fetch：该接口的 CORS 只放行 `https://www.bilibili.com` 一个源（实测
+// `Access-Control-Allow-Origin` 就是它 + `Access-Control-Allow-Credentials: true`），从
+// chrome-extension 源发出的请求**读不到响应体**。
+// 页面主世界两者都满足（Origin 是页面自己、cookie 自动带上），且只回传响应体——凭据不出浏览器。
+// 番剧页 CSP 实测为空，`world:'MAIN'` 注入不会被拦；真被拦/未登录/接口改版都返回 null，
+// 调用方据此回落到「没有可裁源」的既有行为。
+const FUSHI_BILIBILI_PGC_RESOLVE_TIMEOUT_MS = 8000;
+
+async function fushiResolveBilibiliPgcPlayurl(tabId, epId) {
+  let results = null;
+  try {
+    results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        // func 被序列化后注入另一个世界，**不得闭包引用本作用域**的任何变量。
+        args: [String(epId)],
+        func: async (epid) => {
+          try {
+            const res = await fetch(
+              'https://api.bilibili.com/pgc/player/web/playurl?ep_id='
+                + encodeURIComponent(epid) + '&fnval=4048&fourk=1',
+              { credentials: 'include' });
+            if (!res.ok) return null;
+            return await res.text();
+          } catch (_) {
+            return null;
+          }
+        },
+      }),
+      // 注入可能被页面 CSP 拦、页面可能正忙：制卡不该被它挂住，超时即当作解析失败。
+      new Promise((resolve) => {
+        setTimeout(() => resolve(null), FUSHI_BILIBILI_PGC_RESOLVE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (_) {
+    return null;
+  }
+  const body = results && results[0] ? results[0].result : null;
+  return (typeof body === 'string' && body) ? body : null;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
@@ -976,6 +1023,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         //   · clipSourceKind / clipSourceId = 可裁原始流的站点身份（有解析器时才发）；
         //   · documentTitle = 页面标题 → Anki 视频名字段（不发则服务端回落字面 'Netflix'）。
         // 全部为可选：一个都不带时行为与改动前逐字等价（纯文本挖词回落）。
+        // B 站番剧（PGC）的音轨由页面主世界解析（见 `fushiResolveBilibiliPgcPlayurl`）。
+        // **解析不到就连 kind 一起不发**：服务端落到通用兜底（解码帧 + 例句、无句子音频），
+        // 与改动前番剧页的行为逐字一致——既不谎报「有音频」去出坏卡，也不新增失败提示。
+        let pgcPlayurlBody = null;
+        if (msg.clipSourceKind === 'bilibili-pgc' && msg.clipSourceId &&
+            _sender && _sender.tab && Number.isInteger(_sender.tab.id)) {
+          pgcPlayurlBody = await fushiResolveBilibiliPgcPlayurl(
+            _sender.tab.id, msg.clipSourceId);
+        }
+        const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
+          ? null
+          : msg.clipSourceKind;
         const r = await fetch(base + '/api/mine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -986,8 +1045,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.clipStartMs === 'number' ? { clipStartMs: msg.clipStartMs } : {}),
             ...(typeof msg.clipEndMs === 'number' ? { clipEndMs: msg.clipEndMs } : {}),
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
-            ...(msg.clipSourceKind ? { clipSourceKind: msg.clipSourceKind } : {}),
-            ...(msg.clipSourceId ? { clipSourceId: msg.clipSourceId } : {}),
+            ...(clipSourceKind ? { clipSourceKind: clipSourceKind } : {}),
+            ...(clipSourceKind ? { clipSourceId: msg.clipSourceId } : {}),
+            ...(pgcPlayurlBody ? { clipSourcePlayurlBody: pgcPlayurlBody } : {}),
             ...(typeof msg.clipSourcePart === 'number'
               ? { clipSourcePart: msg.clipSourcePart } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
