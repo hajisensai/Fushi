@@ -1,10 +1,14 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('fushi-defaults.js', 'connection-diagnostics.js', 'self-update.js', 'site-cookie-export.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('fushi-defaults.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'self-update.js', 'site-cookie-export.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
 let connectionConfigPromise = null;
+// 界面文案走 i18n.js（SW 里经 importScripts 装入；缺席时退回键名）。
+function bgT(key, params) {
+  return (typeof self.fushiT === 'function') ? self.fushiT(key, params) : key;
+}
 const LOOKUP_PERF_STORAGE_KEY = 'fushiLookupPerfLogs';
 const LOOKUP_PERF_LIMIT = 80;
 let lookupPerfSequence = 0;
@@ -118,6 +122,19 @@ function statusRequestBody() {
 }
 
 let connectionCache = null;
+// 扩展主题（options 的 extensionTheme，见 theme.js）。显式 light/dark 时查词请求带
+// colorScheme 提示，app 按该明暗生成弹窗 --md-* 配色；auto 不带（app 按自己当前明暗）。
+// SW 里没有 matchMedia，「跟随系统」只能由各页面自己决议，这里只关心显式值。
+let extensionThemePromise = null;
+function extensionColorScheme() {
+  if (!extensionThemePromise) {
+    extensionThemePromise = chrome.storage.local.get('extensionTheme').then((saved) => {
+      const v = saved && saved.extensionTheme;
+      return (v === 'light' || v === 'dark') ? v : null;
+    }).catch(() => null);
+  }
+  return extensionThemePromise;
+}
 try {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
@@ -125,6 +142,7 @@ try {
       connectionConfigPromise = null;
       connectionCache = null;
     }
+    if (changes.extensionTheme) extensionThemePromise = null;
   });
 } catch (_) { /* 非扩展测试壳没有 storage.onChanged。 */ }
 async function responseJson(resp) {
@@ -242,8 +260,41 @@ function fushiMergePopupCss(data) {
 // 纯状态机）：已 reload 过仍不一致 = 自更新失效（用户从别的目录加载 / 磁盘没刷成 /
 // 浏览器拒绝 reload），落 chrome.storage.local.fushiUpdateStale {remote, local} 供
 // action-popup 显示「需手动重载」提示 + 图标角标；恢复一致时清除 stale 与角标。
+// app 当前 UI 语言（status 响应 `locale` / 查词响应 `appLocale`）落 chrome.storage.local.appLocale，
+// i18n.js 默认「跟随 Fushi」读它。同值不重复写（storage.onChanged 会惊动所有页面）。
+let lastAppLocale = null;
+function rememberAppLocale(tag) {
+  if (typeof tag !== 'string' || !tag || tag === lastAppLocale) return;
+  lastAppLocale = tag;
+  try { chrome.storage.local.set({ appLocale: tag }); } catch (_) {}
+}
+
+// 沉浸时间（视频）：content script 的 study-tracker.js 每秒交一个位置样本，这里原样
+// POST /api/extension/study（与 popup-size 同一鉴权）。app 没开 / 旧 app 无此端点时退避
+// 15s 再试，避免每秒一次白打；样本本身是幂等状态快照，丢几条不影响口径。
+let studyBackoffUntil = 0;
+async function forwardStudySample(sample) {
+  if (!sample || typeof sample !== 'object') return { ok: false, error: 'no sample' };
+  if (Date.now() < studyBackoffUntil) return { ok: false, error: 'backoff' };
+  try {
+    const { base, token } = await cfg();
+    const r = await fetch(base + '/api/extension/study', {
+      method: 'POST',
+      signal: AbortSignal.timeout(4000),
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+      body: JSON.stringify(sample),
+    });
+    if (!r.ok) studyBackoffUntil = Date.now() + 15000;
+    return { ok: r.ok, status: r.status };
+  } catch (error) {
+    studyBackoffUntil = Date.now() + 15000;
+    return { ok: false, error: String(error && error.message || error) };
+  }
+}
+
 async function maybeSelfReload(data) {
   try {
+    rememberAppLocale(data && data.locale);
     const remote = data && data.extensionBuild;
     const local = FUSHI_DEFAULTS.build;
     const st = await chrome.storage.local.get(
@@ -472,8 +523,8 @@ function setRecordingBadge(on) {
     chrome.action.setBadgeText({ text: on ? '●' : '' });
     chrome.action.setTitle({
       title: on
-          ? 'Fushi：正在生成 Netflix 制卡（逐句回放录制中）'
-          : 'Fushi：点击生成 Netflix 制卡队列（逐集自动回放录制）',
+          ? bgT('bg_badge_generating')
+          : bgT('bg_badge_idle'),
     });
   } catch (_) { /* setBadge 在某些上下文不可用：忽略，不影响录制 */ }
   // BUG-1079：录制角标撤下后恢复自更新失效角标（若 stale 仍在）。录制中绝不动录制红点。
@@ -530,7 +581,7 @@ async function fushiIconClick(tab) {
   if (got.fushiNfBatch && got.fushiNfBatch.active) {
     await stopTabCapture();
     try { await chrome.storage.local.remove(['fushiNfBatch']); } catch (_) {}
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: '已取消生成' }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_generation_cancelled') }); } catch (_) {}
     return;
   }
   const url = tab.url || '';
@@ -547,7 +598,7 @@ async function fushiIconClick(tab) {
     if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
   }
   if (!episodes.length) {
-    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: '队列里没有 Netflix 待生成项' }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_no_netflix_pending') }); } catch (_) {}
     return;
   }
   const curId = (url.match(/\/watch\/(\d+)/) || [])[1];
@@ -596,6 +647,53 @@ function fushiRedeemEmbedToken(token, senderTabId) {
   // token 换 Tab 用不了：核销方必须是签发时那个标签页。
   if (!Number.isInteger(senderTabId) || rec.tabId !== senderTabId) return '';
   return rec.origin;
+}
+
+// BUG-2574：B 站番剧（PGC）的 playurl 必须在**页面主世界**里取，返回原始响应体（音轨仍由
+// 服务端解析）。
+//
+// 为什么不是服务端：`pgc/player/web/playurl` 的大会员内容要带 SESSDATA，而服务端是匿名请求
+// （`bilibili_clip_miner.dart`）→ 拿不到音频流，整张卡失败。
+// 为什么不是本 SW 直接 fetch：该接口的 CORS 只放行 `https://www.bilibili.com` 一个源（实测
+// `Access-Control-Allow-Origin` 就是它 + `Access-Control-Allow-Credentials: true`），从
+// chrome-extension 源发出的请求**读不到响应体**。
+// 页面主世界两者都满足（Origin 是页面自己、cookie 自动带上），且只回传响应体——凭据不出浏览器。
+// 番剧页 CSP 实测为空，`world:'MAIN'` 注入不会被拦；真被拦/未登录/接口改版都返回 null，
+// 调用方据此回落到「没有可裁源」的既有行为。
+const FUSHI_BILIBILI_PGC_RESOLVE_TIMEOUT_MS = 8000;
+
+async function fushiResolveBilibiliPgcPlayurl(tabId, epId) {
+  let results = null;
+  try {
+    results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        // func 被序列化后注入另一个世界，**不得闭包引用本作用域**的任何变量。
+        args: [String(epId)],
+        func: async (epid) => {
+          try {
+            const res = await fetch(
+              'https://api.bilibili.com/pgc/player/web/playurl?ep_id='
+                + encodeURIComponent(epid) + '&fnval=4048&fourk=1',
+              { credentials: 'include' });
+            if (!res.ok) return null;
+            return await res.text();
+          } catch (_) {
+            return null;
+          }
+        },
+      }),
+      // 注入可能被页面 CSP 拦、页面可能正忙：制卡不该被它挂住，超时即当作解析失败。
+      new Promise((resolve) => {
+        setTimeout(() => resolve(null), FUSHI_BILIBILI_PGC_RESOLVE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (_) {
+    return null;
+  }
+  const body = results && results[0] ? results[0].result : null;
+  return (typeof body === 'string' && body) ? body : null;
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -683,6 +781,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'openOptions') {
     try { chrome.runtime.openOptionsPage(); } catch (_) {}
     sendResponse({ ok: true });
+    return true;
+  }
+  if (msg && msg.type === 'studySample') {
+    forwardStudySample(msg.sample).then(sendResponse, () => sendResponse({ ok: false }));
     return true;
   }
   // BUG-1525：查词性能诊断不走 cfg()/localhost，避免“记录日志”本身污染被测热路径。
@@ -784,6 +886,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === 'lookup') {
         const lookupId = lookupTrace.id;
         const maximumTerms = lookupTrace.maximumTerms;
+        const colorScheme = await extensionColorScheme();
         lookupTrace.phase = 'fetch-headers';
         const fetchStartedAt = performance.now();
         // 查词 fetch 必须有上限：app 侧一旦长阻塞（词典重载/磁盘 stall），无超时的 await 会让
@@ -805,6 +908,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             // BUG-1718：已缓存的弹窗 CSS 尾段指纹。字段在 = 本客户端认识该契约；
             // 与服务端当前指纹一致时服务端只回指纹不回正文（数百 KB 不上路）。
             stylesRevision: fushiPopupCss.revision,
+            // 扩展主题显式 light/dark：让 app 按这个明暗生成弹窗配色（旧 app 忽略该字段）。
+            ...(colorScheme ? { colorScheme } : {}),
           }),
         });
         const headersAt = performance.now();
@@ -822,6 +927,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           try {
             data = JSON.parse(raw);
             fushiMergePopupCss(data); // BUG-1718：并进/回填词典 CSS 尾段
+            rememberAppLocale(data && data.appLocale);
           } catch (error) { parseError = String(error && error.message || error); }
         }
         const finishedAt = performance.now();
@@ -976,6 +1082,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         //   · clipSourceKind / clipSourceId = 可裁原始流的站点身份（有解析器时才发）；
         //   · documentTitle = 页面标题 → Anki 视频名字段（不发则服务端回落字面 'Netflix'）。
         // 全部为可选：一个都不带时行为与改动前逐字等价（纯文本挖词回落）。
+        // B 站番剧（PGC）的音轨由页面主世界解析（见 `fushiResolveBilibiliPgcPlayurl`）。
+        // **解析不到就连 kind 一起不发**：服务端落到通用兜底（解码帧 + 例句、无句子音频），
+        // 与改动前番剧页的行为逐字一致——既不谎报「有音频」去出坏卡，也不新增失败提示。
+        let pgcPlayurlBody = null;
+        if (msg.clipSourceKind === 'bilibili-pgc' && msg.clipSourceId &&
+            _sender && _sender.tab && Number.isInteger(_sender.tab.id)) {
+          pgcPlayurlBody = await fushiResolveBilibiliPgcPlayurl(
+            _sender.tab.id, msg.clipSourceId);
+        }
+        const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
+          ? null
+          : msg.clipSourceKind;
         const r = await fetch(base + '/api/mine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -986,8 +1104,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.clipStartMs === 'number' ? { clipStartMs: msg.clipStartMs } : {}),
             ...(typeof msg.clipEndMs === 'number' ? { clipEndMs: msg.clipEndMs } : {}),
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
-            ...(msg.clipSourceKind ? { clipSourceKind: msg.clipSourceKind } : {}),
-            ...(msg.clipSourceId ? { clipSourceId: msg.clipSourceId } : {}),
+            ...(clipSourceKind ? { clipSourceKind: clipSourceKind } : {}),
+            ...(clipSourceKind ? { clipSourceId: msg.clipSourceId } : {}),
+            ...(pgcPlayurlBody ? { clipSourcePlayurlBody: pgcPlayurlBody } : {}),
             ...(typeof msg.clipSourcePart === 'number'
               ? { clipSourcePart: msg.clipSourcePart } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),

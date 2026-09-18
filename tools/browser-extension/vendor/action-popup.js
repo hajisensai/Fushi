@@ -5,6 +5,12 @@
 // 本文件在扩展页上下文运行（有 chrome API），不注入宿主页，故不复用 content.js 的内存镜像，
 // 直接读写 chrome.storage.local 的 fushiQueue（跨 content/popup/background 的单一真相源）。
 
+// 界面文案统一走 i18n.js（fushiT）；node 测试没装 i18n 时退回键名（纯函数的断言以键名为准）。
+function fushiApT(key, params) {
+  const g = typeof self !== 'undefined' ? self : (typeof window !== 'undefined' ? window : globalThis);
+  return (g && typeof g.fushiT === 'function') ? g.fushiT(key, params) : key;
+}
+
 // 纯函数：从队列里剔除指定 id（读-改-写的核心）。抽出来供 node 测试，无 chrome 依赖。
 function fushiFilterQueue(queue, removeId) {
   const list = Array.isArray(queue) ? queue : [];
@@ -19,7 +25,7 @@ function fushiQueueItemLabel(q) {
   const word = (q && q.fields && (q.fields.expression || q.fields.word || q.fields.term)) || '';
   const raw = String(word).trim() || String((q && q.sentence) || '').trim();
   if (raw) return raw.length > 40 ? raw.slice(0, 40) + '…' : raw;
-  return '(空)';
+  return fushiApT('ap_queue_item_empty');
 }
 
 // 队列项的上下文句子（主标签下方暗色次要行）。仅当主标签是「词」时才返回句子；无词时主标签已是
@@ -68,39 +74,40 @@ function fushiTabSite(url) {
 // - generate：当前 tab 站点与队列中可生成项匹配 → 可点，标签带数量；跨站点剩余量进 hint。
 // - empty / unsupported / wrongSite：不可点 + hint 说明原因与下一步（wrongSite 引导点队列条目跳转）。
 function fushiGenButtonState(queue, batchActive, tabSite) {
+  const t = fushiApT;
   if (batchActive) {
-    return { mode: 'cancel', label: '取消生成', enabled: true, hint: '正在生成中，点击取消并清理录制状态' };
+    return { mode: 'cancel', label: t('ap_gen_cancel'), enabled: true, hint: t('ap_gen_cancel_hint') };
   }
   const list = Array.isArray(queue) ? queue : [];
   const nf = list.filter((q) => q && q.site === 'netflix' && q.netflixId).length;
   const yt = list.filter((q) => q && q.site === 'youtube' && q.youtubeId).length;
   if (!list.length) {
-    return { mode: 'empty', label: '开始生成 / 录制', enabled: false, hint: '' };
+    return { mode: 'empty', label: t('ap_gen_start'), enabled: false, hint: '' };
   }
   if (!nf && !yt) {
     return {
-      mode: 'unsupported', label: '开始生成 / 录制', enabled: false,
-      hint: '队列里的卡片来自暂不支持批量生成的站点，可逐项删除或清空',
+      mode: 'unsupported', label: t('ap_gen_start'), enabled: false,
+      hint: t('ap_gen_unsupported_hint'),
     };
   }
   if (tabSite === 'netflix' && nf) {
     return {
-      mode: 'generate', label: '开始录制生成（' + nf + ' 张）', enabled: true,
-      hint: yt ? '另有 YouTube ' + yt + ' 张，需切到 YouTube 页面生成' : '',
+      mode: 'generate', label: t('ap_gen_start_record_n', { n: nf }), enabled: true,
+      hint: yt ? t('ap_gen_other_youtube_hint', { n: yt }) : '',
     };
   }
   if (tabSite === 'youtube' && yt) {
     return {
-      mode: 'generate', label: '开始生成（' + yt + ' 张）', enabled: true,
-      hint: nf ? '另有 Netflix ' + nf + ' 张，需切到 Netflix 播放页生成' : '',
+      mode: 'generate', label: t('ap_gen_start_n', { n: yt }), enabled: true,
+      hint: nf ? t('ap_gen_other_netflix_hint', { n: nf }) : '',
     };
   }
   const parts = [];
-  if (nf) parts.push('Netflix ' + nf + ' 张');
-  if (yt) parts.push('YouTube ' + yt + ' 张');
+  if (nf) parts.push(t('ap_gen_site_count', { site: 'Netflix', n: nf }));
+  if (yt) parts.push(t('ap_gen_site_count', { site: 'YouTube', n: yt }));
   return {
-    mode: 'wrongSite', label: '开始生成 / 录制', enabled: false,
-    hint: '待生成：' + parts.join(' · ') + '，点队列条目跳到对应视频页再生成',
+    mode: 'wrongSite', label: t('ap_gen_start'), enabled: false,
+    hint: t('ap_gen_wrong_site_hint', { pending: parts.join(' · ') }),
   };
 }
 
@@ -111,9 +118,10 @@ function fushiUpdateNotice(stale) {
   if (!stale || !stale.remote) return null;
   const short = (s) => String(s || '').slice(0, 8);
   return {
-    title: '扩展有新版本，需手动重新加载',
-    detail: '自动更新未生效：请到 chrome://extensions 找到本扩展点「重新加载」'
-        + '（当前 ' + (short(stale.local) || '未知') + ' → 最新 ' + short(stale.remote) + '）',
+    title: fushiApT('ap_update_stale_title'),
+    detail: fushiApT('ap_update_stale_detail', {
+      local: short(stale.local) || fushiApT('ap_update_unknown_build'), remote: short(stale.remote),
+    }),
   };
 }
 
@@ -125,10 +133,8 @@ function fushiOverlayToggleState(stored) {
   const on = !(stored && stored.subtitleOverlayEnabled === false);
   return {
     on,
-    state: on ? '开' : '关',
-    title: on
-      ? '点击关闭 Fushi 自绘字幕（回到站点自带字幕）'
-      : '点击在视频上显示 Fushi 字幕（外挂轨 / 替代原生字幕）',
+    state: fushiApT(on ? 'ap_toggle_on' : 'ap_toggle_off'),
+    title: fushiApT(on ? 'ap_overlay_toggle_title_on' : 'ap_overlay_toggle_title_off'),
   };
 }
 
@@ -165,8 +171,8 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   // TODO-1881：探测抽成函数——连接状态行本身可点，点击即强制重检（原来重试只能进 options 页）。
   function refreshConnection() {
     if (connEl) connEl.dataset.tone = 'loading';
-    if (connTitleEl) connTitleEl.textContent = '正在检测 Fushi…';
-    if (connDetailEl) connDetailEl.textContent = '查词与字幕服务';
+    if (connTitleEl) connTitleEl.textContent = fushiApT('ap_connection_checking');
+    if (connDetailEl) connDetailEl.textContent = fushiApT('ap_connection_detail');
     try {
       chrome.runtime.sendMessage({ type: 'connectionStatus', force: true }, (resp) => {
         try { if (chrome.runtime.lastError) return; } catch (_) { return; }
@@ -175,7 +181,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
         if (connEl) connEl.dataset.tone = copy.tone;
         if (connTitleEl) connTitleEl.textContent = copy.title;
         if (connDetailEl) connDetailEl.textContent = copy.detail;
-        if (connEl) connEl.title = copy.detail + '（点击重新检测）';
+        if (connEl) connEl.title = copy.detail + fushiApT('ap_connection_recheck_suffix');
       });
     } catch (_) {}
   }
@@ -272,7 +278,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     if (!list.length) {
       const empty = document.createElement('div');
       empty.className = 'hp-empty';
-      empty.textContent = '队列为空：开字幕 → Shift 查词 → 弹窗「制卡」入队，再回来生成';
+      empty.textContent = fushiApT('ap_queue_empty');
       listEl.appendChild(empty);
       return;
     }
@@ -280,13 +286,13 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
     const heading = document.createElement('div');
     heading.className = 'hp-list-title';
     const headingText = document.createElement('span');
-    headingText.textContent = '待生成的卡片（' + list.length + '）';
+    headingText.textContent = fushiApT('ap_queue_heading', { n: list.length });
     heading.appendChild(headingText);
     // TODO-1881：清空按钮（二次确认）挂在标题行右侧。
     const clearBtn = document.createElement('button');
     clearBtn.className = 'hp-clear';
     clearBtn.type = 'button';
-    clearBtn.textContent = '清空';
+    clearBtn.textContent = fushiApT('ap_queue_clear');
     clearBtn.addEventListener('click', () => {
       if (clearBtn.dataset.confirm === '1') {
         if (clearConfirmTimer) { clearTimeout(clearConfirmTimer); clearConfirmTimer = null; }
@@ -294,11 +300,11 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
         return;
       }
       clearBtn.dataset.confirm = '1';
-      clearBtn.textContent = '确认清空？';
+      clearBtn.textContent = fushiApT('ap_queue_clear_confirm');
       if (clearConfirmTimer) clearTimeout(clearConfirmTimer);
       clearConfirmTimer = setTimeout(() => {
         clearBtn.dataset.confirm = '';
-        clearBtn.textContent = '清空';
+        clearBtn.textContent = fushiApT('ap_queue_clear');
       }, 3000);
     });
     heading.appendChild(clearBtn);
@@ -331,7 +337,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       const jumpUrl = fushiQueueItemUrl(q);
       if (jumpUrl) {
         main.dataset.url = jumpUrl;
-        main.title = (context ? (label + ' — ' + context) : label) + '\n点击打开视频页';
+        main.title = (context ? (label + ' — ' + context) : label) + '\n' + fushiApT('ap_queue_open_video_hint');
         main.addEventListener('click', () => {
           try { chrome.tabs.create({ url: jumpUrl }); } catch (_) {}
         });
@@ -342,7 +348,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       del.className = 'hp-del';
       del.type = 'button';
       del.textContent = '×';
-      del.title = '从队列移除';
+      del.title = fushiApT('ap_queue_remove_title');
       const id = q && q.id;
       del.addEventListener('click', () => { if (id) removeItem(id); });
       row.appendChild(main);

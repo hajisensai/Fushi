@@ -58,15 +58,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Idle timeout':
       'test/media/audiobook/study_clock_test.dart（空闲门）+ '
           'test/tools/statistics_write_convergence_guard_test.dart',
-  // 「今日」重置时刻（整点）：写 prefsRepo（changed=true），生效点是
-  // AppModel._applyStatDayResetHour 镜像到 FushiDatabase.statDayResetHour——之后
-  // 每次 statDateKeyOf 派生 dateKey 才会前移，harness 的渲染输入观测不到。行为由
-  // stat_date_key_test（dateKey 前移 / 边界时长）+ stat_window_test / stat_summary_test /
-  // 热力图用例（读取面 key 算术）咬住。
-  'reading/Day starts at':
-      'test/stats/stat_date_key_test.dart + test/stats/stat_window_test.dart + '
-      'test/pages/stat_summary_test.dart + '
-      'test/widgets/stat_contribution_heatmap_test.dart',
   // 「功能模块」里**有底栏 tab 的七个**（五库页 + 下载/查词两个工具 tab）。写
   // prefsRepo（changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness
   // 里没有挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
@@ -115,6 +106,25 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
+  // 跨页偏移 / 宽页独占：写 prefsRepo（changed=true），生效点是阅读器打开书时
+  // 用它们构建 spread 序列（_buildSpreadsFor），harness 里没有阅读器。配对算法
+  // 是纯函数 buildMangaSpreads，由专项测试逐场景咬死（含「每页恰好出现一次且
+  // 升序」这条丢页守卫）。
+  'manga/Spread offset':
+      'test/media/manga/manga_wide_page_spread_test.dart（跨页偏移 0/1）',
+  'manga/Wide pages alone':
+      'test/media/manga/manga_wide_page_spread_test.dart（宽页独占 + 页序重对齐）',
+  // 底色：写 prefsRepo（changed=true），生效点在阅读器——WebView 文档的
+  // html,body 背景 + 页面 Scaffold 底色两处同源，harness 里没有阅读器。由专项
+  // 测试咬住「偏好值域往返」与「注入的文档真的换了背景且不残留旧的 #000」。
+  'manga/Background':
+      'test/media/manga/manga_overlay_background_tap_zone_test.dart（底色注入）'
+          ' + test/media/manga/manga_tap_zones_test.dart（值域往返）',
+  // 点击热区布局：同上。几何与 RTL 镜像是纯函数（mangaTapZones），由
+  // manga_tap_zones_test 逐布局咬死；注入串由 overlay 专项测试咬住。
+  'manga/Tap zone layout':
+      'test/media/manga/manga_tap_zones_test.dart（四种布局几何 + RTL 镜像）'
+          ' + test/media/manga/manga_overlay_background_tap_zone_test.dart（注入表）',
   // 顶栏悬浮/固定：写 prefsRepo（changed=true），生效点是阅读器打开书时读一次
   // appModel.mangaChromeFloating 决定栏形态与正文让位——harness 里没有阅读器。
   // 由 manga_reader_chrome_test 咬住让位/绘制两条纯函数，manga_fushi_page_test

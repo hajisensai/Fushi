@@ -24,6 +24,7 @@
 | `lapisStyle` | Lapis 样式编辑器 `LapisStyleEditorPage` | `ai_lapis_style_assistant.dart` | `LapisVisualRule[]` + 白名单 CSS | 编辑器草稿（可视化规则合并，CSS 追加到 `HIBIKI-LAPIS-USER` 区段） |
 | `videoIdentify` | 刮削协调器歧义路径 | `ai_video_identity_assistant.dart` | `{key, confidence, reason}` | `confidence >= 0.85` 且 key 在候选集内 → 走与人工确认相同的绑定路径，run diagnostic 记 `ai:matched`；否则原样进待确认 |
 | `videoSearch` | 资源搜索面 / 字幕搜索面板 / 自动补字幕 | `ai_video_search_assistant.dart` | 备选查询词、候选排列 + 推荐下标 | 查询词以 chip 展示、点选才填入（不改写用户输入）；重排只作用于当前列表 |
+| `customTheme` | 外观 → 自定义主题编辑页 `CustomThemePage` | `ai_theme_assistant.dart` | 按角色命名的颜色（`AiThemeRole`）+ 名字 + `neutralDerived` | 编辑页草稿（只覆盖 AI 给出的角色；主题色同时写 seed + primaryColor 钉死；不允许透明度的角色抹成不透明）；带一步「撤销 AI 改动」；落进主题列表仍只有「应用」一条路 |
 
 ## 3. 提示词与解析约定
 

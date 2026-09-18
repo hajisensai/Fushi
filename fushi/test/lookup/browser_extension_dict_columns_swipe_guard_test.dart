@@ -23,8 +23,9 @@ void main() {
         () {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src, contains('browserExtensionThemeColors()'),
-          reason: 'app_model.dart 应存在 browserExtensionThemeColors()');
+      expect(src, contains('browserExtensionThemeColors(String? colorScheme)'),
+          reason:
+              'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)');
       // 多列：列数（popupDictionaryColumns）随 theme 下发。
       expect(src, contains("'--dict-columns': '\$popupDictionaryColumns'"),
           reason: 'theme 必须下发 --dict-columns（扩展多列布局的列数来源）');

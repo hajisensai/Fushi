@@ -57,7 +57,8 @@ function world() {
 test('frame bootstraps its private root and bridge before shared popup scripts', () => {
   const html = fs.readFileSync(path.join(__dirname, 'nested-popup.html'), 'utf8');
   const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(scripts, ['nested-popup.js', 'vendor/dict-media.js',
+  // 文案 / 主题基建（locales/en.js + i18n.js + theme.js）先于本层脚本装入；私有 root 与桥仍在共享弹窗脚本之前。
+  assert.deepEqual(scripts, ['locales/en.js', 'i18n.js', 'theme.js', 'nested-popup.js', 'vendor/dict-media.js',
     'vendor/selection.js', 'vendor/popup.js', 'auto-read.js', 'ruby-render.js']);
   const w = world();
   assert.equal(w.window.__fushiRoot, w.root);

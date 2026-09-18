@@ -9,6 +9,7 @@
 //     站点原生快捷键也没了、屏幕上什么都没发生。
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -89,6 +90,7 @@ function loadPopup(options) {
     },
   });
   const sandbox = {
+    fushiT: FUSHI_T,
     document: {
       getElementById(id) {
         if (!els.has(id)) { const el = makeEl(); el.id = id; els.set(id, el); }
@@ -178,6 +180,7 @@ function loadBackground() {
     },
   });
   const sandbox = {
+    fushiT: FUSHI_T,
     chrome: chromeMock, console, fetch: () => Promise.resolve({ ok: false }),
     setTimeout, clearTimeout, setInterval: () => 1, clearInterval,
     URL, TextEncoder, TextDecoder, Promise, Date, Number, String,
@@ -233,11 +236,13 @@ function loadSubtitleController() {
     getBoundingClientRect() { return { left: 0, top: 0, width: 1280, height: 720 }; },
   };
   const windowObject = {
+    fushiT: FUSHI_T,
     fushiEpisodeCues: { '81001|ja': [{ startMs: 1000, endMs: 2000, text: 'こんにちは' }] },
     addEventListener() {}, postMessage() {},
     fushiToast(text) { toasts.push(String(text)); },
   };
   const sandbox = {
+    fushiT: FUSHI_T,
     window: windowObject,
     document: {
       body: makeEl(), fullscreenElement: null, addEventListener() {},
