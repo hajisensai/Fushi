@@ -556,11 +556,10 @@ class _TitleCatalogBuilder {
       _titleLanguage = _xmlLanguage(event);
       _titleText.clear();
     }
-    if (event.isSelfClosing) {
-      _end(name);
-    } else {
-      _open.add(name);
-    }
+    // 自闭合元素（`<title/>` / `<anime/>`）只有 start 事件、没有 end 事件；
+    // 必须先入栈再走 _end，否则 removeLast() 弹掉的是父级，之后整份目录静默截断。
+    _open.add(name);
+    if (event.isSelfClosing) _end(name);
   }
 
   void _end(String name) {

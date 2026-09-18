@@ -59,6 +59,39 @@ void main() {
       expect(hit.single.kind, AniDbTitleMatchKind.exact);
     });
 
+    test('self-closing elements do not desync the element stack', () async {
+      // 自闭合只有 start 事件：若不先入栈就 _end，弹掉的是父级，
+      // 之后的所有标题与作品会被静默丢掉（解析器等价性断裂、且不报错）。
+      final AniDbTitleCatalog catalog = catalogFor('''
+<?xml version="1.0" encoding="UTF-8"?>
+<animetitles>
+  <anime aid="1">
+    <title type="short" xml:lang="en"/>
+    <title type="main" xml:lang="x-jat">First</title>
+  </anime>
+  <anime aid="2"/>
+  <anime aid="3">
+    <title type="main" xml:lang="x-jat">Third</title>
+  </anime>
+</animetitles>
+''');
+      addTearDown(catalog.close);
+
+      final AniDbTitleRecord? first = await catalog.findByAnimeId(1);
+      final AniDbTitleRecord? third = await catalog.findByAnimeId(3);
+      expect(
+        first?.titles.map((AniDbTitle title) => title.value),
+        <String>['First'],
+        reason: '自闭合空标题之后同一作品的标题不能丢',
+      );
+      expect(
+        third?.titles.map((AniDbTitle title) => title.value),
+        <String>['Third'],
+        reason: '自闭合 <anime/> 之后的作品不能丢',
+      );
+      expect(await catalog.findByAnimeId(2), isNull);
+    });
+
     test('rejects DOCTYPE declarations before building any record', () async {
       final AniDbTitleCatalog catalog = catalogFor('''
 <?xml version="1.0"?>
