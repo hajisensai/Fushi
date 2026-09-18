@@ -48,22 +48,39 @@ void main() {
         reason: 'gallery jump must reuse _navigateToChapter');
   });
 
-  // BUG-2559：插图册与书架端插图库必须列同一组图、用同一把尺判「读到没读到」。
-  // 两条都是「删一行就悄悄退回各扫一遍」的形状，钉在源码层。
-  test('两个插图表面共用 EpubBook.images 这一份枚举', () {
-    // 画廊的清单只许来自 book.images；进度索引也只许从它转形态，不得自己再扫
-    // 一遍 DOM（各扫一遍 = 同一张图在两处被判出不同的「读到没读到」）。
+  // BUG-2559 / BUG-2589：插图册与书架端「查看插图」必须是同一份实现——同一组图、
+  // 同一把尺判「读到没读到」、同一套网格。书架端曾是另一套网格 + 翻页查看器 +
+  // 自己的进度索引（各扫一遍 = 同一张图在两处被判出不同的「读到没读到」，横版图
+  // 也各裁各的），现在只剩装载与接线。「删一行就悄悄长回第二份」的形状钉在源码层。
+  test('两个插图表面共用 EpubBook.images 这一份枚举与同一份 ReaderGalleryPage', () {
     expect(
         src.contains('final List<EpubImageRef> images = book.images;'), isTrue);
-    final String index = File('lib/src/reader/illustration_progress_index.dart')
-        .readAsStringSync();
+    final String shelf =
+        File('lib/src/pages/implementations/illustrations_viewer_page.dart')
+            .readAsStringSync();
     expect(
-        index.contains('for (final EpubImageRef ref in book.images)'), isTrue,
-        reason: '进度索引必须消费 EpubBook.images，不得另起一套章节扫描');
-    expect(index.contains('querySelectorAll'), isFalse,
-        reason: '第二套 DOM 扫描已退役，别再长回来');
-    expect(index.contains('countStudyChars'), isFalse,
-        reason: '章内偏移由 EpubBook.images 算好，这里不再重算');
+        shelf.contains(
+            "import 'package:fushi/src/reader/reader_gallery_page.dart';"),
+        isTrue,
+        reason: '书架端「查看插图」必须直接用阅读器内的 ReaderGalleryPage');
+    expect(shelf.contains('images: input.book.images,'), isTrue,
+        reason: '书架端的清单也只许来自 EpubBook.images');
+    expect(shelf.contains('currentChapter: position?.sectionIndex,'), isTrue,
+        reason: '没有位置行的书传 null，不得退化成 (0, 0) 把整本糊掉');
+    for (final String forbidden in <String>[
+      'GridView',
+      'PageView',
+      'maskedIllustrationCover(',
+      'IllustrationProgressIndex',
+      'querySelectorAll',
+      'InteractiveViewer(',
+    ]) {
+      expect(shelf.contains(forbidden), isFalse,
+          reason: '书架端不得再长出第二份网格 / 查看器 / 进度索引：$forbidden');
+    }
+    expect(File('lib/src/reader/illustration_progress_index.dart').existsSync(),
+        isFalse,
+        reason: '书架端专用的进度索引已退役（判据由 EpubImageRef 自带）');
   });
 
   test('画廊的「还没读到」带章内偏移，且宿主真把偏移传进来', () {
@@ -118,16 +135,31 @@ void main() {
         reason: '锁着的卡是这张图自己的高斯模糊，不是写着「尚未读到」的占位卡');
     expect(gallery.contains('class _LockedCardBody'), isFalse,
         reason: '文案占位卡已退役，别再长回来');
-    // 书架端插图库与阅读器插图册必须是同一份遮罩（含墨水屏的实心遮板分支）。
-    final String shelf =
-        File('lib/src/pages/implementations/illustrations_viewer_page.dart')
-            .readAsStringSync();
+  });
+
+  // BUG-2589：横版图占两列。滚动定位模型与真实网格必须读同一份槽位表，且宽高比
+  // 要在布局前由 isolate 探好——等缩略图解码再改行数会让「定位到当前章」漂走。
+  test('横版插图占两列：槽位表驱动网格与滚动定位，宽高比开页时在 isolate 探好', () {
+    final String gallery =
+        File('lib/src/reader/reader_gallery_page.dart').readAsStringSync();
     expect(
-      shelf.contains(
-          "import 'package:fushi/src/reader/masked_illustration_cover.dart';"),
-      isTrue,
-      reason: '遮罩视觉只许有一份，两端都从 masked_illustration_cover.dart 取',
-    );
+        gallery.contains('class _SlotGridDelegate extends SliverGridDelegate'),
+        isTrue,
+        reason: '网格必须按预算好的槽位画，不得退回固定列数的 childAspectRatio');
+    expect(
+        gallery.contains('SliverGridDelegateWithFixedCrossAxisCount'), isFalse);
+    expect(
+        gallery.contains('compute(') &&
+            gallery.contains('probeIllustrationAspectRatios'),
+        isTrue,
+        reason: '宽高比在 isolate 里批量读文件头，不在 UI 线程解码');
+    expect(gallery.contains('(_aspects[ref.src] ?? 0) > 1 ? 2 : 1'), isTrue,
+        reason: '横版（宽 > 高）占两列，没探到的按竖版');
+    final String probe = File('lib/src/reader/illustration_aspect_probe.dart')
+        .readAsStringSync();
+    expect(probe.contains('kIllustrationProbeHeadBytes'), isTrue,
+        reason: '只读头部，走不到尺寸再整文件重读');
+    expect(probe.contains('decodeImage'), isFalse, reason: '探针不得整图解码');
   });
 
   test('卡片长按 / 右键菜单提供跳转与恢复遮罩', () {

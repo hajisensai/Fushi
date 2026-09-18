@@ -6,13 +6,16 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart'
     show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/reader/illustration_aspect_probe.dart';
 import 'package:fushi/src/reader/illustration_grid_columns.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
@@ -67,7 +70,12 @@ class ReaderGalleryPage extends StatefulWidget {
   });
 
   final List<EpubImageRef> images;
-  final int currentChapter;
+
+  /// 当前阅读到的 spine 章号。null = 这本书没有阅读位置（书架端打开一本从没
+  /// 读过的书）：不出「当前阅读位置」标记与定位按钮，也不按进度遮「还没读到」
+  /// ——退化成 (0, 0) 会把开篇之后每一张都判成未读、整个画廊糊成一片，而用户
+  /// 没有任何开关能关掉它。总开关 [blurImages] 照常生效。
+  final int? currentChapter;
 
   /// 当前阅读位置在 [currentChapter] 内的归一偏移（0~10000，与落库的
   /// `ReaderPosition.normCharOffset` 同基准）。与 [currentChapter] 一起构成
@@ -100,6 +108,9 @@ class _GallerySection {
     required this.chapterIndex,
     required this.images,
     required this.offset,
+    required this.slots,
+    required this.rows,
+    required this.rowStarts,
   });
 
   final int chapterIndex;
@@ -107,18 +118,60 @@ class _GallerySection {
 
   /// 节头在滚动轴上的起点（逻辑像素）。
   final double offset;
+
+  /// 每张图在本节网格里的槽位（与 [images] 同下标）。
+  final List<_CardSlot> slots;
+
+  /// 本节网格的行数。
+  final int rows;
+
+  /// 每行第一张图在 [images] 里的下标（长度 = [rows]）。
+  final List<int> rowStarts;
+
+  /// [row] 行里离 [column] 列最近的那张图的下标（同距取先出现的）。行由装填
+  /// 保证非空。
+  int nearestInRow(int row, int column) {
+    int best = rowStarts[row];
+    int bestDistance = (slots[best].column - column).abs();
+    final int end = row + 1 < rows ? rowStarts[row + 1] : slots.length;
+    for (int i = rowStarts[row] + 1; i < end; i++) {
+      final int distance = (slots[i].column - column).abs();
+      if (distance < bestDistance) {
+        best = i;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+}
+
+/// 网格里一张卡的槽位：第几行、起始列、占几列（横版图占两列）。
+class _CardSlot {
+  const _CardSlot({
+    required this.row,
+    required this.column,
+    required this.span,
+  });
+
+  final int row;
+  final int column;
+  final int span;
 }
 
 /// 解析式布局模型：sliver 网格是惰性构建的，未进视口的卡片没有 RenderObject，
 /// 框架的 `ensureVisible` 对它们无效。「打开时定位到当前章」「回到最近已看」
 /// 「键盘焦点跟随」三处都要滚到还没构建的位置，所以列数 / 行高 / 每节偏移全由
-/// 宽度推出来，网格本身也用同一份列数（`SliverGridDelegateWithFixedCrossAxisCount`），
-/// 两边不会漂。
+/// 宽度推出来，网格本身也用同一份槽位表（[_SlotGridDelegate]），两边不会漂。
+///
+/// 横版图（宽 > 高，BUG-2589）占两列：竖版卡片比例塞不下双页插图，只能裁掉
+/// 两侧。装填按阅读顺序走，一行剩一列放不下横版图就另起一行（上一行末尾留空，
+/// 不拿后面的竖版图倒填——顺序比填满重要）。列数只有 1 时横版图退回占一列。
 class _GalleryLayout {
   _GalleryLayout({
     required double gridWidth,
     required List<_ChapterGroup> groups,
     required int? currentChapter,
+    required int Function(EpubImageRef ref) spanOf,
   }) : columns = _columnsFor(gridWidth) {
     cellWidth = (gridWidth - (columns - 1) * _kGridSpacing) / columns;
     cellHeight = cellWidth / _kCardAspectRatio;
@@ -140,17 +193,14 @@ class _GalleryLayout {
         markerOffset = cursor;
         cursor += _kMarkerHeight;
       }
-      built.add(
-        _GallerySection(
-          chapterIndex: group.chapterIndex,
-          images: group.images,
-          offset: cursor,
-        ),
+      final _GallerySection section = _packSection(
+        group,
+        offset: cursor,
+        columns: columns,
+        spanOf: spanOf,
       );
-      cursor +=
-          _kSectionHeaderHeight +
-          rowsExtent(group.images.length) +
-          _kSectionGap;
+      built.add(section);
+      cursor += _kSectionHeaderHeight + rowsExtent(section) + _kSectionGap;
     }
     if (needsMarker && markerBefore == null) {
       markerBefore = built.length;
@@ -165,6 +215,41 @@ class _GalleryLayout {
   static int _columnsFor(double gridWidth) =>
       illustrationGridColumnsForWidth(gridWidth, spacing: _kGridSpacing);
 
+  /// 按阅读顺序把一章的图装进 [columns] 列的网格。
+  static _GallerySection _packSection(
+    _ChapterGroup group, {
+    required double offset,
+    required int columns,
+    required int Function(EpubImageRef ref) spanOf,
+  }) {
+    final List<_CardSlot> slots = <_CardSlot>[];
+    final List<int> rowStarts = <int>[];
+    int row = 0;
+    int column = 0;
+    for (int i = 0; i < group.images.length; i++) {
+      final int span = spanOf(group.images[i]).clamp(1, columns);
+      if (column + span > columns) {
+        row++;
+        column = 0;
+      }
+      if (column == 0) rowStarts.add(i);
+      slots.add(_CardSlot(row: row, column: column, span: span));
+      column += span;
+      if (column >= columns) {
+        row++;
+        column = 0;
+      }
+    }
+    return _GallerySection(
+      chapterIndex: group.chapterIndex,
+      images: group.images,
+      offset: offset,
+      slots: slots,
+      rows: rowStarts.length,
+      rowStarts: rowStarts,
+    );
+  }
+
   final int columns;
   late final double cellWidth;
   late final double cellHeight;
@@ -174,9 +259,11 @@ class _GalleryLayout {
   late final int? markerSectionIndex;
   double? markerOffset;
 
-  double rowsExtent(int count) {
-    if (count <= 0) return 0;
-    final int rows = (count + columns - 1) ~/ columns;
+  double get rowStride => cellHeight + _kGridSpacing;
+
+  double rowsExtent(_GallerySection section) {
+    final int rows = section.rows;
+    if (rows <= 0) return 0;
     return rows * cellHeight + (rows - 1) * _kGridSpacing;
   }
 
@@ -184,7 +271,69 @@ class _GalleryLayout {
   double rowOffset(_GallerySection section, int indexInSection) =>
       section.offset +
       _kSectionHeaderHeight +
-      (indexInSection ~/ columns) * (cellHeight + _kGridSpacing);
+      section.slots[indexInSection].row * rowStride;
+}
+
+/// 把 [_GalleryLayout] 算好的槽位表交给 sliver 网格：每张卡的几何全部预先
+/// 确定，网格与滚动定位读的是同一份数据。
+class _SlotGridDelegate extends SliverGridDelegate {
+  const _SlotGridDelegate({required this.layout, required this.section});
+
+  final _GalleryLayout layout;
+  final _GallerySection section;
+
+  @override
+  SliverGridLayout getLayout(SliverConstraints constraints) =>
+      _SlotGridLayout(layout: layout, section: section);
+
+  @override
+  bool shouldRelayout(_SlotGridDelegate oldDelegate) =>
+      !identical(oldDelegate.section, section) ||
+      oldDelegate.layout.cellWidth != layout.cellWidth ||
+      oldDelegate.layout.cellHeight != layout.cellHeight;
+}
+
+class _SlotGridLayout extends SliverGridLayout {
+  const _SlotGridLayout({required this.layout, required this.section});
+
+  final _GalleryLayout layout;
+  final _GallerySection section;
+
+  @override
+  SliverGridGeometry getGeometryForChildIndex(int index) {
+    final _CardSlot slot = section.slots[index];
+    return SliverGridGeometry(
+      scrollOffset: slot.row * layout.rowStride,
+      crossAxisOffset: slot.column * (layout.cellWidth + _kGridSpacing),
+      mainAxisExtent: layout.cellHeight,
+      crossAxisExtent:
+          slot.span * layout.cellWidth + (slot.span - 1) * _kGridSpacing,
+    );
+  }
+
+  @override
+  int getMinChildIndexForScrollOffset(double scrollOffset) {
+    if (section.rows == 0) return 0;
+    final int row = (scrollOffset / layout.rowStride).floor().clamp(
+      0,
+      section.rows - 1,
+    );
+    return section.rowStarts[row];
+  }
+
+  @override
+  int getMaxChildIndexForScrollOffset(double scrollOffset) {
+    if (section.rows == 0) return 0;
+    // 与 SliverGridRegularTileLayout 同口径：滚动偏移落在第 k 行顶边之前时，
+    // 最后一张可见卡属于第 k-1 行。
+    final int row = (scrollOffset / layout.rowStride).ceil() - 1;
+    if (row < 0) return 0;
+    if (row + 1 >= section.rows) return section.slots.length - 1;
+    return section.rowStarts[row + 1] - 1;
+  }
+
+  @override
+  double computeMaxScrollOffset(int childCount) => layout.rowsExtent(section);
 }
 
 class _ChapterGroup {
@@ -235,6 +384,16 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   _GalleryLayout? _layout;
 
+  /// 当前查看那一卷里每张图的宽高比（按 `src` 记），开页 / 切卷后在 isolate 里
+  /// 读文件头填上（[_probeAspects]）。没探到的按竖版处理。
+  Map<String, double> _aspects = const <String, double>{};
+  int _aspectProbeSeq = 0;
+
+  /// 打开时自动定位落在的滚动偏移。宽高比探测完成会改行数，若用户此前没动过
+  /// 滚动条（偏移还停在这个值），就按新布局重新定位一次，否则「定位到当前章」
+  /// 会随行数变化漂到别的地方。
+  double? _autoScrolledTo;
+
   /// 当前查看的卷（初值 = 当前卷）。看兄弟卷时 [_sibling] 持有该卷的插图表；
   /// 装载中 / 失败为 null（主体显示占位）。
   late int _viewedVolume = widget.volumeSwitch?.currentIndex ?? 0;
@@ -261,11 +420,17 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   /// 只比章号曾是 BUG-2559 的一半——当前章里读到一半，章内靠后的插图在这里算
   /// 「已读到」不遮，书架那边按偏移算「还没读到」照遮，同一本书两处糊的图不一样。
   bool _unreadAhead(EpubImageRef ref) {
-    if (ref.chapterIndex != widget.currentChapter) {
-      return ref.chapterIndex > widget.currentChapter;
+    final int? currentChapter = widget.currentChapter;
+    if (currentChapter == null) return false;
+    if (ref.chapterIndex != currentChapter) {
+      return ref.chapterIndex > currentChapter;
     }
     return ref.normCharOffset > widget.currentNormCharOffset;
   }
+
+  /// 有没有「当前阅读位置」可标 / 可定位：当前卷且宿主给了章号。
+  bool get _hasReadingPosition =>
+      !_peekingSibling && widget.currentChapter != null;
 
   /// 当前有效的已揭开集：宿主会话集 ∪ 本页揭开的 − 本页恢复遮罩的。
   Set<String> get _revealedNow =>
@@ -313,9 +478,10 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   @override
   void initState() {
     super.initState();
+    _probeAspects();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _scrollToCurrentPosition(animate: false);
+      _autoScrolledTo = _scrollToCurrentPosition(animate: false);
     });
   }
 
@@ -326,10 +492,60 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     super.dispose();
   }
 
+  // ── 宽高比探测（BUG-2589） ──────────────────────────────────────────
+
+  /// 横版 = 宽 > 高，占两列；没探到 / 竖版占一列。
+  int _spanOf(EpubImageRef ref) => (_aspects[ref.src] ?? 0) > 1 ? 2 : 1;
+
+  /// 在 isolate 里读当前查看那一卷全部插图的文件头，拿到宽高比后重排网格。
+  /// 按 seq 丢弃切卷后才回来的旧结果。
+  void _probeAspects() {
+    final int seq = ++_aspectProbeSeq;
+    final Map<String, String> pathBySrc = <String, String>{};
+    for (final EpubImageRef ref in _images) {
+      final File? file = _fileFor(ref);
+      if (file != null) pathBySrc[ref.src] = file.path;
+    }
+    if (pathBySrc.isEmpty) return;
+    unawaited(
+      compute(
+        probeIllustrationAspectRatios,
+        pathBySrc.values.toList(growable: false),
+      ).then<void>(
+        (Map<String, double> byPath) {
+          if (!mounted || seq != _aspectProbeSeq) return;
+          final Map<String, double> bySrc = <String, double>{
+            for (final MapEntry<String, String> e in pathBySrc.entries)
+              if (byPath[e.value] != null) e.key: byPath[e.value]!,
+          };
+          if (bySrc.isEmpty) return;
+          final bool reanchor =
+              _autoScrolledTo != null &&
+              _scrollController.hasClients &&
+              (_scrollController.offset - _autoScrolledTo!).abs() < 0.5;
+          setState(() => _aspects = bySrc);
+          if (!reanchor) return;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _autoScrolledTo = _scrollToCurrentPosition(animate: false);
+          });
+        },
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'ReaderGalleryPage.probeAspects',
+            error,
+            stack,
+          );
+        },
+      ),
+    );
+  }
+
   // ── 滚动 ─────────────────────────────────────────────────────────────
 
-  void _scrollTo(double offset, {required bool animate}) {
-    if (!_scrollController.hasClients) return;
+  /// 滚到 [offset]（夹在可滚范围内），返回实际落点；没挂上滚动视图返回 null。
+  double? _scrollTo(double offset, {required bool animate}) {
+    if (!_scrollController.hasClients) return null;
     final double target = offset.clamp(
       0.0,
       _scrollController.position.maxScrollExtent,
@@ -343,23 +559,25 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     } else {
       _scrollController.jumpTo(target);
     }
+    return target;
   }
 
   /// 当前阅读位置在滚动轴上的偏移：当前章那一节的节头；当前章没插图就是标记条。
-  /// 看兄弟卷时没有当前阅读位置（布局也不出标记）。
+  /// 没有阅读位置（看兄弟卷 / 书架端没读过的书）时 null（布局也不出标记）。
   double? _currentPositionOffset() {
     final _GalleryLayout? layout = _layout;
-    if (layout == null || _peekingSibling) return null;
+    if (layout == null || !_hasReadingPosition) return null;
     for (final _GallerySection section in layout.sections) {
       if (section.chapterIndex == widget.currentChapter) return section.offset;
     }
     return layout.markerOffset;
   }
 
-  void _scrollToCurrentPosition({required bool animate}) {
+  /// 返回实际落点（见 [_scrollTo]）。
+  double? _scrollToCurrentPosition({required bool animate}) {
     final double? offset = _currentPositionOffset();
-    if (offset == null) return;
-    _scrollTo(offset, animate: animate);
+    if (offset == null) return null;
+    return _scrollTo(offset, animate: animate);
   }
 
   /// 卡片的行不在视口里时滚到让它可见（上下各留一格间距）。
@@ -407,16 +625,24 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final ReaderGalleryVolumeSwitch? volumes = widget.volumeSwitch;
     if (volumes == null || volume == _viewedVolume) return;
     final int seq = ++_volumeLoadSeq;
+    // 宽高比按卷探：旧表清掉，旧探测结果按 seq 作废（同名文件在另一卷可能
+    // 是另一张图）。
+    _aspectProbeSeq++;
+    _autoScrolledTo = null;
     setState(() {
       _viewedVolume = volume;
       _sibling = null;
       _siblingError = null;
       _focusedSrc = null;
       _viewerIndex = null;
+      _aspects = const <String, double>{};
     });
     if (volume == volumes.currentIndex) {
+      _probeAspects();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scrollToCurrentPosition(animate: false);
+        if (mounted) {
+          _autoScrolledTo = _scrollToCurrentPosition(animate: false);
+        }
       });
       return;
     }
@@ -427,6 +653,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             (ReaderGalleryVolumeImages data) {
               if (!mounted || seq != _volumeLoadSeq) return;
               setState(() => _sibling = data);
+              _probeAspects();
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) _scrollTo(0, animate: false);
               });
@@ -641,8 +868,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   // ── 键盘 / 滚轮 ─────────────────────────────────────────────────────
 
-  /// 网格内移动焦点：←/→ 沿阅读顺序 ±1；↑/↓ 同节内 ±列数，越过节边界时落到
-  /// 相邻节同一列（末行不满时夹到最后一张）。
+  /// 网格内移动焦点：←/→ 沿阅读顺序 ±1；↑/↓ 落到相邻行里离当前列最近的那张
+  /// （横版图占两列、行末可能留空，按槽位几何找而不是 ±列数），越过节边界时
+  /// 落到相邻节的末行 / 首行。
   void _moveFocus(int dx, int dy) {
     final _GalleryLayout? layout = _layout;
     final List<EpubImageRef> visible = _visible;
@@ -672,19 +900,21 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         base += len;
         continue;
       }
-      final int j = flatIndex - base;
-      final int cols = layout.columns;
-      final int inSection = j + dy * cols;
-      if (inSection >= 0 && inSection < len) return base + inSection;
+      final _GallerySection section = sections[s];
+      final _CardSlot slot = section.slots[flatIndex - base];
+      final int targetRow = slot.row + dy;
+      if (targetRow >= 0 && targetRow < section.rows) {
+        return base + section.nearestInRow(targetRow, slot.column);
+      }
       if (dy < 0) {
         if (s == 0) return flatIndex;
-        final int prevLen = sections[s - 1].images.length;
-        final int lastRowStart = ((prevLen - 1) ~/ cols) * cols;
-        return base - prevLen + math.min(prevLen - 1, lastRowStart + j % cols);
+        final _GallerySection prev = sections[s - 1];
+        return base -
+            prev.images.length +
+            prev.nearestInRow(prev.rows - 1, slot.column);
       }
       if (s == sections.length - 1) return flatIndex;
-      final int nextLen = sections[s + 1].images.length;
-      return base + len + math.min(nextLen - 1, j % cols);
+      return base + len + sections[s + 1].nearestInRow(0, slot.column);
     }
     return flatIndex;
   }
@@ -866,12 +1096,14 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               },
             ),
             const SizedBox(width: 8),
-            IconButton(
-              key: const ValueKey<String>('fushi_gallery_position'),
-              tooltip: t.reader_gallery_position_jump,
-              icon: const Icon(Icons.my_location_outlined),
-              onPressed: () => _scrollToCurrentPosition(animate: true),
-            ),
+            // 没有阅读位置（书架端打开没读过的书）就没有可定位的地方。
+            if (_hasReadingPosition)
+              IconButton(
+                key: const ValueKey<String>('fushi_gallery_position'),
+                tooltip: t.reader_gallery_position_jump,
+                icon: const Icon(Icons.my_location_outlined),
+                onPressed: () => _scrollToCurrentPosition(animate: true),
+              ),
           ],
           Semantics(
             identifier: 'hibiki.reader.gallery.close',
@@ -956,7 +1188,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         final _GalleryLayout layout = _GalleryLayout(
           gridWidth: math.max(1, constraints.maxWidth - _kPagePadding * 2),
           groups: _groupsOf(visible),
-          currentChapter: _peekingSibling ? null : widget.currentChapter,
+          currentChapter: _hasReadingPosition ? widget.currentChapter : null,
+          spanOf: _spanOf,
         );
         _layout = layout;
         return Scrollbar(
@@ -1062,12 +1295,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: _kPagePadding),
       sliver: SliverGrid(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: layout.columns,
-          mainAxisSpacing: _kGridSpacing,
-          crossAxisSpacing: _kGridSpacing,
-          childAspectRatio: _kCardAspectRatio,
-        ),
+        // 横版图占两列（BUG-2589）：槽位由 _GalleryLayout 装填，网格照着画。
+        gridDelegate: _SlotGridDelegate(layout: layout, section: section),
         delegate: SliverChildBuilderDelegate(
           (BuildContext context, int index) =>
               _buildCard(tokens, section.images[index]),

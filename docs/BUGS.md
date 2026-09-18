@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2395 条。点号进各自文件。
+> 共 2396 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2589](bugs/BUG-2589-gallery-wide-image-crop.md) | ✅ | ✅ | 插图册横版插图被裁成竖版卡片，书架端「查看插图」与阅读器内插图册两套实现 |
 | [BUG-2588](bugs/BUG-2588-video-shift-lookup-freeze-hang-dump.md) | ✅ | ✅ | 视频页 Shift 悬停换词到无词条字位时热槽 WebView 被同步拆掉（用户报整机卡死）+ 卡死零证据 |
 | [BUG-2587](bugs/BUG-2587-media-server-study-stats.md) | ✅ | ✅ | 媒体服务器（Jellyfin / Emby）与互联远端视频不进学习统计 |
 | [BUG-2586](bugs/BUG-2586-anidb-status-ignores-bundled-client.md) | ✅ | ✅ | 设置页AniDB状态按四项偏好判空，内置客户端账号测试登录成功仍显示未配置 |

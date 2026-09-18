@@ -15,12 +15,16 @@ double _cardExtent(double gridWidth, {double spacing = 12}) {
   return (gridWidth - (columns - 1) * spacing) / columns;
 }
 
+/// 列数从真实几何反推：网格宽 = 视口宽 − 两侧 16 页边距，卡宽 + 12 间距一格。
+/// （BUG-2589 起网格由槽位表驱动，delegate 不再暴露 crossAxisCount。）
 int _readerGalleryColumns(WidgetTester tester) {
-  final SliverGrid grid = tester.widget<SliverGrid>(
-    find.byType(SliverGrid).first,
-  );
-  return (grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount)
-      .crossAxisCount;
+  final double gridWidth = tester.view.physicalSize.width - 32;
+  final double cardWidth = tester
+      .getSize(
+        find.byKey(const ValueKey<String>('fushi_gallery_card_img0.png')),
+      )
+      .width;
+  return ((gridWidth + 12) / (cardWidth + 12)).round();
 }
 
 Future<void> _pumpReaderGallery(WidgetTester tester, double width) async {
@@ -100,7 +104,9 @@ void main() {
     final String gallery = File(
       'lib/src/reader/reader_gallery_page.dart',
     ).readAsStringSync();
-    expect(viewer, contains('illustrationGridColumnsForWidth('));
+    // BUG-2589：书架端不再有自己的网格，直接用阅读器内的 ReaderGalleryPage。
+    expect(viewer, contains('ReaderGalleryPage('));
+    expect(viewer, isNot(contains('GridView')));
     expect(viewer, isNot(contains('maxCrossAxisExtent:')));
     expect(gallery, contains('illustrationGridColumnsForWidth('));
     expect(gallery, isNot(contains('_kCardMaxExtent')));

@@ -13,6 +13,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
+import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
@@ -267,7 +268,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   // SRT 卡的 bookKey 命中此集合 = 有对应 EpubBooks 行（extractDir 存在），才对称
   // 展示「查看插画」。EPUB 未生成完（`srt_epub_not_ready`）的 SRT 书不在此集合，
   // 避免展示打不开的死项。生成型 EPUB（TextToEpub，无真实插图）仍展示，交由
-  // IllustrationsViewerPage 的 `no_illustrations_found` 占位友好兜底。
+  // IllustrationsViewerPage（阅读器内同一份插图册）的 `reader_gallery_empty`
+  // 空态友好兜底。
   Set<String> _epubBackedBookKeys = const {};
 
   // BUG-728：EPUB-backed 有声书在书架**只渲染成 SRT 卡**（其 EpubBooks 行被

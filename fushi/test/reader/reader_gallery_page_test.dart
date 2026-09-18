@@ -7,6 +7,7 @@ import 'package:fushi_engine/epub/epub_book.dart'
     show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:image/image.dart' as img;
 
 /// n 张图，每章两张：img0/img1 → 第 1 章，img2/img3 → 第 2 章……
 List<EpubImageRef> _images(int n) => <EpubImageRef>[
@@ -843,5 +844,151 @@ void main() {
       onJumpTo: (_) {},
     );
     expect(page.fileForRef(_images(1).first)?.path, 'img0.png');
+  });
+
+  // ── BUG-2589：横版图占两列 / 书架端无阅读位置 ──────────────────────
+
+  /// 写一张 [width]×[height] 的真 PNG（缩略图要能解码，探针要读到尺寸）。
+  File writePng(Directory dir, String name, int width, int height) {
+    final File file = File('${dir.path}/$name');
+    file.writeAsBytesSync(
+        img.encodePng(img.Image(width: width, height: height)));
+    return file;
+  }
+
+  /// 开页并等 isolate 里的宽高比探测落定（真 IO，pump 放进 runAsync）。
+  Future<void> pumpUntilProbed(WidgetTester tester, Widget page,
+      {required String wideSrc}) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(_host(page));
+      // isolate 起得慢时（本机并发跑测试）要多等一会；上限 10s。
+      for (int i = 0; i < 500; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+        final Iterable<Element> found = _card(wideSrc).evaluate();
+        if (found.isNotEmpty &&
+            tester.getSize(_card(wideSrc)).width > 300) {
+          break;
+        }
+      }
+    });
+    await tester.pump();
+    expect(tester.getSize(_card(wideSrc)).width, greaterThan(300),
+        reason: '宽高比探测应在 10s 内落定并把横版图放大到两列');
+  }
+
+  testWidgets('横版插图占两列、竖版占一列，行内按阅读顺序排；放不下就另起一行', (tester) async {
+    _useTallWindow(tester);
+    final Directory dir =
+        Directory.systemTemp.createTempSync('fushi_gallery_wide_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    // img0 横版（2:1），其余竖版（1:2）；全在第 1 章。
+    final Map<String, File> files = <String, File>{
+      'img0.png': writePng(dir, 'img0.png', 2, 1),
+      for (int i = 1; i < 7; i++)
+        'img$i.png': writePng(dir, 'img$i.png', 1, 2),
+    };
+    final List<EpubImageRef> images = <EpubImageRef>[
+      for (int i = 0; i < 7; i++)
+        EpubImageRef(
+          chapterIndex: 0,
+          orderInBook: i,
+          src: 'img$i.png',
+          revealKey: 'img$i.png',
+        ),
+    ];
+    await pumpUntilProbed(
+      tester,
+      ReaderGalleryPage(
+        images: images,
+        currentChapter: 0,
+        fileForRef: (EpubImageRef r) => files[r.src],
+        onOpenImage: (_) {},
+        onJumpTo: (_) {},
+      ),
+      wideSrc: 'img0.png',
+    );
+
+    // 1200 宽：网格宽 1168 → 5 列、格宽 224（目标宽 1168/5 夹在 200~360）。
+    final Size wide = tester.getSize(_card('img0.png'));
+    final Size narrow = tester.getSize(_card('img1.png'));
+    expect(narrow.width, moreOrLessEquals(224, epsilon: 0.5));
+    expect(wide.width, moreOrLessEquals(224 * 2 + 12, epsilon: 0.5),
+        reason: '横版图 = 两格宽 + 一个间距');
+    expect(wide.height, moreOrLessEquals(narrow.height, epsilon: 0.5),
+        reason: '行高不变，横版图只横跨、不加高');
+    // 同行按阅读顺序：img1 紧贴在 img0 右侧；img4 放不下（第 1 行只剩 0 列）
+    // 落到第 2 行行首。
+    final Offset wideTop = tester.getTopLeft(_card('img0.png'));
+    final Offset narrowTop = tester.getTopLeft(_card('img1.png'));
+    expect(narrowTop.dy, moreOrLessEquals(wideTop.dy, epsilon: 0.5));
+    expect(narrowTop.dx, moreOrLessEquals(wideTop.dx + wide.width + 12, epsilon: 0.5));
+    final Offset row2 = tester.getTopLeft(_card('img4.png'));
+    expect(row2.dx, moreOrLessEquals(wideTop.dx, epsilon: 0.5));
+    expect(row2.dy, moreOrLessEquals(wideTop.dy + wide.height + 12, epsilon: 0.5));
+
+    // 键盘 ↑/↓ 按槽位几何找最近列：img5（第 2 行第 2 列）↑ → 第 1 行离第 2 列
+    // 最近的是 img0（起始列 0，距 1）与 img1（列 2，距 1）并列，取先出现的 img0；
+    // img0 ↓ → 第 2 行行首 img4。
+    // 焦点从无到有的第一下落在第一张，再 → 五下到 img5（点卡会开查看器，不能用）。
+    for (int i = 0; i < 6; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+    }
+    expect(_cardBorderWidth(tester, 'img5.png'), 2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    expect(_cardBorderWidth(tester, 'img0.png'), 2);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(_cardBorderWidth(tester, 'img4.png'), 2);
+    expect(_cardBorderWidth(tester, 'img0.png'), 1);
+  });
+
+  testWidgets('currentChapter 为 null（书架端没读过的书）：不按进度遮、无标记与定位键', (tester) async {
+    _useTallWindow(tester);
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(6),
+          currentChapter: null,
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_maskedCards, findsNothing);
+    expect(find.text('Unlocked 6 / 6'), findsOneWidget);
+    expect(find.text('Current reading position'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('fushi_gallery_position')),
+        findsNothing);
+    // 过滤控件照常在（总开关开着时仍有锁着的图可过滤）。
+    expect(find.byKey(const ValueKey<String>('fushi_gallery_filter')),
+        findsOneWidget);
+  });
+
+  testWidgets('currentChapter 为 null 但总开关开：未揭开的图照旧锁着', (tester) async {
+    _useTallWindow(tester);
+    await tester.pumpWidget(
+      _host(
+        ReaderGalleryPage(
+          images: _images(4),
+          currentChapter: null,
+          blurImages: true,
+          revealedImageKeys: const <String>{'img1.png'},
+          fileForRef: (_) => null,
+          onOpenImage: (_) {},
+          onJumpTo: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(_maskedCards, findsNWidgets(3));
+    expect(_maskedCard('img1.png'), findsNothing);
+    expect(find.text('Unlocked 1 / 4'), findsOneWidget);
   });
 }

@@ -60,11 +60,20 @@ void main() {
     expect(source, contains('Future<void> _showReaderImageContextMenu('));
     expect(source, contains('Future<void> _shareReaderImage(String imgUrl)'));
     expect(source, contains('Future<void> _copyReaderImageToClipboard('));
-    expect(source, contains('FushiShare.shareFiles'));
-    expect(source, contains('XFile(file.path'));
-    expect(source, contains('FushiChannels.clipboardImage'));
-    expect(source, contains('invokeMethod<void>('));
-    expect(source, contains("'copyImageFile'"));
+    // BUG-2589：动作本体抽到 illustration_zoom_viewer.dart，与书架端插图册共用；
+    // 阅读器只解析文件再委派，不得再长出第二份 channel 调用。
+    expect(source, contains('await shareImageFile(file);'));
+    expect(source, contains('await copyImageFileToClipboard(file);'));
+    expect(source, isNot(contains('FushiChannels.clipboardImage')));
+    final String shared = read('lib/src/reader/illustration_zoom_viewer.dart');
+    expect(shared, contains('Future<void> shareImageFile(File file)'));
+    expect(
+        shared, contains('Future<void> copyImageFileToClipboard(File file)'));
+    expect(shared, contains('FushiShare.shareFiles'));
+    expect(shared, contains('XFile(file.path'));
+    expect(shared, contains('FushiChannels.clipboardImage'));
+    expect(shared, contains('invokeMethod<void>('));
+    expect(shared, contains("'copyImageFile'"));
     // NOTE(BUG-402): reader text-selection copy (Ctrl+C, caret.part.dart) legitimately
     // uses Clipboard.setData for TEXT. Image copy is still locked to the native
     // clipboardImage channel by the assertions above (clipboardImage/copyImageFile),
@@ -84,10 +93,18 @@ void main() {
     expect(source, isNot(contains('double get _readerImageMenuScale')),
         reason: '双重缩放根源的 getter 必须保持删除状态');
 
-    final String menu = _functionSource(
+    // 菜单本体在共享模块（BUG-2589）；阅读器方法只剩 Windows 门 + 委派。
+    final String delegate = _functionSource(
       source,
       'Future<void> _showReaderImageContextMenuAtGlobalPosition(',
-      'Future<void> _shareReaderImage(String imgUrl)',
+      'Future<void> _showReaderTextContextMenu(',
+    );
+    expect(delegate, contains('showImageCopyContextMenu('));
+    expect(delegate, isNot(contains('showMenu<String>(')));
+    final String menu = _functionSource(
+      read('lib/src/reader/illustration_zoom_viewer.dart'),
+      'Future<void> showImageCopyContextMenu(',
+      "if (action == 'copy') {",
     );
 
     // 尺寸写常量，且不得再出现任何 menuScale 乘法。
@@ -140,6 +157,15 @@ void main() {
     expect(viewer, contains('isWindowsPlatform'));
     expect(viewer, contains('(Offset position) => unawaited('));
     expect(viewer, contains('_showReaderImageContextMenuAtGlobalPosition'));
+    // BUG-2589：缩放查看本体（scrim 路由 + InteractiveViewer）只有共享的一份，
+    // 阅读器正文 / 插图册 / 书架端插图册三处都走它。
+    expect(viewer, contains('illustrationZoomRoute('));
+    expect(viewer, contains('IllustrationZoomViewer('));
+    expect(viewer, isNot(contains('InteractiveViewer(')));
+    final String shared = read('lib/src/reader/illustration_zoom_viewer.dart');
+    expect(shared, contains('class IllustrationZoomViewer'));
+    expect(shared, contains('InteractiveViewer('));
+    expect(shared, contains('barrierDismissible: true'));
   });
 
   test('Windows runner registers a native image clipboard channel', () {
