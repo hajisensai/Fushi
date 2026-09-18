@@ -2215,6 +2215,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               coverPath: _book?.coverHref,
             ),
       readerProgress: (_currentChapter, _book!.chapters.length),
+      readerCharOffset: _tocCharOffsetFor(_currentChapter),
       onJumpSection: (int index, String? fragment) async {
         await _jumpToChapterAnchor(index, fragment);
       },
@@ -2531,18 +2532,50 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   String _currentChapterLabel() {
-    return _currentChapterLabelFor(_currentChapter);
+    return _currentChapterLabelFor(
+      _currentChapter,
+      charOffset: _tocCharOffsetFor(_currentChapter),
+    );
   }
 
-  String _currentChapterLabelFor(int chapterIndex) {
+  /// 章 [chapterIndex]（章内位置 [charOffset]，`countStudyChars` 口径，null / 负数
+  /// 视作章首）落在哪条目录项上的章名。同一 xhtml 装多话、目录靠锚点分节的书，
+  /// 只给章号会落到该章的**第一话**，要分清第几话必须带章内位置——旧实现从目录
+  /// 末尾往前找第一个 `index <= 章号` 的条目，同章多条时永远命中最后一话。
+  String _currentChapterLabelFor(int chapterIndex, {int? charOffset}) {
     if (_book == null) return '';
     final List<TtuTocEntry> toc = _buildTtuToc();
-    for (int i = toc.length - 1; i >= 0; i--) {
-      if (toc[i].index <= chapterIndex) {
-        return toc[i].label;
-      }
-    }
+    final int? entry = resolveCurrentTocEntry(toc, chapterIndex, charOffset);
+    if (entry != null) return toc[entry].label;
     return t.auto_chapter(n: chapterIndex + 1);
+  }
+
+  /// 判「读到哪条目录项」用的章 [chapter] 内位置：优先取阅读器最近回报的精确
+  /// 字符偏移；还没回报时（刚开书 / 刚跳章）依次退到本次导航的目标锚点、按章内
+  /// 分数折算的估计值；都没有返回 null（按章首处理）。位置缓存属于别的章时同样
+  /// 返回 null。
+  int? _tocCharOffsetFor(int chapter) {
+    if (_lastProgressSection != chapter) return null;
+    if (_lastProgressCharOffset >= 0) return _lastProgressCharOffset;
+    final String? fragment = _initialFragment;
+    if (fragment != null) {
+      final int? anchor = _tocAnchorCharOffsetFor(chapter, fragment);
+      if (anchor != null) return anchor;
+    }
+    if (chapter >= 0 &&
+        chapter < _chapterCharCounts.length &&
+        _chapterCharCounts[chapter] > 0) {
+      return (_lastProgressValue.clamp(0.0, 1.0) * _chapterCharCounts[chapter])
+          .round();
+    }
+    return null;
+  }
+
+  /// 目录锚点 `fragment` 在章 [chapter] 内的字符偏移（后台算好的
+  /// [_tocAnchorCharOffsets]）；没算好 / 不是这本书 / 锚点找不到时 null。
+  int? _tocAnchorCharOffsetFor(int chapter, String fragment) {
+    if (!identical(_tocAnchorOffsetsBook, _book)) return null;
+    return _tocAnchorCharOffsets?[tocAnchorKey(chapter, fragment)];
   }
 
   /// 压平后的目录。顶栏章名每帧都要查它（[_currentChapterLabelFor]），而压平要走
@@ -2568,7 +2601,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // TODO-1333: 压平交给纯函数 flattenTtuTocEntries，它保留所有解析到的章、不再因
     // 「图片合并」把被吸收的单图片章从目录里删掉（那会在整本书目录都指向被吸收图片章
     // 时清空章节列表）。被吸收章的目录跳转由导航层 _resolveNavChapter 重定向到宿主章。
-    return flattenTtuTocEntries(toc, _tocHrefToChapterIndex);
+    return flattenTtuTocEntries(
+      toc,
+      _tocHrefToChapterIndex,
+      anchorCharOffset: _tocAnchorCharOffsetFor,
+    );
   }
 
   Future<void> _reloadWithCurrentSettings() async {
@@ -3324,7 +3361,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
-      chapterLabel: _currentChapterLabelFor(section),
+      chapterLabel: _currentChapterLabelFor(
+        section,
+        charOffset: sentenceRange?.offset,
+      ),
       createdAt: DateTime.now(),
       bookKey: widget.bookKey,
       sectionIndex: section,

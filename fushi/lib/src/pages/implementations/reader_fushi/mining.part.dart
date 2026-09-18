@@ -496,7 +496,10 @@ extension _ReaderMining on _ReaderFushiPageState {
         // context.documentTitle 已过显示门面，这里**必须直取 raw**；收藏页
         // 渲染端按 bookKey 再过门面显示新名。
         documentTitle: _book?.title,
-        chapterLabel: _currentChapterLabelFor(section),
+        chapterLabel: _currentChapterLabelFor(
+          section,
+          charOffset: context.sourceLink?.charOffset ?? sentenceRange?.offset,
+        ),
         bookKey: widget.bookKey,
         sectionIndex: section,
         normCharOffset: context.sourceLink?.charOffset ?? sentenceRange?.offset,

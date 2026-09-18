@@ -137,6 +137,51 @@ class EpubBook {
     return countStudyChars(chapterPlainText(index));
   }
 
+  /// 章 [index] 里每个锚点 id（[fragments]）之前的实义字符数（[countStudyChars]
+  /// 口径），即该锚点在章内的字符偏移。一次 DOM 遍历按文档序累积文本、跳过
+  /// `rt`/`rp`/`rtc`（与 [chapterPlainText] 同一剥离规则），走到带匹配 id 的元素
+  /// 时记下此前累积文本的计数。找不到的 id 不出现在结果里；同一 id 重复出现取
+  /// 首个。
+  ///
+  /// 口径为什么要是 [countStudyChars]：阅读器 WebView 回报的章内位置 `charOffset`
+  /// 与落库的 `char_offset` 都是这个口径（`reader_study_unit_script.dart`，有
+  /// node 对拍守卫），所以这里算出的锚点偏移可以直接与运行时位置比较——「一个
+  /// xhtml 装整卷、目录靠 `#anchor` 分节」的书，当前读到哪一节全靠这个比较。
+  Map<String, int> chapterAnchorCharOffsets(
+    int index,
+    Iterable<String> fragments,
+  ) {
+    final Set<String> wanted = fragments.toSet()..remove('');
+    final Map<String, int> offsets = <String, int>{};
+    if (wanted.isEmpty || index < 0 || index >= chapters.length) {
+      return offsets;
+    }
+    final html_dom.Element? body = parseChapterHtml(chapters[index].html).body;
+    if (body == null) return offsets;
+    final StringBuffer prefix = StringBuffer();
+    void visit(html_dom.Node node) {
+      if (offsets.length == wanted.length) return;
+      if (node is html_dom.Text) {
+        prefix.write(node.data);
+        return;
+      }
+      if (node is html_dom.Element) {
+        final String tag = node.localName ?? '';
+        if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return;
+        final String id = node.id;
+        if (wanted.contains(id) && !offsets.containsKey(id)) {
+          offsets[id] = countStudyChars(prefix.toString());
+        }
+      }
+      for (final html_dom.Node child in node.nodes) {
+        visit(child);
+      }
+    }
+
+    visit(body);
+    return offsets;
+  }
+
   /// Whitespace-collapsed plain text of an already-parsed [body], with ruby
   /// annotations (`<rt>`/`<rp>`/`<rtc>`) stripped. Mutates [body] by removing the
   /// ruby nodes, so callers must pass a throwaway parsed document's body.
