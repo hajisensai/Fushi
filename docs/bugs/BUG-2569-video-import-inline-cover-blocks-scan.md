@@ -1,0 +1,22 @@
+## BUG-2569 · 视频来源扫描内联抽封面：每文件最坏两段 30s ffmpeg，导入被拖成几十分钟
+- **报告**：2026-09-16（用户：手机导入视频「loading 极慢、全程卡顿、元数据完全加载不出来」）
+- **真实性**：✅ 真 bug，根因是**导入阶段承担了本不属于它的封面抽取职责**（修复前行号）：
+  - `SourceLibraryScanner._importVideos` — `fushi/lib/src/media/source_library/source_library_scanner.dart:1124-1163`：逐文件 `await VideoCoverMutationGate.runExclusive(... extractVideoCover ...)`。
+  - `extractVideoCover` 内部是**两段** ffmpeg：内嵌封面 `extractEmbeddedVideoCoverViaFfmpeg`（`video_cover_extractor.dart:365`，30s 上限）→ 失败再抽帧 `extractVideoFrameViaFfmpeg`（`:372`，同样 30s）。
+  - 三重放大：① 纯串行 for；② 全部裹在**进程级**排他锁 `VideoCoverMutationGate` 里；③ 整条链在 **UI isolate**。50 个文件的文件夹理论上限 50 分钟，期间用户只看得到一个 spinner。
+  - 移动端更重：`_selectBackend()`（`ffmpeg_backend.dart:829`）在 Android/iOS 返回 `KitFfmpegBackend`——**进程内** ffmpeg-kit，解码线程与 UI 抢 CPU/IO，不是能被调度器隔离的子进程。
+  - 连带把「元数据不出」一并造出来：ffmpeg-kit 被抽帧占满 → `VideoSpecsService` 的 ffprobe（并发上限 2、20s 超时）成片超时 → 见 [BUG-2571](BUG-2571-video-specs-probe-timeout-cached-as-terminal.md)。
+  - `_importPlaylists` 同病更重（`source_library_scanner.dart:1300-1330`）：`extractPlaylistCover` 会**逐集重试**直到抽出一帧，一个坏清单单独就能把扫描拖到分钟级。
+- **关键事实**：这段工作**完全是多余的**。书架侧早有专门的增量补齐产线 `HomeVideoPage._maybeBackfillCovers`（`home_video_page.dart:1073`，BUG-1564 建立）：扫「缺封面的本地可抽帧行」逐个补，带节流刷新（每秒至多一次全库重列）、会话级失败账本 `CoverBackfillLedger`、`diagnosticOnly: true` 降级（抽不出不算错误），并且由 `watchVideoBookUids` 流在**新行落库时**自动触发（`_onVideoUidsChanged` → `_refresh` → `_maybeBackfillCovers`）。也就是说导入留空封面，一条都不会漏。
+- **[x] ① 已修复** — `57c3e7a2cca`
+  - `_importVideos`：删掉整段内联抽封面 + 封面锁，改为 `coverPath: null` 直接落库。导入的契约回到「把条目放进库」，封面归书架补齐产线。
+  - `_importPlaylists`：同样删掉 `extractPlaylistCover` 那段。拆出来的各集都是带真实路径的本地行，补齐产线本来就是为「拆集导入只有首集有封面」写的。
+  - 附带摘掉两个随之失效的 import（`cover_meta_store.dart` / `video_storage.dart`）。
+  - **不新增任何平台分支**：桌面同样受益（列表立刻出现、封面渐进浮现），而不是等全部抽完才见到第一条。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_library_scanner_video_import_test.dart`
+  - **行为层**：`setFfmpegBackendForTesting` 注入记账后端，扫一个 3 文件的本地视频来源，断言 `backend.totalCalls == 0` 且三行 `coverPath` 全为 null。修复前实测为 **6**（3 文件 × 两段抽帧），与根因分析逐数吻合。
+  - 该测试必须 mock `path_provider`：不 mock 时 `enginePaths.videoCoversDirectory()` 抛异常被导入循环的内层 catch 吃掉，ffmpeg 一次都不会被调用——**修复前也是绿的**（已实测踩到，测试里留了注释）。
+  - **登记层**：`fushi/test/media/media_cover_write_guard_test.dart` 的 `kCoverPathDerivers` 封闭注册表摘掉 `source_library_scanner.dart`。该守卫断言「登记与实际一致」，所以扫描器将来若再派生封面目的地会立刻转红。
+- **备注**：
+  - 用户设备 4GB RAM Android。同一轮报告里的 sync/torrent 卡死崩溃是另一组根因，单独处理。
+  - 行为可见差异：导入后书架先显示占位图，封面随补齐产线渐进出现。这是**有意**的——与「导入卡死几十分钟后一次性全有」相比，先拿到可用的库是更重要的。

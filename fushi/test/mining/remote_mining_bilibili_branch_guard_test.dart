@@ -107,6 +107,19 @@ void main() {
               '封面由扩展的 providedCoverBytes 给。');
     });
 
+    test('番剧（bilibili-pgc）与稿件同走这一段，只是音轨来路不同', () {
+      final String segment = bilibiliSegment();
+      // 番剧的音轨由扩展在页面主世界里解析后回传（要带 SESSDATA，服务端匿名请求拿不到）。
+      // 它必须复用**同一段**实现：拆成另一段就会把 requireAudio / 零窗前置门 / web_shot.jpg
+      // 这几条不变式各抄一份，然后慢慢走偏（本文件正是为这类漂移存在的）。
+      expect(segment, contains('isBilibiliPgc'),
+          reason: 'bilibili-pgc 这个 kind 不再接在这段上了：要么被拆成独立分支（不变式被'
+              '复制一份），要么整条番剧链路被删掉了。');
+      expect(segment, contains('buildPgcRequest'),
+          reason: '番剧只挑流、不打网络（音轨响应体随请求一起来），退回 buildRequest 会去'
+              '匿名打 playurl —— 大会员内容必然解析失败。');
+    });
+
     test('本段不得下发动图格式 / 静态帧模式两个恒不生效的参数', () {
       final String segment = bilibiliSegment();
       expect(segment.contains('imageMode:'), isFalse,

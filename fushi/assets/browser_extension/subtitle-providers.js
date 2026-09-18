@@ -80,26 +80,45 @@ function fushiClipSource() {
   }
   if (site === 'bilibili') {
     const b = fushiBilibiliRef();
-    // 非 DRM，服务端拿 {bvid, 分P, 时间窗} 就能从原始 DASH 音轨直接裁 → 点一下即出卡。
-    return b ? { kind: 'bilibili', id: b.bvid, part: b.page, mode: 'immediate' } : null;
+    if (!b) return null;
+    // 非 DRM，服务端拿 {id, 时间窗} 就能从原始 DASH 音轨直接裁 → 点一下即出卡。
+    // 稿件与番剧（PGC）是两种 kind，因为音轨的来路不同，见 `fushiBilibiliRef`。
+    const src = { kind: b.kind, id: b.id, mode: 'immediate' };
+    // 分 P 号只有稿件页有；番剧的「分集」就是 ep_id 本身，不该再发一个 part。
+    if (typeof b.page === 'number') src.part = b.page;
+    return src;
   }
   return null;
 }
-// bilibili.com 稿件页的 `BVxxxxxxxxxx` 与分 P 号。纯 URL 解析，不读页面内部变量
-// （`__INITIAL_STATE__` 那类全局在隔离世界里本来也读不到，且随站点改版就会碎）。
-// cid 由服务端用 bvid 现查（`x/web-interface/view`），扩展不必知道它。
+// bilibili.com 的可裁身份：稿件页给 `BVxxxxxxxxxx` + 分 P 号，PGC（番剧/影视）页给 ep_id。
+// 纯 URL 解析，不读页面内部变量（`__INITIAL_STATE__` 那类全局在隔离世界里本来也读不到，
+// 且随站点改版就会碎）。cid 由服务端用 bvid 现查（`x/web-interface/view`），扩展不必知道它。
 //
-// 只认 `/video/BV...` 稿件页：番剧 `/bangumi/play/ep|ss` 走的是另一套 pgc 接口（epid→cid），
-// 服务端还没有对应解析器，这里就不谎报能裁——返回 null，制卡照常出「解码帧 + 例句」的卡。
+// 两类页面两个 kind，因为**音轨的来路根本不同**：
+//   'bilibili'     — `/video/BV...` 稿件：`x/player/playurl` 匿名即可（未登录也拿得到最高档
+//                    音轨，实测见 `bilibili_clip_miner.dart`），服务端自己解析，原路不动。
+//   'bilibili-pgc' — `/bangumi/play/ep<id>` 番剧/影视：走 `pgc/player/web/playurl`（epid→cid），
+//                    大会员内容**必须带 SESSDATA**；而该接口的 CORS 只放行
+//                    `https://www.bilibili.com`（实测 `Access-Control-Allow-Origin` 就是这一个
+//                    源 + `Access-Control-Allow-Credentials: true`）→ 服务端匿名请求拿不到，
+//                    扩展 SW 是 chrome-extension 源也读不到响应。故由 background 在**页面主
+//                    世界**里解析，只回传响应体，凭据不出浏览器（见 `fushiResolveBilibiliPgc
+//                    Playurl`）。
+// `/bangumi/play/ss<id>` 季页的 URL 里没有 ep_id（当前集只存在于页面内部变量里，隔离世界读
+// 不到）→ 返回 null，维持现状：照常出「解码帧 + 例句」的卡，只是没有句子音频。
 function fushiBilibiliRef() {
   const m = location.pathname.match(/\/video\/(BV[0-9A-Za-z]{10})/);
-  if (!m) return null;
-  let page = 1;
-  try {
-    const p = parseInt(new URL(location.href).searchParams.get('p') || '1', 10);
-    if (Number.isFinite(p) && p >= 1) page = p;
-  } catch (_) { /* 畸形 URL：按第 1 P */ }
-  return { bvid: m[1], page: page };
+  if (m) {
+    let page = 1;
+    try {
+      const p = parseInt(new URL(location.href).searchParams.get('p') || '1', 10);
+      if (Number.isFinite(p) && p >= 1) page = p;
+    } catch (_) { /* 畸形 URL：按第 1 P */ }
+    return { kind: 'bilibili', id: m[1], page: page };
+  }
+  const ep = location.pathname.match(/\/bangumi\/play\/ep(\d+)/);
+  if (ep) return { kind: 'bilibili-pgc', id: ep[1] };
+  return null;
 }
 function fushiVideoTimeMs(video) {
   const v = video || document.querySelector('video');
