@@ -347,6 +347,8 @@ class TtsChannel {
     // 全平台同走 ffmpeg，两端都受压缩开关影响（不再有 Android 原生无损 re-mux 特例）。
     int audioChannels = 1,
     String audioBitrate = '64k',
+    // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo`）；null / 1.0 原速。
+    double? tempo,
   }) {
     // 全平台一律 ffmpeg 裁剪：桌面 CliFfmpegBackend、移动端 KitFfmpegBackend
     // （resolveFfmpegBackend 按平台分流），消除原 Android 原生 Transformer +
@@ -359,6 +361,7 @@ class TtsChannel {
       onFailure: onFailure,
       audioChannels: audioChannels,
       audioBitrate: audioBitrate,
+      tempo: tempo,
     );
   }
 

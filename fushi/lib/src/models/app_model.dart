@@ -7216,6 +7216,12 @@ class AppModel with ChangeNotifier {
   int get miningAudioTailPadMs => prefsRepo.miningAudioTailPadMs;
   void setMiningAudioTailPadMs(int ms) => prefsRepo.setMiningAudioTailPadMs(ms);
 
+  /// 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
+  bool get miningAudioFollowPlaybackSpeed =>
+      prefsRepo.miningAudioFollowPlaybackSpeed;
+  void toggleMiningAudioFollowPlaybackSpeed() =>
+      prefsRepo.toggleMiningAudioFollowPlaybackSpeed();
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();
