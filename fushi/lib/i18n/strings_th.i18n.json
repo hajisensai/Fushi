@@ -28,7 +28,6 @@
   "aidoku_repository_sources": "แหล่งของคลังเก็บ",
   "aidoku_repository_update": "อัปเดต",
   "aidoku_repository_url": "URL คลังเก็บ",
-  "aidoku_runtime_unavailable": "ส่วนขยาย Aidoku ใช้ได้บน macOS เท่านั้นในขณะนี้",
   "aidoku_webview_unsupported": "แหล่งนี้ต้องการ Aidoku WebView API ที่ยังไม่รองรับ",
   "anime_download_back": "ย้อนกลับ",
   "anime_download_batch": "แบทช์",

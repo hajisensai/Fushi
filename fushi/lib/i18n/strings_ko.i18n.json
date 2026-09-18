@@ -28,7 +28,6 @@
   "aidoku_repository_sources": "저장소 소스",
   "aidoku_repository_update": "업데이트",
   "aidoku_repository_url": "저장소 URL",
-  "aidoku_runtime_unavailable": "Aidoku 확장은 현재 macOS에서만 사용할 수 있습니다.",
   "aidoku_webview_unsupported": "이 소스는 아직 지원되지 않는 Aidoku WebView API가 필요합니다.",
   "anime_download_back": "뒤로",
   "anime_download_batch": "일괄",

@@ -28,7 +28,6 @@
   "aidoku_repository_sources": "リポジトリソース",
   "aidoku_repository_update": "更新",
   "aidoku_repository_url": "リポジトリURL",
-  "aidoku_runtime_unavailable": "Aidoku拡張機能は現在macOSでのみ利用可能です。",
   "aidoku_webview_unsupported": "このソースにはまだサポートされていないAidoku WebView APIが必要です。",
   "anime_download_back": "戻る",
   "anime_download_batch": "一括",
