@@ -1234,10 +1234,12 @@ class DictionaryPopupLayer extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     final bool hasRenderableResults = _hasRenderableResults;
-    final bool isSeedWarmSlot = keepWebViewWarm &&
+    // 真实空结果（查过了、没词条）：热槽上用不透明「未找到」盖板盖住 WebView，
+    // 非热槽层直接渲染同一占位（无 WebView）。
+    final bool isRealEmptyResult = !isSearching &&
+        !hasRenderableResults &&
         result != null &&
-        result!.searchTerm.isEmpty &&
-        !hasRenderableResults;
+        result!.searchTerm.isNotEmpty;
 
     // BUG-080: mount the WebView as soon as the lookup starts (while still
     // searching, before results arrive) so popup.html + JS + CSS cold-load in
@@ -1246,14 +1248,18 @@ class DictionaryPopupLayer extends StatelessWidget {
     // defaults to `transparent` until results push theme vars, so the empty
     // preload simply shows the themed popup surface behind the spinner — no
     // flash. Real results are pushed via the WebView's didUpdateWidget when
-    // they arrive. A finished search with no results falls through to the
-    // placeholder below (no WebView kept).
+    // they arrive. A finished search with no results on a NON-warm layer falls
+    // through to the placeholder below (no WebView kept).
     //
-    // A persistent hidden warm slot still mounts the WebView while seeded with
-    // the shared empty result. Once a real empty lookup completes, it must fall
-    // through to the Flutter placeholder instead of showing the warm WebView's
-    // blank shell.
-    if (hasRenderableResults || isSearching || isSeedWarmSlot) {
+    // BUG-2588：热槽（keepWebViewWarm）的 WebView **无论结果如何都留在树上**——seed
+    // 空结果、搜索中、真实空结果三态一致。此前真实空结果会落到下面的 Flutter 占位、
+    // 把带 GlobalKey 的热槽 WebView 整个 unmount：视频页 Shift 悬停换词换到一个没
+    // 词条的字位（助词 / 单字）时，上一词还在飞的 `Runtime.evaluate` + 60 Hz WGC 泵
+    // 尚在 Tick，平台线程就同步走 `ICoreWebView2Controller::Close()` +
+    // `DestroyWindow`（fork `in_app_webview.cpp` 析构），用户报整机卡死；且热槽被
+    // 拆后下一次换词退化为冷建 WebView2，BUG-094 的预热白白丢掉。「别露出热槽空白
+    // 壳」的诉求改由下面的不透明「未找到」盖板满足，与搜索中盖板同一手法。
+    if (hasRenderableResults || isSearching || keepWebViewWarm) {
       return Stack(
         children: [
           DictionaryPopupWebView(
@@ -1307,11 +1313,27 @@ class DictionaryPopupLayer extends StatelessWidget {
                   ],
                 ),
               ),
+            )
+          // BUG-2588：热槽真实空结果——盖板而不是拆 WebView（见上）。ColoredBox 命中
+          // 行为 opaque，WebView 收不到穿透的指针事件。
+          else if (isRealEmptyResult)
+            Positioned.fill(
+              child: ColoredBox(
+                color: fillColor,
+                child: _buildNoResultsPlaceholder(context, tokens),
+              ),
             ),
         ],
       );
     }
 
+    return _buildNoResultsPlaceholder(context, tokens);
+  }
+
+  Widget _buildNoResultsPlaceholder(
+    BuildContext context,
+    FushiDesignTokens tokens,
+  ) {
     return Center(
       child: SingleChildScrollView(
         padding: EdgeInsets.all(tokens.spacing.gap),

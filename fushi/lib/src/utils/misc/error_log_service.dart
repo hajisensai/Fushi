@@ -259,16 +259,19 @@ class ErrorLogService extends ChangeNotifier
       debugPrint('[ErrorLogService] breadcrumb recovery failed: $e');
     }
     // 查词崩溃恢复（TODO-607 P0-2）：上次有**查词**面包屑残留 = 进程在某查词栈层
-    // 活跃时（最高频是嵌套查词）没退出就 native 崩了。独立文件、独立分支，折成
-    // `Lookup.crashRecovered`（日志 label，非 i18n key），记下崩时栈深度。
+    // 活跃时没有正常退出——native 崩了，或者卡死后被用户强杀（BUG-2588：视频页
+    // Shift 换词卡死就是后者，面包屑层面两者不可区分）。独立文件、独立分支，折成
+    // `Lookup.crashRecovered`（日志 label，非 i18n key），记下当时栈深度。卡死那条
+    // 由 Windows 看门狗另折 `MainThread.hangRecovered`（带 hang dump 路径）。
     try {
       final String? lookupCulprit =
           readAndClearBreadcrumb(_lookupBreadcrumbFile!);
       if (lookupCulprit != null) {
         log(
             'Lookup.crashRecovered',
-            '上次查词疑似让 app 崩溃（native 进程级，Dart 无法捕获；嵌套查词最高频，'
-                '文档推断同 603-B 跨线程 teardown 竞态，待 dump 坐实）：$lookupCulprit');
+            '上次查词期间进程没有正常退出（native 崩溃，或卡死后被强杀——若同时有 '
+                'MainThread.hangRecovered 即为卡死，dump 见诊断区「崩溃转储」）：'
+                '$lookupCulprit');
       }
     } catch (e) {
       debugPrint('[ErrorLogService] lookup breadcrumb recovery failed: $e');

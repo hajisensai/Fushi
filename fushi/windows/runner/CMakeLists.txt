@@ -33,6 +33,7 @@ add_executable(${BINARY_NAME} WIN32
   "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
   "global_mouse_trigger.cpp"
+  "hang_watchdog.cpp"
   "hdr_video_host_window.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
