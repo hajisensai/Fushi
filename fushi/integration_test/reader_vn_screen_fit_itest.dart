@@ -107,6 +107,7 @@ const String _fitProbeJs = r'''
     var t = textOf(r.screen);
     joined += t;
     var outside = 0, total = 0;
+    var over = { l: 0, r: 0, t: 0, b: 0 };
     var w2 = document.createTreeWalker(r.screen, NodeFilter.SHOW_TEXT);
     var n2;
     while ((n2 = w2.nextNode())) {
@@ -117,12 +118,20 @@ const String _fitProbeJs = r'''
         var rc = rects[k];
         if (!rc.width && !rc.height) continue;
         total++;
+        over.l = Math.max(over.l, box.left - rc.left);
+        over.r = Math.max(over.r, rc.right - box.right);
+        over.t = Math.max(over.t, box.top - rc.top);
+        over.b = Math.max(over.b, rc.bottom - box.bottom);
         if (rc.left < box.left - 1 || rc.right > box.right + 1 ||
             rc.top < box.top - 1 || rc.bottom > box.bottom + 1) outside++;
       }
     }
+    var cb = document.querySelector('.fushi-vn-content');
+    var cbr = cb ? cb.getBoundingClientRect() : null;
     perScreen.push({
       i: i, len: t.length, outside: outside, total: total,
+      over: [over.l, over.r, over.t, over.b].map(function (v) { return Math.round(v * 100) / 100; }),
+      content: cbr ? [Math.round(cbr.top), Math.round(cbr.bottom), Math.round(cbr.height)] : null,
       contiguous: t.length === 0 || source.indexOf(t) >= 0
     });
   }
@@ -262,7 +271,8 @@ Future<void> _verifyWritingMode(
       outsideRects += outside;
       if (overflowScreens <= 5) {
         debugPrint('[vn-fit] $tag overflow screen ${s['i']} '
-            'outside=$outside/${s['total']} len=${s['len']}');
+            'outside=$outside/${s['total']} len=${s['len']} '
+            'over(l,r,t,b)=${s['over']} content(top,bottom,h)=${s['content']}');
       }
     }
     if (s['contiguous'] != true) nonContiguous++;
