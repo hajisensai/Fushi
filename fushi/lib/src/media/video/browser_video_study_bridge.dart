@@ -96,10 +96,15 @@ class BrowserVideoSample {
 /// play / pause / seek 通知同构）。
 class RemoteVideoPlaybackSource extends ChangeNotifier
     implements VideoPlaybackSource {
+  RemoteVideoPlaybackSource({DateTime Function()? now})
+      : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
   bool _isPlaying = false;
   int? _positionMs;
   int? _durationMs;
   double _speed = 1.0;
+  DateTime? _appliedAt;
 
   @override
   bool get isPlaying => _isPlaying;
@@ -110,8 +115,25 @@ class RemoteVideoPlaybackSource extends ChangeNotifier
   @override
   AudioCue? get currentCue => null;
 
+  /// 播放中按「上条样本位置 + 经过墙钟 × 倍速」外推，与 app 内 controller 的活位置
+  /// 同语义。没有这条时 tracker 每秒的定时采样读到的是静态快照：位置没变 → 该窗
+  /// 不记，但墙钟基准已被挪到 tick 时刻；下一条扩展样本只剩 tick→样本那截墙钟，
+  /// 两个 1s 定时器的相位差决定每窗记 0%~100%，期望只记到四成左右。
   @override
-  int? get positionMs => _positionMs;
+  int? get positionMs {
+    final int? base = _positionMs;
+    final DateTime? at = _appliedAt;
+    if (base == null || at == null || !_isPlaying) return base;
+    final int elapsedMs = _now().difference(at).inMilliseconds;
+    if (elapsedMs <= 0) return base;
+    final double rate = _speed > 0 ? _speed : 1.0;
+    final int extrapolated = base + (elapsedMs * rate).round();
+    final int? duration = _durationMs;
+    if (duration != null && duration > 0 && extrapolated > duration) {
+      return duration;
+    }
+    return extrapolated;
+  }
 
   @override
   int? get durationMs => _durationMs;
@@ -126,6 +148,7 @@ class RemoteVideoPlaybackSource extends ChangeNotifier
     _positionMs = sample.positionMs;
     _durationMs = sample.durationMs;
     _speed = sample.speed;
+    _appliedAt = _now();
     notifyListeners();
   }
 }
@@ -216,7 +239,8 @@ class BrowserVideoStudyBridge {
   _ActiveSession _startSession(BrowserVideoSample sample) {
     final FushiDatabase db = _database();
     final String key = sample.mediaKey;
-    final RemoteVideoPlaybackSource source = RemoteVideoPlaybackSource();
+    final RemoteVideoPlaybackSource source =
+        RemoteVideoPlaybackSource(now: _now);
     final VideoWatchTracker tracker = VideoWatchTracker(
       bookUid: key,
       clock: StudyClock(

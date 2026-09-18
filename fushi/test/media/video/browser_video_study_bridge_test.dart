@@ -160,6 +160,37 @@ void main() {
         isNotNull);
   });
 
+  test('RemoteVideoPlaybackSource 播放中按经过墙钟 × 倍速外推位置、暂停不外推、封顶片长',
+      () {
+    _fakeNow = DateTime(2026, 1, 1, 12);
+    final RemoteVideoPlaybackSource source =
+        RemoteVideoPlaybackSource(now: () => _fakeNow);
+    source.apply(_sample(positionMs: 1000, speed: 2.0, durationMs: 2500));
+    _fakeNow = _fakeNow.add(const Duration(milliseconds: 700));
+    expect(source.positionMs, 2400, reason: '1000 + 700 × 2.0');
+    _fakeNow = _fakeNow.add(const Duration(milliseconds: 700));
+    expect(source.positionMs, 2500, reason: '封顶片长');
+    source.apply(_sample(positionMs: 1000, playing: false));
+    _fakeNow = _fakeNow.add(const Duration(seconds: 3));
+    expect(source.positionMs, 1000, reason: '暂停不外推');
+  });
+
+  test('tracker 定时 tick 与扩展样本相位交错时仍按整段墙钟记账', () async {
+    // 扩展每 1s 一条样本、tracker 每 1s 一次定时采样，两者相位随机。若播放源只给
+    // 静态快照，tick 那一刻位置没变 → 该窗不记，但墙钟基准被挪到 tick 时刻，之后
+    // 每窗只剩「tick → 样本」那截被记，期望只记到四成。这里固定相位 0.7s 复现。
+    final _Rig rig = _Rig.create();
+    await rig.open(_sample(positionMs: 0));
+    for (int i = 1; i <= 10; i++) {
+      _fakeNow = _fakeNow.add(const Duration(milliseconds: 700));
+      rig.trackers.last.debugSampleNow();
+      _fakeNow = _fakeNow.add(const Duration(milliseconds: 300));
+      rig.bridge.onSample(_sample(positionMs: i * 1000));
+    }
+    await rig.bridge.stopAll();
+    expect(_totalMs(await _segments(rig.db), 'web:yt-abc'), 10000);
+  });
+
   test('换 mediaKey 封上一段、开新段；两段各记各的', () async {
     final _Rig rig = _Rig.create();
     await rig.open(_sample(positionMs: 0));
