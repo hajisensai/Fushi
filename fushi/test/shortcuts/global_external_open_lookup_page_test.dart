@@ -253,9 +253,11 @@ void main() {
         reason: '唤前台必须走 DesktopLookupService 的统一出口',
       );
       expect(
-        fn.contains('requestHomeDictionaryTab()'),
+        fn.contains('requestHomeDictionaryTab(focusSearch: true)'),
         isTrue,
-        reason: '落地面必须走 AppModel.requestHomeDictionaryTab',
+        reason: '落地面必须走 AppModel.requestHomeDictionaryTab，且带 focusSearch: '
+            'true——用户按这个键就是为了打字，页面弹出来还得先点一下搜索框等于'
+            '热键只做了一半（Flow Launcher 式用法）',
       );
       expect(
         fn.contains('windowManager.'),

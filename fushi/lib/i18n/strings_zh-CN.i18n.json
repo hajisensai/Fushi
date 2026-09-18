@@ -5074,5 +5074,7 @@
   "video_anidb_login_test_failed_client": "AniDB 拒绝了客户端名称/版本（未注册、已过期或被封禁）",
   "video_anidb_login_test_failed_network": "AniDB UDP 连接失败：请检查 UDP 9000 端口与防火墙；HTTP 代理不能承载 UDP",
   "video_anidb_login_test_failed_blocked": "AniDB 当前限流或维护，请求已暂停，请稍后再试",
-  "video_anidb_login_test_failed_other": "AniDB 登录失败（$reason）"
+  "video_anidb_login_test_failed_other": "AniDB 登录失败（$reason）",
+  "shortcut_lookup_page_escape_minimize": "查词页按返回键最小化窗口",
+  "shortcut_lookup_page_escape_minimize_hint": "置顶热键唤出查词页后，在查词页按返回键（默认 Esc）把窗口收回去，直接回到之前的程序；查询和结果原样保留。"
 }

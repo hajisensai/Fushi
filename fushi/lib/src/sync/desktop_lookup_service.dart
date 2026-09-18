@@ -107,6 +107,12 @@ class DesktopLookupService extends ChangeNotifier {
       return;
     }
     try {
+      // 查词页「返回上一级」最小化过主窗（[minimizeMainWindow]）之后再按热键回来：
+      // Windows 的 focus() 自带「已最小化则 Restore」，macOS 的 makeKeyAndOrderFront
+      // **不会** deminiaturize——显式还原一次，两端同一条路径，Windows 上幂等。
+      if (await windowManager.isMinimized()) {
+        await windowManager.restore();
+      }
       await windowManager.show();
       await windowManager.focus();
     } on MissingPluginException {
@@ -117,6 +123,27 @@ class DesktopLookupService extends ChangeNotifier {
     // TODO-615：show/focus 在某些 Windows 版本上仍可能把任务栏按钮置成请求注意态
     // （即便窗口此刻确实被唤到前台）。唤前台路径尾部统一 clear 一次。
     await WindowCaptionChannel.clearTaskbarFlash();
+  }
+
+  /// [bringMainWindowToFront] 的反向出口：把主窗**最小化**，让 OS 把前台交还给
+  /// Z 序里下一个窗口——即用户按热键之前正在用的那个程序。
+  ///
+  /// 查词页「返回上一级」（默认 Esc）最小化主窗的执行体
+  /// （[AppModel.lookupPageEscapeMinimizesWindow]）。用最小化而不是 hide：hide 会让
+  /// 窗口从任务栏消失，用户找不回来（只剩热键 / 托盘一条路）；最小化仍留任务栏按钮。
+  /// 返回本次是否真的发出了最小化（非桌面 / 隐藏 runner / 插件缺席都返回 false，
+  /// 调用方据此决定要不要认领这次按键）。
+  Future<bool> minimizeMainWindow() async {
+    if (!isDesktop) return false;
+    if (DesktopForegroundGuard.isHiddenWindowsRunner) return false;
+    try {
+      await windowManager.minimize();
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+    return true;
   }
 
   /// 判断 Hibiki 是否已经占据前台。Windows 上不能只信

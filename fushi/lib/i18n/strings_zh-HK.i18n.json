@@ -5074,5 +5074,7 @@
   "video_anidb_login_test_failed_client": "AniDB rejected the client name/version (unregistered, outdated or banned)",
   "video_anidb_login_test_failed_network": "AniDB UDP connection failed: check UDP port 9000 and the firewall; an HTTP proxy cannot carry UDP",
   "video_anidb_login_test_failed_blocked": "AniDB is rate limiting or under maintenance; requests are paused for now",
-  "video_anidb_login_test_failed_other": "AniDB login failed ($reason)"
+  "video_anidb_login_test_failed_other": "AniDB login failed ($reason)",
+  "shortcut_lookup_page_escape_minimize": "Back key on the lookup page minimizes the window",
+  "shortcut_lookup_page_escape_minimize_hint": "After the bring-to-front hotkey, press the back key (Esc by default) on the lookup page to send the window away and return to what you were doing. The query and results are kept."
 }

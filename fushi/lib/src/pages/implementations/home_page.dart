@@ -705,13 +705,25 @@ class _HomePageState extends BasePageState<HomePage>
     // 阅读器 / 播放器压在上面时那个 tab 被完全遮住，早退会让本次请求变成彻底的
     // no-op（窗口弹到前台、一点反馈都没有）。被遮住时继续走 [_revealDictionary]，
     // 由它推独立查词路由到最上层。
+    // app 外热键「置顶主窗并打开查词页」= 用户要打字：把用户送进搜索框并全选已有
+    // 文本（直接打字就替换、什么都不打就保留上次结果）。携带待查词的调用方
+    // （focusSearch: false）不碰焦点——它们正要把 pending 的词填进去出词卡。
+    final DictionaryFocusIntent? focus =
+        appModelNoUpdate.homeDictionaryTabRequest.value.focusSearch
+            ? DictionaryFocusIntent.selectQuery
+            : null;
     if (_currentTab == HomeTab.dictionaries &&
         (ModalRoute.of(context)?.isCurrent ?? true)) {
+      // 已经显示着：不切 tab，但聚焦意图仍要落地（否则「已在查词页时按热键」
+      // 就成了唯一一条不聚焦的路径）。
+      if (focus != null) {
+        _dictFocusSignal.value = DictionaryFocusRequest(focus);
+      }
       return;
     }
     // 这条是「用户刚用桌面取词 / 悬浮字幕点词 / 扩展回流发起了一次查词」，携带待
     // 消费的 pendingText，即便查词模块关着也必须给它落地面，否则请求永远挂着。
-    _revealDictionary(carryingPendingLookup: true);
+    _revealDictionary(carryingPendingLookup: true, focus: focus);
   }
 
   @override
@@ -961,8 +973,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 两种情况下 tab 在就切 tab、tab 不在就推一个独立查词路由 —— 同一个
   /// [HomeDictionaryPage]，同一条消费路径，只是换了个承载面。
   void _revealDictionary({
-    bool focusSearch = false,
-    bool clearQuery = false,
+    DictionaryFocusIntent? focus,
     bool carryingPendingLookup = false,
   }) {
     if (!mounted) return;
@@ -971,8 +982,8 @@ class _HomePageState extends BasePageState<HomePage>
       return;
     }
     void requestFocus() {
-      if (!focusSearch) return;
-      _dictFocusSignal.value = DictionaryFocusRequest(clearQuery: clearQuery);
+      if (focus == null) return;
+      _dictFocusSignal.value = DictionaryFocusRequest(focus);
     }
 
     // 切 tab 只有在 HomePage **真的是栈顶**时才等于「用户看得见查词页」：阅读器 /
@@ -1022,7 +1033,8 @@ class _HomePageState extends BasePageState<HomePage>
     _selectTab(tab);
     if (tab != HomeTab.dictionaries) return;
     if (!_activeTabs().contains(HomeTab.dictionaries)) return;
-    _dictFocusSignal.value = const DictionaryFocusRequest(clearQuery: true);
+    _dictFocusSignal.value =
+        const DictionaryFocusRequest(DictionaryFocusIntent.clearQuery);
   }
 
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
@@ -1153,7 +1165,7 @@ class _HomePageState extends BasePageState<HomePage>
         if (!appModel.moduleVisibility.isEnabled(ModuleId.lookup)) {
           return KeyEventResult.ignored;
         }
-        _revealDictionary(focusSearch: true);
+        _revealDictionary(focus: DictionaryFocusIntent.keepQuery);
         return KeyEventResult.handled;
       case ShortcutAction.globalBack:
         Navigator.of(context).maybePop();
