@@ -616,6 +616,21 @@ mixin _FushiDbContentMisc
                 ..where(
                     (t) => t.key.equals(videoWatchCoveragePrefKey(bookUid))))
               .go();
+          // 远端 host-playlist 的按集并集（`#ep<n>` 后缀）一并忘掉（BUG-2587）。
+          // uid 形如 `video/<文件名>`，可含 LIKE 通配 `_` / `%`：LIKE 只粗筛，
+          // 精确前缀在 Dart 里复核，按精确键删，不误删邻名视频的按集键。
+          final String episodePrefix =
+              '${videoWatchCoveragePrefKey(bookUid)}#ep';
+          final List<String> episodeKeys = (await (select(preferences)
+                    ..where((t) => t.key.like('$episodePrefix%')))
+                  .get())
+              .map((PreferenceRow r) => r.key)
+              .where((String k) => k.startsWith(episodePrefix))
+              .toList();
+          if (episodeKeys.isNotEmpty) {
+            await (delete(preferences)..where((t) => t.key.isIn(episodeKeys)))
+                .go();
+          }
         }
         // 本 tile 自身的 title 恒立碑（被删行的防复活；同名幸存者被连带压制是
         // wire title 粒度的已知限制，见方法 doc）。

@@ -101,11 +101,13 @@ void main() {
         );
   }
 
-  VideoLibraryScrapeSweep sweep({bool Function()? isEnabled}) =>
+  VideoLibraryScrapeSweep sweep(
+          {bool Function()? isEnabled, bool Function()? isHashReady}) =>
       VideoLibraryScrapeSweep(
         database: db,
         controller: controller,
         isEnabled: isEnabled,
+        isHashReady: isHashReady,
       );
 
   test('只补刮无规范身份的作品，批次 scope 记 sweep', () async {
@@ -136,6 +138,56 @@ void main() {
 
     await service.sweepOnce();
     expect(runner.sourceIds, isEmpty);
+  });
+
+  // BUG-2586（对齐 Shoko）：哈希就绪时按内容认文件，纯集号标题正是哈希最该
+  // 派上用场的场景，照常进批次。
+  test('AniDB 哈希就绪时集号标签型标题也自动补刮', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('extra-1', 'D:/A/extra1.mkv', sourceId, title: '特典 S00E01');
+
+    await sweep(isHashReady: () => true).sweepOnce();
+
+    expect(runner.sourceIds, <int>[sourceId]);
+    expect(runner.plannedTitles.single, <String>['特典 S00E01']);
+  });
+
+  test('AniDB 哈希就绪时已识别作品里没记过文件身份的成员也排队（不进待确认清单）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-b', 'D:/A/Scraped Movie (2021).mkv', sourceId,
+        title: 'Scraped Movie');
+    await seedIdentityForBook('movie-b');
+    await addVideo('movie-c', 'D:/A/Known Movie (2022).mkv', sourceId,
+        title: 'Known Movie');
+    await seedIdentityForBook('movie-c');
+    await db.upsertAnidbFileIdentity(const AnidbFileIdentitiesCompanion(
+      ed2k: Value<String>('0123456789abcdef0123456789abcdef'),
+      fileSize: Value<int>(1),
+      anidbFileId: Value<int?>(1),
+      anidbAnimeId: Value<int?>(2),
+      anidbEpisodeId: Value<int?>(3),
+      filePath: Value<String?>('D:/A/Known Movie (2022).mkv'),
+      resolvedAt: Value<int>(1),
+      updatedAt: Value<int>(1),
+    ));
+
+    final VideoLibraryScrapeSweep hashOff = sweep(isHashReady: () => false);
+    expect(await hashOff.sweepAndListPending(), isEmpty,
+        reason: '两部都有规范身份，待确认清单为空');
+    expect(runner.sourceIds, isEmpty, reason: '哈希没就绪不排已识别作品');
+
+    final VideoLibraryScrapeSweep hashOn = sweep(isHashReady: () => true);
+    expect(await hashOn.sweepAndListPending(), isEmpty,
+        reason: '哈希待补不改变待确认清单');
+    expect(runner.sourceIds, <int>[sourceId]);
+    expect(runner.plannedTitles.single, <String>['Scraped Movie'],
+        reason: 'Known Movie 已有文件身份行，不重排');
+
+    runner.sourceIds.clear();
+    runner.plannedTitles.clear();
+    await hashOn.sweepOnce();
+    expect(runner.sourceIds, isEmpty, reason: '同一进程只排一次');
   });
 
   test('来源刮削开关关闭时既不进队列也不补刮', () async {

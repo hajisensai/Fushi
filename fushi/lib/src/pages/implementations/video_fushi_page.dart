@@ -4147,56 +4147,89 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     unawaited(_restoreSecondarySubtitle(controller));
   }
 
+  /// 观看统计的身份 `(uid, episodeIndex)` = 本页此刻播的那个视频：书架书（本地视频 /
+  /// 流媒体书）是 `widget.bookUid`（本地每集独立页面，集下标恒 0）；远端与断点键
+  /// [_remotePositionKeyForIndex] 同口径——合集连播 = (当前成员 id, 0)，换成员即换身份；
+  /// host-playlist（同 id 多集）= (widget.bookUid, 集下标)，id 不变、按集覆盖并集分开。
+  (String uid, int episodeIndex) get _watchStatsIdentity => _isRemote
+      ? _remotePositionKeyForIndex(_currentEpisode)
+      : (widget.bookUid, 0);
+
+  /// 当前 [_watchTracker] 的覆盖并集偏好键；身份变了据此判「要不要重建」。
+  String? _watchTrackerCoverageKey;
+
   /// Start fresh at the explicit continue action; review playback never feeds
   /// the watch coverage ledger, completion callbacks, or study clock.
   void _ensureWatchTracker(VideoPlayerController controller, String title) {
     if (_sourceReviewActive) return;
-    // 首次 load 建观看统计采集器；换片复用同一 controller 实例，已 attach 不重建。
-    // 判据 [_bookRow] 非空 = 书架书（本地视频 + TODO-1157 流媒体书都有 VideoBooks 行）：
-    // 流媒体书（YouTube 等）在本机播放同样计观看时长/字幕字数/看完标记（用户在 app 内
-    // 看油管也是沉浸时间）。互联远端（无行，媒体归 host）保持不采集。
-    if (_bookRow != null && _watchTracker == null) {
-      final FushiDatabase db = appModel.database;
-      _watchTracker =
-          VideoWatchTracker(
-              bookUid: widget.bookUid,
-              // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。BUG-2108：视频面时钟是
-              // 显式记账——时长由 tracker 按「位置推进到首次覆盖的片内区间」推入，回放 /
-              // 拖回 / 重看不计；切走仍在播就照常计时（不设前台门）。
-              // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
-              // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
-              clock: StudyClock(
-                database: db,
-                mediaKind: kActivityMediaVideo,
-                mediaKey: widget.bookUid,
-                title: title,
-                accrual: StudyAccrual.explicit,
-                onWriteError: (Object e, StackTrace st) => ErrorLogService
-                    .instance
-                    .log('StudyClock.write(video)', e, st),
-              ),
-              // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
-              loadCoverage: () =>
-                  db.getPref(videoWatchCoveragePrefKey(widget.bookUid)),
-              saveCoverage: (String json) =>
-                  db.setPref(videoWatchCoveragePrefKey(widget.bookUid), json),
-              markCompleted: (String uid) =>
-                  db.markVideoCompleted(uid, DateTime.now()),
-              onEpisodeCompleted: () async {
-                if (!kMediaTrackingEnabled) return;
-                await appModel.mediaTrackingService.recordVideoCompleted(
-                  bookUid: widget.bookUid,
-                  collectionId: widget.playlistCollectionId,
-                  episodeIndex: _currentEpisode,
-                  seriesCompleted:
-                      _episodes.isNotEmpty &&
-                      _currentEpisode == _episodes.length - 1,
-                );
-              },
-            )
-            ..attach(controller)
-            ..start();
+    // 每次 load 按当前身份建 / 复用观看统计采集器（换片复用同一 controller 实例）。
+    // BUG-2587 之前门是「[_bookRow] 非空 = 书架书」：媒体服务器（Jellyfin / Emby）与
+    // 互联远端播放没有 VideoBooks 行，观看时长 / 字幕字数一秒不进学习统计——本机播的
+    // 就是本机的沉浸时间（与流媒体书「在 app 内看油管也是沉浸时间」同理），不该因为
+    // 文件在服务器上就丢掉；host 端也从不替客户端记。远端按远端条目 id 键控：互联 =
+    // host 的 bookUid（同步后与 host 同一媒体归并），媒体服务器 = 服务器条目 id；
+    // 统计页对不在库的键已按「已删视频的历史」容错展示（段自带 title）。
+    final (String uid, int episodeIndex) = _watchStatsIdentity;
+    final String coverageKey = videoWatchCoverageEpisodePrefKey(
+      uid,
+      episodeIndex,
+    );
+    final VideoWatchTracker? current = _watchTracker;
+    if (current != null) {
+      if (current.bookUid == uid && _watchTrackerCoverageKey == coverageKey) {
+        return;
+      }
+      // 远端换成员 / host-playlist 换集：身份变了，封旧段、按新身份重建（覆盖并集在
+      // attach 时按新键加载）。本地每集独立页面，走不到这里。
+      current.dispose();
+      _watchTracker = null;
     }
+    final FushiDatabase db = appModel.database;
+    // 完成标记只对书架书：远端无行可标「看完」、也无库条目可报单集完成（与浏览器
+    // 网页视频 BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
+    final bool hasLibraryRow = _bookRow != null;
+    _watchTrackerCoverageKey = coverageKey;
+    _watchTracker =
+        VideoWatchTracker(
+            bookUid: uid,
+            // v92：观看时长 + 字幕字数走唯一时钟 StudyClock。BUG-2108：视频面时钟是
+            // 显式记账——时长由 tracker 按「位置推进到首次覆盖的片内区间」推入，回放 /
+            // 拖回 / 重看不计；切走仍在播就照常计时（不设前台门）。
+            // 按视频稳定身份键控（v39：同名不同视频统计不再互串）。本地视频每集独立
+            // 页面（pushReplacement 换集）→ widget.bookUid 恒为当前集。
+            clock: StudyClock(
+              database: db,
+              mediaKind: kActivityMediaVideo,
+              mediaKey: uid,
+              title: title,
+              accrual: StudyAccrual.explicit,
+              onWriteError: (Object e, StackTrace st) => ErrorLogService
+                  .instance
+                  .log('StudyClock.write(video)', e, st),
+            ),
+            // 已看过的片内区间并集按视频身份持久化：次日重看同样不计（BUG-2108）。
+            loadCoverage: () => db.getPref(coverageKey),
+            saveCoverage: (String json) => db.setPref(coverageKey, json),
+            markCompleted: hasLibraryRow
+                ? (String bookUid) =>
+                    db.markVideoCompleted(bookUid, DateTime.now())
+                : (_) async {},
+            onEpisodeCompleted: hasLibraryRow
+                ? () async {
+                    if (!kMediaTrackingEnabled) return;
+                    await appModel.mediaTrackingService.recordVideoCompleted(
+                      bookUid: widget.bookUid,
+                      collectionId: widget.playlistCollectionId,
+                      episodeIndex: _currentEpisode,
+                      seriesCompleted:
+                          _episodes.isNotEmpty &&
+                          _currentEpisode == _episodes.length - 1,
+                    );
+                  }
+                : null,
+          )
+          ..attach(controller)
+          ..start();
   }
 
   /// TODO-897 / BUG-805：本地视频资源缺失时弹中性对话框（资源位置变化 → 重新导入 /

@@ -79,10 +79,10 @@ void main() {
     final int start = src.indexOf('Future<void> _applyLoad({');
     expect(start, greaterThan(-1), reason: '应有 _applyLoad 方法');
     final int seedAt = src.indexOf('_seedWarmPopup();', start);
-    // 锚点跟随真实判据：流媒体书进度写穿后，统计采集器的门是「书架书且未建」
-    // （_bookRow != null），不再是 !_isRemote。
-    final int watchAt =
-        src.indexOf('if (_bookRow != null && _watchTracker == null)', start);
+    // 锚点跟随真实判据：BUG-2587 起统计采集器按本页身份建（远端也采集），
+    // 不再有 _bookRow / !_isRemote 门。
+    final int watchAt = src.indexOf(
+        'final (String uid, int episodeIndex) = _watchStatsIdentity;', start);
     final int prewarmAt = src.indexOf(
         'unawaited(prewarmEmbeddedSubtitleCache(videoPath));', start);
     expect(prewarmAt, greaterThan(seedAt), reason: '预抽应在视频打开成功后的 warmup 区域触发');

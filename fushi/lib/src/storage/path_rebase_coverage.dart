@@ -282,6 +282,21 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '内封字幕轨事实数组，与 audioTracksJson 同型——内封轨没有外部文件，'
           '外挂字幕路径存在 video_books.subtitle_source，不在本表。'),
 
+  // ── anidb_file_identities（v106 AniDB 文件级身份）──────────────────
+  PathRebaseColumn(
+      'AnidbFileIdentities',
+      'filePath',
+      PathRebaseKind.documentsRooted,
+      '与 video_books.video_path 同语义的「最近一次看到这份内容的路径」，不是主键'
+          '（主键是 ed2k + file_size），只用于「路径 + 大小 + mtime 命中就免重算哈希」。'
+          '不改写 = 数据根搬家后每个文件都要重算一遍 ED2K（几十 GB 的顺序读）才能'
+          '按内容键命中；改写只是一条 UPDATE。'),
+  PathRebaseColumn(
+      'AnidbFileIdentities',
+      'ed2k',
+      PathRebaseKind.notAPath,
+      'ED2K 哈希十六进制，内容键。'),
+
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
   PathRebaseColumn('FavoriteWords', 'sourceType', PathRebaseKind.notAPath,
       '统计桶枚举值（book/video/...），不是路径。'),

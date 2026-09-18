@@ -61,16 +61,30 @@ void main() {
         reason: 'DB 写穿必须在 5s 真观看阈值之后（避免慢流 resume 未落地时的 ~0 假进度）');
   });
 
-  test('② 观看统计采集器按书架书（_bookRow）建，而非按 !_isRemote 一刀切', () {
+  test('② 观看统计采集器不按 _bookRow / !_isRemote 门控（BUG-2587：远端也采集）', () {
+    // BUG-2587：媒体服务器 / 互联远端播放无 VideoBooks 行，旧门 `_bookRow != null`
+    // 让它们一秒不进学习统计。现在采集器按本页身份 [_watchStatsIdentity] 建，
+    // 书架流媒体书（有行、走远端路径）身份仍是 widget.bookUid，看完标记只对有行的书。
     expect(
       pageSrc.contains('if (_bookRow != null && _watchTracker == null)'),
-      isTrue,
-      reason: '流媒体书（YouTube 等）在本机播放必须计观看时长/字幕字数/看完标记',
+      isFalse,
+      reason: '不得再用 _bookRow 门控统计采集器（会把媒体服务器 / 互联远端一并关掉）',
     );
     expect(
       pageSrc.contains('if (!_isRemote && _watchTracker == null)'),
       isFalse,
       reason: '不得再用 !_isRemote 门控统计采集器（会把书架流媒体书一并关掉）',
+    );
+    expect(
+      pageSrc.contains(
+          'final (String uid, int episodeIndex) = _watchStatsIdentity;'),
+      isTrue,
+      reason: '采集器身份只经 _watchStatsIdentity（远端 = 断点键同口径）',
+    );
+    expect(
+      _flat(pageSrc).contains(_flat('markCompleted: hasLibraryRow')),
+      isTrue,
+      reason: '看完标记只对有 VideoBooks 行的书架书（含流媒体书）',
     );
   });
 }

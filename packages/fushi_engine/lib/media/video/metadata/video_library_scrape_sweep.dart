@@ -9,7 +9,12 @@
 /// sidecar；歧义/查无→计入 run 的待确认/失败并留在待确认队列里等人工指定。
 /// 集号标签型标题（[VideoSourceScrapeWork.hasIdentifiableTitle] 为 false）不做
 /// 自动尝试——那类标题要么必失败、要么按目录候选把特典误绑成正片，只该人工
-/// 处理（BUG-2001）。
+/// 处理（BUG-2001）。**AniDB 哈希就绪时例外**：那正是哈希识别最该派上用场的
+/// 场景（按内容认，不看文件名），照常进批次（BUG-2586）。
+///
+/// 哈希就绪时还多一类排队对象（对齐 Shoko「新文件先哈希」）：作品已有规范身份，
+/// 但成员里有还没记过 `anidb_file_identities` 的文件（新下载的一集、新拷进来的
+/// 文件）。它们不进待确认清单（作品身份没问题），只静默进批次把文件身份补上。
 ///
 /// 触发：进入视频 tab、切回视频 tab、以及视频库新增条目时（任意导入路径，含
 /// 内置下载管线）。批次经 [VideoSourceScrapeTaskController] 走全应用统一互斥门；
@@ -94,11 +99,16 @@ class VideoLibraryScrapeSweep {
     required FushiDatabase database,
     required VideoSourceScrapeTaskController controller,
     bool Function()? isEnabled,
+    bool Function()? isHashReady,
   })  : _database = database,
         _controller = controller,
-        _isEnabled = isEnabled;
+        _isEnabled = isEnabled,
+        _isHashReady = isHashReady;
 
   final FushiDatabase _database;
+
+  /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
+  final bool Function()? _isHashReady;
   final VideoSourceScrapeTaskController _controller;
 
   /// 自动补刮总闸（`AppModel.videoLibraryAutoBackfillScrape`，默认开，设置页
@@ -120,8 +130,13 @@ class VideoLibraryScrapeSweep {
   bool _sweeping = false;
 
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
-  Future<List<VideoPendingScrapeWork>> pendingWorks() async {
+  Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
+      (await _plannedWorks()).pending;
+
+  /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。
+  Future<_PlannedWorks> _plannedWorks() async {
     final List<VideoPendingScrapeWork> pending = <VideoPendingScrapeWork>[];
+    final List<VideoPendingScrapeWork> identified = <VideoPendingScrapeWork>[];
     for (final SourceLibraryRow source in await _localVideoSources()) {
       final VideoSourceScrapeSettingRow? settings =
           await _database.getVideoSourceScrapeSettings(source.id);
@@ -129,12 +144,26 @@ class VideoLibraryScrapeSweep {
       final List<VideoSourceScrapeWork> works =
           await VideoSourceWorkPlanner(_database).plan(source);
       for (final VideoSourceScrapeWork work in works) {
-        if (!await _hasCanonicalIdentity(work)) {
-          pending.add(VideoPendingScrapeWork(source: source, work: work));
-        }
+        (await _hasCanonicalIdentity(work) ? identified : pending)
+            .add(VideoPendingScrapeWork(source: source, work: work));
       }
     }
-    return pending;
+    return _PlannedWorks(pending: pending, identified: identified);
+  }
+
+  /// 已识别作品里还有成员没记过文件级 AniDB 身份的那些（哈希待补）。
+  Future<List<VideoPendingScrapeWork>> _hashBacklog(
+      List<VideoPendingScrapeWork> identified) async {
+    if (identified.isEmpty) return const <VideoPendingScrapeWork>[];
+    final Set<String> known = await _database.anidbFileIdentityPaths(
+        identified.expand((VideoPendingScrapeWork entry) =>
+            entry.work.members.map((VideoBookRow m) => m.videoPath)));
+    return <VideoPendingScrapeWork>[
+      for (final VideoPendingScrapeWork entry in identified)
+        if (entry.work.members
+            .any((VideoBookRow m) => !known.contains(m.videoPath)))
+          entry,
+    ];
   }
 
   /// 自动补刮一轮，并返回当前待确认作品清单。
@@ -146,20 +175,32 @@ class VideoLibraryScrapeSweep {
     if (_sweeping) return _pendingWorksOrEmpty();
     _sweeping = true;
     try {
-      final List<VideoPendingScrapeWork> pending = await _pendingWorksOrEmpty();
+      final _PlannedWorks planned = await _plannedWorksOrEmpty();
+      final List<VideoPendingScrapeWork> pending = planned.pending;
       if (_isEnabled != null && !_isEnabled()) return pending;
       // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
       if (_controller.isBusy) return pending;
+      final bool hashReady = _isHashReady?.call() ?? false;
       final Map<SourceLibraryRow, List<VideoSourceScrapeWork>> subsets =
           <SourceLibraryRow, List<VideoSourceScrapeWork>>{};
       final List<String> claimed = <String>[];
-      for (final VideoPendingScrapeWork entry in pending) {
-        if (!entry.work.hasIdentifiableTitle) continue;
-        if (_attemptedWorkKeys.contains(entry.work.stableKey)) continue;
+      void claim(VideoPendingScrapeWork entry) {
+        if (_attemptedWorkKeys.contains(entry.work.stableKey)) return;
         claimed.add(entry.work.stableKey);
         subsets
             .putIfAbsent(entry.source, () => <VideoSourceScrapeWork>[])
             .add(entry.work);
+      }
+
+      for (final VideoPendingScrapeWork entry in pending) {
+        if (!entry.work.hasIdentifiableTitle && !hashReady) continue;
+        claim(entry);
+      }
+      if (hashReady) {
+        for (final VideoPendingScrapeWork entry
+            in await _hashBacklog(planned.identified)) {
+          claim(entry);
+        }
       }
       if (subsets.isEmpty) return pending;
       if (_controller.isBusy) return pending;
@@ -182,11 +223,14 @@ class VideoLibraryScrapeSweep {
     await sweepAndListPending();
   }
 
-  Future<List<VideoPendingScrapeWork>> _pendingWorksOrEmpty() async {
+  Future<List<VideoPendingScrapeWork>> _pendingWorksOrEmpty() async =>
+      (await _plannedWorksOrEmpty()).pending;
+
+  Future<_PlannedWorks> _plannedWorksOrEmpty() async {
     try {
-      return await pendingWorks();
+      return await _plannedWorks();
     } catch (_) {
-      return const <VideoPendingScrapeWork>[];
+      return const _PlannedWorks();
     }
   }
 
@@ -206,4 +250,17 @@ class VideoLibraryScrapeSweep {
         await _database.getVideoMetadataProviderIdentities(workId: row.id);
     return identities.isNotEmpty;
   }
+}
+
+class _PlannedWorks {
+  const _PlannedWorks({
+    this.pending = const <VideoPendingScrapeWork>[],
+    this.identified = const <VideoPendingScrapeWork>[],
+  });
+
+  /// 没有规范身份的作品（待确认清单 + 自动补刮候选）。
+  final List<VideoPendingScrapeWork> pending;
+
+  /// 已有规范身份的作品（只在哈希就绪时看成员是否缺文件身份）。
+  final List<VideoPendingScrapeWork> identified;
 }

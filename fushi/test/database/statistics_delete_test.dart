@@ -476,4 +476,45 @@ void main() {
           <(String, String)>[(kActivityMediaVideo, 'uid-1')]);
     });
   });
+
+  group('BUG-2587: 远端 host-playlist 按集覆盖并集键', () {
+    test('videoWatchCoverageEpisodePrefKey: 第 0 集回退整书键，其后带 #ep 后缀',
+        () {
+      expect(videoWatchCoverageEpisodePrefKey('u', 0),
+          videoWatchCoveragePrefKey('u'));
+      expect(videoWatchCoverageEpisodePrefKey('u', -1),
+          videoWatchCoveragePrefKey('u'));
+      expect(videoWatchCoverageEpisodePrefKey('u', 3),
+          '${videoWatchCoveragePrefKey('u')}#ep3');
+    });
+
+    test(
+        'deleteVideoStatisticsForIdentity(bookUid:) 连带删该 uid 的按集并集，'
+        '不误删 LIKE 通配下的邻名 uid', () async {
+      final FushiDatabase db = await _openDb();
+      // uid 含 `_`：LIKE 里 `_` 是单字符通配，`video/a_b` 的粗筛会命中 `video/aXb`。
+      const String uid = 'video/a_b';
+      const String neighbour = 'video/aXb';
+      await db.setPref(videoWatchCoveragePrefKey(uid), '[[0,10]]');
+      await db.setPref(videoWatchCoverageEpisodePrefKey(uid, 1), '[[0,20]]');
+      await db.setPref(videoWatchCoverageEpisodePrefKey(uid, 2), '[[0,30]]');
+      await db.setPref(videoWatchCoveragePrefKey(neighbour), '[[0,40]]');
+      await db.setPref(
+          videoWatchCoverageEpisodePrefKey(neighbour, 1), '[[0,50]]');
+
+      await db.deleteVideoStatisticsForIdentity(title: 'A', bookUid: uid);
+
+      expect(await db.getPref(videoWatchCoveragePrefKey(uid)), isNull);
+      expect(await db.getPref(videoWatchCoverageEpisodePrefKey(uid, 1)),
+          isNull);
+      expect(await db.getPref(videoWatchCoverageEpisodePrefKey(uid, 2)),
+          isNull);
+      expect(await db.getPref(videoWatchCoveragePrefKey(neighbour)),
+          '[[0,40]]',
+          reason: '邻名 uid 的整书并集不连坐');
+      expect(await db.getPref(videoWatchCoverageEpisodePrefKey(neighbour, 1)),
+          '[[0,50]]',
+          reason: 'LIKE 粗筛命中的邻名按集键必须被精确前缀复核挡下');
+    });
+  });
 }
