@@ -163,13 +163,23 @@ void main() {
       // 门控（「本章未下载」态同样没有正文，2026-09-12 起一并门掉）。顶栏重设计后
       // 门控收进 `_chromeActionsEnabled` 一个 getter：栏本体（含返回键）只看
       // `_chromeVisible`（固定态）/ 悬浮唤出态，动作组才问它。
+      //
+      // 「有正文」这半边又被抽成 `_chromeContentReady` 单独一个 getter——底栏跳页
+      // slider 与隐藏界面时的角落页码都要它，而它们**不**受 `_chromeVisible` 门控
+      // （角标恰恰只在界面隐藏时画）。两条断言合起来仍等价于原来那一条：动作组 =
+      // 有正文 ∧ 栏可见。
       expect(
         pageSrc.contains(
-          'bool get _chromeActionsEnabled =>\n'
-          '      _bookRow != null &&\n'
-          '      !_loadFailed &&\n'
-          '      !_chapterNotDownloaded &&\n'
-          '      _chromeVisible;',
+          'bool get _chromeContentReady =>\n'
+          '      _bookRow != null && !_loadFailed && !_chapterNotDownloaded;',
+        ),
+        isTrue,
+        reason: '「有正文」判据必须是单一真相源，供动作组 / 底栏 / 角标共用',
+      );
+      expect(
+        pageSrc.contains(
+          'bool get _chromeActionsEnabled => _chromeContentReady && '
+          '_chromeVisible;',
         ),
         isTrue,
         reason: '顶栏动作组（页码/OCR/单双页）在没有内容时不该画',
@@ -190,10 +200,11 @@ void main() {
       );
       expect(
         RegExp(
-          r'_bookRow != null &&\s+!_loadFailed &&\s+!_chapterNotDownloaded &&\s+_chromeVisible',
+          r'_bookRow != null &&\s+!_loadFailed &&\s+!_chapterNotDownloaded',
         ).allMatches(pageSrc).length,
         1,
-        reason: '内容门控只该剩顶栏那一处；返回键若还挂着它，失败态就没有出口了',
+        reason: '内容门控的原始表达式只该出现一次（`_chromeContentReady` 的定义）；'
+            '返回键若自己再写一份，失败态就没有出口了',
       );
       expect(
         RegExp(r'!_loadFailed &&\s+_chromeVisible').allMatches(pageSrc).length,
