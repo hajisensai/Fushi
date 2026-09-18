@@ -1,39 +1,22 @@
+/* 颜色只来自 theme.css（扩展所有自有界面同一套调色板；明暗由 theme.js 按扩展设置
+   extensionTheme 写根 data-theme，缺省跟随系统）。这里只保留局部别名与非颜色 token。 */
 :root {
-  color-scheme: light dark;
-  --bg: oklch(0.965 0.012 145);
-  --surface: oklch(0.99 0.008 145);
-  --surface-muted: oklch(0.935 0.018 145);
-  --text: oklch(0.245 0.026 145);
-  --muted: oklch(0.47 0.025 145);
-  --outline: oklch(0.79 0.025 145);
-  --primary: oklch(0.46 0.085 155);
-  --primary-strong: oklch(0.37 0.09 155);
-  --primary-soft: oklch(0.89 0.055 150);
-  --on-primary: oklch(0.985 0.008 145);
-  --warn: oklch(0.62 0.135 78);
-  --danger: oklch(0.55 0.18 28);
-  --focus: oklch(0.61 0.13 155);
+  --bg: var(--fushi-bg);
+  --surface: var(--fushi-surface);
+  --surface-muted: var(--fushi-surface-muted);
+  --text: var(--fushi-text);
+  --muted: var(--fushi-muted);
+  --outline: var(--fushi-outline);
+  --primary: var(--fushi-primary);
+  --primary-strong: var(--fushi-primary-strong);
+  --primary-soft: var(--fushi-primary-soft);
+  --on-primary: var(--fushi-on-primary);
+  --warn: var(--fushi-warn);
+  --danger: var(--fushi-danger);
+  --focus: var(--fushi-focus);
   --radius: 16px;
   --ease: cubic-bezier(.22, 1, .36, 1);
   font-family: "Aptos", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: oklch(0.18 0.018 145);
-    --surface: oklch(0.225 0.022 145);
-    --surface-muted: oklch(0.27 0.026 145);
-    --text: oklch(0.91 0.018 145);
-    --muted: oklch(0.72 0.02 145);
-    --outline: oklch(0.39 0.025 145);
-    --primary: oklch(0.78 0.085 155);
-    --primary-strong: oklch(0.84 0.075 155);
-    --primary-soft: oklch(0.31 0.065 155);
-    --on-primary: oklch(0.19 0.03 155);
-    --warn: oklch(0.77 0.12 78);
-    --danger: oklch(0.72 0.15 28);
-    --focus: oklch(0.78 0.11 155);
-  }
 }
 
 * { box-sizing: border-box; }
@@ -173,6 +156,19 @@ summary:focus-visible {
 }
 
 .size-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.select-input {
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 9px 11px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+}
+
+.select-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 .switch {
   position: relative;

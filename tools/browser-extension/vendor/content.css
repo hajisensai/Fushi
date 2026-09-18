@@ -2027,6 +2027,71 @@
     background: var(--background-color);
 }
 
+/* ── theme.css tokens, re-rooted to the in-page hosts (generated; edit theme.css) ── */
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast) {
+  color-scheme: light dark;
+  --fushi-bg: oklch(0.965 0.012 145);
+  --fushi-surface: oklch(0.99 0.008 145);
+  --fushi-surface-muted: oklch(0.935 0.018 145);
+  --fushi-surface-strong: oklch(0.9 0.022 145);
+  --fushi-text: oklch(0.245 0.026 145);
+  --fushi-muted: oklch(0.47 0.025 145);
+  --fushi-outline: oklch(0.79 0.025 145);
+  --fushi-primary: oklch(0.46 0.085 155);
+  --fushi-primary-strong: oklch(0.37 0.09 155);
+  --fushi-primary-soft: oklch(0.89 0.055 150);
+  --fushi-on-primary: oklch(0.985 0.008 145);
+  --fushi-warn: oklch(0.62 0.135 78);
+  --fushi-danger: oklch(0.55 0.18 28);
+  --fushi-focus: oklch(0.61 0.13 155);
+  /* 页内浮层（字幕覆盖层 / 拖柄 / 排队 chip / 拖放提示）压在视频画面上，明暗两态都用深底
+     浅字——画面本身什么颜色都有，浮层要的是稳定可读，不是跟页面同色。 */
+  --fushi-scrim: rgba(12, 15, 13, 0.72);
+  --fushi-scrim-strong: rgba(12, 15, 13, 0.92);
+  --fushi-on-scrim: #f7f8f2;
+}
+
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast)[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast):not([data-theme="light"]) {
+    --fushi-bg: oklch(0.18 0.018 145);
+    --fushi-surface: oklch(0.225 0.022 145);
+    --fushi-surface-muted: oklch(0.27 0.026 145);
+    --fushi-surface-strong: oklch(0.31 0.028 145);
+    --fushi-text: oklch(0.91 0.018 145);
+    --fushi-muted: oklch(0.72 0.02 145);
+    --fushi-outline: oklch(0.39 0.025 145);
+    --fushi-primary: oklch(0.78 0.085 155);
+    --fushi-primary-strong: oklch(0.84 0.075 155);
+    --fushi-primary-soft: oklch(0.31 0.065 155);
+    --fushi-on-primary: oklch(0.19 0.03 155);
+    --fushi-warn: oklch(0.77 0.12 78);
+    --fushi-danger: oklch(0.72 0.15 28);
+    --fushi-focus: oklch(0.78 0.11 155);
+  }
+}
+
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast)[data-theme="dark"] {
+  color-scheme: dark;
+  --fushi-bg: oklch(0.18 0.018 145);
+  --fushi-surface: oklch(0.225 0.022 145);
+  --fushi-surface-muted: oklch(0.27 0.026 145);
+  --fushi-surface-strong: oklch(0.31 0.028 145);
+  --fushi-text: oklch(0.91 0.018 145);
+  --fushi-muted: oklch(0.72 0.02 145);
+  --fushi-outline: oklch(0.39 0.025 145);
+  --fushi-primary: oklch(0.78 0.085 155);
+  --fushi-primary-strong: oklch(0.84 0.075 155);
+  --fushi-primary-soft: oklch(0.31 0.065 155);
+  --fushi-on-primary: oklch(0.19 0.03 155);
+  --fushi-warn: oklch(0.77 0.12 78);
+  --fushi-danger: oklch(0.72 0.15 28);
+  --fushi-focus: oklch(0.78 0.11 155);
+}
+
 /*
  *  content-css-overlay.css — extension-only additions appended to the generated
  *  content.css (see generate-content-css.mjs).
@@ -2156,7 +2221,8 @@
 }
 
 /* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词；
-   按住拖动可挪位（subtitle-panel.js，位置按视频分数坐标记住）。 */
+   鼠标按住左侧拖柄（触屏按住整块）可挪位（subtitle-panel.js，位置按视频分数坐标记住）；
+   鼠标在文字上拖是原生选区，Ctrl+C 可复制。 */
 #fushi-subtitle-overlay {
     position: fixed;
     z-index: 2147483637;
@@ -2167,8 +2233,8 @@
     touch-action: none;
     padding: 6px 12px 7px;
     border-radius: 8px;
-    color: #f7f8f2;
-    background: rgba(12, 15, 13, 0.72);
+    color: var(--fushi-on-scrim);
+    background: var(--fushi-scrim);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
     font: 600 clamp(18px, 2.2vw, 32px)/1.45 "Hiragino Sans", "Yu Gothic UI", sans-serif;
     letter-spacing: 0.01em;
@@ -2179,10 +2245,63 @@
     cursor: text;
 }
 
+/* 「字幕底色」关掉（options subtitleOverlayBackground=false）：去底板、去投影，只剩描边字——
+   像站点原生字幕那样不挡画面。文字描边（text-shadow）保留，浅色画面上仍读得清。 */
+#fushi-subtitle-overlay[data-bare] {
+    background: transparent;
+    box-shadow: none;
+}
+
 /* 拖动中：抓手光标 + 禁选区（否则移动指针会同时拉出一条文字选区）。 */
 #fushi-subtitle-overlay[data-dragging] {
     cursor: grabbing;
     user-select: none;
+}
+
+/* 拖柄：贴在字幕左缘外侧的小抓手，悬停覆盖层时才显出来；用 ::before 画点阵，不带文本节点
+   （content.js 取词兜底会遍历覆盖层下所有文本节点）。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-grip {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translate(-100%, -50%);
+    width: 22px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px 0 0 6px;
+    background: var(--fushi-scrim);
+    opacity: 0;
+    transition: opacity 120ms ease;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+#fushi-subtitle-overlay .fushi-subtitle-overlay-grip::before {
+    content: '';
+    width: 8px;
+    height: 16px;
+    background-image: radial-gradient(circle, currentColor 1.4px, transparent 1.6px);
+    background-size: 4px 5px;
+    opacity: 0.85;
+}
+
+#fushi-subtitle-overlay:hover .fushi-subtitle-overlay-grip,
+#fushi-subtitle-overlay[data-dragging] .fushi-subtitle-overlay-grip {
+    opacity: 1;
+}
+
+#fushi-subtitle-overlay[data-dragging] .fushi-subtitle-overlay-grip {
+    cursor: grabbing;
+}
+
+/* 触屏没有 hover：整块可拖，拖柄不需要露出来。 */
+@media (hover: none) {
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-grip {
+        display: none;
+    }
 }
 
 /* 覆盖层里的振假名：与字幕列表同一套取向——读音在正文上方、不参与选择/取词。 */
@@ -2194,6 +2313,11 @@
 /* 同字幕列表：有振假名的那句要给上方读音留出行框。 */
 #fushi-subtitle-overlay:has(ruby) {
     line-height: 2;
+}
+
+/* 文字层：只是个行内容器，字号/对齐/描边继承自覆盖层根。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-text {
+    display: inline;
 }
 
 #fushi-subtitle-overlay rt {
@@ -2250,7 +2374,7 @@
 /* 开态：拉手槽涂成面板同色（cream），与 iframe 无缝拼成一块面板边——
    旧的 #1e1b18 根底会在面板左缘留一条黑缝，收起态阴影渗边也是黑边元凶，一并禁掉。 */
 #fushi-drawer.is-open .fushi-drawer-strip {
-    background: #fff9f4;
+    background: var(--fushi-bg);
 }
 
 #fushi-drawer.is-port {
@@ -2320,8 +2444,8 @@
     display: grid;
     place-items: center;
     font: 700 15px/1 system-ui, sans-serif;
-    color: #f0e6da;
-    background: rgba(40, 32, 26, 0.88);
+    color: var(--fushi-on-scrim);
+    background: var(--fushi-scrim-strong);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
     cursor: pointer;
     touch-action: none;
@@ -2358,7 +2482,7 @@
     width: 100%;
     height: 100%;
     border: 0;
-    background: #fff9f4;
+    background: var(--fushi-bg);
     pointer-events: auto;
 }
 

@@ -1,0 +1,81 @@
+/*
+ *  theme.css — 扩展自有界面的**唯一**调色板（options 页 / 字幕侧边栏 / 工具栏菜单 /
+ *  嵌套查词壳 / 页内抽屉与字幕覆盖层）。
+ *
+ *  此前四个表面各画各的（options 绿 oklch、侧边栏暖米色、工具栏菜单墨绿、抽屉硬编码
+ *  cream），同一个扩展开起来像四个产品。现在只有这里定义颜色，各页 CSS 把自己的局部
+ *  变量别名到 --fushi-* 上；页内（content script 注入宿主页）的那几块由
+ *  scripts/generate-content-css.mjs 把本文件重根到 #fushi-* 宿主上再拼进 content.css，
+ *  不会泄漏到宿主页 :root。
+ *
+ *  明暗：默认跟随系统（prefers-color-scheme）；theme.js 按扩展设置 extensionTheme
+ *  （auto / light / dark）把 data-theme 写到根上，显式值压过系统。
+ *  查词弹窗（#entries-container）**不吃这里**：它的 --md-* 由 app 按当前主题下发
+ *  （app_model.dart browserExtensionThemeColors），显式明暗经查词请求的 colorScheme
+ *  提示让 app 按同一明暗生成，弹窗与 app 内保持同一套配色。
+ *  SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+:root {
+  color-scheme: light dark;
+  --fushi-bg: oklch(0.965 0.012 145);
+  --fushi-surface: oklch(0.99 0.008 145);
+  --fushi-surface-muted: oklch(0.935 0.018 145);
+  --fushi-surface-strong: oklch(0.9 0.022 145);
+  --fushi-text: oklch(0.245 0.026 145);
+  --fushi-muted: oklch(0.47 0.025 145);
+  --fushi-outline: oklch(0.79 0.025 145);
+  --fushi-primary: oklch(0.46 0.085 155);
+  --fushi-primary-strong: oklch(0.37 0.09 155);
+  --fushi-primary-soft: oklch(0.89 0.055 150);
+  --fushi-on-primary: oklch(0.985 0.008 145);
+  --fushi-warn: oklch(0.62 0.135 78);
+  --fushi-danger: oklch(0.55 0.18 28);
+  --fushi-focus: oklch(0.61 0.13 155);
+  /* 页内浮层（字幕覆盖层 / 拖柄 / 排队 chip / 拖放提示）压在视频画面上，明暗两态都用深底
+     浅字——画面本身什么颜色都有，浮层要的是稳定可读，不是跟页面同色。 */
+  --fushi-scrim: rgba(12, 15, 13, 0.72);
+  --fushi-scrim-strong: rgba(12, 15, 13, 0.92);
+  --fushi-on-scrim: #f7f8f2;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fushi-bg: oklch(0.18 0.018 145);
+    --fushi-surface: oklch(0.225 0.022 145);
+    --fushi-surface-muted: oklch(0.27 0.026 145);
+    --fushi-surface-strong: oklch(0.31 0.028 145);
+    --fushi-text: oklch(0.91 0.018 145);
+    --fushi-muted: oklch(0.72 0.02 145);
+    --fushi-outline: oklch(0.39 0.025 145);
+    --fushi-primary: oklch(0.78 0.085 155);
+    --fushi-primary-strong: oklch(0.84 0.075 155);
+    --fushi-primary-soft: oklch(0.31 0.065 155);
+    --fushi-on-primary: oklch(0.19 0.03 155);
+    --fushi-warn: oklch(0.77 0.12 78);
+    --fushi-danger: oklch(0.72 0.15 28);
+    --fushi-focus: oklch(0.78 0.11 155);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fushi-bg: oklch(0.18 0.018 145);
+  --fushi-surface: oklch(0.225 0.022 145);
+  --fushi-surface-muted: oklch(0.27 0.026 145);
+  --fushi-surface-strong: oklch(0.31 0.028 145);
+  --fushi-text: oklch(0.91 0.018 145);
+  --fushi-muted: oklch(0.72 0.02 145);
+  --fushi-outline: oklch(0.39 0.025 145);
+  --fushi-primary: oklch(0.78 0.085 155);
+  --fushi-primary-strong: oklch(0.84 0.075 155);
+  --fushi-primary-soft: oklch(0.31 0.065 155);
+  --fushi-on-primary: oklch(0.19 0.03 155);
+  --fushi-warn: oklch(0.77 0.12 78);
+  --fushi-danger: oklch(0.72 0.15 28);
+  --fushi-focus: oklch(0.78 0.11 155);
+}

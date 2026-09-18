@@ -17,6 +17,9 @@
   if (root) root.FUSHI_VIDEO_SHORTCUTS = api;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
+  function tr(key, params) {
+    return (typeof window !== 'undefined' && typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
 
   // 纯函数按键判定。ev = {key, code, ctrl, shift, alt, editable}；
   // ctx = {enabled, hasVideo, hasTrack}。返回 {action} 或 null（null = 不接管，放行给站点）。
@@ -144,7 +147,7 @@
     var next = api.nextRate(v.playbackRate, delta);
     try { v.playbackRate = next; } catch (_) { return false; }
     try {
-      if (typeof window.fushiToast === 'function') window.fushiToast('播放速度 ' + next + 'x');
+      if (typeof window.fushiToast === 'function') window.fushiToast(tr('playback_rate_toast', { rate: next }));
     } catch (_) {}
     return true;
   }

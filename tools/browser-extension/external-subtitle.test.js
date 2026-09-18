@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -44,6 +45,12 @@ function makeEl(tag) {
   return el;
 }
 
+
+// 覆盖层根下有「文字层 + 拖柄」两个子节点，正文在 .fushi-subtitle-overlay-text 里。
+function overlayText(el) {
+  const text = el && el.children && el.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  return (text || el).textContent;
+}
 function findByIdDeep(el, id) {
   if (el._id === id) return el;
   for (const c of el.children || []) { const hit = findByIdDeep(c, id); if (hit) return hit; }
@@ -82,6 +89,7 @@ function loadPanel(opts) {
   const toasts = [];
   let captionResp = opts.response;
   const windowObj = {
+    fushiT: FUSHI_T,
     fushiEpisodeCues: opts.store || {},
     postMessage() {},
     addEventListener: (type, fn) => { (documentListeners[type] = documentListeners[type] || []).push(fn); },
@@ -238,6 +246,6 @@ test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字'
   h.tick();
   const overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
   assert.ok(overlay, '当前外挂 cue 应创建视频叠字');
-  assert.strictEqual(overlay.textContent, '画面上的外挂字幕');
+  assert.strictEqual(overlayText(overlay), '画面上的外挂字幕');
   assert.strictEqual(overlay.style.left, '500px');
 });

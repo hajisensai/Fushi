@@ -2,6 +2,9 @@
 // draft and scroll state must never overwrite the parent dictionary's state.
 (function () {
   'use strict';
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
 
   const host = document.getElementById('fushi-nested-root');
   const root = host.attachShadow({ mode: 'open' });
@@ -59,7 +62,7 @@
     let entries;
     try { entries = JSON.parse(data.popupJson); }
     catch (_) {
-      container.textContent = '词典结果解析失败，请重试。';
+      container.textContent = tr('lookup_parse_failed');
       return;
     }
     if (!Array.isArray(entries)) return;
@@ -69,7 +72,7 @@
     window.audioSources = Array.isArray(data.audioSources) ? data.audioSources : [];
     window.needsAudio = true;
     window.embedMedia = true;
-    window._noResultsMessage = '没有查词结果';
+    window._noResultsMessage = tr('lookup_no_results');
     window.sentenceContextPreviewEnabled = data.sentenceContextPreviewEnabled === true;
     if (data.i18nCtx && typeof data.i18nCtx === 'object') window.i18nCtx = data.i18nCtx;
     window.__hasChildPopup = false;
@@ -85,7 +88,11 @@
         document.documentElement.style.setProperty(key, value);
       }
     }
-    const scheme = theme['--fushi-color-scheme'];
+    // 扩展主题显式 light/dark 压过 app 的值（theme.js；查词请求已带同一个 colorScheme 提示）。
+    let scheme = theme['--fushi-color-scheme'];
+    if (window.fushiTheme && typeof window.fushiTheme.resolve === 'function') {
+      scheme = window.fushiTheme.resolve(scheme);
+    }
     if (scheme === 'light' || scheme === 'dark') container.setAttribute('data-theme', scheme);
     const wheelSpeed = Number.parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = Number.isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;

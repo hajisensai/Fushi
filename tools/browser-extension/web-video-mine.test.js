@@ -11,6 +11,7 @@
 // 现在的判据是能力：`clip.mode === 'queue'` 才入队，其余一律立即出卡并尽力附带媒体。
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -49,6 +50,7 @@ function load({
     storage: { onChanged: { addListener: () => {} } },
   };
   const windowObj = {
+    fushiT: FUSHI_T,
     fushiToast: (text) => toasts.push(text),
     fushiEnqueue: (fields, sentence) => {
       enqueued.push({ fields, sentence });

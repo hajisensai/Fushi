@@ -2,6 +2,8 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
+    show BrowserVideoSample;
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -15,12 +17,14 @@ class YomitanApiServerManager {
     required ReadingResolver readingResolver,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
-    Map<String, String> Function()? themeColorsProvider,
+    RemoteThemeColorsProvider? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     bool Function()? autoReadOnLookupProvider,
     String? Function()? extensionBuildProvider,
+    String Function()? appLocaleProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
+    void Function(BrowserVideoSample sample)? onExtensionStudy,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
@@ -35,8 +39,10 @@ class YomitanApiServerManager {
         _audioSourcesProvider = audioSourcesProvider,
         _autoReadOnLookupProvider = autoReadOnLookupProvider,
         _extensionBuildProvider = extensionBuildProvider,
+        _appLocaleProvider = appLocaleProvider,
         _popupDictionaryCssProvider = popupDictionaryCssProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
+        _onExtensionStudy = onExtensionStudy,
         _onExtensionSeen = onExtensionSeen,
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
@@ -49,17 +55,21 @@ class YomitanApiServerManager {
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
   // BUG-530：主题 CSS 变量供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展弹窗。
-  final Map<String, String> Function()? _themeColorsProvider;
+  final RemoteThemeColorsProvider? _themeColorsProvider;
   // 单词音频：已启用音频源供给器，透传给 [YomitanApiServer]，随查词响应下发给扩展。
   final List<String> Function()? _audioSourcesProvider;
   final bool Function()? _autoReadOnLookupProvider;
   // BUG-726：扩展内容指纹供给器，透传给 [YomitanApiServer]，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // app 当前 UI 语言供给器，透传给 [YomitanApiServer]（status `locale` / 查词 `appLocale`）。
+  final String Function()? _appLocaleProvider;
   // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，透传给 [YomitanApiServer]，
   // 按 revision 门控随查词响应下发给扩展弹窗。
   final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗拖角调整后回写尺寸的 sink，透传给 [YomitanApiServer]。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
+  // 扩展视频沉浸时间样本的 sink，透传给 [YomitanApiServer]（app 侧进学习统计）。
+  final void Function(BrowserVideoSample sample)? _onExtensionStudy;
   // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
   // TODO-2936：查词/制卡活动回调，透传给 [YomitanApiServer]（app 侧应用「浏览器」
@@ -91,8 +101,10 @@ class YomitanApiServerManager {
       audioSourcesProvider: _audioSourcesProvider,
       autoReadOnLookupProvider: _autoReadOnLookupProvider,
       extensionBuildProvider: _extensionBuildProvider,
+      appLocaleProvider: _appLocaleProvider,
       popupDictionaryCssProvider: _popupDictionaryCssProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
+      onExtensionStudy: _onExtensionStudy,
       onExtensionSeen: _onExtensionSeen,
       onLookupActivity: _onLookupActivity,
       onExtensionReport: _onExtensionReport,
