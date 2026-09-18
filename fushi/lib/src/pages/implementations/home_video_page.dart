@@ -16,6 +16,8 @@ import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -1838,6 +1840,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       case DropIntent.importVideoUrl:
         // 拖入网络流 URL → 打开视频导入对话框预填 URL 并自动导入（TODO-1306）。
         _openStreamImportPrefilled(streamUrl: files.urls.first);
+      case DropIntent.importTorrent:
+        // 拖入 .torrent → 下载中心「添加任务」对话框预填种子，内容类型预填视频。
+        // 与页头按钮同一入口：后端未配时同样弹引导，不在这里另写一套。下载中心
+        // 关掉时给可见提示（与书架同一形态），不静默。
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.downloads)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(t.module_disabled_hint)),
+          );
+          return;
+        }
+        unawaited(
+          showManualDownloadTaskDialog(
+            context: context,
+            appModel: appModel,
+            torrentPaths: files.torrents,
+          ),
+        );
       case DropIntent.attachToVideoCard:
         // 字幕拖到具体视频卡：直接挂到那张卡所代表的**现有**视频书（不重新导入）。
         // 旧实现走 _openVideoImportPrefilled→VideoImportDialog._doImport，对已存在

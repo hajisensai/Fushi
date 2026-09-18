@@ -5034,6 +5034,7 @@
   "anki_mined_action_forget": "我已在 Anki 里删了这张卡",
   "anki_mined_forget_done": "已清除制卡记录",
   "reader_gallery_cover": "封面",
+  "drag_drop_unsupported_on_downloads": "请把 .torrent 种子文件拖到这里以添加下载任务。其它文件请拖到书架、漫画库或视频页。",
   "stat_center_day_reset_action": "重置时刻",
   "ai_feature_custom_theme": "自定义主题",
   "ai_feature_custom_theme_summary": "让 AI 按描述生成自定义主题配色",

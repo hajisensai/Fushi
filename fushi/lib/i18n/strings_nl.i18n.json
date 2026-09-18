@@ -5034,6 +5034,7 @@
   "anki_mined_action_forget": "I deleted it in Anki",
   "anki_mined_forget_done": "Mining record cleared",
   "reader_gallery_cover": "Cover",
+  "drag_drop_unsupported_on_downloads": "Drop .torrent files here to add a download task. Other files belong to the Books, Manga, or Video pages.",
   "stat_center_day_reset_action": "Day reset time",
   "ai_feature_custom_theme": "Custom theme",
   "ai_feature_custom_theme_summary": "Let AI pick theme colors from a description",
