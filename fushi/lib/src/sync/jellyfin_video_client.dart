@@ -46,6 +46,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -2311,8 +2312,14 @@ class JellyfinVideoClient
         maxStreamingBitrate: preset?.maxBitrate,
         maxWidth: preset?.maxWidth,
       );
-    } on JellyfinApiException catch (e) {
+    } on JellyfinApiException catch (e, st) {
       debugPrint('[jellyfin] PlaybackInfo unavailable ($e); direct stream');
+      // 只有 404 / 405 / 501 才是「端点不存在」的兼容层回落；其它状态码（真 Emby
+      // 因 DeviceProfile 形状拒绝的 400、服务器 500）同样退回直出以免打断播放，
+      // 但不能只留一行 debugPrint——落错误日志让「协商静默失效」可被发现。
+      if (e.statusCode != 404 && e.statusCode != 405 && e.statusCode != 501) {
+        ErrorLogService.instance.log('JellyfinVideoClient.playbackInfo', e, st);
+      }
       return (
         streamUrl: api.streamUrl(id, mediaSourceId: item.mediaSourceId),
         session: null,

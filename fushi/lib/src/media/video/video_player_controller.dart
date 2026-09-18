@@ -13,6 +13,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
     show VideoFitMode;
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
+import 'package:fushi_engine/media/metadata/credential_redaction.dart'
+    show redactCredentialsInText;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
@@ -1513,7 +1515,11 @@ class VideoPlayerController extends ChangeNotifier
     final String sourceUri = nativePlaybackUri(
       mediaUri ?? mediaUriForVideoPath(videoFile!.path),
     );
-    debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
+    // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
+    debugPrint(
+      '[video-load] cues=${cues.length} '
+      'uri=${redactCredentialsInText(sourceUri)}',
+    );
     // TODO-1312：换片复位副字幕 cue 流（旧下标对新片失效；新集副字幕由页面
     // _restoreSecondarySubtitle 重挂）。在 setCues 之前复位，让 setCues 的单次
     // notify 已反映清空后的副字幕状态。
