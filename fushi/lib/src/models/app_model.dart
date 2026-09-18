@@ -494,6 +494,28 @@ DictionaryType? decodeDictTypeFromBlobHeader(List<int> bytes) {
 /// [done] 已结束（成功或失败），显示确认视图等用户点「立即重启」。
 enum BackupImportPhase { validating, running, done, failed }
 
+/// 一次「请打开首页『查词』tab」请求（[AppModel.homeDictionaryTabRequest] 的值）。
+///
+/// [seq] 每次请求自增，只作 edge 触发（ValueNotifier 按相等性去重，两次同意图的请求
+/// 也必须各触发一次）；[focusSearch] 是调用方对搜索框的意图，见
+/// [AppModel.requestHomeDictionaryTab]。
+@immutable
+class HomeDictionaryTabRequest {
+  const HomeDictionaryTabRequest({required this.seq, required this.focusSearch});
+
+  final int seq;
+  final bool focusSearch;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HomeDictionaryTabRequest &&
+      other.seq == seq &&
+      other.focusSearch == focusSearch;
+
+  @override
+  int get hashCode => Object.hash(seq, focusSearch);
+}
+
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
@@ -1642,12 +1664,34 @@ class AppModel with ChangeNotifier {
   /// 这是显式导航原语：HomePage 监听本信号只切 tab，不监听 DesktopLookupService；
   /// pending 只由 HomeDictionaryPage 消费（tab 未挂载时排队），HomePage 根节点
   /// 依旧不消费查词请求。
-  final ValueNotifier<int> homeDictionaryTabRequest = ValueNotifier<int>(0);
+  ///
+  /// 值是 [HomeDictionaryTabRequest]：[HomeDictionaryTabRequest.seq] 每请求一次自增
+  /// （内容无关，仅作 edge 触发），[HomeDictionaryTabRequest.focusSearch] 带调用方对
+  /// 搜索框的意图（见 [requestHomeDictionaryTab]）。
+  final ValueNotifier<HomeDictionaryTabRequest> homeDictionaryTabRequest =
+      ValueNotifier<HomeDictionaryTabRequest>(
+    const HomeDictionaryTabRequest(seq: 0, focusSearch: false),
+  );
 
   /// 发一次「打开查词 tab」请求（桌面悬浮字幕点词等显式手势调）。
-  void requestHomeDictionaryTab() {
-    homeDictionaryTabRequest.value++;
+  ///
+  /// [focusSearch]：是否顺带把用户送进搜索框。**携带待查词**的调用方（桌面取词 /
+  /// 悬浮字幕点词 / 扩展回流）传 false——它们正要把 pending 的词填进去出词卡，此刻
+  /// 抢焦点只会打断；**不取任何文本**的 app 外热键「置顶并打开查词页」传 true——用户
+  /// 按它就是为了打字，页面弹出来还得先点一下搜索框等于热键只做了一半。
+  void requestHomeDictionaryTab({bool focusSearch = false}) {
+    homeDictionaryTabRequest.value = HomeDictionaryTabRequest(
+      seq: homeDictionaryTabRequest.value.seq + 1,
+      focusSearch: focusSearch,
+    );
   }
+
+  /// 查词页按「返回上一级」（默认 Esc）是否最小化主窗（桌面；见
+  /// [PreferencesRepository.lookupPageEscapeMinimizesWindow]）。
+  bool get lookupPageEscapeMinimizesWindow =>
+      prefsRepo.lookupPageEscapeMinimizesWindow;
+  Future<void> setLookupPageEscapeMinimizesWindow(bool value) =>
+      prefsRepo.setLookupPageEscapeMinimizesWindow(value);
 
   /// TODO-935 E0：应用数据根的唯一入口快照（启动期 [AppPaths.resolve] 解析一次）。
   /// [temporaryDirectory] / [appDirectory] / [databaseDirectory] 都从它派生，

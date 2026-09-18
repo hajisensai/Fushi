@@ -143,6 +143,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'lookup.ime_language',
+  // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
+  // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
+  'lookup_page_escape_minimizes_window',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',

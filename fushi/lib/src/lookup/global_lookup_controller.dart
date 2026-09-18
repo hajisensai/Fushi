@@ -487,6 +487,9 @@ class GlobalLookupController {
   ///     「功能模块 → 查词」关掉时推独立查词路由承载同一个 HomeDictionaryPage。这是
   ///     一次**用户显式发起**的查词，绝不能被模块门静默吞掉（吞掉的表现是窗口弹到
   ///     前台却什么都没变，比没有这个热键更糟）。
+  ///     `focusSearch: true`：用户按这个键就是为了打字（Flow Launcher 式用法），页面
+  ///     弹出来还得先点一下搜索框等于热键只做了一半——与携带待查词的悬浮字幕点词
+  ///     不同，本动作不取任何文本，抢焦点不会打断任何事。
   Future<void> openLookupPageInMainWindow() async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -494,7 +497,7 @@ class GlobalLookupController {
       return;
     }
     await DesktopLookupService.instance.bringMainWindowToFront();
-    model.requestHomeDictionaryTab();
+    model.requestHomeDictionaryTab(focusSearch: true);
     glog('openLookupPage: main window fronted + dictionary tab requested');
   }
 
