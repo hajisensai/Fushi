@@ -5016,5 +5016,10 @@
   "anki_mined_unverified_subtitle": "Fushi cannot read your AnkiMobile collection, so the mined mark comes from this device's own record — it cannot tell whether the card is still in Anki.",
   "anki_mined_action_forget": "I deleted it in Anki",
   "anki_mined_forget_done": "Mining record cleared",
-  "reader_gallery_cover": "Cover"
+  "reader_gallery_cover": "Cover",
+  "ai_feature_custom_theme": "Custom theme",
+  "ai_feature_custom_theme_summary": "Let AI pick theme colors from a description",
+  "theme_ai_hint": "Describe the theme you want, e.g. warm paper reading theme with a dark green accent",
+  "theme_ai_applied": "AI suggestion loaded into the editor. Check the preview, then apply.",
+  "theme_ai_undo": "Undo AI changes"
 }
