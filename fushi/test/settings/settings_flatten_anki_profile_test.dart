@@ -320,7 +320,16 @@ void main() {
     );
     // 图片质量 / 音频质量 + 句子音频头/尾 padding 两对滑块。
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(4));
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNothing);
+    // 唯一的开关是「句子音频跟随播放倍速」（PR #1537，与音频质量同组）；
+    // 通用设置的开关一个都不该出现在这个子页。
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsOneWidget);
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Match sentence audio to playback speed',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
