@@ -839,10 +839,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
     // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    // 只在有 Aidoku 宿主的平台装：iOS 的宿主已按 App Store 合规移除
-    // （[StoreRestrictedCapability.onlineMangaSource]），那里装个解题器等于给一个
-    // 不存在的源留后门。`AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源
-    // 匹配用它的 `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
+    // 只在有 Aidoku 宿主的构建里装（iOS 按 App Store 合规、macOS 随 Rust CLI 一并
+    // 移除后当前没有宿主）：没有源却装个解题器等于给一个不存在的源留后门。
+    // `AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源匹配用它的
+    // `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
     if (AidokuRuntimeFactory.isSupported) {
       installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
     }

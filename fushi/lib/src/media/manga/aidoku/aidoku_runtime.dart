@@ -1,15 +1,4 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
-
-import 'package:path/path.dart' as p;
-
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
-import 'package:fushi/src/utils/net/app_native_proxy.dart';
-
-const Duration kAidokuRuntimeTimeout = Duration(seconds: 90);
-const int kAidokuRuntimeOutputLimit = 32 * 1024 * 1024;
 
 /// 运行时错误码：源站返回了 Cloudflare 挑战页。[AidokuRuntimeException.challengeUrl]
 /// 给出被拦的那一页，UI 可以在 WebView 里打开它完成验证后重试（BUG-1876）。
@@ -138,241 +127,25 @@ abstract interface class AidokuRuntime {
   );
 }
 
+/// Aidoku 扩展宿主的工厂。
+///
+/// **当前没有任何平台带宿主。** 两个宿主先后整条移除：
+/// - iOS（内嵌 Rust 静态库 + MethodChannel）按 App Store 合规移除——Aidoku 的本质
+///   是运行时加载第三方仓库提供的 WASM 扩展并执行，属于「下载并执行代码」，不能
+///   上架（[StoreRestrictedCapability.onlineMangaSource]）。
+/// - macOS（`Contents/Resources/aidoku_runtime/fushi-aidoku-runtime` 子进程）
+///   连同 Rust CLI、打包 / 验证脚本与两条 workflow 的 bundle 步骤一并移除，
+///   发布包里不再带 WASM 解释器。
+///
+/// Dart 侧的仓库 / 安装包 / 源浏览 / 书架条目层保留，全部经本工厂门控：
+/// [isSupported] 恒 false，各页面据此隐藏 Aidoku 入口；旧版本留下的 Aidoku
+/// 书架条目走 `OnlineMangaUnavailableReason.platformUnsupported`，不会崩在
+/// 懒建运行时上。要重新接一个宿主，只需实现 [AidokuRuntime] 并在这里分派。
 abstract final class AidokuRuntimeFactory {
-  /// **仅 macOS**。iOS 曾是第二个宿主（内嵌 Rust 静态库 + MethodChannel），已按
-  /// App Store 合规整条移除：Aidoku 的本质是运行时加载第三方仓库提供的
-  /// WASM 扩展并执行，属于「下载并执行代码」，不能上架
-  /// （[StoreRestrictedCapability.onlineMangaSource]）。iOS 侧的 runtime 实现、
-  /// Swift 桥、Rust 构建阶段与 CI toolchain 一并删除，二进制里不再带解释器。
-  ///
-  /// i18n 的不可用文案 `aidoku_runtime_unavailable` 本来就写着「仅 macOS」，
-  /// 移除后它才与代码一致。
-  static bool get isSupported => Platform.isMacOS;
+  static bool get isSupported => false;
 
-  static AidokuRuntime create() {
-    if (Platform.isMacOS) return DesktopAidokuRuntime();
-    throw const AidokuRuntimeException(
-      'UNSUPPORTED_PLATFORM',
-      'Aidoku extensions are currently supported on macOS',
-    );
-  }
-}
-
-class DesktopAidokuRuntime implements AidokuRuntime {
-  DesktopAidokuRuntime({File? executable, this.timeout = kAidokuRuntimeTimeout})
-    : executable = executable ?? _bundledExecutable();
-
-  final File executable;
-  final Duration timeout;
-
-  static bool get isSupported => Platform.isMacOS;
-
-  static File _bundledExecutable() {
-    if (!Platform.isMacOS) {
-      throw const AidokuRuntimeException(
-        'UNSUPPORTED_PLATFORM',
-        'The Aidoku runtime is currently bundled for macOS only',
-      );
-    }
-    final Directory contents = File(Platform.resolvedExecutable).parent.parent;
-    return File(
-      p.join(
-        contents.path,
-        'Resources',
-        'aidoku_runtime',
-        'fushi-aidoku-runtime',
-      ),
-    );
-  }
-
-  @override
-  Future<AidokuPackageInspection> inspect(String packagePath) async =>
-      AidokuPackageInspection.fromJson(
-        await _invoke(<String>['inspect', packagePath]),
-      );
-
-  @override
-  Future<Map<String, Object?>> search(
-    String packagePath, {
-    String? query,
-    int page = 1,
-  }) async {
-    if (page < 1) {
-      throw const AidokuRuntimeException(
-        'INVALID_PAGE',
-        'Aidoku search page must be at least 1',
-      );
-    }
-    final Map<String, Object?> response = await _invoke(<String>[
-      'search',
-      packagePath,
-      query ?? '',
-      '$page',
-    ]);
-    return _object(response['result'], 'search result');
-  }
-
-  @override
-  Future<Map<String, Object?>> browse(
-    String packagePath,
-    AidokuListing listing, {
-    int page = 1,
-  }) async {
-    if (page < 1) {
-      throw const AidokuRuntimeException(
-        'INVALID_PAGE',
-        'Aidoku listing page must be at least 1',
-      );
-    }
-    final Map<String, Object?> response = await _invoke(<String>[
-      'list',
-      packagePath,
-      jsonEncode(listing.toJson()),
-      '$page',
-    ]);
-    return _object(response['result'], 'listing result');
-  }
-
-  @override
-  Future<Map<String, Object?>> getDetails(
-    String packagePath,
-    Map<String, Object?> manga,
-  ) async {
-    final Map<String, Object?> response = await _invoke(<String>[
-      'details',
-      packagePath,
-      jsonEncode(manga),
-    ]);
-    return _object(response['result'], 'manga details');
-  }
-
-  @override
-  Future<List<Object?>> getPages(
-    String packagePath,
-    Map<String, Object?> manga,
-    Map<String, Object?> chapter,
-  ) async {
-    final Map<String, Object?> response = await _invoke(<String>[
-      'pages',
-      packagePath,
-      jsonEncode(manga),
-      jsonEncode(chapter),
-    ]);
-    final Object? result = response['result'];
-    if (result is! List<Object?>) {
-      throw AidokuRuntimeException(
-        'INVALID_RESPONSE',
-        'Aidoku runtime returned ${result.runtimeType}, expected a page list',
-      );
-    }
-    return result;
-  }
-
-  Future<Map<String, Object?>> _invoke(List<String> arguments) async {
-    if (!executable.existsSync()) {
-      throw AidokuRuntimeException(
-        'RUNTIME_MISSING',
-        'Bundled Aidoku runtime is missing from ${executable.path}',
-      );
-    }
-    final Process process;
-    try {
-      process = await Process.start(
-        executable.path,
-        arguments,
-        mode: ProcessStartMode.normal,
-        runInShell: false,
-        environment: appNativeProxyEnvironment(
-          await ensureAppNativeProxyEndpoint(),
-        ),
-      );
-    } on Object catch (error) {
-      throw AidokuRuntimeException(
-        'START_FAILED',
-        'Failed to start the Aidoku runtime',
-        cause: error,
-      );
-    }
-
-    final Future<Uint8List> stdout = _readLimited(process.stdout);
-    final Future<Uint8List> stderr = _readLimited(process.stderr);
-    final int exitCode;
-    try {
-      exitCode = await process.exitCode.timeout(timeout);
-    } on TimeoutException catch (error) {
-      process.kill();
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 2));
-      } on TimeoutException {
-        // The retained process identity has already been killed. Do not scan
-        // or terminate unrelated processes as a fallback.
-      }
-      throw AidokuRuntimeException(
-        'TIMEOUT',
-        'Aidoku runtime exceeded ${timeout.inSeconds} seconds',
-        cause: error,
-      );
-    }
-
-    final String output = utf8.decode(await stdout, allowMalformed: true);
-    final String errorOutput = redactAppNativeProxySecrets(
-      utf8.decode(await stderr, allowMalformed: true),
-    );
-    if (exitCode != 0) {
-      throw AidokuRuntimeException(
-        'EXIT_$exitCode',
-        _errorMessage(errorOutput),
-      );
-    }
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(output);
-    } on FormatException catch (error) {
-      throw AidokuRuntimeException(
-        'INVALID_JSON',
-        'Aidoku runtime returned invalid JSON',
-        cause: error,
-      );
-    }
-    return _object(decoded, 'response');
-  }
-
-  static Future<Uint8List> _readLimited(Stream<List<int>> stream) async {
-    final BytesBuilder builder = BytesBuilder(copy: false);
-    int length = 0;
-    await for (final List<int> chunk in stream) {
-      length += chunk.length;
-      if (length > kAidokuRuntimeOutputLimit) {
-        throw const AidokuRuntimeException(
-          'OUTPUT_TOO_LARGE',
-          'Aidoku runtime output exceeded the 32 MiB limit',
-        );
-      }
-      builder.add(chunk);
-    }
-    return builder.takeBytes();
-  }
-
-  static Map<String, Object?> _object(Object? value, String label) {
-    if (value is! Map<Object?, Object?>) {
-      throw AidokuRuntimeException(
-        'INVALID_RESPONSE',
-        'Aidoku runtime $label was ${value.runtimeType}, expected an object',
-      );
-    }
-    return value.cast<String, Object?>();
-  }
-
-  static String _errorMessage(String stderr) {
-    try {
-      final Object? decoded = jsonDecode(stderr);
-      if (decoded is Map<Object?, Object?>) {
-        return decoded['error']?.toString() ?? 'Aidoku runtime failed';
-      }
-    } on FormatException {
-      // Fall through to the bounded raw error below.
-    }
-    final String trimmed = stderr.trim();
-    return trimmed.isEmpty ? 'Aidoku runtime failed' : trimmed;
-  }
+  static AidokuRuntime create() => throw const AidokuRuntimeException(
+    'UNSUPPORTED_PLATFORM',
+    'No Aidoku runtime host is bundled in this build',
+  );
 }
