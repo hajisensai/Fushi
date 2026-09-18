@@ -1446,16 +1446,24 @@ $sharedInitViewport
     var screenBox = this.screen && this.screen.getBoundingClientRect
       ? this.screen.getBoundingClientRect()
       : null;
+    // BUG-2575：量尺与真实屏共用 `.fushi-vn-screen` 这个 class，而 `_vnLayoutCss`
+    // 里它的 `width: 100% !important; height: 100% !important` 会压过**普通**内联
+    // 样式——上面 BUG-1688 那次把 rect 宽高搬进 `root.style.width/height` 其实一直
+    // 没生效，量尺仍是 position:fixed 相对视口的 100%（整视口），比真实屏盒（视口
+    // 减 chrome 预留带 + 用户上下边距）高出整条预留带。竖排下量尺的列更长、以为
+    // 装得下更多字，真屏列更短就多出一列贴左边被 overflow:hidden 裁掉（iOS 实机
+    // 竖排最左列切半）；横排则是末行被底栏吃掉。只有以 important 优先级写入才能
+    // 让量尺真正等于真实屏盒（属性优先级：内联 important > 样式表 important）。
     if (screenBox && screenBox.width > 0 && screenBox.height > 0) {
       root.style.left = screenBox.left + 'px';
       root.style.top = screenBox.top + 'px';
-      root.style.width = screenBox.width + 'px';
-      root.style.height = screenBox.height + 'px';
+      root.style.setProperty('width', screenBox.width + 'px', 'important');
+      root.style.setProperty('height', screenBox.height + 'px', 'important');
     } else {
       root.style.left = '0';
       root.style.top = '0';
-      root.style.width = 'var(--page-width, 100vw)';
-      root.style.height = 'var(--page-height, 100vh)';
+      root.style.setProperty('width', 'var(--page-width, 100vw)', 'important');
+      root.style.setProperty('height', 'var(--page-height, 100vh)', 'important');
     }
     var content = document.createElement('div');
     content.className = 'fushi-vn-content';
@@ -2499,13 +2507,16 @@ $sharedInitViewport
     wrapper.appendChild(element);
   },
   renderInitialScreen: function() {
-    var index = 0;
+    var index = -1;
     if (this.initialFragment) {
-      var fragmentIndex = this.screenIndexForFragment(this.initialFragment);
-      if (fragmentIndex >= 0) index = fragmentIndex;
-    } else if (this.initialProgress > 0) {
-      index = this.screenIndexForProgress(this.initialProgress);
+      index = this.screenIndexForFragment(this.initialFragment);
     }
+    // BUG-2576：fragment 在屏表里查无（id 落在收不进 screen.ids 的元素上）时不再
+    // 硬落第 0 屏，退回进度锚；进度走 restore 口径（>= 0.99 = 章末）。
+    if (index < 0 && this.initialProgress > 0) {
+      index = this.screenIndexForRestoreProgress(this.initialProgress);
+    }
+    if (index < 0) index = 0;
     this.renderScreen(index, !!this.initialFragment || index !== 0 || this.revealSpeed <= 0 || this.initialProgress > 0);
   },
   renderScreen: function(index, fullyRevealed) {
@@ -2736,9 +2747,21 @@ $sharedInitViewport
     }
     return this.screens.length - 1;
   },
+  // BUG-2576：宿主的 restoreProgress 口径里 `>= 0.99` 是「章末」的约定值（往前翻到
+  // 上一章 `_navigateToChapter(prev, progress: 0.99)`），分页 / 连续 shell 都专门分流到
+  // scrollToChapterEnd（reader_pagination_scripts.dart）。VN 此前只按进度锚线性找
+  // 「第一个尾锚 >= 0.99 的屏」，屏数一多就停在距末屏还差几屏的地方——用户感知是
+  // 「往前翻章落到奇怪的位置」。restore 入口统一走这里；calculateProgress 往返
+  // （refit / 样式重锚）仍走 screenIndexForProgress，不受 0.99 阈值影响。
+  screenIndexForRestoreProgress: function(progress) {
+    if (!this.screens.length) return 0;
+    var target = Number(progress) || 0;
+    if (target >= 0.99) return this.screens.length - 1;
+    return this.screenIndexForProgress(target);
+  },
   restoreProgress: async function(progress) {
     await this.ensureReady();
-    this.renderScreen(this.screenIndexForProgress(progress), true);
+    this.renderScreen(this.screenIndexForRestoreProgress(progress), true);
     this.notifyRestoreComplete();
   },
   screenIndexForFragment: function(fragment) {

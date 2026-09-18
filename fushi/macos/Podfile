@@ -38,5 +38,13 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_macos_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # Xcode 27 拒绝低于 12.0 的 Pod 部署目标（各插件 podspec 仍声明 10.11–10.15，
+      # 整个 Pods 工程直接报 error 不编）。与 ios/Podfile 同一做法：统一压到
+      # `platform :osx` 声明的 13.4，必须与它和 Runner 的 MACOSX_DEPLOYMENT_TARGET
+      # 同步移动。
+      config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '13.4'
+    end
   end
 end
