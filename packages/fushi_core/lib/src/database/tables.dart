@@ -3070,3 +3070,46 @@ class CollectionBookAliases extends Table {
   @override
   Set<Column> get primaryKey => {localUid};
 }
+
+/// v106：AniDB 文件级身份——ED2K 哈希识别的持久结果（对齐 Shoko 的
+/// `CrossRef_File_Episode` / `StoredReleaseInfo`：键是 `(ed2k, file_size)`，
+/// 文件路径只是可变的附属）。
+///
+/// 一行 = 「这份内容在 AniDB 是哪个文件 / 哪部作品 / 哪一集」。`anidb_file_id`
+/// 为空表示 AniDB 尚未收录该哈希（FILE 回 320），`resolved_at` 记下查询时刻供
+/// 到期复查；不为空的行是花了真实 UDP 配额换来的身份，刮削时先查这张表、
+/// 命中就不再哈希也不再发 FILE。`file_path` + `file_size` + `file_modified_at`
+/// 三者相同即视为同一份内容，免重算哈希（Shoko 的 `FileNameHash`）；文件搬家
+/// 后按哈希反查仍能命中。作品/分集的 AniDB 原生标题随行保存：没有 MAL/TMDB
+/// 映射时它们是标题搜索的候选，且不必再发一次 FILE 才拿得到。
+@DataClassName('AnidbFileIdentityRow')
+class AnidbFileIdentities extends Table {
+  TextColumn get ed2k => text()();
+  IntColumn get fileSize => integer()();
+  IntColumn get anidbFileId => integer().nullable()();
+  IntColumn get anidbAnimeId => integer().nullable()();
+  IntColumn get anidbEpisodeId => integer().nullable()();
+  TextColumn get episodeNumber => text().withDefault(const Constant(''))();
+  TextColumn get romajiTitle => text().withDefault(const Constant(''))();
+  TextColumn get kanjiTitle => text().withDefault(const Constant(''))();
+  TextColumn get englishTitle => text().withDefault(const Constant(''))();
+  TextColumn get episodeTitle => text().withDefault(const Constant(''))();
+  TextColumn get episodeRomajiTitle =>
+      text().withDefault(const Constant(''))();
+  TextColumn get episodeKanjiTitle => text().withDefault(const Constant(''))();
+  TextColumn get filePath => text().nullable()();
+  IntColumn get fileModifiedAt => integer().nullable()();
+  IntColumn get resolvedAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {ed2k, fileSize};
+
+  @override
+  List<String> get customConstraints => const <String>[
+        'CHECK (length(ed2k) = 32)',
+        'CHECK (file_size > 0)',
+        'CHECK ((anidb_file_id IS NULL) = (anidb_anime_id IS NULL) '
+            'AND (anidb_file_id IS NULL) = (anidb_episode_id IS NULL))',
+      ];
+}

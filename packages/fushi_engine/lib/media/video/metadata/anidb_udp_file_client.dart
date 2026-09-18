@@ -110,6 +110,11 @@ class AnidbUdpFileClient {
   Future<void> _tail = Future<void>.value();
   int _tag = 0;
   final Map<String, AnidbFileIdentity?> _cache = {};
+
+  /// 320 未收录只在批次尺度内去重：客户端与协调器同寿命，永久缓存会让 AniDB
+  /// 后来收录的文件在本进程里再也查不到；持久层另有 7 天复查期。
+  final Map<String, int> _missAt = {};
+  static const int _missCacheMs = 60 * 60 * 1000;
   static Future<void> _sendTail = Future<void>.value();
   static final Stopwatch _clock = Stopwatch()..start();
   static int _nextSendMs = 0;
@@ -135,20 +140,34 @@ class AnidbUdpFileClient {
           throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
         }
         final String key = '$size:${ed2k.toLowerCase()}';
-        if (_cache.containsKey(key)) return _cache[key];
-        if (_cache.length >= 2048) _cache.remove(_cache.keys.first);
+        if (_cache.containsKey(key)) {
+          final AnidbFileIdentity? cached = _cache[key];
+          if (cached != null ||
+              _clock.elapsedMilliseconds - (_missAt[key] ?? 0) < _missCacheMs) {
+            return cached;
+          }
+          _cache.remove(key);
+          _missAt.remove(key);
+        }
+        if (_cache.length >= 2048) {
+          _missAt.remove(_cache.keys.first);
+          _cache.remove(_cache.keys.first);
+        }
         await _ensureSession();
-        // fmask byte1 bits6/5 = aid/eid. fid is always first.
-        // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
-        final _Reply file = await _request('FILE', {
-          'size': '$size',
-          'ed2k': ed2k.toLowerCase(),
-          'fmask': '6000000000',
-          'amask': '00e0f000',
-          's': _session!,
-        });
+        _Reply file = await _requestFile(size, ed2k);
+        if (file.code == 501 || file.code == 506) {
+          // The virtual connection expires after 35 idle minutes (wiki
+          // UDP_API_Definition), and this client lives as long as the scrape
+          // coordinator, so the first FILE of a later batch routinely lands on
+          // a dead session. Re-authenticate once and resend; a second
+          // rejection is a real session failure (BUG-2586).
+          _session = null;
+          await _ensureSession();
+          file = await _requestFile(size, ed2k);
+        }
         if (file.code == 320) {
           _cache[key] = null;
+          _missAt[key] = _clock.elapsedMilliseconds;
           return null;
         }
         if (file.code != 220) _fail(file.code);
@@ -175,6 +194,16 @@ class AnidbUdpFileClient {
         );
         _cache[key] = identity;
         return identity;
+      });
+
+  // fmask byte1 bits6/5 = aid/eid. fid is always first.
+  // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
+  Future<_Reply> _requestFile(int size, String ed2k) => _request('FILE', {
+        'size': '$size',
+        'ed2k': ed2k.toLowerCase(),
+        'fmask': '6000000000',
+        'amask': '00e0f000',
+        's': _session!,
       });
 
   /// Settings "test login": AUTH only, no FILE query. The caller must still
@@ -211,6 +240,19 @@ class AnidbUdpFileClient {
     clientUpdateAvailable = auth.code == 201;
   }
 
+  /// Shoko parity for a silent server: retry the identical packet once, and
+  /// only when that also gets no reply assume the client is banned (Shoko's
+  /// `BanTimerResetLength` is 1.5 h). One lost datagram used to freeze every
+  /// AniDB request in the process for 30 minutes (BUG-2586).
+  static const Duration _noResponseBan = Duration(minutes: 90);
+  static const Duration _serverBlock = Duration(minutes: 30);
+  static AnidbUdpFailure _blockedReason = AnidbUdpFailure.maintenance;
+
+  static void _block(AnidbUdpFailure reason, Duration duration) {
+    _blockedUntilMs = _clock.elapsedMilliseconds + duration.inMilliseconds;
+    _blockedReason = reason;
+  }
+
   Future<_Reply> _request(String command, Map<String, String> values,
       {bool responseRequired = true}) async {
     final String tag = 'f${++_tag}';
@@ -221,65 +263,76 @@ class AnidbUdpFileClient {
     if (utf8.encode(packet).length > 1400) {
       throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
     }
-    try {
-      _transport ??= await _factory(config);
-      if (_closed && command != 'LOGOUT') {
-        throw const AnidbUdpException(AnidbUdpFailure.closed);
+    for (int attempt = 0;; attempt++) {
+      try {
+        return await _exchangeOnce(command, packet, tag,
+            responseRequired: responseRequired);
+      } on AnidbUdpException catch (error) {
+        if (error.reason == AnidbUdpFailure.network) _session = null;
+        rethrow;
+      } on TimeoutException {
+        // Same tag on purpose: a late reply to the first datagram still
+        // answers this command.
+        if (attempt == 0 && responseRequired) continue;
+        if (_transport is AnidbDatagramTransport) {
+          _block(AnidbUdpFailure.banned, _noResponseBan);
+        }
+        _session = null;
+        throw const AnidbUdpException(AnidbUdpFailure.timeout);
+      } catch (_) {
+        _session = null;
+        throw const AnidbUdpException(AnidbUdpFailure.network);
       }
-      // Shared across all clients in the app isolate. Four seconds even for
-      // short batches satisfies both AniDB's short and long term limits.
-      // In-memory test transports have no network and need no flood delay.
-      if (_transport is AnidbDatagramTransport) {
-        final Future<void> turn = _sendTail.then((_) async {
-          if (_closed && command != 'LOGOUT') {
-            throw const AnidbUdpException(AnidbUdpFailure.closed);
-          }
-          if (_clock.elapsedMilliseconds < _blockedUntilMs) {
-            throw const AnidbUdpException(AnidbUdpFailure.maintenance);
-          }
-          final int delay = _nextSendMs - _clock.elapsedMilliseconds;
-          if (delay > 0) {
-            await Future<void>.delayed(Duration(milliseconds: delay));
-          }
-          if (_closed && command != 'LOGOUT') {
-            throw const AnidbUdpException(AnidbUdpFailure.closed);
-          }
-          if (_clock.elapsedMilliseconds < _blockedUntilMs) {
-            throw const AnidbUdpException(AnidbUdpFailure.maintenance);
-          }
-          _nextSendMs = _clock.elapsedMilliseconds + 4000;
-        });
-        _sendTail = turn.then<void>(
-          (_) {},
-          onError: (Object _, StackTrace __) {},
-        );
-        await turn;
-      }
-      if (_closed && command != 'LOGOUT') {
-        throw const AnidbUdpException(AnidbUdpFailure.closed);
-      }
-      if (!responseRequired) {
-        await _transport!.send(packet);
-        // No response was requested; this is not a successful server reply.
-        return const _Reply(0, '', '');
-      }
-      return _Reply.parse(
-        await _transport!.exchange(packet, tag, config.timeout),
-        tag,
-      );
-    } on AnidbUdpException catch (error) {
-      if (error.reason == AnidbUdpFailure.network) _session = null;
-      rethrow;
-    } on TimeoutException {
-      if (_transport is AnidbDatagramTransport) {
-        _blockedUntilMs = _clock.elapsedMilliseconds + 30 * 60 * 1000;
-      }
-      _session = null;
-      throw const AnidbUdpException(AnidbUdpFailure.timeout);
-    } catch (_) {
-      _session = null;
-      throw const AnidbUdpException(AnidbUdpFailure.network);
     }
+  }
+
+  Future<_Reply> _exchangeOnce(String command, String packet, String tag,
+      {required bool responseRequired}) async {
+    _transport ??= await _factory(config);
+    if (_closed && command != 'LOGOUT') {
+      throw const AnidbUdpException(AnidbUdpFailure.closed);
+    }
+    // Shared across all clients in the app isolate. Four seconds even for
+    // short batches satisfies both AniDB's short and long term limits.
+    // In-memory test transports have no network and need no flood delay.
+    if (_transport is AnidbDatagramTransport) {
+      final Future<void> turn = _sendTail.then((_) async {
+        if (_closed && command != 'LOGOUT') {
+          throw const AnidbUdpException(AnidbUdpFailure.closed);
+        }
+        if (_clock.elapsedMilliseconds < _blockedUntilMs) {
+          throw AnidbUdpException(_blockedReason);
+        }
+        final int delay = _nextSendMs - _clock.elapsedMilliseconds;
+        if (delay > 0) {
+          await Future<void>.delayed(Duration(milliseconds: delay));
+        }
+        if (_closed && command != 'LOGOUT') {
+          throw const AnidbUdpException(AnidbUdpFailure.closed);
+        }
+        if (_clock.elapsedMilliseconds < _blockedUntilMs) {
+          throw AnidbUdpException(_blockedReason);
+        }
+        _nextSendMs = _clock.elapsedMilliseconds + 4000;
+      });
+      _sendTail = turn.then<void>(
+        (_) {},
+        onError: (Object _, StackTrace __) {},
+      );
+      await turn;
+    }
+    if (_closed && command != 'LOGOUT') {
+      throw const AnidbUdpException(AnidbUdpFailure.closed);
+    }
+    if (!responseRequired) {
+      await _transport!.send(packet);
+      // No response was requested; this is not a successful server reply.
+      return const _Reply(0, '', '');
+    }
+    return _Reply.parse(
+      await _transport!.exchange(packet, tag, config.timeout),
+      tag,
+    );
   }
 
   Never _fail(int code) {
@@ -296,7 +349,7 @@ class AnidbUdpFileClient {
     if (code == 501 || code == 506) _session = null;
     if (_transport is AnidbDatagramTransport &&
         (code == 601 || code == 555 || code == 504)) {
-      _blockedUntilMs = _clock.elapsedMilliseconds + 30 * 60 * 1000;
+      _block(reason, _serverBlock);
     }
     if (code == 500 || code == 503 || code == 504 || code == 555) {
       // Stop a queued scan from repeatedly authenticating bad credentials.

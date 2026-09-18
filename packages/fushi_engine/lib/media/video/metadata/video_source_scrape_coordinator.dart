@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
+import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
@@ -45,9 +46,11 @@ class VideoSourceScrapeCoordinator
         VideoSourceScrapeRunner,
         VideoSourceScrapeInterruptible,
         VideoSourceScrapeManualBinding {
-  VideoSourceScrapeCoordinator({
-    required this.database,
-    required this.config,
+  /// 默认装配：哈希服务与离线 id 接力**共用同一份** Fribb 映射表（以前各自
+  /// 下载、各解一份 16 MB JSON），并接上 `anidb_file_identities` 持久层（v106）。
+  factory VideoSourceScrapeCoordinator({
+    required FushiDatabase database,
+    required VideoSourceScrapeGlobalConfig config,
     VideoMetadataProviderRegistry? registry,
     VideoMetadataProviderKind? primaryProvider,
     AnidbHashIdentityService? hashIdentityService,
@@ -58,8 +61,52 @@ class VideoSourceScrapeCoordinator
     AnimeEpisodeRelationsCatalog? episodeRelations,
     VideoMetadataProviderRegistry Function(String locale)?
         localeRegistryFactory,
-    this.onWorkScraped,
-    this.aiIdentityDecider,
+    Future<void> Function(VideoScrapedWorkNotice notice)? onWorkScraped,
+    AiVideoIdentityDecider? aiIdentityDecider,
+  }) {
+    final AnimeIdentityMapping? sharedMapping = identityMapping ??
+        (enableOfflineTitleIndex ? AnimeIdentityMapping() : null);
+    return VideoSourceScrapeCoordinator._(
+      database: database,
+      config: config,
+      registry: registry,
+      primaryProvider: primaryProvider,
+      hashIdentityService: hashIdentityService,
+      resolvedHashIdentityService: hashIdentityService ??
+          AnidbHashIdentityService(
+              enabled: config.hashEnabled,
+              config: config.anidbUdpConfig,
+              mapping: sharedMapping,
+              store: AnidbFileIdentityDatabaseStore(database)),
+      assetDownloader: assetDownloader,
+      identityMapping: identityMapping,
+      resolvedIdentityMapping: sharedMapping,
+      offlineIdentityResolver: offlineIdentityResolver,
+      enableOfflineTitleIndex: enableOfflineTitleIndex,
+      episodeRelations: episodeRelations,
+      localeRegistryFactory: localeRegistryFactory,
+      onWorkScraped: onWorkScraped,
+      aiIdentityDecider: aiIdentityDecider,
+    );
+  }
+
+  VideoSourceScrapeCoordinator._({
+    required this.database,
+    required this.config,
+    required VideoMetadataProviderRegistry? registry,
+    required VideoMetadataProviderKind? primaryProvider,
+    required AnidbHashIdentityService? hashIdentityService,
+    required AnidbHashIdentityService resolvedHashIdentityService,
+    required VideoMetadataAssetDownloader? assetDownloader,
+    required AnimeIdentityMapping? identityMapping,
+    required AnimeIdentityMapping? resolvedIdentityMapping,
+    required AnimeOfflineIdentityResolver? offlineIdentityResolver,
+    required bool enableOfflineTitleIndex,
+    required AnimeEpisodeRelationsCatalog? episodeRelations,
+    required VideoMetadataProviderRegistry Function(String locale)?
+        localeRegistryFactory,
+    required this.onWorkScraped,
+    required this.aiIdentityDecider,
   })  : primaryProvider = primaryProvider ?? config.primaryProvider,
         _localeRegistryFactory = localeRegistryFactory ??
             ((String locale) => _createRegistry(config, locale: locale)),
@@ -68,11 +115,8 @@ class VideoSourceScrapeCoordinator
         _ownsEpisodeRelations = episodeRelations == null,
         registry = registry ?? _createRegistry(config),
         assetDownloader = assetDownloader ?? VideoMetadataAssetDownloader(),
-        hashIdentityService = hashIdentityService ??
-            AnidbHashIdentityService(
-                enabled: config.hashEnabled, config: config.anidbUdpConfig),
-        identityMapping = identityMapping ??
-            (enableOfflineTitleIndex ? AnimeIdentityMapping() : null),
+        hashIdentityService = resolvedHashIdentityService,
+        identityMapping = resolvedIdentityMapping,
         _ownsHashIdentityService = hashIdentityService == null,
         _ownsRegistry = registry == null,
         _ownsAssetDownloader = assetDownloader == null,
@@ -945,27 +989,53 @@ class VideoSourceScrapeCoordinator
     final bool hasExplicitId =
         parseExplicitVideoMetadataIds(pathHints, fallbackMediaKind: kind)
             .isNotEmpty;
-    final _HashWorkEvidence hashEvidence =
-        canonicalLookup == null && !hasExplicitId
-            ? await _identifyWork(
-                localWork, warnings, cancellationToken, onHashProgress)
-            : const _HashWorkEvidence();
+    // 对齐 Shoko：哈希是**文件级第一步**，作品有没有身份都先认文件——新落进
+    // 已识别作品的文件照样哈希、落 `anidb_file_identities`（已认过的文件由持久
+    // 层直接命中，不重算不重问）。作品级身份的优先级不变：已确认 / 已落库 /
+    // NFO / 路径显式 id 在前，哈希只在它们都没有时决定作品是谁（BUG-2586）。
+    final _HashWorkEvidence hashEvidence = await _identifyWork(
+        localWork, warnings, cancellationToken, onHashProgress);
     cancellationToken.throwIfCancelled();
     if (hashEvidence.conflicting) {
       return const _ResolvedWork(
           pending: true,
           status: VideoMetadataResolutionStatus.ambiguous,
-          reason: 'AniDB 文件哈希识别结果属于不同作品，或 AniDB→MAL 映射不唯一；请拆分合集或手动确认作品。');
+          reason: 'AniDB 文件哈希识别结果属于不同作品；请拆分合集或手动确认作品。');
     }
-    final VideoMetadataLookup? hashLookup = hashEvidence.malId == null
-        ? null
-        : VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.mal,
-            externalId: '${hashEvidence.malId}',
-            mediaKind: kind,
-          );
+    final bool hashDecidesIdentity = canonicalLookup == null && !hasExplicitId;
+    // 跨站映射一对多（Fribb 把一个 AniDB 作品映到多个 MAL 条目）：AniDB 身份本身
+    // 已经成立，只是 MAL 那边要选——把各候选拉出来交 AI / 人工，不再让作品悬空。
+    final bool hashMappingAmbiguous = hashDecidesIdentity &&
+        hashEvidence.animeId != null &&
+        hashEvidence.mappedMalIds.length > 1;
+    final int? canonicalMalId =
+        canonicalLookup?.provider == VideoMetadataProviderKind.mal
+            ? int.tryParse(canonicalLookup!.externalId)
+            : null;
+    // 哈希与已确认身份打架：文件确定属于 AniDB X，X 映到的 MAL 里没有当前这个
+    // 已确认的 MAL id。保留已确认身份（手动指定不得静默换源），只报出来。
+    final bool hashContradictsCanonical = !hashDecidesIdentity &&
+        hashEvidence.animeId != null &&
+        canonicalMalId != null &&
+        hashEvidence.mappedMalIds.isNotEmpty &&
+        !hashEvidence.mappedMalIds.contains(canonicalMalId);
+    if (hashContradictsCanonical) {
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          message:
+              '文件哈希指向 AniDB ${hashEvidence.animeId}（anime-lists 映射 MAL ${hashEvidence.mappedMalIds.join('/')}），'
+              '与当前已确认身份 MAL $canonicalMalId 不一致；已保留当前身份，未改写。'));
+    }
+    final VideoMetadataLookup? hashLookup =
+        !hashDecidesIdentity || hashEvidence.malId == null
+            ? null
+            : VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.mal,
+                externalId: '${hashEvidence.malId}',
+                mediaKind: kind,
+              );
     final List<String> searchTitles = <String>[
-      if (hashEvidence.animeId != null)
+      if (hashDecidesIdentity && hashEvidence.animeId != null)
         ...hashEvidence.titles
       else
         ...candidates,
@@ -973,7 +1043,7 @@ class VideoSourceScrapeCoordinator
     // 离线标题索引阶段（A2）：没有任何已知身份时，先拿标题去 AniDB 标题包做
     // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
     final AnimeOfflineIdentity? offline =
-        canonicalLookup == null && hashLookup == null && !hasExplicitId
+        hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous
             ? await _identifyOffline(searchTitles, kind, warnings, localWork)
             : null;
     final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
@@ -992,19 +1062,30 @@ class VideoSourceScrapeCoordinator
         localWork.isEpisodic ? localWork.members.length : null;
     final VideoMetadataResolver resolver =
         VideoMetadataResolver(registry: registry);
-    VideoMetadataResolution resolution =
-        await resolver.resolve(VideoMetadataResolveRequest(
-      selectedProvider: selectedProvider,
-      fallbackProvider: videoMetadataFallbackProvider(selectedProvider),
-      mediaKind: kind,
-      titleCandidates: searchTitles,
-      year: searchYear,
-      seasonNumber: seasonNumber,
-      episodeCount: episodeCount,
-      confirmedLookup:
-          canonicalLookup ?? hashLookup ?? offlineLookups.firstOrNull,
-      identityHints: pathHints,
-    ));
+    final List<VideoMetadataWork> mappedCandidates = hashMappingAmbiguous
+        ? await _fetchMappedMalCandidates(
+            hashEvidence, kind, warnings, localWork)
+        : const <VideoMetadataWork>[];
+    VideoMetadataResolution resolution = mappedCandidates.isNotEmpty
+        ? VideoMetadataResolution(
+            status: VideoMetadataResolutionStatus.ambiguous,
+            providerKind: VideoMetadataProviderKind.mal,
+            candidates: mappedCandidates,
+            reason:
+                'AniDB ${hashEvidence.animeId} 在 anime-lists 映射到多个 MAL 条目（${hashEvidence.mappedMalIds.join('/')}），请确认是哪一个。',
+          )
+        : await resolver.resolve(VideoMetadataResolveRequest(
+            selectedProvider: selectedProvider,
+            fallbackProvider: videoMetadataFallbackProvider(selectedProvider),
+            mediaKind: kind,
+            titleCandidates: searchTitles,
+            year: searchYear,
+            seasonNumber: seasonNumber,
+            episodeCount: episodeCount,
+            confirmedLookup:
+                canonicalLookup ?? hashLookup ?? offlineLookups.firstOrNull,
+            identityHints: pathHints,
+          ));
     if (canonicalLookup == null &&
         hashLookup == null &&
         offlineLookups.isNotEmpty) {
@@ -1223,12 +1304,10 @@ class VideoSourceScrapeCoordinator
         preferredLanguage: _locale,
       );
     }
-    if (hashEvidence.animeId != null &&
-        hashEvidence.malId != null &&
-        metadata.provider == VideoMetadataProviderKind.mal &&
-        _lookupForCandidate(metadata, VideoMetadataProviderKind.mal)
-                ?.externalId ==
-            '${hashEvidence.malId}') {
+    // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
+    // MAL 映射唯一为前提——那是 MAL 那边的事。唯一不写的情况是它与已确认的
+    // MAL 身份明确冲突（上面已报警告）。
+    if (hashEvidence.animeId != null && !hashContradictsCanonical) {
       metadata = _withAnidbId(metadata, hashEvidence.animeId!);
     } else if (offline != null && _resolvedFromOffline(metadata, offline)) {
       // 离线标题索引定的身份：把 AniDB id 一并落成交叉引用，下次不必再查索引。
@@ -1253,13 +1332,24 @@ class VideoSourceScrapeCoordinator
     );
   }
 
+  static const String _hashDisabledNotice =
+      'AniDB 哈希识别已关闭（设置 → 在线服务 → AniDB），本批只按标题识别。';
+
   Future<_HashWorkEvidence> _identifyWork(
     VideoSourceScrapeWork work,
     List<SourceScrapeIssue> warnings,
     VideoSourceScrapeCancellationToken token,
     void Function(String, int, int) onProgress,
   ) async {
-    if (!hashIdentityService.enabled) return const _HashWorkEvidence();
+    if (!hashIdentityService.enabled) {
+      // 一批只提一次：用户排障时得看得出「没开」和「没配好」不是一回事。
+      if (!warnings.any(
+          (SourceScrapeIssue issue) => issue.message == _hashDisabledNotice)) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: work.title, message: _hashDisabledNotice));
+      }
+      return const _HashWorkEvidence();
+    }
     if (!hashIdentityService.isConfigured) {
       warnings.add(SourceScrapeIssue(
           workTitle: work.title,
@@ -1268,9 +1358,8 @@ class VideoSourceScrapeCoordinator
       return const _HashWorkEvidence();
     }
     final Set<int> animeIds = <int>{};
-    final Set<int> malIds = <int>{};
+    final Set<int> mappedMalIds = <int>{};
     final Set<String> titles = <String>{};
-    bool conflicting = false;
     for (final VideoBookRow member in work.members) {
       token.throwIfCancelled();
       final AnidbHashIdentityResult result =
@@ -1288,8 +1377,8 @@ class VideoSourceScrapeCoordinator
       if (result.status == AnidbHashIdentityStatus.matched &&
           identity != null) {
         animeIds.add(identity.animeId);
-        if (result.confirmedMalId case final int malId) malIds.add(malId);
-        conflicting = conflicting || (result.mapping?.isAmbiguous ?? false);
+        final Set<int> malIds = result.mapping?.malIds ?? const <int>{};
+        mappedMalIds.addAll(malIds);
         titles.addAll(<String>[
           identity.romajiTitle,
           identity.kanjiTitle,
@@ -1297,12 +1386,18 @@ class VideoSourceScrapeCoordinator
         ]
             .map((String title) => title.trim())
             .where((String title) => title.isNotEmpty));
+        final String mappingNote = switch (malIds.length) {
+          0 => '文件身份已确定，MAL 元数据映射未确定。',
+          1 => 'MAL 作品映射=${malIds.single}。',
+          _ => 'MAL 映射候选=${malIds.join('/')}（anime-lists 一对多，待确认）。',
+        };
         warnings.add(SourceScrapeIssue(
             workTitle: work.title,
-            message: 'AniDB ED2K 文件识别成功：${p.basename(member.videoPath)}; '
+            message:
+                'AniDB ED2K 文件识别${result.fromStore ? '（已记录，未重算）' : '成功'}：${p.basename(member.videoPath)}; '
                 'hash=${result.matchedEd2k ?? result.hash?.ed2k}; fileId=${identity.fileId}; animeId=${identity.animeId}; '
                 'episodeId=${identity.episodeId}; episodeNumber=${identity.episodeNumber}。'
-                '${result.confirmedMalId == null ? '文件身份已确定，MAL 元数据映射未确定。' : 'MAL 作品映射=${result.confirmedMalId}。'}'
+                '$mappingNote'
                 'AniDB 原生集号仅记录，不推断 MAL 季集对应。'));
       } else if (result.status != AnidbHashIdentityStatus.disabled) {
         warnings.add(SourceScrapeIssue(
@@ -1314,10 +1409,43 @@ class VideoSourceScrapeCoordinator
     }
     return _HashWorkEvidence(
       animeId: animeIds.length == 1 ? animeIds.single : null,
-      malId: malIds.length == 1 ? malIds.single : null,
+      malId: animeIds.length == 1 && mappedMalIds.length == 1
+          ? mappedMalIds.single
+          : null,
+      mappedMalIds: animeIds.length == 1 ? mappedMalIds : const <int>{},
       titles: titles.toList(growable: false),
-      conflicting: conflicting || animeIds.length > 1 || malIds.length > 1,
+      // 只有「成员分属不同 AniDB 作品」才是真冲突；MAL 映射一对多由候选确认消解。
+      conflicting: animeIds.length > 1,
     );
+  }
+
+  /// Fribb 一对多：把每个候选 MAL id 按 id 直拉成候选作品；拉不到的跳过（记
+  /// 一条说明），全拉不到就退回 AniDB 原生标题搜索。
+  Future<List<VideoMetadataWork>> _fetchMappedMalCandidates(
+    _HashWorkEvidence evidence,
+    VideoMetadataMediaKind kind,
+    List<SourceScrapeIssue> warnings,
+    VideoSourceScrapeWork work,
+  ) async {
+    final VideoMetadataProvider? mal =
+        _registry.provider(VideoMetadataProviderKind.mal);
+    if (mal == null || !mal.isAvailable) return const <VideoMetadataWork>[];
+    final List<VideoMetadataWork> candidates = <VideoMetadataWork>[];
+    for (final int malId in evidence.mappedMalIds.toList()..sort()) {
+      try {
+        final VideoMetadataWork? candidate = await mal.fetchWork(
+            VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.mal,
+                externalId: '$malId',
+                mediaKind: kind));
+        if (candidate != null) candidates.add(candidate);
+      } catch (error) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: work.title,
+            message: 'AniDB ${evidence.animeId} 的映射候选 MAL $malId 拉取失败：$error'));
+      }
+    }
+    return candidates;
   }
 
   /// 离线标题索引阶段：唯一精确命中才返回身份；歧义 / 查无 / 不可用都只记一条
@@ -2977,10 +3105,18 @@ class _HashWorkEvidence {
   const _HashWorkEvidence(
       {this.animeId,
       this.malId,
+      this.mappedMalIds = const <int>{},
       this.titles = const <String>[],
       this.conflicting = false});
+
+  /// 全部成员一致指向的 AniDB 作品；成员分属不同作品时为 null 且 [conflicting]。
   final int? animeId;
+
+  /// anime-lists 唯一映射到的 MAL id；映射缺失或一对多时为 null。
   final int? malId;
+
+  /// anime-lists 给出的全部 MAL 候选（一对多时 >1，供候选确认）。
+  final Set<int> mappedMalIds;
   final List<String> titles;
   final bool conflicting;
 }

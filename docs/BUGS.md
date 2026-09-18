@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2393 条。点号进各自文件。
+> 共 2394 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2587](bugs/BUG-2587-media-server-study-stats.md) | ✅ | ✅ | 媒体服务器（Jellyfin / Emby）与互联远端视频不进学习统计 |
+| [BUG-2586](bugs/BUG-2586-anidb-status-ignores-bundled-client.md) | ✅ | ✅ | 设置页AniDB状态按四项偏好判空，内置客户端账号测试登录成功仍显示未配置 |
 | [BUG-2585](bugs/BUG-2585-media-server-embedded-subtitle-wrong-episode.md) | ✅ | ✅ | 媒体服务器内嵌字幕轨：连播切集后下载错集且失败静默 |
 | [BUG-2584](bugs/BUG-2584-media-server-connect-diagnostics-mobile.md) | ✅ | ✅ | Android 连不上媒体服务器：失败原因被原生 toast 截断、无连通性探测、scheme 大小写 |
 | [BUG-2583](bugs/BUG-2583-media-server-playback-negotiation.md) | ✅ | ✅ | 媒体服务器播放卡顿 / 有时无法重播：无 PlaybackInfo 协商与会话、中继逐请求握手、原生拆建竞态 |

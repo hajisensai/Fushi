@@ -702,6 +702,7 @@ void _requireOneVideoMetadataOwner({
   VideoFileSpecs,
   UpdateFeedEntries,
   MangaDownloadJobs,
+  AnidbFileIdentities,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -734,7 +735,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 105;
+  int get schemaVersion => 106;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3212,6 +3213,25 @@ class FushiDatabase extends _$FushiDatabase
                 ],
               );
             }
+          }
+          if (from < 106) {
+            // v106（AniDB 文件级身份持久化）：新表 anidb_file_identities，与
+            // v103 / v104 同款的纯新增表范式。无损：旧库升级后表为空，下一次
+            // 刮削按需回填。幂等：fresh DB 由 onCreate 的 createAll 建好；重复
+            // 升级被 _tableExists 短路。
+            if (!await _tableExists('anidb_file_identities')) {
+              await m.createTable(anidbFileIdentities);
+            }
+            // 索引与建表同步内联（升级路径不会自动补上）；fresh 库由
+            // `_ensureIndexes` 建同名索引，两处 SQL 必须逐字一致。
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_path '
+              'ON anidb_file_identities (file_path, file_size)',
+            );
+            await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_anime '
+              'ON anidb_file_identities (anidb_anime_id)',
+            );
           }
         },
         onCreate: (m) async {

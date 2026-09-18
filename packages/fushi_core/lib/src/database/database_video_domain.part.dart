@@ -2468,6 +2468,54 @@ mixin _FushiDbVideoDomain
   /// 删一个文件的规格缓存（文件被删/被移出库时）。
   Future<void> deleteVideoFileSpec(String filePath) =>
       (delete(videoFileSpecs)..where((t) => t.filePath.equals(filePath))).go();
+
+  // ── anidb_file_identities（v106 AniDB 文件级身份）────────────────────
+
+  /// 按内容键取身份；没查过返回 null。
+  Future<AnidbFileIdentityRow?> anidbFileIdentityByHash({
+    required String ed2k,
+    required int fileSize,
+  }) =>
+      (select(anidbFileIdentities)
+            ..where((t) =>
+                t.ed2k.equals(ed2k.toLowerCase()) &
+                t.fileSize.equals(fileSize)))
+          .getSingleOrNull();
+
+  /// 按「路径 + 大小」取最近一次记下的身份（免重算哈希的快路径）；调用方
+  /// 还要再比 `fileModifiedAt`——同名同大小但内容换过的文件靠这个判出来。
+  Future<AnidbFileIdentityRow?> anidbFileIdentityByPath({
+    required String filePath,
+    required int fileSize,
+  }) =>
+      (select(anidbFileIdentities)
+            ..where((t) =>
+                t.filePath.equals(filePath) & t.fileSize.equals(fileSize))
+            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// 一批路径里哪些已经有身份行（补刮排队用）：返回有行的路径集合。
+  Future<Set<String>> anidbFileIdentityPaths(Iterable<String> filePaths) async {
+    final List<String> paths = filePaths.toSet().toList();
+    if (paths.isEmpty) return const <String>{};
+    final List<AnidbFileIdentityRow> rows =
+        await (select(anidbFileIdentities)
+              ..where((t) => t.filePath.isIn(paths)))
+            .get();
+    return <String>{
+      for (final AnidbFileIdentityRow row in rows)
+        if (row.filePath != null) row.filePath!,
+    };
+  }
+
+  /// 写入/覆盖一份内容的身份。整行覆盖是有意的：一次 FILE 响应就是该内容的
+  /// 完整事实快照，路径 / mtime 也随之更新到最近一次看到它的位置。
+  Future<void> upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion row) =>
+      into(anidbFileIdentities).insert(
+          // 内容键统一小写：读侧按小写查，写侧不归一化就会同一哈希两行。
+          row.copyWith(ed2k: Value(row.ed2k.value.toLowerCase())),
+          mode: InsertMode.insertOrReplace);
 }
 
 /// 一本视频书涉及的全部本地文件路径：主视频 + 播放列表里的每一集。

@@ -2421,6 +2421,8 @@ class _HomePageState extends BasePageState<HomePage>
       database: appModel.database,
       controller: controller,
       isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
+      // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
+      isHashReady: () => config.anidbHashReady,
     );
     return controller;
   }

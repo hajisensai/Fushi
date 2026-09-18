@@ -52621,6 +52621,960 @@ class MangaDownloadJobsCompanion extends UpdateCompanion<MangaDownloadJobRow> {
   }
 }
 
+class $AnidbFileIdentitiesTable extends AnidbFileIdentities
+    with TableInfo<$AnidbFileIdentitiesTable, AnidbFileIdentityRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AnidbFileIdentitiesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _ed2kMeta = const VerificationMeta('ed2k');
+  @override
+  late final GeneratedColumn<String> ed2k = GeneratedColumn<String>(
+    'ed2k',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeMeta = const VerificationMeta(
+    'fileSize',
+  );
+  @override
+  late final GeneratedColumn<int> fileSize = GeneratedColumn<int>(
+    'file_size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _anidbFileIdMeta = const VerificationMeta(
+    'anidbFileId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbFileId = GeneratedColumn<int>(
+    'anidb_file_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbAnimeIdMeta = const VerificationMeta(
+    'anidbAnimeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbAnimeId = GeneratedColumn<int>(
+    'anidb_anime_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbEpisodeIdMeta = const VerificationMeta(
+    'anidbEpisodeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbEpisodeId = GeneratedColumn<int>(
+    'anidb_episode_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<String> episodeNumber = GeneratedColumn<String>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _romajiTitleMeta = const VerificationMeta(
+    'romajiTitle',
+  );
+  @override
+  late final GeneratedColumn<String> romajiTitle = GeneratedColumn<String>(
+    'romaji_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _kanjiTitleMeta = const VerificationMeta(
+    'kanjiTitle',
+  );
+  @override
+  late final GeneratedColumn<String> kanjiTitle = GeneratedColumn<String>(
+    'kanji_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _englishTitleMeta = const VerificationMeta(
+    'englishTitle',
+  );
+  @override
+  late final GeneratedColumn<String> englishTitle = GeneratedColumn<String>(
+    'english_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _episodeTitleMeta = const VerificationMeta(
+    'episodeTitle',
+  );
+  @override
+  late final GeneratedColumn<String> episodeTitle = GeneratedColumn<String>(
+    'episode_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _episodeRomajiTitleMeta =
+      const VerificationMeta('episodeRomajiTitle');
+  @override
+  late final GeneratedColumn<String> episodeRomajiTitle =
+      GeneratedColumn<String>(
+        'episode_romaji_title',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _episodeKanjiTitleMeta = const VerificationMeta(
+    'episodeKanjiTitle',
+  );
+  @override
+  late final GeneratedColumn<String> episodeKanjiTitle =
+      GeneratedColumn<String>(
+        'episode_kanji_title',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _resolvedAtMeta = const VerificationMeta(
+    'resolvedAt',
+  );
+  @override
+  late final GeneratedColumn<int> resolvedAt = GeneratedColumn<int>(
+    'resolved_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    ed2k,
+    fileSize,
+    anidbFileId,
+    anidbAnimeId,
+    anidbEpisodeId,
+    episodeNumber,
+    romajiTitle,
+    kanjiTitle,
+    englishTitle,
+    episodeTitle,
+    episodeRomajiTitle,
+    episodeKanjiTitle,
+    filePath,
+    fileModifiedAt,
+    resolvedAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'anidb_file_identities';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AnidbFileIdentityRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('ed2k')) {
+      context.handle(
+        _ed2kMeta,
+        ed2k.isAcceptableOrUnknown(data['ed2k']!, _ed2kMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_ed2kMeta);
+    }
+    if (data.containsKey('file_size')) {
+      context.handle(
+        _fileSizeMeta,
+        fileSize.isAcceptableOrUnknown(data['file_size']!, _fileSizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeMeta);
+    }
+    if (data.containsKey('anidb_file_id')) {
+      context.handle(
+        _anidbFileIdMeta,
+        anidbFileId.isAcceptableOrUnknown(
+          data['anidb_file_id']!,
+          _anidbFileIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_anime_id')) {
+      context.handle(
+        _anidbAnimeIdMeta,
+        anidbAnimeId.isAcceptableOrUnknown(
+          data['anidb_anime_id']!,
+          _anidbAnimeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_episode_id')) {
+      context.handle(
+        _anidbEpisodeIdMeta,
+        anidbEpisodeId.isAcceptableOrUnknown(
+          data['anidb_episode_id']!,
+          _anidbEpisodeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('romaji_title')) {
+      context.handle(
+        _romajiTitleMeta,
+        romajiTitle.isAcceptableOrUnknown(
+          data['romaji_title']!,
+          _romajiTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('kanji_title')) {
+      context.handle(
+        _kanjiTitleMeta,
+        kanjiTitle.isAcceptableOrUnknown(data['kanji_title']!, _kanjiTitleMeta),
+      );
+    }
+    if (data.containsKey('english_title')) {
+      context.handle(
+        _englishTitleMeta,
+        englishTitle.isAcceptableOrUnknown(
+          data['english_title']!,
+          _englishTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_title')) {
+      context.handle(
+        _episodeTitleMeta,
+        episodeTitle.isAcceptableOrUnknown(
+          data['episode_title']!,
+          _episodeTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_romaji_title')) {
+      context.handle(
+        _episodeRomajiTitleMeta,
+        episodeRomajiTitle.isAcceptableOrUnknown(
+          data['episode_romaji_title']!,
+          _episodeRomajiTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('episode_kanji_title')) {
+      context.handle(
+        _episodeKanjiTitleMeta,
+        episodeKanjiTitle.isAcceptableOrUnknown(
+          data['episode_kanji_title']!,
+          _episodeKanjiTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('resolved_at')) {
+      context.handle(
+        _resolvedAtMeta,
+        resolvedAt.isAcceptableOrUnknown(data['resolved_at']!, _resolvedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_resolvedAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {ed2k, fileSize};
+  @override
+  AnidbFileIdentityRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AnidbFileIdentityRow(
+      ed2k: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ed2k'],
+      )!,
+      fileSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size'],
+      )!,
+      anidbFileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_file_id'],
+      ),
+      anidbAnimeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_anime_id'],
+      ),
+      anidbEpisodeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_episode_id'],
+      ),
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      romajiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}romaji_title'],
+      )!,
+      kanjiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kanji_title'],
+      )!,
+      englishTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}english_title'],
+      )!,
+      episodeTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_title'],
+      )!,
+      episodeRomajiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_romaji_title'],
+      )!,
+      episodeKanjiTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_kanji_title'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      ),
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      ),
+      resolvedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}resolved_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AnidbFileIdentitiesTable createAlias(String alias) {
+    return $AnidbFileIdentitiesTable(attachedDatabase, alias);
+  }
+}
+
+class AnidbFileIdentityRow extends DataClass
+    implements Insertable<AnidbFileIdentityRow> {
+  final String ed2k;
+  final int fileSize;
+  final int? anidbFileId;
+  final int? anidbAnimeId;
+  final int? anidbEpisodeId;
+  final String episodeNumber;
+  final String romajiTitle;
+  final String kanjiTitle;
+  final String englishTitle;
+  final String episodeTitle;
+  final String episodeRomajiTitle;
+  final String episodeKanjiTitle;
+  final String? filePath;
+  final int? fileModifiedAt;
+  final int resolvedAt;
+  final int updatedAt;
+  const AnidbFileIdentityRow({
+    required this.ed2k,
+    required this.fileSize,
+    this.anidbFileId,
+    this.anidbAnimeId,
+    this.anidbEpisodeId,
+    required this.episodeNumber,
+    required this.romajiTitle,
+    required this.kanjiTitle,
+    required this.englishTitle,
+    required this.episodeTitle,
+    required this.episodeRomajiTitle,
+    required this.episodeKanjiTitle,
+    this.filePath,
+    this.fileModifiedAt,
+    required this.resolvedAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['ed2k'] = Variable<String>(ed2k);
+    map['file_size'] = Variable<int>(fileSize);
+    if (!nullToAbsent || anidbFileId != null) {
+      map['anidb_file_id'] = Variable<int>(anidbFileId);
+    }
+    if (!nullToAbsent || anidbAnimeId != null) {
+      map['anidb_anime_id'] = Variable<int>(anidbAnimeId);
+    }
+    if (!nullToAbsent || anidbEpisodeId != null) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId);
+    }
+    map['episode_number'] = Variable<String>(episodeNumber);
+    map['romaji_title'] = Variable<String>(romajiTitle);
+    map['kanji_title'] = Variable<String>(kanjiTitle);
+    map['english_title'] = Variable<String>(englishTitle);
+    map['episode_title'] = Variable<String>(episodeTitle);
+    map['episode_romaji_title'] = Variable<String>(episodeRomajiTitle);
+    map['episode_kanji_title'] = Variable<String>(episodeKanjiTitle);
+    if (!nullToAbsent || filePath != null) {
+      map['file_path'] = Variable<String>(filePath);
+    }
+    if (!nullToAbsent || fileModifiedAt != null) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    }
+    map['resolved_at'] = Variable<int>(resolvedAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  AnidbFileIdentitiesCompanion toCompanion(bool nullToAbsent) {
+    return AnidbFileIdentitiesCompanion(
+      ed2k: Value(ed2k),
+      fileSize: Value(fileSize),
+      anidbFileId: anidbFileId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbFileId),
+      anidbAnimeId: anidbAnimeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbAnimeId),
+      anidbEpisodeId: anidbEpisodeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeId),
+      episodeNumber: Value(episodeNumber),
+      romajiTitle: Value(romajiTitle),
+      kanjiTitle: Value(kanjiTitle),
+      englishTitle: Value(englishTitle),
+      episodeTitle: Value(episodeTitle),
+      episodeRomajiTitle: Value(episodeRomajiTitle),
+      episodeKanjiTitle: Value(episodeKanjiTitle),
+      filePath: filePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(filePath),
+      fileModifiedAt: fileModifiedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fileModifiedAt),
+      resolvedAt: Value(resolvedAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory AnidbFileIdentityRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AnidbFileIdentityRow(
+      ed2k: serializer.fromJson<String>(json['ed2k']),
+      fileSize: serializer.fromJson<int>(json['fileSize']),
+      anidbFileId: serializer.fromJson<int?>(json['anidbFileId']),
+      anidbAnimeId: serializer.fromJson<int?>(json['anidbAnimeId']),
+      anidbEpisodeId: serializer.fromJson<int?>(json['anidbEpisodeId']),
+      episodeNumber: serializer.fromJson<String>(json['episodeNumber']),
+      romajiTitle: serializer.fromJson<String>(json['romajiTitle']),
+      kanjiTitle: serializer.fromJson<String>(json['kanjiTitle']),
+      englishTitle: serializer.fromJson<String>(json['englishTitle']),
+      episodeTitle: serializer.fromJson<String>(json['episodeTitle']),
+      episodeRomajiTitle: serializer.fromJson<String>(
+        json['episodeRomajiTitle'],
+      ),
+      episodeKanjiTitle: serializer.fromJson<String>(json['episodeKanjiTitle']),
+      filePath: serializer.fromJson<String?>(json['filePath']),
+      fileModifiedAt: serializer.fromJson<int?>(json['fileModifiedAt']),
+      resolvedAt: serializer.fromJson<int>(json['resolvedAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'ed2k': serializer.toJson<String>(ed2k),
+      'fileSize': serializer.toJson<int>(fileSize),
+      'anidbFileId': serializer.toJson<int?>(anidbFileId),
+      'anidbAnimeId': serializer.toJson<int?>(anidbAnimeId),
+      'anidbEpisodeId': serializer.toJson<int?>(anidbEpisodeId),
+      'episodeNumber': serializer.toJson<String>(episodeNumber),
+      'romajiTitle': serializer.toJson<String>(romajiTitle),
+      'kanjiTitle': serializer.toJson<String>(kanjiTitle),
+      'englishTitle': serializer.toJson<String>(englishTitle),
+      'episodeTitle': serializer.toJson<String>(episodeTitle),
+      'episodeRomajiTitle': serializer.toJson<String>(episodeRomajiTitle),
+      'episodeKanjiTitle': serializer.toJson<String>(episodeKanjiTitle),
+      'filePath': serializer.toJson<String?>(filePath),
+      'fileModifiedAt': serializer.toJson<int?>(fileModifiedAt),
+      'resolvedAt': serializer.toJson<int>(resolvedAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  AnidbFileIdentityRow copyWith({
+    String? ed2k,
+    int? fileSize,
+    Value<int?> anidbFileId = const Value.absent(),
+    Value<int?> anidbAnimeId = const Value.absent(),
+    Value<int?> anidbEpisodeId = const Value.absent(),
+    String? episodeNumber,
+    String? romajiTitle,
+    String? kanjiTitle,
+    String? englishTitle,
+    String? episodeTitle,
+    String? episodeRomajiTitle,
+    String? episodeKanjiTitle,
+    Value<String?> filePath = const Value.absent(),
+    Value<int?> fileModifiedAt = const Value.absent(),
+    int? resolvedAt,
+    int? updatedAt,
+  }) => AnidbFileIdentityRow(
+    ed2k: ed2k ?? this.ed2k,
+    fileSize: fileSize ?? this.fileSize,
+    anidbFileId: anidbFileId.present ? anidbFileId.value : this.anidbFileId,
+    anidbAnimeId: anidbAnimeId.present ? anidbAnimeId.value : this.anidbAnimeId,
+    anidbEpisodeId: anidbEpisodeId.present
+        ? anidbEpisodeId.value
+        : this.anidbEpisodeId,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    romajiTitle: romajiTitle ?? this.romajiTitle,
+    kanjiTitle: kanjiTitle ?? this.kanjiTitle,
+    englishTitle: englishTitle ?? this.englishTitle,
+    episodeTitle: episodeTitle ?? this.episodeTitle,
+    episodeRomajiTitle: episodeRomajiTitle ?? this.episodeRomajiTitle,
+    episodeKanjiTitle: episodeKanjiTitle ?? this.episodeKanjiTitle,
+    filePath: filePath.present ? filePath.value : this.filePath,
+    fileModifiedAt: fileModifiedAt.present
+        ? fileModifiedAt.value
+        : this.fileModifiedAt,
+    resolvedAt: resolvedAt ?? this.resolvedAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  AnidbFileIdentityRow copyWithCompanion(AnidbFileIdentitiesCompanion data) {
+    return AnidbFileIdentityRow(
+      ed2k: data.ed2k.present ? data.ed2k.value : this.ed2k,
+      fileSize: data.fileSize.present ? data.fileSize.value : this.fileSize,
+      anidbFileId: data.anidbFileId.present
+          ? data.anidbFileId.value
+          : this.anidbFileId,
+      anidbAnimeId: data.anidbAnimeId.present
+          ? data.anidbAnimeId.value
+          : this.anidbAnimeId,
+      anidbEpisodeId: data.anidbEpisodeId.present
+          ? data.anidbEpisodeId.value
+          : this.anidbEpisodeId,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      romajiTitle: data.romajiTitle.present
+          ? data.romajiTitle.value
+          : this.romajiTitle,
+      kanjiTitle: data.kanjiTitle.present
+          ? data.kanjiTitle.value
+          : this.kanjiTitle,
+      englishTitle: data.englishTitle.present
+          ? data.englishTitle.value
+          : this.englishTitle,
+      episodeTitle: data.episodeTitle.present
+          ? data.episodeTitle.value
+          : this.episodeTitle,
+      episodeRomajiTitle: data.episodeRomajiTitle.present
+          ? data.episodeRomajiTitle.value
+          : this.episodeRomajiTitle,
+      episodeKanjiTitle: data.episodeKanjiTitle.present
+          ? data.episodeKanjiTitle.value
+          : this.episodeKanjiTitle,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      resolvedAt: data.resolvedAt.present
+          ? data.resolvedAt.value
+          : this.resolvedAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnidbFileIdentityRow(')
+          ..write('ed2k: $ed2k, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('anidbFileId: $anidbFileId, ')
+          ..write('anidbAnimeId: $anidbAnimeId, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('romajiTitle: $romajiTitle, ')
+          ..write('kanjiTitle: $kanjiTitle, ')
+          ..write('englishTitle: $englishTitle, ')
+          ..write('episodeTitle: $episodeTitle, ')
+          ..write('episodeRomajiTitle: $episodeRomajiTitle, ')
+          ..write('episodeKanjiTitle: $episodeKanjiTitle, ')
+          ..write('filePath: $filePath, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('resolvedAt: $resolvedAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    ed2k,
+    fileSize,
+    anidbFileId,
+    anidbAnimeId,
+    anidbEpisodeId,
+    episodeNumber,
+    romajiTitle,
+    kanjiTitle,
+    englishTitle,
+    episodeTitle,
+    episodeRomajiTitle,
+    episodeKanjiTitle,
+    filePath,
+    fileModifiedAt,
+    resolvedAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AnidbFileIdentityRow &&
+          other.ed2k == this.ed2k &&
+          other.fileSize == this.fileSize &&
+          other.anidbFileId == this.anidbFileId &&
+          other.anidbAnimeId == this.anidbAnimeId &&
+          other.anidbEpisodeId == this.anidbEpisodeId &&
+          other.episodeNumber == this.episodeNumber &&
+          other.romajiTitle == this.romajiTitle &&
+          other.kanjiTitle == this.kanjiTitle &&
+          other.englishTitle == this.englishTitle &&
+          other.episodeTitle == this.episodeTitle &&
+          other.episodeRomajiTitle == this.episodeRomajiTitle &&
+          other.episodeKanjiTitle == this.episodeKanjiTitle &&
+          other.filePath == this.filePath &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          other.resolvedAt == this.resolvedAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class AnidbFileIdentitiesCompanion
+    extends UpdateCompanion<AnidbFileIdentityRow> {
+  final Value<String> ed2k;
+  final Value<int> fileSize;
+  final Value<int?> anidbFileId;
+  final Value<int?> anidbAnimeId;
+  final Value<int?> anidbEpisodeId;
+  final Value<String> episodeNumber;
+  final Value<String> romajiTitle;
+  final Value<String> kanjiTitle;
+  final Value<String> englishTitle;
+  final Value<String> episodeTitle;
+  final Value<String> episodeRomajiTitle;
+  final Value<String> episodeKanjiTitle;
+  final Value<String?> filePath;
+  final Value<int?> fileModifiedAt;
+  final Value<int> resolvedAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const AnidbFileIdentitiesCompanion({
+    this.ed2k = const Value.absent(),
+    this.fileSize = const Value.absent(),
+    this.anidbFileId = const Value.absent(),
+    this.anidbAnimeId = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.romajiTitle = const Value.absent(),
+    this.kanjiTitle = const Value.absent(),
+    this.englishTitle = const Value.absent(),
+    this.episodeTitle = const Value.absent(),
+    this.episodeRomajiTitle = const Value.absent(),
+    this.episodeKanjiTitle = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.resolvedAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AnidbFileIdentitiesCompanion.insert({
+    required String ed2k,
+    required int fileSize,
+    this.anidbFileId = const Value.absent(),
+    this.anidbAnimeId = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.romajiTitle = const Value.absent(),
+    this.kanjiTitle = const Value.absent(),
+    this.englishTitle = const Value.absent(),
+    this.episodeTitle = const Value.absent(),
+    this.episodeRomajiTitle = const Value.absent(),
+    this.episodeKanjiTitle = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    required int resolvedAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : ed2k = Value(ed2k),
+       fileSize = Value(fileSize),
+       resolvedAt = Value(resolvedAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<AnidbFileIdentityRow> custom({
+    Expression<String>? ed2k,
+    Expression<int>? fileSize,
+    Expression<int>? anidbFileId,
+    Expression<int>? anidbAnimeId,
+    Expression<int>? anidbEpisodeId,
+    Expression<String>? episodeNumber,
+    Expression<String>? romajiTitle,
+    Expression<String>? kanjiTitle,
+    Expression<String>? englishTitle,
+    Expression<String>? episodeTitle,
+    Expression<String>? episodeRomajiTitle,
+    Expression<String>? episodeKanjiTitle,
+    Expression<String>? filePath,
+    Expression<int>? fileModifiedAt,
+    Expression<int>? resolvedAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (ed2k != null) 'ed2k': ed2k,
+      if (fileSize != null) 'file_size': fileSize,
+      if (anidbFileId != null) 'anidb_file_id': anidbFileId,
+      if (anidbAnimeId != null) 'anidb_anime_id': anidbAnimeId,
+      if (anidbEpisodeId != null) 'anidb_episode_id': anidbEpisodeId,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (romajiTitle != null) 'romaji_title': romajiTitle,
+      if (kanjiTitle != null) 'kanji_title': kanjiTitle,
+      if (englishTitle != null) 'english_title': englishTitle,
+      if (episodeTitle != null) 'episode_title': episodeTitle,
+      if (episodeRomajiTitle != null)
+        'episode_romaji_title': episodeRomajiTitle,
+      if (episodeKanjiTitle != null) 'episode_kanji_title': episodeKanjiTitle,
+      if (filePath != null) 'file_path': filePath,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (resolvedAt != null) 'resolved_at': resolvedAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AnidbFileIdentitiesCompanion copyWith({
+    Value<String>? ed2k,
+    Value<int>? fileSize,
+    Value<int?>? anidbFileId,
+    Value<int?>? anidbAnimeId,
+    Value<int?>? anidbEpisodeId,
+    Value<String>? episodeNumber,
+    Value<String>? romajiTitle,
+    Value<String>? kanjiTitle,
+    Value<String>? englishTitle,
+    Value<String>? episodeTitle,
+    Value<String>? episodeRomajiTitle,
+    Value<String>? episodeKanjiTitle,
+    Value<String?>? filePath,
+    Value<int?>? fileModifiedAt,
+    Value<int>? resolvedAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return AnidbFileIdentitiesCompanion(
+      ed2k: ed2k ?? this.ed2k,
+      fileSize: fileSize ?? this.fileSize,
+      anidbFileId: anidbFileId ?? this.anidbFileId,
+      anidbAnimeId: anidbAnimeId ?? this.anidbAnimeId,
+      anidbEpisodeId: anidbEpisodeId ?? this.anidbEpisodeId,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      romajiTitle: romajiTitle ?? this.romajiTitle,
+      kanjiTitle: kanjiTitle ?? this.kanjiTitle,
+      englishTitle: englishTitle ?? this.englishTitle,
+      episodeTitle: episodeTitle ?? this.episodeTitle,
+      episodeRomajiTitle: episodeRomajiTitle ?? this.episodeRomajiTitle,
+      episodeKanjiTitle: episodeKanjiTitle ?? this.episodeKanjiTitle,
+      filePath: filePath ?? this.filePath,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      resolvedAt: resolvedAt ?? this.resolvedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (ed2k.present) {
+      map['ed2k'] = Variable<String>(ed2k.value);
+    }
+    if (fileSize.present) {
+      map['file_size'] = Variable<int>(fileSize.value);
+    }
+    if (anidbFileId.present) {
+      map['anidb_file_id'] = Variable<int>(anidbFileId.value);
+    }
+    if (anidbAnimeId.present) {
+      map['anidb_anime_id'] = Variable<int>(anidbAnimeId.value);
+    }
+    if (anidbEpisodeId.present) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<String>(episodeNumber.value);
+    }
+    if (romajiTitle.present) {
+      map['romaji_title'] = Variable<String>(romajiTitle.value);
+    }
+    if (kanjiTitle.present) {
+      map['kanji_title'] = Variable<String>(kanjiTitle.value);
+    }
+    if (englishTitle.present) {
+      map['english_title'] = Variable<String>(englishTitle.value);
+    }
+    if (episodeTitle.present) {
+      map['episode_title'] = Variable<String>(episodeTitle.value);
+    }
+    if (episodeRomajiTitle.present) {
+      map['episode_romaji_title'] = Variable<String>(episodeRomajiTitle.value);
+    }
+    if (episodeKanjiTitle.present) {
+      map['episode_kanji_title'] = Variable<String>(episodeKanjiTitle.value);
+    }
+    if (filePath.present) {
+      map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (resolvedAt.present) {
+      map['resolved_at'] = Variable<int>(resolvedAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AnidbFileIdentitiesCompanion(')
+          ..write('ed2k: $ed2k, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('anidbFileId: $anidbFileId, ')
+          ..write('anidbAnimeId: $anidbAnimeId, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('romajiTitle: $romajiTitle, ')
+          ..write('kanjiTitle: $kanjiTitle, ')
+          ..write('englishTitle: $englishTitle, ')
+          ..write('episodeTitle: $episodeTitle, ')
+          ..write('episodeRomajiTitle: $episodeRomajiTitle, ')
+          ..write('episodeKanjiTitle: $episodeKanjiTitle, ')
+          ..write('filePath: $filePath, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('resolvedAt: $resolvedAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -52780,6 +53734,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $UpdateFeedEntriesTable(this);
   late final $MangaDownloadJobsTable mangaDownloadJobs =
       $MangaDownloadJobsTable(this);
+  late final $AnidbFileIdentitiesTable anidbFileIdentities =
+      $AnidbFileIdentitiesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -52871,6 +53827,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoFileSpecs,
     updateFeedEntries,
     mangaDownloadJobs,
+    anidbFileIdentities,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -91773,6 +92730,455 @@ typedef $$MangaDownloadJobsTableProcessedTableManager =
       MangaDownloadJobRow,
       PrefetchHooks Function()
     >;
+typedef $$AnidbFileIdentitiesTableCreateCompanionBuilder =
+    AnidbFileIdentitiesCompanion Function({
+      required String ed2k,
+      required int fileSize,
+      Value<int?> anidbFileId,
+      Value<int?> anidbAnimeId,
+      Value<int?> anidbEpisodeId,
+      Value<String> episodeNumber,
+      Value<String> romajiTitle,
+      Value<String> kanjiTitle,
+      Value<String> englishTitle,
+      Value<String> episodeTitle,
+      Value<String> episodeRomajiTitle,
+      Value<String> episodeKanjiTitle,
+      Value<String?> filePath,
+      Value<int?> fileModifiedAt,
+      required int resolvedAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$AnidbFileIdentitiesTableUpdateCompanionBuilder =
+    AnidbFileIdentitiesCompanion Function({
+      Value<String> ed2k,
+      Value<int> fileSize,
+      Value<int?> anidbFileId,
+      Value<int?> anidbAnimeId,
+      Value<int?> anidbEpisodeId,
+      Value<String> episodeNumber,
+      Value<String> romajiTitle,
+      Value<String> kanjiTitle,
+      Value<String> englishTitle,
+      Value<String> episodeTitle,
+      Value<String> episodeRomajiTitle,
+      Value<String> episodeKanjiTitle,
+      Value<String?> filePath,
+      Value<int?> fileModifiedAt,
+      Value<int> resolvedAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$AnidbFileIdentitiesTableFilterComposer
+    extends Composer<_$FushiDatabase, $AnidbFileIdentitiesTable> {
+  $$AnidbFileIdentitiesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get ed2k => $composableBuilder(
+    column: $table.ed2k,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbFileId => $composableBuilder(
+    column: $table.anidbFileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbAnimeId => $composableBuilder(
+    column: $table.anidbAnimeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get romajiTitle => $composableBuilder(
+    column: $table.romajiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kanjiTitle => $composableBuilder(
+    column: $table.kanjiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get englishTitle => $composableBuilder(
+    column: $table.englishTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeTitle => $composableBuilder(
+    column: $table.episodeTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeRomajiTitle => $composableBuilder(
+    column: $table.episodeRomajiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeKanjiTitle => $composableBuilder(
+    column: $table.episodeKanjiTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get resolvedAt => $composableBuilder(
+    column: $table.resolvedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AnidbFileIdentitiesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $AnidbFileIdentitiesTable> {
+  $$AnidbFileIdentitiesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get ed2k => $composableBuilder(
+    column: $table.ed2k,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get anidbFileId => $composableBuilder(
+    column: $table.anidbFileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get anidbAnimeId => $composableBuilder(
+    column: $table.anidbAnimeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get romajiTitle => $composableBuilder(
+    column: $table.romajiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kanjiTitle => $composableBuilder(
+    column: $table.kanjiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get englishTitle => $composableBuilder(
+    column: $table.englishTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeTitle => $composableBuilder(
+    column: $table.episodeTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeRomajiTitle => $composableBuilder(
+    column: $table.episodeRomajiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeKanjiTitle => $composableBuilder(
+    column: $table.episodeKanjiTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get resolvedAt => $composableBuilder(
+    column: $table.resolvedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AnidbFileIdentitiesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $AnidbFileIdentitiesTable> {
+  $$AnidbFileIdentitiesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get ed2k =>
+      $composableBuilder(column: $table.ed2k, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSize =>
+      $composableBuilder(column: $table.fileSize, builder: (column) => column);
+
+  GeneratedColumn<int> get anidbFileId => $composableBuilder(
+    column: $table.anidbFileId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbAnimeId => $composableBuilder(
+    column: $table.anidbAnimeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get romajiTitle => $composableBuilder(
+    column: $table.romajiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get kanjiTitle => $composableBuilder(
+    column: $table.kanjiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get englishTitle => $composableBuilder(
+    column: $table.englishTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeTitle => $composableBuilder(
+    column: $table.episodeTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeRomajiTitle => $composableBuilder(
+    column: $table.episodeRomajiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get episodeKanjiTitle => $composableBuilder(
+    column: $table.episodeKanjiTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get resolvedAt => $composableBuilder(
+    column: $table.resolvedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$AnidbFileIdentitiesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $AnidbFileIdentitiesTable,
+          AnidbFileIdentityRow,
+          $$AnidbFileIdentitiesTableFilterComposer,
+          $$AnidbFileIdentitiesTableOrderingComposer,
+          $$AnidbFileIdentitiesTableAnnotationComposer,
+          $$AnidbFileIdentitiesTableCreateCompanionBuilder,
+          $$AnidbFileIdentitiesTableUpdateCompanionBuilder,
+          (
+            AnidbFileIdentityRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $AnidbFileIdentitiesTable,
+              AnidbFileIdentityRow
+            >,
+          ),
+          AnidbFileIdentityRow,
+          PrefetchHooks Function()
+        > {
+  $$AnidbFileIdentitiesTableTableManager(
+    _$FushiDatabase db,
+    $AnidbFileIdentitiesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AnidbFileIdentitiesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AnidbFileIdentitiesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$AnidbFileIdentitiesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> ed2k = const Value.absent(),
+                Value<int> fileSize = const Value.absent(),
+                Value<int?> anidbFileId = const Value.absent(),
+                Value<int?> anidbAnimeId = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String> episodeNumber = const Value.absent(),
+                Value<String> romajiTitle = const Value.absent(),
+                Value<String> kanjiTitle = const Value.absent(),
+                Value<String> englishTitle = const Value.absent(),
+                Value<String> episodeTitle = const Value.absent(),
+                Value<String> episodeRomajiTitle = const Value.absent(),
+                Value<String> episodeKanjiTitle = const Value.absent(),
+                Value<String?> filePath = const Value.absent(),
+                Value<int?> fileModifiedAt = const Value.absent(),
+                Value<int> resolvedAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AnidbFileIdentitiesCompanion(
+                ed2k: ed2k,
+                fileSize: fileSize,
+                anidbFileId: anidbFileId,
+                anidbAnimeId: anidbAnimeId,
+                anidbEpisodeId: anidbEpisodeId,
+                episodeNumber: episodeNumber,
+                romajiTitle: romajiTitle,
+                kanjiTitle: kanjiTitle,
+                englishTitle: englishTitle,
+                episodeTitle: episodeTitle,
+                episodeRomajiTitle: episodeRomajiTitle,
+                episodeKanjiTitle: episodeKanjiTitle,
+                filePath: filePath,
+                fileModifiedAt: fileModifiedAt,
+                resolvedAt: resolvedAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String ed2k,
+                required int fileSize,
+                Value<int?> anidbFileId = const Value.absent(),
+                Value<int?> anidbAnimeId = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String> episodeNumber = const Value.absent(),
+                Value<String> romajiTitle = const Value.absent(),
+                Value<String> kanjiTitle = const Value.absent(),
+                Value<String> englishTitle = const Value.absent(),
+                Value<String> episodeTitle = const Value.absent(),
+                Value<String> episodeRomajiTitle = const Value.absent(),
+                Value<String> episodeKanjiTitle = const Value.absent(),
+                Value<String?> filePath = const Value.absent(),
+                Value<int?> fileModifiedAt = const Value.absent(),
+                required int resolvedAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AnidbFileIdentitiesCompanion.insert(
+                ed2k: ed2k,
+                fileSize: fileSize,
+                anidbFileId: anidbFileId,
+                anidbAnimeId: anidbAnimeId,
+                anidbEpisodeId: anidbEpisodeId,
+                episodeNumber: episodeNumber,
+                romajiTitle: romajiTitle,
+                kanjiTitle: kanjiTitle,
+                englishTitle: englishTitle,
+                episodeTitle: episodeTitle,
+                episodeRomajiTitle: episodeRomajiTitle,
+                episodeKanjiTitle: episodeKanjiTitle,
+                filePath: filePath,
+                fileModifiedAt: fileModifiedAt,
+                resolvedAt: resolvedAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AnidbFileIdentitiesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $AnidbFileIdentitiesTable,
+      AnidbFileIdentityRow,
+      $$AnidbFileIdentitiesTableFilterComposer,
+      $$AnidbFileIdentitiesTableOrderingComposer,
+      $$AnidbFileIdentitiesTableAnnotationComposer,
+      $$AnidbFileIdentitiesTableCreateCompanionBuilder,
+      $$AnidbFileIdentitiesTableUpdateCompanionBuilder,
+      (
+        AnidbFileIdentityRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $AnidbFileIdentitiesTable,
+          AnidbFileIdentityRow
+        >,
+      ),
+      AnidbFileIdentityRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -91993,4 +93399,6 @@ class $FushiDatabaseManager {
       $$UpdateFeedEntriesTableTableManager(_db, _db.updateFeedEntries);
   $$MangaDownloadJobsTableTableManager get mangaDownloadJobs =>
       $$MangaDownloadJobsTableTableManager(_db, _db.mangaDownloadJobs);
+  $$AnidbFileIdentitiesTableTableManager get anidbFileIdentities =>
+      $$AnidbFileIdentitiesTableTableManager(_db, _db.anidbFileIdentities);
 }

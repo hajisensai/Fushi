@@ -102,6 +102,14 @@ class VideoSourceScrapeGlobalConfig {
         clientVersion: anidbClientVersion ?? 0,
       );
 
+  /// 哈希识别在本快照下会不会真的跑：开关打开且 UDP 凭据 / 客户端身份完整，
+  /// 与协调器里 `AnidbHashIdentityService` 的 `enabled` + `isConfigured` 同一判据。
+  ///
+  /// 设置页状态、首页「配置在线服务」提醒都读这个，别再各自按偏好键名判空：
+  /// 客户端名留空时 [resolveAniDbAppClient] 走内置 `fushiplayer`，按键名判空会把
+  /// 「测试登录」已成功的账号标成「未配置」（BUG-2586）。
+  bool get anidbHashReady => hashEnabled && anidbUdpConfig.isAvailable;
+
   /// 装配点判「配置变没变、要不要重建协调器 / 发现服务」的唯一指纹。
   ///
   /// 所有会被烘进 [VideoSourceScrapeCoordinator] / `VideoDiscoveryService`
