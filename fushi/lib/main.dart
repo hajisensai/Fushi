@@ -37,6 +37,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/flutter_error_log.dart';
 import 'package:fushi/src/utils/misc/present_watchdog.dart';
 import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
+import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -493,6 +494,9 @@ void main([List<String> args = const <String>[]]) {
       // BUG-772：把上次运行 present 楔死取证（首帧从未 rasterize）折进错误日志（仅
       // Windows），纳入上传链路，为 raster/present 管线死锁提供可读崩前证据。
       PresentStallLog.foldIntoErrorLog(),
+      // BUG-2588：把上次运行主线程停泵看门狗抓 hang dump 的记录折进错误日志（仅
+      // Windows），让「卡死后强杀」在日志里与 native 崩溃分开、并指向可分享的 hang-*.dmp。
+      HangWatchdogLog.foldIntoErrorLog(),
     ]);
 
     /// Initialise local file-based logging (mobile only).

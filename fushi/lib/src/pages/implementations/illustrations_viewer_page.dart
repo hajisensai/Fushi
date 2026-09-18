@@ -1,58 +1,46 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi_audio/fushi_audio.dart'
     show ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
-import 'package:path/path.dart' as p;
-import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/src/utils/misc/fushi_share.dart';
-import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
-import 'package:fushi_engine/media/collections/shelf_sort.dart'
-    show naturalCompare;
-import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/epub/epub_book.dart' show EpubBook, EpubImageRef;
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
+    show TtuTocEntry;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
-import 'package:fushi/src/reader/illustration_grid_columns.dart';
-import 'package:fushi/src/reader/illustration_progress_index.dart';
-import 'package:fushi/src/reader/image_reveal_key.dart';
-import 'package:fushi/src/reader/masked_illustration_cover.dart';
-import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show GamepadButtonIntent;
-import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
+import 'package:fushi/src/reader/reader_collection_volumes.dart'
+    show epubImageFileFor, parseVolumeBookForPeek;
+import 'package:fushi/src/reader/reader_gallery_page.dart';
+import 'package:fushi/src/reader/ttu_toc_flatten.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/utils.dart';
 
-/// 一张插画：解码用的字节 + 源磁盘文件（复制/分享需要真实文件路径）+ reveal key。
-class _Illustration {
-  const _Illustration({
-    required this.bytes,
-    required this.file,
-    required this.revealKey,
-  });
-
-  final Uint8List bytes;
-  final File file;
-
-  /// BUG-898：extractDir 相对归一 key，与阅读器 WebView / Drift `revealed_images`
-  /// 共享同一标识；`null` = 无法归一（不参与防剧透遮罩，始终原图）。
-  final String? revealKey;
-}
-
+/// 书架端「查看插图」：装载这本书的结构 / 阅读位置 / 已揭开集，然后交给阅读器
+/// 内的同一份插图册 [ReaderGalleryPage]。此前书架端是另一套网格 + 翻页查看器
+/// （BUG-2589 之前），同一本书两处长得不一样、横版图也各裁各的；现在这里只剩
+/// 装载与接线，画廊本体只有一份。
+///
+/// 与阅读器内打开的差别只在数据来源：
+/// - 结构在 isolate 里解析（[parseVolumeBookForPeek]，与看兄弟卷同一入口）；
+/// - 阅读位置读 Drift `reader_positions`；没有位置行 = 这本一次都没打开过，
+///   传 `currentChapter: null`——不按进度遮罩、不出「当前阅读位置」标记；
+/// - 揭开 / 恢复遮罩直接落 `revealed_images`（与阅读器共享真相源，BUG-898）；
+/// - 「跳到此插图」= 关掉本页再由调用方按章开书（[onJumpTo]）。
 class IllustrationsViewerPage extends StatefulWidget {
   const IllustrationsViewerPage({
     required this.bookTitle,
     required this.extractDir,
     required this.bookUid,
     required this.database,
+    required this.onJumpTo,
     super.key,
   });
 
+  /// 装载态 / 出错态页面标题（画廊本体有自己的顶栏）。
   final String bookTitle;
 
   /// The book's on-disk extracted directory (`EpubBooks.extractDir`).
@@ -65,113 +53,85 @@ class IllustrationsViewerPage extends StatefulWidget {
   /// 图片 reveal 状态真相源（与阅读器 WebView 共享，实现书内↔图片库双向同步）。
   final FushiDatabase database;
 
+  /// 「跳到此插图」：本页已 pop，调用方据此按章开书。
+  final Future<void> Function(EpubImageRef ref) onJumpTo;
+
   @override
   State<IllustrationsViewerPage> createState() =>
       _IllustrationsViewerPageState();
 }
 
+/// 装载完成后画廊需要的全部输入。
+class _GalleryInput {
+  const _GalleryInput({
+    required this.book,
+    required this.position,
+    required this.revealed,
+    required this.toc,
+  });
+
+  final EpubBook book;
+  final ReaderPosition? position;
+  final Set<String> revealed;
+  final List<TtuTocEntry> toc;
+}
+
 class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
-  final List<_Illustration> _images = [];
-  bool _loading = true;
+  _GalleryInput? _input;
   String? _error;
 
-  /// BUG-898：本书已揭开的图片 key（与阅读器共享 Drift 真相源）。开页时一次性加载，
-  /// 与阅读器不同时活跃（图片库仅从书架进入），故各自打开 get 即达成双向同步，无需
-  /// live watch（避开 drift keyed watch 的 widget teardown 隐患）。
-  final Set<String> _revealed = <String>{};
-
-  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。开着时未揭开的图
-  /// 一律遮罩；**关着时仍按阅读进度遮「还没读到」的那些**——但只在这本书真有
-  /// 阅读位置行时才成立（见 [_progressIndex] / [_loadReadProgress]）。
+  /// 防剧透遮罩总开关：与阅读器同一偏好（`ttu_blur_images`）。
   bool get _blurEnabled =>
       ReaderFushiSource.readerSettings?.blurImages ?? false;
-
-  /// 插图 → 书中位置的索引（后台 isolate 解析已解压目录建成）。`null` = 还没建好
-  /// 或目录不是合法 EPUB（解析失败）→ 不按进度遮罩，退回旧行为。
-  IllustrationProgressIndex? _progressIndex;
-
-  /// 本书当前阅读位置（与 `ReaderPosition` 同坐标）。只有查到位置行才会被填上，
-  /// 同时 [_progressIndex] 才会挂上去——没读过的书不按进度遮罩，见
-  /// [_loadReadProgress]。
-  int _readChapterIndex = 0;
-  int _readNormCharOffset = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadRevealedThenImages();
+    unawaited(_load());
   }
 
-  Future<void> _loadRevealedThenImages() async {
-    // 进度索引与图片抽取并行起跑：前者是后台 isolate 的整本解析，后者是逐张读盘，
-    // 互不依赖，串起来只会白等。
-    final Future<void> progressFuture = _loadReadProgress();
-    if (widget.bookUid.isNotEmpty) {
-      try {
-        final Set<String> keys =
-            await widget.database.getRevealedImageKeys(widget.bookUid);
-        if (!mounted) return;
-        _revealed.addAll(keys);
-      } catch (e, stack) {
-        ErrorLogService.instance
-            .log('IllustrationsViewer.loadRevealed', e, stack);
-      }
+  Future<void> _load() async {
+    if (!Directory(widget.extractDir).existsSync()) {
+      setState(() => _error = t.book_directory_not_found);
+      return;
     }
-    await _extractImages();
-    await progressFuture;
-  }
-
-  /// 载入「读到哪了」+「每张插图在哪」，两者构成按进度遮罩的判据。
-  ///
-  /// 无 uid（旧行无 uid 的书）没有阅读位置可查 → 不按进度遮罩。索引建好前网格按
-  /// 旧判据渲染，建好后 setState 补遮——不阻塞首屏。
-  Future<void> _loadReadProgress() async {
-    if (widget.bookUid.isEmpty) return;
     try {
-      final ReaderPosition? position =
-          await ReaderPositionRepository(widget.database)
+      // 结构解析（isolate）与两次 Drift 读互不依赖，并行起跑。
+      final Future<EpubBook> bookFuture =
+          compute(parseVolumeBookForPeek, widget.extractDir);
+      final Future<ReaderPosition?> positionFuture = widget.bookUid.isEmpty
+          ? Future<ReaderPosition?>.value(null)
+          : ReaderPositionRepository(widget.database)
               .findByBookUid(widget.bookUid);
-      final IllustrationProgressIndex index =
-          await compute(buildIllustrationProgressIndex, widget.extractDir);
+      final Future<Set<String>> revealedFuture = widget.bookUid.isEmpty
+          ? Future<Set<String>>.value(<String>{})
+          : widget.database.getRevealedImageKeys(widget.bookUid);
+      final EpubBook book = await bookFuture;
+      final ReaderPosition? position = await positionFuture;
+      final Set<String> revealed = await revealedFuture;
       if (!mounted) return;
-      // 没有位置行 = 这本一次都没打开过。退化成 (0, 0) 会把开篇之后的每一张插图
-      // 都判成「还没读到」，整个画廊糊成一片，而用户没有任何开关能关掉它——
-      // 那已经不是防剧透，是画廊坏了。没读过就不按进度遮罩，只留总开关。
-      if (position == null) return;
       setState(() {
-        _progressIndex = index;
-        _readChapterIndex = position.sectionIndex;
-        _readNormCharOffset = position.normCharOffset;
+        _input = _GalleryInput(
+          book: book,
+          position: position,
+          revealed: revealed,
+          toc: flattenTtuTocEntries(book.toc, book.chapterIndexForHref),
+        );
       });
     } catch (e, stack) {
-      // 目录不是合法 EPUB（FormatException）等：退回「不按进度遮罩」，不影响看图。
-      ErrorLogService.instance
-          .log('IllustrationsViewer.loadProgress', e, stack);
+      ErrorLogService.instance.log('IllustrationsViewer.load', e, stack);
+      if (mounted) setState(() => _error = e.toString());
     }
   }
 
-  /// 某图当前是否应遮罩（共用判据，缩略图 / 全屏一致）。
-  bool _isBlurred(_Illustration im) => ImageRevealKey.shouldBlur(
-        blurEnabled: _blurEnabled,
-        revealKey: im.revealKey,
-        revealed: _revealed,
-        unreadAhead: _isUnread(im),
-      );
+  /// 节头章名：与阅读器顶栏同一口径（[resolveCurrentTocEntry] 取不晚于该章的
+  /// 最后一条目录项）；目录里没有就交给画廊退到「第 N 章」。
+  String? _chapterLabelFor(_GalleryInput input, int chapterIndex) {
+    final int? entry = resolveCurrentTocEntry(input.toc, chapterIndex, null);
+    return entry == null ? null : input.toc[entry].label;
+  }
 
-  /// 这张图是否还没读到（位置在当前阅读位置之后）。索引没建好 / 定位不到 → false。
-  bool _isUnread(_Illustration im) =>
-      _progressIndex?.isUnread(
-        revealKey: im.revealKey,
-        chapterIndex: _readChapterIndex,
-        normCharOffset: _readNormCharOffset,
-      ) ??
-      false;
-
-  /// 揭开一张图（幂等）：登记内存集 + 持久化到 Drift（阅读器下次开书据此不遮罩）。
-  Future<void> _revealImage(_Illustration im) async {
-    final String? key = im.revealKey;
-    if (key == null || !_revealed.add(key)) return;
-    setState(() {});
+  Future<void> _reveal(String key) async {
     if (widget.bookUid.isEmpty) return; // 无 uid 只留内存态，不落孤儿行。
     try {
       await widget.database.markImageRevealed(
@@ -181,482 +141,100 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     }
   }
 
-  /// 插图抽取白名单＝图片扩展名基集 ＋ `.svg`（EPUB 插画可为矢量图，
-  /// 沿既有白名单保留，按字节交给查看器处理）。
-  static final Set<String> _imageExtensions = <String>{
-    ...kImageExtensionsBase,
-    '.svg',
-  };
-
-  Future<void> _extractImages() async {
+  Future<void> _unreveal(String key) async {
+    if (widget.bookUid.isEmpty) return;
     try {
-      final String extractDir = widget.extractDir;
-      final Directory dir = Directory(extractDir);
-      if (!dir.existsSync()) {
-        if (mounted) {
-          setState(() {
-            _error = t.book_directory_not_found;
-            _loading = false;
-          });
-        }
-        return;
-      }
-
-      // listSync 不保证顺序（NTFS 按名字、ext4 是目录哈希序），而这份清单就是
-      // 插图网格的展示顺序。自然序才能把 2.jpg 排在 10.jpg 前面。
-      final List<File> imageFiles =
-          dir.listSync(recursive: true).whereType<File>().where((f) {
-        final String ext = p.extension(f.path).toLowerCase();
-        return _imageExtensions.contains(ext);
-      }).toList()
-            ..sort((File a, File b) => naturalCompare(a.path, b.path));
-
-      for (final File file in imageFiles) {
-        if (!mounted) {
-          return;
-        }
-        try {
-          final Uint8List bytes = await file.readAsBytes();
-          if (bytes.isNotEmpty) {
-            final _Illustration illust = _Illustration(
-              bytes: bytes,
-              file: file,
-              revealKey: ImageRevealKey.fromFile(file.path, widget.extractDir),
-            );
-            setState(() => _images.add(illust));
-          }
-        } catch (e, stack) {
-          ErrorLogService.instance
-              .log('IllustrationsViewer.readImage', e, stack);
-          debugPrint('[Fushi] illustration read failed: $e');
-        }
-      }
+      await widget.database.unmarkImageRevealed(widget.bookUid, key);
     } catch (e, stack) {
-      ErrorLogService.instance.log('IllustrationsViewer.loadImages', e, stack);
-      if (mounted) {
-        setState(() => _error = e.toString());
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      ErrorLogService.instance.log('IllustrationsViewer.unreveal', e, stack);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  File? _fileFor(EpubImageRef ref) => epubImageFileFor(widget.extractDir, ref);
 
-    return FushiPageScaffold(
-      title: widget.bookTitle,
-      body: _buildBody(theme, tokens),
-    );
-  }
-
-  Widget _buildBody(ThemeData theme, FushiDesignTokens tokens) {
-    if (_loading && _images.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            adaptiveIndicator(context: context),
-            SizedBox(height: tokens.spacing.card),
-            Text(t.loading_illustrations),
-          ],
-        ),
-      );
-    }
-
-    if (_error != null && _images.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.all(tokens.spacing.page + tokens.spacing.card),
-          child: Text(
-            _error!,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: theme.colorScheme.error),
-          ),
-        ),
-      );
-    }
-
-    if (_images.isEmpty) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          icon: Icons.image_not_supported_outlined,
-          message: t.no_illustrations_found,
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        if (_loading) const LinearProgressIndicator(),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final double gap = tokens.spacing.gap;
-              // 列数随窗口宽度走（与阅读器插图册同一规则）：桌面大窗缩略图放大，
-              // 不再钉死 200px 上限让右边整片空着。
-              final int columns = illustrationGridColumnsForWidth(
-                math.max(1, constraints.maxWidth - gap * 2),
-                spacing: gap,
-              );
-              return GridView.builder(
-                // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末行缩略图得靠
-                // 内容 padding 自己让开 home indicator / 手势条。
-                padding: withBottomSafeInset(
-                  context,
-                  EdgeInsets.all(gap),
-                ),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  mainAxisSpacing: gap,
-                  crossAxisSpacing: gap,
-                ),
-                itemCount: _images.length,
-                itemBuilder: (context, index) {
-                  final _Illustration im = _images[index];
-                  final bool blurred = _isBlurred(im);
-                  return FushiCard(
-                    padding: EdgeInsets.zero,
-                    // 未揭开：点击先揭开（防剧透）；已揭开：点击进全屏。
-                    onTap: blurred
-                        ? () => _revealImage(im)
-                        : () => _openFullScreen(index),
-                    child: _thumb(im, blurred),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 缩略图：未遮罩直接原图；遮罩走 [maskedIllustrationCover]。
-  Widget _thumb(_Illustration im, bool blurred) {
-    final Widget img = Image.memory(
-      im.bytes,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) =>
-          const Center(child: Icon(Icons.broken_image_outlined)),
-    );
-    return blurred ? maskedIllustrationCover(context, img, iconSize: 36) : img;
-  }
-
-  void _openFullScreen(int initialIndex) {
+  /// 与阅读器正文 / 阅读器插图册同一条缩放路径；Windows 右键复制、移动端长按
+  /// 分享（TODO-093 / BUG-177 的两个入口）。
+  void _openZoom(EpubImageRef ref) {
+    final File? file = _fileFor(ref);
+    if (file == null) return;
     Navigator.push(
       context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => _FullScreenGallery(
-          images: _images,
-          initialIndex: initialIndex,
-          revealed: _revealed,
-          blurEnabled: _blurEnabled,
-          isUnread: _isUnread,
-          onReveal: _revealImage,
-        ),
-      ),
-    ).then((_) {
-      // 全屏页可能揭开新图（写入共享 _revealed 集 + DB）；返回刷新网格遮罩。
-      if (mounted) setState(() {});
-    });
-  }
-}
-
-class _FullScreenGallery extends StatefulWidget {
-  const _FullScreenGallery({
-    required this.images,
-    required this.initialIndex,
-    required this.revealed,
-    required this.blurEnabled,
-    required this.isUnread,
-    required this.onReveal,
-  });
-
-  final List<_Illustration> images;
-  final int initialIndex;
-
-  /// 与网格页共享的已揭开集（同一 Set 引用，揭开双向可见，BUG-898）。
-  final Set<String> revealed;
-  final bool blurEnabled;
-
-  /// 「还没读到」判据（网格页持有索引与阅读位置，全屏页读同一份，见
-  /// `IllustrationProgressIndex`）。
-  final bool Function(_Illustration) isUnread;
-
-  /// 揭开一张图（写共享集 + 持久化）；全屏点击遮罩时调。
-  final Future<void> Function(_Illustration) onReveal;
-
-  @override
-  State<_FullScreenGallery> createState() => _FullScreenGalleryState();
-}
-
-class _FullScreenGalleryState extends State<_FullScreenGallery> {
-  late PageController _pageController;
-  late TransformationController _transformationController;
-  late int _currentIndex;
-  bool _zoomed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
-    _transformationController = TransformationController();
-  }
-
-  @override
-  void dispose() {
-    _transformationController.dispose();
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  bool _handleGamepad(GamepadButton button) {
-    switch (button) {
-      case GamepadButton.rb:
-        _pageBy(1);
-        return true;
-      case GamepadButton.lb:
-        _pageBy(-1);
-        return true;
-      case GamepadButton.thumbRight:
-        _toggleZoom();
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  void _pageBy(int delta) {
-    final int target =
-        (_currentIndex + delta).clamp(0, widget.images.length - 1);
-    if (target == _currentIndex) return;
-    _pageController.animateToPage(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  void _toggleZoom() {
-    setState(() {
-      _zoomed = !_zoomed;
-      _transformationController.value =
-          _zoomed ? (Matrix4.identity()..scale(2.0)) : Matrix4.identity();
-    });
-  }
-
-  void _setCurrentIndex(int index) {
-    setState(() {
-      _currentIndex = index;
-      _zoomed = false;
-      _transformationController.value = Matrix4.identity();
-    });
-  }
-
-  File _currentFile() => widget.images[_currentIndex].file;
-
-  /// 该图当前是否遮罩（与网格页同判据，读共享集）。
-  bool _isBlurred(_Illustration im) => ImageRevealKey.shouldBlur(
-        blurEnabled: widget.blurEnabled,
-        revealKey: im.revealKey,
-        revealed: widget.revealed,
-        unreadAhead: widget.isUnread(im),
-      );
-
-  /// 全屏点击遮罩 → 揭开（写共享集 + DB）后本地刷新为原图。
-  Future<void> _revealCurrent(_Illustration im) async {
-    await widget.onReveal(im);
-    if (mounted) setState(() {});
-  }
-
-  /// 移动端：长按 / 顶栏分享按钮 → 系统分享面板（复用 TODO-023 范式）。
-  Future<void> _shareCurrentImage() async {
-    final File file = _currentFile();
-    if (!file.existsSync()) {
-      FushiToast.show(
-        msg: t.reader_image_file_unavailable,
-        severity: ToastSeverity.error,
-      );
-      return;
-    }
-    try {
-      await FushiShare.shareFiles(
-        <XFile>[XFile(file.path, mimeType: fallbackMimeType(file.path))],
-        subject: p.basename(file.path),
-      );
-    } catch (e) {
-      FushiToast.show(
-        msg: t.reader_image_share_failed(error: e),
-        severity: ToastSeverity.error,
-      );
-    }
-  }
-
-  /// Windows：右键菜单 / 顶栏复制按钮 → 原生剪贴板（复用 TODO-023 channel）。
-  Future<void> _copyCurrentImageToClipboard() async {
-    final File file = _currentFile();
-    if (!file.existsSync()) {
-      FushiToast.show(
-        msg: t.reader_image_file_unavailable,
-        severity: ToastSeverity.error,
-      );
-      return;
-    }
-    try {
-      await FushiChannels.clipboardImage.invokeMethod<void>(
-        'copyImageFile',
-        <String, String>{'path': file.path},
-      );
-      FushiToast.show(
-        msg: t.copied_to_clipboard,
-        severity: ToastSeverity.success,
-      );
-    } catch (e) {
-      FushiToast.show(
-        msg: t.reader_image_copy_failed(error: e),
-        severity: ToastSeverity.error,
-      );
-    }
-  }
-
-  /// Windows 右键弹出复制菜单（镜像阅读器内联图片的 `_showReaderImageContextMenu`）。
-  Future<void> _showImageContextMenu(Offset globalPosition) async {
-    if (!mounted) return;
-    final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    // BUG-781（与 BUG-129/261/381 同族）：[globalPosition] 是 onSecondaryTapDown
-    // 报的真实视口坐标，而 showMenu 的 RelativeRect 落在根 Navigator 的 Overlay
-    // 坐标系，该 Overlay 位于全局 [FushiAppUiScale] 的缩放画布内。直接把真实视口
-    // 坐标当 Overlay 本地坐标喂进去，界面大小≠100% 时菜单会偏离点击点 factor≈scale。
-    // 用 Overlay.globalToLocal 沿真实渲染变换链换算——FittedBox 缩放被自动吸收，
-    // 对任意 scale 自洽；scale=1 时为单位阵，逐像素等价（零行为变化）。
-    final Offset anchor = overlay.globalToLocal(globalPosition);
-    final String? action = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(
-          value: 'copy',
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.copy_outlined, size: 18),
-              const SizedBox(width: 12),
-              Text(t.reader_copy_image),
-            ],
+      illustrationZoomRoute(
+        context,
+        (BuildContext routeContext) => ContextMenuTrigger(
+          onInvoke: isWindowsPlatform
+              ? (Offset position) => unawaited(showImageCopyContextMenu(
+                    routeContext,
+                    position,
+                    onCopy: () => copyImageFileToClipboard(file),
+                  ))
+              : null,
+          child: IllustrationZoomViewer(
+            file: file,
+            diagnosticTag: 'IllustrationsViewer.zoom',
+            onLongPress: isWindowsPlatform
+                ? null
+                : () => unawaited(shareImageFile(file)),
           ),
         ),
-      ],
+      ),
     );
-    if (action == 'copy') {
-      await _copyCurrentImageToClipboard();
-    }
+  }
+
+  void _jumpTo(EpubImageRef ref) {
+    Navigator.of(context).pop();
+    unawaited(widget.onJumpTo(ref));
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // 键盘处理由查看器自己持有（BUG-404）：ESC 退出不依赖全局
-    // `_handleGlobalEscape`（整页 PageRoute 下其 primaryFocus 解析不稳定，
-    // 实验导航关闭时退不出），左右方向键复用现成 `_pageBy`（已 clamp +
-    // 驱动 PageView + 同步计数）。包在 `Focus(autofocus:true)` 外层，覆盖
-    // 整页焦点子树，避免被内部 focusable 抢先。
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.escape): () =>
-            Navigator.maybePop(context),
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _pageBy(-1),
-        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _pageBy(1),
-      },
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-            onInvoke: (GamepadButtonIntent intent) =>
-                _handleGamepad(intent.button),
-          ),
-        },
-        child: Focus(
-          autofocus: true,
-          child: FushiToolScaffold(
-            title: t.image_page_counter(
-              current: _currentIndex + 1,
-              total: widget.images.length,
-            ),
-            actions: <Widget>[
-              if (isWindowsPlatform)
-                IconButton(
-                  icon: const Icon(Icons.copy_outlined),
-                  tooltip: t.reader_copy_image,
-                  onPressed: _copyCurrentImageToClipboard,
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.share_outlined),
-                  tooltip: t.share,
-                  onPressed: _shareCurrentImage,
+    final _GalleryInput? input = _input;
+    if (input == null) return _buildPending(context);
+    final ReaderPosition? position = input.position;
+    return ReaderGalleryPage(
+      images: input.book.images,
+      // 没有位置行 = 从没打开过：不按进度遮罩、不出当前位置标记。
+      currentChapter: position?.sectionIndex,
+      currentNormCharOffset: position?.normCharOffset ?? 0,
+      blurImages: _blurEnabled,
+      revealedImageKeys: input.revealed,
+      onRevealImage: (String key) => unawaited(_reveal(key)),
+      onUnrevealImage: (String key) => unawaited(_unreveal(key)),
+      chapterLabelFor: (int chapterIndex) =>
+          _chapterLabelFor(input, chapterIndex) ??
+          t.auto_chapter(n: chapterIndex + 1),
+      fileForRef: _fileFor,
+      onOpenImage: _openZoom,
+      onJumpTo: _jumpTo,
+    );
+  }
+
+  /// 装载中 / 出错：带返回键的普通页面壳。
+  Widget _buildPending(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String? error = _error;
+    return FushiPageScaffold(
+      title: widget.bookTitle,
+      body: Center(
+        child: error != null
+            ? Padding(
+                padding:
+                    EdgeInsets.all(tokens.spacing.page + tokens.spacing.card),
+                child: Text(
+                  error,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: theme.colorScheme.error),
                 ),
-            ],
-            body: PageView.builder(
-              controller: _pageController,
-              itemCount: widget.images.length,
-              onPageChanged: _setCurrentIndex,
-              itemBuilder: (context, index) {
-                final _Illustration im = widget.images[index];
-                final Widget image = Image.memory(
-                  im.bytes,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.broken_image_outlined,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                    size: 64,
-                  ),
-                );
-                if (_isBlurred(im)) {
-                  // 遮罩态：点击揭开（揭开前不许缩放/复制/分享，防剧透）。
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _revealCurrent(im),
-                    child: maskedIllustrationCover(
-                      context,
-                      Center(child: image),
-                      sigma: 24,
-                      scrim: const Color(0x66000000),
-                      iconSize: 48,
-                    ),
-                  );
-                }
-                final Widget viewer = InteractiveViewer(
-                  transformationController: _transformationController,
-                  minScale: 0.5,
-                  maxScale: 4,
-                  child: Center(child: image),
-                );
-                // Windows 右键复制 / 移动端长按分享：仅当前页可操作。
-                return ContextMenuTrigger(
-                  // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-                  onInvoke: isWindowsPlatform
-                      ? (Offset position) => _showImageContextMenu(position)
-                      : null,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onLongPress: isWindowsPlatform ? null : _shareCurrentImage,
-                    child: viewer,
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  adaptiveIndicator(context: context),
+                  SizedBox(height: tokens.spacing.card),
+                  Text(t.loading_illustrations),
+                ],
+              ),
       ),
     );
   }

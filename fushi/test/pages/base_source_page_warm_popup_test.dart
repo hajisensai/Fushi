@@ -205,17 +205,19 @@ void main() {
         reason: 'prunePopupStack(0) must preserve the warm slot');
     expect(base.contains('first.isWarmSlot'), isTrue,
         reason: 'warm-slot reuse condition keys off isWarmSlot');
-    // The popup layer mounts the WebView for the empty seed warm slot, while a
-    // completed real empty lookup can fall through to the Flutter no-results
-    // placeholder instead of exposing a blank warm WebView shell.
+    // BUG-2588: the popup layer keeps the warm slot's WebView mounted for EVERY
+    // result state (seed empty / searching / real empty). A completed real
+    // empty lookup must NOT unmount it (that tore down WebView2 synchronously
+    // on the platform thread mid-lookup and lost the prewarm); the blank warm
+    // shell is hidden by an opaque no-results cover instead.
     expect(
-        layer.contains('final bool isSeedWarmSlot = keepWebViewWarm'), isTrue,
-        reason:
-            'keepWebViewWarm must only force the WebView for the seed slot');
-    expect(
-        layer.contains('hasRenderableResults || isSearching || isSeedWarmSlot'),
+        layer
+            .contains('hasRenderableResults || isSearching || keepWebViewWarm'),
         isTrue,
         reason:
-            'WebView mounting must be keyed to real content, searching, or seed prewarm');
+            'keepWebViewWarm must keep the WebView mounted regardless of result');
+    expect(layer.contains('else if (isRealEmptyResult)'), isTrue,
+        reason:
+            'a real empty lookup on the warm slot must be covered, not unmounted');
   });
 }
