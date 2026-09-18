@@ -11,6 +11,7 @@
 //   ⑥ 存储里的坏值当没拖过，绝不把 NaN 写进 style。
 const test = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -177,6 +178,7 @@ function loadWorld(prefs) {
     },
   };
   sandbox.window = {
+    fushiT: FUSHI_T,
     addEventListener(type, fn) { (winListeners[type] = winListeners[type] || []).push(fn); },
     removeEventListener(type, fn) {
       const l = winListeners[type] || [];
@@ -221,10 +223,17 @@ function loadWorld(prefs) {
     const e = Object.assign({ type, preventDefault() {}, stopPropagation() {} }, ev || {});
     for (const fn of (winListeners[type] || []).slice()) fn(e);
   };
+
+  // 鼠标挪字幕只经拖柄（文字上按下是原生拖选，可复制）；触屏整块可拖。这里模拟鼠标：
+  // 事件派发在覆盖层根上（拖柄 pointerdown 冒泡到根），target 指向拖柄子节点。
+  const gripEl = () => {
+    const el = overlayEl();
+    return el && el.children.find((c) => c.className === 'fushi-subtitle-overlay-grip');
+  };
   const drag = (from, to, opts) => {
     const el = overlayEl();
     const id = (opts && opts.pointerId) || 7;
-    el.dispatch('pointerdown', { pointerId: id, button: 0, clientX: from.x, clientY: from.y });
+    el.dispatch('pointerdown', { pointerId: id, button: 0, clientX: from.x, clientY: from.y, target: gripEl(), pointerType: 'mouse' });
     winDispatch('pointermove', { pointerId: id, clientX: to.x, clientY: to.y });
     if (opts && opts.cancel) winDispatch('pointercancel', { pointerId: id });
     else winDispatch('pointerup', { pointerId: id, clientX: to.x, clientY: to.y });
@@ -236,7 +245,7 @@ function loadWorld(prefs) {
     const el = overlayEl();
     return { left: parseFloat(el.style.left), top: parseFloat(el.style.top) };
   };
-  return { sandbox, stored, tick, overlayEl, setTrack, video, drag, geom, lookups, winListeners };
+  return { sandbox, stored, tick, overlayEl, gripEl, setTrack, video, drag, geom, lookups, winListeners };
 }
 
 const CUES = [
@@ -303,7 +312,7 @@ test('拖动中 tick 重摆用会话里的实时位置，不把字幕拽回原�
   w.setTrack('ja', CUES);
   w.tick();
   const el = w.overlayEl();
-  el.dispatch('pointerdown', { pointerId: 3, button: 0, clientX: 740, clientY: 683.6 });
+  el.dispatch('pointerdown', { pointerId: 3, button: 0, clientX: 740, clientY: 683.6, target: w.gripEl(), pointerType: 'mouse' });
   const move = (x, y) => {
     for (const fn of (w.winListeners.pointermove || []).slice()) {
       fn({ type: 'pointermove', pointerId: 3, clientX: x, clientY: y, preventDefault() {} });
@@ -387,7 +396,7 @@ test('拖动中不触发悬浮字幕自动查词', () => {
   const el = w.overlayEl();
   el.dispatch('mousemove', { clientX: 700, clientY: 680 });
   assert.strictEqual(w.lookups.length, 1, '未拖动时悬停自动查词照常');
-  el.dispatch('pointerdown', { pointerId: 9, button: 0, clientX: 740, clientY: 683.6 });
+  el.dispatch('pointerdown', { pointerId: 9, button: 0, clientX: 740, clientY: 683.6, target: w.gripEl(), pointerType: 'mouse' });
   for (const fn of (w.winListeners.pointermove || []).slice()) {
     fn({ type: 'pointermove', pointerId: 9, clientX: 640, clientY: 583.6, preventDefault() {} });
   }
@@ -408,4 +417,95 @@ test('options 页有「重置位置」按钮且 options.js 删的是同一把键
   assert.match(html, /id="resetSubtitleOverlayPosition"/);
   assert.match(js, /on\('resetSubtitleOverlayPosition',\s*'click'/);
   assert.match(js, /chrome\.storage\.local\.remove\('subtitleOverlayPosition'\)/);
+});
+
+// ───────── 选区与复制（用户 2026-09-18「浏览器字幕无法选取复制」）─────────
+// 根因两处：① 拖动挪位独占了整块——鼠标在文字上一拖就 removeAllRanges 进入挪位；② tick 每
+// 200ms 无条件 fushiRenderCueText 重建文本节点，刚拉出的选区立刻塌掉。现在鼠标只经拖柄挪位、
+// 文字上拖是原生选区；同一条 cue 不重建文本节点；拖选后的合成 click 不查词。触屏整块仍可拖。
+
+function textEl(el) {
+  return el.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+}
+
+test('鼠标在文字上按下不是挪字幕：不进拖动态、位置不变、不写存储（那是原生拖选）', () => {
+  const w = loadWorld();
+  w.setTrack('ja', CUES);
+  w.tick();
+  const el = w.overlayEl();
+  el.dispatch('pointerdown', { pointerId: 5, button: 0, clientX: 740, clientY: 683.6, target: textEl(el), pointerType: 'mouse' });
+  for (const fn of (w.winListeners.pointermove || []).slice()) fn({ pointerId: 5, clientX: 900, clientY: 500, preventDefault() {} });
+  assert.ok(!el.hasAttribute('data-dragging'), '文字上按下拖动不得进入挪位');
+  assert.deepStrictEqual(w.geom(), { left: 740, top: 683.6 });
+  for (const fn of (w.winListeners.pointerup || []).slice()) fn({ pointerId: 5, clientX: 900, clientY: 500 });
+  assert.strictEqual(w.stored[POS_KEY], undefined);
+});
+
+test('触屏按住字幕本身仍可挪位（触屏没有拖选）', () => {
+  const w = loadWorld();
+  w.setTrack('ja', CUES);
+  w.tick();
+  const el = w.overlayEl();
+  el.dispatch('pointerdown', { pointerId: 6, button: 0, clientX: 740, clientY: 683.6, target: textEl(el), pointerType: 'touch' });
+  for (const fn of (w.winListeners.pointermove || []).slice()) fn({ pointerId: 6, clientX: 640, clientY: 583.6, preventDefault() {} });
+  assert.ok(el.hasAttribute('data-dragging'), '触屏整块可拖');
+  for (const fn of (w.winListeners.pointerup || []).slice()) fn({ pointerId: 6, clientX: 640, clientY: 583.6 });
+  assert.ok(w.stored[POS_KEY], '松手要持久化');
+});
+
+test('同一条 cue 的 tick 不重建文本节点（否则用户拖出的选区每 200ms 塌一次）', () => {
+  const w = loadWorld();
+  w.setTrack('ja', CUES);
+  w.tick();
+  const el = w.overlayEl();
+  assert.strictEqual(textEl(el).textContent, CUES[0].text);
+  textEl(el).textContent = 'SENTINEL'; // 若 tick 重渲染会被冲掉
+  w.tick();
+  w.tick();
+  assert.strictEqual(textEl(el).textContent, 'SENTINEL', 'cue 没变不得重写文字层');
+  w.video.currentTime = 4; // 进入第二句
+  w.tick();
+  assert.strictEqual(textEl(el).textContent, CUES[1].text, 'cue 变了才重建');
+});
+
+test('刚用鼠标拖出一段字幕选区：紧随的 click 不查词（查词会清掉选区，Ctrl+C 就没东西可复制）', () => {
+  const w = loadWorld();
+  w.setTrack('ja', CUES);
+  w.tick();
+  const el = w.overlayEl();
+  const anchor = textEl(el).appendChild(makeEl('span')); // 选区锚点落在文字层内
+  w.sandbox.window.getSelection = () => ({
+    isCollapsed: false, rangeCount: 1, anchorNode: anchor, removeAllRanges() {},
+  });
+  el.dispatch('click', { clientX: 740, clientY: 683.6, target: textEl(el) });
+  assert.strictEqual(w.lookups.length, 0, '有选区时 click 不是查词');
+  w.sandbox.window.getSelection = () => ({ isCollapsed: true, rangeCount: 0, anchorNode: null, removeAllRanges() {} });
+  el.dispatch('click', { clientX: 740, clientY: 683.6, target: textEl(el) });
+  assert.strictEqual(w.lookups.length, 1, '没有选区照常查词');
+});
+
+test('点在拖柄上不查词', () => {
+  const w = loadWorld();
+  w.setTrack('ja', CUES);
+  w.tick();
+  const el = w.overlayEl();
+  el.dispatch('click', { clientX: 700, clientY: 683.6, target: w.gripEl() });
+  assert.strictEqual(w.lookups.length, 0);
+});
+
+test('字幕底色开关：subtitleOverlayBackground=false → data-bare；改回 true 即摘掉', () => {
+  const w = loadWorld({ subtitleOverlayBackground: false });
+  w.setTrack('ja', CUES);
+  w.tick();
+  assert.ok(w.overlayEl().hasAttribute('data-bare'), '关底色 = data-bare（CSS 去底板/投影）');
+  w.sandbox.chrome.storage.local.set({ subtitleOverlayBackground: true });
+  assert.ok(!w.overlayEl().hasAttribute('data-bare'));
+  w.sandbox.chrome.storage.local.set({ subtitleOverlayBackground: false });
+  assert.ok(w.overlayEl().hasAttribute('data-bare'));
+});
+
+test('content-css-overlay.css：data-bare 去底板；拖柄用 ::before 画、不带文本节点', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'scripts', 'content-css-overlay.css'), 'utf8');
+  assert.match(css, /#fushi-subtitle-overlay\[data-bare\]\s*\{[^}]*background:\s*transparent/);
+  assert.match(css, /\.fushi-subtitle-overlay-grip::before/);
 });

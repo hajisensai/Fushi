@@ -113,6 +113,99 @@ void main() {
     });
   });
 
+  // 番剧（PGC）的 `pgc/player/web/playurl` 响应体（实测 `ep_id=815751`，2026-09-16）：与稿件
+  // **唯一的形状差异是顶层键**——番剧回 `result`，稿件回 `data`；`dash` 那一层同形。真实直链带
+  // `deadline`/`upsig` 一长串查询参数，这里为可读性省掉（不影响挑流判据）。
+  const String pgcPlayurlBody = '''
+{"code":0,"message":"success","result":{"type":"DASH",
+  "dash":{"duration":1425,
+    "audio":[
+      {"id":30216,"baseUrl":"https://cdn/pgc-audio-30216.m4s","bandwidth":45709,
+       "codecs":"mp4a.40.5"},
+      {"id":30280,"baseUrl":"https://cdn/pgc-audio-30280.m4s","bandwidth":174093,
+       "codecs":"mp4a.40.2"},
+      {"id":30232,"baseUrl":"https://cdn/pgc-audio-30232.m4s","bandwidth":102447,
+       "codecs":"mp4a.40.2"}
+    ]}}}
+''';
+
+  group('parseBilibiliPgcPlayurlResponse', () {
+    test('取最高码率音轨（番剧的顶层键是 result，不是 data）', () {
+      final BilibiliPlayStreams? s =
+          parseBilibiliPgcPlayurlResponse(pgcPlayurlBody);
+      expect(s!.audioUrl, 'https://cdn/pgc-audio-30280.m4s',
+          reason: '30280 的 bandwidth 最高；列表顺序不代表码率顺序');
+      expect(s.durationSec, 1425);
+    });
+
+    test('data 键也认 —— B 站若把番剧改回 data，整条链不该断', () {
+      expect(parseBilibiliPgcPlayurlResponse(playurlBody)!.audioUrl,
+          'https://cdn/audio-30280.m4s');
+    });
+
+    test('未登录 / 大会员过期 / 接口改版 → null，不静默出无声卡', () {
+      expect(parseBilibiliPgcPlayurlResponse('{"code":-404,"result":null}'),
+          isNull, reason: '大会员过期时 B 站返回非 0 code');
+      expect(
+          parseBilibiliPgcPlayurlResponse(
+              '{"code":0,"result":{"dash":{"audio":[]}}}'),
+          isNull);
+      expect(parseBilibiliPgcPlayurlResponse('{"code":0,"result":{}}'), isNull,
+          reason: '没有 dash（例如只给 durl 混流）就当不可用');
+      expect(parseBilibiliPgcPlayurlResponse('garbage'), isNull);
+    });
+  });
+
+  group('BilibiliClipMiner.buildPgcRequest', () {
+    test('用扩展回传的响应体挑音轨，一行网络请求都不发', () {
+      // 番剧的音轨是扩展在页面主世界里取的（要带 SESSDATA），服务端只挑流：
+      // 这里若真的去打网络，说明又把「服务端匿名请求」那条老路走回来了。
+      final BilibiliClipMiner miner = BilibiliClipMiner(
+        fetchJson: (Uri uri) async => throw StateError('pgc 不该打网络'),
+      );
+      final BilibiliClipRequest req = miner.buildPgcRequest(
+        playurlBody: pgcPlayurlBody,
+        startMs: 61000,
+        endMs: 64500,
+        fields: const <String, String>{'expression': '正道'},
+        sentence: '正道ではなく邪道',
+        documentTitle: '从零开始的异世界生活 第13话',
+      );
+      expect(req.audioSource, 'https://cdn/pgc-audio-30280.m4s');
+      expect(req.clipStartMs, 61000);
+      expect(req.clipEndMs, 64500);
+      expect(req.documentTitle, '从零开始的异世界生活 第13话');
+    });
+
+    test('没有可裁音轨就抛，不静默出一张没声音的卡', () {
+      final BilibiliClipMiner miner =
+          BilibiliClipMiner(fetchJson: (Uri uri) async => null);
+      expect(
+        () => miner.buildPgcRequest(
+          playurlBody: '{"code":0,"result":{"dash":{"audio":[]}}}',
+          startMs: 0,
+          endMs: 1,
+          fields: const <String, String>{},
+          sentence: 's',
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('页面标题缺失 → null（不伪造标题，交由服务端回落）', () {
+      final BilibiliClipMiner miner =
+          BilibiliClipMiner(fetchJson: (Uri uri) async => null);
+      final BilibiliClipRequest req = miner.buildPgcRequest(
+        playurlBody: pgcPlayurlBody,
+        startMs: 0,
+        endMs: 1,
+        fields: const <String, String>{},
+        sentence: 's',
+      );
+      expect(req.documentTitle, isNull);
+    });
+  });
+
   group('BilibiliClipMiner', () {
     test('两次往返解析出音轨与标题，分 P 进 cid', () async {
       final List<Uri> calls = <Uri>[];

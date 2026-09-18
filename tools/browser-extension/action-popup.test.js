@@ -1,6 +1,8 @@
 // TODO-1184 守卫：action popup 队列删除 + 标签的纯逻辑单测（无 chrome/DOM 依赖）。
 const { test } = require('node:test');
 const assert = require('node:assert');
+// 文案走 i18n（模块里 tr() 读全局 fushiT）：测试按 zh-CN 字典断言。
+globalThis.fushiT = require('./scripts/i18n-fixture.js').makeFushiT();
 const {
   fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
   fushiQueueItemUrl, fushiTabSite, fushiGenButtonState,

@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -30,6 +31,7 @@ function harness(handler = () => null) {
     focus: () => focusCount++,
   };
   const window = {
+    fushiT: FUSHI_T,
     innerWidth: 1280, innerHeight: 900,
     addEventListener: (name, callback) => { listeners[name] = callback; },
     fushiIsEntryQueued: () => false,

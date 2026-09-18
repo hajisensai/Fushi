@@ -17,6 +17,8 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 // remote_subtitle_search_handlers 是 #1399 把 Jimaku 专用处理器泛化后的版本，
 // 仍住在 fushi（它接的是 app 侧已配置的字幕源）；其余几个随本 PR 搬进 engine。
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
+    show BrowserVideoSample;
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
@@ -78,12 +80,14 @@ class YomitanApiServer {
     required ReadingResolver readingResolver,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
-    Map<String, String> Function()? themeColorsProvider,
+    RemoteThemeColorsProvider? themeColorsProvider,
     List<String> Function()? audioSourcesProvider,
     bool Function()? autoReadOnLookupProvider,
     String? Function()? extensionBuildProvider,
+    String Function()? appLocaleProvider,
     RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
+    void Function(BrowserVideoSample sample)? onExtensionStudy,
     void Function()? onExtensionSeen,
     void Function()? onLookupActivity,
     void Function(String build, String? version)? onExtensionReport,
@@ -101,8 +105,10 @@ class YomitanApiServer {
        _audioSourcesProvider = audioSourcesProvider,
        _autoReadOnLookupProvider = autoReadOnLookupProvider,
        _extensionBuildProvider = extensionBuildProvider,
+       _appLocaleProvider = appLocaleProvider,
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
        _onExtensionPopupSize = onExtensionPopupSize,
+       _onExtensionStudy = onExtensionStudy,
        _onExtensionSeen = onExtensionSeen,
        _onLookupActivity = onLookupActivity,
        _onExtensionReport = onExtensionReport,
@@ -117,8 +123,9 @@ class YomitanApiServer {
   final FushiRemoteHistoryService? _history;
   final Tokenizer _tokenizer;
   final ReadingResolver _readingResolver;
-  // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。
-  final Map<String, String> Function()? _themeColorsProvider;
+  // BUG-530：当前 app 主题的 CSS 变量供给器，随查词响应下发给浏览器扩展弹窗。参数是
+  // 扩展显式要求的明暗（请求体 `colorScheme`），null = 跟随 app 当前明暗。
+  final RemoteThemeColorsProvider? _themeColorsProvider;
   // 单词音频：当前 app 已启用的音频源供给器，随查词响应下发给扩展弹窗。
   final List<String> Function()? _audioSourcesProvider;
 
@@ -127,12 +134,20 @@ class YomitanApiServer {
   final bool Function()? _autoReadOnLookupProvider;
   // BUG-726：app 内置扩展内容指纹供给器，随查词响应下发，驱动扩展自 reload 拉新。
   final String? Function()? _extensionBuildProvider;
+  // app 当前 UI 语言供给器（Slang languageTag）：随 /api/extension/status 的 `locale` 与
+  // 查词响应的 `appLocale` 下发，扩展据此选文案；未注入时两处都省略字段（向后兼容）。
+  final String Function()? _appLocaleProvider;
   // BUG-1718：词典自带 CSS + 用户自定义 CSS 供给器，按 revision 门控随查词响应下发给扩展弹窗。
   final RemotePopupDictionaryCss Function()? _popupDictionaryCssProvider;
   // 弹窗尺寸精细化 Phase D：扩展弹窗被拖角调整尺寸后，content.js 经 bridge 回写最终基准
   // 最大宽高；这个 sink 收到（未 clamp 的原始逻辑像素）→ app 侧 clamp + 拖即解锁 + 写扩展键。
   // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写偏好副作用）。
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
+  // 扩展视频沉浸时间进学习统计：content 脚本在网页视频播放时每 ~1s +
+  // play/pause/seek/ended 时刻打 /api/extension/study，解析成 [BrowserVideoSample]
+  // 交给这个 sink（app 侧 BrowserVideoStudyBridge → VideoWatchTracker + StudyClock）。
+  // 未注入（旧 app / 配对 sync host）时端点 404（向后兼容，无写库副作用）。
+  final void Function(BrowserVideoSample sample)? _onExtensionStudy;
   // 浏览器扩展连接探活：任一扩展端点被命中即回调（app 侧记录 last-seen 时间戳，
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
@@ -356,6 +371,8 @@ class YomitanApiServer {
         return _lookupRoutes.handleDuplicate(request);
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
+      case '/api/extension/study':
+        return _handleExtensionStudy(request);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
@@ -443,6 +460,7 @@ class YomitanApiServer {
       );
     }
     final String? extensionBuild = _extensionBuildProvider?.call();
+    final String? locale = _appLocaleProvider?.call();
     // BUG-2480：app 正在等某站会话时随探活回包带出去，扩展据此决定要不要
     // `chrome.cookies.getAll` 后回传 `/api/extension/site-cookies`。
     final BrowserCookieImportRequest? cookieImport =
@@ -452,6 +470,7 @@ class YomitanApiServer {
       'ready': true,
       'port': port,
       if (extensionBuild != null) 'extensionBuild': extensionBuild,
+      if (locale != null) 'locale': locale,
       if (cookieImport != null) 'cookieImport': cookieImport.toJson(),
     });
   }
@@ -502,6 +521,7 @@ class YomitanApiServer {
           autoReadOnLookupProvider: _autoReadOnLookupProvider,
           extensionBuildProvider: _extensionBuildProvider,
           popupDictionaryCssProvider: _popupDictionaryCssProvider,
+          appLocaleProvider: _appLocaleProvider,
         );
     handlerWatch.stop();
 
@@ -601,6 +621,23 @@ class YomitanApiServer {
       return shelf.Response(400, body: 'Missing maxWidth/maxHeight');
     }
     sink(w.toDouble(), h.toDouble());
+    return jsonResponse(<String, dynamic>{'ok': true});
+  }
+
+  /// 扩展视频沉浸时间样本（POST `/api/extension/study`，体见 [BrowserVideoSample]）。
+  /// 与 popup-size 同一 [_authMiddleware] 鉴权、**不在**免鉴权白名单里——这是一条
+  /// 写学习统计的入口，绝不无鉴权开放。体不合契约（含 `mediaKind` 不是 `video`）
+  /// 400；未注入 sink 404；成功 `{ok:true}`。
+  Future<shelf.Response> _handleExtensionStudy(shelf.Request request) async {
+    final void Function(BrowserVideoSample)? sink = _onExtensionStudy;
+    if (sink == null) return shelf.Response.notFound('Study sink off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final BrowserVideoSample? sample = BrowserVideoSample.tryParse(body);
+    if (sample == null) {
+      return shelf.Response(400, body: 'Invalid study sample');
+    }
+    sink(sample);
     return jsonResponse(<String, dynamic>{'ok': true});
   }
 

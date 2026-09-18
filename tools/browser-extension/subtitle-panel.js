@@ -28,6 +28,12 @@
     tickTimer: null, enabled: false,
     overlayEnabled: true, dragDropEnabled: true, autoScroll: true,
     overlayEl: null, overlayCue: null, dropHint: null,
+    // 覆盖层的两个子节点：文字层（fushiRenderCueText 只往这里写）与拖柄；overlayRenderedCue
+    // 记文字层当前画的是哪条 cue——tick 每 200ms 重摆位置，但只有 cue 换了才重建文本节点，
+    // 否则用户刚拖出来的原生选区每 200ms 就被新文本节点冲掉一次（用户报「字幕选不了、复制不了」）。
+    overlayTextEl: null, overlayGripEl: null, overlayRenderedCue: null,
+    // 覆盖层底色（默认有半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面）。
+    overlayBackground: true,
     // asb 移植：任意轨（检测轨/外挂轨）的读取侧时轴偏移。store 永远存原始 cue，偏移只在
     // Side Panel/覆盖层/快捷键**读取时**套用——provider（textTracks 收割 / live 采样 / 整集拦截）
     // 增量刷新 store 不会与偏移打架。key = `${videoKey}|${lang}`，会话内记忆。
@@ -51,6 +57,10 @@
     overlayDrag: null, overlayDragMoved: false,
   };
   var EXT_PREFIX = '外挂:';
+  // 界面文案统一走 i18n.js（fushiT）；测试壳没装 i18n 时退回键名。
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
   var OVERLAY_POS_KEY = 'subtitleOverlayPosition';
   var OVERLAY_POS_DEFAULT = { x: 0.5, y: 0.88 };
   // 按下后位移小于这个值仍算点击（查词），超过才进入拖动；与 content.js Shift 悬停的
@@ -109,7 +119,9 @@
     var v = videoEl();
     return v && typeof v.currentTime === 'number' ? Math.round(v.currentTime * 1000) : 0;
   }
+  // 明暗统一走 theme.js（扩展设置 extensionTheme）；缺席时退回系统偏好。
   function resolveTheme() {
+    if (window.fushiTheme && typeof window.fushiTheme.resolve === 'function') return window.fushiTheme.resolve();
     return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   }
 
@@ -214,8 +226,10 @@
     st.overlayAutoLookup = c.subtitleOverlayAutoLookup === true;
     st.overlayBlur = c.subtitleOverlayBlur === true;
     st.overlayAllTracks = c.subtitleOverlayAllTracks === true;
+    st.overlayBackground = c.subtitleOverlayBackground !== false;
     st.replaceNative = c.subtitleReplaceNative === true;
     st.overlayPos = normalizeOverlayPos(c[OVERLAY_POS_KEY]);
+    if (st.overlayEl) applyOverlayBackground(st.overlayEl);
     if (!st.overlayEnabled) hideSubtitleOverlay();
     // 位置变了（另一标签页拖过 / options 页重置）立刻重摆，不等下一个 200ms tick。
     else if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
@@ -240,18 +254,23 @@
       subtitleOverlayAutoLookup: st.overlayAutoLookup,
       subtitleOverlayBlur: st.overlayBlur,
       subtitleOverlayAllTracks: st.overlayAllTracks,
+      subtitleOverlayBackground: st.overlayBackground,
       subtitleReplaceNative: st.replaceNative,
       subtitleOverlayPosition: st.overlayPos,
     };
   }
 
+  // 覆盖层消费的全部偏好键（首读与 storage.onChanged 共用一份，漏一处就是「设置页改了不生效」）。
+  var SUBTITLE_PREF_KEYS = [
+    'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
+    'subtitleOverlayAutoLookup',
+    'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleOverlayBackground',
+    'subtitleReplaceNative',
+    OVERLAY_POS_KEY,
+  ];
+
   function readSubtitlePreferences() {
-    var keys = [
-      'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
-      'subtitleOverlayAutoLookup',
-      'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleReplaceNative',
-      OVERLAY_POS_KEY,
-    ];
+    var keys = SUBTITLE_PREF_KEYS;
     try {
       var p = chrome.storage.local.get(keys);
       if (p && typeof p.then === 'function') p.then(applySubtitlePreferences, function () {});
@@ -305,16 +324,53 @@
     st.currentIndex = idx;
   }
 
+  // 用户是否刚在覆盖层里用鼠标拖出了一段原生选区（准备复制）。这时紧随其后的 click
+  // 不能当查词——fushiLookupAtPoint 会 removeAllRanges 把选区清掉，Ctrl+C 就没东西可复制。
+  function overlayHasNativeSelection() {
+    try {
+      var sel = window.getSelection && window.getSelection();
+      if (!sel || sel.isCollapsed || !(sel.rangeCount > 0)) return false;
+      var node = sel.anchorNode;
+      return !!(node && st.overlayEl && st.overlayEl.contains(node));
+    } catch (_) { return false; }
+  }
+
+  function isOverlayGrip(target) {
+    var grip = st.overlayGripEl;
+    if (!grip || !target) return false;
+    if (target === grip) return true;
+    try { return typeof target.closest === 'function' && target.closest('.fushi-subtitle-overlay-grip') === grip; }
+    catch (_) { return false; }
+  }
+
   function ensureSubtitleOverlay() {
     if (!st.overlayEl) {
       var el = document.createElement('div');
       el.id = 'fushi-subtitle-overlay';
       el.setAttribute('data-theme', resolveTheme());
+      // 文字层与拖柄分开：fushiRenderCueText 会先清空目标节点再写，若直接写在根节点上，
+      // 拖柄每次换句都被抹掉。拖柄用 CSS ::before 画图形，不带文本节点——content.js 的
+      // fushiSubtitleCaretAtPoint 会遍历覆盖层下的所有文本节点取词，拖柄不能混进正文。
+      var text = document.createElement('span');
+      text.className = 'fushi-subtitle-overlay-text';
+      var grip = document.createElement('span');
+      grip.className = 'fushi-subtitle-overlay-grip';
+      grip.setAttribute('title', tr('overlay_grip_title'));
+      grip.setAttribute('aria-hidden', 'true');
+      el.appendChild(text);
+      el.appendChild(grip);
+      st.overlayTextEl = text;
+      st.overlayGripEl = grip;
       el.addEventListener('pointerdown', overlayPointerDown);
+      // 鼠标在字幕文字上按下 = 开始原生拖选（复制用），这一击不交给站点：Netflix/YouTube 把
+      // 播放器上的 mousedown 当「点画面」处理，有的还 preventDefault 把选区扼杀在起点。
+      el.addEventListener('mousedown', function (e) { e.stopPropagation(); });
       el.addEventListener('click', function (e) {
         e.stopPropagation();
         // 刚拖完字幕松手：这次 click 是拖动的尾巴，不是查词。
         if (st.overlayDragMoved) { st.overlayDragMoved = false; return; }
+        // 点在拖柄上 / 刚用鼠标拖出一段选区：都不是查词。
+        if (isOverlayGrip(e.target) || overlayHasNativeSelection()) return;
         var cue = st.overlayCue;
         if (cue && typeof window.fushiLookupAtPoint === 'function') {
           window.fushiLookupAtPoint(e.clientX, e.clientY, {
@@ -368,8 +424,30 @@
     try { el.style.filter = blurred ? 'blur(6px)' : ''; } catch (_) {}
   }
 
+  // 底色开关落成 data-bare 属性，样式在 content-css-overlay.css（去底板、去投影，只留描边字）。
+  function applyOverlayBackground(el) {
+    if (!el) return;
+    try {
+      if (st.overlayBackground) el.removeAttribute('data-bare');
+      else el.setAttribute('data-bare', '');
+    } catch (_) {}
+  }
+
+  // 只在 cue 换了才重建文本节点（见 st.overlayRenderedCue）。同一条 cue 的重复调用是 no-op，
+  // 用户在字幕上拖出的原生选区才能活过每 200ms 的 tick。
+  function renderOverlayCue(cue) {
+    var target = st.overlayTextEl || st.overlayEl;
+    if (!target) return;
+    var prev = st.overlayRenderedCue;
+    if (prev === cue || (prev && cue && prev.text === cue.text && prev.ruby === cue.ruby)) return;
+    st.overlayRenderedCue = cue;
+    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(target, cue);
+    else target.textContent = cue.text;
+  }
+
   function hideSubtitleOverlay() {
     st.overlayCue = null;
+    st.overlayRenderedCue = null;
     if (st.overlayEl && st.overlayEl.parentNode) st.overlayEl.parentNode.removeChild(st.overlayEl);
   }
 
@@ -395,8 +473,8 @@
     var el = ensureSubtitleOverlay();
     st.overlayCue = cue;
     el.setAttribute('data-theme', resolveTheme());
-    if (typeof window.fushiRenderCueText === 'function') window.fushiRenderCueText(el, cue);
-    else el.textContent = cue.text;
+    applyOverlayBackground(el);
+    renderOverlayCue(cue);
     placeOverlay(el, rect, currentOverlayPos());
     applyOverlayBlur(el);
   }
@@ -441,6 +519,10 @@
   // 挂 window 全程收得到 move/up；capture 仍尝试一下，多一层保险。
   function overlayPointerDown(e) {
     if (e.button !== undefined && e.button !== null && e.button !== 0) return;
+    // 鼠标：只有按在拖柄上才是挪字幕，按在文字上是原生拖选（复制）——两者都要，不能让挪位
+    // 独占整块。触屏/触控笔没有拖选，整块仍可拖（长按选词由系统菜单管）。
+    var touchLike = !!e.pointerType && e.pointerType !== 'mouse';
+    if (!touchLike && !isOverlayGrip(e.target)) return;
     if (st.overlayDrag) endOverlayDrag(false);
     st.overlayDragMoved = false;
     var from = st.overlayPos || OVERLAY_POS_DEFAULT;
@@ -520,13 +602,12 @@
   // 侧边栏打不开时给用户的可见出路。chrome.sidePanel.open() 要求瞬态用户激活，而内容脚本
   // 既没有 sidePanel API，用户激活也不随 runtime 消息传到 service worker——页面内的按键/拖放
   // 因此永远开不了原生侧边栏。与其静默什么都不发生，不如直说唯一可用入口。
-  var PANEL_OPEN_HINT = '浏览器不允许网页内快捷键打开侧边栏：请点工具栏的 Fushi 图标 →「▤ 打开字幕侧边栏」';
   var panelHintAt = 0;
   function hintPanelOpen() {
     var now = Date.now();
     if (now - panelHintAt < 3000) return; // 同一次操作只提示一次，避免连点刷屏
     panelHintAt = now;
-    toast(PANEL_OPEN_HINT);
+    toast(tr('panel_open_hint'));
   }
 
   // notify=true：这是用户显式的「打开侧边栏」动作，失败必须给可见提示。
@@ -539,7 +620,7 @@
     // 就改拉抽屉，并如实返回 true——抽屉确实开了，Shift+S 该吞键。桌面契约恒缺失，原样走。
     try {
       if (typeof window.fushiMobileDrawerOpen === 'function' && window.fushiMobileDrawerOpen()) {
-        if (notify) toast('字幕列表已打开');
+        if (notify) toast(tr('panel_opened'));
         return true;
       }
     } catch (_) {}
@@ -585,7 +666,7 @@
   }
   function loadSubtitleFile(file) {
     if (file && typeof file.size === 'number' && file.size > 8 * 1024 * 1024) {
-      toast('字幕文件过大（上限 8 MB）');
+      toast(tr('subtitle_file_too_large'));
       return;
     }
     var reader = new FileReader();
@@ -596,18 +677,18 @@
           { type: 'parseSubtitle', filename: file.name, content: content },
           function (resp) {
             try {
-              if (chrome.runtime.lastError) { toast('字幕加载失败：未连上 Fushi'); return; }
+              if (chrome.runtime.lastError) { toast(tr('subtitle_load_failed_offline')); return; }
               applyExternalSubtitle(file.name, resp);
             } catch (_) {}
           });
-      } catch (_) { toast('字幕加载失败'); }
+      } catch (_) { toast(tr('subtitle_load_failed')); }
     };
-    reader.onerror = function () { toast('读取文件失败'); };
-    try { reader.readAsText(file); } catch (_) { toast('读取文件失败'); }
+    reader.onerror = function () { toast(tr('subtitle_read_failed')); };
+    try { reader.readAsText(file); } catch (_) { toast(tr('subtitle_read_failed')); }
   }
   function applyExternalSubtitle(filename, resp) {
-    if (!resp || !resp.ok || !resp.data) { toast(connectionFailureText(resp, '字幕解析失败')); return; }
-    if (resp.data.error === 'unsupported') { toast('不支持的格式（用 srt/ass/vtt）'); return; }
+    if (!resp || !resp.ok || !resp.data) { toast(connectionFailureText(resp, tr('subtitle_parse_failed'))); return; }
+    if (resp.data.error === 'unsupported') { toast(tr('subtitle_unsupported_format')); return; }
     var raw = Array.isArray(resp.data.cues) ? resp.data.cues : [];
     var base = [];
     for (var i = 0; i < raw.length; i++) {
@@ -617,7 +698,7 @@
       if (!text) continue;
       base.push({ startMs: c.startMs, endMs: c.endMs, text: text });
     }
-    if (!base.length) { toast('字幕为空'); return; }
+    if (!base.length) { toast(tr('subtitle_empty')); return; }
     var label = EXT_PREFIX + String(filename).replace(/\|/g, '_');
     var key = videoKey() + '|' + label;
     // 外挂轨与检测轨同构：store 存原始 cue，偏移走统一的读取侧 trackOffsets（重新加载即归零）。
@@ -626,17 +707,15 @@
     delete st.trackOffsets[key];
     st.activeLang = label;
     showPanel();
-    toast('已加载外挂字幕：' + base.length + ' 句');
+    toast(tr('subtitle_external_loaded', { n: base.length }));
   }
 
   function connectionFailureText(resp, fallback) {
     var c = resp && resp.connection;
     if (!c) return fallback;
-    if (c.state === 'yomitan-conflict') {
-      return '端口 ' + (c.port || 19633) + ' 被 Yomitan API 占用：请先在 Yomitan 高级设置关闭 Enable Yomitan API，再开启 Fushi 的 Yomitan API 服务器';
-    }
-    if (c.state === 'unauthorized') return 'Fushi API 密钥不匹配：请在扩展设置中恢复自动配置';
-    if (c.state === 'offline') return 'Fushi API 未开启：请在 Fushi 设置 → 查词中开启 Yomitan API 服务器';
+    if (c.state === 'yomitan-conflict') return tr('conn_yomitan_conflict', { port: c.port || 19633 });
+    if (c.state === 'unauthorized') return tr('conn_unauthorized');
+    if (c.state === 'offline') return tr('conn_api_off');
     return fallback;
   }
 
@@ -652,7 +731,7 @@
     if (!st.dropHint) {
       st.dropHint = document.createElement('div');
       st.dropHint.id = 'fushi-subtitle-drop-hint';
-      st.dropHint.textContent = '松开以加载字幕';
+      st.dropHint.textContent = tr('subtitle_drop_hint');
     }
     var parent = parentForOverlay();
     if (st.dropHint.parentNode !== parent) parent.appendChild(st.dropHint);
@@ -744,7 +823,7 @@
     if (deltaMs === 0) delete st.trackOffsets[key];
     else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
     recomputeShortcutCues();
-    toast('字幕偏移 ' + fmtOffset(trackOffset(key)));
+    toast(tr('subtitle_offset_toast', { offset: fmtOffset(trackOffset(key)) }));
     return true;
   }
   function shortcutCopyCue() {
@@ -757,7 +836,7 @@
     if (typeof navigator === 'undefined' || !navigator.clipboard ||
         typeof navigator.clipboard.writeText !== 'function') return false;
     Promise.resolve(navigator.clipboard.writeText(text)).catch(function () {});
-    toast('已复制字幕：' + (text.length > 30 ? text.slice(0, 30) + '…' : text));
+    toast(tr('subtitle_copied', { text: text.length > 30 ? text.slice(0, 30) + '…' : text }));
     return true;
   }
   function shortcutTogglePanel() {
@@ -836,7 +915,7 @@
       tracks: tracks.map(function (track) {
         return {
           lang: track.lang,
-          label: track.lang === LIVE_LANG ? '实时采集' : track.lang,
+          label: track.lang === LIVE_LANG ? tr('track_live_label') : track.lang,
           length: track.cues.length,
           pending: !!track.pending,
           signature: trackSignature(track),
@@ -957,12 +1036,7 @@
       // 以当前值快照为底、只覆盖真正变化的键——单键变更绝不把其它偏好刷回默认。
       var prefs = prefsSnapshot();
       var changed = false;
-      var keys = [
-        'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
-        'subtitleOverlayAutoLookup',
-        'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleReplaceNative',
-        OVERLAY_POS_KEY,
-      ];
+      var keys = SUBTITLE_PREF_KEYS;
       for (var i = 0; i < keys.length; i++) {
         if (changes[keys[i]]) { prefs[keys[i]] = changes[keys[i]].newValue; changed = true; }
       }

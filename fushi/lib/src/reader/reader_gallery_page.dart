@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi_engine/epub/epub_book.dart'
     show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/reader/illustration_grid_columns.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -159,8 +160,10 @@ class _GalleryLayout {
     markerSectionIndex = markerBefore;
   }
 
+  /// 列数与书架端插图库同一规则（卡片随窗口变宽而放大，见
+  /// [illustrationGridColumnsForWidth]）。
   static int _columnsFor(double gridWidth) =>
-      math.max(1, (gridWidth / (_kCardMaxExtent + _kGridSpacing)).ceil());
+      illustrationGridColumnsForWidth(gridWidth, spacing: _kGridSpacing);
 
   final int columns;
   late final double cellWidth;
@@ -192,7 +195,6 @@ class _ChapterGroup {
 
 enum _LockedAction { backToLastSeen, revealAnyway }
 
-const double _kCardMaxExtent = 160;
 const double _kCardAspectRatio = 0.72;
 const double _kGridSpacing = 12;
 const double _kPagePadding = 16;

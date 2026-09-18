@@ -4,6 +4,8 @@
 // 过仍不一致 → stale（提示用户手动重载）；恢复一致 → clear（清提示）。
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+// 文案走 i18n（模块里 tr() 读全局 fushiT）：测试按 zh-CN 字典断言。
+globalThis.fushiT = require('./scripts/i18n-fixture.js').makeFushiT();
 const fs = require('node:fs');
 const path = require('node:path');
 

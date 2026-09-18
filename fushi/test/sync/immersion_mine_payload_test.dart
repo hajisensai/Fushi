@@ -69,6 +69,38 @@ void main() {
     expect(p.clipBytes, isNull);
   });
 
+  // 番剧（bilibili-pgc）：音轨由扩展在页面主世界里解析后随响应体回传，服务端据此挑流。
+  // 它不参与 isImmersion 判据（那是「有没有可裁原始流 + 时间窗」的问题），但少了它服务端就得
+  // 匿名去打 playurl —— 大会员内容必然失败。
+  test('parses clipSourcePlayurlBody for the bilibili-pgc path', () {
+    final ImmersionMinePayload p =
+        ImmersionMinePayload.fromJson(<String, dynamic>{
+      'fields': <String, dynamic>{'sentence': '正道ではなく邪道'},
+      'clipSourceKind': 'bilibili-pgc',
+      'clipSourceId': '815751',
+      'clipSourcePlayurlBody': '{"code":0,"result":{"dash":{"audio":[]}}}',
+      'clipStartMs': 61000,
+      'clipEndMs': 64500,
+    });
+    expect(p.clipSourceKind, 'bilibili-pgc');
+    expect(p.clipSourceId, '815751');
+    expect(p.clipSourcePlayurlBody, '{"code":0,"result":{"dash":{"audio":[]}}}');
+    expect(p.isImmersion, isTrue);
+  });
+
+  test('clipSourcePlayurlBody absent -> null (falls back to no clip source)',
+      () {
+    final ImmersionMinePayload p =
+        ImmersionMinePayload.fromJson(<String, dynamic>{
+      'fields': <String, dynamic>{'sentence': 'x'},
+      'clipSourceKind': 'bilibili',
+      'clipSourceId': 'BV1Este6wExx',
+      'clipStartMs': 0,
+      'clipEndMs': 1000,
+    });
+    expect(p.clipSourcePlayurlBody, isNull);
+  });
+
   test('youtubeVideoId without a window is not immersion', () {
     final ImmersionMinePayload p =
         ImmersionMinePayload.fromJson(<String, dynamic>{

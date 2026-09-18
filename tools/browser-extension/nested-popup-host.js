@@ -2,6 +2,9 @@
 // are never re-rendered, and callbacks are owned by the exact layer that sent them.
 (function () {
   'use strict';
+  function tr(key, params) {
+    return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
+  }
   const layers = [];
   const requests = new Map();
   let sequence = 0;
@@ -72,7 +75,7 @@
           window.fushiSelection.highlightSelection(matchLength);
         }
       }
-      frame.title = '嵌套查词：' + term;
+      frame.title = tr('nested_lookup_title', { term: term });
       frame.setAttribute('allow', 'autoplay');
       frame.style.cssText = 'position:fixed;z-index:2147483647;border:0;visibility:hidden;background:transparent;border-radius:10px;box-shadow:0 5px 24px #0005;';
       const fallback = (parent ? parent.frame : owner).getBoundingClientRect();
