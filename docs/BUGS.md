@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2379 条。点号进各自文件。
+> 共 2380 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,7 @@
 | [BUG-2571](bugs/BUG-2571-video-specs-probe-timeout-cached-as-terminal.md) | ✅ | ✅ | 规格探测超时被当成「这文件没有规格」永久记账，角标本会话再也不出 |
 | [BUG-2570](bugs/BUG-2570-video-import-one-bad-file-aborts-batch.md) | ✅ | ✅ | 一个文件失败让整批视频导入 0 条入库，只剩一句裸异常 |
 | [BUG-2569](bugs/BUG-2569-video-import-inline-cover-blocks-scan.md) | ✅ | ✅ | 视频来源扫描内联抽封面：每文件最坏两段 30s ffmpeg，导入被拖成几十分钟 |
+| [BUG-2568](bugs/BUG-2568-popup-headword-furigana-native-ruby.md) | ✅ | ✅ | 查词弹窗词头振假名未与基字居中对齐（应与 hoshi 一致） |
 | [BUG-2567](bugs/BUG-2567-emby-ignores-recursive-enumeration.md) | ✅ | ✅ | Emby 兼容服务器忽略 Recursive/IncludeItemTypes 导致剧集库在影片页整库为空 |
 | [BUG-2566](bugs/BUG-2566-popup-redirect-label-hides-definition.md) | ✅ | ✅ | OALDPE10 短语动词记录带「Redirected from」标签就被当成纯跳转记录藏掉（查 give up 看不到 OALDPE10 释义） |
 | [BUG-2565](bugs/BUG-2565-video-collection-delete-subtitles.md) | ✅ | ✅ | 删视频/合集勾选「同时删除本地文件」时，同目录的外挂字幕文件不会被删除 |
