@@ -304,10 +304,11 @@ body {
        few px of furigana spill can still be scrolled to". That was WRONG - a
        scroll container's TOP overflow is unreachable (scrollTop can never go
        negative), so the spilling <rt> was permanently CLIPPED, not scrollable.
-       The real fix is that the headword ruby no longer overflows at all: it now
-       carries the same intrinsic em padding-top reserve as glossary ruby (see
-       the :where(..., .expression) block below), so the implicit overflow-y is
-       genuinely inert. */
+       The real fix is that the headword ruby no longer overflows at all: it
+       carries an intrinsic em padding-top reserve of its own (BUG-2568 moved
+       that reserve onto `.expression` itself when the headword went back to
+       native ruby; see the `.expression ruby` block above), so the implicit
+       overflow-y is genuinely inert. */
     scrollbar-width: none;
 }
 
@@ -318,6 +319,10 @@ body {
 .expression {
     font-size: 26px;
     cursor: pointer;
+    /* BUG-2568: vertical reserve for the native ruby annotation — see the
+       `.expression ruby` block below for why the line box alone is not enough
+       and why the unit is em. */
+    padding-top: 0.66em;
 }
 
 .expression:active {
@@ -347,16 +352,51 @@ body {
     white-space: nowrap;
 }
 
-/* BUG-1098: the headword <rt> geometry (size / absolute anchor / reserve) comes
-   from the SHARED :where(..., .expression) ruby block below - the same intrinsic
-   em reserve glossary furigana has used since BUG-108/363/722/850. The only
-   headword-specific bit left is user-select: the headword is a click target
-   (onLinkClick), so its reading must never be selected by a drag.
-   The old `font-size: 13px` is gone on purpose: 13px == 0.5em of .expression's
-   26px, so the rendered size is unchanged, but a `.expression rt` (0,1,1)
-   declaration used to OUT-RANK the zero-specificity `:where(...) rt` rule and
-   would have pinned the reading to an absolute px size that no longer tracks the
-   popup content zoom. */
+/* BUG-2568 — the entry HEADWORD renders its furigana with the engine's OWN ruby
+   algorithm, like Hoshi's reader does. The glossary ruby block further down is
+   NOT in play here (its `:where(...)` scope is glossary-only again): that scheme
+   deliberately keeps each base compact and lets a long reading hang off it, and
+   Blink pins the overhang to the base's START edge, which is exactly the
+   "reading sits left of the word" the report showed. Native ruby instead widens
+   the base run to the annotation and centres the two on each other — measured
+   in headless Blink on this stylesheet, 入寮/にゅうりょう gives base run and
+   reading both [10.0,73.8] (centre delta 0.00px), with 入 and 寮 spread to share
+   the reading's width.
+   Three declarations carry it and none may be dropped:
+     - `display: ruby` on the <ruby> (the shared block used to override it to
+       inline-block for the absolute-anchor scheme; the headword must stay a real
+       ruby container or Blink degrades <rt> to an anonymous ruby container that
+       renders start-aligned above the base again);
+     - `font-size: 0.6em` on `ruby > rt` — the single source of truth for
+       furigana scale (BUG-1655) expressed in em so it tracks
+       documentElement.style.zoom / popupContentZoom (BUG-363) instead of the
+       hard-coded 13px this rule carried before BUG-1098. The child combinator is
+       deliberate: it can only ever match markup postProcessRuby did NOT wrap, so
+       it can never multiply with the glossary annotation box's own em scale
+       (popup_ruby_single_scale_guard_test.dart locks that invariant). Its
+       (0,1,2) specificity also outranks a dictionary stylesheet's prefixed
+       `[data-dictionary="X"] rt` (0,1,1), so dictionary CSS cannot shrink the
+       headword reading;
+     - `padding-top: 0.66em` on `.expression` — the vertical reserve BUG-1098 was
+       really about. Blink does NOT grow the line box enough for a native ruby
+       annotation (measured: line-height 1.7 and 2.0 both still spill 4.0px above
+       the box), and `.expression-scroll` is `overflow-x: auto`, which computes
+       overflow-y to auto and makes a scroll container whose TOP overflow is
+       unreachable — so any spill is CLIPPED, not scrollable. The reserve is
+       intrinsic to .expression and expressed in em (same shape as the glossary
+       .ruby-unit band), so it scales with the reading under any zoom: same probe
+       measures the annotation landing 3.2px INSIDE the box instead of 4.0px
+       outside it.
+   user-select stays where it was: the headword is a click target (onLinkClick),
+   so its reading must never be selected by a drag. */
+.expression ruby {
+    display: ruby;
+}
+
+.expression ruby > rt {
+    font-size: 0.6em;
+}
+
 .expression rt {
     -webkit-user-select: none;
 }
@@ -1154,26 +1194,29 @@ html[data-theme="dark"] .glossary-group {
     padding: 0 8px;
 }
 
-/* Furigana inside dictionary glossary bodies AND on the entry headword
-   (.expression). Three layout invariants live in this rule group and must stay
-   together.
-   BUG-1098 — the headword was NOT in this group until now and had zero vertical
-   reserve of its own (`.expression rt { font-size: 13px }` and nothing else),
-   because BUG-108 deliberately scoped its fix to glossary bodies. Its <rt> is
-   built by popup.js buildFuriganaEl as a BARE <ruby>/<rt>, so it also never
-   reached postProcessRuby (which only scanned `.glossary-content ruby`). The
-   reading therefore overflowed the header line box, and .expression-scroll
-   (overflow-x:auto -> computed overflow-y:auto) turned that box into a scroll
-   container whose TOP overflow is unreachable, so the reading was clipped /
-   squashed. Only single-segment readings hit it, because buildFuriganaEl only
-   asks for the .expression-scroll wrapper when the whole word is one segment
-   (pure-kanji nouns: 気配 / 邂逅 / 逢瀬), which is exactly the galgame vocabulary.
-   Fix = no new mechanism: postProcessRuby now also processes `.expression ruby`
-   and these rules cover `.expression`, so the headword gets the identical
-   per-base unit + em reserve + horizontal twin. `.expression` is 26px, so the
-   old hard-coded 13px reading is exactly the shared `font-size: 0.5em` — same
-   pixels today, and now it also tracks the popup content zoom instead of
-   growing the overflow linearly with it. The anchor of all three is the
+/* Furigana inside dictionary glossary bodies. Three layout invariants live in
+   this rule group and must stay together.
+   BUG-2568 — the entry HEADWORD (.expression) used to ride this same group;
+   BUG-1098 put it here to borrow the vertical reserve, and that part worked.
+   What it also borrowed was the glossary's COMPACT base: the base box never
+   widens to its reading, and the reading is an absolutely positioned box pinned
+   to the base's own width (left:0/right:0), so a reading wider than its base
+   hangs out of it. `text-align: center` does NOT re-centre that overhang —
+   measured in headless Blink against this exact stylesheet, a 26px headword
+   入寮/にゅうりょう puts the base at [10.0,62.0] and the reading at [10.0,73.8]:
+   flush with the base's START edge, 11.8px hanging off the right. Whole-word
+   readings are the common case (segmentFurigana cannot split にゅうりょう across
+   入/寮), so the headword habitually read as "reading shoved left of its word"
+   instead of centred over it — the reported difference from Hoshi's reader,
+   which renders the headword with the browser's own ruby algorithm.
+   The headword is therefore back on NATIVE <ruby> (see the `.expression ruby`
+   block further down): the engine widens the base run to the annotation and
+   centres the two on each other (same probe: base run and reading both
+   [10.0,73.8], centre delta 0.00px). Glossary bodies KEEP the compaction on
+   purpose — BUG-345/1778 exist precisely because 逐字 ruby lines must not go
+   ragged and正文 must not be pulled apart by a long reading — so the two faces
+   genuinely want different geometry, and the scope below is glossary-only
+   again. The anchor of all three is the
    per-base UNIT box (.ruby-unit), NOT the <ruby> element — popup.js's
    postProcessRuby wraps each base text node in a <span class="ruby-unit"> and
    moves that base's own <rt> INTO the span, so every rt sizes and positions
@@ -1216,14 +1259,14 @@ html[data-theme="dark"] .glossary-group {
    inline text (no position of its own), so it degrades to an unstyled reading
    next to its base rather than escaping the popup — it can no longer be
    positioned against the wrong ancestor. */
-:where(.glossary-group, .glossary-content, .expression) ruby {
+:where(.glossary-group, .glossary-content) ruby {
     display: inline-block;
     position: relative;
     line-height: 1;
     vertical-align: baseline;
 }
 
-:where(.glossary-group, .glossary-content, .expression) .ruby-unit {
+:where(.glossary-group, .glossary-content) .ruby-unit {
     display: inline-block;
     position: relative;
     line-height: 1;
@@ -1267,7 +1310,7 @@ html[data-theme="dark"] .glossary-group {
    Verified byte-for-byte geometry parity on Blink: with and without the
    wrapper, ruby = 37.5x23.25, units = [22.5, 15], annotation boxes =
    [(x+0, y+0, 22.5x7.5), (x+22.5, y+0, 15x7.5)], reading overlap 0px. */
-:where(.glossary-group, .glossary-content, .expression) .ruby-rt {
+:where(.glossary-group, .glossary-content) .ruby-rt {
     position: absolute;
     left: 0;
     right: 0;
@@ -1287,7 +1330,7 @@ html[data-theme="dark"] .glossary-group {
     line-height: 1;
 }
 
-:where(.glossary-group, .glossary-content, .expression) rt {
+:where(.glossary-group, .glossary-content) rt {
     /* Both engines already settle on `inline` for a wrapped <rt>; declaring it
        stops Blink from spinning up an anonymous ruby container around the
        leftover `display: ruby-text`. */
@@ -1320,7 +1363,7 @@ html[data-theme="dark"] .glossary-group {
    丢弃；rt 的颜色/字重/字体等非几何声明不受影响，仍照常生效。
    用户自定义的 `.ruby-rt { font-size: X em !important }`（词典样式可视化编辑器）作用在
    外层盒上，与本条不冲突，仍然可调。 */
-:where(.glossary-group, .glossary-content, .expression) .ruby-rt rt {
+:where(.glossary-group, .glossary-content) .ruby-rt rt {
     font-size: 1em !important;
 }
 
@@ -1333,7 +1376,7 @@ html[data-theme="dark"] .glossary-group {
    absolutely position it out of flow: base glyph spacing stays natural, while
    .ruby-rt remains centred on the base and the vertical padding reserve is
    unchanged. */
-:where(.glossary-group, .glossary-content, .expression) .ruby-reserve {
+:where(.glossary-group, .glossary-content) .ruby-reserve {
     display: block;
     position: absolute;
     width: -webkit-max-content;
@@ -1365,7 +1408,7 @@ html[data-theme="dark"] .glossary-group {
    仅这些单元把孪生体放回 in-flow —— 恰好只在会碰撞的地方付出字距代价，其余位置保持
    BUG-1778 的紧凑正文。两个单元互相标记是安全的：孪生体宽度是 max-content，读音不比
    基字宽时它撑不开任何东西，标了等于没标。 */
-:where(.glossary-group, .glossary-content, .expression)
+:where(.glossary-group, .glossary-content)
     .ruby-unit.ruby-tight
     > .ruby-reserve {
     position: static;

@@ -16,8 +16,10 @@ void main() {
     final int youtubeStart = source.indexOf(
       'if (payload.youtubeVideoId != null',
     );
+    // 番剧（bilibili-pgc）与稿件共用这一段，所以锚点取「bilibili 这个 kind 的判据」而不是
+    // 整个 `if (` 前缀——写法会随判据增减而变，判据本身不会。
     final int bilibiliStart = source.indexOf(
-      "if (payload.clipSourceKind == 'bilibili'",
+      "payload.clipSourceKind == 'bilibili'",
     );
     final int captureStart = source.indexOf(
       'ImmersionCaptureResult cap =',
