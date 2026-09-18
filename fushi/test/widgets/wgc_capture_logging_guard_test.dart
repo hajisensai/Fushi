@@ -259,9 +259,13 @@ void main() {
     expect(crashCpp.contains(r'L"\\crashdumps"'), isTrue,
         reason:
             r'crash_dump.cpp must use escaped separator L"\\crashdumps", not single backslash');
-    expect(crashCpp.contains(r'L"\\hibiki-"'), isTrue,
+    // BUG-2588 起文件名由 WriteProcessMinidump(prefix, …) 拼装：崩溃 filter 传
+    // L"hibiki"（历史文件名不变、诊断区按 *.dmp 列出），分隔符是单字符 L'\\'。
+    expect(crashCpp.contains('WriteProcessMinidump(L"hibiki"'), isTrue,
+        reason: 'crash filter must keep the historical "hibiki" dump prefix');
+    expect(crashCpp.contains(r"path[fp++] = L'\\';"), isTrue,
         reason:
-            r'crash_dump.cpp must use escaped separator L"\\hibiki-", not single backslash');
+            r"crash_dump.cpp must join path segments with the escaped L'\\' separator");
     expect(RegExp(r'L"\\[^\\]').hasMatch(crashCpp), isFalse,
         reason:
             r'no single-backslash path literal allowed -- MSVC C4129 drops the separator');

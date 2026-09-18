@@ -147,7 +147,9 @@ void main() {
     final String fn = _functionSource(
       pageSource,
       '  Future<void> _applyLoad({',
-      '    // 首次 load 建观看统计采集器',
+      // BUG-2587 起采集器按身份建，原「首次 load 建观看统计采集器」注释已删，
+      // 以调用行本身作尾界标。
+      '    _ensureWatchTracker(controller, title);',
     );
     final int currentAt =
         fn.indexOf('unawaited(prewarmEmbeddedSubtitleCache(videoPath));');
