@@ -52,11 +52,18 @@ void main() {
       );
     }
 
-    // 远端封面两处（缓存 Image.file + 网络 Image.network）都必须 contain。
+    // 远端封面：缓存文件 / 钉扎客户端 URL 的选链自 PR #1539 起收口在
+    // `_remoteCoverProvider`（返回 ImageProvider），这里只剩一个 Image 槽位，
+    // 它必须 contain。
+    expect(
+      source,
+      contains('ImageProvider? _remoteCoverProvider('),
+      reason: '远端封面选链必须收口在 _remoteCoverProvider',
+    );
     expect(
       RegExp(r'fit: BoxFit\.contain').allMatches(remoteCover).length,
-      2,
-      reason: '远端缓存图与网络图两处都必须用 BoxFit.contain',
+      1,
+      reason: '远端封面唯一的 Image 槽位必须用 BoxFit.contain',
     );
     expect(
       RegExp(r'fit: BoxFit\.contain').allMatches(localCover).length,
