@@ -58,15 +58,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Idle timeout':
       'test/media/audiobook/study_clock_test.dart（空闲门）+ '
           'test/tools/statistics_write_convergence_guard_test.dart',
-  // 「今日」重置时刻（整点）：写 prefsRepo（changed=true），生效点是
-  // AppModel._applyStatDayResetHour 镜像到 FushiDatabase.statDayResetHour——之后
-  // 每次 statDateKeyOf 派生 dateKey 才会前移，harness 的渲染输入观测不到。行为由
-  // stat_date_key_test（dateKey 前移 / 边界时长）+ stat_window_test / stat_summary_test /
-  // 热力图用例（读取面 key 算术）咬住。
-  'reading/Day starts at':
-      'test/stats/stat_date_key_test.dart + test/stats/stat_window_test.dart + '
-      'test/pages/stat_summary_test.dart + '
-      'test/widgets/stat_contribution_heatmap_test.dart',
   // 「功能模块」里**有底栏 tab 的七个**（五库页 + 下载/查词两个工具 tab）。写
   // prefsRepo（changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness
   // 里没有挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
@@ -431,6 +422,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
+  // 有声书倍速制卡：效果在 ffmpeg `-af atempo`（纯函数 buildFfmpegAtempoFilter /
+  // buildFfmpegClipArgs tempo 参数）+ 偏好写穿 + 阅读器制卡调用点源码守卫，都在专项测试里。
+  'cardCreation/Match sentence audio to playback speed':
+      'test/settings/mining_audio_follow_playback_speed_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡

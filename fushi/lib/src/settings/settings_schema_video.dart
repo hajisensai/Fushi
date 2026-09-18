@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
+import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
@@ -161,6 +162,31 @@ SettingsDestination buildVideoDestination() {
               if (picked == null || picked.isEmpty) return;
               await settingsContext.appModel
                   .setVideoScreenshotDirectory(picked);
+              settingsContext.refresh();
+            },
+          ),
+          // 片段导出的视频码率：0 = 跟随源（默认，能 copy 就 copy、不为改码率而重编
+          // 码），其它值把视频重编码到该码率。给一个自由输入框而不是预设档位：用户的
+          // 诉求是「发到 IM / 上传站点前把体积压到某个上限」，上限各家不同，档位永远
+          // 对不上。放进播放页快捷面板（VideoPlacement）是因为码率通常在按下导出前
+          // 临时调，不该为此退出播放去翻全局设置。
+          SettingsNumberItem(
+            id: 'video.playback.clip_export_video_bitrate',
+            title: t.video_setting_clip_export_video_bitrate,
+            subtitle: t.video_setting_clip_export_video_bitrate_hint,
+            icon: Icons.movie_creation_outlined,
+            integer: true,
+            min: kVideoClipExportVideoBitrateFollowSource,
+            max: kVideoClipExportVideoBitrateMaxKbps,
+            suffixText: t.unit_kbps,
+            video: VideoPlacement(group: VideoGroup.playback, order: 111),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoClipExportVideoBitrateKbps,
+            resetValue: (SettingsContext settingsContext) =>
+                kVideoClipExportVideoBitrateFollowSource,
+            onChanged: (SettingsContext settingsContext, num value) async {
+              await settingsContext.appModel
+                  .setVideoClipExportVideoBitrateKbps(value.toInt());
               settingsContext.refresh();
             },
           ),

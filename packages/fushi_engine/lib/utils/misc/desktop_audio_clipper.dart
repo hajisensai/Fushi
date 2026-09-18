@@ -535,6 +535,13 @@ void _reportFfmpegUnexpectedException(
 /// used for audiobook clips (single audio) and when the user has not switched
 /// the video's audio track. A multi-audio video (e.g. JP + EN dub) passes the
 /// currently-selected track's ordinal so the clip matches what the user hears.
+///
+/// [tempo] time-stretches the cut clip by that factor (`-af atempo=…`, pitch
+/// preserved) so a card mined while the audiobook plays at 1.5× carries audio
+/// at 1.5×. null / 1.0 (within [kFfmpegTempoEpsilon]) adds no filter — the
+/// historical byte-identical output. The range is still expressed in **source**
+/// time (`-ss`/`-t` precede `-i`, so `-t` is the input duration); only the
+/// output shrinks/grows by the factor.
 List<String> buildFfmpegClipArgs({
   required String inputPath,
   required int startMs,
@@ -548,6 +555,8 @@ List<String> buildFfmpegClipArgs({
   String audioBitrate = '64k',
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo=…`）。null / 1.0 不加滤镜。
+  double? tempo,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -555,6 +564,7 @@ List<String> buildFfmpegClipArgs({
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
   );
+  final String? tempoFilter = buildFfmpegAtempoFilter(tempo);
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
@@ -581,6 +591,10 @@ List<String> buildFfmpegClipArgs({
       // 尾随 '?'：越界音轨映射降级回退默认轨而非硬失败（BUG-345）。
       '0:a:$explicitAudio?',
     ],
+    // 有声书倍速制卡：滤镜放在编码器之前，对裁出的片段整体变速。桌面 ffmpeg-min 自
+    // 配方编入 atempo 起可用（tool/ffmpeg-min/build-ffmpeg-min.sh FILTERS），移动端
+    // 自编 ffmpeg-kit 是完整内建滤镜集，本就带。
+    if (tempoFilter != null) ...<String>['-af', tempoFilter],
     '-c:a',
     'aac',
     // TODO-646 近无损压缩 + TODO-757 压缩开关：句子音频是人声短片段，压缩档单声道
@@ -595,6 +609,44 @@ List<String> buildFfmpegClipArgs({
     audioBitrate,
     outputPath,
   ];
+}
+
+/// [buildFfmpegAtempoFilter] treats a tempo this close to 1.0 as "no change".
+/// Audiobook speed pickers step in 0.05/0.25 increments, so anything inside the
+/// band is float noise from the player, not a user choice.
+const double kFfmpegTempoEpsilon = 0.001;
+
+/// Smallest / largest factor a single `atempo` instance accepts (FFmpeg
+/// libavfilter/af_atempo.c: `[0.5, 100.0]`). Outside that band the filter must
+/// be chained (`atempo=0.5,atempo=0.8` for 0.4×).
+const double kFfmpegAtempoMin = 0.5;
+const double kFfmpegAtempoMax = 100.0;
+
+/// Builds the `-af` value that time-stretches audio by [tempo] with pitch
+/// preserved, or null when [tempo] is null / non-finite / non-positive / within
+/// [kFfmpegTempoEpsilon] of 1.0 (no filter — byte-identical to the historical
+/// output). Factors outside a single atempo's `[0.5, 100]` range are chained so
+/// any positive factor is representable; each stage is printed with 3 decimals
+/// (ffmpeg parses `atempo=1.500`), matching `-ss`/`-t` formatting.
+String? buildFfmpegAtempoFilter(double? tempo) {
+  if (tempo == null || !tempo.isFinite || tempo <= 0) {
+    return null;
+  }
+  if ((tempo - 1.0).abs() <= kFfmpegTempoEpsilon) {
+    return null;
+  }
+  final List<String> stages = <String>[];
+  double remaining = tempo;
+  while (remaining < kFfmpegAtempoMin) {
+    stages.add('atempo=${kFfmpegAtempoMin.toStringAsFixed(3)}');
+    remaining /= kFfmpegAtempoMin;
+  }
+  while (remaining > kFfmpegAtempoMax) {
+    stages.add('atempo=${kFfmpegAtempoMax.toStringAsFixed(3)}');
+    remaining /= kFfmpegAtempoMax;
+  }
+  stages.add('atempo=${remaining.toStringAsFixed(3)}');
+  return stages.join(',');
 }
 
 /// Builds the ffmpeg argument list to extract the embedded cover art of
@@ -1408,6 +1460,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   String audioBitrate = '64k',
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  // 有声书倍速制卡：句子音频按播放倍速变速不变调；null / 1.0 = 原速（现状）。
+  double? tempo,
 }) async {
   // TODO-1005 / BUG-472：这两条「ffmpeg 还没跑」的早返回历来静默 return null——
   // 有声书片段导出 / 句子音频 TTS / 视频制卡 只看到「失败但日志空白」，无从诊断。
@@ -1448,6 +1502,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         audioChannels: audioChannels,
         audioBitrate: audioBitrate,
         tlsPinSha256: tlsPinSha256,
+        tempo: tempo,
       ),
       const Duration(seconds: 120),
     );

@@ -188,6 +188,16 @@ for input in \
   assert_nonempty "$WORK/$stem.aac"
 done
 
+echo "[ffmpeg-min-smoke] exporting sentence audio at playback tempo (atempo)"
+# Audiobook mining at playback speed (buildFfmpegClipArgs tempo=...) cuts the
+# sentence clip through `-af atempo=R`. A minimal build without the atempo
+# filter fails with "No such filter: 'atempo'" and the card silently loses its
+# sentence audio; exercise the literal app call so a dropped filter fails here.
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 0.800 -i "$WORK/tone.wav" -vn -map_chapters -1 \
+  -af "atempo=1.500" -c:a aac -ac 1 -b:a 64k "$WORK/tone.tempo.aac"
+assert_nonempty "$WORK/tone.tempo.aac"
+
 echo "[ffmpeg-min-smoke] extracting attached cover"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -i "$WORK/covered.m4a" -an -map 0:v:disp:attached_pic \
@@ -208,6 +218,7 @@ for output in \
   "$WORK/tone.eac3.aac" \
   "$WORK/tone.wma.aac" \
   "$WORK/tone.wav.aac" \
+  "$WORK/tone.tempo.aac" \
   "$WORK/cover.jpg" \
   "$WORK/cover-png.jpg"; do
   run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$output" -f null -

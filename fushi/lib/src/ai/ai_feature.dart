@@ -30,7 +30,10 @@ enum AiFeature {
 
   /// 视频搜索辅助：生成备选查询词（日文原名 / 罗马音 / 英文名），以及在已取回的
   /// 字幕 / 资源候选里做语义重排。
-  videoSearch;
+  videoSearch,
+
+  /// 自定义主题：按自然语言描述生成一组角色配色（进编辑页草稿，不直接应用）。
+  customTheme;
 
   String get storageKey => name;
 

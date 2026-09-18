@@ -4081,6 +4081,13 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoScreenshotDirectory(String path) =>
       prefsRepo.setVideoScreenshotDirectory(path);
 
+  /// 片段导出的视频目标码率（kbps）；0 = 跟随源（不为改码率而重编码）。
+  int get videoClipExportVideoBitrateKbps =>
+      prefsRepo.videoClipExportVideoBitrateKbps;
+
+  Future<void> setVideoClipExportVideoBitrateKbps(int kbps) =>
+      prefsRepo.setVideoClipExportVideoBitrateKbps(kbps);
+
   /// Jimaku API key（自动获取日语字幕）。
   String get jimakuApiKey => prefsRepo.jimakuApiKey;
 
@@ -7228,6 +7235,12 @@ class AppModel with ChangeNotifier {
   void setMiningAudioHeadPadMs(int ms) => prefsRepo.setMiningAudioHeadPadMs(ms);
   int get miningAudioTailPadMs => prefsRepo.miningAudioTailPadMs;
   void setMiningAudioTailPadMs(int ms) => prefsRepo.setMiningAudioTailPadMs(ms);
+
+  /// 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
+  bool get miningAudioFollowPlaybackSpeed =>
+      prefsRepo.miningAudioFollowPlaybackSpeed;
+  void toggleMiningAudioFollowPlaybackSpeed() =>
+      prefsRepo.toggleMiningAudioFollowPlaybackSpeed();
 
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>

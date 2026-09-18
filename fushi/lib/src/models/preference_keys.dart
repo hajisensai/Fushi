@@ -171,6 +171,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_sensitivity',
   'maximum_terms',
   'mine_to_server',
+  // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
+  'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
   'mining_audio_head_pad_ms',
   'mining_audio_quality',

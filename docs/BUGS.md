@@ -35,6 +35,7 @@
 |---|:--:|:--:|---|
 | [BUG-2580](bugs/BUG-2580-reader-toc-anchor-subchapter-current.md) | ✅ | ✅ | 阅读器目录靠锚点分节时当前章名与勾选落错 |
 | [BUG-2579](bugs/BUG-2579-mdx-dict-order.md) | ✅ | ✅ | 查词弹窗里 MDX 词典恒排在所有 Yomitan 词典之后 |
+| [BUG-2578](bugs/BUG-2578-reader-vertical-continuous-android-overscroll-bounce.md) | ✅ | ✅ | 安卓竖排连续模式上下滑动画面回弹 |
 | [BUG-2577](bugs/BUG-2577-android-video-import-scrape-freeze.md) | ✅ | ✅ | 安卓按作品归类导入视频整机卡顿冻结崩溃——AniDB 标题包与 Fribb 映射在 UI isolate 整包解析建 DOM |
 | [BUG-2576](bugs/BUG-2576-vn-restore-progress-chapter-end.md) | ✅ | ✅ | VN 往前翻章 restoreProgress(0.99) 落到 99% 字数所在屏而非末屏，fragment 失效不回退进度 |
 | [BUG-2575](bugs/BUG-2575-vn-measure-box-important-overflow.md) | ✅ | ✅ | VN 量尺盒被 .fushi-vn-screen 的 !important 尺寸覆盖，每屏按整视口切、真实屏溢出裁切 |

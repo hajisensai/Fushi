@@ -29,6 +29,7 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
+import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -1587,6 +1588,24 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 片段导出的视频目标码率（kbps）；0 = 跟随源（默认，旧库没有该 key 时的行为，
+  /// 不需要迁移）。写入前夹到 `[0, kVideoClipExportVideoBitrateMaxKbps]`。
+  int get videoClipExportVideoBitrateKbps => getPref(
+        kVideoClipExportVideoBitrateKbpsPref,
+        defaultValue: kVideoClipExportVideoBitrateFollowSource,
+      ) as int;
+
+  Future<void> setVideoClipExportVideoBitrateKbps(int kbps) async {
+    await setPref(
+      kVideoClipExportVideoBitrateKbpsPref,
+      kbps.clamp(
+        kVideoClipExportVideoBitrateFollowSource,
+        kVideoClipExportVideoBitrateMaxKbps,
+      ),
+    );
+    notifyListeners();
+  }
+
   /// Whether the first-use Anime4K recommendation prompt has been shown.
   bool get videoAnime4kPromptShown =>
       getPref(videoAnime4kPromptShownKey, defaultValue: false) as bool;
@@ -1929,6 +1948,21 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   void setMiningAudioTailPadMs(int ms) async {
     await setPref('mining_audio_tail_pad_ms', ms.clamp(0, kMiningPadMaxMs));
+    notifyListeners();
+  }
+
+  /// 有声书倍速制卡：句子音频是否跟随当前播放倍速（变速不变调）。默认开——用户开着
+  /// 1.5× 听书，卡片里的句子音频就是 1.5× 的，与阅读时听到的一致；关掉则一律裁原速。
+  /// 只对小说有声书制卡链生效（视频链没有「播放倍速」这个制卡语境，不读它）。
+  bool get miningAudioFollowPlaybackSpeed =>
+      getPref('mining_audio_follow_playback_speed', defaultValue: true)
+          as bool;
+
+  void toggleMiningAudioFollowPlaybackSpeed() async {
+    await setPref(
+      'mining_audio_follow_playback_speed',
+      !miningAudioFollowPlaybackSpeed,
+    );
     notifyListeners();
   }
 
