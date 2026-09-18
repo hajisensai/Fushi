@@ -146,6 +146,26 @@ const String _fitProbeJs = r'''
 })()
 ''';
 
+/// 当前屏的盒几何：屏 / 内容盒 / 首个块级子元素 / 首末文本行盒 + 关键 computed
+/// style（谁在裁切）。
+const String _geomProbeJs = r'''
+(function () {
+  var r = window.fushiReader;
+  var rect = function (el) { if (!el) return null; var b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; };
+  var cs = function (el) { if (!el) return null; var c = getComputedStyle(el); return { display: c.display, overflow: c.overflow, overflowX: c.overflowX, overflowY: c.overflowY, height: c.height, maxHeight: c.maxHeight, width: c.width, maxWidth: c.maxWidth, columnWidth: c.columnWidth, columnCount: c.columnCount, writingMode: c.writingMode, clipPath: c.clipPath, contain: c.contain, position: c.position, flex: c.flex, alignSelf: c.alignSelf }; };
+  var content = document.querySelector('.fushi-vn-content');
+  var block = content ? content.firstElementChild : null;
+  var rects = [];
+  var range = document.createRange();
+  var w = document.createTreeWalker(r.screen, NodeFilter.SHOW_TEXT); var n;
+  while ((n = w.nextNode())) { if (!String(n.textContent || '').trim()) continue; range.selectNodeContents(n); var rs = range.getClientRects(); for (var k = 0; k < rs.length; k++) rects.push([Math.round(rs[k].left), Math.round(rs[k].top), Math.round(rs[k].width), Math.round(rs[k].height)]); }
+  return JSON.stringify({ hidden: document.hidden, idx: r.currentScreenIndex,
+    stage: rect(r.stage), screen: rect(r.screen), content: rect(content), block: rect(block),
+    blockTag: block ? block.tagName : null, rects: rects.slice(0, 12), rectCount: rects.length,
+    csScreen: cs(r.screen), csContent: cs(content), csBlock: cs(block), csBody: cs(document.body) });
+})()
+''';
+
 const String _idxProbeJs = r'''
 (function () {
   var r = window.fushiReader;
@@ -306,6 +326,8 @@ Future<void> _verifyWritingMode(
     failures.add('$tag: restoreProgress(0.99) landed on screen $idx of $n '
         '(want last = ${n - 1})');
   }
+  final Map<String, dynamic> geom = await _eval(runJs, _geomProbeJs);
+  debugPrint('[vn-fit] $tag chapter-end geometry ${jsonEncode(geom)}');
   final ObserveShot end = await captureReaderWebView('vn-fit-$tag-chapter-end');
   debugPrint('[vn-fit] $tag webview chapter-end saved=${end.saved} '
       'nonBlank=${end.nonBlank} path=${end.path}');
