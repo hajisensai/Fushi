@@ -132,7 +132,7 @@ void main() {
   });
 
   group('双击缩放', () {
-    test('注入双击判定，且不给单击加延迟', () {
+    test('注入双击判定，且不给查词/热区单击加延迟', () {
       final String doc = _doc();
       expect(doc.contains('function _consumeDoubleTap(x, y)'), isTrue);
       expect(doc.contains('var DBL_MS = 300'), isTrue);
@@ -142,6 +142,37 @@ void main() {
         isFalse,
         reason: '单击不得被延迟去等双击',
       );
+      // 查词与热区在双击判定之前就 return，不经过任何定时器。
+      final int selectAt = doc.indexOf(
+        'if (_selectOcrChar(x, y, false)) return;',
+      );
+      final int deferAt = doc.indexOf('_deferEmptyTap();');
+      expect(selectAt, greaterThanOrEqualTo(0));
+      expect(deferAt, greaterThan(selectAt));
+    });
+
+    test('空白单击的 onTapEmpty 延后发出，第二击到达即取消', () {
+      // onTapEmpty 在 Dart 侧会切换悬浮栏；若第一击立刻上报，默认悬浮态下每次
+      // 双击缩放都会连带闪一次顶栏/底栏。
+      final String doc = _doc();
+      expect(doc.contains('function _deferEmptyTap()'), isTrue);
+      expect(doc.contains('function _cancelPendingEmptyTap()'), isTrue);
+      expect(
+        doc.contains("if (b) b.callHandler('onTapEmpty');"),
+        isTrue,
+        reason: 'onTapEmpty 只能从延后的定时器里发出',
+      );
+      expect(
+        doc.contains("    b.callHandler('onTapEmpty');"),
+        isFalse,
+        reason: '_onTap 里不得再同步上报 onTapEmpty',
+      );
+      final int dblAt = doc.indexOf('if (_consumeDoubleTap(x, y)) {');
+      final int cancelAt = doc.indexOf('_cancelPendingEmptyTap();', dblAt);
+      final int zoomAt = doc.indexOf('_zoomAbout(ZOOM > 1.01 ? 1 : 2, x, y)');
+      expect(dblAt, greaterThanOrEqualTo(0));
+      expect(cancelAt, greaterThan(dblAt));
+      expect(zoomAt, greaterThan(cancelAt), reason: '第二击先取消挂起的 onTapEmpty 再缩放');
     });
 
     test('双击只在没命中 OCR 字、也没命中翻页热区时才缩放', () {

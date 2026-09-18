@@ -216,7 +216,13 @@ List<MangaTapZone> mangaTapZones(
   MangaTapZoneLayout layout, {
   required bool rtl,
 }) {
-  // 下面的 forward 一律按 LTR 语义写，rtl 时整表翻转。
+  // 只有 left_right 是「视觉方位」语义（左边那条 / 右边那条），RTL 右开本要
+  // 镜像成「左 = 下一页」。其余三种是「阅读顺序」语义——Kindle 的「左窄条后退、
+  // 其余整片前进」、L 型的「右侧 + 底部前进」、上下的「下半前进」——它们存在的
+  // 意义就是「大片区域 = 前进」，与开本方向无关（Mihon 亦然：只有 Right and
+  // Left 布局按 LEFT/RIGHT 动作走，其余布局按 NEXT/PREV 动作走、不随 RTL 翻转）。
+  // 整表一律翻转会让默认 RTL 日漫下选 Kindle 布局变成「点中央 = 上一页」。
+  final bool mirror = rtl && layout == MangaTapZoneLayout.leftRight;
   MangaTapZone zone(
     double left,
     double top,
@@ -228,7 +234,7 @@ List<MangaTapZone> mangaTapZones(
     top: top,
     width: width,
     height: height,
-    forward: rtl ? !forward : forward,
+    forward: mirror ? !forward : forward,
   );
 
   const double e = kMangaTapZoneEdge;

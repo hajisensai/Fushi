@@ -3785,6 +3785,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     ),
                   // 底栏跳页 slider：可见性与顶栏同判据（同一条 chrome），但额外
                   // 要求有正文——没有页就没有可跳的页。
+                  // ExcludeFocus：Slider 是可 Tab 到的焦点节点，拿到焦点后左右
+                  // 方向键被它自己的 Shortcuts 吃掉、到不了 _handleReaderKey；
+                  // 阅读器 chrome 不参与焦点遍历（docs/agent/focus-ownership.md），
+                  // 鼠标/触摸拖动不经焦点，功能不受影响。
                   if (_chromeActionsEnabled &&
                       mangaChromeBarPainted(
                         floating: _chromeFloating,
@@ -3796,15 +3800,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       bottom: 0,
                       left: 0,
                       right: 0,
-                      child: MangaReaderBottomBar(
-                        key: const ValueKey<String>('manga_reader_bottom_bar'),
-                        pageCount: _payload?.images.length ?? 0,
-                        pageListenable: _pageNotifier,
-                        currentPage: () => _pageNotifier.value,
-                        rtl: _spreadDirection == 'rtl',
-                        floating: _chromeFloating,
-                        onPageCommitted: (int pageIndex) =>
-                            unawaited(_jumpToPage(pageIndex + 1)),
+                      child: ExcludeFocus(
+                        child: MangaReaderBottomBar(
+                          key: const ValueKey<String>(
+                            'manga_reader_bottom_bar',
+                          ),
+                          pageCount: _payload?.images.length ?? 0,
+                          pageListenable: _pageNotifier,
+                          currentPage: () => _pageNotifier.value,
+                          rtl: _spreadDirection == 'rtl',
+                          floating: _chromeFloating,
+                          onPageCommitted: (int pageIndex) =>
+                              unawaited(_jumpToPage(pageIndex + 1)),
+                        ),
                       ),
                     ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。

@@ -101,11 +101,12 @@ void main() {
   });
 
   group('阅读方向镜像', () {
-    test('rtl 只翻转 forward，不动几何', () {
+    test('rtl 不动几何；只有 left_right 翻转 forward', () {
       for (final MangaTapZoneLayout layout in MangaTapZoneLayout.values) {
         final List<MangaTapZone> ltr = mangaTapZones(layout, rtl: false);
         final List<MangaTapZone> rtl = mangaTapZones(layout, rtl: true);
         expect(rtl.length, ltr.length);
+        final bool mirrored = layout == MangaTapZoneLayout.leftRight;
         for (int i = 0; i < ltr.length; i++) {
           expect(rtl[i].left, ltr[i].left, reason: '$layout[$i] 几何不得镜像');
           expect(rtl[i].top, ltr[i].top);
@@ -113,11 +114,41 @@ void main() {
           expect(rtl[i].height, ltr[i].height);
           expect(
             rtl[i].forward,
-            !ltr[i].forward,
-            reason: '$layout[$i] forward 必须翻转',
+            mirrored ? !ltr[i].forward : ltr[i].forward,
+            reason: mirrored
+                ? '$layout[$i] 是视觉方位语义，RTL 必须翻转 forward'
+                : '$layout[$i] 是阅读顺序语义，RTL 不得翻转 forward',
           );
         }
       }
+    });
+
+    test('RTL 日漫：Kindle 仍是「左窄条后退、其余整片前进」', () {
+      // 整表翻转的旧实现会让默认 RTL 开本下「点中央 = 上一页」，与布局的存在
+      // 意义（大片区域 = 前进）相反。
+      final List<MangaTapZone> z = mangaTapZones(
+        MangaTapZoneLayout.kindle,
+        rtl: true,
+      );
+      expect(_turnAt(z, 0.05, 0.5), 'prev');
+      expect(_turnAt(z, 0.5, 0.5), 'next');
+      expect(_turnAt(z, 0.95, 0.5), 'next');
+    });
+
+    test('RTL 日漫：上下布局仍是「下半前进」，L 型底部横条仍前进', () {
+      final List<MangaTapZone> tb = mangaTapZones(
+        MangaTapZoneLayout.topBottom,
+        rtl: true,
+      );
+      expect(_turnAt(tb, 0.5, 0.2), 'prev');
+      expect(_turnAt(tb, 0.5, 0.8), 'next');
+      final List<MangaTapZone> l = mangaTapZones(
+        MangaTapZoneLayout.lShaped,
+        rtl: true,
+      );
+      expect(_turnAt(l, 0.5, 0.95), 'next');
+      expect(_turnAt(l, 0.95, 0.5), 'next');
+      expect(_turnAt(l, 0.05, 0.5), 'prev');
     });
 
     test('RTL 日漫：左边缘 = 下一页', () {

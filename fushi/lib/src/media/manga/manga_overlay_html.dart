@@ -1291,11 +1291,16 @@ String _mangaGestureJs({
     window.scrollBy(0, dir * (window.innerHeight || 0) * 0.9);
   }
   // 双击缩放：只在**点击本来就是 no-op 的区域**上生效（没命中 OCR 字、也没命中
-  // 翻页热区）。故意不给单击加延迟去等第二击——查词响应速度是用户明确抱怨过的
-  // 一项，为双击而把每次查词都推迟 250ms 是拿高频换低频。代价是 kindle 布局下
-  // 中央也是翻页热区，双击缩放在该布局下只剩边角，属于该布局自身的取舍。
+  // 翻页热区）。查词与热区翻页在 _onTap 里排在双击判定之前、命中即返回，所以
+  // 它们零延迟——查词响应速度是用户明确抱怨过的一项，绝不能为等第二击推迟它。
+  // 被推迟的只有**空白单击**的 onTapEmpty：它在 Dart 侧会切换悬浮栏，若第一击
+  // 立刻上报，默认悬浮态下每次双击缩放都会连带闪一次顶栏/底栏（放大时弹出、
+  // 缩回时收起）。所以空白单击先挂 DBL_MS 定时器，第二击到达就取消它只做缩放；
+  // 没有第二击才把 onTapEmpty 补发出去。代价是 kindle 布局下中央也是翻页热区，
+  // 双击缩放在该布局下只剩边角，属于该布局自身的取舍。
   var DBL_MS = 300, DBL_SLOP = 30;
   var lastTapT = 0, lastTapX = 0, lastTapY = 0;
+  var pendingEmptyTap = null;
   function _consumeDoubleTap(x, y){
     var now = Date.now();
     var dx = x - lastTapX, dy = y - lastTapY;
@@ -1304,6 +1309,17 @@ String _mangaGestureJs({
     if (isDouble) { lastTapT = 0; return true; }
     lastTapT = now; lastTapX = x; lastTapY = y;
     return false;
+  }
+  function _cancelPendingEmptyTap(){
+    if (pendingEmptyTap !== null) { clearTimeout(pendingEmptyTap); pendingEmptyTap = null; }
+  }
+  function _deferEmptyTap(){
+    _cancelPendingEmptyTap();
+    pendingEmptyTap = setTimeout(function(){
+      pendingEmptyTap = null;
+      var b = _bridge();
+      if (b) b.callHandler('onTapEmpty');
+    }, DBL_MS);
   }
   function _onTap(x, y){
     var b = _bridge();
@@ -1315,14 +1331,17 @@ String _mangaGestureJs({
       b.callHandler('onMangaTurn', zone);
       return;
     }
-    // 第二击落在同一块空白上 → 在该点缩放；等比在「贴合」与 2× 之间切换。
+    // 第二击落在同一块空白上 → 取消第一击挂起的 onTapEmpty（否则悬浮栏会跟着
+    // 闪一次），在该点缩放；等比在「贴合」与 2× 之间切换。
     if (_consumeDoubleTap(x, y)) {
+      _cancelPendingEmptyTap();
       _zoomAbout(ZOOM > 1.01 ? 1 : 2, x, y);
       return;
     }
     // 裸图 / 尚未完成 OCR 的区域不打开大图，继续留在阅读器。空白点是 no-op，
-    // 只回传给 Dart 收回焦点；OCR 只能在阅读器外触发，这里不再带落页 payload。
-    b.callHandler('onTapEmpty');
+    // 只回传给 Dart 收回焦点 / 切换悬浮栏；OCR 只能在阅读器外触发，这里不再带
+    // 落页 payload。延后 DBL_MS 发出，给第二击留出取消的窗口。
+    _deferEmptyTap();
   }
   function _end(x, y){
     // 无配对 pointerdown（has=false）：合成事件或捕获丢失，没有位移可判 swipe →
