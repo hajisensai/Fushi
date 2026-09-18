@@ -3,17 +3,26 @@
 /// 与 Shoko 的 `AniDBTitleHelper` 保持同一数据边界：标题识别只依赖 AniDB 每日
 /// 标题包，不需要（也不允许伪造）HTTP API client 身份。目录在磁盘缓存 24 小时，
 /// 更新先完整解压、解析并写入临时文件，再以 rename 替换；刷新失败时继续使用旧包。
+///
+/// 解压、解析、建索引整段都在后台 isolate 里跑（[Isolate.run]，结果经
+/// `Isolate.exit` 零拷贝交回），且解析走 [XmlEventDecoder] 流式事件而不是整棵
+/// `XmlDocument`：标题包解压后是几十 MB、十万级标题，之前在 UI isolate 上整段
+/// 同步解析 + 建 DOM，手机上一次「按作品归类」导入就是数秒到数十秒的整机冻结，
+/// DOM 的堆峰值还足以让低内存机被系统直接杀掉。
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:xml/xml.dart';
+import 'package:xml/xml.dart' show XmlException;
+import 'package:xml/xml_events.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 
 typedef AniDbCatalogNow = DateTime Function();
@@ -161,10 +170,12 @@ class AniDbTitleCatalog {
     try {
       final _LoadedTitleCatalog loaded = await loading;
       _ensureOpen();
-      _recordsByAnimeId = loaded.records;
-      _titleIndex = _AniDbTitleSearchIndex(loaded.records);
+      _recordsByAnimeId = loaded.parsed.records;
+      // 索引随记录一起在后台 isolate 建好，这里只是接管，不再在 UI isolate
+      // 上对十万级标题排序 / 切 n-gram。
+      _titleIndex = loaded.parsed.index;
       _nextRefreshAt = loaded.nextRefreshAt;
-      return loaded.records;
+      return loaded.parsed.records;
     } finally {
       if (identical(_loadFuture, loading)) _loadFuture = null;
     }
@@ -186,9 +197,9 @@ class AniDbTitleCatalog {
 
     if (isFresh) {
       try {
-        final Map<int, AniDbTitleRecord> records = await _readCache(cacheFile);
+        final _ParsedTitleCatalog parsed = await _readCache(cacheFile);
         return _LoadedTitleCatalog(
-          records: records,
+          parsed: parsed,
           nextRefreshAt: modifiedAt.add(cacheTtl),
         );
       } on Object {
@@ -212,7 +223,7 @@ class AniDbTitleCatalog {
       if (await cacheFile.exists()) {
         try {
           return _LoadedTitleCatalog(
-            records: await _readCache(cacheFile),
+            parsed: await _readCache(cacheFile),
             nextRefreshAt: lastAttempt!.add(cacheTtl),
           );
         } on Object {
@@ -229,11 +240,11 @@ class AniDbTitleCatalog {
     try {
       await _recordRefreshAttempt(refreshMarker, now);
       final _DownloadedTitleCatalog downloaded = await _download();
-      await _replaceAtomically(cacheFile, downloaded.xmlBytes);
+      await _replaceAtomically(cacheFile, downloaded.cacheBytes);
       await cacheFile.setLastModified(now);
       if (await refreshMarker.exists()) await refreshMarker.delete();
       return _LoadedTitleCatalog(
-        records: downloaded.records,
+        parsed: downloaded.parsed,
         nextRefreshAt: now.add(cacheTtl),
       );
     } catch (error) {
@@ -245,7 +256,7 @@ class AniDbTitleCatalog {
     if (await cacheFile.exists()) {
       try {
         return _LoadedTitleCatalog(
-          records: await _readCache(cacheFile),
+          parsed: await _readCache(cacheFile),
           nextRefreshAt: now.add(cacheTtl),
         );
       } on Object {
@@ -298,151 +309,39 @@ class AniDbTitleCatalog {
         'AniDB title catalog returned HTTP ${response.statusCode}',
       );
     }
-    final List<int> body = response.bodyBytes;
+    final Uint8List body = response.bodyBytes;
     if (body.isEmpty || body.length > _maxCompressedBytes) {
       throw const AniDbTitleCatalogException(
         'AniDB title catalog has an invalid compressed size',
       );
     }
-    final List<int> expanded;
-    try {
-      expanded = _looksLikeGzip(body) ? gzip.decode(body) : body;
-    } on Object catch (error) {
-      throw AniDbTitleCatalogException(
-        'AniDB title catalog is not valid gzip data',
-        error,
-      );
-    }
-    if (expanded.isEmpty || expanded.length > _maxExpandedBytes) {
-      throw const AniDbTitleCatalogException(
-        'AniDB title catalog has an invalid expanded size',
-      );
-    }
-    final String xml = _decodeXml(expanded);
-    return _DownloadedTitleCatalog(
-      xmlBytes: utf8.encode(xml),
-      records: _parseXml(xml),
+    // \u89E3\u538B + \u89E3\u6790 + \u5EFA\u7D22\u5F15\u6574\u6BB5\u8FDB\u540E\u53F0 isolate\uFF1B\u538B\u7F29\u4F53\u7ECF TransferableTypedData
+    // \u96F6\u62F7\u8D1D\u79FB\u4EA4\uFF0C\u4E0D\u5728 UI isolate \u4E0A\u518D\u78B0\u5B83\u3002\u78C1\u76D8\u7F13\u5B58\u76F4\u63A5\u843D\u4E0B\u8F7D\u5230\u7684\u539F\u59CB\u5B57\u8282
+    // \uFF08\u901A\u5E38\u662F gzip\uFF0C\u51E0 MB\uFF09\uFF0C\u8BFB\u56DE\u65F6\u6309\u9B54\u6570\u5224\u65AD\u662F\u5426\u89E3\u538B\u2014\u2014\u4E0D\u518D\u628A\u51E0\u5341 MB \u7684
+    // \u660E\u6587 XML \u5199\u8FDB\u624B\u673A\u5B58\u50A8\u3002
+    final TransferableTypedData transferable = TransferableTypedData.fromList(
+      <Uint8List>[body],
     );
+    final _ParsedTitleCatalog parsed = await Isolate.run(
+      () => _parseTitleCatalogBytes(transferable),
+      debugName: 'anidb-title-catalog',
+    );
+    return _DownloadedTitleCatalog(cacheBytes: body, parsed: parsed);
   }
 
-  Future<Map<int, AniDbTitleRecord>> _readCache(File cacheFile) async {
+  Future<_ParsedTitleCatalog> _readCache(File cacheFile) async {
     final int length = await cacheFile.length();
     if (length <= 0 || length > _maxExpandedBytes) {
       throw const AniDbTitleCatalogException(
         'Cached AniDB title catalog has an invalid size',
       );
     }
-    final List<int> bytes = await cacheFile.readAsBytes();
-    final List<int> expanded;
-    try {
-      expanded = _looksLikeGzip(bytes) ? gzip.decode(bytes) : bytes;
-    } on Object catch (error) {
-      throw AniDbTitleCatalogException(
-        'Cached AniDB title catalog is invalid gzip data',
-        error,
-      );
-    }
-    if (expanded.length > _maxExpandedBytes) {
-      throw const AniDbTitleCatalogException(
-        'Cached AniDB title catalog is too large',
-      );
-    }
-    return _parseXml(_decodeXml(expanded));
-  }
-
-  String _decodeXml(List<int> bytes) {
-    try {
-      final String value = utf8.decode(bytes);
-      return value.startsWith('\uFEFF') ? value.substring(1) : value;
-    } on FormatException catch (error) {
-      throw AniDbTitleCatalogException(
-        'AniDB title catalog is not valid UTF-8',
-        error,
-      );
-    }
-  }
-
-  Map<int, AniDbTitleRecord> _parseXml(String xml) {
-    if (RegExp(
-      r'<!\s*(?:DOCTYPE|ENTITY)\b',
-      caseSensitive: false,
-    ).hasMatch(xml)) {
-      throw const AniDbTitleCatalogException(
-        'AniDB title catalog contains a forbidden declaration',
-      );
-    }
-
-    final XmlDocument document;
-    try {
-      document = XmlDocument.parse(xml);
-    } on XmlParserException catch (error) {
-      throw AniDbTitleCatalogException(
-        'AniDB title catalog contains invalid XML',
-        error,
-      );
-    }
-    final XmlElement root = document.rootElement;
-    if (root.name.local != 'animetitles') {
-      throw const AniDbTitleCatalogException(
-        'AniDB title catalog has an unexpected root element',
-      );
-    }
-
-    final Map<int, List<AniDbTitle>> titlesByAnime = <int, List<AniDbTitle>>{};
-    int recordCount = 0;
-    for (final XmlElement anime in root.findElements('anime')) {
-      recordCount++;
-      if (recordCount > _maxAnimeRecords) {
-        throw const AniDbTitleCatalogException(
-          'AniDB title catalog contains too many anime records',
-        );
-      }
-      final int? animeId = int.tryParse(anime.getAttribute('aid') ?? '');
-      if (animeId == null || animeId <= 0) continue;
-      final List<AniDbTitle> titles = titlesByAnime.putIfAbsent(
-        animeId,
-        () => <AniDbTitle>[],
-      );
-      int titleCount = 0;
-      for (final XmlElement element in anime.findElements('title')) {
-        titleCount++;
-        if (titleCount > _maxTitlesPerAnime) {
-          throw const AniDbTitleCatalogException(
-            'AniDB title catalog contains too many titles for one anime',
-          );
-        }
-        final String value = element.innerText.trim();
-        if (value.isEmpty || value.length > _maxTitleLength) continue;
-        final String type =
-            (element.getAttribute('type') ?? '').trim().toLowerCase();
-        final String language = _xmlLanguage(element);
-        if (type.isEmpty || language.isEmpty) continue;
-        final bool duplicate = titles.any(
-          (AniDbTitle title) =>
-              title.value == value &&
-              title.type == type &&
-              title.language == language,
-        );
-        if (!duplicate) {
-          titles.add(AniDbTitle(value: value, type: type, language: language));
-        }
-      }
-    }
-
-    final Map<int, AniDbTitleRecord> records = <int, AniDbTitleRecord>{};
-    final List<int> animeIds = titlesByAnime.keys.toList()..sort();
-    for (final int animeId in animeIds) {
-      final List<AniDbTitle> titles = titlesByAnime[animeId]!;
-      if (titles.isNotEmpty) {
-        records[animeId] = AniDbTitleRecord(animeId: animeId, titles: titles);
-      }
-    }
-    if (records.isEmpty) {
-      throw const AniDbTitleCatalogException(
-        'AniDB title catalog contains no usable records',
-      );
-    }
-    return Map<int, AniDbTitleRecord>.unmodifiable(records);
+    // \u6587\u4EF6\u5728\u540E\u53F0 isolate \u91CC\u6D41\u5F0F\u8BFB\u53D6\uFF0CUI isolate \u4E0D\u52A0\u8F7D\u6574\u4EFD\u7F13\u5B58\u3002
+    final String path = cacheFile.path;
+    return Isolate.run(
+      () => _parseTitleCatalogFile(path),
+      debugName: 'anidb-title-catalog',
+    );
   }
 
   Future<void> _replaceAtomically(File target, List<int> bytes) async {
@@ -500,6 +399,237 @@ class AniDbTitleCatalog {
 bool _looksLikeGzip(List<int> bytes) =>
     bytes.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b;
 
+/// 后台 isolate 入口：解析刚下载的压缩体（或明文 XML）。
+Future<_ParsedTitleCatalog> _parseTitleCatalogBytes(
+  TransferableTypedData transferable,
+) {
+  final Uint8List bytes = transferable.materialize().asUint8List();
+  return _parseTitleCatalogSource(
+    Stream<List<int>>.value(bytes),
+    isGzip: _looksLikeGzip(bytes),
+  );
+}
+
+/// 后台 isolate 入口：流式读取磁盘缓存（压缩或明文均可）。
+Future<_ParsedTitleCatalog> _parseTitleCatalogFile(String path) async {
+  final File file = File(path);
+  final RandomAccessFile handle = await file.open();
+  final List<int> magic;
+  try {
+    magic = await handle.read(2);
+  } finally {
+    await handle.close();
+  }
+  return _parseTitleCatalogSource(file.openRead(),
+      isGzip: _looksLikeGzip(magic));
+}
+
+/// 解压 → UTF-8 解码 → XML 事件流 → 记录 → 索引，全程分块，不把整份 XML
+/// 明文或 DOM 留在内存里。异常一律收敛成 [AniDbTitleCatalogException]
+/// 且 `cause` 只带字符串：它要跨 isolate 边界传回来。
+Future<_ParsedTitleCatalog> _parseTitleCatalogSource(
+  Stream<List<int>> source, {
+  required bool isGzip,
+}) async {
+  int expandedBytes = 0;
+  Stream<List<int>> expanded = isGzip ? source.transform(gzip.decoder) : source;
+  expanded = expanded.map((List<int> chunk) {
+    expandedBytes += chunk.length;
+    if (expandedBytes > AniDbTitleCatalog._maxExpandedBytes) {
+      throw const AniDbTitleCatalogException(
+        'AniDB title catalog has an invalid expanded size',
+      );
+    }
+    return chunk;
+  });
+  // validateNesting：错位的闭合标签必须像 DOM 版一样报「invalid XML」，而不是
+  // 静默滑过去、解析出一份空目录。
+  final Stream<XmlEvent> events = expanded
+      .transform(utf8.decoder)
+      .transform(XmlEventDecoder(validateNesting: true))
+      .flatten();
+
+  final _TitleCatalogBuilder builder = _TitleCatalogBuilder();
+  try {
+    await for (final XmlEvent event in events) {
+      builder.accept(event);
+    }
+  } on AniDbTitleCatalogException {
+    rethrow;
+  } on XmlException catch (error) {
+    throw AniDbTitleCatalogException(
+      'AniDB title catalog contains invalid XML',
+      error.toString(),
+    );
+  } on FormatException catch (error) {
+    // gzip 与 UTF-8 解码器都抛 FormatException；哪一层坏了对调用方没有区别，
+    // 都是「这份包不能用」。
+    throw AniDbTitleCatalogException(
+      'AniDB title catalog is not valid gzip / UTF-8 data',
+      error.toString(),
+    );
+  } on Object catch (error) {
+    throw AniDbTitleCatalogException(
+      'Unable to parse the AniDB title catalog',
+      error.toString(),
+    );
+  }
+  if (expandedBytes == 0) {
+    throw const AniDbTitleCatalogException(
+      'AniDB title catalog has an invalid expanded size',
+    );
+  }
+  final Map<int, AniDbTitleRecord> records = builder.finish();
+  return _ParsedTitleCatalog(
+    records: records,
+    index: _AniDbTitleSearchIndex(records),
+  );
+}
+
+/// 把 `<animetitles><anime aid><title type xml:lang>…` 的事件流累积成记录。
+/// 与原 DOM 版保持同一套上限与过滤规则（记录数 / 每部标题数 / 标题长度 /
+/// 同值同类型同语言去重）。
+class _TitleCatalogBuilder {
+  final Map<int, List<AniDbTitle>> _titlesByAnime = <int, List<AniDbTitle>>{};
+  final List<String> _open = <String>[];
+  bool _rootSeen = false;
+  int _recordCount = 0;
+
+  List<AniDbTitle>? _currentTitles;
+  int _currentTitleCount = 0;
+  bool _inTitle = false;
+  String _titleType = '';
+  String _titleLanguage = '';
+  final StringBuffer _titleText = StringBuffer();
+
+  void accept(XmlEvent event) {
+    if (event is XmlDoctypeEvent) {
+      // 只接受纯数据文档：DOCTYPE / ENTITY 声明一律视为不可信输入。
+      throw const AniDbTitleCatalogException(
+        'AniDB title catalog contains a forbidden declaration',
+      );
+    }
+    if (event is XmlStartElementEvent) {
+      _start(event);
+    } else if (event is XmlEndElementEvent) {
+      _end(event.localName);
+    } else if (event is XmlTextEvent) {
+      if (_inTitle) _titleText.write(event.value);
+    } else if (event is XmlCDATAEvent) {
+      if (_inTitle) _titleText.write(event.value);
+    }
+  }
+
+  void _start(XmlStartElementEvent event) {
+    final String name = event.localName;
+    if (!_rootSeen) {
+      _rootSeen = true;
+      if (name != 'animetitles') {
+        throw const AniDbTitleCatalogException(
+          'AniDB title catalog has an unexpected root element',
+        );
+      }
+    } else if (_open.length == 1 && name == 'anime') {
+      _recordCount++;
+      if (_recordCount > AniDbTitleCatalog._maxAnimeRecords) {
+        throw const AniDbTitleCatalogException(
+          'AniDB title catalog contains too many anime records',
+        );
+      }
+      final int? animeId = int.tryParse(_attribute(event, 'aid') ?? '');
+      _currentTitles = animeId == null || animeId <= 0
+          ? null
+          : _titlesByAnime.putIfAbsent(animeId, () => <AniDbTitle>[]);
+      _currentTitleCount = 0;
+    } else if (_open.length == 2 &&
+        _open[1] == 'anime' &&
+        name == 'title' &&
+        _currentTitles != null) {
+      _currentTitleCount++;
+      if (_currentTitleCount > AniDbTitleCatalog._maxTitlesPerAnime) {
+        throw const AniDbTitleCatalogException(
+          'AniDB title catalog contains too many titles for one anime',
+        );
+      }
+      _inTitle = true;
+      _titleType = (_attribute(event, 'type') ?? '').trim().toLowerCase();
+      _titleLanguage = _xmlLanguage(event);
+      _titleText.clear();
+    }
+    // 自闭合元素（`<title/>` / `<anime/>`）只有 start 事件、没有 end 事件；
+    // 必须先入栈再走 _end，否则 removeLast() 弹掉的是父级，之后整份目录静默截断。
+    _open.add(name);
+    if (event.isSelfClosing) _end(name);
+  }
+
+  void _end(String name) {
+    if (_inTitle && name == 'title' && _open.length == 3) {
+      _finishTitle();
+    } else if (name == 'anime' && _open.length == 2) {
+      _currentTitles = null;
+    }
+    if (_open.isNotEmpty) _open.removeLast();
+  }
+
+  void _finishTitle() {
+    _inTitle = false;
+    final List<AniDbTitle>? titles = _currentTitles;
+    final String value = _titleText.toString().trim();
+    _titleText.clear();
+    if (titles == null) return;
+    if (value.isEmpty || value.length > AniDbTitleCatalog._maxTitleLength) {
+      return;
+    }
+    final String type = _titleType;
+    final String language = _titleLanguage;
+    if (type.isEmpty || language.isEmpty) return;
+    final bool duplicate = titles.any(
+      (AniDbTitle title) =>
+          title.value == value &&
+          title.type == type &&
+          title.language == language,
+    );
+    if (!duplicate) {
+      titles.add(AniDbTitle(value: value, type: type, language: language));
+    }
+  }
+
+  Map<int, AniDbTitleRecord> finish() {
+    final Map<int, AniDbTitleRecord> records = <int, AniDbTitleRecord>{};
+    final List<int> animeIds = _titlesByAnime.keys.toList()..sort();
+    for (final int animeId in animeIds) {
+      final List<AniDbTitle> titles = _titlesByAnime[animeId]!;
+      if (titles.isNotEmpty) {
+        records[animeId] = AniDbTitleRecord(animeId: animeId, titles: titles);
+      }
+    }
+    if (records.isEmpty) {
+      throw const AniDbTitleCatalogException(
+        'AniDB title catalog contains no usable records',
+      );
+    }
+    return Map<int, AniDbTitleRecord>.unmodifiable(records);
+  }
+
+  static String? _attribute(XmlStartElementEvent event, String name) {
+    for (final XmlEventAttribute attribute in event.attributes) {
+      if (attribute.name == name) return attribute.value;
+    }
+    return null;
+  }
+
+  /// 与 DOM 版 `getAttribute('xml:lang') ?? getAttribute('lang', namespace: xml)`
+  /// 同义：只认 XML 命名空间下的 lang，裸 `lang` 不算。
+  static String _xmlLanguage(XmlStartElementEvent event) {
+    for (final XmlEventAttribute attribute in event.attributes) {
+      if (attribute.localName == 'lang' && attribute.namespacePrefix == 'xml') {
+        return attribute.value.trim();
+      }
+    }
+    return '';
+  }
+}
+
 Set<String> _normalizedGrams(String value) {
   final List<int> runes =
       value.runes.where((int rune) => rune != 0x20).toList(growable: false);
@@ -531,14 +661,6 @@ bool _isFuzzyCandidate(
   }
   return shorter / longer >= 0.7 && query.runes.first == candidate.runes.first;
 }
-
-String _xmlLanguage(XmlElement element) => (element.getAttribute('xml:lang') ??
-        element.getAttribute(
-          'lang',
-          namespace: 'http://www.w3.org/XML/1998/namespace',
-        ) ??
-        '')
-    .trim();
 
 int _compareWithinRecord(
   AniDbTitleSearchResult left,
@@ -698,9 +820,13 @@ class _AniDbTitleSearchIndex {
         <int, AniDbTitleSearchResult>{};
     for (final _AniDbIndexedTitle entry in entries) {
       final AniDbTitleMatchKind kind = kindFor(entry);
+      // query 与索引条目都已是归一化值，直接打分，不再逐字符重归一化。
       final double similarity = kind == AniDbTitleMatchKind.exact
           ? 1
-          : TitleNormalizer.similarity(query, entry.title.normalizedValue);
+          : TitleNormalizer.similarityNormalized(
+              query,
+              entry.title.normalizedValue,
+            );
       if (similarity < minimumSimilarity) continue;
       final AniDbTitleSearchResult candidate = AniDbTitleSearchResult(
         record: entry.record,
@@ -734,22 +860,32 @@ class _AniDbTitleSearchIndex {
   }
 }
 
+/// 后台 isolate 解析产物：记录表 + 已建好的搜索索引，经 `Isolate.exit`
+/// 整图移交回调用 isolate。
+class _ParsedTitleCatalog {
+  const _ParsedTitleCatalog({required this.records, required this.index});
+
+  final Map<int, AniDbTitleRecord> records;
+  final _AniDbTitleSearchIndex index;
+}
+
 class _LoadedTitleCatalog {
   const _LoadedTitleCatalog({
-    required this.records,
+    required this.parsed,
     required this.nextRefreshAt,
   });
 
-  final Map<int, AniDbTitleRecord> records;
+  final _ParsedTitleCatalog parsed;
   final DateTime nextRefreshAt;
 }
 
 class _DownloadedTitleCatalog {
   const _DownloadedTitleCatalog({
-    required this.xmlBytes,
-    required this.records,
+    required this.cacheBytes,
+    required this.parsed,
   });
 
-  final List<int> xmlBytes;
-  final Map<int, AniDbTitleRecord> records;
+  /// 原样落盘的下载体（通常是 gzip）。
+  final Uint8List cacheBytes;
+  final _ParsedTitleCatalog parsed;
 }
