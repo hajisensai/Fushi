@@ -1888,6 +1888,14 @@ updateLive: function(patch) {
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
+        // BUG-2578：阅读器自己拥有两条轴的滚动语义——分页模式 `touch-action: none`
+        // 根本不走原生滚动；连续模式只沿书写轴原生滚动、到章边界由 onBoundarySwipe
+        // 跨章。Android 平台层的过滚回弹（EdgeEffect 辉光 / Android 12+ 拉伸）在任一
+        // 轴上都不对应任何阅读动作。默认 IF_CONTENT_SCROLLS 只看「文档比视口高不高」，
+        // 不看 CSS 有没有锁轴：竖排连续下 html 已 `overflow-y: hidden`，但章内任一元素
+        // 纵向溢出（文档 scrollHeight > 视口）就足以让上下滑动把整页拉伸回弹。
+        // Android 专属设置，其它平台忽略。
+        overScrollMode: OverScrollMode.NEVER,
         verticalScrollbarThumbColor: Colors.transparent,
         verticalScrollbarTrackColor: Colors.transparent,
         horizontalScrollbarThumbColor: Colors.transparent,
