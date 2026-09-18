@@ -2786,8 +2786,8 @@
   "reading_progress": "Progres Membaca",
   "reading_section_mode": "Mode & orientasi",
   "reading_statistics": "Statistik Membaca",
-  "reading_stats_day_reset_hour": "Day starts at",
-  "reading_stats_day_reset_hour_hint": "Reading before this hour counts toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.",
+  "stat_center_day_reset_hour": "Day starts at",
+  "stat_center_day_reset_hour_hint": "Reading, watching and gaming before this hour count toward the previous day. Affects today and the last N days in statistics; only records written after the change use the new boundary.",
   "reading_stats_idle_timeout": "Batas waktu idle",
   "reading_stats_idle_timeout_hint": "Berhenti menghitung waktu membaca setelah sekian menit tanpa membalik halaman, menggulir, atau mencari kata. Hanya untuk novel, PDF, dan manga; video dihitung selama diputar.",
   "record": "Rekam",
@@ -5016,5 +5016,6 @@
   "anki_mined_unverified_subtitle": "Fushi cannot read your AnkiMobile collection, so the mined mark comes from this device's own record — it cannot tell whether the card is still in Anki.",
   "anki_mined_action_forget": "I deleted it in Anki",
   "anki_mined_forget_done": "Mining record cleared",
-  "reader_gallery_cover": "Cover"
+  "reader_gallery_cover": "Cover",
+  "stat_center_day_reset_action": "Day reset time"
 }
