@@ -9,6 +9,8 @@ import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
@@ -263,6 +265,24 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     );
   }
 
+  /// 拖 `.torrent` 进下载页 → 与页头「添加任务」同一对话框、预填种子（多个种子
+  /// 逐个开框）。其它文件在本页没有语义，给明确提示而不是静默——拖放没有
+  /// 「不渲染入口」这个选项，落点就是整页。
+  Future<void> _handleDownloadsDrop(List<String> paths, Offset _) async {
+    final DroppedFiles files = classifyDroppedFiles(paths);
+    if (files.torrents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
+      );
+      return;
+    }
+    await showManualDownloadTaskDialog(
+      context: context,
+      appModel: ref.read(appProvider),
+      torrentPaths: files.torrents,
+    );
+  }
+
   /// 统一门头：分区导航（资源 / 任务 / 订阅 / 设置）作页头主位 + 页头动作，与其余
   /// 顶层库页同构；独立 push 进来（无 home 壳）时在 leading 位保留返回按钮——旧
   /// AppBar 的自动返回键由这里承接。
@@ -310,7 +330,11 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    // 整页是 .torrent 的落点（桌面拖放）；移动端 FushiFileDropTarget 直接透传。
+    return FushiFileDropTarget(
+        debugLabel: 'downloads',
+        onDrop: _handleDownloadsDrop,
+        child: DefaultTabController(
       initialIndex:
           widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
       length: 4,
@@ -534,7 +558,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
           ),
         ),
       ),
-    );
+    ));
   }
 }
 
