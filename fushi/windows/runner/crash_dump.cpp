@@ -9,6 +9,14 @@ namespace fushi
 {
   namespace
   {
+    using MiniDumpWriteDumpFn = BOOL(WINAPI*)(
+      HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
+      PMINIDUMP_EXCEPTION_INFORMATION,
+      PMINIDUMP_USER_STREAM_INFORMATION, PMINIDUMP_CALLBACK_INFORMATION);
+    // 启动时预载的 MiniDumpWriteDump（见 [PreloadMinidumpWriter]）；dbghelp 句柄
+    // 故意不释放，进程生命周期内常驻。
+    MiniDumpWriteDumpFn g_minidump_write_dump = nullptr;
+
     // 保存安装前的 unhandled exception filter（多半是 Flutter engine 的 crash
     // handler），写完自家 dump 后链回它，不抢占引擎既有上报。
     LPTOP_LEVEL_EXCEPTION_FILTER g_previous_filter = nullptr;
@@ -67,78 +75,36 @@ namespace fushi
       return true;
     }
 
-    bool ResolveCrashDumpDirectory(wchar_t* dir)
-    {
-      if (ResolveTestCrashDumpDirectory(dir)) {
-        return true;
-      }
-      PWSTR local_app_data = nullptr;
-      if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr,
-        &local_app_data)) || local_app_data == nullptr) {
-        if (local_app_data) {
-          CoTaskMemFree(local_app_data);
-        }
-        return false;
-      }
-      size_t p = AppendW(dir, local_app_data);
-      CoTaskMemFree(local_app_data);
-      if (!AppendSegmentW(dir, &p, L"\\Fushi")) return false;
-      CreateDirectoryW(dir, nullptr);
-      if (!AppendSegmentW(dir, &p, L"\\crashdumps")) return false;
-      CreateDirectoryW(dir, nullptr);
+  }  // namespace
+
+  bool ResolveCrashDumpDirectory(wchar_t* dir)
+  {
+    if (ResolveTestCrashDumpDirectory(dir)) {
       return true;
     }
+    PWSTR local_app_data = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr,
+      &local_app_data)) || local_app_data == nullptr) {
+      if (local_app_data) {
+        CoTaskMemFree(local_app_data);
+      }
+      return false;
+    }
+    size_t p = AppendW(dir, local_app_data);
+    CoTaskMemFree(local_app_data);
+    if (!AppendSegmentW(dir, &p, L"\\Fushi")) return false;
+    CreateDirectoryW(dir, nullptr);
+    if (!AppendSegmentW(dir, &p, L"\\crashdumps")) return false;
+    CreateDirectoryW(dir, nullptr);
+    return true;
+  }
 
+  namespace
+  {
     LONG WINAPI WriteDumpFilter(EXCEPTION_POINTERS* exception_pointers)
     {
-      // 解析 %LOCALAPPDATA%\Fushi\crashdumps\ 并确保存在（与 wgc_capture.log 同根，
-      // 便于用户一次性打包上传）。SHGetKnownFolderPath 内部分配一小块 COM 内存，
-      // 在 0xc0000005（读 null）这类异常下进程堆通常仍可用；若失败则放弃写 dump。
-      wchar_t dir[MAX_PATH];
-      if (ResolveCrashDumpDirectory(dir)) {
-        // 文件名：hibiki-<pid>-<tickcount>.dmp（pid+tick 足以区分并发/连续崩溃）。
-        wchar_t path[MAX_PATH];
-        size_t fp = 0;
-        for (size_t i = 0; dir[i] != L'\0'; ++i) path[fp++] = dir[i];
-        fp += AppendW(path + fp, L"\\hibiki-");
-        fp += AppendDecW(path + fp, GetCurrentProcessId(), 1);
-        path[fp++] = L'-';
-        fp += AppendDecW(path + fp, GetTickCount(), 1);
-        fp += AppendW(path + fp, L".dmp");
-        path[fp] = L'\0';
-
-        // 动态加载 dbghelp（避免对 runner 强加链接依赖；找不到则放弃）。
-        HMODULE dbghelp = LoadLibraryW(L"dbghelp.dll");
-        if (dbghelp) {
-          using MiniDumpWriteDumpFn = BOOL(WINAPI*)(
-            HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
-            PMINIDUMP_EXCEPTION_INFORMATION,
-            PMINIDUMP_USER_STREAM_INFORMATION, PMINIDUMP_CALLBACK_INFORMATION);
-          auto write_dump = reinterpret_cast<MiniDumpWriteDumpFn>(
-            GetProcAddress(dbghelp, "MiniDumpWriteDump"));
-          if (write_dump) {
-            HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ,
-              nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-            if (file != INVALID_HANDLE_VALUE) {
-              MINIDUMP_EXCEPTION_INFORMATION mei{};
-              mei.ThreadId = GetCurrentThreadId();
-              mei.ExceptionPointers = exception_pointers;
-              mei.ClientPointers = FALSE;
-              // MiniDumpWithThreadInfo + IndirectlyReferencedMemory：足够 cdb
-              // !analyze -v 解出 GraphicsCapture 偏移 + !vprot 验崩溃帧池内存状态，
-              // 同时控制 dump 体积（不抓全堆，便于上传）。
-              const MINIDUMP_TYPE type = static_cast<MINIDUMP_TYPE>(
-                MiniDumpWithThreadInfo |
-                MiniDumpWithIndirectlyReferencedMemory |
-                MiniDumpWithUnloadedModules);
-              write_dump(GetCurrentProcess(), GetCurrentProcessId(), file,
-                type, &mei, nullptr, nullptr);
-              CloseHandle(file);
-            }
-          }
-          FreeLibrary(dbghelp);
-        }
-      }
+      WriteProcessMinidump(L"hibiki", GetCurrentThreadId(), exception_pointers,
+        nullptr);
 
       // 链回前一个 filter（Flutter engine 上报等），保留其行为。
       if (g_previous_filter) {
@@ -147,6 +113,85 @@ namespace fushi
       return EXCEPTION_EXECUTE_HANDLER;
     }
   }  // namespace
+
+  void PreloadMinidumpWriter()
+  {
+    if (g_minidump_write_dump != nullptr) return;
+    HMODULE dbghelp = LoadLibraryW(L"dbghelp.dll");
+    if (dbghelp == nullptr) return;
+    g_minidump_write_dump = reinterpret_cast<MiniDumpWriteDumpFn>(
+      GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+  }
+
+  bool WriteProcessMinidump(const wchar_t* prefix, DWORD thread_id,
+    EXCEPTION_POINTERS* exception_pointers, wchar_t* out_path)
+  {
+    // 解析 %LOCALAPPDATA%\Fushi\crashdumps\ 并确保存在（与 wgc_capture.log 同根，
+    // 便于用户一次性打包上传）。SHGetKnownFolderPath 内部分配一小块 COM 内存，
+    // 在 0xc0000005（读 null）这类异常下进程堆通常仍可用；若失败则放弃写 dump。
+    wchar_t dir[MAX_PATH];
+    if (!ResolveCrashDumpDirectory(dir)) {
+      return false;
+    }
+    // 文件名：<prefix>-<pid>-<tickcount>.dmp（pid+tick 足以区分并发/连续崩溃）。
+    // 崩溃 filter 用 `hibiki`（诊断区按 *.dmp 列出，历史文件名不变）；主线程停泵
+    // 看门狗用 `hang`，同一目录，一眼可分「崩了」还是「卡死后抓的」。
+    wchar_t path[MAX_PATH];
+    size_t fp = 0;
+    for (size_t i = 0; dir[i] != L'\0'; ++i) path[fp++] = dir[i];
+    path[fp++] = L'\\';
+    fp += AppendW(path + fp, prefix);
+    path[fp++] = L'-';
+    fp += AppendDecW(path + fp, GetCurrentProcessId(), 1);
+    path[fp++] = L'-';
+    fp += AppendDecW(path + fp, GetTickCount(), 1);
+    fp += AppendW(path + fp, L".dmp");
+    path[fp] = L'\0';
+
+    bool written = false;
+    // 动态加载 dbghelp（避免对 runner 强加链接依赖；找不到则放弃）。优先用启动时
+    // [PreloadMinidumpWriter] 缓存的指针：看门狗要抓的正是「主线程卡死」，若主线程
+    // 卡在 loader lock 里（DllMain / FreeLibrary / WebView2 teardown 都属此类），
+    // 这里再 LoadLibraryW 会跟着死锁、永远拿不到 dump。
+    MiniDumpWriteDumpFn write_dump = g_minidump_write_dump;
+    HMODULE dbghelp = nullptr;  // 仅按需加载路径持有，用完释放
+    if (write_dump == nullptr) {
+      dbghelp = LoadLibraryW(L"dbghelp.dll");
+      if (dbghelp) {
+        write_dump = reinterpret_cast<MiniDumpWriteDumpFn>(
+          GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+      }
+    }
+    {
+      if (write_dump) {
+        HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ,
+          nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file != INVALID_HANDLE_VALUE) {
+          MINIDUMP_EXCEPTION_INFORMATION mei{};
+          mei.ThreadId = thread_id;
+          mei.ExceptionPointers = exception_pointers;
+          mei.ClientPointers = FALSE;
+          // MiniDumpWithThreadInfo + IndirectlyReferencedMemory：足够 cdb
+          // !analyze -v 解出 GraphicsCapture 偏移 + !vprot 验崩溃帧池内存状态，
+          // 同时控制 dump 体积（不抓全堆，便于上传）。
+          const MINIDUMP_TYPE type = static_cast<MINIDUMP_TYPE>(
+            MiniDumpWithThreadInfo |
+            MiniDumpWithIndirectlyReferencedMemory |
+            MiniDumpWithUnloadedModules);
+          // 没有异常上下文（hang dump）时不传 exception stream：dbghelp 对
+          // ExceptionPointers==nullptr 的 MEI 会失败，全线程栈本身已够看主线程卡在哪。
+          written = write_dump(GetCurrentProcess(), GetCurrentProcessId(), file,
+            type, exception_pointers ? &mei : nullptr, nullptr, nullptr) != FALSE;
+          CloseHandle(file);
+        }
+      }
+      if (dbghelp) FreeLibrary(dbghelp);
+    }
+    if (written && out_path) {
+      for (size_t i = 0; i <= fp; ++i) out_path[i] = path[i];
+    }
+    return written;
+  }
 
   void InstallCrashDumpHandler()
   {

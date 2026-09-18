@@ -8,6 +8,7 @@
 #include "crash_dump.h"
 #include "external_video_handoff.h"
 #include "flutter_window.h"
+#include "hang_watchdog.h"
 #include "single_instance_mutex.h"
 #include "utils.h"
 
@@ -266,12 +267,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
   window.SetQuitOnClose(true);
 
+  // BUG-2588：主线程停泵看门狗——卡死（非崩溃）时从旁路线程抓一份全线程栈
+  // minidump 到 crashdumps 目录，让「查词后整机卡死、只能强杀」的报告有可分析
+  // 的二进制证据。消息循环退出后先停掉，退出期不泵消息不算卡死。
+  ::fushi::StartHangWatchdog(window.GetHandle());
+
   ::MSG msg;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }
 
+  ::fushi::StopHangWatchdog();
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }
