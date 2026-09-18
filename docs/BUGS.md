@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2388 条。点号进各自文件。
+> 共 2392 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2585](bugs/BUG-2585-media-server-embedded-subtitle-wrong-episode.md) | ✅ | ✅ | 媒体服务器内嵌字幕轨：连播切集后下载错集且失败静默 |
+| [BUG-2584](bugs/BUG-2584-media-server-connect-diagnostics-mobile.md) | ✅ | ✅ | Android 连不上媒体服务器：失败原因被原生 toast 截断、无连通性探测、scheme 大小写 |
+| [BUG-2583](bugs/BUG-2583-media-server-playback-negotiation.md) | ✅ | ✅ | 媒体服务器播放卡顿 / 有时无法重播：无 PlaybackInfo 协商与会话、中继逐请求握手、原生拆建竞态 |
+| [BUG-2582](bugs/BUG-2582-media-server-https-native-tls-crash.md) | ✅ | ✅ | macOS / iOS 播放 https 媒体流闪退：随包 libmpv 的 Mbed TLS 握手段错误 |
 | [BUG-2581](bugs/BUG-2581-anidb-scrape-config-stale.md) | ✅ | ✅ | 手动刮削协调器指纹漏掉AniDB哈希开关与账号 |
 | [BUG-2580](bugs/BUG-2580-reader-toc-anchor-subchapter-current.md) | ✅ | ✅ | 阅读器目录靠锚点分节时当前章名与勾选落错 |
 | [BUG-2579](bugs/BUG-2579-mdx-dict-order.md) | ✅ | ✅ | 查词弹窗里 MDX 词典恒排在所有 Yomitan 词典之后 |

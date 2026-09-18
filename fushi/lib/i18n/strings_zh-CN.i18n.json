@@ -5062,6 +5062,8 @@
   "media_server_items_empty": "没有条目",
   "media_server_items_load_failed": "无法从服务器加载条目",
   "media_server_item_folder": "文件夹",
+  "jellyfin_server_unreachable": "无法连接服务器 $url：$reason",
+  "jellyfin_host_lookup_hint": "本机无法解析这个主机名。Android / iOS 不能解析 .local 或 Windows 计算机名，请改用服务器的 IP 地址（例如 http://192.168.1.10:8096）。",
   "video_anidb_login_test": "测试 AniDB 登录",
   "video_anidb_login_test_hint": "用已保存的账号与客户端发一次 UDP 登录后立即登出，不计算任何文件哈希。",
   "video_anidb_login_test_running": "正在测试 AniDB 登录…",

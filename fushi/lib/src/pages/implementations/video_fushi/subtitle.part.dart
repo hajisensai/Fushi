@@ -1335,9 +1335,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
-    final RemoteVideoClient? client = widget.remoteClient;
-    final RemoteVideoInfo? info = widget.remoteInfo;
+    // 必须是**当前集**（合集连播切集后 widget.remoteInfo 仍是打开播放页时那一集）：
+    // 此前这里用 widget.remoteInfo，切到第 2 集再选内嵌轨，下载的是第 1 集的同号轨
+    // ——字幕与画面对不上，用户看到的就是「选了 srt 轨没反应 / 不对」。副字幕的同款
+    // 函数早已按当前集取，主字幕漏改。
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
     if (client == null || info == null) return;
+    final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+    final String label = _remoteEmbeddedSubtitleLabel(track);
     final Directory temp = await getTemporaryDirectory();
     final File subtitle = File(
       p.join(
@@ -1348,17 +1354,31 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ),
       ),
     );
-    await client.getRemoteVideoSubtitle(
-      info.id,
-      subtitle,
-      embeddedStreamIndex: track.streamIndex,
-    );
+    // 下载失败（服务器 404 / 500、兼容层不支持字幕端点、断网）此前直接从
+    // `unawaited` 里逃逸：没有 OSD、没有日志，用户只看到「点了没反应」。
+    try {
+      await client.getRemoteVideoSubtitle(
+        info.id,
+        subtitle,
+        embeddedStreamIndex: track.streamIndex,
+        episodeIndex: ep,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
+      if (!mounted) return;
+      _showOsd(
+        t.video_subtitle_load_failed(label: label),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
     final String source = _remoteEmbeddedSubtitleSource(track);
     await _applyRemoteSubtitle(
       controller,
       subtitle.path,
       selectedSource: source,
-      label: _remoteEmbeddedSubtitleLabel(track),
+      label: label,
     );
   }
 
@@ -1465,17 +1485,29 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ),
       ),
     );
-    await client.getRemoteVideoSubtitle(
-      info.id,
-      subtitle,
-      embeddedStreamIndex: track.streamIndex,
-      episodeIndex: ep,
-    );
+    final String label = _remoteEmbeddedSubtitleLabel(track);
+    try {
+      await client.getRemoteVideoSubtitle(
+        info.id,
+        subtitle,
+        embeddedStreamIndex: track.streamIndex,
+        episodeIndex: ep,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
+      if (!mounted) return;
+      _showOsd(
+        t.video_subtitle_load_failed(label: label),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
     await _applyRemoteSecondarySubtitle(
       controller,
       subtitle.path,
       selectedSource: _remoteEmbeddedSubtitleSource(track),
-      label: _remoteEmbeddedSubtitleLabel(track),
+      label: label,
     );
   }
 

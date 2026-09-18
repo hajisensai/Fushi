@@ -508,6 +508,16 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 媒体服务器（Jellyfin/Emby）串流画质档下标；-1 = 自动（服务器允许时直播放原
+  /// 文件）。选档 = 向服务器声明码率 / 宽度上限，超限由服务器转码到该档。
+  int get mediaServerQualityPresetIndex =>
+      getPref('video_media_server_quality_preset', defaultValue: -1) as int;
+
+  Future<void> setMediaServerQualityPresetIndex(int index) async {
+    await setPref('video_media_server_quality_preset', index);
+    notifyListeners();
+  }
+
   // ── yomitan-api server ───────────────────────────────────────────────
 
   bool get yomitanApiServerEnabled =>
