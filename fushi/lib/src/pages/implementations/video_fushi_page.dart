@@ -1144,6 +1144,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 就有），又不能长到让用户对着黑屏干等——合计 15 秒。
   static const int _kMediaOpenGraceMs = 12500;
 
+  /// 网络流「压根没打开」的宽限：mpv 自己的 `network-timeout` 走完再加本地文件那档
+  /// 宽限。网络流不能像本地文件那样 15 秒判死（弱网首个分片握手拖过去是正常的），但
+  /// mpv 的连接超时都到了、duration 与 position 仍恒 0，就只剩「打不开」一种解释
+  /// （Emby 流 URL 失效 / 服务器收掉了会话 / 中继 502）。此前网络流永远不判死，
+  /// 用户对着黑屏 00:00 既无提示也无重试——「有时候无法重新播放」的观感。
+  static const int _kNetworkMediaOpenGraceMs =
+      kMpvNetworkTimeoutSeconds * 1000 + _kMediaOpenGraceMs;
+
+  /// [_armNetworkOpenDiagnosis] 的定时器：新一次 load / dispose 取消。
+  Timer? _networkOpenDiagnoseTimer;
+
   /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
   /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
   /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
@@ -2398,7 +2409,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     if (controller.videoPath == null) {
-      _promoteVideoReady(); // 非本地文件：不做超时判死。
+      // 非本地文件：先让位给 media_kit 自己的缓冲圈（弱网慢握手是正常的），另给一段
+      // 以 mpv network-timeout 为基准的宽限，用尽仍没打开才判失败（可自愈）。
+      _promoteVideoReady();
+      _armNetworkOpenDiagnosis(controller);
       return;
     }
     _firstFramePromoteTimer = Timer(
@@ -2439,6 +2453,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // ——那是给 Dart 异常设计的裸子串匹配，mpv 文本里带路径，
           // `\\NAS\Network Share\…` 会命中 'network' 报成网络故障、文件名含
           // `Private` 会命中 'private' 报成「受限」，把本地文件问题指向错误方向。
+          _failReason = t.video_load_failed_not_opened;
+        });
+      },
+    );
+  }
+
+  /// 网络流的「压根没打开」判定（见 [_kNetworkMediaOpenGraceMs]）。判失败后保留首帧
+  /// 监听：媒体若之后才真打开，[_promoteVideoReadyOnFirstFrame] 会把失败态自愈掉。
+  void _armNetworkOpenDiagnosis(VideoPlayerController controller) {
+    _networkOpenDiagnoseTimer?.cancel();
+    _networkOpenDiagnoseTimer = Timer(
+      const Duration(milliseconds: _kNetworkMediaOpenGraceMs),
+      () {
+        _networkOpenDiagnoseTimer = null;
+        if (!mounted) return;
+        if (!identical(_controller ?? _pendingController, controller)) return;
+        if (!VideoPlayerController.shouldDiagnoseMediaNeverOpened(
+          mediaOpened: controller.mediaOpened,
+          isLocalFile: false,
+          alreadyFailed: _failed,
+          missingResource: _missingResource,
+          networkGraceElapsed: true,
+        )) {
+          return;
+        }
+        ErrorLogService.instance.log(
+          'VideoFushi.mediaNeverOpened',
+          'network stream never opened within '
+              '${2500 + _kNetworkMediaOpenGraceMs}ms '
+              '(duration/position stayed 0); '
+              'lastPlayerError=${_lastPlaybackErrorMessage ?? "<none>"}',
+          StackTrace.current,
+        );
+        controller.removeListener(_promoteVideoReadyOnFirstFrame);
+        controller.addListener(_promoteVideoReadyOnFirstFrame);
+        setState(() {
+          _failed = true;
           _failReason = t.video_load_failed_not_opened;
         });
       },
@@ -2820,6 +2871,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     _secondaryDelayMs = _resolveRemoteInitialSecondaryDelayMs(secInfo, secUid);
     final RemoteVideoClient client = _effectiveRemoteClient!;
+    // 媒体服务器画质档：起播协商前把用户偏好写进 client（client 本身不读偏好）。
+    final Object qualityClient = client;
+    if (qualityClient is RemoteVideoQualityLimit) {
+      qualityClient.qualityPresetIndex =
+          appModel.prefsRepo.mediaServerQualityPresetIndex;
+    }
+    // 新一次起播：暂停上报的基线随会话重置（起播上报本身带 IsPaused=false）。
+    _lastReportedRemotePlaying = null;
     // Remote negotiation may report Started/Played, and no transport supplies
     // a locally verified full-file identity. Download before source review.
     if (_sourceReviewActive) {
@@ -3003,6 +3062,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
         externalAudioTrackUrl: urls.audioStreamUrl,
       );
+      if (seq == _episodeLoadSeq && mounted && !_failed) {
+        _startRemotePlaybackSession(client, info, initialPositionMs);
+      }
       if (restoredPrimarySource != null && mounted) {
         // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
         setState(() => _currentSubtitleSource = restoredPrimarySource);
@@ -3337,6 +3399,59 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } catch (e) {
       debugPrint('[VideoFushiPage] remote position upload failed: $e');
     }
+  }
+
+  /// 暂停上报的基线：上一次告诉服务器的「正在播放」状态；null = 本次起播尚未上报
+  /// Start（不上报暂停/继续）。
+  bool? _lastReportedRemotePlaying;
+
+  /// 起播上报（Jellyfin / Emby 的 `/Sessions/Playing`）：流已打开、controller 就绪后
+  /// 调一次。此前本仓从不发它，服务器没见过 Start，仪表盘「正在播放」看不到本客户端、
+  /// 后续 Progress / Stopped 也没有会话可关联。失败只记日志（离线 / 兼容层无端点）。
+  void _startRemotePlaybackSession(
+    RemoteVideoClient client,
+    RemoteVideoInfo info,
+    int positionMs,
+  ) {
+    if (_sourceReviewActive) return;
+    final Object session = client;
+    if (session is! RemoteVideoPlaybackSession) return;
+    // 起播即「正在播放」（autoPlay）；之后 controller 的 playing 翻转才是暂停 / 继续。
+    _lastReportedRemotePlaying = true;
+    unawaited(
+      session
+          .startRemoteVideoPlayback(info.id, positionMs < 0 ? 0 : positionMs)
+          .catchError((Object e) {
+        debugPrint('[VideoFushiPage] remote playback start upload failed: $e');
+      }),
+    );
+  }
+
+  /// controller 监听：播放态翻转即时上报暂停 / 继续（成熟客户端都这么做；此前心跳
+  /// 恒 `IsPaused=false`，用户暂停半小时服务器仍显示在播）。
+  void _syncRemotePlaybackPausedState() {
+    final bool? last = _lastReportedRemotePlaying;
+    if (last == null) return;
+    final VideoPlayerController? controller = _controller;
+    final Object? session = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (controller == null || info == null) return;
+    if (session is! RemoteVideoPlaybackSession) return;
+    final bool playing = controller.isPlaying;
+    if (playing == last) return;
+    _lastReportedRemotePlaying = playing;
+    final int positionMs = controller.positionMs ?? 0;
+    unawaited(
+      session
+          .setRemoteVideoPlaybackPaused(
+            info.id,
+            positionMs < 0 ? 0 : positionMs,
+            paused: !playing,
+          )
+          .catchError((Object e) {
+        debugPrint('[VideoFushiPage] remote pause state upload failed: $e');
+      }),
+    );
   }
 
   /// 向支持会话生命周期的远端源上报本次播放已停止。
@@ -3776,6 +3891,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
     bool detectHls = true,
   }) async {
+    // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
+    // 旧定时器不得给新一程判死）。
+    _networkOpenDiagnoseTimer?.cancel();
+    _networkOpenDiagnoseTimer = null;
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
@@ -3928,6 +4047,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     controller.removeListener(_syncWindowAspectRatioLock);
     controller.addListener(_syncWindowAspectRatioLock);
+    if (_isRemote) {
+      controller.removeListener(_syncRemotePlaybackPausedState);
+      controller.addListener(_syncRemotePlaybackPausedState);
+    }
     _attachControllerChapterListener(controller);
     // 标题先推给响应式 notifier，让全屏路由顶栏（不随页面 setState 重建）也跟上（BUG-120）。
     _titleNotifier.value = title;
@@ -4397,10 +4520,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _watchTracker?.dispose();
     _watchTracker = null;
     // TODO-1276：撤销首帧就绪监听 + 兜底定时器（回调读 _controller，须在 dispose 前摘）。
+    _networkOpenDiagnoseTimer?.cancel();
+    _networkOpenDiagnoseTimer = null;
     _firstFramePromoteTimer?.cancel();
     _firstFramePromoteTimer = null;
     _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
     _controller?.removeListener(_syncWindowAspectRatioLock);
+    _controller?.removeListener(_syncRemotePlaybackPausedState);
     _detachControllerChapterListener();
     _controller?.setOnCompleted(null);
     unawaited(_clearWindowAspectRatioLock());

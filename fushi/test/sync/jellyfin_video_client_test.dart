@@ -312,6 +312,11 @@ void main() {
     test('remoteVideoStreamUrls：直连流自带 api_key，外挂文本字幕优先', () async {
       final JellyfinVideoClient c =
           clientWith(MockClient((http.Request req) async {
+        // 兼容层没有 PlaybackInfo 端点 → 回落手拼直出 URL（协商路径见
+        // jellyfin_playback_negotiation_test.dart）。
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return http.Response('', 404);
+        }
         expect(req.url.path, '/Users/u1/Items/ep1');
         return http.Response(
           jsonEncode(_episodeJson(

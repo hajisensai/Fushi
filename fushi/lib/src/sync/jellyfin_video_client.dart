@@ -32,7 +32,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha1;
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
@@ -46,6 +46,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         RemoteVideoStreamUrls;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -66,6 +67,7 @@ class JellyfinServerConfig {
     required this.accessToken,
     this.serverName,
     this.libraryIds = const <String>[],
+    this.deviceId = JellyfinApi.kLegacyDeviceId,
   });
 
   /// 归一化后的服务器根 URL（[JellyfinApi.normalizeServerUrl] 口径）。
@@ -74,6 +76,10 @@ class JellyfinServerConfig {
   final String userId;
   final String accessToken;
   final String? serverName;
+
+  /// 登录时向服务器声明的设备身份（见 [JellyfinApi.deviceId]）。令牌与它绑定，
+  /// 所以随配置持久化；旧配置没有该字段 → [JellyfinApi.kLegacyDeviceId]。
+  final String deviceId;
 
   /// 要枚举的媒体库视图 id（BUG-1891）。**空 = 全部视频域媒体库**（由
   /// [JellyfinVideoClient.resolveEnumerationParents] 经 `/Users/{uid}/Views` +
@@ -90,6 +96,7 @@ class JellyfinServerConfig {
         'accessToken': accessToken,
         if (serverName != null) 'serverName': serverName,
         if (libraryIds.isNotEmpty) 'libraryIds': libraryIds,
+        if (deviceId != JellyfinApi.kLegacyDeviceId) 'deviceId': deviceId,
       };
 
   static JellyfinServerConfig? fromJson(Map<String, dynamic> json) {
@@ -109,6 +116,9 @@ class JellyfinServerConfig {
         for (final Object? raw in (json['libraryIds'] as List?) ?? const <Object?>[])
           if (raw is String && raw.isNotEmpty) raw,
       ],
+      deviceId: ((json['deviceId'] as String?) ?? '').isEmpty
+          ? JellyfinApi.kLegacyDeviceId
+          : json['deviceId'] as String,
     );
   }
 
@@ -121,6 +131,7 @@ class JellyfinServerConfig {
         accessToken: accessToken,
         serverName: serverName,
         libraryIds: ids,
+        deviceId: deviceId,
       );
 
   /// 从配置构造可用客户端（每次取数新建实例，缓存身份见
@@ -130,6 +141,7 @@ class JellyfinServerConfig {
         api: JellyfinApi(
           serverUrl: serverUrl,
           accessToken: accessToken,
+          deviceId: deviceId,
           client: httpClient,
         ),
         userId: userId,
@@ -354,6 +366,66 @@ class JellyfinRecursiveResult {
   final int totalCount;
 }
 
+/// `POST /Items/{id}/PlaybackInfo` 的解析结果。
+class JellyfinPlaybackInfo {
+  const JellyfinPlaybackInfo({
+    required this.playSessionId,
+    required this.mediaSources,
+    this.errorCode,
+  });
+
+  /// 本次播放的会话 id；服务器没给（兼容层）为 null。
+  final String? playSessionId;
+
+  /// 服务器拒绝播放时的错误码（`NotAllowed` / `RateLimitExceeded` …）。
+  final String? errorCode;
+  final List<JellyfinPlaybackMediaSource> mediaSources;
+}
+
+/// PlaybackInfo 里的一条媒体源及服务器对它的播放裁决。
+class JellyfinPlaybackMediaSource {
+  const JellyfinPlaybackMediaSource({
+    required this.id,
+    this.supportsDirectPlay = false,
+    this.supportsDirectStream = false,
+    this.supportsTranscoding = false,
+    this.transcodingUrl,
+    this.transcodingSubProtocol,
+    this.container,
+    this.bitrate,
+  });
+
+  final String id;
+  final bool supportsDirectPlay;
+  final bool supportsDirectStream;
+  final bool supportsTranscoding;
+
+  /// 服务器签发的转码 URL（相对根路径）；只在需要转码时给。
+  final String? transcodingUrl;
+  final String? transcodingSubProtocol;
+  final String? container;
+  final int? bitrate;
+}
+
+/// 一次播放的会话身份：Progress / Stopped / ActiveEncodings 清理都按它关联。
+class JellyfinPlaybackSession {
+  const JellyfinPlaybackSession({
+    required this.itemId,
+    required this.mediaSourceId,
+    required this.playSessionId,
+    required this.playMethod,
+  });
+
+  final String itemId;
+  final String mediaSourceId;
+  final String playSessionId;
+
+  /// `DirectPlay` / `DirectStream` / `Transcode`（服务器的 PlayMethod 枚举名）。
+  final String playMethod;
+
+  bool get isTranscoding => playMethod == 'Transcode';
+}
+
 /// Jellyfin HTTP 异常：状态码 + 端点，供 UI 按连接失败呈现。
 class JellyfinApiException implements Exception {
   const JellyfinApiException(this.statusCode, this.endpoint);
@@ -370,11 +442,24 @@ class JellyfinApi {
   JellyfinApi({
     required this.serverUrl,
     this.accessToken,
+    this.deviceId = kLegacyDeviceId,
     http.Client? client,
   }) : _client = client ?? createAppHttpIoClient();
 
   /// 归一化后的服务器根 URL（含 scheme、无尾斜杠）。
   final String serverUrl;
+
+  /// 服务器侧的设备身份（认证头 `DeviceId` / 会话 / 转码任务都按它归属）。
+  ///
+  /// 此前所有安装共用常量 [kLegacyDeviceId]：Emby / Jellyfin 按 DeviceId 归并
+  /// 会话，两台设备（或退出再进的同一台）在服务器眼里是同一个「设备」互相顶掉，
+  /// 转码任务也按它清理。新登录用本机 `SyncRepository.getOrCreateDeviceId`；令牌
+  /// 与 DeviceId 绑定，所以它随 [JellyfinServerConfig] 一起持久化，旧配置继续用
+  /// 旧常量、不逼用户重登。
+  final String deviceId;
+
+  /// 引入 per-install DeviceId 之前所有安装共用的常量；旧配置的兼容值。
+  static const String kLegacyDeviceId = 'hibiki-app';
 
   /// 访问令牌；[authenticateByName] 成功后回填。
   String? accessToken;
@@ -426,13 +511,48 @@ class JellyfinApi {
   static String normalizeServerUrl(String raw) {
     String url = normalizeUrlInput(raw);
     if (url.isEmpty) return url;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    // scheme 不分大小写（手机输入法 / 粘贴常给 `HTTP://`）：此前大小写敏感，
+    // `HTTP://nas:8096` 会被再套一层成 `http://HTTP://nas:8096`，连接必失败。
+    final RegExpMatch? scheme =
+        RegExp(r'^(https?)://', caseSensitive: false).firstMatch(url);
+    if (scheme == null) {
       url = 'http://$url';
+    } else if (scheme.group(1) != scheme.group(1)!.toLowerCase()) {
+      url = '${scheme.group(1)!.toLowerCase()}://${url.substring(scheme.end)}';
     }
     while (url.endsWith('/')) {
       url = url.substring(0, url.length - 1);
     }
     return url;
+  }
+
+  /// 连接探测（GET /System/Info/Public，无需认证）。登录前先走它：把「服务器根本
+  /// 连不上 / 地址不对」与「账号密码错」分开——此前唯一的探测就是登录 POST 本身，
+  /// 手机上失败只剩一个 2 秒的原生 toast，用户只能报「直接连不上」。
+  /// 返回服务器自报名（`ServerName`），非 2xx 抛 [JellyfinApiException]，非 JSON
+  /// 抛 [FormatException]（地址指向的不是媒体服务器 / 反代回了网页）。
+  Future<String?> publicSystemInfo() async {
+    final Map<String, Object?> json = await _getJson('/System/Info/Public');
+    return json['ServerName'] as String?;
+  }
+
+  /// [error] 是否是「主机名解析失败」（`SocketException` 的 host lookup 失败 /
+  /// getaddrinfo 错误码）。Android / iOS 不解析 `.local`（mDNS）与 Windows 计算机名
+  /// （NetBIOS / LLMNR），而桌面能——用户在桌面填的主机名到手机上就是「直接连不上」，
+  /// 要给「改用 IP」的提示。纯函数，离线可测。
+  static bool isHostLookupFailure(Object error) {
+    if (error is SocketException) {
+      final String message = error.message.toLowerCase();
+      if (message.contains('host lookup') || message.contains('lookup')) {
+        return true;
+      }
+      final int? code = error.osError?.errorCode;
+      // EAI_NONAME / WSAHOST_NOT_FOUND / EAI_AGAIN / EAI_NODATA。
+      return code == 7 || code == 11001 || code == 8 || code == -2 || code == -3;
+    }
+    final String text = error.toString().toLowerCase();
+    return text.contains('failed host lookup') ||
+        text.contains('nodename nor servname');
   }
 
   /// MediaBrowser 认证头（Jellyfin/Emby 通用；认证前无 Token 字段）。
@@ -442,14 +562,17 @@ class JellyfinApi {
   /// Jellyfin 兼容层只认 `X-Emby-Authorization`——缺它直接 400
   /// "X-Emby-Authorization is missing"（BUG-2254）。两家对未知头都宽容，
   /// 双发是在不引入服务器类型探测的前提下唯一同时覆盖两族的写法。
-  static String authHeaderFor([String? accessToken]) =>
+  static String authHeaderFor([
+    String? accessToken,
+    String deviceId = kLegacyDeviceId,
+  ]) =>
       'MediaBrowser Client="Hibiki", Device="Hibiki", '
-      'DeviceId="hibiki-app", Version="1.0"'
+      'DeviceId="$deviceId", Version="1.0"'
       '${accessToken == null ? '' : ', Token="$accessToken"'}';
 
   Map<String, String> get _headers => <String, String>{
-        'Authorization': authHeaderFor(accessToken),
-        'X-Emby-Authorization': authHeaderFor(accessToken),
+        'Authorization': authHeaderFor(accessToken, deviceId),
+        'X-Emby-Authorization': authHeaderFor(accessToken, deviceId),
         'Content-Type': 'application/json',
       };
 
@@ -945,29 +1068,248 @@ class JellyfinApi {
     return parseItem(json);
   }
 
+  /// 播放协商（POST /Items/{id}/PlaybackInfo）：把本客户端的 [buildDeviceProfile]
+  /// 与码率 / 宽度上限交给服务器，由它决定这条媒体源是直播放（`SupportsDirectPlay`
+  /// / `SupportsDirectStream`）还是转码（`TranscodingUrl`，HLS），并签发本次播放的
+  /// `PlaySessionId`。Jellyfin web / Emby 官方 / Infuse 起播都先走这一步；此前本仓
+  /// 手拼 `static=true` 直出 URL，服务器侧的码率限制、用户策略全被绕过，也没有会话
+  /// 身份可供 Progress / Stopped 关联。
+  ///
+  /// 非 2xx 抛 [JellyfinApiException]，非 JSON 抛 [FormatException]——飞牛影视等兼容
+  /// 层可能没有这个端点，调用方按此回落到直出 URL（见
+  /// `JellyfinVideoClient._negotiatePlayback`）。
+  Future<JellyfinPlaybackInfo> playbackInfo({
+    required String userId,
+    required String itemId,
+    String? mediaSourceId,
+    int startPositionMs = 0,
+    int? maxStreamingBitrate,
+    int? maxWidth,
+  }) async {
+    final http.Response res = await _client
+        .post(
+          _uri('/Items/$itemId/PlaybackInfo', <String, String>{
+            'UserId': userId,
+          }),
+          headers: _headers,
+          body: jsonEncode(buildPlaybackInfoRequest(
+            userId: userId,
+            mediaSourceId: mediaSourceId,
+            startPositionMs: startPositionMs,
+            maxStreamingBitrate: maxStreamingBitrate,
+            maxWidth: maxWidth,
+          )),
+        )
+        .timeout(kRequestTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw JellyfinApiException(res.statusCode, '/Items/$itemId/PlaybackInfo');
+    }
+    final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
+    return parsePlaybackInfo(decoded is Map<String, dynamic>
+        ? decoded.cast<String, Object?>()
+        : <String, Object?>{});
+  }
+
+  /// PlaybackInfo 请求体（纯函数，离线可测）。
+  ///
+  /// 直播放 / 直传 / 转码三个开关全开，让服务器按 profile 与上限裁决；
+  /// `AllowVideoStreamCopy` / `AllowAudioStreamCopy` 让转码时能只 remux 不重编。
+  static Map<String, Object?> buildPlaybackInfoRequest({
+    required String userId,
+    String? mediaSourceId,
+    int startPositionMs = 0,
+    int? maxStreamingBitrate,
+    int? maxWidth,
+  }) =>
+      <String, Object?>{
+        'UserId': userId,
+        if (mediaSourceId != null) 'MediaSourceId': mediaSourceId,
+        'StartTimeTicks': startPositionMs * kTicksPerMs,
+        if (maxStreamingBitrate != null)
+          'MaxStreamingBitrate': maxStreamingBitrate,
+        'AutoOpenLiveStream': true,
+        'EnableDirectPlay': true,
+        'EnableDirectStream': true,
+        'EnableTranscoding': true,
+        'AllowVideoStreamCopy': true,
+        'AllowAudioStreamCopy': true,
+        'IsPlayback': true,
+        'DeviceProfile': buildDeviceProfile(
+          maxStreamingBitrate: maxStreamingBitrate,
+          maxWidth: maxWidth,
+        ),
+      };
+
+  /// 本客户端的 DeviceProfile（纯函数）。播放内核是 libmpv，容器 / 编解码基本无所
+  /// 不能，所以直播放 profile 不限容器与编码（`Container` 留空 = 全部，Jellyfin 与
+  /// Emby 的 ContainerHelper 都把空当通配）；转码只在服务器判定必须时发生
+  /// （码率超上限 / 用户策略），走 HLS + h264 + aac。字幕：文本轨外挂取（本仓自己
+  /// 的字幕 overlay 渲染），图形轨烧进转码流。
+  static Map<String, Object?> buildDeviceProfile({
+    int? maxStreamingBitrate,
+    int? maxWidth,
+  }) =>
+      <String, Object?>{
+        'Name': 'Hibiki',
+        'MaxStreamingBitrate': maxStreamingBitrate ?? kUnlimitedBitrate,
+        'MaxStaticBitrate': kUnlimitedBitrate,
+        'MusicStreamingTranscodingBitrate': 320000,
+        'DirectPlayProfiles': <Object?>[
+          <String, Object?>{'Type': 'Video'},
+          <String, Object?>{'Type': 'Audio'},
+        ],
+        'TranscodingProfiles': <Object?>[
+          <String, Object?>{
+            'Type': 'Video',
+            'Container': 'ts',
+            'Protocol': 'hls',
+            'VideoCodec': 'h264',
+            'AudioCodec': 'aac,mp3,ac3',
+            'Context': 'Streaming',
+            'MaxAudioChannels': '6',
+            'MinSegments': 1,
+            'BreakOnNonKeyFrames': true,
+          },
+          <String, Object?>{
+            'Type': 'Audio',
+            'Container': 'mp3',
+            'AudioCodec': 'mp3',
+            'Protocol': 'http',
+            'Context': 'Streaming',
+          },
+        ],
+        'CodecProfiles': <Object?>[
+          if (maxWidth != null)
+            <String, Object?>{
+              'Type': 'Video',
+              'Conditions': <Object?>[
+                <String, Object?>{
+                  'Condition': 'LessThanEqual',
+                  'Property': 'Width',
+                  'Value': '$maxWidth',
+                  'IsRequired': false,
+                },
+              ],
+            },
+        ],
+        'SubtitleProfiles': <Object?>[
+          for (final String format in const <String>[
+            'srt',
+            'subrip',
+            'ass',
+            'ssa',
+            'vtt',
+            'webvtt',
+          ])
+            <String, Object?>{'Format': format, 'Method': 'External'},
+          for (final String format in const <String>['pgssub', 'pgs', 'dvdsub'])
+            <String, Object?>{'Format': format, 'Method': 'Encode'},
+        ],
+      };
+
+  /// 「不限」码率的 profile 值（120 Mbps，与 Jellyfin web 的顶档一致）。
+  static const int kUnlimitedBitrate = 120000000;
+
+  static JellyfinPlaybackInfo parsePlaybackInfo(Map<String, Object?> json) {
+    final List<JellyfinPlaybackMediaSource> sources =
+        <JellyfinPlaybackMediaSource>[];
+    final List<Object?> rawSources =
+        (json['MediaSources'] as List?) ?? const <Object?>[];
+    for (final Object? raw in rawSources) {
+      if (raw is! Map) continue;
+      final Map<String, Object?> src = raw.cast<String, Object?>();
+      final String? id = src['Id'] as String?;
+      if (id == null || id.isEmpty) continue;
+      sources.add(JellyfinPlaybackMediaSource(
+        id: id,
+        supportsDirectPlay: (src['SupportsDirectPlay'] as bool?) ?? false,
+        supportsDirectStream: (src['SupportsDirectStream'] as bool?) ?? false,
+        supportsTranscoding: (src['SupportsTranscoding'] as bool?) ?? false,
+        transcodingUrl: src['TranscodingUrl'] as String?,
+        transcodingSubProtocol: src['TranscodingSubProtocol'] as String?,
+        container: src['Container'] as String?,
+        bitrate: (src['Bitrate'] as num?)?.toInt(),
+      ));
+    }
+    return JellyfinPlaybackInfo(
+      playSessionId: json['PlaySessionId'] as String?,
+      errorCode: json['ErrorCode'] as String?,
+      mediaSources: sources,
+    );
+  }
+
+  /// 起播上报（POST /Sessions/Playing）：服务器由此建立会话，仪表盘「正在播放」、
+  /// 后续 Progress / Stopped 的关联、转码任务的归属都靠它。
+  Future<void> reportStarted({
+    required JellyfinPlaybackSession session,
+    required int positionMs,
+  }) =>
+      _postSession('/Sessions/Playing', <String, Object?>{
+        ..._sessionBody(session.itemId, session),
+        'PositionTicks': positionMs * kTicksPerMs,
+        'IsPaused': false,
+        'IsMuted': false,
+        'CanSeek': true,
+      });
+
   /// 播放中的周期进度上报（POST /Sessions/Playing/Progress）。
   ///
   /// 无会话生命周期也会持久化 resume 位置，是 scrobbler 类客户端的通用做法；
   /// 与 [reportStopped] 的区别在**语义**：Progress 是「还在播」，Stopped 是
   /// 「不播了」。周期心跳必须走这条，节流档见
-  /// [JellyfinVideoClient.kPositionReportIntervalMs]。
+  /// [JellyfinVideoClient.kPositionReportIntervalMs]。暂停 / 继续事件也走这条
+  /// （`EventName` = pause / unpause，`IsPaused` 如实），服务器才知道用户停在那儿。
   Future<void> reportProgress({
     required String itemId,
     required int positionMs,
-  }) async {
+    JellyfinPlaybackSession? session,
+    bool isPaused = false,
+    String? eventName,
+  }) =>
+      _postSession('/Sessions/Playing/Progress', <String, Object?>{
+        ..._sessionBody(itemId, session),
+        'PositionTicks': positionMs * kTicksPerMs,
+        'IsPaused': isPaused,
+        if (eventName != null) 'EventName': eventName,
+      });
+
+  /// 转码任务清理（DELETE /Videos/ActiveEncodings）：停止播放后服务器不会立刻停
+  /// ffmpeg，要客户端按 `(DeviceId, PlaySessionId)` 显式停，否则转码继续跑到服务器
+  /// 自己的超时（几分钟）——下一次起播就与它抢 CPU，「卡 / 有时开不了」的来源之一。
+  Future<void> stopActiveEncodings(String playSessionId) async {
     final http.Response res = await _client
-        .post(
-          _uri('/Sessions/Playing/Progress'),
-          headers: _headers,
-          body: jsonEncode(<String, Object?>{
-            'ItemId': itemId,
-            'PositionTicks': positionMs * kTicksPerMs,
-            'IsPaused': false,
+        .delete(
+          _uri('/Videos/ActiveEncodings', <String, String>{
+            'DeviceId': deviceId,
+            'PlaySessionId': playSessionId,
           }),
+          headers: _headers,
         )
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, '/Sessions/Playing/Progress');
+      throw JellyfinApiException(res.statusCode, '/Videos/ActiveEncodings');
+    }
+  }
+
+  static Map<String, Object?> _sessionBody(
+    String itemId,
+    JellyfinPlaybackSession? session,
+  ) =>
+      <String, Object?>{
+        'ItemId': itemId,
+        if (session != null) ...<String, Object?>{
+          'MediaSourceId': session.mediaSourceId,
+          'PlaySessionId': session.playSessionId,
+          'PlayMethod': session.playMethod,
+        },
+      };
+
+  Future<void> _postSession(String path, Map<String, Object?> body) async {
+    final http.Response res = await _client
+        .post(_uri(path), headers: _headers, body: jsonEncode(body))
+        .timeout(kRequestTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw JellyfinApiException(res.statusCode, path);
     }
   }
 
@@ -980,21 +1322,12 @@ class JellyfinApi {
   Future<void> reportStopped({
     required String itemId,
     required int positionMs,
-  }) async {
-    final http.Response res = await _client
-        .post(
-          _uri('/Sessions/Playing/Stopped'),
-          headers: _headers,
-          body: jsonEncode(<String, Object?>{
-            'ItemId': itemId,
-            'PositionTicks': positionMs * kTicksPerMs,
-          }),
-        )
-        .timeout(kRequestTimeout);
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw JellyfinApiException(res.statusCode, '/Sessions/Playing/Stopped');
-    }
-  }
+    JellyfinPlaybackSession? session,
+  }) =>
+      _postSession('/Sessions/Playing/Stopped', <String, Object?>{
+        ..._sessionBody(itemId, session),
+        'PositionTicks': positionMs * kTicksPerMs,
+      });
 
   /// 直连播放流 URL（static=true 原文件直出，内嵌字幕/音轨全保留；`api_key`
   /// 查询参数自带认证——[RemoteVideoStreamUrls] 没有 HTTP 头通道）。
@@ -1004,10 +1337,31 @@ class JellyfinApi {
   /// GUID（MediaSources[0].Id）。原版 Jellyfin / Emby 缺省时按条目 id 解析，显式
   /// 带上对三家都正确。播放器（mpv/media_kit）发请求没有头通道，令牌仍走
   /// `api_key`（飞牛在流/字幕端点对该参数实测有效——唯一带参传令牌的例外）。
-  String streamUrl(String itemId, {String? mediaSourceId}) =>
+  ///
+  /// [playSessionId]（PlaybackInfo 签发）给了就连同 `DeviceId` 一起带上：服务器据此
+  /// 把这条流归到会话，与 Jellyfin web 的直播放 URL 同形。
+  String streamUrl(
+    String itemId, {
+    String? mediaSourceId,
+    String? playSessionId,
+  }) =>
       '$serverUrl/Videos/$itemId/stream?static=true'
       '${mediaSourceId == null ? '' : '&MediaSourceId=$mediaSourceId'}'
+      '${playSessionId == null ? '' : '&PlaySessionId=${Uri.encodeQueryComponent(playSessionId)}&DeviceId=${Uri.encodeQueryComponent(deviceId)}'}'
       '&api_key=${accessToken ?? ''}';
+
+  /// 服务器签发的转码 URL（PlaybackInfo 的 `TranscodingUrl`，Jellyfin / Emby 都给
+  /// 相对根路径的形式、自带 api_key / PlaySessionId / DeviceId 等全部参数）补成
+  /// 绝对 URL。
+  String transcodingStreamUrl(String transcodingUrl) {
+    if (transcodingUrl.startsWith('http://') ||
+        transcodingUrl.startsWith('https://')) {
+      return transcodingUrl;
+    }
+    return transcodingUrl.startsWith('/')
+        ? '$serverUrl$transcodingUrl'
+        : '$serverUrl/$transcodingUrl';
+  }
 
   /// 封面 URL（缺省 Primary 图；无图的条目由调用方按 hasPrimaryImage 过滤）。
   ///
@@ -1280,6 +1634,8 @@ class JellyfinVideoClient
         RemoteCoverFetcher,
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
+        RemoteVideoPlaybackSession,
+        RemoteVideoQualityLimit,
         MediaServerBrowser {
   JellyfinVideoClient({
     required this.api,
@@ -1290,6 +1646,48 @@ class JellyfinVideoClient
 
   final JellyfinApi api;
   final String userId;
+
+  /// 画质档（成熟客户端的「画质」菜单）。码率取 Jellyfin web 同一阶梯的常用几档，
+  /// 宽度上限让服务器转码时真的缩到那一档，而不是只降码率不降分辨率。
+  static const List<MediaServerQualityPreset> kQualityPresets =
+      <MediaServerQualityPreset>[
+    MediaServerQualityPreset(
+        label: '1080p · 20 Mbps', maxBitrate: 20000000, maxWidth: 1920),
+    MediaServerQualityPreset(
+        label: '1080p · 10 Mbps', maxBitrate: 10000000, maxWidth: 1920),
+    MediaServerQualityPreset(
+        label: '720p · 6 Mbps', maxBitrate: 6000000, maxWidth: 1280),
+    MediaServerQualityPreset(
+        label: '720p · 3 Mbps', maxBitrate: 3000000, maxWidth: 1280),
+    MediaServerQualityPreset(
+        label: '480p · 1.5 Mbps', maxBitrate: 1500000, maxWidth: 854),
+  ];
+
+  @override
+  List<MediaServerQualityPreset> get qualityPresets => kQualityPresets;
+
+  /// -1 = 自动（不给上限，服务器允许时直播放原文件）。播放页在起播前按偏好写入。
+  @override
+  int qualityPresetIndex = -1;
+
+  MediaServerQualityPreset? get _activeQualityPreset =>
+      qualityPresetIndex >= 0 && qualityPresetIndex < kQualityPresets.length
+          ? kQualityPresets[qualityPresetIndex]
+          : null;
+
+  /// 按条目 id 记录的在途播放会话（FIFO：同一条目「退出 → 立刻重开」时，旧页的
+  /// Stopped 可能晚于新页的 PlaybackInfo 到达，先进先出才不会拿新会话去报旧停止）。
+  final Map<String, List<JellyfinPlaybackSession>> _sessions =
+      <String, List<JellyfinPlaybackSession>>{};
+
+  JellyfinPlaybackSession? _latestSession(String itemId) {
+    final List<JellyfinPlaybackSession>? list = _sessions[itemId];
+    return list == null || list.isEmpty ? null : list.last;
+  }
+
+  @visibleForTesting
+  JellyfinPlaybackSession? debugActiveSession(String itemId) =>
+      _latestSession(itemId);
 
   /// 要枚举的媒体库视图 id；空 = 全部视频域媒体库（见
   /// [JellyfinServerConfig.libraryIds] 与 [resolveEnumerationParents]）。
@@ -1892,6 +2290,97 @@ class JellyfinVideoClient
     );
   }
 
+  /// 起播协商：PlaybackInfo 拿服务器裁决 + 会话 id，得到真正该播的 URL。
+  ///
+  /// - 直播放 / 直传（libmpv 什么都能解，两者对本客户端都是 `static=true` 直出，
+  ///   与 Jellyfin web 一致）→ 直出 URL 带 `PlaySessionId` / `DeviceId`；
+  /// - 服务器判定必须转码（码率超上限 / 用户策略）→ 用它签发的 `TranscodingUrl`（HLS）；
+  /// - **兼容层回落**：飞牛影视等 Jellyfin 兼容层可能没有 PlaybackInfo 端点（404 /
+  ///   回 SPA HTML）。那是外部系统缺功能，不是本端错误：记日志后退回此前的手拼直出
+  ///   URL（无会话）。影响范围只限该服务器（无码率协商、Progress 无会话身份），
+  ///   服务器补上端点即自动恢复，不需要本端改动。网络类异常照常抛出（详情请求
+  ///   同样会失败，不该只吞这一个）。
+  Future<({String streamUrl, JellyfinPlaybackSession? session})>
+      _negotiatePlayback(String id, JellyfinItem item) async {
+    final MediaServerQualityPreset? preset = _activeQualityPreset;
+    JellyfinPlaybackInfo info;
+    try {
+      info = await api.playbackInfo(
+        userId: userId,
+        itemId: id,
+        mediaSourceId: item.mediaSourceId,
+        maxStreamingBitrate: preset?.maxBitrate,
+        maxWidth: preset?.maxWidth,
+      );
+    } on JellyfinApiException catch (e, st) {
+      debugPrint('[jellyfin] PlaybackInfo unavailable ($e); direct stream');
+      // 只有 404 / 405 / 501 才是「端点不存在」的兼容层回落；其它状态码（真 Emby
+      // 因 DeviceProfile 形状拒绝的 400、服务器 500）同样退回直出以免打断播放，
+      // 但不能只留一行 debugPrint——落错误日志让「协商静默失效」可被发现。
+      if (e.statusCode != 404 && e.statusCode != 405 && e.statusCode != 501) {
+        ErrorLogService.instance.log('JellyfinVideoClient.playbackInfo', e, st);
+      }
+      return (
+        streamUrl: api.streamUrl(id, mediaSourceId: item.mediaSourceId),
+        session: null,
+      );
+    } on FormatException catch (e) {
+      debugPrint('[jellyfin] PlaybackInfo not JSON ($e); direct stream');
+      return (
+        streamUrl: api.streamUrl(id, mediaSourceId: item.mediaSourceId),
+        session: null,
+      );
+    }
+    final String? playSessionId = info.playSessionId;
+    JellyfinPlaybackMediaSource? source;
+    for (final JellyfinPlaybackMediaSource candidate in info.mediaSources) {
+      if (candidate.id == item.mediaSourceId) {
+        source = candidate;
+        break;
+      }
+    }
+    source ??= info.mediaSources.isEmpty ? null : info.mediaSources.first;
+    if (source == null || playSessionId == null || playSessionId.isEmpty) {
+      // 服务器没给可播的源 / 没签会话（ErrorCode 之类）：仍按直出尝试，让 mpv 的
+      // 打开结果说话（页面对网络流有「压根没打开」判定与重试）。
+      debugPrint(
+        '[jellyfin] PlaybackInfo gave no playable source '
+        '(error=${info.errorCode}); direct stream',
+      );
+      return (
+        streamUrl: api.streamUrl(id, mediaSourceId: item.mediaSourceId),
+        session: null,
+      );
+    }
+    final String? transcodingUrl = source.transcodingUrl;
+    final bool direct = source.supportsDirectPlay || source.supportsDirectStream;
+    final JellyfinPlaybackSession session;
+    final String streamUrl;
+    if (direct || transcodingUrl == null || transcodingUrl.isEmpty) {
+      session = JellyfinPlaybackSession(
+        itemId: id,
+        mediaSourceId: source.id,
+        playSessionId: playSessionId,
+        playMethod: source.supportsDirectPlay ? 'DirectPlay' : 'DirectStream',
+      );
+      streamUrl = api.streamUrl(
+        id,
+        mediaSourceId: source.id,
+        playSessionId: playSessionId,
+      );
+    } else {
+      session = JellyfinPlaybackSession(
+        itemId: id,
+        mediaSourceId: source.id,
+        playSessionId: playSessionId,
+        playMethod: 'Transcode',
+      );
+      streamUrl = api.transcodingStreamUrl(transcodingUrl);
+    }
+    (_sessions[id] ??= <JellyfinPlaybackSession>[]).add(session);
+    return (streamUrl: streamUrl, session: session);
+  }
+
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
@@ -1900,6 +2389,8 @@ class JellyfinVideoClient
     // Jellyfin 的每一集都是独立条目，episodeIndex 恒 0（多集语义不适用）。
     final JellyfinItem item = await api.itemDetail(userId: userId, itemId: id);
     final String? mediaSourceId = item.mediaSourceId;
+    final ({String streamUrl, JellyfinPlaybackSession? session}) playback =
+        await _negotiatePlayback(id, item);
 
     // 外挂文本字幕优先作为默认外挂轨；其余文本轨全部报给播放页的字幕轨选择器。
     JellyfinSubtitleStream? external;
@@ -1925,9 +2416,9 @@ class JellyfinVideoClient
     }
 
     return RemoteVideoStreamUrls(
-      // 飞牛要求带 MediaSourceId（BUG-2254 ③）；服务器没给流表（null）时省略，
-      // 回落原版语义（stream 端点按条目 id 解析）。
-      streamUrl: api.streamUrl(id, mediaSourceId: mediaSourceId),
+      // 服务器裁决后的 URL：直出（带会话）/ 转码 HLS / 兼容层回落的手拼直出
+      // （飞牛要求带 MediaSourceId，BUG-2254 ③；服务器没给流表时省略）。
+      streamUrl: playback.streamUrl,
       subtitleUrl: external == null || mediaSourceId == null
           ? null
           : api.subtitleUrl(
@@ -2031,15 +2522,61 @@ class JellyfinVideoClient
     // 播放中的周期上报走 Progress，不是 Stopped（后者会标记已播放、清 resume
     // 位置并刷爆活动日志，见 [JellyfinApi.reportStopped]）。
     // last-write-wins（服务器无按时间戳合并）；updatedAtMs 不上传。
-    await api.reportProgress(itemId: id, positionMs: positionMs);
+    await api.reportProgress(
+      itemId: id,
+      positionMs: positionMs,
+      session: _latestSession(id),
+      eventName: 'timeupdate',
+    );
   }
+
+  @override
+  Future<void> startRemoteVideoPlayback(String id, int positionMs) async {
+    final JellyfinPlaybackSession? session = _latestSession(id);
+    // 兼容层没签会话：没有可开始的东西，服务器也不认无会话的 Start。
+    if (session == null) return;
+    // 起播即重开心跳窗口：新会话第一条 Progress 不该被上一次播放的节流吃掉。
+    _lastReportAtMs = 0;
+    await api.reportStarted(session: session, positionMs: positionMs);
+  }
+
+  @override
+  Future<void> setRemoteVideoPlaybackPaused(
+    String id,
+    int positionMs, {
+    required bool paused,
+  }) =>
+      api.reportProgress(
+        itemId: id,
+        positionMs: positionMs,
+        session: _latestSession(id),
+        isPaused: paused,
+        eventName: paused ? 'pause' : 'unpause',
+      );
 
   /// 播放真正停止时通知 Jellyfin，触发已播放判定与 webhook 等服务端副作用。
   ///
   /// 与 [putRemoteVideoPosition] 分开：后者是播放中的节流心跳，不能替代停止事件。
+  /// 会话是转码的还要显式停服务器上的 ffmpeg（[JellyfinApi.stopActiveEncodings]），
+  /// 否则它跑到服务器自己的超时为止、与下一次起播抢 CPU。
   @override
-  Future<void> stopRemoteVideoPlayback(String id, int positionMs) =>
-      api.reportStopped(itemId: id, positionMs: positionMs);
+  Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
+    final List<JellyfinPlaybackSession>? list = _sessions[id];
+    final JellyfinPlaybackSession? session =
+        list == null || list.isEmpty ? null : list.removeAt(0);
+    if (list != null && list.isEmpty) _sessions.remove(id);
+    try {
+      await api.reportStopped(
+        itemId: id,
+        positionMs: positionMs,
+        session: session,
+      );
+    } finally {
+      if (session != null && session.isTranscoding) {
+        await api.stopActiveEncodings(session.playSessionId);
+      }
+    }
+  }
 
   void close() => api.close();
 }

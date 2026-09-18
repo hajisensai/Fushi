@@ -76,16 +76,41 @@ extension _VideoQuality on _VideoFushiPageState {
 
   bool get _isYoutubeStream => _currentYoutubeWatchUrl != null;
 
-  /// 画质入口是否可见：HLS master（多档码率）或 YouTube 流（懒解析多档）。
-  bool get _hasQualityMenu => _hlsVariants.isNotEmpty || _isYoutubeStream;
+  /// 媒体服务器（Jellyfin / Emby）画质档能力：服务器按 DeviceProfile + 码率上限决定
+  /// 直播放还是转码（成熟客户端的「画质」菜单）。非媒体服务器来源为 null。
+  RemoteVideoQualityLimit? get _mediaServerQuality {
+    // 能力接口不是 RemoteVideoClient 的子类型，`is` 不能在 RemoteVideoClient 上提升，
+    // 先退成 Object（与 _reportRemotePlaybackStopped 同款写法）。
+    final Object? client = _effectiveRemoteClient;
+    return client is RemoteVideoQualityLimit ? client : null;
+  }
 
-  /// 画质档数量（YouTube 优先，其次 HLS）。控件槽据此判是否显数字/入口。
-  int get _qualityOptionCount => _youtubeVariants.isNotEmpty
-      ? _youtubeVariants.length
-      : _hlsVariants.length;
+  /// 画质入口是否可见：HLS master（多档码率）、YouTube 流（懒解析多档）或媒体服务器
+  /// （服务器侧转码档）。
+  bool get _hasQualityMenu =>
+      _hlsVariants.isNotEmpty ||
+      _isYoutubeStream ||
+      _mediaServerQuality != null;
 
-  /// 当前画质档标签（控件槽副标题）：YouTube > HLS；YouTube 尚未解析显「自动」占位。
+  /// 画质档数量（媒体服务器 > YouTube > HLS）。控件槽据此判是否显数字/入口。
+  int get _qualityOptionCount {
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server != null) return server.qualityPresets.length;
+    return _youtubeVariants.isNotEmpty
+        ? _youtubeVariants.length
+        : _hlsVariants.length;
+  }
+
+  /// 当前画质档标签（控件槽副标题）：媒体服务器 > YouTube > HLS；YouTube 尚未解析显
+  /// 「自动」占位。
   String? get _qualityCurrentLabel {
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server != null) {
+      final int index = server.qualityPresetIndex;
+      return index < 0 || index >= server.qualityPresets.length
+          ? t.video_quality_auto
+          : server.qualityPresets[index].label;
+    }
     if (_youtubeVariants.isNotEmpty) {
       return (_selectedYoutubeVariantIndex < 0 ||
               _selectedYoutubeVariantIndex >= _youtubeVariants.length)
@@ -202,6 +227,39 @@ extension _VideoQuality on _VideoFushiPageState {
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
+  /// 切到媒体服务器第 [index] 档（-1 = 自动）：偏好落库、写进 client，先关掉当前
+  /// 会话（服务器上的转码任务随之停），再按新档重新协商起播、回到当前位置。
+  Future<void> _switchMediaServerQuality(int index) async {
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server == null || index >= server.qualityPresets.length) return;
+    final int target = index < 0 ? -1 : index;
+    if (target == server.qualityPresetIndex) {
+      _hideVideoSidePanel();
+      return;
+    }
+    final int posMs = _controller?.positionMs ?? 0;
+    _hideVideoSidePanel();
+    await appModel.prefsRepo.setMediaServerQualityPresetIndex(target);
+    if (!mounted) return;
+    _rebuild(() => server.qualityPresetIndex = target);
+    await _reportRemotePlaybackStopped(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      positionMs: posMs,
+      generation: _remotePlaybackGeneration,
+    );
+    if (!mounted) return;
+    await _loadRemoteEpisode(
+      _currentEpisode < 0 ? 0 : _currentEpisode,
+      startIntent: EpisodeStartIntent.explicitCue,
+      initialPositionMsOverride: posMs,
+    );
+    if (!mounted) return;
+    final String label =
+        target < 0 ? t.video_quality_auto : server.qualityPresets[target].label;
+    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+  }
+
   /// 切到第 [index] 档画质（-1=自动/master ABR）：换 variant URL 重载，保持当前播放位置
   /// 与现有字幕 cue。同档早退；重载后弹 OSD。
   Future<void> _switchHlsVariant(int index) async {
@@ -244,6 +302,31 @@ extension _VideoQuality on _VideoFushiPageState {
   /// 的各档（解析中显 spinner）；否则显 HLS 档；空态显示标题占位。
   Widget _buildQualitySidePanel(VideoPlayerController controller) {
     final ColorScheme cs = _videoChromeColorScheme(context);
+    // 媒体服务器分支：固定阶梯（自动 + 各档），当前档打勾。
+    final RemoteVideoQualityLimit? server = _mediaServerQuality;
+    if (server != null) {
+      final List<MediaServerQualityPreset> presets = server.qualityPresets;
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: <Widget>[
+          _buildMediaServerQualityTile(
+            cs,
+            icon: Icons.auto_awesome,
+            label: t.video_quality_auto,
+            index: -1,
+            selected: server.qualityPresetIndex < 0,
+          ),
+          for (int i = 0; i < presets.length; i++)
+            _buildMediaServerQualityTile(
+              cs,
+              icon: Icons.high_quality,
+              label: presets[i].label,
+              index: i,
+              selected: server.qualityPresetIndex == i,
+            ),
+        ],
+      );
+    }
     // YouTube 分支：懒解析。解析中显 spinner；已解析显各档；解析失败/无分离流留占位。
     if (_isYoutubeStream) {
       if (_youtubeVariants.isEmpty && _youtubeVariantsLoading) {
@@ -346,6 +429,25 @@ extension _VideoQuality on _VideoFushiPageState {
       selectedColor: cs.primary,
       trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
       onTap: () => unawaited(_switchHlsVariant(index)),
+    );
+  }
+
+  Widget _buildMediaServerQualityTile(
+    ColorScheme cs, {
+    required IconData icon,
+    required String label,
+    required int index,
+    required bool selected,
+  }) {
+    return ListTile(
+      key: ValueKey<String>('video-quality-media-server-$index'),
+      dense: true,
+      leading: Icon(icon),
+      title: Text(label),
+      selected: selected,
+      selectedColor: cs.primary,
+      trailing: selected ? Icon(Icons.check, color: cs.primary) : null,
+      onTap: () => unawaited(_switchMediaServerQuality(index)),
     );
   }
 

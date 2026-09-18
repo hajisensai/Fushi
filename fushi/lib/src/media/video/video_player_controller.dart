@@ -13,6 +13,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
     show VideoFitMode;
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
+import 'package:fushi_engine/media/metadata/credential_redaction.dart'
+    show redactCredentialsInText;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
@@ -859,14 +861,20 @@ class VideoPlayerController extends ChangeNotifier
   /// **不看 mpv 是否报过 error**：`player.stream.error` 在完全正常的播放里也会响
   /// （hwdec 候选试错、外挂轨打不开），它是证据不是判据，详见
   /// `VideoFushiPage._handlePlaybackError` 的文档。
+  ///  - [networkGraceElapsed]：非本地文件专用——网络流不在首帧兜底那一档判死，但
+  ///    页面会另给一段以 mpv `network-timeout`（[kMpvNetworkTimeoutSeconds]）为基准
+  ///    的宽限；宽限也用尽、mpv 自己的超时都已经到了还没打开，就不再是「弱网慢」而是
+  ///    「打不开」（Emby 流 URL 失效 / 会话被服务器收掉 / 中继 502）。此前网络流永远
+  ///    不判死，用户对着黑屏 00:00 无提示无重试，正是「有时候无法重新播放」的观感。
   static bool shouldDiagnoseMediaNeverOpened({
     required bool mediaOpened,
     required bool isLocalFile,
     required bool alreadyFailed,
     required bool missingResource,
+    bool networkGraceElapsed = false,
   }) {
     if (mediaOpened) return false;
-    if (!isLocalFile) return false;
+    if (!isLocalFile && !networkGraceElapsed) return false;
     return !alreadyFailed && !missingResource;
   }
 
@@ -1507,7 +1515,11 @@ class VideoPlayerController extends ChangeNotifier
     final String sourceUri = nativePlaybackUri(
       mediaUri ?? mediaUriForVideoPath(videoFile!.path),
     );
-    debugPrint('[video-load] cues=${cues.length} uri=$sourceUri');
+    // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
+    debugPrint(
+      '[video-load] cues=${cues.length} '
+      'uri=${redactCredentialsInText(sourceUri)}',
+    );
     // TODO-1312：换片复位副字幕 cue 流（旧下标对新片失效；新集副字幕由页面
     // _restoreSecondarySubtitle 重挂）。在 setCues 之前复位，让 setCues 的单次
     // notify 已反映清空后的副字幕状态。
@@ -1563,6 +1575,11 @@ class VideoPlayerController extends ChangeNotifier
     // 与每次调速无关。**切勿**为「保音高」给这里的 `Player()` 传开启该配置的
     // `PlayerConfiguration`——那会让视频每次调速重写 af 滤镜图、在 Windows 上回归
     // TODO-070 的调速闪退。守卫：`fushi/test/media/video/video_speed_pitch_guard_test.dart`。
+    if (_player == null) {
+      // 上一个视频页的原生拆除还没落定就建新 Player = BUG-2441 的触发时序，先等它。
+      await awaitPendingNativeDisposal();
+      if (loadToken != _loadToken) return; // 等待期间换片/销毁。
+    }
     final Player player = _player ?? Player();
     if (_player == null) {
       _player = player;
@@ -1905,6 +1922,50 @@ class VideoPlayerController extends ChangeNotifier
 
   bool _isCurrentLoad(Player player, int loadToken) =>
       _player == player && _loadToken == loadToken;
+
+  /// 上一个控制器 [dispose] 时 fire-and-forget 的原生释放（进程级，同一时刻至多
+  /// 一个视频页在拆）。
+  ///
+  /// BUG-2441 的触发侧：`dispose()` 是同步签名，只能 `unawaited(player.dispose())`
+  /// 就返回；用户退出播放页再进同一集时，新页的 `Player()` / `VideoController()` 与
+  /// 上一个 Player 的原生拆除（libmpv `mpv_terminate_destroy`、VideoOutput 纹理、
+  /// Windows 的共享 D3D/EGL 设备）在原生侧并发——vendored media_kit 的 VideoOutput
+  /// 析构持锁等一个可能永不满足的 promise、controller 表按 mpv 句柄地址索引、EGL
+  /// display 拆了重建，三处进程级共享状态哪一处踩到都是「第二次打开黑屏 00:00」。
+  /// 用户报的「Emby 有时候无法重新播放」就是这个形状。
+  ///
+  /// 收口：新 Player 建立前先等上一份释放落定（[awaitPendingNativeDisposal]），让
+  /// 拆与建串行。等待有界：原生侧真卡死时不能把新页也一起卡死，超时只记日志继续。
+  static Future<void>? _pendingNativeDisposal;
+
+  /// [awaitPendingNativeDisposal] 的上限。正常释放几十毫秒；超过它说明原生侧已经
+  /// 出问题，继续等也不会好，记日志后照常建新 Player。
+  static const Duration kNativeDisposalWait = Duration(seconds: 5);
+
+  @visibleForTesting
+  static Future<void>? get pendingNativeDisposalForTesting =>
+      _pendingNativeDisposal;
+
+  @visibleForTesting
+  static set pendingNativeDisposalForTesting(Future<void>? value) =>
+      _pendingNativeDisposal = value;
+
+  /// 等上一个 Player 的原生释放落定（有界）；无在途释放立即返回。
+  static Future<void> awaitPendingNativeDisposal() async {
+    final Future<void>? pending = _pendingNativeDisposal;
+    if (pending == null) return;
+    bool timedOut = false;
+    await pending.timeout(kNativeDisposalWait, onTimeout: () {
+      timedOut = true;
+    });
+    if (identical(_pendingNativeDisposal, pending)) _pendingNativeDisposal = null;
+    if (timedOut) {
+      debugPrint(
+        '[video-load] previous native player dispose did not settle within '
+        '${kNativeDisposalWait.inSeconds}s; creating the next player anyway',
+      );
+    }
+  }
 
   /// TODO-1119：黑闪采样节流入口（每 125ms tick 调一次，内部自节流到 >=1s）。仅当页面
   /// 挂了 [onSuspectedBlackFlicker]（页面只在 Windows 挂）且尚未触发、且无在途读时才采样。
@@ -3616,8 +3677,14 @@ class VideoPlayerController extends ChangeNotifier
       _mediaHandleRegistration = null;
     }
     // dispose 同步签名无法 await——底层 libmpv 释放 fire-and-forget（若迁移
-    // 已先经 [_releaseMediaHandles] 放掉句柄并置 null，这里是 no-op）。
-    unawaited(_player?.dispose());
+    // 已先经 [_releaseMediaHandles] 放掉句柄并置 null，这里是 no-op）。但释放
+    // 的 Future 要留着：下一个控制器建 Player 前先等它（见 [_pendingNativeDisposal]）。
+    final Player? disposing = _player;
+    if (disposing != null) {
+      _pendingNativeDisposal = disposing.dispose().catchError((Object e) {
+        debugPrint('[video-dispose] native player dispose failed: $e');
+      });
+    }
     _player = null;
     _videoController = null;
     // Player 没了，「媒体已打开」这条证据随之作废（本控制器已不可能再有位置写入，

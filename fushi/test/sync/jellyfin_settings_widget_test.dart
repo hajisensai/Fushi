@@ -85,6 +85,13 @@ class _FakeServer {
   /// 方便断言「重登换了令牌」）；Views 固定返回两个视频库 + 一个音乐库。
   MockClient client() => MockClient((http.Request req) async {
     seen.add(req);
+    // BUG-2584：登录前先探连通性（GET /System/Info/Public，无需认证）。
+    if (req.url.path == '/System/Info/Public') {
+      return http.Response(
+        jsonEncode(<String, Object?>{'ServerName': 'Fake ${req.url.host}'}),
+        200,
+      );
+    }
     if (req.url.path == '/Users/AuthenticateByName') {
       final Map<String, Object?> body = (jsonDecode(req.body) as Map)
           .cast<String, Object?>();
@@ -363,8 +370,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(server.seen.single.url.path, '/Users/AuthenticateByName');
-    expect(server.seen.single.url.host, 'emby.example.com');
+    // 先探连通性再登录（BUG-2584）：两个请求、同一台服务器。
+    expect(
+      server.seen.map((http.Request r) => r.url.path).toList(),
+      <String>['/System/Info/Public', '/Users/AuthenticateByName'],
+    );
+    expect(server.seen.last.url.host, 'emby.example.com');
     List<JellyfinServerConfig> servers = await repo.getJellyfinServers();
     expect(servers, hasLength(2), reason: '登录成功 → 列表 +1');
     expect(

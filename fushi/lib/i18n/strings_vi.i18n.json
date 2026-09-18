@@ -5062,6 +5062,8 @@
   "media_server_items_empty": "No items",
   "media_server_items_load_failed": "Could not load items from the server",
   "media_server_item_folder": "Folder",
+  "jellyfin_server_unreachable": "Could not reach the server at $url: $reason",
+  "jellyfin_host_lookup_hint": "This device could not resolve the host name. Android and iOS cannot resolve .local or Windows computer names; use the server's IP address instead (for example http://192.168.1.10:8096).",
   "video_anidb_login_test": "Test AniDB login",
   "video_anidb_login_test_hint": "Sends one UDP login with the saved account and client, then logs out. No file is hashed.",
   "video_anidb_login_test_running": "Testing AniDB login…",

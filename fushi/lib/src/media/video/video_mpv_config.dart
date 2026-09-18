@@ -685,6 +685,10 @@ bool isNetworkStreamUri(String uri) {
 ///
 /// 所有属性均为 libmpv 运行时可设属性（经 `mpv_set_property_string`），由
 /// [applyNetworkCachePropertiesToPlayer] 在 `player.open` 后逐条 best-effort 注入。
+/// 下发给 libmpv 的 `network-timeout`（秒）。播放页对网络流的「压根没打开」判定以它
+/// 为基准：mpv 自己的连接超时都到了还没打开，就不再是弱网慢握手。
+const int kMpvNetworkTimeoutSeconds = 30;
+
 Map<String, String> buildNetworkCacheProperties({bool? isMobile}) {
   final bool mobile = isMobile ?? (Platform.isAndroid || Platform.isIOS);
   final int forwardBytes = (mobile ? 32 : 128) * 1024 * 1024;
@@ -694,7 +698,7 @@ Map<String, String> buildNetworkCacheProperties({bool? isMobile}) {
     'cache-secs': mobile ? '20' : '30',
     'demuxer-max-bytes': '$forwardBytes',
     'demuxer-max-back-bytes': '$backBytes',
-    'network-timeout': '30',
+    'network-timeout': '$kMpvNetworkTimeoutSeconds',
   };
 }
 
