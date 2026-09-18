@@ -95,6 +95,29 @@ void main() {
       expect(seenCount, 1, reason: 'last-seen 探活回调不受影响');
     });
 
+    test('注入 appLocaleProvider → 响应含 locale；未注入省略（向后兼容）', () async {
+      // 扩展读 status 的 `locale` 选文案（缺失时回落浏览器语言）。
+      await server.stop();
+      server = YomitanApiServer(
+        port: 0,
+        lookupService: _FakeLookup(),
+        tokenizer: _noopTokenize,
+        readingResolver: _noopReading,
+        appLocaleProvider: () => 'zh-CN',
+      );
+      await server.start();
+      final Map<String, dynamic> j = await _json(
+          await _postRaw(server.port, '/api/extension/status', '{}'));
+      expect(j['locale'], 'zh-CN');
+
+      // setUp 起的默认 server 没注入 → 字段省略。
+      await server.stop();
+      await startServer();
+      final Map<String, dynamic> j2 = await _json(
+          await _postRaw(server.port, '/api/extension/status', '{}'));
+      expect(j2.containsKey('locale'), isFalse);
+    });
+
     test('只报 build 不报 version → version 为 null', () async {
       await _postRaw(server.port, '/api/extension/status',
           jsonEncode(<String, dynamic>{'build': 'abcd1234abcd1234'}));

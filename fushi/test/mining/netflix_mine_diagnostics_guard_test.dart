@@ -42,9 +42,14 @@ void main() {
                 "window.fushiToast('✗ ' + fushiMineHttpFailureReason(resp)"),
             isTrue,
             reason: '$root HTTP 失败分支未弹 ✗ 原因 toast');
-        expect(src.contains('鉴权失败(401)'), isTrue,
+        // 文案已进 i18n 字典（locales/en.js 为源，各语言 json 同键集）：content.js 只钉键名，
+        // 文案本身到字典里查。
+        expect(src.contains("fushiTr('mine_err_401')"), isTrue,
             reason: '$root 未区分 401 鉴权失败原因');
-        expect(src.contains('Yomitan API server'), isTrue,
+        final String en = File('$root/locales/en.js').readAsStringSync();
+        expect(en.contains('Authentication failed (401)'), isTrue,
+            reason: '$root 字典缺 401 鉴权失败原因文案');
+        expect(en.contains('Yomitan API server'), isTrue,
             reason: '$root 未提示连不上/端点错时去开 Yomitan API server');
         // 三态返回契约不变。
         expect(src.contains("return 'done';"), isTrue);

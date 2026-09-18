@@ -22,8 +22,9 @@ void main() {
           File('lib/src/models/app_model.dart').readAsStringSync();
       // 这些 CSS 变量名在 app_model.dart 中仅由 browserExtensionThemeColors() 产生，
       // 故用全文断言（span 会被长注释推出方法体，反而假阴性）。
-      expect(src, contains('browserExtensionThemeColors()'),
-          reason: 'app_model.dart 应存在 browserExtensionThemeColors()');
+      expect(src, contains('browserExtensionThemeColors(String? colorScheme)'),
+          reason:
+              'app_model.dart 应存在 browserExtensionThemeColors(colorScheme)');
       final String body = src;
       // 正文色 / 底色：content.css `color: var(--text-color)` /
       // `background-color: var(--background-color)` 直接读，漏则回落分裂。
@@ -43,8 +44,13 @@ void main() {
       // 读 app 下发的主题名并设到弹窗根的 data-theme（覆盖宿主页 prefers-color-scheme 初值）。
       expect(js, contains("theme['--fushi-color-scheme']"),
           reason: 'content.js 应读取 app 下发的 --fushi-color-scheme');
-      expect(js, contains("setAttribute('data-theme', cs)"),
-          reason: 'content.js 应用 app 主题名设 data-theme，根除主题分裂');
+      // 扩展主题设置（theme.js）显式 light/dark 可压过 app 的值——但那时 background.js 会把
+      // 同一个值作为 colorScheme 提示带进查词请求，app 按它生成 --md-*，两边仍是一套；auto
+      // 下照旧跟 app。data-theme 一律经 fushiResolveTheme(cs) 决议，不再裸取 cs。
+      expect(js, contains('const effective = fushiResolveTheme(cs)'),
+          reason: 'content.js 应经 fushiResolveTheme 用 app 主题名（或扩展显式主题）设 data-theme');
+      expect(js, contains("setAttribute('data-theme', effective)"),
+          reason: 'content.js 应用决议后的主题名设 data-theme，根除主题分裂');
     });
 
     test('content.css 确实读 --text-color / --background-color（契约方向自证）', () {

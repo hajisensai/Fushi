@@ -16,6 +16,7 @@ class ImmersionMinePayload {
     this.youtubeVideoId,
     this.clipSourceKind,
     this.clipSourceId,
+    this.clipSourcePlayurlBody,
     this.clipSourcePart,
     this.screenshotBytes,
     this.clipBytes,
@@ -47,8 +48,16 @@ class ImmersionMinePayload {
   /// （老扩展仍在发它们）。
   final String? clipSourceKind;
 
-  /// [clipSourceKind] 对应的视频 id（bilibili 是 `BVxxxxxxxxxx`）。
+  /// [clipSourceKind] 对应的视频 id（bilibili 是 `BVxxxxxxxxxx`；番剧是 ep_id 的数字串）。
   final String? clipSourceId;
+
+  /// 扩展在**页面里**取回的 playurl 原始响应体（目前只有 `bilibili-pgc` 用）。
+  ///
+  /// 为什么不直接让服务端去取：番剧的 `pgc/player/web/playurl` 大会员内容要带 SESSDATA，而它的
+  /// CORS 只放行 `https://www.bilibili.com`（实测 `Access-Control-Allow-Credentials: true`）
+  /// ——服务端是匿名请求，拿不到。扩展在页面主世界里取（凭据不出浏览器），只把**响应体**回传，
+  /// 挑音轨仍是服务端的事（见 `parseBilibiliPgcPlayurlResponse`）。
+  final String? clipSourcePlayurlBody;
 
   /// 分 P / 分集号，1 基（bilibili URL 的 `?p=`）。缺省视作第 1 P。
   final int? clipSourcePart;
@@ -126,6 +135,7 @@ class ImmersionMinePayload {
       youtubeVideoId: json['youtubeVideoId'] as String?,
       clipSourceKind: json['clipSourceKind'] as String?,
       clipSourceId: json['clipSourceId'] as String?,
+      clipSourcePlayurlBody: json['clipSourcePlayurlBody'] as String?,
       clipSourcePart: (json['clipSourcePart'] as num?)?.round(),
       // 截图 / clip 是**可选媒体**：base64 坏了就当没这个媒体（降级到截图/文本卡），
       // 绝不 throw 把整张卡 400 掉——只有 fields 缺失才是真正的坏请求。

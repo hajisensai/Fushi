@@ -42,12 +42,21 @@ class TitleNormalizer {
       }
     }
     // 小写化 + 空白折叠。
-    return buffer
-        .toString()
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    return buffer.toString().toLowerCase().replaceAll(_kWhitespace, ' ').trim();
   }
+
+  /// 连续空白折叠用的正则。[normalize] 在标题包解析（十万级标题）与每次搜索
+  /// 打分里被反复调用，正则必须只编译一次。
+  static final RegExp _kWhitespace = RegExp(r'\s+');
+
+  /// Unicode 字母/数字判定（带音标拉丁、希腊、西里尔等 `toLowerCase` 判不出的
+  /// 字符）。原先写在 [_isWordChar] 的循环体里，每遇到一个非 ASCII 非 CJK 字符
+  /// 就现编一个 unicode 正则；汉字标题一旦混着这类字符，模糊匹配两万候选
+  /// 逐个分词时会编译上万次正则，是汉字文件名比罗马字明显更卡的来源之一。
+  static final RegExp _kUnicodeLetterOrDigit = RegExp(
+    r'\p{L}|\p{N}',
+    unicode: true,
+  );
 
   /// 分词（输入应为 [normalize] 的输出）：
   /// - ASCII/其它字母数字连续段整体为一个 token（按空白与分隔天然切开）；
@@ -95,8 +104,16 @@ class TitleNormalizer {
   ///
   /// Dice 抗子串/词序差异，Levenshtein 抗少量错字；取 max 兼顾两类失真。
   static double similarity(String a, String b) {
-    final String na = normalize(a);
-    final String nb = normalize(b);
+    return similarityNormalized(normalize(a), normalize(b));
+  }
+
+  /// [similarity] 的已归一化输入版：两个参数都必须是 [normalize] 的输出。
+  ///
+  /// 标题包索引里每条标题的归一化值在解析时已经缓存
+  /// （`AniDbTitle.normalizedValue`），查询词也在进索引前归一化过一次；
+  /// 模糊分支对两万候选逐个打分时若再各归一化一遍（逐字符查繁简表 +
+  /// 逐字符建字符串），归一化本身就成了主要开销。
+  static double similarityNormalized(String na, String nb) {
     if (na.isEmpty || nb.isEmpty) {
       return na == nb ? 1.0 : 0.0;
     }
@@ -142,7 +159,7 @@ class TitleNormalizer {
     if (rune > 0x7F) {
       final String s = String.fromCharCode(rune);
       return s.toLowerCase() != s.toUpperCase() ||
-          RegExp(r'\p{L}|\p{N}', unicode: true).hasMatch(s);
+          _kUnicodeLetterOrDigit.hasMatch(s);
     }
     return false;
   }
