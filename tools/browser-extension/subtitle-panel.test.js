@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
+const FUSHI_T = require('./scripts/i18n-fixture.js').makeFushiT(); // 文案走 i18n：壳里装 zh-CN 字典
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -43,6 +44,7 @@ function loadController(options = {}) {
   const sent = [];
   const posted = [];
   const windowObject = {
+    fushiT: FUSHI_T,
     fushiEpisodeCues: options.store || {},
     addEventListener() {},
     postMessage(message) { posted.push(message); },
