@@ -132,14 +132,19 @@ class SettingsSchemaItem extends StatelessWidget {
         final SettingsDestination Function()? child = navigation.child;
         if (child != null) {
           // 子 schema 页：与顶层分类同一套详情壳；取新鲜树靠闭包而非 id。
-          Navigator.of(context).push(
+          await Navigator.of(context).push(
             routeBuilder(context, (_) => SettingsDetailPage.subPage(child)),
           );
+          // 子页里改的偏好会改本行的实时摘要（AniDB 填完账号 → 「已配置」），
+          // 而 ModalRoute 缓存页面内容、弹回来不会重算 resolveSubtitle；
+          // 不在这里刷一次，状态行就停在进子页那一刻的旧值（BUG-2586）。
+          settingsContext.refresh();
           return;
         }
         final WidgetBuilder? builder = navigation.builder;
         if (builder == null) return;
-        Navigator.of(context).push(routeBuilder(context, builder));
+        await Navigator.of(context).push(routeBuilder(context, builder));
+        settingsContext.refresh();
       },
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
@@ -178,26 +179,19 @@ SettingsDestination buildServicesDestination() {
           SettingsNavigationItem(
             id: 'services.metadata.configure',
             title: 'AniDB',
+            // 状态与「测试登录」/ 协调器共用同一份配置快照判「配齐」：客户端名
+            // 留空走内置身份也算配齐，别按四个偏好键各自判空（BUG-2586）。
             subtitleBuilder: (SettingsContext c) {
-              if (!(c.appModel.prefsRepo.getPref(
-                    kVideoAniDbHashEnabledPref,
-                    defaultValue: false,
-                  )
-                  as bool)) {
+              final VideoSourceScrapeGlobalConfig config =
+                  VideoSourceScrapeGlobalConfig.fromPreferences(
+                    c.appModel.prefsRepo,
+                    resolvedTmdbApiKey: '',
+                    uiLocaleTag: kFallbackVideoMetadataLocale,
+                  );
+              if (!config.hashEnabled) {
                 return t.settings_service_disabled;
               }
-              return <String>[
-                    kVideoAniDbUsernamePref,
-                    kVideoAniDbPasswordPref,
-                    kVideoMetadataAniDbClientNamePref,
-                    kVideoMetadataAniDbClientVersionPref,
-                  ].every(
-                    (String key) =>
-                        (c.appModel.prefsRepo.getPref(key, defaultValue: '')
-                                as String)
-                            .trim()
-                            .isNotEmpty,
-                  )
+              return config.anidbHashReady
                   ? t.settings_service_configured
                   : t.settings_service_not_configured;
             },

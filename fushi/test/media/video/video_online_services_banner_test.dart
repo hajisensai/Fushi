@@ -61,6 +61,26 @@ void main() {
     expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
   });
 
+  // BUG-2586：AniDB 就绪与设置页状态、协调器同一判据——自定义客户端名不合规
+  // 时登录根本发不出去，不能只看账号密码填没填。
+  test('reminder stays while a custom AniDB client identity is unusable',
+      () async {
+    await preferences.setPref(kVideoAniDbHashEnabledPref, true);
+    await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
+    await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+    await preferences.setJimakuApiKey('jimaku-key');
+    await preferences.setVideoSubtitleOpenSubtitlesConfig(
+      OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+    );
+    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse,
+        reason: '客户端留空走内置 fushiplayer，账号齐即就绪');
+    await preferences.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
+    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue,
+        reason: '自定义客户端没填版本，UDP 配置不可用');
+    await preferences.setPref(kVideoMetadataAniDbClientVersionPref, '2');
+    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse);
+  });
+
   test('permanent dismissal survives reload and excludes profile snapshots',
       () async {
     await preferences.setPref(kVideoAniDbHashEnabledPref, true);

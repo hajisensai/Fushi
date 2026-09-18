@@ -138,15 +138,17 @@ class AnidbUdpFileClient {
         if (_cache.containsKey(key)) return _cache[key];
         if (_cache.length >= 2048) _cache.remove(_cache.keys.first);
         await _ensureSession();
-        // fmask byte1 bits6/5 = aid/eid. fid is always first.
-        // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
-        final _Reply file = await _request('FILE', {
-          'size': '$size',
-          'ed2k': ed2k.toLowerCase(),
-          'fmask': '6000000000',
-          'amask': '00e0f000',
-          's': _session!,
-        });
+        _Reply file = await _requestFile(size, ed2k);
+        if (file.code == 501 || file.code == 506) {
+          // The virtual connection expires after 35 idle minutes (wiki
+          // UDP_API_Definition), and this client lives as long as the scrape
+          // coordinator, so the first FILE of a later batch routinely lands on
+          // a dead session. Re-authenticate once and resend; a second
+          // rejection is a real session failure (BUG-2586).
+          _session = null;
+          await _ensureSession();
+          file = await _requestFile(size, ed2k);
+        }
         if (file.code == 320) {
           _cache[key] = null;
           return null;
@@ -175,6 +177,16 @@ class AnidbUdpFileClient {
         );
         _cache[key] = identity;
         return identity;
+      });
+
+  // fmask byte1 bits6/5 = aid/eid. fid is always first.
+  // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
+  Future<_Reply> _requestFile(int size, String ed2k) => _request('FILE', {
+        'size': '$size',
+        'ed2k': ed2k.toLowerCase(),
+        'fmask': '6000000000',
+        'amask': '00e0f000',
+        's': _session!,
       });
 
   /// Settings "test login": AUTH only, no FILE query. The caller must still

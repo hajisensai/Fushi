@@ -152,6 +152,71 @@ void main() {
     },
   );
 
+  // BUG-2586：客户端与协调器同寿命，AniDB 虚拟连接 35 分钟无数据即失效——下一批
+  // 第一条 FILE 落在死会话上会回 506，之前直接报「会话失败」把整个文件判成识别
+  // 失败。要求：清会话、重新 AUTH、同一条 FILE 重发一次；第二次仍拒才抛。
+  for (final int expired in [501, 506]) {
+    test('$expired on FILE re-authenticates once and resends the same FILE',
+        () async {
+      int auths = 0;
+      int files = 0;
+      final _Fake fake = _Fake((packet, tag) {
+        if (packet.startsWith('AUTH ')) {
+          auths++;
+          return '$tag 200 Sess$auths LOGIN ACCEPTED';
+        }
+        if (packet.startsWith('FILE ')) {
+          files++;
+          return files == 1 ? '$tag $expired LOGIN FIRST' : _normal(packet, tag);
+        }
+        return _normal(packet, tag);
+      });
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbFileIdentity? match =
+          await client.lookup(size: 123, ed2k: _hash);
+      expect(match?.fileId, 100);
+      expect(auths, 2);
+      expect(files, 2);
+      expect(fake.packets[1], contains('&s=Sess1'));
+      expect(fake.packets[3], contains('&s=Sess2'), reason: '重发要带新会话');
+      await client.close();
+      expect(fake.packets.last, startsWith('LOGOUT s=Sess2'));
+    });
+  }
+
+  test('a second session rejection on FILE is a session failure, not a loop',
+      () async {
+    int auths = 0;
+    final _Fake fake = _Fake((packet, tag) {
+      if (packet.startsWith('AUTH ')) {
+        auths++;
+        return '$tag 200 Sess$auths LOGIN ACCEPTED';
+      }
+      if (packet.startsWith('FILE ')) return '$tag 506 INVALID SESSION';
+      return _normal(packet, tag);
+    });
+    final AnidbUdpFileClient client = AnidbUdpFileClient(
+      config: _config,
+      transportFactory: (_) async => fake,
+    );
+    await expectLater(
+      client.lookup(size: 123, ed2k: _hash),
+      throwsA(
+        isA<AnidbUdpException>().having(
+          (e) => e.reason,
+          'reason',
+          AnidbUdpFailure.session,
+        ),
+      ),
+    );
+    expect(auths, 2);
+    expect(fake.packets.where((p) => p.startsWith('FILE ')).length, 2);
+    await client.close();
+  });
+
   for (final MapEntry<int, AnidbUdpFailure> error in {
     500: AnidbUdpFailure.authentication,
     503: AnidbUdpFailure.clientOutdated,

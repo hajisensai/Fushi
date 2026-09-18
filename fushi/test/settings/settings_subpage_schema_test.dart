@@ -200,6 +200,41 @@ void main() {
       expect(detail.subPageBuilder!().title, '子页');
     });
 
+    testWidgets('带 child 的导航行：子页弹回后 refresh 父页（实时摘要要重算，BUG-2586）',
+        (WidgetTester tester) async {
+      await pumpContext(
+        tester,
+        child: Builder(
+          builder: (BuildContext context) => SettingsSchemaItem(
+            item: navTo(childPage),
+            settingsContext: sctx,
+            showIcons: false,
+            // ModalRoute 缓存页面内容：真 push 一页再 pop，父页不会自动重算
+            // resolveSubtitle，只能靠导航行在返回后主动 refresh。
+            routeBuilder: (BuildContext ctx, WidgetBuilder builder) =>
+                MaterialPageRoute<void>(
+              builder: (BuildContext c) => Scaffold(
+                body: TextButton(
+                  onPressed: () => Navigator.of(c).pop(),
+                  child: const Text('返回父页'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('进入子页'));
+      await tester.pumpAndSettle();
+      expect(find.text('返回父页'), findsOneWidget);
+      expect(refreshes, 0, reason: '子页还开着，父页不该被刷');
+
+      await tester.tap(find.text('返回父页'));
+      await tester.pumpAndSettle();
+      expect(find.text('进入子页'), findsOneWidget);
+      expect(refreshes, 1, reason: '弹回后父页必须 refresh 一次');
+    });
+
     testWidgets('状态行：标题 + 运行期副标题；无动作时不渲染按钮', (WidgetTester tester) async {
       int port = 41000;
       await pumpContext(
