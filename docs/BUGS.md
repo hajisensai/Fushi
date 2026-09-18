@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2382 条。点号进各自文件。
+> 共 2383 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2579](bugs/BUG-2579-mdx-dict-order.md) | ✅ | ✅ | 查词弹窗里 MDX 词典恒排在所有 Yomitan 词典之后 |
 | [BUG-2577](bugs/BUG-2577-android-video-import-scrape-freeze.md) | ✅ | ✅ | 安卓按作品归类导入视频整机卡顿冻结崩溃——AniDB 标题包与 Fribb 映射在 UI isolate 整包解析建 DOM |
 | [BUG-2574](bugs/BUG-2574-bilibili-pgc-sentence-audio.md) | ✅ | ✅ | B 站浏览器制卡丢失句子音频（番剧主世界取流 + CDN 防盗链 Referer） |
 | [BUG-2573](bugs/BUG-2573-mine-word-audio-datauri-plus-normalized.md) | ✅ | ✅ | 浏览器扩展制卡单词音频丢失：data URI 的 base64 加号被归一化成空格 |
