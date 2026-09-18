@@ -75,6 +75,7 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -8300,6 +8301,30 @@ class AppModel with ChangeNotifier {
   bool get mangaTapZonePaging => prefsRepo.mangaTapZonePaging;
   Future<void> setMangaTapZonePaging(bool value) =>
       prefsRepo.setMangaTapZonePaging(value);
+
+  // 下面四个在漫画页 build 路径上被读（`_loadLocalPayload`），而弹窗词典与悬浮查词
+  // 是不经 `initialise()` 的 entry point，那里 `_prefsRepo` 恒 null——裸 `prefsRepo`
+  // （即 `_prefsRepo!`）会让整页 build 抛。与 `moduleEnabled` / `mineToServerEnabled`
+  // 同律：偏好未就绪时回落到与 repo 侧逐字一致的默认值。
+  String get mangaTapZoneLayout =>
+      _prefsRepo?.mangaTapZoneLayout ?? kMangaTapZoneLayoutDefault;
+  Future<void> setMangaTapZoneLayout(String value) =>
+      prefsRepo.setMangaTapZoneLayout(value);
+
+  String get mangaBackground =>
+      _prefsRepo?.mangaBackground ?? kMangaBackgroundDefault;
+  Future<void> setMangaBackground(String value) =>
+      prefsRepo.setMangaBackground(value);
+
+  int get mangaSpreadOffset =>
+      _prefsRepo?.mangaSpreadOffset ?? kMangaSpreadOffsetDefault;
+  Future<void> setMangaSpreadOffset(int value) =>
+      prefsRepo.setMangaSpreadOffset(value);
+
+  bool get mangaWidePageSolo =>
+      _prefsRepo?.mangaWidePageSolo ?? kMangaWidePageSoloDefault;
+  Future<void> setMangaWidePageSolo(bool value) =>
+      prefsRepo.setMangaWidePageSolo(value);
 
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;

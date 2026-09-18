@@ -29,8 +29,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
 
 /// ffprobe 探测的超时。只读 header，不解码，几十毫秒级；给足 20s 覆盖冷缓存
-/// 与机械盘。**超时按失败处理并返回空结果**——校验拿不到时长时会退化成「只做内容
-/// 自检」，绝不因为探测失败就拒收字幕。
+/// 与机械盘。**超时按「没得出结论」处理**（返回 [VideoProbeFacts.unavailable]，不是
+/// [VideoProbeFacts.empty]）——校验拿不到时长时会退化成「只做内容自检」，绝不因为
+/// 探测失败就拒收字幕；而缓存层据此知道这条可以重试，不会永久判死。
 const Duration kVideoDurationProbeTimeout = Duration(seconds: 20);
 
 /// 探测器请求的字段集版本。
@@ -54,9 +55,22 @@ class VideoProbeFacts {
     this.video,
     this.audioTracks = const <AudioTrackFacts>[],
     this.subtitleTracks = const <SubtitleTrackFacts>[],
+    this.isUnavailable = false,
   });
 
+  /// 探测跑完了，这个文件确实给不出任何事实（无视频流的容器、坏文件）。
+  ///
+  /// 这是**终局结论**：同一个文件再探一百次也是这个结果，调用方可以据此永久记账。
   static const VideoProbeFacts empty = VideoProbeFacts();
+
+  /// 探测**没能做出结论**：超时、后端不回包、ffprobe 根本不存在、非零退出。
+  ///
+  /// 与 [empty] 的差别是全部意义所在（BUG-2571）。二者此前共用一个 `empty`，于是
+  /// 调用方只能把「这次没探成」也当成「这文件没有规格」永久记进负缓存——移动端导入
+  /// 期 ffmpeg-kit 被占满、探测成片超时时，整库文件会被一次性判死，技术规格角标在
+  /// 本次会话里再也不出现。可重试的失败必须能被认出来。
+  static const VideoProbeFacts unavailable =
+      VideoProbeFacts(isUnavailable: true);
 
   /// 容器时长（毫秒）；探不到为 null。
   final int? durationMs;
@@ -78,6 +92,9 @@ class VideoProbeFacts {
 
   /// 全部字幕轨（内封），按流顺序。
   final List<SubtitleTrackFacts> subtitleTracks;
+
+  /// 这次探测没能做出结论（可重试），而不是「探完了，没有」。见 [unavailable]。
+  final bool isUnavailable;
 
   /// 音轨自报的语言标签，**按流顺序**。未标注的流不入列。
   ///
@@ -401,12 +418,15 @@ Future<VideoProbeFacts> probeVideoFacts(
       ],
       kVideoDurationProbeTimeout,
     );
-    if (result.returnCode != 0) return VideoProbeFacts.empty;
+    // 退出码非 0 = 这次没跑成（超时的后端返回 `returnCode: null` 也落这里）。
+    // 它和「跑完了但这文件没东西」是两回事，后者由 parseFfprobeFacts 给出 empty。
+    if (result.returnCode != 0) return VideoProbeFacts.unavailable;
     return parseFfprobeFacts(result.output);
   } catch (e) {
-    // 缺 ffprobe 是**正常降级**（用户没装 / 没捆绑），不是错误路径。
+    // 缺 ffprobe 是**正常降级**（用户没装 / 没捆绑），不是错误路径——但同样是
+    // 「没得出结论」而非「这文件没有规格」，装上/捆上之后就该重试。
     fushiDebugPrint('[VideoDurationProbe] probe failed for "$path": $e');
-    return VideoProbeFacts.empty;
+    return VideoProbeFacts.unavailable;
   }
 }
 

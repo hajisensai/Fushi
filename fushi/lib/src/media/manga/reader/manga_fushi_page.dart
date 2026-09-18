@@ -860,6 +860,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _zoomSensitivity = kMangaZoomSensitivityDefault;
   MangaPageAnimation _pageAnimation = MangaPageAnimation.slide;
   bool _tapZonePaging = true;
+  MangaTapZoneLayout _tapZoneLayout = MangaTapZoneLayout.leftRight;
+  MangaBackground _background = MangaBackground.black;
+
+  /// 双页配对偏移（0/1）与宽页独占；两者都只影响 [_buildSpreadsFor] 的配对。
+  int _spreadOffset = 1;
+  bool _widePageSolo = true;
 
   /// 「显示识别范围」（BUG-2481）：把 OCR 块框画出来。会话内状态，不落偏好——
   /// 它是检查识别质量用的，不是阅读姿势。
@@ -1209,6 +1215,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     statusBarInset: MediaQuery.paddingOf(context).top,
   );
 
+  /// 固定态下正文 WebView 底部让出的高度（0 = 全出血）。与 [_chromeTopInset] 同源
+  /// 同构；只有一页的书不画底栏，也就不让位。
+  double get _chromeBottomInset => mangaChromeBottomInset(
+    floating: _chromeFloating,
+    chromeVisible: _chromeVisible,
+    contentReady: _chromeContentReady && (_payload?.images.length ?? 0) > 1,
+    gestureInset: MediaQuery.paddingOf(context).bottom,
+  );
+
   /// 悬浮态：正文中央空白点击在「唤出」与「收起」间切换（EPUB 阅读器同款，用户
   /// 2026-09-14 拍板的统一口径：**点击是唯一的开关**，鼠标移动不唤出、唤出后也不
   /// 自动收起，移动端单击同为开 / 关）。固定态 / 界面已隐藏（M 键）时仍是 no-op。
@@ -1459,6 +1474,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     _pageAnimation = MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation);
     _tapZonePaging = appModel.mangaTapZonePaging;
+    _tapZoneLayout = MangaTapZoneLayoutKey.fromKey(appModel.mangaTapZoneLayout);
+    _background = MangaBackgroundKey.fromKey(appModel.mangaBackground);
+    _spreadOffset = appModel.mangaSpreadOffset >= 1 ? 1 : 0;
+    _widePageSolo = appModel.mangaWidePageSolo;
     _chromeFloating = appModel.mangaChromeFloating;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
 
@@ -1828,10 +1847,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
+  /// 每页是否宽页（见开き），按 mokuro 已给的原始像素尺寸判定，不解码图片。
+  /// 关闭「宽页独占」偏好时返回空表 = 全部按普通页配对。
+  List<bool> _soloPagesFor(MokuroPayload payload) {
+    if (!_widePageSolo) return const <bool>[];
+    return <bool>[
+      for (final MokuroImage image in payload.images)
+        isMangaWidePage(
+          width: image.size.width,
+          height: image.size.height,
+        ),
+    ];
+  }
+
   /// 构建 spread 序列。webtoon 每页独立；spread 模式按解析出的布局配对（双页
   /// 两两配对，奇数尾页独占；RTL 左右排序由覆盖层 direction:rtl 落实——DOM 序
-  /// 前一页序在右，符合日漫右开本）。spreadOffset 恒 1：日漫惯例封面独占单页，
-  /// 正文从第 2 页起两两配对（自定义偏移列未入 schema，需要时再加）。
+  /// 前一页序在右，符合日漫右开本）。
+  ///
+  /// [MangaSpreadEntry] 的两条偏移来源：`spreadOffset` 是「封面算不算第 0 页」
+  /// （各家扫描不统一，选错整卷左右页全反，默认 1 = 日漫惯例封面独占）；宽页表
+  /// 让见开き页独占一屏并顺带把其后页序重新对齐。
   List<MangaSpreadEntry> _buildSpreadsFor(
     MokuroPayload payload,
     MangaReadingMode mode,
@@ -1840,8 +1875,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _pageLayout = layout;
     return buildMangaSpreads(
       payload.images.length,
+      soloPages: _soloPagesFor(payload),
       layout: layout,
-      spreadOffset: 1,
+      spreadOffset: _spreadOffset,
     );
   }
 
@@ -2035,8 +2071,42 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       zoomSensitivity: _zoomSensitivity,
       pageAnimation: _pageAnimation,
       tapZonePaging: _tapZonePaging,
+      tapZoneLayout: _tapZoneLayout,
+      backgroundCss: _backgroundCssValue,
       showOcrBoxes: _showOcrBoxes,
     );
+  }
+
+  /// 阅读器底色（[MangaBackground]）解析成一个 Flutter 颜色。
+  ///
+  /// `theme` 档取 `colorScheme.surface` 而不是 `scaffoldBackgroundColor`：后者在
+  /// 部分主题下是纯白/纯黑的极值，与「跟随主题」想要的中性面色不是一回事。
+  Color get _backgroundColor {
+    final String? fixed = _background.fixedCss;
+    switch (fixed) {
+      case '#000':
+        return Colors.black;
+      case '#fff':
+        return Colors.white;
+      case '#2b2b2b':
+        return const Color(0xFF2B2B2B);
+      default:
+        return Theme.of(context).colorScheme.surface;
+    }
+  }
+
+  /// 同一个底色给 WebView 文档用的 CSS 值。两处**必须**同源：页图是
+  /// `object-fit:contain`，非等比视口下页图四周露出的就是 body 底色，而 Scaffold
+  /// 底色透过 WebView 之外的区域（顶栏让位的条、底栏）露出——两者不一致会在正文
+  /// 边界切出一条色差带。
+  String get _backgroundCssValue {
+    final String? fixed = _background.fixedCss;
+    if (fixed != null) return fixed;
+    final Color c = Theme.of(context).colorScheme.surface;
+    final int r = (c.r * 255.0).round().clamp(0, 255);
+    final int g = (c.g * 255.0).round().clamp(0, 255);
+    final int b = (c.b * 255.0).round().clamp(0, 255);
+    return 'rgb($r,$g,$b)';
   }
 
   /// （重）加载当前 spread 的窗口文档。设置在飞守卫，让并发翻页不能交叠 loadData；
@@ -3615,7 +3685,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       },
       child: Scaffold(
-        backgroundColor: Colors.black,
+        // 底色跟随「漫画 · 底色」偏好；与 WebView 文档的 html,body 同源
+        // （[_backgroundCssValue]），否则正文边界会切出一条色差带。
+        backgroundColor: _backgroundColor,
         resizeToAvoidBottomInset: false,
         // 屏幕尺寸 Stack：WebView 以 scale 1.0、inset 0 渲染，buildDictionary() 是
         // 全出血 sibling，calcPopupPosition 才能把 JS getClientRects 视口坐标直接
@@ -3655,7 +3727,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 children: <Widget>[
                   // 固定态顶栏让位：WebView 顶部下移，JS 视口坐标经
                   // [_chromeTopInset] 换算回屏幕坐标（选区 / 右键菜单两处）。
-                  Positioned.fill(top: _chromeTopInset, child: _buildBody()),
+                  Positioned.fill(
+                    top: _chromeTopInset,
+                    bottom: _chromeBottomInset,
+                    child: _buildBody(),
+                  ),
                   if (_sourceReviewSession
                       case final SourceReviewSession session)
                     Positioned(
@@ -3706,6 +3782,50 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       left: 0,
                       right: 0,
                       child: _buildTopChrome(),
+                    ),
+                  // 底栏跳页 slider：可见性与顶栏同判据（同一条 chrome），但额外
+                  // 要求有正文——没有页就没有可跳的页。
+                  // ExcludeFocus：Slider 是可 Tab 到的焦点节点，拿到焦点后左右
+                  // 方向键被它自己的 Shortcuts 吃掉、到不了 _handleReaderKey；
+                  // 阅读器 chrome 不参与焦点遍历（docs/agent/focus-ownership.md），
+                  // 鼠标/触摸拖动不经焦点，功能不受影响。
+                  if (_chromeActionsEnabled &&
+                      mangaChromeBarPainted(
+                        floating: _chromeFloating,
+                        chromeVisible: _chromeVisible,
+                        transientVisible: _chrome.transientVisible,
+                        contentReady: _chromeActionsEnabled,
+                      ))
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: ExcludeFocus(
+                        child: MangaReaderBottomBar(
+                          key: const ValueKey<String>(
+                            'manga_reader_bottom_bar',
+                          ),
+                          pageCount: _payload?.images.length ?? 0,
+                          pageListenable: _pageNotifier,
+                          currentPage: () => _pageNotifier.value,
+                          rtl: _spreadDirection == 'rtl',
+                          floating: _chromeFloating,
+                          onPageCommitted: (int pageIndex) =>
+                              unawaited(_jumpToPage(pageIndex + 1)),
+                        ),
+                      ),
+                    ),
+                  // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。
+                  if (!_chromeVisible && _chromeContentReady)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: SafeArea(
+                        child: MangaHiddenPageBadge(
+                          pageListenable: _pageNotifier,
+                          label: _pageLabel,
+                        ),
+                      ),
                     ),
                   // BUG-1888：隐藏态唯一的唤回入口（理由见 [_chromeVisible]）。
                   // 与返回键同理不挂内容门控——否则「隐藏界面后内容加载失败」会把
@@ -3762,12 +3882,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
+  /// 正文是否就绪（与界面可见性无关）。加载失败 / 本章未下载都算没有正文。
+  ///
+  /// 单独拆出来是因为隐藏态（[_chromeVisible] == false）下仍要画页码角标，而
+  /// [_chromeActionsEnabled] 把可见性也算了进去，在隐藏态恒假。
+  bool get _chromeContentReady =>
+      _bookRow != null && !_loadFailed && !_chapterNotDownloaded;
+
   /// 顶栏动作是否有意义：没有正文（加载失败 / 本章未下载）时只剩返回键。
-  bool get _chromeActionsEnabled =>
-      _bookRow != null &&
-      !_loadFailed &&
-      !_chapterNotDownloaded &&
-      _chromeVisible;
+  bool get _chromeActionsEnabled => _chromeContentReady && _chromeVisible;
 
   /// 栏标题：书架在线条目 = `作品 · 章`；本地卷 = 书名。
   String get _chromeTitle {

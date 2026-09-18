@@ -179,10 +179,9 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     '「用 Fushi 打开」外部视频建行时派生 coversDir 交给 CoverMetaStore 做来源准入，'
         '抽帧仍由 extractVideoCover 落盘；main 自己一个字节都不写。',
   ),
-  'lib/src/media/source_library/source_library_scanner.dart': (
-    CoverDeriverRole.derivesPathOnly,
-    '扫描入库时派生 coversDir 做封面来源准入，落盘交给 extractVideoCover。',
-  ),
+  // BUG-2569 起 `source_library_scanner.dart` **不再**在此列：扫描入库不碰封面了
+  // （不派生 coversDir、不抽帧），封面统一由书架的补齐产线负责。它此前每个文件最坏
+  // 两段 30s ffmpeg，串行 + 进程级排他锁 + UI isolate，把导入拖成几十分钟。
   'lib/src/media/video/metadata/video_scrape_cleanup_service.dart': (
     CoverDeriverRole.writesViaService,
     '「清理全部刮削记录」删封面：隔离/删除由本文件自己按 ledger SHA 校验后执行，'
