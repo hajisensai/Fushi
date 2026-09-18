@@ -23,7 +23,7 @@ import 'test_helpers.dart';
 /// 是视口减 chrome 预留带——竖排多出一列贴左被裁、横排末行进底栏。这里在 live
 /// WebView 上锁三条不变式（竖排、横排各一遍）：
 ///   1. 量尺根盒的高宽 == 当前 `.fushi-vn-screen` 盒（±1px）；
-///   2. 逐屏渲染，每屏所有文本行盒都落在 `.fushi-vn-screen` 盒内（±1px）；
+///   2. 逐屏渲染，每屏所有文本行盒都落在 `.fushi-vn-screen` 盒内（±4px，见探针注释）；
 ///   3. 每屏文本与整章源文连续一致（切屏没有错序 / 丢字）。
 /// BUG-2576：`restoreProgress(0.99)`（往前翻章的「章末」约定值）必须落到末屏。
 ///
@@ -122,8 +122,11 @@ const String _fitProbeJs = r'''
         over.r = Math.max(over.r, rc.right - box.right);
         over.t = Math.max(over.t, box.top - rc.top);
         over.b = Math.max(over.b, rc.bottom - box.bottom);
-        if (rc.left < box.left - 1 || rc.right > box.right + 1 ||
-            rc.top < box.top - 1 || rc.bottom > box.bottom + 1) outside++;
+        // 容差 4px：iOS WebKit 横排行末全角标点的行盒比屏盒宽出 ~2px（字形本体
+        // 占左半 em，右侧是空白，不是可见裁切）；BUG-2575 的真溢出是整列 / 整行
+        // 级（≥ 一个字号），4px 不会放过它。
+        if (rc.left < box.left - 4 || rc.right > box.right + 4 ||
+            rc.top < box.top - 4 || rc.bottom > box.bottom + 4) outside++;
       }
     }
     var cb = document.querySelector('.fushi-vn-content');
