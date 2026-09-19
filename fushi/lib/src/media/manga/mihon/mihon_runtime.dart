@@ -114,6 +114,86 @@ abstract interface class MihonRuntime {
   Future<void> dispose();
 }
 
+/// Aniyomi（视频）扩展的调用面。
+///
+/// 与 [MihonRuntime] 的漫画方法逐一对应，只是 wire 方法名与模型不同
+/// （`sourcesAnime` / `getEpisodeList` / `getVideoList` …）；扩展安装、信任、
+/// 偏好、代理、Cloudflare、图片取图（[MihonRuntime.fetchSourceImage]）全部
+/// 复用同一个运行时实例。独立成接口而不是往 [MihonRuntime] 上加方法，是让
+/// 既有的十来个测试 fake 不必跟着实现；生产的两个实现（桌面 sidecar / Android
+/// 原生）都经 [MihonBridgeRuntime] 天然具备，调用方用 `runtime is
+/// AnimeMihonRuntime` 判能力。
+abstract interface class AnimeMihonRuntime {
+  Future<List<MihonSource>> listAnimeSources(
+    MihonExtensionRef extension, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<List<MihonFilter>> getAnimeFilters(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnimePage> getPopularAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnimePage> getLatestAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnimePage> searchAnime(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    required int page,
+    required String query,
+    List<MihonFilter> filters = const <MihonFilter>[],
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<MihonAnime> getAnimeDetails(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<List<MihonEpisode>> getEpisodes(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  /// 一集的全部可播候选（画质 / hoster），空列表表示源解析不出流。
+  Future<List<MihonVideo>> getVideos(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonEpisode episode, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<List<MihonPreference>> getAnimePreferences(
+    MihonExtensionRef extension,
+    MihonSource source, {
+    List<MihonPreference> persisted = const <MihonPreference>[],
+  });
+
+  Future<List<MihonPreference>> setAnimePreference(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPreference preference, {
+    required List<MihonPreference> persisted,
+  });
+}
+
 /// Optional runtime capability used by the online reader to abort image
 /// requests when a chapter is closed. Implementations must cancel the
 /// underlying HTTP/OkHttp operation, not only discard its eventual result.

@@ -811,7 +811,11 @@ class MihonExtensionStoreClient {
     final String language = json['lang']?.toString() ?? '';
     return MihonAvailableExtension(
       storeUrl: store.indexUrl,
-      name: (json['name']?.toString() ?? '').replaceFirst('Tachiyomi: ', ''),
+      // 两个生态的旧索引都给名字加了 app 前缀（`Tachiyomi: X` / `Aniyomi: X`）。
+      name: (json['name']?.toString() ?? '').replaceFirst(
+        RegExp(r'^(Tachiyomi|Aniyomi): '),
+        '',
+      ),
       packageName: packageName,
       apkUrl: base.resolve('apk/${json['apk']}').toString(),
       iconUrl: base.resolve('icon/$packageName.png').toString(),

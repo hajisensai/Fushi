@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/utils.dart';
 
 enum _MihonBrowseMode { popular, latest, search }
@@ -77,7 +78,7 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     maxConcurrent: 4,
   );
   MihonSourceContext? _sourceContext;
-  List<MihonManga> _items = const <MihonManga>[];
+  List<MihonCatalogueEntry> _items = const <MihonCatalogueEntry>[];
   List<MihonFilter> _filters = const <MihonFilter>[];
   _MihonBrowseMode _mode = _MihonBrowseMode.popular;
   bool _loading = true;
@@ -112,11 +113,19 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
         ) =>
           session.contextFor(source),
       };
-      final List<MihonFilter> filters = await widget.manager.runtime.getFilters(
-        context.extension,
-        context.source,
-        preferences: context.preferences,
-      );
+      final List<MihonFilter> filters = switch (widget.manager.kind) {
+        MihonMediaKind.manga => await widget.manager.runtime.getFilters(
+          context.extension,
+          context.source,
+          preferences: context.preferences,
+        ),
+        MihonMediaKind.anime =>
+          await widget.manager.animeRuntime.getAnimeFilters(
+            context.extension,
+            context.source,
+            preferences: context.preferences,
+          ),
+      };
       if (!mounted) return;
       _sourceContext = context;
       _filters = filters;
@@ -145,38 +154,26 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
       _error = null;
     });
     try {
-      final MihonMangaPage response = switch (requestedMode) {
-        _MihonBrowseMode.popular => await widget.manager.runtime.getPopular(
-          context.extension,
-          context.source,
-          page: requestedPage,
-          preferences: context.preferences,
-        ),
-        _MihonBrowseMode.latest => await widget.manager.runtime.getLatest(
-          context.extension,
-          context.source,
-          page: requestedPage,
-          preferences: context.preferences,
-        ),
-        _MihonBrowseMode.search => await widget.manager.runtime.search(
-          context.extension,
-          context.source,
-          page: requestedPage,
-          query: requestedQuery,
-          filters: requestedFilters,
-          preferences: context.preferences,
-        ),
-      };
+      final ({List<MihonCatalogueEntry> items, bool hasNextPage}) response =
+          await _fetchPage(
+            context,
+            mode: requestedMode,
+            page: requestedPage,
+            query: requestedQuery,
+            filters: requestedFilters,
+          );
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
-        final List<MihonManga> previous = reset ? const <MihonManga>[] : _items;
+        final List<MihonCatalogueEntry> previous = reset
+            ? const <MihonCatalogueEntry>[]
+            : _items;
         final Set<String> seen = previous
-            .map((MihonManga item) => item.url)
+            .map((MihonCatalogueEntry item) => item.url)
             .toSet();
-        final List<MihonManga> additions = response.items
-            .where((MihonManga item) => seen.add(item.url))
+        final List<MihonCatalogueEntry> additions = response.items
+            .where((MihonCatalogueEntry item) => seen.add(item.url))
             .toList(growable: false);
-        _items = <MihonManga>[...previous, ...additions];
+        _items = <MihonCatalogueEntry>[...previous, ...additions];
         _page = requestedPage;
         _hasNextPage =
             response.hasNextPage &&
@@ -196,6 +193,69 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     }
   }
 
+  /// 一页结果：按 manager 的生态分派到漫画 / 视频调用面，网格只吃
+  /// [MihonCatalogueEntry]。
+  Future<({List<MihonCatalogueEntry> items, bool hasNextPage})> _fetchPage(
+    MihonSourceContext context, {
+    required _MihonBrowseMode mode,
+    required int page,
+    required String query,
+    required List<MihonFilter> filters,
+  }) async {
+    switch (widget.manager.kind) {
+      case MihonMediaKind.manga:
+        final MihonRuntime runtime = widget.manager.runtime;
+        final MihonMangaPage response = switch (mode) {
+          _MihonBrowseMode.popular => await runtime.getPopular(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+          _MihonBrowseMode.latest => await runtime.getLatest(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+          _MihonBrowseMode.search => await runtime.search(
+            context.extension,
+            context.source,
+            page: page,
+            query: query,
+            filters: filters,
+            preferences: context.preferences,
+          ),
+        };
+        return (items: response.items, hasNextPage: response.hasNextPage);
+      case MihonMediaKind.anime:
+        final AnimeMihonRuntime runtime = widget.manager.animeRuntime;
+        final MihonAnimePage response = switch (mode) {
+          _MihonBrowseMode.popular => await runtime.getPopularAnime(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+          _MihonBrowseMode.latest => await runtime.getLatestAnime(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+          _MihonBrowseMode.search => await runtime.searchAnime(
+            context.extension,
+            context.source,
+            page: page,
+            query: query,
+            filters: filters,
+            preferences: context.preferences,
+          ),
+        };
+        return (items: response.items, hasNextPage: response.hasNextPage);
+    }
+  }
+
   Future<void> _showFilters() async {
     if (_filters.isEmpty) return;
     final List<MihonFilter>? updated = await showAppDialog<List<MihonFilter>>(
@@ -209,15 +269,24 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
     await _load(reset: true);
   }
 
-  void _openDetails(MihonManga manga) {
+  void _openDetails(MihonCatalogueEntry entry) {
+    final MihonSourceContext sourceContext = _sourceContext!;
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) => MihonMangaDetailPage(
-          manager: widget.manager,
-          sourceContext: _sourceContext!,
-          manga: manga,
-        ),
+        builder: (BuildContext context) => switch (entry) {
+          MihonManga() => MihonMangaDetailPage(
+            manager: widget.manager,
+            sourceContext: sourceContext,
+            manga: entry,
+          ),
+          MihonAnime() => AnimeSourceDetailPage(
+            manager: widget.manager,
+            sourceContext: sourceContext,
+            anime: entry,
+          ),
+          _ => throw StateError('Unknown catalogue entry ${entry.runtimeType}'),
+        },
       ),
     );
   }
@@ -360,10 +429,10 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
                       ),
               );
             }
-            final MihonManga manga = _items[index];
+            final MihonCatalogueEntry entry = _items[index];
             return FushiCard(
               padding: EdgeInsets.zero,
-              onTap: _readOnly ? null : () => _openDetails(manga),
+              onTap: _readOnly ? null : () => _openDetails(entry),
               // FushiCard 内部已用 Material(clipBehavior: antiAlias) 按同一
               // 圆角 token 裁剪，这里不再多包一层 ClipRRect。
               child: Column(
@@ -374,14 +443,14 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
                       runtime: widget.manager.runtime,
                       cache: widget.manager.coverCache,
                       context: _sourceContext!,
-                      url: manga.coverUrl,
+                      url: entry.coverUrl,
                       loadQueue: _imageLoadQueue,
                     ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(10),
                     child: Text(
-                      manga.title,
+                      entry.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),

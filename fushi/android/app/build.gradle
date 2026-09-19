@@ -60,6 +60,27 @@ def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
     }
 }
 
+// Aniyomi (anime) extension ABI. The `eu.kanade.tachiyomi.animesource` sources
+// are vendored with the desktop sidecar (third_party/m_extension_server, the
+// extensions-lib 14 shape Mangayomi runs real extensions against); compiling
+// the same files here keeps Android and the desktop sidecar on one ABI. It is
+// a plain copy of files already in the repository: no download, no hash.
+// `util/lang/CoroutinesExtensions.kt` comes along because the anime sources
+// import `eu.kanade.tachiyomi.util.lang.awaitSingle`, which Mihon's source-api
+// does not provide (its awaitSingle lives in `eu.kanade.tachiyomi.util`).
+def aniyomiSourceRoot = rootProject.file("../../third_party/m_extension_server/upstream_src/server/src/main/kotlin")
+def aniyomiSourceOutput = layout.buildDirectory.dir("generated/aniyomiSourceApi")
+def prepareAniyomiSourceApi = tasks.register("prepareAniyomiSourceApi", Sync) {
+    from(new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/animesource")) {
+        into "eu/kanade/tachiyomi/animesource"
+    }
+    from(new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/util/lang")) {
+        into "eu/kanade/tachiyomi/util/lang"
+    }
+    include "**/*.kt"
+    into aniyomiSourceOutput
+}
+
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
@@ -141,6 +162,7 @@ android {
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
         main.java.srcDirs += mihonSourceOutput
+        main.java.srcDirs += aniyomiSourceOutput
         // 内置 libtorrent 引擎（copy-if-present，与 Windows runner 同姿态）：
         // native/fushi_torrent/build_android_so.{ps1,sh} 产出的
         // prebuilt/android/<abi>/libfushi_torrent_ffi.so 存在则随包；目录缺失时
@@ -315,5 +337,6 @@ dependencies {
 tasks.configureEach { task ->
     if (task.name.startsWith("compile") && task.name.endsWith("Kotlin")) {
         task.dependsOn(prepareMihonSourceApi)
+        task.dependsOn(prepareAniyomiSourceApi)
     }
 }

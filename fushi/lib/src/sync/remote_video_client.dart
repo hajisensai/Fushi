@@ -72,6 +72,20 @@ abstract class RemoteVideoClient extends RemoteVideoSource {
   });
 }
 
+/// 「流请求要带 HTTP 头」的可选能力（防盗链 Referer / User-Agent / Cookie 等）。
+///
+/// 播放页在 load 时把它下发到 libmpv `http-header-fields`（同时给 HLS 画质探测与
+/// 同站字幕下载用）。此前只有粘贴 URL 流（`UrlStreamVideoClient`）有这个需求，
+/// 播放页写死了 `is UrlStreamVideoClient`；视频源扩展（Aniyomi）解析出的流几乎
+/// 全部要带站点 Referer，按能力判而不是按具体类判，两者共用同一条下发路径。
+///
+/// 值以**当前已解析的流**为准：扩展的每一集、甚至每条画质候选的头都可能不同，
+/// 实现应在 [RemoteVideoClient.remoteVideoStreamUrls] 返回时把该集的头记下来，
+/// 播放页紧接着的 load 读到的就是这一份。
+abstract interface class RemoteVideoStreamHeaders {
+  Map<String, String> get httpHeaderFields;
+}
+
 /// 「播放真正结束」的可选能力。
 ///
 /// 只有 Jellyfin/Emby 这类有会话生命周期端点的来源需要它；周期断点上报仍由

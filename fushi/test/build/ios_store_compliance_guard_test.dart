@@ -212,6 +212,35 @@ void main() {
         reason: 'Mihon 扩展提供的源行也在这节里，不能只挡住标题。',
       );
     });
+
+    test('视频「来源」视图的在线源（Aniyomi）入口由 onlineVideoSource 门控', () {
+      // 判据只写在 video_online_sources_page.dart 一处（合规门 + 运行时平台门），
+      // 来源页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
+      final String gate = compactCode(
+        read('lib/src/media/video/online/video_online_sources_page.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisVideoOnlineSourcesAvailable=>'
+          'StoreRestrictedCapability.onlineVideoSource.isAvailable&&'
+          'MihonRuntimeFactory.isSupported;',
+        ),
+      );
+      final String sources = compactCode(
+        read('lib/src/pages/implementations/media_sources_page.dart'),
+      );
+      expect(
+        sources,
+        contains("if(widget.mediaKind=='video'&&isVideoOnlineSourcesAvailable)"),
+        reason: '视频来源页的在线源入口卡必须挂在这个门后。',
+      );
+      expect(
+        sources,
+        isNot(contains('Platform.isIOS')),
+        reason: '消费端不得各自写平台判断，只问 StoreRestrictedCapability。',
+      );
+    });
   });
 
   group('Aidoku 的 iOS 宿主已整条移除', () {

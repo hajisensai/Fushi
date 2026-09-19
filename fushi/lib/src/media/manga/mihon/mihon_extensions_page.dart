@@ -578,7 +578,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         children: <Widget>[
           if (!isCupertinoPlatform(context))
             FushiPageHeader(
-              title: t.mihon_extensions_title,
+              title: switch (manager.kind) {
+                MihonMediaKind.manga => t.mihon_extensions_title,
+                MihonMediaKind.anime => t.video_extensions_title,
+              },
               bottom: widget.navigation,
               actions: _actions(manager),
             ),

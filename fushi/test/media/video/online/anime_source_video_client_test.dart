@@ -1,0 +1,384 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
+import 'package:fushi/src/sync/remote_cover_fetcher.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
+
+/// 视频源扩展 → 播放页契约：一集一条 `RemoteVideoInfo`、稳定 id、按集取流 +
+/// 防盗链头经 [RemoteVideoStreamHeaders] 暴露、字幕同站才带头。
+void main() {
+  late Directory root;
+  late FushiDatabase database;
+  late _VideoRuntime runtime;
+  late MihonManager manager;
+  const MihonAnime anime = MihonAnime(
+    url: '/anime/1',
+    title: 'Fixture Show',
+    coverUrl: 'https://site.example/cover.jpg',
+  );
+  const List<MihonEpisode> episodes = <MihonEpisode>[
+    MihonEpisode(url: '/ep/2', name: 'Episode 2', uploadedAt: 2, number: 2),
+    MihonEpisode(url: '/ep/1', name: 'Episode 1', uploadedAt: 1, number: 1),
+  ];
+
+  setUp(() async {
+    root = await Directory.systemTemp.createTemp('hibiki-anime-client-');
+    database = FushiDatabase.forTesting(NativeDatabase.memory());
+    runtime = _VideoRuntime();
+    manager = MihonManager(
+      database: database,
+      rootDirectory: root,
+      runtime: runtime,
+      kind: MihonMediaKind.anime,
+      ownsRuntime: false,
+    );
+  });
+
+  tearDown(() async {
+    manager.dispose();
+    await database.close();
+    if (await root.exists()) await root.delete(recursive: true);
+  });
+
+  AnimeSourceVideoClient client({http.Client? httpClient}) =>
+      AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        httpClient:
+            httpClient ?? MockClient((_) async => http.Response('', 404)),
+      );
+
+  test('episodes become playlist members with stable url-based ids', () {
+    final AnimeSourceVideoClient c = client();
+    final List<RemoteVideoInfo> videos = c.remoteVideos;
+    expect(videos.map((RemoteVideoInfo v) => v.title), <String>[
+      'Episode 1',
+      'Episode 2',
+    ]);
+    expect(
+      videos.first.id,
+      'anime-source:eu.kanade.tachiyomi.animeextension.all.fixture:42:/ep/1',
+    );
+    expect(videos.first.collection?.collectionType, 'playlist');
+    expect(videos.first.collection?.collectionName, 'Fixture Show');
+    expect(videos.map((RemoteVideoInfo v) => v.collection!.sortIndex), <int>[
+      0,
+      1,
+    ]);
+    expect(videos.first.coverUrl, anime.coverUrl);
+    expect(c, isA<RemoteVideoClient>());
+    expect(c, isA<RemoteCoverFetcher>());
+    expect(c.coverCacheNamespace, c.remoteLibrarySourceId);
+    expect(
+      c.remoteLibrarySourceId,
+      'anime-source:eu.kanade.tachiyomi.animeextension.all.fixture:42',
+    );
+  });
+
+  test(
+    'stream resolution picks the best quality and exposes its headers',
+    () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/720.m3u8',
+          'quality': '720p',
+          'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
+        },
+        <Object?, Object?>{
+          'url': 'https://cdn.example/1080.m3u8',
+          'quality': '1080p',
+          'headers': <Object?, Object?>{'Referer': 'https://site.example/1080'},
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://cdn.example/ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = client();
+      expect(c.httpHeaderFields, isEmpty);
+      final String id = c.remoteVideos.first.id;
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(id);
+      expect(runtime.lastEpisodeUrl, '/ep/1');
+      expect(urls.streamUrl, 'https://cdn.example/1080.m3u8');
+      expect(urls.subtitleUrl, 'https://cdn.example/ja.vtt');
+      expect(urls.subtitleFileName, 'episode_1.日本語.vtt');
+      // HLS 不是原容器：内嵌字幕回落路不可用。
+      expect(urls.streamIsOriginalContainer, isFalse);
+      expect(c.httpHeaderFields, <String, String>{
+        'Referer': 'https://site.example/1080',
+      });
+      // 候选缓存：同一集再取不打扩展。
+      runtime.videoListCalls = 0;
+      await c.remoteVideoStreamUrls(id);
+      expect(runtime.videoListCalls, 0);
+    },
+  );
+
+  test('a pinned candidate wins over the default policy', () async {
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/1080.mp4',
+        'quality': '1080p',
+      },
+      <Object?, Object?>{
+        'url': 'https://cdn.example/480.mp4',
+        'quality': '480p',
+      },
+    ];
+    final AnimeSourceVideoClient c = client();
+    final MihonEpisode first = c.episodes.first;
+    final List<MihonVideo> candidates = await c.resolveVideos(first);
+    c.pinVideo(first, candidates.last);
+    final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(
+      c.episodeVideoId(first),
+    );
+    expect(urls.streamUrl, 'https://cdn.example/480.mp4');
+    expect(urls.streamIsOriginalContainer, isTrue);
+  });
+
+  test('empty candidate list is a typed NO_VIDEOS failure', () async {
+    runtime.videos = <Object?>[];
+    final AnimeSourceVideoClient c = client();
+    await expectLater(
+      () => c.remoteVideoStreamUrls(c.remoteVideos.first.id),
+      throwsA(
+        isA<MihonRuntimeException>().having(
+          (MihonRuntimeException e) => e.code,
+          'code',
+          'NO_VIDEOS',
+        ),
+      ),
+    );
+    await expectLater(
+      () => c.remoteVideoStreamUrls('anime-source:other:1:/x'),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+
+  test(
+    'subtitle download sends stream headers only to the same site',
+    () async {
+      final List<http.Request> requests = <http.Request>[];
+      final MockClient httpClient = MockClient((http.Request request) async {
+        requests.add(request);
+        return http.Response('WEBVTT', 200);
+      });
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep.m3u8',
+          'quality': '1080p',
+          'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://cdn.example/ja.vtt',
+              'lang': 'ja',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient sameSite = client(httpClient: httpClient);
+      final String id = sameSite.remoteVideos.first.id;
+      await sameSite.remoteVideoStreamUrls(id);
+      final File dest = File('${root.path}/ja.vtt');
+      await sameSite.getRemoteVideoSubtitle(id, dest);
+      expect(await dest.readAsString(), 'WEBVTT');
+      expect(requests.single.headers['Referer'], 'https://site.example/');
+
+      requests.clear();
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep.m3u8',
+          'quality': '1080p',
+          'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://subs.other/ja.vtt',
+              'lang': 'ja',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient crossSite = client(httpClient: httpClient);
+      await crossSite.remoteVideoStreamUrls(crossSite.remoteVideos.first.id);
+      await crossSite.getRemoteVideoSubtitle(
+        crossSite.remoteVideos.first.id,
+        File('${root.path}/other.vtt'),
+      );
+      expect(requests.single.headers.containsKey('Referer'), isFalse);
+    },
+  );
+
+  test(
+    'covers go through the extension client, positions are local-only',
+    () async {
+      final AnimeSourceVideoClient c = client();
+      expect(await c.fetchRemoteCover('https://site.example/cover.jpg'), <int>[
+        1,
+        2,
+      ]);
+      expect(runtime.fetchedImageUrls, <String>[
+        'https://site.example/cover.jpg',
+      ]);
+      expect(await c.remoteVideoPosition(c.remoteVideos.first.id), (
+        positionMs: 0,
+        updatedAtMs: 0,
+      ));
+      await expectLater(
+        () => c.downloadRemoteVideo(
+          c.remoteVideos.first.id,
+          File('${root.path}/x'),
+        ),
+        throwsA(isA<UnsupportedError>()),
+      );
+    },
+  );
+
+  test('audioTracks are dub alternatives, never exposed as audioStreamUrl',
+      () async {
+    // Aniyomi 的 audioTracks 是替代配音轨；audioStreamUrl 契约是 audio-only 分离流，
+    // 塞进去播放页会 audio-add 并选中它——默认切到配音、制卡也从它裁。
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/1080.mp4',
+        'quality': '1080p',
+        'audioTracks': <Object?>[
+          <Object?, Object?>{'url': 'https://cdn.example/dub.aac', 'lang': 'en'},
+        ],
+      },
+    ];
+    final AnimeSourceVideoClient c = client();
+    final RemoteVideoStreamUrls urls =
+        await c.remoteVideoStreamUrls(c.remoteVideos.first.id);
+    expect(urls.streamUrl, 'https://cdn.example/1080.mp4');
+    expect(urls.audioStreamUrl, isNull);
+  });
+
+  test('playback order is by episode number then upload time', () {
+    final List<MihonEpisode> sorted =
+        sortEpisodesForPlayback(const <MihonEpisode>[
+          MihonEpisode(url: '/c', name: 'c', uploadedAt: 3, number: 2),
+          MihonEpisode(url: '/b', name: 'b', uploadedAt: 1, number: 2),
+          MihonEpisode(url: '/a', name: 'a', uploadedAt: 9, number: 1),
+        ]);
+    expect(sorted.map((MihonEpisode e) => e.url), <String>['/a', '/b', '/c']);
+    expect(
+      chooseBestAnimeVideo(const <MihonVideo>[
+        MihonVideo(url: 'x', quality: 'Auto'),
+        MihonVideo(url: 'y', quality: '480p'),
+        MihonVideo(url: 'z', quality: 'Doodstream 1080p'),
+      ]).url,
+      'z',
+    );
+    expect(
+      chooseBestAnimeVideo(const <MihonVideo>[
+        MihonVideo(url: 'x', quality: 'Server A'),
+        MihonVideo(url: 'y', quality: 'Server B'),
+      ]).url,
+      'x',
+    );
+  });
+}
+
+const MihonSourceContext _context = MihonSourceContext(
+  extension: MihonExtensionRef(
+    packageName: 'eu.kanade.tachiyomi.animeextension.all.fixture',
+    apkPath: '/tmp/fixture.apk',
+  ),
+  source: MihonSource(
+    extensionPackage: 'eu.kanade.tachiyomi.animeextension.all.fixture',
+    id: '42',
+    name: 'Fixture',
+    language: 'all',
+    baseUrl: 'https://site.example',
+  ),
+  preferences: <MihonPreference>[],
+);
+
+class _VideoRuntime extends MihonBridgeRuntime {
+  Object? videos = <Object?>[];
+  String? lastEpisodeUrl;
+  int videoListCalls = 0;
+  final List<String> fetchedImageUrls = <String>[];
+
+  @override
+  Future<Object?> invokeBridge(
+    MihonExtensionRef extension,
+    String method,
+    Map<String, Object?> arguments, {
+    MihonSource? source,
+  }) async {
+    if (method == 'getVideoList') {
+      videoListCalls++;
+      lastEpisodeUrl =
+          (arguments['episodeData']! as Map<String, Object?>)['url']
+              ?.toString();
+      return videos;
+    }
+    throw UnimplementedError(method);
+  }
+
+  @override
+  Future<Uint8List> fetchSourceImage(
+    MihonExtensionRef extension,
+    MihonSource source,
+    String url, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    fetchedImageUrls.add(url);
+    return Uint8List.fromList(<int>[1, 2]);
+  }
+
+  @override
+  Future<Uint8List> fetchImage(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPage page, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) => throw UnimplementedError();
+
+  @override
+  Future<MihonCapabilities> getCapabilities() => throw UnimplementedError();
+
+  @override
+  Future<MihonExtensionInspection> inspectExtension(String apkPath) =>
+      throw UnimplementedError();
+
+  @override
+  Future<String> installPrivateExtension(String apkPath) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> uninstallPrivateExtension(String packageName) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> clearSourceData(
+    MihonExtensionRef extension,
+    MihonSource source,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<void> invalidateExtension(String packageName) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> invalidateExtensions(Iterable<String> packageNames) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> dispose() async {}
+}
