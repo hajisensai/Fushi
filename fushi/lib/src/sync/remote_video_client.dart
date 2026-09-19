@@ -148,6 +148,29 @@ abstract interface class RemoteVideoQualityLimit {
   set qualityPresetIndex(int index);
 }
 
+/// 同一集的一条可播候选（视频源扩展的「线路 / 画质」：一集常给多家 hoster × 多档
+/// 画质，扩展自己排好序）。
+class RemoteVideoStreamVariant {
+  const RemoteVideoStreamVariant({required this.label});
+
+  /// 菜单文案：扩展给的画质 / 线路名（`1080p` / `Vidstream · 720p`），不进 i18n。
+  final String label;
+}
+
+/// 「同一集多条可播候选」的可选能力（视频源扩展）。
+///
+/// 起播**不问用户**：默认那条由实现自己定（扩展标的 `preferred` / 排序第一条），
+/// 播放页的画质菜单再列出 [streamVariants] 让用户换线路。改选后调用方须重新取流
+/// （[RemoteVideoClient.remoteVideoStreamUrls]），实现要把选择记到下一次取流；列表
+/// 以**当前已取流的那一集**为准，换集后随之更新。
+abstract interface class RemoteVideoStreamVariants {
+  List<RemoteVideoStreamVariant> get streamVariants;
+
+  /// 正在播的那条在 [streamVariants] 里的下标；尚未取流为 -1。
+  int get streamVariantIndex;
+  set streamVariantIndex(int index);
+}
+
 /// 「清单里省掉的重字段按需补齐」的**可选**能力（BUG-1891）。
 ///
 /// 起因是 Jellyfin/Emby：清单请求带 `Fields=MediaSources` 会让服务器为**每一条**

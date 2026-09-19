@@ -410,6 +410,30 @@ class VideoPlayerController extends ChangeNotifier
   /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
   final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
 
+  /// 网络流的读取速度（bytes/s，mpv `cache-speed`：缓存层与下层 I/O 之间过去 1 秒
+  /// 的吞吐）；null = 当前不是网络流 / 尚无采样。加载 overlay 与缓冲圈据此给用户
+  /// 「到底在不在下」的反馈——此前裸转圈，链路停滞与慢速下载看起来一模一样。
+  ///
+  /// 只对网络流采样（[isNetworkSource]）：media_kit 默认开 `cache`，本地文件读盘时
+  /// `cache-speed` 同样非零，不能靠「速度为 0」当本地判据。
+  final ValueNotifier<double?> networkReadBytesPerSecond =
+      ValueNotifier<double?>(null);
+
+  /// 当前 [load] 的源是不是 http(s) 网络流（含互联中继的 `http://127.0.0.1`）。
+  bool get isNetworkSource => _sourceIsNetwork;
+  bool _sourceIsNetwork = false;
+
+  /// [networkReadBytesPerSecond] 的 1 秒轮询；不用 `observeProperty`——换集复用同一
+  /// `Player`，同名重复 observe 会抛 `Already observed`，而 mpv 该值本就是 1 秒窗口。
+  Timer? _cacheSpeedTimer;
+  bool _cacheSpeedSampleInFlight = false;
+
+  /// 测试可见：模拟一次读取速度采样（widget 测试起不了 libmpv）。
+  @visibleForTesting
+  void debugSetNetworkReadSpeedForTesting(double? bytesPerSecond) {
+    networkReadBytesPerSecond.value = bytesPerSecond;
+  }
+
   VideoHdrOutputMode _hdrOutputMode = VideoHdrOutputMode.auto;
   VideoFitMode _hdrHostFitMode = VideoFitMode.contain;
   bool _hdrSourceIsHdr = false;
@@ -1523,6 +1547,7 @@ class VideoPlayerController extends ChangeNotifier
     final String sourceUri = nativePlaybackUri(
       mediaUri ?? mediaUriForVideoPath(videoFile!.path),
     );
+    _sourceIsNetwork = isNetworkStreamUri(sourceUri);
     // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
     debugPrint(
       '[video-load] cues=${cues.length} '
@@ -1551,6 +1576,7 @@ class VideoPlayerController extends ChangeNotifier
     // 绑同一实例 → 新视频正常渲染；也是 media_kit 切播放列表的正规姿势。
     _tick?.cancel();
     _tick = null;
+    _stopCacheSpeedSampling();
     // TODO-1119：换片复位黑闪采样窗基线（新片计数器从头；不复位「已触发」——每控制器
     // 生命周期只提示一次，换集不再重复弹）。
     _blackFlickerDetector.resetWindows();
@@ -1743,6 +1769,9 @@ class VideoPlayerController extends ChangeNotifier
       play: false,
     );
     if (!_isCurrentLoad(player, loadToken)) return; // open 后换片/销毁。
+    // 网络流从 open 起就在下：读取速度采样得在这里起，不能搭下面 125ms tick 的车
+    // ——tick 要等 seek 之后才启动，正好错过首开缓冲这段最需要反馈的窗口。
+    _startCacheSpeedSampling(player, loadToken);
     // 点播媒体 open 成功即报 duration，这里先取一次快照；直播流（duration 恒 0）与
     // 慢容器由下面 125ms tick 的同一 helper 继续观测。见 [mediaOpened]。
     _markMediaOpenedIfEvident(player);
@@ -2926,6 +2955,36 @@ class VideoPlayerController extends ChangeNotifier
     }
   }
 
+  /// 起 [networkReadBytesPerSecond] 的轮询：非网络流不采（值保持 null）。每次读完
+  /// 都用 [_isCurrentLoad] 重校验——`getProperty` 是异步 FFI，换集 / 销毁后迟到的
+  /// 样本不能写进新片的 notifier（与黑闪采样、章节读取同一条防 UAF 纪律）。
+  void _startCacheSpeedSampling(Player player, int loadToken) {
+    _stopCacheSpeedSampling();
+    if (!_sourceIsNetwork) return;
+    _cacheSpeedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_cacheSpeedSampleInFlight) return;
+      if (!_isCurrentLoad(player, loadToken)) return;
+      _cacheSpeedSampleInFlight = true;
+      unawaited(() async {
+        try {
+          final String raw = await _getMpvProperty('cache-speed');
+          if (!_isCurrentLoad(player, loadToken)) return;
+          final double? speed = double.tryParse(raw);
+          if (speed == null) return;
+          networkReadBytesPerSecond.value = speed;
+        } finally {
+          _cacheSpeedSampleInFlight = false;
+        }
+      }());
+    });
+  }
+
+  void _stopCacheSpeedSampling() {
+    _cacheSpeedTimer?.cancel();
+    _cacheSpeedTimer = null;
+    networkReadBytesPerSecond.value = null;
+  }
+
   /// 当前视频的内封章节列表（TODO-424）；无章节 / 未 [load] 时为空。章节面板渲染用。
   List<VideoChapter> get chapters => List<VideoChapter>.unmodifiable(_chapters);
 
@@ -3658,6 +3717,7 @@ class VideoPlayerController extends ChangeNotifier
     _forceSavePositionSync();
     _tick?.cancel();
     _tick = null;
+    _stopCacheSpeedSampling();
     unawaited(_playingSub?.cancel());
     _playingSub = null;
     unawaited(_completedSub?.cancel());
@@ -3712,6 +3772,7 @@ class VideoPlayerController extends ChangeNotifier
     _mediaOpened = false;
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     luaScriptStates.dispose();
+    networkReadBytesPerSecond.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();

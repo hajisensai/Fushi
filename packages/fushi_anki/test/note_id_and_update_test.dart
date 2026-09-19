@@ -39,6 +39,16 @@ class _RecordingService extends AnkiConnectService {
     return (modelName: noteModelName, fields: fields);
   }
 
+  /// BUG-2606 起覆盖路径会 addTags；不覆写就打真 localhost:8765——本机开着 Anki
+  /// 时假绿、CI 上红。
+  final List<({int noteId, List<String> tags})> addTagsCalls =
+      <({int noteId, List<String> tags})>[];
+
+  @override
+  Future<void> addTags(int noteId, List<String> tags) async {
+    addTagsCalls.add((noteId: noteId, tags: List<String>.from(tags)));
+  }
+
   /// 假 note 的笔记类型名；null = 服务端没给，仓库跳过类型校验。
   String? noteModelName;
 
