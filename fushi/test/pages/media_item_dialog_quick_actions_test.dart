@@ -1,14 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 
 /// The long-press dialog quick actions are equal-width chips laid out below the
-/// cover: a single Expanded row when they fit, degrading to full-width vertical
-/// rows on a narrow dialog. Labels must render without overflow on both wide and
-/// narrow dialogs, and on a wide dialog the chips must share the row equally.
+/// cover: a single row when they fit, otherwise fewer columns per row (down to
+/// full-width vertical rows) — the column count is decided from the chips'
+/// real intrinsic widths, never from a guessed minimum (BUG-2603). Labels must
+/// render without ellipsis on both wide and narrow dialogs, and chips sharing a
+/// row must share it equally.
 void main() {
   // Three Japanese labels of differing length, the real
   // view_illustrations / audiobook_import / tag_label set.
@@ -30,7 +33,8 @@ void main() {
     ),
   ];
 
-  Future<void> pumpFrame(WidgetTester tester) async {
+  Future<void> pumpFrame(WidgetTester tester,
+      {List<DialogQuickAction>? actions}) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -40,7 +44,7 @@ void main() {
               title: 'こころ',
               launchLabel: 'Read',
               onLaunch: () {},
-              quickActions: threeActions,
+              quickActions: actions ?? threeActions,
             ),
           ),
         ),
@@ -101,6 +105,107 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // BUG-2603: the real shelf book set on upstream — view_illustrations /
+  // audiobook_import / remote_book_audiobook_download (zh-CN). Inside the
+  // 420-wide dialog cap the old layout split the row into three ~124 px chips
+  // (>= its guessed 96 px minimum) while the widest label needs ~190 px, so the
+  // labels rendered as 「查…」「导…」「从…」. Ellipsis throws no exception, so the
+  // narrow-dialog test above never caught it; assert on the paragraph itself.
+  final List<DialogQuickAction> shelfActions = <DialogQuickAction>[
+    DialogQuickAction(
+      label: '查看插画',
+      icon: Icons.image_outlined,
+      onPressed: () {},
+    ),
+    DialogQuickAction(
+      label: '导入有声书',
+      icon: Icons.headphones_outlined,
+      onPressed: () {},
+    ),
+    DialogQuickAction(
+      label: '从互联对端下载有声书',
+      icon: Icons.cloud_download_outlined,
+      onPressed: () {},
+    ),
+  ];
+
+  // Both the dialog at its 420 px cap (the reported tablet-width case) and a
+  // phone-width dialog.
+  for (final Size screen in <Size>[
+    const Size(1200, 1600),
+    const Size(390, 844)
+  ]) {
+    testWidgets(
+        'real shelf labels are never ellipsised on a ${screen.width.round()}-wide screen',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = screen;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await pumpFrame(tester, actions: shelfActions);
+
+      for (final DialogQuickAction action in shelfActions) {
+        expect(_didEllipsise(tester, action.label), isFalse,
+            reason: '"${action.label}" was cut short');
+      }
+      // The three chips cannot share one row at this width, so the layout must
+      // have wrapped — and every chip still uses the same column width.
+      final List<Rect> rects = <Rect>[
+        for (final DialogQuickAction action in shelfActions)
+          _chipRect(tester, action.label),
+      ];
+      expect(rects.map((Rect r) => r.top).toSet().length, greaterThan(1),
+          reason: 'chips should wrap onto more than one row');
+      expect(rects.map((Rect r) => r.width.round()).toSet().length, 1,
+          reason: 'all chips share one column width');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('chips wrap to fewer columns per row instead of shrinking',
+      (WidgetTester tester) async {
+    // Widest label fits two-per-row but not three-per-row inside the 420-wide
+    // dialog: expect a 2 + 1 grid, equal widths, no ellipsis.
+    final List<DialogQuickAction> actions = <DialogQuickAction>[
+      DialogQuickAction(
+        label: '查看插画',
+        icon: Icons.image_outlined,
+        onPressed: () {},
+      ),
+      DialogQuickAction(
+        label: '导入有声书',
+        icon: Icons.headphones_outlined,
+        onPressed: () {},
+      ),
+      DialogQuickAction(
+        label: '打开文件位置',
+        icon: Icons.folder_open_outlined,
+        onPressed: () {},
+      ),
+    ];
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpFrame(tester, actions: actions);
+
+    final Rect r1 = _chipRect(tester, '查看插画');
+    final Rect r2 = _chipRect(tester, '导入有声书');
+    final Rect r3 = _chipRect(tester, '打开文件位置');
+    expect(r1.top, r2.top, reason: 'first two chips share a row');
+    expect(r3.top, greaterThan(r1.bottom), reason: 'third chip wraps');
+    expect(r1.left, r3.left, reason: 'wrapped chip starts a new row');
+    expect((r1.width - r2.width).abs(), lessThan(1.0));
+    expect((r2.width - r3.width).abs(), lessThan(1.0));
+    for (final DialogQuickAction action in actions) {
+      expect(_didEllipsise(tester, action.label), isFalse,
+          reason: '"${action.label}" was cut short');
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('tapping a quick-action fires its callback',
       (WidgetTester tester) async {
     int tapped = 0;
@@ -155,13 +260,26 @@ void main() {
 }
 
 /// Width of the chip wrapping the given label (the OutlinedButton ancestor).
-double _chipWidth(WidgetTester tester, String label) {
+double _chipWidth(WidgetTester tester, String label) =>
+    _chipRect(tester, label).width;
+
+/// Screen rect of the chip wrapping the given label.
+Rect _chipRect(WidgetTester tester, String label) {
   final Finder button = find.ancestor(
     of: find.text(label),
     matching: find.byType(OutlinedButton),
   );
   expect(button, findsOneWidget, reason: 'chip for "$label" not found');
-  return tester.getSize(button).width;
+  return tester.getRect(button);
+}
+
+/// Whether the label paragraph was cut to its single line with an ellipsis.
+/// `TextOverflow.ellipsis` never throws, so this is the only observable signal
+/// that a chip was too narrow for its label.
+bool _didEllipsise(WidgetTester tester, String label) {
+  final RenderParagraph paragraph =
+      tester.renderObject<RenderParagraph>(find.text(label));
+  return paragraph.didExceedMaxLines;
 }
 
 String _methodSource(String source, String signature) {
