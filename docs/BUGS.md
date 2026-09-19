@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2407 条。点号进各自文件。
+> 共 2408 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2604](bugs/BUG-2604-ffmpeg-min-av1-hwaccel-only.md) | ✅ | ✅ | AV1 视频制卡截帧/动图/片段导出恒 ffmpeg exit 69：捆绑 ffmpeg-min 只有 hwaccel 空壳的原生 av1 解码器 |
+| [BUG-2603](bugs/BUG-2603-quick-action-chip-ellipsis.md) | ✅ | ✅ | 书卡长按菜单快捷 chip 在移动端被截成「查…/导…/从…」 |
 | [BUG-2601](bugs/BUG-2601-animekai-suspend-get.md) | ✅ | ✅ | 视频源扩展调 suspend OkHttpClient.get 在两端宿主都缺定义，AnimeKai 剧集列表 BRIDGE_HTTP_500 |
 | [BUG-2600](bugs/BUG-2600-video-ext-lib16-abi.md) | ✅ | ✅ | 视频源扩展在 lib 14 宿主 ABI 上进不去剧集或播不了 |
 | [BUG-2598](bugs/BUG-2598-lyrics-mode-settings-stepper-unverified.md) | 🚧 | ✅ | 歌词模式「阅读设置调节按钮不生效」——Windows 真机未复现 |
