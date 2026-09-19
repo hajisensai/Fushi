@@ -30,7 +30,11 @@ const String kAnimeSourceVideoIdPrefix = 'anime-source:';
 /// 浏览态零入库：本 client 只活在「作品页 → 播放」这一段，不进库页的远端清单缓存
 /// （[listRemoteVideos] 只列本作品的集）。收藏入库是二期。
 class AnimeSourceVideoClient
-    implements RemoteVideoClient, RemoteCoverFetcher, RemoteVideoStreamHeaders {
+    implements
+        RemoteVideoClient,
+        RemoteCoverFetcher,
+        RemoteVideoStreamHeaders,
+        RemoteVideoStreamVariants {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -40,7 +44,9 @@ class AnimeSourceVideoClient
     MihonVideo Function(List<MihonVideo> candidates)? chooseVideo,
   }) : episodes = List<MihonEpisode>.unmodifiable(episodes),
        _httpClient = httpClient ?? createAppHttpIoClient(),
-       _chooseVideo = chooseVideo ?? chooseBestAnimeVideo;
+       _chooseVideo = chooseVideo ?? chooseBestAnimeVideo {
+    _episodeIds = _buildEpisodeIds();
+  }
 
   final MihonManager manager;
   final MihonSourceContext context;
@@ -61,6 +67,9 @@ class AnimeSourceVideoClient
   /// 最近一次 [remoteVideoStreamUrls] 选中的候选：它的头就是当前流的头。
   MihonVideo? _currentVideo;
 
+  /// 最近一次取流的集 id：播放页的线路菜单（[streamVariants]）列的就是这一集的候选。
+  String? _currentEpisodeId;
+
   AnimeMihonRuntime get _runtime => manager.animeRuntime;
 
   @override
@@ -74,17 +83,51 @@ class AnimeSourceVideoClient
   Map<String, String> get httpHeaderFields =>
       _currentVideo?.headers ?? const <String, String>{};
 
+  /// 与 [episodes] 同序的集 id（见 [_buildEpisodeIds]）。
+  late final List<String> _episodeIds;
+
   /// 本集在源内的稳定 id → 播放页 `bookUid`。
-  String episodeVideoId(MihonEpisode episode) =>
+  String episodeVideoId(MihonEpisode episode) {
+    final int index = episodes.indexOf(episode);
+    return index >= 0 ? _episodeIds[index] : _baseEpisodeId(episode);
+  }
+
+  String _baseEpisodeId(MihonEpisode episode) =>
       '$kAnimeSourceVideoIdPrefix'
       '${context.source.extensionPackage}:${context.source.id}:'
       '${episode.url}';
 
-  MihonEpisode? episodeForVideoId(String id) {
-    for (final MihonEpisode episode in episodes) {
-      if (episodeVideoId(episode) == id) return episode;
+  /// 集 id 以 `episode.url` 为身份；有的扩展把身份放在集号 / 名字上而 url 相同（或
+  /// 为空），那样整部作品所有集都解析成同一条 id：换哪一集都取回第一集的流、断点 /
+  /// 字幕记忆互相覆盖，表现为「点下一集还是这一集」。撞车的 id 追加集号去重（集号
+  /// 也撞再追加下标兜底），不撞的保持原样（既有断点键不变）。
+  List<String> _buildEpisodeIds() {
+    final List<String> base = <String>[
+      for (final MihonEpisode episode in episodes) _baseEpisodeId(episode),
+    ];
+    final Map<String, int> baseCounts = <String, int>{};
+    for (final String id in base) {
+      baseCounts[id] = (baseCounts[id] ?? 0) + 1;
     }
-    return null;
+    final List<String> ids = <String>[
+      for (int i = 0; i < base.length; i++)
+        baseCounts[base[i]]! > 1
+            ? '${base[i]}#${episodes[i].number.toStringAsFixed(0)}'
+            : base[i],
+    ];
+    final Map<String, int> counts = <String, int>{};
+    for (final String id in ids) {
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return <String>[
+      for (int i = 0; i < ids.length; i++)
+        counts[ids[i]]! > 1 ? '${ids[i]}/$i' : ids[i],
+    ];
+  }
+
+  MihonEpisode? episodeForVideoId(String id) {
+    final int index = _episodeIds.indexOf(id);
+    return index >= 0 ? episodes[index] : null;
   }
 
   /// 本作品全部集的播放页 DTO，与 [episodes] 同序；播放页拿它当
@@ -127,9 +170,50 @@ class AnimeSourceVideoClient
     return videos;
   }
 
-  /// 作品页选择器：用户为某集钉住一条候选（线路 / 画质）。
+  /// 为某集钉住一条候选（线路 / 画质）：下一次取该集的流用它，不再走默认策略。
   void pinVideo(MihonEpisode episode, MihonVideo video) {
     _pinnedVideos[episodeVideoId(episode)] = video;
+  }
+
+  /// 当前集已解析的候选；尚未取流为空。
+  List<MihonVideo> get _currentCandidates {
+    final String? id = _currentEpisodeId;
+    return id == null
+        ? const <MihonVideo>[]
+        : _resolvedCandidates[id] ?? const <MihonVideo>[];
+  }
+
+  /// 播放页线路菜单：当前集的全部候选，按扩展给的顺序（它已按用户在扩展设置里
+  /// 的画质 / 语言偏好排过）。
+  @override
+  List<RemoteVideoStreamVariant> get streamVariants =>
+      <RemoteVideoStreamVariant>[
+        for (final MihonVideo video in _currentCandidates)
+          RemoteVideoStreamVariant(label: streamVariantLabel(video)),
+      ];
+
+  @override
+  int get streamVariantIndex {
+    final MihonVideo? current = _currentVideo;
+    if (current == null) return -1;
+    return _currentCandidates.indexOf(current);
+  }
+
+  /// 用户在播放页换线路：钉到当前集，播放页随后重新取流即播这一条。
+  @override
+  set streamVariantIndex(int index) {
+    final String? id = _currentEpisodeId;
+    final List<MihonVideo> candidates = _currentCandidates;
+    if (id == null || index < 0 || index >= candidates.length) return;
+    _pinnedVideos[id] = candidates[index];
+  }
+
+  /// 候选在菜单里的文案：扩展给的画质 / 线路名，没给就退到流的主机名（同一集多家
+  /// hoster 时至少能分辨是哪一家）。
+  static String streamVariantLabel(MihonVideo video) {
+    if (video.quality.isNotEmpty) return video.quality;
+    final String host = Uri.tryParse(video.resolvedUrl)?.host ?? '';
+    return host.isNotEmpty ? host : video.resolvedUrl;
   }
 
   @override
@@ -150,6 +234,7 @@ class AnimeSourceVideoClient
     }
     final MihonVideo chosen = _pinnedVideos[id] ?? _chooseVideo(candidates);
     _currentVideo = chosen;
+    _currentEpisodeId = id;
     final MihonVideoTrack? subtitle = chosen.subtitleTracks.firstOrNull;
     final String streamUrl = chosen.resolvedUrl;
     return RemoteVideoStreamUrls(

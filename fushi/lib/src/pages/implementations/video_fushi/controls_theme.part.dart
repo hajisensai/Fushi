@@ -35,6 +35,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
+      bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
+        readSpeed: _networkReadSpeedOf(controller),
+      ),
       // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
       // 桌面默认 150ms，显式写出后改一处全部跟随）。
@@ -204,6 +208,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
+      bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
+        readSpeed: _networkReadSpeedOf(controller),
+      ),
       // 控制条淡入淡出时长（TODO-435）：与侧边锁按钮 / 浮动 rail 读同一真相源
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
       // 移动默认 300ms，显式写出后改一处全部跟随）。

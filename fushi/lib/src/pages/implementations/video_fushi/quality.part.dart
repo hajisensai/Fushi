@@ -85,24 +85,41 @@ extension _VideoQuality on _VideoFushiPageState {
     return client is RemoteVideoQualityLimit ? client : null;
   }
 
-  /// 画质入口是否可见：HLS master（多档码率）、YouTube 流（懒解析多档）或媒体服务器
-  /// （服务器侧转码档）。
+  /// 视频源扩展的「线路」能力：同一集多条候选（hoster × 画质），起播由 client 按
+  /// 扩展的 `preferred` / 排序默认选，用户在画质菜单里换。非扩展来源为 null。
+  RemoteVideoStreamVariants? get _streamVariantsClient {
+    final Object? client = _effectiveRemoteClient;
+    return client is RemoteVideoStreamVariants ? client : null;
+  }
+
+  /// 当前集的线路候选；只有一条时没有可换的，菜单不显。
+  List<RemoteVideoStreamVariant> get _streamVariants {
+    final List<RemoteVideoStreamVariant> variants =
+        _streamVariantsClient?.streamVariants ??
+            const <RemoteVideoStreamVariant>[];
+    return variants.length > 1 ? variants : const <RemoteVideoStreamVariant>[];
+  }
+
+  /// 画质入口是否可见：HLS master（多档码率）、YouTube 流（懒解析多档）、媒体服务器
+  /// （服务器侧转码档）或视频源扩展的多条线路。
   bool get _hasQualityMenu =>
       _hlsVariants.isNotEmpty ||
       _isYoutubeStream ||
-      _mediaServerQuality != null;
+      _mediaServerQuality != null ||
+      _streamVariants.isNotEmpty;
 
-  /// 画质档数量（媒体服务器 > YouTube > HLS）。控件槽据此判是否显数字/入口。
+  /// 画质档数量（媒体服务器 > 扩展线路 > YouTube > HLS）。控件槽据此判是否显数字/入口。
   int get _qualityOptionCount {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server != null) return server.qualityPresets.length;
+    if (_streamVariants.isNotEmpty) return _streamVariants.length;
     return _youtubeVariants.isNotEmpty
         ? _youtubeVariants.length
         : _hlsVariants.length;
   }
 
-  /// 当前画质档标签（控件槽副标题）：媒体服务器 > YouTube > HLS；YouTube 尚未解析显
-  /// 「自动」占位。
+  /// 当前画质档标签（控件槽副标题）：媒体服务器 > 扩展线路 > YouTube > HLS；YouTube
+  /// 尚未解析显「自动」占位。
   String? get _qualityCurrentLabel {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server != null) {
@@ -110,6 +127,13 @@ extension _VideoQuality on _VideoFushiPageState {
       return index < 0 || index >= server.qualityPresets.length
           ? t.video_quality_auto
           : server.qualityPresets[index].label;
+    }
+    final List<RemoteVideoStreamVariant> variants = _streamVariants;
+    if (variants.isNotEmpty) {
+      final int index = _streamVariantsClient!.streamVariantIndex;
+      return index < 0 || index >= variants.length
+          ? null
+          : variants[index].label;
     }
     if (_youtubeVariants.isNotEmpty) {
       return (_selectedYoutubeVariantIndex < 0 ||
@@ -260,6 +284,31 @@ extension _VideoQuality on _VideoFushiPageState {
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
+  /// 切到视频源扩展的第 [index] 条线路：选择记进 client（钉到当前集），再按当前集
+  /// 重新取流起播、回到当前位置——与媒体服务器换档同一条路（[_loadRemoteEpisode]
+  /// 会重新读 client 的防盗链头，这条线路的头随之下发）。同条早退；重载后弹 OSD。
+  Future<void> _switchStreamVariant(int index) async {
+    final RemoteVideoStreamVariants? client = _streamVariantsClient;
+    if (client == null) return;
+    final List<RemoteVideoStreamVariant> variants = client.streamVariants;
+    if (index < 0 || index >= variants.length) return;
+    if (index == client.streamVariantIndex) {
+      _hideVideoSidePanel();
+      return;
+    }
+    final int posMs = _controller?.positionMs ?? 0;
+    final String label = variants[index].label;
+    _hideVideoSidePanel();
+    client.streamVariantIndex = index;
+    await _loadRemoteEpisode(
+      _currentEpisode < 0 ? 0 : _currentEpisode,
+      startIntent: EpisodeStartIntent.explicitCue,
+      initialPositionMsOverride: posMs,
+    );
+    if (!mounted) return;
+    _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+  }
+
   /// 切到第 [index] 档画质（-1=自动/master ABR）：换 variant URL 重载，保持当前播放位置
   /// 与现有字幕 cue。同档早退；重载后弹 OSD。
   Future<void> _switchHlsVariant(int index) async {
@@ -324,6 +373,46 @@ extension _VideoQuality on _VideoFushiPageState {
               index: i,
               selected: server.qualityPresetIndex == i,
             ),
+        ],
+      );
+    }
+    // 视频源扩展分支：当前集的各条线路（扩展排好的顺序），正在播的打勾；线路本身
+    // 是 HLS master 时把它的码率档接在下面（换线路与换档互不覆盖）。
+    final List<RemoteVideoStreamVariant> streamVariants = _streamVariants;
+    if (streamVariants.isNotEmpty) {
+      final int current = _streamVariantsClient!.streamVariantIndex;
+      final List<HlsVariant> hls = _hlsVariants;
+      return ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: <Widget>[
+          for (int i = 0; i < streamVariants.length; i++)
+            ListTile(
+              key: ValueKey<String>('video-quality-stream-variant-$i'),
+              dense: true,
+              leading: const Icon(Icons.alt_route),
+              title: Text(streamVariants[i].label),
+              selected: current == i,
+              selectedColor: cs.primary,
+              trailing:
+                  current == i ? Icon(Icons.check, color: cs.primary) : null,
+              onTap: () => unawaited(_switchStreamVariant(i)),
+            ),
+          if (hls.isNotEmpty) ...<Widget>[
+            const Divider(),
+            _buildQualityTile(
+              cs,
+              icon: Icons.auto_awesome,
+              label: t.video_quality_auto,
+              index: -1,
+            ),
+            for (int i = 0; i < hls.length; i++)
+              _buildQualityTile(
+                cs,
+                icon: Icons.high_quality,
+                label: hls[i].qualityLabel,
+                index: i,
+              ),
+          ],
         ],
       );
     }

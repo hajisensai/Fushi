@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 87193 (5129 per locale)
+/// Strings: 87176 (5128 per locale)
 ///
-/// Built on 2026-09-19 at 17:31 UTC
+/// Built on 2026-09-19 at 19:43 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -7104,7 +7104,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'No enabled video sources. Install and enable an extension first.';
   String get video_online_episodes_title => 'Episodes';
   String get video_online_episodes_empty => 'No episodes found.';
-  String get video_online_stream_choose => 'Choose a stream';
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   String get media_import_segment_local => 'Local';
@@ -19182,8 +19181,6 @@ class _StringsAr extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -31535,8 +31532,6 @@ class _StringsDe extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -43941,8 +43936,6 @@ class _StringsEs extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -56385,8 +56378,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -68626,8 +68617,6 @@ class _StringsId extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -80961,8 +80950,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -92675,8 +92662,6 @@ class _StringsJa extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -104400,8 +104385,6 @@ class _StringsKo extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -116694,8 +116677,6 @@ class _StringsNl extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -129042,8 +129023,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -141364,8 +141343,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -153486,8 +153463,6 @@ class _StringsTh extends _StringsEn {
   String get video_online_episodes_title => 'Episodes';
   @override
   String get video_online_episodes_empty => 'No episodes found.';
-  @override
-  String get video_online_stream_choose => 'Choose a stream';
   @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
@@ -165724,8 +165699,6 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -177934,8 +177907,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -189126,8 +189097,6 @@ class _StringsZhCn extends _StringsEn {
   String get video_online_episodes_title => '剧集';
   @override
   String get video_online_episodes_empty => '没有找到剧集。';
-  @override
-  String get video_online_stream_choose => '选择线路';
   @override
   String get video_online_stream_none => '该集没有可播放的流。';
   @override
@@ -200513,8 +200482,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_online_episodes_empty => 'No episodes found.';
   @override
-  String get video_online_stream_choose => 'Choose a stream';
-  @override
   String get video_online_stream_none =>
       'This episode returned no playable stream.';
   @override
@@ -211099,8 +211066,6 @@ extension on _StringsEn {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -221663,8 +221628,6 @@ extension on _StringsAr {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -232272,8 +232235,6 @@ extension on _StringsDe {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -242872,8 +242833,6 @@ extension on _StringsEs {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -253481,8 +253440,6 @@ extension on _StringsFr {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -264061,8 +264018,6 @@ extension on _StringsId {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -274663,8 +274618,6 @@ extension on _StringsIt {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -285192,8 +285145,6 @@ extension on _StringsJa {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -295725,8 +295676,6 @@ extension on _StringsKo {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -306320,8 +306269,6 @@ extension on _StringsNl {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -316910,8 +316857,6 @@ extension on _StringsPtBr {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -327507,8 +327452,6 @@ extension on _StringsRu {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -338076,8 +338019,6 @@ extension on _StringsTh {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -348660,8 +348601,6 @@ extension on _StringsTr {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -359238,8 +359177,6 @@ extension on _StringsVi {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
@@ -369721,8 +369658,6 @@ extension on _StringsZhCn {
         return '剧集';
       case 'video_online_episodes_empty':
         return '没有找到剧集。';
-      case 'video_online_stream_choose':
-        return '选择线路';
       case 'video_online_stream_none':
         return '该集没有可播放的流。';
       case 'media_import_segment_local':
@@ -380227,8 +380162,6 @@ extension on _StringsZhHk {
         return 'Episodes';
       case 'video_online_episodes_empty':
         return 'No episodes found.';
-      case 'video_online_stream_choose':
-        return 'Choose a stream';
       case 'video_online_stream_none':
         return 'This episode returned no playable stream.';
       case 'media_import_segment_local':
