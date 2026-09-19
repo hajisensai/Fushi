@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -330,6 +331,47 @@ void main() {
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
     expect(find.byIcon(Icons.add_circle_outline), findsNothing);
   });
+
+  testWidgets(
+    'open on website joins the source baseUrl with the manga url when the '
+    'runtime cannot ask the extension',
+    (WidgetTester tester) async {
+      // 运行时是纯 Fake（没有 MihonWebUrlRuntime 能力）→ 走 baseUrl + url 兜底。
+      await database.replaceMangaOnlineSources(
+        'org.example.fixture',
+        <MangaOnlineSourcesCompanion>[
+          MangaOnlineSourcesCompanion.insert(
+            extensionPackage: 'org.example.fixture',
+            sourceId: '9223372036854775807',
+            name: 'Raw Otaku',
+            language: 'en',
+            baseUrl: const Value('https://fixture.invalid'),
+          ),
+        ],
+      );
+      await manager.reload();
+      final List<Uri> launched = <Uri>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MihonMangaDetailPage(
+            manager: manager,
+            sourceContext: await manager.contextForSource(
+              manager.sources.single,
+            ),
+            manga: _BrowseRuntime.manga,
+            openExternal: (Uri url) async => launched.add(url),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_series_open_website')),
+      );
+      await tester.pumpAndSettle();
+      expect(launched, <Uri>[Uri.parse('https://fixture.invalid/manga/fixture')]);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _BrowseRuntime extends Fake

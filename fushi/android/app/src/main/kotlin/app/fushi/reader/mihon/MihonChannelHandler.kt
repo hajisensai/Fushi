@@ -329,6 +329,15 @@ class MihonChannelHandler(private val app: Application) {
                 loaded.mangaCache[cacheKey(source, merged.url)] = merged
                 merged.toBridgeMap()
             }
+            // 作品在源站的网页地址（Mihon `HttpSource.getMangaUrl`，默认 = 详情请求
+            // 的 URL；源可覆盖）。与桌面 sidecar 的 `getMangaUrl` 同一 wire 名。
+            "getMangaUrl" -> {
+                val input = arguments.requiredMap("mangaData")
+                val manga = loaded.mangaCache[cacheKey(source, input.requiredString("url"))]
+                    ?: mangaFromBridge(input)
+                (source as? HttpSource)?.getMangaUrl(manga)
+                    ?: throw MihonHostException("NOT_IMPLEMENTED", "Source has no web page for this title")
+            }
             "getChapterList" -> runBlocking {
                 val input = arguments.requiredMap("mangaData")
                 val manga = loaded.mangaCache[cacheKey(source, input.requiredString("url"))]
@@ -402,6 +411,13 @@ class MihonChannelHandler(private val app: Application) {
                 val merged = anime.mergedWithDetails(catalogue.getAnimeDetails(anime))
                 loaded.animeCache[cacheKey(source, merged.url)] = merged
                 merged.toBridgeMap()
+            }
+            "getAnimeUrl" -> {
+                val input = arguments.requiredMap("animeData")
+                val anime = loaded.animeCache[cacheKey(source, input.requiredString("url"))]
+                    ?: animeFromBridge(input)
+                (catalogue as? AnimeHttpSource)?.getAnimeUrl(anime)
+                    ?: throw MihonHostException("NOT_IMPLEMENTED", "Source has no web page for this title")
             }
             "getEpisodeList" -> runBlocking {
                 val input = arguments.requiredMap("animeData")

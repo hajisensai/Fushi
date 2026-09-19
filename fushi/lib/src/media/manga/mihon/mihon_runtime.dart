@@ -194,6 +194,30 @@ abstract interface class AnimeMihonRuntime {
   });
 }
 
+/// 作品在源站的网页地址（Mihon `HttpSource.getMangaUrl` / Aniyomi
+/// `AnimeHttpSource.getAnimeUrl`）：详情页「在网站打开」入口用。
+///
+/// 独立成可选能力而不是往 [MihonRuntime] 上加方法，理由同 [AnimeMihonRuntime]：
+/// 既有的测试 fake 不必跟着实现。两个生产实现都经 [MihonBridgeRuntime] 具备；
+/// 调用方一律走 `resolveMihonMangaWebUrl` / `resolveMihonAnimeWebUrl`
+/// （`mihon_web_url.dart`），运行时没这能力或源报错时那边回落到
+/// `baseUrl + url` 拼接（Mihon 默认实现就是详情请求的 URL，多数源等价）。
+abstract interface class MihonWebUrlRuntime {
+  Future<String> getMangaWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonManga manga, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+
+  Future<String> getAnimeWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  });
+}
+
 /// Optional runtime capability used by the online reader to abort image
 /// requests when a chapter is closed. Implementations must cancel the
 /// underlying HTTP/OkHttp operation, not only discard its eventual result.

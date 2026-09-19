@@ -3,7 +3,8 @@ import 'dart:typed_data';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 
-abstract class MihonBridgeRuntime implements MihonRuntime, AnimeMihonRuntime {
+abstract class MihonBridgeRuntime
+    implements MihonRuntime, AnimeMihonRuntime, MihonWebUrlRuntime {
   /// [source] 是本次调用**打给哪个源**。桌面端据它挑出该源站的登录 cookie 注入
   /// 请求头（BUG-2425）——sidecar 侧的 domain 也是从 `source.getBaseUrl()` 推的，
   /// 两边必须看同一个 baseUrl，否则注进去的 cookie 域对不上、等于没注。
@@ -392,6 +393,44 @@ abstract class MihonBridgeRuntime implements MihonRuntime, AnimeMihonRuntime {
         .map(MihonVideo.fromJson)
         .where((MihonVideo video) => video.resolvedUrl.isNotEmpty)
         .toList(growable: false);
+  }
+
+  @override
+  Future<String> getMangaWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonManga manga, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'getMangaUrl',
+      <String, Object?>{
+        ..._sourceArguments(source, preferences),
+        'mangaData': manga.toJson(),
+      },
+      source: source,
+    );
+    return response?.toString() ?? '';
+  }
+
+  @override
+  Future<String> getAnimeWebUrl(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonAnime anime, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    final Object? response = await invokeBridge(
+      extension,
+      'getAnimeUrl',
+      <String, Object?>{
+        ..._sourceArguments(source, preferences),
+        'animeData': anime.toJson(),
+      },
+      source: source,
+    );
+    return response?.toString() ?? '';
   }
 
   @override

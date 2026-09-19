@@ -5091,6 +5091,8 @@
   "mihon_source_move_down": "下移",
   "mihon_source_pin": "置顶",
   "mihon_source_unpin": "取消置顶",
+  "mihon_source_website_open": "在网站打开",
+  "mihon_source_website_unavailable": "该源没有这部作品的网页",
   "discovery_alist_settings_title": "AList / OpenList 站点",
   "discovery_alist_settings_hint": "浏览并下载 AList 或 OpenList 站点上的文件；账号留空即以游客访问",
   "discovery_alist_add": "添加站点",

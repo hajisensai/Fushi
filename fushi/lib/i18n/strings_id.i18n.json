@@ -5091,6 +5091,8 @@
   "mihon_source_move_down": "Move down",
   "mihon_source_pin": "Pin to top",
   "mihon_source_unpin": "Unpin",
+  "mihon_source_website_open": "Open on website",
+  "mihon_source_website_unavailable": "This source has no web page for this title",
   "discovery_alist_settings_title": "AList / OpenList sites",
   "discovery_alist_settings_hint": "Browse and download files from your own AList or OpenList site. Leave the account empty to browse as a guest",
   "discovery_alist_add": "Add site",
