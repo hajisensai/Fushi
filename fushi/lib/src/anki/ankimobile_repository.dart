@@ -567,7 +567,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         noteTypeName: noteType.name,
         fields: fields,
         tags: tags,
-        allowDuplicate: settings.allowDupes,
+        // BUG-2605：「新增为重复卡」按单次请求放行（`dupes=1`），不动全局偏好。
+        allowDuplicate: settings.allowDupes || payload.allowDuplicate,
         successCallback: success,
       );
 

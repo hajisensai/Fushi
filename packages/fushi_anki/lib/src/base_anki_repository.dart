@@ -319,12 +319,17 @@ abstract class BaseAnkiRepository {
   /// Updating an ordinary freshly mined card can capture another locator UUID.
   /// Retain the original note's identity, because field updates never add tags.
   /// Legacy notes have no source marker/link and are not silently migrated.
+  ///
+  /// [existingFields] 已由调用方读过时直接传入（覆盖链路本来就要读一遍现有字段，
+  /// 见 [fieldsForOverwrite]），省一次 `notesInfo` 往返；为 null 时自己读。
   @protected
   Future<AnkiMiningContext> contextForExistingSourceNote(
     int noteId,
-    AnkiMiningContext context,
-  ) async {
-    final Map<String, String>? fields = await noteFields(noteId);
+    AnkiMiningContext context, {
+    Map<String, String>? existingFields,
+  }) async {
+    final Map<String, String>? fields =
+        existingFields ?? await noteFields(noteId);
     if (fields == null) throw StateError('Existing note could not be read');
     final Map<String, CardSourceLink> sources = <String, CardSourceLink>{
       for (final String field in fields.values)
@@ -910,6 +915,31 @@ abstract class BaseAnkiRepository {
       }
     }
     return fields;
+  }
+
+  /// BUG-2606：覆盖 = 这张卡变成「此刻新制会得到的那张」——note 现有的每个字段都要
+  /// 被写：映射到的写渲染值，**没映射到的写空串**。
+  ///
+  /// 此前只发映射字段，两后端 native 都「未给出的字段保留旧值」。用户报告的形态是
+  /// Lapis：`SentenceFurigana` 由别的工具填过，Fushi 不映射它，覆盖后 `Sentence`
+  /// 换新、`SentenceFurigana` 留旧，而模板 `{{#SentenceFurigana}}` 优先显示它——
+  /// 卡面照旧是老句子，直到用户手动清空。同理 `Hint` 等任何模板会读的字段。
+  /// 新制的卡这些字段本来就是空的，覆盖不该比新制多留一截旧内容。
+  ///
+  /// 只补 [existingFieldNames] 里有、[rendered] 里没有的名字；[rendered] 里 note
+  /// 没有的名字原样保留（服务端按名匹配自会丢弃，与 BUG-1900 同口径）。AnkiDroid
+  /// 后端在 native `updateNoteFields` 里按位置做同一件事（`clearUnspecified`），
+  /// 那边本来就握着整条 note，不必再经通道回读一次。
+  @protected
+  static Map<String, String> fieldsForOverwrite({
+    required Iterable<String> existingFieldNames,
+    required Map<String, String> rendered,
+  }) {
+    final Map<String, String> out = <String, String>{...rendered};
+    for (final String name in existingFieldNames) {
+      out.putIfAbsent(name, () => '');
+    }
+    return out;
   }
 
   /// BUG-1900：只保留**属于 [noteType] 的字段**。

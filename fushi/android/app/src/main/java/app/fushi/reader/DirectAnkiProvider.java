@@ -246,6 +246,14 @@ final class DirectAnkiProvider implements AnkiProvider {
         return resolver.update(note(noteId), values, null, null) > 0;
     }
 
+    @Override
+    public boolean updateNoteTags(long noteId, Set<String> tags) {
+        final ContentValues values = new ContentValues();
+        values.put(FlashCardsContract.Note.TAGS,
+            tags == null ? "" : TextUtils.join(" ", tags));
+        return resolver.update(note(noteId), values, null, null) > 0;
+    }
+
     /**
      * 查重走 {@code notes_v2} 的 {@code mid=? and csum in (?)}——与上游 AAR 的
      * spec-2 实现同一条路（它的格式串 {@code "%s=%d and %s in (%s)"} 就在 AAR 的
