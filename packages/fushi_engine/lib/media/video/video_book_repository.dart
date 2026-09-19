@@ -22,6 +22,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         videoRemoteAudioTrackPrefKey,
         videoRemoteDelayAtPrefKey,
         videoRemoteDelayPrefKey,
+        videoRemotePositionAtPrefKey,
+        videoRemotePositionPrefKey,
         videoRemoteSecondaryDelayAtPrefKey,
         videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
@@ -482,6 +484,27 @@ class VideoBookRepository {
         positionMs,
         playedAt: playedAt ?? DateTime.now().millisecondsSinceEpoch,
       );
+
+  /// 清除观看进度（卡菜单「清除观看进度」）：行级四列归零走
+  /// [FushiDatabase.clearVideoBookWatchProgress]，再把互联 LWW 镜像键
+  /// `video_remote_position_<uid>` / `_at_` 盖成「位置 0 @ 现在」。
+  ///
+  /// 为什么必须盖戳：全量同步（sync_orchestrator `_syncVideoProgressLive`）读本地
+  /// 进度时位置取行、**时间戳取 `_at_` prefs**，与 host 逐条「严格较新者胜」。只清行
+  /// 不盖戳，本地仍是「0 @ 上次播放时刻」，host 那边同一时刻的旧进度至少打平、
+  /// 对端后来看过就直接更新——下一次同步把刚清掉的进度原样灌回来，用户清了等于
+  /// 没清。盖成 now 后本地严格更新，把「清除」当成一次进度写入推给 host。
+  ///
+  /// 已知边界：进度 wire 只有 (positionMs, updatedAtMs) 两个字段，host 收到后镜像
+  /// 行会写 `lastPlayedAt = now`（BUG-1731 纪律），所以 host 侧这一集会剩「位置 0
+  /// 但有时刻」的痕迹——不显示「已看到」徽标，但合集续播锚点仍停在这一集而不是回退。
+  /// 要消掉得给 wire 加「清除」语义，超出本方法范围。
+  Future<void> clearWatchProgress(String bookUid) async {
+    await _db.clearVideoBookWatchProgress(bookUid);
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    await _db.setPrefTyped<int>(videoRemotePositionPrefKey(bookUid), 0);
+    await _db.setPrefTyped<int>(videoRemotePositionAtPrefKey(bookUid), nowMs);
+  }
 
   /// Updates local file paths after app-owned media is relocated.
   ///

@@ -2917,6 +2917,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 unawaited(_openVideoFileLocation(book));
               },
             ),
+          // 「清除观看进度」：只在这一集确有观看痕迹时出现（位置 / 时刻 / 完成标记
+          // 三判据与合集续播 [CollectionMemberProgress.hasTrace] 同口径）——用户
+          // 误点开下一集又退出后，「继续看」会被钉在那一集上，这条动作让它回到
+          // 上一集看完后的下一集。从未看过的集画这个按钮只是一个什么都不会发生的钮。
+          if (videoBookHasWatchTrace(book))
+            DialogQuickAction(
+              label: t.video_watch_progress_clear,
+              icon: Icons.restart_alt_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_clearWatchProgress(book));
+              },
+            ),
         ],
         dangerActions: <DialogDangerAction>[
           DialogDangerAction(
@@ -2928,6 +2941,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 清除这一集的观看进度（行级四列 + 互联 LWW 镜像键，见
+  /// [VideoBookRepository.clearWatchProgress]）。写库触发 videoBooks 表级变更，
+  /// 墙卡 / 首页 hero / 合集续播锚点随流刷新；这里再显式 [_refresh] 一次与改名同纪律。
+  Future<void> _clearWatchProgress(VideoBookRow book) async {
+    await widget.repo.clearWatchProgress(book.bookUid);
+    if (!mounted) return;
+    _refresh();
+    FushiToast.show(
+      msg: t.video_watch_progress_cleared,
+      severity: ToastSeverity.success,
     );
   }
 

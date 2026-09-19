@@ -5117,5 +5117,7 @@
   "media_source_alist_url": "Site URL",
   "media_source_alist_folder": "Folder on the site",
   "media_source_alist_account_hint": "Leave the account empty to browse as a guest",
-  "media_source_alist_missing_fields": "Enter the site URL (http or https)"
+  "media_source_alist_missing_fields": "Enter the site URL (http or https)",
+  "video_watch_progress_clear": "Clear watch progress",
+  "video_watch_progress_cleared": "Watch progress cleared"
 }
