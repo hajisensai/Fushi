@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2406 条。点号进各自文件。
+> 共 2407 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2602](bugs/BUG-2602-emby-library-cover-404-fallback.md) | ✅ | ✅ | 媒体服务器库封面 404 时整格只剩占位图标 |
 | [BUG-2601](bugs/BUG-2601-animekai-suspend-get.md) | ✅ | ✅ | 视频源扩展调 suspend OkHttpClient.get 在两端宿主都缺定义，AnimeKai 剧集列表 BRIDGE_HTTP_500 |
 | [BUG-2600](bugs/BUG-2600-video-ext-lib16-abi.md) | ✅ | ✅ | 视频源扩展在 lib 14 宿主 ABI 上进不去剧集或播不了 |
 | [BUG-2598](bugs/BUG-2598-lyrics-mode-settings-stepper-unverified.md) | 🚧 | ✅ | 歌词模式「阅读设置调节按钮不生效」——Windows 真机未复现 |
