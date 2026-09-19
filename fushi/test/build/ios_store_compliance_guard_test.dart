@@ -213,11 +213,11 @@ void main() {
       );
     });
 
-    test('视频「来源」视图的在线源（Aniyomi）入口由 onlineVideoSource 门控', () {
-      // 判据只写在 video_online_sources_page.dart 一处（合规门 + 运行时平台门），
-      // 来源页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
+    test('视频「导入」视图的在线源三段（Aniyomi）由 onlineVideoSource 门控', () {
+      // 判据只写在 video_online_sources_gate.dart 一处（合规门 + 运行时平台门），
+      // 导入页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
       final String gate = compactCode(
-        read('lib/src/media/video/online/video_online_sources_page.dart'),
+        read('lib/src/media/video/online/video_online_sources_gate.dart'),
       );
       expect(
         gate,
@@ -233,7 +233,12 @@ void main() {
       expect(
         sources,
         contains("if(widget.mediaKind=='video'&&isVideoOnlineSourcesAvailable)"),
-        reason: '视频来源页的在线源入口卡必须挂在这个门后。',
+        reason: '视频导入页取 animeMihonManager（仓库 / 扩展 / 在线源三段）必须挂在这个门后。',
+      );
+      expect(
+        sources,
+        contains('if(animeManager!=null)...<Widget>['),
+        reason: '三段的 sliver 只在拿到 manager 时才进树，门失效时整段不出现。',
       );
       expect(
         sources,
