@@ -599,6 +599,8 @@ class _PopupStaticSettingsMemo {
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
     required this.popupInstantScroll,
+    required this.popupInstantScrollWheelStep,
+    required this.popupInstantScrollTouchStep,
     required this.wheelBindingsJson,
     required this.popupKeyBindings,
     required this.audioSourcesJson,
@@ -628,6 +630,8 @@ class _PopupStaticSettingsMemo {
   final double dictionaryFontSize;
   final double popupWheelSpeed;
   final bool popupInstantScroll;
+  final double popupInstantScrollWheelStep;
+  final double popupInstantScrollTouchStep;
   final String wheelBindingsJson;
   final String popupKeyBindings;
   final String audioSourcesJson;
@@ -765,6 +769,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
       cached.popupInstantScroll == appModel.popupInstantScroll &&
+      cached.popupInstantScrollWheelStep ==
+          appModel.popupInstantScrollWheelStep &&
+      cached.popupInstantScrollTouchStep ==
+          appModel.popupInstantScrollTouchStep &&
       cached.wheelBindingsJson == wheelBindingsJson &&
       cached.popupKeyBindings == popupKeyBindings &&
       cached.audioSourcesJson == audioSourcesJson &&
@@ -831,6 +839,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 的两个分支（'instant' / 'auto'）在无 scroll-behavior:smooth 的弹窗里完全等价，
     // 滚轮路径又根本不读它——开关两端行为一致 = 用户看到的「不生效」。
     window.__fushiPopupInstantScroll = ${appModel.popupInstantScroll};
+    // 瞬时滚动步长（占被滚表面视口高度的比例，clamp 0.1–1.0）：滚轮一格跳多少 /
+    // 手指滑满多少跳一步。popup.js 的两条瞬时分支读它们替代原先写死的
+    // POPUP_EINK_{WHEEL,TOUCH}_VIEWPORT_FRACTION（那两个常量退为缺省/非法时的回退）。
+    window.__fushiPopupInstantScrollWheelStep = ${appModel.popupInstantScrollWheelStep};
+    window.__fushiPopupInstantScrollTouchStep = ${appModel.popupInstantScrollTouchStep};
     // 查词弹窗「上/下一个词条」的滚轮绑定（ShortcutAction.popupNextEntry /
     // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
     // fushiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
@@ -913,6 +926,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
     popupInstantScroll: appModel.popupInstantScroll,
+    popupInstantScrollWheelStep: appModel.popupInstantScrollWheelStep,
+    popupInstantScrollTouchStep: appModel.popupInstantScrollTouchStep,
     wheelBindingsJson: wheelBindingsJson,
     popupKeyBindings: popupKeyBindings,
     audioSourcesJson: audioSourcesJson,

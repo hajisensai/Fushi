@@ -836,6 +836,55 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  // 瞬时滚动步长：一次跳被滚表面视口高度的多大比例。BUG-2284 / BUG-2415 里写死在
+  // popup.js 的 POPUP_EINK_WHEEL_VIEWPORT_FRACTION(0.5) / POPUP_EINK_TOUCH_VIEWPORT_
+  // FRACTION(0.25) 现在只是默认值；墨水屏尺寸与刷新特性差异大，用户按自己的屏调。
+  // 两条路径各一个旋钮：滚轮是离散 notch（一格跳半屏顺手），触摸是量化的 1:1 跟手
+  // （手指滑满一步才跳一步，1/4 屏更跟手）——默认值本就不同，硬合成一个会改掉其中
+  // 一边的现有行为。clamp 到 [0.1, 1.0]：popup.js 侧同样夹在 [MIN_STEP, 一屏] 内，
+  // 永不一步跳过整屏内容。下发通道与 popupInstantScroll 完全同法（in-app 注入
+  // window.__fushiPopupInstantScroll{Wheel,Touch}Step；扩展经 theme
+  // --fushi-instant-scroll-wheel-step，触摸半边扩展侧不挂所以不下发）。
+  static const double kPopupInstantScrollWheelStepDefault = 0.5;
+  static const double kPopupInstantScrollTouchStepDefault = 0.25;
+  static const double kPopupInstantScrollStepMin = 0.1;
+  static const double kPopupInstantScrollStepMax = 1.0;
+
+  static double _clampInstantScrollStep(Object? raw, double fallback) {
+    if (raw is! num) return fallback;
+    final double v = raw.toDouble();
+    if (!v.isFinite) return fallback;
+    return v.clamp(kPopupInstantScrollStepMin, kPopupInstantScrollStepMax);
+  }
+
+  double get popupInstantScrollWheelStep => _clampInstantScrollStep(
+        getPref('popup_instant_scroll_wheel_step',
+            defaultValue: kPopupInstantScrollWheelStepDefault),
+        kPopupInstantScrollWheelStepDefault,
+      );
+
+  Future<void> setPopupInstantScrollWheelStep(double value) async {
+    await setPref(
+      'popup_instant_scroll_wheel_step',
+      _clampInstantScrollStep(value, kPopupInstantScrollWheelStepDefault),
+    );
+    notifyListeners();
+  }
+
+  double get popupInstantScrollTouchStep => _clampInstantScrollStep(
+        getPref('popup_instant_scroll_touch_step',
+            defaultValue: kPopupInstantScrollTouchStepDefault),
+        kPopupInstantScrollTouchStepDefault,
+      );
+
+  Future<void> setPopupInstantScrollTouchStep(double value) async {
+    await setPref(
+      'popup_instant_scroll_touch_step',
+      _clampInstantScrollStep(value, kPopupInstantScrollTouchStepDefault),
+    );
+    notifyListeners();
+  }
+
   // BUG-1026：查词弹窗滚轮速度倍率。popup.js 的粗鼠标 notch 用 0.24 降速系数（BUG-260），
   // 部分用户觉得太慢；此倍率乘进 popup.js 的 factor（同乘粗鼠标 0.24 与触控板 1.0），
   // 作为统一「滚轮速度」旋钮。默认 1.0 与改前逐帧一致。clamp 0.5–5.0 防越界值把滚动放飞。
