@@ -1818,6 +1818,26 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// SubDL（subdl.com）API key：搜索必须带 key（站点 panel 免费生成）。
+  String get videoSubtitleSubdlApiKey =>
+      getPref('video_subtitle_subdl_api_key', defaultValue: '') as String;
+
+  Future<void> setVideoSubtitleSubdlApiKey(String key) async {
+    await setPref('video_subtitle_subdl_api_key', key);
+    notifyListeners();
+  }
+
+  /// SubDL 是否参与字幕搜索。与 [videoSubtitleSubdlApiKey] 组成 `enabled && key`
+  /// 双门控（形状对齐 Jimaku）。默认 true：key 为空即不装配，默认开不产生请求，
+  /// 用户填了 key 就直接生效，不必再找一次开关。
+  bool get videoSubtitleSubdlEnabled =>
+      getPref('video_subtitle_subdl_enabled', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleSubdlEnabled(bool enabled) async {
+    await setPref('video_subtitle_subdl_enabled', enabled);
+    notifyListeners();
+  }
+
   /// 远端/流媒体视频用户手选的字幕来源（按 `<bookUid>#ep<index>` 记忆）：
   /// `{ "<key>": "<subtitleSource 四态编码>" }`。
   ///

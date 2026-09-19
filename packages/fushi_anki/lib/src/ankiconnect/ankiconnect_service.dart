@@ -8,6 +8,9 @@ import '../card_source_link.dart';
 import '../anki_note_type_definition.dart';
 import '../lapis_note_type.dart';
 
+/// 一张 note 的现有字段（`name → value`）与所属笔记类型名（AnkiConnect 没给时为 null）。
+typedef AnkiConnectNoteInfo = ({String? modelName, Map<String, String> fields});
+
 class AnkiConnectService {
   final String host;
   final int port;
@@ -794,6 +797,17 @@ class AnkiConnectService {
     });
   }
 
+  /// BUG-2606：给已存在的 note 追加标签。AnkiConnect `addTags` 接收
+  /// `{notes: [id], tags: "a b c"}`，与现有标签取并集、已有的不重复；重发幂等，
+  /// 故同 [updateNoteFields] 不列入 [_nonIdempotentActions]。[tags] 为空时不发请求。
+  Future<void> addTags(int noteId, List<String> tags) async {
+    if (tags.isEmpty) return;
+    await _request('addTags', {
+      'notes': [noteId],
+      'tags': tags.join(' '),
+    });
+  }
+
   /// 批量覆写笔记字段。往返数 = `ceil(updates.length / kMultiBatchSize)`。
   ///
   /// 逐条报告结果（与 [updates] 同序），失败条不抛：调用方要能分清哪几条没写
@@ -814,7 +828,14 @@ class AnkiConnectService {
   // fields: {<name>: {value, order}}}`。我们只取 `fields` 拍平成 `name → value`。
   // note 不存在时 AnkiConnect 返回一个空对象项（无 noteId/fields）；这里统一以
   // 「无 fields」当作不存在返回 `null`。
-  Future<Map<String, String>?> notesInfo(int noteId) async {
+  Future<Map<String, String>?> notesInfo(int noteId) async =>
+      (await noteInfo(noteId))?.fields;
+
+  /// [notesInfo] 的原语：同一次往返顺带把 `modelName` 带回来。覆盖既有卡（BUG-2606）
+  /// 要先确认目标 note 就是当前选定的笔记类型——`findMatchingNotes` 按**首字段名**
+  /// 搜同卡组，任何带同名首字段的别的 note type 都会命中，而整卡覆盖会把它没映射的
+  /// 字段全部清空。
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async {
     final result = await _request('notesInfo', {
       'notes': [noteId],
     });
@@ -833,7 +854,11 @@ class AnkiConnectService {
         fields[key.toString()] = value;
       }
     });
-    return fields;
+    final dynamic modelName = first['modelName'];
+    return (
+      modelName: modelName is String && modelName.isNotEmpty ? modelName : null,
+      fields: fields,
+    );
   }
 
   /// Candidate notes whose fields contain the source ID substring. Substring

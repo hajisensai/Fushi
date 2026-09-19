@@ -218,6 +218,44 @@ ruby > rt, ruby > rtc {
         _ => '',
       };
 
+  /// 触屏「压掉原生长按选区」的规则（TODO-1279），按渲染引擎分流。
+  ///
+  /// BUG-2607：WebKit 不绘制 `user-select: none` 文字上的 `::highlight()`——
+  /// Playwright WebKit 探针对同一条 Range：裸段落像素命中 0.559、
+  /// `user-select:none`（带/不带 -webkit- 前缀、写在元素或由祖先继承）**全部 0.000**、
+  /// 祖先 none 但元素 text 回到 0.559、只有 `-webkit-touch-callout:none` 不受影响。
+  /// iOS 的主指针是 coarse，所以 1279 这条全局 `user-select:none` 一落地，阅读器所有
+  /// 走 CSS Custom Highlight 的层——查词 `fushi-selection`、长按划选、收藏句
+  /// `fushi-hl-*`、搜索 `fushi-search`——在 iOS 上一律不可见（用户截图：有声书里划句
+  /// 只见两枚手柄 + 菜单、无高亮；有声书当前句是元素 class 背景，不受影响，所以看
+  /// 起来像「只有划选坏了」）。Blink 不受影响，Android 照旧。
+  ///
+  /// iOS 上「不让长按建立原生选区」改由平台开关承担：阅读器 WebView 设
+  /// `InAppWebViewSettings.isTextInteractionEnabled = false`
+  /// （`WKPreferences.isTextInteractionEnabled`，iOS 14.5+，见 webview.part.dart），
+  /// 这是 WKWebView 关掉文本选择手势的原生真值，与 CSS 无关、不影响 ::highlight 绘制，
+  /// 也不影响 caretRangeFromPoint / Range 等程序化 API（app 自绘选区只用这些）。
+  /// 这里 iOS 只留 `-webkit-touch-callout: none`（链接/图片长按气泡，探针证明无害）。
+  /// macOS 主指针是 fine，本块不生效，桌面原生选区/Ctrl+C/右键导出不受影响。
+  static String _touchNativeSelectionCss() => switch (defaultTargetPlatform) {
+        TargetPlatform.iOS => '''
+@media (pointer: coarse) {
+  html, body, body * {
+    -webkit-touch-callout: none !important;
+  }
+}
+''',
+        _ => '''
+@media (pointer: coarse) {
+  html, body, body * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
+}
+''',
+      };
+
   static String _bodyFontFamily(String? customCssFamilies, String? language) {
     final String chain = contentFontFamilyCss(
       languageTag: language,
@@ -705,15 +743,10 @@ ruby rt, ruby rp {
    长按拖选只留我们的查词高亮；细指针（鼠标，pointer: fine——桌面 WebView2 / WKWebView /
    Linux）不受影响，桌面 Ctrl+C 复制与右键导出所依赖的 window.getSelection() 原生选区
    照旧。这是 CSS 层的根因修复，不再靠 selectstart 的 <400ms 时窗 preventDefault
-   （长按天然 >400ms 会逃逸）去追着压制。 */
-@media (pointer: coarse) {
-  html, body, body * {
-    -webkit-user-select: none !important;
-    user-select: none !important;
-    -webkit-touch-callout: none !important;
-  }
-}
-/* BUG-765 续：移动端选区起止手柄的强调色跟随主题。reader_selection_scripts.dart 里
+   （长按天然 >400ms 会逃逸）去追着压制。
+   BUG-2607：iOS 不走这条 user-select 规则——WebKit 对 user-select:none 的文字
+   **不绘制任何 ::highlight()**，见 _touchNativeSelectionCss。 */
+${_touchNativeSelectionCss()}/* BUG-765 续：移动端选区起止手柄的强调色跟随主题。reader_selection_scripts.dart 里
    自绘的起/止手柄用 var(--fushi-sel-handle) 引用本变量；主题切换重注入本 CSS 时手柄
    颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */

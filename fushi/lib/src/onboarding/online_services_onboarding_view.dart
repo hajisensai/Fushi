@@ -70,6 +70,13 @@ List<OnlineServiceOnboardingItem> onlineServiceOnboardingItems() =>
         link: Uri.parse('https://www.opensubtitles.com/en/consumers'),
       ),
       OnlineServiceOnboardingItem(
+        id: 'subdl',
+        title: 'SubDL',
+        requirement: t.onboarding_online_services_key,
+        description: t.onboarding_online_services_subdl,
+        link: Uri.parse('https://subdl.com/panel/api'),
+      ),
+      OnlineServiceOnboardingItem(
         id: 'dandanplay',
         title: 'DanDanPlay',
         requirement: _dandanplayEmbedded

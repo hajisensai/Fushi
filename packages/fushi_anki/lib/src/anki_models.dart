@@ -611,10 +611,26 @@ class AnkiMiningPayload {
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
     this.glossarySelectionHighlighted = false,
+    this.allowDuplicate = false,
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
   });
+
+  /// [allowDuplicate] 在 wire 上的键名（应用内桥的 `Map<String, String>` 与远端
+  /// `/api/mine/forward` 的 `rawPayloadJson` 都用它）。
+  static const String allowDuplicateKey = 'allowDuplicate';
+
+  /// 给一份弹窗字段拍上「用户已裁决：就是要再加一张」的标记（BUG-2605）。
+  ///
+  /// 「卡已在 Anki」对话框的「新增为重复卡」按钮此前直接复用普通制卡回调，而两后端的
+  /// `addNote` 只看 [AnkiSettings.allowDupes]（默认关）——用户明明选了「新增」，
+  /// AnkiConnect 仍回 `cannot create note because it is a duplicate`、AnkiDroid 仍在
+  /// `checkForDuplicates` 处拦掉，按钮等于没有。标记走 payload 而不是改 `mineEntry`
+  /// 签名：制卡请求本来就以这份 map 为唯一载体，互联「制卡到服务端」转发的也是它，
+  /// 主机侧 `fromJson` 原样认得，不需要另铺一条 wire 字段。
+  static Map<String, String> withAllowDuplicate(Map<String, String> fields) =>
+      <String, String>{...fields, allowDuplicateKey: 'true'};
 
   /// 本 payload 走**两条**线，编码不同，`fromJson` 必须对两条都成立：
   ///
@@ -685,6 +701,7 @@ class AnkiMiningPayload {
       glossarySelectionHighlighted: _boolFromPayloadWire(
         json['glossarySelectionHighlighted'],
       ),
+      allowDuplicate: _boolFromPayloadWire(json[allowDuplicateKey]),
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
@@ -716,6 +733,13 @@ class AnkiMiningPayload {
   /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
   /// `false` → 行为逐字节不变。
   final bool glossarySelectionHighlighted;
+
+  /// 用户在「卡已在 Anki」对话框里明确选了「新增为重复卡」（BUG-2605）。
+  ///
+  /// 三个后端的 `addNote` 都以 `settings.allowDupes || allowDuplicate` 决定是否放行
+  /// 重复：这是**单次请求**的裁决，不改用户的全局「允许重复」偏好。旧 payload 没有
+  /// 这个键 → `false` → 行为逐字节不变。见 [withAllowDuplicate]。
+  final bool allowDuplicate;
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;

@@ -744,7 +744,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           modelName: noteType.name,
           fields: outgoing,
           tags: tags,
-          allowDuplicate: settings.allowDupes,
+          // BUG-2605：用户在「卡已在 Anki」对话框里选了「新增为重复卡」时，这一次
+          // 请求放行重复（payload 位），不动全局「允许重复」偏好。
+          allowDuplicate: settings.allowDupes || payload.allowDuplicate,
           duplicateScope: settings.duplicateScope,
         );
         mediaTransaction.commit();
@@ -935,12 +937,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体上传链路）从
   /// [rawPayloadJson] + [context] 生成 fields，再调 [AnkiConnectService.updateNoteFields]
   /// 按 id 覆盖。与 [mineEntry] 一样保证**返回** [MineOutcome] 而非抛出（供调用方
-  /// 统一 switch 处理 toast/UI）。不新增卡片、不改 tag、不查重（更新语义）。
+  /// 统一 switch 处理 toast/UI）。不新增卡片、不查重（更新语义）。
   ///
   /// BUG-858：覆盖=整体替换。keepEmpty 令 [_renderMinedFields] 保留所有映射字段
   /// （含渲染为空的），使 `updateNoteFields` 真正按 id 替换每个映射字段（句子瞬时选区
   /// 为空时随之清空，不再静默保留旧句）。仅当**所有**字段渲染皆空白时拒绝——那是
   /// 「没有任何字段映射命中」会清空整卡，才拒绝；部分字段有内容时照常整体替换。
+  ///
+  /// BUG-2606：整体替换要覆盖到 note 的**每个**字段，不只映射到的——先 `notesInfo`
+  /// 读现有字段名，没映射的写空串（[fieldsForOverwrite]），否则 Lapis 的
+  /// `SentenceFurigana` 这类别的工具填过、模板又优先读的字段会让卡面停在旧句子。
+  /// 同时把新制会打的那组标签（`fushi` / 分类 / 书名…）经 `addTags` 并进去——覆盖
+  /// 后的卡与新制的卡在字段与标签上都一样，用户原有的其它标签保留。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -949,13 +957,39 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }) async {
     try {
       final settings = await loadSettings();
+      final service = _serviceForSettings(settings);
+      // 现有字段名是整体替换的清单来源；读不到（已删 / 不可达）就没法保证
+      // 「每个字段都被写」，明确失败而不是退回只写映射字段的半覆盖。
+      final AnkiConnectNoteInfo? existing = await service.noteInfo(noteId);
+      if (existing == null) {
+        return MineOutcome.failure(
+          'AnkiConnect: the card to overwrite could not be read '
+          '(was it deleted in Anki?).',
+        );
+      }
+      // 候选是按首字段名搜出来的（[findMatchingNotes]），别的笔记类型只要首字段同名
+      // 也会命中；整卡覆盖会把它没映射的字段全部清空，所以类型不符必须拒绝。
+      final String? targetModel = settings.selectedNoteType?.name;
+      if (existing.modelName != null &&
+          targetModel != null &&
+          existing.modelName != targetModel) {
+        return MineOutcome.failure(
+          'AnkiConnect: the matching card uses note type '
+          '"${existing.modelName}", not "$targetModel" — refusing to '
+          'overwrite a card of a different note type.',
+        );
+      }
+      final Map<String, String> existingFields = existing.fields;
       if (context.sourceLink != null ||
           settings.fieldMappings.values.any(
             (String mapping) => mapping.contains('{source-link}'),
           )) {
-        context = await contextForExistingSourceNote(noteId, context);
+        context = await contextForExistingSourceNote(
+          noteId,
+          context,
+          existingFields: existingFields,
+        );
       }
-      final service = _serviceForSettings(settings);
 
       final AnkiMiningPayload payload;
       try {
@@ -990,8 +1024,27 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       }
 
+      // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper——覆盖后的卡不该比新制
+      // 的少 `fushi` / 分类 / 书名标签。
+      final List<String> tags = buildNoteTags(
+        settings.tags,
+        source: context.source,
+        includeHibiki: settings.tagIncludeHibiki,
+        includeCategory: settings.tagIncludeCategory,
+        titleTag: context.bookTitleTag,
+        collectionTag: context.collectionTag,
+        charPositionTag: context.charPositionTag,
+      );
+
       try {
-        await service.updateNoteFields(noteId, fields);
+        await service.updateNoteFields(
+          noteId,
+          BaseAnkiRepository.fieldsForOverwrite(
+            existingFieldNames: existingFields.keys,
+            rendered: fields,
+          ),
+        );
+        await service.addTags(noteId, tags);
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
         // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
         return MineOutcome.success(

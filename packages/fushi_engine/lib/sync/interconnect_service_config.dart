@@ -46,6 +46,9 @@ class InterconnectServiceConfigSnapshot {
     kVideoMetadataAniDbClientVersionPref,
     'video_scraper_tmdb_api_key',
     'video_subtitle_opensubtitles_config',
+    // SubDL：key + 开关成对搬（同 jimaku 那对的理由）。
+    'video_subtitle_subdl_api_key',
+    'video_subtitle_subdl_enabled',
     'video_resource_torznab_config',
   };
 
@@ -61,6 +64,8 @@ class InterconnectServiceConfigSnapshot {
     kVideoMetadataAniDbClientVersionPref: PrefCodec.encode(''),
     'video_scraper_tmdb_api_key': PrefCodec.encode(''),
     'video_subtitle_opensubtitles_config': PrefCodec.encode(''),
+    'video_subtitle_subdl_api_key': PrefCodec.encode(''),
+    'video_subtitle_subdl_enabled': PrefCodec.encode(true),
     'video_resource_torznab_config': PrefCodec.encode(''),
   };
 

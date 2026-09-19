@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2410 条。点号进各自文件。
+> 共 2413 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2608](bugs/BUG-2608-media-server-search-relevance.md) | ✅ | ✅ | 媒体服务器搜索把服务器的模糊命中原样铺出来，精确命中被埋 |
+| [BUG-2607](bugs/BUG-2607-ios-highlight-user-select-none-webkit.md) | ✅ | ✅ | iOS 触屏阅读器查词/划选/收藏高亮全部不画：WebKit 不绘制 user-select:none 文字上的 ::highlight |
+| [BUG-2606](bugs/BUG-2606-anki-overwrite-stale-fields-no-tags.md) | ✅ | ✅ | 覆盖已有卡不清未映射字段（SentenceFurigana 露旧句）也不补 fushi 标签 |
+| [BUG-2605](bugs/BUG-2605-anki-add-duplicate-ignored.md) | ✅ | ✅ | 「卡已在 Anki」对话框点「新增为重复卡」仍被两后端当重复拒绝 |
 | [BUG-2604](bugs/BUG-2604-ffmpeg-min-av1-hwaccel-only.md) | ✅ | ✅ | AV1 视频制卡截帧/动图/片段导出恒 ffmpeg exit 69：捆绑 ffmpeg-min 只有 hwaccel 空壳的原生 av1 解码器 |
 | [BUG-2603](bugs/BUG-2603-quick-action-chip-ellipsis.md) | ✅ | ✅ | 书卡长按菜单快捷 chip 在移动端被截成「查…/导…/从…」 |
 | [BUG-2602](bugs/BUG-2602-emby-library-cover-404-fallback.md) | ✅ | ✅ | 媒体服务器库封面 404 时整格只剩占位图标 |

@@ -181,6 +181,29 @@ void main() {
     expect(base.contains('runAnkiMinedCardAction('), isTrue);
   });
 
+  // BUG-2605：mineNew 只在用户已被告知「卡已有」并选择继续后才会被调（「新增为重复卡」
+  // / AnkiMobile「再加一张」/ 反查为空后重制）。两条车道构造它时必须给请求拍上
+  // AnkiMiningPayload.withAllowDuplicate，否则三个后端的 addNote 仍按全局 allowDupes
+  // （默认关）把这一次判成重复拒掉——用户报「手动选了新增，Fushi 还是说重复不导出」。
+  test('both host lanes mark the mineNew request as an explicit duplicate add',
+      () {
+    final RegExp marked = RegExp(
+      r'mineNew: \(\) async \{[\s\S]{0,200}?AnkiMiningPayload\.withAllowDuplicate\(fields\)',
+    );
+    expect(
+      marked.hasMatch(
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart'),
+      ),
+      isTrue,
+      reason: 'dictionary_page_mixin 的 mineNew 必须带 withAllowDuplicate',
+    );
+    expect(
+      marked.hasMatch(read('lib/src/pages/base_source_page.dart')),
+      isTrue,
+      reason: 'base_source_page 的 mineNew 必须带 withAllowDuplicate',
+    );
+  });
+
   test('action sheet orchestrator falls back to mineNew when nothing matches',
       () {
     final src = read('lib/src/anki/anki_mined_card_action_sheet.dart');

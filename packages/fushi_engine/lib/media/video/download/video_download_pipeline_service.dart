@@ -2855,9 +2855,25 @@ class VideoDownloadPipelineService {
         final VideoSubtitleDownload download =
             verified?.download ?? await subtitleRegistry!.download(candidate);
         _ensureLeaseHeld();
+        // 打包源（SubDL 的 zip）的候选名只是下载前的猜测 `<release>.srt`，真实扩展名
+        // 要解包后才知道：sidecar 扩展名以 `download.fileName` 为准（空才回退候选名），
+        // 否则 ASS/VTT 会被装成 `.srt`——时轴校验按内容解析、拦不住这个。
+        final String resolvedFileName = download.fileName.trim().isEmpty
+            ? candidate.fileName
+            : download.fileName;
+        final String resolvedExtension = _safeSubtitleExtension(
+          resolvedFileName,
+        );
+        final String resolvedInitialTarget = resolvedExtension == extension
+            ? initialTarget
+            : p.join(
+                p.dirname(video.path),
+                '${p.basenameWithoutExtension(video.path)}'
+                '.$language$resolvedExtension',
+              );
         final String selectedTarget = await _selectSidecarTarget(
           bytes: download.bytes,
-          initialTarget: initialTarget,
+          initialTarget: resolvedInitialTarget,
         );
         final String tempPath = '$selectedTarget.${job.jobId}.fushi.tmp';
         // The exact conflict-free destination is another durable intent. If
@@ -2867,6 +2883,7 @@ class VideoDownloadPipelineService {
         await database.updateVideoDownloadJobSubtitle(
           subtitleId,
           VideoDownloadJobSubtitlesCompanion(
+            originalFileName: Value<String?>(resolvedFileName),
             stagedPath: Value<String?>(tempPath),
             finalPath: Value<String?>(selectedTarget),
             updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),

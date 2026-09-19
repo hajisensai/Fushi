@@ -1066,6 +1066,7 @@
   var SUBTITLE_PROVIDER_LABELS = {
     jimaku: 'Jimaku',
     opensubtitles: 'OpenSubtitles',
+    subdl: 'SubDL',
     ajatt: 'AJATT',
   };
   function providerLabel(id) {
