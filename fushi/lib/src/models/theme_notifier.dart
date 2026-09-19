@@ -1344,6 +1344,12 @@ class ThemeNotifier extends ChangeNotifier {
               },
             ),
       splashFactory: eink ? NoSplash.splashFactory : null,
+      // E-ink：NoSplash 只去掉扩散水波，InkWell 的 hover（4% alpha）/ 按下
+      // highlight（12% alpha）叠层照画——都是墨水屏上的抖动灰，且每次 hover
+      // 进出都是一次局部刷新。按下反馈交给各组件自己的反色/描边，这里归零。
+      // focusColor 不动：焦点环由 FushiFocusTarget 自绘。
+      hoverColor: eink ? Colors.transparent : null,
+      highlightColor: eink ? Colors.transparent : null,
       extensions: <ThemeExtension<dynamic>>[
         FushiDesignSystemTheme(designSystemTheme),
         FushiEinkTheme(eink),
@@ -1453,6 +1459,9 @@ class ThemeNotifier extends ChangeNotifier {
         foregroundColor: cs.onPrimaryContainer,
         shape: RoundedRectangleBorder(
           borderRadius: FushiBorderRadius.control,
+          // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
+          // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
         ),
       ),
       // E-ink：M3 只用 `secondaryContainer` 填充表达选中段，而墨水屏方案把它
@@ -1519,6 +1528,10 @@ class ThemeNotifier extends ChangeNotifier {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           shape: const StadiumBorder(),
+          // E-ink：`FilledButton.tonal*` 的填充是 secondaryContainer == 页面底色，
+          // 没有边就退化成一行裸文字、与旁边的 TextButton 无法区分；描边补回
+          // 按钮体。实心 FilledButton 的填充本就是前景色，多一圈同色边无害。
+          side: eink ? BorderSide(color: cs.outline) : null,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(

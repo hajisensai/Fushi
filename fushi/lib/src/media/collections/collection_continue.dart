@@ -14,6 +14,20 @@
 /// v85 前逐字节一致。
 library;
 
+import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
+
+/// 这一行视频有没有观看痕迹（位置 / 时刻 / 完成标记三判据任一成立）。
+///
+/// 与 [CollectionMemberProgress] 的痕迹口径**同源**：卡菜单「清除观看进度」按它决定
+/// 要不要画那个按钮，合集续播按它决定锚点——两处判据一旦分叉，就会出现「菜单说没
+/// 进度可清、续播却仍钉在这一集」的自相矛盾。纯函数，build 里安全。
+bool videoBookHasWatchTrace(VideoBookRow book) =>
+    CollectionMemberProgress(
+      positionMs: book.lastPositionMs,
+      completed: book.completedAt != null,
+      lastPlayedAt: book.lastPlayedAt,
+    ).hasTrace;
+
 /// 成员播放痕迹（合集内已排序，index 0 在前）。
 class CollectionMemberProgress {
   const CollectionMemberProgress({
@@ -33,7 +47,7 @@ class CollectionMemberProgress {
   final int? lastPlayedAt;
 
   /// 时刻本身就是痕迹：播过就一定有时刻，哪怕位置被拖回 0 且未标完成。
-  bool get _hasTrace => completed || (positionMs ?? 0) > 0 || _playedAt > 0;
+  bool get hasTrace => completed || (positionMs ?? 0) > 0 || _playedAt > 0;
 
   int get _playedAt {
     final int? at = lastPlayedAt;
@@ -77,7 +91,7 @@ int _mostRecentlyPlayedIndex(List<CollectionMemberProgress> members) {
 int _lastTracedIndex(List<CollectionMemberProgress> members) {
   int last = -1;
   for (int i = 0; i < members.length; i++) {
-    if (members[i]._hasTrace) last = i;
+    if (members[i].hasTrace) last = i;
   }
   return last;
 }

@@ -1833,6 +1833,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ],
             ),
           ),
+        // 「清除观看进度」：只对本地行且确有观看痕迹的集出现（远端占位集的进度
+        // 归 host，本地没得清）。用户误点开下一集又退出后，「继续看」会被钉在那一集
+        // （BUG-1542 的最近播放锚点），这条动作让它回到上一集看完后的下一集。
+        if (episode.local case final VideoBookRow local
+            when videoBookHasWatchTrace(local))
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.clearWatchProgress,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.restart_alt_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.video_watch_progress_clear),
+              ],
+            ),
+          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -1851,11 +1866,29 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.mediaInfo:
         await _showEpisodeMediaInfo(episode);
+      case _EpisodeMenuAction.clearWatchProgress:
+        await _clearEpisodeWatchProgress(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
         break;
     }
+  }
+
+  /// 清除某一集的观看进度（行级四列 + 互联 LWW 镜像键，见
+  /// [VideoBookRepository.clearWatchProgress]），然后重查成员槽：集卡「已看到」
+  /// 徽标 / 完成勾、头部「继续看」目标都从成员进度现场推导，重载即刷新。
+  Future<void> _clearEpisodeWatchProgress(CollectionEpisodeSlot episode) async {
+    final VideoBookRow? local = episode.local;
+    if (local == null) return;
+    await VideoBookRepository(widget.database).clearWatchProgress(local.bookUid);
+    if (!mounted) return;
+    widget.onChanged();
+    FushiToast.show(
+      msg: t.video_watch_progress_cleared,
+      severity: ToastSeverity.success,
+    );
+    await _reload();
   }
 
   /// 某一集的完整技术规格弹窗。
@@ -2169,6 +2202,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 enum _EpisodeMenuAction {
   download,
   mediaInfo,
+  clearWatchProgress,
   removeFromCollection,
 }
 
