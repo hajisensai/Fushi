@@ -45,7 +45,10 @@ const Map<String, String> _componentVarToFlag = <String, String>{
 /// 编码器（默认格式已是 AVIF；缺它们时 Dart 侧会降级 GIF，卡还能制出来，但用户选的
 /// 格式静默失效）。ffprobe：BUG-1420——配方曾传 --disable-ffprobe，而 Dart 侧
 /// resolveFfprobeExecutable() 一直按「与 ffmpeg 并排捆绑」设计，导致内封字幕字体与
-/// 音频容器元数据两条链在没装系统 ffmpeg 的机器上静默失效。
+/// 音频容器元数据两条链在没装系统 ffmpeg 的机器上静默失效。libdav1d：BUG-2604——
+/// FFmpeg 原生 `av1` 解码器只是 hwaccel 挂钩壳，`--disable-everything` 后没有任何
+/// hwaccel，AV1 视频的截帧 / 动图 / 片段导出在捆绑 ffmpeg 上恒 exit 69（解码错误率
+/// 100%），真正的软件解码器是 libdav1d。
 /// 少任何一个都是「二进制比配方旧」。
 const List<String> _requiredStandaloneFlags = <String>[
   '--disable-everything',
@@ -53,6 +56,7 @@ const List<String> _requiredStandaloneFlags = <String>[
   '--enable-libx264',
   '--enable-libsvtav1',
   '--enable-libwebp',
+  '--enable-libdav1d',
   '--enable-network',
   '--enable-ffprobe',
 ];

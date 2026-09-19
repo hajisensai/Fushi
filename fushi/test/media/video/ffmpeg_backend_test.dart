@@ -73,9 +73,9 @@ void main() {
       );
 
       final String summary = result.failureSummary;
-      // 真因（尾段错误行）必须出现——从尾向首取第一条含错误关键词的行
-      // （'Conversion failed!' 命中 'failed'），而非开头 banner。
-      expect(summary, contains('Conversion failed!'),
+      // 真因（尾段错误行）必须出现——从尾向首取第一条含错误关键词的行，而非开头
+      // banner；`Conversion failed!` 是零信息量的固定尾行，有真因时不取它（BUG-2604）。
+      expect(summary, contains('Error while opening encoder'),
           reason: 'The real ffmpeg failure line (tail) must survive '
               'summarization instead of the leading banner.');
       // banner（version 行）不得成为唯一显示内容——旧的从头截断正是只剩它。
