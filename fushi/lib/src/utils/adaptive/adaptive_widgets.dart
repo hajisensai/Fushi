@@ -167,12 +167,31 @@ Widget adaptiveSlider({
 
 /// [value] 非空时画**确定**进度（0..1）；为空时是原本的不确定动画。两个平台分支都
 /// 认这个值，避免「Material 显进度、Cupertino 一直转」的静默分歧。
+///
+/// eink 下不确定态改成一枚静止的沙漏：转圈是永不停歇的动画，墨水屏上等于那一小块
+/// 持续局部刷新（闪烁 + 残影）；确定进度照常画环（一次一格、不连续重绘）。
 Widget adaptiveIndicator({
   required BuildContext context,
   Color? color,
   double? strokeWidth,
   double? value,
 }) {
+  if (value == null && isEinkTheme(context)) {
+    // 这是全局 helper：不少调用点把它包在 14~20 px 的 tight SizedBox 里（Anki
+    // 配置行、字幕重匹配、阅读器快捷设置……），父约束会把 36 压到 16 而 24 px 的
+    // 字形不缩，裁成残缺一角。FittedBox.scaleDown 让沙漏随容器缩、无约束时不放大。
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Icon(
+          Icons.hourglass_top,
+          color: color ?? Theme.of(context).colorScheme.primary,
+        ),
+      ),
+    );
+  }
   if (isCupertinoPlatform(context)) {
     final double radius = strokeWidth != null ? strokeWidth * 2.5 : 10.0;
     if (value != null) {

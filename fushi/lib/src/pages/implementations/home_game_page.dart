@@ -437,11 +437,17 @@ class _CaptureStatusStrip extends StatelessWidget {
             ),
           );
 
+    // eink：45% 的 primaryContainer 既是抖动灰、又塌成页面底色，激活态看不出来；
+    // 改走 FushiCard 的 selected（eink 下 2px 描边），图标 + 文案已带语义。
+    final bool eink = isEinkTheme(context);
     return FushiCard(
       key: HomeGamePage.captureStatusKey,
       focusId: const FushiFocusId('game-capture-status'),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: active ? colors.primaryContainer.withValues(alpha: 0.45) : null,
+      color: active && !eink
+          ? colors.primaryContainer.withValues(alpha: 0.45)
+          : null,
+      selected: active && eink,
       onTap: onOpen,
       child: Row(
         children: <Widget>[

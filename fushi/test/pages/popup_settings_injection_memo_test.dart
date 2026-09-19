@@ -434,6 +434,18 @@ void main() {
             marker: 'window.__fushiPopupInstantScroll = true',
           ),
           (
+            name: 'popupInstantScrollWheelStep（瞬时滚动滚轮步长）',
+            mutate: (MemoAppModel m) =>
+                m.popupInstantScrollWheelStepValue = 0.8,
+            marker: 'window.__fushiPopupInstantScrollWheelStep = 0.8',
+          ),
+          (
+            name: 'popupInstantScrollTouchStep（瞬时滚动触摸步长）',
+            mutate: (MemoAppModel m) =>
+                m.popupInstantScrollTouchStepValue = 0.4,
+            marker: 'window.__fushiPopupInstantScrollTouchStep = 0.4',
+          ),
+          (
             name: 'compactGlossaries（BUG-2284 紧凑释义）',
             mutate: (MemoAppModel m) => m.compactGlossariesValue = true,
             marker: 'window.compactGlossaries = true',
@@ -821,6 +833,8 @@ class MemoAppModel extends AppModel {
   // BUG-2284：这两个是 buildPopupStaticSettingsJs 新读的 prefsRepo-backed getter。
   // 本 fake 从不跑 initialise()，prefsRepo 为 null，不覆写就是 build 时 null check 抛。
   bool popupInstantScrollValue = false;
+  double popupInstantScrollWheelStepValue = 0.5;
+  double popupInstantScrollTouchStepValue = 0.25;
   bool compactGlossariesValue = false;
   List<Dictionary> dictionariesValue = <Dictionary>[];
   Map<String, String> customDictCSSValue = <String, String>{};
@@ -848,6 +862,10 @@ class MemoAppModel extends AppModel {
   bool get collapseDictionaries => collapseDictionariesValue;
   @override
   bool get popupInstantScroll => popupInstantScrollValue;
+  @override
+  double get popupInstantScrollWheelStep => popupInstantScrollWheelStepValue;
+  @override
+  double get popupInstantScrollTouchStep => popupInstantScrollTouchStepValue;
   @override
   bool get compactGlossaries => compactGlossariesValue;
   @override

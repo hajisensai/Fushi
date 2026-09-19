@@ -1938,7 +1938,10 @@ void main() {
       expect(frame, contains('ColoredBox('));
       expect(frame, contains('tokens.surfaces.overlay'));
       // MD3 action layout：快捷动作 chip 网格 + 列表动作 + 危险文字按钮。
-      expect(frame, contains('Wrap('));
+      // BUG-2603：chip 网格是按真实内在宽度决定列数的 _QuickActionGrid，不再是
+      // 「常量猜最小宽 + Wrap」（那套在手机宽度把标签截成「查…/导…/从…」）。
+      expect(frame, contains('_QuickActionGrid('));
+      expect(frame, isNot(contains('_quickActionMinChipWidth')));
       expect(frame, contains('FushiActionChip('));
       expect(frame, contains('FushiListItem('));
       expect(frame, contains('TextButton('));
