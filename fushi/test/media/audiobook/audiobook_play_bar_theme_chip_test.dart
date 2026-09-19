@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
@@ -37,11 +40,18 @@ AppModel _testAppModel({FushiDatabase? database}) {
       'brightness_mode': PrefCodec.encode('system'),
       'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
     });
+  // 阅读器快捷设置里已有在 visible/value 里读偏好的条目（查词瞬时滚动步长），
+  // 生产路径抽屉只在 initialise() 之后打开、偏好必已就绪；夹具同样装上。
+  final PreferencesRepository prefsRepo = PreferencesRepository(db);
+  final Directory tmpDir =
+      Directory.systemTemp.createTempSync('fushi_play_bar_theme_chip_');
   final AppModel appModel = AppModel(testPlatformServices())
-    ..themeNotifier = themeNotifier;
+    ..themeNotifier = themeNotifier
+    ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tmpDir);
   addTearDown(() async {
     themeNotifier.dispose();
     await db.close();
+    tmpDir.deleteSync(recursive: true);
   });
   return appModel;
 }
