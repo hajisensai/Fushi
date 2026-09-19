@@ -39,7 +39,7 @@ Aniyomi 扩展与 Mihon 扩展**同一套打包与分发**（APK + `index.min.js
 
 - **入库/收藏**：浏览态零入库，作品页只播不存；收藏建行（对齐漫画 `OnlineMangaLibraryEntry` 的范式，落 `VideoBooks` + 集状态）是二期。
 - **下载离线**：`downloadRemoteVideo` 抛 `UnsupportedError`（直链可下、HLS 要分片合并或 ffmpeg remux）。
-- **观看统计**：无行远端条目不计时长（与互联/Jellyfin 远端同口径）；入库后自然接上。
+- **观看统计**：远端条目同样进学习统计（BUG-2587 起互联/Jellyfin 远端一律计，采集器按 `_watchStatsIdentity` 建），`media_key` = `anime-source:<pkg>:<sourceId>:<episodeUrl>`、按集独立；只有看完标记/单集完成上报因无 VideoBooks 行不发。
 - **全局搜索 / 发现页热门行**：漫画有 `MangaGlobalSearchRunner`，视频侧本期只做单源浏览。
 - **lib 16**：见 §2。
 

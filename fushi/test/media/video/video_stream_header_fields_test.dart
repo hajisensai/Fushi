@@ -38,5 +38,15 @@ void main() {
       );
       expect(p['http-header-fields'], 'Referer: r');
     });
+
+    test('clear property resets http-header-fields to empty (episode switch)',
+        () {
+      // 换集复用同一 Player：上一站的 Referer 若不清会带到下一站的 hoster。
+      expect(kClearHttpHeaderFieldsProperty, <String, String>{
+        'http-header-fields': '',
+      });
+      expect(buildHttpHeaderFieldsProperty(const <String, String>{}), isEmpty,
+          reason: '空 header 本身不产生属性，清空要走专门的 clear 路径');
+    });
   });
 }

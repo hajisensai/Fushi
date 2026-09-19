@@ -5083,6 +5083,5 @@
   "video_online_episodes_title": "Episodes",
   "video_online_episodes_empty": "No episodes found.",
   "video_online_stream_choose": "Choose a stream",
-  "video_online_stream_none": "This episode returned no playable stream.",
-  "video_online_stream_resolving": "Resolving stream…"
+  "video_online_stream_none": "This episode returned no playable stream."
 }

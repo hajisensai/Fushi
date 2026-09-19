@@ -247,6 +247,26 @@ void main() {
     },
   );
 
+  test('audioTracks are dub alternatives, never exposed as audioStreamUrl',
+      () async {
+    // Aniyomi 的 audioTracks 是替代配音轨；audioStreamUrl 契约是 audio-only 分离流，
+    // 塞进去播放页会 audio-add 并选中它——默认切到配音、制卡也从它裁。
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/1080.mp4',
+        'quality': '1080p',
+        'audioTracks': <Object?>[
+          <Object?, Object?>{'url': 'https://cdn.example/dub.aac', 'lang': 'en'},
+        ],
+      },
+    ];
+    final AnimeSourceVideoClient c = client();
+    final RemoteVideoStreamUrls urls =
+        await c.remoteVideoStreamUrls(c.remoteVideos.first.id);
+    expect(urls.streamUrl, 'https://cdn.example/1080.mp4');
+    expect(urls.audioStreamUrl, isNull);
+  });
+
   test('playback order is by episode number then upload time', () {
     final List<MihonEpisode> sorted =
         sortEpisodesForPlayback(const <MihonEpisode>[

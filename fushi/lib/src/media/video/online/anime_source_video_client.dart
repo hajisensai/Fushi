@@ -158,7 +158,11 @@ class AnimeSourceVideoClient
       subtitleFileName: subtitle == null
           ? null
           : subtitleFileNameFor(subtitle, episode),
-      audioStreamUrl: chosen.audioTracks.firstOrNull?.url,
+      // Aniyomi lib-14 的 `Video.audioTracks` 是**可选替代配音轨**（流本身带原声），
+      // 不是 YouTube 那种 audio-only 分离流；[RemoteVideoStreamUrls.audioStreamUrl]
+      // 的契约是后者（播放页会 audio-add 并选中它），塞进去会默认切到第一条配音、
+      // 制卡也从它裁。替代音轨选择器留二期，这里恒 null。
+      audioStreamUrl: null,
       // HLS 是转封装的分片流，不带原容器的内嵌字幕轨。
       streamIsOriginalContainer: !isHlsStreamUrl(streamUrl),
     );

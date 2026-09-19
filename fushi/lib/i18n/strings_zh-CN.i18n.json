@@ -5083,6 +5083,5 @@
   "video_online_episodes_title": "剧集",
   "video_online_episodes_empty": "没有找到剧集。",
   "video_online_stream_choose": "选择线路",
-  "video_online_stream_none": "该集没有可播放的流。",
-  "video_online_stream_resolving": "正在解析流…"
+  "video_online_stream_none": "该集没有可播放的流。"
 }
