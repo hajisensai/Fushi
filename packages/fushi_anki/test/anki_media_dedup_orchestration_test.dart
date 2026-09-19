@@ -74,7 +74,14 @@ class _FakeAnkiConnectService extends AnkiConnectService {
   }
 
   @override
-  Future<Map<String, String>?> notesInfo(int noteId) async => notes[noteId];
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async {
+    final Map<String, String>? fields = notes[noteId];
+    if (fields == null) return null;
+    return (modelName: noteModelName, fields: fields);
+  }
+
+  /// 假 note 的笔记类型名；null = 服务端没给，仓库跳过类型校验。
+  String? noteModelName;
 
   @override
   Future<Map<int, Map<String, String>>> notesInfoMany(List<int> noteIds) async {

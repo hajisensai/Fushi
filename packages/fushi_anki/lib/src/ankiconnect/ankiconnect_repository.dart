@@ -960,15 +960,26 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       final service = _serviceForSettings(settings);
       // 现有字段名是整体替换的清单来源；读不到（已删 / 不可达）就没法保证
       // 「每个字段都被写」，明确失败而不是退回只写映射字段的半覆盖。
-      final Map<String, String>? existingFields = await service.notesInfo(
-        noteId,
-      );
-      if (existingFields == null) {
+      final AnkiConnectNoteInfo? existing = await service.noteInfo(noteId);
+      if (existing == null) {
         return MineOutcome.failure(
           'AnkiConnect: the card to overwrite could not be read '
           '(was it deleted in Anki?).',
         );
       }
+      // 候选是按首字段名搜出来的（[findMatchingNotes]），别的笔记类型只要首字段同名
+      // 也会命中；整卡覆盖会把它没映射的字段全部清空，所以类型不符必须拒绝。
+      final String? targetModel = settings.selectedNoteType?.name;
+      if (existing.modelName != null &&
+          targetModel != null &&
+          existing.modelName != targetModel) {
+        return MineOutcome.failure(
+          'AnkiConnect: the matching card uses note type '
+          '"${existing.modelName}", not "$targetModel" — refusing to '
+          'overwrite a card of a different note type.',
+        );
+      }
+      final Map<String, String> existingFields = existing.fields;
       if (context.sourceLink != null ||
           settings.fieldMappings.values.any(
             (String mapping) => mapping.contains('{source-link}'),

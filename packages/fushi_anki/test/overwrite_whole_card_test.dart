@@ -124,6 +124,47 @@ void main() {
       expect(service.addTagsCalls, isEmpty);
     });
 
+    test('候选卡属于别的笔记类型 → 拒绝整卡覆盖，不写字段不打标签', () async {
+      // findMatchingNotes 按首字段名搜同卡组，任何带同名首字段的 note type 都会命中；
+      // 整卡覆盖会把那张卡没映射的字段全部清空，所以 modelName 不符必须拒绝。
+      final _RecordingService service = _RecordingService()
+        ..noteModelName = 'Core 2k/6k'
+        ..existingFields = <String, String>{
+          'Expression': '仕業',
+          'Meaning': 'deed',
+          'Audio': '[sound:x.mp3]',
+        };
+      final MineOutcome outcome = await _ConfiguredConnectRepo(
+        service: service,
+        settings: settings(),
+      ).updateMinedNote(
+        noteId: 777,
+        rawPayloadJson: kPayload,
+        context: context,
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(outcome.errorDetail, contains('Core 2k/6k'));
+      expect(service.updateCalls, isEmpty);
+      expect(service.addTagsCalls, isEmpty);
+    });
+
+    test('候选卡笔记类型与选定一致（或服务端没给 modelName）照常覆盖', () async {
+      final _RecordingService service = _RecordingService()
+        ..noteModelName = 'Lapis'
+        ..existingFields = <String, String>{'Expression': '', 'Hint': 'h'};
+      final MineOutcome outcome = await _ConfiguredConnectRepo(
+        service: service,
+        settings: settings(),
+      ).updateMinedNote(
+        noteId: 778,
+        rawPayloadJson: kPayload,
+        context: context,
+      );
+      expect(outcome.result, MineResult.success);
+      expect(service.updateCalls, hasLength(1));
+    });
+
     test('全部映射字段渲染皆空仍拒绝（不会借「清未映射字段」清空整卡）', () async {
       final _RecordingService service = _RecordingService()
         ..existingFields = <String, String>{
@@ -210,7 +251,14 @@ class _RecordingService extends AnkiConnectService {
   Future<bool> mediaFileExists(String filename) async => false;
 
   @override
-  Future<Map<String, String>?> notesInfo(int noteId) async => existingFields;
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async {
+    final Map<String, String>? fields = existingFields;
+    if (fields == null) return null;
+    return (modelName: noteModelName, fields: fields);
+  }
+
+  /// 假 note 的笔记类型名；null = 服务端没给，仓库跳过类型校验。
+  String? noteModelName;
 
   @override
   Future<void> storeMediaFile({
