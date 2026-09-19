@@ -139,6 +139,10 @@ extension _VideoEpisode on _VideoFushiPageState {
         );
       }
       _watchTracker?.onEpisodeChanged();
+      // 视频源扩展取流是秒到几十秒级：这段时间旧集不能继续响着播——先停，换集 OSD
+      // （[_buildRemoteSwitchOverlay]）接手反馈；新集 load 内 autoPlay 起播。
+      await _controller?.pause();
+      if (!mounted) return;
       await _loadRemoteEpisode(index, startIntent: intent);
       return;
     }
@@ -430,6 +434,65 @@ extension _VideoEpisode on _VideoFushiPageState {
 
   // BUG-1301 note: 上面的 [FadingChromeGate] 同时承担旧 IgnorePointer + AnimatedOpacity
   // 的职责（少一层嵌套），几何与动画时序不变。
+
+  /// 远端换集在途 OSD：居中「转圈 + 阶段文案 + 网络读取速度」，只在
+  /// [_remoteSwitchPhase] 非 null 时渲染，纯展示套 [IgnorePointer]（控制条照常可点，
+  /// 用户随时能再切别的集 / 退出）。窗口 / 全屏复用（挂在同一 controls Stack）。
+  Widget _buildRemoteSwitchOverlay() {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ValueListenableBuilder<_VideoLoadPhase?>(
+          valueListenable: _remoteSwitchPhase,
+          builder: (BuildContext _, _VideoLoadPhase? phase, __) {
+            if (phase == null) return const SizedBox.shrink();
+            final Color textColor = _osdTextColor(cs);
+            final double scale = _videoUiScale;
+            final ValueListenable<double?>? speed = _networkReadSpeedOf(
+              _controller,
+            );
+            return Center(
+              child: Container(
+                key: const ValueKey<String>('video-remote-switch-overlay'),
+                padding: EdgeInsets.symmetric(
+                  horizontal: 20 * scale,
+                  vertical: 16 * scale,
+                ),
+                decoration: BoxDecoration(
+                  color: _osdSurfaceColor(cs),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    SizedBox(
+                      width: 32 * scale,
+                      height: 32 * scale,
+                      child: CircularProgressIndicator(color: textColor),
+                    ),
+                    SizedBox(height: 12 * scale),
+                    Text(
+                      _loadingPhaseLabel(phase),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14 * scale, color: textColor),
+                    ),
+                    if (speed != null)
+                      Padding(
+                        padding: EdgeInsets.only(top: 6 * scale),
+                        child: VideoReadSpeedLabel(
+                          readSpeed: speed,
+                          color: textColor.withValues(alpha: 0.8),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   /// 自动连播倒计时 overlay（TODO-639）。一集播完且自动连播开关开着时，画面右下角弹出
   /// 「N 秒后播放下一集」+「取消」可点按钮；点取消调 [_cancelAutoAdvanceCountdown] 停在

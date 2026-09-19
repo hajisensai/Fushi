@@ -153,6 +153,103 @@ void main() {
     expect(urls.streamIsOriginalContainer, isTrue);
   });
 
+  test(
+    'stream variants list the current episode and switching pins a line '
+    'whose headers follow',
+    () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://a.example/1080.m3u8',
+          'quality': 'A · 1080p',
+          'headers': <Object?, Object?>{'Referer': 'https://a.example/'},
+        },
+        <Object?, Object?>{
+          'url': 'https://b.example/720.mp4',
+          'quality': '',
+          'headers': <Object?, Object?>{'Referer': 'https://b.example/'},
+        },
+      ];
+      final AnimeSourceVideoClient c = client();
+      // 尚未取流：没有「当前集」，菜单为空、下标 -1、设下标是 no-op。
+      expect(c.streamVariants, isEmpty);
+      expect(c.streamVariantIndex, -1);
+      c.streamVariantIndex = 1;
+      final String id = c.remoteVideos.first.id;
+      final RemoteVideoStreamUrls first = await c.remoteVideoStreamUrls(id);
+      expect(first.streamUrl, 'https://a.example/1080.m3u8');
+      // 没给画质名的候选退到主机名，仍能分辨是哪家 hoster。
+      expect(
+        c.streamVariants.map((RemoteVideoStreamVariant v) => v.label).toList(),
+        <String>['A · 1080p', 'b.example'],
+      );
+      expect(c.streamVariantIndex, 0);
+      c.streamVariantIndex = 1;
+      // 设下标只是钉住：要等播放页重新取流才切换（当前流的头也随之换）。
+      expect(c.httpHeaderFields, <String, String>{
+        'Referer': 'https://a.example/',
+      });
+      final RemoteVideoStreamUrls switched = await c.remoteVideoStreamUrls(id);
+      expect(switched.streamUrl, 'https://b.example/720.mp4');
+      expect(c.streamVariantIndex, 1);
+      expect(c.httpHeaderFields, <String, String>{
+        'Referer': 'https://b.example/',
+      });
+      // 换到另一集：菜单跟着变成那一集的候选，钉住的选择只对原来那集有效。
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': 'https://c.example/ep2.mp4', 'quality': 'C'},
+      ];
+      final RemoteVideoStreamUrls second = await c.remoteVideoStreamUrls(
+        c.remoteVideos.last.id,
+      );
+      expect(second.streamUrl, 'https://c.example/ep2.mp4');
+      expect(
+        c.streamVariants.map((RemoteVideoStreamVariant v) => v.label).toList(),
+        <String>['C'],
+      );
+      expect(c.streamVariantIndex, 0);
+      // 越界下标不改变钉住的选择。
+      c.streamVariantIndex = 5;
+      final RemoteVideoStreamUrls back = await c.remoteVideoStreamUrls(id);
+      expect(back.streamUrl, 'https://b.example/720.mp4');
+    },
+  );
+
+  test('episodes sharing a url still get distinct ids', () async {
+    // 有的扩展把集身份放在集号上、url 全部相同（甚至为空）。
+    const List<MihonEpisode> sameUrl = <MihonEpisode>[
+      MihonEpisode(url: '/watch', name: 'Episode 1', uploadedAt: 1, number: 1),
+      MihonEpisode(url: '/watch', name: 'Episode 2', uploadedAt: 2, number: 2),
+      MihonEpisode(url: '/watch', name: 'Episode 2b', uploadedAt: 3, number: 2),
+      MihonEpisode(url: '/other', name: 'Special', uploadedAt: 4, number: 3),
+    ];
+    final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+      manager: manager,
+      context: _context,
+      anime: anime,
+      episodes: sameUrl,
+      httpClient: MockClient((_) async => http.Response('', 404)),
+    );
+    final List<String> ids = c.remoteVideos
+        .map((RemoteVideoInfo v) => v.id)
+        .toList();
+    expect(ids.toSet().length, 4);
+    // 撞车的按集号去重，集号也撞的再追下标；没撞的（/other）保持原样。
+    expect(ids[0], endsWith(':/watch#1'));
+    expect(ids[1], endsWith(':/watch#2/1'));
+    expect(ids[2], endsWith(':/watch#2/2'));
+    expect(ids[3], endsWith(':/other'));
+    // 每个 id 都解析回自己那一集（不是第一个同 url 的集）。
+    for (int i = 0; i < sameUrl.length; i++) {
+      expect(c.episodeForVideoId(ids[i]), same(sameUrl[i]));
+      expect(c.episodeVideoId(sameUrl[i]), ids[i]);
+    }
+    runtime.videos = <Object?>[
+      <Object?, Object?>{'url': 'https://cdn.example/x.mp4', 'quality': 'x'},
+    ];
+    await c.remoteVideoStreamUrls(ids[2]);
+    expect(runtime.lastEpisodeUrl, '/watch');
+  });
+
   test('empty candidate list is a typed NO_VIDEOS failure', () async {
     runtime.videos = <Object?>[];
     final AnimeSourceVideoClient c = client();

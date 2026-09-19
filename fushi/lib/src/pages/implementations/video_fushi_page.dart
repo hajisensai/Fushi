@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,6 +43,8 @@ import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
+    show MihonRuntimeException;
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
@@ -1419,6 +1422,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 自动连播倒计时剩余秒数（TODO-639）。null=没有倒计时；非空时画面右下角显示
   /// 「N 秒后播放下一集 · 取消」可点 overlay，归零后进下一集。与 [_osdNotifier] 分开：
   /// 这个 overlay 必须可点（取消按钮），不能套 [IgnorePointer]。
+  /// 远端**换集**在途的加载阶段（null = 没在换集）。换集不经页级加载态（Scaffold 的
+  /// 转圈判据里 [_videoReadyToShow] 恒 true，见其注释），此前旧集照播、进度条照走、
+  /// 零反馈；互联 / 媒体服务器建流是亚秒级没人察觉，视频源扩展取流是秒到几十秒级
+  /// （多跳 hoster 解析，桥超时 45 s），用户看到的就是「点了下一集没反应」。这里
+  /// 只驱动一层非模态 OSD（[_buildRemoteSwitchOverlay]），不碰 [_videoReadyToShow]
+  /// （那会拆 [Video] 重建、全屏路由丢实例，BUG-120）。
+  final ValueNotifier<_VideoLoadPhase?> _remoteSwitchPhase =
+      ValueNotifier<_VideoLoadPhase?>(null);
+
+  /// 远端最近一次尝试起播的集下标：换集取流失败后用户点「重试」，[_initRemote] 该回到
+  /// **要切的那集**，而不是作品页点开的起播集（此前重试恒回起播集，表现为「换不了集、
+  /// 一重试又回第 1 集」）。
+  int? _remoteLastAttemptedEpisode;
+
   final ValueNotifier<int?> _autoAdvanceCountdownNotifier = ValueNotifier<int?>(
     null,
   );
@@ -2413,6 +2430,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _subtitleProgress = null;
       }
     });
+    if (_remoteSwitchPhase.value != null) _remoteSwitchPhase.value = phase;
   }
 
   /// TODO-1276/1297：首开时武装「就绪即挂载 [Video]」的监听 + 兜底定时器。
@@ -2825,7 +2843,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 建 _episodes，绕开 info.isPlaylist 门控。换集换的是成员 id（见 _loadRemoteEpisode）。
     if (_isRemoteCollection) {
       final int startIndex =
-          (widget.sourceReview?.episodeIndex ?? widget.initialEpisodeIndex ?? 0)
+          (widget.sourceReview?.episodeIndex ??
+                  _remoteLastAttemptedEpisode ??
+                  widget.initialEpisodeIndex ??
+                  0)
               .clamp(0, _remoteMembers.length - 1);
       _episodes = <_PlaylistEpisodeRef>[
         for (final RemoteVideoInfo m in _remoteMembers)
@@ -2944,6 +2965,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     final int seq = ++_episodeLoadSeq;
+    _remoteLastAttemptedEpisode = index;
+    // 换集（页上已有在播的 controller）才亮换集 OSD；首开走页级加载态。
+    final bool switching = _controller != null;
+    if (switching) _remoteSwitchPhase.value = _VideoLoadPhase.connecting;
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
     _remoteSubtitleUserDismissed = false;
@@ -3184,6 +3209,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _failReason = _describeLoadFailure(e);
         });
       }
+      // 合集换集取流失败：当前成员指针已在上面切到目标集，而 [_currentEpisode] 没推进、
+      // 播放器里仍是旧集——把指针拨回旧集，退出时的断点落库 / 观看统计才不会把旧集的
+      // 位置记到目标集名下。重试要去的集由 [_remoteLastAttemptedEpisode] 记着。
+      if (_isRemoteCollection &&
+          seq == _episodeLoadSeq &&
+          _currentEpisode >= 0) {
+        _activeRemoteMember =
+            _remoteMembers[_currentEpisode.clamp(0, _remoteMembers.length - 1)];
+      }
+    } finally {
+      // 只清自己这一程的 OSD：更新的一程（seq 更大）已接管它。
+      if (switching && seq == _episodeLoadSeq) _remoteSwitchPhase.value = null;
     }
   }
 
@@ -4699,6 +4736,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _longPressSpeedBadge.dispose();
     _autoAdvanceCountdownTimer?.cancel();
     _autoAdvanceCountdownNotifier.dispose();
+    _remoteSwitchPhase.dispose();
     _levelHudTimer?.cancel();
     _levelHudNotifier.dispose();
     _blackFlickerNoticeNotifier.dispose();
@@ -8415,8 +8453,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       progress: _loadingPhase == _VideoLoadPhase.downloadingSubtitle
           ? _subtitleProgress
           : null,
+      // 首开在途时 [_controller] 仍是 null，速度采样挂在 [_pendingController] 上。
+      readSpeed: _networkReadSpeedOf(_controller ?? _pendingController),
       onBack: () => unawaited(_handleBackOrExit()),
     );
+  }
+
+  /// 网络流才有读取速度可显（本地文件读盘的 `cache-speed` 没有意义）；controller
+  /// 未建 / 非网络源恒 null，overlay 与缓冲圈据此不渲染速度行。
+  ValueListenable<double?>? _networkReadSpeedOf(
+    VideoPlayerController? controller,
+  ) {
+    if (controller == null || !controller.isNetworkSource) return null;
+    return controller.networkReadBytesPerSecond;
   }
 
   /// TODO-1213：加载阶段 → 本地化文案。
@@ -8505,6 +8554,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
     // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。
     if (error is SyncPeerUnreachableError) return t.sync_err_peer_unreachable;
+    // 视频源扩展明确回答「这一集没有可播的流」：既不是网络故障也不是站点拒绝，
+    // 作品页已不再预解析拦这一层（点集直接进播放器），失败态得把原因说清。
+    if (error is MihonRuntimeException && error.code == 'NO_VIDEOS') {
+      return t.video_online_stream_none;
+    }
     final String s = error?.toString().toLowerCase() ?? '';
     // 网络判据先行（BUG-1693 顺带修）：旧序里 'age'/'unavailable' 排在前面且
     // 'age' 是裸子串——'message'/'package'/'storage' 这类传输错误文本都含 'age'，
