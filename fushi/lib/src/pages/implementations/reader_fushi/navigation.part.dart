@@ -732,6 +732,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// [flattenTtuTocEntries] 之外，于是同一章下的每一条目录项都只跳到章首——
   /// 用户看到的「章节跳转不准」。
   Future<void> _jumpToChapterAnchor(int index, String? fragment) async {
+    if (_lyricsMode) {
+      await _jumpToChapterInLyricsMode(index);
+      return;
+    }
     if (fragment == null) {
       await _navigateToChapter(index, manual: true);
       return;
@@ -741,6 +745,55 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       return;
     }
     await _navigateToChapterWithFragment(index, fragment, manual: true);
+  }
+
+  /// 歌词模式的「跳章」（BUG-2596）。歌词文档是全书 cue 的连续列表，WebView 里
+  /// 没有 EPUB 章可换——直接走 [_navigateToChapter] 会把歌词页换成正文章而
+  /// `_lyricsMode` 仍为真（歌词消失、cue 推进再也找不到 `__lyricsSetCue`）。这里
+  /// 把「跳章」定义成**把音频定位到该章首句**：[_onCueChanged] 的歌词分支随即把
+  /// 高亮滚/重开窗口到那句，与有声书面板「章节」tab 的 `skipToCue` 同一条路。
+  /// 目录里的 `#anchor` 子节在歌词里没有对应物，一律落该章首句。
+  ///
+  /// 该章没有任何 cue（纯文字章 / 对齐没覆盖到）→ 歌词里根本不存在这一章，
+  /// 唯一能到达它的地方是正文：退出歌词模式后按普通跳章落到该章。
+  Future<void> _jumpToChapterInLyricsMode(int index) async {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final AudioCue? first = _firstCueOfSection(index);
+    if (ctrl != null && first != null) {
+      await ctrl.skipToCue(first);
+      return;
+    }
+    await _toggleLyricsMode();
+    if (!mounted || _lyricsMode) return;
+    await _navigateToChapter(index, manual: true);
+  }
+
+  /// 某章在全书 cue 里的首句；该章没有 cue → null。三种 cue 家族各走各的精确
+  /// 反查，**不做文本模糊匹配**（`_chapterIndexForText` 每次都要解析全书章节
+  /// HTML，线性扫 cue 扫不起；定位错章比退回正文更糟）：
+  /// - `fushi-cue://`（matcher 命中的原生 EPUB）：[AudiobookPlayerController.sectionFirstCue]；
+  /// - 独立 SRT 书（cue 合成的 EPUB）：[_srtChapterRanges] 的分桶首句序号
+  ///   （与 [_restoreFromCurrentAudioCue] 同一口径，桶号即章号）；
+  /// - SMIL / JSON 对齐：cue 自带的 `chapterHref` 精确等于该章 href。
+  AudioCue? _firstCueOfSection(int index) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null || _book == null) return null;
+    if (index < 0 || index >= _book!.chapters.length) return null;
+    final AudioCue? byFragment = ctrl.sectionFirstCue(index);
+    if (byFragment != null) return byFragment;
+    final List<AudioCue> cues = ctrl.allBookCuesSnapshot;
+    final List<(int, int)>? ranges = _srtChapterRanges;
+    if (ranges != null && index < ranges.length) {
+      final int firstSentence = ranges[index].$1;
+      for (final AudioCue cue in cues) {
+        if (cue.sentenceIndex == firstSentence) return cue;
+      }
+    }
+    final String href = _book!.chapters[index].href;
+    for (final AudioCue cue in cues) {
+      if (cue.chapterHref.trim() == href) return cue;
+    }
+    return null;
   }
 
   Future<void> _navigateToChapterWithFragment(

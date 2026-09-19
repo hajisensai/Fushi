@@ -131,9 +131,10 @@ void main() {
   });
 
   test('onSearchJump 按 logical chapter + DOM ready 分流，跨章排队且同章在飞最后写胜出', () {
+    // BUG-2596 起搜索跳转从内联闭包抽成 _jumpToSearchResult（歌词模式不接线）。
     final String body = slice(
-      'onSearchJump: (BookSearchResult result, String query) async {',
-      'favoriteSentences: favorites,',
+      'Future<void> _jumpToSearchResult(',
+      'Future<void> _jumpToFavoriteSentence(',
     );
     // 跨章必须把定位排进导航链（preciseLocateJs），而不是导航后抢发。
     expect(body, contains('preciseLocateJs:'), reason: '跨章搜索定位必须排进导航的原子恢复链');

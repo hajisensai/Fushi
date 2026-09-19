@@ -1412,6 +1412,13 @@ class ReaderFushiPage extends BaseSourcePage {
   @visibleForTesting
   static Future<void> Function(FavoriteSentence fav)? debugJumpToFavorite;
 
+  /// 集成测试钩子：等价于用户在章节导航里点某一章（歌词模式下走音频定位）。
+  static Future<void> Function(int sectionIndex)? debugJumpSection;
+
+  /// 集成测试钩子：把阅读时钟当前段写穿（`StudyClock.flushNow`），让测试不用等
+  /// 60 s tick 就能在 `study_segments` 里读到字数。
+  static Future<void> Function()? debugFlushReadingStats;
+
   @override
   BaseSourcePageState<ReaderFushiPage> createState() => _ReaderFushiPageState();
 }
@@ -2324,6 +2331,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugLyricsModeReady = () =>
           mounted && _lyricsMode && _lyricsPageReady;
       ReaderFushiPage.debugJumpToFavorite = _jumpToFavoriteSentence;
+      ReaderFushiPage.debugJumpSection = (int index) =>
+          _jumpToChapterAnchor(index, null);
+      ReaderFushiPage.debugFlushReadingStats = _flushReadingStats;
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
@@ -2989,6 +2999,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugToggleLyricsMode = null;
       ReaderFushiPage.debugLyricsModeReady = null;
       ReaderFushiPage.debugJumpToFavorite = null;
+      ReaderFushiPage.debugJumpSection = null;
+      ReaderFushiPage.debugFlushReadingStats = null;
       return true;
     }());
     ReaderFushiSource.onSettingsChangedLive = null;

@@ -138,8 +138,23 @@ void main() {
       expect(containsIdentifier(body, 'addChars'), isFalse);
     });
 
-    test('全语料只有 _refreshProgress 调 _readLedger.arrive(', () {
-      expect('_readLedger.arrive('.allMatches(masked), hasLength(1));
+    test(
+        '全语料只有 _refreshProgress 与歌词模式的 _arriveLyricsCueUnit 调 _readLedger.arrive(',
+        () {
+      // BUG-2597：歌词模式没有滚动回传，「当前句」是它的阅读单元，播放态 cue 推进
+      // 在 _arriveLyricsCueUnit 里 arrive；除此之外仍只有 _refreshProgress。
+      expect('_readLedger.arrive('.allMatches(masked), hasLength(2));
+      final String lyrics = methodBody(
+        corpus,
+        'void _arriveLyricsCueUnit(AudiobookPlayerController controller)',
+      );
+      expect(
+          containsCodeLine(lyrics, '_readLedger.arrive(start, end);'), isTrue);
+      expect(
+        containsCodeLine(lyrics, 'if (!controller.isPlaying) return;'),
+        isTrue,
+        reason: '暂停态被动高亮 / 手动跳句不是「读到」',
+      );
     });
   });
 
@@ -190,8 +205,7 @@ void main() {
       expect(
         containsIdentifier(body, '_readLedger'),
         isFalse,
-        reason:
-            'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
+        reason: 'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
             '_beginNavigation、恢复锚就是上次采样 → 恒判原位 → 跳走前那页被 rebase 掉',
       );
     });
@@ -286,7 +300,8 @@ void main() {
       expect('_readLedger.reset('.allMatches(masked), hasLength(2));
       final int review = masked.indexOf('void _onSourceReviewChanged() {');
       expect(review, isNonNegative);
-      final String body = masked.substring(review, masked.indexOf('\n  }\n', review));
+      final String body =
+          masked.substring(review, masked.indexOf('\n  }\n', review));
       expect(body, contains('_readLedger.reset();'));
     });
   });
@@ -310,8 +325,7 @@ void main() {
       expect(
         containsCodeLine(body, '_studyClock?.detach();'),
         isTrue,
-        reason:
-            'dispose 是同步的：停表必须走 detach（内部零 IO，'
+        reason: 'dispose 是同步的：停表必须走 detach（内部零 IO，'
             '攒下的写交给 ExitFlushRegistry.defer），不许自己起事务',
       );
       expect(
@@ -383,9 +397,18 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test('leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
+    test(
+        'leave 恰六处：跳句 + _beginNavigation + 三个同章跳转入口 + 进歌词模式；'
         '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
-      expect('_readLedger.leave('.allMatches(masked), hasLength(5));
+      // BUG-2597：进歌词经 loadData 不过 _beginNavigation，得自己 leave() 正文页。
+      expect('_readLedger.leave('.allMatches(masked), hasLength(6));
+      expect(
+        containsCodeLine(
+          methodBody(corpus, 'Future<void> _toggleLyricsMode()'),
+          '_readLedger.leave();',
+        ),
+        isTrue,
+      );
       // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
       // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
       expect('_studyClock?.detach();'.allMatches(masked), hasLength(1));
@@ -398,9 +421,9 @@ void main() {
   });
 
   group('搜索跳转不对账本做动作（只滚动、不 notifyRestoreComplete，落点首个 arrive 结算旧页）', () {
-    test('onSearchJump 无账本动作', () {
+    test('onSearchJump（_jumpToSearchResult）无账本动作', () {
       final int start = masked.indexOf(
-        'onSearchJump: (BookSearchResult result, String query) async {',
+        'Future<void> _jumpToSearchResult(',
       );
       expect(start, isNonNegative);
       final int end = masked.indexOf('switch (action) {', start);
