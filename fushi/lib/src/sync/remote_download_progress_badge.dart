@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 /// 远端书/视频卡片下载进行中时，盖在下载按钮位置的进度徽章。
 ///
@@ -17,6 +18,9 @@ class RemoteDownloadProgressBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // eink：secondaryContainer 圆盘塌成页面底色、压在封面上没有边，补描边；
+    // 首个进度回报前 value 为 null 是无限转圈（持续局部刷新），钉成 0。
+    final bool eink = isEinkTheme(context);
     return Tooltip(
       message: tooltip,
       child: Container(
@@ -25,6 +29,7 @@ class RemoteDownloadProgressBadge extends StatelessWidget {
         decoration: BoxDecoration(
           color: colors.secondaryContainer,
           shape: BoxShape.circle,
+          border: eink ? Border.all(color: colors.outline) : null,
         ),
         alignment: Alignment.center,
         child: SizedBox(
@@ -32,8 +37,9 @@ class RemoteDownloadProgressBadge extends StatelessWidget {
           height: 18,
           child: CircularProgressIndicator(
             strokeWidth: 2.4,
-            value: progress,
+            value: einkSafeProgressValue(context, progress),
             color: colors.onSecondaryContainer,
+            backgroundColor: eink ? colors.surface : null,
           ),
         ),
       ),
@@ -66,6 +72,10 @@ class RemoteDownloadFailedBadge extends StatelessWidget {
         decoration: BoxDecoration(
           color: colors.errorContainer,
           shape: BoxShape.circle,
+          // eink：errorContainer == 页面底色，圆盘压在封面上没有边；图标本身
+          // 已表达「失败」，描边只为把角标体画出来。
+          border:
+              isEinkTheme(context) ? Border.all(color: colors.outline) : null,
         ),
         alignment: Alignment.center,
         child: Icon(

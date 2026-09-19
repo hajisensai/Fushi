@@ -67,6 +67,13 @@ Duration einkSafeDuration(BuildContext context, Duration duration) {
   return isEinkTheme(context) ? Duration.zero : duration;
 }
 
+/// eink 下把不定态进度（`value == null`）钉成 0：不定态是一条永不停歇的往复
+/// 动画，墨水屏上等于整条进度带持续局部刷新（残影 + 闪烁）；旁边的文案已经在
+/// 说「正在下载 / 同步中」，静止的空轨道足够表达。非 eink 原样返回。
+double? einkSafeProgressValue(BuildContext context, double? value) {
+  return isEinkTheme(context) ? (value ?? 0) : value;
+}
+
 bool isCupertinoPlatform(BuildContext context) {
   final FushiDesignSystem designSystem =
       Theme.of(context).extension<FushiDesignSystemTheme>()?.designSystem ??
