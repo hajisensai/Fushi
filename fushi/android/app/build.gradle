@@ -64,7 +64,7 @@ def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
 // are vendored with the desktop sidecar (third_party/m_extension_server);
 // compiling the same files here keeps Android and the desktop sidecar on one
 // ABI. The sidecar build layers `overlay/` over `upstream_src/` (overlay wins),
-// and so does this task: the overlay holds Hibiki's lib 14 + lib 16 union of
+// and so does this task: the overlay holds Fushi's lib 14 + lib 16 union of
 // the ABI (data-class `Video`, hoster API, `SEpisode.fillermark`, ...) plus the
 // shared host loader `animesource/host/AnimeVideoLoader.kt`. It is a plain
 // copy of files already in the repository: no download, no hash.
