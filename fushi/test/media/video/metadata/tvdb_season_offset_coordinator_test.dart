@@ -192,13 +192,13 @@ void main() {
     expect(bound[(1, 1)]?.$2, 'The Calamity', reason: '标题核对 → TMDB S2E41');
     expect(bound[(1, 2)]?.$1, 'book-1');
     expect(bound[(1, 2)]?.$2, 'Ashes of the Quincy');
-    // 第 3 集标题对不上：季已被前两集锁到 S2，顺序兜底到 S2E43。
-    expect(bound[(1, 3)]?.$1, 'book-2');
-    expect(bound[(1, 3)]?.$2, 'TYBW #43');
+    // 第 3 集标题对不上：季虽被前两集锁到 S2，但顺序兜底（firstAvailable）不算
+    // 核对，不得按 AniDB 集号落进 TMDB 集——不绑，留给人工。
+    expect(bound[(1, 3)]?.$2, isNot('TYBW #43'));
     expect(
       report.warnings.any((SourceScrapeIssue issue) =>
           issue.message.contains('按 AniDB 文件身份的集标题') &&
-          issue.message.contains('对上 3 集')),
+          issue.message.contains('对上 2 集')),
       isTrue,
       reason: '${report.warnings.map((SourceScrapeIssue i) => i.message)}',
     );

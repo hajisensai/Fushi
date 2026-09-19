@@ -509,8 +509,14 @@ TmdbEpisodeMatchOutcome fillEmptySeasonsFromEpisodeTitles(
       seasons.add(season);
       continue;
     }
-    final Map<int, TmdbEpisodeMatch> matches =
-        matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases);
+    final Map<int, TmdbEpisodeMatch> matches = Map<int, TmdbEpisodeMatch>.of(
+        matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases))
+      // 这条路径的输入是 AniDB 文件身份的集标题、输出是「按 AniDB 集号落进 TMDB
+      // 集」——只有标题真核对过的才能落。`firstAvailable` 是季锁定后的顺序兜底，
+      // 标题没对上；Shoko 把它交用户核对界面，本仓没有那个界面，落库就是把错的
+      // 剧照/简介静默写进分集行（「AniDB 集号不能未经验证套到 TMDB 集号」）。
+      ..removeWhere((int _, TmdbEpisodeMatch match) =>
+          match.rating == TmdbEpisodeMatchRating.firstAvailable);
     if (matches.isEmpty) {
       seasons.add(season);
       continue;

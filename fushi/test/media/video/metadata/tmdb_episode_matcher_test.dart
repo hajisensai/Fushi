@@ -212,11 +212,12 @@ void main() {
       );
       final List<VideoMetadataEpisode> episodes =
           outcome.work.seasons.single.episodes;
-      expect(episodes.map((e) => e.episodeNumber), <int>[1, 2, 7]);
+      expect(episodes.map((e) => e.episodeNumber), <int>[1, 2]);
       expect(episodes[0].seasonNumber, 3);
       expect(episodes[0].title, 'Return');
-      expect(episodes[2].title, 'Ashes', reason: '第 7 集在 S2 锚内顺序兜底到 S2E3');
-      expect(outcome.ratings[(3, 7)], TmdbEpisodeMatchRating.firstAvailable);
+      // 第 7 集标题没对上：firstAvailable 只是季锁定后的顺序兜底，未经核对的
+      // AniDB 集号不得套到 TMDB 集，留空交人工。
+      expect(outcome.ratings.containsKey((3, 7)), isFalse);
     });
   });
 }
