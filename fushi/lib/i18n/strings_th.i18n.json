@@ -5117,5 +5117,9 @@
   "media_source_alist_url": "Site URL",
   "media_source_alist_folder": "Folder on the site",
   "media_source_alist_account_hint": "Leave the account empty to browse as a guest",
-  "media_source_alist_missing_fields": "Enter the site URL (http or https)"
+  "media_source_alist_missing_fields": "Enter the site URL (http or https)",
+  "popup_instant_scroll_wheel_step": "Instant scroll wheel step",
+  "popup_instant_scroll_wheel_step_hint": "How far one mouse-wheel notch jumps the popup, as a share of its height (also scaled by popup scroll speed).",
+  "popup_instant_scroll_touch_step": "Instant scroll touch step",
+  "popup_instant_scroll_touch_step_hint": "How far a finger must swipe before the popup jumps one step, as a share of its height."
 }

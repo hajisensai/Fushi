@@ -217,6 +217,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_compact_glossaries',
   'popup_dictionary_columns',
   'popup_instant_scroll',
+  // double：瞬时滚动步长（占被滚表面视口高度的比例，0.1–1.0）。触摸 = 手指滑满
+  // 这么多才跳一步，默认 0.25；滚轮 = 一格跳这么多（再乘滚轮速度），默认 0.5。
+  'popup_instant_scroll_touch_step',
+  'popup_instant_scroll_wheel_step',
   'popup_max_height',
   'popup_max_width',
   'popup_wheel_speed',

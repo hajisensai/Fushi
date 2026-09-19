@@ -440,13 +440,19 @@ void main() {
     ).text;
     expect(itemBody, contains('t.popup_instant_scroll'));
     expect(itemBody, contains('popupInstantScroll'));
+    // 它是跨阅读器 / 视频 / 词典页共享的弹窗行为，所以真值只有全局这一份（上面的
+    // 顺序断言钉住它留在「弹窗窗口」组）；ReaderPlacement 只是把同一份真值**投影**
+    // 进书内快捷面板（与同组的滑动关闭对同法）——墨水屏用户是在书里查词时才发现
+    // 步长不合手，不该为此退出阅读器去翻全局设置。步长滑杆随开关一起投影。
     expect(
       containsIdentifierCall(itemBody, 'ReaderPlacement'),
-      isFalse,
+      isTrue,
       reason:
-          'This controls shared lookup popup behavior across reader, video, '
-          'and dictionary surfaces, so it must not become reader-only.',
+          'The global lookup item must also project into the reader quick '
+          'panel (ReaderGroup.lookup); the placement does not make it '
+          'reader-only.',
     );
+    expect(itemBody, contains('ReaderGroup.lookup'));
   });
 
   test('reader quick settings reuse the shared theme selector', () {
