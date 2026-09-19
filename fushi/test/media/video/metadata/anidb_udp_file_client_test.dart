@@ -155,7 +155,8 @@ void main() {
   // BUG-2586：客户端与协调器同寿命，AniDB 虚拟连接 35 分钟无数据即失效——下一批
   // 第一条 FILE 落在死会话上会回 506，之前直接报「会话失败」把整个文件判成识别
   // 失败。要求：清会话、重新 AUTH、同一条 FILE 重发一次；第二次仍拒才抛。
-  for (final int expired in [501, 506]) {
+  // 505 ILLEGAL INPUT OR ACCESS DENIED 按 Shoko 当会话无效处理（重登重发一次）。
+  for (final int expired in [501, 505, 506]) {
     test('$expired on FILE re-authenticates once and resends the same FILE',
         () async {
       int auths = 0;
@@ -273,6 +274,7 @@ void main() {
     503: AnidbUdpFailure.clientOutdated,
     504: AnidbUdpFailure.clientBanned,
     506: AnidbUdpFailure.session,
+    598: AnidbUdpFailure.session,
     555: AnidbUdpFailure.banned,
     601: AnidbUdpFailure.maintenance,
   }.entries) {
@@ -304,6 +306,28 @@ void main() {
       },
     );
   }
+
+  test(
+      'idle session is logged out after [idleLogout] and re-authenticated '
+      'on the next request (Shoko 5 min idle logout)', () async {
+    int auths = 0;
+    final _Fake fake = _Fake((packet, tag) {
+      if (packet.startsWith('AUTH ')) auths++;
+      return _normal(packet, tag);
+    });
+    final AnidbUdpFileClient client = AnidbUdpFileClient(
+      config: _config,
+      transportFactory: (_) async => fake,
+      idleLogout: const Duration(milliseconds: 40),
+    );
+    expect((await client.lookup(size: 1, ed2k: _hash))?.fileId, 100);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(fake.packets.last, startsWith('LOGOUT s=Ab12'));
+    expect((await client.lookup(size: 2, ed2k: _hash))?.fileId, 100);
+    expect(auths, 2, reason: '空闲登出后下一条请求重新 AUTH');
+    await client.close();
+    expect(fake.packets.where((p) => p.startsWith('LOGOUT ')).length, 2);
+  });
 
   for (final String response in [
     'wrong 200 Ab12 LOGIN ACCEPTED',
@@ -551,6 +575,25 @@ void main() {
             Duration(seconds: seconds));
         nowMs += seconds * 1000;
       }
+      await client.close();
+    });
+
+    test(
+        'rate limiter: 2 s per packet, 6 s once active for over 10 s, reset '
+        'after 120 s idle (Shoko UDPRateLimiter)', () async {
+      final AnidbUdpFileClient client = gated(_Fake(_normal));
+      // AUTH + 7 FILE：前 6 次等待 2 s（活跃 0→12 s），之后 6 s。
+      for (int i = 1; i <= 7; i++) {
+        await client.lookup(size: i, ed2k: _hash);
+      }
+      expect(slept.map((Duration d) => d.inMilliseconds).toList(),
+          <int>[2000, 2000, 2000, 2000, 2000, 2000, 6000]);
+      // 空闲 130 s 后回到短间隔：本包不等，下一包等 2 s。
+      slept.clear();
+      nowMs += 130000;
+      await client.lookup(size: 8, ed2k: _hash);
+      await client.lookup(size: 9, ed2k: _hash);
+      expect(slept.map((Duration d) => d.inMilliseconds).toList(), <int>[2000]);
       await client.close();
     });
 

@@ -106,6 +106,7 @@ class AnidbUdpFileClient {
     required this.config,
     AnidbUdpTransportFactory? transportFactory,
     @visibleForTesting bool sharedRateGate = false,
+    this.idleLogout = const Duration(minutes: 5),
   })  : _factory = transportFactory ?? AnidbDatagramTransport.connect,
         // 进程级节流 / 退避 / 封禁只对真实 UDP 传输生效；内存传输默认不走
         // （没有网络也就没有 flood），测试要验退避时显式打开。
@@ -113,6 +114,12 @@ class AnidbUdpFileClient {
   final AnidbUdpConfig config;
   final AnidbUdpTransportFactory _factory;
   final bool _gated;
+
+  /// 多久没有业务请求就主动 LOGOUT（Shoko `AniDBUDPConnectionHandler` 5 min）。
+  /// 客户端与刮削协调器同寿命，一批扫完后会话不该一直挂着占 AniDB 的连接；
+  /// 下一批第一条请求自动重新 AUTH。
+  final Duration idleLogout;
+  Timer? _idleTimer;
   AnidbUdpTransport? _transport;
   String? _session;
   AnidbUdpException? _terminalFailure;
@@ -144,6 +151,8 @@ class AnidbUdpFileClient {
     _blockedUntilMs = 0;
     _blockedReason = AnidbUdpFailure.maintenance;
     _timeoutStreak = 0;
+    _lastSendMs = -1;
+    _activeSinceMs = -1;
     _clockOverride = clockMs;
     _sleepOverride = sleep;
   }
@@ -161,9 +170,31 @@ class AnidbUdpFileClient {
   }
 
   Future<T> _serialize<T>(Future<T> Function() action) {
+    _idleTimer?.cancel();
     final Future<T> result = _tail.then((_) => action());
     _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _tail = _tail.then((_) => _armIdleLogout());
     return result;
+  }
+
+  /// 最近一条请求结束后起一个空闲计时；到点且仍有会话就在下一个发送槽发
+  /// LOGOUT 并清会话（不等应答）。任何新请求进队列都会先取消它。
+  void _armIdleLogout() {
+    _idleTimer?.cancel();
+    if (_closed || _session == null) return;
+    _idleTimer = Timer(idleLogout, () {
+      _idleTimer = null;
+      if (_closed || _session == null) return;
+      final String session = _session!;
+      _session = null;
+      _tail = _tail.then((_) async {
+        try {
+          await _request('LOGOUT', {'s': session}, responseRequired: false);
+        } on AnidbUdpException {
+          // 尽力而为；会话在服务端 35 分钟后也会自己过期。
+        }
+      });
+    });
   }
 
   Future<AnidbFileIdentity?> lookup({
@@ -194,12 +225,14 @@ class AnidbUdpFileClient {
         }
         await _ensureSession();
         _Reply file = await _requestFile(size, ed2k);
-        if (file.code == 501 || file.code == 506) {
+        if (file.code == 501 || file.code == 506 || file.code == 505) {
           // The virtual connection expires after 35 idle minutes (wiki
           // UDP_API_Definition), and this client lives as long as the scrape
           // coordinator, so the first FILE of a later batch routinely lands on
           // a dead session. Re-authenticate once and resend; a second
-          // rejection is a real session failure (BUG-2586).
+          // rejection is a real session failure (BUG-2586). 505 follows Shoko
+          // (`UDPRequest.ParseResponse`: ILLEGAL INPUT OR ACCESS DENIED ⇒
+          // invalid session ⇒ log in again and resend).
           _session = null;
           await _ensureSession();
           file = await _requestFile(size, ed2k);
@@ -300,6 +333,25 @@ class AnidbUdpFileClient {
   static AnidbUdpFailure _blockedReason = AnidbUdpFailure.maintenance;
   static int _timeoutStreak = 0;
 
+  /// Shoko `UDPRateLimiter`：`BaseRateInSeconds` 2、`SlowRateMultiplier` 3、
+  /// `SlowRatePeriodMultiplier` 5、`ResetPeriodMultiplier` 60。
+  static const int _shortDelayMs = 2000;
+  static const int _longDelayMs = 6000;
+  static const int _shortPeriodMs = 10000;
+  static const int _resetPeriodMs = 120000;
+  static int _lastSendMs = -1;
+  static int _activeSinceMs = -1;
+
+  /// 本包发出后到下一包的最小间隔：按「活跃时长」在短/长间隔间切换。
+  static int _rateLimitDelayMs() {
+    final int now = _nowMs;
+    if (_lastSendMs < 0 || now - _lastSendMs > _resetPeriodMs) {
+      _activeSinceMs = now;
+    }
+    _lastSendMs = now;
+    return now - _activeSinceMs > _shortPeriodMs ? _longDelayMs : _shortDelayMs;
+  }
+
   static void _block(AnidbUdpFailure reason, Duration duration) {
     _blockedUntilMs = _nowMs + duration.inMilliseconds;
     _blockedReason = reason;
@@ -359,8 +411,9 @@ class AnidbUdpFileClient {
     if (_closed && command != 'LOGOUT') {
       throw const AnidbUdpException(AnidbUdpFailure.closed);
     }
-    // Shared across all clients in the app isolate. Four seconds even for
-    // short batches satisfies both AniDB's short and long term limits.
+    // Shared across all clients in the app isolate（Shoko `UDPRateLimiter`）：
+    // 基准 2 s 一包；连续活跃超过 10 s 后放慢到 6 s；空闲超过 120 s 重置回
+    // 短间隔。AniDB 的"长期不超过四秒一包"由 6 s 段兜住。
     // In-memory test transports have no network and need no flood delay.
     if (_gated) {
       final Future<void> turn = _sendTail.then((_) async {
@@ -378,7 +431,7 @@ class AnidbUdpFileClient {
         if (_nowMs < _blockedUntilMs) {
           throw AnidbUdpException(_blockedReason);
         }
-        _nextSendMs = _nowMs + 4000;
+        _nextSendMs = _nowMs + _rateLimitDelayMs();
       });
       _sendTail = turn.then<void>(
         (_) {},
@@ -405,12 +458,15 @@ class AnidbUdpFileClient {
       503 => AnidbUdpFailure.clientOutdated,
       504 => AnidbUdpFailure.clientBanned,
       555 => AnidbUdpFailure.banned,
-      501 || 506 => AnidbUdpFailure.session,
-      502 || 505 => AnidbUdpFailure.accessDenied,
+      501 || 505 || 506 || 598 => AnidbUdpFailure.session,
+      502 => AnidbUdpFailure.accessDenied,
       600 || 601 || 602 || 604 => AnidbUdpFailure.maintenance,
       _ => AnidbUdpFailure.server,
     };
-    if (code == 501 || code == 506) _session = null;
+    // Shoko：505 ⇒ IsInvalidSession，506/598 ⇒ ClearSession，ban ⇒ 清会话。
+    if (reason == AnidbUdpFailure.session || code == 555 || code == 504) {
+      _session = null;
+    }
     if (_gated) {
       if (code == 555 || code == 504) {
         _block(reason, _serverBan);
@@ -433,6 +489,8 @@ class AnidbUdpFileClient {
   Future<void> close() {
     if (_closing != null) return _closing!;
     _closed = true;
+    _idleTimer?.cancel();
+    _idleTimer = null;
     _transport?.cancelPending();
     final Future<void> closing = _closing = _serialize(() async {
       try {

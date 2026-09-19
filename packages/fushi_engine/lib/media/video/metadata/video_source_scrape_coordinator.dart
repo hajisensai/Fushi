@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart
 import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/tmdb_episode_matcher.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
@@ -1313,6 +1314,50 @@ class VideoSourceScrapeCoordinator
           preferredLanguage: _locale,
         );
       }
+      // Shoko `MatchAnidbToTmdbEpisodes`：映射表没给切片的季，逐集按标题 +
+      // 播出日在 TMDB 里找对应——① MAL 有分集的季用 TMDB 集补空；② MAL 一集
+      // 都没有的季用本地文件 AniDB 身份里的集标题核对后按 AniDB 集号落集。
+      if (tmdb.metadata != null &&
+          metadata.provider == VideoMetadataProviderKind.mal &&
+          metadata.kind == VideoMetadataMediaKind.tv) {
+        final Set<int> sliced = expansion?.tmdbSlices.keys.toSet() ?? <int>{};
+        final TmdbEpisodeMatchOutcome enriched =
+            enrichSeasonsByTmdbEpisodeMatch(
+          metadata,
+          tmdb.metadata,
+          skipSeasons: sliced,
+          preferredLanguage: _locale,
+        );
+        metadata = enriched.work;
+        _noteEpisodeMatches(warnings, localWork.title, enriched.ratings,
+            how: '按分集标题与播出日');
+        final Map<int, List<TmdbEpisodeMatchSource>> anidbSources =
+            _anidbEpisodeSources(
+                localWork, hashEvidence, episodeOverrides, metadata, sliced);
+        if (anidbSources.isNotEmpty) {
+          final TmdbEpisodeMatchOutcome filled =
+              fillEmptySeasonsFromEpisodeTitles(
+                  metadata, tmdb.metadata, anidbSources);
+          metadata = filled.work;
+          // 核对通过的成员：本地 (季, 集) 改成 (季, AniDB 集号)。
+          for (final VideoBookRow member in localWork.members) {
+            final AnidbFileIdentity? identity =
+                hashEvidence.identities[member.bookUid];
+            final int? epno = _anidbEpisodeNumber(identity);
+            final (int, int)? key =
+                localEpisodeKeyFor(member, episodeOverrides);
+            if (epno == null || key == null) continue;
+            if (filled.ratings.containsKey((key.$1, epno))) {
+              episodeOverrides = <String, (int, int)>{
+                ...episodeOverrides,
+                member.bookUid: (key.$1, epno),
+              };
+            }
+          }
+          _noteEpisodeMatches(warnings, localWork.title, filled.ratings,
+              how: '按 AniDB 文件身份的集标题');
+        }
+      }
     }
     // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
     // MAL 映射唯一为前提——那是 MAL 那边的事。唯一不写的情况是它与已确认的
@@ -1370,6 +1415,8 @@ class VideoSourceScrapeCoordinator
     final Set<int> animeIds = <int>{};
     final Set<int> mappedMalIds = <int>{};
     final Set<String> titles = <String>{};
+    final Map<String, AnidbFileIdentity> identities =
+        <String, AnidbFileIdentity>{};
     for (final VideoBookRow member in work.members) {
       token.throwIfCancelled();
       final AnidbHashIdentityResult result =
@@ -1386,6 +1433,7 @@ class VideoSourceScrapeCoordinator
       final AnidbFileIdentity? identity = result.identity;
       if (result.status == AnidbHashIdentityStatus.matched &&
           identity != null) {
+        identities[member.bookUid] = identity;
         animeIds.add(identity.animeId);
         final Set<int> malIds = result.mapping?.malIds ?? const <int>{};
         mappedMalIds.addAll(malIds);
@@ -1426,6 +1474,7 @@ class VideoSourceScrapeCoordinator
       titles: titles.toList(growable: false),
       // 只有「成员分属不同 AniDB 作品」才是真冲突；MAL 映射一对多由候选确认消解。
       conflicting: animeIds.length > 1,
+      identities: identities,
     );
   }
 
@@ -1882,6 +1931,98 @@ class VideoSourceScrapeCoordinator
     return (offline.malId != null && malId == '${offline.malId}') ||
         (offline.tmdbId != null && tmdbId == '${offline.tmdbId}');
   }
+
+  /// AniDB epno 的正片集号（`S1` / `C2` / `T1` 等特典前缀 → null）。
+  static int? _anidbEpisodeNumber(AnidbFileIdentity? identity) {
+    if (identity == null) return null;
+    final int? number = int.tryParse(identity.episodeNumber.trim());
+    return number == null || number <= 0 ? null : number;
+  }
+
+  /// 「卡片季号 → AniDB 来源集」：只收 (a) 该季在 [metadata] 里存在且一集都没有、
+  /// (b) 不在映射表切片里、(c) 成员有 AniDB 身份且是正片的成员。
+  static Map<int, List<TmdbEpisodeMatchSource>> _anidbEpisodeSources(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    Map<String, (int, int)> episodeOverrides,
+    VideoMetadataWork metadata,
+    Set<int> slicedSeasons,
+  ) {
+    final Set<int> emptySeasons = <int>{
+      for (final VideoMetadataSeason season in metadata.seasons)
+        if (season.seasonNumber != 0 &&
+            season.episodes.isEmpty &&
+            !slicedSeasons.contains(season.seasonNumber))
+          season.seasonNumber,
+    };
+    if (emptySeasons.isEmpty) {
+      return const <int, List<TmdbEpisodeMatchSource>>{};
+    }
+    final Map<int, Map<int, TmdbEpisodeMatchSource>> result =
+        <int, Map<int, TmdbEpisodeMatchSource>>{};
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      final int? epno = _anidbEpisodeNumber(identity);
+      final (int, int)? key = localEpisodeKeyFor(member, episodeOverrides);
+      if (identity == null || epno == null || key == null) continue;
+      if (!emptySeasons.contains(key.$1)) continue;
+      (result[key.$1] ??= <int, TmdbEpisodeMatchSource>{})[epno] =
+          TmdbEpisodeMatchSource(
+        number: epno,
+        titles: <String>[
+          identity.episodeTitle,
+          identity.episodeRomajiTitle,
+          identity.episodeKanjiTitle,
+        ].where((String title) => title.trim().isNotEmpty).toList(),
+      );
+    }
+    return <int, List<TmdbEpisodeMatchSource>>{
+      for (final MapEntry<int, Map<int, TmdbEpisodeMatchSource>> entry
+          in result.entries)
+        entry.key: entry.value.values.toList(growable: false),
+    };
+  }
+
+  /// 逐集核对结果的一条说明（按季汇总评级），零命中不记。
+  static void _noteEpisodeMatches(
+    List<SourceScrapeIssue> warnings,
+    String localTitle,
+    Map<(int, int), TmdbEpisodeMatchRating> ratings, {
+    required String how,
+  }) {
+    if (ratings.isEmpty) return;
+    final Map<int, Map<TmdbEpisodeMatchRating, int>> bySeason =
+        <int, Map<TmdbEpisodeMatchRating, int>>{};
+    for (final MapEntry<(int, int), TmdbEpisodeMatchRating> entry
+        in ratings.entries) {
+      final Map<TmdbEpisodeMatchRating, int> counts =
+          bySeason[entry.key.$1] ??= <TmdbEpisodeMatchRating, int>{};
+      counts[entry.value] = (counts[entry.value] ?? 0) + 1;
+    }
+    for (final int season in bySeason.keys.toList()..sort()) {
+      final Map<TmdbEpisodeMatchRating, int> counts = bySeason[season]!;
+      final String detail = <String>[
+        for (final TmdbEpisodeMatchRating rating
+            in TmdbEpisodeMatchRating.values)
+          if (counts[rating] case final int n) '${_ratingLabel(rating)} $n',
+      ].join('、');
+      warnings.add(SourceScrapeIssue(
+          workTitle: localTitle,
+          message:
+              '第 $season 季 $how 在 TMDB 逐集核对（Shoko 式）：对上 ${counts.values.fold(0, (int a, int b) => a + b)} 集（$detail）。'));
+    }
+  }
+
+  static String _ratingLabel(TmdbEpisodeMatchRating rating) => switch (rating) {
+        TmdbEpisodeMatchRating.dateAndTitle => '标题+日期',
+        TmdbEpisodeMatchRating.title => '标题',
+        TmdbEpisodeMatchRating.dateAndTitleKinda => '近似标题+日期',
+        TmdbEpisodeMatchRating.date => '日期',
+        TmdbEpisodeMatchRating.titleKinda => '近似标题',
+        TmdbEpisodeMatchRating.dateKinda => '最近日期',
+        TmdbEpisodeMatchRating.firstAvailable => '顺序兜底',
+        TmdbEpisodeMatchRating.none => '无',
+      };
 
   static VideoMetadataWork _withAnidbId(VideoMetadataWork work, int anidbId) =>
       work.copyWith(ids: <VideoMetadataId>[
@@ -3255,7 +3396,12 @@ class _HashWorkEvidence {
       this.malId,
       this.mappedMalIds = const <int>{},
       this.titles = const <String>[],
-      this.conflicting = false});
+      this.conflicting = false,
+      this.identities = const <String, AnidbFileIdentity>{}});
+
+  /// 成员 `bookUid` → 该文件的 AniDB 身份（集号 + 三语集标题），供 Shoko 式
+  /// 「集标题 → TMDB 集」核对用。
+  final Map<String, AnidbFileIdentity> identities;
 
   /// 全部成员一致指向的 AniDB 作品；成员分属不同作品时为 null 且 [conflicting]。
   final int? animeId;

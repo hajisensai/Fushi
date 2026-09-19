@@ -4,6 +4,9 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_ed2k.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_hash_identity_service.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -54,17 +57,21 @@ void main() {
     _MalProvider mal,
     _TmdbProvider tmdb, {
     required List<String> fileNames,
+    String fribb = _fribb,
+    _HashService? hash,
   }) async {
     final SourceLibraryRow source = await _source(db, directory, fileNames);
+    if (hash != null) addTearDown(hash.close);
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
+      hashIdentityService: hash,
       registry:
           VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
       identityMapping: AnimeIdentityMapping(
         httpClient: VideoMetadataHttpClient(
-          client: MockClient((_) async => http.Response(_fribb, 200)),
+          client: MockClient((_) async => http.Response(fribb, 200)),
         ),
       ),
     );
@@ -115,8 +122,8 @@ void main() {
     expect(bound[(5, 1)]?.$1, 'book-0');
     expect(bound[(5, 2)]?.$1, 'book-1');
     // MAL 没给分集，分集行来自 TMDB 第 2 季第 41/42 集的切片。
-    expect(bound[(5, 1)]?.$2, 'TYBW #41');
-    expect(bound[(5, 2)]?.$2, 'TYBW #42');
+    expect(bound[(5, 1)]?.$2, 'The Calamity');
+    expect(bound[(5, 2)]?.$2, 'Ashes of the Quincy');
     // S17E14 = 第二个 cour（偏移 13）的第 1 集，该 cour 自己的 MAL 分集优先。
     expect(bound[(3, 1)]?.$1, 'book-2');
     expect(bound[(3, 1)]?.$2, 'Bleach TYBW 2 #1');
@@ -149,6 +156,101 @@ void main() {
       reason: '${report.warnings.map((SourceScrapeIssue i) => i.message)}',
     );
   });
+
+  // Shoko 主路径（`MatchAnidbToTmdbEpisodes`）：映射表没给季/偏移、MAL 又一集
+  // 都没有时，用本地文件 AniDB 身份里的集标题在 TMDB 里逐集核对，核对通过的
+  // 按 AniDB 集号落集。
+  test(
+      'without mapping offsets, AniDB episode titles verify against TMDB '
+      'episodes and land under the AniDB episode number (Shoko path)',
+      () async {
+    const String fribbNoSeason = '['
+        '{"anidb_id":19079,"mal_id":60636,"themoviedb_id":{"tv":30984},'
+        '"type":"TV"}'
+        ']';
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    final _HashService hash = _HashService(<AnidbHashIdentityResult>[
+      _identity(1, 'The Calamity', 'Kashin', '禍進'),
+      _identity(2, 'Ashes of the Quincy', '', ''),
+      _identity(3, 'Totally Unrelated Title', '', ''),
+    ]);
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>[
+        'Bleach S01E01.mkv',
+        'Bleach S01E02.mkv',
+        'Bleach S01E03.mkv',
+      ],
+      fribb: fribbNoSeason,
+      hash: hash,
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final Map<(int, int), (String?, String?)> bound = await boundEpisodes();
+    expect(bound[(1, 1)]?.$1, 'book-0');
+    expect(bound[(1, 1)]?.$2, 'The Calamity', reason: '标题核对 → TMDB S2E41');
+    expect(bound[(1, 2)]?.$1, 'book-1');
+    expect(bound[(1, 2)]?.$2, 'Ashes of the Quincy');
+    // 第 3 集标题对不上：季已被前两集锁到 S2，顺序兜底到 S2E43。
+    expect(bound[(1, 3)]?.$1, 'book-2');
+    expect(bound[(1, 3)]?.$2, 'TYBW #43');
+    expect(
+      report.warnings.any((SourceScrapeIssue issue) =>
+          issue.message.contains('按 AniDB 文件身份的集标题') &&
+          issue.message.contains('对上 3 集')),
+      isTrue,
+      reason: '${report.warnings.map((SourceScrapeIssue i) => i.message)}',
+    );
+  });
+}
+
+AnidbHashIdentityResult _identity(
+        int epno, String english, String romaji, String kanji) =>
+    AnidbHashIdentityResult(
+      status: AnidbHashIdentityStatus.matched,
+      hash: AnidbEd2kHash(
+          ed2k: '0123456789abcdef0123456789abcdef',
+          size: epno,
+          modifiedAt: DateTime(2026),
+          changedAt: DateTime(2026)),
+      identity: AnidbFileIdentity(
+          fileId: 4000 + epno,
+          animeId: 19079,
+          episodeId: 300 + epno,
+          episodeNumber: '0$epno',
+          romajiTitle: 'Bleach: Sennen Kessen-hen - Kashin-tan',
+          kanjiTitle: 'BLEACH 千年血戦篇-禍進譚-',
+          englishTitle: '',
+          episodeTitle: english,
+          episodeRomajiTitle: romaji,
+          episodeKanjiTitle: kanji),
+      mapping: AnimeIdentityMappingResult(anidbId: 19079, malIds: <int>{60636}),
+    );
+
+class _HashService extends AnidbHashIdentityService {
+  _HashService(this.results)
+      : super(
+            enabled: true,
+            config: const AnidbUdpConfig(
+                username: 'user',
+                password: 'test',
+                clientName: 'testclient',
+                clientVersion: 1));
+  final List<AnidbHashIdentityResult> results;
+  int calls = 0;
+  @override
+  bool get isConfigured => true;
+  @override
+  Future<AnidbHashIdentityResult> identifyFile(String path,
+      {bool Function()? isCancelled,
+      void Function(int, int)? onProgress}) async {
+    final int index = calls++;
+    return index < results.length
+        ? results[index]
+        : const AnidbHashIdentityResult(
+            status: AnidbHashIdentityStatus.notFound);
+  }
 }
 
 Future<SourceLibraryRow> _source(
@@ -332,7 +434,12 @@ class _TmdbProvider implements VideoMetadataProvider {
         VideoMetadataEpisode(
           seasonNumber: seasonNumber,
           episodeNumber: number,
-          title: seasonNumber == 2 ? 'TYBW #$number' : 'Special #$number',
+          title: switch ((seasonNumber, number)) {
+            (2, 41) => 'The Calamity',
+            (2, 42) => 'Ashes of the Quincy',
+            (2, _) => 'TYBW #$number',
+            _ => 'Special #$number',
+          },
         ),
     ];
   }
