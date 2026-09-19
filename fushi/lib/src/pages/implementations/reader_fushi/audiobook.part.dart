@@ -524,22 +524,27 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         frag.sectionIndex >= book.chapters.length) {
       return null;
     }
-    final String html = book.chapters[frag.sectionIndex].html;
+    return _audioPositionIndexFor(frag.sectionIndex).studyRangeForFragment(
+      matchableStart: frag.normCharStart,
+      matchableEnd: frag.normCharEnd,
+    );
+  }
+
+  /// 某章的音频位置索引（按章 LRU 缓存 3 章）。调用方保证 [section] 在范围内。
+  ReaderAudioPositionIndex _audioPositionIndexFor(int section) {
+    final String html = _book!.chapters[section].html;
     final ({String html, ReaderAudioPositionIndex index})? cached =
-        _audioPositionIndices.remove(frag.sectionIndex);
+        _audioPositionIndices.remove(section);
     final ReaderAudioPositionIndex index = cached?.html == html
         ? cached!.index
         : ReaderAudioPositionIndex.fromChapterHtml(html);
-    _audioPositionIndices[frag.sectionIndex] = (html: html, index: index);
+    _audioPositionIndices[section] = (html: html, index: index);
     // The current and adjacent chapters suffice; avoid retaining a whole-book
     // per-character index when playback moves through a long audiobook.
     while (_audioPositionIndices.length > 3) {
       _audioPositionIndices.remove(_audioPositionIndices.keys.first);
     }
-    return index.studyRangeForFragment(
-      matchableStart: frag.normCharStart,
-      matchableEnd: frag.normCharEnd,
-    );
+    return index;
   }
 
   /// 以播放器**当前位置**对应的 cue 作开书起点。返回 false = 算不出（无控制器 /
@@ -731,6 +736,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         }
       }
       _syncPositionFromCurrentCue();
+      _arriveLyricsCueUnit(controller);
       return;
     }
 
@@ -1001,6 +1007,75 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       return;
     }
     await controller.skipToCue(targetCues.first);
+  }
+
+  /// BUG-2597：歌词模式的字数入账。正文模式「读过」的单元来自滚动回传
+  /// （[_refreshProgress] → `_readLedger.arrive(页首字, 页尾字+1)`），歌词模式没有
+  /// 滚动回传、那条路三处早返回，账本在整段听书里一步不推进——退出歌词时
+  /// `_beginNavigation` 的 `leave()` 结算的还是进歌词前站着的那页，听一小时字数 0、
+  /// 「字/时」一路下跌。歌词模式的阅读单元就是**当前句**：cue 推进 = 翻走上一句
+  /// （翻走即计、会话并集去重，与正文口径同一本账）。区间取该 cue 经
+  /// [_studyRangeForAudioFragment] 映射的学习单位范围（音频 UTF-16 坐标不能直接当
+  /// 学习单位用，BUG-2333），映射不出（无 fragment 的 SRT 书 / 章计数未就绪）不 arrive
+  /// ——宁可不计。只在播放态 arrive：暂停后重开 / 手动跳句时的被动高亮不是「读到」；
+  /// 显式跳句已经 `leave()`（BUG-1107），跳过的句子从未成为当前单元。
+  void _arriveLyricsCueUnit(AudiobookPlayerController controller) {
+    if (!controller.isPlaying) return;
+    final AudioCue? cue = controller.currentCue;
+    if (cue == null) return;
+    final ({int chapter, int offset, int length})? unit =
+        _studyUnitForLyricsCue(cue);
+    if (unit == null || unit.length <= 0) return;
+    final int start = absoluteCharOffsetOf(
+      chapterCumulativeChars: _chapterCumulativeChars,
+      chapterCharCounts: _chapterCharCounts,
+      chapter: unit.chapter,
+      charOffset: unit.offset,
+    );
+    final int end = absoluteCharOffsetOf(
+      chapterCumulativeChars: _chapterCumulativeChars,
+      chapterCharCounts: _chapterCharCounts,
+      chapter: unit.chapter,
+      charOffset: unit.offset + unit.length,
+    );
+    if (start < 0 || end <= start) return;
+    _traceArrive(start, end);
+    _readLedger.arrive(start, end);
+  }
+
+  /// 一句 cue 在正文里的学习单位区间（章号 + 章内偏移 + 长度）。
+  /// - `fushi-cue://`：持久化的 matchable 坐标经 [_studyRangeForAudioFragment] 映射；
+  /// - 独立 SRT 书 / SMIL：章号取 [_srtCueChapterMap] 分桶（与恢复路径同口径）或
+  ///   cue 自带 `chapterHref`，区间按句文本在该章**唯一**命中取
+  ///   （[ReaderAudioPositionIndex.studyRangeForUniqueText]，多处命中不猜）。
+  /// 两条都解不出 → null（不计）。
+  ({int chapter, int offset, int length})? _studyUnitForLyricsCue(
+    AudioCue cue,
+  ) {
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
+    if (frag != null) {
+      final ({int offset, int length})? range = _studyRangeForAudioFragment(
+        frag,
+      );
+      if (range == null) return null;
+      return (
+        chapter: frag.sectionIndex,
+        offset: range.offset,
+        length: range.length,
+      );
+    }
+    final EpubBook? book = _book;
+    if (book == null) return null;
+    int chapter = _srtCueChapterMap?[cue.sentenceIndex] ?? -1;
+    if (chapter < 0) chapter = _chapterIndexForCue(cue);
+    if (chapter < 0 || chapter >= book.chapters.length) return null;
+    final ({int offset, int length})? range = _audioPositionIndexFor(
+      chapter,
+    ).studyRangeForUniqueText(cue.text);
+    if (range == null) return null;
+    return (chapter: chapter, offset: range.offset, length: range.length);
   }
 
   /// BUG-1107（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]

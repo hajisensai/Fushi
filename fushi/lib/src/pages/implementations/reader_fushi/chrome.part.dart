@@ -1521,7 +1521,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 控制器就没有可切的歌词，这颗键整个不出现。
       case ReaderControlItem.modeToggle:
         return _audiobookController != null;
+      // 章节导航在歌词模式也要在：歌词文档是全书 cue 的连续列表，「跳章」在这里
+      // 是把音频定位到该章首句（[_jumpToChapterAnchor] 的歌词分支），不是换文档。
+      // 用户反馈「歌词模式没有跳章节按钮」（BUG-2596）——旧码把它和图集一起藏掉。
       case ReaderControlItem.navigation:
+        return true;
       case ReaderControlItem.gallery:
         return !_lyricsMode;
       // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
@@ -1577,6 +1581,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         );
       case ReaderControlItem.navigation:
         return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_navigation_button'),
           icon: Icons.format_list_bulleted,
           label: _labelWithShortcut(
             t.section_navigation,
@@ -2204,55 +2209,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
       charProgress: _progressCurrentChars != null && _progressTotalChars != null
           ? (_progressCurrentChars!, _progressTotalChars!)
           : null,
-      onJumpToCharOffset: (globalOffset) async {
-        _jumpToGlobalCharOffset(globalOffset);
-      },
+      // BUG-2596：导航抽屉在歌词模式也开放（跳章走音频定位）。字数跳转 / 书内搜索
+      // 是正文文档上的定位，歌词页里没有目标——传 null 让面板按既有契约不渲染这两
+      // 段，而不是留一个会把歌词页换成正文章的入口。
+      onJumpToCharOffset: _lyricsMode
+          ? null
+          : (globalOffset) async {
+              _jumpToGlobalCharOffset(globalOffset);
+            },
       epubBook: _book,
       chapterLabel: _currentChapterLabel(),
-      onSearchJump: (BookSearchResult result, String query) async {
-        if (!mounted || _book == null || _controller == null) return;
-        // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
-        // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
-        final String preciseLocateJs =
-            ReaderPaginationScripts.scrollToSearchMatchInvocation(
-          query,
-          result.charOffset,
-        );
-        final ReaderSearchJumpAction action = decideReaderSearchJump(
-          targetChapter: result.sectionIndex,
-          currentChapter: _currentChapter,
-          restoreInFlight: _restoreInFlight,
-          readerContentReady: _readerContentReady,
-        );
-        switch (action) {
-          case ReaderSearchJumpAction.navigate:
-            // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
-            // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
-            // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
-            // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
-            // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
-            // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
-            await _navigateToChapterAndWait(
-              result.sectionIndex,
-              manual: true,
-              preciseLocateJs: preciseLocateJs,
-            );
-            return;
-          case ReaderSearchJumpAction.replacePending:
-            // _currentChapter 在 loadUrl 前就切到逻辑目标章。DOM 尚未 ready 时再次选择
-            // 同章结果，必须更新本导航代际的 pending；直接 evaluate 会命中旧 DOM，
-            // 且首条 pending 会在 restore settle 后反过来覆盖用户最后一次选择。
-            _preciseLocateQueue.replace(
-              generation: _navigateGeneration,
-              js: preciseLocateJs,
-            );
-            return;
-          case ReaderSearchJumpAction.evaluateNow:
-            // 同章且 DOM 已 settle：直接定位（既有正常路径）。
-            await _controller!.evaluateJavascript(source: preciseLocateJs);
-            return;
-        }
-      },
+      onSearchJump: _lyricsMode ? null : _jumpToSearchResult,
       favoriteSentences: favorites,
       favoritePositionLabel: _favoritePositionLabel,
       onDeleteFavorite: (fav) async {
@@ -2266,23 +2233,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onPlayFavorite: _audiobookController == null
           ? null
           : (fav) async {
-              if (fav.normCharOffset == null || fav.sectionIndex == null) {
-                return;
-              }
-              final int section = fav.sectionIndex!;
-              final List<AudioCue> cues =
-                  _audiobookController!.sentenceAudioCuesForSection(section);
-              AudioCue? target;
-              for (final AudioCue cue in cues) {
-                final SubtitleRematchFragment? frag =
-                    SubtitleRematchCodec.tryDecode(cue.textFragmentId);
-                if (frag == null) continue;
-                if (frag.normCharStart <= fav.normCharOffset! &&
-                    frag.normCharEnd > fav.normCharOffset!) {
-                  target = cue;
-                  break;
-                }
-              }
+              final AudioCue? target = _favoriteAudioCue(fav);
               if (target != null) {
                 await _audiobookController!.playRange(
                   AudioPlaybackRange(
@@ -3298,10 +3249,87 @@ extension _ReaderChrome on _ReaderFushiPageState {
     FushiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
   }
 
+  /// 收藏句对应的音频 cue：按章取句级 cue，命中 `normCharOffset` 所在区间的那句。
+  /// 「播放收藏」与歌词模式「跳到收藏」共用。没挂有声书 / 收藏缺偏移 → null。
+  AudioCue? _favoriteAudioCue(FavoriteSentence fav) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    final int? offset = fav.normCharOffset;
+    final int? section = fav.sectionIndex;
+    if (ctrl == null || offset == null || section == null) return null;
+    for (final AudioCue cue in ctrl.sentenceAudioCuesForSection(section)) {
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
+      if (frag == null) continue;
+      if (frag.normCharStart <= offset && frag.normCharEnd > offset) {
+        return cue;
+      }
+    }
+    return null;
+  }
+
+  /// 导航抽屉「书内搜索」命中后的跳转（从 [_buildQuickSettingsSheet] 的内联闭包抽出；
+  /// 歌词模式下不接线——歌词页里没有正文命中的落点，见 BUG-2596）。
+  Future<void> _jumpToSearchResult(
+    BookSearchResult result,
+    String query,
+  ) async {
+    if (!mounted || _book == null || _controller == null) return;
+    // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
+    // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
+    final String preciseLocateJs =
+        ReaderPaginationScripts.scrollToSearchMatchInvocation(
+      query,
+      result.charOffset,
+    );
+    final ReaderSearchJumpAction action = decideReaderSearchJump(
+      targetChapter: result.sectionIndex,
+      currentChapter: _currentChapter,
+      restoreInFlight: _restoreInFlight,
+      readerContentReady: _readerContentReady,
+    );
+    switch (action) {
+      case ReaderSearchJumpAction.navigate:
+        // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
+        // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
+        // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
+        // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
+        // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
+        // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
+        await _navigateToChapterAndWait(
+          result.sectionIndex,
+          manual: true,
+          preciseLocateJs: preciseLocateJs,
+        );
+        return;
+      case ReaderSearchJumpAction.replacePending:
+        // _currentChapter 在 loadUrl 前就切到逻辑目标章。DOM 尚未 ready 时再次选择
+        // 同章结果，必须更新本导航代际的 pending；直接 evaluate 会命中旧 DOM，
+        // 且首条 pending 会在 restore settle 后反过来覆盖用户最后一次选择。
+        _preciseLocateQueue.replace(
+          generation: _navigateGeneration,
+          js: preciseLocateJs,
+        );
+        return;
+      case ReaderSearchJumpAction.evaluateNow:
+        // 同章且 DOM 已 settle：直接定位（既有正常路径）。
+        await _controller!.evaluateJavascript(source: preciseLocateJs);
+        return;
+    }
+  }
+
   /// TODO-1308 问题②（BUG-696 根因①）：书内收藏面板跳转的唯一真实路径——quick
   /// settings sheet 的 onJumpToFavorite 与 debugJumpToFavorite 测试钩子都走这里。
   Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {
     if (fav.sectionIndex == null) return;
+    // BUG-2596：歌词模式下「跳到收藏」= 把音频定位到那句 cue（歌词页随 cue 推进
+    // 高亮/滚过去），与跳章同一条路；正文导航会把歌词文档换成 EPUB 章。找不到
+    // 对应 cue（收藏落在对齐没覆盖的正文）就什么都不做——歌词里没有它。
+    if (_lyricsMode) {
+      final AudioCue? target = _favoriteAudioCue(fav);
+      if (target != null) await _audiobookController?.skipToCue(target);
+      return;
+    }
     final int? normCharOffset = fav.normCharOffset;
     // TODO-1308 问题②（BUG-696 根因①）：fav.normCharOffset 是写入端
     // （lookup.part / mining.part 的 sentenceNormalizedOffset，即 JS

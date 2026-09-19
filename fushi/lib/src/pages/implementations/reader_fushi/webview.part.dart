@@ -2940,6 +2940,11 @@ updateLive: function(patch) {
       }
       if (!currentLyricsLoad()) return;
       _lyricsPageReady = true;
+      // BUG-2597：开书自动恢复歌词模式（BUG-785）可能抢在正文 `_onRestoreComplete`
+      // 之前——歌词 `loadData` 换掉文档后那次回调永远不来，`_studyClock` 一直为 null，
+      // `_onCueChanged` 的 `touch()` / 账本回调全部 no-op → 整段歌词会话零时长零字数。
+      // 歌词文档就绪也是「书能读了」，与正文就绪同样建/起表（对已在跑的是 no-op）。
+      _ensureStudyClock();
       // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
       // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
       if (_pendingLyricsHintOnReady) {
