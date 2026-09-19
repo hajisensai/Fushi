@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2404 条。点号进各自文件。
+> 共 2405 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2599](bugs/BUG-2599-asr-match-recover-cluster.md) | ✅ | ✅ | 有声书 ASR 字幕匹配：恢复扫描单条精确命中把游标钉到书中段、整本只命中 1.7% |
 | [BUG-2598](bugs/BUG-2598-lyrics-mode-settings-stepper-unverified.md) | 🚧 | ✅ | 歌词模式「阅读设置调节按钮不生效」——Windows 真机未复现 |
 | [BUG-2597](bugs/BUG-2597-lyrics-mode-study-chars-not-credited.md) | ✅ | ✅ | 歌词模式听书字数不入账、自动恢复歌词时可能零时长 |
 | [BUG-2596](bugs/BUG-2596-lyrics-mode-chapter-navigation-missing.md) | ✅ | ✅ | 歌词模式顶栏没有章节导航键，无法跳章 |

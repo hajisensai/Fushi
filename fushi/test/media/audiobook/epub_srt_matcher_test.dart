@@ -402,6 +402,124 @@ void main() {
       expect(r.matchRate, greaterThan(0.9));
     });
 
+    test('BUG-2599 恢复扫描：片头登场人物页攒满 miss 后，单条人名精确命中不把游标钉到书中段', () {
+      // 真机复现（『妹さえいればいい。』2 卷，ASR 4719 条）：片头「登場人物」页
+      // 不在 EPUB 里，20 多条 cue 连 miss；其中「大野アシュリー」在正文第一次出现
+      // 是第 18 节，旧恢复扫描（单条 cue 在 [cursor..] indexOf）就把游标钉到那里，
+      // 序章起整段正文全 miss、之后每次恢复只会再往后跳，整本只命中 79/4719。
+      // 现在恢复走聚簇佐证：序章 cue 在第 1 节互相佐证 20 多条，压过孤零零的人名。
+      final List<String> prologue = List<String>.generate(
+        30,
+        (int i) => '序章第$i文は朝起きて洗面所に行くと妹がいたという本文である。',
+      );
+      final String filler = List<String>.generate(
+        200,
+        (int i) => '中盤第$i文は登場人物の名前を一切含まない埋め草である。',
+      ).join();
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, '妹さえいればいい。２'),
+        mkSection(1, prologue.join()),
+        mkSection(2, filler),
+        mkSection(3, '彼女──税理士・大野アシュリーは、サディスティックな笑みを浮かべながら会釈し、'),
+      ];
+      final List<String> intro = <String>[
+        for (int i = 0; i < 22; i++) '登場人物その$i：架空の肩書きが読み上げられる',
+      ];
+      final List<AudioCue> cues = <AudioCue>[
+        for (int i = 0; i < intro.length; i++) mkCue(i, intro[i]),
+        mkCue(intro.length, '大野アシュリー'),
+        for (int i = 0; i < prologue.length; i++)
+          mkCue(intro.length + 1 + i, prologue[i]),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      // 人名那条不许成为锚点。
+      expect(r.matches[intro.length].matched, isFalse);
+      for (int i = 0; i < prologue.length; i++) {
+        final CueMatch m = r.matches[intro.length + 1 + i];
+        expect(m.matched, isTrue, reason: '序章 cue #$i');
+        expect(m.sectionIndex, 1, reason: '序章 cue #$i');
+      }
+    });
+
+    test('BUG-2599 恢复扫描：音频章节顺序与 spine 不一致时，佐证够多允许游标回退', () {
+      final List<String> ch1 = List<String>.generate(
+        30,
+        (int i) => '第一章第$i文は前半の物語であり読み上げと一致している。',
+      );
+      final List<String> ch2 = List<String>.generate(
+        30,
+        (int i) => '第二章第$i文は後半の物語であり読み上げと一致している。',
+      );
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, ch1.join()),
+        mkSection(1, ch2.join()),
+      ];
+      // 音频先读第二章再读第一章。
+      final List<AudioCue> cues = <AudioCue>[
+        for (int i = 0; i < ch2.length; i++) mkCue(i, ch2[i]),
+        for (int i = 0; i < ch1.length; i++) mkCue(ch2.length + i, ch1[i]),
+      ];
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      for (int i = 0; i < ch2.length; i++) {
+        expect(r.matches[i].sectionIndex, 1, reason: '第二章 cue #$i');
+      }
+      // 前 20 条第一章 cue 攒 miss，之后恢复扫描把游标搬回第 0 节。
+      for (int i = EpubSrtMatcher.defaultMaxConsecutiveMisses;
+          i < ch1.length;
+          i++) {
+        final CueMatch m = r.matches[ch2.length + i];
+        expect(m.matched, isTrue, reason: '第一章 cue #$i');
+        expect(m.sectionIndex, 0, reason: '第一章 cue #$i');
+      }
+    });
+
+    test('BUG-2599 恢复扫描：只有一条泛用短语在远处撞中时游标不动，后续正文仍在原位命中', () {
+      final List<String> body = List<String>.generate(
+        40,
+        (int i) => '本文第$i文は物語であって聴き取りとほぼ同じである。',
+      );
+      body[35] = 'ありがとうございます。';
+      final List<EpubSection> sections = <EpubSection>[
+        mkSection(0, body.join()),
+      ];
+      final List<AudioCue> cues = <AudioCue>[];
+      int idx = 0;
+      for (int i = 0; i < 5; i++) {
+        cues.add(mkCue(idx++, body[i]));
+      }
+      // 20 条不在书里的旁白攒满 miss，紧接着一条泛用短语在 35 句之外精确命中。
+      for (int i = 0; i < 20; i++) {
+        cues.add(mkCue(idx++, '旁白その$i：本には存在しない語り'));
+      }
+      cues.add(mkCue(idx++, 'ありがとうございます'));
+      // 再来一长串旁白，让这次恢复扫描的探测范围里只有那一条撞中。
+      for (int i = 0; i < EpubSrtMatcher.recoverScanLimit; i++) {
+        cues.add(mkCue(idx++, '続く旁白その$i：これも本にはない'));
+      }
+      final int bodyFrom = cues.length;
+      for (int i = 5; i < 35; i++) {
+        cues.add(mkCue(idx++, body[i]));
+      }
+
+      final MatchResult r =
+          EpubSrtMatcher.match(sections: sections, cues: cues);
+
+      // 旧实现：泛用短语把游标钉到第 35 句，正文第 5~34 句全部落在游标之后 miss。
+      int matchedBody = 0;
+      for (int i = bodyFrom; i < cues.length; i++) {
+        if (r.matches[i].matched) matchedBody++;
+      }
+      expect(matchedBody, greaterThanOrEqualTo(25),
+          reason: '正文第 5~34 句应大多命中（只允许攒 miss 期间的损失）');
+      expect(r.matches[bodyFrom + 29].matched, isTrue);
+    });
+
     test('起点检测：首条 cue 精确失败时仍从正文开头起步，首条靠窗口内模糊命中', () {
       // 真实现象：EPUB 首句 `<b>…</b>` 后原作者多加 1 字标点/送り仮名差异，
       // SRT 听写与 EPUB 差 1 字 → exact 失败。起点检测对精确失败的探测 cue 做全书
