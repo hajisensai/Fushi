@@ -5081,7 +5081,6 @@
   "video_online_sources_empty": "没有已启用的视频源。请先安装并启用视频扩展。",
   "video_online_episodes_title": "剧集",
   "video_online_episodes_empty": "没有找到剧集。",
-  "video_online_stream_choose": "选择线路",
   "video_online_stream_none": "该集没有可播放的流。",
   "media_import_segment_local": "本地",
   "media_import_segment_stores": "仓库",

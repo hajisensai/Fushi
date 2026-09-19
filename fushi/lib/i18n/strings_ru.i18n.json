@@ -5081,7 +5081,6 @@
   "video_online_sources_empty": "No enabled video sources. Install and enable an extension first.",
   "video_online_episodes_title": "Episodes",
   "video_online_episodes_empty": "No episodes found.",
-  "video_online_stream_choose": "Choose a stream",
   "video_online_stream_none": "This episode returned no playable stream.",
   "media_import_segment_local": "Local",
   "media_import_segment_stores": "Stores",
