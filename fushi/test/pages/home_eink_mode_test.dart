@@ -282,6 +282,38 @@ void main() {
   });
 
   group('不定态进度', () {
+    testWidgets('adaptiveIndicator：eink 沙漏在 tight 小容器里随容器缩、不被裁', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          Builder(
+            builder: (BuildContext context) => Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: adaptiveIndicator(context: context),
+              ),
+            ),
+          ),
+        ),
+      );
+      final Finder icon = find.byIcon(Icons.hourglass_top);
+      expect(icon, findsOneWidget);
+      // 字形本身仍是默认 24（布局尺寸），靠 FittedBox 的缩放变换落进容器：
+      // 全局矩形 ≤ 16×16 且整个在容器内，不再被裁。
+      expect(tester.getSize(icon), const Size(24, 24));
+      final Rect box = tester.getRect(find.byType(FittedBox));
+      expect(box.size, const Size(16, 16));
+      final Rect glyph = tester.getRect(icon);
+      expect(glyph.width, lessThanOrEqualTo(16.0));
+      expect(box.contains(glyph.topLeft), isTrue);
+      expect(
+        box.contains(glyph.bottomRight - const Offset(0.01, 0.01)),
+        isTrue,
+      );
+    });
+
     testWidgets('adaptiveIndicator：eink 下不定态是静止沙漏，确定值照画环', (
       WidgetTester tester,
     ) async {

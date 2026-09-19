@@ -177,12 +177,18 @@ Widget adaptiveIndicator({
   double? value,
 }) {
   if (value == null && isEinkTheme(context)) {
+    // 这是全局 helper：不少调用点把它包在 14~20 px 的 tight SizedBox 里（Anki
+    // 配置行、字幕重匹配、阅读器快捷设置……），父约束会把 36 压到 16 而 24 px 的
+    // 字形不缩，裁成残缺一角。FittedBox.scaleDown 让沙漏随容器缩、无约束时不放大。
     return SizedBox(
       width: 36,
       height: 36,
-      child: Icon(
-        Icons.hourglass_top,
-        color: color ?? Theme.of(context).colorScheme.primary,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Icon(
+          Icons.hourglass_top,
+          color: color ?? Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
