@@ -5123,5 +5123,9 @@
   "popup_instant_scroll_wheel_step": "瞬时滚动滚轮步长",
   "popup_instant_scroll_wheel_step_hint": "滚轮每格让弹窗跳动的距离，占弹窗高度的比例（再乘以弹窗滚动速度）。",
   "popup_instant_scroll_touch_step": "瞬时滚动触摸步长",
-  "popup_instant_scroll_touch_step_hint": "手指滑过弹窗高度的这一比例后，弹窗跳动一步。"
+  "popup_instant_scroll_touch_step_hint": "手指滑过弹窗高度的这一比例后，弹窗跳动一步。",
+  "video_subdl_settings_hint": "为电影与剧集提供英文及多语种字幕，按 IMDb / TMDB id 匹配。需要免费 API key；下载按 IP 计匿名每日额度。",
+  "video_subdl_enabled_hint": "关闭后即使已填 API key 也不再搜索 SubDL。",
+  "video_subdl_api_key_hint": "在 subdl.com/panel/api 免费获取 API key",
+  "onboarding_online_services_subdl": "用于查找电影与剧集的英文及多语种字幕。注册免费 SubDL 账号后在面板生成 API 密钥，填入设置并开启字幕来源。"
 }

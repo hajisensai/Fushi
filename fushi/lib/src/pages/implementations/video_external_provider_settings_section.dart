@@ -36,6 +36,8 @@ class VideoExternalSettingsSnapshot {
     this.openSubtitlesConfig,
     this.jimakuApiKey = '',
     this.jimakuEnabled = true,
+    this.subdlApiKey = '',
+    this.subdlEnabled = true,
     this.ajattEnabled = true,
     this.disabledBuiltinSourceIds = const <String>{},
     this.pathMappings = const <VideoDownloadBackendPathMappingConfig>[],
@@ -57,6 +59,13 @@ class VideoExternalSettingsSnapshot {
   /// **默认 true**：本开关出现之前「填了 key」即启用，默认 false 会让存量用户
   /// 升级后 Jimaku 无声失效。
   final bool jimakuEnabled;
+
+  /// SubDL 的 API key（搜索必须带 key，站点 panel 免费生成）。
+  final String subdlApiKey;
+
+  /// SubDL 是否参与字幕搜索。与 [subdlApiKey] 组成 `enabled && key` 双门控，
+  /// 形状与 Jimaku 逐字同形。默认 true：key 为空即不装配。
+  final bool subdlEnabled;
 
   /// AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。零配置源，只有开关，
   /// 默认 true（没填任何 key 的用户唯一能用的源）。
@@ -82,6 +91,10 @@ abstract interface class VideoExternalSettingsStore {
   Future<void> saveJimakuApiKey(String apiKey);
 
   Future<void> saveJimakuEnabled(bool enabled);
+
+  Future<void> saveSubdlApiKey(String apiKey);
+
+  Future<void> saveSubdlEnabled(bool enabled);
 
   Future<void> saveAjattEnabled(bool enabled);
 
@@ -143,6 +156,8 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       openSubtitlesConfig: appModel.prefsRepo.videoSubtitleOpenSubtitlesConfig,
       jimakuApiKey: appModel.jimakuApiKey,
       jimakuEnabled: appModel.jimakuEnabled,
+      subdlApiKey: appModel.videoSubtitleSubdlApiKey,
+      subdlEnabled: appModel.videoSubtitleSubdlEnabled,
       ajattEnabled: appModel.videoSubtitleAjattEnabled,
       disabledBuiltinSourceIds: appModel.videoResourceDisabledSourceIds,
       pathMappings: appModel.prefsRepo.videoDownloadBackendPathMappings,
@@ -177,6 +192,16 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
       appModel.setJimakuEnabled(enabled);
 
   @override
+  // 同上：`setVideoSubtitleSubdlApiKey` 自己重建下载流水线运行时。
+  Future<void> saveSubdlApiKey(String apiKey) =>
+      appModel.setVideoSubtitleSubdlApiKey(apiKey.trim());
+
+  @override
+  // 同上：`setVideoSubtitleSubdlEnabled` 自己重建下载流水线运行时。
+  Future<void> saveSubdlEnabled(bool enabled) =>
+      appModel.setVideoSubtitleSubdlEnabled(enabled);
+
+  @override
   // 同上：`setVideoSubtitleAjattEnabled` 自己重建下载流水线运行时。
   Future<void> saveAjattEnabled(bool enabled) =>
       appModel.setVideoSubtitleAjattEnabled(enabled);
@@ -206,7 +231,7 @@ class AppVideoExternalSettingsStore implements VideoExternalSettingsStore {
 /// （第三方 API）和下载落盘的路径映射（纯本机管道）。两者归属不同设置分区
 /// （在线服务 / 下载），布尔切不开，所以按内容命名成三段，各挂各的家。
 enum VideoExternalProviderScope {
-  /// 在线字幕来源：Jimaku + OpenSubtitles + 默认字幕语言。
+  /// 在线字幕来源：Jimaku + OpenSubtitles + SubDL + AJATT + 默认字幕语言。
   ///
   /// 两家 registry 是并列的（`video_subtitle_registry.dart`：动漫搜 Jimaku +
   /// OpenSubtitles，其余只搜 OpenSubtitles），所以两家必须并列出现在同一节里；
@@ -214,6 +239,7 @@ enum VideoExternalProviderScope {
   subtitleSources,
   jimaku,
   openSubtitles,
+  subdl,
   subtitlePreferences,
 
   /// 资源索引器：随包内置来源开关 + Torznab 索引器。
@@ -264,12 +290,15 @@ class _VideoExternalProviderSettingsSectionState
   String _preferredLanguage = '';
   String _jimakuApiKey = '';
   bool _jimakuEnabled = true;
+  String _subdlApiKey = '';
+  bool _subdlEnabled = true;
   bool _ajattEnabled = true;
   Set<String> _disabledBuiltinSources = const <String>{};
   String _suggestedBackendProfileId = '';
   Timer? _torznabSaveDebounce;
   Timer? _openSubtitlesSaveDebounce;
   Timer? _jimakuSaveDebounce;
+  Timer? _subdlSaveDebounce;
   Timer? _mappingSaveDebounce;
 
   @override
@@ -285,14 +314,17 @@ class _VideoExternalProviderSettingsSectionState
     final bool flushOpenSubtitles =
         _openSubtitlesSaveDebounce?.isActive ?? false;
     final bool flushJimaku = _jimakuSaveDebounce?.isActive ?? false;
+    final bool flushSubdl = _subdlSaveDebounce?.isActive ?? false;
     final bool flushMappings = _mappingSaveDebounce?.isActive ?? false;
     _torznabSaveDebounce?.cancel();
     _openSubtitlesSaveDebounce?.cancel();
     _jimakuSaveDebounce?.cancel();
+    _subdlSaveDebounce?.cancel();
     _mappingSaveDebounce?.cancel();
     if (flushTorznab) unawaited(_saveTorznabIfValid());
     if (flushOpenSubtitles) unawaited(_saveOpenSubtitlesIfValid());
     if (flushJimaku) unawaited(_saveJimakuApiKey());
+    if (flushSubdl) unawaited(_saveSubdlApiKey());
     if (flushMappings) unawaited(_saveMappingsIfValid());
     super.dispose();
   }
@@ -328,6 +360,8 @@ class _VideoExternalProviderSettingsSectionState
         _preferredLanguage = snapshot.preferredSubtitleLanguage;
         _jimakuApiKey = snapshot.jimakuApiKey;
         _jimakuEnabled = snapshot.jimakuEnabled;
+        _subdlApiKey = snapshot.subdlApiKey;
+        _subdlEnabled = snapshot.subdlEnabled;
         _ajattEnabled = snapshot.ajattEnabled;
         _disabledBuiltinSources = snapshot.disabledBuiltinSourceIds;
         _suggestedBackendProfileId = snapshot.suggestedBackendProfileId;
@@ -431,6 +465,22 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  void _updateSubdlApiKey(String value) {
+    _subdlApiKey = value;
+    _subdlSaveDebounce?.cancel();
+    _subdlSaveDebounce = Timer(
+      const Duration(milliseconds: 500),
+      () => unawaited(_saveSubdlApiKey()),
+    );
+  }
+
+  Future<void> _saveSubdlApiKey() {
+    final String apiKey = _subdlApiKey;
+    return _save(
+      (VideoExternalSettingsStore store) => store.saveSubdlApiKey(apiKey),
+    );
+  }
+
   void _updateMapping(int index, _PathMappingDraft value) {
     setState(() => _mappings[index] = value);
     _mappingSaveDebounce?.cancel();
@@ -479,6 +529,7 @@ class _VideoExternalProviderSettingsSectionState
     final String? target = key is ValueKey<String>
         ? const <String, String>{
             'video-jimaku-api-key': 'services.jimaku.api_key',
+            'video-subdl-api-key': 'services.subdl.api_key',
             'video-opensubtitles-endpoint': 'services.opensubtitles.endpoint',
             'video-opensubtitles-api-key': 'services.opensubtitles.api_key',
             'video-opensubtitles-username': 'services.opensubtitles.username',
@@ -733,6 +784,38 @@ class _VideoExternalProviderSettingsSectionState
     );
   }
 
+  /// SubDL：开关 + API key，与 [_jimakuFields] 逐字同形（同一种双门控）。
+  Widget _subdlFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SwitchListTile.adaptive(
+          key: const ValueKey<String>('video-subdl-enabled'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(t.video_external_enabled),
+          subtitle: Text(t.video_subdl_enabled_hint, maxLines: 3),
+          value: _subdlEnabled,
+          onChanged: (bool value) {
+            setState(() => _subdlEnabled = value);
+            _save(
+              (VideoExternalSettingsStore store) =>
+                  store.saveSubdlEnabled(value),
+            );
+          },
+        ),
+        _field(
+          key: const ValueKey<String>('video-subdl-api-key'),
+          label: t.video_external_api_key,
+          initialValue: _subdlApiKey,
+          helper: t.video_subdl_api_key_hint,
+          secret: true,
+          onChanged: _updateSubdlApiKey,
+        ),
+      ],
+    );
+  }
+
   /// 默认字幕语言：两家 provider 共用的**一个**偏好（存量键名
   /// `jimaku_default_language` 冻结不追改），所以它属于「字幕来源」这一节，
   /// 而不是某一家的卡片内字段——此前它长在 OpenSubtitles 块里，读起来像
@@ -811,6 +894,14 @@ class _VideoExternalProviderSettingsSectionState
         icon: Icons.subtitles_outlined,
       ),
       _openSubtitlesFields(),
+      _sectionHeading(
+        theme,
+        // 品牌名，不进 i18n（同 Jimaku）。
+        'SubDL',
+        t.video_subdl_settings_hint,
+        icon: Icons.subtitles_outlined,
+      ),
+      _subdlFields(),
       _sectionHeading(
         theme,
         // 品牌名，不进 i18n（同 Jimaku）。
@@ -999,6 +1090,7 @@ class _VideoExternalProviderSettingsSectionState
       VideoExternalProviderScope.openSubtitles => <Widget>[
         _openSubtitlesFields(),
       ],
+      VideoExternalProviderScope.subdl => <Widget>[_subdlFields()],
       VideoExternalProviderScope.subtitlePreferences => <Widget>[
         _sectionHeading(theme, 'AJATT', t.video_ajatt_settings_hint),
         _ajattFields(),

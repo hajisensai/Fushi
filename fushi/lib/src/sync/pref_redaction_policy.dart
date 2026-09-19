@@ -74,6 +74,7 @@ abstract final class PrefRedactionPolicy {
     // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
     'yomitan_api_key',
     'jimaku_api_key',
+    'video_subtitle_subdl_api_key',
     'manga_cloud_ocr_api_key',
     'video_scraper_tmdb_api_key',
     'video_metadata_fanart_api_key',

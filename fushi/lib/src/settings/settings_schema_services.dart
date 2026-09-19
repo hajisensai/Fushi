@@ -117,6 +117,23 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
+          _externalServicePage(
+            id: 'services.subdl',
+            title: 'SubDL',
+            scope: VideoExternalProviderScope.subdl,
+            status: (SettingsContext c) => !c.appModel.videoSubtitleSubdlEnabled
+                ? t.settings_service_disabled
+                : c.appModel.videoSubtitleSubdlApiKey.trim().isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            entries: <SettingsBodySearchEntry>[
+              SettingsBodySearchEntry(
+                id: 'services.subdl.api_key',
+                title: t.video_external_api_key,
+                hasRevealTarget: true,
+              ),
+            ],
+          ),
           SettingsCustomItem(
             id: 'services.subtitle_preferences',
             searchTitle: 'AJATT · ${t.video_setting_jimaku_default_language}',
