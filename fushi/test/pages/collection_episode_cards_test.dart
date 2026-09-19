@@ -223,6 +223,48 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  Future<void> openEpisodeMenu(WidgetTester tester, String uid) async {
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(cardOf(uid)),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryButton,
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('集卡右键菜单「清除观看进度」只对有痕迹的集出现，点了真清行', (WidgetTester tester) async {
+    useSurface(tester, const Size(1280, 1600));
+    // e1 看完；e2 误点开看了两秒退出（用户实报形状）。
+    await db.updateVideoBookPosition('video/e1', 1400000, playedAt: 1000);
+    await db.markVideoCompleted('video/e1', DateTime(2026, 1, 1));
+    await db.updateVideoBookPosition('video/e2', 2000, playedAt: 2000);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openEpisodeMenu(tester, 'video/e2');
+    expect(find.text(t.video_watch_progress_clear), findsOneWidget,
+        reason: '有观看痕迹的集必须给「清除观看进度」');
+    await tester.tap(find.text(t.video_watch_progress_clear));
+    await tester.pumpAndSettle();
+
+    final VideoBookRow e2 = (await db.getVideoBookByBookUid('video/e2'))!;
+    expect(e2.lastPositionMs, 0);
+    expect(e2.lastPlayedAt, isNull, reason: '菜单必须真写穿 DB，且时刻一起清');
+    expect(
+      (await db.getVideoBookByBookUid('video/e1'))!.completedAt,
+      isNotNull,
+      reason: '只清点名的那一集',
+    );
+
+    // 清完再右键同一集：没有痕迹了，按钮不再出现。
+    await openEpisodeMenu(tester, 'video/e2');
+    expect(find.text(t.video_watch_progress_clear), findsNothing);
+    expect(find.text(t.collection_remove_member), findsOneWidget,
+        reason: '菜单本身仍弹，缺的只是这一条');
+  });
+
   testWidgets('集卡右键菜单「移出合集」真移出（管理能力收进菜单不丢失）', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
     await tester.pumpWidget(buildApp());

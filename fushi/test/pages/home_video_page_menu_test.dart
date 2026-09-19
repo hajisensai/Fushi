@@ -19,6 +19,8 @@ import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show videoRemotePositionAtPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
@@ -479,6 +481,51 @@ void main() {
     expect(find.byType(FushiDialogFrame), findsOneWidget,
         reason: '菜单本身仍要弹出，缺的只是这一条动作');
     expect(find.text(t.media_file_location_open), findsNothing);
+  });
+
+  testWidgets('从未看过的视频卡菜单不出现「清除观看进度」', (WidgetTester tester) async {
+    // 无痕迹的集画这个按钮只是一个什么都不会发生的钮；门控口径与合集续播的
+    // 痕迹判据同源（videoBookHasWatchTrace）。
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+
+    expect(find.byType(FushiDialogFrame), findsOneWidget);
+    expect(find.text(t.video_watch_progress_clear), findsNothing);
+  });
+
+  testWidgets('有观看痕迹的视频卡菜单「清除观看进度」真清行并盖同步戳', (WidgetTester tester) async {
+    // 用户实报：误点开下一集看了两秒退出，「继续看」被钉在那一集。菜单这条动作
+    // 要把位置 / 时刻 / 完成标记一起清掉（只清位置锚点照样钉着）。
+    // 这条动作排在菜单最末（DELETE 之前），默认 800×600 测试面上落在屏外，tap
+    // 命不中；放大测试面让整张面板可见。
+    tester.view.physicalSize = const Size(1280, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await seedTaggedVideo();
+    await db.updateVideoBookPosition('video/1', 2000, playedAt: 5000);
+    await db.markVideoCompleted('video/1', DateTime(2026, 1, 1));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, videoCard('video/1'));
+    expect(find.text(t.video_watch_progress_clear), findsOneWidget);
+
+    await tester.tap(find.text(t.video_watch_progress_clear));
+    await tester.pumpAndSettle();
+
+    final VideoBookRow row = (await db.getVideoBookByBookUid('video/1'))!;
+    expect(row.lastPositionMs, 0);
+    expect(row.lastPlayedAt, isNull);
+    expect(row.completedAt, isNull);
+    expect(
+      await db.getPrefTyped<int>(videoRemotePositionAtPrefKey('video/1'), 0),
+      greaterThan(5000),
+      reason: '互联 LWW 镜像戳要盖成现在，否则下次同步 host 把旧进度灌回来',
+    );
   });
 
   testWidgets('顶部标签可拖到视频卡并写入视频标签映射', (WidgetTester tester) async {

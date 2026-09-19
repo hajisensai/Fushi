@@ -2346,6 +2346,27 @@ mixin _FushiDbVideoDomain
         lastPlayedAt: Value<int?>(playedAt > 0 ? playedAt : null),
       ));
 
+  /// 清除一行视频的观看进度（用户显式操作：卡菜单「清除观看进度」）。
+  ///
+  /// 一条 UPDATE 同时归零 [VideoBooks.lastPositionMs] / [VideoBooks.lastPlayedAt] /
+  /// [VideoBooks.completedAt] / [VideoBooks.currentEpisode]——这四列合起来才是
+  /// 「这一集有没有看过的痕迹」（`CollectionMemberProgress.hasTrace` 三判据 +
+  /// 单行多集形态的集指针）。只清位置不清时刻会留下「位置 0 但有时刻」的痕迹，
+  /// 合集续播锚点照样钉在这一集上（BUG-1542 的时刻口径），用户看到的还是
+  /// 「继续看这一集」而不是回到上一集看完后的下一集。
+  ///
+  /// 不动观看时长统计（`video_watch_statistics` / `study_segments`）：那是
+  /// 「看了多久」的历史事实，不是「看到哪」的进度。互联 LWW 镜像键由仓库层
+  /// `VideoBookRepository.clearWatchProgress` 负责，这里只管行。
+  Future<void> clearVideoBookWatchProgress(String bookUid) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(const VideoBooksCompanion(
+        lastPositionMs: Value(0),
+        lastPlayedAt: Value<int?>(null),
+        completedAt: Value<DateTime?>(null),
+        currentEpisode: Value(0),
+      ));
+
   Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>
       (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
           .write(VideoBooksCompanion(currentEpisode: Value(episodeIndex)));
