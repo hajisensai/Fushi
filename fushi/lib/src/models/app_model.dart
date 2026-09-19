@@ -58,6 +58,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
+import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -7933,6 +7934,10 @@ class AppModel with ChangeNotifier {
       subtitleRegistryProvider: browserExtensionSubtitleRegistry,
       // 新手引导「试一试」页：GET /onboarding/extension-test 到达时才生成 HTML。
       extensionTestPageProvider: buildBrowserExtensionTestPageHtml,
+      // 扩展字幕外观「字体」下拉框：字体真源是 app 字体目录（与「自定义字体」页
+      // 同一份 font_catalog 偏好 + custom_fonts 目录），推荐字体下载也走页面同一套
+      // FontDownloadService，扩展装的字体在 app 里立刻可用。
+      fontApi: BrowserExtensionFontCatalog(this),
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';

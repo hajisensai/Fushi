@@ -115,7 +115,10 @@ void main() {
     final String page =
         read('lib/src/pages/implementations/custom_fonts_page.dart');
     final int start = page.indexOf('Future<void> _initializeFonts()');
-    final int end = page.indexOf('Future<void> _persistFontState(');
+    // 读/写目录状态已提升为顶层 readCustomFontCatalogState /
+    // persistCustomFontState（与扩展字体端点共用）；页面里的初始化区间到 _save()
+    // 为止，其间仍不得碰 ref.watch 驱动的 appModel。
+    final int end = page.indexOf('Future<void> _save()');
     expect(start, greaterThanOrEqualTo(0));
     expect(end, greaterThan(start));
     final String initAndRead = page.substring(start, end);

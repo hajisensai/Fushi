@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
+import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -93,6 +94,7 @@ class YomitanApiServer {
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
+    ExtensionFontApi? fontApi,
     String? apiKey,
     bool allowLan = false,
   }) : _requestedPort = port,
@@ -114,6 +116,7 @@ class YomitanApiServer {
        _onExtensionReport = onExtensionReport,
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
+       _fontApi = fontApi,
        _apiKey = apiKey,
        _allowLan = allowLan;
 
@@ -170,6 +173,10 @@ class YomitanApiServer {
   /// 新手引导「试一试」页的 HTML 供给器：请求到达时才生成（例句随用户已装词典的
   /// 词头语言走，文案随当前 app 语言走）。未注入时该路由 404。
   final String Function()? _extensionTestPageProvider;
+
+  /// 扩展字幕外观「字体」下拉框的真源：app 字体目录 + 推荐字体下载
+  /// （`/api/extension/fonts` / `fonts/file` / `fonts/download`）。未注入时三路 404。
+  final ExtensionFontApi? _fontApi;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -334,6 +341,14 @@ class YomitanApiServer {
         },
       );
     }
+    // 扩展 `@font-face` 拉字体字节是裸 GET/HEAD → 405 门之前处理。**仍走鉴权中间件**
+    // （它已接受查询串 `token=`），不进免鉴权白名单：字体文件是用户数据目录里的东西。
+    if (path == '/api/extension/fonts/file') {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      return _handleExtensionFontFile(request, headOnly: method == 'HEAD');
+    }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
     }
@@ -377,6 +392,10 @@ class YomitanApiServer {
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
         return _handleSiteCookies(request);
+      case '/api/extension/fonts':
+        return _handleExtensionFonts(request);
+      case '/api/extension/fonts/download':
+        return _handleExtensionFontDownload(request);
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
@@ -474,6 +493,97 @@ class YomitanApiServer {
       if (cookieImport != null) 'cookieImport': cookieImport.toJson(),
     });
   }
+
+  /// 扩展字幕外观「字体」下拉框的数据源：目录里真实存在的字体 + 推荐字体表
+  /// （逐项标注 installed）。body 可空。
+  Future<shelf.Response> _handleExtensionFonts(shelf.Request request) async {
+    final ExtensionFontApi? api = _fontApi;
+    if (api == null) return shelf.Response.notFound('Not Found');
+    final List<ExtensionFontEntry> fonts = await api.listFonts();
+    final List<ExtensionRecommendedFont> recommended = await api
+        .listRecommended();
+    return jsonResponse(<String, dynamic>{
+      'fonts': <Map<String, dynamic>>[
+        for (final ExtensionFontEntry font in fonts) font.toJson(),
+      ],
+      'recommended': <Map<String, dynamic>>[
+        for (final ExtensionRecommendedFont font in recommended) font.toJson(),
+      ],
+    });
+  }
+
+  /// GET/HEAD `?id=<font_id>`：按**目录 id** 回字体字节（不接受任意路径）。
+  /// `Access-Control-Allow-Origin: *`：网页里 `@font-face` 跨源加载必需。
+  Future<shelf.Response> _handleExtensionFontFile(
+    shelf.Request request, {
+    required bool headOnly,
+  }) async {
+    final ExtensionFontApi? api = _fontApi;
+    if (api == null) return shelf.Response.notFound('Not Found');
+    final String? id = request.url.queryParameters['id'];
+    if (id == null || id.isEmpty) return shelf.Response.notFound('Not found');
+    final ExtensionFontEntry? font = await api.findFont(id);
+    if (font == null) return shelf.Response.notFound('Not found');
+    final File file = File(font.path);
+    if (!await file.exists()) return shelf.Response.notFound('Not found');
+    final int length = await file.length();
+    return shelf.Response.ok(
+      headOnly ? null : file.openRead(),
+      headers: <String, String>{
+        'Content-Type': ExtensionFontEntry.contentTypeForExt(font.ext),
+        'Content-Length': '$length',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'private, max-age=86400',
+      },
+    );
+  }
+
+  /// body `{name}`：下载推荐表里的字体进 app 字体目录（已装则直接回已有条目）。
+  /// 404 `unknown_font` / 502 `download_failed`。
+  Future<shelf.Response> _handleExtensionFontDownload(
+    shelf.Request request,
+  ) async {
+    final ExtensionFontApi? api = _fontApi;
+    if (api == null) return shelf.Response.notFound('Not Found');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? name = body['name'];
+    if (name is! String || name.isEmpty) {
+      return shelf.Response(400, body: 'Missing name');
+    }
+    final ExtensionFontDownloadOutcome outcome = await api.downloadRecommended(
+      name,
+    );
+    switch (outcome.status) {
+      case ExtensionFontDownloadStatus.ok:
+        return jsonResponse(<String, dynamic>{
+          'ok': true,
+          'fonts': <Map<String, dynamic>>[
+            for (final ExtensionFontEntry font in outcome.fonts) font.toJson(),
+          ],
+        });
+      case ExtensionFontDownloadStatus.unknownFont:
+        return _jsonError(404, <String, dynamic>{
+          'ok': false,
+          'error': 'unknown_font',
+        });
+      case ExtensionFontDownloadStatus.downloadFailed:
+        return _jsonError(502, <String, dynamic>{
+          'ok': false,
+          'error': 'download_failed',
+          'detail': outcome.detail ?? '',
+        });
+    }
+  }
+
+  static shelf.Response _jsonError(int status, Map<String, dynamic> body) =>
+      shelf.Response(
+        status,
+        body: jsonEncode(body),
+        headers: <String, String>{
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      );
 
   /// BUG-2480：扩展回传站点 cookie。nonce 必须与当前登记一致（409），否则任何
   /// 拿到本地端口的进程都能往源站 jar 里塞会话。

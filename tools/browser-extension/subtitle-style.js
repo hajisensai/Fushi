@@ -48,7 +48,8 @@
     soft: '0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000',
     strong: '0 0 2px #000, 0 0 4px #000, 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000',
   };
-  // 供 options 页字体输入框的建议清单；值就是 CSS font-family 串（不是文案，不进 i18n）。
+  // options 页字体下拉的「本机字体栈」组；值就是 CSS font-family 串（不是文案，不进 i18n）。
+  // Fushi 字体库里的字体另成一组（family 名来自 app，经 fontFaceCss 以 @font-face 挂进页面）。
   var FONT_SUGGESTIONS = Object.freeze([
     '"Hiragino Sans", "Yu Gothic UI", sans-serif',
     '"Hiragino Maru Gothic ProN", "BIZ UDPGothic", "Yu Gothic UI", sans-serif',
@@ -81,10 +82,11 @@
   }
 
   // 字体串只允许字体名、引号、逗号、空格、连字符；分号/花括号等一律剥掉——setProperty 本就
-  // 不会让值逃出声明，这里再收紧一层，顺带限长。
+  // 不会让值逃出声明，这里再收紧一层，顺带限长。范围上界必须写成 \uffff 转义：裸 U+FFFF 是
+  // Unicode 非字符，Chrome 会把整个文件判成「不是 UTF-8」拒绝加载扩展（守卫 utf8-shippable.test.js）。
   function normalizeFontFamily(v) {
     if (typeof v !== 'string') return '';
-    var s = v.replace(/[^\w\s,"'\-. -￿]/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    var s = v.replace(/[^\w\s,"'\-.\u00a0-\uffff]/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
     return s;
   }
 
@@ -150,6 +152,53 @@
     return vars;
   }
 
+  // 下拉里给一条 font-family 串起个可读标签：取前两个 family 去引号（"Hiragino Sans" → Hiragino Sans /
+  // Yu Gothic UI）；关键字栈（sans-serif / monospace）原样。
+  function fontStackLabel(stack) {
+    if (typeof stack !== 'string') return '';
+    var parts = stack.split(',').map(function (x) { return x.trim().replace(/^["']|["']$/g, ''); })
+      .filter(function (x) { return x; });
+    return parts.slice(0, 2).join(' / ');
+  }
+
+  // Fushi 字体库条目 → 要存进设置的 font-family 值（family 加双引号；引号/反斜杠剥掉）。
+  function fontFamilyValueOf(family) {
+    if (typeof family !== 'string') return '';
+    // 与 normalizeFontFamily 同一字符集：存进 style 的值会被它过滤，这里若留下
+    // `[ ] ( ) + / &`（NotoSansJP[wght] 这类导入文件名），下拉回显与 @font-face 的
+    // family 两边就对不上——永远选不中、也载不进。@font-face 的 family 只是标签，
+    // 两边一致即可。
+    var f = family.replace(/["'\\]/g, '').replace(/[^\w\s,\-.\u00a0-\uffff]/g, '')
+      .replace(/\s+/g, ' ').trim().slice(0, 100);
+    return f ? '"' + f + '"' : '';
+  }
+
+  // 是否「就是」某个 Fushi 字体库条目（下拉回显与 @font-face 命中用同一判据）。
+  function matchesFushiFont(fontFamily, family) {
+    var v = fontFamilyValueOf(family);
+    return !!v && normalizeFontFamily(fontFamily) === v;
+  }
+
+  var FONT_FORMATS = { ttf: 'truetype', otf: 'opentype', woff: 'woff', woff2: 'woff2', ttc: 'collection' };
+
+  // Fushi 字体库（app 经 /api/extension/fonts 回的 [{family, url, ext}]）→ 注进页面的 @font-face 文本。
+  // 浏览器只会为真被 font-family 命中的 family 去取字节，所以全量声明也不会多下载一个字体。
+  // url 只收 http(s)（app 本机服务），family 经 fontFamilyValueOf 消毒后已带引号、不可能逃出声明。
+  function fontFaceCss(fonts) {
+    if (!Array.isArray(fonts)) return '';
+    var out = [];
+    for (var i = 0; i < fonts.length; i++) {
+      var f = fonts[i] || {};
+      var fam = fontFamilyValueOf(f.family);
+      var url = typeof f.url === 'string' ? f.url.trim() : '';
+      if (!fam || !/^https?:\/\//i.test(url) || /["'()\s]/.test(url)) continue;
+      var fmt = FONT_FORMATS[String(f.ext || '').toLowerCase()];
+      out.push('@font-face{font-family:' + fam + ';src:url("' + url + '")' + (fmt ? ' format("' + fmt + '")' : '') +
+        ';font-display:swap;}');
+    }
+    return out.join('\n');
+  }
+
   // 把变量套到元素上（覆盖层根 / options 预览）。
   function applyTo(el, style) {
     if (!el || !el.style) return;
@@ -175,5 +224,9 @@
     isDefault: isDefault,
     toCssVars: toCssVars,
     applyTo: applyTo,
+    fontStackLabel: fontStackLabel,
+    fontFamilyValueOf: fontFamilyValueOf,
+    matchesFushiFont: matchesFushiFont,
+    fontFaceCss: fontFaceCss,
   };
 })();
