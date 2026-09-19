@@ -165,12 +165,15 @@ test('surface / text 覆盖生效：浅色底取覆盖色相与明度；文字�
   assert.ok(text.L < 0.4, '浅色模式下白色文字覆盖会被折成深字，不能变成白底白字');
 });
 
-test('跟随 Fushi：app 镜像色映射到 --fushi-*，缺核心键回 null；popupVars 键名与 app 下发一致', () => {
+test('跟随 Fushi：app 镜像色（cssRgb 的 rgb() 串）映射到 --fushi-*，缺核心键回 null；popupVars 键名与 app 下发一致', () => {
   const P = loadPalette();
+  // 夹具用 app 真实下发格式：popup_theme_css.dart cssRgb() → `rgb(r, g, b)`，不是 hex。
+  // 曾因夹具全写 hex 而漏掉「解析只认 hex → 真 app 下永远回 null、退成默认绿」。
   const mirror = {
-    '--text-color': '#191c1a', '--background-color': '#f7f9f4', '--md-primary': '#386a58',
-    '--md-on-primary': '#ffffff', '--md-surface-container': '#eceee9', '--md-surface-container-high': '#e6e8e3',
-    '--md-on-surface': '#191c1a', '--md-on-surface-variant': '#44483f', '--md-outline-variant': '#c4c8be',
+    '--text-color': 'rgb(25, 28, 26)', '--background-color': 'rgb(247, 249, 244)', '--md-primary': 'rgb(56, 106, 88)',
+    '--md-on-primary': 'rgb(255, 255, 255)', '--md-surface-container': 'rgb(236, 238, 233)',
+    '--md-surface-container-high': 'rgb(230, 232, 227)', '--md-on-surface': 'rgb(25, 28, 26)',
+    '--md-on-surface-variant': 'rgb(68, 72, 63)', '--md-outline-variant': 'rgb(196, 200, 190)',
   };
   const t = P.tokensFromAppTheme(mirror);
   assert.strictEqual(t['--fushi-surface'], '#f7f9f4');
@@ -178,6 +181,12 @@ test('跟随 Fushi：app 镜像色映射到 --fushi-*，缺核心键回 null；p
   assert.strictEqual(t['--fushi-text'], '#191c1a');
   assert.strictEqual(t['--fushi-outline'], '#c4c8be');
   assert.strictEqual(P.tokensFromAppTheme({ '--md-primary': '#386a58' }), null);
+  // hex 形态仍收（自定义主题条目 / 旧镜像），rgba 忽略 alpha，坏串回 null。
+  assert.strictEqual(P.toHex(P.parseCssColor('#386a58')), P.toHex({ r: 56, g: 106, b: 88 }));
+  assert.strictEqual(P.toHex(P.parseCssColor('rgba(56, 106, 88, 0.5)')), P.toHex({ r: 56, g: 106, b: 88 }));
+  assert.strictEqual(P.parseCssColor('rgb(300, 0, 0)'), null);
+  assert.strictEqual(P.parseCssColor('hsl(1, 2%, 3%)'), null);
+  assert.strictEqual(P.tokensFromAppTheme({ '--text-color': '#191c1a', '--background-color': '#f7f9f4', '--md-primary': '#386a58' })['--fushi-primary'], '#386a58');
   const pv = P.popupVarsFromTokens(P.derive(P.specFor('ecru-theme'), 'dark'));
   assert.deepStrictEqual(Object.keys(pv).sort(), [
     '--background-color', '--fushi-card-bg-rgb', '--fushi-primary-highlight', '--md-on-primary',
@@ -186,6 +195,13 @@ test('跟随 Fushi：app 镜像色映射到 --fushi-*，缺核心键回 null；p
   ]);
   assert.match(pv['--fushi-card-bg-rgb'], /^\d+, \d+, \d+$/, 'popup.css 的 rgba(var(--fushi-card-bg-rgb), a) 需要裸三元组');
   assert.match(pv['--fushi-primary-highlight'], /^rgba\(\d+, \d+, \d+, 0\.35\)$/);
+});
+
+test('格式契约：app 侧 popup_theme_css.dart 的 cssRgb 仍产出 rgb(r, g, b)，与 parseCssColor 同口径', () => {
+  const dart = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'utils', 'popup_theme_css.dart'), 'utf8');
+  assert.match(dart, /String cssRgb\(Color c\) => 'rgb\(/, 'app 下发格式变了就要同步 theme-palette.js parseCssColor');
+  const P = loadPalette();
+  assert.strictEqual(P.toHex(P.parseCssColor('rgb(1, 2, 3)')), P.toHex({ r: 1, g: 2, b: 3 }));
 });
 
 // ───────── ② theme.js ─────────

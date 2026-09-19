@@ -709,6 +709,9 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   font-family: var(--fushi-sub-family);
   font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale));
   font-weight: var(--fushi-sub-weight);
+  font-style: normal;
+  font-variant: normal;
+  font-stretch: normal;
   line-height: var(--fushi-sub-line-height);
   letter-spacing: var(--fushi-sub-spacing);
   text-align: var(--fushi-sub-align);

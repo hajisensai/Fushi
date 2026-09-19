@@ -2296,6 +2296,11 @@
     /* 基准随视口响应（小播放器不撑、全屏不缩成蚂蚁），用户的「大小」是倍率而非绝对像素。 */
     font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale));
     font-weight: var(--fushi-sub-weight);
+    /* 原本是 `font:` 简写，会把这三项一起重置；拆成长手后要显式归 normal，
+       否则覆盖层挂在播放器容器下（非 shadow root），会继承宿主页的斜体/小型大写。 */
+    font-style: normal;
+    font-variant: normal;
+    font-stretch: normal;
     line-height: var(--fushi-sub-line-height);
     letter-spacing: var(--fushi-sub-spacing);
     text-align: var(--fushi-sub-align);

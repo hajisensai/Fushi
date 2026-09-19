@@ -35,6 +35,20 @@
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   }
 
+  // app 侧 `popup_theme_css.dart` 的 cssRgb() 下发的是 `rgb(r, g, b)`（BUG-688 起 content.css /
+  // popup.css 直接读 --text-color / --background-color），「跟随 Fushi」镜像里没有一个是 hex；
+  // 这里兼收 `#hex` / `rgb()` / `rgba()`（alpha 忽略，token 只描述不透明表面）。
+  function parseCssColor(v) {
+    var c = parseHex(v);
+    if (c) return c;
+    if (typeof v !== 'string') return null;
+    var m = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*[\d.]+\s*)?\)$/i.exec(v.trim());
+    if (!m) return null;
+    var r = +m[1], gg = +m[2], b = +m[3];
+    if (r > 255 || gg > 255 || b > 255) return null;
+    return { r: r, g: gg, b: b };
+  }
+
   function toHex(rgb) {
     function h(v) { var s = Math.round(clamp01(v / 255) * 255).toString(16); return s.length < 2 ? '0' + s : s; }
     return '#' + h(rgb.r) + h(rgb.g) + h(rgb.b);
@@ -113,7 +127,7 @@
   var DEFAULT_SEED = '#1f4959'; // app kCustomThemeDefaultSeed
 
   // ── 自定义主题条目 ───────────────────────────────────────────────────────
-  function normalizeHexOrNull(v) { var c = parseHex(v); return c ? toHex(c) : null; }
+  function normalizeHexOrNull(v) { var c = parseCssColor(v); return c ? toHex(c) : null; }
 
   function normalizeCustomTheme(v) {
     if (!v || typeof v !== 'object') return null;
@@ -300,6 +314,7 @@
     DEFAULT_SEED: DEFAULT_SEED,
     TOKEN_NAMES: TOKEN_NAMES,
     parseHex: parseHex,
+    parseCssColor: parseCssColor,
     toHex: toHex,
     rgbToOklch: rgbToOklch,
     oklchHex: oklchHex,
