@@ -51,7 +51,7 @@ jobs:
         # Debian/Ubuntu 把 SVT-AV1 拆成 common / enc / dec 三个 dev 包，`--enable-libsvtav1`
         # 找的 `SvtAv1Enc.pc` 只在 libsvtav1enc-dev 里；只装 libsvtav1-dev 会在 configure
         # 阶段报 "SvtAv1Enc >= 0.9.0 not found using pkg-config"。
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev libsvtav1-dev libsvtav1enc-dev libwebp-dev
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev libsvtav1-dev libsvtav1enc-dev libwebp-dev libdav1d-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
@@ -61,7 +61,8 @@ jobs:
         # 静态链也没得链。build-ffmpeg-min.sh 的 Darwin 分支现在自己把三个库编成静态库
         # 装进私有 prefix（需要 cmake + nasm，cmake 是 macOS runner 自带）。
         # `ffmpeg` 只是 smoke-test 的 fixture 生成器，与产物链接无关。
-        run: brew install ffmpeg nasm pkg-config
+        # meson + ninja：dav1d（AV1 软件解码器）只有 meson 构建系统，同样静态自编。
+        run: brew install ffmpeg nasm pkg-config meson ninja
 
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
@@ -74,6 +75,7 @@ jobs:
             mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkgconf mingw-w64-x86_64-zlib
             mingw-w64-x86_64-x264 mingw-w64-x86_64-svt-av1 mingw-w64-x86_64-libwebp
+            mingw-w64-x86_64-dav1d
             mingw-w64-x86_64-ffmpeg
 
       - name: Build (Linux)

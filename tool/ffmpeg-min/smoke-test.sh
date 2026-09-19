@@ -165,6 +165,48 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -frames:v 1 -update 1 "$WORK/frame.jpg"
 assert_nonempty "$WORK/frame.jpg"
 
+echo "[ffmpeg-min-smoke] decoding an AV1 source (libdav1d)"
+# FFmpeg's native `av1` decoder is only a hwaccel hook: with --disable-everything
+# there is no hwaccel, so every AV1 frame fails ("Your platform doesn't support
+# hardware accelerated AV1 decoding.") and ffmpeg exits 69 (decode error rate
+# above -max_error_rate) with nothing but "Conversion failed!" on the tail. The
+# vendored binary shipped that way for a whole release: card still frames / cue
+# animations / clip export died on every AV1 video while sentence audio kept
+# working. The real software decoder is libdav1d; a compile that merely lists
+# `av1` passes `-decoders` but fails the user, so decode a real AV1 file here
+# with the literal still-frame argument shape from desktop_audio_clipper.dart.
+"$FFMPEG_MIN" -hide_banner -decoders > "$WORK/decoders.txt" 2>&1
+if ! grep -Eq '^[[:space:]]*V[^[:space:]]*[[:space:]]+libdav1d([[:space:]]|$)' "$WORK/decoders.txt"; then
+  echo "MISSING DECODER (need libdav1d for AV1 video; the native av1 decoder is hwaccel-only):"
+  cat "$WORK/decoders.txt"
+  exit 1
+fi
+AV1_FIXTURE="$WORK/av1.mp4"
+AV1_FIXTURE_ENCODER=""
+for candidate in libsvtav1 libaom-av1; do
+  if "$FIXTURE_FFMPEG" -hide_banner -encoders 2>/dev/null | grep -qw "$candidate"; then
+    AV1_FIXTURE_ENCODER="$candidate"
+    break
+  fi
+done
+if [ -z "$AV1_FIXTURE_ENCODER" ]; then
+  echo "[ffmpeg-min-smoke] fixture ffmpeg has no AV1 encoder (libsvtav1 / libaom-av1); cannot generate the AV1 fixture" >&2
+  exit 1
+fi
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=duration=2:size=160x90:rate=12" \
+  -c:v "$AV1_FIXTURE_ENCODER" -pix_fmt yuv420p "$AV1_FIXTURE"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -i "$AV1_FIXTURE" -an \
+  -frames:v 1 -update 1 "$WORK/av1-frame.jpg"
+assert_nonempty "$WORK/av1-frame.jpg"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$AV1_FIXTURE" -an \
+  -filter_complex \
+  "fps=12,scale=160:-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
+  -loop 0 "$WORK/av1-cue.gif"
+assert_nonempty "$WORK/av1-cue.gif"
+
 echo "[ffmpeg-min-smoke] exporting sentence audio"
 # Windows Galgame 资源链需要专用 xWMA demuxer；只有 wav demuxer + WMA decoder
 # 无法打开 RIFF/XWMA。真实游戏样本不入库，这里至少把随包二进制的能力位钉住。
@@ -212,6 +254,8 @@ assert_nonempty "$WORK/cover-png.jpg"
 for output in \
   "$WORK/cue.gif" \
   "$WORK/frame.jpg" \
+  "$WORK/av1-frame.jpg" \
+  "$WORK/av1-cue.gif" \
   "$MP4_FIXTURE.aac" \
   "$MKV_FIXTURE.aac" \
   "$WORK/tone.ac3.aac" \
