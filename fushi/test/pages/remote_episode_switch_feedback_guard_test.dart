@@ -60,10 +60,10 @@ void main() {
       reason: '_loadRemoteEpisode 换集时应亮 OSD',
     );
     expect(
-      page.contains(
-          'if (switching && seq == _episodeLoadSeq) _remoteSwitchPhase.value = null;'),
+      page.contains('if (mounted && switching && seq == _episodeLoadSeq) {\n'
+          '        _remoteSwitchPhase.value = null;'),
       true,
-      reason: '只清自己这一程的 OSD',
+      reason: '只清自己这一程的 OSD，且页面已退出（notifier 已 dispose）时不再写它',
     );
     expect(episode.contains('Widget _buildRemoteSwitchOverlay()'), true);
     expect(

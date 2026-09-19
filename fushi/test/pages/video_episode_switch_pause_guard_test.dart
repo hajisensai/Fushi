@@ -10,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 起播 → 两条音轨短暂同响（观感：切集时上一个视频还在播）。
 ///
 /// 修复：本地分支在 `pushReplacement` 前 `await _controller?.pause()`，音轨即刻静音，
-/// 不再依赖延迟 dispose。远端换集复用同一 player + open() 顶替，天然不双开，故只本地
-/// 分支处理。撤掉这个 pause 或把它挪到 pushReplacement 之后即转红。
+/// 不再依赖延迟 dispose。远端分支同样先 pause 再取流（BUG-2609：在线源扩展取流可达
+/// 数十秒，旧集不能响着等）。撤掉任一分支的 pause 或挪到 push / 取流之后即转红。
 void main() {
   final File episodePart =
       File('lib/src/pages/implementations/video_fushi/episode.part.dart');

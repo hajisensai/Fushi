@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -85,11 +86,16 @@ void main() {
     ...List<int>.generate(3000, (int i) => (i * 7) & 0xFF),
   ]);
 
+  // `/slow.bin` 的写循环因下游断开而退出时完成；中继若不 cancel 上游迭代器，
+  // 上游那条连接停在 paused、写端 flush 永远挂住，它就永不完成。
+  late Completer<void> slowUpstreamEnded;
+
   setUp(() async {
     oldMode = appUserProxyModeReader;
     oldProxy = appUserProxyReader;
     appUserProxyModeReader = () => kProxyModeDirect;
     upstreamAcceptEncodings.clear();
+    slowUpstreamEnded = Completer<void>();
     origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     origin.listen((HttpRequest request) async {
       upstreamAcceptEncodings.add(
@@ -143,6 +149,27 @@ void main() {
           res.headers.contentType = ContentType.binary;
           res.contentLength = ts.length;
           res.add(ts);
+        case '/slow.bin':
+          // 无限长整包：模拟正在下的大分片，native 中途掐断。
+          res.headers.contentType = ContentType.binary;
+          res.bufferOutput = false;
+          try {
+            for (int i = 0; i < 100000; i++) {
+              res.add(ts);
+              await res.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 5));
+              // Dart 的 HttpResponse 对已销毁连接 add/flush 不抛、done 不完成，
+              // 中继关掉上游连接后只有 connectionInfo 变 null 可观测。
+              if (res.connectionInfo == null) break;
+            }
+          } catch (_) {
+            // 写端报错也是出口。
+          }
+          if (!slowUpstreamEnded.isCompleted) slowUpstreamEnded.complete();
+          try {
+            await res.close();
+          } catch (_) {}
+          return;
         default:
           res.statusCode = HttpStatus.notFound;
       }
@@ -193,6 +220,27 @@ void main() {
       client.close(force: true);
     }
   }
+
+  test('native disconnecting mid-relay cancels the upstream body', () async {
+    // libmpv 每次 seek / 换集都会掐掉正在下的分片；`_relayBody` 手动迭代上游流，
+    // 中断路径必须 cancel 迭代器，否则上游连接（https 含 TLS）永不回池也不关。
+    final HttpClient client = HttpClient()
+      ..findProxy = (Uri _) =>
+          'PROXY ${relay.endpoint.host}:${relay.endpoint.port}';
+    final HttpClientRequest request = await client.getUrl(
+      Uri.parse('http://127.0.0.1:${origin.port}/slow.bin'),
+    );
+    request.headers.set(HttpHeaders.proxyAuthorizationHeader, auth());
+    final HttpClientResponse response = await request.close();
+    expect(response.statusCode, HttpStatus.ok);
+    await response.first;
+    client.close(force: true);
+    await slowUpstreamEnded.future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () =>
+          fail('upstream body was never cancelled after native hung up'),
+    );
+  });
 
   test('playlist: absolute https URIs are rewritten to relay form', () async {
     final result = await get('/index.m3u8', range: 'bytes=0-');

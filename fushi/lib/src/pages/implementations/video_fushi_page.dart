@@ -3219,8 +3219,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             _remoteMembers[_currentEpisode.clamp(0, _remoteMembers.length - 1)];
       }
     } finally {
-      // 只清自己这一程的 OSD：更新的一程（seq 更大）已接管它。
-      if (switching && seq == _episodeLoadSeq) _remoteSwitchPhase.value = null;
+      // 只清自己这一程的 OSD：更新的一程（seq 更大）已接管它。dispose() 不 bump
+      // seq 而 _remoteSwitchPhase 已 dispose，换集在途（桥超时可达 45 s）退出页面
+      // 后取流回来不能再写它，否则 debug 断言 used after being disposed。
+      if (mounted && switching && seq == _episodeLoadSeq) {
+        _remoteSwitchPhase.value = null;
+      }
     }
   }
 

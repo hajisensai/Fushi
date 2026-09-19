@@ -454,6 +454,39 @@ class AppNativeProxy {
     final StreamIterator<List<int>> chunks = StreamIterator<List<int>>(
       response,
     );
+    // native 中途断开（libmpv 每次 seek / 换集都会掐掉正在下的分片或首个
+    // `bytes=0-` 整包请求）：Dart 的 HttpResponse 对已销毁的连接 `add` / `flush`
+    // **不抛**、`done` 也不完成（实测 Windows 上循环会一直跑到上游读完），不看
+    // 它这条循环会把上游整包拉完喂给死连接。唯一可靠信号是连接销毁后
+    // `connectionInfo` 取不到对端地址回 null。`addStream` 路径由 Dart 自己取消
+    // 源订阅，只有这条手动迭代要管；检测到就停读、finally 里 cancel 迭代器让
+    // 上游连接回池 / 关闭（读完后 cancel 是 no-op）。
+    try {
+      await _relayWholeBody(
+        request: request,
+        response: response,
+        out: out,
+        chunks: chunks,
+        gzipped: gzipped,
+        plain: plain,
+        playlistHint: playlistHint,
+        downstreamAlive: () => out.connectionInfo != null,
+      );
+    } finally {
+      await chunks.cancel();
+    }
+  }
+
+  static Future<void> _relayWholeBody({
+    required HttpRequest request,
+    required HttpClientResponse response,
+    required HttpResponse out,
+    required StreamIterator<List<int>> chunks,
+    required bool gzipped,
+    required bool plain,
+    required bool playlistHint,
+    required bool Function() downstreamAlive,
+  }) async {
     final BytesBuilder head = BytesBuilder(copy: false);
     // 第一段先攒够 16 字节判魔数（播放列表 / 图片 / 其它）。
     while (head.length < 16 && await chunks.moveNext()) {
@@ -466,7 +499,9 @@ class AppNativeProxy {
     if (playlist) {
       // 播放列表整份读完再改写（一般几 KB；封顶 16 MiB，超了原样透传）。
       const int cap = 16 * 1024 * 1024;
-      while (head.length <= cap && await chunks.moveNext()) {
+      while (head.length <= cap &&
+          downstreamAlive() &&
+          await chunks.moveNext()) {
         head.add(chunks.current);
       }
       bytes = head.takeBytes();
@@ -486,7 +521,7 @@ class AppNativeProxy {
         }
       }
       out.add(bytes);
-      await _drain(chunks, out);
+      await _drain(chunks, out, downstreamAlive);
       return;
     }
     if (plain && looksLikeImagePrefix(bytes)) {
@@ -507,12 +542,12 @@ class AppNativeProxy {
             ? ContentType('video', 'mp2t')
             : ContentType('video', 'mp4');
         out.add(Uint8List.sublistView(bytes, offset));
-        await _drain(chunks, out);
+        await _drain(chunks, out, downstreamAlive);
         return;
       }
     }
     out.add(bytes);
-    await _drain(chunks, out);
+    await _drain(chunks, out, downstreamAlive);
   }
 
   /// 改写过的响应不再是上游那个实体的字节切片：206 → 200、去掉 Content-Range。
@@ -524,8 +559,9 @@ class AppNativeProxy {
   static Future<void> _drain(
     StreamIterator<List<int>> chunks,
     HttpResponse out,
+    bool Function() downstreamAlive,
   ) async {
-    while (await chunks.moveNext()) {
+    while (downstreamAlive() && await chunks.moveNext()) {
       out.add(chunks.current);
       // 逐段 flush 给 native 侧回压：不然大分片会整段堆在 Dart 端内存里。
       await out.flush();
