@@ -164,7 +164,12 @@
   // Fushi 字体库条目 → 要存进设置的 font-family 值（family 加双引号；引号/反斜杠剥掉）。
   function fontFamilyValueOf(family) {
     if (typeof family !== 'string') return '';
-    var f = family.replace(/["'\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    // 与 normalizeFontFamily 同一字符集：存进 style 的值会被它过滤，这里若留下
+    // `[ ] ( ) + / &`（NotoSansJP[wght] 这类导入文件名），下拉回显与 @font-face 的
+    // family 两边就对不上——永远选不中、也载不进。@font-face 的 family 只是标签，
+    // 两边一致即可。
+    var f = family.replace(/["'\\]/g, '').replace(/[^\w\s,\-.\u00a0-\uffff]/g, '')
+      .replace(/\s+/g, ' ').trim().slice(0, 100);
     return f ? '"' + f + '"' : '';
   }
 

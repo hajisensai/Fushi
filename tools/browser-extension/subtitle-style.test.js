@@ -99,6 +99,12 @@ test('字体库辅助：栈标签取前两个 family；库条目值带引号且�
   assert.strictEqual(S.fontStackLabel('monospace'), 'monospace');
   assert.strictEqual(S.fontFamilyValueOf('Klee "One" ' + String.fromCharCode(92) + 'x'), '"Klee One x"');
   assert.strictEqual(S.fontFamilyValueOf('   '), '');
+  // 导入文件名带 [wght] / (1) 之类：与 normalizeFontFamily 同字符集，下拉回显与
+  // @font-face 两边一致，matchesFushiFont 才命中。
+  assert.strictEqual(S.fontFamilyValueOf('NotoSansJP[wght]'), '"NotoSansJPwght"');
+  assert.ok(S.matchesFushiFont(S.normalize({ fontFamily: '"NotoSansJP[wght]"' }).fontFamily, 'NotoSansJP[wght]'));
+  assert.ok(S.fontFaceCss([{ family: 'NotoSansJP[wght]', url: 'http://127.0.0.1:1/f.ttf', ext: 'ttf' }])
+    .indexOf('font-family:"NotoSansJPwght";') >= 0);
   assert.strictEqual(S.matchesFushiFont('"Klee One"', 'Klee One'), true);
   assert.strictEqual(S.matchesFushiFont('Klee One', 'Klee One'), false, '未加引号的手填值不当作库条目');
   assert.strictEqual(S.matchesFushiFont('"Klee One"', ''), false);
