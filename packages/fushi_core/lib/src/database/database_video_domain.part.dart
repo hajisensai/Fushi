@@ -2350,7 +2350,7 @@ mixin _FushiDbVideoDomain
   ///
   /// 一条 UPDATE 同时归零 [VideoBooks.lastPositionMs] / [VideoBooks.lastPlayedAt] /
   /// [VideoBooks.completedAt] / [VideoBooks.currentEpisode]——这四列合起来才是
-  /// 「这一集有没有看过的痕迹」（`CollectionMemberProgress._hasTrace` 三判据 +
+  /// 「这一集有没有看过的痕迹」（`CollectionMemberProgress.hasTrace` 三判据 +
   /// 单行多集形态的集指针）。只清位置不清时刻会留下「位置 0 但有时刻」的痕迹，
   /// 合集续播锚点照样钉在这一集上（BUG-1542 的时刻口径），用户看到的还是
   /// 「继续看这一集」而不是回到上一集看完后的下一集。
