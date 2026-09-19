@@ -1344,6 +1344,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (client == null || info == null) return;
     final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
     final String label = _remoteEmbeddedSubtitleLabel(track);
+    final String source = _remoteEmbeddedSubtitleSource(track);
     final Directory temp = await getTemporaryDirectory();
     final File subtitle = File(
       p.join(
@@ -1366,6 +1367,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
       if (!mounted) return;
+      // BUG-2590：服务器抽不出该轨（兼容层没有字幕端点 → 404）但直出的是原始
+      // 容器，这条轨就在 libmpv 正在 demux 的流里：交给 libmpv 自绘把字幕显示
+      // 出来；流不是原始容器 / 轨未就绪才按下载失败提示。
+      final bool shown = await _showRemoteEmbeddedTrackViaPlayer(
+        controller,
+        track,
+        source: source,
+        label: label,
+      );
+      if (shown || !mounted) return;
       _showOsd(
         t.video_subtitle_load_failed(label: label),
         severity: ToastSeverity.error,
@@ -1373,13 +1384,62 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return;
     }
     if (!mounted) return;
-    final String source = _remoteEmbeddedSubtitleSource(track);
     await _applyRemoteSubtitle(
       controller,
       subtitle.path,
       selectedSource: source,
       label: label,
     );
+  }
+
+  // ── BUG-2590 远端直出容器的内嵌轨：libmpv 自绘回落 ──────────────────────────
+  //
+  // 媒体服务器兼容层（飞牛、「UHD Media Server」等自研 Emby 兼容层）没有
+  // `/Videos/…/Subtitles/…/Stream` 抽取端点（nginx 404），PlaybackInfo 也如实标
+  // `SupportsExternalStream=false`；但 DirectPlay 送来的就是原始 mkv，文本轨在流里。
+  // 把轨交给 libmpv 自绘：瞬时、零额外流量、不可查词（与图形轨 BUG-122 同一降级）。
+  // 有意**不**在后台用 ffmpeg 把流再读一遍抽成 cue：那等于把整集流量翻倍（用户
+  // 2026-09-19 拍板不要）。
+
+  /// 按流号找当前集的远端内嵌轨（恢复路径只持久化了 `embedded:<n>` 的 n）。
+  RemoteVideoEmbeddedSubtitleTrack? _remoteEmbeddedTrackByStreamIndex(
+    int streamIndex,
+  ) {
+    for (final RemoteVideoEmbeddedSubtitleTrack track
+        in _remoteEmbeddedSubtitleTracks) {
+      if (track.streamIndex == streamIndex) return track;
+    }
+    return null;
+  }
+
+  /// 把远端直出容器里的文本轨交给 libmpv 自绘（复用图形轨通路
+  /// [VideoPlayerController.selectEmbeddedGraphicTrack]：同样是「libmpv 渲染、无 cue、
+  /// 不可查词」的降级），选中即持久化选择、OSD 说明降级。
+  ///
+  /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨未就绪 / 序号越界，调用方
+  /// 按下载失败提示。
+  Future<bool> _showRemoteEmbeddedTrackViaPlayer(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track, {
+    required String source,
+    required String label,
+  }) async {
+    if (!_remoteStreamIsOriginalContainer) return false;
+    final int seq = _episodeLoadSeq;
+    final bool shown = await controller.selectEmbeddedGraphicTrack(
+      track.containerTrackOrdinal ?? track.streamIndex,
+    );
+    if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
+    _rebuild(() => _currentSubtitleSource = source);
+    final (String subUid, int subEp) = _remotePositionKeyForIndex(
+      _currentEpisode,
+    );
+    unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
+    _showOsd(
+      t.video_subtitle_remote_player_rendered(label: label),
+      severity: ToastSeverity.warning,
+    );
+    return true;
   }
 
   /// 远端模式：关闭字幕（清空 cue overlay + 关 libmpv 字幕轨；仅内存，不写本地 DB）。

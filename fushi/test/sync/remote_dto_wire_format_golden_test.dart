@@ -276,6 +276,7 @@ void main() {
           isText: false,
           url: 'http://h/s',
           fileName: 's.ass',
+          containerTrackOrdinal: 0,
         ).toJson(),
         <String>{
           'streamIndex',
@@ -284,10 +285,33 @@ void main() {
           'title',
           'isText',
           'url',
-          'fileName'
+          'fileName',
+          'containerTrackOrdinal',
         },
         what: '内封字幕轨最大实例',
       );
+    });
+
+    test('containerTrackOrdinal 缺失解成 null（旧 host 不带，BUG-2590）', () {
+      // 旧 host / 兼容层没换算容器内序号 → null，消费端按 streamIndex 兜底；
+      // 带上时原样往返（Emby 全局流号 2 可能对应容器内第 0 条字幕轨）。
+      expect(
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(
+          const <String, Object?>{'streamIndex': 2, 'codec': 'subrip'},
+        ).containerTrackOrdinal,
+        isNull,
+      );
+      final RemoteVideoEmbeddedSubtitleTrack round =
+          RemoteVideoEmbeddedSubtitleTrack.fromJson(
+        const RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: 2,
+          codec: 'subrip',
+          containerTrackOrdinal: 0,
+        ).toJson(),
+      );
+      expect(round.containerTrackOrdinal, 0);
+      expect(round.copyWith(url: 'u').containerTrackOrdinal, 0,
+          reason: 'copyWith 不得丢掉序号');
     });
 
     test('isText 缺失解成 true（反向默认，不是 false）', () {

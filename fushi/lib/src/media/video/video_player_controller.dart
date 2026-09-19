@@ -969,6 +969,10 @@ class VideoPlayerController extends ChangeNotifier
   List<SubtitleTrack> get subtitleTracks =>
       _player?.state.tracks.subtitle ?? const <SubtitleTrack>[];
 
+  /// libmpv 当前选中的字幕轨 id（`no` = 关、`auto` = 交给 mpv、其余为真实轨）；
+  /// 未 [load] 为 null。远端内嵌轨的 libmpv 自绘回落（BUG-2590）用它取证。
+  String? get activeSubtitleTrackId => _player?.state.track.subtitle.id;
+
   /// 当前选中字幕轨声明的语言（BCP-47 / ISO-639，视打包者而定）。没有轨、轨未声明
   /// 语言、或值是 mpv 的占位（`und` / `auto` / `no`）时返回 null。
   ///
@@ -2567,6 +2571,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 测试可见：当前是否处于图形内封字幕（PGS 等）渲染模式（BUG-301）。
   @visibleForTesting
   bool get debugGraphicSubtitleActive => _graphicSubtitleActive;
+
+  /// 当前是否由 libmpv 自绘容器内字幕轨（图形轨 BUG-122，或远端抽不出的文本轨
+  /// BUG-2590）——此时没有 cue、不可查词。播放页取证钩子用。
+  bool get isPlayerRenderedSubtitleActive => _graphicSubtitleActive;
 
   /// 测试可见：[setDelayMs] / [selectEmbeddedGraphicTrack] 会下发到 libmpv
   /// `sub-delay` 的延迟（毫秒）——图形模式用真实 delay，文本模式恒 0（BUG-301）。
