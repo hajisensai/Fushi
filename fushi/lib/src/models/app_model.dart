@@ -113,6 +113,7 @@ import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart'
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
@@ -5329,6 +5330,10 @@ class AppModel with ChangeNotifier {
       if (isPreferencesReady)
         for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
           if (server.enabled) OpdsDiscoverySource(config: server),
+      // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
+      if (isPreferencesReady)
+        for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
+          if (site.enabled) AListDiscoverySource.fromConfig(site),
     ]);
   }
 
@@ -5359,6 +5364,12 @@ class AppModel with ChangeNotifier {
     Iterable<OpdsServerConfig> servers,
   ) async {
     await prefsRepo.setDiscoveryOpdsServers(servers);
+    await reloadDiscoverySources();
+  }
+
+  /// 增删改一个 AList / OpenList 站点后的统一写回口（同 [setDiscoveryOpdsServers]）。
+  Future<void> setDiscoveryAListSites(Iterable<AListSiteConfig> sites) async {
+    await prefsRepo.setDiscoveryAListSites(sites);
     await reloadDiscoverySources();
   }
 

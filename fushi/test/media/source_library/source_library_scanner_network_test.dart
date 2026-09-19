@@ -437,6 +437,78 @@ void main() {
     });
   });
 
+  group('network VIDEO source over AList imports stream-in-place (fake fs)',
+      () {
+    test('alist → NetworkSourceFileSystem carries baseUrl from configJson', () {
+      final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
+        transport: 'alist',
+        config: const <String, Object?>{
+          'host': 'od.example.com',
+          'port': 443,
+          'username': '',
+          'baseUrl': 'https://od.example.com',
+        },
+      );
+      final NetworkSourceFileSystem net = fs as NetworkSourceFileSystem;
+      expect(net.config.isAList, isTrue);
+      expect(net.config.baseUrl, 'https://od.example.com');
+      expect(net.config.password, isNull, reason: '游客：无密码');
+    });
+
+    testWidgets(
+        'video gate admits alist; /d/ entry addresses become stream books '
+        'with sidecar subtitles in streamSpecJson',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('net_alist_video_');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final String dummy = p.join(tmp.path, 'dummy.bin');
+      File(dummy).writeAsBytesSync(<int>[0]);
+
+      const String root = 'https://od.example.com/d/GD-3';
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        '$root/罗比哈奇 RobiHachi/#01 旅は道連れ.mkv': dummy,
+        '$root/罗比哈奇 RobiHachi/#01 旅は道連れ.ass': dummy,
+        '$root/罗比哈奇 RobiHachi/#02 タク.mkv': dummy,
+      });
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'OD',
+        mediaKind: 'video',
+        rootPath: root,
+        transport: const Value('alist'),
+        configJson: Value(encodeSourceConfig(<String, Object?>{
+          'host': 'od.example.com',
+          'port': 443,
+          'username': '',
+          'useTls': false,
+          'baseUrl': 'https://od.example.com',
+        })),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, isNull,
+          reason: 'alist 与 webdav 一样是可原地流播的网络视频来源');
+      final List<VideoBookRow> videos = await VideoBookRepository(db).listAll();
+      expect(videos, hasLength(2));
+      final VideoBookRow e01 = videos.singleWhere((VideoBookRow v) =>
+          v.videoPath == '$root/罗比哈奇 RobiHachi/#01 旅は道連れ.mkv');
+      expect(e01.sourceId, sid);
+      expect(e01.title, '#01 旅は道連れ');
+      final StreamVideoSpec spec =
+          StreamVideoSpec.fromStorageJson(e01.streamSpecJson);
+      expect(spec.subtitleUrl, '$root/罗比哈奇 RobiHachi/#01 旅は道連れ.ass');
+      expect(fs.copyToLocalCalls, 0, reason: '视频与字幕字节都不下载');
+    });
+  });
+
   group('network MANGA source mirrors the volume then imports (fake fs)', () {
     late Directory tmp;
     late Directory pp;

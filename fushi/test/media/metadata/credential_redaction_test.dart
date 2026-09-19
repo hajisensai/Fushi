@@ -60,6 +60,11 @@ void main() {
     expect(out, contains('query=Yani+Neko'));
     expect(out, contains('language=zh-CN'));
     expect(out, contains('page=2'));
+    // AList / OpenList 临期签名直链（PR #1557）：`sign` 也是凭据。
+    final String alist = redactCredentialsInText(
+      'HttpException: https://od.h/p/a.mkv?sign=EEE:0 uri=…',
+    );
+    expect(alist.contains('EEE'), isFalse, reason: 'sign 未被脱敏：$alist');
   });
 
   test('纯函数：值终止符覆盖引号/括号/空白包裹的真实拼法', () {
