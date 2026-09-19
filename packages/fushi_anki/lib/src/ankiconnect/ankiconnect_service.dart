@@ -794,6 +794,17 @@ class AnkiConnectService {
     });
   }
 
+  /// BUG-2606：给已存在的 note 追加标签。AnkiConnect `addTags` 接收
+  /// `{notes: [id], tags: "a b c"}`，与现有标签取并集、已有的不重复；重发幂等，
+  /// 故同 [updateNoteFields] 不列入 [_nonIdempotentActions]。[tags] 为空时不发请求。
+  Future<void> addTags(int noteId, List<String> tags) async {
+    if (tags.isEmpty) return;
+    await _request('addTags', {
+      'notes': [noteId],
+      'tags': tags.join(' '),
+    });
+  }
+
   /// 批量覆写笔记字段。往返数 = `ceil(updates.length / kMultiBatchSize)`。
   ///
   /// 逐条报告结果（与 [updates] 同序），失败条不抛：调用方要能分清哪几条没写
