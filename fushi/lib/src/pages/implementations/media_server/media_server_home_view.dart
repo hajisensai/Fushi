@@ -235,6 +235,9 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
                 key: ValueKey<String>('media-server-library-${library.id}'),
                 browser: _browser,
                 library: library,
+                // 库自身封面缺失 / 404 时的拼贴素材：就是下面「每库一行」那 20 条。
+                fallbackItems:
+                    _libraryRows[library.id] ?? const <MediaServerItem>[],
                 focusId: FushiFocusId('$prefix-library-${library.id}'),
                 onTap: () => _openLibrary(library),
               );

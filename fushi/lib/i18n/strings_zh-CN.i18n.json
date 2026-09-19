@@ -5118,6 +5118,8 @@
   "media_source_alist_folder": "站内目录",
   "media_source_alist_account_hint": "账号留空即以游客访问",
   "media_source_alist_missing_fields": "请填写站点地址（http 或 https）",
+  "video_watch_progress_clear": "清除观看进度",
+  "video_watch_progress_cleared": "已清除观看进度",
   "popup_instant_scroll_wheel_step": "瞬时滚动滚轮步长",
   "popup_instant_scroll_wheel_step_hint": "滚轮每格让弹窗跳动的距离，占弹窗高度的比例（再乘以弹窗滚动速度）。",
   "popup_instant_scroll_touch_step": "瞬时滚动触摸步长",

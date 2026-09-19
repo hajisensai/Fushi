@@ -115,6 +115,8 @@ public class AnkiChannelHandler {
                 final String deckName = call.argument("deckName");
                 final Number noteIdArg = call.argument("noteId");
                 final Map<String, String> fieldValues = call.argument("fieldValues");
+                // BUG-2606：覆盖=整体替换——没点名的字段也写空、并入新制会打的标签。
+                final Boolean clearUnspecified = call.argument("clearUnspecified");
                 // Lapis 样式客制化：模板列表（每项 name/front/back），见
                 // readNoteType / updateNoteTypeTemplates。
                 final ArrayList<Map<String, String>> noteTypeTemplates =
@@ -172,14 +174,16 @@ public class AnkiChannelHandler {
                         }
                         break;
                     case "updateNoteFields":
-                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留。
+                        // TODO-270 C2：按 noteId 覆盖给定字段（名 -> 值），其余字段保留；
+                        // BUG-2606：clearUnspecified=true 时其余字段写空、tags 并入。
                         if (noteIdArg == null || fieldValues == null) {
                             result.error("MISSING_ARG",
                                 "noteId and fieldValues are required", null);
                         } else if (requirePermission(result)) {
                             try {
                                 String updateError = updateNoteFields(
-                                    noteIdArg.longValue(), fieldValues);
+                                    noteIdArg.longValue(), fieldValues,
+                                    Boolean.TRUE.equals(clearUnspecified), tags);
                                 if (updateError != null) {
                                     result.error("UPDATE_NOTE_FAILED",
                                         updateError, null);
@@ -683,19 +687,27 @@ public class AnkiChannelHandler {
     }
 
     /**
-     * TODO-270 C2: overwrites only the given fields of an existing note,
-     * preserving every field the caller did not name (symmetric with the
-     * AnkiConnect updateNoteFields contract).
+     * TODO-270 C2: overwrites the given fields of an existing note (symmetric
+     * with the AnkiConnect updateNoteFields contract).
      *
      * <p>{@link AnkiProvider#updateNoteFields} takes a positional
      * {@code String[]} keyed by the model's field order. We start from the note's
-     * current values and overwrite only the named ones, so unspecified fields are
-     * not cleared.
+     * current values and overwrite the named ones; with {@code clearUnspecified}
+     * false, unspecified fields are preserved.
+     *
+     * <p>BUG-2606: {@code clearUnspecified} true makes this a whole-card replace
+     * (the card becomes what a freshly mined one would be): every field the
+     * caller did not name is written empty, so a stale value left in an unmapped
+     * field (Lapis {@code SentenceFurigana}, filled by another tool and preferred
+     * by the template) can no longer keep showing the old sentence. {@code tags}
+     * (the set a fresh mine would carry) is unioned into the note's existing
+     * tags — the user's other tags are kept.
      *
      * @return {@code null} on success, or a human-readable error string when the
      *         note / its model cannot be found or AnkiDroid refused the update.
      */
-    private String updateNoteFields(long noteId, Map<String, String> fieldValues) {
+    private String updateNoteFields(long noteId, Map<String, String> fieldValues,
+                                    boolean clearUnspecified, List<String> tags) {
         final AnkiProvider api = AnkiProviders.forContext(context);
         AnkiNote note = api.getNote(noteId);
         if (note == null) {
@@ -705,22 +717,31 @@ public class AnkiChannelHandler {
         if (fieldNames == null) {
             return "Note type not found for note: " + noteId;
         }
-        // Start from the existing values so unspecified fields are preserved
-        // (overwrite-given-fields-only semantics).
         String[] existing = note.getFields();
         String[] merged = new String[fieldNames.length];
         for (int i = 0; i < fieldNames.length; i++) {
             String value = fieldValues.get(fieldNames[i]);
             if (value != null) {
                 merged[i] = value;
-            } else if (i < existing.length && existing[i] != null) {
+            } else if (!clearUnspecified && i < existing.length && existing[i] != null) {
                 merged[i] = existing[i];
             } else {
                 merged[i] = "";
             }
         }
         boolean ok = api.updateNoteFields(noteId, merged);
-        return ok ? null : "AnkiDroid rejected the field update for note " + noteId;
+        if (!ok) {
+            return "AnkiDroid rejected the field update for note " + noteId;
+        }
+        if (tags != null && !tags.isEmpty()) {
+            Set<String> mergedTags = new HashSet<>(note.getTags());
+            if (mergedTags.addAll(tags)) {
+                if (!api.updateNoteTags(noteId, mergedTags)) {
+                    return "AnkiDroid rejected the tag update for note " + noteId;
+                }
+            }
+        }
+        return null;
     }
 
     /**

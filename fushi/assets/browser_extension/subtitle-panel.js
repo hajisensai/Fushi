@@ -34,6 +34,9 @@
     overlayTextEl: null, overlayGripEl: null, overlayRenderedCue: null,
     // 覆盖层底色（默认有半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面）。
     overlayBackground: true,
+    // 覆盖层外观（字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 描边 / 底板色与透明度…），
+    // 设置对象原样存，落地经 subtitle-style.js toCssVars → 覆盖层根的 --fushi-sub-* 变量。
+    overlayStyle: null,
     // asb 移植：任意轨（检测轨/外挂轨）的读取侧时轴偏移。store 永远存原始 cue，偏移只在
     // Side Panel/覆盖层/快捷键**读取时**套用——provider（textTracks 收割 / live 采样 / 整集拦截）
     // 增量刷新 store 不会与偏移打架。key = `${videoKey}|${lang}`，会话内记忆。
@@ -62,6 +65,7 @@
     return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
   }
   var OVERLAY_POS_KEY = 'subtitleOverlayPosition';
+  var OVERLAY_STYLE_KEY = 'subtitleStyle';
   var OVERLAY_POS_DEFAULT = { x: 0.5, y: 0.88 };
   // 按下后位移小于这个值仍算点击（查词），超过才进入拖动；与 content.js Shift 悬停的
   // 4px 限流同量级，略放宽以免手指/鼠标微抖把查词变成挪字幕。
@@ -229,7 +233,8 @@
     st.overlayBackground = c.subtitleOverlayBackground !== false;
     st.replaceNative = c.subtitleReplaceNative === true;
     st.overlayPos = normalizeOverlayPos(c[OVERLAY_POS_KEY]);
-    if (st.overlayEl) applyOverlayBackground(st.overlayEl);
+    st.overlayStyle = (c[OVERLAY_STYLE_KEY] && typeof c[OVERLAY_STYLE_KEY] === 'object') ? c[OVERLAY_STYLE_KEY] : null;
+    if (st.overlayEl) { applyOverlayBackground(st.overlayEl); applyOverlayStyle(st.overlayEl); }
     if (!st.overlayEnabled) hideSubtitleOverlay();
     // 位置变了（另一标签页拖过 / options 页重置）立刻重摆，不等下一个 200ms tick。
     else if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
@@ -257,6 +262,7 @@
       subtitleOverlayBackground: st.overlayBackground,
       subtitleReplaceNative: st.replaceNative,
       subtitleOverlayPosition: st.overlayPos,
+      subtitleStyle: st.overlayStyle,
     };
   }
 
@@ -266,7 +272,7 @@
     'subtitleOverlayAutoLookup',
     'subtitleOverlayBlur', 'subtitleOverlayAllTracks', 'subtitleOverlayBackground',
     'subtitleReplaceNative',
-    OVERLAY_POS_KEY,
+    OVERLAY_POS_KEY, OVERLAY_STYLE_KEY,
   ];
 
   function readSubtitlePreferences() {
@@ -433,6 +439,21 @@
     } catch (_) {}
   }
 
+  // 外观设置 → 覆盖层根的 --fushi-sub-* 变量（默认项 removeProperty 交还 CSS）。subtitle-style.js
+  // 缺席（旧测试壳）时不动样式，CSS 默认值就是旧观感。
+  // 每 200ms 的 tick 也会路过这里：同一份设置不重复写 style（避免每 tick 都让浏览器重算样式）。
+  var overlayStyleApplied = null;
+  function applyOverlayStyle(el) {
+    if (!el || !window.fushiSubtitleStyle) return;
+    var sig;
+    try { sig = JSON.stringify(st.overlayStyle || null); } catch (_) { sig = null; }
+    if (sig === overlayStyleApplied && el === overlayStyleAppliedEl) return;
+    overlayStyleApplied = sig;
+    overlayStyleAppliedEl = el;
+    window.fushiSubtitleStyle.applyTo(el, st.overlayStyle);
+  }
+  var overlayStyleAppliedEl = null;
+
   // 只在 cue 换了才重建文本节点（见 st.overlayRenderedCue）。同一条 cue 的重复调用是 no-op，
   // 用户在字幕上拖出的原生选区才能活过每 200ms 的 tick。
   function renderOverlayCue(cue) {
@@ -474,6 +495,7 @@
     st.overlayCue = cue;
     el.setAttribute('data-theme', resolveTheme());
     applyOverlayBackground(el);
+    applyOverlayStyle(el);
     renderOverlayCue(cue);
     placeOverlay(el, rect, currentOverlayPos());
     applyOverlayBlur(el);

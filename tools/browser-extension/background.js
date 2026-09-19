@@ -269,6 +269,41 @@ function rememberAppLocale(tag) {
   try { chrome.storage.local.set({ appLocale: tag }); } catch (_) {}
 }
 
+// app 当前主题配色（查词响应 `theme`，app_model.dart browserExtensionThemeColors 下发的
+// --md-* / --text-color / --background-color）按明暗镜像到 chrome.storage.local.appThemeMirror
+// = { light?: {...}, dark?: {...} }，供扩展调色板「跟随 Fushi」（theme.js extensionPalette
+// = 'app'）给设置页 / 侧边栏 / 抽屉 / 字幕覆盖层上色——那些表面没有查词响应可读。只是镜像、
+// 只取颜色键；同值不重复写。
+const APP_THEME_MIRROR_KEYS = [
+  '--text-color', '--background-color', '--md-primary', '--md-on-primary',
+  '--md-surface-container', '--md-surface-container-high', '--md-on-surface',
+  '--md-on-surface-variant', '--md-outline-variant',
+];
+let appThemeMirror = null;
+let appThemeMirrorLoaded = null;
+function rememberAppTheme(theme) {
+  if (!theme || typeof theme !== 'object') return;
+  const scheme = theme['--fushi-color-scheme'];
+  if (scheme !== 'light' && scheme !== 'dark') return;
+  const colors = {};
+  for (const k of APP_THEME_MIRROR_KEYS) {
+    if (typeof theme[k] === 'string' && theme[k]) colors[k] = theme[k];
+  }
+  if (!colors['--text-color'] || !colors['--background-color'] || !colors['--md-primary']) return;
+  if (!appThemeMirrorLoaded) {
+    appThemeMirrorLoaded = chrome.storage.local.get('appThemeMirror').then((saved) => {
+      const v = saved && saved.appThemeMirror;
+      if (v && typeof v === 'object' && !appThemeMirror) appThemeMirror = v;
+    }).catch(() => {});
+  }
+  appThemeMirrorLoaded.then(() => {
+    const prev = appThemeMirror && appThemeMirror[scheme];
+    if (prev && JSON.stringify(prev) === JSON.stringify(colors)) return;
+    appThemeMirror = Object.assign({}, appThemeMirror || {}, { [scheme]: colors });
+    try { chrome.storage.local.set({ appThemeMirror }); } catch (_) {}
+  });
+}
+
 // 沉浸时间（视频）：content script 的 study-tracker.js 每秒交一个位置样本，这里原样
 // POST /api/extension/study（与 popup-size 同一鉴权）。app 没开 / 旧 app 无此端点时退避
 // 15s 再试，避免每秒一次白打；样本本身是幂等状态快照，丢几条不影响口径。
@@ -928,6 +963,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             data = JSON.parse(raw);
             fushiMergePopupCss(data); // BUG-1718：并进/回填词典 CSS 尾段
             rememberAppLocale(data && data.appLocale);
+            rememberAppTheme(data && data.theme);
           } catch (error) { parseError = String(error && error.message || error); }
         }
         const finishedAt = performance.now();

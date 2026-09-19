@@ -14,6 +14,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         videoRemoteAudioTrackPrefKey,
         videoRemoteDelayAtPrefKey,
         videoRemoteDelayPrefKey,
+        videoRemotePositionAtPrefKey,
+        videoRemotePositionPrefKey,
         videoRemoteSecondaryDelayAtPrefKey,
         videoRemoteSecondaryDelayPrefKey;
 import 'package:fushi_audio/fushi_audio.dart';
@@ -287,6 +289,43 @@ void main() {
 
     expect(
         (await repo.getByBookUid('video/playlist/p'))!.playlistJson, flushed);
+  });
+
+  test('clearWatchProgress 清行级四列并把互联 LWW 镜像键盖成「0 @ 现在」', () async {
+    final db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = VideoBookRepository(db);
+    await repo.saveVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/ep2'),
+      title: Value('EP2'),
+      videoPath: Value('/v/ep2.mkv'),
+      currentEpisode: Value(3),
+    ));
+    // 本机播放路径留下的进度 + 镜像键（video_fushi_page._persistPosition 同形）。
+    await repo.updatePosition('video/ep2', 2000, playedAt: 5000);
+    await db.markVideoCompleted('video/ep2', DateTime(2026, 1, 1));
+    await db.setPrefTyped<int>(videoRemotePositionPrefKey('video/ep2'), 2000);
+    await db.setPrefTyped<int>(videoRemotePositionAtPrefKey('video/ep2'), 5000);
+
+    final int before = DateTime.now().millisecondsSinceEpoch;
+    await repo.clearWatchProgress('video/ep2');
+
+    final VideoBookRow row = (await db.getVideoBookByBookUid('video/ep2'))!;
+    expect(row.lastPositionMs, 0);
+    expect(row.lastPlayedAt, isNull);
+    expect(row.completedAt, isNull);
+    expect(row.currentEpisode, 0);
+    expect(
+      await db.getPrefTyped<int>(videoRemotePositionPrefKey('video/ep2'), -1),
+      0,
+      reason: '镜像位置也归零，否则 host 清单读到的还是旧进度',
+    );
+    expect(
+      await db.getPrefTyped<int>(videoRemotePositionAtPrefKey('video/ep2'), 0),
+      greaterThanOrEqualTo(before),
+      reason: '时间戳必须盖成现在：LWW 里「清除」要严格新于 host 的旧进度才推得出去，'
+          '留着 5000 下次同步就把刚清的进度原样灌回来',
+    );
   });
 
   test('updateDelayMs round-trips the A/V delay', () async {

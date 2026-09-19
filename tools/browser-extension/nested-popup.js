@@ -94,6 +94,11 @@
       scheme = window.fushiTheme.resolve(scheme);
     }
     if (scheme === 'light' || scheme === 'dark') container.setAttribute('data-theme', scheme);
+    // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
+      window.fushiTheme.applyPopupPalette(container, scheme);
+      window.fushiTheme.applyPopupPalette(document.documentElement, scheme);
+    }
     const wheelSpeed = Number.parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = Number.isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
     applyFushiPopupCss(data);

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/fushi_settings_page.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -35,11 +38,23 @@ void main() {
             'brightness_mode': PrefCodec.encode('system'),
             'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
           });
+    // 阅读器快捷设置里已有在 visible/value 里读偏好的条目（查词瞬时滚动步长），
+    // 生产路径对话框只在 initialise() 之后打开、偏好必已就绪；夹具同样装上。
+    final PreferencesRepository prefsRepo = PreferencesRepository(db);
+    await prefsRepo.loadFromDb();
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_settings_dialog_',
+    );
     final AppModel appModel = _SettingsDialogTestAppModel()
-      ..themeNotifier = themeNotifier;
+      ..themeNotifier = themeNotifier
+      ..wireLocalAudioForTesting(
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      );
     addTearDown(() async {
       themeNotifier.dispose();
       await db.close();
+      tmpDir.deleteSync(recursive: true);
     });
 
     await tester.pumpWidget(

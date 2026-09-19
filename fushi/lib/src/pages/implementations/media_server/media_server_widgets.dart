@@ -251,12 +251,23 @@ class MediaServerItemCard extends StatelessWidget {
   };
 }
 
+/// 库封面拼贴最多取几张条目海报（220 宽的 16:9 槽里三张 2:3 海报各裁掉约一成，
+/// 再多就只剩细条）。
+const int kMediaServerLibraryCollageCount = 3;
+
 /// 媒体库横卡（16:9）：库封面或按类型的图标 + 库名。
+///
+/// 库自身没图（Jellyfin 库可以不配封面）或图取不回来时，用 [fallbackItems] 里
+/// 前几条有海报的条目拼一张 [MediaServerLibraryCollage] 顶上，实在一张都没有
+/// 才画类型图标。**图取不回来也要回退**（BUG-2602）：UHD Media Server 这类
+/// Emby 兼容层会给每个库都报 `ImageTags.Primary`，其中一部分库的图片端点却任何
+/// 变体都 404——按 `hasCover` 判完仍然可能拿到一张必失败的图。
 class MediaServerLibraryCard extends StatelessWidget {
   const MediaServerLibraryCard({
     required this.browser,
     required this.library,
     required this.onTap,
+    this.fallbackItems = const <MediaServerItem>[],
     this.focusId,
     super.key,
   });
@@ -264,6 +275,10 @@ class MediaServerLibraryCard extends StatelessWidget {
   final MediaServerBrowser browser;
   final MediaServerLibrary library;
   final VoidCallback onTap;
+
+  /// 库封面缺失 / 加载失败时拼贴用的条目（首页已经为每库拉了前 20 条，直接
+  /// 复用，不多发请求）。
+  final List<MediaServerItem> fallbackItems;
   final FushiFocusId? focusId;
 
   @override
@@ -275,6 +290,11 @@ class MediaServerLibraryCard extends StatelessWidget {
       MediaServerLibraryKind.tvShows => Icons.tv_outlined,
       MediaServerLibraryKind.mixed => Icons.video_library_outlined,
     };
+    final Widget fallback = MediaServerLibraryCollage(
+      browser: browser,
+      items: fallbackItems,
+      placeholderIcon: icon,
+    );
     return FushiCard(
       padding: EdgeInsets.zero,
       onTap: onTap,
@@ -286,11 +306,11 @@ class MediaServerLibraryCard extends StatelessWidget {
           AspectRatio(
             aspectRatio: 16 / 9,
             child: image == null
-                ? ShelfCoverPlaceholder(icon: icon)
+                ? fallback
                 : PortraitCoverImage(
                     image: image,
                     landscapeSlot: true,
-                    errorBuilder: (_) => ShelfCoverPlaceholder(icon: icon),
+                    errorBuilder: (_) => fallback,
                   ),
           ),
           Padding(
@@ -310,6 +330,54 @@ class MediaServerLibraryCard extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 库封面的回退画面：[items] 里前 [kMediaServerLibraryCollageCount] 条有海报的
+/// 条目并排铺满槽位（每列 cover 裁切），一张都没有时画 [placeholderIcon]。
+///
+/// 每列各自失败各自变成空底色，不再往下回退——一列 404 不该把已经画出来的另外
+/// 两列一起抹掉。
+class MediaServerLibraryCollage extends StatelessWidget {
+  const MediaServerLibraryCollage({
+    required this.browser,
+    required this.items,
+    required this.placeholderIcon,
+    super.key,
+  });
+
+  final MediaServerBrowser browser;
+  final List<MediaServerItem> items;
+  final IconData placeholderIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<(MediaServerItem, ImageProvider)> posters =
+        <(MediaServerItem, ImageProvider)>[];
+    for (final MediaServerItem item in items) {
+      if (posters.length >= kMediaServerLibraryCollageCount) break;
+      final ImageProvider? provider = mediaServerCoverImage(browser, item);
+      if (provider != null) posters.add((item, provider));
+    }
+    if (posters.isEmpty) return ShelfCoverPlaceholder(icon: placeholderIcon);
+    return ColoredBox(
+      color: tokens.surfaces.group,
+      child: Row(
+        children: <Widget>[
+          for (final (MediaServerItem item, ImageProvider provider) in posters)
+            Expanded(
+              child: Image(
+                key: ValueKey<String>('media-server-collage-${item.id}'),
+                image: provider,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const SizedBox.expand(),
+              ),
+            ),
         ],
       ),
     );
