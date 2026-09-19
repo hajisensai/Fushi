@@ -7,6 +7,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 void main() {
   MangaExtensionRow extension(String packageName, {required bool enabled}) =>
       MangaExtensionRow(
+        mediaKind: 'manga',
         packageName: packageName,
         storeUrl: null,
         name: packageName,
@@ -28,6 +29,7 @@ void main() {
     required bool enabled,
   }) =>
       MangaOnlineSourceRow(
+        mediaKind: 'manga',
         extensionPackage: extensionPackage,
         sourceId: sourceId,
         name: sourceId,

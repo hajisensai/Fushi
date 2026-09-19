@@ -19,6 +19,7 @@ void main() {
     String extensionPackage = 'org.example.mangadex',
     bool enabled = true,
   }) => MangaOnlineSourceRow(
+    mediaKind: 'manga',
     extensionPackage: extensionPackage,
     sourceId: sourceId,
     name: 'Source $sourceId',

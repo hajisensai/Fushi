@@ -466,6 +466,10 @@ class VideoPlayerController extends ChangeNotifier
   /// 本次 [load] 的媒体是否已被底层**真正打开**（见 [mediaOpened]）。
   bool _mediaOpened = false;
 
+  /// 上一次 [load] 是否给 libmpv 下发过 `http-header-fields`：属性跨 open 持久，
+  /// 下一片没有 header 时要显式清掉，否则上一站的 Referer 串到下一站。
+  bool _httpHeaderFieldsApplied = false;
+
   /// 恢复 seek 的目标位置（毫秒）；非 null 表示「正在恢复上次进度，seek 尚未落地」。
   ///
   /// media_kit 在 `open(play:false)` 刚返回时 player 常未就绪（position/duration 仍
@@ -1753,7 +1757,15 @@ class VideoPlayerController extends ChangeNotifier
     // libmpv `http-header-fields`。仅 [httpHeaderFields] 非空时生效（普通流/本地文件
     // no-op），与上面的网络缓存调优同为”仅网络流才下发”的叠加属性，不改
     // 既有 `Media`/缓存判据（播放内核零改）。
-    await applyHttpHeaderFieldsToPlayer(player, httpHeaderFields);
+    if (httpHeaderFields.isEmpty) {
+      if (_httpHeaderFieldsApplied) {
+        await clearHttpHeaderFieldsOnPlayer(player);
+        _httpHeaderFieldsApplied = false;
+      }
+    } else {
+      await applyHttpHeaderFieldsToPlayer(player, httpHeaderFields);
+      _httpHeaderFieldsApplied = true;
+    }
     if (!_isCurrentLoad(player, loadToken)) return; // header 注入后换片/销毁。
 
     // TODO-1280：YouTube 分离流的 audio-only 音轨在此 `audio-add ... select` 外挂。**必须在

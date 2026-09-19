@@ -113,8 +113,15 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   // ── Mihon manga extensions (v63) ───────────────────────────────
 
-  Future<List<MangaExtensionStoreRow>> getMangaExtensionStores() =>
+  /// [mediaKind] 为 null 时不分片（全量）；传 `'manga'` / `'anime'` 只取该生态
+  /// 的仓库（v107，两个生态共用三张表按 media_kind 列分片）。
+  Future<List<MangaExtensionStoreRow>> getMangaExtensionStores({
+    String? mediaKind,
+  }) =>
       (select(mangaExtensionStores)
+            ..where((t) => mediaKind == null
+                ? const Constant(true)
+                : t.mediaKind.equals(mediaKind))
             ..orderBy([
               (t) => OrderingTerm(expression: t.sortOrder),
               (t) => OrderingTerm(expression: t.indexUrl),
@@ -128,8 +135,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (delete(mangaExtensionStores)..where((t) => t.indexUrl.equals(indexUrl)))
           .go();
 
-  Future<List<MangaExtensionRow>> getMangaExtensions() =>
+  Future<List<MangaExtensionRow>> getMangaExtensions({String? mediaKind}) =>
       (select(mangaExtensions)
+            ..where((t) => mediaKind == null
+                ? const Constant(true)
+                : t.mediaKind.equals(mediaKind))
             ..orderBy([
               (t) => OrderingTerm(expression: t.name),
               (t) => OrderingTerm(expression: t.packageName),
@@ -160,8 +170,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             .go();
       });
 
-  Future<List<MangaOnlineSourceRow>> getMangaOnlineSources() =>
+  Future<List<MangaOnlineSourceRow>> getMangaOnlineSources({
+    String? mediaKind,
+  }) =>
       (select(mangaOnlineSources)
+            ..where((t) => mediaKind == null
+                ? const Constant(true)
+                : t.mediaKind.equals(mediaKind))
             ..orderBy([
               (t) => OrderingTerm(
                     expression: t.pinned,

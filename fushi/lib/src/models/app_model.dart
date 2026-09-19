@@ -42,6 +42,7 @@ import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/storage/sandbox_relocation.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
@@ -85,6 +86,8 @@ import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -4373,30 +4376,74 @@ class AppModel with ChangeNotifier {
   /// 只有进入漫画源/漫画扩展/来源设置才读取扩展数据库；桌面 runtime 又会等到
   /// 第一次真正调用扩展时才启动 M-Extension-Server。
   MihonManager? _mihonManager;
-  MihonManager get mihonManager {
-    final MihonManager? existing = _mihonManager;
+  MihonManager get mihonManager =>
+      _mihonManager ??= _createMihonManager(MihonMediaKind.manga);
+
+  /// 视频（Aniyomi）扩展的 manager：与 [mihonManager] 共用同一个运行时，只是
+  /// 三张扩展表按 `media_kind` 分片、默认仓库不同、根目录不同（`mihon_anime/`，
+  /// 扩展 APK / 暂存 / 封面缓存各自独立，删一边的缓存不波及另一边）。
+  MihonManager? _animeMihonManager;
+  MihonManager get animeMihonManager =>
+      _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
+
+  /// 两个生态共用的扩展宿主：桌面端一个 sidecar JVM（`-Xmx512m`，两个太贵），
+  /// Android 原生宿主本来就是进程单例。生命周期归这里管——两个 manager 都以
+  /// `ownsRuntime: false` 构造，退出时的 sidecar 关闭由 [_mihonRuntimeExitShutdown]
+  /// 登记一次，[dispose] 也只关一次。数据目录沿用漫画那份 `mihon/`（sidecar 的
+  /// 偏好 / 日志 / cookie 真值都在那下面，改路径等于让存量用户重新登录源站）。
+  MihonRuntime? _mihonRuntime;
+  ExitFlushCallback? _mihonRuntimeExitShutdown;
+  Future<void>? _mihonRuntimeShutdown;
+  MihonRuntime get _sharedMihonRuntime {
+    final MihonRuntime? existing = _mihonRuntime;
     if (existing != null) return existing;
     if (!MihonRuntimeFactory.isSupported) {
       throw UnsupportedError(
         'Mihon extensions are unavailable on this platform',
       );
     }
-    final Directory root =
-        Directory(path.join(databaseDirectory.path, 'mihon'));
+    final MihonRuntime runtime = MihonRuntimeFactory.create(
+      Directory(path.join(databaseDirectory.path, 'mihon')),
+    );
+    _mihonRuntime = runtime;
+    if (Platform.isWindows || Platform.isMacOS) {
+      _mihonRuntimeExitShutdown = ExitFlushRegistry.instance.register(
+        _shutdownMihonRuntime,
+      );
+    }
+    return runtime;
+  }
+
+  Future<void> _shutdownMihonRuntime() =>
+      _mihonRuntimeShutdown ??= _mihonRuntime?.dispose() ?? Future<void>.value();
+
+  MihonManager _createMihonManager(MihonMediaKind kind) {
+    final MihonRuntime runtime = _sharedMihonRuntime;
+    final Directory root = Directory(
+      path.join(
+        databaseDirectory.path,
+        switch (kind) {
+          MihonMediaKind.manga => 'mihon',
+          MihonMediaKind.anime => 'mihon_anime',
+        },
+      ),
+    );
     final MihonManager manager = MihonManager(
       database: database,
       rootDirectory: root,
-      runtime: MihonRuntimeFactory.create(root),
+      runtime: runtime,
+      kind: kind,
+      ownsRuntime: false,
       coverCacheMaxAge: Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays),
       // 只有真实 app 启动这一处装默认扩展仓库（用户诉求：漫画扩展仓库默认带
-      // keiyoushi）。别把它挪进 MihonManager 的默认值——那会让每个构造 manager
-      // 的单测都去拉真实网络索引，见 MihonManager.seedDefaultStore 的说明。
+      // keiyoushi，视频默认带 yuzono）。别把它挪进 MihonManager 的默认值——那会
+      // 让每个构造 manager 的单测都去拉真实网络索引，见
+      // MihonManager.seedDefaultStore 的说明。
       seedDefaultStore: true,
       // 同理只有真实 app 去拉扩展的公开下载量（一次 5 MB 量级的 GitHub API
       // 请求）；单测构造的 manager 一律不碰外网。
       fetchDownloadCounts: true,
     );
-    _mihonManager = manager;
     unawaited(manager.initialise());
     return manager;
   }
@@ -7164,6 +7211,15 @@ class AppModel with ChangeNotifier {
     _mediaDiscoveryService = null;
     _mihonManager?.dispose();
     _mihonManager = null;
+    _animeMihonManager?.dispose();
+    _animeMihonManager = null;
+    final ExitFlushCallback? mihonExitShutdown = _mihonRuntimeExitShutdown;
+    _mihonRuntimeExitShutdown = null;
+    if (mihonExitShutdown != null) {
+      ExitFlushRegistry.instance.unregister(mihonExitShutdown);
+    }
+    unawaited(_shutdownMihonRuntime());
+    _mihonRuntime = null;
     _prefsRepo?.removeListener(notifyListeners);
     if (_themeListenerAdded) {
       themeNotifier.removeListener(notifyListeners);
@@ -8367,6 +8423,8 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaCoverCacheMaxAgeDays(int value) async {
     await prefsRepo.setMangaCoverCacheMaxAgeDays(value);
     _mihonManager?.coverCache.maxAge =
+        Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays);
+    _animeMihonManager?.coverCache.maxAge =
         Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays);
   }
 

@@ -53,6 +53,8 @@
 # extensions" 区块——Mihon 自己走 -dontobfuscate 全保，Fushi 有混淆，只能逐包 keep。
 # ---------------------------------------------------------------------------
 -keep class eu.kanade.tachiyomi.source.** { *; }
+# Aniyomi（视频）扩展的宿主 ABI：与漫画同一条理由，只是包名不同。
+-keep class eu.kanade.tachiyomi.animesource.** { *; }
 -keep class eu.kanade.tachiyomi.network.** { *; }
 # asJsoup()/awaitSingle() 等扩展解析必用的顶层函数（JsoupExtensionsKt / RxExtension）。
 # 宿主自身一次都不调，漏 keep 时 R8 会把整个包删掉。

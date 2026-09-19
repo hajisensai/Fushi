@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/discovery_header.dart';
 
 MangaOnlineSourceRow _row(String sourceId, String language) =>
     MangaOnlineSourceRow(
+      mediaKind: 'manga',
       extensionPackage: 'eu.kanade.tachiyomi.extension.all.myreadingmanga',
       sourceId: sourceId,
       name: 'MyReadingManga',

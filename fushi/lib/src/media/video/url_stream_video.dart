@@ -234,7 +234,8 @@ StreamImportCoverStrategy streamImportCoverStrategy(String url) {
 ///
 /// [httpHeaderFields] 是可选防盗链 header（Referer / User-Agent 等），由播放页在
 /// load 时下发到 libmpv `http-header-fields`（阶段①仅 session 内有效，不落 DB）。
-class UrlStreamVideoClient implements RemoteVideoClient {
+class UrlStreamVideoClient
+    implements RemoteVideoClient, RemoteVideoStreamHeaders {
   UrlStreamVideoClient({
     required this.streamUrl,
     this.subtitleUrl,
@@ -323,6 +324,7 @@ class UrlStreamVideoClient implements RemoteVideoClient {
   final String? subtitleFileName;
 
   /// 防盗链 header（Referer / User-Agent 等），下发到 libmpv `http-header-fields`。
+  @override
   final Map<String, String> httpHeaderFields;
 
   final http.Client _httpClient;

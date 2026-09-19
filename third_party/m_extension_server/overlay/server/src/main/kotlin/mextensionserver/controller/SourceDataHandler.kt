@@ -2,6 +2,8 @@ package mextensionserver.controller
 
 import android.app.Application
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -33,16 +35,22 @@ class SourceDataHandler {
                 preferences = preferences,
             )
             MExtensionServerLoader.invokeWithExtension(request.data) { loaded ->
-                val source = MihonInvoker.selectSource(loaded.sources, data) as Source
+                val source = MihonInvoker.selectSource(loaded.sources, data)
+                val sourceId: Long =
+                    when (source) {
+                        is Source -> source.id
+                        is AnimeSource -> source.id
+                        else -> throw IllegalArgumentException("Unknown source type: ${source.javaClass}")
+                    }
                 Injekt.get<Application>()
-                    .getSharedPreferences("source_${source.id}", 0)
+                    .getSharedPreferences("source_$sourceId", 0)
                     .edit()
                     .clear()
                     .commit()
-                if (source is HttpSource) {
+                if (source is HttpSource || source is AnimeHttpSource) {
                     Injekt.get<NetworkHelper>().cookieJar.clear()
                 }
-                MihonMetadataCache.remove(source)
+                if (source is Source) MihonMetadataCache.remove(source)
             }
             NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.OK,

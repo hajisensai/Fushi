@@ -3940,13 +3940,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 共享 load 装配：复用或新建 controller，载入视频 + cue，挂位置持久化回调。
-  /// 单 URL 流（TODO-850 阶段①）的防盗链 header（Referer/User-Agent 等）。仅当远端
-  /// client 是 [UrlStreamVideoClient] 时取其 [UrlStreamVideoClient.httpHeaderFields]；
-  /// 其它远端/本地播放恒返回空 map（[applyHttpHeaderFieldsToPlayer] 据此 no-op，
-  /// 既有播放路径零影响）。
+  /// 流请求的防盗链 header（Referer/User-Agent 等）。远端 client 具备
+  /// [RemoteVideoStreamHeaders] 能力（粘贴 URL 流 / 视频源扩展）时取其当前流的
+  /// [RemoteVideoStreamHeaders.httpHeaderFields]；其它远端/本地播放恒返回空 map
+  /// （[applyHttpHeaderFieldsToPlayer] 据此 no-op，既有播放路径零影响）。
   Map<String, String> get _streamHttpHeaderFields {
-    final RemoteVideoClient? client = _effectiveRemoteClient;
-    if (client is UrlStreamVideoClient) return client.httpHeaderFields;
+    final Object? client = _effectiveRemoteClient;
+    if (client is RemoteVideoStreamHeaders) return client.httpHeaderFields;
     return const <String, String>{};
   }
 

@@ -825,6 +825,22 @@ Future<void> applyHttpHeaderFieldsToPlayer(
     Player player, Map<String, String> headers) async {
   final Map<String, String> props = buildHttpHeaderFieldsProperty(headers);
   if (props.isEmpty) return;
+  await _setMpvProperties(player, props);
+}
+
+/// 清掉上一片下发的 `http-header-fields`：libmpv 属性跨 `open` 持久，换集复用同一
+/// Player 时上一站的 Referer 会带到下一站（在线源扩展多集连播换 hoster 是常态，
+/// 严格防盗链 CDN 直接 403）。只在此前真下发过时调用（见 controller）。
+Future<void> clearHttpHeaderFieldsOnPlayer(Player player) =>
+    _setMpvProperties(player, kClearHttpHeaderFieldsProperty);
+
+/// [clearHttpHeaderFieldsOnPlayer] 下发的属性（测试可见）。
+const Map<String, String> kClearHttpHeaderFieldsProperty = <String, String>{
+  'http-header-fields': '',
+};
+
+Future<void> _setMpvProperties(
+    Player player, Map<String, String> props) async {
   final dynamic native = player.platform;
   if (native == null) return;
   for (final MapEntry<String, String> e in props.entries) {
