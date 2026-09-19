@@ -152,8 +152,21 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `--fushi-sub-*` 变量（默认项 removeProperty 交还 CSS），`content-css-overlay.css` 的
   `#fushi-subtitle-overlay` 每一项外观都读这些变量并带默认值；设置页预览走同一份 `toCssVars`，
   预览节点默认值与覆盖层逐项一致（守卫 `subtitle-style.test.js`）。
+- **字体是下拉不是手填**（用户 2026-09-20）：三组——本机字体栈（`FONT_SUGGESTIONS`）/ Fushi 字体库 /
+  自定义（只回显旧版手填过的值）。字体真源在 app 的自定义字体目录：background `subtitleFonts` 消息
+  `POST /api/extension/fonts` 拿 `{fonts:[{id,name,family,ext}], recommended:[{name,nameJa,description,
+  license,installed}]}`，每条字体拼上 `GET /api/extension/fonts/file?id=&token=`（token 在查询串，同
+  dict-media 图片；端点带 `Access-Control-Allow-Origin: *`，因为 `@font-face` 是跨源加载）。库字体存的值
+  是 `"family"`；覆盖层选了字体时 `subtitle-panel.js` 向 background 要一次清单并把全部库字体以
+  `@font-face`（`fushiSubtitleStyle.fontFaceCss`）挂进 `<head>`——浏览器只为真命中的 family 取字节，
+  全量声明零额外下载；options 预览同样挂一份。「字体库」清单 = app 的推荐字体表，`下载` →
+  `subtitleFontDownload` → `POST /api/extension/fonts/download {name}`，app 自己跑多源回退下载并入目录
+  （与 app 内视频字幕共用），完成后自动选中。app 没开：下拉只剩本机组、清单换成「需要 Fushi 正在运行」。
+- **源码不得含 Unicode 非字符**：`utf8-shippable.test.js` 按 Chrome `IsStringUTF8` 口径扫所有会进包的
+  文本文件（BUG-2610：正则里裸 U+FFFF 让 Chrome 报「不是 UTF-8」拒装整个扩展）。要表示这些码位一律
+  `\uXXXX` 转义。
 
-守卫：`subtitle-overlay-drag.test.js` 后半段、`subtitle-style.test.js`。
+守卫：`subtitle-overlay-drag.test.js` 后半段、`subtitle-style.test.js`、`utf8-shippable.test.js`。
 
 ## 主题与颜色
 

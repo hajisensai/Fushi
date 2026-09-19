@@ -91,6 +91,39 @@ test('applyTo：非默认 setProperty、默认 removeProperty；坏元素不抛'
   assert.doesNotThrow(() => S.applyTo(null, {}));
 });
 
+// 用户 2026-09-20：「字体不要手填而是下拉框并且可以下载字体」——下拉两组：本机字体栈
+// （FONT_SUGGESTIONS）+ Fushi 字体库（app /api/extension/fonts）；库字体经 @font-face 挂进页面。
+test('字体库辅助：栈标签取前两个 family；库条目值带引号且剥引号反斜杠；命中判据与存值同形', () => {
+  const S = loadStyle();
+  assert.strictEqual(S.fontStackLabel('"Hiragino Sans", "Yu Gothic UI", sans-serif'), 'Hiragino Sans / Yu Gothic UI');
+  assert.strictEqual(S.fontStackLabel('monospace'), 'monospace');
+  assert.strictEqual(S.fontFamilyValueOf('Klee "One" ' + String.fromCharCode(92) + 'x'), '"Klee One x"');
+  assert.strictEqual(S.fontFamilyValueOf('   '), '');
+  assert.strictEqual(S.matchesFushiFont('"Klee One"', 'Klee One'), true);
+  assert.strictEqual(S.matchesFushiFont('Klee One', 'Klee One'), false, '未加引号的手填值不当作库条目');
+  assert.strictEqual(S.matchesFushiFont('"Klee One"', ''), false);
+});
+
+test('fontFaceCss：每条库字体一条 @font-face（src 为 app 文件端点、按扩展名给 format）；非 http(s)/含引号空白的 url 与空 family 一律丢弃', () => {
+  const S = loadStyle();
+  const css = S.fontFaceCss([
+    { family: 'Klee One', url: 'http://127.0.0.1:19633/api/extension/fonts/file?id=font_1&token=abc', ext: 'ttf' },
+    { family: 'Noto Sans JP', url: 'http://127.0.0.1:19633/api/extension/fonts/file?id=font_2&token=abc', ext: 'woff2' },
+    { family: 'Bad', url: 'javascript:alert(1)', ext: 'ttf' },
+    { family: 'Bad2', url: 'http://127.0.0.1/a") } body { display:none', ext: 'ttf' },
+    { family: '', url: 'http://127.0.0.1/x', ext: 'ttf' },
+    { family: 'NoFmt', url: 'http://127.0.0.1/y', ext: 'bin' },
+  ]);
+  const lines = css.split('\n');
+  assert.strictEqual(lines.length, 3);
+  assert.strictEqual(lines[0],
+    '@font-face{font-family:"Klee One";src:url("http://127.0.0.1:19633/api/extension/fonts/file?id=font_1&token=abc") format("truetype");font-display:swap;}');
+  assert.match(lines[1], /format\("woff2"\)/);
+  assert.strictEqual(lines[2], '@font-face{font-family:"NoFmt";src:url("http://127.0.0.1/y");font-display:swap;}');
+  assert.doesNotMatch(css, /javascript:|display:none/);
+  assert.strictEqual(S.fontFaceCss(null), '');
+});
+
 // ───────── ② CSS 契约 ─────────
 
 function subVarDefaults(block) {
@@ -292,4 +325,126 @@ test('设置页改动经 storage.onChanged 立刻生效；删键回默认（全�
   assert.strictEqual(el.style.props['--fushi-sub-family'], 'serif', '改别的键不能把外观刷掉');
   w.storage.remove('subtitleStyle');
   assert.deepEqual(el.style.props, {}, '删键后全部变量交还 CSS');
+});
+
+// ───────── ④ Fushi 字体库 @font-face ─────────
+
+function withFontMessages(w, fonts) {
+  const calls = [];
+  w.sandbox.chrome.runtime.sendMessage = (msg, cb) => {
+    calls.push(msg);
+    if (msg && msg.type === 'subtitleFonts' && cb) cb(fonts ? { ok: true, fonts } : { ok: false });
+  };
+  return calls;
+}
+
+test('外观选了字体 → 向 background 要一次字体清单并把 @font-face 挂进 <head>；没选字体不请求；app 没开不挂且允许重试', () => {
+  const FONTS = [{ id: 'font_1', name: 'Klee One', family: 'Klee One', ext: 'ttf', url: 'http://127.0.0.1:19633/api/extension/fonts/file?id=font_1&token=t' }];
+  // ① 没选字体：不请求。
+  const w0 = loadWorld({ subtitleStyle: { fontScale: 120 } });
+  const calls0 = withFontMessages(w0, FONTS);
+  w0.setTrack('ja', CUES); w0.tick();
+  assert.strictEqual(calls0.filter((m) => m.type === 'subtitleFonts').length, 0);
+  // ② 选了库字体：请求一次，<head> 里出现 @font-face；再 tick 不重复请求。
+  const w = loadWorld({ subtitleStyle: { fontFamily: '"Klee One"' } });
+  const calls = withFontMessages(w, FONTS);
+  w.setTrack('ja', CUES); w.tick(); w.tick();
+  assert.strictEqual(calls.filter((m) => m.type === 'subtitleFonts').length, 1);
+  const styleEl = w.sandbox.document.getElementById('fushi-subtitle-fontfaces');
+  assert.ok(styleEl, '应注入 <style id=fushi-subtitle-fontfaces>');
+  assert.strictEqual(styleEl.parentNode, w.sandbox.document.head);
+  assert.match(styleEl.textContent, /@font-face\{font-family:"Klee One";src:url\("http:\/\/127\.0\.0\.1:19633\/api\/extension\/fonts\/file\?id=font_1&token=t"\) format\("truetype"\)/);
+  assert.strictEqual(w.overlayEl().style.props['--fushi-sub-family'], '"Klee One"');
+  // ③ 设置页又改了外观：允许再拉一次清单（可能刚下载了新字体），清单没变不重写。
+  const text = styleEl.textContent;
+  w.storage.set({ subtitleStyle: { fontFamily: '"Klee One"', fontScale: 150 } });
+  assert.strictEqual(calls.filter((m) => m.type === 'subtitleFonts').length, 2);
+  assert.strictEqual(styleEl.textContent, text);
+  // ④ app 没开：不挂，且下次外观变化会重试。
+  const w2 = loadWorld({ subtitleStyle: { fontFamily: '"Klee One"' } });
+  const calls2 = withFontMessages(w2, null);
+  w2.setTrack('ja', CUES); w2.tick();
+  assert.strictEqual(calls2.filter((m) => m.type === 'subtitleFonts').length, 1);
+  assert.strictEqual(w2.sandbox.document.getElementById('fushi-subtitle-fontfaces'), null);
+  w2.storage.set({ subtitleStyle: { fontFamily: '"Klee One"', fontScale: 110 } });
+  assert.strictEqual(calls2.filter((m) => m.type === 'subtitleFonts').length, 2, '失败后允许重试');
+});
+
+// ───────── ⑤ background：subtitleFonts / subtitleFontDownload ─────────
+
+function loadBackground(routes) {
+  const stored = { host: '127.0.0.1', port: 19733, token: 'tk' };
+  const fetches = [];
+  const sandbox = {
+    console, URL, btoa: (s) => Buffer.from(s).toString('base64'),
+    setTimeout, clearTimeout, setInterval: () => 0, clearInterval,
+    performance: { now: () => 1, timeOrigin: 0 },
+    AbortSignal: { timeout: () => null },
+    fetch: (url, init) => {
+      const u = new URL(url);
+      fetches.push({ path: u.pathname, method: init && init.method, auth: init && init.headers && init.headers.Authorization, body: init && init.body ? JSON.parse(init.body) : null });
+      const r = routes[u.pathname];
+      if (!r) return Promise.reject(new Error('ECONNREFUSED'));
+      return Promise.resolve({ ok: r.status === 200, status: r.status, headers: { get: () => null }, json: () => Promise.resolve(r.body), text: () => Promise.resolve(JSON.stringify(r.body)) });
+    },
+    importScripts() {},
+    chrome: {
+      storage: { local: { get: (keys) => Promise.resolve(Object.fromEntries([].concat(keys).filter((k) => k in stored).map((k) => [k, stored[k]]))), set: () => Promise.resolve() }, onChanged: { addListener() {} } },
+      runtime: { onMessage: { addListener: (fn) => { sandbox._onMessage = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} }, getURL: (r) => r, id: 'x' },
+      alarms: { create() {}, onAlarm: { addListener() {} } },
+      action: { setBadgeText() {}, setBadgeBackgroundColor() {}, setTitle() {}, onClicked: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener() {} }, query: () => Promise.resolve([]) },
+      webNavigation: { onCompleted: { addListener() {} } },
+      sidePanel: { setPanelBehavior: () => Promise.resolve(), setOptions() {} },
+      offscreen: { hasDocument: () => Promise.resolve(false) },
+      cookies: { getAll: () => Promise.resolve([]) },
+    },
+  };
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8'), sandbox, { filename: 'background.js' });
+  const ask = (msg) => new Promise((resolve) => { sandbox._onMessage(msg, { tab: { id: 1 } }, resolve); });
+  return { ask, fetches };
+}
+
+test('background subtitleFonts：POST /api/extension/fonts 带 Basic 鉴权；每条字体拼上带 token 的文件 URL；坏条目丢弃；app 没开 ok:false', async () => {
+  const status = { status: 200, body: { app: 'fushi' } };
+  const bg = loadBackground({
+    '/api/extension/status': status,
+    '/api/extension/fonts': { status: 200, body: {
+      fonts: [{ id: 'font_1', name: 'Klee One', family: 'Klee One', ext: 'TTF' }, { id: '', family: 'x' }, { id: 'font_3' }],
+      recommended: [{ name: 'Klee One', nameJa: 'クレー One', installed: true }],
+    } },
+  });
+  const r = await bg.ask({ type: 'subtitleFonts' });
+  assert.strictEqual(r.ok, true);
+  const call = bg.fetches.find((f) => f.path === '/api/extension/fonts');
+  assert.strictEqual(call.method, 'POST');
+  assert.strictEqual(call.auth, 'Basic ' + Buffer.from('fushi:tk').toString('base64'));
+  assert.deepEqual(r.fonts, [{ id: 'font_1', name: 'Klee One', family: 'Klee One', ext: 'ttf', url: 'http://127.0.0.1:19733/api/extension/fonts/file?id=font_1&token=tk' }]);
+  assert.deepEqual(r.recommended, [{ name: 'Klee One', nameJa: 'クレー One', installed: true }]);
+  const off = loadBackground({});
+  const r2 = await off.ask({ type: 'subtitleFonts' });
+  assert.strictEqual(r2.ok, false);
+});
+
+test('background subtitleFontDownload：POST /api/extension/fonts/download {name}；app 的 ok/error 原样透传，新字体同样拼 URL', async () => {
+  const bg = loadBackground({
+    '/api/extension/status': { status: 200, body: { app: 'fushi' } },
+    '/api/extension/fonts/download': { status: 200, body: { ok: true, fonts: [{ id: 'font_9', name: 'Noto Sans JP', family: 'Noto Sans JP', ext: 'ttf' }] } },
+  });
+  const r = await bg.ask({ type: 'subtitleFontDownload', name: 'Noto Sans JP' });
+  const call = bg.fetches.find((f) => f.path === '/api/extension/fonts/download');
+  assert.deepEqual(call.body, { name: 'Noto Sans JP' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.fonts[0].url, 'http://127.0.0.1:19733/api/extension/fonts/file?id=font_9&token=tk');
+  const bad = loadBackground({
+    '/api/extension/status': { status: 200, body: { app: 'fushi' } },
+    '/api/extension/fonts/download': { status: 404, body: { ok: false, error: 'unknown_font' } },
+  });
+  const r2 = await bad.ask({ type: 'subtitleFontDownload', name: 'Nope' });
+  assert.strictEqual(r2.ok, false);
+  assert.strictEqual(r2.error, 'unknown_font');
+  assert.strictEqual(r2.status, 404);
 });

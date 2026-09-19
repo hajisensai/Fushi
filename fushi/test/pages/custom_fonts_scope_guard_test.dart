@@ -78,13 +78,33 @@ void main() {
     );
   });
 
-  test('四个新增入口都走 _newFontTargets()', () {
+  test('所有新增入口都走 _newFontTargets()', () {
     final int uses = 'targetEnabled: _newFontTargets()'.allMatches(page).length;
+    // 文件层（复制 / 解包 / 下载）已搬进 FontDownloadService，页面只剩两个登记点：
+    // `_appendImported`（文件导入 / 压缩包 / 推荐字体 / URL 四个入口都汇到它）与
+    // 系统字体。数目变了说明有新入口没接作用域，或旧入口被删。
     expect(
       uses,
-      4,
-      reason: '文件导入 / 压缩包解包(含 override 与批量两支) / 系统字体，共 4 处；'
+      2,
+      reason: '_appendImported（文件类四入口的唯一汇点）+ 系统字体，共 2 处；'
           '数目变了说明有新入口没接作用域，或旧入口被删',
+    );
+    expect(
+      page.contains('int _appendImported(List<ImportedFontFile> files)'),
+      isTrue,
+      reason: '文件类入口的唯一汇点消失了——服务落好的文件必须经它挂作用域用途',
+    );
+    // 服务落地的文件不得绕过汇点直接登记：页面里不应再出现自建 CustomFontCatalogRow
+    // 时手写 path: destPath 之类的落地路径。
+    expect(
+      page.contains('_fontService.importFile('),
+      isTrue,
+      reason: '文件导入必须委托 FontDownloadService（与扩展字体端点共用同一份文件层）',
+    );
+    expect(
+      page.contains('_fontService.download('),
+      isTrue,
+      reason: '下载必须委托 FontDownloadService（与扩展字体端点共用同一份文件层）',
     );
   });
 

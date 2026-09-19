@@ -619,7 +619,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // toCssVars（预览节点的默认值在 options.css 里与 content-css-overlay.css 同一组 --fushi-sub-*）。
 const SUB = self.fushiSubtitleStyle || null;
 const subtitleStyleFields = Object.freeze({
-  subtitleStyleFontFamily: { field: 'fontFamily', kind: 'text' },
+  subtitleStyleFontFamily: { field: 'fontFamily', kind: 'font' },
   subtitleStyleFontScale: { field: 'fontScale', kind: 'range' },
   subtitleStyleFontWeight: { field: 'fontWeight', kind: 'select' },
   subtitleStyleLetterSpacing: { field: 'letterSpacing', kind: 'range' },
@@ -664,6 +664,8 @@ function fillSubtitleStyleInputs(style) {
       if (reset) reset.disabled = auto;
       continue;
     }
+    // 字体下拉的选项集随字体库变化，回显交给 fillFontFamilySelect（当前值不在任何组里会挂到「自定义」组）。
+    if (spec.kind === 'font') { fillFontFamilySelect(); continue; }
     if (el !== focused) el.value = String(v);
     if (spec.kind === 'range') formatRangeOutput(id, v);
   }
@@ -701,18 +703,140 @@ function writeSubtitleStyle(immediate) {
   if (immediate) commit(); else subtitleStyleWriteTimer = setTimeout(commit, 120);
 }
 
+// ── 字体下拉 + Fushi 字体库（用户 2026-09-20：「不要手填而是下拉框并且可以下载字体」）──
+// 下拉三组：本机字体栈（FONT_SUGGESTIONS）/ Fushi 字体库（app /api/extension/fonts 的目录字体，
+// 值 = `"family"`，网页覆盖层经 @font-face 挂进去）/ 自定义（只为回显旧版手填过的值，用户换了就消失）。
+// 字体库列表 = app 的推荐字体表，未安装的一键下载（app 自己跑多源回退下载并入目录，与 app 内视频字幕共用）。
+const fontLibrary = { fonts: [], recommended: [], online: false, fetchedAt: 0, pending: new Set() };
+
+function fillFontFamilySelect() {
+  const sel = $('subtitleStyleFontFamily');
+  if (!sel || !SUB) return;
+  const current = subtitleStyleCurrent ? subtitleStyleCurrent.fontFamily : '';
+  const sys = $('subtitleFontSystemGroup');
+  const fushi = $('subtitleFontFushiGroup');
+  const custom = $('subtitleFontCustomGroup');
+  if (!sys || !fushi || !custom) return;
+  sys.label = tr('opt_subtitleStyleFontFamily_group_system');
+  fushi.label = tr('opt_subtitleStyleFontFamily_group_fushi');
+  custom.label = tr('opt_subtitleStyleFontFamily_group_custom');
+  sys.textContent = ''; fushi.textContent = ''; custom.textContent = '';
+  let matched = current === '';
+  for (const stack of SUB.FONT_SUGGESTIONS) {
+    const o = document.createElement('option');
+    o.value = stack;
+    o.textContent = SUB.fontStackLabel(stack);
+    if (stack === current) { o.selected = true; matched = true; }
+    sys.appendChild(o);
+  }
+  for (const f of fontLibrary.fonts) {
+    const value = SUB.fontFamilyValueOf(f.family);
+    if (!value) continue;
+    const o = document.createElement('option');
+    o.value = value;
+    o.textContent = f.name || f.family;
+    if (SUB.matchesFushiFont(current, f.family)) { o.selected = true; matched = true; }
+    fushi.appendChild(o);
+  }
+  fushi.hidden = fushi.childElementCount === 0;
+  if (!matched) {
+    const o = document.createElement('option');
+    o.value = current;
+    o.textContent = current;
+    o.selected = true;
+    custom.appendChild(o);
+  }
+  custom.hidden = custom.childElementCount === 0;
+  if (matched && current === '') sel.value = '';
+}
+
+function renderFontLibrary() {
+  const list = $('subtitleFontLibraryList');
+  const note = $('subtitleFontLibraryNote');
+  if (!list || !note) return;
+  note.hidden = fontLibrary.online;
+  list.textContent = '';
+  if (!fontLibrary.online) return;
+  for (const rec of fontLibrary.recommended) {
+    const li = document.createElement('li');
+    li.className = 'font-library-item';
+    const copy = document.createElement('span');
+    copy.className = 'font-library-copy';
+    const name = document.createElement('strong');
+    name.textContent = rec.name + (rec.nameJa && rec.nameJa !== rec.name ? ' · ' + rec.nameJa : '');
+    const meta = document.createElement('small');
+    meta.textContent = [rec.description, rec.license].filter(Boolean).join(' · ');
+    copy.appendChild(name); copy.appendChild(meta);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'text-button';
+    const pending = fontLibrary.pending.has(rec.name);
+    btn.disabled = rec.installed || pending;
+    btn.textContent = tr(rec.installed ? 'opt_subtitleFontLibrary_installed'
+      : pending ? 'opt_subtitleFontLibrary_downloading' : 'opt_subtitleFontLibrary_download');
+    if (!rec.installed && !pending) btn.addEventListener('click', () => downloadLibraryFont(rec.name));
+    li.appendChild(copy); li.appendChild(btn);
+    list.appendChild(li);
+  }
+}
+
+async function refreshFontLibrary(force) {
+  if (!SUB || !$('subtitleStyleFontFamily')) return;
+  if (!force && Date.now() - fontLibrary.fetchedAt < 10000) return;
+  fontLibrary.fetchedAt = Date.now();
+  const resp = await runtimeMessage({ type: 'subtitleFonts' });
+  fontLibrary.online = !!(resp && resp.ok);
+  fontLibrary.fonts = fontLibrary.online && Array.isArray(resp.fonts) ? resp.fonts : [];
+  fontLibrary.recommended = fontLibrary.online && Array.isArray(resp.recommended) ? resp.recommended : [];
+  // 预览块要真画出库字体：与网页覆盖层同一份 @font-face（subtitle-panel.js 注入的那份）。
+  const css = SUB.fontFaceCss(fontLibrary.fonts);
+  let faces = $('subtitleFontFaces');
+  if (!faces) {
+    faces = document.createElement('style');
+    faces.id = 'subtitleFontFaces';
+    document.head.appendChild(faces);
+  }
+  if (faces.textContent !== css) faces.textContent = css;
+  fillFontFamilySelect();
+  renderFontLibrary();
+}
+
+async function downloadLibraryFont(name) {
+  if (fontLibrary.pending.has(name)) return;
+  fontLibrary.pending.add(name);
+  renderFontLibrary();
+  const resp = await runtimeMessage({ type: 'subtitleFontDownload', name });
+  fontLibrary.pending.delete(name);
+  if (!resp || !resp.ok) {
+    toast(tr('opt_toast_font_download_failed', { name, error: (resp && resp.error) || 'offline' }));
+    renderFontLibrary();
+    return;
+  }
+  await refreshFontLibrary(true);
+  // 下载完就选中它（用户点下载的意图就是用它）：用 app 回的条目 family，没有就按同名找目录。
+  const added = Array.isArray(resp.fonts) && resp.fonts.length ? resp.fonts[0]
+    : fontLibrary.fonts.find((f) => f.name === name);
+  const value = added ? SUB.fontFamilyValueOf(added.family) : '';
+  const sel = $('subtitleStyleFontFamily');
+  if (value && sel) {
+    fillFontFamilySelect();
+    sel.value = value;
+    writeSubtitleStyle(true);
+  }
+  toast(tr('opt_toast_font_downloaded', { name }));
+}
+
 async function loadSubtitleStyle() {
   if (!SUB || !$('subtitleStylePreviewCue')) return;
-  const list = $('subtitleFontSuggestions');
-  if (list) {
-    for (const f of SUB.FONT_SUGGESTIONS) {
-      const o = document.createElement('option');
-      o.value = f;
-      list.appendChild(o);
-    }
-  }
   const saved = await chrome.storage.local.get(['subtitleStyle']);
   fillSubtitleStyleInputs(saved.subtitleStyle);
+  refreshFontLibrary(true);
+  // 展开下拉前刷一次清单（app 可能刚启动 / 刚在 app 里加了字体）；10s 内不重复拉。
+  on('subtitleStyleFontFamily', 'focus', () => { refreshFontLibrary(false); });
+  // 换语言：optgroup 标签与列表按钮文案是 JS 写的，不经 data-i18n，自己重绘。
+  if (self.fushiI18n && typeof self.fushiI18n.onChange === 'function') {
+    self.fushiI18n.onChange(() => { fillFontFamilySelect(); renderFontLibrary(); });
+  }
   for (const [id, spec] of Object.entries(subtitleStyleFields)) {
     const el = $(id);
     if (!el) continue;

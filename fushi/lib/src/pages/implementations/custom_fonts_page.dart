@@ -1,30 +1,31 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive_io.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_engine/utils/net/app_user_agent.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:path/path.dart' as p;
 
-const _fontExtensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'};
+// 字体扩展名的唯一真相在 FontDownloadService（页面与扩展端点共用）。
+const Set<String> _fontExtensions = kFontFileExtensions;
 
 /// A font added from a target-specific entry point must immediately belong to
 /// that target. Previously every add path silently assigned [FontTarget.body],
 /// so fonts downloaded from the dictionary/game lookup settings appeared in
 /// the catalog but had no effect on the surface that opened it.
-@visibleForTesting
 Map<FontTarget, bool> customFontInitialTargets(FontTarget target) =>
     <FontTarget, bool>{target: true};
 
@@ -73,7 +74,7 @@ class CustomFontEntry {
       CustomFontEntry(name: name, path: path, enabled: enabled ?? this.enabled);
 }
 
-@visibleForTesting
+/// 字体目录的一行（页面内存态；浏览器扩展字体端点追加行时也用它）。
 class CustomFontCatalogRow {
   CustomFontCatalogRow({
     required this.id,
@@ -100,7 +101,6 @@ class CustomFontCatalogRow {
   );
 }
 
-@visibleForTesting
 List<CustomFontCatalogRow> customFontCatalogRowsFromState(
   FontCatalogState state,
 ) {
@@ -129,7 +129,6 @@ List<CustomFontCatalogRow> customFontCatalogRowsFromState(
   ];
 }
 
-@visibleForTesting
 FontCatalogState customFontCatalogStateFromRows(
   List<CustomFontCatalogRow> rows,
 ) {
@@ -180,7 +179,6 @@ FontCatalogState customFontCatalogStateFromRows(
   );
 }
 
-@visibleForTesting
 Map<String, List<Map<String, dynamic>>> customFontLegacyListsFromRows(
   List<CustomFontCatalogRow> rows,
 ) {
@@ -219,7 +217,7 @@ int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
   return next;
 }
 
-@visibleForTesting
+/// 推荐字体表的一项。浏览器扩展的字体端点也按这张表下载，所以不再是仅测试可见。
 class RecommendedFont {
   RecommendedFont({
     required this.name,
@@ -244,7 +242,6 @@ class RecommendedFont {
 //
 // jsDelivr 对整个包 >50MB 的目录会整目录 403（例如 notoserifsc），这类只能
 // 走 GitHub raw；GitHub raw 无此限制，对 CJK 大字体统一补一条兜底直链。
-@visibleForTesting
 List<RecommendedFont> get recommendedFontsCatalog => [
   // ── 推荐首选 ──
   RecommendedFont(
@@ -387,10 +384,6 @@ List<RecommendedFont> get recommendedFontsCatalog => [
     description: t.font_desc_zen_kaku_gothic_new,
   ),
 ];
-
-bool _isFontFile(String path) {
-  return _fontExtensions.contains(p.extension(path).toLowerCase());
-}
 
 // ── 系统字体扫描 ─────────────────────────────────────────────────────────────
 
@@ -612,6 +605,77 @@ String fontTargetLabel(FontTarget target) => switch (target) {
 String _readerPrefKey(String shortKey) =>
     dbSourcePrefKey(kReaderSourcePersistedKey, shortKey);
 
+/// 读字体目录状态：优先 v2 的 `font_catalog` + `font_targets` 两键，解析不出来
+/// 就从各用途的旧列表（`fontsForTarget`）合成。页面与浏览器扩展字体端点共用。
+Future<FontCatalogState> readCustomFontCatalogState({
+  required FushiDatabase database,
+  required ReaderSettings settings,
+}) async {
+  final String? catalogJson = await database.getPref(
+    _readerPrefKey(ReaderSettings.fontCatalogKey),
+  );
+  final String? targetsJson = await database.getPref(
+    _readerPrefKey(ReaderSettings.fontTargetsKey),
+  );
+  if (catalogJson != null && targetsJson != null) {
+    final FontCatalogState? state = FontCatalogState.tryParse(
+      catalogJson: catalogJson,
+      targetsJson: targetsJson,
+      targetKeys: <String>[
+        for (final FontTarget target in FontTarget.values)
+          ReaderSettings.fontKeyForTarget(target),
+      ],
+    );
+    if (state != null) return state;
+  }
+  return FontCatalogState.fromLegacy(<String, List<Map<String, dynamic>>>{
+    for (final FontTarget target in FontTarget.values)
+      ReaderSettings.fontKeyForTarget(target): settings.fontsForTarget(target),
+  });
+}
+
+/// 把字体目录状态写穿 DB（v2 两键 + 各用途旧列表），再刷新所有消费端：
+/// [ReaderSettings] 缓存、app 全局字体、Windows 的 galgame 分层窗、活着的阅读器。
+/// 页面与浏览器扩展字体端点共用——扩展下载的字体也要立刻在 app 里生效。
+Future<void> persistCustomFontState({
+  required AppModel appModel,
+  required ReaderSettings settings,
+  required FontCatalogState state,
+  required Map<String, List<Map<String, dynamic>>> legacy,
+}) async {
+  await appModel.database.setPref(
+    _readerPrefKey(ReaderSettings.fontCatalogKey),
+    jsonEncode(state.toCatalogJson()),
+  );
+  await appModel.database.setPref(
+    _readerPrefKey(ReaderSettings.fontTargetsKey),
+    jsonEncode(state.toTargetsJson()),
+  );
+  for (final MapEntry<String, List<Map<String, dynamic>>> entry
+      in legacy.entries) {
+    await appModel.database.setPref(
+      _readerPrefKey(entry.key),
+      jsonEncode(entry.value),
+    );
+  }
+  await settings.refreshFromDb();
+  await appModel.refreshAppFont();
+  // 平台门在**取单例之前**：GalHookTextOverlayController.instance 会把整套 galgame
+  // 单例图（含 GalIngameLookupController 与它挂上去、永不释放的监听器）建起来。
+  // 非 Windows 用户只是存了一次字体，不该因此拉起一整个 Windows 专属子系统。
+  if (GalHookTextOverlayController.isSupported) {
+    await GalHookTextOverlayController.instance.applyFontFromSettings();
+  }
+  ReaderFushiSource.onSettingsChangedLive?.call();
+}
+
+/// 字体落地目录：`<appDirectory>/custom_fonts`。不存在时创建。
+Directory customFontsDirectory(Directory appDirectory) {
+  final Directory dir = Directory(p.join(appDirectory.path, 'custom_fonts'));
+  if (!dir.existsSync()) dir.createSync(recursive: true);
+  return dir;
+}
+
 class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   ReaderSettings? _settings;
 
@@ -639,7 +703,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         ReaderFushiSource.readerSettings = settings;
       }
       _settings = settings;
-      final FontCatalogState state = await _readCatalogState(settings);
+      final FontCatalogState state = await readCustomFontCatalogState(
+        database: appModelNoUpdate.database,
+        settings: settings,
+      );
       if (!mounted) return;
       setState(() {
         _fonts = customFontCatalogRowsFromState(state);
@@ -679,32 +746,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     };
   }
 
-  Future<FontCatalogState> _readCatalogState(ReaderSettings settings) async {
-    final String? catalogJson = await appModelNoUpdate.database.getPref(
-      _readerPrefKey(ReaderSettings.fontCatalogKey),
-    );
-    final String? targetsJson = await appModelNoUpdate.database.getPref(
-      _readerPrefKey(ReaderSettings.fontTargetsKey),
-    );
-    if (catalogJson != null && targetsJson != null) {
-      final FontCatalogState? state = FontCatalogState.tryParse(
-        catalogJson: catalogJson,
-        targetsJson: targetsJson,
-        targetKeys: <String>[
-          for (final FontTarget target in FontTarget.values)
-            ReaderSettings.fontKeyForTarget(target),
-        ],
-      );
-      if (state != null) return state;
-    }
-    return FontCatalogState.fromLegacy(<String, List<Map<String, dynamic>>>{
-      for (final FontTarget target in FontTarget.values)
-        ReaderSettings.fontKeyForTarget(target): settings.fontsForTarget(
-          target,
-        ),
-    });
-  }
-
   Future<void> _save() {
     final FontCatalogState state = customFontCatalogStateFromRows(_fonts);
     final Map<String, List<Map<String, dynamic>>> legacy =
@@ -714,7 +755,12 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     // previous multi-key write finishes. Preserve invocation order so an older
     // refresh cannot overwrite the newest in-memory target selection.
     final Future<void> operation = _saveTail.then(
-      (_) => _persistFontState(state, legacy),
+      (_) => persistCustomFontState(
+        appModel: appModel,
+        settings: _settings!,
+        state: state,
+        legacy: legacy,
+      ),
     );
     _saveTail = operation.catchError((Object error, StackTrace stack) {
       ErrorLogService.instance.log('CustomFontsPage.save', error, stack);
@@ -722,40 +768,30 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     return operation;
   }
 
-  Future<void> _persistFontState(
-    FontCatalogState state,
-    Map<String, List<Map<String, dynamic>>> legacy,
-  ) async {
-    await appModel.database.setPref(
-      _readerPrefKey(ReaderSettings.fontCatalogKey),
-      jsonEncode(state.toCatalogJson()),
-    );
-    await appModel.database.setPref(
-      _readerPrefKey(ReaderSettings.fontTargetsKey),
-      jsonEncode(state.toTargetsJson()),
-    );
-    for (final MapEntry<String, List<Map<String, dynamic>>> entry
-        in legacy.entries) {
-      await appModel.database.setPref(
-        _readerPrefKey(entry.key),
-        jsonEncode(entry.value),
-      );
-    }
-    await _settings!.refreshFromDb();
-    await appModel.refreshAppFont();
-    // 平台门在**取单例之前**：GalHookTextOverlayController.instance 会把整套 galgame
-    // 单例图（含 GalIngameLookupController 与它挂上去、永不释放的监听器）建起来。
-    // 非 Windows 用户只是存了一次字体，不该因此拉起一整个 Windows 专属子系统。
-    if (GalHookTextOverlayController.isSupported) {
-      await GalHookTextOverlayController.instance.applyFontFromSettings();
-    }
-    ReaderFushiSource.onSettingsChangedLive?.call();
-  }
+  /// 文件层执行体（复制 / 解包 / 多源下载），与浏览器扩展字体端点共用同一份。
+  late final FontDownloadService _fontService = FontDownloadService(
+    fontsDir: customFontsDirectory(appModel.appDirectory),
+  );
 
-  Directory get _fontsDir {
-    final dir = Directory(p.join(appModel.appDirectory.path, 'custom_fonts'));
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    return dir;
+  /// 把服务落好的文件登记成目录行，挂到本次进入页面的作用域用途。
+  /// 文件导入 / 压缩包解包 / 推荐字体下载 / URL 下载四个入口都汇到这里。
+  int _appendImported(List<ImportedFontFile> files) {
+    final List<CustomFontCatalogRow> rows = <CustomFontCatalogRow>[
+      for (final ImportedFontFile file in files)
+        CustomFontCatalogRow(
+          id: null,
+          name: file.name,
+          path: file.path,
+          targetEnabled: _newFontTargets(),
+        ),
+    ];
+    if (rows.isEmpty) return 0;
+    if (mounted) {
+      setState(() => _fonts.addAll(rows));
+    } else {
+      _fonts.addAll(rows);
+    }
+    return rows.length;
   }
 
   Future<void> _importFontFile() async {
@@ -780,13 +816,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     int count = 0;
     for (final picked in result.files) {
       if (picked.path == null) continue;
-      final ext = p.extension(picked.name).toLowerCase();
-
-      if (_fontExtensions.contains(ext)) {
-        count += await _addSingleFont(File(picked.path!), picked.name);
-      } else {
-        count += await _extractFontsFromArchive(File(picked.path!));
-      }
+      count += await _importPickedFile(File(picked.path!), picked.name);
     }
 
     if (count > 0) {
@@ -798,166 +828,16 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     }
   }
 
-  Future<int> _addSingleFont(
-    File srcFile,
-    String fileName, {
-    String? overrideName,
-  }) async {
-    final name = overrideName ?? p.basenameWithoutExtension(fileName);
-    var ext = p.extension(fileName).toLowerCase();
-    if (!_fontExtensions.contains(ext)) {
-      ext = await _detectFontExtension(srcFile) ?? '.ttf';
-    }
-    final destPath = p.join(
-      _fontsDir.path,
-      '${name}_${DateTime.now().millisecondsSinceEpoch}$ext',
-    );
-    await srcFile.copy(destPath);
-    final entry = CustomFontCatalogRow(
-      id: null,
-      name: name,
-      path: destPath,
-      targetEnabled: _newFontTargets(),
-    );
-    if (mounted) {
-      setState(() => _fonts.add(entry));
-    } else {
-      _fonts.add(entry);
-    }
-    return 1;
-  }
-
-  Future<String?> _detectFontExtension(File file) async {
+  /// 用户选的单个文件（字体或压缩包）→ 服务落地 → 登记目录行。
+  /// 解不开 / 不是字体时 toast 一句，返回 0，不中断同批其它文件。
+  Future<int> _importPickedFile(File src, String fileName) async {
     try {
-      final raf = await file.open();
-      try {
-        final header = await raf.read(8);
-        if (header.length < 4) return null;
-        // wOFF
-        if (header[0] == 0x77 &&
-            header[1] == 0x4F &&
-            header[2] == 0x46 &&
-            header[3] == 0x46) {
-          return header.length >= 8 &&
-                  header[4] == 0x00 &&
-                  header[5] == 0x01 &&
-                  header[6] == 0x00 &&
-                  header[7] == 0x00
-              ? '.woff'
-              : '.woff2';
-        }
-        // TrueType / OpenType
-        if (header[0] == 0x00 &&
-            header[1] == 0x01 &&
-            header[2] == 0x00 &&
-            header[3] == 0x00) {
-          return '.ttf';
-        }
-        if (header[0] == 0x4F &&
-            header[1] == 0x54 &&
-            header[2] == 0x54 &&
-            header[3] == 0x4F) {
-          return '.otf';
-        }
-        // TTC
-        if (header[0] == 0x74 &&
-            header[1] == 0x74 &&
-            header[2] == 0x63 &&
-            header[3] == 0x66) {
-          return '.ttc';
-        }
-        return null;
-      } finally {
-        await raf.close();
-      }
+      return _appendImported(
+        await _fontService.importFile(src, fileName: fileName),
+      );
     } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.detectFontExt', e, stack);
-      return null;
-    }
-  }
-
-  Future<bool> _isValidFontFile(File file) async {
-    return await _detectFontExtension(file) != null;
-  }
-
-  Future<bool> _isZipFile(File file) async {
-    try {
-      final raf = await file.open();
-      try {
-        final header = await raf.read(4);
-        return header.length >= 4 &&
-            header[0] == 0x50 &&
-            header[1] == 0x4B &&
-            header[2] == 0x03 &&
-            header[3] == 0x04;
-      } finally {
-        await raf.close();
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.isZipArchive', e, stack);
-      return false;
-    }
-  }
-
-  Future<int> _extractFontsFromArchive(
-    File archiveFile, {
-    String? overrideName,
-  }) async {
-    try {
-      final bytes = await archiveFile.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final fontEntries = archive.files
-          .where((entry) => entry.isFile && _isFontFile(entry.name))
-          .toList();
-      if (overrideName != null && fontEntries.isNotEmpty) {
-        final entry = fontEntries.firstWhere((entry) {
-          final base = p.basenameWithoutExtension(entry.name).toLowerCase();
-          return base.contains('regular') || base.contains('[wght]');
-        }, orElse: () => fontEntries.first);
-        final ext = p.extension(entry.name);
-        final destPath = p.join(
-          _fontsDir.path,
-          '${safeWindowsFileName(overrideName)}_${DateTime.now().millisecondsSinceEpoch}$ext',
-        );
-        File(destPath).writeAsBytesSync(entry.content as List<int>);
-        final fontEntry = CustomFontCatalogRow(
-          id: null,
-          name: overrideName,
-          path: destPath,
-          targetEnabled: _newFontTargets(),
-        );
-        if (mounted) {
-          setState(() => _fonts.add(fontEntry));
-        } else {
-          _fonts.add(fontEntry);
-        }
-        return 1;
-      }
-
-      int count = 0;
-      final ts = DateTime.now().millisecondsSinceEpoch;
-      for (final entry in fontEntries) {
-        final baseName = p.basenameWithoutExtension(entry.name);
-        final ext = p.extension(entry.name);
-        final destPath = p.join(_fontsDir.path, '${baseName}_$ts$ext');
-        File(destPath).writeAsBytesSync(entry.content as List<int>);
-        final fontEntry = CustomFontCatalogRow(
-          id: null,
-          name: baseName,
-          path: destPath,
-          targetEnabled: _newFontTargets(),
-        );
-        if (mounted) {
-          setState(() => _fonts.add(fontEntry));
-        } else {
-          _fonts.add(fontEntry);
-        }
-        count++;
-      }
-      return count;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('CustomFontsPage.extractArchive', e, stack);
-      debugPrint('[fushi-fonts] archive extract failed: $e');
+      ErrorLogService.instance.log('CustomFontsPage.importFile', e, stack);
+      debugPrint('[fushi-fonts] import failed: $e');
       FushiToast.show(
         msg: t.custom_fonts_archive_error,
         severity: ToastSeverity.error,
@@ -966,140 +846,28 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     }
   }
 
-  /// 一次字体下载的结果。[importedCount] > 0 即成功；[error] 非空说明失败，
-  /// [cancelled] 是用户主动取消（既不算成功也不该报错）。
-  ///
-  /// 执行体不弹任何 toast / 对话框，就是为了让批量下载能把 N 条结果聚合成一句话。
+  /// 下载执行体：**不碰 Navigator、不弹 toast**，只跑「多源回退下载 → 校验 →
+  /// 解包/落库 → 登记目录行」。UI 由调用方负责。
   ///
   /// 批量下载真正要避开的是旧实现里「每条各弹一个 barrierDismissible:false +
   /// PopScope(canPop:false) 的独占模态框」——那种框在下载期间把整个 UI 锁死，
   /// 连着下 5 个字体就是连着锁 5 次，中途还没法看进度到哪了。
   ///
   /// 执行体的取消由调用方持有 [cancelToken]：批量时一次取消应当停掉整批。
-
-  /// 下载执行体：**不碰 Navigator、不弹 toast**，只跑「多源回退下载 → 校验 →
-  /// 解包/落库」。UI 由调用方负责。
-  Future<_FontDownloadResult> _runFontDownload(
-    String url, {
+  Future<FontDownloadResult> _runFontDownload(
+    List<String> urls, {
     required ValueNotifier<double?> progressNotifier,
     required CancelToken cancelToken,
-    List<String> mirrorUrls = const [],
     String? overrideName,
   }) async {
-    final allUrls = [url, ...mirrorUrls];
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final tempPath = p.join(_fontsDir.path, '_tmp_$ts');
-    try {
-      // BUG-1498：字体全在 cdn.jsdelivr.net / raw.githubusercontent.com /
-      // fonts.google.com 上，原先是裸 `Dio(...)`（`findProxy` 为 null，连 HTTPS_PROXY
-      // 都不读）。改经统一装配点，三级 URL 回退逻辑不变。
-      final dio = createAppDio(
-        options: BaseOptions(
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(minutes: 10),
-          followRedirects: true,
-          maxRedirects: 10,
-          headers: {
-            'User-Agent': fushiUserAgent('custom-fonts'),
-            'Accept': '*/*',
-          },
-        ),
-      );
-
-      String? downloadedUrl;
-      Object? lastError;
-      for (int i = 0; i < allUrls.length; i++) {
-        final currentUrl = allUrls[i];
-        debugPrint(
-          '[fushi-fonts] trying source ${i + 1}/${allUrls.length}: $currentUrl',
-        );
-        progressNotifier.value = null;
-        try {
-          await dio.download(
-            currentUrl,
-            tempPath,
-            cancelToken: cancelToken,
-            onReceiveProgress: (received, total) {
-              if (total > 0) {
-                progressNotifier.value = received / total;
-              }
-            },
-          );
-          final tempFile = File(tempPath);
-          if (await tempFile.exists() &&
-              !await _isZipFile(tempFile) &&
-              !await _isValidFontFile(tempFile)) {
-            debugPrint(
-              '[fushi-fonts] source ${i + 1} returned non-font data, skipping',
-            );
-            lastError = Exception(
-              'Downloaded file is not a valid font or archive',
-            );
-            await tempFile.delete();
-            continue;
-          }
-          downloadedUrl = currentUrl;
-          break;
-        } on DioError catch (e) {
-          if (e.type == DioErrorType.cancel) rethrow;
-          lastError = e;
-          debugPrint('[fushi-fonts] source ${i + 1} failed: ${e.type.name}');
-          final f = File(tempPath);
-          if (await f.exists()) await f.delete();
-        }
-      }
-
-      if (downloadedUrl == null) {
-        final Object err = lastError ?? Exception('All sources failed');
-        if (err is Exception) throw err;
-        if (err is Error) throw err;
-        throw Exception(err.toString());
-      }
-
-      final tempFile = File(tempPath);
-      final fileName = _fileNameFromUrl(downloadedUrl);
-      int count = 0;
-      final isZip = await _isZipFile(tempFile);
-      if (isZip) {
-        count = await _extractFontsFromArchive(
-          tempFile,
-          overrideName: overrideName,
-        );
-        if (count == 0) {
-          count = await _addSingleFont(
-            tempFile,
-            fileName,
-            overrideName: overrideName,
-          );
-        }
-      } else {
-        count = await _addSingleFont(
-          tempFile,
-          fileName,
-          overrideName: overrideName,
-        );
-      }
-      if (await tempFile.exists()) await tempFile.delete();
-      return _FontDownloadResult(importedCount: count);
-    } on DioError catch (e, stack) {
-      final f = File(tempPath);
-      if (await f.exists()) await f.delete();
-      if (e.type == DioErrorType.cancel) {
-        return const _FontDownloadResult(cancelled: true);
-      }
-      debugPrint(
-        '[fushi-fonts] DioError: type=${e.type} '
-        'status=${e.response?.statusCode} msg=${e.message}',
-      );
-      debugPrint('[fushi-fonts] stack: $stack');
-      return _FontDownloadResult(error: e.type.name);
-    } catch (e, stack) {
-      final f = File(tempPath);
-      if (await f.exists()) await f.delete();
-      debugPrint('[fushi-fonts] download failed: $e');
-      debugPrint('[fushi-fonts] stack: $stack');
-      return _FontDownloadResult(error: '$e');
-    }
+    final FontDownloadResult result = await _fontService.download(
+      urls,
+      overrideName: overrideName,
+      cancelToken: cancelToken,
+      onProgress: (double? progress) => progressNotifier.value = progress,
+    );
+    _appendImported(result.files);
+    return result;
   }
 
   /// 单条下载：独占进度框 + 逐条 toast，行为与重构前一致。
@@ -1129,11 +897,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       );
     }
     try {
-      final _FontDownloadResult result = await _runFontDownload(
-        url,
+      final FontDownloadResult result = await _runFontDownload(
+        <String>[url, ...mirrorUrls],
         progressNotifier: progressNotifier,
         cancelToken: cancelToken,
-        mirrorUrls: mirrorUrls,
         overrideName: overrideName,
       );
       // 取消时进度框已被 onCancel 关掉，别再 pop 一次——那会连着把字体页也弹掉。
@@ -1162,19 +929,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     } finally {
       progressNotifier.dispose();
     }
-  }
-
-  String _fileNameFromUrl(String url) {
-    final uri = Uri.parse(url);
-    // Google Fonts download API: ?family=Font+Name → derive filename from query
-    if (uri.queryParameters.containsKey('family')) {
-      final family = uri.queryParameters['family']!.replaceAll(' ', '_');
-      return '$family.zip';
-    }
-    if (uri.pathSegments.isNotEmpty) {
-      return Uri.decodeComponent(uri.pathSegments.last);
-    }
-    return 'font_${DateTime.now().millisecondsSinceEpoch}';
   }
 
   Future<void> _importFromUrl() async {
@@ -1230,11 +984,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             ? '${font.name}  (${i + 1}/${fonts.length})'
             : font.name;
         progressNotifier.value = null;
-        final _FontDownloadResult result = await _runFontDownload(
-          font.urls.first,
+        final FontDownloadResult result = await _runFontDownload(
+          font.urls,
           progressNotifier: progressNotifier,
           cancelToken: cancelToken,
-          mirrorUrls: font.urls.skip(1).toList(),
           overrideName: font.name,
         );
         if (result.cancelled) {
@@ -1608,21 +1361,6 @@ class _CustomFontUrlImportDialogState extends State<CustomFontUrlImportDialog> {
       ),
     );
   }
-}
-
-/// 一次字体下载的结果：导入了几个字面、是否被取消、失败原因。
-class _FontDownloadResult {
-  const _FontDownloadResult({
-    this.importedCount = 0,
-    this.error,
-    this.cancelled = false,
-  });
-
-  final int importedCount;
-  final String? error;
-  final bool cancelled;
-
-  bool get succeeded => error == null && !cancelled && importedCount > 0;
 }
 
 /// 推荐字体页：**默认就是多选**，不设「进入选择态」开关。

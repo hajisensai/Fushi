@@ -318,11 +318,23 @@
             <label class="setting-row" for="subtitleStyleFontFamily">
               <span class="setting-copy">
                 <strong data-i18n="opt_subtitleStyleFontFamily_title">字体</strong>
-                <small data-i18n="opt_subtitleStyleFontFamily_desc">填 CSS 字体名（可逗号分隔多个备选），留空用默认。只能用本机已安装的字体。</small>
+                <small data-i18n="opt_subtitleStyleFontFamily_desc">本机字体栈，或 Fushi 字体库里的字体（在下方下载；网页上用库字体需要 Fushi 正在运行）。</small>
               </span>
-              <input class="text-input" id="subtitleStyleFontFamily" type="text" list="subtitleFontSuggestions" autocomplete="off" spellcheck="false" placeholder="默认" data-i18n-placeholder="opt_subtitleStyleFontFamily_placeholder">
-              <datalist id="subtitleFontSuggestions"></datalist>
+              <select class="select-input" id="subtitleStyleFontFamily">
+                <option value="" data-i18n="opt_subtitleStyleFontFamily_option_default">默认（Hiragino Sans / Yu Gothic UI）</option>
+                <optgroup id="subtitleFontSystemGroup" label="System"></optgroup>
+                <optgroup id="subtitleFontFushiGroup" label="Fushi" hidden></optgroup>
+                <optgroup id="subtitleFontCustomGroup" label="Custom" hidden></optgroup>
+              </select>
             </label>
+            <div class="setting-row setting-row-static font-library" id="subtitleFontLibrary">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleFontLibrary_title">字体库</strong>
+                <small data-i18n="opt_subtitleFontLibrary_desc">推荐字体由 Fushi 下载进它的自定义字体目录（与 app 内视频字幕共用），下载完自动选中。</small>
+                <small class="font-library-note" id="subtitleFontLibraryNote" hidden data-i18n="opt_subtitleFontLibrary_offline">需要 Fushi 正在运行才能列出与下载字体。</small>
+                <ul class="font-library-list" id="subtitleFontLibraryList"></ul>
+              </span>
+            </div>
             <label class="setting-row" for="subtitleStyleFontScale">
               <span class="setting-copy">
                 <strong data-i18n="opt_subtitleStyleFontScale_title">大小</strong>
