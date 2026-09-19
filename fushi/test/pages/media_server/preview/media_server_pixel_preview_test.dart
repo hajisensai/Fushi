@@ -137,11 +137,17 @@ class _PreviewBrowser extends FakeMediaServerBrowser {
   String? libraryCoverUrl(
     MediaServerLibrary library, {
     int maxWidth = kMediaServerCoverMaxWidth,
-  }) => 'cover|${library.name}|library';
+  }) => library.hasCover ? 'cover|${library.name}|library' : null;
+
+  /// 库封面端点 404 的库（uhdnow 真实形态，BUG-2602）。
+  static const Set<String> _libraryCover404 = <String>{'国产动漫'};
 
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) async {
     final List<String> parts = coverUrl.split('|');
+    if (parts[2] == 'library' && _libraryCover404.contains(parts[1])) {
+      throw StateError('404 $coverUrl');
+    }
     if (parts[2] == MediaServerImageKind.logo.name) {
       return _covers[coverUrl] ??= await _renderLogo(parts[1]);
     }
@@ -338,7 +344,26 @@ _PreviewBrowser _emby() {
       kind: MediaServerLibraryKind.mixed,
       hasCover: true,
     ),
+    // BUG-2602 的两种回退形态：uhdnow 那种「声称有图、端点 404」与 Jellyfin
+    // 那种「库本来就没配封面」，都应画成条目海报拼贴。
+    MediaServerLibrary(
+      id: 'lib-cn-anime',
+      name: '国产动漫',
+      kind: MediaServerLibraryKind.tvShows,
+      hasCover: true,
+    ),
+    MediaServerLibrary(
+      id: 'lib-new',
+      name: '追新',
+      kind: MediaServerLibraryKind.tvShows,
+    ),
   ]);
+  b.children['lib-cn-anime'] = <MediaServerItem>[
+    for (int i = 5; i < 9; i++) _series('cn-$i', _seriesNames[i], year: 2021),
+  ];
+  b.children['lib-new'] = <MediaServerItem>[
+    for (int i = 10; i < 12; i++) _series('nw-$i', _seriesNames[i], year: 2026),
+  ];
   b.children['lib-anime-movies'] = <MediaServerItem>[
     for (int i = 0; i < _movieNames.length; i++)
       _movie('am-$i', _movieNames[i], year: 1985 + i, rating: 6 + (i % 4)),
