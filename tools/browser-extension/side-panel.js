@@ -327,6 +327,10 @@
       scheme = window.fushiTheme.resolve(scheme);
     }
     if (scheme === 'dark' || scheme === 'light') lookupContainer.setAttribute('data-theme', scheme);
+    // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
+      window.fushiTheme.applyPopupPalette(lookupContainer, scheme);
+    }
     var columns = theme['--dict-columns'];
     if (typeof columns === 'string' && columns) {
       document.documentElement.style.setProperty('--dict-columns', columns);

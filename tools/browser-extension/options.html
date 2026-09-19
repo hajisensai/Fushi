@@ -20,10 +20,70 @@
             <span class="section-note" data-i18n="opt_appearance_heading_section_note">修改后立即生效</span>
           </div>
           <div class="setting-list">
+            <div class="setting-row setting-row-static setting-row-block">
+              <span class="setting-copy">
+                <strong data-i18n="opt_palette_title">配色主题</strong>
+                <small data-i18n="opt_palette_desc">与 Fushi 本体同一套主题：跟随 Fushi 当前配色、内置预设，或自定义（一个主色派生浅色与深色两套）。设置页、字幕侧边栏、工具栏菜单、字幕抽屉、视频上的字幕底板和查词框统一套用。</small>
+              </span>
+              <div class="palette-grid" id="paletteGrid" role="radiogroup" aria-labelledby="palette-label"></div>
+              <span id="palette-label" hidden data-i18n="opt_palette_title">配色主题</span>
+            </div>
+            <div class="custom-theme-editor" id="customThemeEditor" hidden>
+              <div class="custom-theme-fields">
+                <label class="field">
+                  <span data-i18n="theme_custom_name">名称</span>
+                  <input id="customThemeName" type="text" maxlength="40" autocomplete="off">
+                </label>
+                <label class="field field-color">
+                  <span data-i18n="theme_custom_accent">主色</span>
+                  <input id="customThemeSeed" type="color">
+                </label>
+                <label class="field field-color">
+                  <span data-i18n="theme_custom_surface">背景色</span>
+                  <span class="color-with-auto">
+                    <input id="customThemeSurface" type="color">
+                    <label class="inline-check"><input id="customThemeSurfaceAuto" type="checkbox"><span data-i18n="theme_custom_follow">随主色</span></label>
+                  </span>
+                </label>
+                <label class="field field-color">
+                  <span data-i18n="theme_custom_text">文字色</span>
+                  <span class="color-with-auto">
+                    <input id="customThemeText" type="color">
+                    <label class="inline-check"><input id="customThemeTextAuto" type="checkbox"><span data-i18n="theme_custom_follow">随主色</span></label>
+                  </span>
+                </label>
+                <label class="field field-check">
+                  <span class="inline-check"><input id="customThemeNeutral" type="checkbox"><span data-i18n="theme_custom_neutral">中性表面</span></span>
+                  <small data-i18n="theme_custom_neutral_desc">背景与卡片不带主色色调（灰阶），主色只用于按钮、开关与强调。</small>
+                </label>
+              </div>
+              <div class="theme-preview-pair" id="customThemePreview">
+                <div class="theme-preview" data-scheme="light">
+                  <span class="theme-preview-label" data-i18n="theme_preview_light">浅色</span>
+                  <div class="theme-preview-card">
+                    <strong data-i18n="theme_preview_sample_title">字幕侧边栏</strong>
+                    <small data-i18n="theme_preview_sample_body">示例文字 · 当前句高亮</small>
+                    <span class="theme-preview-button" data-i18n="theme_preview_button">按钮</span>
+                  </div>
+                </div>
+                <div class="theme-preview" data-scheme="dark">
+                  <span class="theme-preview-label" data-i18n="theme_preview_dark">深色</span>
+                  <div class="theme-preview-card">
+                    <strong data-i18n="theme_preview_sample_title">字幕侧边栏</strong>
+                    <small data-i18n="theme_preview_sample_body">示例文字 · 当前句高亮</small>
+                    <span class="theme-preview-button" data-i18n="theme_preview_button">按钮</span>
+                  </div>
+                </div>
+              </div>
+              <div class="button-row">
+                <button class="text-button" id="customThemeDuplicate" type="button" data-i18n="theme_custom_duplicate">复制一份</button>
+                <button class="text-button danger-button" id="customThemeDelete" type="button" data-i18n="theme_custom_delete">删除</button>
+              </div>
+            </div>
             <label class="setting-row" for="extensionTheme">
               <span class="setting-copy">
-                <strong data-i18n="opt_extensionTheme_title">主题</strong>
-                <small data-i18n="opt_extensionTheme_desc">设置页、字幕侧边栏、工具栏菜单、视频上的字幕和查词框统一明暗。「跟随系统」时查词框跟随 Fushi 当前主题；固定浅色或深色时查词框也按同一明暗取 Fushi 的配色。</small>
+                <strong data-i18n="opt_extensionBrightness_title">明暗</strong>
+                <small data-i18n="opt_extensionBrightness_desc">「跟随系统」时查词框跟随 Fushi 当前明暗；固定浅色或深色时查词框也按同一明暗取配色。选择自带明暗的预设主题会一并切到该明暗。</small>
               </span>
               <select class="select-input" id="extensionTheme">
                 <option value="auto" data-i18n="opt_extensionTheme_option_auto">跟随系统</option>
@@ -173,13 +233,6 @@
               </span>
               <button class="text-button" id="resetSubtitleOverlayPosition" type="button" data-i18n="opt_resetSubtitleOverlayPosition_button">重置位置</button>
             </div>
-            <label class="setting-row" for="subtitleOverlayBackground">
-              <span class="setting-copy">
-                <strong data-i18n="opt_subtitleOverlayBackground_title">字幕底色</strong>
-                <small data-i18n="opt_subtitleOverlayBackground_desc">视频上的字幕带半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面。</small>
-              </span>
-              <span class="switch"><input id="subtitleOverlayBackground" type="checkbox"><span aria-hidden="true"></span></span>
-            </label>
             <label class="setting-row" for="subtitleDragDropEnabled">
               <span class="setting-copy">
                 <strong data-i18n="opt_subtitleDragDropEnabled_title">允许拖放字幕文件</strong>
@@ -245,6 +298,138 @@
               </span>
               <span class="switch"><input id="subtitleOverlayAutoLookup" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="subtitle-style-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker" data-i18n="opt_subtitle_style_heading_section_kicker">字幕外观</p>
+              <h2 id="subtitle-style-heading" data-i18n="opt_subtitle_style_heading_heading">字体、排版与底板</h2>
+            </div>
+            <span class="section-note" data-i18n="opt_subtitle_style_heading_section_note">修改后立即生效</span>
+          </div>
+
+          <div class="subtitle-preview" id="subtitleStylePreview" aria-hidden="true">
+            <div class="subtitle-preview-cue" id="subtitleStylePreviewCue"><span data-i18n="opt_subtitleStylePreview_text">字幕はこんなふうに表示されます。</span></div>
+          </div>
+
+          <div class="setting-list">
+            <label class="setting-row" for="subtitleStyleFontFamily">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleFontFamily_title">字体</strong>
+                <small data-i18n="opt_subtitleStyleFontFamily_desc">填 CSS 字体名（可逗号分隔多个备选），留空用默认。只能用本机已安装的字体。</small>
+              </span>
+              <input class="text-input" id="subtitleStyleFontFamily" type="text" list="subtitleFontSuggestions" autocomplete="off" spellcheck="false" placeholder="默认" data-i18n-placeholder="opt_subtitleStyleFontFamily_placeholder">
+              <datalist id="subtitleFontSuggestions"></datalist>
+            </label>
+            <label class="setting-row" for="subtitleStyleFontScale">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleFontScale_title">大小</strong>
+                <small data-i18n="opt_subtitleStyleFontScale_desc">按视频画面大小自适应的基准字号的百分比。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleFontScale" type="range" min="50" max="300" step="5"><output for="subtitleStyleFontScale" data-unit="%"></output></span>
+            </label>
+            <label class="setting-row" for="subtitleStyleFontWeight">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleFontWeight_title">字重</strong>
+                <small data-i18n="opt_subtitleStyleFontWeight_desc">字体没有对应字重时浏览器会就近取用。</small>
+              </span>
+              <select class="select-input" id="subtitleStyleFontWeight">
+                <option value="300" data-i18n="opt_fontWeight_300">细体 (300)</option>
+                <option value="400" data-i18n="opt_fontWeight_400">常规 (400)</option>
+                <option value="500" data-i18n="opt_fontWeight_500">中等 (500)</option>
+                <option value="600" data-i18n="opt_fontWeight_600">半粗 (600)</option>
+                <option value="700" data-i18n="opt_fontWeight_700">粗体 (700)</option>
+                <option value="800" data-i18n="opt_fontWeight_800">特粗 (800)</option>
+                <option value="900" data-i18n="opt_fontWeight_900">黑体 (900)</option>
+              </select>
+            </label>
+            <label class="setting-row" for="subtitleStyleLetterSpacing">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleLetterSpacing_title">字间距</strong>
+                <small data-i18n="opt_subtitleStyleLetterSpacing_desc">以字号为单位（em）。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleLetterSpacing" type="range" min="-5" max="30" step="1"><output for="subtitleStyleLetterSpacing" data-unit="em"></output></span>
+            </label>
+            <label class="setting-row" for="subtitleStyleLineHeight">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleLineHeight_title">行高</strong>
+                <small data-i18n="opt_subtitleStyleLineHeight_desc">字号的百分比；带振假名的句子至少 200%。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleLineHeight" type="range" min="100" max="250" step="5"><output for="subtitleStyleLineHeight" data-unit="%"></output></span>
+            </label>
+            <label class="setting-row" for="subtitleStyleTextAlign">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleTextAlign_title">对齐</strong>
+                <small data-i18n="opt_subtitleStyleTextAlign_desc">多行字幕在底板内的对齐方式；整块位置仍按拖动记住的位置。</small>
+              </span>
+              <select class="select-input" id="subtitleStyleTextAlign">
+                <option value="left" data-i18n="opt_align_left">左对齐</option>
+                <option value="center" data-i18n="opt_align_center">居中</option>
+                <option value="right" data-i18n="opt_align_right">右对齐</option>
+              </select>
+            </label>
+            <div class="setting-row setting-row-static">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleTextColor_title">文字颜色</strong>
+                <small data-i18n="opt_subtitleStyleTextColor_desc">默认跟随主题的浮层文字色。</small>
+              </span>
+              <span class="color-wrap"><input class="color-input" id="subtitleStyleTextColor" type="color" aria-labelledby="subtitleStyleTextColor-label"><span id="subtitleStyleTextColor-label" hidden data-i18n="opt_subtitleStyleTextColor_title">文字颜色</span><button class="text-button" id="subtitleStyleTextColorReset" type="button" data-i18n="opt_subtitleStyle_follow_theme">跟随主题</button></span>
+            </div>
+            <label class="setting-row" for="subtitleStyleShadow">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleShadow_title">描边</strong>
+                <small data-i18n="opt_subtitleStyleShadow_desc">文字外的深色描边，关掉底板时靠它在浅色画面上保持可读。</small>
+              </span>
+              <select class="select-input" id="subtitleStyleShadow">
+                <option value="none" data-i18n="opt_shadow_none">无</option>
+                <option value="soft" data-i18n="opt_shadow_soft">柔和</option>
+                <option value="strong" data-i18n="opt_shadow_strong">加粗</option>
+              </select>
+            </label>
+            <label class="setting-row" for="subtitleOverlayBackground">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleOverlayBackground_title">字幕底色</strong>
+                <small data-i18n="opt_subtitleOverlayBackground_desc">视频上的字幕带半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面。</small>
+              </span>
+              <span class="switch"><input id="subtitleOverlayBackground" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <div class="setting-row setting-row-static">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleBackgroundColor_title">底板颜色</strong>
+                <small data-i18n="opt_subtitleStyleBackgroundColor_desc">默认跟随主题的浮层底色。</small>
+              </span>
+              <span class="color-wrap"><input class="color-input" id="subtitleStyleBackgroundColor" type="color" aria-labelledby="subtitleStyleBackgroundColor-label"><span id="subtitleStyleBackgroundColor-label" hidden data-i18n="opt_subtitleStyleBackgroundColor_title">底板颜色</span><button class="text-button" id="subtitleStyleBackgroundColorReset" type="button" data-i18n="opt_subtitleStyle_follow_theme">跟随主题</button></span>
+            </div>
+            <label class="setting-row" for="subtitleStyleBackgroundOpacity">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleBackgroundOpacity_title">底板不透明度</strong>
+                <small data-i18n="opt_subtitleStyleBackgroundOpacity_desc">0% 为全透明。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleBackgroundOpacity" type="range" min="0" max="100" step="5"><output for="subtitleStyleBackgroundOpacity" data-unit="%"></output></span>
+            </label>
+            <label class="setting-row" for="subtitleStyleBorderRadius">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleBorderRadius_title">底板圆角</strong>
+                <small data-i18n="opt_subtitleStyleBorderRadius_desc">像素。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleBorderRadius" type="range" min="0" max="32" step="1"><output for="subtitleStyleBorderRadius" data-unit="px"></output></span>
+            </label>
+            <label class="setting-row" for="subtitleStylePadding">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStylePadding_title">底板内边距</strong>
+                <small data-i18n="opt_subtitleStylePadding_desc">默认内边距的百分比。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStylePadding" type="range" min="0" max="300" step="10"><output for="subtitleStylePadding" data-unit="%"></output></span>
+            </label>
+            <div class="setting-row setting-row-static">
+              <span class="setting-copy">
+                <strong data-i18n="opt_resetSubtitleStyle_title">恢复默认外观</strong>
+                <small data-i18n="opt_resetSubtitleStyle_desc">清掉本节全部自定义（不含字幕位置与底板开关）。</small>
+              </span>
+              <button class="text-button" id="resetSubtitleStyle" type="button" data-i18n="opt_resetSubtitleStyle_button">恢复默认</button>
+            </div>
           </div>
         </section>
 
@@ -454,7 +639,9 @@
   <div class="save-toast" id="status" role="status" aria-live="polite"></div>
   <script src="locales/en.js"></script>
   <script src="i18n.js"></script>
+  <script src="theme-palette.js"></script>
   <script src="theme.js"></script>
+  <script src="subtitle-style.js"></script>
   <script src="fushi-defaults.js"></script>
   <script src="popup-size.js"></script>
   <script src="connection-diagnostics.js"></script>

@@ -130,6 +130,19 @@
    鼠标按住左侧拖柄（触屏按住整块）可挪位（subtitle-panel.js，位置按视频分数坐标记住）；
    鼠标在文字上拖是原生选区，Ctrl+C 可复制。 */
 #fushi-subtitle-overlay {
+    /* 外观全部经 --fushi-sub-* 变量：这里是默认值，用户在扩展设置「字幕外观」里改的项由
+       subtitle-panel.js（subtitle-style.js toCssVars）逐个 setProperty 到本节点，默认项不写。 */
+    --fushi-sub-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    --fushi-sub-scale: 1;
+    --fushi-sub-weight: 600;
+    --fushi-sub-spacing: 0.01em;
+    --fushi-sub-line-height: 1.45;
+    --fushi-sub-align: center;
+    --fushi-sub-color: var(--fushi-on-scrim);
+    --fushi-sub-bg: var(--fushi-scrim);
+    --fushi-sub-radius: 8px;
+    --fushi-sub-padding: 6px 12px 7px;
+    --fushi-sub-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
     position: fixed;
     z-index: 2147483637;
     /* top 给的是底边锚点（JS 默认写 88% 处，用户拖过则是记住的分数）：-100% 让文字向上长，
@@ -137,15 +150,24 @@
     transform: translate(-50%, -100%);
     /* 触屏拖字幕时不让浏览器把手势抢去滚页面/缩放：覆盖层压在视频上，本就不该从这里滚页。 */
     touch-action: none;
-    padding: 6px 12px 7px;
-    border-radius: 8px;
-    color: var(--fushi-on-scrim);
-    background: var(--fushi-scrim);
+    padding: var(--fushi-sub-padding);
+    border-radius: var(--fushi-sub-radius);
+    color: var(--fushi-sub-color);
+    background: var(--fushi-sub-bg);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
-    font: 600 clamp(18px, 2.2vw, 32px)/1.45 "Hiragino Sans", "Yu Gothic UI", sans-serif;
-    letter-spacing: 0.01em;
-    text-align: center;
-    text-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+    font-family: var(--fushi-sub-family);
+    /* 基准随视口响应（小播放器不撑、全屏不缩成蚂蚁），用户的「大小」是倍率而非绝对像素。 */
+    font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale));
+    font-weight: var(--fushi-sub-weight);
+    /* 原本是 `font:` 简写，会把这三项一起重置；拆成长手后要显式归 normal，
+       否则覆盖层挂在播放器容器下（非 shadow root），会继承宿主页的斜体/小型大写。 */
+    font-style: normal;
+    font-variant: normal;
+    font-stretch: normal;
+    line-height: var(--fushi-sub-line-height);
+    letter-spacing: var(--fushi-sub-spacing);
+    text-align: var(--fushi-sub-align);
+    text-shadow: var(--fushi-sub-shadow);
     white-space: pre-wrap;
     user-select: text;
     cursor: text;
@@ -216,9 +238,9 @@
     ruby-align: center;
 }
 
-/* 同字幕列表：有振假名的那句要给上方读音留出行框。 */
+/* 同字幕列表：有振假名的那句要给上方读音留出行框；用户把行高调得更大时跟用户的。 */
 #fushi-subtitle-overlay:has(ruby) {
-    line-height: 2;
+    line-height: max(2, var(--fushi-sub-line-height));
 }
 
 /* 文字层：只是个行内容器，字号/对齐/描边继承自覆盖层根。 */
