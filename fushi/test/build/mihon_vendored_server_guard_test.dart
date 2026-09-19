@@ -46,6 +46,11 @@ const List<String> _overlayOverridesUpstream = <String>[
   'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/Video.kt',
   'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/online/AnimeHttpSource.kt',
   'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/online/ParsedAnimeHttpSource.kt',
+  // BUG-2601：extensions-lib 16 的 suspend `OkHttpClient.get/post` 与 Duration 版
+  // `rateLimit/rateLimitHost`——扩展只带引用不带定义，缺一个就是 NoSuchMethodError。
+  'server/src/main/kotlin/eu/kanade/tachiyomi/network/Requests.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/RateLimitInterceptor.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/network/interceptor/SpecificHostRateLimitInterceptor.kt',
 ];
 
 /// overlay 里 Hibiki 新增、上游没有的文件。

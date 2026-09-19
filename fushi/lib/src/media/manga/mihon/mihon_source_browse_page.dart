@@ -479,14 +479,19 @@ class MihonMangaDetailPage extends StatelessWidget {
     required this.sourceContext,
     required this.manga,
     super.key,
+    this.openExternal,
   });
 
   final MihonManager manager;
   final MihonSourceContext sourceContext;
   final MihonManga manga;
 
+  /// 测试缝：透传给作品页的「在网站打开」。
+  final Future<void> Function(Uri url)? openExternal;
+
   @override
   Widget build(BuildContext context) => MangaSeriesPage(
+    openExternal: openExternal,
     target: SourceMangaSeriesTarget(
       // 上下文已经解析好（网格就是用它拉出来的）：直接交给适配器，别让作品页
       // 再从 manager 现解析一次——预览态（试用未安装的扩展）根本没有库行，

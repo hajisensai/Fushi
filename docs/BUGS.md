@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2405 条。点号进各自文件。
+> 共 2406 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2601](bugs/BUG-2601-animekai-suspend-get.md) | ✅ | ✅ | 视频源扩展调 suspend OkHttpClient.get 在两端宿主都缺定义，AnimeKai 剧集列表 BRIDGE_HTTP_500 |
 | [BUG-2600](bugs/BUG-2600-video-ext-lib16-abi.md) | ✅ | ✅ | 视频源扩展在 lib 14 宿主 ABI 上进不去剧集或播不了 |
 | [BUG-2598](bugs/BUG-2598-lyrics-mode-settings-stepper-unverified.md) | 🚧 | ✅ | 歌词模式「阅读设置调节按钮不生效」——Windows 真机未复现 |
 | [BUG-2597](bugs/BUG-2597-lyrics-mode-study-chars-not-credited.md) | ✅ | ✅ | 歌词模式听书字数不入账、自动恢复歌词时可能零时长 |

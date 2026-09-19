@@ -9,10 +9,12 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 视频源扩展的作品页：详情 + 剧集列表 → 选线路 → 内置播放器。
 ///
@@ -28,6 +30,7 @@ class AnimeSourceDetailPage extends ConsumerStatefulWidget {
     super.key,
     this.repositoryOverride,
     this.openPlayer,
+    this.openExternal,
   });
 
   final MihonManager manager;
@@ -45,6 +48,9 @@ class AnimeSourceDetailPage extends ConsumerStatefulWidget {
     int index,
   )?
   openPlayer;
+
+  /// 测试注入：默认用系统浏览器打开（[launchUrl]）。
+  final Future<void> Function(Uri url)? openExternal;
 
   @override
   ConsumerState<AnimeSourceDetailPage> createState() =>
@@ -198,12 +204,46 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     );
   }
 
+  /// 「在网站打开」：源站网页地址（扩展的 `getAnimeUrl`，兜底 baseUrl + url）交给
+  /// 系统浏览器。打不开浏览器不算本页错误，只提示。
+  Future<void> _openWebsite() async {
+    final Uri? url = await resolveMihonAnimeWebUrl(
+      runtime: widget.manager.runtime,
+      context: widget.sourceContext,
+      anime: _anime,
+    );
+    if (!mounted) return;
+    if (url == null) {
+      FushiToast.show(
+        msg: t.mihon_source_website_unavailable,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    try {
+      await (widget.openExternal ?? _launchExternal)(url);
+    } on Object catch (error) {
+      if (!mounted) return;
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+    }
+  }
+
+  static Future<void> _launchExternal(Uri url) async {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: _anime.title,
       subtitle: widget.sourceContext.source.name,
       actions: <Widget>[
+        IconButton(
+          key: const ValueKey<String>('anime_source_open_website'),
+          tooltip: t.mihon_source_website_open,
+          onPressed: () => unawaited(_openWebsite()),
+          icon: const Icon(Icons.open_in_new),
+        ),
         IconButton(
           tooltip: t.refresh,
           onPressed: _loading ? null : () => unawaited(_load()),

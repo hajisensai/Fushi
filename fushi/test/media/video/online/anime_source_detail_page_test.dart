@@ -242,11 +242,49 @@ void main() {
     expect(opened, isFalse);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'open on website asks the extension for the page url and hands it to the browser',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final List<Uri> launched = <Uri>[];
+      runtime.animeUrl = 'https://site.example/watch/fixture-show';
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: AnimeSourceDetailPage(
+              manager: manager,
+              sourceContext: await context(),
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              openExternal: (Uri url) async => launched.add(url),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anime_source_open_website')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(runtime.calls, contains('getAnimeUrl'));
+      // 详情合并后身份仍是入参的 url，问扩展时带的也是它。
+      expect(runtime.animeUrlRequests, <String>['/anime/1']);
+      expect(launched, <Uri>[
+        Uri.parse('https://site.example/watch/fixture-show'),
+      ]);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _AnimeRuntime extends MihonBridgeRuntime {
   final List<String> calls = <String>[];
   Object? videos = <Object?>[];
+  String? animeUrl;
+  final List<String> animeUrlRequests = <String>[];
 
   @override
   Future<Object?> invokeBridge(
@@ -289,6 +327,11 @@ class _AnimeRuntime extends MihonBridgeRuntime {
         ];
       case 'getVideoList':
         return videos;
+      case 'getAnimeUrl':
+        animeUrlRequests.add(
+          (arguments['animeData']! as Map<String, Object?>)['url']! as String,
+        );
+        return animeUrl;
       case 'preferencesAnime':
         return <Object?>[];
     }

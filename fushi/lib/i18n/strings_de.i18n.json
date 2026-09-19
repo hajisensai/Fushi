@@ -5090,5 +5090,7 @@
   "mihon_source_move_up": "Move up",
   "mihon_source_move_down": "Move down",
   "mihon_source_pin": "Pin to top",
-  "mihon_source_unpin": "Unpin"
+  "mihon_source_unpin": "Unpin",
+  "mihon_source_website_open": "Open on website",
+  "mihon_source_website_unavailable": "This source has no web page for this title"
 }

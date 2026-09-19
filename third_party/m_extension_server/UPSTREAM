@@ -206,6 +206,23 @@ overlay/.../network/interceptor/CloudflareInterceptor.kt:
   reports errorKind "cloudflare" + challengeUrl + userAgent so the host can open
   a browser with the same identity -- cf_clearance is bound to both.
 
+overlay/.../network/Requests.kt, .../network/interceptor/RateLimitInterceptor.kt,
+.../network/interceptor/SpecificHostRateLimitInterceptor.kt (BUG-2601):
+  The extensions-lib 16 network surface: `suspend fun OkHttpClient.get(String |
+  HttpUrl, headers, cache)` / `OkHttpClient.post(...)` (extensions link to the
+  synthetic `RequestsKt.get$default(OkHttpClient, String, Headers,
+  CacheControl, Continuation, int, Object)`; measured: AnimeKai / yuzono
+  kotokai v16.8 episode list died with NoSuchMethodError wrapped as
+  BRIDGE_HTTP_500) and the `kotlin.time.Duration` overloads of `rateLimit` /
+  `rateLimitHost` (value-class mangled names `rateLimit-SxA4cEA` /
+  `rateLimitHost-Wn2Vu4Y`). The legacy TimeUnit overloads stay for lib 14
+  sources. Same declarations as kodjodevf/M-Extension-Server v1.0.7 (the
+  mirror that Mangayomi ships); the Android host carries the same three files
+  under fushi/android/app/src/main/kotlin/eu/kanade/tachiyomi/network/ and
+  fushi/test/media/manga/mihon_host_network_abi_guard_test.dart pins both
+  trees to one shape. Reflection tests pin the JVM descriptors
+  (overlay/.../test/kotlin/eu/kanade/tachiyomi/network/**).
+
 overlay/.../AppModule.kt:
   Registers ProtoBuf alongside Json in the Injekt container. Extensions using
   protobuf APIs resolve it from a static initialiser, so the missing
@@ -258,6 +275,12 @@ overlay/ (full-file replacements):
   .../network/interceptor/CloudflareInterceptor.kt
                                                 detects Cloudflare challenges
                                                 and reports URL + User-Agent
+  .../network/Requests.kt                       suspend OkHttpClient.get/post
+                                                (extensions-lib 16)
+  .../network/interceptor/RateLimitInterceptor.kt
+  .../network/interceptor/SpecificHostRateLimitInterceptor.kt
+                                                Duration overloads next to the
+                                                TimeUnit ones
 
 Security boundary (must not be weakened)
 ----------------------------------------

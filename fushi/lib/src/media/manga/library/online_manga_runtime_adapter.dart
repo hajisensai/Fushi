@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/manga/mihon/quirks/comico_magazine_comic_quirk.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -224,6 +225,15 @@ abstract interface class OnlineMangaLoginCapable {
   );
 }
 
+/// 有「作品在源站的网页」的适配器：作品页 AppBar 的「在网站打开」入口用
+/// `is OnlineMangaWebUrlCapable` 判有没有（本地卷 / 互联对端没有）。
+abstract interface class OnlineMangaWebUrlCapable {
+  /// 该条目在源站的网页地址；源没登记、扩展没给出地址且 baseUrl 也拼不出时
+  /// 返回 null（按钮照常显示，点了给「该源没有网页」提示，不做静态判定——
+  /// 地址要真问扩展才知道）。
+  Future<Uri?> webUrl(OnlineMangaLibraryEntry entry);
+}
+
 /// 同一扩展下另一种语言的已启用源（BUG-2510）。
 class OnlineMangaSiblingSource {
   const OnlineMangaSiblingSource({
@@ -274,6 +284,7 @@ class MihonLibraryAdapter
     implements
         OnlineMangaRuntimeAdapter,
         OnlineMangaLoginCapable,
+        OnlineMangaWebUrlCapable,
         OnlineMangaLanguageScoped {
   const MihonLibraryAdapter(
     this.manager, {
@@ -340,6 +351,21 @@ class MihonLibraryAdapter
       return null;
     }
     return (runtime: runtime, sourceName: name, baseUrl: baseUrl);
+  }
+
+  @override
+  Future<Uri?> webUrl(OnlineMangaLibraryEntry entry) async {
+    final MihonSourceContext context;
+    try {
+      context = await _context(entry);
+    } on OnlineMangaUnavailable {
+      return null;
+    }
+    return resolveMihonMangaWebUrl(
+      runtime: manager.runtime,
+      context: context,
+      manga: MihonManga.fromJson(entry.series.raw),
+    );
   }
 
   @override
