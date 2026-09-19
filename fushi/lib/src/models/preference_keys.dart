@@ -329,6 +329,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
+  // string：SubDL（subdl.com）API key（用户在站点 panel 免费生成）。搜索必须带 key。
+  'video_subtitle_subdl_api_key',
+  // bool（默认 true）：SubDL 是否参与字幕搜索。与 api key 组成 `enabled && key`
+  // 双门控（形状对齐 Jimaku）；key 为空即不装配，所以默认开不会产生任何请求。
+  'video_subtitle_subdl_enabled',
   'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
@@ -390,5 +395,6 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'jimaku_api_key',
   'network_proxy_password',
   'network_proxy_username',
+  'video_subtitle_subdl_api_key',
   'yomitan_api_key',
 };

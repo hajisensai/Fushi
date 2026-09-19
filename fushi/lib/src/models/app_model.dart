@@ -4190,6 +4190,25 @@ class AppModel with ChangeNotifier {
     await reloadVideoDownloadPipelineRuntime();
   }
 
+  /// SubDL API key，见 [PreferencesRepository.videoSubtitleSubdlApiKey]。
+  String get videoSubtitleSubdlApiKey =>
+      _prefsRepo?.videoSubtitleSubdlApiKey ?? '';
+
+  /// 与 [setJimakuApiKey] 同范式：落 pref 后重建下载流水线运行时。
+  Future<void> setVideoSubtitleSubdlApiKey(String key) async {
+    await prefsRepo.setVideoSubtitleSubdlApiKey(key);
+    await reloadVideoDownloadPipelineRuntime();
+  }
+
+  /// SubDL 开关，见 [PreferencesRepository.videoSubtitleSubdlEnabled]。
+  bool get videoSubtitleSubdlEnabled =>
+      _prefsRepo?.videoSubtitleSubdlEnabled ?? true;
+
+  Future<void> setVideoSubtitleSubdlEnabled(bool enabled) async {
+    await prefsRepo.setVideoSubtitleSubdlEnabled(enabled);
+    await reloadVideoDownloadPipelineRuntime();
+  }
+
   /// 默认字幕语言归一成语言选择器用的 `String?`（`''`/空白 → null = 不限）。
   /// 三个 Jimaku 界面（字幕对话框 / 番剧下载 / 批量匹配）共用同一兜底。
   ///

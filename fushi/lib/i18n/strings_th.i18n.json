@@ -5123,5 +5123,9 @@
   "popup_instant_scroll_wheel_step": "Instant scroll wheel step",
   "popup_instant_scroll_wheel_step_hint": "How far one mouse-wheel notch jumps the popup, as a share of its height (also scaled by popup scroll speed).",
   "popup_instant_scroll_touch_step": "Instant scroll touch step",
-  "popup_instant_scroll_touch_step_hint": "How far a finger must swipe before the popup jumps one step, as a share of its height."
+  "popup_instant_scroll_touch_step_hint": "How far a finger must swipe before the popup jumps one step, as a share of its height.",
+  "video_subdl_settings_hint": "Subtitles in English and many other languages for movies and TV, matched by IMDb / TMDB id. A free API key is required; downloads count toward an anonymous daily limit per IP.",
+  "video_subdl_enabled_hint": "Off means SubDL is skipped even when an API key is saved.",
+  "video_subdl_api_key_hint": "Get a free API key at subdl.com/panel/api",
+  "onboarding_online_services_subdl": "Find English and multilingual subtitles for movies and TV. Register a free SubDL account, generate an API key in the panel, then enter it in settings and enable this subtitle source."
 }
