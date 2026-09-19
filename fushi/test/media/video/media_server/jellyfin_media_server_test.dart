@@ -701,11 +701,13 @@ void main() {
 
   group('search', () {
     /// 电影 2 部、剧 3 部的服务器；按单值类型分派，按 StartIndex/Limit 切片。
+    /// 条目名都真含查询词（服务器命中 = 客户端把关也过，BUG-2608）。
     http.Response serve(http.Request req) {
       final Map<String, String> q = req.url.queryParameters;
       expect(q['SearchTerm'], 'love');
       expect(q['Recursive'], 'true');
       expect(q['Fields'], isNot(contains('MediaSources')));
+      expect(q['Fields'], contains('OriginalTitle'), reason: 'Emby 要显式要原名');
       final String type = q['IncludeItemTypes']!;
       expect(type, isNot(contains(',')), reason: '单值（BUG-2254）');
       final int total = type == 'Movie' ? 2 : 3;
@@ -713,7 +715,12 @@ void main() {
       final int limit = int.parse(q['Limit']!);
       return _page(<Map<String, Object?>>[
         for (int i = start; i < total && i < start + limit; i++)
-          _item('$type$i', type, isFolder: type == 'Series'),
+          _item(
+            '$type$i',
+            type,
+            name: 'Love $type $i',
+            isFolder: type == 'Series',
+          ),
       ], total: total);
     }
 
@@ -730,23 +737,21 @@ void main() {
         <String>['Movie', 'Series'],
       );
       expect(r.seen[0].url.queryParameters['StartIndex'], '0');
-      expect(r.seen[0].url.queryParameters['Limit'], '4');
+      expect(
+        r.seen[0].url.queryParameters['Limit'],
+        '${JellyfinVideoClient.kSearchServerPageSize}',
+        reason: '服务器页比客户端页大：把关会漏掉一部分，一发多要些少往返',
+      );
       expect(r.seen[1].url.queryParameters['StartIndex'], '0');
       expect(
-        r.seen[1].url.queryParameters['Limit'],
-        '2',
-        reason: '电影占了 2 个位，剧只要补满剩下 2 个',
+        page.items.map((MediaServerItem i) => i.id).toList(),
+        <String>['Movie0', 'Movie1', 'Series0', 'Series1', 'Series2'],
+        reason: '最后一发服务器页把关后全收，允许略多于 limit',
       );
-      expect(page.items.map((MediaServerItem i) => i.id).toList(), <String>[
-        'Movie0',
-        'Movie1',
-        'Series0',
-        'Series1',
-      ]);
       expect(page.totalCount, 5);
       expect(page.startIndex, 0);
-      expect(page.nextStartIndex, 4);
-      expect(page.hasMore, isTrue);
+      expect(page.nextStartIndex, 5);
+      expect(page.hasMore, isFalse);
     });
 
     test('第 2 页：起点跨过整轮电影后落到剧的第 2 条', () async {
@@ -768,11 +773,12 @@ void main() {
       expect(page.hasMore, isFalse);
     });
 
-    test('电影已填满一页时剧那轮只问总数（Limit=1）且不混入条目', () async {
+    test('电影已凑够一页时剧那轮只问总数（Limit=1）且不混入条目', () async {
       final _Router r = _Router(serve);
       final MediaServerPage page = await _client(
         r.client,
       ).search('love', limit: 2);
+      expect(r.seen, hasLength(2));
       expect(r.seen[1].url.queryParameters['Limit'], '1');
       expect(page.items.map((MediaServerItem i) => i.id).toList(), <String>[
         'Movie0',
@@ -783,12 +789,11 @@ void main() {
       expect(page.nextStartIndex, 2);
     });
 
-    test('空白 query 不发请求', () async {
+    test('空白 / 纯标点 query 不发请求', () async {
       final _Router r = _Router(serve);
-      final MediaServerPage page = await _client(r.client).search('   ');
+      expect((await _client(r.client).search('   ')).items, isEmpty);
+      expect((await _client(r.client).search(' 「」… ')).hasMore, isFalse);
       expect(r.seen, isEmpty);
-      expect(page.items, isEmpty);
-      expect(page.hasMore, isFalse);
     });
 
     test('非 2xx 抛（主干导航）', () async {
@@ -796,6 +801,127 @@ void main() {
         MockClient((_) async => http.Response('', 503)),
       );
       await expectLater(c.search('x'), throwsA(isA<JellyfinApiException>()));
+    });
+
+    /// BUG-2608：兼容层（UHD Media Server）的 SearchTerm 按字模糊 + 相关度：搜
+    /// 「怪奇物语」电影轮回 121 条（怪形 / 尘兔 / 绿毛怪格林奇……只沾一个字），
+    /// 精确命中的剧被压在整轮电影之后。客户端只留标题 / 原名真含查询词的条目，
+    /// 精确同名置顶；分页偏移仍按服务器行走。
+    group('把关（BUG-2608）', () {
+      /// 电影轮 121 条：第 0 条是《最后的冒险：怪奇物语幕后》、其余全是沾边；
+      /// 剧轮 3 条：怪奇背后 / 怪奇物语：1985 / 怪奇物语（精确，故意放最后）。
+      http.Response fuzzyServe(http.Request req) {
+        final Map<String, String> q = req.url.queryParameters;
+        final String type = q['IncludeItemTypes']!;
+        final int start = int.parse(q['StartIndex']!);
+        final int limit = int.parse(q['Limit']!);
+        final List<Map<String, Object?>> all = type == 'Movie'
+            ? <Map<String, Object?>>[
+                _item(
+                  'making-of',
+                  'Movie',
+                  name: '最后的冒险：《怪奇物语》第五季幕后',
+                  extra: <String, Object?>{
+                    'OriginalTitle': 'The Making of Stranger Things 5',
+                  },
+                ),
+                for (int i = 1; i < 121; i++)
+                  _item('junk$i', 'Movie', name: '怪形 $i'),
+              ]
+            : <Map<String, Object?>>[
+                _item('beyond', 'Series', name: '怪奇背后', isFolder: true),
+                _item('tales', 'Series', name: '怪奇物语：1985故事集', isFolder: true),
+                _item(
+                  'st',
+                  'Series',
+                  name: '怪奇物语',
+                  isFolder: true,
+                  extra: <String, Object?>{'OriginalTitle': 'Stranger Things'},
+                ),
+              ];
+        return _page(all.skip(start).take(limit).toList(), total: all.length);
+      }
+
+      test('沾边命中被滤掉、精确同名置顶、以查询开头的其次；偏移按服务器行', () async {
+        final _Router r = _Router(fuzzyServe);
+        final MediaServerPage page = await _client(r.client).search('怪奇物语');
+        expect(page.items.map((MediaServerItem i) => i.id).toList(), <String>[
+          'st',
+          'tales',
+          'making-of',
+        ]);
+        expect(page.totalCount, 124, reason: '服务器总数只是上界');
+        expect(page.nextStartIndex, 124);
+        expect(page.hasMore, isFalse);
+        // 电影轮 121 行分两发（100 + 21），第三发不该有：总数已知、已扫穿。
+        expect(
+          r.seen
+              .map(
+                (http.Request q) =>
+                    '${q.url.queryParameters['IncludeItemTypes']}'
+                    '@${q.url.queryParameters['StartIndex']}',
+              )
+              .toList(),
+          <String>['Movie@0', 'Movie@100', 'Series@0'],
+        );
+      });
+
+      test('按原名搜也命中（Emby 中文库的外文原题）', () async {
+        final MediaServerPage page = await _client(
+          _Router(fuzzyServe).client,
+        ).search('stranger things');
+        expect(page.items.map((MediaServerItem i) => i.id).toList(), <String>[
+          'st',
+          'making-of',
+        ]);
+      });
+
+      test(
+        '扫满 kSearchScanLimit 行就先返回：命中可为 0 而 hasMore 仍 true，偏移落在电影轮中段',
+        () async {
+          // 全是沾边的电影 900 条 + 精确命中的剧 1 条。
+          http.Response hugeServe(http.Request req) {
+            final Map<String, String> q = req.url.queryParameters;
+            final String type = q['IncludeItemTypes']!;
+            final int start = int.parse(q['StartIndex']!);
+            final int limit = int.parse(q['Limit']!);
+            final int total = type == 'Movie' ? 900 : 1;
+            return _page(<Map<String, Object?>>[
+              for (int i = start; i < total && i < start + limit; i++)
+                if (type == 'Movie')
+                  _item('junk$i', 'Movie', name: '怪形 $i')
+                else
+                  _item('st', 'Series', name: '怪奇物语', isFolder: true),
+            ], total: total);
+          }
+
+          final _Router r = _Router(hugeServe);
+          final JellyfinVideoClient c = _client(r.client);
+          final MediaServerPage first = await c.search('怪奇物语');
+          expect(first.items, isEmpty);
+          expect(first.totalCount, 901);
+          expect(first.nextStartIndex, JellyfinVideoClient.kSearchScanLimit);
+          expect(first.hasMore, isTrue);
+          expect(
+            r.seen.last.url.queryParameters['IncludeItemTypes'],
+            'Series',
+            reason: '剧那轮仍要问一次总数',
+          );
+          expect(r.seen.last.url.queryParameters['Limit'], '1');
+
+          // 页面按 nextStartIndex 接着扫：剩下 400 条电影 + 剧轮命中。
+          final MediaServerPage second = await c.search(
+            '怪奇物语',
+            startIndex: first.nextStartIndex,
+          );
+          expect(
+            second.items.map((MediaServerItem i) => i.id).toList(),
+            <String>['st'],
+          );
+          expect(second.nextStartIndex, 901);
+          expect(second.hasMore, isFalse);
+        },
+      );
     });
   });
 

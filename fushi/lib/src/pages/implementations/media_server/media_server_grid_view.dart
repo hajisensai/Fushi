@@ -150,6 +150,9 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         _hasMore = page.hasMore;
         _loadingMore = false;
       });
+      // 追加页也可能没铺满视口（搜索把关后一页可以只剩几条甚至 0 条，BUG-2608；
+      // 浏览滤掉非视频域类型也一样），没有滚动事件就得主动再问一页。
+      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
     } catch (e) {
       if (!mounted || generation != _generation) return;
       debugPrint('[media-server] load more failed: $e');

@@ -38,6 +38,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteCollectionMembership,
@@ -214,6 +215,7 @@ class JellyfinItem {
     required this.name,
     required this.type,
     this.isFolder = false,
+    this.originalTitle,
     this.seriesName,
     this.seasonNumber,
     this.episodeNumber,
@@ -247,6 +249,10 @@ class JellyfinItem {
   /// 'Movie' | 'Series' | 'Season' | 'Episode' | 'Folder' | 'BoxSet' | ...
   final String type;
   final bool isFolder;
+
+  /// 原名（`OriginalTitle`）。Emby 要显式 `Fields=OriginalTitle` 才给，Jellyfin
+  /// 缺省带；搜索把关（BUG-2608）按它和 [name] 一起匹配。
+  final String? originalTitle;
   final String? seriesName;
   final int? seasonNumber;
   final int? episodeNumber;
@@ -1573,6 +1579,7 @@ class JellyfinApi {
       name: (json['Name'] as String?) ?? '',
       type: (json['Type'] as String?) ?? '',
       isFolder: (json['IsFolder'] as bool?) ?? false,
+      originalTitle: json['OriginalTitle'] as String?,
       seriesName: json['SeriesName'] as String?,
       seasonNumber: (json['ParentIndexNumber'] as num?)?.toInt(),
       episodeNumber: (json['IndexNumber'] as num?)?.toInt(),
@@ -1824,6 +1831,7 @@ class JellyfinVideoClient
         id: item.id,
         name: item.name,
         type: type,
+        originalTitle: item.originalTitle,
         seriesId: item.seriesId,
         seriesName: item.seriesName,
         seasonId: item.seasonId,
@@ -2094,6 +2102,15 @@ class JellyfinVideoClient
   /// 搜索按类型分轮的顺序：电影在前、剧在后（单值 IncludeItemTypes，BUG-2254）。
   static const List<String> kSearchRounds = <String>['Movie', 'Series'];
 
+  /// 搜索向服务器一次要的行数。命中要在客户端再把关（BUG-2608），一发多要些
+  /// 才不至于为凑一页反复往返；条目不带 MediaSources，100 行也就几十 KB。
+  static const int kSearchServerPageSize = 100;
+
+  /// 单次 [search] 最多扫多少服务器行。兼容层按字模糊时命中率可以低到 1%，
+  /// 不封顶一次调用会把整个结果集扫穿；封顶后本页返回已有命中、`hasMore`
+  /// 照常为 true，页面按 nextStartIndex 接着扫。
+  static const int kSearchScanLimit = 500;
+
   @override
   Future<MediaServerPage> search(
     String query, {
@@ -2101,38 +2118,56 @@ class JellyfinVideoClient
     int limit = kMediaServerPageSize,
   }) async {
     final String term = query.trim();
-    if (term.isEmpty) return const MediaServerPage.empty();
-    // 把两轮结果当成一条拼接序列分页：offset 是「还要跳过多少条」，跨过一整轮
-    // 就减掉那轮总数；remaining 是本页还缺多少条。每轮都要问一次（哪怕本页已
-    // 满也 Limit=1 只取总数），否则 totalCount 算不出、hasMore 无从判断。
-    final List<MediaServerItem> items = <MediaServerItem>[];
-    int offset = startIndex;
-    int remaining = limit;
+    final List<String> tokens = mediaServerSearchTokens(term);
+    if (tokens.isEmpty) return const MediaServerPage.empty();
+    // 把两轮结果当成一条拼接序列分页：cursor 是拼接序里的服务器行位置，跨过
+    // 一整轮就落到下一轮的本地偏移。每轮都要问一次（哪怕已经凑够也 Limit=1
+    // 只取总数），否则 totalCount 算不出、hasMore 无从判断。
+    //
+    // 服务器回来的行先过 [mediaServerSearchMatches]（BUG-2608：兼容层的
+    // SearchTerm 按字模糊，搜「怪奇物语」回 121 部沾一个字的电影），凑够 [limit]
+    // 条命中或扫满 [kSearchScanLimit] 行才停；nextStartIndex 永远是服务器行偏移。
+    // 排序在两轮合并后做一次：精确同名的剧不能排在电影轮「沾边」命中之后。
+    final List<MediaServerItem> hits = <MediaServerItem>[];
+    int cursor = startIndex;
+    int roundBase = 0;
     int total = 0;
+    int scanned = 0;
     for (final String type in kSearchRounds) {
-      final JellyfinItemsPage page = await api.items(
-        userId: userId,
-        recursive: true,
-        includeItemType: type,
-        searchTerm: term,
-        startIndex: offset,
-        limit: remaining > 0 ? remaining : 1,
-      );
-      total += page.totalCount;
-      if (offset >= page.totalCount) {
-        offset -= page.totalCount;
-        continue;
+      // cursor 落在本轮之前 = 上一轮还没扫完就凑够了：本轮只问总数，cursor 不动。
+      final bool inRound = cursor >= roundBase;
+      int localStart = inRound ? cursor - roundBase : 0;
+      int? roundTotal;
+      while (true) {
+        final bool enough = hits.length >= limit || scanned >= kSearchScanLimit;
+        if (roundTotal != null && (enough || localStart >= roundTotal)) break;
+        final JellyfinItemsPage page = await api.items(
+          userId: userId,
+          recursive: true,
+          includeItemType: type,
+          searchTerm: term,
+          startIndex: localStart,
+          limit: enough ? 1 : kSearchServerPageSize,
+          fields: 'ProductionYear,OriginalTitle',
+        );
+        roundTotal = page.totalCount;
+        if (enough || localStart >= roundTotal || page.items.isEmpty) break;
+        scanned += page.items.length;
+        hits.addAll(
+          mediaServerItemsFrom(page.items)
+              .where((MediaServerItem it) => mediaServerSearchMatches(tokens, it)),
+        );
+        localStart += page.items.length;
       }
-      final int take =
-          remaining < page.items.length ? remaining : page.items.length;
-      items.addAll(mediaServerItemsFrom(page.items.take(take)));
-      remaining -= take;
-      offset = 0;
+      total += roundTotal;
+      if (inRound) cursor = roundBase + localStart;
+      roundBase += roundTotal;
     }
     return MediaServerPage(
-      items: items,
+      items: rankMediaServerSearchHits(term, hits),
       totalCount: total,
       startIndex: startIndex,
+      nextStartIndex: cursor,
     );
   }
 
