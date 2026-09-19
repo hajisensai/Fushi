@@ -5821,6 +5821,17 @@ const POPUP_EINK_WHEEL_VIEWPORT_FRACTION = 0.5; // 一次跳半屏
 const POPUP_EINK_WHEEL_MIN_STEP = 48;           // 视口异常小时的下限（布局 px）
 const POPUP_EINK_WHEEL_COOLDOWN_MS = 140;       // 一次手势内的跳跃合并窗口
 let _popupEinkWheelAt = 0;
+// 步长比例用户可调：滚轮 / 触摸各一个旋钮（app 设置 lookup.popup_instant_scroll_
+// {wheel,touch}_step，偏好 popup_instant_scroll_{wheel,touch}_step）。in-app 由
+// popup_settings_injection 注入 window.__fushiPopupInstantScroll{Wheel,Touch}Step；
+// 扩展经查词响应 theme 的 --fushi-instant-scroll-wheel-step 由 content.js /
+// side-panel.js 设同名全局（触摸半边扩展侧不挂，见 BUG-2415 块注释）。缺省 / 非法
+// → 上面的 VIEWPORT_FRACTION 常量，即改前行为；夹在 [0.1, 1]，与 Dart 侧 clamp 同界。
+const POPUP_EINK_STEP_FRACTION_MIN = 0.1;
+function popupEinkStepFraction(value, fallback) {
+    if (typeof value !== 'number' || !isFinite(value) || value <= 0) return fallback;
+    return Math.min(1, Math.max(POPUP_EINK_STEP_FRACTION_MIN, value));
+}
 // 被滚表面的视口高度，单位与 scrollBy 的实参一致（布局 px）。扩展的滚动者是 shadow
 // host（zoom 设在 host 上，clientHeight 已是它自己的布局 px）；in-app 滚 document，
 // window.innerHeight 是视觉 px，要除以 documentElement 的 zoom 才是布局 px。
@@ -6015,9 +6026,11 @@ const __fushiPopupWheelListener = (e) => {
         _popupEinkWheelAt = nowMs;
         _popupWheelResidual = 0; // 比例模式的余量在瞬时模式下无意义，切换回去也别延迟跳
         const extent = popupEinkWheelExtent(scroller);
+        const wheelFraction = popupEinkStepFraction(
+            window.__fushiPopupInstantScrollWheelStep, POPUP_EINK_WHEEL_VIEWPORT_FRACTION);
         const jump = Math.max(
             POPUP_EINK_WHEEL_MIN_STEP,
-            Math.min(extent, extent * POPUP_EINK_WHEEL_VIEWPORT_FRACTION * wheelSpeed));
+            Math.min(extent, extent * wheelFraction * wheelSpeed));
         const step = Math.trunc(deltaPx < 0 ? -jump : jump);
         if (step === 0) return;
         if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
@@ -6100,9 +6113,11 @@ function __fushiPopupEinkTouchReset() {
 // 内容）。复用滚轮那条的 extent 解析——zoom → 布局 px 的换算已经在里面。
 function popupEinkTouchStep(scroller) {
     const extent = popupEinkWheelExtent(scroller);
+    const touchFraction = popupEinkStepFraction(
+        window.__fushiPopupInstantScrollTouchStep, POPUP_EINK_TOUCH_VIEWPORT_FRACTION);
     return Math.max(
         POPUP_EINK_TOUCH_MIN_STEP,
-        Math.min(extent, extent * POPUP_EINK_TOUCH_VIEWPORT_FRACTION));
+        Math.min(extent, extent * touchFraction));
 }
 
 // 从触点向上找**真正横向溢出**的祖先（不是只看 CSS 声明）。找到 → 本轮不接管。

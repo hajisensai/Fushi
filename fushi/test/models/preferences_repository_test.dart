@@ -113,6 +113,15 @@ void main() {
       expect(repo.popupInstantScroll, false);
     });
 
+    test(
+        'popupInstantScroll step defaults match the former hard-coded fractions',
+        () {
+      // BUG-2284 / BUG-2415 hard-coded viewport x 0.5 (wheel) / x 0.25 (touch);
+      // a never-touched install must behave exactly as before.
+      expect(repo.popupInstantScrollWheelStep, 0.5);
+      expect(repo.popupInstantScrollTouchStep, 0.25);
+    });
+
     test('popupDictionaryColumns defaults to 1 (classic single column)', () {
       // TODO-776: a fresh install renders one dictionary per row (N=1), which
       // is the untouched classic vertical layout.
@@ -382,6 +391,31 @@ void main() {
       await repo2.loadFromDb();
       expect(repo2.popupInstantScroll, true);
       repo2.dispose();
+    });
+
+    test(
+        'setPopupInstantScroll{Wheel,Touch}Step round-trip and clamp to [0.1, 1]',
+        () async {
+      await repo.setPopupInstantScrollWheelStep(0.8);
+      await repo.setPopupInstantScrollTouchStep(0.4);
+
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.popupInstantScrollWheelStep, 0.8);
+      expect(repo2.popupInstantScrollTouchStep, 0.4);
+      repo2.dispose();
+
+      // Out-of-range / non-finite input never reaches storage as-is: popup.js
+      // clamps to [0.1, 1] on its side too, and a stored garbage value would
+      // otherwise be re-clamped differently on every read.
+      await repo.setPopupInstantScrollWheelStep(5);
+      expect(repo.popupInstantScrollWheelStep, 1.0);
+      await repo.setPopupInstantScrollTouchStep(0.001);
+      expect(repo.popupInstantScrollTouchStep, 0.1);
+      await repo.setPopupInstantScrollWheelStep(double.nan);
+      expect(repo.popupInstantScrollWheelStep, 0.5);
+      await repo.setPopupInstantScrollTouchStep(double.infinity);
+      expect(repo.popupInstantScrollTouchStep, 0.25);
     });
 
     test('setAudioSources persists list', () async {

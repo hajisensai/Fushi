@@ -147,10 +147,14 @@ class _MaterialNavCluster extends StatelessWidget {
         ),
     ];
 
+    // eink：surfaceContainer / surface 都塌成页面底色，底栏 / 侧栏与内容面连成
+    // 一整块白（黑）；靠一条前景色边线把导航区切出来。
+    final bool eink = isEinkTheme(context);
     if (horizontal) {
       return Material(
         key: fushiMaterialNavKey,
         color: colors.surfaceContainer,
+        shape: eink ? Border(top: BorderSide(color: colors.outline)) : null,
         // Clamp text scaling exactly like the stock NavigationBar: at the
         // system's largest font sizes an unclamped label would push the bar to
         // a third of the screen.
@@ -189,6 +193,9 @@ class _MaterialNavCluster extends StatelessWidget {
     return Material(
       key: fushiMaterialNavKey,
       color: colors.surface,
+      shape: eink
+          ? BorderDirectional(end: BorderSide(color: colors.outline))
+          : null,
       child: SizedBox(
         width: kAdaptiveNavRailWidth,
         child: SafeArea(
@@ -297,6 +304,12 @@ class _FushiNavTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
+    // eink：选中药丸的 secondaryContainer == 页面底色，选中项只剩图标实心/线框
+    // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
+    final bool eink = isEinkTheme(context);
+    final Color pillColor = eink ? colors.onSurface : colors.secondaryContainer;
+    final Color pillIconColor =
+        eink ? colors.surface : colors.onSecondaryContainer;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -305,7 +318,7 @@ class _FushiNavTile extends StatelessWidget {
           height: 32,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? colors.secondaryContainer : Colors.transparent,
+            color: selected ? pillColor : Colors.transparent,
             borderRadius: FushiDesignTokens.of(context).radii.controlRadius,
           ),
           child: _maybeBadge(
@@ -313,9 +326,7 @@ class _FushiNavTile extends StatelessWidget {
             child: Icon(
               selected ? (item.selectedIcon ?? item.icon) : item.icon,
               size: 24,
-              color: selected
-                  ? colors.onSecondaryContainer
-                  : colors.onSurfaceVariant,
+              color: selected ? pillIconColor : colors.onSurfaceVariant,
             ),
           ),
         ),

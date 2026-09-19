@@ -148,7 +148,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
               ),
             ),
             childWhenDragging: Opacity(
-              opacity: 0.3,
+              opacity: isEinkTheme(context) ? 1 : 0.3,
               child: _tagFilterChip(
                 tag: tag,
                 isSelected: isSelected,

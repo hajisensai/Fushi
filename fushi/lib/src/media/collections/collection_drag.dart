@@ -163,7 +163,12 @@ class _MediaCardDraggableState extends State<MediaCardDraggable> {
             label: widget.label,
             child: widget.child,
           ),
-          childWhenDragging: Opacity(opacity: 0.3, child: widget.child),
+          // eink：30% 的原卡是一块抖动灰，且拖起那一刻整卡重绘一次；原位不动，
+          // 浮层 + 落点描边已足够表达「正在拖」。
+          childWhenDragging: Opacity(
+            opacity: isEinkTheme(context) ? 1 : 0.3,
+            child: widget.child,
+          ),
           child: widget.child,
         );
     }
@@ -214,7 +219,7 @@ class _CardDragFeedback extends StatelessWidget {
     return FushiFocusRoot(
       enabled: false,
       child: Opacity(
-        opacity: 0.92,
+        opacity: isEinkTheme(context) ? 1 : 0.92,
         child: Material(
           color: Colors.transparent,
           elevation: 8,

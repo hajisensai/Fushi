@@ -1012,11 +1012,20 @@ class _VideoDownloadJobCard extends StatelessWidget {
         Row(
           children: <Widget>[
             Expanded(
-              child: LinearProgressIndicator(
-                value: _progress,
-                minHeight: 5,
-                color: statusColor,
-                semanticsValue: _progressLabel,
+              // eink：默认轨道色塌成页面底色，0~10% 的任务只剩一小截、看不出
+              // 全长；描一圈边把轨道画出来。
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: isEinkTheme(context)
+                      ? Border.all(color: theme.colorScheme.outline)
+                      : null,
+                ),
+                child: LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 5,
+                  color: statusColor,
+                  semanticsValue: _progressLabel,
+                ),
               ),
             ),
             const SizedBox(width: 10),

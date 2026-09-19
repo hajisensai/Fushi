@@ -874,22 +874,34 @@ class _FushiTagChipState extends State<FushiTagChip> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // eink：这里的每一档 alpha（0.44 / 0.88 / 0.2 / 0.12 / 0.4）在墨水屏上都是
+    // 抖动灰，而 overlay 底又塌成页面底色——未选中的 surface chip 整个消失。
+    // 一律实心：selected 反色（chipTheme 同款），未选中页面底色 + 描边，dimmed
+    // 只保留文字不加透明。
+    final bool eink = isEinkTheme(context);
     final Color tagColor = widget.color ?? colors.primary;
     final Color baseColor = widget.color ??
         (widget.selected ? colors.primaryContainer : tokens.surfaces.overlay);
     final Color background = switch (widget.tone) {
-      FushiTagChipTone.filled => widget.dimmed
-          ? baseColor.withValues(alpha: 0.44)
-          : baseColor.withValues(alpha: widget.color == null ? 1 : 0.88),
-      FushiTagChipTone.surface => widget.selected
-          ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
-          : tokens.surfaces.overlay.withValues(alpha: widget.dimmed ? 0.44 : 1),
+      FushiTagChipTone.filled => eink
+          ? baseColor
+          : widget.dimmed
+              ? baseColor.withValues(alpha: 0.44)
+              : baseColor.withValues(alpha: widget.color == null ? 1 : 0.88),
+      FushiTagChipTone.surface => eink
+          ? (widget.selected ? colors.onSurface : colors.surface)
+          : widget.selected
+              ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
+              : tokens.surfaces.overlay
+                  .withValues(alpha: widget.dimmed ? 0.44 : 1),
     };
     final Color foreground = switch (widget.tone) {
       FushiTagChipTone.filled => _foregroundFor(background),
-      FushiTagChipTone.surface => widget.dimmed
-          ? colors.onSurface.withValues(alpha: 0.4)
-          : colors.onSurface,
+      FushiTagChipTone.surface => eink
+          ? (widget.selected ? colors.surface : colors.onSurface)
+          : widget.dimmed
+              ? colors.onSurface.withValues(alpha: 0.4)
+              : colors.onSurface,
     };
     final BoxBorder? border = widget.selected
         ? Border.all(
@@ -897,7 +909,9 @@ class _FushiTagChipState extends State<FushiTagChip> {
                 ? tagColor
                 : colors.primary,
           )
-        : null;
+        : eink && widget.tone == FushiTagChipTone.surface
+            ? Border.all(color: colors.outline)
+            : null;
     final Text labelText = Text(
       widget.label,
       maxLines: 1,
@@ -938,7 +952,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
       children: contentChildren,
     );
     final Widget chip = AnimatedContainer(
-      duration: fushiMd3StateDuration,
+      duration: einkSafeDuration(context, fushiMd3StateDuration),
       curve: fushiMd3StateCurve,
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,

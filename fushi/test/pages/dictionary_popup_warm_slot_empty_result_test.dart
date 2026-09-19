@@ -63,6 +63,10 @@ class _WarmSlotAppModel extends AppModel {
   @override
   bool get popupInstantScroll => false;
   @override
+  double get popupInstantScrollWheelStep => 0.5;
+  @override
+  double get popupInstantScrollTouchStep => 0.25;
+  @override
   bool get compactGlossaries => false;
   @override
   int get popupDictionaryColumns => 1;

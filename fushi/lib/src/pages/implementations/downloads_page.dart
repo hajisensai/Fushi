@@ -338,6 +338,8 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
       initialIndex:
           widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
       length: 4,
+      // eink：TabBarView 的 300ms 横滑 = 整页一串局部刷新的残影，归零。
+      animationDuration: einkSafeDuration(context, kTabScrollDuration),
       child: Builder(
         builder: (BuildContext tabContext) => Scaffold(
           // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载任务折叠区

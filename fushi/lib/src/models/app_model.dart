@@ -3663,6 +3663,10 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
       // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
       '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
+      // 瞬时滚动的滚轮步长（占视口比例）同通道下发；content.js 设
+      // window.__fushiPopupInstantScrollWheelStep。触摸半边扩展侧不挂监听，不下发。
+      '--fushi-instant-scroll-wheel-step':
+          popupInstantScrollWheelStep.toStringAsFixed(3),
       // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
       // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
@@ -7028,6 +7032,16 @@ class AppModel with ChangeNotifier {
   bool get popupInstantScroll => prefsRepo.popupInstantScroll;
   Future<void> setPopupInstantScroll(bool value) =>
       prefsRepo.setPopupInstantScroll(value);
+
+  // 瞬时滚动步长（占视口比例，clamp 0.1–1.0）：滚轮一格 / 手指滑满一步各一个旋钮。
+  double get popupInstantScrollWheelStep =>
+      prefsRepo.popupInstantScrollWheelStep;
+  Future<void> setPopupInstantScrollWheelStep(double value) =>
+      prefsRepo.setPopupInstantScrollWheelStep(value);
+  double get popupInstantScrollTouchStep =>
+      prefsRepo.popupInstantScrollTouchStep;
+  Future<void> setPopupInstantScrollTouchStep(double value) =>
+      prefsRepo.setPopupInstantScrollTouchStep(value);
 
   // BUG-1026：查词弹窗滚轮速度倍率（默认 1.0，clamp 0.5–5.0）。
   double get popupWheelSpeed => prefsRepo.popupWheelSpeed;
