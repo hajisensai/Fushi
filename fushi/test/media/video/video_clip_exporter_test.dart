@@ -1057,9 +1057,88 @@ Conversion failed!
     test('returns the real error line from the tail, not the input banner', () {
       final String reason = extractFfmpegFailureReason(realStderr);
       // load-bearing：若改回从头截断，这里会拿到 `Input #0`/`encoder` banner → 红。
-      expect(reason, 'Conversion failed!');
+      // BUG-2604：`Conversion failed!` 是 ffmpeg 任何非零退出的固定尾行，零信息量，
+      // 只要还有别的错误行就不能拿它当摘要。
+      expect(
+        reason,
+        '[matroska @ 0000020f] Could not find codec parameters for stream 2',
+      );
       expect(reason, isNot(contains('Input #0')));
       expect(reason, isNot(contains('encoder')));
+    });
+
+    test('keeps Conversion failed! only when no other error line exists', () {
+      const String stderr = '''
+Input #0, matroska,webm, from 'a.mkv':
+  Duration: 00:23:40.00, start: 0.000000, bitrate: 2543 kb/s
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A
+Conversion failed!
+''';
+      expect(extractFfmpegFailureReason(stderr), 'Conversion failed!');
+    });
+
+    test(
+        'BUG-2604: AV1 on a hwaccel-only av1 decoder surfaces the root cause, '
+        'not the generic trailer', () {
+      // 入库 ffmpeg-min（缺 libdav1d）对 AV1 源截帧的**逐字** stderr：根因在
+      // `Stream mapping:` 之后第一行，随后是解码错误率 → exit 69 的级联，尾行只有
+      // 一句 `Conversion failed!`。用户日志里原本只剩 `stderr=Conversion failed!`。
+      const String av1Stderr = '''
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'av1.mp4':
+  Metadata:
+    encoder         : Lavf62.1.100
+  Duration: 00:00:03.00, start: 0.000000, bitrate: 445 kb/s
+  Stream #0:0[0x1](und): Video: av1 (av01 / 0x31307661), yuv420p(tv, progressive), 320x240, 367 kb/s, 24 fps, 24 tbr, 12288 tbn (default)
+      Metadata:
+        encoder         : Lavc62.3.101 libsvtav1
+  Stream #0:1[0x2](und): Audio: aac (mp4a / 0x6134706D), 44100 Hz, mono, fltp, 69 kb/s (default)
+Stream mapping:
+  Stream #0:0 -> #0:0 (av1 (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+[av1 @ 0x1] Your platform doesn't support hardware accelerated AV1 decoding.
+[av1 @ 0x1] Failed to get pixel format.
+[av1 @ 0x1] Get current frame error
+[vist#0:0/av1 @ 0x2] [dec:av1 @ 0x3] Error submitting packet to decoder: Function not implemented
+[vist#0:0/av1 @ 0x2] [dec:av1 @ 0x3] Decode error rate 1 exceeds maximum 0.666667
+[vist#0:0/av1 @ 0x2] [dec:av1 @ 0x3] Task finished with error code: -1145393733 (Error number -1145393733 occurred)
+[vf#0:0 @ 0x4] No filtered frames for output stream, trying to initialize anyway.
+[mjpeg @ 0x5] Non full-range YUV is non-standard, set strict_std_compliance to at most unofficial to use it.
+[vost#0:0/mjpeg @ 0x6] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0x4] Terminating thread with return code -22 (Invalid argument)
+[vost#0:0/mjpeg @ 0x6] Could not open encoder before EOF
+[vost#0:0/mjpeg @ 0x6] Terminating thread with return code -22 (Invalid argument)
+[out#0/image2 @ 0x7] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A
+Conversion failed!
+''';
+      final String reason = extractFfmpegFailureReason(av1Stderr);
+      expect(reason, isNot('Conversion failed!'));
+      // 根因（锚点后第一条错误行）在前，尾部后果在后。
+      expect(
+        reason,
+        startsWith(
+          "[av1 @ 0x1] Your platform doesn't support hardware accelerated "
+          'AV1 decoding.',
+        ),
+      );
+      expect(
+        reason,
+        endsWith('Terminating thread with return code -22 (Invalid argument)'),
+      );
+      expect(reason, isNot(contains('Input #0')));
+    });
+
+    test('does not duplicate when root cause and tail are the same line', () {
+      const String stderr = '''
+Stream mapping:
+  Stream #0:0 -> #0:0 (h264 (native) -> mjpeg (native))
+[out#0/image2 @ 0x1] Could not open file: /nope/frame.jpg
+Conversion failed!
+''';
+      expect(
+        extractFfmpegFailureReason(stderr),
+        '[out#0/image2 @ 0x1] Could not open file: /nope/frame.jpg',
+      );
     });
 
     test('prefers an error-keyword line over later non-error noise', () {
@@ -1119,7 +1198,8 @@ Input #0, matroska,webm, from 'a.mkv':
 
       expect(result.failure, VideoClipExportFailure.ffmpegFailed);
       // detail = 尾段真因，不再是全量 stderr / 头部 banner。
-      expect(result.detail, 'Conversion failed!');
+      expect(result.detail,
+          '[matroska @ 0000020f] Could not find codec parameters for stream 2');
       expect(result.detail, isNot(contains('Input #0')));
     });
   });
