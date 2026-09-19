@@ -5,6 +5,8 @@
 // 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
 // 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
@@ -250,6 +252,14 @@ void main() {
     }
 
     test('触屏 user-select:none（pointer: coarse）仍在--拖选走 app 高亮不复活原生选区', () async {
+      // BUG-2607：这条 CSS 规则只属于 Blink 触屏（Android）。iOS 改由
+      // WKPreferences.isTextInteractionEnabled=false 压原生选区（WebKit 不绘制
+      // user-select:none 文字上的 ::highlight），钉在
+      // reader_ios_highlight_user_select_bug2607_test.dart。
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+      });
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );

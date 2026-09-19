@@ -1885,6 +1885,15 @@ updateLive: function(patch) {
         // 故 Windows 下显式禁掉原生菜单，只留 Flutter 菜单。移动端不设（值 false），原生
         // ContextMenu（查词+导出）仍可用，不回归。
         disableContextMenu: isWindowsPlatform,
+        // BUG-2607：iOS 上 TODO-1279「触屏不建原生选区」不能再靠 CSS
+        // `user-select: none`——WebKit 对 user-select:none 的文字不绘制任何
+        // ::highlight()，查词/划选/收藏/搜索高亮在 iOS 上全部不可见（见
+        // ReaderContentStyles._touchNativeSelectionCss）。改用 WKWebView 的原生开关
+        // `WKPreferences.isTextInteractionEnabled = false`（iOS 14.5+）关掉文本选择
+        // 手势：长按不再起原生选区/放大镜，app 自绘选区（caretRangeFromPoint + Range +
+        // CSS Custom Highlight）不受影响。上面的原生 ContextMenu 在触屏本就因 1279
+        // 无原生选区而不可达，这里不改变其可达性。其它平台保持默认 true。
+        isTextInteractionEnabled: !isIOSPlatform,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
