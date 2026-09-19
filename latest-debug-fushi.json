@@ -17,6 +17,24 @@
       "sha256": "de58e245ff659df770c7ed380bff52965458ec613b6e94ffcfa3bec36a442970"
     },
     {
+      "name": "fushi-2.8.0-debug.15225-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15225-ios.ipa",
+      "releaseSequence": 15225,
+      "tag": "v2.8.0-debug.15225+8058f9c",
+      "version": "2.8.0-debug.15225",
+      "size": 60537342,
+      "sha256": "1acc8f18b9db7d08ca20a1fc385f070c1df1e65ccd15df7c1512c45dcc2248e2"
+    },
+    {
+      "name": "fushi-2.8.0-debug.15225-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15225-macos.zip",
+      "releaseSequence": 15225,
+      "tag": "v2.8.0-debug.15225+8058f9c",
+      "version": "2.8.0-debug.15225",
+      "size": 326305212,
+      "sha256": "0862191916bd63707659b2480c59990b0983fae8e4e2f512fb5606b612facac0"
+    },
+    {
       "name": "fushi-2.8.0-debug.15225-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15225-windows-setup.exe",
       "releaseSequence": 15225,
