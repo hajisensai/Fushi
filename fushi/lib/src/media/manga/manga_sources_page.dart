@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/import/import_page_segments.dart';
 import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_repository_client.dart';
@@ -14,12 +15,10 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_repository_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
-import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -30,25 +29,32 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 漫画库「来源」视图：本域**所有**来源的唯一管理处。
 ///
-/// 四节，自上而下：
-/// 1. 本地漫画扫描根（与书 / 视频共用的 [MediaSourcesView]）；
-/// 2. Aidoku 扩展（Apple 平台添加仓库、浏览仓库及导入 / 移除 `.aix`）；
-/// 3. 漫画扩展（Mihon 扩展仓库 + 安装 / 启停 / 卸载）——用户口径：「漫画扩展
-///    不就是来源吗，来源设置里面加上就行了」，因此**不另开顶层 tab**；
-/// 4. 在线漫画源：内置的 mokuro.moe **与**扩展提供的源并列（启停 / 排序 / 偏好 /
-///    清数据 / 置顶）。
+/// 顶部一条分段选择器（[ImportPageSegmentBar]，与视频「导入」视图同构），四段
+/// 各管一种信息，正文只渲染当前段：
+/// 1. 本地：快速导入 + 漫画扫描根（与书 / 视频共用的 [MediaSourcesView]）；
+/// 2. 仓库：Mihon 扩展仓库（添加 / 改地址 / 删除 / 刷新）+ Aidoku 仓库
+///    （Apple 平台）；
+/// 3. 扩展：仓库里可装的扩展目录 + 已装扩展的启停 / 卸载 + 导入本地 APK /
+///    `.aix`——用户口径：「漫画扩展不就是来源吗，来源设置里面加上就行了」，因此
+///    **不另开顶层 tab**；
+/// 4. 在线源：内置的 mokuro.moe、互联对端 **与**扩展提供的源并列（启停 / 排序 /
+///    偏好 / 清数据 / 置顶，[MihonInstalledSourcesSection]）。
 ///
-/// 🔴 mokuro.moe 归第 4 节，不归第 1 节（BUG-1431）：它是个网站，不是本地扫描根。
+/// 此前四种东西竖着串成一整页长滚动，1900+ 条的扩展目录夹在中间，用户要找
+/// 「仓库」得从扩展目录里翻过去（2026-09-19 用户口径「上下拖动感觉可以在上面
+/// 弄个多段选择器，不同类型信息分开」）。
+///
+/// 🔴 mokuro.moe 归第 4 段，不归第 1 段（BUG-1431）：它是个网站，不是本地扫描根。
 /// 之前它和「Hibiki 互联」一起挂在「本地扫描根」下，用户口径「mokuro 不应该单独
-/// 显示，应该和漫画扩展同一层级」。挪进「漫画源」后它与扩展源同构——同一节、同一
+/// 显示，应该和漫画扩展同一层级」。挪进「在线源」后它与扩展源同构——同一段、同一
 /// 种开关语义（关掉 = 不在「浏览」里出现）。
 ///
-/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1441）：第 3 节要渲染整个扩展
+/// 🔴 本页的滚动容器必须是 [CustomScrollView]（BUG-1441）：第 3 段要渲染整个扩展
 /// 仓库（keiyoushi 有 1900+ 条），只有 sliver 才能懒建。换回 `ListView` +
 /// 内嵌 `Column` 会立刻把「语言下拉一展开就卡死」带回来。
 ///
 /// 平台差异只在**内容**：Aidoku 在 macOS / iOS 显示同一套管理入口；iOS / Linux
-/// 没有 Mihon 扩展宿主，对应小节渲染不可用提示，视图本身与其它平台同构、同位。
+/// 没有 Mihon 扩展宿主，对应段渲染不可用提示，视图本身与其它平台同构、同位。
 /// `AppModel.mihonManager` 在这些平台会抛 [UnsupportedError]，故一切读它的路径
 /// 都必须先过 [MihonRuntimeFactory.isSupported]。
 class MangaSourcesPage extends ConsumerStatefulWidget {
@@ -73,9 +79,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   List<AidokuRepositoryIndex> _aidokuIndexes = const <AidokuRepositoryIndex>[];
   final TextEditingController _aidokuSearchController = TextEditingController();
 
-  /// 已安装在线源列表的搜索（BUG-2479）：源一多，找「要登录的那一个」得翻半天。
-  final TextEditingController _sourceSearchController = TextEditingController();
-  String _sourceSearchQuery = '';
+  /// 顶部分段选择器当前段；正文只渲染这一段。
+  ImportPageSegment _segment = ImportPageSegment.local;
+  final ScrollController _scrollController = ScrollController();
   String _aidokuLanguage = '*';
   String _aidokuSearchQuery = '';
   String? _aidokuInstallingSourceId;
@@ -129,7 +135,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     _manager?.removeListener(_changed);
     _aidokuRepositoryClient.close();
     _aidokuSearchController.dispose();
-    _sourceSearchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -561,83 +567,6 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     }
   }
 
-  Future<void> _clearSourceData(MangaOnlineSourceRow source) async {
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-        title: Text(t.mihon_source_clear_data),
-        content: Text(t.mihon_source_clear_data_hint),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_clear),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    try {
-      await _manager!.clearSourceData(source);
-    } on Object catch (error) {
-      if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      }
-    }
-  }
-
-  /// 该源能不能在 app 里登录，以及登录页要打开哪个地址。
-  ///
-  /// 两个条件缺一不可：运行时是「宿主持有 cookie」那一类（桌面 sidecar；Android
-  /// 由系统 `CookieManager` 拥有 cookie，不需要也不该走这条），以及该源报出了
-  /// 可解析出 host 的 baseUrl（有些源的 baseUrl 是空串或相对地址）。
-  Uri? _loginTargetFor(MangaOnlineSourceRow source) =>
-      mihonLoginTarget(runtime: _manager?.runtime, baseUrl: source.baseUrl);
-
-  Future<void> _openWebLogin(MangaOnlineSourceRow source) async {
-    final bool saved = await openMihonWebLogin(
-      context,
-      runtime: _manager?.runtime,
-      sourceName: source.name,
-      baseUrl: source.baseUrl,
-    );
-    if (!mounted || !saved) return;
-    FushiToast.show(msg: t.mihon_source_login_saved);
-    // 登录态变了，源的章节归属会跟着变；让下一次进源重新取，而不是继续用锁着的
-    // 那份缓存。
-    setState(() {});
-  }
-
-  void _openPreferences(MangaOnlineSourceRow source) {
-    showAppDialog<void>(
-      context: context,
-      builder: (BuildContext context) =>
-          MihonPreferencesDialog(manager: _manager!, source: source),
-    );
-  }
-
-  Future<void> _moveSource(MangaOnlineSourceRow source, int delta) async {
-    final List<MangaOnlineSourceRow> rows = List<MangaOnlineSourceRow>.of(
-      _manager!.sources,
-    );
-    final int index = rows.indexWhere(
-      (MangaOnlineSourceRow row) =>
-          row.extensionPackage == source.extensionPackage &&
-          row.sourceId == source.sourceId,
-    );
-    final int target = index + delta;
-    if (index < 0 || target < 0 || target >= rows.length) return;
-    final MangaOnlineSourceRow other = rows[target];
-    await _manager!.updateSourceSettings(source, sortOrder: other.sortOrder);
-    await _manager!.updateSourceSettings(other, sortOrder: source.sortOrder);
-  }
-
   Widget _sectionTitle(String title) =>
       Text(title, style: Theme.of(context).textTheme.titleLarge);
 
@@ -663,8 +592,115 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     child: Text(t.mihon_runtime_unavailable, textAlign: TextAlign.center),
   );
 
-  Widget _buildAidokuSection() {
+  /// 切段：正文换内容、滚动回顶。各段内容互不相干，沿用上一段的滚动偏移会让
+  /// 新段一进来就停在半截。
+  void _selectSegment(ImportPageSegment segment) {
+    if (segment == _segment) return;
+    setState(() => _segment = segment);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  /// 本页可用的段。
+  ///
+  /// 「仓库」「扩展」两段整段受商店合规门约束（iOS 不出现）；「在线源」段任何
+  /// 平台都有——互联对端的漫画库那一行不受合规边界约束（读的是用户自己另一台
+  /// 设备上的库，与 Plex / Jellyfin 客户端连自己的服务器同类），iOS 上这一段
+  /// 只剩它一行。
+  List<ImportPageSegment> _segmentsFor({
+    required bool onlineSourcesAvailable,
+  }) => <ImportPageSegment>[
+    ImportPageSegment.local,
+    if (onlineSourcesAvailable) ...<ImportPageSegment>[
+      ImportPageSegment.stores,
+      ImportPageSegment.extensions,
+    ],
+    ImportPageSegment.sources,
+  ];
+
+  /// Aidoku 仓库管理（「仓库」段）：刷新 / 添加仓库 + 已保存仓库卡。
+  Widget _buildAidokuRepositories() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            FushiIconButton(
+              tooltip: t.mihon_store_refresh,
+              label: t.mihon_store_refresh,
+              icon: Icons.refresh,
+              onTap: _aidokuBusy ? null : _refreshAidokuRepositories,
+            ),
+            FushiIconButton(
+              key: const ValueKey<String>('aidoku_add_repository'),
+              tooltip: t.aidoku_repository_add,
+              label: t.aidoku_repository_add,
+              icon: Icons.cloud_download_outlined,
+              onTap: _aidokuBusy ? null : _addAidokuRepository,
+            ),
+          ],
+        ),
+        ..._aidokuStatusRows(),
+        const SizedBox(height: 8),
+        if (_aidokuRepositories?.isEmpty == true)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(t.aidoku_repository_empty),
+          ),
+        for (final AidokuSavedRepository repository
+            in _aidokuRepositories ?? const <AidokuSavedRepository>[])
+          FushiCard(
+            margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+            padding: EdgeInsets.zero,
+            child: FushiListItem(
+              leading: const Icon(Icons.cloud_outlined),
+              title: Text(repository.name),
+              subtitle: Text(mangaSourceHostLabel(repository.indexUrl)),
+              trailing: Wrap(
+                children: <Widget>[
+                  IconButton(
+                    tooltip: t.aidoku_repository_browse,
+                    onPressed: _aidokuBusy
+                        ? null
+                        : () => unawaited(_browseAidokuRepository(repository)),
+                    icon: const Icon(Icons.view_list_outlined),
+                  ),
+                  IconButton(
+                    tooltip: t.aidoku_repository_remove,
+                    onPressed: _aidokuBusy
+                        ? null
+                        : () => unawaited(_removeAidokuRepository(repository)),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Aidoku 的忙碌进度条与错误行：仓库段与目录段都要显示（busy 是共享状态）。
+  List<Widget> _aidokuStatusRows() => <Widget>[
+    if (_aidokuBusy || (_aidokuPackages == null && _aidokuError == null))
+      const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: LinearProgressIndicator(),
+      ),
+    if (_aidokuError != null)
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          '$_aidokuError',
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ),
+  ];
+
+  /// Aidoku 扩展目录（「扩展」段）：刷新 / 导入 `.aix` + 筛选 + 可装 / 已装条目。
+  Widget _buildAidokuCatalog() {
     final Map<String, AidokuRepositorySource> availableById =
         <String, AidokuRepositorySource>{};
     for (final AidokuRepositoryIndex index in _aidokuIndexes) {
@@ -740,63 +776,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
               icon: Icons.file_open_outlined,
               onTap: _aidokuBusy ? null : _importAidoku,
             ),
-            FushiIconButton(
-              key: const ValueKey<String>('aidoku_add_repository'),
-              tooltip: t.aidoku_repository_add,
-              label: t.aidoku_repository_add,
-              icon: Icons.cloud_download_outlined,
-              onTap: _aidokuBusy ? null : _addAidokuRepository,
-            ),
           ],
         ),
-        if (_aidokuBusy || (_aidokuPackages == null && _aidokuError == null))
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: LinearProgressIndicator(),
-          ),
-        if (_aidokuError != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              '$_aidokuError',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
-        const SizedBox(height: 8),
-        if (_aidokuRepositories?.isEmpty == true)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(t.aidoku_repository_empty),
-          ),
-        for (final AidokuSavedRepository repository
-            in _aidokuRepositories ?? const <AidokuSavedRepository>[])
-          FushiCard(
-            margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-            padding: EdgeInsets.zero,
-            child: FushiListItem(
-              leading: const Icon(Icons.cloud_outlined),
-              title: Text(repository.name),
-              subtitle: Text(mangaSourceHostLabel(repository.indexUrl)),
-              trailing: Wrap(
-                children: <Widget>[
-                  IconButton(
-                    tooltip: t.aidoku_repository_browse,
-                    onPressed: _aidokuBusy
-                        ? null
-                        : () => unawaited(_browseAidokuRepository(repository)),
-                    icon: const Icon(Icons.view_list_outlined),
-                  ),
-                  IconButton(
-                    tooltip: t.aidoku_repository_remove,
-                    onPressed: _aidokuBusy
-                        ? null
-                        : () => unawaited(_removeAidokuRepository(repository)),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        ..._aidokuStatusRows(),
         if (available.isNotEmpty || installed.isNotEmpty) ...<Widget>[
           const SizedBox(height: 8),
           MangaExtensionFilters(
@@ -887,169 +869,183 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
     );
   }
 
+  /// 「本地」段：快速导入区 + 常驻来源。
+  Widget _buildLocalSegment() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 快速导入区：单卷 / 单文件入口（与书 / 视频「导入」视图同构同位；
+        // 对话框内含文件 / 文件夹 / OCR 向导）。
+        QuickImportSection(
+          actions: <QuickImportAction>[
+            QuickImportAction(
+              icon: Icons.auto_stories_outlined,
+              label: t.manga_import_action,
+              onTap: _importManga,
+            ),
+            QuickImportAction(
+              icon: Icons.drive_folder_upload_outlined,
+              label: t.media_import_folder,
+              onTap: () async => _localSourcesKey.currentState?.importFolder(),
+            ),
+            if (AidokuRuntimeFactory.isSupported)
+              QuickImportAction(
+                icon: Icons.extension_outlined,
+                label: t.aidoku_extension_import,
+                onTap: _importAidoku,
+                enabled: !_aidokuBusy,
+              ),
+            if (AidokuRuntimeFactory.isSupported)
+              QuickImportAction(
+                icon: Icons.cloud_download_outlined,
+                label: t.aidoku_repository_add,
+                onTap: _addAidokuRepository,
+                enabled: !_aidokuBusy,
+              ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        Row(
+          children: <Widget>[
+            Expanded(child: _sectionTitle(t.media_source_section_title)),
+            FushiIconButton(
+              tooltip: t.media_source_add,
+              label: t.media_source_add,
+              icon: Icons.create_new_folder_outlined,
+              onTap: () => _localSourcesKey.currentState?.addSource(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        MediaSourcesView(key: _localSourcesKey, mediaKind: 'manga'),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MihonManager? manager = _manager;
-    // iOS 上「来源」视图只剩本地：扫描根与单卷导入。扩展仓库与在线源整段不渲染
-    // （[StoreRestrictedCapability.onlineMangaSource]），连「本平台不支持」的说明
-    // 也不留——合规要求的是不提供第三方内容源入口，一句「这个功能在 macOS 上有」
-    // 仍然是在向 iOS 用户指路。
+    // iOS 上「来源」视图只剩本地与在线源里的互联一行：扩展仓库与扩展目录整段
+    // 不渲染（[StoreRestrictedCapability.onlineMangaSource]），连「本平台不支持」
+    // 的说明也不留——合规要求的是不提供第三方内容源入口，一句「这个功能在
+    // macOS 上有」仍然是在向 iOS 用户指路。
     final bool onlineSourcesAvailable =
         StoreRestrictedCapability.onlineMangaSource.isAvailable;
+    final List<ImportPageSegment> segments = _segmentsFor(
+      onlineSourcesAvailable: onlineSourcesAvailable,
+    );
+    final ImportPageSegment segment = segments.contains(_segment)
+        ? _segment
+        : ImportPageSegment.local;
+    // Aidoku 与 Mihon 共用「仓库」「扩展」两段时各带一行小标题分开；没有
+    // Aidoku 宿主的构建整节不挂，也就不需要小标题（段名已经说明了一切）。
+    final bool aidoku =
+        onlineSourcesAvailable && AidokuRuntimeFactory.isSupported;
+    final List<MihonExtensionsSection> mihonSections = switch (segment) {
+      ImportPageSegment.stores => const <MihonExtensionsSection>[
+        MihonExtensionsSection.stores,
+      ],
+      ImportPageSegment.extensions => const <MihonExtensionsSection>[
+        MihonExtensionsSection.catalog,
+      ],
+      _ => const <MihonExtensionsSection>[],
+    };
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
           if (!isCupertinoPlatform(context)) _buildHeader(),
+          if (segments.length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: ImportPageSegmentBar(
+                segments: segments,
+                selected: segment,
+                onChanged: _selectSegment,
+              ),
+            ),
           Expanded(
             child: CustomScrollView(
+              controller: _scrollController,
               slivers: <Widget>[
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
                   sliver: SliverMainAxisGroup(
                     slivers: <Widget>[
-                      SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            // 快速导入区：单卷 / 单文件入口（与书 / 视频「导入」
-                            // 视图同构同位；对话框内含文件 / 文件夹 / OCR 向导）。
-                            QuickImportSection(
-                              actions: <QuickImportAction>[
-                                QuickImportAction(
-                                  icon: Icons.auto_stories_outlined,
-                                  label: t.manga_import_action,
-                                  onTap: _importManga,
-                                ),
-                                QuickImportAction(
-                                  icon: Icons.drive_folder_upload_outlined,
-                                  label: t.media_import_folder,
-                                  onTap: () async => _localSourcesKey
-                                      .currentState
-                                      ?.importFolder(),
-                                ),
-                                if (AidokuRuntimeFactory.isSupported)
-                                  QuickImportAction(
-                                    icon: Icons.extension_outlined,
-                                    label: t.aidoku_extension_import,
-                                    onTap: _importAidoku,
-                                    enabled: !_aidokuBusy,
-                                  ),
-                                if (AidokuRuntimeFactory.isSupported)
-                                  QuickImportAction(
-                                    icon: Icons.cloud_download_outlined,
-                                    label: t.aidoku_repository_add,
-                                    onTap: _addAidokuRepository,
-                                    enabled: !_aidokuBusy,
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 28),
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: _sectionTitle(
-                                    t.media_source_section_title,
-                                  ),
-                                ),
-                                FushiIconButton(
-                                  tooltip: t.media_source_add,
-                                  label: t.media_source_add,
-                                  icon: Icons.create_new_folder_outlined,
-                                  onTap: () => _localSourcesKey.currentState
-                                      ?.addSource(),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            MediaSourcesView(
-                              key: _localSourcesKey,
-                              mediaKind: 'manga',
-                            ),
-                            if (onlineSourcesAvailable) ...<Widget>[
-                              // 没有 Aidoku 宿主的构建不挂这一节：与其展示一句
-                              // 「本平台不可用」，不如整节不出现。
-                              if (AidokuRuntimeFactory.isSupported) ...<Widget>[
-                                const SizedBox(height: 28),
-                                _sectionTitle(t.aidoku_extensions_title),
-                                const SizedBox(height: 8),
-                                _buildAidokuSection(),
-                              ],
+                      if (segment == ImportPageSegment.local)
+                        SliverToBoxAdapter(child: _buildLocalSegment()),
+                      if (aidoku && segment == ImportPageSegment.stores)
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              _sectionTitle(t.aidoku_extensions_title),
+                              const SizedBox(height: 8),
+                              _buildAidokuRepositories(),
                               const SizedBox(height: 28),
                               _sectionTitle(t.mihon_extensions_title),
                               const SizedBox(height: 8),
                             ],
-                          ],
+                          ),
                         ),
-                      ),
-                      if (onlineSourcesAvailable)
-                        if (manager == null)
-                          SliverToBoxAdapter(child: _unavailableNote())
-                        else
-                          const MihonExtensionsPage(embedded: true),
-                      SliverToBoxAdapter(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            const SizedBox(height: 28),
-                            _sectionTitle(t.mihon_sources_title),
-                            const SizedBox(height: 8),
-                            if (onlineSourcesAvailable &&
-                                manager != null) ...<Widget>[
-                              Row(
-                                children: <Widget>[
-                                  Expanded(child: _buildSourceSearchField()),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    key: const ValueKey<String>(
-                                      'mihon_sources_sort_by_downloads',
-                                    ),
-                                    tooltip: t.mihon_sources_sort_by_downloads,
-                                    onPressed: () =>
-                                        unawaited(_sortSourcesByDownloads()),
-                                    icon: const Icon(Icons.sort),
-                                  ),
-                                ],
-                              ),
+                      if (aidoku && segment == ImportPageSegment.extensions)
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              _sectionTitle(t.aidoku_extensions_title),
+                              const SizedBox(height: 8),
+                              _buildAidokuCatalog(),
+                              const SizedBox(height: 28),
+                              _sectionTitle(t.mihon_extensions_title),
                               const SizedBox(height: 8),
                             ],
-                            // 内置在线源：与扩展提供的源同节同级（见类文档）。
-                            if (onlineSourcesAvailable) ...<Widget>[
-                              const MokuroMoeSourceRow(),
-                              const SizedBox(height: 8),
-                            ],
-                            // 已配对互联对端的漫画库也是一个「在线源」：不下整卷，
-                            // 直接在对端上翻页（Suwayomi 作为 Tachiyomi 源的形态）。
-                            //
-                            // 这一行**不受商店合规边界约束**，iOS 上照常提供：它读的是
-                            // 用户自己另一台设备上的库，不是第三方内容索引——与 Plex /
-                            // Jellyfin 客户端连自己的服务器同类。整节因此也保留标题，
-                            // 只是在 iOS 上只剩这一行。
-                            const InterconnectMangaSourceRow(),
-                            if (onlineSourcesAvailable && manager == null)
-                              _unavailableNote(),
-                          ],
+                          ),
                         ),
-                      ),
+                      // Mihon 扩展节常驻在树里（key 固定），其它段传空 sections
+                      // 渲染成空 sliver：筛选 / 折叠 / 批量安装进度都是它的
+                      // State，切段不能把它拆掉（见 MihonExtensionsPage 文档）。
                       if (onlineSourcesAvailable && manager != null)
-                        Builder(
-                          builder: (BuildContext context) {
-                            final List<MangaOnlineSourceRow> visible =
-                                _visibleOnlineSources(manager);
-                            return SliverList.builder(
-                              itemCount: visible.length,
-                              itemBuilder: (BuildContext context, int index) =>
-                                  _buildOnlineSource(
-                                    manager,
-                                    visible[index],
-                                    manager.sources.indexOf(visible[index]),
-                                    reorderable: _sourceSearchQuery
-                                        .trim()
-                                        .isEmpty,
-                                  ),
-                            );
-                          },
-                        ),
+                        MihonExtensionsPage(
+                          key: const ValueKey<String>('manga_mihon_extensions'),
+                          embedded: true,
+                          sections: mihonSections,
+                        )
+                      else if (onlineSourcesAvailable &&
+                          mihonSections.isNotEmpty)
+                        SliverToBoxAdapter(child: _unavailableNote()),
+                      if (segment == ImportPageSegment.sources)
+                        if (onlineSourcesAvailable && manager != null)
+                          MihonInstalledSourcesSection(
+                            key: const ValueKey<String>('manga_mihon_sources'),
+                            manager: manager,
+                            // 内置在线源与扩展提供的源同段同级（见类文档）：
+                            // mokuro.moe 是个网站，不是本地扫描根（BUG-1431）；
+                            // 已配对互联对端的漫画库也是一个「在线源」——不下
+                            // 整卷，直接在对端上翻页（Suwayomi 作为 Tachiyomi
+                            // 源的形态）。
+                            leading: const <Widget>[
+                              MokuroMoeSourceRow(),
+                              SizedBox(height: 8),
+                              InterconnectMangaSourceRow(),
+                              SizedBox(height: 8),
+                            ],
+                          )
+                        else
+                          SliverToBoxAdapter(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: <Widget>[
+                                if (onlineSourcesAvailable) ...<Widget>[
+                                  const MokuroMoeSourceRow(),
+                                  const SizedBox(height: 8),
+                                ],
+                                // 互联那一行不受商店合规边界约束，iOS 上照常提供。
+                                const InterconnectMangaSourceRow(),
+                                if (onlineSourcesAvailable) _unavailableNote(),
+                              ],
+                            ),
+                          ),
                     ],
                   ),
                 ),
@@ -1057,130 +1053,6 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// 「按下载量排序」（BUG-2481）：一次性按扩展下载量重写 sort_order。目录快照
-  /// 还没刷出来时提示先刷新仓库，不偷偷按 null 排。
-  Future<void> _sortSourcesByDownloads() async {
-    final MihonManager? manager = _manager;
-    if (manager == null) return;
-    try {
-      final bool sorted = await manager.sortSourcesByDownloads();
-      if (!mounted) return;
-      FushiToast.show(
-        msg: sorted
-            ? t.mihon_sources_sort_by_downloads_done
-            : t.mihon_sources_sort_by_downloads_no_data,
-        severity: sorted ? ToastSeverity.success : ToastSeverity.warning,
-      );
-    } on Object catch (error) {
-      if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      }
-    }
-  }
-
-  /// 搜索按名称 / 语言 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）。
-  List<MangaOnlineSourceRow> _visibleOnlineSources(MihonManager manager) =>
-      filterByMediaSearch<MangaOnlineSourceRow>(
-        manager.sources,
-        _sourceSearchQuery,
-        (MangaOnlineSourceRow source) => <String>[
-          source.name,
-          source.language,
-          source.extensionPackage,
-        ],
-      );
-
-  Widget _buildSourceSearchField() => TextField(
-    key: const ValueKey<String>('mihon_sources_search_field'),
-    controller: _sourceSearchController,
-    decoration: InputDecoration(
-      prefixIcon: const Icon(Icons.search),
-      hintText: t.mihon_sources_search_hint,
-      border: const OutlineInputBorder(),
-      suffixIcon: _sourceSearchQuery.isEmpty
-          ? null
-          : IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () {
-                _sourceSearchController.clear();
-                setState(() => _sourceSearchQuery = '');
-              },
-            ),
-    ),
-    onChanged: (String value) => setState(() => _sourceSearchQuery = value),
-  );
-
-  /// [index] 是该源在**完整**列表里的位置（排序按钮据此判首尾）；筛选中列表
-  /// 顺序已不是真实顺序，[reorderable] 为 false 时不显示排序按钮。
-  Widget _buildOnlineSource(
-    MihonManager manager,
-    MangaOnlineSourceRow source,
-    int index, {
-    bool reorderable = true,
-  }) {
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        leading: Switch.adaptive(
-          value: source.enabled,
-          onChanged: (bool value) =>
-              unawaited(manager.updateSourceSettings(source, enabled: value)),
-        ),
-        title: Text(source.name),
-        subtitle: Text(
-          '${source.language.toUpperCase()} · ${source.extensionPackage}',
-        ),
-        trailing: Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            if (reorderable) ...<Widget>[
-              IconButton(
-                tooltip: t.sort_by,
-                onPressed: index == 0
-                    ? null
-                    : () => unawaited(_moveSource(source, -1)),
-                icon: const Icon(Icons.keyboard_arrow_up),
-              ),
-              IconButton(
-                tooltip: t.sort_by,
-                onPressed: index == manager.sources.length - 1
-                    ? null
-                    : () => unawaited(_moveSource(source, 1)),
-                icon: const Icon(Icons.keyboard_arrow_down),
-              ),
-            ],
-            if (_loginTargetFor(source) != null)
-              IconButton(
-                key: ValueKey<String>('mihon_source_login_${source.sourceId}'),
-                tooltip: t.mihon_source_login,
-                onPressed: () => unawaited(_openWebLogin(source)),
-                icon: const Icon(Icons.login),
-              ),
-            IconButton(
-              tooltip: t.mihon_source_preferences,
-              onPressed: () => _openPreferences(source),
-              icon: const Icon(Icons.tune),
-            ),
-            IconButton(
-              tooltip: t.mihon_source_clear_data,
-              onPressed: () => unawaited(_clearSourceData(source)),
-              icon: const Icon(Icons.delete_sweep_outlined),
-            ),
-            IconButton(
-              tooltip: t.sort_by,
-              onPressed: () => unawaited(
-                manager.updateSourceSettings(source, pinned: !source.pinned),
-              ),
-              icon: Icon(
-                source.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1483,264 +1355,6 @@ class _AidokuRepositorySourcesDialogState
           child: Text(t.dialog_close),
         ),
       ],
-    );
-  }
-}
-
-/// Mihon 在线来源的偏好编辑弹窗。
-///
-/// 文本偏好会保留为草稿，直到用户按下明确的“保存”按钮；开关、下拉和多选仍沿用
-/// Mihon 的即时保存契约。此 widget 公开是为了用真实 manager/runtime 做交互回归测试。
-class MihonPreferencesDialog extends StatefulWidget {
-  const MihonPreferencesDialog({
-    super.key,
-    required this.manager,
-    required this.source,
-  });
-
-  final MihonManager manager;
-  final MangaOnlineSourceRow source;
-
-  @override
-  State<MihonPreferencesDialog> createState() => _MihonPreferencesDialogState();
-}
-
-class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
-  List<MihonPreference>? _preferences;
-  Object? _error;
-  String? _savingKey;
-  bool _savingAll = false;
-  final Map<String, String> _textDrafts = <String, String>{};
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final List<MihonPreference> preferences = await widget.manager
-          .getPreferences(widget.source);
-      if (mounted) setState(() => _preferences = preferences);
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = error);
-    }
-  }
-
-  Future<void> _save(MihonPreference original, Object? value) async {
-    setState(() => _savingKey = original.key);
-    try {
-      final List<MihonPreference> preferences = await _persistPreference(
-        original,
-        value,
-      );
-      if (mounted) {
-        setState(() {
-          _preferences = preferences;
-          if (_textDrafts[original.key] == value) {
-            _textDrafts.remove(original.key);
-          }
-        });
-      }
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = error);
-    } finally {
-      if (mounted) setState(() => _savingKey = null);
-    }
-  }
-
-  Future<List<MihonPreference>> _persistPreference(
-    MihonPreference original,
-    Object? value,
-  ) {
-    final MihonPreference changed = MihonPreference(
-      key: original.key,
-      kind: original.kind,
-      title: original.title,
-      summary: original.summary,
-      value: value,
-      entries: original.entries,
-      entryValues: original.entryValues,
-    );
-    return widget.manager.setPreference(widget.source, changed);
-  }
-
-  Future<void> _saveAllAndClose() async {
-    final List<MihonPreference>? preferences = _preferences;
-    if (preferences == null || _savingKey != null || _savingAll) return;
-    setState(() => _savingAll = true);
-    try {
-      List<MihonPreference> updated = preferences;
-      for (final MihonPreference preference in preferences) {
-        if (preference.kind != MihonPreferenceKind.text) continue;
-        final String? draft = _textDrafts[preference.key];
-        if (draft == null || draft == (preference.value?.toString() ?? '')) {
-          continue;
-        }
-        updated = await _persistPreference(preference, draft);
-      }
-      if (!mounted) return;
-      setState(() {
-        _preferences = updated;
-        _textDrafts.clear();
-      });
-      Navigator.pop(context);
-    } on Object catch (error) {
-      if (mounted) setState(() => _error = error);
-    } finally {
-      if (mounted) setState(() => _savingAll = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final List<MihonPreference>? preferences = _preferences;
-    return AlertDialog(
-      title: Text('${widget.source.name} · ${t.mihon_source_preferences}'),
-      content: SizedBox(
-        width: 480,
-        child: _error != null
-            ? Text('$_error')
-            : preferences == null
-            ? Center(child: adaptiveIndicator(context: context))
-            : preferences.isEmpty
-            ? Text(t.mihon_source_no_results)
-            : ListView(
-                shrinkWrap: true,
-                children: <Widget>[
-                  for (final MihonPreference preference in preferences)
-                    _buildPreference(preference),
-                ],
-              ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: _savingAll ? null : () => Navigator.pop(context),
-          child: Text(t.dialog_close),
-        ),
-        FilledButton(
-          onPressed:
-              preferences == null ||
-                  _error != null ||
-                  _savingKey != null ||
-                  _savingAll
-              ? null
-              : () => unawaited(_saveAllAndClose()),
-          child: Text(t.dialog_save),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPreference(MihonPreference preference) {
-    final bool busy = _savingAll || _savingKey == preference.key;
-    return switch (preference.kind) {
-      MihonPreferenceKind.checkBox ||
-      MihonPreferenceKind.switchControl => SwitchListTile.adaptive(
-        title: Text(preference.title),
-        subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
-        value: preference.value == true,
-        onChanged: busy
-            ? null
-            : (bool value) => unawaited(_save(preference, value)),
-      ),
-      MihonPreferenceKind.text => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: TextFormField(
-          key: ValueKey<String>('${preference.key}:${preference.value}'),
-          initialValue: preference.value?.toString() ?? '',
-          enabled: !busy,
-          decoration: InputDecoration(
-            labelText: preference.title,
-            helperText: preference.summary.isEmpty ? null : preference.summary,
-          ),
-          onChanged: (String value) => _textDrafts[preference.key] = value,
-          onFieldSubmitted: (String value) =>
-              unawaited(_save(preference, value)),
-        ),
-      ),
-      MihonPreferenceKind.list => DropdownButtonFormField<int>(
-        value: (preference.value as int? ?? 0).clamp(
-          0,
-          preference.entries.length - 1,
-        ),
-        decoration: InputDecoration(
-          labelText: preference.title,
-          helperText: preference.summary.isEmpty ? null : preference.summary,
-        ),
-        items: <DropdownMenuItem<int>>[
-          for (int index = 0; index < preference.entries.length; index++)
-            DropdownMenuItem<int>(
-              value: index,
-              child: Text(preference.entries[index]),
-            ),
-        ],
-        onChanged: busy
-            ? null
-            : (int? value) => unawaited(_save(preference, value ?? 0)),
-      ),
-      MihonPreferenceKind.multiSelect => ExpansionTile(
-        title: Text(preference.title),
-        subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
-        children: <Widget>[
-          for (int index = 0; index < preference.entries.length; index++)
-            _MihonMultiSelectRow(
-              label: preference.entries[index],
-              selected:
-                  (preference.value as List<Object?>? ?? const <Object?>[])
-                      .map((Object? value) => value.toString())
-                      .contains(preference.entryValues[index]),
-              onChanged: busy
-                  ? null
-                  : (bool? selected) {
-                      final Set<String> values =
-                          (preference.value as List<Object?>? ??
-                                  const <Object?>[])
-                              .map((Object? value) => value.toString())
-                              .toSet();
-                      if (selected == true) {
-                        values.add(preference.entryValues[index]);
-                      } else {
-                        values.remove(preference.entryValues[index]);
-                      }
-                      unawaited(_save(preference, values.toList()));
-                    },
-            ),
-        ],
-      ),
-      MihonPreferenceKind.unsupported => FushiListItem(
-        leading: const Icon(Icons.warning_amber_outlined),
-        title: Text(preference.title),
-        subtitle: Text(t.mihon_extension_incompatible),
-      ),
-    };
-  }
-}
-
-/// 多选偏好的一行。
-///
-/// 框架的 `CheckboxListTile` 是被 MD3 守卫禁用的本地 chrome；共享的
-/// [FushiListItem] 没有内建复选语义，所以这里把「点整行 = 切换」的行为显式接上，
-/// 与 `CheckboxListTile` 的交互等价（整行可点，禁用态整行不可点）。
-class _MihonMultiSelectRow extends StatelessWidget {
-  const _MihonMultiSelectRow({
-    required this.label,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final String label;
-  final bool selected;
-  final ValueChanged<bool?>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final ValueChanged<bool?>? changed = onChanged;
-    return FushiListItem(
-      title: Text(label),
-      leading: Checkbox(value: selected, onChanged: changed),
-      onTap: changed == null ? null : () => changed(!selected),
     );
   }
 }

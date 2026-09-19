@@ -2361,7 +2361,6 @@
   "mihon_source_popular": "Popolari",
   "mihon_source_preferences": "Preferenze fonte",
   "mihon_source_search": "Cerca manga",
-  "mihon_sources_title": "Fonti manga",
   "mihon_store_add": "Aggiungi store estensioni",
   "mihon_store_edit": "Modifica URL del repository",
   "mihon_store_empty": "Nessuno store di estensioni. Aggiungi uno store Mihon compatibile o importa un APK locale.",
@@ -5078,11 +5077,18 @@
   "video_subtitle_remote_player_rendered": "Server cannot extract this subtitle track; the player renders it directly (no word lookup): $label",
   "video_anidb_login_test_failed_backoff": "AniDB has not answered several requests in a row; backing off, try again shortly",
   "video_extensions_title": "Video source extensions",
-  "video_online_sources_title": "Video sources",
   "video_online_sources_hint": "Third-party Aniyomi extensions (extensions-lib 14). Content comes from each extension's website and plays in the built-in player.",
   "video_online_sources_empty": "No enabled video sources. Install and enable an extension first.",
   "video_online_episodes_title": "Episodes",
   "video_online_episodes_empty": "No episodes found.",
   "video_online_stream_choose": "Choose a stream",
-  "video_online_stream_none": "This episode returned no playable stream."
+  "video_online_stream_none": "This episode returned no playable stream.",
+  "media_import_segment_local": "Local",
+  "media_import_segment_stores": "Stores",
+  "media_import_segment_extensions": "Extensions",
+  "media_import_segment_sources": "Sources",
+  "mihon_source_move_up": "Move up",
+  "mihon_source_move_down": "Move down",
+  "mihon_source_pin": "Pin to top",
+  "mihon_source_unpin": "Unpin"
 }
