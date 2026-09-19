@@ -47,6 +47,7 @@ import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
+import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
@@ -2665,11 +2666,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               sourceId: row.sourceId,
               targetUrl: row.videoPath,
             );
+        // AList / OpenList 来源：条目地址不能直接播，起播前经 fs/get 换临期签名
+        // 直链；非该来源解析为 null，零分支。
+        final StreamUrlResolver? sourceUrlResolver =
+            await resolveSourceStreamUrlResolver(
+              db: appModel.database,
+              sourceId: row.sourceId,
+            );
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
             await buildStreamVideoLaunch(
               row,
               youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
               sourceHttpHeaders: sourceHeaders,
+              sourceUrlResolver: sourceUrlResolver,
             );
         if (!mounted) return;
         _resolvedStreamInfo = launch.info;

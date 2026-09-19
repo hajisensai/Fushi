@@ -58,6 +58,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'design_system',
   'dictionary_entry_font_size',
   'dictionary_update_interval',
+  // 用户自配的 AList / OpenList 站点清单（JSON 数组：id/name/url/kinds/
+  // username/passwordB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。与 discovery_opds_servers 同形、同隔离纪律。
+  'discovery_alist_sites',
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
@@ -375,6 +379,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 const Set<String> kCredentialPreferenceKeys = <String>{
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
+  'discovery_alist_sites',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
+import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -246,10 +247,21 @@ class UrlStreamVideoClient
     this.preresolvedCues = const <AudioCue>[],
     this.youtubeCaptionsUrl,
     this.httpHeaderFields = const <String, String>{},
+    this.urlResolver,
     http.Client? httpClient,
     YoutubeStreamRelay? youtubeStreamRelay,
   })  : _httpClient = httpClient ?? createAppHttpIoClient(),
         _youtubeStreamRelay = youtubeStreamRelay ?? relayYoutubeStreamUrl;
+
+  /// 播放期直链解析器（AList 来源：条目地址 → 临期签名 `raw_url`）。null =
+  /// [streamUrl] / [subtitleUrl] 本身就可播。每次起播与字幕下载前都重新解析，
+  /// 签名过期不会卡在第一次的结果上。
+  final StreamUrlResolver? urlResolver;
+
+  Future<String> _resolveUrl(String url) async {
+    final StreamUrlResolver? resolver = urlResolver;
+    return resolver == null ? url : resolver.resolve(url);
+  }
 
   /// 远端清单缓存里的来源身份（BUG-1202）。本 client 从不进库页的清单缓存
   /// （[listRemoteVideos] 恒空，它只是把一条粘贴来的 URL 包成播放页能吃的契约），
@@ -351,7 +363,10 @@ class UrlStreamVideoClient
     final String? audio = audioStreamUrl;
     final String? mining = miningVideoUrl;
     return RemoteVideoStreamUrls(
-      streamUrl: await _youtubeStreamRelay(streamUrl, httpHeaderFields),
+      streamUrl: await _youtubeStreamRelay(
+        await _resolveUrl(streamUrl),
+        httpHeaderFields,
+      ),
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
       audioStreamUrl: audio == null
@@ -379,11 +394,13 @@ class UrlStreamVideoClient
     int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
-    final String? url = subtitleUrl;
-    if (url == null || url.isEmpty) return;
+    final String? storedUrl = subtitleUrl;
+    if (storedUrl == null || storedUrl.isEmpty) return;
     // 跨站不带凭据（见方法文档）。判据用「字幕 URL 是否与流 URL 同 origin」，
-    // 而不是「有没有 header」——后者正是把凭据发出去的那条路。
-    final bool sameSite = isSameHttpOrigin(url, streamUrl);
+    // 而不是「有没有 header」——后者正是把凭据发出去的那条路。判据按**落库地址**
+    // 比，解析后的签名直链可能落在存储后端另一台主机上，那不是跨站。
+    final bool sameSite = isSameHttpOrigin(storedUrl, streamUrl);
+    final String url = await _resolveUrl(storedUrl);
     final Map<String, String>? headers =
         (httpHeaderFields.isEmpty || !sameSite) ? null : httpHeaderFields;
     final http.Response res = await _httpClient.get(
@@ -430,5 +447,8 @@ class UrlStreamVideoClient
 
   /// 释放底层 http client（页面 dispose 时调用）。
   @visibleForTesting
-  void close() => _httpClient.close();
+  void close() {
+    _httpClient.close();
+    urlResolver?.close();
+  }
 }

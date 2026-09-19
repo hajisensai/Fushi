@@ -402,10 +402,11 @@ void main() {
       // 三选、视频仅 WebDAV，见 _networkTransports），测试连接复用 sync 子系统的
       // WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面的红线守卫
       // 覆盖），绝不作为列写进来源行。
-      expect(src.contains("const <String>['sftp', 'ftp', 'webdav']"), isTrue,
-          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV 三选');
-      expect(src.contains("const <String>['webdav']"), isTrue,
-          reason: '视频网络来源必须收窄到仅 WebDAV（SFTP/FTP 无 HTTP 直链不可播）');
+      expect(src.contains("const <String>['sftp', 'ftp', 'webdav', 'alist']"),
+          isTrue,
+          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选');
+      expect(src.contains("const <String>['webdav', 'alist']"), isTrue,
+          reason: '视频网络来源必须收窄到 WebDAV/AList（SFTP/FTP 无 HTTP 直链不可播）');
       expect(src.contains('WebDavSyncBackend.instance.testConnection'), isTrue,
           reason: 'WebDAV 测试连接必须复用 sync 的 WebDavSyncBackend');
     });
