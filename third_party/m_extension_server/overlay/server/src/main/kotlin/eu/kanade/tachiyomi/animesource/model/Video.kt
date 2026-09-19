@@ -121,18 +121,24 @@ data class Video(
     }
 
     /**
-     * Oldest lib-14 shape (the `uri` parameter was already ignored upstream). No
-     * defaults on purpose: with them a three-argument `Video(url, quality, videoUrl)`
-     * call would be ambiguous against the constructor above in Kotlin source; the
-     * binary descriptor lib-14 code links against is the full five-parameter one.
+     * Oldest lib-14 shape (the `uri` parameter was already ignored upstream). The
+     * defaults are **required**, not a convenience: the lib-14 stub declares this
+     * constructor as `(url, quality, videoUrl, uri: Uri? = null, headers: Headers? = null)`,
+     * and Kotlin resolves the ubiquitous three-argument `Video(url, quality, videoUrl)`
+     * call in extension code to *this* overload (fewer unspecified defaults than the
+     * six-parameter one above), so the dex links against the synthetic
+     * `<init>(String, String, String, Uri, Headers, int, DefaultConstructorMarker)`.
+     * Dropping the defaults removes that synthetic constructor and every real lib-14
+     * APK dies with `NoSuchMethodError` at `getVideoList` (BUG-2600 review).
+     * `AnimeVideoLoaderTest` pins both synthetic descriptors.
      */
     @Suppress("UNUSED_PARAMETER", "DEPRECATION")
     constructor(
         url: String,
         quality: String,
         videoUrl: String?,
-        uri: Uri?,
-        headers: Headers?,
+        uri: Uri? = null,
+        headers: Headers? = null,
     ) : this(url, quality, videoUrl, headers)
 
     /**

@@ -200,4 +200,32 @@ class AnimeVideoLoaderTest {
         assertEquals("1080p", modern.quality)
         assertTrue(!modern.isVideoUrlUnresolved)
     }
+
+    @Test
+    fun `lib 14 and lib 16 synthetic default-argument constructors both exist for extension dex linking`() {
+        // 扩展 dex 按 JVM 描述符链接，宿主源码层编译过不代表二进制契约成立：
+        // lib-14 的 Video(url, quality, videoUrl) 解析到 uri 构造的合成默认参数版本，
+        // lib-16 的 Video(url, quality, videoUrl, headers) 解析到六参 deprecated 构造。
+        // 任一合成构造缺失，真 APK 在 getVideoList 处 NoSuchMethodError。
+        val marker = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker")
+        Video::class.java.getDeclaredConstructor(
+            String::class.java,
+            String::class.java,
+            String::class.java,
+            android.net.Uri::class.java,
+            okhttp3.Headers::class.java,
+            java.lang.Integer.TYPE,
+            marker,
+        )
+        Video::class.java.getDeclaredConstructor(
+            String::class.java,
+            String::class.java,
+            String::class.java,
+            okhttp3.Headers::class.java,
+            List::class.java,
+            List::class.java,
+            java.lang.Integer.TYPE,
+            marker,
+        )
+    }
 }
