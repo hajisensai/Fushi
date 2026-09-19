@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
+import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 
 Future<AppNativeProxy>? _sharedProxy;
 Future<AppNativeProxy>? _challengeProxy;
@@ -398,13 +400,136 @@ class AppNativeProxy {
     // 替它跟了基址就错了。只把 Location 改写成中继认识的形式（下面）。
     outbound.followRedirects = false;
     _copyHeaders(request.headers, outbound.headers);
+    // 上游一律回未压缩正文：中继要读播放列表改写分片地址、要看分片首字节判「图片
+    // 伪装」，压缩过的都做不了（megap 之类 CDN 不问也回 Brotli，Dart 没有 br）。媒体
+    // 分片本就不可压缩，播放列表只有几 KB，放弃压缩没有代价。
+    outbound.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
     await outbound.addStream(request);
     final HttpClientResponse response = await outbound.close();
     request.response.statusCode = response.statusCode;
     _copyHeaders(response.headers, request.response.headers);
     _rewriteRedirectLocation(response.headers, request.response.headers);
-    await request.response.addStream(response);
+    await _relayBody(request, response);
     await request.response.close();
+  }
+
+  /// 把上游正文转给 native，途中做两项 HLS 归一化（见 `hls_relay_normalizer.dart`）：
+  ///  - 播放列表：绝对 https 分片 / 变体 / `URI="…"` 改写成中继终结 TLS 的明文形式，
+  ///    分片请求才会以明文回到中继（否则 CONNECT 隧道里的字节中继看不见）；
+  ///  - 分片：图片魔数开头、后面却是 MPEG-TS / fMP4 的「伪装分片」剥掉图片前缀。
+  /// 只对整包 GET 做（200，或 `bytes=0-` 换来的完整 206）；真正的部分范围请求的
+  /// 字节偏移不能动，原样流过。
+  Future<void> _relayBody(
+    HttpRequest request,
+    HttpClientResponse response,
+  ) async {
+    final HttpResponse out = request.response;
+    // ffmpeg 的 http 首请求默认带 `Range: bytes=0-`，上游多半回 206 + 完整
+    // Content-Range——语义上仍是整包，与 200 同等处理；改写 / 剥前缀后以 200 回给
+    // native（Content-Range 随之作废）。真正的部分范围请求原样流过。
+    final bool wholeBody =
+        request.method == 'GET' &&
+        isWholeBodyRangeRequest(
+          request.headers.value(HttpHeaders.rangeHeader),
+        ) &&
+        (response.statusCode == HttpStatus.ok ||
+            (response.statusCode == HttpStatus.partialContent &&
+                isCompleteContentRange(
+                  response.headers.value(HttpHeaders.contentRangeHeader),
+                )));
+    if (!wholeBody) {
+      await out.addStream(response);
+      return;
+    }
+    final String? encoding = response.headers.value(
+      HttpHeaders.contentEncodingHeader,
+    );
+    final bool gzipped = encoding != null && encoding.toLowerCase() == 'gzip';
+    final bool plain = encoding == null || encoding.toLowerCase() == 'identity';
+    final bool playlistHint =
+        isHlsPlaylistContentType(
+          response.headers.value(HttpHeaders.contentTypeHeader),
+        ) ||
+        isHlsPlaylistPath(request.requestedUri.path);
+    final StreamIterator<List<int>> chunks = StreamIterator<List<int>>(
+      response,
+    );
+    final BytesBuilder head = BytesBuilder(copy: false);
+    // 第一段先攒够 16 字节判魔数（播放列表 / 图片 / 其它）。
+    while (head.length < 16 && await chunks.moveNext()) {
+      head.add(chunks.current);
+    }
+    Uint8List bytes = head.toBytes();
+    final bool playlist =
+        (playlistHint && (gzipped || plain)) ||
+        (plain && looksLikeHlsPlaylist(bytes));
+    if (playlist) {
+      // 播放列表整份读完再改写（一般几 KB；封顶 16 MiB，超了原样透传）。
+      const int cap = 16 * 1024 * 1024;
+      while (head.length <= cap && await chunks.moveNext()) {
+        head.add(chunks.current);
+      }
+      bytes = head.takeBytes();
+      if (bytes.length <= cap) {
+        final List<int> decoded = gzipped ? gzip.decode(bytes) : bytes;
+        if (looksLikeHlsPlaylist(decoded)) {
+          final String rewritten = rewriteHlsPlaylistUris(
+            utf8.decode(decoded, allowMalformed: true),
+            nativePlaybackUri,
+          );
+          final List<int> body = utf8.encode(rewritten);
+          _asWholeEntity(out);
+          out.headers.removeAll(HttpHeaders.contentEncodingHeader);
+          out.contentLength = body.length;
+          out.add(body);
+          return;
+        }
+      }
+      out.add(bytes);
+      await _drain(chunks, out);
+      return;
+    }
+    if (plain && looksLikeImagePrefix(bytes)) {
+      // 伪装分片：继续攒到探到媒体起点或封顶。
+      int? offset = disguisedMediaPayloadOffset(bytes);
+      while (offset == null &&
+          head.length < kDisguisedSegmentProbeLimit &&
+          await chunks.moveNext()) {
+        head.add(chunks.current);
+        offset = disguisedMediaPayloadOffset(head.toBytes());
+      }
+      bytes = head.takeBytes();
+      if (offset != null) {
+        _asWholeEntity(out);
+        final int declared = response.contentLength;
+        if (declared >= offset) out.contentLength = declared - offset;
+        out.headers.contentType = bytes[offset] == 0x47
+            ? ContentType('video', 'mp2t')
+            : ContentType('video', 'mp4');
+        out.add(Uint8List.sublistView(bytes, offset));
+        await _drain(chunks, out);
+        return;
+      }
+    }
+    out.add(bytes);
+    await _drain(chunks, out);
+  }
+
+  /// 改写过的响应不再是上游那个实体的字节切片：206 → 200、去掉 Content-Range。
+  static void _asWholeEntity(HttpResponse out) {
+    out.statusCode = HttpStatus.ok;
+    out.headers.removeAll(HttpHeaders.contentRangeHeader);
+  }
+
+  static Future<void> _drain(
+    StreamIterator<List<int>> chunks,
+    HttpResponse out,
+  ) async {
+    while (await chunks.moveNext()) {
+      out.add(chunks.current);
+      // 逐段 flush 给 native 侧回压：不然大分片会整段堆在 Dart 端内存里。
+      await out.flush();
+    }
   }
 
   /// 上游 3xx 的 `Location` 若是 https，改写成 [nativePlaybackUri] 同款的明文
