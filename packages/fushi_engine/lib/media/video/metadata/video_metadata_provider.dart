@@ -71,6 +71,23 @@ abstract interface class VideoMetadataEpisodeGroupProvider {
   });
 }
 
+/// 集级匹配（Shoko `MatchAnidbToTmdbEpisodes`）用的集名多语言能力：资料语言
+/// 之外再给每集 en-US 与剧原语的标题（Shoko 用 en-US + 原语比标题）。返回
+/// `集号 → 其它语言标题`；不含资料语言那份（调用方已有）。按季按需拉，不进
+/// 常规 hydrate。
+abstract interface class VideoMetadataEpisodeAliasProvider {
+  Future<Map<int, List<String>>> fetchEpisodeTitleAliases(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  });
+}
+
+/// 作品关系（前传）能力：Shoko `TmdbSearchService` 沿 Prequel 链回溯到根作品，
+/// 用根作品的标题搜 TMDB 剧（一个 TMDB 剧 = 整个系列，cour 标题搜不到）。
+abstract interface class VideoMetadataRelationsProvider {
+  Future<List<VideoMetadataLookup>> fetchPrequels(VideoMetadataLookup lookup);
+}
+
 /// Optional provider capability for work-level online trailers and extras.
 abstract interface class VideoMetadataExtrasProvider {
   Future<List<VideoMetadataExtra>> fetchExtras(VideoMetadataLookup lookup);

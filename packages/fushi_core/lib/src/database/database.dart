@@ -735,7 +735,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 107;
+  int get schemaVersion => 108;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3255,6 +3255,20 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(
                 mangaOnlineSources,
                 mangaOnlineSources.mediaKind,
+              );
+            }
+          }
+          if (from < 108) {
+            // v108（AniDB 对齐 Shoko）：anidb_file_identities 加 miss_attempts，
+            // 记 AniDB FILE 回 320「未收录」的连续复查次数（对齐 Shoko
+            // MaxAutoScanAttemptsPerFile 上限，识别成功时归零）。存量行默认 0
+            // 即「尚未计数」，无需回填。幂等：fresh 库由 createAll 带列建表；
+            // 重复升级被 _columnExists 短路；缺表的种子库先查 _tableExists。
+            if (await _tableExists('anidb_file_identities') &&
+                !await _columnExists('anidb_file_identities', 'miss_attempts')) {
+              await m.addColumn(
+                anidbFileIdentities,
+                anidbFileIdentities.missAttempts,
               );
             }
           }

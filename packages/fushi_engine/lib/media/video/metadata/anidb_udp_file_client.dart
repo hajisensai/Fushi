@@ -292,7 +292,7 @@ class AnidbUdpFileClient {
 
   Future<void> _ensureSession() async {
     if (_session != null) return;
-    final _Reply auth = await _request('AUTH', {
+    final Map<String, String> values = <String, String>{
       'user': config.username,
       'pass': config.password,
       'protover': '3',
@@ -300,7 +300,20 @@ class AnidbUdpFileClient {
       'clientver': '${config.clientVersion}',
       'enc': 'UTF-8',
       'comp': '0',
-    });
+    };
+    _Reply auth;
+    try {
+      // 第一轮登录超时不进退避：Shoko `LoginWithFallbacks` 对登录超时先
+      // `ForceReconnection`（重建 socket）再登一次，本地端口状态坏掉时这一步
+      // 才是真正的修复。
+      auth = await _request('AUTH', values, backoffOnTimeout: false);
+    } on AnidbUdpException catch (error) {
+      if (error.reason != AnidbUdpFailure.timeout) rethrow;
+      final AnidbUdpTransport? stale = _transport;
+      _transport = null;
+      await stale?.close();
+      auth = await _request('AUTH', values);
+    }
     if (auth.code != 200 && auth.code != 201) _fail(auth.code);
     final RegExpMatch? sessionMatch = RegExp(
       r'^([a-zA-Z0-9]{4,8}) LOGIN ACCEPTED(?: - NEW VERSION AVAILABLE)?$',
@@ -375,7 +388,7 @@ class AnidbUdpFileClient {
   }
 
   Future<_Reply> _request(String command, Map<String, String> values,
-      {bool responseRequired = true}) async {
+      {bool responseRequired = true, bool backoffOnTimeout = true}) async {
     final String tag = 'f${++_tag}';
     final String packet = '$command ${({
       ...values,
@@ -395,7 +408,7 @@ class AnidbUdpFileClient {
         // Same tag on purpose: a late reply to the first datagram still
         // answers this command.
         if (attempt == 0 && responseRequired) continue;
-        if (_gated) _backoffAfterTimeout();
+        if (_gated && backoffOnTimeout) _backoffAfterTimeout();
         _session = null;
         throw const AnidbUdpException(AnidbUdpFailure.timeout);
       } catch (_) {

@@ -58,13 +58,23 @@ const int kTmdbEpisodeMatchMaxFallbackDays = 120;
 ///
 /// [tmdbEpisodes] 里 `seasonNumber == 0` 的特典不进候选池（来源集都是正片；
 /// Shoko 对 AniDB 正片同样只在正片池里找）。
+///
+/// [candidateAliases]：`(季, 集) → 其它语言的集名`（Shoko 比的是 en-US + 原语，
+/// 本仓 TMDB 常规 hydrate 只有资料语言一种，见 `VideoMetadataEpisodeAliasProvider`）。
 Map<int, TmdbEpisodeMatch> matchEpisodesToTmdb(
   List<TmdbEpisodeMatchSource> sources,
-  Iterable<VideoMetadataEpisode> tmdbEpisodes,
-) {
+  Iterable<VideoMetadataEpisode> tmdbEpisodes, {
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
+}) {
   final List<_Candidate> pool = <_Candidate>[
     for (final VideoMetadataEpisode episode in tmdbEpisodes)
-      if (episode.seasonNumber != 0) _Candidate(episode),
+      if (episode.seasonNumber != 0)
+        _Candidate(
+          episode,
+          candidateAliases[(episode.seasonNumber, episode.episodeNumber)] ??
+              const <String>[],
+        ),
   ]..sort((_Candidate a, _Candidate b) {
       final int season =
           a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
@@ -123,11 +133,16 @@ Map<int, TmdbEpisodeMatch> matchEpisodesToTmdb(
 }
 
 class _Candidate {
-  _Candidate(this.episode)
-      : normalizedTitle = TitleNormalizer.normalize(episode.title),
+  _Candidate(this.episode, List<String> aliases)
+      : normalizedTitles = <String>{
+          for (final String title in <String>[episode.title, ...aliases])
+            if (TitleNormalizer.normalize(title) case final String normalized
+                when normalized.isNotEmpty)
+              normalized,
+        }.toList(growable: false),
         airDate = _parseDate(episode.airDate);
   final VideoMetadataEpisode episode;
-  final String normalizedTitle;
+  final List<String> normalizedTitles;
   final DateTime? airDate;
 }
 
@@ -242,27 +257,27 @@ _Link? _bestMatch(
   _Candidate? kinda;
   double kindaScore = -1;
   for (final _Candidate candidate in candidates) {
-    final String ct = candidate.normalizedTitle;
-    if (ct.isEmpty) continue;
-    for (final String st in source.normalizedTitles) {
-      final int lengthDifference = (st.length - ct.length).abs();
-      final bool contained = st == ct || st.contains(ct) || ct.contains(st);
-      if (contained && lengthDifference < 3) {
-        // 同分时播出日也对上的优先。
-        final double score = 1 + (datedSet.contains(candidate) ? 1 : 0);
-        if (score > exactScore) {
-          exactScore = score;
-          exact = candidate;
+    for (final String ct in candidate.normalizedTitles) {
+      for (final String st in source.normalizedTitles) {
+        final int lengthDifference = (st.length - ct.length).abs();
+        final bool contained = st == ct || st.contains(ct) || ct.contains(st);
+        if (contained && lengthDifference < 3) {
+          // 同分时播出日也对上的优先。
+          final double score = 1 + (datedSet.contains(candidate) ? 1 : 0);
+          if (score > exactScore) {
+            exactScore = score;
+            exact = candidate;
+          }
+          continue;
         }
-        continue;
-      }
-      final double similarity = TitleNormalizer.similarityNormalized(st, ct);
-      if (similarity >= 0.8 && lengthDifference < 6) {
-        final double score =
-            similarity + (datedSet.contains(candidate) ? 1 : 0);
-        if (score > kindaScore) {
-          kindaScore = score;
-          kinda = candidate;
+        final double similarity = TitleNormalizer.similarityNormalized(st, ct);
+        if (similarity >= 0.8 && lengthDifference < 6) {
+          final double score =
+              similarity + (datedSet.contains(candidate) ? 1 : 0);
+          if (score > kindaScore) {
+            kindaScore = score;
+            kinda = candidate;
+          }
         }
       }
     }

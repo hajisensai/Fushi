@@ -15,7 +15,8 @@ const String malIncompleteCreditEndpointsKey =
     'mal_incomplete_credit_endpoints';
 
 /// MAL metadata delivered by the public, read-only Jikan v4 API.
-class MalVideoMetadataProvider implements VideoMetadataProvider {
+class MalVideoMetadataProvider
+    implements VideoMetadataProvider, VideoMetadataRelationsProvider {
   MalVideoMetadataProvider({
     http.Client? client,
     VideoMetadataHttpClient? transport,
@@ -100,6 +101,37 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
         if (incomplete.isNotEmpty) malIncompleteCreditEndpointsKey: incomplete,
       },
     );
+  }
+
+  /// Jikan `full` 里的 `relations[].relation == "Prequel"`（只取 anime 条目）。
+  /// 走同一个 `full` 缓存，不多打请求。
+  @override
+  Future<List<VideoMetadataLookup>> fetchPrequels(
+      VideoMetadataLookup lookup) async {
+    final String id = _id(lookup);
+    final Map<String, Object?> payload;
+    try {
+      payload = await _get('anime/$id/full');
+    } on VideoMetadataNetworkException catch (error) {
+      if (error.statusCode == 404) return const <VideoMetadataLookup>[];
+      rethrow;
+    }
+    final Map<String, Object?>? item = metadataObject(payload['data']);
+    return <VideoMetadataLookup>[
+      for (final Object? node in metadataList(item?['relations']))
+        if (metadataObject(node) case final Map<String, Object?> relation)
+          if (metadataString(relation['relation'])?.toLowerCase() == 'prequel')
+            for (final Object? entryNode in metadataList(relation['entry']))
+              if (metadataObject(entryNode)
+                  case final Map<String, Object?> entry)
+                if (metadataString(entry['type'])?.toLowerCase() == 'anime')
+                  if (metadataInt(entry['mal_id']) case final int malId)
+                    VideoMetadataLookup(
+                      provider: VideoMetadataProviderKind.mal,
+                      externalId: '$malId',
+                      mediaKind: lookup.mediaKind,
+                    ),
+    ];
   }
 
   Future<Map<String, Object?>> _optionalCredits(

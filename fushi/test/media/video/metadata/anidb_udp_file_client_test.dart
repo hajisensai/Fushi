@@ -579,6 +579,39 @@ void main() {
     });
 
     test(
+        'AUTH that times out twice rebuilds the socket and logs in once more '
+        'before backing off (Shoko LoginWithFallbacks/ForceReconnection)',
+        () async {
+      int connects = 0;
+      int auths = 0;
+      final List<_Fake> transports = <_Fake>[];
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        sharedRateGate: true,
+        transportFactory: (_) async {
+          connects++;
+          final _Fake fake = _Fake((packet, tag) {
+            if (packet.startsWith('AUTH ')) {
+              auths++;
+              // 第一条 socket 上的 AUTH 全部丢包；重建后正常。
+              if (connects == 1) throw TimeoutException('lost');
+            }
+            return _normal(packet, tag);
+          });
+          transports.add(fake);
+          return fake;
+        },
+      );
+      expect((await client.lookup(size: 1, ed2k: _hash))?.fileId, 100);
+      expect(connects, 2, reason: '双超时后重建 socket');
+      expect(transports.first.closed, isTrue);
+      expect(auths, 3, reason: '旧 socket 两次 + 新 socket 一次');
+      expect(AnidbUdpFileClient.sharedBlockRemaining, Duration.zero,
+          reason: '登录第一轮超时不进退避');
+      await client.close();
+    });
+
+    test(
         'rate limiter: 2 s per packet, 6 s once active for over 10 s, reset '
         'after 120 s idle (Shoko UDPRateLimiter)', () async {
       final AnidbUdpFileClient client = gated(_Fake(_normal));

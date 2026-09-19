@@ -1321,23 +1321,31 @@ class VideoSourceScrapeCoordinator
           metadata.provider == VideoMetadataProviderKind.mal &&
           metadata.kind == VideoMetadataMediaKind.tv) {
         final Set<int> sliced = expansion?.tmdbSlices.keys.toSet() ?? <int>{};
+        final Map<int, List<TmdbEpisodeMatchSource>> anidbSources =
+            _anidbEpisodeSources(
+                localWork, hashEvidence, episodeOverrides, metadata, sliced);
+        // Shoko 比的是 en-US + 原语集名；只有真要匹配时才按季多拉两种语言。
+        final Map<(int, int), List<String>> aliases =
+            _needsEpisodeMatch(metadata, sliced) || anidbSources.isNotEmpty
+                ? await _tmdbEpisodeAliases(
+                    tmdb.metadata!, warnings, localWork.title)
+                : const <(int, int), List<String>>{};
         final TmdbEpisodeMatchOutcome enriched =
             enrichSeasonsByTmdbEpisodeMatch(
           metadata,
           tmdb.metadata,
           skipSeasons: sliced,
           preferredLanguage: _locale,
+          candidateAliases: aliases,
         );
         metadata = enriched.work;
         _noteEpisodeMatches(warnings, localWork.title, enriched.ratings,
             how: '按分集标题与播出日');
-        final Map<int, List<TmdbEpisodeMatchSource>> anidbSources =
-            _anidbEpisodeSources(
-                localWork, hashEvidence, episodeOverrides, metadata, sliced);
         if (anidbSources.isNotEmpty) {
           final TmdbEpisodeMatchOutcome filled =
               fillEmptySeasonsFromEpisodeTitles(
-                  metadata, tmdb.metadata, anidbSources);
+                  metadata, tmdb.metadata, anidbSources,
+                  candidateAliases: aliases);
           metadata = filled.work;
           // 核对通过的成员：本地 (季, 集) 改成 (季, AniDB 集号)。
           for (final VideoBookRow member in localWork.members) {
@@ -1932,6 +1940,150 @@ class VideoSourceScrapeCoordinator
         (offline.tmdbId != null && tmdbId == '${offline.tmdbId}');
   }
 
+  /// Shoko `TmdbSearchService.GetAnimePrequelChainRoot`：沿 MAL Prequel 关系回溯到
+  /// 系列根作品（最多 8 跳，环路 / 拉不到即停），返回根作品的标题与别名；
+  /// 根就是自己或没有关系能力时为空。
+  Future<List<String>> _prequelRootTitles(VideoMetadataWork primary) async {
+    final VideoMetadataProvider? provider =
+        _registry.provider(VideoMetadataProviderKind.mal);
+    final VideoMetadataLookup? start =
+        _lookupForCandidate(primary, VideoMetadataProviderKind.mal);
+    if (provider is! VideoMetadataRelationsProvider || start == null) {
+      return const <String>[];
+    }
+    final VideoMetadataRelationsProvider relations =
+        provider as VideoMetadataRelationsProvider;
+    final Set<String> visited = <String>{start.externalId};
+    VideoMetadataLookup current = start;
+    try {
+      for (int hop = 0; hop < 8; hop++) {
+        final List<VideoMetadataLookup> prequels =
+            await relations.fetchPrequels(current);
+        final VideoMetadataLookup? next = prequels
+            .where((VideoMetadataLookup l) => visited.add(l.externalId))
+            .firstOrNull;
+        if (next == null) break;
+        current = next;
+      }
+      if (current.externalId == start.externalId) return const <String>[];
+      final VideoMetadataWork? root = await provider!.fetchWork(current);
+      if (root == null) return const <String>[];
+      return <String>[
+        root.title,
+        if (root.originalTitle case final String original) original,
+        ...root.aliases,
+      ];
+    } on Object catch (error) {
+      if (!_isProviderFailure(error)) rethrow;
+      return const <String>[];
+    }
+  }
+
+  /// Shoko `TmdbSearchService` 的季打分：每个候选剧取「集数与 MAL 作品集数最接近
+  /// 的非特典季」，差值最小者胜；同差值再比该季首播与 MAL 首播 ±3 天。打不出
+  /// 唯一赢家返回 null（继续交人工）。
+  Future<VideoMetadataWork?> _pickTmdbCandidateBySeason(
+    VideoMetadataProvider tmdb,
+    List<VideoMetadataWork> candidates,
+    VideoMetadataWork primary,
+  ) async {
+    final int? count = primary.episodeCount;
+    if (count == null || count <= 0 || candidates.length > 5) return null;
+    final DateTime? premiered = primary.premiered == null
+        ? null
+        : DateTime.tryParse(primary.premiered!);
+    VideoMetadataWork? best;
+    int bestDiff = 1 << 30;
+    bool bestDateHit = false;
+    bool tie = false;
+    for (final VideoMetadataWork candidate in candidates) {
+      final VideoMetadataLookup? lookup =
+          _lookupForCandidate(candidate, VideoMetadataProviderKind.tmdb);
+      if (lookup == null) continue;
+      VideoMetadataWork? full;
+      try {
+        full = await tmdb.fetchWork(lookup);
+      } on Object catch (error) {
+        if (!_isProviderFailure(error)) rethrow;
+      }
+      if (full == null) continue;
+      int diff = 1 << 30;
+      bool dateHit = false;
+      for (final VideoMetadataSeason season in full.seasons) {
+        if (season.seasonNumber == 0 || season.episodeCount == null) continue;
+        final int d = (season.episodeCount! - count).abs();
+        final DateTime? aired =
+            season.airDate == null ? null : DateTime.tryParse(season.airDate!);
+        final bool hit = premiered != null &&
+            aired != null &&
+            premiered.difference(aired).inDays.abs() <= 3;
+        if (d < diff || (d == diff && hit && !dateHit)) {
+          diff = d;
+          dateHit = hit;
+        }
+      }
+      if (diff < bestDiff || (diff == bestDiff && dateHit && !bestDateHit)) {
+        best = full;
+        bestDiff = diff;
+        bestDateHit = dateHit;
+        tie = false;
+      } else if (diff == bestDiff && dateHit == bestDateHit) {
+        tie = true;
+      }
+    }
+    return tie || best == null || bestDiff == 1 << 30 ? null : best;
+  }
+
+  /// 有没有「映射表没切片、且分集还没挂 TMDB id」的 MAL 季要做逐集匹配。
+  static bool _needsEpisodeMatch(VideoMetadataWork metadata, Set<int> sliced) =>
+      metadata.seasons.any((VideoMetadataSeason season) =>
+          season.seasonNumber != 0 &&
+          !sliced.contains(season.seasonNumber) &&
+          season.episodes.any((VideoMetadataEpisode episode) => !episode.ids
+              .any((VideoMetadataId id) => id.type.toLowerCase() == 'tmdb')));
+
+  /// TMDB 剧每个正片季的 en-US / 原语集名（`VideoMetadataEpisodeAliasProvider`）；
+  /// 拉不到只记一条说明，匹配退回只比资料语言的集名。
+  Future<Map<(int, int), List<String>>> _tmdbEpisodeAliases(
+    VideoMetadataWork tmdb,
+    List<SourceScrapeIssue> warnings,
+    String localTitle,
+  ) async {
+    final VideoMetadataProvider? provider =
+        _registry.provider(VideoMetadataProviderKind.tmdb);
+    final String? tmdbId =
+        _lookupForCandidate(tmdb, VideoMetadataProviderKind.tmdb)?.externalId;
+    if (provider is! VideoMetadataEpisodeAliasProvider || tmdbId == null) {
+      return const <(int, int), List<String>>{};
+    }
+    final VideoMetadataLookup lookup = VideoMetadataLookup(
+      provider: VideoMetadataProviderKind.tmdb,
+      externalId: tmdbId,
+      mediaKind: VideoMetadataMediaKind.tv,
+      episodeGroupId: tmdb.episodeGroupId,
+    );
+    final Map<(int, int), List<String>> aliases = <(int, int), List<String>>{};
+    for (final VideoMetadataSeason season in tmdb.seasons) {
+      if (season.seasonNumber == 0 || season.episodes.isEmpty) continue;
+      try {
+        final Map<int, List<String>> bySeason =
+            await (provider as VideoMetadataEpisodeAliasProvider)
+                .fetchEpisodeTitleAliases(lookup,
+                    seasonNumber: season.seasonNumber);
+        for (final MapEntry<int, List<String>> entry in bySeason.entries) {
+          aliases[(season.seasonNumber, entry.key)] = entry.value;
+        }
+      } on Object catch (error) {
+        if (!_isProviderFailure(error)) rethrow;
+        warnings.add(SourceScrapeIssue(
+            workTitle: localTitle,
+            message:
+                'TMDB 第 ${season.seasonNumber} 季多语言集名拉取失败（$error），逐集核对只比资料语言的集名。'));
+      }
+    }
+    return aliases;
+  }
+
   /// AniDB epno 的正片集号（`S1` / `C2` / `T1` 等特典前缀 → null）。
   static int? _anidbEpisodeNumber(AnidbFileIdentity? identity) {
     if (identity == null) return null;
@@ -2038,7 +2190,12 @@ class VideoSourceScrapeCoordinator
 
   static String _hashFailureReason(AnidbHashIdentityResult result) {
     if (result.status == AnidbHashIdentityStatus.notFound) {
-      return 'ED2K 已计算，但 AniDB 未收录此文件哈希。';
+      if (result.missExhausted) {
+        return 'ED2K 已计算，AniDB 连续 ${result.missAttempts} 次未收录此文件哈希，不再自动复查。';
+      }
+      return result.missAttempts > 1
+          ? 'ED2K 已计算，但 AniDB 未收录此文件哈希（已复查 ${result.missAttempts} 次，每日再问一次）。'
+          : 'ED2K 已计算，但 AniDB 未收录此文件哈希。';
     }
     if (result.error case final AnidbUdpException error) {
       return switch (error.reason) {
@@ -2337,18 +2494,43 @@ class VideoSourceScrapeCoordinator
       if (lookup != null) {
         work = await tmdb.fetchWork(lookup);
       } else {
-        final VideoMetadataResolution resolution = await VideoMetadataResolver(
-          registry: registry,
-        ).resolve(VideoMetadataResolveRequest(
+        // Shoko `TmdbSearchService`：沿 Prequel 链回溯到根作品，用根作品标题搜
+        // （TMDB 一个剧 = 整个系列，cour 标题搜不到）；是续作就不带年份搜
+        // （Shoko 的无年份查询变体：多季剧的 first_air_date 早于本季年份，
+        // ±1 年的门会把整部剧挡掉）；仍歧义时按「集数最接近的季 + 该季首播
+        // ±3 天」打分。
+        final List<String> rootTitles = await _prequelRootTitles(primary);
+        final List<String> candidates = <String>[
+          primary.title,
+          ...titles,
+          ...rootTitles,
+        ];
+        final VideoMetadataResolution resolution =
+            await VideoMetadataResolver(registry: registry)
+                .resolve(VideoMetadataResolveRequest(
           selectedProvider: VideoMetadataProviderKind.tmdb,
           mediaKind: primary.kind,
-          titleCandidates: <String>[primary.title, ...titles],
-          year: primary.year,
+          titleCandidates: candidates,
+          year: rootTitles.isEmpty ? primary.year : null,
           seasonNumber: seasonNumber,
         ));
         if (resolution.status == VideoMetadataResolutionStatus.matched) {
           work = resolution.work;
           lookup = resolution.lookup;
+        } else if (resolution.status ==
+            VideoMetadataResolutionStatus.ambiguous) {
+          final VideoMetadataWork? scored = await _pickTmdbCandidateBySeason(
+              tmdb, resolution.candidates, primary);
+          if (scored != null) {
+            work = scored;
+            lookup =
+                _lookupForCandidate(scored, VideoMetadataProviderKind.tmdb);
+            warnings.add(SourceScrapeIssue(
+              workTitle: localTitle,
+              message:
+                  'TMDB 补充源标题歧义（${resolution.candidates.length} 个候选），按集数最接近的季与首播日选了「${scored.title}」。',
+            ));
+          }
         }
       }
     } catch (error) {

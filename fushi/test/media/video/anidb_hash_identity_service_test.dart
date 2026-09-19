@@ -276,15 +276,74 @@ void main() {
       expect((await make().identifyFile(file.path)).status,
           AnidbHashIdentityStatus.notFound);
       expect(store.records.single.identity, isNull);
-      now = now.add(const Duration(days: 6));
+      expect(store.records.single.missAttempts, 1);
+      now = now.add(const Duration(hours: 20));
       final AnidbHashIdentityResult fresh =
           await make().identifyFile(file.path);
       expect(fresh.status, AnidbHashIdentityStatus.notFound);
       expect(fresh.fromStore, isTrue);
+      expect(fresh.missAttempts, 1);
       expect(lookups, 1);
-      now = now.add(const Duration(days: 2));
-      expect((await make().identifyFile(file.path)).fromStore, isFalse);
+      // Shoko `File_UpdateFrequency` 默认每日：过了一天再问一次 AniDB。
+      now = now.add(const Duration(hours: 6));
+      final AnidbHashIdentityResult again =
+          await make().identifyFile(file.path);
+      expect(again.fromStore, isFalse);
+      expect(again.missAttempts, 2);
       expect(lookups, 2, reason: '过了复查期再问一次 AniDB');
+      expect(store.records.single.missAttempts, 2);
+    });
+
+    test(
+        'after 15 misses the file is no longer re-queried automatically '
+        '(Shoko MaxAutoScanAttemptsPerFile)', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-store-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      int lookups = 0;
+      DateTime now = DateTime(2026, 9, 18);
+      AnidbHashIdentityService make() => service(store,
+          onHash: () {},
+          onLookup: (_) => lookups++,
+          lookupResult: null,
+          now: () => now);
+      for (int attempt = 1; attempt <= 15; attempt++) {
+        final AnidbHashIdentityResult result =
+            await make().identifyFile(file.path);
+        expect(result.fromStore, isFalse, reason: '第 $attempt 次复查要真问');
+        expect(result.missAttempts, attempt);
+        now = now.add(const Duration(days: 2));
+      }
+      expect(lookups, 15);
+      final AnidbHashIdentityResult exhausted =
+          await make().identifyFile(file.path);
+      expect(exhausted.status, AnidbHashIdentityStatus.notFound);
+      expect(exhausted.fromStore, isTrue);
+      expect(exhausted.missExhausted, isTrue);
+      expect(lookups, 15, reason: '用尽 15 次后不再自动问 AniDB');
+    });
+
+    test('a hit resets the miss counter', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-store-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      DateTime now = DateTime(2026, 9, 18);
+      await service(store,
+          onHash: () {},
+          onLookup: (_) {},
+          lookupResult: null,
+          now: () => now).identifyFile(file.path);
+      expect(store.records.single.missAttempts, 1);
+      now = now.add(const Duration(days: 2));
+      final AnidbHashIdentityResult hit =
+          await service(store, onHash: () {}, onLookup: (_) {}, now: () => now)
+              .identifyFile(file.path);
+      expect(hit.status, AnidbHashIdentityStatus.matched);
+      expect(store.records.single.missAttempts, 0);
     });
   });
 }

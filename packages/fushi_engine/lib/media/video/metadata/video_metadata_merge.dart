@@ -405,6 +405,8 @@ TmdbEpisodeMatchOutcome enrichSeasonsByTmdbEpisodeMatch(
   VideoMetadataWork? tmdb, {
   Set<int> skipSeasons = const <int>{},
   String? preferredLanguage,
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
 }) {
   final Map<(int, int), TmdbEpisodeMatchRating> ratings =
       <(int, int), TmdbEpisodeMatchRating>{};
@@ -439,7 +441,8 @@ TmdbEpisodeMatchOutcome enrichSeasonsByTmdbEpisodeMatch(
     ];
     final Map<int, TmdbEpisodeMatch> matches = sources.isEmpty
         ? const <int, TmdbEpisodeMatch>{}
-        : matchEpisodesToTmdb(sources, pool);
+        : matchEpisodesToTmdb(sources, pool,
+            candidateAliases: candidateAliases);
     if (matches.isEmpty) {
       seasons.add(season);
       continue;
@@ -484,8 +487,10 @@ TmdbEpisodeMatchOutcome enrichSeasonsByTmdbEpisodeMatch(
 TmdbEpisodeMatchOutcome fillEmptySeasonsFromEpisodeTitles(
   VideoMetadataWork primary,
   VideoMetadataWork? tmdb,
-  Map<int, List<TmdbEpisodeMatchSource>> sourcesBySeason,
-) {
+  Map<int, List<TmdbEpisodeMatchSource>> sourcesBySeason, {
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
+}) {
   final Map<(int, int), TmdbEpisodeMatchRating> ratings =
       <(int, int), TmdbEpisodeMatchRating>{};
   if (tmdb == null || sourcesBySeason.isEmpty || primary.seasons.isEmpty) {
@@ -505,7 +510,7 @@ TmdbEpisodeMatchOutcome fillEmptySeasonsFromEpisodeTitles(
       continue;
     }
     final Map<int, TmdbEpisodeMatch> matches =
-        matchEpisodesToTmdb(sources, pool);
+        matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases);
     if (matches.isEmpty) {
       seasons.add(season);
       continue;
