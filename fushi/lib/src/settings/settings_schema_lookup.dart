@@ -8,6 +8,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
@@ -711,15 +712,60 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
+          // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
+          // 去翻全局设置）。步长只在开关开启时展示；滚轮 / 触摸各一个（默认值本就不同，
+          // 见 PreferencesRepository.popupInstantScrollWheelStep 的注释）。
           SettingsSwitchItem(
             id: 'lookup.popup_instant_scroll',
             title: t.popup_instant_scroll,
             subtitle: t.popup_instant_scroll_hint,
             icon: Icons.animation_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 7),
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setPopupInstantScroll(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_instant_scroll_wheel_step',
+            title: t.popup_instant_scroll_wheel_step,
+            subtitle: t.popup_instant_scroll_wheel_step_hint,
+            icon: Icons.mouse_outlined,
+            min: PreferencesRepository.kPopupInstantScrollStepMin,
+            max: PreferencesRepository.kPopupInstantScrollStepMax,
+            divisions: 18,
+            titleReadout: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 8),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScrollWheelStep,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupInstantScrollWheelStep(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'lookup.popup_instant_scroll_touch_step',
+            title: t.popup_instant_scroll_touch_step,
+            subtitle: t.popup_instant_scroll_touch_step_hint,
+            icon: Icons.touch_app_outlined,
+            min: PreferencesRepository.kPopupInstantScrollStepMin,
+            max: PreferencesRepository.kPopupInstantScrollStepMax,
+            divisions: 18,
+            titleReadout: true,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 9),
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScroll,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupInstantScrollTouchStep,
+            label: (double value) => '${(value * 100).round()}%',
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setPopupInstantScrollTouchStep(value);
               settingsContext.refresh();
             },
           ),

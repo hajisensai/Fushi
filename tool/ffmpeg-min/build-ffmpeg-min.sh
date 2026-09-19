@@ -56,6 +56,7 @@ STATIC_DEPS="${STATIC_DEPS:-$PWD/ffmpeg-min-deps}"
 X264_REF="${X264_REF:-stable}"
 SVTAV1_REF="${SVTAV1_REF:-v2.3.0}"
 LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
+DAV1D_REF="${DAV1D_REF:-1.5.1}"
 
 # BUG-1668：macOS 目标架构（`x86_64` / `arm64`），默认跟随构建机。
 #
@@ -71,8 +72,8 @@ LIBWEBP_REF="${LIBWEBP_REF:-v1.5.0}"
 # 合成 universal（见 .github/workflows/ffmpeg-min.yml 的 macOS job）。
 MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
 
-# BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp 从源码编成**静态库**，装进一个
-# 私有 prefix，让 ffmpeg 只从那里取。
+# BUG-1443：macOS 上把 libx264 / SVT-AV1 / libwebp / dav1d 从源码编成**静态库**，
+# 装进一个私有 prefix，让 ffmpeg 只从那里取。
 #
 # 为什么必须自编，而不是用 Homebrew 的库：
 #   1. 之前的做法是 `brew install x264 svt-av1 webp` 后直接 configure，产物于是
@@ -171,10 +172,46 @@ build_darwin_static_deps() {
     cmake --install "$work/libwebp/build"
   fi
 
+  if [ ! -f "$prefix/lib/libdav1d.a" ]; then
+    # AV1 软件解码器（见 DECODERS 注释）。dav1d 只有 meson 构建系统，静态库 +
+    # 目标架构都靠一份 cross file 钉死：`[binaries]` 里把 `-arch` 并进编译器命令、
+    # `[host_machine]` 声明目标 CPU。两个架构都写 cross file（同架构时 meson 只是
+    # 多走一遍「交叉」路径，产物一致），省得 x86_64 / arm64 各维护一套分支。
+    # `-Denable_asm=true` 在 x86_64 上要 nasm（runner 已装），arm64 走 clang 汇编。
+    echo "[ffmpeg-min] build static dav1d @ $DAV1D_REF"
+    rm -rf "$work/dav1d"
+    git clone --depth 1 --branch "$DAV1D_REF" \
+      https://code.videolan.org/videolan/dav1d.git "$work/dav1d"
+    local meson_cpu_family="$MACOS_ARCH"
+    if [ "$MACOS_ARCH" = "arm64" ]; then meson_cpu_family="aarch64"; fi
+    cat >"$work/dav1d/macos-$MACOS_ARCH.ini" <<EOF
+[binaries]
+c = ['clang', '-arch', '$MACOS_ARCH']
+cpp = ['clang++', '-arch', '$MACOS_ARCH']
+ar = 'ar'
+strip = 'strip'
+nasm = 'nasm'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'darwin'
+cpu_family = '$meson_cpu_family'
+cpu = '$MACOS_ARCH'
+endian = 'little'
+EOF
+    meson setup "$work/dav1d/build" "$work/dav1d" \
+      --cross-file "$work/dav1d/macos-$MACOS_ARCH.ini" \
+      --prefix="$prefix" --libdir=lib --buildtype=release \
+      --default-library=static \
+      -Denable_tools=false -Denable_tests=false -Denable_examples=false
+    ninja -C "$work/dav1d/build"
+    ninja -C "$work/dav1d/build" install
+  fi
+
   # 缺任何一个 .a 就当场停：继续跑下去只会又编出一个动态依赖 Homebrew 的产物，
   # 而那个缺陷要到发版流水线才暴露。
   local archive
-  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a; do
+  for archive in libx264.a libSvtAv1Enc.a libwebp.a libwebpmux.a libdav1d.a; do
     if [ ! -f "$prefix/lib/$archive" ]; then
       echo "[ffmpeg-min] FATAL(BUG-1443): 缺静态库 $prefix/lib/$archive" >&2
       ls -la "$prefix/lib" >&2 || true
@@ -198,7 +235,18 @@ cd "$SRC"
 # ffmpeg 找不到 PNG 的 demuxer → AVERROR_INVALIDDATA（exit -1094995529，"Invalid data found
 # when processing input"），片段导出全挂（AudiobookClipSynthFailure.ffmpegFailed）。
 DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe"
-DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
+# libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
+# （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
+# decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
+# 每一帧都是 "Your platform doesn't support hardware accelerated AV1 decoding. /
+# Failed to get pixel format." → 解码错误率 100% 超过默认 -max_error_rate 2/3 →
+# ffmpeg **退出码 69**、尾行只有一句 "Conversion failed!"。用户侧症状：AV1 编码的视频
+# 制卡时截帧 / 动图 / 片段导出全挂，句子音频（不解视频流）却正常。真正的软件 AV1
+# 解码器是 libdav1d（BSD-2，VideoLAN，也是 FFmpeg 默认优先选用的 AV1 解码器）；配上它
+# 之后 `av1` 那个壳就没有存在意义，从清单里去掉，避免再有人以为 AV1 已经覆盖。
+# ⚠️ CI 构建环境需装 dav1d 开发包（MSYS2: mingw-w64-x86_64-dav1d；Ubuntu: libdav1d-dev；
+# macOS 在 build_darwin_static_deps 里从源码静态编，需要 meson + ninja + nasm）。
+DECODERS="h264,hevc,libdav1d,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,rv40,theora,wmv1,wmv2,wmv3,vc1,msmpeg4v1,msmpeg4v2,msmpeg4v3,mjpeg,png,webp,opus,aac,ac3,eac3,vorbis,flac,mp3,mp2,alac,dca,truehd,mlp,cook,sipr,ra_144,ra_288,wmav1,wmav2,wmapro,wmalossless,wmavoice,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_u16le,pcm_u16be,pcm_s24le,pcm_s24be,pcm_u24le,pcm_u24be,pcm_s32le,pcm_s32be,pcm_u32le,pcm_u32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_alaw,pcm_mulaw,ass,ssa,subrip,webvtt,movtext,text"
 # movtext：视频片段导出把「用户正在看的字幕」封成软字幕流（`-c:s mov_text`）。片段
 # 输出恒 .mp4（BUG-917），而 ISO-BMFF 只认 3GPP Timed Text = movtext 编码器；缺它
 # ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
@@ -316,7 +364,7 @@ esac
   --disable-ffplay --enable-ffprobe \
   --enable-ffmpeg \
   --enable-small --enable-zlib \
-  --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp \
+  --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp --enable-libdav1d \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \

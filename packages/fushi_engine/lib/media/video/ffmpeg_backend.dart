@@ -94,7 +94,16 @@ String _formatFfmpegReturnCode(int? returnCode) {
 ///
 /// 策略（从尾往头扫，跳过 banner/进度/Metadata 噪声行）：
 /// 1. 拆成非空行（去掉行内首尾空白）。
-/// 2. **优先**：自尾向首找第一条「含错误关键词」的行，返回它。
+/// 2. **优先**：自尾向首找第一条「含错误关键词」的行。`Conversion failed!` 是
+///    ffmpeg 对**任何**非零退出都打的固定尾行，零信息量——只要还有别的错误行就
+///    跳过它（BUG-2604：AV1 源在缺 libdav1d 的捆绑 ffmpeg 上退出 69，摘要只剩这
+///    一句，真因 `Your platform doesn't support hardware accelerated AV1 decoding.`
+///    被整个吞掉，用户与日志都无从诊断）。
+///    ffmpeg 的日志结构是 banner → `Stream mapping:` → 转码期输出；转码期的错误
+///    **自上而下级联**（解码器起不来 → 滤镜无帧 → 编码器打不开 → 输出为空），
+///    尾行只是最后一层后果。所以有 `Stream mapping:` 锚点时，把锚点后**第一条**
+///    错误行（根因）与尾部那条（后果）一起返回（` | ` 连接，两者相同只留一条）；
+///    没有锚点（`-loglevel error` 等）沿旧行为只取尾部那条。
 /// 3. **退化**：无任何错误关键词行（如只有 banner），返回最后一条非噪声信息行
 ///    （跳过 `Input #` / `Metadata:` / `Stream #` / `Duration:` / `ffmpeg version`
 ///    / `built with` / `configuration:` / `lib*` 版本行 / 纯进度 `frame=` 等）；
@@ -120,16 +129,46 @@ String extractFfmpegFailureReason(String stderr) {
     'permission denied',
     'not found',
     'unsupported',
+    "n't support",
+    'not support',
     'unrecognized',
     'unknown',
     'does not contain',
   ];
-  for (int i = lines.length - 1; i >= 0; i--) {
-    final String lower = lines[i].toLowerCase();
-    if (errorMarkers.any(lower.contains)) {
-      return lines[i];
-    }
+  bool isErrorLine(String line) {
+    final String lower = line.toLowerCase();
+    return errorMarkers.any(lower.contains);
   }
+
+  // ffmpeg 任何非零退出都以这句收尾（fftools/ffmpeg.c），不指向任何具体原因。
+  const String genericTrailer = 'conversion failed!';
+  String? tail;
+  String? trailer;
+  for (int i = lines.length - 1; i >= 0; i--) {
+    if (!isErrorLine(lines[i])) continue;
+    if (lines[i].toLowerCase() == genericTrailer) {
+      trailer ??= lines[i];
+      continue;
+    }
+    tail = lines[i];
+    break;
+  }
+  if (tail != null) {
+    final int mapping = lines.indexWhere(
+      (String l) => l.toLowerCase().startsWith('stream mapping:'),
+    );
+    if (mapping >= 0) {
+      for (int i = mapping + 1; i < lines.length; i++) {
+        if (!isErrorLine(lines[i]) ||
+            lines[i].toLowerCase() == genericTrailer) {
+          continue;
+        }
+        return lines[i] == tail ? tail : '${lines[i]} | $tail';
+      }
+    }
+    return tail;
+  }
+  if (trailer != null) return trailer;
 
   // 退化：无错误关键词（典型是被截断的纯 banner）。返回最后一条非噪声信息行。
   bool isNoise(String line) {
