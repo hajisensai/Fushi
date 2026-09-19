@@ -93,8 +93,16 @@ abstract interface class MediaServerBrowser implements RemoteCoverFetcher {
 
   /// 全服务器搜索（Jellyfin `/Users/{uid}/Items?SearchTerm=&Recursive=true`），
   /// 只搜 Movie / Series 两种（集在剧里下钻；单值 `IncludeItemTypes` 各一轮，
-  /// BUG-2254），按「电影在前、剧在后」的拼接序分页，[MediaServerPage.totalCount]
-  /// 是两轮之和。空白 [query] 不发请求，直接空页。
+  /// BUG-2254），按「电影在前、剧在后」的拼接序分页。空白 [query] 不发请求，直接
+  /// 空页。
+  ///
+  /// 服务器的 `SearchTerm` 语义各家不同（兼容层会按字模糊，BUG-2608），实现侧
+  /// **必须**再按 `rankMediaServerSearchHits` 把关：只留标题 / 原名真含查询词的
+  /// 条目，页内精确同名置顶。因此 [startIndex] / [MediaServerPage.nextStartIndex]
+  /// 是**服务器行**偏移、[MediaServerPage.totalCount] 是两轮服务器总数（命中数的
+  /// 上界，不是命中数）；一页的 `items.length` 可以少于 [limit]（甚至为 0）而
+  /// [MediaServerPage.hasMore] 仍为 true——页面照常按 nextStartIndex 翻，也可以
+  /// 略多于 [limit]（最后一发服务器页整页把关后全收）。
   Future<MediaServerPage> search(
     String query, {
     int startIndex = 0,
@@ -192,6 +200,7 @@ class MediaServerItem {
     required this.id,
     required this.name,
     required this.type,
+    this.originalTitle,
     this.seriesId,
     this.seriesName,
     this.seasonId,
@@ -219,6 +228,10 @@ class MediaServerItem {
   final String id;
   final String name;
   final MediaServerItemType type;
+
+  /// 原名（Jellyfin / Emby `OriginalTitle`）：中文库里通常是外文原题。搜索把关
+  /// （`media_server_search_match.dart`）拿它和 [name] 一起匹配，用户按原题搜也能命中。
+  final String? originalTitle;
 
   /// 集 / 季所属的剧（Jellyfin `SeriesId` / `SeriesName`）。
   final String? seriesId;

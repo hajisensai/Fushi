@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2412 条。点号进各自文件。
+> 共 2413 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2608](bugs/BUG-2608-media-server-search-relevance.md) | ✅ | ✅ | 媒体服务器搜索把服务器的模糊命中原样铺出来，精确命中被埋 |
 | [BUG-2607](bugs/BUG-2607-ios-highlight-user-select-none-webkit.md) | ✅ | ✅ | iOS 触屏阅读器查词/划选/收藏高亮全部不画：WebKit 不绘制 user-select:none 文字上的 ::highlight |
 | [BUG-2606](bugs/BUG-2606-anki-overwrite-stale-fields-no-tags.md) | ✅ | ✅ | 覆盖已有卡不清未映射字段（SentenceFurigana 露旧句）也不补 fushi 标签 |
 | [BUG-2605](bugs/BUG-2605-anki-add-duplicate-ignored.md) | ✅ | ✅ | 「卡已在 Anki」对话框点「新增为重复卡」仍被两后端当重复拒绝 |
