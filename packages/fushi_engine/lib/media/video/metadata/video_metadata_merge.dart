@@ -275,6 +275,119 @@ VideoMetadataWork remapStandaloneVideoMetadataSeason(
   );
 }
 
+/// 一个 MAL cour 在 TMDB 剧里的位置：第 [tmdbSeason] 季、从第 [offset]+1 集起
+/// （Fribb anime-lists 的 `season.tmdb` / `episode_offset.tmdb`）。
+typedef TmdbSeasonSlice = ({int tmdbSeason, int offset});
+
+/// MAL 一个 id = 一个 cour，映射表把它显式钉在 TMDB 剧的某一季某一段上。MAL
+/// 分集缺失或不全（Jikan 对播出中的作品常给 0 集）时，从 TMDB 那一季切出
+/// `(offset, offset + count]` 重编成 1..count 补进这个 cour 季；MAL 已有的集
+/// 只补空（同 [_mergeEpisodes]）。这是映射表给的**显式**对应，不是拿 AniDB /
+/// MAL 集号去猜 TMDB 集号。
+///
+/// [slices]：卡片季号 → 切片，须包含同一 TMDB 季里的**全部** cour（不只是本
+/// 地出现的那几季），MAL 没给集数时才能用下一个 cour 的偏移当本段终点；找不到
+/// 终点则切到季末。TMDB 那一季不存在 / 该段没有集时原样返回。
+VideoMetadataWork fillSeasonsFromTmdbSlices(
+  VideoMetadataWork primary,
+  VideoMetadataWork? tmdb,
+  Map<int, TmdbSeasonSlice> slices, {
+  String? preferredLanguage,
+}) {
+  if (tmdb == null || slices.isEmpty || primary.seasons.isEmpty) {
+    return primary;
+  }
+  final Map<int, VideoMetadataSeason> tmdbByNumber = <int, VideoMetadataSeason>{
+    for (final VideoMetadataSeason season in tmdb.seasons)
+      season.seasonNumber: season,
+  };
+  final bool preferSupplementTitle = _preferSupplementTitle(
+    primary.provider,
+    tmdb.provider,
+    preferredLanguage,
+  );
+  bool changed = false;
+  final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[
+    for (final VideoMetadataSeason season in primary.seasons)
+      if (slices[season.seasonNumber] case final TmdbSeasonSlice slice)
+        if (tmdbByNumber[slice.tmdbSeason]
+            case final VideoMetadataSeason tmdbSeason)
+          _fillSeasonFromSlice(
+            season,
+            tmdbSeason,
+            slice,
+            end: _sliceEnd(season, slice, slices),
+            preferSupplementTitle: preferSupplementTitle,
+            onChanged: () => changed = true,
+          )
+        else
+          season
+      else
+        season,
+  ];
+  return changed ? primary.copyWith(seasons: seasons) : primary;
+}
+
+/// 本段在 TMDB 季内的终点集号（含）：MAL 集数已知 → offset + count；否则同季
+/// 里偏移更大的下一个 cour 的偏移；都没有 → null（到季末）。
+int? _sliceEnd(
+  VideoMetadataSeason season,
+  TmdbSeasonSlice slice,
+  Map<int, TmdbSeasonSlice> slices,
+) {
+  if (season.episodeCount case final int count when count > 0) {
+    return slice.offset + count;
+  }
+  int? next;
+  for (final TmdbSeasonSlice other in slices.values) {
+    if (other.tmdbSeason != slice.tmdbSeason || other.offset <= slice.offset) {
+      continue;
+    }
+    if (next == null || other.offset < next) next = other.offset;
+  }
+  return next;
+}
+
+VideoMetadataSeason _fillSeasonFromSlice(
+  VideoMetadataSeason season,
+  VideoMetadataSeason tmdbSeason,
+  TmdbSeasonSlice slice, {
+  required int? end,
+  required bool preferSupplementTitle,
+  required void Function() onChanged,
+}) {
+  final int seasonNumber = season.seasonNumber;
+  final List<VideoMetadataEpisode> sliced = <VideoMetadataEpisode>[
+    for (final VideoMetadataEpisode episode in tmdbSeason.episodes)
+      if (episode.episodeNumber > slice.offset &&
+          (end == null || episode.episodeNumber <= end))
+        episode.copyWith(
+          seasonNumber: seasonNumber,
+          episodeNumber: episode.episodeNumber - slice.offset,
+          images: <VideoMetadataImage>[
+            for (final VideoMetadataImage image in episode.images)
+              image.copyWith(
+                seasonNumber: seasonNumber,
+                episodeNumber: episode.episodeNumber - slice.offset,
+              ),
+          ],
+        ),
+  ];
+  if (sliced.isEmpty) return season;
+  onChanged();
+  return season.copyWith(
+    episodes: _mergeEpisodes(
+      season.episodes,
+      sliced,
+      preferSupplementTitle: preferSupplementTitle,
+    ),
+    // 终点来自下一个 cour 的偏移时，段长就是集数；到季末的段（播出中的末
+    // cour）集数仍未知。
+    episodeCount:
+        season.episodeCount ?? (end == null ? null : end - slice.offset),
+  );
+}
+
 List<VideoMetadataSeason> _mergeSeasons(
   Iterable<VideoMetadataSeason> primary,
   Iterable<VideoMetadataSeason> supplement, {

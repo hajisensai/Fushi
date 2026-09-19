@@ -110,6 +110,33 @@ class _HoldingScrapeRunner implements VideoSourceScrapeRunner {
   }
 }
 
+/// 立即完成，报告里带 [warnings] 条说明（`Issue #n`）。
+class _ReportRunner implements VideoSourceScrapeRunner {
+  _ReportRunner({required this.warnings});
+  final int warnings;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    return SourceScrapeReport(
+      sourceIds: <int>[source.id],
+      totalWorks: warnings,
+      succeededWorks: warnings,
+      warnings: <SourceScrapeIssue>[
+        for (int index = 1; index <= warnings; index++)
+          SourceScrapeIssue(workTitle: 'Show $index', message: 'Issue #$index'),
+      ],
+    );
+  }
+}
+
 class _ManualBindingRunner
     implements VideoSourceScrapeRunner, VideoSourceScrapeManualBinding {
   final List<String> boundTitles = <String>[];
@@ -341,6 +368,76 @@ void main() {
     runner.release.complete();
     await tester.pumpAndSettle();
     expect(controller.isRunning, isFalse);
+  });
+
+  // BUG-2594：已完成报告的说明列表以前硬截在 260px 里，弹窗下半截一直空着。
+  // 现在整个「当前任务」tab 是一个列表，说明行一直铺到 tab 底部。
+  testWidgets('finished report issues fill the whole activity tab',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final _ReportRunner runner = _ReportRunner(warnings: 60);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+    await controller.scrapeSource(source);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+              )),
+              child: const Text('Open tasks'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open tasks'));
+    await tester.pumpAndSettle();
+
+    final Finder list =
+        find.byKey(const PageStorageKey<String>('video-source-activity-list'));
+    expect(list, findsOneWidget);
+    final Finder issues =
+        find.descendant(of: list, matching: find.textContaining('Issue #'));
+    // 弹窗内容高 640（屏高 1000 × .65），扣掉提示 / tab 栏后列表约 520px；
+    // 每行两行文字 ≈ 56px → 至少 8 行**真正落在列表可视区内**；旧的 260px
+    // 硬截只能露出 4 行（懒加载的 cacheExtent 会多建几行，所以按矩形数）。
+    final Rect listRect = tester.getRect(list);
+    final int visible = issues
+        .evaluate()
+        .where((Element element) => listRect
+            .contains(tester.getRect(find.byWidget(element.widget)).center))
+        .length;
+    expect(visible, greaterThanOrEqualTo(8), reason: '说明行没有铺满 tab');
+    final RenderBox listBox = tester.renderObject(list);
+    final RenderBox tabView = tester.renderObject(find.byType(TabBarView));
+    expect(listBox.size.height, tabView.size.height,
+        reason: '列表要占满 TabBarView 的整个高度');
+    // 列表可以滚到最后一条说明（说明文字是 SelectableText，拖拽会变成选字，
+    // 直接驱动滚动位置）。
+    final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.descendant(of: list, matching: find.byType(Scrollable)).first);
+    // 懒列表的 maxScrollExtent 是逐步估出来的，跳到底要循环几次。
+    for (int round = 0; round < 20; round++) {
+      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      if (scrollable.position.pixels >= scrollable.position.maxScrollExtent) {
+        break;
+      }
+    }
+    expect(find.textContaining('Issue #60'), findsOneWidget);
   });
 
   testWidgets('book and manga rows never expose video scrape controls',

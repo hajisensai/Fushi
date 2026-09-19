@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
+
 /// A registered AniDB client identity and the user's website credentials.
 /// Never include this object or wire packets in logs.
 class AnidbUdpConfig {
@@ -13,7 +15,9 @@ class AnidbUdpConfig {
     this.host = 'api.anidb.net',
     this.port = 9000,
     this.localPort = 19000,
-    this.timeout = const Duration(seconds: 15),
+    // Shoko `AniDBSocketHandler` 收发各 30 s；AniDB 高峰期 FILE 常要十几秒才
+    // 回，15 s 会把慢应答误判成丢包（BUG-2592）。
+    this.timeout = const Duration(seconds: 30),
   });
   final String username, password, clientName, host;
   final int clientVersion, port, localPort;
@@ -43,6 +47,9 @@ enum AnidbUdpFailure {
   maintenance,
   server,
   timeout,
+
+  /// 连续无应答后的本地退避窗口内，报文未发出（不是服务端拒绝）。
+  backoff,
   network,
   malformedResponse,
   closed,
@@ -98,9 +105,14 @@ class AnidbUdpFileClient {
   AnidbUdpFileClient({
     required this.config,
     AnidbUdpTransportFactory? transportFactory,
-  }) : _factory = transportFactory ?? AnidbDatagramTransport.connect;
+    @visibleForTesting bool sharedRateGate = false,
+  })  : _factory = transportFactory ?? AnidbDatagramTransport.connect,
+        // 进程级节流 / 退避 / 封禁只对真实 UDP 传输生效；内存传输默认不走
+        // （没有网络也就没有 flood），测试要验退避时显式打开。
+        _gated = sharedRateGate || transportFactory == null;
   final AnidbUdpConfig config;
   final AnidbUdpTransportFactory _factory;
+  final bool _gated;
   AnidbUdpTransport? _transport;
   String? _session;
   AnidbUdpException? _terminalFailure;
@@ -119,6 +131,34 @@ class AnidbUdpFileClient {
   static final Stopwatch _clock = Stopwatch()..start();
   static int _nextSendMs = 0;
   static int _blockedUntilMs = 0;
+
+  /// 测试用：把进程级节流 / 退避 / 封禁状态归零，并可换成假时钟（毫秒）与
+  /// 假睡眠（节流等待）。
+  @visibleForTesting
+  static void resetSharedState({
+    int Function()? clockMs,
+    Future<void> Function(Duration)? sleep,
+  }) {
+    _sendTail = Future<void>.value();
+    _nextSendMs = 0;
+    _blockedUntilMs = 0;
+    _blockedReason = AnidbUdpFailure.maintenance;
+    _timeoutStreak = 0;
+    _clockOverride = clockMs;
+    _sleepOverride = sleep;
+  }
+
+  static int Function()? _clockOverride;
+  static Future<void> Function(Duration)? _sleepOverride;
+  static int get _nowMs => _clockOverride?.call() ?? _clock.elapsedMilliseconds;
+  static Future<void> _sleep(Duration duration) =>
+      (_sleepOverride ?? Future<void>.delayed)(duration);
+
+  /// 当前退避 / 封禁还剩多久；不在窗口内为 [Duration.zero]。报告文案用。
+  static Duration get sharedBlockRemaining {
+    final int remaining = _blockedUntilMs - _nowMs;
+    return remaining > 0 ? Duration(milliseconds: remaining) : Duration.zero;
+  }
 
   Future<T> _serialize<T>(Future<T> Function() action) {
     final Future<T> result = _tail.then((_) => action());
@@ -142,8 +182,7 @@ class AnidbUdpFileClient {
         final String key = '$size:${ed2k.toLowerCase()}';
         if (_cache.containsKey(key)) {
           final AnidbFileIdentity? cached = _cache[key];
-          if (cached != null ||
-              _clock.elapsedMilliseconds - (_missAt[key] ?? 0) < _missCacheMs) {
+          if (cached != null || _nowMs - (_missAt[key] ?? 0) < _missCacheMs) {
             return cached;
           }
           _cache.remove(key);
@@ -167,7 +206,7 @@ class AnidbUdpFileClient {
         }
         if (file.code == 320) {
           _cache[key] = null;
-          _missAt[key] = _clock.elapsedMilliseconds;
+          _missAt[key] = _nowMs;
           return null;
         }
         if (file.code != 220) _fail(file.code);
@@ -240,17 +279,47 @@ class AnidbUdpFileClient {
     clientUpdateAvailable = auth.code == 201;
   }
 
-  /// Shoko parity for a silent server: retry the identical packet once, and
-  /// only when that also gets no reply assume the client is banned (Shoko's
-  /// `BanTimerResetLength` is 1.5 h). One lost datagram used to freeze every
-  /// AniDB request in the process for 30 minutes (BUG-2586).
-  static const Duration _noResponseBan = Duration(minutes: 90);
-  static const Duration _serverBlock = Duration(minutes: 30);
+  /// Shoko parity for a silent server (`AniDBUDPConnectionHandler.SendInternal`
+  /// + `ConnectionHandler.IsBanned`): a request that gets no reply is resent
+  /// once with the same tag, and if that is also silent the request fails with
+  /// [AnidbUdpFailure.timeout] — it is **not** a ban. Shoko only treats
+  /// `555 BANNED` (and an all-zero reply) as a ban, for `BanTimerResetLength`
+  /// = 1.5 h; every other reply code clears the ban flag. Server-side "try
+  /// again later" codes (600/601/602/604) start a 300 s backoff.
+  ///
+  /// Our previous rule "two silent datagrams ⇒ banned 90 min" turned every
+  /// transient loss into a process-wide freeze: one FILE timing out mid-sweep
+  /// made all remaining files of all works report "限流或维护" (BUG-2592).
+  /// Instead consecutive timeouts back off exponentially (Shoko's queue
+  /// `RetryPolicy`: 30 s × 2ⁿ) so a genuinely silent server is still probed
+  /// only every few minutes, while a single lost datagram costs one file.
+  static const Duration _serverBan = Duration(minutes: 90);
+  static const Duration _serverBackoff = Duration(minutes: 5);
+  static const Duration _timeoutBackoffBase = Duration(seconds: 30);
+  static const Duration _timeoutBackoffMax = Duration(minutes: 10);
   static AnidbUdpFailure _blockedReason = AnidbUdpFailure.maintenance;
+  static int _timeoutStreak = 0;
 
   static void _block(AnidbUdpFailure reason, Duration duration) {
-    _blockedUntilMs = _clock.elapsedMilliseconds + duration.inMilliseconds;
+    _blockedUntilMs = _nowMs + duration.inMilliseconds;
     _blockedReason = reason;
+  }
+
+  /// 连续第 n 次双超时 → 退避 30 s × 2ⁿ⁻¹，封顶 10 分钟。
+  static void _backoffAfterTimeout() {
+    _timeoutStreak++;
+    final int factor = 1 << (_timeoutStreak - 1).clamp(0, 30);
+    final int ms = (_timeoutBackoffBase.inMilliseconds * factor)
+        .clamp(0, _timeoutBackoffMax.inMilliseconds);
+    _block(AnidbUdpFailure.backoff, Duration(milliseconds: ms));
+  }
+
+  /// 收到任何一条 AniDB 应答：链路是通的，清掉超时退避（Shoko：任何响应码都
+  /// 把 `IsBanned` 写回 false）。真 ban（555/504）不由这里清——它们在收到应答
+  /// 时才写入，且之后不再发包。
+  static void _noteReply() {
+    _timeoutStreak = 0;
+    if (_blockedReason == AnidbUdpFailure.backoff) _blockedUntilMs = 0;
   }
 
   Future<_Reply> _request(String command, Map<String, String> values,
@@ -274,9 +343,7 @@ class AnidbUdpFileClient {
         // Same tag on purpose: a late reply to the first datagram still
         // answers this command.
         if (attempt == 0 && responseRequired) continue;
-        if (_transport is AnidbDatagramTransport) {
-          _block(AnidbUdpFailure.banned, _noResponseBan);
-        }
+        if (_gated) _backoffAfterTimeout();
         _session = null;
         throw const AnidbUdpException(AnidbUdpFailure.timeout);
       } catch (_) {
@@ -295,25 +362,23 @@ class AnidbUdpFileClient {
     // Shared across all clients in the app isolate. Four seconds even for
     // short batches satisfies both AniDB's short and long term limits.
     // In-memory test transports have no network and need no flood delay.
-    if (_transport is AnidbDatagramTransport) {
+    if (_gated) {
       final Future<void> turn = _sendTail.then((_) async {
         if (_closed && command != 'LOGOUT') {
           throw const AnidbUdpException(AnidbUdpFailure.closed);
         }
-        if (_clock.elapsedMilliseconds < _blockedUntilMs) {
+        if (_nowMs < _blockedUntilMs) {
           throw AnidbUdpException(_blockedReason);
         }
-        final int delay = _nextSendMs - _clock.elapsedMilliseconds;
-        if (delay > 0) {
-          await Future<void>.delayed(Duration(milliseconds: delay));
-        }
+        final int delay = _nextSendMs - _nowMs;
+        if (delay > 0) await _sleep(Duration(milliseconds: delay));
         if (_closed && command != 'LOGOUT') {
           throw const AnidbUdpException(AnidbUdpFailure.closed);
         }
-        if (_clock.elapsedMilliseconds < _blockedUntilMs) {
+        if (_nowMs < _blockedUntilMs) {
           throw AnidbUdpException(_blockedReason);
         }
-        _nextSendMs = _clock.elapsedMilliseconds + 4000;
+        _nextSendMs = _nowMs + 4000;
       });
       _sendTail = turn.then<void>(
         (_) {},
@@ -329,10 +394,9 @@ class AnidbUdpFileClient {
       // No response was requested; this is not a successful server reply.
       return const _Reply(0, '', '');
     }
-    return _Reply.parse(
-      await _transport!.exchange(packet, tag, config.timeout),
-      tag,
-    );
+    final String raw = await _transport!.exchange(packet, tag, config.timeout);
+    if (_gated) _noteReply();
+    return _Reply.parse(raw, tag);
   }
 
   Never _fail(int code) {
@@ -343,13 +407,17 @@ class AnidbUdpFileClient {
       555 => AnidbUdpFailure.banned,
       501 || 506 => AnidbUdpFailure.session,
       502 || 505 => AnidbUdpFailure.accessDenied,
-      601 => AnidbUdpFailure.maintenance,
+      600 || 601 || 602 || 604 => AnidbUdpFailure.maintenance,
       _ => AnidbUdpFailure.server,
     };
     if (code == 501 || code == 506) _session = null;
-    if (_transport is AnidbDatagramTransport &&
-        (code == 601 || code == 555 || code == 504)) {
-      _block(reason, _serverBlock);
+    if (_gated) {
+      if (code == 555 || code == 504) {
+        _block(reason, _serverBan);
+      } else if (reason == AnidbUdpFailure.maintenance) {
+        // Shoko `UDPRequest.ParseResponse`：600/601/602/604 → 300 s backoff。
+        _block(reason, _serverBackoff);
+      }
     }
     if (code == 500 || code == 503 || code == 504 || code == 555) {
       // Stop a queued scan from repeatedly authenticating bad credentials.

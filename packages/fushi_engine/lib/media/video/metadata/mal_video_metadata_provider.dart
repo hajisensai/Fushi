@@ -373,20 +373,30 @@ class MalVideoMetadataProvider implements VideoMetadataProvider {
   }
 }
 
-/// One gate is shared by all production instances: <= 60 starts/minute,
+/// One gate is shared by all production instances: < 60 starts/minute,
 /// coalesced concurrent reads, bounded cache, and server-directed cooldown.
+///
+/// Jikan 限 3 req/s 且 60 req/min；1 req/s 正好贴着分钟上限，长 sweep 里一个
+/// 计数抖动就是 429。间隔留 10% 余量，429 按 `Retry-After`（缺省 60 s）冷却后
+/// **就地重试同一请求**（最多 [maxRateLimitRetries] 次）——此前 429 一次即失败，
+/// 一个 429 会同时炸出「演职员不完整 / 第 N 季拉取失败 / 季集 0 集」三条警告，
+/// 而下一个请求其实已经在冷却后正常通过（BUG-2595）。
 class MalVideoMetadataRequestGate {
   MalVideoMetadataRequestGate(
       {VideoMetadataNow? now,
       VideoMetadataRetrySleep? sleep,
-      this.interval = const Duration(seconds: 1),
-      this.cacheTtl = const Duration(hours: 1)})
+      this.interval = const Duration(milliseconds: 1100),
+      this.cacheTtl = const Duration(hours: 1),
+      this.maxRateLimitRetries = 2})
       : _now = now ?? DateTime.now,
         _sleep = sleep ?? Future<void>.delayed;
   final VideoMetadataNow _now;
   final VideoMetadataRetrySleep _sleep;
   final Duration interval;
   final Duration cacheTtl;
+
+  /// 同一请求收到 429 后在冷却期满时重试的次数上限。
+  final int maxRateLimitRetries;
   DateTime? _nextStart;
   Future<void> _queue = Future<void>.value();
   final Map<String, ({DateTime expires, String body})> _cache =
@@ -412,27 +422,35 @@ class MalVideoMetadataRequestGate {
       String key, Future<VideoMetadataHttpResponse> Function() request) async {
     final Completer<String> result = Completer<String>();
     _queue = _queue.then((_) async {
-      try {
-        final Duration wait = _nextStart?.difference(_now()) ?? Duration.zero;
-        if (wait > Duration.zero) await _sleep(wait);
-        _nextStart = _now().add(interval);
-        final VideoMetadataHttpResponse response = await request();
-        response.decodeJsonObject(operation: 'MAL');
-        _cache.removeWhere(
-            (String _, ({DateTime expires, String body}) entry) =>
-                !entry.expires.isAfter(_now()));
-        if (_cache.length >= 256) _cache.remove(_cache.keys.first);
-        _cache[key] = (expires: _now().add(cacheTtl), body: response.body);
-        result.complete(response.body);
-      } catch (error, stack) {
-        if (error is VideoMetadataNetworkException && error.statusCode == 429) {
-          final DateTime cooldown =
-              _now().add(error.retryAfter ?? const Duration(seconds: 60));
-          if (_nextStart == null || cooldown.isAfter(_nextStart!)) {
-            _nextStart = cooldown;
+      for (int attempt = 0;; attempt++) {
+        try {
+          final Duration wait = _nextStart?.difference(_now()) ?? Duration.zero;
+          if (wait > Duration.zero) await _sleep(wait);
+          _nextStart = _now().add(interval);
+          final VideoMetadataHttpResponse response = await request();
+          response.decodeJsonObject(operation: 'MAL');
+          _cache.removeWhere(
+              (String _, ({DateTime expires, String body}) entry) =>
+                  !entry.expires.isAfter(_now()));
+          if (_cache.length >= 256) _cache.remove(_cache.keys.first);
+          _cache[key] = (expires: _now().add(cacheTtl), body: response.body);
+          result.complete(response.body);
+          return;
+        } catch (error, stack) {
+          if (error is VideoMetadataNetworkException &&
+              error.statusCode == 429) {
+            // 冷却是全局的：队列里后面的请求同样要等；本请求在冷却期满后
+            // 原样重发。
+            final DateTime cooldown =
+                _now().add(error.retryAfter ?? const Duration(seconds: 60));
+            if (_nextStart == null || cooldown.isAfter(_nextStart!)) {
+              _nextStart = cooldown;
+            }
+            if (attempt < maxRateLimitRetries) continue;
           }
+          result.completeError(error, stack);
+          return;
         }
-        result.completeError(error, stack);
       }
     });
     return result.future;

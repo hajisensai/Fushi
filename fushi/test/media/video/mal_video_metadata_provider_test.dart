@@ -221,15 +221,18 @@ void main() {
       gate.get('b', load),
     ]);
     expect(starts.length, 2);
-    expect(starts[1].difference(starts[0]), const Duration(seconds: 1));
+    // Jikan 60 req/min：1 s 正好贴着上限，留 10% 余量（BUG-2595）。
+    expect(starts[1].difference(starts[0]), const Duration(milliseconds: 1100));
     values.first['data'] = 'mutated';
     expect((await gate.get('a', load))['data'], isEmpty);
   });
 
-  test('429 propagates without retry and applies global Retry-After cooldown',
-      () async {
+  test(
+      '429 waits out Retry-After, retries the same request in place and keeps '
+      'the global cooldown (BUG-2595)', () async {
     DateTime now = DateTime.utc(2026);
     final DateTime start = now;
+    final List<DateTime> starts = <DateTime>[];
     final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
         now: () => now,
         sleep: (Duration duration) async {
@@ -240,6 +243,7 @@ void main() {
         requestGate: gate,
         client: MockClient((http.Request request) async {
           calls++;
+          starts.add(now);
           if (calls == 1) {
             return http.Response('limited', 429,
                 headers: <String, String>{'retry-after': '12'});
@@ -248,11 +252,40 @@ void main() {
         }));
     const VideoMetadataSearchRequest request = VideoMetadataSearchRequest(
         title: 'name', mediaKind: VideoMetadataMediaKind.tv);
-    await expectLater(provider.search(request),
-        throwsA(isA<VideoMetadataNetworkException>()));
-    expect(calls, 1);
+    // 一次 429 不再让调用方失败：冷却 12 s 后原样重发即成功。
     expect(await provider.search(request), isEmpty);
+    expect(calls, 2);
+    expect(starts[1].difference(starts[0]), const Duration(seconds: 12));
     expect(now.difference(start), const Duration(seconds: 12));
+    // 命中缓存，不再发请求。
+    expect(await provider.search(request), isEmpty);
+    expect(calls, 2);
+    provider.close();
+  });
+
+  test('persistent 429 gives up after the retry budget', () async {
+    DateTime now = DateTime.utc(2026);
+    final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
+        now: () => now,
+        sleep: (Duration duration) async {
+          now = now.add(duration);
+        },
+        maxRateLimitRetries: 2);
+    int calls = 0;
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+        requestGate: gate,
+        client: MockClient((http.Request request) async {
+          calls++;
+          return http.Response('limited', 429,
+              headers: <String, String>{'retry-after': '1'});
+        }));
+    const VideoMetadataSearchRequest request = VideoMetadataSearchRequest(
+        title: 'name', mediaKind: VideoMetadataMediaKind.tv);
+    await expectLater(
+        provider.search(request),
+        throwsA(isA<VideoMetadataNetworkException>()
+            .having((e) => e.statusCode, 'statusCode', 429)));
+    expect(calls, 3, reason: '首发 + 2 次重试');
     provider.close();
   });
 

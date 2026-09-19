@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2397 条。点号进各自文件。
+> 共 2401 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2595](bugs/BUG-2595-jikan-429-no-retry.md) | ✅ | ✅ | Jikan 429 一次即失败，单个限流炸出多条季集/演职员缺失警告 |
+| [BUG-2594](bugs/BUG-2594-scrape-task-panel-height.md) | ✅ | ✅ | 后台任务弹窗已完成列表硬截 260px，下半截空白 |
+| [BUG-2593](bugs/BUG-2593-scrape-season-offset.md) | ✅ | ✅ | 多季对齐把映射表条目序号当本地季号，BLEACH S17 整季挂不上集 |
+| [BUG-2592](bugs/BUG-2592-anidb-timeout-ban.md) | ✅ | ✅ | AniDB UDP 一次超时就全局封禁 90 分钟，整批文件全报限流 |
 | [BUG-2590](bugs/BUG-2590-media-server-embedded-subtitle-mpv-fallback.md) | ✅ | ✅ | 媒体服务器兼容层无字幕抽取端点：内嵌文本轨回落 libmpv 自绘 |
 | [BUG-2589](bugs/BUG-2589-gallery-wide-image-crop.md) | ✅ | ✅ | 插图册横版插图被裁成竖版卡片，书架端「查看插图」与阅读器内插图册两套实现 |
 | [BUG-2588](bugs/BUG-2588-video-shift-lookup-freeze-hang-dump.md) | ✅ | ✅ | 视频页 Shift 悬停换词到无词条字位时热槽 WebView 被同步拆掉（用户报整机卡死）+ 卡死零证据 |

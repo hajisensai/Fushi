@@ -462,6 +462,132 @@ void main() {
     },
   );
 
+  group('shared rate gate: timeout is not a ban (BUG-2592, Shoko parity)', () {
+    int nowMs = 0;
+    final List<Duration> slept = <Duration>[];
+    setUp(() {
+      nowMs = 0;
+      slept.clear();
+      AnidbUdpFileClient.resetSharedState(
+        clockMs: () => nowMs,
+        sleep: (Duration d) async {
+          slept.add(d);
+          nowMs += d.inMilliseconds;
+        },
+      );
+    });
+    tearDown(AnidbUdpFileClient.resetSharedState);
+
+    /// [silentFiles] 为 true 时 FILE 全部丢包（AUTH 正常应答）。
+    AnidbUdpFileClient gated(_Fake fake) => AnidbUdpFileClient(
+          config: _config,
+          transportFactory: (_) async => fake,
+          sharedRateGate: true,
+        );
+
+    /// FILE 丢包（[silent] 为真时）；[allSilent] 时 AUTH 也丢——模拟整条链路
+    /// 静默，而不是「AUTH 通、FILE 不通」这种半通状态。
+    _Fake silentFiles(List<int> files,
+            {bool Function()? silent, bool allSilent = false}) =>
+        _Fake((packet, tag) {
+          if (packet.startsWith('FILE ')) files.add(nowMs);
+          if (allSilent || packet.startsWith('FILE ')) {
+            if (silent?.call() ?? true) throw TimeoutException('lost');
+          }
+          return _normal(packet, tag);
+        });
+
+    test(
+        'two silent datagrams fail one file, then back off 30 s instead of '
+        'banning for 90 min', () async {
+      final List<int> files = <int>[];
+      bool silent = true;
+      final AnidbUdpFileClient client =
+          gated(silentFiles(files, silent: () => silent));
+      await expectLater(
+        client.lookup(size: 1, ed2k: _hash),
+        throwsA(isA<AnidbUdpException>()
+            .having((e) => e.reason, 'reason', AnidbUdpFailure.timeout)),
+      );
+      expect(files.length, 2);
+      expect(
+          AnidbUdpFileClient.sharedBlockRemaining, const Duration(seconds: 30));
+      // 退避窗口内：不发包，报 backoff 而不是「限流或维护」。
+      await expectLater(
+        client.lookup(size: 2, ed2k: _hash),
+        throwsA(isA<AnidbUdpException>()
+            .having((e) => e.reason, 'reason', AnidbUdpFailure.backoff)),
+      );
+      expect(files.length, 2);
+      // 30 s 后恢复发送；一旦收到应答，退避计数归零。
+      nowMs += 30000;
+      silent = false;
+      expect((await client.lookup(size: 3, ed2k: _hash))?.fileId, 100);
+      expect(AnidbUdpFileClient.sharedBlockRemaining, Duration.zero);
+      silent = true;
+      await expectLater(
+        client.lookup(size: 4, ed2k: _hash),
+        throwsA(isA<AnidbUdpException>()
+            .having((e) => e.reason, 'reason', AnidbUdpFailure.timeout)),
+      );
+      expect(
+          AnidbUdpFileClient.sharedBlockRemaining, const Duration(seconds: 30),
+          reason: '中间有过应答，退避从 30 s 重新起算');
+      await client.close();
+    });
+
+    test('consecutive silent rounds double the backoff up to 10 min', () async {
+      final List<int> files = <int>[];
+      final AnidbUdpFileClient client =
+          gated(silentFiles(files, allSilent: true));
+      final List<int> expectedSeconds = <int>[30, 60, 120, 240, 480, 600, 600];
+      for (final int seconds in expectedSeconds) {
+        await expectLater(
+          client.lookup(size: seconds, ed2k: _hash),
+          throwsA(isA<AnidbUdpException>()
+              .having((e) => e.reason, 'reason', AnidbUdpFailure.timeout)),
+        );
+        expect(AnidbUdpFileClient.sharedBlockRemaining,
+            Duration(seconds: seconds));
+        nowMs += seconds * 1000;
+      }
+      await client.close();
+    });
+
+    test('555 bans every client for 90 min; 602 backs off 5 min', () async {
+      for (final (int code, AnidbUdpFailure reason, Duration block) in [
+        (555, AnidbUdpFailure.banned, const Duration(minutes: 90)),
+        (602, AnidbUdpFailure.maintenance, const Duration(minutes: 5)),
+      ]) {
+        AnidbUdpFileClient.resetSharedState(
+            clockMs: () => nowMs, sleep: (Duration d) async {});
+        final _Fake fake = _Fake((packet, tag) => packet.startsWith('FILE ')
+            ? '$tag $code SERVER SAYS'
+            : _normal(packet, tag));
+        final AnidbUdpFileClient client = gated(fake);
+        await expectLater(
+          client.lookup(size: 1, ed2k: _hash),
+          throwsA(isA<AnidbUdpException>()
+              .having((e) => e.reason, 'reason', reason)),
+        );
+        expect(AnidbUdpFileClient.sharedBlockRemaining, block);
+        // 另一个客户端（另一个协调器）在窗口内同样不发包。
+        final _Fake other = _Fake(_normal);
+        final AnidbUdpFileClient replacement = gated(other);
+        await expectLater(
+          replacement.lookup(size: 2, ed2k: _hash),
+          throwsA(isA<AnidbUdpException>()
+              .having((e) => e.reason, 'reason', reason)),
+        );
+        expect(other.packets, isEmpty);
+        nowMs += block.inMilliseconds;
+        expect((await replacement.lookup(size: 2, ed2k: _hash))?.fileId, 100);
+        await client.close();
+        await replacement.close();
+      }
+    });
+  });
+
   group('verifyLogin (settings test button, BUG-2581)', () {
     test('sends exactly AUTH then LOGOUT on close, never FILE', () async {
       final _Fake fake = _Fake(_normal);
