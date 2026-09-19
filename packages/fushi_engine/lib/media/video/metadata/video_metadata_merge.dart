@@ -4,6 +4,7 @@
 /// 不因此变为新的主资料源。
 library;
 
+import 'package:fushi_engine/media/video/metadata/tmdb_episode_matcher.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 
@@ -387,6 +388,199 @@ VideoMetadataSeason _fillSeasonFromSlice(
         season.episodeCount ?? (end == null ? null : end - slice.offset),
   );
 }
+
+/// [enrichSeasonsByTmdbEpisodeMatch] 的结果：补过的作品 + 每个 (季, 集) 的评级。
+typedef TmdbEpisodeMatchOutcome = ({
+  VideoMetadataWork work,
+  Map<(int, int), TmdbEpisodeMatchRating> ratings,
+});
+
+/// Shoko 式逐集匹配补充（`MatchAnidbToTmdbEpisodes` 的用法之一）：映射表没有
+/// 给切片的 MAL cour 季，用它自己分集的标题 + 播出日在 TMDB 全部正片季里逐集
+/// 找对应，对上的用 TMDB 集补空（分集 id / 简介 / 剧照 / 播出日）。已被
+/// [fillSeasonsFromTmdbSlices] 切过的季（[skipSeasons]）不再匹配；已经被本作品
+/// 其它季用掉的 TMDB 集不进候选池。
+TmdbEpisodeMatchOutcome enrichSeasonsByTmdbEpisodeMatch(
+  VideoMetadataWork primary,
+  VideoMetadataWork? tmdb, {
+  Set<int> skipSeasons = const <int>{},
+  String? preferredLanguage,
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
+}) {
+  final Map<(int, int), TmdbEpisodeMatchRating> ratings =
+      <(int, int), TmdbEpisodeMatchRating>{};
+  if (tmdb == null || primary.seasons.isEmpty) {
+    return (work: primary, ratings: ratings);
+  }
+  final List<VideoMetadataEpisode> pool = _unusedTmdbEpisodes(primary, tmdb);
+  if (pool.isEmpty) return (work: primary, ratings: ratings);
+  final bool preferSupplementTitle = _preferSupplementTitle(
+    primary.provider,
+    tmdb.provider,
+    preferredLanguage,
+  );
+  final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[];
+  for (final VideoMetadataSeason season in primary.seasons) {
+    if (skipSeasons.contains(season.seasonNumber) ||
+        season.seasonNumber == 0 ||
+        season.episodes.isEmpty) {
+      seasons.add(season);
+      continue;
+    }
+    // 已经带 TMDB 分集 id 的集（同季号时 [_mergeSeasons] 按集号并上的）不再
+    // 参与匹配，否则会被重配到别的 TMDB 集。
+    final List<TmdbEpisodeMatchSource> sources = <TmdbEpisodeMatchSource>[
+      for (final VideoMetadataEpisode episode in season.episodes)
+        if (_tmdbEpisodeKeys(episode).isEmpty)
+          TmdbEpisodeMatchSource(
+            number: episode.episodeNumber,
+            titles: <String>[episode.title],
+            airDate: episode.airDate,
+          ),
+    ];
+    final Map<int, TmdbEpisodeMatch> matches = sources.isEmpty
+        ? const <int, TmdbEpisodeMatch>{}
+        : matchEpisodesToTmdb(sources, pool,
+            candidateAliases: candidateAliases);
+    if (matches.isEmpty) {
+      seasons.add(season);
+      continue;
+    }
+    final Set<String> taken = <String>{};
+    seasons.add(season.copyWith(
+      episodes: <VideoMetadataEpisode>[
+        for (final VideoMetadataEpisode episode in season.episodes)
+          if (matches[episode.episodeNumber] case final TmdbEpisodeMatch match)
+            () {
+              ratings[(season.seasonNumber, episode.episodeNumber)] =
+                  match.rating;
+              taken.addAll(_tmdbEpisodeKeys(match.episode));
+              return _mergeEpisode(
+                episode,
+                _renumberEpisode(
+                    match.episode, season.seasonNumber, episode.episodeNumber),
+                preferSupplementTitle: preferSupplementTitle,
+              );
+            }()
+          else
+            episode,
+      ],
+    ));
+    pool.removeWhere((VideoMetadataEpisode episode) =>
+        _tmdbEpisodeKeys(episode).any(taken.contains));
+  }
+  return (
+    work: ratings.isEmpty ? primary : primary.copyWith(seasons: seasons),
+    ratings: ratings,
+  );
+}
+
+/// Shoko 主路径（AniDB 集 → TMDB 集）在本仓的形态：MAL cour 季**一集都没有**
+/// （Jikan 对播出中的作品常给 0 集）又没有映射表切片时，用本地文件的 AniDB 文件
+/// 身份里的集标题（英/罗马字/日文三种）在 TMDB 正片池里逐集找对应，对上的
+/// TMDB 集按 **AniDB 集号** 落成该季的分集。集号本身不做跨站推断——只有标题
+/// 核对通过的那几集才落，集号只是「这一集在 cour 里排第几」的位置。
+///
+/// [sourcesBySeason]：卡片季号 → 来源集（`number` = AniDB epno，`titles` =
+/// AniDB 集标题）。已有分集的季不动。
+TmdbEpisodeMatchOutcome fillEmptySeasonsFromEpisodeTitles(
+  VideoMetadataWork primary,
+  VideoMetadataWork? tmdb,
+  Map<int, List<TmdbEpisodeMatchSource>> sourcesBySeason, {
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
+}) {
+  final Map<(int, int), TmdbEpisodeMatchRating> ratings =
+      <(int, int), TmdbEpisodeMatchRating>{};
+  if (tmdb == null || sourcesBySeason.isEmpty || primary.seasons.isEmpty) {
+    return (work: primary, ratings: ratings);
+  }
+  final List<VideoMetadataEpisode> pool = _unusedTmdbEpisodes(primary, tmdb);
+  if (pool.isEmpty) return (work: primary, ratings: ratings);
+  final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[];
+  for (final VideoMetadataSeason season in primary.seasons) {
+    final List<TmdbEpisodeMatchSource>? sources =
+        sourcesBySeason[season.seasonNumber];
+    if (sources == null ||
+        sources.isEmpty ||
+        season.seasonNumber == 0 ||
+        season.episodes.isNotEmpty) {
+      seasons.add(season);
+      continue;
+    }
+    final Map<int, TmdbEpisodeMatch> matches = Map<int, TmdbEpisodeMatch>.of(
+        matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases))
+      // 这条路径的输入是 AniDB 文件身份的集标题、输出是「按 AniDB 集号落进 TMDB
+      // 集」——只有标题真核对过的才能落。`firstAvailable` 是季锁定后的顺序兜底，
+      // 标题没对上；Shoko 把它交用户核对界面，本仓没有那个界面，落库就是把错的
+      // 剧照/简介静默写进分集行（「AniDB 集号不能未经验证套到 TMDB 集号」）。
+      ..removeWhere((int _, TmdbEpisodeMatch match) =>
+          match.rating == TmdbEpisodeMatchRating.firstAvailable);
+    if (matches.isEmpty) {
+      seasons.add(season);
+      continue;
+    }
+    final Set<String> taken = <String>{};
+    final List<VideoMetadataEpisode> episodes = <VideoMetadataEpisode>[
+      for (final MapEntry<int, TmdbEpisodeMatch> entry in matches.entries)
+        () {
+          ratings[(season.seasonNumber, entry.key)] = entry.value.rating;
+          taken.addAll(_tmdbEpisodeKeys(entry.value.episode));
+          return _renumberEpisode(
+              entry.value.episode, season.seasonNumber, entry.key);
+        }(),
+    ]..sort((VideoMetadataEpisode a, VideoMetadataEpisode b) =>
+        a.episodeNumber.compareTo(b.episodeNumber));
+    seasons.add(season.copyWith(episodes: episodes));
+    pool.removeWhere((VideoMetadataEpisode episode) =>
+        _tmdbEpisodeKeys(episode).any(taken.contains));
+  }
+  return (
+    work: ratings.isEmpty ? primary : primary.copyWith(seasons: seasons),
+    ratings: ratings,
+  );
+}
+
+/// [tmdb] 的全部分集，去掉已经出现在 [primary] 某一季里的（按 TMDB 分集 id）。
+List<VideoMetadataEpisode> _unusedTmdbEpisodes(
+  VideoMetadataWork primary,
+  VideoMetadataWork tmdb,
+) {
+  final Set<String> used = <String>{
+    for (final VideoMetadataSeason season in primary.seasons)
+      for (final VideoMetadataEpisode episode in season.episodes)
+        ..._tmdbEpisodeKeys(episode),
+  };
+  return <VideoMetadataEpisode>[
+    for (final VideoMetadataSeason season in tmdb.seasons)
+      for (final VideoMetadataEpisode episode in season.episodes)
+        if (!_tmdbEpisodeKeys(episode).any(used.contains)) episode,
+  ];
+}
+
+Iterable<String> _tmdbEpisodeKeys(VideoMetadataEpisode episode) => <String>[
+      for (final VideoMetadataId id in episode.ids)
+        if (id.type.toLowerCase() == 'tmdb') 'tmdb:${id.value.trim()}',
+    ];
+
+/// 把一条 TMDB 集改成目标 (季, 集) 编号（含剧照的季/集号）。
+VideoMetadataEpisode _renumberEpisode(
+  VideoMetadataEpisode episode,
+  int seasonNumber,
+  int episodeNumber,
+) =>
+    episode.copyWith(
+      seasonNumber: seasonNumber,
+      episodeNumber: episodeNumber,
+      images: <VideoMetadataImage>[
+        for (final VideoMetadataImage image in episode.images)
+          image.copyWith(
+            seasonNumber: seasonNumber,
+            episodeNumber: episodeNumber,
+          ),
+      ],
+    );
 
 List<VideoMetadataSeason> _mergeSeasons(
   Iterable<VideoMetadataSeason> primary,

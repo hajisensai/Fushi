@@ -12,7 +12,8 @@ class TmdbVideoMetadataProvider
     implements
         VideoMetadataProvider,
         VideoMetadataExtrasProvider,
-        VideoMetadataEpisodeGroupProvider {
+        VideoMetadataEpisodeGroupProvider,
+        VideoMetadataEpisodeAliasProvider {
   TmdbVideoMetadataProvider({
     String apiKey = '',
     String accessToken = '',
@@ -227,6 +228,50 @@ class TmdbVideoMetadataProvider
     );
     if (payload == null) return const <VideoMetadataEpisode>[];
     return _mapEpisodes(payload, seasonNumber);
+  }
+
+  /// Shoko 集级匹配比的是 en-US + 剧原语集名；本仓常规 hydrate 只拉资料语言一种。
+  /// 这里按季补另外两种（与资料语言同主子标签的跳过），轻量请求（不带
+  /// `append_to_response`），各自独立缓存键。集群/ 404 → 空表，不抛。
+  @override
+  Future<Map<int, List<String>>> fetchEpisodeTitleAliases(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async {
+    _validateLookup(lookup);
+    if (lookup.mediaKind != VideoMetadataMediaKind.tv ||
+        lookup.episodeGroupId != null) {
+      return const <int, List<String>>{};
+    }
+    final String own = VideoMetadataLanguages(language).primarySubtag;
+    final VideoMetadataWork? work = await fetchWork(lookup);
+    final String? original = work?.originalLanguage?.trim().toLowerCase();
+    final List<String> languages = <String>[
+      if (own != 'en') 'en-US',
+      if (original != null &&
+          original.isNotEmpty &&
+          original != 'en' &&
+          original != own)
+        original,
+    ];
+    final Map<int, List<String>> aliases = <int, List<String>>{};
+    for (final String code in languages) {
+      final Map<String, Object?>? payload = await _getObjectOrNull(
+        '/tv/${lookup.externalId}/season/$seasonNumber',
+        operation: 'TMDB season titles ($code)',
+        query: <String, String>{'language': code},
+        cacheKey: 'tmdb:season:${lookup.externalId}:$seasonNumber:$code',
+      );
+      if (payload == null) continue;
+      for (final Object? node in metadataList(payload['episodes'])) {
+        final Map<String, Object?>? item = metadataObject(node);
+        final int? number = metadataInt(item?['episode_number']);
+        final String? name = metadataString(item?['name']);
+        if (number == null || name == null || name.trim().isEmpty) continue;
+        (aliases[number] ??= <String>[]).add(name);
+      }
+    }
+    return aliases;
   }
 
   @override
