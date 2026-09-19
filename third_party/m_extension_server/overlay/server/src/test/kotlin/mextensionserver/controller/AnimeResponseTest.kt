@@ -59,10 +59,8 @@ class AnimeResponseTest {
                     headers = Headers.headersOf("Referer", "https://site.example/", "User-Agent", "Fushi"),
                     subtitleTracks = listOf(Track("https://cdn.example/ja.vtt", "日本語")),
                 ),
-                Video("https://cdn.example/ep1-720.mp4", "720p", null),
+                Video(url = "https://cdn.example/ep1-720.mp4", quality = "720p", videoUrl = null),
             )
-        // Transient progress state must never leak into the wire.
-        videos[0].status = 2
         val mapper = jacksonObjectMapper()
         val json = mapper.readTree(mapper.writeValueAsString(filterResponseForBridge(videos)))
         assertTrue(json.isArray)
@@ -73,11 +71,44 @@ class AnimeResponseTest {
         assertEquals("https://cdn.example/ja.vtt", json[0]["subtitleTracks"][0]["url"].asText())
         assertEquals("日本語", json[0]["subtitleTracks"][0]["lang"].asText())
         assertEquals(
-            setOf("url", "quality", "videoUrl", "headers", "subtitleTracks", "audioTracks"),
+            setOf(
+                "url", "quality", "videoUrl", "videoTitle", "resolution", "bitrate", "preferred",
+                "headers", "subtitleTracks", "audioTracks", "mpvArgs",
+            ),
             json[0].fieldNames().asSequence().toSet(),
         )
+        assertEquals("1080p", json[0]["videoTitle"].asText())
+        assertTrue(json[0]["resolution"].isNull)
+        assertEquals(false, json[0]["preferred"].asBoolean())
+        // The lib-16 deprecated constructor stores a null videoUrl as the string
+        // "null"; the wire keeps the lib-14 meaning.
         assertTrue(json[1]["videoUrl"].isNull)
+        assertEquals("https://cdn.example/ep1-720.mp4", json[1]["url"].asText())
         assertTrue(json[1]["headers"].isNull)
+    }
+
+    @Test
+    fun `lib 16 videos project title resolution preferred and mpv args`() {
+        val videos =
+            listOf(
+                Video(
+                    videoUrl = "https://cdn.example/1080.m3u8",
+                    videoTitle = "Japanese - 1080p",
+                    resolution = 1080,
+                    bitrate = 4_000_000,
+                    preferred = true,
+                    mpvArgs = listOf("http-header-fields" to "Referer: https://site.example/"),
+                ),
+            )
+        val mapper = jacksonObjectMapper()
+        val json = mapper.readTree(mapper.writeValueAsString(filterResponseForBridge(videos)))
+        assertEquals("Japanese - 1080p", json[0]["videoTitle"].asText())
+        assertEquals("Japanese - 1080p", json[0]["quality"].asText())
+        assertEquals("https://cdn.example/1080.m3u8", json[0]["url"].asText())
+        assertEquals(1080, json[0]["resolution"].asInt())
+        assertEquals(4_000_000, json[0]["bitrate"].asInt())
+        assertEquals(true, json[0]["preferred"].asBoolean())
+        assertEquals("http-header-fields", json[0]["mpvArgs"][0]["key"].asText())
     }
 
     @Test
@@ -89,14 +120,16 @@ class AnimeResponseTest {
     }
 
     @Test
-    fun `lib gate accepts manga 1_4 and 1_6 and anime 14 only`() {
+    fun `lib gate accepts manga 1_4 and 1_6 and anime 14 to 16`() {
         assertEquals("1.4", InspectHandler.supportedLibVersionLabel("manga", 1.4))
         assertEquals("1.6", InspectHandler.supportedLibVersionLabel("manga", 1.6))
         assertNull(InspectHandler.supportedLibVersionLabel("manga", 14.0))
         assertEquals("14", InspectHandler.supportedLibVersionLabel("anime", 14.0))
-        // extensions-lib 16 changed the Video constructor and moved to hosters;
-        // the vendored ABI cannot host it, so it is refused at inspect time.
-        assertNull(InspectHandler.supportedLibVersionLabel("anime", 16.0))
+        // The hosted anime ABI is the lib 14 + lib 16 union (hoster API, the
+        // data-class Video); both generations install.
+        assertEquals("15", InspectHandler.supportedLibVersionLabel("anime", 15.0))
+        assertEquals("16", InspectHandler.supportedLibVersionLabel("anime", 16.0))
+        assertNull(InspectHandler.supportedLibVersionLabel("anime", 17.0))
         assertNull(InspectHandler.supportedLibVersionLabel("anime", 1.6))
         assertNull(InspectHandler.supportedLibVersionLabel("anime", null))
     }

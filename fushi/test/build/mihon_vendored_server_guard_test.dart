@@ -35,6 +35,17 @@ const String _licenseSha256 =
 const List<String> _overlayOverridesUpstream = <String>[
   'server/src/main/kotlin/mextensionserver/controller/MExtensionServerController.kt',
   'server/src/main/kotlin/mextensionserver/controller/DalvikHandler.kt',
+  // BUG-2600：anime 宿主 ABI（lib 14 + lib 16 并集）——Android 的
+  // prepareAniyomiSourceApi Sync 任务同样靠「同名覆盖」叠加，上游改名会静默打空。
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/AnimeCatalogueSource.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/AnimeSource.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/SAnime.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/SAnimeImpl.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/SEpisode.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/SEpisodeImpl.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/Video.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/online/AnimeHttpSource.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/online/ParsedAnimeHttpSource.kt',
 ];
 
 /// overlay 里 Hibiki 新增、上游没有的文件。
@@ -43,6 +54,8 @@ const List<String> _overlayNewFiles = <String>[
   'server/src/main/kotlin/mextensionserver/controller/SourceImageHandler.kt',
   'server/src/main/kotlin/mextensionserver/controller/SourceDataHandler.kt',
   'server/src/main/kotlin/mextensionserver/controller/SourceCookieInjection.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/model/FetchType.kt',
+  'server/src/main/kotlin/eu/kanade/tachiyomi/animesource/host/AnimeVideoLoader.kt',
 ];
 
 String _read(String path) => File(path).readAsStringSync();

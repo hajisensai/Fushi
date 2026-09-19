@@ -4,3 +4,6 @@
 [submodule "references/ShokoServer"]
 	path = references/ShokoServer
 	url = https://github.com/ShokoAnime/ShokoServer.git
+[submodule "references/mangayomi"]
+	path = references/mangayomi
+	url = https://github.com/kodjodevf/mangayomi.git

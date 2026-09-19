@@ -270,20 +270,16 @@ class AnimeSourceVideoClient
   }
 }
 
-/// 默认选流策略：画质标签能解出行数的取最高，解不出（`Auto` / hoster 名）的按
-/// 扩展给的顺序取第一条——Aniyomi 扩展自己会按用户偏好 `sort()` 过，第一条即
-/// 它认为最合适的。
+/// 默认选流策略，与 Aniyomi 播放器的 `HosterLoader.selectBestVideo` 同口径：
+/// 扩展标了 `preferred` 的第一条优先；否则取扩展给的第一条——宿主已经按扩展自己
+/// 的 `sortVideos` / `sort`（用户在扩展设置里选的画质、语言偏好）排过序，第一条
+/// 就是它认为最合适的。此前按「行数最高」硬选会把扩展设置里的画质偏好整个作废
+/// （用户选 720p 省流量也永远被推成 1080p）。
 MihonVideo chooseBestAnimeVideo(List<MihonVideo> candidates) {
-  MihonVideo best = candidates.first;
-  int bestHeight = best.resolutionHint ?? -1;
-  for (final MihonVideo candidate in candidates.skip(1)) {
-    final int height = candidate.resolutionHint ?? -1;
-    if (height > bestHeight) {
-      best = candidate;
-      bestHeight = height;
-    }
+  for (final MihonVideo candidate in candidates) {
+    if (candidate.preferred) return candidate;
   }
-  return best;
+  return candidates.first;
 }
 
 /// 播放顺序：集号升序（源多半新集在前），集号相同按上传时间，再按原顺序稳定。

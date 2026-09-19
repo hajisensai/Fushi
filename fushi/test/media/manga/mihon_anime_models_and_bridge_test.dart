@@ -38,7 +38,11 @@ void main() {
 
     test('lib gate is per ecosystem: manga 1.4/1.6, anime 14 only', () {
       expect(MihonMediaKind.manga.supportedLibVersions, <String>['1.4', '1.6']);
-      expect(MihonMediaKind.anime.supportedLibVersions, <String>['14']);
+      expect(MihonMediaKind.anime.supportedLibVersions, <String>[
+        '14',
+        '15',
+        '16',
+      ]);
       expect(MihonMediaKind.fromDbValue('anime'), MihonMediaKind.anime);
       expect(MihonMediaKind.fromDbValue(null), MihonMediaKind.manga);
     });
@@ -67,6 +71,39 @@ void main() {
         '日本語',
       ]);
       expect(video.resolutionHint, 1080);
+    });
+
+    test('lib-16 wire: videoTitle, resolution and preferred are decoded', () {
+      final MihonVideo video = MihonVideo.fromJson(const <String, Object?>{
+        'url': 'https://cdn.example/ep1.m3u8',
+        'quality': '',
+        'videoUrl': 'https://cdn.example/ep1.m3u8',
+        'videoTitle': 'Japanese - 1080p',
+        'resolution': 1080,
+        'bitrate': 4000000,
+        'preferred': true,
+        'mpvArgs': <Object?>[
+          <Object?, Object?>{
+            'key': 'http-header-fields',
+            'value': 'Referer: https://site.example/',
+          },
+        ],
+      });
+      expect(video.quality, 'Japanese - 1080p');
+      expect(video.resolution, 1080);
+      expect(video.bitrate, 4000000);
+      expect(video.preferred, isTrue);
+      expect(video.resolutionHint, 1080);
+      expect(video.mpvArgs.single.key, 'http-header-fields');
+      // 自报行数优先于画质文本里猜出来的数字。
+      expect(
+        MihonVideo.fromJson(const <String, Object?>{
+          'url': 'x',
+          'quality': '720p',
+          'resolution': 1080,
+        }).resolutionHint,
+        1080,
+      );
     });
 
     test(

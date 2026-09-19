@@ -28,13 +28,17 @@ enum MihonMediaKind {
 
   /// 本生态可安装的 extensions-lib 版本标签（`MihonExtensionInspection.libVersion`）。
   ///
-  /// 漫画：Mihon 1.4 / 1.6。视频：Aniyomi **14** 一个版本——桌面 sidecar 与 Android
-  /// 宿主编入的 `animesource` ABI 是 lib 14 形态（`Video(url, quality, videoUrl,
-  /// headers, …)` + `getVideoList(episode)`）；lib 16 换了 `Video` 构造签名并改走
-  /// Hoster API，装进来会在第一次取流时炸，所以在安装门拒掉并说明原因。
+  /// 漫画：Mihon 1.4 / 1.6。视频：Aniyomi **14 / 15 / 16**——桌面 sidecar 与 Android
+  /// 宿主编入的 `animesource` ABI（`third_party/m_extension_server/overlay`）是 lib 14
+  /// 与 lib 16 的并集：老构造 `Video(url, quality, videoUrl, …)` + `getVideoList(episode)`
+  /// 与新 data class `Video(videoUrl, videoTitle, resolution, …)` + Hoster API +
+  /// `SEpisode.fillermark` / `SAnime.fetch_type` 同时存在。yuzono / Anikku 仓库里
+  /// versionName 仍写 14 的 APK，dex 实际编译目标已是 lib 16 面（实测 KickAssAnime
+  /// 在纯 lib 14 宿主上 `NoSuchMethodError: Video.getVideoTitle()`、AniDB 写
+  /// `fillermark`），所以版本标签本身从不决定能不能播；只有 14..16 之外的世代才拒。
   List<String> get supportedLibVersions => switch (this) {
     MihonMediaKind.manga => const <String>['1.4', '1.6'],
-    MihonMediaKind.anime => const <String>['14'],
+    MihonMediaKind.anime => const <String>['14', '15', '16'],
   };
 }
 
@@ -681,22 +685,53 @@ class MihonVideo {
     required this.url,
     required this.quality,
     this.videoUrl,
+    this.resolution,
+    this.bitrate,
+    this.preferred = false,
     this.headers = const <String, String>{},
     this.subtitleTracks = const <MihonVideoTrack>[],
     this.audioTracks = const <MihonVideoTrack>[],
+    this.mpvArgs = const <MapEntry<String, String>>[],
   });
 
-  factory MihonVideo.fromJson(Map<String, Object?> json) => MihonVideo(
-    url: json['url']?.toString() ?? '',
-    quality: json['quality']?.toString() ?? '',
-    videoUrl: json['videoUrl']?.toString(),
-    headers: (json['headers'] as Map<Object?, Object?>? ?? const {}).map(
-      (Object? key, Object? value) =>
-          MapEntry<String, String>(key.toString(), value?.toString() ?? ''),
-    ),
-    subtitleTracks: _tracks(json['subtitleTracks']),
-    audioTracks: _tracks(json['audioTracks']),
-  );
+  /// 宿主投影（sidecar `DalvikHandler.Video.toBridgeMap` / Android
+  /// `MihonModelBridge.Video.toBridgeMap`）：lib 14 的 `url` / `quality` /
+  /// `videoUrl` 与 lib 16 的 `videoTitle` / `resolution` / `bitrate` / `preferred`
+  /// 并存；`quality` 缺省时取 `videoTitle`，反之亦然。
+  factory MihonVideo.fromJson(Map<String, Object?> json) {
+    final String quality = json['quality']?.toString() ?? '';
+    final String videoTitle = json['videoTitle']?.toString() ?? '';
+    final String? videoUrl = json['videoUrl']?.toString();
+    return MihonVideo(
+      url: json['url']?.toString() ?? '',
+      quality: quality.isNotEmpty ? quality : videoTitle,
+      videoUrl: videoUrl == null || videoUrl.isEmpty || videoUrl == 'null'
+          ? null
+          : videoUrl,
+      resolution: (json['resolution'] as num?)?.toInt(),
+      bitrate: (json['bitrate'] as num?)?.toInt(),
+      preferred: json['preferred'] == true,
+      headers: (json['headers'] as Map<Object?, Object?>? ?? const {}).map(
+        (Object? key, Object? value) =>
+            MapEntry<String, String>(key.toString(), value?.toString() ?? ''),
+      ),
+      subtitleTracks: _tracks(json['subtitleTracks']),
+      audioTracks: _tracks(json['audioTracks']),
+      mpvArgs: _mpvArgs(json['mpvArgs']),
+    );
+  }
+
+  static List<MapEntry<String, String>> _mpvArgs(Object? value) =>
+      (value as List<Object?>? ?? const <Object?>[])
+          .whereType<Map<Object?, Object?>>()
+          .map(
+            (Map<Object?, Object?> item) => MapEntry<String, String>(
+              item['key']?.toString() ?? '',
+              item['value']?.toString() ?? '',
+            ),
+          )
+          .where((MapEntry<String, String> entry) => entry.key.isNotEmpty)
+          .toList(growable: false);
 
   static List<MihonVideoTrack> _tracks(Object? value) =>
       (value as List<Object?>? ?? const <Object?>[])
@@ -708,14 +743,30 @@ class MihonVideo {
           .where((MihonVideoTrack track) => track.url.isNotEmpty)
           .toList(growable: false);
 
+  /// lib 14 的页面 / embed 地址；宿主已做过 `getVideoUrl` 解析，这里只作展示与回退。
   final String url;
+
+  /// 显示名（lib 14 `quality` / lib 16 `videoTitle`）。
   final String quality;
+
+  /// 可播地址。宿主（`AnimeVideoLoader`）已把 `resolveVideo` / `getVideoUrl` 跑完，
+  /// 解析不出的候选不会过桥，所以到这里恒非空；null 只剩测试 fake 会造出来。
   final String? videoUrl;
+
+  /// lib 16 扩展自报的行数（`resolution`）；lib 14 只能从 [quality] 文本猜。
+  final int? resolution;
+  final int? bitrate;
+
+  /// lib 16：扩展按用户偏好标出的首选候选（可多条为 true），选流时优先于行数。
+  final bool preferred;
   final Map<String, String> headers;
   final List<MihonVideoTrack> subtitleTracks;
   final List<MihonVideoTrack> audioTracks;
 
-  /// 直接交给播放器的地址：lib 14 约定 `videoUrl` 为空时 `url` 本身就是流地址。
+  /// lib 16：扩展要求附加给 mpv 的选项（`http-header-fields` 之类），本期只透传记录。
+  final List<MapEntry<String, String>> mpvArgs;
+
+  /// 直接交给播放器的地址。
   String get resolvedUrl {
     final String? direct = videoUrl;
     return direct != null && direct.isNotEmpty && direct != 'null'
@@ -723,8 +774,11 @@ class MihonVideo {
         : url;
   }
 
-  /// 画质标签里能解出的行数（`1080p` → 1080；`Auto` / hoster 名 → null），供排序。
+  /// 行数：lib 16 自报的 [resolution] 优先，否则从画质标签解（`1080p` → 1080；
+  /// `Auto` / hoster 名 → null），供选流排序。
   int? get resolutionHint {
+    final int? declared = resolution;
+    if (declared != null && declared > 0) return declared;
     final RegExpMatch? match = RegExp(r'(\d{3,4})\s*[pP]').firstMatch(quality);
     return match == null ? null : int.tryParse(match.group(1)!);
   }

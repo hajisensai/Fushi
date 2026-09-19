@@ -259,18 +259,26 @@ internal fun episodeFromBridge(value: Map<String, Any?>): SEpisode = SEpisode.cr
 }
 
 /**
- * 只投影播放器要的五个字段：okhttp `Headers` 摊成 map，`Video` 上那些
- * `@Transient` 的下载进度状态一律不过通道。
+ * 一条可播候选的通道形状，与桌面 sidecar `DalvikHandler.Video.toBridgeMap` 逐字段
+ * 相同：`url` / `quality` / `videoUrl` 是宿主已在解码的 lib 14 名字，
+ * `videoTitle` / `resolution` / `bitrate` / `preferred` 是 lib 16 的选流字段；
+ * okhttp `Headers` 摊成 map。lib 16 的过时构造把空 `videoUrl` 存成字符串 "null"，
+ * 通道保持 lib 14 语义（null = 未解析）。
  */
 internal fun Video.toBridgeMap(): Map<String, Any?> = mapOf(
     "url" to url,
     "quality" to quality,
-    "videoUrl" to videoUrl,
+    "videoUrl" to videoUrl.takeUnless { isVideoUrlUnresolved },
+    "videoTitle" to videoTitle,
+    "resolution" to resolution,
+    "bitrate" to bitrate,
+    "preferred" to preferred,
     "headers" to headers?.let { headers ->
         (0 until headers.size).associate { index -> headers.name(index) to headers.value(index) }
     },
     "subtitleTracks" to subtitleTracks.map { track -> mapOf("url" to track.url, "lang" to track.lang) },
     "audioTracks" to audioTracks.map { track -> mapOf("url" to track.url, "lang" to track.lang) },
+    "mpvArgs" to mpvArgs.map { (key, value) -> mapOf("key" to key, "value" to value) },
 )
 
 internal fun animeFilterListToBridge(filters: AnimeFilterList): List<Map<String, Any?>> =

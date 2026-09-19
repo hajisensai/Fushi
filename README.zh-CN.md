@@ -186,7 +186,7 @@ Fushi 基于以下项目与生态：
 | 项目 | 说明 |
 |---|---|
 | [Mihon](https://github.com/mihonapp/mihon) | 漫画源扩展生态 |
-| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 动画源扩展生态（extensions-lib 14，与漫画共用同一运行时） |
+| [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 动画源扩展生态（extensions-lib 14–16，与漫画共用同一运行时） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫画扩展运行时 |
 | [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫画源运行时 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 浏览器扩展流媒体字幕桥接参考 |
